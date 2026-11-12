@@ -276,6 +276,16 @@ class CommunityPortalTests(unittest.TestCase):
             with self.subTest(data=data), self.assertRaises(core.Stop):
                 portal.validate_inputs(data)
 
+    def test_sections_allow_section_only_jobs_and_reject_ambiguous_names(self):
+        data=inputs();data['channels']=[];data['sections']=[{'name':'Operations','icon':'Heart'}]
+        self.assertEqual(portal.validate_inputs(data)['sections'],data['sections'])
+        duplicate=inputs();duplicate['sections']=[{'name':'Operations'},{'name':'operations'}]
+        with self.assertRaisesRegex(core.Stop,'Duplicate community section'):
+            portal.validate_inputs(duplicate)
+        conflict=inputs();conflict['sections']=[{'name':conflict['channels'][0]['name']}]
+        with self.assertRaisesRegex(core.Stop,'share an ambiguous sidebar name'):
+            portal.validate_inputs(conflict)
+
     def test_current_add_button_requires_both_name_and_stable_id(self):
         for key, value in (('control_id', 'similar-untrusted-button'),
                            ('control_count', 2)):

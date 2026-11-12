@@ -63,11 +63,22 @@ class DynamicRoomTests(unittest.TestCase):
         changed['expected_staff_locations'][0]['location_value'] = 'https://example.invalid/changed'
         self.assertNotEqual(dynamic.configuration_hash(value),dynamic.configuration_hash(changed))
 
-    def exercise(self, *, no_change=False, drift=False, failed_readback=False, option_disabled=False):
+    def exercise(self, *, no_change=False, drift=False, failed_readback=False, option_disabled=False,
+                 multi_staff=False, sibling_drift=False, sibling_saved_drift=False):
         data = inputs()
         if no_change:
             data['expected_staff_locations'][0].update(location_kind='Meeting Room',location_value='')
-        state = {'value':deepcopy(data['expected_staff_locations'][0]),'persisted':deepcopy(data['expected_staff_locations'][0]),'opens':0}
+        sibling = {'staff_id':'other','staff_name':'Other Staff',
+                   'location_kind':'Custom','location_value':'https://example.invalid/other'}
+        if multi_staff:
+            data['expected_staff_locations'].insert(0,deepcopy(sibling))
+            data['staff_dependency']['users'].append({'id':'other','name':'Other Staff',
+                'roles':{'locationIds':['loc']}})
+            data['staff_dependency']['total_count']=2
+        target=next(row for row in data['expected_staff_locations'] if row['staff_id']=='staff')
+        state = {'value':deepcopy(target),'persisted':deepcopy(target),
+                 'sibling':deepcopy(sibling),'opens':0}
+        native_inventory=dynamic._location_controls
         events = []
         class Control:
             def __init__(self,label): self.label=label
@@ -80,6 +91,10 @@ class DynamicRoomTests(unittest.TestCase):
         select,option,save = Control('select'),Control('option'),Control('save')
         class Frame:
             def locator(self,selector):
+                if selector=='[id$="-calendar-team-member-meeting-location-select"]':
+                    class Inventory:
+                        def count(self):return len(data['expected_staff_locations'])
+                    return Inventory()
                 if selector != '.n-base-select-option': raise AssertionError(selector)
                 return option
             def get_by_text(self,label,exact=True): return Control(label)
@@ -98,6 +113,9 @@ class DynamicRoomTests(unittest.TestCase):
             if failed_readback and state['opens'] == 2:
                 state['value']['location_kind'] = 'Custom'
                 state['value']['location_value'] = 'https://example.invalid/not-saved'
+            if ((sibling_drift and state['opens']==1)
+                    or (sibling_saved_drift and state['opens']==2)):
+                state['sibling']['location_value']='https://example.invalid/changed'
             events.append(('open',state['opens']))
             return frame
         def click(control):
@@ -112,7 +130,10 @@ class DynamicRoomTests(unittest.TestCase):
             for name,kwargs in (
                 ('_connected',{'side_effect':lambda p,d:events.append(('connection',d['staff_id']))}),
                 ('_open_calendar',{'side_effect':opened}),('_editor_identity',{}),('_at',{}),
-                ('_location_controls',{'side_effect':lambda f,d:(select,deepcopy(state['value']))}),
+                ('_location_controls',{'side_effect':lambda f,d:native_inventory(f,d) if multi_staff else
+                    (select,deepcopy(state['value']))}),
+                ('_staff_location',{'side_effect':lambda f,member:(select,
+                    deepcopy(state['value'] if member['staff_id']=='staff' else state['sibling']))}),
                 ('click',{'side_effect':click}),('wait_until',{'side_effect':wait}),
             ):
                 stack.enter_context(patch.object(dynamic,name,**kwargs))
@@ -151,6 +172,23 @@ class DynamicRoomTests(unittest.TestCase):
 
     def test_failed_persistence_is_uncertain_not_success_or_second_write(self):
         result,events,_ = self.exercise(failed_readback=True)
+        self.assertIsInstance(result,Stop)
+        self.assertEqual(events.count(('click','save')),1)
+
+    def test_multi_staff_updates_selected_second_member_and_preserves_other_location(self):
+        result,events,state=self.exercise(multi_staff=True)
+        self.assertEqual(result['status'],'DYNAMIC_MEETING_LOCATION_SAVED_AND_REOPENED')
+        self.assertEqual(events.count(('click','save')),1)
+        self.assertEqual(state['persisted']['location_kind'],'Meeting Room')
+        self.assertEqual(state['sibling']['location_value'],'https://example.invalid/other')
+
+    def test_multi_staff_sibling_drift_stops_before_mutation(self):
+        result,events,_=self.exercise(multi_staff=True,sibling_drift=True)
+        self.assertIsInstance(result,Stop)
+        self.assertFalse(any(event[0]=='click' for event in events))
+
+    def test_multi_staff_saved_sibling_drift_is_not_reported_as_success(self):
+        result,events,_=self.exercise(multi_staff=True,sibling_saved_drift=True)
         self.assertIsInstance(result,Stop)
         self.assertEqual(events.count(('click','save')),1)
 
@@ -249,3 +287,28 @@ class StaffInventoryAmbiguityTests(unittest.TestCase):
             'roles':{'locationIds':['loc']}})
         data['staff_dependency']['total_count']=2
         self.assertEqual(dynamic.validate_inputs(data)['staff_id'],'staff')
+
+
+class CompleteCalendarStaffTests(unittest.TestCase):
+    def test_every_assigned_member_requires_matching_user_id_and_name(self):
+        data=inputs()
+        data['expected_staff_locations'].append({'staff_id':'other','staff_name':'Other Staff',
+            'location_kind':'Meeting Room','location_value':''})
+        with self.assertRaisesRegex(Stop,'Every assigned'):
+            dynamic.validate_inputs(data)
+        data['staff_dependency']['users'].append({'id':'other','name':'Different Staff',
+            'roles':{'locationIds':['loc']}})
+        data['staff_dependency']['total_count']=2
+        with self.assertRaisesRegex(Stop,'Every assigned'):
+            dynamic.validate_inputs(data)
+        data['staff_dependency']['users'][-1]['name']='Other Staff'
+        self.assertEqual(len(dynamic.validate_inputs(data)['expected_staff_locations']),2)
+
+    def test_unlisted_or_missing_staff_control_refuses_before_reading_locations(self):
+        data=inputs()
+        class Frame:
+            def locator(self,selector):return self
+            def count(self):return 2
+        with patch.object(dynamic,'_staff_location') as read,self.assertRaisesRegex(Stop,'inventory changed'):
+            dynamic._location_controls(Frame(),data)
+        read.assert_not_called()

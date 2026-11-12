@@ -84,9 +84,11 @@ class CoHostIntegrationTests(unittest.TestCase):
     def test_runtime_journals_writer_once_and_replay_never_reassigns(self):
         job=self.job();step=job['steps'][0]
         with tempfile.TemporaryDirectory() as root,patch.object(runner,'assert_tenant'), \
-                patch.object(meeting_cohosts,'configure',return_value=self.receipt(step)) as writer:
-            first=runner.run_on_page(object(),job,root)
-            replay=runner.run_on_page(object(),job,root)
+                patch.object(meeting_cohosts,'configure',return_value=self.receipt(step)) as writer, \
+                patch.object(meeting_cohosts,'verify_completed') as verify:
+            page=object();first=runner.run_on_page(page,job,root)
+            replay=runner.run_on_page(page,job,root)
+            verify.assert_called_once_with(page,step['payload'],self.receipt(step))
         self.assertEqual(first['status'],'NEEDS_VERIFICATION')
         self.assertEqual(replay['status'],'NEEDS_VERIFICATION')
         self.assertTrue(replay['replayed'])

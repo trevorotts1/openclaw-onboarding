@@ -1,13 +1,13 @@
 {
   "schema": "skill6-build-inventory/2",
-  "updated_at": "2026-11-10T22:26:04.724Z",
-  "scope": "Public current contracts, feature IDs and delivery. Earlier verbose snapshots remain in Git history.",
+  "updated_at": "2026-11-12T01:36:22.212491+00:00",
+  "scope": "Current local v27.1.109 build candidate, original 33 operation contracts and separately verified public v27.1.108 baseline. Unsupported advanced controls and native acceptance remain explicit.",
   "counts": {
-    "BUILT": 23,
-    "PARTIAL": 10,
+    "BUILT": 33,
+    "PARTIAL": 0,
     "GENERIC_ONLY": 0
   },
-  "remaining_named_operations_requiring_build_work": 10,
+  "remaining_named_operations_requiring_build_work": [],
   "definition": {
     "BUILT": "Executable source exists for the bounded recorded contract; native script/respondent acceptance is separate.",
     "PARTIAL": "Executable source exists with the listed public scope unfinished.",
@@ -15,215 +15,1054 @@
   },
   "current_feature_progress": {
     "schema": "skill6-current-feature-progress/1",
-    "source_branch": "skill6/survey-completion-v108-release-20261110",
-    "source_version": "v27.1.108",
-    "dynamic_actions": 69,
-    "bounded_jobs": 97,
+    "source_branch": "release/skill6-v109-approved-20261111",
+    "source_version": "v27.1.109",
+    "dynamic_actions": 72,
+    "bounded_jobs": 101,
     "completed_since_frozen_audit": [
       {
-        "id": "course-text-blocks"
+        "id": "course-text-blocks",
+        "publication": "MERGED"
       },
       {
-        "id": "course-hero-png"
+        "id": "course-hero-png",
+        "publication": "MERGED"
       },
       {
-        "id": "course-instructor-png"
+        "id": "course-instructor-png",
+        "publication": "MERGED"
       },
       {
-        "id": "course-image-blocks"
+        "id": "course-image-blocks",
+        "publication": "MERGED"
       },
       {
-        "id": "quiz-multi-dropdown"
+        "id": "quiz-multi-dropdown",
+        "publication": "MERGED"
       },
       {
-        "id": "form-mixed-connectors"
+        "id": "form-mixed-connectors",
+        "publication": "MERGED"
       },
       {
-        "id": "form-stack-growth"
+        "id": "form-stack-growth",
+        "publication": "MERGED"
       },
       {
-        "id": "form-stack-contraction"
+        "id": "form-stack-contraction",
+        "publication": "MERGED"
       },
       {
-        "id": "course-background-transparency"
+        "id": "course-background-transparency",
+        "publication": "MERGED"
       },
       {
-        "id": "contact-field-frontdoor"
+        "id": "contact-field-frontdoor",
+        "publication": "MERGED"
       },
       {
-        "id": "course-custom-block-deletion"
+        "id": "course-custom-block-deletion",
+        "publication": "MERGED"
       },
       {
-        "id": "survey-shell-radio-chain"
+        "id": "survey-shell-radio-chain",
+        "publication": "MERGED"
       },
       {
-        "id": "quiz-mixed-question-batches"
+        "id": "quiz-mixed-question-batches",
+        "publication": "MERGED"
       },
       {
-        "id": "quiz-picture-choice"
+        "id": "quiz-picture-choice",
+        "publication": "MERGED"
       },
       {
-        "id": "quiz-picture-mixed-batches"
+        "id": "quiz-picture-mixed-batches",
+        "publication": "MERGED"
       },
       {
-        "id": "survey-multiple-slide-radio"
+        "id": "survey-multiple-slide-radio",
+        "publication": "MERGED"
       },
       {
-        "id": "form-inventoried-outcome-removal"
+        "id": "form-inventoried-outcome-removal",
+        "publication": "MERGED"
       },
       {
-        "id": "quiz-owned-new-shell-pipeline"
+        "id": "quiz-owned-new-shell-pipeline",
+        "publication": "MERGED"
       },
       {
-        "id": "survey-empty-slide-radio-pipeline"
+        "id": "survey-empty-slide-radio-pipeline",
+        "publication": "MERGED"
       },
       {
-        "id": "form-existing-outcome-edits"
+        "id": "form-existing-outcome-edits",
+        "publication": "MERGED"
       },
       {
-        "id": "native-contenteditable-editor-titles"
+        "id": "native-contenteditable-editor-titles",
+        "publication": "MERGED"
       },
       {
-        "id": "show-hide-explicit-order-recreation"
+        "id": "show-hide-explicit-order-recreation",
+        "publication": "MERGED"
       },
       {
-        "id": "inactive-course-image-block-removal"
+        "id": "inactive-course-image-block-removal",
+        "publication": "MERGED"
       },
       {
-        "id": "community-course-completed-replay-readback"
+        "id": "community-course-completed-replay-readback",
+        "publication": "MERGED"
       },
       {
-        "id": "survey-native-single-line-owned-creation"
+        "id": "survey-native-single-line-owned-creation",
+        "publication": "MERGED"
       },
       {
-        "id": "native-condition-nested-value-compatibility"
+        "id": "native-condition-nested-value-compatibility",
+        "publication": "MERGED"
       },
       {
-        "id": "survey-populated-text-and-existing-properties"
+        "id": "survey-populated-text-and-existing-properties",
+        "publication": "MERGED"
       },
       {
-        "id": "native-custom-text-condition-field-bindings"
+        "id": "native-custom-text-condition-field-bindings",
+        "publication": "MERGED"
       },
       {
-        "id": "native-inactive-split-creation-reuse"
+        "id": "native-inactive-split-creation-reuse",
+        "publication": "MERGED"
       },
       {
-        "id": "non-message-outcome-order-recreation"
+        "id": "non-message-outcome-order-recreation",
+        "publication": "MERGED"
       },
       {
-        "id": "survey-existing-multiline-properties"
+        "id": "survey-existing-multiline-properties",
+        "publication": "MERGED"
       },
       {
-        "id": "course-background-removal"
+        "id": "course-background-removal",
+        "publication": "MERGED"
       },
       {
-        "id": "course-custom-image-removal"
+        "id": "course-custom-image-removal",
+        "publication": "MERGED"
       },
       {
-        "id": "course-video-blocks"
+        "id": "course-video-blocks",
+        "publication": "MERGED"
       },
       {
-        "id": "survey-owned-multiline-creation"
+        "id": "survey-owned-multiline-creation",
+        "publication": "MERGED"
       },
       {
-        "id": "address-parent-controls"
+        "id": "address-parent-controls",
+        "publication": "MERGED"
       },
       {
-        "id": "form-native-number"
+        "id": "form-native-number",
+        "publication": "MERGED"
       },
       {
-        "id": "form-native-checkbox"
+        "id": "form-native-checkbox",
+        "publication": "MERGED"
       },
       {
-        "id": "form-native-file-upload"
+        "id": "form-native-file-upload",
+        "publication": "MERGED"
       },
       {
-        "id": "form-native-signature"
+        "id": "form-native-signature",
+        "publication": "MERGED"
       },
       {
-        "id": "form-native-single-dropdown"
+        "id": "form-native-single-dropdown",
+        "publication": "MERGED"
       },
       {
-        "id": "form-native-multi-dropdown"
+        "id": "form-native-multi-dropdown",
+        "publication": "MERGED"
       },
       {
-        "id": "form-embed-button-color-icon"
+        "id": "form-embed-button-color-icon",
+        "publication": "MERGED"
       },
       {
-        "id": "community-details-fresh-replay"
+        "id": "community-details-fresh-replay",
+        "publication": "MERGED"
       },
       {
-        "id": "survey-mixed-text-multiline-append"
+        "id": "survey-mixed-text-multiline-append",
+        "publication": "MERGED"
       },
       {
-        "id": "form-native-url-domains"
+        "id": "form-native-url-domains",
+        "publication": "MERGED"
       },
       {
-        "id": "survey-native-number-properties"
+        "id": "survey-native-number-properties",
+        "publication": "MERGED"
       },
       {
-        "id": "quiz-captured-populated-page-append"
+        "id": "quiz-captured-populated-page-append",
+        "publication": "MERGED"
       },
       {
-        "id": "form-numerical-condition-comparisons"
+        "id": "form-numerical-condition-comparisons",
+        "publication": "MERGED"
       },
       {
-        "id": "survey-owned-number-creation"
+        "id": "survey-owned-number-creation",
+        "publication": "MERGED"
       },
       {
-        "id": "survey-owned-checkbox-lifecycle"
+        "id": "survey-owned-checkbox-lifecycle",
+        "publication": "MERGED"
       },
       {
-        "id": "survey-owned-single-dropdown-lifecycle"
+        "id": "survey-owned-single-dropdown-lifecycle",
+        "publication": "MERGED"
       },
       {
-        "id": "survey-owned-multi-dropdown-lifecycle"
+        "id": "survey-owned-multi-dropdown-lifecycle",
+        "publication": "MERGED"
       },
       {
-        "id": "survey-completion-message-redirect"
+        "id": "survey-completion-message-redirect",
+        "publication": "MERGED"
+      },
+      {
+        "id": "form-legacy-dropdown-canonical-reuse",
+        "operation": "forms.configure",
+        "summary": "Exact native/API canonical identity joins and fresh replay for legacy Single Dropdown reuse.",
+        "publication": "SOURCE_IN_THIS_RELEASE",
+        "source_evidence": [
+          {
+            "path": "06-ghl-install-pages/tools/playwright_recipes/dropdown_fields.py",
+            "function": "configure"
+          }
+        ]
+      },
+      {
+        "id": "form-text-box-list-prefills",
+        "operation": "forms.configure",
+        "summary": "Text Box List creation/editing with complete option and prefill inventories.",
+        "publication": "SOURCE_IN_THIS_RELEASE",
+        "source_evidence": [
+          {
+            "path": "06-ghl-install-pages/tools/playwright_recipes/form_widget_families.py",
+            "function": "configure"
+          }
+        ]
+      },
+      {
+        "id": "form-saved-option-delete-confirmation",
+        "operation": "forms.configure",
+        "summary": "One captured shared-field DELETE confirmation for saved option removal.",
+        "publication": "SOURCE_IN_THIS_RELEASE",
+        "source_evidence": [
+          {
+            "path": "06-ghl-install-pages/tools/playwright_recipes/form_single_dropdown_native.py",
+            "function": "remove_option"
+          }
+        ]
+      },
+      {
+        "id": "form-native-monetary",
+        "operation": "forms.configure",
+        "summary": "Captured Monetary field creation/editing.",
+        "publication": "SOURCE_IN_THIS_RELEASE",
+        "source_evidence": [
+          {
+            "path": "06-ghl-install-pages/tools/playwright_recipes/form_widget_families.py",
+            "function": "configure"
+          }
+        ]
+      },
+      {
+        "id": "form-native-source",
+        "operation": "forms.configure",
+        "summary": "Captured Source widget creation/editing without an invented Contact Query Key.",
+        "publication": "SOURCE_IN_THIS_RELEASE",
+        "source_evidence": [
+          {
+            "path": "06-ghl-install-pages/tools/playwright_recipes/form_widget_families.py",
+            "function": "configure"
+          }
+        ]
+      },
+      {
+        "id": "form-existing-score-properties",
+        "operation": "forms.configure",
+        "summary": "Captured existing Score field properties; creation remains unsupported.",
+        "publication": "SOURCE_IN_THIS_RELEASE",
+        "source_evidence": [
+          {
+            "path": "06-ghl-install-pages/tools/playwright_recipes/form_widget_families.py",
+            "function": "configure"
+          }
+        ]
+      },
+      {
+        "id": "form-existing-rating-properties",
+        "operation": "forms.configure",
+        "summary": "Captured existing Rating properties and endpoint labels; creation remains unsupported.",
+        "publication": "SOURCE_IN_THIS_RELEASE",
+        "source_evidence": [
+          {
+            "path": "06-ghl-install-pages/tools/playwright_recipes/form_widget_families.py",
+            "function": "configure"
+          }
+        ]
+      },
+      {
+        "id": "form-existing-date-time-properties",
+        "operation": "forms.configure",
+        "summary": "Captured existing Date & time properties, date/time formats and bounded picker options.",
+        "publication": "SOURCE_IN_THIS_RELEASE",
+        "source_evidence": [
+          {
+            "path": "06-ghl-install-pages/tools/playwright_recipes/form_datetime.py",
+            "function": "write_options"
+          }
+        ]
+      },
+      {
+        "id": "form-existing-time-properties",
+        "operation": "forms.configure",
+        "summary": "Captured existing Time-only properties and bounded time-picker options.",
+        "publication": "SOURCE_IN_THIS_RELEASE",
+        "source_evidence": [
+          {
+            "path": "06-ghl-install-pages/tools/playwright_recipes/form_datetime.py",
+            "function": "write_options"
+          }
+        ]
+      },
+      {
+        "id": "form-native-bot-protection",
+        "operation": "forms.configure",
+        "summary": "Captured interactive Bot protection widget authoring.",
+        "publication": "SOURCE_IN_THIS_RELEASE",
+        "source_evidence": [
+          {
+            "path": "06-ghl-install-pages/tools/playwright_recipes/form_widget_families.py",
+            "function": "configure"
+          }
+        ]
+      },
+      {
+        "id": "form-custom-html-lifecycle",
+        "operation": "forms.configure",
+        "summary": "Captured custom HTML widget creation and existing single-line source editing/clearing.",
+        "publication": "SOURCE_IN_THIS_RELEASE",
+        "source_evidence": [
+          {
+            "path": "06-ghl-install-pages/tools/playwright_recipes/form_widget_families.py",
+            "function": "configure"
+          }
+        ]
+      },
+      {
+        "id": "quiz-result-header-logo",
+        "operation": "quizzes.configure",
+        "summary": "Result Header logo URL and dimensions with protected Header readback.",
+        "publication": "SOURCE_IN_THIS_RELEASE",
+        "source_evidence": [
+          {
+            "path": "06-ghl-install-pages/tools/playwright_recipes/quiz_results.py",
+            "function": "configure"
+          }
+        ]
+      },
+      {
+        "id": "quiz-picture-option-count",
+        "operation": "quizzes.configure",
+        "summary": "Captured indexed Picture Choice tail Add/Delete option counts.",
+        "publication": "SOURCE_IN_THIS_RELEASE",
+        "source_evidence": [
+          {
+            "path": "06-ghl-install-pages/tools/playwright_recipes/quiz_picture_questions.py",
+            "function": "_resize_options"
+          }
+        ]
+      },
+      {
+        "id": "quiz-picture-label-columns",
+        "operation": "quizzes.configure",
+        "summary": "Captured Picture Choice label visibility and column layout.",
+        "publication": "SOURCE_IN_THIS_RELEASE",
+        "source_evidence": [
+          {
+            "path": "06-ghl-install-pages/tools/playwright_recipes/quiz_picture_questions.py",
+            "function": "_write_presentation"
+          }
+        ]
+      },
+      {
+        "id": "quiz-existing-picture-card-media-update",
+        "operation": "quizzes.configure",
+        "summary": "Existing persisted Picture Choice option/media/layout updates with protected owners.",
+        "publication": "SOURCE_IN_THIS_RELEASE",
+        "source_evidence": [
+          {
+            "path": "06-ghl-install-pages/tools/playwright_recipes/quiz_picture_questions.py",
+            "function": "_configure_update"
+          }
+        ]
+      },
+      {
+        "id": "quiz-tier-create-remove",
+        "operation": "quizzes.configure",
+        "summary": "Native Add/tail Remove tiers, freshly read generated labels, exact result-modal Save and reopen.",
+        "publication": "SOURCE_IN_THIS_RELEASE",
+        "source_evidence": [
+          {
+            "path": "06-ghl-install-pages/tools/playwright_recipes/quiz_ui.py",
+            "function": "_resize_tiers"
+          }
+        ]
+      },
+      {
+        "id": "quiz-single-choice-answer-jumps",
+        "operation": "quizzes.configure",
+        "summary": "Single Choice answer enable/change/disable routing to Next Question or an exact forward question.",
+        "publication": "SOURCE_IN_THIS_RELEASE",
+        "source_evidence": [
+          {
+            "path": "06-ghl-install-pages/tools/playwright_recipes/quiz_answer_jumps.py",
+            "function": "write"
+          }
+        ]
+      },
+      {
+        "id": "native-active-split-allocation",
+        "operation": "funnels.split_variant",
+        "summary": "Activate/reconcile an existing same-step split and authored allocation with one confirmation and saved readback.",
+        "publication": "SOURCE_IN_THIS_RELEASE",
+        "source_evidence": [
+          {
+            "path": "06-ghl-install-pages/tools/playwright_recipes/split_variant.py",
+            "function": "configure"
+          }
+        ]
+      },
+      {
+        "id": "form-plain-message-outcome-reorder",
+        "operation": "forms.conditions",
+        "summary": "Reorder exact plain-paragraph custom-message/disqualification cards while retaining markup hashes.",
+        "publication": "SOURCE_IN_THIS_RELEASE",
+        "source_evidence": [
+          {
+            "path": "06-ghl-install-pages/tools/playwright_recipes/form_condition_outcomes.py",
+            "function": "_recreate_order"
+          }
+        ]
+      },
+      {
+        "id": "form-number-inclusive-between",
+        "operation": "forms.conditions",
+        "summary": "Captured inclusive Number Between conditions with explicit endpoint guards.",
+        "publication": "SOURCE_IN_THIS_RELEASE",
+        "source_evidence": [
+          {
+            "path": "06-ghl-install-pages/tools/playwright_recipes/form_conditions.py",
+            "function": "_write_clause_value"
+          }
+        ]
+      },
+      {
+        "id": "form-numerical-show-hide-targets",
+        "operation": "forms.conditions",
+        "summary": "Use captured Number fields as exact Show/Hide targets.",
+        "publication": "SOURCE_IN_THIS_RELEASE",
+        "source_evidence": [
+          {
+            "path": "06-ghl-install-pages/tools/playwright_recipes/form_condition_outcomes.py",
+            "function": "_rule"
+          }
+        ]
+      },
+      {
+        "id": "form-choice-condition-fields",
+        "operation": "forms.conditions",
+        "summary": "Condition bindings for captured Single/Multi Dropdown, Checkbox and Radio identities/options.",
+        "publication": "SOURCE_IN_THIS_RELEASE",
+        "source_evidence": [
+          {
+            "path": "06-ghl-install-pages/tools/playwright_recipes/form_condition_fields.py",
+            "function": "preflight"
+          }
+        ]
+      },
+      {
+        "id": "survey-file-upload-lifecycle",
+        "operation": "surveys.create",
+        "summary": "Owned File Upload creation/properties, accepted types and captured multiple-file limits.",
+        "publication": "SOURCE_IN_THIS_RELEASE",
+        "source_evidence": [
+          {
+            "path": "06-ghl-install-pages/tools/playwright_recipes/survey_widget_families.py",
+            "function": "configure"
+          }
+        ]
+      },
+      {
+        "id": "survey-signature-lifecycle",
+        "operation": "surveys.create",
+        "summary": "Owned Signature question creation and captured existing-property editing.",
+        "publication": "SOURCE_IN_THIS_RELEASE",
+        "source_evidence": [
+          {
+            "path": "06-ghl-install-pages/tools/playwright_recipes/survey_widget_families.py",
+            "function": "configure"
+          }
+        ]
+      },
+      {
+        "id": "survey-compound-conditional-outcomes",
+        "operation": "surveys.configure",
+        "summary": "Survey-owned compound Show/Hide, plain custom-message and After Submit disqualification outcomes with saved rule/slide binding.",
+        "publication": "SOURCE_IN_THIS_RELEASE",
+        "source_evidence": [
+          {
+            "path": "06-ghl-install-pages/tools/playwright_recipes/survey_condition_outcomes.py",
+            "function": "configure"
+          }
+        ]
+      },
+      {
+        "id": "community-inactive-modern-identity",
+        "operation": "communities.create",
+        "summary": "Exact inactive app-card Login identity through captured modern home plus unchanged fresh app status inventory.",
+        "publication": "SOURCE_IN_THIS_RELEASE",
+        "source_evidence": [
+          {
+            "path": "06-ghl-install-pages/tools/playwright_recipes/community_creation.py",
+            "function": "_reuse_inactive"
+          }
+        ]
+      },
+      {
+        "id": "community-all-members-course-association",
+        "operation": "communities.configure",
+        "summary": "New All members course association with saved native Free badge and protected sibling courses.",
+        "publication": "SOURCE_IN_THIS_RELEASE",
+        "source_evidence": [
+          {
+            "path": "06-ghl-install-pages/tools/playwright_recipes/community_courses.py",
+            "function": "run_courses"
+          }
+        ]
+      },
+      {
+        "id": "community-first-course-loaded-empty",
+        "operation": "communities.configure",
+        "summary": "First association from the complete captured loaded-empty Learning profile, independently reloaded.",
+        "publication": "SOURCE_IN_THIS_RELEASE",
+        "source_evidence": [
+          {
+            "path": "06-ghl-install-pages/tools/playwright_recipes/community_courses.py",
+            "function": "_inventory"
+          }
+        ]
+      },
+      {
+        "id": "community-modern-description",
+        "operation": "communities.configure",
+        "summary": "Modern Group Details description with unchanged group identity/privacy/access.",
+        "publication": "SOURCE_IN_THIS_RELEASE",
+        "source_evidence": [
+          {
+            "path": "06-ghl-install-pages/tools/playwright_recipes/community_modern_details.py",
+            "function": "run_details"
+          }
+        ]
+      },
+      {
+        "id": "community-modern-privacy-access",
+        "operation": "communities.configure",
+        "summary": "Captured modern privacy and three access flags through the existing authorization/readback contract.",
+        "publication": "SOURCE_IN_THIS_RELEASE",
+        "source_evidence": [
+          {
+            "path": "06-ghl-install-pages/tools/playwright_recipes/community_modern_details.py",
+            "function": "run_access"
+          }
+        ]
+      },
+      {
+        "id": "community-modern-ordinary-channels",
+        "operation": "communities.configure",
+        "summary": "Ordinary public writable modern channel creation with default icon and full saved sibling-link replay.",
+        "publication": "SOURCE_IN_THIS_RELEASE",
+        "source_evidence": [
+          {
+            "path": "06-ghl-install-pages/tools/playwright_recipes/community_modern_channels.py",
+            "function": "run_owned"
+          }
+        ]
+      },
+      {
+        "id": "meeting-first-cohosts-before-room-create",
+        "operation": "meetings.setup",
+        "summary": "Exact acknowledged first cohost staging on a positively identified new-room form before Create.",
+        "publication": "SOURCE_IN_THIS_RELEASE",
+        "source_evidence": [
+          {
+            "path": "06-ghl-install-pages/tools/playwright_recipes/meeting_first_cohosts.py",
+            "function": "configure"
+          }
+        ]
+      },
+      {
+        "id": "meeting-saved-empty-cohost-reconciliation",
+        "operation": "meetings.update",
+        "summary": "Captured saved loaded-empty roster reuse, first assignment and clear-all reconciliation with fresh completed replay.",
+        "publication": "SOURCE_IN_THIS_RELEASE",
+        "source_evidence": [
+          {
+            "path": "06-ghl-install-pages/tools/playwright_recipes/meeting_cohosts.py",
+            "function": "configure"
+          }
+        ]
+      },
+      {
+        "id": "meeting-calendar-multi-staff-preservation",
+        "operation": "meetings.integrate",
+        "summary": "Change one existing assigned staff Meeting Room location while preserving the complete multi-staff roster and each single location.",
+        "publication": "SOURCE_IN_THIS_RELEASE",
+        "source_evidence": [
+          {
+            "path": "06-ghl-install-pages/tools/playwright_recipes/meeting_dynamic.py",
+            "function": "configure"
+          }
+        ]
+      },
+      {
+        "id": "form-native-picture-create-and-catalog-replacement",
+        "operation": "forms.configure",
+        "publication": "SOURCE_IN_THIS_RELEASE",
+        "source_evidence": [
+          {
+            "path": "06-ghl-install-pages/tools/playwright_recipes/form_widget_families.py"
+          }
+        ]
+      },
+      {
+        "id": "form-native-text-heading",
+        "operation": "forms.configure",
+        "publication": "SOURCE_IN_THIS_RELEASE",
+        "source_evidence": [
+          {
+            "path": "06-ghl-install-pages/tools/playwright_recipes/form_widget_families.py"
+          }
+        ]
+      },
+      {
+        "id": "form-native-image-url-alt",
+        "operation": "forms.configure",
+        "publication": "SOURCE_IN_THIS_RELEASE",
+        "source_evidence": [
+          {
+            "path": "06-ghl-install-pages/tools/playwright_recipes/form_widget_families.py"
+          }
+        ]
+      },
+      {
+        "id": "form-date-date-time-time-creation",
+        "operation": "forms.configure",
+        "publication": "SOURCE_IN_THIS_RELEASE",
+        "source_evidence": [
+          {
+            "path": "06-ghl-install-pages/tools/playwright_recipes/form_widget_families.py"
+          }
+        ]
+      },
+      {
+        "id": "form-rating-score-creation",
+        "operation": "forms.configure",
+        "publication": "SOURCE_IN_THIS_RELEASE",
+        "source_evidence": [
+          {
+            "path": "06-ghl-install-pages/tools/playwright_recipes/form_widget_families.py"
+          }
+        ]
+      },
+      {
+        "id": "form-legacy-large-text-canonical-adoption",
+        "operation": "forms.configure",
+        "publication": "SOURCE_IN_THIS_RELEASE",
+        "source_evidence": [
+          {
+            "path": "06-ghl-install-pages/tools/playwright_recipes/form_widget_families.py"
+          }
+        ]
+      },
+      {
+        "id": "form-multiline-html-save-warning",
+        "operation": "forms.configure",
+        "publication": "SOURCE_IN_THIS_RELEASE",
+        "source_evidence": [
+          {
+            "path": "06-ghl-install-pages/tools/playwright_recipes/form_widget_families.py"
+          }
+        ]
+      },
+      {
+        "id": "survey-native-text-image-html-picture",
+        "operation": "surveys.create",
+        "publication": "SOURCE_IN_THIS_RELEASE",
+        "source_evidence": [
+          {
+            "path": "06-ghl-install-pages/tools/playwright_recipes/survey_widget_families.py"
+          }
+        ]
+      },
+      {
+        "id": "survey-native-bot-source-monetary-score-rating",
+        "operation": "surveys.create",
+        "publication": "SOURCE_IN_THIS_RELEASE",
+        "source_evidence": [
+          {
+            "path": "06-ghl-install-pages/tools/playwright_recipes/survey_widget_families.py"
+          }
+        ]
+      },
+      {
+        "id": "survey-native-text-box-list",
+        "operation": "surveys.create",
+        "publication": "SOURCE_IN_THIS_RELEASE",
+        "source_evidence": [
+          {
+            "path": "06-ghl-install-pages/tools/playwright_recipes/survey_widget_families.py"
+          }
+        ]
+      },
+      {
+        "id": "survey-date-date-time-time-creation",
+        "operation": "surveys.create",
+        "publication": "SOURCE_IN_THIS_RELEASE",
+        "source_evidence": [
+          {
+            "path": "06-ghl-install-pages/tools/playwright_recipes/survey_widget_families.py"
+          }
+        ]
+      },
+      {
+        "id": "condition-captured-widget-source-target-bindings",
+        "operation": "forms.conditions",
+        "publication": "SOURCE_IN_THIS_RELEASE",
+        "source_evidence": [
+          {
+            "path": "06-ghl-install-pages/tools/playwright_recipes/form_condition_outcomes.py"
+          }
+        ]
+      },
+      {
+        "id": "condition-date-time-ranges",
+        "operation": "forms.conditions",
+        "publication": "SOURCE_IN_THIS_RELEASE",
+        "source_evidence": [
+          {
+            "path": "06-ghl-install-pages/tools/playwright_recipes/form_condition_outcomes.py"
+          }
+        ]
+      },
+      {
+        "id": "condition-consent-checked-operators",
+        "operation": "forms.conditions",
+        "publication": "SOURCE_IN_THIS_RELEASE",
+        "source_evidence": [
+          {
+            "path": "06-ghl-install-pages/tools/playwright_recipes/form_condition_outcomes.py"
+          }
+        ]
+      },
+      {
+        "id": "condition-formatted-multiline-https-link-preservation",
+        "operation": "forms.conditions",
+        "publication": "SOURCE_IN_THIS_RELEASE",
+        "source_evidence": [
+          {
+            "path": "06-ghl-install-pages/tools/playwright_recipes/form_condition_outcomes.py"
+          }
+        ]
+      },
+      {
+        "id": "community-private-readonly-channel-create-reuse",
+        "operation": "communities.configure",
+        "publication": "SOURCE_IN_THIS_RELEASE",
+        "source_evidence": [
+          {
+            "path": "06-ghl-install-pages/tools/playwright_recipes/community_modern_channels.py"
+          }
+        ]
+      },
+      {
+        "id": "community-18-icon-native-catalog",
+        "operation": "communities.configure",
+        "publication": "SOURCE_IN_THIS_RELEASE",
+        "source_evidence": [
+          {
+            "path": "06-ghl-install-pages/tools/playwright_recipes/community_modern_channels.py"
+          }
+        ]
+      },
+      {
+        "id": "community-section-create-replay",
+        "operation": "communities.configure",
+        "publication": "SOURCE_IN_THIS_RELEASE",
+        "source_evidence": [
+          {
+            "path": "06-ghl-install-pages/tools/playwright_recipes/community_modern_channels.py"
+          }
+        ]
+      },
+      {
+        "id": "community-course-visibility-edit-reuse",
+        "operation": "communities.configure",
+        "publication": "SOURCE_IN_THIS_RELEASE",
+        "source_evidence": [
+          {
+            "path": "06-ghl-install-pages/tools/playwright_recipes/community_modern_channels.py"
+          }
+        ]
+      },
+      {
+        "id": "meeting-course-live-session",
+        "operation": "meetings.integrate",
+        "publication": "SOURCE_IN_THIS_RELEASE",
+        "source_evidence": [
+          {
+            "path": "06-ghl-install-pages/tools/playwright_recipes/meetings.py"
+          }
+        ]
+      },
+      {
+        "id": "meeting-multiple-location-preservation",
+        "operation": "meetings.integrate",
+        "publication": "SOURCE_IN_THIS_RELEASE",
+        "source_evidence": [
+          {
+            "path": "06-ghl-install-pages/tools/playwright_recipes/meetings.py"
+          }
+        ]
+      },
+      {
+        "id": "meeting-provider-oauth-handoff",
+        "operation": "meetings.integrate",
+        "publication": "SOURCE_IN_THIS_RELEASE",
+        "source_evidence": [
+          {
+            "path": "06-ghl-install-pages/tools/playwright_recipes/meetings.py"
+          }
+        ]
+      },
+      {
+        "id": "meeting-rich-existing-event-preservation",
+        "operation": "meetings.integrate",
+        "publication": "SOURCE_IN_THIS_RELEASE",
+        "source_evidence": [
+          {
+            "path": "06-ghl-install-pages/tools/playwright_recipes/meetings.py"
+          }
+        ]
+      },
+      {
+        "id": "quiz-checkbox-dropdown-answer-jumps",
+        "operation": "quizzes.configure",
+        "publication": "SOURCE_IN_THIS_RELEASE",
+        "source_evidence": [
+          {
+            "path": "06-ghl-install-pages/tools/playwright_recipes/quiz_results.py"
+          }
+        ]
+      },
+      {
+        "id": "quiz-picture-local-approved-upload",
+        "operation": "quizzes.configure",
+        "publication": "SOURCE_IN_THIS_RELEASE",
+        "source_evidence": [
+          {
+            "path": "06-ghl-install-pages/tools/playwright_recipes/quiz_results.py"
+          }
+        ]
+      },
+      {
+        "id": "quiz-picture-fit-and-presentation",
+        "operation": "quizzes.configure",
+        "publication": "SOURCE_IN_THIS_RELEASE",
+        "source_evidence": [
+          {
+            "path": "06-ghl-install-pages/tools/playwright_recipes/quiz_results.py"
+          }
+        ]
+      },
+      {
+        "id": "quiz-individual-category-result-media",
+        "operation": "quizzes.configure",
+        "publication": "SOURCE_IN_THIS_RELEASE",
+        "source_evidence": [
+          {
+            "path": "06-ghl-install-pages/tools/playwright_recipes/quiz_results.py"
+          }
+        ]
+      },
+      {
+        "id": "survey-native-all-captured-widget-properties",
+        "operation": "surveys.configure",
+        "publication": "SOURCE_IN_THIS_RELEASE",
+        "source_evidence": [
+          {
+            "path": "06-ghl-install-pages/tools/playwright_recipes/survey_condition_outcomes.py"
+          }
+        ]
+      },
+      {
+        "id": "survey-native-url-lifecycle",
+        "operation": "surveys.configure",
+        "publication": "SOURCE_IN_THIS_RELEASE",
+        "source_evidence": [
+          {
+            "path": "06-ghl-install-pages/tools/playwright_recipes/survey_condition_outcomes.py"
+          }
+        ]
+      },
+      {
+        "id": "survey-mixed-jump-outcome-preservation",
+        "operation": "surveys.configure",
+        "publication": "SOURCE_IN_THIS_RELEASE",
+        "source_evidence": [
+          {
+            "path": "06-ghl-install-pages/tools/playwright_recipes/survey_condition_outcomes.py"
+          }
+        ]
+      },
+      {
+        "id": "survey-immutable-jump-known-tail-append",
+        "operation": "surveys.configure",
+        "publication": "SOURCE_IN_THIS_RELEASE",
+        "source_evidence": [
+          {
+            "path": "06-ghl-install-pages/tools/playwright_recipes/survey_condition_outcomes.py"
+          }
+        ]
+      },
+      {
+        "id": "survey-paragraph-rich-message-normalization",
+        "operation": "surveys.configure",
+        "publication": "SOURCE_IN_THIS_RELEASE",
+        "source_evidence": [
+          {
+            "path": "06-ghl-install-pages/tools/playwright_recipes/survey_condition_outcomes.py"
+          }
+        ]
       }
     ],
     "current_next_batch": {
       "features": [
-        "survey-completion-message-redirect"
+        "form-legacy-dropdown-canonical-reuse",
+        "form-text-box-list-prefills",
+        "form-saved-option-delete-confirmation",
+        "form-native-monetary",
+        "form-native-source",
+        "form-existing-score-properties",
+        "form-existing-rating-properties",
+        "form-existing-date-time-properties",
+        "form-existing-time-properties",
+        "form-native-bot-protection",
+        "form-custom-html-lifecycle",
+        "quiz-result-header-logo",
+        "quiz-picture-option-count",
+        "quiz-picture-label-columns",
+        "quiz-existing-picture-card-media-update",
+        "quiz-tier-create-remove",
+        "quiz-single-choice-answer-jumps",
+        "native-active-split-allocation",
+        "form-plain-message-outcome-reorder",
+        "form-number-inclusive-between",
+        "form-numerical-show-hide-targets",
+        "form-choice-condition-fields",
+        "survey-file-upload-lifecycle",
+        "survey-signature-lifecycle",
+        "survey-compound-conditional-outcomes",
+        "community-inactive-modern-identity",
+        "community-all-members-course-association",
+        "community-first-course-loaded-empty",
+        "community-modern-description",
+        "community-modern-privacy-access",
+        "community-modern-ordinary-channels",
+        "meeting-first-cohosts-before-room-create",
+        "meeting-saved-empty-cohost-reconciliation",
+        "meeting-calendar-multi-staff-preservation",
+        "form-native-picture-create-and-catalog-replacement",
+        "form-native-text-heading",
+        "form-native-image-url-alt",
+        "form-date-date-time-time-creation",
+        "form-rating-score-creation",
+        "form-legacy-large-text-canonical-adoption",
+        "form-multiline-html-save-warning",
+        "survey-native-text-image-html-picture",
+        "survey-native-bot-source-monetary-score-rating",
+        "survey-native-text-box-list",
+        "survey-date-date-time-time-creation",
+        "condition-captured-widget-source-target-bindings",
+        "condition-date-time-ranges",
+        "condition-consent-checked-operators",
+        "condition-formatted-multiline-https-link-preservation",
+        "community-private-readonly-channel-create-reuse",
+        "community-18-icon-native-catalog",
+        "community-section-create-replay",
+        "community-course-visibility-edit-reuse",
+        "meeting-course-live-session",
+        "meeting-multiple-location-preservation",
+        "meeting-provider-oauth-handoff",
+        "meeting-rich-existing-event-preservation",
+        "quiz-checkbox-dropdown-answer-jumps",
+        "quiz-picture-local-approved-upload",
+        "quiz-picture-fit-and-presentation",
+        "quiz-individual-category-result-media",
+        "survey-native-all-captured-widget-properties",
+        "survey-native-url-lifecycle",
+        "survey-mixed-jump-outcome-preservation",
+        "survey-immutable-jump-known-tail-append",
+        "survey-paragraph-rich-message-normalization"
       ],
-      "base": "f859b9c72eedacf020686598247e51741a4eb625",
-      "publication": "PREPARED_ONE_UNIT_PR",
+      "source_base": "b05dcf3730830790c3fb510e7c63416c25842942",
+      "publication": "OWNER_APPROVED_PREPARED_RELEASE",
       "pr": null,
-      "source_evidence": [
-        {
-          "path": "06-ghl-install-pages/tools/playwright_recipes/form_submission.py",
-          "function": "configure"
-        },
-        {
-          "path": "06-ghl-install-pages/tools/playwright_recipes/form_submission.py",
-          "function": "verify_completed"
-        }
-      ],
-      "public_source_checkpoint": "a7ee5876b810025d23c81e89ebbdeb765066e1a7",
-      "native_final_script": "NOT_RUN"
+      "source_snapshot_commit": "8ad51bf9b8e3c1a47c2fc308fe231683220eaec8",
+      "native_final_script": "NOT_RUN",
+      "publication_limit": "Owner explicitly approved publishing and batch merging completed Skill6 source on2026-11-11. Delivery remains pending until actual main inclusion is verified."
     },
     "verified_delivery": {
       "status": "MERGED",
-      "version": "v27.1.107",
-      "batch_pr": 3123,
-      "unit_pr": 3122,
-      "unit_head": "b48d02e0f27cffe7dabd38576258a3c790231647",
-      "merge_commit": "f859b9c72eedacf020686598247e51741a4eb625",
-      "merged_at": "2026-11-10T22:11:06Z"
+      "version": "v27.1.108",
+      "batch_pr": 3125,
+      "unit_pr": 3124,
+      "merge_commit": "b05dcf3730830790c3fb510e7c63416c25842942",
+      "merged_at": "2026-11-10T22:53:36Z"
     },
     "delivery_reconciliation": {
-      "verified_main": "f859b9c72eedacf020686598247e51741a4eb625",
-      "source_feature_records": 54,
-      "delivered_on_base": 53,
-      "in_this_prepared_unit": 1,
-      "delivered_percent": 98.1,
-      "completed_operations": 23,
+      "verified_main": "310c6d7ed0f3dc2441b8bbd8b896deaacc93500f",
+      "verified_main_skill6_baseline": "v27.1.108; same Skill 6 subtree as b05dcf3730830790c3fb510e7c63416c25842942",
+      "source_feature_records": 120,
+      "delivered_on_base": 54,
+      "local_only": 0,
+      "completed_operations": 33,
       "total_operations": 33,
-      "operation_completion_percent": 69.7,
-      "counting_rule": "The53 public baseline feature IDs are delivered; survey-completion-message-redirect is the one prepared addition. Neither record delivery nor equal-weight operation closure estimates effort or native acceptance."
+      "operation_completion_percent": 100.0,
+      "counting_rule": "120 bounded source records:54 delivered on verified base,66 in this approved release. Actual delivery is resolved from the merged batch/main receipts; source completeness is separate from native acceptance.",
+      "source_in_this_release": 66
     },
-    "completed_feature_status": "SOURCE_BUILT"
+    "completed_feature_status": "SOURCE_BUILT",
+    "source_snapshot_commit": "8ad51bf9b8e3c1a47c2fc308fe231683220eaec8"
   },
   "operations": [
     {
@@ -285,10 +1124,14 @@
     {
       "operation": "funnels.split_variant",
       "recipe_name": "09_create_split_variant",
-      "status": "PARTIAL",
-      "contract": "Create or reuse an exact inactive same-step variant; active allocation remains partial.",
-      "missing_executable_features": [
-        "Active split activation and authored traffic-allocation confirmation/save/readback remain unimplemented. Current native requests refuse active or non-100/0 profiles before browser acquisition."
+      "status": "BUILT",
+      "contract": "Create/reuse the exact inactive same-step variant, or activate/reconcile an existing inventoried split and authored traffic allocation.",
+      "missing_executable_features": [],
+      "source_built_this_resume": [
+        "native-active-split-allocation"
+      ],
+      "unsupported_advanced_controls": [
+        "Stopping an active test is outside the captured activation/allocation contract and remains unsupported."
       ]
     },
     {
@@ -308,11 +1151,34 @@
     {
       "operation": "forms.configure",
       "recipe_name": "12_configure_form_options",
-      "status": "PARTIAL",
-      "contract": "Configure captured native fields, properties, consent and embed exports.",
-      "missing_executable_features": [
-        "Finite captured Quick Add widget families without dedicated owned authoring: Text Box List, Picture Choice, Rating, customized Text/Html, Bot protection, Source, Score, Image, Monetary, Date & time. Their visible labels are grounded in form-number-created-snapshot.txt; an existing API/typed path must be reused where it already handles the exact request.",
-        "Legacy custom-widget adoption/reuse without durable native/API placement evidence remains unimplemented; current native creation/editing requires complete typed owner inventories."
+      "status": "BUILT",
+      "contract": "Configure captured native fields, existing properties, consent, custom HTML, Bot protection and embed exports.",
+      "missing_executable_features": [],
+      "source_built_this_resume": [
+        "form-legacy-dropdown-canonical-reuse",
+        "form-text-box-list-prefills",
+        "form-saved-option-delete-confirmation",
+        "form-native-monetary",
+        "form-native-source",
+        "form-existing-score-properties",
+        "form-existing-rating-properties",
+        "form-existing-date-time-properties",
+        "form-existing-time-properties",
+        "form-native-bot-protection",
+        "form-custom-html-lifecycle",
+        "form-native-picture-create-and-catalog-replacement",
+        "form-native-text-heading",
+        "form-native-image-url-alt",
+        "form-date-date-time-time-creation",
+        "form-rating-score-creation",
+        "form-legacy-large-text-canonical-adoption",
+        "form-multiline-html-save-warning"
+      ],
+      "native_acceptance": "PENDING",
+      "source_closure_basis": "Original bounded recorded contract; source completeness is separate from live acceptance.",
+      "platform_limits": [
+        "Picture creation and Date/Time mode creation reuse guarded Survey controls; native Form acceptance pending.",
+        "Image dimensions/styles are outside the captured blank-dimensions profile."
       ]
     },
     {
@@ -325,10 +1191,21 @@
     {
       "operation": "surveys.create",
       "recipe_name": "14_create_survey",
-      "status": "PARTIAL",
+      "status": "BUILT",
       "contract": "Compose owned survey shells, slides and captured question families with saved inventories.",
-      "missing_executable_features": [
-        "Remaining survey question/content/security/media families and requested controls beyond the captured standard fields,Radio,TEXT,LARGE_TEXT,Number,Checkbox,Single Dropdown and Multi Dropdown remain unimplemented. Historical SURVEY-BUILD-REMAINDER.md inventory does not override these newly built families."
+      "missing_executable_features": [],
+      "source_built_this_resume": [
+        "survey-file-upload-lifecycle",
+        "survey-signature-lifecycle",
+        "survey-native-text-image-html-picture",
+        "survey-native-bot-source-monetary-score-rating",
+        "survey-native-text-box-list",
+        "survey-date-date-time-time-creation"
+      ],
+      "native_acceptance": "PENDING",
+      "source_closure_basis": "Original bounded recorded contract; source completeness is separate from live acceptance.",
+      "platform_limits": [
+        "Content family adapters reuse captured Form widgets with Survey identity guards; native acceptance pending."
       ]
     },
     {
@@ -343,16 +1220,32 @@
       "recipe_name": "16_create_community",
       "status": "BUILT",
       "contract": "Create and bind a named community or positively identify supported existing reuse.",
-      "missing_executable_features": []
+      "missing_executable_features": [],
+      "source_built_this_resume": [
+        "community-inactive-modern-identity"
+      ]
     },
     {
       "operation": "communities.configure",
       "recipe_name": "17_configure_community",
-      "status": "PARTIAL",
-      "contract": "Configure captured portal settings, branding and course association.",
-      "missing_executable_features": [
-        "First course association from an authoritatively loaded empty Learning inventory and non-Private course visibility modes lack typed native paths.",
-        "Modern portal channel/details/access parity and inactive/ambiguous app-to-portal reuse remain unsupported."
+      "status": "BUILT",
+      "contract": "Configure captured legacy/modern portal details/access, ordinary modern channels, branding and Private/All members course associations including the captured loaded-empty profile.",
+      "missing_executable_features": [],
+      "source_built_this_resume": [
+        "community-all-members-course-association",
+        "community-first-course-loaded-empty",
+        "community-modern-description",
+        "community-modern-privacy-access",
+        "community-modern-ordinary-channels",
+        "community-private-readonly-channel-create-reuse",
+        "community-18-icon-native-catalog",
+        "community-section-create-replay",
+        "community-course-visibility-edit-reuse"
+      ],
+      "native_acceptance": "PENDING",
+      "source_closure_basis": "Original bounded recorded contract; source completeness is separate from live acceptance.",
+      "platform_limits": [
+        "Course Buy Now, time and level modes remain outside the captured Private/All members contract."
       ]
     },
     {
@@ -372,21 +1265,31 @@
     {
       "operation": "meetings.setup",
       "recipe_name": "20_setup_meeting_room",
-      "status": "PARTIAL",
-      "contract": "Create or positively reuse a personal room and captured security settings.",
-      "missing_executable_features": [
-        "Authoritative loaded-empty co-host roster handling and first co-host assignment on a newly empty room remain unimplemented."
+      "status": "BUILT",
+      "contract": "Create/reuse an exact personal room and captured security, including first cohosts staged before new-room creation and the captured saved-empty roster profile.",
+      "missing_executable_features": [],
+      "source_built_this_resume": [
+        "meeting-first-cohosts-before-room-create"
       ]
     },
     {
       "operation": "meetings.integrate",
       "recipe_name": "21_integrate_meeting_room",
-      "status": "PARTIAL",
+      "status": "BUILT",
       "contract": "Associate captured calendar and community-event meeting-room profiles.",
-      "missing_executable_features": [
-        "Native course Live Sessions/Meeting Room association has no typed implementation.",
-        "Dynamic calendar multi-staff/multi-location and new-provider/Connections-staff changes remain unsupported beyond the captured single-staff/single-location profile.",
-        "Community event shapes beyond the captured existing free nonrecurring all-member event lack complete preserved-state handling."
+      "missing_executable_features": [],
+      "source_built_this_resume": [
+        "meeting-calendar-multi-staff-preservation",
+        "meeting-course-live-session",
+        "meeting-multiple-location-preservation",
+        "meeting-provider-oauth-handoff",
+        "meeting-rich-existing-event-preservation"
+      ],
+      "native_acceptance": "PENDING",
+      "source_closure_basis": "Original bounded recorded contract; source completeness is separate from live acceptance.",
+      "platform_limits": [
+        "Personal-room selection is absent from captured course wizard; built-in course Live Session is supported.",
+        "Provider OAuth returns PENDING_USER_AUTHORIZATION until external user sign-in and consent."
       ]
     },
     {
@@ -413,11 +1316,24 @@
     {
       "operation": "forms.conditions",
       "recipe_name": "25_configure_form_condition",
-      "status": "PARTIAL",
+      "status": "BUILT",
       "contract": "Configure captured predicates, ordered Show/Hide and supported conditional outcome families.",
-      "missing_executable_features": [
-        "Custom condition sources beyond captured TEXT and NUMERICAL, all NUMERICAL Show/Hide targets, Between predicates, and other option-valued field families remain unsupported.",
-        "Order recreation involving rich custom-message/disqualification content remains unsupported; non-message Show/Hide/Redirect permutations are supported."
+      "missing_executable_features": [],
+      "source_built_this_resume": [
+        "form-plain-message-outcome-reorder",
+        "form-number-inclusive-between",
+        "form-numerical-show-hide-targets",
+        "form-choice-condition-fields",
+        "condition-captured-widget-source-target-bindings",
+        "condition-date-time-ranges",
+        "condition-consent-checked-operators",
+        "condition-formatted-multiline-https-link-preservation"
+      ],
+      "native_acceptance": "PENDING",
+      "source_closure_basis": "Original bounded recorded contract; source completeness is separate from live acceptance.",
+      "platform_limits": [
+        "Rich-message recreation supports captured paragraph/basic-mark and new-window ASCII HTTPS-link shapes. Other markup is protected from recreation.",
+        "Date-only and Time-only native modal acceptance remains pending."
       ]
     },
     {
@@ -430,30 +1346,59 @@
     {
       "operation": "meetings.update",
       "recipe_name": "27_update_meeting_room",
-      "status": "PARTIAL",
-      "contract": "Update exact room settings and supported nonempty cohost reconciliation.",
-      "missing_executable_features": [
-        "Authoritative loaded-empty co-host roster handling, first assignment and clear-all removal remain unimplemented; existing nonempty roster reconciliation is supported."
+      "status": "BUILT",
+      "contract": "Update exact room settings and reconcile complete cohost rosters, including captured loaded-empty reuse, first assignment and clear-all.",
+      "missing_executable_features": [],
+      "source_built_this_resume": [
+        "meeting-saved-empty-cohost-reconciliation"
       ]
     },
     {
       "operation": "quizzes.configure",
       "recipe_name": "28_configure_quiz_scores_and_tiers",
-      "status": "PARTIAL",
+      "status": "BUILT",
       "contract": "Configure captured questions, options, scoring, tiers and result surfaces.",
-      "missing_executable_features": [
-        "Picture Choice option-count/style/layout/local-upload controls beyond the fixed-three existing-catalog writer remain unimplemented.",
-        "Answer Jump To destination authoring, tier creation/removal and result Header logo/media or remaining result styling controls have no complete native writer."
+      "missing_executable_features": [],
+      "source_built_this_resume": [
+        "quiz-result-header-logo",
+        "quiz-picture-option-count",
+        "quiz-picture-label-columns",
+        "quiz-existing-picture-card-media-update",
+        "quiz-tier-create-remove",
+        "quiz-single-choice-answer-jumps",
+        "quiz-checkbox-dropdown-answer-jumps",
+        "quiz-picture-local-approved-upload",
+        "quiz-picture-fit-and-presentation",
+        "quiz-individual-category-result-media"
+      ],
+      "native_acceptance": "PENDING",
+      "source_closure_basis": "Original bounded recorded contract; source completeness is separate from live acceptance.",
+      "platform_limits": [
+        "Result media updates target an existing Individual category section; this path does not create sections.",
+        "Local Picture Choice uploads are limited to approved PNG/JPEG assets on an existing quiz. Mixed/new-quiz batches require resolved catalog URLs.",
+        "Picture Choice answer Jump To and a persisted multiple-selection switch are absent from the captured Options UI."
       ]
     },
     {
       "operation": "surveys.configure",
       "recipe_name": "29_configure_survey_branch",
-      "status": "PARTIAL",
-      "contract": "Configure captured question properties, forward Jump To rules and Message/HTTPS Redirect completion.",
-      "missing_executable_features": [
-        "Question properties for remaining families beyond captured Radio,TEXT,LARGE_TEXT,Number,Checkbox,Single Dropdown and Multi Dropdown remain unimplemented.",
-        "Compound predicates, conditional rich custom-message/disqualification outcomes and arbitrary existing rule editing, removal and ordering remain unimplemented; captured saved plain Message/HTTPS Redirect completion settings and existing forward Jump To stacks are supported."
+      "status": "BUILT",
+      "contract": "Configure captured question properties, forward Jump To, plain Message/HTTPS Redirect completion and survey-owned compound conditional outcomes.",
+      "missing_executable_features": [],
+      "source_built_this_resume": [
+        "survey-compound-conditional-outcomes",
+        "survey-native-all-captured-widget-properties",
+        "survey-native-url-lifecycle",
+        "survey-mixed-jump-outcome-preservation",
+        "survey-immutable-jump-known-tail-append",
+        "survey-paragraph-rich-message-normalization"
+      ],
+      "native_acceptance": "PENDING",
+      "source_closure_basis": "Original bounded recorded contract; source completeness is separate from live acceptance.",
+      "platform_limits": [
+        "Mixed legacy Jump To cards remain immutable at their exact ordinal; known outcomes can be edited at the same positions or appended after an unchanged complete prefix.",
+        "Outcome recreation supports captured paragraph/basic-mark and new-window ASCII HTTPS-link shapes. Other rich markup remains protected.",
+        "Disqualification timing is limited to captured After Submit."
       ]
     },
     {
@@ -486,16 +1431,94 @@
     }
   ],
   "verification": {
-    "source_review": "CONFIRMED",
+    "source_review": "BOUNDED_SOURCE_CLOSURE_CONFIRMED; native acceptance separate",
     "retained_checks": {
-      "new_behavior_tests": "4 PASS,0.068s",
-      "prior_form_regressions": "10 PASS",
-      "compiler_provider_boundary": "2 PASS,1.166s",
-      "affected_freshness_replay": "1 PASS,0.032s"
+      "affected_module_checks": "Passing focused checks are recorded in the owning lane reports; no aggregate whole-suite total is claimed.",
+      "compiler_provider_boundary": "72 concrete actions /101 bounded jobs; each action has a compiled sample.",
+      "final_shared_smoke": "45 focused tests PASS in0.520s, exit0 at4dbde83e99a41a9998aedaaba756b8c197395712; widget families, mixed Survey conditions, outcome recreation, compiler boundary and Quiz individual media.",
+      "integrated_meetings": "38 focused tests PASS at 7bd8b9304d; compiler/dispatch/replay wiring inspected.",
+      "integrated_communities": "75 focused tests PASS at 7bd8b9304d; bounded contract source reviewed.",
+      "merged_widget_condition_compiler_smoke": "41 focused tests PASS at be1abce261; includes resolved mixed-conditions test fixtures and real compiler fixtures for72 actions101 bounded jobs.",
+      "release_full_recipe_discovery": "1648 tests PASS,7 real-browser fixtures reserved for CI; both Ubuntu and macOS real Chromium CI jobs passed on8ad51bf9."
     },
     "native_final_script": "NOT_RUN",
     "respondent_acceptance": "PENDING",
-    "manual_observation": "Both captured modes were manually saved/reopened; this is separate from maintained-script acceptance.",
-    "history": "Previous snapshots remain in Git history."
+    "member_acceptance": "PENDING",
+    "manual_observation": "Selected native controls and saved/reopened states were inspected manually. These observations are separate from maintained-script acceptance. Independent reload also confirmed saved Form Text/Image and multiline HTML. All six temporary build tabs were closed and the connected build tab list was empty.",
+    "native_proof_limits": {
+      "split_allocation": "Running 50/50 and keyboard-staged 49/51 were observed; a saved 49/51 maintained-script/native run remains unverified.",
+      "cohosts": "Saved loaded-empty card was captured. Actual first-assignment/clear-all execution and notification behavior remain unverified.",
+      "common_scopes": "Source-built scope does not mean every native flow was executed or every client feature supported."
+    },
+    "history": "Historical counts and release snapshots remain in Git history.",
+    "installer_archive": "Six archived documents exactly match canonical source; archived SKILL metadata v27.1.109."
+  },
+  "common_client_use_progress": {
+    "count": 10,
+    "status": "SOURCE_BUILT_FOR_LISTED_SCOPES",
+    "publication": "OWNER_APPROVED_PREPARED_RELEASE",
+    "definition": "Each listed bounded common-use scope has integrated executable source. This does not close every broad feature area or prove final installed-script, respondent, member or notification behavior.",
+    "scopes": [
+      {
+        "operation": "forms.configure",
+        "source_scope": "Configure captured native fields, existing properties, consent, custom HTML, Bot protection and embed exports.",
+        "source_status": "SOURCE_BUILT",
+        "native_acceptance": "PENDING"
+      },
+      {
+        "operation": "surveys.create",
+        "source_scope": "Compose owned survey shells, slides and captured question families with saved inventories.",
+        "source_status": "SOURCE_BUILT",
+        "native_acceptance": "PENDING"
+      },
+      {
+        "operation": "surveys.configure",
+        "source_scope": "Configure captured question properties, forward Jump To, plain Message/HTTPS Redirect completion and survey-owned compound conditional outcomes.",
+        "source_status": "SOURCE_BUILT",
+        "native_acceptance": "PENDING"
+      },
+      {
+        "operation": "forms.conditions",
+        "source_scope": "Configure captured predicates, ordered Show/Hide and supported conditional outcome families.",
+        "source_status": "SOURCE_BUILT",
+        "native_acceptance": "PENDING"
+      },
+      {
+        "operation": "quizzes.configure",
+        "source_scope": "Configure captured questions, options, scoring, tiers and result surfaces.",
+        "source_status": "SOURCE_BUILT",
+        "native_acceptance": "PENDING"
+      },
+      {
+        "operation": "funnels.split_variant",
+        "source_scope": "Create/reuse the exact inactive same-step variant, or activate/reconcile an existing inventoried split and authored traffic allocation.",
+        "source_status": "SOURCE_BUILT",
+        "native_acceptance": "PENDING"
+      },
+      {
+        "operation": "communities.configure",
+        "source_scope": "Configure captured legacy/modern portal details/access, ordinary modern channels, branding and Private/All members course associations including the captured loaded-empty profile.",
+        "source_status": "SOURCE_BUILT",
+        "native_acceptance": "PENDING"
+      },
+      {
+        "operation": "meetings.setup",
+        "source_scope": "Create/reuse an exact personal room and captured security, including first cohosts staged before new-room creation and the captured saved-empty roster profile.",
+        "source_status": "SOURCE_BUILT",
+        "native_acceptance": "PENDING"
+      },
+      {
+        "operation": "meetings.update",
+        "source_scope": "Update exact room settings and reconcile complete cohost rosters, including captured loaded-empty reuse, first assignment and clear-all.",
+        "source_status": "SOURCE_BUILT",
+        "native_acceptance": "PENDING"
+      },
+      {
+        "operation": "meetings.integrate",
+        "source_scope": "Associate captured calendar and community-event meeting-room profiles.",
+        "source_status": "SOURCE_BUILT",
+        "native_acceptance": "PENDING"
+      }
+    ]
   }
 }

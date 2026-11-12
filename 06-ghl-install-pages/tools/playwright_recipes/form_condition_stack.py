@@ -163,10 +163,7 @@ def _author(frame,dialog,rule,prefix,identity):
         group._choose(frame,'#selectedField-'+str(index),clause['if_field'])
         group._choose(frame,'#selectedOperation-'+str(index),clause['operator'])
         if clause['operator'] in group.BINARY:
-            value=group._value_input(modal,index)
-            fill(value,clause['value'])
-            if value.input_value()!=clause['value']:
-                raise Stop('Native condition value did not accept the authored text')
+            group._write_clause_value(modal,index,clause,writer=fill,frame=frame)
         if index<len(rule['clauses'])-1:
             joins=modal.locator('.n-tabs')
             if joins.count()!=index+1:
@@ -217,10 +214,7 @@ def _edit(frame,dialog,index,before_rule,rule,current,identity):
         group._choose(frame,'#selectedField-'+str(row),clause['if_field'])
         group._choose(frame,'#selectedOperation-'+str(row),clause['operator'])
         if clause['operator'] in group.BINARY:
-            value=group._value_input(modal,row)
-            fill(value,clause['value'])
-            if value.input_value()!=clause['value']:
-                raise Stop('Native condition edit ignored the authored binary value')
+            group._write_clause_value(modal,row,clause,writer=fill,frame=frame)
         if row<len(rule['clauses'])-1:
             joins=modal.locator('.n-tabs')
             if joins.count()!=count:raise Stop('Native condition edit connector count changed')

@@ -17,19 +17,33 @@ placement=importlib.import_module('playwright_recipes.field_placement')
 
 
 def properties(kind):
-    profile=native.PROFILES[kind];value=deepcopy(profile['defaults'])
-    value['label']='Approved '+profile['tile'];value['custom_field_name']=value['label']
-    value['unique_key']='contact.approved_'+kind
+    profile=native.PROFILES[kind]
+    if kind=='text_heading':return {'text':'Approved heading'}
+    if kind=='image':return {'label':'Approved Image','image_url':'https://example.com/image.png','alt_text':'Approved image'}
+    if kind=='picture_choice':
+        return {'label':'Approved Picture','placeholder':'','short_label':'','query_key':'approved_picture',
+            'width':100,'required':False,'hidden':False,'options':[
+            {'label':'Option 1','image_url':'https://example.com/one.png','alt':'First'},
+            {'label':'Option 2','image_url':'https://example.com/two.png','alt':'Second'}]}
+    value=deepcopy(profile['defaults'])
+    if 'label' in profile['properties']:value['label']='Approved '+profile['tile']
+    if 'custom_field_name' in profile['properties']:value['custom_field_name']=value['label']
+    if 'unique_key' in profile['properties']:value['unique_key']='contact.approved_'+kind
+    if kind=='source':value['value']='Approved fixture source'
     if 'query_key' in profile['properties']:value['query_key']='approved_'+kind
     if kind=='file_upload':value['file_access']='private'
     return value
 
 
 def inputs(kind='number'):
-    return {'location_id':'LOC','location_name':'Fixture Account',
+    value={'location_id':'LOC','location_name':'Fixture Account',
         'start_url':'https://app.convertandflow.com/v2/location/LOC/form-builder-v2/FORM',
         'widget_fields':{'expected_form_name':'Approved fixture','expected_fields':[],
                          'fields':[{'kind':kind,'index':None,'desired':properties(kind)}]}}
+    if kind=='picture_choice' or native.PROFILES[kind].get('creation_supported') is False:
+        value['widget_fields']['expected_fields']=[{'kind':kind,'index':1,'properties':properties(kind)}]
+        value['widget_fields']['fields'][0]['index']=1
+    return value
 
 
 def step(kind='number'):
@@ -113,7 +127,7 @@ class FormWidgetFamilies(unittest.TestCase):
         with patch.object(native,'_frame',return_value=frame),patch.object(native,'_inventory',side_effect=inventory),\
                 patch.object(native,'_snapshot',side_effect=lambda *a:snapshot()),patch.object(native,'_append',side_effect=append) as created,\
                 patch.object(native,'_write',side_effect=write),patch.object(placement,'_inventory',side_effect=queries),\
-                patch.object(native,'reopen_editor') as reopen:
+                patch.object(native.html_fields,'confirm_save_warning'),patch.object(native,'reopen_editor') as reopen:
             result=native.configure(MagicMock(),spec)
         created.assert_called_once();save.click.assert_called_once();reopen.assert_called_once()
         self.assertEqual(result['fields'],inventory());self.assertEqual(result['saved_snapshot'][0],base[0])

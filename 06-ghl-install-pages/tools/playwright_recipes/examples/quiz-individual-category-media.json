@@ -1,0 +1,27 @@
+{
+  "location_id": "LOC",
+  "location_name": "Fixture Account",
+  "start_url": "https://app.convertandflow.com/v2/location/LOC/quiz-builder-v2/QUIZ",
+  "configuration": {
+    "result_page": {
+      "individual_category_media": {
+        "category": "Leadership",
+        "expected": {
+          "type": "image",
+          "url": "https://example.com/current.png",
+          "placement": "Top"
+        },
+        "expected_target": {
+          "type": "video",
+          "url": "https://example.com/current.mp4",
+          "placement": "Top"
+        },
+        "changes": {
+          "type": "video",
+          "url": "https://example.com/result.mp4",
+          "placement": "Right center"
+        }
+      }
+    }
+  }
+}

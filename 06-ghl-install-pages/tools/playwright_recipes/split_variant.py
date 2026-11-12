@@ -1,6 +1,6 @@
 """Native same-step split variants; canonical API traffic guard is unchanged.
 
-Selectors are bound to the November 10, 2026 authorized staging capture. Page
+Selectors are bound to the November 10–11, 2026 authorized staging captures. Page
 identities come from each card's actual Edit navigation, never thumbnails or
 two disconnected pages. The shared runner journals intent before mutation.
 """
@@ -53,11 +53,12 @@ def validate(step):
     if any(type(data[k]) is not int or not 0 <= data[k] <= 100
            for k in ('expected_control_traffic', 'control_traffic')):
         raise Stop('Split traffic must be an explicit whole percentage from 0 through 100')
-    # Reject uncaptured profiles at compilation/job validation, before execute
-    # can acquire a browser or navigate to the native editor.
-    if (data['active'] or data['expected_active'] or data['control_traffic'] != 100
-            or data['expected_control_traffic'] != 100):
-        raise Stop('Native allocation confirmation/active readback capture is pending; no browser required')
+    if not data['expected_active'] and data['expected_control_traffic'] != 100:
+        raise Stop('Inactive split baselines require the captured full control allocation')
+    if data['expected_active'] and not 1 <= data['expected_control_traffic'] <= 99:
+        raise Stop('Active split baselines require traffic for both same-step pages')
+    if data['active'] and not 1 <= data['control_traffic'] <= 99:
+        raise Stop('Active split allocation must assign traffic to both same-step pages')
     if variant is None and (not data['allow_creation'] or data['expected_active']
                             or data['expected_control_traffic'] != 100):
         raise Stop('A new variant needs explicit creation and an inactive 100-percent control baseline')
@@ -182,8 +183,13 @@ def _ui_state(page, data):
         if traffic != 100:
             raise Stop('Native inactive split does not preserve full control traffic')
         return {'variant_present': True, 'control_traffic': traffic, 'active': False}
-    # Active shape is filled from the independent post-Apply staging capture.
-    raise Stop('Native active split marker requires its captured implementation')
+    running = panel.get_by_text('Split test is running from', exact=True)
+    if running.count() == 1 and running.is_visible() and inactive.count() == 0:
+        _one(panel.locator('.split-stats-table'), 'Native running split statistics are unavailable')
+        if not 1 <= traffic <= 99:
+            raise Stop('Native active split does not assign traffic to both pages')
+        return {'variant_present': True, 'control_traffic': traffic, 'active': True}
+    raise Stop('Native split has neither a captured inactive nor running state')
 
 
 def read_inventory(page, step):
@@ -218,6 +224,77 @@ def _create(page, data):
     click(variant.get_by_role('button', name='Duplicate Control Page', exact=True))
     wait_until(lambda: _overview(page, data)[2].get_by_role('button', name='Edit', exact=True).count() == 1,
                'Native variant duplication did not finish; do not repeat Create')
+
+
+_START_CONFIRM = 'Please confirm that you would like to apply these changes and start the split test.'
+_RESTART_CONFIRM = ('Changing the configuration will invalidate previous results. '
+                    'Please confirm that you would like to apply these changes and start the test over.')
+
+
+def _apply(page, panel):
+    """Accept the one captured JS confirm caused by this exact Apply control.
+
+    The extension exposed the native dialog type, but not its message. The
+    normal Python Playwright dialog API is used here; no message is invented.
+    An unexpected dialog is dismissed, never approved as a split allocation.
+    """
+    apply = _one(panel.get_by_role('button', name='Apply', exact=True),
+                 'Native split Apply is unavailable or ambiguous')
+    if not apply.is_enabled():
+        raise Stop('Native split Apply is disabled')
+    dialogs = []
+    def confirm(dialog):
+        accepted = not dialogs and dialog.type == 'confirm'
+        dialogs.append(accepted)
+        if accepted:dialog.accept()
+        else:dialog.dismiss()
+    page.on('dialog', confirm)
+    try:
+        click(apply)
+        wait_until(lambda: bool(dialogs), 'Native split Apply did not expose its captured confirmation')
+        if dialogs != [True]:
+            raise Stop('Native split Apply exposed an unexpected dialog; allocation is uncertain')
+        wait_until(lambda: panel.get_by_role('button', name='Apply', exact=True).count() == 0,
+                   'Native split Apply remains staged; reconcile without another write')
+    finally:
+        page.remove_listener('dialog', confirm)
+
+
+def _allocate(page, data, baseline):
+    """Stage authored whole percentages through the captured keyboard slider."""
+    if not data['traffic_change_authorized'] or not data['active']:
+        raise Stop('Native split allocation requires the explicit authorized active plan')
+    if _ui_state(page, data) != {key: baseline[key] for key in ('variant_present','control_traffic','active')}:
+        raise Stop('Native split changed immediately before allocation staging')
+    panel, _, _ = _overview(page, data)
+    if not baseline['active']:
+        click(_one(panel.get_by_role('button', name='Start split test', exact=True),
+                   'Native split Start control changed'))
+        wait_until(lambda: panel.get_by_role('button', name='Apply', exact=True).count() == 1,
+                   'Native split activation did not stage its captured Apply control')
+    slider, traffic = _slider(panel)
+    wanted = data['control_traffic']
+    while traffic != wanted:
+        # The captured ArrowLeft decrements one point; the opposite key uses
+        # the same standard native range control and is verified after each key.
+        _overview(page, data)
+        slider, observed = _slider(panel)
+        if observed != traffic:
+            raise Stop('Native split traffic changed during allocation staging')
+        next_value = traffic + (1 if wanted > traffic else -1)
+        slider.press('ArrowRight' if next_value > traffic else 'ArrowLeft', timeout=45000)
+        wait_until(lambda: _slider(panel)[1] == next_value,
+                   'Native split keyboard did not stage exactly one traffic percentage')
+        traffic = next_value
+    prompt = _RESTART_CONFIRM if baseline['active'] else _START_CONFIRM
+    _one(panel.get_by_text(prompt, exact=True), 'Native split allocation confirmation copy changed')
+    _one(panel.get_by_role('button', name='Cancel', exact=True), 'Native split allocation Cancel changed')
+    _overview(page, data)
+    if _slider(panel)[1] != wanted:
+        raise Stop('Native split allocation differs immediately before Apply')
+    _apply(page, panel)
+    wait_until(lambda: panel.get_by_text('Split test is running from', exact=True).count() == 1,
+               'Native split did not expose its saved running state')
 
 
 def _receipt(step, observed, *, created):
@@ -273,13 +350,10 @@ def verify_completed(page, step, receipt):
 def configure(page, step):
     """Create/reuse one captured native variant, then independently reload.
 
-    The active allocation profile is intentionally unavailable until the native
-    JavaScript confirmation and post-Apply state have been independently read.
-    No variant is created as an unintended partial side effect of that request.
+    Native page identity and the complete baseline are read before creation or
+    allocation changes. Authored traffic must survive an independent reload.
     """
     data = validate(step)['payload']
-    if data['active'] or data['expected_active'] or data['control_traffic'] != 100:
-        raise Stop('Native allocation confirmation/active readback capture is pending; no split mutation attempted')
     page.goto(data['start_url'], wait_until='domcontentloaded', timeout=45000)
     before = read_inventory(page, step)
     if (before['control_page_id'] != data['control_page_id']
@@ -293,8 +367,17 @@ def configure(page, step):
     after = read_inventory(page, step)
     if (after['control_page_id'] != before['control_page_id'] or after['variant_page_id'] is None
             or not created and after['variant_page_id'] != before['variant_page_id']
-            or after['active'] is not False or after['control_traffic'] != 100):
-        raise Stop('Native variant creation changed the control or its inactive allocation')
+            or after['active'] != before['active'] or after['control_traffic'] != before['control_traffic']):
+        raise Stop('Native variant creation or identity reading changed the original allocation')
+    if after['active'] != data['active'] or after['control_traffic'] != data['control_traffic']:
+        allocated_variant = after['variant_page_id']
+        _allocate(page, data, after)
+        after = read_inventory(page, step)
+        if (after['control_page_id'] != before['control_page_id']
+                or after['variant_page_id'] != allocated_variant
+                or after['active'] != data['active']
+                or after['control_traffic'] != data['control_traffic']):
+            raise Stop('Native split allocation differs after Apply; do not repeat the write')
     page.reload(wait_until='domcontentloaded', timeout=45000)
     reopened = read_inventory(page, step)
     if reopened != after:

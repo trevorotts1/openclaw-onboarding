@@ -1,8 +1,7 @@
 """Survey property edits reuse captured field-family controls, not form layouts.
 
-Number and Checkbox use separately captured November 10 survey controls.
-File Upload and Signature remain unavailable until their survey profiles are
-captured; a form capture is not treated as survey evidence.
+Survey profiles use separately captured November 10 controls. The File Upload
+and Signature sidebars are captured independently from their form equivalents.
 """
 from copy import deepcopy
 import hashlib
@@ -42,20 +41,143 @@ MULTI_DROPDOWN['properties']['label']='#fieldTitle input'
 MULTI_DROPDOWN['defaults'].pop('width',None)
 MULTI_DROPDOWN['sidebar']='#survey_custom_sidebar'
 MULTI_DROPDOWN['creation_drag']='tile'
-PROFILES={'number':NUMBER,'checkbox':CHECKBOX,'single_dropdown':SINGLE_DROPDOWN,'multi_dropdown':MULTI_DROPDOWN}
+FILE_UPLOAD=deepcopy(shared.PROFILES['file_upload'])
+FILE_UPLOAD['properties']['label']='#fieldTitle input'
+FILE_UPLOAD['sidebar']='#survey_custom_sidebar'
+FILE_UPLOAD['input']='label.custom-file-upload > svg'
+SIGNATURE=deepcopy(shared.PROFILES['signature'])
+SIGNATURE['properties']={key:selector for key,selector in SIGNATURE['properties'].items() if key!='width'}
+SIGNATURE['properties']['label']='#fieldTitle input'
+SIGNATURE['defaults'].pop('width',None)
+SIGNATURE['sidebar']='#survey_custom_sidebar'
+TEXT_BOX_LIST=deepcopy(shared.PROFILES['text_box_list'])
+TEXT_BOX_LIST['properties']={key:selector for key,selector in TEXT_BOX_LIST['properties'].items() if key!='width'}
+TEXT_BOX_LIST['properties']['label']='#fieldTitle input'
+TEXT_BOX_LIST['defaults'].pop('width',None)
+TEXT_BOX_LIST['sidebar']='#survey_custom_sidebar'
+BOT_PROTECTION=deepcopy(shared.PROFILES['bot_protection'])
+BOT_PROTECTION['sidebar']='#survey_custom_sidebar'
+SOURCE=deepcopy(shared.PROFILES['source'])
+SOURCE['sidebar']='#survey_custom_sidebar'
+MONETARY=deepcopy(shared.PROFILES['monetary'])
+MONETARY['properties']={key:selector for key,selector in MONETARY['properties'].items() if key!='width'}
+MONETARY['properties']['label']='#fieldTitle input'
+MONETARY['defaults'].pop('width',None)
+MONETARY['sidebar']='#survey_custom_sidebar'
+MONETARY['creation_drag']='tile'
+SCORE=deepcopy(shared.PROFILES['score'])
+SCORE['properties']={key:selector for key,selector in SCORE['properties'].items() if key!='width'}
+SCORE['properties']['label']='#fieldTitle input'
+SCORE['defaults'].pop('width',None)
+SCORE['sidebar']='#survey_custom_sidebar'
+SCORE['suffix']=4
+SCORE['key_prefix']='score_'
+SCORE['creation_drag']='tile'
+TEXT_HEADING=deepcopy(shared.PROFILES['text_heading'])
+TEXT_HEADING['sidebar']='#survey_custom_sidebar'
+IMAGE=deepcopy(shared.PROFILES['image'])
+IMAGE['sidebar']='#survey_custom_sidebar'
+IMAGE['general_selector']='#survey_custom_sidebar'
+HTML=deepcopy(shared.PROFILES['html'])
+HTML['sidebar']='#survey_custom_sidebar'
+PICTURE_CHOICE=deepcopy(shared.PROFILES['picture_choice'])
+PICTURE_CHOICE['sidebar']='#survey_custom_sidebar'
+PICTURE_CHOICE.update({'suffix':6,'key_prefix':'picture_choice_'})
+PICTURE_CHOICE['properties']={'label':'#fieldTitle input','placeholder':'#fieldPlaceholder input',
+    'short_label':'#shortLabel input','query_key':'#fieldQueryKey input'}
+PICTURE_CHOICE['defaults']={'placeholder':'','short_label':'','required':False,'hidden':False,
+    'options':[{'label':'Option '+str(i),'image_url':None} for i in (1,2,3)]}
+PICTURE_CHOICE['creation_supported']=True
+PICTURE_CHOICE['creation_drag']='tile'
+URL=deepcopy(shared.PROFILES['url'])
+URL['properties']={'label':'#fieldTitle input','placeholder':'#fieldPlaceholder input',
+    'short_label':'#shortLabel input','query_key':'#fieldQueryKey input'}
+URL['defaults'].pop('width',None)
+URL['sidebar']='#survey_custom_sidebar'
+URL['suffix']=4
+URL['key_prefix']='url_'
+URL['creation_drag']='tile'
+RATING=deepcopy(shared.PROFILES['rating'])
+RATING['sidebar']='#survey_custom_sidebar'
+RATING['generated_label_pattern']=r'Rating .+'
+RATING['defaults']['lowest_label']=''
+RATING['defaults']['highest_label']=''
+def _survey_datetime(kind,widget_type,mode,label,tokens,placeholder,input_count):
+    profile=deepcopy(shared.PROFILES['date_time'])
+    profile['type']=widget_type;profile['tile']=label;profile['suffix']=5
+    profile['key_prefix']=tokens;profile['key_property']='unique_key'
+    profile['query_pattern']=r'[A-Za-z0-9_.&-]{1,256}'
+    profile['properties']={key:selector for key,selector in profile['properties'].items() if key!='width'}
+    profile['properties'].update({'label':'#label input','placeholder':'#fieldPlaceholder input',
+        'short_label':'#shortLabel input','query_key':'#fieldQueryKey input',
+        'custom_field_name':'#custom-field-label input','unique_key':'#uniqueKey input'})
+    profile['defaults']={'placeholder':placeholder,'short_label':'','required':False,'hidden':False}
+    profile['flags']={'required':'#fieldRequired','hidden':'#fieldCheckbox'}
+    profile['input']='.date-time-preview-row input';profile['input_count']=input_count
+    profile['hidden_value_captured']=False;profile['sidebar']='#survey_custom_sidebar'
+    profile['sidebar_title']='Date & time';profile['general_tab']='[data-name="settings"]'
+    profile['general_selector']='#survey_custom_sidebar';profile['datetime_options']=False
+    profile['extra']=('collection_mode',);profile['collection_mode']=mode
+    profile['generated_label_pattern']=re.escape(label)+r' [a-z0-9]{5}'
+    profile['creation_mode']=mode
+    return profile
+SURVEY_DATE=_survey_datetime('date','DATE','date','Date','date_','YYYY-MM-DD',1)
+SURVEY_DATE_TIME=_survey_datetime('date_time','DATE_TIME','date_time','Date & time','date_','YYYY-MM-DD',2)
+SURVEY_TIME=_survey_datetime('time','TIME','time','Time','time_','HH:MM',1)
+PROFILES={'number':NUMBER,'checkbox':CHECKBOX,'single_dropdown':SINGLE_DROPDOWN,
+          'multi_dropdown':MULTI_DROPDOWN,'file_upload':FILE_UPLOAD,'signature':SIGNATURE,
+          'text_box_list':TEXT_BOX_LIST,'bot_protection':BOT_PROTECTION,'source':SOURCE,'monetary':MONETARY,
+          'score':SCORE,'rating':RATING,'date':SURVEY_DATE,'date_time':SURVEY_DATE_TIME,'time':SURVEY_TIME,
+          'text_heading':TEXT_HEADING,'image':IMAGE,'html':HTML,'picture_choice':PICTURE_CHOICE,'url':URL}
 # Survey Quick Add drawer and drag handle captured 2026-11-10.
 NUMBER_CREATION_TILE='Number3'
-CREATION_TILES={'number':NUMBER_CREATION_TILE,'checkbox':'Checkbox2','single_dropdown':'Single Dropdown0','multi_dropdown':'Multi Dropdown1'}
+CREATION_TILES={'number':NUMBER_CREATION_TILE,'checkbox':'Checkbox2','single_dropdown':'Single Dropdown0',
+                'multi_dropdown':'Multi Dropdown1','file_upload':'File Upload1','signature':'Signature5',
+                'text_box_list':'Text Box List2','bot_protection':'Bot protection2','source':'Source3','monetary':'Monetary2',
+                'score':'Score5','rating':'Rating0','date':'Date & time4','date_time':'Date & time4','time':'Date & time4',
+                'text_heading':'Text0','image':'Image0','html':'Html1','picture_choice':'Picture Choice4','url':'URL6'}
 
 
 def _key(kind):
     return PROFILES[kind].get('key_property','query_key')
 
 
+def _identity(kind,properties):
+    return PROFILES[kind].get('fixed_identity') or properties[_key(kind)]
+
+
 def _properties(kind,value):
     if not isinstance(kind,str) or kind not in PROFILES:
         raise Stop('Survey widget family has no captured survey property profile')
-    return shared._properties(kind,value,profile=PROFILES[kind])
+    if kind=='picture_choice':
+        if not isinstance(value,dict) or not isinstance(value.get('options'),list) or len(value['options'])!=3:
+            raise Stop('Survey Picture Choice requires its ordered card inventory')
+        value=deepcopy(value)
+        value['options']=[{**option,'alt':''} if isinstance(option,dict) and set(option)=={'label','image_url'} else option
+                          for option in value['options']]
+    result=shared._properties(kind,value,profile=PROFILES[kind])
+    if kind=='picture_choice':
+        result['options']=[{key:item for key,item in option.items() if key!='alt'} for option in result['options']]
+    return result
+
+
+def _read_widget(frame,item,kind):
+    properties=shared._read(frame,item,kind,profile=PROFILES[kind])
+    if kind=='picture_choice':
+        properties['options']=[{key:value for key,value in option.items() if key!='alt'} for option in properties['options']]
+    return _properties(kind,properties)
+
+
+def _write_widget(frame,item,kind,before,desired):
+    if kind!='picture_choice':
+        return shared._write(frame,item,kind,before,desired,profile=PROFILES[kind])
+    if _read_widget(frame,item,kind)!=before:
+        raise Stop('Survey Picture Choice changed after complete preflight')
+    actual=shared._read(frame,item,kind,profile=PROFILES[kind])
+    staged=deepcopy(desired)
+    staged['options']=[{'label':target['label'],'image_url':current['image_url'],'alt':current['alt']}
+                       for current,target in zip(actual['options'],desired['options'])]
+    shared._write(frame,item,kind,actual,staged,profile=PROFILES[kind])
 
 
 def validate(step):
@@ -95,23 +217,30 @@ def validate(step):
                         or type(field['index']) is not int or field['index']<1):
                     raise Stop('Survey widgets require exact one-based positions within each slide')
                 props=_properties(field['kind'],field['properties'])
-                keys.append(props[_key(field['kind'])]);indices.append(field['index'])
+                keys.append(_identity(field['kind'],props));indices.append(field['index'])
             if indices!=sorted(set(indices)):
                 raise Stop('Survey widget positions must be unique and ordered')
         if len(keys)!=len(set(keys)):
             raise Stop('Survey widget Query Keys must be unique across all slides')
     before=fields['expected'];after=fields['desired']
     if not any(before):raise Stop('Survey widget property jobs require existing captured widgets')
-    old_keys={field['properties'][_key(field['kind'])]:(slide,field['index']) for slide,row in enumerate(before) for field in row}
+    old_keys={_identity(field['kind'],field['properties']):(slide,field['index']) for slide,row in enumerate(before) for field in row}
     for slide,(old,new) in enumerate(zip(before,after)):
         if len(old)!=len(new):raise Stop('Survey widget property edits cannot create or remove questions')
         for previous,desired in zip(old,new):
             if previous['kind']!=desired['kind'] or previous['index']!=desired['index']:
                 raise Stop('Survey widget property edits cannot change question family or order')
+            if previous['kind']=='file_upload' and previous['properties']['file_access']!=desired['properties']['file_access']:
+                raise Stop('Saved survey File Upload access is immutable; author it only at creation')
+            if previous['kind']=='picture_choice':
+                old_options=previous['properties']['options'];new_options=desired['properties']['options']
+                if (len(old_options)!=len(new_options)
+                        or any(old['image_url']!=new['image_url'] for old,new in zip(old_options,new_options))):
+                    raise Stop('Saved survey Picture Choice preserves its option count and selected media')
             for key in ('custom_field_name','unique_key'):
-                if previous['properties'][key]!=desired['properties'][key]:
+                if key in PROFILES[previous['kind']]['properties'] and previous['properties'][key]!=desired['properties'][key]:
                     raise Stop('Existing survey custom-field canonical metadata is immutable')
-            key=desired['properties'][_key(desired['kind'])]
+            key=_identity(desired['kind'],desired['properties'])
             if key in old_keys and old_keys[key]!=(slide,desired['index']):
                 raise Stop('Survey widget Query Key collides with another current question')
     return deepcopy(plan)
@@ -135,11 +264,29 @@ def _inventory(frame,plan):
             item=items.nth(index);label=item.locator('[data-field-type]')
             if label.count()!=1:raise Stop('Survey canvas has an ambiguous field family')
             kind=types.get(label.get_attribute('data-field-type'))
+            if kind=='picture_choice' and item.locator('[data-testid="picture-choice-grid"]').count()!=1:kind=None
+            if kind=='text_heading' and item.locator('.tiptap.ProseMirror[contenteditable="true"]').count()!=1:kind=None
             if kind:
-                properties=shared._read(frame,item,kind,profile=PROFILES[kind])
+                properties=_read_widget(frame,item,kind)
                 fields.append({'kind':kind,'index':index+1,'properties':properties})
         result.append(fields)
     return result
+
+
+def _has_unrecognized_widgets(frame,plan,snapshot):
+    owners=survey._owners(frame,plan)
+    known={profile['type'] for kind,profile in PROFILES.items() if kind not in ('picture_choice','text_heading')}
+    for slide,rows in enumerate(snapshot):
+        items=owners.nth(slide).locator('.form-field-wrapper')
+        if items.count()!=len(rows):raise Stop('Survey widget type-shape inventory changed')
+        for index,row in enumerate(rows):
+            types=row['types'];item=items.nth(index)
+            if types==['RADIO']:
+                if item.locator('[data-testid="picture-choice-grid"]').count()!=1:return True
+            elif types==['h1']:
+                if item.locator('.tiptap.ProseMirror[contenteditable="true"]').count()!=1:return True
+            elif len(types)!=1 or types[0] not in known:return True
+    return False
 
 
 def validate_receipt(value,step):
@@ -168,10 +315,9 @@ def configure(page,step):
     if _inventory(frame,plan)!=before:
         raise Stop('Survey widget full previous property inventory changed before edits')
     snapshot=survey.snapshot(frame,plan)
-    renamed=any(old['properties'][_key(old['kind'])]!=new['properties'][_key(new['kind'])]
+    renamed=any(_identity(old['kind'],old['properties'])!=_identity(new['kind'],new['properties'])
                 for a,b in zip(before,desired) for old,new in zip(a,b))
-    if renamed and any(widget['types'] not in ([profile['type']] for profile in PROFILES.values())
-                       for owner in snapshot for widget in owner):
+    if renamed and _has_unrecognized_widgets(frame,plan,snapshot):
         raise Stop('Survey Query Key changes beside other question families require their complete query inventory')
     owners=survey._owners(frame,plan)
     for slide,(old,new) in enumerate(zip(before,desired)):
@@ -180,7 +326,7 @@ def configure(page,step):
             if survey.snapshot(frame,plan)!=snapshot:
                 raise Stop('Survey widget sibling canvas changed before the next write')
             index=target['index']-1;item=owners.nth(slide).locator('.form-field-wrapper').nth(index)
-            shared._write(frame,item,target['kind'],previous['properties'],target['properties'],profile=PROFILES[target['kind']])
+            _write_widget(frame,item,target['kind'],previous['properties'],target['properties'])
             after=survey.snapshot(frame,plan)
             if len(after)!=len(snapshot) or any(len(a)!=len(b) for a,b in zip(after,snapshot)):
                 raise Stop('Survey widget editing changed slide or question counts')
@@ -194,6 +340,8 @@ def configure(page,step):
     _frame(page,plan)
     save=shared._one(frame.get_by_role('button',name='Save',exact=True),'Survey widget Save changed')
     click(save);wait_until(lambda:save.count()==1 and save.is_enabled(),'Survey widget Save did not finish')
+    if any(field['kind']=='html' for row in desired for field in row):
+        shared.html_fields.confirm_save_warning(frame)
     reopen_editor(page,'survey',plan['expected_survey_name'],plan['start_url']);frame=_frame(page,plan)
     if _inventory(frame,plan)!=desired or survey.snapshot(frame,plan)!=snapshot:
         raise Stop('Survey widget properties or siblings did not persist after independent reopen')
@@ -212,7 +360,22 @@ def verify_completed(page,step,receipt):
 
 
 def validate_creation_question(value,kind='number'):
-    """Authoring uses an independently captured survey property profile."""
+    """Authoring needs both the survey sidebar and its captured insertion tile."""
+    if kind not in CREATION_TILES:
+        raise Stop('Survey widget creation tile requires its native capture')
+    if kind=='picture_choice':
+        if not isinstance(value,dict) or not isinstance(value.get('options'),list):
+            raise Stop('Survey Picture Choice requires every authored catalog image')
+        projected=deepcopy(value);projected['options']=[]
+        from playwright_recipes.quiz_picture_questions import _https
+        for option in value['options']:
+            if not isinstance(option,dict) or set(option)!={'label','image_url','media_button_name'}:
+                raise Stop('Survey Picture Choice requires each exact label, approved media URL and catalog tile')
+            if not isinstance(option['media_button_name'],str) or not option['media_button_name'].strip() or option['media_button_name']!=option['media_button_name'].strip():
+                raise Stop('Survey Picture Choice media needs its exact approved catalog tile name')
+            projected['options'].append({'label':option['label'],'image_url':_https(option['image_url'])})
+        _properties(kind,projected)
+        return deepcopy(value)
     return _properties(kind,value)
 
 
@@ -229,7 +392,56 @@ def read_creation_question(frame,plan):
     if items.count()!=1:
         raise Stop('Survey widget creation requires its exact single-widget owner')
     kind=_creation_kind(plan)
-    return shared._read(frame,items.nth(0),kind,profile=PROFILES[kind])
+    return _read_widget(frame,items.nth(0),kind)
+
+
+def _creation_readback(kind,value):
+    result=deepcopy(value)
+    if kind=='picture_choice':
+        result['options']=[{key:item for key,item in option.items() if key!='media_button_name'} for option in result['options']]
+    return result
+
+
+def _validate_new_default(kind,previous):
+    """Match the freshly dragged native default to its captured identity shape."""
+    profile=PROFILES[kind]
+    if kind=='text_heading':
+        if set(previous)!={'text'} or not previous['text'].strip() or any(ord(c)<32 for c in previous['text']):
+            raise Stop('New Survey Text heading differs from its native plain-text baseline')
+        return
+    if kind in ('image','html'):
+        expected=set(profile['properties'])|set(profile.get('flags',()))|set(profile.get('extra',()))
+        if (set(previous)!=expected or not previous.get('label','').strip()
+                or any(previous.get(key)!=value for key,value in profile.get('defaults',{}).items())):
+            raise Stop('New Survey media/content widget differs from its native blank baseline')
+        return
+    if kind=='picture_choice':
+        expected=set(profile['properties'])|set(profile['flags'])|set(profile.get('extra',()))
+        options=previous.get('options')
+        suffix=re.fullmatch(re.escape(profile['tile'])+r' ([a-z0-9]{'+str(profile['suffix'])+'})',previous.get('label',''))
+        if (set(previous)!=expected or not suffix or not shared._default_key(profile,previous.get('query_key',''),suffix.group(1))
+                or len(options or [])!=3 or previous['required'] is not False
+                or previous['hidden'] is not False or not previous['label'].strip() or not previous['query_key'].strip()
+                or any(previous.get(key)!=value for key,value in profile['defaults'].items() if key!='options')
+                or options!=profile['defaults']['options']
+                or any(not option['label'].strip() or option['image_url'] is not None for option in options)):
+            raise Stop('New Survey Picture Choice differs from the captured blank three-option baseline')
+        return
+    if profile.get('fixed_identity'):
+        expected=profile['defaults']
+        if (set(previous)!=set(profile['properties'])|set(profile['flags'])|set(profile.get('extra',()))|set(profile.get('preview_properties',{}))
+                or any(previous.get(key)!=value for key,value in expected.items())
+                or profile.get('generated_label_pattern') and not re.fullmatch(profile['generated_label_pattern'],previous.get('label',''))
+                or not profile.get('generated_label_pattern') and previous!=expected):
+            raise Stop('New survey singleton widget differs from its captured native defaults')
+        return
+    suffix=re.fullmatch(re.escape(profile['tile'])+r' ([a-z0-9]{'+str(profile['suffix'])+'})',previous['label'])
+    if (not suffix or not shared._default_key(profile,previous[_key(kind)],suffix.group(1))
+            or 'custom_field_name' in profile['properties'] and previous.get('custom_field_name')!=previous['label']
+            or 'unique_key' in profile['properties'] and (not previous.get('unique_key','').startswith('contact.'+profile['key_prefix'])
+            or previous['unique_key'][len('contact.'+profile['key_prefix']):].replace('_','')!=suffix.group(1))
+            or any(previous[key]!=value for key,value in profile['defaults'].items())):
+        raise Stop('New survey widget defaults differ from its captured native identity')
 
 
 def _creation_hash(plan):
@@ -268,7 +480,7 @@ def configure_creation(page,plan,evidence_root):
         done=validate_creation_receipt(stored.get('receipt'),plan)
         reopen_editor(page,'survey',plan['expected_survey_name'],plan['start_url'])
         frame=survey._frame(page,plan)
-        if read_creation_question(frame,plan)!=plan['question'] or survey.snapshot(frame,plan)!=done['saved_snapshot']:
+        if read_creation_question(frame,plan)!=_creation_readback(kind,plan['question']) or survey.snapshot(frame,plan)!=done['saved_snapshot']:
             raise Stop('Completed Survey widget owner or siblings drifted; no insertion repeated')
         return done
     owner=survey._owners(frame,plan).nth(plan['target_slide']-1)
@@ -296,27 +508,30 @@ def configure_creation(page,plan,evidence_root):
         handle.drag_to(canvas,timeout=45000,**drag_options)
         wait_until(lambda:owner.locator('.form-field-wrapper').count()==1,'Survey widget insertion did not create exactly one widget')
         survey._close_initial(frame)
+        if profile.get('collection_mode'):
+            shared._set_survey_collection_mode(frame,owner.locator('.form-field-wrapper').nth(0),profile)
         after=survey.snapshot(frame,plan);target=plan['target_slide']-1
         if (len(after)!=len(before) or len(after[target])!=1 or after[target][0]['types']!=[profile['type']]
                 or any(row!=before[index] for index,row in enumerate(after) if index!=target)):
             raise Stop('Survey widget insertion changed another slide or field family')
         previous=read_creation_question(frame,plan)
-        suffix=re.fullmatch(re.escape(profile['tile'])+r' ([a-z0-9]{'+str(profile['suffix'])+'})',previous['label'])
-        if (not suffix or not shared._default_key(profile,previous[_key(kind)],suffix.group(1))
-                or previous['custom_field_name']!=previous['label']
-                or not previous['unique_key'].startswith('contact.'+profile['key_prefix'])
-                or previous['unique_key'][len('contact.'+profile['key_prefix']):].replace('_','')!=suffix.group(1)
-                or any(previous[key]!=value for key,value in profile['defaults'].items())):
-            raise Stop('New survey widget defaults differ from its captured native identity')
-        shared._write(frame,owner.locator('.form-field-wrapper').nth(0),kind,previous,plan['question'],profile=profile)
+        _validate_new_default(kind,previous)
+        item=owner.locator('.form-field-wrapper').nth(0)
+        requested=_creation_readback(kind,plan['question'])
+        _write_widget(frame,item,kind,previous,requested)
+        if kind=='picture_choice':
+            from playwright_recipes.quiz_picture_questions import _media
+            for index,option in enumerate(plan['question']['options']):
+                _media(page,frame,item,index,option)
         desired=survey.snapshot(frame,plan)
         if (len(desired)!=len(before) or len(desired[target])!=1
                 or any(row!=before[index] for index,row in enumerate(desired) if index!=target)):
             raise Stop('Survey widget property authoring changed another slide')
         save=shared._one(frame.get_by_role('button',name='Save',exact=True),'Survey widget Save changed')
         click(save);wait_until(lambda:save.count()==1 and save.is_enabled(),'Survey widget Save did not finish')
+        if kind=='html':shared.html_fields.confirm_save_warning(frame)
         reopen_editor(page,'survey',plan['expected_survey_name'],plan['start_url']);frame=survey._frame(page,plan)
-        if read_creation_question(frame,plan)!=plan['question'] or survey.snapshot(frame,plan)!=desired:
+        if read_creation_question(frame,plan)!=requested or survey.snapshot(frame,plan)!=desired:
             raise Stop('Survey widget did not persist after independent reopen')
         done=validate_creation_receipt({'status':'SURVEY_'+kind.upper()+'_SAVED_AND_REOPENED','editor_url':plan['start_url'],
             'target_slide':plan['target_slide'],'question':deepcopy(plan['question']),

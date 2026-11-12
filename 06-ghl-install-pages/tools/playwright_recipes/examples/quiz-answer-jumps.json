@@ -1,0 +1,33 @@
+{
+  "location_id": "LOC",
+  "location_name": "Exact account name",
+  "start_url": "https://app.convertandflow.com/v2/location/LOC/quiz-builder-v2/QUIZ",
+  "configuration": {
+    "answer_jumps": {
+      "question_labels": [
+        "First question",
+        "Service question",
+        "Booking question"
+      ],
+      "questions": [
+        {
+          "index": 1,
+          "expected_question": "Service question",
+          "expected_query_key": "service_choice",
+          "options": [
+            {
+              "label": "Coaching",
+              "expected_destination": null,
+              "destination": "Booking question"
+            },
+            {
+              "label": "Consulting",
+              "expected_destination": "Next Question",
+              "destination": null
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

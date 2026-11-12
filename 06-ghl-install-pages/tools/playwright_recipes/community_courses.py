@@ -1,4 +1,4 @@
-"""Captured private course association in an authenticated community Learning tab.
+"""Captured native course association in an authenticated community Learning tab.
 
 Native course option titles are bound to a complete same-location API inventory;
 the saved card independently exposes exact product/group IDs. This operation
@@ -26,6 +26,9 @@ else:
 
 _SCHEMA='skill6-community-course-association/1'
 _JOURNAL='community-details-state.json'
+# November 11 independent native reopen: All members cards expose Free.
+# Existing Free badges still require access details before reuse.
+_VISIBILITY_BADGES={'Private':'Private','All members':'Free'}
 
 
 def _title(value):
@@ -39,10 +42,15 @@ def validate_inputs(inputs):
     data=portal._validate_base(inputs,portal._BASE_INPUTS|{'course_associations','api_capability'})
     config=data.get('course_associations')
     if (not isinstance(config,dict)
-            or set(config)!={'course_id','course_title','expected_group_id','expected_courses','visibility'}
-            or config.get('visibility')!='Private'
+            or set(config)-{'course_id','course_title','expected_group_id','expected_courses','visibility','expected_visibility'}
+            or not {'course_id','course_title','expected_group_id','expected_courses','visibility'}<=set(config)
+            or not isinstance(config.get('visibility'),str)
+            or config.get('visibility') not in _VISIBILITY_BADGES
             or not isinstance(config.get('expected_courses'),list)):
-        raise Stop('Course association requires exact previous inventory and Private visibility')
+        raise Stop('Course association requires exact previous inventory and captured Private/All members visibility')
+    if 'expected_visibility' in config and (not isinstance(config['expected_visibility'],str)
+            or config['expected_visibility'] not in _VISIBILITY_BADGES):
+        raise Stop('Course visibility changes require a captured expected Private/All members mode')
     for key in ('course_id','expected_group_id'):delivery._id(config.get(key),key)
     _title(config.get('course_title'))
     identities=[]
@@ -56,6 +64,10 @@ def validate_inputs(inputs):
         identities.append(row['course_id'])
     if len(set(identities))!=len(identities):
         raise Stop('Native course card inventory contains duplicate product identities')
+    if 'expected_visibility' in config:
+        target=[row for row in config['expected_courses'] if row['course_id']==config['course_id']]
+        if len(target)!=1 or target[0]['visibility']!=_VISIBILITY_BADGES[config['expected_visibility']]:
+            raise Stop('Explicit course visibility changes require the exact existing target and expected native badge')
     return deepcopy(data)
 
 
@@ -105,7 +117,7 @@ def _course_identity(api,plan):
 
 def _learning_url(plan):
     if not urlsplit(plan['portal_url']).path.rstrip('/').endswith('/home'):
-        raise Stop('Private course association requires an active authenticated group home')
+        raise Stop('Course association requires an active authenticated group home')
     return plan['portal_url'].rstrip('/').rsplit('/',1)[0]+'/learning'
 
 
@@ -182,9 +194,28 @@ def _inventory(page,plan,facts):
         if visibility=='':raise Stop('Native course card visibility badge is unreadable')
         rows.append({'course_id':product,'title':title,'visibility':visibility})
     if not rows:
-        # Group identity and a settled/visible grid do not prove that async
-        # course loading completed. No positive empty marker was captured.
-        raise Stop('NATIVE_EMPTY_COURSE_INVENTORY_UNPROVEN: capture an authoritative native loaded/empty state before a first association')
+        # November 11 owned first-course capture: the loaded empty grid has
+        # one direct wrapper containing only its fully rendered Add card.
+        # An arbitrary missing list or zero count never satisfies this shape.
+        page.wait_for_load_state('networkidle',timeout=45000)
+        if cards.count()!=0:
+            raise Stop('Native empty Learning inventory changed while settling')
+        error=page.get_by_text('Error Loading Courses',exact=True)
+        retry=page.get_by_role('button',name='Retry',exact=True)
+        if (any(error.nth(i).is_visible() for i in range(error.count()))
+                or any(retry.nth(i).is_visible() for i in range(retry.count()))):
+            raise Stop('NATIVE_EMPTY_COURSE_INVENTORY_UNPROVEN: native course loading failed')
+        add=grid.locator('[id="add-course-card-container-"][role="button"][aria-label="Add course card"]')
+        title=add.locator('[id="add-course-title-text-"]')
+        description=add.locator('[id="add-course-description-text-"]')
+        if (grid.locator(':scope > *').count()!=1
+                or grid.locator(':scope > div > *').count()!=1
+                or grid.locator(':scope > div > [id="add-course-card-container-"]').count()!=1
+                or add.count()!=1 or not add.is_visible()
+                or title.count()!=1 or not title.is_visible() or title.inner_text().strip()!='Add New Course'
+                or description.count()!=1 or not description.is_visible()
+                or description.inner_text().strip()!='Create a new course to share knowledge with your community'):
+            raise Stop('NATIVE_EMPTY_COURSE_INVENTORY_UNPROVEN: loaded empty Learning grid differs from its captured Add card profile')
     return rows
 
 
@@ -205,14 +236,16 @@ def _add(page,plan,context,clock):
     if selected.count()!=1 or (selected.text_content() or '').strip()!=config['course_title']:
         raise Stop('Native selected course title differs from its API-bound identity')
     visibility=_one(modal.locator('#visibility-select-select-'),'Native course visibility selector changed')
-    click(visibility)
-    private=page.get_by_role('option').filter(has=page.get_by_text('Private',exact=True))
-    click(_one(private,'Native admin-only Private course visibility is missing or ambiguous'))
-    if visibility.get_by_text('Private',exact=True).count()!=1:
-        raise Stop('Native course visibility did not select Private')
+    wanted=config['visibility']
+    if visibility.get_by_text(wanted,exact=True).count()!=1:
+        click(visibility)
+        option=page.get_by_role('option').filter(has=page.get_by_text(wanted,exact=True))
+        click(_one(option,'Native requested course visibility is missing or ambiguous'))
+    if visibility.get_by_text(wanted,exact=True).count()!=1:
+        raise Stop('Native course visibility did not select the requested access')
     _check(page,plan,context,clock=clock)
     submit=_one(modal.locator('#add-course-button-button-'),'Native Add Course submit changed')
-    if not submit.is_enabled():raise Stop('Native private course association is not accepted')
+    if not submit.is_enabled():raise Stop('Native course association is not accepted')
     click(submit);modal.wait_for(state='hidden',timeout=45000)
     prompt=page.get_by_role('dialog').filter(has=page.get_by_text('Share Course as Post',exact=True))
     card=page.locator('[id="course-card-'+config['course_id']+'-"]')
@@ -229,16 +262,87 @@ def _add(page,plan,context,clock):
     return skipped
 
 
+def _edit_state(modal,plan):
+    config=plan['course_associations']
+    if _one(modal.locator('#modal-title-text-'),'Native course Edit title changed').inner_text().strip()!='Edit Course':
+        raise Stop('Native course editor is not the captured Edit Course mode')
+    selector=_one(modal.locator('#course-modal-select-course'),'Native edit course owner changed')
+    control=selector.locator('input')
+    if control.count()!=1 or control.is_enabled():
+        raise Stop('Native edit course must preserve its disabled original product selector')
+    selected=modal.locator('#course-modal-selected-course-text')
+    if selected.count()!=1 or (selected.text_content() or '').strip()!=config['course_title']:
+        raise Stop('Native Edit Course selected product differs from the API-bound course')
+    visibility=_one(modal.locator('#visibility-select-select-'),'Native edit course visibility changed')
+    label=visibility.locator('.hr-base-selection-input')
+    value=label.get_attribute('title') if label.count()==1 else None
+    if value not in _VISIBILITY_BADGES:raise Stop('Existing native course uses an uncaptured visibility mode')
+    return visibility,value
+
+
+def _open_edit(page,plan,context,clock):
+    _check(page,plan,context,clock=clock)
+    config=plan['course_associations']
+    card=_one(page.locator('[id="course-card-'+config['course_id']+'-"]'),'Native course edit card changed')
+    trigger=_one(card.locator('button[id="course-action-dropdown-trigger-'+config['course_id']+'-"]'),
+                 'Native Course actions trigger changed')
+    click(trigger)
+    menu=page.get_by_role('menu',name='Course actions',exact=True)
+    wait_until(lambda:menu.count()==1 and menu.is_visible(),
+        'Native Course actions menu is missing or ambiguous')
+    edit=_one(menu.get_by_role('menuitem',name='Edit',exact=True),
+        'Native Edit Course menu item changed')
+    click(edit)
+    modal=page.locator('#courses-add-modal')
+    modal.wait_for(state='visible',timeout=45000)
+    _one(modal,'Native Edit Course dialog changed')
+    return modal
+
+
+def _close_edit(modal):
+    click(_one(modal.locator('button#hr-modal__close-button'),'Native Edit Course Close changed'))
+    modal.wait_for(state='hidden',timeout=45000)
+
+
+def _read_visibility(page,plan,context,clock):
+    modal=_open_edit(page,plan,context,clock)
+    try:return _edit_state(modal,plan)[1]
+    finally:_close_edit(modal)
+
+
+def _update_visibility(page,plan,context,clock):
+    config=plan['course_associations'];modal=_open_edit(page,plan,context,clock)
+    visibility,current=_edit_state(modal,plan)
+    if current!=config['expected_visibility']:
+        _close_edit(modal);raise Stop('Native course visibility changed after preflight')
+    click(visibility)
+    option=page.get_by_role('option').filter(has=page.get_by_text(config['visibility'],exact=True))
+    click(_one(option,'Native requested course visibility option changed'))
+    if _edit_state(modal,plan)[1]!=config['visibility']:
+        raise Stop('Native course visibility ignored its requested update')
+    _check(page,plan,context,clock=clock)
+    submit=_one(modal.locator('#add-course-button-button-'),'Native Update Course submit changed')
+    if submit.inner_text().strip()!='Update Course' or not submit.is_enabled():
+        raise Stop('Native Update Course action is unavailable')
+    click(submit);modal.wait_for(state='hidden',timeout=45000)
+    page.wait_for_load_state('networkidle',timeout=45000)
+
+
 def _receipt(plan,*,reused,skipped):
     config=plan['course_associations'];_,slug=portal._portal(plan['portal_url'])
     return {'status':'NEEDS_VERIFICATION','location_id':plan['location_id'],
         'objects':[{'kind':'community','id':slug}], 'course_id':config['course_id'],
-        'group_id':config['expected_group_id'],'visibility':'Private',
+        'group_id':config['expected_group_id'],'visibility':config['visibility'],
         'configuration_sha256':configuration_hash(plan),'controls_verified':True,
         'independent_readback':'VERIFIED','reused':reused,'share_post_skipped':skipped,
         'communication_attempted':False,'behavior_verified':False,'functional_verified':False,
         'group_activation_attempted':False,'verification_required':True,
         'identity_source':'same_session_authenticated_read_and_native_course_card'}
+
+
+def _updates_visibility(plan):
+    config=plan['course_associations']
+    return 'expected_visibility' in config and config['expected_visibility']!=config['visibility']
 
 
 def _matches_completed_inventory(plan,rows,*,reused):
@@ -249,9 +353,12 @@ def _matches_completed_inventory(plan,rows,*,reused):
     and metadata. Reuse must preserve the complete original list unchanged.
     """
     config=plan['course_associations'];before=config['expected_courses']
-    wanted={'course_id':config['course_id'],'title':config['course_title'],'visibility':'Private'}
+    wanted={'course_id':config['course_id'],'title':config['course_title'],
+            'visibility':_VISIBILITY_BADGES[config['visibility']]}
     matches=[row for row in rows if row['course_id']==config['course_id']]
     if matches!=[wanted]:return False
+    if _updates_visibility(plan):
+        return rows==[{**row,'visibility':wanted['visibility']} if row['course_id']==config['course_id'] else row for row in before]
     if reused:return rows==before
     return (len(rows)==len(before)+1
         and [row for row in rows if row['course_id']!=config['course_id']]==before)
@@ -281,6 +388,9 @@ def run_courses(page,inputs,evidence_root,*,portal_context,transport=None,clock=
             facts=_check(page,plan,portal_context,clock=clock)
             if not _matches_completed_inventory(plan,_inventory(page,plan,facts),reused=raw['reused']):
                 raise Stop('Saved native course association or sibling inventory changed; reconcile before replay')
+            if _updates_visibility(plan) or plan['course_associations']['visibility']=='All members':
+                if _read_visibility(page,plan,portal_context,clock)!=plan['course_associations']['visibility']:
+                    raise Stop('Saved native course visibility changed; reconcile before replay')
             return {**expected,'replayed':True}
         api=transport or delivery.Skill44Transport();_course_identity(api,plan)
         facts=_on_learning(page,plan,portal_context,clock=clock)
@@ -294,23 +404,35 @@ def run_courses(page,inputs,evidence_root,*,portal_context,transport=None,clock=
         config=plan['course_associations']
         if before!=config['expected_courses']:
             raise Stop('Native community course inventory changed before association')
-        wanted={'course_id':config['course_id'],'title':config['course_title'],'visibility':'Private'}
+        wanted={'course_id':config['course_id'],'title':config['course_title'],
+            'visibility':_VISIBILITY_BADGES[config['visibility']]}
         matches=[row for row in before if row['course_id']==config['course_id']]
-        if matches and matches!=[wanted]:
+        updating=_updates_visibility(plan)
+        if matches and matches!=[wanted] and not updating:
             raise Stop('Existing course association has different title/access; explicit update required')
-        reused=bool(matches);state={'schema':_SCHEMA,'fingerprint':digest,
+        if matches and (updating or config['visibility']=='All members' or 'expected_visibility' in config):
+            expected=config.get('expected_visibility',config['visibility'])
+            if _read_visibility(page,plan,portal_context,clock)!=expected:
+                raise Stop('Existing course native access differs from its explicitly expected visibility')
+        reused=bool(matches) and not updating;state={'schema':_SCHEMA,'fingerprint':digest,
             'location_id':plan['location_id'],'status':'INTENT_RECORDED'}
         secure_json(journal,state)
         try:
-            skipped=False if reused else _add(page,plan,portal_context,clock)
+            if updating:
+                _update_visibility(page,plan,portal_context,clock);skipped=False
+            else:skipped=False if reused else _add(page,plan,portal_context,clock)
             facts=_check(page,plan,portal_context,clock=clock)
             desired=_inventory(page,plan,facts)
             if not _matches_completed_inventory(plan,desired,reused=reused):
-                raise Stop('Native private course association changed target or sibling cards')
+                raise Stop('Native course association changed target or sibling cards')
             page.reload(wait_until='domcontentloaded',timeout=45000)
+            page.wait_for_load_state('networkidle',timeout=45000)
             facts=_check(page,plan,portal_context,clock=clock)
             if _inventory(page,plan,facts)!=desired:
-                raise Stop('Private native course association readback or sibling cards differ')
+                raise Stop('Native course association readback or sibling cards differ')
+            if updating or config['visibility']=='All members':
+                if _read_visibility(page,plan,portal_context,clock)!=config['visibility']:
+                    raise Stop('Saved course native access differs after independent reload')
             outcome=_receipt(plan,reused=reused,skipped=skipped)
             state.update(status='NEEDS_VERIFICATION',outcome=outcome);secure_json(journal,state)
             return outcome

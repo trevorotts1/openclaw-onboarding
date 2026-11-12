@@ -62,17 +62,20 @@ class RecreateTests(unittest.TestCase):
         _,result,_=self.exercise(lost_save=True)
         self.assertIsInstance(result,runner.Stop);self.assertIn('did not persist',str(result))
 
-    def test_bad_permutations_edits_or_rich_messages_refuse_before_browser(self):
+    def test_bad_permutations_or_edits_refuse_before_browser(self):
         invalid=[]
         for order in (True,[0,0,1],[0,True,1],[1,0],[-1,0,1]):
             data=request();data['recreate_order']=order;invalid.append(data)
         data=request();data['rules'][1]=rule(native.MESSAGE);invalid.append(data)
-        previous=[rule(),rule(native.MESSAGE)]
-        invalid.append({'expected_rules':previous,'rules':list(reversed(previous)),'recreate_order':[1,0]})
         for data in invalid:
             page=Mock()
             with self.subTest(data=data),self.assertRaises(runner.Stop):native.configure(page,data)
             self.assertFalse(page.mock_calls)
+
+    def test_message_permutation_validates_before_actual_markup_preflight(self):
+        previous=[rule(),rule(native.MESSAGE)]
+        request={'expected_rules':previous,'rules':list(reversed(previous)),'recreate_order':[1,0]}
+        self.assertEqual(native.validate(request)['recreate_order'],[1,0])
 
     def test_compiler_and_hash_preserve_explicit_permutation(self):
         data=request()

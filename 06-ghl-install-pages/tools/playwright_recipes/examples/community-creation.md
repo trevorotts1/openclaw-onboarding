@@ -43,11 +43,20 @@ Existing groups are handled separately from new creation:
   identity binding; name-only card text is never sufficient. Description,
   Discovery and functional verification remain pending. No credentials are
   typed and no invite, join, ownership or status control is clicked.
-- Duplicate, differently cased or inactive same-name groups:
-  `EXISTING_GROUP_IDENTITY_UNVERIFIED`; those identities need separate capture.
+- One exact inactive name match, with `inactive:true` (the default): the same
+  captured native Login control may be inspected without changing its status.
+  The November 11 native handoff opens the exact slug's modern `/home` route
+  even when its app card is Inactive. It requires matching title/name, no
+  password wall and captured Learning/Settings links. Both app inventories
+  are independently read again after Login and must remain unchanged. Portal
+  resource access remains separate: an inactive portal can expose its shell
+  while Learning returns Forbidden; this receipt does not promise access.
+- Duplicate or differently cased same-name groups:
+  `EXISTING_GROUP_IDENTITY_UNVERIFIED`; those identities need reconciliation.
 - An existing Active group with `inactive:true`:
   `EXISTING_GROUP_STATE_UNVERIFIED`. Reusing or creating a container does not
-  implicitly authorize a status change to an existing group.
+  implicitly authorize a status change to an existing group. The inverse request
+  (Inactive group with `inactive:false`) also refuses without activation.
 
 No membership invitation, ownership transfer or activation action is used.
 The existing Forbidden portal is not retried. Privacy/access and branding are

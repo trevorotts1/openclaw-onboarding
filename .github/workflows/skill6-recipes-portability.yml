@@ -34,7 +34,7 @@ jobs:
         with:
           node-version: '22'
       - name: Install Python runtime dependencies
-        run: python -m pip install playwright requests pytest
+        run: python -m pip install playwright requests pytest Pillow
       - name: Install Chromium and Linux runtime libraries
         if: runner.os == 'Linux'
         run: python -m playwright install --with-deps chromium

@@ -22,9 +22,21 @@ class InsertionReceiptTests(unittest.TestCase):
             data['field_dependencies']['observed_at']=0
             with self.subTest(aged=module.__name__):module.validate_receipt(result,step)
             reused=deepcopy(result);reused['fields'][0]['placement']='reused'
+            with self.subTest(module=module.__name__,missing_reuse_proof=True),self.assertRaises(Stop):
+                module.validate_receipt(reused,step)
+            if module is dropdown_fields:
+                reused['fields'][0]['reuse_proof']={'unique_key':field['field_key'],
+                    'custom_field_name':field['name'],'query_key':field['native_query_key'],
+                    'label':field['expected_label'],'options':[{'label':option} for option in field['options']]}
+            else:
+                reused['fields'][0]['reuse_proof']={'unique_key':field['field_key'],
+                    'custom_field_name':field['name']}
+            with self.subTest(module=module.__name__,positive_native_reuse_proof=True):
+                module.validate_receipt(reused,step)
+            malformed_reuse=deepcopy(reused);malformed_reuse['fields'][0]['reuse_proof']['unique_key']='foreign_owner'
             wrong=deepcopy(result);wrong['fields'][0]['id']='FOREIGN_API_ID'
             mutated=deepcopy(result);mutated['fields'][0]['native_query_key']='foreign_query?'
-            for invalid in (reused,wrong,mutated,{**result,'behavior_verified':True},
+            for invalid in (malformed_reuse,wrong,mutated,{**result,'behavior_verified':True},
                             {**result,'configuration_sha256':'0'*64}):
                 with self.subTest(module=module.__name__,invalid=invalid),self.assertRaises(Stop):
                     module.validate_receipt(invalid,step)

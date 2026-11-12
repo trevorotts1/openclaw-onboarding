@@ -3,16 +3,19 @@
 Each saved card remains one native effect. A complete authored ordered stack
 and exact existing prefix protect unrelated conditions. An explicit complete
 expected_rules inventory also permits removal of identified cards or same-count
-in-place edits through the captured editor. Explicit non-message permutations recreate only the changed suffix using captured
-Delete and author controls. Rich-message reordering still requires markup-aware
-authoring; changing effect families uses explicit removal and append. Native rich-message
+in-place edits through the captured editor. Explicit permutations recreate only the
+changed suffix using captured Delete and author controls. Plain single-paragraph
+message cards retain their exact native markup hash; formatted messages require
+markup-aware authoring. Changing effect families uses explicit removal and append. Native rich-message
 card markup is hashed and preserved through append and independent reopen.
 The parent runner owns tenant checks, writer lease and uncertain-write journal.
 """
 from copy import deepcopy
 import hashlib
+from html import escape
 import json
 import re
+from urllib.parse import urlsplit
 
 if __package__:
     from . import form_conditions as group
@@ -34,7 +37,8 @@ REDIRECT='Redirect to URL'
 MESSAGE='Display custom message'
 DISQUALIFY='Disqualify lead'
 SHOW_MESSAGE='Show custom message'
-EFFECTS=frozenset(('Show Field','Hide Field',REDIRECT,MESSAGE,DISQUALIFY))
+JUMP='Jump To'
+EFFECTS=frozenset(('Show Field','Hide Field',REDIRECT,MESSAGE,DISQUALIFY,JUMP))
 RTE='#richTextEditor .tiptap.ProseMirror[contenteditable="true"]'
 _NO_MAPPING=object()
 
@@ -51,6 +55,21 @@ def _message(value):
             or any(ord(char)<32 and char not in '\n\r\t' for char in value)):
         raise Stop('Conditional message requires authored plain text within the script limit')
     return value.replace('\r\n','\n').replace('\r','\n').strip()
+
+
+def _message_from_native(text,markup):
+    """Normalize only captured paragraph boundaries, retaining raw markup hashes."""
+    if __package__:
+        from .condition_message_markup import parse
+    else:
+        from condition_message_markup import parse
+    try:paragraphs=parse(markup)
+    except Stop:return _message(text)
+    parts=[''.join(run[0] for run in paragraph) for paragraph in paragraphs]
+    rendered=_message(text)
+    if rendered not in ('\n'.join(parts),'\n\n'.join(parts)):
+        raise Stop('Native conditional message text and protected markup disagree')
+    return _message('\n'.join(parts))
 
 
 def _rule(value,*,field_bindings=None):
@@ -70,11 +89,16 @@ def _rule(value,*,field_bindings=None):
         required.add('connectors');result['connectors']=predicate['connectors']
     if effect in ('Show Field','Hide Field'):
         required.add('target')
-        targets=group.TARGETS|{field['label'] for field in (field_bindings or [])
-                               if field['field_type']=='TEXT'}
+        targets=group.TARGETS|{field['label'] for field in (field_bindings or [])}
         if not isinstance(value.get('target'),str) or value['target'] not in targets:
             raise Stop('Native field outcome requires one captured target')
         result['target']=value['target']
+    elif effect==JUMP:
+        required.add('target_slide')
+        target=value.get('target_slide')
+        if not isinstance(target,str) or not re.fullmatch(r'P[1-9][0-9]* - .+',target) or target!=target.strip() or any(ord(c)<32 for c in target):
+            raise Stop('Survey Jump To requires an exact numbered slide label')
+        result['target_slide']=target
     elif effect==REDIRECT:
         required.add('redirect_url');result['redirect_url']=_url(value.get('redirect_url'))
     elif effect==MESSAGE:
@@ -134,6 +158,9 @@ def _reconciliation(expected,wanted,source_indices=_NO_MAPPING):
     Moving an unchanged prior rule is never implemented by writing its copy
     into another card; a native reorder needs a captured reorder control.
     """
+    if (source_indices is _NO_MAPPING and len(wanted)>len(expected)
+            and wanted[:len(expected)]==expected):
+        return 'mapped',list(range(len(expected)))+[None]*(len(wanted)-len(expected))
     if source_indices is not _NO_MAPPING:
         if not isinstance(source_indices,list) or len(source_indices)!=len(wanted):
             raise Stop('Outcome source_indices must identify exactly one prior card or new tail card for every desired rule')
@@ -173,7 +200,7 @@ def _reconciliation(expected,wanted,source_indices=_NO_MAPPING):
 def _validate_recreation(plan):
     """Explicit unchanged permutation using captured deletion and authoring.
 
-    Rich-message cards require markup-aware reauthoring and are never flattened.
+    Message markup is preflighted from the actual native inventory before deletion.
     """
     expected=plan['expected_rules'];order=plan['recreate_order']
     if ('source_indices' in plan or not isinstance(order,list)
@@ -181,8 +208,19 @@ def _validate_recreation(plan):
             or sorted(order)!=list(range(len(expected)))
             or plan['rules']!=[expected[i] for i in order]):
         raise Stop('Outcome recreation requires one complete unchanged ordinal permutation')
-    if any('message' in rule for rule in expected):
-        raise Stop('Rich-message outcome recreation requires captured markup-preserving authoring')
+
+
+def _matches_message_markup(dialog,index,record,markup):
+    if __package__:
+        from .condition_message_markup import comparable
+    else:
+        from condition_message_markup import comparable
+    card=_one(dialog.locator(group.CARD).nth(index),'Native message comparison card changed')
+    body=_one(card.locator(group.OUTCOME),'Native message comparison outcome changed').locator(':scope > span')
+    if body.count()!=2:raise Stop('Native message comparison summary owner changed')
+    actual=body.nth(1).inner_html()
+    return (hashlib.sha256(actual.encode()).hexdigest()==record['rich_html_sha256']
+            and comparable(actual)==comparable(markup))
 
 
 def _recreate_order(frame,dialog,plan,current,identity,inventory):
@@ -192,22 +230,66 @@ def _recreate_order(frame,dialog,plan,current,identity,inventory):
         raise Stop('Native outcome recreation differs from complete previous inventory')
     prefix=0
     while prefix<len(current) and current[prefix]['rule']==wanted[prefix]:prefix+=1
+    original=deepcopy(current)
+    # Preflight every changed message before deleting the first card. The
+    # existing literal writer remains the fast path for one plain paragraph.
+    markup_by_source={}
+    for index,record in enumerate(original[prefix:],start=prefix):
+        if 'message' not in record['rule']:continue
+        message=record['rule']['message']
+        plain='<p>'+escape(message,quote=False)+'</p>'
+        if (not any(char in message for char in '\n\r\t')
+                and record['rich_html_sha256']==hashlib.sha256(plain.encode()).hexdigest()):continue
+        card=_one(dialog.locator(group.CARD).nth(index),'Native message recreation card changed')
+        body=_one(card.locator(group.OUTCOME),'Native message recreation outcome row changed').locator(':scope > span')
+        if body.count()!=2:raise Stop('Native message recreation summary owner changed')
+        markup=body.nth(1).inner_html()
+        if hashlib.sha256(markup.encode()).hexdigest()!=record['rich_html_sha256']:
+            raise Stop('Native message markup changed before order recreation; no cards deleted')
+        if __package__:
+            from .condition_message_markup import parse
+        else:
+            from condition_message_markup import parse
+        parse(markup)
+        markup_by_source[index]=markup
+    expected_records=[original[index] for index in plan['recreate_order']]
     for index in reversed(range(prefix,len(current))):
         current=stack._delete_card(frame,dialog,current,identity,index=index,inventory=inventory)
-    for rule in wanted[prefix:]:
+    for index,rule in enumerate(wanted[prefix:],start=prefix):
         identity()
         if inventory(dialog)!=current:
             raise Stop('Native outcomes changed during explicit order recreation')
-        current=_author(frame,dialog,rule,current,identity,inventory=inventory)
+        markup=markup_by_source.get(plan['recreate_order'][index])
+        options={'message_markup':markup} if markup is not None else {}
+        current=_author(frame,dialog,rule,current,identity,inventory=inventory,**options)
+        if current[-1]!=expected_records[index]:
+            raise Stop('Recreated native outcome changed protected message markup; outer Save not attempted')
     return current
 
 
 def validate(step):
-    if (not isinstance(step,dict) or set(step)-{'id','action','rules','expected_rules','source_indices','recreate_order','field_bindings'}
+    if (not isinstance(step,dict) or set(step)-{'id','action','rules','expected_rules','source_indices','recreate_order','field_bindings','message_markup'}
             or step.get('action','native_condition_outcomes')!='native_condition_outcomes'):
         raise Stop('Unsupported native conditional outcome stack')
     bindings=group.condition_bindings(step) if 'field_bindings' in step else None
     plan={**deepcopy(step),'rules':_rules(step.get('rules'),allow_empty='expected_rules' in step,field_bindings=bindings)}
+    if 'message_markup' in step:
+        values=step['message_markup']
+        if not isinstance(values,list) or len(values)!=len(plan['rules']):
+            raise Stop('Message markup must identify each desired rule by ordinal')
+        if __package__:
+            from .condition_message_markup import parse
+        else:
+            from condition_message_markup import parse
+        for rule,markup in zip(plan['rules'],values):
+            if markup is None:continue
+            if 'message' not in rule:raise Stop('Message markup requires a message outcome')
+            paragraphs=parse(markup)
+            text='\n'.join(''.join(run[0] for run in paragraph) for paragraph in paragraphs)
+            if _message(text)!=rule['message']:
+                raise Stop('Message markup text must equal the authored message')
+        if 'expected_rules' in step or 'recreate_order' in step:
+            raise Stop('Authored message markup currently supports append-only creation')
     if 'expected_rules' in step:
         plan['expected_rules']=_rules(step['expected_rules'],allow_empty=True,reject_conflicts=False,field_bindings=bindings)
         if 'recreate_order' in plan:
@@ -225,6 +307,7 @@ def configuration_hash(step):
     plan=validate(step)
     binding=({'expected_rules':plan['expected_rules'],'rules':plan['rules']}
              if 'expected_rules' in plan else plan['rules'])
+    if 'message_markup' in plan:binding={'rules':binding,'message_markup':plan['message_markup']}
     if 'source_indices' in plan:binding['source_indices']=plan['source_indices']
     if 'recreate_order' in plan:binding['recreate_order']=plan['recreate_order']
     if 'field_bindings' in plan:
@@ -252,7 +335,12 @@ def _predicate(card):
             raise Stop('Native outcome predicate connector changed')
         if index:joins.append(tokens[0])
         clause={'if_field':tokens[1],'operator':tokens[2]}
-        if len(tokens)==4:clause['value']=tokens[3]
+        if tokens[2]=='Between':
+            if len(tokens)!=4 or len(tokens[3].split(' And '))!=2:
+                raise Stop('Native Between summary range structure changed')
+            clause['value']=tokens[3].split(' And ')
+        elif len(tokens)==4:clause['value']=tokens[3]
+        elif len(tokens)!=3:raise Stop('Native non-range summary contains ignored values')
         clauses.append(clause)
     if len(set(joins))>1:
         return {'match':'mixed','connectors':[join.lower() for join in joins],'clauses':clauses}
@@ -293,6 +381,7 @@ def _inventory(dialog,*,field_bindings=None):
             elif mode=='SHOW':rule.update(mode=SHOW_MESSAGE,message=text);rich=spans.nth(1).inner_html()
             else:raise Stop('Native disqualification summary mode is unknown')
         else:raise Stop('Unknown existing native outcome requires reconciliation before append')
+        if rich is not None:rule['message']=_message_from_native(text,rich)
         canonical=_rule(rule,field_bindings=field_bindings)
         result.append({'rule':canonical,'rich_html_sha256':(
             hashlib.sha256(rich.encode()).hexdigest() if isinstance(rich,str) else None)})
@@ -303,7 +392,19 @@ def _tile(rule):
     return 'Show/Hide Fields' if rule['effect'] in ('Show Field','Hide Field') else rule['effect']
 
 
+def _disqualify_timing(modal):
+    timing=modal.locator('#disqualify-timing .n-base-selection-input')
+    # Forms without this survey-only control retain their existing profile.
+    if not timing.count():return
+    timing=_one(timing,'Native disqualification timing is ambiguous')
+    text=_one(timing.locator('.n-base-selection-input__content'),
+              'Native disqualification timing text changed').inner_text().strip()
+    if text!='Disqualify After Submit' or timing.get_attribute('title')!=text:
+        raise Stop('Only the captured Disqualify After Submit timing is supported')
+
+
 def _disqualify_mode(modal):
+    _disqualify_timing(modal)
     selected=_one(modal.locator('#disqualify-action .n-base-selection-input'),
                   'Native disqualification mode selector changed')
     text=_one(selected.locator('.n-base-selection-input__content'),
@@ -313,7 +414,7 @@ def _disqualify_mode(modal):
     return text,selected
 
 
-def _effect_value(frame,modal,rule,*,write,identity=lambda:None):
+def _effect_value(frame,modal,rule,*,write,identity=lambda:None,message_markup=None):
     if rule['effect'] in ('Show Field','Hide Field'):
         if write:
             identity();group._choose(frame,'#showHideFieldType',rule['effect'])
@@ -337,10 +438,18 @@ def _effect_value(frame,modal,rule,*,write,identity=lambda:None):
             raise Stop('Native conditional redirect did not accept its exact authored HTTPS URL')
     else:
         control=_one(modal.locator(RTE),'Native conditional plain-message editor changed')
-        if write:identity();fill(control,rule['message'])
-        if _message(control.inner_text())!=rule['message']:
+        if write:
+            identity()
+            if message_markup is None:fill(control,rule['message'])
+            else:
+                if __package__:
+                    from .condition_message_markup import write as write_markup
+                else:
+                    from condition_message_markup import write as write_markup
+                write_markup(modal,control,message_markup,identity,frame=frame)
+        if _message_from_native(control.inner_text(),control.inner_html())!=rule['message']:
             raise Stop('Native conditional message differs from its authored plain text')
-        if write and control.locator('a,script,iframe').count():
+        if write and (control.locator('script,iframe').count() or message_markup is None and control.locator('a').count()):
             raise Stop('Native plain-message editor retained an unapproved embedded element')
 
 
@@ -353,10 +462,7 @@ def _predicate_modal(modal,rule):
         if (group._selected(modal.locator('#selectedField-'+str(index)))!=clause['if_field']
                 or group._selected(modal.locator('#selectedOperation-'+str(index)))!=clause['operator']):
             raise Stop('Native outcome modal source/operator differs')
-        if clause['operator'] in group.UNARY:
-            group._value_input(modal,index,unary=True)
-        elif group._value_input(modal,index).input_value()!=clause['value']:
-            raise Stop('Native outcome predicate value differs')
+        group._read_clause_value(modal,index,clause)
     joins=modal.locator('.n-tabs')
     if joins.count()!=count:raise Stop('Native outcome connector count differs')
     for index in range(count):
@@ -365,7 +471,8 @@ def _predicate_modal(modal,rule):
             raise Stop('Native outcome AND/OR connector differs')
 
 
-def _author(frame,dialog,rule,prefix,identity,*,inventory=None):
+def _author(frame,dialog,rule,prefix,identity,*,inventory=None,message_markup=None):
+    if rule['effect']==JUMP:raise Stop('Survey Jump To cards are immutable in the shared outcome writer')
     inventory=_inventory if inventory is None else inventory
     identity()
     # A redirect summary card repeats the Redirect to URL text. The measured
@@ -382,8 +489,7 @@ def _author(frame,dialog,rule,prefix,identity,*,inventory=None):
         group._choose(frame,'#selectedField-'+str(index),clause['if_field'])
         group._choose(frame,'#selectedOperation-'+str(index),clause['operator'])
         if clause['operator'] in group.BINARY:
-            value=group._value_input(modal,index)
-            fill(value,clause['value'])
+            group._write_clause_value(modal,index,clause,writer=fill,frame=frame)
         if index<len(rule['clauses'])-1:
             joins=modal.locator('.n-tabs')
             if joins.count()!=index+1:raise Stop('Native outcome append connector count changed')
@@ -391,7 +497,8 @@ def _author(frame,dialog,rule,prefix,identity,*,inventory=None):
             click(_one(choice,'Native outcome append connector is ambiguous'))
             wait_until(lambda:modal.locator('[id^="selectedField-"]').count()==index+2,
                        'Native outcome predicate did not append exactly once')
-    _effect_value(frame,modal,rule,write=True,identity=identity)
+    options={'message_markup':message_markup} if message_markup is not None else {}
+    _effect_value(frame,modal,rule,write=True,identity=identity,**options)
     _predicate_modal(modal,rule)
     if rule['effect'] in ('Show Field','Hide Field'):group._modal_state(modal,rule)
     else:_effect_value(frame,modal,rule,write=False)
@@ -417,6 +524,8 @@ def _modal_state(frame,modal,rule):
 
 def _edit(frame,dialog,index,before_rule,rule,current,identity,*,inventory=None):
     """Edit one exact existing outcome while preserving every sibling record."""
+    if before_rule['effect']==JUMP or rule['effect']==JUMP:
+        raise Stop('Survey Jump To cards are immutable in the shared outcome writer')
     inventory=_inventory if inventory is None else inventory
     identity()
     if inventory(dialog)!=current:
@@ -442,10 +551,7 @@ def _edit(frame,dialog,index,before_rule,rule,current,identity,*,inventory=None)
         group._choose(frame,'#selectedField-'+str(row),clause['if_field'])
         group._choose(frame,'#selectedOperation-'+str(row),clause['operator'])
         if clause['operator'] in group.BINARY:
-            control=group._value_input(modal,row)
-            fill(control,clause['value'])
-            if control.input_value()!=clause['value']:
-                raise Stop('Native outcome edit ignored the authored predicate value')
+            group._write_clause_value(modal,row,clause,writer=fill,frame=frame)
         if row<len(rule['clauses'])-1:
             joins=modal.locator('.n-tabs')
             if joins.count()!=count:raise Stop('Native outcome edit connector inventory changed')
@@ -486,9 +592,32 @@ def _edit(frame,dialog,index,before_rule,rule,current,identity,*,inventory=None)
     return after
 
 
-def configure(page,step):
+def configure(page,step,*,surface='form',inventory_override=None):
     plan=validate(step)
-    frame=form_builder(page)
+    if surface not in ('form','survey'):raise Stop('Uncaptured native condition editor surface')
+    contains_jump=any(rule['effect']==JUMP for rule in plan['rules']+plan.get('expected_rules',[]))
+    if (contains_jump or inventory_override is not None) and (surface!='survey' or inventory_override is None):
+        raise Stop('Jump To inventory is supported only by the survey-owned immutable reader')
+    if contains_jump:
+        expected=plan.get('expected_rules')
+        if expected is None or 'recreate_order' in plan or len(expected)>len(plan['rules']):
+            raise Stop('Survey Jump To requires a complete inventory without removal or recreation')
+        if len(expected)<len(plan['rules']) and (plan['rules'][:len(expected)]!=expected or 'source_indices' in plan):
+            raise Stop('Survey Jump To permits only an unchanged prefix and a new outcome suffix')
+        if any(rule['effect']==JUMP for rule in plan['rules'][len(expected):]):
+            raise Stop('Survey Jump To cannot be newly authored by the shared outcome writer')
+        for index,(old,new) in enumerate(zip(expected,plan['rules'])):
+            if (old['effect']==JUMP or new['effect']==JUMP) and old!=new:
+                raise Stop('Survey Jump To cards must remain unchanged at their original ordinal')
+    editor_route='form-builder-v2' if surface=='form' else 'survey-builder-v2'
+    route=urlsplit(page.url)
+    if (route.scheme!='https' or route.username is not None or route.password is not None
+            or route.query or route.fragment
+            or not re.fullmatch(r'/v2/location/[A-Za-z0-9_-]+/'+editor_route+r'/[A-Za-z0-9_-]+/?',route.path)):
+        raise Stop('Native conditional outcomes require their exact captured editor route')
+    def builder():
+        return form_builder(page) if surface=='form' else page.frame_locator('iframe[name="survey-builder-app"]')
+    frame=builder()
     title=frame.get_by_role('textbox',name='Form Name',exact=True)
     title.wait_for(state='visible',timeout=45000)
     if title.count()!=1 or not read_editor_title(title).strip():raise Stop('Native outcome form identity is unavailable')
@@ -502,9 +631,14 @@ def configure(page,step):
         click(frame.get_by_role('button',name='Open Conditional Logic',exact=True))
         return _one(frame.get_by_role('dialog'),'Native outcome Conditions drawer is ambiguous')
     bindings=plan.get('field_bindings')
-    inventory=(lambda dialog:_inventory(dialog,field_bindings=bindings)) if bindings is not None else _inventory
-    reader_options={'inventory':inventory} if bindings is not None else {}
-    group._preflight_fields(frame,plan,identity)
+    reader=inventory_override if inventory_override is not None else _inventory
+    inventory=(lambda dialog:reader(dialog,field_bindings=bindings)) if bindings is not None or inventory_override is not None else reader
+    reader_options={'inventory':inventory} if bindings is not None or inventory_override is not None else {}
+    def preflight():
+        if surface=='survey' and bindings is not None:
+            group.field_identity.preflight(frame,bindings,identity,items_selector='.survey-form-container .form-field-wrapper')
+        else:group._preflight_fields(frame,plan,identity)
+    preflight()
     dialog=open_conditions()
     before=inventory(dialog);wanted=plan['rules']
     current=before
@@ -529,11 +663,20 @@ def configure(page,step):
                     current=_edit(frame,dialog,index,plan['expected_rules'][previous_index],rule,current,identity,**reader_options)
         if not current:stack._empty_state(dialog)
     else:
+        markup_values=plan.get('message_markup',[None]*len(wanted))
+        for index,record in enumerate(before):
+            markup=markup_values[index] if index<len(markup_values) else None
+            if markup is not None and not _matches_message_markup(dialog,index,record,markup):
+                raise Stop('Existing message markup differs from the authored markup; no writes attempted')
         if len(before)>len(wanted) or [record['rule'] for record in before]!=wanted[:len(before)]:
             raise Stop('Existing native outcomes are not the exact authored prefix; reconcile before writing')
-        for rule in wanted[len(before):]:
+        for index in range(len(before),len(wanted)):
+            rule=wanted[index];markup=markup_values[index]
             if inventory(dialog)!=current:raise Stop('Native outcome stack changed after full preflight')
-            current=_author(frame,dialog,rule,current,identity,**reader_options)
+            options={'message_markup':markup} if markup is not None else {}
+            current=_author(frame,dialog,rule,current,identity,**reader_options,**options)
+            if markup is not None and not _matches_message_markup(dialog,index,current[-1],markup):
+                raise Stop('Authored message markup changed in the native card; outer Save not attempted')
     if inventory(dialog)!=current or [record['rule'] for record in current]!=wanted:
         raise Stop('Native outcome stack differs before drawer Save')
     identity();click(_one(dialog.locator('#conditional-logic-save-close'),'Native outcome drawer Save changed'))
@@ -542,9 +685,9 @@ def configure(page,step):
     if changed:
         identity();save=_one(frame.get_by_role('button',name='Save',exact=True),'Native outcome outer Save changed')
         click(save);group._wait_for_form_save(page,save)
-    reopen_editor(page,'form',name,editor_url)
-    frame=form_builder(page)
-    group._preflight_fields(frame,plan,identity)
+    reopen_editor(page,surface,name,editor_url)
+    frame=builder()
+    preflight()
     dialog=open_conditions()
     if inventory(dialog)!=current:
         raise Stop('Native outcomes or protected message markup did not persist after independent reopen; do not repeat the write')
@@ -552,9 +695,10 @@ def configure(page,step):
     click(_one(dialog.locator('#conditional-logic-save-close'),'Reopened native outcome drawer Save changed'))
     dialog.wait_for(state='hidden',timeout=45000)
     return {'status':'CONDITION_OUTCOMES_SAVED_AND_REOPENED' if changed else 'CONDITION_OUTCOMES_REUSED_AND_REOPENED',
-        'kind':'form_condition_outcomes','editor_url':page.url,'rule_count':len(wanted),
+        'kind':surface+'_condition_outcomes','editor_url':page.url,'rule_count':len(wanted),
         'configuration_sha256':configuration_hash(plan),'independent_readback':'VERIFIED',
-        'behavior_verified':False,'submission_verified':False,'disqualification_executed':False}
+        'behavior_verified':False,'submission_verified':False,'disqualification_executed':False,
+        **({'saved_rules':deepcopy(current)} if surface=='survey' else {})}
 
 
 def validate_receipt(result,step):

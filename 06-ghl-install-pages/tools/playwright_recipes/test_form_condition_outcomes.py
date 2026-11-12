@@ -23,6 +23,22 @@ def record(value,markup=None):
 
 
 class SchemaTests(unittest.TestCase):
+    def test_survey_jump_schema_requires_guarded_survey_execution(self):
+        jump={'match':'all','clauses':[{'if_field':'Email','operator':'Is Filled'}],
+              'effect':'Jump To','target_slide':'P2 - Slide 2'}
+        self.assertEqual(native.validate({'rules':[jump]})['rules'],[jump])
+        page=Mock()
+        with self.assertRaises(Stop):native.configure(page,{'rules':[jump]},surface='form')
+        self.assertFalse(page.mock_calls)
+        with self.assertRaises(Stop):native.configure(page,{'rules':[jump]},surface='survey',inventory_override=lambda *a,**k:[])
+        self.assertFalse(page.mock_calls)
+        with self.assertRaises(Stop):native._author(Mock(),Mock(),jump,[],lambda:None)
+
+    def test_message_paragraph_text_normalization_preserves_markup_boundaries(self):
+        html='<p><strong>One</strong></p><p>Two</p>'
+        self.assertEqual(native._message_from_native('One\n\nTwo',html),'One\nTwo')
+        with self.assertRaises(Stop):native._message_from_native('One\n\nDifferent',html)
+
     def test_all_captured_effects_share_exact_single_or_homogeneous_compound_predicates(self):
         values=[rule('Show Field'),rule(native.REDIRECT),rule(native.MESSAGE),rule(native.DISQUALIFY)]
         result=native.validate({'rules':values})
@@ -59,6 +75,18 @@ class SchemaTests(unittest.TestCase):
             with self.subTest(value=value),self.assertRaises(Stop):
                 native.configure(page,{'rules':[value]})
             self.assertFalse(page.mock_calls)
+
+    def test_explicit_markup_matches_message_and_binds_configuration(self):
+        value=rule(native.MESSAGE,message='One\nTwo')
+        html='<p style=""><strong>One</strong></p><p style=""><strong>Two</strong></p>'
+        plan={'rules':[value],'message_markup':[html]}
+        self.assertEqual(native.validate(plan)['message_markup'],[html])
+        self.assertNotEqual(native.configuration_hash(plan),native.configuration_hash({'rules':[value]}))
+        for bad in ([None,None], ['<p>Different</p>'], ['<p style="color:red">One</p>']):
+            with self.subTest(bad=bad), self.assertRaises(Stop):
+                native.validate({'rules':[value],'message_markup':bad})
+        with self.assertRaises(Stop):
+            native.validate({'rules':[value],'expected_rules':[],'message_markup':[html]})
 
     def test_order_plain_copy_mode_and_url_are_all_hash_bound(self):
         base={'rules':[rule(),rule(native.MESSAGE)]}

@@ -1,5 +1,6 @@
 """Real host/compiler/journal boundaries for captured native control additions."""
 from copy import deepcopy
+from contextlib import nullcontext
 import importlib
 import json
 from pathlib import Path
@@ -117,8 +118,10 @@ class FourthControls(unittest.TestCase):
         for kind in KINDS:
             operation,data,module = request(kind);job = compiled(kind)
             native = importlib.import_module('playwright_recipes.'+module)
+            verification=(patch.object(native,'verify_completed',side_effect=lambda page,step,result:native.validate_receipt(result,step))
+                          if kind in ('dropdown','large') else nullcontext(None))
             with self.subTest(kind=kind),tempfile.TemporaryDirectory() as root, \
-                    patch.object(runner,'assert_tenant'),patch.object(native,'configure',return_value=receipt(job,module)) as write:
+                    patch.object(runner,'assert_tenant'),patch.object(native,'configure',return_value=receipt(job,module)) as write, verification as verify:
                 probes = {'lanes':{'playwright':{'available':True}},'api_capabilities':{operation:{
                     'location_id':data['location_id'],'observed_at':time.time(),'supported':True,
                     'provider':'public_api','scope_ok':True,'version':'v3'}}}
@@ -129,6 +132,7 @@ class FourthControls(unittest.TestCase):
                 self.assertEqual(first['status'],'NEEDS_VERIFICATION',first)
                 self.assertEqual(repeated['status'],'NEEDS_VERIFICATION',repeated)
                 write.assert_called_once()
+                if verify is not None:verify.assert_called_once()
                 provider.assert_not_called()
                 self.assertFalse(Path(root,'provider-state.json').exists())
                 saved = json.loads(Path(root,'state.json').read_text())
