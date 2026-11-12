@@ -12,8 +12,10 @@ DSR-105: the studio page used to ask only the production choices, so an
 order placed on the page carried no brief at all -- no offer, no link, no
 audience, no character, no photos -- while an order started in chat did. The
 BRIEF questions close that gap. They are typed answers, not picks, so each
-one carries a single option whose detail starts "Reply with" (the studio reads
-that as "type it in"), and this module stays the one place their text lives.
+one carries a single option whose detail starts "Reply with" on the chat card;
+the studio export marks the screen ``typed`` and sends no option row, so the
+page asks for the words itself (S75-074). This module stays the one place their
+text lives.
 
 Trevor 2026-10-08: the questions arrived "smashed together, no spaces, nothing
 on different lines". Cause: nothing built the card -- the agent wrote it free
@@ -36,9 +38,10 @@ under Telegram's 4096-character limit. ``telegram_payload`` and
 (an argv list, never a shell string, so no shell flattens the newlines).
 
 ``--format studio-json`` (U1) is the studio-shaped export: every question as a
-screen carrying its question text, its price line and its "See a great answer"
-example from the client guide (``studio_json``), so the Drama Studio renders the
-same questions the card asks.
+screen carrying a plain heading, its question text, the example a typed answer
+shows, and the price inputs the page turns into a true price for the length the
+client picks (``studio_json``), so the Drama Studio renders the same questions
+the card asks.
 
 Stdlib only. No network: this module builds text and reads one local guide.
 """
@@ -316,7 +319,7 @@ def _checkpoints_q():
             ],
             "options": [("Everything", "the script, 3 song versions to pick from, and the storyboard."),
                         ("Just the storyboard", "the storyboard, and nothing else."),
-                        ("Nothing - just make it", "I start as soon as the card is approved."),
+                        ("Nothing - just make it", "Work starts as soon as you lock in your order."),
                         ("Choose each one", "answer the script, song and storyboard questions one by one.")],
             "recommended": 0}
 
@@ -334,7 +337,7 @@ def _gate_questions():
          "label": "STORYBOARD APPROVAL",
          "ask": "Do you want to approve the storyboard before any video is made?",
          "options": [("Yes, show me first", "Nothing is generated until you say go."),
-                     ("No, just make it", "I start as soon as the card is approved.")],
+                     ("No, just make it", "Work starts as soon as you lock in your order.")],
          "recommended": 0},
         {"id": "song",
          "why": "The song is the heart of the ad, and it is cheap to change now and costly after video is made.",
@@ -351,7 +354,7 @@ def _gate_questions():
          "label": "SCRIPT APPROVAL",
          "ask": "Do you want to read and approve the script - your story and the song lyrics - before the song is made?",
          "options": [("Yes, show me first", "Nothing is generated until you say go."),
-                     ("No, just make it", "I start as soon as the card is approved.")],
+                     ("No, just make it", "Work starts as soon as you lock in your order.")],
          "recommended": 0},
     ]
 
@@ -1865,16 +1868,17 @@ except ImportError:                                # run as a plain script
 _INTRO = _intro_build(intro_question_count())
 
 
-# --- U1: the studio-shaped export (studio-json) --------------------------------
-#: The Drama Studio renders one screen per intake question, and each screen shows
-#: three things: the question text, the price line (when that screen carries one)
-#: and a "See a great answer" example from the client guide. This export hands
-#: those to the studio from the SAME question list the card uses, so the card and
-#: the studio can never disagree about a question or a price.
+# --- U1 / S75-074: the studio-shaped export (studio-json) ---------------------
+#: The Drama Studio renders one screen per intake question: a plain heading, the
+#: question text, the example a typed answer shows, and -- for a priced option --
+#: the price inputs the page turns into a true price for the length the client
+#: picks. This export hands those to the studio from the SAME question list the
+#: card uses, so the card and the studio can never disagree about a question.
 #:
-#: A screen missing its question text or its example is a broken screen, not a
-#: thin one: studio_json REFUSES it (StudioExportError -> exit 1) instead of
-#: writing a json file the studio would render half-empty.
+#: A typed screen with no example, or a choice screen with no question text or
+#: no options, is a broken screen, not a thin one: studio_json REFUSES it
+#: (StudioExportError -> exit 1) instead of writing a json file the studio would
+#: render half-empty.
 
 #: question id -> the Client Guide STEP that carries that question's example.
 GUIDE_STEP = {
@@ -1892,16 +1896,60 @@ GUIDE_STEP = {
     "checkpoints": 24,
 }
 
-#: ponytail: the CHECKPOINTS example until lane F adds STEP 24 to the guide;
-#: the guide wins the moment it carries one. Upgrade path: delete this constant
-#: when references/CLIENT-GUIDE.md has STEP 24 with a Great answer line.
-CHECKPOINTS_GREAT_ANSWER = ('"1. Everything." Show me the script, three song versions '
-                            'and the storyboard before any video money is spent.')
-
 _HERE = os.path.dirname(os.path.abspath(__file__))
 CLIENT_GUIDE = os.path.join(
     os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(_HERE)))),
     "references", "CLIENT-GUIDE.md")
+
+#: question id -> the heading the page shows (S75-074 step 1). The page never
+#: turns the card's shouting LABEL into a heading.
+STUDIO_TITLES = {
+    "purpose": "What is this video for?",
+    "permission": "Your client's permission",
+    "where": "Where it will run",
+    "offer": "What you are promoting",
+    "link": "Where to send people",
+    "audience": "Who it is for",
+    "character": "Who stars in it",
+    "photos": "Photos and logos",
+    "models": "Who builds and who checks",
+    "length": "How long",
+    "episode_length": "How long",
+    "shape": "Tall or wide",
+    "music": "The sound",
+    "music_full": "The sound",
+    "look": "The look",
+    "agnes": "Your Agnes plan",
+    "model": "Picture quality",
+    "spend": "Your spending limit",
+    #: the three approvals CHECKPOINTS replaces all say the same thing
+    "checkpoints": "What you want to see first",
+    "script": "What you want to see first",
+    "song": "What you want to see first",
+    "storyboard": "What you want to see first",
+}
+
+#: The exact example a typed screen shows (S75-074 step 3). Every other typed
+#: screen takes its example from the Client Guide; a choice screen shows none.
+STUDIO_EXAMPLES = {
+    "link": '"https://example.com/speaker"',
+    "photos": '"My logo and one product photo. I will send them after this."',
+    "character": '"Tasha, a warm 40-year-old braider with locs, in a denim apron."',
+}
+
+#: S75-074 step 4: BUDGET in the page's own words. The chat card keeps its own
+#: wording (``spend_question``); this is the exporter half the page renders.
+STUDIO_BUDGET_ASK = ("What is the most this video may spend? Work stops and asks "
+                     "you before going over.")
+STUDIO_BUDGET_USE = "Use the recommended limit - about %s"
+STUDIO_BUDGET_OWN = "Set my own limit"
+
+#: The price function adds this many keyframes on top of the one-per-shot count
+#: (the cover and the character plates). The page needs it to reproduce the
+#: total exactly.
+#: ponytail: a constant because the price function's plan is fixed today; derive
+#: it from card_render's line items once the keyframe plan varies by length.
+_KEYFRAME_EXTRA = 7
 
 
 class StudioExportError(ValueError):
@@ -1931,56 +1979,147 @@ def _great_answers(path=None):
     return out
 
 
-def _studio_option(q, n, opt):
-    """One option as the studio sees it: number, label, one sentence, its own
-    price when the option has one, and whether it is the recommended pick."""
+def _rate_fields(n):
+    """The price inputs the page turns into a true price for the length the
+    client picks (S75-059 step 1), read from the same table and the same policy
+    the one price function reads."""
+    from catalog_calculator import card_render as CR
+    vm = _vm()
+    row = next((m for m in vm.MODELS if m.get("n") == n), None)
+    if row is None:
+        return {}
+    return {"rate_usd": row["rate_usd"], "unit": row["unit"],
+            "shot_s": row["shot_s"],
+            "keyframe_usd": vm.RATES["keyframe_usd"],
+            "song_usd": vm.RATES["song_usd"],
+            #: the live planning allowance, not the stale figure in the table
+            "redo_rate": CR.RETAKE_RATE,
+            "keyframe_count_extra": _KEYFRAME_EXTRA}
+
+
+def _recommended_model_n():
+    """The model row the card marks recommended (the table's own default)."""
+    models = _vm().require_choices()
+    return next((m["n"] for m in models if m.get("recommended")), models[0]["n"])
+
+
+def _recommended_limit_usd(length_label="60 seconds"):
+    """The card total for the recommended model at the card's default length,
+    from the one price function. None when the card cannot price it."""
+    from catalog_calculator import card_render as CR
+    try:
+        return CR.quote(_recommended_model_n(), length_label)
+    except (KeyError, ValueError, TypeError):
+        return None
+
+
+def _studio_title(q):
+    """The page heading for a screen (S75-074 step 1), never the LABEL."""
+    return STUDIO_TITLES.get(q.get("id")) or str(q.get("label") or "").title()
+
+
+def _studio_example(q, answers):
+    """The "great answer" a screen shows, or None (S75-074 step 3).
+
+    A choice screen shows none: the option text is the answer. A typed screen
+    shows its exact page example, or the Client Guide's example for its step."""
+    if not q.get("free_text"):
+        return None
+    if q.get("id") in STUDIO_EXAMPLES:
+        return STUDIO_EXAMPLES[q["id"]]
+    step = GUIDE_STEP.get(q.get("id"))
+    return answers.get(step) if step is not None else None
+
+
+def _studio_option(q, n, opt, priced=False):
+    """One option as the studio sees it: number, text, one sentence, whether it
+    is the recommended pick, its sample link when one exists, and -- for a
+    priced option -- the price inputs instead of a fixed dollar string."""
     text = opt[0] if isinstance(opt, (tuple, list)) else str(opt)
     detail = opt[1] if isinstance(opt, (tuple, list)) and len(opt) > 1 else ""
-    values = q.get("values")
-    raw = (values[n - 1] if isinstance(values, list) and n - 1 < len(values)
-           else values.get(n) if isinstance(values, dict) else None)
+    if priced and " - about $" in detail:
+        #: the card prices this option for its default length; the page prices
+        #: the length the client picks, so the fixed figure never travels.
+        detail = detail.split(" - about $")[0]
     rec = q.get("recommended")
-    return {"n": n, "text": text, "detail": detail or "",
-            "price": None if raw is None else _usd(raw),
-            "recommended": rec is not None and n - 1 == rec}
+    out = {"n": n, "text": text, "detail": detail or "", "price": None,
+           "recommended": rec is not None and n - 1 == rec}
+    if priced:
+        out.update(_rate_fields(n))
+    links = q.get("links") or {}
+    if isinstance(links, dict) and n in links:
+        out["sample_url"] = links[n]
+    return out
 
 
 def _studio_screen(q, answers):
     """One question as the studio sees it. Raises StudioExportError when a
-    screen has no question text, no example, or no options -- a broken screen,
-    never a thin one."""
-    ask = q.get("ask") or ""
+    screen has no question text, a typed screen has no example, or a choice
+    screen has no options -- a broken screen, never a thin one."""
+    ask = str(q.get("ask") or "")
     if not ask:
         raise StudioExportError(
             "STUDIO_JSON_FIELD_MISSING id=%r field=question" % q.get("id"))
-    step = GUIDE_STEP.get(q.get("id"))
-    example = answers.get(step) if step is not None else None
-    if not example and q.get("id") == "checkpoints":
-        example = CHECKPOINTS_GREAT_ANSWER
-    if not example:
+    qid = q.get("id")
+    typed = bool(q.get("free_text"))
+    #: S75-059 step 2: the fixed "60-second ad ... 50% redo allowance" sentence
+    #: is gone from the screen the page draws; the page prices the length it is
+    #: given instead.
+    priced = qid == "model"
+    if priced and q.get("price"):
+        ask = ask.replace(str(q["price"]), "").strip()
+    example = _studio_example(q, answers)
+    if typed and not example:
         raise StudioExportError(
-            "STUDIO_JSON_FIELD_MISSING id=%r field=example" % q.get("id"))
-    options = q.get("options") or []
-    if not options:
+            "STUDIO_JSON_FIELD_MISSING id=%r field=example" % qid)
+    options = [] if typed else [_studio_option(q, n, o, priced=priced)
+                                for n, o in enumerate(q.get("options") or [], 1)]
+    if not typed and not options:
         raise StudioExportError(
-            "STUDIO_JSON_FIELD_MISSING id=%r field=options" % q.get("id"))
+            "STUDIO_JSON_FIELD_MISSING id=%r field=options" % qid)
     screen = {
-        "id": q.get("id"), "label": q.get("label", ""), "question": ask,
-        "price": q.get("price"),
+        "id": qid, "label": q.get("label", ""), "title": _studio_title(q),
+        "question": ask, "price": None, "why": q.get("why"),
         "example": example,
-        #: DSR-105: a brief question's answer is typed, not picked. The
-        #: page reads this rather than sniffing the option text, so a
-        #: reworded hint can never turn a text box back into a menu.
-        "typed": bool(q.get("free_text")),
+        #: DSR-105 / S75-074 step 2: the page asks for the words itself, so a
+        #: typed screen carries no option row at all.
+        "typed": typed,
         #: S75-006: a screen the card never asks one by one. The page shows it
         #: behind "More options" and still sends its default answer in order.
         "optional": bool(q.get("optional")),
-        "options": [_studio_option(q, n, o) for n, o in enumerate(options, 1)],
+        "options": options,
     }
-    if q["id"] == "agnes":
+    if qid == "agnes":
+        #: S75-020 / S75-074 step 7: the page marks an Agnes option recommended
+        #: only when the client's remembered answer is yes -- and this export
+        #: reads no per-machine state, so here it marks none.
+        for o in screen["options"]:
+            o["recommended"] = False
         from choice_card.intake_card.agnes_explanation import lines as explanation_lines
         screen["supplementary_explanation"] = explanation_lines()
     return screen
+
+
+def _studio_spend_screen(q):
+    """BUDGET in the page's own words (S75-074 step 4): the computed
+    recommended limit first, the client's own limit second."""
+    limit = _recommended_limit_usd()
+    options = []
+    if limit is not None:
+        options.append({
+            "n": 1, "text": STUDIO_BUDGET_USE % _usd(limit),
+            "detail": ("the estimated price for your video, including a %s "
+                       "allowance for redoing shots" % BC.label()),
+            "price": None, "recommended": True,
+            **_rate_fields(_recommended_model_n())})
+    options.append({"n": len(options) + 1, "text": STUDIO_BUDGET_OWN,
+                    "detail": "type a dollar amount, like $25",
+                    "price": None, "recommended": False})
+    return {"id": "spend", "label": q.get("label", "BUDGET"),
+            "title": _studio_title(q), "question": STUDIO_BUDGET_ASK,
+            "why": q.get("why"), "price": None, "example": None,
+            "typed": False, "optional": bool(q.get("optional")),
+            "options": options}
 
 
 #: W1-card-questions-U1 (SPEC B1): which screens the studio page shows, and on
@@ -2014,10 +2153,16 @@ def _conditional_questions():
             _where_q(), _agnes_q("unknown")]
 
 
+def _studio_for(q, answers):
+    """One question as its studio screen; BUDGET in the page's own words."""
+    return _studio_spend_screen(q) if q.get("id") == "spend" else _studio_screen(q, answers)
+
+
 def studio_questions(questions=None, guide=None, conditional=False):
-    """The card's questions as studio screens: id, label, question, price,
-    example, options. Raises StudioExportError when a screen has no question
-    text, no example, or no options.
+    """The card's questions as studio screens: id, label, title, question, why,
+    example, typed, options. Raises StudioExportError when a screen has no
+    question text, a typed screen has no example, or a choice screen has no
+    options.
 
     conditional (SPEC B1) adds the purpose screens -- which the card only asks
     once it knows what the video is for -- each with the ``shows_when`` the page
@@ -2026,13 +2171,13 @@ def studio_questions(questions=None, guide=None, conditional=False):
     """
     qs = QUESTIONS if questions is None else questions
     answers = _great_answers(guide)
-    out = [_studio_screen(q, answers) for q in qs]
+    out = [_studio_for(q, answers) for q in qs]
     if not conditional:
         return out
     for screen in out:
         screen["shows_when"] = _SHOWS_WHEN.get(screen["id"], _EVERY_PURPOSE)
     for q in _conditional_questions():
-        screen = _studio_screen(q, answers)
+        screen = _studio_for(q, answers)
         screen["shows_when"] = _SHOWS_WHEN[screen["id"]]
         out.append(screen)
     return out
@@ -2040,7 +2185,7 @@ def studio_questions(questions=None, guide=None, conditional=False):
 
 def studio_json(questions=None, guide=None, conditional=False):
     """The studio-json envelope (version 0): every intake question as a studio
-    screen carrying its question, price and example."""
+    screen carrying its heading, question, example and price inputs."""
     screens = studio_questions(questions, guide, conditional)
     return {"format": "studio-json", "version": 0,
             "question_count": len(screens), "questions": screens}

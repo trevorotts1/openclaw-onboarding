@@ -28,7 +28,9 @@ QUESTION_SHA256 = {
     "photos": "fca6e105bd1fd50fad8b3e69e5fbfb587d1903d6c197aa99cda43ca7293cc590",
     "models": "919c74f6bc6b3d43f5fedf2caa75fec466d3149b5f541fcb631f332f25bf491e",
     "music": "951199b62baeef6579fa39434dc9a42404ccdbbd941f75329d7c70c9d35108e5",
-    "checkpoints": "ada65d29fa96212e311bec9aa953e6b79a48532e0f8f94d5e53f41c92428de70",
+    # Re-pinned for S75-074, which replaces "I start as soon as the card is
+    # approved." with plain client words on the CHECKPOINTS screen.
+    "checkpoints": "ddd7d0c083f4276a3e6896eab1e13a64c7e6108b844e61e00bd59f209612c812",
     "look": "0d828d83ec361f2f26f19ca0d5c9361cddf3f6ecbb74fbf590fbcae2764b58dd",
     "spend": "5cacf6bad2179a77011f9f7d865b36d7c08ecdcecda267968a9678a902091d85",
     "storyboard": "249a2ac08375b9b6e79ca85e0a0d46699fe18d20a90ada328d54423ec4bac042",
