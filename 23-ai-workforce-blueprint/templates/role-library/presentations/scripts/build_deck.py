@@ -11490,8 +11490,11 @@ def _chk_slide_craft(run_dir: Path, slides_path: Optional[Path] = None) -> str:
 # yet no registry row describes it, so nothing proves the verdicts gate
 # closeout. These two rows close that hole AT THE CLOSEOUT, where the park
 # condition is binding: at P-IMAGE-QC / P-PROMPT-QC attestation a MISSING
-# image_grounding / representation_casting sub-verdict PARKS the run for human
-# review — it cannot pass and cannot be skipped silently.
+# human verdict — PD-206a (decision D-34): working/qc/human-review/
+# image_grounding.json and working/qc/human-review/representation_casting.json,
+# each {pass, reviewed_by, reviewed_at, note}, NOT a block embedded in the
+# graded report (editing a report breaks its stamp; finding PD-306) — PARKS the
+# run for human review: it cannot pass and cannot be skipped silently.
 #
 # The two thin wrappers below are the manifest's py_symbol for each closeout
 # gate (lockstep: same check function, one delegation each, no re-derived
@@ -11506,7 +11509,9 @@ def _chk_slide_craft(run_dir: Path, slides_path: Optional[Path] = None) -> str:
 def _chk_image_grounding_verdict(run_dir: Path, slides_path: Optional[Path] = None) -> str:
     """FIX 92 closeout gate for AF-IMAGE-GROUNDING(-PARK): delegate to
     phase_verifiers._verify_image_grounding (the image-grounding-steward
-    sub-verifier that owns P-IMAGE-QC). Returns "" on pass (or legitimate
+    sub-verifier that owns P-IMAGE-QC). PD-206a: that verifier reads the human
+    verdict from working/qc/human-review/image_grounding.json, so the closeout
+    gate reads the same file by the same code. Returns "" on pass (or legitimate
     pre-report defer); a non-empty AF-IMAGE-GROUNDING* reason on fail/park."""
     try:
         import phase_verifiers as _pv92
@@ -11523,8 +11528,11 @@ def _chk_image_grounding_verdict(run_dir: Path, slides_path: Optional[Path] = No
 def _chk_representation_casting_verdict(run_dir: Path, slides_path: Optional[Path] = None) -> str:
     """FIX 92 closeout gate for AF-CASTING(-PARK / -MIX-PARITY): delegate to
     phase_verifiers._verify_representation_casting (the representation-casting-
-    director sub-verifier that owns P-PROMPT-QC). Returns "" on pass (or
-    legitimate pre-report defer); a non-empty AF-CASTING* reason on fail/park."""
+    director sub-verifier that owns P-PROMPT-QC). PD-206a: that verifier reads
+    the human verdict from working/qc/human-review/representation_casting.json,
+    so the closeout gate reads the same file by the same code. Returns "" on
+    pass (or legitimate pre-report defer); a non-empty AF-CASTING* reason on
+    fail/park."""
     try:
         import phase_verifiers as _pv92
     except ImportError as exc:
@@ -13788,15 +13796,17 @@ def run_postflight_gate(bundle_dir: Path, ledger_path: Path, deck_slug: str,
                 run_dir, "AF-TELEPROMPTER-UNPUBLISHED", tele_pub)
 
     # --- FIX 92: GROUNDING + REPRESENTATION closeout sub-checks ---
-    # (AF-IMAGE-GROUNDING-PARK / AF-CASTING-PARK). The FIX 16 sub-verdicts are
+    # (AF-IMAGE-GROUNDING-PARK / AF-CASTING-PARK). The FIX 16 human verdicts are
     # REQUIRED at closeout exactly as at phase attestation: a run whose
-    # image_qc_report.json carries no image_grounding verdict, or whose
-    # prompt_qc_report.json carries no representation_casting verdict, PARKS
-    # here instead of shipping — the deck cannot be reported complete while
-    # image-grounding-steward / representation-casting-director have not
-    # recorded their human verdicts. Both wrappers delegate to the same
+    # working/qc/human-review/image_grounding.json or
+    # working/qc/human-review/representation_casting.json is absent (PD-206a,
+    # decision D-34: each verdict is its own file, never a block embedded in the
+    # graded report) PARKS here instead of shipping — the deck cannot be reported
+    # complete while image-grounding-steward / representation-casting-director
+    # have not recorded their human verdicts. Both wrappers delegate to the same
     # phase_verifiers sub-verifiers the P-IMAGE-QC / P-PROMPT-QC attestations
-    # use, so the closeout and the attestation can never drift apart.
+    # use, so the closeout and the attestation can never drift apart — they read
+    # the same verdict file by the same code.
     # Pre-QC defers are preserved by the sub-verifiers themselves: a run dir
     # with no render prompts / no research anchors / no intake mix yields only
     # the PARK reason, which at closeout (render+assembly already happened) is
@@ -13806,9 +13816,10 @@ def run_postflight_gate(bundle_dir: Path, ledger_path: Path, deck_slug: str,
         if grounding_reason:
             missing_or_short.append((
                 "deck_pptx",
-                "working/qc/image_qc_report.json",
-                "image-grounding-steward verdict recorded in the image-QC report "
-                "(image_grounding={pass, reviewed_by}; AF-IMAGE-GROUNDING-PARK)",
+                "working/qc/human-review/image_grounding.json",
+                "image-grounding-steward human verdict recorded in "
+                "working/qc/human-review/image_grounding.json "
+                "(pass, reviewed_by, reviewed_at, note; AF-IMAGE-GROUNDING-PARK)",
                 0, 0, "GROUNDING_PARK"))
             update_deliverable_status(ledger_path, "deck_pptx", "failed",
                                       error=grounding_reason)
@@ -13816,9 +13827,10 @@ def run_postflight_gate(bundle_dir: Path, ledger_path: Path, deck_slug: str,
         if casting_reason:
             missing_or_short.append((
                 "deck_pptx",
-                "working/qc/prompt_qc_report.json",
-                "representation-casting-director verdict recorded in the prompt-QC "
-                "report (representation_casting={pass, reviewed_by}; AF-CASTING-PARK)",
+                "working/qc/human-review/representation_casting.json",
+                "representation-casting-director human verdict recorded in "
+                "working/qc/human-review/representation_casting.json "
+                "(pass, reviewed_by, reviewed_at, note; AF-CASTING-PARK)",
                 0, 0, "CASTING_PARK"))
             update_deliverable_status(ledger_path, "deck_pptx", "failed",
                                       error=casting_reason)
