@@ -58,6 +58,10 @@ THIS SUITE PROVES:
       LONGER caught (mutated verdict flips to PASS) -> proves U2 exercises the
       real coverage logic, not a rubber-stamp. Restore -> U2's gap is caught
       again.
+  U6  COUNTER RULE (BU-02 / WF-002), both directions, against one PASSING
+      fixture: a counter frozen BELOW the transcript still PASSES (the lag is a
+      warning), while a counter claiming MORE than the transcript holds HARD
+      FAILS (fabricated progress).
 
 NEVER prints transcript answer content beyond short synthetic fixture strings
 that are never real client business answers — only counts, ids, and verdicts.
@@ -306,10 +310,19 @@ def main():
             },
         )
         raw_blocks = full_transcript.count("**Q:**")
-        state_path_1 = tmproot / "state1.json"
         # Counter consistent with THIS fixture's own transcript (see _base_state).
+        # BU-02/WF-002: the state counter is compared against DISTINCT question
+        # texts, so the drill rounds above (customer_feeling x6, brand_voice x3)
+        # add answered ROUNDS but no new question. A counter at raw_blocks would
+        # now claim MORE questions than the transcript holds and be REFUSED —
+        # the opposite of what U1 proves — so the consistent counter is the
+        # distinct-question count.
+        distinct_questions = len({
+            line for line in full_transcript.splitlines() if line.startswith("**Q:**")
+        })
+        state_path_1 = tmproot / "state1.json"
         state_path_1.write_text(
-            json.dumps(_base_state("interview-web", last_question_number=raw_blocks)),
+            json.dumps(_base_state("interview-web", last_question_number=distinct_questions)),
             encoding="utf-8",
         )
         transcript_path_1 = tmproot / "transcript1.md"
@@ -480,31 +493,50 @@ def main():
         else:
             bad(f"restore did not return to catching the real gap: verdict={verdict_restored}")
 
-        # ── U6: THE DISAGREEMENT HARD FAIL STILL BITES ───────────────────────
-        # Guard for the fixture change in _base_state(). The old fixture pinned
-        # lastQuestionNumber=11 for every case, which meant U1/U4 were failing on
-        # the counter-vs-transcript DISAGREEMENT rather than on anything this
-        # suite asserts. Those two cases now carry a consistent counter -- so this
-        # case exists to prove that consistency did NOT come from the guard going
-        # soft. Same PASSING fixture as U4, counter frozen back to 11: it MUST
-        # hard-fail, and it must fail specifically on the disagreement.
-        print("\n[U6] anti-regression: a frozen lastQuestionNumber still HARD FAILS "
-              "(the 2026-06-10 anti-fabrication guard is intact, not weakened by the U1/U4 fixture fix)")
-        state_path_6 = tmproot / "state6.json"
-        state_path_6.write_text(
+        # ── U6: THE COUNTER RULE IS DIRECTIONAL (BU-02 / WF-002) ─────────────
+        # A counter that sits BELOW the transcript is the progress-writer bug
+        # class, not a missing answer: it must WARN and still PASS. A counter
+        # that claims MORE than the transcript holds (by more than 3) is
+        # fabricated progress: it must HARD FAIL. Both directions run against
+        # U4's own PASSING transcript, so only the counter differs.
+        print("\n[U6a] a counter frozen BELOW the transcript still PASSES "
+              "(a lagging counter is a warning, never a refusal)")
+        state_path_6a = tmproot / "state6a.json"
+        state_path_6a.write_text(
             json.dumps(_base_state("Rescue Agent", last_question_number=11)),
             encoding="utf-8",
         )
-        details_6 = run_qc_cli(transcript_path_4, state_path_6)  # U4's PASSING transcript
-        hard_fail_text_6 = " ".join(details_6.get("hardFailures", []))
-        if details_6.get("verdict") == "FAIL" and "disagree" in hard_fail_text_6:
-            ok(f"frozen counter (11) against the same {details_6.get('questionCount')}-question "
-               f"transcript that PASSES in U4 still HARD FAILS on the disagreement -- the guard "
-               f"has teeth and the U1/U4 fixture fix did not launder it")
+        details_6a = run_qc_cli(transcript_path_4, state_path_6a)  # U4's PASSING transcript
+        warn_text_6a = " ".join(details_6a.get("warnings", []))
+        hard_fail_text_6a = " ".join(details_6a.get("hardFailures", []))
+        if (details_6a.get("verdict") == "PASS"
+                and "behind the transcript" in warn_text_6a.lower()
+                and "more questions than the transcript holds" not in hard_fail_text_6a):
+            ok(f"counter below the transcript ({details_6a.get('questionCount')} answered, "
+               f"counter 11) PASSES with the lag surfaced as a warning — a frozen counter "
+               f"no longer makes a complete interview unmarkable")
         else:
-            bad(f"the counter-vs-transcript disagreement hard fail did NOT fire on a frozen "
-                f"counter -- the guard may have been weakened. verdict={details_6.get('verdict')!r} "
-                f"hardFailures={details_6.get('hardFailures')}")
+            bad(f"a counter BELOW the transcript must not refuse; got "
+                f"verdict={details_6a.get('verdict')!r} hardFailures={details_6a.get('hardFailures')} "
+                f"warnings={details_6a.get('warnings')}")
+
+        print("\n[U6b] a counter that claims MORE than the transcript still HARD FAILS "
+              "(the fabricated-progress guard keeps its teeth)")
+        state_path_6b = tmproot / "state6b.json"
+        state_path_6b.write_text(
+            json.dumps(_base_state("Rescue Agent", last_question_number=99)),
+            encoding="utf-8",
+        )
+        details_6b = run_qc_cli(transcript_path_4, state_path_6b)
+        hard_fail_text_6b = " ".join(details_6b.get("hardFailures", []))
+        if (details_6b.get("verdict") == "FAIL"
+                and "more questions than the transcript holds" in hard_fail_text_6b):
+            ok(f"a counter claiming far more than the {details_6b.get('questionCount')}-answer "
+               f"transcript still HARD FAILS on the counter rule — the guard was narrowed in "
+               f"direction only, never weakened")
+        else:
+            bad(f"a counter ABOVE the transcript must hard-fail on the counter rule; got "
+                f"verdict={details_6b.get('verdict')!r} hardFailures={details_6b.get('hardFailures')}")
 
     finally:
         shutil.rmtree(tmproot, ignore_errors=True)
