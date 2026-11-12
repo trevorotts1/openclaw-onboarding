@@ -1158,6 +1158,11 @@ def _record_distinct_versions(results, run_dir):
     acc = _SD.acceptance_from_run(run_dir)
     if not acc.get("applicable"):
         return acc
+    if _SD.acceptance_refusal(run_dir, "fan-in") is not None:
+        # S75-052 QC: a held boundary (an unjudged take, or no passing
+        # version) must never be papered over by rewriting records here.
+        # D4 is computed only once the whole-run hold is clear.
+        return acc
     verdict, detail = _distinct_versions_verdict(results)
     for r in results or []:
         vid = str(((r or {}).get("variant") or {}).get("id") or "")
