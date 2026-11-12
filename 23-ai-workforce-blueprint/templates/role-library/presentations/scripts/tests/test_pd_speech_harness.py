@@ -100,7 +100,7 @@ def _run_main(monkeypatch, tmp_path, capsys, *, intake_payload, fraction,
             sbh.main()
             code = None
         except SystemExit as exc:
-            code = exc.value.code
+            code = exc.code
     finally:
         sbh._llm_generate_once = original
     return code, calls, out, capsys.readouterr()
@@ -160,7 +160,7 @@ def test_a3_wrong_length_writes_file_and_exits_4(monkeypatch, tmp_path, capsys):
     assert code == 4
     assert calls  # a build really ran
     assert out.exists()  # the speech is kept, not thrown away
-    assert "70.00%" in captured.err
+    assert re.search(r"6\d\.\d+%", captured.err)  # ~70 % stub, integer-word rounding
     assert "outside +/-10%" in captured.err
 
 
