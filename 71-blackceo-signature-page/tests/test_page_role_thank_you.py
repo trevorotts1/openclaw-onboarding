@@ -294,6 +294,18 @@ class PromptTests(RunCase):
             access = self.prompt(stage, 3, width, request)
             self.assertIn("never an invented product, bonus or membership", access, stage)
 
+    def test_steps_follow_the_design_style_and_manage_purchase_is_never_invented(self):
+        # Style A runs numbered lists as full-width rows with square-cornered blocks; a horizontal
+        # circle timeline broke the client's style. The manage-purchase button has no destination
+        # until render time, so it is a labelled grey bar, never a note about an undrawn element.
+        for stage, width in (("desktop-wireframe", 1440), ("mobile-tablet", 390)):
+            request = self.build(stage=stage)
+            steps = self.prompt(stage, 4, width, request)
+            self.assertIn("Style A (Block) runs them as full-width numbered rows" if width > 768
+                          else "square-cornered number blocks with hairline rules", steps, stage)
+            close = self.prompt(stage, 5, width, request)
+            self.assertIn("grey bar labelled MANAGE PURCHASE", close, stage)
+
     def test_every_stage_and_platform_carries_the_pages_own_structure(self):
         for stage, widths in (("desktop-wireframe", (1440,)), ("mobile-tablet", (390,)),
                               ("visual-mockup", (1440, 390)), ("final-mockups", (1440, 390))):
@@ -324,7 +336,7 @@ class PromptTests(RunCase):
             self.assertNotIn("Each pain section", first)
             self.assertNotIn("founder portrait plate", first)
             steps = self.prompt(stage, 4, width, request)
-            self.assertIn("between four and six step badges", steps)
+            self.assertIn("between four and six numbered steps", steps)
             self.assertNotIn("exactly seven step badges", steps)
             for index in (1, 2, 3, 5):
                 self.assertNotIn("STEPS —", self.prompt(stage, index, width, request))
@@ -445,6 +457,12 @@ class WireframeGateTests(unittest.TestCase):
     def test_the_thank_you_page_has_no_landing_height_floor(self):
         proc = self.run_gate(page_role="thank_you")
         self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+
+    def test_a_role_spec_page_has_no_landing_height_floor(self):
+        # checkout's five sections live in roles/checkout.json, which has no wireframe block; the
+        # landing sheet's 16,736 px is never its floor (a five-section page cannot reach it)
+        proc = self.run_gate(page_role="checkout")
+        self.assertNotIn("16736px floor", proc.stdout + proc.stderr)
 
 
 class PipelineTests(RunCase):

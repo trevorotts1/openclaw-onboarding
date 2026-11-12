@@ -133,15 +133,32 @@ def load_brand(run_dir=None, explicit=None) -> dict:
     return {}
 
 
-def composition_cues(brand: dict | None) -> dict:
-    """{preferred, forbidden, imagery_direction} from the brand's composition_cues;
-    unknown treatment ids are dropped so a typo never silently forbids nothing
-    or everything."""
+# A design style whose photos are rectangles only (references/design-styles.json circle_slots
+# "forbidden", Style A Block) cannot take a shaped crop: "No circle crops, no rounded corners on
+# photos" (references/design-styles.md). Its treatments are forbidden like a brand's, so the budget
+# waives the shaped-crop and circle minimums instead of demanding a crop the style refuses.
+_SHAPED_TREATMENTS = ("mask-circle", "mask-arch", "mask-pill", "mask-diagonal")
+
+
+def style_forbidden(style_id) -> list:
+    """Treatment ids the client's design style forbids ([] for an unknown or unset style)."""
+    try:
+        data = json.loads((SKILL_ROOT / "references" / "design-styles.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return []
+    entry = next((s for s in data.get("styles") or [] if s.get("id") == style_id), None)
+    return list(_SHAPED_TREATMENTS) if entry and entry.get("circle_slots") == "forbidden" else []
+
+
+def composition_cues(brand: dict | None, style_id=None) -> dict:
+    """{preferred, forbidden, imagery_direction} from the brand's composition_cues, plus the shaped
+    crops the client's design style forbids; unknown treatment ids are dropped so a typo never
+    silently forbids nothing or everything."""
     raw = (brand or {}).get("composition_cues")
     raw = raw if isinstance(raw, dict) else {}
     known = treatments()
     pick = lambda key: [t for t in raw.get(key) or [] if isinstance(t, str) and t in known]  # noqa: E731
-    forbidden = set(pick("forbidden"))
+    forbidden = set(pick("forbidden")) | set(style_forbidden(style_id))
     return {"preferred": [t for t in pick("preferred") if t not in forbidden],
             "forbidden": sorted(forbidden),
             "imagery_direction": str(raw.get("imagery_direction") or "").strip()}
