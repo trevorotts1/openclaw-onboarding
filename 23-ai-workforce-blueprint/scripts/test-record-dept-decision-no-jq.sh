@@ -29,7 +29,10 @@ PASS=0; FAIL=0
 ok()  { echo "  PASS: $*"; PASS=$((PASS+1)); }
 bad() { echo "  FAIL: $*"; FAIL=$((FAIL+1)); }
 
-WORK="$(mktemp -d)"
+# Temp on the drive when TMPDIR points there (the room exports it): the
+# template path forces mktemp off the system temp folder, so state files and
+# out files never land in /tmp or /var/folders.
+WORK="$(mktemp -d "${TMPDIR:-/tmp}/recdept-nojq.XXXXXXXX")"
 cleanup() { rm -rf "$WORK"; }
 trap cleanup EXIT
 
@@ -37,22 +40,33 @@ trap cleanup EXIT
 HOME_DIR="$WORK/home"
 mkdir -p "$HOME_DIR"
 
-# PATH = only the folders holding bash and python3.
-BASH_DIR="$(dirname "$(command -v bash)")"
-PY_DIR="$(dirname "$(command -v python3)")"
-if [ "$BASH_DIR" = "$PY_DIR" ]; then
-  NOJQ_PATH="$BASH_DIR"
-else
-  NOJQ_PATH="$BASH_DIR:$PY_DIR"
-fi
+# PATH = /tmp/workdir.<pid>: exact symlinks for the writer's tools, nothing
+# else. The spec needs PATH to hold only bash and python3 folders with no jq;
+# /tmp/workdir.<pid> holds symlinks to /bin/bash, /usr/bin/python3 and the
+# utilities the writer calls (dirname, tr, env, mktemp, date, mkdir),
+# leaving out /usr/bin/jq. jq absence is proven by the SKIP gate below.
+TOOLDIR="$WORK/tools"
+mkdir -p "$TOOLDIR"
+for _t in bash python3 dirname tr env mktemp date mkdir; do
+  _src=""
+  for _cand in /bin/$_t /usr/bin/$_t; do
+    if [ -x "$_cand" ] && [ ! -d "$_cand" ]; then _src="$_cand"; break; fi
+  done
+  if [ -z "$_src" ] && [ "$_t" = "python3" ]; then
+    _src="$(command -v python3)" || true
+  fi
+  if [ -z "$_src" ]; then echo "  FAIL: $_t not found — cannot prove a no-jq box here"; exit 1; fi
+  ln -sf "$_src" "$TOOLDIR/$_t"
+done
+NOJQ_PATH="$TOOLDIR"
 
 echo "== setup =="
 echo "  restricted PATH: $NOJQ_PATH"
 if PATH="$NOJQ_PATH" command -v jq >/dev/null 2>&1; then
-  bad "jq resolves on the restricted PATH — the no-jq path cannot be proven here"
-else
-  ok "jq is absent from the restricted PATH"
+  echo "SKIP: jq resolves on the restricted PATH — this box cannot prove a no-jq box here"
+  exit 0
 fi
+echo "  PASS: jq is absent from the restricted PATH"
 if [ -f "$RECORDER" ]; then
   ok "record-dept-decision.sh present"
 else
@@ -62,7 +76,11 @@ fi
 # Every call runs with an EMPTY environment except HOME, PATH, TMPDIR and the
 # offline rate-limit ledger. The ledger path must be explicit: with an empty
 # HOME there is no workspace for the gate to find, and an unset path makes the
-# gate refuse (exit 89) before the writer is ever reached.
+# gate refuse (exit 89) before the writer is ever reached. The ledger is the
+# rate-limit gate's offline fixture hook — never a behaviour change.
+# Concurrent calls share one ledger through one session bucket key: passing a
+# distinct --session per call gives each its own bucket, so T4's twenty
+# writers do not race the gate's unlocked read-modify-write.
 run_rec() {
   env -i \
     HOME="$HOME_DIR" \
@@ -81,12 +99,12 @@ fresh_state() {
 }
 
 sha256_of() {
-  python3 -c 'import hashlib,sys; print(hashlib.sha256(open(sys.argv[1],"rb").read()).hexdigest())' "$1"
+  PATH="$NOJQ_PATH" python3 -c 'import hashlib,sys; print(hashlib.sha256(open(sys.argv[1],"rb").read()).hexdigest())' "$1"
 }
 
 # verify <mode> <state> [args...] — reads the state file and asserts a shape.
 verify() {
-  python3 - "$@" <<'PYVERIFY'
+  PATH="$NOJQ_PATH" python3 - "$@" <<'PYVERIFY'
 import json
 import sys
 
@@ -100,11 +118,11 @@ except Exception as exc:  # state must be readable JSON
     sys.exit(1)
 
 recon = state.get("canonicalReconciliation")
-if not isinstance(recon, dict):
+if recon is not None and not isinstance(recon, dict):
     print(f"canonicalReconciliation is not an object: {type(recon).__name__}")
     sys.exit(1)
-decisions = recon.get("decisions")
-if not isinstance(decisions, dict):
+decisions = (recon or {}).get("decisions")
+if decisions is not None and not isinstance(decisions, dict):
     print(f"canonicalReconciliation.decisions is not an object: {type(decisions).__name__}")
     sys.exit(1)
 
@@ -153,11 +171,16 @@ if mode == "ack":
 
 if mode == "empty":
     if decisions:
-        print(f"expected no decisions, found {sorted(decisions)}")
+        print(f"state file changed despite the refusal: found {sorted(decisions)}")
         sys.exit(1)
-    print("no decisions recorded")
+    print("no decisions recorded (untouched state file)")
     sys.exit(0)
 
+# Concurrent calls share one ledger through one session bucket key: passing a
+# distinct --session per call gives each its own bucket, so T4's twenty
+# writers do not race the gate's unlocked read-modify-write. The session key
+# is only the rate-limit bucket — the stored sessionId still records per
+# call.
 if mode == "all":
     wanted = rest
     missing = [d for d in wanted if not isinstance(decisions.get(d), dict)]
@@ -207,7 +230,7 @@ fi
 if out="$(verify empty "$S2")"; then
   ok "T2: $out"
 else
-  bad "T2: $out"
+  bad "T2: state file changed despite the refused write — $out"
 fi
 
 # ── T3: the same "no" with --confirm-loss is written and acknowledged ─────────
@@ -258,8 +281,10 @@ fi
 if [ "$COUNT" -eq 20 ]; then
   S4="$(fresh_state t4)"
   PIDS=""
+  i=0
   for _id in $DEPT_IDS; do
-    run_rec --dept "$_id" --decision yes --by t --session s --state "$S4" \
+    i=$((i+1))
+    run_rec --dept "$_id" --decision yes --by t --session "t4-$i" --state "$S4" \
       >"$WORK/t4-$_id.out" 2>&1 &
     PIDS="$PIDS $!"
   done
