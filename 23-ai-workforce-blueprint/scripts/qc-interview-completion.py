@@ -1030,7 +1030,11 @@ _ANSWER_BLOCK_SPLIT_RE = re.compile(r"\n\s*-{3,}\s*\n")
 # Byte-identical to seam.ts's qMatch / aMatch regexes (note the REQUIRED colon —
 # this is the format build-workforce.py's own log_answer() writes: "**Q:** ... **A:** ...").
 _Q_BLOCK_RE = re.compile(r"\*\*Q:\*\*\s*([\s\S]*?)(?=\n\*\*A:\*\*)")
-_A_BLOCK_RE = re.compile(r"\*\*A:\*\*\s*([\s\S]*?)(?=\n\*\*(?:Provenance|Logged|Updated)\b|$)")
+# NOTE (BU-01 QC repair): after **A:** match spaces/tabs only, never the newline.
+# \s* ate the newline of an empty answer, so the lookahead below could not match
+# and the **Logged:** line was captured as the answer -- an empty answer block
+# then counted as answered. An empty answer must parse as empty (missing).
+_A_BLOCK_RE = re.compile(r"\*\*A:\*\*[ \t]*([\s\S]*?)(?=\n\*\*(?:Provenance|Logged|Updated)\b|$)")
 
 
 def parse_answer_blocks(text: str) -> list:
