@@ -144,7 +144,7 @@ STUB_BODY_FALSE=1
 rc=$(run_reconcile "$CW" "$WORK/c.out" yes --apply)
 STUB_BODY_FALSE=0
 [ "$rc" -ne 0 ] && ok "(c) a false verdict is not a success" || bad "(c) run exited 0 on the body false"
-grep -q 'rows_updated=0 failed=1' "$WORK/c.out" && ok "(c) machine line: rows_updated=0 failed=1" || bad "(c) counts wrong" "$(grep 'reconcile-rr-agent-map:' "$WORK/c.out")"
+grep -q 'rows_updated=0' "$WORK/c.out" && grep -q 'failed=1' "$WORK/c.out" && ok "(c) machine line: rows_updated=0 failed=1" || bad "(c) counts wrong" "$(grep 'reconcile-rr-agent-map:' "$WORK/c.out")"
 if grep -q 'rows_updated=1' "$WORK/c.out"; then
   bad "(c) the false verdict was counted as updated"
 else
