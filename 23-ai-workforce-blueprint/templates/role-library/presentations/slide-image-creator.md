@@ -363,14 +363,14 @@ The proven QC-9.42 deck was built on exactly FIVE layout archetypes, rotated acr
 ```
 
 **Recurring brand devices (the proven deck's visual grammar, specify them explicitly in every prompt):**
-- Giant numbers as the hero: dollar figures and stats rendered 110-150pt in the heaviest weight (Black), 1.5x to 3x the size of surrounding text, the hero of the data zone; rendered in the "liquid gold" gradient or the accent with a glow.
+- Giant numbers as the hero: dollar figures and stats rendered 110-150pt in the heaviest weight (Black), 1.5x to 3x the size of surrounding text, the hero of the data zone; rendered in flat solid brand gold (a single solid hex) or the flat solid accent; never a gradient fill and never a glow on the numeral (AF-GRAD).
 - Kicker label: small all-caps letter-spaced label (~13pt, Bold) in gold or pink above the headline, with a short gold rule beneath it.
 - Gold rules framing the message: thin gold rules above and below the core message (premium paired-rule framing); a 3px full-width gold rule as the divider between photo and type zones.
 - Drawn strikes on superseded prices: old prices struck with a single clean DRAWN line in the brand accent (double-thickness, a drawn object, never a font strikethrough or a diagonal scribble), per SOP 9.5; the anchor price is NOT struck.
 - Two-line tight dominating headlines: headlines set as two short, tightly-stacked lines that fill and dominate the zone.
 - Single-word color swaps for emphasis: inside a charcoal headline, one or two words switch to raspberry or gold for emphasis.
 - Color roles: gold = money, value, and dividers; pink/accent = action, emphasis words, and urgency; charcoal = headlines (never pure black backgrounds).
-- Price tag motif: drops are rendered as a large white hang-tag shape with a gold border; old prices struck through with a DRAWN line in the brand accent (SOP 9.5); the new price glowing in accent at the bottom of the tag.
+- Price tag motif: drops are rendered as a large white hang-tag shape with a gold border; old prices struck through with a DRAWN line in the brand accent (SOP 9.5); the new price in flat solid accent at the bottom of the tag.
 - Section progress labels on section-opener slides ("SECTION 3 OF 7", "SECRET #1" in a filled accent banner box).
 - White scrim gradients over full-bleed photos: a soft white-to-transparent gradient (never a black box) so charcoal text reads over the imagery.
 - URL image-to-image mode only: logo on a white chip (~9% of slide width, subtle 1px gold border) in the same corner on every slide, never recolored, never distorted, never clipped.
@@ -541,10 +541,10 @@ Rules:
 
 **Steps:**
 1. Identify whether the current slide is a PRICE DROP slide (per price_ladder.json drop slide numbers).
-2. Render the drop on the PRICE-TAG MOTIF: a large white hang-tag shape with a border in the brand accent (gold), positioned per the slide's A4 layout. Old prices sit on the tag; the new price glows in accent at the bottom of the tag.
+2. Render the drop on the PRICE-TAG MOTIF: a large white hang-tag shape with a border in the brand accent (gold), positioned per the slide's A4 layout. Old prices sit on the tag; the new price sits in flat solid accent at the bottom of the tag.
 3. For price-drop slides that show both the OLD price (struck) and the NEW price:
    a. Instruct the image model with the DRAWN-LINE strike (replaces any "hand-drawn red diagonal" language): "The old price [ANCHOR or PRIOR DROP price] appears in muted charcoal/gold on the white hang-tag, with a single clean DRAWN straight line in the brand accent ([BRAND_ACCENT hex]) through the center of the numerals, the line slightly wider than the text. It is a drawn object, not a font strikethrough style and not a diagonal scribble. The crossed-out price is visually smaller than the new price."
-   b. The new (current drop) price: "The new price [DROP_PRICE] appears in a larger, bolder font, [BRAND_ACCENT or PRIMARY HEX], glowing at the bottom of the hang-tag. Size contrast: new price is approximately 1.5x the size of the struck price."
+   b. The new (current drop) price: "The new price [DROP_PRICE] appears in a larger, bolder font, [BRAND_ACCENT or PRIMARY HEX], in flat solid color at the bottom of the hang-tag. Size contrast: new price is approximately 1.5x the size of the struck price."
    c. If there is also a payment plan on this slide: "A smaller line below the new price reads: 'or [N] payments of $[INSTALLMENT]' in a lighter weight of [font]."
 4. Verify: the struck price on this slide matches the PREVIOUS drop price (or ANCHOR_PRICE for Drop 1) in price_ladder.json exactly.
 5. Verify: the new (unhurt) price on this slide matches price_ladder.json for this drop number exactly.
@@ -901,7 +901,7 @@ The four write-time controls that pre-empt the forensic defects. Every prompt mu
 "[ARCHETYPE A1] [SECTION: THE HOOK] [LADDER: none] ONE BIG IDEA: [the audience's core desire, stated as achieved]. Create a 16:9 presentation slide at 2K resolution. [BASE_COLOR] base background. [BRAND_PRIMARY_HEX] used only as accent elements, maximum 20% of visual area. The slide headline reads exactly: '[HOOK LINE from slides_copy.md]'. Place headline in lower-left third on a soft white-to-transparent gradient scrim covering the bottom 28% of the frame. [WEIGHT], 70pt [BRAND_FONT]. PEOPLE via the three engines -- AUDIENCE ENGINE: [one person matching REPRESENTATION_MIX from STYLE BLOCK, professional attire per the niche]. FACIAL EXPRESSION ENGINE: vision/future-pace expression, relieved, arrived, soft confident smile, shoulders down (not just 'smiling'). WORLD ENGINE: [real-world setting justified by the slide's one idea -- NOT a studio backdrop; the setting SHOWS the promise delivered]. Three-quarter shot, person in the right two-thirds. Logo lower-right on a white chip with a 1px [BRAND_PRIMARY] border. AVOID: dark backgrounds, generic studio backdrop, watermarks, em dashes, any text not specified here..."
 
 ### Example B -- Price Drop Slide Prompt Fragment
-"[ARCHETYPE A4] ...On a large white hang-tag with a gold #C4A44D border: the old price $[ANCHOR] appears in muted charcoal, with a single clean DRAWN straight line in the brand accent #C4A44D through the center of the numerals, the line slightly wider than the text (a drawn object, not a font strikethrough and not a diagonal scribble). Struck price is smaller (40pt). The new price $[DROP1] glows below and to the right, bold, 60pt, #C4A44D. Payment plan line: 'or 3 payments of $[ITEM_VALUE]' at 28pt regular weight..."
+"[ARCHETYPE A4] ...On a large white hang-tag with a gold #C4A44D border: the old price $[ANCHOR] appears in muted charcoal, with a single clean DRAWN straight line in the brand accent #C4A44D through the center of the numerals, the line slightly wider than the text (a drawn object, not a font strikethrough and not a diagonal scribble). Struck price is smaller (40pt). The new price $[DROP1] sits in flat solid color below and to the right, bold, 60pt, #C4A44D. Payment plan line: 'or 3 payments of $[ITEM_VALUE]' at 28pt regular weight..."
 
 ---
 
