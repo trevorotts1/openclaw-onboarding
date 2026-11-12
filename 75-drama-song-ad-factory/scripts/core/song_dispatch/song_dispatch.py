@@ -1662,9 +1662,19 @@ def record_acceptance(run_dir, variant_id, binding, results, required=None):
 
 
 def _take_exists(d):
+    """True when ``d`` holds produced take audio, at any depth.
+
+    Takes are filed as ``music/takes/<variant>/take-NN/`` (audio one level
+    down), so the top-level directory itself holds no audio file. Walk the
+    tree instead of listing only the top level; an unreadable folder reads
+    as no take, never as proof of one.
+    """
     try:
-        return any(n.lower().endswith((".mp3", ".wav", ".flac", ".m4a", ".aac"))
-                   for n in os.listdir(d))
+        for _root, _dirs, files in os.walk(d):
+            for n in files:
+                if n.lower().endswith((".mp3", ".wav", ".flac", ".m4a", ".aac")):
+                    return True
+        return False
     except OSError:
         return False
 
