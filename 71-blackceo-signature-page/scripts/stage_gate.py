@@ -234,6 +234,19 @@ def model_substitutions(run_dir, stage=None):
     return {"{model}": model or "", "{max_chars}": str(cap) if cap else ""}
 
 
+def copy_spec_for_role(role):
+    """The page role's own copy spec, relative to the skill root, or '' for a role with none.
+
+    references/copy-specs/roles/<role>.json first (checkout), then a copy form registered for the
+    role (copy_forms.form_for_role: upsell_1/upsell_2 -> upsell, downsell_1 -> downsell). The
+    thank-you page records its own copy_version, so its spec is already selected."""
+    if (SKILL_ROOT / "references" / "copy-specs" / "roles" / f"{role}.json").is_file():
+        return f"references/copy-specs/roles/{role}.json"
+    import copy_forms
+    form = copy_forms.form_for_role(role)
+    return f"references/copy-specs/{copy_forms.SPEC_FILES[form]}" if form else ""
+
+
 def resolve_brand_placeholder(cmd, run_dir, stage, receipt, as_argv=False):
     """Substitute {run_dir}/{brand}/{file}/{sauce} in a validator command.
 
@@ -272,6 +285,12 @@ def resolve_brand_placeholder(cmd, run_dir, stage, receipt, as_argv=False):
                           "(Amendment 6, Items 18/19); none is recorded"]
         substitutions["{copy_version}"] = cv
         substitutions["{copy_spec}"] = page_role.spec_ref(cv)
+        # A priced page (checkout, upsell, downsell) records the landing form its images are drawn
+        # from as copy_version, but its copy has the page role's own sections: validate against them.
+        role = page_role.declared_role(run_dir)
+        role_ref = copy_spec_for_role(role) if role != page_role.LANDING_ROLE else ""
+        if role_ref:
+            substitutions["{copy_spec}"] = role_ref
     files = []
     per_file = spec.get("per_file_glob")
     if per_file:

@@ -1,3 +1,10 @@
+## [1.3.32] - 2026-11-11 - the copy stage validates a priced page against its own section structure
+
+- `scripts/stage_gate.py`: the copy stage's structure validator uses the page role's own spec. A checkout, upsell or downsell run records the landing form its images are drawn from (`copy_version: standard`), so the copy stage validated a five-section checkout against the twelve-section sales page spec and could never close. `copy_spec_for_role` now selects `references/copy-specs/roles/checkout.json`, `upsell-v6.json` (upsell_1, upsell_2) or `downsell-v1.json` (downsell_1). Landing, long-form, thank-you and product-selection runs are unchanged.
+- `scripts/validate_copy_structure.py` `load_spec`: a page-role spec is structure only, so it is read with the landing specs' counting convention, its role as the copy version, and each section's name as its framework name.
+- `tests/test_validate_copy_structure.py`: checkout copy passes its role spec and fails the landing spec; every role spec loads; the gate selects each role's own spec (all three fail on 1.3.31).
+- Version bump so the pull request carries a version above main (G3).
+
 ## [1.3.31] - 2026-11-11 - the no-price rule applies to the landing page only
 
 - `scripts/stage_gate.py` `launch_profile_active`: the `signature_launch_landing` profile engages `validate_public_copy.py --no-offer-pricing` only when the run's page role is `landing`. The launch import stamps the profile on every page of a launch, so the checkout page, whose role spec exists to show the exact price (Skill 79 CHK-13), could never close its copy stage. Checkout, upsell, downsell and thank-you copy is no longer checked against the landing page's no-price rule.

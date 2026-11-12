@@ -610,12 +610,26 @@ def validate(units, section_order, structure_notes, spec, manifest=None,
 # CLI
 # --------------------------------------------------------------------------
 
+# A page role's own spec (references/copy-specs/roles/<role>.json, the upsell and downsell forms) is
+# structure only: no counted bands, so it carries no counting convention or framework names. The landing
+# specs' convention applies; the section's own name stands in for the framework name.
+_SHARED_CONVENTION_SPEC = Path(__file__).resolve().parents[1] / "references" / "copy-specs" / "standard-v6.json"
+
+
 def load_spec(path):
     try:
         spec = json.loads(Path(path).read_text(encoding="utf-8"))
     except Exception as exc:
         print(f"FAIL: could not read spec {path}: {exc}")
         sys.exit(2)
+    if spec.get("page_role") and "copy_version" not in spec:  # a role spec names its role, not a form
+        spec["copy_version"] = spec["page_role"]
+    if (spec.get("page_role") or spec.get("page_roles")) and "counting_convention" not in spec:
+        spec["counting_convention"] = json.loads(
+            _SHARED_CONVENTION_SPEC.read_text(encoding="utf-8"))["counting_convention"]
+    for section in spec.get("sections") or []:
+        if isinstance(section, dict) and "framework_name" not in section and section.get("name"):
+            section["framework_name"] = section["name"]
     for key in ("copy_version", "sequence", "sections", "counting_convention"):
         if key not in spec:
             print(f"FAIL: spec {path} is missing required key '{key}'")
