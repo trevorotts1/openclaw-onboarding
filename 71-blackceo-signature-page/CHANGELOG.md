@@ -1,3 +1,9 @@
+## [1.3.34] - 2026-11-12 - the thank-you order summary and access cards never invent purchase data
+
+- `references/copy-specs/thank-you-v1.json` sections 2 and 3: the layout told the image model to draw "one row per purchased item" with a Total paid row, and "draw three as the pattern" for the access cards. The rows and cards come from the verified order at render time (Skill 82 `layout-and-copy-profiles.md` 2.2 and 2.3), so a wireframe drew invented items, amounts, a failed line, a pending line and a monthly product the funnel does not sell. Each layout now says that any row value or card the copy does not supply is drawn as a grey bar labelled with its column (or ITEM NAME / WHAT IT UNLOCKS), never as a name, a figure or a currency sign, and never an invented product, bonus or membership. Structure unchanged: still a real table and one card per purchased item.
+- `tests/test_page_role_thank_you.py`: both rules reach the desktop wireframe, mobile wireframe and visual mockup prompts (fails on 1.3.33).
+- Version bump so the pull request carries a version above main (G3).
+
 ## [1.3.33] - 2026-11-12 - a wireframe slice is offered type captions only for the copy it carries
 
 - `scripts/wireframe_spec.py` `_type_specs`: the INLINE TYPE SPECS line listed the full house scale (EYEBROW, H1, SUBHEAD, H2, BODY, CTA, CTA MICROCOPY) on every section "for the elements this section has". A section whose copy has no headline (the numbered steps, the founder letter) was offered a headline caption, and the model drew an invented headline to sit beside it ("HOW IT WORKS: 7 SIMPLE STEPS", "A PERSONAL MESSAGE From Your Founder") on three attempts running. `_type_elements` now lists only the roles the section's own copy carries (headline when its first line is a short unnumbered line, subhead, body, and CTA with its microcopy when the section or the closing band has a button). A section's own `type_specs` (the font map) still wins.
