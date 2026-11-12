@@ -1377,11 +1377,6 @@ ARTIFACT_CONTRACTS: Dict[str, str] = {
     # NOTE: P-SP-INTAKE has no contract entry -- confirmed during acceptance testing
     # to be driver_only (see DECLINE_PHASES above); this module honestly declines it
     # rather than guessing at a schema it cannot legitimately satisfy.
-    # P-SHIFT-QC's entry is COMPOSED at the END of this module (see
-    # _compose_p_shift_qc_contract): its item-id list is the shared tuple from
-    # presentation_job.priority_shift_items, never a second hand-typed copy. It is
-    # placed at the tail so this table's own line numbers -- which the build spec
-    # and the lane's later units quote -- do not move.
 }
 
 
