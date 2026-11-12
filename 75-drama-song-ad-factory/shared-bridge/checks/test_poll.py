@@ -23,6 +23,12 @@ Proves, against a local fake studio (stdlib `http.server`, no network):
      client for a second look (`needs_you`), never cancels the order, and puts
      both counts on the operator's stderr line; a 409 (the claim post itself was
      refused, so the order is still `waiting`) is accepted and logged
+  9  a replay the card refuses (a testimonial whose permission answer is "No")
+     writes the durable halt record, posts `needs_you` with the client's own
+     sentence, prints no wake line, and RELEASES the claim - the second poll
+     still checks in, and a halted order never blocks the next one
+ 10  each answer travels with its screen id: ids that do not match the card's,
+     in order, ask the client first (the second sentence), never a shifted run
 
 Run: python3 checks/test_poll.py
 Exit: 0 all pass · 1 at least one failed
@@ -34,6 +40,7 @@ import json
 import os
 import pathlib
 import shutil
+import sqlite3
 import stat
 import subprocess
 import sys
@@ -44,6 +51,7 @@ import urllib.parse
 
 HERE = pathlib.Path(__file__).resolve().parent
 BRIDGE_DIR = HERE.parent
+SKILL_ROOT = BRIDGE_DIR.parent
 sys.path.insert(0, str(BRIDGE_DIR))
 import studio_bridge as bridge  # noqa: E402
 
@@ -121,6 +129,10 @@ class _FakeStudio(http.server.BaseHTTPRequestHandler):
 
 
 class PollBridgeTests(unittest.TestCase):
+    #: purpose -> the card's own reply list, built once per run (the card is
+    #: deterministic, so every test that needs a complete order shares it).
+    _CARD_REPLIES = {}
+
     @classmethod
     def setUpClass(cls):
         cls.srv = http.server.ThreadingHTTPServer(("127.0.0.1", 0), _FakeStudio)
@@ -148,16 +160,81 @@ class PollBridgeTests(unittest.TestCase):
         STUDIO["needs_you_409"] = False
 
     def _stub_skill_root(self):
-        """A skill root whose factory.py records its argv and nothing else."""
+        """A skill root whose factory.py records its argv and answers the card.
+
+        The bridge drives the card with `--format session-json` (S75-106), so
+        the stand-in answers a completed session - the same shape the real
+        durable session prints; a stand-in that printed plain text would be a
+        different instrument and could not prove the turn contract.
+        """
         core = self.tmp / "stub-skill" / "scripts" / "core" / "intake_preflight"
         core.mkdir(parents=True, exist_ok=True)
         (core / "factory.py").write_text(
             "import json, os, sys\n"
             "with open(os.environ['STUB_FACTORY_LOG'], 'a', encoding='utf-8') as fh:\n"
             "    fh.write(json.dumps(sys.argv[1:]) + '\\n')\n"
-            "sys.stdout.write('next question\\n')\n",
+            "sys.stdout.write(json.dumps({'done': True, 'outcome': 'ok',\n"
+            "                             'reason_code': 'INTAKE_CONFIRMED',\n"
+            "                             'question_id': None}) + '\\n')\n",
             encoding="utf-8")
         return self.tmp / "stub-skill"
+
+    def _orders(self):
+        """The ledger's owned orders; [] when the table was never created."""
+        path = self.state / "studio.db"
+        if not path.is_file():
+            return []
+        con = sqlite3.connect("file:%s?mode=ro" % path, uri=True)
+        try:
+            try:
+                return [row[0] for row in con.execute("SELECT order_id FROM orders")]
+            except sqlite3.OperationalError:
+                return []
+        finally:
+            con.close()
+
+    def _card_answer(self, question_id, purpose):
+        """One reply the card accepts for this screen, in ask order."""
+        if question_id in ("offer", "link", "audience", "character", "photos"):
+            return "Spring cookie class for local families"
+        if question_id == "spend":
+            return "$25"
+        if question_id == "purpose":
+            return purpose
+        if question_id == "permission":
+            return "2"           # No - the client has not given permission
+        return "1"
+
+    def _card_replies(self, purpose="2"):
+        """The card's own reply list for a purpose-flow order.
+
+        Asks the installed card, one turn at a time, which screen it is on and
+        answers it, then appends the one recap confirmation the studio page
+        sends (`mini-app/ui/studio.js`). purpose "2" is a testimonial whose
+        client has not given permission, so the card itself waits (S75-106).
+        """
+        if purpose in self._CARD_REPLIES:
+            return list(self._CARD_REPLIES[purpose])
+        factory = str(SKILL_ROOT / "scripts" / "core"
+                      / "intake_preflight" / "factory.py")
+        probe = self.tmp / ("card-probe-" + purpose)
+        probe.mkdir(parents=True, exist_ok=True)   # a run folder: purpose flow on
+        replies = []
+        for _ in range(40):
+            argv = [PY, factory, "card", "--step", "--format", "session-json",
+                    "--run-dir", str(probe)]
+            for reply in replies:
+                argv.extend(["--reply", reply])
+            done = subprocess.run(argv, capture_output=True, text=True,
+                                  env=self.env(), cwd=str(SKILL_ROOT))
+            state = json.loads(done.stdout) if done.stdout.strip() else {}
+            question_id = state.get("question_id")
+            if question_id == "recap" or not question_id:
+                break
+            replies.append(self._card_answer(question_id, purpose))
+        replies.append("yes")
+        self._CARD_REPLIES[purpose] = list(replies)
+        return replies
 
     def env(self, **over):
         env = {"PATH": os.environ.get("PATH", ""),
@@ -288,15 +365,21 @@ class PollBridgeTests(unittest.TestCase):
                                   "order_id": "r_ab12cd34",
                                   "title": "Spring Sale"})
 
-        # every reply reached the card, in order, in ONE argv list (no shell)
+        # every reply reached the card, ONE TURN PER ANSWER, in argv lists (no
+        # shell): the no-reply prime turn presents the first question and every
+        # later turn carries the growing prefix, which is what the durable
+        # session's own replay absorption reduces to its one new answer.
         calls = [json.loads(l) for l in
                  self.factory_log.read_text(encoding="utf-8").splitlines()]
-        self.assertEqual(len(calls), 1, calls)
-        argv = calls[0]
-        self.assertEqual(argv[:6],
-                         ["card", "--step", "--format", "text",
+        self.assertEqual(len(calls), 4, calls)
+        self.assertEqual(calls[0][:6],
+                         ["card", "--step", "--format", "session-json",
                           "--run-dir", str(run_dir)])
-        self.assertEqual(argv[argv.index("--reply", 4):],
+        self.assertNotIn("--reply", calls[0])            # the prime turn
+        self.assertEqual(calls[1][calls[1].index("--reply"):], ["--reply", "1"])
+        self.assertEqual(calls[2][calls[2].index("--reply"):],
+                         ["--reply", "1", "--reply", "2"])
+        self.assertEqual(calls[3][calls[3].index("--reply"):],
                          ["--reply", "1", "--reply", "2", "--reply", "yes"])
 
         # the chain the service saw: check-in → state claim → order fetch
@@ -326,7 +409,7 @@ class PollBridgeTests(unittest.TestCase):
                          claims)
         self.assertEqual(len([json.loads(l) for l in
                               self.factory_log.read_text(encoding="utf-8").splitlines()]),
-                         1)
+                         4)                      # one replay: prime + one per reply
         # the supported runtime acknowledges the wake -> the claim is final
         ack = subprocess.run([PY, BRIDGE, "wake", "--ack",
                               "--order", out["order_id"], "--db", out["db"]],
@@ -369,6 +452,102 @@ class PollBridgeTests(unittest.TestCase):
                   if r["path"].endswith("/state")]
         self.assertEqual(events, ["needs_you"])
         self.assertIn("409", err.getvalue())
+
+    # -- 9 a card-refused replay waits on the client, never blocks the box ----
+
+    def poll_real_card(self):
+        """One poll against the REAL card and factory (the halt is the card's)."""
+        return self.run_bridge(["poll", "--skill-root", str(SKILL_ROOT),
+                                "--runs", str(self.runs),
+                                "--base-url", self.base], DS_KEY=MACHINE_KEY)
+
+    def test_a_halted_replay_waits_on_the_client_and_releases_the_claim(self):
+        replies = self._card_replies("2")
+        STUDIO["line"] = 'DRAMA_ORDER r_halt01 "Spring Sale"'
+        STUDIO["order"] = {"order_id": "r_halt01", "client_id": CLIENT,
+                           "title": "Spring Sale", "replies": replies}
+        p = self.poll_real_card()
+        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+        self.assertEqual(p.stdout, "")                 # no wake line for it
+        self.assertIn("testimonial-permission-pending", p.stderr)
+        posts = [r["body"] for r in STUDIO["seen"]
+                 if r["path"].endswith("/state")
+                 and r["body"].get("event") == "needs_you"]
+        self.assertEqual(len(posts), 1, posts)
+        self.assertEqual(posts[0]["reason"],
+                         "Your order is paused until you have your client's OK "
+                         "to use their story. Open your order and tap Continue "
+                         "when you have it.")
+        halted = json.loads((self.runs / "r_halt01" / "control"
+                             / "replay-halted.json").read_text(encoding="utf-8"))
+        self.assertEqual(halted["reason_code"], "testimonial-permission-pending")
+        self.assertEqual(halted["question_id"], "recap")
+        self.assertEqual(self._orders(), [])          # the claim was released
+        # the second poll still CHECKS IN (the box is alive for other orders)
+        STUDIO["seen"] = []
+        again = self.poll_real_card()
+        self.assertEqual(again.returncode, 0, again.stdout + again.stderr)
+        self.assertIn("POST", [r["method"] for r in STUDIO["seen"]
+                               if r["path"].endswith("/checkin")])
+        self.assertEqual(again.stdout, "")
+        self.assertEqual(self._orders(), [])
+
+    def test_a_halted_order_does_not_block_the_next_one(self):
+        replies = self._card_replies("2")
+        STUDIO["line"] = 'DRAMA_ORDER r_halt02 "Spring Sale"'
+        STUDIO["order"] = {"order_id": "r_halt02", "client_id": CLIENT,
+                           "title": "Spring Sale", "replies": replies}
+        first = self.poll_real_card()
+        self.assertEqual(first.returncode, 0, first.stdout + first.stderr)
+        self.assertEqual(self._orders(), [])
+        # control on the SAME box: a new waiting order is claimed on the next
+        # poll - the halted one is not on the ledger any more and holds nothing
+        STUDIO["seen"] = []
+        STUDIO["line"] = 'DRAMA_ORDER r_next02 "Spring Sale"'
+        STUDIO["order"] = {"order_id": "r_next02", "client_id": CLIENT,
+                           "title": "Spring Sale", "replies": replies}
+        second = self.poll_real_card()
+        self.assertEqual(second.returncode, 0, second.stdout + second.stderr)
+        claimed = [r["path"] for r in STUDIO["seen"]
+                   if r["method"] == "POST" and r["path"].endswith("/state")
+                   and r["body"].get("event") == "claim"]
+        self.assertEqual(claimed, ["/api/studio/orders/r_next02/state"])
+        fetched = [(r["method"], r["path"]) for r in STUDIO["seen"]]
+        self.assertIn(("GET", "/api/studio/orders/r_next02"), fetched)
+
+    # -- 10 ids that do not match the card's ask the client first -------------
+
+    def test_reply_ids_that_do_not_match_ask_the_client_first(self):
+        replies = ["2", "2", "Spring cookie class for local families"]
+        asked = bridge._card_replay(str(SKILL_ROOT), replies)[0]
+        self.assertEqual(asked, ["purpose", "permission", "offer"])
+        # controls on the SAME function: the card's own ids agree (with or
+        # without the page's trailing recap id); a reordered page does not
+        self.assertIsNone(bridge._reply_id_mismatch(str(SKILL_ROOT), asked, replies))
+        self.assertIsNone(bridge._reply_id_mismatch(str(SKILL_ROOT),
+                                                    asked + ["recap"], replies))
+        page = ["permission", "purpose", "offer"]
+        self.assertIsNotNone(bridge._reply_id_mismatch(str(SKILL_ROOT), page, replies))
+        STUDIO["line"] = 'DRAMA_ORDER r_ids01 "Spring Sale"'
+        STUDIO["order"] = {"order_id": "r_ids01", "client_id": CLIENT,
+                           "title": "Spring Sale", "replies": replies,
+                           "reply_ids": page}
+        p = self.poll_real_card()
+        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+        self.assertEqual(p.stdout, "")                 # no wake line for it
+        self.assertIn("INTAKE_REPLAY_MISMATCH", p.stderr)
+        posts = [r["body"] for r in STUDIO["seen"]
+                 if r["path"].endswith("/state")
+                 and r["body"].get("event") == "needs_you"]
+        self.assertEqual(len(posts), 1, posts)
+        self.assertEqual(posts[0]["reason"],
+                         "One of your answers did not match the choices. "
+                         "Open your order and tap Continue to fix it.")
+        halted = json.loads((self.runs / "r_ids01" / "control"
+                             / "replay-halted.json").read_text(encoding="utf-8"))
+        self.assertEqual(halted["reason_code"], "INTAKE_REPLAY_MISMATCH")
+        self.assertEqual(halted["question_id"], "purpose")
+        self.assertEqual(self._orders(), [])
 
     def test_poll_without_a_key_refuses(self):
         p = self.poll()
