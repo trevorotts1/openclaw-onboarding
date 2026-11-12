@@ -358,8 +358,8 @@ The layers and the assembler are the same in both distributions (U15a-U15i):
 ## Suno song recipe (read this first when you build audio)
 
 Every Suno music style (Soul Ballad, R&B Flow, Soul Rise, and any Suno style
-added later) follows this recipe by default. It is what made the Kiesett and
-the client songs land. The code is `scripts/core/suno_recipe/`; every Suno
+added later) follows this recipe by default. It is what made the first
+client songs land. The code is `scripts/core/suno_recipe/`; every Suno
 request goes through `suno_recipe.prepare()` and the `music_director` seam
 refuses a raw Suno style that skipped it.
 
@@ -398,8 +398,8 @@ timestamps of every take, regenerates whole tracks only, and refuses
 openai-whisper.
 
 The targets (Trevor, 2026-10-08, SPK001): speaking is **20-25% of the
-runtime** by default (center 22.5; each ad can set its own, Black Successful
-Women uses 15-20), and the lyric writer derives its spoken word budget from the ad's
+runtime** by default (center 22.5; each ad can set its own - one client run set
+15-20), and the lyric writer derives its spoken word budget from the ad's
 own spoken target and the length formula's measured word rates (no fixed
 word percent). Singing is measured against **voice time**, sung / (sung + spoken),
 with a default target of **77.5%** (75-80): a music-only intro, gaps and the
@@ -657,7 +657,7 @@ and a VERIFIED or UNVERIFIED status.
 
 Captions are the approved lyric sheet's own words, timed by the Suno
 timestamps. Speech-to-text is never a caption text source. Character and
-brand names (for example Stale, Stop Stale) are protected words:
+brand names carried by the approved sheet are protected words:
 
 - When the lyric sheet is BUILT, the lyric writer may not change a protected
   name or rewrite a packet line (`core/protected_names.py::check_sheet`,
@@ -668,7 +668,7 @@ brand names (for example Stale, Stop Stale) are protected words:
   (`music_qc.check_song_qc(..., protected=...)`).
 - Build captions with `protected_names.build_captions(sheet, aligned_words)`;
   QC fails any caption mismatch (`delivery_variants.checks.check_captions(...,
-  protected=...)`): "the house went still" for "Stale" is a FAIL.
+  protected=...)`): "the house went still" for a protected word is a FAIL.
 - **Caption and lyric QC run on measured timing (Part F F18):** word timings
   come from the ONE transcription step (`audio_c3/lyric_timing.provide_word_timings`,
   F17 — Suno alignedWords → faster-whisper local → client cloud STT). Pass
@@ -1170,7 +1170,7 @@ SOP named above.
   sketch is pure black-and-white line art, the base fully photoreal, exactly
   two figures; the sketch eyeline lands on the photoreal lead (a mirrored pose
   fails). Storyboard field `DUAL_PRESENCE {shot_id, start_pct, duration_s,
-  composition TWO_SHOT_SIDE_BY_SIDE, sketch_character INNER-NAME, eyeline
+  composition TWO_SHOT_SIDE_BY_SIDE, sketch_character SKETCH-NAME, eyeline
   SKETCH-TO-REAL, ad_card TRUE}` must be complete **before any generation
   spend**; shot list entry `DUAL-01` carries `BASE_REAL` (photoreal clip) and
   `OVERLAY_SKETCH` (alpha PNG, matched pose frame). Assembly is a 100% opacity
@@ -1183,11 +1183,7 @@ SOP named above.
   the single-style "some time later" phone shot at **112.0-114.3 s** must each
   return **zero passing frames**; the flagship beat is the positive control.
   Bands are starting values - calibrate on both controls. This is a **planned
-  shot with its own storyboard field, never a patch**: INNER CHANEL is a named
-  cast member, receipt line 252 names S6 (S030 to S031 two-shot), built as
-  still `IMG-SHOT-S031-T2` and clip `VID-S031-T3` with the overlay assembled
-  by `FIX0010/RR/BUILD_BASES.PY`; stills and clips by Hailuo 02 Standard 768P, Kling
-  for lip-sync only.
+  shot with its own storyboard field, never a patch**.
 - **Music (decision 30):** Soul Ballad (default), R&B Flow, Soul Rise.
 - **Style questions on the intake card:** each music and video option shows
   one plain line saying what it is; Sketch to Life shows as "Sketch to Life
@@ -1209,14 +1205,14 @@ SOP named above.
 - **Per-character voice packs:** the distinct-voice registry still stands --
   no two characters share a voice. Its spoken-only separate-take packs are
   SUPERSEDED by the one-track rule: spoken words inside the song's lyrics.
-- **Close-up picture gate, enforced in the dispatcher (LPG001/LPG002/LPG003, 2026-10-08):** the
-  30-Day Reset close-up (face 28% of frame, smile 0.62) and the Perfect Daughter close-up
-  (34%, teeth, roll -7.8) went to paid lip-sync unmeasured. Now
+- **Close-up picture gate, enforced in the dispatcher (LPG001/LPG002/LPG003, 2026-10-08):** two
+  client close-ups went to paid lip-sync unmeasured - one at face 28% of frame with smile
+  0.62, one at 34% with teeth showing and roll -7.8. Now
   `lip_gate/picture_gate.gate_picture()` MEASURES every close-up with mediapipe
   FaceLandmarker (one rule set: the constants block at the top of `picture_gate.py`, same
   names in the onboarding repo). LPG003 loosened it (Trevor: "loosen the checks so it's not
-  as strict"), calibrated so every Trevor-approved Kiesett version 2 and client
-  picture passes or flags. Three verdicts. FAIL (refused) is for clear problems only: face
+  as strict"), calibrated so every approved reference ad and client picture
+  passes or flags. Three verdicts. FAIL (refused) is for clear problems only: face
   count not 1, face height under 20%, |roll| over 20 deg, |yaw| over 0.25 (side profile),
   jawOpen over 0.30 (wide-open mouth), sharpness under 60. ACCEPT_WITH_FLAG (goes to Kling,
   flags written to the receipt): smile over 0.60, lip gap over 1.0% (teeth), face under 25%,
@@ -1321,7 +1317,7 @@ SOP named above.
   followed by the agent; code check not yet shipped**: `scripts/core/lip_sync/`
   carries `narrator_rule/` only, no `kling_first/` (see CHANGELOG.md
   "Not shipped here, on record").
-- **Lip-sync process (Trevor approved, 2026-10-08, first used on the Stephanie Brown
+- **Lip-sync process (Trevor approved, 2026-10-08, first used on a client's
   ads; LSP001, built on LSC001).** Every run follows these six rules
   (`lip_sync/lip_gate/lip_process.py`):
   1. **Reuse first.** Before any paid lip-sync job, re-measure every take already on
