@@ -32,7 +32,7 @@ on the command line, never a log line. Nothing in this module prints, echoes or
 receipts a key value.
 
 Exit codes: 0 ok · 1 error · 2 refused · 3 undefined (transport unknown, or an
-approval not answered yet).
+approval not answered yet) · 4 halted (a replay that waits on the client).
 Stdlib only: argparse, hashlib, json, os, pathlib, re, subprocess, sys, time,
 urllib.
 """
@@ -58,7 +58,7 @@ from studio_claim import (ClaimLedger, LedgerError, message_id,  # noqa: E402
                           STEP_MATERIALIZED, STEP_WAKE_QUEUED,
                           STEP_EXECUTION_ACCEPTED)
 
-EXIT = {"ok": 0, "error": 1, "refused": 2, "undefined": 3}
+EXIT = {"ok": 0, "error": 1, "refused": 2, "undefined": 3, "halted": 4}
 
 STATUS_EVENTS = ("claim", "needs_you", "answer", "ready", "deliver", "done")
 
@@ -990,6 +990,25 @@ def _board_epic(skill_root, order_id, title):
 #: prints no step line at all.
 QUESTION_LINE = re.compile(r"Question (\d+) of (\d+)")
 
+#: The durable halt record for a replay (S75-106). While it exists the order
+#: waits on the client and `_replay` runs NO turn, so one refused order can never
+#: loop a card turn on every poll.
+REPLAY_HALTED_FILE = "replay-halted.json"
+
+#: The client's own sentence for a halted replay. One plain line per cause; the
+#: machine code is the operator's, on stderr, never the client's.
+HALT_SECOND_SENTENCE = ("One of your answers did not match the choices. "
+                        "Open your order and tap Continue to fix it.")
+HALT_SENTENCES = {
+    "testimonial-permission-pending":
+        "Your order is paused until you have your client's OK to use their "
+        "story. Open your order and tap Continue when you have it.",
+    "INVALID_OPTION": HALT_SECOND_SENTENCE,
+    "INTAKE_REPLAY_MISMATCH": HALT_SECOND_SENTENCE,
+}
+HALT_DEFAULT = ("Your studio is not ready to start this order. We have been "
+                "told. You do not need to do anything.")
+
 
 def _skill_core(skill_root):
     """`<skill 75>/scripts/core` on `sys.path`, so the bridge reads the skill's
@@ -1071,31 +1090,17 @@ def checkin_body(skill_root, runs_root, client_dir=None):
 
 # --- the replay guard (SPEC B1) ----------------------------------------------
 
-def _question_mismatch(skill_root, replies, client_dir=None):
-    """`(answers the card accepted, questions it asked)` when the replies cannot
-    complete the question list, else None.
+def _card_replay(skill_root, replies, client_dir=None):
+    """The card's own reading of these replies - the ONE judge (SPEC B1).
 
-    The card rebuilds that list from these replies with `_shaped`
-    (SPEC B1) - the same rebuild the studio page's `shows_when` screens were
-    built from - so a set the card cannot finish means the phone showed a
-    different list than this card asks. Replaying anyway would answer one screen
-    with another screen's number: a shifted run, which is what this refuses.
-
-    The card is the judge, never a list this bridge re-derives (its shape can
-    differ from a second `_shaped` call over `QUESTIONS`, and counting against a
-    re-derived list refuses orders the card itself completed). The test: drop the
-    trailing recap confirmation the studio page appends
-    (`mini-app/ui/studio.js:470`), replay the rest, and read the card's own
-    "Question N of M" step line. No step line means the card reached its recap,
-    its waiting answer or a locked-in run - it completed whatever it asked. A
-    step line with fewer accepted answers than questions means it ran out, or a
-    reply did not fit and the rest shifted: that is the refusal, and those are
-    the two counts named back. Extra replies past a complete list are absorbed by
-    the card itself (a "change line N" or a recap), never a mismatch here.
-
-    None when the installed card has no purpose flow to count against, and None
-    on any card fault: a claim never dies on this import. The guard stays inert
-    until the card that defines the shaped list ships (O-card-wiring).
+    Drops the trailing recap confirmation the studio page appends
+    (`mini-app/ui/studio.js:470`), replays the rest through the card's own
+    `conversation`, and returns `(accepted question ids, questions asked, done)`.
+    `questions` is the "Question N of M" total the card is on, or None when it
+    reached its recap, a waiting answer or a locked-in run (it completed what it
+    asked) - so no step line and no count to refuse against. None when the
+    installed card has no purpose flow to judge against, and None on any card
+    fault: a claim never dies on this import.
     """
     _skill_core(skill_root)
     try:
@@ -1113,16 +1118,63 @@ def _question_mismatch(skill_root, replies, client_dir=None):
         state = IC.conversation(given, client_dir=client_dir, purpose_flow=True)
     except Exception:  # noqa: BLE001 - never stop a claim on a card import
         return None
-    if state.get("done"):
-        return None                                    # the card locked these in
+    ids = [str(a.get("id") or "") for a in (state.get("answers") or [])]
     found = QUESTION_LINE.search(str(state.get("message") or ""))
-    if not found:
-        return None                                    # the card reached its recap
-    questions = int(found.group(2))
-    accepted = len(state.get("answers") or [])
-    if questions <= 0 or accepted >= questions:
+    questions = int(found.group(2)) if found else None
+    return ids, questions, bool(state.get("done"))
+
+
+def _question_mismatch(skill_root, replies, client_dir=None):
+    """`(answers the card accepted, questions it asked)` when the replies cannot
+    complete the question list, else None.
+
+    The card rebuilds that list from these replies with `_shaped`
+    (SPEC B1) - the same rebuild the studio page's `shows_when` screens were
+    built from - so a set the card cannot finish means the phone showed a
+    different list than this card asks. Replaying anyway would answer one screen
+    with another screen's number: a shifted run, which is what this refuses.
+
+    The card is the judge, never a list this bridge re-derives (its shape can
+    differ from a second `_shaped` call over `QUESTIONS`, and counting against a
+    re-derived list refuses orders the card itself completed). A step line with
+    fewer accepted answers than questions means the card ran out, or a reply did
+    not fit and the rest shifted: that is the refusal, and those are the two
+    counts named back. Extra replies past a complete list are absorbed by the
+    card itself (a "change line N" or a recap), never a mismatch here.
+
+    None when the installed card has no purpose flow to count against, and None
+    on any card fault: a claim never dies on this import.
+    """
+    replay = _card_replay(skill_root, replies, client_dir)
+    if replay is None:
         return None
-    return accepted, questions
+    ids, questions, done = replay
+    if done or questions is None or questions <= 0 or len(ids) >= questions:
+        return None
+    return len(ids), questions
+
+
+def _reply_id_mismatch(skill_root, reply_ids, replies, client_dir=None):
+    """The page's screen ids against the ids the card itself asks, in order.
+
+    Every answer travels with the id of the screen it was given on (S75-106
+    step 5). A page that numbered its screens differently would replay one
+    screen's answer onto another question, so the card's own ids judge it. The
+    page's trailing recap confirmation carries its own id and is not a card
+    question: one extra trailing id is allowed, and only the card's own
+    positions are compared. None when the page sent no ids (an old page - the
+    count check rules), when the card cannot judge, or when the ids agree.
+    """
+    if not isinstance(reply_ids, (list, tuple)) or not reply_ids:
+        return None
+    replay = _card_replay(skill_root, replies, client_dir)
+    if replay is None:
+        return None
+    ids = replay[0]
+    page = [str(x) for x in reply_ids]
+    if len(page) not in (len(ids), len(ids) + 1) or page[:len(ids)] != ids:
+        return page, ids
+    return None
 
 
 def _refuse_mismatch(base, key, order_id, mismatch):
@@ -1131,9 +1183,10 @@ def _refuse_mismatch(base, key, order_id, mismatch):
     The order is NOT cancelled. It is claimed, so the studio's own lifecycle
     (`mini-app/service/src/lifecycle.js`: `in_production -> needs_you`) accepts
     a `needs_you` event, and the client sees one plain card asking for a second
-    look instead of a dead order. The claim stays on the local ledger, so the
-    next poll reconciles the same order rather than claiming a new one: the run
-    never starts shifted.
+    look instead of a dead order. This is the OLD-PAGE fallback (an order with no
+    `reply_ids`); `cmd_poll` releases the claim after this refusal, so the box
+    checks in and can see other orders - a refused order never blocks it - and
+    the run never starts shifted.
 
     The reply posted to the service is the client's sentence only; the two
     counts travel to the operator on stderr, and in the JSON line on stdout.
@@ -1163,6 +1216,73 @@ def _refuse_mismatch(base, key, order_id, mismatch):
     return EXIT["refused"]
 
 
+def _halt_sentence(code):
+    """The client's sentence for a halt code; the code itself is the operator's."""
+    return HALT_SENTENCES.get(str(code or ""), HALT_DEFAULT)
+
+
+def _write_halted(run_dir, turn, state, fallback_code):
+    """Write the durable halt record (S75-106) and return it.
+
+    `{turn, question_id, reason_code, at}` - the reason code and the question id
+    read from the card's own `--format session-json` answer, never invented here.
+    """
+    state = state if isinstance(state, dict) else {}
+    record = {"turn": turn,
+              "question_id": state.get("question_id"),
+              "reason_code": (str(state.get("reason_code") or "").strip()
+                              or fallback_code),
+              "at": time.time()}
+    control = pathlib.Path(run_dir) / "control"
+    control.mkdir(parents=True, exist_ok=True)
+    (control / REPLAY_HALTED_FILE).write_text(
+        json.dumps(record, sort_keys=True) + "\n", encoding="utf-8")
+    return record
+
+
+def _read_halted(run_dir):
+    """The run's durable halt record, or None when there is none."""
+    try:
+        record = json.loads(
+            (pathlib.Path(run_dir) / "control" / REPLAY_HALTED_FILE)
+            .read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    return record if isinstance(record, dict) else None
+
+
+def _halt_order(led, base, key, order_id, record):
+    """One halted order waits on the client, in words, and the box moves on.
+
+    Posts `needs_you` with the client's own sentence - a 409 is expected when
+    the order never left `waiting` (its claim post was refused) and is accepted
+    and logged, never a failed poll - writes the `replay_halted` receipt, and
+    RELEASES the local claim so the next poll checks in and can see other
+    orders: one refused order never blocks the box. The machine code goes to
+    stderr for the operator, never to the client.
+    """
+    code = str(record.get("reason_code") or "REPLAY_HALTED")
+    status, out = _http("POST",
+                        base.rstrip("/") + "/api/studio/orders/%s/state" % order_id,
+                        key=key,
+                        body={"event": "needs_you",
+                              "reason": _halt_sentence(code)})
+    posted = bool(status and status // 100 == 2 and out.get("ok"))
+    sys.stderr.write("studio_bridge: order %s halted (%s); needs_you %s%s\n"
+                     % (order_id, code, "posted" if posted else "refused",
+                        "" if posted else " (HTTP %s %s)" % (
+                            status, (out.get("code") or out.get("message")
+                                     or "")[:200])))
+    led.write_receipt(order_id, "replay_halted", record)
+    led.release_order(order_id, BRIDGE_OWNER)
+    # Nothing on stdout: this is not a wake line. The timer hands every stdout
+    # line to the wake script, which would report a line it cannot wake as a
+    # failed wake - a false failure for an order that is simply waiting on its
+    # client. The code and the order id are on stderr; the receipt and the halt
+    # record both outlive the claim.
+    return EXIT["ok"]
+
+
 def _journaled_turns(session_path):
     """How many card turns the run's intake session has already journaled.
 
@@ -1181,6 +1301,35 @@ def _journaled_turns(session_path):
     return len(events) if isinstance(events, list) else 0
 
 
+def _session_state(proc):
+    """A turn's `--format session-json` answer, or None when it printed none."""
+    try:
+        state = json.loads(proc.stdout)
+    except (ValueError, TypeError):
+        return None
+    return state if isinstance(state, dict) else None
+
+
+def _session_done(run_dir, state):
+    """The session's own completion: True, False, or None when it cannot tell.
+
+    The last turn's session-json is the first answer; the run's stored session
+    (`control/intake-session.json`) answers for a card copy that prints text.
+    None when neither exists - a skill copy with no durable session has no
+    `done` to read, and an absent record is never a proven false.
+    """
+    if isinstance(state, dict) and isinstance(state.get("done"), bool):
+        return state["done"]
+    try:
+        stored = json.loads((pathlib.Path(run_dir) / "control"
+                             / "intake-session.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    if isinstance(stored, dict) and isinstance(stored.get("done"), bool):
+        return stored["done"]
+    return None
+
+
 def _replay(skill_root, run_dir, replies):
     """Hand every reply back to the card, one turn per answer, in order.
 
@@ -1194,43 +1343,69 @@ def _replay(skill_root, run_dir, replies):
     turn to its one new answer. Starting past the turns the session already
     journaled resumes an interrupted order without re-answering, and a shifted
     list still fails closed at the session's own prefix check. argv lists, never
-    a shell; any refused turn fails the replay before the run line is printed.
+    a shell.
+
+    A turn that exits non-zero writes `control/replay-halted.json`
+    `{turn, question_id, reason_code, at}` - the reason code read from the card's
+    `--format session-json` answer - and the replay answers `halted`; while that
+    file exists the replay answers `halted` WITHOUT running a turn, so one
+    refused order never loops a card turn on every poll. It never answers ok for
+    a session whose `done` is false: after the last turn the session's own
+    completion is required.
     """
+    run_dir = pathlib.Path(run_dir)
+    control = run_dir / "control"
+    if (control / REPLAY_HALTED_FILE).is_file():
+        return EXIT["halted"], None      # already halted: run no turn
     factory = (pathlib.Path(skill_root).expanduser() / "scripts" / "core"
                / "intake_preflight" / "factory.py")
     if not factory.is_file():
         _emit({"code": "NO_FACTORY",
                "message": "factory.py not found under %s" % skill_root})
         return EXIT["refused"], factory
-    base = [sys.executable, str(factory), "card", "--step", "--format", "text",
-            "--run-dir", str(run_dir)]
+    base = [sys.executable, str(factory), "card", "--step",
+            "--format", "session-json", "--run-dir", str(run_dir)]
 
-    def _turn(extra):
+    def _halt(turn, state, fallback):
+        record = _write_halted(run_dir, turn, state, fallback)
+        # stderr only: stdout is the wake line, and a halt has none to wake.
+        sys.stderr.write("studio_bridge: replay halted at turn %s (%s)\n"
+                         % (record["turn"], record["reason_code"]))
+        return EXIT["halted"], factory
+
+    def _turn(extra, turn):
         argv = list(base)
         for reply in extra:
             argv.extend(["--reply", str(reply)])
-        return subprocess.run(argv, capture_output=True, text=True,
-                              timeout=600, cwd=str(skill_root))
-
-    try:
-        done = _turn(())                 # prime: the first question is presented
-        if done.returncode != 0:
-            tail = (done.stderr or done.stdout or "").strip()[-300:]
-            _emit({"code": "REPLAY_FAILED", "message": tail})
+        try:
+            done = subprocess.run(argv, capture_output=True, text=True,
+                                  timeout=600, cwd=str(skill_root))
+        except (OSError, subprocess.SubprocessError) as exc:
+            _emit({"code": "REPLAY_FAILED", "message": str(exc)[:300]})
             return EXIT["error"], factory
-        start = _journaled_turns(pathlib.Path(run_dir) / "control"
-                                 / "intake-session.json")
+        state = _session_state(done)
+        if done.returncode != 0:
+            return _halt(turn, state, "INTAKE_TURN_REFUSED")
+        return state or {}
+
+    result = _turn((), 0)                # prime: the first question is presented
+    if isinstance(result, tuple):
+        return result
+    state = result
+    try:
+        start = _journaled_turns(control / "intake-session.json")
         if start is None:
             return EXIT["error"], factory
         for i in range(start, len(replies)):
-            done = _turn(replies[:i + 1])
-            if done.returncode != 0:
-                tail = (done.stderr or done.stdout or "").strip()[-300:]
-                _emit({"code": "REPLAY_FAILED", "message": tail})
-                return EXIT["error"], factory
+            result = _turn(replies[:i + 1], i + 1)
+            if isinstance(result, tuple):
+                return result
+            state = result
     except (OSError, subprocess.SubprocessError) as exc:
         _emit({"code": "REPLAY_FAILED", "message": str(exc)[:300]})
         return EXIT["error"], factory
+    if _session_done(run_dir, state) is False:
+        return _halt(len(replies), state, "INTAKE_NOT_CONFIRMED")
     return EXIT["ok"], factory
 
 
@@ -1359,6 +1534,17 @@ def cmd_poll(args):
 
     db = os.path.abspath(args.db or str(state_dir() / "studio.db"))
     with ClaimLedger(db) as led:
+        # Check-in on EVERY poll, before unfinished claims are looked at
+        # (S75-106 step 3): the studio learns this box is alive even while a
+        # local claim sits unfinished, so one refused order can never keep the
+        # box from checking in. Its inbox line is used only when nothing is
+        # pending.
+        status, out = _http("POST", base + "/api/studio/checkin", key=key,
+                            body=checkin_body(args.skill_root, args.runs,
+                                              args.client_dir))
+        if status // 100 != 2 or not out.get("ok"):
+            return _refusal(out, status, "check-in")
+        line = out.get("line")
         # Startup recovery BEFORE relying on the waiting inbox (SPEC 9.4, D35):
         # a claim event can take an order out of that inbox while its local
         # handoff is unfinished, so a crashed claim is found here, not lost.
@@ -1375,12 +1561,6 @@ def cmd_poll(args):
                     resume_token = (rec.get("payload") or {}).get("claim_token")
                     break
         else:
-            status, out = _http("POST", base + "/api/studio/checkin", key=key,
-                                body=checkin_body(args.skill_root, args.runs,
-                                                  args.client_dir))
-            if status // 100 != 2 or not out.get("ok"):
-                return _refusal(out, status, "check-in")
-            line = out.get("line")
             if not line:
                 return EXIT["ok"]               # nothing waiting: no output at all
             found = INBOX_LINE.match(str(line))
@@ -1458,19 +1638,41 @@ def cmd_poll(args):
         title = str(order.get("title") or title)
         client_id = str(order.get("client_id") or "")
 
-        # Before the run folder exists at all: a reply count that cannot complete
-        # the card's question list replays shifted answers, so the order waits on
-        # the client (`needs_you`, never cancelled) and nothing is written (SPEC
-        # B1). The claim stays local, so the next poll reconciles this order.
-        mismatch = _question_mismatch(args.skill_root, order.get("replies") or [],
-                                      args.client_dir)
-        if mismatch is not None:
-            return _refuse_mismatch(base, key, order_id, mismatch)
-
         # Absolute, always: the poll line's `next` is meant to be run as printed,
         # from wherever the agent happens to be (a relative --runs would otherwise
         # print a relative run_dir and a next that resolves somewhere else).
         run_dir = (pathlib.Path(args.runs).expanduser() / order_id).resolve()
+
+        # Each answer travels with the id of the screen it was given on (S75-106
+        # step 5). A page that numbered its screens differently would replay one
+        # screen's answer onto another question, so the card's own ids are
+        # compared first: a difference waits on the client (`halted`), never a
+        # shifted run.
+        ids_mismatch = _reply_id_mismatch(args.skill_root, order.get("reply_ids"),
+                                          order.get("replies") or [],
+                                          args.client_dir)
+        if ids_mismatch is not None:
+            page_ids, asked_ids = ids_mismatch
+            at = next((i for i in range(min(len(page_ids), len(asked_ids)))
+                       if page_ids[i] != asked_ids[i]), len(asked_ids))
+            record = _write_halted(
+                run_dir, 0,
+                {"question_id": asked_ids[at] if at < len(asked_ids) else None,
+                 "reason_code": "INTAKE_REPLAY_MISMATCH"},
+                "INTAKE_REPLAY_MISMATCH")
+            return _halt_order(led, base, key, order_id, record)
+
+        # An old page carries no reply ids: a reply count that cannot complete
+        # the card's question list still replays shifted answers, so the order
+        # waits on the client (`needs_you`, never cancelled) and nothing is
+        # written (SPEC B1). The claim is released so a refused order never
+        # blocks the box, exactly as a halted one does not.
+        mismatch = _question_mismatch(args.skill_root, order.get("replies") or [],
+                                      args.client_dir)
+        if mismatch is not None:
+            code = _refuse_mismatch(base, key, order_id, mismatch)
+            led.release_order(order_id, BRIDGE_OWNER)
+            return code
         out_line = stored_line
         if out_line is None:
             control = run_dir / "control"
@@ -1486,6 +1688,13 @@ def cmd_poll(args):
                 return EXIT["error"]
 
             code, factory = _replay(args.skill_root, run_dir, order.get("replies") or [])
+            if code == EXIT["halted"]:
+                # The order waits on the client: needs_you, the halt receipt and
+                # the claim released - no wake line and no run for it, and the
+                # box is free for the next order.
+                return _halt_order(led, base, key, order_id,
+                                   _read_halted(run_dir)
+                                   or {"reason_code": "REPLAY_HALTED"})
             if code != EXIT["ok"]:
                 return code
             _board_epic(args.skill_root, order_id, title)
