@@ -2139,9 +2139,12 @@ def _help_problems(stage, d, root):
     published command runs a real argument parser -- the check S75-005 asks
     for. An unknown-option check would need a ``build_parser()`` inside the
     script itself, and only the lane that owns that script may add one.
-    Nothing else runs: no run dir is created, no network, no provider. A script
-    that does not resolve on disk is already named by the caller, so it is
-    skipped here rather than reported twice.
+    Nothing else runs: no run dir is created, no network, no provider. The
+    proof is the parser's own usage text on stdout: a script that merely
+    exits 0 (an empty file, a JSON document, any module with no parser)
+    answers nothing and is refused. A script that does not resolve on disk
+    is already named by the caller, so it is skipped here rather than
+    reported twice.
     """
     script = str((d or {}).get("script") or "")
     if not script:
@@ -2157,12 +2160,15 @@ def _help_problems(stage, d, root):
     except (OSError, subprocess.SubprocessError) as exc:
         return ["stage %r script %r could not be probed with --help: %s"
                 % (stage, script, str(exc)[:200])]
-    if proc.returncode == 0:
-        return []
     detail = (proc.stderr or proc.stdout or "").strip().splitlines()
-    return ["stage %r script %r does not answer --help (exit %d)%s"
-            % (stage, script, proc.returncode,
-               ": %s" % detail[-1][:200] if detail else "")]
+    if proc.returncode != 0:
+        return ["stage %r script %r does not answer --help (exit %d)%s"
+                % (stage, script, proc.returncode,
+                   ": %s" % detail[-1][:200] if detail else "")]
+    if not any(line.lstrip().lower().startswith("usage:") for line in detail):
+        return ["stage %r script %r does not answer --help (exit 0 with no usage text)"
+                % (stage, script)]
+    return []
 
 
 def _descriptor_problems(skill_root=None, help_probe=False):
