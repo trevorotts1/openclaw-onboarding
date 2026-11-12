@@ -33,6 +33,8 @@
 //     -> { ok, upload_id, upload_url, … }          (body passed through unchanged)
 //   getDelivery(orderId)                          -> GET  /api/studio/orders/<id>
 //     -> order.delivery (null until the run delivers)
+//   getOrder(orderId)                             -> GET  /api/studio/orders/<id>
+//     -> { order, stale_page_line }   (S75-073 — the project page re-reads this)
 //   listInbox()      -> { messages: [] }            (not built yet — SPEC.md §1)
 //   postInbox()      -> rejects STUDIO_INBOX_UNAVAILABLE (not built yet — SPEC.md §1)
 //
@@ -171,6 +173,17 @@ const service = {
   getDelivery: async (orderId) => {
     const data = await call("GET", `/api/studio/orders/${encodeURIComponent(orderId)}`);
     return (data.order && data.order.delivery) || null;
+  },
+
+  // S75-073 — the project page's own read: the order as it stands now, plus
+  // the service's line about a page that has fallen behind. Never throws for a
+  // missing line; the page shows nothing rather than inventing a warning.
+  getOrder: async (orderId) => {
+    const data = await call("GET", `/api/studio/orders/${encodeURIComponent(orderId)}`);
+    return {
+      order: data.order || null,
+      stale_page_line: typeof data.stale_page_line === "string" ? data.stale_page_line : "",
+    };
   },
 
   listInbox: async () => ({ messages: [] }),

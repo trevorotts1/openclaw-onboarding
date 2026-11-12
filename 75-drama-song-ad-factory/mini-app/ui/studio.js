@@ -121,7 +121,17 @@ const STATUS_WORDS = {
   cancelled: "Cancelled",
   expired: "Expired",
 };
-const TIMELINE = ["waiting", "in_production", "needs_you", "ready", "delivered", "done"];
+// S75-073 — a stage is on the timeline only when the order really reached it.
+// The service stamps each move (`created_at` for waiting, then `<state>_at` in
+// lifecycle.js), so the page reads the stamps instead of guessing from order.
+// "Needs you" is deliberately absent from this list: it is shown as a
+// highlighted line only while it is the state the order is in now.
+const TIMELINE_STAGES = [
+  { state: "waiting", stamp: "created_at" },
+  { state: "in_production", stamp: "in_production_at" },
+  { state: "ready", stamp: "ready_at" },
+  { state: "delivered", stamp: "delivered_at" },
+];
 
 const state = {
   page: "start",
@@ -142,6 +152,10 @@ const state = {
   sending: false,       // Lock it in is in flight — a second tap sends nothing
   orderId: null,        // S75-071 — ONE id for the recap on screen, until accepted
   delivery: null,
+  // S75-073 — what the project page is showing and what it last drew.
+  staleLine: "",        // stale_page_line the service sent with the order, if it sent one
+  approvalItems: [],    // the approval listing behind the drawn signature
+  projectSig: "",       // the signature of the last thing drawn on the project page
 };
 
 // ── which screens are on: the `shows_when` the card exports (SPEC B1) ────────
@@ -471,6 +485,10 @@ const statusWords = (order) => STATUS_WORDS[order && order.state] || "In progres
 
 function openProject(order) {
   state.order = order;
+  // A different project starts from nothing read yet (S75-073).
+  state.staleLine = "";
+  state.approvalItems = [];
+  state.projectSig = "";
   setPage("approvals");
 }
 
@@ -694,12 +712,175 @@ function pageReceived() {
   ];
 }
 
-function timelineFor(order) {
-  const at = TIMELINE.indexOf(order.state);
-  if (at < 0) return [el("p", { class: "muted", text: `Status: ${statusWords(order)}` })];
-  return [el("ol", {}, TIMELINE.map((s, i) => el("li", {
-    text: `${STATUS_WORDS[s]}${i < at ? " — finished" : i === at ? " — now" : " — not yet"}`,
-  })))];
+export function timelineFor(order) {
+  if (!order) return [];
+  const current = order.state;
+  const rows = [];
+  for (const { state: stage, stamp } of TIMELINE_STAGES) {
+    const reached = typeof order[stamp] === "number";
+    const now = stage === current;
+    if (!reached && !now) continue;
+    rows.push(el("li", {
+      class: now ? "current" : "finished",
+      text: `${STATUS_WORDS[stage]}${now ? " — now" : " — finished"}`,
+    }));
+  }
+  if (current === "needs_you") {
+    rows.push(el("li", { class: "current", text: `${STATUS_WORDS.needs_you} — now` }));
+  } else if (current && !TIMELINE_STAGES.some((s) => s.state === current)) {
+    // done / cancelled / expired: the state it is in now, in words.
+    rows.push(el("li", { class: "current", text: `${statusWords(order)} — now` }));
+  }
+  return rows.length ? [el("ol", {}, rows)] : [];
+}
+
+// ── S75-073 — the project page keeps itself true ────────────────────────────
+// While the project page is open and the tab is visible, the order and its
+// approvals are read again every 30 seconds, and once more the moment the tab
+// comes back. The page redraws only when the state, the stale line or the list
+// of approval versions changed — and never while the client is typing into a
+// box on the page, because a redraw would throw away what has been typed.
+export const PROJECT_REFRESH_MS = 30000;
+
+/** What the project page is showing: state + stale line + approval versions. */
+export function projectSignature(order, staleLine, approvalItems) {
+  const versions = (approvalItems || [])
+    .map((it) => `${(it && (it.stage || it.item_id)) || ""}@${it && it.version != null ? it.version : ""}`)
+    .sort()
+    .join(",");
+  return `${(order && order.state) || ""}|${staleLine || ""}|${versions}`;
+}
+
+/** Every input and textarea drawn on the page, wherever it sits. */
+function textBoxes() {
+  const out = [];
+  const visit = (node) => {
+    if (!node) return;
+    const tag = String(node.tagName || "").toUpperCase();
+    if (tag === "INPUT" || tag === "TEXTAREA") out.push(node);
+    for (const child of node.children || []) visit(child);
+  };
+  const root = typeof main === "function" ? main() : null;
+  if (root) visit(root);
+  return out;
+}
+
+/** True while a text box on the page has focus or holds text — never redraw. */
+export function redrawBlocked() {
+  const active = typeof document !== "undefined" ? document.activeElement : null;
+  for (const box of textBoxes()) {
+    if (box === active) return true;
+    if (typeof box.value === "string" && box.value.trim()) return true;
+  }
+  return false;
+}
+
+/**
+ * One read of the order and its approvals. Redraws only when the signature
+ * changed and no box on the page is being typed into. `manual` is the
+ * "Check for updates" button: it says in words what happened either way.
+ * @returns {Promise<boolean>} whether the page was redrawn
+ */
+export async function refreshProject({ manual = false } = {}) {
+  const order = state.order || state.orders[0];
+  if (!order || !order.order_id || !serviceConnected()) return false;
+  let fresh;
+  let items;
+  try {
+    fresh = await svc().getOrder(order.order_id);
+    const listed = await svc().listApprovals(order.order_id);
+    items = listed && Array.isArray(listed.items) ? listed.items : [];
+  } catch (err) {
+    // A read that failed changes nothing: the page keeps what it drew.
+    if (manual) announce(serviceMessage(err));
+    return false;
+  }
+  // The page, or the project on it, may have changed while the read was in
+  // flight. Painting then would show one project's data on another screen.
+  const still = state.order || state.orders[0];
+  if (state.page !== "approvals" || !still || still.order_id !== order.order_id) return false;
+  const nextOrder = (fresh && fresh.order) || order;
+  const staleLine = (fresh && typeof fresh.stale_page_line === "string") ? fresh.stale_page_line : "";
+  if (projectSignature(nextOrder, staleLine, items) === state.projectSig) {
+    if (manual) announce("Nothing has changed yet.");
+    return false;
+  }
+  if (redrawBlocked()) {
+    if (manual) announce("Finish typing first — then the page will show what changed.");
+    return false;
+  }
+  state.order = nextOrder;
+  state.orders = state.orders.map((o) => (o && o.order_id === nextOrder.order_id ? nextOrder : o));
+  state.staleLine = staleLine;
+  state.approvalItems = items;
+  render();
+  if (manual) announce("Updated.");
+  return true;
+}
+
+let refreshTimer = null;
+let refreshingFor = null;
+
+/** Read once now, then every PROJECT_REFRESH_MS while the page stays open. */
+export function startProjectRefresh() {
+  stopProjectRefresh();
+  refreshProject();
+  if (typeof setInterval === "function") {
+    refreshTimer = setInterval(() => { refreshProject(); }, PROJECT_REFRESH_MS);
+  }
+}
+
+export function stopProjectRefresh() {
+  if (refreshTimer !== null && typeof clearInterval === "function") clearInterval(refreshTimer);
+  refreshTimer = null;
+}
+
+/** The reader runs on the project page and nowhere else. */
+function syncProjectRefresh() {
+  if (state.page === "approvals") {
+    if (refreshingFor !== "approvals") {
+      refreshingFor = "approvals";
+      startProjectRefresh();
+    }
+  } else if (refreshingFor !== null) {
+    refreshingFor = null;
+    stopProjectRefresh();
+  }
+}
+
+/** The tab is hidden: no reads. It is visible again: read at once. */
+function onVisibilityChange() {
+  if (typeof document === "undefined") return;
+  if (document.visibilityState === "hidden") {
+    refreshingFor = null;
+    stopProjectRefresh();
+  } else if (state.page === "approvals") {
+    refreshingFor = "approvals";
+    startProjectRefresh();
+  }
+}
+
+/**
+ * "Start it again" — the order's own answers go back into the recap, so the
+ * client changes what they want and locks in a NEW order (a fresh id; the old
+ * one is terminal). Lifecycle: the draft is cleared at lock-in, so the replies
+ * kept on the order record are the only copy — they are what this reads.
+ */
+function startAgainButton(order) {
+  return primary("Start it again", () => startAgain(order));
+}
+
+async function startAgain(order) {
+  const kept = Array.isArray(order && order.replies) ? order.replies.filter((r) => typeof r === "string") : [];
+  state.replies = kept;
+  state.locked = false;
+  state.sending = false;
+  state.orderId = null;
+  state.qIndex = 0;
+  await loadQuestions();
+  hydrateReplies(state.replies);
+  state.qIndex = Math.min(firstUnanswered(), Math.max(0, state.visible.length - 1));
+  setPage("recap");
 }
 
 // The Agnes job's own record for this project (SPEC A11): the service reports
@@ -730,9 +911,25 @@ function pageProject() {
   nodes.push(el("div", { class: "card" }, [
     el("h2", { text: order.title || "Your video" }),
     el("p", { text: `Status: ${statusWords(order)}` }),
+    // S75-073 — the service's own line when this page has fallen behind.
+    state.staleLine ? el("p", { class: "muted", text: state.staleLine }) : null,
     ...timelineFor(order),
     ...progressNodes(order),
-  ]));
+  ].filter(Boolean)));
+
+  // S75-073 — a cancelled or expired order says what happened, in words, and
+  // offers the one thing left to do. `state_reason` is never printed: it is a
+  // machine code, not something a client can read.
+  if (order.state === "cancelled" || order.state === "expired") {
+    nodes.push(el("div", { class: "panel" }, [
+      el("p", {
+        text: order.state === "cancelled"
+          ? "This order was cancelled before any work was charged. Your answers were kept."
+          : "This order was not picked up in 45 days and has ended.",
+      }),
+      startAgainButton(order),
+    ]));
+  }
 
   const approvalsCard = el("div", { class: "card" }, [el("h2", { text: "Your approvals" })]);
   const slot = el("div", {});
@@ -770,7 +967,13 @@ function pageProject() {
     ]));
   }
 
-  nodes.push(el("div", { class: "actions" }, [secondary("Back to home", () => setPage("start"))]));
+  nodes.push(el("div", { class: "actions" }, [
+    secondary("Check for updates", () => { refreshProject({ manual: true }); }),
+    secondary("Back to home", () => setPage("start")),
+  ]));
+  // What this draw is showing — the reader compares against it, so an
+  // unchanged read repaints nothing and a typing client is never interrupted.
+  state.projectSig = projectSignature(order, state.staleLine, state.approvalItems);
   return nodes;
 }
 
@@ -871,6 +1074,7 @@ export function render() {
   renderProgress();
   main().replaceChildren(...RENDERERS[state.page]());
   focusHeading();
+  syncProjectRefresh();
 }
 
 async function boot() {
@@ -911,6 +1115,11 @@ async function boot() {
     const { page } = readHash();
     if (PAGES.some((p) => p.id === page) && page !== state.page) { state.page = page; render(); }
   });
+  // S75-073 — coming back to the tab reads at once instead of waiting for the
+  // next interval; leaving it stops the reads.
+  if (typeof document !== "undefined" && typeof document.addEventListener === "function") {
+    document.addEventListener("visibilitychange", onVisibilityChange);
+  }
 }
 
 if (typeof document !== "undefined") boot();
