@@ -2387,12 +2387,42 @@ def _write_interview_complete_to_state(answers_path=None):
     Also records the absolute path of the answers file in
     interviewProgress.answersFilePath so verify_interview_complete() and any
     future audit script can find the populated file directly without guessing.
+
+    BU-32: for a gate-v2 interview (interviewProgress.engine == "gate-v2")
+    completion belongs to update-interview-state.sh --complete alone. If the flag
+    is not already true the build exits EXIT_INTERVIEW_PENDING; if it is true the
+    only fields written are interviewProgress.answersFilePath and the company
+    slug fields. interviewQc is never touched on that path.
     """
     path = _build_state_path()
     try:
         os.makedirs(os.path.dirname(path), exist_ok=True)
         state = _load_build_state()
         now = datetime.now().isoformat()
+        progress = state.get("interviewProgress") or {}
+        if not isinstance(progress, dict):
+            progress = {}
+        if progress.get("engine") == "gate-v2":
+            if state.get("interviewComplete") is not True:
+                print(
+                    "interview not complete: run update-interview-state.sh --complete",
+                    file=sys.stderr,
+                )
+                sys.exit(EXIT_INTERVIEW_PENDING)
+            touched = False
+            if answers_path:
+                progress["answersFilePath"] = str(answers_path)
+                touched = True
+            if COMPANY_SLUG:
+                state["companySlug"] = COMPANY_SLUG
+                state["clientSlug"] = COMPANY_SLUG  # transition alias (P1-3)
+                touched = True
+            if touched:
+                state["interviewProgress"] = progress
+                _state_commit(path, state)
+                if answers_path:
+                    print(f"[INTERVIEW] answers file path recorded: {answers_path}", file=sys.stderr)
+            return
         state["interviewComplete"] = True
         state["interviewCompletedAt"] = state.get("interviewCompletedAt") or now
         # P1-3: persist the company slug into build-state so EVERY downstream reader
@@ -2406,9 +2436,6 @@ def _write_interview_complete_to_state(answers_path=None):
         if COMPANY_SLUG:
             state["companySlug"] = COMPANY_SLUG
             state["clientSlug"] = COMPANY_SLUG  # transition alias (P1-3); drop once all readers use `.companySlug // .clientSlug`
-        progress = state.get("interviewProgress") or {}
-        if not isinstance(progress, dict):
-            progress = {}
         progress.setdefault("lastQuestionAt", now)
         progress["interviewComplete"] = True
         if answers_path:
