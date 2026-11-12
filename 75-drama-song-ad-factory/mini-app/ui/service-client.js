@@ -22,7 +22,7 @@
 //     -> { ok, updated_at }
 //   getQuestions()                                -> GET  /questions.json
 //     -> the intake_card studio-json export ({ format, version, questions… })
-//   lockIn({ title, replies, upload_ids })        -> POST /api/studio/orders
+//   lockIn({ title, replies, upload_ids, order_id }) -> POST /api/studio/orders
 //     -> { ok, order, option_line }
 //   listApprovals(orderId)                        -> GET  /api/studio/orders/<id>/approvals
 //     -> { ok, items }
@@ -122,6 +122,13 @@ export async function fetchApprovalMedia(url) {
   };
 }
 
+/**
+ * S75-071 — one tap, one order. While a lock-in is in flight, a second tap
+ * (or any other caller) joins the SAME request instead of sending a second
+ * order; the next tap after it settles starts a fresh one.
+ */
+let lockInInFlight = null;
+
 const service = {
   getSession: () => call("GET", "/api/studio/session"),
 
@@ -139,8 +146,13 @@ const service = {
     return data;
   },
 
-  lockIn: ({ title, replies, upload_ids }) =>
-    call("POST", "/api/studio/orders", { title, replies, upload_ids }),
+  lockIn: ({ title, replies, upload_ids, order_id }) => {
+    if (!lockInInFlight) {
+      lockInInFlight = call("POST", "/api/studio/orders", { title, replies, upload_ids, order_id })
+        .finally(() => { lockInInFlight = null; });
+    }
+    return lockInInFlight;
+  },
 
   listApprovals: (orderId) =>
     call("GET", `/api/studio/orders/${encodeURIComponent(orderId)}/approvals`),
