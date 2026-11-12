@@ -2000,7 +2000,10 @@ STAGE_DESCRIPTORS = {
         "recovery": 'scripts/core/lyric_writer/lyric_writer.py '
                     '--lyrics "$RUN/creative/lyrics.json" '
                     '--brief "$RUN/brief.json"',
-        "artifacts": ("script/lyrics.json",),
+        # S75-011: the lyric sheet lives at creative/lyrics.json -- the file
+        # lyric_writer reads and script_approval/stage.py 83-86 requires.
+        # script/lyrics.json was named by nothing that ran.
+        "artifacts": ("creative/lyrics.json",),
     },
     "music": {
         "script": "scripts/core/intake_preflight/factory.py",
@@ -2050,7 +2053,11 @@ STAGE_DESCRIPTORS = {
                     '--save-dir "$RUN/generation" --ledger "$RUN/spend.sqlite3" '
                     '--run-id "$RUN_ID" --logical-key video '
                     '--attempt-id "$ATTEMPT" --cost "$COST"',
-        "artifacts": ("video/clips.json",),
+        # S75-011: video-generation wrote no file of its own (video/clips.json
+        # was written by nothing). The stage's own dispatcher writes this
+        # manifest for every produced clip with its sha256; the writer is
+        # kie_dispatch.py, a lane-B file -- reported, not edited here.
+        "artifacts": ("generation/clips-manifest.json",),
     },
     "qc-retakes": {
         "script": "scripts/core/retake_manager/retake_manager.py",
@@ -2058,7 +2065,11 @@ STAGE_DESCRIPTORS = {
         "command": _stage_command("qc-retakes"),
         "recovery": 'scripts/core/retake_manager/retake_manager.py '
                     '--request "$RUN/qc/retake-request.json"',
-        "artifacts": ("qc/retakes.json",),
+        # S75-011: retake_manager.py writes no file today (qc/retakes.json was
+        # written by nothing). The stage's own script writes this plan listing
+        # every retake with its sha256; retake_manager.py is owned by no lane
+        # in this build -- reported, not edited here.
+        "artifacts": ("qc/retakes-plan.json",),
     },
     "assembly": {
         "script": "scripts/core/final_assembler/assembler.py",
@@ -2066,7 +2077,11 @@ STAGE_DESCRIPTORS = {
         "command": _stage_command("assembly"),
         "recovery": 'scripts/core/final_assembler/assembler.py '
                     '"$RUN/edit/timeline.json" "$RUN/edit/ad.mp4"',
-        "artifacts": ("edit/timeline.json", "edit/ad.mp4"),
+        # S75-011: the assembled master is the file this stage writes (plus its
+        # own <master>.receipt.json, assembler.py 1682). edit/timeline.json is
+        # an INPUT to the render, never an output of it -- the timeline is
+        # written by the assembler's planning step (lane V, U-V03).
+        "artifacts": ("edit/ad.mp4",),
     },
     "final-qc": {
         "script": "scripts/core/qc_gate.py",
@@ -2075,7 +2090,10 @@ STAGE_DESCRIPTORS = {
         "recovery": 'scripts/core/qc_gate.py evaluate --run "$RUN_ID" '
                     '--stage final-qc --records "$RUN/qc/records.json" '
                     '--makers "$RUN/qc/makers.json" --required "$REQUIRED_CHECKS"',
-        "artifacts": ("final-qc/record.json",),
+        # S75-011: qc_gate.py writes this verdict (S75-002 part B). The old
+        # final-qc/record.json was written by nothing; qc_gate.py is a lane-C
+        # file -- reported, not edited here.
+        "artifacts": ("qc/final-qc-verdict.json",),
     },
     "delivery": {
         "script": "scripts/core/qc_gate.py",
@@ -2084,7 +2102,11 @@ STAGE_DESCRIPTORS = {
         "recovery": 'scripts/core/qc_gate.py evaluate --run "$RUN_ID" '
                     '--stage delivery --records "$RUN/qc/records.json" '
                     '--makers "$RUN/qc/makers.json" --required "$REQUIRED_CHECKS"',
-        "artifacts": ("delivery/receipts.json",),
+        # S75-011: the delivery modules write delivery/delivery-receipt.json
+        # (delivery_clips.py 98, delivery_package/packaging.py 48).
+        # delivery/receipts.json was written by nothing. The final delivery
+        # artifact list is set by U-A13 after U-T05.
+        "artifacts": ("delivery/delivery-receipt.json",),
     },
 }
 
@@ -2347,8 +2369,8 @@ STAGE_REGISTRY = {
         artifacts=STAGE_DESCRIPTORS["creative-strategy"]["artifacts"]),
     "script-lyrics": _stage(
         ["creative-strategy"], "lyricist",
-        STAGE_DESCRIPTORS["script-lyrics"]["command"], "script/<plan-revision>",
-        "script/lyrics.json", "script/qc-record.json", ["script/lyrics.json"],
+        STAGE_DESCRIPTORS["script-lyrics"]["command"], "creative/<plan-revision>",
+        "creative/lyrics.json", "script/qc-record.json", ["creative/lyrics.json"],
         "delivered-approval", "approved lyric sheet",
         STAGE_DESCRIPTORS["script-lyrics"]["recovery"], "script-approved",
         artifacts=STAGE_DESCRIPTORS["script-lyrics"]["artifacts"]),
@@ -2391,39 +2413,39 @@ STAGE_REGISTRY = {
     "video-generation": _stage(
         ["image-keyframes"], "video-generator",
         STAGE_DESCRIPTORS["video-generation"]["command"],
-        "video/<segment-set-digest>", "video/clips.json",
-        "video/qc-record.json", ["video/clips.json"],
+        "generation/<segment-set-digest>", "generation/clips-manifest.json",
+        "video/qc-record.json", ["generation/clips-manifest.json"],
         "none", "all clips materialized",
         STAGE_DESCRIPTORS["video-generation"]["recovery"], "provider-completion",
         artifacts=STAGE_DESCRIPTORS["video-generation"]["artifacts"]),
     "qc-retakes": _stage(
         ["video-generation"], "qc-reviewer",
         STAGE_DESCRIPTORS["qc-retakes"]["command"], "qc/<clip-set-digest>",
-        "qc/retakes.json", "qc/qc-record.json", ["qc/retakes.json"],
+        "qc/retakes-plan.json", "qc/qc-record.json", ["qc/retakes-plan.json"],
         "operator", "QC verdict recorded (retakes or accept)",
         STAGE_DESCRIPTORS["qc-retakes"]["recovery"], "qc-complete",
         required=False, artifacts=STAGE_DESCRIPTORS["qc-retakes"]["artifacts"]),
     "assembly": _stage(
         ["qc-retakes"], "editor",
         STAGE_DESCRIPTORS["assembly"]["command"],
-        "edit/<timeline-digest>", "edit/timeline.json",
-        "assembly/qc-record.json", ["edit/timeline.json", "edit/ad.mp4"],
-        "none", "assembled timeline on disk",
+        "edit/<timeline-digest>", "edit/ad.mp4",
+        "assembly/qc-record.json", ["edit/ad.mp4"],
+        "none", "assembled master on disk",
         STAGE_DESCRIPTORS["assembly"]["recovery"], "assembly-complete",
         artifacts=STAGE_DESCRIPTORS["assembly"]["artifacts"]),
     "final-qc": _stage(
         ["assembly"], "final-qc-reviewer",
         STAGE_DESCRIPTORS["final-qc"]["command"],
-        "final-qc/<assembly-digest>", "final-qc/record.json",
-        "final-qc/record.json", ["final-qc/record.json"],
+        "qc/<assembly-digest>", "qc/final-qc-verdict.json",
+        "qc/final-qc-verdict.json", ["qc/final-qc-verdict.json"],
         "operator", "independent final QC PASS",
         STAGE_DESCRIPTORS["final-qc"]["recovery"], "final-qc-complete",
         artifacts=STAGE_DESCRIPTORS["final-qc"]["artifacts"]),
     "delivery": _stage(
         ["final-qc"], "delivery-agent",
         STAGE_DESCRIPTORS["delivery"]["command"],
-        "delivery/<run-id>", "delivery/receipts.json",
-        "delivery/qc-record.json", ["delivery/receipts.json"],
+        "delivery/<run-id>", "delivery/delivery-receipt.json",
+        "delivery/qc-record.json", ["delivery/delivery-receipt.json"],
         "none", "successful destination delivery receipts",
         STAGE_DESCRIPTORS["delivery"]["recovery"], "delivery-complete",
         artifacts=STAGE_DESCRIPTORS["delivery"]["artifacts"]),
@@ -2737,7 +2759,9 @@ def _collect_completion_evidence(run_dir, got, stages=None, registry=None):
 
     # independent final QC: a record whose producer is a dedicated final-QC
     # reviewer, gate PASS. A stage's own output never counts as final QC.
-    fq = _read_json(rd / "final-qc" / "record.json", {}) or {}
+    # S75-011: the declared final-qc artifact is qc/final-qc-verdict.json (the
+    # file qc_gate.py writes); final-qc/record.json was written by nothing.
+    fq = _read_json(rd / "qc" / "final-qc-verdict.json", {}) or {}
     fq_producer = str(fq.get("producer") or "")
     final_qc_ok = (fq.get("gate") == "PASS"
                    and fq_producer == reg.get("final-qc", {}).get("qc_producer", "final-qc-reviewer"))
@@ -2755,6 +2779,9 @@ def _collect_completion_evidence(run_dir, got, stages=None, registry=None):
     artifacts_present = not missing
 
     # destination delivery receipts: all destinations delivered successfully.
+    # S75-011: the declared delivery artifact is delivery/delivery-receipt.json
+    # (the delivery modules' merged receipt); U-A13 settles the destination-list
+    # reader against that file's real shape, so it keeps its current path here.
     receipts = _read_json_list(rd / "delivery" / "receipts.json", required=False)
     rows = [r for r in receipts if isinstance(r, dict)]
     dests = [r.get("destination") for r in rows]
