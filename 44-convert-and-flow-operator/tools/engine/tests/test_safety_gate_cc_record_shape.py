@@ -73,3 +73,21 @@ class TestCcShape(_Base):
         # native fields present and wrong must refuse even if scope would match
         self.refused(_cc(location_id="OTHER", action=ACTION, object_key=OBJ, plan_sha256=PLAN,
                          approver="o", verification_class="authenticated_platform_record"))
+
+
+class TestNative645Shape(_Base):
+    """GET /api/launch-approvals/<id> after CC PR 645: gate fields returned natively next to the CC columns."""
+
+    def rec(self, **over):
+        r = _cc(location_id=LOC, action=ACTION, object_key=OBJ, plan_sha256="sha256:" + PLAN,
+                approver="owner@client", verification_class="authenticated_platform_record",
+                request_id="req_abc123")
+        r.update(over)
+        return r
+
+    def test_645_record_passes(self):
+        self.write(self.rec())
+
+    def test_645_record_wrong_plan_hash_refused(self):
+        with self.assertRaises(self.sg.SafetyRefused):
+            self.write(self.rec(plan_sha256="sha256:" + "c" * 64))
