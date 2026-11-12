@@ -6,10 +6,12 @@
 # a QC fail). Scope: this skill tree (onboarding). The 999 copy is
 # W3-A's — run this script there is their unit's job, not ours.
 #
-# "Endpoint" means a KIE host occurrence — kie.ai, api.kie.ai, or any
-# other subdomain, including ones nobody has thought of yet. The ONE
-# exception is the documentation host docs.kie.ai (a docs URL is a
-# citation, not an API call), and it is applied per host OCCURRENCE:
+# "Endpoint" means a KIE host occurrence in a string literal of a Python
+# file — kie.ai, api.kie.ai, or any other subdomain, including ones nobody
+# has thought of yet. Markdown and other prose files name KIE.ai in user
+# words (client copy); prose is never an endpoint. The ONE exception is the
+# documentation host docs.kie.ai (a docs URL is a citation, not an API
+# call), and it is applied per host OCCURRENCE:
 # a line carrying both a docs URL and a real api URL still fails on the
 # api host. A line-level exemption would let the real direct call escape.
 #

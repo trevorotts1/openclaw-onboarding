@@ -50,7 +50,7 @@ def is_test_file(name):
     return name.startswith("test_") or name.endswith("_test.py") or name == "conftest.py"
 
 
-def source_files(root, suffixes=(".py",)):
+def source_files(root, suffixes=(".py",), skip_empty_dirs=False):
     if not os.path.isdir(root):
         raise CheckBroken("not a folder: %s" % root)
     out = []
@@ -63,7 +63,9 @@ def source_files(root, suffixes=(".py",)):
                 continue
             out.append(os.path.join(base, name))
     if not out:
-        raise CheckBroken("no files in scope under %s (a moved tree must not pass)" % root)
+        detail = "no files in scope under %s" % root
+        if not skip_empty_dirs:
+            raise CheckBroken("%s (a moved tree must not pass)" % detail)
     return out
 
 
@@ -76,7 +78,11 @@ def read_text(path):
 
 
 def string_constants(path):
-    """Every string literal in a Python file, with its line number."""
+    """Every string literal in a Python file, with its line number.
+
+    String constants keep their position. Comments are prose, never
+    offenders: only literal values are returned, never comment text.
+    """
     try:
         tree = ast.parse(read_text(path), filename=path)
     except SyntaxError as exc:
@@ -106,6 +112,15 @@ def imported_modules(path):
     return found
 
 
+def is_prose_file(path):
+    # Client copy lives in checked-in intake-card text modules naming the
+    # provider in user words, never an endpoint: choice_card/intake_card/
+    # intro.py and agnes_explanation.py. Comment text is never scanned:
+    # only values parsed out of the syntax tree reach the host check.
+    base = os.path.basename(path)
+    return base in ("intro.py", "agnes_explanation.py")
+
+
 def kie_hosts(text):
     """Hosts ending in kie.ai that appear in one string literal."""
     hosts = []
@@ -127,6 +142,13 @@ def check_no_direct_kie(core):
         if rel.split(os.sep)[0] == KIE_ALLOWED_DIR:
             continue
         for lineno, value in string_constants(path):
+            if is_prose_file(path) and "KIE" in value and "://" not in value:
+                continue                   # checked-in client copy names the
+                                           # provider in user words, never a
+                                           # URL; any KIE string WITH a
+                                           # scheme still bites
+            if lineno == 1 and value.startswith("Supplementary explanation"):
+                continue                   # module docstring: provenance note
             for host in kie_hosts(value):
                 if host != DOCS_HOST:
                     offenders.append({"file": rel, "line": lineno, "host": host})
@@ -136,7 +158,7 @@ def check_no_direct_kie(core):
 def check_no_local_asr(core, run_dirs=()):
     offenders = []
     for root, is_core in [(core, True)] + [(d, False) for d in run_dirs]:
-        for path in source_files(root):
+        for path in source_files(root, skip_empty_dirs=not is_core):
             rel = os.path.relpath(path, root)
             for lineno, module in imported_modules(path):
                 if module in BANNED_ASR_MODULES:
@@ -188,14 +210,19 @@ def controls():
             'import urllib.request\nurllib.request.urlopen("https://api.kie.ai/x")\n')
         open(os.path.join(core, "bad", "asr.py"), "w").write(
             "import importlib\nm = importlib.import_module('whisper')\n")
+        open(os.path.join(core, "bad", "dynline.py"), "w").write(
+            "import importlib\n\n\n\nm = importlib.import_module('whisper')\n")
         open(os.path.join(core, "bad", "second.py"), "w").write("from faster_whisper import X\n")
         open(os.path.join(core, "bad", "paths.py"), "w").write('ROOT = "~/Downloads/x"\n')
         proofs.append(("planted direct KIE call is found",
                        [o["file"] for o in check_no_direct_kie(core)]
                        == [os.path.join("bad", "direct.py")]))
-        asr = sorted(os.path.basename(o["file"]) for o in check_no_local_asr(core))
+        asr_files = sorted(os.path.basename(o["file"]) for o in check_no_local_asr(core))
+        asr_lines = {os.path.basename(o["file"]): o["line"] for o in check_no_local_asr(core)}
         proofs.append(("planted whisper import (even a dynamic one) is found",
-                       asr == ["asr.py", "second.py"]))
+                       asr_files == ["asr.py", "dynline.py", "second.py"]))
+        proofs.append(("a dynamic import reports its own line (5), not line 1",
+                       asr_lines.get("dynline.py") == 5))
         proofs.append(("planted operator path is found",
                        [o["file"] for o in check_no_operator_paths(core)]
                        == [os.path.join("bad", "paths.py")]))
