@@ -102,7 +102,14 @@ if mode == "full":
     con.executemany(
         "INSERT INTO workspaces (id, name, slug) VALUES (?, ?, ?)",
         [("ws-marketing", "Marketing", "marketing"),
-         ("ws-sales", "Sales", "sales")],
+         ("ws-sales", "Sales", "sales"),
+         # Non-department rows the Command Center seeds under fixed identities
+         # (structural default, setup General lane, engine lane, no-fit
+         # catch-all). Phase 3's fallback must not write sub-agents into these.
+         ("default", "General", "default"),
+         ("testco-general", "General", "testco-general"),
+         ("podcast", "Podcast", "podcast"),
+         ("general-task", "General Task", "general-task")],
     )
 elif mode == "bare":
     con.execute("CREATE TABLE unrelated (id INTEGER)")
@@ -147,6 +154,27 @@ import sys
 con = sqlite3.connect(sys.argv[1])
 try:
     print(con.execute("SELECT COUNT(DISTINCT workspace_id) FROM agents").fetchone()[0])
+except sqlite3.Error:
+    print(-1)
+finally:
+    con.close()
+PY
+}
+
+# non_department_row_count: sub-agent rows Phase 3 wrote into the fixed-identity
+# non-department rows make_db full seeds (structural default, setup General lane,
+# engine lane, no-fit catch-all). Must be 0 — the fallback returns departments only.
+non_department_row_count() {
+  python3 - "$DB" <<'PY'
+import sqlite3
+import sys
+
+con = sqlite3.connect(sys.argv[1])
+try:
+    print(con.execute(
+        "SELECT COUNT(*) FROM agents WHERE workspace_id IN "
+        "('default', 'testco-general', 'podcast', 'general-task')"
+    ).fetchone()[0])
 except sqlite3.Error:
     print(-1)
 finally:
@@ -237,6 +265,12 @@ if [[ "$_ws" -eq 2 ]]; then
   ok "case 2: rows landed on the 2 departments in the table"
 else
   bad "case 2: expected rows on 2 departments, found $_ws"
+fi
+_nd="$(non_department_row_count)"
+if [[ "$_nd" -eq 0 ]]; then
+  ok "case 2: no rows on non-department workspaces (default/testco-general/podcast/general-task)"
+else
+  bad "case 2: expected 0 rows on non-department workspaces, found $_nd"; show_output
 fi
 
 # ── Case 3: roster absent, workspaces table missing ─────────────────────────

@@ -979,13 +979,39 @@ def _ws_has_archived_at(conn):
 
 manifest_path = os.path.join(OC_ROOT, ".materialize-dept-agents.manifest")
 if not os.path.isfile(manifest_path):
-    # Manifest was already consumed by Phase 2 scaffolder -- try workspaces table
+    # Roster file absent (Phase 1 found no department folders, or its write
+    # failed) -- fall back to the workspaces table.
+    #
+    # The workspaces table has NO kind/type/role column (src/lib/db/schema.ts:
+    # id, name, slug, description, icon, company_id, user_md, sort_order,
+    # head_agent_id, original_slug, archived_at, archived_reason, created_at,
+    # updated_at). The rows that are NOT departments are the ones the Command
+    # Center seeds under fixed identities, so this filter names exactly those
+    # identities on the two columns that exist:
+    #   'default'                              seed.ts:138 structural default row
+    #   'general-task','dept-general-task'     migrations.ts 166/167 no-fit catch-all
+    #   '<company>-general'                    readiness/setup.ts:748 setup General lane
+    #   'podcast','anthology','presentations'  migrations.ts 113/114 (ENGINE_WORKSPACE_SLUGS)
+    #   'smoke-test-dept','no-script-dept'     test-residue.ts fixture residue
+    # Everything else the seeding code writes IS a department (departments.json
+    # rows, /api/departments rows, 'funnels', 'master-orchestrator') and keeps
+    # its rows. This is an exclusion list: a NEW structural row class needs a
+    # term here. The upgrade path is a real workspaces.kind column.
+    _NON_DEPARTMENT = (
+        "'default', 'general-task', 'dept-general-task',"
+        " 'podcast', 'anthology', 'presentations',"
+        " 'smoke-test-dept', 'no-script-dept'"
+    )
     try:
         db = sqlite3.connect(db_path)
-        cur = db.execute(
-            "SELECT id, name, slug FROM workspaces"
-            + (" WHERE archived_at IS NULL" if _ws_has_archived_at(db) else "")
+        _where = (
+            f" WHERE lower(id) NOT IN ({_NON_DEPARTMENT})"
+            f" AND lower(COALESCE(slug, '')) NOT IN ({_NON_DEPARTMENT})"
+            " AND lower(id) NOT LIKE '%-general'"
+            " AND lower(COALESCE(slug, '')) NOT LIKE '%-general'"
+            + (" AND archived_at IS NULL" if _ws_has_archived_at(db) else "")
         )
+        cur = db.execute("SELECT id, name, slug FROM workspaces" + _where)
         rows = cur.fetchall()
         db.close()
         entries = [(ws_id, name, slug or name.lower().replace(" ", "-")) for ws_id, name, slug in rows]
