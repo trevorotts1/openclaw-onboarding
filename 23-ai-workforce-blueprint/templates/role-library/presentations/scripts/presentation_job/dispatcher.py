@@ -101,10 +101,6 @@ except ImportError:  # pragma: no cover - pre-Item-15 trees force nothing
 # PD-TEST-067: the ONE reader for the deck's slide-array shape, shared with
 # fanout, build_deck and craft_judgement. json/pathlib/typing only -- no cycle.
 from presentation_job import arc_slides as _arc_slides  # noqa: E402
-# PD-304: the ONE list of priority-shift ship-gate item ids, shared by this
-# module's P-SHIFT-QC output contract, the step check that grades the report
-# and the renderer's own writer (build_deck._chk_priority_shift_ledger).
-from presentation_job import priority_shift_items as _pshift  # noqa: E402
 # PRES-014 (W2 WF05): durable fan-out unit records. Banked results are read
 # and validated BEFORE any model call; only failed/changed units resubmit;
 # the attempt/budget ledger survives restarts (append-only transitions +
@@ -1382,77 +1378,12 @@ ARTIFACT_CONTRACTS: Dict[str, str] = {
     # NOTE: P-SP-INTAKE has no contract entry -- confirmed during acceptance testing
     # to be driver_only (see DECLINE_PHASES above); this module honestly declines it
     # rather than guessing at a schema it cannot legitimately satisfy.
-    # P-SHIFT-QC's entry is COMPOSED below (see _compose_p_shift_qc_contract): its
-    # item-id list is the shared tuple from presentation_job.priority_shift_items,
-    # never a second hand-typed copy.
+    # P-SHIFT-QC's entry is COMPOSED at the END of this module (see
+    # _compose_p_shift_qc_contract): its item-id list is the shared tuple from
+    # presentation_job.priority_shift_items, never a second hand-typed copy. It is
+    # placed at the tail so this table's own line numbers -- which the build spec
+    # and the lane's later units quote -- do not move.
 }
-
-
-def _compose_p_shift_qc_contract() -> str:
-    """PD-304: tell the P-SHIFT-QC grader the ONE shape its check accepts.
-
-    THE DEFECT this closes (build spec section 1.3): P-SHIFT-QC had no entry in
-    ARTIFACT_CONTRACTS, so the grading model was handed GENERIC_CONTRACT -- "write
-    a substantive JSON file" -- while `runfacts.verify_priority_shift` grades the
-    ledger against `schema == "priority_shift_report/v1"`, a literal top-level
-    `pass: true`, and a non-empty `items` array whose every row is `pass: true`.
-    A model that never saw those requirements could not converge, and the step
-    could not pass honestly.
-
-    The shape below is stated from the two sources that judge it, not invented:
-      * `presentation_job.runfacts.verify_priority_shift` (the step check);
-      * `build_deck._chk_priority_shift_ledger` (the report's other writer, whose
-        own `add(item, ok, evidence)` produces exactly these three row keys).
-    The id list and the row key come from presentation_job.priority_shift_items,
-    the same tuple PD-300b (the step check) and PD-097 (the writer) import, so
-    this text can never enumerate a different set than the check requires.
-
-    A failing row is a CORRECT output: the gate exists to block ship, so telling
-    the grader only how to pass would buy a fabricated pass. Point 5 says so
-    explicitly.
-    """
-    ids = "\n".join(
-        f"   - `{_pshift.PRIORITY_SHIFT_ID_KEY}`: `{item_id}`"
-        for item_id in _pshift.PRIORITY_SHIFT_ITEM_IDS
-    )
-    key = _pshift.PRIORITY_SHIFT_ID_KEY
-    return (
-        "OUTPUT CONTRACT (mechanically enforced by the P-SHIFT-QC step check, "
-        "presentation_job.runfacts.verify_priority_shift -- graded literally against "
-        "the shape stated here). File path: working/qc/priority_shift_report.json "
-        "(a single JSON object). You are the priority-shift ship gate: READ the deck "
-        "(working/copy/slides_copy.md, working/copy/priority_shift_spec.json and the "
-        "rendered slides under renders/) and WRITE this one report. Report what you "
-        "actually found.\n"
-        "1. `schema`: the exact string `priority_shift_report/v1` (case-sensitive, "
-        "no variation).\n"
-        "2. `pass`: boolean `true` only when EVERY item row below is `pass: true`. "
-        "The step passes only when this top-level `pass` is literally true AND every "
-        "row's `pass` is true; any contradiction between the flag and the rows is "
-        "rejected as a rubber stamp.\n"
-        "3. `items`: a JSON array holding EXACTLY one row for each of these "
-        f"{len(_pshift.PRIORITY_SHIFT_ITEM_IDS)} item ids -- every id present, none "
-        "missing, none extra, none twice, in this order:\n"
-        + ids
-        + "\n"
-        "4. Every `items[]` row is an object with exactly these three keys:\n"
-        f"   - `{key}`: the id string, copied character-for-character from the list "
-        "above (this is the row key that carries the id -- do not rename it).\n"
-        "   - `pass`: boolean.\n"
-        "   - `evidence`: a short QUOTED excerpt from the deck or the artifact you "
-        "read that justifies the verdict -- never a placeholder, never 'looks good'.\n"
-        "5. A FAILING row is a correct output. If an item genuinely fails, write "
-        "`pass: false` on that row (and on the top-level `pass` if any row fails, "
-        "as point 2 requires) and quote what is wrong. Do not inflate a weak item to "
-        "`pass: true`: a failing report is a correct answer, a fabricated pass is a "
-        "rejected one.\n"
-        "6. Extra top-level keys you need (for example `gate`, a `phase` label, or a "
-        "per-slide `slides` list) are ALLOWED and ignored by the mechanical check. Do "
-        "not rename, skip, merge or reorder the item rows."
-    )
-
-
-ARTIFACT_CONTRACTS["P-SHIFT-QC"] = _compose_p_shift_qc_contract()
 
 
 def _shared_prompt_gate():
@@ -11326,6 +11257,85 @@ def main(argv: Optional[List[str]] = None) -> int:
                         args.max_lifetime_minutes, run_dir_mode=False) * 60,
                     max_workers=args.max_workers)
     return 0
+
+
+# ---------------------------------------------------------------------------
+# PD-304: P-SHIFT-QC's output contract, composed from the ONE shared item list.
+#
+# THE DEFECT: P-SHIFT-QC had no entry in ARTIFACT_CONTRACTS, so the grading model
+# was handed GENERIC_CONTRACT ("write a substantive JSON file") while
+# `presentation_job.runfacts.verify_priority_shift` grades the ledger against
+# `schema == "priority_shift_report/v1"`, a literal top-level `pass: true`, and an
+# `items` array whose every row is `pass: true`. A model that was never told the
+# shape could not converge on it, so the check could not be passed honestly.
+#
+# THE SHAPE is stated from the two things that judge it, never invented:
+#   * `runfacts.verify_priority_shift` (the step check, reached through
+#     PHASE_VERIFIERS["P-SHIFT-QC"]); and
+#   * `build_deck._chk_priority_shift_ledger` (the report's other writer, whose own
+#     local `add(item, ok, evidence)` emits exactly these three row keys).
+# The id list and the row key come from presentation_job.priority_shift_items --
+# the same tuple PD-300b (the step check) and PD-097 (the writer) import -- so this
+# text can never enumerate a different set than the check requires.
+#
+# It lives at the END of this module, not beside the table, so the table's own line
+# numbers (quoted by the build spec and by this lane's later units) do not move.
+# ---------------------------------------------------------------------------
+def _compose_p_shift_qc_contract() -> str:
+    """Build the P-SHIFT-QC output contract from presentation_job.priority_shift_items.
+
+    A failing row is a CORRECT output: the gate exists to block ship, so a contract
+    that only teaches how to pass would buy a fabricated pass. Point 5 says so
+    explicitly. Extra top-level keys are allowed and ignored, because the writer
+    today adds `gate`, `phase`, `generated_at` and a per-slide `slides` list and
+    the check ignores them -- telling the grader they are forbidden would make a
+    correct report look wrong.
+    """
+    # Lazy import (same pattern as _shared_prompt_gate): keeps this module's import
+    # header unchanged, so no line above this block shifts.
+    from presentation_job import priority_shift_items as _pshift  # noqa: PLC0415
+
+    key = _pshift.PRIORITY_SHIFT_ID_KEY
+    ids = "\n".join(
+        f"   - `{key}`: `{item_id}`" for item_id in _pshift.PRIORITY_SHIFT_ITEM_IDS
+    )
+    return (
+        "OUTPUT CONTRACT (mechanically enforced by the P-SHIFT-QC step check, "
+        "presentation_job.runfacts.verify_priority_shift -- graded literally against "
+        "the shape stated here). File path: working/qc/priority_shift_report.json "
+        "(a single JSON object). You are the priority-shift ship gate: READ the deck "
+        "(working/copy/slides_copy.md, working/copy/priority_shift_spec.json and the "
+        "rendered slides under renders/) and WRITE this one report. Report what you "
+        "actually found.\n"
+        "1. `schema`: the exact string `priority_shift_report/v1` (case-sensitive, "
+        "no variation).\n"
+        "2. `pass`: boolean `true` only when EVERY item row below is `pass: true`. "
+        "The step passes only when this top-level `pass` is literally true AND every "
+        "row's `pass` is true; a report whose rows contradict its own flag is "
+        "rejected as a rubber stamp.\n"
+        "3. `items`: a JSON array holding EXACTLY one row for each of these "
+        f"{len(_pshift.PRIORITY_SHIFT_ITEM_IDS)} item ids -- every id present, none "
+        "missing, none extra, none twice, in this order:\n"
+        + ids
+        + "\n"
+        "4. Every `items[]` row is an object with these three keys:\n"
+        f"   - `{key}`: the id string, copied character-for-character from the list "
+        "above (this is the row key that carries the id -- do not rename it).\n"
+        "   - `pass`: boolean.\n"
+        "   - `evidence`: a short QUOTED excerpt from the deck or the artifact you "
+        "read that justifies the verdict -- never a placeholder, never 'looks good'.\n"
+        "5. A FAILING row is a correct output. If an item genuinely fails, write "
+        "`pass: false` on that row (and on the top-level `pass` if any row fails, "
+        "as point 2 requires) and quote what is wrong. Do not inflate a weak item to "
+        "`pass: true`: a failing report is a correct answer, a fabricated pass is a "
+        "rejected one.\n"
+        "6. Extra top-level keys you need (for example `gate`, a `phase` label, or a "
+        "per-slide `slides` list) are ALLOWED and ignored by the mechanical check. Do "
+        "not rename, skip, merge or reorder the item rows."
+    )
+
+
+ARTIFACT_CONTRACTS["P-SHIFT-QC"] = _compose_p_shift_qc_contract()
 
 
 if __name__ == "__main__":
