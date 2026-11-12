@@ -16,6 +16,8 @@ Run: python3 delivery_docs/test_pdf_writer.py
 """
 from __future__ import annotations
 
+import unicodedata
+
 # US Letter, in PostScript points.
 PAGE_W, PAGE_H = 612.0, 792.0
 MARGIN_L, MARGIN_R = 64.0, 64.0
@@ -62,12 +64,36 @@ _WIDE = {0x96: 556, 0x97: 1000, 0x91: 278, 0x92: 278,
 _WIDE_DEFAULT = 780
 
 
+def _replacement(ch):
+    """The text one character prints as: itself, a plain-ASCII decomposition,
+    or '?' when neither works."""
+    try:
+        ch.encode("cp1252")
+        return ch
+    except UnicodeEncodeError:
+        folded = "".join(c for c in unicodedata.normalize("NFKD", ch)
+                         if not unicodedata.combining(c))
+    return folded if folded and folded.isascii() else "?"
+
+
+def to_page_text(text):
+    """The text the page can actually draw.
+
+    A character cp1252 can hold is kept. Anything else is tried as its Unicode
+    decomposition with the combining marks removed ('o' with a dot below prints
+    as 'o'), and used when the result is plain ASCII; otherwise it becomes '?'.
+    """
+    return "".join(_replacement(ch) for ch in str(text))
+
+
+def unprintable(text):
+    """The characters of `text` that will print as '?' instead of themselves."""
+    return [ch for ch in str(text) if ch != "?" and _replacement(ch) == "?"]
+
+
 def _byte(ch):
     """One WinAnsi byte for a character; anything unmappable becomes '?'."""
-    try:
-        return ch.encode("cp1252")[0]
-    except UnicodeEncodeError:
-        return ord("?")
+    return to_page_text(ch).encode("cp1252")[0]
 
 
 def text_width(text, font, size):
@@ -76,7 +102,7 @@ def text_width(text, font, size):
         raise ValueError("unknown font %r" % (font,))
     table = _WIDTHS[font]
     units = 0
-    for ch in text:
+    for ch in to_page_text(text):
         b = _byte(ch)
         units += table[b - 32] if 32 <= b <= 126 else _WIDE.get(b, _WIDE_DEFAULT)
     return units * float(size) / 1000.0
@@ -132,7 +158,7 @@ def fit(text, font, size, max_width):
 def _esc(text):
     """PDF literal-string body: ASCII only, everything else an octal escape."""
     out = []
-    for b in str(text).encode("cp1252", errors="replace"):
+    for b in to_page_text(text).encode("cp1252", errors="replace"):
         if b in (0x28, 0x29, 0x5C):
             out.append("\\" + chr(b))
         elif 32 <= b <= 126:
@@ -174,7 +200,13 @@ class Layout:
         self.top, self.bottom = float(top), float(bottom)
         self.pages = []
         self._footer = None
+        self._replaced = set()
         self._new_page()
+
+    @property
+    def replaced(self):
+        """The characters this layout had to print as '?', sorted."""
+        return sorted(self._replaced)
 
     # -- page frame --
     @property
@@ -228,6 +260,7 @@ class Layout:
         for line in wrap(text, font, size, width):
             self.need(lead)
             if line:
+                self._replaced.update(unprintable(line))
                 baseline = self.y - float(size) * 0.80
                 self._ops().append(
                     text_op(self.left + float(indent), baseline, line,
