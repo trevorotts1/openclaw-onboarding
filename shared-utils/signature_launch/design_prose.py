@@ -116,10 +116,21 @@ def role_structure(role: str, refs: Path) -> str:
         node = node.get(key) if isinstance(node, dict) else None
     if not isinstance(node, list) or not node:
         _refuse(f"Skill 71 has no section list for {role} at {rel}")
-    parts = []
+    parts, seen = [], {}
     for section in node:
         label = str(section.get("name") or section.get("job") or "").strip().rstrip(".")
-        label = "" if _PRIVATE.search(label) else label[:140]
+        if _PRIVATE.search(label):
+            label = ""
+        # a clause an earlier section already states is named by reference, never repeated: three pain
+        # sections sharing one rule would print an 8-word run three times, which the padding screen refuses
+        kept, ref = [], None
+        for clause in (c.strip() for c in label.split(";") if c.strip()):
+            if clause in seen:
+                ref = ref or seen[clause]
+            else:
+                seen[clause] = section.get("id")
+                kept.append(clause)
+        label = "; ".join(kept + ([f"same rules as section {ref}"] if ref else []))[:140]
         parts.append(f"{section.get('id')}: {label}" if label else str(section.get("id")))
     return f"{role.replace('_', ' ')} page, {len(node)} sections in this order: " + "; ".join(parts)
 
