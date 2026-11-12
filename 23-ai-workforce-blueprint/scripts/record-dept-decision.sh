@@ -10,7 +10,7 @@
 # back, so the owner's opt-out is silently discarded and a smaller shop gets over-built.
 # This helper writes the PROVENANCED object form the enforcer accepts, so a decline is
 # actually honored. It mirrors the style/robustness of update-interview-state.sh
-# (atomic write, jq --arg only — never string interpolation).
+# (atomic, locked write through workforce_state; arguments only, never string interpolation).
 #
 # The produced shape (accepted by _canonical_decline_set for a "no"):
 #   .canonicalReconciliation.decisions[<dept>] = {
@@ -50,6 +50,7 @@ set -euo pipefail
 # Rate-limit gate (U056)
 RECD_SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$RECD_SCRIPT_DIR/lib-interview-rate-limit.sh"
+source "$RECD_SCRIPT_DIR/lib-workforce-state.sh"
 
 # ── Parse flags ──────────────────────────────────────────────────────────────
 DEPT=""
@@ -90,8 +91,6 @@ fi
 if [ -z "$SOURCE" ]; then
   echo "ERROR: --source must be non-empty (provenance field)" >&2; exit 1
 fi
-
-command -v jq >/dev/null 2>&1 || { echo "ERROR: jq not found on PATH" >&2; exit 1; }
 
 # ── Resolve state file path (mirror update-interview-state.sh) ────────────────
 if [ -n "$STATE_OVERRIDE" ]; then
@@ -269,11 +268,8 @@ fi
 
 # ── Write the provenanced decision object atomically ─────────────────────────
 NOW=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-TMP="$STATE.tmp.$$"
-
-# All dynamic values pass through jq --arg (never string interpolation into the
-# filter), so a dept id / owner id / session id can never break or inject into the
-# JSON. setpath-via-[$dept] handles an arbitrary dept key safely.
+# All dynamic values pass as ARGUMENTS (never interpolated into code), so a dept
+# id / owner id / session id can never break or inject into the update.
 # For a confirmed floor-dept decline, also stamp the acknowledged loss warning
 # (lossWarning + lossWarningAck=true) INTO the decision object. These are extra
 # audit fields ALONGSIDE the four provenance fields canonical_decline.py requires
@@ -286,28 +282,33 @@ else
   LOSS_ACK="false"
 fi
 
-jq \
-  --arg dept "$DEPT" \
-  --arg decision "$DECISION_LC" \
-  --arg source "$SOURCE" \
-  --arg by "$BY" \
-  --arg session "$SESSION" \
-  --arg now "$NOW" \
-  --arg lossWarning "$LOSS_WARNING" \
-  --argjson lossAck "$LOSS_ACK" '
-    (if (.canonicalReconciliation | type) != "object" then .canonicalReconciliation = {} else . end)
-    | (if (.canonicalReconciliation.decisions | type) != "object" then .canonicalReconciliation.decisions = {} else . end)
-    | .canonicalReconciliation.decisions[$dept] = (
-        {
-          "decision":  $decision,
-          "source":    $source,
-          "decidedAt": $now,
-          "decidedBy": $by,
-          "sessionId": $session
-        }
-        + (if $lossAck then {"lossWarning": $lossWarning, "lossWarningAck": true} else {} end)
-      )
-  ' "$STATE" > "$TMP"
-mv -f "$TMP" "$STATE"
+"$WORKFORCE_PYTHON" - "$STATE" "$DEPT" "$DECISION_LC" "$SOURCE" "$BY" "$SESSION" "$NOW" "$LOSS_WARNING" "$LOSS_ACK" <<'PYDECIDE'
+import sys
+from workforce_state import read, commit
+
+(state_path, dept, decision, source, by, session, now,
+ loss_warning, loss_ack) = sys.argv[1:10]
+state = read(state_path)
+recon = state.get("canonicalReconciliation")
+if not isinstance(recon, dict):
+    recon = {}
+    state["canonicalReconciliation"] = recon
+decisions = recon.get("decisions")
+if not isinstance(decisions, dict):
+    decisions = {}
+    recon["decisions"] = decisions
+entry = {
+    "decision": decision,
+    "source": source,
+    "decidedAt": now,
+    "decidedBy": by,
+    "sessionId": session,
+}
+if loss_ack == "true":
+    entry["lossWarning"] = loss_warning
+    entry["lossWarningAck"] = True
+decisions[dept] = entry
+commit(state_path, state)
+PYDECIDE
 
 echo "recorded decision: dept=$DEPT decision=$DECISION_LC source=$SOURCE by=$BY session=$SESSION at=$NOW -> $STATE"
