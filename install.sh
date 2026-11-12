@@ -1212,17 +1212,40 @@ inject_shared_operator_secrets() {
         # after inject_shared_operator_secrets has returned, under set -u.
         [ -f "${OC_JSON:-}" ] || return 0
         # Use python to safely merge into env.vars (preserves other keys)
-        VAR="$var" VAL="$val" OC_JSON="$OC_JSON" python3 - <<'PYEOF' 2>/dev/null || true
+        VAR="$var" VAL="$val" OC_JSON="$OC_JSON" python3 - <<'PYEOF' || warn "openclaw.json was not updated for $var (left unchanged; see the line above)"
 import json, os
 p = os.environ['OC_JSON']
 v = os.environ['VAR']
 val = os.environ['VAL']
+import sys, tempfile
 try:
-    d = json.load(open(p))
-except Exception:
-    d = {}
-d.setdefault('env', {}).setdefault('vars', {})[v] = val
-json.dump(d, open(p, 'w'), indent=2)
+    with open(p, encoding='utf-8') as fh:
+        d = json.load(fh)
+except Exception as exc:
+    # RRX-105: a file that cannot be read is LEFT ALONE. The old code started
+    # from an empty object here and wrote it over the whole configuration.
+    sys.stderr.write('shared-secrets: %s was not changed (%s could not be set: the file did not parse: %s)\n' % (p, v, type(exc).__name__))
+    sys.exit(3)
+if not isinstance(d, dict):
+    sys.stderr.write('shared-secrets: %s was not changed (top level is not an object)\n' % p)
+    sys.exit(3)
+env = d.get('env')
+if env is None:
+    env = d['env'] = {}
+vars_ = env.get('vars') if isinstance(env, dict) else None
+if isinstance(env, dict) and vars_ is None:
+    vars_ = env['vars'] = {}
+if not isinstance(vars_, dict):
+    sys.stderr.write('shared-secrets: %s was not changed (env.vars is not an object)\n' % p)
+    sys.exit(3)
+if vars_.get(v) == val:
+    sys.exit(0)          # already set: the file is not rewritten
+vars_[v] = val
+fd, tmp = tempfile.mkstemp(prefix='.openclaw-json-', dir=os.path.dirname(p) or '.')
+with os.fdopen(fd, 'w', encoding='utf-8') as fh:
+    json.dump(d, fh, indent=2); fh.write('\n'); fh.flush(); os.fsync(fh.fileno())
+os.chmod(tmp, os.stat(p).st_mode & 0o777)
+os.replace(tmp, p)
 PYEOF
     }
 
@@ -1345,8 +1368,7 @@ PYEOF
     # escalation SENDER on this box (the AGENTS.md curl + the Skill-6 safety alarms
     # + the resume/closeout watchdogs) includes that header ONLY WHEN this var is
     # set — so seeding it here makes the box's escalations survive the webhook's
-    # auth enforcement, and leaving it unset stays fully backward-compatible (no
-    # header; the relay accepts it during the soft phase). UNLIKE the webhook URL
+    # auth enforcement. UNLIKE the webhook URL
     # above, the secret is NEVER a committed default — it flows ONLY from the
     # operator's OWN env var of the same name at install time, gateway-inherited
     # via openclaw.json env.vars (the SAME mechanism that delivers
@@ -1356,10 +1378,10 @@ PYEOF
     if [ -n "${RESCUE_RANGERS_WEBHOOK_SECRET:-}" ]; then
         _shared_write_env    "RESCUE_RANGERS_WEBHOOK_SECRET" "$RESCUE_RANGERS_WEBHOOK_SECRET"
         _shared_write_ocjson "RESCUE_RANGERS_WEBHOOK_SECRET" "$RESCUE_RANGERS_WEBHOOK_SECRET"
-        success "Rescue Rangers webhook secret seeded (RESCUE_RANGERS_WEBHOOK_SECRET, length=${#RESCUE_RANGERS_WEBHOOK_SECRET})"
+        success "Rescue Rangers webhook secret seeded (RESCUE_RANGERS_WEBHOOK_SECRET)"
         injected_count=$((injected_count + 1))
     else
-        warn "RESCUE_RANGERS_WEBHOOK_SECRET not in operator env — client agents on this box will POST without the auth header (backward-compatible until relay enforces auth). Backfill with ~/clawd/fleet-heartbeat/scripts/propagate-rescue-webhook.sh."
+        warn "RESCUE_RANGERS_WEBHOOK_SECRET not in operator env — client agents on this box will POST without the auth header and the intake will refuse them with HTTP 403: this box cannot ask Rescue Rangers for help until the secret is seeded. Backfill with ~/clawd/fleet-heartbeat/scripts/propagate-rescue-webhook.sh."
     fi
 
     # Rescue Rangers escalation CHAT ID (operator Telegram GROUP). The Skill-6
