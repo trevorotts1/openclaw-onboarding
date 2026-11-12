@@ -247,7 +247,7 @@ class TestSignatureModeRegressionAndFault21Sibling:
                             f"Client answer {n}", env=env)
             assert r.returncode == 0, f"{qid} failed: {r.stdout}\n{r.stderr}"
             r = _run_driver(run_dir, "--signature", "--sig-confirm", qid,
-                            "--confirmed", env=env)
+                            "--sig-confirmed", env=env)
             assert r.returncode == 0, f"{qid} confirm failed: {r.stdout}\n{r.stderr}"
         r = _run_driver(run_dir, "--signature", "--sig-answer",
                         "signature_frame", "vault", env=env)

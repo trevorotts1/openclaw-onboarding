@@ -74,7 +74,7 @@ def _answer_the_eight(call, confirm: bool):
         out = call("--signature", "--sig-answer", qid, f"Client answer {n}")
         assert out.returncode == 0, out.stdout + out.stderr
         if confirm:
-            confirmed = call("--signature", "--sig-confirm", qid, "--confirmed")
+            confirmed = call("--signature", "--sig-confirm", qid, "--sig-confirmed")
             assert confirmed.returncode == 0, confirmed.stdout + confirmed.stderr
     return out
 
