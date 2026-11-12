@@ -138,6 +138,27 @@ def _make_fake_scripts_dir(tmp_path: Path, sync_drift_json: str,
     (d / "run_signature_deck.py").write_text(
         "import sys\nprint('stub run_signature_deck plan')\nsys.exit(%d)\n" % runner_rc
     )
+    # PD-008 QC: the engine stub must be PRESENT. PD-005 made a missing
+    # presentation_job.py a blocking exit 9 (AF-ENGINE-ABSENT) before any
+    # fallback dispatch, so without this stub no dispatch reaches the runner
+    # and the attempt budget is never exercised.
+    (d / "presentation_job.py").write_text(
+        "import sys\n"
+        "if '--new' in sys.argv:\n"
+        "    sys.exit(0)\n"
+        f"sys.exit({runner_rc})\n"
+    )
+    (d / "presentation_job").mkdir(exist_ok=True)
+    (d / "presentation_job" / "resolve_intake.py").write_text(
+        "import argparse, json, sys\n"
+        "p = argparse.ArgumentParser()\n"
+        "p.add_argument('--ledger'); p.add_argument('--out'); p.add_argument('--source')\n"
+        "p.add_argument('--intake-depth', default=None)\n"
+        "a = p.parse_args()\n"
+        "json.dump({'presentation_type': 'signature_presentation'}, open(a.out, 'w'))\n"
+        "print('intake resolved')\n"
+        "sys.exit(0)\n"
+    )
     (d / "ghl_media.py").write_text(
         "def upload_media(*a, **k): pass\ndef list_media(*a, **k): return {'data': []}\n"
         "def create_media_folder(*a, **k): pass\n"
@@ -264,7 +285,9 @@ def test_entry_plan_exempts_attempt_cap():
     a run dir is not a build attempt."""
     src = ENTRY.read_text(encoding="utf-8", errors="replace")
     # The cap block must be inside `if [ "$PLAN" -eq 0 ]`.
-    cap_idx = src.find(".canonical-entry-attempts")
+    # PD-008 QC: anchor on the counter assignment in code. The header comment
+    # names the file before the guard, so a bare find() hits prose, not code.
+    cap_idx = src.find('_ATTEMPT_FILE="$_ATTEMPT_DIR/.canonical-entry-attempts"')
     assert cap_idx != -1
     # Look backwards for the nearest `if [ "$PLAN" -eq 0 ]` gate.
     before = src[:cap_idx]
