@@ -1318,7 +1318,7 @@ def check(skill_root=None, execute=True):
 
     try:
         steps = entrypoints(root)
-    except (AdapterError, OSError, ValueError) as exc:
+    except (AdapterError, OSError, ImportError, ValueError) as exc:
         clauses.append({"id": "no_unsupported_commands", "ok": False,
                         "detail": "%s: %s" % (type(exc).__name__, exc)})
         clauses.append({"id": "no_placeholder_ellipses", "ok": False,
