@@ -2,10 +2,14 @@
   "algo": "sha256(CRLF->LF normalized bytes)",
   "generator": "scripts/hash-universal-sops-manifest.py",
 <<<<<<< HEAD
+<<<<<<< HEAD
   "generated_at": "2026-11-12T22:01:04Z",
 =======
   "generated_at": "2026-11-12T21:35:44Z",
 >>>>>>> 48d0e74cb (PD-038: defer the sales/checkout and VSL build phases on the client's answer)
+=======
+  "generated_at": "2026-11-12T23:56:52Z",
+>>>>>>> a1cdca37a (PD-021: rename the signature intake phase to the one-question-at-a-time wording)
   "file_count": 116,
   "files": {
     "CLIENT-WEBINAR-DECK-SOP.md": {
@@ -313,8 +317,8 @@
       "bytes": 148222
     },
     "presentation-slide-craft/PIPELINE-MANIFEST.json": {
-      "sha256": "02fe0194cdc22675586728f70f22e127aa0059825d61921c521bdc5d1153b230",
-      "bytes": 199021
+      "sha256": "9e0bfc7910c9db51290fad867007897f148e471488fd8b37f1b58ead7138b65c",
+      "bytes": 199099
     },
     "presentation-slide-craft/README.md": {
       "sha256": "90b23b7d9263831fc5267852d7f804f9a549d995c187a16f822b5a660264f982",
