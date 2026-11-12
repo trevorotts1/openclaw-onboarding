@@ -2589,12 +2589,30 @@ def cmd_complete(args) -> int:
     # local reimplementation), so the two completion paths can never drift.
     # Built for every deck_type, not just signature_presentation, so the
     # transcript's provenance is always true regardless of which gate happens
-    # to check it today. Fail-soft (mirrors _sig_finalize's own posture): a
-    # missing intake_trace_check.py or an empty turn log degrades to a loud
-    # stderr WARN, never a blocked completion -- P-SP-INTAKE-TRACE itself
-    # already defers for every non-signature deck_type and fails closed at
-    # BUILD time (not here) for a signature deck with no real transcript.
+    # to check it today. PD-011 (this unit): a --complete that cannot sign is
+    # now BLOCKED (exit 5, ledger never marked complete, no transcript
+    # written) instead of failing soft. The old fail-soft posture let a run
+    # reach the build door with an unsigned transcript; the door then refused
+    # it with a message that never said the signer was missing. The refusal
+    # names the cause and every path that was searched.
     envelope, envelope_warning = _finalize_transcript_envelope(run_dir)
+    if envelope is None:
+        _signer, searched = _import_skill51_module("intake_trace_check")
+        if _signer is None:
+            error = ("The interview transcript could not be signed because "
+                     "Skill 51 (51-signature-presentation/scripts/"
+                     "intake_trace_check.py) was not found. The build door "
+                     "will refuse this run. Install or update Skill 51, then "
+                     "run --complete again.")
+        else:
+            # The signer resolved, so the only other way to get no envelope
+            # is an empty turn log -- state that cause, never blame Skill 51.
+            error = ("The interview transcript could not be signed because no "
+                     "interview turns were recorded for this run. Answer the "
+                     "intake with --answer first, then run --complete again.")
+        print(json.dumps({"status": "blocked", "error": error,
+                          "searched": searched}, indent=2))
+        return 5
     if envelope_warning:
         print(f"  WARN  {envelope_warning}", file=sys.stderr)
 
@@ -2647,7 +2665,10 @@ SP_EIGHT_QUESTIONS_SPEC: Optional[Dict[str, Any]] = None
 def _import_skill51_module(mod_name: str):
     """Lazily import a Skill-51 module (prove_sp_intake / intake_trace_check) by
     file, same candidate-path search _run_prove_sp_intake already uses below.
-    Returns the module or None. Used so the driver signs turn-ledger/transcript
+    Returns a 2-tuple ``(module_or_None, searched_paths)``. The paths are every
+    candidate this search actually tried, in order, so a caller that has to
+    refuse (PD-011: --complete with no signer) can name them instead of telling
+    the operator to guess. Used so the driver signs turn-ledger/transcript
     provenance with the EXACT SAME canonicalization + key the prover verifies
     with -- never a hand-rolled reimplementation that could silently drift.
 
@@ -2672,10 +2693,10 @@ def _import_skill51_module(mod_name: str):
                 spec = importlib_util.spec_from_file_location(mod_name, cand)
                 mod = importlib_util.module_from_spec(spec)
                 spec.loader.exec_module(mod)
-                return mod
+                return mod, [str(c) for c in cands]
             except Exception:
                 continue
-    return None
+    return None, [str(c) for c in cands]
 
 
 # ---------------------------------------------------------------------------
@@ -2717,7 +2738,7 @@ def _build_signed_transcript_envelope(
     /--answer)."""
     if not raw_turns:
         return None, None
-    mod = _import_skill51_module("intake_trace_check")
+    mod, _searched = _import_skill51_module("intake_trace_check")
     if mod is None:
         return None, (
             "51-signature-presentation/scripts/intake_trace_check.py could not "
@@ -3270,7 +3291,7 @@ def _sig_finalize(run_dir: Path, ledger: Dict[str, Any],
     ledger_turns = [{"question_id": t["question_id"], "turn": t["turn"],
                      "asked_at": t.get("asked_at"), "validated_at": t.get("validated_at")}
                     for t in turn_log if t.get("question_id") in req_ids]
-    prove_sp_intake_mod = _import_skill51_module("prove_sp_intake")
+    prove_sp_intake_mod, _searched = _import_skill51_module("prove_sp_intake")
     if ledger_turns and prove_sp_intake_mod is not None:
         # FIX 29: prefer the one-time envelope API so this record carries
         # key_id + signed_at INSIDE the authenticated payload, signed with the
