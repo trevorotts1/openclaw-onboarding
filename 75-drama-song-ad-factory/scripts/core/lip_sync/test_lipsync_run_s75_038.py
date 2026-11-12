@@ -100,6 +100,7 @@ class Fake74:
         self.root = Path(root)
         self.calls = []
         self.saves = 0
+        self.jobs = 0
 
     def __call__(self, argv):
         cmd = argv[1] if len(argv) > 1 else ""
@@ -112,16 +113,18 @@ class Fake74:
             return 0, {"state": "success",
                        "data": {"status": "OK", "exit_code": 0, "max": 20000}}
         if cmd == "submit":
-            return 0, {"state": "queued", "task_id": "t-lip", "raw_family": "market"}
+            self.jobs += 1
+            return 0, {"state": "queued", "task_id": "t-lip-%d" % self.jobs,
+                       "raw_family": "market"}
         if cmd == "wait":
-            return 0, {"state": "success", "task_id": "t-lip",
+            return 0, {"state": "success", "task_id": "t-lip-%d" % self.jobs,
                        "raw_family": "market", "credits_consumed": 16}
         if cmd == "save":
             self.saves += 1
             clip = self.root / "generation" / "saved" / ("clip-%d.mp4" % self.saves)
             clip.parent.mkdir(parents=True, exist_ok=True)
             clip.write_bytes(("synthetic-lip-clip-%d" % self.saves).encode())
-            return 0, {"state": "success", "task_id": "t-lip",
+            return 0, {"state": "success", "task_id": "t-lip-%d" % self.jobs,
                        "saved_paths": [str(clip)]}
         return 0, {}
 
