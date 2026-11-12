@@ -65,9 +65,11 @@ import uuid
 DEFAULT_URL = "https://main.blackceoautomations.com/webhook/rr-v2-intake"
 MAX_ATTEMPTS = 12            # flush gives up after 12 tries (about one hour at a 5-minute cadence)
 TIMEOUT_S = 60
+ORIGIN_TIMEOUT_S = 30        # the owner-chat helper gets its own, shorter limit
 USER_AGENT = "rr-escalate/1.0"   # a bare Python user agent has been refused by Cloudflare on this fleet
 SECRETS_REJECTED_DETAIL = "the secrets file has a line the installer will reject"
 _KEY_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]*\Z")
+_CHAT_ID_RE = re.compile(r"-?[0-9]+\Z")   # digits, optional leading minus, nothing else
 
 
 # ---------------------------------------------------------------- box facts
@@ -149,6 +151,28 @@ def openclaw_version() -> str:
 def reply_leg_enrolled(root: str) -> bool:
     store = os.path.join(root, "secrets", ".env")
     return all(dotenv_get(store, k) for k in ("RR_RECEIVER_URL", "RR_BOX_TOKEN", "RR_BOX_SLUG"))
+
+
+def resolve_origin(root: str) -> dict | None:
+    """Ask the box's OWN helper which conversation this case came from.
+
+    The helper uses `local`, so it must run under bash. The command string is
+    fixed and the only value handed to it is the path, as $1 -- nothing else is
+    interpolated. A value that is not digits (an optional leading minus is
+    allowed) is not a chat id and means "no origin".
+    """
+    helper = os.path.join(root, "skills", "shared-utils", "resolve-owner-chat.sh")
+    if not os.path.isfile(helper):
+        return None
+    try:
+        p = subprocess.run(["bash", "-c", 'source "$1" && resolve_owner_chat_id', "_", helper],
+                           capture_output=True, text=True, timeout=ORIGIN_TIMEOUT_S, check=False)
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    target = p.stdout.strip()
+    if not _CHAT_ID_RE.match(target):
+        return None
+    return {"channel": "telegram", "account": "default", "target": target}
 
 
 # ---------------------------------------------------------------- files
@@ -350,8 +374,16 @@ def cmd_send(a) -> int:
             origin = json.loads(a.origin_json)
         except ValueError:
             origin = None
+        if not origin:
+            origin = None
+    else:
+        # RRX-001a: no explicit origin -- ask the box which conversation this came from.
+        origin = resolve_origin(root)
+    # RRX-001a: with no origin there is no conversation to deliver into, so the
+    # owner is told a person will follow up directly, whatever the local leg says.
+    owner_leg = "enrolled" if (enrolled and origin) else "not_enrolled"
     entry = {"body": body, "attempts": 0, "created_at": int(time.time()),
-             "reply_leg": "enrolled" if enrolled else "not_enrolled", "origin": origin}
+             "reply_leg": owner_leg, "origin": origin}
     path = os.path.join(state_dir(root, "outbox"), rid + ".json")
     atomic_json(path, entry)                               # durable BEFORE the send
     out = deliver(root, path)
