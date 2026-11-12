@@ -153,6 +153,20 @@ def word_count(text: str) -> int:
     return len(text.split())
 
 
+def default_workdir(out_path: str) -> str:
+    """The chunk folder for ONE synthesis, beside its own deliverable (PD-307).
+
+    Named after the out file stem, so `PRESENTER-AUDIO.mp3` writes its per-chunk
+    mp3s to `<out_dir>/_audio_chunks_PRESENTER-AUDIO` — the folder
+    `build_webinar_video.resolve_required_inputs` reads — and two syntheses of two
+    different out files in one delivery folder leave two chunk folders instead of
+    overwriting each other's chunks.
+    """
+    out_path = os.path.abspath(out_path)
+    return os.path.join(os.path.dirname(out_path),
+                        "_audio_chunks_" + os.path.splitext(os.path.basename(out_path))[0])
+
+
 # ----------------------------------------------------------------------------
 # Chunking — split into <= chunk_chars pieces on sentence/paragraph boundaries.
 # Never splits mid-sentence unless a single sentence exceeds the limit (then it
@@ -481,7 +495,10 @@ def main():
     ap.add_argument("--min-ratio", type=float, default=0.80,
                     help="Hard floor: audio_sec must be >= min_ratio * expected_sec")
     ap.add_argument("--chunk-chars", type=int, default=280, help="Max chars per Fish request (API cap is 300)")
-    ap.add_argument("--workdir", default=None, help="Where to write per-chunk mp3s (default: <out_dir>/_audio_chunks_full)")
+    ap.add_argument("--workdir", default=None,
+                    help="Where to write per-chunk mp3s (default: "
+                         "<out_dir>/_audio_chunks_<out file stem>, e.g. "
+                         "_audio_chunks_PRESENTER-AUDIO next to PRESENTER-AUDIO.mp3)")
     ap.add_argument("--normalize", action="store_true", default=True)
     # ---- WEBINAR FRAMING (Feature L2-H): welcome / Q&A / crescendo close ----
     ap.add_argument("--webinar-intro-outro", action="store_true",
@@ -641,7 +658,12 @@ def main():
 
     # Build ordered chunks: speech segments chunked to --chunk-chars, silence
     # segments as exact silent mp3s. Order is preserved for the concat.
-    workdir = args.workdir or os.path.join(os.path.dirname(os.path.abspath(args.out)), "_audio_chunks_full")
+    # Chunk folder is named after the OUT FILE, not a fixed name (PD-307): two
+    # syntheses into one delivery folder leave two chunk folders, and the webinar
+    # video builder can find the chunks that belong to ITS audio file. The old
+    # fixed `_audio_chunks_full` is still resolved as a read-only fallback by
+    # build_webinar_video.resolve_required_inputs.
+    workdir = args.workdir or default_workdir(args.out)
     os.makedirs(workdir, exist_ok=True)
 
     speech_segments = [p for k, p in items if k == "speech"]
