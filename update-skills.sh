@@ -7626,26 +7626,41 @@ PYEOF
     # keep the files the reviewed manifest targets (stashed here, put back below
     # only where the release does not ship them). No manifest = empty list =
     # the update behaves exactly as before, so existing installs are not broken.
+    # This block only sets _x11_skip; the `continue` that skips this skill's
+    # remaining steps sits on the first line after the end marker below, so the
+    # marked text stays runnable on its own and the test can prove the skip.
     _x11_rc=0
     _x11_keep=""
+    _x11_keep_list=""
+    _x11_skip=0
     if [ "$SKILL_NAME" = "75-drama-song-ad-factory" ]; then
       _x11_out="$(bash "$SKILL_DIR/scripts/core/x11_install_gate.sh" 2>&1)" || _x11_rc=$?
       echo "$_x11_out"
     fi
     if [ "$_x11_rc" = "20" ]; then
       echo "  ✗ [x11-gate] skill $SKILL_NAME NOT updated (refuse mode); existing copy left intact"
-    else
-      if [ "$_x11_rc" != "0" ]; then
+      _x11_skip=1
+    elif [ "$_x11_rc" != "0" ]; then
+      _x11_keep_list="$(bash "$SKILL_DIR/scripts/core/x11_install_gate.sh" preserve-list 2>/dev/null || true)"
+      if [ -n "$_x11_keep_list" ]; then
         _x11_keep="$(mktemp -d "${TMPDIR:-/tmp}/oc-x11-keep.XXXXXX" 2>/dev/null || true)"
-        while IFS= read -r _x11_rel; do
-          [ -n "$_x11_rel" ] && [ -n "$_x11_keep" ] && [ -f "$SKILLS_DIR/$SKILL_NAME/$_x11_rel" ] || continue
-          mkdir -p "$_x11_keep/$(dirname "$_x11_rel")" \
-            && cp -p "$SKILLS_DIR/$SKILL_NAME/$_x11_rel" "$_x11_keep/$_x11_rel" \
-            || echo "  ⚠ [x11-gate] could not set aside $_x11_rel"
-        done <<X11EOF
-$(bash "$SKILL_DIR/scripts/core/x11_install_gate.sh" preserve-list 2>/dev/null)
+        if [ -z "$_x11_keep" ]; then
+          echo "  ✗ [x11-gate] could not make a keep folder - skill 75 left untouched this roll"
+          _x11_skip=1
+        else
+          while IFS= read -r _x11_rel; do
+            [ -n "$_x11_rel" ] || continue
+            [ -f "$SKILLS_DIR/$SKILL_NAME/$_x11_rel" ] || continue
+            mkdir -p "$_x11_keep/$(dirname "$_x11_rel")" \
+              && cp -p "$SKILLS_DIR/$SKILL_NAME/$_x11_rel" "$_x11_keep/$_x11_rel" \
+              || echo "  ⚠ [x11-gate] could not set aside $_x11_rel"
+          done <<X11EOF
+$_x11_keep_list
 X11EOF
+        fi
       fi
+    fi
+    if [ "$_x11_skip" = "0" ]; then
     oc_skill_box_state_save "$SKILL_NAME" "$SKILLS_DIR/$SKILL_NAME" || true
     oc_remove_tree_guarded "$SKILLS_DIR/$SKILL_NAME" "skill"
 
@@ -7670,7 +7685,9 @@ X11EOF
       fi
     fi
     # <<< X11-GATE-END
+    [ "${_x11_skip:-0}" = 1 ] && continue
 
+    # >>> X11-GATE-TAIL-BEGIN (S75-X11 gate tail: pin, verify, Updated; extracted verbatim by tests/test_x11_install_gate.py)
     # ENGINE-PIN RE-STAMP (2026-10-13). Skill 59's `verify.sh stamp-pin`
     # recomputes ENGINE-PIN.sha256 over its enforcement set (the entry script,
     # ENGINE-MANIFEST.json and the four guard scripts), and the entry's own
@@ -7715,6 +7732,7 @@ X11EOF
     echo "    Updated: $SKILL_NAME"
     # FIX 1: state transition -- files are on disk = DOWNLOADED (NOT installed).
     command -v obs_set_status >/dev/null 2>&1 && obs_set_status "$SKILL_NAME" "downloaded"
+    # <<< X11-GATE-TAIL-END
   done
 
   # ----------------------------------------------------------
