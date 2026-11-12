@@ -524,25 +524,14 @@
 
     function buildLogo(q, onChange) {
       var wrap = el("div");
-      var state = { mode: "none", url: "", file: null, name: "" }; /* none | link | file | declined */
+      var state = { mode: "none", url: "", name: "" }; /* none | link | declined */
 
-      var zone = el("div", { class: "logo-zone", tabindex: "0", role: "button", "aria-label": "Upload logo or paste a link" });
-      zone.appendChild(el("div", { class: "cloud", text: "↑" }));
-      zone.appendChild(el("div", { class: "lz-main", text: "Upload logo" }));
-      zone.appendChild(el("div", { class: "lz-sub", text: "or paste a link below" }));
-      var fileInput = el("input", { type: "file", accept: "image/*", class: "hidden", "aria-hidden": "true" });
-      zone.appendChild(fileInput);
-      var onFile = function () {
-        var f = fileInput.files && fileInput.files[0];
-        if (!f) return;
-        state.mode = "file"; state.file = f; state.name = f.name;
-        preview(state); onChange(state);
-      };
-      zone.onclick = function () { fileInput.click(); };
-      zone.onkeydown = function (e) { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); fileInput.click(); } };
-      fileInput.onchange = onFile;
+      /* No file-upload control: the page cannot keep an uploaded binary
+         (the record only ever carried a file name), so the client is told
+         plainly to paste a link or to send the file in chat. */
+      var zone = el("div", { class: "logo-zone", style: "cursor: default;" });
+      zone.appendChild(el("div", { class: "lz-main", text: "Paste a link to your logo below. If you only have the file, choose \"No logo on file\" and send the file to your assistant in chat." }));
       wrap.appendChild(zone);
-      wrap.appendChild(fileInput);
 
       var row = el("div", { class: "link-row" });
       var urlInput = el("input", { type: "url", placeholder: "or paste an image link…", "aria-label": "Logo image link" });
@@ -571,12 +560,7 @@
 
       function preview(s) {
         previewEl.innerHTML = "";
-        if (s.mode === "file" && s.file) {
-          var url = URL.createObjectURL(s.file);
-          previewEl.appendChild(el("img", { src: url, alt: "Logo preview" }));
-          previewEl.appendChild(el("span", { class: "lp-name", text: s.name }));
-          previewEl.style.display = "flex";
-        } else if (s.mode === "link" && s.url) {
+        if (s.mode === "link" && s.url) {
           previewEl.appendChild(el("img", { src: s.url, alt: "Logo preview" }));
           previewEl.appendChild(el("span", { class: "lp-name", text: s.url }));
           previewEl.style.display = "flex";
@@ -689,7 +673,7 @@
       stage.appendChild(msg);
 
       function emptyFor(qq) {
-        if (qq.kind === "logo") return { mode: "declined", url: "", file: null, name: "" };
+        if (qq.kind === "logo") return { mode: "declined", url: "", name: "" };
         if (qq.kind === "image_links") return [];
         return qq.default != null ? qq.default : "";
       }
@@ -709,12 +693,9 @@
     function serialize(q, v) {
       /* normalize to the value the bridge + intake_writer.py consume */
       if (q.kind === "logo") {
-        if (!v) v = { mode: "declined", url: "", file: null, name: "" };
+        if (!v) v = { mode: "declined", url: "", name: "" };
         if (v.mode === "declined") {
           return { value: "", logo_mode: "declined", note: "no logo on file — building without one" };
-        }
-        if (v.mode === "file") {
-          return { value: "", logo_mode: "file", logo_file_name: v.name, note: "logo uploaded by client (file name captured; binary lives in the run dir when the bridge stores it)" };
         }
         return { value: v.url || "", logo_mode: "link", note: "logo provided by link" };
       }
@@ -804,7 +785,6 @@
         var val = a.skipped ? "(skipped)" : (a.kind === "image_links" && a.extra && a.extra.image_links && a.extra.image_links.length ? a.extra.image_links.join("  ·  ") : (a.value || "(none)"));
         if (a.kind === "logo" && a.extra) {
           if (a.extra.logo_mode === "declined") val = "Building without a logo";
-          else if (a.extra.logo_mode === "file") val = "Logo file: " + (a.extra.logo_file_name || "uploaded");
           else if (a.extra.value) val = "Logo link: " + a.extra.value;
           else val = "(no logo)";
         }
