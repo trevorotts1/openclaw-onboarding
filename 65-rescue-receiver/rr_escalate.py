@@ -30,6 +30,15 @@ SAME request_id, so a retry can never create a second ticket. A cron on the box
 runs flush every 5 minutes. An escalation is therefore never lost to a short
 outage, and the agent never has to "wait 2 minutes and try again" by hand.
 
+RESOLVE (RRX-007): "rr_escalate.py resolve --ticket <id> --fixed <one line>"
+closes the case FROM THE BOX. It builds one operation_id from the ticket and
+the fixed text, so running it twice sends the same identifier and cannot close
+two tickets. It rides the same outbox and the same send path as "send".
+
+STATUS (RRX-007): "rr_escalate.py status --ticket <id>" prints the outcome the
+poll recorded for that ticket, so the agent can answer the owner from the
+conversation the case came from.
+
 STATES (printed in "state")
   accepted               ticket created; ticket id is in "ticket_id"
   already_being_worked   this problem already has a ticket; do not send again
@@ -38,6 +47,11 @@ STATES (printed in "state")
   not_an_incident        Rescue Rangers decided this is not an incident
   setup_problem          the address, the secret or the box slug is missing or refused
   invalid_request        a required value was empty; fix it and run again
+  resolved               (resolve) Rescue Rangers recorded the repair
+  unknown_incident       (resolve) Rescue Rangers has no open case for that ticket
+  outcome_recorded       (status) the poll recorded an outcome for that ticket
+  waiting                (status) the ticket is open; no outcome recorded yet
+  unknown_ticket         (status) this box has no record of that ticket
 
 Exit codes: 0 accepted / already_being_worked / needs_owner_action / not_an_incident,
             10 queued_will_retry, 20 setup_problem, 21 invalid_request, 2 internal failure.
@@ -46,11 +60,14 @@ Usage:
   python3 rr_escalate.py send --person "Owner Name" --client "<client label>" --agent "<agent name>" \
       --box-type "<VPS | Mac Mini | MacBook Pro>" --problem-file p.txt --tried-file t.txt [--loop]
   python3 rr_escalate.py flush
+  python3 rr_escalate.py resolve --ticket <id> --fixed "what fixed it, one line"
+  python3 rr_escalate.py status --ticket <id>
   python3 rr_escalate.py selftest
 """
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import re
@@ -70,6 +87,9 @@ USER_AGENT = "rr-escalate/1.0"   # a bare Python user agent has been refused by 
 SECRETS_REJECTED_DETAIL = "the secrets file has a line the installer will reject"
 _KEY_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]*\Z")
 _CHAT_ID_RE = re.compile(r"-?[0-9]+\Z")   # digits, optional leading minus, nothing else
+_TICKET_RE = re.compile(r"[A-Za-z0-9._-]+\Z")   # RRX-007: safe in a file name and in a request
+WAITING_SAY = ("Our support team is still working on this. I will message you here as soon as "
+               "there is an answer.")
 
 
 # ---------------------------------------------------------------- box facts
@@ -254,6 +274,37 @@ def classify(code: int, doc: dict | None) -> str:
     return "queued_will_retry"
 
 
+def classify_resolve(code: int, doc: dict | None) -> str:
+    """RRX-007: decide a resolution's state from the HTTP code and NAMED fields.
+
+    Today's intake answers a resolution with a "status" of resolution_recorded
+    or resolution_no_open_ticket (and, after n8n unit N-18, correlation_required).
+    A 409 means the intake has no such incident. The retry, refusal and 400
+    rules are the same as for a first send.
+    """
+    if code == 409:
+        return "unknown_incident"
+    if code == 0 or code == 429 or 500 <= code <= 599:
+        return "queued_will_retry"
+    if code in (401, 403):
+        return "setup_problem"
+    if code == 400:
+        status = str((doc or {}).get("status") or "")
+        return "invalid_request" if status == "invalid_payload" else "setup_problem"
+    if 300 <= code <= 399:
+        return "queued_will_retry"
+    if code != 200 or doc is None:
+        return "queued_will_retry"
+    status = str(doc.get("status") or "")
+    if status in ("resolution_recorded", "resolved"):
+        return "resolved"
+    if status in ("resolution_no_open_ticket", "correlation_required"):
+        return "unknown_incident"
+    if isinstance(doc.get("ticketId"), str) and doc["ticketId"]:
+        return "resolved"
+    return "queued_will_retry"
+
+
 def owner_reply_leg(state: str, doc: dict, local: str | None) -> str:
     """The reply leg the OWNER is told about. The intake's own verdict wins."""
     if state == "accepted" and doc.get("boxEnrolled") is False:
@@ -276,6 +327,9 @@ SAY = {
     "setup_problem": "I cannot reach our support team from this computer because of a setup problem on our side. "
                      "Please tell your support contact that Rescue Rangers is not connected on this computer.",
     "invalid_request": "",
+    # RRX-007: the two answers a resolution can get.
+    "resolved": "Rescue Rangers has recorded the repair. This case is closed.",
+    "unknown_incident": "Rescue Rangers has no open case for this problem, so there was nothing to close.",
 }
 
 
@@ -298,7 +352,10 @@ def exit_code(state: str) -> int:
     return {"queued_will_retry": 10, "setup_problem": 20, "invalid_request": 21}.get(state, 0)
 
 
-def deliver(root: str, entry_path: str) -> dict:
+SENT_STATES = ("accepted", "already_being_worked", "needs_owner_action", "not_an_incident", "resolved")
+
+
+def deliver(root: str, entry_path: str, classifier=classify) -> dict:
     """Send one outbox entry. Moves it to sent/ or failed/ when it is finished."""
     with open(entry_path, encoding="utf-8") as fh:
         entry = json.load(fh)
@@ -311,7 +368,7 @@ def deliver(root: str, entry_path: str) -> dict:
     entry["last_attempt_at"] = int(time.time())
     atomic_json(entry_path, entry)
     code, doc = post(url, secret, entry["body"])
-    state = classify(code, doc)
+    state = classifier(code, doc)
     doc = doc or {}
     extra = dict(request_id=rid, http=code, ticket_id=str(doc.get("ticketId") or ""),
                  message=str(doc.get("message") or ""),
@@ -324,7 +381,7 @@ def deliver(root: str, entry_path: str) -> dict:
     out = result(state, **extra)
     if state == "queued_will_retry" and entry["attempts"] < MAX_ATTEMPTS:
         return out                                        # stays in the outbox
-    final_dir = "sent" if state in ("accepted", "already_being_worked", "needs_owner_action", "not_an_incident") else "failed"
+    final_dir = "sent" if state in SENT_STATES else "failed"
     entry["final"] = out
     atomic_json(os.path.join(state_dir(root, final_dir), rid + ".json"), entry)
     os.unlink(entry_path)
@@ -411,6 +468,138 @@ def cmd_flush(_a) -> int:
     return worst
 
 
+def json_records(directory: str):
+    """Yield (name, parsed) for every non-hidden JSON file in a folder. Read only."""
+    if not os.path.isdir(directory):
+        return
+    for name in sorted(os.listdir(directory)):
+        if name.startswith(".") or not name.endswith(".json"):
+            continue
+        path = os.path.join(directory, name)
+        if not os.path.isfile(path):
+            continue
+        try:
+            with open(path, encoding="utf-8") as fh:
+                rec = json.load(fh)
+        except (OSError, ValueError):
+            continue
+        if isinstance(rec, dict):
+            yield name, rec
+
+
+def written_at_key(rec: dict):
+    """A comparable key for "written_at", numeric or ISO text. Same types compare."""
+    v = rec.get("written_at")
+    if isinstance(v, bool):
+        return (0, "")
+    if isinstance(v, (int, float)):
+        return (1, float(v))
+    return (0, str(v or ""))
+
+
+def resolve_operation_id(ticket: str, fixed: str) -> str:
+    """RRX-007: the same on a re-run, so one resolution never closes two tickets."""
+    digest = hashlib.sha1((ticket + "|" + fixed).encode("utf-8")).hexdigest()
+    return "res-" + ticket + "-" + digest[:16]
+
+
+def newest_attempt_id(root: str, ticket: str) -> str:
+    """The attempt_id of the newest done record for this ticket, or "" -- never invented."""
+    best, best_key = None, None
+    for _name, rec in json_records(os.path.join(root, "state", "rr-receiver", "done")):
+        if rec.get("ticket_id") != ticket:
+            continue
+        key = written_at_key(rec)
+        if best is None or key > best_key:
+            best, best_key = rec, key
+    if best is None:
+        return ""
+    attempt = best.get("attempt_id")
+    return attempt if isinstance(attempt, str) and attempt else ""
+
+
+def sent_record(root: str, ticket: str) -> dict:
+    """The sent/ record whose final.ticket_id is this ticket, or {}."""
+    for _name, rec in json_records(os.path.join(root, "state", "rr-escalate", "sent")):
+        final = rec.get("final")
+        if isinstance(final, dict) and final.get("ticket_id") == ticket:
+            return rec
+    return {}
+
+
+def cmd_resolve(a) -> int:
+    """RRX-007: the box closes its own case, through the same outbox as send."""
+    root = oc_root()
+    if not root:
+        print(json.dumps(result("setup_problem", detail="no OpenClaw folder found on this computer")))
+        return 20
+    ticket = (a.ticket or "").strip()
+    if not _TICKET_RE.match(ticket):
+        print(json.dumps(result("invalid_request", detail="the ticket id may use only letters, digits, '.', '_' and '-'")))
+        return 21
+    fixed = (a.fixed or "").strip()
+    if not fixed:
+        print(json.dumps(result("invalid_request", detail="--fixed is empty")))
+        return 21
+    slug = setting(root, "FLEET_STANDING_BOX_SLUG")
+    if not slug:
+        print(json.dumps(result("setup_problem", detail="FLEET_STANDING_BOX_SLUG is not set; the box cannot identify itself")))
+        return 20
+    op = resolve_operation_id(ticket, fixed)
+    known = sent_record(root, ticket)
+    known_body = known.get("body") if isinstance(known.get("body"), dict) else {}
+    text = "RESOLVED: " + fixed
+    body = {
+        "action": "escalate", "request_id": op,
+        "boxName": slug, "runtime_id": slug,
+        "clientName": str(known_body.get("clientName") or slug),
+        "agentName": str(known_body.get("agentName") or "main"),
+        "incident_id": ticket, "operation_id": op,
+        "result_digest": "sha256-" + hashlib.sha256(text.encode("utf-8")).hexdigest(),
+        "problem": text,
+    }
+    attempt = newest_attempt_id(root, ticket)
+    if attempt:
+        body["attempt_id"] = attempt      # kept when the box has one; never invented
+    entry = {"body": body, "attempts": 0, "created_at": int(time.time()),
+             "reply_leg": "enrolled" if reply_leg_enrolled(root) else "not_enrolled", "origin": None}
+    path = os.path.join(state_dir(root, "outbox"), op + ".json")
+    atomic_json(path, entry)                               # durable BEFORE the send
+    out = deliver(root, path, classify_resolve)
+    if secrets_rejected(root):
+        out.setdefault("detail", SECRETS_REJECTED_DETAIL)
+    print(json.dumps(out, sort_keys=True))
+    return exit_code(out["state"])
+
+
+def cmd_status(a) -> int:
+    """RRX-007: read the outcome the poll recorded, so the agent can answer the owner."""
+    root = oc_root()
+    if not root:
+        print(json.dumps(result("setup_problem", detail="no OpenClaw folder found on this computer")))
+        return 20
+    ticket = (a.ticket or "").strip()
+    if not _TICKET_RE.match(ticket):
+        print(json.dumps(result("invalid_request", detail="the ticket id may use only letters, digits, '.', '_' and '-'")))
+        return 21
+    path = os.path.join(root, "state", "rr-receiver", "case-outcomes", ticket + ".json")
+    if os.path.isfile(path):
+        try:
+            with open(path, encoding="utf-8") as fh:
+                doc = json.load(fh)
+        except (OSError, ValueError):
+            doc = None
+        if isinstance(doc, dict):
+            doc["state"] = "outcome_recorded"
+            print(json.dumps(doc, sort_keys=True))
+            return 0
+    if sent_record(root, ticket):
+        print(json.dumps({"state": "waiting", "say_to_owner": WAITING_SAY}, sort_keys=True))
+        return 0
+    print(json.dumps({"state": "unknown_ticket"}, sort_keys=True))
+    return 21
+
+
 def selftest() -> int:
     ok = True
     ok &= classify(0, None) == "queued_will_retry"
@@ -431,6 +620,22 @@ def selftest() -> int:
     # RRX-011: the intake's own enrollment verdict decides what the owner is told.
     ok &= owner_reply_leg("accepted", {"boxEnrolled": False}, "enrolled") == "not_enrolled"
     ok &= owner_reply_leg("accepted", {"boxEnrolled": True}, "enrolled") == "enrolled"
+    # RRX-007: a resolution's four outcomes, read from NAMED fields only.
+    ok &= classify_resolve(200, {"status": "resolution_recorded"}) == "resolved"
+    ok &= classify_resolve(200, {"status": "resolved"}) == "resolved"
+    ok &= classify_resolve(200, {"ticketId": "RR-1"}) == "resolved"
+    ok &= classify_resolve(200, {"status": "resolution_no_open_ticket"}) == "unknown_incident"
+    ok &= classify_resolve(200, {"status": "correlation_required"}) == "unknown_incident"
+    ok &= classify_resolve(409, None) == "unknown_incident"
+    ok &= classify_resolve(0, None) == "queued_will_retry"
+    ok &= classify_resolve(503, None) == "queued_will_retry"
+    ok &= classify_resolve(403, None) == "setup_problem"
+    ok &= classify_resolve(200, None) == "queued_will_retry"
+    # RRX-007: the same resolution always sends the same operation_id.
+    ok &= resolve_operation_id("RR-1", "restarted the gateway") == resolve_operation_id("RR-1", "restarted the gateway")
+    ok &= resolve_operation_id("RR-1", "a").startswith("res-RR-1-")
+    ok &= resolve_operation_id("RR-1", "a") != resolve_operation_id("RR-1", "b")
+    ok &= _TICKET_RE.match("RR-000123") is not None and _TICKET_RE.match("../x") is None
     with tempfile.TemporaryDirectory() as d:
         def write(name, text):
             p = os.path.join(d, name)
@@ -482,6 +687,11 @@ def main() -> int:
     s.add_argument("--loop", action="store_true", help="the symptom is looping, stuck or no reply")
     s.add_argument("--origin-json", help='{"channel":"telegram","account":"default","target":"<owner chat id>"}')
     sub.add_parser("flush")
+    r = sub.add_parser("resolve", help="close this box's own case with Rescue Rangers")
+    r.add_argument("--ticket", required=True)
+    r.add_argument("--fixed", required=True, help="what fixed it, in one line")
+    t = sub.add_parser("status", help="read the outcome recorded for a ticket")
+    t.add_argument("--ticket", required=True)
     sub.add_parser("selftest")
     a = ap.parse_args()
     try:
@@ -489,6 +699,10 @@ def main() -> int:
             return cmd_send(a)
         if a.command == "flush":
             return cmd_flush(a)
+        if a.command == "resolve":
+            return cmd_resolve(a)
+        if a.command == "status":
+            return cmd_status(a)
         if a.command == "selftest":
             return selftest()
     except (OSError, ValueError, KeyError) as exc:
