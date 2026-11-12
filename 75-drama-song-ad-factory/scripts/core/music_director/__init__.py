@@ -3,7 +3,7 @@
 
 Flow: approved lyrics -> build request (current Skill 68 envelope; route
 and version names read from the work-copy models.json at runtime, never
-copied here) -> validate through the owner validator -> ledger plan +
+copied here) -> checked by ``song_dispatch.validate_request`` -> ledger plan +
 reserve via W1-03 spend_ledger (every paid call reserved before dispatch)
 -> candidate intake from caller-supplied fixtures (no network transport in
 this module; dispatch rides the W1-06 canonical transport) -> score on the
@@ -13,6 +13,9 @@ lock -> extend-for-length.
 
 Tests run on throwaway ledger DBs with fixture costs and task IDs; no paid
 call leaves this module.
+
+``validate_payload`` runs Skill 68's validator for tests and the proof run;
+it is never wired into the song path (S75-081).
 
 WW-29 (reconciled templates and researched guidance): the direction that
 reaches the provider is the CALLER's style text (built from the recipe and
@@ -657,18 +660,27 @@ def build_persona_request(task_id, audio_id, name, description,
 
 
 def validate_payload(payload):
-    """Run the owner Skill 68 validator on one payload. No dispatch."""
+    """Run the owner Skill 68 validator on one payload. No dispatch.
+
+    S75-081: the caller's environment passes through, so the answer is the
+    same one Skill 74 gives -- ``KIE_LIVE_ADAPTER_PATH`` is no longer blanked
+    here. A validator file that is not installed is reported as
+    ``"missing": True``, never as a bare exit 2.
+    """
     p = workcopy_paths()
-    env = dict(os.environ, KIE_LIVE_ADAPTER_PATH="",
-               PYTHONDONTWRITEBYTECODE="1")
+    validator = Path(p["validator"])
+    if not validator.is_file():
+        return {"ok": False, "rc": None, "missing": True,
+                "output": "Skill 68 validator not found: %s" % validator}
+    env = dict(os.environ, PYTHONDONTWRITEBYTECODE="1")
     with tempfile.TemporaryDirectory(prefix="blackceo-DTS-303-") as td:
         f = Path(td) / "payload.json"
         f.write_text(json.dumps(payload), encoding="utf-8")
         r = subprocess.run(
-            [sys.executable, str(p["validator"]), "--domain", "music",
+            [sys.executable, str(validator), "--domain", "music",
              "--payload", str(f)], capture_output=True, text=True,
             timeout=120, env=env)
-    return {"ok": r.returncode == 0, "rc": r.returncode,
+    return {"ok": r.returncode == 0, "rc": r.returncode, "missing": False,
             "output": (r.stdout + r.stderr)[-2000:]}
 
 
