@@ -462,16 +462,21 @@ class BuildError(Exception):
     pass
 
 
+# A manuscript link `[Choose your seat](https://...)` is the page's link, not its printed words: the
+# copy block carries the label only, or the render prints the bracket, the parentheses and the URL.
+MD_LINK = re.compile(r"\[([^\]\n]+)\]\([^)\s]+\)")
+
 def section_copy(units):
     """Public copy lines of one section, and its single CTA button label."""
     lines, buttons = [], []
     for u in units:
+        text = MD_LINK.sub(r"\1", u.text)
         if u.kind == "cta_button":
-            buttons.append(u.text)
+            buttons.append(text)
         elif u.kind == "step":
-            lines.append(f"{u.step_no}. {u.text}")
+            lines.append(f"{u.step_no}. {text}")
         else:
-            lines.append(u.text)
+            lines.append(text)
     return "\n".join(lines), buttons
 
 

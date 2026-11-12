@@ -216,6 +216,19 @@ class UtilityButtonTests(RunCase):
             builder.build("visual-mockup", "standard", text, {}, {}, [], STUB, "", self.run)
         self.assertIn("one button per section", str(ctx.exception))
 
+    def test_an_inline_markdown_link_prints_its_label_never_its_url(self):
+        # A founder letter that links its invite inline (`[Choose your seat](https://...)`) was
+        # rendered with the brackets and the URL printed on the page.
+        text = (FIXTURES / "standard-path-b.md").read_text(encoding="utf-8")
+        old = "Join me in the live lab."
+        self.assertIn(old, text)
+        text = text.replace(old, "Join me in the [live lab](https://example.invalid/checkout).", 1)
+        request = builder.build("visual-mockup", "standard", text, {}, {}, [], STUB, "", self.run)
+        section = next(s for s in request["sections"] if s["section_id"] == "12")
+        self.assertIn("Join me in the live lab.", section["copy"])
+        self.assertNotIn("](", section["copy"])
+        self.assertNotIn("example.invalid", section["copy"])
+
     def test_a_button_in_a_landing_section_the_spec_forbids_is_refused(self):
         # the landing specs declare cta.standalone "forbidden" for 6, 7, 8, 9, 11 and 12; the
         # builder refuses there instead of letting the copy validator be the first to notice

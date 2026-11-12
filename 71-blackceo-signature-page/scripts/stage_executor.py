@@ -2133,6 +2133,17 @@ class _AdapterTransport:
     def submit(self, req_path: Path) -> dict:
         return self._call("submit", "--request", str(req_path), "--mode", "active")
 
+    def upload(self, file_path) -> str:
+        """Host one local reference image through Skill 74's own `upload` (KIE accepts only http(s)
+        or data:image input_urls). Returns the download URL; any failure refuses before submit."""
+        out = self._call("upload", "--file", str(file_path))
+        url = (out.get("data") or {}).get("download_url")
+        if out.get("state") == "fail" or not url:
+            raise ExecutorError(
+                f"Skill 74 could not upload the reference {Path(file_path).name}: "
+                f"{(out.get('error') or {}).get('msg', 'no download_url')}"[:300] + " (no paid render was made)")
+        return url
+
     def wait(self, task_id, timeout=None) -> dict:
         args = ["wait", "--task-id", str(task_id)]
         if timeout:
@@ -2144,6 +2155,27 @@ class _AdapterTransport:
         if info is not None:
             args += ["--info", json.dumps(info, sort_keys=True)]
         return self._call(*args)
+
+
+def hosted_references(refs, transport) -> list:
+    """input_urls as KIE accepts them: an http(s) or data:image reference passes unchanged; a local file
+    (a later stage's pixel-mate, the prior slice on disk) is uploaded through the transport and replaced
+    by its download URL, in the same order. A local path that is not a file refuses before any call."""
+    out = []
+    for ref in refs or []:
+        text = str(ref)
+        if text.startswith(("http://", "https://", "data:image")):
+            out.append(text)
+            continue
+        path = Path(text)
+        if not path.is_file():
+            raise ExecutorError(f"reference {text!r} is neither a URL nor a file on disk (no paid render was made)")
+        upload = getattr(transport, "upload", None)
+        if upload is None:
+            raise ExecutorError(f"the transport cannot upload the local reference {path.name} "
+                                "(no paid render was made)")
+        out.append(upload(path))
+    return out
 
 
 def drive_paid_job(run_dir: Path, job: dict, request: dict, transport, *,
@@ -2162,6 +2194,7 @@ def drive_paid_job(run_dir: Path, job: dict, request: dict, transport, *,
     req_dir.mkdir(parents=True, exist_ok=True)
     req_path = req_dir / f"request-a{int(ident['attempt']):03d}.json"
     req = {"model": model, "input": build_input(job, request)}
+    req["input"]["input_urls"] = hosted_references(req["input"].get("input_urls"), transport)
     # F18 (kept from main): freeze the FINAL prompt and bind the payload that will actually be
     # sent. A payload whose prompt is not the frozen one never reaches the paid call.
     pol = _prompt_policy()
