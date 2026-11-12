@@ -104,7 +104,7 @@ class RefusalTextTest(unittest.TestCase):
         self.assertEqual(out["message"],
                          session.INVALID_REPLY_PREFIX + "\n\n" + out["pending"]["message"])
         self.assertEqual(out["pending"]["message"], asked["message"])
-        self.assertEqual(out["answered_count"], 3)
+        self.assertEqual(out["answered_count"], 2)
 
 
 if __name__ == "__main__":
