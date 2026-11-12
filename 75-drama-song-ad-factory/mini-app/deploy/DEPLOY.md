@@ -171,8 +171,9 @@ ever written to a file.
 3. **Zone guard** — the hard gate (section 2).
 4. **Scope preflight** — the read-only probe (section 4). Runs before any write.
 5. **R2 bucket** — create `zhw-drama-studio` if missing (idempotent).
-6. **Retention** — 45-day lifecycle rule on the `projects/` prefix (scoped
-   project-object retention).
+6. **Retention** — 45-day lifecycle rule on the `clients/` prefix: every stored
+   object is removed 45 days after it was uploaded. Enrollment records, delivery
+   receipts and GHL media are not in this bucket and are untouched.
 7. **CORS** — put the committed `upload-cors.json` rule on the bucket, so a
    browser may `PUT` an upload straight to R2 from the studio host.
 8. **KV namespace** — find `DS_STUDIO` by title; create it only if absent. Its id
