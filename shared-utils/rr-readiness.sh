@@ -1900,26 +1900,12 @@ rrr_cron_reconcile() {
                     _rrr_cr_tried_add=1
                     rrr_argv_run "$_rrr_cr_tmp.ahelp" "$_rrr_cr_tmp.err" "$RRR_OPENCLAW_BIN" cron add --help || true
                     _rrr_cr_ahelp="$(cat "$_rrr_cr_tmp.ahelp" 2>/dev/null)"
-                    if [ -z "$_rrr_cr_ahelp" ] || [ "$RRR_ARGV_RC" -ne 0 ]; then
-                        # A CLI with no readable help must still get a chance to
-                        # register; try the silenced form first, then the plain
-                        # form (the two forms wire.sh has always used).
-                        rrr_argv_run "$_rrr_cr_tmp.mut" "$_rrr_cr_tmp.err" "$RRR_OPENCLAW_BIN" cron add \
-                            --name "$RRR_NAME" --cron "$RRR_SCHEDULE" --no-deliver --command "sh $RRR_POLL" || true
-                        if [ "$RRR_ARGV_RC" -ne 0 ]; then
-                            rrr_argv_run "$_rrr_cr_tmp.mut" "$_rrr_cr_tmp.err" "$RRR_OPENCLAW_BIN" cron add \
-                                --name "$RRR_NAME" --cron "$RRR_SCHEDULE" --command "sh $RRR_POLL" || true
-                        fi
-                    else
-                        case "$_rrr_cr_ahelp" in
-                            *--no-deliver*)
-                                rrr_argv_run "$_rrr_cr_tmp.mut" "$_rrr_cr_tmp.err" "$RRR_OPENCLAW_BIN" cron add \
-                                    --name "$RRR_NAME" --cron "$RRR_SCHEDULE" --no-deliver --command "sh $RRR_POLL" || true ;;
-                            *)
-                                rrr_argv_run "$_rrr_cr_tmp.mut" "$_rrr_cr_tmp.err" "$RRR_OPENCLAW_BIN" cron add \
-                                    --name "$RRR_NAME" --cron "$RRR_SCHEDULE" --command "sh $RRR_POLL" || true ;;
-                        esac
-                    fi
+                    # RRX-043: the poll is added with --no-deliver or not at all.
+                    # A job that fires every 2 minutes with delivery on can post
+                    # into the owner's chat for as long as it takes the readback
+                    # to notice. A refused add is reported as mutation_failed.
+                    rrr_argv_run "$_rrr_cr_tmp.mut" "$_rrr_cr_tmp.err" "$RRR_OPENCLAW_BIN" cron add \
+                        --name "$RRR_NAME" --cron "$RRR_SCHEDULE" --no-deliver --command "sh $RRR_POLL" || true
                     [ "$RRR_ARGV_RC" -ne 0 ] && _rrr_cr_mut_rc="$RRR_ARGV_RC"
                     [ -z "$RRR_RECONCILE_ACTION" ] && RRR_RECONCILE_ACTION="add"
                     continue
