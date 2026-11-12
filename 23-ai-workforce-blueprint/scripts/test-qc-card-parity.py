@@ -94,7 +94,12 @@ LONG = {
 
 
 def block(q: str, a: str) -> str:
-    return f"**Q:** {q}\n**A:** {a}\n**Logged:** test fixture\n\n---\n\n"
+    # NOTE (BU-01 QC repair): the real log_answer() writes "**A:** ..." and the
+    # metadata line ("**Logged:** ...") on SEPARATE lines. An earlier draft of
+    # this fixture inlined the metadata on the same line as an empty answer,
+    # which the shared parser (correctly) read as answer text. Keep the two on
+    # separate lines so an empty answer parses as empty (exit 3), as specified.
+    return f"**Q:** {q}\n**A:** {a}\n\n**Logged:** test fixture\n\n---\n\n"
 
 
 def transcript(overrides: dict) -> str:
