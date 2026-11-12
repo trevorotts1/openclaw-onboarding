@@ -1491,7 +1491,11 @@ NO_OFFER_PRICING_FLAG = "--no-offer-pricing"
 
 
 def launch_profile_active(run_dir):
-    return intake_data(run_dir).get("launch_profile") == LAUNCH_PROFILE_NAME
+    """The no-price rule is the LANDING page's (packet doc 07 section 3). The launch import stamps
+    the profile on every page of the launch, but the checkout, upsell, downsell and thank-you pages
+    must state the exact price (Skill 79 CHK-13, the role specs), so only the landing role engages it."""
+    return (intake_data(run_dir).get("launch_profile") == LAUNCH_PROFILE_NAME
+            and page_role.declared_role(run_dir) == page_role.LANDING_ROLE)
 
 
 def apply_launch_profile(cmd, run_dir):

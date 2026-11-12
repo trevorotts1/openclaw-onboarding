@@ -711,6 +711,17 @@ class TestProfileGateWiring(unittest.TestCase):
         self.assertEqual(cmd, self.cmd)
         self.assertIsNone(line)
 
+    def test_profile_on_a_priced_page_role_leaves_the_command_unchanged(self):
+        # checkout/upsell/downsell/thank-you state the exact price; the no-price rule is the landing page's
+        self.write_intake(profile=True)
+        intake = json.loads((self.run_dir / "intake.json").read_text(encoding="utf-8"))
+        for role in ("checkout", "upsell_1", "downsell_1", "thank_you"):
+            intake["launch"]["page_role"] = role
+            (self.run_dir / "intake.json").write_text(json.dumps(intake) + "\n", encoding="utf-8")
+            cmd, line = stage_gate.apply_launch_profile(self.cmd, self.run_dir)
+            self.assertEqual(cmd, self.cmd, role)
+            self.assertIsNone(line, role)
+
     def test_profile_on_fails_closed_naming_the_gate(self):
         self.write_intake(profile=True)
         self.pin_skill_root("# validator build without the launch gate\n")
