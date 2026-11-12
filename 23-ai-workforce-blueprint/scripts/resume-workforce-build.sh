@@ -3,8 +3,8 @@
 #
 # Reads /data/.openclaw/workspace/.workforce-build-state.json. If the state
 # shows pending or stale-building departments, sends a self-message via
-# `openclaw message send` from the operator's chat (owner OR operator) to the
-# bot's own chat so the agent gets invoked and continues the build.
+# `openclaw message send` from the operator's chat to the bot's own chat.
+# A Telegram send does not start an agent turn (see the dispatch-result note near the end of this file). Builds are started by start-workforce-build.py; the closeout by run-closeout.sh.
 #
 # This is the ONLY autonomous-recovery layer in the workforce-build pipeline.
 # If this script doesn't run on a cron, an interrupted build will sit forever.
@@ -958,18 +958,23 @@ stale_building_count=$(jq --arg min "$STALE_BUILDING_MINUTES" -r '
 # Standard-first prebuilt counters (always 0 on legacy boxes).
 prebuilt_count=$(jq -r '[.departments[]? | select(.status == "prebuilt")] | length' "$STATE_FILE" 2>/dev/null || echo 0)
 # "Confirmed or declined" decisions for prebuilt departments are recorded by
-# the interview review board (record-dept-decision.sh) as provenanced decline
-# records; KEEP is implicit (no record). prebuilt_decided_count therefore
-# counts ONLY the prebuilt departments carrying a provenanced decline — the
-# ones the apply-diff build will archive. A confirmationsComplete=true state
-# flag is the authoritative "every prebuilt dept was reviewed" signal (see the
-# HOP-4 standard-first completion contract below); this count is diagnostic.
+# the interview review board (record-dept-decision.sh) under
+# canonicalReconciliation.decisions[<dept>] = {decision, source, decidedAt,
+# decidedBy, sessionId}; KEEP is implicit (no record). prebuilt_decided_count
+# therefore counts ONLY the prebuilt departments whose recorded decision is "no"
+# - the ones the apply-diff build will archive. standardPrebuild.
+# prebuiltDepartments is a list of department id STRINGS (interface contract
+# section 2.2), so each entry is compared as an id and never read as an object.
+# A confirmationsComplete=true state flag is the authoritative "every prebuilt
+# dept was reviewed" signal (see the HOP-4 standard-first completion contract
+# below); this count is diagnostic.
 prebuilt_decided_count=$(jq -r '
-  [((.standardPrebuild.prebuiltDepartments // [])[]) as $p
-    | (($p.decision // "") | ascii_downcase) as $d
-    | select(($d == "decline" or $d == "declined" or $d == "remove")
-             and (($p.provenance // "") != ""))
-  ] | length
+  . as $root
+  | [ (($root.canonicalReconciliation.decisions // {}) | to_entries[])
+      | . as $entry
+      | select((($entry.value.decision // "") | tostring | ascii_downcase) == "no")
+      | select((($root.standardPrebuild.prebuiltDepartments // []) | map(tostring)) | index($entry.key))
+    ] | length
 ' "$STATE_FILE" 2>/dev/null || echo 0)
 
 build_completed_at=$(jq -r '.buildCompletedAt // empty' "$STATE_FILE")
@@ -1100,6 +1105,31 @@ fi
 
 # B4: Ensure wiring_dirty is defined (set to 0 if not already computed above)
 wiring_dirty=${wiring_dirty:-0}
+
+# ---- START THE BUILD (BU-21): a Telegram send cannot start an agent turn ----
+# The self-ping lanes below are OUTBOUND messages; an outbound message never
+# becomes an inbound agent turn (see the dispatch-result note at the end of this
+# file), so they cannot start a build. start-workforce-build.py can:
+#   * standard-first box, prebuild done, owner review not settled -> it writes
+#     the build config and launches the apply-diff build detached; or
+#   * any other lane -> it records .workforce-build-wanted.json so the Command
+#     Center's build-kick job can start an agent turn (a script cannot).
+# Either way there is nothing left for the self-ping lanes to do on this fire, so
+# this exits after logging the script's one JSON line. An install that predates
+# the start script falls through to those lanes unchanged (no silent exit).
+if [[ "$interview_complete" == "true" ]] && [[ -z "$build_completed_at" ]] \
+   && { [[ "$total_count_now" == "0" ]] \
+        || { [[ "$build_type" == "standard-first" ]] \
+             && [[ "$confirmations_complete" != "true" ]]; }; }; then
+  _swb_script="$SCRIPT_DIR/start-workforce-build.py"
+  if [[ -f "$_swb_script" ]]; then
+    _swb_out=$("$WORKFORCE_PYTHON" "$_swb_script" --state "$STATE_FILE" 2>>"$LOG_FILE" || true)
+    log "start-workforce-build: ${_swb_out:-no output}"
+    exit 0
+  fi
+  log "start-workforce-build: no script at $_swb_script (install predates BU-21) - falling through to the self-ping lanes"
+fi
+
 total_attention=$(( pending_count + stale_building_count + library_dirty + wiring_dirty + comms_automation_dirty + closeout_dirty ))
 if (( total_attention == 0 )); then
   done_count=$(jq -r '[.departments[] | select(.status == "done")] | length' "$STATE_FILE")
