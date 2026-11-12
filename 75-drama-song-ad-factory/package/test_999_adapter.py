@@ -220,7 +220,7 @@ def test_every_declared_carrier_is_loaded_by_its_probe():
 def test_absent_requirements_name_the_unit_that_owes_them():
     rows = {r["id"]: r for r in A.requirements()["rows"]}
     gaps = {g["carrier"]: g["owed_by"] for g in rows["notion"]["absent"]}
-    assert gaps["scripts/core/character_library/notion_store.py"] == "S75-T15"
+    assert "scripts/core/character_library/notion_store.py" not in gaps
     assert gaps["scripts/core/character_library/migration.py"] == "S75-T17"
     paid = rows["paid_compatibility"]["absent"]
     assert [g["owed_by"] for g in paid] == ["S75-T28"]
@@ -231,12 +231,12 @@ def test_stale_absent_declaration_fails_closed():
     with _temp_999_root() as root:
         assert A.requirements(root)["ok"]
         carrier = os.path.join(root, "scripts", "core", "character_library",
-                               "notion_store.py")
+                               "migration.py")
         with open(carrier, "w", encoding="utf-8") as fh:
             fh.write("# planted: this carrier is declared absent\n")
         result = A.requirements(root)
         assert result["ok"] is False
-        assert any("notion_store.py absent but" in p and "is present" in p
+        assert any("migration.py absent but" in p and "is present" in p
                    for p in result["problems"]), result["problems"]
 
 
