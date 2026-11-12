@@ -1629,16 +1629,26 @@ def _verify_notes_sync(run_dir: Path) -> Tuple[bool, List[str]]:
 #    top, because this verifier runs BEFORE curate.py assembles the flat
 #    deliverables/ bundle the other consumers check. --
 
-# Pre-curation search pattern (glob, relative to run_dir) per canonical key.
+# Search pattern (glob, relative to run_dir) per canonical key.
+#
+# PD-064: each pattern is the path the phase that PRODUCES the deliverable
+# declares in PIPELINE-MANIFEST.json — not where a folder-shaped guess puts it.
+# The deck, the deck PDF and the infographic are written to
+# working/deliverables/ (pdf_export.py writes the PDF only there;
+# build_infographic.py writes only working/deliverables/ and working/renders/);
+# the audio, the webinar video and their peers stay where their own steps
+# write them. The old table looked for the deck, the deck PDF and the
+# infographic under working/delivery/, so a real bundle reported three of ten
+# deliverables missing.
 _DELIVERY_PATTERN_BY_KEY = {
-    "deck_pptx":         "working/delivery/*-FINAL.pptx",
-    "deck_pdf":          "working/delivery/*-FINAL.pdf",
+    "deck_pptx":         "working/deliverables/*-FINAL.pptx",
+    "deck_pdf":          "working/deliverables/*-FINAL.pdf",
     "guide_pdf":         "working/deliverables/PRESENTER-GUIDE.pdf",
     "speech_md":         "working/deliverables/PRESENTERS-SPEECH.md",
     "speech_pdf":        "working/deliverables/PRESENTERS-SPEECH.pdf",
     "speech_fish_md":    "working/deliverables/PRESENTERS-SPEECH-FISH-TAGGED.md",
     "audio_mp3":         "working/delivery/PRESENTER-AUDIO.mp3",
-    "infographic_png":   "working/delivery/infographic.png",
+    "infographic_png":   "working/deliverables/infographic.png",
     "teleprompter_html": "working/deliverables/presenter-teleprompter.html",
     "webinar_mp4":       "working/delivery/*-WEBINAR.mp4",
 }
@@ -2065,10 +2075,13 @@ def _deliverable_content_check(key: str, path: Path, reasons: list) -> None:
                            f"for video verification: {exc!r}")
 
 
-def _verify_delivery(run_dir: Path) -> Tuple[bool, List[str]]:
-    """P9-DELIVER: hard-fail on ANY missing or substance-less whitelist deliverable.
+def _verify_delivery(run_dir: Path, keys: Optional[tuple] = None) -> Tuple[bool, List[str]]:
+    """The bundle check: hard-fail on ANY missing or substance-less whitelist
+    deliverable.
 
-    Checks ALL 10 deliverables in _DELIVERY_DELIVERABLES.  Each is verified for
+    Checks ALL 10 deliverables in _DELIVERY_DELIVERABLES — or, when ``keys`` is
+    given, only those keys (PD-064: P9-DELIVER asks it for the audio alone; the
+    full ten-key check runs at P-BUNDLE-GATE).  Each is verified for
     existence, non-empty, min bytes, magic-byte signature (where applicable),
     AND content substance (where content_check is configured).  A missing or
     substance-less deliverable produces FAIL with the specific deficiency —
@@ -2082,6 +2095,8 @@ def _verify_delivery(run_dir: Path) -> Tuple[bool, List[str]]:
     reasons: List[str] = []
 
     for item in _DELIVERY_DELIVERABLES:
+        if keys is not None and item["key"] not in keys:
+            continue
         key = item["key"]
         pattern = item["pattern"]
         min_bytes = item["min_bytes"]
@@ -2159,6 +2174,34 @@ def _verify_delivery(run_dir: Path) -> Tuple[bool, List[str]]:
 
     hard = [r for r in reasons if not r.startswith("NOTE")]
     return (len(hard) == 0), reasons
+
+
+def _verify_delivery_scoped(keys: tuple) -> Callable:
+    """A delivery verifier narrowed to ``keys`` (PD-064).
+
+    P9-DELIVER is the audio step: it must be checked for the audio it produces,
+    not for all ten deliverables at once. It used to run the whole bundle
+    check, so a run whose audio was never made still passed the step whenever
+    the rest of the bundle happened to be present — the step reported a pass
+    for a file it never looked at.
+
+    The narrowed check still delegates to the ONE ten-key machinery
+    (``_verify_delivery``), so the whitelist, each byte floor and each
+    magic-byte rule can never drift into a second copy. The whole-bundle
+    verdict lives at P-BUNDLE-GATE now, which is where the bundle belongs.
+
+    ``_verify_delivery`` is bound as a local so the returned verifier carries
+    it in its closure: the deliverable single-source test pins P9-DELIVER's
+    delegation to that function, and that pin stays true here.
+    """
+    _shared_delivery_check = _verify_delivery
+    _keys = tuple(keys)
+
+    def _v(run_dir: Path) -> Tuple[bool, List[str]]:
+        return _shared_delivery_check(run_dir, _keys)
+
+    _v.scoped_keys = _keys  # PD-064: the keys this check was narrowed to
+    return _v
 
 
 def _verify_json_artifact(pattern: str, required_keys: tuple = ()):
@@ -3831,32 +3874,19 @@ def _verify_style_pick(run_dir: Path) -> Tuple[bool, List[str]]:
 
 def _verify_bundle_gate(run_dir: Path) -> Tuple[bool, List[str]]:
     """P-BUNDLE-GATE (order 9.95, script bundle_gate.py): the terminal
-    bundle-completeness gate's own verdict record. The script exits 5 naming
-    any missing/under-threshold deliverable; the verifier re-measures the
-    bundle it attests (every consumed deliverable pattern must resolve) and
-    requires the gate's own checkpoint record to exist and pass."""
-    import json as _json
-    consumed = [
-        "working/deliverables/{deck_slug}-FINAL.pptx",
-        "working/deliverables/{deck_slug}-FINAL.pdf",
-        "working/deliverables/PRESENTER-GUIDE.pdf",
-        "working/deliverables/PRESENTERS-SPEECH.md",
-        "working/deliverables/PRESENTERS-SPEECH.pdf",
-        "working/deliverables/PRESENTERS-SPEECH-FISH-TAGGED.md",
-        "working/delivery/PRESENTER-AUDIO.mp3",
-        "working/deliverables/infographic.png",
-        "working/deliverables/presenter-teleprompter.html",
-        "working/delivery/{deck_slug}-WEBINAR.mp4",
-    ]
-    missing: List[str] = []
-    for pat in consumed:
-        if "{deck_slug}" in pat:
-            # The slug resolves per run; match the glob the engine itself uses.
-            pat = pat.replace("{deck_slug}", "*")
-        if _resolve_glob(run_dir, pat) is None:
-            missing.append(pat)
-    if missing:
-        return False, [f"bundle deliverable(s) absent: {', '.join(missing)}"]
+    bundle-completeness gate's own verdict record.
+
+    PD-064: the ten-deliverable check lives HERE. P9-DELIVER used to run it, so
+    the audio step passed for a run with no audio. The check itself is
+    `_verify_delivery` — the one canonical whitelist, each key resolved through
+    `_DELIVERY_PATTERN_BY_KEY` at the path its phase's producer declares — and
+    this gate additionally requires the gate's own checkpoint record to exist
+    and pass."""
+    bundle_ok, bundle_reasons = _verify_delivery(run_dir)
+    if not bundle_ok:
+        return False, [
+            f"bundle deliverable(s) absent: {r}" for r in bundle_reasons
+        ]
     gate = _read_json(_resolve_glob(run_dir, "working/checkpoints/bundle_gate.json")
                       or Path("/nonexistent"))
     if not isinstance(gate, dict):
@@ -4060,9 +4090,13 @@ PHASE_VERIFIERS: dict[str, Callable] = {
     # (verify_notes_sync) — report-only unless PRES_TRUST_BOUNDARY_ENFORCE=1.
     "P9.5-NOTES-SYNC":    _shadow_composite_verifier("notes_sync:sync", _verify_notes_sync),
     # Phase 9     Delivery
-    # Slice 3: shadowed against the sealed 10-key bundle verdict
-    # (verify_deliverables) — report-only unless PRES_TRUST_BOUNDARY_ENFORCE=1.
-    "P9-DELIVER":         _shadow_composite_verifier("deliverables:bundle", _verify_delivery),
+    # PD-064: the step named Delivery is checked for the AUDIO it produces
+    # (exists, the canonical size floor, ID3 magic). It used to run the whole
+    # ten-file bundle check, so a run with no audio passed this step as long as
+    # the other nine were there. The ten-file check now runs at P-BUNDLE-GATE
+    # (_verify_bundle_gate) — its proper owner — and this check is the same
+    # single-sourced whitelist narrowed to the audio key.
+    "P9-DELIVER":         _verify_delivery_scoped(("audio_mp3",)),
     # Phase 0.15  Signature-Presentation Intake Gate (Skill 51)
     "P-SP-INTAKE":        _verify_sp_intake,
     # Phase 4.1   Signature-Presentation SACRED Structure (Skill 51)
