@@ -92,7 +92,7 @@ mission and USER.md values.
    consider as a Skill-61 fix-class proposal.
 5. **Hand off with the evidence attached.** The ticket now carries: symptom,
    confirmed root cause, evidence, the recommended fix class, and the blast radius.
-   Write it into the ledger answer/notes so it is durable.
+   Write it into `05-work.json` (step 5 of the case, SOP-RR-06) so it is durable.
 
 ### Blast-radius and reversibility assessment (mandatory)
 
@@ -109,8 +109,9 @@ Before recommending any fix, classify it:
 (1) a client-account-action remedy is outcome (b) — tell the client's agent what
 its owner must do, and the diagnosis is complete as (b), never a page; (2) an
 infrastructure failure on a REACHABLE box is diagnosed for the rescue AI to
-self-fix using our access — the operator's `~/.ssh/config` `rescue-*` alias for
-the box plus the provider env var NAME from `~/.openclaw/secrets/.env` (names
+self-fix using our access — the box resolved with the operator's fleet access
+resolver (the SSH configuration covers Mac boxes only and is never the roster)
+plus the provider env var NAME from `~/.openclaw/secrets/.env` (names
 only, never a value — values live in the secrets env, never in a doc or ticket);
 (3) only a box the rescue AI cannot reach, or a one-way door, or an at-cap client
 goes to the Operator page — with what was tried and why.
@@ -125,7 +126,7 @@ goes to the Operator page — with what was tried and why.
 | Symptom plausible but unconfirmed | Cheapest confirming check named; do NOT hand off a guess |
 | Root cause is the client's own logic, not infra | Route back; state which layer; do not fix the wrong layer |
 | Irreversible/one-way-door remedy required | Prepare command+revert, flag NEVER-AUTO, tell Dispatcher to page |
-| Cannot reach the box to gather evidence | Try the box's `rescue-*` SSH alias (own access) FIRST; if the rescue AI also cannot reach it, page — with the attempts + evidence |
+| Cannot reach the box to gather evidence | Try the box with the operator's fleet access resolver (own access) FIRST; if the rescue AI also cannot reach it, page — with the attempts + evidence |
 
 ---
 
@@ -146,8 +147,10 @@ goes to the Operator page — with what was tried and why.
 The three-tier order is BINDING (director's doctrine): (1) a client-account-action
 remedy is outcome (b) — tell the client's agent, complete as (b), never a page;
 (2) infrastructure on a REACHABLE box is fixed by the rescue AI using our access
-(the box's `rescue-*` SSH alias + provider env var NAMES from
-`~/.openclaw/secrets/.env` — never print a value; values live in the secrets env);
+(the box resolved with the operator's fleet access resolver — the SSH
+configuration covers Mac boxes only and is never the roster — plus provider env
+var NAMES from `~/.openclaw/secrets/.env` — never print a value; values live in
+the secrets env);
 (3) escalate to the Dispatcher (who pages the Operator) only when: the box is
 unreachable AFTER the rescue AI's own SSH attempts, the remedy is a one-way door,
 the client is at the daily cap, or three consecutive diagnoses of the same ticket
@@ -193,14 +196,14 @@ row for the ticket.
    posture, MCP, billing signal. Adjacent imperfections you notice are notes for the
    QC/Postmortem Specialist, not a licence to widen the investigation while a client
    is down.
-5. **Check the budget against the question.** A FAST-tier ticket (180s) buys one or
-   two cheap checks; a LONG ticket (1,320s) buys a real investigation. If the
-   falsifiable test alone cannot be run inside the budget, say so immediately and
-   let the Dispatcher re-tier — discovering it at the ceiling wastes the whole
-   window.
+5. **Check the budget against the question.** The time budget the Director gave
+   this ticket is what bounds the work. If the falsifiable test alone cannot be run
+   inside the budget, say so immediately and let the Dispatcher re-tier — discovering
+   it at the ceiling wastes the whole window.
 **Outputs:** A one-line falsifiable symptom statement, the exact check that confirms
 or kills it, and an explicit list of what `alreadyTried` has already eliminated —
-all written to the ledger notes so they survive the session.
+all written to `03-triage.json` (step 3 of the case, SOP-RR-06) so they survive the
+session.
 **Hand to:** Director of Rescue Rangers (immediately, if the ticket needs re-tiering
 or is out of scope); Structured-Fix Operator (later, as the verification check they
 must re-run).
@@ -354,8 +357,8 @@ description, and the blast-radius classification.
 1. **Assemble the packet in one place.** Symptom (falsifiable), confirmed root cause,
    evidence with citations, named failure class, recommended `remediate.sh` card,
    blast radius, reversibility bucket, the one-line revert, and the exact check that
-   must pass for the fix to count as verified. Write it into the ledger answer/notes
-   so it is durable rather than living in a Telegram thread.
+   must pass for the fix to count as verified. Write it into `05-work.json` (step 5
+   of the case, SOP-RR-06) so it is durable rather than living in a Telegram thread.
 2. **Name the class, or describe a new one properly.** A match to a catalogued class
    hands the Structured-Fix Operator a ready card. A genuinely new class needs a
    detection signature — the specific, machine-checkable pattern that identifies it
@@ -372,13 +375,14 @@ description, and the blast-radius classification.
    will think to undo.
 5. **Escalate the conditions that are not yours to solve — after the tiers run.**
    An unreachable box is an uptime problem, not a diagnosis problem — but first try
-   the box's own `rescue-*` SSH alias (the rescue AI's access); only if the rescue
-   AI also cannot reach the box does the Dispatcher page. A client-account-action
+   the box with the operator's fleet access resolver (the rescue AI's access); only
+   if the rescue AI also cannot reach the box does the Dispatcher page. A client-account-action
    remedy is NOT yours to page at all — it is outcome (b) to the client's agent,
    and the diagnosis closes as (b). A client at the daily cap, a one-way-door
    remedy, and a third consecutive failed diagnosis on the same ticket page the
    Operator per the routing table, always with what was tried and why.
-**Outputs:** A durable evidence packet on the ledger row; a named failure class or a
+**Outputs:** A durable evidence packet in `05-work.json` (step 5 of the case,
+SOP-RR-06); a named failure class or a
 new-class description with its detection signature; an explicit route-back or page
 request where the ticket is not yours to finish.
 **Hand to:** Structured-Fix Operator (the packet, including the verification check
