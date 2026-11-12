@@ -9,7 +9,8 @@ Prove for BUILD-PLAN.md section W1-card-questions-U1:
 * a remembered "no" hides AGNES, a remembered "yes" still asks;
 * Agnes Yes turns VIDEO MODEL into the backup wording (same options, same prices);
 * ``--run-dir`` writes control/method.json and the receipt's agnes block;
-* studio-json carries ``shows_when`` and an example on every screen.
+* studio-json carries ``shows_when``, a plain heading and an example on every
+  typed screen (S75-074).
 
 Nothing here calls a provider: the card builds text and reads one local guide.
 
@@ -361,7 +362,10 @@ def test_studio_json_carries_shows_when_and_an_example_on_every_screen(capsys):
         assert qid in by_id, qid
     for s in screens:                       # every screen, card and conditional
         assert s["shows_when"], s["id"]
-        assert s["example"], s["id"]
+        # S75-074 step 3: only a typed screen shows an example; a choice screen
+        # shows its option text instead.
+        if s["typed"]:
+            assert s["example"], s["id"]
         assert s["question"], s["id"]
     assert by_id["purpose"]["shows_when"] == {"purpose": [1, 2, 3, 4]}
     assert by_id["episode_length"]["shows_when"] == {"purpose": [1]}

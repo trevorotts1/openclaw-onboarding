@@ -119,7 +119,8 @@ def test_the_studio_export_marks_the_brief_as_typed_and_still_refuses_a_half_scr
     screens = {s["id"]: s for s in IC.studio_json()["questions"]}
     for qid in IC.BRIEF_IDS:
         assert screens[qid]["typed"] is True, qid
-        assert screens[qid]["options"][0]["detail"].lower().startswith("reply with"), qid
+        # S75-074 step 2: the page asks for the words itself; no option row.
+        assert screens[qid]["options"] == [], qid
     for qid in ("models", "length", "music", "look", "checkpoints", "spend"):
         assert screens[qid]["typed"] is False, qid
     # the export still refuses a screen the studio cannot render
