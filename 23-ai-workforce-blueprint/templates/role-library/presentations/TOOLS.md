@@ -170,11 +170,17 @@ deck run directory: the render guard (`canonical_render_guard.py`) blocks any `*
 that mentions `createTask`, `recordInfo` or `api.kie.ai` (`AF-CANONICAL-RENDER-BYPASS`).
 
 **Exit codes (the contract you act on):**
-- `0` — every slide rendered and the `.pptx` was written. `outputPath` is your deliverable.
-- `1` — one or more slides failed (NO `.pptx` written), or assembly failed.
-  Read `failures`. Fix `slides.json` if it was a content problem and re-run; otherwise
-  report the failure. NEVER substitute an image.
-- `2` — fatal config error (no `KIE_API_KEY`, bad `slides.json`, `python-pptx` missing).
+- `0` — the engine finished every phase and the bundle gate passed.
+- `2` — usage error, or no working Python interpreter.
+- `3` — a slide failed to render. `4` — the image account has no credit.
+- `5` — an intake gate or the bypass scan refused the build.
+- `6` — a required tool is missing on this box.
+- `7` — the renderer does not match the pinned version.
+- `8` — the GoHighLevel media module cannot be loaded.
+- `9` — the engine refused the job, or is not installed.
+- `10` — legacy runner only, owner-approved: NOT a full deliverable build.
+- `12` — started 3 times in 6 hours without finishing; use `--resume`.
+On any non-zero code: read the message, fix what it names, run the same command again. Never substitute an image. Never write your own build script.
 
 **API key:** the script reads `KIE_API_KEY` itself, from env or the client's own env stores
 (`~/.openclaw/workspace/.env`, `~/clawd/secrets/.env`, `~/.openclaw/secrets/.env`). It is
@@ -215,7 +221,7 @@ URL is downloaded to a local PNG in the run directory first). The render stays t
 `assemble_pptx` places the exact PNG on every slide at assembly time (top-right, ~13% of slide
 width, 0.25 inch margin). The URL image-to-image mode (`build_deck.py --logo <https URL>`, the logo
 riding `input_urls`) exists in the renderer but is not forwarded by the entry or the runner, so it
-is not available to a department agent until lane D plumbs it; never hand-run `build_deck.py` to
+is not available to a department agent; never hand-run `build_deck.py` to
 reach it (AF-CANONICAL-RENDER-BYPASS). You never pass logo image files into `slides.json` — its `logo` field is a TEXT wordmark only, and there is
 no per-slide `mode` choice for a deck build. (The separate `kie_generate.py` helper runs
 standalone i2i jobs for the full webinar pipeline per SOP-IMG-01, but it is OUT OF SCOPE
