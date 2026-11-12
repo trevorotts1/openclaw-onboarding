@@ -4,6 +4,12 @@ Usage: runner = skill74_runner(run_dir, uploader, dispatch_kwargs, isolation_rea
 produce(run_dir, run_id, shot_id, song_path, runner) returns a stem for upload_stem.
 No operation occurs until produce is called.
 
+A song is separated ONCE. ``produce`` reads ``music/vocal-stem.mp3`` first; when
+it is absent it runs one ``separate-vocals`` job keyed ``logical_key="vocal-stem"``
+(so the ledger refuses a second), publishes ``music/vocal-stem.mp3`` and
+``music/instrumental.mp3``, and every lip-sync clip cuts from that one stem. The
+delivery stage reads the same two files.
+
 The injected separation runner must use the existing Skill 74 approved dispatch
 route. No default provider transport or retrospective receipt import is provided.
 Generic vocal separation does not prove speaker isolation; its runner must return
@@ -21,13 +27,49 @@ from style_defaults.card_gate import gate_run_state
 
 MODEL = "ai-music-api/separate-vocals"
 SCHEMA = "blackceo.lipsync-production/v1"
-VERSION = "1.0.0"
+VERSION = "1.1.0"
+
+#: The song's one vocal stem and one instrumental, beside the mix. Delivery
+#: reads exactly these names; every lip-sync clip cuts from the vocal stem.
+STEM_NAME = "vocal-stem.mp3"
+INSTRUMENTAL_NAME = "instrumental.mp3"
+STEM_LOGICAL_KEY = "vocal-stem"
+SEPARATION_RECEIPT = "vocal-stem.json"
 
 
 def _record(path, rec):
     temp = path.with_suffix(".tmp")
     temp.write_text(json.dumps(rec, sort_keys=True), encoding="utf-8")
     temp.replace(path)
+
+
+def _music_paths(root):
+    """The two stem files this producer publishes, beside the finished mix."""
+    music = (root / "music").resolve()
+    _need(music.is_relative_to(root), "LIPSYNC_FOREIGN_ARTIFACT", "producer output leaves run")
+    music.mkdir(parents=True, exist_ok=True)
+    return music / STEM_NAME, music / INSTRUMENTAL_NAME
+
+
+def _instrumental(root, evidence, stem, saved):
+    """The separation task's instrumental output, named by evidence first."""
+    for value in (evidence.get("instrumental_path"), stem.get("instrumental_path")):
+        if isinstance(value, str) and value.strip():
+            return _path(root, value)
+    named = [p for p in saved if "instrumental" in Path(p).name.lower()]
+    _need(len(named) == 1, "LIPSYNC_SEPARATION_FAILED",
+          "separation task did not save one instrumental file")
+    return _path(root, named[0])
+
+
+def _publish(source, target):
+    """Copy a task output to its delivery path, never the receipt's own copy."""
+    import shutil
+    if source == target:
+        return
+    temp = target.with_suffix(target.suffix + ".tmp")
+    shutil.copyfile(source, temp)
+    temp.replace(target)
 
 
 def _selection(root, song):
@@ -55,6 +97,11 @@ def produce(run_dir, run_id, shot_id, song_path, separation_runner,
     separation_runner(request) returns the normal successful dispatch envelope,
     plus evidence.isolated_stem={path,speaker_id,kind,isolated}. It must preserve
     the approved Skill74 budget/retry policy, never submit uncertain jobs again.
+
+    The song is separated once for the whole run: a present
+    ``music/vocal-stem.mp3`` (with its separation receipt) is reused and no job
+    is submitted; otherwise one job keyed ``logical_key="vocal-stem"`` runs and
+    publishes both stem files. Every clip cuts from ``music/vocal-stem.mp3``.
     """
     root, required = _approved(run_dir)
     row = required.get(shot_id)
@@ -63,40 +110,90 @@ def produce(run_dir, run_id, shot_id, song_path, separation_runner,
     song_hash = _sha(song)
     _need(song.stat().st_size > 0, "LIPSYNC_SELECTED_SONG_MISMATCH", "selected song is empty")
     selection = _selection(root, song)
+    vocal, instrumental = _music_paths(root)
     directory = (root / "control/lipsync-production" / uuid.uuid4().hex).resolve()
     _need(directory.is_relative_to(root), "LIPSYNC_FOREIGN_ARTIFACT", "producer output leaves run")
     directory.mkdir(parents=True)
     path = directory / "lineage.json"
-    request = {"model": MODEL, "run_id": run_id, "source_path": str(song),
-               "source_sha256": song_hash, "output_dir": str(directory),
-               "speaker_id": row["speaker"], "lipsync_binding": _binding(row)}
-    record = {"schema": SCHEMA, "producer": "audio_c3.lipsync_producer", "producer_version": VERSION, "state": "separation_started",
-              "run_id": run_id, "binding": _binding(row), "source_path": str(song),
-              "source_sha256": song_hash, "selection": selection,
-              "separation_request": request}
-    _record(path, record)
-    separation = separation_runner(request)
-    _need(_sha(song) == song_hash and _selection(root, song) == selection,
-          "LIPSYNC_SOURCE_CHANGED", "selected source changed during separation")
-    ev = separation.get("evidence") or {}
-    _need(separation.get("tool") == "kie_dispatch" and separation.get("outcome") == "ok"
-          and separation.get("run_id") == run_id and ev.get("generated") is True and ev.get("task_id"),
-          "LIPSYNC_SEPARATION_FAILED", "successful Skill74 separation task required")
-    _source_binding(root, ev, song, song_hash)
-    stem = ev.get("isolated_stem") or {}
+    receipt = (root / "control/lipsync-production" / SEPARATION_RECEIPT).resolve()
+    if vocal.is_file() and vocal.stat().st_size > 0:
+        # One stem per song: a second clip never buys a second separation.
+        _need(instrumental.is_file() and instrumental.stat().st_size > 0,
+              "LIPSYNC_SEPARATION_FAILED", "saved vocal stem has no instrumental")
+        _need(receipt.is_file(), "LIPSYNC_SEPARATION_FAILED",
+              "saved vocal stem has no separation receipt")
+        held = _read(_path(root, str(receipt)))
+        _need(held.get("source_sha256") == song_hash,
+              "LIPSYNC_SELECTED_SONG_MISMATCH", "saved vocal stem belongs to another song")
+        _need(_sha(vocal) == held.get("stem_sha256")
+              and _sha(instrumental) == held.get("instrumental_sha256"),
+              "LIPSYNC_SEPARATION_FAILED", "saved stem bytes changed")
+        separation = held.get("separation")
+        _need(isinstance(separation, dict), "LIPSYNC_SEPARATION_FAILED",
+              "saved vocal stem receipt has no separation task record")
+        separation_request = held.get("separation_request") or {}
+        separated = _path(root, held.get("separated_path"))
+        separated_hash = held.get("separated_sha256")
+        stem = (separation.get("evidence") or {}).get("isolated_stem") or {}
+    else:
+        request = {"model": MODEL, "run_id": run_id, "source_path": str(song),
+                   "source_sha256": song_hash, "output_dir": str(directory),
+                   "logical_key": STEM_LOGICAL_KEY,
+                   "speaker_id": row["speaker"], "lipsync_binding": _binding(row)}
+        _record(path, {"schema": SCHEMA, "producer": "audio_c3.lipsync_producer",
+                       "producer_version": VERSION, "state": "separation_started",
+                       "run_id": run_id, "binding": _binding(row), "source_path": str(song),
+                       "source_sha256": song_hash, "selection": selection,
+                       "separation_request": request})
+        separation = separation_runner(request)
+        _need(_sha(song) == song_hash and _selection(root, song) == selection,
+              "LIPSYNC_SOURCE_CHANGED", "selected source changed during separation")
+        ev = separation.get("evidence") or {}
+        _need(separation.get("tool") == "kie_dispatch" and separation.get("outcome") == "ok"
+              and separation.get("run_id") == run_id and ev.get("generated") is True and ev.get("task_id"),
+              "LIPSYNC_SEPARATION_FAILED", "successful Skill74 separation task required")
+        _source_binding(root, ev, song, song_hash)
+        stem = ev.get("isolated_stem") or {}
+        source = _path(root, stem.get("path"))
+        saved = [_path(root, p) for p in ev.get("saved_paths", [])]
+        _need(source in saved and source.stat().st_size > 0 and source != song,
+              "LIPSYNC_SEPARATION_FAILED", "separation task did not save an isolated stem")
+        instrumental_source = _instrumental(root, ev, stem, saved)
+        _need(instrumental_source.stat().st_size > 0 and instrumental_source != song
+              and instrumental_source != source,
+              "LIPSYNC_SEPARATION_FAILED", "separation task did not save an instrumental")
+        separated, separated_hash = source, _sha(source)
+        separation_request = request
+        _publish(source, vocal)
+        _publish(instrumental_source, instrumental)
+        _record(receipt, {"schema": SCHEMA, "producer": "audio_c3.lipsync_producer",
+                          "producer_version": VERSION, "source_path": str(song),
+                          "source_sha256": song_hash, "selection": selection,
+                          "separation": separation, "separation_request": request,
+                          "separated_path": str(separated),
+                          "separated_sha256": separated_hash,
+                          "stem_path": str(vocal), "stem_sha256": _sha(vocal),
+                          "instrumental_path": str(instrumental),
+                          "instrumental_sha256": _sha(instrumental)})
     ok, code, errors = check_stems([stem], row["speaker"])
     _need(ok, code, str(errors))
-    source = _path(root, stem.get("path"))
-    saved = [_path(root, p) for p in ev.get("saved_paths", [])]
-    _need(source in saved and source.stat().st_size > 0 and source != song,
-          "LIPSYNC_SEPARATION_FAILED", "separation task did not save an isolated stem")
-    source_hash = _sha(source)
-    record.update(state="offset_started", separation=separation,
-                  separated_path=str(source), separated_sha256=source_hash,
-                  speaker_id=stem["speaker_id"], isolated=stem["isolated"], kind=stem.get("kind"))
+    stem_hash = _sha(vocal)
+    record = {"schema": SCHEMA, "producer": "audio_c3.lipsync_producer",
+              "producer_version": VERSION, "state": "offset_started",
+              "run_id": run_id, "binding": _binding(row), "source_path": str(song),
+              "source_sha256": song_hash, "selection": selection,
+              "separation": separation, "separation_request": separation_request,
+              "separated_path": str(separated),
+              "separated_sha256": separated_hash,
+              "stem_path": str(vocal), "stem_sha256": stem_hash,
+              "instrumental_path": str(instrumental),
+              "instrumental_sha256": _sha(instrumental),
+              "speaker_id": stem["speaker_id"], "isolated": stem["isolated"],
+              "kind": stem.get("kind")}
     _record(path, record)
-    offset = (measure_offset or measure_offset_files)(str(source), str(song))
-    _need(_sha(source) == source_hash and _sha(song) == song_hash,
+    # Every clip cuts from the one saved vocal stem, never from a task output.
+    offset = (measure_offset or measure_offset_files)(str(vocal), str(song))
+    _need(_sha(vocal) == stem_hash and _sha(song) == song_hash,
           "LIPSYNC_SOURCE_CHANGED", "source changed during offset measurement")
     _need(isinstance(offset, dict) and _num(offset.get("offset_s")) and _num(offset.get("corr")),
           "LIPSYNC_OFFSET_MISSING", "measured offset and correlation required")
@@ -104,22 +201,23 @@ def produce(run_dir, run_id, shot_id, song_path, separation_runner,
     _need(cut["cut_start_stem"] >= 0, "LIPSYNC_CUT_INVALID", "offset places cut before source")
     output = directory / "cut.wav"
     argv = ["ffmpeg", "-v", "error", "-y", "-threads", "4", "-ss", str(cut["cut_start_stem"]),
-            "-i", str(source), "-t", str(cut["cut_dur"]), "-vn", "-c:a", "pcm_s16le", str(output)]
+            "-i", str(vocal), "-t", str(cut["cut_dur"]), "-vn", "-c:a", "pcm_s16le", str(output)]
     record.update(state="cut_started", offset=offset, cut=cut, cut_argv=argv)
     _record(path, record)
     if cut_runner is None:
         from load_governor import run_ffmpeg
         cut_runner = run_ffmpeg
     cut_runner(argv, "lipsync-line-cut", check=True, timeout=300)
-    _need(_sha(source) == source_hash and _sha(song) == song_hash and _selection(root, song) == selection,
+    _need(_sha(vocal) == stem_hash and _sha(song) == song_hash and _selection(root, song) == selection,
           "LIPSYNC_SOURCE_CHANGED", "source changed while cutting")
     output = _path(root, str(output))
     _need(output.stat().st_size > 0, "LIPSYNC_CUT_INVALID", "cut output empty")
     record.update(state="complete", output_path=str(output), output_sha256=_sha(output))
     _record(path, record)
-    return {"path": str(output), "speaker_id": row["speaker"], "kind": stem.get("kind"),
-            "isolated": True, "line_ids": row["lip_sync_line_ids"],
-            "start_s": row["start_s"], "end_s": row["end_s"], "lineage_path": str(path)}
+    return {"path": str(output), "speaker_id": stem["speaker_id"], "kind": stem.get("kind"),
+            "isolated": stem["isolated"], "line_ids": row["lip_sync_line_ids"],
+            "start_s": row["start_s"], "end_s": row["end_s"], "lineage_path": str(path),
+            "stem_path": str(vocal)}
 
 
 def verify(run_dir, run_id, row, stem, song_path=None):
@@ -137,6 +235,14 @@ def verify(run_dir, run_id, row, stem, song_path=None):
         _need(source == _path(root, song_path), "LIPSYNC_SELECTED_SONG_MISMATCH", "export uses a different soundtrack")
     separated = _path(root, rec.get("separated_path"))
     output = _path(root, rec.get("output_path"))
+    # One saved stem per song, cut by every clip; delivery reads the same file.
+    saved_stem = _path(root, rec.get("stem_path"))
+    instrumental = _path(root, rec.get("instrumental_path"))
+    _need(saved_stem == (root / "music" / STEM_NAME).resolve()
+          and instrumental == (root / "music" / INSTRUMENTAL_NAME).resolve()
+          and _sha(saved_stem) == rec.get("stem_sha256")
+          and _sha(instrumental) == rec.get("instrumental_sha256"),
+          "LIPSYNC_LINEAGE_MISMATCH", "saved stem/instrumental moved or changed")
     _need(_sha(separated) == rec.get("separated_sha256") and output == _path(root, stem.get("path"))
           and _sha(output) == rec.get("output_sha256"), "LIPSYNC_LINEAGE_MISMATCH", "separated/cut bytes changed")
     offset = rec.get("offset") or {}
@@ -145,7 +251,7 @@ def verify(run_dir, run_id, row, stem, song_path=None):
     _need(rec.get("cut") == expected and expected["cut_start_stem"] >= 0,
           "LIPSYNC_LINEAGE_MISMATCH", "cut window/placement differs from approved timeline")
     expected_argv = ["ffmpeg", "-v", "error", "-y", "-threads", "4", "-ss", str(expected["cut_start_stem"]),
-                     "-i", str(separated), "-t", str(expected["cut_dur"]), "-vn", "-c:a", "pcm_s16le", str(output)]
+                     "-i", str(saved_stem), "-t", str(expected["cut_dur"]), "-vn", "-c:a", "pcm_s16le", str(output)]
     _need(rec.get("cut_argv") == expected_argv and rec.get("speaker_id") == stem.get("speaker_id")
           and rec.get("isolated") is True, "LIPSYNC_LINEAGE_MISMATCH", "executed cut or speaker differs")
     separation = rec.get("separation") or {}
@@ -157,7 +263,8 @@ def verify(run_dir, run_id, row, stem, song_path=None):
     isolated = ev.get("isolated_stem") or {}
     req = rec.get("separation_request") or {}
     _need(separation.get("tool") == "kie_dispatch" and req.get("model") == MODEL
-          and req.get("source_path") == str(source) and req.get("source_sha256") == _sha(source)
+          and req.get("logical_key") == STEM_LOGICAL_KEY
+          and req.get("source_sha256") == _sha(source)
           and req.get("lipsync_binding") == _binding(row)
           and isolated.get("speaker_id") == rec.get("speaker_id") and isolated.get("isolated") is True
           and _path(root, isolated.get("path")) == separated,
@@ -168,10 +275,16 @@ def verify(run_dir, run_id, row, stem, song_path=None):
 
 
 def _source_binding(root, evidence, source, digest):
+    """The task's uploaded audio is this run's selected song, by bytes.
+
+    One stem serves every clip, so a later clip may reach the same song by a
+    different in-run path; equal bytes are the identity, plus the receipt.
+    """
     binding = evidence.get("separation_source") or {}
     receipt = _read(_path(root, binding.get("upload_receipt_path")))
-    _need(binding.get("path") == str(source) and binding.get("sha256") == digest
-          and receipt == {"path": str(source), "sha256": digest, "url": binding.get("url")}
+    _need(binding.get("sha256") == digest
+          and receipt == {"path": binding.get("path"), "sha256": digest,
+                          "url": binding.get("url")}
           and evidence.get("separation_input", {}).get("audio_url") == binding.get("url"),
           "LIPSYNC_SEPARATION_SOURCE_MISMATCH", "submitted separation audio is not selected song upload")
 
@@ -296,8 +409,12 @@ def skill74_runner(run_dir, source_uploader, dispatch_kwargs, isolated_stem_read
                    "card_receipt": approval}
         if production_stage is not None:
             payload["production_stage"] = production_stage
+        kwargs = dict(dispatch_kwargs)
+        if request.get("logical_key"):
+            # The ONE job per song: the ledger refuses a second keyed attempt.
+            kwargs["logical_key"] = request["logical_key"]
         result = dispatch(model=MODEL, request=payload,
-                          save_dir=str(output_dir), run_id=request["run_id"], **dispatch_kwargs)
+                          save_dir=str(output_dir), run_id=request["run_id"], **kwargs)
         if result.get("outcome") != "ok":
             return result
         evidence = result.setdefault("evidence", {})
