@@ -6,20 +6,14 @@
     {
       "id": "offer",
       "label": "OFFER",
+      "title": "What you are promoting",
       "question": "What are we promoting, and where should the video send people? Give the exact name, then paste the web address.",
       "price": null,
+      "why": "The story, the song and the call to action are all built around this.",
       "example": "\"My 6-week Confident Speaker program, https://example.com/speaker. Use my logo and the testimonial PDF.\" It has the name, the link and the assets.",
       "typed": true,
       "optional": false,
-      "options": [
-        {
-          "n": 1,
-          "text": "Type it in",
-          "detail": "Reply with your own words.",
-          "price": null,
-          "recommended": false
-        }
-      ],
+      "options": [],
       "shows_when": {
         "purpose": [
           1,
@@ -32,20 +26,14 @@
     {
       "id": "link",
       "label": "OFFER LINK",
+      "title": "Where to send people",
       "question": "Thanks. What web address should the video send people to?",
       "price": null,
-      "example": "\"My 6-week Confident Speaker program, https://example.com/speaker. Use my logo and the testimonial PDF.\" It has the name, the link and the assets.",
+      "why": null,
+      "example": "\"https://example.com/speaker\"",
       "typed": true,
       "optional": false,
-      "options": [
-        {
-          "n": 1,
-          "text": "Type it in",
-          "detail": "Reply with your own words.",
-          "price": null,
-          "recommended": false
-        }
-      ],
+      "options": [],
       "shows_when": {
         "purpose": [
           1,
@@ -58,20 +46,14 @@
     {
       "id": "audience",
       "label": "AUDIENCE",
+      "title": "Who it is for",
       "question": "Who is this video for, and what should they do after watching it?",
       "price": null,
+      "why": "One audience and one action beat ten of each.",
       "example": "\"Women 35-55 who want a second income. Register for my free masterclass.\" One audience, one action.",
       "typed": true,
       "optional": false,
-      "options": [
-        {
-          "n": 1,
-          "text": "Type it in",
-          "detail": "Reply with your own words.",
-          "price": null,
-          "recommended": false
-        }
-      ],
+      "options": [],
       "shows_when": {
         "purpose": [
           1,
@@ -84,20 +66,14 @@
     {
       "id": "character",
       "label": "CHARACTER",
+      "title": "Who stars in it",
       "question": "Who stars in your video? Give a name, an age, and how they look and dress. You can send photos in your next message, or skip that.",
       "price": null,
-      "example": "\"1. A warm 40-year-old braider named Tasha with locs, wearing a denim apron.\" Name, age, look, clothing.",
+      "why": "Your characters are the actors, and viewers spend the whole video with them.",
+      "example": "\"Tasha, a warm 40-year-old braider with locs, in a denim apron.\"",
       "typed": true,
       "optional": false,
-      "options": [
-        {
-          "n": 1,
-          "text": "Type it in",
-          "detail": "Reply with your own words.",
-          "price": null,
-          "recommended": false
-        }
-      ],
+      "options": [],
       "shows_when": {
         "purpose": [
           1,
@@ -110,9 +86,11 @@
     {
       "id": "models",
       "label": "AI MODELS",
+      "title": "Who builds and who checks",
       "question": "Which AI setup should work on your video?",
       "price": null,
-      "example": "\"1. Recommended setup.\" Short, clear, done.",
+      "why": "One AI does the writing and planning, and a different one checks the work.",
+      "example": null,
       "typed": false,
       "optional": false,
       "options": [
@@ -143,9 +121,11 @@
     {
       "id": "length",
       "label": "LENGTH",
+      "title": "How long",
       "question": "How long do you want your ad to be? The longer ads also come with short clips you can post on social media.",
       "price": null,
-      "example": "\"60 seconds. It's for Instagram.\" The length and the reason.",
+      "why": "Length decides the story size and the price.",
+      "example": null,
       "typed": false,
       "optional": false,
       "options": [
@@ -203,9 +183,11 @@
     {
       "id": "music",
       "label": "MUSIC STYLE",
+      "title": "The sound",
       "question": "Which sound fits your story?",
       "price": null,
-      "example": "\"Soul Rise. It starts with the problem and ends hopeful.\" The style and the reason.",
+      "why": "The song carries the feeling of the whole ad.",
+      "example": null,
       "typed": false,
       "optional": false,
       "options": [
@@ -250,9 +232,11 @@
     {
       "id": "look",
       "label": "VIDEO STYLE",
+      "title": "The look",
       "question": "How should your video look? Tap a link to watch a sample.",
       "price": null,
-      "example": "\"Lifelike 3D. I want it to look real.\" Your choice and your reason.",
+      "why": "The look is what viewers see in every shot.",
+      "example": null,
       "typed": false,
       "optional": false,
       "options": [
@@ -261,21 +245,24 @@
           "text": "Lifelike 3D",
           "detail": "polished animated movie look with lifelike faces.",
           "price": null,
-          "recommended": true
+          "recommended": true,
+          "sample_url": "https://assets.cdn.filesafe.space/Mct54Bwi1KlNouGXQcDX/media/ceccdb53-1db7-4513-b7d5-f8da7a9cdd65.mp4"
         },
         {
           "n": 2,
           "text": "2D Hand-Painted",
           "detail": "a warm, hand-painted cartoon from start to finish.",
           "price": null,
-          "recommended": false
+          "recommended": false,
+          "sample_url": "https://assets.cdn.filesafe.space/Mct54Bwi1KlNouGXQcDX/media/79707c0f-e255-4f3f-955a-9fed2e8e9915.mp4"
         },
         {
           "n": 3,
           "text": "Sketch to Life (Hybrid)",
           "detail": "black-and-white pencil sketch that turns into real footage.",
           "price": null,
-          "recommended": false
+          "recommended": false,
+          "sample_url": "https://assets.cdn.filesafe.space/Mct54Bwi1KlNouGXQcDX/media/923bbada-b8c2-4901-a736-8835a85605b3.mp4"
         },
         {
           "n": 4,
@@ -289,7 +276,8 @@
           "text": "Canvas to 3D",
           "detail": "painted cartoon that turns into lifelike 3D.",
           "price": null,
-          "recommended": false
+          "recommended": false,
+          "sample_url": "https://assets.cdn.filesafe.space/Mct54Bwi1KlNouGXQcDX/media/9eb9ea93-2cf8-4246-935f-739d2eb576cf.mp4"
         }
       ],
       "shows_when": {
@@ -304,9 +292,11 @@
     {
       "id": "checkpoints",
       "label": "CHECKPOINTS",
+      "title": "What you want to see first",
       "question": "How much do you want to see before video money is spent?",
       "price": null,
-      "example": "\"1. Everything.\" Show me the script, three song versions and the storyboard before any video money is spent.",
+      "why": "Fixing a script or a song is cheap; fixing a finished video is not.",
+      "example": null,
       "typed": false,
       "optional": false,
       "options": [
@@ -327,7 +317,7 @@
         {
           "n": 3,
           "text": "Nothing - just make it",
-          "detail": "I start as soon as the card is approved.",
+          "detail": "Work starts as soon as you lock in your order.",
           "price": null,
           "recommended": false
         },
@@ -351,16 +341,32 @@
     {
       "id": "spend",
       "label": "BUDGET",
-      "question": "What's the most you want to spend on this video? Reply with a dollar amount, like $25.",
+      "title": "Your spending limit",
+      "question": "What is the most this video may spend? Work stops and asks you before going over.",
+      "why": "This keeps you in control of the cost.",
       "price": null,
-      "example": "\"1. The recommended price.\" Clear, and it includes the redo allowance.",
+      "example": null,
       "typed": false,
       "optional": false,
       "options": [
         {
           "n": 1,
-          "text": "A different maximum",
-          "detail": "reply with a dollar amount, like $25",
+          "text": "Use the recommended limit - about $4.02",
+          "detail": "the estimated price for your video, including a 50% allowance for redoing shots",
+          "price": null,
+          "recommended": true,
+          "rate_usd": 0.04,
+          "unit": "second",
+          "shot_s": 15,
+          "keyframe_usd": 0.02,
+          "song_usd": 0.06,
+          "redo_rate": 0.5,
+          "keyframe_count_extra": 7
+        },
+        {
+          "n": 2,
+          "text": "Set my own limit",
+          "detail": "type a dollar amount, like $25",
           "price": null,
           "recommended": false
         }
@@ -377,39 +383,69 @@
     {
       "id": "model",
       "label": "VIDEO MODEL",
-      "question": "Which video model should make your shots? Prices are for your 60-second ad, with the song, pictures and a 50% redo allowance.",
-      "price": "Prices are for your 60-second ad, with the song, pictures and a 50% redo allowance.",
-      "example": "\"Hailuo 02 Standard. Good quality at a fair price.\"",
+      "title": "Picture quality",
+      "question": "Which video model should make your shots?",
+      "price": null,
+      "why": "The video model sets how good the shots look and what they cost.",
+      "example": null,
       "typed": false,
       "optional": true,
       "options": [
         {
           "n": 1,
           "text": "MiniMax H3",
-          "detail": "great quality, best value - about $4.02",
-          "price": "$4.02",
-          "recommended": true
+          "detail": "great quality, best value",
+          "price": null,
+          "recommended": true,
+          "rate_usd": 0.04,
+          "unit": "second",
+          "shot_s": 15,
+          "keyframe_usd": 0.02,
+          "song_usd": 0.06,
+          "redo_rate": 0.5,
+          "keyframe_count_extra": 7
         },
         {
           "n": 2,
           "text": "Seedance 2.5",
-          "detail": "premium detail and motion - about $28.77",
-          "price": "$28.77",
-          "recommended": false
+          "detail": "premium detail and motion",
+          "price": null,
+          "recommended": false,
+          "rate_usd": 0.315,
+          "unit": "second",
+          "shot_s": 15,
+          "keyframe_usd": 0.02,
+          "song_usd": 0.06,
+          "redo_rate": 0.5,
+          "keyframe_count_extra": 7
         },
         {
           "n": 3,
           "text": "Seedance 2.0 Mini",
-          "detail": "quicker and cheaper - about $4.11",
-          "price": "$4.11",
-          "recommended": false
+          "detail": "quicker and cheaper",
+          "price": null,
+          "recommended": false,
+          "rate_usd": 0.041,
+          "unit": "second",
+          "shot_s": 15,
+          "keyframe_usd": 0.02,
+          "song_usd": 0.06,
+          "redo_rate": 0.5,
+          "keyframe_count_extra": 7
         },
         {
           "n": 4,
           "text": "Google Veo 3.1",
-          "detail": "top-tier realism - about $4.14",
-          "price": "$4.14",
-          "recommended": false
+          "detail": "top-tier realism",
+          "price": null,
+          "recommended": false,
+          "rate_usd": 0.3,
+          "unit": "clip",
+          "shot_s": 8,
+          "keyframe_usd": 0.02,
+          "song_usd": 0.06,
+          "redo_rate": 0.5,
+          "keyframe_count_extra": 7
         }
       ],
       "shows_when": {
@@ -424,9 +460,11 @@
     {
       "id": "shape",
       "label": "SHAPE",
+      "title": "Tall or wide",
       "question": "How should your video be framed?",
       "price": null,
-      "example": "\"Vertical.\" Your audience watches on a phone.",
+      "why": "The shape decides how every shot is framed.",
+      "example": null,
       "typed": false,
       "optional": true,
       "options": [
@@ -456,20 +494,14 @@
     {
       "id": "photos",
       "label": "PHOTOS",
+      "title": "Photos and logos",
       "question": "Which photos or proof should we use - your logo, a product shot, a testimonial?",
       "price": null,
-      "example": "\"My 6-week Confident Speaker program, https://example.com/speaker. Use my logo and the testimonial PDF.\" It has the name, the link and the assets.",
+      "why": "A real photo makes the story feel true instead of invented.",
+      "example": "\"My logo and one product photo. I will send them after this.\"",
       "typed": true,
       "optional": true,
-      "options": [
-        {
-          "n": 1,
-          "text": "Type it in",
-          "detail": "Reply with your own words.",
-          "price": null,
-          "recommended": false
-        }
-      ],
+      "options": [],
       "shows_when": {
         "purpose": [
           1,
@@ -482,9 +514,11 @@
     {
       "id": "purpose",
       "label": "PURPOSE",
+      "title": "What is this video for?",
       "question": "What is this video for?",
       "price": null,
-      "example": "\"Grow my business.\" You want the whole package from one production.",
+      "why": "What the video is for decides its shape, its length and where it goes.",
+      "example": null,
       "typed": false,
       "optional": false,
       "options": [
@@ -529,9 +563,11 @@
     {
       "id": "episode_length",
       "label": "EPISODE LENGTH",
+      "title": "How long",
       "question": "How long should the full episode be? Your 60-second and 90-second trailers and ad clips are included.",
       "price": null,
-      "example": "\"3 minutes.\" The shortest episode that still earns two good trailers.",
+      "why": "The full episode lives on your YouTube channel; the trailers bring people to it.",
+      "example": null,
       "typed": false,
       "optional": false,
       "options": [
@@ -587,9 +623,11 @@
     {
       "id": "permission",
       "label": "PERMISSION",
+      "title": "Your client's permission",
       "question": "Do you have your client's permission to use their testimonial?",
       "price": null,
-      "example": "\"Yes.\" Your client is happy to be quoted.",
+      "why": null,
+      "example": null,
       "typed": false,
       "optional": false,
       "options": [
@@ -617,9 +655,11 @@
     {
       "id": "where",
       "label": "WHERE",
+      "title": "Where it will run",
       "question": "Where will this video run?",
       "price": null,
-      "example": "\"Facebook or Instagram - paid ad.\" One vertical video fits Reels, Stories and the feed there.",
+      "why": "Each app has its own length and shape rules, so the video is made to fit the one you pick.",
+      "example": null,
       "typed": false,
       "optional": false,
       "options": [
@@ -661,9 +701,11 @@
     {
       "id": "agnes",
       "label": "AGNES",
+      "title": "Your Agnes plan",
       "question": "Do you have a paid Agnes subscription (Starter, Plus or Pro), and should it make this video's pictures and clips?",
       "price": null,
-      "example": "\"Yes - use my Agnes plan.\" You have a plan and you want it used.",
+      "why": "If you pay for an Agnes AI plan, your pictures and video clips can be made with it at no extra cost.",
+      "example": null,
       "typed": false,
       "optional": false,
       "options": [
@@ -672,7 +714,7 @@
           "text": "Yes - use my Agnes plan.",
           "detail": "Agnes video is 720p, a little softer than the studio's standard models, and the song and the talking close-ups still use the studio's providers.",
           "price": null,
-          "recommended": true
+          "recommended": false
         },
         {
           "n": 2,
@@ -683,11 +725,8 @@
         }
       ],
       "supplementary_explanation": [
-        "Option 1 - Agnes: You need a paid Agnes plan and working subscription API access. It makes the pictures and 720p motion clips using your remaining plan quota. The clips are 10 seconds each; this skill supports selected lengths up to 5 minutes on Agnes.",
-        "The daily planning limits here are 500 video seconds and 4,000 images, shared across keys of the same type. Remaining quota and provider limits still apply; the whole video must fit that day.",
-        "Option 2 - KIE.ai: Use KIE.ai's video models, including premium options. You'll choose the model next, see the estimated cost, and approve it before generation. KIE.ai also supplies the pictures; image and video usage is billed against your KIE.ai credits.",
-        "With either choice, the Suno song and Kling talking close-ups still use KIE.ai and are billed separately. Those charges are included in the estimate and must stay within your approved spending limit. Choosing Agnes does not make the whole production free.",
-        "Neither option is selected for you; choose 1 or 2."
+        "Option 1 uses the plan you already pay Agnes for to make the pictures and clips. The song and the talking close-ups are still charged to your studio balance, and that cost is in your estimate.",
+        "Option 2 uses the studio's own models for everything. You pick the quality next and see the cost before anything is made."
       ],
       "shows_when": {
         "agnes_remembered": [
