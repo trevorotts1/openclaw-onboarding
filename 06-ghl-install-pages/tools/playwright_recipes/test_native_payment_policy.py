@@ -1,8 +1,13 @@
 import unittest
 
-from .native_payment_policy import payment_policy, validate_payment_inputs
-from .route import decide, recovery
-from .host import run_recipe
+if __package__:
+    from .native_payment_policy import payment_policy, validate_payment_inputs
+    from .route import decide, recovery
+    from .host import run_recipe
+else:
+    from native_payment_policy import payment_policy, validate_payment_inputs
+    from route import decide, recovery
+    from host import run_recipe
 
 
 class NativePaymentPolicyTests(unittest.TestCase):
