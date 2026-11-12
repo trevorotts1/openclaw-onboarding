@@ -97,6 +97,7 @@ import sys
 import time
 import urllib.request
 import urllib.error
+from pathlib import Path
 
 
 # ----------------------------------------------------------------------------
@@ -534,8 +535,8 @@ def main():
                         print(f"[speed] intake speech_speed_preference={_pref!r} -> "
                               f"prosody.speed {args.prosody_speed}")
                     break
-        except Exception:  # noqa: BLE001 — intake absence is non-fatal; keep 1.25
-            pass
+        except Exception as _exc:  # noqa: BLE001 — intake absence is non-fatal; keep 1.25
+            print(f"[speed] could not read intake: {_exc}")
 
     # ffmpeg presence
     for tool in ("ffmpeg", "ffprobe"):
