@@ -230,11 +230,40 @@ def _plates(section: dict) -> str:
     return "; ".join(labels)
 
 
-def _type_specs(stage: str, section: dict) -> str:
+def _type_elements(section: dict, closing=None) -> list:
+    """The type roles this section's own copy carries, in the house scale's names. The copy's first
+    line is its headline (H1 on the first section, H2 below it), an unnumbered line of twelve words or
+    fewer under it is a subhead, longer lines are body, numbered steps are body, and a button adds CTA
+    and CTA microcopy. A role the copy does not carry is never listed: a listed caption invites the
+    model to draw an element for it, which is how a steps or letter section grew an invented headline."""
+    lines = [l.strip() for l in str(section.get("copy") or "").splitlines() if l.strip()]
+    if section.get("labels"):
+        lines += [str(x).strip() for x in section["labels"] if str(x).strip()]
+    words = lambda line: len(line.split())
+    numbered = lambda line: bool(re.match(r"\d+\.\s", line))
+    out = []
+    first = section_tag(section, 1) == "1"
+    if lines and not numbered(lines[0]) and words(lines[0]) <= 12:
+        out.append("H1" if first else "H2")
+        rest = lines[1:]
+        if rest and not numbered(rest[0]) and words(rest[0]) <= 12:
+            out.append("Subhead")
+            rest = rest[1:]
+    else:
+        rest = lines
+    if rest:
+        out.append("Body")
+    if _cta(section) or closing:
+        out += ["CTA", "CTA microcopy"]
+    return out or ["Body"]
+
+def _type_specs(stage: str, section: dict, closing=None) -> str:
     given = section.get("type_specs")
     if isinstance(given, dict) and given:
         return "; ".join(f"{str(k).upper()} / {v}" for k, v in given.items())
-    return "; ".join(f"{k.upper()} / {v}" for k, v in spec()["type_scale_default"][stage].items())
+    scale = {k.lower(): (k, v) for k, v in spec()["type_scale_default"][stage].items()}
+    return "; ".join(f"{scale[e.lower()][0].upper()} / {scale[e.lower()][1]}"
+                     for e in _type_elements(section, closing) if e.lower() in scale)
 
 
 def _note(stage: str, section: dict, cta: str, role=None, closing: bool = False) -> str:
@@ -333,7 +362,7 @@ def prompt_block(stage: str, section: dict, index: int, total: int, width: int,
             "shows the annotated build-spec style only; this page's sections and layout are the ones "
             "described here."))
     lines.append(blocks["chip"].format(tag=tag, name_caps=name.upper()))
-    lines.append(blocks["type_specs"].format(type_specs=_type_specs(stage, section)))
+    lines.append(blocks["type_specs"].format(type_specs=_type_specs(stage, section, closing)))
     plates = _plates(section)
     lines.append(blocks["plates_some"].format(plates=plates, ratio_list=", ".join(s["ratio_labels"]))
                  if plates else blocks["plates_none"])
