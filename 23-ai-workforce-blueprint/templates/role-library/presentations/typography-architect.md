@@ -112,7 +112,7 @@ Re-read the master SOP regions on the canonical hierarchy stack and the TEXT_ANC
 | Design system spec delivered before Phase 2 begins | 100% |
 | Every slide assigned exactly one archetype in the type plan | 100% (zero unassigned slides) |
 | Two or more consecutive slides sharing the same archetype AND the same text anchor | 0 |
-| Price/LADDER slides without a price-typography rule (gold gradient, glow, strike) | 0 |
+| Price/LADDER slides without a price-typography rule (flat solid gold, strike) | 0 |
 | Price-typography system applied to the FULL ladder, not just the anchor | 100% of LADDER slides |
 | Weight ladder defined (at least 4 named weights) | 100% |
 | Per-word emphasis instruction present on every headline | 100% |
@@ -339,7 +339,7 @@ At least 4 named weights with roles; per-word emphasis system defined (SOP 9.1).
 Every slide assigned an archetype; zero adjacency violations; 3 distinct archetypes per 5-slide window (SOP 9.2).
 
 ### Gate 4 -- Price System Full-Ladder
-Every LADDER slide has the gold/glow/strike rule; applied to the full ladder, not one rung (SOP 9.3).
+Every LADDER slide has the flat-gold/strike rule; applied to the full ladder, not one rung (SOP 9.3).
 
 ### Gate 5 -- Per-Slide Plan Audited and Delivered
 design_system.json and design_system.md exist, audit passed, Slide Image Creator notified before Phase 2 (SOP 9.4).
@@ -441,7 +441,7 @@ A 58-slide deck: image positions walk right, left, full-bleed, none(hook), right
 ## 14. Bad Output Examples (Anti-Patterns)
 
 - Shipping a design system with one weight and one accent device reused on every slide (the exact reference failure case).
-- Defining gold/glow only for the anchor price and leaving the other price beats flat.
+- Defining flat gold/strike only for the anchor price and leaving the other price beats flat.
 - Assigning the same archetype and text anchor to three consecutive slides (the cookie-cutter chassis).
 - Putting the hook line in a footer treatment instead of on a dedicated A4 pure-type slide (this is a Hook Doctrine violation; design must never re-introduce the footer hook).
 - Picking brand colors or logo placement yourself (that is the Brand Steward's job; you inherit the STYLE BLOCK).
@@ -482,7 +482,7 @@ A 58-slide deck: image positions walk right, left, full-bleed, none(hook), right
 
 **Tier 1:**
 - the presentation-design-system cluster (SOP-DESIGN-01..04) (PRESENTATION-MASTER-DOCTRINE.md §4) (: archetypes, prompt spec, strikethrough)
-- The gold-standard reference type spec (5-archetype system, locked Montserrat weight ladder, gold-gradient/glow/strikethrough, logo bottom-right ~9% via image-to-image)
+- The gold-standard reference type spec (5-archetype system, locked Montserrat weight ladder, flat-solid-gold/strikethrough, logo bottom-right ~9% via image-to-image)
 - working/brand/style_block.md (the locked brand identity for this client)
 - universal-sops/CLIENT-WEBINAR-DECK-SOP.md (the canonical hierarchy stack region, the TEXT_ANCHOR / copy-QC layout-variety criterion, archetype A4 the type-driven hook slide)
 - The Brand Steward's STYLE BLOCK and TYPOGRAPHY LAW (the inherited weight map)
@@ -509,7 +509,7 @@ If the Brand Steward routed a reference deck to the Graphics Design Intelligence
 Fewer slides means a tighter rotation. Keep all five archetypes available but expect fewer A5 founder slides. The adjacency and window rules still apply; on a 15-slide deck the window check still requires 3 distinct archetypes per 5 slides.
 
 ### Edge Case 17.3 -- Straight-price deck (no ladder)
-If PRICE_MODE is straight (one price, no drops), SOP 9.3 still applies to the single price slide: gold gradient, glow, hero numeral. There is simply no cumulative strike. Record price_typography with one live entry.
+If PRICE_MODE is straight (one price, no drops), SOP 9.3 still applies to the single price slide: flat solid brand gold, hero numeral, no gradient and no glow. There is simply no cumulative strike. Record price_typography with one live entry.
 
 ### Edge Case 17.1 -- No-People Deck (typography-led VISUAL_MIX)
 When the STYLE BLOCK is no-people, the type system carries more weight. Lean A4 type-dominant and A3 data-bottom; A1 and A5 (which require people/portraits) shift to abstract or product imagery. Note the constraint and ensure the rotation still passes the audit using the available archetypes.
