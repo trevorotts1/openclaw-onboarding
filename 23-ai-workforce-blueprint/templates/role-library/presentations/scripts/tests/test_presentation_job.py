@@ -853,9 +853,12 @@ class TestQCGateBlocks:
         assert engine.state["terminal"] == "DONE"
         assert "CANNOT CLOSE" not in captured.err
 
-    def test_close_succeeds_with_client_quoted_qc_waiver(self, tmp_path, capsys):
-        """The only sanctioned bypass: a waiver quoting the client's own recorded words.
-        Must not be weakened by this fix (waivers.py is untouched)."""
+    def test_close_refuses_a_qc_waiver_the_interview_never_asked_for(self, tmp_path, capsys):
+        """PD-202: `qc` has no decline question in the question bank, so a qc waiver
+        citing an intake field is REFUSED (EXIT_WAIVER_INVALID) rather than closing
+        the job. The bank's own waiver_field_mapping omits qc and prompt_floor on
+        purpose: a client cannot consent to a lower quality bar. `qc` stays in
+        GATE_KEYS, but its bypass is not a typed intake waiver."""
         run_dir = tmp_path / "run"; run_dir.mkdir()
         self._seed_other_gates_passing(run_dir)
         (run_dir / "working" / "copy").mkdir(parents=True, exist_ok=True)
@@ -863,14 +866,13 @@ class TestQCGateBlocks:
             {"skip_qc": "Please skip the QC check for this run, we are on a deadline."}))
         (run_dir / "waivers.json").write_text(json.dumps([
             {"rule": "qc", "source": "intake_field", "intake_field": "skip_qc",
-             "client_request_quote": "skip the QC check",
+             "client_request_quote": "skip the QC check for this run",
              "captured_at": "2026-01-01T00:00:00Z"}]))
         engine = self._make_engine(run_dir)
         rc = engine.close()
         captured = capsys.readouterr()
-        assert rc == EXIT_OK, f"expected EXIT_OK, got {rc}; stderr={captured.err}"
-        assert engine.state["terminal"] == "DONE"
-        assert engine.state["gates"]["qc"]["state"] == "waived"
+        assert rc == EXIT_WAIVER_INVALID, f"expected exit 9, got {rc}; stderr={captured.err}"
+        assert "cannot be waived from an intake field" in captured.err, captured.err
 
 
 # ---------------------------------------------------------------------------
@@ -1064,16 +1066,27 @@ class TestQCAggregatePhaseEndToEnd:
             "an invalid waiver must not resolve the job to any terminal state"
 
     def test_genuine_client_quoted_waiver_still_closes_done(self, tmp_path, capsys):
+        """PD-202: a genuine client-quoted waiver still closes DONE — for a gate the
+        interview actually asked the client to decline. `ghl_upload` is one: its
+        bank question stores the client's verbatim reason in
+        ghl_upload_declined_reason, and that field is the only one that can waive
+        the gate."""
         run_dir = tmp_path / "run"; run_dir.mkdir()
         self._seed_other_gates_passing(run_dir)
         self._seed_six_domain_reports(run_dir)
-        (run_dir / "working" / "qc" / "speech_qc_report.json").unlink()  # force a real qc failure
+        # Make the ghl_upload gate fail honestly: the media ledger has no deck id.
+        ledger = run_dir / "working" / "checkpoints" / "media_library.json"
+        media = json.loads(ledger.read_text(encoding="utf-8"))
+        media["pptx_ghl_media_id"] = ""
+        ledger.write_text(json.dumps(media), encoding="utf-8")
         (run_dir / "working" / "copy").mkdir(parents=True, exist_ok=True)
         (run_dir / "working" / "copy" / "intake.json").write_text(json.dumps(
-            {"skip_qc": "Please skip the QC check for this run, we are on a deadline."}))
+            {"ghl_upload_declined_reason":
+                 "I do not want the GoHighLevel upload, skip it entirely."}))
         (run_dir / "waivers.json").write_text(json.dumps([
-            {"rule": "qc", "source": "intake_field", "intake_field": "skip_qc",
-             "client_request_quote": "skip the QC check",
+            {"rule": "ghl_upload", "source": "intake_field",
+             "intake_field": "ghl_upload_declined_reason",
+             "client_request_quote": "I do not want the GoHighLevel upload",
              "captured_at": "2026-01-01T00:00:00Z"}]))
 
         self._run_qc_aggregate(run_dir)
@@ -1082,4 +1095,4 @@ class TestQCAggregatePhaseEndToEnd:
         captured = capsys.readouterr()
         assert rc == EXIT_OK, f"expected EXIT_OK, got {rc}; stderr={captured.err}"
         assert engine.state["terminal"] == "DONE"
-        assert engine.state["gates"]["qc"]["state"] == "waived"
+        assert engine.state["gates"]["ghl_upload"]["state"] == "waived"
