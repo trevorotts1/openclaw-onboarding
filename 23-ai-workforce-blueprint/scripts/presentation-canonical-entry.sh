@@ -49,8 +49,10 @@
 # gate code). Never silently; never by an agent's own choice.
 #
 # THE FORBIDDEN PATH:  python3 working/*.py   (the ungoverned, hand-rolled path)
-# THE ONLY PATH:       bash presentation-canonical-entry.sh --run-dir ... \
-#                           --slides slides.json --out out.pptx
+# THE ONLY PATH:       bash presentation-canonical-entry.sh --run-dir ...
+#                      (--slides / --out are LEGACY RUNNER ONLY -- PD-002a. The
+#                      engine reads and writes inside the run dir, so a deck is
+#                      never required to invent slides.json before copywriting.)
 #
 # EXIT CODES
 #   0  — gates passed; canonical orchestrator dispatched (its own exit is returned)
@@ -110,14 +112,19 @@ usage() {
 $PROG — the ONE sanctioned command to build a Presentations deck.
 
 USAGE:
-  bash $PROG --run-dir DIR --slides slides.json --out out.pptx [options]
+  bash $PROG --run-dir DIR [options]
 
 REQUIRED:
   --run-dir DIR       the deck run directory (contains working/)
-  --slides FILE       slides.json (the deck spec)
-  --out FILE          output .pptx path
 
 OPTIONS:
+  --slides FILE       slides.json (the deck spec) -- LEGACY RUNNER ONLY
+  --out FILE          output .pptx path -- LEGACY RUNNER ONLY
+                      Both are required ONLY by the legacy fallback (no
+                      presentation_job.py on this box). The engine reads and
+                      writes inside --run-dir, so neither is needed for a
+                      normal build. Supplying them to the engine prints a NOTE
+                      and changes nothing.
   --phase ID          canonical phase to dispatch (default: P4-RENDER)
   --platform mac|vps  box-type override (default: auto-detect)
   --scripts-dir DIR   location of build_deck.py / run_signature_deck.py
@@ -278,11 +285,11 @@ stamp_intake_depth_after_gates() {
 [ -n "$RUN_DIR" ] || usage
 [ -d "$RUN_DIR" ] || die "--run-dir not found: $RUN_DIR"
 RUN_DIR="$(cd "$RUN_DIR" && pwd)"
-if [ "$PLAN" -eq 0 ] && [ "$RESUME" -eq 0 ]; then
-    [ -n "$SLIDES" ] || die "--slides is required (use --plan to inspect only)"
-    [ -f "$SLIDES" ] || die "slides.json not found: $SLIDES"
-    [ -n "$OUT" ] || die "--out is required to build a deck"
-fi
+# PD-002a: --slides / --out are NOT required here. They are legacy-runner inputs
+# only; requiring them at the door forced a slides.json to be invented before
+# copywriting, on a path (the engine) that reads and writes inside --run-dir.
+# The requirement now lives in the legacy fallback branch, immediately before the
+# legacy dispatch — see "PD-002a: the LEGACY runner is the only dispatch".
 
 # ---------------------------------------------------------------------------
 # FIX-23(b) — CANONICAL-ENTRY ATTEMPT CAP (loop-breaker; Error 4/5 residual).
@@ -1414,6 +1421,13 @@ stamp_intake_depth_after_gates
 if [ -f "$ENGINE_ENTRY" ] && { [ -x "$PRESENTATION_PY" ] || command -v "$PRESENTATION_PY" >/dev/null 2>&1; }; then
     note "ALL GATES PASSED -- dispatching the presentation engine (all $_PHASE_COUNT manifest phases, mechanical)"
 
+    # PD-002a: --slides/--out belong to the legacy runner. On the engine path they
+    # are accepted and ignored (never required) — say so instead of ignoring them
+    # silently.
+    if [ -n "$SLIDES" ] || [ -n "$OUT" ]; then
+        echo "NOTE: --slides/--out are used only by the legacy runner; the engine reads and writes inside --run-dir"
+    fi
+
     # Step 1: Resolve the intake ledger into the engine's --new intake JSON
     # through the ONE shared resolver (single-sourced deck-type vocabulary,
     # zero string-interpolation of ledger content into python source -- see
@@ -1563,6 +1577,16 @@ else
 box. The legacy runner builds 2 of the manifest's phases and is not a deliverable \
 build. Update the Presentations department, or have the owner log owner_skip_approval \
 for LEGACY-RUNNER-FALLBACK."
+    fi
+    # PD-002a: the LEGACY runner is the only dispatch that needs --slides/--out, so
+    # the requirement lives HERE and not at the top of the door. It sits behind the
+    # PD-005 owner-token gate on purpose: an unapproved fallback must still fail as
+    # AF-ENGINE-ABSENT (exit 9), whatever arguments were supplied. A --resume that
+    # continues an existing run keeps its old exemption.
+    if [ "$RESUME" -eq 0 ]; then
+        [ -n "$SLIDES" ] || die "--slides is required (use --plan to inspect only)"
+        [ -f "$SLIDES" ] || die "slides.json not found: $SLIDES"
+        [ -n "$OUT" ] || die "--out is required to build a deck"
     fi
 fi
 
