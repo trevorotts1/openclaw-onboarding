@@ -146,7 +146,9 @@ with open(os.environ["RRX_LOG"], encoding="utf-8") as fh:
         if line:
             calls.append(json.loads(line))
 
-adds = [c for c in calls if len(c) >= 2 and c[0] == "cron" and c[1] == "add"]
+# --help probes are capability reads, not mutations (same rule as
+# rr028_mutating_argv in lib-readiness-harness.sh): only real adds count.
+adds = [c for c in calls if len(c) >= 2 and c[0] == "cron" and c[1] == "add" and "--help" not in c]
 silenced = [c for c in adds if "--no-deliver" in c]
 delivering = [c for c in adds if "--no-deliver" not in c]
 print("ADDS %d" % len(adds))
