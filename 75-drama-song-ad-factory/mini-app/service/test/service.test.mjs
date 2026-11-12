@@ -414,6 +414,9 @@ test('service: health, enrollment, check-in, order and the cross-client read ref
   const created = await handle(post('/api/studio/orders', { title: 'Spring Sale' }, box.key), GOOD_ENV, store, objects);
   assert.equal(created.status, 201);
   const order = (await created.json()).order;
+  // S75-071 — no id sent, so the service invents one in the shape the page
+  // mints: `r_` plus eight lower-case hex.
+  assert.match(order.order_id, /^r_[0-9a-f]{8}$/, 'the service invents the order id');
   assert.equal(order.state, 'waiting');
   assert.equal(order.availability, 'not-delivered');
 
@@ -428,6 +431,67 @@ test('service: health, enrollment, check-in, order and the cross-client read ref
   // The owner still sees it.
   const own = await handle(get(`/api/studio/orders/${order.order_id}`, box.key), GOOD_ENV, store, objects);
   assert.equal(own.status, 200);
+});
+
+test('S75-071: the same order id stores ONE order, and the second POST answers 200 with it', async () => {
+  const store = memStore();
+  const objects = memObjects();
+  const { clientId, key } = await clientWithKey(store);
+  const orderId = 'r_0123abcd';
+  const body = { title: 'Spring Sale', replies: ['1', 'yes'], upload_ids: [], order_id: orderId };
+
+  const first = await handle(post('/api/studio/orders', body, key), GOOD_ENV, store, objects);
+  assert.equal(first.status, 201);
+  assert.equal((await first.json()).order.order_id, orderId);
+
+  const second = await handle(post('/api/studio/orders', body, key), GOOD_ENV, store, objects);
+  assert.equal(second.status, 200, 'the repeat answers 200, not a second 201');
+  assert.equal((await second.json()).order.order_id, orderId);
+
+  assert.deepEqual(
+    [...store._mem.keys()].filter((k) => k === `order:${clientId}:${orderId}`),
+    [`order:${clientId}:${orderId}`],
+    'exactly one order record exists',
+  );
+});
+
+test('S75-071: a repeat POST never changes an order already in production', async () => {
+  const store = memStore();
+  const objects = memObjects();
+  const { clientId, key } = await clientWithKey(store, 'box');
+  const orderId = 'r_0011aabb';
+
+  const created = await handle(post('/api/studio/orders', { title: 'Spring Sale', order_id: orderId }, key), GOOD_ENV, store, objects);
+  assert.equal(created.status, 201);
+  const claimed = await handle(post(`/api/studio/orders/${orderId}/state`, { event: 'claim' }, key), GOOD_ENV, store, objects);
+  assert.equal(claimed.status, 200);
+
+  const again = await handle(post('/api/studio/orders', { title: 'Something else', order_id: orderId }, key), GOOD_ENV, store, objects);
+  assert.equal(again.status, 200);
+  const answer = (await again.json()).order;
+  assert.equal(answer.state, 'in_production', 'the state is untouched');
+  assert.equal(answer.title, 'Spring Sale', 'the stored order is answered, not rewritten');
+
+  const raw = JSON.parse(await store.kvGet(`order:${clientId}:${orderId}`));
+  assert.equal(raw.state, 'in_production');
+  assert.equal(raw.title, 'Spring Sale');
+});
+
+test('S75-071: a PRESENT order id of the wrong shape is refused and nothing is stored', async () => {
+  const store = memStore();
+  const objects = memObjects();
+  const { clientId, key } = await clientWithKey(store, 'box');
+
+  for (const bad of ['order-1', 'r_0123ABCD', 'r_0123abcd0', 'r_0123abc', '', 42]) {
+    const res = await handle(post('/api/studio/orders', { title: 'x', order_id: bad }, key), GOOD_ENV, store, objects);
+    assert.equal(res.status, 400, `${JSON.stringify(bad)} must be refused`);
+    assert.equal((await res.json()).code, 'AF-DS-ORDER-ID');
+  }
+  assert.deepEqual(
+    [...store._mem.keys()].filter((k) => k.startsWith(`order:${clientId}:`)),
+    [],
+    'a refused id writes no order',
+  );
 });
 
 test('service: pairing — admin mints, the code burns once, a machine key comes back', async () => {

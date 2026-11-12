@@ -13,6 +13,8 @@
 //     right JSON body;
 //   * linkKey() and personalLink() read the fragment;
 //   * a 409 answer rejects with the service's own code;
+//   * two taps of Lock it in before the first resolves send ONE order request
+//     (S75-071), and both taps see the same answer;
 //   * listInbox/postInbox keep their "not built yet" answer.
 //
 // It does NOT drive a real browser or talk to the real service, so it cannot
@@ -82,8 +84,18 @@ async function loadPage({ hash, answer }) {
     () => svc.saveDraft({ replies: ["1", "yes"] }), { replies: ["1", "yes"] });
   await expect("getQuestions", "GET", "/questions.json", () => svc.getQuestions());
   await expect("lockIn", "POST", "/api/studio/orders",
-    () => svc.lockIn({ title: "Drama video", replies: ["1", "yes"], upload_ids: ["u_1"] }),
-    { title: "Drama video", replies: ["1", "yes"], upload_ids: ["u_1"] });
+    () => svc.lockIn({ title: "Drama video", replies: ["1", "yes"], upload_ids: ["u_1"], order_id: "r_0123abcd" }),
+    { title: "Drama video", replies: ["1", "yes"], upload_ids: ["u_1"], order_id: "r_0123abcd" });
+
+  // S75-071 — one tap, one order. Two lockIn calls made before the first one
+  // resolves send ONE request, and both taps see the same answer.
+  calls.length = 0;
+  const tapOne = svc.lockIn({ title: "Drama video", replies: ["1", "yes"], upload_ids: [], order_id: "r_0123abcd" });
+  const tapTwo = svc.lockIn({ title: "Drama video", replies: ["1", "yes"], upload_ids: [], order_id: "r_0123abcd" });
+  const [firstAnswer, secondAnswer] = await Promise.all([tapOne, tapTwo]);
+  rule("two taps before the first resolves send one request", calls.length === 1, `${calls.length} call(s)`);
+  rule("both taps resolve with the same answer",
+    JSON.stringify(firstAnswer) === JSON.stringify(secondAnswer));
   await expect("listApprovals", "GET", "/api/studio/orders/r_abc123/approvals",
     () => svc.listApprovals("r_abc123"));
   await expect("answerApproval", "POST", "/api/studio/orders/r_abc123/approvals/script/answer",

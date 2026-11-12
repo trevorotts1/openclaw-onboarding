@@ -45,6 +45,10 @@ import { approvalsRoute } from './approvals-api.js';
 export const SERVICE_VERSION = '0.1.0';
 export { randomConnectHex };
 
+/** S75-071 — the order id the page mints for one recap: `r_` plus eight
+ *  lower-case hex. The service still invents one when the page sends none. */
+const ORDER_ID_FORMAT = /^r_[0-9a-f]{8}$/;
+
 // ---------------------------------------------------------------------------
 // DSR-105 — the story brief
 //
@@ -339,12 +343,31 @@ export async function handle(request, env, store, objects, deps = {}) {
 
   // POST /api/studio/orders — the client tapped Lock it in
   if (request.method === 'POST' && url.pathname === '/api/studio/orders') {
+    // S75-071 — one tap, one order. The page mints ONE id for the recap on
+    // screen and sends it with every tap, so a double tap (or a retry after a
+    // lost answer) is the same order: it is written once, and every later POST
+    // with that id answers 200 with the order already stored and writes
+    // nothing — its state is not touched. A PRESENT id must be `r_` plus eight
+    // lower-case hex; with no id at all the service still invents one.
+    const askedId = body.order_id;
+    if (askedId !== undefined && askedId !== null) {
+      if (typeof askedId !== 'string' || !ORDER_ID_FORMAT.test(askedId)) {
+        return fail(400, 'AF-DS-ORDER-ID', 'An order id is "r_" and eight lower-case hex characters.');
+      }
+      const already = await store.kvGet(`order:${clientId}:${askedId}`);
+      if (already) {
+        return ok({
+          order: project(JSON.parse(already), nowMs),
+          option_line: optionLine(await clientRecord(store, clientId), nowMs, await lastCheckIn(objects, clientId)),
+        }, 200);
+      }
+    }
     // The answers are the order: the box replays them through factory.py, so
     // they are validated against the SPEC §4 limits and stored on the record
     // (they used to be dropped — only the title survived).
     const checked = validateReplies(body.replies === undefined ? [] : body.replies, body.upload_ids);
     if (!checked.ok) return fail(400, checked.code, checked.message);
-    const orderId = body.order_id || `r_${randomConnectHex(4)}`;
+    const orderId = askedId || `r_${randomConnectHex(4)}`;
     const read = readBrief(checked.replies);
     const order = {
       order_id: orderId,

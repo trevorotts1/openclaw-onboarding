@@ -139,6 +139,8 @@ const state = {
   agnesRemembered: "unknown",   // session.agnes_remembered — "yes", "no", "unknown"
   agnesProgress: null,          // session.agnes_progress — the Agnes job's record
   locked: false,
+  sending: false,       // Lock it in is in flight — a second tap sends nothing
+  orderId: null,        // S75-071 — ONE id for the recap on screen, until accepted
   delivery: null,
 };
 
@@ -602,6 +604,11 @@ function pageRecap() {
     ];
   }
 
+  // S75-071 — one tap, one order. The id is minted when the recap is drawn and
+  // kept in state until the order is accepted, so a second tap (or a retry
+  // after an error) names the SAME order and the service stores it once.
+  if (!state.orderId) state.orderId = newOrderId();
+
   const replies = currentReplies();
   const rows = list.map((q, i) => {
     const li = el("li", {});
@@ -621,20 +628,43 @@ function pageRecap() {
     el("div", { class: "card" }, [el("h2", { text: "Your recap" }), el("ol", {}, rows)]),
     el("p", { class: "muted", text: "Tap any line to change it. Locking it in sends your answers to the studio — nothing starts before that." }),
     el("div", { class: "actions" }, [
-      missing ? null : primary("Lock it in", () => lockIn()),
+      missing ? null : lockInButton(),
       secondary("Change an answer", () => goAnswer()),
     ].filter(Boolean)),
   ].filter(Boolean);
 }
 
-async function lockIn() {
+/** A fresh order id in the service's own shape: `r_` plus eight lower-case hex. */
+function newOrderId() {
+  const bytes = new Uint8Array(4);
+  if (globalThis.crypto && typeof globalThis.crypto.getRandomValues === "function") {
+    globalThis.crypto.getRandomValues(bytes);
+  } else {
+    for (let i = 0; i < bytes.length; i += 1) bytes[i] = Math.floor(Math.random() * 256);
+  }
+  return "r_" + [...bytes].map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+/** The Lock it in button, in its sending state while the order is on the wire. */
+function lockInButton() {
+  const b = primary("Lock it in", () => lockIn(b));
+  if (state.sending) { b.disabled = true; b.textContent = "Sending..."; }
+  return b;
+}
+
+async function lockIn(button) {
+  if (state.sending) return;
+  state.sending = true;
+  if (button) { button.disabled = true; button.textContent = "Sending..."; }
   try {
     const out = await svc().lockIn({
       title: `Drama video ${new Date().toISOString().slice(0, 10)}`,
       replies: [...currentReplies(), "yes"],
       upload_ids: [],
+      order_id: state.orderId,
     });
     state.locked = true;
+    state.orderId = null;
     if (out && out.order) {
       state.order = out.order;
       state.orders = [out.order, ...state.orders.filter((o) => o.order_id !== out.order.order_id)];
@@ -642,9 +672,14 @@ async function lockIn() {
     }
     announce("Order received. Your answers are with the studio.");
   } catch (err) {
+    // The order did not go through: the button comes back, with the SAME id,
+    // so the retry is the same order and can never become a second one.
+    state.sending = false;
+    if (button) { button.disabled = false; button.textContent = "Lock it in"; }
     announce(serviceMessage(err));
     return;
   }
+  state.sending = false;
   render();
 }
 
