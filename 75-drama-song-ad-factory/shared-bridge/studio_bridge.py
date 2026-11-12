@@ -239,6 +239,13 @@ def _http(method, url, *, key=None, body=None, timeout=20):
         return 0, {"code": "TRANSPORT_UNKNOWN", "message": str(e)[:200]}
 
 
+class _NoRedirect(urllib.request.HTTPRedirectHandler):
+    """A redirect is never followed: the bytes come from the address asked for."""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        return None
+
+
 # --- photo handling ----------------------------------------------------------
 
 def sniff_image(header):
@@ -311,12 +318,8 @@ def _put_file(url, file_handle, content_type, size, *, timeout=120):
                                  headers={"Content-Type": content_type,
                                           "Content-Length": str(size),
                                           "User-Agent": STUDIO_USER_AGENT})
-    # A redirect must never forward the file to another destination.
-    class NoRedirect(urllib.request.HTTPRedirectHandler):
-        def redirect_request(self, req, fp, code, msg, headers, newurl):
-            return None
     try:
-        with urllib.request.build_opener(NoRedirect()).open(req, timeout=timeout) as resp:
+        with urllib.request.build_opener(_NoRedirect()).open(req, timeout=timeout) as resp:
             return resp.status
     except urllib.error.HTTPError as exc:
         return exc.code
@@ -330,7 +333,8 @@ def upload_file(path, *, channel=None, env=None, post=None, put=None):
     if not key:
         raise LedgerError("NO_KEY", "DS_KEY not set in env")
     body = upload_request(path, channel)
-    status, result = (post or _http)("POST", STUDIO_BASE_URL + "/api/studio/uploads",
+    base = (resolve_base_url(None, env) or STUDIO_BASE_URL).rstrip("/")
+    status, result = (post or _http)("POST", base + "/api/studio/uploads",
                                     key=key, body=body)
     if status == 0:
         raise LedgerError("TRANSPORT_UNKNOWN", "upload request outcome is unknown")
@@ -341,11 +345,16 @@ def upload_file(path, *, channel=None, env=None, post=None, put=None):
     upload_id = result.get("upload_id", "")
     parts = urllib.parse.urlsplit(upload.get("url", ""))
     # Validate the destination before sending any file bytes; no redirects.
-    import re
+    # The bucket is whatever the service's own signed address names - never a
+    # fixed name - so it is read from that path and the address must point at
+    # exactly this object in exactly that one bucket.
+    segments = parts.path.split("/")
+    bucket = segments[1] if len(segments) > 1 else ""
     if (parts.scheme != "https" or parts.username or parts.password or parts.port
             or not re.fullmatch(r"[a-f0-9]{32}\.r2\.cloudflarestorage\.com", parts.hostname or "")
             or not re.fullmatch(r"clients/c-[a-f0-9]{32}/intake/u_[a-f0-9]{24}\.[a-z0-9]+", object_path)
-            or parts.path != "/zhw-drama-studio/" + object_path
+            or not bucket
+            or parts.path != "/" + bucket + "/" + object_path
             or upload_id != object_path.rsplit("/", 1)[-1].split(".")[0]
             or upload.get("content_type") != body["content_type"]):
         raise LedgerError("UPLOAD_RESPONSE_INVALID", "storage upload response is invalid")
@@ -1586,6 +1595,120 @@ def _drop_terminal(led, order_id, state, via):
     return EXIT["ok"]
 
 
+# --- the order's uploaded files (S75-075) -----------------------------------
+
+#: The uploads read route (U-Z08): raw bytes for a box-held key, and
+#: `AF-DS-UP-NOT-ARRIVED` when the object never reached storage.
+UPLOAD_FILE_ROUTE = "/api/studio/uploads/%s/file"
+#: An upload id becomes one path segment, never a walk.
+UPLOAD_ID = re.compile(r"[A-Za-z0-9_-]{1,64}\Z")
+#: content type -> (extension, channel). The extension names the saved file and
+#: the channel picks the cap from `MAX_UPLOAD_BYTES`.
+UPLOAD_FILE_TYPES = {
+    "image/jpeg": ("jpg", "image"), "image/png": ("png", "image"),
+    "image/heic": ("heic", "image"), "image/heic-sequence": ("heic", "image"),
+    "image/webp": ("webp", "image"), "audio/mpeg": ("mp3", "audio"),
+    "audio/mp4": ("m4a", "audio"), "audio/wav": ("wav", "audio"),
+    "audio/x-wav": ("wav", "audio"), "audio/ogg": ("ogg", "audio"),
+    "audio/webm": ("webm", "audio"), "video/mp4": ("mp4", "video"),
+    "video/quicktime": ("mov", "video"), "video/webm": ("webm", "video"),
+}
+FILENAME_HEADER = re.compile(r'filename\s*=\s*"?([^";]+)"?', re.I)
+
+
+def _upload_target(upload_id, content_type, disposition):
+    """(file name, size cap) for one download.
+
+    The extension comes from the service's own file name when it sends one,
+    else from the bytes' content type. An unknown type keeps the largest cap
+    the table holds and a `.bin` name: the file is never dropped for its name.
+    """
+    ctype = (content_type or "").split(";")[0].strip().lower()
+    ext, channel = UPLOAD_FILE_TYPES.get(ctype, ("bin", "video"))
+    named = FILENAME_HEADER.search(disposition or "")
+    if named:
+        suffix = pathlib.PurePosixPath(named.group(1).strip()).name
+        suffix = suffix.rsplit(".", 1)[-1].lower() if "." in suffix else ""
+        if suffix in UPLOAD_TYPES:
+            ext = suffix
+    return upload_id + "." + ext, MAX_UPLOAD_BYTES[channel]
+
+
+def _fetch_uploads(base, key, order, run_dir, *, timeout=120):
+    """Download each `upload_ids` file into `<run>/intake/uploads/<id>.<ext>`.
+
+    Runs before the intake replay, so the photos and voice notes the client's
+    answers talk about are already in the run. Returns `(records, warnings)`:
+    the records are what `control/studio-order.json` keeps, the warnings are
+    plain lines on the wake output. A file that is missing, refused or over
+    its cap is ONE warning line - never a refusal, never a failed order.
+    """
+    upload_ids = order.get("upload_ids") if isinstance(order, dict) else None
+    if not isinstance(upload_ids, list) or not upload_ids:
+        return [], []
+    folder = pathlib.Path(run_dir) / "intake" / "uploads"
+    records, warnings = [], []
+    opener = urllib.request.build_opener(_NoRedirect())
+    for raw_id in upload_ids:
+        upload_id = str(raw_id or "").strip()
+        if not UPLOAD_ID.fullmatch(upload_id):
+            warnings.append("An uploaded file could not be fetched (bad reference).")
+            continue
+        req = urllib.request.Request(
+            base.rstrip("/") + UPLOAD_FILE_ROUTE % upload_id, method="GET")
+        req.add_header("content-type", "application/json")
+        req.add_header("User-Agent", STUDIO_USER_AGENT)
+        for h, v in key_headers(key).items():
+            req.add_header(h, v)
+        try:
+            with opener.open(req, timeout=timeout) as resp:
+                name, cap = _upload_target(
+                    upload_id, resp.headers.get("content-type"),
+                    resp.headers.get("content-disposition"))
+                folder.mkdir(parents=True, exist_ok=True)
+                target = folder / name
+                digest = hashlib.sha256()
+                written = 0
+                too_big = False
+                with target.open("wb") as fh:
+                    while True:
+                        chunk = resp.read(1 << 20)
+                        if not chunk:
+                            break
+                        written += len(chunk)
+                        if written > cap:
+                            too_big = True
+                            break
+                        fh.write(chunk)
+                        digest.update(chunk)
+                if too_big:
+                    target.unlink(missing_ok=True)
+                    warnings.append("An uploaded file (%s) is larger than the "
+                                    "studio accepts; it was not kept." % upload_id)
+                    continue
+        except urllib.error.HTTPError as exc:
+            try:
+                exc.read()          # drain the body: a clean close, no half-read
+            except OSError:
+                pass
+            if exc.code == 404:
+                warnings.append("An uploaded file (%s) has not reached the "
+                                "studio yet; the run continues without it."
+                                % upload_id)
+            else:
+                warnings.append("An uploaded file (%s) could not be fetched "
+                                "(HTTP %s); the run continues without it."
+                                % (upload_id, exc.code))
+            continue
+        except (urllib.error.URLError, TimeoutError, OSError):
+            warnings.append("An uploaded file (%s) could not be reached; the "
+                            "run continues without it." % upload_id)
+            continue
+        records.append({"upload_id": upload_id, "path": str(target),
+                        "bytes": written, "sha256": digest.hexdigest()})
+    return records, warnings
+
+
 def cmd_poll(args):
     """Check in, claim one waiting order, replay it, print one JSON line.
 
@@ -1776,13 +1899,22 @@ def cmd_poll(args):
             led.release_order(order_id, BRIDGE_OWNER)
             return code
         out_line = stored_line
+        upload_warnings = []
         if out_line is None:
             control = run_dir / "control"
             control.mkdir(parents=True, exist_ok=True)
+            # (S75-075) The client's uploaded files land in the run BEFORE the
+            # intake replay: the card's photos answer is about files that must
+            # already be there. A file the studio cannot hand over is one
+            # warning line on this wake, never a refusal - the order still runs.
+            uploads, upload_warnings = _fetch_uploads(base, key, order, run_dir)
+            order_record = {"order_id": order_id, "client_id": client_id,
+                            "title": title, "base_url": base}
+            if uploads:
+                order_record["uploads"] = uploads
             # The run dir knows WHERE the studio is; it never holds the key.
             (control / "studio-order.json").write_text(
-                json.dumps({"order_id": order_id, "client_id": client_id,
-                            "title": title, "base_url": base}, sort_keys=True) + "\n",
+                json.dumps(order_record, sort_keys=True) + "\n",
                 encoding="utf-8")
 
             # The run's state authority, at claim time, so the very next command works.
@@ -1805,6 +1937,8 @@ def cmd_poll(args):
                                 % (sys.executable, factory, run_dir),
                         "db": db, "fence": fence,
                         "claim_token": st.get("claim_token")}
+            if upload_warnings:
+                out_line["upload_warnings"] = upload_warnings
             if not _advance_claim(led, order_id, BRIDGE_OWNER, fence,
                                   STEP_MATERIALIZED):
                 return EXIT["refused"]
