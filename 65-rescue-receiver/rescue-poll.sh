@@ -301,6 +301,7 @@ _rr_sup() {
 # who holds this target.
 RR_TARGET_KEY="box|$(printf '%s' "$RR_BOX_SLUG" | tr 'A-Z' 'a-z')"
 
+_LOCK_BLOCK_REASON=""
 _LOCK_OWNER_TOKEN=""
 _LOCK_HELD=0
 _LOCK_TAKEOVER_NOTE=""
@@ -368,10 +369,21 @@ _try_lock() {
     # naming the evidence — the fence contract's takeover protocol.
     case "$_tl_out" in
         *'"reason": "lapsed_without_reconciliation"'*|*'"prior_state": "dead"'*|*'"prior_state": "reused"'*)
-            _tl_gen=$(printf '%s' "$_tl_out" | sed -n 's/.*"observed_generation": *\([^,}]*\).*/\1/p')
-            [ -n "$_tl_gen" ] || _tl_gen=$(_rr_sup lock inspect --dir "$_LOCK_DIR" 2>/dev/null \
-                | sed -n 's/.*"generation": *\([^,}]*\).*/\1/p')
-            [ -n "$_tl_gen" ] || _tl_gen="null"
+            # RRX-039: the generation is read as JSON. The old sed kept the JSON
+            # quotation marks, so the supervisor compared "123" with 123, refused
+            # every takeover, and a lock left by a dead poll was never freed.
+            # The value is printed behind a fixed prefix so that an empty
+            # generation and "could not read the record" stay different answers.
+            _tl_gen_raw=$(_rr_sup lock inspect --dir "$_LOCK_DIR" 2>/dev/null | python3 -c 'import json,sys
+try:
+    rec = json.load(sys.stdin).get("record")
+    if isinstance(rec, dict): print("G:" + str(rec.get("generation")))
+except Exception:
+    pass' 2>/dev/null)
+            case "$_tl_gen_raw" in
+                G:*) _tl_gen="${_tl_gen_raw#G:}" ;;
+                *)   _LOCK_BLOCK_REASON="lock_record_unreadable"; return 1 ;;
+            esac
             _tl_out2=$(_rr_sup lock acquire \
                 --dir "$_LOCK_DIR" \
                 --owner-token "$_tl_token" \
@@ -391,6 +403,7 @@ _try_lock() {
                 _LOCK_TAKEOVER_NOTE="prior_generation=$_tl_gen"
                 return 0
             fi
+            _LOCK_BLOCK_REASON="takeover_refused"
             ;;
     esac
     return 1
@@ -414,15 +427,6 @@ _rr_lock_renew() {
     _rr_sup lock renew --dir "$_LOCK_DIR" --owner-token "$_LOCK_OWNER_TOKEN" \
         --lease-seconds "${1:-900}" >/dev/null 2>&1
 }
-
-_try_lock
-_tl_rc=$?
-if [ "$_tl_rc" -eq 2 ]; then
-    exit 0      # degraded: supervisor absent; already recorded and logged
-elif [ "$_tl_rc" -ne 0 ]; then
-    exit 0      # another poll holds the lock; nothing to do this fire
-fi
-trap _release_lock EXIT HUP INT TERM
 
 # ---------------------------------------------------------------------------
 # Minimal log helper. Logs are best-effort and must NEVER contain the token or
@@ -464,6 +468,26 @@ _sleep_jitter() {
 _json_str() {
     printf '%s' "$1" | tr -d '"' | tr -d '\\' | tr -d '\n\r\t'
 }
+
+# ---------------------------------------------------------------------------
+# RRX-039: the lock is taken here, after _log and _json_str have been defined.
+_try_lock
+_tl_rc=$?
+if [ "$_tl_rc" -eq 2 ]; then
+    exit 0      # degraded: supervisor absent; already recorded and logged
+elif [ "$_tl_rc" -ne 0 ]; then
+    # RRX-039: a lock whose owner is GONE and that still could not be taken is
+    # not "another poll is running". Say so, once an hour, with the next owner.
+    if [ -n "$_LOCK_BLOCK_REASON" ]; then
+        _lb_mark="$_STATE/lock-blocked.logged"
+        if [ ! -f "$_lb_mark" ] || [ -z "$(find "$_lb_mark" -mmin -60 2>/dev/null)" ]; then
+            _log "lock-blocked reason=$_LOCK_BLOCK_REASON acked=false next_owner=operator (the earlier poll is gone and its lock could not be taken over; no instruction is being collected)"
+            : > "$_lb_mark" 2>/dev/null || true
+        fi
+    fi
+    exit 0      # a live poll holds the lock, or the takeover was refused (logged above)
+fi
+trap _release_lock EXIT HUP INT TERM
 
 # ---------------------------------------------------------------------------
 # v1.3.0 honesty helpers.
