@@ -14,6 +14,7 @@ from pathlib import Path
 from storyboard_director import approval_package as AP
 from kie_dispatch.model_lock import is_locked_lipsync
 from lip_sync.narrator_rule import person_on_screen
+from lipsync_clips import OPT_OUT_MISSING, ROUTE_NO_LIPSYNC, no_lipsync_opt_out
 
 
 class LipsyncEvidenceError(ValueError):
@@ -59,10 +60,25 @@ def _ids(value):
             and len(value) == len(set(value)))
 
 
-def _approved(run_dir):
+def _approved(run_dir, route=None):
+    """Approved lip-sync requirements for the run.
+
+    S75-047: ``route=ROUTE_NO_LIPSYNC`` is honoured ONLY when
+    ``control/method.json`` records ``lipsync_opt_out`` with ``who`` and
+    ``at`` (lipsync_clips.no_lipsync_opt_out, the one reader). With the
+    record the run needs no storyboard requirements and returns ``{}``;
+    without it the gate refuses LIPSYNC_OPT_OUT_MISSING. Every other route
+    keeps the ordinary approved-storyboard requirement.
+    """
     _need(isinstance(run_dir, (str, Path)) and str(run_dir),
           "LIPSYNC_EVIDENCE_MISSING", "run_dir required")
     root = Path(run_dir).resolve()
+    if route == ROUTE_NO_LIPSYNC:
+        _need(no_lipsync_opt_out(root) is not None, OPT_OUT_MISSING,
+              "the no-lip-sync route needs control/method.json "
+              "lipsync_opt_out with who and at; an ordinary run keeps its "
+              "approved lip-sync")
+        return root, {}
     sb = root / "storyboard"
     raw = _read(_path(root, str(sb / "shot-list.json")))
     shots = raw.get("shots") if isinstance(raw, dict) else raw
@@ -285,19 +301,27 @@ def inputs_for_request(run_dir, request):
         raise LipsyncEvidenceError(getattr(exc, "code", "LIPSYNC_INPUTS_MISSING"), str(exc)) from exc
 
 
-def check_plan(plan, require_measured=False):
+def check_plan(plan, require_measured=False, route=None):
     """Join approved requirements, successful receipts, files and actual slots.
 
     Frame rounding may differ by one frame. Crossfade opacity time is excluded
     from measured coverage. In production, source_dur must be a measured probe.
     Dry-run callers may omit it, explicitly reporting source duration unverified.
+
+    ``route`` defaults to ``plan["route"]``. ROUTE_NO_LIPSYNC (S75-047) passes
+    with zero requirements only when ``control/method.json`` records the owner
+    opt-out; otherwise it is refused by ``_approved``.
     """
     evidence = {"included": [], "requirements": [], "measured_seconds": 0.0,
                 "source_duration_verified": bool(require_measured)}
     try:
         _need(isinstance(plan, dict), "LIPSYNC_EVIDENCE_MISSING", "plan object required")
-        root, required = _approved(plan.get("run_dir"))
+        route = route or plan.get("route")
+        root, required = _approved(plan.get("run_dir"), route)
         evidence["requirements"] = list(required.values())
+        if route == ROUTE_NO_LIPSYNC:
+            evidence["route"] = route
+            evidence["lipsync_opt_out"] = no_lipsync_opt_out(root)
         if require_measured or plan.get("song_path"):
             song = _path(root, plan.get("song_path"))
             _need(song.stat().st_size > 0, "LIPSYNC_AUDIO_MISSING", "final export needs the soundtrack")
