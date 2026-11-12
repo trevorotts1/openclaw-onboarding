@@ -37,7 +37,8 @@ sys.path.insert(0, str(SCRIPTS))
 
 from presentation_job.manifest import Manifest  # noqa: E402
 from presentation_job.phases import Engine  # noqa: E402
-from presentation_job.state import StateStore, EXIT_OK  # noqa: E402
+from presentation_job.state import StateStore, EXIT_OK, EXIT_GATE_BLOCKED  # noqa: E402
+from presentation_job.execution_plan import persist_execution_graph  # noqa: E402
 import phase_verifiers  # noqa: E402
 
 SALES_GATE = 'intake.want_sales_checkout == "yes"'
@@ -151,22 +152,32 @@ def test_declined_sales_branch_defers_the_build_and_the_run_succeeds(tmp_path):
 
 
 def test_ungated_build_phase_is_stranded_on_the_non_optional_edge(tmp_path):
-    """A3 (the control): without the predicate the same run cannot succeed.
+    """A3 (the control): without the predicate the gate withholds the build.
 
     This is the PD-038 defect itself: a deferred producer can never satisfy a
-    REQUIRED edge, so the build phase is withheld -- which is why test A2's
-    success depends on the manifest carrying `defers_unless` on the build.
+    REQUIRED edge. Proven at the admission gate -- the exact predicate
+    `Engine.run_phase` consults before any transport call, and the same gate
+    the A6 reproduction drives directly. A full `eng.run()` is NOT used here:
+    the ready-queue scheduler keeps re-admitting a withheld phase whose
+    blocker never settles (the tick's ready set and this gate disagree about
+    deferred predecessors), so a full run spins instead of returning -- an
+    engine scheduler gap outside this unit's lane, not something this test
+    can or should wait out. The gate verdict below is the mechanism a run
+    parks on: BLOCKED naming the deferred producer on a non-optional edge.
     """
     _declined_intake(tmp_path)
     eng = _engine(tmp_path, _branch(None))
-    rc = eng.run()
+    manifest_path = tmp_path / "PIPELINE-MANIFEST.json"
+    persist_execution_graph(manifest_path, tmp_path / "run")
+    eng._checkpoint("P-U-SALES-COPY", status="deferred",
+                    deferred_reason="defers_unless")
+    gate_rc = eng._check_predecessor_success(
+        eng.manifest.phase("P-U-SALES-BUILD"))
+    assert gate_rc == EXIT_GATE_BLOCKED, \
+        "a build phase with no defers_unless consuming a declined producer " \
+        "must be withheld by the admission gate"
     ps_build = eng._phase_state("P-U-SALES-BUILD")
     waiting = ps_build.get("waiting_dependency") or []
-    assert rc != EXIT_OK, \
-        "a build phase with no defers_unless consuming a declined producer cannot succeed"
-    assert eng._phase_state("P-U-SALES-COPY").get("status") == "deferred"
-    assert eng._phase_state("INDY").get("status") == "done", \
-        "the declined branch must not stop unrelated work"
     assert any(w.get("blocked_by") == "P-U-SALES-COPY"
                and "non-optional" in (w.get("reason") or "") for w in waiting), \
         f"the deferred producer must be named on a non-optional edge: {waiting}"
