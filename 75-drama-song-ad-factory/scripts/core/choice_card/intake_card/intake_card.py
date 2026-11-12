@@ -82,7 +82,8 @@ def _closing(qs):
     choices = [q for q in qs if not q.get("free_text")]
     shortcut = (' Say "all recommended" to take every RECOMMENDED choice.'
                 if all(q.get("recommended") is not None for q in choices) else "")
-    typed = [q["label"].title() for q in qs if q.get("free_text")]
+    typed = [q["label"].title() for q in qs
+             if q.get("free_text") and not q.get("defaulted")]
     if typed:
         return ("How to answer: type your own words for %s, one number for the "
                 "choice questions, and a dollar amount for the BUDGET.%s"
@@ -186,16 +187,31 @@ def spend_question(price=None, limit=None, from_brief=False):
                       "up to " + _usd(limit) if limit is not None else None)}
 
 
-def _models_q():
+def _plain_label(mid):
+    """A model's name for a client: the catalog label without its route in
+    brackets (S75-006: no vendor name in a question)."""
     from choice_card.intake_card import ai_models as AM
-    return {"id": "models", "why": "One AI builds your video and a different AI checks the work.",
-            "reason": "OpenRouter is the faster route, and a separate model checks the work.",
-            "label": "AI MODELS",
-            "ask": "Which AI should build your video, and which should check the work? "
-                   "OpenRouter is recommended because it's faster; Ollama works too.",
-            "options": [("Recommended setup", "An OpenRouter model builds, Claude Sonnet checks."),
-                        ("Choose my own", "Reply with the build model and the check model, "
-                         "e.g. 'DeepSeek builds, Sonnet checks'.")],
+    text = AM.label(mid)
+    for vendor in VENDOR_JARGON:
+        text = text.replace(" (%s)" % vendor, "").replace(" %s" % vendor, "")
+    return text.strip()
+
+
+def _ai_setup_q():
+    """The AI setup question, asked ONCE on a computer with no saved pair
+    (S75-006). A saved pair moves it to the recap as a changeable line, so the
+    client is never asked what this computer is already set up to do."""
+    from choice_card.intake_card import ai_models as AM
+    rec = AM.recommended()
+    return {"id": "models", "label": "AI MODELS",
+            "why": "One AI does the writing and planning, and a different one checks the work.",
+            "reason": "it is already set up and tested here.",
+            "ask": "Which AI setup should work on your video?",
+            "options": [("Use the setup on this computer",
+                         "%s builds, %s checks." % (_plain_label(rec["build"]),
+                                                    _plain_label(rec["check"]))),
+                        ("Choose different ones",
+                         "Tell me which one builds and which one checks.")],
             "recommended": 0}
 
 
@@ -219,40 +235,156 @@ def _duration_options(episode=False):
         rows.update({
             180: ("3 minutes", "one full story with room for the turn and the offer."),
             300: ("5 minutes", "a deeper story with more of the solution at work."),
-            600: ("10 minutes", "the long version, a full show episode. "
-                  "(made with KIE, not Agnes)"),
+            600: ("10 minutes", "the long version, a full show episode."),
         })
     return [rows[seconds] for seconds in MS.CANONICAL_DURATION_S]
 
 
-def _questions():
+def _length_prices(options):
+    """option number -> "- about $X" for every length choice (S75-006 step 5).
+
+    One function, the same price table the VIDEO MODEL line reads, priced for
+    the model that screen recommends. A length the table cannot price simply
+    carries no price; the choice is never removed for it."""
+    from catalog_calculator import card_render as CR
+    models = _vm().require_choices()
+    chosen = next((m["n"] for m in models if m.get("recommended")), models[0]["n"])
+    out = {}
+    for n, (label, _sentence) in enumerate(options, 1):
+        try:
+            out[n] = "- about %s" % ("$%.2f" % CR.quote(chosen, label))
+        except (KeyError, ValueError, TypeError):
+            continue
+    return out
+
+
+def _length_question(options=None, recommended=None):
+    """LENGTH: the owner's six durations, each ending with its price (S75-006)."""
+    from music_styles import music_styles as MS
+    options = _duration_options() if options is None else options
+    return {"id": "length", "why": "Length decides the story size and the price.",
+            "reason": "the standard length for ads, and it fits stories, reels and ads.",
+            "label": "LENGTH",
+            "ask": "How long do you want your ad to be? The longer ads also come with "
+                   "short clips you can post on social media.",
+            "options": options, "prices": _length_prices(options),
+            "recommended": 0 if recommended is None else recommended}
+
+
+def _music_q():
+    """MUSIC STYLE: the three original styles, then the full list on request.
+
+    ``full_options`` carries all eighteen; the expansion is its own question
+    (``music_full``) so the screen the client is looking at never changes out
+    from under an answer already recorded."""
+    styles = _musics()
+    return {"id": "music", "why": "The song carries the feeling of the whole ad.",
+            "reason": "it is the style that tests best for emotional stories.",
+            "label": "MUSIC STYLE", "ask": "Which sound fits your story?",
+            "options": styles[:3] + [("Show me all %d styles" % len(styles), None)],
+            "full_options": styles, "recommended": 0}
+
+
+def _music_full_q():
+    """The eighteen-style menu, asked as its own screen when the client says
+    "more" (option 4). Same id family as MUSIC STYLE; its answer is folded back
+    into the music line when the run records its answers."""
+    return {"id": "music_full", "why": "Every style the studio can make.",
+            "reason": "it is the style that tests best for emotional stories.",
+            "label": "MUSIC STYLE (ALL)", "ask": "Which sound fits your story?",
+            "options": _music_q()["full_options"], "recommended": 0}
+
+
+def _checkpoints_q():
+    """CHECKPOINTS: one screen in place of the three approval screens
+    (S75-006 step 1). Option 1 turns every gate on, option 2 only the
+    storyboard, option 3 none, option 4 asks each approval on its own."""
+    return {"id": "checkpoints", "label": "CHECKPOINTS",
+            "why": "Fixing a script or a song is cheap; fixing a finished video is not.",
+            "reason": "fixing a script or a song is cheap, and fixing a finished video is not.",
+            "ask": "How much do you want to see before video money is spent?",
+            "body": [
+                "How much do you want to see before video money is spent?",
+                "1. Everything - the script, 3 song versions to pick from, and the storyboard. (RECOMMENDED)",
+                "2. Just the storyboard.",
+                "3. Nothing - just make it.",
+                "",
+                "I recommend option 1 because fixing a script or a song is cheap, "
+                "and fixing a finished video is not.",
+                'Reply with a number, or say "recommended". You can also say '
+                '"custom" to choose each one.',
+            ],
+            "options": [("Everything", "the script, 3 song versions to pick from, and the storyboard."),
+                        ("Just the storyboard", "the storyboard, and nothing else."),
+                        ("Nothing - just make it", "I start as soon as the card is approved."),
+                        ("Choose each one", "answer the script, song and storyboard questions one by one.")],
+            "recommended": 0}
+
+
+#: CHECKPOINTS option -> (storyboard, song, script) approval, 1 = shown first.
+_CHECKPOINT_GATES = {1: (1, 1, 1), 2: (1, 2, 2), 3: (2, 2, 2)}
+
+
+def _gate_questions():
+    """The approval screens, asked only by CHECKPOINTS option 4."""
     return [
-        _models_q(),
-        {"id": "length", "why": "Length decides the story size and the price.", "reason": "the standard length for ads, and it fits stories, reels and ads.", "label": "LENGTH", "ask": "How long do you want your ad to be? The longer ads also come with short clips you can post on social media.",
-         "options": _duration_options(),
+        {"id": "storyboard",
+         "why": "The storyboard is cheap to fix now and costly to fix after video is made.",
+         "reason": "you see every scene before any money is spent on video.",
+         "label": "STORYBOARD APPROVAL",
+         "ask": "Do you want to approve the storyboard before any video is made?",
+         "options": [("Yes, show me first", "Nothing is generated until you say go."),
+                     ("No, just make it", "I start as soon as the card is approved.")],
          "recommended": 0},
+        {"id": "song",
+         "why": "The song is the heart of the ad, and it is cheap to change now and costly after video is made.",
+         "reason": "you hear three labelled versions and pick your favourite before any money is spent on video.",
+         "label": "SONG APPROVAL",
+         "ask": "Do you want to hear and pick the song before any video is made?",
+         "options": [("Yes, send me 3 versions to choose from",
+                      "Three labelled songs; nothing else starts until you pick, and two extra songs are added to the price."),
+                     ("No, just make it", "I make one song and keep going.")],
+         "recommended": 0},
+        {"id": "script",
+         "why": "The script is cheap to fix now and costly to fix after the song is made.",
+         "reason": "you read the story and the lyrics before any money is spent on the song.",
+         "label": "SCRIPT APPROVAL",
+         "ask": "Do you want to read and approve the script - your story and the song lyrics - before the song is made?",
+         "options": [("Yes, show me first", "Nothing is generated until you say go."),
+                     ("No, just make it", "I start as soon as the card is approved.")],
+         "recommended": 0},
+    ]
+
+
+def _legacy_questions():
+    """The card a run that already started keeps, exactly as it was asked.
+
+    Frozen on purpose: a resumed run's answers belong to HIS list, and changing
+    this list would migrate the answers he already gave (S75-006 step 5)."""
+    return [
+        _ai_setup_q(),
+        _length_question(),
         {"id": "music", "why": "The song carries the feeling of the whole ad.", "reason": "it is the style that tests best for emotional stories.", "label": "MUSIC STYLE", "ask": "Which sound fits your story?",
          "options": _musics(), "recommended": 0},
         {"id": "look", "why": "The look is what viewers see in every shot.", "reason": "it gives the most real, cinematic result.", "label": "VIDEO STYLE", "ask": "How should your video look? Tap a link to watch a sample.",
          "options": _looks(), "links": _look_links(), "recommended": 0},
         _model_question("60 seconds"),
         spend_question(),
-        {"id": "storyboard", "why": "The storyboard is cheap to fix now and costly to fix after video is made.", "reason": "you see every scene before any money is spent on video.", "label": "STORYBOARD APPROVAL",
-         "ask": "Do you want to approve the storyboard before any video is made?",
-         "options": [("Yes, show me first", "Nothing is generated until you say go."),
-                     ("No, just make it", "I start as soon as the card is approved.")],
-         "recommended": 0},
-        {"id": "song", "why": "The song is the heart of the ad, and it is cheap to change now and costly after video is made.", "reason": "you hear three labelled versions and pick your favourite before any money is spent on video.", "label": "SONG APPROVAL",
-         "ask": "Do you want to hear and pick the song before any video is made?",
-         "options": [("Yes, send me 3 versions to choose from", "Three labelled songs; nothing else starts until you pick, and two extra songs are added to the price."),
-                     ("No, just make it", "I make one song and keep going.")],
-         "recommended": 0},
-        {"id": "script", "why": "The script is cheap to fix now and costly to fix after the song is made.", "reason": "you read the story and the lyrics before any money is spent on the song.", "label": "SCRIPT APPROVAL",
-         "ask": "Do you want to read and approve the script - your story and the song lyrics - before the song is made?",
-         "options": [("Yes, show me first", "Nothing is generated until you say go."),
-                     ("No, just make it", "I start as soon as the card is approved.")],
-         "recommended": 0},
-    ]
+    ] + _gate_questions()
+
+
+def _new_questions():
+    """The card a NEW run asks (S75-006): only what the client can answer.
+
+    The last three carry ``defaulted``: they are shown as numbered lines on the
+    recap with their default and are never asked one by one.
+    """
+    return [_offer_q(), _link_q(), _audience_q(), _character_q(), _ai_setup_q(),
+            _length_question(), _music_q(),
+            {"id": "look", "why": "The look is what viewers see in every shot.", "reason": "it gives the most real, cinematic result.", "label": "VIDEO STYLE", "ask": "How should your video look? Tap a link to watch a sample.",
+             "options": _looks(), "links": _look_links(), "recommended": 0},
+            _checkpoints_q(), spend_question(),
+            _model_question("60 seconds", defaulted=True), _shape_q(), _photos_q()]
 
 
 def _model_price_line(length_label):
@@ -272,11 +404,14 @@ def _vm():
     return VM
 
 
-def _model_question(length_label, agnes_yes=False):
+def _model_question(length_label, agnes_yes=False, defaulted=False):
     """VIDEO MODEL: the models the live KIE catalog proves it carries, each
     priced for the client's chosen length. A client who said yes to Agnes
     reads it as the backup it now is (SPEC A10): same models, same prices,
     one question of when they are used.
+
+    ``defaulted`` (S75-006): the screen is shown on the recap with its default
+    -- the recommended row -- and asked only when the client asks to change it.
 
     L3 (v2.9.73): the choices come from the price table filtered through the
     LIVE registry (refs/kie-model-registry.json, the file dispatch reads).
@@ -290,13 +425,17 @@ def _model_question(length_label, agnes_yes=False):
     cost = {m["n"]: "$%.2f" % CR.quote(m["n"], length_label) for m in models}
     ask = ("Which video model should make your shots if Agnes cannot? " if agnes_yes
            else "Which video model should make your shots? ")
-    return {"id": "model", "why": "The video model sets how good the shots look and what they cost.",
-            "reason": "it gives the best balance of quality and price.", "label": "VIDEO MODEL",
-            "ask": ask + _model_price_line(length_label),
-            "price": _model_price_line(length_label),
-            "options": [(m["name"], "%s - about %s" % (m["blurb"], cost[m["n"]])) for m in models],
-            "values": [cost[m["n"]] for m in models],
-            "recommended": next(i for i, m in enumerate(models) if m["recommended"])}
+    q = {"id": "model", "why": "The video model sets how good the shots look and what they cost.",
+         "reason": "it gives the best balance of quality and price.", "label": "VIDEO MODEL",
+         "ask": ask + _model_price_line(length_label),
+         "price": _model_price_line(length_label),
+         "options": [(m["name"], "%s - about %s" % (m["blurb"], cost[m["n"]])) for m in models],
+         "values": [cost[m["n"]] for m in models],
+         "recommended": next(i for i, m in enumerate(models) if m["recommended"])}
+    if defaulted:
+        q["defaulted"] = True
+        q["optional"] = True
+    return q
 
 
 def _priced(qs, answers):
@@ -349,12 +488,21 @@ _CONDITIONAL_IDS = ("purpose", "episode_length", "shape", "permission", "where",
 METHOD_JARGON = ("MOS", "ERM", "ERM drop", "beat sheet", "screenwriting",
                  "inciting incident", "story arc", "master scene", "turning point")
 
+#: Vendor and build-tool names that mean nothing to a client (S75-006). Checked
+#: everywhere METHOD_JARGON is, except the option details of the VIDEO MODEL and
+#: AGNES questions -- there the client is choosing between those very products.
+VENDOR_JARGON = ("OpenRouter", "Ollama", "KIE", "Suno", "Skill 74", "sqlite")
 
-def jargon_hits(text):
-    """The method-jargon terms in ``text``, whole-word and case-insensitive."""
+
+def jargon_hits(text, terms=None):
+    """The jargon terms in ``text``, whole-word and case-insensitive.
+
+    ``terms`` defaults to every blocked tuple; a caller that checks one family
+    passes it (the tests check method words and vendor names separately).
+    """
     import re
     hits = []
-    for term in METHOD_JARGON:
+    for term in (METHOD_JARGON + VENDOR_JARGON) if terms is None else terms:
         if re.search(r"(?<![A-Za-z])" + re.escape(term) + r"(?![A-Za-z])",
                      text or "", re.IGNORECASE):
             hits.append(term)
@@ -367,6 +515,10 @@ def jargon_hits(text):
 _RESUME_MARKERS = ("card-answers.json",
                    os.path.join("control", "card-receipt.json"),
                    os.path.join("control", "state.sqlite3"))
+
+#: The durable session file a --format session-json run writes (intake_session).
+#: It records the flow it started with, so a resume keeps that flow exactly.
+_SESSION_FILE = os.path.join("control", "intake-session.json")
 
 #: The records only a purpose-flow card writes, plus the studio order whose
 #: screens ARE the purpose flow. A run carrying one is replayed THROUGH the
@@ -386,6 +538,16 @@ def _run_history(run_dir):
         return None
     if any(os.path.exists(os.path.join(run_dir, p)) for p in _FLOW_MARKERS):
         return True
+    #: S75-006 step 5: the durable session records the flow it started with, so
+    #: a run that asked the new card keeps asking it (and a resumed old run
+    #: keeps the old one) -- the presence of the file alone is not the answer.
+    try:
+        with open(os.path.join(run_dir, _SESSION_FILE), encoding="utf-8") as fh:
+            sess = json.load(fh)
+    except (OSError, ValueError):
+        sess = None
+    if isinstance(sess, dict) and "purpose_flow" in sess:
+        return bool(sess["purpose_flow"])
     if any(os.path.exists(os.path.join(run_dir, p)) for p in _RESUME_MARKERS):
         return False
     return None
@@ -463,25 +625,31 @@ def _episode_length_q():
     """The campaign's one follow-up (METHOD-INTEGRATION 3.2). It takes LENGTH's
     own slot, so a campaign grows by the PURPOSE question and nothing else."""
     from music_styles import music_styles as MS
+    options = _duration_options(episode=True)
     return {"id": "episode_length", "label": "EPISODE LENGTH",
             "why": "The full episode lives on your YouTube channel; the trailers bring "
                    "people to it.",
             "reason": "it is the shortest episode that still earns two good trailers.",
             "ask": "How long should the full episode be? Your 60-second and 90-second "
                    "trailers and ad clips are included.",
-            "options": _duration_options(episode=True),
+            "options": options, "prices": _length_prices(options),
             "recommended": MS.CANONICAL_DURATION_S.index(180)}
 
 
 def _shape_q():
-    """How every shot is framed (SPEC B1, purposes 1-3)."""
+    """How every shot is framed (SPEC B1, purposes 1-3).
+
+    S75-006: shown on the recap with its default -- Wide for a campaign episode,
+    Vertical for everything else -- and asked only when the client changes it."""
     return {"id": "shape", "label": "SHAPE",
             "why": "The shape decides how every shot is framed.",
             "reason": "it fits phones, Reels, Shorts and TikTok.",
             "ask": "How should your video be framed?",
             "options": [("Vertical", "phones, Reels, Shorts, TikTok."),
                         ("Wide", "YouTube on a TV or a computer.")],
-            "recommended": 0}
+            "recommended": 0, "defaulted": True, "optional": True,
+            #: the default option for a purpose (1-based); a campaign episode is wide
+            "default_by_purpose": {1: 2, 2: 1, 3: 1}}
 
 
 def _permission_q():
@@ -599,6 +767,26 @@ def _remember_agnes(client_dir, answers, qs):
     AG.remember(client_dir, "yes" if n == 1 else "no")
 
 
+def _remember_ai_setup(client_dir, answers, qs):
+    """Save this computer's AI setup once the client has chosen it (S75-006).
+
+    The saved pair is what later runs reuse instead of asking again; it is
+    never a per-machine answer the Studio export reads."""
+    a = next((x for x in answers if x.get("id") == "models"), None)
+    if not isinstance((a or {}).get("value"), dict):
+        return
+    try:
+        from choice_card.intake_card import ai_models as AM
+    except ImportError:
+        _loud("warn", "AI_SETUP_UNAVAILABLE",
+              "ai_models could not be imported; the AI setup was not saved.")
+        return
+    try:
+        AM.remember_setup(client_dir, a["value"])
+    except (OSError, ValueError) as e:
+        _loud("warn", "AI_SETUP_NOT_SAVED", str(e))
+
+
 def _runtime_targets(length_s):
     """The one length function's numbers for the chosen length (SPEC B1). The
     method's own runtime row is used when the length function carries it; every
@@ -684,18 +872,117 @@ def _pick(pos, answers, qid):
     return (a or {}).get("n") or None
 
 
+def _ai_setup_remembered(client_dir):
+    """The AI setup saved for this computer, or None (S75-006).
+
+    ``ai_models`` is read lazily, like the Agnes answer: a missing module is a
+    WARNING, never a crash, and the question is asked rather than hidden."""
+    if not client_dir:
+        return None
+    try:
+        from choice_card.intake_card import ai_models as AM
+    except ImportError:
+        _loud("warn", "AI_SETUP_UNAVAILABLE",
+              "ai_models could not be imported; the AI setup question is asked.")
+        return None
+    try:
+        return AM.remembered_setup(client_dir)
+    except OSError as e:
+        _loud("warn", "AI_SETUP_UNREADABLE", str(e))
+        return None
+
+
+def _default_row(q, purpose_n=None, client_dir=None):
+    """The default a recap line shows for a defaulted screen: {"n", "text", ...}."""
+    if q["id"] == "model":
+        n = (q.get("recommended") or 0) + 1
+        return {"n": n, "text": q["options"][n - 1][0], "id": q["id"]}
+    if q["id"] == "shape":
+        n = (q.get("default_by_purpose") or {}).get(purpose_n, 1)
+        return {"n": n, "text": q["options"][n - 1][0], "id": q["id"]}
+    if q["id"] == "photos":
+        return {"n": 1, "text": q.get("default_text", "none yet - send them any time"),
+                "id": q["id"]}
+    if q["id"] == "models":
+        saved = _ai_setup_remembered(client_dir)
+        if saved:
+            return {"n": 1, "value": dict(saved), "id": q["id"],
+                    "text": "%s builds, %s checks" % (_plain_label(saved["build"]),
+                                                      _plain_label(saved["check"]))}
+        return {"n": 1, "text": q["options"][0][0], "id": q["id"]}
+    return {"n": 1, "text": q.get("default_text", ""), "id": q["id"]}
+
+
+def _defaults(qs, answers, client_dir=None, given=None):
+    """{question id: {"n", "text", "value"?}} for every defaulted screen.
+
+    A client's own change (``given``) always wins over the default."""
+    out = dict(given or {})
+    purpose_n = next((a.get("n") for a in answers if a.get("id") == "purpose"), None)
+    for q in qs:
+        if q.get("defaulted") and q["id"] not in out:
+            out[q["id"]] = _default_row(q, purpose_n, client_dir)
+    return out
+
+
+def _record_lists(answers, qs, client_dir=None, defaults=None):
+    """(questions, answers) the run records when the recap is confirmed.
+
+    The two lists stay aligned pair for pair. Screens nobody was asked one by
+    one carry their default, or the client's change. CHECKPOINTS becomes the
+    three approval answers the run has always kept (S75-006 step 1), the full
+    music menu folds back into the MUSIC STYLE line, and a saved AI setup is
+    recorded as the pair it is.
+    """
+    d = _defaults(qs, answers, client_dir, defaults)
+    asked_qs = [q for q in qs if not q.get("defaulted")]
+    by_id = {}
+    for q, a in zip(asked_qs, answers):
+        by_id[q["id"]] = dict(a)
+    if "music_full" in by_id:                 # the expanded list answers MUSIC STYLE
+        by_id["music"] = dict(by_id.pop("music_full"), id="music")
+    rec_qs = [q for q in asked_qs if q["id"] != "music_full"]
+    rec_ans = [by_id[q["id"]] for q in rec_qs]
+    for q in qs:
+        if q.get("defaulted"):
+            rec_qs.append(q)
+            rec_ans.append(dict(d.get(q["id"]) or {"n": 1, "text": ""}, id=q["id"]))
+    if "checkpoints" in by_id and "storyboard" not in by_id:
+        mapping = _CHECKPOINT_GATES.get(by_id["checkpoints"].get("n"), _CHECKPOINT_GATES[1])
+        for gate, option_n in zip(_gate_questions(), mapping):
+            if gate["id"] in by_id:
+                continue                      # "custom": already asked and answered
+            rec_qs.append(gate)
+            rec_ans.append({"n": option_n, "text": gate["options"][option_n - 1][0],
+                            "value": None, "id": gate["id"]})
+    if "link" not in by_id:
+        #: the merged OFFER screen answered the address too (S75-006 step 2).
+        #: Question and answer are appended together, so every pair above keeps
+        #: its own position.
+        addr = (by_id.get("offer") or {}).get("address")
+        if addr:
+            rec_qs.append(_link_q())
+            rec_ans.append({"n": 1, "text": addr, "value": addr, "id": "link"})
+    return rec_qs, rec_ans
+
+
 def _shaped(qs, answers, client_dir=None):
     """The question list rebuilt from the answers so far -- the ``_priced`` idea
-    applied to the whole list (SPEC B1).
+    applied to the whole list (SPEC B1), and since S75-006 the list a NEW run
+    asks: only the questions the client can answer.
 
     PURPOSE is first; its one follow-up sits right after it, except EPISODE
     LENGTH, which takes LENGTH's own slot so a campaign adds no screen; AI
     MODELS and the rest keep the order they already had; AGNES sits after VIDEO
     STYLE unless the client already said no, and only while the chosen length is
-    one Agnes can make. The conditional ids are stripped before the rebuild, so
-    shaping twice on the same answers gives the same list.
+    one Agnes can make. The screen that is not asked one by one -- the video
+    model, the shape, the photos and a saved AI setup -- rides at the END,
+    marked ``defaulted``, so the recap can number it and the client can change
+    it. The conditional ids are stripped before the rebuild, so shaping twice
+    on the same answers gives the same list.
     """
-    base = [q for q in qs if q["id"] not in _CONDITIONAL_IDS]
+    base = [q for q in qs if q["id"] not in _CONDITIONAL_IDS and not q.get("defaulted")]
+    tail = [q for q in qs if q.get("defaulted")]
     out, pos = [], {}
 
     def place(q):
@@ -705,35 +992,62 @@ def _shaped(qs, answers, client_dir=None):
     place(_purpose_q())
     purpose_n = _pick(pos, answers, "purpose")
     if purpose_n is None:                       # nothing chosen yet
-        return out + base
+        return out + base + tail
     length_text, agnes_yes = None, False
     if purpose_n in (2, 4):                     # the one follow-up, right after PURPOSE
         place(_permission_q() if purpose_n == 2 else _where_q())
     key = _purpose_key(purpose_n, _pick(pos, answers, "where"))
     for q in base:
-        if q["id"] == "length":
+        qid = q["id"]
+        if qid == "link":
+            #: S75-006 step 2: the OFFER screen carries the address too, so the
+            #: address is asked on its own only when that reply had none.
+            prev = next((a for a in answers if a.get("id") == "offer"), None)
+            if prev is not None and not prev.get("address"):
+                place(q)
+            continue
+        if qid == "models":
+            if _ai_setup_remembered(client_dir) is None:
+                place(q)
+            continue
+        if qid == "length":
             #: EPISODE LENGTH for a campaign is the LENGTH question in its own
             #: slot (METHOD-INTEGRATION 3.2: it replaces LENGTH), so a campaign
             #: grows by PURPOSE and no other screen.
             lq = _episode_length_q() if key == "campaign" else _length_q(key)
             ask_id = "episode_length" if key == "campaign" else "length"
             place(lq)
-            if purpose_n in _SHAPE_PURPOSES:
-                place(_shape_q())
             n = _pick(pos, answers, ask_id) or 0      # not answered yet: no length
             length_text = lq["options"][n - 1][0] if 0 < n <= len(lq["options"]) else None
             continue
-        if q["id"] == "model":
-            place(_model_question(length_text or "60 seconds", agnes_yes=agnes_yes))
+        if qid == "music":
+            place(q)
+            if _pick(pos, answers, "music") == len(q["options"]):
+                place(_music_full_q())     # "Show me all N styles": its own screen
             continue
         place(q)
-        if q["id"] == "look":
+        if qid == "look":
             remembered = (_agnes_remembered(client_dir) if length_text
                           and _vm().length_seconds(length_text) <= _AGNES_MAX_LENGTH_S
                           else None)         # episodes over five minutes are KIE-only
             if remembered and remembered != "no":
                 place(_agnes_q(remembered))
             agnes_yes = _pick(pos, answers, "agnes") == 1
+        if qid == "checkpoints" and _pick(pos, answers, "checkpoints") == 4:
+            for gate in _gate_questions():     # "custom": ask the three in place
+                place(gate)
+    for q in tail:
+        if q["id"] == "model":
+            place(_model_question(length_text or "60 seconds", agnes_yes=agnes_yes,
+                                  defaulted=True))
+        elif q["id"] == "shape":
+            if purpose_n in _SHAPE_PURPOSES:
+                place(q)
+        elif q["id"] == "models":
+            if _ai_setup_remembered(client_dir) is not None:
+                place(q)
+        else:
+            place(q)
     return out
 
 
@@ -770,35 +1084,68 @@ def _typed(id_, label, why, ask):
             "options": [("Type it in", FREE_TEXT_HINT)]}
 
 
-def _brief_questions():
-    return [
-        _typed("offer", "OFFER",
+def _offer_q():
+    """OFFER and the web address in ONE typed question (S75-006 step 2).
+
+    A reply that carries a web address answers the address too (``_parse``
+    splits it out); a reply without one asks only for the address next."""
+    q = _typed("offer", "OFFER",
                "The story, the song and the call to action are all built around this.",
-               "What are we promoting? Give the exact name of your offer."),
-        _typed("link", "OFFER LINK",
-               "The link goes on screen at the end, so it has to be exact.",
-               "What web address should the video send people to? Paste it rather than typing it from memory."),
-        _typed("audience", "AUDIENCE",
-               "One audience and one action beat ten of each.",
-               "Who is this video for, and what should they do after watching it?"),
-        _typed("character", "CHARACTER",
-               "Your characters are the actors, and viewers spend the whole video with them.",
-               "Who stars in your video? Describe them by name, age, look and clothing."),
-        _typed("photos", "PHOTOS",
+               "What are we promoting, and where should the video send people? "
+               "Give the exact name, then paste the web address.")
+    q["merge_link"] = True
+    return q
+
+
+def _link_q():
+    """The web address on its own, asked only when the OFFER reply had none."""
+    q = _typed("link", "OFFER LINK", None,
+               "Thanks. What web address should the video send people to?")
+    q["why"] = None
+    return q
+
+
+def _audience_q():
+    return _typed("audience", "AUDIENCE",
+                  "One audience and one action beat ten of each.",
+                  "Who is this video for, and what should they do after watching it?")
+
+
+def _character_q():
+    return _typed("character", "CHARACTER",
+                  "Your characters are the actors, and viewers spend the whole video with them.",
+                  "Who stars in your video? Give a name, an age, and how they look and "
+                  "dress. You can send photos in your next message, or skip that.")
+
+
+def _photos_q():
+    """PHOTOS as a recap line (S75-006): nothing to send is a real answer, so it
+    is never a question the client has to get past to start."""
+    q = _typed("photos", "PHOTOS",
                "A real photo makes the story feel true instead of invented.",
-               "Which photos or proof should we use - your logo, a product shot, a testimonial? Reply \"none\" if you have none."),
-    ]
+               "Which photos or proof should we use - your logo, a product shot, a testimonial?")
+    q["defaulted"] = True
+    q["optional"] = True
+    q["default_text"] = "none yet - send them any time"
+    return q
 
 
-QUESTIONS = _brief_questions() + _questions()
+QUESTIONS = _new_questions()
+#: The card a resumed run keeps, exactly as it was asked (S75-006 step 5).
+LEGACY_QUESTIONS = _legacy_questions()
 
 
 def example_replies(questions=None):
     """One plausible reply per question, in order: the typed answer for a brief
     question, a dollar amount for BUDGET, the recommended pick for a choice.
-    Fixtures and tests use it so a complete card needs no hand-counting."""
+    Fixtures and tests use it so a complete card needs no hand-counting.
+
+    The default is the card a plain replay asks -- ``conversation(replies)``
+    with no run folder replays the one a resumed run keeps -- because that is
+    what a fixture feeding ``conversation`` needs. Pass ``QUESTIONS`` for the
+    new card."""
     out = []
-    for q in (questions or QUESTIONS):
+    for q in (LEGACY_QUESTIONS if questions is None else questions):
         if q["id"] == "spend":
             out.append("$25")
         elif q.get("free_text"):
@@ -823,11 +1170,14 @@ def song_required(answers):
 def _option_lines(q):
     """Numbered option lines; an option with a sample link gets an indented line under it.
 
-    A look with no verified sample says so plainly instead of borrowing a link."""
+    A look with no verified sample says so plainly instead of borrowing a link.
+    A priced option (LENGTH) ends with its price, ``- about $X`` (S75-006)."""
     out = []
+    prices = q.get("prices") or {}
     for n, (opt, sentence) in enumerate(q["options"], 1):
         mark = (" " + q.get("rec_mark", REC)) if n - 1 == q.get("recommended") else ""
-        out.append("%d. %s%s%s" % (n, opt, " - " + sentence if sentence else "", mark))
+        price = (" " + prices[n]) if n in prices else ""
+        out.append("%d. %s%s%s%s" % (n, opt, " - " + sentence if sentence else "", price, mark))
         if n in q.get("links", {}):
             out.append("   Watch: " + q["links"][n])
         elif q["id"] == "look":
@@ -841,7 +1191,7 @@ def _typed_block(i, total, q, why=False):
     and no blank line inside the block -- the blank line is what separates one
     question from the next."""
     lines = ["Question %d of %d - %s" % (i, total, q["label"])]
-    if why:
+    if why and q.get("why"):     # the address follow-up asks its one sentence only
         lines += [q["why"], ""]
     lines += [q["ask"], FREE_TEXT_HINT]
     return "\n".join(lines)
@@ -902,15 +1252,32 @@ def render_step(i, questions=None):
     return "\n".join(lines)
 
 
-def render_recap(answers, questions=None):
-    qs = _priced(questions or QUESTIONS, answers)
+def render_recap(answers, questions=None, defaults=None, client_dir=None):
+    """The recap: one numbered line per answer, then one per defaulted screen.
+
+    S75-006: a screen the client never had to answer is marked "(default -
+    reply <n> to change)"; replying its number asks the full question."""
+    qs = list(questions or QUESTIONS)
+    if not any(q.get("defaulted") for q in qs):
+        qs = _priced(qs, answers)          # the older card, priced in place
+    d = _defaults(qs, answers, client_dir, defaults)
     lines = ["Here is what you picked:"]
-    for i, (q, a) in enumerate(zip(qs, answers), 1):
+    for i, q in enumerate(qs, 1):
+        if q.get("defaulted"):
+            row = d.get(q["id"]) or {}
+            lines.append("%d. %s: %s (default - reply %d to change)"
+                         % (i, q["label"].title().replace("Model", "model"),
+                            row.get("text", ""), i))
+            continue
+        if i > len(answers):
+            break
+        a = answers[i - 1]
         if "recap" in q and a.get("n"):
             lines.append("%d. %s" % (i, q["recap"][a["n"] - 1]))
             continue
         price = (" - about " + q["values"][a["n"] - 1]) if q["id"] == "model" and a.get("n") else ""
-        lines.append("%d. %s: %s%s" % (i, q["label"].title().replace("Model", "model"), a["text"], price))
+        lines.append("%d. %s: %s%s" % (i, q["label"].title().replace("Model", "model"),
+                                       a["text"], price))
     lines += ["", 'Reply "yes" to start, or the number of a line to change it.']
     return "\n".join(lines)
 
@@ -920,6 +1287,44 @@ _YES = ("yes", "y", "yep", "go", "ok", "okay", "start", "approve", "approved")
 #: The words that mean "take the recommended option". A typed brief question
 #: refuses them too, so they can never be stored as an answer.
 _PICK_WORDS = ("recommended", "recommend", "rec")
+
+
+def _address_in(text):
+    """The first token of ``text`` that parses as a web address, or None.
+
+    Scheme optional, a dot in the host required (S75-006 step 2). A price like
+    "1.5" is not an address: the last label must be letters."""
+    from urllib.parse import urlsplit
+    import re as _re
+    for token in _re.split(r"[\s,;]+", text or ""):
+        word = token.strip("()[]<>\"'")
+        if not word or "." not in word or not any(c.isalpha() for c in word):
+            continue
+        try:
+            parts = urlsplit(word if "://" in word else "//" + word)
+        except ValueError:
+            continue
+        host = parts.hostname or ""
+        last = host.rsplit(".", 1)[-1]
+        if "." in host and last.isalpha() and len(last) >= 2 and all(host.split(".")):
+            return word
+    return None
+
+
+def _parse_offer(reply, q):
+    """The merged OFFER question: the text, plus the address when there is one."""
+    import re as _re
+    raw = (reply or "").strip()
+    low = raw.lower()
+    if len(raw) < 2 or low in _YES or low in _PICK_WORDS or len(raw) > MAX_TYPED_ANSWER_CHARS:
+        return None
+    address = _address_in(raw)
+    if not address:
+        return {"n": 1, "text": raw, "value": raw, "id": "offer"}
+    offer = _re.sub(r"\s+", " ", raw.replace(address, " ")).strip(" ,;.-")
+    if len(offer) < 2:                     # the client sent only the address
+        offer = address
+    return {"n": 1, "text": offer, "value": offer, "id": "offer", "address": address}
 
 
 def _parse(reply, q):
@@ -932,7 +1337,9 @@ def _parse(reply, q):
         if not c:
             return {"error": err}
         return {"n": 1 if c == AM.recommended() else 2, "value": c,
-                "text": AM.label(c["build"]) + " builds, " + AM.label(c["check"]) + " checks"}
+                "text": _plain_label(c["build"]) + " builds, " + _plain_label(c["check"]) + " checks"}
+    if q.get("merge_link"):                # OFFER and the address in one reply
+        return _parse_offer(reply, q)
     if q.get("free_text"):                 # a brief question: the answer IS the text
         raw = (reply or "").strip()
         # A mistyped "1", a stray "yes" or a stray "recommended" must never be
@@ -940,7 +1347,9 @@ def _parse(reply, q):
         if len(raw) < 2 or t in _YES or t in _PICK_WORDS or len(raw) > MAX_TYPED_ANSWER_CHARS:
             return None
         return {"n": 1, "text": raw, "value": raw, "id": q["id"]}
-    if t in _PICK_WORDS or (t in _YES and len(opts) > 0):
+    if q["id"] == "checkpoints" and t in ("custom", "choose each one", "each one"):
+        return {"n": 4, "text": opts[3][0], "value": None, "id": q["id"]}
+    if t in _PICK_WORDS:
         if q.get("recommended") is None:
             return None
         n = q.get("recommended", 0) + 1
@@ -989,37 +1398,51 @@ def conversation(replies, questions=None, state_store=None, run_id=None,
     """
     if purpose_flow is None:
         purpose_flow = new_run_flow(run_dir, run_state_file)
-    qs = questions or QUESTIONS
     #: The list every rebuild starts from. Shaping a SHAPED list again would
     #: lose LENGTH's own slot on a campaign (EPISODE LENGTH took it), so the
-    #: rebuild always reads the list the caller handed in.
-    base_qs = qs
-    answers, fix, note, done = [], None, "", False
+    #: rebuild always reads the base list. A run that already asked a card keeps
+    #: the one it was asked with (LEGACY_QUESTIONS), never the new one.
+    base_qs = questions or (QUESTIONS if purpose_flow else LEGACY_QUESTIONS)
+    answers, defaults, fix, note, done = [], {}, None, "", False
 
     def shaped(list_, ans):
         return _shaped(list_, ans, client_dir) if purpose_flow else _priced(list_, ans)
 
+    def ask_at(list_, ans):
+        """The index of the next question to ask, or None at the recap."""
+        at = len(ans)
+        if at < len(list_) and not list_[at].get("defaulted"):
+            return at
+        return None
+
     for r in replies:
         note = ""
         qs = shaped(base_qs, answers)
-        if len(answers) < len(qs) and fix is None:
-            a = _parse(r, qs[len(answers)])
+        at = ask_at(qs, answers)
+        if fix is not None:                         # re-answering one line
+            q = qs[fix]
+            a = _parse(r, q)
+            if a and "error" in a:
+                note = a["error"] + " "
+            elif a:
+                if q.get("defaulted"):
+                    defaults[q["id"]] = a           # a recap line, never asked inline
+                else:
+                    if q["id"] == "purpose":
+                        # the whole list was built around the old purpose, so every
+                        # answer after it has to be given again (SPEC B1)
+                        del answers[fix + 1:]
+                        defaults.clear()
+                    answers[fix] = a
+                fix = None
+            else:
+                note = "Sorry, I did not catch that. "
+        elif at is not None:
+            a = _parse(r, qs[at])
             if a and "error" in a:
                 note = a["error"] + " "
             elif a:
                 answers.append(a)
-            else:
-                note = "Sorry, I did not catch that. "
-        elif fix is not None:                       # re-answering one line
-            a = _parse(r, qs[fix])
-            if a and "error" in a:
-                note = a["error"] + " "
-            elif a:
-                if qs[fix]["id"] == "purpose":
-                    # the whole list was built around the old purpose, so every
-                    # answer after it has to be given again (SPEC B1)
-                    del answers[fix + 1:]
-                answers[fix], fix = a, None
             else:
                 note = "Sorry, I did not catch that. "
         else:                                       # recap: yes, or a line number
@@ -1027,11 +1450,17 @@ def conversation(replies, questions=None, state_store=None, run_id=None,
             if t in _YES:
                 done = True
             elif t.isdigit() and 1 <= int(t) <= len(qs):
-                fix = int(t) - 1
+                k = int(t) - 1
+                if k < len(answers) or qs[k].get("defaulted"):
+                    fix = k
+                else:
+                    note = "Sorry, I did not catch that. "
             else:
                 note = "Sorry, I did not catch that. "
     qs = shaped(base_qs, answers)
-    model_n = next((a["n"] for q, a in zip(qs, answers) if q["id"] == "model"), None)
+    full = _defaults(qs, answers, client_dir, defaults)
+    model_n = (next((a["n"] for a in answers if a.get("id") == "model"), None)
+               or (full.get("model") or {}).get("n"))
     if model_n and state_store and run_id:
         from choice_card.video_models import video_models as VM
         VM.lock_choice(state_store, run_id, model_n)
@@ -1046,13 +1475,16 @@ def conversation(replies, questions=None, state_store=None, run_id=None,
                                 "generate anything or charge you until you have "
                                 "your client's permission. Tell me when you have "
                                 "it and I will pick this straight back up.")}
-        if run_dir:     # recap confirmed: the storyboard answer goes to the run
+        #: the shapes the run has always recorded: every asked answer, the three
+        #: approvals CHECKPOINTS stands for, and every defaulted screen (S75-006)
+        rec_qs, rec_ans = _record_lists(answers, qs, client_dir, defaults)
+        if run_dir:
             from storyboard_director import approval_runner as _ar
-            _ar.record_card_answer(run_dir, answers, qs, target)
+            _ar.record_card_answer(run_dir, rec_ans, rec_qs, target)
             from song_choices import song_choices as _sc   # noqa: PLC0415
-            _sc.record_card_answer(run_dir, answers, target)
+            _sc.record_card_answer(run_dir, rec_ans, target)
             from script_approval import card_answers       # noqa: PLC0415
-            card_answers.write(run_dir, answers, qs)
+            card_answers.write(run_dir, rec_ans, rec_qs)
             if purpose_flow:
                 record = _method_record(answers, qs)
                 if record:
@@ -1060,15 +1492,17 @@ def conversation(replies, questions=None, state_store=None, run_id=None,
                 _record_agnes_receipt(run_dir, answers, qs)
         if purpose_flow and client_dir:
             _remember_agnes(client_dir, answers, qs)
+            _remember_ai_setup(client_dir, answers, qs)
         msg = "Locked in. I am starting now."
     elif fix is not None:
         msg = note + render_step(fix + 1, qs)
-    elif len(answers) < len(qs):
-        msg = note + render_step(len(answers) + 1, qs)
+    elif ask_at(qs, answers) is not None:
+        i = ask_at(qs, answers)
+        msg = note + render_step(i + 1, qs)
         if not replies and qs[0].get("preface"):
             msg = qs[0]["preface"] + "\n\n" + msg
     else:
-        msg = note + render_recap(answers, qs)
+        msg = note + render_recap(answers, qs, defaults, client_dir)
     return {"answers": answers, "done": done, "message": msg, "video_model": model_n}
 
 
@@ -1390,31 +1824,45 @@ def _render_fit(card):
     return "\n".join(out)
 
 
-def _with_saved_character(client_dir):
-    """QUESTIONS, with the saved-character question where the brief's typed
+def _with_saved_character(client_dir, base=None):
+    """THE card, with the saved-character question where the brief's typed
     CHARACTER question sat when the client has saved characters (Part I, I6).
     Exactly one "who stars" question is ever asked: the pick replaces the typed
     description, so the total never moves -- the swap-in takes the typed
     CHARACTER question's own slot. With a client folder but no saved characters
     the card opens with one short line (``NO_SAVED_LINE``). No folder: the
-    plain card. SWI-002: len() of every branch here equals len(QUESTIONS), and
-    test_intake_card_h9.py asserts it."""
+    plain card. ``base`` is the card being asked (the new one by default; a
+    resumed run passes the one it was asked with)."""
+    base = QUESTIONS if base is None else base
     if not client_dir:
-        return QUESTIONS
+        return base
     from character_library import character_library as CL
     q = CL.saved_character_question(client_dir)
     if not q:
-        return [dict(QUESTIONS[0], preface=NO_SAVED_LINE)] + QUESTIONS[1:]
-    plain = [x for x in QUESTIONS if x["id"] != "character"]
-    i = len(BRIEF_IDS) - 1              # the brief's CHARACTER question's own slot
+        return [dict(base[0], preface=NO_SAVED_LINE)] + list(base[1:])
+    plain = [x for x in base if x["id"] != "character"]
+    i = next((n for n, x in enumerate(base) if x["id"] == "character"), len(plain))
     return plain[:i] + [q] + plain[i:]  # PURPOSE leads (SPEC B1); AI MODELS leads
                                         # the production choices that follow it
 
 
+def intro_question_count():
+    """The number the intro states: what a new run asks in the common case.
+
+    PURPOSE, plus every question the card asks one by one -- with the offer
+    reply carrying the web address (so the address screen is not asked) and
+    this computer's AI setup already saved (S75-006)."""
+    asked = [q for q in QUESTIONS
+             if not q.get("defaulted") and q["id"] not in ("models", "link")]
+    return 1 + len(asked)                  # 1 is PURPOSE, which leads the card
+
+
 try:
-    from choice_card.intake_card.intro import INTRO as _INTRO, take as _intro_take
+    from choice_card.intake_card.intro import build as _intro_build, take as _intro_take
 except ImportError:                                # run as a plain script
-    from intro import INTRO as _INTRO, take as _intro_take  # noqa: E402
+    from intro import build as _intro_build, take as _intro_take  # noqa: E402
+
+_INTRO = _intro_build(intro_question_count())
 
 
 # --- U1: the studio-shaped export (studio-json) --------------------------------
@@ -1440,7 +1888,15 @@ GUIDE_STEP = {
     # at the end of the guide, each with one Great answer line.
     "purpose": 18, "episode_length": 19, "shape": 20, "permission": 21,
     "where": 22, "agnes": 23,
+    # S75-006: the CHECKPOINTS screen's own step (lane F adds it to the guide).
+    "checkpoints": 24,
 }
+
+#: ponytail: the CHECKPOINTS example until lane F adds STEP 24 to the guide;
+#: the guide wins the moment it carries one. Upgrade path: delete this constant
+#: when references/CLIENT-GUIDE.md has STEP 24 with a Great answer line.
+CHECKPOINTS_GREAT_ANSWER = ('"1. Everything." Show me the script, three song versions '
+                            'and the storyboard before any video money is spent.')
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
 CLIENT_GUIDE = os.path.join(
@@ -1499,6 +1955,8 @@ def _studio_screen(q, answers):
             "STUDIO_JSON_FIELD_MISSING id=%r field=question" % q.get("id"))
     step = GUIDE_STEP.get(q.get("id"))
     example = answers.get(step) if step is not None else None
+    if not example and q.get("id") == "checkpoints":
+        example = CHECKPOINTS_GREAT_ANSWER
     if not example:
         raise StudioExportError(
             "STUDIO_JSON_FIELD_MISSING id=%r field=example" % q.get("id"))
@@ -1514,6 +1972,9 @@ def _studio_screen(q, answers):
         #: page reads this rather than sniffing the option text, so a
         #: reworded hint can never turn a text box back into a menu.
         "typed": bool(q.get("free_text")),
+        #: S75-006: a screen the card never asks one by one. The page shows it
+        #: behind "More options" and still sends its default answer in order.
+        "optional": bool(q.get("optional")),
         "options": [_studio_option(q, n, o) for n, o in enumerate(options, 1)],
     }
     if q["id"] == "agnes":
@@ -1534,6 +1995,8 @@ _SHOWS_WHEN = {
     "where": {"purpose": [4]},
     #: a campaign answers EPISODE LENGTH instead, so LENGTH is not its screen
     "length": {"purpose": [2, 3, 4]},
+    #: S75-006: CHECKPOINTS replaces the three approval screens for every purpose
+    "checkpoints": {"purpose": [1, 2, 3, 4]},
     "agnes": {"agnes_remembered": ["unknown", "yes"],
               "purpose": [1, 2, 3, 4], "length_s_max": _AGNES_MAX_LENGTH_S},
 }
@@ -1544,8 +2007,10 @@ _EVERY_PURPOSE = {"purpose": [1, 2, 3, 4]}
 
 def _conditional_questions():
     """The screens that are not on the plain card: they only exist for some
-    purposes, so they ride beside the card's own list rather than in it."""
-    return [_purpose_q(), _episode_length_q(), _shape_q(), _permission_q(),
+    purposes, so they ride beside the card's own list rather than in it.
+    SHAPE is not one of them since S75-006: it is on the card as a defaulted
+    recap screen, and it carries its purpose rule from ``_SHOWS_WHEN``."""
+    return [_purpose_q(), _episode_length_q(), _permission_q(),
             _where_q(), _agnes_q("unknown")]
 
 
@@ -1644,13 +2109,21 @@ def main(argv=None):
     #: card it was asked with and is never migrated or rewritten.
     purpose_flow = (a.purpose_flow if a.purpose_flow is not None
                     else new_run_flow(a.run_dir or None, a.run_state_file or None))
-    qs = [spend_question(a.price, a.limit, a.limit_from_brief) if q["id"] == "spend" else q
-          for q in _with_saved_character(a.client_dir)]
+
+    def _priced_card(base):
+        return [spend_question(a.price, a.limit, a.limit_from_brief)
+                if q["id"] == "spend" else q
+                for q in _with_saved_character(a.client_dir, base)]
+
+    #: The card this caller is asking: the new one for a NEW run, and the one a
+    #: resumed run was asked with (S75-006 step 5).
+    qs = _priced_card(QUESTIONS if purpose_flow else LEGACY_QUESTIONS)
     if a.format == "studio-json":                  # U1: the studio export, whole card
         try:
             #: the purpose screens ride along with their shows_when, so the
-            #: page can render the flow the card asks (SPEC B1)
-            payload = studio_json(qs, conditional=True)
+            #: page can render the flow the card asks (SPEC B1). The export is
+            #: always the NEW card the page serves, never a legacy list.
+            payload = studio_json(_priced_card(QUESTIONS), conditional=True)
         except StudioExportError as e:
             sys.stderr.write("studio-json: %s\n" % e)
             return 1                               # refuse loudly, never a half file

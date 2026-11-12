@@ -1,15 +1,16 @@
 {
   "format": "studio-json",
   "version": 0,
-  "question_count": 20,
+  "question_count": 18,
   "questions": [
     {
       "id": "offer",
       "label": "OFFER",
-      "question": "What are we promoting? Give the exact name of your offer.",
+      "question": "What are we promoting, and where should the video send people? Give the exact name, then paste the web address.",
       "price": null,
       "example": "\"My 6-week Confident Speaker program, https://example.com/speaker. Use my logo and the testimonial PDF.\" It has the name, the link and the assets.",
       "typed": true,
+      "optional": false,
       "options": [
         {
           "n": 1,
@@ -31,10 +32,11 @@
     {
       "id": "link",
       "label": "OFFER LINK",
-      "question": "What web address should the video send people to? Paste it rather than typing it from memory.",
+      "question": "Thanks. What web address should the video send people to?",
       "price": null,
       "example": "\"My 6-week Confident Speaker program, https://example.com/speaker. Use my logo and the testimonial PDF.\" It has the name, the link and the assets.",
       "typed": true,
+      "optional": false,
       "options": [
         {
           "n": 1,
@@ -60,6 +62,7 @@
       "price": null,
       "example": "\"Women 35-55 who want a second income. Register for my free masterclass.\" One audience, one action.",
       "typed": true,
+      "optional": false,
       "options": [
         {
           "n": 1,
@@ -81,35 +84,11 @@
     {
       "id": "character",
       "label": "CHARACTER",
-      "question": "Who stars in your video? Describe them by name, age, look and clothing.",
+      "question": "Who stars in your video? Give a name, an age, and how they look and dress. You can send photos in your next message, or skip that.",
       "price": null,
       "example": "\"1. A warm 40-year-old braider named Tasha with locs, wearing a denim apron.\" Name, age, look, clothing.",
       "typed": true,
-      "options": [
-        {
-          "n": 1,
-          "text": "Type it in",
-          "detail": "Reply with your own words.",
-          "price": null,
-          "recommended": false
-        }
-      ],
-      "shows_when": {
-        "purpose": [
-          1,
-          2,
-          3,
-          4
-        ]
-      }
-    },
-    {
-      "id": "photos",
-      "label": "PHOTOS",
-      "question": "Which photos or proof should we use - your logo, a product shot, a testimonial? Reply \"none\" if you have none.",
-      "price": null,
-      "example": "\"My 6-week Confident Speaker program, https://example.com/speaker. Use my logo and the testimonial PDF.\" It has the name, the link and the assets.",
-      "typed": true,
+      "optional": false,
       "options": [
         {
           "n": 1,
@@ -131,22 +110,23 @@
     {
       "id": "models",
       "label": "AI MODELS",
-      "question": "Which AI should build your video, and which should check the work? OpenRouter is recommended because it's faster; Ollama works too.",
+      "question": "Which AI setup should work on your video?",
       "price": null,
       "example": "\"1. Recommended setup.\" Short, clear, done.",
       "typed": false,
+      "optional": false,
       "options": [
         {
           "n": 1,
-          "text": "Recommended setup",
-          "detail": "An OpenRouter model builds, Claude Sonnet checks.",
+          "text": "Use the setup on this computer",
+          "detail": "MiMo 2.6 Pro builds, GLM 5.3 checks.",
           "price": null,
           "recommended": true
         },
         {
           "n": 2,
-          "text": "Choose my own",
-          "detail": "Reply with the build model and the check model, e.g. 'DeepSeek builds, Sonnet checks'.",
+          "text": "Choose different ones",
+          "detail": "Tell me which one builds and which one checks.",
           "price": null,
           "recommended": false
         }
@@ -167,6 +147,7 @@
       "price": null,
       "example": "\"60 seconds. It's for Instagram.\" The length and the reason.",
       "typed": false,
+      "optional": false,
       "options": [
         {
           "n": 1,
@@ -226,6 +207,7 @@
       "price": null,
       "example": "\"Soul Rise. It starts with the problem and ends hopeful.\" The style and the reason.",
       "typed": false,
+      "optional": false,
       "options": [
         {
           "n": 1,
@@ -247,6 +229,13 @@
           "detail": "starts slow and sad, then lifts into an upbeat, hopeful groove.",
           "price": null,
           "recommended": false
+        },
+        {
+          "n": 4,
+          "text": "Show me all 18 styles",
+          "detail": "",
+          "price": null,
+          "recommended": false
         }
       ],
       "shows_when": {
@@ -265,6 +254,7 @@
       "price": null,
       "example": "\"Lifelike 3D. I want it to look real.\" Your choice and your reason.",
       "typed": false,
+      "optional": false,
       "options": [
         {
           "n": 1,
@@ -312,12 +302,86 @@
       }
     },
     {
+      "id": "checkpoints",
+      "label": "CHECKPOINTS",
+      "question": "How much do you want to see before video money is spent?",
+      "price": null,
+      "example": "\"1. Everything.\" Show me the script, three song versions and the storyboard before any video money is spent.",
+      "typed": false,
+      "optional": false,
+      "options": [
+        {
+          "n": 1,
+          "text": "Everything",
+          "detail": "the script, 3 song versions to pick from, and the storyboard.",
+          "price": null,
+          "recommended": true
+        },
+        {
+          "n": 2,
+          "text": "Just the storyboard",
+          "detail": "the storyboard, and nothing else.",
+          "price": null,
+          "recommended": false
+        },
+        {
+          "n": 3,
+          "text": "Nothing - just make it",
+          "detail": "I start as soon as the card is approved.",
+          "price": null,
+          "recommended": false
+        },
+        {
+          "n": 4,
+          "text": "Choose each one",
+          "detail": "answer the script, song and storyboard questions one by one.",
+          "price": null,
+          "recommended": false
+        }
+      ],
+      "shows_when": {
+        "purpose": [
+          1,
+          2,
+          3,
+          4
+        ]
+      }
+    },
+    {
+      "id": "spend",
+      "label": "BUDGET",
+      "question": "What's the most you want to spend on this video? Reply with a dollar amount, like $25.",
+      "price": null,
+      "example": "\"1. The recommended price.\" Clear, and it includes the redo allowance.",
+      "typed": false,
+      "optional": false,
+      "options": [
+        {
+          "n": 1,
+          "text": "A different maximum",
+          "detail": "reply with a dollar amount, like $25",
+          "price": null,
+          "recommended": false
+        }
+      ],
+      "shows_when": {
+        "purpose": [
+          1,
+          2,
+          3,
+          4
+        ]
+      }
+    },
+    {
       "id": "model",
       "label": "VIDEO MODEL",
       "question": "Which video model should make your shots? Prices are for your 60-second ad, with the song, pictures and a 50% redo allowance.",
       "price": "Prices are for your 60-second ad, with the song, pictures and a 50% redo allowance.",
       "example": "\"Hailuo 02 Standard. Good quality at a fair price.\"",
       "typed": false,
+      "optional": true,
       "options": [
         {
           "n": 1,
@@ -358,17 +422,25 @@
       }
     },
     {
-      "id": "spend",
-      "label": "BUDGET",
-      "question": "What's the most you want to spend on this video? Reply with a dollar amount, like $25.",
+      "id": "shape",
+      "label": "SHAPE",
+      "question": "How should your video be framed?",
       "price": null,
-      "example": "\"1. The recommended price.\" Clear, and it includes the redo allowance.",
+      "example": "\"Vertical.\" Your audience watches on a phone.",
       "typed": false,
+      "optional": true,
       "options": [
         {
           "n": 1,
-          "text": "A different maximum",
-          "detail": "reply with a dollar amount, like $25",
+          "text": "Vertical",
+          "detail": "phones, Reels, Shorts, TikTok.",
+          "price": null,
+          "recommended": true
+        },
+        {
+          "n": 2,
+          "text": "Wide",
+          "detail": "YouTube on a TV or a computer.",
           "price": null,
           "recommended": false
         }
@@ -377,94 +449,23 @@
         "purpose": [
           1,
           2,
-          3,
-          4
+          3
         ]
       }
     },
     {
-      "id": "storyboard",
-      "label": "STORYBOARD APPROVAL",
-      "question": "Do you want to approve the storyboard before any video is made?",
+      "id": "photos",
+      "label": "PHOTOS",
+      "question": "Which photos or proof should we use - your logo, a product shot, a testimonial?",
       "price": null,
-      "example": "\"Approved. Change shot 4 to show the storefront.\"",
-      "typed": false,
+      "example": "\"My 6-week Confident Speaker program, https://example.com/speaker. Use my logo and the testimonial PDF.\" It has the name, the link and the assets.",
+      "typed": true,
+      "optional": true,
       "options": [
         {
           "n": 1,
-          "text": "Yes, show me first",
-          "detail": "Nothing is generated until you say go.",
-          "price": null,
-          "recommended": true
-        },
-        {
-          "n": 2,
-          "text": "No, just make it",
-          "detail": "I start as soon as the card is approved.",
-          "price": null,
-          "recommended": false
-        }
-      ],
-      "shows_when": {
-        "purpose": [
-          1,
-          2,
-          3,
-          4
-        ]
-      }
-    },
-    {
-      "id": "song",
-      "label": "SONG APPROVAL",
-      "question": "Do you want to hear and pick the song before any video is made?",
-      "price": null,
-      "example": "\"Version B. I can't stop humming the chorus.\" Choice and reason.",
-      "typed": false,
-      "options": [
-        {
-          "n": 1,
-          "text": "Yes, send me 3 versions to choose from",
-          "detail": "Three labelled songs; nothing else starts until you pick, and two extra songs are added to the price.",
-          "price": null,
-          "recommended": true
-        },
-        {
-          "n": 2,
-          "text": "No, just make it",
-          "detail": "I make one song and keep going.",
-          "price": null,
-          "recommended": false
-        }
-      ],
-      "shows_when": {
-        "purpose": [
-          1,
-          2,
-          3,
-          4
-        ]
-      }
-    },
-    {
-      "id": "script",
-      "label": "SCRIPT APPROVAL",
-      "question": "Do you want to read and approve the script - your story and the song lyrics - before the song is made?",
-      "price": null,
-      "example": "\"Approved. Change 'free class' to 'free masterclass'.\" Clear and specific.",
-      "typed": false,
-      "options": [
-        {
-          "n": 1,
-          "text": "Yes, show me first",
-          "detail": "Nothing is generated until you say go.",
-          "price": null,
-          "recommended": true
-        },
-        {
-          "n": 2,
-          "text": "No, just make it",
-          "detail": "I start as soon as the card is approved.",
+          "text": "Type it in",
+          "detail": "Reply with your own words.",
           "price": null,
           "recommended": false
         }
@@ -485,6 +486,7 @@
       "price": null,
       "example": "\"Grow my business.\" You want the whole package from one production.",
       "typed": false,
+      "optional": false,
       "options": [
         {
           "n": 1,
@@ -531,6 +533,7 @@
       "price": null,
       "example": "\"3 minutes.\" The shortest episode that still earns two good trailers.",
       "typed": false,
+      "optional": false,
       "options": [
         {
           "n": 1,
@@ -570,7 +573,7 @@
         {
           "n": 6,
           "text": "10 minutes",
-          "detail": "the long version, a full show episode. (made with KIE, not Agnes)",
+          "detail": "the long version, a full show episode.",
           "price": null,
           "recommended": false
         }
@@ -582,43 +585,13 @@
       }
     },
     {
-      "id": "shape",
-      "label": "SHAPE",
-      "question": "How should your video be framed?",
-      "price": null,
-      "example": "\"Vertical.\" Your audience watches on a phone.",
-      "typed": false,
-      "options": [
-        {
-          "n": 1,
-          "text": "Vertical",
-          "detail": "phones, Reels, Shorts, TikTok.",
-          "price": null,
-          "recommended": true
-        },
-        {
-          "n": 2,
-          "text": "Wide",
-          "detail": "YouTube on a TV or a computer.",
-          "price": null,
-          "recommended": false
-        }
-      ],
-      "shows_when": {
-        "purpose": [
-          1,
-          2,
-          3
-        ]
-      }
-    },
-    {
       "id": "permission",
       "label": "PERMISSION",
       "question": "Do you have your client's permission to use their testimonial?",
       "price": null,
       "example": "\"Yes.\" Your client is happy to be quoted.",
       "typed": false,
+      "optional": false,
       "options": [
         {
           "n": 1,
@@ -648,6 +621,7 @@
       "price": null,
       "example": "\"Facebook or Instagram - paid ad.\" One vertical video fits Reels, Stories and the feed there.",
       "typed": false,
+      "optional": false,
       "options": [
         {
           "n": 1,
@@ -691,6 +665,7 @@
       "price": null,
       "example": "\"Yes - use my Agnes plan.\" You have a plan and you want it used.",
       "typed": false,
+      "optional": false,
       "options": [
         {
           "n": 1,
