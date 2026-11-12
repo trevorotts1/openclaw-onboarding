@@ -1775,7 +1775,8 @@ def acceptance_from_run(run_dir):
 
 def acceptance_refusal(run_dir, action):
     """The delivery-boundary HARD STOP: None when nothing is held, else the
-    refusal record. Mirrors ``song_choices.overlap._overlap_refusal``; the
+    refusal record. It mirrors the same whole-run shape as the overlap
+    measurement the choices side keeps on its own receipt; the
     BLOCK reaches the offer, the pick and every paid job.
 
     S75-052: this is the WHOLE-RUN stop only -- an unjudged take, or a run in
