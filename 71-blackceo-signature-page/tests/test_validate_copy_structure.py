@@ -219,5 +219,43 @@ class ContainmentTest(unittest.TestCase):
                          rep.warns)
 
 
+class RoleSpecCopyTest(unittest.TestCase):
+    """A priced page's copy is validated against its own role spec, not the 12-section landing spec."""
+
+    CHECKOUT = "".join(f"## Section {i}: {name}\n\nPlain approved copy for this part of the order page.\n\n"
+                       for i, name in enumerate(["Offer or selected package", "Offer details and price",
+                                                 "Order bump", "Guarantee and terms"], 1))
+    CHECKOUT += "## Section 5: Secure checkout\n\nComplete your order below.\n\n[CTA BUTTON: Complete My Order]\n"
+
+    def test_checkout_copy_passes_its_role_spec_and_fails_the_landing_spec(self):
+        rc, out = run_cli(self.CHECKOUT, "roles/checkout.json")
+        self.assertEqual(rc, 0, out)
+        rc, out = run_cli(self.CHECKOUT, "standard-v6.json")
+        self.assertEqual(rc, 1, out)
+
+    def test_every_page_role_spec_loads(self):
+        for name in ("roles/checkout.json", "upsell-v6.json", "downsell-v1.json"):
+            spec = vcs.load_spec(SPECS / name)
+            self.assertTrue(spec["counting_convention"], name)
+            self.assertTrue(all(s["framework_name"] for s in spec["sections"]), name)
+
+    def test_the_gate_selects_the_page_roles_own_spec(self):
+        sys.path.insert(0, str(SKILL / "scripts"))
+        try:
+            import stage_gate
+        finally:
+            sys.path.pop(0)
+        cmd = "python3 scripts/validate_copy_structure.py {run_dir} --spec {copy_spec}"
+        want = {"landing": "standard-v6.json", "checkout": "roles/checkout.json",
+                "upsell_1": "upsell-v6.json", "upsell_2": "upsell-v6.json", "downsell_1": "downsell-v1.json"}
+        for role, spec in want.items():
+            with tempfile.TemporaryDirectory() as tmp:
+                (Path(tmp) / "intake.json").write_text(
+                    json.dumps({"copy_version": "standard", "launch": {"page_role": role}}), encoding="utf-8")
+                argv, lines = stage_gate.resolve_brand_placeholder(cmd, Path(tmp), "copy", None, as_argv=True)
+                self.assertEqual(lines, [], role)
+                self.assertEqual(argv[-1], "references/copy-specs/" + spec, role)
+
+
 if __name__ == "__main__":
     unittest.main()
