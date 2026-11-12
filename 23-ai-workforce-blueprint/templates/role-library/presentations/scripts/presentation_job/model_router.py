@@ -2236,12 +2236,6 @@ def resolve_route(phase_id: str, *,
         _ultra_or_model = None
         if mode == "ultra" and alias_def and _norm_provider(alias_def.get("provider")) == "ollama-cloud":
             _ultra_or_model = (alias_def.get("served_ids") or {}).get("openrouter")
-            if not _ultra_or_model:
-                _oc_model = alias_def.get("model")
-                for _a, _d in ROUTER_CATALOG.items():
-                    if (_d.get("served_ids") or {}).get("ollama-cloud") == _oc_model:
-                        _ultra_or_model = (_d.get("served_ids") or {}).get("openrouter")
-                        break
             if _ultra_or_model:
                 alias_def = {**alias_def, "provider": "openrouter",
                              "model": _ultra_or_model,
