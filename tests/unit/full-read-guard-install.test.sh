@@ -77,12 +77,17 @@ run "$R" --verify | grep -q '^full-read-guard: PASS' && ok "repair-config restor
 
 # 6. missing plugin folder -> clear no-op, exit 0, config untouched
 R="$T/nofolder"; mkbox "$R"; h1="$(shasum "$R/openclaw.json" | cut -d' ' -f1)"
-mkdir -p "$T/emptysrc"
+mkdir -p "$T/emptysrc" "$T/norelease/scripts"
+# A release without the plugin: run a copy of the installer that has no extensions/ beside it
+# (the repo copy would fall back to <repo>/extensions, which ships the plugin once it lands).
+cp "$INST" "$T/norelease/scripts/install-full-read-guard.sh"
+_INST_SAVED="$INST"; INST="$T/norelease/scripts/install-full-read-guard.sh"
 out="$(run "$R" --install --source "$T/emptysrc")"; rc=$?
 [ "$rc" = 0 ] && ok "missing folder: exit 0" || bad "missing folder: rc=$rc"
 echo "$out" | grep -q '^full-read-guard: no-op, extensions/full-read-guard not found' && ok "missing folder: clear log line" || bad "missing folder log: $out"
 [ "$h1" = "$(shasum "$R/openclaw.json" | cut -d' ' -f1)" ] && [ ! -d "$R/extensions/full-read-guard" ] && ok "missing folder: nothing written" || bad "missing folder wrote something"
 run "$R" --verify | grep -q '^full-read-guard: SKIP' && ok "verify SKIPs (exit 0) when not shipped" || bad "verify on not-shipped"
+INST="$_INST_SAVED"
 
 # 7. invalid config after edit -> original restored (fake CLI that rejects any config naming the plugin)
 R="$T/rollback"; mkbox "$R"; h1="$(shasum "$R/openclaw.json" | cut -d' ' -f1)"
