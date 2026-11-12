@@ -3,17 +3,8 @@
 Board family: POST /api/ad-campaigns + PATCH /api/ad-campaigns/[id]
 (stage-card family). NOT /api/campaigns, NOT Skill 47 cc_board.py default URL.
 
-Live contract read 2026-10-06 (R05):
-  src/app/api/ad-campaigns/route.ts          POST create (idempotent on job_id; 201/200), GET poll
-  src/app/api/ad-campaigns/[id]/route.ts     PATCH move one stage card; ILLEGAL_TRANSITION -> 409
-  src/lib/ad-campaigns.ts                    createAdCampaign L171 (idempotent); moveAdStage L270
-                                             (canonical transition()); blocked gate L284-302;
-                                             epic-done completes campaign L364
-  src/lib/validation.ts                      CreateAdCampaignSchema L391; UpdateAdCampaignStageSchema
-                                             L417; AdCardStatus = 5 values; blocked-requires-ask
-  src/lib/task-lifecycle.ts                  LEGAL_TRANSITIONS L146; same-state idempotent L1329
-  src/lib/db/schema.ts                       tasks.workspace_id / business_id (NULL in this family);
-                                             tasks.stage_slug
+Contract re-read 2026-11-11 at blackceo-command-center main 86bd193f:
+  POST and GET /api/ad-campaigns, PATCH and GET /api/ad-campaigns/[id]
 
 Directive 20.5 rules enforced here:
   stable keys (job_id == campaign_id == tasks.campaign_id, stage_slug);
@@ -205,16 +196,37 @@ def _slug(value):
 
 def default_outbox_path(workspace, run_id=None):
     """Durable outbox file bound to the tenant and run identity (D13: the
-    default state must never be :memory:). CC_OUTBOX_DIR overrides the root;
+    default state must never be :memory:). CC_OUTBOX_DIR overrides the root.
     CC_RUN_ID supplies the run when the caller has no explicit run identity.
+
+    Root order, first that applies:
+      1. CC_OUTBOX_DIR (an explicit operator choice).
+      2. The old ~/.claude/drama-song-factory/outbox file when one already
+         exists for this workspace and run -- rows queued before the move are
+         never orphaned.
+      3. <OPENCLAW_HOME or ~/.openclaw>/drama-runs/.cc-outbox when the box has
+         a drama-runs folder (the run's own tree, beside the run data).
+      4. The old ~/.claude path (a box with no drama-runs tree).
+
     ponytail: callers that know their run (the adapter does) pass run_id=;
     studio_bridge._board_epic passes none and lands in the tenant's
-    'default' run file -- add run_id there when that file is next owned."""
-    root = (os.environ.get("CC_OUTBOX_DIR")
-            or os.path.join(os.path.expanduser("~"), ".claude",
-                            "drama-song-factory", "outbox"))
+    'default' run file -- add run_id there when that file is next owned.
+    """
     run = run_id or os.environ.get("CC_RUN_ID") or "default"
-    return os.path.join(root, _slug(workspace), _slug(run) + ".sqlite3")
+    leaf = os.path.join(_slug(workspace), _slug(run) + ".sqlite3")
+    explicit = (os.environ.get("CC_OUTBOX_DIR") or "").strip()
+    if explicit:
+        return os.path.join(explicit, leaf)
+    home = os.path.expanduser("~")
+    legacy = os.path.join(home, ".claude", "drama-song-factory", "outbox", leaf)
+    if os.path.exists(legacy):
+        return legacy
+    openclaw_home = (os.environ.get("OPENCLAW_HOME") or "").strip() or os.path.join(
+        home, ".openclaw")
+    drama_runs = os.path.join(openclaw_home, "drama-runs")
+    if os.path.isdir(drama_runs):
+        return os.path.join(drama_runs, ".cc-outbox", leaf)
+    return legacy
 
 
 def host_identity(env=None):
@@ -594,6 +606,11 @@ class Outbox:
                 raise BlockedGateError("blocked requires blocked_reason")
             if not (ask or "").strip() or "(no ask specified)" in ask:
                 raise BlockedGateError("blocked requires a non-empty ask")
+            if len(ask) > 500:
+                # Server limit (validation.ts ask field, 500). Refuse here: the
+                # outbox would otherwise queue a write the board rejects forever.
+                raise BlockedGateError(
+                    "ask is %d characters; the board accepts 500 at most" % len(ask))
         if status in ("review", "done") and not (evidence or "").strip():
             raise EvidenceError("%s requires completion evidence" % status)
         if status in ("review", "done") and not self.stage_deliverable_queued(job_id, stage_slug):
@@ -701,7 +718,7 @@ class Outbox:
                   % len(report["pending"]))
         for (sid, sstate) in self.db.execute("SELECT id,state FROM outbox WHERE state IN (?,?)", (PENDING, SENT)):
             if sid not in report["acked"] and sid not in report["rejected"] and sid not in report["pending"] and sid not in report["refused"]:
-                report["pending" if sstate == PENDING else "pending"].append(sid)
+                report["pending"].append(sid)
         return report
 
     # -- internals -------------------------------------------------------
@@ -883,6 +900,12 @@ class Outbox:
                 err_body = {}
             if e.code in (401, 403):
                 raise AuthError("board auth refused (%s): fix creds, nothing retried" % e.code)
+            if e.code in (408, 425, 429):
+                # Transient by contract (timeout / too early / rate limited):
+                # the server kept nothing, so retry later as a pending row
+                # instead of a terminal rejection the queue would never retry.
+                raise TransportOutage("board %s (retry later)" % e.code,
+                                      dispatched=False)
             if e.code >= 500:
                 raise TransportOutage("board 5xx (maybe dispatched)", dispatched=True)
             return e.code, err_body  # 4xx: caller marks rejected, never retried
