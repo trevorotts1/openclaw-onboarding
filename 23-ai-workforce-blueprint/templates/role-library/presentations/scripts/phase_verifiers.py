@@ -2162,9 +2162,15 @@ def _verify_delivery(run_dir: Path) -> Tuple[bool, List[str]]:
 
 
 def _verify_json_artifact(pattern: str, required_keys: tuple = ()):
-    """Factory returning a verifier that checks a JSON artifact."""
+    """Factory returning a verifier that checks a JSON artifact.
+
+    PD-061: the checked path is exposed as ``artifact_pattern`` on the returned
+    function so a parity test can compare the WHOLE registry against each
+    phase's manifest ``produces_artifact`` without re-deriving it from source.
+    """
     def _v(run_dir: Path) -> Tuple[bool, List[str]]:
         return _check_json_nonempty(run_dir, pattern, required_keys)
+    _v.artifact_pattern = pattern  # PD-061: the path this check reads
     return _v
 
 
@@ -2338,6 +2344,7 @@ def _verify_text_artifact(pattern: str, min_bytes: int = 50,
         except Exception:  # noqa: BLE001 — fall back to the fixed floor
             _scaled = min_bytes
         return _check_text_nonempty(run_dir, pattern, _scaled)
+    _v.artifact_pattern = pattern  # PD-061: the path this check reads
     return _v
 
 
@@ -2904,6 +2911,11 @@ def _shadow_qc_verifier(qc_key: str, legacy_fn: Callable) -> Callable:
             except Exception:  # noqa: BLE001
                 pass
         return legacy_ok, legacy_reasons
+    # PD-061: the checked path survives the shadow wrapper, so the parity walk
+    # below can classify the WHOLE registry (not a hand-picked sample).
+    _pat = getattr(legacy_fn, "artifact_pattern", None)
+    if _pat is not None:
+        _v.artifact_pattern = _pat
     return _v
 
 
@@ -4017,7 +4029,13 @@ PHASE_VERIFIERS: dict[str, Callable] = {
     # Phase 8     PPTX Assembly
     "P8-ASSEMBLE":        _verify_assemble,
     # Phase 8.5   Presenter Speech
-    "P9-SPEECH":          _verify_text_artifact("working/presenter-speech/PRESENTERS-SPEECH.md", 200),
+    # PD-061: the CHECK reads the path the MANIFEST declares. It used to read
+    # working/presenter-speech/PRESENTERS-SPEECH.md — speech_build_harness
+    # writes its --workdir there, but the artifact it delivers (manifest
+    # produces_artifact, and its own --out) is working/deliverables/
+    # PRESENTERS-SPEECH.md. Checking the workdir parked every run that had
+    # produced the speech.
+    "P9-SPEECH":          _verify_text_artifact("working/deliverables/PRESENTERS-SPEECH.md", 200),
     # Phase 8.6   Speech QC
     # TRUST BOUNDARY, SLICE 2 — converted to the sealed-RunFacts verifier
     # pattern (verifier_registry.qc_report_verifier("speech"), gate
