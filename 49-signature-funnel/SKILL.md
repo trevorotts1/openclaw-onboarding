@@ -1,7 +1,7 @@
 ---
 name: signature-funnel
 description: Builds a Trevor Otts Signature Funnel — the SACRED 12-section Hero copy system, per-section long-form image prompts sized to the model's own character budget (95 to 100 percent of its maximum, never below 80 percent), GHL media + funnel build, and a configurable 3/5/7-step funnel (Main -> Checkout -> Upsell-1 -> Downsell-1 -> Upsell-2 -> Downsell-2 -> Thank-You with accept/decline branching). Gates the sacred method with fail-closed deterministic provers: the intake gate, the 12-section copy contract (per-section char/word bands, six page profiles), the image-prompt two-floor gate (length and structure), and a no-pitch (clean thank-you) + image-provenance gate. A canonical fail-closed entry (deps/version/dept-map/hash-pin/bypass-scan/operator key) drives a no-skip orchestrator that issues a signed PROCESS-CERTIFICATE only on all-phases-pass. Delegates image generation to Skill 66 (model policy) then Skill 74 (the one approved KIE transport) and the media hosting (P4) and funnel/page build (P7) to the delivery rail the brief names, which proves them with signed receipts. Client runtime uses the client's own providers, never Anthropic.
-version: v2.1.58
+version: v2.1.59
 ---
 
 # Signature Funnel (Skill 49)
@@ -161,6 +161,21 @@ The copy ledger and `build_receipt.json` are written by the run's own agent, so 
 - **`prove_sf_cert.py`** — the signed PROCESS-CERTIFICATE: contiguous phase order, all pass, valid HMAC.
 
 Each prover ships a `--self-test` with VALID + VIOLATION fixtures; run everything with `bash verify.sh`.
+
+## Owner approvals: in chat, by button, or in Command Center (any one works)
+
+Every owner approval in a Skill 49 run (the launch plan, the copy, the Design Board, wireframes and mockups, a paid
+picture budget, a placeholder-wireframe run, a GHL install or automation write, going live) goes through the ONE shared
+helper `shared-utils/owner_approval/owner_approval.py` (README beside it). The owner is never made to go to Command
+Center: the review material is sent INTO the chat they are using (Telegram and the OpenClaw chat app), the copy text
+inline, wireframe and mockup images or the review PDF attached, with a short plain summary, `Code: <first 6 characters of
+the request id>`, and three ways to answer: reply in chat ("approve" / "yes" / "changes: ..."), tap the Telegram button,
+or use the Command Center link. When the owner replies in chat or taps a button, the agent runs
+`owner_approval.py chat-decision` with the reference of that real inbound message and Command Center verifies it and
+records the approval; the agent never records a yes itself and never treats its own text as one. Never ask again for
+something already approved. Every message and reminder also carries a "View it here:" link (`--view-url "<label>=<link>"`, repeatable) to where the material lives (review PDF, Google Sheet or Doc, Command Center preview); if a source cannot be read the link and the content still go inline with a plain sentence (`--source-problem`). A launch plan uses `--kind plan_build`; copy, boards, wireframes and mockups
+`--kind design_board`; picture spend `--kind paid_asset_budget`; placeholder wireframes `--kind stub_render`; a GHL
+write `--kind automation_write`; going live `--kind publish`.
 
 ## Delegation seams (never forked)
 

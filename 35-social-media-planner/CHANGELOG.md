@@ -1,4 +1,8 @@
 # Changelog - Social Media Planner (Skill 35)
+## [3.9.19] - 2026-11-12 - the owner approves the week in chat, and every message links to the content
+
+- `INSTRUCTIONS.md` "Owner approval flow": approve by replying in Telegram or the OpenClaw chat app, by button, or in Command Center (`owner_approval.py chat-decision`); every approval message and reminder carries the posts inline plus a "View it here" link to the client's Google Sheet (`--view-url`); an unreadable sheet still sends the link and posts and says the Google connection needs signing in again (`--source-problem`).
+
 ## [3.9.18] - 2026-11-12 - owner approval gets a link; one weekly-theme cron with explicit delivery
 
 - **Owner approval flow.** `INSTRUCTIONS.md` gains "Owner approval flow": the agent registers a pending request in Command Center (`shared-utils/owner_approval/owner_approval.py request`), messages the owner once with a plain summary, the real posts and the one-tap approve link, polls for the minted approval id, exports `CAF_APPROVAL_ID` and proceeds without asking again. "Approved" typed in chat is answered at once with the link and is never treated as approval. Reminders always carry the link. The agent still never mints approval.

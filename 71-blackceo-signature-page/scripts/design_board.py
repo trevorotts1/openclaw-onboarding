@@ -15,8 +15,11 @@ Commands:
   design_board.py finalize <run_dir> --readback-file TXT [--reader NAME]
                                        record the native-resolution read-back of the board
   design_board.py validate <run_dir> [--require-approval]  QC floor (the stage validator)
-  design_board.py approve  <run_dir> --by NAME --evidence REF
-                                       record the client's approval (refuses a failing board)
+  design_board.py approve  <run_dir> (--approval-id ID | --by NAME --evidence REF)
+                                       record the client's approval (refuses a failing board).
+                                       --approval-id is a Command Center design_board record, minted
+                                       whether the client answered in chat, by button or on the link;
+                                       --by/--evidence is the platform record of their own message.
   design_board.py gate     <run_dir>                       approval present and current
 Exit codes: 0 pass, 1 named failure, 2 usage.
 
@@ -1078,6 +1081,60 @@ def approve(run_dir: Path, by: str, evidence: str, request_name=DEFAULT_REQUEST)
     return rec["approval"]
 
 
+def _approval_verifier():
+    """The one shared approval verifier (trusts only a record fetched live from Command Center)."""
+    import importlib.util
+    path = HERE.parents[1] / "shared-utils" / "signature_launch_contract" / "approval_record.py"
+    if not path.is_file():
+        raise BoardError("the shared approval checker (approval_record.py) is not installed here, so a "
+                         "Command Center approval cannot be verified; nothing was recorded")
+    spec = importlib.util.spec_from_file_location("design_board_approval_record", path)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def approve_with_command_center(run_dir: Path, approval_id: str, request_name=DEFAULT_REQUEST) -> dict:
+    """Record the client's approval from a Command Center `design_board` record.
+
+    Command Center mints that record when the client approves in chat (it verifies the real inbound
+    message itself), taps the Telegram button, or uses the link: all three arrive here the same way.
+    The record is fetched live and must be bound to THIS board's sha256, so a remade board needs a
+    fresh approval. The agent's own text, a file or a made-up id is refused by the verifier.
+    """
+    fails = validate(run_dir, request_name=request_name)
+    if fails:
+        raise BoardError("a board that fails QC is never approved: " + " | ".join(fails))
+    rec = load_record(run_dir)
+    ver = _approval_verifier()
+    ident = launch_client_ref(run_dir)
+    extra = {"client_identity": ident, "identity_kind": "tenant"} if ident else {}
+    try:
+        got = ver.verify(str(approval_id or "").strip(), "design_board", rec["board"]["sha256"],
+                         ["design_board"], test_only=False, **extra)
+    except (ver.ApprovalRefused, ver.ApprovalUnavailable) as exc:
+        raise BoardError(f"{approval_id!r} is not a verified design board approval from Command Center "
+                         f"({getattr(exc, 'code', type(exc).__name__)}); nothing was recorded. Ask the client "
+                         "to answer in chat, by button or on the link, then use the id Command Center gives back")
+    if not (got.get("ok") is True and got.get("authority") == "command-center"
+            and got.get("approval_id") == str(approval_id).strip()):
+        raise BoardError("that is not a design board approval recorded in Command Center")
+    rec["approval"] = {"decision": "approved", "party": "client",
+                       "approved_by": str(got.get("consenting_actor_ref") or got.get("client_identity") or "client"),
+                       "evidence_ref": f"command-center:{got['approval_id']}",
+                       "evidence_approval_id": got["approval_id"], "evidence_authority": "command-center",
+                       # the package check wants a hashed evidence record and a message id: here they are
+                       # the verified Command Center record itself and its id
+                       "evidence_message_id": got["approval_id"],
+                       "evidence_sha256": hashlib.sha256(json.dumps(
+                           {k: got.get(k) for k in ("approval_id", "kind", "plan_hash", "authority",
+                                                    "consenting_actor_ref", "expires_at")},
+                           sort_keys=True).encode()).hexdigest(),
+                       "approved_at": now_iso(), **approval_binding(rec)}
+    save_record(run_dir, rec)
+    return rec["approval"]
+
+
 def finalize(run_dir: Path, text: str, reader: str):
     """Record the reader's transcript of the board, after the board image itself supports it."""
     rec = load_record(run_dir)
@@ -1113,8 +1170,10 @@ def main(argv=None) -> int:
         if name == "validate":
             s.add_argument("--require-approval", action="store_true")
         if name == "approve":
-            s.add_argument("--by", required=True, help="the client identity ref (must match the record)")
-            s.add_argument("--evidence", required=True,
+            s.add_argument("--approval-id", default="",
+                           help="the Command Center design_board approval id (chat, button or link)")
+            s.add_argument("--by", default="", help="the client identity ref (must match the record)")
+            s.add_argument("--evidence", default="",
                            help="PATH of the platform record of the client's own message")
     a = ap.parse_args(argv)
     run_dir = a.run_dir.resolve()
@@ -1135,7 +1194,13 @@ def main(argv=None) -> int:
             print(f"RECORDED read-back in {RECORD_FILE}")
             return 0
         if a.cmd == "approve":
-            ap_rec = approve(run_dir, a.by, a.evidence, a.request)
+            if a.approval_id:
+                ap_rec = approve_with_command_center(run_dir, a.approval_id, a.request)
+            elif a.by and a.evidence:
+                ap_rec = approve(run_dir, a.by, a.evidence, a.request)
+            else:
+                print("FAIL: give --approval-id <Command Center id>, or --by and --evidence")
+                return 2
             print(f"APPROVED design board for {load_record(run_dir)['page_role']} by {ap_rec['approved_by']}")
             return 0
         fails = (gate_failures(run_dir, a.request) if a.cmd == "gate"

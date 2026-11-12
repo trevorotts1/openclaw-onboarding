@@ -277,6 +277,81 @@ class QcAndApprovalTests(Base):
         with self.assertRaises(db.BoardError):
             db.approve(self.run_dir, "Client", "msg")
 
+    def _fake_verifier(self, record_id="apr_chat_0001", authority="command-center", refuse=None):
+        """A stand-in for the shared verifier: returns what Command Center would for a design_board record."""
+        class Refused(Exception):
+            code = "APPROVAL-HASH"
+
+        class Unavailable(Exception):
+            pass
+
+        class Ver:
+            ApprovalRefused, ApprovalUnavailable = Refused, Unavailable
+            calls = []
+
+            @staticmethod
+            def verify(approval_id, kind, plan_hash, scope, **kw):
+                Ver.calls.append((approval_id, kind, plan_hash, scope, kw))
+                if refuse:
+                    raise Refused()
+                return {"ok": True, "approval_id": approval_id, "authority": authority,
+                        "consenting_actor_ref": "Test Client", "kind": kind}
+        return Ver
+
+    def test_command_center_approval_from_chat_closes_the_board_gate(self):
+        self.seeded(approved=False)
+        self.assertTrue(db.gate_failures(self.run_dir))
+        ver = self._fake_verifier()
+        with mock.patch.object(db, "_approval_verifier", return_value=ver):
+            ap = db.approve_with_command_center(self.run_dir, "apr_chat_0001")
+        board_hash = db.load_record(self.run_dir)["board"]["sha256"]
+        self.assertEqual(ver.calls[0][1:4], ("design_board", board_hash, ["design_board"]))
+        self.assertFalse(ver.calls[0][4].get("test_only"))
+        self.assertEqual(ap["evidence_ref"], "command-center:apr_chat_0001")
+        for key in ("approved_by", "evidence_ref", "evidence_sha256", "evidence_message_id", "approved_at"):
+            self.assertTrue(str(ap.get(key) or "").strip(), key)   # what Skill 83's package check needs
+        self.assertEqual(db.gate_failures(self.run_dir), [])
+
+    def test_command_center_approved_record_satisfies_skill_83_package_check(self):
+        self.seeded(approved=False)
+        with mock.patch.object(db, "_approval_verifier", return_value=self._fake_verifier()):
+            db.approve_with_command_center(self.run_dir, "apr_chat_0001")
+        root83 = ROOT.parent / "83-black-friday-launcher"
+        if not (root83 / "launcher_core" / "page_designs.py").is_file():
+            self.skipTest("Skill 83 is not installed beside Skill 71")
+        sys.path.insert(0, str(root83))
+        try:
+            from launcher_core import page_designs as pd
+        finally:
+            sys.path.remove(str(root83))
+        record = self.run_dir / db.RECORD_FILE
+        entry = {"state": "approved", "approval_ref": str(record), "record_sha256": db.sha256_file(record)}
+        self.assertIsNone(pd.approval_record_problem(entry, self.run_dir))
+
+    def test_command_center_refusal_or_foreign_authority_records_nothing(self):
+        self.seeded(approved=False)
+        for ver in (self._fake_verifier(refuse=True), self._fake_verifier(authority="local-test-record")):
+            with mock.patch.object(db, "_approval_verifier", return_value=ver):
+                with self.assertRaises(db.BoardError):
+                    db.approve_with_command_center(self.run_dir, "apr_chat_0001")
+        self.assertIsNone(db.load_record(self.run_dir).get("approval"))
+        self.assertTrue(db.gate_failures(self.run_dir))
+
+    def test_command_center_approval_goes_stale_when_the_board_changes(self):
+        self.seeded(approved=False)
+        with mock.patch.object(db, "_approval_verifier", return_value=self._fake_verifier()):
+            db.approve_with_command_center(self.run_dir, "apr_chat_0001")
+        rec = db.load_record(self.run_dir)
+        rec["board"]["sha256"] = "f" * 64
+        db.save_record(self.run_dir, rec)
+        self.assertTrue(any("stale" in f for f in db.approval_failures(db.load_record(self.run_dir))))
+
+    def test_cli_approve_needs_an_approval_id_or_message_evidence(self):
+        self.seeded(approved=False)
+        r = run([ROOT / "scripts" / "design_board.py", "approve", self.run_dir])
+        self.assertEqual(r.returncode, 2)
+        self.assertIn("--approval-id", r.stdout)
+
     def test_palette_must_be_the_resolved_client_palette(self):
         self.seeded()
         rec = db.load_record(self.run_dir)

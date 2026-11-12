@@ -2984,7 +2984,7 @@ def main(argv=None) -> int:
     stages = [s for s in stages if s != BOARD_STAGE]
     try:
         if board_requested and (stages or args.item):
-            raise ExecutorError("run the design board on its own: the client approves it before "
+            raise ExecutorError("run the design board on its own: the client approves it (in chat, by button or in Command Center) before "
                                 "the final-mockups stage starts")
         if board_requested:
             request = load_board_request(run_dir, args.request)

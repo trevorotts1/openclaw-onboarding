@@ -14,6 +14,11 @@ Environment variables (all set by the 'caf'/'convertandflow'/'ghl' wrappers):
                               approver, expires_at}. CAF_WRITE_ACTION / CAF_PLAN_SHA256 /
                               CAF_OBJECT_KEY name the current action, plan and object.
                               An env token or a ZHC- name is NOT approval (S44-16).
+    CAF_OWNER_CONTACT_ID      The owner's OWN GHL contact id for this location, set at install.
+                              A single SMS or email to exactly that contact is a notice to the
+                              owner, not a business write, and passes without an approval record
+                              (owner_notice_exempt below). Unset = no exemption. Every other
+                              recipient still needs the approval record.
 
 All safety values are read at call time so that env vars set after import
 (e.g. by --dry-run flag callbacks) are always honoured.
@@ -161,6 +166,45 @@ def _require_approval(kind: str, location_id: str, action: str, object_key: str,
     return rec
 
 
+_NOTICE_TYPES = ("sms", "email")
+# Any field that could send the message to someone other than the one contact id, or fan it out.
+_NOTICE_REDIRECT_KEYS = ("conversationId", "to", "toNumber", "emailTo", "emailCc", "emailBcc", "cc", "bcc",
+                         "contactIds", "contacts", "recipients", "replyMessageId", "threadId")
+
+
+def owner_notice_exempt(method: str, url: str, payload: Any, location_id: Optional[str]) -> bool:
+    """True only for a single SMS/email to the owner's own contact id (CAF_OWNER_CONTACT_ID).
+
+    Fail closed: every condition must hold, and any doubt returns False so the normal approval
+    gate runs. The recipient is compared, in constant time, to the id configured at install; the
+    message must be a POST to exactly /conversations/messages of type SMS or Email, must name that
+    contact id and nothing else that could redirect or fan it out, and its location (when stated)
+    must be the whitelisted location being written to.
+    """
+    owner = os.environ.get("CAF_OWNER_CONTACT_ID", "").strip()
+    if not owner or not location_id or method.upper() != "POST" or not isinstance(payload, dict):
+        return False
+    try:
+        parts = urllib.parse.urlsplit(str(url))
+    except ValueError:
+        return False
+    if parts.path.rstrip("/") != "/conversations/messages" or parts.query:
+        return False
+    if str(payload.get("type", "")).strip().lower() not in _NOTICE_TYPES:
+        return False
+    contact = payload.get("contactId")
+    if not isinstance(contact, str) or not contact.strip():
+        return False
+    if not hmac.compare_digest(contact.strip().encode(), owner.encode()):
+        return False
+    if any(payload.get(k) not in (None, "", [], {}) for k in _NOTICE_REDIRECT_KEYS):
+        return False
+    stated = payload.get("locationId")
+    if stated not in (None, "") and stated != location_id:
+        return False
+    return True
+
+
 def _current(action: str, object_key: str, plan_sha256: str) -> tuple:
     return (action or os.environ.get("CAF_WRITE_ACTION", "").strip(),
             object_key or os.environ.get("CAF_OBJECT_KEY", "").strip(),
@@ -242,6 +286,10 @@ def check_write(
     # Rule 3 — APPROVAL GATE: a verified automation_write record bound to this
     # location, action, object and plan (S44-16). No env token or name opens it.
     # ponytail: one Command Center GET per write; cache per process if a build is too slow.
+    # Exception: a single notice to the owner's OWN contact (CAF_OWNER_CONTACT_ID) is not a business
+    # write the owner must pre-approve. Narrow and fail-closed; see owner_notice_exempt.
+    if owner_notice_exempt(verb, url, payload, location_id):
+        return
     act, obj, plan = _current(action, object_key, plan_sha256)
     _require_approval("automation_write", location_id, act, obj or workflow_name, plan)
 
