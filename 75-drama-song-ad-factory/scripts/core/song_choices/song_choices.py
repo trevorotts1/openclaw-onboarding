@@ -453,6 +453,21 @@ def extra_cost_cents():
     return EXTRA_GENERATIONS * _SD.GEN_COST_CENTS
 
 
+def suno_max_seconds():
+    """Suno's own duration ceiling, read from the prompt-limit catalog.
+
+    S75-105 step 3: the ceiling is DATA (``prompt_limits.suno_caps``), never a
+    typed 360 in this file. None only when the catalog carries no number at
+    all; the caller then keeps the provider-side check as the last word.
+    """
+    import prompt_limits                     # noqa: PLC0415 - core is on sys.path
+    dur = (prompt_limits.suno_caps() or {}).get("duration") or {}
+    mx = dur.get("max_seconds")
+    if isinstance(mx, int) and not isinstance(mx, bool) and mx > 0:
+        return mx
+    return None
+
+
 def build_requests(style_id, sheet, client_text, title, length_s, vocal_gender="f", **kw):
     """[(variant, request)] x3: the style's own request plus the variant clause.
     Every request must pass song_dispatch.validate_request or none is sent.
@@ -464,6 +479,21 @@ def build_requests(style_id, sheet, client_text, title, length_s, vocal_gender="
     appended BEFORE the drop and return: assembling the pace clause inside
     ``build_request`` put it ahead of the variant clause, which is the WW-07
     defect this fixes."""
+    # S75-105 step 3: an unsupported length is refused BY NAME, before any
+    # request is built and long before any provider call. The ceiling comes
+    # from the prompt-limit catalog, so an old run or a typed brief can never
+    # reach the provider with a duration the song stage refuses (the envelope
+    # check only knew "duration must be 10-360 s").
+    _mx = suno_max_seconds()
+    try:
+        _too_long = _mx is not None and float(length_s) > float(_mx)
+    except (TypeError, ValueError):
+        _too_long = False
+    if _too_long:
+        raise ChoiceError(
+            "SONG_LENGTH_NOT_SUPPORTED: the ad asks for a %s-second song and the song "
+            "provider makes one take of at most %s seconds; choose %s seconds or less."
+            % (length_s, _mx, _mx))
     pace_plan = kw.pop("pace_plan", None)   # WW-07: into the style, never into the payload
     # WW-07 / WW-26: each variant's style is its OWN complete brief, assembled
     # by suno_recipe.brief_style_text -- compliance trailer first, the variant's
@@ -1717,6 +1747,76 @@ def picked_song(run_dir):
     return os.path.join(run_dir, "music", "picked-song.mp3")
 
 
+#: S75-055: the ONE timing receipt the delivery packager reads.
+WORD_TIMINGS_PATH = os.path.join("music", "word-timings.json")
+
+
+def _picked_timing(run_dir, offered):
+    """(source file, in-memory document) for the picked take, or a named refusal.
+
+    S75-055: ``music/word-timings.json`` is a required delivery input that no
+    stage wrote (the timings were saved under the ``music/word-timings/``
+    FOLDER). The take records where its own file landed
+    (``song_transports.make_save``); the pick copies THAT file. A take from a
+    run whose save never materialized the file still carries its measured
+    words, and those are written as the same document -- never invented. A
+    take with neither is refused by name: a pick is never silently clockless.
+    """
+    take = (offered or {}).get("take") if isinstance(offered, dict) else None
+    if not isinstance(take, dict):
+        take = {}
+    rel = take.get("word_timings_path")
+    if isinstance(rel, str) and rel:
+        cand = os.path.join(run_dir, rel)
+        if not os.path.isfile(cand):
+            raise ChoiceError(
+                "SONG_WORD_TIMINGS_MISSING: the take records its word timing at %s, "
+                "which is not on disk; re-measure the take before the pick (no timing "
+                "is ever invented)." % rel)
+        return cand, None
+    words = [dict(w) for w in (take.get("aligned_words") or [])
+             if isinstance(w, dict)]
+    if words:
+        owners = (take.get("measurement_owners") or {}) \
+            .get("transcription_and_timing") or {}
+        return None, {"words": words,
+                      "source": owners.get("source") or "measured"}
+    vid = (offered or {}).get("variant_id") or "the picked version"
+    raise ChoiceError(
+        "SONG_WORD_TIMINGS_MISSING: version %s has no measured word timing, so the "
+        "picked song has no clock for captions or lip-sync; re-measure the take "
+        "before the pick (no timing is ever invented)." % vid)
+
+
+def _copy_word_timings(run_dir, source=None, doc=None):
+    """Write the picked take's timing to ``music/word-timings.json``, atomically.
+
+    ``source`` is copied byte for byte; ``doc`` is serialized from the take's
+    own measured words. A reader (the delivery packager) never sees a
+    half-written file: the payload lands as ``.partial`` beside the
+    destination and is then replaced into it.
+    """
+    dest = os.path.join(run_dir, WORD_TIMINGS_PATH)
+    os.makedirs(os.path.dirname(dest), exist_ok=True)
+    partial = dest + ".partial"
+    try:
+        if source is not None:
+            shutil.copyfile(source, partial)
+        else:
+            with open(partial, "w", encoding="utf-8") as f:
+                json.dump(doc or {}, f, indent=2, sort_keys=True)
+        os.replace(partial, dest)
+    except OSError:
+        try:
+            os.unlink(partial)
+        except OSError:
+            pass
+        raise ChoiceError(
+            "SONG_WORD_TIMINGS_UNWRITABLE: the picked take's timing could not be "
+            "copied to music/word-timings.json; the pick is not complete until it is.")
+    return dest
+
+
 def record_pick(run_dir, reply):
     """The client's 1, 2 or 3. Anything not offered is refused; returns the label.
 
@@ -1745,10 +1845,16 @@ def record_pick(run_dir, reply):
     ok, why = _SD.constituent_ok(o.get("receipt"))
     if not ok:
         raise ChoiceError("song %s is not offerable: %s" % (reply, why))
+    # S75-055: the pick is where the chosen take's measured timing becomes the
+    # run's ONE timing receipt (music/word-timings.json). Resolve the source
+    # BEFORE any file is written, so a missing timing leaves no half pick.
+    _timing_src, _timing_doc = _picked_timing(run_dir, o)
     os.makedirs(os.path.join(run_dir, "music"), exist_ok=True)
     shutil.copyfile(o["file"], picked_song(run_dir))
+    _timing_dest = _copy_word_timings(run_dir, source=_timing_src, doc=_timing_doc)
     _write(run_dir, "pick.json", {"pick": int(n), "label": o["label"], "sha256": _sha(picked_song(run_dir)),
-                                  "take": o.get("take")})
+                                  "take": o.get("take"),
+                                  "word_timings": os.path.relpath(_timing_dest, run_dir)})
     return o["label"]
 
 
@@ -2099,16 +2205,24 @@ def _sheet_lyric_words(spec):
     return spec.get("sheet_text") or ""
 
 
-def _real_generate(run_dir, ledger, run_id):
+def _real_generate(run_dir, ledger, run_id, dispatcher=None):
     """The default per-variant worker: ONE KIE dispatch per call, and the
     per-variant envelope carries the two aware-UTC stamps the overlap
     receipt binds (``evidence.accepted_submit_at`` / ``evidence.terminal_at``).
-    Injected in tests, so no provider is ever called there."""
+    Injected in tests, so no provider is ever called there.
+
+    S75-001: the ledger estimate is the song price authority's own number
+    (``song_dispatch.song_cost_cents`` -> ``card_render.price_envelope``), never
+    the bare constant 6. ``dispatcher`` lets a test read that exact number
+    without reaching a provider."""
     def generate(variant, request):
         _c = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         if _c not in sys.path:
             sys.path.insert(0, _c)
-        import kie_dispatch.kie_dispatch as _KD   # noqa: PLC0415
+        _dispatch = dispatcher
+        if _dispatch is None:
+            import kie_dispatch.kie_dispatch as _KD   # noqa: PLC0415
+            _dispatch = _KD.dispatch
         save_dir = os.path.join(run_dir, "music", "takes", variant["id"])
         os.makedirs(save_dir, exist_ok=True)
         # F15: the run's recorded card receipt rides the request. Without it
@@ -2120,17 +2234,19 @@ def _real_generate(run_dir, ledger, run_id):
             receipt = _card_receipt(run_dir)
             if receipt is not None:
                 payload["card_receipt"] = receipt
-        env = _KD.dispatch(model=payload.get("model") or "ai-music-api/generate",
-                           request=payload, save_dir=save_dir, ledger_db=ledger,
-                           run_id=run_id or (os.path.basename(run_dir) or "run"),
-                           logical_key="song/%s" % variant["id"],
-                           # Empty: the ledger mints the attempt identity and
-                           # dispatch() carries the committed id back. A literal
-                           # "a1" made every retry after a failed paid take
-                           # refuse DUPLICATE_ATTEMPT, so the retry path was
-                           # structurally dead.
-                           attempt_id="", estimated_cost=_SD.GEN_COST_CENTS,
-                           prompt=payload.get("input", {}).get("style", "")[:2000])
+        env = _dispatch(model=payload.get("model") or "ai-music-api/generate",
+                        request=payload, save_dir=save_dir, ledger_db=ledger,
+                        run_id=run_id or (os.path.basename(run_dir) or "run"),
+                        logical_key="song/%s" % variant["id"],
+                        # Empty: the ledger mints the attempt identity and
+                        # dispatch() carries the committed id back. A literal
+                        # "a1" made every retry after a failed paid take
+                        # refuse DUPLICATE_ATTEMPT, so the retry path was
+                        # structurally dead.
+                        # S75-001: the reserve estimate is the priced one song
+                        # generation, never the bare constant 6.
+                        attempt_id="", estimated_cost=_SD.song_cost_cents(),
+                        prompt=payload.get("input", {}).get("style", "")[:2000])
         ev = env.get("evidence", {}) if isinstance(env, dict) else {}
         # S75-W02-U3: the COMPLETE typed envelope per attempt is preserved           # here -- outcome, refusal reason, next action and the dispatch-boundary           # counts (evaluated/delivered are folded in at the judge boundary) --           # never only the evidence above. The refusal triple of a rejected or           # waiting dispatch survives this boundary verbatim.
         _raw_outcome = env.get("outcome") if isinstance(env, dict) else "error"
