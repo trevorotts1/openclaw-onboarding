@@ -125,7 +125,8 @@ OPTIONS:
   --intake-depth quick|in-depth
                       intake interview depth (FIX 30's standard_mode: the
                       deck-intake-questions.json order-8 question, stored as
-                      pre_presentation_capture.STANDARD_MODE). Default: quick.
+                      pre_presentation_capture.STANDARD_MODE). When omitted,
+                      the answer the client gave in the interview stands.
                       May also be set via PRESENTATION_INTAKE_DEPTH. This is
                       the INTERVIEW-DEPTH axis ONLY — it selects how much
                       optional detail the intake asks for and never changes
@@ -183,8 +184,11 @@ done
 # gate runs. Legal values are exactly quick|in-depth (case-insensitive). A
 # run-mode value (Ultra/Standard/Economy) passed to this flag is the exact
 # collision the spec forbids: refuse it with the message naming both axes.
+# PD-007: an ABSENT depth stays absent. There is no "QUICK" default any more —
+# the door stamps a depth ONLY when one was stated, so the answer the client
+# gave in the interview is never silently overwritten with a default.
 case "$(printf '%s' "$INTAKE_DEPTH" | tr '[:upper:]' '[:lower:]')" in
-    "")          INTAKE_DEPTH="QUICK" ;;
+    "")          ;;
     quick)       INTAKE_DEPTH="QUICK" ;;
     in-depth)    INTAKE_DEPTH="IN-DEPTH" ;;
     in_depth)    INTAKE_DEPTH="IN-DEPTH" ;;   # tolerated shell-friendly spelling
@@ -196,12 +200,16 @@ two vocabularies are never interchangeable."
         ;;
     *)
         die "--intake-depth: invalid value '$INTAKE_DEPTH'. Allowed: quick|in-depth \
-(env PRESENTATION_INTAKE_DEPTH). Default: quick."
+(env PRESENTATION_INTAKE_DEPTH). When omitted, the answer the client gave in the \
+interview stands."
         ;;
 esac
 case "$INTAKE_DEPTH" in
     *d*|*D*) INTAKE_DEPTH="IN-DEPTH" ;;
 esac
+# PD-007: a stated-but-empty value states nothing. Only a non-empty depth is
+# ever stamped or handed to the resolver.
+[ -n "$INTAKE_DEPTH" ] || INTAKE_DEPTH_STATED=""
 
 # ---------------------------------------------------------------------------
 # FIX 36(3) — stamp_intake_depth: persist the resolved intake-depth into
@@ -257,10 +265,19 @@ except Exception as exc:
 PY
 }
 
+# PD-007 — the ONLY caller of stamp_intake_depth: after every gate has passed,
+# on a real build, and only when a depth was actually stated. --plan is a
+# read-only inspection and never writes; a gate-failed run never writes; no
+# flag and no PRESENTATION_INTAKE_DEPTH means the interview's own answer stands.
+stamp_intake_depth_after_gates() {
+    [ "$PLAN" -eq 0 ] || return 0
+    [ -n "$INTAKE_DEPTH_STATED" ] || return 0
+    stamp_intake_depth "$INTAKE_DEPTH"
+}
+
 [ -n "$RUN_DIR" ] || usage
 [ -d "$RUN_DIR" ] || die "--run-dir not found: $RUN_DIR"
 RUN_DIR="$(cd "$RUN_DIR" && pwd)"
-stamp_intake_depth "$INTAKE_DEPTH"
 if [ "$PLAN" -eq 0 ] && [ "$RESUME" -eq 0 ]; then
     [ -n "$SLIDES" ] || die "--slides is required (use --plan to inspect only)"
     [ -f "$SLIDES" ] || die "slides.json not found: $SLIDES"
@@ -1388,6 +1405,12 @@ if [ "$PLAN" -eq 1 ]; then
     exit 0
 fi
 
+# PD-007: every gate above has passed and this is a real build, so NOW the
+# stated depth may be stamped. --plan exited before this line; a gate failure
+# exits inside the gate. No flag and no PRESENTATION_INTAKE_DEPTH means no
+# stamp at all — the answer the client gave in the interview stands.
+stamp_intake_depth_after_gates
+
 if [ -f "$ENGINE_ENTRY" ] && { [ -x "$PRESENTATION_PY" ] || command -v "$PRESENTATION_PY" >/dev/null 2>&1; }; then
     note "ALL GATES PASSED -- dispatching the presentation engine (all $_PHASE_COUNT manifest phases, mechanical)"
 
@@ -1405,7 +1428,7 @@ engine install, not a genuinely absent one, so this does NOT fall back to \
 run_signature_deck.py. Re-sync the Presentations department."
     fi
     _RESOLVE_DEPTH_ARGS=""
-    if [ -n "$INTAKE_DEPTH" ]; then
+    if [ -n "$INTAKE_DEPTH_STATED" ]; then
         # F36 (SMOKE-1, 2026-09-01): this shell keeps INTAKE_DEPTH in display
         # case ("QUICK"/"IN-DEPTH") for stamp_intake_depth, but resolve_intake.py's
         # argparse choices are exactly quick|in-depth (resolve_intake.py:544) --
