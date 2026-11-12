@@ -110,18 +110,23 @@ def test_sv999_raises_systemexit_3(tmpdir):
 
 
 def test_corrupt_json_raises_systemexit_2_and_quarantines(tmpdir):
-    """Unparseable JSON -> SystemExit(2) + quarantine rename."""
+    """Unparseable JSON -> SystemExit(2) + quarantine copy; the original stays (BU-36)."""
     path = tmpdir / ".workforce-build-state.json"
-    _write(path, '{"{{broken"')
+    corrupt_text = '{"{{broken"'
+    _write(path, corrupt_text)
 
     with pytest.raises(SystemExit) as exc_info:
         load_build_state(path)
     assert exc_info.value.code == 2
 
-    # File should have been quarantined (renamed away)
-    assert not path.exists()
+    # BU-36: the file is COPIED, not renamed — the original stays under its own
+    # name with unchanged bytes so an operator can still inspect it.
+    assert path.exists()
+    assert path.read_text(encoding="utf-8") == corrupt_text
+    # Exactly one quarantined copy, holding the same bytes.
     corrupts = list(tmpdir.glob("*.corrupt-*"))
     assert len(corrupts) == 1
+    assert corrupts[0].read_text(encoding="utf-8") == corrupt_text
 
 
 def test_empty_file_returns_empty_dict_no_quarantine(tmpdir):
@@ -236,14 +241,27 @@ def test_legacy_client_slug_coexists_with_company_slug(tmpdir):
 
 
 def test_interview_complete_normalization(tmpdir):
-    """Test all string variants for interviewComplete normalization."""
+    """Standard values normalize; a false-y non-standard string is left untouched (BU-36)."""
     path = tmpdir / ".workforce-build-state.json"
 
-    for raw_str, expected_bool in [("yes", True), ("YES", True), ("true", True), ("True", True), ("1", True), ("no", False), ("NO", False), ("false", False), ("False", False), ("0", False), ("", False)]:
+    for raw_str, expected_bool in [("yes", True), ("YES", True), ("true", True), ("True", True), ("1", True), ("", False)]:
         _write(path, {"interviewComplete": raw_str})
         state = load_build_state(path)
         assert state["interviewComplete"] is expected_bool, f"raw_str={raw_str!r}"
         assert state["schemaVersion"] == 2
+
+    # BU-36: a non-empty string that `_normalize_boolean` would turn into false is
+    # never rewritten — the value is left exactly as found and one warning
+    # sentence naming it is recorded in schemaMigrationWarnings.
+    for raw_str in ("no", "NO", "false", "False", "0"):
+        _write(path, {"interviewComplete": raw_str})
+        state = load_build_state(path)
+        assert state["interviewComplete"] == raw_str, f"raw_str={raw_str!r}"
+        assert isinstance(state["interviewComplete"], str), f"raw_str={raw_str!r}"
+        assert state["schemaVersion"] == 2
+        warnings = state["schemaMigrationWarnings"]
+        assert len(warnings) == 1, f"raw_str={raw_str!r}"
+        assert raw_str in warnings[0], f"raw_str={raw_str!r}"
 
 
 def test_interview_complete_int_true(tmpdir):
