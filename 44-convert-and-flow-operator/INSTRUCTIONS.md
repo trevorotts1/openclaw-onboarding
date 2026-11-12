@@ -260,6 +260,17 @@ PLAN MODE run file `plan-mode.json` next to the evidence root:
  "publish_intent": "DRAFT", "re_entry": "ONCE", "build_model": "<model that builds>"}
 ```
 
+**GETTING THE OWNER'S YES (BINDING — the owner always gets a link).** The record is minted by
+Command Center when the owner taps Approve on a page; there is no screen the owner must hunt for.
+Whenever any skill needs an approval, run the shared flow in `shared-utils/owner_approval/README.md`:
+(1) `owner_approval.py request ...` registers a pending request and returns the owner's one-tap
+link; (2) send the owner ONE message with a plain-English summary, a preview (the real content or a
+link to it) and that link; (3) `owner_approval.py wait --request-id <id> --shell` until Command
+Center reports approved, then export `CAF_APPROVAL_ID` and continue without asking again; (4) if the
+owner types "approved" in chat, reply at once with the link (`message --chat-said-approved`), never
+proceed on chat text; (5) reminders re-send the link, never a bare "awaiting approval". The agent
+never mints approval itself; the write gate still fetches and verifies the record.
+
 A file the build agent wrote on its own is worthless: `qc-built-workflow.sh` asks the approval
 verifier to confirm the record, so an invented `approval_id` fails. Never guess an answer to make
 the file verify. **Only after the gating questions are answered and the run file exists may the
@@ -418,8 +429,9 @@ relationNumber will fail. Resolve the Firestore id once and reuse it.
 
 - `locations create` requires `--experimental` (it is the internal Firebase API).
   `locations add-user` does NOT require `--experimental` (it is the public PIT path).
-- Approval gate applies to both (same as workflow writes): set `CAF_APPROVAL_TOKEN`,
-  or prefix a `ZHC-`/`ZHC_` name for standing approval. No approval = WRITE REFUSED.
+- Approval gate applies to both (same as workflow writes): `CAF_APPROVAL_ID` must name a Command
+  Center approval record minted for exactly this action and plan (an env token or a `ZHC-` name is
+  not approval). No approval = WRITE REFUSED.
 - `locations create`: the location whitelist is SKIPPED (a sub-account being
   created has no id yet); the approval gate still applies. No `GHL_LOCATION_ID`
   is required.

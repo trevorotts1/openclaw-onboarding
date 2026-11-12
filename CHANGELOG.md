@@ -1,3 +1,10 @@
+## [Unreleased]  -  2026-11-12  -  Owner approval flow: the owner always gets a link (Skills 35, 44, 83 + shared helper)
+
+- New `shared-utils/owner_approval/` (`owner_approval.py`, README, 13 tests): register a pending approval request with Command Center, build the owner message (plain summary, preview, one-tap link), poll for the minted approval id, answer a chat "approved" with the link, re-send the link on reminders. The agent never mints approval; the Skill 44 write gate is unchanged.
+- Skill 35 v3.9.17 -> v3.9.18: owner approval flow documented, stale `CAF_APPROVAL_TOKEN` advice removed, unreadable-sheet fallback (say so plainly, show the posts inline), `register-weekly-cron.sh` registers `skill35-weekly-theme` once with explicit `--no-deliver`.
+- Skill 44 v2.1.49 -> v2.1.50 (docs only). Skill 83 0.2.36 -> 0.2.37 (SKILL.md wording only; no per-skill CHANGELOG file).
+- Depends on the Command Center `/api/approval-requests` endpoints and `/approvals/<requestId>` page being deployed. Not merged, deployed or rolled onto any client box.
+
 ## [Unreleased]  -  2026-11-10  -  Merge train: integration of the finish-388 pull requests (presentation-funnel gap fixes for Skills 49, 66, 71, 74 and 83, plus test-only bumps for Skills 6 and 7)
 
 - One linear integration of PR 3075, 3066, 3065, 3064, 3071 and 3068 plus the gap patches GAP-INST21, GAP-RES3 and GAP-LAND5 on top of main 710b36e9c1 (PR 3077 is already on main). Resolved on integration: Skill 49 `prove_sf_build.py` keeps the four-stage `VISUAL_STAGES` block, both stage-name tests are kept, and Skill 83 `cmd_assemble` keeps the step spine, the `AF-LAUNCH-ASSEMBLE-DESIGN` refusal and then the receipt re-open check.

@@ -11,7 +11,7 @@ description: Multi-agent content publishing engine that researches, creates, pro
 # run via OpenClaw subagents. It is NOT the skill name and OpenClaw never
 # registers from it.
 pipeline_id: content-publishing-engine
-version: 3.9.17
+version: 3.9.18
 author: Stefanie
 created_date: 2026-04-14
 ---
@@ -281,7 +281,7 @@ The following fields are stored in the skill config and MUST be populated during
 | `content_sheet_id` | Google Sheet ID for the client's content calendar (e.g. `1RKgS5l-i6NBtf_vON49nBPdHe-F5W67RF9ym-S67L2c`) | MEMORY.md + `openclaw config set` during INSTALL.md Step 7 |
 | `content_sheet_url` | Full Google Sheet URL the agent uses to answer "what's my social media planner link?" | MEMORY.md during INSTALL.md Step 7 |
 
-**The agent can always answer "what is my social media planner link?"** by reading `content_sheet_url` from MEMORY.md. It never responds "gws is not authenticated" or "I don't have the link."
+**The agent can always answer "what is my social media planner link?"** by reading `content_sheet_url` from MEMORY.md. It never responds "gws is not authenticated" or "I don't have the link." If the Google Sheet itself cannot be read (expired Google sign-in), it says so in one plain sentence, still gives the link, and pastes the week's posts inline so the owner can review them. For approving the week it follows the **Owner approval flow** in `INSTRUCTIONS.md` (a one-tap link, never "approve it somewhere").
 
 ## Media Delivery Contract
 
