@@ -502,18 +502,6 @@ fi
 trap _release_lock EXIT HUP INT TERM
 
 # ---------------------------------------------------------------------------
-# v1.3.0 honesty helpers.
-#
-# _is_escalation <text> — returns 0 when the reply TEXT says the job was not
-# done (escalation / deferral language). Case-insensitive; the apostrophe in
-# "don't" is matched as a single-character wildcard so the pattern survives
-# shell quoting. A well-formed turn whose text defers to a human is not a
-# delivery (see the VERDICT RULE below).
-# ---------------------------------------------------------------------------
-_is_escalation() {
-    printf '%s' "$1" | grep -iE 'could not|unable to|human intervention|i don.t have|needs human|failed to' >/dev/null 2>&1
-}
-
 # _bounded_excerpt <text> — the first 500 bytes with line breaks flattened to
 # spaces, so the excerpt is a single-line JSON-safe string (the caller still
 # runs it through _json_str before interpolating it into the body).
@@ -2003,7 +1991,7 @@ _ack() {
 
     # fail-closed reason validation.
     case "$_ack_reason" in
-        failed_nonzero_exit|failed_empty_reply|failed_timeout|failed_no_parser|dry_run|escalation_language|interrupted_prior_attempt)
+        failed_nonzero_exit|failed_empty_reply|failed_timeout|failed_no_parser|dry_run|interrupted_prior_attempt)
             _fr_json="\"$(_json_str "$_ack_reason")\""
             ;;
         "")
