@@ -1,3 +1,7 @@
+## [1.3.37] - 2026-11-12 - the Design Board is approved in chat, by button, or in Command Center
+
+- `scripts/design_board.py approve --approval-id <id>` records a Command Center `design_board` approval (minted whether the client answered in chat, by button or on the link), re-verified live and bound to the board sha256; `--by/--evidence` still works. The record carries the fields Skill 83's package check needs. `SKILL.md`, `references/design-board.md` and the production SOP say the board goes into the client chat and is approved there. Tests added in `tests/test_design_board.py`.
+
 ## [1.3.36] - 2026-11-12 - local reference images are uploaded before the paid call, and inline copy links print their label only
 
 - `scripts/stage_executor.py` `hosted_references` / `_AdapterTransport.upload`: KIE accepts only http(s) or data:image `input_urls` ("Invalid input_urls format. Only http/https URLs or data:image base64 are supported."), so every later-stage job that attaches an earlier stage's slice from disk (mobile-tablet's desktop pixel-mate, the mockup's wireframe slices) was refused. Before the request is frozen and written, each local reference is uploaded through Skill 74's own `upload --file` and replaced by its download URL, in the same order; URLs pass unchanged. A failed upload, or a local path that is not a file, refuses before any reservation or paid call.

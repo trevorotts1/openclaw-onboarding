@@ -476,7 +476,7 @@ def dispatch(launch: Dict[str, Any], approval: Dict[str, Any], *,
         test_only=(launch.get("test_only") is True))
     if allowed_write_target == "approved_live_publication" and \
             plan_ok["verification_class"] != "authenticated_platform_record":
-        raise DispatchError("live publication needs a Command Center approval, "
+        raise DispatchError("live publication needs an approval Command Center recorded (the owner can give it in chat, by button or on the link), "
                             "not a local test record")
     graph = clr.compile_route(launch)
     if clr.graph_hash(graph) != launch["route_graph_hash"]:

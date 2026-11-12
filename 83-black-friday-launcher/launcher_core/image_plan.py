@@ -231,7 +231,8 @@ def _verify_paid_budget(approval_id: str, plan_hash: Optional[str], cap_minor: i
         raise ImagePlanError(
             "AF-LAUNCH-IMAGE-PLAN-APPROVAL", "image_plan.paid_render_approval_ref",
             f"Your budget approval could not be verified ({code}). Nothing has been sent and nothing has "
-            "been spent. Approve the budget in Command Center by replying with the plan code.") from exc
+            "been spent. You can approve the budget right here by replying \"approve\" with the plan code, by tapping the "
+            "button, or with the Command Center link; any of them works.") from exc
     if not (isinstance(got, dict) and got.get("ok") is True and got.get("kind") == PAID_APPROVAL_KIND
             and got.get("authority") == "command-center" and got.get("approval_id") == approval_id):
         raise ImagePlanError(
@@ -553,7 +554,7 @@ def resolve(raw: Optional[Dict[str, Any]], *, test_only: bool,
                                           approval_ref=raw.get("creative_direction_approval_ref"))
     for conflict in policy["conflicts"]:
         to_confirm.append(_confirm("creative_direction", policy["grade_mode"], conflict,
-                                   "Approve the blend in Command Center (it then supplies the grade), or name "
+                                   "Approve the blend (reply \"approve\" in chat, tap the button, or use the Command Center link; it then supplies the grade), or name "
                                    "the style without one and the house grade stays on."))
 
     # Design style and provider: defaultable, flagged; an unbuilt provider is refused for paid pictures.
@@ -593,7 +594,8 @@ def resolve(raw: Optional[Dict[str, Any]], *, test_only: bool,
             raise ImagePlanError(
                 "AF-LAUNCH-IMAGE-PLAN-APPROVAL", "image_plan.paid_render_approval_ref",
                 "A real run needs your written OK to spend on pictures. Nothing has been sent and nothing "
-                "has been spent. Tell me when you approve the budget and I will record it.")
+                "has been spent. I will send you the budget right here in chat; reply \"approve\", tap the button, "
+                "or use the Command Center link, and Command Center records it.")
         if cap_minor is None or currency is None:
             raise ImagePlanError(
                 "AF-LAUNCH-IMAGE-PLAN-CAP", "image_plan.image_cap_minor",

@@ -2,7 +2,7 @@
 name: black-friday-launcher
 description: "Helps a business owner get their whole Black Friday sale ready, step by step: the sales page, the order form, the special offers, the thank-you page, and the launch emails and text messages. Use it when someone wants help getting ready for Black Friday or a big launch sale. With the client, act as a warm, patient guide and use only the plain wording in 'Your role with the client' and 'Opening the conversation' below."
 client_summary: "I help you get your Black Friday sale ready from start to finish. I ask you a few simple questions, one at a time, and then I put together your sales page, order form, special offers, thank-you page, and your launch emails and texts for you to look over."
-version: 0.2.37
+version: 0.2.38
 priority: HIGH
 ---
 
@@ -141,15 +141,24 @@ I'm getting some advice on the best way to set up your offers. I'll share what w
 When the plan is ready for their yes (the client's yes is what counts; put the plan's code into the
 approval record for them and never ask them to read or type it):
 
-How the yes is collected (Skill 44/49 gate is unchanged, the agent never records the yes itself): register the request with
-`shared-utils/owner_approval/owner_approval.py request` (see `shared-utils/owner_approval/README.md`), send the client the
-printed message in the SAME turn (what will happen, a preview of the pages or messages, and the one-tap link), then
-`owner_approval.py wait --request-id <id> --shell` and carry the minted approval id forward. If the client says yes in
-chat, answer right away with the link (`message --chat-said-approved`). Reminders re-send the link. Never say "approve it
-in the Command Center" without the link, and never leave the client with only "awaiting your approval". A "yes" typed in chat is only a trigger to resend the link; it never counts as the approval.
+How the yes is collected (Skill 44/49 gate is unchanged, the agent never records the yes itself). **The client approves
+right here in the chat they are already using (Telegram or the OpenClaw chat app), by a Telegram button, or in Command
+Center. Any of the three works; none is required.** Register the request with
+`shared-utils/owner_approval/owner_approval.py request --kind <kind> ... --deliver telegram` (see
+`shared-utils/owner_approval/README.md`; kinds: `plan_build` for the plan, `design_board` for copy, boards, wireframes
+and mockups, `paid_asset_budget` for the picture budget). The message goes INTO the chat in the SAME turn: what will
+happen, the actual copy text inline, wireframe and mockup images or the review PDF attached, the three ways to answer
+and `Code: <first 6 characters of the request id>`. Add `--view-url "<label>=<link>"` for every place the material lives (the review PDF, the client's Google Sheet or Doc, the Command Center preview) so every message and reminder says "View it here:" with that link; if a source cannot be read, still send the link and the content inline and say plainly what needs reconnecting (`--source-problem`). Never send only a link and never leave the client with only
+"awaiting your approval". When the client replies in chat ("approve", "yes", "changes: ..."), or taps the button, run
+`owner_approval.py chat-decision --request-id <id> --decision approve|changes --channel telegram|webchat
+--source-message-ref <channel>:<chat or session id>:<message id> [--note ...]` with the reference of their real inbound
+message: Command Center checks the message is really theirs and records it. If it refuses, tell the client the reason
+in plain words and send the link again. Then `owner_approval.py wait --request-id <id> --shell` (it sees an approval
+from any of the three places) and carry the minted approval id forward. Never type the approval yourself, never treat
+your own sentence as one, and never ask again for something already approved. Reminders re-send everything.
 
 <!-- CLIENT-TEXT:BEGIN plan-review -->
-Here's the plan in plain words. If it looks right, tap this link and press Approve, or tell me what you'd like to change: [the approval link]
+Here's the plan in plain words. If it looks right, just reply "approve" right here, tap the Approve button, or use this link: [the approval link]. If you'd like something changed, tell me what.
 <!-- CLIENT-TEXT:END -->
 
 When pages or messages are finished:
@@ -509,7 +518,10 @@ per-image price table) backed by a verified `paid_asset_budget` approval record.
 unchanged; a worker cannot approve its own plan, and a plan changed after approval is refused. (2) Skill 71's
 `gate:intake_design_style` closes only on a recorded style (`client_choice` or `recommended_accepted`); a
 defaulted style stays a proposal until the client confirms it. (3) The design board and the final mockups
-are recorded `awaiting_client_approval` until the client approves them.
+are recorded `awaiting_client_approval` until the client approves them. The client sees each one in chat (the board and
+mockup images or the review PDF attached, the copy inline) and may approve there, by button or in Command Center; the
+board approval is recorded from the Command Center `design_board` record with
+`design_board.py approve --approval-id <id>` (Skill 71).
 
 **Final mockups.** A delivered launch holds, for every page, desktop and mobile wireframes and mockups,
 review PDFs and an overview board (AF-LAUNCH-PAGE-DESIGNS), with real pictures: placeholder pictures fail a

@@ -158,7 +158,8 @@ def main(argv=None) -> int:
     if a.preflight or a.provider == "stub":
         print("NOTE: nothing is complete yet; NEXT 1 and NEXT 2 are the commands for a run that "
               "generated real images.")
-    print(f"NEXT 1, Design Board for this page role (client approval), on its own: "
+    print(f"NEXT 1, Design Board for this page role (the client approves it in chat, by button or in "
+          f"Command Center: send the board image into their chat, see references/design-board.md), on its own: "
           f"{fmt([sys.executable, executor, run_dir, '--stages', 'design-board', '--request', request.name])}")
     build_final = [sys.executable, HERE / "build_production_request.py", "--copy-version", a.copy_version,
                    "--page-role", role, "--copy-json", a.copy_json, "--bundle", a.bundle,

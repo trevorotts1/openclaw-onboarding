@@ -1,40 +1,79 @@
 # Owner approval flow (one path for every skill)
 
-Use this whenever a skill needs the owner's yes before something goes out or gets written
-(weekly social posts, a Black Friday launch step, a Skill 44 automation write). Never tell
-the owner to "approve it in the Command Center" without a link. The owner gets the link.
+Use this whenever a skill needs the owner's yes before something is built, spent, written or goes out:
+the launch plan, copy, the Design Board, wireframes and mockups, a paid image budget, a Skill 44
+automation write, a publish. **The owner can approve right inside the conversation they are already in
+(Telegram or the OpenClaw chat app), by a Telegram button, or in Command Center. Any of the three
+works and none is required.** The review material goes to the owner in the chat, not behind a link.
 
-The helper is `shared-utils/owner_approval/owner_approval.py`. It is the ONLY place the
-Command Center path lives. It needs `MISSION_CONTROL_URL` and `MC_API_TOKEN` (already on the box).
+The helper is `shared-utils/owner_approval/owner_approval.py`. It is the ONLY place the Command
+Center path lives. It needs `MISSION_CONTROL_URL` and `MC_API_TOKEN` (already on the box).
 Installed path: `~/.openclaw/skills/shared-utils/owner_approval/owner_approval.py` (VPS: `/data/.openclaw/skills/shared-utils/...`).
 
-## The five steps
+## Kinds (one path, every kind)
 
-1. **Register the request.** The agent hashes the plan it is asking about (`PLAN_SHA`, the same
-   `CAF_PLAN_SHA256` the write gate will check) and runs:
+| `--kind` | The approval point | Put in the chat |
+|---|---|---|
+| `plan_build` | the launch plan (Skill 49 / 83) | the plan in plain words, page list, prices |
+| `design_board` | copy, the Design Board, wireframes, mockups, layout proofs (Skills 71 / 83) | the copy text inline; board, wireframe and mockup images or the review PDF attached |
+| `paid_asset_budget` | the picture spend ceiling (Skill 83) | the cap, what it buys, the per-image price |
+| `automation_write` | a GHL install or automation write (Skills 44 / 35 / 57) | what will be created and where |
+| `publish` | going live (Skill 44 draft-off) | the final page or post |
+| `stub_render` | placeholder wireframes (Skill 49) | what the placeholders are |
+| `pin_rotation` | a key or pin rotation | what changes |
+
+## The steps
+
+1. **Register and deliver in one go.** The agent hashes the plan it is asking about (`PLAN_SHA`, the
+   same `CAF_PLAN_SHA256` the write gate checks) and runs:
    ```bash
-   python3 owner_approval.py request --kind automation_write --action social_publish \
-     --object-key "weekly-2026-11-09" --plan-sha256 "$PLAN_SHA" --skill 35 \
-     --title "Week of Nov 9: nine posts" --valid-until 2026-11-16T23:59:59Z --summary "Nine posts across Facebook, Instagram and LinkedIn, Nov 9-15, Black Friday theme." \
-     --preview-file week-preview.txt --preview-url "$SHEET_OR_PDF_URL"
+   python3 owner_approval.py request --kind design_board --action design_board_approve \
+     --object-key "landing-board" --plan-sha256 "$BOARD_SHA" --skill 71 \
+     --title "Landing page design board" \
+     --summary "The look of your landing page: your colors, logo and the real images." \
+     --preview-file copy.md --preview-file design-board.png --preview-file mockups.pdf \
+     --deliver telegram --target "$OWNER_TELEGRAM_CHAT_ID"
    ```
-   It POSTs `{MISSION_CONTROL_URL}/api/approval-requests` with the bearer `MC_API_TOKEN`, saves
-   `request_id` and the owner's link under `~/.openclaw/data/owner-approvals/`, and prints JSON with
-   `owner_message`. Asking again about the same plan reuses the same request (no duplicates). A
-   changed plan is a new request, because the old approval is bound to the old plan hash.
-2. **Message the owner (Telegram or chat)** with the printed `owner_message`: a plain-English
-   summary, the preview (the actual posts, or a link to the sheet or PDF), and the direct link to
-   approve. Send it in the same message. Never send a bare "awaiting your approval".
-3. **Poll, do not nag.** `python3 owner_approval.py wait --request-id RID --shell` (or `status`
-   on each heartbeat of the run). Exit 0 and `export CAF_APPROVAL_ID=...` means Command Center
-   minted the approval; the agent exports it and proceeds without asking again. Exit 3 pending,
-   4 owner asked for changes (read `note`, revise, register a NEW request), 5 expired or revoked
-   (register a new one), 6 Command Center unreachable (say so plainly; do not proceed).
-4. **Owner says "approved" in chat.** Chat text is never approval. Answer immediately with the
-   one-tap link: `python3 owner_approval.py message --request-id RID --chat-said-approved` and send
-   it. Do not stall, do not ask the owner to repeat themselves, and do not proceed on the chat text.
-5. **Reminders re-send the link.** `python3 owner_approval.py message --request-id RID --reminder`
-   prints the same summary, preview and link. Every reminder carries the link.
+   `--preview-file` is repeatable. A text file (`.md .txt .json .html`) is shown INLINE in the message; an
+   image (`.png .jpg .webp .gif`) or a PDF is ATTACHED. It POSTs `{MISSION_CONTROL_URL}/api/approval-requests`,
+   saves the request and the owner's link under `~/.openclaw/data/owner-approvals/`, and with `--deliver
+   telegram` sends the message through the gateway (`openclaw message send`, attachments as `--media`, Approve /
+   Ask-for-changes buttons as a `--presentation`; if the gateway rejects buttons it resends without them). For
+   the OpenClaw chat app (`--deliver webchat`) the helper prints the message and the file list and the agent posts
+   them in its own reply with the files attached. Asking again about the same plan reuses the same request. A
+   changed plan is a new request, because the old approval is bound to the old plan hash. Re-send later with
+   `owner_approval.py deliver --request-id RID --channel telegram --target ID [--reminder]`.
+2. **The message always carries** a plain summary, the preview inline, the attached files, a **"View it here" link
+   to where the content actually lives**, the three ways to answer, and `Code: <first 6 characters of the request id>`.
+   Never send a bare "awaiting your approval". Give every place the content lives with a repeatable
+   `--view-url "Label=https://..."` (the client's Google Sheet, a Google Doc, a PDF, the Command Center preview; a
+   bare https link is labeled "View it here"). The links are saved with the request, sent to Command Center in
+   `preview.links`, and repeated in every message, reminder and refusal re-send. If the source cannot be read (for
+   example the agent's Google sign-in expired), still send the link and the content inline and say it plainly with
+   `--source-problem "I could not open your Google Sheet because my Google connection needs to be signed in again..."`.
+   Content approvals (social posts, copy, pages) always use `--view-url`.
+3. **The owner answers (any one place).**
+   - *In chat.* Their reply ("approve", "yes", "looks good", or "changes: make the headline shorter"). The agent
+     does NOT treat it as approval. It runs
+     `owner_approval.py chat-decision --request-id RID --decision approve|changes --channel telegram|webchat --source-message-ref <channel>:<chat_or_session_id>:<message_id> [--note "..."]`
+     with the reference of the owner's REAL inbound message. Command Center verifies that message really came from
+     the owner and mints the record. Exit 0 and the printed id (or `--shell` exports) means approved; exit 4 means
+     changes were recorded (read `note`, revise, register a NEW request); exit 7 means Command Center refused with a
+     reason: relay the reason in plain words and re-send the link (the output carries a ready `owner_message`).
+   - *By button.* A Telegram button tap arrives as the same kind of inbound owner message ("approve ABC123"): handle it
+     exactly like a typed reply.
+   - *In Command Center.* The owner taps the link. Nothing for the agent to do but wait.
+   If more than one request is waiting, match the reply by `Code:` (or by the one request it is plainly about); run
+   `owner_approval.py pending` to list them. If a reply is ambiguous ("maybe", "what about the price?"), answer the
+   question and ask once; do not guess a decision.
+4. **Poll, do not nag.** `python3 owner_approval.py wait --request-id RID --shell` (or `status` on each heartbeat) sees
+   an approval from ANY of the three places. Exit 0 and `export CAF_APPROVAL_ID=...`: carry on without asking again.
+   Exit 3 pending, 4 changes requested, 5 expired or revoked (register a new one), 6 Command Center unreachable
+   (say so plainly; do not proceed).
+5. **Reminders re-send everything.** `owner_approval.py deliver --request-id RID --channel telegram --reminder` (or
+   `message --reminder`) prints the same summary, preview, three ways to answer and code.
+6. **Never re-ask what is already approved.** `deliver` refuses an approved request and `chat-decision` returns the
+   existing approval without a second call.
 
 Kinds: `caf` write commands (including `caf social create-post`) are checked as `automation_write`;
 use `--kind publish` only for the Skill 44 draft-off (go live) approval.
@@ -45,22 +84,28 @@ use `--kind publish` only for the Skill 44 draft-off (go live) approval.
   reads the answer. The write gate (`safety_gate.py`) still fetches the record from Command Center and
   checks kind, location, action, object key, plan hash, approver, expiry and revocation. An invented
   id fails. A plan that changed after the owner tapped Approve is refused.
-- An env token, a `ZHC-` name, a file the agent wrote, or the owner's chat message is not approval.
+- An env token, a `ZHC-` name, a file the agent wrote, or the agent's own sentence is not approval. The owner's chat
+  message becomes approval only when Command Center verifies that real inbound message through `chat-decision` and
+  mints the record. The agent only relays what the owner said and which message said it; it never decides for the owner, and a reply Command Center cannot match to the owner is refused.
 - If the preview source (for example the Google Sheet) cannot be read, say so in plain words
   ("I could not open your Google Sheet because my Google sign-in expired") and put the preview
   inline in the message. The approval link is sent either way.
 
 ## Contract (Command Center `/api/approval-requests`, snake_case)
 
-`POST` (Bearer `MC_API_TOKEN`): `{kind: publish|automation_write, location_id, action, object_key, plan_sha256,
-title, summary, preview?: {text, links:[{label,url}], images:[https urls]}, requested_by?, expires_at? (how long
-the owner has to answer, default 7d), valid_until? (end of the window being approved, e.g. end of the week)}`
+`POST /api/approval-requests` (Bearer `MC_API_TOKEN`): `{kind: plan_build|paid_asset_budget|publish|automation_write|design_board|pin_rotation|stub_render,
+location_id, action, object_key, plan_sha256, title, summary, preview?: {text, links:[{label,url}], images:[https urls]},
+requested_by?, expires_at? (how long the owner has to answer, default 7d), valid_until? (end of the window being approved)}`
 returns `{request_id, status:"pending", path:"/approvals/<id>", approval_url (absolute, or null: path is used)}`.
-`GET /api/approval-requests/<id>` returns `{status: pending|approved|changes_requested|expired, approval_id
-(null until approved), decision_note, approval_url, path}`. Paths and field spellings are constants at the top of
-`owner_approval.py`. Use `--valid-until` for a weekly plan so the approval outlives the week it covers.
+`GET /api/approval-requests/<id>` returns `{status: pending|approved|changes_requested|expired, approval_id (null until
+approved), decision_note, approval_url, path, short_code, approve_by}`.
+`POST /api/approval-requests/<id>/chat-decision`: `{decision: "approve"|"changes", channel: "telegram"|"webchat",
+source_message_ref: "<channel>:<chat_or_session_id>:<message_id>", note?}` returns `{status, approval_id}`; a refusal is
+403 or 409 with `{reason}`. After a chat approval the helper re-reads the request with GET before it hands out an id.
+Paths and field spellings are constants at the top of `owner_approval.py`. Use `--valid-until` for a weekly plan so the
+approval outlives the week it covers.
 
-`wait/status --shell` on approval prints four exports so the Skill 44 write gate binds to what was registered:
+`wait/status/chat-decision --shell` on approval prints four exports so the Skill 44 write gate binds to what was registered:
 `CAF_APPROVAL_ID`, `CAF_WRITE_ACTION`, `CAF_OBJECT_KEY`, `CAF_PLAN_SHA256` (`caf social create-post` reads
 them; nothing else sets them). Use `eval "$(owner_approval.py wait --request-id RID --shell)"`.
-Skills 35, 57 and 83 all use this one helper.
+Skills 35, 49, 57, 71 and 83 all use this one helper.

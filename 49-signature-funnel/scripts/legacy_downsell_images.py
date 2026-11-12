@@ -391,7 +391,7 @@ def main(argv=None):
             # Center record verified now and carried verified in the receipt, never a free-text string.
             if not (args.stub_approved_by or "").strip():
                 raise Refused("--image-provider stub writes PLACEHOLDER wireframes and needs the owner's "
-                              "approval: pass --stub-approved-by <Command Center approval id>. The "
+                              "approval: ask the owner in chat (owner_approval.py request --kind stub_render; they can reply, tap a button or use the Command Center link), then pass --stub-approved-by <approval id>. The "
                               "default provider is kie.")
             try:
                 stub_record = stub_approval.verify_for_ledger(args.stub_approved_by, args.ledger)
