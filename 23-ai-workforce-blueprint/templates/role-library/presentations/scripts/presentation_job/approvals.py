@@ -136,8 +136,11 @@ def _board_row(owner_msg_id: str, run_dir: Optional[Path]) -> Optional[Dict[str,
             row = _message_row(resolver(owner_msg_id, run_dir))
         except Exception:  # noqa: BLE001 — a board failure is "no text here"
             row = None
-        if row is not None:
+        # ponytail: id match keeps a confused board from attaching another
+        # message's text; full provenance pinning arrives with PD-305b.
+        if row is not None and row["msg_id"] == owner_msg_id:
             return row
+        row = None
     _log_reason(RESOLVE_BOARD_HAS_NO_TEXT)
     return None
 
