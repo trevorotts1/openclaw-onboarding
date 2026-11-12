@@ -1,3 +1,10 @@
+## [1.3.33] - 2026-11-12 - a wireframe slice is offered type captions only for the copy it carries
+
+- `scripts/wireframe_spec.py` `_type_specs`: the INLINE TYPE SPECS line listed the full house scale (EYEBROW, H1, SUBHEAD, H2, BODY, CTA, CTA MICROCOPY) on every section "for the elements this section has". A section whose copy has no headline (the numbered steps, the founder letter) was offered a headline caption, and the model drew an invented headline to sit beside it ("HOW IT WORKS: 7 SIMPLE STEPS", "A PERSONAL MESSAGE From Your Founder") on three attempts running. `_type_elements` now lists only the roles the section's own copy carries (headline when its first line is a short unnumbered line, subhead, body, and CTA with its microcopy when the section or the closing band has a button). A section's own `type_specs` (the font map) still wins.
+- `references/wireframe-build-spec.json` `type_specs`: one added sentence forbidding an eyebrow, headline, subhead or button added to give a caption something to label.
+- `tests/test_wireframe_build_spec.py`: a steps section is offered BODY only, the letter with a closing band BODY and CTA, the hero H1, BODY and CTA (fails on 1.3.32).
+- Version bump so the pull request carries a version above main (G3).
+
 ## [1.3.32] - 2026-11-11 - the copy stage validates a priced page against its own section structure
 
 - `scripts/stage_gate.py`: the copy stage's structure validator uses the page role's own spec. A checkout, upsell or downsell run records the landing form its images are drawn from (`copy_version: standard`), so the copy stage validated a five-section checkout against the twelve-section sales page spec and could never close. `copy_spec_for_role` now selects `references/copy-specs/roles/checkout.json`, `upsell-v6.json` (upsell_1, upsell_2) or `downsell-v1.json` (downsell_1). Landing, long-form, thank-you and product-selection runs are unchanged.
