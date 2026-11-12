@@ -125,6 +125,13 @@ for f in scripts/apply-fleet-standards.sh scripts/apply-routing-fix.sh hooks/lib
   grep -q '"read_skill"' "$REPO/$f" && ok "read_skill in $f" || bad "read_skill missing from $f"
 done
 
+# 10b. 999 / claude-nine narrow installer call sits right after frontdoor_update_999, Mac only, never fatal
+l999="$(grep -n 'frontdoor_update_999 ||' "$US" | head -1 | cut -d: -f1)"
+lcall="$(grep -n -- '--only full-read-guard --root' "$US" | head -1 | cut -d: -f1)"
+[ -n "$l999" ] && [ -n "$lcall" ] && [ "$lcall" -gt "$l999" ] && [ $((lcall-l999)) -lt 40 ] && ok "999 call follows frontdoor_update_999" || bad "999 call misplaced ($l999/$lcall)"
+sed -n "${l999},$((lcall+8))p" "$US" | grep -q '"Darwin"' && ok "999 call is Mac-only" || bad "999 call not Darwin-guarded"
+sed -n "${l999},$((lcall+8))p" "$US" | grep -q 'no-op' && ok "999 call logs a no-op for missing script/folder" || bad "999 no-op log missing"
+
 # 11. one-line full-read rule: stamped once through the managed-block writer, additive
 D="$T/doctrine"; mkdir -p "$D"; printf '# Agents\nkeep this line\n' > "$D/AGENTS.md"
 ( . "$REPO/shared-utils/agents-doctrine-blocks.sh"; stamp_full_read_guard "$D/AGENTS.md" >/dev/null; stamp_full_read_guard "$D/AGENTS.md" >/dev/null )

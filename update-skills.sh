@@ -5726,6 +5726,28 @@ main() {
       if declare -F frontdoor_update_999 >/dev/null 2>&1; then
         frontdoor_update_999 || _FD_999_NOTE=" (999 refresh reported a failure — see above)"
       fi
+      # FULL-READ GUARD, Claude Code / claude-nine side (Trevor's order 2026-11-12): right after the
+      # 999 checkout is refreshed, run its narrow installer so the PreToolUse hook reaches
+      # ~/.claude-nine on this roll. Mac boxes only. A missing script, checkout or ~/.claude-nine is a
+      # logged no-op; nothing here can fail the roll. One PASS/FAIL line is printed.
+      if [ "$(uname -s 2>/dev/null)" = "Darwin" ]; then
+        _FRG_999_SCRIPT=""
+        for _frg_c in "$HOME/999-setup" "$HOME/Documents/999-setup" "$HOME/999-setup-clean" "$HOME/.claude-nine/../999-setup"; do
+          if [ -f "$_frg_c/.claude/skills/hook-skill/scripts/macos/install.sh" ]; then
+            _FRG_999_SCRIPT="$_frg_c/.claude/skills/hook-skill/scripts/macos/install.sh"; break
+          fi
+        done
+        if [ -z "$_FRG_999_SCRIPT" ]; then
+          echo "full-read-guard (999): no-op, 999 checkout has no hook-skill/scripts/macos/install.sh"
+        elif [ ! -d "$HOME/.claude-nine" ]; then
+          echo "full-read-guard (999): no-op, $HOME/.claude-nine does not exist on this box"
+        elif bash "$_FRG_999_SCRIPT" --only full-read-guard --root "$HOME/.claude-nine" >>"$LOG_FILE" 2>&1; then
+          echo "full-read-guard (999): PASS installed into $HOME/.claude-nine"
+        else
+          echo "full-read-guard (999): FAIL installer returned non-zero (advisory, roll continues; see $LOG_FILE)"
+        fi
+        unset _FRG_999_SCRIPT _frg_c
+      fi
       if frontdoor_run_stage "$_FRONTDOOR_STAGE_PY"; then
         case "$FRONTDOOR_STATUS" in
           ok)          echo "  ✓ [FRONT DOOR] repairs + health gate: clean" ;;
