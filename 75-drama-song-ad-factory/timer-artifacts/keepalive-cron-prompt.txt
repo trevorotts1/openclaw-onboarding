@@ -12,11 +12,15 @@
 # job payload can also be switched to this block verbatim by the installer on
 # a box that prefers command payloads; the block never calls a model).
 #
-# Read-only with respect to runs: never changes a run's production state,
-# never answers a card question, never spends, never submits or resubmits a
-# paid job, never authors creative output and never manufactures PASS records.
-# It writes only its OWN supervision records (run registry, per-run leases,
-# shared breaker, tick summary) and delivers the envelope's prewritten text.
+# Read-only with respect to a run's creative and spend state: never answers a
+# card question, never spends, never submits or resubmits a paid job, never
+# authors creative output and never manufactures PASS records. A stall is
+# resumed ONLY when the run carries a written recovery authorization, and then
+# only through the one supported native control (factory.py next) under the run
+# watcher's fence; without that authorization recovery is announce-only. It
+# writes its own supervision records (run registry, per-run leases, shared
+# breaker, tick summary, per-run recovery counters) and delivers the
+# envelope's prewritten text.
 #
 #   name: skill75-keepalive   schedule: every 10 minutes   delivery: silent
 #
@@ -39,6 +43,8 @@ LOCK       = os.path.join(KA_DIR, "registry.lock")
 BATCH      = 8               # bounded per-tick batch
 LEASE_S    = 25 * 60         # per-run lease lifetime
 LOCK_STALE = 60              # stale lock takeover
+RECOVERY_GAP_S        = 30 * 60   # at most ONE recovery attempt per run per 30 min
+RECOVERY_MAX_FAILURES = 3         # then stop trying and raise EXHAUSTED
 RUN_WATCH  = os.path.join(SKILL_ROOT, "scripts", "core", "heartbeat", "run_watch.py")
 CHANNEL_SEND = os.path.join(SKILL_ROOT, "scripts", "core", "choice_card", "intake_card", "channel_send.py")
 FINISHED   = ("complete", "expired", "canceled")
@@ -59,6 +65,14 @@ def note(code, detail):
     os.makedirs(KA_DIR, exist_ok=True)
     with open(EVENTS, "a", encoding="utf-8") as f: f.write(line + "\n")
     print("KEEPALIVE_EVENT %s %s" % (code, detail), file=sys.stderr)
+
+def recovery_failed(row, rid, rc):
+    """Count one failed recovery attempt; stop for good on the third."""
+    row["recovery_failed_attempts"] = int(row.get("recovery_failed_attempts") or 0) + 1
+    note("KEEPALIVE_RECOVERY_FAILED", "%s rc=%s" % (rid, rc))
+    if row["recovery_failed_attempts"] >= RECOVERY_MAX_FAILURES:
+        row["recovery_exhausted_at"] = now()
+        note("KEEPALIVE_RECOVERY_EXHAUSTED", rid)
 
 def with_registry_lock():
     os.makedirs(KA_DIR, exist_ok=True)
@@ -165,7 +179,8 @@ batch = active[idx:idx + BATCH]          # bounded pass; no wraparound repeats
 next_index = idx + len(batch)
 cycle_done = bool(n) and next_index >= n
 summary = {"observed": [], "delivered": [], "isolated": [], "skipped_leased": [],
-           "suppressed": [], "breaker": "open" if breaker_open else "closed"}
+           "suppressed": [], "recovered": [],
+           "breaker": "open" if breaker_open else "closed"}
 
 # ---- 4. per-run lease + observe + deliver ---------------------------------
 for row in batch:
@@ -231,13 +246,49 @@ for row in batch:
                            "event_id": hashlib.sha256((rid + str(now())).encode()).hexdigest()[:12]})
             breaker_open = True
             note("KEEPALIVE_BREAKER_OPEN", "%s %s" % (hard.get("provider"), hard.get("class")))
-        if envelope.get("stalled") and envelope.get("recovery_command"):
+        # ---- stall recovery: real, separately authorized, rate-limited -----
+        # The look above only PRINTS a command. Recovery is a second, FENCED
+        # pass under --recovery-act: it executes only when a written
+        # authorization exists (control/recovery-authorization.json, written
+        # by the run's own start under DS_AUTO_RECOVERY=1, or by a person) and
+        # it runs the one supported native control as an ARGUMENT LIST, never
+        # a shell -- a run folder with a space in it stays one argument.
+        if envelope.get("stalled"):
             if breaker_open:
                 summary["suppressed"].append(rid)   # breaker open: NO launches
+            elif row.get("recovery_exhausted_at"):
+                pass                                # stopped for good: 3 failures
+            elif int(row.get("recovery_failed_attempts") or 0) >= RECOVERY_MAX_FAILURES:
+                row["recovery_exhausted_at"] = now()
+                note("KEEPALIVE_RECOVERY_EXHAUSTED", rid)
+            elif now() - int(row.get("last_recovery_attempt_at") or 0) < RECOVERY_GAP_S:
+                pass                                # one attempt per run per 30 min
             else:
-                row["last_recovery_command_at"] = now()
-                subprocess.run(["sh", "-c", envelope["recovery_command"]],
-                               capture_output=True, text=True, timeout=300)
+                row["last_recovery_attempt_at"] = now()
+                act = None
+                try:
+                    act = subprocess.run([sys.executable, RUN_WATCH, "--run-dir", run_dir,
+                                          "--recovery-act"],
+                                         cwd=SKILL_ROOT, capture_output=True, text=True,
+                                         timeout=300)
+                except Exception as e:
+                    recovery_failed(row, rid, e)
+                if act is not None:
+                    try: act_env = json.loads(act.stdout)
+                    except Exception: act_env = None
+                    rec = (act_env or {}).get("recovery") or {}
+                    outcome_rc = ((rec.get("control") or {}).get("outcome") or {}).get("returncode")
+                    if rec.get("acted") is True and outcome_rc == 0:
+                        row["last_recovery_ok_at"] = now()
+                        summary["recovered"].append(rid)
+                    elif (rec.get("refused") or {}).get("code") == "RECOVERY_NOT_AUTHORIZED":
+                        # announce-only box: say it ONCE, never retry it per tick
+                        if not row.get("recovery_not_authorized_at"):
+                            row["recovery_not_authorized_at"] = now()
+                            note("KEEPALIVE_RECOVERY_NOT_AUTHORIZED", rid)
+                    else:
+                        recovery_failed(row, rid, outcome_rc if outcome_rc is not None
+                                        else act.returncode)
         if proc.returncode == 10:
             row["state"] = "expired" if envelope.get("expired") else "complete"
         row["last_useful_progress_at"] = max(row.get("last_useful_progress_at") or 0,
@@ -263,15 +314,21 @@ PY_KEEPALIVE_CORE
 
 Then relay, and nothing else:
 1. If the block printed a KEEPALIVE_EVENT line asking for an operator handoff
-   (KEEPALIVE_ORIGIN_CONFLICT, KEEPALIVE_BREAKER_OPEN, KEEPALIVE_PIN_MISMATCH),
-   announce it ONCE on the operator lane in plain English, with the run folder
-   and the code. Never resolve an origin conflict yourself - the client's own
-   authenticated session resolves it.
+   (KEEPALIVE_ORIGIN_CONFLICT, KEEPALIVE_BREAKER_OPEN, KEEPALIVE_PIN_MISMATCH,
+   KEEPALIVE_RECOVERY_NOT_AUTHORIZED, KEEPALIVE_RECOVERY_EXHAUSTED), announce
+   it ONCE on the operator lane in plain English, with the run folder and the
+   code. KEEPALIVE_RECOVERY_NOT_AUTHORIZED means this box is announce-only: the
+   write of control/recovery-authorization.json is a person's decision, never
+   yours. KEEPALIVE_RECOVERY_EXHAUSTED means three attempts failed and the
+   block has stopped trying: a person now owns it. Never resolve an origin
+   conflict yourself - the client's own authenticated session resolves it.
 2. Do not add wording, do not answer pending decisions for the client, do not
-   spend, do not resubmit anything. Never write to the run folder yourself:
-   the block alone writes its own supervision records (run registry, per-run
-   leases, shared breaker, tick summary) and nothing else. The block has
-   already delivered every client message; there is nothing else to send.
+   spend, do not resubmit anything. Do not write to the run folder yourself:
+   the block is the only writer, and only through what it owns - its own
+   supervision records (run registry, per-run leases, shared breaker, tick
+   summary, per-run recovery counters) and, when a written recovery
+   authorization exists, one fenced resume through factory.py next. The block
+   has already delivered every client message; there is nothing else to send.
 3. If the block failed to run at all, report the exact stderr once on the
    operator lane (that is a supervision outage, not a run failure) and stop.
 4. The delivery contract the block follows (never invent another one): every

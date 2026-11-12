@@ -87,6 +87,7 @@ import atexit
 import hashlib
 import json
 import os
+import shlex
 import shutil
 import sqlite3
 import subprocess
@@ -544,10 +545,17 @@ def stall_check(state, row, now, decisions=()):
 
 
 def recovery_command(run_dir):
-    """The exact command the supported native control runs. Printed when the
-    actuator is not separately authorized; executed when it is."""
-    return ("python3 scripts/core/intake_preflight/factory.py next --run-dir %s"
-            % run_dir)
+    """The exact command the supported native control runs, as a shell line.
+
+    Printed when the actuator is not separately authorized; the driver runs
+    the watcher itself (argument list, no shell) when it is. Both the absolute
+    factory path and the run folder are quoted with shlex.quote, so a path
+    with a space in it stays ONE argument: `shlex.split(recovery_command(run))`
+    round-trips to the argv the actuator uses.
+    """
+    factory = _factory_control_argv(run_dir)[1]
+    return ("python3 %s next --run-dir %s"
+            % (shlex.quote(factory), shlex.quote(str(run_dir))))
 
 
 # --- the fenced recovery actuator -------------------------------------------
@@ -791,9 +799,21 @@ def _decision_lines(decisions):
     return lines
 
 
+def recovery_acted_ok(recovery):
+    """True only when recovery really acted AND the native control returned 0.
+
+    The client is told the run is being picked back up only on this evidence;
+    anything else is a person being asked to look, said plainly.
+    """
+    if not isinstance(recovery, dict) or recovery.get("acted") is not True:
+        return False
+    outcome = (recovery.get("control") or {}).get("outcome") or {}
+    return outcome.get("returncode") == 0
+
+
 def client_message(run_id, row, decisions, stalled, stall_detail, expired,
                    complete, elapsed_minutes, done, total, max_hours,
-                   canceled=False):
+                   canceled=False, recovery=None):
     """Plain, warm, direct. No internal codes, no jargon, never a false 'done'."""
     if row is None:
         return ("I couldn't read where your video is up to just now, and I'm on "
@@ -822,9 +842,15 @@ def client_message(run_id, row, decisions, stalled, stall_detail, expired,
     parts = ["Here's where we are in the process: %s." % phrase]
     if stalled:
         reason = stall_detail or "it stopped responding"
+        # "picking it back up" is a promise only an ACTED, successful recovery
+        # can keep. Otherwise say a person has been asked to look.
+        if recovery_acted_ok(recovery):
+            tail = "I'm picking it back up now."
+        else:
+            tail = ("I've flagged it for a person to look at, and I'll tell you "
+                    "as soon as it moves.")
         parts.append("I hit a problem with %s and I'm on it - here's what "
-                     "happened: %s. I'm picking it back up now."
-                     % (stage_noun(row["stage"]), reason))
+                     "happened: %s. %s" % (stage_noun(row["stage"]), reason, tail))
     if decisions:
         lead = ("I need one thing from you:" if len(decisions) == 1
                 else "I need a few things from you:")
@@ -945,7 +971,7 @@ def build(run_dir, max_hours=DEFAULT_MAX_HOURS, now=None,
         "message_for_client": client_message(
             state["run_id"], row, decisions, stalled, stall_detail, expired,
             complete, elapsed_minutes, done, total, max_hours,
-            canceled=canceled),
+            canceled=canceled, recovery=recovery),
     }
     return env
 

@@ -41,6 +41,7 @@ Run: python3 scripts/core/heartbeat/test_run_watch.py
 import hashlib
 import json
 import os
+import shlex
 import sqlite3
 import sys
 import tempfile
@@ -261,12 +262,28 @@ def main():
           env["stalled"] is True, str(env))
     check("3: HEARTBEAT_STALLED is named",
           "HEARTBEAT_STALLED" in env["loud"], env["loud"])
+    # The printed command is a SHELL line: assert on shlex.split, never on a
+    # substring -- the quote is the fix, so a run folder with a space in it
+    # must come back as ONE argument.
+    parts = shlex.split(env["recovery_command"])
     check("3: the recovery command is the factory's own next",
-          "factory.py next --run-dir" in env["recovery_command"],
+          len(parts) == 5 and parts[1].endswith("factory.py")
+          and parts[2:4] == ["next", "--run-dir"] and parts[4] == str(run),
           env["recovery_command"])
+    spaced = str(Path(tmp) / "run 3 spaced")
+    spaced_parts = shlex.split(RW.recovery_command(spaced))
+    check("3: a run folder with a space stays one argument",
+          spaced_parts[-2:] == ["--run-dir", spaced]
+          and spaced_parts[1] == str(Path(RW.__file__).resolve().parent.parent
+                                     / "intake_preflight" / "factory.py"),
+          spaced_parts)
     check("3: the client hears it plainly, no codes",
           "I hit a problem with the script and lyrics step" in env["message_for_client"]
           and "HEARTBEAT" not in env["message_for_client"],
+          env["message_for_client"])
+    check("3: an un-acted stall promises no pickup, it names a person",
+          "picking it back up" not in env["message_for_client"]
+          and "flagged it for a person to look at" in env["message_for_client"],
           env["message_for_client"])
     check("3: a stall is not an expiry", env["expired"] is False)
 
@@ -404,8 +421,29 @@ def main():
     check("7: the run's own files are untouched outside the fence ledger",
           before == tree_digest_skip(run, "control/recovery/"),
           sorted(set(before) ^ set(tree_digest_skip(run, "control/recovery/"))))
+    check("7: recovery that really acted and returned 0 promises the pickup",
+          "I'm picking it back up now." in env["message_for_client"],
+          env["message_for_client"])
     rc = RW.main(["--run-dir", str(run), "--interval-check", "--now", str(NOW)])
     check("7: --interval-check keeps looping at four hours", rc == 0, rc)
+
+    # 7c. recovery that ran but FAILED is not announced as a pickup ----------
+    run = make_run(tmp, "run7c")
+    set_stage(run, "run7c", "music", "RUNNING", age_s=45 * 60, lease_in=300,
+              owner="worker-7c")
+    write_auth(run)
+    env = RW.build(run, now=NOW, recovery_act=True,
+                   runner=lambda argv: {"returncode": 2,
+                                        "stdout_sha256": "0" * 64,
+                                        "stderr_tail": ""})
+    check("7c: a failed recovery is not a promise to the client",
+          "picking it back up" not in env["message_for_client"]
+          and "flagged it for a person to look at" in env["message_for_client"],
+          env["message_for_client"])
+    check("7c: the failed control's own return code is carried in the receipt",
+          (env.get("recovery") or {}).get("acted") is True
+          and ((env["recovery"].get("control") or {}).get("outcome")
+               or {}).get("returncode") == 2, env.get("recovery"))
 
     # 7b. four hours parked on the client is a NAMED legitimate wait --------
     run = make_run(tmp, "run7b", base_ago_s=240 * 60)
