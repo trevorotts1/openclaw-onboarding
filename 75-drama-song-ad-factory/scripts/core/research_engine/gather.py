@@ -16,12 +16,21 @@ Reads the BARE brief {offer, audience, action/cta, claims?, sources?} and:
      URLs, and de-duplicates in first-seen order;
   4. fetches each candidate URL exactly ONCE with a browser-like User-Agent
      under a per-URL timeout, inside ONE total stage budget;
-  5. extracts readable text and returns sources[] ({id, url, retrieved}) and
-     claims[] ({id, text, source}) shaped exactly as research.validate_sources
-     and research.validate_claims accept, plus a citation for any client claim
-     whose text a fetched page actually contains (verbatim normalised match
-     only — a claim no page contains stays untouched, so the validator still
-     parks it instead of accepting an invented attribution).
+  5. extracts readable text and keeps up to OFFER_SENTENCES_MAX sentences per
+     page that are ABOUT the brief — each carrying at least two distinct
+     content words of the brief's offer or audience fields (lower-cased, the
+     module's STOPWORDS removed). A page with no such sentence is dropped and
+     named in errors as "no sentence about the offer": a page the brief has
+     nothing to do with is not a source, however readable it is.
+
+     It returns sources[] ({id, url, retrieved, excerpts}) and claims[]
+     ({id, text, source}) shaped exactly as research.validate_sources and
+     research.validate_claims accept — `excerpts` is the fetched text each
+     claim was quoted from, so the structural check can prove the quote is in
+     the page — plus a citation for any client claim whose text a fetched page
+     actually contains (verbatim normalised match only — a claim no page
+     contains stays untouched, so the validator still parks it instead of
+     accepting an invented attribution).
 
 Every network path is guarded: a dead link, a dead resolver or an exhausted
 budget yields a status, never an exception. research.run_stage maps "offline"
@@ -62,6 +71,8 @@ MAX_BYTES = 1_500_000        # one bounded read per URL
 MIN_TEXT = 60                # a page shorter than this carries no readable body
 CLAIM_MAX = 220              # short claim text
 MAX_QUERY_WORDS = 10
+OFFER_SENTENCES_MAX = 5      # candidate sentences kept from one page
+OFFER_TERMS_MIN = 2          # distinct brief words a kept sentence must carry
 
 # Search-engine hosts never count as a research source (their own result pages,
 # asset CDNs and tracking endpoints). Matched on the host and any subdomain.
@@ -377,18 +388,45 @@ def html_to_text(page):
     return "\n".join(line for line in lines if line)
 
 
-def first_claim(text, max_len=CLAIM_MAX, min_len=MIN_TEXT):
-    """Short claim text: the first complete prose sentence long enough to say
-    something, cut on a word boundary inside max_len. Site chrome (bylines,
-    cookie banners, copyright lines) and unreadable debris are skipped; '' when
-    the page carries no such sentence."""
+def _brief_terms(brief):
+    """The content words of the brief's offer and audience fields: lower-cased,
+    the module's stop list removed. These are what a kept sentence must be
+    about."""
+    brief = brief or {}
+    terms = set()
+    for field in ("offer", "audience"):
+        terms.update(_tokens(_clean(brief.get(field))))
+    return terms
+
+
+def offer_sentences(text, brief, limit=OFFER_SENTENCES_MAX):
+    """Up to `limit` sentences of one page that are about this brief.
+
+    A sentence is kept when it carries at least OFFER_TERMS_MIN distinct content
+    words of the brief's offer or audience fields, and when it reads as a
+    finished piece of prose (site chrome, navigation soup and glued debris are
+    not sentences about anything). Page order, repeats dropped. [] means the
+    page says nothing about this brief and must not become a source."""
+    wanted = _brief_terms(brief)
+    if not wanted:
+        return []
+    out, seen = [], set()
     for raw in (text or "").splitlines():        # one block of prose per line
         for sentence in re.split(r"(?<=[.!?])\s+", raw):
             sentence = " ".join(sentence.split())
-            if not _usable_claim(sentence, min_len, max_len):
+            if not _usable_claim(sentence, MIN_TEXT, CLAIM_MAX):
                 continue
-            return sentence if len(sentence) <= max_len else _cut(sentence, max_len, min_len)
-    return ""
+            if len(wanted & set(_tokens(sentence))) < OFFER_TERMS_MIN:
+                continue
+            key = sentence.lower()
+            if key in seen:
+                continue
+            seen.add(key)
+            out.append(sentence if len(sentence) <= CLAIM_MAX
+                       else _cut(sentence, CLAIM_MAX, MIN_TEXT))
+            if len(out) >= limit:
+                return out
+    return out
 
 
 def _cut(sentence, max_len, min_len):
@@ -513,7 +551,7 @@ def _find_source_for_claim(text, pages):
     needle = " ".join(_clean(text).lower().split())
     if len(needle) < 24:
         return -1
-    for i, (_url, page_text) in enumerate(pages):
+    for i, (_url, page_text, _sentences) in enumerate(pages):
         hay = " ".join(page_text.lower().split())
         if needle in hay:
             return i
@@ -527,9 +565,11 @@ def gather(brief, transport=None, budget=DEFAULT_BUDGET, timeout=DEFAULT_TIMEOUT
 
     Returns a dict:
       status   "client-supplied" | "ok" | "empty" | "offline" | "budget"
-      sources  [{id, url, retrieved}]   (empty unless status == "ok")
+      sources  [{id, url, retrieved, excerpts}]  (empty unless status == "ok")
       claims   [{id, text, source}]     client claims kept verbatim first,
-                                        gathered claims appended
+                                        gathered claims appended (one per
+                                        on-offer sentence, up to
+                                        OFFER_SENTENCES_MAX per page)
       queries  the queries actually asked, in order
       urls     candidate URLs after junk filtering + de-duplication
       fetched  how many candidate pages were attempted
@@ -593,14 +633,26 @@ def gather(brief, transport=None, budget=DEFAULT_BUDGET, timeout=DEFAULT_TIMEOUT
             continue
         page_ok += 1
         text = html_to_text(_decode(body, charset))
-        if len(text) < MIN_TEXT or not first_claim(text):
+        if len(text) < MIN_TEXT:
             result["errors"].append("no readable text")
             continue
-        pages.append((final_url or url, text))
+        sentences = offer_sentences(text, brief)
+        if not sentences:
+            result["errors"].append("no sentence about the offer")
+            continue
+        pages.append((final_url or url, text, sentences))
+
+    # The recorded page text each source is checked against: the sentences the
+    # claim was quoted from, carried with the source so the structural check
+    # can prove a gathered claim really is in the page.
+    sources = [{"id": "gsrc-%d" % (i + 1), "url": url, "retrieved": today,
+                "gathered": True, "excerpts": list(sentences)}
+               for i, (url, _text, sentences) in enumerate(pages)]
 
     # Client claims first, verbatim; a source is attached only when a fetched
-    # page literally contains the claim text. Generated ids never collide with
-    # an id the client already used.
+    # page literally contains the claim text — and that text is recorded on the
+    # source, because the claim is checked against the page like any other.
+    # Generated ids never collide with an id the client already used.
     claims = []
     supplied = brief.get("claims")
     if isinstance(supplied, list):
@@ -611,18 +663,20 @@ def gather(brief, transport=None, budget=DEFAULT_BUDGET, timeout=DEFAULT_TIMEOUT
                     hit = _find_source_for_claim(copy.get("text"), pages)
                     if hit >= 0:
                         copy["source"] = "gsrc-%d" % (hit + 1)
+                        quoted = _clean(copy.get("text"))
+                        if quoted not in sources[hit]["excerpts"]:
+                            sources[hit]["excerpts"].append(quoted)
                 claims.append(copy)
             else:
                 claims.append(claim)
     used = {c.get("id") for c in claims
             if isinstance(c, dict) and _clean(c.get("id"))}
-    sources = [{"id": "gsrc-%d" % (i + 1), "url": url, "retrieved": today}
-               for i, (url, _text) in enumerate(pages)]
     index = 0
-    for i, (_url, text) in enumerate(pages):
-        index += 1
-        claims.append({"id": _claim_id(index, used), "text": first_claim(text),
-                       "source": "gsrc-%d" % (i + 1)})
+    for i, (_url, _text, sentences) in enumerate(pages):
+        for sentence in sentences:
+            index += 1
+            claims.append({"id": _claim_id(index, used), "text": sentence,
+                           "source": "gsrc-%d" % (i + 1)})
     result["sources"], result["claims"] = sources, claims
 
     if sources:
