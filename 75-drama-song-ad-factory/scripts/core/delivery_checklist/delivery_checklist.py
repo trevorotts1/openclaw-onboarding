@@ -795,6 +795,9 @@ def _q5_voice_music(receipt, ans, codes, details):
         mismatched = []
         for i, ln in enumerate(lines):
             if not isinstance(ln, dict):
+                codes.append("%s:VOICE_MUSIC line %d not a record"
+                             % (CHECKLIST_NO_MEASUREMENT, i + 1))
+                ok = False
                 continue
             line_delivery = ln.get("delivery", "")
             line_mode = ln.get("mode", "")
@@ -2196,7 +2199,7 @@ def _measurement_line(q, ans, qdetails):
     if q == "VOICE_MUSIC":
         return "music gaps %.2f s, %d line(s) delivery-checked%s" % (
             d.get("music_gaps_s", 0.0), d.get("lines_checked", 0),
-            ("reverb tail %.3f s" % d["reverb_tail_s"])
+            ("; reverb tail %.3f s" % d["reverb_tail_s"])
             if "reverb_tail_s" in d and d["reverb_tail_s"] is not None else "")
     if q == "MODELS":
         parts = ["%s=%s" % (k, v)
@@ -2256,7 +2259,7 @@ def to_qc_record(result, run_id, stage, reviewer, check_id=None,
                                  "reviewer.%s is required" % key)
         rev[key] = v.strip()
     answers = result.get("answers", {})
-    # qc-schema evidence carries summary + refs only; the 7 answers ride in
+    # qc-schema evidence carries summary + refs only; the 12 answers ride in
     # the summary, each as yes/no plus the measurement that proves it
     lines = ["%s=%s(%s)" % (q, a["answer"], a["measurement"][:80])
              for q, a in sorted(answers.items())]
@@ -2482,22 +2485,30 @@ def _wav_measure(path):
     with wave.open(str(path), "rb") as w:
         rate = w.getframerate()
         width = w.getsampwidth()
+        chans = w.getnchannels()       # read inside the open block (S75-080)
         frames = w.readframes(w.getnframes())
-    if rate <= 0 or w.getnchannels() < 1:
+    if rate <= 0 or chans < 1 or width not in (1, 2, 3, 4):
         return None
-    # mono downmix; 8/16/24/32-bit little-endian PCM (the wave module's own)
-    chans = 2 if width in (2, 3, 4) else 1
-    step = width * chans
-    window = max(1, int(rate * SONG_MP3_WINDOW_S))
-    env, acc, n = [], 0.0, 0
-    total = len(frames) // step
-    for i in range(total):
-        chunk = frames[i * step:i * step + width]
+    # decode each sample at its real width: 8-bit is unsigned, 16/24/32-bit
+    # are signed little-endian PCM; channels are averaged into one frame value
+    def sample(off):
         if width == 1:
-            v = (chunk[0] - 128) / 128.0
-        else:
-            v = struct.unpack("<h", chunk[:2])[0] / 32768.0
-        acc += v * v
+            return (frames[off] - 128) / 128.0
+        if width == 2:
+            return struct.unpack("<h", frames[off:off + 2])[0] / 32768.0
+        if width == 3:
+            v = int.from_bytes(frames[off:off + 3], "little", signed=True)
+            return v / 8388608.0
+        return struct.unpack("<i", frames[off:off + 4])[0] / 2147483648.0
+
+    step = width * chans
+    total = len(frames) // step
+    window = max(1, int(rate * SONG_MP3_WINDOW_S))   # frames, from real time
+    env, acc, n = [], 0.0, 0
+    for i in range(total):
+        base = i * step
+        acc += sum(sample(base + c * width) ** 2
+                   for c in range(chans)) / float(chans)
         n += 1
         if n == window:
             env.append(math.sqrt(acc / n))
@@ -2677,7 +2688,7 @@ def main(argv=None):
     import json
     p = argparse.ArgumentParser(
         prog="delivery_checklist",
-        description="G7 delivery QC: the 7 checklist questions, answered "
+        description="G7 delivery QC: the 12 checklist questions, answered "
                     "with measured evidence from the receipt (fail-closed)")
     sub = p.add_subparsers(dest="cmd", required=True)
     a = sub.add_parser("check", help="evaluate a receipt")
