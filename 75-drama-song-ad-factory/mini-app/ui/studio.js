@@ -143,6 +143,7 @@ const state = {
   visible: [],          // those questions that are on now (shows_when), in card order
   visibleFrom: null,    // the questions list `visible` was built from
   qIndex: 0,            // which question screen
+  note: "",             // drawn above the Next button after an empty tap
   picks: [],            // selected option number, as a string
   texts: [],            // typed answer for a free-text option
   replies: [],          // what the box replays: option number, or the typed text
@@ -324,6 +325,7 @@ function personalLink() {
 
 function setPage(id) {
   state.page = id;
+  state.note = "";
   render();
   const { key } = readHash();
   const params = new URLSearchParams();
@@ -430,6 +432,7 @@ function ensurePick(i) {
 // it, so everything after that screen is dropped — the card does the same
 // (SPEC B1: "every answer after it has to be given again").
 function answerChanged(i, value) {
+  state.note = "";
   state.picks[i] = value;
   if (state.visible[i] && state.visible[i].id === "purpose") {
     state.picks.length = i + 1;
@@ -454,9 +457,13 @@ async function advance() {
   const i = state.qIndex;
   const value = replyFor(i);
   if (!value) {
-    announce(state.picks[i] ? "Type your answer first." : "Pick one of the options first.");
+    // Say it where the button is, not only in the status line at the bottom.
+    state.note = state.picks[i] ? "Type your answer first." : "Pick one of the options first.";
+    announce(state.note);
+    render();
     return;
   }
+  state.note = "";
   state.replies = currentReplies();
   await saveDraft();
   if (i + 1 >= state.visible.length) { setPage("recap"); return; }
@@ -477,6 +484,7 @@ async function startOrder() {
 
 function goAnswer() {
   hydrateReplies(state.replies);
+  state.note = "";
   state.qIndex = Math.min(firstUnanswered(), Math.max(0, state.visible.length - 1));
   setPage("questions");
 }
@@ -602,13 +610,16 @@ function pageQuestions() {
     el("h1", { text: q.label || "Your question" }),
     el("p", { class: "muted", text: `${i + 1} of ${list.length}. Your answer saves when you tap Next.` }),
     el("div", { class: "card" }, [fieldset]),
+    // Directly above the button row, so the reason is beside the button the
+    // client just tapped and not only in the status line at the bottom.
+    state.note ? el("p", { class: "inline-note", text: state.note }) : null,
     el("div", { class: "actions" }, [
       i > 0
-        ? secondary("Back", () => { state.qIndex = i - 1; render(); })
+        ? secondary("Back", () => { state.note = ""; state.qIndex = i - 1; render(); })
         : secondary("Home", () => setPage("start")),
       primary(i + 1 >= list.length ? "Read the recap" : "Next", () => advance()),
     ]),
-  ];
+  ].filter(Boolean);
 }
 
 function pageRecap() {
