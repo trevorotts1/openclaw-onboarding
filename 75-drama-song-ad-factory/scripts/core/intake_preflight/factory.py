@@ -3097,12 +3097,24 @@ def _stage_command_values(run_dir, sid, stage):
     """The placeholder values this run can answer, and nothing it cannot.
 
     ``next`` substitutes what the run already knows (the run dir, the run id,
-    the QC gate's own required-check list) and leaves the rest to named needs.
+    the locked video model for the two generation stages, the QC gate's own
+    required-check list) and leaves the rest to named needs.
     """
     values = {"RUN": str(run_dir), "RUN_ID": str(sid)}
     core = str(Path(__file__).resolve().parent.parent)
     if core not in sys.path:
         sys.path.insert(0, core)
+    if stage in ("image-keyframes", "video-generation"):
+        try:
+            from kie_dispatch import model_lock  # noqa: PLC0415
+            for store in (str(Path(run_dir) / "control" / "state.sqlite3"),
+                          str(run_dir)):
+                locked = model_lock.read_locked_model(store, str(sid))
+                if locked:
+                    values["MODEL"] = str(locked)
+                    break
+        except Exception:                                # noqa: BLE001
+            pass
     try:
         import qc_gate  # noqa: PLC0415
         required = getattr(qc_gate, "STAGE_REQUIRED", None)
