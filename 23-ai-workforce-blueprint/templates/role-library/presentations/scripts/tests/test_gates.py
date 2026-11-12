@@ -282,9 +282,9 @@ def test_qc_waiver_must_cite_a_field_the_interview_offers():
     waiver_field_mapping omits qc and prompt_floor on purpose, "a client cannot
     consent to a thinner prompt or a lower quality bar". So a qc waiver citing an
     intake field is refused: a typed waiver is not a request about this gate."""
-    rd = _rd(); _wj(rd, "working/copy/intake.json", {"skip_qc": "Please skip the QC check for this run."})
+    rd = _rd(); _wj(rd, "working/copy/intake.json", {"skip_qc": "Please skip the QC check for this run, we need it."})
     w = {"rule": "qc", "source": "intake_field", "intake_field": "skip_qc",
-         "client_request_quote": "skip the QC check", "captured_at": "2026-01-01T00:00:00Z"}
+         "client_request_quote": "skip the QC check for this run", "captured_at": "2026-01-01T00:00:00Z"}
     with pytest.raises(WaiverError, match="cannot be waived from an intake field"):
         validate_waiver(w, rd)
     assert "qc" not in NON_WAIVABLE_GATES
@@ -347,19 +347,20 @@ def test_duplicate_waivers_rejected():
     with pytest.raises(WaiverError, match="(?i)two waivers"): load_waivers(rd)
 
 def test_valid_intake_waiver_loads():
-    # The quote must genuinely appear in the intake field's recorded value —
-    # a bare presence check on a boolean flag is the defect this guards against.
+    # PD-202: the quote must genuinely appear in the intake field's recorded value
+    # AND that field must be one the question bank offers for the gate -- a bare
+    # presence check on an arbitrary field is the defect this guards against.
     rd = _rd()
-    _wj(rd, "working/copy/intake.json", {"skip_qc": "Please skip the QC check for this run."})
-    _wj(rd, "waivers.json", [{"rule": "qc", "source": "intake_field", "intake_field": "skip_qc",
-        "client_request_quote": "skip the QC check", "captured_at": "2026-01-01T00:00:00Z"}])
+    _wj(rd, "working/copy/intake.json", {"teleprompter_declined_reason": "Please skip the teleprompter quality check for this run."})
+    _wj(rd, "waivers.json", [{"rule": "teleprompter", "source": "intake_field", "intake_field": "teleprompter_declined_reason",
+        "client_request_quote": "skip the teleprompter quality check", "captured_at": "2026-01-01T00:00:00Z"}])
     waivers = load_waivers(rd)
     validate_waiver(waivers[0], rd)
     wk = {w.get("rule") for w in waivers if w.get("rule")}
-    assert "qc" in wk
+    assert "teleprompter" in wk
     gates = Gates(rd, {}).evaluate_all()
-    g = gates.get("qc", {})
-    if "qc" in wk:
+    g = gates.get("teleprompter", {})
+    if "teleprompter" in wk:
         g["state"] = "waived"
     assert g["state"] == "waived"
 
