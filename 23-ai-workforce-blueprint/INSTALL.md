@@ -1119,7 +1119,7 @@ controls WHEN the standard prebuild materializes the canonical floor.
 | Value | Behavior | Default? |
 |---|---|---|
 | `at-onboarding` | Materialize immediately when the operator consents — the floor is prebuilt BEFORE the owner answers a single interview question. This is the original prebuild behavior and the **default**. | YES |
-| `on-first-answer` | **Defer:** record the consent and arm the prebuild lane but do NOT materialize. The prebuild fires later, when the owner answers their first interview question (the interview-start hook drives `prebuild-standard-workforce.sh` at that moment). `prebuildStartedAt` stays NULL until materialization actually begins, so boxes abandoned before the first answer are measurable. | NO |
+| `on-first-answer` | **Retired:** accepted for compatibility only. The prebuild always materializes at onboarding now; this value no longer defers it. | NO |
 
 **How to configure:**
 
@@ -1137,12 +1137,7 @@ python3 scripts/prebuild-standard-workforce.py \
   --apply
 ```
 
-**How the deferred lane fires later:** when the owner answers their first
-interview question, the interview-start hook reads `standardFirstOnboarding:
-"on-first-answer"` and `standardPrebuild.status: "pending"` from the build-state,
-then re-invokes `prebuild-standard-workforce.sh` (idempotent: the consent gate
-recognizes the prior consent and re-runs the materializer; `prebuildStartedAt` is
-written at that point).
+The standard foundation is always prebuilt at onboarding. The "on first answer" option is retired.
 
 Fresh installation now selects standard-first with `at-onboarding` automatically and records the real operator invocation in the pending state before materialization. Existing recorded lane and timing choices remain authoritative. These direct engine flags remain available for explicit operator configuration; the fresh installer no longer depends on someone remembering to set a manual environment variable. A disabled/conflicting lane must be handled explicitly and must not be reported as a verified standard foundation.
 
