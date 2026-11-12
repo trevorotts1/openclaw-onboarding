@@ -152,7 +152,8 @@ def main(argv=None) -> int:
               "generated real images.")
     fmt = lambda cmd: " ".join(shlex.quote(str(x)) for x in cmd)
     board = run_dir / "production-request.json"
-    print("NEXT 1, Design Board for the role (client approval), on its own: "
+    print("NEXT 1, Design Board for the role (the client approves it in chat, by button or in "
+          "Command Center: send the board image into their chat, see references/design-board.md), on its own: "
           + fmt([sys.executable, executor, run_dir, "--stages", "design-board",
                  "--request", board.name]))
     final = run_dir / "production-request-final-mockups.json"
