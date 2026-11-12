@@ -6,6 +6,12 @@ Board family: POST /api/ad-campaigns + PATCH /api/ad-campaigns/[id]
 Contract re-read 2026-11-11 at blackceo-command-center main 86bd193f:
   POST and GET /api/ad-campaigns, PATCH and GET /api/ad-campaigns/[id]
 
+Completion contract (S75-033): the create carries the typed marker
+contract={"kind": "skill75", "version": 1} (CampaignContractSchema) plus the
+run's requester record, and a move may carry an approval and a review envelope
+(Skill75ApprovalEnvelopeSchema / Skill75ReviewEnvelopeSchema), which the board
+persists as the durable records its Skill 75 completion guard reads.
+
 Directive 20.5 rules enforced here:
   stable keys (job_id == campaign_id == tasks.campaign_id, stage_slug);
   retries update existing cards, stale transitions rejected, never duplicated;
@@ -113,6 +119,22 @@ CREATE TABLE IF NOT EXISTS stage_receipts(
 );
 """
 
+#: Command Center contract markers (src/lib/validation.ts CampaignContractSchema,
+#: lines 410-413): a discriminated OBJECT, never a bare string.
+CONTRACT_SKILL75 = {"kind": "skill75", "version": 1}
+CONTRACT_LEGACY = {"kind": "legacy", "version": 1}
+
+#: Required approval artifact kinds (src/lib/validation.ts lines 449-456).
+APPROVAL_KINDS = ("script", "lyrics", "character_bible", "music", "storyboard", "final")
+
+#: Envelope field lists the board schema accepts (src/lib/validation.ts lines
+#: 519-533 approval, 537-547 review). Anything else is refused here, before it
+#: becomes a row the board would reject forever.
+APPROVAL_FIELDS = ("contract", "version", "kind", "artifact_kind", "revision",
+                   "sha256", "decision", "approver", "decided_at", "thread_id")
+REVIEW_FIELDS = ("contract", "version", "kind", "reviewer", "actor", "verdict",
+                 "scope", "revision")
+
 #: CC deliverable types (src/lib/validation.ts CreateDeliverableSchema).
 DELIVERABLE_TYPES = ("file", "url", "artifact", "image")
 
@@ -192,6 +214,76 @@ def _slug(value):
     safe = safe or "x"
     return safe if safe == str(value) else "%s-%s" % (
         safe, hashlib.sha1(str(value).encode()).hexdigest()[:8])
+
+
+def _bounded(value, low, high, what):
+    if not isinstance(value, str) or not (low <= len(value) <= high):
+        raise BoardSyncError("%s must be a string of %d-%d characters" % (what, low, high))
+    return value
+
+
+def _positive_int(value, what):
+    if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
+        raise BoardSyncError("%s must be a positive integer" % what)
+    return value
+
+
+def _no_unknown_fields(envelope, fields, what):
+    unknown = sorted(set(envelope) - set(fields))
+    if unknown:
+        raise BoardSyncError("%s carries unknown field(s) %s"
+                             % (what, ", ".join(unknown)))
+    return envelope
+
+
+def check_approval(approval):
+    """Refuse an approval envelope the board schema would reject (validation.ts
+    lines 519-533) while it is still local. Returns it unchanged."""
+    if not isinstance(approval, dict):
+        raise BoardSyncError("approval must be an object")
+    _no_unknown_fields(approval, APPROVAL_FIELDS, "approval")
+    if approval.get("contract") != CONTRACT_SKILL75["kind"] or approval.get("version") != 1:
+        raise BoardSyncError("approval contract must be skill75 version 1")
+    if approval.get("kind") != "approval":
+        raise BoardSyncError("approval kind must be 'approval'")
+    if approval.get("artifact_kind") not in APPROVAL_KINDS:
+        raise BoardSyncError("unknown approval artifact_kind %r"
+                             % (approval.get("artifact_kind"),))
+    _positive_int(approval.get("revision"), "approval revision")
+    if approval.get("sha256") is not None:
+        sha = approval.get("sha256")
+        if not isinstance(sha, str) or len(sha) != 64 or \
+                any(c not in "0123456789abcdefABCDEF" for c in sha):
+            raise BoardSyncError("approval sha256 must be 64 hex characters")
+    if approval.get("decision") not in ("approved", "revised"):
+        raise BoardSyncError("approval decision must be approved or revised")
+    _bounded(approval.get("approver"), 1, 200, "approval approver")
+    _bounded(approval.get("decided_at"), 1, 64, "approval decided_at")
+    if "thread_id" in approval:
+        _bounded(approval.get("thread_id"), 0, 128, "approval thread_id")
+    return approval
+
+
+def check_review(review):
+    """Refuse a review envelope the board schema would reject (validation.ts
+    lines 537-547). Returns it unchanged."""
+    if not isinstance(review, dict):
+        raise BoardSyncError("review must be an object")
+    _no_unknown_fields(review, REVIEW_FIELDS, "review")
+    if review.get("contract") != CONTRACT_SKILL75["kind"] or review.get("version") != 1:
+        raise BoardSyncError("review contract must be skill75 version 1")
+    if review.get("kind") != "review":
+        raise BoardSyncError("review kind must be 'review'")
+    _bounded(review.get("reviewer"), 1, 200, "review reviewer")
+    if not isinstance(review.get("actor"), str) or len(review.get("actor")) > 200:
+        raise BoardSyncError("review actor must be a string of 0-200 characters")
+    if review.get("verdict") not in ("pass", "fail"):
+        raise BoardSyncError("review verdict must be pass or fail")
+    if "scope" in review:
+        _bounded(review.get("scope"), 0, 64, "review scope")
+    if "revision" in review:
+        _positive_int(review.get("revision"), "review revision")
+    return review
 
 
 def default_outbox_path(workspace, run_id=None):
@@ -373,19 +465,41 @@ class Outbox:
     def enqueue_create(self, job_id, show_name, stages, workspace, owner=None,
                        department=None, agent_id=None, money_ceiling_usd=None,
                        estimated_cost_usd=None, show_date=None,
-                       title_prefix=None):
+                       title_prefix=None, contract=None,
+                       requester_channel=None, requester_chat_id=None,
+                       requester_session_key=None):
+        """Campaign create intent. Carries the typed contract marker
+        (CreateAdCampaignSchema.contract, validation.ts lines 410-413/641) and
+        the run's requester record (lines 648-650), so the board holds the
+        campaign to the completion contract and report-back returns to the
+        conversation that asked for the work. `contract` defaults to the Skill
+        75 marker: this module IS the Skill 75 producer."""
         self._bind(workspace)
         if not (1 <= len(job_id) <= 128):
             raise BoardSyncError("job_id length out of range")
         if not (1 <= len(show_name) <= 500):
             raise BoardSyncError("show_name length out of range")
+        contract = CONTRACT_SKILL75 if contract is None else contract
+        if contract not in (CONTRACT_SKILL75, CONTRACT_LEGACY):
+            raise BoardSyncError("unknown contract marker %r (expected %r or %r)"
+                                 % (contract, CONTRACT_SKILL75, CONTRACT_LEGACY))
         stages = list(stages or [])
         if len(stages) > 50:
             raise BoardSyncError("too many stages (server max 50)")
         for s in stages:
             if not (1 <= len(s.get("slug", "")) <= 64):
                 raise BoardSyncError("stage slug length out of range")
-        payload = {"job_id": job_id, "show_name": show_name}
+        payload = {"job_id": job_id, "show_name": show_name,
+                   "contract": dict(contract)}
+        if requester_channel is not None:
+            payload["requester_channel"] = _bounded(
+                requester_channel, 1, 64, "requester_channel")
+        if requester_chat_id is not None:
+            payload["requester_chat_id"] = _bounded(
+                requester_chat_id, 1, 128, "requester_chat_id")
+        if requester_session_key is not None:
+            payload["requester_session_key"] = _bounded(
+                requester_session_key, 1, 256, "requester_session_key")
         if owner is not None:
             payload["owner"] = owner
         if department is not None:
@@ -595,12 +709,21 @@ class Outbox:
 
     def enqueue_move(self, job_id, stage_slug, status, actor, workspace, reason=None,
                      evidence=None, reviewer=None, blocked_reason=None,
-                     blocked_on_human=None, ask=None):
+                     blocked_on_human=None, ask=None, approval=None, review=None):
+        """A stage move. `approval` and `review` are the board's typed evidence
+        envelopes (validation.ts lines 689-691): a revision-bound approval
+        decision and an independent review record, persisted as durable rows the
+        Skill 75 completion guard reads. Both are validated here against the
+        schema's field list, so a malformed envelope never becomes a row."""
         self._bind(workspace)
         if status not in AD_STATUSES:
             raise BoardSyncError("unknown status %r" % (status,))
         if not (1 <= len(stage_slug) <= 64):
             raise BoardSyncError("stage slug length out of range")
+        if approval is not None:
+            check_approval(approval)
+        if review is not None:
+            check_review(review)
         if status == "blocked":  # server mirror: ad-campaigns.ts L284-302
             if blocked_reason not in BLOCKED_REASONS:
                 raise BlockedGateError("blocked requires blocked_reason")
@@ -647,6 +770,10 @@ class Outbox:
             payload["evidence"] = evidence
         if reviewer is not None:
             payload["reviewer"] = reviewer
+        if approval is not None:
+            payload["approval"] = approval
+        if review is not None:
+            payload["review"] = review
         if blocked_reason is not None:
             payload["blocked_reason"] = blocked_reason
         if blocked_on_human is not None:
