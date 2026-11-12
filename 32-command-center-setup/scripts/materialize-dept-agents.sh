@@ -259,7 +259,11 @@ DEPT_SCAN_ROOTS+=(
 export OC_CONFIG_FILE="$CONFIG_FILE"
 export OC_ROOT_PATH="$OC_ROOT"
 export OC_DRY_RUN="$DRY_RUN"
-export OC_DEPT_ROOTS="${DEPT_SCAN_ROOTS[*]}"
+# U-24 repair: DEPT_SCAN_ROOTS is a real bash array whose members may contain
+# spaces (the swarm drive itself is "/Volumes/mac mini m4/..."). Join on
+# newlines, not spaces, so a spaced HOME does not split one root into many.
+export OC_DEPT_ROOTS
+OC_DEPT_ROOTS="$(printf '%s\n' "${DEPT_SCAN_ROOTS[@]}")"
 # The Command Center DB, resolved ONCE by the shared resolver
 # (shared-utils/resolve_db.py: env/.env.local first, 0-byte decoys skipped,
 # layout candidates only with a `workspaces` table). Empty when unresolvable;
@@ -280,7 +284,7 @@ from pathlib import Path
 CONFIG_FILE = os.environ["OC_CONFIG_FILE"]
 OC_ROOT = os.environ["OC_ROOT_PATH"]
 DRY_RUN = os.environ.get("OC_DRY_RUN", "0") == "1"
-DEPT_ROOTS = os.environ["OC_DEPT_ROOTS"].split()
+DEPT_ROOTS = os.environ["OC_DEPT_ROOTS"].splitlines()
 SCRIPTS_DIR = os.environ.get("OC_SCRIPTS_DIR", "")
 
 # STRIP A DEPT AFFIX, nothing else.
