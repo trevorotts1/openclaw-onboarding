@@ -208,16 +208,10 @@ The package ends at approved local files. Each item below is tracked, not forgot
 | Skill 06 registry registration of Skill 83 | follow-up, no defect id yet |
 | Command Center launch view | CON-21, CON-22 |
 | 999 package parity gap | CON-06, CON-07, CON-08 |
-| Attestation boundary label on `receipt.json`, the route record and `checks.py` | follow-up below |
+| Attestation boundary label | retired: the membership/purchase gate was removed, nothing to label |
 
 SKILL.md's Entry lists `dispatch` and `questions` beside the other commands and spells `--landing-pages` as the
 comma list (`landing,sales`), matching `launcher_core/cli.py`. Its "does not build pages" line remains true:
 this skill composes the page-results Skills 71, 78, 79, 80, 81 and 82 return, it does not author them.
 
-The attestation boundary label stops at this lane's edge: `launcher_core/entitlement.py` records
-`evidence_kind`, `proves_purchase` and `attestation_boundary` on every gate result, and `package.py` copies
-that full block into `package-manifest.json`, but `receipt.json` (its entitlement block is an explicit subset
-in `package.py`) and the route/launch record (`launcher_core/route.py`) carry only `basis`,
-`requires_purchase` and `billing`, and `checks.py` does not re-check the label at package-check time. Until they
-carry the label, `package-manifest.json` is the only artifact that tells a buyer the gate is not proof of
-purchase.
+The attestation boundary follow-up is retired. The membership/purchase gate (`launcher_core/entitlement.py`) was removed: the client is never asked about a membership, a tag or a purchase, and nothing is held back for want of one.
