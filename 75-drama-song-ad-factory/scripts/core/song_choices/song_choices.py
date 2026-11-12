@@ -43,6 +43,7 @@ if _CORE not in sys.path:
 from song_dispatch import song_dispatch as _SD   # noqa: E402
 import suno_recipe as _R                          # noqa: E402  (same form as song_dispatch: works with the package or the bare module on sys.path)
 from song_choices import overlap as _OV            # noqa: E402  (WWFIX D2 item 3)
+import loud_failure                                # noqa: E402  (S75-053 warnings)
 
 TOOL_NAME = "song_choices"
 DIRNAME = "SONG-CHOICES"
@@ -1040,17 +1041,32 @@ def overlap_from_run(run_dir):
     return gate
 
 
-def _overlap_refusal(run_dir, action):
+def record_overlap(run_dir, state):
+    """S75-053: the overlap MEASUREMENT is a receipt line, never a client stop.
+
+    The same three-initial-attempt figure is still computed and written onto the
+    choices receipt (``song-choices/state.json``) as ``overlap: {verdict,
+    seconds}``. When it is not PASS the named ``SONG_OVERLAP_NOT_SHOWN`` warning
+    is recorded through ``loud_failure.warn``, which prints it and puts it on
+    every receipt that attaches the buffer. Nothing here refuses the offer, the
+    pick or any later stage: a provider that finished one song before the last
+    was accepted is not a client fault, and no paid redo is bought for it.
+    Returns the recorded row."""
     chk = overlap_from_run(run_dir)
-    if not chk.get("applicable"):
-        return None
-    if chk.get("allowed"):
-        return None
-    return _refuse("the three initial song attempts are %s (overlap %s s); %s is held. "
-                   "NO PAID REDO is bought for a missing overlap -- new spend needs "
-                   "explicit owner authority."
-                   % (chk["verdict"], chk.get("overlap_s"), action),
-                   code="SONG_OVERLAP_NOT_PROVEN")
+    row = {"verdict": chk.get("verdict"),
+           "seconds": chk.get("overlap_s") if chk.get("applicable") else None}
+    state["overlap"] = row
+    if row["verdict"] != "PASS":
+        loud_failure.warn(
+            "SONG_OVERLAP_NOT_SHOWN",
+            "the three initial song attempts did not overlap by the build target "
+            "(verdict %s, overlap %s s); the songs are still offered and pickable "
+            "and no redo is bought for it" % (row["verdict"], row["seconds"]))
+        state["warnings"] = [e for e in loud_failure.entries()
+                             if e.get("kind") == "WARNING"]
+    else:
+        state.pop("warnings", None)
+    return row
 
 
 # ---- WW-21: the acceptance boundary at the real delivery boundary ----------
@@ -1256,10 +1272,11 @@ def deliver_choices(results, delivery_dir, run_dir, runner=_run_ffmpeg, target=N
     WW-21: OFFER is a delivery boundary. A take whose required gate set is not
     all PASS -- or whose five results are missing, unbound or stale -- is never
     offered. Zero purchases on this path.
+
+    S75-053: the provider-overlap measurement no longer refuses the offer. It is
+    recorded on the choices receipt (see ``record_overlap``) and, when it is not
+    PASS, raises the named ``SONG_OVERLAP_NOT_SHOWN`` warning instead.
     """
-    hold = _overlap_refusal(run_dir, "delivery")
-    if hold:
-        raise ChoiceError(hold["detail"])
     _require_three(results, key=lambda r: r["variant"]["id"])
     # S75-052: a version whose own acceptance record is not PASS is never
     # OFFERED -- but it no longer stops the versions that passed. Its named
@@ -1348,6 +1365,7 @@ def deliver_choices(results, delivery_dir, run_dir, runner=_run_ffmpeg, target=N
     st = _state(run_dir) or {"required": True}
     st.update(required=True, offered=offered,
               failure_fork=bool(heard), concerns=concerns)
+    record_overlap(run_dir, st)
     _write(run_dir, "state.json", st)
     # Method Step 14 (inert until the run carries control/method.json): the
     # message RECOMMENDS the strongest compliant version with a concrete reason.
@@ -1708,9 +1726,7 @@ def record_pick(run_dir, reply):
     st = _state(run_dir)
     if not st or not st.get("required"):
         raise ChoiceError("this run did not ask for song choices")
-    hold = _overlap_refusal(run_dir, "the pick")
-    if hold:
-        raise ChoiceError(hold["detail"])
+    # S75-053: the overlap measurement is a receipt line, never a pick stop.
     # WW-21: the PICK is a delivery boundary too.
     ahold = _acceptance_refusal(run_dir, "the pick")
     if ahold:
