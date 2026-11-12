@@ -432,7 +432,12 @@ def tick(runs_dir, skill_root=SKILL_ROOT):
                 summary["isolated"].append(rid)
                 note("HEARTBEAT_STATE_UNREADABLE", rid)
                 continue
-            msg = envelope.get("message_for_client") or ""
+            # The send goes out AFTER the recovery pass below, so the text
+            # the client receives already knows whether recovery acted and
+            # won. (Reusing the look's own message here would build
+            # recovery=None and always say a person is looking, even when
+            # the control just succeeded.)
+            msg = ""
             origins = row.get("origins") or (
                 [row["origin"]] if row.get("origin") else [])
             decision = message_decision(row, envelope, now(),
@@ -444,50 +449,9 @@ def tick(runs_dir, skill_root=SKILL_ROOT):
                     row["client_silent_key"] = decision["key"]
                     note("KEEPALIVE_CLIENT_SILENT", rid)
                 summary["silent"].append(rid)
-            if decision["send"] and msg and origins \
-                    and not row.get("origin_error"):
-                text = msg
-                if decision.get("reminder_number"):
-                    try:
-                        text = reminder_text(envelope,
-                                             decision["reminder_number"])
-                    except Exception as e:             # noqa: BLE001
-                        note("KEEPALIVE_REMINDER_WORDING_FAILED",
-                             "%s %s" % (rid, e))
-                delivered = False
-                for origin in origins:
-                    try:
-                        if origin.get("kind") == "studio":
-                            send = [sys.executable, channel_send, "send",
-                                    "--channel", "studio", "--run-dir", run_dir,
-                                    "--message", text]
-                        else:
-                            send = ["openclaw", "message", "send", "--channel",
-                                    "telegram", "--target",
-                                    str(origin["target"]), "--message", text]
-                        r = subprocess.run(send, capture_output=True, text=True,
-                                           timeout=60)
-                        if r.returncode == 0:
-                            summary["delivered"].append(rid)
-                            delivered = True
-                        else:
-                            note("KEEPALIVE_DELIVERY_FAILED",
-                                 "%s rc=%d" % (rid, r.returncode))
-                    except Exception as e:             # noqa: BLE001
-                        note("KEEPALIVE_DELIVERY_FAILED", "%s %s" % (rid, e))
-                if delivered:
-                    # Remember what the client was told, so the same news is
-                    # never sent twice.
-                    if row.get("last_message_key") != decision["key"]:
-                        row["reminders_sent"] = 0
-                        row["first_sent_at"] = now()
-                    if decision.get("reminder_number"):
-                        row["reminders_sent"] = \
-                            int(row.get("reminders_sent") or 0) + 1
-                    row["last_message_key"] = decision["key"]
-                    row["last_message_kind"] = decision["kind"]
-                    row["last_sent_at"] = now()
-            elif decision["send"] and (not origins or row.get("origin_error")):
+            if decision["send"] and (not origins or row.get("origin_error")):
+                # No origins (or an origin error): the look already said all
+                # it can, and there is nowhere to deliver it.
                 note(row.get("origin_error") or "KEEPALIVE_TARGET_MISSING", rid)
             # hard provider/account failure surfaced by the run? OPEN THE
             # BREAKER BEFORE any launch decision below, so this tick already
@@ -522,6 +486,7 @@ def tick(runs_dir, skill_root=SKILL_ROOT):
             # control as an ARGUMENT LIST, never a shell -- a run folder with
             # a space in it stays one argument.
             if envelope.get("stalled"):
+                act_env = None
                 if breaker_open:
                     summary["suppressed"].append(rid)   # breaker open: NO launches
                 elif row.get("recovery_exhausted_at"):
@@ -568,6 +533,60 @@ def tick(runs_dir, skill_root=SKILL_ROOT):
                             recovery_failed(
                                 row, rid, outcome_rc
                                 if outcome_rc is not None else act.returncode)
+            else:
+                # No stall this tick: no recovery pass ran, so the delivered
+                # text is the look's own.
+                act_env = None
+            # ---- deliver: AFTER recovery, so the delivered text already knows
+            # whether recovery acted and won. The --recovery-act run above
+            # already built that receipt; take ITS message when it parsed.
+            send_env = envelope
+            if isinstance(act_env, dict) and act_env.get("message_for_client"):
+                send_env = act_env
+            msg = send_env.get("message_for_client") or ""
+            if decision["send"] and msg and origins \
+                    and not row.get("origin_error"):
+                text = msg
+                if decision.get("reminder_number"):
+                    try:
+                        text = reminder_text(send_env,
+                                             decision["reminder_number"])
+                    except Exception as e:             # noqa: BLE001
+                        note("KEEPALIVE_REMINDER_WORDING_FAILED",
+                             "%s %s" % (rid, e))
+                delivered = False
+                for origin in origins:
+                    try:
+                        if origin.get("kind") == "studio":
+                            send = [sys.executable, channel_send, "send",
+                                    "--channel", "studio", "--run-dir", run_dir,
+                                    "--message", text]
+                        else:
+                            send = ["openclaw", "message", "send", "--channel",
+                                    "telegram", "--target",
+                                    str(origin["target"]), "--message", text]
+                        r = subprocess.run(send, capture_output=True, text=True,
+                                           timeout=60)
+                        if r.returncode == 0:
+                            summary["delivered"].append(rid)
+                            delivered = True
+                        else:
+                            note("KEEPALIVE_DELIVERY_FAILED",
+                                 "%s rc=%d" % (rid, r.returncode))
+                    except Exception as e:             # noqa: BLE001
+                        note("KEEPALIVE_DELIVERY_FAILED", "%s %s" % (rid, e))
+                if delivered:
+                    # Remember what the client was told, so the same news is
+                    # never sent twice.
+                    if row.get("last_message_key") != decision["key"]:
+                        row["reminders_sent"] = 0
+                        row["first_sent_at"] = now()
+                    if decision.get("reminder_number"):
+                        row["reminders_sent"] = \
+                            int(row.get("reminders_sent") or 0) + 1
+                    row["last_message_key"] = decision["key"]
+                    row["last_message_kind"] = decision["kind"]
+                    row["last_sent_at"] = now()
             if proc.returncode == 10:
                 row["state"] = ("expired" if envelope.get("expired")
                                 else "complete")
