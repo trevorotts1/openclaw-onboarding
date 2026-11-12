@@ -49,9 +49,11 @@ this SOP text takes effect with that landing, not before.
 
 ### SOP 9.1 — Pull the Durable Record
 
-**Steps:** Read the ticket from the ledger (`rescue_ledger.py get --ticket-id <id>`):
-symptom, confirmed root cause, evidence, fix class/mode, answer, and
-`return_delivered`. Ground truth is the ledger — never reconstruct from memory or a
+**Steps:** Read the ticket from the live record — the `RR-04-ledger` tables, on the
+Command Center Rescue Rangers page, never written by hand; `rescue_ledger.py` is drill and migration tooling
+only. Take the symptom, confirmed root cause, evidence,
+fix class/mode, answer, and the box's acknowledgement and the owner-message receipt
+on the ticket. Ground truth is the live record — never reconstruct from memory or a
 Telegram thread.
 
 ---
@@ -60,8 +62,9 @@ Telegram thread.
 
 **Steps:** Confirm the diagnosis was evidence-backed (log line / config value / doc
 citation, not a guess); the fix was reversible and verified END-TO-END by the same
-falsifiable check; and the outcome actually reached the client agent
-(`return_delivered=1`). An answer that only landed in the operator group is an
+falsifiable check; and the outcome actually reached the client agent — the box's
+acknowledgement and the owner-message receipt on the ticket. An answer that only
+landed in the operator group is an
 **incomplete dispatch** — flag it to the Dispatcher to chase the return leg.
 
 ---
@@ -95,10 +98,10 @@ detection signature.
 **Steps:** Run the operator-only weekly prevention review (SOP 9.0 job
 queue is the source list, not a fresh scan). Read the week's resolved +
 incomplete tickets. Flag: any answered ticket
-with `return_delivered=0`; any client that hit the daily cap; any defect class that
+with no box acknowledgement and no owner-message receipt; any client that hit the daily cap; any defect class that
 recurred; any diagnosis later contradicted (a wrong-layer fix). Summarize into a
-short prevention memo for the Dispatcher + Operator; recommend FAST-tiering recurring
-classes with a ready `remediate.sh` card.
+short prevention memo for the Dispatcher + Operator; recommend raising the priority
+of recurring classes with a ready `remediate.sh` card.
 
 **Outputs:** A prevention artifact per qualifying ticket; a weekly prevention memo.
 **Hand to:** openclaw-maintenance / Skill-61 owner (fix-classes), Operator (repo
