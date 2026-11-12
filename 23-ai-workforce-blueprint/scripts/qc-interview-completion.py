@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
 """
+This gate applies only to interviews whose build-state has no `interviewProgress.engine == 'gate-v2'`.
+
 qc-interview-completion.py — PRD-2.15 + PRD-2.16: Interview Completion QC Gate.
 
 Checks that a completed interview transcript meets quality standards before
@@ -60,10 +62,11 @@ the build pipeline is allowed to proceed. Five checks:
      (those are logged solely to the transcript), so it reported these five fields
      "missing" for every client, always: brand_evokes, customer_feeling,
      brand_descriptors, ideal_customer, unique_differentiator.
-  4. Nudge cadence wired: interview-nudge-cron.sh exists + ensure-pipeline-crons.sh
-     (the shared registrar BOTH install.sh and update-skills.sh call) wires it.
-     (2026-07-30 fix, hot-patched-box false-failure): a SOFT/advisory finding, not
-     a hard block — see build_verdict() below and check_nudges_wired() docstring.
+  4. Nudge cadence: NOT CHECKED at completion time (WF-026 / BU-26). The old
+     check searched another script's text for cron wiring — box plumbing for an
+     earlier lifecycle stage, and no evidence about this interview. It now
+     reports wired: null with the note "not checked at completion time" and
+     adds nothing to warnings. See check_nudges_wired().
   5. NO-FABRICATION (v12.3.4): if interview-context-map.json exists, every answer whose
      text is a verbatim copy of a context snippet WITHOUT a 'confirmed-from-context:'
      provenance note is flagged as HARD FAIL (exit 3, reason 'unconfirmed-context-as-answer').
@@ -89,13 +92,13 @@ EXIT CODES (mirror qc-completeness.sh):
   3 — HARD FAIL (jargon hit, missing mandatory field, count way off,
                  or unconfirmed-context-as-answer)
 
-Nudge cadence wiring (check 4) is reported (nudgesWired / nudgeIssues) but is a
-WARNING, not a HARD FAIL (2026-07-30): it is box/infrastructure plumbing for a
-DIFFERENT, already-past lifecycle stage (nudging an owner who has not yet
-finished) — unlike checks 1/2/3/5/6/7, it says nothing about whether THIS
-transcript or these decisions are legitimate/complete. Blocking a client's
-already-complete, substantively-valid interview over an operator-facing cron
-gap is the wrong trade — see check_nudges_wired() and build_verdict() below.
+Nudge cadence wiring (check 4) is NOT CHECKED here (WF-026 / BU-26): it is
+reported as nudgesWired: null with the note "not checked at completion time" and
+adds nothing to warnings. It was box/infrastructure plumbing for a DIFFERENT,
+already-past lifecycle stage (nudging an owner who has not yet finished) and was
+decided by searching another script's text — that says nothing about whether THIS
+transcript or these decisions are legitimate/complete. See check_nudges_wired()
+and build_verdict() below.
 
 LEGACY/PRE-STANDARD INTERVIEW EXEMPTION (v12.4.0)
   Why: real, owner-authored interviews that were conducted BEFORE the 25-35 question
@@ -1306,94 +1309,29 @@ def check_mandatory_fields(state: dict, branding_questions_path: Path,
 
 def check_nudges_wired(repo_root: Path) -> dict:
     """
-    Static "is it wired" check — does not require a live cron or gateway.
-      (a) interview-nudge-cron.sh exists and is executable
-      (b) the box's shared cron REGISTRAR (ensure-pipeline-crons.sh) actually
-          wires interview-nudge-cron.sh into the "interview-nudge" cron
-      (c) nudge-incomplete-interviews.py has NUDGE_CONFIG with 24/72/168h
+    Check #4 (WF-026 / BU-26): NOT CHECKED AT COMPLETION TIME.
 
-    (b) — 2026-07-30 fix (hot-patched-box false-HARD-FAIL, third defect of this
-    shape in this file after the transcript-path fix / PR #772 and the
-    mandatory-fields fix / PR #775): this USED to grep repo_root/"install.sh"
-    for the string "interview-nudge-cron". install.sh is a PROVISIONING-TIME
-    script — it runs once during a full install and is NEVER copied into the
-    skills tree. Verified live on a hot-patched box (rescue-<client>):
-    install.sh is absent from ~/.openclaw entirely. Every box patched via
-    update-skills.sh (the fleet hot-patch path) therefore hard-failed this
-    check permanently, for a reason with nothing to do with the client's
-    interview.
+    This used to decide "wired" by searching the box's plumbing — an existence
+    test on interview-nudge-cron.sh, a substring search of
+    ensure-pipeline-crons.sh's text, and a text search of the nudge worker's
+    cadence constants. That is the wrong instrument for this gate: nudge
+    cadence is box plumbing for an EARLIER lifecycle stage (nudging an owner
+    who has not yet finished) and says nothing about whether THIS interview is
+    complete. Deciding it by substring search of another script also made it
+    a false authority — text can match while the mechanism is broken, and vice
+    versa.
 
-    ensure-pipeline-crons.sh is the ACTUAL, current source of truth: per its
-    own header, it is "the SHARED, IDEMPOTENT registrar/backfiller ... called
-    by BOTH install.sh (end of run) and update-skills.sh (after the wiring
-    phase) so files AND triggers always land together" — its _ensure_
-    interview_nudge() function is what registers cron name "interview-nudge"
-    (`openclaw cron add`) pointed at interview-nudge-cron.sh. It is persisted
-    to <openclaw-root>/scripts/ensure-pipeline-crons.sh on EVERY successful
-    run of either install.sh (canonical-scripts copy step) OR update-skills.sh
-    (deliver_canonical_scripts_tree(), which runs before that script's
-    same-version early-exit) — so, unlike install.sh, it is present on a
-    hot-patched box.
-
-    Deliberately NOT a live `openclaw cron list` check: interview-nudge is a
-    LIFECYCLE cron. ensure-pipeline-crons.sh's own _ensure_interview_nudge()
-    refuses to (re-)register it once state.interviewComplete==true, and
-    _sweep_stale_lifecycle_crons() ACTIVELY REMOVES it once that flag flips.
-    Since THIS gate runs at/after interview completion, a live "is the cron
-    currently present" check would be checking for something a healthy box is
-    expected to have already torn down — that would trade this false failure
-    for a new one of the identical shape (checking a signal that is correct
-    when negative). Checking the REGISTRAR's own wiring (capability) rather
-    than a lifecycle-dependent live snapshot avoids that trap while still
-    proving the mechanism is genuinely present and correctly configured.
-
-    Two candidate locations are checked for the registrar, matching this
-    script's two real call shapes: repo_root may be a live deployed skills
-    tree (default; no --repo-root — ensure-pipeline-crons.sh lives at the
-    SIBLING <openclaw-root>/scripts/, found via _resolve_openclaw_root()) or
-    an explicit full repo checkout (--repo-root; scripts/ is a direct child
-    of repo_root, as used by this script's own test suite / CI).
+    It now reports that the wiring was not checked here:
+        wired: None
+        note: "not checked at completion time"
+    and contributes NOTHING to warnings. `repo_root` stays in the signature
+    because the call site and the tests still pass it; this function reads no
+    files.
     """
-    issues = []
-
-    nudge_cron = repo_root / "23-ai-workforce-blueprint" / "scripts" / "interview-nudge-cron.sh"
-    if not nudge_cron.exists():
-        issues.append(f"interview-nudge-cron.sh not found at {nudge_cron}")
-    elif not os.access(nudge_cron, os.X_OK):
-        issues.append(f"interview-nudge-cron.sh exists but is not executable: {nudge_cron}")
-
-    registrar_candidates = [
-        repo_root / "scripts" / "ensure-pipeline-crons.sh",
-        _resolve_openclaw_root() / "scripts" / "ensure-pipeline-crons.sh",
-    ]
-    registrar = next((p for p in registrar_candidates if p.exists()), None)
-    if registrar is None:
-        issues.append(
-            "ensure-pipeline-crons.sh (the shared cron registrar run by BOTH "
-            "install.sh and update-skills.sh) not found at any of: "
-            + ", ".join(str(p) for p in registrar_candidates)
-        )
-    else:
-        content = registrar.read_text(encoding="utf-8", errors="replace")
-        if "interview-nudge-cron.sh" not in content or '"interview-nudge"' not in content:
-            issues.append(
-                f"{registrar} does not register the interview-nudge cron "
-                "(expected both a reference to interview-nudge-cron.sh and "
-                "the cron name \"interview-nudge\")"
-            )
-
-    nudge_worker = repo_root / "shared-utils" / "nudge-incomplete-interviews.py"
-    if nudge_worker.exists():
-        worker_text = nudge_worker.read_text(encoding="utf-8", errors="replace")
-        for expected_h in [24, 72, 168]:
-            if f'"hours_idle": {expected_h}' not in worker_text and f"'hours_idle': {expected_h}" not in worker_text and f"hours_idle: {expected_h}" not in worker_text:
-                issues.append(f"nudge-incomplete-interviews.py: missing {expected_h}h nudge cadence in NUDGE_CONFIG")
-    else:
-        issues.append(f"nudge-incomplete-interviews.py not found at {nudge_worker}")
-
     return {
-        "wired": len(issues) == 0,
-        "issues": issues,
+        "wired": None,
+        "note": "not checked at completion time",
+        "issues": [],
     }
 
 
@@ -1959,19 +1897,11 @@ def build_verdict(
             "build-kick can address the right recipient."
         )
 
-    # Nudge wiring check (2026-07-30: WARNING, not a HARD FAIL — see the
-    # check_nudges_wired() docstring and the EXIT CODES note at the top of this
-    # file. Unlike checks 1/2/3/5/6/7, this says nothing about whether THIS
-    # transcript/decision set is legitimate — it is box plumbing for nudging an
-    # owner who has ALREADY finished the interview by the time this gate runs.
-    # Still fail-closed at the detection level: a genuine wiring gap is still
-    # named here and surfaced in nudgesWired/nudgeIssues for operational
-    # follow-up (ensure-pipeline-crons.sh backfill / fleet sweep) — it just no
-    # longer blocks recognizing a substantively-complete interview.)
-    if not nudge_result["wired"]:
-        warnings.append(
-            "[nudge-cadence] Nudge cadence not fully wired: " + "; ".join(nudge_result["issues"])
-        )
+    # Nudge wiring (WF-026 / BU-26): not checked at completion time. The check
+    # inspected box plumbing for a different, already-past lifecycle stage and
+    # decided it by searching another script's text, so it is not evidence about
+    # THIS interview and adds nothing to warnings. Its result is reported as
+    # nudgesWired: null plus a note.
 
     # Check #5: No-fabrication (v12.3.4)
     fabrication_violations = []
@@ -2068,6 +1998,7 @@ def build_verdict(
         "missingFields": missing_fields,
         "checkedFields": field_result.get("checked", []),
         "nudgesWired": nudge_result["wired"],
+        "nudgeNote": nudge_result.get("note", ""),
         "nudgeIssues": nudge_result.get("issues", []),
         "fabricationViolations": fabrication_violations,
         "declineProvenanceViolations": decline_violations,
@@ -2100,10 +2031,7 @@ def build_verdict(
                 + (" [edit-mode exemption GRANTED]" if edit_mode_granted else "")
                 + (" [structured-web coverage standard applied]" if is_structured else "")
                 + ", 0 jargon hits, all fields present"
-                + (
-                    ", nudges wired" if nudge_result["wired"]
-                    else " [nudge cadence NOT wired — see warnings, not blocking]"
-                )
+                + ", nudge wiring not checked at completion time"
             )
             if verdict == "PASS" else
             f"{verdict}: " + "; ".join(hard_failures + soft_failures)
@@ -2414,7 +2342,7 @@ def main():
                   f"[askedBy=interview-web — 25-35 raw count standard N/A]")
         print(f"  Jargon hits    : {len(details['jargonHits'])}")
         print(f"  Missing fields : {len(details['missingFields'])}")
-        print(f"  Nudges wired   : {'yes' if details['nudgesWired'] else 'NO'}")
+        print(f"  Nudges wired   : {details.get('nudgeNote') or 'not checked at completion time'}")
         fab_violations = details.get("fabricationViolations", [])
         print(f"  No-fabrication : {'PASS' if not fab_violations else f'FAIL ({len(fab_violations)} violation(s))'}")
         decline_viol = details.get("declineProvenanceViolations", [])
@@ -2443,7 +2371,7 @@ def main():
         if details["missingFields"]:
             print(f"\n  MISSING FIELDS: {', '.join(details['missingFields'])}")
 
-        if not details["nudgesWired"] and details["nudgeIssues"]:
+        if details["nudgeIssues"]:
             print("\n  NUDGE ISSUES:")
             for iss in details["nudgeIssues"]:
                 print(f"    - {iss}")
