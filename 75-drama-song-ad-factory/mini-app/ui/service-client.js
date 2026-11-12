@@ -22,7 +22,7 @@
 //     -> { ok, updated_at }
 //   getQuestions()                                -> GET  /questions.json
 //     -> the intake_card studio-json export ({ format, version, questions… })
-//   lockIn({ title, replies, upload_ids })        -> POST /api/studio/orders
+//   lockIn({ title, replies, upload_ids, order_id }) -> POST /api/studio/orders
 //     -> { ok, order, option_line }
 //   listApprovals(orderId)                        -> GET  /api/studio/orders/<id>/approvals
 //     -> { ok, items }
@@ -33,6 +33,8 @@
 //     -> { ok, upload_id, upload_url, … }          (body passed through unchanged)
 //   getDelivery(orderId)                          -> GET  /api/studio/orders/<id>
 //     -> order.delivery (null until the run delivers)
+//   getOrder(orderId)                             -> GET  /api/studio/orders/<id>
+//     -> { order, stale_page_line }   (S75-073 — the project page re-reads this)
 //   listInbox()      -> { messages: [] }            (not built yet — SPEC.md §1)
 //   postInbox()      -> rejects STUDIO_INBOX_UNAVAILABLE (not built yet — SPEC.md §1)
 //
@@ -122,6 +124,13 @@ export async function fetchApprovalMedia(url) {
   };
 }
 
+/**
+ * S75-071 — one tap, one order. While a lock-in is in flight, a second tap
+ * (or any other caller) joins the SAME request instead of sending a second
+ * order; the next tap after it settles starts a fresh one.
+ */
+let lockInInFlight = null;
+
 const service = {
   getSession: () => call("GET", "/api/studio/session"),
 
@@ -139,8 +148,13 @@ const service = {
     return data;
   },
 
-  lockIn: ({ title, replies, upload_ids }) =>
-    call("POST", "/api/studio/orders", { title, replies, upload_ids }),
+  lockIn: ({ title, replies, upload_ids, order_id }) => {
+    if (!lockInInFlight) {
+      lockInInFlight = call("POST", "/api/studio/orders", { title, replies, upload_ids, order_id })
+        .finally(() => { lockInInFlight = null; });
+    }
+    return lockInInFlight;
+  },
 
   listApprovals: (orderId) =>
     call("GET", `/api/studio/orders/${encodeURIComponent(orderId)}/approvals`),
@@ -159,6 +173,17 @@ const service = {
   getDelivery: async (orderId) => {
     const data = await call("GET", `/api/studio/orders/${encodeURIComponent(orderId)}`);
     return (data.order && data.order.delivery) || null;
+  },
+
+  // S75-073 — the project page's own read: the order as it stands now, plus
+  // the service's line about a page that has fallen behind. Never throws for a
+  // missing line; the page shows nothing rather than inventing a warning.
+  getOrder: async (orderId) => {
+    const data = await call("GET", `/api/studio/orders/${encodeURIComponent(orderId)}`);
+    return {
+      order: data.order || null,
+      stale_page_line: typeof data.stale_page_line === "string" ? data.stale_page_line : "",
+    };
   },
 
   listInbox: async () => ({ messages: [] }),

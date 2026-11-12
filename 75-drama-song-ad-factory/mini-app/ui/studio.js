@@ -31,7 +31,6 @@
 // =============================================================================
 import { studio, serviceConnected, ServiceUnavailableError } from "./api-client.js";
 import { encode, toElement } from "./qr.js";
-import { verifyDownload, triggerSave } from "./download.js";
 
 // ── sibling modules, each owned by another unit ──────────────────────────────
 // service-client.js (W1-studio-page-U1) installs globalThis.studioService;
@@ -122,7 +121,17 @@ const STATUS_WORDS = {
   cancelled: "Cancelled",
   expired: "Expired",
 };
-const TIMELINE = ["waiting", "in_production", "needs_you", "ready", "delivered", "done"];
+// S75-073 — a stage is on the timeline only when the order really reached it.
+// The service stamps each move (`created_at` for waiting, then `<state>_at` in
+// lifecycle.js), so the page reads the stamps instead of guessing from order.
+// "Needs you" is deliberately absent from this list: it is shown as a
+// highlighted line only while it is the state the order is in now.
+const TIMELINE_STAGES = [
+  { state: "waiting", stamp: "created_at" },
+  { state: "in_production", stamp: "in_production_at" },
+  { state: "ready", stamp: "ready_at" },
+  { state: "delivered", stamp: "delivered_at" },
+];
 
 const state = {
   page: "start",
@@ -140,8 +149,13 @@ const state = {
   agnesRemembered: "unknown",   // session.agnes_remembered — "yes", "no", "unknown"
   agnesProgress: null,          // session.agnes_progress — the Agnes job's record
   locked: false,
+  sending: false,       // Lock it in is in flight — a second tap sends nothing
+  orderId: null,        // S75-071 — ONE id for the recap on screen, until accepted
   delivery: null,
-  deliveryVerdict: null,
+  // S75-073 — what the project page is showing and what it last drew.
+  staleLine: "",        // stale_page_line the service sent with the order, if it sent one
+  approvalItems: [],    // the approval listing behind the drawn signature
+  projectSig: "",       // the signature of the last thing drawn on the project page
 };
 
 // ── which screens are on: the `shows_when` the card exports (SPEC B1) ────────
@@ -471,6 +485,10 @@ const statusWords = (order) => STATUS_WORDS[order && order.state] || "In progres
 
 function openProject(order) {
   state.order = order;
+  // A different project starts from nothing read yet (S75-073).
+  state.staleLine = "";
+  state.approvalItems = [];
+  state.projectSig = "";
   setPage("approvals");
 }
 
@@ -604,6 +622,11 @@ function pageRecap() {
     ];
   }
 
+  // S75-071 — one tap, one order. The id is minted when the recap is drawn and
+  // kept in state until the order is accepted, so a second tap (or a retry
+  // after an error) names the SAME order and the service stores it once.
+  if (!state.orderId) state.orderId = newOrderId();
+
   const replies = currentReplies();
   const rows = list.map((q, i) => {
     const li = el("li", {});
@@ -623,20 +646,43 @@ function pageRecap() {
     el("div", { class: "card" }, [el("h2", { text: "Your recap" }), el("ol", {}, rows)]),
     el("p", { class: "muted", text: "Tap any line to change it. Locking it in sends your answers to the studio — nothing starts before that." }),
     el("div", { class: "actions" }, [
-      missing ? null : primary("Lock it in", () => lockIn()),
+      missing ? null : lockInButton(),
       secondary("Change an answer", () => goAnswer()),
     ].filter(Boolean)),
   ].filter(Boolean);
 }
 
-async function lockIn() {
+/** A fresh order id in the service's own shape: `r_` plus eight lower-case hex. */
+function newOrderId() {
+  const bytes = new Uint8Array(4);
+  if (globalThis.crypto && typeof globalThis.crypto.getRandomValues === "function") {
+    globalThis.crypto.getRandomValues(bytes);
+  } else {
+    for (let i = 0; i < bytes.length; i += 1) bytes[i] = Math.floor(Math.random() * 256);
+  }
+  return "r_" + [...bytes].map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+/** The Lock it in button, in its sending state while the order is on the wire. */
+function lockInButton() {
+  const b = primary("Lock it in", () => lockIn(b));
+  if (state.sending) { b.disabled = true; b.textContent = "Sending..."; }
+  return b;
+}
+
+async function lockIn(button) {
+  if (state.sending) return;
+  state.sending = true;
+  if (button) { button.disabled = true; button.textContent = "Sending..."; }
   try {
     const out = await svc().lockIn({
       title: `Drama video ${new Date().toISOString().slice(0, 10)}`,
       replies: [...currentReplies(), "yes"],
       upload_ids: [],
+      order_id: state.orderId,
     });
     state.locked = true;
+    state.orderId = null;
     if (out && out.order) {
       state.order = out.order;
       state.orders = [out.order, ...state.orders.filter((o) => o.order_id !== out.order.order_id)];
@@ -644,9 +690,14 @@ async function lockIn() {
     }
     announce("Order received. Your answers are with the studio.");
   } catch (err) {
+    // The order did not go through: the button comes back, with the SAME id,
+    // so the retry is the same order and can never become a second one.
+    state.sending = false;
+    if (button) { button.disabled = false; button.textContent = "Lock it in"; }
     announce(serviceMessage(err));
     return;
   }
+  state.sending = false;
   render();
 }
 
@@ -661,12 +712,175 @@ function pageReceived() {
   ];
 }
 
-function timelineFor(order) {
-  const at = TIMELINE.indexOf(order.state);
-  if (at < 0) return [el("p", { class: "muted", text: `Status: ${statusWords(order)}` })];
-  return [el("ol", {}, TIMELINE.map((s, i) => el("li", {
-    text: `${STATUS_WORDS[s]}${i < at ? " — finished" : i === at ? " — now" : " — not yet"}`,
-  })))];
+export function timelineFor(order) {
+  if (!order) return [];
+  const current = order.state;
+  const rows = [];
+  for (const { state: stage, stamp } of TIMELINE_STAGES) {
+    const reached = typeof order[stamp] === "number";
+    const now = stage === current;
+    if (!reached && !now) continue;
+    rows.push(el("li", {
+      class: now ? "current" : "finished",
+      text: `${STATUS_WORDS[stage]}${now ? " — now" : " — finished"}`,
+    }));
+  }
+  if (current === "needs_you") {
+    rows.push(el("li", { class: "current", text: `${STATUS_WORDS.needs_you} — now` }));
+  } else if (current && !TIMELINE_STAGES.some((s) => s.state === current)) {
+    // done / cancelled / expired: the state it is in now, in words.
+    rows.push(el("li", { class: "current", text: `${statusWords(order)} — now` }));
+  }
+  return rows.length ? [el("ol", {}, rows)] : [];
+}
+
+// ── S75-073 — the project page keeps itself true ────────────────────────────
+// While the project page is open and the tab is visible, the order and its
+// approvals are read again every 30 seconds, and once more the moment the tab
+// comes back. The page redraws only when the state, the stale line or the list
+// of approval versions changed — and never while the client is typing into a
+// box on the page, because a redraw would throw away what has been typed.
+export const PROJECT_REFRESH_MS = 30000;
+
+/** What the project page is showing: state + stale line + approval versions. */
+export function projectSignature(order, staleLine, approvalItems) {
+  const versions = (approvalItems || [])
+    .map((it) => `${(it && (it.stage || it.item_id)) || ""}@${it && it.version != null ? it.version : ""}`)
+    .sort()
+    .join(",");
+  return `${(order && order.state) || ""}|${staleLine || ""}|${versions}`;
+}
+
+/** Every input and textarea drawn on the page, wherever it sits. */
+function textBoxes() {
+  const out = [];
+  const visit = (node) => {
+    if (!node) return;
+    const tag = String(node.tagName || "").toUpperCase();
+    if (tag === "INPUT" || tag === "TEXTAREA") out.push(node);
+    for (const child of node.children || []) visit(child);
+  };
+  const root = typeof main === "function" ? main() : null;
+  if (root) visit(root);
+  return out;
+}
+
+/** True while a text box on the page has focus or holds text — never redraw. */
+export function redrawBlocked() {
+  const active = typeof document !== "undefined" ? document.activeElement : null;
+  for (const box of textBoxes()) {
+    if (box === active) return true;
+    if (typeof box.value === "string" && box.value.trim()) return true;
+  }
+  return false;
+}
+
+/**
+ * One read of the order and its approvals. Redraws only when the signature
+ * changed and no box on the page is being typed into. `manual` is the
+ * "Check for updates" button: it says in words what happened either way.
+ * @returns {Promise<boolean>} whether the page was redrawn
+ */
+export async function refreshProject({ manual = false } = {}) {
+  const order = state.order || state.orders[0];
+  if (!order || !order.order_id || !serviceConnected()) return false;
+  let fresh;
+  let items;
+  try {
+    fresh = await svc().getOrder(order.order_id);
+    const listed = await svc().listApprovals(order.order_id);
+    items = listed && Array.isArray(listed.items) ? listed.items : [];
+  } catch (err) {
+    // A read that failed changes nothing: the page keeps what it drew.
+    if (manual) announce(serviceMessage(err));
+    return false;
+  }
+  // The page, or the project on it, may have changed while the read was in
+  // flight. Painting then would show one project's data on another screen.
+  const still = state.order || state.orders[0];
+  if (state.page !== "approvals" || !still || still.order_id !== order.order_id) return false;
+  const nextOrder = (fresh && fresh.order) || order;
+  const staleLine = (fresh && typeof fresh.stale_page_line === "string") ? fresh.stale_page_line : "";
+  if (projectSignature(nextOrder, staleLine, items) === state.projectSig) {
+    if (manual) announce("Nothing has changed yet.");
+    return false;
+  }
+  if (redrawBlocked()) {
+    if (manual) announce("Finish typing first — then the page will show what changed.");
+    return false;
+  }
+  state.order = nextOrder;
+  state.orders = state.orders.map((o) => (o && o.order_id === nextOrder.order_id ? nextOrder : o));
+  state.staleLine = staleLine;
+  state.approvalItems = items;
+  render();
+  if (manual) announce("Updated.");
+  return true;
+}
+
+let refreshTimer = null;
+let refreshingFor = null;
+
+/** Read once now, then every PROJECT_REFRESH_MS while the page stays open. */
+export function startProjectRefresh() {
+  stopProjectRefresh();
+  refreshProject();
+  if (typeof setInterval === "function") {
+    refreshTimer = setInterval(() => { refreshProject(); }, PROJECT_REFRESH_MS);
+  }
+}
+
+export function stopProjectRefresh() {
+  if (refreshTimer !== null && typeof clearInterval === "function") clearInterval(refreshTimer);
+  refreshTimer = null;
+}
+
+/** The reader runs on the project page and nowhere else. */
+function syncProjectRefresh() {
+  if (state.page === "approvals") {
+    if (refreshingFor !== "approvals") {
+      refreshingFor = "approvals";
+      startProjectRefresh();
+    }
+  } else if (refreshingFor !== null) {
+    refreshingFor = null;
+    stopProjectRefresh();
+  }
+}
+
+/** The tab is hidden: no reads. It is visible again: read at once. */
+function onVisibilityChange() {
+  if (typeof document === "undefined") return;
+  if (document.visibilityState === "hidden") {
+    refreshingFor = null;
+    stopProjectRefresh();
+  } else if (state.page === "approvals") {
+    refreshingFor = "approvals";
+    startProjectRefresh();
+  }
+}
+
+/**
+ * "Start it again" — the order's own answers go back into the recap, so the
+ * client changes what they want and locks in a NEW order (a fresh id; the old
+ * one is terminal). Lifecycle: the draft is cleared at lock-in, so the replies
+ * kept on the order record are the only copy — they are what this reads.
+ */
+function startAgainButton(order) {
+  return primary("Start it again", () => startAgain(order));
+}
+
+async function startAgain(order) {
+  const kept = Array.isArray(order && order.replies) ? order.replies.filter((r) => typeof r === "string") : [];
+  state.replies = kept;
+  state.locked = false;
+  state.sending = false;
+  state.orderId = null;
+  state.qIndex = 0;
+  await loadQuestions();
+  hydrateReplies(state.replies);
+  state.qIndex = Math.min(firstUnanswered(), Math.max(0, state.visible.length - 1));
+  setPage("recap");
 }
 
 // The Agnes job's own record for this project (SPEC A11): the service reports
@@ -697,9 +911,25 @@ function pageProject() {
   nodes.push(el("div", { class: "card" }, [
     el("h2", { text: order.title || "Your video" }),
     el("p", { text: `Status: ${statusWords(order)}` }),
+    // S75-073 — the service's own line when this page has fallen behind.
+    state.staleLine ? el("p", { class: "muted", text: state.staleLine }) : null,
     ...timelineFor(order),
     ...progressNodes(order),
-  ]));
+  ].filter(Boolean)));
+
+  // S75-073 — a cancelled or expired order says what happened, in words, and
+  // offers the one thing left to do. `state_reason` is never printed: it is a
+  // machine code, not something a client can read.
+  if (order.state === "cancelled" || order.state === "expired") {
+    nodes.push(el("div", { class: "panel" }, [
+      el("p", {
+        text: order.state === "cancelled"
+          ? "This order was cancelled before any work was charged. Your answers were kept."
+          : "This order was not picked up in 45 days and has ended.",
+      }),
+      startAgainButton(order),
+    ]));
+  }
 
   const approvalsCard = el("div", { class: "card" }, [el("h2", { text: "Your approvals" })]);
   const slot = el("div", {});
@@ -723,16 +953,27 @@ function pageProject() {
   if (url) {
     nodes.push(el("div", { class: "card" }, [
       el("h2", { text: "Your finished video" }),
-      el("p", {}, [el("a", { href: url, rel: "noopener", text: url })]),
       el("div", { class: "actions" }, [primary("Watch it now", () => {
-        state.delivery = { masterUrl: url, clips: [], qrPayload: url };
-        state.deliveryVerdict = null;
+        // The delivery screen is a player now, so it needs the one thing it
+        // cannot look up itself: whether the link still stands (the service
+        // reports `availability` beside the order, never as an order state).
+        state.delivery = {
+          masterUrl: url, clips: [], qrPayload: url,
+          availability: order.availability || "available",
+        };
         setPage("delivery");
       })]),
+      el("p", {}, [el("a", { href: url, rel: "noopener", download: "", text: "Open my video" })]),
     ]));
   }
 
-  nodes.push(el("div", { class: "actions" }, [secondary("Back to home", () => setPage("start"))]));
+  nodes.push(el("div", { class: "actions" }, [
+    secondary("Check for updates", () => { refreshProject({ manual: true }); }),
+    secondary("Back to home", () => setPage("start")),
+  ]));
+  // What this draw is showing — the reader compares against it, so an
+  // unchanged read repaints nothing and a typing client is never interrupted.
+  state.projectSig = projectSignature(order, state.staleLine, state.approvalItems);
   return nodes;
 }
 
@@ -758,54 +999,43 @@ function qrSurface(url, what) {
   return wrap;
 }
 
+// The delivery screen: a player the client can watch, and one plain link that
+// saves the file. Nothing here measures the link — a page cannot tell a client
+// anything useful about bytes or header names, and a button that refuses to
+// work until a check passed is a button that does not work (S75-070).
 function pageDelivery() {
   const d = state.delivery;
   if (!d) {
     return [
       el("h1", { text: "Your finished video" }),
-      el("p", { class: "muted", text: "Nothing is ready to watch yet. Your premiere lands here the moment the studio finishes." }),
-      el("div", { class: "card" }, [
-        el("h2", { text: "Where it will be" }),
-        el("p", { text: "The finished video, the 60- and 90-second clips, a ready-to-post kit and a code you can scan to watch on your phone." }),
-      ]),
+      el("p", { class: "muted", text: "Your finished video will appear here. You will also get a message when it is ready." }),
     ];
   }
 
-  const verdict = state.deliveryVerdict;
-  const checkBtn = secondary("Check the download before saving", async () => {
-    announce("Checking the download…");
-    state.deliveryVerdict = await verifyDownload(d.masterUrl, {
-      fetchImpl: (...args) => (
-        serviceConnected() && globalThis.studioService.fetchDelivery
-          ? globalThis.studioService.fetchDelivery(...args)
-          : fetch(...args)
-      ),
-      expectedBytes: d.masterBytes ?? null,
-    });
-    announce(state.deliveryVerdict.ok
-      ? "That link gives a real file. You can save it."
-      : "That link is not a real download. See the note above the button.");
-    render();
-  });
-
-  const saveBtn = primary("Download my video", () => {
-    triggerSave(d.masterUrl, "05 - Video Captioned.mp4");
-    announce("Saving your video.");
-  });
-  if (!verdict?.ok) {
-    saveBtn.disabled = true;
-    saveBtn.setAttribute("aria-disabled", "true");
-    saveBtn.title = "Check the link first — a redirect is not a download";
+  // The studio's storage link lasts 7 days after delivery; the video itself
+  // stays in the client's own media library, so the page says what to do next.
+  if (d.availability === "r2-expired") {
+    return [
+      el("h1", { text: "Your finished video" }),
+      el("p", { text: "This download link ended 7 days after delivery. Your video is still in your own media library. Ask us for a fresh link." }),
+    ];
   }
 
   return [
     el("h1", { text: "Your finished video" }),
-    verdict && !verdict.ok ? el("p", { class: "refusal", text: `This link is not an actual download: ${verdict.reasons.join("; ")}.` }) : null,
-    verdict?.ok ? el("p", { class: "complete", text: `Real file: ${verdict.receivedBytes} bytes, ${verdict.contentType}.` }) : null,
     el("div", { class: "card" }, [
       el("h2", { text: "Watch and save" }),
-      el("p", { text: "Check the link first. A link that only redirects is not a download — you would get a page instead of your video." }),
-      el("div", { class: "actions" }, [checkBtn, saveBtn]),
+      el("video", { controls: true, playsinline: true, preload: "metadata", src: d.masterUrl }),
+      el("div", { class: "actions" }, [
+        el("a", {
+          class: "btn",
+          href: d.masterUrl,
+          download: "05 - Video Captioned.mp4",
+          rel: "noopener",
+          text: "Download my video",
+        }),
+      ]),
+      el("p", { class: "muted", text: "If the video opens in a new tab instead of saving, press and hold it and choose Save." }),
     ]),
     d.clips?.length ? el("div", { class: "card" }, [
       el("h2", { text: "Clips for social media" }),
@@ -844,6 +1074,7 @@ export function render() {
   renderProgress();
   main().replaceChildren(...RENDERERS[state.page]());
   focusHeading();
+  syncProjectRefresh();
 }
 
 async function boot() {
@@ -884,6 +1115,11 @@ async function boot() {
     const { page } = readHash();
     if (PAGES.some((p) => p.id === page) && page !== state.page) { state.page = page; render(); }
   });
+  // S75-073 — coming back to the tab reads at once instead of waiting for the
+  // next interval; leaving it stops the reads.
+  if (typeof document !== "undefined" && typeof document.addEventListener === "function") {
+    document.addEventListener("visibilitychange", onVisibilityChange);
+  }
 }
 
 if (typeof document !== "undefined") boot();
