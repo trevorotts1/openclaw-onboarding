@@ -259,6 +259,22 @@ def test_exit5_explicit_ok_true_proceeds():
           repr(status) + " " + repr(payload))
 
 
+def test_exit5_validated_above_target_refuses():
+    """Exit 5 + validated state but ABOVE_TARGET data: still refused (D1)."""
+    budget = (5, {"state": "validated",
+                  "data": {"status": "ABOVE_TARGET", "exit_code": 5,
+                           "chars": 20100, "max": 20000, "cut": 100}})
+    env, db, fake, run_id, label = run_case(_full_script(budget),
+                                            "s75039-validated-above")
+    check("exit5 validated+ABOVE_TARGET: rejected",
+          env.get("outcome") == "rejected", str(env.get("outcome")))
+    check("exit5 validated+ABOVE_TARGET: reason prompt-budget-failed",
+          env.get("reason_code") == "prompt-budget-failed",
+          str(env.get("reason_code")))
+    check("exit5 validated+ABOVE_TARGET: never submitted",
+          "submit" not in fake.order(), str(fake.order()))
+
+
 def test_exit4_over_max_unchanged():
     """Exit 4 keeps today's handling: prompt-over-max, nothing submitted."""
     env, db, fake, run_id, label = run_case(_full_script(BUDGET_OVER_MAX),
@@ -290,6 +306,7 @@ TESTS = [
     test_exit5_refused_still_refuses,
     test_exit5_explicit_ok_false_refuses,
     test_exit5_explicit_ok_true_proceeds,
+    test_exit5_validated_above_target_refuses,
     test_exit4_over_max_unchanged,
     test_exit0_proceeds_without_note,
 ]
