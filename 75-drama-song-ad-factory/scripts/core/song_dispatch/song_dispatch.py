@@ -258,6 +258,43 @@ class DispatchError(ValueError):
     pass
 
 
+def song_cost_cents(price_fn=None):
+    """Cents for ONE song generation, from the card price authority.
+
+    S75-001 (fifth-pass correction): the song path reserved a hard-coded 6
+    cents, so a real charge was reserved at the wrong number and the spending
+    limit was judged against it. The number comes from
+    ``catalog_calculator.card_render.price_envelope`` -- the ONE place the card,
+    the question and dispatch price a song. That function DOES price a single
+    generate (the ``music`` line item), so nothing here is invented.
+
+    ``price_fn`` is Skill 74's ``price`` adapter; with none the shipped video
+    model rate table prices the song (``video_models.rated_price_fn``), so the
+    number resolves offline. A card that cannot be priced raises: the paid path
+    must never proceed on a guessed estimate (fail closed).
+    """
+    from catalog_calculator import card_render as _CR   # noqa: PLC0415 - paid path
+    envelope, _model = _CR.price_envelope(
+        {"length": "60 seconds", "shape": "9:16", "main_characters": 1}, price_fn)
+    card = envelope.get("card") if isinstance(envelope, dict) \
+        and envelope.get("state") == "ok" else None
+    line = next((li for li in (card or {}).get("line_items") or []
+                 if li.get("component") == "music"), None)
+    usd = line.get("usd") if isinstance(line, dict) else None
+    try:
+        cents = int(round(float(usd) * 100))
+    except (TypeError, ValueError):
+        cents = 0
+    if cents <= 0:
+        raise DispatchError(
+            "SONG_PRICE_UNAVAILABLE: the card price authority could not price one "
+            "song generation (%s), so the ledger estimate is refused rather than "
+            "invented; record a live Skill 74 price before the run"
+            % ((envelope or {}).get("reasons") if isinstance(envelope, dict)
+               else "no envelope"))
+    return cents
+
+
 def refuse_asr(engine):
     """Only the local fast engine (faster-*, small.en int8) may transcribe;
     anything openai, or any engine not named faster-*, is refused."""
