@@ -39,6 +39,7 @@ class DocsDeliverToChat(unittest.TestCase):
         for needle in ("chat-decision", "--deliver telegram", "Code: <first 6 characters of the request id>",
                        "Any of the three works", "design_board", "paid_asset_budget"):
             self.assertIn(needle, skill, needle)
+        self.assertIn("--view-url", skill)
         self.assertIn("--kind design_board", dispatch)
         self.assertIn("into the client's chat", dispatch)
         # the old rule that a chat yes only re-sends a link is gone

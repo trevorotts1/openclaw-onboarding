@@ -267,6 +267,8 @@ python3 shared-utils/owner_approval/owner_approval.py request --kind design_boar
   --deliver telegram --target <client chat id>
 ```
 
+Pass `--view-url "Design board PDF=<link>"` (repeatable; the review PDF, a Google Doc or Sheet, the Command Center preview) so every message and reminder carries a "View it here:" link beside the inline copy and attached images.
+
 The client may approve three ways, and any one is enough: reply in chat ("approve", "yes", "changes: ..."), tap the
 Approve button in Telegram, or use the Command Center link. A chat reply or button tap is handed to Command Center by
 `owner_approval.py chat-decision` with the reference of the real inbound message; Command Center verifies it and

@@ -148,7 +148,7 @@ Center. Any of the three works; none is required.** Register the request with
 `shared-utils/owner_approval/README.md`; kinds: `plan_build` for the plan, `design_board` for copy, boards, wireframes
 and mockups, `paid_asset_budget` for the picture budget). The message goes INTO the chat in the SAME turn: what will
 happen, the actual copy text inline, wireframe and mockup images or the review PDF attached, the three ways to answer
-and `Code: <first 6 characters of the request id>`. Never send only a link and never leave the client with only
+and `Code: <first 6 characters of the request id>`. Add `--view-url "<label>=<link>"` for every place the material lives (the review PDF, the client's Google Sheet or Doc, the Command Center preview) so every message and reminder says "View it here:" with that link; if a source cannot be read, still send the link and the content inline and say plainly what needs reconnecting (`--source-problem`). Never send only a link and never leave the client with only
 "awaiting your approval". When the client replies in chat ("approve", "yes", "changes: ..."), or taps the button, run
 `owner_approval.py chat-decision --request-id <id> --decision approve|changes --channel telegram|webchat
 --source-message-ref <channel>:<chat or session id>:<message id> [--note ...]` with the reference of their real inbound

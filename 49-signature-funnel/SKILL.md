@@ -173,7 +173,7 @@ the request id>`, and three ways to answer: reply in chat ("approve" / "yes" / "
 or use the Command Center link. When the owner replies in chat or taps a button, the agent runs
 `owner_approval.py chat-decision` with the reference of that real inbound message and Command Center verifies it and
 records the approval; the agent never records a yes itself and never treats its own text as one. Never ask again for
-something already approved. A launch plan uses `--kind plan_build`; copy, boards, wireframes and mockups
+something already approved. Every message and reminder also carries a "View it here:" link (`--view-url "<label>=<link>"`, repeatable) to where the material lives (review PDF, Google Sheet or Doc, Command Center preview); if a source cannot be read the link and the content still go inline with a plain sentence (`--source-problem`). A launch plan uses `--kind plan_build`; copy, boards, wireframes and mockups
 `--kind design_board`; picture spend `--kind paid_asset_budget`; placeholder wireframes `--kind stub_render`; a GHL
 write `--kind automation_write`; going live `--kind publish`.
 
