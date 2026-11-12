@@ -35,28 +35,144 @@ import os
 from pathlib import Path
 
 __all__ = ["live_departments_dir", "departments_root_for", "platform_workspace",
-           "looks_like_departments_dir"]
+           "looks_like_departments_dir", "resolve_live_departments_dir"]
+
+
+def _registered_agents(cfg):
+    """(id, entry) for every registered agent in BOTH roster shapes:
+    `agents.entries` (OpenClaw 2026.9.x, keyed by id, no "id" in the body) and
+    legacy `agents.list[]`. Same union as update-skills.sh _registry_snapshot();
+    entries wins when both carry an id. Copied from
+    refresh-build-state-from-index.py so both readers agree on the roster."""
+    agents = cfg.get("agents") if isinstance(cfg, dict) else None
+    if not isinstance(agents, dict):
+        return []
+    out, seen = [], set()
+    entries = agents.get("entries")
+    for k, v in (entries.items() if isinstance(entries, dict) else ()):
+        if isinstance(v, dict) and str(k).lower() not in seen:
+            out.append((str(k), v)); seen.add(str(k).lower())
+    lst = agents.get("list")
+    for a in (lst if isinstance(lst, list) else ()):
+        if isinstance(a, dict) and a.get("id") and str(a["id"]).lower() not in seen:
+            out.append((str(a["id"]), a)); seen.add(str(a["id"]).lower())
+    return out
+
+
+def _dept_slugs(state):
+    """The department slugs the build state lists (`slug`, else `id`)."""
+    out = []
+    entries = state.get("departments") if isinstance(state, dict) else None
+    for d in (entries if isinstance(entries, list) else ()):
+        if not isinstance(d, dict):
+            continue
+        slug = d.get("slug") or d.get("id")
+        if isinstance(slug, str) and slug.strip():
+            out.append(slug.strip())
+    return out
+
+
+def _score_tree(root, slugs):
+    """How many of the state's departments live in `root`; with no state
+    departments, how many of its sub-folders hold at least one role how-to.md."""
+    if slugs:
+        return sum(1 for s in slugs
+                   if (root / s).is_dir() or (root / f"{s}-dept").is_dir())
+    try:
+        children = [c for c in root.iterdir() if c.is_dir()]
+    except OSError:
+        return 0
+    return sum(1 for c in children if next(c.glob("*/how-to.md"), None) is not None)
+
+
+def resolve_live_departments_dir(state, workspace, config_path=None):
+    """Where the company's departments actually live: (folder or None, reason).
+
+    The ONE resolver every caller uses (BU-103, WF-124). Rule, in order:
+
+    1. AGENTS FIRST. The roster in `config_path` (default
+       <parent of workspace>/openclaw.json) is ground truth: for every `dept-*`
+       agent whose `workspace` is an existing folder, its parent is a candidate
+       tree. Exactly one distinct parent -> that folder, reason "agents".
+    2. Otherwise SCORE the three fixed candidates (existing folders only,
+       de-duplicated by resolved path): <companyRoot>/departments when absolute,
+       <workspaceRoot>/departments, <workspace>/departments. A candidate's score
+       is how many of the state's department slugs it holds (bare or `-dept`);
+       with no state departments, how many sub-folders hold a */how-to.md.
+    3. Highest score wins; a tie keeps the earlier candidate. No candidate
+       exists -> (None, "none").
+    """
+    state = state if isinstance(state, dict) else {}
+    workspace = Path(workspace)
+    if config_path is None:
+        config_path = workspace.parent / "openclaw.json"
+    try:
+        cfg = json.loads(Path(config_path).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        cfg = None
+    parents, seen = [], set()
+    for aid, entry in _registered_agents(cfg):
+        if not aid.startswith("dept-"):
+            continue
+        ws = entry.get("workspace")
+        if not isinstance(ws, str) or not ws.strip() or not Path(ws).is_dir():
+            continue
+        parent = Path(ws).resolve().parent
+        if str(parent) not in seen:
+            seen.add(str(parent)); parents.append(parent)
+    if len(parents) == 1:
+        return parents[0], "agents"
+
+    candidates, cseen = [], set()
+
+    def add(p):
+        try:
+            resolved = Path(p).resolve()
+        except OSError:
+            return
+        if str(resolved) in cseen or not resolved.is_dir():
+            return
+        cseen.add(str(resolved)); candidates.append(resolved)
+
+    root = state.get("companyRoot")
+    if isinstance(root, str) and os.path.isabs(root):
+        add(Path(root) / "departments")
+    ws_root = state.get("workspaceRoot")
+    if isinstance(ws_root, str) and ws_root.strip():
+        add(Path(ws_root) / "departments")
+    add(workspace / "departments")
+
+    slugs = _dept_slugs(state)
+    best, best_score = None, -1
+    for cand in candidates:
+        score = _score_tree(cand, slugs)
+        if score > best_score:
+            best, best_score = cand, score
+    if best is None:
+        return None, "none"
+    return best, "scored"
 
 
 def departments_root_for(workspace):
     """The departments tree for the workspace `workspace`.
 
-    The build state's own companyRoot comes first: build-workforce.py records
-    where it wrote (resolve_company_paths -> companyRoot), materialize-dept-
-    agents.sh registers the department agents on that tree, so it is the tree
-    the agents actually run. Only when the build state names no existing
-    <companyRoot>/departments does <workspace>/departments apply.
+    Delegates to resolve_live_departments_dir() so this reader and every other
+    reader of the tree agree by construction (BU-103): the registered dept
+    agents first, then the build state's own companyRoot, then the workspace.
+    Only when nothing exists does <workspace>/departments apply (the write
+    target of a fresh install).
     $WORKFORCE_BUILD_STATE_FILE overrides the state location, as in the build.
     """
     workspace = Path(workspace)
     state_file = os.environ.get("WORKFORCE_BUILD_STATE_FILE", "").strip() \
         or str(workspace / ".workforce-build-state.json")
     try:
-        root = json.loads(Path(state_file).read_text(encoding="utf-8")).get("companyRoot")
-    except (OSError, ValueError, AttributeError):
-        root = None
-    if isinstance(root, str) and os.path.isabs(root) and (Path(root) / "departments").is_dir():
-        return Path(root) / "departments"
+        state = json.loads(Path(state_file).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        state = {}
+    live, _reason = resolve_live_departments_dir(state, workspace)
+    if live is not None:
+        return live
     return workspace / "departments"
 
 
@@ -132,3 +248,23 @@ def looks_like_departments_dir(p):
         return len(subdirs) >= 2 and not (p / "how-to.md").exists()
     except Exception:
         return False
+
+
+def _cli_workspace():
+    """The workspace the installer means: the OpenClaw env pins, else the
+    platform rule (same order as the package contract, section 2.1)."""
+    for key in ("OPENCLAW_WORKSPACE_ROOT", "OPENCLAW_WORKSPACE_PATH"):
+        value = os.environ.get(key, "").strip()
+        if value:
+            return Path(value)
+    return platform_workspace()
+
+
+if __name__ == "__main__":
+    import sys
+
+    if "--print-live-departments-dir" in sys.argv[1:]:
+        _live = departments_root_for(_cli_workspace())
+        if Path(_live).is_dir():
+            print(_live)
+        sys.exit(0)
