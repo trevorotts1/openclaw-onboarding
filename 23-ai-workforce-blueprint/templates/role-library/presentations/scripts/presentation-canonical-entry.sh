@@ -63,6 +63,9 @@
 #        job (AF-DECK-TYPE-UNKNOWN / AF-ENGINE-NEW-FAILED / AF-ENGINE-COMPONENT-
 #        MISSING). BLOCKING -- never a silent downgrade to run_signature_deck.py.
 #        (See engine_fail() / fix/deck-type-routing-bypass.)
+#  12 — ATTEMPT CAP (FIX-23 / PD-008): the door was DISPATCHED 3 times inside the
+#        last 6 hours and did not finish. Nothing is lost -- continue the same
+#        build with --resume. Writing a custom driver is never the answer.
 #   (3/4 propagate from run_signature_deck.py: 3 render fail, 4 kie balance abort)
 # ============================================================================
 
@@ -264,26 +267,118 @@ fi
 # missing GHL sibling). What must NEVER happen is the door failing and the
 # agent "engineering around it" by writing a custom driver (the ungoverned
 # path, AF-CANONICAL-RENDER-BYPASS) — the exact Error-5 behavior this loop
-# exists to stop. Cap canonical-entry invocations per run dir at 3; the 4th
-# invocation dies with an explicit message naming the sanctioned recovery path
-# (open a maintenance ticket / apply the sync + GHL fix) instead of letting the
-# agent improvise. --plan (read-only inspection) is EXEMPT: inspecting a run
-# dir must never consume its entry budget.
+# exists to stop.
+#
+# PD-008 — THE CAP MUST NOT BRICK A RUN:
+#   * ONLY A REAL DISPATCH COUNTS. _attempt_budget_gate is called immediately
+#     before the engine run (Step 3) and immediately before the legacy fallback
+#     dispatch, so gate-repair cycles and --plan inspections never burn budget.
+#   * The window is 6 HOURS. The count stays a BARE INTEGER in
+#     .canonical-entry-attempts (the door tests read it that way); the window
+#     timestamps live beside it in .canonical-entry-attempts.meta.json
+#     ({"first_at": "...", "last_at": "..."}). A count whose last_at is older
+#     than 6 hours resets to 0; a missing/unreadable meta file is treated as
+#     "now" (never a silent reset).
+#   * The 4th dispatch inside 6 hours exits 12 with the documented recovery
+#     (--resume), never a bare brick.
+#   * A --resume that continues an existing state.json is a continuation, not a
+#     new attempt (FIX 11).
 # ---------------------------------------------------------------------------
-# FIX 11: a --resume of an existing run is a continuation, not a new
-# attempt — it must not consume the entry budget.
-# FIX 11: declare a safe default so the success-path reset below is a no-op
-# when the increment is skipped (set -u is active; rm -f "" is harmless).
 _ATTEMPT_FILE=""
-if [ "$PLAN" -eq 0 ] && { [ "$RESUME" -eq 0 ] || [ ! -f "$RUN_DIR/state.json" ]; }; then
-    _ATTEMPT_FILE="$RUN_DIR/working/checkpoints/.canonical-entry-attempts"
-    mkdir -p "$(dirname "$_ATTEMPT_FILE")"
-    _ATTEMPTS=$(( $(cat "$_ATTEMPT_FILE" 2>/dev/null | tr -d ' ') + 1 ))
-    echo "$_ATTEMPTS" > "$_ATTEMPT_FILE"
-    if [ "$_ATTEMPTS" -gt 3 ]; then
-        die "canonical entry attempted $_ATTEMPTS times (>3). Do NOT write a custom driver. The sanctioned door is failing — open a maintenance ticket, apply the sync/ghl fix, then retry."
+_ATTEMPT_META=""
+_attempt_budget_gate() {
+    if [ "$PLAN" -eq 0 ]; then
+        # FIX 11: a resume of an existing run is a continuation, not an attempt.
+        if [ "$RESUME" -eq 1 ] && [ -f "$RUN_DIR/state.json" ]; then
+            return 0
+        fi
+        _ATTEMPT_DIR="$RUN_DIR/working/checkpoints"
+        mkdir -p "$_ATTEMPT_DIR" 2>/dev/null || true
+        _ATTEMPT_FILE="$_ATTEMPT_DIR/.canonical-entry-attempts"
+        _ATTEMPT_META="$_ATTEMPT_DIR/.canonical-entry-attempts.meta.json"
+        command -v python3 >/dev/null 2>&1 || return 0
+        _ATTEMPT_OUT="$(ATTEMPT_FILE="$_ATTEMPT_FILE" ATTEMPT_META="$_ATTEMPT_META" \
+            RUN_DIR="$RUN_DIR" "$PRESENTATION_PY" - <<'PY'
+import json, os, sys, time
+from datetime import datetime, timezone
+
+path = os.environ["ATTEMPT_FILE"]
+meta_path = os.environ["ATTEMPT_META"]
+run_dir = os.environ["RUN_DIR"]
+WINDOW_S = 6 * 3600.0
+now = time.time()
+
+
+def _epoch(value):
+    """ISO-8601 -> epoch seconds, or None when unreadable."""
+    if not isinstance(value, str) or not value.strip():
+        return None
+    txt = value.strip().replace("Z", "+00:00")
+    try:
+        dt = datetime.fromisoformat(txt)
+    except Exception:
+        return None
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt.timestamp()
+
+
+try:
+    with open(path, encoding="utf-8") as fh:
+        count = int((fh.read() or "0").strip() or "0")
+except Exception:
+    count = 0
+
+first_at = None
+last_at = None
+try:
+    with open(meta_path, encoding="utf-8") as fh:
+        meta = json.load(fh)
+    if isinstance(meta, dict):
+        first_at = meta.get("first_at")
+        last_at = meta.get("last_at")
+except Exception:
+    meta = None
+
+last_epoch = _epoch(last_at)
+if last_epoch is None:
+    # Missing/unreadable window -> treat it as "now": never a silent reset.
+    last_epoch = now
+if now - last_epoch > WINDOW_S:
+    count = 0
+    first_at = None
+
+count += 1
+stamp = datetime.fromtimestamp(now, timezone.utc).isoformat()
+first_stamp = first_at if _epoch(first_at) is not None else stamp
+try:
+    with open(path, "w", encoding="utf-8") as fh:
+        fh.write(str(count))
+    tmp = meta_path + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as fh:
+        json.dump({"first_at": first_stamp, "last_at": stamp}, fh)
+    os.replace(tmp, meta_path)
+except Exception:
+    pass
+
+if count > 3:
+    sys.stderr.write(
+        "The build was started 3 times in the last 6 hours and did not finish. "
+        "Nothing is lost. To continue the same build run: "
+        "bash presentation-canonical-entry.sh --run-dir %s --resume . "
+        "Do not write your own build script.\n" % run_dir)
+    sys.exit(13)
+sys.exit(0)
+PY
+)"
+        _ATTEMPT_RC=$?
+        [ -n "$_ATTEMPT_OUT" ] && printf '%s\n' "$_ATTEMPT_OUT" >&2
+        if [ "$_ATTEMPT_RC" -eq 13 ]; then
+            exit 12
+        fi
     fi
-fi
+    return 0
+}
 
 # ---------------------------------------------------------------------------
 # Locate the canonical render scripts (single source of truth).
@@ -1346,6 +1441,11 @@ $_CREATE_OUT"
         fi
     fi
 
+    # PD-008: a REAL engine dispatch is what consumes an entry attempt. Every
+    # gate above has passed, so a gate-repair cycle can never brick the run; the
+    # 4th dispatch inside 6 hours exits 12 with the --resume recovery.
+    _attempt_budget_gate
+
     # Step 3: Run the engine. This walks every manifest phase (count derived
     # from PIPELINE-MANIFEST.json, never a hardcoded number), refuses to skip,
     # runs 6 fail-closed gates in close(), and posts progress to the CC board.
@@ -1394,8 +1494,12 @@ $_CREATE_OUT"
     note "run: ${_ENGINE_RUN_CMD[*]}"
     "${_ENGINE_RUN_CMD[@]}"
     _ENGINE_RC=$?
-    # FIX 11: a successful engine run resets the entry-attempt budget.
-    [ "$_ENGINE_RC" -eq 0 ] && rm -f "$_ATTEMPT_FILE"
+    # FIX 11 / PD-008 — canonical-entry attempt budget reset: a successful engine
+    # run (exit 0) clears the counter AND its 6-hour window.
+    if [ "$_ENGINE_RC" -eq 0 ]; then
+        [ -n "$_ATTEMPT_FILE" ] && rm -f "$_ATTEMPT_FILE"
+        [ -n "$_ATTEMPT_META" ] && rm -f "$_ATTEMPT_META"
+    fi
     rm -f "$NONCE_FILE" "$NONCE_PHASE_FILE" "$_ENGINE_INTAKE_TMP" 2>/dev/null || true
     exit "$_ENGINE_RC"
 else
@@ -1496,9 +1600,17 @@ export PRESENTATION_SLIDE_GEOMETRY_ENFORCE="${PRESENTATION_SLIDE_GEOMETRY_ENFORC
 # concurrent sibling's phase-keyed file is a different path and is never touched.
 trap 'rm -f "$NONCE_FILE" "$NONCE_PHASE_FILE" 2>/dev/null || true' EXIT INT TERM HUP
 
+# PD-008: the legacy fallback is a REAL dispatch too — it consumes one attempt,
+# and the 4th dispatch inside 6 hours exits 12 with the --resume recovery.
+_attempt_budget_gate
+
 "${cmd[@]}"
 _rc=$?
-# FIX 11: a successful fallback run resets the entry-attempt budget.
-[ "$_rc" -eq 0 ] && rm -f "$_ATTEMPT_FILE"
+# FIX 11 / PD-008 — canonical-entry attempt budget reset: a successful fallback
+# run (exit 0) clears the counter AND its 6-hour window.
+if [ "$_rc" -eq 0 ]; then
+    [ -n "$_ATTEMPT_FILE" ] && rm -f "$_ATTEMPT_FILE"
+    [ -n "$_ATTEMPT_META" ] && rm -f "$_ATTEMPT_META"
+fi
 rm -f "$NONCE_FILE" "$NONCE_PHASE_FILE" 2>/dev/null || true
 exit "$_rc"

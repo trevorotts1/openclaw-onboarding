@@ -7,7 +7,10 @@ Proof (verbatim from QC.md; the critic runs exactly this):
 The three mechanisms:
   1. ATTEMPT BUMP IS POST-GATE — a run that dies on any gate exits with the
      budget untouched, so gate-repair cycles never burn the cap. The bump
-     happens only after "ALL GATES PASSED", and only when PLAN=0.
+     happens only after "ALL GATES PASSED", immediately before a real dispatch,
+     and only when PLAN=0. PD-008: the cap counts DISPATCHES inside a 6-hour
+     window (the count stays a bare integer; the window lives beside it in
+     .canonical-entry-attempts.meta.json) and the 4th exits 12 naming --resume.
   2. RESET ON SUCCESS — a build whose engine exits 0 clears the counter, so
      the next deck in the same run dir starts from a fresh budget.
   3. --plan IS EXEMPT FROM EVERY SIDE EFFECT — it never reaches the bump and
@@ -166,7 +169,10 @@ def test_three_failed_gate_runs_then_one_pass_never_hits_cap(tmp_path):
 
 def test_engine_failing_builds_do_consume_and_cap_still_guards(tmp_path):
     """The cap still stops the engine-keeps-failing loop: builds that REACH the
-    engine consume one attempt each, and the 4th dies with the explicit message."""
+    engine consume one attempt each, and the 4th dies with the explicit message.
+
+    PD-008: the 4th dispatch exits 12 (the new documented code) and names the
+    --resume recovery, not a bare brick."""
     run_dir = make_run_dir(tmp_path)
     fail_dir = make_scripts_dir(tmp_path, engine_rc=7)
     for i in (1, 2, 3):
@@ -174,8 +180,10 @@ def test_engine_failing_builds_do_consume_and_cap_still_guards(tmp_path):
         assert r.returncode == 7, f"stub engine exit must propagate (run {i})"
         assert read_attempts(run_dir) == i, f"attempt {i} must be counted"
     r4 = run_entry(run_dir, fail_dir, env_extra={"OPENCLAW_WORKSPACE": str(tmp_path / "no-ws")})
-    assert r4.returncode == 2, "the 4th build must be bricked by the cap (exit 2)"
-    assert "Do NOT write a custom driver" in r4.stderr, r4.stderr
+    assert r4.returncode == 12, "the 4th build must be stopped by the cap (exit 12)"
+    assert "--resume" in r4.stderr, r4.stderr
+    assert "Do not write your own build script" in r4.stderr, r4.stderr
+    assert read_attempts(run_dir) == 4, "the refused 4th dispatch is still counted"
 
 
 def test_plan_does_not_increment_attempts(tmp_path):
