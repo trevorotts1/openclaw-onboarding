@@ -108,12 +108,13 @@
       "--logical-key",
       "keyframes",
       "--attempt-id",
-      "a1",
+      "",
       "--cost",
-      "0"
+      "{COST_MINOR}"
     ],
     "produces": "Keyframe images for every planned shot, delivered only after `final_assembler`-independent QC records exist.",
     "placeholders": [
+      "COST_MINOR",
       "MODEL",
       "RUN",
       "RUN_ID"
@@ -139,12 +140,13 @@
       "--logical-key",
       "video",
       "--attempt-id",
-      "a1",
+      "",
       "--cost",
-      "0"
+      "{COST_MINOR}"
     ],
     "produces": "Per-shot video clips on reserved KIE attempts (model id from `video_router`). The lip-sync windows keep THIS row verbatim on the Agnes path too. MiniMax H3 (`minimax-h3/*`) refuses a hand-written prompt: build its request with `python3 scripts/core/prompt_templates/make_h3_request.py --spec <spec.json> --characters <chars.json> --first-frame-url <https url> --out \"$RUN/generation/video-req/shot-NN.json\" [--card-receipt ...] [--storyboard-plan ...] [--storyboard-review ...]`, which assembles through `prompt_templates.assemble_h3`, measures the model's own band (5,000-6,800 of a 7,000 cap) and attaches the matching `prompt_receipt`; never substitute another model to get a prompt through.",
     "placeholders": [
+      "COST_MINOR",
       "MODEL",
       "RUN",
       "RUN_ID"
@@ -168,7 +170,7 @@
       "--logical-key",
       "keyframes",
       "--attempt-id",
-      "a1",
+      "",
       "--aspect-ratio",
       "9:16",
       "--run-dir",
@@ -198,7 +200,7 @@
       "--logical-key",
       "video-segment-{SEGMENT}",
       "--attempt-id",
-      "a1",
+      "",
       "--seconds",
       "10",
       "--poll-s",
