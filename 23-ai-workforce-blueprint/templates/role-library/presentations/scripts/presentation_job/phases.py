@@ -5305,9 +5305,14 @@ class Engine:
         # FIX 20: an obsolete row is a phase REMOVED from the manifest at
         # repin, not a gap in this run — it must not read as incomplete and
         # brick the close gate for a job whose manifest legitimately changed.
+        # PD-076: a step that is blocked, running, pending, failed or
+        # quarantined is NOT a settled step. Only done, deferred (the client
+        # declined that page) and obsolete (removed from the manifest at
+        # repin) count, otherwise the certificate claims an integrity the run
+        # does not have.
         incomplete = [p.get('id') for p in phases
                       if p.get('status') not in (PHASE_STATUS_DONE,
-                                                 PHASE_STATUS_BLOCKED,
+                                                 PHASE_STATUS_DEFERRED,
                                                  PHASE_STATUS_OBSOLETE)]
 
         # 3. Check substance verification
@@ -5360,6 +5365,39 @@ class Engine:
             k for k, v in gates_state.items()
             if isinstance(v, dict) and v.get('state') not in ('pass', 'waived')
         ]
+        # PD-076: `total` is the CONTRACT (every key in ALL_GATE_KEYS). A key
+        # the state never recorded was never evaluated, and an unevaluated
+        # gate is not a pass -- name each one that is missing.
+        missing_gate_keys = [
+            k for k in ALL_GATE_KEYS if not isinstance(gates_state.get(k), dict)
+        ]
+
+        # PD-201: a gate that passed only in degraded mode or through a test
+        # seam is not a real pass. working/checkpoints/gate_log.jsonl is the
+        # engine's own record of gate results; any row whose result is
+        # degraded_pass or test_seam_used means this run's evidence is weaker
+        # than the certificate would imply.
+        degraded_rows: List[str] = []
+        gate_log_path = self.run_dir / 'working' / 'checkpoints' / 'gate_log.jsonl'
+        try:
+            gate_log_lines = gate_log_path.read_text(
+                encoding='utf-8', errors='replace').splitlines()
+        except OSError:
+            gate_log_lines = []
+        for lineno, line in enumerate(gate_log_lines, 1):
+            if not line.strip():
+                continue
+            try:
+                row = json.loads(line)
+            except (json.JSONDecodeError, TypeError):
+                continue
+            if not isinstance(row, dict):
+                continue
+            result = row.get('result')
+            if result in ('degraded_pass', 'test_seam_used'):
+                label = (row.get('phase_id') or row.get('gate')
+                         or row.get('check') or row.get('step') or '?')
+                degraded_rows.append(f'line {lineno} ({label} result={result})')
 
         # 7. Build the certificate
         cert = {
@@ -5401,13 +5439,20 @@ class Engine:
                 'passed': gate_pass_count,
                 'total': gate_total,
                 'failed_gate_keys': gate_failures,
-                'all_passed': len(gate_failures) == 0,
+                'missing_gate_keys': missing_gate_keys,
+                'degraded_or_test_seam_rows': degraded_rows,
+                'all_passed': (len(gate_failures) == 0
+                               and len(missing_gate_keys) == 0
+                               and len(degraded_rows) == 0),
             },
             'integrity_pass': (
                 len(unentered) == 0 and
+                len(incomplete) == 0 and
                 len(substance_unverified) == 0 and
                 len(monotonic_violations) == 0 and
-                len(gate_failures) == 0
+                len(gate_failures) == 0 and
+                len(missing_gate_keys) == 0 and
+                len(degraded_rows) == 0
             ),
             'integrity_fail_reasons': [],
         }
@@ -5421,10 +5466,27 @@ class Engine:
                 cert['integrity_fail_reasons'].append(
                     f'AF-PROCESS-INTEGRITY: {len(substance_unverified)} phase(s) '
                     'without substance verification: ' + ', '.join(substance_unverified))
+            if incomplete:
+                cert['integrity_fail_reasons'].append(
+                    f'AF-PROCESS-INTEGRITY: {len(incomplete)} step(s) not done, '
+                    'deferred or obsolete: ' + ', '.join(incomplete))
             if monotonic_violations:
                 cert['integrity_fail_reasons'].append(
                     f'AF-PROCESS-INTEGRITY: {len(monotonic_violations)} timestamp '
                     'monotonicity violation(s)')
+            if gate_failures:
+                cert['integrity_fail_reasons'].append(
+                    f'AF-PROCESS-INTEGRITY: {len(gate_failures)} gate(s) did not '
+                    'pass and were not waived: ' + ', '.join(gate_failures))
+            if missing_gate_keys:
+                cert['integrity_fail_reasons'].append(
+                    f'AF-PROCESS-INTEGRITY: {len(missing_gate_keys)} gate key(s) '
+                    'never evaluated: ' + ', '.join(missing_gate_keys))
+            if degraded_rows:
+                cert['integrity_fail_reasons'].append(
+                    f'AF-PROCESS-INTEGRITY: {len(degraded_rows)} gate-log row(s) '
+                    'recorded a degraded or test-seam pass: '
+                    + '; '.join(degraded_rows))
 
         # 8. Write to checkpoints (atomic, same pattern as state.save())
         import tempfile as _tempfile
