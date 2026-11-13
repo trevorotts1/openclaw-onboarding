@@ -47,6 +47,10 @@ def _reply(q):
         return "$25"
     if q.get("free_text"):
         return TYPED
+    if q.get("recommended") is None:
+        # S75-020: AGNES marks a pick only for a client who said yes before, so
+        # "recommended" is refused there; answer the first option by number.
+        return "1"
     return "recommended"
 
 
