@@ -16,7 +16,7 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
 **When to run:** After the Presenters Speech passes QC and WANT_AUDIO_DEMO = true.
 
 **Inputs:**
-- working/presenter-speech/presenters_speech.md (the QC-passed script)
+- `working/deliverables/PRESENTERS-SPEECH-FISH-TAGGED.md` (the QC-passed script -- the P8.4-FISH-TAG artifact; the untagged speech it was tagged from is `working/deliverables/PRESENTERS-SPEECH.md`)
 - working/copy/hook_package.json (the hook beats)
 - working/copy/price_ladder.json (the drops)
 - the chosen demo voice / persona from the brief
@@ -49,7 +49,7 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
    listener FEEL the stage's emotion first; a tag with no emotional beat behind
    it lands flat.
 
-4. Enforce MAX 2 TAGS PER LINE, pairing one PHYSICAL tag (pause, breath, tempo) with one EMOTIONAL tag (conviction, excitement, warmth). More than two tags per line muddies the delivery. Follow the placement rules (emotion cue at the START of the sentence it governs; tone/sound cue anywhere, scoped forward; stack max 3 cues per sentence) and the density guide (~1 emotion tag every 80-120 words, rising into the Offer and easing either side; never a tag on every clause — tags are seasoning, not the meal).
+4. Enforce at most 2 emotion tags per line and at most 3 cues of any kind per sentence, pairing one PHYSICAL tag (pause, breath, tempo) with one EMOTIONAL tag (conviction, excitement, warmth). More than two tags per line muddies the delivery. Follow the placement rules (emotion cue at the START of the sentence it governs; tone/sound cue anywhere, scoped forward; stack max 3 cues per sentence) and the density guide (~1 emotion tag every 80-120 words, rising into the Offer and easing either side; never a tag on every clause — tags are seasoning, not the meal).
 
 5. USE DRAMATIC PACING, not just tags: the measured silence is the close-rate
    lever. The audio executor splices EXACT seconds at pause markers (0.8 s /
@@ -96,7 +96,7 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
 
    **FULL-COVERAGE RULE (hard):** Every spoken word of the QC-passed speech MUST land in some chunk. The chunker MUST assert >= 95% character coverage of the cleaned spoken text BEFORE any synthesis; if coverage is below that, ABORT and fix the chunker -- do not synthesize a partial speech. NEVER synthesize only a "key beats" / "sizzle" / highlight subset and pass it off as the presentation audio. (Root-cause of the 2026-06 client-run incident: only 7 hand-picked beats -- ~4 min -- were synthesized instead of the full ~25 min, 62-slide speech.) If a SHORT highlight reel is explicitly requested, it is a SEPARATE deliverable with its own name (e.g. `<deck>_sizzle.mp3`) and MUST NOT overwrite the full presenter audio.
 
-   The committed pipeline that does this correctly is `Presentations/scripts/synthesize_full_speech.py` (cleans front-matter / headings / stage-directions out of the speech, chunks the whole talk, synthesizes every chunk via Fish Audio, concatenates with ffmpeg, and enforces the SOP 9.3 duration gate). Use it; do not hand-roll an ad-hoc subset run.
+   The committed pipeline that does this correctly is `scripts/synthesize_full_speech.py` (cleans front-matter / headings / stage-directions out of the speech, chunks the whole talk, synthesizes every chunk via Fish Audio, concatenates with ffmpeg, and enforces the SOP 9.3 duration gate). Use it; do not hand-roll an ad-hoc subset run.
 
    **EXPRESSIVE AUDIO (GAUNTLET LOOP 2, Feature A):** synthesize the **FISH-TAGGED**
    speech (`PRESENTERS-SPEECH-FISH-TAGGED.md`, produced by `speech_fish_tag.py`) — pass
@@ -163,10 +163,10 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
 
    Worked example (a 2026-06 client run): spoken_words = 3,516 -> expected ~1,507s (~25 min) -> gate floor ~1,205s (~20 min). The original 4-min sizzle (242s) and even the 18.5-min cut (1,110s) FAIL this gate; a full render (~25 min) passes.
 
-4. Name the file working/audio-demo/<deck>_demo.mp3 (full presenter audio). A short highlight reel, if separately requested, is named `<deck>_sizzle.mp3` and is exempt from the duration gate ONLY because it is explicitly a partial deliverable -- it never substitutes for the full audio.
+4. Name the file working/delivery/PRESENTER-AUDIO.mp3 (full presenter audio). A short highlight reel, if separately requested, is named `<deck>_sizzle.mp3` and is exempt from the duration gate ONLY because it is explicitly a partial deliverable -- it never substitutes for the full audio.
 
 **Outputs:**
-- working/audio-demo/<deck>_demo.mp3 (stitched, loudness-normalized, duration-gated to the full speech length)
+- working/delivery/PRESENTER-AUDIO.mp3 (stitched, loudness-normalized, duration-gated to the full speech length)
 
 **Hand to:** SOP 9.4 (STT Verify).
 
@@ -179,7 +179,7 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
 **When to run:** After the demo mp3 is stitched and normalized.
 
 **Inputs:**
-- working/audio-demo/<deck>_demo.mp3
+- working/delivery/PRESENTER-AUDIO.mp3
 - working/audio-demo/<deck>_tagged_script.md (with tags stripped for the word comparison)
 
 **Steps:**
@@ -206,7 +206,7 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
 **When to run:** After the STT verification passes.
 
 **Inputs:**
-- working/audio-demo/<deck>_demo.mp3
+- working/delivery/PRESENTER-AUDIO.mp3
 - working/audio-demo/<deck>_tagged_script.md
 - the STT verification record
 
