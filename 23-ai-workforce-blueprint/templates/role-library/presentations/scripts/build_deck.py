@@ -13117,6 +13117,10 @@ TELEPROMPTER_PUBLISH_LEDGER = "teleprompter_publish.json"
 TELEPROMPTER_HOST = "teleprompter.zerohumanworkforce.com"
 TELEPROMPTER_R2_BUCKET = "zhw-teleprompter"
 TELEPROMPTER_HTML_NAME = "teleprompter.html"
+# PD-210: with the flag False a 3xx verify response is recorded (verify_redirected)
+# and treated as today (a followed redirect that lands on 200 still publishes);
+# with the flag True any redirect is a verify failure. Do not flip this flag.
+TELEPROMPTER_VERIFY_STRICT = False
 # The R2 PutObject endpoint is the account-scoped REST path. The serving Worker maps
 # https://<host>/<client>/<deck>/teleprompter.html -> the same object key in R2.
 _CF_API_BASE = "https://api.cloudflare.com/client/v4"
@@ -13203,22 +13207,40 @@ def _client_slug_from_run(run_dir: Path, bundle_dir: Path) -> str:
     return "client"
 
 
-def _http_status(url: str, timeout: int = 60) -> int:
-    """Live GET of a public URL; return the HTTP status code. Reuses the C1 SSRF
-    guard (http(s) only). A network/timeout error surfaces as a RuntimeError so the
-    caller records a verify failure rather than a false 200. Behind Cloudflare Access
-    an unauthenticated GET may 302 to the Access login — that is NOT a 200 and is a
-    correct verify-failure signal for an automated check; for the published-object
-    check we GET the object directly through the serving Worker which returns 200 for
-    a present object (Access challenges the human browser, not the object existence
-    probe path). We only need the status code."""
+class _NoRedirect(urllib.request.HTTPRedirectHandler):
+    """PD-210: do NOT follow a redirect. Behind Cloudflare Access an unauthenticated
+    GET may 302 to the Access login, and a followed redirect returns 200 — so the
+    follow hides the redirect and a login page passes as the published object."""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):  # noqa: D401
+        return None
+
+
+def _sha256_file(path: Path) -> Optional[str]:
+    """Hex sha256 of a file, or None when it cannot be read (PD-210)."""
+    try:
+        return hashlib.sha256(path.read_bytes()).hexdigest()
+    except OSError:
+        return None
+
+
+def _http_status(url: str, timeout: int = 60) -> Tuple[int, str]:
+    """Live GET of a public URL; return (status code, redirect Location). Reuses the
+    C1 SSRF guard (http(s) only). A redirect is NOT followed (PD-210): a 3xx is
+    returned as-is with its Location so the caller can record it. A network/timeout
+    error surfaces as a RuntimeError so the caller records a verify failure rather
+    than a false 200."""
     assert_url_scheme_allowed(url, what="teleprompter public_url")
     req = urllib.request.Request(url, headers={"User-Agent": "build_deck-teleprompter-verify/1.0"})
+    opener = urllib.request.build_opener(_NoRedirect)
     try:
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
-            return int(resp.getcode())
+        with opener.open(req, timeout=timeout) as resp:
+            return int(resp.getcode()), ""
     except urllib.error.HTTPError as exc:
-        return int(exc.code)
+        location = ""
+        if exc.headers is not None:
+            location = str(exc.headers.get("Location", "") or "")
+        return int(exc.code), location
     except urllib.error.URLError as exc:
         raise RuntimeError(f"teleprompter verify GET failed for {url}: {exc}") from exc
 
@@ -13290,6 +13312,7 @@ def publish_teleprompter(bundle_dir: Path, deck_slug: str, run_dir: Path,
             "host_target": "cloudflare-central",
             "local_file": str(local_file),
             "public_url": None,
+            "local_sha256": _sha256_file(local_file),
             "published_at": now,
             "verified_http_status": None,
             "verified_at": None,
@@ -13302,7 +13325,7 @@ def publish_teleprompter(bundle_dir: Path, deck_slug: str, run_dir: Path,
     if not local_file.exists():
         record = {
             "platform": platform, "host_target": "cloudflare-central",
-            "local_file": str(local_file), "public_url": None,
+            "local_file": str(local_file), "public_url": None, "local_sha256": None,
             "published_at": now, "verified_http_status": None, "verified_at": None,
             "status": "verify_failed",
             "note": "presenter-teleprompter.html absent from bundle_dir — nothing to publish.",
@@ -13326,7 +13349,8 @@ def publish_teleprompter(bundle_dir: Path, deck_slug: str, run_dir: Path,
         # _check_teleprompter_published branch below).
         record = {
             "platform": platform, "host_target": "cloudflare-central",
-            "local_file": str(local_file), "public_url": public_url,
+            "local_file": str(local_file), "public_url": None,
+            "intended_url": public_url, "local_sha256": _sha256_file(local_file),
             "published_at": now, "verified_http_status": None, "verified_at": None,
             "status": "warned_no_credentials",
             "warn_code": "AF-TELEPROMPTER-UNPUBLISHED",
@@ -13361,6 +13385,7 @@ def publish_teleprompter(bundle_dir: Path, deck_slug: str, run_dir: Path,
         record = {
             "platform": platform, "host_target": "cloudflare-central",
             "local_file": str(local_file), "public_url": public_url,
+            "local_sha256": _sha256_file(local_file),
             "published_at": now, "verified_http_status": None, "verified_at": None,
             "status": "verify_failed",
             "note": f"R2 upload failed: {exc}",
@@ -13376,11 +13401,12 @@ def publish_teleprompter(bundle_dir: Path, deck_slug: str, run_dir: Path,
     #    failure.
     published_at = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
     try:
-        status = _http_status(public_url, timeout=60)
+        status, redirect_location = _http_status(public_url, timeout=60)
     except RuntimeError as exc:
         record = {
             "platform": platform, "host_target": "cloudflare-central",
             "local_file": str(local_file), "public_url": public_url,
+            "local_sha256": _sha256_file(local_file),
             "published_at": published_at, "verified_http_status": None,
             "verified_at": None, "status": "verify_failed",
             "note": f"upload succeeded but verify GET errored: {exc}",
@@ -13392,17 +13418,25 @@ def publish_teleprompter(bundle_dir: Path, deck_slug: str, run_dir: Path,
         ) from exc
 
     verified_at = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
-    status_ok = (status == 200)
+    redirected = 300 <= status < 400
+    # PD-210: with the flag False a redirect is recorded and treated as today (the
+    # old opener followed it and a followed 200 published); with it True any 3xx is
+    # a verify failure.
+    status_ok = (status == 200) or (redirected and not TELEPROMPTER_VERIFY_STRICT)
     record = {
         "platform": platform,
         "host_target": "cloudflare-central",
         "local_file": str(local_file),
         "public_url": public_url,
+        "local_sha256": _sha256_file(local_file),
         "published_at": published_at,
         "verified_http_status": status,
         "verified_at": verified_at,
+        "verify_redirected": redirected,
         "status": "published" if status_ok else "verify_failed",
     }
+    if redirected:
+        record["redirect_host"] = urlparse(redirect_location).hostname or ""
     _write_publish_ledger(pub_path, record)
 
     # Record the URL on the teleprompter_html deliverable entry (additive field).
@@ -13440,8 +13474,10 @@ def _check_teleprompter_published(bundle_dir: Path, skip_gate: bool = False,
       * file absent                                  -> fail (WARN when creds absent)
       * status != 'published'                        -> fail (carry the recorded status;
                                                         WARN when creds absent)
+      * local_sha256 missing or != the HTML on disk  -> fail (PD-210)
       * public_url missing / not http(s)             -> fail
-      * verified_http_status != 200                  -> fail
+      * verified_http_status != 200 unless a redirect is recorded and
+        TELEPROMPTER_VERIFY_STRICT is False          -> fail (PD-210)
 
     M7 HARDENING: the gate is bypassed ONLY when the caller passes the explicit
     per-run --skip-teleprompter-gate CLI flag (skip_gate=True). It is NEVER bypassed
@@ -13479,12 +13515,17 @@ def _check_teleprompter_published(bundle_dir: Path, skip_gate: bool = False,
         if creds_absent:
             return (reason, True)  # FIX 5: WARN — publish not enforced without credentials
         return (reason, False)
+    # PD-210: the record must describe the file that is actually in the bundle now.
+    recorded_sha = obj.get("local_sha256")
+    if not recorded_sha or recorded_sha != _sha256_file(bundle_dir / "presenter-teleprompter.html"):
+        return ("publish record does not match the teleprompter file", False)
     url = str(obj.get("public_url", "")).strip()
     try:
         assert_url_scheme_allowed(url, what="teleprompter public_url")
     except ValueError as exc:
         return (f"teleprompter public_url invalid: {exc}", False)
-    if obj.get("verified_http_status") != 200:
+    redirect_ok = bool(obj.get("verify_redirected")) and not TELEPROMPTER_VERIFY_STRICT
+    if obj.get("verified_http_status") != 200 and not redirect_ok:
         return ((f"teleprompter public_url not verified live (status="
                  f"{obj.get('verified_http_status')!r}); a live HTTP 200 is required."),
                 False)
