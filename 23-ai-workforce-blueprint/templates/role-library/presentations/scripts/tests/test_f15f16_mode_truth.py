@@ -347,8 +347,8 @@ def test_the_launcher_banner_and_sidecar_carry_the_notice(monkeypatch,
     assert record["concurrency"]["concurrency"] is None, record["concurrency"]
     assert record["warnings"], record
     # the operator ceiling key keeps its old meaning: the global human-ratified
-    # maximum, not the mode's share of it
-    assert record["concurrency"]["operator_ceiling"] == 100
+    # maximum, not the mode's share of it. FIX 61 (7e5c4d6f3) made that maximum 400.
+    assert record["concurrency"]["operator_ceiling"] == model_router.ULTRA_OPERATOR_CEILING
 
 
 # ===========================================================================
