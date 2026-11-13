@@ -230,11 +230,13 @@ Remote head equals local head, 40 characters, literal.
 |---|---|
 | `2a2b072fbf057a588c7754fc4bbca994b07b295f` | PRE — branch head at the start (not rewritten) |
 | `a12d14f9e1ed1eb49a3d4b7c03f46c43cd3a31f2` | merge of `origin/pd/fl05-engine-reporting` — proven above |
-| `d186967211f4fb5ffbd78c18ffece47c393f8e07` | this report's own commit, a fast-forward on the merge |
+| `d186967211f4fb5ffbd78c18ffece47c393f8e07` | the report commit itself, a fast-forward on the merge |
 
-The proofs in §8 and §9 were taken at `a12d14f9e` and re-taken after the report commit; the result of the final
-push is `a12d14f9e..d18696721  HEAD -> pd/fl04-manifest`, and the ancestry and sibling `merge-tree` checks were
-re-run at the final head with `rc=0` both times.
+The canonical head is whatever `git ls-remote --heads origin pd/fl04-manifest` reports: this report carries its own
+commit on top of the merge, so the branch tip is the report commit (or a later commit that adds only report text).
+The proofs in §8 and §9 were taken at `a12d14f9e` and re-taken after each report commit; the final pushes were
+`a12d14f9e..d18696721` and `d18696721..c6149a987`, and the ancestry and sibling `merge-tree` checks were re-run at
+every resulting head with `rc=0` each time.
 
 ## 10. What could not be proven
 
