@@ -332,3 +332,65 @@ opened.
 5. **No test asserts the old contract wording**, so the rewrite could not be caught by an
    existing test; it is proven only by the new contract assertions.
 6. **A hold branch is not a merge.** No PR was opened and no merge was attempted.
+
+---
+
+## Seam repair — the fan-out quality step (added after the build above)
+
+The "Anything unproved" item 1 above named the gap: `dispatch_one` returned into
+`_dispatch_phase_fanout_units()` before the new gate, so a QC phase with a manifest
+`fanout` field never reached the family comparison. That is not a theoretical shape:
+`universal-sops/presentation-slide-craft/PIPELINE-MANIFEST.json` declares
+`"fanout": {"by": "slide", "batch_width": 12}` for **P-PROMPT-QC** and **P-IMAGE-QC** — the
+prompt and the vision graders. On the build above, every per-slide unit of those two phases was
+still graded by the author's own model family.
+
+Measured, not assumed:
+
+```
+$ python3 -c 'import json; m=json.load(open("universal-sops/presentation-slide-craft/PIPELINE-MANIFEST.json"));
+> [print(x["id"], json.dumps(x.get("fanout"))) for x in m["phases"] if x.get("id") in
+>  ("P-PROMPT-QC","P-IMAGE-QC","P1Q-COPY-QC","P-TYPO-QC","P-SPEECH-QC")]'
+P1Q-COPY-QC null
+P-TYPO-QC null
+P-PROMPT-QC {"by": "slide", "batch_width": 12}
+P-IMAGE-QC {"by": "slide", "batch_width": 12}
+P-SPEECH-QC null
+```
+
+The repair reuses the SAME helper (no second rule) at the fan-out seam:
+
+- `_dispatch_phase_fanout_units` calls `_independent_grader_decision(run_dir, phase_id,
+  owning_role)` before the preflight, before enumerate, before one paid token. A refusal returns
+  `error`, attempts `0`, and the plain reason — zero unit calls.
+- A different-family pin is threaded into the unit worker's `dispatch_complete(...,
+  route_override=<pin>)`, so every per-slide call is graded on the other family exactly as the
+  serial path is.
+
+Two tests were ADDED to the unit's own test file (none renamed, weakened or removed):
+
+| Test | Proves |
+|---|---|
+| `test_fanout_quality_step_refuses_before_any_preflight_or_unit_call` | same family, one route → `error`, attempts 0, plain reason; `_preflight_fanout_contract`, `fanout.enumerate_fanout_items` and `dispatch_complete` are stubbed to raise and are never reached |
+| `test_fanout_quality_step_pins_the_other_family_into_every_unit` | two families → the unit worker's `dispatch_complete` receives `route_override={'provider': 'ollama-cloud', 'model': 'z-ai/glm-4.6'}` and makes exactly one call |
+
+Mutation proof (turning this repair's proof RED, then reverted): with the new `if
+_is_qc_phase(owning_role, phase_id):` guard in the fan-out function disabled, the file is
+`2 failed, 9 passed` — the refusal test dies on the preflight stub raising, and the pin test sees
+`override=None`. With the guard restored: `11 passed`.
+
+Independent acceptance probe (a scratch script, not the unit's tests) against this tree:
+18/18 rows pass — A1 (one call, `qc_failed`, own reason, report kept), C1 (pass:true still
+retries, 3 calls), A2 (zero calls, plain reason), A3 (one call, other family), A2b (ineligible
+candidate does not count), C2 (non-QC not gated), F1 (fan-out refusal, zero calls), the three
+contract sentences, and `qc_failed` in `_FAILING_STATUSES`.
+
+Regression set on this tree: 24 dispatcher/fan-out/unit-contract test files → `292 passed,
+2 failed`. Both failures are pre-existing at the parent commit: `test_fix112`'s
+`infographic-checklist.md` is absent from the base tree (`git ls-tree` empty at `be56b5a19`), and
+`test_pres013_fanout_deadline::test_hanging_subprocess_child_terminated_no_orphan` fails the same
+way with this repair stashed (the local child never writes its pid marker on this host).
+
+Honest limit that remains: the pin is honoured by `_apply_route_override`, which requires the
+candidate to be eligible — so an eligibility flip between the pre-call read and the call drops
+the pin back to the router's pick. The router-side rule is PD-204 (lane FL28).
