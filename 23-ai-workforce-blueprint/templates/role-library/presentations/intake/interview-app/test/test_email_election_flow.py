@@ -99,7 +99,11 @@ class TestPayloadMintsThePair(unittest.TestCase):
                          "pre_presentation_capture.EMAIL_SEQUENCES_DECLINED_REASON")
         self.assertEqual(reason["conditional_on"],
                          {"id": "want_email_sequences", "equals": "no"})
-        self.assertTrue(reason["required"])
+        # Defaults to "no": the reason is optional, never a gate, and asked
+        # only when the client earlier wanted email sequences.
+        self.assertFalse(reason["required"])
+        self.assertFalse(reason["block_gate"])
+        self.assertTrue(reason["ask_only_if_previously_wanted"])
 
 
 class TestHostedRoundTrip(unittest.TestCase):
