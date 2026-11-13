@@ -27,11 +27,11 @@
 
 'use strict';
 
-import { AF_ID_INVALID, isClientId } from './ids.js';
+import { AF_ID_INVALID, isClientId, ownsPath } from './ids.js';
 import { AF_ISO_CROSS, authorizeClient, enrollClient } from './isolation.js';
-import { AF_PAIR_LOCKED, PAIRING_MAX_TRIES, attemptPairing, buildKeyRecord, mintKey, mintPairingCode, pairRecordKey } from './keys.js';
+import { AF_PAIR_EXPIRED, AF_PAIR_LOCKED, PAIRING_MAX_TRIES, attemptPairing, buildKeyRecord, mintKey, mintPairingCode, pairRecordKey } from './keys.js';
 import { MAX_WAITING_ORDERS, checkIn, readInbox, writeInbox } from './inbox.js';
-import { acceptUpload, pollUpload } from './uploads.js';
+import { AF_UP_KIND, AF_UP_NOT_ARRIVED, AF_UP_UNKNOWN, acceptUpload, pollUpload } from './uploads.js';
 import { resolveOrderState, transition, writeOperatorRecord } from './lifecycle.js';
 import { AF_OPT_APPROVAL, lastCheckIn, optionLine, setOption, staleVerdict } from './options.js';
 import { listKeys, randomConnectHex } from './support.js';
@@ -41,9 +41,16 @@ import { AF_PUSH_DISABLED, pushEnabled, registerSubscription, revokeSubscription
 import { AF_LINK_KIND, linkRoute } from './link.js';
 import { deleteDraft, pageRoute, validateReplies } from './page-api.js';
 import { approvalsRoute } from './approvals-api.js';
+import { authorityPrefix } from './approval-store.js';
 
 export const SERVICE_VERSION = '0.1.0';
 export { randomConnectHex };
+
+/** S75-071 — the order id the page mints for one recap: `r_` plus eight
+ *  lower-case hex. The service still invents one when the page sends none. */
+const ORDER_ID_FORMAT = /^r_[0-9a-f]{8}$/;
+/** The upload id shape acceptUpload mints (uploads.js). */
+const UPLOAD_ID_FORMAT = /^u_[0-9a-f]{24}$/;
 
 // ---------------------------------------------------------------------------
 // DSR-105 — the story brief
@@ -69,6 +76,11 @@ export { randomConnectHex };
 /** The card's leading questions, in the order intake_card.py asks them. */
 export const BRIEF_QUESTION_IDS = ['offer', 'link', 'audience', 'character', 'photos'];
 
+/** An option pick on the wire: "1" (a page older than S75-059) or
+ *  "1. MiniMax H3" (the page since). A typed answer that merely starts with a
+ *  number is not matched by "1.2 million" or "3 apples" — the dot is required. */
+export const OPTION_PICK_REPLY = /^\d+(\.\s|$)/;
+
 /** Without these four the crew has no brief to write from. `photos` is asked
  *  and stored but never required: plenty of ads use what the client already has. */
 export const BRIEF_REQUIRED_IDS = ['offer', 'link', 'audience', 'character'];
@@ -82,10 +94,13 @@ export function readBrief(replies) {
   const brief = {};
   BRIEF_QUESTION_IDS.forEach((id, i) => {
     const value = typeof list[i] === 'string' ? list[i].trim() : '';
-    // A bare number is an OPTION PICK, not an answer someone typed. A page
-    // loaded before this fix sends the nine production choices as numbers, so
-    // without this the number "1" would be stored as the client's offer.
-    if (value && !/^\d+$/.test(value)) brief[id] = value;
+    // An OPTION PICK is not an answer someone typed. A page loaded before this
+    // fix sends the nine production choices as bare numbers; since S75-059 the
+    // page sends them as "<n>. <option text>" so the box can compare the text
+    // with its own card. Neither shape is the client's own words, so neither
+    // is stored as the brief: the number "1" or "1. MiniMax H3" must never be
+    // read as their offer. Everything is still in `replies`, the replay channel.
+    if (value && !OPTION_PICK_REPLY.test(value)) brief[id] = value;
   });
   const missing = BRIEF_REQUIRED_IDS.filter((id) => !brief[id]);
   return { brief, complete: missing.length === 0, missing };
@@ -120,6 +135,19 @@ export function r2Store(bucket) {
       return o ? { value: await o.text() } : null;
     },
     objectPut: (p, v) => bucket.put(p, v),
+    objectDelete: (p) => bucket.delete(p),
+    // U-Z07 — a staging object's name is never written on the order record, so
+    // the cleanup after a finished order has to ask the bucket which ones exist.
+    objectList: async (prefix) => {
+      const keys = [];
+      let cursor = null;
+      do {
+        const page = await bucket.list({ prefix, cursor, limit: 1000 });
+        keys.push(...(page.objects || []).map((o) => o.key));
+        cursor = page.truncated ? page.cursor : null;
+      } while (cursor);
+      return keys;
+    },
   };
 }
 
@@ -208,7 +236,11 @@ export async function handle(request, env, store, objects, deps = {}) {
         await store.kvPut(`pair:${attempt.record.fingerprint}`, JSON.stringify(attempt.record), 900);
       }
       await store.kvPut(pairFailKey, String(pairFails + 1), 900);
-      return fail(403, attempt.code, 'That pairing code cannot be used.');
+      // S75-077 — an expired code says how to get a working one; every other
+      // refusal keeps the one wording, so a wrong code learns nothing.
+      return fail(403, attempt.code, attempt.code === AF_PAIR_EXPIRED
+        ? 'That pairing code has expired. Codes last 15 minutes - ask for a new one.'
+        : 'That pairing code cannot be used.');
     }
     await store.kvDelete(pairFailKey);
     await store.kvDelete(`pair:${attempt.record.fingerprint}`);
@@ -339,12 +371,44 @@ export async function handle(request, env, store, objects, deps = {}) {
 
   // POST /api/studio/orders — the client tapped Lock it in
   if (request.method === 'POST' && url.pathname === '/api/studio/orders') {
+    // S75-071 — one tap, one order. The page mints ONE id for the recap on
+    // screen and sends it with every tap, so a double tap (or a retry after a
+    // lost answer) is the same order: it is written once, and every later POST
+    // with that id answers 200 with the order already stored and writes
+    // nothing — its state is not touched. A PRESENT id must be `r_` plus eight
+    // lower-case hex; with no id at all the service still invents one.
+    const askedId = body.order_id;
+    if (askedId !== undefined && askedId !== null) {
+      if (typeof askedId !== 'string' || !ORDER_ID_FORMAT.test(askedId)) {
+        return fail(400, 'AF-DS-ORDER-ID', 'An order id is "r_" and eight lower-case hex characters.');
+      }
+      const already = await store.kvGet(`order:${clientId}:${askedId}`);
+      if (already) {
+        return ok({
+          order: project(JSON.parse(already), nowMs),
+          option_line: optionLine(await clientRecord(store, clientId), nowMs, await lastCheckIn(objects, clientId)),
+        }, 201);
+      }
+    }
     // The answers are the order: the box replays them through factory.py, so
     // they are validated against the SPEC §4 limits and stored on the record
     // (they used to be dropped — only the title survived).
     const checked = validateReplies(body.replies === undefined ? [] : body.replies, body.upload_ids);
     if (!checked.ok) return fail(400, checked.code, checked.message);
-    const orderId = body.order_id || `r_${randomConnectHex(4)}`;
+    // U-Z08 — every id the page names that is one of OUR ids (`u_` + 24 hex,
+    // the shape acceptUpload mints) must be an upload THIS client asked for.
+    // Without this an order could point at a file that was never accepted, and
+    // the box would go looking for something no record exists for. A string
+    // outside that shape is not an id this service ever issued and is left to
+    // the box, which treats a missing file as a warning, never a refusal.
+    for (const uploadId of checked.uploadIds) {
+      if (!UPLOAD_ID_FORMAT.test(uploadId)) continue;
+      const job = await pollUpload(store, { clientId, uploadId });
+      if (!job.ok) {
+        return fail(400, AF_UP_UNKNOWN, 'One of the files you added is not with your studio. Add it again.');
+      }
+    }
+    const orderId = askedId || `r_${randomConnectHex(4)}`;
     const read = readBrief(checked.replies);
     const order = {
       order_id: orderId,
@@ -415,17 +479,35 @@ export async function handle(request, env, store, objects, deps = {}) {
       if (auth.record.kind === 'link' && body.event !== 'cancel') {
         return fail(403, AF_LINK_KIND, 'A personal link may only cancel an order.');
       }
+      // S75-102 — a delivery the page cannot show is refused HERE, before the
+      // order moves. Storing it and answering 200 hid the bad link: the page
+      // then showed a delivered order with nothing it could show.
+      if (body.event === 'deliver' && body.delivery !== undefined && body.delivery !== null) {
+        const isObject = typeof body.delivery === 'object';
+        const deliveryUrl = isObject && typeof body.delivery.url === 'string' ? body.delivery.url : '';
+        const deliveryKind = isObject && (body.delivery.kind === 'ghl' || body.delivery.kind === 'r2') ? body.delivery.kind : null;
+        if (!deliveryUrl.startsWith('https://') || !deliveryKind) {
+          return fail(400, 'AF-DS-DELIVERY-INVALID', 'The delivery link must be an https link of kind ghl or r2.');
+        }
+      }
       const moved = transition(JSON.parse(raw), body.event, { nowMs, actor: body.actor || auth.record.kind });
       if (!moved.ok) return fail(409, moved.code, moved.message);
       if (body.event === 'claim' || body.event === 'needs_you') moved.order.paid_started = Boolean(body.paid_started);
-      if (body.event === 'deliver' && body.delivery && typeof body.delivery === 'object') {
+      if (body.event === 'deliver' && body.delivery) {
         // The page shows WHERE the video is (GHL library first, R2 copy
-        // second). Only an https URL and one of the two known kinds are stored.
-        const deliveryUrl = typeof body.delivery.url === 'string' ? body.delivery.url : '';
-        const deliveryKind = body.delivery.kind === 'ghl' || body.delivery.kind === 'r2' ? body.delivery.kind : null;
-        if (deliveryUrl.startsWith('https://') && deliveryKind) {
-          moved.order.delivery = { url: deliveryUrl, kind: deliveryKind };
-        }
+        // second). The guard above already refused anything that is not an
+        // https link of the two known kinds.
+        moved.order.delivery = { url: body.delivery.url, kind: body.delivery.kind };
+      }
+      // U-Z07 — the order is finished (delivered, done) or abandoned (cancel):
+      // the intake files and the approval staging copies have done their job
+      // and are deleted. A store that refuses never fails the state change.
+      if (CLEANUP_EVENTS.includes(body.event)) {
+        const cleaned = await cleanupOrderFiles({
+          store, objects, clientId, orderId, uploadIds: moved.order.upload_ids,
+        });
+        if (cleaned.pending) moved.order.cleanup_pending = true;
+        else if (moved.order.cleanup_pending) delete moved.order.cleanup_pending;
       }
       await store.kvPut(`order:${clientId}:${orderId}`, JSON.stringify(moved.order));
       await writeInbox(objects, { clientId, orders: await waitingList(store, clientId), nowMs });
@@ -435,6 +517,11 @@ export async function handle(request, env, store, objects, deps = {}) {
     if (verb === 'cancel' && request.method === 'POST') {
       const moved = transition(JSON.parse(raw), 'cancel', { nowMs, actor: auth.record.kind });
       if (!moved.ok) return fail(409, moved.code, moved.message);
+      // U-Z07 — a cancelled order keeps none of its intake files either.
+      const cleaned = await cleanupOrderFiles({
+        store, objects, clientId, orderId, uploadIds: moved.order.upload_ids,
+      });
+      if (cleaned.pending) moved.order.cleanup_pending = true;
       await store.kvPut(`order:${clientId}:${orderId}`, JSON.stringify(moved.order));
       await writeInbox(objects, { clientId, orders: await waitingList(store, clientId), nowMs });
       return ok({ order: project(moved.order, nowMs) });
@@ -451,6 +538,34 @@ export async function handle(request, env, store, objects, deps = {}) {
   if (parts.length === 5 && parts[4] === 'complete' && request.method === 'POST') {
     const poll = await pollUpload(store, { clientId, uploadId: parts[3] });
     return poll.ok ? ok(poll.job) : fail(poll.status, poll.code, poll.message);
+  }
+
+  // GET /api/studio/uploads/<id>/file — U-Z08: the studio's own computer (or a
+  // paired machine) reads the bytes a client uploaded, so it can put them in
+  // the run's intake folder. The phone's link key never opens this: a link is
+  // for one client's screen, not for pulling that client's files.
+  if (request.method === 'GET' && parts.length === 5
+      && parts[0] === 'api' && parts[1] === 'studio' && parts[2] === 'uploads' && parts[4] === 'file') {
+    const kind = auth.record && auth.record.kind;
+    if (kind !== 'box' && kind !== 'machine') {
+      return fail(403, AF_UP_KIND, 'Only the studio computer may read an uploaded file.');
+    }
+    const poll = await pollUpload(store, { clientId, uploadId: parts[3] });
+    // A job this client does not own and an id that never existed answer the
+    // same 404, so the route cannot be used to probe another studio's ids.
+    if (!poll.ok || !ownsPath(clientId, poll.job && poll.job.object_path)) {
+      return fail(404, AF_UP_NOT_ARRIVED, 'No such upload for this studio.');
+    }
+    // Streamed from the bucket binding itself, never through the text adapter.
+    const object = env && env.DRAMA_STUDIO ? await env.DRAMA_STUDIO.get(poll.job.object_path) : null;
+    if (!object) return fail(404, AF_UP_NOT_ARRIVED, 'That file has not arrived yet.');
+    const headers = new Headers({
+      'Content-Type': (poll.job && poll.job.content_type) || 'application/octet-stream',
+      'Cache-Control': 'no-store',
+      'X-Content-Type-Options': 'nosniff',
+    });
+    if (typeof object.size === 'number') headers.set('Content-Length', String(object.size));
+    return new Response(object.body, { status: 200, headers });
   }
 
   return fail(404, 'AF-DS-NOT-FOUND', `No route for ${request.method} ${url.pathname}.`);
@@ -539,8 +654,82 @@ async function serveAsset(request, env, assetPath) {
   headers.set('Cache-Control', 'no-store');
   headers.set('Referrer-Policy', 'no-referrer');
   headers.set('X-Content-Type-Options', 'nosniff');
-  headers.set('Content-Security-Policy', "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' blob:; media-src 'self' blob:; connect-src 'self' https://*.r2.cloudflarestorage.com; frame-ancestors 'none'; form-action 'self'; base-uri 'none'");
+  // The delivery screen plays the finished video from wherever the studio
+  // stored it, so media-src names those two hosts and nothing else changes:
+  // connect-src stays the r2.cloudflarestorage.com surface the page already had
+  // (S75-070 — a player must not be a hole in the page's own rules).
+  headers.set('Content-Security-Policy', "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' blob:; media-src 'self' blob: https://storage.googleapis.com https://*.r2.dev; connect-src 'self' https://*.r2.cloudflarestorage.com; frame-ancestors 'none'; form-action 'self'; base-uri 'none'");
   return new Response(asset.body, { status: asset.status, headers });
+}
+
+// ---------------------------------------------------------------------------
+// U-Z07 (S75-083) — a finished order does not keep its working files
+//
+// Intake answers and photos are asked for a reason only until the order is
+// delivered, done or cancelled; approval `staging/` copies exist only until the
+// frozen `files/` copy is made. Both are the client's own bytes, so both are
+// removed here, at the one moment the order is finished — never on a timer that
+// could not be undone.
+//
+// What is NOT deleted here: `files/` (the page still plays them), `ready.json`
+// (the card stays answerable) and `decision.json` (the client's answer). The
+// bucket's own 45-day rule removes those later (deploy.manifest.json, U-DP2).
+//
+// A store that refuses a delete is recorded on the order as
+// `cleanup_pending: true`; it NEVER fails the state change. A delivery the page
+// can show is worth more than a cleanup that has to be retried.
+// ---------------------------------------------------------------------------
+
+/** The events after which an order's working files are no longer needed. */
+const CLEANUP_EVENTS = ['deliver', 'done', 'cancel'];
+
+/**
+ * Delete one order's intake objects and approval staging objects.
+ * @returns {{pending: boolean}} pending = at least one delete did not happen
+ */
+async function cleanupOrderFiles({ store, objects, clientId, orderId, uploadIds }) {
+  const targets = new Set();
+  let pending = false;
+
+  // Intake: the object path lives on the upload job, never on the order, and it
+  // is re-checked with ownsPath so a corrupt record can never name another
+  // client's object.
+  for (const uploadId of Array.isArray(uploadIds) ? uploadIds : []) {
+    try {
+      const raw = await store.kvGet(`upload:${clientId}:${uploadId}`);
+      if (!raw) continue;
+      const job = JSON.parse(raw);
+      const path = job && typeof job.object_path === 'string' ? job.object_path : '';
+      if (path && ownsPath(clientId, path)) targets.add(path);
+    } catch {
+      pending = true;
+    }
+  }
+
+  // Approval staging: found by prefix under this order's own namespace. Only
+  // `/staging/` segments are named, so `files/`, `ready.json` and
+  // `decision.json` can never match. A store with no list capability (an
+  // injected test adapter) knows of no staging object and is not an error.
+  if (typeof objects.objectList === 'function') {
+    try {
+      const listed = await objects.objectList(`${authorityPrefix(clientId, orderId)}/`);
+      for (const key of listed) {
+        if (typeof key === 'string' && key.includes('/staging/') && ownsPath(clientId, key)) targets.add(key);
+      }
+    } catch {
+      pending = true;
+    }
+  }
+
+  for (const path of targets) {
+    try {
+      if (typeof objects.objectDelete !== 'function') throw new Error('AF-DS-NO-DELETE');
+      await objects.objectDelete(path);
+    } catch {
+      pending = true;
+    }
+  }
+  return { pending };
 }
 
 async function clientRecord(store, clientId) {
