@@ -326,24 +326,33 @@ def _store_reused(state, qs, verdict):
     no best-effort fallback.
     """
     by_id = {q["id"]: q for q in qs}
-    applied, wrote = [], False
+    applied, refused, wrote = [], list(verdict["refused"]), False
     for qid in verdict["applied"]:
         saved, q = verdict["records"].get(qid), by_id.get(qid)
         if (not saved or q is None or saved.get("definition_digest") != _digest(q)
                 or not isinstance(saved.get("raw_answer"), str)
                 or not isinstance(saved.get("rendered_question"), str)):
             continue
-        record = _answer_record(q, saved["raw_answer"], source=saved.get("source", "client"),
-                                source_ref=saved.get("source_ref"),
-                                rendered=saved["rendered_question"],
-                                at_utc=saved.get("at_utc"), sequence=saved.get("sequence"),
-                                provenance_kind=saved.get("provenance_kind"))
-        record["reused_at_utc"] = saved.get("reused_at_utc") or _now()
+        rebuilt = _answer_record(q, saved["raw_answer"],
+                                 source=saved.get("source", "client"),
+                                 source_ref=saved.get("source_ref"),
+                                 rendered=saved["rendered_question"],
+                                 at_utc=saved.get("at_utc"), sequence=saved.get("sequence"),
+                                 provenance_kind=saved.get("provenance_kind"))
+        prior = dict(saved)
+        prior.pop("reused_at_utc", None)
+        if _dump(rebuilt) != _dump(prior):
+            # The saved answer does not re-derive from its own raw reply. It is
+            # not applied and it is not overwritten: the record stays as saved.
+            refused.append({"question_id": qid,
+                            "reason": "the saved answer no longer matches its own question"})
+            continue
         applied.append(qid)
-        if _dump(record) != _dump(saved):
-            state["answer_records"][qid] = record
+        stamp = saved.get("reused_at_utc") or _now()
+        if saved.get("reused_at_utc") != stamp:
+            state["answer_records"][qid] = dict(rebuilt, reused_at_utc=stamp)
             wrote = True
-    return {"applied": applied, "refused": verdict["refused"], "wrote": wrote}
+    return {"applied": applied, "refused": refused, "wrote": wrote}
 
 
 def _persist_ai_roles(state, answers, run_dir, *, prepare_only=False):
