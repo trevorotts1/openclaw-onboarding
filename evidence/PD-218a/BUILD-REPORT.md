@@ -268,10 +268,11 @@ same way and quoted in the harness return.
 
 ## 8. Not proved / limits
 
-- The repo-wide `pytest tests/` sweep was started and was still running (≈65 %, zero failures at
-  that point) when this report was written; it is **not** a completed measurement and is not
-  claimed. The targeted census above (every file that references the three changed functions) is
-  complete and compared base-to-head.
+- The repo-wide `pytest tests/` sweep was started and reached 73 % before it stalled (a test that
+  blocks), so it is **not** a completed measurement and the run was abandoned there. It also
+  produced `F` markers in the part it did run; those were **not attributed** to a test id and are
+  not claimed as clean. The targeted census above (every file that references the three changed
+  functions) is complete and compared base-to-head.
 - The 10 pre-existing `test_speech_pacing_fix97.py` failures and the pre-existing `PF-SPEECH-B`
   are named, not fixed — they are outside this unit and fail identically at the merge-base.
 - `test_image_qc_unreadable_file_date_fails_naming_it` relies on `Path.exists()` resolving through
