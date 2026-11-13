@@ -143,9 +143,17 @@ Pushed to `refs/heads/pd/fl04-manifest--hold-d12` (fast-forward from `11ce373df`
 
 ```
 $ git ls-remote --heads origin refs/heads/pd/fl04-manifest--hold-d12
+7ba1de5335c104269048788ecf6127ca390cdd3d	refs/heads/pd/fl04-manifest--hold-d12
+
+$ git rev-parse HEAD
+7ba1de5335c104269048788ecf6127ca390cdd3d
+MATCH=yes
 ```
 
-Pre-repair and post-repair values are in §7 (post-push value is the literal 40 characters).
+Pre-repair remote head was `11ce373dffdea8b0ccd31df5317512047c9e9417`; the push was a
+fast-forward (`11ce373df..7ba1de533`), no force. This report is then its own next commit on the
+same branch; at that push `git rev-parse HEAD` and `git ls-remote --heads origin
+refs/heads/pd/fl04-manifest--hold-d12` were compared again and matched, full 40 characters.
 
 ## 7. What I could not prove — stated plainly
 
