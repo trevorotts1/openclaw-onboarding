@@ -9,8 +9,12 @@ GHL-first verified video link and R2 fallback". Decision 5 (answered by Trevor,
 2026-10-10) fixes the order: the finished video's PUBLIC CDN link is handed over
 from the CLIENT'S OWN GoHighLevel (white label: Convert and Flow) FIRST; Cloudflare
 R2 (bucket `drama-studio`) is the FALLBACK, used only when the client's box has no
-working GHL path or the GHL upload fails. The R2 copy of a finished video is
-deleted 7 days after delivery; GHL copies are never deleted by the studio.
+working GHL path or the GHL upload fails. Decision 5 sets a 7-day deletion
+deadline on the R2 copy of a finished video; GHL copies are never deleted by the
+studio. THIS MODULE RECORDS THAT DEADLINE AND DELETES NOTHING: the delivered
+record carries `r2_delete_after`, and the delivery step prints it in the operator
+evidence, worded as a deadline that is RECORDED, never as a deletion that has
+happened.
 
 This module owns EXACTLY that decision. It does not upload the video, does not
 message anyone, does not schedule anything, and adds no second control service. It
@@ -101,7 +105,7 @@ _SIGNED_PARAM_NAMES = frozenset({
 })
 _SIGNED_PARAM_PREFIXES = ("x-amz-", "x-goog-", "x-ms-")
 
-# The R2 fallback copy is deleted 7 days after delivery (decision 5).
+# Decision 5 sets a 7-day deletion deadline on the R2 fallback copy; recording it is all this module does.
 R2_RETENTION_DAYS = 7
 
 # Streaming verify: never buffer a whole video in memory.
@@ -453,10 +457,12 @@ def _delivered(link: dict, verified: dict, source: str, fallback_reason: str | N
     }
     if source == "r2":
         record["fallback_reason"] = fallback_reason or "ghl-unavailable"
-        # Decision 5: the R2 copy of a finished video is deleted 7 days after
-        # delivery. The studio-owned GHL copy is never deleted.
-        # ponytail: this records the deadline only; the deletion itself is the
-        # U5 owned-run cleanup receipt, not built here.
+        # Decision 5: a 7-day deletion deadline applies to the R2 copy of a
+        # finished video; the studio-owned GHL copy is never deleted.
+        # ponytail: this RECORDS the deadline only — no code here deletes
+        # anything. The deletion is a separate owned run, not built here, so the
+        # delivery step prints this deadline in its operator evidence marked as
+        # recorded-not-enforced, and it never reads as a deletion guarantee.
         delete_at = _dt.datetime.now(_dt.timezone.utc) + _dt.timedelta(days=R2_RETENTION_DAYS)
         record["r2_delete_after"] = delete_at.replace(microsecond=0).isoformat().replace("+00:00", "Z")
     return record
@@ -684,9 +690,23 @@ def _cmd_deliver(args) -> int:
     ]
     if record.get("fallback"):
         evidence.append(f"fallback_reason={record['fallback_reason']}")
+    # S75-083: the R2 deletion deadline is an OPERATOR FACT, not a deletion. It
+    # is printed here marked RECORDED, so it can never read as something this
+    # module or this run guarantees happens.
+    next_action = "hand the verified client-owned link to the delivery record"
+    if record.get("r2_delete_after"):
+        evidence.append(
+            f"r2_delete_after={record['r2_delete_after']} (RECORDED deletion deadline; "
+            "no deletion is performed by this module)"
+        )
+        next_action = (
+            "hand the verified client-owned link to the delivery record; the R2 copy's "
+            f"deletion deadline {record['r2_delete_after']} is recorded, not enforced - "
+            "nothing in this module deletes it"
+        )
     return _emit(_envelope(
         "deliver", "ok", "delivered",
-        "hand the verified client-owned link to the delivery record",
+        next_action,
         data={"delivery": record},
         evidence=evidence,
     ))
