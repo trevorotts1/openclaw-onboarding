@@ -379,7 +379,10 @@ function setPage(id) {
   if (key) params.set("k", key);
   params.set("p", id);
   const next = `#${params.toString()}`;
-  if (location.hash !== next) history.replaceState(null, "", next);
+  // A host with no history (a check's DOM shim, a bare page context) still
+  // renders; only the address bar update is skipped.
+  if (location.hash !== next && typeof history !== "undefined"
+    && typeof history.replaceState === "function") history.replaceState(null, "", next);
 }
 
 // ── chrome ───────────────────────────────────────────────────────────────────
