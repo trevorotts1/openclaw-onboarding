@@ -174,3 +174,64 @@ def test_missing_deck_is_exit_one(tmp_path, monkeypatch, capsys):
     assert rc == 1
     assert f"the assembled deck is not at {base / 'working' / 'delivery' / (SLUG + '-FINAL.pptx')}" in err
     assert calls == []
+
+
+# ---------------------------------------------------------------------------
+# PD-316 A1 — the completion list-back reads every page: 450 entries with the
+# deck on page 3 is found (the old single-page read reported it missing)
+# ---------------------------------------------------------------------------
+
+def _list_back_fixture(tmp_path, monkeypatch):
+    """Upload once to get a real ledger, then return (base, hosted_id, remote_name)."""
+    base = tmp_path / "listback"
+    _governed_run(base)
+    _env(monkeypatch)
+    _stub_transport(monkeypatch)
+    assert _run_main(monkeypatch, base) == 0
+    ledger = json.loads(
+        (base / "working" / "checkpoints" / "media_library.json").read_text())
+    monkeypatch.setattr(ghl_media, "resolve_location_pit", lambda: "pit-test")
+    monkeypatch.setattr(ghl_media, "resolve_location_id", lambda: "loc-test")
+    return base, ledger["pptx_ghl_media_id"], str(ledger.get("pptx_ghl_remote_name") or "")
+
+
+def test_list_back_pages_until_deck_found(tmp_path, monkeypatch, capsys):
+    base, hosted_id, remote_name = _list_back_fixture(tmp_path, monkeypatch)
+    others = [{"fileId": f"file_other_{i}", "name": f"other-{i}.png"} for i in range(449)]
+    entries = others[:400] + [{"fileId": hosted_id, "name": remote_name}] + others[400:]
+    assert len(entries) == 450 and entries[400]["fileId"] == hosted_id
+    seen_offsets: list[int] = []
+
+    def _list(location_id, pit, *, media_type="file", parent_id=None, query=None,
+              limit=50, offset=0, timeout=60, opener=None):
+        seen_offsets.append(offset)
+        page = entries[offset:offset + limit]
+        return {"http": 200, "data": page, "count": len(page)}
+
+    monkeypatch.setattr(ghl_media, "list_media", _list)
+
+    ok, reasons = gmp.gate_ghl_media_complete(base)
+
+    assert ok is True, reasons
+    assert not any("NOT present" in r for r in reasons), reasons
+    # It really paged: page 1, page 2, page 3 (the deck is the first entry of page 3).
+    assert seen_offsets[:3] == [0, 200, 400], seen_offsets
+
+
+# ---------------------------------------------------------------------------
+# PD-316 A1 — a listing error produces the NOTE (never a silent pass or a
+# false "deck missing" verdict)
+# ---------------------------------------------------------------------------
+
+def test_list_back_error_produces_note(tmp_path, monkeypatch, capsys):
+    base, _hosted_id, _remote_name = _list_back_fixture(tmp_path, monkeypatch)
+
+    def _boom(*a, **k):
+        raise RuntimeError("media list HTTP 502")
+
+    monkeypatch.setattr(ghl_media, "list_media", _boom)
+
+    ok, reasons = gmp.gate_ghl_media_complete(base)
+
+    assert ok is True, reasons
+    assert "NOTE: remote list-back not performed" in reasons, reasons
