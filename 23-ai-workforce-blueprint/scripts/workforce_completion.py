@@ -116,6 +116,22 @@ def evaluate(state):
     if not current or current!=evidence.get('digest'):missing.append('changed-or-missing-artifacts')
     return missing
 
+PROGRESS_STAGES=('manifest','research','departments','roles','assembly')
+PROGRESS_RUNNING_MINUTES=30
+
+def verification_without_checked_at(verification):
+    if not isinstance(verification,dict):return None
+    return {k:v for k,v in verification.items() if k!='checkedAt'}
+
+def progress_is_running(progress,build_id,minutes=PROGRESS_RUNNING_MINUTES):
+    """True while a build is writing its own progress (a fresh, unfinished stage)."""
+    if progress.get('build_id')!=build_id:return False
+    if progress.get('stage') not in PROGRESS_STAGES:return False
+    try:when=datetime.fromisoformat(str(progress.get('updated_at')).replace('Z','+00:00'))
+    except ValueError:return False
+    if when.tzinfo is None:when=when.replace(tzinfo=timezone.utc)
+    return (datetime.now(timezone.utc)-when).total_seconds()<minutes*60
+
 def finalize(path,check_results=None,artifact_root=None,presentation_deps=None):
     def mutate(state):
         require_build_identity(state)
@@ -139,8 +155,12 @@ def finalize(path,check_results=None,artifact_root=None,presentation_deps=None):
             if blockers:state['closeoutBlockers']=blockers
             else:state.pop('closeoutBlockers',None)
         missing=evaluate(state)
-        state['completionVerification']={'version':1,'buildId':state['buildId'],'companyId':state.get('companyId'),
-                                         'status':'verified' if not missing else 'pending','checkedAt':now,'unmetRequirements':missing,'inputDigest':input_digest(state),'artifactDigest':(state.get('buildArtifactVerification') or {}).get('digest')}
+        verification={'version':1,'buildId':state['buildId'],'companyId':state.get('companyId'),
+                      'status':'verified' if not missing else 'pending','checkedAt':now,'unmetRequirements':missing,'inputDigest':input_digest(state),'artifactDigest':(state.get('buildArtifactVerification') or {}).get('digest')}
+        # The 15-minute re-check must not rewrite the state file when nothing but the
+        # timestamp changed: keep the receipt it already holds.
+        if verification_without_checked_at(state.get('completionVerification'))!=verification_without_checked_at(verification):
+            state['completionVerification']=verification
         if missing:
             state.pop('buildCompletedAt',None)
             if state.get('closeoutStatus') in ('done','sent'):state['closeoutStatus']='partial'
@@ -156,12 +176,25 @@ def finalize(path,check_results=None,artifact_root=None,presentation_deps=None):
         target=Path(root).parent/'build-progress.json'
         try:progress=json.loads(target.read_text()) if target.is_file() else {}
         except (ValueError,OSError):progress={}
-        progress.update(stage='complete' if result else 'qc',company_slug=state.get('companySlug'),build_id=state.get('buildId'),
-                        completion_verification=state['completionVerification'],updated_at=state['completionVerification']['checkedAt'],
-                        message='Your workforce is verified.' if result else 'Required workforce checks are still pending.')
-        if result:progress['completed_at']=state['buildCompletedAt']
-        else:progress.pop('completed_at',None)
-        atomic_write(target,progress)
+        if not isinstance(progress,dict):progress={}
+        progress.setdefault('departments',[]);progress.setdefault('documents_total',0)
+        progress.setdefault('documents_complete',0);progress.setdefault('eta_minutes',0)
+        verification=state['completionVerification']
+        wanted={'stage':'complete' if result else 'validating','company_slug':state.get('companySlug'),'build_id':state.get('buildId'),
+                'completion_verification':verification,'updated_at':verification['checkedAt'],
+                'message':'Your workforce is verified.' if result else 'Your workforce is being checked.'}
+        if result:wanted['completed_at']=state['buildCompletedAt']
+        if not result and progress_is_running(progress,state.get('buildId')):
+            # A build is writing its own progress: keep its stage and message and only
+            # record the verification outcome.
+            if verification_without_checked_at(progress.get('completion_verification'))!=verification_without_checked_at(verification):
+                progress['completion_verification']=verification
+                atomic_write(target,progress)
+        elif (progress.get('stage')!=wanted['stage'] or progress.get('build_id')!=wanted['build_id']
+              or verification_without_checked_at(progress.get('completion_verification'))!=verification_without_checked_at(verification)):
+            progress.update(wanted)
+            if not result:progress.pop('completed_at',None)
+            atomic_write(target,progress)
     return result
 
 def refresh(path):
