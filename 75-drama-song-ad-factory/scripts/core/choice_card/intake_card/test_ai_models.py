@@ -27,9 +27,9 @@ def _run_dir():
     return tempfile.mkdtemp(prefix="skill75-ai-models-")
 
 
-#: AI MODELS leads the production choices of the card a plain replay asks
-#: (S75-006: IC.conversation with no run folder keeps the list a resumed run
-#: keeps). It is also the first screen of the NEW card's production choices.
+#: AI MODELS leads the production choices of the frozen card, and this file
+#: replays THAT card explicitly (S75-006: a bare ``conversation`` asks the new
+#: card, whose brief is five screens in a different order).
 MODELS_AT = [q["id"] for q in IC.LEGACY_QUESTIONS].index("models") + 1
 #: The brief answers that come before AI MODELS, so a reply lands on it.
 BRIEF = IC.example_replies(IC.LEGACY_QUESTIONS)[:MODELS_AT - 1]
@@ -142,7 +142,7 @@ def test_unknown_model_refused_with_actionable_result():
     assert c is None and 'cannot use "Banana"' in err and "GLM 5.3" in err
     res = AM.check_result("Banana", "GLM 5.3")
     assert res["error_code"] == "MODEL_UNKNOWN" and res["selectable"] and res["next_action"]
-    st = IC.conversation(BRIEF + ["Banana builds, GLM 5.3 checks"])
+    st = IC.conversation(BRIEF + ["Banana builds, GLM 5.3 checks"], IC.LEGACY_QUESTIONS)
     assert len(st["answers"]) == len(BRIEF) and st["message"].startswith("Sorry, I cannot use")
     assert AM.parse("2")[0] is None                      # "choose my own" alone asks for both names
 
@@ -230,7 +230,7 @@ def test_choice_is_recorded_in_the_approved_summary():
     assert _summary({})["ai_models"] == REC                     # card skipped -> recommended pair
     assert _summary({"ai_models": {"build": "Banana", "check": "GLM 5.3"}})["ai_models"] == REC
     assert _summary({"ai_models": {"build": "Sonnet", "check": "Sonnet"}})["ai_models"] == REC
-    st = IC.conversation(BRIEF + ["1"])
+    st = IC.conversation(BRIEF + ["1"], IC.LEGACY_QUESTIONS)
     assert st["answers"][MODELS_AT - 1]["value"] == REC         # selecting the recommended pair stores it
 
 
