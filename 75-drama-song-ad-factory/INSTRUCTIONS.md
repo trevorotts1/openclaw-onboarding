@@ -109,7 +109,8 @@ guard that already failed.
    music-generation route is RETIRED with no fallback). Images -> Skill 66.
    Video clips -> Skill 67.
    Paid transport, poll and credits -> Skill 74 (shadow-first; submit
-   never chooses or changes a model). Callbacks -> Skill 46. Spoken voice ->
+   never chooses or changes a model). Results are polled through Skill 74;
+   no callback relay is used. Spoken voice ->
    inside the Suno track; Velvet Voiceover -> Google text-to-speech through
    Skill 74 (Fish Audio is not used by drama song ads). Account setup ->
    Skill 07. FFmpeg/editor
