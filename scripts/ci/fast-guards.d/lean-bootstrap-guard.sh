@@ -6,7 +6,7 @@ set -e
 cd "${GITHUB_WORKSPACE:-$(git rev-parse --show-toplevel)}"
 # The old job ran on Python 3.9 (the interpreter client Macs run). fast-guards runs 3.11 and ubuntu-latest has no
 # setup-python 3.9 build, so install 3.9 here with uv and put it first on PATH as python3 for every step below.
-python3 -m pip install --quiet --disable-pip-version-check uv || { echo "::error::fast-guards lean-bootstrap-guard: could not install uv"; exit 1; }
+command -v uv >/dev/null 2>&1 || python3 -m pip install --quiet --disable-pip-version-check uv || { echo "::error::fast-guards lean-bootstrap-guard: could not install uv"; exit 1; }
 uv python install 3.9 || { echo "::error::fast-guards lean-bootstrap-guard: could not install Python 3.9"; exit 1; }
 FG_PY39="$(uv python find 3.9)" && FG_SHIM="$(mktemp -d)" && ln -s "$FG_PY39" "$FG_SHIM/python3" && ln -s "$FG_PY39" "$FG_SHIM/python" || { echo "::error::fast-guards lean-bootstrap-guard: no Python 3.9"; exit 1; }
 export PATH="$FG_SHIM:$PATH"
