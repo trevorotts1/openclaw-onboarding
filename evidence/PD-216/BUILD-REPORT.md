@@ -151,13 +151,22 @@ No sibling-unit hunks on this branch (no other lane commits are on it).
 
 ## Remote head proof
 
+Commit chain on `pd/fl30-path-table--hold-d12`, base `1a476d2cbbc57fedbfa9dbcf73c91074bfd1a1dc`:
+
+| commit | what |
+|---|---|
+| `1c6358215ede5691f6ab680fb9a8a0d5c131c941` | code + test — **every row is held by this commit** |
+| `09d50d9543fb0900a2d2f0f680b87cde55f599ec` | this report |
+| `5a60f54c9d4f902429e27dfe144f36d85b849666` | report wording (code commit named instead of the report's own sha) |
+| `0f34aec35d5820f2f09660f4e71f51597f4764f6` | this remote-head section |
+
+The remote head itself is the docs commit that carries this paragraph, so its literal sha is read at handback, not
+written here (writing it would be a self-reference that changes on every commit):
+
 ```
 $ git ls-remote --heads origin refs/heads/pd/fl30-path-table--hold-d12
-5a60f54c9d4f902429e27dfe144f36d85b849666	refs/heads/pd/fl30-path-table--hold-d12
+<40-char sha>	refs/heads/pd/fl30-path-table--hold-d12
 ```
-
-Pushed chain: `1a476d2cb` (base) -> `1c6358215ede5691f6ab680fb9a8a0d5c131c941` (code + test) ->
-`09d50d9543fb0900a2d2f0f680b87cde55f599ec` (report) -> `5a60f54c9d4f902429e27dfe144f36d85b849666` (report wording).
 
 The pushed tree was re-checked from a clean checkout of the remote head (not the build tree): `10 passed`,
 `AUDIT_TODAY_EXIT=1`, `AUDIT_PD062_EXIT=0`, and `git diff --stat base..HEAD` showing exactly the four files above.
