@@ -79,7 +79,10 @@ Record formats (all fields required unless marked optional):
                              preservation_id, only AFTER independent applied-tree
                              verification, and never for original work.
 
-  operator decision (owned elsewhere, consumed unchanged)
+  operator decision (file x11-operator-decision.json, owned elsewhere,
+                     consumed unchanged; never the song run artifact
+                     <run>/music/acceptance/operator-decision.json, which is a
+                     different document with a different shape)
     installed_apply    boolean
 
 Stdlib only. Pure reads: no filesystem, process, network or subprocess.
