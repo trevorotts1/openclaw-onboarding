@@ -127,9 +127,11 @@ class TestSyncCheckGateWiring:
             assert needle in src, f"pre-commit trigger set missing {needle}"
 
     def test_ci_half_exists(self):
-        wf = REPO / ".github" / "workflows" / "presentations-drift-gates.yml"
-        assert wf.is_file()
-        body = wf.read_text(encoding="utf-8")
+        # folded into fast-guards: the steps are the folded scripts plus the gate script they run
+        parts = [REPO / "scripts" / "ci" / "presentations-drift-gates.sh"]
+        parts += sorted((REPO / "scripts" / "ci" / "fast-guards.d").glob("presentations-drift-gates--*.sh"))
+        assert parts and all(p.is_file() for p in parts)
+        body = "\n".join(p.read_text(encoding="utf-8") for p in parts)
         assert "sync_check" in body
 
     def test_sync_check_clean_today(self):

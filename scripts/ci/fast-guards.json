@@ -4079,6 +4079,42 @@
   }
  },
  {
+  "name": "downsell-wrapper-pins",
+  "was": "downsell-wrapper-pins.yml",
+  "script": "scripts/ci/fast-guards.d/downsell-wrapper-pins.sh",
+  "python311": true,
+  "events": {
+   "push": {
+    "branches": [
+     "main"
+    ],
+    "paths": [
+     "49-signature-funnel/scripts/**",
+     "81-signature-downsell/**",
+     "82-signature-thank-you/**",
+     "shared-utils/signature_launch_contract/**",
+     "71-blackceo-signature-page/**",
+     ".github/workflows/downsell-wrapper-pins.yml",
+     ".github/CODEOWNERS"
+    ]
+   },
+   "pull_request": {
+    "branches": [
+     "main"
+    ],
+    "paths": [
+     "49-signature-funnel/scripts/**",
+     "81-signature-downsell/**",
+     "82-signature-thank-you/**",
+     "shared-utils/signature_launch_contract/**",
+     "71-blackceo-signature-page/**",
+     ".github/workflows/downsell-wrapper-pins.yml",
+     ".github/CODEOWNERS"
+    ]
+   }
+  }
+ },
+ {
   "name": "embedded-python-syntax-guard",
   "was": "embedded-python-syntax-guard.yml",
   "script": "scripts/ci/fast-guards.d/embedded-python-syntax-guard.sh",
@@ -4865,6 +4901,86 @@
   }
  },
  {
+  "name": "lean-bootstrap-guard",
+  "was": "lean-bootstrap-guard.yml",
+  "script": "scripts/ci/fast-guards.d/lean-bootstrap-guard.sh",
+  "python311": true,
+  "events": {
+   "push": {
+    "branches": [
+     "main"
+    ],
+    "paths": [
+     "scripts/compact-bootstrap.py",
+     "scripts/bootstrap-pointerize.py",
+     "scripts/lib-bootstrap-pointer.sh",
+     "scripts/validate-core-references.py",
+     "scripts/bootstrap-validate-daily.sh",
+     "scripts/bootstrap-compact-weekly.sh",
+     "scripts/ensure-pipeline-crons.sh",
+     "config/bootstrap-compact.conf.example",
+     "config/bootstrap-pointer.conf.example",
+     "docs/COMPACT-CORE-SOP.md",
+     "install.sh",
+     "tests/unit/compact-bootstrap.test.sh",
+     "tests/unit/bootstrap-pointerize.test.sh",
+     "tests/unit/test_bootstrap_marker_pairs.py",
+     "38-conversational-ai-system/scripts/05-update-agents-md.sh",
+     ".github/workflows/lean-bootstrap-guard.yml"
+    ]
+   },
+   "pull_request": {
+    "branches": null,
+    "paths": [
+     "scripts/compact-bootstrap.py",
+     "scripts/bootstrap-pointerize.py",
+     "scripts/lib-bootstrap-pointer.sh",
+     "scripts/validate-core-references.py",
+     "scripts/bootstrap-validate-daily.sh",
+     "scripts/bootstrap-compact-weekly.sh",
+     "scripts/ensure-pipeline-crons.sh",
+     "config/bootstrap-compact.conf.example",
+     "config/bootstrap-pointer.conf.example",
+     "docs/COMPACT-CORE-SOP.md",
+     "install.sh",
+     "tests/unit/compact-bootstrap.test.sh",
+     "tests/unit/bootstrap-pointerize.test.sh",
+     "tests/unit/test_bootstrap_marker_pairs.py",
+     "38-conversational-ai-system/scripts/05-update-agents-md.sh",
+     ".github/workflows/lean-bootstrap-guard.yml"
+    ]
+   }
+  }
+ },
+ {
+  "name": "ledger-truth-gate",
+  "was": "ledger-truth-gate.yml",
+  "script": "scripts/ci/fast-guards.d/ledger-truth-gate.sh",
+  "python311": true,
+  "events": {
+   "push": {
+    "branches": [
+     "main"
+    ],
+    "paths": [
+     "ledgers/**",
+     ".github/workflows/ledger-truth-gate.yml",
+     "scripts/ledger-truth-gate.py"
+    ]
+   },
+   "pull_request": {
+    "branches": [
+     "main"
+    ],
+    "paths": [
+     "ledgers/**",
+     ".github/workflows/ledger-truth-gate.yml",
+     "scripts/ledger-truth-gate.py"
+    ]
+   }
+  }
+ },
+ {
   "name": "local-embedder-guard",
   "was": "local-embedder-guard.yml",
   "script": "scripts/ci/fast-guards.d/local-embedder-guard.sh",
@@ -5042,6 +5158,104 @@
      "23-ai-workforce-blueprint/templates/role-library/presentations/scripts/tests/pres043_live_smoke.py",
      "lib-presentation-schedules.sh",
      ".github/workflows/presentation-release-matrix.yml"
+    ]
+   }
+  }
+ },
+ {
+  "name": "presentations-drift-gates--mac",
+  "was": "presentations-drift-gates.yml",
+  "script": "scripts/ci/fast-guards.d/presentations-drift-gates--mac.sh",
+  "python311": true,
+  "events": {
+   "push": {
+    "branches": [
+     "main"
+    ],
+    "paths": null
+   },
+   "pull_request": {
+    "branches": [
+     "main"
+    ],
+    "paths": [
+     "scripts/ci/presentations-drift-gates.sh",
+     "23-ai-workforce-blueprint/templates/role-library/presentations/scripts/**",
+     "universal-sops/presentation-slide-craft/PIPELINE-MANIFEST.json",
+     "universal-sops/presentation-slide-craft/MANIFEST-SOURCE.txt",
+     "universal-sops/_content-manifest.json",
+     "23-ai-workforce-blueprint/templates/role-library/presentations/00-START-HERE.md",
+     "universal-sops/presentation-slide-craft/SOP-SLIDE-05-PROCESS-MANIFEST.md",
+     "scripts/check-duplicate-sop-drift.py",
+     "23-ai-workforce-blueprint/templates/role-library/*/sops/**",
+     "universal-sops/**",
+     "scripts/duplicate-sop-authority.json",
+     "scripts/ci/phase_doc_sync.py",
+     "23-ai-workforce-blueprint/templates/role-library/presentations/DEPARTMENT-COUNTS-CANONICAL.md",
+     "23-ai-workforce-blueprint/templates/role-library/presentations/director-of-presentations.md",
+     "23-ai-workforce-blueprint/templates/role-library/presentations/pptx-assembly-specialist.md",
+     "23-ai-workforce-blueprint/templates/role-library/presentations/slide-image-creator.md",
+     "23-ai-workforce-blueprint/templates/role-library/presentations/qc-specialist-prompt-presentations.md",
+     "scripts/check-shared-script-drift.py",
+     "scripts/shared-script-authority.json",
+     "23-ai-workforce-blueprint/templates/presentation-render/**",
+     "23-ai-workforce-blueprint/templates/role-library/presentations/scripts/kie_generate.py",
+     "23-ai-workforce-blueprint/templates/role-library/presentations/scripts/slides.schema.json",
+     "06-ghl-install-pages/tools/ghl_media.py",
+     "51-signature-presentation/**",
+     "23-ai-workforce-blueprint/scripts/register-library-additions.py",
+     "23-ai-workforce-blueprint/templates/role-library/_index.json",
+     ".github/workflows/presentations-drift-gates.yml",
+     "23-ai-workforce-blueprint/scripts/presentation-canonical-entry.sh"
+    ]
+   }
+  }
+ },
+ {
+  "name": "presentations-drift-gates--vps",
+  "was": "presentations-drift-gates.yml",
+  "script": "scripts/ci/fast-guards.d/presentations-drift-gates--vps.sh",
+  "python311": true,
+  "events": {
+   "push": {
+    "branches": [
+     "main"
+    ],
+    "paths": null
+   },
+   "pull_request": {
+    "branches": [
+     "main"
+    ],
+    "paths": [
+     "scripts/ci/presentations-drift-gates.sh",
+     "23-ai-workforce-blueprint/templates/role-library/presentations/scripts/**",
+     "universal-sops/presentation-slide-craft/PIPELINE-MANIFEST.json",
+     "universal-sops/presentation-slide-craft/MANIFEST-SOURCE.txt",
+     "universal-sops/_content-manifest.json",
+     "23-ai-workforce-blueprint/templates/role-library/presentations/00-START-HERE.md",
+     "universal-sops/presentation-slide-craft/SOP-SLIDE-05-PROCESS-MANIFEST.md",
+     "scripts/check-duplicate-sop-drift.py",
+     "23-ai-workforce-blueprint/templates/role-library/*/sops/**",
+     "universal-sops/**",
+     "scripts/duplicate-sop-authority.json",
+     "scripts/ci/phase_doc_sync.py",
+     "23-ai-workforce-blueprint/templates/role-library/presentations/DEPARTMENT-COUNTS-CANONICAL.md",
+     "23-ai-workforce-blueprint/templates/role-library/presentations/director-of-presentations.md",
+     "23-ai-workforce-blueprint/templates/role-library/presentations/pptx-assembly-specialist.md",
+     "23-ai-workforce-blueprint/templates/role-library/presentations/slide-image-creator.md",
+     "23-ai-workforce-blueprint/templates/role-library/presentations/qc-specialist-prompt-presentations.md",
+     "scripts/check-shared-script-drift.py",
+     "scripts/shared-script-authority.json",
+     "23-ai-workforce-blueprint/templates/presentation-render/**",
+     "23-ai-workforce-blueprint/templates/role-library/presentations/scripts/kie_generate.py",
+     "23-ai-workforce-blueprint/templates/role-library/presentations/scripts/slides.schema.json",
+     "06-ghl-install-pages/tools/ghl_media.py",
+     "51-signature-presentation/**",
+     "23-ai-workforce-blueprint/scripts/register-library-additions.py",
+     "23-ai-workforce-blueprint/templates/role-library/_index.json",
+     ".github/workflows/presentations-drift-gates.yml",
+     "23-ai-workforce-blueprint/scripts/presentation-canonical-entry.sh"
     ]
    }
   }
@@ -5346,6 +5560,36 @@
      "tests/unit/platform-detection-parity.test.sh",
      ".github/workflows/script-defect-classes-guard.yml",
      "**.sh"
+    ]
+   }
+  }
+ },
+ {
+  "name": "shared-readiness-projection-guard",
+  "was": "shared-readiness-projection-guard.yml",
+  "script": "scripts/ci/fast-guards.d/shared-readiness-projection-guard.sh",
+  "python311": true,
+  "events": {
+   "push": {
+    "branches": [
+     "main"
+    ],
+    "paths": [
+     "shared-utils/shared_readiness.py",
+     "tests/unit/shared-readiness-projection.test.py",
+     "32-command-center-setup/scripts/verify-tenant-readiness.py",
+     ".github/workflows/shared-readiness-projection-guard.yml"
+    ]
+   },
+   "pull_request": {
+    "branches": [
+     "main"
+    ],
+    "paths": [
+     "shared-utils/shared_readiness.py",
+     "tests/unit/shared-readiness-projection.test.py",
+     "32-command-center-setup/scripts/verify-tenant-readiness.py",
+     ".github/workflows/shared-readiness-projection-guard.yml"
     ]
    }
   }

@@ -58,7 +58,9 @@ for _ in range(8):
         break
     REPO = REPO.parent
 
-WORKFLOW = REPO / ".github" / "workflows" / "presentations-drift-gates.yml"
+# The drift-gates job was folded into fast-guards (one guard per platform leg): its triggers are the
+# guard entries in scripts/ci/fast-guards.json and its steps are scripts/ci/fast-guards.d/presentations-drift-gates--<platform>.sh.
+FAST_GUARDS_JSON = REPO / "scripts" / "ci" / "fast-guards.json"
 GATE_SCRIPT = REPO / "scripts" / "ci" / "presentations-drift-gates.sh"
 VERIFY_SH = REPO / "51-signature-presentation" / "verify.sh"
 DEPT_REL = "23-ai-workforce-blueprint/templates/role-library/presentations"
@@ -69,49 +71,17 @@ UNIVERSAL_SOPS = REPO / "universal-sops"
 # ---------------------------------------------------------------------------
 # the filter, parsed; and a GitHub-path-filter matcher
 # ---------------------------------------------------------------------------
-def _pull_request_paths() -> list[str]:
-    """The literal `on.pull_request.paths:` list, in file order.
+def _guard_entry() -> dict:
+    import json
+    guards = json.loads(FAST_GUARDS_JSON.read_text(encoding="utf-8"))
+    return next(g for g in guards if g["was"] == "presentations-drift-gates.yml")
 
-    Hand-parsed rather than via PyYAML: the suite must not grow a third-party
-    dependency to check a CI trigger, and the block is a flat scalar list.
-    """
-    lines = WORKFLOW.read_text(encoding="utf-8").split("\n")
-    i = 0
-    while i < len(lines) and lines[i].strip() != "pull_request:":
-        i += 1
-    assert i < len(lines), (
-        "presentations-drift-gates.yml has NO `pull_request:` trigger -- every "
-        "drift gate in it is push-only and cannot block a PR."
-    )
-    pr_indent = len(lines[i]) - len(lines[i].lstrip())
-    # find `paths:` INSIDE the pull_request block (indented deeper than it)
-    i += 1
-    while i < len(lines):
-        line = lines[i]
-        stripped = line.strip()
-        if stripped == "" or stripped.startswith("#"):
-            i += 1
-            continue
-        if len(line) - len(line.lstrip()) <= pr_indent:
-            i = len(lines)  # left the block without finding paths:
-            break
-        if stripped == "paths:":
-            break
-        i += 1
-    assert i < len(lines), (
-        "`pull_request:` carries no `paths:` block -- the job fires on every PR, "
-        "which is not what this test grades; re-derive before trusting it."
-    )
-    out: list[str] = []
-    for line in lines[i + 1:]:
-        stripped = line.strip()
-        if stripped.startswith("- "):
-            out.append(stripped[2:].strip().strip('"').strip("'"))
-        elif stripped == "" or stripped.startswith("#"):
-            continue
-        else:
-            break
-    return out
+
+def _pull_request_paths() -> list[str]:
+    """The folded guard's `events.pull_request.paths` list, in file order (the old `on.pull_request.paths:`)."""
+    paths = _guard_entry()["events"]["pull_request"]["paths"]
+    assert paths, "the folded guard has no pull_request paths -- it would fire on every PR, which is not what this test grades"
+    return list(paths)
 
 
 def _to_regex(pattern: str) -> re.Pattern:
@@ -166,7 +136,9 @@ def _report(kind: str, misses: list[str]) -> str:
 # ===========================================================================
 class TestMatcherIsNotARubberStamp:
     def test_workflow_and_gate_script_exist(self):
-        assert WORKFLOW.is_file(), f"missing {WORKFLOW}"
+        assert FAST_GUARDS_JSON.is_file(), f"missing {FAST_GUARDS_JSON}"
+        assert (REPO / "scripts" / "ci" / "fast-guards.d" / "presentations-drift-gates--mac.sh").is_file()
+        assert (REPO / "scripts" / "ci" / "fast-guards.d" / "presentations-drift-gates--vps.sh").is_file()
         assert GATE_SCRIPT.is_file(), f"missing {GATE_SCRIPT}"
         assert VERIFY_SH.is_file(), f"missing {VERIFY_SH}"
 
@@ -174,7 +146,7 @@ class TestMatcherIsNotARubberStamp:
         assert len(matcher.patterns) >= 10, matcher.patterns
 
     def test_known_governed_file_matches(self, matcher):
-        # positive control: the workflow lists itself, and has since it was written
+        # positive control: the guard lists the workflow file it came from (and the fold itself re-runs every guard)
         assert matcher(".github/workflows/presentations-drift-gates.yml")
 
     def test_ungoverned_file_does_not_match(self, matcher):
@@ -186,8 +158,8 @@ class TestMatcherIsNotARubberStamp:
             )
 
     def test_push_trigger_survives(self):
-        text = WORKFLOW.read_text(encoding="utf-8")
-        assert "push:" in text and "branches: [main]" in text, (
+        push = _guard_entry()["events"].get("push")
+        assert push is not None and push.get("branches") == ["main"], (
             "the push-on-main trigger is gone -- the job would no longer run "
             "post-merge either."
         )
@@ -344,7 +316,7 @@ class TestExistingCoverageNotWeakened:
         f"{DEPT_REL}/qc-specialist-prompt-presentations.md",
         "23-ai-workforce-blueprint/scripts/register-library-additions.py",
         "51-signature-presentation/verify.sh",
-        ".github/workflows/presentations-drift-gates.yml",
+        "scripts/ci/presentations-drift-gates.sh",
     ])
     def test_previously_covered_path_still_fires(self, matcher, rel):
         assert (REPO / rel).is_file(), f"missing {rel} (path list is stale)"

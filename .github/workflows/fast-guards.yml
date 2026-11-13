@@ -45,4 +45,8 @@ jobs:
         with:
           python-version: "3.11"
       - name: Run the folded guards
+        # GH_TOKEN: the folded ledger-truth-gate guard clones blackceo-command-center and reads check-runs with it,
+        # exactly as its old workflow did with secrets.GITHUB_TOKEN.
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: python3 scripts/ci/fast_guards.py --shard ${{ matrix.shard }}/2
