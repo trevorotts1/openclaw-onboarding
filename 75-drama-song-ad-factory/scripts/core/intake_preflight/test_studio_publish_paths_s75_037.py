@@ -128,7 +128,13 @@ def make_run(tmp, studio=True):
 
 def song_state(run, numbers=(1, 2, 3), failed=(), concerns=None):
     """The record `deliver_choices` leaves behind: offered numbers + presented
-    audio files (the same shape the real client message is built from)."""
+    audio files (the same shape the real client message is built from).
+
+    Faithful to song_choices.deliver_choices (lines 1213-1223): only an
+    ACCEPTED take goes into `offered`; a take the judge failed is presented for
+    LISTENING and recorded in `concerns`, never offered. Putting a failed take
+    in `offered` would invent an offer the real delivery never makes.
+    """
     sc = run / "song-choices"
     sc.mkdir(parents=True, exist_ok=True)
     offered, presented = {}, []
@@ -136,6 +142,8 @@ def song_state(run, numbers=(1, 2, 3), failed=(), concerns=None):
         f = sc / ("%d.mp3" % n)
         f.write_bytes(b"mp3")
         presented.append(str(f))
+        if n in failed:
+            continue                      # listening-only: never an offer
         offered[str(n)] = {"label": "%d - take %d (short)" % (n, n),
                            "file": str(f), "duration": "0:30",
                            "take": {"audio_path": str(f)}, "receipt": {}}
