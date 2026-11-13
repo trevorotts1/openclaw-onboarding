@@ -510,6 +510,9 @@ def evaluate(brief, settings=None, resume_state=None, run_id=None, now_unix=None
         "product_reference": product_reference(fields, prov),
         "next_action": base.get("next_action"),
         "next_stage": base.get("next_stage"),
+        "mode": base.get("mode"),
+        "notices": base.get("notices"),
+        "warnings": base.get("warnings"),
     }
     if invented:  # F6: an invented style/number/gate refuses the brief
         out.update({
@@ -691,7 +694,8 @@ def main(argv=None):
             "questions", "question_message", "summary", "digest", "provenance",
             "auth_status", "approval_invalidated", "changes", "untrusted_fields",
             "invented_fields",
-            "product_reference", "next_stage")}
+            "product_reference", "next_stage",
+            "mode", "notices", "warnings")}
         expected = (resume or {}).get("digest") if resume else None
         state_version = {"expected": expected, "current": r.get("digest")}
     except Exception as e:                                  # noqa: BLE001
