@@ -235,9 +235,10 @@ _VERIFIER_SYMBOL_CONTRACT: "Dict[str, Tuple[str, ...]]" = {
         "_load_slide_copy_map",
         "FORBIDDEN_DEMOGRAPHIC_DEFAULTS",
         "FORBIDDEN_QC_GRADER_IDENTITIES",
-        # independent QC-report gates (P1Q-COPY-QC / P-PROMPT-QC)
+        # independent QC-report gates (P1Q-COPY-QC / P-PROMPT-QC / P-TYPO-QC)
         "_chk_copy_qc",
         "_chk_prompt_qc",
+        "_chk_typography_qc",
         # Signature-Presentation verifiers
         "_chk_sp_intake",
         "_chk_sp_structure",
@@ -730,14 +731,20 @@ def _verify_prompt(run_dir: Path) -> Tuple[bool, List[str]]:
 # deterministically re-measure the underlying artifact) via the report FILE it
 # actually produces, never the upstream artifact a sibling phase already checked.
 # ---------------------------------------------------------------------------
-def _verify_qc_report(report_rel: str, bd_fn_name: str, af_code: str) -> Callable:
+def _verify_qc_report(report_rel: str, bd_fn_name: str, af_code: str,
+                      artifact_pattern: Optional[str] = None) -> Callable:
     """Build a verifier for an independent QC-report phase: open
     <run_dir>/<report_rel>, hand its path to the real build_deck report-shape+teeth
     gate named `bd_fn_name` (e.g. "_chk_copy_qc"), and translate its "" == pass /
     non-empty-string == fail convention into the (ok, reasons) shape every other
     verifier here returns. Degrades to a bare-existence check (never a silent
     pass) when build_deck is unavailable, matching this module's existing
-    degraded-mode pattern elsewhere."""
+    degraded-mode pattern elsewhere.
+
+    `artifact_pattern` (PD-075): the checked report path, exposed on the returned
+    callable for the PD-061 parity walk when this verifier sits behind a wrapper
+    that copies the attribute (e.g. the P-TYPO-QC shadow verifier). Off by
+    default so existing registrations keep the walk's coverage set unchanged."""
     def _v(run_dir: Path) -> Tuple[bool, List[str]]:
         report_path = run_dir / report_rel
         fn = _bd_fn(bd_fn_name)
@@ -763,6 +770,8 @@ def _verify_qc_report(report_rel: str, bd_fn_name: str, af_code: str) -> Callabl
         if result:
             return False, [str(result)]
         return True, []
+    if artifact_pattern is not None:
+        _v.artifact_pattern = artifact_pattern
     return _v
 
 
@@ -2943,19 +2952,21 @@ def _verify_webinarized_speech(run_dir: Path) -> Tuple[bool, List[str]]:
 # PHASE_VERIFIERS entries (currently just P-TYPO-QC) so their verdict is
 # shadow-compared against a sealed RunFacts read, without changing what the
 # verifier returns unless the operator has explicitly opted into enforcing
-# mode. P-TYPO-QC was chosen because it is the PROVEN gap, executed against
-# this exact checkout:
+# mode. P-TYPO-QC was chosen because it WAS the proven gap, executed against
+# this exact checkout before PD-075:
 #
 #   >>> phase_verifiers.verify("P-TYPO-QC", <run_dir with
 #   ...     typography_qc_report.json = {"gate":"typography","pass":false,
 #   ...                                  "average":2.1, ...}>)
-#   (True, [])   # <-- a report that says pass:false is reported as a PASS
+#   (True, [])   # was: a report that says pass:false reported as a PASS
 #
-# because the registered verifier is _verify_json_artifact(pattern) with NO
-# required_keys — it only proves the file exists, is non-empty, and parses;
-# it never opens "gate", "pass", "average", or independence. The RunFacts
-# verdict re-derives the SAME rubric build_deck._qc_report_gate already
-# enforces on other paths for this exact report and rejects it on five
+# because the registered verifier was then _verify_json_artifact(pattern) with
+# NO required_keys — it only proved the file existed, was non-empty, and parsed;
+# it never opened "gate", "pass", "average", or independence. PD-075 closed that
+# gap: the legacy half is now _verify_qc_report against build_deck's real
+# report-shape+teeth gate (_chk_typography_qc), so the same report now FAILS.
+# The RunFacts verdict re-derives the SAME rubric build_deck._qc_report_gate
+# already enforces on other paths for this exact report and rejects it on five
 # independent grounds (see the demo in the acceptance evidence).
 # ---------------------------------------------------------------------------
 def _shadow_qc_verifier(qc_key: str, legacy_fn: Callable) -> Callable:
@@ -2979,8 +2990,17 @@ def _shadow_qc_verifier(qc_key: str, legacy_fn: Callable) -> Callable:
             # _resolve_enforcing_mode()) -- never a live os.environ re-read --
             # so this decision cannot drift mid-run.
             if facts.enforcing:
-                if verdict is _rf.Verdict.PASS:
+                if verdict is _rf.Verdict.PASS and legacy_ok:
                     return True, []
+                if verdict is _rf.Verdict.PASS:
+                    # PD-075: the legacy half now carries build_deck's
+                    # deterministic teeth (AF-FONT-FLOOR re-measure) which the
+                    # report-only RunFacts read cannot see. Enforcing must
+                    # never LIFT a legacy FAIL — the docstring's "can only ever
+                    # make the gate STRICTER" is the invariant, so the legacy
+                    # refusal stands even when RunFacts passes.
+                    return False, list(legacy_reasons) or [
+                        f"[RunFacts enforcing] qc[{qc_key}]: legacy gate failed"]
                 return False, [f"[RunFacts enforcing] qc[{qc_key}]: {detail}"]
         except Exception as exc:  # noqa: BLE001 — shadow must never break a gate
             try:
@@ -4128,8 +4148,14 @@ PHASE_VERIFIERS: dict[str, Callable] = {
     "PF-DESIGN":          _verify_design_phase,
     # Phase 4.6   Typography QC
     # Trust Boundary Increment 1 (report-only) — see _shadow_qc_verifier above.
+    # PD-075: the legacy half is the REAL report-shape+teeth gate, not the
+    # existence-only _verify_json_artifact — so a report that says pass:false
+    # now fails this step instead of passing on the file merely existing.
     "P-TYPO-QC":          _shadow_qc_verifier(
-        "typography", _verify_json_artifact("working/qc/typography_qc_report.json")),
+        "typography", _verify_qc_report(
+            "working/qc/typography_qc_report.json", "_chk_typography_qc",
+            "AF-TYPOGRAPHY-QC",
+            artifact_pattern="working/qc/typography_qc_report.json")),
     # Phase 4.7   Prompt Authoring
     "P4-PROMPT":          _verify_prompt,
     # Phase 4.8   Prompt QC — INDEPENDENT report gate (root-cause fix, iteration
