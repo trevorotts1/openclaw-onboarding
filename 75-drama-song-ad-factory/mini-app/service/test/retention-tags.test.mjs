@@ -202,7 +202,7 @@ test('retention tags: the module writers store a resolving kind', async () => {
     'push_subscription',
   );
 
-  const enrolled = await enrollClient(store, { env: { DS_ENROLLMENT_SECRET: 's3cret' }, presentedSecret: 's3cret', nowMs: T0 });
+  const enrolled = await enrollClient({ store, env: { DS_ENROLLMENT_SECRET: 's3cret' }, presentedSecret: 's3cret', nowMs: T0 });
   assert.equal(enrolled.ok, true);
   assert.equal(storedRecord(await store.kvGet(`client:${enrolled.client_id}`)).retention_kind, 'enrollment_record');
 });
