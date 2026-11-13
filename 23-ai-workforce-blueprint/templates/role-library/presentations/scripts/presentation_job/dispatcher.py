@@ -10906,11 +10906,7 @@ def watch_run_dir(run_dir: Path, *, interval: float = SWEEP_INTERVAL_S,
 #      large deck cannot own every slot; AGE PRIORITY inside a run (oldest
 #      eligible order first). The per-run max_workers ceiling still binds:
 #      total capacity = sum of per-run caps the box can actually serve.
-#   3. QC/recovery reserve: while the pool is saturated, the LAST slot is
-#      held for a QC-owning phase (P1Q-COPY-QC / P-TYPo-QC / P-PROMPT-QC /
-#      P-IMAGE-QC / P-SHIFT-QC / P-SPEECH-QC / P-QC-AGGREGATE / P-U-QC) so
-#      queued authors do not starve QC (QC.md QC-PRES-036 check 2).
-#   4. DURABLE REPORT: working/scan-root-queue.json carries, per run, the
+#   3. DURABLE REPORT: working/scan-root-queue.json carries, per run, the
 #      queued vs running counts, the last claim-scan time and the oldest
 #      queued age -- the progress/ETA surface the operator reads.
 #
@@ -10922,10 +10918,6 @@ def watch_run_dir(run_dir: Path, *, interval: float = SWEEP_INTERVAL_S,
 #
 # ROLLBACK: PRESENTATION_SCAN_ROOT_SCHEDULER=0 selects the old serial
 # watch_scan_root loop byte-for-byte.
-_SCAN_ROOT_SCHEDULER_QC_IDS = frozenset({
-    "P1Q-COPY-QC", "P-TYPO-QC", "P-PROMPT-QC", "P-IMAGE-QC",
-    "P-SHIFT-QC", "P-SPEECH-QC", "P-QC-AGGREGATE", "P-U-QC",
-})
 
 def _scan_root_scheduler_enabled() -> bool:
     """PRES-036: default ON; only exactly "0" disables (same quote/whitespace
