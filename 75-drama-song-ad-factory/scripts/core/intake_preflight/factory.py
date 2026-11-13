@@ -36,6 +36,7 @@ Approval -> `next` hands out music; an edit is re-checked and re-sent.
 """
 import argparse
 import fcntl
+import hashlib
 import json
 import os
 import re
@@ -538,29 +539,96 @@ def _studio_bump_version(run_dir, stage):
 STUDIO_CHOICES = {"storyboard": ({"n": 1, "label": "GO"},)}
 
 
+def _studio_item_digest(ab, item):
+    """The presentation digest of one published item (S75-036): the bridge's
+    own digest when it has one, so the value is the SAME bytes its answer_item
+    binds, else the same canonical form the bridge uses."""
+    fn = getattr(ab, "_item_digest", None)
+    if callable(fn):
+        return fn(item)
+    canonical = {"stage": item.get("stage"), "version": item.get("version"),
+                 "text": item.get("text"), "choices": item.get("choices") or []}
+    raw = json.dumps(canonical, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    return hashlib.sha256(raw).hexdigest()
+
+
 def _studio_publish(run_dir, order, stage, text, files, choices=()):
     """One approval item on the studio page (approvals_bridge.publish). Returns
-    the item dict, or None when the bridge module is not on this box."""
+    the item dict, or None when the bridge module is not on this box. S75-036:
+    the digest the page confirmed for this version is kept, so a later answer
+    can be proved against the presentation it names."""
     ab = _approvals_bridge()
     if ab is None:
         return None
     version = _studio_bump_version(run_dir, stage)
-    return ab.publish(order.get("base_url") or "", _studio_key(),
+    item = ab.publish(order.get("base_url") or "", _studio_key(),
                       order.get("order_id"), stage, version,
                       text, list(choices), list(files))
+    if isinstance(item, dict) and item:
+        _studio_record_publish(run_dir, stage, version, _studio_item_digest(ab, item))
+    return item
+
+
+def _studio_publish_record(run_dir):
+    """{stage: {version: digest}} this run published, or {} when unreadable."""
+    try:
+        doc = json.loads((Path(run_dir) / "control" / "studio-publish.json")
+                         .read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    return doc if isinstance(doc, dict) else {}
+
+
+def _studio_record_publish(run_dir, stage, version, digest):
+    """Remember the presentation digest the page confirmed for this version, so
+    an answer that names a different presentation is refused (S75-036)."""
+    if not digest:
+        return
+    path = Path(run_dir) / "control" / "studio-publish.json"
+    doc = _studio_publish_record(run_dir)
+    entry = doc.get(stage) if isinstance(doc.get(stage), dict) else {}
+    entry = dict(entry)
+    entry[str(version)] = digest
+    doc[stage] = entry
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(doc, indent=2, sort_keys=True), encoding="utf-8")
+
+
+def _studio_published_digest(run_dir, stage, version):
+    """The digest this run published for one stage+version, or None."""
+    entry = _studio_publish_record(run_dir).get(stage)
+    value = (entry or {}).get(str(version)) if isinstance(entry, dict) else None
+    return value if isinstance(value, str) else None
 
 
 def _studio_answer(run_dir, stage):
     """The client's studio answer for one approval stage, or None — never opens
-    a gate on a studio error, a missing bridge, or a never-published stage."""
+    a gate on a studio error, a missing bridge, or a never-published stage.
+
+    S75-036: returns the bridge's WHOLE verified record (value, who, when,
+    version and the presentation digest), never a bare scalar, so an approval
+    can be bound to the exact bytes the page showed. A bridge that only offers
+    the legacy scalar read yields a record with no digest: it may inform a
+    command, but it can never approve the script in-process.
+    """
     order = _studio_order(run_dir)
     ab = _approvals_bridge() if order else None
     if not order or ab is None:
         return None
     version = int(_studio_versions(run_dir).get(stage) or 1)
     try:
-        return ab.answer(order.get("base_url") or "", _studio_key(),
-                         order.get("order_id"), stage, version)
+        read_item = getattr(ab, "answer_item", None)
+        if callable(read_item):
+            record = read_item(order.get("base_url") or "", _studio_key(),
+                               order.get("order_id"), stage, version)
+            if isinstance(record, dict) and record.get("value") is not None:
+                return record
+            return None
+        value = ab.answer(order.get("base_url") or "", _studio_key(),
+                          order.get("order_id"), stage, version)
+        if value is None:
+            return None
+        return {"stage": stage, "version": version, "value": value, "digest": None}
     except Exception:   # noqa: BLE001 - a studio outage keeps the gate waiting
         return None
 
@@ -608,17 +676,113 @@ def _studio_apply_shot_notes(cmd, sid, run_dir, stage, notes, answer):
                           "command": None})
 
 
-def _studio_apply(cmd, sid, run_dir, stage, approval, value):
-    """A studio ANSWER becomes the EXISTING apply command (script-reply /
-    song pick / storyboard --reply). No new approval logic here."""
+def _script_ask_context(run_dir):
+    """The run id and the open presentation ask a studio script answer binds to.
+
+    The ask comes from the run's own approval record (the same ask the chat
+    reply must name), never from the page or a default. An unreadable record
+    answers {} and the gate refuses for want of context -- fail closed.
+    """
+    try:
+        core = Path(__file__).resolve().parent.parent
+        if str(core) not in sys.path:
+            sys.path.insert(0, str(core))
+        from script_approval import script_approval as _appr  # noqa: PLC0415
+        from script_approval import approval_events as _ev    # noqa: PLC0415
+        rec = _appr.record_for(str(run_dir))
+        if not isinstance(rec, dict):
+            return {}
+        asks = _ev.open_asks(rec)
+        run_id = ((rec.get("run") or {}).get("run_id")
+                  or (rec.get("reply_contract") or {}).get("run_id"))
+        return {"ask_id": (asks[-1] or {}).get("ask_id") if asks else None,
+                "run_id": run_id}
+    except (ImportError, OSError, ValueError, TypeError, KeyError):
+        return {}
+
+
+def _studio_source_ref(run_dir, answer):
+    """<order>/<stage>/<version>/<presentation digest> -- the distinct studio
+    reply reference a script approval is recorded under (S75-036)."""
+    order = _studio_order(run_dir) or {}
+    return "%s/%s/%s/%s" % (order.get("order_id"), answer.get("stage") or "script",
+                            answer.get("version"), answer.get("digest"))
+
+
+def _studio_script_command(run_dir, value, answer):
+    """The script-reply command carrying the provenance the studio answer did.
+
+    Used only as the fallback; a legacy answer with no digest gets the plain
+    command, which the gate then refuses for want of provenance."""
+    q = shlex.quote
+    command = ("python3 scripts/core/intake_preflight/factory.py script-reply "
+               "--run-dir %s --reply %s" % (q(str(run_dir)), q(str(value))))
+    if not isinstance(answer, dict) or not answer.get("digest"):
+        return command
+    context = _script_ask_context(run_dir)
+    for flag, val in (("--reply-source", "studio"),
+                      ("--answer-source-ref", _studio_source_ref(run_dir, answer)),
+                      ("--presentation-ask-id", context.get("ask_id")),
+                      ("--run-id", context.get("run_id"))):
+        if val:
+            command += " %s %s" % (flag, q(str(val)))
+    return command
+
+
+def _studio_apply_script(cmd, sid, run_dir, stage, answer):
+    """Apply a verified studio script answer in-process (S75-036).
+
+    None means the answer carries no presentation digest, so the caller keeps
+    the command form. Otherwise the answer is proved against the digest this
+    run published for that version, then handed to the SAME function
+    `script-reply` calls. A mismatch leaves the stage waiting: it never opens.
+    """
+    if not isinstance(answer, dict) or not answer.get("digest"):
+        return None
+    published = _studio_published_digest(run_dir, "script", answer.get("version"))
+    detail = {"stage": stage, "approval": "script", "version": answer.get("version"),
+              "presentation_digest": answer.get("digest")}
+    if not published:
+        return envelope(cmd, sid, "waiting", "studio-presentation-unverified",
+                        "The studio answer names a script presentation this run has "
+                        "no publish record for; nothing was approved. Present the "
+                        "script again, then answer the new version.",
+                        data=detail)
+    if published != answer.get("digest"):
+        return envelope(cmd, sid, "waiting", "studio-presentation-mismatch",
+                        "The studio answer names a different presentation than the "
+                        "script this run published; it is refused and the script "
+                        "stage stays waiting for an answer to the current version.",
+                        data=dict(detail, published_digest=published))
+    context = _script_ask_context(run_dir)
+    # The same attribute names `script-reply --reply-source / --answer-source-ref`
+    # produce, so the in-process call and the CLI carry one contract.
+    ns = argparse.Namespace(run_dir=str(run_dir), reply=answer.get("value"),
+                            reply_source="studio", target="",
+                            answer_source_ref=_studio_source_ref(run_dir, answer),
+                            presentation_ask_id=context.get("ask_id"),
+                            run_id=context.get("run_id"))
+    try:
+        return cmd_script_reply(ns)
+    except Exception:   # noqa: BLE001 - the command form stays the fallback
+        return None
+
+
+def _studio_apply(cmd, sid, run_dir, stage, approval, answer):
+    """A studio ANSWER becomes the EXISTING apply path (script-reply in-process
+    when it carries verified provenance / song pick / storyboard --reply). No
+    new approval logic here."""
     q = shlex.quote
     run = q(str(run_dir))
+    value = answer.get("value") if isinstance(answer, dict) else answer
     notes = _studio_shot_notes(value) if approval == "storyboard" else []
     if len(notes) > 1 and _approval_runner() is not None:
         return _studio_apply_shot_notes(cmd, sid, run_dir, stage, notes, value)
     if approval == "script":
-        command = ("python3 scripts/core/intake_preflight/factory.py script-reply "
-                   "--run-dir %s --reply %s" % (run, q(str(value))))
+        applied = _studio_apply_script(cmd, sid, run_dir, stage, answer)
+        if applied is not None:
+            return applied
+        command = _studio_script_command(run_dir, value, answer)
     elif approval == "song":
         command = ("python3 scripts/core/song_choices/song_choices.py pick "
                    "--run-dir %s --reply %s" % (run, q(str(value))))
