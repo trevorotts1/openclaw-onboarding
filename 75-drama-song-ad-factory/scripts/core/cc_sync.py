@@ -3,17 +3,14 @@
 Board family: POST /api/ad-campaigns + PATCH /api/ad-campaigns/[id]
 (stage-card family). NOT /api/campaigns, NOT Skill 47 cc_board.py default URL.
 
-Live contract read 2026-10-06 (R05):
-  src/app/api/ad-campaigns/route.ts          POST create (idempotent on job_id; 201/200), GET poll
-  src/app/api/ad-campaigns/[id]/route.ts     PATCH move one stage card; ILLEGAL_TRANSITION -> 409
-  src/lib/ad-campaigns.ts                    createAdCampaign L171 (idempotent); moveAdStage L270
-                                             (canonical transition()); blocked gate L284-302;
-                                             epic-done completes campaign L364
-  src/lib/validation.ts                      CreateAdCampaignSchema L391; UpdateAdCampaignStageSchema
-                                             L417; AdCardStatus = 5 values; blocked-requires-ask
-  src/lib/task-lifecycle.ts                  LEGAL_TRANSITIONS L146; same-state idempotent L1329
-  src/lib/db/schema.ts                       tasks.workspace_id / business_id (NULL in this family);
-                                             tasks.stage_slug
+Contract re-read 2026-11-11 at blackceo-command-center main 86bd193f:
+  POST and GET /api/ad-campaigns, PATCH and GET /api/ad-campaigns/[id]
+
+Completion contract (S75-033): the create carries the typed marker
+contract={"kind": "skill75", "version": 1} (CampaignContractSchema) plus the
+run's requester record, and a move may carry an approval and a review envelope
+(Skill75ApprovalEnvelopeSchema / Skill75ReviewEnvelopeSchema), which the board
+persists as the durable records its Skill 75 completion guard reads.
 
 Directive 20.5 rules enforced here:
   stable keys (job_id == campaign_id == tasks.campaign_id, stage_slug);
@@ -122,6 +119,22 @@ CREATE TABLE IF NOT EXISTS stage_receipts(
 );
 """
 
+#: Command Center contract markers (src/lib/validation.ts CampaignContractSchema,
+#: lines 410-413): a discriminated OBJECT, never a bare string.
+CONTRACT_SKILL75 = {"kind": "skill75", "version": 1}
+CONTRACT_LEGACY = {"kind": "legacy", "version": 1}
+
+#: Required approval artifact kinds (src/lib/validation.ts lines 449-456).
+APPROVAL_KINDS = ("script", "lyrics", "character_bible", "music", "storyboard", "final")
+
+#: Envelope field lists the board schema accepts (src/lib/validation.ts lines
+#: 519-533 approval, 537-547 review). Anything else is refused here, before it
+#: becomes a row the board would reject forever.
+APPROVAL_FIELDS = ("contract", "version", "kind", "artifact_kind", "revision",
+                   "sha256", "decision", "approver", "decided_at", "thread_id")
+REVIEW_FIELDS = ("contract", "version", "kind", "reviewer", "actor", "verdict",
+                 "scope", "revision")
+
 #: CC deliverable types (src/lib/validation.ts CreateDeliverableSchema).
 DELIVERABLE_TYPES = ("file", "url", "artifact", "image")
 
@@ -203,18 +216,109 @@ def _slug(value):
         safe, hashlib.sha1(str(value).encode()).hexdigest()[:8])
 
 
+def _bounded(value, low, high, what):
+    if not isinstance(value, str) or not (low <= len(value) <= high):
+        raise BoardSyncError("%s must be a string of %d-%d characters" % (what, low, high))
+    return value
+
+
+def _positive_int(value, what):
+    if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
+        raise BoardSyncError("%s must be a positive integer" % what)
+    return value
+
+
+def _no_unknown_fields(envelope, fields, what):
+    unknown = sorted(set(envelope) - set(fields))
+    if unknown:
+        raise BoardSyncError("%s carries unknown field(s) %s"
+                             % (what, ", ".join(unknown)))
+    return envelope
+
+
+def check_approval(approval):
+    """Refuse an approval envelope the board schema would reject (validation.ts
+    lines 519-533) while it is still local. Returns it unchanged."""
+    if not isinstance(approval, dict):
+        raise BoardSyncError("approval must be an object")
+    _no_unknown_fields(approval, APPROVAL_FIELDS, "approval")
+    if approval.get("contract") != CONTRACT_SKILL75["kind"] or approval.get("version") != 1:
+        raise BoardSyncError("approval contract must be skill75 version 1")
+    if approval.get("kind") != "approval":
+        raise BoardSyncError("approval kind must be 'approval'")
+    if approval.get("artifact_kind") not in APPROVAL_KINDS:
+        raise BoardSyncError("unknown approval artifact_kind %r"
+                             % (approval.get("artifact_kind"),))
+    _positive_int(approval.get("revision"), "approval revision")
+    if approval.get("sha256") is not None:
+        sha = approval.get("sha256")
+        if not isinstance(sha, str) or len(sha) != 64 or \
+                any(c not in "0123456789abcdefABCDEF" for c in sha):
+            raise BoardSyncError("approval sha256 must be 64 hex characters")
+    if approval.get("decision") not in ("approved", "revised"):
+        raise BoardSyncError("approval decision must be approved or revised")
+    _bounded(approval.get("approver"), 1, 200, "approval approver")
+    _bounded(approval.get("decided_at"), 1, 64, "approval decided_at")
+    if "thread_id" in approval:
+        _bounded(approval.get("thread_id"), 0, 128, "approval thread_id")
+    return approval
+
+
+def check_review(review):
+    """Refuse a review envelope the board schema would reject (validation.ts
+    lines 537-547). Returns it unchanged."""
+    if not isinstance(review, dict):
+        raise BoardSyncError("review must be an object")
+    _no_unknown_fields(review, REVIEW_FIELDS, "review")
+    if review.get("contract") != CONTRACT_SKILL75["kind"] or review.get("version") != 1:
+        raise BoardSyncError("review contract must be skill75 version 1")
+    if review.get("kind") != "review":
+        raise BoardSyncError("review kind must be 'review'")
+    _bounded(review.get("reviewer"), 1, 200, "review reviewer")
+    if not isinstance(review.get("actor"), str) or len(review.get("actor")) > 200:
+        raise BoardSyncError("review actor must be a string of 0-200 characters")
+    if review.get("verdict") not in ("pass", "fail"):
+        raise BoardSyncError("review verdict must be pass or fail")
+    if "scope" in review:
+        _bounded(review.get("scope"), 0, 64, "review scope")
+    if "revision" in review:
+        _positive_int(review.get("revision"), "review revision")
+    return review
+
+
 def default_outbox_path(workspace, run_id=None):
     """Durable outbox file bound to the tenant and run identity (D13: the
-    default state must never be :memory:). CC_OUTBOX_DIR overrides the root;
+    default state must never be :memory:). CC_OUTBOX_DIR overrides the root.
     CC_RUN_ID supplies the run when the caller has no explicit run identity.
+
+    Root order, first that applies:
+      1. CC_OUTBOX_DIR (an explicit operator choice).
+      2. The old ~/.claude/drama-song-factory/outbox file when one already
+         exists for this workspace and run -- rows queued before the move are
+         never orphaned.
+      3. <OPENCLAW_HOME or ~/.openclaw>/drama-runs/.cc-outbox when the box has
+         a drama-runs folder (the run's own tree, beside the run data).
+      4. The old ~/.claude path (a box with no drama-runs tree).
+
     ponytail: callers that know their run (the adapter does) pass run_id=;
     studio_bridge._board_epic passes none and lands in the tenant's
-    'default' run file -- add run_id there when that file is next owned."""
-    root = (os.environ.get("CC_OUTBOX_DIR")
-            or os.path.join(os.path.expanduser("~"), ".claude",
-                            "drama-song-factory", "outbox"))
+    'default' run file -- add run_id there when that file is next owned.
+    """
     run = run_id or os.environ.get("CC_RUN_ID") or "default"
-    return os.path.join(root, _slug(workspace), _slug(run) + ".sqlite3")
+    leaf = os.path.join(_slug(workspace), _slug(run) + ".sqlite3")
+    explicit = (os.environ.get("CC_OUTBOX_DIR") or "").strip()
+    if explicit:
+        return os.path.join(explicit, leaf)
+    home = os.path.expanduser("~")
+    legacy = os.path.join(home, ".claude", "drama-song-factory", "outbox", leaf)
+    if os.path.exists(legacy):
+        return legacy
+    openclaw_home = (os.environ.get("OPENCLAW_HOME") or "").strip() or os.path.join(
+        home, ".openclaw")
+    drama_runs = os.path.join(openclaw_home, "drama-runs")
+    if os.path.isdir(drama_runs):
+        return os.path.join(drama_runs, ".cc-outbox", leaf)
+    return legacy
 
 
 def host_identity(env=None):
@@ -361,19 +465,41 @@ class Outbox:
     def enqueue_create(self, job_id, show_name, stages, workspace, owner=None,
                        department=None, agent_id=None, money_ceiling_usd=None,
                        estimated_cost_usd=None, show_date=None,
-                       title_prefix=None):
+                       title_prefix=None, contract=None,
+                       requester_channel=None, requester_chat_id=None,
+                       requester_session_key=None):
+        """Campaign create intent. Carries the typed contract marker
+        (CreateAdCampaignSchema.contract, validation.ts lines 410-413/641) and
+        the run's requester record (lines 648-650), so the board holds the
+        campaign to the completion contract and report-back returns to the
+        conversation that asked for the work. `contract` defaults to the Skill
+        75 marker: this module IS the Skill 75 producer."""
         self._bind(workspace)
         if not (1 <= len(job_id) <= 128):
             raise BoardSyncError("job_id length out of range")
         if not (1 <= len(show_name) <= 500):
             raise BoardSyncError("show_name length out of range")
+        contract = CONTRACT_SKILL75 if contract is None else contract
+        if contract not in (CONTRACT_SKILL75, CONTRACT_LEGACY):
+            raise BoardSyncError("unknown contract marker %r (expected %r or %r)"
+                                 % (contract, CONTRACT_SKILL75, CONTRACT_LEGACY))
         stages = list(stages or [])
         if len(stages) > 50:
             raise BoardSyncError("too many stages (server max 50)")
         for s in stages:
             if not (1 <= len(s.get("slug", "")) <= 64):
                 raise BoardSyncError("stage slug length out of range")
-        payload = {"job_id": job_id, "show_name": show_name}
+        payload = {"job_id": job_id, "show_name": show_name,
+                   "contract": dict(contract)}
+        if requester_channel is not None:
+            payload["requester_channel"] = _bounded(
+                requester_channel, 1, 64, "requester_channel")
+        if requester_chat_id is not None:
+            payload["requester_chat_id"] = _bounded(
+                requester_chat_id, 1, 128, "requester_chat_id")
+        if requester_session_key is not None:
+            payload["requester_session_key"] = _bounded(
+                requester_session_key, 1, 256, "requester_session_key")
         if owner is not None:
             payload["owner"] = owner
         if department is not None:
@@ -583,17 +709,31 @@ class Outbox:
 
     def enqueue_move(self, job_id, stage_slug, status, actor, workspace, reason=None,
                      evidence=None, reviewer=None, blocked_reason=None,
-                     blocked_on_human=None, ask=None):
+                     blocked_on_human=None, ask=None, approval=None, review=None):
+        """A stage move. `approval` and `review` are the board's typed evidence
+        envelopes (validation.ts lines 689-691): a revision-bound approval
+        decision and an independent review record, persisted as durable rows the
+        Skill 75 completion guard reads. Both are validated here against the
+        schema's field list, so a malformed envelope never becomes a row."""
         self._bind(workspace)
         if status not in AD_STATUSES:
             raise BoardSyncError("unknown status %r" % (status,))
         if not (1 <= len(stage_slug) <= 64):
             raise BoardSyncError("stage slug length out of range")
+        if approval is not None:
+            check_approval(approval)
+        if review is not None:
+            check_review(review)
         if status == "blocked":  # server mirror: ad-campaigns.ts L284-302
             if blocked_reason not in BLOCKED_REASONS:
                 raise BlockedGateError("blocked requires blocked_reason")
             if not (ask or "").strip() or "(no ask specified)" in ask:
                 raise BlockedGateError("blocked requires a non-empty ask")
+            if len(ask) > 500:
+                # Server limit (validation.ts ask field, 500). Refuse here: the
+                # outbox would otherwise queue a write the board rejects forever.
+                raise BlockedGateError(
+                    "ask is %d characters; the board accepts 500 at most" % len(ask))
         if status in ("review", "done") and not (evidence or "").strip():
             raise EvidenceError("%s requires completion evidence" % status)
         if status in ("review", "done") and not self.stage_deliverable_queued(job_id, stage_slug):
@@ -630,6 +770,10 @@ class Outbox:
             payload["evidence"] = evidence
         if reviewer is not None:
             payload["reviewer"] = reviewer
+        if approval is not None:
+            payload["approval"] = approval
+        if review is not None:
+            payload["review"] = review
         if blocked_reason is not None:
             payload["blocked_reason"] = blocked_reason
         if blocked_on_human is not None:
@@ -701,7 +845,7 @@ class Outbox:
                   % len(report["pending"]))
         for (sid, sstate) in self.db.execute("SELECT id,state FROM outbox WHERE state IN (?,?)", (PENDING, SENT)):
             if sid not in report["acked"] and sid not in report["rejected"] and sid not in report["pending"] and sid not in report["refused"]:
-                report["pending" if sstate == PENDING else "pending"].append(sid)
+                report["pending"].append(sid)
         return report
 
     # -- internals -------------------------------------------------------
@@ -883,6 +1027,12 @@ class Outbox:
                 err_body = {}
             if e.code in (401, 403):
                 raise AuthError("board auth refused (%s): fix creds, nothing retried" % e.code)
+            if e.code in (408, 425, 429):
+                # Transient by contract (timeout / too early / rate limited):
+                # the server kept nothing, so retry later as a pending row
+                # instead of a terminal rejection the queue would never retry.
+                raise TransportOutage("board %s (retry later)" % e.code,
+                                      dispatched=False)
             if e.code >= 500:
                 raise TransportOutage("board 5xx (maybe dispatched)", dispatched=True)
             return e.code, err_body  # 4xx: caller marks rejected, never retried
