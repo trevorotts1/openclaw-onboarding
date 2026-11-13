@@ -261,8 +261,9 @@ test('wiring: a deliver event stores the https delivery link on the order', asyn
   assert.equal((await dropped.json()).code, 'AF-DS-DELIVERY-INVALID');
   const after = await call(req('GET', `/api/studio/orders/${otherId}`, undefined, { key: s.box }), s);
   assert.equal(after.status, 200);
-  assert.equal((await after.json()).order.state, 'ready');
-  assert.equal((await after.json()).order.delivery, undefined);
+  const afterBody = (await after.json()).order;
+  assert.equal(afterBody.state, 'ready');
+  assert.equal(afterBody.delivery, undefined);
 });
 
 // ---------------------------------------------------------------------------
