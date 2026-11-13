@@ -475,10 +475,19 @@ def test_breaking_entrypoint_routing_turns_reachability_red():
         target = os.path.join(root, A.ENTRYPOINT_REL)
         with open(target, encoding="utf-8") as fh:
             text = fh.read()
-        text = text.replace(
-            "from character_library import sync_protocol  # noqa: E402\n", "")
+        # U-GEN412 guards each carrier import on its own, so the sabotage has
+        # to take the whole block: deleting only the import line would leave an
+        # empty `try` body and a SyntaxError instead of a dropped carrier.
+        guarded = (
+            "try:\n"
+            "    from character_library import sync_protocol"
+            "  # noqa: E402\n"
+            "except Exception as exc:  # noqa: BLE001 - the refusal IS the"
+            " evidence\n"
+            '    _carrier_failed("character_library.sync_protocol", exc)\n')
+        assert guarded in text, "the guarded sync_protocol block moved"
         with open(target, "w", encoding="utf-8") as fh:
-            fh.write(text)
+            fh.write(text.replace(guarded, ""))
         rc, payload = _run_check(root)
         assert rc == 1
         assert _clauses(payload)["entrypoint_reachability"] is False
