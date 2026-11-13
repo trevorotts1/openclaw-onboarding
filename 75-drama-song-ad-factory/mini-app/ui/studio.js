@@ -458,7 +458,9 @@ export function headingFor(question) {
   if (title) return title;
   const label = String((question && question.label) || "").trim();
   if (label && label !== label.toUpperCase()) return label;
-  const sentence = String((question && question.question) || "").trim();
+  // The fallback is the drawn question, never the raw one: the sample sentence is
+  // stripped everywhere else and must not survive in the heading (S75-074 step 6).
+  const sentence = questionLabel(question);
   return sentence || label || "Your question";
 }
 
