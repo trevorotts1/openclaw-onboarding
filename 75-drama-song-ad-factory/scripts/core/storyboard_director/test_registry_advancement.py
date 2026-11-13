@@ -366,7 +366,10 @@ def _final_qc_fixture(run):
     assert result["gate"] == "PASS", result
     result.update(producer=FACTORY.STAGE_REGISTRY["final-qc"]["qc_producer"],
                   records=[record], fixture=True)
-    outbox._write_json(os.path.join(run, "final-qc", "record.json"), result)
+    # S75-011: the declared final-qc artifact is qc/final-qc-verdict.json (the
+    # file qc_gate.py writes). final-qc/record.json was written by nothing and
+    # is read by nothing, so the verdict goes where the collector reads it.
+    outbox._write_json(os.path.join(run, "qc", "final-qc-verdict.json"), result)
 
 
 def _delivery_fixture(run):
@@ -379,13 +382,18 @@ def _delivery_fixture(run):
                                         origin, text="Synthetic local registry fixture delivery.",
                                         approval_state="not-required", allowed_actions=())
     box = delivery.Outbox(run)
-    box.enqueue(envelope)
+    queued = box.enqueue(envelope)
     def local_fake_transport(piece):
         return {"destination": "terminal/offline-registry-fixture", "status": "delivered",
                 "message_id": "fixture-ack/" + piece["piece_id"], "transport": "local-fixture"}
     result = box.resume(local_fake_transport)
     assert result["sent"] and not result["failed"] and not result["uncertain"], result
-    pieces = box.pieces()
+    # Only THIS delivery package's pieces are journalled. Earlier stages leave
+    # their own pieces in the shared outbox; folding those receipts in here
+    # claimed one destination for work this stage never sent, which the
+    # collector rightly reads as a duplicate send.
+    ours = set(piece["piece_id"] for piece in queued)
+    pieces = [piece for piece in box.pieces() if piece["piece_id"] in ours]
     assert all(piece["state"] == delivery.SENT and piece.get("receipt") for piece in pieces)
     delivery._write_json(os.path.join(run, "delivery", "receipts.json"),
                          [piece["receipt"] for piece in pieces])
