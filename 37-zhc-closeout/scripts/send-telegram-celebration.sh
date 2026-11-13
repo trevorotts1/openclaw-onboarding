@@ -368,8 +368,9 @@ elif _is_held celebration_video; then
   failed_messages+=("msg-4-held")
 elif [[ "${ZHC_VIDEO_STATUS:-}" == "failed" ]]; then
   log "INFO" "msg 4: video generation failed upstream -- sending text-only deferred notice"
-  MSG4_DEFERRED="🎬 Your celebration video is queued but deferred for tonight -- the video vendor is hitting congestion right now. It'll show up in this thread automatically when it lands. Everything else below is ready to go."
-  if send_text 4 "$MSG4_DEFERRED"; then
+  MSG4_DEFERRED="🎬 Your celebration video is not ready yet. Everything else below is ready to go."
+  if send_text 40 "$MSG4_DEFERRED"; then
+    record_failed 4 "video-deferred"
     log "INFO" "msg 4: deferred-notice delivered"
     sleep 4
   else
@@ -465,16 +466,6 @@ else
     GHL_MEDIA_LINE="
 
 📁 Your celebration media is also saved in your Convert and Flow media library -- open any of these directly:${GHL_PUBLIC_LINES}"
-    if [[ -n "$GHL_MEDIA_URL" && "$GHL_MEDIA_URL" == https://* ]]; then
-      GHL_MEDIA_LINE="${GHL_MEDIA_LINE}
-
-(Browse them all in your account: ${GHL_MEDIA_URL})"
-    fi
-  elif [[ -n "$GHL_MEDIA_URL" && "$GHL_MEDIA_URL" == https://* ]]; then
-    GHL_MEDIA_LINE="
-
-📁 Your celebration video and graphics are also in your Convert and Flow media library:
-${GHL_MEDIA_URL}"
   fi
   MSG6="🎛️ Your BlackCEO Command Center:
 ${CC_URL}
@@ -519,9 +510,7 @@ ${CC_URL}
 
 -- ${AGENT_NAME}"
   else
-    MSG7="🔖 Your Command Center link is in this thread just above — bookmark it so it's always one tap away, and message me any time if you need it resent.
-
--- ${AGENT_NAME}"
+    MSG7="🔖 Your Command Center link is not ready yet. Message me any time and I will send it as soon as it is."
   fi
   if send_text 7 "$MSG7"; then
     log "INFO" "msg 7: delivered"
