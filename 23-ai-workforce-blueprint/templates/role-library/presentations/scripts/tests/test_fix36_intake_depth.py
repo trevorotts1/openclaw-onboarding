@@ -155,7 +155,6 @@ def _make_build_fixture(tmp_path: Path) -> tuple[Path, Path]:
     it is observable only on a non---plan run. Stubs only; nothing live."""
     run_dir, scripts = _make_fixture(tmp_path)
     (run_dir / "working" / "interview").mkdir(parents=True, exist_ok=True)
-    (run_dir / "working" / "checkpoints" / ".test-context").write_text("")
     (run_dir / "working" / "interview" / "intake_ledger.json").write_text(
         json.dumps({"status": "complete", "complete": True}), encoding="utf-8")
     # PD-009: GATE 0b checks the sp-intake-transcript-v1 envelope, not a size.
@@ -189,6 +188,8 @@ def _run_build(run_dir: Path, scripts: Path, extra_args, env_overrides=None):
     env = dict(os.environ)
     env["OPENCLAW_WORKSPACE"] = str(run_dir.parent / "no-such-workspace")
     env["QC_SKIP_PRESENTATION_DEPS"] = "1"
+    # PD-201b: the test seam is an environment name, not a marker file.
+    env["PRESENTATION_ALLOW_DEGRADED_VERIFIERS"] = "1"
     env.pop("SCRIPTS_DIR", None)
     env.pop("PRESENTATION_INTAKE_DEPTH", None)
     for k, v in (env_overrides or {}).items():
