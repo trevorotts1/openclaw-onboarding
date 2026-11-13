@@ -7378,6 +7378,14 @@ def determine_specialists(dept_id, dept_info, interview_answers):
             content = f.read()
         import re
         role_blocks = re.split(r'###\s+\d+\.\s+', content)
+        try:
+            _dept_model = _require_resolved_model(
+                _resolve_director_model(dept_id),
+                f"specialist roles in department '{dept_id}'")
+        except RuntimeError as _model_err:
+            print(f"[SPECIALISTS] {_model_err} -- continuing without a model label",
+                  file=sys.stderr)
+            _dept_model = ""
         for block in role_blocks[1:]:
             lines = block.strip().split('\n')
             if not lines:
@@ -7401,9 +7409,7 @@ def determine_specialists(dept_id, dept_info, interview_answers):
                 # When the selector resolves nothing, _require_resolved_model
                 # uses the client's configured default or stops with an
                 # ask-the-client error.
-                'model': _require_resolved_model(
-                    _resolve_director_model(dept_id),
-                    f"specialist roles in department '{dept_id}'"),
+                'model': _dept_model,
                 'reason': f'From suggested roles for {dept_id}, type={role_type} based on activity signals'
             })
     else:
