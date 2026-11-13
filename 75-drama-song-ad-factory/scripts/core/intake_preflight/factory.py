@@ -85,7 +85,7 @@ _CHILD_EXIT_PREFLIGHT = {0: "ok", 1: "error", 2: "waiting",
 #: spend_ledger.py and qc_gate.py share this one (no 2; waiting is 3).
 _CHILD_EXIT_LEDGER = {0: "ok", 1: "error", 3: "waiting",
                       4: "parked", 5: "rejected"}
-#: The lip-sync modules, video_router.py and narrator_rule.py all use this.
+#: video_router.py and narrator_rule.py use this (no 2; waiting is 3).
 _CHILD_EXIT_LIPSYNC = dict(_CHILD_EXIT_LEDGER)
 
 CHILD_EXIT_CODES = {
@@ -96,7 +96,10 @@ CHILD_EXIT_CODES = {
     "prompt-budget": {0: "ok", 3: "waiting", 4: "parked", 5: "rejected"},
     "video_router.py": _CHILD_EXIT_LIPSYNC,
     "narrator_rule.py": _CHILD_EXIT_LIPSYNC,
-    "ceiling_cli.py": _CHILD_EXIT_LIPSYNC,
+    #: ceiling_cli.py declares no EXIT map and uses its own numbering: its
+    #: docstring and main() answer only 0 (ceiling not reached), 1 (history
+    #: unreadable) and 4 (the ceiling says STOP). 4 is a stop, never "parked".
+    "ceiling_cli.py": {0: "ok", 1: "error", 4: "stop"},
     "delivery_checklist.py": {0: "ok", 1: "error", 5: "rejected"},
 }
 
