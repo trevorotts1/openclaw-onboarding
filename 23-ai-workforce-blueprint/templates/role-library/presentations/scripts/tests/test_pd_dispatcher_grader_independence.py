@@ -246,3 +246,115 @@ def test_model_family_follows_the_pd204_rule():
     assert D._model_family("GLM-5.3-Flash") == "glm"
     assert D._model_family("") == ""
     assert D._model_family(None) == ""
+
+# --------------------------------------------------------------------------
+# (4) THE FAN-OUT SEAM. P-PROMPT-QC and P-IMAGE-QC declare
+#     `fanout: {by: slide}` in the manifest, so their per-slide model calls
+#     come from _dispatch_phase_fanout_units' unit worker -- NOT the serial
+#     loop in dispatch_one. The gate has to stand in front of that seam too.
+# --------------------------------------------------------------------------
+import contextlib  # noqa: E402
+import types  # noqa: E402
+
+FANOUT_PHASE = "P-PROMPT-QC"
+FANOUT_ROLE = "qc-specialist-prompt-presentations"
+FANOUT_REPORT = "working/qc/prompt_qc_report.json"
+
+class FanoutQCPhase:
+    id = FANOUT_PHASE
+    owning_role = FANOUT_ROLE
+    workers = 1
+    budget_minutes = 5
+    executor_kind = "agent"
+    fanout = {"by": "slide", "batch_width": 12}
+
+def _fanout_call(run: Path, tmp_path: Path):
+    dept = _dept(tmp_path)
+    role = dept / FANOUT_ROLE
+    role.mkdir(parents=True)
+    (role / "how-to.md").write_text("Grade the per-slide prompts honestly.")
+    return D._dispatch_phase_fanout_units(
+        run,
+        {"phase": FANOUT_PHASE, "owning_role": FANOUT_ROLE,
+         "produces_artifact": [FANOUT_REPORT]},
+        dept_root=dept, phase_obj=FanoutQCPhase(), worker_id="test",
+        spec=types.SimpleNamespace(desired_count=None, batch_width=None),
+        patterns=[FANOUT_REPORT], target=run / FANOUT_REPORT, prior_reasons=[])
+
+def test_fanout_quality_step_refuses_before_any_preflight_or_unit_call(
+        tmp_path, monkeypatch):
+    run = _run_dir(tmp_path)
+    monkeypatch.setattr(D, "_graded_author_model",
+                        lambda _rd, _pid: "deepseek/deepseek-chat")
+    monkeypatch.setattr(D, "_grader_route_decision", lambda _pid: {
+        "route": {"provider": "deepseek-direct", "model": "deepseek-chat"},
+        "candidates": [{"provider": "deepseek-direct", "model": "deepseek-chat",
+                        "eligible": True}],
+    })
+
+    def _must_not_run(*_a, **_k):
+        raise AssertionError("a refused fan-out quality step must make zero unit calls")
+
+    monkeypatch.setattr(D, "_preflight_fanout_contract", _must_not_run)
+    monkeypatch.setattr(D.fanout, "enumerate_fanout_items", _must_not_run)
+    monkeypatch.setattr(D, "dispatch_complete", _must_not_run)
+
+    result = _fanout_call(run, tmp_path)
+
+    assert result.status == "error"
+    assert result.attempts == 0
+    assert result.reasons == ["no independent model is available to grade this step"]
+
+class _StopAfterPin(Exception):
+    pass
+
+def test_fanout_quality_step_pins_the_other_family_into_every_unit(
+        tmp_path, monkeypatch):
+    run = _run_dir(tmp_path)
+    monkeypatch.setattr(D, "_graded_author_model",
+                        lambda _rd, _pid: "deepseek/deepseek-chat")
+    monkeypatch.setattr(D, "_grader_route_decision", lambda _pid: {
+        "route": {"provider": "deepseek-direct", "model": "deepseek-chat"},
+        "candidates": [
+            {"provider": "deepseek-direct", "model": "deepseek-chat",
+             "eligible": True},
+            {"provider": "ollama-cloud", "model": "z-ai/glm-4.6",
+             "eligible": True},
+        ],
+    })
+    monkeypatch.setattr(D, "_preflight_fanout_contract", lambda *_a, **_k: "")
+    monkeypatch.setattr(D.fanout, "enumerate_fanout_items",
+                        lambda *_a, **_k: [{"key": "slide-01"}])
+    monkeypatch.setattr(D, "_unit_payload_enrichment",
+                        lambda _rd, _pid, it, _n: {"key": it["key"],
+                                                   "ordinal": 1,
+                                                   "unit_inputs_now": {}})
+    monkeypatch.setattr(D, "_preflight_section_payload_ranges",
+                        lambda *_a, **_k: "")
+    monkeypatch.setattr(D, "_read_units_ledger", lambda *_a, **_k: [])
+    monkeypatch.setattr(D, "unit_store", None)
+    monkeypatch.setattr(D, "paid_unit_scope",
+                        lambda *_a, **_k: contextlib.nullcontext())
+    seen = {"calls": 0, "override": "unset"}
+
+    def _dispatch_stub(*_args, **kwargs):
+        seen["calls"] += 1
+        seen["override"] = kwargs.get("route_override")
+        return _report(True), {"request_id": "stub"}, {
+            "provider": "ollama-cloud", "model": "z-ai/glm-4.6"}
+
+    monkeypatch.setattr(D, "dispatch_complete", _dispatch_stub)
+
+    held = {}
+
+    def _run_units_spy(units, worker_fn, **_kwargs):
+        held["r"] = worker_fn(units[0])
+        raise _StopAfterPin()
+
+    monkeypatch.setattr(D.fanout, "run_units", _run_units_spy)
+
+    with __import__("pytest").raises(_StopAfterPin):
+        _fanout_call(run, tmp_path)
+
+    assert seen["calls"] == 1, seen
+    assert seen["override"] == {"provider": "ollama-cloud", "model": "z-ai/glm-4.6"}, seen
