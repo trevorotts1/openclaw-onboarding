@@ -93,6 +93,14 @@ class AdapterError(Exception):
     """The package layout cannot support what the manifest declares."""
 
 
+#: What every clause guard catches. A clause body imports product carriers into
+#: this process, so a gutted carrier raises whatever type it likes; guessing the
+#: list (ImportError, then SyntaxError) is how this fail-open kept reopening. A
+#: clause that cannot be proven is still a receipt, so any failure becomes a
+#: named false clause. KeyboardInterrupt and GeneratorExit still propagate.
+CLAUSE_FAILURES = (Exception, SystemExit)
+
+
 # ---------------------------------------------------------------------------
 # loading
 # ---------------------------------------------------------------------------
@@ -973,7 +981,7 @@ def own_adapters(skill_root=None):
                 if PRIMARY_WRAPPER in " ".join(row.get("argv") or []):
                     problems.append("%s:%s routes through the primary wrapper %s"
                                     % (group, row.get("id"), PRIMARY_WRAPPER))
-    except (AdapterError, OSError, ImportError, SyntaxError, ValueError) as exc:
+    except CLAUSE_FAILURES as exc:
         problems.append("%s: %s" % (type(exc).__name__, exc))
 
     return {
@@ -1289,14 +1297,14 @@ def check(skill_root=None, execute=True):
         ok = resolved["ok"] and reqs["ok"]
         clauses.append({"id": "same_product_requirements", "ok": ok,
                         "detail": {"resolve": resolved, "requirements": reqs}})
-    except (AdapterError, OSError, ImportError, SyntaxError, ValueError) as exc:
+    except CLAUSE_FAILURES as exc:
         clauses.append({"id": "same_product_requirements", "ok": False,
                         "detail": "%s: %s" % (type(exc).__name__, exc)})
 
     try:
         own = own_adapters(root)
         clauses.append({"id": "own_adapters", "ok": own["ok"], "detail": own})
-    except (AdapterError, OSError, ImportError, SyntaxError, ValueError) as exc:
+    except CLAUSE_FAILURES as exc:
         clauses.append({"id": "own_adapters", "ok": False,
                         "detail": "%s: %s" % (type(exc).__name__, exc)})
 
@@ -1304,7 +1312,7 @@ def check(skill_root=None, execute=True):
         reach = reachability(root)
         clauses.append({"id": "entrypoint_reachability", "ok": reach["ok"],
                         "detail": reach})
-    except (AdapterError, OSError, ImportError, SyntaxError, ValueError) as exc:
+    except CLAUSE_FAILURES as exc:
         clauses.append({"id": "entrypoint_reachability", "ok": False,
                         "detail": "%s: %s" % (type(exc).__name__, exc)})
 
@@ -1312,13 +1320,13 @@ def check(skill_root=None, execute=True):
         emergency = _probe_emergency_fixes_read_only(root)
         clauses.append({"id": "emergency_fixes_read_only",
                         "ok": emergency["pass"], "detail": emergency})
-    except (AdapterError, OSError, ImportError, SyntaxError, ValueError) as exc:
+    except CLAUSE_FAILURES as exc:
         clauses.append({"id": "emergency_fixes_read_only", "ok": False,
                         "detail": "%s: %s" % (type(exc).__name__, exc)})
 
     try:
         steps = entrypoints(root)
-    except (AdapterError, OSError, ImportError, SyntaxError, ValueError) as exc:
+    except CLAUSE_FAILURES as exc:
         clauses.append({"id": "no_unsupported_commands", "ok": False,
                         "detail": "%s: %s" % (type(exc).__name__, exc)})
         clauses.append({"id": "no_placeholder_ellipses", "ok": False,

@@ -40,7 +40,9 @@ if CORE not in sys.path:
 
 #: Carriers that would not load, as {"module", "error"} rows. A module that
 #: advertises a surface but raises on import is recorded here, so the run fails
-#: closed with a JSON receipt instead of dying on a traceback.
+#: closed with a JSON receipt instead of dying on a traceback. SystemExit is
+#: named too: a carrier that calls sys.exit() at import is not an Exception,
+#: and left alone it would leave the process with no receipt at all.
 CARRIER_FAILURES = []
 
 
@@ -56,37 +58,37 @@ def _carrier_failed(module, exc):
 # separately so the receipt names the carrier that actually failed.
 try:
     import story_first_contracts  # noqa: E402
-except Exception as exc:  # noqa: BLE001 - the refusal IS the evidence
+except (Exception, SystemExit) as exc:  # noqa: BLE001 - the refusal IS the evidence
     _carrier_failed("story_first_contracts", exc)
 
 try:
     import package_flavor_adapter  # noqa: E402
-except Exception as exc:  # noqa: BLE001 - the refusal IS the evidence
+except (Exception, SystemExit) as exc:  # noqa: BLE001 - the refusal IS the evidence
     _carrier_failed("package_flavor_adapter", exc)
 
 try:
     from music_styles import catalog  # noqa: E402
-except Exception as exc:  # noqa: BLE001 - the refusal IS the evidence
+except (Exception, SystemExit) as exc:  # noqa: BLE001 - the refusal IS the evidence
     _carrier_failed("music_styles.catalog", exc)
 
 try:
     from character_bible import identity  # noqa: E402
-except Exception as exc:  # noqa: BLE001 - the refusal IS the evidence
+except (Exception, SystemExit) as exc:  # noqa: BLE001 - the refusal IS the evidence
     _carrier_failed("character_bible.identity", exc)
 
 try:
     from character_library import notion_adapter  # noqa: E402
-except Exception as exc:  # noqa: BLE001 - the refusal IS the evidence
+except (Exception, SystemExit) as exc:  # noqa: BLE001 - the refusal IS the evidence
     _carrier_failed("character_library.notion_adapter", exc)
 
 try:
     from character_library import sync_protocol  # noqa: E402
-except Exception as exc:  # noqa: BLE001 - the refusal IS the evidence
+except (Exception, SystemExit) as exc:  # noqa: BLE001 - the refusal IS the evidence
     _carrier_failed("character_library.sync_protocol", exc)
 
 try:
     from method_plan import method_plan  # noqa: E402
-except Exception as exc:  # noqa: BLE001 - the refusal IS the evidence
+except (Exception, SystemExit) as exc:  # noqa: BLE001 - the refusal IS the evidence
     _carrier_failed("method_plan.method_plan", exc)
 
 #: Every module this entrypoint is declared to route into. `carriers` reports
