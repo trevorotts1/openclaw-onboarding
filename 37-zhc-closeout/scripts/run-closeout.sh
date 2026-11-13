@@ -460,6 +460,18 @@ else
   exit 1
 fi
 
+# ---- already done: a finished box is never re-checked ----
+# This sits ABOVE the wiring, routing and provider-smoke preflights on purpose.
+# A box whose closeout is done/sent is finished; re-running those preflights on
+# every resume fire spent live provider calls (a pong per attempt) to re-prove a
+# decision already made. Verified completion + cleanup, then exit.
+closeout_status=$(state_get '.closeoutStatus')
+if [[ "$closeout_status" == "done" || "$closeout_status" == "sent" ]] && "$WORKFORCE_PYTHON" "$COMPLETION_SCRIPT" "$STATE_FILE" --closeout >>"$LOG_FILE" 2>&1; then
+  "$WORKFORCE_PYTHON" "$SKILL_DIR/scripts/cleanup-closeout.py" "$STATE_FILE" >>"$LOG_FILE" 2>&1 || log "WARN" "Verified cleanup pending; recovery identity retained"
+  log "INFO" "closeoutStatus=$closeout_status -- verified completion; cleanup retried"
+  exit 0
+fi
+
 # B5: HARD verify-wiring.sh precondition — wiring must be done before closeout
 VERIFY_WIRING_SCRIPT=""
 for _vw_cand in \
@@ -523,6 +535,9 @@ fi
 # enabled against a text-only embedding provider (the silent memory-death class).
 # On failure: sets closeoutStatus=blocked-provider-mismatch + alerts operator.
 # Skip via ZHC_SKIP_PROVIDER_SMOKE=1 in unit-test environments.
+# Once per build: providerSmokeBuildId records the build whose provider health
+# check already passed, so a resume fire for the SAME build never spends another
+# live provider call. A new build id runs the check again.
 if [[ "${ZHC_SKIP_PROVIDER_SMOKE:-0}" != "1" ]]; then
   PROVIDER_SMOKE_SCRIPT=""
   for _ps_cand in \
@@ -532,7 +547,11 @@ if [[ "${ZHC_SKIP_PROVIDER_SMOKE:-0}" != "1" ]]; then
     "/data/.openclaw/skills/scripts/smoke-test-provider-capabilities.sh"; do
     [[ -f "$_ps_cand" ]] && PROVIDER_SMOKE_SCRIPT="$_ps_cand" && break
   done
-  if [[ -n "$PROVIDER_SMOKE_SCRIPT" ]]; then
+  _smoke_build_id=$(state_get '.buildId')
+  _smoke_passed_build=$(state_get '.providerSmokeBuildId')
+  if [[ -n "$_smoke_build_id" && "$_smoke_passed_build" == "$_smoke_build_id" ]]; then
+    log "INFO" "provider smoke already passed for buildId=$_smoke_build_id (providerSmokeBuildId) -- not running it again for this build"
+  elif [[ -n "$PROVIDER_SMOKE_SCRIPT" ]]; then
     SMOKE_STATE_FILE="$STATE_FILE" \
     SMOKE_OPERATOR_CHAT_ID="${OPERATOR_CHAT_ID:-}" \
     bash "$PROVIDER_SMOKE_SCRIPT" >> "$LOG_FILE" 2>&1
@@ -543,6 +562,12 @@ if [[ "${ZHC_SKIP_PROVIDER_SMOKE:-0}" != "1" ]]; then
       exit 1
     fi
     log "INFO" "smoke-test-provider-capabilities.sh preflight rc=$PROVIDER_SMOKE_RC (provider capabilities verified)"
+    if [[ -n "$_smoke_build_id" ]]; then
+      state_set ".providerSmokeBuildId = \"$_smoke_build_id\""
+      log "INFO" "providerSmokeBuildId=$_smoke_build_id recorded -- the provider smoke runs once per build"
+    else
+      log "WARN" "buildId is absent from state -- providerSmokeBuildId not recorded; the provider smoke will run again on the next fire"
+    fi
   else
     log "ERROR" "Required verifier unavailable: smoke-test-provider-capabilities.sh"
   state_set '.closeoutStatus = "blocked-verifier-missing"'
@@ -551,11 +576,6 @@ if [[ "${ZHC_SKIP_PROVIDER_SMOKE:-0}" != "1" ]]; then
 fi
 
 closeout_status=$(state_get '.closeoutStatus')
-if [[ "$closeout_status" == "done" || "$closeout_status" == "sent" ]] && "$WORKFORCE_PYTHON" "$COMPLETION_SCRIPT" "$STATE_FILE" --closeout >>"$LOG_FILE" 2>&1; then
-  "$WORKFORCE_PYTHON" "$SKILL_DIR/scripts/cleanup-closeout.py" "$STATE_FILE" >>"$LOG_FILE" 2>&1 || log "WARN" "Verified cleanup pending; recovery identity retained"
-  log "INFO" "closeoutStatus=$closeout_status -- verified completion; cleanup retried"
-  exit 0
-fi
 
 # ---- transition pending → generating (idempotent) ----
 if [[ "$closeout_status" != "generating" ]]; then
