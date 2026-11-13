@@ -296,13 +296,22 @@ def excerpt_lines(brief):
     return list(lines), prov, []
 
 
-def to_intake_brief(fields):
+def to_intake_brief(fields, brief=None):
     """Map book fields onto the standard intake brief.
 
     A slot counts as answered only when ALL of its book fields are present,
     so a half-filled slot still opens exactly the one question that already
     exists -- the ask folds in, it never multiplies.
+
+    U-GEN423: the shared engine also reads ``mode``, ``extracted_sources``,
+    ``packet_lines``, ``sfx``, ``length``/``length_option``, ``target_length_s``
+    and ``fps`` from the brief itself. A book brief may carry them; they used
+    to be dropped here, which left mode/notices/warnings structurally constant
+    on the book path. Each is forwarded ONLY when the brief actually supplies
+    it -- nothing is defaulted, because a fabricated value would read as if
+    the client had asked for it.
     """
+    brief = brief if isinstance(brief, dict) else {}
     offer = None
     if fields.get("book_title") and fields.get("author") and fields.get("buy_link"):
         offer = "%s by %s -- get it at %s" % (
@@ -321,6 +330,22 @@ def to_intake_brief(fields):
     }
     if fields.get("cover"):
         mapped["assets"] = [fields["cover"]]
+    # U-GEN423: pass-through fields the shared engine reads from the brief.
+    # Scalars go over verbatim (each reader -- mode_of, notices -- coerces its
+    # own type); list-shaped fields are forwarded only as lists, which is the
+    # shape the engine walks. A key the brief does not have is left out.
+    for key in ("mode", "fps", "target_length_s"):
+        if brief.get(key) is not None:
+            mapped[key] = brief[key]
+    for key in ("extracted_sources", "packet_lines", "sfx"):
+        if isinstance(brief.get(key), list):
+            mapped[key] = brief[key]
+    # The book brief spells a length as ``length``; the engine reads
+    # ``length_option`` and parses it with its own ``_as_length`` ("90s"/"2m"
+    # and plain seconds all convert). An explicit length_option wins.
+    length = brief.get("length_option", brief.get("length"))
+    if length is not None:
+        mapped["length_option"] = length
     return mapped
 
 
@@ -465,7 +490,7 @@ def evaluate(brief, settings=None, resume_state=None, run_id=None, now_unix=None
     # F6: menus and numbers come from Trevor's words or the skill's tables,
     # never invented. Checked at compile time, before any question is asked.
     invented = reject_any_invented(brief)
-    mapped = to_intake_brief(fields)
+    mapped = to_intake_brief(fields, brief)
     base = _base.evaluate(mapped, settings, resume_state, run_id, now_unix)
 
     base_fields, _ = _base.normalize(mapped, settings)
