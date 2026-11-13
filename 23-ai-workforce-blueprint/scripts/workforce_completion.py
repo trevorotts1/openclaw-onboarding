@@ -12,6 +12,22 @@ from workforce_state import update, read, atomic_write
 from interview_eligibility import eligible_status
 
 REQUIRED_CHECKS = ('registration', 'postBuild', 'qc', 'libraries')
+# BU-57 (decision D-7): the presentation runtime is NOT a required check. It is
+# probed separately (qc-completeness.sh --deps-only) and recorded, never enforced:
+# missing presentation tools are a closeout blocker, not a reason to keep the
+# whole company unbuilt.
+PRESENTATION_DEPS_CLASS = 'presentation-tools-missing'
+DEPS_ONLY_TIMEOUT = 120
+
+def probe_presentation_deps(scripts, env=None):
+    """Run only the presentation-dependency block: 0 present, 6 missing, 124 could not run."""
+    probe_env = dict(env if env is not None else os.environ)
+    probe_env.pop('QC_SKIP_PRESENTATION_DEPS', None)
+    try:
+        return subprocess.run(['bash', str(scripts / 'qc-completeness.sh'), '--deps-only'],
+                              env=probe_env, timeout=DEPS_ONLY_TIMEOUT).returncode
+    except (OSError, subprocess.TimeoutExpired):
+        return 124
 CC_PHASES = ('commandCenterBuildFresh','commandCenterWorkspacesSeeded','commandCenterDepartmentsSynced',
              'commandCenterMdContentSynced','commandCenterDashboardContentSeeded','commandCenterDeptRuntimeParity','commandCenterTenantReady')
 
@@ -100,7 +116,23 @@ def evaluate(state):
     if not current or current!=evidence.get('digest'):missing.append('changed-or-missing-artifacts')
     return missing
 
-def finalize(path,check_results=None,artifact_root=None):
+PROGRESS_STAGES=('manifest','research','departments','roles','assembly')
+PROGRESS_RUNNING_MINUTES=30
+
+def verification_without_checked_at(verification):
+    if not isinstance(verification,dict):return None
+    return {k:v for k,v in verification.items() if k!='checkedAt'}
+
+def progress_is_running(progress,build_id,minutes=PROGRESS_RUNNING_MINUTES):
+    """True while a build is writing its own progress (a fresh, unfinished stage)."""
+    if progress.get('build_id')!=build_id:return False
+    if progress.get('stage') not in PROGRESS_STAGES:return False
+    try:when=datetime.fromisoformat(str(progress.get('updated_at')).replace('Z','+00:00'))
+    except ValueError:return False
+    if when.tzinfo is None:when=when.replace(tzinfo=timezone.utc)
+    return (datetime.now(timezone.utc)-when).total_seconds()<minutes*60
+
+def finalize(path,check_results=None,artifact_root=None,presentation_deps=None):
     def mutate(state):
         require_build_identity(state)
         now=datetime.now(timezone.utc).isoformat();state.setdefault('buildId',str(uuid.uuid4()))
@@ -110,9 +142,25 @@ def finalize(path,check_results=None,artifact_root=None):
                 checks[name]={'status':'pass' if rc==0 else 'failed','returnCode':rc,'checkedAt':now,'buildId':state['buildId']}
             root=artifact_root or (state.get('buildArtifactVerification') or {}).get('root')
             state['buildArtifactVerification']={'root':str(root) if root else None,'digest':artifact_digest(root),'digestVersion':DIGEST_VERSION,'inputDigest':input_digest(state),'inputDigestVersion':INPUT_DIGEST_VERSION}
+        if presentation_deps is not None:
+            # BU-57: record the non-required probe as a plain integer result, and
+            # carry a missing presentation runtime as a closeout blocker instead
+            # of failing a required check.
+            state.setdefault('buildChecks',{})['presentationDeps']=presentation_deps
+            blockers=[b for b in (state.get('closeoutBlockers') or [])
+                      if not (isinstance(b,dict) and b.get('class')==PRESENTATION_DEPS_CLASS)]
+            if presentation_deps==6:
+                blockers.append({'class':PRESENTATION_DEPS_CLASS,'returnCode':6,'recordedAt':now,
+                                 'detail':'presentation runtime tools are missing (qc-completeness.sh --deps-only exited 6); closeout cannot render the presentation artifacts until they are installed'})
+            if blockers:state['closeoutBlockers']=blockers
+            else:state.pop('closeoutBlockers',None)
         missing=evaluate(state)
-        state['completionVerification']={'version':1,'buildId':state['buildId'],'companyId':state.get('companyId'),
-                                         'status':'verified' if not missing else 'pending','checkedAt':now,'unmetRequirements':missing,'inputDigest':input_digest(state),'artifactDigest':(state.get('buildArtifactVerification') or {}).get('digest')}
+        verification={'version':1,'buildId':state['buildId'],'companyId':state.get('companyId'),
+                      'status':'verified' if not missing else 'pending','checkedAt':now,'unmetRequirements':missing,'inputDigest':input_digest(state),'artifactDigest':(state.get('buildArtifactVerification') or {}).get('digest')}
+        # The 15-minute re-check must not rewrite the state file when nothing but the
+        # timestamp changed: keep the receipt it already holds.
+        if verification_without_checked_at(state.get('completionVerification'))!=verification_without_checked_at(verification):
+            state['completionVerification']=verification
         if missing:
             state.pop('buildCompletedAt',None)
             if state.get('closeoutStatus') in ('done','sent'):state['closeoutStatus']='partial'
@@ -128,12 +176,25 @@ def finalize(path,check_results=None,artifact_root=None):
         target=Path(root).parent/'build-progress.json'
         try:progress=json.loads(target.read_text()) if target.is_file() else {}
         except (ValueError,OSError):progress={}
-        progress.update(stage='complete' if result else 'qc',company_slug=state.get('companySlug'),build_id=state.get('buildId'),
-                        completion_verification=state['completionVerification'],updated_at=state['completionVerification']['checkedAt'],
-                        message='Your workforce is verified.' if result else 'Required workforce checks are still pending.')
-        if result:progress['completed_at']=state['buildCompletedAt']
-        else:progress.pop('completed_at',None)
-        atomic_write(target,progress)
+        if not isinstance(progress,dict):progress={}
+        progress.setdefault('departments',[]);progress.setdefault('documents_total',0)
+        progress.setdefault('documents_complete',0);progress.setdefault('eta_minutes',0)
+        verification=state['completionVerification']
+        wanted={'stage':'complete' if result else 'validating','company_slug':state.get('companySlug'),'build_id':state.get('buildId'),
+                'completion_verification':verification,'updated_at':verification['checkedAt'],
+                'message':'Your workforce is verified.' if result else 'Your workforce is being checked.'}
+        if result:wanted['completed_at']=state['buildCompletedAt']
+        if not result and progress_is_running(progress,state.get('buildId')):
+            # A build is writing its own progress: keep its stage and message and only
+            # record the verification outcome.
+            if verification_without_checked_at(progress.get('completion_verification'))!=verification_without_checked_at(verification):
+                progress['completion_verification']=verification
+                atomic_write(target,progress)
+        elif (progress.get('stage')!=wanted['stage'] or progress.get('build_id')!=wanted['build_id']
+              or verification_without_checked_at(progress.get('completion_verification'))!=verification_without_checked_at(verification)):
+            progress.update(wanted)
+            if not result:progress.pop('completed_at',None)
+            atomic_write(target,progress)
     return result
 
 def refresh(path):
@@ -144,20 +205,22 @@ def refresh(path):
     slug=state.get('companySlug') or state.get('clientSlug')
     if not slug:return finalize(path)
     env['OPENCLAW_COMPANY_SLUG']=slug
+    qc_env=dict(env,QC_SKIP_PRESENTATION_DEPS='1')
     commands={'registration':['bash',str(scripts/'verify-wiring.sh'),'--all'],
               'postBuild':[sys.executable,str(scripts/'post-build-role-workspaces.py'),'--company-slug',slug],
               'qc':['bash',str(scripts/'qc-completeness.sh'),'--quiet'],
               'libraries':['bash',str(scripts/'verify-library-gate.sh')]}
     results={}
     for name,command in commands.items():
-        try:results[name]=subprocess.run(command,env=env,timeout=300).returncode
+        try:results[name]=subprocess.run(command,env=(qc_env if name=='qc' else env),timeout=300).returncode
         except (OSError,subprocess.TimeoutExpired):results[name]=124
+    deps_rc=probe_presentation_deps(scripts,env)
     root=(read(path).get('buildArtifactVerification') or {}).get('root')
     if not root:
         sys.path.insert(0,str(scripts.parent.parent/'shared-utils'))
         from detect_platform import get_openclaw_paths
         root=str(get_openclaw_paths()['company_root']/slug/'departments')
-    return finalize(path,results,root)
+    return finalize(path,results,root,presentation_deps=deps_rc)
 
 def closeout_artifact_digest(state):
     keys=('infographic1Url','infographic2Url','celebrationVideoUrl','notionRootPageUrl','commandCenterUrl','messagesDelivered','ownerChat')
