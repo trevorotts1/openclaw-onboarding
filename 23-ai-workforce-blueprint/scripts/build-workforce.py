@@ -9273,8 +9273,8 @@ def create_handoff(option, departments_done, departments_remaining, progress_pct
     if not discovery_dir:
         print("[PERSISTENCE ERROR] create_handoff() - handoff file NOT saved.", file=sys.stderr)
         return
-    handoff_path = os.path.join(discovery_dir, "interview-handoff.md")
-    content = f"""# Interview Handoff
+    handoff_path = os.path.join(discovery_dir, "build-handoff.md")
+    content = f"""# Build Handoff
 ## Last Updated: {datetime.now().strftime('%B %d, %Y at %I:%M %p')}
 
 ## Option Selected: {option}
