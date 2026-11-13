@@ -307,11 +307,14 @@ My hunks (this unit's commit) are exactly:
 
 ## Commit and remote proof
 
-- Commit: `ab5adf06e3e28fd0dbdb9d9221e719b71ae62524`
+- Build commit: `ab5adf06e3e28fd0dbdb9d9221e719b71ae62524`
 - Push: `git push origin pd003-build:refs/heads/pd/fl04-manifest--hold-d1`
-- `git ls-remote --heads origin refs/heads/pd/fl04-manifest--hold-d1` → `ab5adf06e3e28fd0dbdb9d9221e719b71ae62524	refs/heads/pd/fl04-manifest--hold-d1`
-- Local `git rev-parse HEAD` → `ab5adf06e3e28fd0dbdb9d9221e719b71ae62524` — the two 40-char hashes
-  compare literally equal.
+- `git ls-remote --heads origin refs/heads/pd/fl04-manifest--hold-d1` returned
+  `ab5adf06e3e28fd0dbdb9d9221e719b71ae62524	refs/heads/pd/fl04-manifest--hold-d1` at that push;
+  local `git rev-parse HEAD` was the same 40-char hash — compared literally.
+- The build report itself is committed on top of that build commit; the same
+  `ls-remote` vs `rev-parse HEAD` equality was re-proven after every push. The final branch tip
+  40-char hash is printed in this report's return text (a commit cannot contain its own sha).
 - Trees clean after the push: build worktree `git status --porcelain` = empty; lane clone
   `/Volumes/mac mini m4/swarm-contract/pd-fix/worktrees/onboarding/FL04--hold-d1` status = empty on
   `pd/fl04-manifest--hold-d1`.
