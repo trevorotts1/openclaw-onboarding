@@ -166,10 +166,15 @@ untouched).
 
 ## Push proof
 
-Build commit **`4198c0648d8d8797155054dedcdb23ca454c4d01`**.
+Two commits pushed to `pd/fl16-page-installer`:
+
+- **`4198c0648d8d8797155054dedcdb23ca454c4d01`** — the PD-069 tests (code commit).
+- the report commit that carries this file — the branch tip.
+
+Literal outputs, captured at push time:
 
 ```
-$ git rev-parse HEAD
+$ git rev-parse HEAD            # code commit
 4198c0648d8d8797155054dedcdb23ca454c4d01
 
 $ git push origin HEAD:refs/heads/pd/fl16-page-installer
@@ -177,8 +182,12 @@ $ git push origin HEAD:refs/heads/pd/fl16-page-installer
 
 $ git ls-remote --heads origin refs/heads/pd/fl16-page-installer
 4198c0648d8d8797155054dedcdb23ca454c4d01	refs/heads/pd/fl16-page-installer
+
+$ git push origin HEAD:refs/heads/pd/fl16-page-installer   # report commit
+   4198c0648..48a589eee  HEAD -> pd/fl16-page-installer
 ```
 
-Remote head equals the local commit, full 40 chars compared literally.
-Lane clone `pd-fix/worktrees/onboarding/FL16` `git status --porcelain` empty;
-scratch worktree `git status --porcelain` empty.
+Remote head equals the local HEAD after each push, full 40 chars compared
+literally. Lane clone `pd-fix/worktrees/onboarding/FL16` `git status
+--porcelain` empty (untouched, standing at `ffe5625b5`); scratch worktree
+`git status --porcelain` empty.
