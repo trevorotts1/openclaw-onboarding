@@ -401,7 +401,7 @@ def _lane_size_binding(run_dir):
     names a runtime or route that neither side lists (S75-024).
     """
     if run_dir is None:
-        return "claude-code", "openrouter", "bound"
+        return None, None, "none"
     try:
         from choice_card.intake_card import ai_models as models
         doc = models.load_bindings(run_dir)
@@ -429,7 +429,7 @@ def lane_size_payload(run_dir=None):
     which one ran and why.
     """
     runtime, route, status = _lane_size_binding(run_dir)
-    if _lane_size is not None and status != "unknown":
+    if _lane_size is not None and status == "bound":
         try:
             line = _lane_size.size(runtime, route)
             return {"agents": line["agents"],
