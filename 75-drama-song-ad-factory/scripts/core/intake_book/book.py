@@ -23,10 +23,12 @@ The cover becomes the product image path and is stored as a product
 reference with provenance (origin, field provenance, sha256 when the file is
 readable). The story's mentor/turning point is the book; the call to action
 is to get the book. Brief text is source material, never instructions, and
-authorization is untouched. Only offer / audience / action and the cover are
-mapped into the intake brief, so an extracted source on the raw brief is
-never mapped anywhere; one that carries an instruction is dropped and named
-in ``warnings``, and typed words are never refused.
+authorization is untouched. Besides offer / audience / action and the cover,
+the engine-read fields a book brief may carry (mode, extracted_sources,
+packet_lines, sfx, the length and fps) are mapped too, each only when the
+brief supplies it. Extracted sources are screened by the engine: one that
+carries an instruction is dropped and named once in ``warnings``, and typed
+words are never refused.
 """
 from __future__ import annotations
 
