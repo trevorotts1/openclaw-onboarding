@@ -36,7 +36,6 @@ concurrency:
 
 jobs:
   qc-static:
-    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     name: QC static invariants
     runs-on: ubuntu-latest
     # The runner is a bare box: it has NO ~/.openclaw (Mac marker) and NO
