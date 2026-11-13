@@ -722,6 +722,25 @@ def _context_usage(config, led):
     return max(0, pct), cw
 
 
+LEGACY_CLEAR_MARKER = "legacy_events_cleared"
+
+
+def _clear_legacy_events_once(led):
+    """Fresh start for alerting, exactly once per ledger: every event still
+    active from before 1.3.0 was never delivered (client boxes had no working
+    route), so none of it is escalated now. Returns rows cleared (0 when the
+    marker is already set)."""
+    if led.get_meta(LEGACY_CLEAR_MARKER, None):
+        return 0
+    _ph = ",".join("?" * len(led.ACTIVE_ACK_STATES))
+    cleared = led.conn.execute(
+        "UPDATE events SET ack_state='resolved', ack_ts=? WHERE ack_state IN (%s)" % _ph,
+        (now_utc(), *led.ACTIVE_ACK_STATES)).rowcount or 0
+    led.conn.commit()
+    led.set_meta(LEGACY_CLEAR_MARKER, "1.3.0")
+    return int(cleared)
+
+
 def run_tick(state_dir=None, config_path=None, send=True, probe=None, role=None):
     """One deterministic tick. Records events; routes findings via ews_alert unless
     send is False. Returns a summary dict."""
@@ -763,6 +782,18 @@ def run_tick(state_dir=None, config_path=None, send=True, probe=None, role=None)
             except (OSError, ValueError):
                 baseline = None  # unreadable (e.g. wrong owner): run baseline-free checks
 
+        # v1.3.0 one-time fresh start, gated on its OWN ledger marker (not the
+        # baseline version: the fleet-update hook may re-pin the baseline to v2
+        # before the first v1.3.0 tick ever runs).
+        _cleared_now = _clear_legacy_events_once(led)
+        if _cleared_now:
+            _c = led.record_event("S0", "INFO", key_path="events", klass="baseline",
+                                  detail="v1.3.0 fresh start: %d pre-1.3.0 active event(s) cleared "
+                                         "(never delivered; anything still true is re-detected)"
+                                         % _cleared_now,
+                                  dedup_key="S0|legacy-cleared|1.3.0")
+            led.ack_event(_c, "resolved")
+
         # v1.3.0 one-time schema upgrade: a v1 baseline (hashed skills manifest,
         # pinned long ago) is re-pinned ONCE so years-old, never-delivered drift
         # does not all fire at the moment alert delivery starts working. What it
@@ -771,18 +802,10 @@ def run_tick(state_dir=None, config_path=None, send=True, probe=None, role=None)
             res = B.repin(config, state_dir, baseline)
             baseline = res["baseline"]
             absorbed = res["absorbed"]
-            # fresh start for alerting: every event still active from before
-            # 1.3.0 was never delivered (client boxes had no working route), so
-            # none of it is escalated now. Anything still true is re-detected.
-            _ph = ",".join("?" * len(led.ACTIVE_ACK_STATES))
-            cleared = led.conn.execute(
-                "UPDATE events SET ack_state='resolved', ack_ts=? WHERE ack_state IN (%s)" % _ph,
-                (now_utc(), *led.ACTIVE_ACK_STATES)).rowcount or 0
-            led.conn.commit()
             s0 = led.record_event("S0", "INFO", key_path="baseline", klass="baseline",
-                             detail=("baseline upgraded to schema %d and re-pinned; %d pre-1.3.0 "
-                                     "active event(s) cleared; absorbed %d standing difference(s): %s" % (
-                                         B.BASELINE_SCHEMA, cleared, len(absorbed),
+                             detail=("baseline upgraded to schema %d and re-pinned; absorbed %d "
+                                     "standing difference(s): %s" % (
+                                         B.BASELINE_SCHEMA, len(absorbed),
                                          ", ".join("%s (%s)" % (a["path"], a["direction"])
                                                    for a in absorbed)[:900] or "none")),
                              dedup_key="S0|baseline-upgrade|%d" % B.BASELINE_SCHEMA)
@@ -1306,6 +1329,9 @@ def self_test():
         v1["monitored"]["agents.defaults.model.primary"]["value"] = "old-model"
         bp.write_text(json.dumps(v1), encoding="utf-8")
         with Ledger() as led:
+            # a pre-1.3.0 ledger carries no fresh-start marker
+            led.conn.execute("DELETE FROM meta WHERE key=?", (LEGACY_CLEAR_MARKER,))
+            led.conn.commit()
             legacy = led.record_event("S7", "P1", key_path="alert.operator_target",
                                       dedup_key="S7|no_operator_target")
         s3, rec3 = run_tick(send=False, probe={"gateway": "unknown"})
@@ -1313,12 +1339,34 @@ def self_test():
         assert nb["version"] == B.BASELINE_SCHEMA and "skills_manifest" not in nb
         assert not any(f["signal"] == "S1" for f in rec3), "upgrade must absorb, not alert"
         with Ledger() as led:
-            s0 = [e for e in led.events_since("2000-01-01T00:00:00+00:00") if e["signal"] == "S0"]
+            s0 = [e for e in led.events_since("2000-01-01T00:00:00+00:00")
+                  if e["dedup_key"].startswith("S0|baseline-upgrade")]
+            s0c = [e for e in led.events_since("2000-01-01T00:00:00+00:00")
+                   if e["dedup_key"].startswith("S0|legacy-cleared")]
         assert len(s0) == 1 and s0[0]["ack_state"] == "resolved" and "model.primary" in s0[0]["detail"]
+        assert s0c and all(e["ack_state"] == "resolved" for e in s0c)
         with Ledger() as led:
             assert led.conn.execute("SELECT ack_state FROM events WHERE event_id=?",
                                     (legacy,)).fetchone()[0] == "resolved", "legacy P1 must not escalate"
         print("  baseline-upgrade case: PASS (v1 re-pinned once; absorbed drift logged, not alerted)")
+
+        # fleet-update hook re-pins to v2 BEFORE the first v1.3.0 tick: the
+        # one-time clear must still run (own marker), and only once
+        with Ledger() as led:
+            led.conn.execute("DELETE FROM meta WHERE key=?", (LEGACY_CLEAR_MARKER,))
+            led.conn.commit()
+            legacy2 = led.record_event("S2", "P1", key_path="trajectory", dedup_key="S2|legacy")
+        B.repin(json.loads(cfgp.read_text(encoding="utf-8")), None, None)   # hook-style pin -> v2
+        run_tick(send=False, probe={"gateway": "unknown"})
+        with Ledger() as led:
+            assert led.conn.execute("SELECT ack_state FROM events WHERE event_id=?",
+                                    (legacy2,)).fetchone()[0] == "resolved"
+            later = led.record_event("S2", "P1", key_path="trajectory", dedup_key="S2|after")
+        run_tick(send=False, probe={"gateway": "unknown"})
+        with Ledger() as led:
+            assert led.conn.execute("SELECT ack_state FROM events WHERE event_id=?",
+                                    (later,)).fetchone()[0] == "open", "clear must run only once"
+        print("  legacy-clear-once case: PASS (runs after a hook re-pin; never again)")
 
         # B1/B2: only STATE findings auto-resolve. Evidence findings (S2), the
         # dead-man and no-operator-target events stay open across a tick.
