@@ -123,10 +123,20 @@ if ! command -v curl >/dev/null 2>&1; then
   exit 0
 fi
 
+# ---- credential never on a command line (BU-79 / WF-096) ----
+# The LOCATION PIT used to be interpolated into `-H "Authorization: Bearer ..."`
+# argv, which put the secret in plaintext in this host's process table for the
+# life of every curl call (any `ps`/`ps -eww` on the box could read it). Headers
+# now go through a curl --config file (mode 600, per-run, removed on exit) the
+# same way create-notion-closeout.sh does it, so the token never appears as a
+# command-line argument.
+_ghl_cfg="$(mktemp "${TMPDIR:-/tmp}/ghl-curl-hdr.XXXXXX")" || exit 0
+chmod 600 "$_ghl_cfg"; trap 'rm -f "$_ghl_cfg"' EXIT
+printf 'header = "Authorization: Bearer %s"\nheader = "Version: %s"\n' "$GHL_PIT" "$GHL_VERSION" > "$_ghl_cfg"
+
 # ---- verify the LOCATION PIT actually works before uploading ----
 verify_code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 15 \
-  -H "Authorization: Bearer $GHL_PIT" \
-  -H "Version: $GHL_VERSION" \
+  -K "$_ghl_cfg" \
   "$GHL_BASE/locations/$GHL_LOC" 2>/dev/null || echo "000")
 if [[ ! "$verify_code" =~ ^2 ]]; then
   log "WARN" "ghl-media: LOCATION PIT verify returned HTTP $verify_code -- skipping upload (PIT not working for this location)"
@@ -201,8 +211,7 @@ for entry in "${TO_UPLOAD[@]}"; do
     attempt=$((attempt + 1))
     log "INFO" "ghl-media: uploading '$nice_name' ($fname) attempt $attempt/$GHL_UPLOAD_MAX_ATTEMPTS -> $GHL_BASE/medias/upload-file (location $GHL_LOC)"
     resp=$(curl -s --max-time 300 \
-      -H "Authorization: Bearer $GHL_PIT" \
-      -H "Version: $GHL_VERSION" \
+      -K "$_ghl_cfg" \
       -F "file=@$f" \
       -F "locationId=$GHL_LOC" \
       -F "name=$nice_name" \
