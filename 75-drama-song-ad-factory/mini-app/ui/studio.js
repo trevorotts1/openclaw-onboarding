@@ -388,7 +388,9 @@ function renderNav() {
   nav.replaceChildren(...PAGES.map((p) => {
     const b = el("button", { type: "button", text: p.label });
     if (p.id === state.page) b.setAttribute("aria-current", "page");
-    b.addEventListener("click", () => setPage(p.id));
+    // S75-074 — the top-bar Questions button starts (or resumes) the order; it
+    // never drops the client on an empty screen with no questions loaded.
+    b.addEventListener("click", () => (p.id === "questions" ? startOrder() : setPage(p.id)));
     return b;
   }));
 }
@@ -399,7 +401,14 @@ function renderProgress() {
   const rail = document.getElementById("rail");
   rail.setAttribute("aria-valuenow", String(pct));
   document.getElementById("rail-fill").style.width = `${pct}%`;
-  document.getElementById("step-label").textContent = `Step ${idx + 1} of ${PAGES.length}: ${PAGES[idx].label}`;
+  // S75-074 step 9 — inside the questions the count is the questions the client
+  // is actually being asked ("Question 3 of 17"); the five pages keep "Step N of 5".
+  let label = `Step ${idx + 1} of ${PAGES.length}`;
+  if (state.page === "questions") {
+    const list = screens();
+    if (list.length) label = `Question ${Math.min(state.qIndex + 1, list.length)} of ${list.length}`;
+  }
+  document.getElementById("step-label").textContent = label;
 }
 
 // ── the service, in the words this page shows when it is not there ───────────
@@ -425,6 +434,34 @@ async function loadQuestions() {
 // as typed text ("Reply with …") — exactly what the client typed (SPEC §5).
 const isFreeTextOption = (o) => /^reply with/i.test(String(o.detail || "").trim());
 
+// S75-074 — a typed question asks for a sentence. The page draws the text box
+// directly and never an option row; the reply is exactly what was typed. An
+// older export still carried the one "reply with" option row, and both shapes
+// read the same way here, so a page loaded before the re-export keeps working.
+export function isTypedScreen(question) {
+  return Boolean(question && question.typed);
+}
+
+// S75-074 step 1 — the heading is the exported `title` when the card carries
+// one. An older export carries only an upper-case `label` ("BUDGET"), which is
+// never drawn as a heading: the question's own sentence is, until the title lands.
+export function headingFor(question) {
+  const title = String((question && question.title) || "").trim();
+  if (title) return title;
+  const label = String((question && question.label) || "").trim();
+  if (label && label !== label.toUpperCase()) return label;
+  const sentence = String((question && question.question) || "").trim();
+  return sentence || label || "Your question";
+}
+
+// S75-074 step 6 — "Tap a link to watch a sample." is an instruction with
+// nothing to tap unless the export carries a `sample_url`; the link below the
+// options is the only place a sample is offered, in the words "Watch a sample".
+const SAMPLE_SENTENCE = /\s*Tap a link to watch a sample\.?/i;
+export function questionLabel(question) {
+  return String((question && question.question) || "").trim().replace(SAMPLE_SENTENCE, "").trim();
+}
+
 function hydrateReplies(replies) {
   // The list is rebuilt from these replies (SPEC B1), so every index below is
   // an index into the list on display, never into the whole export.
@@ -436,6 +473,8 @@ function hydrateReplies(replies) {
   (replies || []).forEach((r, i) => {
     const q = list[i];
     if (!q || r == null || r === "") return;
+    // A typed screen's reply is the sentence itself, whatever its options say.
+    if (isTypedScreen(q)) { state.texts[i] = String(r); return; }
     // A draft or order saved before S75-059 carries the pick as a bare number;
     // one saved after it carries `"<n>. <option text>"`. Both read back.
     const pick = q.options.find((o) => String(o.n) === String(r));
@@ -468,6 +507,8 @@ function screens() {
 const OPTION_REPLY = /^\s*(\d+)\.\s+([\s\S]*)$/;
 
 export function answerReply(question, pick, typedText) {
+  // A typed question has no option row to pick from: the text is the reply.
+  if (isTypedScreen(question)) return String(typedText || "").trim();
   if (!question || pick == null || pick === "") return "";
   const opt = (question.options || []).find((o) => String(o.n) === String(pick));
   if (opt && isFreeTextOption(opt)) return String(typedText || "").trim();
@@ -476,7 +517,9 @@ export function answerReply(question, pick, typedText) {
 }
 
 function replyFor(i) {
-  return answerReply(state.visible[i], state.picks[i], state.texts[i]);
+  const q = state.visible[i];
+  if (isTypedScreen(q)) return String(state.texts[i] || "").trim();
+  return answerReply(q, state.picks[i], state.texts[i]);
 }
 
 const currentReplies = () => state.visible.map((_, i) => replyFor(i));
@@ -496,6 +539,7 @@ function ensurePick(i) {
 // (SPEC B1: "every answer after it has to be given again").
 function answerChanged(i, value) {
   state.note = "";
+  const screenId = state.visible[i] && state.visible[i].id;
   state.picks[i] = value;
   if (state.visible[i] && state.visible[i].id === "purpose") {
     state.picks.length = i + 1;
@@ -503,6 +547,11 @@ function answerChanged(i, value) {
   }
   state.replies = currentReplies();
   hydrateReplies(state.replies);
+  // The rebuilt list carries no reply for a typeable option whose text is still
+  // empty, so the pick itself is put back on the screen it was made on. Without
+  // this the box for "Set my own limit" never appears (S75-074 step 4).
+  const after = state.visible[i];
+  if (after && after.id === screenId) state.picks[i] = String(value);
   state.qIndex = Math.min(i, Math.max(0, state.visible.length - 1));
   render();
 }
@@ -521,7 +570,9 @@ async function advance() {
   const value = replyFor(i);
   if (!value) {
     // Say it where the button is, not only in the status line at the bottom.
-    state.note = state.picks[i] ? "Type your answer first." : "Pick one of the options first.";
+    // A typed screen has no option to pick, so its line asks for the sentence.
+    state.note = (isTypedScreen(state.visible[i]) || state.picks[i])
+      ? "Type your answer first." : "Pick one of the options first.";
     announce(state.note);
     render();
     return;
@@ -687,8 +738,13 @@ function pageQuestions() {
 
   const i = Math.min(state.qIndex, list.length - 1);
   const q = list[i];
-  ensurePick(i);
-  const chosen = q.options.find((o) => String(o.n) === String(state.picks[i] || ""));
+  const typed = isTypedScreen(q);
+  // A typed screen never draws an option row (S75-074 step 2): the box is the
+  // whole answer, so an export that still carries the one "reply with" option
+  // reads exactly like one that carries no options at all.
+  if (!typed) ensurePick(i);
+  const selectable = typed ? [] : (q.options || []);
+  const chosen = selectable.find((o) => String(o.n) === String(state.picks[i] || ""));
 
   // S75-059 — what an option costs at the length the client picked. The length
   // is read off the answer they already gave; before that there is no price to
@@ -701,34 +757,51 @@ function pageQuestions() {
   const lengthSeconds = chosenLengthSeconds(state.questions, answersGiven);
 
   const fieldset = el("fieldset", { class: "options" });
-  fieldset.append(el("legend", { text: q.question }));
+  fieldset.append(el("legend", { text: questionLabel(q) }));
   if (q.example) fieldset.append(el("p", { class: "hint muted", text: `See a great answer: ${q.example}` }));
-  for (const o of q.options) {
+  for (const o of selectable) {
     const id = `q-${q.id}-${o.n}`;
     const input = el("input", { id, type: "radio", name: `q-${q.id}`, value: String(o.n) });
     if (String(state.picks[i]) === String(o.n)) input.checked = true;
     input.addEventListener("change", () => answerChanged(i, String(o.n)));
     // The card's own `price` string on an older export; the arithmetic above
-    // once the export carries rates instead (S75-059).
+    // once the export carries rates instead (S75-059). S75-074 step 5: when the
+    // detail already states the price, the price field is skipped — once.
     const priceText = o.price || optionPriceLine(o, lengthSeconds);
+    const showPrice = Boolean(priceText)
+      && !(o.detail && String(o.detail).includes(String(priceText)));
     fieldset.append(el("label", { class: "option", for: id }, [
       input,
       el("span", {}, [
         el("span", { class: "label", text: o.text }),
+        // S75-074 step 5 — the card's own recommendation, as a small tag.
+        o.recommended ? el("span", { class: "tag hint", text: " Recommended" }) : null,
         o.detail ? el("span", { class: "hint", text: ` ${o.detail}` }) : null,
-        priceText ? el("span", { class: "hint", text: ` ${priceText}` }) : null,
+        showPrice ? el("span", { class: "hint", text: ` ${priceText}` }) : null,
       ].filter(Boolean)),
+    ]));
+  }
+  // S75-074 step 5 — one line under the options, in the card's own words.
+  if (q.why) fieldset.append(el("p", { class: "hint muted", text: q.why }));
+  // S75-074 step 6 — a sample is a real link, never a sentence telling the
+  // client to tap a link that is not there.
+  const sample = selectable.find((o) => o && o.sample_url);
+  if (sample) {
+    fieldset.append(el("p", { class: "hint" }, [
+      el("a", { href: String(sample.sample_url), text: "Watch a sample" }),
     ]));
   }
   for (const text of q.supplementary_explanation || []) {
     fieldset.append(el("p", { class: "hint", text }));
   }
-  if (chosen && isFreeTextOption(chosen)) {
+  // A typed screen's box is always drawn; an untyped one grows a box only when
+  // the option the client picked reads typed text ("reply with …").
+  if (typed || (chosen && isFreeTextOption(chosen))) {
     fieldset.append(answerBox(state.texts[i] || "", (v) => { state.texts[i] = v; }, q));
   }
 
   return [
-    el("h1", { text: q.label || "Your question" }),
+    el("h1", { text: headingFor(q) }),
     el("p", { class: "muted", text: `${i + 1} of ${list.length}. Your answer saves when you tap Next.` }),
     el("div", { class: "card" }, [fieldset]),
     // Directly above the button row, so the reason is beside the button the
@@ -761,10 +834,12 @@ function pageRecap() {
 
   // S75-059 — the recap says the question's plain wording and the option TEXT
   // the client picked ("The sound: R&B Flow"), never the upper-case label and
-  // never the option's number. A typed answer reads back as it was typed.
+  // never the option's number. A typed answer reads back as it was typed
+  // (S75-074: a typed screen's reply is its sentence, with or without options).
   const recapHeading = (q) => String((q && (q.title || q.question || q.label)) || "Your answer").trim();
   const recapAnswer = (i) => {
     const q = list[i];
+    if (isTypedScreen(q)) return String(state.texts[i] || "").trim() || "not answered yet";
     const pick = state.picks[i];
     const opt = q && pick ? (q.options || []).find((o) => String(o.n) === String(pick)) : null;
     if (!opt) return "not answered yet";
