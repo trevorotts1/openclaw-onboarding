@@ -6219,7 +6219,7 @@ class Engine:
             return True
         return False
 
-    def _send_done_message(self) -> None:
+    def _send_done_message(self, waived_count: int = 0) -> None:
         """PD-042: send the client their finished message, or send nothing.
 
         The message is `_compose_done_message`'s output: the ready sentence
@@ -6228,6 +6228,10 @@ class Engine:
         destination -- the client is NOT told "ready" and `report.done_withheld`
         records why, so the run stays visible to the delivery step instead of
         claiming a handoff nobody can point at.
+
+        PD-313: when gates were waived at the client's own request, the
+        waived-checks sentence is appended to the same message. Nothing is
+        appended when no gate was waived.
         """
         msg = _compose_done_message(self.run_dir)
         if not msg:
@@ -6238,6 +6242,8 @@ class Engine:
                 "'verified'), so no 'ready' message was sent to the client; "
                 "the run is left for the delivery step.")
             return
+        if waived_count > 0:
+            msg = f"{msg} {waived_count} check(s) were waived at your request."
         self.report.to_requester("done", msg)
 
     def close(self) -> int:
@@ -6301,6 +6307,10 @@ class Engine:
                 gate_warnings.append({"gate": k, "reason": g.get("reason") or "failed"})
                 continue
             failures.append((k, g.get("reason") or "failed"))
+        # PD-313: how many checks reached DONE only because the client waived
+        # them -- the finished message says so instead of claiming a clean run.
+        waived_n = sum(1 for k in ALL_GATE_KEYS
+                       if (gates.get(k) or {}).get("state") == "waived")
         if gate_warnings:
             self.state["gate_warnings"] = gate_warnings
             print(f"{len(gate_warnings)} gate(s) in warn-mode did not pass -- see state.json gate_warnings", file=sys.stderr)
@@ -6376,7 +6386,7 @@ class Engine:
                 # PD-042: the finished message says WHERE the deck is, from the
                 # verified delivery record. No verified destination -> nothing
                 # is sent and the withholding is logged (PD-313 reuses this).
-                self._send_done_message()
+                self._send_done_message(waived_count=waived_n)
                 print("DONE — all gates passed after re-evaluation.", flush=True)
                 return EXIT_OK
             self.state["terminal"] = "BLOCKED"
@@ -6456,6 +6466,11 @@ class Engine:
         self.state["terminal"] = "DONE"
         self.state["completed_at"] = utcnow()
         self.store.save(self.state)
+        # PD-313: the normal close (every gate passed first time) tells the
+        # client the deck is ready, exactly like the re-gated close above. The
+        # same PD-042 compose function decides the text; no verified
+        # destination -> nothing is sent and the withholding is logged.
+        self._send_done_message(waived_count=waived_n)
         print("DONE -- all gates passed.", flush=True)
         return EXIT_OK
 
