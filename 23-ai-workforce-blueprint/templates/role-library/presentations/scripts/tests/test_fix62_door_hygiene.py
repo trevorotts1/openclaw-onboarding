@@ -7,7 +7,10 @@ Proof (verbatim from QC.md; the critic runs exactly this):
 The three mechanisms:
   1. ATTEMPT BUMP IS POST-GATE — a run that dies on any gate exits with the
      budget untouched, so gate-repair cycles never burn the cap. The bump
-     happens only after "ALL GATES PASSED", and only when PLAN=0.
+     happens only after "ALL GATES PASSED", immediately before a real dispatch,
+     and only when PLAN=0. PD-008: the cap counts DISPATCHES inside a 6-hour
+     window (the count stays a bare integer; the window lives beside it in
+     .canonical-entry-attempts.meta.json) and the 4th exits 12 naming --resume.
   2. RESET ON SUCCESS — a build whose engine exits 0 clears the counter, so
      the next deck in the same run dir starts from a fresh budget.
   3. --plan IS EXEMPT FROM EVERY SIDE EFFECT — it never reaches the bump and
@@ -51,8 +54,13 @@ def make_run_dir(base: Path) -> Path:
     (run_dir / "working" / "checkpoints" / ".test-context").write_text("")
     (run_dir / "working" / "interview" / "intake_ledger.json").write_text(
         json.dumps({"status": "complete", "complete": True}))
+    # PD-009: GATE 0b checks the SHAPE (S51 SKILL.md lines 41-48), not a byte
+    # count — the fixture must carry the four envelope keys.
     (run_dir / "working" / "interview" / "intake_transcript.json").write_text(
-        json.dumps({"driver": "deck-intake-driver", "signature": "signed",
+        json.dumps({"format": "sp-intake-transcript-v1",
+                    "driver": "deck-intake-driver",
+                    "driver_signature": "fixture-signed",
+                    "qid_sequence": ["q1", "q2"],
                     "turns": [{"q": "What topic?", "a": "A long enough answer " * 40}] * 10}))
     (run_dir / "slides.json").write_text("{}")
     return run_dir
@@ -166,7 +174,10 @@ def test_three_failed_gate_runs_then_one_pass_never_hits_cap(tmp_path):
 
 def test_engine_failing_builds_do_consume_and_cap_still_guards(tmp_path):
     """The cap still stops the engine-keeps-failing loop: builds that REACH the
-    engine consume one attempt each, and the 4th dies with the explicit message."""
+    engine consume one attempt each, and the 4th dies with the explicit message.
+
+    PD-008: the 4th dispatch exits 12 (the new documented code) and names the
+    --resume recovery, not a bare brick."""
     run_dir = make_run_dir(tmp_path)
     fail_dir = make_scripts_dir(tmp_path, engine_rc=7)
     for i in (1, 2, 3):
@@ -174,8 +185,10 @@ def test_engine_failing_builds_do_consume_and_cap_still_guards(tmp_path):
         assert r.returncode == 7, f"stub engine exit must propagate (run {i})"
         assert read_attempts(run_dir) == i, f"attempt {i} must be counted"
     r4 = run_entry(run_dir, fail_dir, env_extra={"OPENCLAW_WORKSPACE": str(tmp_path / "no-ws")})
-    assert r4.returncode == 2, "the 4th build must be bricked by the cap (exit 2)"
-    assert "Do NOT write a custom driver" in r4.stderr, r4.stderr
+    assert r4.returncode == 12, "the 4th build must be stopped by the cap (exit 12)"
+    assert "--resume" in r4.stderr, r4.stderr
+    assert "Do not write your own build script" in r4.stderr, r4.stderr
+    assert read_attempts(run_dir) == 4, "the refused 4th dispatch is still counted"
 
 
 def test_plan_does_not_increment_attempts(tmp_path):
@@ -246,16 +259,21 @@ def test_bump_and_reset_are_plan_gated_in_source():
     # The stamp wrapper refuses to run in plan mode.
     assert "stamp_intake_depth_after_gates() {" in src
     wrapper_idx = src.index("stamp_intake_depth_after_gates() {")
-    wrapper = src[wrapper_idx:wrapper_idx + 220]
-    assert '[ "$PLAN" -eq 0 ] || return 0' in wrapper
+    # PD-008 QC: PD-007 added STATED-gating to save ink; the PLAN gate is the
+    # invariant this unit owns (amendment (b) pins the reset form, not PD-007's
+    # stamp row). Assert the first guard line only.
+    wrapper_first = src[wrapper_idx:wrapper_idx + 220].splitlines()[1]
+    assert '[ "$PLAN" -eq 0 ] || return 0' in wrapper_first
     # Definition order: gate_fail / owner_skip_approved / _record_dep_gate_bypassed
     # / trace_fail are all DEFINED before GATE 0c executes (bash does not hoist).
+    # PD-008 QC: PD-007 factored the drift-gate path into $_GATE0C_SCRIPT, so
+    # anchor on the script NAME, not the old inline test string.
+    drift_exec_marker = "presentations-drift-gates.sh"
+    assert drift_exec_marker in src
+    gate0c_idx = src.index(drift_exec_marker)
     for fn in ("owner_skip_approved()", "_record_dep_gate_bypassed()",
                "gate_fail()", "trace_fail()"):
         def_idx = src.index(fn)
-        gate0c_idx = src.index('if [ -f "$SELF_DIR/presentations-drift-gates.sh" ]; then')
         assert def_idx < gate0c_idx, f"{fn} must be defined before GATE 0c executes"
-    # SELF_DIR is defined before GATE 0c's first read of it.
     self_dir_idx = src.index('SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"')
-    gate0c_idx = src.index('if [ -f "$SELF_DIR/presentations-drift-gates.sh" ]; then')
     assert self_dir_idx < gate0c_idx, "SELF_DIR must be defined before GATE 0c"
