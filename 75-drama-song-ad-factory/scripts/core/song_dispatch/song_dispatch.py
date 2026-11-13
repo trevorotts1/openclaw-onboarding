@@ -1418,6 +1418,50 @@ def _take_exists(d):
         return False
 
 
+#: D-4 (answer: honour the client's choice): when the client says "keep one of
+#: these" about a take the judge failed, the client-kept record lives OUTSIDE
+#: ``music/acceptance/`` -- two readers there (this module's acceptance list and
+#: the operator-decision evidence digest) would read it as a take record and
+#: diverge. One file per variant, written by ``song_choices.record_client_kept``.
+CLIENT_KEPT_DIRNAME = "client-kept"
+CLIENT_KEPT_SCHEMA = "blackceo.client-kept/v1"
+
+
+def client_kept_path(run_dir, variant_id):
+    """<run>/song-choices/client-kept/<variant>.json -- never under music/acceptance/."""
+    return os.path.join(run_dir, "song-choices", CLIENT_KEPT_DIRNAME,
+                        "%s.json" % variant_id)
+
+
+def read_client_kept(run_dir, variant_id):
+    """The client-kept record for a variant, or None when absent/unreadable."""
+    d = _open_json(client_kept_path(run_dir, variant_id))
+    return d if isinstance(d, dict) else None
+
+
+def client_kept_reasons(doc, variant_id):
+    """Why this record may NOT stand in for a PASS. [] = the recorded client
+    choice is complete: who, when, the judge's named concerns, the client's words."""
+    if not isinstance(doc, dict):
+        return ["CLIENT_KEPT_MISSING: no client-kept record for %s" % variant_id]
+    out = []
+    if str(doc.get("variant")) != str(variant_id):
+        out.append("CLIENT_KEPT_MALFORMED: the record names variant %r, not %r"
+                   % (doc.get("variant"), variant_id))
+    if str(doc.get("answer") or "") != "keep_one":
+        out.append("CLIENT_KEPT_MALFORMED: the record's answer is %r, not 'keep_one'"
+                   % doc.get("answer"))
+    if not str(doc.get("who") or "").strip():
+        out.append("CLIENT_KEPT_MALFORMED: the record names no one")
+    if not str(doc.get("at") or "").strip():
+        out.append("CLIENT_KEPT_MALFORMED: the record carries no time")
+    if not isinstance(doc.get("concerns"), list):
+        out.append("CLIENT_KEPT_MALFORMED: the judge's named concerns are not a list")
+    if not str(doc.get("client_words") or "").strip():
+        out.append("CLIENT_KEPT_MALFORMED: the client's own words are missing")
+    return out
+
+
 def acceptance_from_run(run_dir):
     """Read the WW-21 acceptance records and the take folders under the run.
 
@@ -1448,18 +1492,50 @@ def acceptance_from_run(run_dir):
                 continue
             if name in records:
                 continue
+            kept = read_client_kept(run_dir, name)
+            kreasons = client_kept_reasons(kept, name) if kept is not None else []
+            if kept is not None and not kreasons:
+                # D-4: the client kept this take. That is NOT a PASS on any
+                # measured gate -- the take-level record is untouched (there is
+                # none) and the verdict stays CLIENT_KEPT.
+                records[name] = {
+                    "variant_id": name, "verdict": "CLIENT_KEPT", "blocked": False,
+                    "reasons": [], "client_kept": kept, "purchases": 0}
+                continue
             records[name] = {
                 "variant_id": name, "verdict": "FAIL", "blocked": True,
                 "reasons": ["ACCEPTANCE_RECORD_MISSING: music/takes/%s holds a produced take but "
                             "no WW-21 acceptance record was written for it; only a complete set "
-                            "of five PASS, bound delivered-audio results may advance" % name],
+                            "of five PASS, bound delivered-audio results may advance" % name]
+                           + kreasons,
                 "purchases": 0}
     if not records:
         return {"applicable": False, "verdict": "UNAVAILABLE", "allowed": False,
                 "blocked": [], "variants": {}}
-    bad = sorted(v for v, r in records.items() if r.get("verdict") != "PASS")
+    bad = sorted(v for v, r in records.items()
+                 if r.get("verdict") not in ("PASS", "CLIENT_KEPT"))
     return {"applicable": True, "verdict": "FAIL" if bad else "PASS",
             "allowed": not bad, "blocked": bad, "variants": records}
+
+
+def picked_client_kept(run_dir):
+    """The valid client-kept record for the version the client PICKED, or None.
+
+    D-4: when the client says "keep one of these" about a take the judge
+    failed, the run may go on WITH THAT TAKE. This reads the pick (number +
+    variant id + the client_kept flag the picker wrote) and the record under
+    song-choices/client-kept/. It releases nothing else: the per-take verdicts
+    in ``acceptance_from_run`` are untouched and never become PASS."""
+    d = _open_json(os.path.join(run_dir, "song-choices", "pick.json"))
+    if not isinstance(d, dict) or not d.get("client_kept"):
+        return None
+    vid = str(d.get("variant") or "").strip()
+    if not vid:
+        return None
+    doc = read_client_kept(run_dir, vid)
+    if doc is None or client_kept_reasons(doc, vid):
+        return None
+    return doc
 
 
 def acceptance_refusal(run_dir, action):
@@ -1473,6 +1549,10 @@ def acceptance_refusal(run_dir, action):
     if not chk.get("applicable"):
         return None
     if chk.get("allowed"):
+        return None
+    if picked_client_kept(run_dir) is not None:
+        # D-4: the client kept the take they picked; the run may go on with it.
+        # No measured gate was re-written and the other takes stay as recorded.
         return None
     detail = []
     for v in chk.get("blocked") or []:

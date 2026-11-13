@@ -1225,7 +1225,13 @@ def deliver_choices(results, delivery_dir, run_dir, runner=_run_ffmpeg, target=N
         f.write("\n".join(lines) + "\n")
     st = _state(run_dir) or {"required": True}
     st.update(required=True, offered=offered,
-              failure_fork=bool(heard), concerns=concerns)
+              failure_fork=bool(heard), concerns=concerns,
+              # D-4: the pick is a NUMBER (1, 2, 3); the acceptance boundary and
+              # the take folder are the variant's own id. Record the mapping the
+              # client-kept record is keyed by -- never guessed from a label.
+              variants={str(r["n"]): str((r.get("variant") or {}).get("id"))
+                        for r in (results or [])
+                        if r.get("n") is not None and (r.get("variant") or {}).get("id")})
     _write(run_dir, "state.json", st)
     # Method Step 14 (inert until the run carries control/method.json): the
     # message RECOMMENDS the strongest compliant version with a concrete reason.
@@ -1373,6 +1379,71 @@ _FORK_ALIASES = (
 )
 FORK_FILE = "fork-decision.json"
 
+#: D-4: "keep one of these" is HONOURED -- the run may go on, and the client's
+#: choice is recorded (who, when, the judge's named concerns, the client's own
+#: words) in <run>/song-choices/client-kept/<variant>.json. NEVER under
+#: music/acceptance/: that folder is read as take records by
+#: song_dispatch.acceptance_from_run and by the operator-decision digest.
+#: The path, schema and reader live ONCE in song_dispatch; these are the thin
+#: names this module's callers use (resolved at call time, never at import).
+
+
+def client_kept_path(run_dir, variant_id):
+    return _SD.client_kept_path(run_dir, variant_id)
+
+
+def _variant_id(st, variant):
+    """The take-folder / acceptance id for a pick number (1, 2, 3), or the id
+    itself. The mapping is the one the run recorded; nothing is guessed."""
+    raw = str(variant or "").strip()
+    return str((st.get("variants") or {}).get(raw) or raw)
+
+
+def client_kept(run_dir, variant_id):
+    """The client-kept record for a pick number or variant id, or None."""
+    return _SD.read_client_kept(run_dir, _variant_id(_state(run_dir) or {}, variant_id))
+
+
+def record_client_kept(run_dir, variant, reply, who=None, channel="card",
+                       at=None, concerns=None):
+    """Record the client's "keep one of these" choice for ONE take.
+
+    The reply must be the keep-one answer; an unreadable or different answer is
+    refused, never guessed. The record carries WHO kept it, WHEN, the song
+    judge's NAMED concerns for that take, and the client's words verbatim. It
+    is the only thing that lets a take the judge failed be picked and lets the
+    run go on; it never writes a PASS for a measured gate and never touches
+    music/acceptance/."""
+    if parse_fork_answer(reply) != "keep_one":
+        raise ChoiceError("%r is not the keep-one answer; ask again: %s"
+                          % (reply, FAILURE_FORK))
+    if not str(who or "").strip():
+        # A keep-one record that names nobody releases nothing (the boundary
+        # refuses it). Refuse to write it rather than write an unusable one.
+        raise ChoiceError("a client-kept record must name WHO kept the take "
+                          "(pass --who, e.g. the client's own chat id)")
+    raw = str(variant or "").strip()
+    if not raw:
+        raise ChoiceError("record_client_kept needs the version the client kept (1, 2 or 3)")
+    st = _state(run_dir) or {}
+    vid = _variant_id(st, raw)
+    if concerns is None:
+        concerns = (st.get("concerns") or {}).get(raw)
+        if concerns is None:
+            concerns = failure_concerns(next(
+                (r for r in (st.get("results") or []) if str(r.get("n")) == raw), {}))
+    doc = {"schema": _SD.CLIENT_KEPT_SCHEMA, "answer": "keep_one", "variant": vid,
+           "n": raw if raw.isdigit() else None,
+           "who": who, "channel": channel,
+           "at": at or time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+           "concerns": [str(c) for c in (concerns or [])],
+           "client_words": str(reply)}
+    p = client_kept_path(run_dir, vid)
+    os.makedirs(os.path.dirname(p), exist_ok=True)
+    with open(p, "w", encoding="utf-8") as f:
+        json.dump(doc, f, indent=2, sort_keys=True)
+    return doc
+
 
 def parse_fork_answer(reply):
     """The client's answer folded onto the three branches, or None (never
@@ -1424,16 +1495,22 @@ def failure_fork_message(results):
     return "\n".join(msg)
 
 
-def record_fork_decision(run_dir, reply, who=None, channel="card", at=None):
+def record_fork_decision(run_dir, reply, who=None, channel="card", at=None, variant=None):
     """Record the client's answer. Authoritative: nothing overrides it and no
     new paid round runs before it exists. An answer outside the three branches
-    is refused, never guessed."""
+    is refused, never guessed.
+
+    D-4: a keep-one answer ALSO writes the client-kept record for ``variant``
+    when the take is named (explicit ``variant``, or a lone version number in
+    the reply). With no take named the fork alone is recorded -- the variant is
+    never guessed, it is named by the pick or by ``record_client_kept``."""
     ans = parse_fork_answer(reply)
     if ans is None:
         raise ChoiceError("%r is not one of the three answers; ask again: %s"
                           % (reply, FAILURE_FORK))
+    stamp = at or time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
     rec = {"answer": ans, "reply": str(reply), "who": who, "channel": channel,
-           "at": at or time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())}
+           "at": stamp}
     doc = {}
     p = _path(run_dir, FORK_FILE)
     if os.path.exists(p):
@@ -1444,7 +1521,37 @@ def record_fork_decision(run_dir, reply, who=None, channel="card", at=None):
             doc = {}                     # unreadable: a fresh doc, never a guess
     log = doc.get("decisions") if isinstance(doc.get("decisions"), list) else []
     _write(run_dir, FORK_FILE, dict(doc, decisions=log + [rec]))
+    if ans == "keep_one" and str(who or "").strip():
+        named = str(variant or "").strip() or _named_version(reply) \
+            or _sole_failed_version(run_dir)
+        if named:
+            rec["client_kept"] = record_client_kept(
+                run_dir, named, reply, who=who, channel=channel, at=stamp)["variant"]
     return rec
+
+
+def _named_version(reply):
+    """The ONE version number the client named in their answer, or '' -- never
+    guessed from a sentence that names two."""
+    nums = set(re.findall(r"\b([123])\b", str(reply or "")))
+    return nums.pop() if len(nums) == 1 else ""
+
+
+def _sole_failed_version(run_dir):
+    """The ONE take the judge failed, when the run has exactly one: determined
+    by the recorded concerns (else the presented take that is not offered), not
+    guessed. '' when two or more failed -- the client must name one."""
+    st = _state(run_dir) or {}
+    bad = sorted(str(n) for n in (st.get("concerns") or {}))
+    if not bad:
+        offered = set(str(n) for n in (st.get("offered") or {}))
+        seen = {}
+        for p in st.get("presented") or []:
+            m = re.match(r"^([123]) - ", os.path.basename(str(p)))
+            if m and m.group(1) not in offered:
+                seen[m.group(1)] = True
+        bad = sorted(seen)
+    return bad[0] if len(bad) == 1 else ""
 
 
 def fork_decision(run_dir):
@@ -1582,29 +1689,60 @@ def record_pick(run_dir, reply):
 
     WW-18: a file may be picked only when its take's REQUIRED gate set all
     PASSED (its constituent receipt is current); an offered file whose take did
-    not pass every required gate is refused here and at delivery."""
+    not pass every required gate is refused here and at delivery.
+
+    D-4: a take that has a valid client-kept record (song-choices/client-kept/)
+    is pickable even though no gate was re-written PASS; a take with NEITHER a
+    PASS record NOR a client-kept record is still refused."""
     st = _state(run_dir)
     if not st or not st.get("required"):
         raise ChoiceError("this run did not ask for song choices")
     hold = _overlap_refusal(run_dir, "the pick")
     if hold:
         raise ChoiceError(hold["detail"])
-    # WW-21: the PICK is a delivery boundary too.
-    ahold = _acceptance_refusal(run_dir, "the pick")
-    if ahold:
-        raise ChoiceError(ahold["detail"])
+    # WW-21: the PICK is a delivery boundary too. D-4: a version the client
+    # KEPT carries its own record, so it is not held by the acceptance boundary
+    # -- the record is the authority for that take, read below.
     n = str(reply).strip()
     o = (st.get("offered") or {}).get(n)
-    if not o or not os.path.isfile(o["file"]):
+    kept = client_kept(run_dir, n)
+    vid = _variant_id(st, n)
+    kept_ok = kept is not None and not _SD.client_kept_reasons(kept, vid)
+    if not kept_ok:
+        ahold = _acceptance_refusal(run_dir, "the pick")
+        if ahold:
+            raise ChoiceError(ahold["detail"])
+    if o and os.path.isfile(o["file"]):
+        ok, why = _SD.constituent_ok(o.get("receipt"))
+        if not ok and not kept_ok:
+            raise ChoiceError("song %s is not offerable: %s" % (reply, why))
+        src, label, take = o["file"], o["label"], o.get("take")
+    elif kept_ok:
+        # D-4: the client kept this take, so its pick is honoured. The file is
+        # the version presented for listening in THIS run, never a new one.
+        src = _kept_source(st, n)
+        if not src:
+            raise ChoiceError("version %s was kept by the client, but no presented file for it "
+                              "is recorded in this run" % n)
+        label = re.sub(r" - NOT PASSED$", "", os.path.splitext(os.path.basename(src))[0])
+        take = {"audio_path": src}
+    else:
         raise ChoiceError("%r is not one of the offered songs %s" % (reply, sorted(st.get("offered") or {})))
-    ok, why = _SD.constituent_ok(o.get("receipt"))
-    if not ok:
-        raise ChoiceError("song %s is not offerable: %s" % (reply, why))
     os.makedirs(os.path.join(run_dir, "music"), exist_ok=True)
-    shutil.copyfile(o["file"], picked_song(run_dir))
-    _write(run_dir, "pick.json", {"pick": int(n), "label": o["label"], "sha256": _sha(picked_song(run_dir)),
-                                  "take": o.get("take")})
-    return o["label"]
+    shutil.copyfile(src, picked_song(run_dir))
+    _write(run_dir, "pick.json", {"pick": int(n), "label": label, "sha256": _sha(picked_song(run_dir)),
+                                  "take": take, "variant": vid,
+                                  "client_kept": bool(kept_ok)})
+    return label
+
+
+def _kept_source(st, n):
+    """The presented file for a client-kept version, found in this run's own
+    presented list (the version the client actually heard). '' when absent."""
+    for p in st.get("presented") or []:
+        if os.path.basename(str(p)).startswith("%s - " % n) and os.path.isfile(str(p)):
+            return str(p)
+    return ""
 
 
 def refusal(run_dir):
@@ -2128,6 +2266,13 @@ def main(argv=None):
     fk.add_argument("--run-dir", required=True)
     fk.add_argument("--reply", required=True)
     fk.add_argument("--who", default="")
+    fk.add_argument("--variant", default="",
+                    help="the version the client kept (keep-one answers only)")
+    kp = sub.add_parser("keep", help="record the client's 'keep one of these' choice for a version")
+    kp.add_argument("--run-dir", required=True)
+    kp.add_argument("--variant", required=True)
+    kp.add_argument("--reply", required=True)
+    kp.add_argument("--who", default="")
     sd = sub.add_parser("send")
     sd.add_argument("--run-dir", required=True)
     sd.add_argument("--target", required=True)
@@ -2159,8 +2304,12 @@ def main(argv=None):
                 rec = record_fork_decision(a.run_dir, a.reply)
                 print("Fork recorded: " + rec["answer"])
         elif a.cmd == "fork":
-            rec = record_fork_decision(a.run_dir, a.reply, who=a.who or None)
+            rec = record_fork_decision(a.run_dir, a.reply, who=a.who or None,
+                                       variant=a.variant or None)
             print("Fork recorded: " + rec["answer"])
+        elif a.cmd == "keep":
+            d = record_client_kept(a.run_dir, a.variant, a.reply, who=a.who or None)
+            print("Kept version %s recorded" % d["variant"])
         elif a.cmd == "generate":
             # The CLI is the command the stage runbook hands agents, so it
             # supplies the REAL transports itself: measurements off the take's
