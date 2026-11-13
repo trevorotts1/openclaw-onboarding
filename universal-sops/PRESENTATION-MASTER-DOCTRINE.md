@@ -83,11 +83,15 @@ audiences for two different file sets:
 - Layer A **authors** the rich prompt files and the copy; Layer B **consumes** them
   verbatim. The retired claim that "the script composes the KIE prompt mechanically" is
   **false** for the current engine and is a banned residual pattern.
-- The single entry command (`presentation-canonical-entry.sh` → `run_signature_deck.py` →
-  `build_deck.py`) enforces Layer A **before** Layer B: `build_deck.py`'s preflight requires
-  the full Layer-A artifact set, and `run_signature_deck.py` refuses to attest a phase out
-  of order. "Finishing at a bare `.pptx`" is a forbidden shortcut — the deck is DELIVERED
-  only when the full bundle exists.
+- The entry door `presentation-canonical-entry.sh` runs seven gates and then starts the
+  presentation engine (`presentation_job.py`). The engine walks every phase of the pipeline
+  manifest in order. For a phase a person or an AI role must author, the engine writes a work
+  order to `working/work-orders/<phase>.json` and waits for the product; the role produces
+  exactly that product and nothing else. `run_signature_deck.py` is used only on a box where
+  the engine is not installed, and that is not a full build.
+- That door enforces Layer A **before** Layer B: `build_deck.py`'s preflight requires the full
+  Layer-A artifact set. "Finishing at a bare `.pptx`" is a forbidden shortcut — the deck is
+  DELIVERED only when the full bundle exists.
 - **The correct mental model for every builder:** *you are always running Layer A up to the
   render, and Layer B is the render+delivery the runner dispatches for you.* You never
   choose between them.
@@ -132,24 +136,24 @@ units.**
 
 ## 3. THE PROCESS IS SERVED ONE STEP AT A TIME (enforcement, not description)
 
-Doctrine is not held in 30 documents an agent must reconcile in its head. **The RUNNER is
-the agent's interface to what is next.** The orchestrating loop is:
+Doctrine is not held in 30 documents an agent must reconcile in its head. **The engine is
+the agent's interface to what is next.** The entry door `presentation-canonical-entry.sh`
+runs seven gates and then starts the presentation engine (`presentation_job.py`). The engine
+walks every phase of the pipeline manifest in order. For a phase a person or an AI role must
+author, the engine writes a work order to `working/work-orders/<phase>.json` and waits for
+the product; the role produces exactly that product and nothing else. `run_signature_deck.py`
+is used only on a box where the engine is not installed, and that is not a full build.
 
-```
-run_signature_deck.py --run-dir DIR --next        # emits ONLY the single next phase
-   → do EXACTLY that one phase (produce its produces_artifact per the cited sop_refs)
-   → run_signature_deck.py … --phase <ID>          # verifies the artifact + attests it
-   → run_signature_deck.py --run-dir DIR --next    # emits the following step
-```
+A work order names the phase, its owning role, the artifact contract (`produces_artifact` and
+the phase `verifier`), the phase budget and when it was issued. Because attestation is
+order-enforced (`check_phase_preconditions`, AF-PHASE-SKIPPED) and every governed phase has a
+substance verifier, the agent physically cannot run the process out of the order the engine
+serves it.
 
-`--next` reads `PIPELINE-MANIFEST.json` + the on-disk attestation ledger and returns one
-payload: the next required phase, its owning role, the artifact contract (path + the
-manifest's `required_brief_categories` + whether a substance verifier runs), the SOP refs,
-the gate codes, and the exact attest command. **It deliberately refuses to reveal any phase
-further ahead.** Because attestation is order-enforced (`check_phase_preconditions`,
-AF-PHASE-SKIPPED) and every governed phase has a substance verifier, the agent physically
-cannot run the process out of the order the runner serves it. `--plan` remains available
-for a read-only view of the whole plan.
+On a box where the engine is not installed, `run_signature_deck.py --next` remains available
+as the read-only single-step interface: it reads `PIPELINE-MANIFEST.json` and the on-disk
+attestation ledger and emits only the next required phase, and `--plan` gives a read-only view
+of the whole plan.
 
 ---
 
