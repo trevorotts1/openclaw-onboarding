@@ -83,6 +83,10 @@ on:
     paths:
       # Gate script itself
       - "scripts/ci/presentations-drift-gates.sh"
+      # GATE 10 target (PD-038) -- the manifest defer-trap checker. Listed by
+      # name: a PR touching ONLY the checker must fire the gate that grades it
+      # (the same path-filter blind spot measured for GATE 6 / GATE 7 / GATE 8).
+      - "scripts/ci/pd_manifest_order_check.py"
       # GATE 1 + GATE 3 + verify.sh targets -- the WHOLE engine scripts dir, not a
       # hand-kept file list. Both gates `cp -R "$SCRIPTS_DIR/."` into a temp tree and
       # import presentation_job.phases out of THAT COPY, so every file in the
