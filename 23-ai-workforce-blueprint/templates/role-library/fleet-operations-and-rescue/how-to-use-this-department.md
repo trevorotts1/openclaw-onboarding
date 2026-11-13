@@ -69,7 +69,7 @@ and it will pick the right one, or you can ask for a specialist by name.
 | --- | --- |
 | _(specialists are assigned based on your workload)_ | The Director of Fleet Operations And Rescue staffs this department as work comes in. |
 
-### What each specialist is for, with an example request
+### What each specialist is for
 
 The Director of Fleet Operations And Rescue staffs specialists in this department as your workload requires. Ask the department for what you need and the right specialist is assigned for you.
 

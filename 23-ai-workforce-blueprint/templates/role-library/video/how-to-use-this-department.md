@@ -85,109 +85,90 @@ and it will pick the right one, or you can ask for a specialist by name.
 | **Video Editor** | Premiere / DaVinci / Final Cut / CapCut. |
 | **Video SEO Specialist** | YouTube metadata, titles, descriptions, tags, end screens, chapters. |
 | **VSL Video Sales Letter Specialist** | Long-form sales videos that convert cold to customer. |
-| **Automated Video Production Specialist (OpenMontage Pipeline Operator)** | You own the end-to-end operation of the OpenMontage agentic video production system - the only role in the video. |
-| **Animation Specialist Phase2** | You take a locked motion brief and produce the moving asset that carries the client's brand onto a screen - work. |
+| **Automated Video Production Specialist (OpenMontage Pipeline Operator)** | You own the end-to-end operation of the OpenMontage agentic video production system - the only role in the video department that takes a written brief or pipeline manifest and autonomously produces a finished, rendered, export-ready video file without requiring human hands on a timeline. |
+| **Animation Specialist Phase2** | You take a locked motion brief and produce the moving asset that carries the client's brand onto a screen - work that serves the company mission () and lands in the workspace - a short-form hook, a logo sting, a 30-second explainer, a product feature loop, an animated end-card, a kinetic-type pull-quote. |
 | **CRM Specialist Phase2** | For the department of the company, working in the workspace toward the company mission (). |
 | **Long Form Video Specialist Phase2** | You own the entire pipeline of a long-form asset from the beat-spine brief to post-publish retention forensics. |
 | **Short Form Video Specialist Phase2** | For the department of the company, reporting to the . |
 | **VSL Specialist Phase2** | For the department of the company, reporting to the . |
 
-### What each specialist is for, with an example request
+### What each specialist is for
 
 **AI Video Generator Specialist**
 
 - *What it is for:* Pika, Runway, HeyGen, Synthesia, and KIE.ai-hosted Veo.
-- *Example request:* "Have the AI Video Generator Specialist take this on: Pika, Runway, HeyGen, Synthesia, and KIE.ai-hosted Veo."
 
 **Animation Specialist 2D 3D Whiteboard**
 
 - *What it is for:* Pure animation work - explainer videos, character animation, whiteboard animation.
-- *Example request:* "Have the Animation Specialist 2D 3D Whiteboard take this on: Pure animation work - explainer videos, character animation, whiteboard animation."
 
 **Captioning Subtitling Specialist**
 
 - *What it is for:* Burned-in captions for short-form (Reels/TikTok need captions for sound-off scrollers).
-- *Example request:* "Have the Captioning Subtitling Specialist take this on: Burned-in captions for short-form (Reels/TikTok need captions for sound-off scrollers)."
 
 **Color Grading Specialist**
 
 - *What it is for:* Color correction + creative color grading.
-- *Example request:* "Have the Color Grading Specialist take this on: Color correction + creative color grading."
 
 **CRM Specialist Video Version**
 
 - *What it is for:* Bridges Video and CRM.
-- *Example request:* "Have the CRM Specialist Video Version take this on: Bridges Video and CRM."
 
 **Live Streaming Specialist**
 
 - *What it is for:* Live broadcasts - YouTube Live, Twitch, LinkedIn Live, Facebook Live.
-- *Example request:* "Have the Live Streaming Specialist take this on: Live broadcasts - YouTube Live, Twitch, LinkedIn Live, Facebook Live."
 
 **Long Form Video Specialist YouTube Courses Sales Videos**
 
 - *What it is for:* Owns 5-60 minute video production.
-- *Example request:* "Have the Long Form Video Specialist YouTube Courses Sales Videos take this on: Owns 5-60 minute video production."
 
 **Motion Graphics Specialist**
 
 - *What it is for:* Animated graphics, lower thirds, animated logos, kinetic typography.
-- *Example request:* "Have the Motion Graphics Specialist take this on: Animated graphics, lower thirds, animated logos, kinetic typography."
 
 **Short Form Video Specialist Reels Shorts TikTok**
 
 - *What it is for:* 9:16 vertical video.
-- *Example request:* "Have the Short Form Video Specialist Reels Shorts TikTok take this on: 9:16 vertical video."
 
 **Storyboard Pre Production Specialist**
 
 - *What it is for:* Concept to storyboard.
-- *Example request:* "Have the Storyboard Pre Production Specialist take this on: Concept to storyboard."
 
 **Video Editor**
 
 - *What it is for:* Premiere / DaVinci / Final Cut / CapCut.
-- *Example request:* "Have the Video Editor take this on: Premiere / DaVinci / Final Cut / CapCut."
 
 **Video SEO Specialist**
 
 - *What it is for:* YouTube metadata, titles, descriptions, tags, end screens, chapters.
-- *Example request:* "Have the Video SEO Specialist take this on: YouTube metadata, titles, descriptions, tags, end screens, chapters."
 
 **VSL Video Sales Letter Specialist**
 
 - *What it is for:* Long-form sales videos that convert cold to customer.
-- *Example request:* "Have the VSL Video Sales Letter Specialist take this on: Long-form sales videos that convert cold to customer."
 
 **Automated Video Production Specialist (OpenMontage Pipeline Operator)**
 
-- *What it is for:* You own the end-to-end operation of the OpenMontage agentic video production system - the only role in the video.
-- *Example request:* "Have the Automated Video Production Specialist (OpenMontage Pipeline Operator) take this on: You own the end-to-end operation of the OpenMontage agentic video production system."
+- *What it is for:* You own the end-to-end operation of the OpenMontage agentic video production system - the only role in the video department that takes a written brief or pipeline manifest and autonomously produces a finished, rendered, export-ready video file without requiring human hands on a timeline.
 
 **Animation Specialist Phase2**
 
-- *What it is for:* You take a locked motion brief and produce the moving asset that carries the client's brand onto a screen - work.
-- *Example request:* "Have the Animation Specialist Phase2 take this on: You take a locked motion brief and produce the moving asset that carries the client's."
+- *What it is for:* You take a locked motion brief and produce the moving asset that carries the client's brand onto a screen - work that serves the company mission () and lands in the workspace - a short-form hook, a logo sting, a 30-second explainer, a product feature loop, an animated end-card, a kinetic-type pull-quote.
 
 **CRM Specialist Phase2**
 
 - *What it is for:* For the department of the company, working in the workspace toward the company mission ().
-- *Example request:* "Have the CRM Specialist Phase2 take this on: For the department of the company, working in the workspace toward the company mission ()."
 
 **Long Form Video Specialist Phase2**
 
 - *What it is for:* You own the entire pipeline of a long-form asset from the beat-spine brief to post-publish retention forensics.
-- *Example request:* "Have the Long Form Video Specialist Phase2 take this on: You own the entire pipeline of a long-form asset from the beat-spine brief."
 
 **Short Form Video Specialist Phase2**
 
 - *What it is for:* For the department of the company, reporting to the .
-- *Example request:* "Have the Short Form Video Specialist Phase2 take this on: For the department of the company, reporting to the ."
 
 **VSL Specialist Phase2**
 
 - *What it is for:* For the department of the company, reporting to the .
-- *Example request:* "Have the VSL Specialist Phase2 take this on: For the department of the company, reporting to the ."
 
 
 ---
