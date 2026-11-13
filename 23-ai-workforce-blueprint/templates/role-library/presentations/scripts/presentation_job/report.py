@@ -194,7 +194,11 @@ class Reporter:
     def to_requester(self, kind: str, message: str, *,
                      phase_id: Optional[str] = None,
                      reason: Optional[str] = None) -> None:
-        """kind in {ack, progress, blocked, done}. BLOCKED and DONE ignore quiet hours.
+        """kind in {ack, progress, blocked, done, waiting}. BLOCKED, DONE and
+        WAITING ignore quiet hours. WAITING is the PD-048b person-pause notice:
+        it is never throttled away, because a client who is the reason the run
+        is paused must actually be told (it counts under sent["waiting"], not
+        under the progress budget).
 
         PRES-052: every dispatch outcome is ALSO observed into the supervised
         relay ledger (presentation_job.relay.observe_dispatch) with the
@@ -290,7 +294,9 @@ class Reporter:
     def _throttle_decision(self, kind: str, message: str,
                            phase_id: Optional[str],
                            reason: Optional[str]) -> bool:
-        if kind in ("ack", "done"):
+        if kind in ("ack", "done", "waiting"):
+            # PD-048b: a WAITING notice is the message that explains the pause;
+            # the 10-minute progress budget must never swallow it.
             return True
         if kind == "blocked":
             if phase_id and reason:
