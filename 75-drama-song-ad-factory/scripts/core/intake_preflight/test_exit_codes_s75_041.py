@@ -5,8 +5,10 @@ Proves:
 
   * a mistyped factory command is an ERROR: ``factory.py card --no-such-option``
     exits 1, never 2 (which this CLI spells "waiting");
-  * every table in ``factory.CHILD_EXIT_CODES`` agrees with the exit map the
-    tool itself declares in its own source (so the table cannot drift);
+  * every table in ``factory.CHILD_EXIT_CODES`` agrees with the numbering the
+    tool itself declares in its own source -- the ``EXIT`` map where it has
+    one, the literal codes its ``main`` returns where it has none (so the
+    table cannot drift);
   * ``child_exit(tool, code)`` answers the outcome word by tool name --
     ``spend_ledger.py`` 5 is ``rejected``, ``video_router.py`` 3 is ``waiting``,
     ``delivery_checklist.py`` 5 is ``rejected`` -- and an unknown tool or code
@@ -29,7 +31,7 @@ SKILL = HERE.parent.parent.parent          # 75-drama-song-ad-factory/
 FACTORY = HERE / "factory.py"
 
 #: tool name -> the file that declares its own EXIT map (None: no map to
-#: compare; the number is read from the module's documented TICK_EXIT_STOP).
+#: compare; run_watch uses TICK_EXIT_STOP and ceiling_cli its returned codes).
 DECLARERS = {
     "factory.py": FACTORY,
     "spend_ledger.py": SKILL / "scripts/core/spend_ledger.py",
@@ -37,6 +39,8 @@ DECLARERS = {
     "video_router.py": SKILL / "scripts/core/video_router/video_router.py",
     "narrator_rule.py": (SKILL / "scripts/core/lip_sync/narrator_rule/"
                                 "narrator_rule.py"),
+    # ceiling_cli.py declares no EXIT map; its own codes are proven below from
+    # the literals its main returns.
     "ceiling_cli.py": None,
     "delivery_checklist.py": (SKILL / "scripts/core/delivery_checklist/"
                                      "delivery_checklist.py"),
@@ -90,6 +94,25 @@ def declared_int(path, name):
                 return ast.literal_eval(node.value)
             except (ValueError, SyntaxError):
                 return None
+    return None
+
+
+def returned_ints(path, func="main"):
+    """Every integer constant a function returns, nested expressions included.
+    ``None`` when the file has no such function."""
+    tree = ast.parse(path.read_text(encoding="utf-8"))
+    for node in ast.walk(tree):
+        if isinstance(node, ast.FunctionDef) and node.name == func:
+            out = set()
+            for sub in ast.walk(node):
+                if not isinstance(sub, ast.Return) or sub.value is None:
+                    continue
+                for c in ast.walk(sub.value):
+                    if (isinstance(c, ast.Constant)
+                            and isinstance(c.value, int)
+                            and not isinstance(c.value, bool)):
+                        out.add(c.value)
+            return out
     return None
 
 
@@ -168,6 +191,18 @@ def main():
           factory.CHILD_EXIT_CODES.get("run_watch.py", {}).get(10) == "stop",
           repr(factory.CHILD_EXIT_CODES.get("run_watch.py")))
 
+    # ceiling_cli.py declares no EXIT map; its own codes are the literals its
+    # main returns -- 4 there is STOP, never the ledger's "parked".
+    ceiling = SKILL / "scripts/core/lip_sync/lip_gate/ceiling_cli.py"
+    check("ceiling_cli.py source file exists", ceiling.is_file(), str(ceiling))
+    ceiling_codes = returned_ints(ceiling) if ceiling.is_file() else None
+    check("ceiling_cli.py main returns only 0/1/4", ceiling_codes == {0, 1, 4},
+          repr(ceiling_codes))
+    check("ceiling_cli row maps its numbers to its meanings",
+          factory.CHILD_EXIT_CODES.get("ceiling_cli.py")
+          == {0: "ok", 1: "error", 4: "stop"},
+          repr(factory.CHILD_EXIT_CODES.get("ceiling_cli.py")))
+
     # 3. child_exit names the outcome, never a raw number -------------------
     cases = (
         ("factory.py", 0, "ok"),
@@ -180,7 +215,7 @@ def main():
         ("video_router.py", 5, "rejected"),
         ("narrator_rule.py", 4, "parked"),
         ("narrator_rule.py", 5, "rejected"),
-        ("ceiling_cli.py", 4, "parked"),
+        ("ceiling_cli.py", 4, "stop"),
         ("delivery_checklist.py", 5, "rejected"),
         ("delivery_checklist.py", 1, "error"),
         ("run_watch.py", 10, "stop"),
