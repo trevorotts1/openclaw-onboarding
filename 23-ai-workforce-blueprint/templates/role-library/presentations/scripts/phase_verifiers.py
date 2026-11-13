@@ -4027,6 +4027,73 @@ def _verify_motion_phase(run_dir: Path) -> Tuple[bool, List[str]]:
 
 
 
+_DESIGN_BRIEF_PATTERN = "working/research/design-brief-*.md"
+_TYPE_LAYOUT_SYSTEM_REL = "working/typography/type_layout_system.md"
+_DESIGN_SYSTEM_REL = "working/typography/design_system.json"
+
+
+def _verify_design_phase(run_dir: Path) -> Tuple[bool, List[str]]:
+    """PF-DESIGN — the typography step proves TYPOGRAPHY work, not a brief.
+
+    PD-088. This entry used to be ``_verify_text_artifact(
+    "working/research/design-brief-*.md", 50)``: 50 characters of art direction
+    flipped the typography step to `done` with no declared type system and no
+    design system behind it, so a run reached render with no weights at all.
+    The step passes only when ALL THREE artifacts exist and are valid:
+
+      1. the design brief, >= 200 characters of text;
+      2. ``working/typography/type_layout_system.md``, whose declared tokens
+         pass ``build_deck.check_font_floor`` (the deterministic numeric floor);
+      3. ``working/typography/design_system.json``, an object carrying a
+         non-empty ``weight_ladder`` and a non-empty ``archetype_plan``.
+
+    Each miss returns its own reason. Run-dir-scoped.
+    """
+    reasons: List[str] = []
+
+    _ok_brief, brief_reasons = _check_text_nonempty(
+        run_dir, _DESIGN_BRIEF_PATTERN, 200)
+    reasons.extend(brief_reasons)
+
+    layout = run_dir / _TYPE_LAYOUT_SYSTEM_REL
+    if not layout.is_file():
+        reasons.append(
+            f"{_TYPE_LAYOUT_SYSTEM_REL}: file not found — the typography step "
+            f"must emit the deterministic type tokens (min_body_pt, "
+            f"type_scale_steps, min_contrast_ratio), not the research brief alone")
+    elif _bd is None:
+        # F03 — fail closed: an unmeasurable font floor is not a pass.
+        reasons.append("AF-FONT-FLOOR: build_deck.check_font_floor is unavailable, "
+                       "so the declared type system cannot be measured")
+    else:
+        try:
+            floor_reason = _bd.check_font_floor(run_dir)
+        except Exception as exc:  # noqa: BLE001 — a crashed measurer is a FAIL
+            reasons.append(f"AF-FONT-FLOOR: check raised: {exc!r}")
+        else:
+            if floor_reason:
+                reasons.append(floor_reason)
+
+    system = _read_json(run_dir / _DESIGN_SYSTEM_REL)
+    if not isinstance(system, dict):
+        reasons.append(f"{_DESIGN_SYSTEM_REL}: missing, unreadable or not a "
+                       f"JSON object")
+    else:
+        for _key in ("weight_ladder", "archetype_plan"):
+            if not system.get(_key):
+                reasons.append(f"{_DESIGN_SYSTEM_REL}: {_key} is empty — the "
+                               f"design system must declare it")
+
+    if reasons:
+        return False, reasons
+    return True, []
+
+
+# PD-061: the brief IS the phase artifact the manifest declares, so the parity
+# walk still classifies this entry (the check's two further inputs are the
+# type system and the design system PD-088 added).
+_verify_design_phase.artifact_pattern = _DESIGN_BRIEF_PATTERN
+
 PHASE_VERIFIERS: dict[str, Callable] = {
     # Phase -1    Content-to-Presentation Conversion
     "P-CONVERTER":        _verify_converter,
@@ -4056,7 +4123,9 @@ PHASE_VERIFIERS: dict[str, Callable] = {
     "P1Q-COPY-QC":        _verify_qc_report(
         "working/qc/copy_qc_report.json", "_chk_copy_qc", "AF-COPY-QC"),
     # Phase 4.5   Typography / Design Brief
-    "PF-DESIGN":          _verify_text_artifact("working/research/design-brief-*.md", 50),
+    # PD-088: the brief alone proved nothing — the step now also requires the
+    # deterministic type tokens and the design system (see _verify_design_phase).
+    "PF-DESIGN":          _verify_design_phase,
     # Phase 4.6   Typography QC
     # Trust Boundary Increment 1 (report-only) — see _shadow_qc_verifier above.
     "P-TYPO-QC":          _shadow_qc_verifier(
