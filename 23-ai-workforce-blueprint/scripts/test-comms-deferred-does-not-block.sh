@@ -147,6 +147,7 @@ state = {
     "sopLibraryStatus": "done",
     "departments": [{"slug": "operations", "status": "done"}],
     "buildId": "fixture-build",
+    "commsAutomationStatus": "done",
 }
 state["buildChecks"] = {
     name: {"status": "pass", "buildId": "fixture-build"} for name in wc.REQUIRED_CHECKS
