@@ -35,6 +35,7 @@ the caller must supply them from the reply's presentation, never from a default.
 Approval -> `next` hands out music; an edit is re-checked and re-sent.
 """
 import argparse
+import fcntl
 import json
 import os
 import re
@@ -2938,23 +2939,40 @@ def continuation_enqueue(run_dir, event, run_id=None, stages=None,
                                                 evidence=evidence)
         action["delivered"] = delivered
         action["completion_report"] = report
-    # durable append to the continuation queue
-    qpath = rd / "control" / _CONTINUATION_QUEUE
+    # Durable append to the continuation queue, under an exclusive lock so two
+    # events landing at once never lose each other's write (S75-023). A queue
+    # that exists but does not parse is preserved under a corrupt-<epoch> name,
+    # never silently replaced; a write that fails is loud and says so on the
+    # returned action instead of pretending the write happened.
+    qdir = rd / "control"
+    qpath = qdir / _CONTINUATION_QUEUE
     try:
-        qpath.parent.mkdir(parents=True, exist_ok=True)
-        queue = []
-        if qpath.is_file():
-            try:
-                with open(qpath, encoding="utf-8") as f:
-                    prev = json.load(f)
-                queue = prev if isinstance(prev, list) else []
-            except (OSError, ValueError):
-                queue = []
-        queue.append(action)
-        with open(qpath, "w", encoding="utf-8") as f:
-            json.dump(queue, f, indent=2)
-    except OSError:
-        pass
+        qdir.mkdir(parents=True, exist_ok=True)
+        with open(qdir / "continuation-queue.lock", "a") as lock_f:
+            fcntl.flock(lock_f.fileno(), fcntl.LOCK_EX)
+            queue = []
+            if qpath.is_file():
+                try:
+                    with open(qpath, encoding="utf-8") as f:
+                        prev = json.load(f)
+                    queue = prev if isinstance(prev, list) else []
+                except (OSError, ValueError) as exc:
+                    corrupt = qdir / ("continuation-queue.corrupt-%d.json"
+                                      % int(time.time()))
+                    os.replace(qpath, corrupt)
+                    _loud("fail", "CONTINUATION_QUEUE_CORRUPT",
+                          "%s: %s" % (corrupt, exc))
+                    queue = []
+            queue.append(action)
+            queue = queue[-500:]
+            tmp_path = qdir / ("." + _CONTINUATION_QUEUE + ".tmp")
+            with open(tmp_path, "w", encoding="utf-8") as f:
+                json.dump(queue, f, indent=2)
+            os.replace(tmp_path, qpath)
+        action["queue_persisted"] = True
+    except OSError as exc:
+        _loud("fail", "CONTINUATION_QUEUE_WRITE_FAILED", str(exc))
+        action["queue_persisted"] = False
     return action
 
 
