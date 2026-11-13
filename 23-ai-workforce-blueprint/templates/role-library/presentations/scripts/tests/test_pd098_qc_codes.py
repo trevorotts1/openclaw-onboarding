@@ -85,6 +85,24 @@ def test_no_code_has_two_definitions():
                 seen[code] = number
 
 
+def test_mirror_covers_every_role_autofail_code():
+    """Absence test: the mirror claims to be a verbatim Section 9 extract, so
+    every auto-fail code the role defines must also be defined in the mirror.
+
+    The registration test above is one-directional (it checks each file's own
+    rows), so it cannot catch a role row that is missing from the mirror. This
+    test closes that hole: a role autofail absent from the mirror fails here.
+    """
+    def codes(path):
+        return {code for _, cell in definition_rows(path) for code in cell_codes(cell)}
+
+    missing = sorted(codes(ROLE_FILE) - codes(MIRROR_FILE))
+    assert not missing, (
+        "%s: role auto-fail codes absent from the mirror extract: %s"
+        % (MIRROR_FILE.name, ", ".join(missing))
+    )
+
+
 def test_sop_97_points_at_the_shared_item_list():
     for path in (ROLE_FILE, MIRROR_FILE):
         text = path.read_text()
