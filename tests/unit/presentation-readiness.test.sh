@@ -376,6 +376,12 @@ write_complete_ledger "$E2_RUN"
 echo '[{"slide":1,"scene":"x","copy":["hi"]}]' > "$E2_RUN/slides.json"
 E2_SCRIPTS="$(mktemp -d)"
 for f in build_deck.py run_signature_deck.py; do echo "x" > "$E2_SCRIPTS/$f"; done
+# PD-917: GATE 1 reads its dependency LIST from the canon presentation-deps.json
+# in SCRIPTS_DIR (absent list = hard failure by design since PD-010). E2 exists to
+# prove OPTIONAL video classification, so give the fixture the canon: its required
+# rows are satisfied by this fixture, and ffmpeg/ffprobe stay off PATH.
+cp "$REPO_ROOT/23-ai-workforce-blueprint/templates/role-library/presentations/scripts/presentation-deps.json" \
+   "$E2_SCRIPTS/presentation-deps.json"
 E2_BIN="$TMPDIR_TEST/e2bin"; mkdir -p "$E2_BIN"
 for b in bash date mkdir dirname tee sed cat printf grep env python3 soffice pdftoppm tesseract tr head cut wc sh; do
     src="$(command -v "$b" 2>/dev/null || true)"; [ -n "$src" ] && ln -sf "$src" "$E2_BIN/$b"
