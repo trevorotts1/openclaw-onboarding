@@ -2043,6 +2043,52 @@ def cmd_answer(args) -> int:
         print(json.dumps({"error": f"Unknown question id: {qid}"}))
         return 1
 
+    # PD-004b step 2: an answer is tied to the client's own message, to the
+    # operator contract, or to the message in which the client accepted a
+    # default. PD-004b's proof reads these stamps at every completion door.
+    owner_msg_id = str(getattr(args, "owner_msg_id", None) or "").strip()
+    operator_contract = bool(getattr(args, "operator_contract", False))
+    accept_default = bool(getattr(args, "accept_default", False))
+    prov_stamp: Dict[str, Any] = {}
+    if operator_contract and owner_msg_id:
+        print(json.dumps({"error": "--operator-contract replaces "
+                                   "--owner-msg-id; give one, not both"}))
+        return 1
+    if operator_contract:
+        prov = _intake_provenance()
+        if prov is not None:
+            receipt_ok, digest = prov.contract_receipt_ok(run_dir), prov.receipt_sha256(run_dir)
+        else:
+            receipt = run_dir / "working" / "interview" / "operator_contract.json"
+            receipt_ok, digest = receipt.is_file(), None
+        if not receipt_ok or not digest:
+            print(json.dumps({"error": "--operator-contract needs "
+                                       "working/interview/operator_contract.json "
+                                       "carrying receipt_hmac"}))
+            return 1
+        prov_stamp = {"source": "operator-contract", "contract_sha256": digest}
+    elif owner_msg_id:
+        prov_stamp["owner_msg_id"] = owner_msg_id
+    if accept_default:
+        if not owner_msg_id:
+            print(json.dumps({"error": "--accept-default requires "
+                                       "--owner-msg-id naming the message in "
+                                       "which the client accepted it"}))
+            return 1
+        if qdef.get("default") is None and qdef.get("answer_field"):
+            # Plain rows carry the default on their answer_field's annotation.
+            qdef = dict(qdef)
+            qdef["default"] = _skip_default_value(
+                (qdef.get("subfields") or {}).get(qdef["answer_field"], {}))
+        if qdef.get("default") is None:
+            print(json.dumps({"error": f"{qid} has no documented default to "
+                                       f"accept"}))
+            return 1
+        text = str(qdef.get("default"))
+        prov_stamp.update({"defaulted": True,
+                           "default_accepted_msg_id": owner_msg_id,
+                           "owner_msg_id": owner_msg_id})
+
     if qdef.get("answer_field") and qdef.get("required") and not text.strip():
         print(json.dumps({"error": f"{qid} requires the client's answer"}))
         return 1
@@ -2092,7 +2138,8 @@ def cmd_answer(args) -> int:
                      if key in entries and prior_answers.get(key) not in (None, "")}
     entries[store_on] = {"value": text.strip(), "validated": True,
                          "source": "deck-intake-driver",
-                         "answered_at": datetime.now(timezone.utc).isoformat()}
+                         "answered_at": datetime.now(timezone.utc).isoformat(),
+                         **prov_stamp}
     # Also store by question id for lookup
     entries[qid] = entries[store_on]
     if qid == "pitch_included":
@@ -2121,7 +2168,11 @@ def cmd_answer(args) -> int:
         store_target = schema.get("storeTarget") or {}
         for k, v in derived.items():
             rec = {"value": v, "validated": True, "source": "deck-intake-driver",
-                   "answered_at": now_iso, "normalized": v, "answer": str(v)}
+                   "answered_at": now_iso, "normalized": v, "answer": str(v),
+                   **prov_stamp}
+            if prov_stamp.get("owner_msg_id"):
+                # One client message can carry several labelled values.
+                rec["from_same_message"] = True
             entries[k] = rec
             so = str((qdef["subfields"].get(k) or {}).get("storeOn") or "")
             if so in store_target and so != k:
@@ -2478,6 +2529,101 @@ def _emit_question(qdef: Dict[str, Any],
     return 0
 
 
+def _intake_provenance():
+    """The PD-004b proof module, or None on a box that does not carry it."""
+    try:
+        import intake_provenance  # noqa: PLC0415
+        return intake_provenance
+    except Exception:  # noqa: BLE001 -- absent module: the caller decides
+        return None
+
+
+def _provenance_mode() -> str:
+    prov = _intake_provenance()
+    if prov is not None:
+        return prov.provenance_mode()
+    raw = str(os.environ.get("PRESENTATION_INTAKE_PROVENANCE") or "").strip().lower()
+    return "enforce" if raw == "enforce" else "warn"
+
+
+def _provenance_requester(intake: Dict[str, Any]) -> str:
+    """The chat id this run's answers must come from (same rule as PD-015)."""
+    chat = str((intake.get("requester") or {}).get("chat_id")
+               or intake.get("requester_chat_id") or "").strip()
+    if not chat:
+        try:
+            chat = str(
+                _resolve_requester_from_env(intake).get("requester_chat_id") or ""
+            ).strip()
+        except Exception:  # noqa: BLE001
+            chat = ""
+    return chat
+
+
+def _question_ids() -> set:
+    ids = set()
+    try:
+        for q in get_questions(load_question_schema()):
+            ids.add(str(q.get("id") or ""))
+            ids.add(str(q.get("answer_field") or ""))
+    except Exception:  # noqa: BLE001 -- names are cosmetic, never the proof
+        pass
+    return {q for q in ids if q}
+
+
+def _provenance_gate(run_dir: Path, ledger: Dict[str, Any],
+                     question_ids=None, door: str = "intake") -> int:
+    """PD-004b proof at a completion door: 0 continue, 6 refuse.
+
+    A box without intake_provenance.py cannot prove anything -- under
+    `enforce` that is a refusal, never a silent pass.
+    """
+    prov = _intake_provenance()
+    if prov is None:
+        if _provenance_mode() != "enforce":
+            print("  WARN  [INTAKE-PROVENANCE] intake_provenance.py is missing; "
+                  "no answer can be proven (mode=warn, not blocking).",
+                  file=sys.stderr)
+            return 0
+        print(json.dumps({
+            "status": "unproven",
+            "door": door,
+            "mode": "enforce",
+            "unproven_questions": [],
+            "error": "intake_provenance.py is missing; nothing can be proven.",
+        }, indent=2))
+        return 6
+    return prov.apply(
+        run_dir, ledger,
+        requester_chat=_provenance_requester(read_intake_json(run_dir)),
+        question_ids=question_ids if question_ids is not None else _question_ids(),
+        door=door)
+
+
+def _provenance_block_problems(block: Any) -> List[str]:
+    """Every answer_provenance entry must name a provenance class.
+
+    A batch record (--sig-record) has to CARRY its provenance: an owner message
+    id, an operator-contract digest, or the message in which the client
+    accepted a default.
+    """
+    if not isinstance(block, dict) or not block:
+        return ["answer_provenance block is missing from the record"]
+    problems: List[str] = []
+    for qid in sorted(block):
+        entry = block[qid]
+        if not isinstance(entry, dict):
+            problems.append(f"{qid}: answer_provenance entry is not an object")
+            continue
+        if (str(entry.get("owner_msg_id") or "").strip()
+                or str(entry.get("contract_sha256") or "").strip()
+                or (entry.get("defaulted")
+                    and str(entry.get("default_accepted_msg_id") or "").strip())):
+            continue
+        problems.append(f"{qid}: answer_provenance entry carries no owner_msg_id")
+    return problems
+
+
 def cmd_complete(args) -> int:
     """Finalize the intake: write merged intake.json, run SP claim gate,
     mark ledger complete."""
@@ -2492,6 +2638,14 @@ def cmd_complete(args) -> int:
     # Merge all answers into intake.json
     entries = ledger.get("entries", {})
     intake = read_intake_json(run_dir)
+
+    # PD-004b: no answer reaches a "complete" intake without proof it came
+    # from a message the client sent. Runs BEFORE anything is written, so an
+    # `enforce` refusal leaves intake.json and the ledger exactly as they were.
+    prov_rc = _provenance_gate(run_dir, ledger, door="--complete")
+    if prov_rc:
+        return prov_rc
+
     for store_key, entry in entries.items():
         if isinstance(entry, dict):
             # A commercial-only field skipped because the owner selected an
@@ -3293,6 +3447,19 @@ def _sig_confirm(run_dir: Path, qid: str, confirmed: bool = False) -> int:
 def _sig_finalize(run_dir: Path, ledger: Dict[str, Any],
                   sp_entries: Dict[str, Any]) -> int:
     """Assemble the ONE atomic record, write sp_intake.json, run prove_sp_intake."""
+    # PD-004b: the same proof guards the signature door, before any record is
+    # written. Under `enforce` an unproven answer refuses with exit 6 and the
+    # ledger keeps its in-progress state.
+    _prov_view = dict(ledger)
+    _prov_view["sp_entries"] = sp_entries
+    _prov_rc = _provenance_gate(
+        run_dir, _prov_view,
+        question_ids={str(sq.get("id")) for sq in
+                      _load_sp_spec().get("questions", []) if sq.get("id")},
+        door="--signature")
+    if _prov_rc:
+        return _prov_rc
+
     mode_value = (sp_entries.get("sp_mode", {}).get("value", "IN-DEPTH")
                  if isinstance(sp_entries.get("sp_mode"), dict)
                  else sp_entries.get("sp_mode", "IN-DEPTH"))
@@ -3524,6 +3691,35 @@ def _sig_record(run_dir: Path, record_file: str) -> int:
         print(json.dumps({"error": "Record is missing signature_frame. "
                                    "A signature intake MUST select a frame."}))
         return 1
+
+    # PD-004b step 4: the batch door carries its own provenance. A record file
+    # that does not name, per answer, the client message (or the operator
+    # contract) that proves it cannot become an atomic record.
+    prov_problems = _provenance_block_problems(answers.get("answer_provenance"))
+    if prov_problems:
+        if _provenance_mode() == "enforce":
+            print(json.dumps({
+                "status": "unproven",
+                "door": "--sig-record",
+                "mode": "enforce",
+                "unproven_questions": [],
+                "problems": prov_problems,
+                "message": "The record file carries no usable answer_provenance "
+                           "block; nothing was written.",
+            }, indent=2))
+            return 6
+        print("  WARN  [INTAKE-PROVENANCE] the record carries no usable "
+              "answer_provenance block (mode=warn, not blocking):",
+              file=sys.stderr)
+        for line in prov_problems:
+            print(f"  WARN  [INTAKE-PROVENANCE] {line}", file=sys.stderr)
+
+    # The same proof the completion doors run, before ANY file is written.
+    prov_view = read_intake_ledger(run_dir)
+    prov_view["sp_entries"] = dict(answers)
+    prov_rc = _provenance_gate(run_dir, prov_view, door="--sig-record")
+    if prov_rc:
+        return prov_rc
 
     # Write the atomic record
     record = dict(answers)
@@ -4655,6 +4851,18 @@ def build_parser() -> argparse.ArgumentParser:
     std.add_argument("--complete", action="store_true",
                      help="finalize intake: merge fields, run SP claim gate, "
                           "mark ledger complete")
+    std.add_argument("--accept-default", dest="accept_default",
+                     action="store_true",
+                     help="with --answer: record the question's documented "
+                          "default as the value (defaulted=true). Requires "
+                          "--owner-msg-id naming the message in which the "
+                          "client accepted it")
+    std.add_argument("--operator-contract", dest="operator_contract",
+                     action="store_true",
+                     help="with --answer: the answer came over the signed "
+                          "operator-contract path. Replaces --owner-msg-id; "
+                          "needs working/interview/operator_contract.json "
+                          "carrying receipt_hmac")
 
     # Signature mode
     sig = p.add_argument_group("signature mode (8 Sacred Questions + frame)")
