@@ -4,7 +4,8 @@
 **Repo:** `trevorotts1/openclaw-onboarding`
 **Base head (before this unit):** `a2887c8977141451682da40485e0ef8e89854754` — proven equal to
 `refs/heads/pd/fl02-intake-driver` on origin before any edit.
-**This unit's commit:** `THIS-UNIT-COMMIT-PLACEHOLDER`
+**This unit's commit:** `f187aafa04e1dcbaabb3a8d4ade286d3c8bacc93` (the retarget commit; this
+report's SHA-recording commit is the branch head)
 **Merge-base with `origin/main`:** `1a476d2cbbc57fedbfa9dbcf73c91074bfd1a1dc`
 **Acceptance row:** A1 (from the ledger row's own `note`; there is no PD-936 brief or spec section — see §0)
 
