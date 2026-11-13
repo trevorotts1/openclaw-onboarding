@@ -1097,6 +1097,9 @@
             "id": "want_vsl_page",
             "equals": "no"
           },
+          "required": false,
+          "block_gate": false,
+          "ask_only_if_previously_wanted": true,
           "no_note": true,
           "question": {
             "prompt": "In your own words, why are you declining the video sales letter page?",
@@ -1109,6 +1112,9 @@
             "id": "want_email_sequences",
             "equals": "no"
           },
+          "required": false,
+          "block_gate": false,
+          "ask_only_if_previously_wanted": true,
           "no_note": true,
           "question": {
             "prompt": "In your own words, why are you declining email follow-up sequences?",
@@ -1121,6 +1127,9 @@
             "id": "want_motion_graphics",
             "equals": "no"
           },
+          "required": false,
+          "block_gate": false,
+          "ask_only_if_previously_wanted": true,
           "no_note": true,
           "question": {
             "prompt": "In your own words, why are you declining motion graphics?",
@@ -1580,16 +1589,17 @@
       "section": "deck-intake",
       "order": 22.06,
       "prompt": "Understood -- no VSL page. In your own words, why don't you want it? (I record this verbatim so nobody later has to guess.)",
-      "help": "Asked ONLY when want_vsl_page is 'no'. The answer is stored word-for-word as the waiver's client_request_quote. There is no default and no assistant-authored fallback: an empty answer must be re-asked.",
+      "help": "Asked ONLY when the client's preference record shows an earlier YES for want_vsl_page. VSL page defaults to 'no', so accepting that default is not a decline and owes no reason. When it is asked, the answer is stored word-for-word; it is optional and never blocks the gate.",
       "kind": "text",
       "storeOn": "VSL_PAGE_DECLINED_REASON",
-      "required": true,
-      "block_gate": true,
+      "required": false,
+      "block_gate": false,
+      "ask_only_if_previously_wanted": true,
       "conditional_on": {
         "id": "want_vsl_page",
         "equals": "no"
       },
-      "resolverHint": "Auto-skipped whenever want_vsl_page is 'yes'. When asked, it BLOCKS --complete: a declined gate with no recorded reason is exactly the self-authored waiver this mechanism exists to prevent.",
+      "resolverHint": "Skipped whenever want_vsl_page is 'yes' AND whenever the preference record carries no earlier YES -- declining an opt-in that defaults to no is not a waiver. Optional, never blocking.",
       "alias": true
     },
     {
@@ -1597,16 +1607,17 @@
       "section": "deck-intake",
       "order": 22.07,
       "prompt": "Understood -- no email sequences. In your own words, why don't you want them? (I record this verbatim so nobody later has to guess.)",
-      "help": "Asked ONLY when want_email_sequences is 'no'. The answer is stored word-for-word as the waiver's client_request_quote. There is no default and no assistant-authored fallback: an empty answer must be re-asked.",
+      "help": "Asked ONLY when the client's preference record shows an earlier YES for want_email_sequences. Email sequences default to 'no', so accepting that default is not a decline and owes no reason. When it is asked, the answer is stored word-for-word; it is optional and never blocks the gate.",
       "kind": "text",
       "storeOn": "EMAIL_SEQUENCES_DECLINED_REASON",
-      "required": true,
-      "block_gate": true,
+      "required": false,
+      "block_gate": false,
+      "ask_only_if_previously_wanted": true,
       "conditional_on": {
         "id": "want_email_sequences",
         "equals": "no"
       },
-      "resolverHint": "Auto-skipped whenever want_email_sequences is 'yes'. When asked, it BLOCKS --complete: a declined gate with no recorded reason is exactly the self-authored waiver this mechanism exists to prevent.",
+      "resolverHint": "Skipped whenever want_email_sequences is 'yes' AND whenever the preference record carries no earlier YES. Optional, never blocking.",
       "alias": true
     },
     {
@@ -1614,21 +1625,22 @@
       "section": "deck-intake",
       "order": 22.08,
       "prompt": "Understood -- no motion graphics. In your own words, why don't you want them? (I record this verbatim so nobody later has to guess.)",
-      "help": "Asked ONLY when want_motion_graphics is 'no'. The answer is stored word-for-word as the waiver's client_request_quote. There is no default and no assistant-authored fallback: an empty answer must be re-asked.",
+      "help": "Asked ONLY when the client's preference record shows an earlier YES for want_motion_graphics. Motion graphics default to 'no', so accepting that default is not a decline and owes no reason. When it is asked, the answer is stored word-for-word; it is optional and never blocks the gate.",
       "kind": "text",
       "storeOn": "MOTION_GRAPHICS_DECLINED_REASON",
-      "required": true,
-      "block_gate": true,
+      "required": false,
+      "block_gate": false,
+      "ask_only_if_previously_wanted": true,
       "conditional_on": {
         "id": "want_motion_graphics",
         "equals": "no"
       },
-      "resolverHint": "Auto-skipped whenever want_motion_graphics is 'yes'. When asked, it BLOCKS --complete: a declined gate with no recorded reason is exactly the self-authored waiver this mechanism exists to prevent.",
+      "resolverHint": "Skipped whenever want_motion_graphics is 'yes' AND whenever the preference record carries no earlier YES. Optional, never blocking.",
       "alias": true
     }
   ],
   "waiver_field_mapping": {
-    "_comment": "U026 — the CONSENT record. Each entry maps a gate key (see the engine's Gates class) to the intake question that captures the client's own decision, plus the conditional follow-up that captures their VERBATIM words when they decline. A gate may be waived ONLY by a record carrying a non-empty client_request_quote. Silence is NOT consent: every toggle here is required+block_gate, so --complete cannot pass while one is unanswered. prompt_floor and qc are deliberately ABSENT — a client cannot consent to a thinner prompt or a lower quality bar; those are craft floors, not options.",
+    "_comment": "U026 — the CONSENT record. Each entry maps a gate key (see the engine's Gates class) to the intake question that captures the client's own decision, plus the conditional follow-up that captures their VERBATIM words when they decline. A gate may be waived ONLY by a record carrying a non-empty client_request_quote. Silence is NOT consent: every toggle here is required+block_gate, so --complete cannot pass while one is unanswered. The three opt-ins that DEFAULT to no (vsl_page, email_sequences, motion_graphics) are the exception: declining them is not a waiver, so their entries carry waiver_required false and their reason questions are optional. prompt_floor and qc are deliberately ABSENT — a client cannot consent to a thinner prompt or a lower quality bar; those are craft floors, not options.",
     "teleprompter": {
       "toggle": "want_teleprompter",
       "reason": "teleprompter_declined_reason"
@@ -1651,15 +1663,21 @@
     },
     "vsl_page": {
       "toggle": "want_vsl_page",
-      "reason": "vsl_page_declined_reason"
+      "reason": "vsl_page_declined_reason",
+      "waiver_required": false,
+      "waiver_comment": "Declining an opt-in that defaults to no is not a waiver; no reason is required."
     },
     "email_sequences": {
       "toggle": "want_email_sequences",
-      "reason": "email_sequences_declined_reason"
+      "reason": "email_sequences_declined_reason",
+      "waiver_required": false,
+      "waiver_comment": "Declining an opt-in that defaults to no is not a waiver; no reason is required."
     },
     "motion_graphics": {
       "toggle": "want_motion_graphics",
-      "reason": "motion_graphics_declined_reason"
+      "reason": "motion_graphics_declined_reason",
+      "waiver_required": false,
+      "waiver_comment": "Declining an opt-in that defaults to no is not a waiver; no reason is required."
     }
   },
   "intake_v2": {
