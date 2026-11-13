@@ -178,6 +178,17 @@ MUSIC_UNDER_SPEECH_MIN = 0.3     # music level under speech / music level under 
 NEAR_SILENT_DBFS = -50.0         # RMS of the final 2 s below this = near silent
 SPEND_CAP_CENTS = 1000           # per author (Trevor 2026-10-08)
 GEN_COST_CENTS = 6
+# S75-001: THE DECLARED PER-RUN SPEND MAXIMUM for one ``run_takes`` call.
+# One paid song generation is the whole money a single call may buy.  Its
+# price is the line above, and the real price behind it is U-S03's estimate
+# (``song_cost_cents()`` -> ``catalog_calculator.card_render.price_envelope``'s
+# music line); this module declares no price of its own.  The old signature
+# default, ``SPEND_CAP_CENTS`` = 1000 cents, bought up to 166 paid generations
+# for any caller that left it alone.  ``run_takes`` now refuses ANY cap above
+# this maximum before the first generation, so that budget can never be
+# inherited again: a caller that needs a larger run must raise this number
+# here, with review.
+MAX_RUN_CAP_CENTS = GEN_COST_CENTS
 GATES += ("song_contract",)      # FU-RNBFLOW-SONG: the style's own contract on every take
 # WWFIXGAPS U1 (defect 2): the two D1 audio gates were shipped but NEVER
 # CALLED by the pipeline, so "UNMEASURED blocks a take PASS" was only true of
@@ -1762,6 +1773,18 @@ def run_takes(request, plan, generate, measure, save, script_words, hook_text,
                     "nothing was sent to the music generator")
         return generate(take_request)
 
+    # S75-001: the per-run spend maximum is enforced on the callee's OWN
+    # argument, before the loop can submit one paid generation.  The signature
+    # default (SPEND_CAP_CENTS = 1000) is deliberately larger than the maximum,
+    # so a caller that never passed a cap is REFUSED instead of trusted to buy
+    # up to 166 generations.  The one production caller (song_choices
+    # .one_variant) passes one generation, which stays inside the maximum.
+    if cap_cents > MAX_RUN_CAP_CENTS:
+        raise DispatchError(
+            "SPEND_CAP_ABOVE_MAX: cap_cents %r exceeds this module's declared "
+            "per-run maximum of %r cents (one paid song generation); nothing "
+            "was sent to the music generator"
+            % (cap_cents, MAX_RUN_CAP_CENTS))
     spent, receipts = 0, []
     while spent + cost_cents <= cap_cents:
         spent += cost_cents
