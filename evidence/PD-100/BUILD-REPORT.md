@@ -262,7 +262,19 @@ $ git ls-remote --heads origin refs/heads/pd/fl24-role-procedures-c
 976856b38123df9dcfac196af086d75ef6083c2a	refs/heads/pd/fl24-role-procedures-c
 ```
 
-A commit cannot name itself, so the head above is the **build** commit; the report commit is its child and the live head after this file lands is recorded in the follow-up commit that carries the re-measured line (PD-101 and PD-108 took the same step on this branch).
+A commit cannot name itself, so the head above is the **build** commit. Measured again after pushing the report commit:
+
+```
+$ git push origin HEAD:refs/heads/pd/fl24-role-procedures-c
+   976856b38..4891897a0  HEAD -> pd/fl24-role-procedures-c
+
+$ git ls-remote --heads origin refs/heads/pd/fl24-role-procedures-c
+4891897a0b5673fd9d6b6b2018e6c5b4feecd5d0	refs/heads/pd/fl24-role-procedures-c
+```
+
+`4891897a0` is the report commit (parent `976856b38`). This paragraph's own commit is its child and cannot appear in its own bytes — PD-101 and PD-108 took the same step on this branch. The live head is re-measured in the hand-back, not claimed here.
+
+The lane clone `/Volumes/mac mini m4/swarm-contract/pd-fix/worktrees/onboarding/FL24` was left clean (`git status --porcelain` empty after the push).
 
 ---
 
