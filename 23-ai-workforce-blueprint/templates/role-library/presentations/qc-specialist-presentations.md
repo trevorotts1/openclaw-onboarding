@@ -364,7 +364,7 @@ These auto-fails implement the gate-overhaul doctrine: every rule lands in BOTH 
 | AF-GRAD | Gradient fill, radial glow, or bloom on any type region | SOP-IMG-05-PIL-LOGO-COMPOSITE.md (gradient ban); slide-image-creator-sops.md SOP 9.10 Part A |
 | AF-TYPE | Hero type below pt-size floor, type not dominating its zone, generic or default font, no weight hierarchy | slide-image-creator-sops.md SOP 9.6 Part A |
 | AF-TELEGRAPH | First-person presenter voice, ledger language, telegraph eyebrows, or "who agrees" framing on the slide face (verbatim match to brief is NOT a defense) | SOP-SLIDE-02-AUDIENCE-FACING-ONLY.md; slide-image-creator-sops.md SOP 9.10 Part F note |
-| AF-PRICE-FACE | Unauthorized per-item dollar values or multiple prices on the offer face | slide-image-creator-sops.md SOP 9.10 Part F |
+| AF-PRICE-FACE | Unauthorized dollar figures on a slide face outside the price-belt, value-stack, tally, re-pitch, value-gap, callback and component-card classes the rule authorizes | slide-image-creator-sops.md SOP 9.10 Part F |
 | AF-VALIDATOR | Validator slide carries zero external refs or only self-referential framing | slide-image-creator-sops.md SOP 9.10 Part G |
 | AF-WALL | Empty tile, placeholder, or future-pace framing on the Wall of Wins | SOP-PITCH-04-WALL-OF-WINS.md |
 | AF-OPACITY | Pure flat-color slide where the SOP requires an atmospheric background layer | slide-image-creator-sops.md SOP 9.10 Part B |
