@@ -555,8 +555,8 @@
         "slide-submitter",
         "typography-architect"
       ],
-      "content_sha": "sha256:9c0fd30c619f12e9ccc7f28acd067ad54515231d67d99f4c4f6f76540c89da07",
-      "content_hashed_at": "2026-11-14T16:04:06.514483+00:00"
+      "content_sha": "sha256:14030e99adf553f93720361355353084a418308a8165dd8aead93b3bfcc07e3a",
+      "content_hashed_at": "2026-11-13T16:12:58.838141+00:00"
     },
     "product-production": {
       "count": 4,
@@ -5479,10 +5479,10 @@
       "path": "templates/role-library/presentations/brainstorming-buddy-presentations.md",
       "capability_class": "CONVERSATIONAL",
       "vision_flag": false,
-      "content_sha": "sha256:7ea00a26a4b561274884497dcba6ea96185b7eeab789f8ff5f489f3f757756bb",
-      "render_sha": "sha256:7ea00a26a4b561274884497dcba6ea96185b7eeab789f8ff5f489f3f757756bb",
-      "content_version": "1.0.13",
-      "content_hashed_at": "2026-11-14T16:04:06.514483+00:00"
+      "content_sha": "sha256:9462eb580f4ecf82dec8b088a12f2c552f9910c22c1133bad385f2f298130fef",
+      "render_sha": "sha256:UNAVAILABLE",
+      "content_version": "1.0.14",
+      "content_hashed_at": "2026-11-13T16:12:58.838141+00:00"
     },
     {
       "slug": "brand-steward",
@@ -10426,9 +10426,9 @@
       "slug": "brainstorming-buddy-presentations-sops",
       "dept": "presentations",
       "path": "templates/role-library/presentations/sops/brainstorming-buddy-presentations-sops.md",
-      "content_sha": "sha256:80d5cfeb1cba298b92ef1f13136873c8bb1ebe4f1b86ed25ad600f4213457ebb",
-      "content_version": "1.0.4",
-      "content_hashed_at": "2026-11-14T16:04:06.514483+00:00"
+      "content_sha": "sha256:ceec0b8dc20763d753f83fe63dc39ebe7249e9486a067fe9a444aa4abf41456b",
+      "content_version": "1.0.5",
+      "content_hashed_at": "2026-11-13T16:12:58.838141+00:00"
     },
     {
       "slug": "brand-steward-sops",
