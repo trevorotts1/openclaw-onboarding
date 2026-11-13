@@ -76,16 +76,21 @@ it advances. Standard library only; no credential value is ever printed.
       list, `cta_unavailable_cannot_pass: true`,
       `aggregate_may_not_erase_critical` (identity, lyrics, offer, claim,
       product_label, cta), `threshold_changes_require_documented_decision: true`.
-- [ ] The four implemented CLIs exist and `--help` works:
-      `intake_preflight/factory.py` (intake|preflight), `spend_ledger.py`
+- [ ] The implemented CLIs exist and `--help` works:
+      `intake_preflight/factory.py` (eleven subcommands: intake, preflight,
+      next, event, storyboard, music, script-reply, final-recap,
+      production-go, owner, card), `spend_ledger.py`
       (init_run/plan/reserve/mark_unknown/cancel/mark_submitted/
       mark_terminal/reconcile/summary/can_spend/park_run/unpark),
       `qc_gate.py` (evaluate), `job_recovery.py` (ingest_event/
       record_result/recover).
 - [ ] `state_store.py`, `timing_guard.py`, `artifact_graph.py`, `cc_sync.py`
       are import libraries (no CLI) - documented as such in EXAMPLES.md.
-- [ ] `delivery_verify.py` / `release_check.py` are NOT present and are
-      never claimed anywhere in the docs.
+- [ ] `delivery_verify.py` / `release_check.py` are NOT present in the
+      skill and are not part of any run; SKILL.md says so. The
+      `DEPENDENCY-MANIFEST.md` "Release verifier" row still names
+      `release_check.py` and is stale (reported for removal by U-F05;
+      that file is outside this unit's edit list).
 - [ ] `skill-version.txt` matches `SKILL.md` frontmatter `version`.
 - [ ] No real credential value appears anywhere in the skill files.
 
@@ -353,7 +358,7 @@ the lyrics, captions and end card (`WEBSITE_NOT_VERBATIM`).
 
 ## H10 voice fits the character on screen (Part H)
 
-Run `qc_voice_match/line_voice_fit.py` (`enforce`) before assembly. Each line is measured inside the vocal stem (median pitch of its voiced frames) against the declared voice band of the character whose face is shown. Distance outside the band, as a percent of the nearest edge: up to 5 accept; over 5 up to 10 accept with a flag in the receipt; over 10 is `VOICE_FACE_MISMATCH` and that take is regenerated (never keep the closest). The receipt carries `median_hz`, `band_hz`, `deviation_pct` and every attempt per line. A line still failing after the regeneration rounds rejects the run.
+Run `qc_voice_match/line_voice_fit.py` (`enforce`) before assembly. Each line is measured inside the vocal stem (median pitch of its voiced frames) against the declared voice band of the character whose face is shown. Distance outside the band, as a percent of the nearest edge: up to 5 accept; over 5 up to 10 accept with a flag in the receipt; over 10 is `VOICE_FACE_MISMATCH`. The checker never regenerates the take: it is kept and recorded, the failure is presented to the client under the one fork question (`song_choices.FAILURE_FORK`), and only the client's recorded answer authorises a new paid round. The receipt carries `median_hz`, `band_hz`, `deviation_pct` and every attempt per line. A line still failing after the client-authorised rounds rejects the run.
 
 ## Lyric sheet, request limits, captions and books (U12; what main checks)
 
@@ -364,7 +369,7 @@ TODO (U3, U9): refresh the band bullet and the caption bullet below when FU-U3 (
 - **Captions early.** `LYRIC_MISSPELLED` before any Suno payload; `ONSCREEN_TEXT_NOT_CHECKED` before any keyframe or video; the Script gate requires a `spelling_grammar` record. Captions burn the display spelling ("Girl, I got you"), not the performance spelling ("you-u").
 - **Captions at the end: UNMEASURED on main.** Reading the burned text back off the frames (FU-U9) is not built. Report delivery caption text as checked against the approved sheet only.
 - **Book campaigns.** The shots stage requires a PASS `book_orientation` record (`BOOK_MIRRORED`, `BOOK_COVER_NOT_FRONT`, `BOOK_SPINE_WRONG_SIDE`, `BOOK_WRONG_DIRECTION`, `BOOK_NO_MOTION`; UNAVAILABLE never advances; the checker must pass its calibration pair). `BOOK_SHOT_NOT_CONTRACTED` for a book video job with no start frame from the cover file. FU-U11 (open branch) adds `BOOK_BLANK_PAGES` and `BOOK_PLAN_NOT_APPROVED`; refresh this line when it lands.
-- **Per-style spoken bands.** FU-U3 (open pull request) judges R&B Flow against its planned share and counts music-only time as neither sung nor spoken; Soul Ballad and Soul Rise stay at 22.5 / 77.5. The 5/10 band and the 6 s sung stretch do not change.
+- **Per-style spoken bands.** FU-U3 (landed in 2.7.31 via PR #120) judges R&B Flow against its planned share and counts music-only time as neither sung nor spoken; Soul Ballad and Soul Rise stay at 22.5 / 77.5. The 5/10 band and the 6 s sung stretch do not change.
 
 ## No blur fill (DEL-14)
 
