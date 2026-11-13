@@ -475,16 +475,77 @@ def test_breaking_entrypoint_routing_turns_reachability_red():
         target = os.path.join(root, A.ENTRYPOINT_REL)
         with open(target, encoding="utf-8") as fh:
             text = fh.read()
-        text = text.replace(
-            "from character_library import sync_protocol  # noqa: E402\n", "")
+        # The carrier import sits inside a guarded try block, so the whole block
+        # goes. Dropping only the import line would leave a bodyless try and
+        # turn this routing mutation into an unrelated SyntaxError.
+        block = (
+            "try:\n"
+            "    from character_library import sync_protocol  # noqa: E402\n"
+            "except (Exception, SystemExit) as exc:  # noqa: BLE001 - the refusal IS the evidence\n"
+            '    _carrier_failed("character_library.sync_protocol", exc)\n')
+        assert block in text, "entrypoint guard shape drifted; update this mutation"
         with open(target, "w", encoding="utf-8") as fh:
-            fh.write(text)
+            fh.write(text.replace(block, ""))
         rc, payload = _run_check(root)
         assert rc == 1
         assert _clauses(payload)["entrypoint_reachability"] is False
         detail = _clause(payload, "entrypoint_reachability")["detail"]
         assert "character_library.sync_protocol" in detail["unreachable"] or any(
             "character_library.sync_protocol" in p for p in detail["problems"])
+
+
+def test_unparseable_entrypoint_still_emits_a_receipt():
+    """A surface that cannot be parsed fails closed: a receipt, never a traceback."""
+    with _source_copy("unparseable") as root:
+        with open(os.path.join(root, A.ENTRYPOINT_REL), "w",
+                  encoding="utf-8") as fh:
+            fh.write("try:\nexcept Exception:\n    pass\n")
+        proc = subprocess.run([sys.executable, "package/999_adapter.py", "check"],
+                              cwd=root, capture_output=True, text=True,
+                              timeout=900)
+        assert proc.returncode == 1, proc.returncode
+        assert proc.stderr == "", proc.stderr[-400:]
+        payload = json.loads(proc.stdout)
+        assert payload["ok"] is False
+        assert _clauses(payload)["entrypoint_reachability"] is False
+
+
+def test_a_carrier_that_raises_a_non_import_error_still_emits_a_receipt():
+    """Gutted means any exception type, not only ImportError and SyntaxError.
+
+    The adapter imports carriers into its own process, so a type outside the
+    guessed list used to kill check() before it printed anything: exit 1, a
+    traceback on stderr, and no receipt at all.
+    """
+    with _source_copy("runtime-gut") as root:
+        with open(os.path.join(root, "scripts/core/story_first_contracts.py"),
+                  "w", encoding="utf-8") as fh:
+            fh.write("raise RuntimeError('gutted by negative control')\n")
+        proc = subprocess.run([sys.executable, "package/999_adapter.py",
+                               "check"], cwd=root, capture_output=True,
+                              text=True, timeout=900)
+        assert proc.returncode == 1, proc.returncode
+        assert proc.stderr == "", proc.stderr[-400:]
+        payload = json.loads(proc.stdout)
+        assert payload["ok"] is False
+        assert _clauses(payload)["same_product_requirements"] is False
+
+
+def test_a_carrier_that_exits_at_import_is_named_in_the_receipt():
+    """A carrier can leave by SystemExit, which is not an Exception."""
+    with _source_copy("exit-gut") as root:
+        with open(os.path.join(root, "scripts/core/story_first_contracts.py"),
+                  "w", encoding="utf-8") as fh:
+            fh.write("import sys\nsys.exit(7)\n")
+        proc = subprocess.run([sys.executable, A.ENTRYPOINT_REL, "carriers"],
+                              cwd=root, capture_output=True, text=True,
+                              timeout=180)
+        assert proc.returncode == 1, proc.returncode
+        assert proc.stderr == "", proc.stderr
+        payload = json.loads(proc.stdout)
+        assert payload["ok"] is False
+        failed = [row["module"] for row in payload["failed_carriers"]]
+        assert "story_first_contracts" in failed, failed
 
 
 def test_gutting_any_declared_carrier_turns_the_check_red():
@@ -512,6 +573,43 @@ def test_gutting_the_entrypoint_turns_reachability_red():
         assert rc == 1
         assert _clauses(payload)["entrypoint_reachability"] is False
         assert _clauses(payload)["no_missing_advertised_steps"] is False
+
+
+def test_gutted_carrier_makes_the_entrypoint_receipt_fail_closed():
+    """A carrier that advertises a surface but raises must not crash the run.
+
+    The entrypoint itself fails closed: exit 1, a JSON receipt naming the
+    carrier, and nothing on stderr.
+    """
+    carriers = (("scripts/core/music_styles/catalog.py",
+                 "music_styles.catalog"),
+                ("scripts/core/story_first_contracts.py",
+                 "story_first_contracts"))
+    for rel, module in carriers:
+        with _source_copy("gut-receipt") as root:
+            with open(os.path.join(root, rel), "w", encoding="utf-8") as fh:
+                fh.write("raise ImportError('gutted by negative control')\n")
+            proc = subprocess.run(
+                [sys.executable, A.ENTRYPOINT_REL, "carriers"],
+                cwd=root, capture_output=True, text=True, timeout=180)
+            assert proc.returncode == 1, "%s: rc %d" % (rel, proc.returncode)
+            assert proc.stderr == "", "%s: stderr %r" % (rel, proc.stderr)
+            payload = json.loads(proc.stdout)
+            assert payload["ok"] is False, rel
+            failed = [row["module"] for row in payload["failed_carriers"]]
+            assert module in failed, "%s: receipt named %r" % (rel, failed)
+            assert any("ImportError" in row["error"]
+                       for row in payload["failed_carriers"]), rel
+
+
+def test_entrypoint_receipt_is_green_when_every_carrier_loads():
+    """Control for the receipt: an intact tree loads every declared carrier."""
+    proc = subprocess.run([sys.executable, A.ENTRYPOINT_REL, "carriers"],
+                          cwd=SKILL_ROOT, capture_output=True, text=True,
+                          timeout=180)
+    assert proc.returncode == 0, proc.stderr
+    payload = json.loads(proc.stdout)
+    assert sorted(payload["loaded"]) == sorted(payload["routed"])
 
 
 # ---------------------------------------------------------------------------
