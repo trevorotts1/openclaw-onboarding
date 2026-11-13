@@ -15,7 +15,7 @@ DRIVER = SCRIPTS / 'deck-intake-driver.py'
 RESOLVER = SCRIPTS / 'presentation_job' / 'resolve_intake.py'
 sys.path.insert(0, str(SCRIPTS))
 from presentation_job import model_router, resource_profile, launcher  # noqa: E402
-CC_ROOT = pathlib.Path('/private/tmp/pd025-cc-current')
+CC_ROOT = pathlib.Path(os.environ.get('PD_CC_ROOT', '/private/tmp/pd025-cc-current'))
 CC_TSX = CC_ROOT / 'node_modules/.bin/tsx'
 
 spec = importlib.util.spec_from_file_location('operator_contract_bridge', BRIDGE)
