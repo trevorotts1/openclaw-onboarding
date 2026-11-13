@@ -7863,9 +7863,9 @@
       "path": "templates/role-library/rescue-rangers/director-of-rescue-rangers.md",
       "capability_class": "HEAVY-REASONING",
       "vision_flag": false,
-      "content_sha": "sha256:b7b28e6616b31c4c06ca06ab840cddfc01c1877312243e0306256b8415f19794",
+      "content_sha": "sha256:6f7f1596a0fb3135ff9fc1710199c56e7f4732d3a1b92dda929032ad23804cbd",
       "render_sha": "sha256:UNAVAILABLE",
-      "content_version": "1.0.6",
+      "content_version": "1.0.7",
       "content_hashed_at": "2026-11-09T23:25:05.532974+00:00"
     },
     {
@@ -10714,8 +10714,8 @@
       "slug": "SOP-RR-01-triage-and-dispatch",
       "dept": "rescue-rangers",
       "path": "templates/role-library/rescue-rangers/sops/SOP-RR-01-triage-and-dispatch.md",
-      "content_sha": "sha256:a67e8d21bfa15bed3bbbd0eedca691fcb0b5954aea92b93bd06bc5a0d4468550",
-      "content_version": "1.0.3",
+      "content_sha": "sha256:9f2b752024f5b6fdd3672d57c0479cdc1c295a64b3d7f82ff172e25518b2c89e",
+      "content_version": "1.0.4",
       "content_hashed_at": "2026-11-09T23:25:05.532974+00:00"
     },
     {
