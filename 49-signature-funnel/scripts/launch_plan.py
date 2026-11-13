@@ -404,6 +404,7 @@ def _package_record(offer: Dict[str, Any], index: int) -> Dict[str, Any]:
         "billing_schedule": list(schedule) if isinstance(schedule, list) else [],
         "billing_schedule_raw": schedule,
         "terms_source": price.get("terms_source"),
+        "recurring_interval": price.get("recurring_interval"),
         "native_product_id": offer.get("native_product_id"),
         "entitlements": list(offer.get("entitlement_ids") or []),
         "prerequisites": list(offer.get("requires") or []),
@@ -476,8 +477,14 @@ def _offer_block(launch: Dict[str, Any], answers: Dict[str, Any],
         if raw_schedule is not None and not isinstance(raw_schedule, list):
             missing.append("a billing schedule for %s must be a list of due/amount rows "
                            "(got %r)" % (label, raw_schedule))
+        stated_interval = package.get("recurring_interval")
+        if package.get("billing_type") == "recurring" and stated_interval is not None \
+                and stated_interval not in _billing().RECURRING_INTERVALS:
+            missing.append("a billing interval for %s that is one of %s (got %r)"
+                           % (label, ", ".join(_billing().RECURRING_INTERVALS), stated_interval))
         if package.get("billing_type") in ("installment", "trial", "recurring") \
-                and not package.get("billing_schedule") and not package.get("terms_source"):
+                and not package.get("billing_schedule") and not package.get("terms_source") \
+                and not (package.get("billing_type") == "recurring" and stated_interval):
             missing.append("the exact %s terms for %s (unsupported without a schedule or "
                            "terms source)" % (package["billing_type"], label))
 
