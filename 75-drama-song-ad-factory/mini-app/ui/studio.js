@@ -214,6 +214,46 @@ function chosenLengthSeconds(questions, answers) {
   return null;
 }
 
+// ── S75-059 — the price of an option at the chosen LENGTH ────────────────────
+// THE formula, the same arithmetic as
+// `catalog_calculator.card_render.price_envelope` (and `quote` on top of it).
+// A different sum here is a different price from the card the client approves,
+// so `checks/price-check.mjs` pins these three lengths to the Python function's
+// own output in `checks/price-fixture.json`:
+//
+//   shots  = ceil(length_s / shot_s)
+//   video  = unit === "second" ? rate_usd * length_s : rate_usd * shots
+//   frames = (shots + keyframe_count_extra) * keyframe_usd
+//   total  = (video + frames + song_usd) * (1 + redo_rate), rounded to the cent
+//
+// The rates ride the option itself (the card exports them); an option with no
+// rates is not priced here and says nothing rather than guessing a number.
+export function optionPriceUsd(option, lengthSeconds) {
+  if (!option) return null;
+  const seconds = Number(lengthSeconds);
+  if (!Number.isFinite(seconds) || seconds <= 0) return null;
+  const rate = Number(option.rate_usd);
+  const shot = Number(option.shot_s);
+  const keyframe = Number(option.keyframe_usd);
+  const song = Number(option.song_usd);
+  const redo = Number(option.redo_rate);
+  const extra = Number(option.keyframe_count_extra);
+  if (![rate, shot, keyframe, song, redo].every(Number.isFinite) || shot <= 0) return null;
+  const shots = Math.ceil(seconds / shot);
+  const video = String(option.unit) === "second" ? rate * seconds : rate * shots;
+  const frames = (shots + (Number.isFinite(extra) ? extra : 0)) * keyframe;
+  return Math.round((video + frames + song) * (1 + redo) * 100) / 100;
+}
+
+/** The line under a priced option: its price at the chosen length, or the
+ *  sentence that says why no price is shown yet. "" for an unpriced option. */
+export function optionPriceLine(option, lengthSeconds) {
+  if (!option || !Number.isFinite(Number(option.rate_usd))) return "";
+  const total = optionPriceUsd(option, lengthSeconds);
+  if (total == null) return "price shown after you pick a length";
+  return `about $${total.toFixed(2)}`;
+}
+
 // The screens that are on, in the card's own order: PURPOSE first, its one
 // follow-up right after it, EPISODE LENGTH in LENGTH's own slot, SHAPE right
 // after the length screen, AGNES after VIDEO STYLE — the placement of
@@ -396,8 +436,15 @@ function hydrateReplies(replies) {
   (replies || []).forEach((r, i) => {
     const q = list[i];
     if (!q || r == null || r === "") return;
+    // A draft or order saved before S75-059 carries the pick as a bare number;
+    // one saved after it carries `"<n>. <option text>"`. Both read back.
     const pick = q.options.find((o) => String(o.n) === String(r));
     if (pick) { state.picks[i] = String(pick.n); return; }
+    const numbered = OPTION_REPLY.exec(String(r));
+    if (numbered) {
+      const byNumber = q.options.find((o) => String(o.n) === numbered[1]);
+      if (byNumber && !isFreeTextOption(byNumber)) { state.picks[i] = String(byNumber.n); return; }
+    }
     const free = q.options.find(isFreeTextOption) || q.options[0];
     if (free) { state.picks[i] = String(free.n); state.texts[i] = String(r); }
   });
@@ -414,13 +461,22 @@ function screens() {
   return state.visible;
 }
 
+// S75-059 — an option pick travels WITH its text: `"<n>. <option text>"`. The
+// box compares the text after the number with its own card, so a card that
+// reordered its options asks the client instead of quietly picking a different
+// one (the box half is U-K04). A typed answer stays exactly what was typed.
+const OPTION_REPLY = /^\s*(\d+)\.\s+([\s\S]*)$/;
+
+export function answerReply(question, pick, typedText) {
+  if (!question || pick == null || pick === "") return "";
+  const opt = (question.options || []).find((o) => String(o.n) === String(pick));
+  if (opt && isFreeTextOption(opt)) return String(typedText || "").trim();
+  const text = opt ? String(opt.text || "").trim() : "";
+  return text ? `${pick}. ${text}` : String(pick);
+}
+
 function replyFor(i) {
-  const q = state.visible[i];
-  const pick = state.picks[i];
-  if (!q || !pick) return "";
-  const opt = q.options.find((o) => String(o.n) === String(pick));
-  if (opt && isFreeTextOption(opt)) return String(state.texts[i] || "").trim();
-  return String(pick);
+  return answerReply(state.visible[i], state.picks[i], state.texts[i]);
 }
 
 const currentReplies = () => state.visible.map((_, i) => replyFor(i));
@@ -634,6 +690,16 @@ function pageQuestions() {
   ensurePick(i);
   const chosen = q.options.find((o) => String(o.n) === String(state.picks[i] || ""));
 
+  // S75-059 — what an option costs at the length the client picked. The length
+  // is read off the answer they already gave; before that there is no price to
+  // show and the option says so.
+  const answersGiven = {};
+  list.forEach((item, k) => {
+    const picked = state.picks[k];
+    if (item && picked != null && picked !== "") answersGiven[item.id] = picked;
+  });
+  const lengthSeconds = chosenLengthSeconds(state.questions, answersGiven);
+
   const fieldset = el("fieldset", { class: "options" });
   fieldset.append(el("legend", { text: q.question }));
   if (q.example) fieldset.append(el("p", { class: "hint muted", text: `See a great answer: ${q.example}` }));
@@ -642,12 +708,15 @@ function pageQuestions() {
     const input = el("input", { id, type: "radio", name: `q-${q.id}`, value: String(o.n) });
     if (String(state.picks[i]) === String(o.n)) input.checked = true;
     input.addEventListener("change", () => answerChanged(i, String(o.n)));
+    // The card's own `price` string on an older export; the arithmetic above
+    // once the export carries rates instead (S75-059).
+    const priceText = o.price || optionPriceLine(o, lengthSeconds);
     fieldset.append(el("label", { class: "option", for: id }, [
       input,
       el("span", {}, [
         el("span", { class: "label", text: o.text }),
         o.detail ? el("span", { class: "hint", text: ` ${o.detail}` }) : null,
-        o.price ? el("span", { class: "hint", text: ` ${o.price}` }) : null,
+        priceText ? el("span", { class: "hint", text: ` ${priceText}` }) : null,
       ].filter(Boolean)),
     ]));
   }
@@ -690,12 +759,24 @@ function pageRecap() {
   // after an error) names the SAME order and the service stores it once.
   if (!state.orderId) state.orderId = newOrderId();
 
+  // S75-059 — the recap says the question's plain wording and the option TEXT
+  // the client picked ("The sound: R&B Flow"), never the upper-case label and
+  // never the option's number. A typed answer reads back as it was typed.
+  const recapHeading = (q) => String((q && (q.title || q.question || q.label)) || "Your answer").trim();
+  const recapAnswer = (i) => {
+    const q = list[i];
+    const pick = state.picks[i];
+    const opt = q && pick ? (q.options || []).find((o) => String(o.n) === String(pick)) : null;
+    if (!opt) return "not answered yet";
+    if (isFreeTextOption(opt)) return String(state.texts[i] || "").trim() || "not answered yet";
+    return String(opt.text || "").trim() || "not answered yet";
+  };
   const replies = currentReplies();
   const rows = list.map((q, i) => {
     const li = el("li", {});
     const b = el("button", {
       type: "button", class: "btn secondary",
-      text: `${i + 1}. ${q.label}: ${replies[i] || "not answered yet"}`,
+      text: `${i + 1}. ${recapHeading(q)}: ${recapAnswer(i)}`,
     });
     b.addEventListener("click", () => { state.qIndex = i; setPage("questions"); });
     li.append(b);

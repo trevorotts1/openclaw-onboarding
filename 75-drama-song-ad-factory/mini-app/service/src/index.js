@@ -76,6 +76,11 @@ const UPLOAD_ID_FORMAT = /^u_[0-9a-f]{24}$/;
 /** The card's leading questions, in the order intake_card.py asks them. */
 export const BRIEF_QUESTION_IDS = ['offer', 'link', 'audience', 'character', 'photos'];
 
+/** An option pick on the wire: "1" (a page older than S75-059) or
+ *  "1. MiniMax H3" (the page since). A typed answer that merely starts with a
+ *  number is not matched by "1.2 million" or "3 apples" — the dot is required. */
+export const OPTION_PICK_REPLY = /^\d+(\.\s|$)/;
+
 /** Without these four the crew has no brief to write from. `photos` is asked
  *  and stored but never required: plenty of ads use what the client already has. */
 export const BRIEF_REQUIRED_IDS = ['offer', 'link', 'audience', 'character'];
@@ -89,10 +94,13 @@ export function readBrief(replies) {
   const brief = {};
   BRIEF_QUESTION_IDS.forEach((id, i) => {
     const value = typeof list[i] === 'string' ? list[i].trim() : '';
-    // A bare number is an OPTION PICK, not an answer someone typed. A page
-    // loaded before this fix sends the nine production choices as numbers, so
-    // without this the number "1" would be stored as the client's offer.
-    if (value && !/^\d+$/.test(value)) brief[id] = value;
+    // An OPTION PICK is not an answer someone typed. A page loaded before this
+    // fix sends the nine production choices as bare numbers; since S75-059 the
+    // page sends them as "<n>. <option text>" so the box can compare the text
+    // with its own card. Neither shape is the client's own words, so neither
+    // is stored as the brief: the number "1" or "1. MiniMax H3" must never be
+    // read as their offer. Everything is still in `replies`, the replay channel.
+    if (value && !OPTION_PICK_REPLY.test(value)) brief[id] = value;
   });
   const missing = BRIEF_REQUIRED_IDS.filter((id) => !brief[id]);
   return { brief, complete: missing.length === 0, missing };
