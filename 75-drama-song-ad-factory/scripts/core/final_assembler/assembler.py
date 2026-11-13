@@ -468,8 +468,14 @@ def lipsync_gate(plan):
     if incomplete:
         # S75-047: a no-lip-sync plan advances ONLY with the owner's recorded
         # opt-out (who + at in control/method.json). One reader, one record.
-        from lipsync_evidence import no_lipsync_opt_out
-        if (plan.get("route") == "no_lipsync"
+        # Fail closed when the reader is unavailable (lane merged without
+        # lane U): an unresolvable opt-out is missing evidence, not a pass.
+        try:
+            from lipsync_evidence import no_lipsync_opt_out
+        except ImportError:
+            no_lipsync_opt_out = None
+        if (no_lipsync_opt_out is not None
+                and plan.get("route") == "no_lipsync"
                 and no_lipsync_opt_out(plan.get("run_dir"))):
             return {"outcome": "ok", "reason_code": LIPSYNC_NOT_APPLICABLE,
                     "next_action": "the owner recorded the no-lip-sync opt-out",
