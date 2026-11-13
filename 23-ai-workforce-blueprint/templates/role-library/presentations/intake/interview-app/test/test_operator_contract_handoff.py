@@ -24,6 +24,47 @@ assert spec.loader
 spec.loader.exec_module(bridge)
 
 
+# PD-930: the bank is one-question-per-message, so the turn gate requires the
+# ATOMIC subfield ids -- not the four merged rows these fixtures used to carry.
+# Every value below is an explicit non-commercial fact for the informational
+# demo; none is a commercial claim. A fixture that supplies `brief` covers
+# `client_notes` through the bridge's own alias, so that key is dropped there
+# rather than sent twice (the mapper refuses a conflicting duplicate).
+_ATOMIC_ANSWERS = {
+    'audience_composition_note': 'department leads and operators; no people in imagery',
+    'transformation_promise': 'No commercial transformation promise — informational department demonstration',
+    'cta_action': 'Request or use the Presentation Department',
+    'tone': 'teacher',
+    'representation_mix': 'operators and department leads, uniform mix',
+    'grounded_content': 'the department itself and its SOPs; no named method',
+    'goal': 'Show the department end to end',
+    'target_feeling': 'Confident the department can be trusted',
+    'primary_objection': 'Distrust of unsourced claims',
+    'hook_seed': 'propose',
+    'deadline': '2026-11-20',
+    'visual_mix': 'clean technical diagrams, minimal text',
+    'dark_ok': 'no',
+    'logo_on_slides': 'no',
+    'standard_mode': 'QUICK',
+    'style_source': 'create-new',
+    'style_prefs': 'navy and gold, clean technical diagrams',
+    'brand_primary': 'navy #0b1f3a',
+    'style_pick_auto': 'no',
+    'client_notes': 'informational demo, no commercial claims',
+    'email_sequences_declined_reason': 'Not requested for an informational demo',
+    'motion_graphics_declined_reason': 'Not requested for an informational demo',
+}
+
+
+def _with_atomic(answers):
+    """Complete a fixture's answers with every atomic turn the gate requires."""
+    merged = dict(_ATOMIC_ANSWERS)
+    merged.update(answers)
+    if 'brief' in merged:
+        merged.pop('client_notes', None)
+    return merged
+
+
 def contract():
     # Values are explicit non-commercial facts from the authenticated
     # informational-demo contract, never invented commercial claims.
@@ -40,12 +81,12 @@ def contract():
         'want_ghl_upload': 'yes', 'want_sales_checkout': 'yes', 'want_vsl_page': 'yes',
         'deliverable_set': 'PPTX, PDF, presenter guide, workbook, fillable workbook, infographic',
         'delivery_destinations': ['PPTX', 'PDF', 'presenter guide', 'workbook', 'fillable workbook', 'infographic'],
-        'answers': {
+        'answers': _with_atomic({
             'audience': 'General informational audience learning how to use the Presentation Department',
             'transformation_promise': 'No commercial transformation promise — informational department demonstration',
             'cta_action': 'Request or use the Presentation Department',
             'tone': 'teacher',
-        },
+        }),
     }
 
 
@@ -56,12 +97,12 @@ def live_contract():
     contract so the bridge cannot pass because of a hand-written reduced shape.
     """
     value = contract()
-    value["answers"] = {
+    value["answers"] = _with_atomic({
         "audience": "general informational audience learning how to request and use the Presentation Department",
         "brief": "How the Presentation Department Works",
         "deck_type_source": "presentation_type: from_scratch; pitch_included: false",
         "mode": "general",
-    }
+    })
     return value
 
 
@@ -355,12 +396,12 @@ def live_authorized_contract_shape():
     option and answer key/type from the accepted request is represented.
     """
     payload = contract()
-    payload['answers'] = {
+    payload['answers'] = _with_atomic({
         'deck_type_source': 'presentation_type: from_scratch; pitch_included: false',
         'audience': 'General informational audience learning how to request and use the Presentation Department',
         'mode': 'general',
         'brief': 'How the Presentation Department Works — an informational department demonstration.',
-    }
+    })
     return payload
 
 
