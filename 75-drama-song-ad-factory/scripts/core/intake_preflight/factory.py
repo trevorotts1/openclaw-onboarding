@@ -331,21 +331,76 @@ def _runbook_rows():
     return rows, str(_STAGE_COMMANDS_FILE)
 
 
-def lane_size_payload():
-    """One sizing payload. Live module when importable; else Part D defaults."""
-    if _lane_size is not None:
+#: The runtime and provider names ``lane_size.size`` sizes with (lane_size.py:
+#: runtime "openclaw"|"claude-code"; provider "ollama-cloud", "openrouter",
+#: "deepseek-direct", or any other id, which sizes machine-only). A run's
+#: ``model-bindings.json`` names them in ai_models terms; these maps translate.
+_LANE_SIZE_RUNTIMES = {"claude-nine": "claude-code", "claude-code": "claude-code",
+                       "openclaw": "openclaw"}
+_LANE_SIZE_ROUTES = {"ollama": "ollama-cloud", "openrouter": "openrouter",
+                     "deepseek-direct": "deepseek-direct", "router-alias": "router-alias",
+                     "anthropic": "anthropic"}
+
+
+def _lane_size_binding(run_dir):
+    """Translate the run's own model bindings into lane_size's names.
+
+    ``(runtime, route, status)``: "bound" when both names translate, "none"
+    when the run has no valid builder binding, "unknown" when the binding
+    names a runtime or route that neither side lists (S75-024).
+    """
+    if run_dir is None:
+        return "claude-code", "openrouter", "bound"
+    try:
+        from choice_card.intake_card import ai_models as models
+        doc = models.load_bindings(run_dir)
+    except Exception:  # noqa: BLE001 - no bindings module on this box: Part D
+        return None, None, "none"
+    if not isinstance(doc, dict) or doc.get("schema") != models.STORE_SCHEMA:
+        return None, None, "none"
+    row = (doc.get("bindings") or {}).get(models.ROLE_BUILD)
+    if not isinstance(row, dict):
+        return None, None, "none"
+    raw_runtime = doc.get("runtime") or ((row.get("dispatch") or {}).get("runtime")) or ""
+    runtime = _LANE_SIZE_RUNTIMES.get(str(raw_runtime).strip().lower())
+    route = _LANE_SIZE_ROUTES.get(str(row.get("route") or "").strip().lower())
+    if runtime is None or route is None:
+        return runtime, route, "unknown"
+    return runtime, route, "bound"
+
+
+def lane_size_payload(run_dir=None):
+    """One sizing payload, from the run's own model choice where it can be read.
+
+    S75-024: the sizing follows the runtime and builder route the run's
+    ``model-bindings.json`` names. No bindings, no lane_size module, or a pair
+    lane_size does not size with -> the Part D defaults, and ``source`` says
+    which one ran and why.
+    """
+    runtime, route, status = _lane_size_binding(run_dir)
+    if _lane_size is not None and status != "unknown":
         try:
-            line = _lane_size.size("claude-code", "openrouter")
+            line = _lane_size.size(runtime, route)
             return {"agents": line["agents"],
                     "kie_inflight": line["kie_inflight"],
                     "ffmpeg_jobs": line["ffmpeg_jobs"],
                     "ffmpeg_threads": line["ffmpeg_threads"],
-                    "source": "lane_size.module"}
+                    "source": "lane_size.module (%s/%s)" % (runtime, route)}
         except Exception as exc:  # noqa: BLE001 - broken module: fall through
             _loud("warn", "LANE_SIZE_BROKEN",
                   "using Part D default lane sizes: %r" % (exc,))
+    if status == "unknown":
+        _loud("warn", "LANE_SIZE_UNKNOWN_PAIR",
+              "model bindings name runtime %r and route %r; lane_size sizes "
+              "claude-code/openclaw only, so Part D defaults apply"
+              % (runtime, route))
     out = dict(PART_D_DEFAULTS)
-    out["source"] = "part_d_defaults"
+    if status == "none":
+        out["source"] = "part_d_defaults (no model bindings on this run)"
+    elif status == "unknown":
+        out["source"] = "part_d_defaults (unknown model binding pair)"
+    else:
+        out["source"] = "part_d_defaults"
     return out
 
 
@@ -3575,7 +3630,7 @@ def _next_stage(a, *, boot_snapshot=None):
                 "Agnes path: these keyframes come from Agnes Image with no words "
                 "in the picture; onscreen_text decides bake or overlay per shot.",
                 data={"stage": next_stage, "command": arow["command"],
-                      "produces": arow["produces"], "lane_size": lane_size_payload(),
+                      "produces": arow["produces"], "lane_size": lane_size_payload(run_dir),
                       "stages_source": stages_source, "agnes": agnes,
                       "method": method_block},
                 evidence=["%s" % db, runbook_path])
@@ -3634,7 +3689,7 @@ def _next_stage(a, *, boot_snapshot=None):
                 "next", str(sid), "ok", "next-stage", why,
                 data={"stage": next_stage, "command": kie,
                       "produces": (rows.get("video-generation") or {}).get("produces", ""),
-                      "lane_size": lane_size_payload(),
+                      "lane_size": lane_size_payload(run_dir),
                       "stages_source": stages_source, "agnes": agnes,
                       "method": method_block},
                 evidence=["%s" % db, runbook_path])
@@ -3645,7 +3700,7 @@ def _next_stage(a, *, boot_snapshot=None):
             "while they run.",
             data={"stage": next_stage, "command": jobs[0]["command"],
                   "produces": agnes["segment_produces"],
-                  "lane_size": lane_size_payload(),
+                  "lane_size": lane_size_payload(run_dir),
                   "stages_source": stages_source, "agnes": agnes,
                   "method": method_block},
             evidence=["%s" % db, runbook_path])
@@ -3708,7 +3763,7 @@ def _next_stage(a, *, boot_snapshot=None):
         if sc is not None:
             if stage_price is None:
                 return _price_refusal(sid, next_stage)
-            lane = lane_size_payload()
+            lane = lane_size_payload(run_dir)
             data = {"stage": next_stage, "command": sc["command"],
                     "produces": row.get("produces", ""), "lane_size": lane,
                     "stages_source": stages_source, "song_choices": sc,
@@ -3752,7 +3807,7 @@ def _next_stage(a, *, boot_snapshot=None):
         refusal["data"].update(stage=next_stage,
                                missing_artifacts=order.get("missing_artifacts", []))
         return refusal
-    lane = lane_size_payload()
+    lane = lane_size_payload(run_dir)
     # S75-001: the paid number rides in cost_minor, never as a made-up flag.
     # The published command stays the canonical template ({COST_MINOR} named
     # in needs/argv), per S75-010 step 4 -- substituting the number into
