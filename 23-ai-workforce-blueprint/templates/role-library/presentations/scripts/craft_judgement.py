@@ -1046,50 +1046,25 @@ def _finding_slides_fallback(record):
 
 
 def _load_craft_waivers(run_dir):
-    """FIX 15's owner-token waiver regime, extended to FIX 18's five codes.
-    slide_craft._load_waivers only accepts its own ten codes, so this re-validates
-    the file directly for ENFORCED_CODES with the SAME rules (one rule / one run /
-    named slides; af_code + approved_by + reason required; malformed ignored,
-    fail-closed)."""
-    p = Path(run_dir) / _sc.WAIVER_REL if _sc is not None else         Path(run_dir) / "working" / "checkpoints" / "slide_craft_waivers.json"
-    if not p.is_file():
-        return {}
-    try:
-        data = json.loads(p.read_text(encoding="utf-8"))
-    except (json.JSONDecodeError, OSError, ValueError):
-        return {}
-    if not isinstance(data, list):
+    """The five ENFORCED_CODES waived by OWNER APPROVALS (PD-309 / D-15).
+
+    Every record goes through slide_craft._verified_waiver_records — the same
+    loader slide_craft._load_waivers uses — so an approval here is a real owner
+    decision proven by an `owner_msg_id` that presentation_job.approvals.verify
+    resolves, never a free-text token. The slide-naming rule is also stated once,
+    in slide_craft._waiver_scope: one rule / one run / named slides, and "ALL" is
+    accepted only for AF-DEN-4 — which is not one of these five codes, so none of
+    them can be waived deck-wide. Fail-closed: no slide_craft (or no verified
+    record) means no waiver."""
+    if _sc is None:
         return {}
     waivers = {}
-    for rec in data:
-        if not isinstance(rec, dict):
+    for rec in _sc._verified_waiver_records(run_dir):
+        scope = _sc._waiver_scope(rec)
+        if scope is None:
             continue
-        code = str(rec.get("af_code", "")).strip().upper()
+        code, ordinals, all_slides = scope
         if code not in ENFORCED_CODES:
-            continue
-        if not str(rec.get("approved_by", "")).strip():
-            continue
-        if not str(rec.get("reason", "")).strip():
-            continue
-        slides = rec.get("slides")
-        if not isinstance(slides, list) or not slides:
-            continue
-        ordinals = set()
-        all_slides = False
-        for s in slides:
-            if s == "ALL":
-                # FIX 18's five rules all attribute slides; the ALL escape is
-                # accepted only where the run has no attributable slide — same
-                # posture slide_craft takes for AF-DEN-4.
-                all_slides = True
-                continue
-            try:
-                n = int(s)
-            except (TypeError, ValueError):
-                continue
-            if n > 0:
-                ordinals.add(n)
-        if not ordinals and not all_slides:
             continue
         entry = waivers.setdefault(code, {"slides": set(), "all_slides": False})
         entry["slides"].update(ordinals)
