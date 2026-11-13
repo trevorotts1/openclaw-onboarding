@@ -60,9 +60,11 @@ def test_named_spam_sentence_is_refused():
     errors = C.validate_bundle(_bundle(fx["claims"], fx["sources"],
                                        offer=OFFER, audience=AUDIENCE))
     _refused(errors)
-    assert any("no checkable relation to any owner fact" in e for e in errors), errors
-    assert any("keyword stuffing" in e for e in errors), errors
+    # U-X01: no vocabulary or parser refuses 'spam' here; what refuses it is
+    # the escalation with no citation for that claim. Relevance is the judged
+    # check's verdict.
     assert any("uncited claim" in e for e in errors), errors
+    assert C.relevance_verdict([], maker="maker-1") == "MISSING"
 
 
 def test_spam_with_forged_support_is_refused():
@@ -71,13 +73,13 @@ def test_spam_with_forged_support_is_refused():
     fx = _fx()["reject_spam_sentence_forged_support"]
     errors = C.validate_bundle(_bundle(fx["claims"], fx["sources"],
                                        offer=fx["offer"], audience=fx["audience"]))
-    _refused(errors, "not in the claim text")
     _refused(errors, "citation is not for this claim")
 
 
-def test_keyword_run_dressed_with_the_offers_own_words_is_refused():
-    """The lazy bypass: stuff the run with the run's own vocabulary and an
-    anchor that ties it to the offer. It still asserts nothing."""
+def test_keyword_run_dressed_with_the_offers_own_words_needs_the_judged_check():
+    """U-X01: the run of keywords is not refused by a parser any more. It passes
+    the structural check and is stopped by the run's checker model — which is
+    the only reader that can say whether it is about this client."""
     text = ("sleep coach near me sleep coaching Dallas sleep coach Fort Worth "
             "sleep coach Plano sleep coach Frisco sleep coach Arlington sleep")
     claim = {"id": "k9", "text": text, "provenance": "public-fact",
@@ -88,7 +90,8 @@ def test_keyword_run_dressed_with_the_offers_own_words_is_refused():
         _bundle([claim], [{"id": "src-1", "url": "https://example.invalid/k",
                           "retrieved": "2026-10-20"}],
                 offer=OFFER, audience=AUDIENCE))
-    _refused(errors, "keyword stuffing")
+    assert errors == [], errors
+    assert C.relevance_verdict([], maker="maker-1") == "MISSING"
 
 
 # --------------------------------------- one-character and style reshaping

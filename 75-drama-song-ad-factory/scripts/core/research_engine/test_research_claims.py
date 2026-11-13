@@ -153,10 +153,24 @@ def test_empty_research_fails_however_large_the_artifact_is():
     assert any("empty research" in e for e in errors), errors
 
 
-def test_keyword_stuffing_is_refused():
+def test_a_keyword_run_is_the_judged_checks_job_not_a_parser():
+    """U-X01: the hand-built language parser is gone. A run of keywords is not
+    refused here for being a run of keywords; a marker it carries with no
+    citation for that marker is still refused, and the rest is the run's
+    checker model's verdict, filed as one `research_relevance` record."""
     fx = _fx()["reject_keyword_stuffing"]
     errors = C.validate_bundle(_bundle(fx["claims"], fx["sources"]))
-    assert any("keyword stuffing" in e for e in errors), errors
+    assert not any("keyword stuffing" in e for e in errors), errors
+    assert any("uncited claim" in e for e in errors), errors
+    # a run with no escalated marker passes the structural check ...
+    plain = _plain("public-fact",
+                   "buy backlinks, crypto signals, weight loss tea, katy perry "
+                   "diet, seo package",
+                   id="s2", source="src-1",
+                   sections=["market", "audience", "competitors"])
+    assert C.validate_bundle(_bundle([plain], fx["sources"])) == []
+    # ... and the stage cannot advance until a checker has judged it.
+    assert C.relevance_verdict([], maker="maker-1") == "MISSING"
 
 
 def test_unsupported_business_claim_is_refused():
@@ -192,17 +206,14 @@ def test_superlative_business_claim_is_refused_in_any_phrasing():
         assert any("unsupported business claim" in e for e in errors), (text, errors)
 
 
-def test_sentence_level_keyword_stuffing_is_refused_without_commas():
+def test_sentence_shaped_keyword_stuffing_is_left_to_the_judged_check():
+    """U-X01: no parser reads the sentence shape any more. 'Best sleep coach'
+    is refused because a superlative with no citation for that claim is not
+    evidence — a structural rule, not a vocabulary."""
     fx = _fx()["reject_sentence_keyword_stuffing"]
     errors = C.validate_bundle(_bundle(fx["claims"], fx["sources"]))
-    assert sum("keyword stuffing" in e for e in errors) >= 2, errors
-    src = [{"id": "src-1", "url": "https://example.invalid/r", "retrieved": "2026-10-20"}]
-    for text in ("sleep coach | sleep coaching | best sleep coach | sleep coach near me",
-                 "sleep coach insomnia treatment shift work fatigue sleep clinic downtown",
-                 "sleep coach, sleep coach near me, best sleep supplement, buy now, backlinks, seo services."):
-        claim = _plain("public-fact", text, source="src-1")
-        errors = C.validate_bundle(_bundle([claim], src))
-        assert any("keyword stuffing" in e for e in errors), (text, errors)
+    assert not any("keyword stuffing" in e for e in errors), errors
+    assert any("uncited claim" in e for e in errors), errors
 
 
 def test_market_facts_still_pass_the_same_instrument():
@@ -210,6 +221,50 @@ def test_market_facts_still_pass_the_same_instrument():
     fx = _fx()["accept_market_facts"]
     errors = C.validate_bundle(_bundle(fx["claims"], fx["sources"], **_facts(fx)))
     assert errors == [], errors
+
+
+def test_relevance_is_a_checker_record_and_the_maker_cannot_sign_it():
+    """U-X01: relevance and fairness are the run's CHECKER model's verdict,
+    filed through the QC record path under the check id research_relevance. A
+    maker's own signature is not evidence (17.6)."""
+    reviewer = {"identity": "checker-model", "session": "run-1",
+                "authority": "research-qc"}
+    rec = C.relevance_record(run_id="research-1", stage="research",
+                             maker="maker-model", reviewer=reviewer,
+                             verdict="PASS",
+                             summary="every claim is about this client and fairly stated")
+    assert rec["check"] == C.RESEARCH_RELEVANCE_CHECK == "research_relevance"
+    assert rec["schema_version"] == "1.0.0" and rec["reviewer"] == reviewer
+    assert C.relevance_verdict([rec], maker="maker-model") == "PASS"
+    assert C.relevance_verdict([rec], maker=None) == "PASS"
+    assert C.relevance_verdict([], maker="maker-model") == "MISSING"
+    failed = dict(rec, verdict="FAIL")
+    assert C.relevance_verdict([failed], maker="maker-model") == "FAIL"
+    try:
+        C.relevance_record(run_id="research-1", stage="research",
+                           maker="maker-model",
+                           reviewer=dict(reviewer, identity="maker-model"),
+                           verdict="PASS", summary="trust me")
+    except ValueError:
+        pass
+    else:
+        raise AssertionError("a maker signing its own relevance check must be refused")
+    own = dict(rec, reviewer=dict(reviewer, identity="maker-model"))
+    assert C.relevance_verdict([own], maker="maker-model") == "MISSING"
+
+
+def test_two_industries_pass_the_same_structural_check(tmp_path):
+    """Acceptance: a sleep-coaching brief and a non-coaching brief both pass the
+    structural check. Nothing in it is keyed to a trade's vocabulary."""
+    with open(os.path.join(HERE, "fixtures", "research_industries.json"),
+              encoding="utf-8") as f:
+        bakery = json.load(f)["bakery"]
+    for label, brief in (("coaching", _fx()["accept"]), ("bakery", bakery)):
+        out = str(tmp_path / label)
+        env, code = R.run_stage(dict(brief), out)
+        assert code == R.EXIT["ok"], (label, env)
+        bundle = json.loads((tmp_path / label / "research" / "bundle.json").read_text())
+        assert C.validate_bundle(bundle) == [], (label, C.validate_bundle(bundle))
 
 
 def test_repeated_text_is_refused_and_deduped_at_authoring():
