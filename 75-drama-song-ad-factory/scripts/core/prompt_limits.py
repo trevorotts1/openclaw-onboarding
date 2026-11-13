@@ -12,7 +12,14 @@ The caps come from the skills' own catalogs, never copied here:
     no hailuo entry at all - the whole family prefix is held there, and H3
     keeps the catalog's 7,000); Kling 2.6 i2v 2,500; and the Kling 2.5 Turbo
     negative_prompt cap of 2,500 (the catalog verifies the prompt cap but does
-    not declare the field).
+    not declare the field). S75-060 adds the two card-menu models whose rows
+    publish no cap: Seedance 2.0 Mini 20,000 (vendor page, VERIFIED) and
+    veo3_fast 5,000 (no cap on the vendor page, conservative sibling cap,
+    UNVERIFIED), and refuses PROMPT_LIMIT_NO_CAP for any other model the card
+    sells whose cap would otherwise be null.
+
+find_catalogs() is the ONE catalog locator (S75-060): every module that needs
+the 67 or 68 catalog calls it instead of walking the tree itself.
 
 check_request(model, request) measures EVERY text field of the FINAL payload.
 Over the cap is a refusal (PROMPT_OVER_CAP: field, characters, cap, source,
@@ -69,6 +76,32 @@ OVERRIDES = {
                   "VERIFIED but holds no i2v entry)",
         "confirm": "re-read the Kling 2.6 i2v page on docs.kie.ai (free); no paid probe",
     },
+    # S75-060: the two card-menu video models whose 67 catalog row publishes
+    # no prompt cap (NOT_PUBLISHED). Each row names the vendor page it was read
+    # from and the date. Seedance 2.0 Mini's page states the cap, so it is
+    # VERIFIED; the Veo 3 page states none, so the conservative Veo sibling cap
+    # is used and the row stays UNVERIFIED. Neither model declares a
+    # negative_prompt control field in the catalog, so no negative cap is
+    # claimed here.
+    "bytedance/seedance-2-mini": {
+        "cap": 20000, "status": "VERIFIED", "negative_prompt": None,
+        "source_url": "https://docs.kie.ai/market/bytedance/seedance-2-mini",
+        "source": "skill-75 override (docs.kie.ai/market/bytedance/seedance-2-mini "
+                  "read 2026-11-12: the input schema states 'Min length: 3, Max "
+                  "length: 20000 characters', maxLength 20000; the 67 catalog "
+                  "carries the row with no cap, NOT_PUBLISHED)",
+        "confirm": "re-read the seedance-2-mini page on docs.kie.ai (free); no paid probe",
+    },
+    "veo3_fast": {
+        "cap": 5000, "status": "UNVERIFIED", "negative_prompt": None,
+        "source_url": "https://docs.kie.ai/veo3-api/generate-veo-3-video",
+        "source": "skill-75 override (docs.kie.ai/veo3-api/generate-veo-3-video "
+                  "read 2026-11-12: the request schema states no prompt maxLength, "
+                  "so the conservative Veo sibling cap 5,000 is used; the 67 "
+                  "catalog carries veo3_fast with no cap, NOT_PUBLISHED)",
+        "confirm": "re-read the veo3 generate page on docs.kie.ai (free); record the "
+                   "prompt maxLength if one appears; no paid probe",
+    },
 }
 
 #: FU-U7 (plan E.1, file 17): Hailuo 02 / 2.3 / 2.3 Fast prompt 2,000,
@@ -105,6 +138,34 @@ SUNO_FALLBACK = {"lyrics": 5000, "style": 1000, "title": 80,
 #: The market createTask id for Veo 3.1 ("veo-3-1", tier in input.model) is
 #: the same model family as the dedicated catalog entry; hold it to that entry.
 MARKET_ALIASES = {"veo-3-1": "veo3_fast"}
+
+#: The card's own video price menu, beside this file. Every model it sells must
+#: come back with a measured cap (S75-060); a sold model the catalog leaves
+#: uncapped and no override holds is refused, never sent unmeasured.
+RATES_PATH = (Path(__file__).resolve().parent
+              / "choice_card" / "video_models" / "video_model_rates.json")
+
+
+def sold_video_models():
+    """Every ``kie_model`` / ``kie_tier`` the card's video price menu sells.
+
+    Read from ``video_model_rates.json`` (the one table behind the video model
+    question). An unreadable file sells nothing, so the caller cannot mistake
+    a missing menu for an empty one.
+    """
+    try:
+        doc = json.loads(RATES_PATH.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return set()
+    sold = set()
+    for row in doc.get("models") or []:
+        if not isinstance(row, dict):
+            continue
+        for key in ("kie_model", "kie_tier"):
+            value = row.get(key)
+            if isinstance(value, str) and value.strip():
+                sold.add(value.strip())
+    return sold
 
 
 class PromptLimitError(ValueError):
@@ -182,13 +243,18 @@ def video_caps(model, models_path=None):
 
     A missing catalog or a missing entry raises PromptLimitError (fail closed);
     a model the catalog carries with no published cap returns cap None and the
-    caller reports the status. Hailuo models are held at the file-17 cap of
-    2,000 even though the catalog carries no hailuo entry at all.
+    caller reports the status -- EXCEPT a model the card's video price menu
+    sells (S75-060): that one is refused PROMPT_LIMIT_NO_CAP unless OVERRIDES
+    holds a row for it, because a sold model must always be measured. Hailuo
+    models are held at the file-17 cap of 2,000 even though the catalog carries
+    no hailuo entry at all.
     """
     model = MARKET_ALIASES.get(model, model)
     if model in OVERRIDES:
         o = OVERRIDES[model]
-        return {"prompt": o["cap"], "negative_prompt": o["cap"], "status": o["status"],
+        return {"prompt": o["cap"],
+                "negative_prompt": o.get("negative_prompt", o["cap"]),
+                "status": o["status"],
                 "source": "%s; %s" % (o["source_url"], o["source"])}
     if str(model).startswith(HAILUO_PREFIX):
         return {"prompt": HAILUO["cap"], "negative_prompt": None,
@@ -204,6 +270,16 @@ def video_caps(model, models_path=None):
                                "models.json (%s), status UNKNOWN: refusing (pass models_path)"
                                % (model, path or "not found"))
     cap = entry.get("vendor_hard_cap_chars")
+    if cap is None and model in sold_video_models():
+        raise PromptLimitError(
+            "PROMPT_LIMIT_NO_CAP", model, 0, 0,
+            "%s %s (%s)" % (Path(path).name, model, entry.get("source_url", "")),
+            entry.get("cap_status", "UNKNOWN"),
+            "PROMPT_LIMIT_NO_CAP: field %r, chars 0, cap 0, source %s %s (%s), "
+            "status %s: the card sells this model and its catalog row publishes "
+            "no prompt cap; add a sourced prompt_limits.OVERRIDES row"
+            % (model, Path(path).name, model, entry.get("source_url", ""),
+               entry.get("cap_status", "UNKNOWN")))
     neg = cap if "negative_prompt" in (entry.get("control_fields") or []) else None
     if neg is None and model in KLING25_NEG_TABLE:
         neg = KLING25_NEG_TABLE[model]

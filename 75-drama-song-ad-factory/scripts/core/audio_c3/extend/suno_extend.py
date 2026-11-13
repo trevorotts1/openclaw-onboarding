@@ -14,8 +14,9 @@ Rules implemented here:
 
 1. **Extend path tops up to the exact target.** A take short of the target
    is sent through the Suno extend route (catalog id ``suno-extend``, route
-   and endpoint read from the work copy at ``onboarding/68-kie-audio/
-   models.json``) until the produced audio reaches the target, then fitted
+   and endpoint read from the 68 work copy, located by
+   ``prompt_limits.find_catalogs()`` -- the one locator) until the produced
+   audio reaches the target, then fitted
    so the delivered length *is* the target to the second. A take already at
    or above the target never calls extend.
 2. **Extend has no duration field** (work copy, ``known_inconsistencies``:
@@ -55,6 +56,7 @@ from __future__ import annotations
 
 import json
 import math
+import sys
 from pathlib import Path
 
 SCHEMA_VERSION = "blackceo.audio-c3/suno-extend/v1"
@@ -108,16 +110,31 @@ def _text(v, name):
 _CATS = {}
 
 
-def _catalog_path(catalog_path=None):
-    if catalog_path is not None:
-        return Path(catalog_path)
-    # core/audio_c3/extend/suno_extend.py -> repo root
-    return Path(__file__).resolve().parents[3] / "onboarding" / "68-kie-audio" / "models.json"
+def _prompt_limits():
+    """The ONE catalog locator (core/prompt_limits.py), imported lazily."""
+    core = Path(__file__).resolve().parents[2]          # extend -> audio_c3 -> core
+    if str(core) not in sys.path:
+        sys.path.insert(0, str(core))
+    import prompt_limits
+    return prompt_limits
+
+
+def _catalog_file():
+    """The 68 work copy, located by ``prompt_limits.find_catalogs`` (no walk here)."""
+    audio = _prompt_limits().find_catalogs()[0]
+    if audio is None:
+        raise ExtendError("catalog-missing: 68-kie-audio/models.json not found")
+    return Path(audio)
 
 
 def catalog(catalog_path=None):
-    """canonical_model_id -> entry, read from the work copy. Never hardcoded."""
-    p = _catalog_path(catalog_path)
+    """canonical_model_id -> entry, read from the work copy. Never hardcoded.
+
+    With no argument the path comes from the ONE locator
+    (``prompt_limits.find_catalogs``); ``catalog_path`` overrides it for a
+    test tree.
+    """
+    p = Path(catalog_path) if catalog_path is not None else _catalog_file()
     key = str(p)
     if key not in _CATS:
         try:
