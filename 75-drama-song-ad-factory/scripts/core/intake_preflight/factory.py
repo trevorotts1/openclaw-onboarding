@@ -667,30 +667,108 @@ def _studio_shot_notes(value):
     return [ln for ln in lines if _STUDIO_SHOT_NOTE.match(ln)]
 
 
+#: S75-072: the notes of one answer that a still regeneration interrupted. The
+#: runner's redo record holds the change, so they are kept on the run and the
+#: next `next` after the still lands applies them -- never dropped.
+_STUDIO_NOTES_FILE = ("control", "studio-shot-notes.json")
+
+
+def _studio_notes_path(run_dir):
+    return Path(run_dir).joinpath(*_STUDIO_NOTES_FILE)
+
+
+def _studio_notes_queue(run_dir):
+    """The shot notes still owed to the client (empty when none are)."""
+    try:
+        doc = json.loads(_studio_notes_path(run_dir).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return []
+    return [str(n) for n in doc] if isinstance(doc, list) else []
+
+
+def _studio_notes_save(run_dir, notes):
+    p = _studio_notes_path(run_dir)
+    if not notes:
+        try:
+            p.unlink()
+        except OSError:
+            pass
+        return
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_text(json.dumps(list(notes), indent=2), encoding="utf-8")
+
+
+def _studio_notes_drain(cmd, sid, run_dir, stage):
+    """Apply the notes a still regeneration interrupted; None when none owed."""
+    if _approval_runner() is None:
+        return None
+    notes = _studio_notes_queue(run_dir)
+    if not notes:
+        return None
+    return _studio_apply_shot_notes(cmd, sid, run_dir, stage, notes,
+                                    "\n".join(notes))
+
+
 def _studio_apply_shot_notes(cmd, sid, run_dir, stage, notes, answer):
     """S75-072: one studio answer carrying notes for several shots.
 
     Applying the whole answer as ONE reply let the runner read only the first
-    shot and fold every later line into that shot's change. Each note now takes
-    the EXISTING apply path (``storyboard --reply <line>``) once, in the order
-    the client wrote them, so every named shot gets its own revision record.
+    shot and fold every later line into that shot's change. Each note takes the
+    EXISTING apply path (``storyboard --reply <line>``) once, in the order the
+    client wrote them, so every named shot gets its own revision record.
+
+    The first note whose still has to be made again stops the pass: the
+    runner's redo record already holds that change, and it and every note after
+    it stay on the run (``control/studio-shot-notes.json``) so the next `next`
+    after the still is on disk applies them. A note is never folded into
+    another shot and never silently dropped.
     """
-    applied, shot_ids = [], []
-    for note in notes:
+    applied, shot_ids, rest = [], [], list(notes)
+    while rest:
+        note = rest[0]
         env = cmd_storyboard(argparse.Namespace(run_dir=str(run_dir),
                                                 target="", reply=note))
         data = env.get("data") or {}
-        row = {"note": note, "action": data.get("action"),
+        action = data.get("action") or env.get("reason_code")
+        row = {"note": note, "action": action,
                "shot_ids": data.get("shot_ids") or (
                    [data["shot_id"]] if data.get("shot_id") else []),
                "reason_code": env.get("reason_code")}
         applied.append(row)
         shot_ids.extend(s for s in row["shot_ids"] if s not in shot_ids)
-    return envelope(cmd, sid, "ok", "next-stage",
-                    "The client answered the storyboard approval with %d shot "
-                    "note(s) on the studio page; each note took the apply path "
-                    "on its own shot (a note whose still must be made again "
-                    "reports regenerate_still). Run `next` again." % len(notes),
+        rest.pop(0)
+        if action in ("revised", "approved"):
+            continue
+        if action == "regenerate_still":     # transient: the still is not there yet
+            _studio_notes_save(run_dir, [note] + rest)
+            return envelope(
+                cmd, sid, "waiting", "regenerate_still",
+                "The client's storyboard answer names several shots. Shot %s "
+                "needs its still made again before that change is recorded; "
+                "%d note(s) stay queued and apply on the next `next` once the "
+                "still is on disk."
+                % (", ".join(row["shot_ids"]) or "?", len(rest) + 1),
+                data={"stage": stage, "approval": "storyboard",
+                      "answer": answer, "notes": [note] + rest,
+                      "applied": applied, "shot_ids": shot_ids,
+                      "command": None})
+        # A note that can never apply (unknown shot, unusable text): its row
+        # carries the refusal and the remaining notes still get their turn.
+    _studio_notes_save(run_dir, [])
+    done = [r for r in applied if r["action"] in ("revised", "approved")]
+    if len(done) == len(applied):
+        return envelope(cmd, sid, "ok", "next-stage",
+                        "The client answered the storyboard approval with %d shot "
+                        "note(s) on the studio page; each note took the apply path "
+                        "on its own shot. Run `next` again." % len(applied),
+                        data={"stage": stage, "approval": "storyboard",
+                              "answer": answer, "notes": notes,
+                              "applied": applied, "shot_ids": shot_ids,
+                              "command": None})
+    return envelope(cmd, sid, "waiting", "shot-note-not-applied",
+                    "%d of %d storyboard note(s) were applied; the refused ones "
+                    "are named in the applied rows and no shot was changed for "
+                    "them." % (len(done), len(applied)),
                     data={"stage": stage, "approval": "storyboard",
                           "answer": answer, "notes": notes,
                           "applied": applied, "shot_ids": shot_ids,
@@ -3883,6 +3961,10 @@ def _next_stage(a, *, boot_snapshot=None):
         if decision["next_stage"] == "video-generation":
             _ar = _approval_runner()
             if _ar is not None and not _ar.gate_open(str(run_dir)):
+                _owed = _studio_notes_drain("next", str(sid), run_dir,
+                                            decision["next_stage"])
+                if _owed:
+                    return _owed
                 _ans = _studio_answer(run_dir, "storyboard")
                 if _ans:
                     return _studio_apply("next", str(sid), run_dir,
@@ -3921,6 +4003,9 @@ def _next_stage(a, *, boot_snapshot=None):
     if next_stage == "video-generation":      # storyboard approval point
         ar = _approval_runner()
         if ar is not None and not ar.gate_open(str(run_dir)):
+            owed = _studio_notes_drain("next", str(sid), run_dir, next_stage)
+            if owed:
+                return owed
             ans = _studio_answer(run_dir, "storyboard")
             if ans:
                 return _studio_apply("next", str(sid), run_dir, next_stage,
