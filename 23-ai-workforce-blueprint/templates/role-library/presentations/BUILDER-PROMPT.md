@@ -45,7 +45,7 @@ stop — you are one phase behind. The render step (`build_deck.py`) preflights 
 Layer-A artifact set and refuses (loudly, non-zero exit) to run without it.
 
 **The correct mental model:** *you are always running Layer A up to the render, and
-Layer B is the render+delivery the runner dispatches for you once Layer A is done.* You
+Layer B is the render+delivery the engine dispatches for you once Layer A is done.* You
 never choose between them, and you never skip ahead.
 
 ---
