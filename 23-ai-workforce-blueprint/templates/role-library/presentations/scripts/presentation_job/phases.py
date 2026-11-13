@@ -28,7 +28,7 @@ from .execution_plan import (build_execution_plan, build_edge_records,
                              _load_raw_phases)
 from .state import (
     StateStore, utcnow, sha256_file, EXIT_OK, EXIT_GATE_BLOCKED, EXIT_WAIVER_INVALID,
-    ENTRY_COMMAND,
+    ENTRY_COMMAND, ensure_run_key,
 )
 from .manifest import Manifest, Phase
 from .report import Reporter
@@ -2731,6 +2731,12 @@ class Engine:
         is unlinked by _run_script_phase's finally, but a rung2 regenerate
         re-executes the same guarded script and must mint its own rather than
         reuse a consumed (deleted) one.
+
+        PD-906: this nonce is NOT a run identity. It is per-phase and
+        per-invocation and is never linked or kept. Rows that must be keyed by
+        RUN use state.ensure_run_key's key (persisted in state.json, read back
+        with state.run_key_of); the two live side by side and neither replaces
+        the other.
         """
         phase_token = _nonce_phase_token(phase.id)
         nonce = secrets.token_hex(32)
@@ -4624,6 +4630,14 @@ class Engine:
             f"run over it. Plan refused; no phase has run.")
 
     def run(self, only: Optional[str] = None, until: Optional[str] = None) -> int:
+        # PD-906: one key per RUN, minted once and persisted in state.json so
+        # every phase, retry and resume of this run can be keyed by it. It is
+        # read back (never re-minted) on resume, and it is never logged or
+        # printed. This sits BESIDE the per-phase front-door nonce below --
+        # the nonce is per-phase/per-invocation and stays exactly as it was.
+        with self._state_lock:
+            ensure_run_key(self.state, self.store)
+
         # U024 — sacred-structure warn check, once at engine start-up.
         # DELIBERATELY NON-BLOCKING: a structure drift is a signal to a human,
         # not grounds to refuse a client's job. A missing pin file is likewise
