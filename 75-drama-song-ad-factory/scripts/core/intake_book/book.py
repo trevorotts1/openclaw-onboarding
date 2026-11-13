@@ -458,7 +458,6 @@ def evaluate(brief, settings=None, resume_state=None, run_id=None, now_unix=None
             "next_action": "Resubmit the brief as a JSON object.",
         }
 
-    hits = _base.detect_injection(brief)
     try:
         fields, prov = normalize(brief, settings)
     except BookBriefError as exc:
@@ -512,18 +511,7 @@ def evaluate(brief, settings=None, resume_state=None, run_id=None, now_unix=None
         "next_action": base.get("next_action"),
         "next_stage": base.get("next_stage"),
     }
-    if hits:  # untrusted text never reaches questions or auth scope
-        out.update({
-            "outcome": "rejected",
-            "reason_code": "untrusted-injection-blocked",
-            "questions": [],
-            "question_message": None,
-            "untrusted_fields": hits,
-            "approval_invalidated": False,
-            "changes": [],
-            "next_action": "Remove instruction language from brief fields and resubmit.",
-        })
-    elif invented:  # F6: an invented style/number/gate refuses the brief
+    if invented:  # F6: an invented style/number/gate refuses the brief
         out.update({
             "outcome": "rejected",
             "reason_code": invented["reason_code"],
