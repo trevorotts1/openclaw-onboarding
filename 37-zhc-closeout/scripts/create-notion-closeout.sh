@@ -366,10 +366,14 @@ AGENT_NAME=$(state_get '.agentName'); [[ -z "$AGENT_NAME" ]] && AGENT_NAME="the 
 CC_URL=$(state_get '.commandCenterUrl'); [[ "$CC_URL" == "null" ]] && CC_URL=""
 LOGO_URL=$(state_get '.logoUrl // .logo_url'); [[ "$LOGO_URL" == "null" ]] && LOGO_URL=""
 
-# Visual intelligence set -- array of image URLs from state
-VISUAL_SET=$(state_get '.visualIntelligenceUrls')
-INFO_1=$(state_get '.infographic1Url')
-INFO_2=$(state_get '.infographic2Url')
+# WF-095: the permanent document must show pictures that do not expire. The GHL
+# media upload (run-closeout step 5.5, now above the Notion step) writes the
+# durable public URLs; prefer them and fall back to the generator URL only when
+# no public link exists (older box / no GHL).
+INFO_1=$(state_get '.ghlInfographic1PublicUrl')
+[[ -z "$INFO_1" || "$INFO_1" == "null" ]] && INFO_1=$(state_get '.infographic1Url')
+INFO_2=$(state_get '.ghlInfographic2PublicUrl')
+[[ -z "$INFO_2" || "$INFO_2" == "null" ]] && INFO_2=$(state_get '.infographic2Url')
 
 ROOT_TITLE="Your Zero-Human Company -- ${COMPANY_NAME}"
 
@@ -701,21 +705,20 @@ if [[ -n "$INFO_1" && "$INFO_1" != "null" && "$INFO_1" != file://* ]]; then
   sec4_blocks_arr+=( "$(img "$INFO_1")" )
 fi
 
-# Embed full visual intelligence set if available
-if [[ -n "$VISUAL_SET" && "$VISUAL_SET" != "null" && "$VISUAL_SET" != "[]" ]]; then
-  sec4_blocks_arr+=( "$(h "Visual Intelligence Set")" )
-  sec4_blocks_arr+=( "$(p "Your closeout includes a full set of visual intelligence images -- each one built from a written prompt to capture how your Zero-Human Company looks and works.")" )
-  # Embed each image URL from the set
-  while IFS= read -r img_url; do
-    [[ -z "$img_url" || "$img_url" == "null" ]] && continue
-    [[ "$img_url" == file://* ]] && continue
-    sec4_blocks_arr+=( "$(img "$img_url")" )
-  done < <(echo "$VISUAL_SET" | jq -r '.[]? // empty' 2>/dev/null)
-fi
+# WF-095: nothing from .visualIntelligenceUrls is embedded here -- that list
+# holds generator URLs that are not durable, so it has no place in the permanent
+# document. The durable set reaches the owner through Telegram and the media
+# library instead.
 
 if [[ -n "$INFO_2" && "$INFO_2" != "null" && "$INFO_2" != file://* ]]; then
   sec4_blocks_arr+=( "$(h "How Your Workforce Runs")" )
   sec4_blocks_arr+=( "$(img "$INFO_2")" )
+fi
+
+# WF-095: this sentence is client-facing and is character for character from the
+# spec. It is true only when the media upload actually ran.
+if [[ "$(state_get '.ghlMediaUploaded')" == "true" ]]; then
+  sec4_blocks_arr+=( "$(p "Your full picture set was sent to you in Telegram and saved to your media library.")" )
 fi
 
 sec4_blocks_arr+=( "$(p "Read it top-down. The CEO sees everything. Each Department Head only worries about their team. Each AI Employee only worries about their role.")" )
