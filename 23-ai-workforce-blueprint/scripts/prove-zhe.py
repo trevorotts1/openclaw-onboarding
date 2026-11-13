@@ -646,6 +646,18 @@ def workspace_root(fs, oc_root, cfg):
     return os.path.join(oc_root, "workspace")
 
 
+def build_state_path(ws):
+    """Path of the build-state file this prover reads.
+
+    ONE RULE (WF-097): $WORKFORCE_BUILD_STATE_FILE wins when set, exactly as the
+    shell scripts resolve it; otherwise <workspace>/.workforce-build-state.json.
+    """
+    env_state = os.environ.get("WORKFORCE_BUILD_STATE_FILE", "").strip()
+    if env_state:
+        return env_state
+    return os.path.join(ws, ".workforce-build-state.json")
+
+
 def discover_departments(fs, oc_root, ws=None, state=None):
     """Discover department folders (built-as-files). Mirrors materialize-dept-agents.sh
     DEPT_ROOTS. Returns a dict slug -> workspace_path (first root wins).
@@ -1492,7 +1504,7 @@ def check_standard_ready_board_join(fs, oc_root, ws, company_dir, departments_di
         }
 
     build_state = {}
-    state_txt = fs.read_text(os.path.join(ws, ".workforce-build-state.json"))
+    state_txt = fs.read_text(build_state_path(ws))
     if state_txt:
         try:
             build_state = json.loads(state_txt) or {}
@@ -1586,7 +1598,7 @@ def check_web_build_genuineness(fs, ws):
 
     # build-state (provenance) + transcript (genuineness banner).
     state = {}
-    state_txt = fs.read_text(os.path.join(ws, ".workforce-build-state.json"))
+    state_txt = fs.read_text(build_state_path(ws))
     if state_txt:
         try:
             state = json.loads(state_txt)
@@ -1807,7 +1819,7 @@ def prove(box_id, client, fs, local_root=None, with_subprovers=False):
     receipt["workspace"] = ws
 
     # ----- EXEMPTION / STANDARD_READY: interview not completed -----
-    state_txt = fs.read_text(os.path.join(ws, ".workforce-build-state.json"))
+    state_txt = fs.read_text(build_state_path(ws))
     interview_complete = False
     state = {}
     if state_txt:
