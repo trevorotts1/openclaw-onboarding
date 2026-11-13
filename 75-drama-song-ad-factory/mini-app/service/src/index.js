@@ -363,7 +363,7 @@ export async function handle(request, env, store, objects, deps = {}) {
         return ok({
           order: project(JSON.parse(already), nowMs),
           option_line: optionLine(await clientRecord(store, clientId), nowMs, await lastCheckIn(objects, clientId)),
-        }, 200);
+        }, 201);
       }
     }
     // The answers are the order: the box replays them through factory.py, so

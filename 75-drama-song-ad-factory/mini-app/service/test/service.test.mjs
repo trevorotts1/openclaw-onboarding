@@ -457,7 +457,7 @@ test('S75-071: the same order id stores ONE order, and the second POST answers 2
   assert.equal((await first.json()).order.order_id, orderId);
 
   const second = await handle(post('/api/studio/orders', body, key), GOOD_ENV, store, objects);
-  assert.equal(second.status, 200, 'the repeat answers 200, not a second 201');
+  assert.equal(second.status, 201, 'the repeat answers 201 with the same order, never a second record');
   assert.equal((await second.json()).order.order_id, orderId);
 
   assert.deepEqual(
@@ -479,7 +479,7 @@ test('S75-071: a repeat POST never changes an order already in production', asyn
   assert.equal(claimed.status, 200);
 
   const again = await handle(post('/api/studio/orders', { title: 'Something else', order_id: orderId }, key), GOOD_ENV, store, objects);
-  assert.equal(again.status, 200);
+  assert.equal(again.status, 201);
   const answer = (await again.json()).order;
   assert.equal(answer.state, 'in_production', 'the state is untouched');
   assert.equal(answer.title, 'Spring Sale', 'the stored order is answered, not rewritten');

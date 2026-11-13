@@ -126,10 +126,13 @@ export async function fetchApprovalMedia(url) {
 
 /**
  * S75-071 — one tap, one order. While a lock-in is in flight, a second tap
- * (or any other caller) joins the SAME request instead of sending a second
- * order; the next tap after it settles starts a fresh one.
+ * joins the SAME request only when it names the same order id; a tap naming
+ * a DIFFERENT order id sends its own request. The next tap after a settle
+ * starts fresh. Without the id check, a concurrent tap with different answers
+ * would silently resolve with the first tap's order.
  */
 let lockInInFlight = null;
+let lockInOrderId = null;
 
 const service = {
   getSession: () => call("GET", "/api/studio/session"),
@@ -149,9 +152,13 @@ const service = {
   },
 
   lockIn: ({ title, replies, upload_ids, order_id }) => {
+    if (lockInInFlight && lockInOrderId !== order_id) {
+      return call("POST", "/api/studio/orders", { title, replies, upload_ids, order_id });
+    }
     if (!lockInInFlight) {
+      lockInOrderId = order_id;
       lockInInFlight = call("POST", "/api/studio/orders", { title, replies, upload_ids, order_id })
-        .finally(() => { lockInInFlight = null; });
+        .finally(() => { lockInInFlight = null; lockInOrderId = null; });
     }
     return lockInInFlight;
   },
