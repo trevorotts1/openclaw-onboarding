@@ -739,8 +739,10 @@ def run_tick(state_dir=None, config_path=None, send=True, probe=None, role=None)
             config = C.read_config(config_path)
         except (OSError, ValueError):
             config = None
-            led.record_event("S7", "P1", key_path="config", klass="config",
-                             detail="live openclaw.json unreadable/unparseable")
+            # v1.3.0: a regular finding (change-only + resolved once readable)
+            findings.append(F("S7", "P1", "config", "config",
+                              "live openclaw.json unreadable/unparseable",
+                              dedup_key="S7|config"))
 
         # --- S6: audit tail + snapshot every write + ownership -----------------
         audit_path = openclaw_root() / "logs" / "config-audit.jsonl"
@@ -756,7 +758,10 @@ def run_tick(state_dir=None, config_path=None, send=True, probe=None, role=None)
         baseline = None
         bp = B.baseline_path(Path(state_dir) if state_dir else None)
         if bp.is_file():
-            baseline = json.loads(bp.read_text(encoding="utf-8"))
+            try:
+                baseline = json.loads(bp.read_text(encoding="utf-8"))
+            except (OSError, ValueError):
+                baseline = None  # unreadable (e.g. wrong owner): run baseline-free checks
 
         # v1.3.0 one-time schema upgrade: a v1 baseline (hashed skills manifest,
         # pinned long ago) is re-pinned ONCE so years-old, never-delivered drift
@@ -830,17 +835,18 @@ def run_tick(state_dir=None, config_path=None, send=True, probe=None, role=None)
         findings += sig_s7(probe if probe is not None else probe_surfaces())
 
         # --- S9 skills versions (cheap; v1.3.0) ---------------------------------
-        evaluated = {"S6", "S7"}
-        if baseline and config is not None:
-            evaluated |= {"S1", "S4", "S10"}
+        # STATE checks re-evaluated this tick: only their findings may be
+        # auto-resolved when absent. Evidence findings (S2, S5 idle burn, S6
+        # config.write, S8, dead-man) are never resolved by absence.
+        stateful = ["S6|root-owned", "S6|owner", "S7|gateway", "S7|dashboard", "S7|tunnel"]
         if config is not None:
-            evaluated |= {"S3", "S5"}
-        if baseline:
-            evaluated.add("S2")
+            stateful += ["S7|config", "S3|", "S5|cadence", "S5|hbmodel"]
+        if baseline and config is not None:
+            stateful += ["S1|", "S4|", "S10|"]
         if baseline and baseline.get("skills_versions"):
             cur_v = B._skills_versions()
             if cur_v:
-                evaluated.add("S9")
+                stateful.append("S9|")
                 findings += sig_s9(baseline.get("skills_versions"), cur_v)
                 # ratchet: a normal update raises the bar, so a later DOWNGRADE
                 # below the new level is still caught
@@ -852,13 +858,26 @@ def run_tick(state_dir=None, config_path=None, send=True, probe=None, role=None)
                         bv[k] = v
                         raised = True
                 if raised:
-                    baseline["skills_versions"] = bv
-                    B.write_baseline(baseline, state_dir)
+                    # re-read right before writing so a concurrent re-pin or
+                    # approve-baseline is not overwritten by this tick's copy
+                    try:
+                        fresh = json.loads(bp.read_text(encoding="utf-8"))
+                    except (OSError, ValueError):
+                        fresh = baseline
+                    fv = dict(fresh.get("skills_versions") or {})
+                    for k, v in bv.items():
+                        ft, nt = B.version_tuple(fv.get(k)), B.version_tuple(v)
+                        if k not in fv or (ft is not None and nt is not None and nt > ft):
+                            fv[k] = v
+                    fresh["skills_versions"] = fv
+                    B.write_baseline(fresh, state_dir)
+                    baseline = fresh
 
         # record CHANGES only (v1.3.0): a finding that is already active (same
         # dedup_key, same severity) is not written again and not routed again -
         # a standing problem is ONE event, not one per tick (a box carried
         # 200,000 identical rows). A finding that went away is resolved.
+        led.collapse_duplicate_active()
         recorded = []
         new_findings = []
         for f in findings:
@@ -874,12 +893,17 @@ def run_tick(state_dir=None, config_path=None, send=True, probe=None, role=None)
             f["event_id"] = eid
             recorded.append(f)
             new_findings.append(f)
-        led.resolve_absent([f["dedup_key"] for f in findings], sorted(evaluated))
+        led.resolve_absent([f["dedup_key"] for f in findings], stateful)
 
     # route (outside the ledger context; the alert layer opens its own)
+    # CLIENT box: route each problem once, when it appears. OPERATOR box:
+    # unchanged - route every standing finding each tick and let route_finding's
+    # own dedup window / storm cap decide (a failed or deferred operator send
+    # is retried, as before).
+    to_route = recorded if role == "operator" else new_findings
     sent = 0
-    if send and new_findings:
-        sent = _route(new_findings, state_dir)
+    if send and to_route:
+        sent = _route(to_route, state_dir)
 
     summary = {"ok": True, "action": "tick", "role": role,
                "findings": len(recorded), "new": len(new_findings),
@@ -1281,6 +1305,79 @@ def self_test():
             s0 = [e for e in led.events_since("2000-01-01T00:00:00+00:00") if e["signal"] == "S0"]
         assert len(s0) == 1 and s0[0]["ack_state"] == "resolved" and "model.primary" in s0[0]["detail"]
         print("  baseline-upgrade case: PASS (v1 re-pinned once; absorbed drift logged, not alerted)")
+
+        # B1/B2: only STATE findings auto-resolve. Evidence findings (S2), the
+        # dead-man and no-operator-target events stay open across a tick.
+        from datetime import datetime as _dt, timedelta as _td, timezone as _tz
+        with Ledger() as led:
+            ev_s2 = led.record_event("S2", "P1", key_path="trajectory", dedup_key="S2|some-model")
+            ev_dm = led.record_event("S7", "P1", key_path="fleet:box-x", dedup_key="deadman|box-x|t")
+            ev_nt = led.record_event("S7", "P1", key_path="alert.operator_target",
+                                     dedup_key="S7|no_operator_target")
+        run_tick(send=False, probe={"gateway": "unknown"})
+        with Ledger() as led:
+            st = {r["event_id"]: r["ack_state"] for r in
+                  led.conn.execute("SELECT event_id, ack_state FROM events").fetchall()}
+        assert st[ev_s2] == "open" and st[ev_dm] == "open" and st[ev_nt] == "open", st
+        print("  evidence-not-resolved case: PASS (S2 / dead-man / no-target stay open across a tick)")
+
+        # B1: an unreadable config is a finding that STAYS open while broken
+        # (escalatable after 30 min) and resolves once readable again
+        good = cfgp.read_text(encoding="utf-8")
+        cfgp.write_text("{not json", encoding="utf-8")
+        run_tick(send=False, probe={"gateway": "unknown"})
+        run_tick(send=False, probe={"gateway": "unknown"})
+        with Ledger() as led:
+            act = led.active_event("S7|config")
+        assert act is not None and act["ack_state"] == "open" and act["severity"] == "P1"
+        cfgp.write_text(good, encoding="utf-8")
+        run_tick(send=False, probe={"gateway": "unknown"})
+        with Ledger() as led:
+            assert led.active_event("S7|config") is None
+        print("  config-unreadable case: PASS (open while broken across ticks, resolved when fixed)")
+
+        # B4: legacy duplicate open rows collapse to the newest per problem
+        with Ledger() as led:
+            # an EVIDENCE key, so only the collapse (not resolve-by-absence) acts
+            ids = [led.record_event("S2", "P1", key_path="trajectory", dedup_key="S2|legacy-dup")
+                   for _ in range(3)]
+        run_tick(send=False, probe={"gateway": "unknown"})
+        with Ledger() as led:
+            active = [r["event_id"] for r in led.conn.execute(
+                "SELECT event_id FROM events WHERE dedup_key='S2|legacy-dup' AND ack_state='open'")]
+        assert active == [ids[-1]], active
+        with Ledger() as led:
+            n_open_dups = led.conn.execute(
+                "SELECT COUNT(*) FROM (SELECT dedup_key FROM events WHERE ack_state IN "
+                "('open','acked','escalated') GROUP BY dedup_key HAVING COUNT(*) > 1)").fetchone()[0]
+        assert n_open_dups == 0
+        print("  duplicate-collapse case: PASS (one active row per problem)")
+
+        # N1: the OPERATOR box routes standing findings every tick (its own
+        # dedup window decides); a CLIENT box routes only new ones
+        routed = []
+        _g = globals()  # this module as it is running (may be __main__)
+        _real_route = _g["_route"]
+        _g["_route"] = lambda fs, sd: routed.append(len(fs)) or 0
+        try:
+            cfgp.write_text("{not json", encoding="utf-8")
+            with Ledger() as led:
+                led.set_meta("role", "client")
+            run_tick(send=True, probe={"gateway": "unknown"})
+            run_tick(send=True, probe={"gateway": "unknown"})
+            client_second = routed[-1] if len(routed) >= 2 else 0
+            with Ledger() as led:
+                led.set_meta("role", "operator")
+            routed.clear()
+            run_tick(send=True, probe={"gateway": "unknown"})
+            assert routed and routed[-1] >= 1, routed
+            assert client_second == 0, client_second
+        finally:
+            _g["_route"] = _real_route
+            cfgp.write_text(good, encoding="utf-8")
+            with Ledger() as led:
+                led.set_meta("role", "client")
+        print("  operator-reroute case: PASS (operator re-routes standing findings; client routes new only)")
 
         for k in ("EWS_STATE_DIR", "EWS_OPENCLAW_ROOT", "EWS_CONFIG_PATH"):
             os.environ.pop(k, None)

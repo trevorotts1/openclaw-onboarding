@@ -526,7 +526,10 @@ def escalate(state_dir=None, sender=None, dry_run=False, admission=None):
             # through the direct outbound HTTP path and is the receipt that
             # matters.
             msg_ok = False
-            if rescue:
+            # the group message rides the "rescue-rangers" Telegram account,
+            # which only the operator box carries; on a client box it can only
+            # fail, so it is not attempted there (the admission is the receipt).
+            if rescue and led.get_meta("role", "client") == "operator":
                 try:
                     msg_ok, _ = sender(_RESCUE_ACCOUNT, rescue, text)
                 except Exception:  # noqa: BLE001 - visibility is best-effort
@@ -851,6 +854,25 @@ def self_test():
         assert calls == first, "a P1 inside its retry window must not be re-posted: %r" % calls
         print("  escalation-backoff case: PASS (retry window honored; no POST every run)")
 
+        # B3: not-enrolled / refused also back off (they used to get no next
+        # attempt and were re-POSTed on every run)
+        from datetime import timedelta as _td, timezone as _tz
+        old_ts = (datetime.now(_tz.utc) - _td(hours=2)).replace(microsecond=0).isoformat()
+        for status in ("no_enrollment", "refused", "client_unavailable"):
+            with Ledger() as led:
+                led.record_event("S4", "P1", key_path="b3", tick_ts=old_ts,
+                                 dedup_key="b3-%s" % status)
+            hits = []
+
+            def _fixed(state_dir=None, box="", problem_text="", _s=status, **kw):
+                if kw.get("dedup_key") == "b3-%s" % _s:
+                    hits.append(1)
+                return {"status": _s, "detail": "fixture"}
+            escalate(sender=fake_sender, admission=_fixed)
+            escalate(sender=fake_sender, admission=_fixed)
+            assert len(hits) == 1, (status, hits)
+        print("  escalation-backoff-all-outcomes case: PASS (not-enrolled / refused / unavailable back off)")
+
         # v1.3.0 CLIENT box: no direct Telegram send at all. A P1 is held open
         # for the escalate sweep (Rescue Rangers); a P2 is recorded only.
         with Ledger() as led_role:
@@ -869,6 +891,23 @@ def self_test():
                            if e["dedup_key"] == "S7|no_operator_target" and e["event_id"] > 0
                            and e["detail"] == "client P1")
         print("  client-route case: PASS (no Telegram; P1 queued for Rescue Rangers, P2 recorded)")
+
+        # a CLIENT box never sends the supplemental rescue-group Telegram
+        # message (it has no rescue-rangers account); the admission still runs
+        from datetime import timedelta as _td2, timezone as _tz2
+        _old = (datetime.now(_tz2.utc) - _td2(hours=2)).replace(microsecond=0).isoformat()
+        with Ledger() as led:
+            led.record_event("S4", "P1", key_path="grp", tick_ts=_old, dedup_key="client-grp")
+        adm = []
+
+        def _ok(state_dir=None, box="", problem_text="", **kw):
+            adm.append(kw.get("dedup_key"))
+            return {"status": "admitted", "ticket_id": "T-1", "detail": "fixture"}
+        before_g = len(sent_log)
+        escalate(sender=fake_sender, admission=_ok)
+        assert "client-grp" in adm
+        assert len(sent_log) == before_g, sent_log[before_g:]
+        print("  client-no-group-message case: PASS (admission sent; no Telegram group message)")
 
         for k in ("EWS_STATE_DIR", "EWS_OPERATOR_CHAT", "EWS_RESCUE_CHAT", "EWS_BOX_NAME"):
             os.environ.pop(k, None)

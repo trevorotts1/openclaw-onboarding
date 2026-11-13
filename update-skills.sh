@@ -12084,8 +12084,20 @@ LEPY
   # forever (one box: August), and every approved model/skill change since was
   # a permanent "drift" finding. Only re-pins a box that already has a baseline;
   # never installs Skill 60. Best-effort.
+  # Never as root over a box-user-owned baseline: the rewrite would leave a
+  # root-owned 0600 file the box user's tick can no longer read.
   _EWS_ENTRY="$SKILLS_DIR/60-zhc-early-warning-system/ews-entry.sh"
-  if [ -f "$_EWS_ENTRY" ] && bash "$_EWS_ENTRY" baseline show >/dev/null 2>&1; then
+  _EWS_BASE_OK=1
+  if [ "$(id -u)" = "0" ]; then
+    _EWS_BASE_OK="$(python3 -c 'import os,sys
+sys.path.insert(0, sys.argv[1])
+from ews_ledger import default_state_dir
+p = default_state_dir() / "baseline.json"
+print(1 if (not p.exists() or os.stat(p).st_uid == 0) else 0)' "$SKILLS_DIR/60-zhc-early-warning-system/scripts" 2>/dev/null || echo 0)"
+  fi
+  if [ "$_EWS_BASE_OK" != "1" ]; then
+    echo "  ℹ Skill 60 baseline refresh skipped (running as root; baseline owned by the box user)"
+  elif [ -f "$_EWS_ENTRY" ] && bash "$_EWS_ENTRY" baseline show >/dev/null 2>&1; then
     if bash "$_EWS_ENTRY" baseline pin >/dev/null 2>&1; then
       echo "  ✓ Skill 60 early-warning baseline refreshed after the update"
     else

@@ -340,25 +340,44 @@ class Ledger:
             (dedup_key, *self.ACTIVE_ACK_STATES)).fetchone()
         return dict(row) if row else None
 
-    def resolve_absent(self, present_keys, signals):
-        """Mark ACTIVE events of the given signals 'resolved' when their
-        dedup_key is not in present_keys (the problem went away). Returns the
-        number of events resolved."""
-        if not signals:
+    def resolve_absent(self, present_keys, stateful_prefixes):
+        """Mark ACTIVE events 'resolved' when their dedup_key belongs to a
+        STATE check that ran this tick (it starts with one of
+        stateful_prefixes) and the key is not among this tick's findings - the
+        problem went away. Findings from one-shot EVIDENCE (trajectory deltas,
+        a single config write, a leaked secret, the fleet dead-man, the
+        no-operator-target condition) are never auto-resolved: absence on the
+        next tick only means no NEW evidence. Returns the number resolved."""
+        prefixes = tuple(stateful_prefixes or ())
+        if not prefixes:
             return 0
         present = set(present_keys)
         rows = self.conn.execute(
-            "SELECT event_id, dedup_key FROM events WHERE signal IN (%s) AND ack_state IN (%s)"
-            % (",".join("?" * len(signals)), ",".join("?" * len(self.ACTIVE_ACK_STATES))),
-            (*signals, *self.ACTIVE_ACK_STATES)).fetchall()
+            "SELECT event_id, dedup_key FROM events WHERE ack_state IN (%s)"
+            % ",".join("?" * len(self.ACTIVE_ACK_STATES)), self.ACTIVE_ACK_STATES).fetchall()
         n = 0
         for r in rows:
-            if r["dedup_key"] not in present:
+            k = r["dedup_key"] or ""
+            if k not in present and k.startswith(prefixes):
                 self.conn.execute("UPDATE events SET ack_state='resolved', ack_ts=? WHERE event_id=?",
                                   (now_utc(), r["event_id"]))
                 n += 1
         self.conn.commit()
         return n
+
+    def collapse_duplicate_active(self):
+        """Keep only the NEWEST active event per dedup_key; resolve the older
+        duplicates. Boxes upgraded from pre-1.3.0 carry one open row per tick
+        per standing problem; without this the escalate sweep would admit each
+        duplicate separately. Idempotent and cheap. Returns rows resolved."""
+        ph = ",".join("?" * len(self.ACTIVE_ACK_STATES))
+        cur = self.conn.execute(
+            "UPDATE events SET ack_state='resolved', ack_ts=? WHERE ack_state IN (%s) "
+            "AND event_id NOT IN (SELECT MAX(event_id) FROM events WHERE ack_state IN (%s) "
+            "GROUP BY dedup_key)" % (ph, ph),
+            (now_utc(), *self.ACTIVE_ACK_STATES, *self.ACTIVE_ACK_STATES))
+        self.conn.commit()
+        return int(cur.rowcount or 0)
 
     def events_since(self, since_iso):
         rows = self.conn.execute(
@@ -593,13 +612,16 @@ class Ledger:
             outcome = "dry_run"
             nxt = None
             err = last_error
-        elif receipt_status in ("no_enrollment", "client_unavailable"):
-            outcome = "deferred"
-            nxt = None
-            err = last_error
-        elif receipt_status == "refused":
-            outcome = "failed"
-            nxt = None
+        elif receipt_status in ("no_enrollment", "client_unavailable", "refused"):
+            # v1.3.0: these used to carry no next attempt, so the escalate
+            # sweep re-POSTed them on every run. They now back off like any
+            # other non-accepted outcome (the event itself stays open).
+            outcome = "deferred" if receipt_status != "refused" else "failed"
+            try:
+                base = datetime.now(timezone.utc) + timedelta(seconds=retry_seconds)
+                nxt = base.replace(microsecond=0).isoformat()
+            except (OverflowError, ValueError):
+                nxt = None
             err = last_error
         else:
             outcome = "attempted"
