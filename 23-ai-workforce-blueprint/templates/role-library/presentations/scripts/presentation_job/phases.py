@@ -729,6 +729,32 @@ OPERATOR_REVIEW_CLIENT_SENTENCE = (
     "Your presentation is moving ahead. One of our team is doing a quick "
     "review of your slides. You do not need to do anything.")
 
+#: PD-018b. The ONE sentence a client gets when the engine hits an internal
+#: close-time failure. The technical text (integrity reasons, missing
+#: deliverables, audit output) goes to the event log and the operator console
+#: only -- never to the client transport.
+CLIENT_INTERNAL_SENTENCE = (
+    "We are fixing something on our side. You do not need to do anything.")
+
+
+def _client_need_line(state: Dict[str, Any]) -> str:
+    """PD-018b: the client-safe "<plain need>" for a pause message.
+
+    Sourced from the park record the engine already classifies
+    (presentation_job.auto_resume.classify_park), whose `needed` field is
+    plain words written for the client -- never the raw blocked reason, a
+    phase id, or an AF- code. When the park cannot be classified at all, the
+    generic internal-work sentence is used instead of guessing.
+    """
+    try:
+        from .auto_resume import classify_park
+        needed = str(classify_park(state).get("needed") or "").strip()
+        if needed:
+            return needed
+    except Exception:  # noqa: BLE001 -- a pause message must still go out
+        pass
+    return CLIENT_INTERNAL_SENTENCE
+
 
 def _first_check_reason(reason: str) -> str:
     """The FIRST reason a failed step check reported, out of the single string
@@ -1224,7 +1250,19 @@ class Engine:
         self.store = store
         self.state = state
         self.dry_run = dry_run
-        self.report = Reporter(state, store)
+        self.report = Reporter(state, store, manifest)
+        # PD-018b: (client_label, client_visible) per phase, read from the
+        # manifest's own retokened phase entries (PD-018a). The Phase dataclass
+        # does not parse these two fields, so the raw manifest mapping is the
+        # single source -- never a phase id or role name turned into copy.
+        self._client_meta: Dict[str, Tuple[str, bool]] = {}
+        _raw = getattr(manifest, "raw", None)
+        if isinstance(_raw, dict):
+            for _entry in _raw.get("phases") or []:
+                if isinstance(_entry, dict) and _entry.get("id"):
+                    self._client_meta[str(_entry["id"])] = (
+                        str(_entry.get("client_label") or "").strip(),
+                        bool(_entry.get("client_visible", True)))
         from .board import BoardMirror
         try:
             self.board = BoardMirror(run_dir, state, store, self.report)
@@ -1552,44 +1590,65 @@ class Engine:
                 return i + 1, len(visible)
         return None, len(visible)
 
+    def _phase_client_meta(self, phase: Phase) -> Tuple[str, bool]:
+        """(client_label, client_visible) for `phase` from the loaded manifest.
+
+        Fail-safe: an unknown phase (a synthetic Phase a test built, or a
+        manifest entry without the field) is treated as VISIBLE with an empty
+        label, so nothing is silently suppressed for a reason the engine cannot
+        see.
+        """
+        meta = getattr(self, "_client_meta", None)
+        if not isinstance(meta, dict):
+            return ("", True)
+        return meta.get(phase.id, ("", True))
+
     def _render_client_report_msg(self, phase: Phase, kind: str) -> str:
         """Render phase.client_report's start/done template for the client,
-        substituting {k}/{N}/{name}/{eta} for real -- NEVER hands a manifest
-        template to the client with its braces unformatted (see the B2b
-        block above PhaseExecutorContractError). kind in {"start", "done"}.
+        substituting {k}/{N}/{client_label}/{eta} for real -- and NEVER sending
+        a phase's own internal text.
 
-        Fails safe in three independent ways:
+        PD-018b: returns "" (the caller sends nothing) when the phase is
+        declared `client_visible: false`, when it has no step number for this
+        deck (k is None), or when the manifest gives it no client label. The
+        returned text never carries a manifest phase id or a role name; a
+        template or default that would is replaced by the plain default.
+
+        Fails safe in two independent ways:
           1. deck shape unknown  -> _client_visible_phases widens N to the
-             full 36-phase superset instead of asserting a smaller number.
-          2. phase_id not one of this deck's visible steps (k is None) ->
-             honest "not part of the N-step plan" wording, never a
-             fabricated step number (same branch run_signature_deck.py's
-             emit_client_report uses for the identical case).
-          3. a malformed manifest template (stray brace) -> caught and
+             full phase superset instead of asserting a smaller number.
+          2. a malformed manifest template (stray brace) -> caught and
              replaced with the plain default message, never raised, never
              leaked partially-formatted.
         """
-        tmpl_key = "start_template" if kind == "start" else "done_template"
-        default = (f"Starting {phase.id} ({phase.owning_role})" if kind == "start"
-                   else f"{phase.id} complete")
-        tmpl = phase.client_report.get(tmpl_key) or default
-        if "{" not in tmpl:
-            return tmpl  # nothing to substitute (default string, or a static template)
+        label, client_visible = self._phase_client_meta(phase)
+        if not client_visible or not label:
+            return ""
         k, n = self._client_phase_index(phase.id, self.manifest.phases)
         if k is None:
-            return (f"{phase.id} — not part of the {n}-step plan for this deck type "
-                    f"(internal housekeeping phase, no client-visible step number) — "
-                    f"{'starting' if kind == 'start' else 'complete'}")
+            # Walked/attested internal step, not one of this deck's N client
+            # steps: the client hears nothing rather than a fabricated number.
+            return ""
+        tmpl_key = "start_template" if kind == "start" else "done_template"
+        default = (f"Step {k} of {n} — {label} — starting" if kind == "start"
+                   else f"Step {k} of {n} — {label} — complete")
+        tmpl = phase.client_report.get(tmpl_key) or default
         eta_val = phase.client_report.get("eta_minutes") or phase.client_report.get("eta")
         eta_str = f" (ETA ~{eta_val} min)" if (kind == "start" and eta_val) else ""
-        fields = _SafeFormatDict(k=k, N=n, name=(phase.name or phase.id), eta=eta_str)
-        try:
-            return tmpl.format_map(fields)
-        except (ValueError, IndexError):
-            # Malformed template syntax (e.g. a stray unmatched '{' or '}') --
-            # never let a bad template string reach the client verbatim, and
-            # never crash phase reporting over it.
-            return default
+        fields = _SafeFormatDict(k=k, N=n, client_label=label, name=label, eta=eta_str)
+        if "{" not in tmpl:
+            text = tmpl  # nothing to substitute (default string, or a static template)
+        else:
+            try:
+                text = tmpl.format_map(fields)
+            except (ValueError, IndexError):
+                # Malformed template syntax (e.g. a stray unmatched '{' or '}') --
+                # never let a bad template string reach the client verbatim, and
+                # never crash phase reporting over it.
+                text = default
+        if phase.id in text or (phase.owning_role and phase.owning_role in text):
+            text = default
+        return text
 
     def _route_around_converter_phase(self, phase: Phase, creation_mode: str) -> None:
         """Record a converter_path phase as not applicable to this deck, WITHOUT
@@ -2255,11 +2314,12 @@ class Engine:
                              attempts=ps.get("attempts", 0) + 1)
 
             start_msg = self._render_client_report_msg(phase, "start")
-            self.report.to_requester("progress", start_msg)
-            # PRES-052: supervised relay emits at stage time, from job start —
-            # stage/waiting/retrying/progress visible before final output.
-            self._relay_emit("stage_start", f"{phase.id} starting — {start_msg}",
-                             stage=phase.id)
+            if start_msg:
+                self.report.to_requester("progress", start_msg, phase_id=phase.id)
+                # PRES-052: supervised relay emits at stage time, from job start —
+                # stage/waiting/retrying/progress visible before final output.
+                self._relay_emit("stage_start", f"{phase.id} starting — {start_msg}",
+                                 stage=phase.id)
 
         # PRES-031: build the canonical scoped persona context (client /
         # company / presentation IDs, audience, topic, offer, owner voice,
@@ -2514,13 +2574,17 @@ class Engine:
                 method="engine_done")
             done_msg = self._render_client_report_msg(phase, "done")
             with self._state_lock:
-                self.report.to_requester("progress", done_msg)
-                # PRES-052: stage completion visible in the supervised view.
-                self._relay_emit("stage_done",
-                                 f"{phase.id} complete — {done_msg}",
-                                 stage=phase.id)
+                if done_msg:
+                    self.report.to_requester("progress", done_msg, phase_id=phase.id)
+                    # PRES-052: stage completion visible in the supervised view.
+                    self._relay_emit("stage_done",
+                                     f"{phase.id} complete — {done_msg}",
+                                     stage=phase.id)
                 if self.board:
-                    self.board.phase_progress(phase.id, done_msg)
+                    # The board is the OPERATOR view: when the phase is not one
+                    # the client is told about, the card still names it plainly.
+                    board_msg = done_msg or f"{phase.id} complete"
+                    self.board.phase_progress(phase.id, board_msg)
                     # Option B: the phase's verifier has already passed by this point
                     # (a failing verifier returns via _block() above, never reaching
                     # here) -- so this phase's FIRST progress report both mints its
@@ -2534,7 +2598,7 @@ class Engine:
                     # re-derivation. Without it the CC server 403s the
                     # done-transition ("no completion evidence") and the board is
                     # left disagreeing with the run.
-                    self.board.child_report(phase.id, title, description, "done", done_msg,
+                    self.board.child_report(phase.id, title, description, "done", board_msg,
                                             deliverables=sorted(shas.keys()))
         return rc
 
@@ -3027,12 +3091,14 @@ class Engine:
 
             with self._state_lock:
                 record_heal_event(self.state, phase.id, self.store, ps, rung=1, attempt=attempt, reason=reason)
-                # ANNOUNCE BEFORE RETRYING (invariant 6).
-                self.report.to_requester(
-                    "blocked",
+                # ANNOUNCE BEFORE RETRYING (invariant 6) -- but PD-018b: a retry
+                # is the engine's own internal work, so the client is told
+                # nothing until a step finishes or a pause is real. The retry
+                # line goes to the event log, where the operator reads it.
+                self.report.event(
+                    "report.internal",
                     f"{phase.id} failed ({reason}). Retrying — attempt {attempt} of "
-                    f"{heal.HEAL_CAP_TRANSIENT}. Nothing you need to do yet.",
-                    phase_id=phase.id, reason=reason)
+                    f"{heal.HEAL_CAP_TRANSIENT}. Nothing you need to do yet.")
                 # PRES-052: retrying state visible in the supervised view.
                 self._relay_emit("retrying",
                                  f"{phase.id} retrying — attempt {attempt} of "
@@ -3825,8 +3891,11 @@ class Engine:
             if not announced_half and remaining < budget_seconds / 2:
                 announced_half = True
                 with self._state_lock:
-                    self.report.to_requester(
-                        "progress",
+                    # PD-018b: waiting on a step is internal work. The client
+                    # hears nothing until a step finishes or a pause is real;
+                    # the full line goes to the event log and the relay.
+                    self.report.event(
+                        "report.internal",
                         f"Still waiting on {phase.id} ({phase.owning_role}). "
                         f"About {int(remaining/60)} minutes before I flag it.")
                     # PRES-052: active progress before final output.
@@ -4343,15 +4412,13 @@ class Engine:
                 # same as the success path) and closes it 'blocked' with the reason.
                 title, description = self._child_card_meta(phase)
                 self.board.child_report(phase.id, title, description, "blocked", reason)
-            safe_msg = f"{len(banked)} file(s) are saved and {len(lost)} will be rebuilt on resume " \
-                       "-- nothing you sent us is lost."
-            if not lost:
-                safe_msg = f"{len(banked)} file(s) already produced are saved -- nothing is lost."
+            # PD-018b: the raw reason (phase id, AF- code, path) never reaches
+            # the client; the plain need comes from the park record. The banked/
+            # lost accounting stays on the operator console below.
             self.report.to_requester(
                 "blocked",
-                f"Your presentation is paused at {phase.id}. {reason} "
-                f"{safe_msg} "
-                "We have been told and are looking at it.",
+                f"Your presentation is paused. {_client_need_line(self.state)} "
+                "Everything you sent is saved.",
                 phase_id=phase.id, reason=reason)
         print("\n" + "=" * 72, file=sys.stderr)
         print(f"BLOCKED at {phase.id}", file=sys.stderr)
@@ -5840,9 +5907,12 @@ class Engine:
                 "gates": [r.split(':', 1)[0] for r in reasons],
             }
             self.store.save(self.state)
-            self.report.to_requester(
-                "blocked",
+            # PD-018b: integrity detail is internal -- event log and the operator
+            # console below only; the client gets one plain sentence.
+            self.report.event(
+                "report.internal",
                 f"Process integrity failed — deck cannot ship: {len(reasons)} integrity violation(s)")
+            self.report.to_requester("blocked", CLIENT_INTERNAL_SENTENCE)
             print("\nCANNOT CLOSE -- process certificate integrity FAILED:", file=sys.stderr)
             print(lines, file=sys.stderr)
             print("\n  Every manifest phase must have run and been substance-verified.", file=sys.stderr)
@@ -5912,9 +5982,12 @@ class Engine:
                         "missing_keys": exc.missing_keys,
                     }
                     self.store.save(self.state)
-                    self.report.to_requester(
-                        "blocked",
+                    # PD-018b: technical text to the event log, plain sentence
+                    # to the client (see CLIENT_INTERNAL_SENTENCE).
+                    self.report.event(
+                        "report.internal",
                         f"Curation failed — {len(exc.missing_keys)} deliverable(s) missing: {exc}")
+                    self.report.to_requester("blocked", CLIENT_INTERNAL_SENTENCE)
                     print(f"\nCANNOT CLOSE — curation failed:\n{exc}", file=sys.stderr)
                     return EXIT_GATE_BLOCKED
                 # WORK-ITEM-16: self-audit runs as the FINAL step before
@@ -5930,9 +6003,12 @@ class Engine:
                         "output": audit_output,
                     }
                     self.store.save(self.state)
-                    self.report.to_requester(
-                        "blocked",
+                    # PD-018b: technical text to the event log, plain sentence
+                    # to the client (see CLIENT_INTERNAL_SENTENCE).
+                    self.report.event(
+                        "report.internal",
                         f"Self-audit failed before handoff — {audit_reason}")
+                    self.report.to_requester("blocked", CLIENT_INTERNAL_SENTENCE)
                     print(f"\nCANNOT CLOSE — self-audit failed:\n{audit_output}", file=sys.stderr)
                     return EXIT_GATE_BLOCKED
                 if not self._board_register_close():
@@ -5987,9 +6063,12 @@ class Engine:
                 "missing_keys": exc.missing_keys,
             }
             self.store.save(self.state)
-            self.report.to_requester(
-                "blocked",
+            # PD-018b: technical text to the event log, plain sentence to the
+            # client (see CLIENT_INTERNAL_SENTENCE).
+            self.report.event(
+                "report.internal",
                 f"Curation failed — {len(exc.missing_keys)} deliverable(s) missing: {exc}")
+            self.report.to_requester("blocked", CLIENT_INTERNAL_SENTENCE)
             print(f"\nCANNOT CLOSE — curation failed:\n{exc}", file=sys.stderr)
             return EXIT_GATE_BLOCKED
         # WORK-ITEM-16: self-audit runs as the FINAL step before handoff --
@@ -6005,9 +6084,12 @@ class Engine:
                 "output": audit_output,
             }
             self.store.save(self.state)
-            self.report.to_requester(
-                "blocked",
+            # PD-018b: technical text to the event log, plain sentence to the
+            # client (see CLIENT_INTERNAL_SENTENCE).
+            self.report.event(
+                "report.internal",
                 f"Self-audit failed before handoff — {audit_reason}")
+            self.report.to_requester("blocked", CLIENT_INTERNAL_SENTENCE)
             print(f"\nCANNOT CLOSE — self-audit failed:\n{audit_output}", file=sys.stderr)
             return EXIT_GATE_BLOCKED
         if not self._board_register_close():
