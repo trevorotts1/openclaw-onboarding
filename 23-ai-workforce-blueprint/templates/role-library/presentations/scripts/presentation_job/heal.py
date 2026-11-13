@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import subprocess
+import sys
 import time
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional, Tuple
@@ -76,18 +77,59 @@ _MISSING_INPUT_MARKERS = ("missing working/", "missing deliverables/",
 _VERIFIER_MARKERS = ("substance check failed", "verifier", "verify")
 
 
-def classify_failure(reason: Any) -> str:
-    """FIX 10: classify one block/heal reason into a failure class.
+# PD-045: structured failure KINDS a call site can state from facts it already
+# holds (a verifier's verdict, a caught exception's type, an exec's exit code).
+# When one is supplied it decides the class; the word lists above are consulted
+# only when no kind is given, and every word-based decision logs
+# ``heal.classified_by_text`` so an operator can see the weaker evidence.
+_FACT_KIND_CLASS = {
+    "check_failed": FAILURE_VERIFIER_SUBSTANCE,
+    "missing_input": FAILURE_MISSING_INPUT,
+    "owner_decision": FAILURE_OWNER_DECISION,
+    "timeout": FAILURE_TRANSIENT,
+    "exec_os_error": FAILURE_TRANSIENT,
+    "dispatcher_retry_ceiling": FAILURE_TRANSIENT,
+    "produced_nothing": FAILURE_TRANSIENT,
+    "transient": FAILURE_TRANSIENT,
+}
+
+# HTTP 402 masked by a shell exit code is 146 (402 & 255) -- a structured
+# provider fact the script executor already holds, per FIX 10's own note.
+_PROVIDER_EXIT_CODES = frozenset({146})
+
+
+def classify_failure(reason: Any, failure_kind: Optional[str] = None) -> str:
+    """FIX 10 / PD-045: classify one block/heal reason into a failure class.
 
     `reason` is usually the human-readable reason string the rungs record;
     anything non-str classifies as transient (the safe retry class). Order
     matters: owner decisions are checked first (a waiver reason that happens
     to contain the word 'missing' must still park, never auto-heal), then
     provider errors, then missing inputs, then verifier substance.
+
+    PD-045: `failure_kind` is a structured fact the caller already holds
+    ("check_failed" for a verifier verdict, "timeout"/"exec_os_error" for the
+    caught exception's type, "exit_code:<n>" for an exec's exit code). When it
+    is present it decides the class and the text is never inspected — a check
+    message that happens to mention "provider" is not a provider outage.
+    Without it, the word lists run as before and the decision is logged as
+    ``heal.classified_by_text``.
     """
+    if failure_kind:
+        kind = str(failure_kind).strip().lower()
+        if kind.startswith("exit_code:"):
+            try:
+                code = int(kind.split(":", 1)[1])
+            except ValueError:
+                code = None
+            return (FAILURE_PROVIDER_ERROR if code in _PROVIDER_EXIT_CODES
+                    else FAILURE_TRANSIENT)
+        return _FACT_KIND_CLASS.get(kind, FAILURE_TRANSIENT)
     text = str(reason or "").lower()
     if not text:
         return FAILURE_TRANSIENT
+    print(f"heal.classified_by_text: {str(reason)[:200]}", file=sys.stderr,
+          flush=True)
     if any(m in text for m in _OWNER_DECISION_MARKERS):
         return FAILURE_OWNER_DECISION
     if any(m in text for m in _PROVIDER_ERROR_MARKERS):
