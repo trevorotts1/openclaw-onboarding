@@ -176,8 +176,9 @@
 --   delivered       delivered_at      lifecycle.transition on deliver
 --
 --   A record carrying none of them yet is KEPT, never swept. retention.js
---   reads a column this file does not name: the sweep must read the keys the
---   store actually writes, or it runs and deletes nothing.
+--   reads only the columns named here. It once read `created_at_ms` and
+--   `event_at_ms`, which no writer produces, so every record was kept and the
+--   sweep ran and deleted nothing.
 --
 -- ============================================================================
 -- SECRETS  (declared here; the deploy files in U4 set them — this unit never
