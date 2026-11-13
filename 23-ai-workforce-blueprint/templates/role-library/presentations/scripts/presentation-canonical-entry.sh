@@ -855,7 +855,7 @@ if [ -f "$SELF_DIR/presentations-drift-gates.sh" ]; then
   if [ ! -x "$_GATE0C_SCRIPT" ] && [ ! -r "$_GATE0C_SCRIPT" ]; then
     note "GATE 0c ERROR: drift-gate script not runnable at $_GATE0C_SCRIPT (build continues)"
   else
-    _GATE0C_OUT="$("$_GATE0C_SCRIPT" 2>&1)"
+    _GATE0C_OUT="$(bash "$_GATE0C_SCRIPT" 2>&1)"
     _GATE0C_RC=$?
     if [ "$_GATE0C_RC" -ne 0 ]; then
       note "GATE 0c WARNING: presentations drift detected (gate exit $_GATE0C_RC) -- build CONTINUES per D6. Operator: review drift before ship."
