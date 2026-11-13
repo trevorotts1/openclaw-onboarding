@@ -565,11 +565,57 @@ def _studio_answer(run_dir, stage):
         return None
 
 
+#: S75-072: the page sends every storyboard note in ONE answer, one line per
+#: shot ("shot 2: text" newline "shot 5: text"). A line of that shape is one
+#: shot's note; each one takes the apply path on its own, so a second note is
+#: never folded into the first shot's change text.
+_STUDIO_SHOT_NOTE = re.compile(r"^shots?\s+[A-Za-z0-9_,.&\s#-]+?\s*[:\-]\s*\S", re.I)
+
+
+def _studio_shot_notes(value):
+    """The non-empty ``shot N: text`` lines of one studio storyboard answer."""
+    lines = [ln.strip() for ln in str(value or "").splitlines() if ln.strip()]
+    return [ln for ln in lines if _STUDIO_SHOT_NOTE.match(ln)]
+
+
+def _studio_apply_shot_notes(cmd, sid, run_dir, stage, notes, answer):
+    """S75-072: one studio answer carrying notes for several shots.
+
+    Applying the whole answer as ONE reply let the runner read only the first
+    shot and fold every later line into that shot's change. Each note now takes
+    the EXISTING apply path (``storyboard --reply <line>``) once, in the order
+    the client wrote them, so every named shot gets its own revision record.
+    """
+    applied, shot_ids = [], []
+    for note in notes:
+        env = cmd_storyboard(argparse.Namespace(run_dir=str(run_dir),
+                                                target="", reply=note))
+        data = env.get("data") or {}
+        row = {"note": note, "action": data.get("action"),
+               "shot_ids": data.get("shot_ids") or (
+                   [data["shot_id"]] if data.get("shot_id") else []),
+               "reason_code": env.get("reason_code")}
+        applied.append(row)
+        shot_ids.extend(s for s in row["shot_ids"] if s not in shot_ids)
+    return envelope(cmd, sid, "ok", "next-stage",
+                    "The client answered the storyboard approval with %d shot "
+                    "note(s) on the studio page; each note took the apply path "
+                    "on its own shot (a note whose still must be made again "
+                    "reports regenerate_still). Run `next` again." % len(notes),
+                    data={"stage": stage, "approval": "storyboard",
+                          "answer": answer, "notes": notes,
+                          "applied": applied, "shot_ids": shot_ids,
+                          "command": None})
+
+
 def _studio_apply(cmd, sid, run_dir, stage, approval, value):
     """A studio ANSWER becomes the EXISTING apply command (script-reply /
     song pick / storyboard --reply). No new approval logic here."""
     q = shlex.quote
     run = q(str(run_dir))
+    notes = _studio_shot_notes(value) if approval == "storyboard" else []
+    if len(notes) > 1 and _approval_runner() is not None:
+        return _studio_apply_shot_notes(cmd, sid, run_dir, stage, notes, value)
     if approval == "script":
         command = ("python3 scripts/core/intake_preflight/factory.py script-reply "
                    "--run-dir %s --reply %s" % (run, q(str(value))))
