@@ -3,7 +3,7 @@
 
 Flow: approved lyrics -> build request (current Skill 68 envelope; route
 and version names read from the work-copy models.json at runtime, never
-copied here) -> validate through the owner validator -> ledger plan +
+copied here) -> checked by ``song_dispatch.validate_request`` -> ledger plan +
 reserve via W1-03 spend_ledger (every paid call reserved before dispatch)
 -> candidate intake from caller-supplied fixtures (no network transport in
 this module; dispatch rides the W1-06 canonical transport) -> score on the
@@ -13,6 +13,9 @@ lock -> extend-for-length.
 
 Tests run on throwaway ledger DBs with fixture costs and task IDs; no paid
 call leaves this module.
+
+``validate_payload`` runs Skill 68's validator for tests and the proof run;
+it is never wired into the song path (S75-081).
 
 WW-29 (reconciled templates and researched guidance): the direction that
 reaches the provider is the CALLER's style text (built from the recipe and
@@ -74,24 +77,19 @@ _cat = None
 
 
 def workcopy_paths():
-    """Locate the W1-06 work copy from this file's position.
+    """Locate the W1-06 work copy through the ONE catalog locator.
 
-    The catalog lives at 68-kie-audio/models.json at the REPO ROOT (tracked
-    tree), i.e. parents[4] of this file under the repackaged skill layout
-    (75-drama-song-ad-factory/scripts/core/music_director). Legacy checkouts
-    kept it under <root>/onboarding/68-kie-audio — try that first so the
-    operator's existing tree keeps working, then fall back to the tracked
-    repo-root copy found by walking ancestors.
+    ``prompt_limits.find_catalogs()`` walks the ancestors for both the
+    repo-root layout (68-kie-audio beside this skill, or under onboarding/)
+    and the installer layout, so this module keeps no path walk of its own
+    (S75-060). An unreachable catalog comes back as a non-existent path, so
+    every caller fails closed on the missing file.
     """
-    here = Path(__file__).resolve()
-    for anc in here.parents:
-        for cand in (anc / "68-kie-audio", anc / "onboarding" / "68-kie-audio"):
-            if (cand / "models.json").is_file():
-                return {"root": anc, "models": cand / "models.json",
-                        "validator": cand / "scripts" / "validate_audio_request.py"}
-    root = here.parents[2]
-    base = root / "onboarding" / "68-kie-audio"
-    return {"root": root, "models": base / "models.json",
+    models = prompt_limits.find_catalogs()[0]
+    if models is None:
+        models = Path("68-kie-audio") / "models.json"
+    base = Path(models).parent
+    return {"root": base.parent, "models": base / "models.json",
             "validator": base / "scripts" / "validate_audio_request.py"}
 
 
@@ -145,7 +143,7 @@ def _cast_model():
 
 def build_generate_request(lyrics_text, style_text, title, version=None,
                            vocal_gender=None, instrumental=False,
-                           duration=None, callback_url="https://example.invalid/cb",
+                           duration=None, callback_url=None,
                            packet_lines=None, protected=(),
                            style_id=None, client_text=None, length_s=None,
                            mode=None, true_at_beat=None, hook_plan=None, pace_plan=None,
@@ -281,12 +279,18 @@ def build_generate_request(lyrics_text, style_text, title, version=None,
     # the recipe's own negative_tags() is the single source when there is one).
     req = {"endpoint": CREATE_TASK_ENDPOINT,
            "model": MUSIC_TASK_MODEL,
-           "callBackUrl": callback_url,
            "input": {"custom_mode": True, "instrumental": bool(instrumental),
                      "model": ver, "style": style_text, "title": title,
                      "lyrics": lyrics_text,
                      "negative_tags": (suno_recipe.negative_tags(style_id)
                                        if style_id else "")}}
+    # U-M01: the callback address is sent only when one really exists (the
+    # caller's argument or KIE_CALLBACK_URL). No callback is required by the
+    # CURRENT createTask song request, so with none set the key is ABSENT and
+    # the run polls the task -- the retired placeholder is never sent.
+    cb = callback_url if callback_url is not None else suno_recipe.callback_from_env()
+    if cb:
+        req["callBackUrl"] = str(cb).strip()
     if vocal_gender is not None:
         req["input"]["vocal_gender"] = vocal_gender
     # ponytail: ''duration'' is always PRESENT (a required direction), from the
@@ -297,8 +301,9 @@ def build_generate_request(lyrics_text, style_text, title, version=None,
     # its delivered length.
     req["input"]["duration"] = duration if duration is not None else length_s
     # WW-30: the FINAL envelope is checked against the ONE contract (outer
-    # model, top-level callBackUrl, nested input, exactly one lyrics source)
-    # before its caps are measured; the retired flat payload is refused here.
+    # model, one top-level callBackUrl only when an address is set, nested
+    # input, exactly one lyrics source) before its caps are measured; the
+    # retired flat payload is refused here.
     envelope_errs = suno_recipe.check_envelope(req)
     if envelope_errs:
         raise ValueError("; ".join(envelope_errs))
@@ -611,14 +616,16 @@ def build_blueprint_request(blueprint, lyrics_text, style_text, title, style_id=
 
 
 def build_extend_request(audio_id, continue_at=None, version=None,
-                         title=None, prompt=None,
-                         callback_url="https://example.invalid/cb"):
+                         title=None, prompt=None, callback_url=None):
     """Current-envelope extend payload against a prior audio id."""
     ver = _checked_version(version, EXTEND_CATALOG_ID)
     req = {"endpoint": CREATE_TASK_ENDPOINT,
            "model": route_model(EXTEND_CATALOG_ID).split()[0],
-           "callBackUrl": callback_url,
            "input": {"audio_id": audio_id, "model": ver}}
+    # U-M01: no invented placeholder -- the address rides only when one exists.
+    cb = callback_url if callback_url is not None else suno_recipe.callback_from_env()
+    if cb:
+        req["callBackUrl"] = str(cb).strip()
     if continue_at is not None:
         req["input"]["continue_at"] = continue_at
     if title is not None:
@@ -639,29 +646,41 @@ def persona_route():
 
 
 def build_persona_request(task_id, audio_id, name, description,
-                          vocal_start, vocal_end,
-                          callback_url="https://example.invalid/cb"):
+                          vocal_start, vocal_end, callback_url=None):
     """Current-envelope persona-lock payload (vocal window per work copy)."""
-    return {"endpoint": CREATE_TASK_ENDPOINT, "model": persona_route(),
-            "callBackUrl": callback_url,
-            "input": {"task_id": task_id, "audio_id": audio_id,
-                      "name": name, "description": description,
-                      "vocal_start": vocal_start, "vocal_end": vocal_end}}
+    req = {"endpoint": CREATE_TASK_ENDPOINT, "model": persona_route(),
+           "input": {"task_id": task_id, "audio_id": audio_id,
+                     "name": name, "description": description,
+                     "vocal_start": vocal_start, "vocal_end": vocal_end}}
+    # U-M01: no invented placeholder -- the address rides only when one exists.
+    cb = callback_url if callback_url is not None else suno_recipe.callback_from_env()
+    if cb:
+        req["callBackUrl"] = str(cb).strip()
+    return req
 
 
 def validate_payload(payload):
-    """Run the owner Skill 68 validator on one payload. No dispatch."""
+    """Run the owner Skill 68 validator on one payload. No dispatch.
+
+    S75-081: the caller's environment passes through, so the answer is the
+    same one Skill 74 gives -- ``KIE_LIVE_ADAPTER_PATH`` is no longer blanked
+    here. A validator file that is not installed is reported as
+    ``"missing": True``, never as a bare exit 2.
+    """
     p = workcopy_paths()
-    env = dict(os.environ, KIE_LIVE_ADAPTER_PATH="",
-               PYTHONDONTWRITEBYTECODE="1")
+    validator = Path(p["validator"])
+    if not validator.is_file():
+        return {"ok": False, "rc": None, "missing": True,
+                "output": "Skill 68 validator not found: %s" % validator}
+    env = dict(os.environ, PYTHONDONTWRITEBYTECODE="1")
     with tempfile.TemporaryDirectory(prefix="blackceo-DTS-303-") as td:
         f = Path(td) / "payload.json"
         f.write_text(json.dumps(payload), encoding="utf-8")
         r = subprocess.run(
-            [sys.executable, str(p["validator"]), "--domain", "music",
+            [sys.executable, str(validator), "--domain", "music",
              "--payload", str(f)], capture_output=True, text=True,
             timeout=120, env=env)
-    return {"ok": r.returncode == 0, "rc": r.returncode,
+    return {"ok": r.returncode == 0, "rc": r.returncode, "missing": False,
             "output": (r.stdout + r.stderr)[-2000:]}
 
 
