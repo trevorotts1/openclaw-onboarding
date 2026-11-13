@@ -340,7 +340,9 @@ class PackageFromStageOutputs(unittest.TestCase):
     def setUpClass(cls):
         cls.tmp = Path(tempfile.mkdtemp(prefix="s75-055-"))
         cls.run_dir = build_stage_run(cls.tmp / "run")
-        cls.out = cls.tmp / "delivery"
+        # the command's default is <run>/delivery (no --out is passed);
+        # verify the folder the command wrote, not a sibling tmp/delivery.
+        cls.out = cls.run_dir / DELIVERY_NAME
         cls.proc = _run_command(cls.run_dir, cls.tmp)
         try:
             cls.envelope = json.loads(cls.proc.stdout)
