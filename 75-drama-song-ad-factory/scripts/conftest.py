@@ -39,8 +39,16 @@ def _skill_modules():
         if name in _KEEP or name.startswith("conftest"):
             continue
         mod = sys.modules.get(name)
-        f = getattr(mod, "__file__", None)
-        if not f:
+        # Read __file__ from the module's OWN dict, never through getattr: a
+        # stub module can define a module-level __getattr__ (PEP 562) that
+        # answers EVERY missing name, so getattr(mod, "__file__") hands back a
+        # lambda instead of a path. The fake `song_choices.overlap` in
+        # core/song_choices/test_song_choices_c11_regions.py does exactly that,
+        # and one-process runs then died in os.path.abspath on every later
+        # test's setup. Only a real path can be inside ROOT; anything else is
+        # not a skill module.
+        f = getattr(mod, "__dict__", {}).get("__file__")
+        if not isinstance(f, (str, os.PathLike)):
             continue
         try:
             if os.path.abspath(f).startswith(ROOT):
