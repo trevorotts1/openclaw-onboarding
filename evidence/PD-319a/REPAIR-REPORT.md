@@ -211,13 +211,15 @@ from `74d48abe6581fe2a191e7e697d70a8b59348e797`; no force anywhere.
 
 A further commit carries this paragraph, so the remote head after it is one
 sha beyond `7da3a8e41`. A report cannot contain the sha of the commit that
-contains it; the head is verified with
-`git ls-remote --heads origin refs/heads/pd/fl35-sealed-record` and the value
-observed at hand-back is:
+contains it, so no final sha is asserted here — that would be stale on commit.
+The head is verified with:
 
 ```
-9c076e4738126fa53febdb9965acd9e211fd1d02	refs/heads/pd/fl35-sealed-record
+$ git ls-remote --heads origin refs/heads/pd/fl35-sealed-record
 ```
+
+Every push after `94fd1c918` is a fast-forward from it and carries only this
+file. The head observed at hand-back is given in the returned repair message.
 
 ## 6. What I could not prove
 
