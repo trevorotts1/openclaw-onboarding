@@ -199,7 +199,7 @@ class TestAnApprovalNamesItsGateOnce:
         monkeypatch.setattr(approvals, "_cc_board_oracle",
                             lambda run_dir: frozenset({"msg-a"}))
         monkeypatch.setattr(approvals, "_board_row",
-                            lambda msg_id, run_dir: {
+                            lambda msg_id, run_dir, resolved=None: {
                                 "msg_id": msg_id, "chat_id": "111",
                                 "text": text, "received_at": "t"})
         monkeypatch.setattr(approvals, "_file_row", lambda msg_id, run_dir: None)
@@ -252,7 +252,8 @@ class TestAnApprovalNamesItsGateOnce:
         An id proves a message exists, never what the owner approved."""
         monkeypatch.setattr(approvals, "_cc_board_oracle",
                             lambda run_dir: frozenset({"msg-a"}))
-        monkeypatch.setattr(approvals, "_board_row", lambda msg_id, run_dir: None)
+        monkeypatch.setattr(
+            approvals, "_board_row", lambda msg_id, run_dir, resolved=None: None)
         monkeypatch.setattr(approvals, "_file_row", lambda msg_id, run_dir: None)
         with pytest.raises(approvals.ApprovalError) as exc:
             approvals.verify_with_gate_text(self._approval(), tmp_path)
