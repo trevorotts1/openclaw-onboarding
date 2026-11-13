@@ -100,6 +100,26 @@ def _patch_owner_ids_oracle(real_ids):
 
     return _Both()
 
+def _patch_verified_owner_ids(ids):
+    """PD-066: pin presentation_job.approvals' oracle so `ids` resolve as real
+    owner-authored messages. A waiver is granted ONLY through this oracle now,
+    so any fixture that expects a waiver to hold must patch it (a real box
+    talks to Command Center; a test must not)."""
+    import presentation_job.approvals as _ap
+
+    p = _mock.patch.object(_ap, "_cc_board_oracle",
+                           lambda run_dir=None: frozenset(ids))
+
+    class _One:
+        def start(self):
+            p.start()
+            return self
+
+        def stop(self):
+            p.stop()
+
+    return _One().start()
+
 SLIDES = [
     {"slide": 1, "scene": "A sunlit modern office, editorial photography.",
      "copy": ["Northwind Co", "Three moves that doubled our pipeline"]},
@@ -6760,12 +6780,27 @@ def test_mode_substance_u022() -> list:
     result7 = build_deck._chk_mode(r7)
     if result7: fails.append(f"U022-7: from_scratch expected '', got {result7!r}")
 
-    good_token = {"owner_approved": True, "af_code": "AF-MODE-UNSET", "approved_by": "the operator", "reason": "legacy run dir, migration deferred", "timestamp": "2026-07-26T00:00:00Z"}
+    # PD-066: a token waives ONLY with an owner_msg_id the approvals oracle
+    # resolves; "the operator" would also trip the self-grant marker, and the
+    # T00:00:00 placeholder is refused, so the token is a real verified shape.
+    good_token = {"owner_approved": True, "af_code": "AF-MODE-UNSET", "approved_by": "Trevor (operator)", "reason": "legacy run dir, migration deferred", "timestamp": "2026-11-13T15:35:00Z", "owner_msg_id": "msg-mode-unset"}
     r8 = _mk({}, False, token=good_token)
+    _oracle8 = _patch_verified_owner_ids({"msg-mode-unset"})
     try:
         build_deck.date = _Later
         result8 = build_deck._chk_mode(r8)
         if result8: fails.append(f"U022-8: valid owner token past window expected '', got {result8!r}")
+    finally:
+        build_deck.date = orig_date
+        _oracle8.stop()
+
+    # PD-066: the SAME otherwise-valid token with NO owner_msg_id is refused.
+    no_id_token = {k: v for k, v in good_token.items() if k != "owner_msg_id"}
+    r8b = _mk({}, False, token=no_id_token)
+    try:
+        build_deck.date = _Later
+        result8b = build_deck._chk_mode(r8b)
+        if not result8b: fails.append("U022-8b: token with no owner_msg_id expected BLOCK, got PASS")
     finally:
         build_deck.date = orig_date
 
@@ -7084,9 +7119,10 @@ def _make_ocr_run_dir(sidecar_gen, *, n=2, token=None):
 OCR_OWNER_TOKEN = {
     "owner_approved": True,
     "af_code": "AF-OCR-READBACK",
-    "approved_by": "owner",
-    "reason": "stylised headline",
-    "timestamp": "2026-07-25T00:00:00Z",
+    "approved_by": "Trevor (operator)",
+    "reason": "stylised headline — owner accepted the render",
+    "timestamp": "2026-11-13T15:35:00Z",
+    "owner_msg_id": "msg-ocr-waiver",
 }
 
 
@@ -7138,14 +7174,19 @@ def test_ocr_matched_false_fails():
 
 
 def test_ocr_matched_false_waivable():
-    """U027 fixture 6: checked:true, matched:false + owner token -> '' (PASS)."""
+    """U027 fixture 6: checked:true, matched:false + a VERIFIED owner token
+    (PD-066: the id must resolve through the approvals oracle) -> '' (PASS)."""
     rd = _make_ocr_run_dir(
         lambda i: {"checked": True, "matched": False, "misses": ["X"]},
         token=OCR_OWNER_TOKEN)
-    result = build_deck.check_ocr_readback(rd)
+    _oracle = _patch_verified_owner_ids({"msg-ocr-waiver"})
+    try:
+        result = build_deck.check_ocr_readback(rd)
+    finally:
+        _oracle.stop()
     assert result == "", (
-        f"matched:false WITH owner token should waive (stylised headline), "
-        f"got: {result!r}")
+        f"matched:false WITH a verified owner token should waive (stylised "
+        f"headline), got: {result!r}")
 
 
 def test_ocr_all_good_passes():
