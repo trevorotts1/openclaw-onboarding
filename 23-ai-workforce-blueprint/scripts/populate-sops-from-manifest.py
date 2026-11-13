@@ -331,6 +331,13 @@ def spawn_inline(dept_entry, prompt, model_id, timeout, dry_run=False):
 # counts as real when it is >= HOW_TO_MIN bytes AND contains no "[PENDING" marker).
 # A dept whose SOP files already clear that bar is skipped — no sub-agent spawned.
 SOP_SUBSTANCE_MIN = 256  # bytes — mirrors HOW_TO_MIN in resume-workforce-build.sh:442
+# The library gate's own size floor (verify-library-gate.sh). A file that clears
+# SOP_SUBSTANCE_MIN is skipped as already authored, but a file still under this
+# floor keeps the gate failing — so every skipped file below it is reported at the
+# end of the run (module list, filled by dept_already_authored) instead of the
+# skip silently reading as done.
+SOP_GATE_FLOOR_BYTES = 7168  # bytes — the size floor verify-library-gate.sh enforces
+_BELOW_FLOOR_SKIPS = []
 # Placeholder markers that prove a SOP file is still a stub (the authoring step
 # replaces "[Step 1 - to be personalized]" / "[PENDING ...]" with real DMAIC content).
 _SOP_PLACEHOLDER_MARKERS = ("[PENDING", "to be personalized", "[Step 1 -", "how-to.md (stub)")
@@ -382,12 +389,17 @@ def dept_already_authored(entry):
     """True iff EVERY SOP file for this dept already exists on disk with real
     substance (>= SOP_SUBSTANCE_MIN bytes AND no placeholder markers). Used to
     skip re-spawning the authoring sub-agent on a resume re-fire (furnace guard).
-    Conservative: any missing / undersized / stub file → False (author it)."""
+    Conservative: any missing / undersized / stub file → False (author it).
+
+    On a True result, every skipped file still under SOP_GATE_FLOOR_BYTES is
+    added to the module list _BELOW_FLOOR_SKIPS: the furnace guard counts it as
+    authored, but the library gate will not."""
     sop_files = entry.get("sop_files", [])
     if not sop_files:
         # No stub files queued → nothing for the authoring path to write; treat as
         # already-handled so we don't spawn a sub-agent with no work.
         return True
+    below_floor = []
     for sf in sop_files:
         path = _sop_path_for(entry, sf)
         if path is None:
@@ -395,11 +407,15 @@ def dept_already_authored(entry):
         try:
             if not path.is_file() or path.stat().st_size < SOP_SUBSTANCE_MIN:
                 return False
+            size = path.stat().st_size
             content = path.read_text(encoding="utf-8", errors="replace")
         except Exception:
             return False
         if any(marker in content for marker in _SOP_PLACEHOLDER_MARKERS):
             return False
+        if size < SOP_GATE_FLOOR_BYTES:
+            below_floor.append(str(path))
+    _BELOW_FLOOR_SKIPS.extend(below_floor)
     return True
 
 
@@ -433,8 +449,11 @@ def main():
 
     depts = manifest.get("departments", [])
     if not depts:
-        print("[POPULATE-SOPS] ERROR: Manifest has no departments. Has the interview run?", file=sys.stderr)
-        return 1
+        # An empty departments list means every department was handled by the
+        # role-library copy path: there is no custom authoring to do. That is a
+        # success, not the "has the interview run?" error this used to report.
+        print("[POPULATE-SOPS] no custom departments to author")
+        return 0
 
     instructions = manifest.get("sub_agent_instructions", "")
     if not instructions:
@@ -604,6 +623,12 @@ def main():
             import time
             time.sleep(5)
 
+    # Every file the furnace guard skipped that is still under the library gate's
+    # size floor: the skip called it authored, the gate will not.
+    if _BELOW_FLOOR_SKIPS:
+        print(f"[POPULATE-SOPS] below the gate floor: {', '.join(_BELOW_FLOOR_SKIPS)}",
+              file=sys.stderr)
+
     # 4. Summary
     total = len(depts)
     if failures:
@@ -618,6 +643,18 @@ def main():
     # the inline rc=4 "queued-not-authored". A resume that finds the SOPs already
     # substantive must NOT keep the library stuck at 'authoring' forever.
     if dispatched == 0:
+        if _BELOW_FLOOR_SKIPS:
+            # The skip list holds files still under the gate floor: nothing was
+            # authored this run, so the library is NOT done. Report it as a
+            # failure (rc=2) instead of the "nothing to author" success below.
+            print(
+                f"\n[POPULATE-SOPS] {total} custom dept(s) in manifest; {authored_skips} skipped, "
+                f"0 dispatched, and {len(_BELOW_FLOOR_SKIPS)} skipped file(s) are still below "
+                f"the gate floor. SOPs are NOT authored — returning rc=2 so the library gate "
+                f"stays failed and the resume cron re-fires.",
+                file=sys.stderr,
+            )
+            return 2
         print(
             f"\n[POPULATE-SOPS] {total} custom dept(s) in manifest; {authored_skips} already "
             f"authored on disk, 0 dispatched. SOP substance already present — nothing to author. "
