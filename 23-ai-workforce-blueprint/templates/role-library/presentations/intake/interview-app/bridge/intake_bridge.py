@@ -603,6 +603,30 @@ def _drive_submission_claimed(run_dir: pathlib.Path, intake: dict,
         return _out(2, {"verdict": "retry_scheduled",
                         "detail": "run-dir record unavailable; retry scheduled"})
 
+    # PD-081: a web "Signature" choice starts NO build until the 8 questions
+    # have been answered. The run-dir record is written by now, so the run dir
+    # exists; the driver's turn-gate record is working/copy/sp_intake.json and
+    # it is written only when all 8 answers and the frame are in. Without it,
+    # stop here — before the board card — with the one remediation that ends
+    # the block, and stop consuming retries (this is not an environment fault).
+    if str(intake.get("presentation_type") or "").strip() == "signature":
+        sp_intake = pathlib.Path(run_dir) / "working" / "copy" / "sp_intake.json"
+        if not sp_intake.exists():
+            _blocked_reason = ("signature interview not done: the 8 questions "
+                               "have not been asked")
+            doc = _ll.load(run_dir, session_id) or doc
+            _ll.mark_blocked(
+                run_dir, session_id, doc,
+                reason=_blocked_reason,
+                remediation=("ask the 8 questions in chat with "
+                             f"deck-intake-driver.py --run-dir {run_dir} "
+                             "--signature --sig-next, then delete this "
+                             "submission state file to re-drive"),
+                notify=True, notifier=_make_notifier())
+            return _out(8, {"verdict": "blocked",
+                            "state": _ll.BLOCKED_ACTIONABLE,
+                            "detail": _blocked_reason})
+
     # 2) the board card — persisted BEFORE any launch attempt, so the binding
     #    survives launch retries and the card is never duplicated.
     board_state, task_id = _ensure_board_card(run_dir, intake, session_id, doc, policy)

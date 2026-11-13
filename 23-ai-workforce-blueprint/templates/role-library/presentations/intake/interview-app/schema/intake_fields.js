@@ -85,7 +85,7 @@ export const INTAKE_CONTRACT = {
           "from_scratch": "From scratch — brainstorm and build a brand-new presentation",
           "content_personal": "From something I already have, for ONE specific person",
           "content_general": "From something I already have, for a room or wider audience",
-          "signature": "The full Signature Presentation (100+ slides, multi-part keynote)"
+          "signature": "The full Signature Presentation (100+ slides). You will answer 8 more questions in chat after this form."
         }
       }
     },
