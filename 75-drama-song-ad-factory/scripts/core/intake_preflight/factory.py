@@ -36,6 +36,7 @@ Approval -> `next` hands out music; an edit is re-checked and re-sent.
 """
 import argparse
 import fcntl
+import hashlib
 import json
 import os
 import re
@@ -74,6 +75,59 @@ except Exception:  # noqa: BLE001 - package-or-module missing: try sibling
         _lane_size = _lane_size_mod
     except Exception:  # noqa: BLE001 - module missing: fallback stays
         _lane_size = None
+
+#: S75-041: one meaning per exit code, by tool. The tools never agreed on a
+#: single numbering (2 is "waiting" here but "waiting" is 3 for the ledger and
+#: the lip-sync modules), so a raw number is never passed upward as-is: every
+#: child code is named by the tool that produced it.
+_CHILD_EXIT_PREFLIGHT = {0: "ok", 1: "error", 2: "waiting",
+                         3: "parked", 4: "rejected"}
+#: spend_ledger.py and qc_gate.py share this one (no 2; waiting is 3).
+_CHILD_EXIT_LEDGER = {0: "ok", 1: "error", 3: "waiting",
+                      4: "parked", 5: "rejected"}
+#: video_router.py and narrator_rule.py use this (no 2; waiting is 3).
+_CHILD_EXIT_LIPSYNC = dict(_CHILD_EXIT_LEDGER)
+
+CHILD_EXIT_CODES = {
+    "factory.py": _CHILD_EXIT_PREFLIGHT,
+    "spend_ledger.py": _CHILD_EXIT_LEDGER,
+    "qc_gate.py": _CHILD_EXIT_LEDGER,
+    "run_watch.py": {0: "ok", 10: "stop"},
+    "prompt-budget": {0: "ok", 3: "waiting", 4: "parked", 5: "rejected"},
+    "video_router.py": _CHILD_EXIT_LIPSYNC,
+    "narrator_rule.py": _CHILD_EXIT_LIPSYNC,
+    #: ceiling_cli.py declares no EXIT map and uses its own numbering: its
+    #: docstring and main() answer only 0 (ceiling not reached), 1 (history
+    #: unreadable) and 4 (the ceiling says STOP). 4 is a stop, never "parked".
+    "ceiling_cli.py": {0: "ok", 1: "error", 4: "stop"},
+    "delivery_checklist.py": {0: "ok", 1: "error", 5: "rejected"},
+}
+
+
+def child_exit(tool, code):
+    """S75-041: the outcome a child tool's raw exit code means, by tool name.
+
+    ``tool`` is a name or a path (only its basename is used). A tool or code
+    the table does not know answers ``"error"`` -- never the raw number, so a
+    caller can never read one tool's ``2`` as another tool's meaning.
+    """
+    table = CHILD_EXIT_CODES.get(Path(str(tool or "")).name)
+    if not table:
+        return "error"
+    try:
+        code = int(code)
+    except (TypeError, ValueError):
+        return "error"
+    return table.get(code, "error")
+
+
+class _ExitOneParser(argparse.ArgumentParser):
+    """S75-041: a mistyped command is an ERROR (exit 1), never 2 (waiting)."""
+
+    def error(self, message):
+        self.print_usage(sys.stderr)
+        self.exit(EXIT["error"], "%s: error: %s\n" % (self.prog, message))
+
 
 #: Part D fallback when lane_size.py is not importable (W2-A-U1 not landed).
 #: Same constants a live lane_size exposes; agents floor 1, never 0.
@@ -175,7 +229,8 @@ def cmd_intake(a):
                     data={k: r.get(k) for k in ("questions", "question_message", "summary",
                                                 "digest", "provenance", "auth_status",
                                                 "approval_invalidated", "changes",
-                                                "untrusted_fields", "next_stage", "mode", "notices")},
+                                                "untrusted_fields", "next_stage", "mode", "notices",
+                                                "warnings")},
                     state_version={"expected": (resume or {}).get("digest") if resume else None,
                                    "current": r.get("digest")})
 
@@ -331,21 +386,76 @@ def _runbook_rows():
     return rows, str(_STAGE_COMMANDS_FILE)
 
 
-def lane_size_payload():
-    """One sizing payload. Live module when importable; else Part D defaults."""
-    if _lane_size is not None:
+#: The runtime and provider names ``lane_size.size`` sizes with (lane_size.py:
+#: runtime "openclaw"|"claude-code"; provider "ollama-cloud", "openrouter",
+#: "deepseek-direct", or any other id, which sizes machine-only). A run's
+#: ``model-bindings.json`` names them in ai_models terms; these maps translate.
+_LANE_SIZE_RUNTIMES = {"claude-nine": "claude-code", "claude-code": "claude-code",
+                       "openclaw": "openclaw"}
+_LANE_SIZE_ROUTES = {"ollama": "ollama-cloud", "openrouter": "openrouter",
+                     "deepseek-direct": "deepseek-direct", "router-alias": "router-alias",
+                     "anthropic": "anthropic"}
+
+
+def _lane_size_binding(run_dir):
+    """Translate the run's own model bindings into lane_size's names.
+
+    ``(runtime, route, status)``: "bound" when both names translate, "none"
+    when the run has no valid builder binding, "unknown" when the binding
+    names a runtime or route that neither side lists (S75-024).
+    """
+    if run_dir is None:
+        return None, None, "none"
+    try:
+        from choice_card.intake_card import ai_models as models
+        doc = models.load_bindings(run_dir)
+    except Exception:  # noqa: BLE001 - no bindings module on this box: Part D
+        return None, None, "none"
+    if not isinstance(doc, dict) or doc.get("schema") != models.STORE_SCHEMA:
+        return None, None, "none"
+    row = (doc.get("bindings") or {}).get(models.ROLE_BUILD)
+    if not isinstance(row, dict):
+        return None, None, "none"
+    raw_runtime = doc.get("runtime") or ((row.get("dispatch") or {}).get("runtime")) or ""
+    runtime = _LANE_SIZE_RUNTIMES.get(str(raw_runtime).strip().lower())
+    route = _LANE_SIZE_ROUTES.get(str(row.get("route") or "").strip().lower())
+    if runtime is None or route is None:
+        return runtime, route, "unknown"
+    return runtime, route, "bound"
+
+
+def lane_size_payload(run_dir=None):
+    """One sizing payload, from the run's own model choice where it can be read.
+
+    S75-024: the sizing follows the runtime and builder route the run's
+    ``model-bindings.json`` names. No bindings, no lane_size module, or a pair
+    lane_size does not size with -> the Part D defaults, and ``source`` says
+    which one ran and why.
+    """
+    runtime, route, status = _lane_size_binding(run_dir)
+    if _lane_size is not None and status == "bound":
         try:
-            line = _lane_size.size("claude-code", "openrouter")
+            line = _lane_size.size(runtime, route)
             return {"agents": line["agents"],
                     "kie_inflight": line["kie_inflight"],
                     "ffmpeg_jobs": line["ffmpeg_jobs"],
                     "ffmpeg_threads": line["ffmpeg_threads"],
-                    "source": "lane_size.module"}
+                    "source": "lane_size.module (%s/%s)" % (runtime, route)}
         except Exception as exc:  # noqa: BLE001 - broken module: fall through
             _loud("warn", "LANE_SIZE_BROKEN",
                   "using Part D default lane sizes: %r" % (exc,))
+    if status == "unknown":
+        _loud("warn", "LANE_SIZE_UNKNOWN_PAIR",
+              "model bindings name runtime %r and route %r; lane_size sizes "
+              "claude-code/openclaw only, so Part D defaults apply"
+              % (runtime, route))
     out = dict(PART_D_DEFAULTS)
-    out["source"] = "part_d_defaults"
+    if status == "none":
+        out["source"] = "part_d_defaults (no model bindings on this run)"
+    elif status == "unknown":
+        out["source"] = "part_d_defaults (unknown model binding pair)"
+    else:
+        out["source"] = "part_d_defaults"
     return out
 
 
@@ -430,47 +540,378 @@ def _studio_bump_version(run_dir, stage):
 
 
 # The approvals service stores choices as {n: whole number, label: string}.
-STUDIO_CHOICES = {"storyboard": ({"n": 1, "label": "GO"},)}
+def _studio_song_choices(st):
+    """S75-037: the choices the studio page shows for the song stage -- one per
+    OFFERED number, built from the numbers the run really offered, never from a
+    fixed list (a failed take is presented for listening, never offered)."""
+    offered = (st or {}).get("offered") if isinstance(st, dict) else None
+    if not isinstance(offered, dict) or not offered:
+        return ()
+    rows = []
+    try:
+        numbers = sorted(offered, key=lambda k: int(k))
+    except (TypeError, ValueError):
+        return ()
+    for n in numbers:
+        entry = offered.get(n) if isinstance(offered.get(n), dict) else {}
+        rows.append({"n": int(n), "label": str(entry.get("label") or n)})
+    return tuple(rows)
+
+
+STUDIO_CHOICES = {"storyboard": ({"n": 1, "label": "GO"},),
+                  # built per run from the offered numbers (never a fixed list)
+                  "song": _studio_song_choices}
+
+
+def _studio_item_digest(ab, item):
+    """The presentation digest of one published item (S75-036): the bridge's
+    own digest when it has one, so the value is the SAME bytes its answer_item
+    binds, else the same canonical form the bridge uses."""
+    fn = getattr(ab, "_item_digest", None)
+    if callable(fn):
+        return fn(item)
+    canonical = {"stage": item.get("stage"), "version": item.get("version"),
+                 "text": item.get("text"), "choices": item.get("choices") or []}
+    raw = json.dumps(canonical, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    return hashlib.sha256(raw).hexdigest()
 
 
 def _studio_publish(run_dir, order, stage, text, files, choices=()):
     """One approval item on the studio page (approvals_bridge.publish). Returns
-    the item dict, or None when the bridge module is not on this box."""
+    the item dict, or None when the bridge module is not on this box. S75-036:
+    the digest the page confirmed for this version is kept, so a later answer
+    can be proved against the presentation it names."""
     ab = _approvals_bridge()
     if ab is None:
         return None
     version = _studio_bump_version(run_dir, stage)
-    return ab.publish(order.get("base_url") or "", _studio_key(),
+    item = ab.publish(order.get("base_url") or "", _studio_key(),
                       order.get("order_id"), stage, version,
                       text, list(choices), list(files))
+    if isinstance(item, dict) and item:
+        _studio_record_publish(run_dir, stage, version, _studio_item_digest(ab, item))
+    return item
+
+
+def _studio_publish_record(run_dir):
+    """{stage: {version: digest}} this run published, or {} when unreadable."""
+    try:
+        doc = json.loads((Path(run_dir) / "control" / "studio-publish.json")
+                         .read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    return doc if isinstance(doc, dict) else {}
+
+
+def _studio_record_publish(run_dir, stage, version, digest):
+    """Remember the presentation digest the page confirmed for this version, so
+    an answer that names a different presentation is refused (S75-036)."""
+    if not digest:
+        return
+    path = Path(run_dir) / "control" / "studio-publish.json"
+    doc = _studio_publish_record(run_dir)
+    entry = doc.get(stage) if isinstance(doc.get(stage), dict) else {}
+    entry = dict(entry)
+    entry[str(version)] = digest
+    doc[stage] = entry
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(doc, indent=2, sort_keys=True), encoding="utf-8")
+
+
+def _studio_published_digest(run_dir, stage, version):
+    """The digest this run published for one stage+version, or None."""
+    entry = _studio_publish_record(run_dir).get(stage)
+    value = (entry or {}).get(str(version)) if isinstance(entry, dict) else None
+    return value if isinstance(value, str) else None
 
 
 def _studio_answer(run_dir, stage):
     """The client's studio answer for one approval stage, or None — never opens
-    a gate on a studio error, a missing bridge, or a never-published stage."""
+    a gate on a studio error, a missing bridge, or a never-published stage.
+
+    S75-036: returns the bridge's WHOLE verified record (value, who, when,
+    version and the presentation digest), never a bare scalar, so an approval
+    can be bound to the exact bytes the page showed. A bridge that only offers
+    the legacy scalar read yields a record with no digest: it may inform a
+    command, but it can never approve the script in-process.
+    """
     order = _studio_order(run_dir)
     ab = _approvals_bridge() if order else None
     if not order or ab is None:
         return None
     version = int(_studio_versions(run_dir).get(stage) or 1)
     try:
-        return ab.answer(order.get("base_url") or "", _studio_key(),
-                         order.get("order_id"), stage, version)
+        read_item = getattr(ab, "answer_item", None)
+        if callable(read_item):
+            record = read_item(order.get("base_url") or "", _studio_key(),
+                               order.get("order_id"), stage, version)
+            if isinstance(record, dict) and record.get("value") is not None:
+                return record
+            return None
+        value = ab.answer(order.get("base_url") or "", _studio_key(),
+                          order.get("order_id"), stage, version)
+        if value is None:
+            return None
+        return {"stage": stage, "version": version, "value": value, "digest": None}
     except Exception:   # noqa: BLE001 - a studio outage keeps the gate waiting
         return None
 
 
-def _studio_apply(cmd, sid, run_dir, stage, approval, value):
-    """A studio ANSWER becomes the EXISTING apply command (script-reply /
-    song pick / storyboard --reply). No new approval logic here."""
+#: S75-072: the page sends every storyboard note in ONE answer, one line per
+#: shot ("shot 2: text" newline "shot 5: text"). A line of that shape is one
+#: shot's note; each one takes the apply path on its own, so a second note is
+#: never folded into the first shot's change text.
+_STUDIO_SHOT_NOTE = re.compile(r"^shots?\s+[A-Za-z0-9_,.&\s#-]+?\s*[:\-]\s*\S", re.I)
+
+
+def _studio_shot_notes(value):
+    """The non-empty ``shot N: text`` lines of one studio storyboard answer."""
+    lines = [ln.strip() for ln in str(value or "").splitlines() if ln.strip()]
+    return [ln for ln in lines if _STUDIO_SHOT_NOTE.match(ln)]
+
+
+#: S75-072: the notes of one answer that a still regeneration interrupted. The
+#: runner's redo record holds the change, so they are kept on the run and the
+#: next `next` after the still lands applies them -- never dropped.
+_STUDIO_NOTES_FILE = ("control", "studio-shot-notes.json")
+
+
+def _studio_notes_path(run_dir):
+    return Path(run_dir).joinpath(*_STUDIO_NOTES_FILE)
+
+
+def _studio_notes_queue(run_dir):
+    """The shot notes still owed to the client (empty when none are)."""
+    try:
+        doc = json.loads(_studio_notes_path(run_dir).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return []
+    return [str(n) for n in doc] if isinstance(doc, list) else []
+
+
+def _studio_notes_save(run_dir, notes):
+    p = _studio_notes_path(run_dir)
+    if not notes:
+        try:
+            p.unlink()
+        except OSError:
+            pass
+        return
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_text(json.dumps(list(notes), indent=2), encoding="utf-8")
+
+
+def _studio_notes_drain(cmd, sid, run_dir, stage):
+    """Apply the notes a still regeneration interrupted; None when none owed."""
+    if _approval_runner() is None:
+        return None
+    notes = _studio_notes_queue(run_dir)
+    if not notes:
+        return None
+    return _studio_apply_shot_notes(cmd, sid, run_dir, stage, notes,
+                                    "\n".join(notes))
+
+
+def _studio_apply_shot_notes(cmd, sid, run_dir, stage, notes, answer):
+    """S75-072: one studio answer carrying notes for several shots.
+
+    Applying the whole answer as ONE reply let the runner read only the first
+    shot and fold every later line into that shot's change. Each note takes the
+    EXISTING apply path (``storyboard --reply <line>``) once, in the order the
+    client wrote them, so every named shot gets its own revision record.
+
+    The first note whose still has to be made again stops the pass: the
+    runner's redo record already holds that change, and it and every note after
+    it stay on the run (``control/studio-shot-notes.json``) so the next `next`
+    after the still is on disk applies them. A note is never folded into
+    another shot and never silently dropped.
+    """
+    applied, shot_ids, rest = [], [], list(notes)
+    while rest:
+        note = rest[0]
+        env = cmd_storyboard(argparse.Namespace(run_dir=str(run_dir),
+                                                target="", reply=note))
+        data = env.get("data") or {}
+        action = data.get("action") or env.get("reason_code")
+        row = {"note": note, "action": action,
+               "shot_ids": data.get("shot_ids") or (
+                   [data["shot_id"]] if data.get("shot_id") else []),
+               "reason_code": env.get("reason_code")}
+        applied.append(row)
+        shot_ids.extend(s for s in row["shot_ids"] if s not in shot_ids)
+        rest.pop(0)
+        if action in ("revised", "approved"):
+            continue
+        if action == "regenerate_still":     # transient: the still is not there yet
+            _studio_notes_save(run_dir, [note] + rest)
+            return envelope(
+                cmd, sid, "waiting", "regenerate_still",
+                "The client's storyboard answer names several shots. Shot %s "
+                "needs its still made again before that change is recorded; "
+                "%d note(s) stay queued and apply on the next `next` once the "
+                "still is on disk."
+                % (", ".join(row["shot_ids"]) or "?", len(rest) + 1),
+                data={"stage": stage, "approval": "storyboard",
+                      "answer": answer, "notes": [note] + rest,
+                      "applied": applied, "shot_ids": shot_ids,
+                      "command": None})
+        # A note that can never apply (unknown shot, unusable text): its row
+        # carries the refusal and the remaining notes still get their turn.
+    _studio_notes_save(run_dir, [])
+    done = [r for r in applied if r["action"] in ("revised", "approved")]
+    if len(done) == len(applied):
+        return envelope(cmd, sid, "ok", "next-stage",
+                        "The client answered the storyboard approval with %d shot "
+                        "note(s) on the studio page; each note took the apply path "
+                        "on its own shot. Run `next` again." % len(applied),
+                        data={"stage": stage, "approval": "storyboard",
+                              "answer": answer, "notes": notes,
+                              "applied": applied, "shot_ids": shot_ids,
+                              "command": None})
+    return envelope(cmd, sid, "waiting", "shot-note-not-applied",
+                    "%d of %d storyboard note(s) were applied; the refused ones "
+                    "are named in the applied rows and no shot was changed for "
+                    "them." % (len(done), len(applied)),
+                    data={"stage": stage, "approval": "storyboard",
+                          "answer": answer, "notes": notes,
+                          "applied": applied, "shot_ids": shot_ids,
+                          "command": None})
+
+
+def _script_ask_context(run_dir):
+    """The run id and the open presentation ask a studio script answer binds to.
+
+    The ask comes from the run's own approval record (the same ask the chat
+    reply must name), never from the page or a default. An unreadable record
+    answers {} and the gate refuses for want of context -- fail closed.
+    """
+    try:
+        core = Path(__file__).resolve().parent.parent
+        if str(core) not in sys.path:
+            sys.path.insert(0, str(core))
+        from script_approval import script_approval as _appr  # noqa: PLC0415
+        from script_approval import approval_events as _ev    # noqa: PLC0415
+        rec = _appr.record_for(str(run_dir))
+        if not isinstance(rec, dict):
+            return {}
+        asks = _ev.open_asks(rec)
+        run_id = ((rec.get("run") or {}).get("run_id")
+                  or (rec.get("reply_contract") or {}).get("run_id"))
+        return {"ask_id": (asks[-1] or {}).get("ask_id") if asks else None,
+                "run_id": run_id}
+    except (ImportError, OSError, ValueError, TypeError, KeyError):
+        return {}
+
+
+def _studio_source_ref(run_dir, answer):
+    """<order>/<stage>/<version>/<presentation digest> -- the distinct studio
+    reply reference a script approval is recorded under (S75-036)."""
+    order = _studio_order(run_dir) or {}
+    return "%s/%s/%s/%s" % (order.get("order_id"), answer.get("stage") or "script",
+                            answer.get("version"), answer.get("digest"))
+
+
+def _studio_script_command(run_dir, value, answer):
+    """The script-reply command carrying the provenance the studio answer did.
+
+    Used only as the fallback; a legacy answer with no digest gets the plain
+    command, which the gate then refuses for want of provenance."""
+    q = shlex.quote
+    command = ("python3 scripts/core/intake_preflight/factory.py script-reply "
+               "--run-dir %s --reply %s" % (q(str(run_dir)), q(str(value))))
+    if not isinstance(answer, dict) or not answer.get("digest"):
+        return command
+    context = _script_ask_context(run_dir)
+    for flag, val in (("--reply-source", "studio"),
+                      ("--answer-source-ref", _studio_source_ref(run_dir, answer)),
+                      ("--presentation-ask-id", context.get("ask_id")),
+                      ("--run-id", context.get("run_id"))):
+        if val:
+            command += " %s %s" % (flag, q(str(val)))
+    return command
+
+
+def _studio_apply_script(cmd, sid, run_dir, stage, answer):
+    """Apply a verified studio script answer in-process (S75-036).
+
+    None means the answer carries no presentation digest, so the caller keeps
+    the command form. Otherwise the answer is proved against the digest this
+    run published for that version, then handed to the SAME function
+    `script-reply` calls. A mismatch leaves the stage waiting: it never opens.
+    """
+    if not isinstance(answer, dict) or not answer.get("digest"):
+        return None
+    published = _studio_published_digest(run_dir, "script", answer.get("version"))
+    detail = {"stage": stage, "approval": "script", "version": answer.get("version"),
+              "presentation_digest": answer.get("digest")}
+    if not published:
+        return envelope(cmd, sid, "waiting", "studio-presentation-unverified",
+                        "The studio answer names a script presentation this run has "
+                        "no publish record for; nothing was approved. Present the "
+                        "script again, then answer the new version.",
+                        data=detail)
+    if published != answer.get("digest"):
+        return envelope(cmd, sid, "waiting", "studio-presentation-mismatch",
+                        "The studio answer names a different presentation than the "
+                        "script this run published; it is refused and the script "
+                        "stage stays waiting for an answer to the current version.",
+                        data=dict(detail, published_digest=published))
+    context = _script_ask_context(run_dir)
+    # The same attribute names `script-reply --reply-source / --answer-source-ref`
+    # produce, so the in-process call and the CLI carry one contract.
+    ns = argparse.Namespace(run_dir=str(run_dir), reply=answer.get("value"),
+                            reply_source="studio", target="",
+                            answer_source_ref=_studio_source_ref(run_dir, answer),
+                            presentation_ask_id=context.get("ask_id"),
+                            run_id=context.get("run_id"))
+    try:
+        return cmd_script_reply(ns)
+    except Exception:   # noqa: BLE001 - the command form stays the fallback
+        return None
+
+
+def _song_choices_state(run_dir):
+    """The run's song-choices record (offered numbers, presented files), or {}
+    when it is absent or unreadable -- no record means no numbers to check."""
+    try:
+        _c = str(Path(__file__).resolve().parent.parent)
+        if _c not in sys.path:
+            sys.path.insert(0, _c)
+        from song_choices import song_choices as _sc   # noqa: PLC0415
+        return _sc._state(str(run_dir)) or {}
+    except Exception:   # noqa: BLE001 - a broken record never invents an offer
+        return {}
+
+
+def _studio_apply(cmd, sid, run_dir, stage, approval, answer):
+    """A studio ANSWER becomes the EXISTING apply path (script-reply in-process
+    when it carries verified provenance / song pick / storyboard --reply). No
+    new approval logic here."""
     q = shlex.quote
     run = q(str(run_dir))
+    value = answer.get("value") if isinstance(answer, dict) else answer
+    notes = _studio_shot_notes(value) if approval == "storyboard" else []
+    if len(notes) > 1 and _approval_runner() is not None:
+        return _studio_apply_shot_notes(cmd, sid, run_dir, stage, notes, value)
     if approval == "script":
-        command = ("python3 scripts/core/intake_preflight/factory.py script-reply "
-                   "--run-dir %s --reply %s" % (run, q(str(value))))
+        applied = _studio_apply_script(cmd, sid, run_dir, stage, answer)
+        if applied is not None:
+            return applied
+        command = _studio_script_command(run_dir, value, answer)
     elif approval == "song":
-        command = ("python3 scripts/core/song_choices/song_choices.py pick "
-                   "--run-dir %s --reply %s" % (run, q(str(value))))
+        # S75-037: a studio song answer becomes the music command's own reply
+        # path, using the SAME choices the page published (the offered numbers).
+        numbers = [str(c["n"]) for c in STUDIO_CHOICES["song"](_song_choices_state(run_dir))]
+        picked = str(value if value is not None else "").strip()
+        if numbers and picked not in numbers:
+            return envelope(cmd, sid, "rejected", "studio-song-choice-unknown",
+                            "The studio answer %r is not one of the songs offered (%s); "
+                            "nothing was picked."
+                            % (picked, ", ".join(numbers)),
+                            data={"stage": stage, "approval": "song",
+                                  "offered": numbers, "answer": value})
+        command = ("python3 scripts/core/intake_preflight/factory.py music "
+                   "--run-dir %s --reply %s" % (run, q(picked)))
     else:
         command = ("python3 scripts/core/intake_preflight/factory.py storyboard "
                    "--run-dir %s --reply %s" % (run, q(str(value))))
@@ -497,13 +938,19 @@ def cmd_storyboard(a):
     studio = _studio_order(run_dir)
     target = a.target or ar.receipt_target(run_dir)
     sent, stills = [], []
+    studio_failure = {}
 
     def send(message, images):
         delivered = False
         if studio:
-            delivered = _studio_publish(run_dir, studio, "storyboard", message,
-                                        [p for _n, p in images],
-                                        choices=list(STUDIO_CHOICES["storyboard"])) is not None or delivered
+            try:
+                delivered = _studio_publish(run_dir, studio, "storyboard", message,
+                                            [p for _n, p in images],
+                                            choices=list(STUDIO_CHOICES["storyboard"])) is not None or delivered
+            except Exception as e:   # S75-037: a studio outage must not silence the chat
+                if not target:
+                    raise
+                studio_failure["detail"] = str(e)[:300]
         if target:
             ar.openclaw_sender(target)(message, images)
             delivered = True
@@ -520,6 +967,16 @@ def cmd_storyboard(a):
     data = dict(r)
     if sent:
         data["messages"], data["stills"] = sent, stills
+    if studio_failure:
+        # S75-037: the chat copy went out; the studio page is the thing that
+        # failed, so the stage waits on the chat instead of aborting both.
+        data.update(reason="studio-publish-failed",
+                    studio_publish={"outcome": "failed",
+                                    "detail": studio_failure["detail"]})
+        return envelope("storyboard", sid, "waiting", "studio-publish-failed",
+                        "The studio page did not take the storyboard (%s); the client "
+                        "chat copy was sent and the stage waits for the client's reply."
+                        % studio_failure["detail"], data=data)
     return envelope("storyboard", sid, out, r["action"],
                     "Run `next` for the video stage." if r["action"] == "approved"
                     else "Waiting for the client's reply (GO, or 'shot N: change ...').",
@@ -642,6 +1099,42 @@ def cmd_script_reply(a):
                         _script_gate(run_dir, a, reply=a.reply))
 
 
+def _studio_publish_song(run_dir):
+    """S75-037: put the delivered songs on a Studio order's page as stage `song`.
+
+    Published ONCE per run: the client's answer binds the version the page
+    showed, so a repeated `next` must not move that version out from under them.
+    The text is the SAME client message the chat delivery built, the files are
+    the audio files the run presented, and the choices are the offered numbers.
+    A run with no studio order, no bridge, or nothing offered publishes nothing;
+    a studio outage never blocks the music stage.
+    """
+    if not _studio_order(run_dir):
+        return None
+    if _studio_publish_record(run_dir).get("song"):
+        return None
+    st = _song_choices_state(run_dir)
+    choices = list(STUDIO_CHOICES["song"](st))
+    if not choices:
+        return None
+    concerns = st.get("concerns") or {}
+    try:
+        _c = str(Path(__file__).resolve().parent.parent)
+        if _c not in sys.path:
+            sys.path.insert(0, _c)
+        from song_choices import song_choices as _sc   # noqa: PLC0415
+        failed = sorted(int(k) for k in concerns if str(k).isdigit())
+        text = _sc.client_message(st.get("offered") or {}, failed, concerns=concerns)
+    except Exception:   # noqa: BLE001 - no message, no publish; the page keeps waiting
+        return None
+    files = [str(p) for p in (st.get("presented") or [])]
+    try:
+        return _studio_publish(run_dir, _studio_order(run_dir), "song", text, files,
+                               choices=choices)
+    except Exception:   # noqa: BLE001 - a studio outage never blocks the music stage
+        return None
+
+
 def _song_choices_next(run_dir, orchestrated=False):
     """SONG APPROVAL = Yes -> the three-version music runner descriptors.
 
@@ -662,6 +1155,8 @@ def _song_choices_next(run_dir, orchestrated=False):
     if not st or not st.get("required"):
         return None
     rd = str(run_dir)
+    # S75-037: a Studio order sees the three songs on its page, not only in chat.
+    _studio_publish_song(run_dir)
     units = _sc.plan_units(rd)["units"]
     base = ("python3 scripts/core/song_choices/song_choices.py generate "
             "--run-dir \"$RUN\" --request \"$RUN/music/req.json\" "
@@ -977,8 +1472,45 @@ def music_stage(run_dir, owner, action, run_id=None, reason=None,
         st.close()
 
 
+def _music_song_pick(a, run_dir):
+    """S75-037: `music --run-dir D --reply N` is the command form a studio song
+    answer becomes. Routes to the SAME pick the song_choices `pick` CLI records
+    (never a second pick path); a worded answer to the song-failure fork is
+    recorded the same way that CLI records it."""
+    sid = run_dir.name or "run"
+    try:
+        _c = str(Path(__file__).resolve().parent.parent)
+        if _c not in sys.path:
+            sys.path.insert(0, _c)
+        from song_choices import song_choices as _sc   # noqa: PLC0415
+        try:
+            label = _sc.record_pick(str(run_dir), a.reply)
+        except _sc.ChoiceError:
+            if _sc.parse_fork_answer(a.reply) is None:
+                raise
+            rec = _sc.record_fork_decision(str(run_dir), a.reply)
+            return envelope("music", sid, "ok", "song-fork-recorded",
+                            "The client answered the song-failure fork; the answer is "
+                            "%r." % rec["answer"],
+                            data={"stage": MUSIC, "fork": rec})
+        return envelope("music", sid, "ok", "song-picked",
+                        "Picked: %s. Run `next` for the next stage." % label,
+                        data={"stage": MUSIC, "pick": label})
+    except Exception as e:   # noqa: BLE001 - a refused pick never becomes a pick
+        return envelope("music", sid, "error", "SONG_PICK_REFUSED", str(e)[:300])
+
+
 def cmd_music(a):
     run_dir = Path(a.run_dir).expanduser().resolve()
+    if getattr(a, "reply", None) is not None and not a.action:
+        return _music_song_pick(a, run_dir)
+    if not a.action:
+        return envelope("music", run_dir.name or "run", "error", "MUSIC_ACTION_REQUIRED",
+                        "Name the music action (start, resume, complete, ...), or give "
+                        "the client's song pick with --reply.")
+    if not a.owner:
+        return envelope("music", run_dir.name or "run", "error", "MUSIC_OWNER_REQUIRED",
+                        "Name the worker id that holds the music lease with --owner.")
     guarded = a.action in ("start", "resume", "complete")
     admission = (_production_admission(run_dir, MUSIC if a.action == "start" else None,
                                         run_id=getattr(a, "run_id", None)) if guarded else
@@ -2162,9 +2694,12 @@ def _help_problems(stage, d, root):
     published command runs a real argument parser -- the check S75-005 asks
     for. An unknown-option check would need a ``build_parser()`` inside the
     script itself, and only the lane that owns that script may add one.
-    Nothing else runs: no run dir is created, no network, no provider. A script
-    that does not resolve on disk is already named by the caller, so it is
-    skipped here rather than reported twice.
+    Nothing else runs: no run dir is created, no network, no provider. The
+    proof is the parser's own usage text on stdout: a script that merely
+    exits 0 (an empty file, a JSON document, any module with no parser)
+    answers nothing and is refused. A script that does not resolve on disk
+    is already named by the caller, so it is skipped here rather than
+    reported twice.
     """
     script = str((d or {}).get("script") or "")
     if not script:
@@ -2180,12 +2715,15 @@ def _help_problems(stage, d, root):
     except (OSError, subprocess.SubprocessError) as exc:
         return ["stage %r script %r could not be probed with --help: %s"
                 % (stage, script, str(exc)[:200])]
-    if proc.returncode == 0:
-        return []
     detail = (proc.stderr or proc.stdout or "").strip().splitlines()
-    return ["stage %r script %r does not answer --help (exit %d)%s"
-            % (stage, script, proc.returncode,
-               ": %s" % detail[-1][:200] if detail else "")]
+    if proc.returncode != 0:
+        return ["stage %r script %r does not answer --help (exit %d)%s"
+                % (stage, script, proc.returncode,
+                   ": %s" % detail[-1][:200] if detail else "")]
+    if not any(line.lstrip().lower().startswith("usage:") for line in detail):
+        return ["stage %r script %r does not answer --help (exit 0 with no usage text)"
+                % (stage, script)]
+    return []
 
 
 def _descriptor_problems(skill_root=None, help_probe=False):
@@ -3192,11 +3730,25 @@ _PLACEHOLDER_WHERE = {
 }
 
 
+def _placeholder_where(name, stage):
+    """One sentence naming where this stage's placeholder value comes from.
+
+    ``MODEL`` is the video model only for the video stage; the image stage's
+    model is a different model, so its need must not point at the video lock.
+    """
+    if name == "MODEL" and stage == "image-keyframes":
+        return ("the image model this run's keyframe plan buys (the card's "
+                "image plan in `catalog_calculator`; `kie_dispatch.model_lock` "
+                "holds the video model and cannot answer it)")
+    return _PLACEHOLDER_WHERE.get(name, "the runner supplies it")
+
+
 def _stage_command_values(run_dir, sid, stage, extra=None):
     """The placeholder values this run can answer, and nothing it cannot.
 
     ``next`` substitutes what the run already knows (the run dir, the run id,
-    the QC gate's own required-check list) and leaves the rest to named needs.
+    the locked video model for the video stage, the QC gate's own
+    required-check list) and leaves the rest to named needs.
     ``extra`` carries a value only ``next`` can compute (``COST_MINOR``, for a
     paid stage whose price was read off the card): it never comes from a guess.
     """
@@ -3206,6 +3758,22 @@ def _stage_command_values(run_dir, sid, stage, extra=None):
     core = str(Path(__file__).resolve().parent.parent)
     if core not in sys.path:
         sys.path.insert(0, core)
+    if stage == "video-generation":
+        # S75-010 step 4: {MODEL} is the locked MODEL OF THE VIDEO STAGE. The
+        # lock holds a video model only, so the image stage must never take it
+        # (its image model comes from the card's image plan). An import failure
+        # is the one thing swallowed: the need below stays named. A store error
+        # is already fail-closed inside read_locked_model, and `next` refuses an
+        # unreadable store before it ever reaches this function.
+        try:
+            from kie_dispatch import model_lock  # noqa: PLC0415
+        except ImportError:
+            pass
+        else:
+            locked = model_lock.read_locked_model(
+                str(Path(run_dir) / "control" / "state.sqlite3"), str(sid))
+            if locked:
+                values["MODEL"] = str(locked)
     try:
         import qc_gate  # noqa: PLC0415
         required = getattr(qc_gate, "STAGE_REQUIRED", None)
@@ -3238,7 +3806,7 @@ def _stage_needs(argv, run_dir, sid, stage, extra=None):
                 missing.add(name)
         filled.append(out)
     needs = [{"placeholder": name,
-              "where": _PLACEHOLDER_WHERE.get(name, "the runner supplies it")}
+              "where": _placeholder_where(name, stage)}
              for name in sorted(missing)]
     return filled, needs
 
@@ -3432,6 +4000,10 @@ def _next_stage(a, *, boot_snapshot=None):
         if decision["next_stage"] == "video-generation":
             _ar = _approval_runner()
             if _ar is not None and not _ar.gate_open(str(run_dir)):
+                _owed = _studio_notes_drain("next", str(sid), run_dir,
+                                            decision["next_stage"])
+                if _owed:
+                    return _owed
                 _ans = _studio_answer(run_dir, "storyboard")
                 if _ans:
                     return _studio_apply("next", str(sid), run_dir,
@@ -3470,6 +4042,9 @@ def _next_stage(a, *, boot_snapshot=None):
     if next_stage == "video-generation":      # storyboard approval point
         ar = _approval_runner()
         if ar is not None and not ar.gate_open(str(run_dir)):
+            owed = _studio_notes_drain("next", str(sid), run_dir, next_stage)
+            if owed:
+                return owed
             ans = _studio_answer(run_dir, "storyboard")
             if ans:
                 return _studio_apply("next", str(sid), run_dir, next_stage,
@@ -3520,6 +4095,9 @@ def _next_stage(a, *, boot_snapshot=None):
             hold = {"reason_code": "SONG_GATE_BROKEN", "next_action": "song gate failed: %r" % (exc,)}
         if hold:
             if hold["reason_code"] == "SONG_PICK_MISSING":   # the client's pick, via the studio
+                # S75-037: the songs are delivered and the pick is what waits --
+                # put them on the Studio page before reading its answer.
+                _studio_publish_song(run_dir)
                 ans = _studio_answer(run_dir, "song")
                 if ans:
                     return _studio_apply("next", str(sid), run_dir, next_stage, "song", ans)
@@ -3557,7 +4135,7 @@ def _next_stage(a, *, boot_snapshot=None):
                 "Agnes path: these keyframes come from Agnes Image with no words "
                 "in the picture; onscreen_text decides bake or overlay per shot.",
                 data={"stage": next_stage, "command": arow["command"],
-                      "produces": arow["produces"], "lane_size": lane_size_payload(),
+                      "produces": arow["produces"], "lane_size": lane_size_payload(run_dir),
                       "stages_source": stages_source, "agnes": agnes,
                       "method": method_block},
                 evidence=["%s" % db, runbook_path])
@@ -3616,7 +4194,7 @@ def _next_stage(a, *, boot_snapshot=None):
                 "next", str(sid), "ok", "next-stage", why,
                 data={"stage": next_stage, "command": kie,
                       "produces": (rows.get("video-generation") or {}).get("produces", ""),
-                      "lane_size": lane_size_payload(),
+                      "lane_size": lane_size_payload(run_dir),
                       "stages_source": stages_source, "agnes": agnes,
                       "method": method_block},
                 evidence=["%s" % db, runbook_path])
@@ -3627,7 +4205,7 @@ def _next_stage(a, *, boot_snapshot=None):
             "while they run.",
             data={"stage": next_stage, "command": jobs[0]["command"],
                   "produces": agnes["segment_produces"],
-                  "lane_size": lane_size_payload(),
+                  "lane_size": lane_size_payload(run_dir),
                   "stages_source": stages_source, "agnes": agnes,
                   "method": method_block},
             evidence=["%s" % db, runbook_path])
@@ -3690,7 +4268,7 @@ def _next_stage(a, *, boot_snapshot=None):
         if sc is not None:
             if stage_price is None:
                 return _price_refusal(sid, next_stage)
-            lane = lane_size_payload()
+            lane = lane_size_payload(run_dir)
             data = {"stage": next_stage, "command": sc["command"],
                     "produces": row.get("produces", ""), "lane_size": lane,
                     "stages_source": stages_source, "song_choices": sc,
@@ -3734,15 +4312,25 @@ def _next_stage(a, *, boot_snapshot=None):
         refusal["data"].update(stage=next_stage,
                                missing_artifacts=order.get("missing_artifacts", []))
         return refusal
-    lane = lane_size_payload()
-    # S75-001: the published command carries the computed cost, never a fixed 0.
+    lane = lane_size_payload(run_dir)
+    # S75-001: the paid number rides in cost_minor, never as a made-up flag.
+    # The published command stays the canonical template ({COST_MINOR} named
+    # in needs/argv), per S75-010 step 4 -- substituting the number into
+    # the command string drifted the row the runbook and the registry share.
+    # S75-041 step 3 below still reads the child tool's name off that same
+    # canonical string, so `published` names the template, not a substituted
+    # copy -- one string, both invariants.
     published = row["command"]
-    if stage_price is not None and row.get("argv"):
-        published = shlex.join([str(t).replace("{COST_MINOR}", str(stage_price))
-                                for t in row["argv"]])
     nxt = {"stage": present_id, "production_stage": next_stage, "command": published,
            "produces": row.get("produces", ""), "lane_size": lane,
            "stages_source": stages_source}
+    # S75-041 step 3: the child tool's code is read through ITS table, by
+    # name -- `next` never hands a bare number upward for the caller to guess.
+    _tool = Path(_command_script(published)).name
+    if _tool in CHILD_EXIT_CODES:
+        nxt["exit_codes"] = {str(code): outcome
+                             for code, outcome in
+                             sorted(CHILD_EXIT_CODES[_tool].items())}
     if stage_price is not None:
         nxt["cost_minor"] = stage_price
     if row_id != present_id:
@@ -3882,8 +4470,8 @@ def _card_help():
 
 
 def main(argv=None):
-    ap = argparse.ArgumentParser(prog="factory.py",
-                                 description="Drama-song factory control CLI (intake/preflight/next).")
+    ap = _ExitOneParser(prog="factory.py",
+                        description="Drama-song factory control CLI (intake/preflight/next).")
     sub = ap.add_subparsers(dest="cmd", required=True)
     i = sub.add_parser("intake", help="Normalize brief, ask ONE missing essential per turn.")
     i.add_argument("--brief", default=None, help="Brief as JSON string.")
@@ -3948,8 +4536,14 @@ def main(argv=None):
                        "wait-provider, wait-approval, resume, complete (song gate + audio "
                        "+ independent qc_gate PASS), fail, park, reopen.")
     m.add_argument("--run-dir", required=True)
-    m.add_argument("--owner", required=True, help="Worker id that holds the music lease.")
-    m.add_argument("--action", required=True, choices=_MUSIC_ACTIONS)
+    m.add_argument("--owner", default="",
+                   help="Worker id that holds the music lease; required for every action.")
+    m.add_argument("--action", default=None, choices=_MUSIC_ACTIONS,
+                   help="The lifecycle move. Omitted with --reply: that is the client's pick.")
+    m.add_argument("--reply", default=None,
+                   help="The client's song pick (or the song-failure fork answer) from the "
+                        "studio page or the chat; records the same pick the song_choices "
+                        "pick CLI writes.")
     m.add_argument("--run-id", default=None, help="Store run id; default: the only one.")
     m.add_argument("--reason", default=None, help="Required for fail and park.")
     m.add_argument("--retryable", action="store_true", help="fail -> FAILED_RETRYABLE.")
