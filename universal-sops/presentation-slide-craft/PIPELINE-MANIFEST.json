@@ -596,6 +596,9 @@
       "client_label": "Building your sales page",
       "client_visible": true,
       "owning_role": "slide-copywriter",
+      "sop_refs": [
+        "SALES-CHECKOUT-BUILDER-SOP.md"
+      ],
       "produces_artifact": [
         "working/upsell/copy/sales.fragment.md",
         "working/upsell/copy/copy_ledger.json"
@@ -624,6 +627,9 @@
       "client_label": "Building your checkout page",
       "client_visible": true,
       "owning_role": "slide-copywriter",
+      "sop_refs": [
+        "SALES-CHECKOUT-BUILDER-SOP.md"
+      ],
       "produces_artifact": "working/upsell/copy/checkout.fragment.md",
       "defers_unless": "intake.want_sales_checkout == \"yes\"",
       "gate_codes": [],
@@ -649,6 +655,9 @@
       "client_label": "Building your video sales page",
       "client_visible": true,
       "owning_role": "deep-research-specialist-presentations",
+      "sop_refs": [
+        "VSL-BUILDER-SOP.md"
+      ],
       "produces_artifact": "working/upsell/vsl-research.md",
       "defers_unless": "intake.want_vsl_page == \"yes\"",
       "gate_codes": [],
@@ -674,6 +683,9 @@
       "client_label": "Building your video sales page",
       "client_visible": false,
       "owning_role": "slide-copywriter",
+      "sop_refs": [
+        "VSL-BUILDER-SOP.md"
+      ],
       "produces_artifact": "working/upsell/copy/vsl.fragment.md",
       "defers_unless": "intake.want_vsl_page == \"yes\"",
       "gate_codes": [],
@@ -882,6 +894,9 @@
       "client_label": "Building your sales page",
       "client_visible": false,
       "owning_role": "media-librarian-ghl-updater",
+      "sop_refs": [
+        "SALES-CHECKOUT-BUILDER-SOP.md"
+      ],
       "produces_artifact": [
         "working/pages/page-brief-sales.v*.json",
         "working/pages/page-brief-checkout.v*.json"
@@ -912,6 +927,9 @@
       "client_label": "Building your video sales page",
       "client_visible": false,
       "owning_role": "media-librarian-ghl-updater",
+      "sop_refs": [
+        "VSL-BUILDER-SOP.md"
+      ],
       "produces_artifact": "working/pages/page-brief-vsl.v*.json",
       "defers_unless": "intake.want_vsl_page == \"yes\"",
       "gate_codes": [],
@@ -1273,6 +1291,9 @@
       "client_label": "Building your video sales page",
       "client_visible": false,
       "owning_role": "media-librarian-ghl-updater",
+      "sop_refs": [
+        "GHL-EXTERNAL-INSTALLER-SOP.md"
+      ],
       "produces_artifact": [
         "ecosystem/gate-form.json",
         "workflows/gate-workflow.json"
@@ -1305,6 +1326,9 @@
       "client_label": "Building your sales page",
       "client_visible": false,
       "owning_role": "media-librarian-ghl-updater",
+      "sop_refs": [
+        "GHL-EXTERNAL-INSTALLER-SOP.md"
+      ],
       "produces_artifact": "working/sales-checkout/ghl_build_receipt.json",
       "defers_unless": "intake.want_sales_checkout == \"yes\"",
       "gate_codes": [
@@ -1325,9 +1349,7 @@
       "heartbeat_minutes": 20,
       "consumes": [
         "working/sales-checkout/html/sales.html",
-        "working/sales-checkout/html/checkout.html",
-        "ecosystem/gate-form.json",
-        "workflows/gate-workflow.json"
+        "working/sales-checkout/html/checkout.html"
       ]
     },
     {
@@ -1337,6 +1359,9 @@
       "client_label": "Building your video sales page",
       "client_visible": false,
       "owning_role": "media-librarian-ghl-updater",
+      "sop_refs": [
+        "GHL-EXTERNAL-INSTALLER-SOP.md"
+      ],
       "produces_artifact": "working/vsl/ghl_build_receipt.json",
       "defers_unless": "intake.want_vsl_page == \"yes\"",
       "gate_codes": [
@@ -1918,6 +1943,10 @@
       "client_label": "Final checks and delivery",
       "client_visible": true,
       "owning_role": "delivery-concierge",
+      "sop_refs": [
+        "SALES-CHECKOUT-BUILDER-SOP.md",
+        "VSL-BUILDER-SOP.md"
+      ],
       "produces_artifact": "delivery/{deck_slug}-FINAL/upsell/*",
       "defers_unless": "intake.want_sales_checkout == \"yes\" or intake.want_vsl_page == \"yes\"",
       "gate_codes": [],
@@ -1979,7 +2008,8 @@
       "client_visible": false,
       "owning_role": "media-librarian-ghl-updater",
       "sop_refs": [
-        "media-librarian-ghl-updater-sops.md"
+        "media-librarian-ghl-updater-sops.md",
+        "WEBINAR-BUILDER-SOP.md"
       ],
       "produces_artifact": "working/delivery/{deck_slug}-WEBINAR.mp4",
       "gate_codes": [
@@ -2105,6 +2135,10 @@
       "client_label": "Quality check",
       "client_visible": false,
       "owning_role": "qc-specialist-presentations",
+      "sop_refs": [
+        "SALES-CHECKOUT-BUILDER-SOP.md",
+        "VSL-BUILDER-SOP.md"
+      ],
       "produces_artifact": "qc/upsell-scorecard.json",
       "defers_unless": "intake.want_sales_checkout == \"yes\" or intake.want_vsl_page == \"yes\"",
       "gate_codes": [],
