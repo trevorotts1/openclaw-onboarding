@@ -195,8 +195,17 @@ def test_live_contract_shape_projects_ultra_and_direct_flash_to_real_consumers(t
     assert proc.returncode == 0, proc.stderr
     resolved = json.loads(engine_intake.read_text())
     assert resolved['run_mode'] == 'ultra'
-    assert resolved['workhorse_model'] == 'deepseek-flash@deepseek-direct'
-    assert not resolved['workhorse_model'].endswith(';')
+    # FIX 41 (M17): the resolver NO LONGER projects workhorse_model -- nothing
+    # downstream read it, so the projection was dead. What this test actually
+    # protects is the routing decision, which is carried by the resource
+    # profile's workhorse slot (the sole cross-worker model-plan store, and the
+    # one intake_bridge._verified_operator_model_plan checks). Assert that slot
+    # verbatim -- including its merged-turn separator, which must have been
+    # cleaned -- AND that the dead intake field has not come back.
+    assert 'workhorse_model' not in resolved
+    declared = resource_profile.model_plan(resource_profile.load_profile()).get('workhorse')
+    assert declared == {'provider': 'deepseek-direct', 'model': 'deepseek-flash'}
+    assert not declared['model'].endswith(';')
     assert resolved['pre_presentation_capture']['WANT_VSL_PAGE'] == 'yes'
     assert resolved['pre_presentation_capture']['WANT_SALES_CHECKOUT'] == 'yes'
     # Read the exact profile the real driver just produced. Credentials are
@@ -206,7 +215,13 @@ def test_live_contract_shape_projects_ultra_and_direct_flash_to_real_consumers(t
     assert decision['route'] == {'provider': 'deepseek-direct', 'model': 'deepseek-flash'}
     assert decision['client_plan']['applied'] is True
     assert decision['mode_ceiling']['mode'] == 'ultra'
-    assert decision['mode_ceiling']['operator_ceiling'] == 100
+    # Pre-existing stale literal, found while proving PD-932: this said 100,
+    # but FIX 61 (2026-09-28) set ultra's operator ceiling to 400 by design
+    # (model_router.ULTRA_OPERATOR_CEILING == 400, pinned by
+    # test_f15f16_mode_truth.test_the_operator_ceiling_constant_is_untouched).
+    # The ceiling block must report the GLOBAL ratified maximum, so assert it
+    # against that constant instead of a date-frozen number.
+    assert decision['mode_ceiling']['operator_ceiling'] == model_router.ULTRA_OPERATOR_CEILING
 
 
 def test_launcher_writes_ultra_mode_and_client_route_sidecars(tmp_path, monkeypatch):
