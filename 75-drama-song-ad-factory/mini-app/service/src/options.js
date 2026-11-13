@@ -16,8 +16,11 @@
 //   3  "Your crew starts automatically within about 2 minutes while your
 //       computer is on and awake. Last check-in: 2 minutes ago."
 //   stale (any option, 30 minutes with an order waiting)
-//      "Your computer has not checked in since 2:14 PM. Your order is safe and
-//       starts when it is back." plus ONE quiet line in the operator inbox.
+//      "Your studio computer has not checked in for 2 hours. Your order is safe
+//       and starts when it is back." (a clock time only when the record carries
+//       a time zone) plus ONE quiet line in the operator inbox; with no
+//       check-in yet, "Your order is safe. It starts as soon as your studio
+//       computer is on."
 //
 // PURE apart from lastCheckIn, the ONE store read this surface needs: the store
 // is injected, there are no bindings, and the clock is always passed in.
@@ -135,6 +138,23 @@ export function staleVerdict({ record, lastCheckMs, hasWaitingOrder, nowMs }) {
   if (!hasWaitingOrder) return { stale: false, page_line: null, operator_line: null };
   if (typeof lastCheckMs === 'number' && nowMs - lastCheckMs < STALE_AFTER_MS) {
     return { stale: false, page_line: null, operator_line: null };
+  }
+  if (typeof lastCheckMs !== 'number') {
+    return {
+      stale: true,
+      page_line: 'Your order is safe. It starts as soon as your studio computer is on.',
+      operator_line: 'Computer has not checked in yet with an order waiting',
+    };
+  }
+  // A clock time is only printed when the record says which zone it is in: a
+  // bare time would be the operator's clock shown to the client as their own.
+  if (!(record && record.timezone)) {
+    const age = ageText(nowMs, lastCheckMs);
+    return {
+      stale: true,
+      page_line: `Your studio computer has not checked in for ${age}. Your order is safe and starts when it is back.`,
+      operator_line: `Computer has not checked in for ${age} with an order waiting`,
+    };
   }
   const clock = clockText(lastCheckMs, record && record.timezone);
   return {

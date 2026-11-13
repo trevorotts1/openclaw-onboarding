@@ -153,6 +153,7 @@ const state = {
   sending: false,       // Lock it in is in flight — a second tap sends nothing
   orderId: null,        // S75-071 — ONE id for the recap on screen, until accepted
   delivery: null,
+  sessionFailure: null, // S75-077 — "link" (the service refused the key) or "unreachable"
   // S75-073 — what the project page is showing and what it last drew.
   staleLine: "",        // stale_page_line the service sent with the order, if it sent one
   approvalItems: [],    // the approval listing behind the drawn signature
@@ -255,8 +256,9 @@ export function visibleScreens(questions, replies = [], agnesRemembered = "unkno
 // ── the Agnes progress line on the project card (SPEC A11) ───────────────────
 // SPEC A11's own two sentences. The only reason the quota ledger writes today
 // is the daily reset, so it carries its words here; any other reason is printed
-// as it arrives — the page never invents a reason it was not given.
-const WAITING_WORDS = { "agnes-quota-next-day": "waiting for tomorrow's Agnes time" };
+// as plain "paused" — the page never shows the client a reason code it was not
+// given words for.
+const WAITING_WORDS = { "agnes-quota-next-day": "paused until tomorrow - today's plan time is used up" };
 
 function clockAt(iso) {
   const at = new Date(String(iso));
@@ -271,7 +273,7 @@ export function agnesProgressLine(progress) {
   const done = Number(progress.clips_done);
   if (!Number.isFinite(total) || total <= 0 || !Number.isFinite(done)) return "";
   if (progress.waiting_reason) {
-    const why = WAITING_WORDS[String(progress.waiting_reason)] || `waiting (${progress.waiting_reason})`;
+    const why = WAITING_WORDS[String(progress.waiting_reason)] || "paused";
     const at = clockAt(progress.next_continue_utc);
     return at ? `${why}, continues at ${at}` : why;
   }
@@ -519,7 +521,11 @@ function pageHome() {
     nodes.push(el("div", { class: "panel" }, [el("p", { text: state.optionLine })]));
   }
 
-  nodes.push(el("div", { class: "card" }, [el("h2", { text: "Your projects" }), ...projectList()]));
+  // A refused link has nothing to list and cannot load any: the empty list is
+  // hidden rather than shown as "Nothing here yet".
+  if (!(state.sessionFailure === "link" && !state.orders.length)) {
+    nodes.push(el("div", { class: "card" }, [el("h2", { text: "Your projects" }), ...projectList()]));
+  }
 
   if (link) {
     nodes.push(el("div", { class: "card" }, [
@@ -674,6 +680,14 @@ function newOrderId() {
   return "r_" + [...bytes].map((b) => b.toString(16).padStart(2, "0")).join("");
 }
 
+/** S75-077 — the project is named by the client's own offer: the first 60
+ *  characters of the OFFER answer, or "Your video" when there is none. */
+export function orderTitle() {
+  const at = state.visible.findIndex((q) => q && q.id === "offer");
+  const text = at >= 0 ? String(replyFor(at) || "").trim() : "";
+  return text ? text.slice(0, 60) : "Your video";
+}
+
 /** The Lock it in button, in its sending state while the order is on the wire. */
 function lockInButton() {
   const b = primary("Lock it in", () => lockIn(b));
@@ -687,7 +701,7 @@ async function lockIn(button) {
   if (button) { button.disabled = true; button.textContent = "Sending..."; }
   try {
     const out = await svc().lockIn({
-      title: `Drama video ${new Date().toISOString().slice(0, 10)}`,
+      title: orderTitle(),
       replies: [...currentReplies(), "yes"],
       upload_ids: [],
       order_id: state.orderId,
@@ -1074,6 +1088,23 @@ function serviceMessage(err) {
   return `Something went wrong saving that (${err.message}). Nothing was lost — try again.`;
 }
 
+// ── a session the service refuses, said once on the page (S75-077) ───────────
+// The service answers 401 with one of these codes (index.js, keys.js,
+// isolation.js); the bare HTTP code is the fallback service-client.js stamps.
+const LINK_REFUSED_CODES = new Set([
+  "AF-DS-KEY-MALFORMED", "AF-DS-KEY-UNKNOWN", "AF-DS-KEY-REVOKED",
+  "AF-DS-ID-INVALID", "AF-DS-HTTP-401",
+]);
+const SESSION_NOTICE = {
+  link: "This studio link is no longer active. Ask for your new link - your projects are safe.",
+  unreachable: "The studio could not be reached. Check your connection and open the page again.",
+};
+function sessionNotice() {
+  const words = SESSION_NOTICE[state.sessionFailure];
+  if (!words) return null;
+  return el("div", { class: "card", role: "status" }, [el("p", { text: words })]);
+}
+
 // ── render ───────────────────────────────────────────────────────────────────
 const RENDERERS = {
   start: pageHome, questions: pageQuestions, recap: pageRecap,
@@ -1083,7 +1114,8 @@ const RENDERERS = {
 export function render() {
   renderNav();
   renderProgress();
-  main().replaceChildren(...RENDERERS[state.page]());
+  const notice = sessionNotice();
+  main().replaceChildren(...(notice ? [notice] : []), ...RENDERERS[state.page]());
   focusHeading();
   syncProjectRefresh();
 }
@@ -1107,8 +1139,11 @@ async function boot() {
       // on the card (its shows_when names "unknown") and no progress line shows.
       state.agnesRemembered = session.agnes_remembered || "unknown";
       state.agnesProgress = session.agnes_progress || null;
+      state.sessionFailure = null;
     } catch (err) {
-      announce(serviceMessage(err));
+      // A refused key is a page-level card, never the "saving" line: nothing
+      // was being saved, and the client's next step is a new link.
+      state.sessionFailure = LINK_REFUSED_CODES.has(String(err && err.code)) ? "link" : "unreachable";
     }
     if (state.page === "questions" || state.page === "recap") {
       await loadQuestions();

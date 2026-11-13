@@ -349,6 +349,18 @@ test('options: the four approved strings are reproduced verbatim', () => {
   assert.match(stale.page_line, /^Your computer has not checked in since .*Your order is safe and starts when it is back\.$/);
   assert.match(stale.operator_line, /with an order waiting$/);
   assert.equal(staleVerdict({ record: {}, lastCheckMs: T0, hasWaitingOrder: false, nowMs: T0 }).stale, false);
+
+  // S75-077 — no stored time zone means an age, never a clock the client would
+  // read as their own; no check-in at all gets its own sentence.
+  const noZone = staleVerdict({
+    record: { option: 2 }, lastCheckMs: T0 - 31 * 60 * 1000, hasWaitingOrder: true, nowMs: T0,
+  });
+  assert.equal(noZone.page_line,
+    'Your studio computer has not checked in for 31 minutes ago. Your order is safe and starts when it is back.');
+  const never = staleVerdict({
+    record: { option: 2 }, lastCheckMs: null, hasWaitingOrder: true, nowMs: T0,
+  });
+  assert.equal(never.page_line, 'Your order is safe. It starts as soon as your studio computer is on.');
 });
 
 test('options: Option 3 refuses without a recorded approval, and accepts with one', () => {
@@ -515,6 +527,31 @@ test('service: pairing — admin mints, the code burns once, a machine key comes
 
   const again = await handle(post('/api/studio/pair', { code }), GOOD_ENV, store, objects);
   assert.equal(again.status, 403, 'the code is single use');
+});
+
+test('service: an expired pairing code names the way out, a wrong one does not', async () => {
+  const store = memStore();
+  const objects = memObjects();
+  const { code, fingerprint } = await mintPairingCode();
+  await store.kvPut(`pair:${fingerprint}`, JSON.stringify({
+    client_id: randomClientId(),
+    fingerprint,
+    exp: Date.now() - 1000,
+    tries: 0,
+    status: 'open',
+  }), 900);
+
+  const expired = await handle(post('/api/studio/pair', { code }), GOOD_ENV, store, objects);
+  assert.equal(expired.status, 403);
+  const refused = await expired.json();
+  assert.equal(refused.code, AF_PAIR_EXPIRED);
+  assert.equal(refused.message,
+    'That pairing code has expired. Codes last 15 minutes - ask for a new one.');
+
+  // Every other refusal keeps the one wording, so a guess learns nothing.
+  const wrong = await handle(post('/api/studio/pair', { code: 'AAAA-1111' }), GOOD_ENV, store, objects);
+  assert.equal(wrong.status, 403);
+  assert.equal((await wrong.json()).message, 'That pairing code cannot be used.');
 });
 
 test('service: the option line is served, and Option 3 is refused without approval', async () => {

@@ -30,7 +30,7 @@ separate=0
 # check has no zbarimg), not that the page is wrong: it is reported separately
 # and does not fail the suite.
 for check in ui-contract a11y-check qr-roundtrip download-bytes-check \
-             approvals-view-check delivery-page-check \
+             approvals-view-check delivery-page-check home-page-check \
              service-client-check questions-drift; do
   if [ ! -f "checks/${check}.mjs" ]; then
     echo "==================================================================="

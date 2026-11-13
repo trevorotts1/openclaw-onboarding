@@ -29,7 +29,7 @@
 
 import { AF_ID_INVALID, isClientId } from './ids.js';
 import { AF_ISO_CROSS, authorizeClient, enrollClient } from './isolation.js';
-import { AF_PAIR_LOCKED, PAIRING_MAX_TRIES, attemptPairing, buildKeyRecord, mintKey, mintPairingCode, pairRecordKey } from './keys.js';
+import { AF_PAIR_EXPIRED, AF_PAIR_LOCKED, PAIRING_MAX_TRIES, attemptPairing, buildKeyRecord, mintKey, mintPairingCode, pairRecordKey } from './keys.js';
 import { MAX_WAITING_ORDERS, checkIn, readInbox, writeInbox } from './inbox.js';
 import { acceptUpload, pollUpload } from './uploads.js';
 import { resolveOrderState, transition, writeOperatorRecord } from './lifecycle.js';
@@ -212,7 +212,11 @@ export async function handle(request, env, store, objects, deps = {}) {
         await store.kvPut(`pair:${attempt.record.fingerprint}`, JSON.stringify(attempt.record), 900);
       }
       await store.kvPut(pairFailKey, String(pairFails + 1), 900);
-      return fail(403, attempt.code, 'That pairing code cannot be used.');
+      // S75-077 — an expired code says how to get a working one; every other
+      // refusal keeps the one wording, so a wrong code learns nothing.
+      return fail(403, attempt.code, attempt.code === AF_PAIR_EXPIRED
+        ? 'That pairing code has expired. Codes last 15 minutes - ask for a new one.'
+        : 'That pairing code cannot be used.');
     }
     await store.kvDelete(pairFailKey);
     await store.kvDelete(`pair:${attempt.record.fingerprint}`);
