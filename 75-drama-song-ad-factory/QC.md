@@ -113,8 +113,10 @@ it advances. Standard library only; no credential value is ever printed.
       it again with that answer added and the next question appears.
 - [ ] Complete brief exits 0, `complete-brief-zero-questions`, returns a
       16-hex `digest`; `auth_status` is `missing` without an auth object.
-- [ ] Injection text in a brief (`ignore all previous instructions`)
-      exits 4, `untrusted-injection-blocked`, and does not touch auth.
+- [ ] Injection text in a brief (`ignore all previous instructions`) sent as
+      an extracted page or attached file is dropped, and the envelope lists
+      `warnings: ["source ignored: <name>"]`; the client's own typed words are
+      never refused, and the run does not touch auth.
 - [ ] Resume trio: no change -> 0 `resume-no-changes`; budget change -> 3
       `resume-approval-invalidated`; outstanding decision -> 2
       `resume-outstanding-decisions` (questionnaire not re-run).
