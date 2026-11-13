@@ -304,3 +304,15 @@ After the report commit the head is re-proved at the end of this file (section 1
    `runfacts.verify_priority_shift`; named, not fixed here (out of this unit's scope).
 5. **Not run:** no live engine run, no paid service, no network. Everything above is fixture-driven
    pytest and one probe script, as the unit's live-action flag allows.
+## 10. Final head proof
+
+```
+$ git ls-remote --heads origin pd/fl15-renderer
+e04e7de8fc62acec9a442cc1f78971dc254bc8f9	refs/heads/pd/fl15-renderer
+$ git rev-parse HEAD
+e04e7de8fc62acec9a442cc1f78971dc254bc8f9
+```
+
+Unit commit `3b57687be` (code + tests), report commit `e04e7de8f`. Fast-forward only: the push
+was `5dc81e96e..3b57687be` then `3b57687be..e04e7de8f`; no rebase, no force-push, `main` never
+written.
