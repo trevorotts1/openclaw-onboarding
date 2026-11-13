@@ -536,7 +536,27 @@ def _studio_bump_version(run_dir, stage):
 
 
 # The approvals service stores choices as {n: whole number, label: string}.
-STUDIO_CHOICES = {"storyboard": ({"n": 1, "label": "GO"},)}
+def _studio_song_choices(st):
+    """S75-037: the choices the studio page shows for the song stage -- one per
+    OFFERED number, built from the numbers the run really offered, never from a
+    fixed list (a failed take is presented for listening, never offered)."""
+    offered = (st or {}).get("offered") if isinstance(st, dict) else None
+    if not isinstance(offered, dict) or not offered:
+        return ()
+    rows = []
+    try:
+        numbers = sorted(offered, key=lambda k: int(k))
+    except (TypeError, ValueError):
+        return ()
+    for n in numbers:
+        entry = offered.get(n) if isinstance(offered.get(n), dict) else {}
+        rows.append({"n": int(n), "label": str(entry.get("label") or n)})
+    return tuple(rows)
+
+
+STUDIO_CHOICES = {"storyboard": ({"n": 1, "label": "GO"},),
+                  # built per run from the offered numbers (never a fixed list)
+                  "song": _studio_song_choices}
 
 
 def _studio_item_digest(ab, item):
@@ -768,6 +788,19 @@ def _studio_apply_script(cmd, sid, run_dir, stage, answer):
         return None
 
 
+def _song_choices_state(run_dir):
+    """The run's song-choices record (offered numbers, presented files), or {}
+    when it is absent or unreadable -- no record means no numbers to check."""
+    try:
+        _c = str(Path(__file__).resolve().parent.parent)
+        if _c not in sys.path:
+            sys.path.insert(0, _c)
+        from song_choices import song_choices as _sc   # noqa: PLC0415
+        return _sc._state(str(run_dir)) or {}
+    except Exception:   # noqa: BLE001 - a broken record never invents an offer
+        return {}
+
+
 def _studio_apply(cmd, sid, run_dir, stage, approval, answer):
     """A studio ANSWER becomes the EXISTING apply path (script-reply in-process
     when it carries verified provenance / song pick / storyboard --reply). No
@@ -784,8 +817,19 @@ def _studio_apply(cmd, sid, run_dir, stage, approval, answer):
             return applied
         command = _studio_script_command(run_dir, value, answer)
     elif approval == "song":
-        command = ("python3 scripts/core/song_choices/song_choices.py pick "
-                   "--run-dir %s --reply %s" % (run, q(str(value))))
+        # S75-037: a studio song answer becomes the music command's own reply
+        # path, using the SAME choices the page published (the offered numbers).
+        numbers = [str(c["n"]) for c in STUDIO_CHOICES["song"](_song_choices_state(run_dir))]
+        picked = str(value if value is not None else "").strip()
+        if numbers and picked not in numbers:
+            return envelope(cmd, sid, "rejected", "studio-song-choice-unknown",
+                            "The studio answer %r is not one of the songs offered (%s); "
+                            "nothing was picked."
+                            % (picked, ", ".join(numbers)),
+                            data={"stage": stage, "approval": "song",
+                                  "offered": numbers, "answer": value})
+        command = ("python3 scripts/core/intake_preflight/factory.py music "
+                   "--run-dir %s --reply %s" % (run, q(picked)))
     else:
         command = ("python3 scripts/core/intake_preflight/factory.py storyboard "
                    "--run-dir %s --reply %s" % (run, q(str(value))))
@@ -812,13 +856,19 @@ def cmd_storyboard(a):
     studio = _studio_order(run_dir)
     target = a.target or ar.receipt_target(run_dir)
     sent, stills = [], []
+    studio_failure = {}
 
     def send(message, images):
         delivered = False
         if studio:
-            delivered = _studio_publish(run_dir, studio, "storyboard", message,
-                                        [p for _n, p in images],
-                                        choices=list(STUDIO_CHOICES["storyboard"])) is not None or delivered
+            try:
+                delivered = _studio_publish(run_dir, studio, "storyboard", message,
+                                            [p for _n, p in images],
+                                            choices=list(STUDIO_CHOICES["storyboard"])) is not None or delivered
+            except Exception as e:   # S75-037: a studio outage must not silence the chat
+                if not target:
+                    raise
+                studio_failure["detail"] = str(e)[:300]
         if target:
             ar.openclaw_sender(target)(message, images)
             delivered = True
@@ -835,6 +885,16 @@ def cmd_storyboard(a):
     data = dict(r)
     if sent:
         data["messages"], data["stills"] = sent, stills
+    if studio_failure:
+        # S75-037: the chat copy went out; the studio page is the thing that
+        # failed, so the stage waits on the chat instead of aborting both.
+        data.update(reason="studio-publish-failed",
+                    studio_publish={"outcome": "failed",
+                                    "detail": studio_failure["detail"]})
+        return envelope("storyboard", sid, "waiting", "studio-publish-failed",
+                        "The studio page did not take the storyboard (%s); the client "
+                        "chat copy was sent and the stage waits for the client's reply."
+                        % studio_failure["detail"], data=data)
     return envelope("storyboard", sid, out, r["action"],
                     "Run `next` for the video stage." if r["action"] == "approved"
                     else "Waiting for the client's reply (GO, or 'shot N: change ...').",
@@ -957,6 +1017,42 @@ def cmd_script_reply(a):
                         _script_gate(run_dir, a, reply=a.reply))
 
 
+def _studio_publish_song(run_dir):
+    """S75-037: put the delivered songs on a Studio order's page as stage `song`.
+
+    Published ONCE per run: the client's answer binds the version the page
+    showed, so a repeated `next` must not move that version out from under them.
+    The text is the SAME client message the chat delivery built, the files are
+    the audio files the run presented, and the choices are the offered numbers.
+    A run with no studio order, no bridge, or nothing offered publishes nothing;
+    a studio outage never blocks the music stage.
+    """
+    if not _studio_order(run_dir):
+        return None
+    if _studio_publish_record(run_dir).get("song"):
+        return None
+    st = _song_choices_state(run_dir)
+    choices = list(STUDIO_CHOICES["song"](st))
+    if not choices:
+        return None
+    concerns = st.get("concerns") or {}
+    try:
+        _c = str(Path(__file__).resolve().parent.parent)
+        if _c not in sys.path:
+            sys.path.insert(0, _c)
+        from song_choices import song_choices as _sc   # noqa: PLC0415
+        failed = sorted(int(k) for k in concerns if str(k).isdigit())
+        text = _sc.client_message(st.get("offered") or {}, failed, concerns=concerns)
+    except Exception:   # noqa: BLE001 - no message, no publish; the page keeps waiting
+        return None
+    files = [str(p) for p in (st.get("presented") or [])]
+    try:
+        return _studio_publish(run_dir, _studio_order(run_dir), "song", text, files,
+                               choices=choices)
+    except Exception:   # noqa: BLE001 - a studio outage never blocks the music stage
+        return None
+
+
 def _song_choices_next(run_dir, orchestrated=False):
     """SONG APPROVAL = Yes -> the three-version music runner descriptors.
 
@@ -977,6 +1073,8 @@ def _song_choices_next(run_dir, orchestrated=False):
     if not st or not st.get("required"):
         return None
     rd = str(run_dir)
+    # S75-037: a Studio order sees the three songs on its page, not only in chat.
+    _studio_publish_song(run_dir)
     units = _sc.plan_units(rd)["units"]
     base = ("python3 scripts/core/song_choices/song_choices.py generate "
             "--run-dir \"$RUN\" --request \"$RUN/music/req.json\" "
@@ -1292,8 +1390,45 @@ def music_stage(run_dir, owner, action, run_id=None, reason=None,
         st.close()
 
 
+def _music_song_pick(a, run_dir):
+    """S75-037: `music --run-dir D --reply N` is the command form a studio song
+    answer becomes. Routes to the SAME pick the song_choices `pick` CLI records
+    (never a second pick path); a worded answer to the song-failure fork is
+    recorded the same way that CLI records it."""
+    sid = run_dir.name or "run"
+    try:
+        _c = str(Path(__file__).resolve().parent.parent)
+        if _c not in sys.path:
+            sys.path.insert(0, _c)
+        from song_choices import song_choices as _sc   # noqa: PLC0415
+        try:
+            label = _sc.record_pick(str(run_dir), a.reply)
+        except _sc.ChoiceError:
+            if _sc.parse_fork_answer(a.reply) is None:
+                raise
+            rec = _sc.record_fork_decision(str(run_dir), a.reply)
+            return envelope("music", sid, "ok", "song-fork-recorded",
+                            "The client answered the song-failure fork; the answer is "
+                            "%r." % rec["answer"],
+                            data={"stage": MUSIC, "fork": rec})
+        return envelope("music", sid, "ok", "song-picked",
+                        "Picked: %s. Run `next` for the next stage." % label,
+                        data={"stage": MUSIC, "pick": label})
+    except Exception as e:   # noqa: BLE001 - a refused pick never becomes a pick
+        return envelope("music", sid, "error", "SONG_PICK_REFUSED", str(e)[:300])
+
+
 def cmd_music(a):
     run_dir = Path(a.run_dir).expanduser().resolve()
+    if getattr(a, "reply", None) is not None and not a.action:
+        return _music_song_pick(a, run_dir)
+    if not a.action:
+        return envelope("music", run_dir.name or "run", "error", "MUSIC_ACTION_REQUIRED",
+                        "Name the music action (start, resume, complete, ...), or give "
+                        "the client's song pick with --reply.")
+    if not a.owner:
+        return envelope("music", run_dir.name or "run", "error", "MUSIC_OWNER_REQUIRED",
+                        "Name the worker id that holds the music lease with --owner.")
     guarded = a.action in ("start", "resume", "complete")
     admission = (_production_admission(run_dir, MUSIC if a.action == "start" else None,
                                         run_id=getattr(a, "run_id", None)) if guarded else
@@ -3853,6 +3988,9 @@ def _next_stage(a, *, boot_snapshot=None):
             hold = {"reason_code": "SONG_GATE_BROKEN", "next_action": "song gate failed: %r" % (exc,)}
         if hold:
             if hold["reason_code"] == "SONG_PICK_MISSING":   # the client's pick, via the studio
+                # S75-037: the songs are delivered and the pick is what waits --
+                # put them on the Studio page before reading its answer.
+                _studio_publish_song(run_dir)
                 ans = _studio_answer(run_dir, "song")
                 if ans:
                     return _studio_apply("next", str(sid), run_dir, next_stage, "song", ans)
@@ -4287,8 +4425,14 @@ def main(argv=None):
                        "wait-provider, wait-approval, resume, complete (song gate + audio "
                        "+ independent qc_gate PASS), fail, park, reopen.")
     m.add_argument("--run-dir", required=True)
-    m.add_argument("--owner", required=True, help="Worker id that holds the music lease.")
-    m.add_argument("--action", required=True, choices=_MUSIC_ACTIONS)
+    m.add_argument("--owner", default="",
+                   help="Worker id that holds the music lease; required for every action.")
+    m.add_argument("--action", default=None, choices=_MUSIC_ACTIONS,
+                   help="The lifecycle move. Omitted with --reply: that is the client's pick.")
+    m.add_argument("--reply", default=None,
+                   help="The client's song pick (or the song-failure fork answer) from the "
+                        "studio page or the chat; records the same pick the song_choices "
+                        "pick CLI writes.")
     m.add_argument("--run-id", default=None, help="Store run id; default: the only one.")
     m.add_argument("--reason", default=None, help="Required for fail and park.")
     m.add_argument("--retryable", action="store_true", help="fail -> FAILED_RETRYABLE.")
