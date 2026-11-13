@@ -196,7 +196,7 @@ jobs:
     runs-on: ubuntu-latest
     # Only the push-to-main path runs the strict tag check; PRs use the
     # changelog-entry check in G2 below instead.
-    if: (github.event_name != 'pull_request' || github.event.pull_request.draft == false) && (github.event_name == 'push')
+    if: (github.event_name != 'pull_request' || github.event.pull_request.draft == false) && (github.event_name == 'push' && github.ref == 'refs/heads/main')
     steps:
       - name: Checkout full history + tags
         uses: actions/checkout@v4
@@ -312,7 +312,7 @@ jobs:
   # Security note: consumes only repo content and git metadata -- no untrusted
   # GitHub event fields -- so there is no injection surface in the run: block.
   check-released-versions-tagged:
-    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    if: (github.event_name != 'pull_request' || github.event.pull_request.draft == false) && (github.event_name != 'push' || github.ref == 'refs/heads/main')
     name: G1b — every release on main must keep a truthful annotated tag
     runs-on: ubuntu-latest
     steps:
@@ -385,7 +385,7 @@ jobs:
   # on every push without fixing anything. The v11 series is the Wave 1-3
   # release train where tag discipline is enforced by PRD 2.2.
   check-tag-changelog-guard:
-    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    if: (github.event_name != 'pull_request' || github.event.pull_request.draft == false) && (github.event_name != 'push' || github.ref == 'refs/heads/main')
     name: G2 — every v11+ annotated tag must have a CHANGELOG entry
     runs-on: ubuntu-latest
     steps:
@@ -506,7 +506,7 @@ jobs:
   # ARCHIVED skills (*-ARCHIVED/) are excluded.
   # Only runs when there is a previous commit to diff against (not first push).
   check-skill-version-bump:
-    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    if: (github.event_name != 'pull_request' || github.event.pull_request.draft == false) && (github.event_name != 'push' || github.ref == 'refs/heads/main')
     name: G3 — skill content change requires skill-version.txt bump
     runs-on: ubuntu-latest
     steps:
