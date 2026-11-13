@@ -10,6 +10,7 @@ Proves, on the REAL manifest and the REAL engine:
 from __future__ import annotations
 
 import json
+import shlex
 import sys
 from pathlib import Path
 
@@ -76,14 +77,19 @@ class TestEveryTemplateFillsItsOwnLabel:
         assert rendered == 2 * len(manifest.phases)
 
     def test_the_rendered_step_line_reads_as_a_step(self, tmp_path):
-        eng, manifest = _engine(tmp_path)
+        # A real deck shape, not the no-intake fail-safe: PD-018b counts the
+        # RENDERED phases, so P4-RENDER is step 10 of 16 here.
+        eng, manifest = _engine(
+            tmp_path, intake={"deck_type": "webinar", "creation_mode": "from_scratch"})
         msg = eng._render_client_report_msg(manifest.phase("P4-RENDER"), "start")
-        assert msg == "Step 19 of 46 — Creating your slide images — starting", msg
+        assert msg == "Step 10 of 16 — Creating your slide images — starting", msg
 
-    def test_hidden_phase_is_silent_whatever_its_step_number(self, tmp_path):
-        eng, manifest = _engine(tmp_path)  # unknown deck: every phase has a k
+    def test_hidden_phase_is_silent_and_unnumbered(self, tmp_path):
+        eng, manifest = _engine(tmp_path)  # unknown deck: every phase passes the deck filter
         ph = manifest.phase("P-STYLE-SPEC")
-        assert eng._client_phase_index(ph.id, manifest.phases)[0] is not None
+        label, client_visible = eng._phase_client_meta(ph)
+        assert label and client_visible is False
+        assert eng._client_phase_index(ph.id, manifest.phases)[0] is None
         assert eng._render_client_report_msg(ph, "start") == ""
 
 
@@ -95,7 +101,10 @@ class TestScriptRetryIsInternal:
         notify = tmp_path / "notify.sh"
         notify.write_text("#!/bin/sh\ncat >> \"$PD018B_SENT\"\necho >> \"$PD018B_SENT\"\nexit 0\n")
         notify.chmod(0o755)
-        monkeypatch.setenv("PRESENTATION_NOTIFY_CMD", str(notify))
+        # D: the notify command is an argv vector -- a path under the mandated
+        # TMPDIR contains spaces, so it MUST be quoted or shlex.split yields
+        # three tokens and the transport never starts.
+        monkeypatch.setenv("PRESENTATION_NOTIFY_CMD", shlex.quote(str(notify)))
         monkeypatch.setenv("PD018B_SENT", str(sent))
         marker = tmp_path / "attempted"
         script = tmp_path / "flaky.sh"
@@ -120,3 +129,9 @@ class TestScriptRetryIsInternal:
         assert internal, "the retry line is missing from the event log"
         assert any("Retrying" in e["message"] for e in internal)
         assert not [e for e in eng.state["events"] if e["kind"] == "report.blocked"]
+        # D: PROVE the transport was reachable, so the "received nothing" above
+        # is a real absence and not a pipe that never started. A control
+        # message must land in the very same file.
+        eng.report.to_requester("blocked", "transport control")
+        assert sent.exists() and sent.read_text().strip(), (
+            "notify transport never started -- 'received nothing' above was vacuous")
