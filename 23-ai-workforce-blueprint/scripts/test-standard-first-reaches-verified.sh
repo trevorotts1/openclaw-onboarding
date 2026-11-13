@@ -7,13 +7,16 @@
 # department entry left "prebuilt" or "pending", and the Skill 38 handoff
 # recorded as "deferred" (BU-54) instead of holding the build open.
 #
-# The sandbox and PHASE A / PHASE B are the ones test-build-standard-first-
-# roundtrip.sh already uses; the two deliberate differences are the point:
-#   * DASHBOARD_DB_PATH is NOT placed in the environment — the lane must reach
-#     verified without a live Command Center database in its environment
-#     (the company tree is followed through companyRoot, BU-102);
+# The sandbox and PHASE A are the ones test-build-standard-first-
+# roundtrip.sh already uses; the deliberate differences are the point:
 #   * commsAutomationStatus is NOT pre-written — the resume job records the
-#     deferral itself (BU-54), which is exactly what the assertion reads.
+#     deferral itself (BU-54), which is exactly what the assertion reads;
+#   * the interview completes through the real --complete evidence gate, not
+#     a hand-set flag — the resume QC lane keys off interviewQc;
+#   * the board assertions resolve through the scratch board file (seeded by
+#     the prebuild, reseeded after the vertical adds): the ZHE prover needs a
+#     database to check, and a hermetic test must hand it its own sandbox
+#     file, never a live box's database.
 #
 # Steps:
 #   1. prebuild (PHASE 2 driver) + mock interview answers + --complete gate +
@@ -264,10 +267,10 @@ if [ "$RC" -eq 0 ]; then good "step 1: apply-diff build rc=0"; else
   bad "step 1: apply-diff build rc=$RC"; tail -12 "$TMP/apply1.err" >&2; echo "ABORT"; exit 1; fi
 
 # ══ STEP 2: one resume fire, with the stub openclaw ══
-# DASHBOARD_DB_PATH is scrubbed from this fire: the resume must prove the lane
-# reaches verified without a live Command Center database in its environment
-# (the company tree is followed through companyRoot, BU-102). The board
-# assertions resolve through the scratch board file via the refresh step.
+# DASHBOARD_DB_PATH is scrubbed from this fire: the resume must prove it
+# advances the lane without depending on a live Command Center database in
+# its environment (the company tree is followed through companyRoot, BU-102).
+# The board assertions resolve through the scratch board file in step 3.
 env -u DASHBOARD_DB_PATH "HOME=$SANDBOX_HOME" "MASTER_FILES_DIR=$MASTER" \
   "OPENCLAW_ROOT=$SANDBOX_HOME/.openclaw" "WORKFORCE_BUILD_STATE_FILE=$STATE" \
   "PATH=$STUB_BIN:$PATH" "STANDARD_FIRST_ONBOARDING=1" \
