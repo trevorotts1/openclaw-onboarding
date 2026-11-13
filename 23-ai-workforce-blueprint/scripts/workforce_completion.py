@@ -163,6 +163,25 @@ def closeout_artifact_digest(state):
     keys=('infographic1Url','infographic2Url','celebrationVideoUrl','notionRootPageUrl','commandCenterUrl','messagesDelivered','ownerChat')
     return hashlib.sha256(json.dumps({k:state.get(k) for k in keys},sort_keys=True).encode()).hexdigest()
 
+# A closeout is done when the owner has what was delivered. The Notion tree and
+# the celebration video are the two legs an owner may never be able to receive (a
+# client that never shares a page with the integration; a vendor that keeps
+# failing). Those legs are WAIVED and reported instead of blocking the closeout
+# forever (decision D-8). Everything else (infographics, delivery confirmation,
+# command center) is still required.
+CLOSEOUT_LEGS=('notion','celebration-video')
+NOTION_WAIVED_PREFIXES=('failed:ownership-unverified','failed:no-shared-page','skipped')
+
+def waived_closeout_legs(state):
+    waived=set()
+    listed=state.get('closeoutWaivedLegs')
+    if isinstance(listed,list):
+        waived.update(leg for leg in listed if isinstance(leg,str) and leg in CLOSEOUT_LEGS)
+    legs=state.get('closeoutLegStatus')
+    notion=legs.get('notion') if isinstance(legs,dict) else None
+    if isinstance(notion,str) and notion.startswith(NOTION_WAIVED_PREFIXES):waived.add('notion')
+    return [leg for leg in CLOSEOUT_LEGS if leg in waived]
+
 def finalize_closeout(path):
     def mutate(state):
         require_build_identity(state)
@@ -176,7 +195,10 @@ def finalize_closeout(path):
             missing.append('build-not-verified')
         if state.get('commandCenterStatus')!='done' or any(state.get(k) is not True for k in CC_PHASES):missing.append('command-center')
         if state.get('qualityHeld'):missing.append('quality-held')
-        for key in ('infographic1Url','infographic2Url','celebrationVideoUrl','notionRootPageUrl'):
+        waived=waived_closeout_legs(state)
+        for key,leg in (('infographic1Url',None),('infographic2Url',None),
+                        ('celebrationVideoUrl','celebration-video'),('notionRootPageUrl','notion')):
+            if leg and leg in waived:continue
             if not state.get(key):missing.append(key)
         delivery=state.get('telegramDeliveryVerification') or {}
         if (delivery.get('status')!='pass' or delivery.get('authority') not in ('gateway-json-registry','gateway-sqlite-plugin-state')
@@ -190,6 +212,7 @@ def finalize_closeout(path):
         if missing:
             if state.get('closeoutStatus') in ('done','sent'):state['closeoutStatus']='partial'
             return False
+        if waived:state['closeoutWaivedLegs']=waived
         state.update(closeoutStatus='done',closeoutCompletedAt=now,closeoutPendingSlots=[],closeoutFailureReason=None)
         state.pop('closeoutCriticalFailed',None)
         state['closeoutCleanupPending']=True
