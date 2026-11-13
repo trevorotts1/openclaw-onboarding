@@ -307,9 +307,11 @@ $ git ls-remote --heads origin refs/heads/pd/fl18-dispatcher--hold-d13
 6b2760afe1a3872662c8e5763895643314b2f9d2	refs/heads/pd/fl18-dispatcher--hold-d13
 ```
 
-40 characters, compared literally, both times. Branch commits: `be56b5a19` (base, PD-079) →
-`efeb1dd7b` (PD-068 code) → `6b2760afe` (this report). Nothing was merged (D-13 HOLD) and no PR
-was opened.
+40 characters, compared literally, both times. Branch line: `be56b5a19` (base, PD-079) →
+`efeb1dd7b` (PD-068 code) → the evidence commits on top of it (this file describes pushes 1 and
+2; later evidence-only commits follow, and the live head is whatever `git ls-remote` prints). No
+commit after `efeb1dd7b` touches a production file. Nothing was merged (D-13 HOLD) and no PR was
+opened.
 
 ## Anything unproved / honest limits
 
