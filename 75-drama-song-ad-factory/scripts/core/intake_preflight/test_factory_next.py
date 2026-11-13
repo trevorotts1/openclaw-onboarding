@@ -16,7 +16,10 @@ Proves, behaviourally:
     absolute path, empty stdout JSON (no stage, no command);
   * lane_size comes from a live `lane_size` import when the module landed
     (W2-A-U1), else from the Part D fallback constants in factory.py
-    (agents >= 1 always); "source" inside the payload names which one ran.
+    (agents >= 1 always); "source" inside the payload names which one ran;
+  * S75-024: the runtime and builder route come from the run's own
+    model-bindings.json, so two different bindings are sized two different
+    ways, and no bindings falls back to Part D and says so.
 
 Run from the skill root:  python3 scripts/core/intake_preflight/test_factory_next.py
 stdlib only, no network, no provider, writes only under a temp dir.
@@ -105,8 +108,8 @@ def main():
         check("lane_size has agents>=1",
               isinstance(lane.get("agents"), int) and lane["agents"] >= 1, True)
         check("lane_size names its source",
-              str((lane.get("source") or "")
-                  ) in ("lane_size.module", "part_d_defaults"), True)
+              str(lane.get("source") or "").startswith(
+                  ("lane_size.module", "part_d_defaults")), True)
         check("lane_size source is honest",
               (env.get("data", {}).get("lane_size") or {}).get("agents") is not None, True)
         check("stage-list source tag", (env.get("data", {}).get("stages_source")
@@ -145,6 +148,44 @@ def main():
               env.get("reason_code"), "UNKNOWN_PRICE")
         check("paid stage with no price: no command handed out",
               (env.get("data") or {}).get("command"), None)
+
+        # -- S75-024: the run's own model choice sizes the lanes -------------
+        from choice_card.intake_card import ai_models as models  # noqa: E402
+
+        def bind(run, runtime, build_id, route):
+            (run / models.STORE_NAME).write_text(json.dumps({
+                "schema": models.STORE_SCHEMA, "runtime": runtime,
+                "binding_id": "b-fixture",
+                "bindings": {"build": {"model_id": build_id, "route": route},
+                             "check": {"model_id": "checker", "route": "openrouter"}}}),
+                "utf-8")
+
+        run_a = make_fresh(tmp)
+        bind(run_a, "claude-nine", "openrouter/z-ai/glm-5.3", "openrouter")
+        run_b = make_fresh(tmp)
+        bind(run_b, "openclaw", "ollama/kimi-k2.6", "ollama")
+        a = F.lane_size_payload(run_a)
+        b = F.lane_size_payload(run_b)
+        check("two bindings give two different sizing sources",
+              a.get("source") != b.get("source"), True)
+        check("first binding is sized as its runtime/route",
+              "claude-code/openrouter" in str(a.get("source")), True)
+        check("second binding is sized as its runtime/route",
+              "openclaw/ollama-cloud" in str(b.get("source")), True)
+        check("sized payload still has agents>=1", a.get("agents", 0) >= 1, True)
+        run_c = make_fresh(tmp)
+        bind(run_c, "claude-nine", "mystery-model", "mystery-route")
+        c = F.lane_size_payload(run_c)
+        check("unknown binding pair falls back to Part D",
+              str(c.get("source")).startswith("part_d_defaults"), True)
+        run_d = make_fresh(tmp)
+        try:
+            (run_d / models.STORE_NAME).unlink()
+        except FileNotFoundError:
+            pass
+        d = F.lane_size_payload(run_d)
+        check("no bindings -> Part D source says why",
+              d.get("source"), "part_d_defaults (no model bindings on this run)")
 
         # -- run complete: exit 0, stage null, plain reason -----------------
         run = make_run(tmp, done=True)
