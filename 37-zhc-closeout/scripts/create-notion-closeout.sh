@@ -511,7 +511,7 @@ if [[ -z "$ROOT_ID" || "$ROOT_ID" == "null" ]]; then
   _OP_CHAT="${OPERATOR_ESCALATION_CHAT_ID:-${OPERATOR_TELEGRAM_CHAT_ID:-}}"
   if [[ -n "$_OP_CHAT" ]] && command -v openclaw >/dev/null 2>&1 && [[ "${ZHC_SKIP_TG_PREFLIGHT:-0}" != "1" ]]; then
     openclaw message send --channel telegram -t "$_OP_CHAT" \
-      -m "ZHC HOLD [notion-root-page-failed] $(state_get '.companyName'): $_notion_fail_reason (full closeout staged locally; auto-publishes on next run). State: $STATE_FILE" \
+      -m "ZHC HOLD [notion-root-page-failed] ${COMPANY_NAME}: $_notion_fail_reason (full closeout staged locally; auto-publishes on next run). State: $STATE_FILE" \
       >>"$LOG_FILE" 2>&1 || true
   fi
   echo "[NOTION] BLOCKED (staged, resumable): $_notion_fail_reason" >&2
