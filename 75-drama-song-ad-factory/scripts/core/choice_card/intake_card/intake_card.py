@@ -359,12 +359,38 @@ def _gate_questions():
     ]
 
 
+def _legacy_brief_questions():
+    """The five story-brief screens EVERY pre-S75-006 card opened with, frozen.
+
+    The old card was these five plus the production choices below; a resumed
+    run's replies are positional, so dropping them would slide every answer
+    onto the wrong question (S75-006 step 5). Wording is the old card's own.
+    """
+    return [
+        _typed("offer", "OFFER",
+               "The story, the song and the call to action are all built around this.",
+               "What are we promoting? Give the exact name of your offer."),
+        _typed("link", "OFFER LINK",
+               "The link goes on screen at the end, so it has to be exact.",
+               "What web address should the video send people to? Paste it rather than typing it from memory."),
+        _typed("audience", "AUDIENCE",
+               "One audience and one action beat ten of each.",
+               "Who is this video for, and what should they do after watching it?"),
+        _typed("character", "CHARACTER",
+               "Your characters are the actors, and viewers spend the whole video with them.",
+               "Who stars in your video? Describe them by name, age, look and clothing."),
+        _typed("photos", "PHOTOS",
+               "A real photo makes the story feel true instead of invented.",
+               "Which photos or proof should we use - your logo, a product shot, a testimonial? Reply \"none\" if you have none."),
+    ]
+
+
 def _legacy_questions():
     """The card a run that already started keeps, exactly as it was asked.
 
     Frozen on purpose: a resumed run's answers belong to HIS list, and changing
     this list would migrate the answers he already gave (S75-006 step 5)."""
-    return [
+    return _legacy_brief_questions() + [
         _ai_setup_q(),
         _length_question(),
         {"id": "music", "why": "The song carries the feeling of the whole ad.", "reason": "it is the style that tests best for emotional stories.", "label": "MUSIC STYLE", "ask": "Which sound fits your story?",
@@ -442,12 +468,17 @@ def _model_question(length_label, agnes_yes=False, defaulted=False):
 
 
 def _priced(qs, answers):
-    """Swap in the VIDEO MODEL question priced for the length already answered."""
+    """Swap in the VIDEO MODEL question priced for the length already answered.
+
+    The replacement keeps the screen's ``defaulted`` flag (S75-006): a card
+    whose video model rides on the recap must not start asking it one by one
+    just because the price is now known."""
     ids = [q["id"] for q in qs]
     if "length" not in ids or len(answers) <= ids.index("length"):
         return qs
     length_text = answers[ids.index("length")]["text"]       # AI MODELS (and the saved character) may come first
-    return [_model_question(length_text) if q["id"] == "model" else q for q in qs]
+    return [_model_question(length_text, defaulted=bool(q.get("defaulted")))
+            if q["id"] == "model" else q for q in qs]
 
 
 # --- W1-card-questions-U1: the PURPOSE flow and the AGNES question (SPEC B1) ----
@@ -583,6 +614,21 @@ def new_run_flow(run_dir=None, run_state_file=None):
     if not run_dir or not os.path.isdir(run_dir):
         return False
     return not _intro_shown(run_state_file)
+
+
+def _base_card(run_dir=None, purpose_flow=None):
+    """The base list a caller starts from.
+
+    Only a run that ALREADY recorded the old card (``_run_history`` is False)
+    keeps ``LEGACY_QUESTIONS`` (S75-006 step 5). Everything else starts from
+    the new card -- including a preview with no run folder at all, which shows
+    what a client starting today is asked, and a run past its intro. The old
+    code read "not the purpose flow" as "the old card", which printed the
+    frozen list to a brand-new preview.
+    """
+    if purpose_flow:
+        return QUESTIONS
+    return LEGACY_QUESTIONS if _run_history(run_dir) is False else QUESTIONS
 
 
 def _loud(kind, code, detail):
@@ -962,13 +1008,17 @@ def _record_lists(answers, qs, client_dir=None, defaults=None):
             rec_ans.append({"n": option_n, "text": gate["options"][option_n - 1][0],
                             "value": None, "id": gate["id"]})
     if "link" not in by_id:
-        #: the merged OFFER screen answered the address too (S75-006 step 2).
-        #: Question and answer are appended together, so every pair above keeps
-        #: its own position.
-        addr = (by_id.get("offer") or {}).get("address")
+        #: the merged OFFER screen answered the address too (S75-006 step 2), so
+        #: the address is recorded as its own pair right after the offer -- the
+        #: same order the recap shows. A change made on the recap line wins.
+        changed = d.get("link") if isinstance(d.get("link"), dict) else None
+        addr = (changed or {}).get("text") or (by_id.get("offer") or {}).get("address")
         if addr:
-            rec_qs.append(_link_q())
-            rec_ans.append({"n": 1, "text": addr, "value": addr, "id": "link"})
+            at = next((n for n, q in enumerate(rec_qs) if q["id"] == "offer"),
+                      len(rec_qs) - 1)
+            rec_qs.insert(at + 1, _link_q())
+            rec_ans.insert(at + 1, dict(changed or {"n": 1, "text": addr, "value": addr},
+                                        id="link"))
     return rec_qs, rec_ans
 
 
@@ -1146,12 +1196,13 @@ def example_replies(questions=None):
     question, a dollar amount for BUDGET, the recommended pick for a choice.
     Fixtures and tests use it so a complete card needs no hand-counting.
 
-    The default is the card a plain replay asks -- ``conversation(replies)``
-    with no run folder replays the one a resumed run keeps -- because that is
-    what a fixture feeding ``conversation`` needs. Pass ``QUESTIONS`` for the
-    new card."""
+    The default is the new card -- what ``conversation(replies)`` with no run
+    folder now asks. A screen the card never asks one by one (the defaulted
+    tail) takes no reply, so the list is exactly as long as the ask list."""
     out = []
-    for q in (LEGACY_QUESTIONS if questions is None else questions):
+    for q in (QUESTIONS if questions is None else questions):
+        if q.get("defaulted"):
+            continue
         if q["id"] == "spend":
             out.append("$25")
         elif q.get("free_text"):
@@ -1223,6 +1274,13 @@ def _blocks(questions):
     return blocks
 
 
+def askable(questions):
+    """The screens a run actually ASKS one by one: the defaulted tail rides on
+    the recap, so it is never part of the live question count (S75-006). The
+    intro states this number, so the live "Question i of N" must read it too."""
+    return [q for q in questions if not q.get("defaulted")]
+
+
 def render_step(i, questions=None):
     """ONE question as its own message (Trevor 2026-10-08, I7): a one-sentence
     why, numbered options one per line, the RECOMMENDED one marked and
@@ -1258,10 +1316,65 @@ def render_step(i, questions=None):
     return "\n".join(lines)
 
 
+def render_change(questions, position):
+    """Re-ask the recap line at ``position`` (0-based into ``questions``).
+
+    A defaulted screen is not part of the live count, so its full question is
+    shown WITHOUT a counter -- the header line is the only thing dropped."""
+    qs = list(questions)
+    q = qs[position]
+    if q.get("defaulted"):
+        return "\n".join(render_step(1, [q]).split("\n")[1:])
+    return render_step(position + 1, askable(qs))
+
+
 #: S75-030: the recap's own heading for a screen whose card label is jargon or
 #: shouts; every other screen reads its label with a plain first capital.
 _RECAP_LABEL = {"models": "AI setup", "model": "Video model",
                 "link": "Web address", "spend": "Budget"}
+
+
+def _recap_rows(answers, qs, defaults=None, client_dir=None):
+    """Every recap line as {n, label, text, target}, numbered from 1.
+
+    S75-006: the address the OFFER reply carried is stored beside the offer
+    (step 2), so the recap shows it on its own numbered line right after the
+    offer -- "as today", when OFFER LINK was its own screen. Its target is the
+    address question, which is not on the ask list; every other target is the
+    screen's own position in ``qs`` (None for a line that is shown, not changed).
+    """
+    d = _defaults(qs, answers, client_dir, defaults)
+    purpose_n = next((a.get("n") for a in answers if a.get("id") == "purpose"), None)
+    rows = []
+
+    def add(label, text, target, raw=False):
+        rows.append({"n": len(rows) + 1, "label": label, "text": text,
+                     "target": target, "raw": raw})
+
+    for i, q in enumerate(qs):
+        label = _RECAP_LABEL.get(q["id"]) or q["label"].capitalize()
+        if q.get("defaulted"):
+            text = (d.get(q["id"]) or {}).get("text", "")
+            #: a line the client changed is their own answer now, so it is no
+            #: longer marked as a default waiting to be changed
+            changed = text != _default_row(q, purpose_n, client_dir).get("text")
+            add(label, text if changed else
+                "%s (default - reply %d to change)" % (text, len(rows) + 1), ("q", i))
+            continue
+        if i >= len(answers):
+            break
+        a = answers[i]
+        if "recap" in q and a.get("n"):
+            add("", q["recap"][a["n"] - 1], ("q", i), raw=True)
+            continue
+        price = (" - about " + q["values"][a["n"] - 1]) if q["id"] == "model" and a.get("n") else ""
+        add(label, a["text"] + price, ("q", i))
+        if q["id"] == "offer":
+            link = d.get("link") if isinstance(d.get("link"), dict) else None
+            addr = (link or {}).get("text") or a.get("address")
+            if addr:
+                add(_RECAP_LABEL["link"], addr, ("link", None))
+    return rows
 
 
 def render_recap(answers, questions=None, defaults=None, client_dir=None):
@@ -1272,24 +1385,10 @@ def render_recap(answers, questions=None, defaults=None, client_dir=None):
     qs = list(questions or QUESTIONS)
     if not any(q.get("defaulted") for q in qs):
         qs = _priced(qs, answers)          # the older card, priced in place
-    d = _defaults(qs, answers, client_dir, defaults)
     lines = ["Here is what you picked:"]
-    for i, q in enumerate(qs, 1):
-        if q.get("defaulted"):
-            row = d.get(q["id"]) or {}
-            lines.append("%d. %s: %s (default - reply %d to change)"
-                         % (i, _RECAP_LABEL.get(q["id"]) or q["label"].capitalize(),
-                            row.get("text", ""), i))
-            continue
-        if i > len(answers):
-            break
-        a = answers[i - 1]
-        if "recap" in q and a.get("n"):
-            lines.append("%d. %s" % (i, q["recap"][a["n"] - 1]))
-            continue
-        price = (" - about " + q["values"][a["n"] - 1]) if q["id"] == "model" and a.get("n") else ""
-        lines.append("%d. %s: %s%s" % (i, _RECAP_LABEL.get(q["id"]) or q["label"].capitalize(),
-                                       a["text"], price))
+    for r in _recap_rows(answers, qs, defaults, client_dir):
+        lines.append("%d. %s" % (r["n"], r["text"]) if r["raw"]
+                     else "%d. %s: %s" % (r["n"], r["label"], r["text"]))
     lines += ["", 'Reply "yes" to start, or the number of a line to change it.']
     return "\n".join(lines)
 
@@ -1427,7 +1526,7 @@ def conversation(replies, questions=None, state_store=None, run_id=None,
     #: lose LENGTH's own slot on a campaign (EPISODE LENGTH took it), so the
     #: rebuild always reads the base list. A run that already asked a card keeps
     #: the one it was asked with (LEGACY_QUESTIONS), never the new one.
-    base_qs = questions or (QUESTIONS if purpose_flow else LEGACY_QUESTIONS)
+    base_qs = questions or _base_card(run_dir, purpose_flow)
     answers, defaults, fix, note, done = [], {}, None, "", False
 
     def shaped(list_, ans):
@@ -1445,26 +1544,27 @@ def conversation(replies, questions=None, state_store=None, run_id=None,
         qs = shaped(base_qs, answers)
         at = ask_at(qs, answers)
         if fix is not None:                         # re-answering one line
-            q = qs[fix]
+            kind, where = fix
+            q = qs[where] if kind == "q" else _link_q()
             a = _parse(r, q)
             if a and "error" in a:
                 note = a["error"] + " "
             elif a:
-                if q.get("defaulted"):
+                if kind == "link" or q.get("defaulted"):
                     defaults[q["id"]] = a           # a recap line, never asked inline
                 else:
                     before = [x["id"] for x in qs]
                     if q["id"] == "purpose":
                         # the whole list was built around the old purpose, so every
                         # answer after it has to be given again (SPEC B1)
-                        del answers[fix + 1:]
+                        del answers[where + 1:]
                         defaults.clear()
-                    answers[fix] = a
+                    answers[where] = a
                     after = [x["id"] for x in shaped(base_qs, answers)]
-                    if after[fix:] != before[fix:]:
+                    if after[where:] != before[where:]:
                         # S75-021: the later questions moved, so the answers given
                         # for them no longer belong to them; ask those again.
-                        del answers[fix + 1:]
+                        del answers[where + 1:]
                         note = ("That changes a few of the later choices, so I'll "
                                 "ask those again. ")
                 fix = None
@@ -1480,14 +1580,15 @@ def conversation(replies, questions=None, state_store=None, run_id=None,
                 note = "Sorry, I did not catch that. "
         else:                                       # recap: yes, or a line number
             t = r.strip().lower()
+            rows = _recap_rows(answers, qs, defaults, client_dir)
             if t in _YES:
                 done = True
-            elif t.isdigit() and 1 <= int(t) <= len(qs):
-                k = int(t) - 1
-                if k < len(answers) or qs[k].get("defaulted"):
-                    fix = k
-                else:
+            elif t.isdigit() and 1 <= int(t) <= len(rows):
+                target = rows[int(t) - 1]["target"]
+                if target is None:
                     note = "Sorry, I did not catch that. "
+                else:
+                    fix = target
             else:
                 note = "Sorry, I did not catch that. "
     qs = shaped(base_qs, answers)
@@ -1528,10 +1629,12 @@ def conversation(replies, questions=None, state_store=None, run_id=None,
             _remember_ai_setup(client_dir, answers, qs)
         msg = "Locked in. I am starting now."
     elif fix is not None:
-        msg = note + render_step(fix + 1, qs)
+        kind, where = fix
+        msg = note + (render_change(qs, where) if kind == "q" else
+                      "\n".join([_link_q()["ask"], FREE_TEXT_HINT]))
     elif ask_at(qs, answers) is not None:
         i = ask_at(qs, answers)
-        msg = note + render_step(i + 1, qs)
+        msg = note + render_step(i + 1, askable(qs))
         if not replies and qs[0].get("preface"):
             msg = qs[0]["preface"] + "\n\n" + msg
     else:
@@ -2290,9 +2393,10 @@ def main(argv=None):
                 if q["id"] == "spend" else q
                 for q in _with_saved_character(a.client_dir, base)]
 
-    #: The card this caller is asking: the new one for a NEW run, and the one a
-    #: resumed run was asked with (S75-006 step 5).
-    qs = _priced_card(QUESTIONS if purpose_flow else LEGACY_QUESTIONS)
+    #: The card this caller is asking: the new one for a NEW run and for an
+    #: unbound preview (it shows what a client starting today is asked), and
+    #: the frozen one only for a run that already asked it (S75-006 step 5).
+    qs = _priced_card(_base_card(a.run_dir or None, purpose_flow))
     if a.format == "studio-json":                  # U1: the studio export, whole card
         try:
             #: the purpose screens ride along with their shows_when, so the

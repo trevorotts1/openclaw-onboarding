@@ -17,15 +17,14 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.dirname(os.path.dirname(HERE)))
 from choice_card.intake_card import intake_card as IC  # noqa: E402
 
-#: The card a plain replay asks (S75-006: a run with no folder keeps the list
-#: a resumed run keeps; a NEW run folder asks QUESTIONS instead).
-LEGACY = IC.LEGACY_QUESTIONS
-N = len(LEGACY)
-#: The five story-brief questions (DSR-105) are typed, the nine production
-#: choices are picked, and the spend question still takes a dollar amount.
-OK = IC.example_replies(LEGACY)
-#: index -> the question at it, so a test can name a line instead of counting.
-Q = LEGACY
+#: The card a plain replay asks: the new card, numbered over the screens it
+#: actually ASKS (S75-006: the defaulted tail -- video model, shape, photos --
+#: rides on the recap and is never a turn of its own).
+Q = [q for q in IC.QUESTIONS if not q.get("defaulted")]
+N = len(Q)
+#: The typed brief answers for the ask list, the nine production picks and the
+#: dollar amount for the spend question.
+OK = IC.example_replies(IC.QUESTIONS)
 
 
 def _transcript(replies):
@@ -38,12 +37,15 @@ def test_transcript_one_question_per_turn_with_options_and_recommendation():
     for i, t in enumerate(turns[:N], 1):
         assert t.count("Question ") == 1 and t.startswith("Question %d of %d - " % (i, N)), t
         lines = t.split("\n")
-        assert lines[1].endswith(".") and lines[2] == ""              # one-sentence why
         q = Q[i - 1]
-        opts = [l for l in lines if re.match(r"^\d+\. ", l)]
-        if q.get("free_text"):                                       # a brief question: typed, no menu
-            assert not opts and t.endswith(IC.FREE_TEXT_HINT), t
+        if "body" in q:                  # CHECKPOINTS carries its own exact wording
+            assert lines[1:] == q["body"], t
             continue
+        if q.get("free_text"):           # the address follow-up carries no why line
+            assert t.endswith(IC.FREE_TEXT_HINT) and not lines[2].startswith("1. "), t
+            continue
+        assert lines[1].endswith(".") and lines[2] == ""              # one-sentence why
+        opts = [l for l in lines if re.match(r"^\d+\. ", l)]
         assert len(opts) == len(q["options"])
         if q["recommended"] is None:                                 # unpriced spend: no recommendation
             assert not any(IC.REC in l for l in opts) and t.endswith("like $25.")
@@ -57,7 +59,9 @@ def test_recap_then_yes_finishes():
     turns = _transcript(OK)
     recap = turns[N]
     assert recap.startswith("Here is what you picked:") and "Question " not in recap
-    assert len([l for l in recap.split("\n") if re.match(r"^\d+\. ", l)]) == N
+    # one numbered line per asked answer, plus the three defaulted recap lines
+    lines = [l for l in recap.split("\n") if re.match(r"^\d+\. ", l)]
+    assert len(lines) == len(IC.QUESTIONS), recap
     assert not IC.conversation(OK)["done"]
     done = IC.conversation(OK + ["yes"])
     assert done["done"] and done["message"].startswith("Locked in")
@@ -74,8 +78,16 @@ def test_recommended_bad_answer_and_spend_amount():
     assert st["message"].startswith("Sorry, I did not catch that. Question %d of" % (models_at + 2))
     assert len(st["answers"]) == models_at + 1
     spend_at = [q["id"] for q in Q].index("spend")
-    a = IC.conversation(OK[:spend_at] + ["$25", "2"])["answers"]
-    assert a[spend_at]["value"] == "25" and a[spend_at + 1]["n"] == 2
+    a = IC.conversation(OK[:spend_at] + ["$25"])["answers"]
+    assert a[spend_at]["value"] == "25"
+    # the VIDEO MODEL is a recap line since S75-006: its own number asks the
+    # full question, and the client's pick replaces the line's default.
+    model_line = len(Q) + 1                     # first defaulted line
+    st = IC.conversation(OK + [str(model_line)])
+    assert "Which video model should make your shots?" in st["message"], st["message"]
+    st = IC.conversation(OK + [str(model_line), "2"])
+    assert st["message"].startswith("Here is what you picked:")
+    assert "Video model: " in st["message"] and "(default" not in st["message"].split("Video model:", 1)[1].split("\n")[0]
 
 
 def test_change_one_line_returns_to_recap():

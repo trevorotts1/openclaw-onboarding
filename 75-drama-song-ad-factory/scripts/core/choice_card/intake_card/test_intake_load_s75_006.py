@@ -67,9 +67,14 @@ def test_a_the_common_campaign_asks_nine_questions_before_the_recap():
                      "MUSIC STYLE", "VIDEO STYLE", "CHECKPOINTS", "BUDGET"], asked
     assert len(asked) == 9
     assert st["message"].startswith("Here is what you picked:"), st["message"]
-    # the address arrived inside the OFFER reply and is stored beside it
-    ids = [a["id"] for a in st["answers"]]
-    assert "link" in ids and "offer" in ids, ids
+    # the address arrived inside the OFFER reply and is stored beside it: the
+    # replies stay one per ASKED screen, so the pair is proved where the run
+    # records it, not as a reply that was never given.
+    qs = IC._shaped(IC.QUESTIONS, st["answers"], client)
+    rec_qs, rec_ans = IC._record_lists(st["answers"], qs, client, {})
+    rows = dict(zip((q["id"] for q in rec_qs), rec_ans))
+    assert rows["offer"]["text"] == "My course", rows.get("offer")
+    assert rows["link"]["text"] == "https://example.com/course", rows.get("link")
     assert IC.conversation(CAMPAIGN + ["yes"], client_dir=client,
                            purpose_flow=True)["done"] is True
 
@@ -124,9 +129,12 @@ def test_d_ok_on_music_style_is_not_an_answer():
     assert IC._parse("ok", music) is None
     assert IC._parse("yes", music) is None
     assert IC._parse("recommended", music)["n"] == 1
-    # and it never advances the flow
+    # and it never advances the flow. The setup is saved here so the card does
+    # not stop on the AI-setup screen first (a machine with no saved pair is
+    # asked that once, by design).
+    client = _client_dir()
     st = IC.conversation(["1", "My course, example.com/course", "Women", "Tasha",
-                          "5", "ok"], purpose_flow=True)
+                          "5", "ok"], client_dir=client, purpose_flow=True)
     assert [a["id"] for a in st["answers"]] == ["purpose", "offer", "audience",
                                                 "character", "episode_length"]
 
