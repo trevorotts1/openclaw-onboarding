@@ -2919,7 +2919,8 @@ def cmd_signature(args) -> int:
         if isinstance(sig_answer_val, list) and len(sig_answer_val) == 2:
             origin = getattr(args, 'sig_origin', None) or "client"
             return _sig_answer(run_dir, sig_answer_val[0], sig_answer_val[1],
-                               origin=origin)
+                               origin=origin,
+                               owner_msg_id=getattr(args, 'owner_msg_id', None))
         else:
             print(json.dumps({"error": "--sig-answer requires ID and TEXT"}))
             return 2
@@ -3033,8 +3034,55 @@ def _emit_frame_question() -> int:
     return 0
 
 
+_OWNER_TEXT_WS = re.compile(r"\s+")
+
+def _normalize_owner_text(text: str) -> str:
+    """One normalization for BOTH sides of the owner-message proof: collapse
+    whitespace, strip, casefold. Punctuation stays significant."""
+    return _OWNER_TEXT_WS.sub(" ", str(text or "")).strip().casefold()
+
+def _prove_owner_message(run_dir: Path, owner_msg_id: str,
+                         text: str) -> Tuple[Optional[Dict[str, Any]], str]:
+    """Prove one `--owner-msg-id` against the message the client really sent.
+
+    PD-015: the id proves the answer DIRECTLY only when the message
+    (1) exists, (2) came from THIS run's requester, and (3) carries the same
+    normalized text as the answer. The resolver is PD-004a's
+    `presentation_job.approvals.resolve_owner_message` -- this unit only
+    calls it. A box without that module (or without a record of the text)
+    cannot prove anything, so the answer stays unconfirmed.
+
+    Returns (row, reason) where reason is one of 'proven', 'text_mismatch',
+    'no_resolver', 'unresolved', 'no_requester', 'other_chat'. Only 'proven'
+    carries a row."""
+    try:
+        from presentation_job.approvals import resolve_owner_message  # noqa: PLC0415
+    except Exception:  # noqa: BLE001 -- absent dependency is "cannot prove"
+        return None, "no_resolver"
+    try:
+        row = resolve_owner_message(owner_msg_id, run_dir)
+    except Exception:  # noqa: BLE001 -- a resolver failure proves nothing
+        return None, "unresolved"
+    if not isinstance(row, dict):
+        return None, "unresolved"
+    if (_normalize_owner_text(row.get("text"))
+            != _normalize_owner_text(text)):
+        return None, "text_mismatch"
+    intake = read_intake_json(run_dir)
+    requester_chat = str(intake.get("requester_chat_id") or "").strip()
+    if not requester_chat:
+        requester_chat = str(
+            _resolve_requester_from_env(intake).get("requester_chat_id") or ""
+        ).strip()
+    if not requester_chat:
+        return None, "no_requester"
+    if str(row.get("chat_id") or "").strip() != requester_chat:
+        return None, "other_chat"
+    return row, "proven"
+
 def _sig_answer(run_dir: Path, qid: str, text: str,
-                origin: str = "client") -> int:
+                origin: str = "client",
+                owner_msg_id: Optional[str] = None) -> int:
     """Record one signature answer and return the next question.
 
     CONTENT-PROVENANCE contract (2026-08-27 live defect: 2 of 8 answers on a
@@ -3046,7 +3094,16 @@ def _sig_answer(run_dir: Path, qid: str, text: str,
     refuses it until the client confirms it via --sig-confirm. The flag is a
     DECLARATION by the caller, not proof — the proof is the --sig-confirm
     quote-back step, which is the only thing that can flip
-    confirmed_by_client to True (origin stays visible either way)."""
+    confirmed_by_client to True (origin stays visible either way).
+
+    PD-015: when --owner-msg-id is supplied, PD-004a's resolver must PROVE the
+    message exists, came from this run's requester, and carries this answer's
+    text. Proven → the answer is recorded as confirmed_by_client=True,
+    confirmation="direct", owner_msg_id=... (the client typed it themselves;
+    no quote-back is needed). An id whose text differs is a caller error
+    (exit 1, nothing stored). An id that cannot be resolved stays unconfirmed
+    and takes the quote-back path — "cannot resolve" is never treated as
+    proven."""
     ledger = read_intake_ledger(run_dir)
     # FAULT-21 sibling fix: capture completion state BEFORE this call flips
     # ledger["status"] back to "in_progress" below. _sig_finalize() (reached
@@ -3071,18 +3128,44 @@ def _sig_answer(run_dir: Path, qid: str, text: str,
                                        f"Must be one of: {allowed}"}))
             return 1
 
+    # PD-015: an owner message id is a CLAIM until the resolver proves it.
+    # A mismatch in text is a hard caller error (nothing stored); anything
+    # the resolver cannot prove leaves the answer on the quote-back path.
+    owner_proven = False
+    if owner_msg_id:
+        _row, _reason = _prove_owner_message(run_dir, str(owner_msg_id), text)
+        if _reason == "text_mismatch":
+            print(json.dumps({
+                "status": "error",
+                "question_id": qid,
+                "owner_msg_id": str(owner_msg_id),
+                "message": "the owner message id does not carry this "
+                           "answer's text; nothing was stored.",
+            }))
+            return 1
+        owner_proven = _reason == "proven"
+        if not owner_proven:
+            print(f"  WARN  [OWNER-MSG-UNPROVEN] --owner-msg-id "
+                  f"{owner_msg_id!r} for {qid} was not proven ({_reason}); "
+                  "the answer stays unconfirmed and needs the quote-back "
+                  "step (--sig-confirm).", file=sys.stderr)
+
     asked_at = datetime.now(timezone.utc).isoformat()
     # CONTENT-PROVENANCE: the answer entry records WHO the words came from and
-    # whether the client has confirmed them. Only --sig-confirm sets
-    # confirmed_by_client=True (it is the one step that reads the answer back
-    # to the client); a fresh --sig-answer always (re)opens unconfirmed, so an
+    # whether the client has confirmed them. --sig-confirm sets
+    # confirmed_by_client=True after reading the answer back to the client
+    # (confirmation="quote_back"); PD-015's proven owner message sets it
+    # directly (confirmation="direct") because the client typed the words
+    # themselves. A fresh --sig-answer otherwise (re)opens unconfirmed, so an
     # edited answer can never ride a confirmation captured for older wording.
     sp_entries[qid] = {"value": text.strip(), "validated": True,
                        "source": "deck-intake-driver --signature",
                        "origin": origin,
-                       "confirmed_by_client": False,
-                       "confirmation": None,
+                       "confirmed_by_client": owner_proven,
+                       "confirmation": "direct" if owner_proven else None,
                        "answered_at": asked_at}
+    if owner_proven:
+        sp_entries[qid]["owner_msg_id"] = str(owner_msg_id)
     ledger["sp_entries"] = sp_entries
     ledger["status"] = "in_progress"
     ledger["updated_at"] = asked_at
@@ -3151,8 +3234,10 @@ def _sig_confirm(run_dir: Path, qid: str, confirmed: bool = False) -> int:
     behalf — a confirmation requires a second, explicit --confirmed call).
 
     The confirmation mode is recorded as 'quote_back'. The gate also accepts
-    'direct' (the client voiced/typed the answer themselves) which --sig-answer
-    stamps when the caller declares it; origin stays visible on every path."""
+    'direct' (the client voiced/typed the answer themselves): PD-015 stamps it
+    from --sig-answer only when --owner-msg-id is PROVEN to be the client's own
+    message carrying this exact text. This quote-back step is therefore needed
+    only for answers the client did not type themselves."""
     ledger = read_intake_ledger(run_dir)
     sp_entries = ledger.get("sp_entries", {})
     entry = sp_entries.get(qid)
@@ -4589,7 +4674,10 @@ def build_parser() -> argparse.ArgumentParser:
     sig.add_argument("--sig-confirm", dest="sig_confirm", metavar="ID",
                      help="signature: quote-back confirmation -- print the recorded "
                           "answer verbatim for the client to approve (no flag), or "
-                          "mark it confirmed after the client approved (--sig-confirmed)")
+                          "mark it confirmed after the client approved (--sig-confirmed). "
+                          "Needed only for answers the client did not type themselves: "
+                          "an answer given with a PROVEN --owner-msg-id is already "
+                          "directly confirmed")
     sig.add_argument("--sig-confirmed", dest="sig_confirmed", action="store_true",
                      help="with --sig-confirm: record the client's approval of the "
                           "quoted answer (confirmed_by_client=true, mode=quote_back)")
@@ -4632,7 +4720,11 @@ def build_parser() -> argparse.ArgumentParser:
     pick.add_argument("--owner-msg-id", dest="owner_msg_id", metavar="ID",
                       help="with --style-pick: the message id of the CLIENT's "
                            "own A/B/C reply. Mandatory -- a pick without a "
-                           "resolvable owner message id is a forged approval")
+                           "resolvable owner message id is a forged approval. "
+                           "With --sig-answer ID TEXT: the client's own message "
+                           "carrying that answer; when the resolver proves its "
+                           "text matches, the answer is recorded as directly "
+                           "confirmed and needs no --sig-confirm")
     pick.add_argument("--approved-by", dest="approved_by", metavar="WHO",
                       default="owner",
                       help="with --style-pick: who approved (default 'owner')")
