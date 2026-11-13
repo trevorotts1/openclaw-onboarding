@@ -5698,10 +5698,14 @@ def dispatch_one(run_dir: Path, phase_id: str, order: Dict[str, Any], *,
     # ROOT CAUSE (live run pj_34a56a26caca04532ec6e9cba6, 2026-08-18, iteration 3):
     # verify()==True does NOT mean THIS phase's own produces_artifact file exists --
     # for a QC/audit phase whose phase_verifiers mapping re-runs an UPSTREAM check
-    # (P1Q-COPY-QC maps to the exact same _verify_copy() P4-COPY already passed,
-    # which only ever reads working/copy/slides_copy.md and never looks at
-    # working/qc/copy_qc_report.json at all), verify() can be True forever while the
-    # phase's own artifact is never written. Before this fix, `ok` alone was treated
+    # instead of opening the phase's own artifact (P1Q-COPY-QC was exactly that: it
+    # used to map to the same _verify_copy() P4-COPY already passed, which only ever
+    # reads working/copy/slides_copy.md and never opened
+    # working/qc/copy_qc_report.json at all. phase_verifiers.py now wires it to the
+    # independent report gate _verify_qc_report("working/qc/copy_qc_report.json",
+    # "_chk_copy_qc", "AF-COPY-QC"), so that instance is fixed; this guard is what
+    # makes the remaining class of bug harmless), verify() can be True forever while
+    # the phase's own artifact is never written. Before this fix, `ok` alone was treated
     # as "already satisfied" and dispatch_one returned WITHOUT writing anything. But
     # the Engine's separate poll loop (phases.py._run_agent_phase) gates PURELY on
     # _artifacts_present(phase) -- literal file existence at produces_artifact -- and
@@ -8624,17 +8628,20 @@ def resolve_scripts_dir_for_run(run_dir: Path) -> Path:
 
 def _json_load_manifest_fallback() -> Dict[str, Any]:
     """Load the pinned PIPELINE-MANIFEST.json for phase-definition fallbacks.
-    Resolution: PRESENTATION_MANIFEST env first (the launcher pins it), then the
-    universal-sops repo copy two conventions up from this module. Raises on
-    absence — callers degrade, never crash the sweep."""
-    from pathlib import Path as _P
+    Resolution: PRESENTATION_MANIFEST env first (the launcher pins it), then
+    _qc_manifest_for_run() -- the same canonical resolver the reviewer stamps and
+    the aggregate use (the run's pinned state.json path, the deployed
+    <dept_root>/sops/ layout, then the manifest_source.find_repo_root() walk-up).
+    Never a guessed home-folder copy. Raises on absence -- callers degrade, never
+    crash the sweep."""
     import json as _json
     candidates = []
     env_path = os.environ.get("PRESENTATION_MANIFEST")
     if env_path:
-        candidates.append(_P(env_path))
-    candidates.append(_P.home() / "openclaw-onboarding" / "universal-sops" /
-                      "presentation-slide-craft" / "PIPELINE-MANIFEST.json")
+        candidates.append(Path(env_path))
+    resolved = _qc_manifest_for_run()
+    if resolved is not None:
+        candidates.append(resolved)
     for c in candidates:
         try:
             if c.is_file():
@@ -11295,7 +11302,8 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--authorize-paid-retry-reset", metavar="PHASE_ID", default=None,
                    help="local-operator repair action: issue one bounded reset receipt for PHASE_ID")
     p.add_argument("--reset-allowance", type=int, default=None,
-                   help="provider calls allowed by --authorize-paid-retry-reset (1..retry cap)")
+                   help="provider calls allowed by --authorize-paid-retry-reset "
+                        f"(1..{PHASE_TOTAL_PAID_HARD_CAP}, PHASE_TOTAL_PAID_HARD_CAP)")
     return p
 
 
