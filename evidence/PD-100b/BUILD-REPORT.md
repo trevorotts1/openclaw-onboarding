@@ -252,7 +252,17 @@ Mirror file: 6 hunks, all produced by regenerating sections 9A+9 — attributed 
 
 ## 11. Remote-head proof
 
-To be appended by the report commit that measures it after the push (§12).
+The branch was absent (§2) and was created by this push; measured immediately after it:
+
+```
+$ git ls-remote --heads origin pd/fl24-role-procedures-c--hold-d3
+ecbed73eb52132d8e016a256125bbfaf86a90d88	refs/heads/pd/fl24-role-procedures-c--hold-d3
+
+$ git rev-parse HEAD
+ecbed73eb52132d8e016a256125bbfaf86a90d88
+```
+
+Local equals remote, 40 characters, new branch created fast-forward; no rebase, no force-push, nothing pushed to `main` (`refs/heads/main` still `ebf5c769a2ad5b2582bf2256588095cbef20cfac`). This line records the push it measured; the commit carrying this edit is its descendant, and the final `git ls-remote` re-proof is in the unit's return block.
 
 ## 12. Honest unproved / judgement calls
 
