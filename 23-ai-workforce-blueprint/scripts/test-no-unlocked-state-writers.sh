@@ -99,7 +99,7 @@ with open(state_path + '.write.lock', 'a+') as handle:
 PYHOLD
 }
 
-RU_RC=0; RU_WITNESS=""; RU_TS_FIELD=""
+RU_RC=0; RU_WITNESS=""; RU_TS_FIELD=""; RU_DONE_AT=""
 run_under_lock() {   # <label> <state> <timestamp-field> <command...>
   local label="$1" state="$2" ts_field="$3"; shift 3
   RU_WITNESS="$WORK/$label.released"
@@ -110,15 +110,19 @@ run_under_lock() {   # <label> <state> <timestamp-field> <command...>
   sleep 0.4          # let the helper take the lock first
   "$@" >"$WORK/$label.out" 2>&1
   RU_RC=$?
+  # ponytail: wall-clock finish proves the script blocked on the lock (the lock
+  # is held a full 2s; an unlocked writer would finish before the witness lands).
+  # Upgrade path: per-write logical clocks if second-granularity ever matters.
+  RU_DONE_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
   wait "$helper_pid" 2>/dev/null
 }
 
 # verify_written <state> <;-separated dotted paths> <witness> <timestamp field>
 verify_written() {
-  python3 - "$1" "$2" "$3" "$4" <<'PYVERIFY'
+  python3 - "$1" "$2" "$3" "$4" "$RU_DONE_AT" <<'PYVERIFY'
 import json, sys
 
-state_path, want_raw, witness_path, ts_field = sys.argv[1:5]
+state_path, want_raw, witness_path, ts_field, done_at = sys.argv[1:6]
 try:
     state = json.loads(open(state_path).read())
 except Exception as exc:  # noqa: BLE001
@@ -155,16 +159,25 @@ except OSError:
     released = ""
 if not released:
     problems.append("the helper never recorded its release time")
-elif ts_field:
-    written = dig(state, ts_field)
-    if not isinstance(written, str) or written < released:
-        problems.append("write landed before the lock was released "
-                        f"({written!r} < {released!r})")
+else:
+    # The script must not have finished before the lock was released: with the
+    # helper holding the lock a full 2s, finishing earlier means it never
+    # blocked on the lock (an unlocked jq>tmp>mv writer finishes in ~0s).
+    if not isinstance(done_at, str) or done_at < released:
+        problems.append("script finished before the lock was released "
+                        f"({done_at!r} < {released!r}) — it never blocked on the lock")
+if ts_field:
+    try:
+        written = dig(state, ts_field)
+    except (KeyError, IndexError, TypeError):
+        written = None
+    if not isinstance(written, str) or not written:
+        problems.append(f"{ts_field} missing or empty")
 
 if problems:
     print("; ".join(problems))
     raise SystemExit(1)
-print("write landed after the release and the helper's field survived")
+print("script blocked on the lock and the helper's field survived")
 PYVERIFY
 }
 

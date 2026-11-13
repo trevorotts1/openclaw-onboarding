@@ -620,6 +620,8 @@ for DEPT_SLUG in "${DEPTS_TO_CHECK[@]}"; do
       echo "  [MATERIALIZED] SKIP (not roles, no how-to.md expected): ${SKIPPED_NON_ROLE[*]}"
     fi
 
+    # ponytail: bash-3.2-safe empty-array expansion (set -u treats "${A[@]}" on an
+    # empty array as unbound); upgrade path is dropping bash 3.2 / older macOS shells.
     for ROLE_DIR in ${ROLE_DIRS[@]+"${ROLE_DIRS[@]}"}; do
       ROLE_SLUG="$(basename "$ROLE_DIR")"
       HOW_TO="$ROLE_DIR/how-to.md"
