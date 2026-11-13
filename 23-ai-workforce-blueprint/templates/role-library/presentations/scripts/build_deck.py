@@ -609,6 +609,20 @@ COPY_SLIDE_TOTAL_CHAR_CEILING = 180  # ~30 words @ ~6 chars/word -- preserves hi
 COPY_HOOK_SLIDE_TOTAL_CHAR_FLOOR = 12  # pure-typography HOOK / section-banner slides: the
                                         # hook line alone is allowed to be short
 
+# PD-089 / D-16: the VALUE-STACK copy band. The August 20, 2026 ruling (AF-C8
+# ARCHETYPE CARVE-OUT, test_af_c8_archetype_carveout.py) allows a value-stack /
+# offer-stack slide 6 line items of up to 7 words each, on top of a 9-word
+# headline and 18-word sub-copy -- 62 words in all. The character bands above
+# model an ordinary teaching slide (3 bullets, 30 chars each, 180 total), so a
+# fully SOP-compliant offer stack was mechanically guaranteed to FAIL AF-COPY-BAND.
+# These numbers are the same ruling expressed in the ONLY unit this gate measures
+# (characters): 6 bullets x <= 60 chars, slide total <= 420 (~62 words @ ~6.7
+# chars/word). Everything else -- headline, subhead, kicker -- is unchanged.
+COPY_VALUE_STACK_BULLET_MAX_COUNT = 6
+COPY_VALUE_STACK_BULLET_CHAR_FLOOR = 8
+COPY_VALUE_STACK_BULLET_CHAR_CEILING = 60
+COPY_VALUE_STACK_SLIDE_TOTAL_CHAR_CEILING = 420
+
 # U067 stage 1 (Rule 3.5). The hook/section-banner exemption was unreachable on the
 # boolean arc_allocation schema, so every such slide has been judged against the
 # 40-char floor. Turning the exemption on flips slides from FAIL to PASS, which is
@@ -4877,27 +4891,29 @@ def check_copy_qc_teeth(run_dir: Path) -> str:
                     f"{COPY_KICKER_CHAR_CEILING}-char ceiling the copy-QC report marked pass")
 
         real_bullets = [b for b in bullets if b]
-        if len(real_bullets) > COPY_BULLET_MAX_COUNT:
+        tag_blob = arc_tags.get(ordinal, "")
+        bands = _copy_bands_for(tag_blob)  # PD-089: same band the preflight gate applies
+        band_label = " (value-stack band, PD-089)" if bands["value_stack"] else ""
+        if len(real_bullets) > bands["bullet_max"]:
             problems.append(
                 f"slide {ordinal:02d} carries {len(real_bullets)} bullets, over the "
-                f"{COPY_BULLET_MAX_COUNT}-bullet max the copy-QC report marked pass")
+                f"{bands['bullet_max']}-bullet max the copy-QC report marked pass{band_label}")
         for bi, b in enumerate(real_bullets, start=1):
             blen = len(b)
-            if not (COPY_BULLET_CHAR_FLOOR <= blen <= COPY_BULLET_CHAR_CEILING):
+            if not (bands["bullet_floor"] <= blen <= bands["bullet_ceiling"]):
                 problems.append(
                     f"slide {ordinal:02d} BULLET {bi} is {blen} chars, outside the "
-                    f"{COPY_BULLET_CHAR_FLOOR}-{COPY_BULLET_CHAR_CEILING} band the copy-QC "
-                    f"report marked pass")
+                    f"{bands['bullet_floor']}-{bands['bullet_ceiling']} band the copy-QC "
+                    f"report marked pass{band_label}")
 
         total = sum(len(f) for f in fields)
-        tag_blob = arc_tags.get(ordinal, "")
         exempt_eligible = _is_hook_or_banner_slide(tag_blob)
         exempt = exempt_eligible and COPY_HOOK_EXEMPTION_ENFORCED
         floor = COPY_HOOK_SLIDE_TOTAL_CHAR_FLOOR if exempt else COPY_SLIDE_TOTAL_CHAR_FLOOR
-        if not (floor <= total <= COPY_SLIDE_TOTAL_CHAR_CEILING):
+        if not (floor <= total <= bands["total_ceiling"]):
             problems.append(
                 f"slide {ordinal:02d} SLIDE TOTAL is {total} chars, outside the "
-                f"{floor}-{COPY_SLIDE_TOTAL_CHAR_CEILING} band the copy-QC report marked pass")
+                f"{floor}-{bands['total_ceiling']} band the copy-QC report marked pass{band_label}")
 
     if problems:
         return ("AF-COPY-QC: the copy-QC report passed its shape check but the ACTUAL "
@@ -6139,6 +6155,35 @@ def _is_hook_or_banner_slide(tag_blob: str) -> bool:
     markers = ("hook", "section-banner", "section_banner", "sectionbanner", "banner")
     return any(m in tag_blob for m in markers)
 
+def _is_value_stack_slide(tag_blob: str) -> bool:
+    """True when the arc tag text marks a value-stack / offer-stack slide (PD-089).
+    Accepts the five spellings the ruling names -- value-stack, value_stack,
+    offer-stack, offer_stack, tally -- matched on WORD boundaries after treating
+    `-`/`_` as separators, so `offer-stack` in a tag blob matches while a tag such
+    as `totally` cannot: `tally` is only a marker as its own word. Empty blob ->
+    False (the safe default: the standard band applies)."""
+    if not tag_blob:
+        return False
+    norm = " " + tag_blob.replace("-", " ").replace("_", " ") + " "
+    return (" value stack " in norm or " offer stack " in norm or " tally " in norm)
+
+def _copy_bands_for(tag_blob: str) -> dict:
+    """The ONE source of copy-band arithmetic shared by _chk_copy_density and the
+    _chk_copy_qc re-measure, so the preflight gate and the QC teeth can never drift
+    apart (the same failure PD-089 fixes for the doctrine). Ordinary slides get the
+    historical band unchanged; value-stack / offer-stack slides get PD-089's."""
+    if _is_value_stack_slide(tag_blob):
+        return {"value_stack": True,
+                "bullet_max": COPY_VALUE_STACK_BULLET_MAX_COUNT,
+                "bullet_floor": COPY_VALUE_STACK_BULLET_CHAR_FLOOR,
+                "bullet_ceiling": COPY_VALUE_STACK_BULLET_CHAR_CEILING,
+                "total_ceiling": COPY_VALUE_STACK_SLIDE_TOTAL_CHAR_CEILING}
+    return {"value_stack": False,
+            "bullet_max": COPY_BULLET_MAX_COUNT,
+            "bullet_floor": COPY_BULLET_CHAR_FLOOR,
+            "bullet_ceiling": COPY_BULLET_CHAR_CEILING,
+            "total_ceiling": COPY_SLIDE_TOTAL_CHAR_CEILING}
+
 
 def _chk_copy_density(run_dir: Path, slides_path: Optional[Path] = None) -> str:
     """AF-COPY-BAND (preflight, fail-loud) -- per-slide COPY character-count FLOOR
@@ -6201,27 +6246,31 @@ def _chk_copy_density(run_dir: Path, slides_path: Optional[Path] = None) -> str:
                     f"{COPY_KICKER_CHAR_CEILING}-char ceiling")
 
         real_bullets = [b for b in bullets if b]
-        if len(real_bullets) > COPY_BULLET_MAX_COUNT:
+        tag_blob = arc_tags.get(ordinal, "")
+        bands = _copy_bands_for(tag_blob)  # PD-089: value-stack slides get their own band
+        band_label = " (value-stack band, PD-089)" if bands["value_stack"] else ""
+        if len(real_bullets) > bands["bullet_max"]:
             offenders.append(
                 f"slide {ordinal:02d} BULLETS: {len(real_bullets)} bullets, over the "
-                f"{COPY_BULLET_MAX_COUNT}-bullet max (AF-COPY-BAND reconciles the historical "
-                f"3-vs-5-bullet / 7-vs-5-word conflict DOWN to this one enforced rule)")
+                f"{bands['bullet_max']}-bullet max"
+                + (band_label if bands["value_stack"] else
+                   f" (AF-COPY-BAND reconciles the historical "
+                   f"3-vs-5-bullet / 7-vs-5-word conflict DOWN to this one enforced rule)"))
         for bi, b in enumerate(real_bullets, start=1):
             blen = len(b)
-            if not (COPY_BULLET_CHAR_FLOOR <= blen <= COPY_BULLET_CHAR_CEILING):
+            if not (bands["bullet_floor"] <= blen <= bands["bullet_ceiling"]):
                 offenders.append(
                     f"slide {ordinal:02d} BULLET {bi}: {blen} chars, outside "
-                    f"{COPY_BULLET_CHAR_FLOOR}-{COPY_BULLET_CHAR_CEILING} band")
+                    f"{bands['bullet_floor']}-{bands['bullet_ceiling']} band{band_label}")
 
         total = sum(len(f) for f in fields)
-        tag_blob = arc_tags.get(ordinal, "")
         exempt_eligible = _is_hook_or_banner_slide(tag_blob)
         exempt = exempt_eligible and COPY_HOOK_EXEMPTION_ENFORCED
         floor = COPY_HOOK_SLIDE_TOTAL_CHAR_FLOOR if exempt else COPY_SLIDE_TOTAL_CHAR_FLOOR
-        if not (floor <= total <= COPY_SLIDE_TOTAL_CHAR_CEILING):
+        if not (floor <= total <= bands["total_ceiling"]):
             offenders.append(
                 f"slide {ordinal:02d} SLIDE TOTAL: {total} chars, outside "
-                f"{floor}-{COPY_SLIDE_TOTAL_CHAR_CEILING} band"
+                f"{floor}-{bands['total_ceiling']} band{band_label}"
                 + (" (hook/section-banner exemption applied)" if exempt else ""))
             if exempt_eligible and not COPY_HOOK_EXEMPTION_ENFORCED:
                 offenders[-1] += (" [U067 ADVISORY: this slide is hook/section-banner and "
@@ -6236,7 +6285,10 @@ def _chk_copy_density(run_dir: Path, slides_path: Optional[Path] = None) -> str:
                 f"<= {COPY_KICKER_CHAR_CEILING} (if present), BULLETS <= {COPY_BULLET_MAX_COUNT} "
                 f"each {COPY_BULLET_CHAR_FLOOR}-{COPY_BULLET_CHAR_CEILING}, SLIDE TOTAL "
                 f"{COPY_SLIDE_TOTAL_CHAR_FLOOR}-{COPY_SLIDE_TOTAL_CHAR_CEILING} "
-                f"({COPY_HOOK_SLIDE_TOTAL_CHAR_FLOOR} floor for hook/section-banner slides). "
+                f"({COPY_HOOK_SLIDE_TOTAL_CHAR_FLOOR} floor for hook/section-banner slides; "
+                f"value-stack/offer-stack slides: BULLETS <= {COPY_VALUE_STACK_BULLET_MAX_COUNT} "
+                f"each {COPY_VALUE_STACK_BULLET_CHAR_FLOOR}-{COPY_VALUE_STACK_BULLET_CHAR_CEILING}, "
+                f"SLIDE TOTAL <= {COPY_VALUE_STACK_SLIDE_TOTAL_CHAR_CEILING}). "
                 "Offenders: " + "; ".join(offenders))
     return ""
 
