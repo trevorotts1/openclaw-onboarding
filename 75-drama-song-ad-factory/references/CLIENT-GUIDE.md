@@ -14,7 +14,7 @@ Here is the best part: you are never left guessing. You approve three things bef
 
 This guide walks you through the whole production, one step at a time, from "I just heard about this" to "my finished video just arrived." We will use one running example so you can see exactly what good looks like. Meet **Maya**, who runs a small bakery and is launching a cookie-decorating class. You will watch Maya answer every single question, so by the end you will know exactly what to say.
 
-> **Did you know?** Most video projects stall because the first brief is vague. You are about to beat that problem by answering eight short questions the smart way.
+> **Did you know?** Most video projects stall because the first brief is vague. You are about to beat that problem by answering the studio's questions, in the order it asks them, the smart way.
 
 ---
 
@@ -33,7 +33,7 @@ Steps are in the order you will actually experience them. You can read straight 
 - **Did you know?**: a fun fact that makes the process make sense.
 - **Great answer / Weak answer**: real examples of what to say, and what to avoid.
 
-**[INFOGRAPHIC: timeline]** *Title: "Your Production Schedule: 17 Steps from Idea to Premiere."* Data: a horizontal film strip with four acts. **Act 1, Get Ready** (Steps 1-3: checklist, top up, setup question). **Act 2, Tell Your Story** (Steps 4-11: the eight questions). **Act 3, Approvals** (Steps 12-15: recap, script, song, storyboard, each marked with a gold "You approve" star). **Act 4, Show Time** (Steps 16-17: the crew works, your video is delivered). Show a small clapperboard at each act break.
+**[INFOGRAPHIC: timeline]** *Title: "Your Production Schedule: Idea to Premiere."* Data: a horizontal film strip with four acts. **Act 1, Get Ready** (the before-you-start checklist). **Act 2, Tell Your Story** (the brief questions, then the card's questions in the order it asks them: purpose first, then the rest). **Act 3, Approvals** (recap, script, song, storyboard, each marked with a gold "You approve" star). **Act 4, Show Time** (the crew works, your video is delivered). Show a small clapperboard at each act break.
 
 ### Meet Your Crew
 
@@ -66,9 +66,6 @@ Making a great video normally takes a whole studio. You get all of them without 
 
 **Your before-you-start checklist**
 
-- [ ] Top up your KIE.ai credits (we do this together in Step 2).
-- [ ] Top up your OpenRouter credits, if you use OpenRouter.
-- [ ] Decide which AI model builds your video, and which one checks the work.
 - [ ] Have your offer name and its link ready.
 - [ ] Write one line: who the video is for.
 - [ ] Write one line: what viewers should do next.
@@ -82,62 +79,15 @@ Making a great video normally takes a whole studio. You get all of them without 
 
 **What you'll see.** Nothing on screen yet. This is your backstage warm-up. When your checklist is ticked, you are ready to move on.
 
-**[INFOGRAPHIC: checklist]** *Title: "The 10-Minute Prep List."* Data: the nine checkbox items above, each with a small icon (credit coin, model chip, link, person, arrow, camera, character face, stopwatch). Group them in three color bands: "Money" (the two top-ups), "Words" (offer, audience, next step), "Stuff" (logo and photos, characters, time).
-
----
-
-## STEP 2: Top Up the Fuel Tanks
-
-**What happens.** Your video is built using credits in two places: KIE.ai and, if you use it, OpenRouter. Think of them as the fuel tanks of your production. Before the show starts, check that both tanks have enough in them.
-
-**Why it matters.** Filming a whole video takes many small jobs: images, video shots, music, checks. If a tank runs dry halfway through, production pauses until you refill it. That is not a disaster, but it is an annoying intermission nobody wants. A full tank means a smooth, uninterrupted shoot.
-
-**How to do it.** Sign in to your KIE.ai account and look at your credit balance. Add credits if it looks low. If you use OpenRouter, do the same there. Not sure how much is enough? Your project card (you will see it in the questions) shows the cost for your chosen length, so you can check your balance against it, with your redo allowance in mind. When in doubt, top up a little extra. Unused credits stay in your account for your next video.
-
-> **Top-up reminder:** If your video uses KIE.ai or OpenRouter, top up your credits there first so your video does not stop halfway.
-
-> **Did you know?** A movie set never starts filming with half a tank of gas in the generator. Neither should you.
-
-**What Maya did.** Maya logged in to both accounts, saw her KIE.ai balance was a little thin for a longer video, and added more. Then she took a screenshot of both balances so she could compare them to the cost on her card later.
-
-**What you'll see.** Your account pages with a balance you feel good about. That is the whole step: green light on both tanks.
-
-**[INFOGRAPHIC: do-and-don't]** *Title: "Top-Up Do's and Don'ts."* Do: top up before you answer anything; check both accounts; keep a little extra for redos. Don't: wait until the video stops; assume your balance is fine without looking; forget the account for your build model.
-
----
-
-## STEP 3: Set Up Your Production Team (The AI Models Question)
-
-**What happens.** Next, we ask one setup question before the creative questions begin: *which AI should build your video, and which should check the work?* Think of it as choosing your lead crew and your independent reviewer. One does the building. A different one inspects it, because a second set of eyes catches things the first one missed.
-
-**Why it matters.** Having a builder and a checker is how we make sure no rough draft reaches you. It also decides which accounts and credits get used. We recommend OpenRouter because it's faster. It is not required, and other options work too.
-
-**How to do it.** We ask: "Which AI should build your video, and which should check the work? OpenRouter is recommended because it's faster; Ollama works too." You choose one of two options:
-
-1. **Recommended setup**: an OpenRouter model builds, Claude Sonnet checks (recommended).
-2. **Choose my own**: reply with the build model and the check model, for example "DeepSeek builds, Sonnet checks."
-
-If your setup already has a build-and-check pair and you say "use my defaults," we skip this question.
-
-**Great answer:** "1. Recommended setup." Short, clear, done.
-
-**Weak answer (and how to fix it):** "Whatever is cheapest." That does not name a setup, so we have to guess. Fix it: "1. Recommended setup," or name both models, such as "DeepSeek builds, Sonnet checks."
-
-> **Pro tip:** The checker should always be a different model from the builder. A writer who proofreads their own work misses the same typos every time.
-
-**What Maya did.** Maya had no idea what a model was, and that was fine. She typed "1" and moved on in four seconds.
-
-**What you'll see.** A one-line confirmation of your build-and-check pair. Then the creative questions begin.
-
-**[INFOGRAPHIC: comparison table]** *Title: "Your Two Setup Options."* Columns: "Recommended setup" and "Choose my own." Rows: Who builds (an OpenRouter model / you pick); Who checks (Claude Sonnet / you pick); Effort for you (one word: "1" / one sentence); Speed (fast, OpenRouter is faster / depends on your pick); Best for (most people / people with a favorite).
+**[INFOGRAPHIC: checklist]** *Title: "The 10-Minute Prep List."* Data: the checkbox items above, each with a small icon (link, person, arrow, camera, character face, stopwatch). Group them in two color bands: "Words" (offer, audience, next step), "Stuff" (logo and photos, characters, time).
 
 ---
 
 # ACT 2: TELL YOUR STORY
 
-*Eight questions. Each one shapes a different part of your video. Answer them in order, and remember: you can always accept the recommended option and move on.*
+*The questions below come in the order the studio asks them. Each one shapes a different part of your video. Answer them in order, and remember: you can always accept the recommended option and move on.*
 
-## STEP 4: Question 1, What Are We Promoting?
+## STEP 2: What Are We Promoting?
 
 **What happens.** The first creative question is the foundation of everything: *What product or offer are we promoting, and what link or assets should we use?* This tells the crew what the story, the song and the call to action are about.
 
@@ -157,7 +107,7 @@ If your setup already has a build-and-check pair and you say "use my defaults," 
 
 ---
 
-## STEP 5: Question 2, Who Is It For, and What Should They Do?
+## STEP 3: Who Is It For, and What Should They Do?
 
 **What happens.** Next, the crew needs two things: your ideal viewer and the one action you want them to take. We ask: *Who is this video for, and what should they do after watching it?*
 
@@ -179,7 +129,7 @@ If your setup already has a build-and-check pair and you say "use my defaults," 
 
 ---
 
-## STEP 6: Question 3, Who Stars in Your Video?
+## STEP 4: Who Stars in Your Video?
 
 **What happens.** Time for casting. We ask: *Do you want to create a new character for this video, or use one you've used before?* If you have characters saved with us, we tell you how many (for example, "You have 3 characters saved"). Option 1 is to create new (recommended). Option 2 and up let you use a saved character by name.
 
@@ -199,9 +149,59 @@ If your setup already has a build-and-check pair and you say "use my defaults," 
 
 ---
 
-## STEP 7: Question 4, How Long Should It Run?
+## STEP 5: What Is This Video For?
 
-**What happens.** Now we pick the running time. We ask: *How long should the video be?* The options are 60 seconds (recommended), 90 seconds, 3 minutes plus 60- and 90-second clips, 5 minutes plus clips, and 10 minutes plus clips.
+These next questions are the card's own, and they come in the order the card asks them, PURPOSE first.
+
+**What happens.** The first card question is what the video is for. You get four choices: grow your business with the full package, tell a client's success story, teach a lesson, or make a video for social media.
+
+**Why it matters.** What the video is for decides its shape, its length and where it goes. One answer tells the crew whether to build a full episode with trailers and ad clips around it, or a single video made to fit one app.
+
+**How to do it.** Pick the option that matches the result you want, not the way you imagine it being made. If you are not sure, take the full package: one production gives you an episode, two trailers that send people to it, and two ready-to-run ad clips.
+
+**Great answer:** "Grow my business." You want the whole package from one production.
+
+**What Maya said:** "Grow my business. My Saturday class needs a steady stream of bookings."
+
+## STEP 6: How Long Is the Full Episode? (Full Package Only)
+
+**What happens.** Chosen "Grow my business" and you are asked how long the full episode should be. The card shows its own length options (60 seconds, 90 seconds, 2 minutes, 3 minutes, 5 minutes and the 10-minute long version), and 3 minutes is recommended for a full episode. Your 60-second and 90-second trailers and ad clips are included.
+
+**Why it matters.** The episode is the story people watch all the way through; the trailers and ad clips are what send people to it. Three minutes is the shortest episode that still earns two good trailers. The longer episodes are made with KIE, not Agnes.
+
+**How to do it.** Pick the length that fits how much story you have. If this is your first one, take 3 minutes.
+
+**Great answer:** "3 minutes." The shortest episode that still earns two good trailers.
+
+**What Maya said:** "3 minutes. I want to see how it performs before I go longer."
+
+## STEP 7: Do You Have Permission? (Success Stories Only)
+
+**What happens.** Told a client's success story, and you are asked one question: do you have your client's permission to use their testimonial? Yes, or no and the order pauses until you have it.
+
+**Why it matters.** A client's own words can only be used when they say so. Without permission nothing is generated and nothing is charged, so your money and your client's trust both stay safe.
+
+**How to do it.** Ask your client first, then answer. If the answer is no, we save your answers exactly as they are and pick the whole thing back up when you have it.
+
+**Great answer:** "Yes." Your client is happy to be quoted.
+
+**What Maya said:** "Yes. She asked me to share it."
+
+## STEP 8: Where Will This Video Run? (Social Videos Only)
+
+**What happens.** Chose a video for social media, and you are asked where it will run: Facebook or Instagram as a paid ad, TikTok, LinkedIn, or a free post.
+
+**Why it matters.** Each app has its own length and shape rules, so the video is made to fit the one you pick rather than resized afterwards and cropped badly.
+
+**How to do it.** Pick the app your audience actually uses. Facebook or Instagram is the widest reach for a vertical video.
+
+**Great answer:** "Facebook or Instagram - paid ad." One vertical video fits Reels, Stories and the feed there.
+
+**What Maya said:** "Facebook or Instagram - paid ad. That is where my students are."
+
+## STEP 9: How Long Should It Run?
+
+**What happens.** Now we pick the running time. We ask: *How long do you want your ad to be?* The card's options are 60 seconds (recommended), 90 seconds, 2 minutes, 3 minutes plus 60- and 90-second clips, 5 minutes plus clips, and 10 minutes plus clips.
 
 **Why it matters.** Length decides the size of the story, the length of the song and the cost. A 60-second video is a single, punchy idea. A 10-minute video is a full mini-movie with room to breathe. Longer videos cost more because there are more shots to film. Length also sets how many storyboard pictures you approve: 8 for a 60-second ad, 24 for a 2-minute ad, then about one more for every five seconds of runtime, capped at 120 pictures for any ad. The 3-, 5- and 10-minute options also come with 60- and 90-second clips for social media, so one big production gives you a stack of shareable pieces.
 
@@ -209,7 +209,7 @@ If your setup already has a build-and-check pair and you say "use my defaults," 
 
 **Great answer:** "60 seconds. It's for Instagram." The length and the reason.
 
-**Weak answer (and how to fix it):** "As long as it needs." We cannot size the story from that. Fix it by picking one of the five options, and mention where it will play.
+**Weak answer (and how to fix it):** "As long as it needs." We cannot size the story from that. Fix it by picking one of the card's six options, and mention where it will play.
 
 **What Maya said:** "60 seconds. I'll post it on Instagram and Facebook."
 
@@ -217,13 +217,27 @@ If your setup already has a build-and-check pair and you say "use my defaults," 
 
 **What you'll see.** Your chosen length on your card, along with the cost for it.
 
-**[INFOGRAPHIC: comparison table]** *Title: "Pick Your Running Time."* Rows: 60 seconds (recommended; one punchy idea; best for Reels and Instagram); 90 seconds (a little more story; best for Facebook and YouTube Shorts); 3 minutes plus clips (full mini-story; best for landing pages); 5 minutes plus clips (deeper story; best for webinar warm-ups); 10 minutes plus clips (a full production; best for flagship offers). Draw it as five film strips of growing length, like a bar chart.
+**[INFOGRAPHIC: comparison table]** *Title: "Pick Your Running Time."* Rows: 60 seconds (recommended; one punchy idea; best for Reels and Instagram); 90 seconds (a little more story; best for Facebook and YouTube Shorts); 2 minutes (a short story with room for one turn); 3 minutes plus clips (full mini-story; best for landing pages); 5 minutes plus clips (deeper story; best for webinar warm-ups); 10 minutes plus clips (a full production; best for flagship offers). Draw it as six film strips of growing length, like a bar chart.
 
 ---
 
-## STEP 8: Question 5, What Does Your Song Feel Like?
+## STEP 10: How Should Your Video Be Framed?
 
-**What happens.** The Composer needs a mood. We ask: *Which music style?* You choose from three:
+**What happens.** You choose the shape: Vertical for phones, Reels, Shorts and TikTok, or Wide for YouTube on a TV or a computer. The card offers these two.
+
+**Why it matters.** The shape decides how every shot is framed, so it has to be decided before the storyboard is drawn. Social video is watched upright; long-form video is often watched on a bigger screen.
+
+**How to do it.** If most people will watch on a phone, choose Vertical. A paid ad and a free post are always made vertical, so this question only comes up for the other choices.
+
+**Great answer:** "Vertical." Your audience watches on a phone.
+
+**What Maya said:** "Vertical. Everyone watches me on their phone."
+
+---
+
+## STEP 11: What Does Your Song Feel Like?
+
+**What happens.** The Composer needs a mood. We ask: *Which sound fits your story?* The card lists every sound in the studio's catalog - eighteen in all, with Soul Ballad first and recommended. The three you will hear about most:
 
 - **Soul Ballad**: slow and heartfelt, with a big emotional chorus (recommended).
 - **R&B Flow**: rap verses on the beat with a smooth sung hook.
@@ -235,7 +249,7 @@ If your setup already has a build-and-check pair and you say "use my defaults," 
 
 **Great answer:** "Soul Rise. It starts with the problem and ends hopeful." The style and the reason.
 
-**Weak answer (and how to fix it):** "Something good." There is no style here. Fix it by choosing one of the three, even if you are unsure. You will hear 3 versions later and can adjust then.
+**Weak answer (and how to fix it):** "Something good." There is no style here. Fix it by choosing one of the card's eighteen sounds, even if you are unsure. You will hear 3 versions later and can adjust then.
 
 **What Maya said:** "Soul Rise. My moms start out feeling like they have no time for themselves, and I want the end to feel like a celebration."
 
@@ -247,7 +261,7 @@ If your setup already has a build-and-check pair and you say "use my defaults," 
 
 ---
 
-## STEP 9: Question 6, How Should Every Shot Look?
+## STEP 12: How Should Every Shot Look?
 
 **What happens.** Now we choose the visual style. We ask: *Which video style?* Your options are Lifelike 3D (recommended), 2D Hand-Painted, Sketch to Life (Hybrid), Canvas to Life and Canvas to 3D. **Watch the samples first**, because seeing beats reading every time.
 
@@ -277,19 +291,33 @@ If you accept Lifelike 3D, we move on.
 
 ---
 
-## STEP 10: Question 7, Pick the Quality Level (Video Model)
+## STEP 13: Should Agnes Make Your Pictures and Clips?
 
-**What happens.** We ask: *Which video model?* This is the engine that films your shots. The options are Hailuo 02 Standard (recommended), Seedance 2.5, Seedance 2.0 Mini and Google Veo 3.1. Your card shows the cost for your length, so you can choose with your eyes open.
+**What happens.** After you pick your video style, you are asked whether you have a paid Agnes subscription, and whether it should make this video's pictures and clips. If you told us before that you do not have one, this question is not asked again.
+
+**Why it matters.** If you pay for an Agnes plan, your pictures and video clips can be made with it at no extra cost. Agnes video is 720p, a little softer than the studio's standard models, and the song and the talking close-ups still use the studio's providers. The question is not shown for the 10-minute long version, which is KIE-only.
+
+**How to do it.** Answer yes if you have a plan and want it used. If Agnes cannot make something, we fall back to the studio's standard models and ask you first.
+
+**Great answer:** "Yes - use my Agnes plan." You have a plan and you want it used.
+
+**What Maya said:** "Yes. I pay for it every month anyway."
+
+---
+
+## STEP 14: Pick the Quality Level (Video Model)
+
+**What happens.** We ask: *Which video model?* This is the engine that films your shots. The options are MiniMax H3 (recommended), Seedance 2.5, Seedance 2.0 Mini and Google Veo 3.1. Your card shows the cost for your length, so you can choose with your eyes open.
 
 **Why it matters.** The model controls the quality and the cost of the video shots. Higher quality can cost more. The recommended option is a strong balance for most videos, so most people simply accept it.
 
-**How to do it.** Look at the cost on your card and decide how much quality this particular video is worth. For a flagship offer you may want the best. For a quick social video, the recommended choice is plenty. Make sure the matching account has enough credit (see Step 2).
+**How to do it.** Look at the cost on your card and decide how much quality this particular video is worth. For a flagship offer you may want the best. For a quick social video, the recommended choice is plenty.
 
-**Great answer:** "Hailuo 02 Standard. Good quality at a fair price."
+**Great answer:** "MiniMax H3. Good quality at a fair price."
 
 **Weak answer (and how to fix it):** "The best one." Best at what? Fix it by naming the model, or by saying "recommended." We can also explain the differences if you ask.
 
-**What Maya said:** "Hailuo 02 Standard. It's my first video, so I'll go with the recommended one."
+**What Maya said:** "MiniMax H3. It's my first video, so I'll go with the recommended one."
 
 > **Pro tip:** If you are unsure, take the recommended option. You can always step up for the next video.
 
@@ -297,23 +325,23 @@ If you accept Lifelike 3D, we move on.
 
 ---
 
-## STEP 11: Question 8, Set Your Ceiling (Budget)
+## STEP 15: Set Your Ceiling (Budget)
 
-**What happens.** The last question sets your spending limit. We ask: *What's the most you want to spend on this video?* Option 1 is the cost on your card, which already includes a 50% redo allowance (recommended). Option 2 is a different maximum that you name.
+**What happens.** The last question sets your spending limit. We ask: *What's the most you want to spend on this video?* Option 1 is the price on your card, which already includes the planning allowance the card names (recommended). Option 2 is a different maximum that you name.
 
-**Why it matters.** This is your safety rail. We promise to stay under it. The redo allowance means that if a shot needs to be reshot to meet the standard, there is room in the budget to fix it without stopping to ask you for more.
+**Why it matters.** This is your safety rail. We promise to stay under it. The planning allowance is the card's own contingency: it covers a shot that has to be redone to meet the standard, without stopping to ask you for more.
 
-**How to do it.** Compare the card to the balances you checked in Step 2. If you are comfortable, reply "1." If you want a firm ceiling that is different, reply "2" and name it.
+**How to do it.** Compare the card's price to your own budget. If you are comfortable, reply "1." If you want a firm ceiling that is different, reply "2" and name it.
 
-**Great answer:** "1. The recommended price." Clear, and it includes the redo allowance.
+**Great answer:** "1. The recommended price." Clear, and it includes the planning allowance.
 
 **Weak answer (and how to fix it):** "Not too much." We cannot stay under a feeling. Fix it by choosing option 1 or naming a maximum.
 
-**What Maya said:** "1. The recommended price. And yes, I checked my balances first."
+**What Maya said:** "1. The recommended price. And yes, I checked my budget first."
 
 **What you'll see.** Your budget line added to the card.
 
-**[INFOGRAPHIC: flow diagram]** *Title: "Your Safety Net."* Data: a price tag at the top labeled "Cost on your card," with a safety-net icon underneath labeled "50% redo allowance included," and an arrow to "Your ceiling: we stay under it."
+**[INFOGRAPHIC: flow diagram]** *Title: "Your Safety Net."* Data: a price tag at the top labeled "Cost on your card," with a safety-net icon underneath labeled "planning allowance included," and an arrow to "Your ceiling: we stay under it."
 
 ---
 
@@ -323,9 +351,9 @@ If you accept Lifelike 3D, we move on.
 
 **[INFOGRAPHIC: flow diagram]** *Title: "Your Three Gold Stars."* Data: a film-strip road from "Your answers" to a trophy, with three gates labeled "Script," "Song," "Storyboard," each with a gold "You approve" star. Between the gates, small icons for the work the crew does.
 
-## STEP 12: The Recap, Say "Yes" and the Cameras Roll
+## STEP 16: The Recap, Say "Yes" and the Cameras Roll
 
-**What happens.** After your eight answers, we show you the recap, a single numbered card with everything you chose. We ask: *Reply "yes" to start, or the number of a line to change it.*
+**What happens.** After your answers, we show you the recap, a single numbered card with everything you chose. We ask: *Reply "yes" to start, or the number of a line to change it.*
 
 **Why it matters.** This is your last chance to change anything for free, before the crew begins. It is much easier to fix a wrong word on the card than in a finished video. Nothing starts until you reply.
 
@@ -339,8 +367,8 @@ If you accept Lifelike 3D, we move on.
 > 4. Length: 60 seconds
 > 5. Music: Soul Rise
 > 6. Video style: 2D Hand-Painted
-> 7. Video model: Hailuo 02 Standard
-> 8. Budget: the recommended price, with a 50% redo allowance
+> 7. Video model: MiniMax H3
+> 8. Budget: the recommended price, with the planning allowance the card names
 
 **Great answer:** "Yes." Or: "Change 4 to 90 seconds."
 
@@ -352,7 +380,7 @@ If you accept Lifelike 3D, we move on.
 
 ---
 
-## STEP 13: Approval 1, The Script (Approve the Words)
+## STEP 17: Approval 1, The Script (Approve the Words)
 
 **What happens.** Scene one of production: the Screenwriter writes your story and the song lyrics, and sends them to you *before* the song is made. We ask you to approve, or tell us what to change.
 
@@ -381,9 +409,9 @@ If you accept Lifelike 3D, we move on.
 
 ---
 
-## STEP 14: Approval 2, The Song (Pick 1 of 3)
+## STEP 18: Approval 2, The Song (Pick 1 of 3)
 
-**What happens.** Next, the Casting Director creates your characters while the Composer records your original song. You receive **three labelled versions**, A, B and C, and we ask: *Which one do you want?*
+**What happens.** Next, the Casting Director creates your characters while the Composer records your original song. You receive **three labelled versions, numbered 1, 2 and 3** (each label is the arrangement's own name, such as Polished Modern or Warm Live Band), and the message asks: *Reply 1, 2 or 3 to pick your song.*
 
 **Why it matters.** The song carries your whole video, so this choice matters. Three versions let you pick the one that fits, rather than hoping the first try was right.
 
@@ -391,25 +419,25 @@ If you accept Lifelike 3D, we move on.
 
 **What Maya received:**
 
-> **Version A:** Slower, piano-led, with a gentle build.
-> **Version B:** A warm start that lifts into a bright, clap-along chorus.
-> **Version C:** More upbeat from the first note, with a bouncy rhythm.
+> **1 - Polished Modern:** Slower, piano-led, with a gentle build.
+> **2 - Warm Live Band:** A warm start that lifts into a bright, clap-along chorus.
+> **3 - Cinematic Strings:** More upbeat from the first note, with a bouncy rhythm.
 
-**Great answer:** "Version B. I can't stop humming the chorus." Choice and reason.
+**Great answer:** "2. I can't stop humming the chorus." Choice and reason.
 
 **Weak answer (and how to fix it):** "They're all good." We need one. Fix it by choosing the one you would play on a long drive, then add a note if any word needs fixing.
 
-**What Maya said:** "Version B! And can the singer say 'Sweet Details Bakery' a little slower?"
+**What Maya said:** "2! And can the singer say 'Sweet Details Bakery' a little slower?"
 
 > **Did you know?** If you cannot decide, play all three for someone in your target audience and watch which one makes them move.
 
-**What you'll see.** Three audio players labeled A, B and C, plus a question asking you to pick one.
+**What you'll see.** Three numbered audio files, 1, 2 and 3, each with its label, plus a question asking you to reply with one number.
 
 **[INFOGRAPHIC: do-and-don't]** *Title: "How to Judge the Song."* Do: listen on speakers or headphones; listen twice (feeling, then words); check the offer name; think of your audience. Don't: decide from phone speakers in a noisy room; choose only by your own taste; skip the spelling check.
 
 ---
 
-## STEP 15: Approval 3, The Storyboard (Approve Every Shot)
+## STEP 19: Approval 3, The Storyboard (Approve Every Shot)
 
 **What happens.** Now the Storyboard Artists draw every shot, with a written card and a picture for each one. How many pictures that is depends on the length you picked: a 60-second ad gets 8 storyboard pictures, a 2-minute ad gets 24, and after that the count grows by about one picture for every five seconds of runtime, up to a maximum of 120 pictures for any ad. We ask you to approve, or tell us what to change. This is the very last stop before any video is filmed.
 
@@ -444,7 +472,7 @@ Your video can open with a sweeping drone fly-in.
 
 # ACT 4: SHOW TIME
 
-## STEP 16: While You Wait, the Crew Gets to Work
+## STEP 20: While You Wait, the Crew Gets to Work
 
 **What happens.** You have pressed all three gold stars. Now you can put your feet up. Many crews film different scenes at the same time, so every shot is made in parallel. That is why it is fast. Your characters are lip-synced, the Editor cuts everything together with captions and your call to action, and the Screening Room runs quality checks.
 
@@ -454,9 +482,9 @@ Your video can open with a sweeping drone fly-in.
 
 - **Real emotion, not a puppet:** faces stay expressive and true to each character from the first note to the last.
 - **Matched to your song:** the singing follows the exact version of the song you picked.
-- **Checked before you see it:** every singing shot is reviewed, and anything out of sync is fixed before your video is delivered.
+- **Checked before you see it:** every singing shot is reviewed. Each segment gets at most two paid tries; a second try happens only when a person marks a visible defect and the input changes, and then the best-measured take is kept. A sung line the checker cannot confirm is kept and flagged, and you are shown its mouth strip - there is never an automatic paid redo.
 
-**The Screening Room.** Every shot and the final cut are reviewed. Anything off is reshot. That is the redo allowance doing its job. No rough drafts land on your desk.
+**The Screening Room.** Every shot and the final cut are reviewed. Anything off is caught before it reaches you, and the card's planning allowance covers that work. No rough drafts land on your desk.
 
 **How to do it.** Nothing! Just watch for the delivery message. If a message arrives from the crew, answer it, because the crew might need one quick decision.
 
@@ -468,7 +496,7 @@ Your video can open with a sweeping drone fly-in.
 
 ---
 
-## STEP 17: The Premiere (Delivery and Clips)
+## STEP 21: The Premiere (Delivery and Clips)
 
 **What happens.** Drum roll. Your final video is delivered, edited, captioned, sung, and ending with your call to action. If you chose a 3-, 5- or 10-minute video, you also get 60- and 90-second clips for social media. Those are your trailers, ready to share.
 
@@ -486,87 +514,9 @@ Your video can open with a sweeping drone fly-in.
 
 ---
 
-# ACT 5: THE FIRST QUESTIONS
-
-These are the questions the studio asks first, before ACT 1, because the answer to the first one decides everything that follows: which questions come next, how long the video can be, and where it will run. You only see the questions that apply to what you chose, so nobody is ever asked about a choice they did not make.
-
-## STEP 18: Question 1, What Is This Video For?
-
-**What happens.** The very first question is what the video is for. You get four choices: grow your business with the full package, tell a client's success story, teach a lesson, or make a video for social media.
-
-**Why it matters.** What the video is for decides its shape, its length and where it goes. One answer tells the crew whether to build a full episode with trailers and ad clips around it, or a single video made to fit one app.
-
-**How to do it.** Pick the option that matches the result you want, not the way you imagine it being made. If you are not sure, take the full package: one production gives you an episode, two trailers that send people to it, and two ready-to-run ad clips.
-
-**Great answer:** "Grow my business." You want the whole package from one production.
-
-**What Maya said:** "Grow my business. My Saturday class needs a steady stream of bookings."
-
-## STEP 19: Question 2, How Long Is the Full Episode?
-
-**What happens.** Chosen "Grow my business" and you are asked how long the full episode should be: 3 minutes, 5 minutes, 7 minutes or 10 minutes. Your 60-second and 90-second trailers and ad clips are included at every length.
-
-**Why it matters.** The episode is the story people watch all the way through; the trailers and ad clips are what send them to it. Three minutes is the shortest episode that still earns two good trailers. The 7- and 10-minute episodes are made with KIE, not Agnes.
-
-**How to do it.** Pick the length that fits how much story you have. If this is your first one, take 3 minutes.
-
-**Great answer:** "3 minutes." The shortest episode that still earns two good trailers.
-
-**What Maya said:** "3 minutes. I want to see how it performs before I go longer."
-
-## STEP 20: Question 3, How Should Your Video Be Framed?
-
-**What happens.** You choose the shape: vertical for phones, Reels, Shorts and TikTok, or wide for YouTube on a TV or a computer.
-
-**Why it matters.** The shape decides how every shot is framed, so it has to be decided before the storyboard is drawn. Social video is watched upright; long-form video is often watched on a bigger screen.
-
-**How to do it.** If most people will watch on a phone, choose vertical. A paid ad and a free post are always made vertical, so this question only comes up for the other choices.
-
-**Great answer:** "Vertical." Your audience watches on a phone.
-
-**What Maya said:** "Vertical. Everyone watches me on their phone."
-
-## STEP 21: Question 2, Do You Have Permission?
-
-**What happens.** Told a client's success story, and you are asked one question: do you have your client's permission to use their testimonial? Yes, or no and the order pauses until you have it.
-
-**Why it matters.** A client's own words can only be used when they say so. Without permission nothing is generated and nothing is charged, so your money and your client's trust both stay safe.
-
-**How to do it.** Ask your client first, then answer. If the answer is no, we save your answers exactly as they are and pick the whole thing back up when you have it.
-
-**Great answer:** "Yes." Your client is happy to be quoted.
-
-**What Maya said:** "Yes. She asked me to share it."
-
-## STEP 22: Question 2, Where Will This Video Run?
-
-**What happens.** Chose a video for social media, and you are asked where it will run: Facebook or Instagram as a paid ad, TikTok, LinkedIn, or a free post.
-
-**Why it matters.** Each app has its own length and shape rules, so the video is made to fit the one you pick rather than resized afterwards and cropped badly.
-
-**How to do it.** Pick the app your audience actually uses. Facebook or Instagram is the widest reach for a vertical video.
-
-**Great answer:** "Facebook or Instagram - paid ad." One vertical video fits Reels, Stories and the feed there.
-
-**What Maya said:** "Facebook or Instagram - paid ad. That is where my students are."
-
-## STEP 23: Should Agnes Make Your Pictures and Clips?
-
-**What happens.** After you pick your video style, you are asked whether you have a paid Agnes subscription, and whether it should make this video's pictures and clips. If you told us before that you do not have one, this question is not asked again.
-
-**Why it matters.** If you pay for an Agnes plan, your pictures and video clips can be made with it at no extra cost. Agnes video is 720p, a little softer than the studio's standard models, and the song and the talking close-ups still use the studio's providers.
-
-**How to do it.** Answer yes if you have a plan and want it used. If Agnes cannot make something, we fall back to the studio's standard models and ask you first.
-
-**Great answer:** "Yes - use my Agnes plan." You have a plan and you want it used.
-
-**What Maya said:** "Yes. I pay for it every month anyway."
-
----
-
 ## That's a Wrap!
 
-You did it, Executive Producer. Here is the whole story in one breath: you said what the video is for, got ready, topped up the tanks, set up your team, answered your questions, said "yes" to the recap, approved the script, picked your song, signed off on the storyboard, and the crew took it from there.
+You did it, Executive Producer. Here is the whole story in one breath: you got ready, answered the brief questions, said what the video is for, answered the card's questions, said "yes" to the recap, approved the script, picked your song, signed off on the storyboard, and the crew took it from there.
 
 **You bring the story. Our Hollywood team brings it to life.**
 
@@ -575,29 +525,25 @@ You did it, Executive Producer. Here is the whole story in one breath: you said 
 | Step | What you do | You see |
 |---|---|---|
 | 1 | Run the before-you-start checklist | Your checklist ticked |
-| 2 | Top up your KIE.ai and OpenRouter credits | Healthy balances |
-| 3 | Choose who builds and who checks | Your build-and-check pair |
-| 4 | Question 1: your offer | Your offer and link repeated back |
-| 5 | Question 2: your audience and next step | Your audience and action |
-| 6 | Question 3: your character | Your character described |
-| 7 | Question 4: length | Your running time and its cost |
-| 8 | Question 5: music style | Your chosen style |
-| 9 | Question 6: video style | Your chosen look |
-| 10 | Question 7: video model | Your chosen model and updated cost |
-| 11 | Question 8: budget | Your budget line |
-| 12 | The recap: say "yes" | Production starts |
-| 13 | Approve the script | Story and lyrics |
-| 14 | Pick 1 of 3 songs | Versions A, B and C |
-| 15 | Approve the storyboard | A card and a picture per shot |
-| 16 | Wait while the crew works | Progress updates |
-| 17 | Premiere | Your finished video, plus clips for longer videos |
-| 18 | Question 1: what is this video for | Your purpose chosen |
-| 19 | Question 2: how long is the full episode | Your episode length (full package only) |
-| 20 | Question 3: how should it be framed | Your shape (not asked for a social video) |
-| 21 | Question 2: do you have permission? | Permission to use your client's words (success stories only) |
-| 22 | Question 2: where will it run? | Your app (social videos only) |
-| 23 | Should Agnes make your pictures and clips? | Your Agnes answer, remembered for next time |
+| 2 | Your offer and its link | Your offer and link repeated back |
+| 3 | Your audience and next step | Your audience and action |
+| 4 | Your character | Your character described |
+| 5 | What this video is for | Your purpose chosen |
+| 6 | How long the full episode is (full package only) | Your episode length |
+| 7 | Your client's permission (success stories only) | Permission recorded |
+| 8 | Where the video will run (social videos only) | Your app |
+| 9 | Length | Your running time and its cost |
+| 10 | Shape | Vertical or Wide |
+| 11 | Music style | Your chosen style |
+| 12 | Video style | Your chosen look |
+| 13 | Agnes, when you have a plan | Your Agnes answer, remembered for next time |
+| 14 | Video model | Your chosen model and updated cost |
+| 15 | Budget | Your budget line |
+| 16 | The recap: say "yes" | Production starts |
+| 17 | Approve the script | Story and lyrics |
+| 18 | Pick 1 of 3 songs | Three numbered versions, 1, 2 and 3 |
+| 19 | Approve the storyboard | A card and a picture per shot |
+| 20 | Wait while the crew works | Progress updates |
+| 21 | Premiere | Your finished video, plus clips for longer videos |
 
-**[INFOGRAPHIC: flow diagram]** *Title: "From Your Answers to Your Premiere."* Data: a winding film-strip road with all 23 steps as stops, three gold "You approve" gates at Steps 13, 14 and 15, and a finish-line trophy labeled "Your finished video."
-
-> **Top-up reminder:** Before your next video, check your KIE.ai and OpenRouter balances first so your video never stops halfway.
+**[INFOGRAPHIC: flow diagram]** *Title: "From Your Answers to Your Premiere."* Data: a winding film-strip road with every step above as a stop, three gold "You approve" gates at Steps 17, 18 and 19, and a finish-line trophy labeled "Your finished video."
