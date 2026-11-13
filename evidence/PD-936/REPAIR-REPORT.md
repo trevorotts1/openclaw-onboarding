@@ -212,6 +212,10 @@ Commits landed by this repair:
 |---|---|
 | `0bb4cbd38b07630b7fa033be82b56acae8491d7d` | `Merge origin/main into pd/fl02-intake-driver` (parents `507e3ceb7`, `ebf5c769a`) |
 | `d3e96a7ecc5de6a814a833fe1b38eb2c36620925` | this report |
+| `7720c27d358b2d5947001e25e60cbbc444b5f750` | the remote-head proof above, written into this report |
+
+All five acceptance rows were re-run at `7720c27d3` as well: `4 passed in 1.00s` and
+`1 passed in 0.68s`, identical verdicts.
 
 This report has since received its own documentation-only follow-up commit; `git ls-remote`
 is the live truth for the final head, and every push is repeated with the same literal
