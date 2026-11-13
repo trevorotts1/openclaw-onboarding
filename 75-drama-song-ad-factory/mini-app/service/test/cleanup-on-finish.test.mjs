@@ -88,8 +88,9 @@ test('U-Z07: a delivered order leaves neither intake object in the bucket', asyn
     {}, store, objects,
   );
   assert.equal(delivered.status, 200);
-  assert.equal((await delivered.json()).order.state, 'delivered');
-  assert.equal((await delivered.json()).order.cleanup_pending, undefined, 'a clean delete is not flagged');
+  const deliveredBody = await delivered.json();
+  assert.equal(deliveredBody.order.state, 'delivered');
+  assert.equal(deliveredBody.order.cleanup_pending, undefined, 'a clean delete is not flagged');
 
   for (const path of intake) {
     assert.equal(objects._files.has(path), false, `${path} was deleted`);
