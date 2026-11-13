@@ -3,6 +3,36 @@
 All notable changes to this skill. Dates are UTC. This skill's version lives in
 `skill-version.txt` and the SKILL.md frontmatter `version:` field, kept in lockstep.
 
+## [1.3.0] - 2026-11-13
+
+Quieter and actually delivered. On one live client box the sentinel had raised the same 5 findings every 15 minutes since August. It logged 9,253 failed sends, delivered nothing, and spent 2 minutes of disk work on every tick.
+
+**Noise**
+- **Change-only recording.** A finding is recorded and routed only when it first appears (same `dedup_key` and severity). While it stands, nothing is written again. When it goes away, it is marked `resolved`. A standing problem is now one event, not one per tick.
+- **S9 reads versions, not hashes.** S9 compares each skill's `skill-version.txt` with the pinned versions. A version that went down, or a skill that disappeared, is P2. An upgrade raises the pinned level. The old per-tick hash of the whole skills tree (548 MB / ~15k files on that box) hit its 120 s timeout on every tick and returned nothing.
+- **S1 only raises P1 for new spend risk.** On a client box, P1 fires only when the change ADDS a metered or Anthropic-family model that the baseline did not have. A model already present at baseline is no longer reported as "changed to a paid tier". The dedup key carries a hash of the live value, so a further change is a new finding.
+- **S5 heartbeat-model check is metered-only.** A subscription (`:cloud`) heartbeat model is the normal setup and is no longer a standing P2. Idle burn on any tier is still P1.
+- **Config snapshots only on real change.** A config that drifted from baseline is snapshotted only when it differs from the newest snapshot. It used to be copied on every tick.
+- **Baseline refresh.** A v1 baseline is re-pinned once on the first v1.3.0 tick. What it absorbed is recorded as one resolved S0 INFO event, with paths and direction only. `update-skills.sh` also re-pins the baseline at the end of every fleet update.
+
+**Delivery**
+- **Client boxes no longer send Telegram directly.** They have no `operator` account ("Unknown account operator"). A P1 stays open, and `cron-tick` now runs the escalate sweep, which nothing had scheduled before. A P1 still open after 30 minutes is admitted to Rescue Rangers through the shared admission client. P2/P3 are recorded only.
+- **Escalation honors its retry schedule:** 30 min, 1 h, 2 h, 4 h, then every 6 h, instead of a POST on every run.
+- **The operator box is unchanged.** It keeps its direct operator-account send, the fleet dead-man, and Lane 2.
+- **The "no operator target" P1 is no longer raised on client boxes.** They do not need an operator target.
+
+**Fixes**
+- A failed gateway send now records the real error line, not a node deprecation warning.
+- The documented `ews-entry.sh tick --no-send` form works (flags now reach the sentinel before the subcommand).
+- The ews_common and ews_sentinel self-tests are aligned with the 2026-10-29 rule (empty Anthropic-family list). The full aggregate self-test passes.
+- `prune` also clears `rescue_admissions` journal rows past the 72 h window.
+
+**Tests**
+- New sentinel cases: change-only, resolve, baseline-upgrade, S1 pre-existing-model, S5 heartbeat-model, S9 versions.
+- New alert cases: escalation-backoff, client-route.
+- New `tests/unit/skill60-cron-tick-delivery.test.sh` (8 checks).
+- 11 mutations, each caught.
+
 ## [1.2.6] - 2026-11-13
 
 Skill 60 keeps 72 hours of history, and prunes it on every tick.

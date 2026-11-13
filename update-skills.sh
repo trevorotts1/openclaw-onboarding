@@ -12078,6 +12078,21 @@ LEPY
     echo "  ℹ activate-loop-protection.sh not in bundle — loop protection wiring skipped (older bundle)"
   fi
 
+  # Skill 60 baseline refresh (v1.3.0). A fleet update is the operator-sanctioned
+  # change, so the early-warning baseline is re-pinned at the end of it. Without
+  # this a box compared itself against the baseline from its FIRST install
+  # forever (one box: August), and every approved model/skill change since was
+  # a permanent "drift" finding. Only re-pins a box that already has a baseline;
+  # never installs Skill 60. Best-effort.
+  _EWS_ENTRY="$SKILLS_DIR/60-zhc-early-warning-system/ews-entry.sh"
+  if [ -f "$_EWS_ENTRY" ] && bash "$_EWS_ENTRY" baseline show >/dev/null 2>&1; then
+    if bash "$_EWS_ENTRY" baseline pin >/dev/null 2>&1; then
+      echo "  ✓ Skill 60 early-warning baseline refreshed after the update"
+    else
+      echo "  ⚠ Skill 60 baseline refresh failed (update continues; re-run: ews-entry.sh baseline pin)"
+    fi
+  fi
+
   # ----------------------------------------------------------
   # Routing-defect permanent fix (4-layer: doctrine path, pptx deny, symlink
   # unblock, dept workspace seeding). Mirror of install.sh — idempotent on every

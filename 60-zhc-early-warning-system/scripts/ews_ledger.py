@@ -326,6 +326,40 @@ class Ledger:
                 "SELECT * FROM events WHERE ack_state='open' ORDER BY event_id").fetchall()
         return [dict(r) for r in rows]
 
+    # ---- change-only recording (v1.3.0) ----------------------------------
+    ACTIVE_ACK_STATES = ("open", "acked", "escalated")
+
+    def active_event(self, dedup_key):
+        """The newest event for dedup_key that is still ACTIVE (open, acked or
+        escalated - i.e. not resolved/reverted), else None. The sentinel records
+        a finding only when no active event exists, so a standing problem is
+        ONE row, not one row per tick."""
+        row = self.conn.execute(
+            "SELECT * FROM events WHERE dedup_key=? AND ack_state IN (%s) "
+            "ORDER BY event_id DESC LIMIT 1" % ",".join("?" * len(self.ACTIVE_ACK_STATES)),
+            (dedup_key, *self.ACTIVE_ACK_STATES)).fetchone()
+        return dict(row) if row else None
+
+    def resolve_absent(self, present_keys, signals):
+        """Mark ACTIVE events of the given signals 'resolved' when their
+        dedup_key is not in present_keys (the problem went away). Returns the
+        number of events resolved."""
+        if not signals:
+            return 0
+        present = set(present_keys)
+        rows = self.conn.execute(
+            "SELECT event_id, dedup_key FROM events WHERE signal IN (%s) AND ack_state IN (%s)"
+            % (",".join("?" * len(signals)), ",".join("?" * len(self.ACTIVE_ACK_STATES))),
+            (*signals, *self.ACTIVE_ACK_STATES)).fetchall()
+        n = 0
+        for r in rows:
+            if r["dedup_key"] not in present:
+                self.conn.execute("UPDATE events SET ack_state='resolved', ack_ts=? WHERE event_id=?",
+                                  (now_utc(), r["event_id"]))
+                n += 1
+        self.conn.commit()
+        return n
+
     def events_since(self, since_iso):
         rows = self.conn.execute(
             "SELECT * FROM events WHERE tick_ts >= ? ORDER BY event_id", (since_iso,)).fetchall()
@@ -431,6 +465,11 @@ class Ledger:
             "  GROUP BY dedup_key)", (ev_cut,)).rowcount
         dg = self.conn.execute(
             "DELETE FROM digests WHERE substr(sent_ts,1,19) < ?", (dg_cut,)).rowcount
+        # the per-attempt rescue admission journal grows by one row per attempt;
+        # it follows the same window (escalation_state keeps one row per
+        # operation and is left alone).
+        self.conn.execute(
+            "DELETE FROM rescue_admissions WHERE substr(attempted_at,1,19) < ?", (ev_cut,))
         self.conn.commit()
         return int(ev or 0), int(dg or 0)
 
