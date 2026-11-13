@@ -90,13 +90,16 @@ def test_changing_the_length_drops_the_answers_given_to_the_later_questions():
 
     # 10 minutes is KIE-only, so the Agnes screen after the length is gone.
     # The saved-setup answer carries no "id" key (production pairs answers
-    # with questions by position), so pair positionally here too.
+    # with questions by position), so prove the pairing positionally: every
+    # kept answer is exactly what its own reply parses to against the question
+    # now in that slot, and no answer outlives the changed question.
     st = IC.conversation(replies + [str(length_at + 1), "6"], purpose_flow=True)
     later = IC._shaped(IC.QUESTIONS, st["answers"])
-    assert [q["id"] for q in later][:len(st["answers"])] == \
-        ["purpose", "offer", "link", "audience", "character", "models",
-         "episode_length"]
     assert len(st["answers"]) == length_at + 1
+    assert [q["id"] for q in later[:len(st["answers"])]] == ids[:length_at + 1]
+    for i, q in enumerate(later[:length_at]):
+        assert st["answers"][i] == IC._parse(replies[i], q), (i, q["id"])
+    assert st["answers"][length_at]["n"] == 6
     assert "agnes" not in [q["id"] for q in later]
     assert "That changes a few of the later choices" in st["message"], st["message"]
     assert st["done"] is False
