@@ -89,7 +89,7 @@ $ python3 -m pytest tests/test_pd_manifest_order.py -q -p no:cacheprovider
 3 passed in 0.05s
 ```
 
-CONTROL 1 — the same test against the **unedited** manifest (`git show HEAD:...PIPELINE-MANIFEST.json`,
+CONTROL 1 — the same test against the **unedited** manifest (`git show 2bfc0569:...PIPELINE-MANIFEST.json`,
 the lane tip): **RED**, 9 edges.
 
 ```
@@ -302,6 +302,20 @@ My hunks (this unit's commit) are exactly:
    tests. The new test mirrors `pd_manifest_order_check.py:EXTERNAL_INPUTS` exactly for that one
    artifact class and adds a guard that each entry is still consumed by a phase.
 6. **D-1 HOLD:** this branch is built, committed and pushed, but NOT merged. No merge, no PR.
+
+---
+
+## Commit and remote proof
+
+- Commit: `ab5adf06e3e28fd0dbdb9d9221e719b71ae62524`
+- Push: `git push origin pd003-build:refs/heads/pd/fl04-manifest--hold-d1`
+- `git ls-remote --heads origin refs/heads/pd/fl04-manifest--hold-d1` → `ab5adf06e3e28fd0dbdb9d9221e719b71ae62524	refs/heads/pd/fl04-manifest--hold-d1`
+- Local `git rev-parse HEAD` → `ab5adf06e3e28fd0dbdb9d9221e719b71ae62524` — the two 40-char hashes
+  compare literally equal.
+- Trees clean after the push: build worktree `git status --porcelain` = empty; lane clone
+  `/Volumes/mac mini m4/swarm-contract/pd-fix/worktrees/onboarding/FL04--hold-d1` status = empty on
+  `pd/fl04-manifest--hold-d1`.
+- **D-1 HOLD: no merge, no PR opened.**
 
 ---
 
