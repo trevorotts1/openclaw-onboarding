@@ -1,0 +1,26 @@
+{
+  "id": "full-read-guard",
+  "name": "Full-Read Guard",
+  "description": "Forces an agent that uses a skill to read the whole skill and the skills and SOPs it directly depends on. Blocks partial reads (grep, head, tail, sed, awk, ranged reads) of instruction files, rewrites ranged reads to whole-file reads, provides the read_skill tool (whole skill plus one level of dependencies, chunked, with a per-session read receipt), and refuses to run a skill's scripts until the receipt exists. Lookup files named in the central manifest stay searchable. Fails open: the same call blocked three times in a row is allowed through and logged.",
+  "version": "1.0.0",
+  "contracts": {
+    "tools": ["read_skill"]
+  },
+  "setup": {
+    "providers": []
+  },
+  "main": "./dist/index.js",
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "enabled": { "type": "boolean" },
+      "mode": { "type": "string", "enum": ["off", "audit", "enforce"], "description": "enforce (default) blocks; audit only logs what would be blocked; off does nothing." },
+      "skillsDir": { "type": "string", "description": "Override the skills directory. Default: OC_SKILLS_DIR, else <OpenClaw root>/skills." },
+      "stateDir": { "type": "string", "description": "Where per-session receipts are mirrored. Default: <OpenClaw root>/state/full-read-guard." },
+      "chunkChars": { "type": "integer", "minimum": 4000, "description": "Maximum characters of file text per read_skill part. Default 40000." },
+      "loopBreakerRepeats": { "type": "integer", "minimum": 2, "description": "The Nth identical blocked call in a row is allowed through. Default 3." },
+      "maxBlocksPerRun": { "type": "integer", "minimum": 3, "description": "Safety valve: after this many blocks in one run, the rest of the run is allowed. Default 12." }
+    }
+  }
+}
