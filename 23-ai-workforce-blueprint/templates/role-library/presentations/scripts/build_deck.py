@@ -4492,9 +4492,14 @@ def _qc_independence_reason(obj: dict) -> str:
 # that REWARDS sub-floor prompts, and the post-production-overlay image rubric with its
 # `typography_overlay_readiness` criterion that rewards a blank canvas) — it is a
 # hand-authored / corrupt artifact, not a governed grade, and is REJECTED on sight.
-# Matched case-insensitively against the whole report JSON blob. The bare phrase
-# "out of scope" is NOT here (it false-positives on legit prose); slide-exclusion is
-# caught structurally by _image_qc_report_defects' excluded-keys check instead.
+# Matched case-insensitively against the report's KEY NAMES at any depth and the
+# string value of a top-level `generator` field only — NEVER against free-text
+# values (notes, reasons, findings, fixes). A reviewer's note that says "do not
+# overlay the headline; re-prompt" is prose about the report, not a foreign
+# generator's fingerprint; matching the whole JSON blob rejected that report
+# (PD-111). The bare phrase "out of scope" is NOT here (it false-positives on
+# legit prose); slide-exclusion is caught structurally by
+# _image_qc_report_defects' excluded-keys check instead.
 QC_FOREIGN_SIGNATURES = [
     "score_prompt_length", "_build_qc_report", "word_count_band", "words_in_band",
     "80-180 words", "80–180 words", "word-count rubric", "word count rubric",
@@ -4504,24 +4509,49 @@ QC_FOREIGN_SIGNATURES = [
 ]
 
 
+def _qc_foreign_signature_text(obj) -> str:
+    """The only text a foreign-generator signature may match: every KEY NAME at any
+    depth, plus the string value of a top-level `generator` field. Free-text values
+    (notes, reasons, findings, fixes) are deliberately excluded — a reviewer writing
+    "do not overlay the headline; re-prompt" is describing the report, not signing it.
+    Lowercased; depth-capped so a pathological/cyclic report cannot recurse forever."""
+    parts = []
+
+    def walk(node, depth):
+        if depth > 32:
+            return
+        if isinstance(node, dict):
+            for k, v in node.items():
+                parts.append(str(k))
+                walk(v, depth + 1)
+        elif isinstance(node, (list, tuple)):
+            for v in node:
+                walk(v, depth + 1)
+
+    walk(obj, 0)
+    if isinstance(obj, dict):
+        gen = obj.get("generator")
+        if isinstance(gen, str):
+            parts.append(gen)
+    return "\n".join(parts).lower()
+
+
 def _qc_report_substance_problems(obj: dict) -> list:
     """ANTI-RUBBER-STAMP teeth shared by EVERY report-shape QC gate (copy / prompt /
     image / typography / speech). Returns a list of fatal reasons the report cannot be a
     governed grade. Two classes:
       (1) FOREIGN/CORRUPT generator signature — the eliminated word-count prompt rubric or
           the post-production-overlay image rubric; the governed path ignores reports it
-          did not produce.
+          did not produce. Matched against KEY NAMES at any depth and a top-level
+          `generator` string only, never against free-text values (PD-111).
       (2) SCORE-INCONSISTENCY — a declared headline `average` that grossly exceeds the mean
           of the report's OWN per-criterion scores, or a per-criterion mean below the 8.5
           bar; a typed pass over low criteria is a rubber stamp.
     Empty list = the report carries no rubber-stamp signature."""
     problems = []
-    try:
-        blob = json.dumps(obj, default=str).lower()
-    except Exception:  # noqa: BLE001
-        blob = ""
+    sig_text = _qc_foreign_signature_text(obj)
     for sig in QC_FOREIGN_SIGNATURES:
-        if sig in blob:
+        if sig in sig_text:
             problems.append(
                 f"report bears a corrupt/foreign QC-generator signature ({sig!r}) — the "
                 "word-count prompt rubric and the post-production-overlay image rubric are "
