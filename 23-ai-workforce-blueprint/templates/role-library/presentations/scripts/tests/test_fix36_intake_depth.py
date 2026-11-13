@@ -266,6 +266,19 @@ def _fixture_with_manifest(tmp_path: Path, n_phases: int) -> tuple[Path, Path]:
     manifest = {"manifest_version": 999,
                 "phases": [{"id": f"P{i}"} for i in range(n_phases)]}
     (sops / "PIPELINE-MANIFEST.json").write_text(json.dumps(manifest), encoding="utf-8")
+    # PD-920: since PD-010, GATE 1 takes its dependency LIST from
+    # $SCRIPTS_DIR/presentation-deps.json and refuses the run (exit 6) when that
+    # canon is absent — gates run before --plan prints "Manifest phases". This
+    # fixture's subject is the manifest count, not the deps gate, so stage a
+    # minimal canon with one OPTIONAL row: the gate resolves and enumerates a
+    # real canon, and no machine's installed binaries can change the verdict.
+    (scripts / "presentation-deps.json").write_text(json.dumps({
+        "$id": "presentation-deps",
+        "deps": [{"name": "pd920-fixture-optional-probe",
+                  "kind": "binary",
+                  "binary_name": "pd920_optional_probe",
+                  "required": False}],
+    }), encoding="utf-8")
     return run_dir, scripts
 
 
