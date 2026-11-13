@@ -220,6 +220,10 @@ ebf5c769a2ad5b2582bf2256588095cbef20cfac	refs/heads/main
 Local HEAD == remote branch head, 40 characters each. Fast-forward/new-branch only: no rebase, no
 force-push, `main` untouched.
 
+This report is committed on the same branch, so the branch head after the report commit is
+`b401c070f0b984a17af7fba4a4fd117577a0996c` (`git ls-remote --heads origin pd/fl32-curation`), and
+`00544f04f0cf6baede04db9bd1633e25dbd3b5f7` is the code commit inside it.
+
 ## 8. Unproved / honest gaps
 
 1. **The waiver record's `deliverable` field is new.** `waivers.validate_waiver` requires
