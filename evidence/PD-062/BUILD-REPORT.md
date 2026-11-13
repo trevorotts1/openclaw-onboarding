@@ -114,18 +114,22 @@ python3 build_deck.py <run>/working/copy/slides.json <run>/out.pptx --notes-sync
         --run-dir <run> --out <run>/working/deliverables
 ```
 
-**AFTER** (same file, read back):
+**AFTER** (same file, read back; the speech had blocks for slides 1 and 3 only):
 
 ```
 1 True 'Spoken words for slide one.'
-2 True 'Spoken words for slide two.'
+2 False ''
 3 True 'Spoken words for slide three.'
 ```
+
+Slide 2 has no speech block, so it gets no notes part at all — never a blank injection.
+On the live head the same run with a `One.` / `Three.` stub produced
+`[(1, True, "'One.'"), (2, False, "''"), (3, True, "'Three.'")]`.
 
 and the phase's produces_artifact:
 
 ```json
-{"status": "synced", "slides_total": 3, "slides_with_notes": 3,
+{"status": "synced", "slides_total": 3, "slides_with_notes": 2,
  "speech_source": "found", "bundle_pptx": "<run>/working/deliverables/out-FINAL.pptx"}
 ```
 
