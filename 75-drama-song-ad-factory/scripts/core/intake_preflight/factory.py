@@ -4307,11 +4307,14 @@ def _next_stage(a, *, boot_snapshot=None):
                                missing_artifacts=order.get("missing_artifacts", []))
         return refusal
     lane = lane_size_payload(run_dir)
-    # S75-001: the published command carries the computed cost, never a fixed 0.
+    # S75-001: the paid number rides in cost_minor, never as a made-up flag.
+    # The published command stays the canonical template ({COST_MINOR} named
+    # in needs/argv), per S75-010 step 4 -- substituting the number into
+    # the command string drifted the row the runbook and the registry share.
+    # S75-041 step 3 below still reads the child tool's name off that same
+    # canonical string, so `published` names the template, not a substituted
+    # copy -- one string, both invariants.
     published = row["command"]
-    if stage_price is not None and row.get("argv"):
-        published = shlex.join([str(t).replace("{COST_MINOR}", str(stage_price))
-                                for t in row["argv"]])
     nxt = {"stage": present_id, "production_stage": next_stage, "command": published,
            "produces": row.get("produces", ""), "lane_size": lane,
            "stages_source": stages_source}
