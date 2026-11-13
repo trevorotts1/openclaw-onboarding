@@ -4421,7 +4421,13 @@ def _pu_check_receipt_identity(run_dir: Path, p: Path, *, scope_key: str) -> Lis
             except Exception:  # noqa: BLE001
                 placeholder_hosts = ()
             loc_l = location_id.lower()
-            if any(ph in loc_l for ph in ("placeholder", "example", "test", "changeme", "todo")):
+            # "unbound-test" is the installer's DOCUMENTED unbound sentinel
+            # (checkout_form_builder.resolve_scope / ghl_external_installer
+            # write it when no location is bound). It is an honest "not bound"
+            # declaration, not a made-up placeholder, so the "test" token must
+            # not swallow it -- PD-048a keys on this exact spelling.
+            if loc_l != "unbound-test" and any(
+                    ph in loc_l for ph in ("placeholder", "example", "test", "changeme", "todo")):
                 reasons.append(
                     f"{tag}: location_id {location_id!r} reads as a placeholder -- a made-up "
                     "location is a fabrication, not a push record")
@@ -4722,9 +4728,15 @@ def _make_pu_verifier(phase_id: str, artifacts: List[str]):
                 reasons.extend(_pu_check_json_object(run_dir, rel))
             else:
                 reasons.extend(_pu_check_text(run_dir, rel))
-        if reasons:
-            return False, [f"AF-U-{phase_id}: " + r for r in reasons]
-        return True, []
+        # A NOTE reason is a DEGRADED PASS, never a failure (see verify()'s
+        # own contract). A skipped remote readback stays visible as a note so
+        # no caller can mistake it for a verified pass, while every real
+        # finding still fails the phase.
+        notes = [r for r in reasons if r.startswith("NOTE:")]
+        failures = [r for r in reasons if not r.startswith("NOTE:")]
+        if failures:
+            return False, [f"AF-U-{phase_id}: " + r for r in failures] + notes
+        return True, notes
     _verify.__name__ = f"_verify_{phase_id.lower().replace('-', '_')}"
     return _verify
 
