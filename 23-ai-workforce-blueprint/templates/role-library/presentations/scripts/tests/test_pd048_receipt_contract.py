@@ -233,5 +233,116 @@ def test_blocked_receipt_carries_the_flat_fields_and_no_invented_ids(tmp_path):
     assert data["page_id"] == ""
 
 
+# ---------------------------------------------------------------------------
+# PD-069 A1 -- the check the ENGINE runs. The acceptance names
+# `phase_verifiers.PHASE_VERIFIERS[...]` itself, not the `verify()` wrapper
+# whose SIMULATED/provenance guards sit in front of it, so these rows call the
+# registered function directly on the run dir.
+#
+# A1.1 / A1.2: a COMPLETED in-memory install for P-U-GHL-VSL and
+# P-U-FORM-GATE passes the registered check -- i.e. the receipt carries the
+# flat fields that check reads (execution_id, input_sha256, location_id, a
+# remote id; name/fields/steps for the gate pair).
+# A1.3: a PENDING plan fails with the installer's own "pending" reason, not
+# with a shape complaint -- so the engine reports an honest pause, never
+# "the artifact is malformed".
+# A1.4 / A1.5 are the NEGATIVE CONTROLS: delete the flat fields the receipt
+# carries and the same check turns RED with a shape reason. Without them the
+# pass rows would prove nothing.
+# ---------------------------------------------------------------------------
+SHAPE_MARKERS = (
+    "no operation name",
+    "no fields list",
+    "no actions/steps list",
+    "carries no schema_version",
+    "carries no run scope",
+    "carries no execution_id",
+    "carries no revision/input hash",
+    "carries no remote artifact id",
+    "carries no location_id",
+    "reads as a placeholder",
+    "file not found",
+    "file is zero bytes",
+    "not valid JSON",
+)
+
+def _shape_reasons(reasons):
+    return [r for r in reasons if any(m in r for m in SHAPE_MARKERS)]
+
+def test_pd069_a1_completed_vsl_install_passes_the_registered_check(tmp_path):
+    rd = _intake(tmp_path, VSL_PRE)
+    _seed_pages(rd)
+    rc, receipt = gx.execute_phase(rd, gx.PHASE_GHL_VSL,
+                                   page_adapter=gx.MemoryPageAdapter(LOC),
+                                   env=ENV)
+    assert rc == gx.EXIT_OK, receipt
+    assert receipt["status"] == gx.STATUS_COMPLETE
+    ok, reasons = pv.PHASE_VERIFIERS["P-U-GHL-VSL"](rd)
+    assert ok is True, reasons
+    assert not _shape_reasons(reasons), reasons
+
+def test_pd069_a1_completed_gate_pair_passes_the_registered_check(tmp_path):
+    rd = _intake(tmp_path, VSL_PRE)
+    _seed_pages(rd)
+    rc, receipt = gx.execute_phase(rd, gx.PHASE_FORM_GATE,
+                                   gate_adapter=gx.MemoryGateAdapter(LOC),
+                                   env=ENV)
+    assert rc == gx.EXIT_OK, receipt
+    assert receipt["status"] == gx.STATUS_COMPLETE
+    ok, reasons = pv.PHASE_VERIFIERS["P-U-FORM-GATE"](rd)
+    assert ok is True, reasons
+    assert not _shape_reasons(reasons), reasons
+
+def test_pd069_a1_pending_gate_plan_fails_as_pending_not_shape(tmp_path):
+    rd = _intake(tmp_path, VSL_PRE)
+    _seed_pages(rd)
+    rc, receipt = gx.execute_phase(rd, gx.PHASE_FORM_GATE, env=ENV)
+    assert rc == gx.EXIT_OK, receipt
+    assert receipt["status"] == gx.STATUS_PENDING
+    ok, reasons = pv.PHASE_VERIFIERS["P-U-FORM-GATE"](rd)
+    assert ok is False, reasons
+    joined = " | ".join(reasons)
+    assert "pending_external_execution" in joined, reasons
+    assert not _shape_reasons(reasons), reasons
+
+def test_pd069_a1_control_stripping_gate_flat_fields_turns_the_check_red(tmp_path):
+    """Same pending pair, flat name/fields/steps deleted (the pre-PD-048a
+    receipt): the check must fall back to a SHAPE reason and lose the pending
+    reason -- proving the pass/fail split above is caused by the fields."""
+    rd = _intake(tmp_path, VSL_PRE)
+    _seed_pages(rd)
+    rc, _receipt = gx.execute_phase(rd, gx.PHASE_FORM_GATE, env=ENV)
+    assert rc == gx.EXIT_OK
+    for p in gx.receipt_paths(rd, gx.PHASE_FORM_GATE):
+        data = json.loads(p.read_text(encoding="utf-8"))
+        for key in ("name", "fields", "steps"):
+            data.pop(key, None)
+        p.write_text(json.dumps(data), encoding="utf-8")
+    ok, reasons = pv.PHASE_VERIFIERS["P-U-FORM-GATE"](rd)
+    assert ok is False, reasons
+    assert _shape_reasons(reasons), reasons
+    assert not any("pending_external_execution" in r for r in reasons), reasons
+
+def test_pd069_a1_control_stripping_vsl_flat_fields_turns_the_check_red(tmp_path):
+    """The completed VSL receipt with its flat fields deleted: the registered
+    check must fail naming the identity fields -- proving it really reads the
+    file on disk, not the installer's return value."""
+    rd = _intake(tmp_path, VSL_PRE)
+    _seed_pages(rd)
+    rc, _receipt = gx.execute_phase(rd, gx.PHASE_GHL_VSL,
+                                    page_adapter=gx.MemoryPageAdapter(LOC),
+                                    env=ENV)
+    assert rc == gx.EXIT_OK
+    p = gx.receipt_paths(rd, gx.PHASE_GHL_VSL)[0]
+    data = json.loads(p.read_text(encoding="utf-8"))
+    for key in ("execution_id", "input_sha256", "location_id", "funnel_id",
+                "page_id"):
+        data.pop(key, None)
+    p.write_text(json.dumps(data), encoding="utf-8")
+    ok, reasons = pv.PHASE_VERIFIERS["P-U-GHL-VSL"](rd)
+    assert ok is False, reasons
+    assert _shape_reasons(reasons), reasons
+
+
 if __name__ == "__main__":
     sys.exit(pytest.main([__file__, "-v"]))
