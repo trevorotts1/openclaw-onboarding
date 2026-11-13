@@ -12473,9 +12473,8 @@ PREFLIGHT_REQUIRED = [
      _chk_persuasion_beats),
     # AF-STYLE-UNPICKED / AF-STYLE-DOUBLECHARGE (P-STYLE-PREVIEW, 4.85).
     (None,
-     "style preview picked + locked — the owner picked one of 3 attention-grade variants and "
-     "the winner's 3 representative renders are locked + reused, never re-charged "
-     "(AF-STYLE-UNPICKED / AF-STYLE-DOUBLECHARGE)",
+     "style preview picked — the owner picked one of 3 attention-grade variants and the pick "
+     "is on file (AF-STYLE-UNPICKED / AF-STYLE-DOUBLECHARGE)",
      "Phase 4.85 — Attention Designer 3-style-preview (owner gateway sign-off)",
      _chk_style_preview),
     # AF-PRIORITY-SHIFT (composite, P-SHIFT-QC 7.5) — the 14-item pre-output ship gate.
