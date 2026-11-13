@@ -111,8 +111,19 @@ _CATS = {}
 def _catalog_path(catalog_path=None):
     if catalog_path is not None:
         return Path(catalog_path)
-    # core/audio_c3/extend/suno_extend.py -> repo root
-    return Path(__file__).resolve().parents[3] / "onboarding" / "68-kie-audio" / "models.json"
+    # The work copy is a TRACKED file: 68-kie-audio/models.json at the repo
+    # root, or the legacy <root>/onboarding/68-kie-audio. The old default was
+    # ``parents[3] / "onboarding" / "68-kie-audio"``, i.e. scripts/onboarding/...
+    # in this layout, which no tree has: every SHORT take died as
+    # ``catalog-missing`` before its first extend round. Same ancestor walk as
+    # music_director.workcopy_paths() (not imported - this module is stdlib
+    # only and a leaf), so both names resolve the one file.
+    here = Path(__file__).resolve()
+    for anc in here.parents:
+        for cand in (anc / "68-kie-audio", anc / "onboarding" / "68-kie-audio"):
+            if (cand / "models.json").is_file():
+                return cand / "models.json"
+    return here.parents[3] / "onboarding" / "68-kie-audio" / "models.json"
 
 
 def catalog(catalog_path=None):
