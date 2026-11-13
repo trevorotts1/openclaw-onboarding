@@ -53,6 +53,7 @@ import json
 import os
 import re
 import sys
+import zipfile
 from pathlib import Path
 from typing import Callable, List, Optional, Tuple
 
@@ -1511,18 +1512,71 @@ def _fix16_apply(pv_registry: dict) -> dict:
         pv_registry["P-PROMPT-QC"] = _fix16_get_verifier("P-PROMPT-QC")
     return pv_registry
 
-def _verify_assemble(run_dir: Path) -> Tuple[bool, List[str]]:
-    """P8-ASSEMBLE: build_deck.check_deck_harmony (arc + visual consistency).
-    Falls back to filesystem PPTX existence + size check when unavailable.
+# PD-062v: the paths the assembled deck can be at. `working/deliverables/` is
+# where the render writes it; the run top is the manifest's own
+# `produces_artifact` ("*-FINAL.pptx") and stays accepted until PD-062 retargets
+# that declaration, so this unit is safe to merge before or after PD-062.
+_ASSEMBLE_DECK_PATTERNS = (
+    "working/deliverables/*-FINAL.pptx",
+    "*-FINAL.pptx",
+)
+_ASSEMBLE_DECK_EXPECTED = ("working/deliverables/*-FINAL.pptx "
+                           "(or *-FINAL.pptx at the run top)")
 
-    check_deck_harmony only proves cross-slide cohesion (recurring character,
-    palette, archetype rhythm) from the RENDERED PNGs / prompts — it never opens
-    the assembled PPTX itself. Delegating straight to it let a decoy file (e.g. a
-    40-byte text file renamed 'deck.pptx') pass this phase outright, because a
-    harmony PASS was returned before anything checked the artifact was a real
-    PPTX. Mirror the same magic-bytes idiom _DELIVERY_DELIVERABLES already uses
-    (PK\\x03\\x04 header) on every passing harmony result, so a decoy cannot ride
-    a harmony pass through assembly."""
+
+def _assemble_deck_candidates(run_dir: Path) -> List[Path]:
+    """Every assembled deck under the two accepted patterns, deduplicated."""
+    hits: List[Path] = []
+    for pattern in _ASSEMBLE_DECK_PATTERNS:
+        for p in sorted(run_dir.glob(pattern)):
+            if p.is_file() and not p.name.startswith("~$") and p not in hits:
+                hits.append(p)
+    return hits
+
+
+def _is_real_deck(path: Path) -> bool:
+    """A deck is a ZIP container holding ppt/presentation.xml — not a renamed
+    text file (magic bytes alone let any ZIP-shaped decoy through)."""
+    try:
+        if path.stat().st_size < 1000:
+            return False
+        with zipfile.ZipFile(path) as zf:
+            return "ppt/presentation.xml" in zf.namelist()
+    except (OSError, zipfile.BadZipFile):
+        return False
+
+
+def _verify_assemble(run_dir: Path) -> Tuple[bool, List[str]]:
+    """P8-ASSEMBLE: exactly one real assembled deck, plus build_deck.check_deck_harmony.
+
+    PD-062v: the deck is resolved where the render writes it —
+    `working/deliverables/*-FINAL.pptx` — with the run-top `*-FINAL.pptx`
+    (the manifest's current declaration) still accepted. A stray `.pptx`
+    elsewhere never stands in for the deck, and a text file named
+    `*-FINAL.pptx` fails as "not a deck" because the container must hold
+    `ppt/presentation.xml`.
+
+    check_deck_harmony only proves cross-slide cohesion from the RENDERED PNGs /
+    prompts — it never opens the assembled PPTX itself, so the deck proof runs
+    here regardless of whether harmony is available.
+    """
+    decks = _assemble_deck_candidates(run_dir)
+    if not decks:
+        stray = [p for p in run_dir.glob("**/*.pptx") if not p.name.startswith("~$")]
+        detail = (f" (found only {', '.join(str(p.relative_to(run_dir)) for p in stray)} — "
+                  f"a stray .pptx is not the deck)" if stray else "")
+        return False, [f"AF-HARMONY: no assembled deck found — expected "
+                       f"{_ASSEMBLE_DECK_EXPECTED}{detail}"]
+    if len(decks) > 1:
+        names = ", ".join(str(p.relative_to(run_dir)) for p in decks)
+        return False, [f"AF-HARMONY: {len(decks)} assembled decks found ({names}) — "
+                       f"expected exactly one at {_ASSEMBLE_DECK_EXPECTED}"]
+    bad = [p for p in decks if not _is_real_deck(p)]
+    if bad:
+        return False, [f"AF-HARMONY: {p.name} is not a deck — it is not a ZIP "
+                       f"holding ppt/presentation.xml (a renamed non-PPTX file "
+                       f"cannot pass assembly)" for p in bad]
+
     fn = _bd_fn("check_deck_harmony")
     if fn is not None:
         try:
@@ -1530,46 +1584,12 @@ def _verify_assemble(run_dir: Path) -> Tuple[bool, List[str]]:
             if not _checker_pass(result):
                 detail = result if isinstance(result, str) else json.dumps(result)
                 return False, [f"AF-HARMONY: deck harmony check failed: {detail}"]
-            # Harmony passed — but harmony never inspects the assembled PPTX
-            # itself. Prove each candidate PPTX is a real one before letting the
-            # delegated pass stand.
-            hits = [p for p in run_dir.glob("**/*.pptx") if not p.name.startswith("~$")]
-            if not hits:
-                return False, ["AF-HARMONY: deck harmony check passed but no .pptx "
-                               "found in run dir (assembly not complete)"]
-            pptx_reasons: List[str] = []
-            for p in hits:
-                size = p.stat().st_size
-                if size < 1000:
-                    pptx_reasons.append(
-                        f"AF-HARMONY: {p.name} is suspiciously small ({size} bytes) "
-                        f"— not a real assembled PPTX")
-                    continue
-                try:
-                    with open(p, "rb") as fh:
-                        head = fh.read(4)
-                except OSError as exc:  # noqa: BLE001
-                    pptx_reasons.append(f"AF-HARMONY: cannot read {p.name} for "
-                                        f"magic-bytes check: {exc!r}")
-                    continue
-                if head != b"PK\x03\x04":
-                    pptx_reasons.append(
-                        f"AF-HARMONY: {p.name} is not a valid ZIP/PPTX container "
-                        f"(expected b'PK\\x03\\x04' at offset 0, got {head!r}) — "
-                        f"a renamed non-PPTX file cannot pass assembly")
-            if pptx_reasons:
-                return False, pptx_reasons
             return True, []
         except Exception as exc:  # noqa: BLE001
             pass  # fall through to filesystem check
 
-    # Filesystem fallback: a non-trivially-sized PPTX must exist.
-    hits = [p for p in run_dir.glob("**/*.pptx") if not p.name.startswith("~$")]
-    if not hits:
-        return False, ["AF-HARMONY: no .pptx found in run dir (assembly not complete)"]
-    biggest = max(hits, key=lambda p: p.stat().st_size)
-    if biggest.stat().st_size < 1000:
-        return False, [f"AF-HARMONY: {biggest.name} is suspiciously small ({biggest.stat().st_size} bytes)"]
+    # Filesystem fallback: the validated deck exists, but cohesion was not
+    # measured, so a production pass is not allowed on container sanity alone.
     if not _degraded_allowed(run_dir):
         # F03: cross-slide cohesion was never measured; container sanity alone
         # cannot attest assembly in production.
@@ -4209,10 +4229,26 @@ def artifact_path(run_dir: Path, key: str) -> Optional[Path]:
     This is THE single resolution rule for the engine's presence check
     (presentation_job.phases._artifacts_present) and every verifier here —
     one function, one ordering, no mirror to drift.
+
+    PD-062v: a key that carries a folder (``working/deliverables/*-FINAL.pptx``)
+    resolves AS WRITTEN relative to the run folder first. Keys with no folder
+    keep the run-top then working/upsell/ lookups below.
     """
     key = (key or "").strip()
     if not key:
         return None
+    if "/" in key:
+        # PD-062v: folder-carrying pattern — as written, relative to the run dir.
+        if key.endswith("/*"):
+            literal = run_dir / key[:-2]
+            if literal.is_dir() and any(literal.iterdir()):
+                return literal
+        elif any(c in key for c in "*?["):
+            literal_matches = [p for p in sorted(run_dir.glob(key)) if p.is_file()]
+            if literal_matches:
+                return max(literal_matches, key=lambda p: p.stat().st_mtime)
+        elif (run_dir / key).is_file():
+            return run_dir / key
     if key.endswith("/*"):
         base = run_dir / "working" / "upsell" / key[:-2]
         if base.is_dir() and any(base.iterdir()):
