@@ -4338,7 +4338,7 @@ class Engine:
         }
         try:
             from . import approvals as _approvals
-            _approvals.verify(approval, self.run_dir)
+            _approvals.verify_with_gate_text(approval, self.run_dir)
         except Exception as exc:  # ApprovalError or oracle transport — DENIED either way
             return False, (f"style choice owner_msg_id {owner_msg_id!r} failed "
                            f"authenticity verification: {exc}")
