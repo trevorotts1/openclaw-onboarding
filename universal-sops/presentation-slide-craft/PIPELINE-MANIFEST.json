@@ -1897,6 +1897,7 @@
       "consumes": [
         "renders/slide-*.png",
         "working/deliverables/PRESENTERS-SPEECH.md",
+        "working/delivery/PRESENTER-AUDIO.mp3",
         "working/checkpoints/slide_media_manifest.json"
       ]
     },
