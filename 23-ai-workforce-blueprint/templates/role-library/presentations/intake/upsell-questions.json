@@ -77,16 +77,17 @@
    "section": "deck-intake-upsell",
    "order": 7.71,
    "prompt": "Understood -- no VSL page. In your own words, why don't you want it? (I record this verbatim so nobody later has to guess.)",
-   "help": "Asked ONLY when want_vsl_page is 'no'. The answer is stored word-for-word as the waiver's client_request_quote. There is no default and no assistant-authored fallback: an empty answer must be re-asked.",
+   "help": "Asked ONLY when the client's preference record shows an earlier YES for want_vsl_page. VSL page defaults to 'no', so accepting that default is not a decline and owes no reason. When it is asked, the answer is stored word-for-word; it is optional and never blocks the gate.",
    "kind": "text",
    "storeOn": "VSL_PAGE_DECLINED_REASON",
-   "required": true,
-   "block_gate": true,
+   "required": false,
+   "block_gate": false,
+   "ask_only_if_previously_wanted": true,
    "conditional_on": {
     "id": "want_vsl_page",
     "equals": "no"
    },
-   "resolverHint": "Auto-skipped whenever want_vsl_page is 'yes'. When asked, it BLOCKS --complete: a declined gate with no recorded reason is exactly the self-authored waiver this mechanism exists to prevent."
+   "resolverHint": "Skipped whenever want_vsl_page is 'yes' AND whenever the preference record carries no earlier YES -- declining an opt-in that defaults to no is not a waiver. Optional, never blocking."
   },
   {
    "id": "want_motion_graphics",
