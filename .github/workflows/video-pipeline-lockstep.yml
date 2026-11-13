@@ -26,7 +26,7 @@ name: Video pipeline lockstep (Movie Producer)
 
 on:
   push:
-    branches: [main]
+    branches: [main, "batch/**"]
     paths:
       - "47-movie-producer/scripts/executive_producer.py"
       - "47-movie-producer/scripts/video_build_check.py"
@@ -49,6 +49,7 @@ on:
       - "23-ai-workforce-blueprint/templates/role-library/video/sops/*.md"
       - ".github/workflows/video-pipeline-lockstep.yml"
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
     branches: [main]
     paths:
       - "47-movie-producer/scripts/executive_producer.py"
@@ -73,11 +74,12 @@ on:
       - ".github/workflows/video-pipeline-lockstep.yml"
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
   video-pipeline-lockstep:
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     name: Movie Producer manifest/code/ruleset lockstep + GOOD/BAD self-test
     runs-on: ubuntu-latest
     steps:

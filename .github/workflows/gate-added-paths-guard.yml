@@ -23,15 +23,17 @@ name: Added-lines absolute-path guard
 
 on:
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
     branches: [main]
   workflow_dispatch:
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
   control:
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     name: Prove the guard discriminates before trusting it
     runs-on: ubuntu-latest
     steps:
@@ -53,6 +55,7 @@ jobs:
           echo "control suite PASSED (rc=0)"
 
   guard:
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     name: Judge this PR's added lines
     runs-on: ubuntu-latest
     needs: control

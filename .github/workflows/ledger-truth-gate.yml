@@ -44,12 +44,13 @@ name: Ledger-truth gate
 
 on:
   push:
-    branches: [main]
+    branches: [main, "batch/**"]
     paths:
       - "ledgers/**"
       - ".github/workflows/ledger-truth-gate.yml"
       - "scripts/ledger-truth-gate.py"
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
     branches: [main]
     paths:
       - "ledgers/**"
@@ -57,11 +58,12 @@ on:
       - "scripts/ledger-truth-gate.py"
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
   ledger-truth-gate:
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     name: "Reject ledger rows claiming verified/done that git + check-run history cannot prove"
     runs-on: ubuntu-latest
     steps:

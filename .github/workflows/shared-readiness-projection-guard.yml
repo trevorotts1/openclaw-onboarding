@@ -8,13 +8,14 @@ name: shared readiness projection guard (T-40)
 
 on:
   push:
-    branches: [main]
+    branches: [main, "batch/**"]
     paths:
       - "shared-utils/shared_readiness.py"
       - "tests/unit/shared-readiness-projection.test.py"
       - "32-command-center-setup/scripts/verify-tenant-readiness.py"
       - ".github/workflows/shared-readiness-projection-guard.yml"
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
     branches: [main]
     paths:
       - "shared-utils/shared_readiness.py"
@@ -24,11 +25,12 @@ on:
   workflow_dispatch:
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
   shared-readiness-projection-tests:
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     name: "T-40 — shared readiness projection acceptance suite"
     runs-on: ubuntu-latest
     steps:

@@ -36,6 +36,7 @@ name: SF prover pin authority
 
 on:
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
     paths:
       - "49-signature-funnel/**"
       - "83-black-friday-launcher/**"
@@ -65,7 +66,7 @@ concurrency:
 jobs:
   verify:
     name: Recompute the pin from the tree and fail on mismatch
-    if: github.event_name == 'pull_request' || startsWith(github.ref, 'refs/tags/')
+    if: (github.event_name != 'pull_request' || github.event.pull_request.draft == false) && (github.event_name == 'pull_request' || startsWith(github.ref, 'refs/tags/'))
     runs-on: ubuntu-latest
     steps:
       - name: Checkout the proposed (or tagged) tree
@@ -238,7 +239,7 @@ jobs:
 
   mint:
     name: Mint the pin (the only minting path)
-    if: (github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event_name == 'workflow_dispatch'
+    if: (github.event_name != 'pull_request' || github.event.pull_request.draft == false) && ((github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event_name == 'workflow_dispatch')
     runs-on: ubuntu-latest
     permissions:
       contents: write

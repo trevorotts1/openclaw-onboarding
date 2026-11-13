@@ -25,14 +25,16 @@ name: Release ceremony batching guard
 
 on:
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
     branches: [main]
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
   check-no-standalone-release-pr:
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     name: No standalone CHANGELOG/version-only PR
     runs-on: ubuntu-latest
     steps:

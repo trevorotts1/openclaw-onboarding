@@ -33,7 +33,7 @@ name: rescue-rangers-rr031-gates
 
 on:
   push:
-    branches: [main]
+    branches: [main, "batch/**"]
     paths:
       - "scripts/reconcile-rr-agent-map.sh"
       - "scripts/_rr_registry_lib.py"
@@ -43,6 +43,7 @@ on:
       - "tests/unit/fixtures/mock-rr-datatable.py"
       - ".github/workflows/rescue-rangers-rr031-gates.yml"
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
     branches: [main]
     paths:
       - "scripts/reconcile-rr-agent-map.sh"
@@ -54,11 +55,12 @@ on:
       - ".github/workflows/rescue-rangers-rr031-gates.yml"
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
   rescue-rangers-rr031-gates:
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     name: RR-031 gates (reconcile + abort + lock + deadlines + mutation drills)
     runs-on: ubuntu-latest
     steps:
