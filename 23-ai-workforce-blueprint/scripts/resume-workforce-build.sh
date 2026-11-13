@@ -315,7 +315,14 @@ if ! "$WORKFORCE_PYTHON" "$COMPLETION_SCRIPT" "$STATE_FILE" --has-identity >>"$L
   exit 0
 fi
 normalize_status_vocabulary
-"$WORKFORCE_PYTHON" "$COMPLETION_SCRIPT" "$STATE_FILE" >>"$LOG_FILE" 2>&1 || true
+# A box whose closeout is finished is never re-opened by this job.
+_recheck_closeout="$(jq -r '.closeoutStatus // ""' "$STATE_FILE" 2>/dev/null || true)"
+case "$_recheck_closeout" in
+  done|sent)
+    log "completion re-check skipped: closeoutStatus=$_recheck_closeout (a finished box is not re-opened by the resume job)" ;;
+  *)
+    "$WORKFORCE_PYTHON" "$COMPLETION_SCRIPT" "$STATE_FILE" >>"$LOG_FILE" 2>&1 || true ;;
+esac
 
 # ---- v10.14.36: BELT - explicit self-stop on terminal state ----
 # v10.15.26 / v10.16.25 HARD FLOOR: a terminal state in the build-state JSON
@@ -1402,6 +1409,10 @@ elif (( closeout_dirty == 1 )) && (( pending_count == 0 )) && (( stale_building_
   _osh_out="$(python3 "$SCRIPT_DIR/../../shared-utils/owner_sends_hold.py" check "$STATE_FILE" 2>&1)"; _osh_rc=$?
   if [[ "$_osh_rc" -ne 1 ]]; then
     log "HOP-4: OWNER SENDS HELD: ${_osh_out:-owner_sends_hold.py unavailable (rc $_osh_rc)} -- run-closeout.sh NOT launched."
+    _CLOSEOUT_SCRIPT=""
+  fi
+  if [[ "$(jq -r '.closeoutResumePaused // false' "$STATE_FILE" 2>/dev/null)" == "true" ]]; then
+    log "HOP-4: closeoutResumePaused=true -- run-closeout.sh NOT launched."
     _CLOSEOUT_SCRIPT=""
   fi
   if [[ -n "$_CLOSEOUT_SCRIPT" ]]; then
