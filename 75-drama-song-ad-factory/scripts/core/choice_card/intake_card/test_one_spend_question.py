@@ -17,8 +17,8 @@ from choice_card.intake_card import intake_card as IC  # noqa: E402
 import intake as I  # noqa: E402
 
 MONEY = re.compile(r"spend|budget|cost|price|\$|dollar", re.I)
-#: The card a plain replay asks (S75-006): a run with no folder keeps the list
-#: a resumed run keeps, so the fixture and the list it replays agree.
+#: The frozen card this file replays explicitly (S75-006: a bare
+#: ``conversation`` asks the NEW card, so the list is named here).
 LEGACY = IC.LEGACY_QUESTIONS
 N = len(LEGACY)
 SPEND_AT = [q["id"] for q in LEGACY].index("spend")
@@ -86,7 +86,7 @@ def test_no_reply_means_no_spend():
 
 
 def test_recap_shows_the_limit():
-    full = IC.example_replies()
+    full = IC.example_replies(LEGACY)
     full[SPEND_AT] = "1"
     recap = IC.conversation(full, _qs(18.5, 25))["message"]
     assert "Budget: up to $25.00" in recap, recap
@@ -131,7 +131,7 @@ def QUESTION_TEXT():
 
 
 def test_recap_line_exact():
-    recap = IC.conversation(IC.example_replies(), _qs(18.5, 25))["message"]
+    recap = IC.conversation(IC.example_replies(LEGACY), _qs(18.5, 25))["message"]
     assert "%d. Budget: up to $25.00\n" % (SPEND_AT + 1) in recap and "Spend" not in recap, recap
 
 

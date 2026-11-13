@@ -28,7 +28,12 @@ CARD = IC.render_card()
 
 
 def _blocks(text):
-    return text.split("\n\n")
+    """One block per question, plus the closing block.
+
+    A question's own body may carry a blank line (the CHECKPOINTS wording
+    does), so a seam is a blank line followed by a question header or the
+    closing sentence -- never the first blank line found."""
+    return re.split(r"\n\n(?=Question \d+ of \d+ - |How to answer: )", text)
 
 
 def test_thirteen_questions_each_own_block():
