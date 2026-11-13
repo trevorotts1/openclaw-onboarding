@@ -14,7 +14,11 @@
 //   * every button sends the value the plan names:
 //       script     "Looks great" -> "approve", "Change something" -> typed text
 //       song       three players, "Pick this one" -> "1" / "2" / "3"
-//       storyboard "Approve all" -> "GO", "Change this shot" -> "shot N: <text>"
+//       storyboard "Approve all" -> "GO",
+//                  "Send my changes" -> ONE answer, one line per filled box
+//   * the script change box is a four-row textarea, not a one-line input;
+//   * the storyboard card has no per-shot button: notes on several shots leave
+//     in a single answer, and empty boxes send nothing;
 //   * an answer the service refuses (HTTP 409 APPROVAL_ANSWER_TAKEN) shows
 //     "This was already answered, from your chat or another device. ...";
 //   * an answer that lands says what happens next, in one exact sentence;
@@ -168,10 +172,12 @@ const first = await render(SAMPLE);
     JSON.stringify(a.svc.sent()[0]) === JSON.stringify(["answer", ORDER_ID, "script", 1, "approve"]),
     JSON.stringify(a.svc.sent()[0]));
 
-  const b = await render(SAMPLE); // a fresh card: the answered one has no inputs left
+  const b = await render(SAMPLE); // a fresh card: the answered one has no boxes left
   const card = findCard(b.root, "script");
-  const input = walk(card).find((n) => n.tagName === "INPUT");
-  input.value = "  make the opening shorter  ";
+  const box = walk(card).find((n) => n.tagName === "TEXTAREA");
+  rule("script change box is a four-row textarea", !!box && box.getAttribute("rows") === "4",
+    box ? `rows=${box.getAttribute("rows")}` : "no textarea");
+  box.value = "  make the opening shorter  ";
   await click(findButton(card, "Change something"));
   rule("script “Change something” sends the typed text",
     b.svc.sent()[0]?.[4] === "make the opening shorter", JSON.stringify(b.svc.sent()[0]));
@@ -181,8 +187,8 @@ const first = await render(SAMPLE);
 {
   const { svc, root } = await render(SAMPLE);
   const card = findCard(root, "script");
-  const input = walk(card).find((n) => n.tagName === "INPUT");
-  input.value = "   ";
+  const box = walk(card).find((n) => n.tagName === "TEXTAREA");
+  box.value = "   ";
   await click(findButton(card, "Change something"));
   rule("empty change box sends nothing", svc.sent().length === 0, `${svc.sent().length} call(s)`);
 }
@@ -371,6 +377,9 @@ const first = await render(SAMPLE);
   const mediaFiles = [
     { name: "shot-1.png", url: revUrl("storyboard", 2, "shot-1.png"), sha256: "a".repeat(64), bytes: 10 },
     { name: "shot-2.png", url: revUrl("storyboard", 2, "shot-2.png"), sha256: "b".repeat(64), bytes: 20 },
+    { name: "shot-3.png", url: revUrl("storyboard", 2, "shot-3.png"), sha256: "c".repeat(64), bytes: 30 },
+    { name: "shot-4.png", url: revUrl("storyboard", 2, "shot-4.png"), sha256: "e".repeat(64), bytes: 40 },
+    { name: "shot-5.png", url: revUrl("storyboard", 2, "shot-5.png"), sha256: "f".repeat(64), bytes: 50 },
   ];
   const knownBlobs = new Map(mediaFiles.map((f) => [f.url, f]));
   const storyItems = () => SAMPLE.filter((i) => i.stage === "storyboard")
@@ -394,6 +403,13 @@ const first = await render(SAMPLE);
   // One stills round: its own service, request log and decode gate. The round is
   // read twice — locked before the release, settled after — then the gate is
   // released and the unlock awaited, so no later paint can cancel this round first.
+  //
+  // S75-072 card shape: no per-shot button. Two card-wide buttons ("Approve all",
+  // "Send my changes"), both gated on the stills. `fill` is the list of notes by
+  // shot number — [{ n: 2, text }, { n: 5, text }] — or null for "Approve all".
+  const STORY_BUTTONS = ["Approve all", "Send my changes"];
+  const storyButtonsIn = (card) => (card ? walk(card).filter((n) => n.tagName === "BUTTON"
+    && STORY_BUTTONS.includes(n.textContent)) : []);
   const stillsRound = async (fill) => {
     const svc = fakeService(storyItems());
     const seen = [];
@@ -410,8 +426,7 @@ const first = await render(SAMPLE);
     const rendered = await renderApprovalsFor({ order_id: ORDER_ID }, root);
     const card = findCard(root, "storyboard");
     const preImgs = card ? walk(card).filter((n) => n.tagName === "IMG") : [];
-    const preBtns = card ? walk(card).filter((n) => n.tagName === "BUTTON"
-      && (n.textContent === "Change this shot" || n.textContent === "Approve all")) : [];
+    const preBtns = storyButtonsIn(card);
     const pre = {
       imgCount: preImgs.length, imgSrcs: preImgs.map((im) => im.getAttribute("src")),
       btnCount: preBtns.length,
@@ -421,8 +436,7 @@ const first = await render(SAMPLE);
     await new Promise((r) => setTimeout(r, 200));
     const postCard = findCard(root, "storyboard");
     const postImgs = postCard ? walk(postCard).filter((n) => n.tagName === "IMG") : [];
-    const postBtns = postCard ? walk(postCard).filter((n) => n.tagName === "BUTTON"
-      && (n.textContent === "Change this shot" || n.textContent === "Approve all")) : [];
+    const postBtns = storyButtonsIn(postCard);
     const out = {
       svc, seen: seen.slice(), rendered, root, pre,
       imgCount: postImgs.length, imgSrcs: postImgs.map((im) => im.getAttribute("src")),
@@ -435,13 +449,12 @@ const first = await render(SAMPLE);
         const goBtn = findButton(nowCard, "Approve all");
         if (goBtn) await click(goBtn);
       } else {
-        const inputs = walk(nowCard).filter((n) => n.tagName === "INPUT");
-        const changeButtons = walk(nowCard).filter((n) => n.tagName === "BUTTON"
-          && n.textContent === "Change this shot");
-        if (inputs.length > 1 && changeButtons.length > 1) {
-          inputs[1].value = fill;
-          await click(changeButtons[1]);
+        const boxes = walk(nowCard).filter((n) => n.tagName === "INPUT");
+        for (const { n, text } of fill) {
+          if (boxes[n - 1]) boxes[n - 1].value = text;
         }
+        const sendBtn = findButton(nowCard, "Send my changes");
+        if (sendBtn) await click(sendBtn);
       }
       await new Promise((r) => setTimeout(r, 200));
       out.sent = svc.sent().slice();
@@ -455,7 +468,7 @@ const first = await render(SAMPLE);
     const stills = await stillsRound();
     const storySeen = stills.seen.filter((u) => storyRoutes.has(u));
     rule("storyboard answers stay locked until the stills decode",
-      stills.pre.btnCount > 0 && stills.pre.lockedAll,
+      stills.pre.btnCount === 2 && stills.pre.lockedAll,
       `${stills.pre.btnCount} button(s) pre-decode`);
     rule("storyboard lists one still per listed file",
       stills.imgCount === listed, `${stills.imgCount} still(s) for ${listed} file(s)`);
@@ -468,16 +481,38 @@ const first = await render(SAMPLE);
         && stills.seen.every((u) => knownBlobs.has(u)),
       storySeen.join(","));
     rule("storyboard answers unlock after the stills decode",
-      stills.btnCount > 0 && stills.unlockedAll,
+      stills.btnCount === 2 && stills.unlockedAll,
       `${stills.btnCount} button(s) post-decode`);
+    rule("storyboard offers the two card-wide buttons and no per-shot button",
+      STORY_BUTTONS.every((t) => !!findButton(findCard(stills.root, "storyboard"), t))
+        && buttonsIn(findCard(stills.root, "storyboard")).length === 2,
+      `${buttonsIn(findCard(stills.root, "storyboard")).length} button(s) on the card`);
 
     const go = await stillsRound(null);
     rule("storyboard “Approve all” sends GO",
       stills.imgCount === listed && go.sent[0]?.[4] === "GO", JSON.stringify(go.sent[0]));
 
-    const shot = await stillsRound("the door should be red");
-    rule("storyboard “Change this shot” sends shot N: text",
-      stills.imgCount === listed && shot.sent[0]?.[4] === "shot 2: the door should be red", JSON.stringify(shot.sent[0]));
+    // The headline case: notes on shots 2 and 5 leave in ONE answer, one line
+    // per shot, in shot order.
+    const many = await stillsRound([
+      { n: 5, text: "end on the empty stage" },
+      { n: 2, text: "tighter close-up" },
+    ]);
+    rule("notes on shots 2 and 5 produce one answer with two lines",
+      many.sent.length === 1
+        && many.sent[0]?.[4] === "shot 2: tighter close-up\nshot 5: end on the empty stage",
+      JSON.stringify(many.sent));
+
+    const one = await stillsRound([{ n: 2, text: "the door should be red" }]);
+    rule("a note on one shot still leaves as a single shot line",
+      one.sent.length === 1 && one.sent[0]?.[4] === "shot 2: the door should be red",
+      JSON.stringify(one.sent));
+
+    const none = await stillsRound([]);
+    rule("empty boxes send no answer", none.sent.length === 0, `${none.sent.length} call(s)`);
+    rule("empty boxes get the write-something-first sentence",
+      registry.status.textContent === "Write what should change under at least one shot first.",
+      registry.status.textContent);
   } finally {
     globalThis.document.createElement = origCreate;
     activeGate = null;
@@ -499,8 +534,8 @@ const first = await render(SAMPLE);
 {
   const { root } = await render(SAMPLE);
   const card = findCard(root, "script");
-  const input = walk(card).find((n) => n.tagName === "INPUT");
-  input.value = "make the opening shorter";
+  const box = walk(card).find((n) => n.tagName === "TEXTAREA");
+  box.value = "make the opening shorter";
   await click(findButton(card, "Change something"));
   const after = findCard(root, "script");
   rule("a change says the new version will appear",
