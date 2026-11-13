@@ -158,6 +158,17 @@ edc4334137d4d8482cfb2c3823924d98b640cfe0
 
 Local head = remote branch head = `edc4334137d4d8482cfb2c3823924d98b640cfe0`, 40 characters compared literally. The report commit is then pushed on top; its full sha and the fresh `git ls-remote` proof are in my handoff text, and the branch head after it is the report commit (the only difference from the change commit is this file).
 
+Branch head after this report was first pushed, proven the same way:
+
+```
+$ git rev-parse HEAD
+ccfa41fb4b5a21afd1ec5e805579a4db38e7ed89
+$ git ls-remote --heads origin refs/heads/pd/fl05-engine-reporting
+ccfa41fb4b5a21afd1ec5e805579a4db38e7ed89	refs/heads/pd/fl05-engine-reporting
+```
+
+The difference between `edc433413` and `ccfa41fb4` is this report file only. The true branch head at handoff is the final documentation commit; its full sha and `git ls-remote` output are in the handoff text.
+
 ## What I could not prove / notes
 
 - **The line numbers in the carried-over text (`5654-5655`, `5729`) do not exist in the current file.** They are `PASS6-LAST.md` coordinates; the branch's PD-018b/PD-042/PD-031 work moved the file. I implemented the text's intent at the equivalent normal-close DONE branch and proved it there.
