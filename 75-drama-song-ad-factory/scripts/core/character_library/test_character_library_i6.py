@@ -74,7 +74,9 @@ class RoundTrip(unittest.TestCase):
             out = subprocess.run([sys.executable, card, "--client-dir", self.client],
                                  capture_output=True, text=True, check=True).stdout
             self.assertIn("saved with us", out)
-            n = len(IC.QUESTIONS)          # the card a new run asks (S75-006)
+            #: U-GEN425: the card counts the screens a run ASKS one by one, so
+            #: the defaulted recap lines are not part of its "of N".
+            n = len([q for q in IC.QUESTIONS if not q.get("defaulted")])
             #: OFFER now carries the web address, so the screens after it are
             #: AUDIENCE, CHARACTER, AI MODELS. Read the slot off the card.
             models_at = [q["id"] for q in IC.QUESTIONS].index("models") + 1

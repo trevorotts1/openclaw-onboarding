@@ -71,7 +71,8 @@ class SavedCharacterQuestion(unittest.TestCase):
         self.assertEqual(len(empty), len(IC.QUESTIONS))
         first = IC.conversation([], empty)["message"]
         self.assertTrue(first.startswith(NO_SAVED + "\n\nQuestion 1 of %d - OFFER" % ASKED))
-        self.assertTrue(IC.render_card(empty).startswith(NO_SAVED + "\n\nQuestion 1 of %d" % len(IC.QUESTIONS)))
+        #: U-GEN425: the card counts the screens it ASKS, exactly like the chat.
+        self.assertTrue(IC.render_card(empty).startswith(NO_SAVED + "\n\nQuestion 1 of %d" % ASKED))
         self.assertNotIn("CHARACTER", first)
         self.assertNotIn(NO_SAVED, IC.conversation(["1"], empty)["message"])   # shown once
         self.assertEqual(IC._with_saved_character(""), IC.QUESTIONS)           # no folder: nothing

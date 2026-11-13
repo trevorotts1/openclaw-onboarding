@@ -47,7 +47,9 @@ def test_each_brief_question_is_typed_with_one_option_the_page_reads():
 
 
 def test_the_chat_card_asks_them_as_typed_blocks_not_menus():
-    total = len(IC.QUESTIONS)
+    #: the counter reads the screens asked one by one (U-GEN425): the card and
+    #: the live chat agree, and the defaulted recap lines are not questions.
+    total = len(IC.askable(IC.QUESTIONS))
     for i, qid in enumerate(TYPED_ON_CARD, 1):
         block = IC.render_step(i)
         lines = block.split("\n")
