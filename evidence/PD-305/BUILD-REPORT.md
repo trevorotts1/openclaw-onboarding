@@ -73,7 +73,7 @@ clause-1 board-text half, and its own A1 test.
 |---|---|
 | (1) text names the gate + board returns `{id: text}` | `cc_board.list_owner_message_ids` now returns `{message_id: text}` when the endpoint supplies row text, and still a `frozenset` of ids when it does not. Membership (`owner_msg_id in result`) is unchanged for every existing consumer. `approvals._default_board_text_resolver` reads the board through that same route; an ids-only answer is UNDETERMINED. `approvals` reuses the single oracle answer already fetched, so no second request per approval. |
 | (2) `working/checkpoints/approvals_used.json`, one id one gate | New `APPROVALS_USED_REL`, `check_approval_not_reused`, `_record_approval_used`, `_read_approvals_used`. `verify_with_gate_text` records `(owner_msg_id, gate)` on acceptance; the same id on a SECOND gate raises `AF-FORGED-APPROVAL`. The same gate twice is idempotent. An unreadable or unwritable ledger refuses the approval (fail-closed). |
-| (3) task id from `state.json` `board.task_id` first | New `resolve_cc_task_id`: `state.json` `board.task_id` first, `process_manifest.json` `cc_task_id` only when they agree (or when only the manifest has a value). Both present and different → `""` (UNDETERMINED) and logs `task_id.sources_disagree`. `_cc_board_oracle` now uses it. |
+| (3) task id from `state.json` `board.task_id` first | New `resolve_cc_task_id`: `state.json` `board.task_id` first, `process_manifest.json` `cc_task_id` only when they agree (or when only the manifest has a value). Both present and different → `""` (UNDETERMINED) and logs `task_id.sources_disagree`; the oracle then returns None rather than falling through to the manifest-only helper. `_cc_board_oracle` now uses it. |
 | (4) gateway accepts `is_owner: true` only | Removed the `role` branch from `_gateway_owner_oracle`. A gateway answer with a role and no `is_owner` flag is now UNDETERMINED, never an approval. |
 | (5) self-grant words match whole words | New `_self_grant_marker` uses the shared whole-token regex. `"via "` (with the trailing space) became `"via"`. `validate_schema` calls it. `SELF_GRANT_MARKERS` keeps every marker it had. |
 
@@ -139,6 +139,17 @@ Gateway fallback, `is_owner` only:
 is_owner true -> True
 role-only -> None
 is_owner false -> False
+```
+
+Task-id source (item 3), including the case where the two files contradict each other — the failure mode
+that would otherwise fall through to the manifest alone and silently pick one:
+
+```
+[approvals] task_id.sources_disagree
+task_id: ''
+oracle on disagreement: None
+agree task_id: same
+state-only: s
 ```
 
 Existing consumers unchanged (this is the regression control the clause-1 change could have broken):
