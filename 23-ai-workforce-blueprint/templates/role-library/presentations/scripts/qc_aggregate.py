@@ -130,6 +130,9 @@ FIX33_MODEL_KEYS = ("graded_by_model", "vision_model", "multimodal_model",
                     "ocr_engine", "vision_engine", "reviewer_vision_model")
 FIX33_REQUEST_KEYS = ("request_id", "route_request_id", "vision_request_id")
 
+# PD-300b: the report's AUTHOR model, PD-300's top-level field.
+FIX33_AUTHOR_MODEL_KEYS = ("author_model",)
+
 # Per-slide observation fields (mirrors build_deck._image_qc_report_defects
 # VIS_FIELDS / phase_verifiers._FIX33_OBSERVED_FIELDS so all three rubrics
 # agree on what counts as an observation).
@@ -190,14 +193,90 @@ def _fix33_authoring_stamp(report: dict) -> str:
     return ""
 
 
-def _fix33_vision_unit_reasons(run_dir: Path, report: dict) -> List[str]:
+def _pd300b_grader_vs_author_reasons(run_dir: Path, report: dict,
+                                     report_rel: Optional[str]) -> List[str]:
+    """PD-300b part (1) — the grader is compared with the AUTHOR the report
+    declares, and the report must carry an author stamp for its CURRENT bytes.
+
+    `author_model` is PD-300's top-level field, written by the dispatcher's
+    merge from the TRUSTED execution stamps (`_graded_author_model`). It is
+    null exactly when no active author stamp covers the graded files, so an
+    absent/null value here is the honest "cannot say who wrote this" and
+    FAILS — never an invitation to fall back to report prose.
+
+    Skipped entirely when stamps are rolled back (PRESENTATION_EXECUTION_STAMPS
+    =0): that rollback mints no rows, and requiring one would fail every run
+    under a documented rollback."""
+    reasons: List[str] = []
+    tag = FIX33_UNIT_AF_CODE
+    try:
+        from presentation_job import execution_stamp as _es
+    except Exception:  # noqa: BLE001 — unproven beats a crash
+        reasons.append(
+            f"{tag}: presentation_job.execution_stamp is not importable — the "
+            "report's author cannot be established (fail-closed).")
+        return reasons
+    if not _es.stamps_enabled():
+        return reasons
+
+    author_model = _fix33_first_str(report, FIX33_AUTHOR_MODEL_KEYS)
+    graded_model = _fix33_first_str(report, FIX33_MODEL_KEYS)
+    if not author_model:
+        reasons.append(
+            f"{tag}: image_qc_report.json declares no author_model — PD-300 "
+            "writes the graded files' author model from the trusted execution "
+            "stamps, so a merged report without it cannot prove the grader was "
+            "anyone other than the author (fail-closed).")
+    elif graded_model and author_model.strip().lower() == graded_model.strip().lower():
+        reasons.append(
+            f"{tag}: graded_by_model {graded_model!r} equals author_model "
+            f"{author_model!r} — the model that wrote the deck also graded it. "
+            "FIX 33: the grading route must be a DIFFERENT model from the author "
+            "(cross-graded, never self-graded).")
+
+    # The report's own ACTIVE author stamp, for the bytes it has RIGHT NOW.
+    if report_rel:
+        try:
+            report_path = Path(run_dir) / report_rel
+            current_sha = _es.sha256_file(report_path)
+            rows = _es._all_stamp_rows(Path(run_dir))
+            row = _es._active_author_row(rows, str(report_rel), current_sha)
+        except (OSError, ValueError):
+            row = None
+        if row is None:
+            reasons.append(
+                f"{tag}: no ACTIVE author stamp covers {report_rel} at its "
+                "current bytes — the report changed after it was stamped (or was "
+                "never stamped), so who wrote it is unproven. Re-run the QC phase "
+                "so a fresh author stamp covers the current revision (PRES-042).")
+    return reasons
+
+
+def _fix33_vision_unit_reasons(run_dir: Path, report: dict,
+                               report_rel: Optional[str] = None) -> List[str]:
     """FIX 33 vision-unit contract over an already-parsed image_qc_report.json.
     Returns the BLOCKING reason list ('' list == contract attested). Same
     contract as phase_verifiers._fix33_check_report's production branch:
       * graded_by_model present AND different from the authoring stamp;
       * a request_id present (the vision route's request id);
       * per-slide rows in LIST form (a dict can silently drop rows), one per
-        rendered PNG, each with a non-empty observed_text."""
+        rendered PNG, each with a non-empty observed_text.
+
+    PD-300b part (1) adds the three grader-vs-author teeth the unit names:
+      * the report's `author_model` (PD-300's field) must be PRESENT — a merged
+        report that cannot say who wrote the files it graded is unscorable;
+      * `graded_by_model` must DIFFER from `author_model` — the same comparison
+        the authoring stamp carried, now made against the fact PD-300 stamps
+        from the trusted execution stamps rather than against report prose;
+      * an ACTIVE author stamp row must cover the report's CURRENT bytes
+        (PRES-042). A report whose bytes changed after its author stamp is a
+        new revision nobody stamped: the grader identity is then unproven.
+      * and `graded_by_model` must be a VISION model, by PD-205b's lookup.
+
+    All four are skipped when execution stamps are rolled back
+    (PRESENTATION_EXECUTION_STAMPS=0): the documented rollback mints no stamp
+    rows, so requiring one would turn a deliberate rollback into a hard fail.
+    The vision-modality rule is not stamp-derived and always applies."""
     reasons: List[str] = []
     tag = FIX33_UNIT_AF_CODE
 
@@ -216,6 +295,26 @@ def _fix33_vision_unit_reasons(run_dir: Path, report: dict) -> List[str]:
             f"authoring stamp {authoring_stamp!r} — the author graded its own work. "
             "FIX 33: the vision route that graded the deck must be a DIFFERENT "
             "model from the authoring stamp (cross-graded, never self-graded).")
+
+    # --- PD-300b: grader vs the report's own author_model, plus the stamp row ---
+    reasons.extend(_pd300b_grader_vs_author_reasons(run_dir, report, report_rel))
+
+    # --- PD-300b: the grading model must be a VISION model (PD-205b's lookup) ---
+    if graded_model:
+        modality = ""
+        try:
+            from presentation_job.model_router import _registry_capability_meta
+            modality = str((_registry_capability_meta(graded_model) or {})
+                           .get("modality") or "").strip().lower()
+        except Exception:  # noqa: BLE001 — an unimportable table proves nothing
+            modality = ""
+        if modality != "vision":
+            reasons.append(
+                f"{tag}: graded_by_model {graded_model!r} is not a vision model "
+                f"(registry modality {modality or 'unknown'!r}) — FIX 33 requires "
+                "the image range to be graded by a model that can read pixels; a "
+                "text model's grade of a rendered deck is a claim with no route "
+                "behind it.")
 
     # --- request_id: the vision route's request id must appear ---
     request_id = _fix33_first_str(report, FIX33_REQUEST_KEYS)
@@ -583,7 +682,7 @@ def aggregate(run_dir: Path, explicit_manifest: Optional[str] = None) -> Dict[st
         # (AF-IMAGE-QC-UNIT) exactly as specified. Rollback flag restores the
         # pre-FIX-33 aggregate.
         if key == "image" and _fix33_wiring_enabled():
-            for unit_reason in _fix33_vision_unit_reasons(run_dir, obj):
+            for unit_reason in _fix33_vision_unit_reasons(run_dir, obj, rel):
                 entry["reasons"].append(unit_reason)
                 blocking_reasons.append(unit_reason)
 
