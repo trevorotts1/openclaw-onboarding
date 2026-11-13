@@ -80,6 +80,7 @@ def _hosted_answers(**overrides) -> dict:
         "want_email_sequences": "no",
         "want_motion_graphics": "yes",
         "client_notes": "",
+        "duration_min": "45 minutes",
     }
     answers.update(overrides)
     return answers
