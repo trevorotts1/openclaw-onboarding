@@ -237,3 +237,240 @@ RC=0
 ## 9. Scope
 
 Files changed by this repair, apart from the merge itself: none. The merge commit `cf8cf54f3` carries main's 66 changed files and nothing else — no hand edits, no conflict resolution, no tidying, no neighbouring code touched. This report file is the only addition.
+
+---
+
+# REPAIR 2 — the sibling collision the first repair could not see
+
+**Repair date:** November 13, 2026
+**Branch:** `pd/fl23-role-procedures-b--hold-d17` — PR 3319
+**Why this exists:** PR 3319 was ejected again after Repair 1. Repair 1 merged `origin/main` and merged cleanly, which is
+exactly why it came back: the batch engine ejects a member against its **in-batch siblings**, not only against `main`.
+
+Section 3 above concluded that the engine's conflict could not be reproduced and named a path that does not exist
+(`sops/qc-specialist-presentations.md`). That conclusion was correct about `main` and wrong about the cause. The real
+collision is with the sibling PR riding the same batch: **#3207, `pd/fl23-role-procedures-b`, PD-098** — which edits the
+same two auto-fail tables, one file with `-sops` in its name, which is the file the ledger was reaching for.
+
+## R2.1 Heads at the start of this repair
+
+| Item | Full 40-character SHA |
+|---|---|
+| Branch head before this repair (PRE) | `388ed0df3ffbe0354363cfd19bc146bebe69fd86` |
+| `origin/main` | `ebf5c769a2ad5b2582bf2256588095cbef20cfac` |
+| Sibling `pd/fl23-role-procedures-b` (#3207) | `55dbc08155a861ca00f69a426ed80608975af935` |
+
+```
+$ git ls-remote --heads origin pd/fl23-role-procedures-b--hold-d17
+388ed0df3ffbe0354363cfd19bc146bebe69fd86	refs/heads/pd/fl23-role-procedures-b--hold-d17
+$ git rev-parse origin/main
+ebf5c769a2ad5b2582bf2256588095cbef20cfac        # matches the expected main
+```
+
+## R2.2 The merge with main: nothing left to merge
+
+```
+$ git checkout -b repair origin/pd/fl23-role-procedures-b--hold-d17
+$ git merge origin/main
+Already up to date.
+rc=0
+$ git merge-base origin/main HEAD
+ebf5c769a2ad5b2582bf2256588095cbef20cfac        # == origin/main tip
+$ git merge-base --is-ancestor origin/main HEAD; echo $?
+0
+```
+
+`origin/main` is already an ancestor of PRE, because Repair 1 merged it. There is no file to arbitrate and no resolution
+to invent, and I did not invent one. The merge-base being exactly the main tip is the proof that main moved nothing for
+this branch to absorb.
+
+## R2.3 SIBLING TEST — BEFORE
+
+`git merge-tree --write-tree` touches no branch and creates no commit.
+
+```
+$ git merge-tree --write-tree HEAD origin/pd/fl23-role-procedures-b
+cbe73def69c798f513f3b64fa8d1ebdad287e970
+100644 a40eaa7bae02c4092a4b6dc0496306b491322ff9 1   .../presentations/qc-specialist-presentations.md
+100644 0f0c5360a04d9350d310f8ff776354954ca8722b 2   .../presentations/qc-specialist-presentations.md
+100644 53c3f5c8c496df81e1b64519e9e42e027d694c69 3   .../presentations/qc-specialist-presentations.md
+100644 8da262c3f408e31c0e171f4c5703492dc56ee825 1   .../presentations/sops/qc-specialist-presentations-sops.md
+100644 dfc4cda2ae8f2e98eec50e6fb7d22a7dca9ab024 2   .../presentations/sops/qc-specialist-presentations-sops.md
+100644 4c65c0c406a83087249288c136a6eb19f619c67a 3   .../presentations/sops/qc-specialist-presentations-sops.md
+CONFLICT (content): Merge conflict in .../qc-specialist-presentations.md
+CONFLICT (content): Merge conflict in .../sops/qc-specialist-presentations-sops.md
+rc=1
+```
+
+**Both files conflict. This is the ejection.** One sibling in the list, one collides.
+
+## R2.4 What each side actually changed, so the resolution is not a coin toss
+
+The merge base of the two branches is `1a476d2cbbc57fedbfa9dbcf73c91074bfd1a1dc`. Commits since that base:
+
+| Side | Commit | Intent |
+|---|---|---|
+| Ours | `af296dd88` PD-090 | one price-face rule instead of two that cancel: AF-PRICE-FACE's two overlapping exception clauses replaced by a single authorized-class list |
+| Sibling | `5e63875fd` PD-098 | every code not in `PIPELINE-MANIFEST.json` marked `(role-level; not in the registry)`; re-pitch block widened from 4-to-5 to 4-7 slides |
+| Sibling | `55dbc0815` PD-098 | mirror AF-C3 wording + restored converter-parity row |
+
+Registry check against `universal-sops/presentation-slide-craft/PIPELINE-MANIFEST.json` — all fourteen codes in the
+conflicted table (`AF-LOGO`, `AF-CAST`, `AF-FACE-MOOD`, `AF-GRAD`, `AF-TYPE`, `AF-TELEGRAPH`, `AF-PRICE-FACE`,
+`AF-VALIDATOR`, `AF-WALL`, `AF-OPACITY`, `AF-CALLOUT`, `AF-REPITCH`, `AF-MODEL`, `AF-SAME`) report **not-registered**, so
+PD-098's marker is factually required and PD-098's own test enforces it.
+
+## R2.5 Resolution per hunk — both intents kept, nothing deleted wholesale
+
+| File | Taken | Why |
+|---|---|---|
+| both files | sibling's table rows (every code carries the `(role-level; not in the registry)` marker; mirror re-pitch reads 4-7) | PD-098's intent; required by its test and factual against the manifest |
+| both files | **our** AF-PRICE-FACE wording, re-headed with the marker | PD-090's intent; PD-098 did not touch this wording beyond the marker |
+
+Resolved rows, verbatim heads:
+
+```
+| AF-PRICE-FACE (role-level; not in the registry) | Unauthorized dollar figures on a slide face outside the price-belt, value-stack, tally, re-pitch, value-gap, callback and component-card classes the rule authorizes | ...   (role file)
+| AF-PRICE-FACE (role-level; not in the registry) | Unauthorized price(s) or per-item dollar values on the slide face. ... auto-fails unless the slide is tagged in arc_allocation.json as ANCHOR, DROP1, ...   (mirror)
+```
+
+Neither side was dropped: the marker comes only from the sibling, the price-face clause comes only from PD-090.
+
+### The real collision was in PD-090's own acceptance checker
+
+PD-090's locator matched the bare table cell:
+
+```python
+if stripped.startswith("| AF-PRICE-FACE |"):
+```
+
+PD-098's marker lands between the code and that closing pipe, so all 8 PD-090 rows raised
+`AssertionError: no AF-PRICE-FACE row in ...` at the merged tree — 8 failed, 5 passed. That is the cross-PR break the
+batch engine was ejecting on.
+
+Fix, in `scripts/tests/test_pd090_price_face.py` only:
+
+```python
+if stripped.startswith("| AF-PRICE-FACE"):
+```
+
+Every assertion in the file is unchanged. Nothing was weakened, skipped, renamed or xfailed; the change makes the
+locator find the row that PD-098 now labels, and the row content is still asserted exactly as before.
+
+## R2.6 SIBLING TEST — AFTER
+
+```
+$ git merge-tree --write-tree HEAD origin/pd/fl23-role-procedures-b
+70a59df55dcc356564ef5e359c9a0b29eec2307e
+rc=0
+```
+
+Clean, no conflict block, no message output. Nothing was imported from the sibling that was already clean, because
+nothing in this list was clean — the one sibling conflicted and was imported.
+
+## R2.7 What was imported and why
+
+Sibling `pd/fl23-role-procedures-b` @ `55dbc08155a861ca00f69a426ed80608975af935` was merged in as a real two-parent
+commit:
+
+```
+$ git rev-list --parents -n1 HEAD
+8486289e70f88e7022eb63b0ca7348eec4a895fe 388ed0df3ffbe0354363cfd19bc146bebe69fd86 55dbc08155a861ca00f69a426ed80608975af935
+```
+
+Parents: PRE, then the sibling head. Six sibling commits came with it (PD-087, PD-088-series PD-098 work, PD-092). This
+is the minimum needed to make the pair mergeable — no unrelated branch was pulled in, and the one sibling that was clean
+was left alone.
+
+## R2.8 Acceptance rows at the repaired head
+
+Tree `8486289e70f88e7022eb63b0ca7348eec4a895fe`, runner `python3 -I -m pytest`.
+
+```
+$ python3 -I -m pytest test_pd090_price_face.py -v
+test_both_sections_are_present_and_parse PASSED
+test_mirror_authorizes_every_class_in_the_one_clause PASSED
+test_mirror_reconciles_every_authorized_figure_to_a_declared_source PASSED
+test_mirror_drops_both_retired_exceptions PASSED
+test_mirror_drops_always_fail_a_and_b_and_keeps_c PASSED
+test_role_summary_does_not_ban_the_classes_the_rule_authorizes PASSED
+test_role_summary_names_the_same_authorized_classes PASSED
+test_no_authorized_class_is_banned_by_either_section PASSED
+8 passed
+rc=0
+```
+
+Both PRs' checkers together, proving the pair is green in one tree:
+
+```
+$ python3 -I -m pytest test_pd090_price_face.py test_pd098_qc_codes.py -q
+.............  [100%]
+13 passed in 0.09s
+rc=0
+```
+
+**Negative control on the repaired locator** — the checker still fails when the rule is wrong. One word removed from the
+role row (`callback and component-card` → `component-card`), then restored:
+
+```
+$ (mutate role row) python3 -I -m pytest test_pd090_price_face.py -q
+FAILED test_pd090_price_face.py::test_role_summary_names_the_same_authorized_classes
+1 failed, 7 passed
+$ (restore) python3 -I -m pytest test_pd090_price_face.py -q
+8 passed
+```
+
+No failure to attribute to a base commit: every row is green at the repaired head, and the only red state observed was
+the sibling collision itself, which is this repair's subject.
+
+## R2.9 Remote head and ancestry arithmetic
+
+Push was fast-forward, no rebase, no force:
+
+```
+$ git push origin HEAD:refs/heads/pd/fl23-role-procedures-b--hold-d17
+To https://github.com/trevorotts1/openclaw-onboarding.git
+   388ed0df3..8486289e7  HEAD -> pd/fl23-role-procedures-b--hold-d17
+rc=0
+
+$ git rev-parse HEAD
+8486289e70f88e7022eb63b0ca7348eec4a895fe
+$ git ls-remote --heads origin pd/fl23-role-procedures-b--hold-d17
+8486289e70f88e7022eb63b0ca7348eec4a895fe	refs/heads/pd/fl23-role-procedures-b--hold-d17
+
+$ git merge-base --is-ancestor 388ed0df3ffbe0354363cfd19bc146bebe69fd86 HEAD; echo $?
+0
+```
+
+Local head equals remote head, 40 characters both sides. PRE is an ancestor of the new head — nothing was rewritten.
+
+## R2.10 What I could not prove
+
+1. **The engine's own batch logic was not run.** `git merge-tree --write-tree` proves the pair no longer conflicts at the
+   text level. If the engine ejects on a different axis — a manifest lock, a version-stamp rule, a checksum — this
+   repair does not cover it, and I have no way to run that detector from here.
+2. **The rest of the sibling's batch was not visible.** The task named exactly one sibling (#3207). If other members
+   ride the same batch and the list was incomplete, those pairs are untested.
+3. **The full `scripts/tests/` directory was not run end to end.** It exceeded a 600-second budget and was stopped. I ran
+   the two files this collision touches (13 tests). Roughly 80 other test files in that directory were not exercised.
+4. **PD-098 has no acceptance file of its own beyond `test_pd098_qc_codes.py`.** I ran that file because the collision
+   was with it. I did not audit the rest of PD-098's surface, which belongs to #3207 and not to this unit.
+5. **`AF-REPITCH` 4-to-5 → 4-7 was taken from the sibling unverified against `SOP-PITCH-03-RE-PITCH.md`.** That is
+   PD-098's claim to defend, not PD-090's; I kept it rather than silently reverting another PR's intent.
+6. **The report commit itself advances the head.** The remote-head proof above is at `8486289e7`. Every commit after it is
+   documentation only — this file and nothing else — so the code and test tree the proofs describe is still exactly
+   `8486289e7`'s tree. The final remote head is re-read with `git ls-remote` after the last push and reported back with
+   this repair; `git merge-base --is-ancestor 8486289e7 <final head>` is the check that the proof still stands.
+
+## R2.11 Scope of this repair
+
+| File | Change |
+|---|---|
+| `.../presentations/qc-specialist-presentations.md` | conflict resolved, both intents kept |
+| `.../presentations/sops/qc-specialist-presentations-sops.md` | conflict resolved, both intents kept |
+| `.../presentations/scripts/tests/test_pd090_price_face.py` | locator matches the PD-098 marker; zero assertions changed |
+| `evidence/PD-090/REPAIR-REPORT.md` | this section |
+
+Everything else in the merge commit came from the sibling or from main. No rebase, no force-push, nothing pushed to
+`main`, no test weakened, skipped, renamed or xfailed, no conflict side dropped wholesale, `~/.openclaw` and every client
+box untouched.
+
