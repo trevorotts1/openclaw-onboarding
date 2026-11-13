@@ -78,6 +78,32 @@ _OCROOT=""
 [ -d /data/.openclaw ] && _OCROOT="/data/.openclaw"
 [ -z "$_OCROOT" ] && [ -d "$HOME/.openclaw" ] && _OCROOT="$HOME/.openclaw"
 
+# RRX-042: every way this installer can finish is written to one small file,
+# so "the roll was green" can never again be the only record of a box that has
+# no job collecting answers. Best effort: it never changes the exit code.
+_wire_status() {   # _wire_status <true|false|unknown> <reason>
+  [ -n "${_OCROOT:-}" ] || return 0
+  command -v python3 >/dev/null 2>&1 || return 0
+  mkdir -p "$_OCROOT/state/rr-receiver" 2>/dev/null || return 0
+  python3 -c 'import json,os,sys,tempfile,time
+path, reg, reason, root = sys.argv[1:5]
+section = None
+for cand in (os.path.join(root, "workspace", "AGENTS.md"),):
+    try:
+        with open(cand, encoding="utf-8") as fh:
+            section = any(line.startswith("## Escalate to Rescue Rangers") for line in fh)
+    except OSError:
+        section = None
+doc = {"schema": "rrx-042/wire-status/1", "at": int(time.time()),
+       "poll_registered": {"true": True, "false": False}.get(reg), "reason": reason,
+       "escalation_section": section}
+fd, tmp = tempfile.mkstemp(prefix=".new-", dir=os.path.dirname(path))
+with os.fdopen(fd, "w", encoding="utf-8") as fh:
+    json.dump(doc, fh, sort_keys=True); fh.write("\n")
+os.chmod(tmp, 0o600); os.replace(tmp, path)
+' "$_OCROOT/state/rr-receiver/wire-status.json" "$1" "$2" "$_OCROOT" 2>/dev/null || true
+}
+
 # Locate the shared helper beside the skills tree (installed copy) or beside
 # this script in the repo tree (repo-side runs / self-tests). Sourced, never
 # executed; it defines only functions and exports nothing.
@@ -87,7 +113,7 @@ for _cand in "$_OCROOT/skills/shared-utils/rescue-env.sh" \
              "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/../shared-utils/rescue-env.sh"; do
   [ -n "$_cand" ] && [ -f "$_cand" ] && { _SHARED_HELPERS="$_cand"; break; }
 done
-[ -n "$_SHARED_HELPERS" ] || { echo "65-rescue-receiver: shared-utils/rescue-env.sh not found (required helper missing)" >&2; exit 0; }
+[ -n "$_SHARED_HELPERS" ] || { echo "65-rescue-receiver: shared-utils/rescue-env.sh not found (required helper missing)" >&2; _wire_status false shared_helper_missing; exit 0; }
 # shellcheck disable=SC1090
 . "$_SHARED_HELPERS"
 
@@ -118,6 +144,7 @@ fi
 
 if [ ! -f "$_SECRETS" ] || [ ! -f "$_POLL" ]; then
   echo "65-rescue-receiver: secrets file or rescue-poll.sh missing; nothing to wire" >&2
+  _wire_status false secrets_or_poll_missing
   exit 0
 fi
 
@@ -134,6 +161,7 @@ RR_BOX_SLUG=$(rescue_env_get "$_SECRETS" RR_BOX_SLUG); _rc_slug=$?
 case "$_rc_url$_rc_tok$_rc_slug" in
   *2*)
     echo "65-rescue-receiver: secrets store unreadable ($_SECRETS) — poll cron NOT registered" >&2
+    _wire_status false secrets_unreadable
     exit 0
     ;;
 esac
@@ -145,6 +173,7 @@ if [ "$_rc_url" = 3 ] || [ "$_rc_tok" = 3 ] || [ "$_rc_slug" = 3 ] \
   # stderr from the parser (line numbers named, values never printed).
   if [ "$_rc_url" = 3 ] || [ "$_rc_tok" = 3 ] || [ "$_rc_slug" = 3 ]; then
     echo "65-rescue-receiver: malformed enrollment config in $_SECRETS (see rescue-env lines above) — poll cron NOT registered" >&2
+    _wire_status false enrollment_malformed
     exit 1
   fi
 fi
@@ -351,6 +380,7 @@ if [ -z "${RR_RECEIVER_URL:-}" ] || [ -z "${RR_BOX_TOKEN:-}" ] || [ -z "${RR_BOX
     register_intake_auth_cron
     register_escalate_flush_cron
   fi
+  _wire_status false not_enrolled
   exit 0
 fi
 unset RR_RECEIVER_URL RR_BOX_TOKEN RR_BOX_SLUG
@@ -369,6 +399,7 @@ done
 
 if [ -z "$_OC_BIN" ]; then
   echo "65-rescue-receiver: openclaw CLI not found" >&2
+  _wire_status false cli_not_found
   exit 1
 fi
 
@@ -492,6 +523,11 @@ if [ -n "$_ENGINE" ]; then
   # unexpected code is a failure, never a silent success.
   [ "$_iv_ok" = "1" ] || exit 1
   case "$_recon_rc" in
+    0) _wire_status true "$RRR_RECONCILE_STATE" ;;
+    3) _wire_status unknown "$RRR_RECONCILE_STATE" ;;
+    *) _wire_status false "${RRR_RECONCILE_STATE:-reconcile_rc_$_recon_rc}" ;;
+  esac
+  case "$_recon_rc" in
     0|6|8) exit 0 ;;
     *)     exit 1 ;;
   esac
@@ -504,6 +540,7 @@ fi
 echo "65-rescue-receiver: readiness=UNKNOWN reason=engine_not_installed detail=shared-utils/rr-readiness.sh not found beside rescue-env.sh; registration falls back to the presence-only path (no readback)" >&2
 if _cron_count "$_NAME"; then
   echo "65-rescue-receiver: cron $_NAME already registered (presence only; NOT read back)"
+  _wire_status unknown presence_only_not_read_back
   register_intake_auth_cron
   register_escalate_flush_cron
   exit 0
@@ -517,5 +554,6 @@ else
   exit 1
 fi
 echo "65-rescue-receiver: registered cron $_NAME (*/2) -> sh $_POLL (presence path; NOT read back)"
+_wire_status unknown presence_only_not_read_back
 register_intake_auth_cron
 register_escalate_flush_cron

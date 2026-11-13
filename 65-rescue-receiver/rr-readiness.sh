@@ -237,6 +237,34 @@ rr_enrollment_flag_lines() {
 }
 
 # ---------------------------------------------------------------------------
+# RRX-042: the installer's own record of how it finished (wire-status.json,
+# written by wire.sh). Reported under "flags.wire": null when the file does not
+# exist, {"reason": "UNREADABLE"} when it cannot be parsed.
+# ---------------------------------------------------------------------------
+rrw_collect() {
+  RRW_JSON="null"; RRW_POLL_FALSE=0
+  _rrw_f="$RR_ROOT/state/rr-receiver/wire-status.json"
+  [ -e "$_rrw_f" ] || return 0
+  _rrw_out="$(python3 -c 'import json, sys
+try:
+    with open(sys.argv[1], encoding="utf-8") as fh:
+        doc = json.load(fh)
+    if not isinstance(doc, dict):
+        raise ValueError("not an object")
+    print(json.dumps(doc, sort_keys=True))
+    print("0" if doc.get("poll_registered") is not False else "1")
+except Exception:
+    print(json.dumps({"reason": "UNREADABLE"}))
+    print("0")' "$_rrw_f" 2>/dev/null)"
+  _rrw_json="$(printf '%s\n' "$_rrw_out" | sed -n '1p')"
+  _rrw_poll="$(printf '%s\n' "$_rrw_out" | sed -n '2p')"
+  [ -n "$_rrw_json" ] || _rrw_json='{"reason":"UNREADABLE"}'
+  RRW_JSON="$_rrw_json"
+  case "$_rrw_poll" in 1) RRW_POLL_FALSE=1 ;; *) RRW_POLL_FALSE=0 ;; esac
+  return 0
+}
+
+# ---------------------------------------------------------------------------
 # rrr_report <exit-mapped> — resolve inputs, run the state machine, print.
 # ---------------------------------------------------------------------------
 rr_report() {
@@ -246,6 +274,7 @@ rr_report() {
   fi
   rrr_evaluate
   rrf_collect
+  rrw_collect
   if [ "$MODE" = "json" ]; then
     # one JSON object, flags spliced in before the closing brace (the engine owns the rest)
     _rr_json="$(rrr_report_json)"
@@ -256,8 +285,8 @@ try:
 except FileNotFoundError: print("null")
 except Exception: print(json.dumps({"class": "UNREADABLE", "since": ""}))' "$RR_ROOT/state/rr-intake-auth.flag" 2>/dev/null)"
     [ -n "$_rr_intake" ] || _rr_intake='{"class":"UNREADABLE","since":""}'
-    _rr_flags="$(printf '{"claim_unauthorized":%s,"slug_mismatch":%s,"intake_auth":%s}' \
-      "$([ -n "$RRF_UNAUTH" ] && echo true || echo false)" "$([ -n "$RRF_MISMATCH" ] && echo true || echo false)" "$_rr_intake")"
+    _rr_flags="$(printf '{"claim_unauthorized":%s,"slug_mismatch":%s,"intake_auth":%s,"wire":%s}' \
+      "$([ -n "$RRF_UNAUTH" ] && echo true || echo false)" "$([ -n "$RRF_MISMATCH" ] && echo true || echo false)" "$_rr_intake" "$RRW_JSON")"
     printf '%s,"flags":%s}\n' "${_rr_json%\}}" "$_rr_flags"
   else
     rrr_report_line
@@ -267,7 +296,7 @@ except Exception: print(json.dumps({"class": "UNREADABLE", "since": ""}))' "$RR_
   # RRX-023: with --strict, any recorded problem is a non-zero exit, so a caller
   # that reads only the exit code can never see "ready" on a box the receiver is refusing.
   if [ "${STRICT:-0}" = "1" ]; then
-    if [ -n "$RRF_UNAUTH" ] || [ -n "$RRF_MISMATCH" ] || [ -r "$RR_ROOT/state/rr-intake-auth.flag" ]; then
+    if [ -n "$RRF_UNAUTH" ] || [ -n "$RRF_MISMATCH" ] || [ -r "$RR_ROOT/state/rr-intake-auth.flag" ] || [ "${RRW_POLL_FALSE:-0}" = "1" ]; then
       return 4
     fi
   fi
