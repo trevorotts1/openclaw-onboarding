@@ -1132,6 +1132,64 @@ deps_check || {
 }
 
 # ===========================================================================
+# READINESS (PD-043 / PD-077 / PD-318) — say BEFORE any spend what this box
+# cannot do. Three presence-only lines, computed by $PRESENTATION_PY:
+#   TELEPROMPTER-PUBLISH  both Cloudflare names the delivery procedure needs
+#   SPEECH-KEY            any key speech_build_harness.py's resolve_api_key accepts
+#   AUDIO-KEY             FISH_AUDIO_API_KEY (synthesize_full_speech.py:516)
+# Presence of a NAME in the process environment only. No value is ever read
+# out, printed, or written; no secrets file is opened. Non-blocking: a missing
+# key degrades a later step, it does not stop the door.
+# ===========================================================================
+readiness_lines() {
+    if ! have_py; then
+        echo "  readiness lines not evaluated: no working Python interpreter ($PRESENTATION_PY)" >&2
+        return 0
+    fi
+    RUN_DIR="$RUN_DIR" "$PRESENTATION_PY" - <<'PY'
+import json, os, sys
+from pathlib import Path
+
+checks = (
+    ("TELEPROMPTER-PUBLISH",
+     ("CLOUDFLARE_ZHW_APPS_API_TOKEN", "CLOUDFLARE_ZHW_ACCOUNT_ID"), "all",
+     "this box cannot publish the teleprompter link; the teleprompter will not "
+     "be hosted and the client will get the teleprompter file with no web link"),
+    ("SPEECH-KEY",
+     ("SPEECH_LLM_API_KEY", "OLLAMA_API_KEY", "OPENROUTER_API_KEY", "OPENAI_API_KEY"),
+     "any",
+     "no key the speech builder accepts is set on this box; the speech step will "
+     "stop after the deck is rendered"),
+    ("AUDIO-KEY", ("FISH_AUDIO_API_KEY",), "all",
+     "the audio key is not set on this box; the audio step will stop after the "
+     "deck is rendered"),
+)
+
+log = Path(os.environ["RUN_DIR"]) / "working" / "checkpoints" / "gate_log.jsonl"
+try:
+    log.parent.mkdir(parents=True, exist_ok=True)
+except OSError:
+    pass
+
+for tag, names, mode, text in checks:
+    present = [n for n in names if os.environ.get(n, "").strip()]
+    missing = [n for n in names if n not in present]
+    ok = bool(present) if mode == "any" else not missing
+    if ok:
+        continue
+    print("WARN [%s]: %s" % (tag, text), file=sys.stderr)
+    row = {"gate": "READINESS", "warning": tag, "result": "unset", "missing": missing}
+    try:
+        with log.open("a") as fh:
+            fh.write(json.dumps(row, sort_keys=True) + "\n")
+    except OSError:
+        print("  readiness row could not be appended to %s" % log, file=sys.stderr)
+PY
+    return 0
+}
+readiness_lines
+
+# ===========================================================================
 # GATE 1b — SKILL-48 GHL MODULE CO-LOCATION (FIX-PRES-03 / FIX-23(d))
 # ghl_media.py re-exports Skill-48 helpers; delivery_gate.py requires the
 # resulting pptx_ghl_media_id. If the module is absent, a deck renders on PAID
