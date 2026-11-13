@@ -415,13 +415,20 @@ class Ledger:
         dedup window and the per-day alert cap, so the digest window is never
         shorter than digest_keep_hours. Timestamps are compared on their first
         19 characters (YYYY-MM-DDTHH:MM:SS), which ignores a Z / +00:00 suffix.
+        The newest OPEN P1 per dedup_key is always kept (escalation retry).
         Returns (events_deleted, digests_deleted)."""
         now = datetime.now(timezone.utc)
         ev_cut = (now - timedelta(hours=float(keep_hours))).strftime("%Y-%m-%dT%H:%M:%S")
         dg_hours = max(float(keep_hours), float(digest_keep_hours or 0))
         dg_cut = (now - timedelta(hours=dg_hours)).strftime("%Y-%m-%dT%H:%M:%S")
+        # An OPEN P1 is the escalate sweep's retry queue (a failed admission
+        # leaves it open on purpose). Keep the newest open P1 per dedup_key at
+        # any age, so an unresolved P1 is never lost; older duplicates of the
+        # same problem still go, so the table stays bounded.
         ev = self.conn.execute(
-            "DELETE FROM events WHERE substr(tick_ts,1,19) < ?", (ev_cut,)).rowcount
+            "DELETE FROM events WHERE substr(tick_ts,1,19) < ? AND event_id NOT IN ("
+            "  SELECT MAX(event_id) FROM events WHERE severity='P1' AND ack_state='open' "
+            "  GROUP BY dedup_key)", (ev_cut,)).rowcount
         dg = self.conn.execute(
             "DELETE FROM digests WHERE substr(sent_ts,1,19) < ?", (dg_cut,)).rowcount
         self.conn.commit()
@@ -433,7 +440,10 @@ class Ledger:
         pages = self.conn.execute("PRAGMA page_count").fetchone()[0] or 0
         free = self.conn.execute("PRAGMA freelist_count").fetchone()[0] or 0
         if pages and free / pages >= min_free_ratio:
-            self.conn.execute("VACUUM")
+            try:
+                self.conn.execute("VACUUM")
+            except sqlite3.OperationalError:
+                return False  # busy (a concurrent tick); the next prune retries
             try:
                 self.conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
             except sqlite3.Error:
@@ -827,6 +837,20 @@ def self_test():
         left = sorted(e["key_path"] for e in led.events_since("2000-01-01T00:00:00+00:00"))
         assert left == ["c", "d"], left
         assert led.prune_history(24, 168) == (1, 0), "digest window must never shrink below digest_keep_hours"
+        # an OPEN P1 older than the window is the escalation retry queue: the
+        # newest one per dedup_key survives, an older duplicate does not, and an
+        # escalated (no longer open) old P1 is pruned normally.
+        led.conn.execute("DELETE FROM events"); led.conn.commit()
+        older = (datetime.now(timezone.utc) - timedelta(hours=200)).replace(microsecond=0).isoformat()
+        led.record_event("S9", "P1", key_path="p1", tick_ts=older, dedup_key="S9|dead")
+        keep_id = led.record_event("S9", "P1", key_path="p1", tick_ts=old_ts, dedup_key="S9|dead")
+        esc_id = led.record_event("S3", "P1", key_path="p1b", tick_ts=old_ts, dedup_key="S3|x")
+        led.ack_event(esc_id, "escalated")
+        assert led.prune_history(72, 24) == (2, 0)
+        ids = [e["event_id"] for e in led.events_since("2000-01-01T00:00:00+00:00")]
+        assert ids == [keep_id], ids
+        assert [e["event_id"] for e in led.unacked_p1_older_than(30)] == [keep_id]
+        print("  open-P1 retention case: PASS (newest open P1 per key survives the window)")
         assert led.recent_digest("k", 6) is not None
         print("  history prune case: PASS (72h window, digest floor honored)")
 

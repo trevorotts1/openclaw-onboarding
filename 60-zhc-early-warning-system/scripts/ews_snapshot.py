@@ -133,7 +133,7 @@ def cmd_prune(args) -> int:
     sd = Path(args.state_dir) if args.state_dir else None
     with Ledger(sd) as led:
         pruned = led.prune_snapshots(keep_count, keep_hours=keep_hours)
-        kept_paths = {str(r["path"]) for r in led.list_snapshots()}
+        kept_paths = {os.path.realpath(str(r["path"])) for r in led.list_snapshots()}
         ev, dg = led.prune_history(keep_hours, digest_floor)
     removed = []
     for p in pruned:
@@ -149,7 +149,7 @@ def cmd_prune(args) -> int:
     cutoff = time.time() - keep_hours * 3600
     try:
         for f in Path(snap_dir).iterdir():
-            if f.is_file() and not f.is_symlink() and str(f) not in kept_paths \
+            if f.is_file() and not f.is_symlink() and os.path.realpath(str(f)) not in kept_paths \
                     and f.stat().st_mtime < cutoff:
                 try:
                     f.unlink()
@@ -269,6 +269,18 @@ def self_test():
         assert cmd_prune(ns) == EX_OK
         assert not old_f.exists() and new_f.exists(), "72h window must drop old, keep new"
         assert not orphan.exists() and fresh_orphan.exists(), "orphan sweep must be age-gated"
+        # a KEPT row whose path is spelled differently (relative state dir, a
+        # symlinked parent) must never be swept as an orphan, however old.
+        with Ledger() as led:
+            led.conn.execute("DELETE FROM snapshots"); led.conn.commit()
+            kept = snapshots_dir() / "openclaw.json.kept"
+            kept.write_text("k", encoding="utf-8")
+            os.utime(kept, (old_epoch, old_epoch))
+            alias = str(snapshots_dir()) + "/./openclaw.json.kept"
+            led.record_snapshot(alias, sha256="k")
+        ns = argparse.Namespace(keep_count=3, keep_days=None, keep_hours=72.0, state_dir=None)
+        assert cmd_prune(ns) == EX_OK
+        assert kept.exists(), "a file a kept row points to (any spelling) must survive"
         print("  72h prune case: PASS (window, file unlink, age-gated orphan sweep)")
 
         os.environ.pop("EWS_STATE_DIR", None)
