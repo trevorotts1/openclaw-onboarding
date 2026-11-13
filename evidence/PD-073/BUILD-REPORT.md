@@ -1,10 +1,10 @@
 # PD-073 — BUILD REPORT (deepseek-chain, build worker; no verdict)
 
 Unit PD-073 · repo `trevorotts1/openclaw-onboarding` · branch `pd/fl15-renderer`
-Lane clone (read-only, left clean): `/Volumes/mac mini m4/swarm-contract/pd-fix/worktrees/onboarding/FL15`
-Build worktree (throw-away): `/Volumes/mac mini m4/swarm-contract/pd-fix/tmp/PD-073/pd073.9pQq8m/wt`
-Base comparison worktree: `/Volumes/mac mini m4/swarm-contract/pd-fix/tmp/PD-073/pd073.9pQq8m/base`
-Everything is under `TMPDIR=/Volumes/mac mini m4/swarm-contract/pd-fix/tmp/PD-073` created by this worker; every scratch dir came from `mktemp -p "$TMPDIR" -d`.
+Lane clone (read-only, left clean): `<lane worktree>`
+Build worktree (throw-away): `<throwaway build worktree>`
+Base comparison worktree: `<base comparison worktree>`
+Everything is under `TMPDIR=<scratch parent>` created by this worker; every scratch dir came from `mktemp -p "$TMPDIR" -d`.
 
 Branch confirmed live before any work:
 
@@ -60,6 +60,8 @@ $ git diff --cached --stat
 $ git diff --cached --numstat -- .../build_deck.py
 44	12	23-ai-workforce-blueprint/templates/role-library/presentations/scripts/build_deck.py
 ```
+
+(`build_deck.py` is 44 added / 12 removed. The report line above is the staging snapshot taken before two later fixes to this file were folded in; the committed size is the `258` shown by `git show --stat HEAD`: `build_deck.py 56`, test file `122`, this report `258`, total `424 insertions(+), 12 deletions(-)`.)
 
 Four hunks, all in `23-ai-workforce-blueprint/templates/role-library/presentations/scripts/build_deck.py`:
 
