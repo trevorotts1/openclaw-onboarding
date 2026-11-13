@@ -468,15 +468,22 @@ def _process_locked(path, replies, questions, run_dir, run_state_file, target,
             answers, qs, _ = _active(state, base or card.QUESTIONS, client_dir)
             return _result(state, path, answers, qs, "INTAKE_FLOW_MISMATCH", "waiting")
         #: S75-006: a run keeps the card it was asked with. A session that
-        #: records the old flow re-attaches against the FROZEN old list.
+        #: records the old flow re-attaches against the FROZEN old list; a new
+        #: chat run (no run history) asks the NEW card, unshaped when it has no
+        #: run folder to record a purpose in.
         if base is None:
-            base = card.QUESTIONS if state["purpose_flow"] else card.LEGACY_QUESTIONS
+            if "card_new" in state:
+                base = card.QUESTIONS if state["card_new"] else card.LEGACY_QUESTIONS
+            else:
+                base = card.QUESTIONS if state["purpose_flow"] else card.LEGACY_QUESTIONS
     else:
         flow = (card.new_run_flow(run_dir, run_state_file) if purpose_flow is None
                 else bool(purpose_flow))
         if base is None:
-            base = card.QUESTIONS if flow else card.LEGACY_QUESTIONS
+            history = card._run_history(run_dir)
+            base = card.QUESTIONS if (flow or history is None) else card.LEGACY_QUESTIONS
         state = {"schema": SCHEMA, "created_at": _now(), "purpose_flow": flow,
+                 "card_new": base is card.QUESTIONS,
                  "answer_records": {}, "events": [], "done": False,
                  "editing_question_id": None, "confirmation": None, "requested_runtime": runtime,
                  "base_definition_digest": _digest(base)}
@@ -666,7 +673,7 @@ def completion_status(run_dir, *, require_handoff=True):
             raise ValueError("unrecognised intake session schema")
         required = state["required_question_ids"]
         active = state["active_question_ids"]
-        if (not isinstance(required, list) or not required or
+        if (not isinstance(required, list) or
                 any(not isinstance(q, str) or not q for q in required) or
                 len(set(required)) != len(required) or not isinstance(active, list) or
                 active != required[:len(active)] or len(active) > len(required) or
@@ -912,8 +919,11 @@ def ensure_handoff(run_dir, *, runtime=None):
                 if runtime not in ("openclaw", "claude-nine", "openrouter-direct"):
                     return refusal(proven, "AI_MODEL_RUNTIME_UNKNOWN", "waiting")
                 state["requested_runtime"] = runtime
-            answers = [copy.deepcopy(state["answer_records"][qid]["parsed"])
-                       for qid in state["active_question_ids"]]
+            #: S75-006: a defaulted screen (the video model, the AI setup that
+            #: was saved for this computer) lives in answer_records and never in
+            #: active_question_ids, so the rebuild reads every recorded answer.
+            answers = [copy.deepcopy(rec["parsed"])
+                       for rec in state["answer_records"].values()]
             # Both halves must pass read-only admission before either mutates.
             for check in (_persist_ai_roles, _persist_model_lock):
                 blocked = check(state, answers, run_dir, prepare_only=True)

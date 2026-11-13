@@ -59,11 +59,17 @@ def test_intro_once_then_question_one_on_new_interactive_run():
     assert json.load(open(st))["intro_shown"] is True
 
 
+def _new_card_replies():
+    """One reply per question the NEW card asks one by one (S75-006)."""
+    return [r for q, r in zip(IC.QUESTIONS, IC.example_replies(IC.QUESTIONS))
+            if not q.get("defaulted")]
+
+
 def test_not_shown_on_resume_or_recap():
     st = _state()
     json.dump({"intro_shown": True, "keep": 1}, open(st, "w"))
     assert card("--run-state-file", st).startswith("Question 1 of ")   # resume
-    for reply in IC.example_replies():
+    for reply in _new_card_replies():
         message = card("--run-state-file", st, "--reply", reply)
     assert "Here is what you picked" in message
     assert json.load(open(st))["keep"] == 1                            # state kept

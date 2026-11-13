@@ -267,10 +267,15 @@ class IntakeSessionTest(unittest.TestCase):
         self.assertEqual(self.read()["answer_records"], {})
 
     def model_turns(self, n=2):
+        """Answer the VIDEO MODEL screen the way the new card asks it: it is a
+        recap line (S75-006), so open line 1, then answer the screen."""
         qs = [next(q for q in card.QUESTIONS if q["id"] == "model")]
         session.process([], qs, run_dir=self.run, purpose_flow=False)
+        st = session.process(["1"], qs, run_dir=self.run, purpose_flow=False)
+        self.assertEqual(st["question_id"], "model", st)
         st = session.process([str(n)], qs, run_dir=self.run, purpose_flow=False)
         self.assertFalse(st["done"])
+        self.assertEqual(st["question_id"], "recap", st)
         return qs, st
 
     def test_confirmed_nondefault_model_persists_and_dispatch_reads_that_choice(self):
@@ -397,6 +402,9 @@ class IntakeSessionTest(unittest.TestCase):
         session.process([], qs, run_dir=self.run, purpose_flow=False, runtime=runtime)
         st = session.process(["opus-chain builds, haiku-chain checks"], qs,
                              run_dir=self.run, purpose_flow=False, source_ref="message:synthetic-explicit-pair")
+        self.assertEqual(st["question_id"], "recap", st)
+        # the video model is a recap line (S75-006): open line 2, then answer it
+        st = session.process(["2"], qs, run_dir=self.run, purpose_flow=False)
         self.assertEqual(st["question_id"], "model", st)
         st = session.process(["2"], qs, run_dir=self.run, purpose_flow=False)
         self.assertEqual(st["question_id"], "recap", st)
@@ -488,9 +496,10 @@ class IntakeSessionTest(unittest.TestCase):
         from batch_mode.batch import STAGES
         import sqlite3
         qs = [next(q for q in card.QUESTIONS if q["id"] == qid) for qid in
-              ("offer", "audience", "models", "model", "storyboard", "song", "script")]
+              ("offer", "audience", "models", "model")]
         state = session.process([], qs, run_dir=self.run, purpose_flow=False, target="original-fixture-target")
-        replies = ["New Chapter Coaching", "Founders 45–60", "opus-chain builds, haiku-chain checks", "2", "yes", "yes", "yes", "yes"]
+        replies = ["New Chapter Coaching", "Founders 45–60",
+                   "opus-chain builds, haiku-chain checks", "4", "2", "yes"]
         for raw in replies:
             state = session.process([raw], qs, run_dir=self.run, purpose_flow=False,
                                     target="original-fixture-target", source_ref="message:original-synthetic-source")

@@ -308,7 +308,6 @@ def _checkpoints_q():
                 "1. Everything - the script, 3 song versions to pick from, and the storyboard. (RECOMMENDED)",
                 "2. Just the storyboard.",
                 "3. Nothing - just make it.",
-                "",
                 "I recommend option 1 because fixing a script or a song is cheap, "
                 "and fixing a finished video is not.",
                 'Reply with a number, or say "recommended". You can also say '
@@ -356,15 +355,61 @@ def _gate_questions():
     ]
 
 
+def _legacy_models_q():
+    """The AI setup screen as the previous card asked it (frozen, S75-006)."""
+    return {"id": "models", "why": "One AI builds your video and a different AI checks the work.",
+            "reason": "OpenRouter is the faster route, and a separate model checks the work.",
+            "label": "AI MODELS",
+            "ask": "Which AI should build your video, and which should check the work? "
+                   "OpenRouter is recommended because it's faster; Ollama works too.",
+            "options": [("Recommended setup", "An OpenRouter model builds, Claude Sonnet checks."),
+                        ("Choose my own", "Reply with the build model and the check model, "
+                         "e.g. 'DeepSeek builds, Sonnet checks'.")],
+            "recommended": 0}
+
+
+def _legacy_brief_questions():
+    """The five story-brief screens as the previous card asked them (frozen)."""
+    return [
+        _typed("offer", "OFFER",
+               "The story, the song and the call to action are all built around this.",
+               "What are we promoting? Give the exact name of your offer."),
+        _typed("link", "OFFER LINK",
+               "The link goes on screen at the end, so it has to be exact.",
+               "What web address should the video send people to? Paste it rather "
+               "than typing it from memory."),
+        _typed("audience", "AUDIENCE",
+               "One audience and one action beat ten of each.",
+               "Who is this video for, and what should they do after watching it?"),
+        _typed("character", "CHARACTER",
+               "Your characters are the actors, and viewers spend the whole video with them.",
+               "Who stars in your video? Describe them by name, age, look and clothing."),
+        _typed("photos", "PHOTOS",
+               "A real photo makes the story feel true instead of invented.",
+               "Which photos or proof should we use - your logo, a product shot, a testimonial? "
+               'Reply "none" if you have none.'),
+    ]
+
+
 def _legacy_questions():
     """The card a run that already started keeps, exactly as it was asked.
 
     Frozen on purpose: a resumed run's answers belong to HIS list, and changing
-    this list would migrate the answers he already gave (S75-006 step 5)."""
-    return [
-        _ai_setup_q(),
-        _length_question(),
-        {"id": "music", "why": "The song carries the feeling of the whole ad.", "reason": "it is the style that tests best for emotional stories.", "label": "MUSIC STYLE", "ask": "Which sound fits your story?",
+    this list would migrate the answers he already gave (S75-006 step 5). This
+    is the previous card verbatim -- the brief screens, the eighteen-style menu,
+    the unpriced length table and the three approval screens -- built from the
+    old wording, never from the new screens."""
+    return _legacy_brief_questions() + [
+        _legacy_models_q(),
+        {"id": "length", "why": "Length decides the story size and the price.",
+         "reason": "the standard length for ads, and it fits stories, reels and ads.",
+         "label": "LENGTH",
+         "ask": "How long do you want your ad to be? The longer ads also come with "
+                "short clips you can post on social media.",
+         "options": _duration_options(), "recommended": 0},
+        {"id": "music", "why": "The song carries the feeling of the whole ad.",
+         "reason": "it is the style that tests best for emotional stories.",
+         "label": "MUSIC STYLE", "ask": "Which sound fits your story?",
          "options": _musics(), "recommended": 0},
         {"id": "look", "why": "The look is what viewers see in every shot.", "reason": "it gives the most real, cinematic result.", "label": "VIDEO STYLE", "ask": "How should your video look? Tap a link to watch a sample.",
          "options": _looks(), "links": _look_links(), "recommended": 0},
@@ -439,12 +484,16 @@ def _model_question(length_label, agnes_yes=False, defaulted=False):
 
 
 def _priced(qs, answers):
-    """Swap in the VIDEO MODEL question priced for the length already answered."""
+    """Swap in the VIDEO MODEL question priced for the length already answered.
+
+    A defaulted VIDEO MODEL (S75-006) stays defaulted: the rebuilt screen is the
+    recap line, never an inline question."""
     ids = [q["id"] for q in qs]
     if "length" not in ids or len(answers) <= ids.index("length"):
         return qs
     length_text = answers[ids.index("length")]["text"]       # AI MODELS (and the saved character) may come first
-    return [_model_question(length_text) if q["id"] == "model" else q for q in qs]
+    return [_model_question(length_text, defaulted=bool(q.get("defaulted")))
+            if q["id"] == "model" else q for q in qs]
 
 
 # --- W1-card-questions-U1: the PURPOSE flow and the AGNES question (SPEC B1) ----
@@ -1043,11 +1092,15 @@ def _shaped(qs, answers, client_dir=None):
         elif q["id"] == "shape":
             if purpose_n in _SHAPE_PURPOSES:
                 place(q)
-        elif q["id"] == "models":
-            if _ai_setup_remembered(client_dir) is not None:
-                place(q)
         else:
             place(q)
+    if _ai_setup_remembered(client_dir) is not None:
+        #: S75-006: a saved AI setup is a recap line the client can change,
+        #: never a screen they are asked again (and never silently dropped).
+        saved = _ai_setup_q()
+        saved["defaulted"] = True
+        saved["optional"] = True
+        place(saved)
     return out
 
 
@@ -1252,6 +1305,15 @@ def render_step(i, questions=None):
     return "\n".join(lines)
 
 
+#: Plain recap labels for screens whose title case reads wrong to a client.
+_RECAP_LABEL = {"models": "AI setup"}
+
+
+def _recap_label(q):
+    """The plain label one recap line shows (S75-006: 'AI setup', not 'Ai Models')."""
+    return _RECAP_LABEL.get(q["id"]) or q["label"].title().replace("Model", "model")
+
+
 def render_recap(answers, questions=None, defaults=None, client_dir=None):
     """The recap: one numbered line per answer, then one per defaulted screen.
 
@@ -1266,8 +1328,7 @@ def render_recap(answers, questions=None, defaults=None, client_dir=None):
         if q.get("defaulted"):
             row = d.get(q["id"]) or {}
             lines.append("%d. %s: %s (default - reply %d to change)"
-                         % (i, q["label"].title().replace("Model", "model"),
-                            row.get("text", ""), i))
+                         % (i, _recap_label(q), row.get("text", ""), i))
             continue
         if i > len(answers):
             break
@@ -1276,8 +1337,7 @@ def render_recap(answers, questions=None, defaults=None, client_dir=None):
             lines.append("%d. %s" % (i, q["recap"][a["n"] - 1]))
             continue
         price = (" - about " + q["values"][a["n"] - 1]) if q["id"] == "model" and a.get("n") else ""
-        lines.append("%d. %s: %s%s" % (i, q["label"].title().replace("Model", "model"),
-                                       a["text"], price))
+        lines.append("%d. %s: %s%s" % (i, _recap_label(q), a["text"], price))
     lines += ["", 'Reply "yes" to start, or the number of a line to change it.']
     return "\n".join(lines)
 
@@ -1402,7 +1462,11 @@ def conversation(replies, questions=None, state_store=None, run_id=None,
     #: lose LENGTH's own slot on a campaign (EPISODE LENGTH took it), so the
     #: rebuild always reads the base list. A run that already asked a card keeps
     #: the one it was asked with (LEGACY_QUESTIONS), never the new one.
-    base_qs = questions or (QUESTIONS if purpose_flow else LEGACY_QUESTIONS)
+    #: A preview (no run folder, no run state) is the card itself, so it reads
+    #: the NEW list exactly as render_card() does. Only a run that already used
+    #: a card keeps the frozen one.
+    preview = not run_dir and not run_state_file
+    base_qs = questions or (QUESTIONS if (purpose_flow or preview) else LEGACY_QUESTIONS)
     answers, defaults, fix, note, done = [], {}, None, "", False
 
     def shaped(list_, ans):
@@ -2116,8 +2180,10 @@ def main(argv=None):
                 for q in _with_saved_character(a.client_dir, base)]
 
     #: The card this caller is asking: the new one for a NEW run, and the one a
-    #: resumed run was asked with (S75-006 step 5).
-    qs = _priced_card(QUESTIONS if purpose_flow else LEGACY_QUESTIONS)
+    #: resumed run was asked with (S75-006 step 5). A bare preview (no run
+    #: folder and no run state) is the card itself, never the resumed list.
+    preview = not (a.run_dir or a.run_state_file)
+    qs = _priced_card(QUESTIONS if (purpose_flow or preview) else LEGACY_QUESTIONS)
     if a.format == "studio-json":                  # U1: the studio export, whole card
         try:
             #: the purpose screens ride along with their shows_when, so the
@@ -2134,7 +2200,7 @@ def main(argv=None):
     if (a.seed_answers_file or a.format == "session-json"
             or a.run_dir or a.run_state_file):
         from intake_preflight.card_session_cli import run
-        return run(a, questions=qs, purpose_flow=purpose_flow)
+        return run(a, questions=None, purpose_flow=purpose_flow)
     if a.step:
         st = conversation(a.reply, qs, run_dir=a.run_dir or None, target=a.target or None,
                           client_dir=a.client_dir or None, purpose_flow=purpose_flow)

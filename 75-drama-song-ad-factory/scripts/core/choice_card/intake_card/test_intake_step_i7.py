@@ -17,15 +17,12 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.dirname(os.path.dirname(HERE)))
 from choice_card.intake_card import intake_card as IC  # noqa: E402
 
-#: The card a plain replay asks (S75-006: a run with no folder keeps the list
-#: a resumed run keeps; a NEW run folder asks QUESTIONS instead).
-LEGACY = IC.LEGACY_QUESTIONS
-N = len(LEGACY)
-#: The five story-brief questions (DSR-105) are typed, the nine production
-#: choices are picked, and the spend question still takes a dollar amount.
-OK = IC.example_replies(LEGACY)
-#: index -> the question at it, so a test can name a line instead of counting.
-Q = LEGACY
+#: The card a preview asks is the NEW card (S75-006). A run with no folder has
+#: no history, so the card itself is what is replayed.
+Q = IC.QUESTIONS
+ASKED = [q for q in Q if not q.get("defaulted")]
+N = len(ASKED)
+OK = IC.example_replies(Q)[:N]
 
 
 def _transcript(replies):
@@ -36,10 +33,16 @@ def _transcript(replies):
 def test_transcript_one_question_per_turn_with_options_and_recommendation():
     turns = _transcript(OK)
     for i, t in enumerate(turns[:N], 1):
-        assert t.count("Question ") == 1 and t.startswith("Question %d of %d - " % (i, N)), t
+        assert t.count("Question ") == 1 and t.startswith(
+            "Question %d of %d - " % (i, len(Q))), t
         lines = t.split("\n")
-        assert lines[1].endswith(".") and lines[2] == ""              # one-sentence why
         q = Q[i - 1]
+        if "body" in q:                                              # fixed-text screen
+            assert lines[1] == q["ask"], ("body", i, lines[:3])
+            assert t.endswith('"custom" to choose each one.'), ("body-end", i, lines[-1])
+            continue
+        if q.get("why"):                                             # one-sentence why
+            assert lines[1].endswith(".") and lines[2] == ""
         opts = [l for l in lines if re.match(r"^\d+\. ", l)]
         if q.get("free_text"):                                       # a brief question: typed, no menu
             assert not opts and t.endswith(IC.FREE_TEXT_HINT), t
@@ -57,7 +60,7 @@ def test_recap_then_yes_finishes():
     turns = _transcript(OK)
     recap = turns[N]
     assert recap.startswith("Here is what you picked:") and "Question " not in recap
-    assert len([l for l in recap.split("\n") if re.match(r"^\d+\. ", l)]) == N
+    assert len([l for l in recap.split("\n") if re.match(r"^\d+\. ", l)]) == len(Q)
     assert not IC.conversation(OK)["done"]
     done = IC.conversation(OK + ["yes"])
     assert done["done"] and done["message"].startswith("Locked in")
@@ -74,8 +77,10 @@ def test_recommended_bad_answer_and_spend_amount():
     assert st["message"].startswith("Sorry, I did not catch that. Question %d of" % (models_at + 2))
     assert len(st["answers"]) == models_at + 1
     spend_at = [q["id"] for q in Q].index("spend")
-    a = IC.conversation(OK[:spend_at] + ["$25", "2"])["answers"]
-    assert a[spend_at]["value"] == "25" and a[spend_at + 1]["n"] == 2
+    st = IC.conversation(OK[:spend_at] + ["$25", "2"])
+    assert st["answers"][spend_at]["value"] == "25"
+    # replying a recap line number asks that line (the merged OFFER line)
+    assert st["message"].startswith("Question 2 of")
 
 
 def test_change_one_line_returns_to_recap():

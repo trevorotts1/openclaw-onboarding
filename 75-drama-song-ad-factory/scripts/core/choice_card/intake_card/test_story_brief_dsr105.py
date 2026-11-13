@@ -49,9 +49,10 @@ def test_each_brief_question_is_typed_with_one_option_the_page_reads():
 def test_the_chat_card_asks_them_as_typed_blocks_not_menus():
     total = len(IC.QUESTIONS)
     for i, qid in enumerate(TYPED_ON_CARD, 1):
+        q = next(x for x in IC.QUESTIONS if x["id"] == qid)
         block = IC.render_step(i)
         lines = block.split("\n")
-        assert lines[0] == "Question %d of %d - %s" % (i, total, qid.upper()), block
+        assert lines[0] == "Question %d of %d - %s" % (i, total, q["label"]), block
         assert lines[-1] == IC.FREE_TEXT_HINT, block
         assert not [x for x in lines if x[:2] in ("1.", "2.")], block   # no menu
     # the OFFER screen is one sentence of why; the address follow-up asks only
@@ -86,14 +87,29 @@ def test_one_reply_carries_the_offer_and_its_address():
 
 
 def test_the_recap_lists_the_brief_and_the_run_carries_it():
+    import json
+    import tempfile
+    from choice_card.intake_card import ai_models as AM
+    client = tempfile.mkdtemp()
+    AM.remember_setup(client, AM.recommended())
+    with open(os.path.join(client, "agnes.json"), "w", encoding="utf-8") as f:
+        json.dump({"subscriber": "no"}, f)
     replies = ["1", "My course, example.com/course", "Women 35-55", "Tasha, 40, locs",
-               "5", "1", "1", "2", "1", "$25"]
-    recap = IC.conversation(replies, purpose_flow=True)["message"]
-    for n, label in ((2, "Offer"), (3, "Offer Link"), (4, "Audience"), (5, "Character")):
+               "5", "1", "1", "2", "$25"]
+    st = IC.conversation(replies, client_dir=client, purpose_flow=True)
+    recap = st["message"]
+    for n, label in ((1, "Purpose"), (2, "Offer"), (3, "Audience"), (4, "Character")):
         assert "%d. %s: " % (n, label) in recap, recap
-    assert "2. Offer: My course" in recap and "3. Offer Link: example.com/course" in recap
+    assert "2. Offer: My course" in recap
     assert "Photos: none yet - send them any time (default - reply" in recap, recap
-    assert IC.conversation(replies + ["yes"], purpose_flow=True)["done"] is True
+    done = IC.conversation(replies + ["yes"], client_dir=client, purpose_flow=True)
+    assert done["done"] is True
+    # the address rides beside the offer and is recorded under the old id
+    qs = IC._shaped(IC.QUESTIONS, done["answers"], client)
+    rq, ra = IC._record_lists(done["answers"], qs, client, {})
+    rows = dict(zip((q["id"] for q in rq), ra))
+    assert rows["offer"]["value"] == "My course", rows["offer"]
+    assert rows["link"]["value"] == "example.com/course", rows.get("link")
 
 
 def test_the_saved_character_pick_replaces_the_brief_character_question():

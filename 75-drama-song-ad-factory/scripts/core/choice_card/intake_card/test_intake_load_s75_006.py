@@ -67,9 +67,14 @@ def test_a_the_common_campaign_asks_nine_questions_before_the_recap():
                      "MUSIC STYLE", "VIDEO STYLE", "CHECKPOINTS", "BUDGET"], asked
     assert len(asked) == 9
     assert st["message"].startswith("Here is what you picked:"), st["message"]
-    # the address arrived inside the OFFER reply and is stored beside it
-    ids = [a["id"] for a in st["answers"]]
-    assert "link" in ids and "offer" in ids, ids
+    # the address arrived inside the OFFER reply and is stored beside it: the
+    # answer list stays one answer per reply, so the run's RECORD carries the
+    # link under its existing id (S75-006 step 2)
+    qs = IC._shaped(IC.QUESTIONS, st["answers"], client)
+    rq, ra = IC._record_lists(st["answers"], qs, client, {})
+    rows = {q["id"]: a for q, a in zip(rq, ra)}
+    assert rows["offer"]["value"] == "My course", rows["offer"]
+    assert rows["link"]["value"] == "https://example.com/course", rows.get("link")
     assert IC.conversation(CAMPAIGN + ["yes"], client_dir=client,
                            purpose_flow=True)["done"] is True
 
@@ -124,9 +129,11 @@ def test_d_ok_on_music_style_is_not_an_answer():
     assert IC._parse("ok", music) is None
     assert IC._parse("yes", music) is None
     assert IC._parse("recommended", music)["n"] == 1
-    # and it never advances the flow
+    # and it never advances the flow (this computer's setup is already saved,
+    # so the common campaign reaches MUSIC STYLE at the sixth reply)
+    client = _client_dir()
     st = IC.conversation(["1", "My course, example.com/course", "Women", "Tasha",
-                          "5", "ok"], purpose_flow=True)
+                          "5", "ok"], client_dir=client, purpose_flow=True)
     assert [a["id"] for a in st["answers"]] == ["purpose", "offer", "audience",
                                                 "character", "episode_length"]
 
