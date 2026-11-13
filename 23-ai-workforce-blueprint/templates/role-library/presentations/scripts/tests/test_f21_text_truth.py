@@ -324,33 +324,32 @@ def test_presentations_roster_has_no_superseded_manifest_stamp():
 
 
 @pytest.mark.skipif(REPO is None, reason="repo layout not found")
-def test_generated_department_guide_example_request_is_a_whole_sentence():
-    """The guide's 'Example request' lines are what a non-technical owner copies
-    and pastes. The Slide Submitter one used to end mid-clause ('... P4-RENDER."')
-    because the source's first sentence overran the 90-char cap. A truncated
-    example is an instruction the owner cannot follow."""
+def test_generated_department_guide_specialist_lines_are_whole_sentences():
+    """The specialist table is what a non-technical owner reads to choose a role.
+
+    This used to guard the guide's 'Example request' lines. PD-022 removed those
+    lines (the generator has no real per-role example to show) and moved the
+    whole-sentence contract onto the table itself; the full PD-022 contract now
+    lives in test_pd022_client_guide.py. This keeps the original defect class --
+    a line cut mid-clause by a character cap -- under test on the committed
+    artifact, not just on a fresh render."""
     generated = (REPO / "23-ai-workforce-blueprint" / "templates" / "role-library"
                  / "presentations" / "how-to-use-this-department.md")
     if not generated.is_file():
         pytest.skip(f"generated guide not present at {generated}")
 
     text = generated.read_text(encoding="utf-8")
-    lines = [l for l in text.split("\n") if "*Example request:*" in l]
-    assert lines, (
-        "no '*Example request:*' lines found in how-to-use-this-department.md -- "
+    cells = re.findall(r"^\| \*\*(.+?)\*\* \| (.+?) \|$", text, re.M)
+    assert cells, (
+        "no specialist table rows found in how-to-use-this-department.md -- "
         "the scanner matched nothing, so this test proves nothing")
 
     broken = []
-    for line in lines:
-        if "Slide Submitter" not in line:
-            continue
-        # An unbalanced '(' means the cap cut the sentence inside a parenthetical.
-        if line.count("(") != line.count(")"):
-            broken.append(line.strip())
+    for name, what in cells:
+        if not what.rstrip().endswith((".", "!", "?")) or what.count("(") != what.count(")"):
+            broken.append(f"{name}: {what.strip()}")
     assert not broken, (
-        "the Slide Submitter example request is truncated mid-parenthetical; "
-        "shorten the FIRST sentence of its entry in "
-        "23-ai-workforce-blueprint/suggested-roles/presentations-suggested-roles.md "
-        "(cap is 90 chars, see how_to_use_department._first_sentence) and "
-        "regenerate with generate_how_to_use_docs.py presentations. Got:\n  "
+        "a specialist line is truncated (no terminal punctuation, or an "
+        "unbalanced parenthesis). Regenerate with "
+        "generate_how_to_use_docs.py presentations. Got:\n  "
         + "\n  ".join(broken))
