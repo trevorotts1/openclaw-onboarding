@@ -70,16 +70,30 @@ def test_run_mode_vocabulary_collision_guard_present():
 
 
 def test_no_bare_mode_flag_added():
-    """--mode must NOT be a parsable flag on the entry script: one vocabulary
-    per axis. (Mentions of --mode in explanatory comments are fine; a case
-    pattern or env var definition is not.)"""
+    """--mode must NOT be a parsable flag on the entry script and the entry
+    must never READ the run-mode env var: one vocabulary per axis. (Mentions of
+    --mode in explanatory comments are fine; a case pattern is not.)
+
+    FIX 8 (bd7650a07, 2026-09-28) deliberately EXPORTS PRESENTATION_MODE from
+    the intake ledger's RUN_MODE — the documented env seam for non-launcher
+    callers that speech_build_harness.py reads. That export is the fix for the
+    chat path silently running standard. What this test defends is that the
+    entry is not a run-mode DOOR: no --mode flag, and no READ of the env var
+    (a read would let the entry pick a run mode itself). The previous assertion
+    banned the bare substring instead, contradicting its own "the entry script
+    reads PRESENTATION_MODE" message; it went red the day FIX 8 landed."""
     src = _read(ENTRY)
     assert "--mode)" not in src, (
         "the entry script defines a --mode case in its arg parser — the "
         "run-mode axis must never be a canonical-entry flag")
-    assert 'PRESENTATION_MODE' not in src, (
-        "the entry script reads PRESENTATION_MODE — that is the run-mode "
-        "axis (FIX 11), which the canonical entry must not expose")
+    for read in ("$PRESENTATION_MODE", "${PRESENTATION_MODE"):
+        assert read not in src, (
+            "the entry script reads PRESENTATION_MODE — that is the run-mode "
+            "axis (FIX 11), which the canonical entry must not expose")
+    assert "export PRESENTATION_MODE=" in src, (
+        "the entry script must still EXPORT PRESENTATION_MODE from the intake "
+        "ledger's RUN_MODE (FIX 8) — dropping the export makes the chat path "
+        "silently run standard, the exact defect FIX 8 corrected")
 
 
 def test_mirror_is_byte_identical():
