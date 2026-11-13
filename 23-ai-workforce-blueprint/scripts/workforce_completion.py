@@ -66,7 +66,7 @@ def evaluate(state):
     if state.get('interviewComplete') is not True or not eligible_status((state.get('interviewQc') or {}).get('status')):missing.append('interview')
     for key in ('roleLibraryStatus','sopLibraryStatus'):
         if state.get(key)!='done':missing.append(key)
-    if state.get('commsAutomationStatus') not in ('done','not-applicable'):missing.append('communications')
+    if state.get('commsAutomationStatus') not in ('done','not-applicable','deferred'):missing.append('communications')
     depts=state.get('departments')
     if not isinstance(depts,list) or not depts or any(not isinstance(d,dict) or d.get('status') not in ('done',) for d in depts):missing.append('departments')
     if state.get('buildType')=='standard-first' and state.get('confirmationsComplete') is not True:missing.append('confirmations')
