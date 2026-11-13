@@ -219,24 +219,32 @@ origin/main
 ```
 
 Post-push proofs are recorded in §9 (new head, remote head equality, and
-`git merge-base --is-ancestor <PRE> <new-head>` exit 0). Push was fast-forward only — no
+`git merge-base --is-ancestor e0813cf54 623f58a81` exit 0). Push was fast-forward only — no
 rebase, no force-push, nothing pushed to `main`.
 
 ## 9. Post-push proof
 
 ```
 $ git push origin HEAD:refs/heads/pd/fl08-buddy-procedure--hold-d2
-   e0813cf5485f..<new-head>  HEAD -> pd/fl08-buddy-procedure--hold-d2      (fast-forward)
+   e0813cf54..623f58a81  HEAD -> pd/fl08-buddy-procedure--hold-d2      (fast-forward)
 
 $ git rev-parse HEAD
-<new-head>
+623f58a81ccf5fbc3e7ed3aa09bcc1ffc720ffdf
 
 $ git ls-remote --heads origin pd/fl08-buddy-procedure--hold-d2
-<new-head>   refs/heads/pd/fl08-buddy-procedure--hold-d2                  (identical)
+623f58a81ccf5fbc3e7ed3aa09bcc1ffc720ffdf   refs/heads/pd/fl08-buddy-procedure--hold-d2   (identical)
 
-$ git merge-base --is-ancestor e0813cf5485fb300eb43b5e0bf62044384b194d7 <new-head>
+$ git merge-base --is-ancestor e0813cf5485fb300eb43b5e0bf62044384b194d7 623f58a8…
 rc=0
+
+$ git ls-remote --heads origin main
+ebf5c769a2ad5b2582bf2256588095cbef20cfac                                   (unchanged — nothing pushed to main)
 ```
+
+This report file was then updated with those proofs in one further fast-forward commit, so
+the current remote head is the commit that contains this paragraph. The ancestry and
+remote-head equality above hold for that head as well (`e0813cf54` is its ancestor).
+Push was fast-forward only — no rebase, no force-push, nothing pushed to `main`.
 
 ## 10. What I could not prove
 
