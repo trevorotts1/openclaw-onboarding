@@ -19,7 +19,7 @@ name: rescue-rangers-rr025-rr026-gates
 
 on:
   push:
-    branches: [main]
+    branches: [main, "batch/**"]
     paths:
       - "65-rescue-receiver/rescue-poll.sh"
       - "shared-utils/rescue-supervise.py"
@@ -27,6 +27,7 @@ on:
       - "tests/rescue/RR-026/**"
       - ".github/workflows/rescue-rangers-rr025-rr026-gates.yml"
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
     paths:
       - "65-rescue-receiver/rescue-poll.sh"
       - "shared-utils/rescue-supervise.py"
@@ -35,11 +36,12 @@ on:
       - ".github/workflows/rescue-rangers-rr025-rr026-gates.yml"
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
   rescue-rangers-rr025-rr026-gates:
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     name: RR-025/RR-026 gates (envelope identity + supervision)
     runs-on: ubuntu-latest
     steps:

@@ -54,7 +54,7 @@ name: legacy-agents-list-gate
 
 on:
   push:
-    branches: [main]
+    branches: [main, "batch/**"]
     paths:
       - scripts/qc-assert-legacy-agents-list.sh
       - scripts/oc-atomic-upgrade.sh
@@ -71,6 +71,7 @@ on:
       - tests/unit/oc-atomic-upgrade.test.sh
       - .github/workflows/legacy-agents-list-gate.yml
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
     paths:
       - scripts/qc-assert-legacy-agents-list.sh
       - scripts/oc-atomic-upgrade.sh
@@ -88,11 +89,12 @@ on:
       - .github/workflows/legacy-agents-list-gate.yml
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
   legacy-agents-list-gate:
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     name: Legacy agents.list pre-upgrade gate
     runs-on: ubuntu-latest
     steps:

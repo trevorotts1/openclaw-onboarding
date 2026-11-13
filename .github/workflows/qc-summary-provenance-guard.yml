@@ -32,15 +32,17 @@ name: qc-summary-provenance-guard
 
 on:
   push:
-    branches: [main]
+    branches: [main, "batch/**"]
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
   qc-summary-provenance-guard:
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     name: a QC summary carries only the version it was measured at
     runs-on: ubuntu-latest
     steps:
@@ -60,6 +62,7 @@ jobs:
         run: bash tests/unit/qc-summary-not-rolled-by-bumper.test.sh
 
   ghl-setup-selftest-no-live-send:
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     name: the GHL setup self-test sends nothing from a client account
     runs-on: ubuntu-latest
     # FINDING T1-01. 05-ghl-setup/ghl-setup-full.md told the agent to run seven

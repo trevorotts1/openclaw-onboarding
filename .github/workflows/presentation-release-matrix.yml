@@ -21,7 +21,7 @@ name: presentation-release-matrix
 
 on:
   push:
-    branches: [main]
+    branches: [main, "batch/**"]
     paths:
       - "23-ai-workforce-blueprint/templates/role-library/presentations/release-matrix/**"
       - "23-ai-workforce-blueprint/templates/role-library/presentations/scripts/pdf_export.py"
@@ -35,6 +35,7 @@ on:
       - "lib-presentation-schedules.sh"
       - ".github/workflows/presentation-release-matrix.yml"
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
     paths:
       - "23-ai-workforce-blueprint/templates/role-library/presentations/release-matrix/**"
       - "23-ai-workforce-blueprint/templates/role-library/presentations/scripts/pdf_export.py"
@@ -49,11 +50,12 @@ on:
       - ".github/workflows/presentation-release-matrix.yml"
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
   macos-acceptance:
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     name: macOS runner acceptance (native render + OCR + tick)
     runs-on: macos-latest
     steps:
@@ -99,6 +101,7 @@ jobs:
           bash tests/unit/presentation-schedules-installed.test.sh
 
   docker-hostinger:
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     name: Docker leg — Hostinger profile
     runs-on: ubuntu-latest
     steps:
@@ -132,6 +135,7 @@ jobs:
           docker run --rm -v "$PWD:/opt/engine:ro" pres043-hostinger bash -lc 'cd /opt/engine/23-ai-workforce-blueprint/templates/role-library/presentations/scripts/tests && python3 -m pytest test_pres043_release_matrix.py::test_restart_resume_only_incomplete_units -q -p no:cacheprovider'
 
   docker-contabo:
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     name: Docker leg — Contabo profile
     runs-on: ubuntu-latest
     steps:
@@ -170,6 +174,7 @@ jobs:
   # refuses without authorization). Record NOT VERIFIED until authorized
   # sandbox execution produces actual remote IDs and readback.
   live-smoke-refusal:
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     name: Live GHL smoke stays refused in CI (NOT VERIFIED)
     runs-on: ubuntu-latest
     steps:

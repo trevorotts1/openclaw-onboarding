@@ -19,6 +19,7 @@ name: skill-44 install-path integrity
 
 on:
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
     branches:
       - main
       - "fix/skill44**"
@@ -30,6 +31,7 @@ on:
     branches:
       - "fix/skill44**"
       - "skill-44/**"
+      - "batch/**"
   workflow_dispatch:
 
 concurrency:
@@ -44,6 +46,7 @@ jobs:
   # (no `.main` suffix).
   # ─────────────────────────────────────────────────────────────────────────────
   install-path-wrapper-exec:
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     name: "Install-path: wrapper exec line is cli_anything.gohighlevel (no .main)"
     runs-on: ubuntu-latest
 
@@ -135,6 +138,7 @@ jobs:
   # is installed (the root cause this PR fixes).
   # ─────────────────────────────────────────────────────────────────────────────
   install-path-core-updates-action:
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     name: "Install-path: INSTALL.md contains CORE_UPDATES auto-apply (Action 7)"
     runs-on: ubuntu-latest
 
@@ -184,6 +188,7 @@ jobs:
   # dead caf. These checks are pure static + bash -n + functional exit-code tests.
   # ─────────────────────────────────────────────────────────────────────────────
   install-path-env-wiring:
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     name: "Install-path: GHL env wired into gateway-inherited env + fail-loud verify"
     runs-on: ubuntu-latest
 
@@ -289,7 +294,7 @@ jobs:
       - install-path-wrapper-exec
       - install-path-core-updates-action
       - install-path-env-wiring
-    if: always()
+    if: (github.event_name != 'pull_request' || github.event.pull_request.draft == false) && (always())
     steps:
       - name: Check all install-path jobs passed
         run: |

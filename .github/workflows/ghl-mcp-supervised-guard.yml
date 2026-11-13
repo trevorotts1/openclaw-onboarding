@@ -104,15 +104,17 @@ name: ghl-mcp-supervised-guard
 
 on:
   push:
-    branches: [main]
+    branches: [main, "batch/**"]
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
   ghl-mcp-pin-gate:
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     # NOTE: this job name is the string Trevor would enter if he ever decides to
     # make it a required status check. Renaming the job silently un-requires it.
     name: ghl-mcp-pin-gate
@@ -188,6 +190,7 @@ jobs:
           bash tests/unit/ghl-mcp-pin-digest.test.sh
 
   ghl-mcp-supervised-guard:
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     name: GHL MCP supervision + install regression guard
     runs-on: ubuntu-latest
     steps:

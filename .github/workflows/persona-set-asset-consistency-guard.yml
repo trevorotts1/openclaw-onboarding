@@ -16,7 +16,7 @@ name: persona-set-asset-consistency-guard
 
 on:
   push:
-    branches: [main]
+    branches: [main, "batch/**"]
     paths:
       - 22-book-to-persona-coaching-leadership-system/personas/**
       - 22-book-to-persona-coaching-leadership-system/persona-categories.json
@@ -25,6 +25,7 @@ on:
       - shared-utils/prebuilt-index/assert-install-doc-consistency.py
       - .github/workflows/persona-set-asset-consistency-guard.yml
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
     paths:
       - 22-book-to-persona-coaching-leadership-system/personas/**
       - 22-book-to-persona-coaching-leadership-system/persona-categories.json
@@ -35,11 +36,12 @@ on:
   workflow_dispatch:
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
   persona-set-triad:
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     name: "Persona-SET count triad (offline)"
     runs-on: ubuntu-latest
     steps:
