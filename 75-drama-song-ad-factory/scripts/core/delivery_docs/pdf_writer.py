@@ -79,16 +79,20 @@ def _replacement(ch):
 def to_page_text(text):
     """The text the page can actually draw.
 
-    A character cp1252 can hold is kept. Anything else is tried as its Unicode
-    decomposition with the combining marks removed ('o' with a dot below prints
-    as 'o'), and used when the result is plain ASCII; otherwise it becomes '?'.
+    The text is composed first (NFC), so a base letter and its combining mark
+    arrive as one precomposed character. A character cp1252 can hold is kept.
+    Anything else is tried as its Unicode decomposition with the combining marks
+    removed ('o' with a dot below prints as 'o'), and used when the result is
+    plain ASCII; otherwise it becomes '?'.
     """
-    return "".join(_replacement(ch) for ch in str(text))
+    return "".join(_replacement(ch)
+                   for ch in unicodedata.normalize("NFC", str(text)))
 
 
 def unprintable(text):
     """The characters of `text` that will print as '?' instead of themselves."""
-    return [ch for ch in str(text) if ch != "?" and _replacement(ch) == "?"]
+    return [ch for ch in unicodedata.normalize("NFC", str(text))
+            if ch != "?" and _replacement(ch) == "?"]
 
 
 def _byte(ch):
