@@ -278,3 +278,25 @@ command is recorded in the unit handback.
 - The pre-existing red test in §6 is reported, not fixed — fixing it would be a change no one asked for.
 - Nothing was tested against the interview app's rendered payload; PD-032 adds a template key whose
   consumer (`conversation_layer.frontdoor_handoff`) is unchanged and its 19 tests still pass.
+
+---
+
+## 11. Instrument correction — temp files moved out of `/var/folders`
+
+The first pytest runs let pytest's `tmp_path` fall back to the machine temp root
+(`/private/var/folders/yf/.../T/pytest-of-blackceomacmini/pytest-418`), which violates this unit's
+binding storage rule. That directory was identified by its contents (it held
+`test_park_seam_reports_unavail0`, one of the ids from my run), deleted, and the tests were re-run
+with `TMPDIR` pointed at the unit scratch directory. Nothing else under that temp root was touched —
+23 sibling `pytest-*` directories belong to other concurrent agents and remain as they were.
+
+Both suites were re-run on the corrected instrument and are unchanged:
+
+```
+base (5a9743c2d): 1 failed, 23 passed   # head-pytest-clean.log / base-pytest-clean.log
+head (e7c631fd):  1 failed, 27 passed
+```
+
+`tempfile.gettempdir()` inside that run resolved to
+`/Volumes/mac mini m4/swarm-contract/pd-fix/tmp/PD-032`, and the count of `pytest-*` directories under
+the machine temp root was 23 before and 23 after each run.
