@@ -132,7 +132,7 @@ Bookmark your private interview page after signing in: $DASH/interview
 EOF
 elif [ -n "$LINK" ] && [ "$LANE" = "standard-first" ]; then
   cat > "$TMP_MSG" <<EOF
-Hi $FIRST_NAME — your company's standard foundation is already set up, and your AI Workforce Interview is ready. It's a short conversation in your own words that tailors that foundation to you. When you're ready, start here: $LINK
+Hi $FIRST_NAME — your company is set up and ready for you to make it yours. It takes about 12 minutes: 15 short questions, most of them one tap. Start here: $LINK
 
 {{INVITATION_VALIDITY}}
 Answers are saved as you go. You can stop and return later.
@@ -142,7 +142,7 @@ Bookmark your private interview page after signing in: $DASH/interview
 EOF
 elif [ -n "$LINK" ]; then
   cat > "$TMP_MSG" <<EOF
-Hi $FIRST_NAME — your AI Workforce Interview is ready. It's a short conversation in your own words, and we build your company from what you tell us. When you're ready, start here: $LINK
+Hi $FIRST_NAME — your company setup is ready. It takes about 12 minutes: 15 short questions, most of them one tap. Start here: $LINK
 
 {{INVITATION_VALIDITY}}
 Answers are saved as you go. You can stop and return later.
