@@ -1300,26 +1300,6 @@ class NotesSyncInfo:
     notes_pane_result: str           # "" = no empty notes panes; else AF-EMPTY-NOTES-PANE finding
 
 
-@dataclass(frozen=True)
-class FishTagInfo:
-    """Sealed P8.4-FISH-TAG dual-file measurement (AF-FISH-TAG).
-
-    The tagged speech must be the source speech with [fish] expression tags
-    (and parens) inserted — the strip-equals prover removes every bracket/paren
-    span and whitespace from BOTH files and requires the stripped texts to be
-    identical. Both texts are sealed raw; the verdict does the pure strip
-    comparison (mirrors phase_verifiers._verify_fish_tag's rubric)."""
-
-    tagged_found: bool
-    source_found: bool
-    tagged_path: str
-    source_path: str
-    tagged_size: int
-    source_size: int
-    tagged_text: str                 # "" when unreadable
-    source_text: str                 # "" when unreadable
-
-
 # ---------------------------------------------------------------------------
 # Seal-time readers for the slice-3 facts. Each reads its source EXACTLY ONCE
 # per seal. None of these may ever raise into seal().
