@@ -22,8 +22,10 @@ model prompt.
 The cover becomes the product image path and is stored as a product
 reference with provenance (origin, field provenance, sha256 when the file is
 readable). The story's mentor/turning point is the book; the call to action
-is to get the book. Brief text is source material, never instructions:
-injection -> rejected, authorization untouched.
+is to get the book. Brief text is source material, never instructions, and
+authorization is untouched. A book brief carries no extracted sources
+(fetched pages or attached files), so the injection screen has nothing to
+drop here and typed words are never refused.
 """
 from __future__ import annotations
 
