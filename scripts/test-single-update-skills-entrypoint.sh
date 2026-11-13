@@ -72,6 +72,7 @@ hdr "(C) no doc/script/cron template references scripts/update-skills.sh as some
 ALLOWLIST=(
   ".githooks/pre-commit"                                        # historical incident comment
   "scripts/ci/fast-guards.json"                                  # path triggers of the config-injection, gws and single-entrypoint guards
+  "scripts/ci/fast-guards.d/single-update-skills-entrypoint-guard.sh"  # the folded copy of this guard's workflow (its header names the job)
   "22-book-to-persona-coaching-leadership-system/CHANGELOG.md"   # historical record of the incident + fix
   "22-book-to-persona-coaching-leadership-system/INSTALL.md"     # explicit "do not run this" warning
   "32-command-center-setup/CORE_UPDATES.md"                      # explicit "NOT scripts/update-skills.sh" warning
