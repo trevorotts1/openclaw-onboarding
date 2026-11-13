@@ -1230,6 +1230,15 @@ try:
  if isinstance(o,dict) and o.get("authorized") is True and o.get("channel")=="telegram" and isinstance(o.get("account"),str) and isinstance(o.get("target"),str): print(json.dumps(o,sort_keys=True,separators=(",",":")))
 except Exception: pass' 2>/dev/null)
 
+    # RRX-002: the words the owner will read are written by Rescue Rangers and
+    # arrive with the instruction. Accepted only as an object with a known kind
+    # and a text string; anything else is treated as absent.
+    RR_OWNER_MESSAGE_JSON=$(printf '%s' "$_pc_resp" | python3 -c 'import json,sys
+try:
+ d=json.load(sys.stdin); o=d.get("owner_message")
+ if isinstance(o,dict) and o.get("kind") in ("solved","owner_action","answer") and isinstance(o.get("text"),str) and o["text"].strip(): print(json.dumps({"kind":o["kind"],"text":o["text"]},sort_keys=True,separators=(",",":")))
+except Exception: pass' 2>/dev/null)
+
     # --- member TYPES (mistype QC) -----------------------------------------
     # ONE probe, then every member the envelope relies on is checked for its
     # JSON TYPE before its value is used. Absent/null types fall through to the
@@ -2975,8 +2984,26 @@ fi
 # RR plan F88: the client-facing final body is three plain sentences ("Fixed and checked.",
 # "We are still working on this: <reason>.", "A specialist will follow up."). The machine
 # fields (repair_status, verification_status, owner, next_action) stay in the ack only.
-RR_NOTIFICATION_FINAL_BODY=$(python3 "$(dirname "$0")/rescue-notification.py" final-body --result-json "${RR_RESULT_JSON:-}" 2>/dev/null)
-[ -n "$RR_NOTIFICATION_FINAL_BODY" ] || RR_NOTIFICATION_FINAL_BODY="We are still working on this."
+# RRX-002: four outcomes in plain words, chosen from verified facts by
+# rr_owner_message.py. "Solved" is said only when the receiver's own check
+# verified the repair. The instruction's owner_message supplies the wording for
+# "one thing only you can do" and "here is the answer".
+RR_OWNER_OUT=$(python3 -c 'import json,sys
+ticket, result_path, om, verdict = sys.argv[1:5]
+try:
+    with open(result_path, encoding="utf-8") as fh: result = json.load(fh)
+except Exception: result = {}
+try: owner = json.loads(om) if om else {}
+except Exception: owner = {}
+print(json.dumps({"ticket_id": ticket, "result": result, "owner_message": owner, "transport_verdict": verdict}))
+' "${TICKET_ID:-}" "${RR_RESULT_JSON:-}" "${RR_OWNER_MESSAGE_JSON:-}" "$VERDICT" 2>/dev/null \
+    | python3 "$(dirname "$0")/rr_owner_message.py" 2>/dev/null)
+RR_NOTIFICATION_FINAL_BODY=$(_json_field "$RR_OWNER_OUT" "body")
+RR_OWNER_OUTCOME=$(_json_field "$RR_OWNER_OUT" "outcome")
+if [ -z "$RR_NOTIFICATION_FINAL_BODY" ]; then
+    RR_OWNER_OUTCOME="specialist_follow_up"
+    RR_NOTIFICATION_FINAL_BODY="Our support team is still working on the problem you reported. A person on the team now has it and will contact you. You do not need to do anything right now."
+fi
 if ! _write_done "$VERDICT" "$AGENT_RC" "$REPLY_CHARS" "$FAIL_REASON" "$_elapsed" "$REPLY_EXCERPT"; then
     _log "DONE-WRITE FAILED op=$_op_id instruction=$INSTRUCTION_ID — ack HELD (no dedup proof; journal retained)"
     exit 0
