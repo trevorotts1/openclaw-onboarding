@@ -4876,6 +4876,53 @@ for _pid, _arts in (
 
 
 # ---------------------------------------------------------------------------
+# PD-310b — the human-only craft holds, called from the engine's step checks
+# ---------------------------------------------------------------------------
+# The two step ids PD-310's report names (craft_judgement.HUMAN_VERDICT_PHASES):
+# the copy QC and the prompt QC. PD-310's module docstring says the older
+# runner applies these holds (run_signature_deck.attest_phase) while the
+# phase-verifier engine path did not — that gap is what this hook closes.
+_CRAFT_HOLD_PHASES = ("P1Q-COPY-QC", "P-PROMPT-QC")
+
+# The one switch. Unset (or anything but the literal "1") = off = no import,
+# no call, no change.
+_CRAFT_HOLD_SWITCH_ENV = "PRESENTATION_CRAFT_ENGINE_HOLDS"
+
+
+def _craft_hold_reasons(phase_id: str, run_dir) -> List[str]:
+    """PD-310b: craft_judgement.engine_attestation_reasons for the two QC step
+    ids, only when PRESENTATION_CRAFT_ENGINE_HOLDS is exactly "1".
+
+    With the switch off this imports nothing and returns [] — both step checks
+    return exactly what they returned before. With it on, a missing independent
+    human verdict (AF-OBI-4 / AF-OBI) or an unacknowledged warning hold is an
+    OPERATOR-REVIEW reason (PD-206's operator-channel prefix).
+
+    Fails closed in every direction: with the switch on, a craft module that
+    cannot be imported, a missing engine_attestation_reasons, or a hook that
+    raises is an OPERATOR-REVIEW reason, never a pass."""
+    if os.environ.get(_CRAFT_HOLD_SWITCH_ENV) != "1":
+        return []
+    if phase_id not in _CRAFT_HOLD_PHASES:
+        return []
+    try:
+        try:
+            import craft_judgement as _cj
+        except ImportError:
+            _scripts_dir = Path(__file__).resolve().parent
+            if str(_scripts_dir) not in sys.path:
+                sys.path.insert(0, str(_scripts_dir))
+            import craft_judgement as _cj
+        reason = _cj.engine_attestation_reasons(Path(run_dir), phase_id)
+    except Exception as exc:  # noqa: BLE001 — fail closed, never pass on doubt
+        return [
+            f"OPERATOR-REVIEW: the craft holds are on and {phase_id!r} could not "
+            f"be re-checked ({exc!r}) — refusing to pass on an unreadable hold "
+            f"state"]
+    return [reason] if reason else []
+
+
+# ---------------------------------------------------------------------------
 # Public entry point (called by run_signature_deck.py)
 # ---------------------------------------------------------------------------
 
@@ -4944,6 +4991,15 @@ def verify(phase_id: str, run_dir: Path) -> Tuple[bool, List[str]]:
                 f"missing file, empty field, or violated gate code."
             ]
         # ---- end FAIL-with-reason validation ----
+
+        # ---- PD-310b: the craft holds, behind a switch that is off ----
+        # Switch unset -> [] -> this block changes nothing (A1). Switch "1" and
+        # a hold is outstanding -> OPERATOR-REVIEW reason(s) and the step does
+        # not attest (A2); every verdict present -> [] and the step passes (A3).
+        _holds = _craft_hold_reasons(phase_id, run_dir)
+        if _holds:
+            return False, list(reasons) + _holds
+        # ---- end PD-310b ----
 
         return bool(ok), list(reasons)
     except Exception as exc:  # noqa: BLE001
