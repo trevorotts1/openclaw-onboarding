@@ -317,41 +317,45 @@ class TestRenderClientReportMsgNoLiteralBraces:
         done = eng._render_client_report_msg(ph, "done")
         assert "ETA" not in done  # ETA only ever appended to the start message
 
-    def test_deferred_phase_gets_honest_wording_not_a_wrong_step_number(self, tmp_path):
+    def test_deferred_phase_gets_no_client_message(self, tmp_path):
         """P-CONVERTER on a standard from-scratch deck: walked/attested (the
-        36-phase enforcement never skips it) but NOT one of this deck's 31
-        client-visible steps. Must not fabricate 'Step <n> of 31'."""
+        phase enforcement never skips it) but NOT one of this deck's 46
+        client-visible steps. PD-018b changed the honest-wording branch to an
+        EMPTY string -- the caller sends nothing rather than a sentence that
+        carries a phase id or a fabricated step number."""
         eng = _engine(tmp_path, deck_type="webinar", creation_mode="from_scratch")
         ph = eng.manifest.phase("P-CONVERTER")
-        msg = eng._render_client_report_msg(ph, "start")
-        assert "Step" not in msg or "46-step plan" in msg
-        assert "P-CONVERTER" in msg
-        assert "46" in msg  # still names the honest total for context (the composed client-visible count on this base)
-        assert "{" not in msg and "}" not in msg
+        assert eng._render_client_report_msg(ph, "start") == ""
+        assert eng._render_client_report_msg(ph, "done") == ""
 
     def test_sp_only_phase_deferred_on_standard_deck(self, tmp_path):
         eng = _engine(tmp_path, deck_type="webinar", creation_mode="from_scratch")
         ph = eng.manifest.phase("P-SP-INTAKE")
-        msg = eng._render_client_report_msg(ph, "start")
-        assert "46-step plan" in msg
-        assert "{" not in msg and "}" not in msg
+        assert eng._render_client_report_msg(ph, "start") == ""
 
     def test_malformed_template_falls_back_to_default_not_a_crash_or_leak(self, tmp_path):
         """A manifest client_report template with a stray unmatched brace must
-        never propagate to the client verbatim, and must never raise."""
+        never propagate to the client verbatim, and must never raise. PD-018b:
+        the fallback is the plain labelled step line -- never "Starting
+        <phase id> (<role>)", which put internal text in front of a client."""
         eng = _engine(tmp_path, deck_type="webinar", creation_mode="from_scratch")
         ph = eng.manifest.phase("P4-COPY")
         ph.client_report = {"start_template": "Step {k of {N} -- broken"}
         msg = eng._render_client_report_msg(ph, "start")
-        assert msg == f"Starting {ph.id} ({ph.owning_role})"
+        assert msg.startswith("Step ") and msg.endswith("— starting"), msg
+        assert ph.id not in msg and ph.owning_role not in msg
         assert "{" not in msg and "}" not in msg
 
     def test_no_template_declared_uses_plain_default(self, tmp_path):
         eng = _engine(tmp_path, deck_type="webinar", creation_mode="from_scratch")
         ph = eng.manifest.phase("P4-COPY")
         ph.client_report = {}
-        assert eng._render_client_report_msg(ph, "start") == f"Starting {ph.id} ({ph.owning_role})"
-        assert eng._render_client_report_msg(ph, "done") == f"{ph.id} complete"
+        start = eng._render_client_report_msg(ph, "start")
+        done = eng._render_client_report_msg(ph, "done")
+        assert start.startswith("Step ") and start.endswith("— starting"), start
+        assert done.startswith("Step ") and done.endswith("— complete"), done
+        for msg in (start, done):
+            assert ph.id not in msg and ph.owning_role not in msg
 
     def test_unrecognized_token_in_template_drops_cleanly(self):
         """_SafeFormatDict: a template referencing a token this engine does
