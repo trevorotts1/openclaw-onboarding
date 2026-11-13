@@ -973,7 +973,7 @@ def own_adapters(skill_root=None):
                 if PRIMARY_WRAPPER in " ".join(row.get("argv") or []):
                     problems.append("%s:%s routes through the primary wrapper %s"
                                     % (group, row.get("id"), PRIMARY_WRAPPER))
-    except (AdapterError, OSError, ValueError) as exc:
+    except (AdapterError, OSError, ImportError, ValueError) as exc:
         problems.append("%s: %s" % (type(exc).__name__, exc))
 
     return {
@@ -1296,7 +1296,7 @@ def check(skill_root=None, execute=True):
     try:
         own = own_adapters(root)
         clauses.append({"id": "own_adapters", "ok": own["ok"], "detail": own})
-    except (AdapterError, OSError, ValueError) as exc:
+    except (AdapterError, OSError, ImportError, ValueError) as exc:
         clauses.append({"id": "own_adapters", "ok": False,
                         "detail": "%s: %s" % (type(exc).__name__, exc)})
 
@@ -1312,7 +1312,7 @@ def check(skill_root=None, execute=True):
         emergency = _probe_emergency_fixes_read_only(root)
         clauses.append({"id": "emergency_fixes_read_only",
                         "ok": emergency["pass"], "detail": emergency})
-    except (AdapterError, OSError, ValueError) as exc:
+    except (AdapterError, OSError, ImportError, ValueError) as exc:
         clauses.append({"id": "emergency_fixes_read_only", "ok": False,
                         "detail": "%s: %s" % (type(exc).__name__, exc)})
 
