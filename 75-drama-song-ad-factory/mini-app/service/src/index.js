@@ -51,6 +51,10 @@ export { randomConnectHex };
 const ORDER_ID_FORMAT = /^r_[0-9a-f]{8}$/;
 /** The upload id shape acceptUpload mints (uploads.js). */
 const UPLOAD_ID_FORMAT = /^u_[0-9a-f]{24}$/;
+/** U-Z11 (S75-106) — the one line an order carries for the client: why the
+ *  studio needs them, or why the order was cancelled. The page draws it under
+ *  the status, so it is trimmed to what one line holds. */
+const NOTE_MAX_CHARS = 300;
 
 // ---------------------------------------------------------------------------
 // DSR-105 — the story brief
@@ -58,22 +62,25 @@ const UPLOAD_ID_FORMAT = /^u_[0-9a-f]{24}$/;
 // The chat intake asks for the offer, the link, the audience, the character
 // and the photos; the studio page used to ask only the nine production
 // choices, so an order placed here carried no brief and the crew had nothing
-// to write from. intake_card.py now asks those five first, and this reads them
-// back out of the leading replies.
+// to write from. intake_card.py now asks those first, and this reads them
+// back out of the replies.
 //
-// They are read positionally because the page's service client forwards only
-// `title`, `replies` and `upload_ids` — there is no separate brief field on
-// the wire, and adding one would have meant a second place that defines which
-// questions exist. `test/brief.test.mjs` reads the committed ui/questions.json
-// and fails if these ids ever stop being the card's first five questions, so
-// the position cannot drift without a red test.
+// U-Z11 (S75-106) — the page sends `reply_ids` alongside `replies`: the id of
+// the question each answer belongs to, in the same order. When they are
+// present the brief is read BY ID, so a card that reorders or merges screens
+// can never put one answer where another belonged. A page older than this
+// change sends no ids, and its answers are read by position exactly as before.
+// `test/brief.test.mjs` checks these ids against the committed ui/questions.json
+// and fails if the card stops asking one of them.
 //
 // An order is NEVER refused for a thin brief: the answers are the client's
 // work, and a refusal would throw them away. It is stored marked, so the box
 // sees `brief_complete`/`brief_missing` and can ask for the rest.
 // ---------------------------------------------------------------------------
 
-/** The card's leading questions, in the order intake_card.py asks them. */
+/** The card's questions that carry the brief, in the order intake_card.py asks
+ *  them. With `reply_ids` the order below does not matter — each answer is read
+ *  by the id it travels with. */
 export const BRIEF_QUESTION_IDS = ['offer', 'link', 'audience', 'character', 'photos'];
 
 /** An option pick on the wire: "1" (a page older than S75-059) or
@@ -87,21 +94,32 @@ export const BRIEF_REQUIRED_IDS = ['offer', 'link', 'audience', 'character'];
 
 /**
  * @param {string[]} replies the client's answers, in card order
+ * @param {string[]} [replyIds] U-Z11 — the question id each answer belongs to,
+ *   same order as `replies`. Absent on a page older than S75-106.
  * @returns {{brief: Record<string,string>, complete: boolean, missing: string[]}}
  */
-export function readBrief(replies) {
+export function readBrief(replies, replyIds) {
   const list = Array.isArray(replies) ? replies : [];
   const brief = {};
-  BRIEF_QUESTION_IDS.forEach((id, i) => {
-    const value = typeof list[i] === 'string' ? list[i].trim() : '';
+  const take = (id, value) => {
+    const text = typeof value === 'string' ? value.trim() : '';
     // An OPTION PICK is not an answer someone typed. A page loaded before this
     // fix sends the nine production choices as bare numbers; since S75-059 the
     // page sends them as "<n>. <option text>" so the box can compare the text
     // with its own card. Neither shape is the client's own words, so neither
     // is stored as the brief: the number "1" or "1. MiniMax H3" must never be
     // read as their offer. Everything is still in `replies`, the replay channel.
-    if (value && !OPTION_PICK_REPLY.test(value)) brief[id] = value;
-  });
+    if (text && !OPTION_PICK_REPLY.test(text)) brief[id] = text;
+  };
+  if (Array.isArray(replyIds)) {
+    // U-Z11 — the answer names its screen; a duplicate id is read last-wins and
+    // an id the brief does not want is skipped.
+    replyIds.forEach((id, i) => {
+      if (BRIEF_QUESTION_IDS.includes(id)) take(id, list[i]);
+    });
+  } else {
+    BRIEF_QUESTION_IDS.forEach((id, i) => take(id, list[i]));
+  }
   const missing = BRIEF_REQUIRED_IDS.filter((id) => !brief[id]);
   return { brief, complete: missing.length === 0, missing };
 }
@@ -393,7 +411,7 @@ export async function handle(request, env, store, objects, deps = {}) {
     // The answers are the order: the box replays them through factory.py, so
     // they are validated against the SPEC §4 limits and stored on the record
     // (they used to be dropped — only the title survived).
-    const checked = validateReplies(body.replies === undefined ? [] : body.replies, body.upload_ids);
+    const checked = validateReplies(body.replies === undefined ? [] : body.replies, body.upload_ids, body.reply_ids);
     if (!checked.ok) return fail(400, checked.code, checked.message);
     // U-Z08 — every id the page names that is one of OUR ids (`u_` + 24 hex,
     // the shape acceptUpload mints) must be an upload THIS client asked for.
@@ -409,12 +427,16 @@ export async function handle(request, env, store, objects, deps = {}) {
       }
     }
     const orderId = askedId || `r_${randomConnectHex(4)}`;
-    const read = readBrief(checked.replies);
+    const read = readBrief(checked.replies, checked.replyIds);
     const order = {
       order_id: orderId,
       client_id: clientId,
       title: String(body.title || 'your video'),
       replies: checked.replies,
+      // U-Z11 — the id of the question each answer belongs to, kept beside the
+      // answers so the box can compare them with its own card. An old page
+      // sends none and the field is simply absent.
+      ...(checked.replyIds === undefined ? {} : { reply_ids: checked.replyIds }),
       upload_ids: checked.uploadIds,
       // DSR-105 — the brief the card asked first, beside the replies the box
       // replays. `brief` is what factory.py reads when the run starts; the
@@ -493,6 +515,14 @@ export async function handle(request, env, store, objects, deps = {}) {
       const moved = transition(JSON.parse(raw), body.event, { nowMs, actor: body.actor || auth.record.kind });
       if (!moved.ok) return fail(409, moved.code, moved.message);
       if (body.event === 'claim' || body.event === 'needs_you') moved.order.paid_started = Boolean(body.paid_started);
+      // U-Z11 (S75-106) — a refused or cancelled order says why, in the same
+      // words the client is waiting on, and the page draws that line under the
+      // status. `answer` clears it: the client has seen it and acted.
+      if (body.event === 'needs_you' || body.event === 'cancel') {
+        moved.order.note = (typeof body.reason === 'string' ? body.reason : '').trim().slice(0, NOTE_MAX_CHARS);
+      } else if (body.event === 'answer') {
+        delete moved.order.note;
+      }
       if (body.event === 'deliver' && body.delivery) {
         // The page shows WHERE the video is (GHL library first, R2 copy
         // second). The guard above already refused anything that is not an
