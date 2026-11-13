@@ -14,8 +14,9 @@ Rules implemented here:
 
 1. **Extend path tops up to the exact target.** A take short of the target
    is sent through the Suno extend route (catalog id ``suno-extend``, route
-   and endpoint read from the 68 work copy, located by
-   ``prompt_limits.find_catalogs()`` -- the one locator) until the produced
+   and endpoint read from the 68 work copy, located beside this module
+   first and by ``prompt_limits.find_catalogs()`` only when this module's
+   own tree holds no copy) until the produced
    audio reaches the target, then fitted
    so the delivered length *is* the target to the second. A take already at
    or above the target never calls extend.
@@ -123,14 +124,17 @@ def _catalog_path(catalog_path=None):
     """The 68 work copy path, in ONE documented order.
 
     1. an explicit ``catalog_path`` (tests, callers with their own tree);
-    2. ``prompt_limits.find_catalogs()[0]`` - the ONE locator: the repo root
-       (``68-kie-audio/models.json``), the legacy ``onboarding/`` layout and
+    2. this module's own ancestor walk over every parent, trying
+       ``68-kie-audio`` and ``onboarding/68-kie-audio`` at each, nearest
+       parent first - the pre-sibling resolution, so the catalogue is the
+       one that sits beside *this module* and cannot be displaced by an
+       import resolving ``prompt_limits`` from some other tree;
+    3. ``prompt_limits.find_catalogs()[0]`` - the ONE locator, consulted
+       only when the walk found nothing: the repo-root distribution layout
+       (also caught by 2), the legacy ``onboarding/`` layout (also 2) and
        the 999-setup installer layout
-       (``installer-registration/helpers/68-kie-audio``);
-    3. this module's own ancestor walk over every parent, trying
-       ``68-kie-audio`` and ``onboarding/68-kie-audio`` at each - the
-       pre-sibling resolution, kept so a tree the locator cannot see (or a
-       tree without ``prompt_limits``) still resolves the file;
+       (``installer-registration/helpers/68-kie-audio``, outside this
+       module's tree, so only the locator sees it);
     4. the historic ``parents[3]/onboarding/68-kie-audio/models.json`` as the
        last resort, so a missing catalog reports the path this module has
        always named.
@@ -140,17 +144,17 @@ def _catalog_path(catalog_path=None):
     """
     if catalog_path is not None:
         return Path(catalog_path)
-    try:
-        audio = _prompt_limits().find_catalogs()[0]
-    except Exception:              # locator missing/unreadable -> walk below
-        audio = None
-    if audio is not None:
-        return Path(audio)
     here = Path(__file__).resolve()
     for anc in here.parents:
         for cand in (anc / "68-kie-audio", anc / "onboarding" / "68-kie-audio"):
             if (cand / "models.json").is_file():
                 return cand / "models.json"
+    try:
+        audio = _prompt_limits().find_catalogs()[0]
+    except Exception:              # locator missing/unreadable -> historic path
+        audio = None
+    if audio is not None:
+        return Path(audio)
     return here.parents[3] / "onboarding" / "68-kie-audio" / "models.json"
 
 
@@ -165,9 +169,10 @@ def _catalog_file():
 def catalog(catalog_path=None):
     """canonical_model_id -> entry, read from the work copy. Never hardcoded.
 
-    With no argument the path comes from ``_catalog_path()`` (the ONE
-    locator ``prompt_limits.find_catalogs`` first, then this module's
-    ancestor walk); ``catalog_path`` overrides it for a test tree.
+    With no argument the path comes from ``_catalog_path()`` (this module's
+    own ancestor walk first, then the locator
+    ``prompt_limits.find_catalogs``); ``catalog_path`` overrides it for a
+    test tree.
     """
     p = Path(catalog_path) if catalog_path is not None else _catalog_file()
     key = str(p)
