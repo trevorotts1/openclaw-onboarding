@@ -9,9 +9,15 @@ This file is byte-identical in both distributions.
 
 ## 1. What the card is
 
-One card, all defaults pre-selected, so a client can approve with a single
-click. It is presented as a card, never as a pile of extra questions.
-Directive 24.3 still caps intake at three questions total:
+One card. Every question carries the RECOMMENDED option marked, and the
+client answers each question explicitly - no answer is ever taken from
+silence, an assistant recap or a pre-selected default. It is presented as a
+card, never as a pile of extra questions. The card prints its own
+`Question <n> of <total>`; that computed total is the only count anyone may
+say, and no document states a total.
+
+Directive 24.3 caps the story questions the card does not itself ask at
+three:
 
 1. What are you selling, with a link and an optional product image?
 2. Who is it for, and what should they do after watching?
@@ -42,7 +48,7 @@ product and CTA lines flagged), never free-hand text.
 Your drama song ad
   Length:       60 seconds   (90 seconds, 2 minutes, 3 minutes, 5 minutes,
                 10-minute long version)
-  Shape:        9:16 vertical (16:9 widescreen, or both)
+  Shape:        Vertical 9:16 (Wide 16:9)
   Style:        Lifelike 3D (default) / 2D Hand-Painted / Sketch to Life
                 / Canvas to Life / Canvas to 3D
   Music:        Soul Ballad (default) / R&B Flow / Soul Rise
@@ -55,7 +61,7 @@ Your drama song ad
   Video model:  MiniMax H3 (RECOMMENDED) / Seedance 2.5 / Seedance 2.0 Mini /
                 Google Veo 3.1, each with its price for the chosen length
   Villain:      <name>, shown in N shots    (FU-U16; from the story plan)
-  Price:        computed by Skill 74 `price`   (+ the measured planning allowance)
+  Price:        the chosen model's price for your length, plus every other line, plus the measured planning allowance
   Includes:     all video shots, the song (song mp3 included), one image per shot
   Not included: the AI writing, planning and checking (runs on your own AI plan)
   [Approve]   [Change options]
@@ -78,15 +84,15 @@ runs only against the plan hash the client approved.
 Directive 24.3 note (owner order 2026-10-08): the card is one step with
 four picks, so the three-question cap applies to the story questions only.
 
-`[Approve]` is one click. `[Change options]` reopens the same card with the
-previous selections kept.
+`[Approve]` records the client's explicit "yes" - never an inferred one.
+`[Change options]` reopens the same card with the previous selections kept.
 
 ## 2.2 One question at a time (Part I7, normative)
 
 The intake is a conversation, not a form. One message per turn:
 
-1. `Question 3 of 9 - VIDEO STYLE`, then a one-sentence reason the question
-   matters, then the question.
+1. `Question <n> of <total> - VIDEO STYLE` (the card prints its own numbers),
+   then a one-sentence reason the question matters, then the question.
 2. Options as a numbered list, one per line, each with a short plain
    description; the RECOMMENDED option is marked and followed by "I recommend
    option N (name) because ...".
@@ -148,16 +154,24 @@ pauses before the song (`script_approval/script_approval.py`; gate
 
 ## 2.1 Intake question card layout (Part H9, normative)
 
-The nine intake questions (AI models, length, music style, video style, video
-model, budget, storyboard approval, song approval, script approval) are built by
+The intake questions are built by
 `scripts/core/choice_card/intake_card/intake_card.py` and nowhere else. Never
 write them free hand and never carry them as one JSON string.
 
-- Each question is its own block: `Question 2 of 9 - LENGTH`, then the plain
-  question, then one numbered option per line (`1. 60 seconds - one short
+- Order (the purpose flow a new run opens on): PURPOSE first, then its ONE
+  follow-up (PERMISSION for a testimonial, WHERE for a social video; EPISODE
+  LENGTH for a campaign takes LENGTH's own slot so it adds no screen), then
+  AI MODELS, LENGTH (or EPISODE LENGTH), SHAPE (purposes 1-3), MUSIC STYLE,
+  VIDEO STYLE, AGNES (when the remembered answer is not "no" and the length
+  is 5 minutes or less), VIDEO MODEL, BUDGET, STORYBOARD APPROVAL, SONG
+  APPROVAL, SCRIPT APPROVAL - plus the saved-character question when the
+  client has saved characters. `answered_count` / `total_count` come from the
+  session response; the card prints `Question <n> of <total>`.
+- Each question is its own block: `Question <n> of <total> - LENGTH`, then the
+  plain question, then one numbered option per line (`1. 60 seconds - one short
   sentence. (RECOMMENDED)`). A blank line separates questions. The last line
   is the "how to answer" line.
-- Question 1 is AI MODELS: "Which AI should build your video, and which should
+- AI MODELS comes after the purpose and its one follow-up: "Which AI should build your video, and which should
   check the work? OpenRouter is recommended because it's faster; Ollama works
   too." Option 1 is the recommended setup (an OpenRouter model builds, Claude
   Sonnet checks); option 2 is the client's own pair, e.g. "DeepSeek builds,
@@ -214,7 +228,7 @@ question 2 (AI MODELS stays question 1) and the card has one more question. Buil
 characters the client has saved ("1 character", "2 characters"):
 
 ```
-Question 2 of 10 - CHARACTER
+Question <n> of <total> - CHARACTER
 Do you want to create a new character for this ad, or use one you've used before?
 You have 2 characters saved with us.
 1. Create a new character (recommended)
@@ -247,25 +261,30 @@ incomplete card or no still file blocks the approval message. The live run sends
 
 ## 2.6 Song approval (FU-SONG-APPROVAL, normative)
 
-Question 8 of 9, label `SONG APPROVAL`, built by `intake_card.py` like the
-storyboard question (the saved-character question, when shown, makes it 9 of 10):
+Label `SONG APPROVAL`, built by `intake_card.py` like the storyboard question.
+Its position is the card's computed order; the card prints
+`Question <n> of <total>`, and no fixed number is ever stated:
 
 ```text
-Question 8 of 9 - SONG APPROVAL
+Question <n> of <total> - SONG APPROVAL
 Do you want to hear and pick the song before any video is made?
 1. Yes, send me 3 versions to choose from - ... (RECOMMENDED)
 2. No, just make it - I make one song and keep going.
 ```
 
-- It appears in the recap ("8. Song Approval: ...") and the recap's "number of
+- It appears in the recap on its own numbered line and the recap's "number of
   a line to change it" reopens it.
 - **Yes:** the song stage generates three versions of the same lyric sheet IN
   PARALLEL inside the chosen music style, three arrangement variants from the
   data table `scripts/core/song_choices/variants.json` (for R&B Flow: Polished
   Modern, Warm Live Band, Cinematic Strings). Every version must pass the
   song checks (`song_dispatch.judge_take`: lyrics, hook placement, voice rules)
-  before it is offered; a failed version is regenerated once, then reported
-  and left out.
+  before it is offered. A failed version is NEVER regenerated by the factory:
+  it keeps the judge's named concerns, is presented for listening only
+  (`SONG-CHOICES/FOR-LISTENING/`), and the client answers ONE fork
+  (`song_choices.FAILURE_FORK`, recorded in
+  `song-choices/fork-decision.json`); only the client's recorded answer
+  authorises a new paid round, and `keep_one` never writes a PASS.
 - **Labels:** one folder `SONG-CHOICES/` in the client's delivery folder with
   `1 - <LABEL> (<one-line description>).mp3`, `2 - ...`, `3 - ...`, each file's
   embedded title tag set to the same label (`ffmpeg -c copy -metadata
@@ -285,16 +304,17 @@ Do you want to hear and pick the song before any video is made?
 
 ### 3.1 Length
 
-The intake card asks it as one full question with five numbered options, each
+The intake card asks it as one full question with six numbered options, each
 saying what the client gets (`core/choice_card/intake_card`, LENGTH):
 
 ```text
 How long do you want your ad to be? The longer ads also come with short clips you can post on social media.
 1. 60 seconds
 2. 90 seconds
-3. 3 minutes + 60s and 90s clips
-4. 5 minutes + 60s and 90s clips
-5. 10 minutes (the long version) + 60s and 90s clips
+3. 2 minutes
+4. 3 minutes + 60s and 90s clips
+5. 5 minutes + 60s and 90s clips
+6. 10 minutes (the long version) + 60s and 90s clips
 Reply with a number, or say "recommended".
 ```
 
@@ -332,11 +352,12 @@ section or to land an exact length.
 
 ### 3.2 Shape
 
-Offered: **9:16, 16:9, or both** (decision 2). Default 9:16.
+Offered: **Vertical (9:16) or Wide (16:9)** - `intake_card._shape_q` has exactly
+these two options and no "both" answer. Default Vertical. (The old "both
+shapes" promise is a product gap recorded by U-F05; it is not selectable.)
 
 - Each shape is generated natively - its own keyframes and shots, framed for
   that shape. Never a squash or crop of the other.
-- "Both shapes" shows its own price before approval.
 - Shared between shapes: story, song, timing map, Continuity Bible and the
   shot plan up to framing. Final QC runs separately per shape.
 
@@ -390,13 +411,20 @@ Rules:
 
 ### 3.4 Music
 
-Decision 30, plan 6.7:
+Decision 30, plan 6.7. The card renders the eighteen canonical styles from
+`music_styles.catalog.choice_rows()` (the catalog is closed at eighteen; a
+nineteenth is refused `CATALOG_FULL`), Soul Ballad first and recommended:
 
 | Value on the card | Sound |
 |---|---|
-| **Soul Ballad** (default) | Slow, emotional, soulful singing - the original drama-song style |
+| **Soul Ballad** (default, recommended) | Slow, emotional, soulful singing - the original drama-song style |
 | **R&B Flow** | Rap verses with a smooth sung R&B hook |
 | **Soul Rise** | Slow and soulful through the pain, lifts into an upbeat groove at the turning point |
+
+The other fifteen, each with the catalog's own one-line description:
+Acoustic Pop, Folk Storytelling, Country Pop, Melodic Rap, Trap Rap, Pop Rap,
+Pop Rock, Reggaeton, Cinematic Orchestral Song, Musical Theater, Contemporary
+Gospel, Urban Gospel, Alternative R&B, Afro-Soul and Country Rap.
 
 The song brief, the Suno style prompt and the spoken/sung balance all follow
 this choice.
@@ -424,7 +452,8 @@ Decision 27 and decision 31, plan 6.12 and 6.12.1:
   Velvet Voiceover is not selectable - `choice_card.stl_voice_guard`
   disables it on the card (default mode keeps it listed with an unavailable
   note, `mode="hide"` drops it from the line), refuses intake with
-  `stl-voice-velvet-not-offered` and re-asks with All Suno preselected, and
+  `stl-voice-velvet-not-offered` and re-asks with a card that offers only
+  All Suno (the client still answers), and
   writing Velvet onto a Sketch to Life card raises `StlGuardError`. The
   other four looks offer both voices.
 - Voice choice is verified against the picture, not trusted: `qc_voice_match`
@@ -485,9 +514,9 @@ Constraints:
 
 Decision 32, plan 6.13.
 
-- Automatic 60-second and 90-second clips are offered **for the 5-minute and
-  10-minute lengths only**. On 60 s, 90 s and 3 minutes the Clips row is
-  hidden and states "not offered for this length".
+- Automatic 60-second and 90-second clips come with the **3-minute, 5-minute
+  and 10-minute** ads (`core/clip_cutdown`, `clips_for`; `MIN_CLIP_AD_S` =
+  180). On 60 s, 90 s and 2 minutes the Clips row says "not offered".
 - Cutting a clip is free: it is an FFmpeg edit of the finished video. The AI
   that picks the moments runs on the client's own AI plan.
 - Default set: Clip 1 = cold-open teaser plus humiliation (the ad clip);
@@ -499,9 +528,6 @@ Decision 32, plan 6.13.
   frames lands (no onboarding branch; 999 `unit/FU-U9` carries only the
   excerpt burn).
 
-- Automatic clips come with the **3-minute, 5-minute and 10-minute** ads:
-  one 60-second clip and one 90-second clip each (`core/clip_cutdown`,
-  `clips_for`). On 60 s and 90 s the Clips row says "not offered".
 - Cutting a clip is free: it is an FFmpeg edit of the finished video, so the
   price of the ad already includes the clips (the Clips row shows $0.00 and
   says "included in the price").
@@ -519,9 +545,8 @@ Decision 32, plan 6.13.
   file after the rename, and merges the rows into `delivery-receipt.json` and
   `README.md` (merge, never clobber). `check_clips` fails closed (a promised
   clip missing, unlisted, or a refused gate); 60 s and 90 s ads owe none.
-- Long-version shape choice is shown on the card: generate both shapes
-  (roughly double the video cost, clips cut from the 9:16 version) or
-  centre-crop to 9:16 (free, may cut off faces, the client must accept it).
+- The chosen shape (Vertical or Wide) is generated natively; the card has no
+  "both shapes" answer. A client who needs both runs the ad twice.
 
 ### 3.8 Video model
 
@@ -535,9 +560,9 @@ its price for THAT length, one plain descriptor each (about 8 words), and MiniMa
 H3 first and marked RECOMMENDED:
 
 ```
-Question 4 of 6 - VIDEO MODEL
+Question <n> of <total> - VIDEO MODEL
 Which video model should make your shots? Prices are for your 3-minute ad,
-with the song, pictures and a 50% redo allowance.
+with the song, pictures and the planning allowance (`budget_contingency.label()`).
 1. MiniMax H3 - great quality, best value - about $11.46 (RECOMMENDED)
 2. Seedance 2.5 - premium detail and motion - about $85.71
 3. Seedance 2.0 Mini - quicker and cheaper - about $11.73
@@ -552,9 +577,10 @@ factory really renders: MiniMax H3 768P, Seedance 2.5 720p, Seedance 2.0 Mini 72
 Google Veo 3.1 Fast 720p (per 8-second clip). The figure shown comes from the
 SAME function as the final card (`card_render.price_envelope`): video + one
 keyframe per shot + the character reference pictures + the song, then the
-50% redo allowance, so the number in the question is the number on the card
-(for the standard 9:16 ad with one main character; more characters or both
-shapes re-price on the card with the same function). Skill 74 `price` returns
+planning allowance (`budget_contingency.label()`), so the number in the
+question is the number on the card
+(for the standard 9:16 ad with one main character; more characters re-price
+on the card with the same function). Skill 74 `price` returns
 the highest listed tier, so the chosen model's video line is priced from the
 table instead; Skill 74's own behaviour for other skills is unchanged.
 The recap line reads `Video model: Seedance 2.5 - about $68.57` (3-minute ad). The
@@ -566,7 +592,7 @@ off; Veo 3.1: top-level `veo-3-1`, tier `veo3_fast` inside `input`).
 Seedance 2.0 Fast is not offered: its 4-15 s clip range is unconfirmed and it
 is not on the price menu; Mini is the "lite" tier on the menu.
 
-If Hailuo 02 Standard is unavailable, the factory says so and offers the next
+If MiniMax H3 is unavailable, the factory says so and offers the next
 cheapest APPROVED model that fits, with its price. It never switches models
 silently. The chosen model and resolution are saved on the campaign; resumes
 and retakes reuse them.
@@ -658,18 +684,21 @@ numbers `references/price-menu.md` documents:
 - The storyboard picture count is a separate count, always at least as large
   as the video shot count for the same ad; the two are never conflated or
   added together.
-- No rate is printed next to the count: every price the client sees still
-  comes from Skill 74 `price` (section 4), and the per-picture price lives
-  only in `references/price-menu.md`.
+- No rate is printed next to the count: every price the client sees follows
+  section 4 (the video line from the rates table, every other line from
+  Skill 74 `price`), and the per-picture price lives only in
+  `references/price-menu.md`.
 - The client guide states the same counts and the same cap
   (`references/CLIENT-GUIDE.md`, STEP 15).
 
 ## 4. Price rules on the card
 
-1. **Every number on the card comes from Skill 74 `price`** - video model,
-   both shapes, lip-sync close-ups, voice packs, clips and the batch total.
-   The card never computes a rate itself and never reads a table from this
-   repository.
+1. **The VIDEO MODEL line is priced from this repository's one rates table**,
+   `scripts/core/choice_card/video_models/video_model_rates.json`, through the
+   shared price function (`card_render.price_envelope`), because Skill 74
+   `price` returns the highest listed tier. Every OTHER number on the card -
+   the chosen shape, lip-sync close-ups, voice packs, clips and the batch
+   total - comes from Skill 74 `price`. The card never computes a rate.
 2. `preflight --model ID --units N` runs before approval; a shortfall is
    shown on the card and no paid call starts.
 3. Approval records the spending limit: the chosen price **plus the measured
@@ -719,7 +748,9 @@ The four rules (recipe v2, replaces G12):
 1. Spoken tags only in [Intro] and [Outro]; spoken is named once in the style
    text, and the style says the full band keeps playing under the spoken lines.
 2. Sung lines are short (5-6 syllables aimed, 8 at most), rhymed, with
-   hyphen-held vowels, after a wordless sung vocalise.
+   hyphen-held vowels. A wordless vocalise is OPTIONAL, never a forced
+   lead-in: a sheet may open with one short note inside the 3-second ceiling
+   below, or with no vocalise at all.
 3. The hook is the payoff, never the opener: it comes after the build-up
    (a verse, plus a pre-chorus or build where the style and length plan
    have one), measured at or after the story beat where its words become
@@ -755,11 +786,10 @@ end card never count against it. Both numbers use Trevor's band: within 5
 points accept, over 5 up to 10 accept with a flag, over 10 redo. The only
 hard reject is no sung stretch of at least 6 seconds. One constants set holds
 the numbers: `scripts/core/spoken_share/spoken_share.py`.
-**TODO(FU-U3):** per-style bands change how these two numbers are read -
-`STYLE_TARGETS` judges each music style by its own delivery (R&B Flow's rap
-share comes from the approved plan, never the spoken runtime target). Landed
-in 999 (2.7.31, PR #120); open PR #1752 on onboarding - refresh this
-paragraph when it lands there.
+**FU-U3 (landed in 2.7.31 via PR #120):** per-style bands change how these two
+numbers are read - `STYLE_TARGETS` judges each music style by its own delivery
+(R&B Flow's rap share comes from the approved plan, never the spoken runtime
+target). The 5/10 band and the 6 s sung stretch do not change.
 
 The only exemption is the Velvet Voiceover version (the spoken Google voice
 over the song, id `velvet_voiceover`), which keeps its own flow. Almost

@@ -41,7 +41,7 @@
       "argv": ["{python}", "scripts/core/intake_preflight/factory.py", "intake",
                "--brief-file", "{work}/brief.json"],
       "cwd": "{skill_root}",
-      "advertised_in": ["SKILL.md:312 'intake   --brief-file brief.json'"],
+      "advertised_in": ["SKILL.md:305 'intake   --brief-file brief.json'"],
       "expect": {"exit_code": 2, "outcome": "waiting", "stderr_empty": true},
       "observed": {"exit_code": 2, "outcome": "waiting", "stderr_bytes": 0},
       "note": "rc 2 is EXIT['waiting']: the brief is normalized and the next essential is asked, which is the documented first command."
@@ -52,7 +52,7 @@
       "argv": ["{python}", "scripts/core/intake_preflight/factory.py",
                "preflight", "--root", "{work}/storage"],
       "cwd": "{skill_root}",
-      "advertised_in": ["SKILL.md:313 'preflight --root \"$STORAGE\"'"],
+      "advertised_in": ["SKILL.md:306 'preflight --root \"$STORAGE\"'"],
       "expect": {"exit_code": 2, "stderr_empty": true},
       "observed": {"exit_code": 2, "stderr_bytes": 0},
       "note": "An empty root is waiting, not ok; the envelope is produced either way."
@@ -63,7 +63,7 @@
       "argv": ["{python}", "scripts/core/intake_preflight/factory.py", "next",
                "--run-dir", "{work}/run"],
       "cwd": "{skill_root}",
-      "advertised_in": ["SKILL.md:202 'factory.py next --run-dir $RUN'"],
+      "advertised_in": ["SKILL.md:235 'factory.py next --run-dir $RUN'"],
       "expect": {"exit_code": 1, "stderr_empty": true},
       "observed": {"exit_code": 1, "stderr_bytes": 0},
       "note": "A run directory with no control/state.sqlite3 is refused with the missing path, never invented."
@@ -108,7 +108,7 @@
                "script-reply", "--run-dir", "{work}/run", "--reply",
                "approved"],
       "cwd": "{skill_root}",
-      "advertised_in": ["SKILL.md:249 'factory.py script-reply --run-dir $RUN --reply'"],
+      "advertised_in": ["SKILL.md:242 'factory.py script-reply --run-dir $RUN --reply'"],
       "expect": {"exit_code": 4, "stderr_empty": true},
       "observed": {"exit_code": 4, "stderr_bytes": 0},
       "note": "rc 4 is EXIT['rejected']: no creative/script.json exists, so the reply is blocked rather than accepted."
@@ -119,7 +119,7 @@
       "argv": ["{python}", "scripts/core/intake_preflight/factory.py", "card",
                "--step", "--run-state-file", "{work}/run-state.json"],
       "cwd": "{skill_root}",
-      "advertised_in": ["SKILL.md:634 'factory.py card --step --run-state-file'"],
+      "advertised_in": ["SKILL.md:627 'factory.py card --step --run-state-file'"],
       "expect": {"exit_code": 0, "stderr_empty": true},
       "observed": {"exit_code": 0, "stderr_bytes": 0}
     },
@@ -129,7 +129,7 @@
       "argv": ["{python}", "scripts/core/intake_preflight/factory.py", "card",
                "--client-dir", "{work}/client"],
       "cwd": "{skill_root}",
-      "advertised_in": ["SKILL.md:1031 'factory.py card --client-dir <dir>'"],
+      "advertised_in": ["SKILL.md:1006 'factory.py card --client-dir <dir>'"],
       "expect": {"exit_code": 0, "stderr_empty": true},
       "observed": {"exit_code": 0, "stderr_bytes": 0}
     },
@@ -139,7 +139,7 @@
       "argv": ["{python}", "scripts/core/intake_preflight/factory.py",
                "character", "--client-dir", "{work}/client", "list"],
       "cwd": "{skill_root}",
-      "advertised_in": ["SKILL.md:1026 'factory.py character --client-dir'"],
+      "advertised_in": ["SKILL.md:1001 'factory.py character --client-dir'"],
       "expect": {"exit_code": 0, "stderr_empty": true},
       "observed": {"exit_code": 0, "stderr_bytes": 0}
     },
