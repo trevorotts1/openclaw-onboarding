@@ -26,7 +26,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import * as A from "../approvals.mjs";
-import { approvalsView, renderApprovals } from "../ui.mjs";
+import { APPROVAL_HEADINGS, approvalsView, renderApprovals } from "../ui.mjs";
 
 const HERE = fileURLToPath(new URL(".", import.meta.url));
 const CLI = fileURLToPath(new URL("../producer-handoff.mjs", import.meta.url));
@@ -139,7 +139,7 @@ export function c5_uiRendersServiceLines() {
     const tree = renderApprovals(fakeDoc(), view);
     const flat = flatten(tree);
     assert(flat.includes(line), "the line reaches the DOM as text");
-    assert(flat.includes("Approval 1 — the script"), "the card heading reaches the DOM");
+    assert(flat.includes(APPROVAL_HEADINGS.script), "the card heading reaches the DOM");
     assert(!flat.includes("<"), "no markup was smuggled in as text");
 
     // The approved card shows the recorded state and no action.
