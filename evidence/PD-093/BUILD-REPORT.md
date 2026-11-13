@@ -296,7 +296,10 @@ The Boss is recommending the latter: keep the literal GATE 7 marker and ask.
 | `579c937ae` | qc-pd094-recheck3 | PD-094: qc fix - remaining stale craft mandates (PD-094 accepted head) |
 | `66bf69c97` | CI | PD-093: assembly procedure follows the engine it actually dispatches |
 | `7381bff56` | CI | PD-093: build report (walk-through table, blocked header row, cross-unit findings) |
-| *this row's commit* | deepseek-chain | PD-093: header states the manifest version is read from the file |
+| `e9fb04930` | CI | **this row's build commit** — PD-093: header states the manifest version is read from the file |
+
+Push proof: `git ls-remote origin refs/heads/pd/fl24-role-procedures-c` →
+`e9fb049304c37529415fde530d81b2c8bb988697`, identical to local `HEAD`.
 
 Hunk attribution for this row: two files, one line each, both inside `owned_paths`. No PD-094 hunk
 is touched and no hunk belonging to another unit is present.
