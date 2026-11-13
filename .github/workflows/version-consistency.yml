@@ -461,40 +461,6 @@ jobs:
 
           echo "✓ All v11+ annotated tags have CHANGELOG entries."
 
-  # ── PRD 2.2 Guard G2-EXT: every annotated tag (full history) needs a
-  # CHANGELOG entry, or a documented pre-v11 gap ────────────────────────────
-  # G2 above is scoped to v11+ on purpose (pre-v11 tags predate the
-  # CHANGELOG-on-tag discipline; see its comment). That floor means a gap
-  # ANYWHERE below v11 — new or old — is invisible to G2 forever. G2-EXT walks
-  # every annotated tag with no floor, using the identical header matcher, and
-  # grandfathers the known pre-v11 backlog through
-  # .github/known-changelog-gap-tags.txt (same bidirectional-ledger pattern as
-  # .github/known-untagged-releases.txt / known-orphan-tags.txt): a gap NOT in
-  # the ledger fails the build, and a ledger entry that is no longer a gap
-  # ALSO fails the build, so the ledger can only shrink. See
-  # scripts/check-changelog-full-history.py for the full rationale.
-  check-tag-changelog-full-history:
-    name: G2-EXT — every annotated tag (all history) must have a CHANGELOG entry or a documented gap
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout full history + tags
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-
-      - name: Verify every annotated tag has a CHANGELOG entry or a documented gap
-        shell: bash
-        run: python3 scripts/check-changelog-full-history.py
-
-      - name: "Self-test: check-changelog-full-history.py (tests/unit/check-changelog-full-history.test.sh)"
-        shell: bash
-        run: bash tests/unit/check-changelog-full-history.test.sh
-
   # ── PRD 2.2 Guard G3: skill content change → skill-version.txt must bump ───
   # If any file inside a skill directory (XX-<name>/ pattern) changed on this
   # push or PR, the skill's own skill-version.txt must also have changed.

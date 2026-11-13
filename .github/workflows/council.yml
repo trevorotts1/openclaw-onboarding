@@ -1,0 +1,186 @@
+name: council
+
+# Skill 77 (Council of Wise Elders) checks in one workflow. Five workflows used to run
+# these on the same paths and each set up Node again (11 jobs with their matrices):
+#   council-bundle-integrity-after-build, council-existing-skill22-persona-audit,
+#   council-installed-pack-contract, council-runtime-node-preflight and
+#   council-wer013-source-qualification.
+# Now one job per Node version (22 and 24) runs the five groups in that order, one step
+# per group. Every group runs even when an earlier one fails (`!cancelled()`), so a red
+# run names each failing group instead of stopping at the first. The Node 20 preflight
+# (it must REFUSE to start the runtime) runs once, inside the Node 22 job.
+# Paths are the union of the five old workflows' paths.
+
+on:
+  pull_request:
+    paths:
+      - "77-council-of-wise-elders/**"
+      - "22-book-to-persona-coaching-leadership-system/personas/**"
+      - "22-book-to-persona-coaching-leadership-system/persona-categories.json"
+      - ".github/workflows/council.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  council:
+    # Batch pull requests run only the required checks (Trevor order 2026-11-13).
+    if: ${{ !startsWith(github.head_ref, 'batch/') }}
+    name: council (Node ${{ matrix.node }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node: ["22", "24"]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+          cache-dependency-path: 77-council-of-wise-elders/runtime/package-lock.json
+
+      # Group 1 (was council-bundle-integrity-after-build). Runs BEFORE any regeneration:
+      # the regeneration step rewrites manifest.json and the .skill archive and then
+      # verifies its own output, which can never fail; skill 77 shipped v1.0.64 to
+      # v1.0.68 with the manifest still at v1.0.63 (wire.sh TREE_GATE, QC hash drift)
+      # because nothing checked the COMMITTED manifest against the committed tree. The
+      # doctor does: tree hash, file count, archive SHA-256 and all four version carriers.
+      - name: "Council 1 of 5: bundle integrity after runtime build"
+        if: ${{ !cancelled() }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd 77-council-of-wise-elders
+          echo "::group::Committed manifest and archive describe the committed tree"
+          node scripts/doctor.mjs
+          echo "::endgroup::"
+          echo "::group::Regenerate deterministic package and verify clean source"
+          node scripts/build-bundles.mjs
+          node scripts/doctor.mjs
+          node scripts/verify-bundles.mjs
+          echo "::endgroup::"
+          echo "::group::Verify extracted distribution and tamper rejection"
+          node --test scripts/tests/bundle-extraction.test.mjs
+          echo "::endgroup::"
+          echo "::group::Build runtime in-place with dependencies"
+          (cd runtime && npm ci --no-audit --no-fund && npm run build \
+            && node --import tsx --test tests/cli.test.ts tests/cli-doctor-readiness.test.ts tests/cli-composition.test.ts tests/cli-route-composition.test.ts)
+          echo "::endgroup::"
+          echo "::group::Built artifacts do not alter source manifest"
+          node scripts/doctor.mjs
+          node scripts/verify-bundles.mjs
+          echo "::endgroup::"
+          echo "::group::Changing real source must fail verification"
+          printf '\ninvalidating source change\n' >> runtime/README.md
+          if node scripts/verify-bundles.mjs; then
+            echo "ERROR: source modification was ignored by integrity verification"
+            exit 1
+          fi
+          git checkout -- runtime/README.md
+          node scripts/verify-bundles.mjs
+          echo "::endgroup::"
+
+      # Group 2 (was council-existing-skill22-persona-audit).
+      - name: "Council 2 of 5: approved Skill 22 personas (read-only)"
+        if: ${{ !cancelled() }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "::group::Verify nine-seat freeze and existing original Book-to-Persona artifacts"
+          node --test 77-council-of-wise-elders/scripts/tests/audit-skill22-personas.test.mjs
+          echo "::endgroup::"
+          echo "::group::Produce read-only full SHA-256 provenance inventory"
+          node 77-council-of-wise-elders/scripts/audit-skill22-personas.mjs --check
+          node 77-council-of-wise-elders/scripts/audit-skill22-personas.mjs --json > "${{ runner.temp }}/council-existing-skill22.json"
+          echo "::endgroup::"
+
+      - uses: actions/upload-artifact@v4
+        if: ${{ !cancelled() }}
+        with:
+          name: council-existing-skill22-node-${{ matrix.node }}
+          path: ${{ runner.temp }}/council-existing-skill22.json
+          retention-days: 21
+
+      # Group 3 (was council-installed-pack-contract). The locked dependencies were
+      # installed by group 1 (same lockfile), so no second `npm ci`.
+      - name: "Council 3 of 5: installed advisor pack contract"
+        if: ${{ !cancelled() }}
+        shell: bash
+        working-directory: 77-council-of-wise-elders/runtime
+        run: |
+          set -euo pipefail
+          [ -d node_modules ] || npm ci --no-audit --no-fund
+          npm run build
+          node --import tsx --test tests/installed-seat-pack.test.ts tests/cli.test.ts
+
+      # Group 4 (was council-runtime-node-preflight, a 3-way matrix over Node 20, 22, 24).
+      # Node 20 must NOT pass the runtime preflight; it runs once, in the Node 22 job.
+      # Node 22 and 24 run the preflight below in their own jobs.
+      - uses: actions/setup-node@v4
+        if: ${{ !cancelled() && matrix.node == '22' }}
+        with:
+          node-version: "20"
+
+      - name: "Council 4 of 5: Node 20 must not pass the runtime preflight"
+        if: ${{ !cancelled() && matrix.node == '22' }}
+        shell: bash
+        working-directory: 77-council-of-wise-elders
+        run: |
+          node --version
+          node --test scripts/tests/node-runtime-preflight.test.mjs
+          if node scripts/install-runtime.mjs --check-prereqs; then
+            echo "Node 20 must not pass Council runtime preflight"
+            exit 1
+          fi
+
+      - uses: actions/setup-node@v4
+        if: ${{ !cancelled() && matrix.node == '22' }}
+        with:
+          node-version: ${{ matrix.node }}
+
+      - name: "Council 4 of 5: runtime and SQLite preflight on this Node"
+        if: ${{ !cancelled() }}
+        shell: bash
+        working-directory: 77-council-of-wise-elders
+        run: |
+          node --version
+          node --test scripts/tests/node-runtime-preflight.test.mjs
+          node scripts/install-runtime.mjs --check-prereqs
+
+      # Group 5 (was council-wer013-source-qualification).
+      - name: "Council 5 of 5: WER-013 source qualification"
+        if: ${{ !cancelled() }}
+        shell: bash
+        working-directory: 77-council-of-wise-elders/runtime
+        run: |
+          set -euo pipefail
+          [ -d node_modules ] || npm ci --no-audit --no-fund
+          echo "::group::Check source coverage classifier and fail-closed cases"
+          npm run build
+          node --import tsx --test src/sources/sources.test.ts tests/wer013-primary-coverage.test.ts
+          echo "::endgroup::"
+          echo "::group::Verify Skill 22 legacy books and canonical Council roster are preserved"
+          node --import tsx --test tests/wer013-skill22-preservation.test.ts
+          node --import tsx scripts/audit-skill22-preservation.ts
+          node --import tsx scripts/audit-skill22-preservation.ts --json > "${{ runner.temp }}/council-skill22-preservation.json"
+          echo "::endgroup::"
+          echo "::group::Print current nine-seat source gap without faking release acceptance"
+          node --import tsx scripts/audit-advisor-sources.ts
+          node --import tsx scripts/audit-advisor-sources.ts --json > "${{ runner.temp }}/council-source-qualification.json"
+          echo "::endgroup::"
+
+      - uses: actions/upload-artifact@v4
+        if: ${{ !cancelled() }}
+        with:
+          name: council-wer013-source-gap-node-${{ matrix.node }}
+          path: |
+            ${{ runner.temp }}/council-source-qualification.json
+            ${{ runner.temp }}/council-skill22-preservation.json
+          retention-days: 14

@@ -1,3 +1,7 @@
+## [v2.1.60] - 2026-11-13 - test-only: the CI-wiring test reads the folded fast-guards guard (no behavior change)
+
+- `scripts/test_downsell_wrapper.py` `ThankYouTranslatorRunsInCiTests` read `.github/workflows/downsell-wrapper-pins.yml`. That workflow was folded into `fast-guards`, so the test now reads the folded script `scripts/ci/fast-guards.d/downsell-wrapper-pins.sh` and the guard entry in `scripts/ci/fast-guards.json` for the same two assertions (the translator suite is a step of the job; the 82 and shared-contract paths trigger it). Tests are not part of the prover pin, so the pin is unchanged.
+
 ## [v2.1.59] - 2026-11-12 - owner approvals reach the owner in chat, by button, or in Command Center
 
 - Every owner approval point (plan, copy, Design Board, wireframes and mockups, paid budget, placeholder run, GHL write, go-live) delivers its review material into the owner chat (copy inline, images or PDF attached) through `shared-utils/owner_approval/owner_approval.py`, and the owner may approve by replying, by Telegram button, or in Command Center. `SKILL.md` and `LAUNCH_MODE.md` say so; the refusal wording in `dispatch_launch.py`, `legacy_downsell_images.py` and `prove_sf_build.py` no longer implies Command Center only. Pinned file change: the prover pin needs a CI mint.

@@ -233,9 +233,11 @@ def test_ci_drift_gates_script_runs_the_hashlock_checker():
 
 
 def test_ci_workflow_fires_on_the_files_the_gate_grades():
-    wf = REPO / ".github/workflows/presentations-drift-gates.yml"
-    assert wf.is_file(), "presentations-drift-gates.yml not found"
-    text = wf.read_text(encoding="utf-8")
+    # The job was folded into fast-guards: its path filter is the guard entry in scripts/ci/fast-guards.json.
+    import json
+    guards = json.loads((REPO / "scripts/ci/fast-guards.json").read_text(encoding="utf-8"))
+    entry = next(g for g in guards if g["was"] == "presentations-drift-gates.yml")
+    text = json.dumps(entry["events"]["pull_request"]["paths"])
     for needed in (CHECKER_REL, REGISTRY_REL, MIRROR_TREE, GHL_MEDIA_REL):
         assert needed in text, (
             f"{needed} is not in the workflow's path filter — a PR touching it would "

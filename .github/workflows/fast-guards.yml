@@ -9,7 +9,10 @@ name: fast-guards
 # the filters live in scripts/ci/fast-guards.json. A change to this workflow or
 # to either of those re-runs every guard.
 # Deliberately NOT folded: the 8 required checks, the heavy (>= 60 s) workflows,
-# and any workflow whose file is referenced by another guard.
+# macOS jobs, jobs that need a service container, and any workflow whose file is
+# read by another guard or test.
+# Two shards (guard names sorted, index modulo 2) so the folded guards run in two
+# parallel jobs instead of one long one; a guard failure names the guard and the step.
 
 on:
   push:
@@ -23,9 +26,15 @@ concurrency:
 
 jobs:
   fast-guards:
-    name: fast-guards (all folded guards)
+    # Batch pull requests run only the required checks (Trevor order 2026-11-13).
+    if: ${{ !startsWith(github.head_ref, 'batch/') }}
+    name: fast-guards (shard ${{ matrix.shard }})
     runs-on: ubuntu-latest
     timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1]
     steps:
       - name: Checkout repo
         uses: actions/checkout@v4
@@ -36,4 +45,8 @@ jobs:
         with:
           python-version: "3.11"
       - name: Run the folded guards
-        run: python3 scripts/ci/fast_guards.py
+        # GH_TOKEN: the folded ledger-truth-gate guard clones blackceo-command-center and reads check-runs with it,
+        # exactly as its old workflow did with secrets.GITHUB_TOKEN.
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: python3 scripts/ci/fast_guards.py --shard ${{ matrix.shard }}/2

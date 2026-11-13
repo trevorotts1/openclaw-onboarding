@@ -44,8 +44,8 @@ else
   declare -A GATE_WORKFLOWS
   GATE_WORKFLOWS[1]="qc-static.yml"; GATE_WORKFLOWS[2]="qc-static.yml"
   GATE_WORKFLOWS[3]="qc-static.yml"; GATE_WORKFLOWS[4]="qc-static.yml"
-  GATE_WORKFLOWS[5]="version-consistency.yml"; GATE_WORKFLOWS[6]="agent-browser-lifecycle-guard.yml"
-  GATE_WORKFLOWS[7]="persona-set-asset-consistency-guard.yml"
+  GATE_WORKFLOWS[5]="version-consistency.yml"; GATE_WORKFLOWS[6]="fast-guards.yml"  # agent-browser-lifecycle-guard is folded into fast-guards
+  GATE_WORKFLOWS[7]="fast-guards.yml"  # persona-set-asset-consistency-guard is folded into fast-guards
   WORKFLOW_DIR=".github/workflows"; ALL_BRANCH_COUNT=0; MAIN_ONLY_COUNT=0
   for gate in "${GATE_SECTIONS[@]}"; do
     wf="${GATE_WORKFLOWS[$gate]:-}"

@@ -1016,21 +1016,23 @@ class ThankYouTranslatorRunsInCiTests(unittest.TestCase):
     translator suite, installs the jsonschema it needs, and triggers on the
     82 and shared-utils paths. Text checks (the CI python has no yaml)."""
 
-    WORKFLOW = (pathlib.Path(__file__).resolve().parents[2] / ".github" / "workflows"
-                / "downsell-wrapper-pins.yml")
+    # The job was folded into fast-guards: its steps live in the folded script and its triggers in the
+    # guard's entry in scripts/ci/fast-guards.json (same run: lines, same push and pull_request paths).
+    REPO = pathlib.Path(__file__).resolve().parents[2]
+    SCRIPT = REPO / "scripts" / "ci" / "fast-guards.d" / "downsell-wrapper-pins.sh"
 
     def test_the_translator_suite_is_a_step_of_the_job(self):
-        text = self.WORKFLOW.read_text(encoding="utf-8")
-        self.assertRegex(text, r"(?m)^\s+run: python3 49-signature-funnel/scripts/test_thankyou_translator\.py\s*$")
-        self.assertRegex(text, r"(?m)^\s+run: python -m pip install [^\n]*\bjsonschema==")
+        text = self.SCRIPT.read_text(encoding="utf-8")
+        self.assertRegex(text, r"(?m)^python3 49-signature-funnel/scripts/test_thankyou_translator\.py\s*$")
+        self.assertRegex(text, r"(?m)^python -m pip install [^\n]*\bjsonschema==")
 
     def test_82_and_the_shared_contract_trigger_the_job(self):
-        text = self.WORKFLOW.read_text(encoding="utf-8")
-        blocks = {"push": text.split("\n  push:", 1)[1].split("\n  pull_request:", 1)[0],
-                  "pull_request": text.split("\n  pull_request:", 1)[1].split("\n  workflow_dispatch:", 1)[0]}
-        for event, block in blocks.items():
+        import json
+        guards = json.loads((self.REPO / "scripts" / "ci" / "fast-guards.json").read_text(encoding="utf-8"))
+        entry = next(g for g in guards if g["name"] == "downsell-wrapper-pins")
+        for event in ("push", "pull_request"):
             for path in ("82-signature-thank-you/**", "shared-utils/signature_launch_contract/**"):
-                self.assertIn(f'"{path}"', block, (event, path))
+                self.assertIn(path, entry["events"][event]["paths"], (event, path))
 
 
 class DownsellPinTests(unittest.TestCase):

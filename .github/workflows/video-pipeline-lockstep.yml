@@ -78,6 +78,8 @@ concurrency:
 
 jobs:
   video-pipeline-lockstep:
+    # Batch pull requests run only the required checks (Trevor order 2026-11-13).
+    if: ${{ !startsWith(github.head_ref, 'batch/') }}
     name: Movie Producer manifest/code/ruleset lockstep + GOOD/BAD self-test
     runs-on: ubuntu-latest
     steps:

@@ -16,25 +16,6 @@ name: prebuilt-index-section-tagged-guard
 # publish/manifest-change time, not every PR).
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - install.sh
-      - update-skills.sh
-      - shared-utils/prebuilt-index/INDEX-MANIFEST.json
-      - shared-utils/provision-persona-index.sh
-      - tests/unit/prebuilt-index-section-tagged.test.sh
-      - tests/fixtures/prebuilt-index-section-tagged.fixture.sqlite
-      - .github/workflows/prebuilt-index-section-tagged-guard.yml
-  pull_request:
-    paths:
-      - install.sh
-      - update-skills.sh
-      - shared-utils/prebuilt-index/INDEX-MANIFEST.json
-      - shared-utils/provision-persona-index.sh
-      - tests/unit/prebuilt-index-section-tagged.test.sh
-      - tests/fixtures/prebuilt-index-section-tagged.fixture.sqlite
-      - .github/workflows/prebuilt-index-section-tagged-guard.yml
   release:
     types: [published]
   workflow_dispatch:
@@ -49,34 +30,11 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
-  static-manifest-fixture:
-    name: "Static + manifest + fixture (offline)"
-    runs-on: ubuntu-latest
-    env:
-      OPENCLAW_PLATFORM: mac
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-
-      - name: Run prebuilt-index-section-tagged tests (layers A/B/C)
-        run: |
-          chmod +x tests/unit/prebuilt-index-section-tagged.test.sh
-          bash tests/unit/prebuilt-index-section-tagged.test.sh
-
   artifact-verify:
     name: "Full artifact verify (download + sha256 + 54-persona count)"
     runs-on: ubuntu-latest
     # Only runs on workflow_dispatch (with opt-in flag) or release published
-    if: |
-      github.event_name == 'release' ||
-      (github.event_name == 'workflow_dispatch' && github.event.inputs.run_artifact_verify == 'true')
-
+    if: ${{ !startsWith(github.head_ref, 'batch/') && (github.event_name == 'release' || (github.event_name == 'workflow_dispatch' && github.event.inputs.run_artifact_verify == 'true')) }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
