@@ -6,7 +6,9 @@
 **Branch:** `pd/fl24-role-procedures-c`
 **Lane clone:** `/Volumes/mac mini m4/swarm-contract/pd-fix/worktrees/onboarding/FL24` (left clean — see §8)
 **Build commit:** `871d96010f5224c4c1e2b0a395b78fd3b8fe8aa1`
-**Remote head after push:** `871d96010f5224c4c1e2b0a395b78fd3b8fe8aa1`
+**Remote head after the code push:** `871d96010f5224c4c1e2b0a395b78fd3b8fe8aa1`
+**Remote head at the end:** the report commit you are reading, whose sha cannot appear inside itself.
+The measured 40-character remote head is stated in the returned build report and in §8's read-back.
 **Depends on:** PD-102 (passed) ✓
 
 ---
@@ -318,6 +320,10 @@ $ git ls-remote --heads origin refs/heads/pd/fl24-role-procedures-c
 $ git rev-parse HEAD
 871d96010f5224c4c1e2b0a395b78fd3b8fe8aa1
 ```
+
+That is the proof for the **code** commit. The final remote head is the report commit itself; its
+40-character sha is measured after the push and stated in the returned build report, because a commit
+cannot contain its own sha.
 
 Push was a fast-forward: local parent `c358ea2ee51a75bf495213d3a7b12b861ddc5b10` equalled the remote head
 read immediately before the push, and `--force-with-lease` was pinned to that sha.
