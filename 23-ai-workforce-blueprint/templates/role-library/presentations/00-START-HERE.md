@@ -21,16 +21,23 @@
 >     --run-dir <RUN_DIR> --slides slides.json --out <OUT>.pptx
 > ```
 >
-> The entry script runs three **fail-closed** gates and only then dispatches the canonical
-> orchestrator `run_signature_deck.py` → `build_deck.py` (kie.ai GPT Image 2.6 Sunburst only, words baked
-> into each image, zero native on-slide text, full phase-attestation chain):
-> 1. **deps check** — the four runtime deps (`soffice`, `pdftoppm`, `reportlab`, `python-pptx`)
+> The entry script runs seven **fail-closed** gates and only then starts the presentation
+> engine (`presentation_job.py`), which walks every phase of `PIPELINE-MANIFEST.json` in
+> order and refuses to skip (kie.ai GPT Image 2.6 Sunburst only, words baked into each
+> image, zero native on-slide text, full phase-attestation chain). For a phase a person or
+> an AI role must author, the engine writes a work order to
+> `working/work-orders/<phase>.json` and waits for the product:
+> 1. **intake-ledger check** (GATE 0) — the interview ledger must exist and be complete.
+> 2. **intake-trace check** (GATE 0b) — intake must be a real conversation, no owner override.
+> 3. **drift gates** (GATE 0c) — warning-only: drift is reported and the build continues.
+> 4. **deps check** (GATE 1) — the four runtime deps (`soffice`, `pdftoppm`, `reportlab`, `python-pptx`)
 >    or the build refuses to start.
-> 2. **bypass-scan** — refuses to start if any hand-rolled renderer/assembler is present in the
+> 5. **Skill-48 GHL module co-location** (GATE 1b) — the `ghl_media` module must be importable.
+> 6. **bypass-scan** (GATE 2) — refuses to start if any hand-rolled renderer/assembler is present in the
 >    run directory: a non-canonical `*.py` defining a 2048×1152 `Image.new` slide canvas
 >    (`AF-LOCAL-CANVAS`), a native `add_textbox`/`add_text_box` overlay, or a direct kie
 >    `createTask` outside `build_deck.py` (`AF-CANONICAL-RENDER-BYPASS`).
-> 3. **version/hash pin** — the deployed renderer must be in lockstep with the SOP/manifest
+> 7. **version/hash pin** (GATE 3) — the deployed renderer must be in lockstep with the SOP/manifest
 >    stack (`sync_check.py`) and match the pinned governed head.
 >
 > **`python3 working/*.py` — writing and running your own per-deck driver/submit/assemble
@@ -170,7 +177,7 @@ All 56 declared phases are listed once, in the sequence below, in the manifest's
 19. **`P-U-BRIEF-VSL`** (order 4.42, script: `scripts/page_brief.py`, CONDITIONAL -- defers unless `intake.want_vsl_page == "yes"`) -- Upsell VSL Page Brief Emit (Item 20 page-brief seam: writes the versioned page-brief JSON the page builder consumes). Owned by `media-librarian-ghl-updater`. Produces `working/pages/page-brief-vsl.v*.json`. Full contract: the `P-U-BRIEF-VSL` row in [`PIPELINE-MANIFEST.json`](../../../../universal-sops/presentation-slide-craft/PIPELINE-MANIFEST.json).
 20. **`PF-DESIGN`** (order 4.5) -- typography-architect locks `type_system` + `layout_map` + `treatment_table` and runs the self-audit before any prompt is written.
 21. **`P-TYPO-QC`** (order 4.6) -- qc-specialist-typography-presentations independently reviews the design brief.
-22. **`P4-PROMPT`** (order 4.7, fanout by slide, max None units) -- prompt-author-presentations writes each slide's image prompt to the treatment table, to the 9,000-character standard.
+22. **`P4-PROMPT`** (order 4.7, fanout by slide, max None units) -- prompt-author-presentations writes each slide's image prompt to the treatment table, to the rule 12 prompt band (16,000 to 20,000 characters for the current image model).
 23. **`P-PROMPT-QC`** (order 4.8, fanout by slide, max None units) -- qc-specialist-prompt-presentations independently (dual-scored) reviews the prompts.
 24. **`P-STYLE-SPEC`** (order 4.84, fanout by slide, max None units) -- Style Preview Spec (fanout unit: 3 slide-bound units each author one attention-grade variant + representative slide, aggregated to the spec before the 9 samples render). Owned by `brand-steward`. Produces `working/copy/style_preview_spec.json`. Full contract: [`sops/brand-steward-sops.md`](sops/brand-steward-sops.md) and the `P-STYLE-SPEC` row in [`PIPELINE-MANIFEST.json`](../../../../universal-sops/presentation-slide-craft/PIPELINE-MANIFEST.json).
 25. **`P-STYLE-PREVIEW`** (order 4.85, script: `scripts/build_deck.py`) -- slide-image-creator renders 9 samples across 3 style variants; the owner picks 1 via their OWN gateway before the full render, and the winner's 3 representative renders are LOCKED + reused so Kie never double-charges.
