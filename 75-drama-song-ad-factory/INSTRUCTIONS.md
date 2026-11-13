@@ -565,7 +565,9 @@ card. The answers and the time answered go into the receipt
   same shot with the twin removed, and the single-style "some time later"
   phone shot at 112.0-114.3 s. It is a planned shot with its own storyboard
   field, never a patch.
-- **Music styles:** Soul Ballad (default), R&B Flow, Soul Rise. The song
+- **Music styles:** the eighteen canonical styles from
+  `music_styles.catalog.choice_rows()` - Soul Ballad (default, recommended),
+  R&B Flow, Soul Rise and fifteen more. The song
   brief, the Suno style prompt and the spoken/sung balance follow the choice.
   R&B Flow consistently directs rhythmic speech-rhythm RAP verses contrasted
   with a fully sung melodic R&B hook: its verses are rap, its hook is sung

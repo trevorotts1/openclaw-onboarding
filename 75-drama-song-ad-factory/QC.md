@@ -77,9 +77,9 @@ it advances. Standard library only; no credential value is ever printed.
       `aggregate_may_not_erase_critical` (identity, lyrics, offer, claim,
       product_label, cta), `threshold_changes_require_documented_decision: true`.
 - [ ] The implemented CLIs exist and `--help` works:
-      `intake_preflight/factory.py` (eleven subcommands: intake, preflight,
+      `intake_preflight/factory.py` (twelve subcommands: intake, preflight,
       next, event, storyboard, music, script-reply, final-recap,
-      production-go, owner, card), `spend_ledger.py`
+      production-go, owner, card, character), `spend_ledger.py`
       (init_run/plan/reserve/mark_unknown/cancel/mark_submitted/
       mark_terminal/reconcile/summary/can_spend/park_run/unpark),
       `qc_gate.py` (evaluate), `job_recovery.py` (ingest_event/
