@@ -4,7 +4,10 @@
 - **Lane:** FL05
 - **Repository:** trevorotts1/openclaw-onboarding
 - **Branch:** `pd/fl05-engine-reporting`
-- **Commit:** `06bffcf210ce220b2c8bc1a145e68c344c6e629c`
+- **Commit (the PD-031 change):** `06bffcf210ce220b2c8bc1a145e68c344c6e629c`
+- **Report commit:** this file is committed as a documentation-only commit on
+  top of the change commit; the branch head after it is the value
+  `git ls-remote` returns and is recorded in the handoff message.
 - **Base:** `afd4a7571` (PD-042)
 - **Builder:** deepseek-chain
 
@@ -175,19 +178,21 @@ on.
 
 ## Commit and remote proof
 
-```
-$ git push origin pd/fl05-engine-reporting
-   afd4a7571..06bffcf21  pd/fl05-engine-reporting -> pd/fl05-engine-reporting
+Change commit `06bffcf21` pushed, then the report commit `4556ab565` pushed on
+top of it. Remote proof for the branch head as it stands now:
 
+```
 $ git rev-parse HEAD
-06bffcf210ce220b2c8bc1a145e68c344c6e629c
+4556ab565821accdb80f2666fc6cd8198976d3b5
 $ git rev-parse origin/pd/fl05-engine-reporting
-06bffcf210ce220b2c8bc1a145e68c344c6e629c
+4556ab565821accdb80f2666fc6cd8198976d3b5
 $ git ls-remote origin refs/heads/pd/fl05-engine-reporting
-06bffcf210ce220b2c8bc1a145e68c344c6e629c	refs/heads/pd/fl05-engine-reporting
+4556ab565821accdb80f2666fc6cd8198976d3b5	refs/heads/pd/fl05-engine-reporting
 ```
 
-Local head = remote branch head = `06bffcf210ce220b2c8bc1a145e68c344c6e629c`.
+Local head = remote branch head = `4556ab565821accdb80f2666fc6cd8198976d3b5`.
+The PD-031 code under review is the parent, `06bffcf21`; the only difference
+between the two is this report file.
 
 ## Temp discipline
 
