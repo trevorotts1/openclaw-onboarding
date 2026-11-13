@@ -139,8 +139,9 @@ and names the URL and the HTTP status, never a skip. `--repair` also links the
 verified file into `scripts/core/lip_sync/lip_gate/` so the clip gate finds it
 without the environment variable.
 
-Run this step after every install and after every update: an update replaces the
-skill folder, and `assets/face_landmarker.task` goes with it.
+The updater runs this step for you. Run it by hand only if lip-sync reports the
+face model missing. An update replaces the skill folder, and
+`assets/face_landmarker.task` goes with it.
 
 ### What is unavailable until all four are present
 
@@ -188,9 +189,7 @@ guessed.
 To check either leg by hand:
 
 ```bash
-ls -l ~/.drama-studio/machine.key      # enrolled, or absent (not enrolled)
-launchctl list | grep drama-studio     # Mac: the loaded 2-minute timer
-crontab -l | grep drama-studio         # VPS: the 2-minute poll line
+python3 shared-bridge/studio_bridge.py capability    # prints the enrolment state; exit 0 = ready
 ```
 
 ## Step 3: Credentials (canonical paths, canonical names)
@@ -198,10 +197,8 @@ crontab -l | grep drama-studio         # VPS: the 2-minute poll line
 Needed for paid KIE paths (required):
 
 ```bash
-# confirm presence ONLY - never print values
-grep -c KIE_API_KEY ~/.openclaw/secrets/.env 2>/dev/null || echo "add it"
-chmod 600 ~/.openclaw/secrets/.env     # Mac
-# VPS: /data/.openclaw/secrets/.env
+# presence only - the checker prints SET or NOT-SET and never the value
+bash "$SKILLS_DIR/shared-utils/check-skill-prereqs.sh" "$SKILLS_DIR/75-drama-song-ad-factory"
 ```
 
 If absent, ask the operator to add `KIE_API_KEY` to
@@ -212,9 +209,8 @@ If absent, ask the operator to add `KIE_API_KEY` to
 openclaw config set env.vars.KIE_API_KEY "$KIE_API_KEY"
 ```
 
-Do NOT mint a new key. `FISH_AUDIO_API_KEY` / `FISH_AUDIO_VOICE_ID` are
-only needed for spoken voiceover stages (Skill 30); sung-only campaigns
-skip them.
+Do NOT create a new key, and do not open or search the secrets file. Fish
+Audio keys are not used by this skill.
 
 Command Center board sync (`scripts/core/cc_sync.py`) also needs these
 three environment variables (names only - values live in the env stores,
@@ -287,6 +283,8 @@ PYTHONPATH=scripts/core python3 -m intake_preflight.factory owner --run-dir "$RU
 
 A malformed `onCallOperator` (not a string, blank, over 200 characters) and an
 unreadable config are refused on every box.
+
+**Stall recovery.** `control/recovery-authorization.json` is written at run start by `factory.py` when the box setup flag `DS_AUTO_RECOVERY=1` is set (authorized by the person who provisioned the box); otherwise the keepalive is announce-only. A person may also write it later for one run. The keepalive never writes it, never raises its scope above `resume`, and never runs anything but `factory.py next --run-dir <run>` under it.
 
 ## Step 6: Run storage
 
