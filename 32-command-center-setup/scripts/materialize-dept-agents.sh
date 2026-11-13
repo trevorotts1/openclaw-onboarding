@@ -260,7 +260,7 @@ export OC_CONFIG_FILE="$CONFIG_FILE"
 export OC_ROOT_PATH="$OC_ROOT"
 export OC_DRY_RUN="$DRY_RUN"
 # U-24 repair: DEPT_SCAN_ROOTS is a real bash array whose members may contain
-# spaces (the swarm drive itself is "/Volumes/mac mini m4/..."). Join on
+# spaces (a portable drive's own path can contain spaces). Join on
 # newlines, not spaces, so a spaced HOME does not split one root into many.
 export OC_DEPT_ROOTS
 OC_DEPT_ROOTS="$(printf '%s\n' "${DEPT_SCAN_ROOTS[@]}")"
