@@ -340,16 +340,19 @@ def test_waiver_ghl_upload_valid_quote_passes(tmp_path):
     from presentation_job.waivers import validate_waiver
     base = tmp_path / "waiver_ok"
     client_words = "I do not want the GoHighLevel upload, skip it entirely"
-    # Use intake_field path since TRANSCRIPT_WAIVERS_ACCEPTED=False per U013 step 6
+    # Use intake_field path since TRANSCRIPT_WAIVERS_ACCEPTED=False per U013 step 6.
+    # PD-202: the cited field must be the question the interview asks the client
+    # to decline THIS deliverable (ghl_upload_declined_reason), not any field.
     cp = base / "working" / "copy"
     cp.mkdir(parents=True, exist_ok=True)
-    (cp / "intake.json").write_text(json.dumps({"has_ghl": True, "skip_ghl": client_words}))
+    (cp / "intake.json").write_text(json.dumps(
+        {"has_ghl": True, "ghl_upload_declined_reason": client_words}))
     waiver = {
         "rule": "ghl_upload",
         "source": "intake_field",
         "client_request_quote": client_words,
         "captured_at": "2026-07-27T12:00:00Z",
-        "intake_field": "skip_ghl",
+        "intake_field": "ghl_upload_declined_reason",
     }
     validate_waiver(waiver, base)
 

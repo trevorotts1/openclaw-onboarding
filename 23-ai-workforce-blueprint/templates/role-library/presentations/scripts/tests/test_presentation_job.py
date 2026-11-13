@@ -853,9 +853,12 @@ class TestQCGateBlocks:
         assert engine.state["terminal"] == "DONE"
         assert "CANNOT CLOSE" not in captured.err
 
-    def test_close_succeeds_with_client_quoted_qc_waiver(self, tmp_path, capsys):
-        """The only sanctioned bypass: a waiver quoting the client's own recorded words.
-        Must not be weakened by this fix (waivers.py is untouched)."""
+    def test_close_refuses_a_qc_waiver_the_interview_never_asked_for(self, tmp_path, capsys):
+        """PD-202: `qc` has no decline question in the question bank, so a qc waiver
+        citing an intake field is REFUSED (EXIT_WAIVER_INVALID) rather than closing
+        the job. The bank's own waiver_field_mapping omits qc and prompt_floor on
+        purpose: a client cannot consent to a lower quality bar. `qc` stays in
+        GATE_KEYS, but its bypass is not a typed intake waiver."""
         run_dir = tmp_path / "run"; run_dir.mkdir()
         self._seed_other_gates_passing(run_dir)
         (run_dir / "working" / "copy").mkdir(parents=True, exist_ok=True)
@@ -863,14 +866,13 @@ class TestQCGateBlocks:
             {"skip_qc": "Please skip the QC check for this run, we are on a deadline."}))
         (run_dir / "waivers.json").write_text(json.dumps([
             {"rule": "qc", "source": "intake_field", "intake_field": "skip_qc",
-             "client_request_quote": "skip the QC check",
+             "client_request_quote": "skip the QC check for this run",
              "captured_at": "2026-01-01T00:00:00Z"}]))
         engine = self._make_engine(run_dir)
         rc = engine.close()
         captured = capsys.readouterr()
-        assert rc == EXIT_OK, f"expected EXIT_OK, got {rc}; stderr={captured.err}"
-        assert engine.state["terminal"] == "DONE"
-        assert engine.state["gates"]["qc"]["state"] == "waived"
+        assert rc == EXIT_WAIVER_INVALID, f"expected exit 9, got {rc}; stderr={captured.err}"
+        assert "cannot be waived from an intake field" in captured.err, captured.err
 
 
 # ---------------------------------------------------------------------------
@@ -1064,16 +1066,27 @@ class TestQCAggregatePhaseEndToEnd:
             "an invalid waiver must not resolve the job to any terminal state"
 
     def test_genuine_client_quoted_waiver_still_closes_done(self, tmp_path, capsys):
+        """PD-202: a genuine client-quoted waiver still closes DONE — for a gate the
+        interview actually asked the client to decline. `ghl_upload` is one: its
+        bank question stores the client's verbatim reason in
+        ghl_upload_declined_reason, and that field is the only one that can waive
+        the gate."""
         run_dir = tmp_path / "run"; run_dir.mkdir()
         self._seed_other_gates_passing(run_dir)
         self._seed_six_domain_reports(run_dir)
-        (run_dir / "working" / "qc" / "speech_qc_report.json").unlink()  # force a real qc failure
+        # Make the ghl_upload gate fail honestly: the media ledger has no deck id.
+        ledger = run_dir / "working" / "checkpoints" / "media_library.json"
+        media = json.loads(ledger.read_text(encoding="utf-8"))
+        media["pptx_ghl_media_id"] = ""
+        ledger.write_text(json.dumps(media), encoding="utf-8")
         (run_dir / "working" / "copy").mkdir(parents=True, exist_ok=True)
         (run_dir / "working" / "copy" / "intake.json").write_text(json.dumps(
-            {"skip_qc": "Please skip the QC check for this run, we are on a deadline."}))
+            {"ghl_upload_declined_reason":
+                 "I do not want the GoHighLevel upload, skip it entirely."}))
         (run_dir / "waivers.json").write_text(json.dumps([
-            {"rule": "qc", "source": "intake_field", "intake_field": "skip_qc",
-             "client_request_quote": "skip the QC check",
+            {"rule": "ghl_upload", "source": "intake_field",
+             "intake_field": "ghl_upload_declined_reason",
+             "client_request_quote": "I do not want the GoHighLevel upload",
              "captured_at": "2026-01-01T00:00:00Z"}]))
 
         self._run_qc_aggregate(run_dir)
@@ -1082,4 +1095,157 @@ class TestQCAggregatePhaseEndToEnd:
         captured = capsys.readouterr()
         assert rc == EXIT_OK, f"expected EXIT_OK, got {rc}; stderr={captured.err}"
         assert engine.state["terminal"] == "DONE"
-        assert engine.state["gates"]["qc"]["state"] == "waived"
+        assert engine.state["gates"]["ghl_upload"]["state"] == "waived"
+
+# ---------------------------------------------------------------------------
+# PD-313 -- Say "ready" on the normal close.
+#
+# The re-gated close (gates that failed then passed) already sent the finished
+# message; the NORMAL close (every gate passed first time) reached DONE in
+# silence, so the client was never told the deck was ready. These drive
+# Engine.close() itself on the normal path and count the real `report.done`
+# event in state["events"] -- the event Reporter.to_requester records for every
+# client message, whatever the transport outcome.
+# ---------------------------------------------------------------------------
+class TestDoneMessageOnNormalClose:
+    def _seed_all_gates_passing(self, run_dir):
+        """Every gate passes FIRST TIME (no re-gate), and a verified delivery
+        destination exists so the PD-042 compose function has something real
+        to name."""
+        _seed_curated_bundle(run_dir)
+        (run_dir / "working" / "prompts").mkdir(parents=True, exist_ok=True)
+        (run_dir / "working" / "checkpoints").mkdir(parents=True, exist_ok=True)
+        (run_dir / "working" / "qc").mkdir(parents=True, exist_ok=True)
+        (run_dir / "renders").mkdir(parents=True, exist_ok=True)
+        (run_dir / "working" / "prompts" / "slide-01.txt").write_text("p" * _rule12_len())
+        (run_dir / "working" / "checkpoints" / "media_library.json").write_text(json.dumps(
+            {"ghl_folder_id": "root",
+             "slides": [{"slide_number": 1, "ghl_media_id": "m1", "ghl_upload_status": "complete"}],
+             "pptx_ghl_media_id": "p9"}))
+        # PD-202 gate contract: the qc gate only accepts an aggregate report that
+        # carries the "final_qc_report/v1" schema and overall pass flag. A bare
+        # {"average": 9.2} is refused (EXIT 3), so seed the real shape.
+        (run_dir / "working" / "qc" / "final_qc_report.json").write_text(json.dumps(
+            {"schema": "final_qc_report/v1", "pass": True, "average": 9.2}))
+        (run_dir / "renders" / "slide-01.ocr.json").write_text(
+            json.dumps({"checked": True, "matched": True}))
+        (run_dir / "renders" / "slide-02.ocr.json").write_text(
+            json.dumps({"checked": True, "matched": True}))
+        self._seed_delivery(run_dir, [
+            {"type": "mac_downloads", "status": "verified",
+             "verify_anchor": "/decks/demo/demo-FINAL.pptx"},
+        ])
+
+    def _seed_delivery(self, run_dir, destinations):
+        (run_dir / "working" / "checkpoints" / "delivery_plan.json").write_text(
+            json.dumps({"destinations": destinations}))
+        bundle = run_dir / "bundle"
+        bundle.mkdir(parents=True, exist_ok=True)
+        (run_dir / "working" / "checkpoints" / "process_manifest.json").write_text(
+            json.dumps({"bundleDir": str(bundle)}))
+
+    def _make_engine(self, run_dir):
+        from presentation_job.phases import Engine
+        manifest_path = run_dir / "manifest.json"
+        manifest_path.write_text(json.dumps({"manifest_version": 25, "phases": []}))
+        manifest = Manifest(manifest_path)
+        store = StateStore(run_dir)
+        state = {
+            "schema_version": 1, "job_id": "pd313_done_test",
+            "run_dir": str(run_dir), "created_at": "2026-01-01T00:00:00+00:00",
+            "manifest_path": str(manifest_path), "manifest_version": 25,
+            "manifest_sha256": manifest.sha256, "presentation_type": "from_scratch",
+            "requester": {"chat_id": "test"}, "current_phase": None,
+            "phases": [], "gates": {}, "waivers": [], "events": [],
+            "sent": {}, "undeliverable": [], "heartbeat": {}, "terminal": None,
+        }
+        store.save(state)
+        return Engine(run_dir, manifest, store, state, dry_run=False)
+
+    def _stub_transport(self, monkeypatch):
+        from presentation_job import report as report_mod
+        sent = []
+
+        def _fake_dispatch3(chat_id, kind, message):
+            sent.append({"chat_id": chat_id, "kind": kind, "message": message})
+            return report_mod.CheckResult.PASS
+
+        monkeypatch.setattr(report_mod, "dispatch3", _fake_dispatch3)
+        return sent
+
+    def _done_events(self, engine):
+        return [e for e in engine.state["events"] if e["kind"] == "report.done"]
+
+    def test_a_run_that_passes_every_gate_first_time_records_one_report_done(
+            self, tmp_path, monkeypatch, capsys):
+        """A1: a stub run that passes every gate first time records one
+        `report.done` event, and that message names the verified destination."""
+        sent = self._stub_transport(monkeypatch)
+        run_dir = tmp_path / "run"; run_dir.mkdir()
+        self._seed_all_gates_passing(run_dir)
+        engine = self._make_engine(run_dir)
+        rc = engine.close()
+        captured = capsys.readouterr()
+        assert rc == EXIT_OK, f"expected EXIT_OK, got {rc}; stderr={captured.err}"
+        assert engine.state["terminal"] == "DONE"
+        done = self._done_events(engine)
+        assert len(done) == 1, done
+        assert "/decks/demo/demo-FINAL.pptx" in done[0]["message"], done[0]["message"]
+        assert "waived at your request" not in done[0]["message"], done[0]["message"]
+
+    def test_a_waived_check_is_named_in_the_ready_message(
+            self, tmp_path, monkeypatch, capsys):
+        """The waived-checks sentence is appended only when a check was waived
+        at the client's own request.
+
+        PD-202 keeps `qc` in GATE_KEYS but makes it unwaivable from an intake
+        field: the question bank has no decline question for it, so the client
+        never consented. This test's own intent is the waived-checks sentence,
+        so it waives `ghl_upload` -- a gate the bank DOES ask about, whose
+        answer lands in ghl_upload_declined_reason."""
+        sent = self._stub_transport(monkeypatch)
+        run_dir = tmp_path / "run"; run_dir.mkdir()
+        self._seed_all_gates_passing(run_dir)
+        # Make the ghl_upload gate fail honestly: the media ledger has no deck id.
+        ledger = run_dir / "working" / "checkpoints" / "media_library.json"
+        media = json.loads(ledger.read_text(encoding="utf-8"))
+        media["pptx_ghl_media_id"] = ""
+        ledger.write_text(json.dumps(media), encoding="utf-8")
+        (run_dir / "working" / "copy").mkdir(parents=True, exist_ok=True)
+        (run_dir / "working" / "copy" / "intake.json").write_text(json.dumps(
+            {"ghl_upload_declined_reason":
+                 "I do not want the GoHighLevel upload, skip it entirely."}))
+        (run_dir / "waivers.json").write_text(json.dumps([
+            {"rule": "ghl_upload", "source": "intake_field",
+             "intake_field": "ghl_upload_declined_reason",
+             "client_request_quote": "I do not want the GoHighLevel upload",
+             "captured_at": "2026-01-01T00:00:00Z"}]))
+        engine = self._make_engine(run_dir)
+        rc = engine.close()
+        captured = capsys.readouterr()
+        assert rc == EXIT_OK, f"expected EXIT_OK, got {rc}; stderr={captured.err}"
+        assert engine.state["gates"]["ghl_upload"]["state"] == "waived"
+        done = self._done_events(engine)
+        assert len(done) == 1, done
+        assert "1 check(s) were waived at your request." in done[0]["message"], done[0]["message"]
+
+    def test_no_verified_destination_withholds_the_ready_message(
+            self, tmp_path, monkeypatch, capsys):
+        """The negative control: the SAME normal-close fixture with no verified
+        destination records NO `report.done` and one `report.done_withheld`, so
+        the assertions above cannot pass on an unconditional send."""
+        sent = self._stub_transport(monkeypatch)
+        run_dir = tmp_path / "run"; run_dir.mkdir()
+        self._seed_all_gates_passing(run_dir)
+        self._seed_delivery(run_dir, [
+            {"type": "ghl", "status": "uploaded", "url": "https://example.test/x"},
+        ])
+        engine = self._make_engine(run_dir)
+        rc = engine.close()
+        captured = capsys.readouterr()
+        assert rc == EXIT_OK, f"expected EXIT_OK, got {rc}; stderr={captured.err}"
+        assert self._done_events(engine) == []
+        withheld = [e for e in engine.state["events"]
+                    if e["kind"] == "report.done_withheld"]
+        assert len(withheld) == 1, engine.state["events"]
+        assert not [s for s in sent if s["kind"] == "done"], sent
