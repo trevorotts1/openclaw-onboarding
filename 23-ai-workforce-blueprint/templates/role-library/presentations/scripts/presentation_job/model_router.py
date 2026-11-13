@@ -307,6 +307,27 @@ def _served_model(alias_def: Dict[str, Any], provider: str) -> str:
     return str(alias_def.get("model") or "")
 
 
+def _model_family(model_id: Any) -> str:
+    """PD-204: the vendor family a model id belongs to.
+
+    The text after the last "/", lower-cased, up to the first character that is
+    not a letter: "deepseek-v4.1-flash" -> "deepseek", "z-ai/glm-5.3" -> "glm".
+    Deliberately the SAME family the catalog's aliases group under, so a
+    "deepseek-flash" grader can never be mistaken for independent of a
+    "deepseek-v4.1-flash" author.
+
+    An empty answer ("", or an id that starts with a non-letter) means the
+    family is UNKNOWN -- absence of a reading is never evidence of a
+    difference, so callers must not treat two unknowns as a match."""
+    text = str(model_id or "").rsplit("/", 1)[-1].lower()
+    family = ""
+    for ch in text:
+        if not ("a" <= ch <= "z"):
+            break
+        family += ch
+    return family
+
+
 # ---------------------------------------------------------------------------
 # Phase -> capability class (the fix-spec routing table)
 # ---------------------------------------------------------------------------
@@ -368,6 +389,20 @@ PHASE_CAPABILITY: Dict[str, str] = {
 # is authoring work (the loop exists to author artifacts) -- same class as
 # P4-COPY. Never invents a capability the phase did not declare.
 DEFAULT_CAPABILITY = "authoring"
+
+# PD-204: A GRADER NEVER RIDES THE MODEL THAT WROTE THE ARTIFACT.
+# Each QC phase is mapped to the phase whose output it grades. resolve_route()
+# resolves that author's route first (same profile, same mode), then refuses
+# every candidate in the author's model family -- and only those. A client's
+# declared judge model faces the same rule, so no declaration can re-open the
+# hole this module was written to close ("QC judges could silently ride the
+# same model identity that authored the artifact", header, WHAT THIS IS).
+GRADER_OF: Dict[str, str] = {
+    "P1Q-COPY-QC": "P4-COPY",
+    "P-PROMPT-QC": "P4-PROMPT",
+    "P-SPEECH-QC": "P9-SPEECH",
+    "P-SHIFT-QC": "P4-COPY",
+}
 
 
 # Ordered (alias, allow) candidates per capability class, straight from the
@@ -2217,6 +2252,22 @@ def resolve_route(phase_id: str, *,
                 "fallback_alias": requested_alias or None,
             }
 
+    # PD-204: resolve the AUTHOR's route before grading anything it wrote.
+    # Same profile, same mode -- so the comparison is against the model this
+    # run would really have used, never against a hypothetical. The author
+    # phase is never itself a grader, so this recursion terminates at depth 1.
+    author_phase = GRADER_OF.get(phase_id)
+    author_family = ""
+    if author_phase:
+        author_decision = resolve_route(author_phase, profile=profile,
+                                        config_dir=config_dir, mode=mode)
+        decision["author_phase"] = author_phase
+        decision["author_route"] = author_decision.get("route")
+        if author_decision.get("route"):
+            author_route = author_decision["route"]
+            author_family = _model_family(
+                _served_model(author_route, author_route.get("provider")))
+    family_skipped = 0
     candidates: List[Dict[str, Any]] = []
     route: Optional[Dict[str, str]] = None
     reason = ""
@@ -2255,6 +2306,17 @@ def resolve_route(phase_id: str, *,
             _m = alias_def.get("model")
             row.update({"eligible": False,
                         "reason": "ultra: no OpenRouter served id for " + str(_m)})
+            candidates.append(row)
+            continue
+        # PD-204: a grader in the author's family is not an independent
+        # grader. Recorded as its own skip so the decision says WHY the
+        # candidate was passed over, never a silent omission.
+        cand_family = _model_family(
+            _served_model(alias_def, alias_def.get("provider")))
+        if author_family and cand_family and cand_family == author_family:
+            family_skipped += 1
+            row.update({"eligible": False,
+                        "reason": "same model family as the author"})
             candidates.append(row)
             continue
         ok, why = _eligible(providers, alias_def)
@@ -2356,16 +2418,25 @@ def resolve_route(phase_id: str, *,
         rec = _recommendation_for(capability)
         rec_text = (f"{rec['provider']}/{rec['model']}" if rec.get("model")
                     else f"alias {rec['alias']!r}")
+        # PD-204: when the only thing standing between this grader and a
+        # route is the author's own family, say that plainly instead of the
+        # generic park text -- the fix is a second family, not another alias.
+        if author_phase and family_skipped:
+            no_route_reason = ("no independent model is available to grade "
+                               "this step")
+        else:
+            no_route_reason = (
+                f"no eligible route for capability '{capability}' "
+                f"({rejected}) -- park/fail-closed. Recommendation "
+                f"from capability data: {rec_text} ({rec['basis']}). "
+                f"Ask the client which model they want to use for "
+                f"this class, or have them configure a default model; "
+                f"no model was selected for them.")
         decision.update({
             "route": None,
             "recommendation": rec,
             "model_source": None,
-            "reason": f"no eligible route for capability '{capability}' "
-                      f"({rejected}) -- park/fail-closed. Recommendation "
-                      f"from capability data: {rec_text} ({rec['basis']}). "
-                      f"Ask the client which model they want to use for "
-                      f"this class, or have them configure a default model; "
-                      f"no model was selected for them.",
+            "reason": no_route_reason,
         })
     decision["candidates"] = candidates
     return decision
