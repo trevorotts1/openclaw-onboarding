@@ -14,6 +14,13 @@ _MIN_BYTES = {s["key"]: s["min_bytes"] for s in _DELIVERABLE_AUDIT_SPEC}
 NON_WAIVABLE_GATES = ("ocr_readback",)
 ALL_GATE_KEYS = GATE_KEYS + NON_WAIVABLE_GATES
 QC_PASS_THRESHOLD = 8.5
+# The schema string and the verdict flag qc_aggregate.py (P-QC-AGGREGATE) writes into
+# working/qc/final_qc_report.json -- read from that producer's report dict
+# (qc_aggregate.aggregate: "schema": "final_qc_report/v1", "pass": overall_pass).
+# The gate requires BOTH alongside the numeric score (PD-317): a number alone is not
+# a verdict, and a report that never came from the roll-up cannot be told apart from
+# one somebody typed. Not edited here: qc_aggregate.py is another lane's file.
+QC_REPORT_SCHEMA = "final_qc_report/v1"
 # The phase that OWES working/qc/final_qc_report.json. Mirrors the PIPELINE-MANIFEST.json
 # entry (id / order / produces_artifact) so the operator-facing reason in _qc_gate names a
 # real, schedulable phase instead of asserting no producer exists. These constants are
@@ -255,6 +262,22 @@ class Gates:
         # blocking_reasons key (every existing test fixture) is unaffected.
         reasons = obj.get("blocking_reasons")
         detail = "; ".join(str(r) for r in reasons) if isinstance(reasons, list) and reasons else ""
+        # PD-317: read the VERDICT, not just a number. The roll-up writes "pass" (its
+        # own overall verdict) and "schema" (the report shape it emits). A passing
+        # number with pass: false is a failed QC run; a report with no schema did not
+        # come from the roll-up at all. Both fail closed, naming the missing field.
+        schema = obj.get("schema")
+        if not isinstance(schema, str) or schema.strip() != QC_REPORT_SCHEMA:
+            base = (f"QC report carries no {QC_REPORT_SCHEMA!r} schema "
+                    f"(field 'schema' is {schema!r})")
+            return {"state":"fail","warn_only":False,
+                    "reason": f"{base} -- {detail}" if detail else base}
+        verdict = obj.get("pass")
+        if verdict is not True:
+            base = (f"QC report's own verdict field 'pass' is {verdict!r}, not true "
+                    f"-- the score is not the verdict")
+            return {"state":"fail","warn_only":False,
+                    "reason": f"{base} -- {detail}" if detail else base}
         if not isinstance(score, (int, float)):
             base = "QC report carries no numeric score"
             return {"state":"fail","warn_only":False,
