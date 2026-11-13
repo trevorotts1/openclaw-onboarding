@@ -8,6 +8,7 @@ import re
 import secrets
 import signal
 import shlex
+import statistics
 import subprocess
 import sys
 import threading
@@ -773,6 +774,11 @@ MEDIA_LIBRARY_REL = "working/checkpoints/media_library.json"
 #: per variant is the one-sentence description the client is shown.
 SAMPLES_MANIFEST_REL = "working/style-preview/style_samples_manifest.json"
 STYLE_SPEC_REL = "working/copy/style_preview_spec.json"
+
+#: PD-031. How many sibling run dirs beside this run are scanned for recorded
+#: stage durations when the run's own telemetry has none. Bounds the read; the
+#: newest ones win, because they are the most representative of this box.
+_ETA_HISTORY_SIBLING_LIMIT = 20
 
 #: PD-042. The literal line the engine reports when it must ask for a pick
 #: without having attached the images -- the reporter's transport carries JSON
@@ -1858,7 +1864,86 @@ class Engine:
                 text = default
         if phase.id in text or (phase.owning_role and phase.owning_role in text):
             text = default
+        if kind == "start" and text:
+            # PD-031: the client's "how long is left" sentence. Computed from
+            # recorded durations only; "" when the box has no history, so the
+            # client sees nothing rather than an invented number.
+            eta_sentence = self._client_eta_sentence()
+            if eta_sentence:
+                text = f"{text} {eta_sentence}"
         return text
+
+    def _stage_timing_medians(self) -> Dict[str, float]:
+        """PD-031: per-phase MEDIAN recorded duration, from the box's own
+        stage-timing history -- the same source `eta` is filled from today
+        (`_observed_stage_seconds`, `_emit_stage_timing`, FIX 5's
+        working/telemetry/stage-timings.jsonl `phase_exit` rows).
+
+        This run's own file comes first, then the run dirs beside it under the
+        same runs root, so a fresh run still speaks from what the box measured
+        before it. A phase with no recorded row has no median and is absent --
+        never defaulted to a guessed constant.
+
+        Ceiling: the newest `_ETA_HISTORY_SIBLING_LIMIT` sibling run dirs are
+        scanned. Upgrade path: a durable per-phase history file if a box ever
+        needs cross-root history.
+        """
+        files: List[Path] = [self._telemetry_dir() / "stage-timings.jsonl"]
+        try:
+            siblings = sorted(p for p in self.run_dir.parent.iterdir()
+                              if p.is_dir() and p != self.run_dir)
+        except OSError:
+            siblings = []
+        for sib in siblings[-_ETA_HISTORY_SIBLING_LIMIT:]:
+            files.append(sib / "working" / "telemetry" / "stage-timings.jsonl")
+        samples: Dict[str, List[float]] = {}
+        for path in files:
+            try:
+                with path.open("r", encoding="utf-8") as fh:
+                    for line in fh:
+                        try:
+                            row = json.loads(line)
+                        except json.JSONDecodeError:
+                            continue
+                        if not isinstance(row, dict) or row.get("event") != "phase_exit":
+                            continue
+                        pid = row.get("phase_id")
+                        dur = row.get("duration_s")
+                        if not pid or isinstance(dur, bool) \
+                                or not isinstance(dur, (int, float)):
+                            continue
+                        samples.setdefault(str(pid), []).append(float(dur))
+            except OSError:
+                continue
+        return {pid: statistics.median(vals) for pid, vals in samples.items() if vals}
+
+    def _client_eta_sentence(self) -> str:
+        """PD-031: `About <N> minutes to go.` for the START message, or "".
+
+        N is the sum of the MEDIAN recorded durations of the phases still
+        ahead of the run, rounded to whole minutes. Nothing is stated unless
+        every minute of it came from a recorded duration: no median for any
+        remaining phase -> no sentence.
+        """
+        medians = self._stage_timing_medians()
+        if not medians:
+            return ""
+        remaining: List[str] = []
+        for ph in self.manifest.phases:
+            status = PHASE_STATUS_PENDING
+            for ps in self.state.get("phases") or []:
+                if ps.get("id") == ph.id:
+                    status = ps.get("status") or PHASE_STATUS_PENDING
+                    break
+            if status in (PHASE_STATUS_DONE, PHASE_STATUS_DEFERRED,
+                          PHASE_STATUS_OBSOLETE):
+                continue
+            remaining.append(ph.id)
+        total_s = sum(medians[pid] for pid in remaining if pid in medians)
+        minutes = int(round(total_s / 60.0))
+        if minutes < 1:
+            return ""
+        return f"About {minutes} minutes to go."
 
     def _route_around_converter_phase(self, phase: Phase, creation_mode: str) -> None:
         """Record a converter_path phase as not applicable to this deck, WITHOUT
