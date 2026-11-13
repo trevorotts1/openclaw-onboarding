@@ -87,7 +87,7 @@ begins at its own `## 9.` line 10):
 
 ```
 python3 -I - ROLE section9.md   # extract "## 9. ..." up to the line before "## 10. "
-diff /Volumes/mac mini m4/swarm-contract/pd-fix/scratchpads/PD-017/role-section9.md \
+diff <host-scratch-root>/PD-017/role-section9.md \
      <(sed -n '/^## 9\. Standard Operating Procedures (Numbered)$/,$p' MIRROR)
 ```
 
@@ -201,8 +201,8 @@ Note: the branch's upstream was `origin/main`, so the push was made with an expl
 
 ## Storage
 
-Temp files: `/Volumes/mac mini m4/swarm-contract/pd-fix/tmp/PD017.FoaSOn` (via `mktemp -p "$TMPDIR"`).
-Scratch: `/Volumes/mac mini m4/swarm-contract/pd-fix/scratchpads/PD-017/`. No `/tmp` path used.
+Temp files: `<host-scratch-root>/tmp/PD017.FoaSOn` (via `mktemp -p "$TMPDIR"`).
+Scratch: `<host-scratch-root>/PD-017/`. No host temp-root path used.
 
 ---
 
@@ -211,7 +211,7 @@ Scratch: `/Volumes/mac mini m4/swarm-contract/pd-fix/scratchpads/PD-017/`. No `/
 **Repair code commit:** `330f12fc5440e77d98323f3a2c05d6101e37fd9b` — the two SOP files, on `pd/fl08-buddy-procedure--hold-d2`
 **Base for the repair:** `50326dc9f4ac0fa7cddeba232bb99d9c145d8fdb` (the tree the reviewer failed)
 **Isolation:** own worktree at
-`/Volumes/mac mini m4/swarm-contract/pd-fix/scratchpads/PD-017/worktree`
+`<host-scratch-root>/PD-017/worktree`
 (branch `pd017-fix` from the tip). The lane clone was read only and left clean.
 
 ## Decision: which file each passage belongs in
@@ -328,7 +328,7 @@ head (repair):  role section 9, 305 lines = mirror body, 305 lines   diff rc=0
 ## 4. The two gates still have teeth
 
 Fixtures under
-`/Volumes/mac mini m4/swarm-contract/pd-fix/scratchpads/PD-017/gate-fixture/`.
+`<host-scratch-root>/PD-017/gate-fixture/`.
 Driver imports the real `build_deck.py` and calls the real gate functions
 (`_chk_asset_question`, `_chk_pitch_flag`) — no reimplementation.
 
