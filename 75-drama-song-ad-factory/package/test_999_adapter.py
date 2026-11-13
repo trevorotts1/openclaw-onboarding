@@ -481,7 +481,7 @@ def test_breaking_entrypoint_routing_turns_reachability_red():
         block = (
             "try:\n"
             "    from character_library import sync_protocol  # noqa: E402\n"
-            "except Exception as exc:  # noqa: BLE001 - the refusal IS the evidence\n"
+            "except (Exception, SystemExit) as exc:  # noqa: BLE001 - the refusal IS the evidence\n"
             '    _carrier_failed("character_library.sync_protocol", exc)\n')
         assert block in text, "entrypoint guard shape drifted; update this mutation"
         with open(target, "w", encoding="utf-8") as fh:
@@ -508,6 +508,44 @@ def test_unparseable_entrypoint_still_emits_a_receipt():
         payload = json.loads(proc.stdout)
         assert payload["ok"] is False
         assert _clauses(payload)["entrypoint_reachability"] is False
+
+
+def test_a_carrier_that_raises_a_non_import_error_still_emits_a_receipt():
+    """Gutted means any exception type, not only ImportError and SyntaxError.
+
+    The adapter imports carriers into its own process, so a type outside the
+    guessed list used to kill check() before it printed anything: exit 1, a
+    traceback on stderr, and no receipt at all.
+    """
+    with _source_copy("runtime-gut") as root:
+        with open(os.path.join(root, "scripts/core/story_first_contracts.py"),
+                  "w", encoding="utf-8") as fh:
+            fh.write("raise RuntimeError('gutted by negative control')\n")
+        proc = subprocess.run([sys.executable, "package/999_adapter.py",
+                               "check"], cwd=root, capture_output=True,
+                              text=True, timeout=900)
+        assert proc.returncode == 1, proc.returncode
+        assert proc.stderr == "", proc.stderr[-400:]
+        payload = json.loads(proc.stdout)
+        assert payload["ok"] is False
+        assert _clauses(payload)["same_product_requirements"] is False
+
+
+def test_a_carrier_that_exits_at_import_is_named_in_the_receipt():
+    """A carrier can leave by SystemExit, which is not an Exception."""
+    with _source_copy("exit-gut") as root:
+        with open(os.path.join(root, "scripts/core/story_first_contracts.py"),
+                  "w", encoding="utf-8") as fh:
+            fh.write("import sys\nsys.exit(7)\n")
+        proc = subprocess.run([sys.executable, A.ENTRYPOINT_REL, "carriers"],
+                              cwd=root, capture_output=True, text=True,
+                              timeout=180)
+        assert proc.returncode == 1, proc.returncode
+        assert proc.stderr == "", proc.stderr
+        payload = json.loads(proc.stdout)
+        assert payload["ok"] is False
+        failed = [row["module"] for row in payload["failed_carriers"]]
+        assert "story_first_contracts" in failed, failed
 
 
 def test_gutting_any_declared_carrier_turns_the_check_red():
