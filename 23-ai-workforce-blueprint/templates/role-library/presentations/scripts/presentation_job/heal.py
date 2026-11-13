@@ -788,11 +788,13 @@ def rung2_regenerate(engine, phase, deficiency, child_env=None):
     for attempt in range(prior + 1, HEAL_CAP_REGENERATE + 1):
         record_heal_event(engine.state, phase.id, engine.store, ps,
                           rung=2, attempt=attempt, reason=deficiency)
-        engine.report.to_requester(
-            "blocked",
+        # PD-018b: an artifact check that failed and is being regenerated is the
+        # engine's own internal repair work -- the client hears nothing until a
+        # step finishes or a real pause. The line goes to the event log.
+        engine.report.event(
+            "report.internal",
             f"{phase.id} artifact check failed ({deficiency}). "
-            f"Regenerating -- attempt {attempt} of {HEAL_CAP_REGENERATE}.",
-            phase_id=phase.id, reason=f"rung2:{deficiency}")
+            f"Regenerating -- attempt {attempt} of {HEAL_CAP_REGENERATE}.")
         if attempt < HEAL_CAP_REGENERATE:
             time.sleep(min(60, 5 * (2 ** (attempt - 1))))
         engine._checkpoint(phase.id, pending_cmd=' '.join(argv), pending_started_at=utcnow())
