@@ -100,6 +100,11 @@ CHECKS = frozenset({
     # PASS must come from a crop-in render attempt, never from a fill; see
     # fill_claim.
     "no_blur_fill",
+
+    # U-C04 (S75-002, U-X01): the research relevance record the judged check
+    # writes (claims.relevance_record). A research bundle cannot pass without
+    # it, and its reviewer must not be the bundle's maker.
+    "research_relevance",
 })
 # 17.8 critical categories (identity, lyrics, offer, claim, product_label,
 # CTA) ride on these checks: lyrics carries the critical-word coverage,
@@ -117,7 +122,10 @@ SCRIPT_STAGES = frozenset({"script", "script-lyrics"})
 #: master plus the song files, the three labelled audio versions, the one cover
 #: image and the delivered video. A caller list that omits any of these names
 #: is REFUSED (REQUIRED_CHECKS_NARROWED) -- saying less must never measure less.
+#: U-C04 adds the research stage: the judged relevance record (U-X01's
+#: research_relevance) is required there, by the same declared-not-dictated rule.
 STAGE_REQUIRED = {
+    "research": ("research_relevance",),
     "final-qc": ("final_edit", "export", "timeline", "audio", "text_product"),
     "delivery": ("final_edit", "song_files", "audio_versions",
                  "cover_image", "video_delivery"),
