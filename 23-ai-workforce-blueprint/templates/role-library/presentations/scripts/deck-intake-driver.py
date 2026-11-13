@@ -785,7 +785,18 @@ def _yes_or_no(text: str) -> Optional[str]:
         return "no"
     return None
 
-_PACE_WPM = {"default": 130, "medium": 140, "fast": 155}
+_PACE_WPM = {"standard": 140, "teaching": 130, "high-energy": 155,
+             "default": 140, "medium": 150, "fast": 160}
+
+
+def _pace_wpm(value: Any) -> int:
+    """Words a minute for one speaking-pace answer (PD-023).
+
+    The bank asks standard / teaching / high-energy; the pre-PD-023 words
+    stay accepted. Blank or unknown reads as the one default, 140.
+    """
+    pace = str(value or "").strip().lower().replace("_", "-").replace(" ", "-")
+    return _PACE_WPM.get(pace, _PACE_WPM["standard"])
 
 def _truthy_value(cval: Any) -> bool:
     if isinstance(cval, bool):
@@ -932,6 +943,8 @@ def derive_structured_answer(qdef: Dict[str, Any], text: str,
             continue
         if ann.get("enum"):
             e = _enum_match(val, ann["enum"])
+            if e is None:
+                e = (ann.get("aliases") or {}).get(str(val).strip().lower())
             out[k] = e if e is not None else val.strip()
             merged[k] = out[k]
             continue
@@ -958,7 +971,7 @@ def derive_structured_answer(qdef: Dict[str, Any], text: str,
                     out[k] = cand[0]
                 else:
                     pace = str(merged.get("speech_speed_preference") or "default").lower()
-                    out[k] = _PACE_WPM.get(pace, _PACE_WPM["default"])
+                    out[k] = _pace_wpm(pace)
                 merged[k] = out[k]
                 continue
             if k == "duration_min":
@@ -999,7 +1012,7 @@ def derive_structured_answer(qdef: Dict[str, Any], text: str,
         merged["access_free"] = out["access_free"]
     if "target_wpm" in sub and "target_wpm" not in captured:
         pace = str(out.get("speech_speed_preference") or merged.get("speech_speed_preference") or "default").lower()
-        out["target_wpm"] = _PACE_WPM.get(pace, _PACE_WPM["default"])
+        out["target_wpm"] = _pace_wpm(pace)
         merged["target_wpm"] = out["target_wpm"]
     if "deliverable_set" in sub and "deliverable_set" not in captured:
         parts = ["deck"]
@@ -1054,7 +1067,12 @@ def validate_labeled_enums(qdef: Dict[str, Any], text: str) -> Optional[str]:
         if not allowed:
             continue
         if _enum_match(val, allowed) is None:
-            return (f"Invalid value {val!r} for {k}. Allowed: {allowed}")
+            # PD-023: a subfield may declare `aliases` (old client word ->
+            # the bank's word). The vocabulary stays in the question bank;
+            # this parser never hardcodes it.
+            alias = (ann.get("aliases") or {}).get(str(val).strip().lower())
+            if alias is None or _enum_match(alias, allowed) is None:
+                return (f"Invalid value {val!r} for {k}. Allowed: {allowed}")
     return None
 
 def _skip_default_value(ann: Dict[str, Any]) -> Any:
@@ -2244,9 +2262,15 @@ def cmd_answer(args) -> int:
     # Validate enum values (plain rows keep the legacy exact-match gate)
     allowed = qdef.get("allowed_values")
     if qid != "pitch_included" and allowed and text.strip() not in allowed and (text.strip() or qdef.get("required")):
-        print(json.dumps({"error": f"Invalid value {text!r} for {qid}. "
-                                   f"Allowed: {allowed}"}))
-        return 1
+        # PD-023: an old client word stays accepted through the question's
+        # own aliases map. The canonical bank word is what gets recorded.
+        alias = (qdef.get("aliases") or {}).get(text.strip().lower())
+        if alias in allowed:
+            text = alias
+        else:
+            print(json.dumps({"error": f"Invalid value {text!r} for {qid}. "
+                                       f"Allowed: {allowed}"}))
+            return 1
 
     # Record the answer
     ledger = read_intake_ledger(run_dir)
