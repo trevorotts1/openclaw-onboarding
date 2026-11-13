@@ -58,9 +58,70 @@ DELIVERY_NAME = "delivery"
 #: timing receipt inside the run (F17 measured word timings).
 TIMING_PATH = os.path.join("music", "word-timings.json")
 
+#: The four files packaging reads, each with the stage that writes it (S75-055:
+#: no stage wrote music/word-timings.json, music/vocal-stem.mp3,
+#: music/instrumental.mp3 or edit/timeline.json; the packaging command named a
+#: bare path instead). A refusal now names the STAGE to re-run.
+PACKAGING_INPUT_STAGES = (
+    ("music/instrumental.mp3", "music",
+     "the music stage writes it with the one vocal-separation job"),
+    ("music/vocal-stem.mp3", "music",
+     "the music stage writes it with the one vocal-separation job"),
+    ("music/word-timings.json", "music",
+     "the music stage writes it when the client picks a song"),
+    ("edit/timeline.json", "edit",
+     "the edit stage writes it in the assembler's planning step"),
+)
+
+
+def _rel(path):
+    """One run-relative path, forward slashes, for the stage lookup."""
+    return str(path).replace(os.sep, "/")
+
+
+_PACKAGING_STAGE = {_rel(rel): (stage, why)
+                    for rel, stage, why in PACKAGING_INPUT_STAGES}
+
+
+def stage_of(rel):
+    """(stage, what wrote it) for one packaging input, or None."""
+    return _PACKAGING_STAGE.get(_rel(rel))
+
 
 class RunInputError(RuntimeError):
     """The run is missing what this producer's real deliver path needs."""
+
+
+class PackagingInputMissing(RunInputError):
+    """A packaging input was never written; ``missing`` names each one.
+
+    The message names the stage that should have written the file, so a run
+    says which stage to re-run instead of which path a producer opened.
+    """
+
+    def __init__(self, missing):
+        self.missing = tuple(missing)
+        super().__init__("; ".join(
+            "PACKAGING_INPUT_MISSING: %s is missing - %s"
+            % (rel, (_PACKAGING_STAGE.get(_rel(rel)) or ("the run", ""))[1])
+            for rel in self.missing))
+
+
+def require_packaging_inputs(run_dir):
+    """The four files the packaging command needs, or a refusal naming stages.
+
+    Returns the four run-relative paths in PACKAGING_INPUT_STAGES order. A
+    missing or empty file raises PackagingInputMissing naming the stage that
+    should have written it -- the packaging command never guesses a file's
+    stage from the producer that happened to open the path.
+    """
+    root = as_run(run_dir)
+    missing = [rel for rel, _stage, _why in PACKAGING_INPUT_STAGES
+               if not (root / rel).is_file()
+               or (root / rel).stat().st_size == 0]
+    if missing:
+        raise PackagingInputMissing(missing)
+    return tuple(rel for rel, _stage, _why in PACKAGING_INPUT_STAGES)
 
 
 def as_run(run_dir):
@@ -83,6 +144,11 @@ def load_json(run_dir, rel):
         with open(path, encoding="utf-8") as fh:
             return json.load(fh)
     except FileNotFoundError:
+        held = _PACKAGING_STAGE.get(_rel(rel))
+        if held is not None:
+            raise RunInputError("run is missing %s - %s (S75-055: the stage "
+                                "that writes it has not run)"
+                                % (rel, held[1])) from None
         raise RunInputError("run is missing %s" % rel) from None
     except (OSError, ValueError) as exc:
         raise RunInputError("cannot read %s: %s" % (rel, exc)) from None
@@ -386,7 +452,9 @@ def stage(item, folder):
     return [folder / name for name in item.files]
 
 
-__all__ = ["RunInputError", "DELIVERY_NAME", "TIMING_PATH", "PURPOSE_KEYS",
+__all__ = ["RunInputError", "PackagingInputMissing", "DELIVERY_NAME",
+           "TIMING_PATH", "PURPOSE_KEYS", "PACKAGING_INPUT_STAGES", "stage_of",
+           "require_packaging_inputs",
            "as_run", "delivery_dir", "load_json", "load_json_optional",
            "approved_lines", "measured_cues", "audio_sources", "ad_title",
            "chosen_length_s", "delivery_context", "ffmpeg_with", "stage"]
