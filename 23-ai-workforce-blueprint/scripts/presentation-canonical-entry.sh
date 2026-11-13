@@ -897,7 +897,9 @@ _TEST_CONTEXT_MARKER="$RUN_DIR/working/checkpoints/.test-context"
 # helper that dies inside this heredoc must be loud, not silent.
 # ---------------------------------------------------------------------------
 read_run_mode() {
-    python3 - "$1" "$SCRIPTS_DIR" <<'PYMODE'
+    # PD-026: the resolved pin, never a bare `python3`. This runs after
+    # _pres35_resolve_entry_interpreter has finalised $PRESENTATION_PY.
+    "$PRESENTATION_PY" - "$1" "$SCRIPTS_DIR" <<'PYMODE'
 import json
 import sys
 from pathlib import Path
@@ -1368,14 +1370,19 @@ version_hash_pin() {
     #     it means the actual renderer has drifted from the manifest/ruleset and
     #     the door FAILS CLOSED exactly as before.
     if [ -f "$SCRIPTS_DIR/sync_check.py" ] && have_py; then
-        if "$PRESENTATION_PY" "$SCRIPTS_DIR/sync_check.py" --json >/tmp/_pce_sync.$$ 2>&1; then
+        # PD-026: the raw sync_check JSON lands under THIS run's own checkpoints
+        # directory, never the system temp folder, and it is removed on every
+        # exit path of this block.
+        local _sync_tmp="$RUN_DIR/working/checkpoints/.sync-check.$$.json"
+        mkdir -p "$(dirname "$_sync_tmp")" 2>/dev/null || true
+        if "$PRESENTATION_PY" "$SCRIPTS_DIR/sync_check.py" --json >"$_sync_tmp" 2>&1; then
             echo "  OK: sync_check.py — renderer in lockstep with the SOP/manifest stack"
-            rm -f /tmp/_pce_sync.$$
+            rm -f "$_sync_tmp"
         else
             # sync_check exited 4 (drift). Classify: only A5/A6 (library-only) -> proceed evented.
             # NOTE: the temp path is passed via env var because the heredoc is
-            # QUOTED ('PY') and bash does not expand $$ inside it.
-            if _PCE_SYNC_TMP="/tmp/_pce_sync.$$" "$PRESENTATION_PY" - <<'PY'
+            # QUOTED ('PY') and bash does not expand it inside.
+            if _PCE_SYNC_TMP="$_sync_tmp" "$PRESENTATION_PY" - <<'PY'
 import json, os, sys
 try:
     d = json.load(open(os.environ["_PCE_SYNC_TMP"]))
@@ -1391,7 +1398,7 @@ if blocking:
 sys.exit(0)      # library-only drift -> proceed, evented
 PY
             then
-                sed 's/^/    sync_check> /' /tmp/_pce_sync.$$ >&2 || true
+                sed 's/^/    sync_check> /' "$_sync_tmp" >&2 || true
                 echo "  OK: render-path lockstep clean (library-only A5/A6 drift deferred, logged)"
                 # PD-026: the sync_drift_deferred board event is DEFERRED here, never
                 # posted from an inline module import — that import was dead in every
@@ -1410,10 +1417,10 @@ PY
                     echo "  sync_drift_deferred event not posted: could not write $_SYNC_DEFER_LOG" >&2
                     printf '%s\n' "$_SYNC_DEFER_ROW" >&2
                 fi
-                rm -f /tmp/_pce_sync.$$
+                rm -f "$_sync_tmp"
             else
-                sed 's/^/    sync_check> /' /tmp/_pce_sync.$$ >&2 || true
-                rm -f /tmp/_pce_sync.$$
+                sed 's/^/    sync_check> /' "$_sync_tmp" >&2 || true
+                rm -f "$_sync_tmp"
                 return 4
             fi
         fi
@@ -1853,7 +1860,8 @@ export OC_DECK_CANONICAL_ENTRY=1
 
 # FIX P3-01(c)4 — close the kie_generate.py / kie-slide-submitter.js side door:
 # both are SHARED scripts (also reused by Skills 06/47/49/59 for non-presentations
-# image work), so their full 9,000-18,000-char rich-prompt floor gate is opt-in via
+# image work), so their full rule 12 prompt band (16,000 to 20,000 characters
+# for the current pin) gate is opt-in via
 # KIE_PROMPT_GATE=presentations (see prompt_gate.py / kie_generate.py). This entry
 # point IS the presentations context — force the full gate on for the ENTIRE process
 # tree it spawns so a Mode-B reference-image call made anywhere inside a canonical
