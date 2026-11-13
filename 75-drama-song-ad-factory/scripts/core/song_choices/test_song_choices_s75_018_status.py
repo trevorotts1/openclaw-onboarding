@@ -19,6 +19,7 @@ Everything is offline: the provider transport, the judge, the save and measure
 transports and the ffmpeg runner are injected stubs. No network, no spend.
 
 Run: python3 75-drama-song-ad-factory/scripts/core/song_choices/test_song_choices_s75_018_status.py
+Run: python3 -m pytest -q 75-drama-song-ad-factory/scripts/core/song_choices/test_song_choices_s75_018_status.py
 """
 import contextlib
 import importlib.util
@@ -149,16 +150,20 @@ def check_one(m, tmp, status):
     return "%s -> %s" % (status, got["where"])
 
 
+def _same_vocabulary(m):
+    """The expectation table and the producer's vocabulary are the SAME set:
+    a new status with no home here fails, never goes untested."""
+    assert set(m.STATUSES) == set(EXPECT), \
+        ("the producer's statuses %r and this test's %r disagree"
+         % (sorted(m.STATUSES), sorted(EXPECT)))
+
+
 def run_all(path):
     tmp = tempfile.mkdtemp(prefix="s75018-")
     rows = []
     try:
         m = load(path)
-        # The expectation table and the producer's vocabulary are the SAME set:
-        # a new status with no home here fails, never goes untested.
-        assert set(m.STATUSES) == set(EXPECT), \
-            ("the producer's statuses %r and this test's %r disagree"
-             % (sorted(m.STATUSES), sorted(EXPECT)))
+        _same_vocabulary(m)
         for status in m.STATUSES:
             tmpc = tempfile.mkdtemp(dir=tmp)
             try:
@@ -170,6 +175,65 @@ def run_all(path):
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
     return rows
+
+
+# --- pytest items -----------------------------------------------------------
+# This file is script-style (`python3 <file>`), and CI's empty-home loop runs it
+# that way. The pytest step also collects every test_*.py and tolerates exit 5
+# ("no test items"), so without items here the six-status routing was invisible
+# to pytest while the suite still reported green. Each item below calls the SAME
+# check_one the script runner uses -- one case, its exact message, no rewrite.
+
+def _isolated(fn, *args):
+    """Run ``fn`` with the module table restored afterwards. ``load()`` installs
+    its stub modules by BARE name; they carry no ``__file__``, so conftest's
+    skill-tree sweep cannot see them, and in the one-process whole-tree run they
+    would leak into the next file's suite. Restore exactly, add and replace."""
+    before = dict(sys.modules)
+    try:
+        return fn(*args)
+    finally:
+        for name in [n for n in sys.modules if n not in before]:
+            del sys.modules[name]
+        sys.modules.update(before)
+
+
+def _pytest_case(status):
+    def run():
+        tmp = tempfile.mkdtemp(prefix="s75018-")
+        try:
+            check_one(load(_target([])), tmp, status)
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
+    _isolated(run)
+
+
+def test_pass_is_offered():
+    _pytest_case("PASS")
+
+
+def test_failed_is_heard():
+    _pytest_case("FAILED")
+
+
+def test_held_is_refused_by_name():
+    _pytest_case("HELD")
+
+
+def test_save_failed_is_refused_by_name():
+    _pytest_case("SAVE_FAILED")
+
+
+def test_measure_failed_is_refused_by_name():
+    _pytest_case("MEASURE_FAILED")
+
+
+def test_refused_is_refused_by_name():
+    _pytest_case("REFUSED")
+
+
+def test_expectation_table_is_the_producer_vocabulary():
+    _isolated(lambda: _same_vocabulary(load(_target([]))))
 
 
 def _target(argv):
