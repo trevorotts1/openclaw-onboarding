@@ -846,7 +846,11 @@ function pageRecap() {
   // the client picked ("The sound: R&B Flow"), never the upper-case label and
   // never the option's number. A typed answer reads back as it was typed
   // (S75-074: a typed screen's reply is its sentence, with or without options).
-  const recapHeading = (q) => String((q && (q.title || q.question || q.label)) || "Your answer").trim();
+  // S75-074 step 6 — the recap is a question screen too: it shows the same
+  // plain wording, so the "Tap a link to watch a sample." sentence is gone
+  // here as well (the sample link is drawn beside the options, not in a recap).
+  const recapHeading = (q) => String(
+    (q && (q.title || questionLabel(q) || q.label)) || "Your answer").trim();
   const recapAnswer = (i) => {
     const q = list[i];
     if (isTypedScreen(q)) return String(state.texts[i] || "").trim() || "not answered yet";

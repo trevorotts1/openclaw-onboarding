@@ -193,6 +193,31 @@ if (look) {
   rule("(2) and the plain sentence is still gone", !/Tap a link to watch a sample/i.test(pageText()));
 }
 
+// the recap is a question screen too — the sample sentence must not come back
+{
+  const withSample = {
+    id: "look", label: "VIDEO STYLE", title: "", typed: false,
+    question: "How should your video look? Tap a link to watch a sample.",
+    options: [{ n: 1, text: "Lifelike 3D", detail: "", recommended: true }],
+  };
+  state.page = "recap";
+  state.questions = [withSample];
+  state.visible = [withSample];
+  state.visibleFrom = null;
+  state.qIndex = 0;
+  state.picks = ["1"];
+  state.texts = [];
+  state.replies = [];
+  state.note = "";
+  state.orderId = "check-order";
+  render();
+  const text = pageText();
+  rule("(2) the recap never draws \"Tap a link to watch a sample.\"",
+    !/Tap a link to watch a sample/i.test(text), text.slice(0, 200));
+  rule("(2) the recap keeps the question's own wording",
+    text.includes("How should your video look?"), text.slice(0, 200));
+}
+
 // ── (3) plain words on a re-exported screen ─────────────────────────────────
 // The card U-E02 re-exports: titles, no typed option row, plain AGNES copy.
 const plainCard = {
