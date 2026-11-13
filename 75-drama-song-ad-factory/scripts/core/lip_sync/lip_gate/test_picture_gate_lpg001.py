@@ -250,7 +250,7 @@ def test_face_model_install_pins_sha256():
     assert "install_face_model.py" in ids["face-landmarker-model"]["satisfy"]
     assert "mediapipe" in ids["python-mediapipe"]["satisfy"]
     assert IM.MODEL_URL.startswith("https://storage.googleapis.com/mediapipe-models/"
-                                   "face_landmarker/face_landmarker/float16/latest/")
+                                   "face_landmarker/face_landmarker/float16/1/")
     data = b"pretend model"
     import hashlib, io
     sha = hashlib.sha256(data).hexdigest()
