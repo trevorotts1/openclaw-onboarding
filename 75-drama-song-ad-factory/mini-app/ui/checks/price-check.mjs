@@ -53,13 +53,23 @@ if (fixture) {
   rule("the fixture carries every video model", Object.keys(models).length > 0,
     `${Object.keys(models).length} model(s)`);
 
+  // U-E02 saves the picture rate, the song rate and the planning allowance ONCE
+  // at the top of the fixture (`keyframe_usd`, `song_usd`, `redo_rate`), with
+  // `keyframe_count_extra` beside them; a model may override any of the three.
+  // Reading them off the model object alone gives undefined, the page rightly
+  // refuses to price, and this check goes red for the wrong reason.
+  const priceInputs = (model) => ({
+    keyframe_usd: model.keyframe_usd ?? fixture.keyframe_usd,
+    song_usd: model.song_usd ?? fixture.song_usd,
+    redo_rate: model.redo_rate ?? fixture.redo_rate,
+    keyframe_count_extra: fixture.keyframe_count_extra,
+  });
+
   for (const [n, model] of Object.entries(models)) {
     for (const length of lengths) {
       const option = {
         n: Number(n), text: model.name, unit: model.unit, shot_s: model.shot_s,
-        rate_usd: model.rate_usd, keyframe_usd: model.keyframe_usd,
-        song_usd: model.song_usd, redo_rate: model.redo_rate,
-        keyframe_count_extra: fixture.keyframe_count_extra,
+        rate_usd: model.rate_usd, ...priceInputs(model),
       };
       const got = optionPriceUsd(option, Number(length));
       const want = model.prices_usd[length];
@@ -74,9 +84,7 @@ if (fixture) {
     const [n, model] = first;
     const option = {
       n: Number(n), text: model.name, unit: model.unit, shot_s: model.shot_s,
-      rate_usd: model.rate_usd, keyframe_usd: model.keyframe_usd,
-      song_usd: model.song_usd, redo_rate: model.redo_rate,
-      keyframe_count_extra: fixture.keyframe_count_extra,
+      rate_usd: model.rate_usd, ...priceInputs(model),
     };
     rule("a priced option with no length says so, no number",
       optionPriceLine(option, null) === "price shown after you pick a length",
