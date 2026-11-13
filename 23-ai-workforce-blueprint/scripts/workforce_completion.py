@@ -56,7 +56,10 @@ DEPT_RUNTIME_DIRS=frozenset({'memory','conversational-logs','logs','artifacts','
                              'intake','fish-audio','release-matrix','contract'})
 # v1 hashed every .md/.json under the tree. Evidence recorded without a
 # digestVersion is re-checked with v1, so no already-verified build flips on update.
-DIGEST_VERSION=2
+# v3 additionally skips the workforce's own memory/instruction files at any depth:
+# the agent rewrites them as it works, and they are state, not build artifacts.
+DIGEST_VERSION=3
+RUNTIME_FILE_NAMES=frozenset({'MEMORY.md','HEARTBEAT.md','AGENTS.md','TOOLS.md','USER.md','persona-matrix.md','dept-default-models.json'})
 
 def artifact_digest(root,version=DIGEST_VERSION):
     if not root or not Path(root).is_dir():
@@ -66,12 +69,32 @@ def artifact_digest(root,version=DIGEST_VERSION):
         if path.is_file() and not path.is_symlink() and path.suffix in ('.md','.json'):
             rel=path.relative_to(root)
             if version>=2 and len(rel.parts)>2 and rel.parts[1].lower() in DEPT_RUNTIME_DIRS:continue
+            if version>=3 and path.name in RUNTIME_FILE_NAMES:continue
             digest.update(str(rel).encode());digest.update(path.read_bytes());count+=1
     return digest.hexdigest() if count else None
 
-def input_digest(state):
-    keys=('companyId','companySlug','interviewComplete','interviewCompletedAt','confirmationsComplete','canonicalReconciliation','interviewAnswers','answers','interviewProgress')
-    return hashlib.sha256(json.dumps({k:state.get(k) for k in keys},sort_keys=True).encode()).hexdigest()
+# v1 hashed whole canonicalReconciliation and interviewProgress objects, so a
+# reconcile timestamp or a late progress stamp un-verified a finished build.
+# v2 hashes only the owner's decisions, the chosen departments and the merge
+# decisions, and drops interviewProgress. Evidence without inputDigestVersion is
+# re-checked with v1, so an already-verified build does not flip on update.
+INPUT_DIGEST_VERSION=2
+INPUT_DIGEST_V1_KEYS=('companyId','companySlug','interviewComplete','interviewCompletedAt','confirmationsComplete','canonicalReconciliation','interviewAnswers','answers','interviewProgress')
+
+def input_digest(state,version=INPUT_DIGEST_VERSION):
+    if version>=2:
+        canonical=state.get('canonicalReconciliation')
+        canonical=canonical if isinstance(canonical,dict) else {}
+        chosen=canonical.get('chosenDepartments')
+        chosen=chosen.get('slugs') if isinstance(chosen,dict) else None
+        payload={'companyId':state.get('companyId'),'companySlug':state.get('companySlug'),
+                 'interviewComplete':state.get('interviewComplete'),'interviewCompletedAt':state.get('interviewCompletedAt'),
+                 'confirmationsComplete':state.get('confirmationsComplete'),'interviewAnswers':state.get('interviewAnswers'),
+                 'answers':state.get('answers'),
+                 'canonicalReconciliation':{'decisions':canonical.get('decisions'),'chosen':chosen,'mergeDecisions':canonical.get('mergeDecisions')}}
+    else:
+        payload={k:state.get(k) for k in INPUT_DIGEST_V1_KEYS}
+    return hashlib.sha256(json.dumps(payload,sort_keys=True).encode()).hexdigest()
 
 def evaluate(state):
     missing=[];checks=state.get('buildChecks') or {};build_id=state.get('buildId')
@@ -87,7 +110,7 @@ def evaluate(state):
     if not isinstance(depts,list) or not depts or any(not isinstance(d,dict) or d.get('status') not in ('done',) for d in depts):missing.append('departments')
     if state.get('buildType')=='standard-first' and state.get('confirmationsComplete') is not True:missing.append('confirmations')
     evidence=state.get('buildArtifactVerification') or {}
-    if evidence.get('inputDigest')!=input_digest(state):missing.append('changed-inputs')
+    if evidence.get('inputDigest')!=input_digest(state,evidence.get('inputDigestVersion',1)):missing.append('changed-inputs')
     try:current=artifact_digest(evidence.get('root'),evidence.get('digestVersion',1))
     except OSError:current=None
     if not current or current!=evidence.get('digest'):missing.append('changed-or-missing-artifacts')
@@ -102,7 +125,7 @@ def finalize(path,check_results=None,artifact_root=None,presentation_deps=None):
             for name,rc in check_results.items():
                 checks[name]={'status':'pass' if rc==0 else 'failed','returnCode':rc,'checkedAt':now,'buildId':state['buildId']}
             root=artifact_root or (state.get('buildArtifactVerification') or {}).get('root')
-            state['buildArtifactVerification']={'root':str(root) if root else None,'digest':artifact_digest(root),'digestVersion':DIGEST_VERSION,'inputDigest':input_digest(state)}
+            state['buildArtifactVerification']={'root':str(root) if root else None,'digest':artifact_digest(root),'digestVersion':DIGEST_VERSION,'inputDigest':input_digest(state),'inputDigestVersion':INPUT_DIGEST_VERSION}
         if presentation_deps is not None:
             # BU-57: record the non-required probe as a plain integer result, and
             # carry a missing presentation runtime as a closeout blocker instead
@@ -173,7 +196,14 @@ def closeout_artifact_digest(state):
 def finalize_closeout(path):
     def mutate(state):
         require_build_identity(state)
-        missing=evaluate(state)
+        # Closeout judges the build by its settled verification receipt, not by
+        # re-evaluating inputs and artifacts: runtime writes after finalize must
+        # not un-verify a build that was already verified.
+        verification=state.get('completionVerification') or {}
+        missing=[]
+        if not (isinstance(verification,dict) and verification.get('status')=='verified'
+                and verification.get('buildId') and verification.get('buildId')==state.get('buildId')):
+            missing.append('build-not-verified')
         if state.get('commandCenterStatus')!='done' or any(state.get(k) is not True for k in CC_PHASES):missing.append('command-center')
         if state.get('qualityHeld'):missing.append('quality-held')
         for key in ('infographic1Url','infographic2Url','celebrationVideoUrl','notionRootPageUrl'):
