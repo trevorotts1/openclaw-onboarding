@@ -49,12 +49,13 @@ class SavedCharacterQuestion(unittest.TestCase):
         self.qs = IC._with_saved_character(self.client)
 
     def test_text_one_saved_singular(self):
+        #: U-GEN425: the counter reads the screens asked one by one (ASKED).
         self.assertEqual(IC.render_step(AT + 1, self.one),
-                         NEW % (AT + 1, N, "1 character") + "2. Use Maya Lee - Warm, 40s, silver braids\n" + TAIL)
+                         NEW % (AT + 1, ASKED, "1 character") + "2. Use Maya Lee - Warm, 40s, silver braids\n" + TAIL)
 
     def test_text_two_saved_plural(self):
         self.assertEqual(IC.render_step(AT + 1, self.qs),
-                         NEW % (AT + 1, N, "2 characters") + "2. Use Dre - Sharp suit, calm voice\n"
+                         NEW % (AT + 1, ASKED, "2 characters") + "2. Use Dre - Sharp suit, calm voice\n"
                          "3. Use Maya Lee - Warm, 40s, silver braids\n" + TAIL)
 
     def test_card_uses_same_text(self):
