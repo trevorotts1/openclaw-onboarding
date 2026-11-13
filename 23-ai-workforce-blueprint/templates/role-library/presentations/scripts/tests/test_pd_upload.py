@@ -24,6 +24,7 @@ import delivery_gate  # noqa: E402
 import ghl_media  # noqa: E402
 import ghl_media_push as gmp  # noqa: E402
 import ghl_media_upload  # noqa: E402
+from presentation_job import approvals as approvals_mod  # noqa: E402
 from presentation_job.gates import Gates  # noqa: E402
 
 SLUG = "demo-deck"
@@ -235,3 +236,69 @@ def test_list_back_error_produces_note(tmp_path, monkeypatch, capsys):
 
     assert ok is True, reasons
     assert "NOTE: remote list-back not performed" in reasons, reasons
+
+
+# ---------------------------------------------------------------------------
+# PD-316b — the upload closeout skip is an OWNER APPROVAL, not four typed fields
+# ---------------------------------------------------------------------------
+
+def _owner_skip_run(base: pathlib.Path, **record):
+    """A run dir with has_ghl:false and ONE owner_skip_approval record."""
+    intake = base / "working" / "copy"
+    intake.mkdir(parents=True, exist_ok=True)
+    (intake / "intake.json").write_text(json.dumps({"has_ghl": False}))
+    ck = base / "working" / "checkpoints"
+    ck.mkdir(parents=True, exist_ok=True)
+    rec = {"gate": "ghl_media_upload", "owner_approved": True,
+           "approved_by": "operator", "reason": "client has no GHL account",
+           "granted_at": "2026-11-13T10:00:00-05:00"}
+    rec.update(record)
+    (ck / "process_manifest.json").write_text(
+        json.dumps({"owner_skip_approval": rec}))
+
+
+def _stub_oracle(monkeypatch, ids):
+    monkeypatch.setattr(approvals_mod, "_cc_board_oracle",
+                        lambda run_dir=None: None if ids is None else frozenset(ids))
+    monkeypatch.setattr(approvals_mod, "_gateway_owner_oracle", lambda mid: None)
+    monkeypatch.delenv("OPENCLAW_GATEWAY_URL", raising=False)
+    monkeypatch.delenv("GATEWAY_URL", raising=False)
+
+
+def test_typed_four_field_token_without_owner_msg_id_fails(tmp_path, monkeypatch):
+    """A1 — the old typed token (owner_approved/approved_by/reason/gate) fails, and
+    the reason names the missing approval."""
+    base = tmp_path / "typedonly"
+    _owner_skip_run(base)
+    _stub_oracle(monkeypatch, {"cc-msg-1"})  # the oracle WOULD verify a real id
+
+    ok, reasons = gmp.gate_ghl_media_complete(base)
+
+    assert ok is False, reasons
+    assert any("AF-FORGED-APPROVAL" in r and "owner_msg_id" in r
+               for r in reasons), reasons
+
+
+def test_verified_owner_approval_opens_the_closeout_gate(tmp_path, monkeypatch):
+    """A2 — a record the stub oracle verifies opens the gate."""
+    base = tmp_path / "verified"
+    _owner_skip_run(base, owner_msg_id="cc-msg-1")
+    _stub_oracle(monkeypatch, {"cc-msg-1"})
+
+    ok, reasons = gmp.gate_ghl_media_complete(base)
+
+    assert ok is True, reasons
+    assert reasons == []
+
+
+def test_owner_oracle_unavailable_fails_the_gate(tmp_path, monkeypatch):
+    """A3 — an oracle that cannot run never opens the gate."""
+    base = tmp_path / "nooracle"
+    _owner_skip_run(base, owner_msg_id="cc-msg-1")
+    _stub_oracle(monkeypatch, None)
+
+    ok, reasons = gmp.gate_ghl_media_complete(base)
+
+    assert ok is False, reasons
+    assert any("owner approvals cannot be checked on this machine" in r
+               for r in reasons), reasons
