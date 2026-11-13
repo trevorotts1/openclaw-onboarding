@@ -1380,8 +1380,16 @@ def cmd_resume(args) -> int:
         print("error: session.json has no session_id; cannot resume",
               file=sys.stderr)
         return 2
+    # PD-085: the worker binds a session to its company and answers 403 to a
+    # renew that omits or mismatches it. Send the company from the record.
+    company_id = record.get("company_id") or ""
+    if not company_id:
+        print("error: session.json has no company_id; cannot resume",
+              file=sys.stderr)
+        return 2
     status, resp = _http("POST", args.worker_url.rstrip("/") + "/api/sessions/renew",
-                         token=admin, body={"session_id": session_id})
+                         token=admin,
+                         body={"session_id": session_id, "company_id": company_id})
     if status not in (200, 201):
         print(f"error: resume failed (HTTP {status}): {resp.get('error')}",
               file=sys.stderr)
