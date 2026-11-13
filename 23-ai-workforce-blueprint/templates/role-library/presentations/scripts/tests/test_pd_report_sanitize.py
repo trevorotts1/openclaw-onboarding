@@ -12,6 +12,7 @@ Proves:
 from __future__ import annotations
 
 import json
+import shlex
 import sys
 from pathlib import Path
 
@@ -39,7 +40,10 @@ def _transport(tmp_path, monkeypatch) -> Path:
     notify = tmp_path / "notify.sh"
     notify.write_text("#!/bin/sh\ncat >> \"$PD018B_SENT\"\necho >> \"$PD018B_SENT\"\nexit 0\n")
     notify.chmod(0o755)
-    monkeypatch.setenv("PRESENTATION_NOTIFY_CMD", str(notify))
+    # PRESENTATION_NOTIFY_CMD is an argument vector (shlex.split, shell=False).
+    # The mandated TMPDIR contains spaces, so the path MUST be quoted or the
+    # transport never starts and "received nothing" would pass vacuously.
+    monkeypatch.setenv("PRESENTATION_NOTIFY_CMD", shlex.quote(str(notify)))
     monkeypatch.setenv("PD018B_SENT", str(sent))
     return sent
 
