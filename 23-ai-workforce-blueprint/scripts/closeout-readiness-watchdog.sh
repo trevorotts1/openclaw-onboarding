@@ -618,7 +618,7 @@ case "$build_idle_hours" in ''|*[!0-9]*) build_idle_hours=0 ;; esac
 gates_open=0
 [[ "$role_library_status" != "done" ]] && gates_open=1
 [[ "$sop_library_status" != "done" ]] && gates_open=1
-case "$comms_automation_status" in done|not-applicable) : ;; *) gates_open=1 ;; esac
+case "$comms_automation_status" in done|not-applicable|deferred) : ;; *) gates_open=1 ;; esac
 
 # ── RECOVERY-LANE CHECK (runs BEFORE, and independently of, classification) ───
 # STUCK_RECOVERY_LANE_MISSING. The build is not finished (we already exited above
