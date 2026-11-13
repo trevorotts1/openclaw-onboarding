@@ -1429,7 +1429,7 @@
       "section": "deck-intake",
       "order": 20.03,
       "prompt": "Would you like email follow-up sequences prepared as drafts?",
-      "help": "Default NO -- the email sequences are an opt-in delivery option, not a standard deliverable, and only an explicit 'yes' opens the branch. A 'no' is recorded as a CLIENT WAIVER with the client's own words -- it is never inferred from silence and never written by the assistant. A 'no' gates OUT the email branch entirely: nothing is prepared at delivery.",
+      "help": "Default no. If yes, the follow-up emails are written as drafts and nothing is sent until a person approves them.",
       "kind": "text",
       "allowed_values": [
         "yes",
