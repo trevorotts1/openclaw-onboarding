@@ -145,3 +145,23 @@ def test_b_verify_prompt_uses_the_declared_constraints(tmp_path, monkeypatch):
          "required_blocks": ["[ARCHETYPE", "Do not "]})
     assert ok is True, reasons
     assert reasons == []
+
+
+def test_b_gate_pass_with_an_advisory_note_still_passes(tmp_path, monkeypatch):
+    """Amendment (c) end to end: the dispatcher may PASS with the explicit
+    test/CI degraded NOTE. Only the ADDED constraint reasons may flip that
+    verdict -- judging `not reasons` would fail a check the gate just allowed."""
+    note = ("NOTE: build_deck.check_prompt_qc_deterministic unavailable -- "
+            "degraded to a length-only check (explicit test/CI context)")
+    monkeypatch.setattr(D, "_verify_single_prompt", lambda rd, o: (True, [note]))
+    ok, reasons = W._verify_prompt(
+        {"ordinal": 1}, "a body", tmp_path / "run",
+        {"min_chars": 1, "max_chars": 10_000})
+    assert ok is True, reasons
+    assert reasons == [note]
+
+    # ...and a real constraint violation on the same advisory pass still fails
+    ok, reasons = W._verify_prompt(
+        {"ordinal": 1}, "a body", tmp_path / "run",
+        {"min_chars": 10_000, "max_chars": 20_000})
+    assert ok is False, reasons

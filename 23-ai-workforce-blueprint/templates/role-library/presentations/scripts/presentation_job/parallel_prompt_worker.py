@@ -793,8 +793,13 @@ def _verify_prompt(slide: Dict[str, Any], prompt_text: str, run_dir: Path,
     target = _prompt_path(run_dir, int(slide["ordinal"]))
     _atomic_write_bytes(target, prompt_text.encode("utf-8"))
     ok, reasons = dispatcher._verify_single_prompt(run_dir, int(slide["ordinal"]))
-    reasons = list(reasons) + _prompt_constraint_reasons(prompt_text, constraints)
-    return (ok and not reasons), reasons
+    # Only the ADDED constraint reasons can turn the gate's own pass into a
+    # fail. The gate may legitimately pass WITH an advisory reason (the
+    # explicit test/CI degraded note), and that verdict must stand -- judging
+    # `not reasons` instead would fail the worker on a check the dispatcher
+    # just allowed.
+    extra = _prompt_constraint_reasons(prompt_text, constraints)
+    return (ok and not extra), list(reasons) + extra
 
 
 # ---------------------------------------------------------------------------
