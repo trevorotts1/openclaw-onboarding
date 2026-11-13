@@ -1453,7 +1453,8 @@ def _parse(reply, q):
         if not c:
             return {"error": err}
         return {"n": 1 if c == AM.recommended() else 2, "value": c,
-                "text": _plain_label(c["build"]) + " builds, " + _plain_label(c["check"]) + " checks"}
+                "text": _plain_label(c["build"]) + " builds, " + _plain_label(c["check"]) + " checks",
+                "id": q["id"]}
     if q.get("merge_link"):                # OFFER and the address in one reply
         return _parse_offer(reply, q)
     if q.get("free_text"):                 # a brief question: the answer IS the text
