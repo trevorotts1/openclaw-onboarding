@@ -61,6 +61,8 @@ $ git diff --cached --numstat -- .../build_deck.py
 44	12	23-ai-workforce-blueprint/templates/role-library/presentations/scripts/build_deck.py
 ```
 
+(`build_deck.py` is 44 added / 12 removed. The report line above is the staging snapshot taken before two later fixes to this file were folded in; the committed size is the `258` shown by `git show --stat HEAD`: `build_deck.py 56`, test file `122`, this report `258`, total `424 insertions(+), 12 deletions(-)`.)
+
 Four hunks, all in `23-ai-workforce-blueprint/templates/role-library/presentations/scripts/build_deck.py`:
 
 1. `_canonical_prompt_dir_problems` — named problem on missing module + marker escape.
