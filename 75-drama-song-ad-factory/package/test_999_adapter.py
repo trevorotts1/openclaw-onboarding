@@ -475,10 +475,17 @@ def test_breaking_entrypoint_routing_turns_reachability_red():
         target = os.path.join(root, A.ENTRYPOINT_REL)
         with open(target, encoding="utf-8") as fh:
             text = fh.read()
-        text = text.replace(
-            "from character_library import sync_protocol  # noqa: E402\n", "")
+        # The carrier import sits inside a guarded try block, so the whole block
+        # goes. Dropping only the import line would leave a bodyless try and
+        # turn this routing mutation into an unrelated SyntaxError.
+        block = (
+            "try:\n"
+            "    from character_library import sync_protocol  # noqa: E402\n"
+            "except Exception as exc:  # noqa: BLE001 - the refusal IS the evidence\n"
+            '    _carrier_failed("character_library.sync_protocol", exc)\n')
+        assert block in text, "entrypoint guard shape drifted; update this mutation"
         with open(target, "w", encoding="utf-8") as fh:
-            fh.write(text)
+            fh.write(text.replace(block, ""))
         rc, payload = _run_check(root)
         assert rc == 1
         assert _clauses(payload)["entrypoint_reachability"] is False
