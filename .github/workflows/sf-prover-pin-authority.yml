@@ -19,7 +19,9 @@ name: SF prover pin authority
 #                                     PR checks and warns; its pin comes from the mint job after merge. A PR
 #                                     whose net diff edits the pin file fails unless every commit touching it
 #                                     is bot-authored, bot-committed and touches only the pin.
-#   mint    push to main / manual   : the merge is the authority. Recompute, and when the pin changed open a
+#   mint    push to main / manual   : (a manual dispatch on a batch branch pushes the one pin-only bot commit
+#                                     onto that branch itself; no pin/mint-* ref, no pull request to main.)
+#                                     the merge is the authority. Recompute, and when the pin changed open a
 #                                     PR to main carrying it as ONE github-actions[bot] commit touching ONLY
 #                                     the pin file (never a direct push to main). `mint-pin --ci` refuses to
 #                                     run anywhere else, and the local `--write-pin` needs a signed pin_rotation
@@ -274,6 +276,28 @@ jobs:
           bot_email="41898282+github-actions[bot]@users.noreply.github.com"
           short="${MINT_SHA::12}"
           branch="pin/mint-${short}"
+          # A manual dispatch on a branch other than main (a batch branch): push the ONE pin-only bot commit onto
+          # that branch itself, as a fast-forward. No new pin/mint-* ref (the built-in token cannot create a ref
+          # when the batch also changes workflow files) and no stray pull request to main. The push-to-main and
+          # dispatch-on-main path below is unchanged.
+          if [ "${GITHUB_EVENT_NAME}" = "workflow_dispatch" ] && [ "$MINT_REF" != "refs/heads/main" ]; then
+            case "$MINT_REF" in
+              refs/heads/*) ;;
+              *) echo "refusing to mint onto a non-branch ref: $MINT_REF"; exit 1 ;;
+            esac
+            python3 49-signature-funnel/scripts/front_door.py --skill-dir 49-signature-funnel mint-pin --ci
+            if git diff --quiet -- "$pin_path"; then
+              echo "pin already matches the tree; nothing to commit on ${MINT_REF}"
+              exit 0
+            fi
+            git config user.name "$bot_name"
+            git config user.email "$bot_email"
+            git add "$pin_path"
+            git commit -m "ci: mint SF-PROVER-PIN.sha256 for ${short}"
+            git push origin "HEAD:${MINT_REF}"
+            echo "minted the pin as one bot commit on ${MINT_REF}"
+            exit 0
+          fi
           # A re-run for the same tree reuses the branch (fast-forward only; history is never rewritten).
           git fetch origin "$branch" 2>/dev/null || true
           if git show-ref --verify --quiet "refs/remotes/origin/${branch}"; then

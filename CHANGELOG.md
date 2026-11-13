@@ -1,3 +1,10 @@
+## [Unreleased]  -  2026-11-13  -  SF prover pin authority: a manual mint on a batch branch commits onto that branch
+
+- `.github/workflows/sf-prover-pin-authority.yml` (mint job only): a manual dispatch on a branch other than main now pushes the one pin-only github-actions[bot] commit onto the dispatched branch itself (fast-forward), instead of creating a `pin/mint-*` ref and a pull request to main. The built-in token cannot create a new ref when the batch also changes workflow files ("workflows scope may be required"); a fast-forward by a pin-only commit carries no workflow change. Push-to-main and dispatch-on-main are unchanged. Source: batch-merge diagnosis 2026-11-13, section 5.2.
+- No skill version bump: the pinned Skill 49 inputs are untouched, so the pin does not change.
+- Migration: repository change only; not merged, deployed or rolled onto any client box.
+- Risk: LOW. A dispatch on a non-branch ref is refused; a non-fast-forward push fails loudly.
+
 ## [Unreleased]  -  2026-11-12  -  Owner approval flow: the owner always gets a link (Skills 35, 44, 83 + shared helper)
 
 - New `shared-utils/owner_approval/` (`owner_approval.py`, README, 15 tests): register a pending approval request with Command Center, build the owner message (plain summary, preview, one-tap link), poll for the minted approval id, answer a chat "approved" with the link, re-send the link on reminders. The agent never mints approval; the Skill 44 write gate is unchanged.
