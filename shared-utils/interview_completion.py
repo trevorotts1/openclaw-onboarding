@@ -1,5 +1,18 @@
 #!/usr/bin/env python3
-"""Read-only interview prompt admission; NEVER authorization to build or pass QC."""
+"""Read-only interview prompt admission; NEVER authorization to build or pass QC.
+
+The completion DECISION is not made here. It is made by the one reader,
+scripts/interview_status.py (interface contract, 01-BUILD-SPEC.md 2.3), whose
+states are mapped onto this module's three output words:
+
+  COMPLETE / BUILDING / BUILT -> COMPLETE
+  DECLARED                    -> DECLARED
+  everything else             -> INCOMPLETE
+
+UNKNOWN stays a fourth, safety-only answer: a store or identity that cannot be
+read is deliberately never INCOMPLETE, because callers must not nag on errors.
+"""
+import importlib.util
 import json
 import os
 import sqlite3
@@ -12,6 +25,23 @@ from service_env import decode_value
 IDENTITY = {'tenantId': 'MC_TENANT_ID', 'companyId': 'MC_COMPANY_ID', 'installationId': 'MC_INSTALLATION_ID'}
 
 SERVICE_KEYS = {*IDENTITY.values(), 'MC_TENANT_REGISTRY_JSON', 'DATABASE_PATH', 'DASHBOARD_DB_PATH'}
+
+COMPLETE_WORDS = ('COMPLETE', 'BUILDING', 'BUILT')
+_status_reader = None
+
+
+def _status_reader():
+    """Load scripts/interview_status.py without assuming the caller's cwd or path."""
+    global _status_reader
+    if _status_reader is None:
+        source = Path(__file__).resolve().parent.parent / 'scripts' / 'interview_status.py'
+        spec = importlib.util.spec_from_file_location('interview_status_reader', source)
+        if spec is None or spec.loader is None:
+            raise ValueError(f'interview status reader unavailable: {source}')
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        _status_reader = module
+    return _status_reader
 
 
 def service_values(file):
@@ -82,10 +112,21 @@ def prompt_status(state, env=None):
     UNKNOWN covers missing identity, unavailable stores and migration gaps. Local
     installation config supplies scope; request parameters never select a tenant.
     No flag, database, answers, or quality evidence is created or changed.
+
+    The completion word comes from scripts/interview_status.py, never from a rule
+    in this file (BU-23). This module only adds the identity scope and the
+    declarations-table read that DECLARED needs.
     """
     if not isinstance(state, dict):
         return 'UNKNOWN'
-    if state.get('interviewComplete') is True or state.get('interview_complete') is True or state.get('buildCompletedAt'):
+    try:
+        verdict = _status_reader().state_of(state)
+    except (OSError, ValueError, ImportError):
+        return 'UNKNOWN'
+    # A finished build is terminal evidence of a finished interview; the reader
+    # only reaches BUILT through completionVerification, but a legacy box can
+    # carry buildCompletedAt without that block. Same word either way.
+    if verdict in COMPLETE_WORDS or state.get('buildCompletedAt'):
         return 'COMPLETE'
     selected = dict(os.environ if env is None else env)
     launch = state.get('launchBootstrap')
