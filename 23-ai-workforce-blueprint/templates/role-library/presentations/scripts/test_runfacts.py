@@ -18,14 +18,22 @@ import os
 import sys
 import tempfile
 import unittest
+import unittest.mock as _mock
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 
 from presentation_job import runfacts as rf  # noqa: E402
+import presentation_job.approvals as approvals  # noqa: E402
 import build_deck as bd  # noqa: E402
 import phase_verifiers as pv  # noqa: E402
+
+def _oracle(ids):
+    """PD-066: the legacy waiver path now verifies owner_msg_id through the
+    approvals oracle, so a fixture that expects a waiver to hold pins it."""
+    return _mock.patch.object(approvals, "_cc_board_oracle",
+                              lambda run_dir=None: frozenset(ids))
 
 
 def _write(p: Path, obj_or_text) -> None:
@@ -103,9 +111,11 @@ class SealOwnerSkipTest(unittest.TestCase):
         _write(pm, {"owner_skip_approval": {
             "owner_approved": True, "af_code": "AF-MODE-UNSET",
             "approved_by": "trevor", "reason": "client requested general mode",
-            "timestamp": "2026-08-13T00:00:00Z",
+            "timestamp": "2026-08-13T12:00:00Z",
+            "owner_msg_id": "msg-mode-unset-001",
         }})
-        legacy = bd._owner_skip_approved_legacy(self.run_dir, "AF-MODE-UNSET")
+        with _oracle({"msg-mode-unset-001"}):
+            legacy = bd._owner_skip_approved_legacy(self.run_dir, "AF-MODE-UNSET")
         self.assertIsNotNone(legacy)
         facts = rf.seal(self.run_dir, force=True)
         verdict, _detail = rf.verify_owner_skip(facts, "AF-MODE-UNSET")
@@ -113,8 +123,9 @@ class SealOwnerSkipTest(unittest.TestCase):
         self.assertEqual(facts.findings(), [])
         # And the public wrapper (report-only, default env) must return the
         # SAME thing the legacy function returns — behavior unchanged.
-        self.assertEqual(bd._owner_skip_approved(self.run_dir, "AF-MODE-UNSET"),
-                          legacy)
+        with _oracle({"msg-mode-unset-001"}):
+            self.assertEqual(bd._owner_skip_approved(self.run_dir, "AF-MODE-UNSET"),
+                              legacy)
 
     def test_incomplete_record_is_surfaced_even_though_legacy_silently_drops_it(self):
         pm = self.run_dir / "working" / "checkpoints" / "process_manifest.json"
@@ -140,9 +151,11 @@ class SealOwnerSkipTest(unittest.TestCase):
              "timestamp": "2026-08-12T00:00:00Z"},
             {"owner_approved": True, "af_code": "AF-MODE-UNSET",
              "approved_by": "trevor", "reason": "override",
-             "timestamp": "2026-08-13T00:00:00Z"},
+             "timestamp": "2026-08-13T12:00:00Z",
+             "owner_msg_id": "msg-mode-unset-002"},
         ]})
-        legacy = bd._owner_skip_approved_legacy(self.run_dir, "AF-MODE-UNSET")
+        with _oracle({"msg-mode-unset-002"}):
+            legacy = bd._owner_skip_approved_legacy(self.run_dir, "AF-MODE-UNSET")
         self.assertIsNotNone(legacy)  # legacy silently picks the valid one -> "approved"
         facts = rf.seal(self.run_dir, force=True)
         verdict, detail = rf.verify_owner_skip(facts, "AF-MODE-UNSET")
@@ -151,7 +164,8 @@ class SealOwnerSkipTest(unittest.TestCase):
         # Report-only: the public wrapper still returns the legacy (permissive)
         # result — divergence is LOGGED, never silently enforced, by default.
         os.environ.pop(rf.ENFORCE_ENV, None)
-        wrapped = bd._owner_skip_approved(self.run_dir, "AF-MODE-UNSET")
+        with _oracle({"msg-mode-unset-002"}):
+            wrapped = bd._owner_skip_approved(self.run_dir, "AF-MODE-UNSET")
         self.assertEqual(wrapped, legacy)
 
 
