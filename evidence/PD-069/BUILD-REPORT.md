@@ -156,10 +156,11 @@ untouched).
 
 ## Isolation / hygiene
 
-- Work done in a scratch worktree detached at the branch tip; the lane clone
-  `pd-fix/worktrees/onboarding/FL16` reports `git status --porcelain` empty
-  before and after (its checkout was restored; the branch then fast-forwarded to
-  the new tip).
+- Work done in a scratch worktree detached at the branch tip
+  (`pd-fix/scratchpads/PD-069/work`); the lane clone
+  `pd-fix/worktrees/onboarding/FL16` had its one accidental edit reverted and
+  then left standing untouched at `ffe5625b5`, `git status --porcelain` empty
+  before and after — never fast-forwarded, never reset.
 - Scratch temp under `pd-fix/tmp`, no literal `/tmp`, no `--` in directory names.
 - No test weakened, deleted, renamed, skipped or xfailed; the pre-existing 8
   tests in the file still pass unchanged.
