@@ -228,16 +228,21 @@ function chosenLengthSeconds(questions, answers) {
 //
 // The rates ride the option itself (the card exports them); an option with no
 // rates is not priced here and says nothing rather than guessing a number.
+// A rate the card did not export is NOT zero: `Number(null)` and `Number("")`
+// are both 0, which would print "about $0.00" as if the video were free.
+// Anything blank is "not priced", never a made-up price.
+const rateOf = (v) => (v == null || v === "" ? NaN : Number(v));
+
 export function optionPriceUsd(option, lengthSeconds) {
   if (!option) return null;
   const seconds = Number(lengthSeconds);
   if (!Number.isFinite(seconds) || seconds <= 0) return null;
-  const rate = Number(option.rate_usd);
-  const shot = Number(option.shot_s);
-  const keyframe = Number(option.keyframe_usd);
-  const song = Number(option.song_usd);
-  const redo = Number(option.redo_rate);
-  const extra = Number(option.keyframe_count_extra);
+  const rate = rateOf(option.rate_usd);
+  const shot = rateOf(option.shot_s);
+  const keyframe = rateOf(option.keyframe_usd);
+  const song = rateOf(option.song_usd);
+  const redo = rateOf(option.redo_rate);
+  const extra = rateOf(option.keyframe_count_extra);
   if (![rate, shot, keyframe, song, redo].every(Number.isFinite) || shot <= 0) return null;
   const shots = Math.ceil(seconds / shot);
   const video = String(option.unit) === "second" ? rate * seconds : rate * shots;
@@ -248,7 +253,7 @@ export function optionPriceUsd(option, lengthSeconds) {
 /** The line under a priced option: its price at the chosen length, or the
  *  sentence that says why no price is shown yet. "" for an unpriced option. */
 export function optionPriceLine(option, lengthSeconds) {
-  if (!option || !Number.isFinite(Number(option.rate_usd))) return "";
+  if (!option || !Number.isFinite(rateOf(option.rate_usd))) return "";
   const total = optionPriceUsd(option, lengthSeconds);
   if (total == null) return "price shown after you pick a length";
   return `about $${total.toFixed(2)}`;
