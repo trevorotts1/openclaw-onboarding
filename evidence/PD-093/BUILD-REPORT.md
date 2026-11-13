@@ -298,8 +298,11 @@ The Boss is recommending the latter: keep the literal GATE 7 marker and ask.
 | `7381bff56` | CI | PD-093: build report (walk-through table, blocked header row, cross-unit findings) |
 | `e9fb04930` | CI | **this row's build commit** — PD-093: header states the manifest version is read from the file |
 
-Push proof: `git ls-remote origin refs/heads/pd/fl24-role-procedures-c` →
-`e9fb049304c37529415fde530d81b2c8bb988697`, identical to local `HEAD`.
+Push proof (measured, 2026-11-12): after pushing `7381bff56..e9fb04930`,
+`git ls-remote origin refs/heads/pd/fl24-role-procedures-c` returned
+`e9fb049304c37529415fde530d81b2c8bb988697`, identical to local `HEAD` at that moment. The commit
+after it (`cd9a9f003`) only fills this sha line in and is pushed the same way; re-run `ls-remote`
+for the branch's current head — by construction this paragraph can never name its own commit.
 
 Hunk attribution for this row: two files, one line each, both inside `owned_paths`. No PD-094 hunk
 is touched and no hunk belonging to another unit is present.
