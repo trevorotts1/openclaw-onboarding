@@ -53,35 +53,77 @@ run_resume() {
   local workspace="$home/.openclaw/workspace"
   local marker="$home/closeout-ran.marker"
   local state="$workspace/.workforce-build-state.json"
+  local depts_dir="$workspace/departments"
+  local role_dir="$depts_dir/fixture-dept/fixture-role"
 
-  mkdir -p "$workspace" "$home/.openclaw/skills/37-zhc-closeout/scripts"
+  mkdir -p "$workspace" "$role_dir" "$home/.openclaw/skills/37-zhc-closeout/scripts"
   printf '#!/usr/bin/env bash\ntouch "%s"\n' "$marker" \
     > "$home/.openclaw/skills/37-zhc-closeout/scripts/run-closeout.sh"
   chmod +x "$home/.openclaw/skills/37-zhc-closeout/scripts/run-closeout.sh"
 
-  if [[ "$paused" == "true" ]]; then
-    local paused_field='"closeoutResumePaused": true,'
-  else
-    local paused_field=''
-  fi
+  # A real, non-stub how-to.md: the resume lane's disk-reality audit demotes a
+  # "done" department with no real how-to.md (>= 256 bytes, no placeholder
+  # marker) back to pending, which would also clear buildCompletedAt.
+  {
+    printf 'Fixture role how-to for BU-69. '
+    i=0
+    while (( i < 8 )); do
+      printf 'Padding line %d keeps this file above the 256-byte stub floor and free of placeholder markers. ' "$i"
+      i=$((i + 1))
+    done
+    printf '\n'
+  } > "$role_dir/how-to.md"
 
-  cat > "$state" <<JSON
-{
-  "companyId": "fixture-company",
-  "companySlug": "fixture-company",
-  "companyName": "Fixture Company",
-  "interviewComplete": true,
-  "interviewCompletedAt": "2026-11-12T00:00:00Z",
-  "interviewQc": {"status": "pass"},
-  "roleLibraryStatus": "done",
-  "sopLibraryStatus": "done",
-  "departments": [],
-  "buildCompletedAt": "2026-11-12T01:00:00Z",
-  "closeoutStatus": "partial",
-  ${paused_field}
-  "maxResumeAttempts": 12
+  # The resume lane calls workforce_completion.finalize() on EVERY fire, before
+  # any branch is chosen, and finalize() DELETES buildCompletedAt whenever
+  # evaluate() reports any unmet requirement (workforce_completion.py). A thin
+  # fixture (no departments, no buildChecks, no digests) is therefore stripped
+  # into a "nothing to do" state and never reaches the closeout branch at all —
+  # which is exactly how this test can pass or fail without proving anything.
+  # So build a genuinely verified state, computing both digests with the real
+  # module rather than re-implementing them here.
+  python3 - "$SCRIPT_DIR" "$state" "$depts_dir" "$paused" <<'PY'
+import json, sys
+scripts, state_path, root, paused = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4] == "true"
+sys.path.insert(0, scripts)
+from workforce_completion import artifact_digest, input_digest, DIGEST_VERSION
+
+state = {
+    "companyId": "fixture-company",
+    "companySlug": "fixture-company",
+    "companyName": "Fixture Company",
+    "interviewComplete": True,
+    "interviewCompletedAt": "2026-11-12T00:00:00Z",
+    "interviewQc": {"status": "pass"},
+    "roleLibraryStatus": "done",
+    "sopLibraryStatus": "done",
+    "commsAutomationStatus": "not-applicable",
+    "departments": [{"id": "fixture-dept", "slug": "fixture-dept", "status": "done"}],
+    "buildId": "fixture-build",
+    "buildChecks": {
+        name: {"status": "pass", "buildId": "fixture-build"}
+        for name in ("registration", "postBuild", "qc", "libraries")
+    },
+    "buildCompletedAt": "2026-11-12T01:00:00Z",
+    "closeoutStatus": "partial",
+    "maxResumeAttempts": 12,
 }
-JSON
+if paused:
+    state["closeoutResumePaused"] = True
+state["buildArtifactVerification"] = {
+    "root": root,
+    "digest": artifact_digest(root, DIGEST_VERSION),
+    "digestVersion": DIGEST_VERSION,
+    "inputDigest": input_digest(state),
+}
+with open(state_path, "w", encoding="utf-8") as handle:
+    handle.write(json.dumps(state, indent=2) + "\n")
+PY
+  local fixture_rc=$?
+  if [[ "$fixture_rc" -ne 0 ]]; then
+    echo "FATAL: fixture setup failed (rc=$fixture_rc)"
+    exit 1
+  fi
 
   HOME="$home" PATH="$FIXTURE_BIN:$PATH" bash "$RESUME" >/dev/null 2>&1
   echo "  ($label: resume exit $?)" >&2
