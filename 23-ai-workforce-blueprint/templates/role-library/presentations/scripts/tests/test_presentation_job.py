@@ -1122,7 +1122,11 @@ class TestDoneMessageOnNormalClose:
             {"ghl_folder_id": "root",
              "slides": [{"slide_number": 1, "ghl_media_id": "m1", "ghl_upload_status": "complete"}],
              "pptx_ghl_media_id": "p9"}))
-        (run_dir / "working" / "qc" / "final_qc_report.json").write_text(json.dumps({"average": 9.2}))
+        # PD-202 gate contract: the qc gate only accepts an aggregate report that
+        # carries the "final_qc_report/v1" schema and overall pass flag. A bare
+        # {"average": 9.2} is refused (EXIT 3), so seed the real shape.
+        (run_dir / "working" / "qc" / "final_qc_report.json").write_text(json.dumps(
+            {"schema": "final_qc_report/v1", "pass": True, "average": 9.2}))
         (run_dir / "renders" / "slide-01.ocr.json").write_text(
             json.dumps({"checked": True, "matched": True}))
         (run_dir / "renders" / "slide-02.ocr.json").write_text(
@@ -1192,23 +1196,35 @@ class TestDoneMessageOnNormalClose:
     def test_a_waived_check_is_named_in_the_ready_message(
             self, tmp_path, monkeypatch, capsys):
         """The waived-checks sentence is appended only when a check was waived
-        at the client's own request."""
+        at the client's own request.
+
+        PD-202 keeps `qc` in GATE_KEYS but makes it unwaivable from an intake
+        field: the question bank has no decline question for it, so the client
+        never consented. This test's own intent is the waived-checks sentence,
+        so it waives `ghl_upload` -- a gate the bank DOES ask about, whose
+        answer lands in ghl_upload_declined_reason."""
         sent = self._stub_transport(monkeypatch)
         run_dir = tmp_path / "run"; run_dir.mkdir()
         self._seed_all_gates_passing(run_dir)
-        (run_dir / "working" / "qc" / "final_qc_report.json").unlink()
+        # Make the ghl_upload gate fail honestly: the media ledger has no deck id.
+        ledger = run_dir / "working" / "checkpoints" / "media_library.json"
+        media = json.loads(ledger.read_text(encoding="utf-8"))
+        media["pptx_ghl_media_id"] = ""
+        ledger.write_text(json.dumps(media), encoding="utf-8")
         (run_dir / "working" / "copy").mkdir(parents=True, exist_ok=True)
         (run_dir / "working" / "copy" / "intake.json").write_text(json.dumps(
-            {"skip_qc": "Please skip the QC check for this run, we are on a deadline."}))
+            {"ghl_upload_declined_reason":
+                 "I do not want the GoHighLevel upload, skip it entirely."}))
         (run_dir / "waivers.json").write_text(json.dumps([
-            {"rule": "qc", "source": "intake_field", "intake_field": "skip_qc",
-             "client_request_quote": "skip the QC check",
+            {"rule": "ghl_upload", "source": "intake_field",
+             "intake_field": "ghl_upload_declined_reason",
+             "client_request_quote": "I do not want the GoHighLevel upload",
              "captured_at": "2026-01-01T00:00:00Z"}]))
         engine = self._make_engine(run_dir)
         rc = engine.close()
         captured = capsys.readouterr()
         assert rc == EXIT_OK, f"expected EXIT_OK, got {rc}; stderr={captured.err}"
-        assert engine.state["gates"]["qc"]["state"] == "waived"
+        assert engine.state["gates"]["ghl_upload"]["state"] == "waived"
         done = self._done_events(engine)
         assert len(done) == 1, done
         assert "1 check(s) were waived at your request." in done[0]["message"], done[0]["message"]
