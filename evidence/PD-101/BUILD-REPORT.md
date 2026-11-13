@@ -227,6 +227,20 @@ builder (spec rule 9) and no test was weakened, renamed or skipped.
 ## 8. Push proof
 
 Branch `pd/fl24-role-procedures-c`, build commit `80e5bc39218b9078989813302eada7f09af896b9`.
-Remote equality is proven with `git ls-remote --heads origin refs/heads/pd/fl24-role-procedures-c` after the push;
-the 40-character SHA is compared literally against `git rev-parse HEAD` in the final report line, not inferred from
-the push command's own output.
+
+Measured after the build commit and this report's first push (the head at that moment was `054c77ef2`, the commit that
+first carried this file; the commit you are reading was pushed after it and is proven in the build's final message,
+because a file cannot name the commit that introduces it):
+
+```
+$ git rev-parse HEAD
+054c77ef206de3843504835d0fddf3e1e5e1ffe3
+$ git ls-remote --heads origin refs/heads/pd/fl24-role-procedures-c | cut -f1
+054c77ef206de3843504835d0fddf3e1e5e1ffe3
+$ git status --porcelain
+(empty)
+```
+
+The 40-character SHAs are compared literally, not inferred from the push command's own output. The lane clone
+(`pd-fix/clones/onboarding`) and `pd-fix/worktrees/onboarding/_base` both report `git status --porcelain` with zero
+lines, checked after this build.
