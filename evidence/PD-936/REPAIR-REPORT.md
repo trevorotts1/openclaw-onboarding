@@ -179,9 +179,43 @@ Exactly one verdict moved, from FAIL to PASS, on the retargeted assertion. No ne
 
 ## 6. Remote-head proof
 
-Pushed `0bb4cbd38b07630b7fa033be82b56acae8491d7d` to `refs/heads/pd/fl02-intake-driver`,
-then read the remote back (literal, full 40 characters) — see §7 for the value read back
-at the end of this run.
+**Before any push:**
+
+```
+$ git ls-remote --heads origin refs/heads/pd/fl02-intake-driver
+507e3ceb75a87a67c4dc7f990988ebed29365329	refs/heads/pd/fl02-intake-driver
+```
+
+**Push (fast-forward, no force):**
+
+```
+$ git push origin HEAD:refs/heads/pd/fl02-intake-driver
+To https://github.com/trevorotts1/openclaw-onboarding.git
+   507e3ceb7..d3e96a7ec  HEAD -> pd/fl02-intake-driver
+```
+
+**Remote read back, literal, full 40 characters:**
+
+```
+$ git ls-remote --heads origin refs/heads/pd/fl02-intake-driver
+d3e96a7ecc5de6a814a833fe1b38eb2c36620925	refs/heads/pd/fl02-intake-driver
+
+$ git rev-parse HEAD
+d3e96a7ecc5de6a814a833fe1b38eb2c36620925
+```
+
+Equal: `d3e96a7ecc5de6a814a833fe1b38eb2c36620925`.
+
+Commits landed by this repair:
+
+| commit | what |
+|---|---|
+| `0bb4cbd38b07630b7fa033be82b56acae8491d7d` | `Merge origin/main into pd/fl02-intake-driver` (parents `507e3ceb7`, `ebf5c769a`) |
+| `d3e96a7ecc5de6a814a833fe1b38eb2c36620925` | this report |
+
+This report has since received its own documentation-only follow-up commit; `git ls-remote`
+is the live truth for the final head, and every push is repeated with the same literal
+comparison.
 
 ---
 
