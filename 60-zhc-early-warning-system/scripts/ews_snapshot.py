@@ -33,6 +33,7 @@ import json
 import os
 import shutil
 import sys
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -106,13 +107,34 @@ def cmd_snapshot(args) -> int:
     return EX_OK
 
 
+def _retention(args):
+    """Resolve (keep_count, keep_hours, digest_floor_hours) from flags, then config."""
+    th_all = C.load_skill_config("thresholds.json")
+    th = th_all.get("snapshots", {})
+    keep_count = int(args.keep_count if args.keep_count is not None else th.get("retention_count", 3))
+    if args.keep_hours is not None:
+        keep_hours = float(args.keep_hours)
+    elif args.keep_days is not None:
+        keep_hours = float(args.keep_days) * 24
+    elif th.get("retention_hours") is not None:
+        keep_hours = float(th["retention_hours"])
+    elif th.get("retention_days") is not None:
+        keep_hours = float(th["retention_days"]) * 24
+    else:
+        keep_hours = 72.0
+    al = th_all.get("alert", {}) if isinstance(th_all.get("alert"), dict) else {}
+    # digests back the alert dedup window and the 24h per-day cap
+    digest_floor = max(24.0, float(al.get("dedup_window_hours", 6) or 6))
+    return keep_count, keep_hours, digest_floor
+
+
 def cmd_prune(args) -> int:
-    th = C.load_skill_config("thresholds.json").get("snapshots", {})
-    keep_count = int(args.keep_count if args.keep_count is not None else th.get("retention_count", 60))
-    keep_days = int(args.keep_days if args.keep_days is not None else th.get("retention_days", 45))
+    keep_count, keep_hours, digest_floor = _retention(args)
     sd = Path(args.state_dir) if args.state_dir else None
     with Ledger(sd) as led:
-        pruned = led.prune_snapshots(keep_count, keep_days)
+        pruned = led.prune_snapshots(keep_count, keep_hours=keep_hours)
+        kept_paths = {str(r["path"]) for r in led.list_snapshots()}
+        ev, dg = led.prune_history(keep_hours, digest_floor)
     removed = []
     for p in pruned:
         try:
@@ -120,8 +142,28 @@ def cmd_prune(args) -> int:
             removed.append(p)
         except OSError:
             pass
-    _emit({"ok": True, "action": "prune", "keep_count": keep_count, "keep_days": keep_days,
-           "rows_pruned": len(pruned), "files_removed": len(removed)})
+    # Snapshot files the ledger no longer knows about (older installs, crashed
+    # writes) are swept by age, never a file a kept row still points to.
+    orphans = 0
+    snap_dir = snapshots_dir(sd)
+    cutoff = time.time() - keep_hours * 3600
+    try:
+        for f in Path(snap_dir).iterdir():
+            if f.is_file() and not f.is_symlink() and str(f) not in kept_paths \
+                    and f.stat().st_mtime < cutoff:
+                try:
+                    f.unlink()
+                    orphans += 1
+                except OSError:
+                    pass
+    except OSError:
+        pass
+    with Ledger(sd) as led:
+        vacuumed = led.vacuum_if_bloated()
+    _emit({"ok": True, "action": "prune", "keep_count": keep_count, "keep_hours": keep_hours,
+           "rows_pruned": len(pruned), "files_removed": len(removed),
+           "orphan_files_removed": orphans, "events_pruned": ev, "digests_pruned": dg,
+           "vacuumed": vacuumed})
     return EX_OK
 
 
@@ -143,6 +185,7 @@ def _cli(argv=None):
     sp = sub.add_parser("prune")
     sp.add_argument("--keep-count", type=int)
     sp.add_argument("--keep-days", type=int)
+    sp.add_argument("--keep-hours", type=float)
     args = ap.parse_args(argv)
     if args.self_test:
         return self_test()
@@ -203,6 +246,30 @@ def self_test():
         with Ledger() as led:
             assert len(led.list_snapshots()) == 1
         print("  prune case: PASS (D7 retention prunes rows and files)")
+
+        # 72h window: a recent snapshot survives even past keep_count; an old
+        # one and an old orphan file (no ledger row) are removed.
+        from datetime import timedelta
+        with Ledger() as led:
+            led.conn.execute("DELETE FROM snapshots"); led.conn.commit()
+            old_f = Path(td) / "openclaw.json.old"; old_f.write_text("o", encoding="utf-8")
+            new_f = Path(td) / "openclaw.json.new"; new_f.write_text("n", encoding="utf-8")
+            led.record_snapshot(str(old_f), sha256="o")
+            led.record_snapshot(str(new_f), sha256="n")
+            old_ts = (datetime.now(timezone.utc) - timedelta(hours=100)).replace(microsecond=0).isoformat()
+            led.conn.execute("UPDATE snapshots SET ts=? WHERE path=?", (old_ts, str(old_f)))
+            led.conn.commit()
+        orphan = snapshots_dir() / "openclaw.json.orphan"
+        orphan.write_text("x", encoding="utf-8")
+        old_epoch = time.time() - 100 * 3600
+        os.utime(orphan, (old_epoch, old_epoch))
+        fresh_orphan = snapshots_dir() / "openclaw.json.fresh"
+        fresh_orphan.write_text("y", encoding="utf-8")
+        ns = argparse.Namespace(keep_count=0, keep_days=None, keep_hours=72.0, state_dir=None)
+        assert cmd_prune(ns) == EX_OK
+        assert not old_f.exists() and new_f.exists(), "72h window must drop old, keep new"
+        assert not orphan.exists() and fresh_orphan.exists(), "orphan sweep must be age-gated"
+        print("  72h prune case: PASS (window, file unlink, age-gated orphan sweep)")
 
         os.environ.pop("EWS_STATE_DIR", None)
     print("[ews_snapshot] self-test: PASS")
