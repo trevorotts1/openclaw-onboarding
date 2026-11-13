@@ -51,11 +51,14 @@
       "word": "UNKNOWN"
     },
     {
-      "name": "legacy with the declaration flag true",
-      "stamps": {},
-      "declared": true,
-      "class": "legacy",
-      "commandCenterClass": "unstamped",
+      "name": "flag true: interviewComplete answers COMPLETE over a mismatched identity",
+      "stamps": {
+        "companyId": "co-foreign"
+      },
+      "declared": false,
+      "interviewComplete": true,
+      "class": "mismatched",
+      "commandCenterClass": "mismatched",
       "word": "COMPLETE"
     }
   ]

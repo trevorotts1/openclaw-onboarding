@@ -67,11 +67,11 @@ class IdentityRule(unittest.TestCase):
                 'MC_COMPANY_ID': self.context['companyId'],
                 'MC_INSTALLATION_ID': self.context['installationId']}
 
-    def status(self, stamps, env=None):
+    def status(self, stamps, env=None, complete=False):
         """prompt_status plus the one stderr line it must print."""
         stderr = io.StringIO()
         with contextlib.redirect_stderr(stderr):
-            result = prompt_status(dict(stamps, interviewComplete=False),
+            result = prompt_status(dict(stamps, interviewComplete=complete),
                                    self.env() if env is None else env)
         return result, stderr.getvalue()
 
@@ -88,10 +88,14 @@ class IdentityRule(unittest.TestCase):
             with self.subTest(case=case['name']):
                 if case['declared']:
                     self.declare()
-                result, stderr = self.status(case['stamps'])
+                result, stderr = self.status(
+                    case['stamps'], complete=case.get('interviewComplete', False))
                 self.assertEqual(result, case['word'])
-                self.assertEqual(len(stderr.strip().splitlines()), 1, stderr)
-                self.assertIn(f'identity {case["class"]}:', stderr)
+                # COMPLETE returns before the identity rule runs, so it is the one
+                # word that does not print the identity line (BU-35).
+                if case['word'] != 'COMPLETE':
+                    self.assertEqual(len(stderr.strip().splitlines()), 1, stderr)
+                    self.assertIn(f'identity {case["class"]}:', stderr)
 
     def test_matched_with_a_declaration_is_declared(self):
         self.declare()
