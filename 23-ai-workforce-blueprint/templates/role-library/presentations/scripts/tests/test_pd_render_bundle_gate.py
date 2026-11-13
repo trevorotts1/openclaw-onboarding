@@ -130,3 +130,23 @@ def test_a4_bundle_gate_is_a_known_flag(monkeypatch, tmp_path, capsys):
     _rig(monkeypatch, tmp_path, stub_checks=True, bundle_gate=True)
     err = capsys.readouterr().err
     assert "unknown flag" not in err
+
+
+def test_pd074_a_non_size_reason_prints_failed_and_the_reason_code(
+        monkeypatch, tmp_path, capsys):
+    """PD-074 A1 — EMPTY_NOTES_PANE is not a size failure.
+
+    The printout used to fall through to "TOO SMALL … actual=0 bytes" for every
+    reason with no size arm of its own, which lied about what went wrong. A
+    reason with no arm now prints FAILED and names its code; "TOO SMALL" is
+    printed only for UNDER_THRESHOLD.
+    """
+    monkeypatch.setattr(
+        build_deck, "_chk_notes_pane",
+        lambda *a, **k: "AF-EMPTY-NOTES-PANE: slide 1 has an empty notes pane")
+    code, _bundle = _rig(monkeypatch, tmp_path, stub_checks=True, bundle_gate=True)
+    err = capsys.readouterr().err
+    assert code == 5, err
+    assert "FAILED" in err
+    assert "EMPTY_NOTES_PANE" in err
+    assert "0 bytes" not in err
