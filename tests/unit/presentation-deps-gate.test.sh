@@ -427,9 +427,19 @@ echo '[{"slide":1,"scene":"x","copy":["hi"]}]' > "$ENV_RUN/slides.json"
 # PD-005: this fixture has no presentation_job.py, so the door refuses the legacy
 # fallback (exit 9) unless the owner logged the gate. Assert the env propagation
 # through an OWNER-APPROVED legacy run, which then ends at exit 10, not 0.
+# PD-919: PD-009 made GATE 3 (VERSION/HASH PIN) FAIL CLOSED when sync_check.py
+# is absent from the scripts dir, instead of the old silent skip. $FAKE_SCRIPTS
+# is a synthetic directory built from individual real modules — it carries no
+# canonical renderer pair and no sync_check.py, so no lockstep can be proven
+# from it. The row under test is KIE_PROMPT_GATE propagation through the spawned
+# tree, not the pin, so the run waives GATE 3 with the same sanctioned owner
+# token the legacy fallback above uses. The token is the documented skip path
+# (gate_fail -> owner_skip_approved); it is not a weakened assertion. A run with
+# no token and no sync_check.py still exits 7.
 cat > "$ENV_RUN/working/checkpoints/process_manifest.json" <<'PMLEGACY'
 { "owner_skip_approvals": [
-  {"gate":"LEGACY-RUNNER-FALLBACK","approved":true,"approved_by":"founder","reason":"ci"}
+  {"gate":"LEGACY-RUNNER-FALLBACK","approved":true,"approved_by":"founder","reason":"ci"},
+  {"gate":"AF-CANONICAL-RENDER-BYPASS","approved":true,"approved_by":"founder","reason":"fixture: synthetic scripts dir carries no sync_check.py (PD-009 GATE 3 fails closed)"}
 ]}
 PMLEGACY
 
