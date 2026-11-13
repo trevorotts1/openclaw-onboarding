@@ -226,7 +226,8 @@ def cmd_intake(a):
                     data={k: r.get(k) for k in ("questions", "question_message", "summary",
                                                 "digest", "provenance", "auth_status",
                                                 "approval_invalidated", "changes",
-                                                "untrusted_fields", "next_stage", "mode", "notices")},
+                                                "untrusted_fields", "next_stage", "mode", "notices",
+                                                "warnings")},
                     state_version={"expected": (resume or {}).get("digest") if resume else None,
                                    "current": r.get("digest")})
 
