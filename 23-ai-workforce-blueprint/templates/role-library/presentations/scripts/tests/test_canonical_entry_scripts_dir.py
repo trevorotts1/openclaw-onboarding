@@ -133,6 +133,14 @@ def _make_fake_scripts_dir(tmp_path: Path) -> Path:
         "import sys\nprint('stub run_signature_deck')\nsys.exit(0)\n"
     )
     (d / "ghl_media.py").write_text("# stub ghl_media\n")
+    # PD-009: GATE 3 treats an absent sync_check.py as a FAILED check (exit 7),
+    # never a skipped one — a fixture that reaches the gate must carry the stub.
+    (d / "sync_check.py").write_text(
+        "import json, sys\n"
+        "print(json.dumps({'in_sync': True, 'manifest_version': 39, 'drift': [],\n"
+        "                  'drift_summary': {'total': 0, 'render_path': 0, 'library_only': 0}}))\n"
+        "sys.exit(0)\n"
+    )
     return d
 
 
@@ -215,9 +223,11 @@ def test_succeeds_with_a_valid_stated_scripts_dir(tmp_path):
     Without this, test_refuses_* above would still pass on a resolver that
     refuses everything unconditionally — a guard that always fails is not a
     guard. QC_SKIP_PRESENTATION_DEPS + the .test-context marker clear GATE 1
-    (deps); --plan clears GATE 0 (intake ledger); the stub scripts have no
-    sync_check.py / pin file so GATE 3 is a no-op; a stub run_signature_deck.py
-    exits 0 so the whole chain completes successfully end to end."""
+    (deps); --plan clears GATE 0 (intake ledger); the stub scripts carry a
+    lockstep sync_check.py and no pin file, so GATE 3 runs, records the pin's
+    absence and proceeds (PD-009: a MISSING sync_check.py is exit 7, a missing
+    pin file is a warning); a stub run_signature_deck.py exits 0 so the whole
+    chain completes successfully end to end."""
     run_dir = tmp_path / "run"
     (run_dir / "working" / "checkpoints").mkdir(parents=True)
     (run_dir / "working" / "checkpoints" / ".test-context").write_text("")

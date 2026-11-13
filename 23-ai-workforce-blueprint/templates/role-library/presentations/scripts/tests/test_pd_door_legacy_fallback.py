@@ -103,7 +103,8 @@ def _run_dir(tmp_path: Path, *, owner_token: bool) -> Path:
         "format": "sp-intake-transcript-v1",
         "driver_signature": "fixture-signed",
         "qid_sequence": ["interview_choice", "q1", "q2", "q3", "q4", "q5", "q6", "q7", "q8"],
-        "turns": [{"qid": "interview_choice", "answer": "A long enough fixture answer " * 8}],
+        "turns": [{"qid": "interview_choice", "answer": "A long enough fixture answer " * 8},
+                  {"qid": "q1", "answer": "A grounded fixture answer " * 4}],
     }))
     if owner_token:
         (ckpt / "process_manifest.json").write_text(json.dumps({
