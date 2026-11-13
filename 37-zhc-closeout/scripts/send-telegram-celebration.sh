@@ -289,6 +289,13 @@ send_video() {
 _held_list=",${ZHC_QUALITY_HELD:-},"
 _is_held() { case "$_held_list" in *",$1,"*) return 0 ;; *) return 1 ;; esac; }
 
+# WF-090 (decision D-8): a leg recorded in closeoutWaivedLegs was deliberately
+# not delivered (Notion never shared, celebration video failed every attempt).
+# Its slot is SKIPPED and is NOT counted as a failure -- a waiver must never
+# fail the owner's delivery or leave a retry loop running for it.
+_waived_list=",$(state_get '.closeoutWaivedLegs // [] | join(",")'),"
+_is_waived() { case "$_waived_list" in *",$1,"*) return 0 ;; *) return 1 ;; esac; }
+
 failed_messages=()
 
 # ---- Message 1: Announcement ----
@@ -363,6 +370,8 @@ fi
 # cron will re-attempt the video tonight when vendor congestion clears.
 if is_delivered 4; then
   log "INFO" "msg 4: already delivered -- skipping"
+elif _is_waived celebration-video; then
+  log "WARN" "msg 4: celebration video WAIVED (closeoutWaivedLegs) -- skipping slot; not counted as a failure"
 elif _is_held celebration_video; then
   log "WARN" "msg 4: celebration video HELD by 8.5 quality gate -- NOT delivering; leaving slot for regeneration"
   failed_messages+=("msg-4-held")
@@ -395,6 +404,8 @@ fi
 # ---- Message 5: Notion doc link ----
 if is_delivered 5; then
   log "INFO" "msg 5: already delivered -- skipping"
+elif _is_waived notion; then
+  log "WARN" "msg 5: Notion closeout doc WAIVED (closeoutWaivedLegs) -- skipping slot; not counted as a failure"
 elif _is_held closeout_docs; then
   log "WARN" "msg 5: onboarding doc HELD by 8.5 quality gate -- NOT delivering incomplete doc; leaving slot for regeneration"
   failed_messages+=("msg-5-held")
