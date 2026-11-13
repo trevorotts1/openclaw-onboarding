@@ -1,6 +1,7 @@
 name: presentation-release-matrix
 
-# PRES-043 — end-to-end release matrix: real macOS runner acceptance plus
+# PRES-043 — end-to-end release matrix. The real macOS runner acceptance moved to
+# macos-acceptance.yml (one macOS job, checks-compress); this file keeps the
 # Linux Docker legs for the Hostinger and Contabo image profiles.
 #
 # WHY THIS EXISTS. The drift-gates matrix comment says it plainly: both legs
@@ -50,53 +51,6 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
-  macos-acceptance:
-    # Batch pull requests run only the required checks (Trevor order 2026-11-13).
-    if: ${{ !startsWith(github.head_ref, 'batch/') }}
-    name: macOS runner acceptance (native render + OCR + tick)
-    runs-on: macos-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-
-      - name: Install native render deps (Homebrew)
-        run: |
-          set -euo pipefail
-          brew install --cask libreoffice || brew install libreoffice
-          brew install poppler tesseract ffmpeg
-          python3 -m pip install --upgrade pip
-          python3 -m pip install -r 23-ai-workforce-blueprint/templates/role-library/presentations/release-matrix/requirements-hostinger.txt
-
-      - name: Record host identity receipt
-        run: |
-          set -euo pipefail
-          {
-            echo "os=$(sw_vers -productName) $(sw_vers -productVersion) $(uname -m)"
-            echo "python=$(python3 --version)"
-            echo "soffice=$(soffice --version | head -1)"
-            echo "pdftoppm=$(pdftoppm -v 2>&1 | head -1)"
-            echo "tesseract=$(tesseract --version 2>&1 | head -1)"
-            echo "ffmpeg=$(ffmpeg -version 2>&1 | head -1)"
-            echo "fonts=$(fc-list | grep -ciE 'dejavu|liberation')"
-          } | tee release-matrix-macos-identity.txt
-
-      - name: Run PRES-043 battery (native Mac leg)
-        run: |
-          set -euo pipefail
-          cd 23-ai-workforce-blueprint/templates/role-library/presentations/scripts/tests
-          python3 -m pytest test_pres043_release_matrix.py -q
-
-      - name: Scheduler install render (sandboxed HOME, stub launchctl)
-        run: |
-          set -euo pipefail
-          chmod +x tests/unit/presentation-schedules-installed.test.sh
-          bash tests/unit/presentation-schedules-installed.test.sh
-
   docker-hostinger:
     # Batch pull requests run only the required checks (Trevor order 2026-11-13).
     if: ${{ !startsWith(github.head_ref, 'batch/') }}

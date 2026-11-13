@@ -27,8 +27,7 @@ def sh(*a):
 # Pre-existing: the workflow had no concurrency block before this change and is kept as is (a two-OS matrix).
 KNOWN_NO_CONCURRENCY = {'skill6-recipes-portability'}
 # Workflow files that keep one or more jobs after a partial fold (the rest of the file stays).
-PARTIAL_KEEP = {'embedding-integrity-guard.yml', 'hardening-and-fleet-standards-exec-guard.yml',
-                'script-defect-classes-guard.yml', 'prebuilt-index-section-tagged-guard.yml',
+PARTIAL_KEEP = {'embedding-integrity-guard.yml', 'prebuilt-index-section-tagged-guard.yml',
                 'version-consistency.yml', 'presentation-release-matrix.yml'}
 # Guards whose path filter was widened on purpose when folded (plan step 2.2).
 INTENDED_PATH_CHANGES = {'unwired-checks-guard'}
@@ -36,6 +35,7 @@ INTENDED_PATH_CHANGES = {'unwired-checks-guard'}
 # prebuilt-index file whose only job left is release/manual).
 INTENDED_TRIGGER_CHANGES = {'launch-family-parity', 'claim-provenance-advisory',
                             'presentation-release-matrix', 'prebuilt-index-section-tagged-guard'}
+# New workflows with no base counterpart: council, skill44 and macos-acceptance are checked by the 'new workflow' branch.
 
 
 def triggers(d):

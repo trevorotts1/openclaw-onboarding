@@ -1,0 +1,259 @@
+# ONE macOS job (checks-compress). Three macOS jobs used to run in three workflows:
+#   hardening-and-fleet-standards-exec-guard (LIVE watchdog + whisper probe),
+#   script-defect-classes-guard (bash 3.2 parses every tracked shell script),
+#   presentation-release-matrix (macOS runner acceptance: native render + OCR + tick).
+# The account runs only 5 macOS jobs at once, so they are one job here, and each part runs
+# only when its own files changed (scripts/ci/macos-acceptance-paths.json holds each part's
+# paths for pull_request and push; scripts/ci/macos_acceptance_select.py applies them).
+# On the nightly schedule and a manual run every part runs. The Linux Docker legs of the
+# presentation matrix stay in presentation-release-matrix.yml.
+name: macos-acceptance
+on:
+  push:
+    branches:
+    - main
+    paths:
+    - scripts/install-hardening.sh
+    - scripts/apply-fleet-standards.sh
+    - scripts/verify-routing.sh
+    - update-skills.sh
+    - tests/unit/hardening-bounded-brew-and-whisper-probe.test.sh
+    - tests/unit/fleet-standards-legacy-exec-mode.test.sh
+    - tests/unit/fleet-standards-version-detector-rollback.test.sh
+    - scripts/repair-model-sovereignty.sh
+    - tests/unit/repair-model-sovereignty-no-truncate.test.sh
+    - tests/unit/no-anthropic-rule.test.sh
+    - scripts/ensure-burn-guard.sh
+    - scripts/oc-schema-migrate.py
+    - tests/unit/burn-guard.test.sh
+    - tests/unit/workshop-mode-compat.test.sh
+    - .github/workflows/macos-acceptance.yml
+    - 23-ai-workforce-blueprint/scripts/refresh-build-state-from-index.py
+    - 23-ai-workforce-blueprint/scripts/retire-confirmed-decline.sh
+    - 23-ai-workforce-blueprint/scripts/resume-workforce-build.sh
+    - scripts/verify-model-pins.py
+    - scripts/dedup-agents-md.py
+    - scripts/pre-july14-embedding-migration-check.sh
+    - scripts/ensure-heartbeat-defaults.sh
+    - scripts/reconcile-rr-agent-map.sh
+    - scripts/u126-remediate.sh
+    - scripts/fleet-audit-remediate.sh
+    - scripts/qc-system-integrity.sh
+    - scripts/diagnose-telegram-config.sh
+    - 31-upgraded-memory-system/scripts/activate-memory-stack.sh
+    - 38-conversational-ai-system/scripts/09-install-conversation-workflows.sh
+    - shared-utils/resolve_injected_core_files.py
+    - shared-utils/resolve_db.py
+    - shared-utils/check-credential.sh
+    - shared-utils/fleet-heartbeat-persona-probe.sh
+    - 38-conversational-ai-system/scripts/10-generate-capabilities-playbook.sh
+    - 38-conversational-ai-system/scripts/15-configure-hooks-mappings.sh
+    - 38-conversational-ai-system/scripts/28-configure-pixel-hook.sh
+    - 32-command-center-setup/scripts/backfill-per-dept-healer.sh
+    - 32-command-center-setup/scripts/materialize-dept-agents.sh
+    - 32-command-center-setup/scripts/run-full-install.sh
+    - 32-command-center-setup/scripts/heartbeat-embedding-probe.py
+    - 15-blackceo-team-management/scripts/lib/rr-config-lock.sh
+    - 15-blackceo-team-management/scripts/lib/rr-promote-atomic.sh
+    - 41-build-with-ai-playbook/scripts/06-verify-agent-browser.sh
+    - platform/common.sh
+    - install.sh
+    - tests/unit/agents-entries-roster-readers.test.py
+    - 07-kie-setup/wire.sh
+    - 63-agnes-image/wire.sh
+    - 64-agnes-video/wire.sh
+    - 66-kie-image/wire.sh
+    - 67-kie-video/wire.sh
+    - 68-kie-audio/wire.sh
+    - scripts/onboarding-state.sh
+    - scripts/grant-ceo-consent.sh
+    - scripts/qc-assert-platform-facts-stamped.sh
+    - scripts/qc-assert-provider-capability-invariants.sh
+    - scripts/smoke-test-provider-capabilities.sh
+    - shared-utils/select_model.py
+    - shared-utils/assert_model_sovereignty.py
+    - 32-command-center-setup/scripts/register-routing-dept.py
+    - 32-command-center-setup/scripts/add-department.sh
+    - 23-ai-workforce-blueprint/scripts/verify-wiring.sh
+    - 23-ai-workforce-blueprint/scripts/test-wiring-gate-role-dir-walk.sh
+    - 58-podcast-production-engine/scripts/install-podcast-department.sh
+    - tests/unit/agents-entries-remaining-readers.test.py
+    - tests/unit/cc-db-decoy-resolver.test.py
+    - tests/unit/gnu-stat-first.test.sh
+    - tests/unit/retire-decline-separate-workspace.test.py
+    - tests/unit/cc-update-path-build-fresh.test.sh
+    - tests/unit/embedding-probe-shipped-asset.test.py
+    - tests/unit/platform-detection-parity.test.sh
+    - '**.sh'
+    - 23-ai-workforce-blueprint/templates/role-library/presentations/release-matrix/**
+    - 23-ai-workforce-blueprint/templates/role-library/presentations/scripts/pdf_export.py
+    - 23-ai-workforce-blueprint/templates/role-library/presentations/scripts/presenter_guide.py
+    - 23-ai-workforce-blueprint/templates/role-library/presentations/scripts/presentation-watchdog.sh
+    - 23-ai-workforce-blueprint/templates/role-library/presentations/scripts/presentation_job/ocr_verify.py
+    - 23-ai-workforce-blueprint/templates/role-library/presentations/scripts/presentation_job/auto_resume.py
+    - 23-ai-workforce-blueprint/templates/role-library/presentations/scripts/cc_board.py
+    - 23-ai-workforce-blueprint/templates/role-library/presentations/scripts/tests/test_pres043_release_matrix.py
+    - 23-ai-workforce-blueprint/templates/role-library/presentations/scripts/tests/pres043_live_smoke.py
+    - lib-presentation-schedules.sh
+  pull_request:
+    branches:
+    - main
+    paths:
+    - scripts/install-hardening.sh
+    - scripts/apply-fleet-standards.sh
+    - scripts/verify-routing.sh
+    - update-skills.sh
+    - tests/unit/hardening-bounded-brew-and-whisper-probe.test.sh
+    - tests/unit/fleet-standards-legacy-exec-mode.test.sh
+    - tests/unit/fleet-standards-version-detector-rollback.test.sh
+    - scripts/repair-model-sovereignty.sh
+    - tests/unit/repair-model-sovereignty-no-truncate.test.sh
+    - tests/unit/no-anthropic-rule.test.sh
+    - scripts/ensure-burn-guard.sh
+    - scripts/oc-schema-migrate.py
+    - tests/unit/burn-guard.test.sh
+    - tests/unit/workshop-mode-compat.test.sh
+    - .github/workflows/macos-acceptance.yml
+    - 23-ai-workforce-blueprint/scripts/refresh-build-state-from-index.py
+    - 23-ai-workforce-blueprint/scripts/retire-confirmed-decline.sh
+    - 23-ai-workforce-blueprint/scripts/resume-workforce-build.sh
+    - scripts/verify-model-pins.py
+    - scripts/dedup-agents-md.py
+    - scripts/pre-july14-embedding-migration-check.sh
+    - scripts/ensure-heartbeat-defaults.sh
+    - scripts/reconcile-rr-agent-map.sh
+    - scripts/u126-remediate.sh
+    - scripts/fleet-audit-remediate.sh
+    - scripts/qc-system-integrity.sh
+    - scripts/diagnose-telegram-config.sh
+    - 31-upgraded-memory-system/scripts/activate-memory-stack.sh
+    - 38-conversational-ai-system/scripts/09-install-conversation-workflows.sh
+    - shared-utils/resolve_injected_core_files.py
+    - shared-utils/resolve_db.py
+    - shared-utils/check-credential.sh
+    - shared-utils/fleet-heartbeat-persona-probe.sh
+    - 38-conversational-ai-system/scripts/10-generate-capabilities-playbook.sh
+    - 38-conversational-ai-system/scripts/15-configure-hooks-mappings.sh
+    - 38-conversational-ai-system/scripts/28-configure-pixel-hook.sh
+    - 32-command-center-setup/scripts/backfill-per-dept-healer.sh
+    - 32-command-center-setup/scripts/materialize-dept-agents.sh
+    - 32-command-center-setup/scripts/run-full-install.sh
+    - 32-command-center-setup/scripts/heartbeat-embedding-probe.py
+    - 15-blackceo-team-management/scripts/lib/rr-config-lock.sh
+    - 15-blackceo-team-management/scripts/lib/rr-promote-atomic.sh
+    - 41-build-with-ai-playbook/scripts/06-verify-agent-browser.sh
+    - platform/common.sh
+    - install.sh
+    - tests/unit/agents-entries-roster-readers.test.py
+    - 07-kie-setup/wire.sh
+    - 63-agnes-image/wire.sh
+    - 64-agnes-video/wire.sh
+    - 66-kie-image/wire.sh
+    - 67-kie-video/wire.sh
+    - 68-kie-audio/wire.sh
+    - scripts/onboarding-state.sh
+    - scripts/grant-ceo-consent.sh
+    - scripts/qc-assert-platform-facts-stamped.sh
+    - scripts/qc-assert-provider-capability-invariants.sh
+    - scripts/smoke-test-provider-capabilities.sh
+    - shared-utils/select_model.py
+    - shared-utils/assert_model_sovereignty.py
+    - 32-command-center-setup/scripts/register-routing-dept.py
+    - 32-command-center-setup/scripts/add-department.sh
+    - 23-ai-workforce-blueprint/scripts/verify-wiring.sh
+    - 23-ai-workforce-blueprint/scripts/test-wiring-gate-role-dir-walk.sh
+    - 58-podcast-production-engine/scripts/install-podcast-department.sh
+    - tests/unit/agents-entries-remaining-readers.test.py
+    - tests/unit/cc-db-decoy-resolver.test.py
+    - tests/unit/gnu-stat-first.test.sh
+    - tests/unit/retire-decline-separate-workspace.test.py
+    - tests/unit/cc-update-path-build-fresh.test.sh
+    - tests/unit/embedding-probe-shipped-asset.test.py
+    - tests/unit/platform-detection-parity.test.sh
+    - '**.sh'
+    - 23-ai-workforce-blueprint/templates/role-library/presentations/release-matrix/**
+  schedule:
+  - cron: 23 7 * * *
+  workflow_dispatch:
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+jobs:
+  macos-acceptance:
+    if: ${{ !startsWith(github.head_ref, 'batch/') }}
+    name: macOS acceptance (hardening watchdog, bash 3.2 parse, presentation render)
+    runs-on: macos-latest
+    timeout-minutes: 40
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+    - name: Which macOS parts does this change need?
+      id: sel
+      shell: bash
+      env:
+        BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        BEFORE_SHA: ${{ github.event.before }}
+      run: |
+        python3 scripts/ci/macos_acceptance_select.py
+    - name: 'Hardening: bash 3.2 parses the hardening script'
+      run: /bin/bash -n scripts/install-hardening.sh
+      if: ${{ !cancelled() && steps.sel.outputs.hardening == 'true' }}
+    - name: 'Hardening: LIVE -- hung brew is killed, helper reaped, caller survives'
+      run: |
+        chmod +x tests/unit/hardening-bounded-brew-and-whisper-probe.test.sh
+        bash tests/unit/hardening-bounded-brew-and-whisper-probe.test.sh
+      if: ${{ !cancelled() && steps.sel.outputs.hardening == 'true' }}
+    - name: 'Hardening: Fleet standards keeps tools.exec.mode (no legacy security/ask rewrite)'
+      run: |
+        chmod +x tests/unit/fleet-standards-legacy-exec-mode.test.sh
+        bash tests/unit/fleet-standards-legacy-exec-mode.test.sh
+      if: ${{ !cancelled() && steps.sel.outputs.hardening == 'true' }}
+    - name: 'bash 3.2: /bin/bash -n'
+      run: |
+        /bin/bash --version | head -1
+        rc=0; n=0
+        while IFS= read -r -d '' f; do
+          n=$((n+1))
+          /bin/bash -n "$f" || { echo "FAIL $f"; rc=1; }
+        done < <(git ls-files -z '*.sh')
+        echo "parsed $n tracked .sh files with /bin/bash"
+        exit $rc
+      if: ${{ !cancelled() && steps.sel.outputs.bash32 == 'true' }}
+    - name: 'Presentation: Set up Python'
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.11'
+      if: ${{ !cancelled() && steps.sel.outputs.presentation == 'true' }}
+    - name: 'Presentation: Install native render deps (Homebrew)'
+      run: |
+        set -euo pipefail
+        brew install --cask libreoffice || brew install libreoffice
+        brew install poppler tesseract ffmpeg
+        python3 -m pip install --upgrade pip
+        python3 -m pip install -r 23-ai-workforce-blueprint/templates/role-library/presentations/release-matrix/requirements-hostinger.txt
+      if: ${{ !cancelled() && steps.sel.outputs.presentation == 'true' }}
+    - name: 'Presentation: Record host identity receipt'
+      run: |
+        set -euo pipefail
+        {
+          echo "os=$(sw_vers -productName) $(sw_vers -productVersion) $(uname -m)"
+          echo "python=$(python3 --version)"
+          echo "soffice=$(soffice --version | head -1)"
+          echo "pdftoppm=$(pdftoppm -v 2>&1 | head -1)"
+          echo "tesseract=$(tesseract --version 2>&1 | head -1)"
+          echo "ffmpeg=$(ffmpeg -version 2>&1 | head -1)"
+          echo "fonts=$(fc-list | grep -ciE 'dejavu|liberation')"
+        } | tee release-matrix-macos-identity.txt
+      if: ${{ !cancelled() && steps.sel.outputs.presentation == 'true' }}
+    - name: 'Presentation: Run PRES-043 battery (native Mac leg)'
+      run: |
+        set -euo pipefail
+        cd 23-ai-workforce-blueprint/templates/role-library/presentations/scripts/tests
+        python3 -m pytest test_pres043_release_matrix.py -q
+      if: ${{ !cancelled() && steps.sel.outputs.presentation == 'true' }}
+    - name: 'Presentation: Scheduler install render (sandboxed HOME, stub launchctl)'
+      run: |
+        set -euo pipefail
+        chmod +x tests/unit/presentation-schedules-installed.test.sh
+        bash tests/unit/presentation-schedules-installed.test.sh
+      if: ${{ !cancelled() && steps.sel.outputs.presentation == 'true' }}
