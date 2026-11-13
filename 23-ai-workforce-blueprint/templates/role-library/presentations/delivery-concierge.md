@@ -103,7 +103,7 @@ Review the delivery_destinations records across all completed runs. Are all deli
 | Drive upload confirmed via API before notification sent (if applicable) | 100% |
 | media_library.json updated with delivery_complete and all destination records | 100% |
 | Decks delivered below Phase 6 QC threshold (score < 8.5) | 0% |
-| Delivery destination resolved correctly (Mac vs. ask-the-owner rule honored) | 100% |
+| Delivery destination resolved correctly (the client's `deck_brief.DELIVERY_DESTINATIONS` answer honored; asked again only when empty or unreachable) | 100% |
 
 ---
 
@@ -195,19 +195,22 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
 
 **Steps:**
 0. Confirm SOP 9.0 has completed: `delivery/[DECK_SLUG]-FINAL/` exists and passes the AF-DH1 whitelist check. Destination resolution never runs against an unhygiened build root.
-1. Read intake.json. Check the `box_type` field.
-2. **If `box_type` is `mac` (Mac mini or MacBook):**
+1. Read `intake.json` → `deck_brief.DELIVERY_DESTINATIONS` (the client's own answer to "Where should I send the finished presentation?"). Deliver to every destination named there.
+2. Read intake.json. Check the `box_type` field.
+3. **If `box_type` is `mac` (Mac mini or MacBook):**
    a. Primary destination: the folder `~/Downloads/<client-slug>-<deck-slug>/` on the client's Mac (the SAME folder-aware location `build_deck.py` writes to). The whole clean seven-file CLIENT package lands here; verify anchor `~/Downloads/<client-slug>-<deck-slug>/<deck-slug>-FINAL.pptx`.
    b. Secondary destination: GHL media library (same `ghl_folder_id`/`"root"` resolved by the Media Librarian).
    c. Tertiary destination: Google Drive mirror folder (if `use_drive: true`).
    d. Record all destinations in a local `delivery_plan.json` before proceeding.
-3. **If `box_type` is NOT mac, or is missing or unclear:**
+4. **Ask the client again ONLY when `deck_brief.DELIVERY_DESTINATIONS` is empty, or when it names a destination this box cannot reach:**
    a. DO NOT assume a delivery location.
-   b. Ask the client explicitly via `openclaw message send`: "Where would you like the PowerPoint delivered: email, Google Drive, GHL, or somewhere else?" Wait for their reply before proceeding.
+   b. Ask the client explicitly via `openclaw message send`, quoting what the client already said, and wait for their reply before proceeding:
+      - field names an unreachable destination: "You told me to send the finished presentation to <the destination the client named>, and this box cannot reach it. Where would you like the PowerPoint delivered: email, Google Drive, GHL, or somewhere else?"
+      - field is empty: "Where would you like the PowerPoint delivered: email, Google Drive, GHL, or somewhere else?"
    c. Record their stated destination in `delivery_plan.json`.
    d. Deliver only to the destination(s) they confirm.
    e. **Fallback file channel:** if the client has neither GHL (`has_ghl: false`) nor Drive (`use_drive: false`) and no other reachable file destination, add a `telegram_documents` destination so the seven client files still reach them as document attachments (SOP 9.2). If even that is unreachable, hard-escalate "no reachable file channel" to the Director (never silently mark done).
-4. Write `delivery_plan.json` to working/checkpoints/:
+5. Write `delivery_plan.json` to working/checkpoints/:
    ```json
    {
      "deck_slug": "...",
@@ -221,14 +224,14 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
      "created_at": "ISO timestamp"
    }
    ```
-5. Confirm the final QC score of record from working/qc/final_qc_report.json (the P-QC-AGGREGATE aggregate; gate-facing `average` field). If the average is < 8.5: halt, return to Director. Record in delivery_plan.json: `"delivery_blocked": true, "reason": "QC score below threshold"`.
+6. Confirm the final QC score of record from working/qc/final_qc_report.json (the P-QC-AGGREGATE aggregate; gate-facing `average` field). If the average is < 8.5: halt, return to Director. Record in delivery_plan.json: `"delivery_blocked": true, "reason": "QC score below threshold"`.
 
 **Outputs:**
 - working/checkpoints/delivery_plan.json (all destinations listed with pending status)
 
 **Hand to:** SOP 9.2 (Multi-Destination Upload)
 
-**Failure mode:** If intake.json is missing or malformed and box_type cannot be determined: ask the client directly before touching any destination. Never guess the delivery path. Record the blocker in delivery_plan.json and notify the Director.
+**Failure mode:** If intake.json is missing or malformed and `deck_brief.DELIVERY_DESTINATIONS` cannot be read: ask the client directly before touching any destination. Never guess the delivery path. Record the blocker in delivery_plan.json and notify the Director.
 
 ---
 
@@ -454,7 +457,7 @@ The delivery notification is sent exclusively via `openclaw message send`. Raw T
 | Drive upload fails after one retry | Director with error log | Operator notification | Human owner |
 | GHL verification returns 404 after upload | Director -- possible GHL API issue | Operator notification | Human owner |
 | openclaw message send fails after one retry | Director via Director's channel | Operator notification | Human owner |
-| Client box type unknown and client does not respond to destination question | Director -- hold delivery | Escalate to operator | Human owner |
+| Client's `DELIVERY_DESTINATIONS` answer is empty or unreachable and the client does not answer the destination question | Director -- hold delivery | Escalate to operator | Human owner |
 
 ---
 
@@ -497,7 +500,7 @@ The delivery notification is sent exclusively via `openclaw message send`. Raw T
 - Marking `delivery_complete: true` without running a live GHL API check -- a self-report is not ground truth.
 - Sending the delivery notification before SOP 9.4 completes -- the notification must not arrive before the files are verified.
 - Using `curl https://api.telegram.org/...` instead of `openclaw message send` -- raw API calls are forbidden.
-- Delivering to a hardcoded path on a non-Mac client without asking -- always ask when box_type is not mac.
+- Delivering to a hardcoded path instead of the destinations in `deck_brief.DELIVERY_DESTINATIONS` -- ask again only when that field is empty or names a destination this box cannot reach.
 - Delivering a deck with a Phase 6 QC score below 8.5 -- a below-threshold deck goes back to the QC Specialist, not to the client.
 - Skipping a destination in delivery_plan.json because "GHL is probably fine from the media library upload" -- the PPTX is a separate upload; previous slide image uploads do not satisfy the PPTX delivery verification.
 - Recording Drive or GHL URLs in the notification before confirming they are reachable -- verify each before including it.
@@ -515,7 +518,7 @@ The delivery notification is sent exclusively via `openclaw message send`. Raw T
 | 2 | Using the operator's GHL API token instead of the client's | GHL credentials come from the CLIENT's env stores. Check before the first call. |
 | 3 | Sending the delivery message via a raw Telegram curl call | Gate 4: openclaw message send is the only allowed channel. No exceptions. |
 | 4 | Delivering a deck before Phase 6 QC score is confirmed | Gate 1: read final_qc_report.json and confirm its gate-facing average >= 8.5 as the literal first action. |
-| 5 | Assuming a non-Mac client wants Mac Downloads delivery | SOP 9.1 step 3: if box_type is not mac, ASK. Never assume. |
+| 5 | Guessing a delivery location instead of using the client's own answer | SOP 9.1 step 1 and step 4: deliver to `deck_brief.DELIVERY_DESTINATIONS`; ask again only when it is empty or unreachable. Never assume. |
 | 6 | Not writing delivery_plan.json before starting uploads | SOP 9.1 always runs first. delivery_plan.json is required input for SOP 9.2. |
 | 7 | Conflating ROLE-06 image delivery verification with PPTX delivery | ROLE-06 verifies slide image delivery. This role verifies PPTX delivery. They are separate steps. |
 
@@ -548,7 +551,7 @@ If the PPTX exceeds the GHL file size limit (typically 100MB for documents): com
 If `use_drive: false` in intake.json or the client has no Drive folder: skip the Drive destination. Remove it from delivery_plan.json. Record `"drive_delivery_skipped": true` in media_library.json. Not a failure.
 
 ### Edge Case 17.5 -- Client Does Not Respond to Destination Question
-If the client box_type is not mac, you ask for the delivery destination, and the client does not respond within the run window: escalate to the Director. Do NOT deliver to a guessed destination. Hold the PPTX in the clean `delivery/[DECK_SLUG]-FINAL/` package until the client confirms. Record `"delivery_blocked_awaiting_client_response": true` in delivery_plan.json.
+If `deck_brief.DELIVERY_DESTINATIONS` is empty or names a destination this box cannot reach, you ask for the delivery destination, and the client does not respond within the run window: escalate to the Director. Do NOT deliver to a guessed destination. Hold the PPTX in the clean `delivery/[DECK_SLUG]-FINAL/` package until the client confirms. Record `"delivery_blocked_awaiting_client_response": true` in delivery_plan.json.
 
 ---
 

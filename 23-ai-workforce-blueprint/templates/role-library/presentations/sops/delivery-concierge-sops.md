@@ -80,19 +80,22 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
 
 **Steps:**
 0. Confirm SOP 9.0 has completed: `delivery/[DECK_SLUG]-FINAL/` exists and passes the AF-DH1 whitelist check. Destination resolution never runs against an unhygiened build root.
-1. Read intake.json. Check the `box_type` field.
-2. **If `box_type` is `mac` (Mac mini or MacBook):**
+1. Read `intake.json` → `deck_brief.DELIVERY_DESTINATIONS` (the client's own answer to "Where should I send the finished presentation?"). Deliver to every destination named there.
+2. Read intake.json. Check the `box_type` field.
+3. **If `box_type` is `mac` (Mac mini or MacBook):**
    a. Primary destination: the folder `~/Downloads/<client-slug>-<deck-slug>/` on the client's Mac (the SAME folder-aware location `build_deck.py` writes to). The whole clean seven-file CLIENT package lands here; verify anchor `~/Downloads/<client-slug>-<deck-slug>/<deck-slug>-FINAL.pptx`.
    b. Secondary destination: GHL media library (same `ghl_folder_id`/`"root"` resolved by the Media Librarian).
    c. Tertiary destination: Google Drive mirror folder (if `use_drive: true`).
    d. Record all destinations in a local `delivery_plan.json` before proceeding.
-3. **If `box_type` is NOT mac, or is missing or unclear:**
+4. **Ask the client again ONLY when `deck_brief.DELIVERY_DESTINATIONS` is empty, or when it names a destination this box cannot reach:**
    a. DO NOT assume a delivery location.
-   b. Ask the client explicitly via `openclaw message send`: "Where would you like the PowerPoint delivered: email, Google Drive, GHL, or somewhere else?" Wait for their reply before proceeding.
+   b. Ask the client explicitly via `openclaw message send`, quoting what the client already said, and wait for their reply before proceeding:
+      - field names an unreachable destination: "You told me to send the finished presentation to <the destination the client named>, and this box cannot reach it. Where would you like the PowerPoint delivered: email, Google Drive, GHL, or somewhere else?"
+      - field is empty: "Where would you like the PowerPoint delivered: email, Google Drive, GHL, or somewhere else?"
    c. Record their stated destination in `delivery_plan.json`.
    d. Deliver only to the destination(s) they confirm.
    e. **Fallback file channel:** if the client has neither GHL (`has_ghl: false`) nor Drive (`use_drive: false`) and no other reachable file destination, add a `telegram_documents` destination so the seven client files still reach them as document attachments (SOP 9.2). If even that is unreachable, hard-escalate "no reachable file channel" to the Director (never silently mark done).
-4. Write `delivery_plan.json` to working/checkpoints/:
+5. Write `delivery_plan.json` to working/checkpoints/:
    ```json
    {
      "deck_slug": "...",
@@ -106,14 +109,14 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
      "created_at": "ISO timestamp"
    }
    ```
-5. Confirm the final QC score of record from working/qc/final_qc_report.json (the P-QC-AGGREGATE aggregate; gate-facing `average` field). If the average is < 8.5: halt, return to Director. Record in delivery_plan.json: `"delivery_blocked": true, "reason": "QC score below threshold"`.
+6. Confirm the final QC score of record from working/qc/final_qc_report.json (the P-QC-AGGREGATE aggregate; gate-facing `average` field). If the average is < 8.5: halt, return to Director. Record in delivery_plan.json: `"delivery_blocked": true, "reason": "QC score below threshold"`.
 
 **Outputs:**
 - working/checkpoints/delivery_plan.json (all destinations listed with pending status)
 
 **Hand to:** SOP 9.2 (Multi-Destination Upload)
 
-**Failure mode:** If intake.json is missing or malformed and box_type cannot be determined: ask the client directly before touching any destination. Never guess the delivery path. Record the blocker in delivery_plan.json and notify the Director.
+**Failure mode:** If intake.json is missing or malformed and `deck_brief.DELIVERY_DESTINATIONS` cannot be read: ask the client directly before touching any destination. Never guess the delivery path. Record the blocker in delivery_plan.json and notify the Director.
 
 ---
 
