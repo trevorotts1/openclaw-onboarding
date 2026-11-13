@@ -127,11 +127,26 @@ rc=0
 
 ## 5. Sibling results
 
-No siblings were named in the task. Full-batch safety checked against the base branch:
+No sibling list was named in the task, so the batch pool was discovered from the live PR
+list: `gh pr list --state open --limit 100` (100 open PRs, 100 distinct head branches).
+`git fetch origin '+refs/heads/*:refs/remotes/origin/*'` then
+`git merge-tree --write-tree HEAD origin/<sibling>` for every one of them.
 
 | Comparison | Result |
 |---|---|
-| `git merge-tree --write-tree HEAD origin/main` | **clean** (rc=0) |
+| `git merge-tree --write-tree HEAD origin/main` — main was `ebf5c769a2ad5b2582bf2256588095cbef20cfac` | **clean** (rc=0, tree `a544325319ac1737b850331d3d0292325b08e050`) |
+| All 100 open-PR head branches | **99/99 recorded clean**, plus `rrx/wire-rrx-019h` re-run alone clean (rc=0) |
+| Same-file sibling: `pd/fl08-buddy-procedure--hold-d2` (PR #3317, PD-017) — the only open branch that touches `templates/role-library/_index.json` | **clean** (rc=0, tree `5b11e781835c564775b33c5336476f9e05e3768a`) |
+
+Why that sibling matters: PD-109 edits four `content_sha`/`content_version` entries in
+`_index.json`, and PD-017 also edits that file. Git merges both without conflict, but a
+conflict-free merge is not a semantic guarantee — whichever of the two lands second must
+re-run `hash-content-manifest.py --check`, because the hasher's manifest entries are
+compared per-artifact and a later tree change would make the PD-017 entry stale. The
+second-lander check is the guard; the merge itself is clean.
+
+The 83-PR batch branch `batch/openclaw-onboarding/20261113-155200-n3` (PR #3372) does
+**not** contain #3192, so #3192 rides the next batch window rather than that one.
 
 ## 6. Ancestry and remote-head proofs
 
@@ -180,3 +195,51 @@ is a separate guard and is **not** addressed here.
   were not diagnosed.
 - Whether the branch needs `origin/main` merged in: not required for this check
   (`merge-tree` clean), so nothing was merged.
+
+## 9. Attempt-2 re-verification (fresh clone, head proven live)
+
+The repair above was re-proven from a clean clone rather than trusted from the earlier
+session. Clone of `trevorotts1/openclaw-onboarding`, then:
+
+```
+$ git ls-remote --heads origin pd/fl25-doctrine
+00f7e3fcfdaafa04bcb07a12df8a391073366438	refs/heads/pd/fl25-doctrine
+```
+
+Commands run locally with the job's own environment (`OPENCLAW_PLATFORM=mac`, exactly what
+`.github/workflows/qc-static.yml` sets), against that head:
+
+```
+$ python3 -I 23-ai-workforce-blueprint/scripts/qc-assert-repo-consistency.py --only consistency
+RESULT: PASS — all 29 floor departments are consistent across floor/roster/library/SOP/persona (rc=0)
+rc=0
+
+$ bash 23-ai-workforce-blueprint/scripts/test-repo-consistency.sh
+=== T1: CLEAN REPO PASSES ===
+  PASS: clean repo exits 0 (rc=0)
+...
+RESULT: 8 passed, 0 failed
+ALL REPO-CONSISTENCY FIXTURE TESTS PASSED
+rc=0
+```
+
+The two T1 lines are the proof:
+`FAIL: clean repo should exit 0, got rc=6` (the red) is now `PASS: clean repo exits 0 (rc=0)`.
+
+Every other Skill 23 gate in the same job was re-run green on the same head:
+
+```
+$ python3 -I .../qc-assert-repo-consistency.py --only artifact
+RESULT: PASS — every downstream artifact covers all 29 floor departments… (rc=0)
+$ python3 -I .../hash-content-manifest.py --check
+✓ content-manifest CHECK PASS — 538 roles + 148 sops + 19 personas… no token leaks. rc=0
+$ python3 -I .../register-library-additions.py --check
+✓ library-register CHECK PASS — 538 disk roles, 538 index roles, 148 sops, 19 personas… rc=0
+$ bash .../test-bw-prover-layout-parity.sh     -> ALL LAYOUT-PARITY TESTS PASSED   rc=0
+$ bash .../test-bw-prover-build-roundtrip.sh   -> ALL BUILD-ROUNDTRIP GUARDS PASSED rc=0
+```
+
+CI verdict: the rerun GitHub started for `00f7e3fc…` (run `43462575717`, job
+`QC static invariants`) was still **queued** on the runner pool when this verification
+finished. Its verdict belongs to GitHub, not to this report; the local re-run above is the
+same command with the same environment, and it is green.
