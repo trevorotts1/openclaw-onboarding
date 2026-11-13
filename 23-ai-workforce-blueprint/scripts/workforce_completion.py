@@ -116,6 +116,22 @@ def evaluate(state):
     if not current or current!=evidence.get('digest'):missing.append('changed-or-missing-artifacts')
     return missing
 
+PROGRESS_STAGES=('manifest','research','departments','roles','assembly')
+PROGRESS_RUNNING_MINUTES=30
+
+def verification_without_checked_at(verification):
+    if not isinstance(verification,dict):return None
+    return {k:v for k,v in verification.items() if k!='checkedAt'}
+
+def progress_is_running(progress,build_id,minutes=PROGRESS_RUNNING_MINUTES):
+    """True while a build is writing its own progress (a fresh, unfinished stage)."""
+    if progress.get('build_id')!=build_id:return False
+    if progress.get('stage') not in PROGRESS_STAGES:return False
+    try:when=datetime.fromisoformat(str(progress.get('updated_at')).replace('Z','+00:00'))
+    except ValueError:return False
+    if when.tzinfo is None:when=when.replace(tzinfo=timezone.utc)
+    return (datetime.now(timezone.utc)-when).total_seconds()<minutes*60
+
 def finalize(path,check_results=None,artifact_root=None,presentation_deps=None):
     def mutate(state):
         require_build_identity(state)
@@ -139,8 +155,12 @@ def finalize(path,check_results=None,artifact_root=None,presentation_deps=None):
             if blockers:state['closeoutBlockers']=blockers
             else:state.pop('closeoutBlockers',None)
         missing=evaluate(state)
-        state['completionVerification']={'version':1,'buildId':state['buildId'],'companyId':state.get('companyId'),
-                                         'status':'verified' if not missing else 'pending','checkedAt':now,'unmetRequirements':missing,'inputDigest':input_digest(state),'artifactDigest':(state.get('buildArtifactVerification') or {}).get('digest')}
+        verification={'version':1,'buildId':state['buildId'],'companyId':state.get('companyId'),
+                      'status':'verified' if not missing else 'pending','checkedAt':now,'unmetRequirements':missing,'inputDigest':input_digest(state),'artifactDigest':(state.get('buildArtifactVerification') or {}).get('digest')}
+        # The 15-minute re-check must not rewrite the state file when nothing but the
+        # timestamp changed: keep the receipt it already holds.
+        if verification_without_checked_at(state.get('completionVerification'))!=verification_without_checked_at(verification):
+            state['completionVerification']=verification
         if missing:
             state.pop('buildCompletedAt',None)
             if state.get('closeoutStatus') in ('done','sent'):state['closeoutStatus']='partial'
@@ -156,12 +176,25 @@ def finalize(path,check_results=None,artifact_root=None,presentation_deps=None):
         target=Path(root).parent/'build-progress.json'
         try:progress=json.loads(target.read_text()) if target.is_file() else {}
         except (ValueError,OSError):progress={}
-        progress.update(stage='complete' if result else 'qc',company_slug=state.get('companySlug'),build_id=state.get('buildId'),
-                        completion_verification=state['completionVerification'],updated_at=state['completionVerification']['checkedAt'],
-                        message='Your workforce is verified.' if result else 'Required workforce checks are still pending.')
-        if result:progress['completed_at']=state['buildCompletedAt']
-        else:progress.pop('completed_at',None)
-        atomic_write(target,progress)
+        if not isinstance(progress,dict):progress={}
+        progress.setdefault('departments',[]);progress.setdefault('documents_total',0)
+        progress.setdefault('documents_complete',0);progress.setdefault('eta_minutes',0)
+        verification=state['completionVerification']
+        wanted={'stage':'complete' if result else 'validating','company_slug':state.get('companySlug'),'build_id':state.get('buildId'),
+                'completion_verification':verification,'updated_at':verification['checkedAt'],
+                'message':'Your workforce is verified.' if result else 'Your workforce is being checked.'}
+        if result:wanted['completed_at']=state['buildCompletedAt']
+        if not result and progress_is_running(progress,state.get('buildId')):
+            # A build is writing its own progress: keep its stage and message and only
+            # record the verification outcome.
+            if verification_without_checked_at(progress.get('completion_verification'))!=verification_without_checked_at(verification):
+                progress['completion_verification']=verification
+                atomic_write(target,progress)
+        elif (progress.get('stage')!=wanted['stage'] or progress.get('build_id')!=wanted['build_id']
+              or verification_without_checked_at(progress.get('completion_verification'))!=verification_without_checked_at(verification)):
+            progress.update(wanted)
+            if not result:progress.pop('completed_at',None)
+            atomic_write(target,progress)
     return result
 
 def refresh(path):
@@ -193,6 +226,25 @@ def closeout_artifact_digest(state):
     keys=('infographic1Url','infographic2Url','celebrationVideoUrl','notionRootPageUrl','commandCenterUrl','messagesDelivered','ownerChat')
     return hashlib.sha256(json.dumps({k:state.get(k) for k in keys},sort_keys=True).encode()).hexdigest()
 
+# A closeout is done when the owner has what was delivered. The Notion tree and
+# the celebration video are the two legs an owner may never be able to receive (a
+# client that never shares a page with the integration; a vendor that keeps
+# failing). Those legs are WAIVED and reported instead of blocking the closeout
+# forever (decision D-8). Everything else (infographics, delivery confirmation,
+# command center) is still required.
+CLOSEOUT_LEGS=('notion','celebration-video')
+NOTION_WAIVED_PREFIXES=('failed:ownership-unverified','failed:no-shared-page','skipped')
+
+def waived_closeout_legs(state):
+    waived=set()
+    listed=state.get('closeoutWaivedLegs')
+    if isinstance(listed,list):
+        waived.update(leg for leg in listed if isinstance(leg,str) and leg in CLOSEOUT_LEGS)
+    legs=state.get('closeoutLegStatus')
+    notion=legs.get('notion') if isinstance(legs,dict) else None
+    if isinstance(notion,str) and notion.startswith(NOTION_WAIVED_PREFIXES):waived.add('notion')
+    return [leg for leg in CLOSEOUT_LEGS if leg in waived]
+
 def finalize_closeout(path):
     def mutate(state):
         require_build_identity(state)
@@ -206,7 +258,10 @@ def finalize_closeout(path):
             missing.append('build-not-verified')
         if state.get('commandCenterStatus')!='done' or any(state.get(k) is not True for k in CC_PHASES):missing.append('command-center')
         if state.get('qualityHeld'):missing.append('quality-held')
-        for key in ('infographic1Url','infographic2Url','celebrationVideoUrl','notionRootPageUrl'):
+        waived=waived_closeout_legs(state)
+        for key,leg in (('infographic1Url',None),('infographic2Url',None),
+                        ('celebrationVideoUrl','celebration-video'),('notionRootPageUrl','notion')):
+            if leg and leg in waived:continue
             if not state.get(key):missing.append(key)
         delivery=state.get('telegramDeliveryVerification') or {}
         if (delivery.get('status')!='pass' or delivery.get('authority') not in ('gateway-json-registry','gateway-sqlite-plugin-state')
@@ -220,6 +275,7 @@ def finalize_closeout(path):
         if missing:
             if state.get('closeoutStatus') in ('done','sent'):state['closeoutStatus']='partial'
             return False
+        if waived:state['closeoutWaivedLegs']=waived
         state.update(closeoutStatus='done',closeoutCompletedAt=now,closeoutPendingSlots=[],closeoutFailureReason=None)
         state.pop('closeoutCriticalFailed',None)
         state['closeoutCleanupPending']=True
