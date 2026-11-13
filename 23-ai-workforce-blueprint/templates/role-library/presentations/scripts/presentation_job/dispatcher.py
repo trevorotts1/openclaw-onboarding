@@ -6439,18 +6439,13 @@ def _validate_qc_slide(payload: Dict[str, Any], text: str) -> Tuple[bool, List[s
     got_id = str(doc.get("slide_id") or "")
     if expected_id and got_id and got_id != expected_id:
         return False, [f"slide_id {got_id!r} != scope slide_id {expected_id!r}"]
-    real = False
-    for key in ("pass", "verdict", "score", "status", "result", "grade", "ok",
-                "pass_fail", "passed"):
-        val = doc.get(key)
-        if isinstance(val, bool) or isinstance(val, (int, float)):
-            real = True
-            break
-        if isinstance(val, str) and val.strip():
-            real = True
-            break
-    if not real:
-        return False, ["QC unit verdict carries no real pass/fail/score value"]
+    # PD-067: the verdict key is EXACTLY `pass`, and it must be a JSON boolean.
+    # A row saying "verdict": "FAIL", "passed": false or "pass": 0 used to be
+    # accepted here while the reducer only read `pass` — so a failed slide
+    # merged into a passing report. No other key stands in for the verdict.
+    if "pass" not in doc or not isinstance(doc.get("pass"), bool):
+        return False, ["QC unit verdict must carry `pass` as true or false "
+                       "(no other key stands in for the verdict)"]
     if payload.get("needs_observed_text") and \
             not str(doc.get("observed_text") or "").strip():
         return False, ["image-QC unit carries no observed_text (pixel-blind)"]
@@ -6600,6 +6595,11 @@ def _reduce_qc_union(ordered: List[Tuple[Dict[str, Any], str]]) -> Optional[str]
             return None
         if not isinstance(doc, dict):
             return None
+        # PD-067: a row without a boolean `pass` refuses the whole merge. The
+        # validator rejects such a unit upstream; this is the reducer's own
+        # independent guard (a reducer must never trust its caller).
+        if not isinstance(doc.get("pass"), bool):
+            return None
         sid = str(payload.get("slide_id") or "")
         if not sid and payload.get("ordinal") is not None:
             sid = f"slide-{int(payload['ordinal']):02d}"
@@ -6633,17 +6633,13 @@ def _reduce_qc_union(ordered: List[Tuple[Dict[str, Any], str]]) -> Optional[str]
             return None  # ordinal coverage gap: the union is NOT the whole deck
 
     # All-results pass: the union passes only when EVERY preserved row passed.
-    # A row with no real verdict (validator already refused those upstream)
-    # or a failed row fails the union — the reduced report can never stamp
-    # pass over a sibling's failure.
+    # PD-067: every surviving row carries a boolean `pass` (the guard above
+    # refuses the rest), so the union can never read a word, a number or a
+    # missing key as a pass. One failed row fails the reduced report.
     all_pass = True
     scores: List[float] = []
     for row in merged_rows:
-        val = row.get("pass")
-        if isinstance(val, bool):
-            all_pass = all_pass and val
-        elif isinstance(val, str) and val.strip():
-            all_pass = all_pass and val.strip().lower() in ("pass", "passed", "ok")
+        all_pass = all_pass and bool(row.get("pass"))
         if isinstance(row.get("score"), (int, float)) and \
                 not isinstance(row.get("score"), bool):
             scores.append(float(row["score"]))
@@ -6693,8 +6689,11 @@ def _reduce_qc_union(ordered: List[Tuple[Dict[str, Any], str]]) -> Optional[str]
         if role:
             independence = role
     if independence:
-        report["qc_independence"] = {
-            "graded_by": independence, "independent": True}
+        # PD-067: the merge writes the NAME it can see and claims nothing more.
+        # It used to also stamp `"independent": True` by code — a claim the
+        # merge cannot prove (it never compared grader and author), and one the
+        # report gate then read as proof. Independence is judged downstream.
+        report["qc_independence"] = {"graded_by": independence}
     # PD-300 (finding PD-300, decision D-29 default): a merged QC report that
     # cannot say WHO graded it is unscorable — the image check and every later
     # grader-vs-author comparison read these keys. Per row they are already
@@ -6703,6 +6702,9 @@ def _reduce_qc_union(ordered: List[Tuple[Dict[str, Any], str]]) -> Optional[str]
     # row and makes no top-level claim). `author_model` is one fact about the
     # graded files, sourced from the trusted execution stamps; null when no
     # active author stamp covers them — never an invented name.
+    # PD-067: `author_route` / `reviewer_route` are the SAME facts as PD-300's
+    # `author_model` / `graded_by_model`. One set of names is written (PD-300's)
+    # so the report gate compares one pair, not two spellings of it.
     providers = {r[0] for r in row_routes}
     models = {r[1] for r in row_routes}
     if len(providers) == 1:
