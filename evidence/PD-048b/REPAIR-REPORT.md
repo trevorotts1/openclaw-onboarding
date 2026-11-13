@@ -155,3 +155,109 @@ The literal head of this report's commit is recorded in section 8 and re-proved 
 - `git merge-tree` proves the pair merges without textual conflict; it proves nothing about runtime
   behaviour of the pair.
 - The batch engine's own ledger and ejection reason were not available to me beyond the task card.
+
+## 9. Third pass — A2 retargeted to the PD-018b contract (contradiction, not a broken repair)
+
+This pass fixes the one red row named by the re-check: **A2**. The branch itself was structurally sound
+(merges clean with `main` and the sibling; A1/A3 held; D-10 hold intact). A2 was red because two accepted
+units assert opposite things about one line.
+
+### 9.1 The two contracts, quoted
+
+**PD-048b, row A2** (SPEC/`01-BUILD-SPEC.md`, unit PD-048b):
+
+> (A2) control: with the heal path un-patched (test the old function directly) the same fixture produces the
+> "Regenerating" message — proving the test can fail.
+
+**PD-018b** (same spec, LANE L5; a stated dependency of PD-048b — ledger `depends_on`:
+`PD-048a, PD-018b, RD-04, RD-05`):
+
+> Replace the three close-failure messages with that same sentence and keep the technical text in the event
+> log only. … (3) Add a guard in `to_requester`: if the outgoing `message` contains a manifest phase id or a
+> token that starts with `AF-`, replace the message with `Your presentation is moving ahead: <client_label>.`
+> and record an event `report.sanitized` (build the id list from the loaded manifest, not from a pattern).
+
+PD-018b's acceptance:
+
+> a visible phase sends text containing its `client_label` and none of the fixture phase ids; a deliberately
+> bad message containing a phase id is sanitized and the event is recorded.
+
+The sibling landed the change in `414c715ab` — *PD-018b: fill client_label and keep internal text off the
+client* — which rewrote exactly this hunk in `heal.rung2_regenerate`:
+
+    -        engine.report.to_requester(
+    -            "blocked",
+    +        # PD-018b: an artifact check that failed and is being regenerated is the
+    +        # engine's own internal repair work -- the client hears nothing until a
+    +        # step finishes or a real pause. The line goes to the event log.
+    +        engine.report.event(
+    +            "report.internal",
+                 f"{phase.id} artifact check failed ({deficiency}). "
+    -            f"Regenerating -- attempt {attempt} of {HEAL_CAP_REGENERATE}.",
+    -            phase_id=phase.id, reason=f"rung2:{deficiency}")
+    +            f"Regenerating -- attempt {attempt} of {HEAL_CAP_REGENERATE}.")
+
+### 9.2 Which contract is authoritative, and why
+
+**PD-018b is authoritative.** PD-048b declares PD-018b a dependency, so PD-048b must be satisfied *inside*
+PD-018b's client-safety contract, not beside it. PD-018b is also later-proved and covered by its own
+discriminating test (`tests/test_pd_engine_client_copy.py::TestScriptRetryIsInternal` asserts the client
+transport received nothing and the line is in the event log as `report.internal`). PD-048b's A2 never says
+the text must reach the *client*; its purpose is a negative control proving A1's forbidden strings really
+exist on the old heal path, so that A1 is not vacuous. Under PD-018b the old heal path still produces the
+line — at the boundary PD-018b defines: the event log. Retargeting A2 to that boundary keeps the control's
+full strength: the row still fails if `rung2_regenerate` stops emitting "Regenerating", or if the
+internal-only contract regresses (technical text reaching the client), or if the re-run stops returning
+`EXIT_OK`. It is not weakened, skipped, renamed or xfailed, and no production code was changed.
+
+### 9.3 The minimum change
+
+One test file: `23-ai-workforce-blueprint/templates/role-library/presentations/scripts/tests/test_pd_engine_048b_waiting_install.py`.
+
+- A2 now reads `eng.state["events"]` for `kind == "report.internal"` and asserts the same four strings
+  ("Regenerating", "P-U-GHL-SALES artifact check failed", "AF-U-", "artifact check failed").
+- It additionally asserts none of those strings reach the client transport, and sends a `transport control`
+  message through the same stub so "client received nothing" is a proved absence, not a dead pipe.
+- Module docstring's A2 row gains one sentence naming the PD-018b boundary.
+
+No other unit, test or production file touched. Code diff: that one test file, plus this report.
+
+### 9.4 Proof — rows, mutation, wider suite
+
+Rows at the code head `bf51fa4becca003f75dc0732971076891782a06a`:
+
+    $ python3 -m pytest tests/test_pd_engine_048b_waiting_install.py -v
+    TestA1WaitingIsAPause::test_install_waiting_leaves_no_failure_text_and_siblings_run PASSED
+    TestA1WaitingIsAPause::test_complete_receipt_is_not_a_wait PASSED
+    TestA2ControlOldHealPath::test_old_heal_path_still_says_regenerating PASSED
+    TestA3ResumeFinishes::test_complete_receipt_then_resume_finishes_the_phase PASSED
+    4 passed
+
+Mutation that turns A2 RED (production `heal.py`, restored immediately by `git checkout --`):
+
+    - "Regenerating -- attempt {attempt} of {HEAL_CAP_REGENERATE}."
+    + "Retrying -- attempt {attempt} of {HEAL_CAP_REGENERATE}."
+
+    $ python3 -m pytest tests/test_pd_engine_048b_waiting_install.py::TestA2ControlOldHealPath -q
+    FAILED tests/test_pd_engine_048b_waiting_install.py::TestA2ControlOldHealPath::test_old_heal_path_still_says_regenerating
+    1 failed in 5.21s        (pytest rc=1)
+
+Restored: `4 passed in 5.83s` (rc=0). `git status` after restore: only the A2 test file modified.
+
+Wider affected suite (the report/phases tests that carry the PD-018b contract):
+
+    BASE  ebf5c769a  tests/test_engine_client_report.py only file present of the set  28 passed
+    HEAD  bf51fa4be  same six-file set + PD-048b rows                     42 passed, 13 failed
+
+The 13 head failures are **pre-existing at `23afd26e3`** and untouched by this diff (my change is confined
+to `test_pd_engine_048b_waiting_install.py`):
+
+- `tests/test_engine_client_report.py` — 10 failures. Its fixture expects 16 rendered client-visible
+  phases; `universal-sops/presentation-slide-craft/PIPELINE-MANIFEST.json` (v75) on this tree has
+  `client_visible` on 0 of 56 phases and `client_label` on 0. PD-018b now counts only labelled visible
+  phases, so `_client_phase_index` returns 0. This needs the manifest-label work (PD-018a's lane) in the
+  tree; it is not PD-048b's row and not this repair's scope.
+- `tests/test_pd_engine_client_copy.py` — 3 failures, already named in section 8 as the sibling's own
+  pre-existing `TestEveryTemplateFillsItsOwnLabel` failures.
+
+No repo-wide suite, no CI, no container was run — same limitation as section 8.
