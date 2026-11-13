@@ -42,16 +42,18 @@ name: embedded-python syntax guard (ONB-STATE-001)
 
 on:
   push:
-    branches: [main]
+    branches: [main, "batch/**"]
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
     branches: [main]
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
   embedded-python-syntax:
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     name: "ONB-STATE-001: every embedded Python program compiles"
     runs-on: ubuntu-latest
     steps:

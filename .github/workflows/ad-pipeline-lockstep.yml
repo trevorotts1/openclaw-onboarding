@@ -18,7 +18,7 @@ name: FB/IG ad pipeline lockstep (Skill 48)
 
 on:
   push:
-    branches: [main]
+    branches: [main, "batch/**"]
     paths:
       - "48-facebook-ad-generator/scripts/ad_director.py"
       - "48-facebook-ad-generator/scripts/ad_build_check.py"
@@ -40,6 +40,7 @@ on:
       - "23-ai-workforce-blueprint/templates/role-library/paid-advertisement/*.md"
       - ".github/workflows/ad-pipeline-lockstep.yml"
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
     branches: [main]
     paths:
       - "48-facebook-ad-generator/scripts/ad_director.py"
@@ -63,11 +64,12 @@ on:
       - ".github/workflows/ad-pipeline-lockstep.yml"
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
   ad-pipeline-lockstep:
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     name: FB/IG ad manifest/code/ruleset lockstep + GOOD/BAD self-test
     runs-on: ubuntu-latest
     steps:

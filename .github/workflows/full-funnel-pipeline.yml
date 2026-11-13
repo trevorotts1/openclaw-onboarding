@@ -32,8 +32,9 @@ name: full-funnel pipeline (goal #196)
 
 on:
   push:
-    branches: [main]
+    branches: [main, "batch/**"]
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
     branches: [main]
   workflow_dispatch:
 
@@ -41,11 +42,12 @@ env:
   PYTHONUNBUFFERED: "1"
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
   persona-selector:
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     name: "persona-selector (web-dev funnel surface + A7)"
     runs-on: ubuntu-latest
     steps:
@@ -106,6 +108,7 @@ jobs:
           bash 23-ai-workforce-blueprint/scripts/test-persona-selector-stickiness-staleness.sh
 
   funnel-pipeline-pytest:
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     name: "funnel pipeline pytest (T-1..T-9 + T-N1..T-N6 + T-PRE-1/4 + T-N5 + graduation)"
     runs-on: ubuntu-latest
     steps:
@@ -135,6 +138,7 @@ jobs:
           echo "✓ P0→P5 integration + negatives + T-PRE-1/4 + T-N5 fail-closed + graduation green"
 
   seed-normalize:
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     name: "seed-workspaces departments normalizer (converge Step-4 crash fix)"
     runs-on: ubuntu-latest
     steps:
@@ -154,6 +158,7 @@ jobs:
           echo "✓ installer hardening: archived workspaces skipped, name match updates, company split logged"
 
   rubric-scorecard-gate:
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     name: "rubric scorecard gate (11 GRADUATED rubrics >= 8.5 from RAW evidence)"
     runs-on: ubuntu-latest
     steps:
@@ -216,6 +221,7 @@ jobs:
           echo "✓ committed live-run: 10 of 11 rubrics >= 8.5; R-PERSONA-GROUNDING=8.20 is a documented environmental residual (OpenRouter 402 + no fixture company-config), surfaced not faked"
 
   funnel-rollback-prose-guard:
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     name: "funnel_rollback executable (not prose-only)"
     runs-on: ubuntu-latest
     steps:

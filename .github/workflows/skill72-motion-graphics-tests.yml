@@ -27,22 +27,24 @@ name: Skill 72 motion graphics tests (MG-043)
 
 on:
   push:
-    branches: [main]
+    branches: [main, "batch/**"]
     paths:
       - "72-motion-video-plus/**"
       - ".github/workflows/skill72-motion-graphics-tests.yml"
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
     branches: [main]
     paths:
       - "72-motion-video-plus/**"
       - ".github/workflows/skill72-motion-graphics-tests.yml"
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
   fast-gate:
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     name: Skill 72 fast gate
     # Pinned: run-typography.ts asserts the sha256 of the installed Liberation
     # Sans files against the MG-006/MG-026 render-font evidence. Those bytes
@@ -77,6 +79,7 @@ jobs:
         run: bash 72-motion-video-plus/tests/ci/run-fast-gate.sh
 
   clean-install:
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     name: Skill 72 clean install (T03)
     # Pinned to the same image as the fast gate.
     runs-on: ubuntu-24.04
