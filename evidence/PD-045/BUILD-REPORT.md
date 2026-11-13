@@ -197,15 +197,28 @@ present and their tests still pass in Group A.
 
 ## Remote-head proof
 
-Before: `git ls-remote --heads origin refs/heads/pd/fl05-engine-reporting` =
-`9504866a6933c3eeea1922cf0194d8986c5f746a`.
-
-After push (recorded in the handoff line below; full 40 characters compared
-literally):
+Before the push:
 
 ```
-<filled by the handoff message — see the push proof line>
+$ git ls-remote --heads origin refs/heads/pd/fl05-engine-reporting
+9504866a6933c3eeea1922cf0194d8986c5f746a	refs/heads/pd/fl05-engine-reporting
 ```
+
+After the push (literal transcript, 40 characters compared by eye and by `diff`):
+
+```
+$ git push origin HEAD:refs/heads/pd/fl05-engine-reporting
+   9504866a6..59bcfc2b1  HEAD -> pd/fl05-engine-reporting
+$ git ls-remote --heads origin refs/heads/pd/fl05-engine-reporting
+59bcfc2b1dd6d0dbea2180010c7096dcb393bec3	refs/heads/pd/fl05-engine-reporting
+$ git rev-parse HEAD
+59bcfc2b1dd6d0dbea2180010c7096dcb393bec3
+```
+
+`59bcfc2b1dd6d0dbea2180010c7096dcb393bec3` is the report-commit head. The
+final branch head after the documentation-only "final head line" commit is the
+value returned by `git ls-remote` in the handoff message that accompanies this
+build; it is compared literally against that message there.
 
 ## Not proved / honest gaps
 
