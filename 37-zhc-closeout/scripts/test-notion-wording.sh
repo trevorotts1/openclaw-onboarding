@@ -62,7 +62,7 @@ case "$method|$url" in
   "GET|https://api.notion.com/v1/blocks/"*"/children")
     printf '{"object":"list","has_more":false,"results":[]}' ;;
   "GET|"*)
-    printf '{"object":"page","id":"%s","archived":false,"in_trash":false}' "$PARENT_PAGE_ID" ;;
+    printf '{"object":"page","id":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","archived":false,"in_trash":false}' ;;
   *)
     printf '{}' ;;
 esac
