@@ -98,12 +98,13 @@ explain the one unresolved choice without discarding established facts.
 
 Legacy `card-answers.json` is preserved as unverified evidence when it lacks
 this provenance. It is never automatically remapped or treated as a completed
-new session. Legacy bulk Studio order replay does not supply this contract:
-it currently fails closed rather than accepting an unprovenanced answer
-batch. Preserve the order and its source evidence, seed explicit supported
-facts, and continue the pending questions through the supported entrypoint.
-Do not bypass that refusal with the stateless renderer, claim the Studio web
-producer has been updated, or claim a failed bulk replay saved its answers.
+new session. A Studio order's answers are replayed into this session one turn at a
+time by shared-bridge/studio_bridge.py (the poll command). Each replayed
+answer is journalled with source "client". When the replay completes, the
+intake is complete and nothing is asked again. When a replayed answer is
+refused, the order moves to "needs you" with one plain sentence on the
+client's Studio page, the box releases its claim, and the client is not
+asked to start over.
 
 ## Completion and approval boundaries
 

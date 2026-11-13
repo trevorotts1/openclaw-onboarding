@@ -284,6 +284,8 @@ PYTHONPATH=scripts/core python3 -m intake_preflight.factory owner --run-dir "$RU
 A malformed `onCallOperator` (not a string, blank, over 200 characters) and an
 unreadable config are refused on every box.
 
+**Stall recovery.** `control/recovery-authorization.json` is written at run start by `factory.py` when the box setup flag `DS_AUTO_RECOVERY=1` is set (authorized by the person who provisioned the box); otherwise the keepalive is announce-only. A person may also write it later for one run. The keepalive never writes it, never raises its scope above `resume`, and never runs anything but `factory.py next --run-dir <run>` under it.
+
 ## Step 6: Run storage
 
 Campaign runs live under an operator-approved persistent root (section 21
