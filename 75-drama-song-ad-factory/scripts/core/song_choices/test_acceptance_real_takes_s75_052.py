@@ -18,15 +18,17 @@ build and copy the audio, is the same local tool the shipped tests use).
       and pick 2 still succeeds;
   (e) deleting one record makes the offer refuse with "never judged";
   (f) a one-voice, no-rap fixture with measured PASS on story and pace is
-      offered and pickable when the policy is ``applicable``;
+      offered and pickable with the SHIPPED profile (``applicable``, D-2);
   (g) the same fixture with the pace gate UNMEASURED is blocked and named;
   (h) music/acceptance/ holds ONLY <variant>.json files after a delivery;
-  (i) the same one-voice, no-rap fixture under ``all_five`` is blocked and the
-      message names D1 and D5.
+  (i) the same one-voice, no-rap fixture under ``all_five``, passed
+      EXPLICITLY, is blocked and the message names D1 and D5.
 
-The acceptance policy is read from acceptance-profile.json (committed value:
-``all_five``). Case (f) passes ``applicable`` EXPLICITLY to ``required_for``,
-exactly as the unit's amendment says; it never flips the committed value.
+The acceptance policy is read from acceptance-profile.json (committed value
+after decision D-2: ``applicable``). Case (f) uses the committed value, so it
+proves the shipped profile offers an ordinary song; case (i) passes
+``all_five`` EXPLICITLY, so the stricter policy is still tested and its
+results are not deleted.
 
 Run: python3 scripts/core/song_choices/test_acceptance_real_takes_s75_052.py
 """
@@ -306,10 +308,10 @@ def case_e(tmp):
 def case_f(tmp):
     run, plan = _run_three(tmp)
     results = SC.results_from_run(run)
-    required = SD.required_for(plan, "applicable")
-    check("(f) applicable requires D2 and D3 only for a one-voice, no-rap song",
+    required = SD.required_for(plan)               # the shipped profile value
+    check("(f) the shipped policy requires D2 and D3 only for a one-voice, no-rap song",
           required == ("D2", "D3"), required)
-    _refresh_records(run, results, plan, "applicable")
+    _refresh_records(run, results, plan, None)     # the shipped profile value
     acc = SD.acceptance_from_run(run)
     reasons = {v: (r.get("reasons") or []) for v, r in acc["variants"].items()}
     check("(f) the one-voice, no-rap fixture passes under applicable",
@@ -352,10 +354,10 @@ def case_g(tmp):
 def case_i(tmp):
     run, plan = _run_three(tmp)
     results = SC.results_from_run(run)
-    _refresh_records(run, results, plan, None)      # the committed profile value
-    check("(i) the committed policy is all_five",
-          SD.required_for(plan) == ("D1", "D2", "D3", "D4", "D5"),
-          SD.required_for(plan))
+    _refresh_records(run, results, plan, "all_five")   # passed EXPLICITLY
+    check("(i) all_five passed explicitly requires D1 to D5",
+          SD.required_for(plan, "all_five") == ("D1", "D2", "D3", "D4", "D5"),
+          SD.required_for(plan, "all_five"))
     acc = SD.acceptance_from_run(run)
     reasons = [x for v in acc["variants"].values() for x in (v.get("reasons") or [])]
     check("(i) all_five blocks the one-voice, no-rap song and names D1 and D5",
