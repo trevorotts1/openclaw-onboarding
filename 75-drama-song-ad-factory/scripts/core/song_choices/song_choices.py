@@ -128,10 +128,6 @@ STATUSES = (STATUS_PASS, STATUS_FAILED, STATUS_HELD, STATUS_SAVE_FAILED,
 #: A take the JUDGE failed: its paid file is presented for LISTENING only, and
 #: the client answers the one fork question about it (order 2026-10-21).
 LISTENING_STATUSES = (STATUS_FAILED,)
-#: Statuses that carry NO take at all. Each one is NAMED in the refusal in
-#: plain English; none is silently dropped.
-NO_TAKE_STATUSES = (STATUS_HELD, STATUS_SAVE_FAILED, STATUS_MEASURE_FAILED,
-                    STATUS_REFUSED)
 #: What every status actually means, in the client's words.
 STATUS_PLAIN = {
     STATUS_PASS: ("the version passed its own checks but its take is not on "
