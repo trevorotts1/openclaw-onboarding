@@ -857,7 +857,14 @@ ARTIFACT_TARGET_OVERRIDE: Dict[str, List[str]] = {
 # decision, it is a stuck record). Parking it writes a VISIBLE marker file and
 # still auto-un-parks the moment the work order is reissued or state changes.
 _FAILING_STATUSES = frozenset({"error", "exhausted", "declined",
-                               "partial_failure"})  # PRES-014: some-units-failed
+                               "partial_failure",  # PRES-014: some-units-failed
+                               # PD-068: a grader that honestly reports pass:false
+                               # has FINISHED its work -- the failure is the
+                               # finding, not a transient fault, so it must never
+                               # be retried into a different answer. It is still a
+                               # failing OUTCOME (the phase did not pass), so it
+                               # parks/blocks exactly like the others.
+                               "qc_failed"})
 
 # ---------------------------------------------------------------------------
 # Per-phase artifact contracts -- the EXACT, mechanical requirements each
@@ -1241,8 +1248,8 @@ ARTIFACT_CONTRACTS: Dict[str, str] = {
     "P1Q-COPY-QC": (
         "OUTPUT CONTRACT (mechanically enforced LATER by build_deck._chk_copy_qc at "
         "the canonical-entry preflight -- write it right the first time). File path: "
-        "working/qc/copy_qc_report.json (a single JSON object). Required top-level "
-        "fields, EXACTLY:\n"
+        "working/qc/copy_qc_report.json (a single JSON object). Report what you "
+        "found; a failing report is a correct output. Required top-level fields:\n"
         "1. `gate`: the exact string `Phase 1Q` (case-sensitive, no variation).\n"
         "2. `criteria`: an array of objects, each `{\"name\": <criterion>, \"score\": "
         "<number 1-10>}`, covering the real writing-engine criteria you actually "
@@ -1251,14 +1258,17 @@ ARTIFACT_CONTRACTS: Dict[str, str] = {
         "price, etc.) -- at least 6 criteria, each scored HONESTLY from the real "
         "content (see upstream slides_copy.md).\n"
         "3. `average`: the arithmetic mean of every `criteria[].score`, rounded to 1 "
-        "decimal -- must be >= 8.5 AND must NOT exceed that real mean by more than "
-        "1.0 (a headline score inflated over your own cited criteria is rejected).\n"
-        "4. `triggered_autofails`: `[]` (empty array) -- if slides_copy.md genuinely "
-        "still has an open AF-* issue, name it here instead of inflating scores to "
-        "hide it.\n"
-        "5. `pass`: boolean `true` (only if average >= 8.5 and triggered_autofails is "
-        "empty -- these must be mutually consistent, never pass:true over a failing "
-        "score).\n"
+        "decimal -- it must NOT exceed that real mean by more than 1.0 (a headline "
+        "score inflated over your own cited criteria is rejected). Report the mean "
+        "you actually measured; the gate, not your optimism, decides a pass.\n"
+        "4. `triggered_autofails`: `[]` only when slides_copy.md genuinely has no "
+        "open AF-* issue; otherwise the AF-* ids you found, never hidden and never "
+        "inflated.\n"
+        "5. `pass`: `true` when the graded copy genuinely meets the bar, `false` "
+        "when it does not -- a failing report is a correct output, so report what "
+        "you found instead of inflating scores or emptying `triggered_autofails` to "
+        "force a pass. `pass` must agree with the rest of the report: never "
+        "`true` over a real AF-* entry or over a mean below 8.5.\n"
         "6. `qc_independence`: an object `{\"graded_by\": \"qc-specialist-"
         "presentations\", \"independent\": true, \"self_graded\": false}` -- `graded_by` "
         "must be the QC role, NEVER `slide-copywriter`/`build_deck.py`/`self`/"
@@ -1273,24 +1283,29 @@ ARTIFACT_CONTRACTS: Dict[str, str] = {
         "OUTPUT CONTRACT (mechanically enforced LATER by build_deck's "
         "_qc_report_gate at the canonical-entry preflight -- write it right the "
         "first time). File path: working/qc/prompt_qc_report.json (a single JSON "
-        "object). Same shape and rules as the P1Q-COPY-QC contract (criteria array, "
-        "honest average, triggered_autofails, pass:true, qc_independence with "
-        "graded_by='qc-specialist-prompt-presentations', no foreign rubric "
-        "language) with ONE difference: `gate` must be the exact string "
-        "`Phase Prompt-QC`. Grade the real per-slide prompts in working/prompts/ "
-        "against length (__PROMPT_FLOOR__-__PROMPT_CEILING__ chars), the negative-"
-        "class block, spelling-lock, and verbatim-copy-baked criteria -- never "
-        "rubber-stamp a thin prompt."
+        "object). Report what you found; a failing report is a correct output. "
+        "Same fields and rules as the P1Q-COPY-QC contract (criteria array, honest "
+        "average, triggered_autofails, a `pass` that agrees with the report, "
+        "qc_independence with graded_by='qc-specialist-prompt-presentations', no "
+        "foreign rubric language) with ONE difference: `gate` must be the exact "
+        "string `Phase Prompt-QC`. Grade the real per-slide prompts in "
+        "working/prompts/ against length (__PROMPT_FLOOR__-__PROMPT_CEILING__ "
+        "chars), the negative-class block, spelling-lock, and verbatim-copy-baked "
+        "criteria. Name every real failure you find -- a thin prompt reported "
+        "failing is the correct output; never rubber-stamp one."
     ),
     "P-TYPO-QC": (
         "OUTPUT CONTRACT (mechanically enforced LATER by build_deck's "
         "_qc_report_gate at the canonical-entry preflight -- write it right the "
         "first time). File path: working/qc/typography_qc_report.json (a single "
-        "JSON object). Same shape and rules as the P1Q-COPY-QC contract (criteria "
-        "array, honest average, triggered_autofails, pass:true, qc_independence "
-        "with graded_by='qc-specialist-typography-presentations', no foreign rubric "
+        "JSON object). Report what you found; a failing report is a correct "
+        "output. Same fields and rules as the P1Q-COPY-QC contract (criteria "
+        "array, honest average, triggered_autofails, a `pass` that agrees with the "
+        "report, qc_independence with "
+        "graded_by='qc-specialist-typography-presentations', no foreign rubric "
         "language) with ONE difference: `gate` must be the exact string "
-        "`Phase Typography-QC`."
+        "`Phase Typography-QC`. A typography defect you honestly report as failing "
+        "is the correct output; never rubber-stamp one."
     ),
     # PROACTIVE (found before P4-PROMPT was ever reached this run, live run
     # pj_34a56a26caca04532ec6e9cba6, 2026-08-18, iteration 3): extracted verbatim
@@ -3466,6 +3481,147 @@ def _graded_author_model(run_dir: Path, phase_id: str) -> str:
     except Exception:  # noqa: BLE001 — a stamp read must never block a merge
         return ""
 
+# ---------------------------------------------------------------------------
+# PD-068 (D-13) — the grader is not told its grade and never grades its own
+# model's work. Three pieces, all on this module:
+#   1. the three QC report contracts above now say "report what you found; a
+#      failing report is a correct output";
+#   2. a quality step whose report PARSES and says `pass: false` returns the
+#      new `qc_failed` status with the report's own reasons -- no retry, because
+#      a second paid call cannot turn an honest finding into a different one;
+#   3. before a quality step's model call, the routed model FAMILY is compared
+#      with the AUTHOR stamp of the files it grades. Same family and no other
+#      eligible candidate -> `error` with "no independent model is available to
+#      grade this step", ZERO calls. Same family with an eligible candidate on
+#      another family -> that candidate is pinned for the call.
+# PD-204 (lane FL28) puts the same rule in the router; this is the second check
+# behind it. The family helper is deliberately ONE function: when PD-204's
+# `_model_family` is on the base it is used verbatim, never duplicated.
+# ---------------------------------------------------------------------------
+def _model_family(model_id: Any) -> str:
+    """The model's family: the text after the last `/`, lower-cased, up to the
+    first character that is not a letter (the PD-204 definition, so the router's
+    rule and this refusal can never disagree). PD-204's own helper wins when it
+    is present. "" means the id names no family; callers treat that as UNKNOWN,
+    never as a match."""
+    shared = getattr(_model_router, "_model_family", None) if _model_router else None
+    if callable(shared):
+        try:
+            return str(shared(model_id) or "")
+        except Exception:  # noqa: BLE001 -- fall through to the same rule
+            pass
+    tail = str(model_id or "").rsplit("/", 1)[-1].lower()
+    letters = []
+    for ch in tail:
+        if not ("a" <= ch <= "z"):
+            break
+        letters.append(ch)
+    return "".join(letters)
+
+def _grader_route_decision(phase_id: str) -> Dict[str, Any]:
+    """The router's own decision for this phase, read BEFORE the call so the
+    candidate list can be inspected. {} when the router is unavailable
+    (PRESENTATION_MODEL_ROUTER=0 rollback): the DeepSeek-direct path publishes
+    no candidates, so the dispatcher cannot prove a same-family route and must
+    not invent a refusal."""
+    if _model_router is None:
+        return {}
+    try:
+        return dict(_model_router.resolve_route(phase_id, mode=_active_mode()[0]) or {})
+    except Exception:  # noqa: BLE001 -- a broken router is dispatch_complete's problem
+        return {}
+
+def _independent_grader_decision(run_dir: Path, phase_id: str,
+                                 owning_role: str) -> Tuple[str, Optional[Dict[str, Any]]]:
+    """PD-068: may this quality step be graded by the route it would use?
+
+    Returns (refusal_reason, route_override). `refusal_reason` non-empty means
+    ZERO calls: the only available grader shares the author's model family.
+    `route_override` is a {provider, model} pin when the router's pick shares
+    the author's family but another ELIGIBLE candidate does not (dispatch_complete
+    re-checks eligibility, so an ineligible pin can never slip through).
+
+    Every unknown is permissive, never a fabricated refusal: a non-QC phase, an
+    unstamped/revised author ("" = UNKNOWN), an unknown family, a disabled or
+    broken router, or a route that is absent altogether (dispatch_complete owns
+    that park) all return ("", None)."""
+    if not _is_qc_phase(owning_role, phase_id):
+        return "", None
+    author_model = _graded_author_model(run_dir, phase_id)
+    if not author_model:
+        return "", None
+    author_family = _model_family(author_model)
+    if not author_family:
+        return "", None
+    decision = _grader_route_decision(phase_id)
+    route = decision.get("route") or None
+    if not route:
+        return "", None
+    if _model_family(str(route.get("model") or "")) != author_family:
+        return "", None
+    for cand in decision.get("candidates") or []:
+        if not isinstance(cand, dict) or not cand.get("eligible"):
+            continue
+        cand_family = _model_family(str(cand.get("model") or ""))
+        if cand_family and cand_family != author_family:
+            return "", {"provider": cand.get("provider"),
+                        "model": cand.get("model")}
+    return ("no independent model is available to grade this step", None)
+
+def _qc_report_failure(phase_id: str, owning_role: str, target: Optional[Path],
+                       run_dir: Path) -> Optional[List[str]]:
+    """PD-068: read a quality step's OWN report and return its reasons when it
+    says `pass: false`, else None.
+
+    Only a report that PARSES as a JSON object carrying `pass: false` counts --
+    an unreadable file, a non-JSON target, `pass: true`, or a missing `pass`
+    key all return None, leaving the verdict to the phase verifier (which owns
+    every other failure shape). A failing report stays ON DISK: it is the
+    phase's correct output, so the real finding is never deleted."""
+    if not _is_qc_phase(owning_role, phase_id):
+        return None
+    if target is None or not target.is_file():
+        return None
+    try:
+        report = json.loads(target.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    if not isinstance(report, dict) or report.get("pass") is not False:
+        return None
+    reasons: List[str] = []
+
+    def _add(value: Any) -> None:
+        if isinstance(value, dict):
+            text = str(value.get("id") or value.get("name") or value).strip()
+        else:
+            text = str(value).strip()
+        if text and text not in reasons:
+            reasons.append(text)
+
+    for key in ("reasons", "findings", "failures"):
+        val = report.get(key)
+        if isinstance(val, list):
+            for item in val:
+                _add(item)
+    for key in ("triggered_autofails", "autofails_triggered"):
+        val = report.get(key)
+        if isinstance(val, list):
+            for item in val:
+                _add(item)
+    criteria = report.get("criteria")
+    if isinstance(criteria, list):
+        for row in criteria:
+            if not isinstance(row, dict):
+                continue
+            try:
+                below = float(row.get("score")) < 8.5
+            except (TypeError, ValueError):
+                below = False
+            if below:
+                _add(f"{row.get('name')}: {row.get('score')}")
+    if not reasons:
+        reasons = [f"{phase_id} report says pass: false"]
+    return reasons
 
 def _qc_manifest_for_run(run_dir: Optional[Path] = None) -> Optional[Path]:
     """PRES-042 (QC-OPUS seam repair): resolve the PIPELINE-MANIFEST.json the
@@ -5760,6 +5916,23 @@ def dispatch_one(run_dir: Path, phase_id: str, order: Dict[str, Any], *,
     # the fanout branch above already passes.
     prior_reasons: Optional[List[str]] = reasons if reasons else None
 
+    # PD-068 (D-13): a quality step must never be graded by the model family
+    # that authored the files it reads. Resolved ONCE, before any paid call, so
+    # "same family, no other route" costs ZERO calls and the refusal is the
+    # phase's whole outcome. A pin to a different family rides into every
+    # attempt through route_override (dispatch_complete re-checks eligibility).
+    grader_override: Optional[Dict[str, Any]] = None
+    if _is_qc_phase(owning_role, phase_id):
+        grader_refusal, grader_override = _independent_grader_decision(
+            run_dir, phase_id, owning_role)
+        if grader_refusal:
+            _append_sidecar(run_dir, phase_id, {
+                "worker": worker_id, "attempt": 0, "status": "error",
+                "reason": grader_refusal,
+                "author_model": _graded_author_model(run_dir, phase_id),
+            })
+            return DispatchResult(phase_id, "error", 0, [grader_refusal])
+
     for attempt in range(1, DISPATCH_RETRY_CAP + 1):
         try:
             system_prompt, user_prompt = compose_prompt(
@@ -5782,9 +5955,12 @@ def dispatch_one(run_dir: Path, phase_id: str, order: Dict[str, Any], *,
                 worker_id=worker_id,
                 # F10: a heal rung's provider pin, if this order carries one.
                 # Ignored unless the router already lists it as eligible --
-                # see _apply_route_override.
-                route_override=(order.get("route_override")
-                                if isinstance(order, dict) else None))
+                # see _apply_route_override. PD-068: the grader-independence
+                # pin WINS over it -- a heal rung must never re-point a quality
+                # step back onto the author's own model family.
+                route_override=(grader_override or
+                                (order.get("route_override")
+                                 if isinstance(order, dict) else None)))
         except RoutingUnavailable as exc:
             reason = f"RoutingUnavailable: {exc}"
             _append_sidecar(run_dir, phase_id, {
@@ -5877,6 +6053,26 @@ def dispatch_one(run_dir: Path, phase_id: str, order: Dict[str, Any], *,
                 "status": "publication_rolled_back", "reason": publication_error,
             })
             return DispatchResult(phase_id, "error", attempt, [publication_error])
+
+        # PD-068 (D-13): a quality step that PARSED its own report and found
+        # `pass: false` has delivered a correct output -- the finding. Retrying
+        # would spend a second paid call trying to turn that honest verdict into
+        # a different one, so the loop ends here with `qc_failed` and the
+        # report's OWN reasons. The published report stays on disk untouched;
+        # `qc_failed` is in _FAILING_STATUSES, so the phase still blocks/parks
+        # like any other failing outcome.
+        qc_failure = _qc_report_failure(phase_id, owning_role, target, run_dir)
+        if qc_failure is not None:
+            _append_sidecar(run_dir, phase_id, {
+                "worker": worker_id, "attempt": attempt, "status": "qc_failed",
+                "reasons": qc_failure,
+                "target": str(target.relative_to(run_dir)),
+                "model": route_dict2.get("model") or DEEPSEEK_MODEL,
+                "provider": route_dict2.get("provider") or "deepseek-direct",
+                "usage": usage,
+            })
+            return DispatchResult(phase_id, "qc_failed", attempt, qc_failure,
+                                  str(target.relative_to(run_dir)))
 
         verifier_ok, verifier_reasons = _verify(phase_id, run_dir)
         _append_sidecar(run_dir, phase_id, {
@@ -7357,6 +7553,26 @@ def _dispatch_phase_fanout_units(
     phase_id = phase_obj.id if phase_obj is not None else "P-UNKNOWN-FANOUT"
     owning_role = order.get("owning_role") or (phase_obj.owning_role if phase_obj else "")
 
+    # PD-068 (D-13) seam repair: the grader-independence check in dispatch_one
+    # sits AFTER its fan-out branch, so a FAN-OUT quality step (P-PROMPT-QC and
+    # P-IMAGE-QC declare `fanout: {by: slide}` in the manifest) used to reach
+    # this function with no independent-grader check at all -- every per-slide
+    # unit was graded by the author's own model family. The SAME helper runs
+    # here, before the preflight, before enumerate, before one paid token:
+    # refusal -> `error` with the plain reason and ZERO unit calls; otherwise
+    # the other-family pin rides into every unit's dispatch_complete.
+    _grader_override: Optional[Dict[str, Any]] = None
+    if _is_qc_phase(owning_role, phase_id):
+        _grader_refusal, _grader_override = _independent_grader_decision(
+            run_dir, phase_id, owning_role)
+        if _grader_refusal:
+            _append_sidecar(run_dir, phase_id, {
+                "worker": worker_id, "attempt": 0, "status": "error",
+                "reason": _grader_refusal,
+                "author_model": _graded_author_model(run_dir, phase_id),
+            })
+            return DispatchResult(phase_id, "error", 0, [_grader_refusal])
+
     # PRES-001 preflight: an incompatible manifest fanout (no UnitContract,
     # scope/shape disagreement, dead script-executor declaration) is refused
     # HERE — before enumerate, before compose, before one paid token.
@@ -7892,9 +8108,16 @@ def _dispatch_phase_fanout_units(
                 )
                 content, usage, route = dispatch_complete(
                     system_prompt, user_prompt, phase_id=phase_id, run_dir=run_dir,
-                    worker_id=worker_id, reasoning_effort=effort, image=image)
+                    worker_id=worker_id, reasoning_effort=effort,
+                    # PD-205c: the rendered slide image rides the request --
+                    # the P-IMAGE-QC unit is a PIXEL read, and image is None
+                    # for every other phase.
+                    image=image,
+                    # PD-068: a quality step's other-family pin applies to every
+                    # unit exactly as it does to the serial path.
+                    route_override=_grader_override)
         except ImageRouteIneligible:
-            # Zero transport calls, zero paid attempts (raised inside
+            # PD-205c: zero transport calls, zero paid attempts (raised inside
             # dispatch_complete before both). The reason is the whole story.
             return fanout.UnitResult(key=unit.key, status="failed", attempts=0,
                                      reasons=[IMAGE_ROUTE_INELIGIBLE_REASON])
