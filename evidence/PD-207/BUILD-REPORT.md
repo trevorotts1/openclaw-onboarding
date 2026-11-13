@@ -29,7 +29,9 @@ Ledger row (`loop-control/pd-fix/ledger.json`): `"id": "PD-207"`, `"owned_paths"
 
 ```
 copy1 2529 2582 copy2 2723 2776 identical= True
-removed lines 2721 to 2776
+removed old lines 2723 to 2778
+  (git show -U0: "@@ -2723,56 +2728,0 @@" — the 54-line body 2723-2776
+   plus the two blank lines that followed it)
 ```
 
 (Hashes of both function bodies: `41e35fc8242525e9`, computed with `ast` line spans.)
