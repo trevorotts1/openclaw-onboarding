@@ -2478,6 +2478,13 @@ def render_slides_batch(slides: list, api_key: str, renders_dir: Path, run_dir: 
     checkpoint all still run per slide — batch does NOT weaken a single gate; it only
     changes WHEN submission happens (all up front) and WHEN polling happens (all at once).
 
+    PD-070 — RETRY INSIDE THE BATCH: a slide that fails at submit, poll, or
+    download/verify is re-submitted with the IDENTICAL request up to
+    SLIDE_MAX_ATTEMPTS (the render_slide ladder) instead of being parked as a
+    failure while its siblings finish. One exhausted ladder contributes exactly
+    ONE failure row. An AuthError (HTTP 401/403) is permanent and is NEVER
+    retried — zero re-submits.
+
     Returns the same contract main() consumed from the thread pool:
       {"rendered": [ {slide,file,taskId} ... ], "failures": [ {slide,error} ... ]}
     """
@@ -2487,10 +2494,9 @@ def render_slides_batch(slides: list, api_key: str, renders_dir: Path, run_dir: 
 
     # ---- Phase A: submit every prompt once, 0.6s apart ----
     submitted = {}  # ordinal -> (slide, task_id)
-    submit_failures = []  # {slide, error}
     # FIX 23a: failures can also surface during the in-flight-cap DRAIN pass
-    # (below) while Phase A is still submitting, so this list starts here —
-    # Phase B extends it with submit_failures instead of replacing it.
+    # (below) while Phase A is still submitting, and PD-070 retries live here
+    # too, so this ONE list is the batch's failure ledger from start to finish.
     poll_failures: list = []
     start = time.time()
 
@@ -2568,6 +2574,83 @@ def render_slides_batch(slides: list, api_key: str, renders_dir: Path, run_dir: 
     # waits for the next drain.
     _rendered_pre: list = []
 
+    # PD-070 — RETRY A FAILED SLIDE INSIDE THE BATCH. A slide that fails mid-batch
+    # (submit, poll, or download/verify) is re-submitted with the IDENTICAL request
+    # up to SLIDE_MAX_ATTEMPTS — the same ladder render_slide uses — instead of being
+    # parked as a failure while its siblings finish their polls. A permanent
+    # AuthError is NEVER retried (FIX-6: an identical 401/403 fails forever, so a
+    # re-submit is a token furnace). `_attempts` counts SUBMISSIONS per slide
+    # ordinal; the first submit is attempt 1.
+    _attempts: dict = {}
+
+    def _submit_slide(slide: dict, ordinal: int, attempt: int) -> str:
+        """One 429-aware createTask for `slide`; records the attempt count.
+        Raises AuthError (the caller never retries it) and any other submit error
+        to the caller."""
+        prompt = load_rich_prompt(slide, run_dir)
+        # F07: bounded — KIE_SUBMIT_MAX_429 consecutive backoffs then this slide
+        # FAILS (batch continues; the failure is surfaced, never a silent hang).
+        _rl_streak = 0
+        while True:
+            try:
+                task_id = submit_task(prompt, api_key, logo_url=logo_url)
+                break
+            except RateLimited:
+                _rl_streak += 1
+                if _rl_streak >= KIE_SUBMIT_MAX_429:
+                    raise RuntimeError(
+                        f"[submit] rate-limited {KIE_SUBMIT_MAX_429} consecutive "
+                        f"times ({KIE_SUBMIT_MAX_429 * RATE_LIMIT_SLEEP_S}s of "
+                        "sustained throttling) — giving up on this slide (F07)")
+                print(f"    [submit] 429 — sleeping {RATE_LIMIT_SLEEP_S}s "
+                      f"({_rl_streak}/{KIE_SUBMIT_MAX_429})", flush=True)
+                time.sleep(RATE_LIMIT_SLEEP_S)
+        _attempts[ordinal] = attempt
+        print(f"  [{slide_name(ordinal)}] submitted (attempt "
+              f"{attempt}/{SLIDE_MAX_ATTEMPTS}) -> taskId={task_id}", flush=True)
+        return task_id
+
+    def _retry_or_fail(ordinal: int, slide: dict, exc: Exception) -> Optional[str]:
+        """Return a FRESH taskId after re-submitting the identical request, or None
+        when the slide is terminal — in which case EXACTLY ONE failure row has been
+        appended to poll_failures. AuthError and an exhausted attempt ladder are
+        terminal; every other error backs off and re-submits."""
+        name = slide_name(ordinal)
+        # The dead task's checkpoint record must never be resumed again.
+        _clear_pending_task(run_dir, ordinal)
+        if isinstance(exc, AuthError):
+            print(f"  [{name}] AUTH ERROR — not retried: {exc}",
+                  file=sys.stderr, flush=True)
+            poll_failures.append({"slide": ordinal, "error": str(exc)})
+            return None
+        while True:
+            attempt = _attempts.get(ordinal, 1)
+            if attempt >= SLIDE_MAX_ATTEMPTS:
+                print(f"  [{name}] FAILED after {attempt} attempts: {exc}",
+                      file=sys.stderr, flush=True)
+                poll_failures.append({"slide": ordinal, "error": str(exc)})
+                return None
+            backoff = min(SLIDE_BACKOFF_CAP_S, SLIDE_BACKOFF_BASE * (2 ** (attempt - 1)))
+            print(f"  [{name}] attempt {attempt}/{SLIDE_MAX_ATTEMPTS} failed: {exc} — "
+                  f"re-submitting the identical request in {backoff:.0f}s (PD-070)",
+                  file=sys.stderr, flush=True)
+            time.sleep(backoff)
+            # Count the attempt BEFORE issuing it so a submit that itself fails
+            # advances the ladder instead of re-trying at the same rung forever.
+            _attempts[ordinal] = attempt + 1
+            try:
+                task_id = _submit_slide(slide, ordinal, attempt + 1)
+            except AuthError as aexc:
+                print(f"  [{name}] AUTH ERROR — not retried: {aexc}",
+                      file=sys.stderr, flush=True)
+                poll_failures.append({"slide": ordinal, "error": str(aexc)})
+                return None
+            except Exception as aexc:  # noqa: BLE001 — next rung of the ladder
+                exc = aexc
+                continue
+            _checkpoint_pending_task(run_dir, ordinal, task_id, attempt + 1)
+            return task_id
+
     def _drain_finished_inflight() -> None:
         """Poll every live in-flight task once; free the slots of the ones that
         reached a terminal state. Runs ONLY inside the in-flight-cap wait, so it
@@ -2579,11 +2662,13 @@ def render_slides_batch(slides: list, api_key: str, renders_dir: Path, run_dir: 
             except RateLimited:
                 print(f"    [drain] {_nm} 429 — retry next drain pass", flush=True)
                 continue
-            except Exception as exc:  # noqa: BLE001 — terminal failure surfaced
+            except Exception as exc:  # noqa: BLE001 — retry inside the batch (PD-070)
                 print(f"  [{_nm}] DRAIN POLL FAILED: {exc}", file=sys.stderr, flush=True)
-                poll_failures.append({"slide": _ord, "error": str(exc)})
-                _clear_pending_task(run_dir, _ord)
-                submitted.pop(_ord, None)
+                _new_tid = _retry_or_fail(_ord, _sl, exc)
+                if _new_tid is None:
+                    submitted.pop(_ord, None)
+                else:
+                    submitted[_ord] = (_sl, _new_tid)
                 continue
             if _st.get("state") != "success":
                 continue  # still in flight — keep the slot, poll again next pass
@@ -2596,11 +2681,15 @@ def render_slides_batch(slides: list, api_key: str, renders_dir: Path, run_dir: 
                 _rendered_pre.append({"slide": _ord, "file": str(_out), "taskId": _tid})
                 print(f"  [{_nm}] drained + verified during in-flight wait "
                       f"({_out})", flush=True)
-            except Exception as exc:  # noqa: BLE001 — a bad image fails this slide only
+            except Exception as exc:  # noqa: BLE001 — retry inside the batch (PD-070)
                 print(f"  [{_nm}] DRAIN DOWNLOAD/VERIFY FAILED: {exc}",
                       file=sys.stderr, flush=True)
-                poll_failures.append({"slide": _ord, "error": str(exc)})
-                _clear_pending_task(run_dir, _ord)
+                _new_tid = _retry_or_fail(_ord, _sl, exc)
+                if _new_tid is None:
+                    submitted.pop(_ord, None)
+                else:
+                    submitted[_ord] = (_sl, _new_tid)
+                continue
             submitted.pop(_ord, None)
 
     for slide in pending_submit:
@@ -2620,33 +2709,20 @@ def render_slides_batch(slides: list, api_key: str, renders_dir: Path, run_dir: 
                 break
             time.sleep(_inflight_cap_wait_s)
         try:
-            prompt = load_rich_prompt(slide, run_dir)
-            # 429-aware submit: a rate limit backs off and re-tries the SAME slide,
-            # everything else (network, shape, 401) fails that slide without blocking
-            # the batch. Never re-submit a slide that already has a taskId.
-            # F07: bounded — KIE_SUBMIT_MAX_429 consecutive backoffs then this slide
-            # FAILS (batch continues; the failure is surfaced, never a silent hang).
-            _rl_streak = 0
-            while True:
-                try:
-                    task_id = submit_task(prompt, api_key, logo_url=logo_url)
-                    break
-                except RateLimited:
-                    _rl_streak += 1
-                    if _rl_streak >= KIE_SUBMIT_MAX_429:
-                        raise RuntimeError(
-                            f"[submit] rate-limited {KIE_SUBMIT_MAX_429} consecutive "
-                            f"times ({KIE_SUBMIT_MAX_429 * RATE_LIMIT_SLEEP_S}s of "
-                            "sustained throttling) — giving up on this slide (F07)")
-                    print(f"    [submit] 429 — sleeping {RATE_LIMIT_SLEEP_S}s "
-                          f"({_rl_streak}/{KIE_SUBMIT_MAX_429})", flush=True)
-                    time.sleep(RATE_LIMIT_SLEEP_S)
-            submitted[ordinal] = (slide, task_id)
-            _checkpoint_pending_task(run_dir, ordinal, task_id, attempt=1)
-            print(f"  [{name}] submitted -> taskId={task_id}", flush=True)
+            task_id = _submit_slide(slide, ordinal, 1)
+        except AuthError as exc:
+            # Permanent auth failure — the identical request fails forever.
+            print(f"  [{name}] SUBMIT AUTH ERROR — not retried: {exc}",
+                  file=sys.stderr, flush=True)
+            poll_failures.append({"slide": ordinal, "error": str(exc)})
+            task_id = None
         except Exception as exc:  # noqa: BLE001 — one bad prompt must not block 19
-            submit_failures.append({"slide": ordinal, "error": str(exc)})
             print(f"  [{name}] SUBMIT FAILED: {exc}", file=sys.stderr, flush=True)
+            task_id = _retry_or_fail(ordinal, slide, exc)
+        if task_id is not None:
+            submitted[ordinal] = (slide, task_id)
+            _checkpoint_pending_task(run_dir, ordinal, task_id,
+                                     attempt=_attempts.get(ordinal, 1))
         # Space submissions inside the 20/10s window.
         if submit_interval > 0:
             time.sleep(submit_interval)
@@ -2661,7 +2737,6 @@ def render_slides_batch(slides: list, api_key: str, renders_dir: Path, run_dir: 
 
     # ---- Phase B: poll every submitted task together, download as each finishes ----
     rendered = list(_rendered_pre)
-    poll_failures.extend(submit_failures)  # drain-pass failures already live here (FIX 23a)
     pending = {ordinal: (slide, task_id) for ordinal, (slide, task_id) in submitted.items()}
     # F08: reused slides never re-billed — seed them straight into `rendered`
     # (with their recorded taskId) so Phase B polls only genuinely new tasks and
@@ -2705,11 +2780,13 @@ def render_slides_batch(slides: list, api_key: str, renders_dir: Path, run_dir: 
                 # Transient 429 on the poll — retry the same task on the next pass.
                 print(f"    [poll {pass_no}] {name} 429 — retry next pass", flush=True)
                 continue
-            except Exception as exc:  # noqa: BLE001 — terminal failure surfaced
+            except Exception as exc:  # noqa: BLE001 — retry inside the batch (PD-070)
                 print(f"  [{name}] POLL FAILED: {exc}", file=sys.stderr, flush=True)
-                poll_failures.append({"slide": ordinal, "error": str(exc)})
-                _clear_pending_task(run_dir, ordinal)
-                done_this_pass.append(ordinal)
+                _new_tid = _retry_or_fail(ordinal, slide, exc)
+                if _new_tid is None:
+                    done_this_pass.append(ordinal)
+                else:
+                    pending[ordinal] = (slide, _new_tid)
                 continue
 
             if status.get("state") != "success":
@@ -2730,10 +2807,14 @@ def render_slides_batch(slides: list, api_key: str, renders_dir: Path, run_dir: 
                       flush=True)
                 _record_completed_task(run_dir, ordinal, task_id, out_path)
                 rendered.append({"slide": ordinal, "file": str(out_path), "taskId": task_id})
-            except Exception as exc:  # noqa: BLE001 — a bad image fails this slide only
+            except Exception as exc:  # noqa: BLE001 — retry inside the batch (PD-070)
                 print(f"  [{name}] DOWNLOAD/VERIFY FAILED: {exc}", file=sys.stderr, flush=True)
-                poll_failures.append({"slide": ordinal, "error": str(exc)})
-                _clear_pending_task(run_dir, ordinal)
+                _new_tid = _retry_or_fail(ordinal, slide, exc)
+                if _new_tid is None:
+                    done_this_pass.append(ordinal)
+                else:
+                    pending[ordinal] = (slide, _new_tid)
+                continue
             done_this_pass.append(ordinal)
 
         for ordinal in done_this_pass:
