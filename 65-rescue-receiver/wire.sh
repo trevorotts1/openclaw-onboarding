@@ -462,7 +462,21 @@ if [ -n "$_ENGINE" ]; then
     rrr_receipt_read "$RRR_STATE_DIR" "$RRR_DIGEST"
   fi
   rrr_evaluate
-  echo "65-rescue-receiver: files-installed=1 (this installer claims INSTALLATION; receiver readiness is a separate claim)"
+  # RRX-019: the claim is checked, not printed. Every file the poll needs must
+  # exist, be non-empty and parse.
+  _iv_tool="$_OCROOT/skills/65-rescue-receiver/rr_install_verify.py"
+  _iv_ok=0
+  if [ -f "$_iv_tool" ] && command -v python3 >/dev/null 2>&1; then
+    _iv_out="$(python3 "$_iv_tool" --skills-root "$_OCROOT/skills" --include-added 2>/dev/null)"; _iv_rc=$?
+    [ "$_iv_rc" -eq 0 ] && _iv_ok=1
+  else
+    _iv_out='{"why":"rr_install_verify.py or python3 missing"}'
+  fi
+  if [ "$_iv_ok" = "1" ]; then
+    echo "65-rescue-receiver: files-installed=1 (every required file exists, is non-empty and parses; receiver readiness is a separate claim)"
+  else
+    echo "65-rescue-receiver: files-installed=0 detail=$_iv_out" >&2
+  fi
   [ "$_RECONCILE_ONLY" = "1" ] && echo "65-rescue-receiver: reconcile-only pass (files are copied by the roll; this pass reconciles and reports)"
   echo "65-rescue-receiver: readiness=$RRR_STATE reason=$RRR_REASON digest=${RRR_DIGEST:-none} runtime=${RRR_RUNTIME_ID:-unresolved} coverage=$RRR_COVERAGE"
   echo "65-rescue-receiver: detail=$RRR_DETAIL"
@@ -476,6 +490,7 @@ if [ -n "$_ENGINE" ]; then
   # 6/8 are deliberate no-mutation outcomes (operator intent respected, or a
   # fail-closed refusal) and are honestly zero. There is no fall-through: an
   # unexpected code is a failure, never a silent success.
+  [ "$_iv_ok" = "1" ] || exit 1
   case "$_recon_rc" in
     0|6|8) exit 0 ;;
     *)     exit 1 ;;
