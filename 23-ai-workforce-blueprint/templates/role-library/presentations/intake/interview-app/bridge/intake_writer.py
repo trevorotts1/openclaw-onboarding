@@ -1022,6 +1022,33 @@ def _promote_anti_fabrication_fields(intake: dict) -> dict:
     return intake
 
 
+_MINUTES_RE = re.compile(r"\d+")
+
+
+def _talk_length_minutes(answers: dict) -> int:
+    """PD-082b: the client's own talk length, in whole minutes.
+
+    The page asks "How many minutes should the talk run?" and the hosted worker
+    stores what the client typed ("45 minutes", "45mins", or 45). A record that
+    never captured the answer has NO talk length -- the old constant of 20 sized
+    every deck to a number the client never said -- so this fails closed and
+    names the missing answer instead of inventing one.
+    """
+    raw = answers.get("duration_min")
+    if isinstance(raw, dict):
+        raw = raw.get("value", "")
+    found = _MINUTES_RE.search(str(raw if raw is not None else ""))
+    minutes = int(found.group()) if found else 0
+    if minutes <= 0:
+        raise IntakeIncompleteError(
+            "intake incomplete -- required canonical field missing or empty "
+            f"(contract v{INTAKE_CONTRACT_VERSION}): deck_brief.DURATION_MIN "
+            "-- the duration_min answer is absent, so the record has no talk "
+            "length. Ask the client how many minutes the talk should run and "
+            "resend; nothing was assembled.")
+    return minutes
+
+
 def assemble_intake(app_payload: dict, run_id: str = "") -> dict:
     """Turn the app's answer map into the dept-format intake record.
 
@@ -1033,6 +1060,12 @@ def assemble_intake(app_payload: dict, run_id: str = "") -> dict:
     if isinstance(app_payload.get("intake"), dict):
         base = dict(app_payload["intake"])
         base["answers"] = app_payload.get("answers") or base.get("answers") or {}
+        # PD-082b: the speech harness reads DURATION_MIN at the record root;
+        # the hosted worker stamps target_talk_minutes on this shape, so mirror
+        # the client's number across rather than let the harness fall back to
+        # its own default.
+        if base.get("DURATION_MIN") is None and base.get("target_talk_minutes") is not None:
+            base["DURATION_MIN"] = base["target_talk_minutes"]
         _stamp_derived_provenance(base)
         return base
 
@@ -1060,9 +1093,16 @@ def assemble_intake(app_payload: dict, run_id: str = "") -> dict:
     # hardcoded "webinar" here; see UngroundedDeckTypeError.__doc__.
     deck_type_fields = _grounded_deck_type_fields(answers)
 
+    # PD-082b: the talk length is the CLIENT's number, never a constant. It
+    # rides both keys on purpose -- target_talk_minutes is what build_deck.py's
+    # size floor reads, DURATION_MIN is what speech_build_harness.py reads --
+    # so deck sizing and speech pacing cannot disagree.
+    talk_minutes = _talk_length_minutes(answers)
+
     intake = {
         "interview_confirmed": True,
-        "target_talk_minutes": 20,
+        "target_talk_minutes": talk_minutes,
+        "DURATION_MIN": talk_minutes,
         "created_at": now,
         "source": "presentation-interview-app",
         "run_id": run_id,
