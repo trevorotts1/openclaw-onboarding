@@ -7548,6 +7548,26 @@ def _dispatch_phase_fanout_units(
     phase_id = phase_obj.id if phase_obj is not None else "P-UNKNOWN-FANOUT"
     owning_role = order.get("owning_role") or (phase_obj.owning_role if phase_obj else "")
 
+    # PD-068 (D-13) seam repair: the grader-independence check in dispatch_one
+    # sits AFTER its fan-out branch, so a FAN-OUT quality step (P-PROMPT-QC and
+    # P-IMAGE-QC declare `fanout: {by: slide}` in the manifest) used to reach
+    # this function with no independent-grader check at all -- every per-slide
+    # unit was graded by the author's own model family. The SAME helper runs
+    # here, before the preflight, before enumerate, before one paid token:
+    # refusal -> `error` with the plain reason and ZERO unit calls; otherwise
+    # the other-family pin rides into every unit's dispatch_complete.
+    _grader_override: Optional[Dict[str, Any]] = None
+    if _is_qc_phase(owning_role, phase_id):
+        _grader_refusal, _grader_override = _independent_grader_decision(
+            run_dir, phase_id, owning_role)
+        if _grader_refusal:
+            _append_sidecar(run_dir, phase_id, {
+                "worker": worker_id, "attempt": 0, "status": "error",
+                "reason": _grader_refusal,
+                "author_model": _graded_author_model(run_dir, phase_id),
+            })
+            return DispatchResult(phase_id, "error", 0, [_grader_refusal])
+
     # PRES-001 preflight: an incompatible manifest fanout (no UnitContract,
     # scope/shape disagreement, dead script-executor declaration) is refused
     # HERE — before enumerate, before compose, before one paid token.
@@ -8083,7 +8103,10 @@ def _dispatch_phase_fanout_units(
                 )
                 content, usage, route = dispatch_complete(
                     system_prompt, user_prompt, phase_id=phase_id, run_dir=run_dir,
-                    worker_id=worker_id, reasoning_effort=effort, image=image)
+                    worker_id=worker_id, reasoning_effort=effort, image=image,
+                    # PD-068: a quality step's other-family pin applies to every
+                    # unit exactly as it does to the serial path.
+                    route_override=_grader_override)
         except ImageRouteIneligible:
             # Zero transport calls, zero paid attempts (raised inside
             # dispatch_complete before both). The reason is the whole story.
