@@ -3,6 +3,7 @@
   "generator": "scripts/hash-universal-sops-manifest.py",
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
   "generated_at": "2026-11-12T22:01:04Z",
 =======
   "generated_at": "2026-11-12T21:35:44Z",
@@ -10,6 +11,9 @@
 =======
   "generated_at": "2026-11-12T23:56:52Z",
 >>>>>>> a1cdca37a (PD-021: rename the signature intake phase to the one-question-at-a-time wording)
+=======
+  "generated_at": "2026-11-13T00:11:52Z",
+>>>>>>> ac1515f3c (PD-307m: declare the presenter audio as an input of the webinar video step)
   "file_count": 116,
   "files": {
     "CLIENT-WEBINAR-DECK-SOP.md": {
@@ -317,8 +321,8 @@
       "bytes": 148222
     },
     "presentation-slide-craft/PIPELINE-MANIFEST.json": {
-      "sha256": "9e0bfc7910c9db51290fad867007897f148e471488fd8b37f1b58ead7138b65c",
-      "bytes": 199099
+      "sha256": "6b6610bd7e4085b5df9248be8afdb73093a9f1f451e54d774600bad1f16664d2",
+      "bytes": 199147
     },
     "presentation-slide-craft/README.md": {
       "sha256": "90b23b7d9263831fc5267852d7f804f9a549d995c187a16f822b5a660264f982",
