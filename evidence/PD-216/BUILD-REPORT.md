@@ -29,7 +29,7 @@ Acceptance rows: **A1** (ledger `acceptance_rows: ["A1"]`).
 
 - `1c6358215ede5691f6ab680fb9a8a0d5c131c941` — "PD-216: one path table that matches the producers, and a PDF exporter
   that finds the deck" — the code and the test. **Every row below is held by this commit.**
-- this report's own commit (added after the code commit, sha stated in the push output).
+- a docs-only commit on top of it — this report. No code change; every row is held by `1c6358215`.
 
 ## Files changed
 
