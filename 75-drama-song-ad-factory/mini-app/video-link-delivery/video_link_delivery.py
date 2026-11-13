@@ -212,6 +212,29 @@ def _host_set(request: dict, key: str, default: tuple[str, ...]) -> tuple[str, .
     return default
 
 
+def _is_https(url: str) -> bool:
+    """True iff `url` is an https link — the only scheme the page can show."""
+    try:
+        return urllib.parse.urlsplit(str(url)).scheme.lower() == "https"
+    except ValueError:
+        return False
+
+
+def _names_test_hosts(request: dict) -> bool:
+    """True iff the caller named explicit hosts (`ghl_allowed_hosts` /
+    `r2_allowed_hosts`).
+
+    Naming the hosts is how a test points the rule at a local `http://127.0.0.1`
+    mock server. It is the ONLY way a non-https link may pass: a production
+    request never names hosts, so it never gets this exemption.
+    """
+    for key in ("ghl_allowed_hosts", "r2_allowed_hosts"):
+        val = request.get(key)
+        if isinstance(val, list) and any(str(v).strip() for v in val):
+            return True
+    return False
+
+
 def _is_ghl_media_url(url: str, request: dict) -> bool:
     """True iff `url` is a CLIENT-OWNED GHL media link (host + media path)."""
     host = _host_of(url)
@@ -446,11 +469,12 @@ def choose_deliverable(request: dict, *, fetcher=None, timeout: int = 30) -> dic
 
       1. cross-client guard  — the record and the delivery must be the same client
       2. credential guard    — no candidate URL may carry or embed a secret
-      3. operator guard      — an operator-marked candidate is refused outright
-      4. GHL-first           — the client-owned GHL candidate, VERIFIED, wins
-      5. R2 fallback         — only when the client-owned GHL path was unavailable,
+      3. https guard         — no candidate may be a link the page cannot show
+      4. operator guard      — an operator-marked candidate is refused outright
+      5. GHL-first           — the client-owned GHL candidate, VERIFIED, wins
+      6. R2 fallback         — only when the client-owned GHL path was unavailable,
                                and only when the R2 copy VERIFIES
-      6. otherwise refuse    — nothing unverified is ever handed over
+      7. otherwise refuse    — nothing unverified is ever handed over
 
     Args:
         request: the delivery request (see the module docstring / README).
@@ -497,7 +521,23 @@ def choose_deliverable(request: dict, *, fetcher=None, timeout: int = 30) -> dic
                 ),
             )
 
-    # 3) Never deliver an operator-owned link or an operator-hosted upload as if it
+    # 3) S75-102 — the page cannot show a link that is not https, so refuse one
+    #    here rather than hand over a delivery nobody can open. A request that
+    #    names its hosts is a test against a local http mock server; it is the
+    #    only exemption, and production requests never name hosts.
+    if not _names_test_hosts(request):
+        for name, cand in _all_candidates(request):
+            if not _is_https(str(cand.get("url", ""))):
+                raise DeliveryRefused(
+                    "link-not-https",
+                    _redact(
+                        f"refusing to deliver {name}: its URL is not an https link, and "
+                        "the page cannot show a link that is not https",
+                        secrets,
+                    ),
+                )
+
+    # 4) Never deliver an operator-owned link or an operator-hosted upload as if it
     #    were the client's. Refused outright — never skipped over into the fallback,
     #    because a fallback around an operator link would hide the mix-up.
     for name, cand in _all_candidates(request):
@@ -512,7 +552,7 @@ def choose_deliverable(request: dict, *, fetcher=None, timeout: int = 30) -> dic
                 ),
             )
 
-    # 4) GHL-first: the client-owned link, verified, is the deliverable.
+    # 5) GHL-first: the client-owned link, verified, is the deliverable.
     ghl = _select_ghl_candidate(request)
     ghl_unavailable = "ghl-missing"
     if ghl is not None:
@@ -541,7 +581,7 @@ def choose_deliverable(request: dict, *, fetcher=None, timeout: int = 30) -> dic
         else:
             return _delivered(ghl, verified, "ghl", None, request)
 
-    # 5) R2 is a FALLBACK, used only because the client-owned GHL path was not usable.
+    # 6) R2 is a FALLBACK, used only because the client-owned GHL path was not usable.
     r2 = request.get("r2_candidate")
     if isinstance(r2, dict) and str(r2.get("url", "")).strip():
         if not _is_r2_url(r2.get("url", ""), request):
@@ -566,7 +606,7 @@ def choose_deliverable(request: dict, *, fetcher=None, timeout: int = 30) -> dic
             ) from exc
         return _delivered(r2, verified, "r2", ghl_unavailable, request)
 
-    # 6) Nothing verified: refuse rather than hand over anything unverified.
+    # 7) Nothing verified: refuse rather than hand over anything unverified.
     raise DeliveryRefused(
         "no-verified-deliverable-link",
         _redact(

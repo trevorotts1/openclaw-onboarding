@@ -50,6 +50,10 @@ export const AF_UP_FORMAT = 'AF-DS-UP-REJECT-FORMAT';
 export const AF_UP_SIZE = 'AF-DS-UP-REJECT-SIZE';
 export const AF_UP_CAPABILITY = 'AF-DS-UP-CAPABILITY';
 export const AF_UP_CROSS = 'AF-DS-UP-CROSS';
+// U-Z08 — the file route's two refusals.
+export const AF_UP_NOT_ARRIVED = 'AF-DS-UP-NOT-ARRIVED';
+export const AF_UP_UNKNOWN = 'AF-DS-UP-UNKNOWN';
+export const AF_UP_KIND = 'AF-DS-UP-KIND';
 
 export function uploadKey(clientId, uploadId) {
   return `upload:${clientId}:${uploadId}`;
