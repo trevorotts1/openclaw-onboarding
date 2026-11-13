@@ -1239,6 +1239,31 @@ try:
  if isinstance(o,dict) and o.get("kind") in ("solved","owner_action","answer") and isinstance(o.get("text"),str) and o["text"].strip(): print(json.dumps({"kind":o["kind"],"text":o["text"]},sort_keys=True,separators=(",",":")))
 except Exception: pass' 2>/dev/null)
 
+    # RRX-001: when the server sends no origin, use the conversation this box
+    # recorded when it sent the case (written by rr_escalate.py). The chat id
+    # never left the box. Only a well-formed telegram origin is accepted.
+    # The per-box switch stays in charge: the box record is used ONLY when the
+    # claim says this box may message its owner (notify_authorized true, set by
+    # the operator in rr_box_auth). Default is off for every box.
+    RR_NOTIFY_AUTHORIZED=$(_json_field "$_pc_resp" "notify_authorized")
+    if [ -z "$RR_NOTIFICATION_ORIGIN" ] && [ -n "$TICKET_ID" ] && [ "$RR_NOTIFY_AUTHORIZED" = "true" ]; then
+        case "$TICKET_ID" in
+            *[!A-Za-z0-9._-]*|.*) : ;;
+            *)
+                _pc_of="$_OCROOT/state/rr-escalate/origins/$TICKET_ID.json"
+                if [ -f "$_pc_of" ]; then
+                    RR_NOTIFICATION_ORIGIN=$(python3 -c 'import json,sys
+try:
+ with open(sys.argv[1], encoding="utf-8") as fh: o=(json.load(fh) or {}).get("origin")
+ if isinstance(o,dict) and o.get("channel")=="telegram" and isinstance(o.get("account"),str) and o["account"] and isinstance(o.get("target"),str) and o["target"]:
+  print(json.dumps({"authorized":True,"channel":"telegram","account":o["account"],"target":o["target"]},sort_keys=True,separators=(",",":")))
+except Exception: pass' "$_pc_of" 2>/dev/null)
+                    [ -n "$RR_NOTIFICATION_ORIGIN" ] && RR_ORIGIN_SOURCE="box_record"
+                fi
+                ;;
+        esac
+    fi
+
     # --- member TYPES (mistype QC) -----------------------------------------
     # ONE probe, then every member the envelope relies on is checked for its
     # JSON TYPE before its value is used. Absent/null types fall through to the
@@ -3009,6 +3034,25 @@ if ! _write_done "$VERDICT" "$AGENT_RC" "$REPLY_CHARS" "$FAIL_REASON" "$_elapsed
     exit 0
 fi
 _rr_notification_enqueue final "$RR_NOTIFICATION_FINAL_BODY"
+# RRX-001: the session that talks to the owner never saw this turn. Leave the
+# outcome in a small local file, by ticket, so that agent can look it up
+# (rr_escalate.py status --ticket <id>).
+case "${TICKET_ID:-}" in
+    ''|*[!A-Za-z0-9._-]*|.*) : ;;
+    *)
+        mkdir -p "$_STATE/case-outcomes" 2>/dev/null && chmod 700 "$_STATE/case-outcomes" 2>/dev/null
+        python3 -c 'import json,os,sys,tempfile,time
+path, ticket, outcome, body, origin = sys.argv[1:6]
+doc = {"ticket_id": ticket, "outcome": outcome, "owner_message": body, "owner_notified": bool(origin), "recorded_at": int(time.time())}
+fd, tmp = tempfile.mkstemp(prefix=".new-", dir=os.path.dirname(path))
+with os.fdopen(fd, "w", encoding="utf-8") as fh:
+    json.dump(doc, fh, sort_keys=True); fh.write("\n"); fh.flush(); os.fsync(fh.fileno())
+os.chmod(tmp, 0o600); os.replace(tmp, path)
+' "$_STATE/case-outcomes/$TICKET_ID.json" "$TICKET_ID" "${RR_OWNER_OUTCOME:-specialist_follow_up}" "$RR_NOTIFICATION_FINAL_BODY" "${RR_NOTIFICATION_ORIGIN:-}" 2>/dev/null \
+            || _log "case-outcome write failed ticket=$TICKET_ID"
+        ;;
+esac
+
 _ack "$VERDICT" "$AGENT_RC" "$REPLY_CHARS" "$FAIL_REASON" "$_elapsed" "$REPLY_EXCERPT"
 
 # The durable done/pending ledgers now carry the result. Do not leave this
