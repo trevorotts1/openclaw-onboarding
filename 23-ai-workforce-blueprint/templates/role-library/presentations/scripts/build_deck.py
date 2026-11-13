@@ -5178,6 +5178,8 @@ def check_speech_qc_teeth(run_dir: Path) -> str:
       * speech present, no readable word count / no intake target -> the AF-SPEECH-SHORT
         half defers (its own contract); the AF-SPEECH-HOOK-COUNT half still fires
         (5-20x char-exact hook sings).
+      * PD-218a: a MISSING or CRASHING pitch_engines_check module is a NAMED problem —
+        the hook sing count is unverified, never silently skipped.
 
     Returns "" on pass / defer, or a fatal AF-SPEECH-QC message naming the exact
     discrepancy."""
@@ -5209,10 +5211,21 @@ def check_speech_qc_teeth(run_dir: Path) -> str:
     # Runs BEFORE the duration section: with no usable talk length the AF-SPEECH-SHORT
     # half defers, but the hook half still fires (see the docstring's DEFER SEMANTICS).
     pec = _import_pitch_engines_check()
-    if pec is not None:
+    if pec is None:
+        # PD-218a: a missing hook engine is a NAMED problem, never a silent skip.
+        problems.append(
+            "the pitch-engine hook-count check (SOP 9.1 step 2a: char-exact "
+            "intake.hook sung 5-20x in PRESENTERS-SPEECH.md) could not run — the "
+            "pitch_engines_check module is MISSING beside build_deck.py, so the hook "
+            "sing count was NOT verified")
+    else:
         try:
             hook_hits = pec.run(run_dir, phase="SPEECH-QC")
-        except Exception:  # noqa: BLE001
+        except Exception as exc:  # noqa: BLE001
+            # PD-218a: a crashing engine is a NAMED problem, never a silent empty pass.
+            problems.append(
+                f"the pitch-engine hook-count check (SOP 9.1 step 2a) CRASHED "
+                f"({type(exc).__name__}: {exc}) — the hook sing count was NOT verified")
             hook_hits = []
         hook_codes = [h for h in hook_hits if str(h.get("code") or "").startswith("AF-")]
         if hook_codes:
@@ -6042,9 +6055,13 @@ def _chk_citation_validated(run_dir: Path) -> str:
          brief URLs) -> return "" (nothing to validate; _chk_research_cited /
          _chk_research_brief own absence).
       2. Map/brief declare URL-bearing citations but the run dir carries NO
-         FIX 19 retrieval ledger -> return "" (pre-FIX-19 run dir: defer;
-         the ledger marks the new pipeline and a legacy fixture must keep
-         passing preflight unchanged).
+         research brief -> return "" (nothing claims FIX 19 research yet).
+         PD-218a: once a brief DOES exist, a missing FIX 19 retrieval ledger is
+         a NAMED FAILURE — a declared citation set with no fetch record is
+         unproven.
+      3. PD-218a: a missing citation_validator module or a failed inventory read
+         is a NAMED FAILURE, never a silent defer. Only the PD-201 test rule
+         (_degraded_allowed: explicit test/CI context) still permits a defer.
 
     Once an actual citation set exists under the FIX 19 ledger, every
     citation is fetched + evaluated and the gate FAILS LOUD on the verdict
@@ -6057,7 +6074,19 @@ def _chk_citation_validated(run_dir: Path) -> str:
     presentation_job.citation_validator.citation_validation_enabled).
     """
     if not _citation_validator:
-        return ""  # module unavailable -> defer (report-only doctrine)
+        # PD-218a: a missing instrument is a NAMED failure, not a silent pass. The
+        # only exemption is the PD-201 test rule (a declared test/CI context), which
+        # cannot reach a real production run.
+        if _degraded_allowed(run_dir):
+            return ""
+        return (
+            "AF-RESEARCH-UNCITED: citation validation could not run — the "
+            "presentation_job.citation_validator module is MISSING, so no cited URL "
+            "can be fetched or validated. A brief whose citations cannot be checked "
+            "must not pass preflight. Restore "
+            "(presentations/scripts/presentation_job/citation_validator.py) and "
+            "re-run Phase -0.5 (Deep Research Specialist)."
+        )
 
     if not _citation_validator.citation_validation_enabled():
         # Documented rollback path: the skip is PRINTED, never a silent pass
@@ -6069,18 +6098,41 @@ def _chk_citation_validated(run_dir: Path) -> str:
 
     try:
         inventory = _citation_validator.load_citation_inventory(run_dir)
-    except Exception:  # noqa: BLE001 -- inventory fault is a defer, never a crash
-        return ""
+    except Exception as exc:  # noqa: BLE001 -- PD-218a: a named failure, never a crash
+        # A failed inventory read means the gate cannot even enumerate what to
+        # validate; passing would be a silent rubber stamp. PD-201 test rule only.
+        if _degraded_allowed(run_dir):
+            return ""
+        return (
+            f"AF-RESEARCH-UNCITED: citation inventory could not be read "
+            f"({type(exc).__name__}: {exc}) — the gate refuses to pass a brief whose "
+            f"citation set it could not enumerate. Repair the research pack "
+            f"(working/research/research_map.json + working/research/brief-*.md) and "
+            f"re-run Phase -0.5 (Deep Research Specialist)."
+        )
     citations = inventory["citations"]
     if not citations:
         return ""  # no URL-bearing citations to validate; nothing declared
 
     ledger = run_dir / "working" / "research" / _citation_validator._rw.LEDGER_NAME
     if not ledger.is_file():
-        # Pre-FIX-19 run dir (no retrieval ledger): defer. The legacy fixture
-        # shape must keep passing preflight unchanged; the FIX 19 ledger marks
-        # the new pipeline this gate validates.
-        return ""
+        # PD-218a: no ledger stays a defer ONLY while no research brief exists. Once
+        # a brief exists the run claims FIX 19 research, and a gate that cannot see a
+        # single fetch record is not evidence of anything — fail, naming the ledger.
+        briefs = sorted(run_dir.glob("working/research/brief-*.md"))
+        if not briefs:
+            # Pre-FIX-19 run dir with no research brief at all: genuine defer (the
+            # research-brief gate owns the absence).
+            return ""
+        return (
+            f"AF-RESEARCH-UNCITED: the research pack "
+            f"({', '.join(b.name for b in briefs)}) declares "
+            f"{len(citations)} URL-bearing citation(s) but the FIX 19 retrieval "
+            f"ledger (working/research/{_citation_validator._rw.LEDGER_NAME}) is "
+            f"MISSING, so not one cited URL can be shown to have been fetched. "
+            f"Re-run Phase -0.5 (Deep Research Specialist) so the retrieval ledger "
+            f"is written, then re-run preflight."
+        )
 
     try:
         # Single validation pass per gate call: check_citations builds its own
@@ -7076,6 +7128,9 @@ def check_image_qc_present(run_dir: Path, slides_path: Optional[Path] = None) ->
     """AF-IMAGE-QC-RAN: the image-QC report must exist, be newer than the rendered
     PNGs, and carry a per-slide PASS/FAIL row for every rendered slide.
 
+    PD-218a: an UNREADABLE file date (report or render) is a FAILURE — with no
+    readable date the gate cannot prove freshness, so it must not pass.
+
     Returns '' on pass / defer, or a fatal AF-IMAGE-QC-RAN message."""
     report_path = run_dir / "working" / "qc" / "image_qc_report.json"
     renders_dir = run_dir / "renders"
@@ -7103,8 +7158,16 @@ def check_image_qc_present(run_dir: Path, slides_path: Optional[Path] = None) ->
                 f"the current render batch. A stale report cannot prove the rendered slides "
                 f"were actually reviewed (AF-IMAGE-QC-RAN)."
             )
-    except OSError:
-        pass  # if stat fails, skip staleness check
+    except OSError as exc:
+        # PD-218a: an unreadable file date is a FAILURE, not a skipped check — with no
+        # readable date the gate cannot prove the report is newer than the renders.
+        return (
+            f"AF-IMAGE-QC-RAN: the image-QC report's file date could not be read "
+            f"({type(exc).__name__}: {exc}) — freshness against the rendered slides "
+            f"cannot be established, so the report cannot prove the rendered slides "
+            f"were reviewed after the last render. Re-run the Image QC Specialist "
+            f"once the report and renders are readable (AF-IMAGE-QC-RAN)."
+        )
 
     # Per-slide coverage check: the report must carry per-slide entries.
     obj = _read_json(report_path)
