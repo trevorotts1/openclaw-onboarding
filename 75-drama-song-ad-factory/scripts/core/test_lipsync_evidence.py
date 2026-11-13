@@ -137,9 +137,12 @@ def fixture_request(plan, run_id=None, shot_id=None):
         assert request["request"]["input"]["audio_url"].startswith("https://")
         path = Path(request["save_dir"]) / "isolated.wav"
         path.write_bytes(("synthetic-isolated-" + sid).encode())
+        # S75-056: the one separation job saves the instrumental beside the stem.
+        instrumental = Path(request["save_dir"]) / "instrumental.wav"
+        instrumental.write_bytes(("synthetic-instrumental-" + sid).encode())
         return {"tool": "kie_dispatch", "outcome": "ok", "run_id": run_id,
                 "evidence": {"generated": True, "task_id": "separation-" + sid,
-                             "saved_paths": [str(path)],
+                             "saved_paths": [str(path), str(instrumental)],
                              "isolated_stem": {"path": str(path), "speaker_id": row["speaker"],
                                                "kind": "speech", "isolated": True}}}
     def cut_runner(argv, *args, **kwargs):
@@ -471,6 +474,83 @@ class EvidenceTests(unittest.TestCase):
     def test_no_requirements_refused(self):
         _write(self.root / "storyboard/shot-list.json", {"shots": []})
         self.check_bad("LIPSYNC_EVIDENCE_MISSING")
+
+
+class NoLipsyncOptOutTests(unittest.TestCase):
+    """U-U04 / S75-047: the free / no-lip-sync route is honoured ONLY with the
+    owner's recorded opt-out (who + at) in control/method.json; without it the
+    evidence gate keeps refusing."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.root = Path(self.tmp.name)
+
+    def record(self, value):
+        _write(self.root / "control/method.json", value)
+
+    def test_recorded_opt_out_accepts_the_free_route(self):
+        self.record({"purpose": "campaign",
+                     "lipsync_opt_out": {"who": "owner",
+                                         "at": "2026-11-12T15:00:00Z"}})
+        root, required = E._approved(self.root, route=E.ROUTE_NO_LIPSYNC)
+        self.assertEqual({}, required)
+        self.assertTrue(root.is_dir())
+
+    def test_free_route_without_the_record_is_refused(self):
+        self.record({"purpose": "campaign"})
+        with self.assertRaises(E.LipsyncEvidenceError) as exc:
+            E._approved(self.root, route=E.ROUTE_NO_LIPSYNC)
+        self.assertEqual("LIPSYNC_OPT_OUT_MISSING", exc.exception.code)
+
+
+class PictureApprovalTests(unittest.TestCase):
+    """U-U03: a CROP of the approved still dispatches; a REGENERATED picture is
+    refused LIPSYNC_PICTURE_NEEDS_APPROVAL and that one shot's approval re-opens."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.root = Path(self.tmp.name)
+        self.plan = fixture(self.root)
+
+    def derived_request(self, operation):
+        from lip_sync.lip_gate import picture_gate as PG
+        request = fixture_request(self.plan)
+        sid = request["lipsync_binding"]["shot_id"]
+        approved = Path(request["lipsync_image_path"])
+        approved_sha = hashlib.sha256(approved.read_bytes()).hexdigest()
+        derived = approved.with_name("%s-%s.png" % (sid, operation))
+        derived.write_bytes(("[%s] " % operation).encode() + approved.read_bytes())
+        derived_sha = hashlib.sha256(derived.read_bytes()).hexdigest()
+        rdir = Path(request["lipsync_receipt_dir"])
+        PG.write_receipt(str(derived), derived_sha, "PASS",
+                         {"face_count": 1, "face_h_pct": 40, "roll_deg": 0,
+                          "yaw_proxy": 0, "jaw_open": 0, "smile": 0,
+                          "inner_gap_pct": 0, "sharp_face_256": 400}, [], [], [], str(rdir))
+        url = PG.upload_measured(
+            str(derived),
+            uploader=lambda p, s=derived_sha: "https://fixture.invalid/image/" + s,
+            receipt_dir=str(rdir))
+        PG.write_derivation(approved_sha, str(derived), {}, operation, str(rdir))
+        request["lipsync_image_path"] = str(derived)
+        request["input"]["image_url"] = url
+        return request, sid
+
+    def test_a_crop_of_the_approved_still_dispatches(self):
+        request, _ = self.derived_request("crop")
+        proof = E.inputs_for_request(str(self.root), request)
+        image = Path(request["lipsync_image_path"])
+        self.assertEqual(hashlib.sha256(image.read_bytes()).hexdigest(),
+                         proof["image_sha256"])
+
+    def test_a_regenerated_picture_is_refused_and_reopens_its_shot(self):
+        request, sid = self.derived_request("regenerate")
+        with self.assertRaises(E.LipsyncEvidenceError) as exc:
+            E.inputs_for_request(str(self.root), request)
+        self.assertEqual("LIPSYNC_PICTURE_NEEDS_APPROVAL", exc.exception.code)
+        approval = json.loads((self.root / "storyboard/approval.json").read_text())
+        self.assertEqual(E.REOPENED_STATUS, approval["shots"][sid]["status"])
 
 
 if __name__ == "__main__":

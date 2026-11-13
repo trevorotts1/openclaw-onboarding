@@ -17,14 +17,15 @@ here; this package is the one the lip-sync stage V2-08L screens against):
 
 Two gates, both fail-closed:
 
-* ``screen_line`` / ``screen_selection`` -- planning gate. Screens the base
-  stage's ``select_lines`` envelope against speaker + on-screen identity and
-  extends it with the ``narrator_rule`` block: which flagged lines may be
-  lip-synced, which play as voice-over, which scenes are violations.
+* ``screen_line`` / ``screen_selection`` -- planning gate. Screens a selection
+  envelope (line id + chosen 4-6 s window from ``lipsync_clips.choose_window``)
+  against speaker + on-screen identity and extends it with the
+  ``narrator_rule`` block: which flagged lines may be lip-synced, which play
+  as voice-over, which scenes are violations.
 * ``check_lipsync_attempt`` -- dispatch/QC gate. Verdict PASS/FAIL for an
   actual lip-sync attempt (mouth moved or not) including the stem check
-  (exactly one isolated stem of the on-screen speaker; sung/music/narrator
-  stems refused).
+  (exactly one isolated stem of the on-screen speaker; music and narrator
+  stems refused, and a sung stem only for a line whose own delivery is sung).
 
 stdlib only, no network, no spend. Sibling ``qc_voice_match`` (D17) owns
 the pitch bands and the on-screen speaker predicate -- this package imports
@@ -177,13 +178,18 @@ def person_on_screen(face):
 
 # ------------------------------------------------------------------ stems --
 
-def check_stems(stems, speaker):
+def check_stems(stems, speaker, delivery=None):
     """Validate the lip-sync audio input. Returns (ok, reason_code, errors).
 
-    Exactly one stem, isolated, belonging to the on-screen speaker. The sung
-    layer, the music bed and a narrator stem are refused (plan 6.6, the
-    2026-10-07 HIDE test: a CTA stem carrying another voice was lip-synced
-    onto a face).
+    Exactly one stem, isolated, belonging to the on-screen speaker. The music
+    bed and a narrator stem are always refused (plan 6.6, the 2026-10-07 HIDE
+    test: a CTA stem carrying another voice was lip-synced onto a face).
+
+    A SUNG stem IS the lip-sync input when the line's own delivery is sung and
+    the speaker is on screen (U-U03 settled the contradiction: a sung line's
+    mouth moves to that sung line). ``delivery`` names the line's delivery
+    ("sung" / "spoken"); when it is None the stem's own "delivery" field is
+    the declaration. Every other sung stem is refused.
     """
     spk = _norm(speaker)
     if stems is None:
@@ -198,7 +204,9 @@ def check_stems(stems, speaker):
     if not isinstance(stem, dict):
         return False, RC_STEM_MALFORMED, ["stem-not-an-object"]
     kind = _norm(stem.get("kind"))
-    if kind in SUNG_STEM_KINDS:
+    sung_ok = (_norm(delivery if delivery is not None else stem.get("delivery"))
+               == "sung" and person_on_screen(spk))
+    if kind in SUNG_STEM_KINDS and not sung_ok:
         return False, RC_SUNG_STEM, ["sung-stem:%s" % kind]
     if kind in MUSIC_STEM_KINDS:
         return False, RC_MUSIC_STEM, ["music-stem:%s" % kind]
@@ -285,7 +293,7 @@ def screen_line(record, stems_required=False):
     if stems is None and not stems_required:
         return base("ok", RC_LIPSYNC_OK, [], True, False, "ok",
                     stems_verified=False)
-    ok, rc, errs = check_stems(stems, speaker)
+    ok, rc, errs = check_stems(stems, speaker, record.get("delivery"))
     if not ok:
         return base("refused", rc, errs, False, False, "ok",
                     stems_verified=False)
@@ -351,7 +359,8 @@ def screen_selection(selection, scenes):
             # Stems were optional here; if the scene carries them, verify now.
             if record.get("stems") is not None:
                 sok, src, serrs = check_stems(record["stems"],
-                                              record.get("speaker"))
+                                              record.get("speaker"),
+                                              record.get("delivery"))
                 if not sok:
                     errors.extend("line-%s:%s" % (lid, e) for e in serrs)
                     violations.append({"line_id": lid, "reason_code": src,
@@ -531,32 +540,61 @@ def _override(rule, reason_code):
 
 # ------------------------------------------------- selection extension -----
 
-def _load_base():
-    """The base V2-08L module when it is in the workspace, else None."""
-    try:
-        import lip_sync as base
-    except ImportError:
-        return None
-    if not hasattr(base, "select_lines"):
-        return None          # namespace placeholder, package not merged yet
-    return base
+def choose_selection(timing, flags):
+    """The base-shaped selection envelope, windows chosen by ``choose_window``.
+
+    ``lip_sync.select_lines`` does not exist (there is no ``core/lip_sync/__init__``;
+    the base package is a namespace only), so window choice comes from the
+    module that owns it: ``lipsync_clips.choose_window`` -- the 4-6 s window at
+    real rest / phrase boundaries (U-U03).
+
+    timing: {line_id: [word stamps]} or [{"line_id", "words" | "word_stamps"}].
+    flags:  line ids to select (list / tuple / set), or {line_id: truthy}.
+    A line with no legal 4-6 s window is never selected.
+    """
+    import lipsync_clips as LC
+    if isinstance(timing, dict):
+        pairs = list(timing.items())
+    elif isinstance(timing, (list, tuple)):
+        pairs = [(r.get("line_id"), r.get("words") or r.get("word_stamps"))
+                 for r in timing if isinstance(r, dict)]
+    else:
+        return _res("error", "TIMING_INVALID", ["timing-must-be-a-map-or-a-list"])
+    wanted = None
+    if isinstance(flags, dict):
+        wanted = {k for k, v in flags.items() if v}
+    elif flags is not None:
+        wanted = set(flags)
+    selected = []
+    for lid, stamps in pairs:
+        if wanted is not None and lid not in wanted:
+            continue
+        if not isinstance(lid, str) or not isinstance(stamps, (list, tuple)) or not stamps:
+            continue
+        try:
+            window = LC.choose_window(list(stamps))
+        except LC.LipsyncClipsError:
+            continue
+        selected.append({"line_id": lid, "window": window,
+                         "word_start": window["start"], "word_end": window["end"]})
+    return {"outcome": "ok", "selected": selected}
 
 
 def build_screened_plan(timing, flags, scenes, base=None):
-    """Base ``select_lines`` -> narrator screen -> dispatch subset.
+    """Timing + flags -> ``choose_window`` selection -> narrator screen -> dispatch subset.
 
-    ``base`` is a module-like object exposing ``select_lines(timing, flags)``
-    (tests inject a mock; production resolves the real ``lip_sync``).
-    Fail closed as BASE_LIPSYNC_UNAVAILABLE when neither is given and the
-    base package is not in the workspace.
+    ``base`` may be a module-like object exposing ``select_lines(timing, flags)``
+    (a test double or a future base stage). With no base, the selection comes
+    from ``choose_window`` (``lip_sync.select_lines`` never existed). Fail
+    closed with TIMING_INVALID when the timing shape is not one it can read;
+    an injected base's own rejection is passed through unchanged.
     """
-    base = base if base is not None else _load_base()
-    if base is None or not hasattr(base, "select_lines"):
-        return _res("error", "BASE_LIPSYNC_UNAVAILABLE",
-                    ["base core/lip_sync not importable in %s" % _CORE])
-    selection = base.select_lines(timing, flags)
+    if base is not None and hasattr(base, "select_lines"):
+        selection = base.select_lines(timing, flags)
+    else:
+        selection = choose_selection(timing, flags)
     if not isinstance(selection, dict) or selection.get("outcome") != "ok":
-        return selection          # base rejected on its own terms, unchanged
+        return selection          # nothing to screen: the caller sees why
     screened = screen_selection(selection, scenes)
     out = dict(screened)
     out["selection"] = selection
