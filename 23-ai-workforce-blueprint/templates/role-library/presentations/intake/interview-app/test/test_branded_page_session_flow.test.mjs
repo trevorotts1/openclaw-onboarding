@@ -213,6 +213,7 @@ test("branded page drives a minted session end to end into the canonical record"
 
   const PLAN = {
     presentation_type: { choice: "From scratch" },
+    duration_min: { text: "45" },
     offer_name: { text: "The Momentum Method" },
     named_methodology: { text: "The Three-Move Pipeline System" },
     transformation_promise: { text: "stuck and overwhelmed to clear, confident, closing" },
@@ -297,6 +298,12 @@ test("branded page drives a minted session end to end into the canonical record"
   // The declined-reason waiver was asked (conditional), the sales one was not.
   assert.ok(answeredOrder.includes("vsl_page_declined_reason"), "waiver question asked: " + answeredOrder.join(","));
   assert.ok(!answeredOrder.includes("sales_checkout_declined_reason"), "sales waiver not asked when accepted");
+  // PD-082a: how long is asked directly after the type picker; the personal
+  // and content-type follow-ups stay unasked for a from-scratch deck.
+  assert.equal(answeredOrder.indexOf("duration_min"), answeredOrder.indexOf("presentation_type") + 1,
+    "duration_min must directly follow presentation_type: " + answeredOrder.join(","));
+  assert.ok(!answeredOrder.includes("recipient_name"), "recipient_name never asked for from_scratch");
+  assert.ok(!answeredOrder.includes("extracted_substance"), "source question never asked for from_scratch");
 
   // 1. Honest queued state: saved + queued, never "started".
   const statusEl = await until(() => documentStub.getElementById("sessionStatus"), "status line");
@@ -320,6 +327,8 @@ test("branded page drives a minted session end to end into the canonical record"
   assert.ok(!("WANT_SALES_CHECKOUT" in rec.deck_brief), "upsell flag must not land in deck_brief");
   assert.equal(rec.answers.want_vsl_page, "no");
   assert.equal(rec.presentation_type, "from_scratch");
+  assert.equal(rec.target_talk_minutes, 45, "PD-082a: the record carries the client's number");
+  assert.equal(typeof rec.target_talk_minutes, "number", "PD-082a: as a number, not a string");
   const prov = rec.derived_field_provenance || {};
   assert.deepEqual(Object.keys(prov).sort(),
     ["AUDIENCE_COMPOSITION_NOTE", "DARK_OK", "GROUNDED_CONTENT", "HOOK_SEED", "REPRESENTATION_MIX", "VISUAL_MIX"]);
@@ -383,6 +392,7 @@ test("standalone mode (no token): honest NOT SUBMITTED outcome + page-stamped pr
     || findIn(stage, (e) => e.tagName === "BUTTON" && hasClass(e, "primary"));
   const PLAN = {
     presentation_type: { choice: "From scratch" },
+    duration_min: { text: "45" },
     offer_name: { text: "The Momentum Method" },
     named_methodology: { text: "The Three-Move Pipeline System" },
     transformation_promise: { text: "stuck and overwhelmed to clear, confident, closing" },
@@ -451,6 +461,11 @@ test("standalone mode (no token): honest NOT SUBMITTED outcome + page-stamped pr
   assert.equal(payload.pre_presentation_capture.WANT_SALES_CHECKOUT, "yes");
   assert.equal(payload.pre_presentation_capture.WANT_VSL_PAGE, "no");
   assert.equal(payload.pre_presentation_capture.VSL_PAGE_DECLINED_REASON, "we have no hosted video yet");
+  // PD-082a A4: the page no longer pins target_talk_minutes: 20 — the
+  // evaluated page's own built record carries the client's answer under the
+  // canonical field instead (behaviour, not a text search).
+  assert.ok(!("target_talk_minutes" in payload), "no hardcoded talk length on the page");
+  assert.equal(payload.deck_brief.DURATION_MIN, "45", "the client's answer rides the canonical field");
   const prov = payload.derived_field_provenance || {};
   assert.deepEqual(Object.keys(prov).sort(),
     ["AUDIENCE_COMPOSITION_NOTE", "DARK_OK", "GROUNDED_CONTENT", "HOOK_SEED", "REPRESENTATION_MIX", "VISUAL_MIX"]);

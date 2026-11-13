@@ -132,7 +132,9 @@ function _conditionMet(question, answers) {
   if (!cond) return true;
   const ctrlValue = answers[cond.id];
   if (ctrlValue === undefined) return null;
-  return String(ctrlValue).trim().toLowerCase() === String(cond.equals).trim().toLowerCase();
+  const got = String(ctrlValue).trim().toLowerCase();
+  if (Array.isArray(cond.in)) return cond.in.map((v) => String(v).trim().toLowerCase()).includes(got);
+  return got === String(cond.equals).trim().toLowerCase();
 }
 
 export function isQuestionActive(question, answers) {
