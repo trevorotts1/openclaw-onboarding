@@ -32,10 +32,17 @@ test_fix77_roster_uniqueness.py` already holds unique, so the sync and the
 roster cannot disagree.
 
 One source path collides across two sources: `scripts/blend_voice_governance.py`
-exists in S51 and in the department with different bytes. The department's copy
-is kept, because `scripts/presentation_job/persona.py` resolves that file
-department-first (`<dept>/scripts/` is candidate one, the S51 tree is the
-fallback for a standalone skill install); the S51 variant is not copied and is
+exists in S51 and in the department with different bytes. S51's copy wins,
+because it is the strict superset: the department's copy is a stale fork that
+stops at 5056350ad, predating b1540a6aa "v22.0.68 F01-F27 enforcement sweep",
+and it carries neither `prove_against_pin()` nor the `--prove-pin` flag. The
+vendored `verify.sh` runs `blend_voice_governance.py --prove-pin`, so shipping
+the department bytes makes that check die with "unrecognized arguments:
+--prove-pin" (rc=2) and the skill's own verify gate print FAIL on the
+sacred-structure pin. The S51 bytes satisfy both the runtime resolution
+(`scripts/presentation_job/persona.py`, candidate one `<dept>/scripts/`) and
+`verify.sh`; the department copy satisfies only the former and silently drops
+an S51 enforcement behaviour. The department variant is not copied and is
 named in `VENDORED.md`. The sync refuses any other collision rather than
 picking a winner.
 
@@ -61,10 +68,15 @@ DEPT_ROOT_DOCS = ("BUILDER-PROMPT.md", "TOOLS.md", "00-START-HERE.md",
 ROSTER_SOURCE = "00-START-HERE.md"
 ROSTER_COUNT = 34
 # dest relative path -> the source whose bytes win. See the module docstring.
-SUPERSEDED = {"scripts/blend_voice_governance.py": "department"}
+# The department copy is the stale fork; S51's is the strict superset that keeps
+# verify.sh's --prove-pin check working.
+SUPERSEDED = {"scripts/blend_voice_governance.py": "S51"}
 VENDORED = "VENDORED.md"
 # dest relative paths named by the unit text in their own right; the cluster copy
 # already carries the ruleset, so this is an assertion, not a second copy.
+# scripts/blend_voice_governance.py must be present AND be S51's bytes: the
+# vendored verify.sh runs it with --prove-pin, which only the S51 copy defines
+# (the department copy is a stale fork predating the v22.0.68 F01-F27 sweep).
 REQUIRED = ("scripts/build_deck.py", "scripts/run_signature_deck.py",
             "scripts/blend_voice_governance.py", "00-START-HERE.md",
             "TOOLS.md", "BUILDER-PROMPT.md", "connection-manifest.json",
@@ -121,6 +133,8 @@ def plan(onb: Path):
             dest = (Path(dest_prefix) / rel).as_posix() if dest_prefix else rel.as_posix()
             if dest in rows:
                 winner = SUPERSEDED.get(dest)
+                if winner == origin[dest]:
+                    continue   # already carrying the declared winner's bytes
                 if winner is None or winner != label:
                     raise Refused(f"two sources claim {dest} with different bytes "
                                   f"({origin[dest]} and {label}); refusing to pick a winner")
@@ -211,12 +225,17 @@ def vendored_text(onb: Path, rows, sha: str, ref: str) -> str:
         "onboarding sources and fails on one changed byte, a missing file, or a source",
         "tree that moved after this snapshot.",
         "",
-        f"One source file is superseded, not copied: `{S51_REL.as_posix()}/scripts/"
-        "blend_voice_governance.py`. Its bytes differ from the department's copy of the",
-        "same path, which is kept because `scripts/presentation_job/persona.py` resolves",
-        "`<dept>/scripts/blend_voice_governance.py` first and the S51 tree only as the",
-        "fallback for a standalone skill install. Any other path collision refuses the",
-        "sync instead of picking a winner.",
+        f"One source file is superseded, not copied: `{DEPT_REL.as_posix()}/scripts/"
+        "blend_voice_governance.py`. Its bytes differ from S51's copy of the same",
+        "path, which is kept because S51's is the strict superset: the department copy",
+        "is a stale fork stopping at 5056350ad that predates the v22.0.68 F01-F27",
+        "enforcement sweep and lacks `prove_against_pin()` and `--prove-pin`. The",
+        "vendored `verify.sh` invokes `blend_voice_governance.py --prove-pin`, so the",
+        "department bytes would make the sacred-structure pin check fail closed (rc=2,",
+        "\"unrecognized arguments: --prove-pin\"). The S51 bytes satisfy both the",
+        "department-first resolution in `scripts/presentation_job/persona.py` and",
+        "`verify.sh`. Any other path collision refuses the sync instead of picking a",
+        "winner.",
         "",
         "Not vendored, because the unit text names neither: the department's",
         "`IDENTITY.md`, `SOUL.md`, `how-to-use-this-department.md`,",
