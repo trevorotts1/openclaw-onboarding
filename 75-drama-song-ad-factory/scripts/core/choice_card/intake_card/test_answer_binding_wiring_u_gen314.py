@@ -8,8 +8,11 @@ here fails on that tree:
 
 * the production import and the ``bind_run`` call site do not exist;
 * the read-only production admission (``inspect_intake``, the one gate every
-  resumed run passes) admits a session whose saved music record no longer
-  matches its own definition digest.
+  resumed run passes) never resolves a ``music_style`` and admits a
+  synthetic-marked music record as a human production fact. A digest-tampered
+  record is refused in both trees by the earlier session check
+  (``INTAKE_SESSION_UNREADABLE``); the direct ``bind_run`` refusal is asserted
+  to pin the layer that owns the digest rule.
 
 No provider, model, media or client-send call: the session is driven through
 the real intake API with offline replies.
@@ -93,9 +96,29 @@ class AnswerBindingWiredTest(unittest.TestCase):
         record["definition_digest"] = "0" * 64
         path.write_text(json.dumps(state), encoding="utf-8")
 
+        from choice_card.intake_card import answer_binding
+        with self.assertRaises(answer_binding.BindingError) as raised:
+            answer_binding.bind_run(self.run)
+        self.assertEqual(raised.exception.code, "BINDING_DEFINITION_DIGEST_MISMATCH")
+
         admitted = production_process.inspect_intake(self.run)
         self.assertFalse(admitted["ok"], admitted)
-        self.assertEqual(admitted["reason_code"], "BINDING_DEFINITION_DIGEST_MISMATCH")
+        self.assertEqual(admitted["reason_code"], "INTAKE_SESSION_UNREADABLE")
+
+    def test_a_synthetic_marked_music_record_is_not_a_production_fact(self):
+        _, path, state = self._confirmed()
+        record = state["answer_records"]["music"]
+        record["origin"] = "synthetic_test_only"
+        path.write_text(json.dumps(state), encoding="utf-8")
+
+        from choice_card.intake_card import answer_binding
+        bound = answer_binding.bind_run(self.run, allow_synthetic=True)
+        self.assertFalse(bound["production_fact"])
+        self.assertTrue(bound["test_only"])
+
+        admitted = production_process.inspect_intake(self.run)
+        self.assertFalse(admitted["ok"], admitted)
+        self.assertEqual(admitted["reason_code"], "BINDING_SYNTHETIC_NOT_ALLOWED")
 
 
 if __name__ == "__main__":
