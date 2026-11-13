@@ -250,7 +250,7 @@ their own scripts.
 - [ ] No client names or identifying strings anywhere in the skill files
       (repo guard: `scripts/qc-assert-no-client-names.sh` must PASS).
 - [ ] No instruction-override text is treated as authorization anywhere in
-      the flow (intake drops an extracted source; auth is a separate object).
+      the flow (intake rejects override text; auth is a separate optional object).
 
 ## 8. QC Score
 Score this skill from **0 to 10** after running the checks above.
