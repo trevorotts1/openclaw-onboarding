@@ -258,6 +258,43 @@ class DispatchError(ValueError):
     pass
 
 
+def song_cost_cents(price_fn=None):
+    """Cents for ONE song generation, from the card price authority.
+
+    S75-001 (fifth-pass correction): the song path reserved a hard-coded 6
+    cents, so a real charge was reserved at the wrong number and the spending
+    limit was judged against it. The number comes from
+    ``catalog_calculator.card_render.price_envelope`` -- the ONE place the card,
+    the question and dispatch price a song. That function DOES price a single
+    generate (the ``music`` line item), so nothing here is invented.
+
+    ``price_fn`` is Skill 74's ``price`` adapter; with none the shipped video
+    model rate table prices the song (``video_models.rated_price_fn``), so the
+    number resolves offline. A card that cannot be priced raises: the paid path
+    must never proceed on a guessed estimate (fail closed).
+    """
+    from catalog_calculator import card_render as _CR   # noqa: PLC0415 - paid path
+    envelope, _model = _CR.price_envelope(
+        {"length": "60 seconds", "shape": "9:16", "main_characters": 1}, price_fn)
+    card = envelope.get("card") if isinstance(envelope, dict) \
+        and envelope.get("state") == "ok" else None
+    line = next((li for li in (card or {}).get("line_items") or []
+                 if li.get("component") == "music"), None)
+    usd = line.get("usd") if isinstance(line, dict) else None
+    try:
+        cents = int(round(float(usd) * 100))
+    except (TypeError, ValueError):
+        cents = 0
+    if cents <= 0:
+        raise DispatchError(
+            "SONG_PRICE_UNAVAILABLE: the card price authority could not price one "
+            "song generation (%s), so the ledger estimate is refused rather than "
+            "invented; record a live Skill 74 price before the run"
+            % ((envelope or {}).get("reasons") if isinstance(envelope, dict)
+               else "no envelope"))
+    return cents
+
+
 def refuse_asr(engine):
     """Only the local fast engine (faster-*, small.en int8) may transcribe;
     anything openai, or any engine not named faster-*, is refused."""
@@ -792,6 +829,13 @@ def _judge_take_inner(take, plan, script_words, hook_text, spoken_range_pct=None
         put("rap_share", "PASS" if m["rap_seconds"] <= 0 else
             _SS.judge_gap(m["rap_share_pct"], 0.0)["verdict"],
             "%.1f%% rap (Soul style allows none)" % m["rap_share_pct"])
+    # S75-052: the MEASURED rap seconds ride the rap gate record. D1 "real rap"
+    # is decided from a measurement (was any rap actually delivered?), never
+    # from a style's no-rap PASS that would otherwise let a rap-less song
+    # satisfy D1.
+    g["rap_share"]["measurement"] = {"owner": "spoken_share",
+                                     "rap_seconds": m["rap_seconds"],
+                                     "rap_share_pct": m["rap_share_pct"]}
     v = (_SS.check_sung_of_voice(segs, basis=basis, style_id=style_id)
          if m["voice_seconds"] - m["sung_seconds"] > 0
          else {"verdict": "FAIL", "sung_of_voice_pct": 0})
@@ -1062,6 +1106,89 @@ def _profile_min_count(profile):
     return _MIN_AUDIO_RESULTS
 
 
+# ---- S75-052: the REQUIRED set and the measured D-results -------------------
+#
+# The five delivered-audio results (D1 real rap, D2 story start, D3 both pace
+# changes, D4 three different versions, D5 more than one character voice) used
+# to be required of EVERY song, so a song with no rap and one voice could never
+# pass. ``required_for`` makes the required set a POLICY read from
+# ``acceptance-profile.json`` (key ``required_policy``):
+#   * ``all_five``  -- every song must meet D1 to D5 (today's written rule);
+#   * ``applicable`` -- D2 and D3 always; D1 only when the plan orders rap;
+#                       D5 only when two or more voices were ordered; D4 only
+#                       when three versions were ordered.
+# THIS BUILD COMMITS ``all_five``. Decision D-2 is Trevor's; the value moves
+# only when he answers, in U-S07 -- never here.
+REQUIRED_POLICIES = ("all_five", "applicable")
+
+
+def required_policy_name(profile=None):
+    """The committed policy: the profile's ``required_policy``, else all_five.
+
+    A missing or unrecognised value falls back to ``all_five`` (the stricter
+    value), never to "no gates required"."""
+    p = profile if isinstance(profile, dict) else acceptance_profile()
+    rows = (p or {}).get("audio_results")
+    rows = rows if isinstance(rows, dict) else {}
+    raw = str((p or {}).get("required_policy")
+              or rows.get("required_policy") or "").strip().lower()
+    return raw if raw in REQUIRED_POLICIES else "all_five"
+
+
+def _approved_voice_count(plan):
+    """How many character voices the approved plan ordered, or None.
+
+    Read from the plan's own cast manifest (a list or mapping of characters)
+    or an explicit count; nothing is invented. None means the plan does not
+    say -- and D5 then stays REQUIRED under ``applicable`` (unknown is not
+    "one voice")."""
+    p = plan if isinstance(plan, dict) else {}
+    for k in ("distinct_voice_count", "voice_count", "voices_required"):
+        v = p.get(k)
+        if isinstance(v, int) and not isinstance(v, bool) and v >= 0:
+            return v
+    for k in ("cast_manifest", "cast", "voices"):
+        v = p.get(k)
+        if isinstance(v, (list, tuple)):
+            return len(v)
+        if isinstance(v, dict):
+            return len(v)
+    return None
+
+
+def _three_versions_ordered(plan):
+    """True when this run ordered three versions (D4's precondition)."""
+    p = plan if isinstance(plan, dict) else {}
+    if p.get("three_versions") is True:
+        return True
+    for k in ("variant_count", "variants_ordered", "variants", "versions"):
+        v = p.get(k)
+        if isinstance(v, int) and not isinstance(v, bool) and v >= 3:
+            return True
+        if isinstance(v, (list, tuple)) and len(v) >= 3:
+            return True
+    return False
+
+
+def required_for(plan, policy=None):
+    """The D-results THIS song must meet, in D1..D5 order (S75-052)."""
+    pol = str(policy or required_policy_name()).strip().lower()
+    if pol not in REQUIRED_POLICIES:
+        pol = "all_five"
+    if pol == "all_five":
+        return tuple(AUDIO_RESULTS)
+    style_id = (plan or {}).get("style_id")
+    want = ["D2", "D3"]
+    if _rap_required(plan, style_id):
+        want.append("D1")
+    voices = _approved_voice_count(plan)
+    if voices is None or voices >= 2:
+        want.append("D5")
+    if _three_versions_ordered(plan):
+        want.append("D4")
+    return tuple(name for name in AUDIO_RESULTS if name in want)
+
+
 def _block(reasons, results=None, binding=None, required=None):
     """Every refusal from this boundary has the same shape, and every one of
     them reports zero purchases -- nothing here can spend."""
@@ -1320,7 +1447,7 @@ def _accept_audio_results(results, binding, required, profile):
     prof_rev = prof.get("profile_version")
     if not isinstance(prof_rev, str) or not prof_rev.strip():
         reasons.append("PROFILE_UNAVAILABLE: acceptance-profile.json carries no profile_version")
-    minimum = _profile_min_count(prof)
+    minimum = len(want) if required is not None else _profile_min_count(prof)
     if len(results) < minimum:
         reasons.append("INCOMPLETE_EVIDENCE: %d delivered-audio results carried, %d required "
                        "(PROPOSED count of the five gates the plan names)"
@@ -1371,6 +1498,12 @@ def _accept_audio_results(results, binding, required, profile):
             continue
         rec = results[name]
         v = rec.get("verdict") if isinstance(rec, dict) else None
+        # S75-052: a D-result this song was NOT required to meet (D1 on a song
+        # with no rap, D5 on a one-voice song, D4 before fan-in) is carried as
+        # information only -- it never blocks. An UNKNOWN result name still
+        # must PASS, so nothing can be smuggled past the boundary.
+        if name in AUDIO_RESULTS:
+            continue
         if not isinstance(v, str) or v.strip().upper() != "PASS":
             reasons.append("UNEXPECTED_AUDIO_RESULT: %s is carried but is not one of the "
                            "required results and did not PASS (%r)" % (name, v))
@@ -1396,6 +1529,161 @@ def take_binding(export_path, creative_revision, profile=None):
             "profile_revision": str(profile_revision(profile) or "")}
 
 
+def _gate_record(receipt, name):
+    """One gate record from a judge receipt, or None."""
+    gates = (receipt or {}).get("gates") if isinstance(receipt, dict) else None
+    rec = (gates or {}).get(name)
+    return rec if isinstance(rec, dict) else None
+
+
+def _d1_real_rap(receipt):
+    """D1 real rap, from the MEASURED rap duration on the take's rap gate.
+
+    A style that delivers no rap PASSes its own rap gate ("nothing to prove"),
+    which is not a measurement of real rap -- so D1 reads the measured rap
+    seconds the judge now stamps on that record. No rap measured (0.0 s) is a
+    measured FAIL, never a PASS."""
+    rap = _gate_record(receipt, "rap_audio")
+    share = _gate_record(receipt, "rap_share")
+    if rap is None and share is None:
+        return {"verdict": "UNMEASURED",
+                "detail": "D1 real rap: the take carries no measured rap gate"}
+    measured = (share or {}).get("measurement") or {}
+    seconds = measured.get("rap_seconds")
+    if not isinstance(seconds, (int, float)) or isinstance(seconds, bool):
+        return {"verdict": "UNMEASURED",
+                "detail": "D1 real rap: the take carries no measured rap duration"}
+    if float(seconds) <= 0:
+        return {"verdict": "FAIL",
+                "detail": "D1 real rap: %.1f s of rap measured in this take"
+                          % float(seconds)}
+    ok = (str((rap or {}).get("verdict") or "").strip().upper() == "PASS"
+          and str((share or {}).get("verdict") or "").strip().upper() == "PASS")
+    return {"verdict": "PASS" if ok else "FAIL",
+            "detail": "D1 real rap: %.1f s measured; rap_audio=%r rap_share=%r"
+                      % (float(seconds), (rap or {}).get("verdict"),
+                         (share or {}).get("verdict"))}
+
+
+def _d2_story_start(take, plan):
+    """D2 story start, measured by the story module's OWN story-start gate on
+    the take's aligned words against the approved sheet's ordered plot lines.
+
+    The judge's ``story`` gate is the delivery-side verdict; it requires the
+    run to declare a story revision and reports NOT_APPLICABLE otherwise,
+    which is not a measurement. D2 is measured directly so every song can earn
+    or fail it on the take it actually delivered."""
+    try:
+        from story_coverage import story_coverage as _ST   # noqa: PLC0415
+    except Exception:                    # noqa: BLE001 - no measuring code
+        try:
+            import story_coverage as _ST   # noqa: PLC0415
+        except Exception:                # noqa: BLE001
+            return {"verdict": "UNMEASURED",
+                    "detail": "D2 story start: no story measuring code is installed"}
+    take = take if isinstance(take, dict) else {}
+    sheet = (plan or {}).get("sheet_text")
+    aligned = take.get("aligned_words") or []
+    D = take.get("duration_s")
+    if not isinstance(D, (int, float)) or isinstance(D, bool):
+        D = (plan or {}).get("delivered_s")
+    if not sheet or not aligned or not isinstance(D, (int, float)) or D <= 0:
+        return {"verdict": "UNMEASURED",
+                "detail": "D2 story start: the take carries no aligned words, sheet "
+                          "or delivered duration to measure"}
+    try:
+        plot = _ST.plot_lines_from_sheet(sheet)
+        got = _ST.story_start_gate(aligned, plot, D)
+    except Exception as exc:             # noqa: BLE001 - a raise blocks
+        return {"verdict": "UNMEASURED",
+                "detail": "D2 story start: the story-start gate raised %r" % (exc,)}
+    v = str(got.get("verdict") or "").strip().upper()
+    verdict = "PASS" if v == "PASS" else ("FAIL" if v == "FAIL" else "UNMEASURED")
+    return {"verdict": verdict,
+            "detail": "D2 story start: %s" % (got.get("detail") or v or "no verdict")}
+
+
+def _measured_gate_result(receipt, gate, label):
+    """One D-result read off a MEASURED take gate. Only a PASS advances; a
+    FAIL blocks and any other verdict (UNMEASURED, NOT_APPLICABLE, absent) is
+    carried UNMEASURED, which blocks too."""
+    rec = _gate_record(receipt, gate)
+    if rec is None:
+        return {"verdict": "UNMEASURED",
+                "detail": "%s: the take carries no %r gate" % (label, gate)}
+    v = str(rec.get("verdict") or "").strip().upper()
+    if v == "PASS":
+        return {"verdict": "PASS", "detail": "%s: %s" % (label, rec.get("detail") or "PASS")}
+    if v == "FAIL":
+        return {"verdict": "FAIL", "detail": "%s: %s" % (label, rec.get("detail") or "FAIL")}
+    return {"verdict": "UNMEASURED",
+            "detail": "%s: measured gate %r returned %r"
+                      % (label, gate, rec.get("verdict"))}
+
+
+def _d5_voices(take):
+    """D5 more than one character voice, from MEASURED evidence only.
+
+    The multi-voice probe lives in ``audio_c3/lipsync_cuts``; its default is a
+    STUB that assumes one voice, and a stub is not a measurement -- it is
+    carried UNMEASURED, never PASS and never a quiet FAIL."""
+    take = take if isinstance(take, dict) else {}
+    count = take.get("distinct_voice_count")
+    method = str(take.get("voice_method") or "measured")
+    if not (isinstance(count, int) and not isinstance(count, bool)):
+        try:
+            from audio_c3.lipsync_cuts import measure_distinct_voices as _MDV  # noqa: PLC0415
+        except Exception:                    # noqa: BLE001 - no measuring code
+            return {"verdict": "UNMEASURED",
+                    "detail": "D5 voices: no multi-voice measuring code is installed"}
+        path = take.get("audio_path")
+        if not path:
+            return {"verdict": "UNMEASURED",
+                    "detail": "D5 voices: the take carries no audio path to measure"}
+        try:
+            got = _MDV(str(path), analyzer=take.get("voice_analyzer"))
+        except Exception as exc:             # noqa: BLE001 - a raise blocks
+            return {"verdict": "UNMEASURED",
+                    "detail": "D5 voices: the probe raised %r" % (exc,)}
+        if str(got.get("method") or "") == "stub":
+            return {"verdict": "UNMEASURED",
+                    "detail": "D5 voices: only the stub probe ran (1 voice assumed, "
+                              "not measured)"}
+        count = got.get("distinct_voice_count")
+        method = str(got.get("method") or "measured")
+    if count >= 2:
+        return {"verdict": "PASS",
+                "detail": "D5 voices: %d distinct voices measured (%s)" % (count, method)}
+    return {"verdict": "FAIL",
+            "detail": "D5 voices: %d distinct voice measured (%s)" % (count, method)}
+
+
+def audio_results_for(take, receipt, plan, run_dir=None, binding=None):
+    """S75-052: the D-results this take MEASURED, each bound to its own export.
+
+    Built from measured code only: D1 real rap (measured rap seconds plus the
+    rap gates), D2 story start (the story module's own story-start gate on the
+    aligned words), D3 both pace changes (the pace gate) and D5 more than one
+    voice (the multi-voice probe). D4 is computed ONCE at fan-in across the
+    three takes (``song_choices.fan_in``), never here per take. A result whose
+    measurement is absent is carried UNMEASURED, which always blocks; no PASS
+    is ever written for an unmeasured gate. Each result carries the take's own
+    ``take_binding``."""
+    if binding is None:
+        binding = take_binding(
+            (take or {}).get("audio_path"),
+            str((plan or {}).get("creative_fingerprint")
+                or (plan or {}).get("story_revision") or "take"))
+    out = {}
+    for name, rec in (("D1", _d1_real_rap(receipt)),
+                      ("D2", _d2_story_start(take, plan)),
+                      ("D3", _measured_gate_result(receipt, "pace_change",
+                                                   "D3 both pace changes")),
+                      ("D5", _d5_voices(take))):
+        out[name] = dict(rec, binding=dict(binding))
+    return out
+
+
 def record_acceptance(run_dir, variant_id, binding, results, required=None):
     """Write ONE variant's WW-21 acceptance record under
     ``<run>/music/acceptance/<variant>.json`` and return it. This is the
@@ -1411,9 +1699,19 @@ def record_acceptance(run_dir, variant_id, binding, results, required=None):
 
 
 def _take_exists(d):
+    """True when ``d`` holds produced take audio, at any depth.
+
+    Takes are filed as ``music/takes/<variant>/take-NN/`` (audio one level
+    down), so the top-level directory itself holds no audio file. Walk the
+    tree instead of listing only the top level; an unreadable folder reads
+    as no take, never as proof of one.
+    """
     try:
-        return any(n.lower().endswith((".mp3", ".wav", ".flac", ".m4a", ".aac"))
-                   for n in os.listdir(d))
+        for _root, _dirs, files in os.walk(d):
+            for n in files:
+                if n.lower().endswith((".mp3", ".wav", ".flac", ".m4a", ".aac")):
+                    return True
+        return False
     except OSError:
         return False
 
@@ -1426,12 +1724,19 @@ def acceptance_from_run(run_dir):
     nothing to gate. The moment a variant has a produced take under
     ``<run>/music/takes/<variant>/`` (the folder ``_real_generate`` fills,
     where the dispatch envelope is written), an acceptance record is REQUIRED
-    for it: a take on disk with no all-PASS acceptance record BLOCKS. That is
-    what keeps this a live guard and not a key nobody writes.
+    for it: a take on disk with no acceptance record is a HARD STOP
+    ("take saved but never judged"), because an unjudged take is not evidence.
+
+    S75-052: one FAILED version no longer blocks the versions that passed. A
+    variant whose record exists and is not PASS is reported in ``blocked``
+    (it is never offered or picked), the passing variants stay offerable and
+    pickable, and only an UNJUDGED take -- or a run where NO variant passed --
+    holds the whole boundary.
     """
     base = os.path.join(run_dir, _ACCEPTANCE_DIR)
     takes = os.path.join(run_dir, "music", "takes")
     records = {}
+    unjudged = []
     if os.path.isdir(base):
         for name in sorted(os.listdir(base)):
             if not name.endswith(".json") or name == OPERATOR_DECISION_FILE:
@@ -1448,27 +1753,39 @@ def acceptance_from_run(run_dir):
                 continue
             if name in records:
                 continue
+            unjudged.append(name)
             records[name] = {
                 "variant_id": name, "verdict": "FAIL", "blocked": True,
-                "reasons": ["ACCEPTANCE_RECORD_MISSING: music/takes/%s holds a produced take but "
-                            "no WW-21 acceptance record was written for it; only a complete set "
-                            "of five PASS, bound delivered-audio results may advance" % name],
+                "reasons": ["ACCEPTANCE_RECORD_MISSING: take saved but never judged: %s "
+                            "(music/takes/%s holds a produced take but no WW-21 acceptance "
+                            "record was written for it); only a judged take may advance"
+                            % (name, name)],
                 "purchases": 0}
     if not records:
         return {"applicable": False, "verdict": "UNAVAILABLE", "allowed": False,
-                "blocked": [], "variants": {}}
+                "blocked": [], "unjudged": [], "passing": [], "variants": {}}
     bad = sorted(v for v, r in records.items() if r.get("verdict") != "PASS")
-    return {"applicable": True, "verdict": "FAIL" if bad else "PASS",
-            "allowed": not bad, "blocked": bad, "variants": records}
+    passing = sorted(v for v, r in records.items() if r.get("verdict") == "PASS")
+    hard = sorted(set(unjudged))
+    allowed = (not hard) and bool(passing)
+    return {"applicable": True, "verdict": "PASS" if allowed else "FAIL",
+            "allowed": allowed, "blocked": bad, "unjudged": hard,
+            "passing": passing, "variants": records}
 
 
 def acceptance_refusal(run_dir, action):
-    """The delivery-boundary refusal: None when nothing is held, else the
-    refusal record. Mirrors ``song_choices.overlap._overlap_refusal``; the
-    BLOCK reaches the offer, the pick and every paid job. L2 (WW-21): the
-    refusal points at the documented operator-decision path when the only thing
-    missing is a human's recorded decision -- but NEVER at a hand-set relabel,
-    which stays refused (a decision is not a relabel)."""
+    """The delivery-boundary HARD STOP: None when nothing is held, else the
+    refusal record. It mirrors the same whole-run shape as the overlap
+    measurement the choices side keeps on its own receipt; the
+    BLOCK reaches the offer, the pick and every paid job.
+
+    S75-052: this is the WHOLE-RUN stop only -- an unjudged take, or a run in
+    which no version passed. A single FAILED version is not a whole-run stop:
+    it is reported by ``acceptance_from_run`` in ``blocked``, is never offered
+    or picked, and ``acceptance_variant_refusal`` refuses it by name.
+    L2 (WW-21): the refusal points at the documented operator-decision path
+    when the only thing missing is a human's recorded decision -- but NEVER at
+    a hand-set relabel, which stays refused (a decision is not a relabel)."""
     chk = acceptance_from_run(run_dir)
     if not chk.get("applicable"):
         return None
@@ -1479,7 +1796,12 @@ def acceptance_refusal(run_dir, action):
         detail += ["%s: %s" % (v, r) for r in (chk["variants"][v].get("reasons") or [])]
     manual = any("MANUAL_RELABEL" in r for v in chk.get("blocked") or []
                  for r in (chk["variants"][v].get("reasons") or []))
-    if manual:
+    unjudged = chk.get("unjudged") or []
+    if unjudged:
+        nxt = ("judge the saved take(s) %s and record their measured results with "
+               "record_acceptance; a take saved but never judged is not evidence"
+               % ", ".join(unjudged))
+    elif manual:
         nxt = ("a manual relabel is NEVER decided around: the take's own export "
                "digest binding is the evidence; re-measure the delivered audio "
                "and record it with record_acceptance.")
@@ -1498,6 +1820,30 @@ def acceptance_refusal(run_dir, action):
                       % ("; ".join(detail[:4]) or "no PASS record", action),
             "blocked": chk.get("blocked") or [],
             "next_action": nxt}
+
+
+def acceptance_variant_refusal(run_dir, variant_id, action):
+    """S75-052: the PER-VERSION stop -- one variant whose record is not PASS
+    (or is missing) is never offered or picked. None when that variant passed
+    or the boundary is not applicable."""
+    chk = acceptance_from_run(run_dir)
+    if not chk.get("applicable"):
+        return None
+    vid = str(variant_id)
+    rec = (chk.get("variants") or {}).get(vid)
+    if rec is not None and rec.get("verdict") == "PASS":
+        return None
+    reasons = list((rec or {}).get("reasons") or [])
+    if rec is None:
+        reasons = ["ACCEPTANCE_RECORD_MISSING: take saved but never judged: %s "
+                   "(no WW-21 acceptance record was written for it)" % vid]
+    return {"reason_code": ACCEPTANCE_CODE_NOT_PROVEN,
+            "detail": "%s is held (%s): %s. Only a PASS record bound to the take's "
+                      "export digest may advance -- zero purchases on this path."
+                      % (action, vid, "; ".join(reasons[:4]) or "the record is not PASS"),
+            "blocked": [vid],
+            "next_action": ("re-measure the delivered audio for %s and record the results "
+                            "with record_acceptance" % vid)}
 
 def operator_decision_gates(run_dir, dec=None, required=None):
     """((dec, None) | (None, refusals)) for the run's staged decision, the
