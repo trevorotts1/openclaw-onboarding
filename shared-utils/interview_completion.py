@@ -27,21 +27,21 @@ IDENTITY = {'tenantId': 'MC_TENANT_ID', 'companyId': 'MC_COMPANY_ID', 'installat
 SERVICE_KEYS = {*IDENTITY.values(), 'MC_TENANT_REGISTRY_JSON', 'DATABASE_PATH', 'DASHBOARD_DB_PATH'}
 
 COMPLETE_WORDS = ('COMPLETE', 'BUILDING', 'BUILT')
-_status_reader = None
+_status_reader_module = None
 
 
 def _status_reader():
     """Load scripts/interview_status.py without assuming the caller's cwd or path."""
-    global _status_reader
-    if _status_reader is None:
+    global _status_reader_module
+    if _status_reader_module is None:
         source = Path(__file__).resolve().parent.parent / 'scripts' / 'interview_status.py'
         spec = importlib.util.spec_from_file_location('interview_status_reader', source)
         if spec is None or spec.loader is None:
             raise ValueError(f'interview status reader unavailable: {source}')
         module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(module)
-        _status_reader = module
-    return _status_reader
+        _status_reader_module = module
+    return _status_reader_module
 
 
 def service_values(file):

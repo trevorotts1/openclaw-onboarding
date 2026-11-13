@@ -58,13 +58,26 @@ def _mapping(value) -> dict:
 
 
 def _count(value) -> int:
+    """Mirror the TypeScript port's `count` exactly: bool 0, integers as-is,
+    finite floats truncated, strings by their leading integer, anything else 0."""
     if isinstance(value, bool):
         return 0
     if isinstance(value, int):
         return value
+    if isinstance(value, float):
+        return int(value) if value == value and abs(value) != float("inf") else 0
+    text = str(value).strip() if value is not None else ""
+    digits = ""
+    for index, character in enumerate(text):
+        if character in "+-" and index == 0:
+            digits += character
+        elif character.isdigit():
+            digits += character
+        else:
+            break
     try:
-        return int(str(value).strip())
-    except (TypeError, ValueError):
+        return int(digits)
+    except ValueError:
         return 0
 
 
@@ -96,7 +109,9 @@ def state_of(build_state, *, declared: bool = False, gate=None, unreadable: bool
         return "DECLARED"
     facts = _mapping(gate)
     missing = facts.get("missingRequired")
-    if isinstance(missing, list) and not missing and "answers" in facts:
+    answers = facts.get("answers")
+    if (isinstance(missing, list) and not missing
+            and isinstance(answers, (int, float)) and not isinstance(answers, bool)):
         return "READY"
     if _count(facts.get("answers")) > 0 or _count(_mapping(build.get("interviewProgress")).get("lastQuestionNumber")) > 0:
         return "IN_PROGRESS"
@@ -105,9 +120,14 @@ def state_of(build_state, *, declared: bool = False, gate=None, unreadable: bool
 
 def gate_facts(gate_state_path: Path, registry_path: Path) -> dict:
     """Read the gate's own answers with the gate's own code (no second rule set)."""
-    script_dir = str(Path(__file__).resolve().parent)
-    if script_dir not in sys.path:
-        sys.path.insert(0, script_dir)
+    here = Path(__file__).resolve()
+    # The gate ships in the blueprint scripts folder next to the registry, not
+    # beside this reader; import it from whichever folder actually holds it.
+    for directory in (here.parent,
+                      registry_path.resolve().parent.parent / "scripts",
+                      here.parent.parent / "23-ai-workforce-blueprint" / "scripts"):
+        if (directory / "interview_gate.py").is_file() and str(directory) not in sys.path:
+            sys.path.insert(0, str(directory))
     import interview_gate
 
     if gate_state_path.name != interview_gate.STATE_NAME:
