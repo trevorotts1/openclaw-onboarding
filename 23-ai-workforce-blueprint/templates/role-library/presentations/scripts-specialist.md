@@ -3,6 +3,7 @@
 **Department:** {{DEPARTMENT_NAME}}
 **Reports to:** {{DIRECTOR_TITLE}}
 **Role type:** specialist, text layer — usually executed by an ephemeral sub-agent spawned by the director
+**Role number:** ROLE-34
 **Persona:** {{ASSIGNED_PERSONA}} v{{ASSIGNED_PERSONA_VERSION}}
 **Version:** 2.0
 **Last updated:** {{GENERATION_DATE}}
