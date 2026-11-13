@@ -136,7 +136,8 @@ def test_purpose_is_first_and_carries_its_own_wording():
     qs, _ = _plan()
     assert _ids(qs)[0] == "purpose"
     msg = IC.render_step(1, qs)
-    assert msg.splitlines()[0] == "Question 1 of %d - PURPOSE" % len(qs)
+    #: U-GEN425: the live counter numbers the screens asked one by one.
+    assert msg.splitlines()[0] == "Question 1 of %d - PURPOSE" % len(IC.askable(qs))
     assert "What is this video for?" in msg
     assert "(RECOMMENDED)" in msg
     assert ("I recommend option 1 (Grow my business) because one production gives "
@@ -188,7 +189,7 @@ def test_each_purpose_gets_the_right_follow_up_and_the_right_lengths():
 def test_the_permission_block_is_the_wording_in_the_method_doc():
     qs, _ = _plan(purpose=2)
     lines = IC.render_step(2, qs).splitlines()
-    assert lines[0] == "Question 2 of %d - PERMISSION" % len(qs)
+    assert lines[0] == "Question 2 of %d - PERMISSION" % len(IC.askable(qs))
     assert lines[1] == "Do you have your client's permission to use their testimonial?"
     assert lines[2] == "1. Yes"
     assert lines[3] == "2. No - pause this order until I have it."

@@ -1297,20 +1297,13 @@ def askable(questions):
     return [q for q in questions if not q.get("defaulted")]
 
 
-def render_step(i, questions=None):
-    """ONE question as its own message (Trevor 2026-10-08, I7): a one-sentence
-    why, numbered options one per line, the RECOMMENDED one marked and
-    explained, then how to answer."""
-    #: the default list is the screens the run ASKS one by one (U-GEN425), so a
-    #: direct call counts the same screens the live conversation counts; a
-    #: caller that passes its own list is numbered over that list.
-    qs = questions if questions else askable(QUESTIONS)
-    q = qs[i - 1]
+def _question_step(i, total, q):
+    """The rich text of ONE question, numbered ``i`` of ``total``."""
     if q.get("free_text"):
-        return _typed_block(i, len(qs), q, why=True)
+        return _typed_block(i, total, q, why=True)
     if "body" in q:
-        return _block(i, len(qs), q)
-    lines = ["Question %d of %d - %s" % (i, len(qs), q["label"])]
+        return _block(i, total, q)
+    lines = ["Question %d of %d - %s" % (i, total, q["label"])]
     if q.get("why"):        # PERMISSION carries none: it is the yes/no, nothing else
         lines += [q["why"], ""]
     lines.append(q["ask"])
@@ -1335,6 +1328,20 @@ def render_step(i, questions=None):
     return "\n".join(lines)
 
 
+def render_step(i, questions=None):
+    """ONE question as its own message (Trevor 2026-10-08, I7): a one-sentence
+    why, numbered options one per line, the RECOMMENDED one marked and
+    explained, then how to answer.
+
+    ``i`` is the position among the screens the run ASKS one by one, and the
+    counter is that same askable list (U-GEN425): the card and the live chat
+    must never disagree about how many questions are left. A defaulted screen
+    is never a live question; ``render_change`` shows its full text without a
+    counter."""
+    qs = askable(questions if questions else QUESTIONS)
+    return _question_step(i, len(qs), qs[i - 1])
+
+
 def render_change(questions, position):
     """Re-ask the recap line at ``position`` (0-based into ``questions``).
 
@@ -1343,8 +1350,8 @@ def render_change(questions, position):
     qs = list(questions)
     q = qs[position]
     if q.get("defaulted"):
-        return "\n".join(render_step(1, [q]).split("\n")[1:])
-    return render_step(position + 1, askable(qs))
+        return "\n".join(_question_step(1, 1, q).split("\n")[1:])
+    return render_step(position + 1, qs)
 
 
 #: S75-030: the recap's own heading for a screen whose card label is jargon or
