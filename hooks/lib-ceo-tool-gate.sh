@@ -100,7 +100,7 @@ CEO_GATE_DENY_TOOLS=()
 # / SOUL.md), not a tool-removal. This is additive: the deny list is untouched, so
 # verify-routing.sh G7 still PASSES (exec + mc-route__route_task both present).
 CEO_GATE_ALLOW_TOOLS=(
-  "read" "web_fetch" "web_search"
+  "read" "read_skill" "web_fetch" "web_search"
   "message" "telegram" "slack" "discord"
   "sessions_send" "sessions_list" "sessions_history"
   "mc-route__route_task"

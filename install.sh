@@ -26,7 +26,7 @@
 #  because VPS container re-exec uses conditional commands that may fail.
 # ============================================================
 
-ONBOARDING_VERSION="v27.1.71"
+ONBOARDING_VERSION="v27.1.72"
 
 # ----------------------------------------------------------
 # Platform detection + bootstrap (MUST run before set -euo pipefail)
@@ -10716,6 +10716,20 @@ PY
     fi
 else
     warn "agent-exchange-telemetry extension not found in repo ($_TE_SRC) — skipping install"
+fi
+
+# ----------------------------------------------------------
+# Full-read guard plugin (Trevor's order 2026-11-12): force agents to read a skill and its
+# dependencies in full. Installed into the RESOLVED OpenClaw root (not a hard-coded
+# $HOME/.openclaw), enabled in openclaw.json, idempotent, advisory-only, and a logged no-op
+# when extensions/full-read-guard is not in this release.
+# ----------------------------------------------------------
+note "Installing Full-read guard plugin..."
+_FRG_INSTALLER="$ONBOARDING_DIR/scripts/install-full-read-guard.sh"
+if [ -f "$_FRG_INSTALLER" ]; then
+    bash "$_FRG_INSTALLER" --install --source "$ONBOARDING_DIR/extensions" || true
+else
+    warn "install-full-read-guard.sh not found in repo ($_FRG_INSTALLER) — skipping"
 fi
 echo ""
 
