@@ -1097,6 +1097,9 @@
             "id": "want_vsl_page",
             "equals": "no"
           },
+          "required": false,
+          "block_gate": false,
+          "ask_only_if_previously_wanted": true,
           "no_note": true,
           "question": {
             "prompt": "In your own words, why are you declining the video sales letter page?",
@@ -1109,6 +1112,9 @@
             "id": "want_email_sequences",
             "equals": "no"
           },
+          "required": false,
+          "block_gate": false,
+          "ask_only_if_previously_wanted": true,
           "no_note": true,
           "question": {
             "prompt": "In your own words, why are you declining email follow-up sequences?",
@@ -1121,6 +1127,9 @@
             "id": "want_motion_graphics",
             "equals": "no"
           },
+          "required": false,
+          "block_gate": false,
+          "ask_only_if_previously_wanted": true,
           "no_note": true,
           "question": {
             "prompt": "In your own words, why are you declining motion graphics?",
@@ -1631,7 +1640,7 @@
     }
   ],
   "waiver_field_mapping": {
-    "_comment": "U026 — the CONSENT record. Each entry maps a gate key (see the engine's Gates class) to the intake question that captures the client's own decision, plus the conditional follow-up that captures their VERBATIM words when they decline. A gate may be waived ONLY by a record carrying a non-empty client_request_quote. Silence is NOT consent: every toggle here is required+block_gate, so --complete cannot pass while one is unanswered. prompt_floor and qc are deliberately ABSENT — a client cannot consent to a thinner prompt or a lower quality bar; those are craft floors, not options.",
+    "_comment": "U026 — the CONSENT record. Each entry maps a gate key (see the engine's Gates class) to the intake question that captures the client's own decision, plus the conditional follow-up that captures their VERBATIM words when they decline. A gate may be waived ONLY by a record carrying a non-empty client_request_quote. Silence is NOT consent: every toggle here is required+block_gate, so --complete cannot pass while one is unanswered. The three opt-ins that DEFAULT to no (vsl_page, email_sequences, motion_graphics) are the exception: declining them is not a waiver, so their entries carry waiver_required false and their reason questions are optional. prompt_floor and qc are deliberately ABSENT — a client cannot consent to a thinner prompt or a lower quality bar; those are craft floors, not options.",
     "teleprompter": {
       "toggle": "want_teleprompter",
       "reason": "teleprompter_declined_reason"
@@ -1654,11 +1663,15 @@
     },
     "vsl_page": {
       "toggle": "want_vsl_page",
-      "reason": "vsl_page_declined_reason"
+      "reason": "vsl_page_declined_reason",
+      "waiver_required": false,
+      "waiver_comment": "Declining an opt-in that defaults to no is not a waiver; no reason is required."
     },
     "email_sequences": {
       "toggle": "want_email_sequences",
-      "reason": "email_sequences_declined_reason"
+      "reason": "email_sequences_declined_reason",
+      "waiver_required": false,
+      "waiver_comment": "Declining an opt-in that defaults to no is not a waiver; no reason is required."
     },
     "motion_graphics": {
       "toggle": "want_motion_graphics",
