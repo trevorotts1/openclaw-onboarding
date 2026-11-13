@@ -1,0 +1,244 @@
+{
+  "version": 1,
+  "skills": [
+    {
+      "skill": "07-kie-setup",
+      "depends_on": [
+        "74-kie-live-adapter",
+        "46-kie-callback-relay",
+        "66-kie-image"
+      ],
+      "lookup": [
+        {
+          "glob": "references/kie-official-agent-docs-digest.md",
+          "why": "digest of vendor documentation"
+        }
+      ]
+    },
+    {
+      "skill": "24-storyboard-writer",
+      "depends_on": [
+        "67-kie-video",
+        "74-kie-live-adapter"
+      ],
+      "lookup": [
+        {
+          "glob": "test/**",
+          "why": "test files (1 files)"
+        }
+      ]
+    },
+    {
+      "skill": "25-video-creator",
+      "depends_on": [
+        "74-kie-live-adapter",
+        "67-kie-video"
+      ]
+    },
+    {
+      "skill": "26-caption-creator",
+      "lookup": [
+        {
+          "glob": "Scripts/**",
+          "why": "executable code (4 files)"
+        },
+        {
+          "glob": "test/**",
+          "why": "test files (1 files)"
+        }
+      ]
+    },
+    {
+      "skill": "27-video-editor",
+      "depends_on": [
+        "67-kie-video"
+      ],
+      "lookup": [
+        {
+          "glob": "test/**",
+          "why": "test files (1 files)"
+        }
+      ]
+    },
+    {
+      "skill": "28-cinematic-forge",
+      "depends_on": [
+        "66-kie-image",
+        "67-kie-video",
+        "68-kie-audio",
+        "74-kie-live-adapter"
+      ]
+    },
+    {
+      "skill": "46-kie-callback-relay",
+      "depends_on": [
+        "74-kie-live-adapter",
+        "44-convert-and-flow-operator"
+      ],
+      "lookup": [
+        {
+          "glob": "test/**",
+          "why": "test files (1 files)"
+        }
+      ]
+    },
+    {
+      "skill": "47-movie-producer",
+      "depends_on": [
+        "74-kie-live-adapter",
+        "72-motion-video-plus",
+        "27-video-editor"
+      ]
+    },
+    {
+      "skill": "48-facebook-ad-generator",
+      "depends_on": [
+        "47-movie-producer",
+        "universal-sops/fb-ad-craft/MASTER-AD-QC-AUTOFAIL-RULESET.md"
+      ]
+    },
+    {
+      "skill": "63-agnes-image",
+      "lookup": [
+        {
+          "glob": "references/api-patterns.md",
+          "why": "endpoints and patterns"
+        }
+      ]
+    },
+    {
+      "skill": "64-agnes-video"
+    },
+    {
+      "skill": "66-kie-image",
+      "depends_on": [
+        "07-kie-setup",
+        "74-kie-live-adapter",
+        "46-kie-callback-relay"
+      ],
+      "lookup": [
+        {
+          "glob": "references/models.md",
+          "why": "model limits matrix and routing guide"
+        },
+        {
+          "glob": "references/api-patterns.md",
+          "why": "endpoints, callback and polling patterns"
+        }
+      ]
+    },
+    {
+      "skill": "67-kie-video",
+      "depends_on": [
+        "07-kie-setup",
+        "74-kie-live-adapter",
+        "46-kie-callback-relay"
+      ],
+      "lookup": [
+        {
+          "glob": "references/models.md",
+          "why": "model limits matrix and routing guide"
+        },
+        {
+          "glob": "references/api-patterns.md",
+          "why": "endpoints, callback and polling patterns"
+        }
+      ]
+    },
+    {
+      "skill": "68-kie-audio",
+      "depends_on": [
+        "74-kie-live-adapter",
+        "46-kie-callback-relay"
+      ],
+      "lookup": [
+        {
+          "glob": "references/tts.md",
+          "why": "text-to-speech parameter reference"
+        },
+        {
+          "glob": "references/music.md",
+          "why": "music parameter reference"
+        },
+        {
+          "glob": "references/stt.md",
+          "why": "speech-to-text parameter reference"
+        },
+        {
+          "glob": "PROVIDER-DISCREPANCIES.md",
+          "why": "record of known provider differences"
+        }
+      ]
+    },
+    {
+      "skill": "72-motion-video-plus",
+      "depends_on": [
+        "47-movie-producer"
+      ],
+      "lookup": [
+        {
+          "glob": "references/{component-catalog,performance-benchmarks,untested-alternatives}.md",
+          "why": "catalog, benchmarks and notes (reference data)"
+        }
+      ]
+    },
+    {
+      "skill": "74-kie-live-adapter",
+      "depends_on": [
+        "07-kie-setup"
+      ],
+      "lookup": [
+        {
+          "glob": "references/decision-log.md",
+          "why": "decision log"
+        },
+        {
+          "glob": "references/vendor-research.md",
+          "why": "vendor research notes"
+        }
+      ]
+    },
+    {
+      "skill": "75-drama-song-ad-factory",
+      "depends_on": [
+        "07-kie-setup",
+        "24-storyboard-writer",
+        "25-video-creator",
+        "27-video-editor",
+        "30-fish-audio-api-reference",
+        "46-kie-callback-relay",
+        "66-kie-image",
+        "67-kie-video",
+        "68-kie-audio",
+        "74-kie-live-adapter",
+        "23-ai-workforce-blueprint"
+      ],
+      "lookup": [
+        {
+          "glob": "mini-app/**",
+          "why": "mini app code (81 files)"
+        },
+        {
+          "glob": "package/**",
+          "why": "packaging output (6 files)"
+        },
+        {
+          "glob": "shared-bridge/**",
+          "why": "bridge code (17 files)"
+        },
+        {
+          "glob": "timer-artifacts/**",
+          "why": "recorded timer output (13 files)"
+        },
+        {
+          "glob": "references/{agnes-platform-proof,agnes-proof-receipt,method-proof-receipt,lipsync-cartoon-proof,studio-e2e-receipt,sync-manifest}.md",
+          "why": "proof receipts and sync manifest (records, not procedures)"
+        },
+        {
+          "glob": "references/price-menu.md",
+          "why": "price list"
+        }
+      ]
+    }
+  ]
+}
