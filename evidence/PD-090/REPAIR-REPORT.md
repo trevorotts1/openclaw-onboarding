@@ -199,6 +199,34 @@ To https://github.com/trevorotts1/openclaw-onboarding.git
 
 Fast-forward from `af296dd88` to `cf8cf54f3`. Remote head equals local head, full 40 characters.
 
+### Final head, after this report was committed
+
+```
+$ git push origin pd-repair-PD-090:refs/heads/pd/fl23-role-procedures-b--hold-d17
+To https://github.com/trevorotts1/openclaw-onboarding.git
+   cf8cf54f3..85cc6dcdf  pd-repair-PD-090 -> pd/fl23-role-procedures-b--hold-d17
+
+$ git ls-remote --heads origin refs/heads/pd/fl23-role-procedures-b--hold-d17
+85cc6dcdfa253360ec6d4172236acb790a516c8f	refs/heads/pd/fl23-role-procedures-b--hold-d17
+RC=0
+```
+
+Committing this report necessarily advances the head past the merge commit, so the two facts to check are:
+
+1. the merge commit is in the pushed history —
+   `git merge-base --is-ancestor cf8cf54f3bd3bac6390ffeee40707d760ea6843c HEAD` → rc=0;
+2. the remote head equals the local head at push time —
+   `85cc6dcdfa253360ec6d4172236acb790a516c8f` both sides.
+
+Acceptance re-run at that final head:
+
+```
+$ python3 -m pytest scripts/tests/test_pd090_price_face.py -q
+........                                                                 [100%]
+8 passed in 0.21s
+RC=0
+```
+
 ## 8. What I could not prove, and what remains open
 
 1. **The engine's reported conflict could not be reproduced.** Neither named file conflicts at `ebf5c769`. The second named path does not exist in any ref. I cannot tell from here whether the engine read a different `main`, a stale base, or whether its conflict detector misfired. I repaired the only thing I could observe: the branch now contains `origin/main` at `ebf5c769` and merges clean. If the engine's gate re-runs against the same stale snapshot, it may report the same phantom conflict again.
