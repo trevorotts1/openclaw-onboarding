@@ -2253,20 +2253,29 @@ class Engine:
         return (not missing), missing
 
     def _phase_is_gate_declined(self, phase: Phase) -> bool:
-        """True when the phase's own substance verifier returns a PASS whose
-        reason names a gate decline (defer/waived) — the phase legitimately
-        made no artifact because the client declined the upsell, and must be
-        checkpointed deferred, never regenerated or blocked (F59)."""
+        """True when the phase legitimately made no artifact because the client
+        declined its gate — decided from the manifest's structured gate
+        (`defers_unless`) against the run's recorded intake answers, never from
+        words in the verifier's notes (PD-045).
+
+        The phase must still pass its substance verifier; a failed verifier is
+        a real finding, not a declination.
+        """
+        if not getattr(phase, "defers_unless", None):
+            return False
+        intake = (self.state.get("intake")
+                  if isinstance(self.state, dict) else None) or load_intake(
+                      self.run_dir)
+        if not intake:
+            return False
         try:
             import phase_verifiers
-            ok, notes = phase_verifiers.verify(phase.id, self.run_dir)
+            ok, _notes = phase_verifiers.verify(phase.id, self.run_dir)
         except Exception:  # noqa: BLE001 — verifier unusable: not a decline
             return False
         if not ok:
             return False
-        joined = "; ".join(notes or []).lower()
-        return ("defer" in joined or "waived" in joined) and ("gate" in joined
-                or "declined" in joined)
+        return phase_is_deferred(phase, intake)
 
     def _revalidate_banked(self, phase: Phase, ps: Dict[str, Any]) -> List[str]:
         """Return a list of human-readable reasons, empty when every banked artifact is still good."""
@@ -3316,6 +3325,7 @@ class Engine:
             1, heal.HEAL_CAP_TRANSIENT - _prior_transient)
         _final_attempt = _attempts_this_invocation
         for attempt in range(1, _attempts_this_invocation + 1):
+            failure_kind = None
             try:
                 # FIX-21 (D21): process-group exec with cleanup — on budget expiry the
                 # whole group dies, so a timed-out phase never leaves a stray orphan.
@@ -3361,6 +3371,13 @@ class Engine:
                     self._flush_captured_output(_captured)
                     return EXIT_OK
                 reason = f"exit {r.returncode}"
+                # PD-045: the exit code is a structured fact. 402 masked by the
+                # shell is 146 (402 & 255) -- decisive, so it names the class
+                # without reading words. Any other code is NOT decisive, so the
+                # captured stderr still supplies the evidence (logged as
+                # heal.classified_by_text).
+                if r.returncode == 146:
+                    failure_kind = "exit_code:146"
                 # FIX 10: a bare exit code names no failure CLASS -- the provider
                 # refusal (HTTP 402/429/5xx, quota, connection refused...) is only
                 # visible in the executor's stderr, and 402's masked exit code
@@ -3373,8 +3390,10 @@ class Engine:
                     reason = f"exit {r.returncode}: {tail}"
             except subprocess.TimeoutExpired:
                 reason = f"exceeded its {phase.budget_minutes}-minute budget"
+                failure_kind = "timeout"
             except OSError as exc:
                 reason = f"could not start: {exc}"
+                failure_kind = "exec_os_error"
 
             with self._state_lock:
                 record_heal_event(self.state, phase.id, self.store, ps, rung=1, attempt=attempt, reason=reason)
@@ -3400,7 +3419,8 @@ class Engine:
         # both providers -- the QC FIX 10 proof row), any other class falls
         # through to the alternate-route rung (cap x1) exactly as before.
         last_reason = reason  # always bound: >= 1 attempt ran (Item 9(d) floor)
-        if heal.classify_failure(last_reason) == heal.FAILURE_PROVIDER_ERROR:
+        if heal.classify_failure(last_reason, failure_kind=failure_kind) \
+                == heal.FAILURE_PROVIDER_ERROR:
             with self._state_lock:
                 rc_pf = heal.rung2_provider_failover(self, phase, last_reason,
                                                      child_env=child_env)
@@ -3781,17 +3801,20 @@ class Engine:
                 return self._fail_unit(
                     phase, f"dispatcher paid retry budget: {marker_text}")
             return self._heal_or_fail_agent_phase(
-                phase, f"dispatcher retry ceiling: {marker_text}")
+                phase, f"dispatcher retry ceiling: {marker_text}",
+                failure_kind="dispatcher_retry_ceiling")
         if last_present:
             return self._heal_or_fail_agent_phase(
                 phase,
                 f"artifact matching {', '.join(phase.produces_artifact)} exists but failed "
                 f"substance verification for {phase.budget_minutes} minutes: "
-                f"{'; '.join(last_verify_notes) or 'no verifier notes captured'}")
+                f"{'; '.join(last_verify_notes) or 'no verifier notes captured'}",
+                failure_kind="check_failed")
         return self._heal_or_fail_agent_phase(
             phase,
             f"agent-authored phase produced nothing within {phase.budget_minutes} minutes. "
-            f"Expected: {', '.join(phase.produces_artifact)}")
+            f"Expected: {', '.join(phase.produces_artifact)}",
+            failure_kind="produced_nothing")
 
     # -- F9 / F10 / F11: the shared agent-phase wait -------------------------
 
@@ -3980,7 +4003,8 @@ class Engine:
         except Exception:  # noqa: BLE001 -- the alarm must never fail the wait
             return
 
-    def _heal_or_fail_agent_phase(self, phase: Phase, reason: str) -> int:
+    def _heal_or_fail_agent_phase(self, phase: Phase, reason: str,
+                                  failure_kind: Optional[str] = None) -> int:
         """F10 (2026-09-06): run the REAL heal ladder for an agent phase before
         quarantining it.
 
@@ -4002,8 +4026,12 @@ class Engine:
         ladder pass per phase per run, recorded on the phase record as
         agent_heal_done, so a --resume cannot spin the ladder forever.
         Owner-decision reasons never heal -- they fall through to _fail_unit,
-        which routes them to _block (park and notify)."""
-        failure_class = heal.classify_failure(reason)
+        which routes them to _block (park and notify).
+
+        PD-045: `failure_kind` is the structured fact the caller holds (the
+        verifier verdict, the wait outcome) — a check message that mentions
+        the word "provider" is a failed check, never a provider outage."""
+        failure_class = heal.classify_failure(reason, failure_kind=failure_kind)
         if failure_class == heal.FAILURE_OWNER_DECISION:
             return self._fail_unit(phase, reason)
         with self._state_lock:
