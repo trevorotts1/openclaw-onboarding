@@ -51,8 +51,9 @@ name: role-workspace-root-collapse-guard
 
 on:
   push:
-    branches: [main]
+    branches: [main, "batch/**"]
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
   workflow_dispatch:
 
 permissions:
@@ -64,6 +65,7 @@ concurrency:
 
 jobs:
   role-workspace-root-collapse-guard:
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     name: Role-workspace root must never collapse onto the company root
     runs-on: ubuntu-latest
     timeout-minutes: 10

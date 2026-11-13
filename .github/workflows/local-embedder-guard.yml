@@ -5,7 +5,7 @@ name: local-embedder-guard
 
 on:
   push:
-    branches: [main]
+    branches: [main, "batch/**"]
     paths:
       - 76-local-embedder/**
       - install.sh
@@ -15,6 +15,7 @@ on:
       - shared-utils/embedding_health.py
       - .github/workflows/local-embedder-guard.yml
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
     paths:
       - 76-local-embedder/**
       - install.sh
@@ -25,11 +26,12 @@ on:
       - .github/workflows/local-embedder-guard.yml
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
   local-embedder:
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     name: Skill 76 wire.sh + re-pinner guards (mocked)
     runs-on: ubuntu-latest
     steps:

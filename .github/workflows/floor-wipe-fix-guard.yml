@@ -104,7 +104,7 @@ name: Floor-wipe fix guard (P2-06)
 
 on:
   push:
-    branches: [main]
+    branches: [main, "batch/**"]
     paths:
       - "23-ai-workforce-blueprint/scripts/department-floor.py"
       - "23-ai-workforce-blueprint/scripts/materialize-missing-departments.py"
@@ -123,6 +123,7 @@ on:
       - "scripts/probe/test-p206-floor-short-probe.sh"
       - ".github/workflows/floor-wipe-fix-guard.yml"
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
     branches: [main]
     paths:
       - "23-ai-workforce-blueprint/scripts/department-floor.py"
@@ -143,11 +144,12 @@ on:
       - ".github/workflows/floor-wipe-fix-guard.yml"
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
   floor-wipe-fix-guard:
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     name: P2-06 floor-wipe fix (5 hermetic suites)
     runs-on: ubuntu-latest
     env:

@@ -16,7 +16,7 @@ name: KIE owner prompt cap present for every GPT Image 2.6 route (G-7)
 
 on:
   push:
-    branches: [main]
+    branches: [main, "batch/**"]
     paths:
       - "66-kie-image/models.json"
       - "71-blackceo-signature-page/references/prompt-budget-policy.json"
@@ -24,6 +24,7 @@ on:
       - "tests/unit/kie-owner-cap-2-6.test.py"
       - "scripts/ci/fast-guards.d/kie-owner-cap-2-6-guard.sh"
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
     branches: [main]
     paths:
       - "66-kie-image/models.json"
@@ -33,11 +34,12 @@ on:
       - "scripts/ci/fast-guards.d/kie-owner-cap-2-6-guard.sh"
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
   kie-owner-cap-2-6-guard:
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     name: owner_prompt_cap_chars present and single-valued for every GPT Image 2.6 route
     runs-on: ubuntu-latest
     steps:

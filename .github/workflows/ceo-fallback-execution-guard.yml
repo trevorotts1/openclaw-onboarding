@@ -1,6 +1,7 @@
 name: CEO fallback execution guard
 on:
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
     paths:
       - 'shared-utils/ceo_execution_policy.py'
       - 'shared-utils/sync_ceo_runtime_bindings.py'
@@ -17,13 +18,14 @@ on:
       - 'tests/unit/test_ceo_*.py'
       - '.github/workflows/ceo-fallback-execution-guard.yml'
   push:
-    branches: [main]
+    branches: [main, "batch/**"]
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
   offline-regressions:
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

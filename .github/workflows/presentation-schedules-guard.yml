@@ -37,7 +37,7 @@ name: presentation-schedules-guard
 
 on:
   push:
-    branches: [main]
+    branches: [main, "batch/**"]
     paths:
       - install.sh
       - update-skills.sh
@@ -49,6 +49,7 @@ on:
       - tests/unit/pres034-scheduler-reconcile.test.sh
       - .github/workflows/presentation-schedules-guard.yml
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
     paths:
       - install.sh
       - update-skills.sh
@@ -61,11 +62,12 @@ on:
       - .github/workflows/presentation-schedules-guard.yml
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
   presentation-schedules-guard:
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     name: Presentations scheduler install guard (F12a/F12b)
     runs-on: ubuntu-latest
     steps:

@@ -26,6 +26,7 @@ name: skill-44 e2e (unit 11 — AC 19/20/21)
 
 on:
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
     branches:
       - main
       - "skill-44/**"
@@ -33,8 +34,7 @@ on:
       - "44-convert-and-flow-operator/tools/engine/**"
       - ".github/workflows/skill44-e2e.yml"
   push:
-    branches:
-      - "skill-44/**"
+    branches: ["batch/**"]
   workflow_dispatch:
 
 # No live CRM credentials are needed or present.
@@ -60,6 +60,7 @@ jobs:
   # TRINITY stub → 23-key stub → DRAFT workflow, NOT published.
   # ─────────────────────────────────────────────────────────────────────────────
   unit11-e2e-merge-gate:
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     name: "AC 19 — E2E Merge Gate (intent → Tier 0 → build → gates → DRAFT)"
     runs-on: ubuntu-latest
     defaults:
@@ -161,6 +162,7 @@ jobs:
   # matches the pre-mutation snapshot (server-managed keys stripped).
   # ─────────────────────────────────────────────────────────────────────────────
   unit11-rollback:
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     name: "AC 20 — Rollback (pre-write snapshot + restore)"
     runs-on: ubuntu-latest
     needs: unit11-e2e-merge-gate
@@ -241,6 +243,7 @@ jobs:
   # lock so it cannot run builds in parallel on a box.
   # ─────────────────────────────────────────────────────────────────────────────
   unit11-serialization:
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     name: "AC 21 — Serialization (WriteLock + step backoff)"
     runs-on: ubuntu-latest
     needs: unit11-e2e-merge-gate
@@ -331,6 +334,7 @@ jobs:
   # A failing regression here means the e2e changes broke something upstream.
   # ─────────────────────────────────────────────────────────────────────────────
   regression-guard:
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     name: "Regression guard (existing engine tests must stay green)"
     runs-on: ubuntu-latest
     needs:
@@ -392,7 +396,7 @@ jobs:
       - unit11-rollback
       - unit11-serialization
       - regression-guard
-    if: always()
+    if: (github.event_name != 'pull_request' || github.event.pull_request.draft == false) && (always())
     steps:
       - name: Check all required jobs passed
         run: |

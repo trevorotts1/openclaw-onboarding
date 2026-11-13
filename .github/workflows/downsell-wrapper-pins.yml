@@ -16,7 +16,7 @@ name: downsell-wrapper-pins
 
 on:
   push:
-    branches: [main]
+    branches: [main, "batch/**"]
     paths:
       - "49-signature-funnel/scripts/**"
       - "81-signature-downsell/**"
@@ -26,6 +26,7 @@ on:
       - ".github/workflows/downsell-wrapper-pins.yml"
       - ".github/CODEOWNERS"
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
     branches: [main]
     paths:
       - "49-signature-funnel/scripts/**"
@@ -38,11 +39,12 @@ on:
   workflow_dispatch:
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
   downsell-wrapper-pins:
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     name: downsell-wrapper-pins
     runs-on: ubuntu-latest
     timeout-minutes: 15

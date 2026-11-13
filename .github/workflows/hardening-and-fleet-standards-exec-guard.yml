@@ -31,7 +31,7 @@ name: hardening bounded-brew + fleet-standards legacy exec.mode guard
 
 on:
   push:
-    branches: [main]
+    branches: [main, "batch/**"]
     paths:
       - scripts/install-hardening.sh
       - scripts/apply-fleet-standards.sh
@@ -49,6 +49,7 @@ on:
       - tests/unit/workshop-mode-compat.test.sh
       - .github/workflows/hardening-and-fleet-standards-exec-guard.yml
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
     paths:
       - scripts/install-hardening.sh
       - scripts/apply-fleet-standards.sh
@@ -67,11 +68,12 @@ on:
       - .github/workflows/hardening-and-fleet-standards-exec-guard.yml
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
   structural:
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     name: structural gates (brew bounds, streamed log, exec.mode translation)
     runs-on: ubuntu-latest
     steps:
@@ -130,6 +132,7 @@ jobs:
           bash tests/unit/bash4-syntax-guard.test.sh
 
   live-darwin:
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     name: LIVE watchdog + whisper probe (macOS)
     runs-on: macos-latest
     steps:

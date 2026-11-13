@@ -25,13 +25,14 @@ name: QC static checks
 
 on:
   push:
-    branches: [main]
+    branches: [main, "batch/**"]
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
     branches: [main]
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
   qc-static:
@@ -3825,6 +3826,7 @@ jobs:
   # and fails unless it succeeded, so it still gates "QC static invariants".
   # Same tools the empty-home step installs, so no suite skips itself here.
   skill75-one-process:
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     name: Skill 75 whole-tree pytest (one process)
     runs-on: ubuntu-latest
     timeout-minutes: 35
