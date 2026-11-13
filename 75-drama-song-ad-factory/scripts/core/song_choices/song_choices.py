@@ -20,6 +20,10 @@ client answers Yes to the SONG APPROVAL card question:
 
 State lives in <run>/song-choices/ (state.json, pick.json). No state file means
 the client answered No: behaviour is exactly as before (one song, no wait).
+A state file with ``unanswered`` true means the SONG APPROVAL question was never
+answered (or the answer was corrupt or had no recorded author): NOTHING is
+bought -- not three songs, not one -- and every paid job waits while the
+question is put to the client again (D-3, 2026-11-13).
 stdlib only; generate/measure/save/runner are injected, so no network here.
 """
 from __future__ import annotations
@@ -46,6 +50,12 @@ from song_choices import overlap as _OV            # noqa: E402  (WWFIX D2 item 
 
 TOOL_NAME = "song_choices"
 DIRNAME = "SONG-CHOICES"
+#: D-3: the SONG APPROVAL answer that is missing, corrupt or author-less. It is
+#: neither Yes nor No: the run WAITS and ASKS, and buys nothing.
+UNANSWERED = "unanswered"
+#: The SONG APPROVAL question the client must answer before any song is bought.
+SONG_APPROVAL_QUESTION = ("Do you want to hear and pick the song before any "
+                          "video is made? (three labelled songs)")
 #: Failed takes are presented for listening only, never on the offer surface.
 FOR_LISTENING = "FOR-LISTENING"
 BANNED_WORDS = ("choir", "reverb", "echo", "rap", "spoken", "speak", "acapella")
@@ -1515,25 +1525,27 @@ def answer_provenance(answer, target=None, channel="card"):
 
 
 def classify_song_answer(answers, target=None):
-    """WW-09: (required, provenance, reason).
+    """WW-09 / D-3: (required, provenance, reason).
 
     An EXPLICIT client answer is honoured: Yes = three labelled versions, No =
     one song, exactly as recorded. A MISSING answer (no song row), a CORRUPT one
-    (n not 1 or 2) or an AUTHOR-LESS delegated one is NEVER silently turned into
-    No: it is treated as UNSPECIFIED and routed to the recommended Yes, and the
-    refusal to guess is recorded with the answer."""
+    (n not 1 or 2) or an AUTHOR-LESS delegated one is ``UNANSWERED``: the run
+    WAITS and ASKS the SONG APPROVAL question again and buys NOTHING. It is
+    never turned into Yes (three paid songs on silence, the S75-001 defect) and
+    never into No (one song on silence)."""
     rows = [a for a in (answers or []) if isinstance(a, dict)]
     rec = next((a for a in rows if a.get("id") == "song"), None)
     if rec is None:
-        return True, {"channel": "card", "unknown": True}, \
-            ("no song answer recorded: treated as unspecified and routed to the "
-             "recommended Yes (three labelled versions)")
+        return UNANSWERED, {"channel": "card", "unknown": True}, \
+            ("no song answer recorded: the SONG APPROVAL question is still open, "
+             "so nothing is bought; ask the client and wait for the answer")
     prov = answer_provenance(rec, target)
     n = rec.get("n")
     if n not in (1, 2) or prov["unknown"]:
-        return True, prov, \
+        return UNANSWERED, prov, \
             ("the song answer (n=%r, author=%r) is corrupt or has no recorded "
-             "author: treated as unspecified and routed to the recommended Yes"
+             "author: the SONG APPROVAL question is still open, so nothing is "
+             "bought; ask the client again and wait for the answer"
              % (n, prov["who"]))
     return n == 1, prov, ""
 
@@ -1544,10 +1556,11 @@ def record_card_answer(run_dir, answers, target=None):
     the songs are made replaces the old one; once versions exist (resume) the
     recorded answer is kept untouched.
 
-    WW-09: a missing, corrupt or author-less answer is never read as No (it
-    routes to the recommended Yes and records the refusal to guess); the
-    channel, the author and the timestamp, when recorded, are stored with the
-    answer so nobody can answer for the client unnoticed."""
+    WW-09 / D-3: a missing, corrupt or author-less answer is neither Yes nor No.
+    The run state records the question as OPEN (``required`` false,
+    ``unanswered`` true) with the channel, author and timestamp and the reason
+    nobody answered for the client: the music stage then waits and asks, and no
+    song is bought until a real answer arrives."""
     st = _state(run_dir)
     if st and st.get("offered"):
         return bool(st.get("required"))
@@ -1559,8 +1572,14 @@ def record_card_answer(run_dir, answers, target=None):
 
 
 def init(run_dir, required, target=None, provenance=None):
-    """Record the card answer (and the client's chat id). Call once when the card is approved."""
-    st = {"required": bool(required), "offered": {}}
+    """Record the card answer (and the client's chat id). Call once when the card is approved.
+
+    ``required`` is True (three songs), False (one song) or ``UNANSWERED``.
+    UNANSWERED is a WAITING state: it never reads as Yes, so nothing is bought."""
+    unanswered = required == UNANSWERED
+    st = {"required": (required is True) and not unanswered, "offered": {}}
+    if unanswered:
+        st["unanswered"] = True
     if target:
         st["target"] = str(target)
     if provenance is not None:
@@ -1620,6 +1639,10 @@ def refusal(run_dir):
         st = _state(run_dir)
     except (OSError, ValueError):
         return _refuse("the song-choices state is unreadable; fix it before anything is spent")
+    if st and st.get("unanswered"):
+        # D-3: nothing was bought, and nothing else starts, until the client
+        # answers the SONG APPROVAL question.
+        return _unanswered_hold(run_dir, st)
     if st is None or not st.get("required"):
         return None
     try:
@@ -1640,6 +1663,34 @@ def _refuse(why, code="SONG_PICK_MISSING"):
             # S75-W02-U3: the refusal travels as an envelope with its causal
             # chain, so a wrapper boundary can never flatten it to a bare "no".
             "causal_chain": [causal_link("song_choices", code, why)]}
+
+
+def _unanswered_hold(run_dir, st):
+    """D-3: the refusal that makes the music stage WAIT with the SONG APPROVAL
+    question instead of acting as Yes. Nothing is spent while it stands."""
+    why = ("the SONG APPROVAL answer is missing, corrupt or has no recorded "
+           "author; the run waits and buys nothing")
+    return {"reason_code": "SONG_APPROVAL_UNANSWERED",
+            "detail": why,
+            "next_action": "Ask the client: %s. Then wait for their answer. No "
+                           "song, picture, video, image or lip-sync job starts "
+                           "before it." % SONG_APPROVAL_QUESTION,
+            "causal_chain": [causal_link("song_choices",
+                                         "SONG_APPROVAL_UNANSWERED", why)]}
+
+
+def _unanswered_refusal(run_dir):
+    """D-3: the recorded SONG APPROVAL answer is missing, corrupt or has no
+    recorded author -> the hold, else None. An unreadable state file is not
+    this hold (``refusal`` refuses it, fail closed); a state file with no
+    ``unanswered`` flag is an answered run and is left alone."""
+    try:
+        st = _state(run_dir)
+    except (OSError, ValueError):
+        return None
+    if not st or not st.get("unanswered"):
+        return None
+    return _unanswered_hold(run_dir, st)
 
 
 def _refuse_constituent(why):
@@ -1671,7 +1722,13 @@ def constituent_hold(run_dir):
 def dispatch_refusal(is_music_job, run_dir):
     """kie_dispatch seam: the song stage itself may run; everything else waits
     until the pick is in AND every offered song's constituent receipt is
-    current (WW-08 item 3)."""
+    current (WW-08 item 3).
+
+    D-3 first: with the SONG APPROVAL question still unanswered NOTHING runs,
+    the song stage included -- silence must never buy three songs."""
+    hold = _unanswered_refusal(run_dir)
+    if hold:
+        return hold
     if is_music_job:
         return None
     return refusal(run_dir) or constituent_hold(run_dir)
@@ -2050,6 +2107,14 @@ def cmd_generate(a, generate=None, measure=None, save=None, plan=None):
     defect this unit fixes.
     """
     run_dir = _canonical_run_dir(a.run_dir)
+    # D-3: an unanswered SONG APPROVAL card buys NOTHING. The three-version
+    # runner is the Yes path; it refuses here rather than spending three songs
+    # on a question the client never answered.
+    _hold = _unanswered_refusal(run_dir)
+    if _hold:
+        raise ChoiceError("REFUSED: %s -- %s. %s"
+                          % (_hold["reason_code"], _hold["detail"],
+                             _hold["next_action"]))
     spec = _load_request(a.request, run_dir)
     conflict = _run_dir_conflict(spec.get("run_authorities") or {})
     if conflict:
