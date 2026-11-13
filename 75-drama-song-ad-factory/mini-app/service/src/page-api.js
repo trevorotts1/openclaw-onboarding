@@ -34,6 +34,7 @@
 import { scopePath } from './ids.js';
 import { DEFAULT_OPTION, OPTIONS, lastCheckIn, optionLine } from './options.js';
 import { listKeys } from './support.js';
+import { orderRetentionKind, withRetentionKind } from './retention.js';
 
 export const AF_ORDER_INVALID = 'AF-DS-ORDER-INVALID';
 export const AF_DRAFT_KIND = 'AF-DS-DRAFT-KIND';
@@ -45,8 +46,6 @@ export const MAX_UPLOAD_IDS = 10;
 export const MAX_SESSION_ORDERS = 20;
 
 const DRAFT_FILE = 'draft.json';
-/** The R2 object carries no delete in the adapter, so "no draft" is `{}`. */
-const DRAFT_NONE = '{}';
 
 /** SPEC A2/B1 — the remembered Agnes answer as the page reads it. A value
  *  outside this list is never stored: an unrecognised report leaves the stored
@@ -141,7 +140,7 @@ async function absorbAgnesCheckIn(ctx) {
   if (AGNES_REMEMBERED.includes(body.agnes_remembered)) {
     const record = await clientRecord(store, clientId);
     if (record.agnes_remembered !== body.agnes_remembered) {
-      await store.kvPut(`client:${clientId}`, JSON.stringify({ ...record, agnes_remembered: body.agnes_remembered }));
+      await store.kvPut(`client:${clientId}`, JSON.stringify(withRetentionKind({ ...record, agnes_remembered: body.agnes_remembered }, 'enrollment_record')));
       stored += 1;
     }
   }
@@ -156,16 +155,17 @@ async function absorbAgnesCheckIn(ctx) {
       continue;
     }
     if (JSON.stringify(order.agnes_progress || null) === JSON.stringify(progress)) continue;
-    await store.kvPut(`order:${clientId}:${orderId}`, JSON.stringify({ ...order, agnes_progress: progress, agnes_progress_at: nowMs }));
+    await store.kvPut(`order:${clientId}:${orderId}`, JSON.stringify(withRetentionKind({ ...order, agnes_progress: progress, agnes_progress_at: nowMs }, orderRetentionKind(order))));
     stored += 1;
   }
   return { stored };
 }
 
 /** R2 has no delete in the adapter, so an empty marker stands for "no draft".
- *  W2 calls this after Lock it in. */
+ *  W2 calls this after Lock it in. The draft holds the client's intake answers,
+ *  so it carries the intake_answer class even when it is only the `{}` marker. */
 export async function deleteDraft(objects, clientId) {
-  await objects.objectPut(scopePath(clientId, DRAFT_FILE), DRAFT_NONE);
+  await objects.objectPut(scopePath(clientId, DRAFT_FILE), JSON.stringify(withRetentionKind({}, 'intake_answer')));
 }
 
 // ---------------------------------------------------------------------------
@@ -220,7 +220,8 @@ async function draftRoute(ctx) {
   const updated_at = nowMs;
   await objects.objectPut(
     scopePath(auth.client_id, DRAFT_FILE),
-    JSON.stringify({ replies: checked.replies, updated_at }),
+    // The draft is the client's intake answers: the intake_answer class.
+    JSON.stringify(withRetentionKind({ replies: checked.replies, updated_at }, 'intake_answer')),
   );
   return ok({ updated_at });
 }

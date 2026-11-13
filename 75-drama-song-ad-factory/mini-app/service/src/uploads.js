@@ -16,6 +16,7 @@
 'use strict';
 
 import { randomHex, scopePath } from './ids.js';
+import { withRetentionKind } from './retention.js';
 
 export const MAX_BYTES = { audio: 25 * 1024 * 1024, image: 25 * 1024 * 1024, video: 200 * 1024 * 1024 };
 
@@ -134,14 +135,15 @@ export async function acceptUpload({ store, env, clientId, body, nowUtc, entropy
   };
 
   // Persist the queued job BEFORE the link is handed out, so a phone that
-  // uploads and dies still has a pollable job.
-  await store.kvPut(uploadKey(clientId, uploadId), JSON.stringify(job));
+  // uploads and dies still has a pollable job. The job is a stored object in the
+  // client's own scope (the 45-day storage class).
+  await store.kvPut(uploadKey(clientId, uploadId), JSON.stringify(withRetentionKind(job, 'project_object')));
 
   const presigned = await presignPut(env, objectPath, body.content_type);
   if (!presigned.ok) {
     await store.kvPut(
       uploadKey(clientId, uploadId),
-      JSON.stringify({ ...job, status: 'failed', error: 'storage-not-ready' }),
+      JSON.stringify(withRetentionKind({ ...job, status: 'failed', error: 'storage-not-ready' }, 'project_object')),
     );
     return { ok: false, status: 503, code: AF_UP_CAPABILITY, message: 'Upload storage is not ready. Try again shortly.' };
   }

@@ -28,6 +28,13 @@
 // It is new work (U2)." This module IS that work: it decides, it never
 // blanket-deletes, and it refuses the never-delete classes by construction.
 //
+// Every retention-managed stored object carries one of these names in
+// `retention_kind` (RETENTION_TAG_FIELD), written by the module that stores it.
+// A credential record (a key) and the bare check-in millisecond count are not
+// retention objects and carry no tag; they are revoked or overwritten, never
+// swept, and the table names no class for them. Without the tag every real
+// object reached this module as an unknown kind and was kept forever (S75-083).
+//
 // PURE. No bindings, no I/O, no clock of its own.
 // ============================================================================
 
@@ -52,6 +59,41 @@ export const RETENTION_RULES = {
 
 export const AF_RET_UNKNOWN_KIND = 'AF-DS-RET-UNKNOWN-KIND';
 export const AF_RET_NO_EVENT = 'AF-DS-RET-NO-EVENT';
+
+/**
+ * The property every stored object carries, holding one of the names above.
+ *
+ * The service already uses `kind` for two other vocabularies — a key's role
+ * ('link' | 'box' | 'machine', keys.js) and a delivery's transport ('ghl' |
+ * 'r2', index.js) — so the retention tag is its own field and nothing already
+ * stored is renamed. Writers emit THIS table's names; the two older
+ * vocabularies stay as they are.
+ */
+export const RETENTION_TAG_FIELD = 'retention_kind';
+
+/** True only for a name RETENTION_RULES knows. */
+export function isRetentionKind(kind) {
+  return typeof kind === 'string' && Object.prototype.hasOwnProperty.call(RETENTION_RULES, kind);
+}
+
+/**
+ * Tag one stored record with the table name for its class. An unknown name
+ * throws, the same way buildKeyRecord throws on an unknown key kind: a writer
+ * can never store an object this sweep would fall back to unknown-kind -> keep.
+ */
+export function withRetentionKind(record, kind) {
+  if (!isRetentionKind(kind)) throw new Error(AF_RET_UNKNOWN_KIND);
+  return { ...record, [RETENTION_TAG_FIELD]: kind };
+}
+
+/**
+ * The class a stored order record belongs to: an order nobody claimed is the
+ * 45-day waiting class; every other state is the status record (30 days after
+ * delivery). Computed at the writer, never guessed by the sweep.
+ */
+export function orderRetentionKind(order) {
+  return order && order.state === 'waiting' ? 'waiting_unclaimed' : 'status_record';
+}
 
 /**
  * @param {string} kind

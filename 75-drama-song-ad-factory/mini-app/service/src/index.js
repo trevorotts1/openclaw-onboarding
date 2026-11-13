@@ -41,6 +41,7 @@ import { AF_PUSH_DISABLED, pushEnabled, registerSubscription, revokeSubscription
 import { AF_LINK_KIND, linkRoute } from './link.js';
 import { deleteDraft, pageRoute, validateReplies } from './page-api.js';
 import { approvalsRoute } from './approvals-api.js';
+import { orderRetentionKind, withRetentionKind } from './retention.js';
 
 export const SERVICE_VERSION = '0.1.0';
 export { randomConnectHex };
@@ -257,7 +258,8 @@ export async function handle(request, env, store, objects, deps = {}) {
     const record = await clientRecord(store, target);
     const set = setOption(record, body.option, { nowMs, approval: body.approval });
     if (!set.ok) return fail(set.code === AF_OPT_APPROVAL ? 403 : 400, set.code, set.message);
-    await store.kvPut(`client:${target}`, JSON.stringify(set.record));
+    // The client record is the enrollment record: the table's never-delete class.
+    await store.kvPut(`client:${target}`, JSON.stringify(withRetentionKind(set.record, 'enrollment_record')));
     return ok({ option: set.record.option, line: optionLine(set.record, nowMs, await lastCheckIn(objects, target)) });
   }
 
@@ -363,7 +365,8 @@ export async function handle(request, env, store, objects, deps = {}) {
       created_at: nowMs,
       updated_at: nowMs,
     };
-    await store.kvPut(`order:${clientId}:${orderId}`, JSON.stringify(order));
+    // A brand-new order is the waiting class (45 days from creation).
+    await store.kvPut(`order:${clientId}:${orderId}`, JSON.stringify(withRetentionKind(order, orderRetentionKind(order))));
     // Lock it in ends the draft: the order holds the answers now.
     await deleteDraft(objects, clientId);
     // DSF-611 — the box must see this order on its VERY first poll.
@@ -424,10 +427,16 @@ export async function handle(request, env, store, objects, deps = {}) {
         const deliveryUrl = typeof body.delivery.url === 'string' ? body.delivery.url : '';
         const deliveryKind = body.delivery.kind === 'ghl' || body.delivery.kind === 'r2' ? body.delivery.kind : null;
         if (deliveryUrl.startsWith('https://') && deliveryKind) {
-          moved.order.delivery = { url: deliveryUrl, kind: deliveryKind };
+          // Plan 3.15: the GHL library copy is never deleted by the studio; the
+          // R2 fallback goes 7 days after delivery. The copy is tagged HERE, at
+          // the only place that records where the video lives.
+          const delivery = { url: deliveryUrl, kind: deliveryKind };
+          moved.order.delivery = deliveryKind === 'ghl'
+            ? withRetentionKind(delivery, 'ghl_media')
+            : withRetentionKind(delivery, 'r2_fallback_video');
         }
       }
-      await store.kvPut(`order:${clientId}:${orderId}`, JSON.stringify(moved.order));
+      await store.kvPut(`order:${clientId}:${orderId}`, JSON.stringify(withRetentionKind(moved.order, orderRetentionKind(moved.order))));
       await writeInbox(objects, { clientId, orders: await waitingList(store, clientId), nowMs });
       return ok({ order: project(moved.order, nowMs) });
     }
@@ -435,7 +444,7 @@ export async function handle(request, env, store, objects, deps = {}) {
     if (verb === 'cancel' && request.method === 'POST') {
       const moved = transition(JSON.parse(raw), 'cancel', { nowMs, actor: auth.record.kind });
       if (!moved.ok) return fail(409, moved.code, moved.message);
-      await store.kvPut(`order:${clientId}:${orderId}`, JSON.stringify(moved.order));
+      await store.kvPut(`order:${clientId}:${orderId}`, JSON.stringify(withRetentionKind(moved.order, orderRetentionKind(moved.order))));
       await writeInbox(objects, { clientId, orders: await waitingList(store, clientId), nowMs });
       return ok({ order: project(moved.order, nowMs) });
     }

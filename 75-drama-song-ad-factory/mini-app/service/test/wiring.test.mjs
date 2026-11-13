@@ -248,7 +248,7 @@ test('wiring: a deliver event stores the https delivery link on the order', asyn
     s,
   );
   assert.equal(delivered.status, 200);
-  assert.deepEqual((await delivered.json()).order.delivery, { url: 'https://media.example/v/1', kind: 'ghl' });
+  assert.deepEqual((await delivered.json()).order.delivery, { url: 'https://media.example/v/1', kind: 'ghl', retention_kind: 'ghl_media' });
 
   // An http URL is never stored.
   const otherId = await readyOrder('Second Sale');
