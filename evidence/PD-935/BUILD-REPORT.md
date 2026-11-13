@@ -3,6 +3,7 @@
 **Unit:** PD-935 · lane FL02 · branch `pd/fl02-intake-driver`
 **Repo:** `trevorotts1/openclaw-onboarding`
 **Base commit:** `7d21a9641e98708959a07923df353ccc4bc2002a` (== `origin/pd/fl02-intake-driver` before this unit)
+**This unit's commit:** `710ba6d36060598e5a8afcf031605a95f46364be` (pushed; remote proven equal)
 **Merge-base with `origin/main`:** `1a476d2cbbc57fedbfa9dbcf73c91074bfd1a1dc`
 **Acceptance row used:** ledger row PD-935 `acceptance: ["A1"]`; the brief file for PD-935 does
 not exist (`loop-control/pd-fix/briefs/` holds only PD-933), so A1 is read from the unit's own
@@ -170,7 +171,7 @@ the fixture change.
 | PD-930 | `87e2458d4` | PD-930 | `test_operator_contract_handoff.py` (atomic-shape fixtures) |
 | PD-932 | `2c3d74b92` | PD-932 | `test_operator_contract_handoff.py` (workhorse_model retarget) |
 | PD-931 | `7d21a9641` | PD-931 | `test_operator_contract_handoff.py` (`PD_CC_ROOT`) |
-| **this unit** | new commit | **PD-935** | `test_operator_contract_handoff.py` — fixture hunk only, lines 233–246; no other hunk |
+| **this unit** | `710ba6d36` | **PD-935** | `test_operator_contract_handoff.py` — fixture hunk only, lines 233–246; no other hunk |
 
 ---
 
