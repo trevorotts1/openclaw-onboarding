@@ -108,18 +108,30 @@ if [[ -z "$WHAT_THEY_DELIVER" ]]; then
 fi
 
 # ---- substitute template placeholders ----
+# BU-77: substitutions are literal (same function as generate-infographics.sh).
+# bash 5.1+ treats a bare `&` in ${v//pat/repl} replacements as the matched text,
+# and an unescaped `|` or `&` in a value corrupts the prompt, so prefix/suffix
+# removal is used instead; the values are treated strictly as data.
+_literal_replace() {  # <haystack> <needle> <replacement> -> stdout (literal)
+  local needle="$2" repl="$3" out="" rest="$1"
+  while [[ "$rest" == *"$needle"* ]]; do
+    out+="${rest%%"$needle"*}$repl"
+    rest="${rest#*"$needle"}"
+  done
+  printf '%s' "$out$rest"
+}
 fill_prompt() {
   local text="$1"
-  text="${text//\{\{COMPANY_NAME\}\}/$COMPANY_NAME}"
-  text="${text//\{\{OWNER_NAME\}\}/$OWNER_NAME}"
-  text="${text//\{\{AGENT_NAME\}\}/$AGENT_NAME}"
-  text="${text//\{\{INDUSTRY\}\}/$INDUSTRY}"
-  text="${text//\{\{BRAND_COLOR\}\}/$BRAND_COLOR}"
-  text="${text//\{\{DEPT_LIST\}\}/$DEPT_LIST}"
-  text="${text//\{\{DEPT_COUNT\}\}/$DEPT_COUNT}"
-  text="${text//\{\{ROLE_COUNT\}\}/$ROLE_COUNT}"
-  text="${text//\{\{WHAT_THEY_DELIVER\}\}/$WHAT_THEY_DELIVER}"
-  echo "$text"
+  text="$(_literal_replace "$text" '{{COMPANY_NAME}}' "$COMPANY_NAME")"
+  text="$(_literal_replace "$text" '{{OWNER_NAME}}' "$OWNER_NAME")"
+  text="$(_literal_replace "$text" '{{AGENT_NAME}}' "$AGENT_NAME")"
+  text="$(_literal_replace "$text" '{{INDUSTRY}}' "$INDUSTRY")"
+  text="$(_literal_replace "$text" '{{BRAND_COLOR}}' "$BRAND_COLOR")"
+  text="$(_literal_replace "$text" '{{DEPT_LIST}}' "$DEPT_LIST")"
+  text="$(_literal_replace "$text" '{{DEPT_COUNT}}' "$DEPT_COUNT")"
+  text="$(_literal_replace "$text" '{{ROLE_COUNT}}' "$ROLE_COUNT")"
+  text="$(_literal_replace "$text" '{{WHAT_THEY_DELIVER}}' "$WHAT_THEY_DELIVER")"
+  printf '%s' "$text"
 }
 
 # ---- KIE: one path, Skill 74 (lib-kie74.sh does validate, createTask and poll) ----
@@ -185,11 +197,13 @@ declare -a PROMPT_QUEUE=(
   "dept-overview|$SKILL_DIR/templates/img-dept-overview-prompt.md"
   "sop-system|$SKILL_DIR/templates/img-sop-system-prompt.md"
   "six-sigma|$SKILL_DIR/templates/img-six-sigma-prompt.md"
-  "workflow-infographic|$SKILL_DIR/templates/infographic-2-prompt.md"
 )
 
 # ---- run generation loop ----
 RESULT_URLS=()
+# BU-77: labels kept in step with RESULT_URLS so a state field can be found by
+# label, never by position (a failed image shifts every later index).
+RESULT_LABELS=()
 generated=0
 for entry in "${PROMPT_QUEUE[@]}"; do
   [[ "$generated" -ge "$CAP" ]] && break
@@ -199,6 +213,7 @@ for entry in "${PROMPT_QUEUE[@]}"; do
   url=$(generate_image "$pfile" "$label" || true)
   if [[ -n "$url" && "$url" != "null" ]]; then
     RESULT_URLS+=("$url")
+    RESULT_LABELS+=("$label")
     generated=$((generated + 1))
     log "INFO" "[$label] added to visual intelligence set ($generated/$CAP)"
   else
@@ -216,17 +231,18 @@ fi
 URL_ARRAY=$(printf '%s\n' "${RESULT_URLS[@]}" | jq -R . | jq -s .)
 state_set ".visualIntelligenceUrls = $URL_ARRAY"
 
-# Backward compat: write infographic1Url (org chart) and infographic2Url (how-your-zhc-works)
-# Org chart is always index 0; how-zhc-works is always index 1 in the mandatory set.
+# Backward compat: write infographic1Url (org chart) and infographic2Url (how-your-zhc-works).
+# Org chart is always index 0; how-your-zhc-works is found by its label, never by position,
+# because a failed image shifts the URL indexes.
 if [[ "${#RESULT_URLS[@]}" -ge 1 ]]; then
   state_set ".infographic1Url = \"${RESULT_URLS[0]}\""
 fi
-if [[ "${#RESULT_URLS[@]}" -ge 3 ]]; then
-  # Index 2 is how-your-zhc-works
-  state_set ".infographic2Url = \"${RESULT_URLS[2]}\""
-elif [[ "${#RESULT_URLS[@]}" -ge 2 ]]; then
-  state_set ".infographic2Url = \"${RESULT_URLS[1]}\""
-fi
+for i in "${!RESULT_LABELS[@]}"; do
+  if [[ "${RESULT_LABELS[$i]}" == "how-your-zhc-works" ]]; then
+    state_set ".infographic2Url = \"${RESULT_URLS[$i]}\""
+    break
+  fi
+done
 
 log "INFO" "visual intelligence set complete: ${#RESULT_URLS[@]} images written to state (.visualIntelligenceUrls)"
 log "INFO" "8.5-GATE: each image must be self-rated 1-10 vs the rubric in QUALITY-GATE.md. Write .qualityRatings per image. Do NOT deliver below 8.5 -- regenerate and re-rate."
