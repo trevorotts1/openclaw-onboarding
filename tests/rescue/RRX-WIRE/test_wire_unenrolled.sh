@@ -277,6 +277,43 @@ _fc="$(printf '%s\n' "$_report2" | sed -n 's/^FLUSH_CMD \([0-9][0-9]*\)$/\1/p')"
     && pass "C4: the flush add runs rr_escalate.py flush" \
     || fail "C4: the flush command did not name rr_escalate.py flush (count: ${_fc:-none})"
 
+# =============================================================================
+# CASE 3 (RRX-019h). The two DAILY jobs are NOT the poll job. Driven through the
+# RR-028 harness -- the same mock the RR-028 batteries use -- so this pins the
+# split itself rather than a copy of it: on the unenrolled fixture jobs.json
+# holds ZERO jobs, and the two daily adds are recorded where the poll job's
+# assertions (jobs_len, job_field, "no cron.add was issued") cannot see them.
+# =============================================================================
+RR028_REPO="$REPO_ROOT"
+export RR028_REPO
+. "$REPO_ROOT/tests/rescue/RR-028/lib-readiness-harness.sh"
+rr028_require_files
+
+BOX3="$WORK/box-rr028-unenrolled"
+STORE3="$WORK/store-rr028-unenrolled.env"
+printf 'RR_RECEIVER_URL=http://127.0.0.1:1/rr\nRR_BOX_SLUG=box-synthetic\n' > "$STORE3"
+rr028_make_box "$BOX3" "$STORE3"
+rr028_wire "$BOX3" >/dev/null 2>&1
+RC3=$?
+
+JOBS3="$(python3 - "$BOX3/jobs.json" <<'PY'
+import json, sys
+d = json.load(open(sys.argv[1], encoding="utf-8"))
+print(len(d.get("jobs") or []))
+PY
+)"
+AUX3="$(rr028_aux_argv "$BOX3" | grep -c . || true)"
+
+[ "$RC3" = "0" ] \
+    && pass "D1: the harness-driven unenrolled fixture exits 0" \
+    || fail "D1: harness fixture exited $RC3"
+[ "$JOBS3" = "0" ] \
+    && pass "D2: jobs.json holds 0 jobs (the daily jobs are not the poll job)" \
+    || fail "D2: jobs.json holds $JOBS3 job(s); the daily jobs leaked into the poll store"
+[ "${AUX3:-0}" = "2" ] \
+    && pass "D3: rr028_aux_argv shows exactly two daily-job adds (intake check + outbox flush)" \
+    || fail "D3: rr028_aux_argv showed ${AUX3:-0} add(s), expected exactly 2"
+
 echo ""
 echo "=== Results: $PASS passed, $FAIL failed ==="
 if [ "$FAIL" -gt 0 ]; then
