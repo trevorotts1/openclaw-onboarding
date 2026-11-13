@@ -221,6 +221,8 @@ import ipaddress
 import json
 import os
 import re
+import shutil
+import subprocess
 import sys
 import time
 import urllib.request
@@ -3019,7 +3021,7 @@ def discover_speech_chunks(run_dir: Path, bundle_dir: Path) -> Optional[dict]:
 # component.mp4 + poster.png + final-qc.json).
 #
 # Nothing here waves a motion slide through. validate_motion_slide_
-# artifacts authenticates the package in the current run (election,
+# artifacts judges the package's INTERNAL CONSISTENCY in the current run (election,
 # slot, package record, the MG-034 QC verdict it binds, poster parity,
 # receipt binding, artifact hashes, the B14 clip limits, playback
 # parity, webinar policy, the temporal copy inventory, and the motion
@@ -3031,7 +3033,7 @@ def discover_speech_chunks(run_dir: Path, bundle_dir: Path) -> Optional[dict]:
 # hard cap 2 pieces per deck, Slot A slide 1, Slot B a section
 # divider. Still slides keep every image-generation and copy-QC gate
 # exactly as before; the ONLY new allowance is the narrow one Section
-# 14.2 grants a complete, authenticated motion composition.
+# 14.2 grants a complete, internally consistent motion composition.
 # ---------------------------------------------------------------------------
 
 _MOTION_PLAYBACK_VALUES = {
@@ -3136,13 +3138,92 @@ def _motion_receipt_artifact_hash(receipt: dict):
     return None
 
 
+# ---------------------------------------------------------------------------
+# PD-212 — the clip is MEASURED, not just cross-checked against the
+# package record's own probe block. The record's probe block is a CLAIM
+# about the delivered bytes; when ffprobe is on PATH the claim is
+# checked against the file. No ffprobe means no measurement, and no
+# measurement is a named degrade, never a pass on the record's word.
+# ---------------------------------------------------------------------------
+
+_MOTION_PROBED_FIELDS = ("codec", "pixel_format", "width", "height",
+                         "fps", "duration_seconds", "audio_streams")
+
+
+def _probe_component_media(clip_path: Path) -> Optional[dict]:
+    """Measure one clip with ffprobe into the same key set the package
+    record's probe block uses (codec, pixel_format, width, height, fps,
+    duration_seconds, audio_streams). Returns None when ffprobe is
+    absent or cannot read the file: unmeasurable is a degrade the
+    caller names, never a silent pass."""
+    ffprobe = shutil.which("ffprobe")
+    if ffprobe is None:
+        return None
+    try:
+        out = subprocess.run(
+            [ffprobe, "-v", "error", "-show_streams", "-show_format",
+             "-of", "json", str(clip_path)],
+            capture_output=True, text=True, timeout=120)
+    except Exception:  # noqa: BLE001 -- unmeasurable is a named degrade
+        return None
+    if out.returncode != 0:
+        return None
+    try:
+        info = json.loads(out.stdout or "{}")
+        streams = info.get("streams") or []
+        video = next(s for s in streams
+                     if s.get("codec_type") == "video")
+        num, den = str(video.get("avg_frame_rate") or "0/1").split("/")
+        fps = (int(num) / int(den)) if int(den or 0) else 0.0
+        return {
+            "codec": video.get("codec_name"),
+            "pixel_format": video.get("pix_fmt"),
+            "width": video.get("width"),
+            "height": video.get("height"),
+            "fps": round(fps, 3),
+            "duration_seconds": round(
+                float((info.get("format") or {}).get("duration") or 0), 3),
+            "audio_streams": sum(1 for s in streams
+                                 if s.get("codec_type") == "audio"),
+        }
+    except Exception:  # noqa: BLE001 -- an unparseable probe measures
+        return None      # nothing, so the caller degrades by name
+
+
+def _motion_probe_diffs(measured: dict, claimed: dict) -> list:
+    """Every field where what ffprobe MEASURED differs from what the
+    package record CLAIMS, as human-readable strings. Codec, pixel
+    format, width, height and audio-stream count compare exactly;
+    frame rate and duration compare within the same tolerances the
+    B14 fixture checks already use."""
+    diffs = []
+    for field in _MOTION_PROBED_FIELDS:
+        got, said = measured.get(field), claimed.get(field)
+        if field in ("fps", "duration_seconds"):
+            try:
+                got_f, said_f = float(got or 0), float(said or 0)
+            except (TypeError, ValueError):
+                diffs.append(f"{field} is {said!r} in the record but "
+                             f"{got!r} on disk")
+                continue
+            if abs(got_f - said_f) > (0.01 if field == "fps" else 0.05):
+                diffs.append(f"{field} is {said_f:g} in the record but "
+                             f"{got_f:g} on disk")
+        elif got != said:
+            diffs.append(f"{field} is {said!r} in the record but "
+                         f"{got!r} on disk")
+    return diffs
+
+
 def validate_motion_slide_artifacts(run_dir: Path, slide_ord: int,
                                     media: dict, *, election: dict,
                                     arc_tag_blob: str = "",
                                     copy_lines: Optional[list] = None
                                     ) -> dict:
-    """P02: authenticate ONE declared motion slide against its governed
-    MG-035 package. Returns an outcome dict:
+    """P02: judge ONE declared motion slide against its governed
+    MG-035 package, on INTERNAL CONSISTENCY — the package's own records
+    agreeing with each other and, where ffprobe is available, with the
+    delivered bytes. Returns an outcome dict:
 
       {"slide": n, "kind": "motion", "status": "validated"|"degraded",
        "reason_code": None | MOTION_* code, "detail": str, "slot": ...,
@@ -3368,6 +3449,24 @@ def validate_motion_slide_artifacts(run_dir: Path, slide_ord: int,
                       "record's artifact.sha256")
     outcome["artifact_sha256"] = artifact_sha
     outcome["clip_path"] = str(clip_path.relative_to(run_dir.resolve()))
+
+    # PD-212: the hash proves the bytes are the bytes the record names;
+    # it proves nothing about what those bytes ARE. Everything below
+    # judges the record's own probe block, so measure the file first.
+    measured = _probe_component_media(clip_path)
+    if measured is None:
+        return refuse(_motion.MOTION_PROBE_UNAVAILABLE,
+                      "ffprobe is not on PATH (or cannot read the "
+                      "component), so the clip's stream facts are "
+                      "unmeasured; the package record's probe block is "
+                      "not evidence about these bytes, and the piece "
+                      "degrades to the static slide")
+    probe_diffs = _motion_probe_diffs(measured, probe)
+    if probe_diffs:
+        return refuse(_motion.MOTION_HASH_MISMATCH,
+                      "the clip does not match its own record: "
+                      + "; ".join(probe_diffs))
+
     artifact_bytes = clip_path.stat().st_size
     if artifact_bytes > _motion.MOTION_CLIP_MAX_BYTES:
         return refuse(_motion.MOTION_CLIP_TOO_LARGE,
@@ -3418,8 +3517,11 @@ def validate_motion_slide_artifacts(run_dir: Path, slide_ord: int,
                       "the render receipt approves a different artifact "
                       "than the package carries")
     status = receipt.get("status")
-    if isinstance(status, str) \
-            and status.strip().lower() not in _MOTION_RECEIPT_OK_STATUSES:
+    if not isinstance(status, str) or not status.strip():
+        return refuse(_motion.MOTION_RECEIPT_UNREADABLE,
+                      "the render receipt carries no status string, so "
+                      "there is no approved-render verdict to read")
+    if status.strip().lower() not in _MOTION_RECEIPT_OK_STATUSES:
         return refuse(_motion.MOTION_RECEIPT_MISMATCH,
                       f"the render receipt's status is {status!r}, not "
                       f"an approved render")
@@ -3605,11 +3707,11 @@ def _chk_motion_media(run_dir: Path,
 
     NEVER returns a fatal string. That is deliberate, not softness:
     the B14 seam rule is that every motion failure degrades its slide
-    to static with a reason code, and the teeth are structural (an
-    unauthenticated package is never embedded, and phase
-    P8.15-MOTION's verifier fails the phase when the record and the
-    delivered deck disagree). Defers silently when no slides.json can
-    be read yet; the absence is owned by the copy/arc gates."""
+    to static with a reason code, and the teeth are structural (a
+    package that is not internally consistent is never embedded, and
+    phase P8.15-MOTION's verifier fails the phase when the record and
+    the delivered deck disagree). Defers silently when no slides.json
+    can be read yet; the absence is owned by the copy/arc gates."""
     slides = _load_slides_list(run_dir, slides_path)
     if slides is None:
         return ""
@@ -3630,10 +3732,10 @@ def _chk_motion_media(run_dir: Path,
 def finalize_motion_record(run_dir: Path, deck_path: Path) -> Optional[dict]:
     """Post-assembly embed proof: reopen the assembled deck, hash its
     media parts, and mark every planned-validated slide embedded when
-    its authenticated artifact bytes are inside the deck, or degraded
-    MOTION_EMBED_MISSING when they are not. Rewrites motion.json and
-    the slide-media manifest. Never raises; returns the record (or
-    None when no record exists)."""
+    its internally consistent artifact bytes are inside the deck, or
+    degraded MOTION_EMBED_MISSING when they are not. Rewrites
+    motion.json and the slide-media manifest. Never raises; returns the
+    record (or None when no record exists)."""
     run_dir = Path(run_dir)
     record = _motion.read_motion_record(run_dir)
     if record is None:
@@ -3662,7 +3764,7 @@ def finalize_motion_record(run_dir: Path, deck_path: Path) -> Optional[dict]:
             entry["reason_code"] = _motion.MOTION_EMBED_MISSING
             entry["detail"] = ("the assembled deck carries no media "
                                "part byte-identical to the "
-                               "authenticated component")
+                               "internally consistent component")
     _motion.write_motion_record(run_dir, record)
     _motion.write_slide_media_manifest(run_dir, record)
     return record
@@ -3734,12 +3836,12 @@ def add_motion_media(slide, media: dict) -> dict:
 def _authenticated_motion_outcomes(run_dir: Path,
                                    slides_path: Optional[Path] = None
                                    ) -> dict:
-    """Recompute, RIGHT NOW, which declared motion slides authenticate
-    (full validate_motion_slide_artifacts). Returns {ordinal: outcome}
-    for validated slides only. The P03 checks consult this rather than
-    trusting motion.json, so a stale or forged record can bless
-    nothing: authentication is a live recomputation plus, for the
-    poster exemption, a live hash comparison."""
+    """Recompute, RIGHT NOW, which declared motion slides are
+    internally consistent (full validate_motion_slide_artifacts).
+    Returns {ordinal: outcome} for validated slides only. The P03
+    checks consult this rather than trusting motion.json, so a stale or
+    forged record can bless nothing: the check is a live recomputation
+    plus, for the poster exemption, a live hash comparison."""
     slides = _load_slides_list(run_dir, slides_path)
     if not slides:
         return {}
@@ -3766,9 +3868,15 @@ def _authenticated_motion_posters(run_dir: Path,
                                   slides_path: Optional[Path] = None
                                   ) -> set:
     """Resolved paths of renders/slide-NN.png files that are, right
-    now, the authenticated poster derivative of a validated motion
-    slide (package validates AND the PNG's bytes hash to the package
-    poster). Consumed by check_image_qc_vision (P03)."""
+    now, the poster derivative of a validated motion slide (package
+    validates AND the PNG's bytes hash to the package poster).
+    Consumed by check_image_qc_vision (P03).
+
+    The exemption this backs rests on INTERNAL CONSISTENCY: the
+    package's own records agree with each other and with the delivered
+    bytes. It is not a claim that the composition was independently
+    judged as craft, and it is never a claim about PowerPoint
+    playback."""
     out = set()
     for ord_, outcome in _authenticated_motion_outcomes(
             run_dir, slides_path).items():
@@ -3784,10 +3892,11 @@ def _authenticated_motion_package_dirs(run_dir: Path,
                                        ) -> set:
     """Resolved workspace directories of validated motion slides.
     Consumed by check_canonical_render_path (P03): files inside an
-    authenticated Skill 72 job workspace are the governed package's
-    own records, not a hand-rolled per-deck renderer. Only the
-    workspace of a slide whose package validates RIGHT NOW earns the
-    exemption; an unauthenticated working/motion tree earns nothing."""
+    internally consistent Skill 72 job workspace are the governed
+    package's own records, not a hand-rolled per-deck renderer. Only
+    the workspace of a slide whose package validates RIGHT NOW earns
+    the exemption; a working/motion tree that fails that internal
+    consistency earns nothing."""
     out = set()
     validated = _authenticated_motion_outcomes(run_dir, slides_path)
     slides = _load_slides_list(run_dir, slides_path) or []
@@ -8994,13 +9103,15 @@ def check_image_qc_vision(run_dir: Path, slides_path: Optional[Path] = None) -> 
            per-slide observation) — a self-typed number is refused;
          * the eliminated typography-overlay-readiness rubric may not appear.
 
-    MG-036 (P03) — the narrow authenticated Skill 72 artifact path: a rendered
-    PNG that IS the authenticated poster derivative of a validated motion
+    MG-036 (P03) — the narrow Skill 72 artifact path: a rendered
+    PNG that IS the poster derivative of a validated motion
     slide is exempt from the flat-fill sub-check ONLY (never the byte floor).
     A data chart on a light ground is the component's subject, judged by the
     motion path's own proofs (motion proof + the MG-034 QC bound into its
     package record), not by the photographic-noise expectation this check
-    applies to KIE bakes. Authentication is recomputed live
+    applies to KIE bakes. This exemption rests on the package being
+    INTERNALLY CONSISTENT — its records agreeing with each other and with
+    the delivered bytes — and it is recomputed live
     (_authenticated_motion_posters): the package must validate in full AND
     the PNG's bytes must hash to the package poster. A filename, a slide
     declaration, or a stale motion.json record earns NOTHING here.
@@ -9027,8 +9138,8 @@ def check_image_qc_vision(run_dir: Path, slides_path: Optional[Path] = None) -> 
     if not pngs and report_obj is None:
         return ""
 
-    # MG-036 (P03): live-authenticated motion poster derivatives (see
-    # the docstring). Computed only when PNGs exist to judge.
+    # MG-036 (P03): live-checked motion poster derivatives (see the
+    # docstring). Computed only when PNGs exist to judge.
     motion_posters = _authenticated_motion_posters(run_dir, slides_path) \
         if pngs else set()
 
@@ -9053,10 +9164,11 @@ def check_image_qc_vision(run_dir: Path, slides_path: Optional[Path] = None) -> 
             except OSError:
                 _resolved_png = png
             if _resolved_png in motion_posters:
-                # MG-036 (P03): authenticated motion poster. The byte
-                # floor above already applied; the flat-fill judgment
-                # does not apply to a governed component's poster
-                # (its subject is data, proven by the motion path).
+                # MG-036 (P03): internally consistent motion poster.
+                # The byte floor above already applied; the flat-fill
+                # judgment does not apply to a governed component's
+                # poster (its subject is data, proven by the motion
+                # path).
                 continue
         frac, rgb = _png_flatfill_fraction(png)
         if frac is None:
@@ -9206,16 +9318,18 @@ def check_canonical_render_path(run_dir: Path, slides_path: Optional[Path] = Non
     no hand-rolled renderer. A failure may be waived ONLY by a logged
     owner_skip_approval token (AF-CANONICAL-RENDER-BYPASS or AF-LOCAL-CANVAS).
 
-    MG-036 (P03) — the narrow authenticated Skill 72 artifact path: files
-    inside the motion workspace of a slide whose Skill 72 package
-    authenticates RIGHT NOW (validate_motion_slide_artifacts passes in
+    MG-036 (P03) — the narrow Skill 72 artifact path: files inside the
+    motion workspace of a slide whose Skill 72 package is internally
+    consistent RIGHT NOW (validate_motion_slide_artifacts passes in
     full) are the governed package's own records, not a hand-rolled
-    per-deck renderer, and are exempt from this scan. The exemption is
-    earned per workspace by live validation, never by directory name:
-    a working/motion tree whose package is missing, forged, or failed
+    per-deck renderer, and are exempt from this scan. The exemption
+    rests on that internal consistency — the package's records agreeing
+    with each other and with the delivered bytes — and it is earned per
+    workspace by live validation, never by directory name: a
+    working/motion tree whose package is missing, forged, or failed
     earns nothing and is scanned like everything else. This does NOT
     globally allow local canvases: the exemption covers only the
-    authenticated package tree of a validated motion slide."""
+    internally consistent package tree of a validated motion slide."""
     skip = (_owner_skip_approved(run_dir, AF_CANONICAL_RENDER_BYPASS)
             or _owner_skip_approved(run_dir, AF_LOCAL_CANVAS))
     if skip is not None:
@@ -9230,8 +9344,8 @@ def check_canonical_render_path(run_dir: Path, slides_path: Optional[Path] = Non
     # working/scripts/. Skip only the canonical scripts dir, by resolved path
     # (the canonical_render_guard.py pattern) — every other scripts/ dir is scanned.
     _canonical_scripts_dir = Path(__file__).resolve().parent
-    # MG-036 (P03): authenticated Skill 72 motion workspaces (live
-    # validation, see the docstring).
+    # MG-036 (P03): internally consistent Skill 72 motion workspaces
+    # (live validation, see the docstring).
     _motion_pkg_dirs = _authenticated_motion_package_dirs(run_dir,
                                                           slides_path)
     offenders = []
@@ -9255,7 +9369,7 @@ def check_canonical_render_path(run_dir: Path, slides_path: Optional[Path] = Non
             pass
         if _motion_pkg_dirs and any(
                 _rp == _d or _d in _rp.parents for _d in _motion_pkg_dirs):
-            continue  # inside an authenticated Skill 72 motion workspace
+            continue  # inside an internally consistent motion workspace
         try:
             text = py.read_text(errors="replace")
         except OSError:
@@ -15123,9 +15237,9 @@ def main():
     speech_chunks = discover_speech_chunks(run_dir, bundle_dir)
 
     # MG-036 (P02/P04): plan the governed motion path for THIS deck and
-    # embed only authenticated packages. Recomputed here, never trusted
-    # from the preflight write, so poster parity is judged against the
-    # renders that now exist. A still-only deck gets an empty map and
+    # embed only internally consistent packages. Recomputed here, never
+    # trusted from the preflight write, so poster parity is judged
+    # against the renders that now exist. A still-only deck gets an empty map and
     # the assembly below is the unchanged still path.
     motion_record, motion_media = plan_motion_media(run_dir, slides)
     if motion_media:
@@ -15152,7 +15266,7 @@ def main():
         sys.exit(1)
 
     # MG-036: prove the embeds landed in the assembled deck (media part
-    # bytes hash to the authenticated artifacts) and finalize the run
+    # bytes hash to the validated artifacts) and finalize the run
     # record BEFORE the bundle copy below carries the deck onward.
     if motion_media:
         finalize_motion_record(run_dir, out_path)
