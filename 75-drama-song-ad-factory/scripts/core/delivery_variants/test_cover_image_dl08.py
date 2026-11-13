@@ -171,6 +171,56 @@ class CoverImage(unittest.TestCase):
                                runner=fake_runner(), **bad)
             self.assertEqual(cm.exception.code, ci.BAD_INPUT)
 
+    # ------------------------------------------------------- the run's shape ---
+    def test_a_vertical_run_gets_a_vertical_cover_and_a_top_crop(self):
+        (self.run / "card-answers.json").write_text(
+            json.dumps([{"id": "shape", "text": "9:16 vertical"}]))
+        self.assertEqual(ci.run_shape(str(self.run)), "vertical")
+        self.assertEqual(ci.shape_dimensions(str(self.run)), (1080, 1920))
+        calls = []
+        row = self.build(runner=fake_runner(calls=calls),
+                         width=1080, height=1920)
+        self.assertEqual((row["width"], row["height"]), (1080, 1920))
+        self.assertEqual(ci.png_size(self.d / row["file"]), (1080, 1920))
+        vf = calls[0][calls[0].index("-vf") + 1]
+        self.assertIn("scale=1080:1920", vf)
+        self.assertIn("crop=1080:1920:0:0", vf)     # the TOP, never the centre
+
+    def test_a_wide_run_keeps_the_1280x720_cover(self):
+        (self.run / "card-answers.json").write_text(
+            json.dumps([{"id": "shape", "text": "16:9 widescreen"}]))
+        self.assertEqual(ci.shape_dimensions(str(self.run)), (1280, 720))
+
+    def test_a_run_with_no_recorded_shape_keeps_the_wide_default(self):
+        self.assertEqual(ci.shape_dimensions(str(self.run)), (1280, 720))
+
+    def test_a_70_character_title_wraps_to_two_lines_at_28_pixels_or_more(self):
+        title = "A Seventeen Word Title That Keeps Going Until It Fills Two Whole Lines"
+        self.assertEqual(len(title), 70)
+        geom = ci.cover_geometry(1280, 720, title)
+        self.assertEqual(len(geom["lines"]), 2)
+        self.assertGreaterEqual(geom["fontsize"], ci.MIN_TITLE_FONT)
+        self.assertGreaterEqual(geom["band"]["h"],
+                                len(geom["lines"]) * geom["line_height"])
+        row = self.build()
+        self.assertEqual(row["title_lines"], 2)
+        self.assertGreaterEqual(row["fontsize"], ci.MIN_TITLE_FONT)
+
+    # ---------------------------------------------------- the title's source ---
+    def test_the_script_title_records_the_script_file(self):
+        row = self.build()
+        self.assertEqual(row["title"], "The Long Road")
+        self.assertEqual(row["source_title"], "creative/script.json")
+
+    def test_a_brief_only_title_is_recorded_as_brief_json(self):
+        (self.run / "creative" / "script.json").write_text(json.dumps({}))
+        (self.run / "brief.json").write_text(json.dumps({"title": "From Brief"}))
+        row = self.build()
+        self.assertEqual(row["title"], "From Brief")
+        self.assertEqual(row["source_title"], "brief.json")
+        receipt = json.loads((self.d / "delivery-receipt.json").read_text())
+        self.assertEqual(receipt["cover_image"]["source_title"], "brief.json")
+
     # -------------------------------------------------------------- sources ---
     def test_title_comes_from_the_approved_script(self):
         row = self.build()
