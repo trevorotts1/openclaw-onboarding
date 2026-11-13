@@ -30,17 +30,15 @@ of anything the client said.
 
 ROLLOUT SWITCH -- `PRESENTATION_INTAKE_PROVENANCE`:
 
-  warn     (default)  print the findings to stderr, write
+  warn                print the findings to stderr, write
                       `working/interview/provenance_findings.json`, do NOT
-                      block. This is the shipped default because the only
-                      store today (cc_board owner message ids) returns ids
-                      without text, so on a real box nothing can yet prove what
-                      a client sent; refusing by default would stop every
-                      interview at --complete.
-  enforce             refuse: the caller exits 6 with the unproven question ids
-                      and does not record completion.
+                      block. Opt-in only, for a deployment that cannot yet
+                      prove what a client sent.
+  enforce  (default)  refuse: the caller exits 6 with the unproven question ids
+                      and does not record completion. This is the shipped
+                      default: an unproven answer is never accepted.
 
-PD-004c (decision D-40) flips DEFAULT_MODE to "enforce".
+PD-004c (decision D-40) flipped DEFAULT_MODE to "enforce".
 
 Stdlib only. No network. Read-only apart from the findings file.
 """
@@ -54,7 +52,7 @@ from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Set
 
 MODE_ENV = "PRESENTATION_INTAKE_PROVENANCE"
-DEFAULT_MODE = "warn"  # PD-004c (D-40) changes this one constant to "enforce".
+DEFAULT_MODE = "enforce"  # PD-004c (D-40): warn is opt-in; unproven is refused.
 MODE_WARN = "warn"
 MODE_ENFORCE = "enforce"
 
@@ -71,9 +69,9 @@ NO = {"no", "n", "false", "nope", "no thanks", "no thank you"}
 
 
 def provenance_mode() -> str:
-    """'warn' (default) or 'enforce'; an unrecognised value stays 'warn'."""
+    """'enforce' (default) or 'warn'; an unrecognised value stays 'enforce'."""
     raw = str(os.environ.get(MODE_ENV) or "").strip().lower()
-    return MODE_ENFORCE if raw == MODE_ENFORCE else DEFAULT_MODE
+    return MODE_WARN if raw == MODE_WARN else DEFAULT_MODE
 
 
 def norm(text: Any) -> str:

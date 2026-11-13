@@ -2539,11 +2539,16 @@ def _intake_provenance():
 
 
 def _provenance_mode() -> str:
+    """The rollout mode; a box without the module fails CLOSED (enforce).
+
+    PD-004c: the module's own default is enforce, so the missing-module
+    fallback must agree. Only an explicit `warn` opts a box out.
+    """
     prov = _intake_provenance()
     if prov is not None:
         return prov.provenance_mode()
     raw = str(os.environ.get("PRESENTATION_INTAKE_PROVENANCE") or "").strip().lower()
-    return "enforce" if raw == "enforce" else "warn"
+    return "warn" if raw == "warn" else "enforce"
 
 
 def _provenance_requester(intake: Dict[str, Any]) -> str:

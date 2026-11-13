@@ -222,7 +222,10 @@ def _walk_to_complete(call, values):
     return q
 
 
-def test_real_cli_walk_completes_and_proves_a_single_question_transcript(interview):
+def test_real_cli_walk_completes_and_proves_a_single_question_transcript(interview, monkeypatch):
+    # PD-004c: enforce is now the default, and this walk records no client
+    # message ids -- it exercises the walk, so it asks for warn explicitly.
+    monkeypatch.setenv("PRESENTATION_INTAKE_PROVENANCE", "warn")
     run, call = interview
     _walk_to_complete(call, WALK_VALUES)
     _, complete = call("--complete")
