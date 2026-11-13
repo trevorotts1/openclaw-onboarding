@@ -10751,6 +10751,14 @@
       "content_hashed_at": "2026-11-09T23:25:05.532974+00:00"
     },
     {
+      "slug": "SOP-RR-06-decision-rule-and-step-gate",
+      "dept": "rescue-rangers",
+      "path": "templates/role-library/rescue-rangers/sops/SOP-RR-06-decision-rule-and-step-gate.md",
+      "content_sha": "sha256:55a8a1e2c272f101ad917a1b4acdfce87d42c351722b7cc3cfbffa1c0097138e",
+      "content_version": "1.0.0",
+      "content_hashed_at": "2026-11-13T21:47:29.895096+00:00"
+    },
+    {
       "slug": "SOP-SOCIAL-00-CLUSTER-INDEX-AND-WIRING",
       "dept": "social-media",
       "path": "templates/role-library/social-media/sops/SOP-SOCIAL-00-CLUSTER-INDEX-AND-WIRING.md",
