@@ -6925,11 +6925,16 @@ def _reduce_qc_union(ordered: List[Tuple[Dict[str, Any], str]]) -> Optional[str]
         report["route_request_id"] = row_routes[0][2]
     # PD-205c: the image check's own provenance under the names the RENDER leg
     # reads. phase_verifiers' FIX 33 contract accepts graded_by_model (and
-    # vision_model as a fallback), but build_deck refuses a merged image report
-    # that declares no vision engine at all. Both facts come from the dispatch
-    # RECORD (each row's own route), never from the model's prose about itself;
-    # an unknown value is null, never a guess. Per row always; at the top level
-    # only when every row agrees.
+    # vision_model as a fallback), but build_deck._image_qc_report_defects
+    # scans (vision_model, multimodal_model, vision_provider, ocr_engine,
+    # vision_engine, reviewer_vision_model) — graded_by_model is NOT in that
+    # list, so the image phase must also publish the vision_* aliases or the
+    # render leg refuses the report as "declares no vision engine". Both facts
+    # come from the dispatch RECORD (each row's own route), never from the
+    # model's prose about itself; an unknown value is null, never a guess. Per
+    # row always; at the top level only when every row agrees (a merge whose
+    # units used different routes keeps each row's own truth and makes no
+    # deck-wide claim).
     if phase_id == "P-IMAGE-QC":
         if len(providers) == 1:
             report["vision_provider"] = next(iter(providers)) if row_routes else None
@@ -8103,12 +8108,16 @@ def _dispatch_phase_fanout_units(
                 )
                 content, usage, route = dispatch_complete(
                     system_prompt, user_prompt, phase_id=phase_id, run_dir=run_dir,
-                    worker_id=worker_id, reasoning_effort=effort, image=image,
+                    worker_id=worker_id, reasoning_effort=effort,
+                    # PD-205c: the rendered slide image rides the request --
+                    # the P-IMAGE-QC unit is a PIXEL read, and image is None
+                    # for every other phase.
+                    image=image,
                     # PD-068: a quality step's other-family pin applies to every
                     # unit exactly as it does to the serial path.
                     route_override=_grader_override)
         except ImageRouteIneligible:
-            # Zero transport calls, zero paid attempts (raised inside
+            # PD-205c: zero transport calls, zero paid attempts (raised inside
             # dispatch_complete before both). The reason is the whole story.
             return fanout.UnitResult(key=unit.key, status="failed", attempts=0,
                                      reasons=[IMAGE_ROUTE_INELIGIBLE_REASON])
