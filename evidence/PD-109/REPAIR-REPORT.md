@@ -5,8 +5,10 @@
 - Branch: **pd/fl25-doctrine**
 - Repo: `trevorotts1/openclaw-onboarding`
 - PRE (branch head when the repair started): `f1b2b41dbb8dcaeb5bf5a089c01de8c853d75255`
-- Fix commit: `2c81a6ee5354aefa468d3899c40a93cb3305ec45`
-- New head (branch tip after this evidence commit): `c8eacebb4e9012140147cf52b3f8c34bc1f6ef8d`
+- Fix commit: `2c81a6ee5354aefa468d3899c40a93cb3305ec45` (the code change)
+- Evidence commits carrying this report follow it; the branch tip is proven live with
+  `git ls-remote --heads origin pd/fl25-doctrine` (see §6). A literal tip written here
+  would be stale the moment this file lands.
 - origin/main at repair time: `ebf5c769a2ad5b2582bf2256588095cbef20cfac`
 
 ## 1. The failing check, quoted
@@ -136,17 +138,17 @@ No siblings were named in the task. Full-batch safety checked against the base b
 ```
 $ git push origin HEAD:pd/fl25-doctrine
    f1b2b41db..2c81a6ee5  HEAD -> pd/fl25-doctrine      (fast-forward, no force)
-   2c81a6ee5..c8eacebb4  HEAD -> pd/fl25-doctrine      (fast-forward, evidence commit)
-
-$ git rev-parse HEAD
-c8eacebb4e9012140147cf52b3f8c34bc1f6ef8d
-
-$ git ls-remote --heads origin pd/fl25-doctrine
-c8eacebb4e9012140147cf52b3f8c34bc1f6ef8d	refs/heads/pd/fl25-doctrine
+   2c81a6ee5..c8eacebb4  HEAD -> pd/fl25-doctrine      (fast-forward, report)
+   ...                   HEAD -> pd/fl25-doctrine      (fast-forward, report correction)
 
 $ git merge-base --is-ancestor f1b2b41dbb8dcaeb5bf5a089c01de8c853d75255 HEAD
 rc=0
 ```
+
+At the time of the last proof, local `git rev-parse HEAD` and
+`git ls-remote --heads origin pd/fl25-doctrine` returned the same 40-character value, and
+PRE `f1b2b41d…` was an ancestor of it. Re-run `git ls-remote --heads origin pd/fl25-doctrine`
+for the current tip: every evidence commit is a plain fast-forward on top of the PRE line.
 
 Local head == remote head, and PRE is an ancestor of the new head.
 
