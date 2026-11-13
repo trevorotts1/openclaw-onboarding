@@ -294,9 +294,18 @@ neg "a different script path (argv)"      "$(payload_json argv "[\"sh\",\"-lc\",
 # extra-element case built on a WRONG path proves nothing about arity -- it
 # would mismatch for the unrelated reason, and a widened shape check would go
 # unnoticed.)
-neg "an unexpected EXTRA argv element"    "$(payload_json argv "[\"sh\",\"-lc\",\"sh $WORK/box-neg-x/rescue-poll.sh\",\"extra\"]")"
-neg "an EXTRA argv element after the REAL poll command" \
-    "$(payload_json argv "[\"sh\",\"-lc\",\"$(POLLSEL "$WORK/box-neg-real-extra")\",\"extra\"]")"
+# neg_arity <label> — THIS box's real poll command in the argv wrapper PLUS an
+# extra element. The box path is derived with the same rule `neg` uses, so the
+# only way the case can be judged matching is a widened arity check. (Pointing
+# the payload at a DIFFERENT box's poll script made both cases below mismatch on
+# the path, so a `len(v) != 3` -> `len(v) < 3` mutation survived the battery.)
+neg_arity() {
+  _lbl="$1"
+  _n="$(printf '%s' "$_lbl" | tr -c 'A-Za-z0-9_.-' '_')"
+  neg "$_lbl" "$(payload_json argv "[\"sh\",\"-lc\",\"$(POLLSEL "$WORK/box-neg-$_n")\",\"extra\"]")"
+}
+neg_arity "an unexpected EXTRA argv element"
+neg_arity "an EXTRA argv element after the REAL poll command"
 neg "empty argv"                          "$(payload_json argv "[]")" 1
 neg "argv with a NON-STRING member"       "$(payload_json argv "[\"sh\",\"-lc\",42]")" 1
 neg "a payload with NEITHER command NOR argv" '{"kind":"command"}' 1
