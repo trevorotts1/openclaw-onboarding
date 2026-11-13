@@ -47,8 +47,8 @@ COMPANY="$WORK/scratch-company"
 MARKETING_ROLE="$COMPANY/departments/marketing/00-marketing-head"
 SALES_ROLE="$COMPANY/departments/sales/00-sales-head"
 mkdir -p "$MARKETING_ROLE" "$SALES_ROLE"
-printf '# Marketing Director\n\n**Role Type:** permanent\n' > "$MARKETING_ROLE/00-START-HERE.md"
-printf '# Sales Director\n\n**Role Type:** on-call\n' > "$SALES_ROLE/00-START-HERE.md"
+printf '# Meridian Marketing Specialist\n\n**Role Type:** permanent\n' > "$MARKETING_ROLE/00-START-HERE.md"
+printf '# Meridian Sales Specialist\n\n**Role Type:** on-call\n' > "$SALES_ROLE/00-START-HERE.md"
 
 python3 - "$WORK/state1.json" "$COMPANY" <<'PY' || exit 1
 import json, sys
@@ -76,7 +76,10 @@ rc1=$?
 python3 - "$COMPANY/ORG-CHART.md" <<'PY' || exit 1
 import sys
 text = open(sys.argv[1], encoding="utf-8", errors="replace").read()
-missing = [n for n in ("Marketing Director", "Sales Director") if n not in text]
+# Role names are deliberately distinct from the department heads ("Marketing
+# Director" / "Sales Director" in the state fixture): only the on-disk scan
+# can produce these strings, so a stored-map regression goes RED here.
+missing = [n for n in ("Meridian Marketing Specialist", "Meridian Sales Specialist") if n not in text]
 if missing:
     print(f"FAIL: ORG-CHART.md does not name: {', '.join(missing)}")
     sys.exit(1)
