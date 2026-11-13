@@ -2635,6 +2635,26 @@ def cmd_complete(args) -> int:
                                    "--next / --answer first."}))
         return 1
 
+    # PD-913: --complete may not finalize an interview the turn gate has not
+    # finished. --next reports "complete" only when neither the progressive
+    # gate nor the residual sweep has a turn left; without this check a
+    # caller could skip the walk and --complete wrote intake.json and signed
+    # a transcript with required answers (pitch_included) absent. Runs BEFORE
+    # anything is written, so a refusal leaves every file as it was.
+    _answers = _answer_view(ledger.get("entries", {}))
+    _questions = get_questions(load_question_schema())
+    _pending = (_first_unanswered_progressive(
+                    _questions, _answers, load_preferences())
+                or _first_unanswered_residual(_questions, _answers))
+    if _pending is not None:
+        print(json.dumps({
+            "status": "incomplete",
+            "error": "the interview is not finished: a turn is still "
+                     "unanswered",
+            "missing": [_pending["id"]],
+        }))
+        return 3
+
     # Merge all answers into intake.json
     entries = ledger.get("entries", {})
     intake = read_intake_json(run_dir)

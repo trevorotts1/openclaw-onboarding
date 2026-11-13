@@ -53,6 +53,37 @@ def _ledger(run: Path) -> dict:
     return json.loads((run / LEDGER).read_text(encoding="utf-8"))
 
 
+def _walk_to_complete(call) -> None:
+    """PD-913: --complete refuses an interview the turn gate has not finished,
+    so a fixture that wants a finished intake answers the gate's own pending
+    turns first. SETUP ONLY -- it reuses the live gate (--next) and makes no
+    claim about the product; the test's own assertions decide pass/fail."""
+    for _ in range(120):
+        q = json.loads(call("--next").stdout or "{}")
+        if q.get("status") == "complete":
+            return
+        qid = q.get("question_id")
+        if not qid:
+            return
+        vals = q.get("allowed_values") or []
+        if qid == "pitch_included" and "no" in vals:
+            # SETUP: an informational deck. The commercial turns are then not
+            # asked at all, so a fixture about some OTHER behaviour does not
+            # have to supply commercial values it never asserts on.
+            answer = "no"
+        elif qid in ("workhorse_model", "reasoning_model", "qc_model",
+                     "deepseek_variant", "openrouter_model", "provider_plan",
+                     "thinking_mode", "ollama_plan"):
+            answer = ""       # the client's wired provider is not probed here
+        elif vals:
+            answer = vals[0]
+        elif q.get("kind") == "integer":
+            answer = "20"
+        else:
+            answer = "Client supplied " + qid
+        call("--answer", qid, answer)
+
+
 # ---------------------------------------------------------------------------
 # A1 -- Skill 51 hidden: --complete exits 5, ledger unchanged, no transcript
 # ---------------------------------------------------------------------------
@@ -75,6 +106,7 @@ def test_a1_missing_skill51_blocks_complete(tmp_path):
     assert answered.returncode == 0, answered.stdout + answered.stderr
     assert (run / LEDGER).is_file(), "the intake walk never recorded a ledger"
     assert _ledger(run).get("status") != "complete"
+    _walk_to_complete(call)
 
     out = call("--complete")
     assert out.returncode == 5, out.stdout + out.stderr
@@ -106,6 +138,7 @@ def test_a2_present_skill51_signs_complete(tmp_path):
 
     answered = call("--answer", "presentation_type", "from_scratch")
     assert answered.returncode == 0, answered.stdout + answered.stderr
+    _walk_to_complete(call)
 
     out = call("--complete")
     assert out.returncode == 0, out.stdout + out.stderr

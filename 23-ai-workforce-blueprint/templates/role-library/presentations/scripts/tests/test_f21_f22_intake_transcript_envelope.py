@@ -121,6 +121,41 @@ def _sp_env() -> dict:
     return env
 
 
+def _walk_to_complete(run_dir: Path, env: dict | None = None) -> None:
+    """PD-913: --complete refuses an interview the turn gate has not finished,
+    so a fixture that wants a finished intake answers the gate's own pending
+    turns first. SETUP ONLY -- it reuses the live gate (--next) and makes no
+    claim about the product; the test's own assertions decide pass/fail."""
+    for _ in range(120):
+        q = json.loads(_run_driver(run_dir, "--next", env=env).stdout or "{}")
+        if q.get("status") == "complete":
+            return
+        qid = q.get("question_id")
+        if not qid:
+            return
+        vals = q.get("allowed_values") or []
+        if qid == "pitch_included" and "no" in vals:
+            # SETUP: an informational deck. The commercial turns are then not
+            # asked at all, so a fixture about some OTHER behaviour does not
+            # have to supply commercial values it never asserts on.
+            answer = "no"
+        elif qid in ("workhorse_model", "reasoning_model", "qc_model",
+                     "deepseek_variant", "openrouter_model", "provider_plan",
+                     "thinking_mode", "ollama_plan"):
+            answer = ""       # the client's wired provider is not probed here
+        elif vals:
+            answer = vals[0]
+        elif q.get("kind") == "integer":
+            answer = "20"
+        else:
+            answer = "Client supplied " + qid
+        _run_driver(run_dir, "--answer", qid, answer, env=env)
+
+def _drive_complete(run_dir: Path, env: dict | None = None) -> subprocess.CompletedProcess:
+    """Finish the walk, then --complete. SETUP ONLY (see _walk_to_complete)."""
+    _walk_to_complete(run_dir, env)
+    return _run_driver(run_dir, "--complete", env=env)
+
 def _envelope(run_dir: Path) -> dict:
     path = run_dir / "working" / "interview" / "intake_transcript.json"
     assert path.is_file(), f"no signed envelope written at {path}"
@@ -139,7 +174,7 @@ class TestFault22StandardCompleteSigns:
         run_dir = tmp_path / "run"
         r = _run_driver(run_dir, "--answer", "presentation_type", "from_scratch")
         assert r.returncode == 0, f"--answer failed: {r.stdout}\n{r.stderr}"
-        r = _run_driver(run_dir, "--complete")
+        r = _drive_complete(run_dir)
         assert r.returncode == 0, f"--complete failed: {r.stdout}\n{r.stderr}"
         payload = json.loads(r.stdout)
         assert payload.get("intake_transcript_signed") is True
@@ -153,7 +188,7 @@ class TestFault22StandardCompleteSigns:
     def test_standard_complete_envelope_passes_real_provenance_checker(self, tmp_path):
         run_dir = tmp_path / "run"
         _run_driver(run_dir, "--answer", "presentation_type", "from_scratch")
-        r = _run_driver(run_dir, "--complete")
+        r = _drive_complete(run_dir)
         assert r.returncode == 0
         env = _envelope(run_dir)
         fails = ITC.check_driver_provenance(env)
@@ -165,7 +200,7 @@ class TestFault22StandardCompleteSigns:
         must not find anything BROKEN on the path it takes before deferring."""
         run_dir = tmp_path / "run"
         _run_driver(run_dir, "--answer", "presentation_type", "from_scratch")
-        r = _run_driver(run_dir, "--complete")
+        r = _drive_complete(run_dir)
         assert r.returncode == 0
         result = build_deck._chk_sp_intake_trace(run_dir)
         assert result == "", f"expected PASS/DEFER, got: {result!r}"
@@ -180,7 +215,7 @@ class TestFault21PostCompletionAnswerSurvives:
     def test_answer_after_complete_envelope_survives_as_dict_and_grows(self, tmp_path):
         run_dir = tmp_path / "run"
         _run_driver(run_dir, "--answer", "presentation_type", "from_scratch")
-        r = _run_driver(run_dir, "--complete")
+        r = _drive_complete(run_dir)
         assert r.returncode == 0
         before = _envelope(run_dir)
         before_turns = len(before["turns"])
@@ -204,7 +239,7 @@ class TestFault21PostCompletionAnswerSurvives:
     def test_answer_after_complete_is_never_silent(self, tmp_path):
         run_dir = tmp_path / "run"
         _run_driver(run_dir, "--answer", "presentation_type", "from_scratch")
-        _run_driver(run_dir, "--complete")
+        _drive_complete(run_dir)
         r = _run_driver(run_dir, "--answer", "offer_name", "The Momentum Method")
         assert r.returncode == 0
         payload = json.loads(r.stdout)
