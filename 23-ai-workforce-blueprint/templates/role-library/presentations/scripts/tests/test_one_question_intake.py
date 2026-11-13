@@ -75,10 +75,14 @@ def test_type_and_pitch_are_separate_questions(interview, entry):
     assert second["question_id"] == "pitch_included"
     assert "pitch_included" not in ledger(run)
     _, third = call("--answer", "pitch_included", "no", entry=entry)
-    assert third["question_id"] == "audience"
+    # PD-013: the pace question is asked third, right after the deck type and
+    # the pitch decision, so the client picks QUICK before anything optional.
+    assert third["question_id"] == "standard_mode"
     assert ledger(run)["pitch_included"]["value"] is False
     _, same = call("--next", entry=entry)
     assert same["question_id"] == third["question_id"]
+    _, fourth = call("--answer", "standard_mode", "IN-DEPTH", entry=entry)
+    assert fourth["question_id"] == "audience"
 
 
 def test_individual_answers_do_not_invent_sibling_answers(interview):
@@ -102,7 +106,10 @@ def test_existing_merged_session_resumes_with_only_missing_fields(interview):
     run, call = interview
     call("--answer", "deck_type_source", "presentation_type: content_personal; pitch_included: no; extracted_substance: Build trust")
     _, next_q = call("--next")
-    assert next_q["question_id"] == "recipient_name"
+    # PD-013: the pace question sits at 0.6, ahead of every field question.
+    assert next_q["question_id"] == "standard_mode"
+    _, after_pace = call("--answer", "standard_mode", "IN-DEPTH")
+    assert after_pace["question_id"] == "recipient_name"
     call("--answer", "recipient_name", "Jordan")
     assert ledger(run)["extracted_substance"]["value"] == "Build trust"
     assert ledger(run)["RECIPIENT_NAME"]["value"] == "Jordan"
