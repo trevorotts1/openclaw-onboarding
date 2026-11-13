@@ -1305,6 +1305,34 @@ def _drop_terminal(led, order_id, state, via):
     return EXIT["ok"]
 
 
+def _refresh_stored_line(led, order_id):
+    """Re-point a stored poll line at the claim that is live now.
+
+    The claim commit (studio_claim) and the `poll_line` receipt below are TWO
+    SQLite commits. A process killed between them leaves the line frozen on the
+    old fence and the old claim token. The refusal in `cmd_poll` must not leave
+    it that way: every later poll would present the stale token, be refused,
+    and report success — the line would stay wedged until the lease expired and
+    a takeover rewrote it. Refreshing the line to the live claim keeps the
+    receipt true, so the next poll resumes. Nothing is printed, the exit-code
+    contract is unchanged, and only OUR OWN live claim is written: a line that
+    already matches it is left alone, and another owner's claim is never
+    recorded as ours.
+    """
+    st = led.order_state(order_id) or {}
+    if not st or st.get("owner") != BRIDGE_OWNER:
+        return False
+    stored = next((r["payload"] for r in reversed(led.receipts(order_id))
+                   if r["kind"] == "poll_line"), None)
+    if not stored or stored.get("fence") == st.get("fence"):
+        return False
+    line = dict(stored)
+    line["fence"] = st.get("fence")
+    line["claim_token"] = st.get("claim_token")
+    led.write_receipt(order_id, "poll_line", line)
+    return True
+
+
 def cmd_poll(args):
     """Check in, claim one waiting order, replay it, print one JSON line.
 
@@ -1372,6 +1400,10 @@ def cmd_poll(args):
         won = led.claim_order(order_id, BRIDGE_OWNER,
                               resume_token=resume_token)
         if not won:
+            # Refused: a live holder keeps it. A refused RESUME, though, must
+            # not leave the stored line stale (see `_refresh_stored_line`);
+            # refresh first, then keep the silent success.
+            _refresh_stored_line(led, order_id)
             return EXIT["ok"]                   # a live holder keeps it
         recs = led.receipts(order_id)
         st = led.order_state(order_id) or {}
