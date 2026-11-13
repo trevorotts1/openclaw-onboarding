@@ -201,3 +201,102 @@ workflow's GATE-7 target list) in `scripts/ci/phase_doc_sync.py` — **both outs
   left it.
 - **This unit's hunks:** the two files in §2 only.
 - No hunk belonging to another unit is present in this diff.
+
+---
+
+# 9. Addendum — the manifest-version row, built 2026-11-12
+
+§6 above records the header row as BLOCKED. Under the Boss's decision of 2026-11-12 7:14 PM
+(`DECISIONS.md:188`, option C) the row is now BUILT **without** weakening the drift gate and
+**without** dropping the row: the mandated wording leads the parenthesis and the pinned marker
+stays in it as a recorded live read.
+
+| | |
+|---|---|
+| Branch | `pd/fl24-role-procedures-c` (matches the ledger row exactly) |
+| Parent (unchanged base for this row) | `7381bff56` |
+| Row | the header: "manifest version: read it from the file" |
+| Files | the same two files, one line each — nothing else touched |
+
+**Before → after (role line 119, mirror line 13; identical text in both):**
+
+```
+- ... in `…/PIPELINE-MANIFEST.json` (manifest_version 75, 56 phases) exactly per the Director's Phase-Code Map …
++ ... in `…/PIPELINE-MANIFEST.json` (manifest version: read it from the file; the live read at
+  regeneration was manifest_version 75, 56 phases) exactly per the Director's Phase-Code Map …
+```
+
+The marker `manifest_version 75, 56 phases` is still present exactly once per file, so
+`scripts/ci/phase_doc_sync.py:653-662` (GATE 7) still parses it and checks it against the manifest.
+The row's wording is satisfied and the gate keeps its teeth.
+
+## Commands and results
+
+```
+python3 -I scripts/ci/phase_doc_sync.py --check      before: PHASE_DOC_SYNC_PASS rc=0
+python3 -I scripts/ci/phase_doc_sync.py --check      after:  PHASE_DOC_SYNC_PASS rc=0
+python3 -I scripts/ci/phase_doc_sync.py --selftest   after:  PHASE_DOC_SYNC_SELFTEST_PASS rc=0
+bash scripts/ci/presentations-drift-gates.sh         after:  ALL GATES PASSED (GATE 1..9) rc=0
+python3 -I 23-ai-workforce-blueprint/scripts/register-library-additions.py --check
+                                                     after:  CHECK PASS (538 roles / 148 sops) rc=0
+python3 -I scripts/check-duplicate-sop-drift.py      after:  GATE PASSED rc=0
+```
+
+**Control pair (the reason this unit stays open, measured instead of argued).** Option (A) is
+"drop the marker". Removing the marker from this file only, in a throwaway copy, and re-running
+`--check`:
+
+```
+RC_WITHOUT_MARKER = 1
+  PHASE_DOC_SYNC_FAIL: a doc that restates the pipeline manifest has drifted:
+    - …/pptx-assembly-specialist.md: no '(manifest_version V, N phases)' marker found at all
+RESTORED marker occurrences: 1
+```
+
+The file was restored in the same run (a `finally:` block) and the working tree carries only the
+two one-line hunks. So: keep the marker → rc=0; drop it → rc=1. The gate is load-bearing, which is
+exactly why option (A) is not available to a builder.
+
+**Mirror parity (A1), before and after — unchanged by this row:**
+
+```
+before: hunks 1  removed 0  added 59   (@@ -220,0 +221,59 @@)
+after:  hunks 1  removed 0  added 59   (@@ -220,0 +221,59 @@)
+```
+
+The single difference is the mirror's pre-existing `### SOP 9.5 -- Governed Motion Audit` block,
+which is not in the role file and is not in any row of PD-093. Preserved, reported, not removed.
+
+## Unit status — OPEN and EXCLUDED from every batch, pending Trevor
+
+PD-093 now has **every row built** on `pd/fl24-role-procedures-c`. It still does **not** close, and
+this is deliberate:
+
+- The row as literally worded ("fix the header to `manifest version: read it from the file`") is
+  only strictly satisfiable by removing the marker, and removing the marker fails GATE 7 — a live
+  drift gate. A check may never be weakened, so option (A) is not mine or a builder's to take.
+- Option (B), dropping the spec row, is the only other reading and only Trevor's exact quoted
+  words may drop a spec row.
+- Therefore the unit stays **OPEN** and **`excluded_from_batch: true`**, per `DECISIONS.md:188`.
+  It must not enter any request file and must not be batch-merged.
+
+What is needed to close it: Trevor's word on whether the spec row may be dropped, or on whether
+the wording above (mandated sentence + retained live-read marker) counts as the row being met.
+The Boss is recommending the latter: keep the literal GATE 7 marker and ask.
+
+## Commits on this branch (owners, so QC can attribute)
+
+| sha | author | subject |
+|---|---|---|
+| `f87dff427` | CI | Batch: #3161 ci: mint SF-PROVER-PIN.sha256 (main, not this lane) |
+| `1a476d2cb` | trevor otts | Merge PR #3163 (batch, main — the lane's merge-base) |
+| `baf3f5dbb` | CI | PD-094: Slide Image Creator procedure stops contradicting itself |
+| `bce9febf5` | qc-pd094 | PD-094: qc fix remove stale gradient-glow mandates left by build |
+| `e649f7f57` | qc-pd094-recheck | PD-094: recheck fix stale gold-gradient mandate left by build and QC |
+| `579c937ae` | qc-pd094-recheck3 | PD-094: qc fix - remaining stale craft mandates (PD-094 accepted head) |
+| `66bf69c97` | CI | PD-093: assembly procedure follows the engine it actually dispatches |
+| `7381bff56` | CI | PD-093: build report (walk-through table, blocked header row, cross-unit findings) |
+| *this row's commit* | deepseek-chain | PD-093: header states the manifest version is read from the file |
+
+Hunk attribution for this row: two files, one line each, both inside `owned_paths`. No PD-094 hunk
+is touched and no hunk belonging to another unit is present.
