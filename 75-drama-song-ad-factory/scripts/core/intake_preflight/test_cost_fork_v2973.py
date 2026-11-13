@@ -173,3 +173,7 @@ def main():
 
 if __name__ == "__main__":
     sys.exit(main())
+
+
+def test_cost_fork_v2973():
+    assert main() == 0
