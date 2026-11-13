@@ -280,21 +280,32 @@ class TestRenderClientReportMsgNoLiteralBraces:
         eng = _engine(tmp_path, deck_type="webinar", creation_mode="from_scratch")
         ph = eng.manifest.phase("P-0.5-RESEARCH")
         assert ph.name == "Deep Research"
+        # PD-018a moved every manifest template from {name} to {client_label};
+        # PD-018b (lane FL05) teaches _render_client_report_msg to fill that
+        # token. The {k}/{N} substitution this test exists for is unchanged, so
+        # pin it and prove no raw token (old or new) leaks to the client.
         msg = eng._render_client_report_msg(ph, "start")
-        assert msg == "Step 1 of 46 — Deep Research — starting", msg
+        assert msg.startswith("Step 1 of 46 — "), msg
+        assert msg.endswith("— starting"), msg
         done = eng._render_client_report_msg(ph, "done")
-        assert done == "Step 1 of 46 — Deep Research — complete", done
+        assert done.startswith("Step 1 of 46 — "), done
+        assert done.endswith("— complete"), done
+        for tok in ("{k}", "{N}", "{name}", "{client_label}"):
+            assert tok not in msg and tok not in done
 
     def test_name_field_used_not_bare_phase_id(self, tmp_path):
-        """{name} resolves to the manifest's declared 'name' (a human string),
-        not the machine phase id -- proves Phase.name (manifest.py) is wired,
-        not just defaulting to phase.id every time."""
+        """The client-facing template names the step with a plain label, never
+        the machine phase id and never the technical 'name' -- PD-018a declares
+        {client_label} on every phase and removes {name} from every template."""
         eng = _engine(tmp_path, deck_type="webinar", creation_mode="from_scratch")
         ph = eng.manifest.phase("P4-RENDER")
         assert ph.name and ph.name != ph.id
+        template = ph.client_report["start_template"]
+        assert "{client_label}" in template
+        assert "{name}" not in template
         msg = eng._render_client_report_msg(ph, "start")
-        assert ph.name in msg
-        assert "{name}" not in msg
+        assert ph.id not in msg
+        assert "{" not in msg and "}" not in msg
 
     def test_eta_placeholder_empty_when_no_eta_declared(self, tmp_path):
         """None of the 36 manifest phases declare eta_minutes today -- {eta}
