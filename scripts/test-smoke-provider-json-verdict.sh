@@ -200,6 +200,9 @@ printf '%s\n' '{
 }' > "$CSTATE"
 
 rc=0
+# KIE_API_KEY / NOTION_API_TOKEN are the pipeline's own credential-presence
+# preflight (unchanged by this unit); a fixture passes placeholders past it so
+# the assertion can reach the done-block it is about. Nothing reads the values.
 env -i \
   PATH="$BOX/bin:$BASE_PATH" \
   HOME="$BOX" \
@@ -207,6 +210,8 @@ env -i \
   WORKFORCE_PYTHON="$BOX/bin/workforce-python" \
   OPENCLAW_CALLS="$CALLS2" \
   SMOKE_MARKER="$SMOKE_MARKER" \
+  KIE_API_KEY="fixture-kie-key" \
+  NOTION_API_TOKEN="fixture-notion-token" \
   ZHC_SKIP_TG_PREFLIGHT=1 \
   ZHC_SKIP_ROUTING_PREFLIGHT=1 \
   bash "$SK/37-zhc-closeout/scripts/run-closeout.sh" > "$WORK/run.out" 2>&1 || rc=$?
