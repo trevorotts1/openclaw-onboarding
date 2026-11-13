@@ -2450,6 +2450,54 @@ def _verify_text_artifact(pattern: str, min_bytes: int = 50,
     return _v
 
 
+def _verify_binary_artifact(pattern: str, min_bytes: int = 50,
+                            magic: bytes = b"%PDF",
+                            scale_by_slides: bool = False,
+                            floor_formula: str = "pdf"):
+    """Factory returning a verifier that checks a BINARY artifact (PD-208).
+
+    A PDF step was checked by _verify_text_artifact, which measures DECODED
+    TEXT length and never looks at the bytes: a text file named ``*.pdf``
+    passed as long as it was long enough. This factory measures the file's
+    byte length on disk (never a decoded-text length) and requires the first
+    ``len(magic)`` bytes to equal ``magic``.
+
+    Floors scale by slide count exactly as _verify_text_artifact does — the
+    same one helper (presentation_job/deliverable_floors — FIX 103), the same
+    ``floor_formula`` select, the same raw-min_bytes fallback when the module
+    is unavailable.
+    """
+    def _v(run_dir: Path) -> Tuple[bool, List[str]]:
+        p = _resolve_glob(run_dir, pattern)
+        if p is None:
+            return False, [f"{pattern}: file not found — phase artifact missing"]
+        floor = min_bytes
+        if scale_by_slides:
+            try:
+                _n = _floors.slide_count(run_dir) if _floors is not None else 0
+                _n = _n or 1
+                floor = (_floors.guide_floor(_n) if floor_formula == "guide"
+                         else _floors.pdf_floor(_n)) if _floors is not None else min_bytes
+            except Exception:  # noqa: BLE001 — fall back to the fixed floor
+                floor = min_bytes
+        try:
+            with open(p, "rb") as fh:
+                head = fh.read(len(magic))
+            size = p.stat().st_size
+        except OSError as exc:  # noqa: BLE001
+            return False, [f"{pattern}: unreadable ({exc!r})"]
+        if head != magic:
+            return False, [
+                f"{pattern}: not a PDF — expected {magic!r} at offset 0, "
+                f"got {head!r}"
+            ]
+        if size < floor:
+            return False, [f"{pattern}: {size} bytes < {floor} — not a usable PDF"]
+        return True, []
+    _v.artifact_pattern = pattern  # PD-061: the path this check reads
+    return _v
+
+
 # ---------------------------------------------------------------------------
 # Signature Presentation (Skill 51) substance verifiers. Each DELEGATES to the
 # build_deck _chk_sp_* wrapper (single source of truth), which itself DEFERS
@@ -4209,15 +4257,18 @@ PHASE_VERIFIERS: dict[str, Callable] = {
     # FIX 103: both PDF floors scale by THIS deck's slide count from THE one
     # helper (deliverable_floors) — deck_pdf via pdf_floor(n)=max(1506n, 8192),
     # guide_pdf via guide_floor(n)=max(1600n, 12000). No 51,200 / 34-slide
-    # literal is enforced here any more (the verifier registry fixture in
-    # tests/test_fix17_verifier_import_failclosed.py mirrors this call shape).
-    "P8.1-PDF-EXPORT":    _verify_text_artifact("working/deliverables/*-FINAL.pdf",
-                                                _MIN_BYTES["deck_pdf"],
-                                                scale_by_slides=True, floor_formula="pdf"),
+    # literal is enforced here any more. PD-208: the three PDF steps are checked
+    # by _verify_binary_artifact, which measures BYTE length and requires %PDF
+    # at offset 0 — a text file named *.pdf no longer satisfies them.
+    "P8.1-PDF-EXPORT":    _verify_binary_artifact("working/deliverables/*-FINAL.pdf",
+                                                  _MIN_BYTES["deck_pdf"],
+                                                  magic=b"%PDF",
+                                                  scale_by_slides=True, floor_formula="pdf"),
     # MG-036: governed motion audit (Skill 72) — record-vs-deck embed proof.
     "P8.15-MOTION":       _verify_motion_phase,
-    "P8.2-GUIDE":         _verify_text_artifact("working/deliverables/PRESENTER-GUIDE.pdf",
+    "P8.2-GUIDE":         _verify_binary_artifact("working/deliverables/PRESENTER-GUIDE.pdf",
                                                 _MIN_BYTES["guide_pdf"],
+                                                magic=b"%PDF",
                                                 scale_by_slides=True, floor_formula="guide"),
     # Slice 3: shadowed against the sealed dual-file strip-equals verdict
     # (verify_fish_tag) — report-only unless PRES_TRUST_BOUNDARY_ENFORCE=1.
@@ -4228,8 +4279,9 @@ PHASE_VERIFIERS: dict[str, Callable] = {
     # never-cited pre-doctrine number found in PIPELINE-MANIFEST.json and
     # presenters_speech_pdf.py's own PDF_MIN_BYTES self-check during this pass.
     # Now derived from the canonical spec (speech_pdf: 3_000, the doctrine floor).
-    "P9.1-SPEECH-PDF":    _verify_text_artifact("working/deliverables/PRESENTERS-SPEECH.pdf",
-                                                  _MIN_BYTES["speech_pdf"]),
+    "P9.1-SPEECH-PDF":    _verify_binary_artifact("working/deliverables/PRESENTERS-SPEECH.pdf",
+                                                  _MIN_BYTES["speech_pdf"],
+                                                  magic=b"%PDF"),
     # Slice 3: shadowed against the sealed media-library ledger verdict
     # (verify_media_library) — report-only unless PRES_TRUST_BOUNDARY_ENFORCE=1.
     # The READ-ONLY GHL list-back stays inside _verify_ghl_upload (network —
