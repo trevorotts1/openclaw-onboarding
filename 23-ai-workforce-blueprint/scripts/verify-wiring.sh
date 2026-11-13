@@ -216,17 +216,19 @@ now_iso() { date -u +%Y-%m-%dT%H:%M:%SZ; }
 # BUG FIX (v1.0.2): runtime .workforce-build-state.json stores departments with field
 # "id" not "slug" (the schema name). Using .slug produced an always-empty ALL_DEPTS,
 # causing the gate to WARN and exit 0 vacuously — a false pass.  Use .id instead.
+# BU-51: accept either field — `.id // .slug` — because a department entry may be
+# keyed by slug only; a slug-only state file used to hard-fail here.
 ALL_DEPTS=()
 while IFS= read -r _dept_line; do
   [[ -n "$_dept_line" ]] && ALL_DEPTS+=("$_dept_line")
-done < <(jq -r '.departments[]?.id // empty' "$STATE_FILE" 2>/dev/null || true)
+done < <(jq -r '.departments[]? | (.id // .slug // empty)' "$STATE_FILE" 2>/dev/null || true)
 
 if [[ ${#ALL_DEPTS[@]} -eq 0 ]]; then
   # Guard: if the state file has a non-empty departments array but we got no IDs,
   # that is a BUG (wrong field name or unreadable state) — hard-fail, not a vacuous pass.
   _raw_dept_count=$(jq -r '(.departments // []) | length' "$STATE_FILE" 2>/dev/null || echo 0)
   if (( _raw_dept_count > 0 )); then
-    echo "[verify-wiring] FATAL: state file has ${_raw_dept_count} department(s) but .id was empty for all of them — schema mismatch or corrupted state. Aborting to prevent a vacuous false pass." >&2
+    echo "[verify-wiring] FATAL: state file has ${_raw_dept_count} department(s) but neither .id nor .slug was present on them — schema mismatch or corrupted state. Aborting to prevent a vacuous false pass." >&2
     exit 9
   fi
   echo "[verify-wiring] WARN: no departments found in state file — nothing to check" >&2
@@ -275,6 +277,8 @@ fi
 # absent, detection is the only honest option available to this gate.
 #
 # Candidate order is preference, not authority — the score decides:
+#   0. the LIVE departments tree                (BU-58: the folder _qc_paths
+#                                                resolves, printed first here)
 #   1. state.workspaceRoot/departments          (explicit, when present)
 #   2. $OC_ROOT/workspace/departments           (the tree the floor-fill repair
 #                                                pipeline maintains — see
@@ -292,6 +296,14 @@ _add_candidate() {
   done
   DEPT_TREE_CANDIDATES+=("$c")
 }
+
+# BU-58: the live tree goes FIRST. _qc_paths.resolve_live_departments_dir() is the
+# ONE definition of "which departments tree is live" (BU-103); its CLI prints that
+# folder only when it resolves to an existing directory and prints nothing
+# otherwise, so the candidates below stay exactly as they were when it cannot
+# answer. The score still decides — this only puts the live tree in the race first.
+_LIVE_DEPTS_DIR="$(python3 -B "$SCRIPT_DIR/_qc_paths.py" --print-live-departments-dir 2>/dev/null || true)"
+_add_candidate "$_LIVE_DEPTS_DIR"
 
 _STATE_WS_ROOT=$(jq -r '.workspaceRoot // empty' "$STATE_FILE" 2>/dev/null || true)
 _add_candidate "$_STATE_WS_ROOT/departments"
@@ -1293,7 +1305,7 @@ if [[ -f "$STATE_FILE" ]]; then
     '
       .departments = ((.departments // []) | map(
         . as $d
-        | ($perdept[$d.id] // {}) as $pd
+        | ($perdept[($d.id // $d.slug // "")] // {}) as $pd
         | $d
         + (if ($pd | has("wiringStatus"))    then {wiringStatus: $pd.wiringStatus}       else {} end)
         + (if ($pd | has("wiringCheckedAt")) then {wiringCheckedAt: $pd.wiringCheckedAt} else {} end)
