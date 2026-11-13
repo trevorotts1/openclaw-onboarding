@@ -260,7 +260,10 @@ def test_launcher_writes_ultra_mode_and_client_route_sidecars(tmp_path, monkeypa
     mode_plan = json.loads((run / '.mode-plan.json').read_text())
     model_plan = json.loads((run / '.model-plan.json').read_text())
     assert mode_plan['mode'] == 'ultra' and mode_plan['declared'] is True
-    assert mode_plan['ceiling']['operator_ceiling'] == 100
+    # FIX 61 (7e5c4d6f3) ratified ultra's operator ceiling at 400. The ceiling
+    # block reports the GLOBAL ratified maximum, so assert it against the
+    # constant, not the pre-FIX-61 literal 100.
+    assert mode_plan['ceiling']['operator_ceiling'] == model_router.ULTRA_OPERATOR_CEILING
     assert json.loads((run / 'engine-env.json').read_text())['mode'] == 'ultra'
     authoring = next(row for row in model_plan['decisions'] if row['capability'] == 'authoring')
     assert authoring['provider'] == 'deepseek-direct' and authoring['model'] == 'deepseek-flash'
