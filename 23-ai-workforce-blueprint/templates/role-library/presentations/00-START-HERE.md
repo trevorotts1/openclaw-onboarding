@@ -69,7 +69,7 @@ Every deck must carry, and the QC Specialist gates, the operator's ten named req
 
 ---
 
-## Role Roster (34 roles, one unique ROLE number per file)
+## Role Roster (35 roles, one unique ROLE number per file)
 
 > **Fix-77 uniqueness rule:** every role file in this directory carries exactly one ROLE number
 > (the `**Role number:**` header line inside the file), and no two files share one. The numbers
@@ -112,6 +112,7 @@ Every deck must carry, and the QC Specialist gates, the operator's ten named req
 | ROLE-31 | signature-presentation-architect | specialist | signature-presentation-architect.md |
 | ROLE-32 | representation-casting-director | specialist | representation-casting-director.md |
 | ROLE-33 | image-grounding-steward | specialist | image-grounding-steward.md |
+| ROLE-34 | scripts-specialist | specialist | scripts-specialist.md |
 
 **New in the density-floor overhaul (2026-06-14):** ROLE-18 Typography Architect (locks the type/layout/treatment system in Phase 1.5, before any prompt), ROLE-19 Presenter's Guide Specialist (speaker-facing outline PDF + Notion), ROLE-20 Presenter's Speech Writer (word-for-word script at 130 wpm + audio demo via Fish > ElevenLabs > local + ffmpeg chunk/stitch), ROLE-29 Fish Audio / Expression Specialist (expression-tags the speech), ROLE-22 First-Time-User Onboarding (orients a newcomer once, then hands to the Brainstorming Buddy).
 
