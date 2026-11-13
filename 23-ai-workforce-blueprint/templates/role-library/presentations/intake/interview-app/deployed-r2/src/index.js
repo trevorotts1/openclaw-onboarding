@@ -130,7 +130,7 @@ async function routeSessions(request, env, parts, method, url) {
   if (parts.length === 4 && parts[3] === "answers" && method === "GET") return pollAnswers(request, env, token);
   if (parts.length === 4 && parts[3] === "complete" && method === "POST") return completeSession(request, env, token);
   if (parts.length === 4 && parts[3] === "outbox" && method === "GET") return outboxStatus(env, token);
-  if (parts.length === 4 && parts[3] === "review" && method === "GET") return reviewAnswers(env, token);
+  if (parts.length === 4 && parts[3] === "review" && method === "GET") return reviewAnswers(request, env, token);
   if (parts.length === 4 && parts[3] === "corrections" && method === "POST") return postCorrection(request, env, token);
   return errorResponse("not found", 404);
 }
@@ -408,6 +408,8 @@ async function postAnswer(request, env, token) {
 async function pollAnswers(request, env, token) {
   const row = await loadOpenSession(env, token, true); if (row.error) return row.error;
   const { session, payload } = row;
+  // PD-106: a session minted with a confirmation code guards its reads too.
+  const codeErr = confirmCodeError(request, session); if (codeErr) return codeErr;
   const sid = session.session_id || token;
   const since = Number(new URL(request.url).searchParams.get("since") || 0);
   const answersRec = await loadAnswersRecord(env.STORE, session.session_id || token);
@@ -734,9 +736,10 @@ async function markOutboxAccepted(env, sessionId) {
  * question id (the pre-PRES-024 getSession returned only the answered ID list,
  * which made a full review/edit UX impossible).
  */
-async function reviewAnswers(env, token) {
+async function reviewAnswers(request, env, token) {
   const row = await loadOpenSession(env, token, true); if (row.error) return row.error;
   const { session, payload } = row;
+  const codeErr = confirmCodeError(request, session); if (codeErr) return codeErr;
   const sid = session.session_id || token;
   const answeredRows = await loadAnswers(env, sid);
   const answeredValues = {}; for (const r of answeredRows) answeredValues[r.question_id] = r.value;
@@ -762,6 +765,8 @@ async function reviewAnswers(env, token) {
 async function postCorrection(request, env, token) {
   const row = await loadOpenSession(env, token, true); if (row.error) return row.error;
   const { session, payload } = row;
+  // PD-106: corrections are a read-and-write of stored answers; guard them.
+  const codeErr = confirmCodeError(request, session); if (codeErr) return codeErr;
   const sid = session.session_id || token;
   let body; try { body = await request.json(); } catch { return errorResponse("invalid JSON body", 400); }
   const questionId = body.question_id;
@@ -1313,10 +1318,10 @@ async function saveRunIndex(env, runId, rows) { await storePutJson(env, "runs/" 
  * cached index would keep naming a revoked token as the run's open session.
  */
 async function refreshRunIndexFor(env, runId) {
-  const listed = await env.STORE.list({ prefix: SESSION_PREFIX });
+  const keys = await listAllKeys(env.STORE, SESSION_PREFIX);
   const rows = [];
-  for (const obj of (listed && listed.objects) || []) {
-    const s = await storeGetJson(env, obj.key);
+  for (const key of keys) {
+    const s = await storeGetJson(env, key);
     if (s && s.run_id === runId) {
       rows.push({ token: s.token, session_id: s.session_id || null, status: s.status, expires_at: s.expires_at });
     }
@@ -1336,11 +1341,12 @@ async function openGrantsFor(env, sid, latest) {
 async function latestGrantFor(env, sessionId, runId) {
   if (sessionId) {
     // Walk every grant object carrying this session id (revoked ones included)
-    // and return the newest by created_at.
-    const listed = await env.STORE.list({ prefix: SESSION_PREFIX });
+    // and return the newest by created_at. PD-106: paged — a single list() call
+    // sees only the first page, and a busy bucket can hold 1,200 sessions.
+    const keys = await listAllKeys(env.STORE, SESSION_PREFIX);
     let latest = null;
-    for (const obj of (listed && listed.objects) || []) {
-      const s = await storeGetJson(env, obj.key);
+    for (const key of keys) {
+      const s = await storeGetJson(env, key);
       if (s && (s.session_id === sessionId)) {
         if (!latest || (Number(s.revision) > Number(latest.revision) || (Number(s.revision) === Number(latest.revision) && Number(s.created_at) > Number(latest.created_at)))) latest = s;
       }
@@ -1387,6 +1393,36 @@ function timingSafeEqual(a, b) {
   if (sa.length !== sb.length) return false;
   let diff = 0; for (let i = 0; i < sa.length; i++) diff |= sa.charCodeAt(i) ^ sb.charCodeAt(i);
   return diff === 0;
+}
+
+/**
+ * PD-106: when the session was minted with a confirmation code, every read of
+ * the stored answers (answers poll, review, corrections) must present it in the
+ * `x-confirm-code` header. Returns an error response, or null when the call may
+ * proceed. A code-less session is unchanged.
+ */
+function confirmCodeError(request, session) {
+  if (!session || !session.confirm_code) return null;
+  const supplied = request.headers.get("x-confirm-code") || "";
+  if (!timingSafeEqual(supplied, session.confirm_code)) return errorResponse("confirmation code required or incorrect", 401);
+  return null;
+}
+
+/**
+ * PD-106: R2 list() pages at a bounded size and reports `truncated` + `cursor`.
+ * A caller that reads only the first page silently ignores every object beyond
+ * it — with 1,200 stored sessions the newest grant can sit on page two.
+ */
+async function listAllKeys(bucket, prefix) {
+  const keys = [];
+  let cursor;
+  for (;;) {
+    const page = await bucket.list(cursor ? { prefix, cursor } : { prefix });
+    for (const obj of (page && page.objects) || []) keys.push(obj.key);
+    if (!page || !page.truncated || !page.cursor) break;
+    cursor = page.cursor;
+  }
+  return keys;
 }
 
 // Keep the pending index inside the same tenant boundary as its intake records.

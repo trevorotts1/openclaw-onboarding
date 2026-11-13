@@ -1015,6 +1015,10 @@
        /api/intake itself. */
     function apiJson(method, path, body) {
       var opts = { method: method, headers: { "content-type": "application/json" } };
+      /* PD-106: the worker guards the stored-answer reads (and corrections)
+         with the session's confirmation code, sent as a header. Empty until
+         the client types it, so a code-less session sends nothing. */
+      if (SESSION && SESSION.confirmCode) opts.headers["x-confirm-code"] = SESSION.confirmCode;
       if (body !== undefined) opts.body = JSON.stringify(body);
       return fetchWithTimeout(path, opts).then(function (r) {
         return r.json().catch(function () { return {}; }).then(function (res) {
