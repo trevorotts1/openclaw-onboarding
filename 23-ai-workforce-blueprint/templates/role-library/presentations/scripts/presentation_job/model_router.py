@@ -66,7 +66,10 @@ classes never fall back to the cheaper Flash model (the fix spec: "no
 adequate context window = park", "cannot fall back to a model that cannot
 hold the research bundle"), and vision phases resolve NO route when no
 vision-capable owner exists (the caller parks fail-closed -- a
-vision phase is never answered with a text model).
+vision phase is never answered with a text model). The candidate loop
+enforces that by kind: `vision_ocr` and `image_render` refuse any candidate
+the capability registry does not mark with that modality, and an unknown kind
+is refused too.
 
 PARK / FAIL-CLOSED
 ------------------
@@ -469,17 +472,6 @@ CAPABILITY_CANDIDATES: Dict[str, List[Dict[str, Any]]] = {
         {"alias": "glm-5.3"},
     ],
     "vision_ocr": [  # vision + OCR only; no owner -> park fail-closed
-        # F30 (SMOKE-1, 2026-09-01): glm-ocr (ollama-cloud) needs
-        # OLLAMA_CLOUD_API_KEY which no env store on the operator box carries,
-        # so the single-candidate chain exhausted every wave with
-        # "OLLAMA_CLOUD_API_KEY not set". F30b: OpenRouter credits are
-        # exhausted (HTTP 402 at any token budget -- balance is negative),
-        # so the OCR readback falls to deepseek-direct (proven live 2026-09-01
-        # with a 1-token smoke call). deepseek-v4.1-flash is a text model; the
-        # P-IMAGE-QC OCR readback is text-QC over baked-prompt text, not raw
-        # pixel vision, so a text model satisfies the verifier.
-        {"alias": "deepseek-v4.1-flash"},
-        {"alias": "glm-5.3"},
         {"alias": "glm-ocr"},
     ],
     "image_render": [  # Kie render; the script executor owns the phase
@@ -2308,6 +2300,24 @@ def resolve_route(phase_id: str, *,
                         "reason": "ultra: no OpenRouter served id for " + str(_m)})
             candidates.append(row)
             continue
+        # PD-205a: the vision rule, enforced on the candidate itself. A vision
+        # or image class takes the candidate's kind from the capability
+        # registry -- alias first, then the served id it would actually send
+        # -- and refuses a candidate whose kind does not meet the class floor.
+        # An unknown kind is refused too: the absence of a capability reading
+        # is never evidence of vision, exactly as an unmeasured context window
+        # never becomes a long one.
+        if capability in ("vision_ocr", "image_render"):
+            kind = _registry_capability_meta(alias) or _registry_capability_meta(
+                _served_model(alias_def, alias_def.get("provider")))
+            if str(kind.get("modality") or "").strip().lower() != \
+                    str(class_floor(capability).get("modality") or ""):
+                row.update({"eligible": False,
+                            "reason": ("not a vision model"
+                                       if capability == "vision_ocr"
+                                       else "not an image model")})
+                candidates.append(row)
+                continue
         # PD-204: a grader in the author's family is not an independent
         # grader. Recorded as its own skip so the decision says WHY the
         # candidate was passed over, never a silent omission.
