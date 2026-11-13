@@ -202,6 +202,7 @@ class CoverImage(unittest.TestCase):
         self.assertGreaterEqual(geom["fontsize"], ci.MIN_TITLE_FONT)
         self.assertGreaterEqual(geom["band"]["h"],
                                 len(geom["lines"]) * geom["line_height"])
+        self._build_run(title=title)
         row = self.build()
         self.assertEqual(row["title_lines"], 2)
         self.assertGreaterEqual(row["fontsize"], ci.MIN_TITLE_FONT)
