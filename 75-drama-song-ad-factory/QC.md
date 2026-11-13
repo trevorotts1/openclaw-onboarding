@@ -120,9 +120,10 @@ it advances. Standard library only; no credential value is ever printed.
 - [ ] Resume trio: no change -> 0 `resume-no-changes`; budget change -> 3
       `resume-approval-invalidated`; outstanding decision -> 2
       `resume-outstanding-decisions` (questionnaire not re-run).
-- [ ] `preflight --root <dir>` with no `--auth-file` exits 4
-      `approval-missing`; with auth bound to the digest, credential present
-      and tools found, exits 0 `preflight-pass` and `data.checks` shows
+- [ ] `preflight --root <dir>` with no `--auth-file` is not a refusal: the
+      auth object is optional, so its scope/expiry checks are skipped; with
+      auth bound to the digest, credential present and tools found, exits 0
+      `preflight-pass` and `data.checks` shows
       schema/profile/references/storage/disk/tools/credentials all true.
 - [ ] Refusal battery: wrong digest -> 4 `approval-out-of-scope`; unknown
       profile -> 4 `delivery-profile-unknown`; missing tool -> 1
