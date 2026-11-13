@@ -315,7 +315,14 @@ if ! "$WORKFORCE_PYTHON" "$COMPLETION_SCRIPT" "$STATE_FILE" --has-identity >>"$L
   exit 0
 fi
 normalize_status_vocabulary
-"$WORKFORCE_PYTHON" "$COMPLETION_SCRIPT" "$STATE_FILE" >>"$LOG_FILE" 2>&1 || true
+# A box whose closeout is finished is never re-opened by this job.
+_recheck_closeout="$(jq -r '.closeoutStatus // ""' "$STATE_FILE" 2>/dev/null || true)"
+case "$_recheck_closeout" in
+  done|sent)
+    log "completion re-check skipped: closeoutStatus=$_recheck_closeout (a finished box is not re-opened by the resume job)" ;;
+  *)
+    "$WORKFORCE_PYTHON" "$COMPLETION_SCRIPT" "$STATE_FILE" >>"$LOG_FILE" 2>&1 || true ;;
+esac
 
 # ---- v10.14.36: BELT - explicit self-stop on terminal state ----
 # v10.15.26 / v10.16.25 HARD FLOOR: a terminal state in the build-state JSON
