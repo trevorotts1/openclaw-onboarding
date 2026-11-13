@@ -466,6 +466,20 @@ def lipsync_gate(plan):
             lid not in known_lines for lid in s.get("lip_sync_line_ids", []))
         for s in marked)
     if incomplete:
+        # S75-047: a no-lip-sync plan advances ONLY with the owner's recorded
+        # opt-out (who + at in control/method.json). One reader, one record.
+        # Fail closed when the reader is unavailable (lane merged without
+        # lane U): an unresolvable opt-out is missing evidence, not a pass.
+        try:
+            from lipsync_evidence import no_lipsync_opt_out
+        except ImportError:
+            no_lipsync_opt_out = None
+        if (no_lipsync_opt_out is not None
+                and plan.get("route") == "no_lipsync"
+                and no_lipsync_opt_out(plan.get("run_dir"))):
+            return {"outcome": "ok", "reason_code": LIPSYNC_NOT_APPLICABLE,
+                    "next_action": "the owner recorded the no-lip-sync opt-out",
+                    "evidence": dict(evidence, route="no_lipsync")}
         return _fail("LIPSYNC_EVIDENCE_MISSING",
                      next_action="restore the approved lip-sync plan, line and "
                                  "speaker metadata; missing evidence is not "
@@ -1034,6 +1048,7 @@ def plan_timeline(tl, base_dir=".", probe=None):
     return {"fps": fps, "width": width, "height": height,
             "song_path": tl.get("song_path"),
             "run_dir": tl.get("run_dir"), "run_id": tl.get("run_id"),
+            "route": tl.get("route"),
             "chosen_length_s": tl.get("chosen_length_s"),
             "segments": items, "total_frames": total_frames,
             "total_dur": total_frames / fps,
@@ -2226,6 +2241,13 @@ def plan_run_timeline(run_dir, out_path=None, width=None, height=None,
         segments.append(segment)
         line = {"line_id": lid, "start_s": line_start, "end_s": line_end,
                 "text": text}
+        # S75-055: the clip cutter reads the hook flag off timeline lines
+        # (clip_cutdown._best_window); the approved shot record is the only
+        # place the storyboard stage records it, so carry it, never invent it.
+        if shot.get("hook") is not None:
+            line["hook"] = bool(shot.get("hook"))
+        if shot.get("beat") is not None:
+            line["beat"] = shot.get("beat")
         line["speaker"] = speaker if isinstance(speaker, str) else None
         if not (isinstance(line["speaker"], str) and line["speaker"].strip()):
             line.pop("speaker")
