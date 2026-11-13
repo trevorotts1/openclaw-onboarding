@@ -423,7 +423,10 @@ def main():
 
     # G (run). a healthy run gets exactly one first message ---------------
     box, skill, runs = core_box(os.path.join(tmp, "g1"))
-    base = int(time.time())
+    # A fixed 9:00 AM AT THE CLIENT: an ordinary progress update is held
+    # during the client's quiet hours, so a real clock makes this case pass
+    # by day and fail by night. The clock is pinned, as case I (a) does.
+    base = ny_ts(2026, 6, 10, 9, 0)
     run = make_stage_run(runs, "run-g", base - 60, stage="music",
                          state="RUNNING")
     flog = Path(box.root) / "factory.log"
@@ -510,7 +513,7 @@ def main():
           "picking it back up" in msg_a
           and "picking it back up" not in msg_b
           and "picking it back up" not in msg_c,
-          (msg_a, msg_b, msg_c))
+          repr((msg_a, msg_b, msg_c)))
 
     # I (a). 54 ticks over 9 hours of an unchanged needs_you state ----------
     box, skill, runs = core_box(os.path.join(tmp, "k1"))
@@ -623,7 +626,9 @@ def main():
 
     # K. the run's OWN channel is the channel it sends on -------------------
     box, skill, runs = core_box(os.path.join(tmp, "l2"))
-    base = int(time.time())
+    # daytime at the client, for the same reason as G (run): a progress
+    # message is held during the client's quiet hours
+    base = ny_ts(2026, 6, 10, 9, 0)
     make_stage_run(runs, "run-app", base - 60, stage="music", state="RUNNING",
                    channel="app")
     make_stage_run(runs, "run-chat", base - 60, stage="music", state="RUNNING")
