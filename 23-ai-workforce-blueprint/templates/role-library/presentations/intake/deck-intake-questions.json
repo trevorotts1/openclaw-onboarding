@@ -445,11 +445,11 @@
       "stage_beat": "provider/resource preference"
     },
     {
-      "id": "build_settings",
-      "section": "build settings",
+      "id": "resource_plan",
+      "section": "deck-intake",
       "order": 9,
-      "kind": "text",
-      "prompt": "Recommended build settings unless the client asks to choose the AI models. (compatibility row; never asked)",
+      "kind": "merged",
+      "prompt": "I detected these presentation providers and plans: [redacted detected summary]. Confirm the plan/tier for any provider whose concurrency cannot be detected, or choose 'use conservative default.' You own the model choice too -- nothing is forced. Give a slot as model@provider, labelled -- workhorse: deepseek-flash@deepseek-direct (your authoring/copy workhorse; older deepseek-v4-flash configs still accepted); reasoning: (long-context synthesis); qc: z-ai/glm-5.3-flash@openrouter (independent judge); thinking: max/high/medium/low/off; mode: ultra/standard/economy (how hard this deck's BUILD runs -- not how long this interview is; that is the separate quick/in-depth question). An omitted slot stays on the department default. No API key, no endpoint URL, no account id -- tier label, model id and provider id only. Also pick your DeepSeek variant (flash|pro) and your OpenRouter model (free text, e.g. z-ai/glm-5.3-flash).",
       "required": false,
       "block_gate": false,
       "subfields": {
@@ -470,19 +470,7 @@
             ]
           },
           "note": "PD-013: the recommended build settings are the default. Only an explicit 'customize' opens the eight model-choice questions below it; provider_plan keeps its own capacity-probe rule."
-        }
-      },
-      "stage": 1
-    },
-    {
-      "id": "resource_plan",
-      "section": "deck-intake",
-      "order": 9,
-      "kind": "merged",
-      "prompt": "I detected these presentation providers and plans: [redacted detected summary]. Confirm the plan/tier for any provider whose concurrency cannot be detected, or choose 'use conservative default.' You own the model choice too -- nothing is forced. Give a slot as model@provider, labelled -- workhorse: deepseek-flash@deepseek-direct (your authoring/copy workhorse; older deepseek-v4-flash configs still accepted); reasoning: (long-context synthesis); qc: z-ai/glm-5.3-flash@openrouter (independent judge); thinking: max/high/medium/low/off; mode: ultra/standard/economy (how hard this deck's BUILD runs -- not how long this interview is; that is the separate quick/in-depth question). An omitted slot stays on the department default. No API key, no endpoint URL, no account id -- tier label, model id and provider id only. Also pick your DeepSeek variant (flash|pro) and your OpenRouter model (free text, e.g. z-ai/glm-5.3-flash).",
-      "required": false,
-      "block_gate": false,
-      "subfields": {
+        },
         "resource_plan": {
           "storeOn": "RESOURCE_PLAN",
           "conservative_value": "use conservative default",
