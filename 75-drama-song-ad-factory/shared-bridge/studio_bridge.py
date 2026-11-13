@@ -974,13 +974,15 @@ def _board_epic(skill_root, order_id, title):
     try:
         from cc_sync import Outbox  # noqa: PLC0415
         from batch_mode.batch import STAGES  # noqa: PLC0415
-        out = Outbox()
+        out = Outbox(run_id=order_id)
         out.enqueue_create(job_id=order_id, show_name=title,
                            stages=[{"slug": s[0]} for s in STAGES],
-                           workspace=out.workspace)
+                           workspace=out.workspace,
+                           department="video",
+                           title_prefix="Drama Song Ad")
         out.flush()
-    except Exception:  # noqa: BLE001 - a down board never stops the order
-        pass
+    except Exception as exc:  # noqa: BLE001 - a down board never stops the order
+        sys.stderr.write("studio_bridge: board card not created: %s\n" % exc)
 
 
 #: The card's own step line: the one place its question count is written out
@@ -1124,18 +1126,40 @@ def _question_mismatch(skill_root, replies, client_dir=None):
 
 
 def _refuse_mismatch(base, key, order_id, mismatch):
-    """Refuse a replay whose reply count cannot complete the question list, and
-    cancel the order with that reason on it: the run never starts shifted."""
+    """Refuse a replay whose reply count cannot complete the question list.
+
+    The order is NOT cancelled. It is claimed, so the studio's own lifecycle
+    (`mini-app/service/src/lifecycle.js`: `in_production -> needs_you`) accepts
+    a `needs_you` event, and the client sees one plain card asking for a second
+    look instead of a dead order. The claim stays on the local ledger, so the
+    next poll reconciles the same order rather than claiming a new one: the run
+    never starts shifted.
+
+    The reply posted to the service is the client's sentence only; the two
+    counts travel to the operator on stderr, and in the JSON line on stdout.
+    A claim post that was itself refused leaves the order `waiting`, where
+    `needs_you` is not a legal move: the studio answers 409, which is accepted
+    and logged here - a refused state post never becomes a failed poll.
+    """
     given, questions = mismatch
     reason = ("REPLAY_QUESTION_MISMATCH: %d replies cannot complete the %d "
               "questions of this card" % (given, questions))
     status, out = _http("POST",
                         base.rstrip("/") + "/api/studio/orders/%s/state" % order_id,
-                        key=key, body={"event": "cancel", "reason": reason})
-    cancelled = bool(status and status // 100 == 2 and out.get("ok"))
+                        key=key,
+                        body={"event": "needs_you",
+                              "reason": "A few of your answers need a second "
+                                        "look. Open your studio page and tap "
+                                        "Continue."})
+    posted = bool(status and status // 100 == 2 and out.get("ok"))
+    sys.stderr.write("studio_bridge: %s - order %s; needs_you %s%s\n"
+                     % (reason, order_id, "posted" if posted else "refused",
+                        "" if posted else " (HTTP %s %s)" % (
+                            status, (out.get("code") or out.get("message")
+                                     or "")[:200])))
     _emit({"code": "REPLAY_QUESTION_MISMATCH", "message": reason,
            "order_id": order_id, "replies": given, "questions": questions,
-           "cancelled": cancelled})
+           "needs_you_posted": posted})
     return EXIT["refused"]
 
 
@@ -1435,8 +1459,9 @@ def cmd_poll(args):
         client_id = str(order.get("client_id") or "")
 
         # Before the run folder exists at all: a reply count that cannot complete
-        # the card's question list replays shifted answers, so the order is
-        # cancelled with that reason instead and nothing is written (SPEC B1).
+        # the card's question list replays shifted answers, so the order waits on
+        # the client (`needs_you`, never cancelled) and nothing is written (SPEC
+        # B1). The claim stays local, so the next poll reconciles this order.
         mismatch = _question_mismatch(args.skill_root, order.get("replies") or [],
                                       args.client_dir)
         if mismatch is not None:
