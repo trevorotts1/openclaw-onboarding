@@ -1039,6 +1039,68 @@ def _verified_operator_model_plan(contract: dict) -> dict:
             "run_mode": str(contract["run_mode"])}
 
 
+def _operator_driver_answer(driver: pathlib.Path, rd: pathlib.Path,
+                            question_id: str, text: str) -> subprocess.CompletedProcess:
+    """One answer turn, stamped as the operator-contract provenance class.
+
+    PD-107: every answer this path records declares where it came from, so
+    PD-004b's proof can accept it under `enforce` instead of finding an answer
+    with no client message behind it. The receipt the caller already wrote
+    (working/interview/operator_contract.json) carries the `receipt_hmac` the
+    driver hashes into each entry.
+
+    A driver built before PD-004b does not know the flag yet -- this branch
+    gets PD-004b from another lane. That one exact "unrecognized arguments"
+    refusal is replayed without the flag; anything else still fails the caller.
+    Remove the replay once PD-004b is in main.
+    """
+    argv = [sys.executable, str(driver), "--run-dir", str(rd),
+            "--answer", str(question_id), str(text)]
+    proc = subprocess.run(argv + ["--operator-contract"],
+                          text=True, capture_output=True, check=False)
+    stderr = proc.stderr or ""
+    if (proc.returncode == 2 and "unrecognized arguments" in stderr
+            and "--operator-contract" in stderr):
+        proc = subprocess.run(argv, text=True, capture_output=True, check=False)
+    return proc
+
+def _stamp_operator_contract_mirrors(rd: pathlib.Path,
+                                     receipt_path: pathlib.Path) -> None:
+    """Declare the run-mode mirror this contract caused.
+
+    PD-004b's driver derives `run_mode`/`RUN_MODE` from the resource_plan
+    answer and records it as `source: "deck-intake-driver"`. Its proof exempts
+    only `source: "derived"`, so under `enforce` that derived mirror is the one
+    row nothing can prove and `--complete` exits 6. The value itself came from
+    this authenticated contract, so the bridge records the class the proof can
+    check instead of leaving a false 'no client message' finding. Only these
+    two keys are touched; every answer the driver already stamped keeps its
+    own provenance.
+    """
+    ledger_path = rd / "working" / "interview" / "intake_ledger.json"
+    try:
+        ledger = json.loads(ledger_path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return
+    entries = ledger.get("entries") if isinstance(ledger, dict) else None
+    if not isinstance(entries, dict):
+        return
+    try:
+        receipt_sha = hashlib.sha256(receipt_path.read_bytes()).hexdigest()
+    except OSError:
+        return
+    changed = False
+    for key in ("run_mode", "RUN_MODE"):
+        entry = entries.get(key)
+        if (isinstance(entry, dict) and entry.get("source") == "deck-intake-driver"
+                and not entry.get("skipped")
+                and not isinstance(entry.get("value"), (dict, list))):
+            entry["source"] = "operator-contract"
+            entry["contract_sha256"] = receipt_sha
+            changed = True
+    if changed:
+        ledger_path.write_text(json.dumps(ledger, indent=2), encoding="utf-8")
+
 def drive_operator_contract(contract: dict, run_dir: pathlib.Path, *,
                             driver_path: pathlib.Path | None = None,
                             launch: bool = True,
@@ -1118,11 +1180,10 @@ def drive_operator_contract(contract: dict, run_dir: pathlib.Path, *,
             # missing turns resumes a partial transcript without duplicate turns.
             if question_id in answered:
                 continue
-            proc = subprocess.run([sys.executable, str(driver), "--run-dir", str(rd),
-                                   "--answer", str(question_id), str(text)],
-                                  text=True, capture_output=True, check=False)
+            proc = _operator_driver_answer(driver, rd, question_id, text)
             if proc.returncode:
                 raise RuntimeError("driver refused %s: %s" % (question_id, proc.stderr[-500:]))
+        _stamp_operator_contract_mirrors(rd, receipt_path)
         proc = subprocess.run([sys.executable, str(driver), "--run-dir", str(rd), "--complete"],
                               text=True, capture_output=True, check=False)
         if proc.returncode:
