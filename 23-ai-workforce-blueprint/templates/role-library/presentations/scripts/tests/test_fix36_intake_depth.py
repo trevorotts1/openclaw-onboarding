@@ -104,6 +104,13 @@ def _make_fixture(tmp_path: Path) -> tuple[Path, Path]:
     (scripts / "build_deck.py").write_text("# stub build_deck\n")
     (scripts / "run_signature_deck.py").write_text("# stub runner\n")
     (scripts / "ghl_media.py").write_text("# stub ghl_media\n")
+    # PD-009: GATE 3 treats an absent sync_check.py as a FAILED check, never a
+    # skipped one, so every fixture that reaches a gate must carry the stub.
+    (scripts / "sync_check.py").write_text(
+        "import json, sys\n"
+        "print(json.dumps({'in_sync': True, 'manifest_version': 39, 'drift': [],\n"
+        "                  'drift_summary': {'total': 0, 'render_path': 0, 'library_only': 0}}))\n"
+        "sys.exit(0)\n", encoding="utf-8")
     return run_dir, scripts
 
 
@@ -137,8 +144,12 @@ def _make_build_fixture(tmp_path: Path) -> tuple[Path, Path]:
     (run_dir / "working" / "checkpoints" / ".test-context").write_text("")
     (run_dir / "working" / "interview" / "intake_ledger.json").write_text(
         json.dumps({"status": "complete", "complete": True}), encoding="utf-8")
+    # PD-009: GATE 0b checks the sp-intake-transcript-v1 envelope, not a size.
     (run_dir / "working" / "interview" / "intake_transcript.json").write_text(
-        json.dumps({"turns": [{"q": "What topic?", "a": "A long enough answer " * 40}] * 10}),
+        json.dumps({"format": "sp-intake-transcript-v1",
+                    "driver_signature": "fixture-signed",
+                    "qid_sequence": ["q1", "q2"],
+                    "turns": [{"q": "What topic?", "a": "A long enough answer " * 40}] * 10}),
         encoding="utf-8")
     (run_dir / "slides.json").write_text("{}", encoding="utf-8")
     (scripts / "presentation_job.py").write_text("import sys\nsys.exit(0)\n", encoding="utf-8")

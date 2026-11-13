@@ -328,9 +328,14 @@ def test_attempt_cap_end_to_end_4th_dies(tmp_path):
     (run_dir / "working" / "interview").mkdir(parents=True)
     (run_dir / "working" / "interview" / "intake_ledger.json").write_text(
         json.dumps({"status": "complete", "complete": True}))
+    # PD-009: GATE 0b checks the sp-intake-transcript-v1 envelope, not a size.
     (run_dir / "working" / "interview" / "intake_transcript.json").write_text(
-        json.dumps({"driver": "deck-intake-driver", "signature": "signed",
-                    "turns": [{"q": "What topic?", "a": "A long enough answer " * 40}]}))
+        json.dumps({"format": "sp-intake-transcript-v1",
+                    "driver": "deck-intake-driver",
+                    "driver_signature": "fixture-signed",
+                    "qid_sequence": ["q1", "q2"],
+                    "turns": [{"q": "What topic?", "a": "A long enough answer " * 40},
+                              {"q": "Who for?", "a": "A fixture audience"}]}))
     payload = {"in_sync": True, "manifest_version": 39, "drift": [],
                "drift_summary": {"total": 0, "render_path": 0, "library_only": 0}}
     scripts = _make_fake_scripts_dir(tmp_path, json.dumps(payload), runner_rc=1)

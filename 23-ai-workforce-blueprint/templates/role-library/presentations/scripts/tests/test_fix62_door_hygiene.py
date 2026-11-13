@@ -54,8 +54,13 @@ def make_run_dir(base: Path) -> Path:
     (run_dir / "working" / "checkpoints" / ".test-context").write_text("")
     (run_dir / "working" / "interview" / "intake_ledger.json").write_text(
         json.dumps({"status": "complete", "complete": True}))
+    # PD-009: GATE 0b checks the SHAPE (S51 SKILL.md lines 41-48), not a byte
+    # count — the fixture must carry the four envelope keys.
     (run_dir / "working" / "interview" / "intake_transcript.json").write_text(
-        json.dumps({"driver": "deck-intake-driver", "signature": "signed",
+        json.dumps({"format": "sp-intake-transcript-v1",
+                    "driver": "deck-intake-driver",
+                    "driver_signature": "fixture-signed",
+                    "qid_sequence": ["q1", "q2"],
                     "turns": [{"q": "What topic?", "a": "A long enough answer " * 40}] * 10}))
     (run_dir / "slides.json").write_text("{}")
     return run_dir
