@@ -238,27 +238,25 @@ I ran the census of every test file in the tree that mentions `phase_verifiers` 
 $ grep -rl "phase_verifiers" tests/*.py | wc -l   ->  57
 ```
 
-One file in that set, `tests/test_fanout_prompt_phase.py`, **hangs in this environment on the
-pristine base tree as well** (bounded probe: still running after 60 s with no output; last started
-test `test_workers_1_and_workers_n_produce_identical_file_sets`). It is a pre-existing environmental
-hang, not PD-208: it hangs on a tree that does not contain this unit's change at all.
+One file in that set does not complete in this environment, **on the pristine base tree as well**:
+`tests/test_fanout_prompt_phase.py` — still running after a 60 s bounded probe with no output; last
+started test `test_workers_1_and_workers_n_produce_identical_file_sets`. It is a pre-existing
+environmental hang, not PD-208: it hangs on a tree that does not contain this unit's change at all.
+It is excluded from the census below and reported as unobserved.
 
-Two files in that set do not complete in this environment, **on the pristine base tree as well**:
+With that file excluded (56 files, 803 collected tests), both trees run 237 tests and then **block**
+(not compute: 4.5 s of CPU over 2 m 10 s of wall time) on a budget/timing test
+(`test_f16_agent_phase_wait_race.py::test_complete_inherited_artifact_inside_budget_does_not_block`
+in one run; the stall point moves between runs). Both trees stall the same way.
 
-- `tests/test_fanout_prompt_phase.py` — still running after a 60 s bounded probe, no output; last
-  started test `test_workers_1_and_workers_n_produce_identical_file_sets`. Excluded from the census
-  below and reported as unobserved.
-- With that file excluded, both trees run 237 of the 803 collected tests and then **block** (not
-  compute: 4.5 s of CPU over 2 m 10 s of wall time) on a budget/timing test
-  (`test_f16_agent_phase_wait_race.py::test_complete_inherited_artifact_inside_budget_does_not_block`
-  in one sample; the stall point moves between samples). Both trees stall the same way.
-
-Comparable census output (56 files, first 237 tests, base vs head):
+The two progress streams, verbatim:
 
 ```
 $ sed 's|^|tests/|' census-files2.txt | xargs python3 -m pytest -q --tb=no -p no:cacheprovider
-base sample 1: ...........F...[ 26%] ...   (237 chars, stopped)
-head sample 1: ............F...[ 26%] ...   (237 chars, stopped)
+base: ............F.................................................F...F..F.F [ 26%]
+      FFF..................
+head: ...........FF.................................................F...F..F.F [ 26%]
+      FFF..................
 ```
 
 **One difference appeared in sample 1 and it was investigated, not waved away.** Character index 155
