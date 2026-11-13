@@ -356,7 +356,7 @@ test('options: the four approved strings are reproduced verbatim', () => {
     record: { option: 2 }, lastCheckMs: T0 - 31 * 60 * 1000, hasWaitingOrder: true, nowMs: T0,
   });
   assert.equal(noZone.page_line,
-    'Your studio computer has not checked in for 31 minutes ago. Your order is safe and starts when it is back.');
+    'Your studio computer has not checked in for 31 minutes. Your order is safe and starts when it is back.');
   const never = staleVerdict({
     record: { option: 2 }, lastCheckMs: null, hasWaitingOrder: true, nowMs: T0,
   });
