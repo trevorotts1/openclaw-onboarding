@@ -23,7 +23,14 @@ on:
       - "74-kie-live-adapter/scripts/kie_live_adapter.py"
       - "tests/unit/kie-owner-cap-2-6.test.py"
       - "scripts/ci/fast-guards.d/kie-owner-cap-2-6-guard.sh"
-  # pull_request trigger removed: fast-guards runs this exact test (same script, same paths filter, plus --self-test) on every PR.
+  pull_request:
+    branches: [main]
+    paths:
+      - "66-kie-image/models.json"
+      - "71-blackceo-signature-page/references/prompt-budget-policy.json"
+      - "74-kie-live-adapter/scripts/kie_live_adapter.py"
+      - "tests/unit/kie-owner-cap-2-6.test.py"
+      - "scripts/ci/fast-guards.d/kie-owner-cap-2-6-guard.sh"
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
@@ -31,9 +38,9 @@ concurrency:
 
 jobs:
   kie-owner-cap-2-6-guard:
+    name: owner_prompt_cap_chars present and single-valued for every GPT Image 2.6 route
     # Batch pull requests run only the required checks (Trevor order 2026-11-13).
     if: ${{ !startsWith(github.head_ref, 'batch/') }}
-    name: owner_prompt_cap_chars present and single-valued for every GPT Image 2.6 route
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repo
