@@ -55,6 +55,10 @@ const UPLOAD_ID_FORMAT = /^u_[0-9a-f]{24}$/;
  *  studio needs them, or why the order was cancelled. The page draws it under
  *  the status, so it is trimmed to what one line holds. */
 const NOTE_MAX_CHARS = 300;
+/** U-Z12 (S75-103) — the key kinds an admin may cut off here. `link` is absent
+ *  on purpose: a personal link is rotated by minting a new one (link.js), and
+ *  the admin page offers only the computer key and the box key. */
+const REVOKE_KINDS = ['box', 'machine'];
 
 // ---------------------------------------------------------------------------
 // DSR-105 — the story brief
@@ -297,6 +301,26 @@ export async function handle(request, env, store, objects, deps = {}) {
       15 * 60,
     );
     return ok({ code: code.code, expires_in: 900 }, 201);
+  }
+
+  // POST /api/studio/admin/revoke — U-Z12 (S75-103): cut off a leaked key.
+  // It names a CLIENT and a KIND, never a key: the route lists the stored
+  // `key:` records, marks every ACTIVE record of that client and kind
+  // `revoked`, and answers how many it cut. A revoked key is refused by
+  // isolation.resolveKey with AF-DS-KEY-REVOKED on its next check-in. The
+  // route never takes, returns, logs or renders a key value — the fingerprint
+  // in the record name is the only form the service ever knows.
+  if (request.method === 'POST' && url.pathname === '/api/studio/admin/revoke') {
+    if (!isAdmin(env, body.admin_key)) return fail(403, 'AF-DS-ADMIN-REFUSED', 'Not the admin.');
+    if (!body.client_id) return fail(400, 'AF-DS-ADMIN-INVALID', 'client_id is required.');
+    if (!isClientId(body.client_id)) {
+      return fail(400, 'AF-DS-ADMIN-INVALID', 'client_id must be a studio-issued id (c-<32 hex>).');
+    }
+    if (!REVOKE_KINDS.includes(body.kind)) {
+      return fail(400, 'AF-DS-ADMIN-INVALID', 'kind must be "box" or "machine".');
+    }
+    const cut = await revokeKeys(store, { clientId: body.client_id, kind: body.kind });
+    return ok({ client_id: body.client_id, kind: body.kind, revoked: cut });
   }
 
   // POST /api/studio/options — admin sets the option (Option 3 behind approval)
@@ -760,6 +784,31 @@ async function cleanupOrderFiles({ store, objects, clientId, orderId, uploadIds 
     }
   }
   return { pending };
+}
+
+/** U-Z12 (S75-103) — cut every ACTIVE key of one client and one kind off.
+ *  A record that is already revoked is left alone and not counted, so a second
+ *  call answers 0 and changes nothing. Records of other clients, and of other
+ *  kinds (link, machine when box is asked for), are never read past the test.
+ *  @returns {Promise<number>} how many keys this call cut off. */
+async function revokeKeys(store, { clientId, kind }) {
+  let cut = 0;
+  for (const name of await listKeys(store, 'key:')) {
+    const raw = await store.kvGet(name);
+    if (!raw) continue;
+    let record;
+    try {
+      record = JSON.parse(raw);
+    } catch {
+      continue;
+    }
+    if (!record || record.client_id !== clientId || record.kind !== kind) continue;
+    if (record.status !== 'active') continue;
+    record.status = 'revoked';
+    await store.kvPut(name, JSON.stringify(record));
+    cut += 1;
+  }
+  return cut;
 }
 
 async function clientRecord(store, clientId) {
