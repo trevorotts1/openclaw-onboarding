@@ -460,7 +460,7 @@
     /* ---- segmented progress ---- */
     function renderProgress() {
       var head = el("div", { class: "progress-head" });
-      head.appendChild(el("span", { class: "progress-label", text: "Question " + (currentIndex + 1) + " of " + TOTAL }));
+      head.appendChild(el("span", { class: "progress-label", text: "Question " + (currentIndex + 1) }));
       var pct = Math.round((currentIndex / TOTAL) * 100);
       head.appendChild(el("span", { class: "progress-count", text: pct + "%" }));
       /* The progressbar is real markup with literal ARIA attributes (the
