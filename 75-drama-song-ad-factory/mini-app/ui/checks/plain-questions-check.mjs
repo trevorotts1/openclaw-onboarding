@@ -173,8 +173,16 @@ if (look) {
   draw(look);
   rule("(2) the page never draws \"Tap a link to watch a sample.\"",
     !/Tap a link to watch a sample/i.test(pageText()), pageText().slice(0, 200));
-  rule("(2) no sample link is drawn when no option carries a sample_url",
-    !walk(registry.main).some((n) => n.tagName === "A" && String(n.textContent) === "Watch a sample"));
+  // The card's own contents decide it, not an assumption about which card
+  // shipped: a sample link is drawn for exactly those cards that carry a
+  // `sample_url` on an option. Lane Z's `look` carries none and lane E's
+  // carries four; both are honest, and both must satisfy this. (U-GEN436)
+  const sampleOptions = (look.options || []).filter((o) => o && o.sample_url);
+  const drawnSample = () => walk(registry.main)
+    .some((n) => n.tagName === "A" && String(n.textContent) === "Watch a sample");
+  rule("(2) a sample link is drawn exactly when an option carries a sample_url",
+    drawnSample() === (sampleOptions.length > 0),
+    `page ${drawnSample()}, export ${sampleOptions.length} option(s) with a sample_url`);
 }
 {
   draw({
