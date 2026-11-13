@@ -292,7 +292,7 @@ class _StubSpec:
 
 def _pad_lexicon(target_chars: int) -> str:
     """Deterministic nonce-word lexicon used ONLY by the local stub to reach the
-    9,000-char floor with >=400 distinct words (the excellence target)."""
+    shared gate's floor with >=400 distinct words (the excellence target)."""
     letters = "abcdefghijklmnopqrstuvwxyz"
     vowels = "aeiou"
     words: List[str] = []
@@ -483,8 +483,8 @@ def _default_provider_call(slide: Dict[str, Any], routing: Dict[str, Any],
         f"=== THIS CALL AUTHORS EXACTLY ONE FILE: SLIDE {ordinal} OF {n_slides} ===\n"
         f"Find slide {ordinal}'s block in slides_copy.md above (the line reading "
         f"exactly `SLIDE {ordinal}`) and author ONLY its rich image-generation "
-        f"prompt. Output ONLY that one slide's complete prompt body (9,000 to "
-        f"18,000 characters) -- no slide-number header, no preamble, no other "
+        f"prompt. Output ONLY that one slide's complete prompt body "
+        f"({_prompt_band_text(None)}) -- no slide-number header, no preamble, no other "
         f"slide's content.\n\n" + user_prompt)
     # FIX 7: routed completion. The worker owns NO transport: it asks the
     # dispatcher's dispatch_complete, which resolves the route from the
@@ -739,6 +739,46 @@ def _prompt_path(run_dir: Path, ordinal: int) -> Path:
     return run_dir / "working" / "prompts" / _prompt_filename(ordinal)
 
 
+def _prompt_band_text(constraints: Optional[Dict[str, Any]]) -> str:
+    """The rule 12 length band as the author is told it, e.g. "<floor> to
+    <ceiling> characters" -- taken from the wave's own prompt_constraints
+    (stamped from the shared gate) and, when no constraints rode the task,
+    from the shared gate itself. Never a literal: a typed band drifts from the
+    gate that grades."""
+    lo = (constraints or {}).get("min_chars")
+    hi = (constraints or {}).get("max_chars")
+    if not (isinstance(lo, int) and not isinstance(lo, bool)
+            and isinstance(hi, int) and not isinstance(hi, bool)):
+        import presentation_job.dispatcher as dispatcher  # spawn-safe: file import only
+        budget = dispatcher._shared_prompt_gate().length_budget()
+        lo, hi = budget["floor"], budget["ceiling"]
+    return f"{lo:,} to {hi:,} characters"
+
+
+def _prompt_constraint_reasons(prompt_text: str,
+                               constraints: Dict[str, Any]) -> List[str]:
+    """Enforce the wave's OWN declared prompt_constraints (min/max chars plus
+    required block prefixes). Before PD-065 this function took `constraints`
+    and ignored it, so a wave could declare any band and every unit still
+    verified against the gate's band only -- the declaration was decoration."""
+    if not constraints:
+        return []
+    text = prompt_text.strip()
+    reasons: List[str] = []
+    lo = constraints.get("min_chars")
+    hi = constraints.get("max_chars")
+    if isinstance(lo, int) and not isinstance(lo, bool) and len(text) < lo:
+        reasons.append(f"prompt_constraints: prompt is {len(text)} chars, "
+                       f"under the declared floor {lo}")
+    if isinstance(hi, int) and not isinstance(hi, bool) and len(text) > hi:
+        reasons.append(f"prompt_constraints: prompt is {len(text)} chars, "
+                       f"over the declared ceiling {hi}")
+    for block in constraints.get("required_blocks") or []:
+        if isinstance(block, str) and block and block.lower() not in text.lower():
+            reasons.append(f"prompt_constraints: required block {block!r} is missing")
+    return reasons
+
+
 # ---------------------------------------------------------------------------
 # Per-slide verify through the EXISTING gate (no second verifier).
 # ---------------------------------------------------------------------------
@@ -746,12 +786,15 @@ def _verify_prompt(slide: Dict[str, Any], prompt_text: str, run_dir: Path,
                    constraints: Dict[str, Any]) -> Tuple[bool, List[str]]:
     """Write the completion atomically to the canonical prompt path, then run the
     REAL per-slide gate (dispatcher._verify_single_prompt ->
-    build_deck.check_prompt_qc_deterministic). No second verifier exists."""
+    build_deck.check_prompt_qc_deterministic) AND the wave's declared
+    prompt_constraints. No second verifier exists; the constraints are added
+    reasons on top of the gate, never a substitute for it."""
     import presentation_job.dispatcher as dispatcher
     target = _prompt_path(run_dir, int(slide["ordinal"]))
     _atomic_write_bytes(target, prompt_text.encode("utf-8"))
     ok, reasons = dispatcher._verify_single_prompt(run_dir, int(slide["ordinal"]))
-    return ok, list(reasons)
+    reasons = list(reasons) + _prompt_constraint_reasons(prompt_text, constraints)
+    return (ok and not reasons), reasons
 
 
 # ---------------------------------------------------------------------------
