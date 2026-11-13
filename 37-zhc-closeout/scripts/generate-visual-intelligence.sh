@@ -50,7 +50,10 @@ CAP="${ZHC_VISUAL_INTEL_CAP:-10}"
 
 log() {
   printf '%s [%-5s] step=%s %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$1" "$STEP_LABEL" "$2" >> "$LOG_FILE"
-  printf '%s [%-5s] step=%s %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$1" "$STEP_LABEL" "$2"
+  # BU-77: console copy goes to STDERR, never STDOUT. generate_image's STDOUT is
+  # captured by command substitution (url=$(generate_image ...)); logging to
+  # stdout would poison that capture (same rule as generate-celebration-video.sh).
+  printf '%s [%-5s] step=%s %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$1" "$STEP_LABEL" "$2" >&2
 }
 state_get() { jq -r "$1 // empty" "$STATE_FILE" 2>/dev/null; }
 # SK1-13: shared, concurrency-safe state_set (portable mkdir-mutex + stale-lock
@@ -71,28 +74,23 @@ if [[ "$existing_count" -ge 3 ]]; then
 fi
 
 # ---- gather placeholders ----
-COMPANY_NAME=$(state_get '.companyName'); [[ -z "$COMPANY_NAME" ]] && COMPANY_NAME="Your Company"
-OWNER_NAME=$(state_get '.ownerName'); [[ -z "$OWNER_NAME" ]] && OWNER_NAME="the Owner"
-AGENT_NAME=$(state_get '.agentName'); [[ -z "$AGENT_NAME" ]] && AGENT_NAME="the CEO Agent"
-INDUSTRY=$(state_get '.industry'); [[ -z "$INDUSTRY" ]] && INDUSTRY="modern business"
-BRAND_COLOR=$(state_get '.brandColor'); [[ -z "$BRAND_COLOR" ]] && BRAND_COLOR="#1a1a1a (with #D4AF37 gold accent)"
+# BU-64: one call to closeout_facts.py replaces this script's own reads of the
+# company name, owner, agent, industry, brand colour and department / role counts.
+CLOSEOUT_FACTS=$(python3 -B "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/closeout_facts.py" "$STATE_FILE" --json 2>/dev/null)
+[[ -z "$CLOSEOUT_FACTS" ]] && CLOSEOUT_FACTS='{}'
+facts_get() { printf '%s' "$CLOSEOUT_FACTS" | jq -r "$1 // empty" 2>/dev/null; }
 
-# Department enumeration
-DEPT_TYPE=$(jq -r '.departments | type' "$STATE_FILE" 2>/dev/null || echo "null")
-case "$DEPT_TYPE" in
-  array)
-    DEPT_JSON=$(jq -c '[.departments[] | {slug: (.slug // .name // "dept"), name: (.name // .slug // "dept"), roles: (.rolesDone // .roles // 0)}]' "$STATE_FILE" 2>/dev/null || echo "[]")
-    ;;
-  object)
-    DEPT_JSON=$(jq -c '[.departments | to_entries[] | {slug: .key, name: (.value.name // (.key | gsub("[-_]"; " "))), roles: (.value.rolesDone // .value.roles // 0)}]' "$STATE_FILE" 2>/dev/null || echo "[]")
-    ;;
-  *)
-    DEPT_JSON="[]"
-    ;;
-esac
-DEPT_LIST=$(echo "$DEPT_JSON" | jq -r '[.[].name] | join(", ")' 2>/dev/null || echo "(departments)")
-DEPT_COUNT=$(echo "$DEPT_JSON" | jq 'length' 2>/dev/null || echo "0")
-ROLE_COUNT=$(echo "$DEPT_JSON" | jq '[.[].roles] | add // 0' 2>/dev/null || echo "0")
+COMPANY_NAME=$(facts_get '.companyName'); [[ -z "$COMPANY_NAME" ]] && COMPANY_NAME="Your Company"
+OWNER_NAME=$(facts_get '.ownerName'); [[ -z "$OWNER_NAME" ]] && OWNER_NAME="the Owner"
+AGENT_NAME=$(facts_get '.agentName'); [[ -z "$AGENT_NAME" ]] && AGENT_NAME="the CEO Agent"
+INDUSTRY=$(facts_get '.industry'); [[ -z "$INDUSTRY" ]] && INDUSTRY="modern business"
+BRAND_COLOR=$(facts_get '.brandPrimary'); [[ -z "$BRAND_COLOR" ]] && BRAND_COLOR="#1a1a1a (with #D4AF37 gold accent)"
+
+DEPT_JSON=$(printf '%s' "$CLOSEOUT_FACTS" | jq -c '[.departments[]? | {slug: .slug, name: .name, roles: (.roles // 0)}]' 2>/dev/null)
+[[ -z "$DEPT_JSON" || "$DEPT_JSON" == "null" ]] && DEPT_JSON="[]"
+DEPT_LIST=$(echo "$DEPT_JSON" | jq -r '[.[].name] | join(", ")' 2>/dev/null); [[ -z "$DEPT_LIST" ]] && DEPT_LIST="(departments)"
+DEPT_COUNT=$(echo "$DEPT_JSON" | jq 'length' 2>/dev/null); [[ -z "$DEPT_COUNT" || "$DEPT_COUNT" == "null" ]] && DEPT_COUNT=0
+ROLE_COUNT=$(printf '%s' "$CLOSEOUT_FACTS" | jq -r '.roleTotal // 0' 2>/dev/null); [[ -z "$ROLE_COUNT" || "$ROLE_COUNT" == "null" ]] && ROLE_COUNT=0
 
 # What the business delivers (for prompt placeholders)
 WHAT_THEY_DELIVER=$(state_get '.whatYouDeliver // .whatTheyDeliver // .coreDeliverable')
@@ -108,18 +106,30 @@ if [[ -z "$WHAT_THEY_DELIVER" ]]; then
 fi
 
 # ---- substitute template placeholders ----
+# BU-77: substitutions are literal (same function as generate-infographics.sh).
+# bash 5.1+ treats a bare `&` in ${v//pat/repl} replacements as the matched text,
+# and an unescaped `|` or `&` in a value corrupts the prompt, so prefix/suffix
+# removal is used instead; the values are treated strictly as data.
+_literal_replace() {  # <haystack> <needle> <replacement> -> stdout (literal)
+  local needle="$2" repl="$3" out="" rest="$1"
+  while [[ "$rest" == *"$needle"* ]]; do
+    out+="${rest%%"$needle"*}$repl"
+    rest="${rest#*"$needle"}"
+  done
+  printf '%s' "$out$rest"
+}
 fill_prompt() {
   local text="$1"
-  text="${text//\{\{COMPANY_NAME\}\}/$COMPANY_NAME}"
-  text="${text//\{\{OWNER_NAME\}\}/$OWNER_NAME}"
-  text="${text//\{\{AGENT_NAME\}\}/$AGENT_NAME}"
-  text="${text//\{\{INDUSTRY\}\}/$INDUSTRY}"
-  text="${text//\{\{BRAND_COLOR\}\}/$BRAND_COLOR}"
-  text="${text//\{\{DEPT_LIST\}\}/$DEPT_LIST}"
-  text="${text//\{\{DEPT_COUNT\}\}/$DEPT_COUNT}"
-  text="${text//\{\{ROLE_COUNT\}\}/$ROLE_COUNT}"
-  text="${text//\{\{WHAT_THEY_DELIVER\}\}/$WHAT_THEY_DELIVER}"
-  echo "$text"
+  text="$(_literal_replace "$text" '{{COMPANY_NAME}}' "$COMPANY_NAME")"
+  text="$(_literal_replace "$text" '{{OWNER_NAME}}' "$OWNER_NAME")"
+  text="$(_literal_replace "$text" '{{AGENT_NAME}}' "$AGENT_NAME")"
+  text="$(_literal_replace "$text" '{{INDUSTRY}}' "$INDUSTRY")"
+  text="$(_literal_replace "$text" '{{BRAND_COLOR}}' "$BRAND_COLOR")"
+  text="$(_literal_replace "$text" '{{DEPT_LIST}}' "$DEPT_LIST")"
+  text="$(_literal_replace "$text" '{{DEPT_COUNT}}' "$DEPT_COUNT")"
+  text="$(_literal_replace "$text" '{{ROLE_COUNT}}' "$ROLE_COUNT")"
+  text="$(_literal_replace "$text" '{{WHAT_THEY_DELIVER}}' "$WHAT_THEY_DELIVER")"
+  printf '%s' "$text"
 }
 
 # ---- KIE: one path, Skill 74 (lib-kie74.sh does validate, createTask and poll) ----
@@ -185,11 +195,13 @@ declare -a PROMPT_QUEUE=(
   "dept-overview|$SKILL_DIR/templates/img-dept-overview-prompt.md"
   "sop-system|$SKILL_DIR/templates/img-sop-system-prompt.md"
   "six-sigma|$SKILL_DIR/templates/img-six-sigma-prompt.md"
-  "workflow-infographic|$SKILL_DIR/templates/infographic-2-prompt.md"
 )
 
 # ---- run generation loop ----
 RESULT_URLS=()
+# BU-77: labels kept in step with RESULT_URLS so a state field can be found by
+# label, never by position (a failed image shifts every later index).
+RESULT_LABELS=()
 generated=0
 for entry in "${PROMPT_QUEUE[@]}"; do
   [[ "$generated" -ge "$CAP" ]] && break
@@ -199,6 +211,7 @@ for entry in "${PROMPT_QUEUE[@]}"; do
   url=$(generate_image "$pfile" "$label" || true)
   if [[ -n "$url" && "$url" != "null" ]]; then
     RESULT_URLS+=("$url")
+    RESULT_LABELS+=("$label")
     generated=$((generated + 1))
     log "INFO" "[$label] added to visual intelligence set ($generated/$CAP)"
   else
@@ -216,17 +229,18 @@ fi
 URL_ARRAY=$(printf '%s\n' "${RESULT_URLS[@]}" | jq -R . | jq -s .)
 state_set ".visualIntelligenceUrls = $URL_ARRAY"
 
-# Backward compat: write infographic1Url (org chart) and infographic2Url (how-your-zhc-works)
-# Org chart is always index 0; how-zhc-works is always index 1 in the mandatory set.
+# Backward compat: write infographic1Url (org chart) and infographic2Url (how-your-zhc-works).
+# Org chart is always index 0; how-your-zhc-works is found by its label, never by position,
+# because a failed image shifts the URL indexes.
 if [[ "${#RESULT_URLS[@]}" -ge 1 ]]; then
   state_set ".infographic1Url = \"${RESULT_URLS[0]}\""
 fi
-if [[ "${#RESULT_URLS[@]}" -ge 3 ]]; then
-  # Index 2 is how-your-zhc-works
-  state_set ".infographic2Url = \"${RESULT_URLS[2]}\""
-elif [[ "${#RESULT_URLS[@]}" -ge 2 ]]; then
-  state_set ".infographic2Url = \"${RESULT_URLS[1]}\""
-fi
+for i in "${!RESULT_LABELS[@]}"; do
+  if [[ "${RESULT_LABELS[$i]}" == "how-your-zhc-works" ]]; then
+    state_set ".infographic2Url = \"${RESULT_URLS[$i]}\""
+    break
+  fi
+done
 
 log "INFO" "visual intelligence set complete: ${#RESULT_URLS[@]} images written to state (.visualIntelligenceUrls)"
 log "INFO" "8.5-GATE: each image must be self-rated 1-10 vs the rubric in QUALITY-GATE.md. Write .qualityRatings per image. Do NOT deliver below 8.5 -- regenerate and re-rate."
