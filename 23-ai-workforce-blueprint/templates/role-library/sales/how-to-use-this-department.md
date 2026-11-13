@@ -30,7 +30,7 @@ figures out who handles it and routes it for you.
 
 Reach for this department when you want any of the following:
 
-- For deals that don't split into SDR/Discovery/Closer, the AE owns the full deal cycle from qualified lead.
+- For deals that don't split into SDR/Discovery/Closer.
 - Owns the relationship after the sale.
 - Handles inbound leads who requested contact.
 - Runs the proposal/close conversation.
@@ -82,82 +82,68 @@ and it will pick the right one, or you can ask for a specialist by name.
 | **Proposal And Quote Specialist** | Professional voice that translates a sales conversation into a compelling, accurate, and closeable business document. |
 | **Sales Operations Pipeline Specialist** | CRM hygiene, pipeline reporting, lead routing rules, sales tool stack maintenance. |
 | **SDR Sales Development Rep** | Top-of-funnel outreach. |
-| **Account Executive Full Cycle Phase2** | You own every dollar in the deals you are handed - from qualified lead to signed install - and you own the client. |
+| **Account Executive Full Cycle Phase2** | You own every dollar in the deals you are handed - from qualified lead to signed install - and you own the client relationship until the delivery pod takes custody. |
 | **Account Manager Post Sale Phase2** | Installs and operates a governed AI workforce for each client. |
-| **CRM Specialist Phase2** | You own the customer relationship platform end-to-end. |
+| **CRM Specialist Phase2** | You own the customer relationship platform end-to-end: contact records, company records, the deal pipeline. |
 | **SDR Sales Development Rep Phase2** | Top of the funnel that keeps the installation pipeline flowing into of annual revenue. |
 
-### What each specialist is for, with an example request
+### What each specialist is for
 
 **Account Executive Full Cycle**
 
 - *What it is for:* For deals that don't split into SDR/Discovery/Closer, the AE owns the full deal cycle from qualified lead to closed-won.
-- *Example request:* "Have the Account Executive Full Cycle take this on: For deals that don't split into SDR/Discovery/Closer."
 
 **Account Manager Post Sale**
 
 - *What it is for:* Owns the relationship after the sale.
-- *Example request:* "Have the Account Manager Post Sale take this on: Owns the relationship after the sale."
 
 **Appointment Setter**
 
 - *What it is for:* Handles inbound leads who requested contact.
-- *Example request:* "Have the Appointment Setter take this on: Handles inbound leads who requested contact."
 
 **Closer**
 
 - *What it is for:* Runs the proposal/close conversation.
-- *Example request:* "Have the Closer take this on: Runs the proposal/close conversation."
 
 **CRM Specialist Sales Version**
 
 - *What it is for:* Bridges between Sales dept and CRM dept.
-- *Example request:* "Have the CRM Specialist Sales Version take this on: Bridges between Sales dept and CRM dept."
 
 **Discovery Call Specialist**
 
 - *What it is for:* Runs first sales conversation.
-- *Example request:* "Have the Discovery Call Specialist take this on: Runs first sales conversation."
 
 **Follow Up Sequence Specialist**
 
 - *What it is for:* Owns post-touchpoint sequences for prospects who didn't close immediately.
-- *Example request:* "Have the Follow Up Sequence Specialist take this on: Owns post-touchpoint sequences for prospects who didn't close immediately."
 
 **Proposal And Quote Specialist**
 
 - *What it is for:* Professional voice that translates a sales conversation into a compelling, accurate, and closeable business document.
-- *Example request:* "Have the Proposal And Quote Specialist take this on: Professional voice that translates a sales conversation into a compelling, accurate."
 
 **Sales Operations Pipeline Specialist**
 
 - *What it is for:* CRM hygiene, pipeline reporting, lead routing rules, sales tool stack maintenance.
-- *Example request:* "Have the Sales Operations Pipeline Specialist take this on: CRM hygiene, pipeline reporting, lead routing rules, sales tool stack maintenance."
 
 **SDR Sales Development Rep**
 
 - *What it is for:* Top-of-funnel outreach.
-- *Example request:* "Have the SDR Sales Development Rep take this on: Top-of-funnel outreach."
 
 **Account Executive Full Cycle Phase2**
 
-- *What it is for:* You own every dollar in the deals you are handed - from qualified lead to signed install - and you own the client.
-- *Example request:* "Have the Account Executive Full Cycle Phase2 take this on: You own every dollar in the deals you are handed - from qualified lead to signed install."
+- *What it is for:* You own every dollar in the deals you are handed - from qualified lead to signed install - and you own the client relationship until the delivery pod takes custody.
 
 **Account Manager Post Sale Phase2**
 
 - *What it is for:* Installs and operates a governed AI workforce for each client.
-- *Example request:* "Have the Account Manager Post Sale Phase2 take this on: Installs and operates a governed AI workforce for each client."
 
 **CRM Specialist Phase2**
 
-- *What it is for:* You own the customer relationship platform end-to-end.
-- *Example request:* "Have the CRM Specialist Phase2 take this on: You own the customer relationship platform end-to-end."
+- *What it is for:* You own the customer relationship platform end-to-end: contact records, company records, the deal pipeline.
 
 **SDR Sales Development Rep Phase2**
 
 - *What it is for:* Top of the funnel that keeps the installation pipeline flowing into of annual revenue.
-- *Example request:* "Have the SDR Sales Development Rep Phase2 take this on: Top of the funnel that keeps the installation pipeline flowing into of annual revenue."
 
 
 ---
