@@ -149,7 +149,9 @@ export function staleVerdict({ record, lastCheckMs, hasWaitingOrder, nowMs }) {
   // A clock time is only printed when the record says which zone it is in: a
   // bare time would be the operator's clock shown to the client as their own.
   if (!(record && record.timezone)) {
-    const age = ageText(nowMs, lastCheckMs);
+    // The sentence below already supplies "for", so the helper's trailing
+    // "ago" is stripped: "for 31 minutes", never "for 31 minutes ago".
+    const age = ageText(nowMs, lastCheckMs).replace(/ ago$/, '');
     return {
       stale: true,
       page_line: `Your studio computer has not checked in for ${age}. Your order is safe and starts when it is back.`,
