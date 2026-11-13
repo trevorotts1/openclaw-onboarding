@@ -280,6 +280,8 @@ def test_search_page_with_no_results_is_waiting_not_rejected(tmp_path):
     assert code == 2 and env["outcome"] == "waiting"
     assert env["reason_code"] == "search-no-results"
     assert env["data"]["gather_status"] == "empty"
+    # the client is asked ONE plain question, never continued silently
+    assert env["next_action"] == R.NO_OUTSIDE_SOURCES_QUESTION, env["next_action"]
 
 
 def test_exhausted_stage_budget_is_waiting_with_its_reason(tmp_path):
@@ -431,22 +433,30 @@ def test_script_mode_cli_imports_gather_as_a_sibling(tmp_path):
     assert json.loads(proc.stdout)["reason_code"] == "SOURCES_MISSING"
 
 
-def test_first_claim_never_files_nav_glued_or_chrome_text():
-    prose = ("Chronic back pain keeps millions of adults awake at night, "
-             "and most of them never mention it to a doctor.")
-    assert G.first_claim(prose) == prose
-    # unfinished line (navigation / heading soup)
-    assert G.first_claim("FindCare Cardiology Dentistry Neurology Orthopedic "
-                         "Surgery Pediatrics Primary Care Psychiatry Urology") == ""
-    # two chunks glued together without a space
-    assert G.first_claim("Melatonin Dosage: How Much Melatonin to Take94% of Us "
-                         "Drink Caffeinated Beverages.") == ""
-    # site chrome is skipped, the real sentence behind it still filed
-    chrome = ("Medically reviewed by a board certified physician, written by the "
-              "editorial team. Sleep and stress feed each other in both directions "
-              "for most adults over fifty, night after night.")
-    assert G.first_claim(chrome).startswith("Sleep and stress")
-    assert G.first_claim("") == ""
+def test_offer_sentences_take_the_on_offer_sentence_not_the_first():
+    """Acceptance: a page whose first sentence is unrelated and whose fourth is
+    on-offer yields the fourth. The page is read for what it says ABOUT this
+    brief, not for the first line that reads like prose."""
+    page = ("Store hours are posted at the counter. A friend of the family "
+            "painted the front window last spring. None of this is about the "
+            "brief at all. Chronic back pain keeps millions of adults awake at "
+            "night, and most of them never mention it to a doctor.")
+    assert G.offer_sentences(page, BARE) == [
+        "Chronic back pain keeps millions of adults awake at night, and most of "
+        "them never mention it to a doctor."]
+
+
+def test_offer_sentences_keep_at_most_five_and_drop_unrelated_pages():
+    on_offer = ("Adults over 50 wake at night and never tell a doctor about the trouble. "
+                "Back pain keeps adults awake through the night after long working days. "
+                "Sleep and pain feed adults at night in both directions for most people. "
+                "A back pain guide helps adults sleep through the night without a prescription. "
+                "Adults want a guide that covers sleep and night pain in one short read. "
+                "Adults over 50 read a back pain guide at night and ask for more detail.")
+    kept = G.offer_sentences(on_offer, BARE)
+    assert len(kept) == G.OFFER_SENTENCES_MAX, kept
+    assert G.offer_sentences("", BARE) == []
+    assert G.offer_sentences("Store hours are posted at the counter today.", BARE) == []
 
 
 def test_binary_and_claimless_pages_never_become_sources():
@@ -469,6 +479,7 @@ def test_binary_and_claimless_pages_never_become_sources():
     assert "https://docs.example.org/guide" not in urls, "nav-only page must drop"
     assert urls == ["https://example.invalid/sleep-and-stress"], urls
     assert any("binary" in e for e in g["errors"]), g["errors"]
+    assert any("no sentence about the offer" in e for e in g["errors"]), g["errors"]
     assert g["claims"], g
     for claim in g["claims"]:
         assert claim["text"].endswith((".", "!", "?")), claim
