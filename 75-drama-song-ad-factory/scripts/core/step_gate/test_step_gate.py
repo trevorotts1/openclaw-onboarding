@@ -1,9 +1,12 @@
 #!/usr/bin/env python3
-"""The step gate's own proofs: the seven from selftest(), plus (h), (i) and (j).
+"""The step gate's own proofs: the seven from selftest(), plus (h), (i), (j) and (k).
 
 (h) the contract's stage list equals batch_mode.batch.STAGES word for word
 (i) a hand-written seal file with a made-up signature is refused
 (j) `verify --through delivery` on a run with a gap names the first missing stage
+(k) every stage's artifact list is the audited list of files that stage really
+    writes (U-A03's report, U-A13's twelve delivery package items, and the
+    character records U-C03 declared for the continuity stage)
 
 Plain asserts, no framework: `python3 -B scripts/core/step_gate/test_step_gate.py`
 prints one line per proof and exits 0 only when every proof holds.
@@ -123,7 +126,7 @@ def test_an_artifact_edited_after_sealing_blocks_the_next_stage():
         assert _refused("SEALED_ARTIFACT_CHANGED", G.cmd_open, run, "two", contract)
 
 
-# ---- (h), (i), (j) --------------------------------------------------------
+# ---- (h), (i), (j) and (k) ------------------------------------------------
 def test_contract_stage_list_equals_batch_stages():
     from batch_mode import batch as B
     contract = G.load_contract()
@@ -156,6 +159,64 @@ def test_verify_through_delivery_names_the_first_missing_stage():
             assert "research" in exc.detail, exc.detail
         else:
             raise AssertionError("verify passed a run with no seals")
+
+
+# ---- (k): the contract names only files the stage really writes -----------
+# Where each list comes from, so the table can be checked against its source:
+#   * every stage but delivery - the audited inventory in reports/U-A03.md
+#     (all but the two character records are also that report's final list);
+#   * continuity-bible's character/bible.json and character/approval.json -
+#     U-C03's declaration, whose writers are character_bible/character_approval;
+#   * delivery - the twelve numbered package items U-A13 declared (18 file
+#     names), from delivery_package.contract.PACKAGE_ITEMS.
+AUDITED_ARTIFACTS = {
+    "research": ["research/evidence.json", "research/manifest.json",
+                 "research/bundle.json"],
+    "creative-strategy": ["creative/story.json", "creative/blueprint.json"],
+    "script-lyrics": ["creative/lyrics.json"],
+    "music": ["music/picked-song.mp3", "song-choices/pick.json"],
+    "continuity-bible": ["character/bible.json", "character/approval.json",
+                         "continuity/qc-records.json", "continuity/makers.json"],
+    "storyboard": ["storyboard/shot-list.json", "storyboard/contracts.json"],
+    "image-keyframes": ["keyframes/manifest.json"],
+    "video-generation": ["generation/clips-manifest.json"],
+    "qc-retakes": ["qc/retakes-plan.json"],
+    "assembly": ["edit/ad.mp4"],
+    "final-qc": ["qc/final-qc-verdict.json"],
+    "delivery": [
+        "delivery/01 - Full Song.mp3",
+        "delivery/01 - Instrumental.mp3",
+        "delivery/01 - Voice Only.mp3",
+        "delivery/01 - About These Audio Files.txt",
+        "delivery/02 - Character Bible.pdf",
+        "delivery/02 - Character Bible Images",
+        "delivery/03 - SCRIPT.pdf",
+        "delivery/04 - Storyboard.pdf",
+        "delivery/05 - Video Captioned.mp4",
+        "delivery/05 - Video Clean.mp4",
+        "delivery/06 - Clip 60s.mp4",
+        "delivery/06 - Clip 90s.mp4",
+        "delivery/07 - Ready-to-Post Kit.pdf",
+        "delivery/08 - Cover Thumbnail.png",
+        "delivery/09 - Lyric Sheet.pdf",
+        "delivery/10 - Captions.srt",
+        "delivery/11 - Character Images",
+        "delivery/12 - Welcome Sheet.pdf",
+    ],
+}
+
+
+def test_contract_declares_the_audited_artifact_lists():
+    contract = G.load_contract()
+    problems = []
+    for stage in contract["order"]:
+        got = [a["path"] for a in contract["stages"][stage]["artifacts"]]
+        want = AUDITED_ARTIFACTS.get(stage)
+        if want is None:
+            problems.append("%s: no audited list to check against" % stage)
+        elif got != want:
+            problems.append("%s: contract %s != audited %s" % (stage, got, want))
+    assert not problems, "; ".join(problems)
 
 
 # ---- the validator hook ---------------------------------------------------
