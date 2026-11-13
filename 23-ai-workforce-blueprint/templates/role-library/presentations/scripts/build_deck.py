@@ -4608,7 +4608,15 @@ def _qc_slide_floor(run_dir: Path, report_obj=None) -> int:
     its row count is the deck size it attests to. Falls back to the reference floor
     only when neither is readable.
     FIX 103: the min(20, n) arithmetic is THE helper's (_floors.qc_verdict_floor);
-    this site never re-derives it."""
+    this site never re-derives it.
+
+    PD-097: the floor does NOT apply to the priority-shift report
+    (gate == "AF-PRIORITY-SHIFT"). That report is a 15-row deck-level checklist, not
+    a per-slide verdict report; its rows are graded by runfacts.verify_priority_shift
+    and never by a per-slide count. Returning 0 here is the whole waiver — nothing
+    else in this function changes."""
+    if isinstance(report_obj, dict) and report_obj.get("gate") == "AF-PRIORITY-SHIFT":
+        return 0
     try:
         n = 0
         for cand in sorted((run_dir / "working" / "copy").glob("slides*.json")):
@@ -11224,92 +11232,138 @@ def _chk_style_preview(run_dir: Path, slides_path: Optional[Path] = None) -> str
     return ""
 
 
-def _chk_priority_shift_ledger(run_dir: Path, slides_path: Optional[Path] = None) -> str:
-    """AF-PRIORITY-SHIFT (composite, P-SHIFT-QC order 7.5) — the framework's 14-item
-    pre-output ship gate, the ONLY point where copy + design + rendered images coexist.
-    Runs all 14 sub-assertions (reusing the shift-left gates), writes a per-item
-    pass/fail ledger to working/qc/priority_shift_report.json, and refuses ship until
-    all 14 PASS. Item 0 is the North Star itself: the #1 job is to hold attention.
-    Defers pre-render and without doctrine; waivable only by a logged owner skip.
+def _priority_shift_report_shape_problems(obj, item_ids, id_key) -> list:
+    """PD-097: the ONE shape (01-BUILD-SPEC section 1.3) an EXISTING
+    working/qc/priority_shift_report.json must carry before this writer leaves it
+    alone. Returns [] when the report matches; otherwise the named problems.
+    Extra keys are allowed and ignored (e.g. `gate`, or the older `slides` list)."""
+    problems = []
+    if obj.get("schema") != "priority_shift_report/v1":
+        problems.append("schema=" + repr(obj.get("schema"))
+                        + ", expected 'priority_shift_report/v1'")
+    if not isinstance(obj.get("pass"), bool):
+        problems.append("top-level pass=" + repr(obj.get("pass"))
+                        + " is not a JSON boolean")
+    items = obj.get("items")
+    if not isinstance(items, list):
+        return problems + ["items is " + type(items).__name__ + ", expected a list"]
+    seen = []
+    for i, row in enumerate(items):
+        if not isinstance(row, dict):
+            problems.append(f"items[{i}] is {type(row).__name__}, expected an object")
+            continue
+        if not isinstance(row.get("pass"), bool):
+            problems.append(f"items[{i}].pass={row.get('pass')!r} is not a JSON boolean")
+        seen.append(row.get(id_key))
+    missing = [i for i in item_ids if i not in seen]
+    extra = [i for i in seen if i not in item_ids]
+    dupes = sorted({str(i) for i in seen if seen.count(i) > 1})
+    if missing:
+        problems.append("items missing ids " + ", ".join(map(str, missing)))
+    if extra:
+        problems.append("items carry unknown ids " + ", ".join(map(str, extra)))
+    if dupes:
+        problems.append("items repeat ids " + ", ".join(dupes))
+    return problems
 
-    OUT OF SCOPE for fix/two-remaining-gates -- NOT modified by this change. RISK
-    NOTED, not fixed: this function's ONLY registration in PREFLIGHT_REQUIRED (see
-    below) is dispatched by run_preflight(), whose sole call site in main() is
-    preceded by the comment "Runs BEFORE any API key load, render, or assembly" --
-    so `_gather_rendered_pngs(run_dir)` a few lines below is provably always empty
-    on THAT path, and this function returns "" (defer) before any of the 14
-    sub-assertions evaluate. Through run_preflight() alone, the 14-item ledger
-    (including item 0, the North Star) never actually fires. It is ALSO registered
-    in slice1_gate_verifiers.SLICE1_GATES ("slice1:priority_shift_ledger") as the
-    legacy/shadow-compare fn against v_priority_shift_ledger -- whether THAT path
-    dispatches it post-render (giving it real teeth there) was not investigated as
-    part of this change; do not assume either way. A genuine fix likely requires
-    moving (or adding) a post-render dispatch of this check, which is a structural
-    change to run_preflight()/the P-SHIFT-QC wiring outside this change's scope --
-    left alone pending a dedicated, separately-reviewed line item."""
+
+def _chk_priority_shift_ledger(run_dir: Path, slides_path: Optional[Path] = None) -> str:
+    """AF-PRIORITY-SHIFT (composite, P-SHIFT-QC order 7.5) — the framework's 15-row
+    (items 0-14; the doctrine text says "14-item" and item 0 is the North Star)
+    deck-level pre-output ship gate, the ONLY point where copy + design + rendered
+    images coexist. Runs the sub-assertions (reusing the shift-left gates) and refuses
+    ship until every row PASSes. Defers pre-render and without doctrine; waivable only
+    by a logged owner skip.
+
+    THE ONE REPORT, TWO WRITERS (PD-097): working/qc/priority_shift_report.json is also
+    written by the P-SHIFT-QC agent, under the contract in
+    presentation_job/priority_shift_items.py (PD-304). This function writes the file
+    ONLY when none exists, and it never overwrites a report that already carries
+    `schema: "priority_shift_report/v1"` — it validates that report against the one
+    shape (section 1.3) and returns the named problems when it is invalid. Its rows
+    come from PRIORITY_SHIFT_ITEM_IDS in that same module, in that order; there is no
+    second copy of the ids. The file is a DECK-LEVEL checklist: it carries no per-slide
+    verdict rows (the old `slides` list was invented here and is gone), so the QC
+    report-substance per-slide floor does not apply to it (see _qc_slide_floor).
+
+    WHERE IT IS AND IS NOT CALLED (corrected in PD-097; the prior note here was wrong
+    about the slice1 path): (a) it is registered once in PREFLIGHT_REQUIRED and
+    dispatched by run_preflight(), whose main() call site runs BEFORE any API key load,
+    render or assembly — so on THAT path `_gather_rendered_pngs(run_dir)` is always
+    empty and the function returns "" (defer) without evaluating a row; (b) it IS
+    reachable post-render as the legacy/shadow side of
+    slice1_gate_verifiers.SLICE1_GATES ("slice1:priority_shift_ledger", paired with
+    v_priority_shift_ledger, which writes the same file on that path); (c) the
+    P-SHIFT-QC step check (runfacts.verify_priority_shift) does NOT call it — it reads
+    the report file. That second writer is why the report on disk is authoritative
+    here and is never clobbered by a retry or resume."""
     if not _doctrine_active(run_dir):
         return ""
     pngs = _gather_rendered_pngs(run_dir)
     if not pngs:
-        return ""  # the 14-item gate needs the rendered images — defer pre-render.
+        return ""  # the deck-level gate needs the rendered images — defer pre-render.
+    # PD-097: the ONE id list (PD-304). Imported lazily so the rest of build_deck
+    # still imports on a lane branch that lands before PD-304; a missing module is a
+    # NAMED failure, never a silent fallback to a second literal copy of the ids.
+    try:
+        from presentation_job.priority_shift_items import (
+            PRIORITY_SHIFT_ID_KEY, PRIORITY_SHIFT_ITEM_IDS)
+    except Exception as exc:  # noqa: BLE001
+        return ("AF-PRIORITY-SHIFT: presentation_job/priority_shift_items.py (the ONE id "
+                "list, PD-304) could not be imported (" + repr(exc) + "). Fail-closed — "
+                "the ledger will not fall back to a second copy of the ids.")
+    if len(PRIORITY_SHIFT_ITEM_IDS) != 15:
+        return ("AF-PRIORITY-SHIFT: PRIORITY_SHIFT_ITEM_IDS holds "
+                f"{len(PRIORITY_SHIFT_ITEM_IDS)} ids but this ledger measures 15 rows — "
+                "the one id list and the ledger have drifted (PD-304 / PD-097).")
+    ITEM = PRIORITY_SHIFT_ITEM_IDS
     spec = _read_priority_spec(run_dir) or {}
     text = _slides_copy_text_lc(run_dir) or ""
     rows = []
 
     def add(item, ok, evidence):
-        rows.append({"item": item, "pass": bool(ok), "evidence": str(evidence)[:240]})
+        rows.append({PRIORITY_SHIFT_ID_KEY: item, "pass": bool(ok),
+                     "evidence": str(evidence)[:240]})
 
     pitch = _intake_pitch_included(run_dir) is True
-    add("0_attention_is_the_no1_job",
+    add(ITEM[0],
         bool(str(spec.get("true_goal") or "").strip()),
         "priority_shift_spec.true_goal declares the destination shift")
-    add("1_creation_mode_identified", _chk_mode(run_dir) == "", "AF-MODE-UNSET")
-    add("2_priority_stack_named", _chk_priority_stack(run_dir) == "", "AF-NO-PRIORITY-STACK")
-    add("3_priority_shift_engineered", _chk_priority_shift(run_dir) == "", "AF-NO-SHIFT")
-    add("4_present_cost_exposed",
+    add(ITEM[1], _chk_mode(run_dir) == "", "AF-MODE-UNSET")
+    add(ITEM[2], _chk_priority_stack(run_dir) == "", "AF-NO-PRIORITY-STACK")
+    add(ITEM[3], _chk_priority_shift(run_dir) == "", "AF-NO-SHIFT")
+    add(ITEM[4],
         _first_marker_offset(text, COST_OF_INACTION_MARKERS) is not None,
         "cost-of-inaction beat present (Move 2)")
-    add("5_higher_priority_lever",
+    add(ITEM[5],
         bool(str(spec.get("higher_priority_hook") or "").strip()),
         "priority_shift_spec.higher_priority_hook (Move 3)")
-    add("6_value_anchored_high",
+    add(ITEM[6],
         _first_marker_offset(text, ("anchor", "value-stack", "value_stack", "value add")) is not None,
         "value anchor beat present (Move 4)")
-    add("7_urgency_scarcity",
+    add(ITEM[7],
         (not pitch) or _first_marker_offset(text, URGENCY_SCARCITY_MARKERS) is not None,
         "urgency/scarcity present (Move 5; n/a for pitchless)")
-    add("8_ability_unblocked",
+    add(ITEM[8],
         (not pitch) or _first_marker_offset(text, ABILITY_UNBLOCK_MARKERS) is not None,
         "ability-blocker removed (Move 6; n/a for pitchless)")
-    add("9_rerank_demanded", _chk_rerank(run_dir) == "", "AF-NO-RERANK (Move 7)")
-    add("10_trigger_fired", _chk_trigger(run_dir) == "", "AF-NO-TRIGGER (Move 8)")
-    add("11_proclamation_hedge_free", _chk_proclamation_hedge(run_dir) == "",
+    add(ITEM[9], _chk_rerank(run_dir) == "", "AF-NO-RERANK (Move 7)")
+    add(ITEM[10], _chk_trigger(run_dir) == "", "AF-NO-TRIGGER (Move 8)")
+    add(ITEM[11], _chk_proclamation_hedge(run_dir) == "",
         "AF-PROCLAMATION-HEDGE")
-    add("12_peak_and_ending", _chk_peak_end(run_dir) == "", "AF-PEAK-END")
-    add("13_most_vivid_by_the_end", _chk_salience_apex(run_dir) == "", "AF-NO-SALIENCE-APEX")
-    add("14_one_promise_one_wow_one_demonstration",
+    add(ITEM[12], _chk_peak_end(run_dir) == "", "AF-PEAK-END")
+    add(ITEM[13], _chk_salience_apex(run_dir) == "", "AF-NO-SALIENCE-APEX")
+    add(ITEM[14],
         all(str(spec.get(k) or "").strip()
             for k in ("the_one_promise", "the_one_wow", "the_one_demonstration")),
         "spec carries the single promise + wow + demonstration anchors")
 
     passed = all(r["pass"] for r in rows)
-    # FIX-2 (Error 2): real per-slide verdicts. P-SHIFT-QC runs AFTER render (order
-    # 7.5), so every rendered slide exists and the ship gate grades each one. Each
-    # per-slide verdict records the slide ordinal and an explicit pass (a rendered
-    # slide present + non-degenerate in the run dir). This is the per-slide coverage
-    # the QC report floor (>= 20 real per-slide verdicts) requires — a 14-row
-    # checklist alone can never satisfy the floor.
-    per_slide = []
-    for png in sorted(_gather_rendered_pngs(run_dir)):
-        sid = _png_ordinal(png)
-        if sid is None:
-            continue
-        per_slide.append({
-            "slide": sid,
-            "pass": png.is_file(),
-            "verdict": "pass" if png.is_file() else "fail",
-            "evidence": "rendered slide present in run dir (ship-gate per-slide pass)",
-        })
+    # PD-097: NO per-slide rows. This report is a deck-level checklist; the earlier
+    # FIX-2 loop below invented one "verdict" per rendered PNG (always pass, because
+    # the PNG was the only evidence) purely to satisfy the per-slide verdict floor,
+    # which is what made a 15-row gate look like a fabricated QC report. The floor is
+    # now waived for this gate in _qc_slide_floor instead of being gamed here.
     report = {
         "schema": "priority_shift_report/v1",
         "gate": "AF-PRIORITY-SHIFT",
@@ -11317,14 +11371,25 @@ def _chk_priority_shift_ledger(run_dir: Path, slides_path: Optional[Path] = None
         "generated_at": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
         "pass": passed,
         "items": rows,
-        "slides": per_slide,
+        "per_slide": "not applicable — 14-item deck-level checklist",
     }
-    try:
-        out = run_dir / PRIORITY_SHIFT_REPORT_REL
-        out.parent.mkdir(parents=True, exist_ok=True)
-        out.write_text(json.dumps(report, indent=2))
-    except Exception:  # noqa: BLE001 — never let report-write mask the verdict
-        pass
+    out = run_dir / PRIORITY_SHIFT_REPORT_REL
+    existing = _read_json(out) if out.is_file() else None
+    if isinstance(existing, dict) and existing.get("schema") == "priority_shift_report/v1":
+        # Two writers, one file: the P-SHIFT-QC agent's report (or an earlier run's)
+        # is the artifact. Validate the shape; never overwrite it.
+        problems = _priority_shift_report_shape_problems(
+            existing, ITEM, PRIORITY_SHIFT_ID_KEY)
+        if problems:
+            return ("AF-PRIORITY-SHIFT: the existing working/qc/priority_shift_report.json "
+                    "does not match priority_shift_report/v1 — " + "; ".join(problems)
+                    + ". PD-097: this step never overwrites a report it did not write.")
+    else:
+        try:
+            out.parent.mkdir(parents=True, exist_ok=True)
+            out.write_text(json.dumps(report, indent=2))
+        except Exception:  # noqa: BLE001 — never let report-write mask the verdict
+            pass
     if not passed:
         if _owner_skip_approved(run_dir, "AF-PRIORITY-SHIFT"):
             return ""
