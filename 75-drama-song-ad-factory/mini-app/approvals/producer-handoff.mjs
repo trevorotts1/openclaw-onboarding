@@ -17,6 +17,7 @@
 //   5  refused  — the item is unknown or unapproved; nothing on stdout
 //   2  bad input (an argument is missing or malformed)
 // =============================================================================
+import { pathToFileURL } from "node:url";
 import { fileStore, producerPayload, ApprovalError, REFUSED_EXIT } from "./approvals.mjs";
 
 function parse(argv) {
@@ -61,6 +62,6 @@ export function main(argv = process.argv.slice(2)) {
   }
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   process.exit(main());
 }
