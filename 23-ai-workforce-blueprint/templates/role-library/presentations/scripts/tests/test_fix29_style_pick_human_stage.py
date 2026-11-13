@@ -23,10 +23,13 @@ What FIX 29 declares and this file proves, without any network or model spend:
   4. The run CONTINUES only after style_preview_choice.json carries
      owner_approved:true + a chosen_variant from the offered set + an
      owner_msg_id the Fix 32 approvals oracle resolves to a REAL owner-authored
-     message (stubbed oracle). The phase then attests done through the same
-     substance verifier every phase runs.
+     message AND whose message TEXT names the gate (PD-305: an ids-only oracle
+     never proves an approval; stubbed oracle). The phase then attests done
+     through the same substance verifier every phase runs.
   5. A choice WITHOUT an id is REJECTED: the file is denied loudly, the phase
-     never completes, and the run still parks at the pick.
+     never completes, and the run still parks at the pick. A choice whose id
+     resolves but whose message text is absent/does not name the gate is
+     likewise REJECTED (PD-305 flip).
   6. The only auto-pick is the recorded opt-in: intake.style_pick_auto:true lets
      the timeout auto-pick variant 1 with auto_pick:true provenance — never a
      forged owner_msg_id. A falsy/missing field is never an opt-in.
@@ -144,10 +147,23 @@ def _stub_transport(monkeypatch):
     return sent
 
 
-def _stub_oracle(monkeypatch, ids):
+def _stub_oracle(monkeypatch, ids, *, text: str | None = None):
+    """Stub the Fix 32 approvals oracle.
+
+    PD-305: an id alone never proves an owner decision — the oracle must also
+    return the owner message TEXT naming the gate. Pass text=None to keep the
+    ids-only shape (the flip rows assert that shape is REFUSED)."""
     monkeypatch.setattr(
         approvals_mod, "_cc_board_oracle",
         lambda run_dir=None: frozenset(ids) if ids is not None else None)
+    if ids is not None and text is not None:
+        monkeypatch.setattr(
+            approvals_mod, "BOARD_TEXT_RESOLVER",
+            lambda mid, _run_dir=None: (
+                {"msg_id": mid, "chat_id": "owner-chat", "text": text,
+                 "received_at": datetime.now(timezone.utc).isoformat()}
+                if mid in ids else None),
+            raising=False)
 
 
 def _write_choice(rd: Path, choice: dict) -> Path:
@@ -242,10 +258,22 @@ class TestManifestWiring:
 class TestChoiceProofGate:
     def test_signed_choice_with_verified_id_passes(self, tmp_path, monkeypatch):
         eng = _engine(_seed_run(tmp_path))
-        _stub_oracle(monkeypatch, ["owner-msg-42"])
+        _stub_oracle(monkeypatch, ["owner-msg-42"],
+                     text="approve P-STYLE-PICK variant B")
         ok, denial = eng._style_choice_authentic(
             _signed_choice("B"), offered_variants=["A", "B", "C"])
         assert ok, denial
+
+    def test_ids_only_oracle_without_gate_text_is_refused(self, tmp_path, monkeypatch):
+        """FLIP (PD-305): a resolvable owner_msg_id with NO message text — the
+        old ids-only acceptance — is now REFUSED. The id proves a message
+        exists; only its text proves the owner picked a style."""
+        eng = _engine(_seed_run(tmp_path))
+        _stub_oracle(monkeypatch, ["owner-msg-42"])  # ids only, no text
+        ok, denial = eng._style_choice_authentic(
+            _signed_choice("B"), ["A", "B", "C"])
+        assert not ok
+        assert "authenticity" in denial or "AF-FORGED-APPROVAL" in denial
 
     def test_choice_without_id_is_rejected(self, tmp_path, monkeypatch):
         eng = _engine(_seed_run(tmp_path))
@@ -327,7 +355,8 @@ class TestLiveProofRun:
     def test_run_stops_at_the_pick_then_continues_on_a_signed_choice(
             self, tmp_path, monkeypatch):
         sent = _stub_transport(monkeypatch)
-        _stub_oracle(monkeypatch, ["owner-msg-42"])
+        _stub_oracle(monkeypatch, ["owner-msg-42"],
+                     text="approve P-STYLE-PICK variant B")
         monkeypatch.setenv("PRESENTATION_STYLE_PICK_TIMEOUT_MINUTES", "0.05")
         rd = _seed_run(tmp_path)  # NO intake.style_pick_auto opt-in
         eng = _engine(rd)
