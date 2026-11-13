@@ -27,11 +27,15 @@ def run(first_dur):
     return A.validate_lipsync_placement(A.plan_timeline(tl), tl)
 
 
-assert run(3.65) == 1                      # exact
-assert run(3.65 + 1 / 30) == 1             # one frame late still passes
-try:
-    run(3.65 + 0.2)                        # re-timed by 0.2 s
-    raise AssertionError("re-timed clip must fail")
-except ValueError as e:
-    assert str(e).startswith("LIPSYNC_RETIMED"), e
-print("ok: lipsync placement H1")
+def test_lipsync_placement_h1():
+    assert run(3.65) == 1                      # exact
+    assert run(3.65 + 1 / 30) == 1             # one frame late still passes
+    try:
+        run(3.65 + 0.2)                        # re-timed by 0.2 s
+        raise AssertionError("re-timed clip must fail")
+    except ValueError as e:
+        assert str(e).startswith("LIPSYNC_RETIMED"), e
+    print("ok: lipsync placement H1")
+
+if __name__ == "__main__":
+    test_lipsync_placement_h1()

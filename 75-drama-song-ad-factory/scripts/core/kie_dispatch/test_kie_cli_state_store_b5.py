@@ -115,3 +115,7 @@ def main():
 
 if __name__ == "__main__":
     sys.exit(main())
+
+
+def test_kie_cli_state_store_b5():
+    assert main() == 0

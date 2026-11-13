@@ -187,3 +187,7 @@ def main():
 
 if __name__ == "__main__":
     sys.exit(main())
+
+
+def test_cast_gate_fail_closed_s75_t13():
+    assert main() == 0
