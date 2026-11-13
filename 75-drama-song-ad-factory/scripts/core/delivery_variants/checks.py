@@ -17,7 +17,6 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import protected_names  # noqa: E402  H7 caption gate
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import caption_timing  # noqa: E402  F18 caption cues measured by lyric_timing
 
 CTA_HOLD_MIN_SECONDS = 3.0
@@ -53,6 +52,7 @@ def check_cta_hold(hold_seconds):
         value = float(hold_seconds)
     except (TypeError, ValueError):
         return (FAIL, "CTA hold not a number: %r" % (hold_seconds,))
+    if value != value: return (FAIL, "CTA hold is not a number")
     if value < CTA_HOLD_MIN_SECONDS:
         return (FAIL, "CTA hold %.2fs below minimum %.1fs"
                 % (value, CTA_HOLD_MIN_SECONDS))
