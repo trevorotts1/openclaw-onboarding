@@ -63,7 +63,9 @@ def test_every_screen_carries_a_plain_heading_and_a_question():
 
 
 def test_headings_come_from_the_page_table():
-    screens = _screens()
+    # the purpose screens ride only on the conditional export (SPEC B1), and
+    # this test names all of them
+    screens = _screens(conditional=True)
     for qid, title in (("purpose", "What is this video for?"),
                        ("permission", "Your client's permission"),
                        ("where", "Where it will run"),
