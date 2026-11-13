@@ -1268,7 +1268,23 @@ def _block(i, total, q):
 
 
 def _blocks(questions):
-    blocks = [_block(i, len(questions), q) for i, q in enumerate(questions, 1)]
+    """One block per screen; only a screen the run ASKS one by one carries a
+    counter.
+
+    A defaulted screen rides on the recap (S75-006), so the card shows it
+    without a "Question i of N" header -- exactly the way ``render_change``
+    shows it when the client asks to change that recap line. The card and the
+    live chat therefore number the SAME screens (U-GEN425): the screens that
+    are actually asked.
+    """
+    total = len(askable(questions))
+    blocks, asked = [], 0
+    for q in questions:
+        if q.get("defaulted"):
+            blocks.append("\n".join(_block(1, 1, q).split("\n")[1:]))
+        else:
+            asked += 1
+            blocks.append(_block(asked, total, q))
     if questions and questions[0].get("preface"):
         blocks[0] = questions[0]["preface"] + "\n\n" + blocks[0]
     return blocks
@@ -1285,7 +1301,10 @@ def render_step(i, questions=None):
     """ONE question as its own message (Trevor 2026-10-08, I7): a one-sentence
     why, numbered options one per line, the RECOMMENDED one marked and
     explained, then how to answer."""
-    qs = questions or QUESTIONS
+    #: the default list is the screens the run ASKS one by one (U-GEN425), so a
+    #: direct call counts the same screens the live conversation counts; a
+    #: caller that passes its own list is numbered over that list.
+    qs = questions if questions else askable(QUESTIONS)
     q = qs[i - 1]
     if q.get("free_text"):
         return _typed_block(i, len(qs), q, why=True)
@@ -1354,10 +1373,20 @@ def _recap_rows(answers, qs, defaults=None, client_dir=None):
     for i, q in enumerate(qs):
         label = _RECAP_LABEL.get(q["id"]) or q["label"].capitalize()
         if q.get("defaulted"):
-            text = (d.get(q["id"]) or {}).get("text", "")
+            row = d.get(q["id"]) or {}
+            text = row.get("text", "")
             #: a line the client changed is their own answer now, so it is no
             #: longer marked as a default waiting to be changed
             changed = text != _default_row(q, purpose_n, client_dir).get("text")
+            #: VIDEO MODEL carries its price here too (U-GEN425). The question,
+            #: the LENGTH options and the final total all show it, so the recap
+            #: line must not be the one place that hides it -- not at its
+            #: default and not after the client changes it.
+            if q["id"] == "model":
+                n = row.get("n") or (q.get("recommended") or 0) + 1
+                values = q.get("values") or []
+                if 0 < n <= len(values):
+                    text = "%s - about %s" % (text, values[n - 1])
             add(label, text if changed else
                 "%s (default - reply %d to change)" % (text, len(rows) + 1), ("q", i))
             continue

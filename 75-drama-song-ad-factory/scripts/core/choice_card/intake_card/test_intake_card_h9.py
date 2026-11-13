@@ -5,9 +5,10 @@ a blank line between questions, and the send payloads keep those newlines.
 Run: python3 core/choice_card/intake_card/test_intake_card_h9.py
 
 SWI-002 (SPEC item 10): this file is also the companion test that encodes the
-card's total. The card prints its own total from len(QUESTIONS); this file is
-the one place the number 13 is written down, and it fails every string in the
-three card-facing files that claims a different one.
+card's total. The card shows len(QUESTIONS) screens but numbers only the ones
+it ASKS one by one (len(askable(QUESTIONS)), U-GEN425); this file is the one
+place the number 13 is written down, and it fails every string in the three
+card-facing files that claims a different one.
 """
 import contextlib
 import io
@@ -27,39 +28,49 @@ N = len(IC.QUESTIONS)
 CARD = IC.render_card()
 
 
-def _blocks(text):
-    """One block per question, plus the closing block.
+def _blocks():
+    """One block per screen, plus the closing block.
 
-    A question's own body may carry a blank line (the CHECKPOINTS wording
-    does), so a seam is a blank line followed by a question header or the
-    closing sentence -- never the first blank line found."""
-    return re.split(r"\n\n(?=Question \d+ of \d+ - |How to answer: )", text)
+    Built from the same list ``render_card`` joins (a question's own body may
+    carry a blank line -- the CHECKPOINTS wording does -- so a text-level split
+    on blank lines would cut inside it)."""
+    blocks = IC._blocks(IC.QUESTIONS) + [IC._closing(IC.QUESTIONS)]
+    assert "\n\n".join(blocks) == CARD
+    return blocks
 
 
-def test_thirteen_questions_each_own_block():
+def test_thirteen_screens_each_own_block_and_the_asked_ones_are_numbered():
     assert N == 13                                  # the NEW card (S75-006)
-    blocks = _blocks(CARD)
-    assert len(blocks) == N + 1                       # thirteen questions + closing
-    for i, b in enumerate(blocks[:N], 1):
+    blocks = _blocks()
+    assert len(blocks) == N + 1                       # thirteen screens + closing
+    asked = [q for q in IC.QUESTIONS if not q.get("defaulted")]
+    for i, b in enumerate(blocks[:len(asked)], 1):
         first = b.split("\n")[0]
-        assert first.startswith("Question %d of %d - " % (i, N)), first
-    labels = [b.split("\n")[0].split(" - ")[1] for b in blocks[:N]]
+        assert first.startswith("Question %d of %d - " % (i, len(asked))), first
+    # U-GEN425: a defaulted screen is shown, never numbered as a question.
+    defaults = [q for q in IC.QUESTIONS if q.get("defaulted")]
+    for b, q in zip(blocks[len(asked):N], defaults):
+        assert b.split("\n")[0] == q["ask"], b
+    labels = [b.split("\n")[0].split(" - ")[1] for b in blocks[:len(asked)]]
     assert labels == ["OFFER", "OFFER LINK", "AUDIENCE", "CHARACTER", "AI MODELS",
-                      "LENGTH", "MUSIC STYLE", "VIDEO STYLE", "CHECKPOINTS", "BUDGET",
-                      "VIDEO MODEL", "SHAPE", "PHOTOS"]
+                      "LENGTH", "MUSIC STYLE", "VIDEO STYLE", "CHECKPOINTS", "BUDGET"]
+    assert [q["label"] for q in defaults] == ["VIDEO MODEL", "SHAPE", "PHOTOS"]
 
 
 def test_each_option_on_its_own_numbered_line_recommended_marked():
-    for q, b in zip(IC.QUESTIONS, _blocks(CARD)):
+    for q, b in zip(IC.QUESTIONS, _blocks()):
+        lines = b.split("\n")
         if q.get("free_text"):              # a brief block has no menu to number
-            assert b.split("\n")[-1] == IC.FREE_TEXT_HINT, b
+            assert lines[-1] == IC.FREE_TEXT_HINT, b
             continue
         if "body" in q:                     # CHECKPOINTS carries its own fixed text
-            assert b.split("\n")[1] == q["ask"], b
-            assert b.split("\n")[-1].endswith('"custom" to choose each one.'), b
+            assert lines[1] == q["ask"], b
+            assert lines[-1].endswith('"custom" to choose each one.'), b
             continue
-        lines = b.split("\n")
-        opts = [l for l in lines[2:] if not l.startswith("   Watch: ")
+        # a defaulted screen has no counter header, so its options start one
+        # line higher than an asked question's (U-GEN425).
+        start = 1 if q.get("defaulted") else 2
+        opts = [l for l in lines[start:] if not l.startswith("   Watch: ")
                 and l != "   " + IC.SAMPLE_MISSING]   # sample lines sit under their option
         assert len(opts) == len(q["options"])
         prices = q.get("prices") or {}
@@ -79,8 +90,8 @@ def test_each_option_on_its_own_numbered_line_recommended_marked():
 
 
 def test_closing_line_last():
-    assert _blocks(CARD)[-1] == IC._closing(IC.QUESTIONS)
-    assert CARD.startswith("Question 1 of 13")
+    assert _blocks()[-1] == IC._closing(IC.QUESTIONS)
+    assert CARD.startswith("Question 1 of %d" % len(IC.askable(IC.QUESTIONS)))
 
 
 def test_no_markup_that_a_sender_could_strip():
@@ -106,8 +117,12 @@ def test_messages_under_limit_and_split_between_questions():
         else:
             rebuilt += ("\n\n" if rebuilt else "") + m
     assert rebuilt == CARD
+    #: a defaulted screen is shown without a counter (U-GEN425), so a message
+    #: may also open with one of those asks.
+    defaults = [q["ask"] for q in IC.QUESTIONS if q.get("defaulted")]
     for m in small:                       # never starts a message mid-question
-        assert m.startswith("Question") or m == IC._closing(IC.QUESTIONS)
+        assert (m.startswith("Question") or m == IC._closing(IC.QUESTIONS)
+                or any(m.startswith(a) for a in defaults)), m
     # a single oversize question still splits on line boundaries, and the long
     # music menu is exactly that question when a client asks for it
     menu = IC._music_full_q()
@@ -196,9 +211,11 @@ def test_a_card_with_typed_questions_closes_with_its_own_sentence():
 
 
 # --- SWI-002: the companion test that encodes 13 -------------------------------
-#: The card's total, written down ONCE, here. Every string the client or the
-#: operator reads is printed from len(QUESTIONS) instead, so this literal is
-#: the assertion the card is held to -- never a second source of the answer.
+#: The card's screen total, written down ONCE, here. Every string the client or
+#: the operator reads is printed from len(QUESTIONS) instead, so this literal is
+#: the assertion the card is held to -- never a second source of the answer. The
+#: live question counter reads len(askable(QUESTIONS)) (the screens asked one by
+#: one, U-GEN425), which is derived from the same list, never written down.
 CARD_TOTAL = 13
 
 #: Numbers that can read as a card total in prose. "one" is deliberately absent:
@@ -247,13 +264,14 @@ def _capture_help(runner, argv):
     return re.sub(r"\s+", " ", buf.getvalue())
 
 
-def test_the_card_renders_exactly_thirteen_questions():
+def test_the_card_shows_thirteen_screens_and_numbers_the_ones_it_asks():
     assert CARD_TOTAL == 13                         # the number this file encodes
     assert len(IC.QUESTIONS) == CARD_TOTAL          # module count
+    asked = len(IC.askable(IC.QUESTIONS))
     headers = re.findall(r"^Question (\d+) of (\d+) - ", CARD, re.M)
-    assert len(headers) == CARD_TOTAL               # rendered count == module count
-    assert {n for _, n in headers} == {str(CARD_TOTAL)}
-    assert [int(i) for i, _ in headers] == list(range(1, CARD_TOTAL + 1))
+    assert len(headers) == asked                     # the card == the live chat
+    assert {n for _, n in headers} == {str(asked)}
+    assert [int(i) for i, _ in headers] == list(range(1, asked + 1))
     assert IC.studio_json()["question_count"] == CARD_TOTAL   # third surface, same list
 
 
