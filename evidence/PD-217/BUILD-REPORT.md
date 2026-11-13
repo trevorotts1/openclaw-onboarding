@@ -230,9 +230,19 @@ Pre-push, before anything was written to the branch:
 ```
 
 All 40 characters compared literally: `1d6cc92bd66472e9c8cef23fff4f6a4672215b6d` is the
-commit this unit built. This evidence file is pushed after it; the head that carries the
-report is proven with `git ls-remote` in the same push cycle and quoted in the delivery
-message.
+commit this unit built.
+
+Second push, carrying this report file:
+
+```
+   1d6cc92bd..5652fcb32  HEAD -> pd/fl16-page-installer
+5652fcb32d11af7a8a51ee611cbbfeb3479c7f4a	refs/heads/pd/fl16-page-installer
+```
+
+(the `ls-remote` line above was taken immediately after that push). The head that carries
+this addendum is proven with `git ls-remote` after its own push and quoted in the delivery
+message, so every push this unit made has a 40-character remote proof somewhere it can be
+checked against.
 
 The tests and the self-test above were run in a FRESH worktree checked out at
 `1d6cc92bd66472e9c8cef23fff4f6a4672215b6d` — the pushed artefact, not the editing tree.
