@@ -275,8 +275,11 @@ def test_no_min_bytes_drift_across_all_known_copies():
         # which would let the "one byte under the floor" case below pass for the
         # WRONG reason and the "exactly at the floor" case fail spuriously. Seed
         # real %PDF bytes of the exact length under test so the only variable
-        # here is the SIZE floor.
-        _head = b"%PDF" if rel_path.endswith(".pdf") else b""
+        # here is the SIZE floor. PD-209: the teleprompter step now also runs
+        # the content check, so seed real HTML structure for the same reason —
+        # a filler file would fail for its content, not its size.
+        _head = (b"%PDF" if rel_path.endswith(".pdf")
+                 else b"<html><body><div class=\"slide\">")
         rd_pv_short = pathlib.Path(tempfile.mkdtemp())
         p = rd_pv_short / rel_path
         p.parent.mkdir(parents=True, exist_ok=True)
