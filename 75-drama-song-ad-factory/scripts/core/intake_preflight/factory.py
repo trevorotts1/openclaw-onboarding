@@ -75,6 +75,56 @@ except Exception:  # noqa: BLE001 - package-or-module missing: try sibling
     except Exception:  # noqa: BLE001 - module missing: fallback stays
         _lane_size = None
 
+#: S75-041: one meaning per exit code, by tool. The tools never agreed on a
+#: single numbering (2 is "waiting" here but "waiting" is 3 for the ledger and
+#: the lip-sync modules), so a raw number is never passed upward as-is: every
+#: child code is named by the tool that produced it.
+_CHILD_EXIT_PREFLIGHT = {0: "ok", 1: "error", 2: "waiting",
+                         3: "parked", 4: "rejected"}
+#: spend_ledger.py and qc_gate.py share this one (no 2; waiting is 3).
+_CHILD_EXIT_LEDGER = {0: "ok", 1: "error", 3: "waiting",
+                      4: "parked", 5: "rejected"}
+#: The lip-sync modules, video_router.py and narrator_rule.py all use this.
+_CHILD_EXIT_LIPSYNC = dict(_CHILD_EXIT_LEDGER)
+
+CHILD_EXIT_CODES = {
+    "factory.py": _CHILD_EXIT_PREFLIGHT,
+    "spend_ledger.py": _CHILD_EXIT_LEDGER,
+    "qc_gate.py": _CHILD_EXIT_LEDGER,
+    "run_watch.py": {0: "ok", 10: "stop"},
+    "prompt-budget": {0: "ok", 3: "waiting", 4: "parked", 5: "rejected"},
+    "video_router.py": _CHILD_EXIT_LIPSYNC,
+    "narrator_rule.py": _CHILD_EXIT_LIPSYNC,
+    "ceiling_cli.py": _CHILD_EXIT_LIPSYNC,
+    "delivery_checklist.py": {0: "ok", 1: "error", 5: "rejected"},
+}
+
+
+def child_exit(tool, code):
+    """S75-041: the outcome a child tool's raw exit code means, by tool name.
+
+    ``tool`` is a name or a path (only its basename is used). A tool or code
+    the table does not know answers ``"error"`` -- never the raw number, so a
+    caller can never read one tool's ``2`` as another tool's meaning.
+    """
+    table = CHILD_EXIT_CODES.get(Path(str(tool or "")).name)
+    if not table:
+        return "error"
+    try:
+        code = int(code)
+    except (TypeError, ValueError):
+        return "error"
+    return table.get(code, "error")
+
+
+class _ExitOneParser(argparse.ArgumentParser):
+    """S75-041: a mistyped command is an ERROR (exit 1), never 2 (waiting)."""
+
+    def error(self, message):
+        self.print_usage(sys.stderr)
+        self.exit(EXIT["error"], "%s: error: %s\n" % (self.prog, message))
+
+
 #: Part D fallback when lane_size.py is not importable (W2-A-U1 not landed).
 #: Same constants a live lane_size exposes; agents floor 1, never 0.
 PART_D_DEFAULTS = {"agents": 1, "kie_inflight": 8, "ffmpeg_jobs": 1,
@@ -3798,6 +3848,13 @@ def _next_stage(a, *, boot_snapshot=None):
     nxt = {"stage": present_id, "production_stage": next_stage, "command": published,
            "produces": row.get("produces", ""), "lane_size": lane,
            "stages_source": stages_source}
+    # S75-041 step 3: the child tool's code is read through ITS table, by
+    # name -- `next` never hands a bare number upward for the caller to guess.
+    _tool = Path(_command_script(published)).name
+    if _tool in CHILD_EXIT_CODES:
+        nxt["exit_codes"] = {str(code): outcome
+                             for code, outcome in
+                             sorted(CHILD_EXIT_CODES[_tool].items())}
     if stage_price is not None:
         nxt["cost_minor"] = stage_price
     if row_id != present_id:
@@ -3937,8 +3994,8 @@ def _card_help():
 
 
 def main(argv=None):
-    ap = argparse.ArgumentParser(prog="factory.py",
-                                 description="Drama-song factory control CLI (intake/preflight/next).")
+    ap = _ExitOneParser(prog="factory.py",
+                        description="Drama-song factory control CLI (intake/preflight/next).")
     sub = ap.add_subparsers(dest="cmd", required=True)
     i = sub.add_parser("intake", help="Normalize brief, ask ONE missing essential per turn.")
     i.add_argument("--brief", default=None, help="Brief as JSON string.")
