@@ -54,6 +54,7 @@ every sibling in this directory (see test_f19_requester_stamp.py).
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -97,11 +98,31 @@ pytestmark = pytest.mark.skipif(
 # ---------------------------------------------------------------------------
 # fixture plumbing
 # ---------------------------------------------------------------------------
-def _run_driver(run_dir: Path, *args: str) -> subprocess.CompletedProcess:
+def _run_driver(run_dir: Path, *args: str, env: dict | None = None) -> subprocess.CompletedProcess:
+    if env is None:
+        # PD-004c: the standard-mode cases prove the envelope, not provenance.
+        env = {**os.environ, "PRESENTATION_INTAKE_PROVENANCE": "warn"}
     return subprocess.run(
         [sys.executable, str(DRIVER_PATH), "--run-dir", str(run_dir), *args],
-        capture_output=True, text=True,
+        capture_output=True, text=True, env=env,
     )
+
+
+#: PD-001: every signature answer now reaches --sig-finalize (QUICK asks the
+#: same eight questions as IN-DEPTH), and finalize signs the turn ledger. A
+#: throwaway per-process key keeps that signing off the box's provisioned
+#: record -- the same pattern the two signature suites already use.
+_SP_QUESTION_IDS = ("q1", "q2", "q3", "q4", "q5", "q6", "q7", "q8")
+
+
+def _sp_env() -> dict:
+    env = dict(os.environ)
+    env["PRESENTATION_INTAKE_PROVENANCE"] = "warn"  # PD-004c: proves the envelope, not provenance.
+    env["PRESENTATION_SP_TURN_LEDGER_KEYS_FILE"] = ""
+    env["PRESENTATION_SP_TURN_LEDGER_CURRENT_KEY"] = "f21-f22-test-key-material"
+    env["PRESENTATION_SP_TURN_LEDGER_CURRENT_KEY_ID"] = "f21-f22-test-1"
+    env["PRESENTATION_SP_TURN_LEDGER_ROTATION_STARTED_AT"] = "2026-01-01T00:00:00+00:00"
+    return env
 
 
 def _envelope(run_dir: Path) -> dict:
@@ -215,9 +236,25 @@ class TestFault21PostCompletionAnswerSurvives:
 # ---------------------------------------------------------------------------
 class TestSignatureModeRegressionAndFault21Sibling:
     def _quick_signature_complete(self, run_dir: Path):
-        r = _run_driver(run_dir, "--signature", "--sig-answer", "sp_mode", "QUICK")
+        """Drive the signature turn-gate to completion. PD-001 (decision D-7
+        default): QUICK asks the SAME eight questions as IN-DEPTH -- the old
+        QUICK branch skipped them and finalized on a frame answer alone. And
+        --sig-finalize now reports "complete" ONLY for a record whose prover
+        passed with every answer confirmed, so each answer is confirmed
+        quote-back exactly as a client conversation would be."""
+        env = _sp_env()
+        r = _run_driver(run_dir, "--signature", "--sig-answer", "sp_mode",
+                        "QUICK", env=env)
         assert r.returncode == 0, f"sp_mode failed: {r.stdout}\n{r.stderr}"
-        r = _run_driver(run_dir, "--signature", "--sig-answer", "signature_frame", "vault")
+        for n, qid in enumerate(_SP_QUESTION_IDS, 1):
+            r = _run_driver(run_dir, "--signature", "--sig-answer", qid,
+                            f"Client answer {n}", env=env)
+            assert r.returncode == 0, f"{qid} failed: {r.stdout}\n{r.stderr}"
+            r = _run_driver(run_dir, "--signature", "--sig-confirm", qid,
+                            "--sig-confirmed", env=env)
+            assert r.returncode == 0, f"{qid} confirm failed: {r.stdout}\n{r.stderr}"
+        r = _run_driver(run_dir, "--signature", "--sig-answer",
+                        "signature_frame", "vault", env=env)
         assert r.returncode == 0, f"signature_frame failed: {r.stdout}\n{r.stderr}"
         return r
 
@@ -240,7 +277,8 @@ class TestSignatureModeRegressionAndFault21Sibling:
 
         # A newly-synced bank question answered after the signature intake
         # already finalized -- the sibling of FAULT-21's own trigger scenario.
-        r = _run_driver(run_dir, "--signature", "--sig-answer", "sp_mode", "QUICK")
+        r = _run_driver(run_dir, "--signature", "--sig-answer", "sp_mode",
+                        "QUICK", env=_sp_env())
         assert r.returncode == 0, f"post-finalize sig-answer failed: {r.stdout}\n{r.stderr}"
         assert "POST-COMPLETION-APPEND" in r.stderr
 
