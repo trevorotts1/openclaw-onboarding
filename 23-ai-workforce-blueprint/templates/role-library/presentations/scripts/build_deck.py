@@ -1381,10 +1381,17 @@ def _canonical_prompt_dir_problems(run_dir: Path) -> list:
     Every consumed gate (preflight rich-prompt _chk_rich_prompts, Prompt-QC
     teeth check_prompt_qc_teeth) routes through _collect_prompt_problems, the
     single choke point that calls this, so the two sides can never disagree.
-    Returns [] when the directory is clean, else the fatal problem strings."""
+    Returns [] when the directory is clean, else the fatal problem strings. When the
+    shared prompt_gate module cannot be imported, the detector never ran — that is a
+    NAMED problem (PD-073), never "no problems", unless an explicit test/CI marker
+    allows the degraded pass (_degraded_allowed, the phase_verifiers rule)."""
     pg = _import_prompt_gate()
     if pg is None:
-        return []
+        if _degraded_allowed(run_dir):
+            return []
+        return [f"prompt_gate: module unavailable — cannot judge "
+                f"{run_dir / 'working' / 'prompts'} for duplicate or non-canonical "
+                f"prompt names (the directory detector never ran; PD-073)"]
     base_problems = pg.prompt_dir_problems(run_dir / "working" / "prompts")
     if not base_problems:
         return []
@@ -1907,6 +1914,20 @@ def _import_prompt_gate():
     return None
 
 
+def _degraded_allowed(run_dir) -> bool:
+    """PD-073: the ONE test/CI-marker rule that may excuse a check whose instrument
+    (prompt_gate) could not be imported. Delegates to phase_verifiers._degraded_allowed
+    so the renderer and the per-phase verifiers can never disagree about what counts as
+    an explicit test context: PRESENTATION_ALLOW_DEGRADED_VERIFIERS=1, CI / OPENCLAW_TEST,
+    or the run dir's working/checkpoints/.test-context marker. If that rule itself cannot
+    be loaded the answer is False — an unprovable marker gate must not open."""
+    try:
+        import phase_verifiers as _pv
+        return bool(_pv._degraded_allowed(run_dir))
+    except Exception:  # noqa: BLE001 — an unloadable rule cannot excuse a check
+        return False
+
+
 def _ensure_english_pin(prompt: str) -> str:
     """Make the mandatory English/Latin anti-garble pin REAL on the render payload. The
     ENGLISH_PIN constant was historically defined and appended NOWHERE (dead code); this
@@ -1949,10 +1970,18 @@ def _verify_aspect_and_readback(out_path: Path, slide: dict, ordinal: int) -> No
         provenance-recorded when absent). When the engine RAN and the rendered text does not
         match the slide's approved copy, re-render (retry). This converts garbled baked text
         from an LLM-honesty check into code.
-    No-op (PNG magic already verified by verify_png) when the shared gate is unavailable."""
+    No-op (PNG magic already verified by verify_png) when the shared gate is unavailable
+    ONLY inside an explicit test/CI context (_degraded_allowed). In a real run an
+    unimportable prompt_gate means neither check ran — PD-073: that raises, naming the
+    missing module, so the slide is never shipped unverified by not running."""
     pg = _import_prompt_gate()
     if pg is None:
-        return
+        if _degraded_allowed(out_path.parent.parent):  # renders/.. == run dir
+            return
+        raise RuntimeError(
+            f"slide {ordinal}: prompt_gate module unavailable — cannot verify the "
+            f"16:9/2K aspect pin or the OCR text readback for {out_path}. A check that "
+            f"never ran is not a pass (PD-073).")
     label = f"slide-{ordinal:02d}"
     # Aspect/resolution: build_deck always renders the pinned 16:9 / 2K. Raises on mismatch.
     pg.verify_aspect_ratio(out_path, slide_id=label)
@@ -6360,14 +6389,17 @@ def _collect_prompt_problems(run_dir: Path, slides_path: Optional[Path] = None) 
     # shared detector's verdicts go through _canonical_prompt_dir_problems, which
     # overlays the R3 3-digit-canonical rule (signature-deck 100-slide floor) so
     # slide-100.txt is accepted while slide-1.txt / slide-1000.txt still fail.
-    _pg22 = _import_prompt_gate()
-    if _pg22 is not None:
-        dir_problems = _canonical_prompt_dir_problems(run_dir)
-        if dir_problems:
-            # Fatal directory-level defect, reported at the sentinel ordinal -1 so
-            # callers can tell it apart from the "slide count unknown" sentinel (0).
-            # The message already names the offending files; the ordinal is cosmetic.
-            return [(-1, "; ".join(dir_problems))]
+    # PD-073: no `if _import_prompt_gate() is not None` guard here. That guard WAS the
+    # pass-by-not-running branch: with no prompt_gate the directory detector silently
+    # skipped and this gate passed on a check it never ran. _canonical_prompt_dir_problems
+    # now returns a NAMED problem for an unimportable module (degraded pass only under an
+    # explicit test/CI marker), so the caller fails closed on the same evidence.
+    dir_problems = _canonical_prompt_dir_problems(run_dir)
+    if dir_problems:
+        # Fatal directory-level defect, reported at the sentinel ordinal -1 so
+        # callers can tell it apart from the "slide count unknown" sentinel (0).
+        # The message already names the offending files; the ordinal is cosmetic.
+        return [(-1, "; ".join(dir_problems))]
     copy_map = _load_slide_copy_map(run_dir, slides_path)
     problems = []
     for ordinal in range(1, n + 1):
