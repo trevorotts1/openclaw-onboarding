@@ -135,10 +135,13 @@ def test_question_price_equals_card_with_real_skill_74_registry_prices():
 
 
 def test_recap_line_is_plain_and_the_question_is_priced():
-    """S75-006: the recap names the model; the price rides on the question."""
+    """S75-006: the recap names the model and carries no price; the price rides on the question."""
     msg = IC.conversation(_campaign(_length_reply(180)) + [str(MODEL_N), "2"],
                           client_dir=CLIENT, purpose_flow=True)["message"]
-    assert ("%d. Video model: Seedance 2.5" % MODEL_N) in msg, msg
+    recap = [l for l in msg.split("\n") if l.startswith("%d. Video model: " % MODEL_N)]
+    assert len(recap) == 1, msg
+    assert "Seedance 2.5" in recap[0], recap[0]
+    assert "about $" not in recap[0], recap[0]      # plain: the price is on the question, not here
     cents = _expect(*EXPECT["Seedance 2.5"], 180)
     assert _question_price(_length_reply(180), "Seedance 2.5") == \
         "%d.%02d" % (cents // 100, cents % 100)
