@@ -700,8 +700,24 @@ def _verify_prompt(run_dir: Path) -> Tuple[bool, List[str]]:
                     continue
                 if str(d.get("severity", "")).lower() == "ok":
                     continue
+                # PD-072: the deficiency record carries code / severity / measured /
+                # required / intelligence / fix — NOT "detail". Reading "detail" dropped
+                # every word, so the regenerate order and the client pause message read
+                # "AF-PROMPT-FLOOR slide-3: AF-P1 — " with nothing after the dash.
+                detail = d.get("detail")
+                if not detail:
+                    bits = []
+                    measured = d.get("measured")
+                    if measured:
+                        required = d.get("required")
+                        bits.append(
+                            f"measured {measured}" + (f" (required {required})" if required else "")
+                        )
+                    if d.get("fix"):
+                        bits.append(str(d["fix"]))
+                    detail = "; ".join(bits) or str(d.get("intelligence") or "")
                 reasons.append(
-                    f"AF-PROMPT-FLOOR slide-{sid}: {d.get('code', '?')} — {d.get('detail', '')}"
+                    f"AF-PROMPT-FLOOR slide-{sid}: {d.get('code', '?')} — {detail}"
                 )
         if not reasons:
             reasons.append("AF-PROMPT-FLOOR: check_prompt_qc_deterministic returned pass:false")
