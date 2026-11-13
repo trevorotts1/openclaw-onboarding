@@ -1,188 +1,247 @@
-# PD-062 — REPAIR REPORT (ejected merge member)
+# PD-062 — REPAIR REPORT (ejected merge member, second repair)
 
 **Unit:** PD-062 · **Lane:** FL04 · **Decision:** D-12 **HOLD** — repaired to mergeable, **not merged**
 **Repo:** `trevorotts1/openclaw-onboarding` · **PR:** 3340
 **Branch:** `pd/fl04-manifest--hold-d12`
-**Repairer:** deepseek-chain · **Repaired:** 2026-11-13, 10:18 AM Eastern
-**Method:** merge `origin/main` INTO the branch (no rebase, no force-push), resolve only the
-named conflict.
+**Repairer:** deepseek-chain · **Repaired:** 2026-11-13, US Eastern
+**Method:** merge `origin/main` INTO the branch, then merge each colliding **in-batch sibling**
+INTO the branch. No rebase. No force-push. Nothing pushed to `main`.
 
 ---
 
-## 1. The conflict as the engine gave it
+## 1. Why this is a second repair — the original ejection
 
-Verbatim from the run ledger:
+The engine ejected PR 3340 as a conflicting merge member and named:
 
 ```
 real conflict in: 23-ai-workforce-blueprint/templates/role-library/presentations/pptx-assembly-specialist.md
 ```
 
-## 2. What I merged
+**The first repair missed the actual partner.** It merged only `origin/main`
+(`f0157e92c`), which came back clean, and concluded the conflict was not reproducible
+against main. That conclusion was correct as far as it went and useless in practice: the
+batch engine ejects a PR against its **in-batch siblings**, not only against `main`. The
+first repair was ejected again after `f0157e92c` / `7ba1de533` / `638509cc5`.
 
-| Item | Value |
-|---|---|
-| Branch head before repair | `11ce373dffdea8b0ccd31df5317512047c9e9417` (== remote head before repair) |
-| `origin/main` merged in | `ebf5c769a2ad5b2582bf2256588095cbef20cfac` ("Merge pull request #3244 …batch…20261113-013042") |
-| Merge base | `1a476d2cbbc57fedbfa9dbcf73c91074bfd1a1dc` |
-| Merge commit | `f0157e92cfab163eea76ca2c7a2b8a3dded24cde` — parents `11ce373df` + `ebf5c769a` |
-| Merge outcome | **clean, exit 0** — 66 files changed, +/-6769/65, **zero conflicted paths** |
-| Branch was behind | 14 commits behind `origin/main`, 3 ahead |
+This repair clears **both** surfaces: main, and every sibling the batch would carry.
 
-Merge performed in a private worktree of the base clone:
-`/Volumes/mac mini m4/swarm-contract/pd-fix/tmp/PD-062/work.KD8seA/wt`
-(created with `git worktree add -b pd-062-repair … 11ce373df`).
+---
 
-## 3. Resolution per hunk
-
-**There were no conflicted hunks.** `git merge origin/main` returned rc=0 and wrote no conflict
-markers (`git grep -nE '^(<<<<<<<|>>>>>>>|=======$)' -- 23-ai-workforce-blueprint universal-sops`
-returned nothing).
-
-The named file is not a real two-sided conflict against current `origin/main`:
+## 2. Heads proved before touching anything
 
 ```
-base blob  1a476d2cb:pptx-assembly-specialist.md = 50fe3cb2ca6d51a7f6f875e70c019df55699b224
-main blob  origin/main:pptx-assembly-specialist.md = 50fe3cb2ca6d51a7f6f875e70c019df55699b224   <- identical
-unit blob  11ce373df:pptx-assembly-specialist.md   = a4fe1c5f605f43c494e8d48be871f8bbfceabaf0
+$ git ls-remote --heads origin pd/fl04-manifest--hold-d12
+638509cc5486a992546e6d0a7fef3f6bfb7aac1b	refs/heads/pd/fl04-manifest--hold-d12   <- PRE
+
+$ git rev-parse origin/main
+ebf5c769a2ad5b2582bf2256588095cbef20cfac      <- required value, matches
+
+$ git ls-remote --heads origin pd/fl24-role-procedures-c
+276762b420499f2fda50c0651667c3011d2bf588      <- the one sibling in this batch
 ```
 
-`git diff --numstat 1a476d2c..origin/main -- <file>` is empty, and `git log 1a476d2c..origin/main --
-<file>` lists no commit. Main never touched this file, so nothing of main's could be lost and the
-unit's single-line change stands as written:
+---
+
+## 3. Merge with `main`
 
 ```
-(manifest_version 76, 56 phases)     <- unit's edit (was 75)
+$ git merge-base HEAD origin/main
+ebf5c769a2ad5b2582bf2256588095cbef20cfac      <- merge base IS origin/main
+
+$ git merge origin/main
+Already up to date.        rc=0, no commit created
 ```
 
-### Why the engine still saw it — and the real collision partner
-
-`git log --all` shows two commits on a **sibling, unmerged lane branch** that rewrite the *same*
-line of the *same* file:
+**Main has not moved the conflicted file since the merge base** — proven by blob identity,
+not by assertion:
 
 ```
-e9fb04930 PD-093: header states the manifest version is read from the file
-66bf69c97 PD-093: assembly procedure follows the engine it actually dispatches
+base blob (1a476d2cb)    :pptx-assembly-specialist.md = 50fe3cb2ca6d51a7f6f875e70c019df55699b224
+origin/main            :pptx-assembly-specialist.md = 50fe3cb2ca6d51a7f6f875e70c019df55699b224
+$ git diff --numstat ebf5c769a origin/main -- <file>
+(empty)
 ```
 
-PD-093 replaces `manifest_version 76` with `(manifest version: read it from the file; the live
-read at regeneration was manifest_version 75, 56 phases)`. PD-062 and PD-093 are therefore a true
-one-line collision, but the collision is with **PD-093's unmerged work**, not with `origin/main`.
+The branch blob is `a4fe1c5f605f43c494e8d48be871f8bbfceabaf0`, the unit's own edit
+(`manifest_version 76, 56 phases`). So there is no main-side intent to keep or lose on
+this file, and no invented resolution was needed.
 
-I did **not** import PD-093's wording. Two reasons: (a) the card's method is to merge
-`origin/main` and resolve only what that merge conflicts on; PD-093 is not in `main`, and copying
-another unit's unmerged hunk into this branch would delete PD-093's own commit's purpose and
-misattribute authorship; (b) the unit's intent ("the header states the version this manifest
-actually is") is *correct and verified* at the merged tree — see §4. Both intents are legitimate
-and both survive: whoever lands second re-runs `phase_doc_sync.py --write`, and the generator will
-restamp every version marker from the manifest as it then stands. **Merge order note for the
-merge-writer:** if PD-093 lands before PD-062, re-run
-`scripts/ci/phase_doc_sync.py --write` + `scripts/hash-universal-sops-manifest.py` after the
-merge rather than hand-resolving that line.
+---
 
-## 4. Row-by-row re-proof at the merged tree (`f0157e92c`)
-
-Working dir: `23-ai-workforce-blueprint/templates/role-library/presentations`, Python 3.14.7.
-
-**Acceptance rows are A3 and A4** (per the unit's BUILD-REPORT §1). `/bin/pytest -v` on the
-unit's own suite, at the merged tree:
+## 4. Sibling collision — BEFORE
 
 ```
-scripts/tests/test_pd_manifest_assembly_notes.py::test_a3_notes_sync_writes_notes_into_the_delivered_deck PASSED
-scripts/tests/test_pd_manifest_assembly_notes.py::test_a3_control_without_speech_the_panes_stay_empty PASSED
-scripts/tests/test_pd_manifest_assembly_notes.py::test_a4_valid_stub_deck_exits_zero_and_is_not_rewritten PASSED
-scripts/tests/test_pd_manifest_assembly_notes.py::test_a4_control_no_deck_and_no_renders_exits_non_zero_naming_what_is_missing PASSED
-scripts/tests/test_pd_manifest_assembly_notes.py::test_a4_invalid_deck_is_rebuilt_from_the_banked_renders PASSED
-scripts/tests/test_pd_manifest_assembly_notes.py::test_a4_slide_count_mismatch_fails_loudly PASSED
-scripts/tests/test_pd_manifest_assembly_notes.py::test_manifest_wires_both_steps_to_scripts_and_moves_every_consumer PASSED
-============================== 7 passed in 2.84s ===============================
+$ git merge-tree --write-tree HEAD origin/pd/fl24-role-procedures-c
+rc=1
+03d4e6a943aee1f25e535bba934d73da76419c8e
+100644 50fe3cb2ca6d51a7f6f875e70c019df55699b224 1	<file>   (base)
+100644 a4fe1c5f605f43c494e8d48be871f8bbfceabaf0 2	<file>   (PD-062 side)
+100644 2ebf3512a9c4b52679746ef085fed4059ba88218 3	<file>   (sibling side)
+Auto-merging <file>
+CONFLICT (content): Merge conflict in <file>
 ```
 
-| Row | Test id(s) | Merged-tree result |
+`<file>` = `23-ai-workforce-blueprint/templates/role-library/presentations/pptx-assembly-specialist.md`.
+Conflict surface was **one line**, in §9's Phase-Code Map.
+
+- PD-062 side (stage 2): `(manifest_version 76, 56 phases)`
+- Sibling side (stage 3, PD-093): `(manifest version: read it from the file; the live read at regeneration was manifest_version 75, 56 phases)`
+
+The sibling branched at `1a476d2cbbc57fedbfa9dbcf73c91074bfd1a1dc`, i.e. before PD-062's
+bump to 76 — hence the stale `75`.
+
+## 5. What I imported, and why
+
+Merged `origin/pd/fl24-role-procedures-c` (`276762b42`) into the repair branch:
+
+```
+$ git merge origin/pd/fl24-role-procedures-c
+CONFLICT (content): Merge conflict in <file>
+commit 8907d276c0410d06b4950edbaab1e91ff1f9292b
+parents: 638509cc5486… + 276762b42049…
+20 files changed, 2273 insertions(+), 450 deletions(-)
+```
+
+Import was required, not optional: the pair was red, and a red pair is what the engine
+ejects on. Nothing was imported from a sibling that was already clean.
+
+**Resolution (both intents kept, neither side deleted):**
+
+```markdown
+> **Phase-Code Map (per FIX of the short-code reconciliation):** … in
+> `universal-sops/presentation-slide-craft/PIPELINE-MANIFEST.json` (manifest version: read it
+> from the file; the live read at regeneration was manifest_version 76, 56 phases) exactly per
+> the Director's Phase-Code Map …
+```
+
+- The sibling's **instruction** survives: "read the manifest version from the file" — that
+  was PD-093's whole point (stop hard-coding a version that drifts).
+- PD-062's **fact** survives: the merged `PIPELINE-MANIFEST.json` in this tree IS
+  `manifest_version: 76`, 56 phases, verified by reading the file.
+
+Resolved blob: `31904650f75bb8fcc3142220af3b3decad340ce9`. Zero conflict markers remain:
+
+```
+$ git grep -n '^<<<<<<< \|^>>>>>>> ' -- .     -> no output
+```
+
+## 6. Sibling collision — AFTER
+
+```
+$ git merge-tree --write-tree HEAD origin/pd/fl24-role-procedures-c
+rc=0
+fd512d470b9bd90b32c032ca036597c02828ed94     <- clean, no conflict report
+
+$ git merge-tree --write-tree HEAD origin/main
+rc=0
+fd512d470b9bd90b32c032ca036597c02828ed94     <- clean
+```
+
+| Partner | BEFORE | AFTER |
 |---|---|---|
-| **A3** notes land in the delivered deck | `test_a3_notes_sync_writes_notes_into_the_delivered_deck` | PASSED |
-| **A3 control** no speech → panes stay empty | `test_a3_control_without_speech_the_panes_stay_empty` | PASSED |
-| **A4** valid stub deck → exit 0, file not rewritten | `test_a4_valid_stub_deck_exits_zero_and_is_not_rewritten` | PASSED |
-| **A4 control** no deck, no renders → non-zero naming what is missing | `test_a4_control_no_deck_and_no_renders_exits_non_zero_naming_what_is_missing` | PASSED |
-| **A4** invalid deck rebuilt from renders | `test_a4_invalid_deck_is_rebuilt_from_the_banked_renders` | PASSED |
-| **A4** slide-count mismatch fails loudly | `test_a4_slide_count_mismatch_fails_loudly` | PASSED |
-| Manifest wiring (both phases `kind: script`, every `*-FINAL.pptx` consumer retargeted) | `test_manifest_wires_both_steps_to_scripts_and_moves_every_consumer` | PASSED |
+| `origin/main` `ebf5c769a` | clean (already ancestor) rc=0 | clean rc=0 |
+| `pd/fl24-role-procedures-c` `276762b42` (#3210) | **CONFLICT rc=1**, 1 file, 1 line | **clean rc=0** |
 
-Manifest lock at the merged tree:
+`merge-tree` touches no branch and creates no commit; both outputs above are the command's
+own text.
 
-```
-sync_check.py            -> manifest_version: 76 | phases: 56 | IN SYNC | rc=0
-phase_doc_sync.py --check-> PHASE_DOC_SYNC_PASS: every phase table and version marker matches
-                            manifest_version 76 (56 phases). | rc=0
-```
+---
 
-So the unit's `manifest_version 76` marker in the conflicted file agrees with the merged manifest,
-and the merge did not disturb the lock.
+## 7. Unit acceptance rows at the repaired head (`8907d276c`)
 
-**Merge did not alter a single unit blob** (pre-merge `11ce373df` vs merged `HEAD`):
+Rows are **A3** and **A4** per the unit's BUILD-REPORT §1, plus the manifest-wiring row.
+Each run by test id, separately, real output:
 
-```
-SAME pd_assemble_step.py                         6038b9165adac2c9722bcbfec9810c5cc065df7c
-SAME tests/test_pd_manifest_assembly_notes.py    21f4789b27820c195d2e256bd6809e09505630e2
-SAME PIPELINE-MANIFEST.json                      68d840635f891a910f2512822e0437cbcec57d29
-SAME MANIFEST-SOURCE.txt                         57a3e469313cc8a385fb5dd56a9ce4a6fcbe87d5
-SAME universal-sops/_content-manifest.json       643b594b686baf7c6453516ce5ab157b40df1718
-```
+| Row | Test id | Result |
+|---|---|---|
+| A3 — notes land in the delivered deck | `test_a3_notes_sync_writes_notes_into_the_delivered_deck` | PASSED (rc=0) |
+| A3 control — no speech, panes stay empty | `test_a3_control_without_speech_the_panes_stay_empty` | PASSED (rc=0) |
+| A4 — valid stub deck: exit 0, file not rewritten | `test_a4_valid_stub_deck_exits_zero_and_is_not_rewritten` | PASSED (rc=0) |
+| A4 control — no deck, no renders: non-zero naming what is missing | `test_a4_control_no_deck_and_no_renders_exits_non_zero_naming_what_is_missing` | PASSED (rc=0) |
+| A4 — invalid deck rebuilt from banked renders | `test_a4_invalid_deck_is_rebuilt_from_the_banked_renders` | PASSED (rc=0) |
+| A4 — slide-count mismatch fails loudly | `test_a4_slide_count_mismatch_fails_loudly` | PASSED (rc=0) |
+| Manifest wiring — both phases `kind: script`, every `*-FINAL.pptx` consumer retargeted | `test_manifest_wires_both_steps_to_scripts_and_moves_every_consumer` | PASSED (rc=0) |
 
-## 5. Commits
+Whole file in one run: `7 passed in 1.19s`. No row was skipped, renamed, weakened or xfailed.
+Nothing failed, so there is no base-commit comparison to report.
+
+Manifest lock re-checked at the repaired head (the merge touched a generator-owned doc):
 
 ```
-f0157e92cfab163eea76ca2c7a2b8a3dded24cde  Merge remote-tracking branch 'origin/main' into pd-062-repair
-11ce373dffdea8b0ccd31df5317512047c9e9417  PD-062: correct the A3 AFTER transcript to the stub speech used
-27356f83c…                                PD-062: build report with commit sha, files and captured check output
-195202d55…                                PD-062: give the assembly and notes steps an executor
+$ python3 sync_check.py
+manifest_version: 76 | phases: 56 | autofails: 196 | roles: 36
+IN SYNC — …                                  rc=0
+
+$ python3 scripts/ci/phase_doc_sync.py --check
+PHASE_DOC_SYNC_PASS: every phase table and version marker matches manifest_version 76
+(56 phases).                                 rc=0
 ```
 
-Pushed to `refs/heads/pd/fl04-manifest--hold-d12` (fast-forward from `11ce373df`, no force).
+That second line is the proof the resolved one-liner is consistent with the manifest, not
+merely syntactically merged.
 
-## 6. Remote-head proof
+---
+
+## 8. Ancestry — the push did not rewrite history
 
 ```
-$ git ls-remote --heads origin refs/heads/pd/fl04-manifest--hold-d12
-7ba1de5335c104269048788ecf6127ca390cdd3d	refs/heads/pd/fl04-manifest--hold-d12
+PRE   = 638509cc5486a992546e6d0a7fef3f6bfb7aac1b
+$ git merge-base --is-ancestor 638509cc5486… 8907d276c041…
+rc=0
+```
+
+`PRE` is an ancestor of the new head: fast-forward only, zero rewritten commits.
+
+## 9. Remote-head proof
+
+```
+$ git ls-remote --heads origin pd/fl04-manifest--hold-d12
+8907d276c0410d06b4950edbaab1e91ff1f9292b	refs/heads/pd/fl04-manifest--hold-d12
 
 $ git rev-parse HEAD
-7ba1de5335c104269048788ecf6127ca390cdd3d
-MATCH=yes
+8907d276c0410d06b4950edbaab1e91ff1f9292b
+MATCH=yes (40 chars, literal)
 ```
 
-Pre-repair remote head was `11ce373dffdea8b0ccd31df5317512047c9e9417`; the push was a
-fast-forward (`11ce373df..7ba1de533`), no force. This report is then its own next commit on the
-same branch; at that push `git rev-parse HEAD` and `git ls-remote --heads origin
-refs/heads/pd/fl04-manifest--hold-d12` were compared again and matched, full 40 characters.
+Push line as the remote reported it: `638509cc5..8907d276c HEAD -> pd/fl04-manifest--hold-d12`
+(fast-forward, no force).
 
-## 7. What I could not prove — stated plainly
+This report is its own next commit on the same branch; the remote head is re-proved after
+that commit in the commit message and must be read from the live ref, since a report cannot
+contain the sha of the commit that contains it.
 
-1. **`presentations-drift-gates.sh` does not exit 0 on this Mac.** It returns rc=11 with
-   `DRIFT=1 FAILED=0`. The only failing gate is **GATE-D (FIX 113)**, which compares the repo
-   `scripts/` tree against the *live department copy on this box*
-   (`/Users/blackceomacmini/.openclaw/workspace/departments/Presentations/scripts`):
+---
 
-   ```
-   SCRIPTS-TREE DRIFT: 2 file(s) differ between the repo copy and the department copy (FIX 113):
-     - pd_assemble_step.py — MISSING from the department copy (repo sha256=35d7afa8446cb13c…)
-     - tests/test_pd_manifest_assembly_notes.py — MISSING from the department copy (repo sha256=1ab85c0661a5baa9…)
-   ```
+## 10. Prior attempt, recorded so it is not repeated
 
-   This is box state, not branch state: both files are byte-identical before and after the merge
-   (blob proof in §4), `origin/main` touched no path under `presentations/`, and the sanctioned
-   repair is the reinstall/update roll (`refresh-dept-scripts.py`), which I did not run — it
-   mutates the department install and is outside this unit. The unit's BUILD-REPORT §5 claims
-   "ALL GATES PASSED (GATE 1..9) exit 0"; that claim does **not** reproduce from a fresh worktree
-   on this box at either the pre-merge head or the merged head. I am not asserting which
-   environment produced the original green; I am saying it is not reproducible here.
-2. **The engine's reported conflict is not reproducible against current `origin/main`.** I can
-   prove the honest negative only against `origin/main` (blob equality, §3). I cannot see the
-   engine's exact base tree, so I cannot prove *which* commit pair it merged. The PD-093 commits
-   are the only same-line collision I found in `--all` history; that is the best-supported
-   explanation, not a certainty.
-3. **The wider suites were not re-run.** The BUILD-REPORT documents a 12-file manifest-shape set
-   at 119 passed / 3 pre-existing failures; `origin/main` touches none of those files (empty
-   `git diff --stat 1a476d2c..origin/main` over the presentations tree), so those rows cannot have
-   changed, but I am quoting the unit's numbers rather than re-running them.
-4. **D-12 remains unanswered.** Per the card this branch is repaired to mergeable and **left
-   unmerged**.
+```
+f0157e92c  Merge remote-tracking branch 'origin/main' into pd-062-repair   (clean, rc=0)
+7ba1de533  PD-062: repair report for the ejected merge member
+638509cc5  PD-062: record the remote-head proof in the repair report
+```
+
+That attempt correctly established main was not the partner (blob equality, §3) and then
+**stopped there**, leaving the real collision — the PD-093 sibling line — unresolved. It is
+superseded by `8907d276c`.
+
+## 11. What I could not prove
+
+1. **I cannot see the engine's exact ejection pair.** I proved the collision exists against
+   `pd/fl24-role-procedures-c` because the card named it, and I proved it is gone. I cannot
+   prove the engine used that same comparison, only that this is the only sibling on the
+   card and the only same-line collision present.
+2. **`presentations-drift-gates.sh` still does not exit 0 on this Mac** (rc=11,
+   `DRIFT=1 FAILED=0`, GATE-D / FIX 113 — it compares the repo `scripts/` tree against the
+   live department copy in `~/.openclaw/workspace/departments/Presentations/scripts`, where
+   `pd_assemble_step.py` and its test are missing). That is box state, not branch state:
+   both files are byte-identical before and after this repair, and the sanctioned fix is the
+   department reinstall roll, which I did not run. It is not a claim about this branch.
+3. **No wider suite was re-run.** The unit's BUILD-REPORT documents a 12-file
+   manifest-shape set at 119 passed / 3 pre-existing failures. I re-ran the unit's own rows
+   and the two lock checks, not that set.
+4. **The sibling's own acceptance rows were not re-run here.** I proved the sibling merges
+   clean and that its files arrived intact; I did not re-judge PD-093/PD-100/PD-101/PD-102/
+   PD-108.
+5. **D-12 remains unanswered.** Per the card this branch is repaired to mergeable and
+   **left unmerged**. Nothing in this branch may enter a batch until Trevor says yes in
+   `CORRECTIONS.md`.
