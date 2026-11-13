@@ -36,6 +36,10 @@ while [ $# -gt 0 ]; do
   esac
 done
 
+# The helper honours the documented ALLOW_DECLARED=1 channel. Export it only when
+# the operator passed the flag, so DECLARED without the flag stays refused.
+if [ "$ALLOW_DECLARED" -eq 1 ]; then export ALLOW_DECLARED=1; fi
+
 # Resolve the selected client using the installer platform contract, including
 # custom workspace pins. An unrelated /data directory never overrides them.
 PLATFORM_HELPER="$SCRIPT_DIR/../../platform/common.sh"
