@@ -1,0 +1,76 @@
+# Skill 75 per-file pytest gate -- files ALLOWED to collect zero test items.
+#
+# Read by the step "Skill 75 pytest collection + run (no hidden failures)" in
+# .github/workflows/qc-static.yml. pytest exits 5 for "no tests collected".
+# Exit 5 is tolerated ONLY for a path listed here; every other test_*.py /
+# *_test.py under 75-drama-song-ad-factory/scripts that collects nothing now
+# FAILS the build.
+#
+# Why exit 5 used to be free for every file: commit 83121e15c ("CI speed:
+# single-pass Skill 75 suite, deflake 2 tests, fix compact-core", 2026-11-02)
+# split the whole-tree run into one pytest process per file. Per file, a suite
+# with no pytest items returns 5, where the old single-process run returned 0
+# because OTHER files had items. 5 was whitelisted to keep that parity, not
+# because an empty test file is acceptable. The parity it bought was silence:
+# a file could be named like a test, sit in a test directory, collect zero
+# items forever, and the gate stayed green (U-GEN434 found the shape, U-GEN435
+# measured it: 42 files under scripts/).
+#
+# DO NOT ADD A PATH HERE TO SILENCE A FAILURE. Exit 5 means "collected
+# nothing", so a file with a real failing test can never be listed: it exits
+# non-zero for a different reason and still fails.
+#
+# [A] Self-running suites. The file calls pytest.skip(allow_module_level=True)
+#     on purpose, with the reason in its own docstring; its assertions run
+#     under `python3 <file>`, which the "Skill 75 empty-home test suite" step
+#     already executes. Legitimate by design. Keep these.
+# ---------------------------------------------------------------------------
+75-drama-song-ad-factory/scripts/core/singing_detector/test_receipt_evidence_g5.py
+75-drama-song-ad-factory/scripts/core/singing_detector/test_singing_detector_amend_g2.py
+75-drama-song-ad-factory/scripts/core/singing_detector/test_singing_detector.py
+# ---------------------------------------------------------------------------
+# [B] Script-style runners with no pytest items today. Named like a test,
+#     execute at import, contribute nothing to pytest's collected count. This
+#     is the U-GEN434 defect, parked: converting these files is a separate
+#     unit. DELETE the line as soon as its file grows pytest items, so the
+#     allowlist cannot outlive its reason.
+# ---------------------------------------------------------------------------
+75-drama-song-ad-factory/scripts/core/catalog_calculator/test_image_plan_i3.py
+75-drama-song-ad-factory/scripts/core/ending_qc/test_ending_qc.py
+75-drama-song-ad-factory/scripts/core/final_assembler/test_lipsync_placement_h1.py
+75-drama-song-ad-factory/scripts/core/heartbeat/test_run_watch.py
+75-drama-song-ad-factory/scripts/core/intake_preflight/test_continuity_reconciler_b5.py
+75-drama-song-ad-factory/scripts/core/intake_preflight/test_cost_fork_v2973.py
+75-drama-song-ad-factory/scripts/core/intake_preflight/test_factory_next.py
+75-drama-song-ad-factory/scripts/core/intake_preflight/test_final_recap_b7.py
+75-drama-song-ad-factory/scripts/core/intake_preflight/test_music_stage_lifecycle.py
+75-drama-song-ad-factory/scripts/core/intake_preflight/test_next_decision_hold_b5.py
+75-drama-song-ad-factory/scripts/core/intake_preflight/test_reconcile_v2973.py
+75-drama-song-ad-factory/scripts/core/intake_preflight/test_stale_session_v2973.py
+75-drama-song-ad-factory/scripts/core/intake_preflight/test_waiter_pattern_v2973.py
+75-drama-song-ad-factory/scripts/core/kie_dispatch/test_kie_cli_state_store_b5.py
+75-drama-song-ad-factory/scripts/core/kie_dispatch/test_model_identity_h3.py
+75-drama-song-ad-factory/scripts/core/kie_dispatch/test_qc_docs_host.py
+75-drama-song-ad-factory/scripts/core/length_formula/test_length_formula.py
+75-drama-song-ad-factory/scripts/core/length_formula/test_rnbflow_fit_v2972.py
+75-drama-song-ad-factory/scripts/core/length_formula/test_story_arc_u13.py
+75-drama-song-ad-factory/scripts/core/length_formula/test_style_budget_fits_v2970.py
+75-drama-song-ad-factory/scripts/core/lip_sync/lip_gate/test_attempt_ceiling_v2973.py
+75-drama-song-ad-factory/scripts/core/lip_sync/lip_gate/test_face_model_locator.py
+75-drama-song-ad-factory/scripts/core/lip_sync/lip_gate/test_lipsync_closeup.py
+75-drama-song-ad-factory/scripts/core/lyric_writer/test_brief_exemption_v2972.py
+75-drama-song-ad-factory/scripts/core/lyric_writer/test_cast_gate_fail_closed_s75_t13.py
+75-drama-song-ad-factory/scripts/core/lyric_writer/test_steer_opening.py
+75-drama-song-ad-factory/scripts/core/prompt_templates/test_make_h3_request.py
+75-drama-song-ad-factory/scripts/core/qc_voice_match/test_line_voice_fit.py
+75-drama-song-ad-factory/scripts/core/song_choices/test_candidate_matrix.py
+75-drama-song-ad-factory/scripts/core/song_choices/test_song_choices_c11_regions.py
+75-drama-song-ad-factory/scripts/core/song_dispatch/test_operator_decision_v2973.py
+75-drama-song-ad-factory/scripts/core/song_dispatch/test_remaining_defects_r1_r2_r4.py
+75-drama-song-ad-factory/scripts/core/song_dispatch/test_song_dispatch.py
+75-drama-song-ad-factory/scripts/core/spoken_share/test_per_ad_target.py
+75-drama-song-ad-factory/scripts/core/sung_hook/test_three_walls.py
+75-drama-song-ad-factory/scripts/core/sung_hook/test_timing_word_shapes.py
+75-drama-song-ad-factory/scripts/core/test_emergency_owner_s75_t13.py
+75-drama-song-ad-factory/scripts/core/test_music_createtask_ww30.py
+75-drama-song-ad-factory/scripts/qc_no_blur/test_smooth_content_not_fill.py
