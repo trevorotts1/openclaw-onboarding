@@ -43,6 +43,10 @@
 #   2  — environment error (a copy missing entirely / unresolved repo tree):
 #        fail-closed, never a pass the gate could not actually perform
 #
+# When called by the entry door (GATE 0c) a non-zero exit is logged as a
+# WARNING and the build continues (owner ruling D6). When called by continuous
+# integration a non-zero exit fails the job.
+#
 # PRESENTATION_DRIFT_GATE=0 documents the skip everywhere it is honored: the
 # disabled path PRINTS the skip and exits 0 — it never reports a pass it did
 # not perform. Default (unset or =1) is ON.
