@@ -3,12 +3,46 @@
 - Unit: PD-300b, lane FL35, repo `trevorotts1/openclaw-onboarding`
 - Branch: `pd/fl35-sealed-record--hold-d23-d24`
 - Worktree: `/Volumes/mac mini m4/swarm-contract/pd-fix/worktrees/onboarding/FL35--hold-d23-d24`
-- **Commit: `c1887fb484aadcbceb3c48830eafd8ad300e8458`**
-- Remote proven equal: `git ls-remote origin refs/heads/pd/fl35-sealed-record--hold-d23-d24` → `c1887fb484aadcbceb3c48830eafd8ad300e8458` (MATCH)
-- Attempt: 2. Builder: `[deepseek-chain] PD-300b build`. Report written 2026-11-12, Eastern.
+- **Commit: `c28474c1e752d2c06a335ea7e68c93e1a04362e3`** (attempt 3, merge commit; attempt 2's build is `c1887fb48`)
+- Remote proven equal: `git ls-remote origin refs/heads/pd/fl35-sealed-record--hold-d23-d24` → `c28474c1e752d2c06a335ea7e68c93e1a04362e3` (MATCH)
+- Attempt: 3. Builder: `[deepseek-chain] PD-300b build`. Report written 2026-11-13, Eastern.
 - **Staged under D-23 and D-24. It is NOT mergeable until Trevor answers both.**
 - Baseline before change: **5 failed, 79 passed** (target subset, at hold HEAD `1a476d2cb`).
 - After change: **8 failed, 116 passed** (same target subset plus my new test file). The three extra red are the four test edits attempt 1 flagged and this brief forbade; every one is named in §6 with its exact assertion.
+
+## 0. ATTEMPT 3 — the scoped continuation that applied the real merge
+
+Attempt 2 built and pushed this unit. Attempt 3 changed no product code; it applied exactly one thing attempt 2 had probed and correctly declined to do on its own authority: **`git merge --no-ff pd/fl35-sealed-record`**, so the tree this receipt judges actually contains PD-319a and PD-306.
+
+| Proof | Result |
+|---|---|
+| `git merge --no-ff pd/fl35-sealed-record` | clean — **zero conflicts** (9 files, 1033 insertions, 61 deletions) — exactly what the attempt-2 probe measured |
+| Merge commit | `c28474c1e752d2c06a335ea7e68c93e1a04362e3`, **two parents** (`18e0aafcc` + `74d48abe6`) — a real merge, not an ff |
+| `merge-base --is-ancestor 3b9cb6884` (PD-304) | rc=0 |
+| `merge-base --is-ancestor 6f65f416e` (PD-300) | rc=0 |
+| `merge-base --is-ancestor 74d48abe6` (PD-319a) | rc=0 |
+| `merge-base --is-ancestor fcb901515` (PD-306) | rc=0 |
+| **FishTagInfo AST class count in `runfacts.py`** | **exactly 1** (13 classes total; pre-merge hold branch had **2** — the duplicate PD-319a deletes) |
+| **PD-300b's own `verify_priority_shift` hunk survived** | yes — `def verify_priority_shift` at line 1089, id-set rule at 1124-1170 (`AF-PRIORITY-SHIFT`, imports `PRIORITY_SHIFT_ITEM_IDS`) |
+| Purity guard | `gate_integrity_check.py --purity` rc=0 (unchanged by the merge) |
+| Unit's own 17 tests | **17 passed** |
+| Live four-way control of the id rule (post-merge) | all 15 ids → PASS; one missing → FAIL naming `3_priority_shift_engineered`; duplicate → FAIL naming `0_attention`; extra `99` → FAIL naming `99` |
+| Push | `18e0aafcc..c28474c1e`; `ls-remote` = local sha (MATCH) |
+
+**The merge did not red anything.** Full sweep on a dash-free path, before vs after the merge:
+
+| Run | Result |
+|---|---|
+| Pre-merge `18e0aafcc` (`tests/` full) | **227 failed, 3674 passed, 25 skipped** |
+| Post-merge `c28474c1e` (`tests/` full) | **227 failed, 3690 passed, 25 skipped** |
+| Failure-id set | **byte-identical, 227/227** — `diff` empty; 0 newly red, 0 newly green |
+| Passed delta | +16 = PD-306's and PD-317's new tests arriving with the merge |
+
+**One artifact worth naming, because a careless reader would call it a regression.** A first post-merge run inside this worktree read **228** failed: `test_auto_resume.py::test_the_exhaustion_alert_only_names_real_commands` went red. Cause is the worktree directory name, not the code: the test regexes `--flags` out of the alert message, and this path contains `FL35--hold-d23-d24`, so `--hold-d23-d24` is scraped as a flag the parser does not declare. Proven both directions — the **pre-merge** commit `18e0aafcc` in a `--`-containing path fails 3/3, the same commit in a dash-free path passes, and the post-merge commit in a dash-free path passes. Not a merge effect, not this unit's code.
+
+Also re-measured on a dash-free path, the eleven test files that import the changed modules: **pre-merge 11 failed / 163 passed → post-merge 9 failed / 165 passed** (the merge fixed two, broke none).
+
+**Nothing was resolved by hand. No conflicting hunk existed to resolve.**
 
 ## 1. First action
 
