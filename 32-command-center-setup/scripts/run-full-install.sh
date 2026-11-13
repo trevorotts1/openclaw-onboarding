@@ -2958,35 +2958,48 @@ if [[ "$SP_ACTIVE" == "true" && -z "$(state_get '.standardPlaceholder.ccProvisio
 # PHASE 3 — Workspace department folders
 # ----------------------------------------------------------------------
 log "INFO" "phase=3 workspace-folders: starting"
+# >>> PHASE3-BEGIN
+# ONE resolver for where a company's departments live (BU-103, WF-124).
+# _qc_paths.py answers with the tree the department agents actually run from
+# (the roster first, then the build state's own trees), so the installer no
+# longer assumes <OC_ROOT>/workspace/departments. The command prints nothing
+# when no such folder exists; the historical workspace tree is then the
+# fallback and the "folder existed" test below fails loudly instead of
+# stamping the phase done over an empty tree.
+_PHASE3_QC_PATHS="$(dirname "${SKILL_DIR:-.}")/23-ai-workforce-blueprint/scripts/_qc_paths.py"
+DEPT_SRC=""
+if [[ -f "$_PHASE3_QC_PATHS" ]]; then
+  DEPT_SRC="$(WORKFORCE_BUILD_STATE_FILE="${STATE_FILE:-}" python3 "$_PHASE3_QC_PATHS" --print-live-departments-dir 2>>"${LOG_FILE:-/dev/null}")"
+fi
+[[ -n "$DEPT_SRC" ]] || DEPT_SRC="$OC_ROOT/workspace/departments"
 if [[ "$BLOCK_B_UPDATE_ONLY" == "true" ]]; then
   log "INFO" "phase=3 workspace-folders: --update-only mode — skipping (already done on prior run)"
 elif [[ "$(state_get '.commandCenterPhase3Done')" == "true" ]]; then
   log "INFO" "phase=3 workspace-folders: already done — skipping"
-else
+elif [[ -d "$DEPT_SRC" ]]; then
   CC_BASE="$OC_ROOT/workspaces/command-center"
   mkdir -p "$CC_BASE"
-  DEPT_SRC="$OC_ROOT/workspace/departments"
-  if [[ -d "$DEPT_SRC" ]]; then
-    while IFS= read -r dept_path; do
-      [[ -z "$dept_path" ]] && continue
-      dept_slug="$(basename "$dept_path")"
-      target="$CC_BASE/$dept_slug"
-      mkdir -p "$target/memory"
-      log "INFO" "phase=3: ensured $target/"
-    done < <(find "$DEPT_SRC" -mindepth 1 -maxdepth 1 -type d 2>/dev/null)
-  else
-    log "WARN" "phase=3: $DEPT_SRC missing — no departments to materialize folders for"
-  fi
+  while IFS= read -r dept_path; do
+    [[ -z "$dept_path" ]] && continue
+    dept_slug="$(basename "$dept_path")"
+    target="$CC_BASE/$dept_slug"
+    mkdir -p "$target/memory"
+    log "INFO" "phase=3: ensured $target/"
+  done < <(find "$DEPT_SRC" -mindepth 1 -maxdepth 1 -type d 2>/dev/null)
   state_set '.commandCenterPhase3Done = true'
   log "INFO" "phase=3 workspace-folders: done"
+else
+  log "WARN" "phase=3: $DEPT_SRC missing — no departments to materialize folders for"
 fi
+# <<< PHASE3-END
 
 # ----------------------------------------------------------------------
 # PHASE 3b — Vertical-derivation guard (U107, E5-2/G2a): a vertical is NEVER
 # force-added to a client who is not that vertical.
 # ----------------------------------------------------------------------
 # Independently audits the departments just materialized in Phase 3
-# ($OC_ROOT/workspace/departments, on disk — never trusts a JSON self-report)
+# ($DEPT_SRC, the same live tree Phase 3 resolved, on disk — never trusts a
+# JSON self-report)
 # against the verticals the interview DECLARED (build-workforce.py's
 # verticalPacks.detectedPacks record in $STATE_FILE). Asserts provisioned
 # (subset) declared for every vertical-specific department (universal-primary
@@ -3008,10 +3021,10 @@ else
   done
   if [[ -z "$VERTICAL_GUARD" ]]; then
     log "WARN" "phase=3b vertical-derivation-guard: script not found in any skill-23 location — skipping (update the Skill 23 install to a version that ships U107)"
-  elif [[ ! -d "$OC_ROOT/workspace/departments" ]]; then
-    log "WARN" "phase=3b vertical-derivation-guard: $OC_ROOT/workspace/departments missing — nothing to audit yet, skipping"
+  elif [[ ! -d "$DEPT_SRC" ]]; then
+    log "WARN" "phase=3b vertical-derivation-guard: $DEPT_SRC missing — nothing to audit yet, skipping"
   else
-    VG_OUT="$(python3 "$VERTICAL_GUARD" --departments-dir "$OC_ROOT/workspace/departments" \
+    VG_OUT="$(python3 "$VERTICAL_GUARD" --departments-dir "$DEPT_SRC" \
       --build-state "$STATE_FILE" \
       --out "$OC_ROOT/workspace/provisioning/vertical-derivation.json" --json 2>>"$LOG_FILE")"
     VG_RC=$?
