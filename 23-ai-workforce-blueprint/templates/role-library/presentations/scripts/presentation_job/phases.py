@@ -334,6 +334,12 @@ PHASE_STATUS_QUARANTINED = "quarantined"
 PHASE_STATUS_BLOCKED = "blocked"
 PHASE_STATUS_FAILED = "failed"
 PHASE_STATUS_OBSOLETE = "obsolete"
+# PD-048b: an external page install whose receipt says a PERSON still has to
+# execute the delegated Skill 06/44 step. A pause, not a failure: the phase is
+# recorded waiting, its descendants are withheld, its siblings keep running,
+# and a resume re-enters it (readmit) so it finishes the moment the install
+# receipt turns complete. Never terminal-bad, never healed, never quarantined.
+PHASE_STATUS_WAITING = "waiting"
 
 PHASE_STATUSES = (
     PHASE_STATUS_PENDING,
@@ -344,6 +350,7 @@ PHASE_STATUSES = (
     PHASE_STATUS_BLOCKED,
     PHASE_STATUS_FAILED,
     PHASE_STATUS_OBSOLETE,
+    PHASE_STATUS_WAITING,
 )
 assert len(PHASE_STATUSES) == len(set(PHASE_STATUSES)), \
     "duplicate value in the per-unit status enum"
@@ -696,7 +703,12 @@ def _phase_terminal_bad(status: Optional[str]) -> bool:
 # across resumes. Owner-decision parks (PHASE_STATUS_BLOCKED, FIX 10) are
 # never re-admitted: only the client can make that call.
 # ---------------------------------------------------------------------------
-_READMITTABLE_PHASE_STATUSES = (PHASE_STATUS_FAILED, PHASE_STATUS_QUARANTINED)
+# PD-048b: WAITING is re-admitted too. A person-wait is not re-runnable while
+# the install is still pending, but a resume is exactly how the run notices
+# that the person finished it -- without this the phase stayed waiting forever
+# and every resume re-parked identically.
+_READMITTABLE_PHASE_STATUSES = (PHASE_STATUS_FAILED, PHASE_STATUS_QUARANTINED,
+                                PHASE_STATUS_WAITING)
 
 #: The literal prefix the engine's own substance park writes (phases.py `_block`
 #: callers build it as f"substance check failed: {verdict}"). PD-TEST-135 matches
@@ -2684,6 +2696,14 @@ class Engine:
             return self._block(phase, "no executor is defined for this phase")
 
         if rc == EXIT_OK:
+            # PD-048b: THE PAUSE. A delegated page install that is waiting on
+            # a person (its receipt says pending_external_execution) is
+            # recorded waiting HERE -- before the artifact/verifier/heal
+            # ladder can read the pending receipt as a substance failure and
+            # tell the client "<phase id> artifact check failed ... Regenerating".
+            pause = heal.waiting_on_person(self.run_dir, phase)
+            if pause is not None:
+                return self._pause_for_person(phase, pause)
             ok, missing = self._artifacts_present(phase)
             if not ok:
                 # F59 (SMOKE-1, 2026-09-01): a gate-decline script phase (the
@@ -4539,6 +4559,86 @@ class Engine:
         self.report.event("phase.style_pick.timeout", reason)
         return self._block(phase, reason, client_text=STYLE_PICK_TIMEOUT_SENTENCE)
 
+    def _pause_for_person(self, phase: Phase, pause: Dict[str, Any]) -> int:
+        """PD-048b: record ONE phase as WAITING on a person and let the run go
+        on. Returns EXIT_OK so neither run() nor the ready queue counts it as
+        a failed unit.
+
+        What this deliberately does NOT do: run the substance verifier, enter
+        the heal ladder, quarantine, or call _block. All four are the failure
+        loop this unit removes -- the receipt is honest, it simply is not
+        execution evidence YET. The client is told in plain words (no phase
+        id, no AF- code, no "artifact check failed"); the operator console
+        keeps the full detail. Descendants are held by the ready predicate;
+        an independent sibling is unaffected."""
+        with self._state_lock:
+            self._checkpoint(phase.id, status=PHASE_STATUS_WAITING,
+                             waiting_reason=pause["waiting_for"],
+                             waiting_on="person",
+                             waiting_status=pause["status"],
+                             waiting_receipts=list(pause["receipts"]),
+                             waiting_since=utcnow())
+            self._clear_blocked_marker(phase.id)
+            self.report.event(
+                "phase.waiting_on_person",
+                f"{phase.id} is waiting on a person "
+                f"({pause['status']}; receipts: {', '.join(pause['receipts'])}) "
+                "-- recorded waiting, not failed; independent phases keep running")
+            self.report.to_requester("waiting", pause["waiting_for"])
+        print(f"WAITING {phase.id}: a person still has to finish the delegated "
+              f"install ({pause['status']}). Nothing is lost; a resume picks "
+              "it up once the install receipt is complete.", flush=True)
+        return EXIT_OK
+
+    def _pause_run_for_person(self) -> Optional[int]:
+        """PD-048b: the run has drained with at least one phase WAITING on a
+        person. Park it ONCE as a pause and never call close(): close() would
+        mint a process certificate and then fail the delivery gates over the
+        missing page installs -- reporting a wait as a failure.
+
+        The park record carries the full phase detail for the operator and
+        watchdog (which flags it PARKED-FOR-HUMAN, exactly right). The client
+        was already told in plain words per phase by _pause_for_person. A
+        resume re-admits the waiting phase (_READMITTABLE_PHASE_STATUSES) and
+        finishes it the moment the receipt is complete. Returns
+        EXIT_GATE_BLOCKED (the department's resumable-park code) or None when
+        nothing is waiting."""
+        waiting = [ps for ps in (self.state.get("phases") or [])
+                   if ps.get("status") == PHASE_STATUS_WAITING]
+        if not waiting:
+            return None
+        phase_ids = [str(ps.get("id")) for ps in waiting]
+        with self._state_lock:
+            self.state["terminal"] = "BLOCKED"
+            self.state["blocked"] = {
+                "phase": phase_ids[0],
+                "reason": (f"{len(phase_ids)} page install(s) waiting on a "
+                           f"person: {', '.join(phase_ids)} -- the install "
+                           "plan is written and a resume finishes this the "
+                           "moment the install receipt is complete"),
+                "at": utcnow(),
+                "kind": "waiting_on_person",
+                "phases": phase_ids,
+            }
+            self.state["waiting_for_person"] = [
+                {"phase": ps.get("id"), "reason": ps.get("waiting_reason"),
+                 "since": ps.get("waiting_since"),
+                 "receipts": list(ps.get("waiting_receipts") or [])}
+                for ps in waiting]
+            self.store.save(self.state)
+            self.report.event(
+                "run.waiting_on_person",
+                f"run paused: {len(phase_ids)} page install(s) waiting on a "
+                f"person ({', '.join(phase_ids)}) -- not a failure, resumable")
+        print("\n" + "=" * 72, file=sys.stderr)
+        print(f"PAUSED -- waiting on a person at {', '.join(phase_ids)}", file=sys.stderr)
+        print("  This is a pause, not a failure. Nothing is lost.", file=sys.stderr)
+        print("\n  continue with:", file=sys.stderr)
+        print(f"    python3 {ENTRY_COMMAND} --resume --run-dir {self.run_dir}",
+              file=sys.stderr)
+        print("=" * 72 + "\n", file=sys.stderr)
+        return EXIT_GATE_BLOCKED
+
     def _fail_unit(self, phase: Phase, reason: str) -> int:
         """FIX 9a (MASTER Part 8 Fix 9): quarantine ONE unit, park nothing.
 
@@ -4799,7 +4899,13 @@ class Engine:
                 continue
             if status in (PHASE_STATUS_RUNNING, PHASE_STATUS_QUARANTINED,
                           PHASE_STATUS_FAILED, PHASE_STATUS_BLOCKED,
-                          PHASE_STATUS_DEFERRED, PHASE_STATUS_OBSOLETE):
+                          PHASE_STATUS_DEFERRED, PHASE_STATUS_OBSOLETE,
+                          # PD-048b: a person-wait is NOT re-admitted inside
+                          # this invocation -- without this it would fall
+                          # through to the pending branch and be re-run on
+                          # every tick (the failure loop, moved). Descendants
+                          # below still see it as not-passed and wait.
+                          PHASE_STATUS_WAITING):
                 if status == PHASE_STATUS_RUNNING:
                     running.append(p.id)
                 continue
@@ -5314,6 +5420,11 @@ class Engine:
                         failed_rcs.append((p.id, rc))
                 if failed_rcs:
                     return self._park_failed_units(failed_rcs)
+                # PD-048b: a drained run with a person-wait is PAUSED, never
+                # closed as done and never parked as a failure.
+                paused_rc = self._pause_run_for_person()
+                if paused_rc is not None:
+                    return paused_rc
                 self._emit_run_summary(run_started_t)
                 if only:
                     return EXIT_OK
@@ -5596,6 +5707,12 @@ class Engine:
                         # FIX 5 (emitter): same early-exit drain as the wave fail.
                         self._flush_telemetry_cc()
                     return rc
+
+        # PD-048b: same pause rule on the wave/rollback path -- a person-wait
+        # is never closed as done and never parked as a failure.
+        paused_rc = self._pause_run_for_person()
+        if paused_rc is not None:
+            return paused_rc
 
         # FIX 5: one-line run summary (total wall-clock, slowest phases).
         self._emit_run_summary(run_started_t)
