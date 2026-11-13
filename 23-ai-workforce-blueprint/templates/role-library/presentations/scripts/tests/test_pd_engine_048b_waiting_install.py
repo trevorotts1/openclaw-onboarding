@@ -10,7 +10,8 @@ Acceptance rows proven here, verbatim from the unit's spec row
       still runs.
   A2  control: with the heal path un-patched (test the old function directly)
       the same fixture produces the "Regenerating" message -- proving the test
-      can fail.
+      can fail. Under PD-018b that message is the internal event
+      ``report.internal``, never a client transport line.
   A3  after a complete receipt is written by the installer's in-memory adapter
       and the engine is resumed, the phase finishes.
 
@@ -264,8 +265,17 @@ class TestA1WaitingIsAPause:
 class TestA2ControlOldHealPath:
     def test_old_heal_path_still_says_regenerating(self, tmp_path, monkeypatch):
         """With the heal path un-patched -- the OLD function called directly --
-        the same fixture produces the "Regenerating" message. If this control
-        ever stops producing it, A1's assertion proves nothing."""
+        the same fixture still produces the "Regenerating" line, so A1's
+        forbidding of that line is not vacuous.
+
+        PD-018b (accepted sibling, and a stated dependency of this unit) moved
+        the legacy line off the client transport: technical repair text is
+        internal work, recorded as ``report.internal``, and the client hears
+        nothing. The control therefore reads the event log, and also asserts
+        that none of the legacy text reached the client. If the old path stops
+        emitting the line, or the internal-only contract regresses, this row
+        goes red.
+        """
         sent = _capture_transport(monkeypatch)
         eng = _engine(tmp_path)
         phase = _phase(eng, INSTALL)
@@ -275,12 +285,28 @@ class TestA2ControlOldHealPath:
             "substance check failed: AF-U-P-U-GHL-SALES: carries no location_id.")
         assert rc == EXIT_OK  # the re-run script exits 0, receipt still pending
 
-        body = "\n".join(_messages(sent))
+        # The same strings A1 forbids are exactly the ones this old path emits
+        # -- at the boundary PD-018b defines: the event log.
+        internal = [e for e in eng.state.get("events", [])
+                    if e.get("kind") == "report.internal"]
+        assert internal, "the old heal path emitted no internal repair line"
+        body = "\n".join(e.get("message", "") for e in internal)
         assert "Regenerating" in body
         assert "P-U-GHL-SALES artifact check failed" in body
         assert "AF-U-" in body
-        # The same strings A1 forbids are exactly the ones this old path emits.
         assert "artifact check failed" in body
+
+        # PD-018b's contract: none of it reaches the client.
+        client = "\n".join(_messages(sent))
+        assert "Regenerating" not in client
+        assert "artifact check failed" not in client
+        assert "AF-" not in client
+        assert "P-U-" not in client
+
+        # Prove the capture boundary is live, so "client" above is a real
+        # absence and not a transport that never started.
+        eng.report.to_requester("blocked", "transport control")
+        assert "transport control" in "\n".join(_messages(sent))
 
 # ---------------------------------------------------------------------------
 # A3 -- a complete receipt + a resume finishes the phase
