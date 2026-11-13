@@ -304,7 +304,10 @@ def _pending(answers, qs, editing=None, defaults=None, client_dir=None):
             at = len(qs)                 # the defaulted tail rides on the recap
     if at < len(qs):
         q = qs[at]
-        message = card.render_step(at + 1, qs)
+        #: S75-006: the live counter reads only the screens a run asks; a
+        #: defaulted screen changed from the recap is shown without a counter.
+        message = (card.render_change(qs, at) if editing
+                   else card.render_step(at + 1, card.askable(qs)))
         if at == 0 and q.get("preface"):
             message = q["preface"] + "\n\n" + message
         return {"id": q["id"], "definition": copy.deepcopy(q),
@@ -857,7 +860,7 @@ def seed_answers(records, questions=None, *, run_dir=None, run_state_file=None,
                     return _result(state, path, answers, qs, "INVALID_OPTION", "waiting")
                 parsed["id"] = qid
                 at = next(i for i, entry in enumerate(qs) if entry["id"] == qid)
-                rendered = card.render_step(at + 1, qs)
+                rendered = card.render_change(qs, at)
                 receipt = {"id": qid, "definition": q, "message": rendered}
                 event = {"sequence": len(state["events"]) + len(candidates) + 1,
                          "raw_answer": raw, "source": "client", "source_ref": row["source_ref"],
@@ -967,6 +970,19 @@ def ensure_handoff(run_dir, *, runtime=None):
                 state["requested_runtime"] = runtime
             answers = [copy.deepcopy(state["answer_records"][qid]["parsed"])
                        for qid in state["active_question_ids"]]
+            #: S75-006: the video model rides on the recap, so it has no asked
+            #: answer record. The handoff still needs the model the run will
+            #: dispatch with: the client's recorded change, else the
+            #: recommended row priced for the length the run chose.
+            model_rec = state["answer_records"].get("model")
+            if not any(a.get("id") == "model" for a in answers):
+                if model_rec is not None:
+                    answers.append(copy.deepcopy(model_rec["parsed"]))
+                else:
+                    length = next((a.get("text") for a in answers
+                                   if a.get("id") in ("length", "episode_length")), None)
+                    model_q = card._model_question(length or "60 seconds", defaulted=True)
+                    answers.append(card._default_row(model_q))
             # Both halves must pass read-only admission before either mutates.
             for check in (_persist_ai_roles, _persist_model_lock):
                 blocked = check(state, answers, run_dir, prepare_only=True)

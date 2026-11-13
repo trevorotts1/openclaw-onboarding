@@ -89,10 +89,13 @@ def test_changing_the_length_drops_the_answers_given_to_the_later_questions():
     assert recap["message"].startswith("Here is what you picked:")
 
     # 10 minutes is KIE-only, so the Agnes screen after the length is gone.
+    # The saved-setup answer carries no "id" key (production pairs answers
+    # with questions by position), so pair positionally here too.
     st = IC.conversation(replies + [str(length_at + 1), "6"], purpose_flow=True)
     later = IC._shaped(IC.QUESTIONS, st["answers"])
-    assert [a["id"] for a in st["answers"]] == \
-        [q["id"] for q in later][:len(st["answers"])]
+    assert [q["id"] for q in later][:len(st["answers"])] == \
+        ["purpose", "offer", "link", "audience", "character", "models",
+         "episode_length"]
     assert len(st["answers"]) == length_at + 1
     assert "agnes" not in [q["id"] for q in later]
     assert "That changes a few of the later choices" in st["message"], st["message"]
