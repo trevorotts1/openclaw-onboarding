@@ -1,3 +1,11 @@
+## [Unreleased]  -  2026-11-13  -  Batch pull requests run only the required checks
+
+- Every pull_request workflow that does not produce one of the 8 required checks (69 workflows, 105 jobs) now skips its jobs when the head branch starts with `batch/`. The three workflows that produce the required checks (`ghl-mcp-supervised-guard.yml`, `qc-static.yml`, `version-consistency.yml`) are untouched, and push-to-main triggers are unchanged, so main still runs everything after a merge.
+- New guard `scripts/ci/batch-required-only-check.py` (folded into fast-guards as `batch-required-only-guard`, with a self-test) fails if a required-check workflow gets the skip or a new pull_request workflow lacks it.
+- `kie-owner-cap-2-6-guard.yml` loses its pull_request trigger: fast-guards already runs the same test, same paths filter, plus its `--self-test`.
+- No skill content changed, so no version bump. Migration: CI only; not rolled onto any client box.
+- Risk: LOW. Members run their own checks before QC; a skipped job reports "skipped", not failed.
+
 ## [Unreleased]  -  2026-11-12  -  Owner approval flow: the owner always gets a link (Skills 35, 44, 83 + shared helper)
 
 - New `shared-utils/owner_approval/` (`owner_approval.py`, README, 15 tests): register a pending approval request with Command Center, build the owner message (plain summary, preview, one-tap link), poll for the minted approval id, answer a chat "approved" with the link, re-send the link on reminders. The agent never mints approval; the Skill 44 write gate is unchanged.
