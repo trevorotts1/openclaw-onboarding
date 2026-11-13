@@ -166,5 +166,19 @@ untouched).
 
 ## Push proof
 
-Filled after the push: `git ls-remote --heads origin refs/heads/pd/fl16-page-installer`
-(local `git rev-parse HEAD` compared literally, full 40 chars).
+Build commit **`4198c0648d8d8797155054dedcdb23ca454c4d01`**.
+
+```
+$ git rev-parse HEAD
+4198c0648d8d8797155054dedcdb23ca454c4d01
+
+$ git push origin HEAD:refs/heads/pd/fl16-page-installer
+   ffe5625b5..4198c0648  HEAD -> pd/fl16-page-installer
+
+$ git ls-remote --heads origin refs/heads/pd/fl16-page-installer
+4198c0648d8d8797155054dedcdb23ca454c4d01	refs/heads/pd/fl16-page-installer
+```
+
+Remote head equals the local commit, full 40 chars compared literally.
+Lane clone `pd-fix/worktrees/onboarding/FL16` `git status --porcelain` empty;
+scratch worktree `git status --porcelain` empty.
