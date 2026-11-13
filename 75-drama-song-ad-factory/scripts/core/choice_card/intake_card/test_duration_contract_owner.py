@@ -40,7 +40,9 @@ QUESTION_SHA256 = {
     "shape": "6b2e9955b66e960b5752c1c36ee72d08e4b642623d5e01e7aed41110e465c461",
     "permission": "5b47700c188a5b746dc5ab37df55bfbe073e4345cfc065f8ffcb62a095f8f802",
     "where": "5ca5da1b331bd2ef5c9de489cd1777d8b24190b6af3dff3ca99db46b9f8686e3",
-    "agnes": "a397f139e3600832ecad473feb006d1d58284ae643176cfd515f7ac9616215cf",
+    # Re-pinned for S75-020: AGNES recommends a pick only for a client who said
+    # yes before, and its closing says "Reply 1 or 2." when nothing is marked.
+    "agnes": "c53035ef359c1092760a0d00cf286230ebcecc64b3d7c4e43a1ccc6d7452af2a",
 }
 
 
