@@ -46,6 +46,7 @@ Runnable two ways (both exercise the exact same code):
 """
 
 import argparse
+import base64
 import contextlib
 import fcntl
 import functools
@@ -1565,6 +1566,28 @@ def _compose_p3_arc_contract(base: str) -> str:
 
 ARTIFACT_CONTRACTS["P3-ARC"] = _compose_p3_arc_contract(ARTIFACT_CONTRACTS["P3-ARC"])
 
+# PD-205c: the image check gets an output contract of its own. Without one the
+# phase fell to GENERIC_CONTRACT, which asks the model to WRITE an artifact
+# file -- a shape with no place for "here are the words I can read on this
+# picture". The unit's own validator (_validate_qc_slide) and the FIX 33 step
+# check (phase_verifiers._fix33_check_report) grade per-slide `observed_text`;
+# this is the shape those readers accept.
+ARTIFACT_CONTRACTS["P-IMAGE-QC"] = (
+    "OUTPUT CONTRACT: this unit grades exactly ONE rendered slide, and that "
+    "slide's image is attached to this message. Answer with ONE JSON object "
+    "and nothing else:\n"
+    '{"pass": true|false, "observed_text": "<the words you can read on the '
+    'slide>", "findings": ["<one line per defect you see>"]}\n'
+    "- `pass` is a real boolean verdict for THIS slide only.\n"
+    "- `observed_text` quotes the text you can actually SEE in the image, as it "
+    "appears. If no text is readable, say what you do see -- never leave it "
+    "empty, and never describe the picture from the prompt text instead.\n"
+    "- `findings` lists every defect you see (overflow, clipping, unreadable or "
+    "contrast-lost text, collision, missing subject); an empty list is a clean "
+    "slide.\n"
+    "Report what you see. A failing slide is a correct output."
+)
+
 
 GENERIC_CONTRACT = (
     "OUTPUT CONTRACT: write the exact artifact file(s) named in the work order below at "
@@ -1904,6 +1927,69 @@ def _load_deepseek_key() -> str:
 class DeepSeekCallError(RuntimeError):
     pass
 
+# ---------------------------------------------------------------------------
+# PD-205c — image carriage. The image check is the ONE phase whose unit is a
+# multimodal read: the rendered slide PNG must ride the request. The two
+# transports are:
+#   * deepseek-complete (native DeepSeek chat endpoint) — text messages only.
+#     Its endpoint takes no image part, so it is NOT eligible for this phase.
+#   * _openai_compat_complete (openrouter / ollama-cloud / agnes, all speaking
+#     the OpenAI chat-completions shape) — accepts an image part as
+#     {"type": "image_url", "image_url": {"url": "data:image/png;base64,..."}}.
+# A route that cannot carry an image is refused BEFORE any transport work, and
+# the unit fails with this one plain reason. There is no text-only fallback:
+# a model shown no picture cannot honestly say what it saw.
+# ---------------------------------------------------------------------------
+IMAGE_PART_PROVIDERS: Tuple[str, ...] = ("openrouter", "ollama-cloud", "agnes")
+IMAGE_ROUTE_INELIGIBLE_REASON = "this route cannot carry an image"
+
+
+class ImageRouteIneligible(DeepSeekCallError):
+    """The route selected for an image-bearing phase cannot carry an image."""
+
+    reason = IMAGE_ROUTE_INELIGIBLE_REASON
+
+
+def unit_slide_image(run_dir: Path,
+                     payload: Dict[str, Any]) -> Optional[Tuple[bytes, str]]:
+    """(bytes, mime) of the ONE rendered slide a P-IMAGE-QC unit grades.
+
+    Read from `renders/slide-NN.png` for the unit's ordinal (the path the
+    render phase writes, the manifest's own P-IMAGE-QC consumes glob). Returns
+    None when no file is there — the caller refuses the unit rather than
+    sending the prompt text alone."""
+    if not isinstance(payload, dict):
+        return None
+    cands: List[Path] = []
+    ordinal = payload.get("ordinal")
+    if isinstance(ordinal, int) and not isinstance(ordinal, bool):
+        cands.append(run_dir / "renders" / f"slide-{ordinal:02d}.png")
+    sid = str(payload.get("slide_id") or "").strip()
+    if sid and sid.startswith("slide-"):
+        cands.append(run_dir / "renders" / f"{sid}.png")
+    for cand in cands:
+        try:
+            if cand.is_file():
+                return cand.read_bytes(), "image/png"
+        except OSError:
+            return None
+    return None
+
+
+def image_user_content(user_prompt: str,
+                       image: Tuple[bytes, str]) -> List[Dict[str, Any]]:
+    """The OpenAI-shape user content list carrying ONE image part. The bytes are
+    the render's own bytes, base64'd — nothing else (not the deck, not the
+    prompt files) leaves the machine with it."""
+    raw, mime = image
+    b64 = base64.b64encode(raw).decode("ascii")
+    return [
+        {"type": "text", "text": user_prompt},
+        {"type": "image_url",
+         "image_url": {"url": f"data:{mime or 'image/png'};base64,{b64}"}},
+    ]
+
+
 
 def deepseek_complete(system_prompt: str, user_prompt: str, *,
                       model: Optional[str] = None,
@@ -2004,6 +2090,10 @@ def deepseek_complete(system_prompt: str, user_prompt: str, *,
                 # so the two were indistinguishable after the fact.
                 if isinstance(usage, dict):
                     usage["finish_reason"] = choice.get("finish_reason")
+                    # PD-205c: the provider's OWN response id, so a merged QC
+                    # report can name the call that graded it. None when the
+                    # provider returns none -- never invented.
+                    usage["request_id"] = obj.get("id")
                 _govern_ok("deepseek-direct")
                 return content, usage
             except urllib.error.HTTPError as exc:
@@ -2135,11 +2225,36 @@ def _provider_key_names(provider: str) -> Tuple[str, ...]:
     return (f"{token.upper().replace('-', '_')}_API_KEY",)
 
 
+def openai_compat_body(system_prompt: str, user_prompt: str, *, model: str,
+                       max_tokens: int,
+                       image: Optional[Tuple[bytes, str]] = None) -> Dict[str, Any]:
+    """The ONE request body the OpenAI-compatible transport sends.
+
+    PD-205c: with an `image`, the user turn becomes the two-part content list
+    (text + one image_url data URI) and the picture rides the same request as
+    the instructions. Without one it is the untouched plain string body, so
+    every non-image phase sends byte-identical requests to before."""
+    user_content: Any = user_prompt
+    if image is not None:
+        user_content = image_user_content(user_prompt, image)
+    return {
+        "model": model,
+        "messages": [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_content},
+        ],
+        "max_tokens": max_tokens,
+        "temperature": DEEPSEEK_TEMPERATURE,
+    }
+
+
 def _openai_compat_complete(system_prompt: str, user_prompt: str, *,
                             provider: str, model: str,
                             max_tokens: int = DEEPSEEK_MAX_OUTPUT_TOKENS,
                             retries: int = 3,
-                            run_dir: Optional[Path] = None) -> Tuple[str, Dict[str, Any]]:
+                            run_dir: Optional[Path] = None,
+                            image: Optional[Tuple[bytes, str]] = None,
+                            ) -> Tuple[str, Dict[str, Any]]:
     """OpenAI-compatible chat-completions transport for NON-DeepSeek client-owned
     providers (openrouter, ollama-cloud text classes, ...). Mirrors
     deepseek_complete's retry/timeout semantics. Credentials resolve per
@@ -2174,15 +2289,8 @@ def _openai_compat_complete(system_prompt: str, user_prompt: str, *,
         raise DeepSeekCallError(
             f"no base URL known for provider {provider} -- set "
             f"PRESENTATION_{provider.upper().replace('-', '_')}_BASE_URL")
-    body = {
-        "model": model,
-        "messages": [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_prompt},
-        ],
-        "max_tokens": max_tokens,
-    "temperature": DEEPSEEK_TEMPERATURE,
-    }
+    body = openai_compat_body(system_prompt, user_prompt, model=model,
+                              max_tokens=max_tokens, image=image)
     data = json.dumps(body).encode("utf-8")
     last_exc: Optional[Exception] = None
     for attempt in range(1, retries + 1):
@@ -2208,6 +2316,9 @@ def _openai_compat_complete(system_prompt: str, user_prompt: str, *,
                 choice = (obj.get("choices") or [{}])[0]
                 content = ((choice.get("message") or {}).get("content")) or ""
                 usage = obj.get("usage") or {}
+                # PD-205c: the provider's OWN response id (None when absent).
+                if isinstance(usage, dict):
+                    usage["request_id"] = obj.get("id")
                 _govern_ok(provider)
                 return content, usage
             except urllib.error.HTTPError as exc:
@@ -2246,6 +2357,8 @@ def _openai_compat_complete(system_prompt: str, user_prompt: str, *,
                             choice2 = (obj2.get("choices") or [{}])[0]
                             content2 = ((choice2.get("message") or {}).get("content")) or ""
                             usage2 = obj2.get("usage") or {}
+                            if isinstance(usage2, dict):
+                                usage2["request_id"] = obj2.get("id")
                             _govern_ok(provider)
                             return content2, usage2
                         except Exception as exc2:  # noqa: BLE001
@@ -2347,6 +2460,7 @@ def dispatch_complete(system_prompt: str, user_prompt: str, *,
                       retries: int = 3,
                       route_override: Optional[Dict[str, Any]] = None,
                       reasoning_effort: Optional[str] = None,
+                      image: Optional[Tuple[bytes, str]] = None,
                       ) -> Tuple[str, Dict[str, Any], Dict[str, Any]]:
     """THE routed completion entrypoint: every dispatcher LLM call site goes
     through here. Returns (content, usage, route_dict) where route_dict carries
@@ -2414,6 +2528,25 @@ def dispatch_complete(system_prompt: str, user_prompt: str, *,
     _route_unknown_yet = (route is None or router_id == "disabled")
     _dispatch_provider = "deepseek-direct" if _route_unknown_yet \
         else str(route.get("provider") or "deepseek-direct")
+    # PD-205c: an image-bearing call is dispatched ONLY to a route whose
+    # transport can carry an image part. Refused HERE -- before the governor
+    # admission, before any paid reservation, before any transport work -- so
+    # an ineligible route costs zero calls and the unit fails with the one
+    # plain reason. No text-only fallback exists.
+    if image is not None:
+        _img_provider = _dispatch_provider
+        try:
+            _img_provider = _model_router._norm_provider(_img_provider)
+        except Exception:  # noqa: BLE001 -- a fold failure must not change the gate
+            pass
+        # A route that is None WITH client providers present parks with
+        # RoutingUnavailable below (its own, more precise reason); every other
+        # unresolved route is the native text-only transport.
+        if not (route is None and profile_state == "has_providers") \
+                and _img_provider not in IMAGE_PART_PROVIDERS:
+            raise ImageRouteIneligible(
+                f"phase {phase_id}: provider {_img_provider!r} transports text "
+                f"only -- {IMAGE_ROUTE_INELIGIBLE_REASON}")
     _dispatch_admission = _govern_admit(_dispatch_provider)
     if not _dispatch_admission.admitted:
         raise DeepSeekCallError(
@@ -2503,7 +2636,7 @@ def dispatch_complete(system_prompt: str, user_prompt: str, *,
         _reserve_paid_attempt(run_dir, phase_id, worker_id)
         content, usage = _openai_compat_complete(
             system_prompt, user_prompt, provider=ctx.provider, model=ctx.model,
-            max_tokens=max_tokens, retries=1, run_dir=run_dir)
+            max_tokens=max_tokens, retries=1, run_dir=run_dir, image=image)
         _emit_model_route_telemetry(run_dir, ctx, phase_id)
         return content, usage, ctx.as_dict()
     finally:
@@ -5883,7 +6016,7 @@ _UNIT_QC_GATE_LABELS: Dict[str, str] = {
 _UNIT_CONTRACT_OUTPUT: Dict[str, str] = {
     "P4-COPY": "markdown-section: `SLIDE <n>` blocks, contiguous ordinals",
     "P-PROMPT-QC": "json: {slide_id, slide, criteria[], average, pass}",
-    "P-IMAGE-QC": "json: {slide_id, slide, observed_text, pass}",
+    "P-IMAGE-QC": "json: {slide_id, slide, observed_text, pass, findings[]}",
     "P-STYLE-SPEC": "json: {id, style_directive, representative_slide} — id is "
         "YOUR ASSIGNED VARIANT ID (A/B/C), style_directive the ONE attention-grade "
         "art-direction sentence for that variant, representative_slide the single "
@@ -6102,10 +6235,16 @@ def _unit_scope_text_base(payload: Dict[str, Any]) -> Optional[str]:
                         "bounded three; the deck-level spec carries exactly "
                         "three variants, never one per slide).\n"
                         if variant else "")
+        # PD-205c: the image check reads PIXELS. Say so, or the model answers
+        # from the prompt text it was handed and never mentions the picture.
+        image_line = ("THE RENDERED SLIDE IMAGE IS ATTACHED to this message: "
+                      "grade what the pixels show, never what the prompt text "
+                      "says the slide should show.\n"
+                      if payload.get("phase_id") == "P-IMAGE-QC" else "")
         return (
             f"=== THIS CALL IS EXACTLY ONE UNIT: {kind} for SLIDE {ordinal} "
             f"OF {n} ===\n"
-            + variant_line +
+            + variant_line + image_line +
             "Produce ONLY this one unit's output for ONLY this slide — never "
             "the whole deck, never another slide's content, no preamble, no "
             "fences around the whole answer.\n\n")
@@ -6458,6 +6597,37 @@ def _reduce_qc_union(ordered: List[Tuple[Dict[str, Any], str]]) -> Optional[str]
     request_id = str(ordered[0][0].get("route_request_id") or "").strip()
     if request_id:
         report["request_id"] = request_id
+    # PD-205c: the image check's own provenance. phase_verifiers' FIX 33
+    # vision-unit contract (_fix33_check_report) refuses a merged image report
+    # that cannot name the route that graded each slide and the request id the
+    # provider returned, and build_deck's render leg refuses one that declares
+    # no vision engine at all. Both names come from the dispatch RECORD (the
+    # unit's recorded route), never from the model's prose about itself; an
+    # unknown value is null, never a guess. Per row always; at the top level
+    # only when every row agrees (a merge whose units used different routes
+    # keeps each row's own truth and makes no deck-wide claim).
+    if phase_id == "P-IMAGE-QC":
+        row_routes: List[Tuple[Optional[str], Optional[str], Optional[str]]] = []
+        for row, (payload, _text) in zip(merged_rows, ordered):
+            prov = str(payload.get("route_provider") or "").strip() or None
+            model_used = str(payload.get("route_model") or "").strip() or None
+            rid = payload.get("route_request_id")
+            rid = str(rid).strip() if rid not in (None, "") else None
+            row["graded_by_provider"] = prov
+            row["graded_by_model"] = model_used
+            row["request_id"] = rid
+            row_routes.append((prov, model_used, rid))
+        providers = {r[0] for r in row_routes}
+        models = {r[1] for r in row_routes}
+        rids = {r[2] for r in row_routes}
+        if len(providers) == 1:
+            report["graded_by_provider"] = next(iter(providers))
+            # the same fact under the name build_deck's render leg reads
+            report["vision_provider"] = next(iter(providers))
+        if len(models) == 1:
+            report["graded_by_model"] = next(iter(models))
+            report["vision_model"] = next(iter(models))
+        report["request_id"] = next(iter(rids)) if len(rids) == 1 else None
     return json.dumps(report, indent=2, ensure_ascii=False)
 
 
@@ -7578,6 +7748,24 @@ def _dispatch_phase_fanout_units(
             if isinstance(prior_rec, dict) else ""
         _was_success = _prior_status in (
             _us.BANKED_STATUSES if _us is not None else ("ok", "verified", "banked"))
+        # PD-205c: this phase's unit is a PIXEL read -- the rendered slide image
+        # rides the request. No PNG on disk means no honest grade is possible,
+        # so the unit is refused (attempts=0: nothing was paid for) instead of
+        # falling back to the prompt text alone.
+        image: Optional[Tuple[bytes, str]] = None
+        if phase_id == "P-IMAGE-QC":
+            image = unit_slide_image(run_dir, payload)
+            if image is None:
+                _want = (f"renders/slide-{int(payload['ordinal']):02d}.png"
+                         if isinstance(payload.get("ordinal"), int)
+                         and not isinstance(payload.get("ordinal"), bool)
+                         else "renders/slide-NN.png")
+                return fanout.UnitResult(
+                    key=unit.key, status="failed", attempts=0,
+                    reasons=[f"image-QC unit has no rendered slide at {_want} -- "
+                             "refusing to send the prompt text alone (a "
+                             "pixel-blind unit cannot grade a slide it was never "
+                             "shown)"])
         try:
             with paid_unit_scope(unit.key,
                                  allow_reauthor=bool(_force_reauthor or _was_success)):
@@ -7588,7 +7776,12 @@ def _dispatch_phase_fanout_units(
                 )
                 content, usage, route = dispatch_complete(
                     system_prompt, user_prompt, phase_id=phase_id, run_dir=run_dir,
-                    worker_id=worker_id, reasoning_effort=effort)
+                    worker_id=worker_id, reasoning_effort=effort, image=image)
+        except ImageRouteIneligible:
+            # Zero transport calls, zero paid attempts (raised inside
+            # dispatch_complete before both). The reason is the whole story.
+            return fanout.UnitResult(key=unit.key, status="failed", attempts=0,
+                                     reasons=[IMAGE_ROUTE_INELIGIBLE_REASON])
         except Exception as exc:  # noqa: BLE001 — a raised unit is a failed unit
             return fanout.UnitResult(key=unit.key, status="failed", attempts=1,
                                      reasons=[f"{type(exc).__name__}: {exc}"])
@@ -7850,8 +8043,15 @@ def _dispatch_phase_fanout_units(
         if text is None:
             text = ""
         payload = by_key.get(r.key, {})
-        payload = {**payload, "route_request_id":
-                   (r.meta or {}).get("request_id") if isinstance(r.meta, dict) else None,
+        # PD-205c: the unit's own recorded route rides the payload into the
+        # reducer, which stamps it into the merged image report (graded_by_*,
+        # request_id). A unit that paid nothing this call carries no route --
+        # nulls, never an invented name.
+        _unit_meta = r.meta if isinstance(r.meta, dict) else {}
+        payload = {**payload,
+                   "route_provider": _unit_meta.get("provider"),
+                   "route_model": _unit_meta.get("model"),
+                   "route_request_id": _unit_meta.get("request_id"),
                    "reviewer_role": owning_role}
         ordered_parts.append((payload, text))
     if unit_contracts_enabled() and contract is not None:
