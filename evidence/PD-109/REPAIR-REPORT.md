@@ -5,7 +5,8 @@
 - Branch: **pd/fl25-doctrine**
 - Repo: `trevorotts1/openclaw-onboarding`
 - PRE (branch head when the repair started): `f1b2b41dbb8dcaeb5bf5a089c01de8c853d75255`
-- New head: `2c81a6ee5354aefa468d3899c40a93cb3305ec45`
+- Fix commit: `2c81a6ee5354aefa468d3899c40a93cb3305ec45`
+- New head (branch tip after this evidence commit): `c8eacebb4e9012140147cf52b3f8c34bc1f6ef8d`
 - origin/main at repair time: `ebf5c769a2ad5b2582bf2256588095cbef20cfac`
 
 ## 1. The failing check, quoted
@@ -135,12 +136,13 @@ No siblings were named in the task. Full-batch safety checked against the base b
 ```
 $ git push origin HEAD:pd/fl25-doctrine
    f1b2b41db..2c81a6ee5  HEAD -> pd/fl25-doctrine      (fast-forward, no force)
+   2c81a6ee5..c8eacebb4  HEAD -> pd/fl25-doctrine      (fast-forward, evidence commit)
 
 $ git rev-parse HEAD
-2c81a6ee5354aefa468d3899c40a93cb3305ec45
+c8eacebb4e9012140147cf52b3f8c34bc1f6ef8d
 
 $ git ls-remote --heads origin pd/fl25-doctrine
-2c81a6ee5354aefa468d3899c40a93cb3305ec45	refs/heads/pd/fl25-doctrine
+c8eacebb4e9012140147cf52b3f8c34bc1f6ef8d	refs/heads/pd/fl25-doctrine
 
 $ git merge-base --is-ancestor f1b2b41dbb8dcaeb5bf5a089c01de8c853d75255 HEAD
 rc=0
