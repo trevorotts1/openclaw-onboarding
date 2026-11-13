@@ -201,6 +201,60 @@ def resolve_owner_message(owner_msg_id: str,
 
 
 # ---------------------------------------------------------------------------
+# PD-305 — the owner message must NAME the gate it approves.
+# ---------------------------------------------------------------------------
+# An id proves a message EXISTS. Only the message text proves WHAT the owner
+# approved, so a consumer that acts on an approval for a named gate also
+# requires that gate's name in the message. Both refusals below carry the
+# AF-FORGED-APPROVAL code every consumer matches on, but say different things:
+# "the id is real and its text could not be read" (the ids-only oracle shape
+# that used to pass) is never reported as "the text approves something else".
+_GATE_TOKEN_BEFORE = r"(?<![A-Za-z0-9_-])"
+_GATE_TOKEN_AFTER = r"(?![A-Za-z0-9_-])"
+
+
+def text_names_gate(text: str, gate: str) -> bool:
+    """True when `text` contains `gate` as one whole, case-insensitive token.
+    Hyphens stay inside the token, so 'P4-COPY' matches its own name and never
+    a longer identifier that merely contains it."""
+    want = str(gate or "").strip()
+    if not want:
+        return False
+    pattern = _GATE_TOKEN_BEFORE + re.escape(want) + _GATE_TOKEN_AFTER
+    return re.search(pattern, str(text or ""), re.IGNORECASE) is not None
+
+
+def verify_with_gate_text(approval: Any, run_dir: Optional[Path] = None,
+                          *, gate: str = "") -> Dict[str, Any]:
+    """`verify()` plus PD-305: the owner message's TEXT must name the gate.
+
+    Returns the verified approval. Raises ApprovalError (AF-FORGED-APPROVAL)
+    when the id does not verify, when no text can be read for it (ids-only
+    oracle / no inbound message log — the exact shape ids-only acceptance used
+    to let through), or when the text does not name the gate. `gate` overrides
+    the record's own gate for callers whose record carries the gate elsewhere.
+    """
+    approval = verify(approval, run_dir)
+    want = str(gate or approval.get("gate") or approval.get("af_code")
+               or approval.get("phase_id") or "").strip()
+    owner_msg_id = str(approval.get("owner_msg_id") or "").strip()
+    row = resolve_owner_message(owner_msg_id, run_dir)
+    if row is None:
+        raise ApprovalError(
+            f"{AF_FORGED_APPROVAL}: approval for gate {want!r} references "
+            f"owner_msg_id {owner_msg_id!r}, which resolves to a real message "
+            "but whose TEXT could not be read (ids-only oracle / no inbound "
+            "message log). An id proves a message exists, never what the owner "
+            "approved — DENIED.")
+    if not text_names_gate(row.get("text") or "", want):
+        raise ApprovalError(
+            f"{AF_FORGED_APPROVAL}: owner message {owner_msg_id!r} does not name "
+            f"gate {want!r} (text={str(row.get('text'))[:80]!r}). The message "
+            "must contain the gate name to be an approval for that gate — DENIED.")
+    return approval
+
+
+# ---------------------------------------------------------------------------
 # Schema validation (pure — no oracle, no I/O).
 # ---------------------------------------------------------------------------
 def _parse_granted_at(ts: str) -> Optional[datetime]:
