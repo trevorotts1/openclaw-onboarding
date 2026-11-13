@@ -13,6 +13,7 @@ CORE = os.path.dirname(os.path.dirname(HERE))
 sys.path.insert(0, CORE)
 
 from choice_card.intake_card import intake_card as IC  # noqa: E402
+from choice_card.intake_card import ai_models as AM  # noqa: E402
 from choice_card.video_models import video_models as VM  # noqa: E402
 import kie_dispatch as D  # noqa: E402
 import kie_dispatch.model_lock as ML  # noqa: E402
@@ -21,15 +22,37 @@ from catalog_calculator import card_render as CR  # noqa: E402
 
 NAMES = ["MiniMax H3", "Seedance 2.5", "Seedance 2.0 Mini", "Google Veo 3.1"]
 
-#: DSR-105: the five typed story-brief answers that open the card, plus the
-#: 1-based line numbers of the two questions these tests move around.
-BRIEF = IC.example_replies()[:len(IC.BRIEF_IDS)]
+#: S75-006: the card a new run asks is OFFER (the reply carries the web address,
+#: so OFFER LINK is never asked), AUDIENCE, CHARACTER, LENGTH, MUSIC STYLE,
+#: VIDEO STYLE, CHECKPOINTS and BUDGET one at a time. VIDEO MODEL is a recap
+#: line, opened only by replying its number. The client folder below answers
+#: AGNES "no" and remembers this computer's AI setup, so neither extra screen is
+#: asked. Both line numbers come off the card, never from a count.
 LENGTH_N = [q["id"] for q in IC.QUESTIONS].index("length") + 1
 MODEL_N = [q["id"] for q in IC.QUESTIONS].index("model") + 1
 
 
+def _client_dir():
+    d = tempfile.mkdtemp(prefix="vm-client-")
+    AM.remember_setup(d, AM.recommended())
+    with open(os.path.join(d, "agnes.json"), "w", encoding="utf-8") as f:
+        json.dump({"subscriber": "no"}, f)
+    return d
+
+
+CLIENT = _client_dir()
+
+
+def _campaign(length_reply):
+    """One reply per screen the card asks, in card order (S75-006)."""
+    return ["1", "My course, https://example.com/course", "Women 35-55",
+            "Tasha, 40, locs", length_reply, "1", "1", "1", "$25"]
+
+
 def _model_turn(length_reply):
-    return IC.conversation(BRIEF + ["1", length_reply, "1", "1"])["message"]
+    """The VIDEO MODEL question, opened from its recap line, priced for that length."""
+    return IC.conversation(_campaign(length_reply) + [str(MODEL_N)],
+                           client_dir=CLIENT, purpose_flow=True)["message"]
 
 
 def _fake74(model, units):
@@ -111,18 +134,23 @@ def test_question_price_equals_card_with_real_skill_74_registry_prices():
             assert _question_price(reply, name) == _card_total(n, label, pf)[1], (name, label)
 
 
-def test_recap_line_is_plain_and_priced():
-    msg = IC.conversation(BRIEF + ["1", _length_reply(180), "1", "1", "2", "$25", "1", "1", "1"])["message"]
+def test_recap_line_is_plain_and_the_question_is_priced():
+    """S75-006: the recap names the model; the price rides on the question."""
+    msg = IC.conversation(_campaign(_length_reply(180)) + [str(MODEL_N), "2"],
+                          client_dir=CLIENT, purpose_flow=True)["message"]
+    assert ("%d. Video model: Seedance 2.5" % MODEL_N) in msg, msg
     cents = _expect(*EXPECT["Seedance 2.5"], 180)
-    assert ("%d. Video model: Seedance 2.5 - about $%d.%02d" % (MODEL_N, cents // 100, cents % 100)) in msg, msg
+    assert _question_price(_length_reply(180), "Seedance 2.5") == \
+        "%d.%02d" % (cents // 100, cents % 100)
 
 
-def test_changing_length_reprices_the_recap():
-    # fourteen answers (60 s, Seedance 2.5), recap, change LENGTH_N, pick 3 minutes
-    msg = IC.conversation(BRIEF + ["1", "1", "1", "1", "2", "$25", "1", "1", "1"]
-                          + [str(LENGTH_N), _length_reply(180)])["message"]
-    cents = _expect(*EXPECT["Seedance 2.5"], 180)
-    assert ("%d. Video model: Seedance 2.5 - about $%d.%02d" % (MODEL_N, cents // 100, cents % 100)) in msg, msg
+def test_changing_length_keeps_the_model_and_moves_the_length():
+    # the full card at 60 s with Seedance 2.5, then change LENGTH to 3 minutes
+    msg = IC.conversation(_campaign(_length_reply(60))
+                          + [str(MODEL_N), "2", str(LENGTH_N), _length_reply(180)],
+                          client_dir=CLIENT, purpose_flow=True)["message"]
+    assert ("%d. Video model: Seedance 2.5" % MODEL_N) in msg, msg
+    assert ("%d. Episode length: 3 minutes" % LENGTH_N) in msg, msg
 
 
 # ---- payload tests: lock -> dispatch -> the request Skill 74 would submit ----
@@ -170,7 +198,8 @@ def _dispatch_choice(n, first_frame=None):
     tmp = tempfile.mkdtemp(prefix="vm-")
     state, ledger = os.path.join(tmp, "state.db"), os.path.join(tmp, "spend.db")
     L.init_run(ledger, "run-vm", 10000)
-    IC.conversation(BRIEF + ["1", "1", "1", "1", str(n)], state_store=state, run_id="run-vm")   # the client answers; run state is written
+    IC.conversation(_campaign(_length_reply(60)) + [str(MODEL_N), str(n)], client_dir=CLIENT,
+                    purpose_flow=True, state_store=state, run_id="run-vm")   # the client answers; run state is written
     shot_s = 6 if n == 1 else 8   # H3/Seedance take any whole second; Veo only 4, 6 or 8
     req = VM.request_for_run(state, "run-vm", "A woman sings at a kitchen window. " * 6, shot_s, "9:16", first_frame)
     req["storyboard"] = {"shots": [{"shot_id": "s1", "status": "storyboard_approved"}],
@@ -249,7 +278,8 @@ def test_client_pick_reaches_card_row_and_dispatch_payload_for_every_model():
         assert env["outcome"] == "ok" and sub["model"] == kie and sub["input"]["resolution"] == res, (n, env, sub)
         tmp = tempfile.mkdtemp(prefix="vm-")
         state = os.path.join(tmp, "state.db")
-        IC.conversation(BRIEF + ["1", "1", "1", "1", str(n)], state_store=state, run_id="r")
+        IC.conversation(_campaign(_length_reply(60)) + [str(MODEL_N), str(n)], client_dir=CLIENT,
+                        purpose_flow=True, state_store=state, run_id="r")
         text, _ok = CR.render({"length": "60 seconds"}, _fake74, state_store=state, run_id="r")   # no card field: run state decides
         assert "Video model: %s" % row in " ".join(text.split()), text
 
@@ -257,7 +287,8 @@ def test_client_pick_reaches_card_row_and_dispatch_payload_for_every_model():
 def test_dispatch_stamps_the_chosen_resolution_over_a_wrong_one():
     tmp = tempfile.mkdtemp(prefix="vm-")
     state = os.path.join(tmp, "state.db")
-    IC.conversation(BRIEF + ["1", "1", "1", "1", "2"], state_store=state, run_id="r")
+    IC.conversation(_campaign(_length_reply(60)) + [str(MODEL_N), "2"], client_dir=CLIENT,
+                    purpose_flow=True, state_store=state, run_id="r")
     req = {"model": "bytedance/seedance-2-5", "input": {"prompt": "x", "duration": 8, "resolution": "1080p"}}
     assert VM.apply_locked_choice(req, ML.read_locked_model(state, "r"))["input"]["resolution"] == "720p"
 
