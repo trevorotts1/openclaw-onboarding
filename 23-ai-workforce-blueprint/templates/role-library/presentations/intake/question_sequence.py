@@ -29,6 +29,17 @@ QUICK_ALWAYS = frozenset({"standard_mode", "provider_plan"})
 
 DEFAULTS_REVIEW_ID = "defaults_review"
 
+#: PD-023: one speaking-pace default. The bank asks standard / teaching /
+#: high-energy; the pre-PD-023 answers stay accepted as aliases.
+PACE_ALIASES = {"default": "standard", "medium": "teaching",
+                "fast": "high-energy"}
+
+
+def normalize_pace(value):
+    """Return the canonical bank value for one speech-pace answer (PD-023)."""
+    text = str(value or "").strip().lower().replace("_", "-").replace(" ", "-")
+    return PACE_ALIASES.get(text, text)
+
 
 def atomic_questions(schema):
     rows = schema.get("questions", [])
@@ -84,6 +95,11 @@ def atomic_questions(schema):
                 q["help"] = "Provide one brand reference, such as a logo link or primary color."
             q["help"] = copy.get("help", q.get("help", ""))
             q.update(copy)
+            # PD-023: keep the old pace words answerable. The aliases travel
+            # with the projected question so every surface resolves them the
+            # same way; normalize_pace() is the one resolver.
+            if field == "speech_speed_preference":
+                q["aliases"] = dict(PACE_ALIASES)
             # PD-014: declining a toggle that DEFAULTS to "no" is not a
             # waiver, so its reason is asked only when the client's
             # preference record shows a YES for that toggle. This ask_if is
