@@ -222,9 +222,36 @@ and after the push (§8).
 
 ## 8. Push and re-proof
 
+> ```
+> $ git push origin HEAD:refs/heads/pd/fl35-sealed-record--hold-d23-d24
+>    91dc54bba..b5c783890  HEAD -> pd/fl35-sealed-record--hold-d23-d24
+> ```
+>
+> Note the `..` with no `+`: a **fast-forward**, not a force-push.
+
+Local head at that moment: `b5c78389059c2da9cef98ffa78c84f8ab747c4c1` (the merge commit `cc025bcc9`
+plus this report).
+
 ```
-$ git push origin HEAD:refs/heads/pd/fl35-sealed-record--hold-d23-d24
+$ git ls-remote --heads origin pd/fl35-sealed-record--hold-d23-d24
+b5c78389059c2da9cef98ffa78c84f8ab747c4c1	refs/heads/pd/fl35-sealed-record--hold-d23-d24
+
+$ git rev-parse HEAD
+b5c78389059c2da9cef98ffa78c84f8ab747c4c1
+$ git merge-base --is-ancestor 91dc54bba92ec377c6a99ba6e59eb91329167535 b5c78389059c2da9cef98ffa78c84f8ab747c4c1
+$ echo $?
+0
+MATCH (40 chars literal), ancestry rc=0
 ```
 
-(Fast-forward; output and re-proof of the 40-char remote head and the ancestry exit code are appended
-below after the push.)
+Committing this section moves the head forward once more by one report-only commit, which is itself
+fast-forwarded and re-proven by `git ls-remote` and `git merge-base --is-ancestor` at the close of the
+lane; both must equal the local `HEAD` and exit 0.
+
+## 9. What was NOT done
+
+- No rebase, no force-push, no push to `main`.
+- No other unit's files touched; only `evidence/PD-925/REPAIR-REPORT.md` was added.
+- No test weakened, skipped or deleted; no assertion touched.
+- No conflict "resolved" by deleting a side — there was nothing to resolve.
+- `~/.openclaw` and every client box untouched. Nothing run against any live system.
