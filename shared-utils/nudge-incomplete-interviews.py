@@ -35,6 +35,18 @@ sys.path.insert(0, str(Path(__file__).parent))
 from detect_platform import get_openclaw_paths
 from interview_completion import prompt_status
 
+# The one build-state writer (BU-36): workforce_state owns the lock, the read and
+# the write, so a reminder recorded here can never erase a field another writer
+# committed. Resolved the way lib-workforce-state.sh resolves it — this skill's
+# scripts/ folder, i.e. the blueprint directory beside this shared-utils one —
+# and appended, never prepended, so it cannot shadow anything already importable.
+_WORKFORCE_SCRIPTS = (
+    Path(__file__).resolve().parents[1] / "23-ai-workforce-blueprint" / "scripts"
+)
+if str(_WORKFORCE_SCRIPTS) not in sys.path:
+    sys.path.append(str(_WORKFORCE_SCRIPTS))
+from workforce_state import update as workforce_state_update  # noqa: E402
+
 # ── §8 shared reminder slots + reserved final action (T-17 wiring) ──────────
 # shared-utils/reminders/reminder_state_machine.py is the DATA-CONTRACTS §8
 # governor: a separate initial invitation, at most three shared escalating
@@ -481,12 +493,7 @@ def send_telegram_nudge(meta: dict, cfg: dict, company_slug: str, dry_run: bool 
         # skip, but report it without requiring a chat target or gateway.
         return False
 
-    message = cfg["message_template"].format(
-        name=meta.get("owner_name", "there"),
-        progress=meta.get("progress_percent", 0),
-        last_question=meta.get("last_question", "(beginning)"),
-        link=link,
-    )
+    message = _render_message(cfg["message_template"], meta, link)
 
     if dry_run:
         print(f"  [DRY-RUN] Would send Telegram nudge ({cfg['key']}): {message}")
@@ -566,7 +573,108 @@ def read_build_state(state_path: Path) -> dict:
         return {}
 
 
-def merge_meta_from_state(meta: dict, state: dict) -> dict:
+# ── gate-v2 reminder numbers (WF-042) ─────────────────────────────────────────
+# A gate-v2 interview already knows exactly how far the owner got. The reminder
+# must read those numbers from the gate instead of estimating them from a
+# question count, and must name the question the owner actually stopped on.
+GATE_STATE_NAME = "interview-gate-state.json"
+REGISTRY_RELATIVE = Path("23-ai-workforce-blueprint") / "interview" / "questions.v2.json"
+_STOPPED_AT_SENTENCE = " You stopped at: {last_question}"
+
+
+def _default_registry_path() -> Path:
+    return Path(__file__).resolve().parents[1] / REGISTRY_RELATIVE
+
+
+def _title_from_id(dept_id) -> str:
+    return " ".join(
+        word.capitalize()
+        for word in str(dept_id).replace("_", "-").split("-")
+        if word
+    )
+
+
+def _gate_prompt_for(question: dict, answers: dict) -> str:
+    """One question's wording, resolved exactly as interview_gate.prompt_for does."""
+    prompt = question.get("prompt", "") or ""
+    if "{team}" in prompt:
+        spec = question.get("teamFrom") or {}
+        source = (answers.get(spec.get("question", "")) or {}).get("value")
+        dept = (spec.get("map") or {}).get(source, spec.get("default", ""))
+        prompt = prompt.replace("{team}", _title_from_id(dept) or "first")
+    return prompt
+
+
+def gate_reminder_facts(workspace, registry_path=None):
+    """Return {"progress_percent", "last_question"} from the gate, or None.
+
+    progress_percent is required-answered over required-total, rounded the way
+    the gate's own counts() rounds it; last_question is the prompt of the last
+    accepted answer. Anything the gate cannot be read from — no workspace, no
+    gate state, no registry, malformed JSON — returns None so the caller keeps
+    today's rule for older interviews.
+    """
+    if workspace is None:
+        return None
+    try:
+        gate_state = json.loads(
+            (Path(workspace) / "company-discovery" / GATE_STATE_NAME).read_text(encoding="utf-8")
+        )
+        registry = json.loads(
+            Path(registry_path or _default_registry_path()).read_text(encoding="utf-8")
+        )
+    except Exception:
+        return None
+    if not isinstance(gate_state, dict) or not isinstance(registry, dict):
+        return None
+    answers = gate_state.get("answers")
+    questions = registry.get("questions")
+    if not isinstance(answers, dict) or not isinstance(questions, list):
+        return None
+
+    required = [q for q in questions if isinstance(q, dict) and q.get("required")]
+    answered_required = [q for q in required if q.get("id") in answers]
+    percent = int(round(100 * len(answered_required) / len(required))) if required else 100
+
+    last_question = ""
+    latest = max(
+        (a for a in answers.values() if isinstance(a, dict)),
+        key=lambda a: a.get("at", ""),
+        default=None,
+    )
+    if latest:
+        qid = latest.get("qid")
+        for question in questions:
+            if isinstance(question, dict) and question.get("id") == qid:
+                last_question = _gate_prompt_for(question, answers)
+                break
+    return {"progress_percent": percent, "last_question": last_question}
+
+
+def _render_message(template: str, meta: dict, link: str) -> str:
+    """Fill one nudge template.
+
+    For a gate-v2 interview, when the gate has no accepted answer yet or its
+    wording is empty, the "You stopped at:" sentence is REMOVED instead of
+    printing "(start)" (WF-042): a reminder must never announce a question the
+    owner never saw.
+    """
+    last_question = meta.get("last_question")
+    if meta.get("interview_engine") == "gate-v2":
+        last_question = str(last_question or "").strip()
+        if not last_question or last_question == "(start)":
+            template = template.replace(_STOPPED_AT_SENTENCE, "")
+            last_question = ""
+    return template.format(
+        name=meta.get("owner_name", "there"),
+        progress=meta.get("progress_percent", 0),
+        last_question=last_question or "(beginning)",
+        link=link,
+    )
+
+
+def merge_meta_from_state(meta: dict, state: dict, workspace=None,
+                          registry_path=None) -> dict:
     """
     Merge build-state fields into meta dict, preferring state values as primary.
     Falls back to handoff frontmatter values when state fields are absent.
@@ -595,18 +703,31 @@ def merge_meta_from_state(meta: dict, state: dict) -> dict:
     if state.get("ownerChat"):
         merged["owner_chat"] = state["ownerChat"]
 
-    # lastQuestionNumber → last_question fallback
-    if progress.get("lastQuestionNumber") and not merged.get("last_question"):
-        merged["last_question"] = f"Question #{progress['lastQuestionNumber']}"
+    # WF-042: a gate-v2 interview takes BOTH numbers from the gate — how far
+    # (required answered / required total) and which question the owner stopped
+    # on. Older interviews keep today's question-count rule below.
+    gate_facts = None
+    if progress.get("engine") == "gate-v2":
+        merged["interview_engine"] = "gate-v2"
+        gate_facts = gate_reminder_facts(workspace, registry_path)
+        if gate_facts is not None:
+            merged["progress_percent"] = gate_facts["progress_percent"]
+            merged["last_question"] = gate_facts["last_question"]
+
+    if gate_facts is None:
+        # lastQuestionNumber → last_question fallback
+        if progress.get("lastQuestionNumber") and not merged.get("last_question"):
+            merged["last_question"] = f"Question #{progress['lastQuestionNumber']}"
 
     # nudges_sent from state (canonical) or handoff (legacy)
     if "nudges_sent" in state:
         merged["nudges_sent"] = state.get("nudges_sent", [])
 
-    # progress_percent estimate from question count
-    if not merged.get("progress_percent") and progress.get("lastQuestionNumber"):
-        q = progress["lastQuestionNumber"]
-        merged["progress_percent"] = min(100, int((q / 30) * 100))
+    if gate_facts is None:
+        # progress_percent estimate from question count
+        if not merged.get("progress_percent") and progress.get("lastQuestionNumber"):
+            q = progress["lastQuestionNumber"]
+            merged["progress_percent"] = min(100, int((q / 30) * 100))
 
     return merged
 
@@ -615,24 +736,24 @@ def record_nudge_sent_state(state_path: Path, nudge_key: str) -> None:
     """
     Record a sent nudge in the build state file (canonical dedup store).
     Also records in the handoff file if it exists (legacy compat).
+
+    The write goes through workforce_state.update (BU-36), so it holds the state
+    lock and merges: a nudge recorded mid-build can no longer overwrite a field
+    the build, the gate or the watchdog just wrote.
     """
     if not state_path.exists():
         return
+
+    def mutate(state):
+        sent = list(state.get("nudges_sent") or [])
+        if nudge_key not in sent:
+            sent.append(nudge_key)
+            state["nudges_sent"] = sent
+
     try:
-        state = json.loads(state_path.read_text(encoding="utf-8"))
+        workforce_state_update(str(state_path), mutate)
     except Exception:
         return
-
-    sent = list(state.get("nudges_sent") or [])
-    if nudge_key not in sent:
-        sent.append(nudge_key)
-        state["nudges_sent"] = sent
-        tmp = Path(str(state_path) + f".tmp.{os.getpid()}")
-        try:
-            tmp.write_text(json.dumps(state, indent=2), encoding="utf-8")
-            tmp.replace(state_path)
-        except Exception:
-            tmp.unlink(missing_ok=True)
 
 
 def scan_and_nudge(dry_run: bool = False) -> dict:
@@ -668,7 +789,7 @@ def scan_and_nudge(dry_run: bool = False) -> dict:
 
         # Merge: state is primary, handoff is fallback
         if state:
-            meta = merge_meta_from_state(meta, state)
+            meta = merge_meta_from_state(meta, state, workspace=workspace)
 
         if meta.get("complete"):
             counts["skipped_complete"] += 1
@@ -767,15 +888,19 @@ def scan_and_nudge(dry_run: bool = False) -> dict:
             if hours_idle >= 168 and not meta.get("complete"):
                 if state_path.exists() and not dry_run:
                     try:
-                        import json as _json
-                        _s = _json.loads(state_path.read_text())
-                        if not _s.get("interviewStalled"):
-                            from datetime import timezone as _tz
-                            _s["interviewStalled"] = True
-                            _s["interviewStalledAt"] = datetime.now(_tz.utc).strftime(
-                                "%Y-%m-%dT%H:%M:%SZ"
-                            )
-                            state_path.write_text(_json.dumps(_s, indent=2))
+                        from datetime import timezone as _tz
+                        _stalled_at = datetime.now(_tz.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+                        def _mark_stalled(state, _at=_stalled_at):
+                            if state.get("interviewStalled"):
+                                return False
+                            state["interviewStalled"] = True
+                            state["interviewStalledAt"] = _at
+                            return True
+
+                        # Locked write (BU-36): never a whole-file replace, so a
+                        # field written by another process survives this flag.
+                        if workforce_state_update(str(state_path), _mark_stalled):
                             print(
                                 f"  Company {company.name}: nudges exhausted at {hours_idle:.1f}h idle — "
                                 "marked interviewStalled=true (watchdog will escalate operator)"

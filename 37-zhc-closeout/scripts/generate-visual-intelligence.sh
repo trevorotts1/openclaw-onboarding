@@ -71,28 +71,23 @@ if [[ "$existing_count" -ge 3 ]]; then
 fi
 
 # ---- gather placeholders ----
-COMPANY_NAME=$(state_get '.companyName'); [[ -z "$COMPANY_NAME" ]] && COMPANY_NAME="Your Company"
-OWNER_NAME=$(state_get '.ownerName'); [[ -z "$OWNER_NAME" ]] && OWNER_NAME="the Owner"
-AGENT_NAME=$(state_get '.agentName'); [[ -z "$AGENT_NAME" ]] && AGENT_NAME="the CEO Agent"
-INDUSTRY=$(state_get '.industry'); [[ -z "$INDUSTRY" ]] && INDUSTRY="modern business"
-BRAND_COLOR=$(state_get '.brandColor'); [[ -z "$BRAND_COLOR" ]] && BRAND_COLOR="#1a1a1a (with #D4AF37 gold accent)"
+# BU-64: one call to closeout_facts.py replaces this script's own reads of the
+# company name, owner, agent, industry, brand colour and department / role counts.
+CLOSEOUT_FACTS=$(python3 -B "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/closeout_facts.py" "$STATE_FILE" --json 2>/dev/null)
+[[ -z "$CLOSEOUT_FACTS" ]] && CLOSEOUT_FACTS='{}'
+facts_get() { printf '%s' "$CLOSEOUT_FACTS" | jq -r "$1 // empty" 2>/dev/null; }
 
-# Department enumeration
-DEPT_TYPE=$(jq -r '.departments | type' "$STATE_FILE" 2>/dev/null || echo "null")
-case "$DEPT_TYPE" in
-  array)
-    DEPT_JSON=$(jq -c '[.departments[] | {slug: (.slug // .name // "dept"), name: (.name // .slug // "dept"), roles: (.rolesDone // .roles // 0)}]' "$STATE_FILE" 2>/dev/null || echo "[]")
-    ;;
-  object)
-    DEPT_JSON=$(jq -c '[.departments | to_entries[] | {slug: .key, name: (.value.name // (.key | gsub("[-_]"; " "))), roles: (.value.rolesDone // .value.roles // 0)}]' "$STATE_FILE" 2>/dev/null || echo "[]")
-    ;;
-  *)
-    DEPT_JSON="[]"
-    ;;
-esac
-DEPT_LIST=$(echo "$DEPT_JSON" | jq -r '[.[].name] | join(", ")' 2>/dev/null || echo "(departments)")
-DEPT_COUNT=$(echo "$DEPT_JSON" | jq 'length' 2>/dev/null || echo "0")
-ROLE_COUNT=$(echo "$DEPT_JSON" | jq '[.[].roles] | add // 0' 2>/dev/null || echo "0")
+COMPANY_NAME=$(facts_get '.companyName'); [[ -z "$COMPANY_NAME" ]] && COMPANY_NAME="Your Company"
+OWNER_NAME=$(facts_get '.ownerName'); [[ -z "$OWNER_NAME" ]] && OWNER_NAME="the Owner"
+AGENT_NAME=$(facts_get '.agentName'); [[ -z "$AGENT_NAME" ]] && AGENT_NAME="the CEO Agent"
+INDUSTRY=$(facts_get '.industry'); [[ -z "$INDUSTRY" ]] && INDUSTRY="modern business"
+BRAND_COLOR=$(facts_get '.brandPrimary'); [[ -z "$BRAND_COLOR" ]] && BRAND_COLOR="#1a1a1a (with #D4AF37 gold accent)"
+
+DEPT_JSON=$(printf '%s' "$CLOSEOUT_FACTS" | jq -c '[.departments[]? | {slug: .slug, name: .name, roles: (.roles // 0)}]' 2>/dev/null)
+[[ -z "$DEPT_JSON" || "$DEPT_JSON" == "null" ]] && DEPT_JSON="[]"
+DEPT_LIST=$(echo "$DEPT_JSON" | jq -r '[.[].name] | join(", ")' 2>/dev/null); [[ -z "$DEPT_LIST" ]] && DEPT_LIST="(departments)"
+DEPT_COUNT=$(echo "$DEPT_JSON" | jq 'length' 2>/dev/null); [[ -z "$DEPT_COUNT" || "$DEPT_COUNT" == "null" ]] && DEPT_COUNT=0
+ROLE_COUNT=$(printf '%s' "$CLOSEOUT_FACTS" | jq -r '.roleTotal // 0' 2>/dev/null); [[ -z "$ROLE_COUNT" || "$ROLE_COUNT" == "null" ]] && ROLE_COUNT=0
 
 # What the business delivers (for prompt placeholders)
 WHAT_THEY_DELIVER=$(state_get '.whatYouDeliver // .whatTheyDeliver // .coreDeliverable')
