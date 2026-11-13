@@ -4955,7 +4955,8 @@ def check_copy_qc_teeth(run_dir: Path) -> str:
          deterministic character bands (HEADLINE 12-60 / SUBHEAD 20-110 / KICKER <= 40 /
          <= 3 BULLETS each 8-30 / SLIDE TOTAL 40-180) that AF-COPY-BAND enforces
          first-party. A pass:true report over copy that violates a band is REJECTED,
-         naming the exact discrepancy (slide + field + chars + band).
+         naming the exact discrepancy (slide + field + chars + band). A rendered slide
+         with no copy at all is named ("slide NN has no copy"), never skipped.
 
     It DEFERS (returns "") ONLY when the rendered copy is genuinely not produced yet —
     no readable slides.json (its absence is owned by the schema / AF-P1 / slide-count
@@ -5007,8 +5008,14 @@ def check_copy_qc_teeth(run_dir: Path) -> str:
     for ordinal in range(1, n + 1):
         copy_val = copy_map.get(ordinal)
         if not isinstance(copy_val, list) or not copy_val:
-            continue  # missing/malformed copy — schema validation / AF-P1 own this.
+            # PD-211: a rendered slide with no copy is a failure, not a silent skip —
+            # the copy-QC report cannot have graded it.
+            problems.append(f"slide {ordinal:02d} has no copy")
+            continue
         fields = [str(c) if c is not None else "" for c in copy_val]
+        if not any(f.strip() for f in fields):
+            problems.append(f"slide {ordinal:02d} has no copy")
+            continue
         headline = fields[0]
         subhead = fields[1] if len(fields) > 1 else None
         kicker = fields[2] if len(fields) > 2 else None
@@ -5076,10 +5083,12 @@ def check_typography_qc_teeth(run_dir: Path) -> str:
     SHAPE and never opened a design-system artifact, so an agent could type 8.8/pass:true
     over a design system whose declared tokens violate the AF-FONT-FLOOR deterministic
     floors (min_body_pt / type_scale_steps / min_contrast_ratio) and it sailed through.
-    This is the equivalent upgrade the prompt/image gates already got: it RE-MEASURES the
-    ACTUAL design-system tokens in working/typography/type_layout_system.md (the gate-of-
-    record artifact AF-FONT-FLOOR parses) against the shared floors, and rejects a
-    typography-QC report whose pass claims do not match the on-disk design system.
+    This reads the type sizes and contrast the design file DECLARES in
+    working/typography/type_layout_system.md (the gate-of-record artifact AF-FONT-FLOOR
+    parses) and checks those declared values against the shared floors. It does NOT
+    measure type in the rendered pixels — _chk_type_size is the only check that does,
+    and it runs in a report-only stage. It rejects a typography-QC report whose pass
+    claims do not match the design system the file declares.
 
     Two independent classes of failure, both fatal:
       A. FONT-FLOOR RE-MEASURE — the declared tokens must clear the deterministic floors
@@ -5183,11 +5192,12 @@ def check_typography_qc_teeth(run_dir: Path) -> str:
 
     if problems:
         return ("AF-TYPOGRAPHY-QC: the typography-QC report passed its shape check but "
-                "the ACTUAL design-system artifacts (working/typography/"
+                "the declared design-system artifacts (working/typography/"
                 "type_layout_system.md tokens) CONTRADICT it — a real typography-QC pass "
-                "RE-MEASURES the declared type system against the deterministic floors; a "
-                "typed pass:true over a missing/sub-floor design is a fabricated pass. Fix "
-                "the design tokens and re-run the Typography QC Specialist. "
+                "checks the type sizes and contrast the design file DECLARES against the "
+                "deterministic floors; a typed pass:true over a missing/sub-floor design "
+                "is a fabricated pass. Fix the design tokens and re-run the Typography QC "
+                "Specialist. "
                 "Discrepancies: " + "; ".join(problems[:10])
                 + ("" if len(problems) <= 10 else f" (+{len(problems) - 10} more)") + ".")
     return ""
