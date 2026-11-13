@@ -89,9 +89,11 @@ def test_exact_sample_links():
 
 
 def test_recap_reads_plainly():
+    # S75-030: the recap heading is the screen's label with only its first
+    # letter capitalised, so a two-word label reads as a sentence, not a title.
     st = IC.conversation(IC.example_replies())
-    assert "Music Style: Soul Ballad" in st["message"]
-    assert "Video Style: Lifelike 3D" in st["message"]
+    assert "Music style: Soul Ballad" in st["message"]
+    assert "Video style: Lifelike 3D" in st["message"]
 
 
 if __name__ == "__main__":

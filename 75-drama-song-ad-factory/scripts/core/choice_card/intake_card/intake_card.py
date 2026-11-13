@@ -698,9 +698,12 @@ def _agnes_q(remembered):
                  "use the studio's providers."),
                 ("No - use the studio's standard models.", None),
             ],
-            "recommended": 0,
+            # S75-020: mark a pick only for a client who said yes before; with
+            # nothing recommended the closing says how many choices there are.
+            "recommended": 0 if remembered == "yes" else None,
             "rec_mark": "(RECOMMENDED when you said yes before)",
-            "closing": "Reply with a number."}
+            "closing": ("Reply with a number." if remembered == "yes"
+                        else "Reply 1 or 2.")}
 
 
 def _length_q(key):
@@ -1255,6 +1258,12 @@ def render_step(i, questions=None):
     return "\n".join(lines)
 
 
+#: S75-030: the recap's own heading for a screen whose card label is jargon or
+#: shouts; every other screen reads its label with a plain first capital.
+_RECAP_LABEL = {"models": "AI setup", "model": "Video model",
+                "link": "Web address", "spend": "Budget"}
+
+
 def render_recap(answers, questions=None, defaults=None, client_dir=None):
     """The recap: one numbered line per answer, then one per defaulted screen.
 
@@ -1269,7 +1278,7 @@ def render_recap(answers, questions=None, defaults=None, client_dir=None):
         if q.get("defaulted"):
             row = d.get(q["id"]) or {}
             lines.append("%d. %s: %s (default - reply %d to change)"
-                         % (i, q["label"].title().replace("Model", "model"),
+                         % (i, _RECAP_LABEL.get(q["id"]) or q["label"].capitalize(),
                             row.get("text", ""), i))
             continue
         if i > len(answers):
@@ -1279,13 +1288,18 @@ def render_recap(answers, questions=None, defaults=None, client_dir=None):
             lines.append("%d. %s" % (i, q["recap"][a["n"] - 1]))
             continue
         price = (" - about " + q["values"][a["n"] - 1]) if q["id"] == "model" and a.get("n") else ""
-        lines.append("%d. %s: %s%s" % (i, q["label"].title().replace("Model", "model"),
+        lines.append("%d. %s: %s%s" % (i, _RECAP_LABEL.get(q["id"]) or q["label"].capitalize(),
                                        a["text"], price))
     lines += ["", 'Reply "yes" to start, or the number of a line to change it.']
     return "\n".join(lines)
 
 
 _YES = ("yes", "y", "yep", "go", "ok", "okay", "start", "approve", "approved")
+
+#: S75-020: a bare yes answers only these choice questions, and then only when
+#: their first option is itself a yes (CHECKPOINTS names its own top option).
+_YES_CHOICE_IDS = ("storyboard", "song", "script", "permission", "agnes",
+                   "checkpoints")
 
 #: The words that mean "take the recommended option". A typed brief question
 #: refuses them too, so they can never be stored as an answer.
@@ -1352,7 +1366,15 @@ def _parse(reply, q):
         return {"n": 1, "text": raw, "value": raw, "id": q["id"]}
     if q["id"] == "checkpoints" and t in ("custom", "choose each one", "each one"):
         return {"n": 4, "text": opts[3][0], "value": None, "id": q["id"]}
-    if t in _PICK_WORDS:
+    if t in _YES:
+        # S75-020: a yes word picks the recommended option on an approval
+        # question whose first option is a yes; on every other choice question
+        # it is not an answer, so the question is asked again.
+        if (q["id"] not in _YES_CHOICE_IDS or q.get("recommended") is None
+                or not (q["id"] == "checkpoints" or opts[0][0].startswith("Yes"))):
+            return None
+        n = q["recommended"] + 1
+    elif t in _PICK_WORDS:
         if q.get("recommended") is None:
             return None
         n = q.get("recommended", 0) + 1
@@ -1431,12 +1453,20 @@ def conversation(replies, questions=None, state_store=None, run_id=None,
                 if q.get("defaulted"):
                     defaults[q["id"]] = a           # a recap line, never asked inline
                 else:
+                    before = [x["id"] for x in qs]
                     if q["id"] == "purpose":
                         # the whole list was built around the old purpose, so every
                         # answer after it has to be given again (SPEC B1)
                         del answers[fix + 1:]
                         defaults.clear()
                     answers[fix] = a
+                    after = [x["id"] for x in shaped(base_qs, answers)]
+                    if after[fix:] != before[fix:]:
+                        # S75-021: the later questions moved, so the answers given
+                        # for them no longer belong to them; ask those again.
+                        del answers[fix + 1:]
+                        note = ("That changes a few of the later choices, so I'll "
+                                "ask those again. ")
                 fix = None
             else:
                 note = "Sorry, I did not catch that. "

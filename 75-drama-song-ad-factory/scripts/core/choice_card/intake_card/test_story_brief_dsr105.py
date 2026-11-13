@@ -89,9 +89,11 @@ def test_the_recap_lists_the_brief_and_the_run_carries_it():
     replies = ["1", "My course, example.com/course", "Women 35-55", "Tasha, 40, locs",
                "5", "1", "1", "2", "1", "$25"]
     recap = IC.conversation(replies, purpose_flow=True)["message"]
-    for n, label in ((2, "Offer"), (3, "Offer Link"), (4, "Audience"), (5, "Character")):
+    # S75-030: the address screen's card label is "OFFER LINK"; the recap calls
+    # it "Web address" so the client reads what it is.
+    for n, label in ((2, "Offer"), (3, "Web address"), (4, "Audience"), (5, "Character")):
         assert "%d. %s: " % (n, label) in recap, recap
-    assert "2. Offer: My course" in recap and "3. Offer Link: example.com/course" in recap
+    assert "2. Offer: My course" in recap and "3. Web address: example.com/course" in recap
     assert "Photos: none yet - send them any time (default - reply" in recap, recap
     assert IC.conversation(replies + ["yes"], purpose_flow=True)["done"] is True
 
