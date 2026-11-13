@@ -26,9 +26,9 @@ ledger row, a board card, and either an answer or a clear operator page.
    `openclawVersion`, `problem`, `alreadyTried`, `returnTo`). The `alreadyTried`
    list tells you what NOT to repeat. INCOMPLETE tickets carry `missing_fields` —
    work them with degraded context; never drop them.
-2. **Cap check before anything else:** live `rr_cap_counters` table (drill
-   equivalent: `python3 rescue_ledger.py count-today --client <client> --cap 25`,
-   exit 3 = at/over). At cap → do NOT loop: deliver
+2. **Cap check before anything else:** read the live `rr_cap_counters` table and
+   record the reading as step 2 of the case (`rr_step_gate.py record --step 2`,
+   SOP-RR-06). The drill ledger is never used for a live ticket. At cap → do NOT loop: deliver
    outcome (b) — instruct the client's agent to have its owner escalate through the Rescue Rangers escalation section (never a personal chat) — and page the Operator. The client-instruction IS the
    outcome (b); it is delivered by the client's own agent and is a complete
    dispatch, never a silent drop. The cap is a furnace guard, not a courtesy.
@@ -56,9 +56,9 @@ Operator rather than risk a furnace loop.
 1. Route to the **Diagnostician** when the root cause is unknown; straight to the
    **Structured-Fix Operator** when the class is already identified and has a
    sanctioned `remediate.sh` card.
-2. Confirm the **Ticket Clerk** has opened the ledger row and boarded the ticket on
-   the Command Center Kanban (a card in `backlog`). **No ticket is worked that is not
-   on the board.**
+2. Confirm the ledger row exists. The Command Center copies the ticket onto the
+   Kanban board by itself (department `rescue-rangers`). **The board is a view, never
+   a gate: do not wait for a card before working a ticket.**
 
 ---
 
@@ -88,12 +88,13 @@ Operator's — never authorize an irreversible action.
 
 ### SOP 9.5 — Enforce the Outcome Contract
 
-**Steps:** A dispatch is not complete until an answer (or a clear escalation) is
-posted back through the relay's `answer` action so the CLIENT's own agent can tell
-its owner one of: (a) we solved it, (b) here is what you should do, (c) here is the
-answer. A ticket answered in the operator group but never returned to the client
-agent is an **incomplete dispatch** — chase the return leg (the VPS `status`-poll
-return leg exists for exactly this).
+**Steps:** A dispatch is not complete until the answer is in the outbox WITH the
+words the owner will read (`owner_message`), the client's box has collected and
+acknowledged it, and the owner-message receipt is recorded. The owner hears one of:
+(a) we solved it and checked it, (b) here is the one thing only you can do,
+(c) here is the answer, (d) a person on the team now has it. A ticket answered in
+the operator group but never acknowledged by the client's box is an **incomplete
+dispatch** — chase the return leg. There is no box-side `status` poll.
 
 **Outputs:** Triaged, tiered, boarded, dispatched ticket with a durable ledger row.
 **Hand to:** Diagnostician / Structured-Fix Operator / Operator (per SOP 9.4).
