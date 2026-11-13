@@ -63,6 +63,37 @@ if ! source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib-closeout-state.sh
   state_set() { local tmp; tmp=$(mktemp); jq "$1" "$STATE_FILE" > "$tmp" && mv "$tmp" "$STATE_FILE"; }
 fi
 
+# ---- BU-64: company facts (one helper call, not five ad-hoc state reads) ----
+CLOSEOUT_FACTS=$(python3 -B "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/closeout_facts.py" "$STATE_FILE" --json 2>/dev/null)
+[[ -z "$CLOSEOUT_FACTS" ]] && CLOSEOUT_FACTS='{}'
+facts_get() { printf '%s' "$CLOSEOUT_FACTS" | jq -r "$1 // empty" 2>/dev/null; }
+
+COMPANY_NAME=$(facts_get '.companyName'); [[ -z "$COMPANY_NAME" ]] && COMPANY_NAME="Your Company"
+OWNER_NAME=$(facts_get '.ownerName'); [[ -z "$OWNER_NAME" ]] && OWNER_NAME="the Owner"
+AGENT_NAME=$(facts_get '.agentName'); [[ -z "$AGENT_NAME" ]] && AGENT_NAME="the CEO Agent"
+CC_URL=$(state_get '.commandCenterUrl'); [[ "$CC_URL" == "null" ]] && CC_URL=""
+
+# Departments for Section 5: the helper owns slug/name/role count; the extra
+# per-department detail (role list, SOP list, emoji) still comes from state.
+STATE_DEPT_EXTRA=$(jq -c '[ (.departments // []) | (if type == "array" then .[] else to_entries[] | (.value + {slug: .key}) end) | {
+    slug:       (.slug // .name // ""),
+    roles_list: (.rolesList // []),
+    sop_count:  (.sopCount // 0),
+    sop_list:   (.sopList // []),
+    emoji:      (.emoji // "")
+  } ]' "$STATE_FILE" 2>/dev/null)
+[[ -z "$STATE_DEPT_EXTRA" || "$STATE_DEPT_EXTRA" == "null" ]] && STATE_DEPT_EXTRA='[]'
+DEPT_NORM=$(printf '%s' "$CLOSEOUT_FACTS" | jq -c --argjson extra "$STATE_DEPT_EXTRA" '[.departments[]? | . as $d | {
+    slug:       $d.slug,
+    name:       $d.name,
+    roles:      ($d.roles // 0),
+    roles_list: (first($extra[] | select(.slug == $d.slug) | .roles_list) // []),
+    sop_count:  (first($extra[] | select(.slug == $d.slug) | .sop_count) // 0),
+    sop_list:   (first($extra[] | select(.slug == $d.slug) | .sop_list) // []),
+    emoji:      (first($extra[] | select(.slug == $d.slug) | .emoji) // "")
+  }]' 2>/dev/null)
+[[ -z "$DEPT_NORM" || "$DEPT_NORM" == "null" ]] && DEPT_NORM="[]"
+
 # ---- chunk() -- split long text into <=1900-char segments ----
 # Returns a JSON array of paragraph blocks, one per chunk.
 chunk_paragraphs() {
@@ -285,9 +316,6 @@ COMPANY_ID="$(state_get '.companyId // .company_id')"
 PARENT_PAGE_ID="${NOTION_CLOSEOUT_PARENT_PAGE_ID:-${NOTION_WORKSPACE_ROOT_ID:-}}"
 notion_ownership_hold() {
   log "ERROR" "Notion ownership unresolved: $1"
-  COMPANY_NAME="$(state_get '.companyName')"; OWNER_NAME="$(state_get '.ownerName')"
-  AGENT_NAME="$(state_get '.agentName')"; CC_URL="$(state_get '.commandCenterUrl')"
-  DEPT_NORM=$(jq -c '.departments // []' "$STATE_FILE" 2>/dev/null || echo '[]')
   stage_closeout_locally "notion-ownership-unverified"
   state_set '.closeoutLegStatus.notion = "failed:ownership-unverified" | .notionFailureReason = "Client-owned parent and root ownership must be verified" | .closeoutBlockers = ((.closeoutBlockers // [] | map(select(.class != "notion-ownership-unverified"))) + [{class:"notion-ownership-unverified",resumable:true,staged:true,cleared:false,reason:"Configure this company own integration and explicit shared parent; no agency fallback"}])' || true
   echo "[NOTION] BLOCKED (staged, resumable): $(notion_client_action_line)" >&2
@@ -339,14 +367,14 @@ if [[ $REFRESH_WORKFORCE_ONLY -eq 1 ]]; then
   fi
   root_proof=$(with_retry notion_curl GET "https://api.notion.com/v1/pages/$NOTION_CLOSEOUT_PAGE_ID" || echo '{}')
   printf '%s' "$root_proof" | jq -e --arg id "${NOTION_CLOSEOUT_PAGE_ID//-/}" --arg parent "${PARENT_PAGE_ID//-/}" '.object == "page" and (.id|gsub("-";"")) == $id and (.parent.page_id // "" | gsub("-";"")) == $parent and .archived != true and .in_trash != true' >/dev/null 2>&1 || notion_ownership_hold "refresh root is not under the verified client parent"
-  DEPT_JSON=$(jq -c '.departments' "$STATE_FILE" 2>/dev/null || echo '{}')
-  COMPANY_NAME_LOCAL=$(state_get '.companyName'); [[ -z "$COMPANY_NAME_LOCAL" ]] && COMPANY_NAME_LOCAL="Your Company"
+  DEPT_JSON=$(printf '%s' "$CLOSEOUT_FACTS" | jq -c '.departments // []' 2>/dev/null || echo '[]')
+  COMPANY_NAME_LOCAL="$COMPANY_NAME"
   log "INFO" "--refresh-workforce-only: updating Section 5 under page $NOTION_CLOSEOUT_PAGE_ID for $COMPANY_NAME_LOCAL"
   search_resp=$(with_retry notion_curl POST "https://api.notion.com/v1/search" \
     -d "$(jq -n --arg q "5. Departments and Roles" '{query:$q,filter:{value:"page",property:"object"},page_size:5}')" 2>/dev/null || echo "{}")
   sec5_id=$(owned_page_id "$search_resp" "5. Departments and Roles" "$NOTION_CLOSEOUT_PAGE_ID") || notion_ownership_hold "section search is ambiguous or incomplete"
   if [[ -n "$sec5_id" ]]; then
-    DEPT_COUNT=$(echo "$DEPT_JSON" | jq 'if type == "array" then length elif type == "object" then . | keys | length else 0 end' 2>/dev/null || echo "0")
+    DEPT_COUNT=$(echo "$DEPT_JSON" | jq 'length' 2>/dev/null || echo "0")
     with_retry notion_curl PATCH "https://api.notion.com/v1/pages/$sec5_id" \
       -d "$(jq -n --arg note "Updated by converge $(date -u +%Y-%m-%dT%H:%M:%SZ). Departments: $DEPT_COUNT" \
         '{archived:false}' 2>/dev/null || echo '{}')" >/dev/null 2>&1 || true
@@ -360,10 +388,8 @@ if [[ $REFRESH_WORKFORCE_ONLY -eq 1 ]]; then
 fi
 
 # ---- gather placeholders ----
-COMPANY_NAME=$(state_get '.companyName'); [[ -z "$COMPANY_NAME" ]] && COMPANY_NAME="Your Company"
-OWNER_NAME=$(state_get '.ownerName'); [[ -z "$OWNER_NAME" ]] && OWNER_NAME="the Owner"
-AGENT_NAME=$(state_get '.agentName'); [[ -z "$AGENT_NAME" ]] && AGENT_NAME="the CEO Agent"
-CC_URL=$(state_get '.commandCenterUrl'); [[ "$CC_URL" == "null" ]] && CC_URL=""
+# BU-64: company name, owner, agent, CC URL and DEPT_NORM come from the facts
+# block at the top of this script; only the media URLs and logo remain here.
 LOGO_URL=$(state_get '.logoUrl // .logo_url'); [[ "$LOGO_URL" == "null" ]] && LOGO_URL=""
 
 # Visual intelligence set -- array of image URLs from state
@@ -372,39 +398,6 @@ INFO_1=$(state_get '.infographic1Url')
 INFO_2=$(state_get '.infographic2Url')
 
 ROOT_TITLE="Your Zero-Human Company -- ${COMPANY_NAME}"
-
-# Departments for Section 5
-DEPT_JSON=$(jq -c '.departments' "$STATE_FILE")
-
-# ---- normalize department shape ----
-DEPT_TYPE=$(jq -r '.departments | type' "$STATE_FILE" 2>/dev/null || echo "null")
-case "$DEPT_TYPE" in
-  array)
-    DEPT_NORM=$(jq -c '[.departments[] | {
-        slug:  (.slug // .name // "dept"),
-        name:  (.name // .slug // "dept"),
-        roles: (.rolesDone // .roles // 0),
-        roles_list: (.rolesList // []),
-        sop_count: (.sopCount // 0),
-        sop_list: (.sopList // []),
-        emoji: (.emoji // "")
-      }]' "$STATE_FILE" 2>/dev/null || echo "[]")
-    ;;
-  object)
-    DEPT_NORM=$(jq -c '[.departments | to_entries[] | {
-        slug:  .key,
-        name:  (.value.name // (.key | gsub("[-_]"; " "))),
-        roles: (.value.rolesDone // .value.roles // 0),
-        roles_list: (.value.rolesList // []),
-        sop_count: (.value.sopCount // 0),
-        sop_list: (.value.sopList // []),
-        emoji: (.value.emoji // "")
-      }]' "$STATE_FILE" 2>/dev/null || echo "[]")
-    ;;
-  *)
-    DEPT_NORM="[]"
-    ;;
-esac
 
 # ---- load department naming map for director_title and one_liner ----
 NAMING_MAP="{}"
@@ -518,7 +511,7 @@ if [[ -z "$ROOT_ID" || "$ROOT_ID" == "null" ]]; then
   _OP_CHAT="${OPERATOR_ESCALATION_CHAT_ID:-${OPERATOR_TELEGRAM_CHAT_ID:-}}"
   if [[ -n "$_OP_CHAT" ]] && command -v openclaw >/dev/null 2>&1 && [[ "${ZHC_SKIP_TG_PREFLIGHT:-0}" != "1" ]]; then
     openclaw message send --channel telegram -t "$_OP_CHAT" \
-      -m "ZHC HOLD [notion-root-page-failed] $(state_get '.companyName'): $_notion_fail_reason (full closeout staged locally; auto-publishes on next run). State: $STATE_FILE" \
+      -m "ZHC HOLD [notion-root-page-failed] ${COMPANY_NAME}: $_notion_fail_reason (full closeout staged locally; auto-publishes on next run). State: $STATE_FILE" \
       >>"$LOG_FILE" 2>&1 || true
   fi
   echo "[NOTION] BLOCKED (staged, resumable): $_notion_fail_reason" >&2
@@ -779,7 +772,10 @@ for i in $(seq 0 $((n_depts - 1))); do
   dept_blocks_arr+=( "$(h3 "Department Director")" )
   dept_blocks_arr+=( "$(p "${director_title} -- the AI head of this department. Reports to ${AGENT_NAME}.")" )
   dept_blocks_arr+=( "$(p "Focal point: ${one_liner} Receives every task routed by ${AGENT_NAME} that belongs to this department and dispatches the right AI role to execute it.")" )
-  dept_blocks_arr+=( "$(h3 "Roles Built: ${dept_roles_n}")" )
+  # BU-64 wording rule: print "Roles Built" only when the count is above 0.
+  if [[ "$dept_roles_n" =~ ^[0-9]+$ ]] && [[ "$dept_roles_n" -gt 0 ]]; then
+    dept_blocks_arr+=( "$(h3 "Roles Built: ${dept_roles_n}")" )
+  fi
 
   if [[ "$roles_count" -gt 0 ]]; then
     dept_blocks_arr+=( "$(p "Roles active in this department:")" )
