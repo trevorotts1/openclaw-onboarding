@@ -197,14 +197,17 @@ ADDED lines only.
 
 ## 7. Sibling test
 
-No sibling branches were named in the repair ticket, so none were merged. The only
-integration point tested is the merge base every batch item shares:
+Sibling set discovered from the live remote and the open pull requests, not from memory:
+`git ls-remote --heads` for `refs/heads/pd/fl08*` and `refs/heads/pd/fl25*` returns exactly
+two branches — this one and `pd/fl25-doctrine` (**PR #3192**, the other unit in the same
+batch). There is no other `pd/fl08-*` branch.
 
-| ref | `git merge-tree --write-tree` | result |
+| ref | `git merge-tree --write-tree HEAD <ref>` | result |
 |---|---|---|
-| `origin/main` | `1613ecf2c97dabe7a8024b0438397355c7175bcf` | **clean**, rc 0 |
+| `origin/pd/fl25-doctrine` (PR #3192) | `c503360f86290d803029c21de12dc770189deb90` | **clean**, rc 0 |
+| `origin/main` | `28fed081154d5bf212fa2cffc4f13c950ad91364` | **clean**, rc 0 |
 
-Per-sibling result: **not applicable — no siblings named.**
+Per-sibling result: **`pd/fl25-doctrine` clean; `main` clean.** No conflict surfaced in either.
 
 ## 8. Ancestry and remote-head proofs
 
@@ -259,4 +262,45 @@ Push was fast-forward only — no rebase, no force-push, nothing pushed to `main
   `ubuntu-latest` / `/usr/bin/bash`. The gate, the manifest tool and the fixture script are
   Python/bash with no platform-conditional branches on the paths touching this fix, but the
   platform difference is unproven by construction.
-- **No sibling branches were supplied**, so no per-sibling merge result exists beyond `main`.
+- **No CI completion has been observed yet.** The run on this branch's head has sat `queued`
+  (runner congestion) through this attempt; local runs of the exact workflow commands on the
+  exact pushed tree are the green proof recorded here.
+
+## 11. Attempt-2 reverification
+
+Second repair pass on the same unit, starting from the already-pushed head rather than from
+the original red:
+
+```
+PRE (this attempt)
+  $ git ls-remote --heads origin pd/fl08-buddy-procedure--hold-d2
+  c5f8279fc5f602d2a865fdb63685e7e26b887dd8
+```
+
+Re-run of the exact workflow commands on that tree:
+
+```
+$ python3 23-ai-workforce-blueprint/scripts/qc-assert-repo-consistency.py
+RESULT: PASS — all 29 floor departments are consistent ... (rc=0)
+RESULT: PASS — every downstream artifact covers all 29 floor departments ... (rc=0)
+
+$ bash 23-ai-workforce-blueprint/scripts/test-repo-consistency.sh
+=== T1: CLEAN REPO PASSES ===
+  PASS: clean repo exits 0 (rc=0)
+...
+RESULT: 8 passed, 0 failed
+ALL REPO-CONSISTENCY FIXTURE TESTS PASSED
+```
+
+Cause, re-proved by bisecting the two contiguous commits (control pair, same script):
+
+| commit | state | artifact sub-gate |
+|---|---|---|
+| `7eca28234` | `origin/main` merged in, content manifest **not** restamped | `rc=6`, `CONTENT-HASH DRIFT … STALE content_sha` |
+| `623f58a81` | content manifest **restamped** | `rc=0` |
+
+The PR head is a fast-forward descendant of both, so T1's `rc=6` is provably gone.
+
+Per-sibling results: `pd/fl25-doctrine` (#3192) clean, `main` clean — see §7. This attempt's
+own commit is a report-only fast-forward on top of `c5f8279fc…`; no source file, test, check,
+or workflow was changed to obtain green.
