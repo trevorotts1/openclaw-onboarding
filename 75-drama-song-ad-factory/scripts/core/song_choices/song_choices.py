@@ -110,6 +110,67 @@ RUN_OUTCOMES = ("ok", "partial", "error")
 _EMPTY_NEXT_ACTION = ("reconcile the provider job before any retry; an empty "
                       "take list is never a successful dispatch")
 
+# ---- S75-018 (U-GEN319 C5): ONE status vocabulary for a produced version ---
+#
+# ``one_variant`` writes exactly ONE of these into ``result["status"]``. The
+# producer and all three consumers below share the constants and test
+# membership in a NAMED group, never a bare literal against a bare literal, so
+# a status can never fall between the offer list and the listening list and
+# vanish -- a paid task held for resume is not a run with no song.
+STATUS_PASS = "PASS"
+STATUS_FAILED = "FAILED"
+STATUS_HELD = "HELD"
+STATUS_SAVE_FAILED = "SAVE_FAILED"
+STATUS_MEASURE_FAILED = "MEASURE_FAILED"
+STATUS_REFUSED = "REFUSED"
+#: EVERY status the producer can write. A new one belongs HERE first.
+STATUSES = (STATUS_PASS, STATUS_FAILED, STATUS_HELD, STATUS_SAVE_FAILED,
+            STATUS_MEASURE_FAILED, STATUS_REFUSED)
+#: A take the JUDGE failed: its paid file is presented for LISTENING only, and
+#: the client answers the one fork question about it (order 2026-10-21).
+LISTENING_STATUSES = (STATUS_FAILED,)
+#: Statuses that carry NO take at all. Each one is NAMED in the refusal in
+#: plain English; none is silently dropped.
+NO_TAKE_STATUSES = (STATUS_HELD, STATUS_SAVE_FAILED, STATUS_MEASURE_FAILED,
+                    STATUS_REFUSED)
+#: What every status actually means, in the client's words.
+STATUS_PLAIN = {
+    STATUS_PASS: ("the version passed its own checks but its take is not on "
+                  "the offer surface"),
+    STATUS_FAILED: "the version did not pass every required song check",
+    STATUS_HELD: ("the paid song was made and charged but could not be saved "
+                  "yet - it is held and is resumed by saving the same task, so "
+                  "nothing has to be bought again"),
+    STATUS_SAVE_FAILED: ("the song was made but saving it into the run folder "
+                         "failed, so there is no file to offer yet"),
+    STATUS_MEASURE_FAILED: ("the song was made but measuring it failed, so it "
+                            "could not be checked against the song gates"),
+    STATUS_REFUSED: "the song request was refused, so no song was produced",
+}
+
+
+def _status(result):
+    """One result's status in the module's vocabulary shape (stripped, upper)."""
+    return str((result or {}).get("status") or "").strip().upper()
+
+
+def _nothing_to_offer_refusal(results):
+    """S75-018: the refusal that NAMES what happened to every version, instead
+    of a bare "nothing to offer". The case that matters most is a paid task
+    held for resume: it is never reported as a run that made no song."""
+    groups = {}
+    for r in results or []:
+        groups.setdefault(_status(r), []).append(str(r.get("n")))
+    lines = ["no song version passed every required song gate; nothing to offer"]
+    for st in STATUSES:
+        if st not in groups:
+            continue
+        lines.append("version %s: %s" % (", ".join(groups[st]), STATUS_PLAIN[st]))
+    for st in sorted(set(groups) - set(STATUSES)):          # an unknown is NAMED
+        lines.append("version %s: unknown status %r"
+                     % (", ".join(groups[st]), st))
+    return "; ".join(lines)
+
 
 def make_counts(**kw):
     """The seven lifecycle counts as ONE typed object: every key present, each
@@ -252,7 +313,7 @@ def _held_result(n, variant, env, hold, submitted_digest=None, spent_cents=None)
     passed through unchanged -- ``run_takes``' own figure where it returned,
     the ledger-settled ``actual_cost`` of the held envelope otherwise. An
     unknown charge stays ``None``; it is never reported as zero."""
-    return {"n": n, "variant": variant, "status": "HELD", "take": None,
+    return {"n": n, "variant": variant, "status": STATUS_HELD, "take": None,
             "heard": None, "concerns": [], "receipt": None,
             "attempt": 1, "attempts": 1, "receipts": [],
             "submitted_digest": submitted_digest,
@@ -843,15 +904,15 @@ def one_variant(n, variant, request, plan, generate, measure, save, script_words
         if save_failures:
             failure = save_failures[-1]
             env = _save_failed_envelope(generate, variant, failure, judged, len(saved))
-            status, held, held_rcpt = "SAVE_FAILED", failure["take"], failure["receipt"]
+            status, held, held_rcpt = STATUS_SAVE_FAILED, failure["take"], failure["receipt"]
         elif measure_failures:
             failure = measure_failures[-1]
             env = _operation_failed_envelope(generate, variant, failure, "measure",
                                              judged, len(saved))
-            status, held, held_rcpt = "MEASURE_FAILED", None, None
+            status, held, held_rcpt = STATUS_MEASURE_FAILED, None, None
         else:
             env = _refused_envelope(generate, variant, exc)
-            status, held, held_rcpt = "REFUSED", None, None
+            status, held, held_rcpt = STATUS_REFUSED, None, None
         # FIX 1: persistence is evidence, never the response. Writing the
         # recovery envelope under the SAME obstructed music path used to raise
         # NotADirectoryError and discard the retained-task hold above.
@@ -886,7 +947,10 @@ def one_variant(n, variant, request, plan, generate, measure, save, script_words
                             submitted_digest=r.get("submitted_digest"),
                             spent_cents=r.get("spent_cents"))
     return {"n": n, "variant": variant,
-            "status": got["verdict"] if got else "FAILED",
+            # S75-018: ``got`` is non-None only when run_takes delivered a take
+            # whose REQUIRED gates all PASS, so the status is the vocabulary's
+            # PASS -- never a judge verdict string carried through as one.
+            "status": STATUS_PASS if got else STATUS_FAILED,
             "take": got["delivered"] if got else None,
             # ``heard`` is LISTENING ONLY: a take the judge failed is presented
             # to the client, never offered for a pick (WW-18 stays).
@@ -1191,12 +1255,27 @@ def _accepted(result):
     """WW-18: a result is offerable only when its take's REQUIRED gate set all
     PASSES (its constituent receipt is current). A take with a failed, flagged,
     unmeasured, unavailable or unknown REQUIRED gate (or no receipt) is never
-    offered."""
-    rec = (result or {}).get("receipt")
+    offered.
+
+    S75-018 (C6): a PAID TAKE carrying a receipt that is not constituent
+    evidence at all is a BUG in the producer, not a soft False -- the assertion
+    below fails loudly so a later relaxed guard can never read it as "no
+    receipt" and quietly withhold a paid take. It never fires at a client
+    boundary on a well-formed result.
+    """
+    result = result or {}
+    rec = result.get("receipt")
     if rec is None:
         return (False, "no constituent receipt") if result.get("receipts") else \
             (False, "no take receipt recorded")
-    return _SD.constituent_ok(rec)
+    ok, why = _SD.constituent_ok(rec)
+    if result.get("take") and rec:
+        assert why != getattr(_SD, "NOT_CONSTITUENT_REASON",
+                              "no constituent-evidence receipt"), \
+            ("take on result %r carries a receipt that is not constituent "
+             "evidence (%r); the producer must bind the constituent receipt"
+             % (result.get("n"), why))
+    return ok, why
 
 # ---- WW-25: the copy-first archive (the shipping writer, no second module) --
 #
@@ -1306,7 +1385,7 @@ def deliver_choices(results, delivery_dir, run_dir, runner=_run_ffmpeg, target=N
 
     good, acc_blocked = [], []
     for r in results:
-        if not r.get("take") or r.get("status") == "FAILED" or not _accepted(r)[0]:
+        if not r.get("take") or _status(r) in LISTENING_STATUSES or not _accepted(r)[0]:
             continue
         _vid, why = _acc_of(r)
         if why:
@@ -1317,7 +1396,7 @@ def deliver_choices(results, delivery_dir, run_dir, runner=_run_ffmpeg, target=N
     # concerns). A take blocked by WW-21's acceptance binding is NOT presented
     # here -- that refusal path is unchanged.
     heard = [r for r in results
-             if r not in good and str(r.get("status") or "").upper() == "FAILED"
+             if r not in good and _status(r) in LISTENING_STATUSES
              and (r.get("take") or r.get("heard"))]
     # S75-052: an acceptance-blocked version is presented for LISTENING too,
     # with the acceptance reasons, so the client can hear it and answer the
@@ -1325,7 +1404,9 @@ def deliver_choices(results, delivery_dir, run_dir, runner=_run_ffmpeg, target=N
     heard += [r for r, _why in acc_blocked
               if (r.get("take") or r.get("heard")) and r not in heard]
     if not good and not heard:
-        raise ChoiceError("no song version passed every required song gate; nothing to offer")
+        # S75-018: name what happened to EVERY version -- a held paid task is
+        # never reported as a run that produced no song.
+        raise ChoiceError(_nothing_to_offer_refusal(results))
     if good:
         ahold = _acceptance_refusal(run_dir, "the offer")
         if ahold:
@@ -1476,7 +1557,7 @@ def recommend(results):
     nothing extra."""
     ranked = []
     for r in results or []:
-        if not isinstance(r, dict) or r.get("status") == "FAILED" or not r.get("take"):
+        if not isinstance(r, dict) or _status(r) in LISTENING_STATUSES or not r.get("take"):
             continue
         if not _accepted(r)[0]:                     # never recommend an unoffered take
             continue
@@ -1579,7 +1660,7 @@ def failure_fork_message(results):
     """The one client message when any take failed the judge: the concerns in
     plain words, the client's freedom to say a take is fine, and the ONE
     question. No jargon, no second question."""
-    failed = [r for r in results or [] if str(r.get("status") or "").upper() == "FAILED"]
+    failed = [r for r in results or [] if _status(r) in LISTENING_STATUSES]
     msg = ["I listened through your song options and checked them carefully.", ""]
     for r in failed:
         concerns = r.get("concerns") or failure_concerns(r)
