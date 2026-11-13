@@ -1,0 +1,38 @@
+{
+  "defaults": {
+    "lookup": [
+      {
+        "glob": "CHANGELOG.md",
+        "why": "release history"
+      },
+      {
+        "glob": "skill-version.txt",
+        "why": "version stamp"
+      },
+      {
+        "glob": "PREREQS.json",
+        "why": "machine-readable prerequisites"
+      },
+      {
+        "glob": "EXAMPLES.md",
+        "why": "worked examples and templates"
+      },
+      {
+        "glob": "*.skill",
+        "why": "packaged archive"
+      },
+      {
+        "glob": "qc-*.sh",
+        "why": "QC helper script"
+      },
+      {
+        "glob": "wire.sh",
+        "why": "wiring helper script"
+      },
+      {
+        "glob": "{tests,scripts,tools,assets,evidence,fixtures,test-fixtures,runtime,schemas,config,data,templates,exemplars,funnel-templates,automation-templates,extensions,examples}/**",
+        "why": "code, tests, data, templates and assets directories"
+      }
+    ]
+  }
+}
