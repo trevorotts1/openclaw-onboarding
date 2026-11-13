@@ -442,17 +442,25 @@ export async function handle(request, env, store, objects, deps = {}) {
       if (auth.record.kind === 'link' && body.event !== 'cancel') {
         return fail(403, AF_LINK_KIND, 'A personal link may only cancel an order.');
       }
+      // S75-102 — a delivery the page cannot show is refused HERE, before the
+      // order moves. Storing it and answering 200 hid the bad link: the page
+      // then showed a delivered order with nothing it could show.
+      if (body.event === 'deliver' && body.delivery !== undefined && body.delivery !== null) {
+        const isObject = typeof body.delivery === 'object';
+        const deliveryUrl = isObject && typeof body.delivery.url === 'string' ? body.delivery.url : '';
+        const deliveryKind = isObject && (body.delivery.kind === 'ghl' || body.delivery.kind === 'r2') ? body.delivery.kind : null;
+        if (!deliveryUrl.startsWith('https://') || !deliveryKind) {
+          return fail(400, 'AF-DS-DELIVERY-INVALID', 'The delivery link must be an https link of kind ghl or r2.');
+        }
+      }
       const moved = transition(JSON.parse(raw), body.event, { nowMs, actor: body.actor || auth.record.kind });
       if (!moved.ok) return fail(409, moved.code, moved.message);
       if (body.event === 'claim' || body.event === 'needs_you') moved.order.paid_started = Boolean(body.paid_started);
-      if (body.event === 'deliver' && body.delivery && typeof body.delivery === 'object') {
+      if (body.event === 'deliver' && body.delivery) {
         // The page shows WHERE the video is (GHL library first, R2 copy
-        // second). Only an https URL and one of the two known kinds are stored.
-        const deliveryUrl = typeof body.delivery.url === 'string' ? body.delivery.url : '';
-        const deliveryKind = body.delivery.kind === 'ghl' || body.delivery.kind === 'r2' ? body.delivery.kind : null;
-        if (deliveryUrl.startsWith('https://') && deliveryKind) {
-          moved.order.delivery = { url: deliveryUrl, kind: deliveryKind };
-        }
+        // second). The guard above already refused anything that is not an
+        // https link of the two known kinds.
+        moved.order.delivery = { url: body.delivery.url, kind: body.delivery.kind };
       }
       await store.kvPut(`order:${clientId}:${orderId}`, JSON.stringify(moved.order));
       await writeInbox(objects, { clientId, orders: await waitingList(store, clientId), nowMs });
