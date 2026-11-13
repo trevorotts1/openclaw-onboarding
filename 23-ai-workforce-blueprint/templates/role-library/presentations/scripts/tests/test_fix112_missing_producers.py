@@ -222,7 +222,11 @@ def test_infographic_checklist_writes_a_verdict_file_and_verifier_passes(tmp_pat
     (run_dir / "working" / "checkpoints").mkdir(parents=True)
     (run_dir / "working" / "prompts").mkdir(parents=True)
     (run_dir / "working" / "prompts" / "infographic-prompt.txt").write_text("PROMPT" * 2000)
-    (run_dir / "working" / "deliverables" / "infographic.png").write_bytes(b"x" * 102_400)
+    # PD-105: the verifier now requires the PNG signature, so the fixture is a
+    # real PNG (signature + filler) at the same 102,400 bytes. The negative
+    # case (letters x -> fail) and the rest of this file's coverage are PD-099b.
+    (run_dir / "working" / "deliverables" / "infographic.png").write_bytes(
+        b"\x89PNG\r\n\x1a\n" + b"x" * (102_400 - 8))
     (run_dir / "working" / "checkpoints" / "infographic_status.json").write_text(json.dumps(
         {"infographic_format": "checklist", "status": "ready", "qc_passed": True,
          "prompt_path": "working/prompts/infographic-prompt.txt",
