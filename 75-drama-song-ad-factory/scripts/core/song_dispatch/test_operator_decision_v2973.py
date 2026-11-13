@@ -325,3 +325,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+
+def test_operator_decision_v2973():
+    main()  # asserts and sys.exit inside main() carry the failures
