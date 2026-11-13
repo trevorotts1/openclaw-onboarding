@@ -50,7 +50,10 @@ CAP="${ZHC_VISUAL_INTEL_CAP:-10}"
 
 log() {
   printf '%s [%-5s] step=%s %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$1" "$STEP_LABEL" "$2" >> "$LOG_FILE"
-  printf '%s [%-5s] step=%s %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$1" "$STEP_LABEL" "$2"
+  # BU-77: console copy goes to STDERR, never STDOUT. generate_image's STDOUT is
+  # captured by command substitution (url=$(generate_image ...)); logging to
+  # stdout would poison that capture (same rule as generate-celebration-video.sh).
+  printf '%s [%-5s] step=%s %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$1" "$STEP_LABEL" "$2" >&2
 }
 state_get() { jq -r "$1 // empty" "$STATE_FILE" 2>/dev/null; }
 # SK1-13: shared, concurrency-safe state_set (portable mkdir-mutex + stale-lock
