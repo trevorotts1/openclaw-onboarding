@@ -634,7 +634,7 @@ COPY_HOOK_EXEMPTION_ENFORCED = False
 # carries the load-bearing structural scaffolding: an [ARCHETYPE ...] layout declaration,
 # the final-paragraph negative block (the header our gold exemplars + the SOP 9.8 template
 # emit is literally "DO-NOT BLOCK"), and at least one "Do not " imperative inside it. A
-# 9,000-char file with none of these is a verbose stub, not a slide spec. This is the
+# 16,000-char file with none of these is a verbose stub, not a slide spec. This is the
 # structural-block check FOLDED IN from the retired presentation-render/render_deck.py
 # (_validate_prompt) so build_deck.py is the ONE canonical renderer — it now enforces
 # every invariant render_deck.py used to, with no separate render module to drift.
@@ -781,7 +781,7 @@ SPELLING_LOCK_TOKENS = [
 
 # AF-P-DENSITY — concrete specificity signals. A genuinely rich prompt that carries the
 # 15-element spec necessarily declares: a brand palette HEX, an explicit type SIZE
-# (pt/px), and a COMPOSITION/zone instruction. A 9,000-char file padded with boilerplate
+# (pt/px), and a COMPOSITION/zone instruction. A 16,000-char file padded with boilerplate
 # can clear the length floor while carrying none of these. Each signal below is required.
 PROMPT_COMPOSITION_TOKENS = [
     "thirds", "rule of thirds", "grid", "left third", "right third", "upper third",
@@ -5448,8 +5448,10 @@ def check_speech_qc_teeth(run_dir: Path) -> str:
 def _chk_prompt_qc(path: Optional[Path]) -> str:
     """PROMPT-QC gate (AF-PROMPT-QC). After Prompt-Authoring (P4-PROMPT), an
     INDEPENDENT QC specialist grades every per-slide prompt against the written
-    9,000–14,000-char prompt standard rubric (length, the 15-element structural blocks,
-    8-class negative block, per-string spelling-locks, verbatim copy). Self/builder grade
+    16,000–20,000-char prompt standard (floor 16,000, target 19,000 to 20,000, ceiling
+    20,000 characters for the current image model; read from the shared gate) rubric
+    (length, the 15-element structural blocks, 8-class negative block, per-string
+    spelling-locks, verbatim copy). Self/builder grade
     refused — AND the report's pass is cross-checked against the on-disk prompts.
 
     The legacy gate validated only the report's SHAPE and never opened a prompt (a JSON
@@ -9799,10 +9801,10 @@ def check_intelligence_engines_prompt(run_dir: Path, slides_path: Optional[Path]
 # (before any kie.ai render is paid for); deck-level HARMONY fires pre-assembly.
 # ===========================================================================
 
-# EXCELLENCE quality floor (§3.4 / G6). A prompt must clear BOTH the 9,000-char
+# EXCELLENCE quality floor (§3.4 / G6). A prompt must clear BOTH the 16,000-char
 # LENGTH floor (necessary) AND this richness floor (sufficient): a floor-grazing,
 # boilerplate-padded prompt scores below this and routes back even though it clears
-# 9,000 chars — the two floors are independent (§1.1a). Env-overridable for tuning.
+# 16,000 chars — the two floors are independent (§1.1a). Env-overridable for tuning.
 try:
     PROMPT_EXCELLENCE_FLOOR = float(os.environ.get("PROMPT_EXCELLENCE_FLOOR", "0.70"))
 except (TypeError, ValueError):
@@ -10098,7 +10100,7 @@ def check_pitch_engines(run_dir: Path, slides_path: Optional[Path] = None) -> st
 def _excellence_score(prompt_text: str):
     """G6 — the EXCELLENCE dimension. Returns (score 0.0-1.0, reasons) measuring whether the
     prompt's character budget was spent on DEFECT-PREVENTING SPECIFICITY (richness) rather
-    than boilerplate padding. A prompt can clear the 9,000-char LENGTH floor and still score
+    than boilerplate padding. A prompt can clear the 16,000-char LENGTH floor and still score
     low here — that is the design: length is necessary, excellence is the independent QUALITY
     gate (two floors, §1.1a), so a compliant-but-soulless prompt does NOT pass.
 
@@ -10167,8 +10169,8 @@ def check_prompt_excellence(run_dir: Path, slides_path: Optional[Path] = None) -
     """G6 preflight gate (AF-EXCELLENCE) — fires at PROMPT-QC, BEFORE any render. Every
     per-slide rich prompt must score >= PROMPT_EXCELLENCE_FLOOR on the EXCELLENCE dimension:
     the budget must be spent on defect-preventing specificity, not padding. This is the
-    QUALITY floor that sits ALONGSIDE the 9,000-char LENGTH floor (§1.1a) — a floor-grazing,
-    boilerplate-padded prompt clears 9,000 chars yet routes back here. Defers pre-prompt
+    QUALITY floor that sits ALONGSIDE the 16,000-char LENGTH floor (§1.1a) — a floor-grazing,
+    boilerplate-padded prompt clears 16,000 chars yet routes back here. Defers pre-prompt
     (no prompts dir); the slide-count / missing-file failures are owned by _chk_rich_prompts.
     Returns "" on pass, or a fatal AF-EXCELLENCE message naming the under-floor slides."""
     prompts_dir = run_dir / "working" / "prompts"
@@ -10188,7 +10190,7 @@ def check_prompt_excellence(run_dir: Path, slides_path: Optional[Path] = None) -
             offenders.append(f"slide {ordinal:02d}: excellence {score:.2f} < "
                              f"{PROMPT_EXCELLENCE_FLOOR:.2f} ({'; '.join(reasons[:4])})")
     if offenders:
-        return ("AF-EXCELLENCE: one or more prompts clear the 9,000-char LENGTH floor but "
+        return ("AF-EXCELLENCE: one or more prompts clear the 16,000-char LENGTH floor but "
                 "fail the EXCELLENCE QUALITY floor — the budget was spent on padding, not "
                 "defect-preventing specificity (full 8-class negative block, per-string "
                 "spelling-lock, people-anatomy + world-grounding, brand HEX + type SIZE + "
@@ -12121,7 +12123,7 @@ PREFLIGHT_REQUIRED = [
      "Phase F — Typography Architect SOP 9.1 (emits type_layout_system.md tokens) (AF-FONT-FLOOR)",
      check_font_floor),
     # PROMPT-QC gate (AF-PROMPT-QC). After Prompt-Authoring, an INDEPENDENT QC
-    # specialist grades every per-slide prompt against the 9,000–14,000-char prompt standard
+    # specialist grades every per-slide prompt against the 16,000–20,000-char prompt standard
     # AND the gate RE-MEASURES every on-disk prompt (check_prompt_qc_teeth) — no rubber stamp.
     ("working/qc/prompt_qc_report.json",
      "prompt QC report (gate Phase Prompt-QC, average >= 8.5, independent reviewer)",
@@ -12186,11 +12188,11 @@ PREFLIGHT_REQUIRED = [
      "Mission PRD — source_slide_count (Mode A=0 always passes)",
      _chk_coverage),
     # 8th check — RICH-PROMPT-REQUIRED gate (AF-P1). EVERY slide must have a
-    # hand-authored rich prompt >= 9,000 chars (clearing the quality floor) in working/prompts/. Like coverage,
+    # hand-authored rich prompt >= 16,000 chars (clearing the quality floor) in working/prompts/. Like coverage,
     # this needs the whole run dir (it counts slides AND reads every prompt file),
     # so it uses the rel sentinel None.
     (None,
-     "rich per-slide prompt — every slide has a >=9,000-char prompt in working/prompts/ "
+     "rich per-slide prompt — every slide has a >=16,000-char prompt in working/prompts/ "
      "that clears the quality floor (8-class negative block / spelling-lock / density / "
      "verbatim copy baked), rendered VERBATIM",
      "Phase 2 — Slide Image Creator SOP 9.1 (15-element rich prompt; rendered verbatim, no thin fallback)",
@@ -12210,13 +12212,13 @@ PREFLIGHT_REQUIRED = [
     # G6 — EXCELLENCE quality floor (AF-EXCELLENCE), fired at PROMPT-QC, BEFORE any render
     # (the money step). Every prompt must score >= PROMPT_EXCELLENCE_FLOOR on the EXCELLENCE
     # dimension: the char budget must buy defect-preventing specificity, not padding. This
-    # is the QUALITY floor that sits ALONGSIDE the 9,000-char LENGTH floor (two independent
-    # gates, §1.1a) — a floor-grazing boilerplate-padded prompt clears 9,000 chars yet
+    # is the QUALITY floor that sits ALONGSIDE the 16,000-char LENGTH floor (two independent
+    # gates, §1.1a) — a floor-grazing boilerplate-padded prompt clears 16,000 chars yet
     # routes back here. Run-dir-scoped (None sentinel); defers pre-prompt.
     (None,
      "prompt excellence — every rich prompt scores above the EXCELLENCE floor (full 8-class "
      "negative block, per-string spelling-lock, people-anatomy + world-grounding, brand HEX "
-     "+ type SIZE + composition, lexical richness); padding to clear 9,000 chars routes back "
+     "+ type SIZE + composition, lexical richness); padding to clear 16,000 chars routes back "
      "(AF-EXCELLENCE)",
      "Phase Prompt-QC — Slide Image Creator / Prompt QC (amazing-not-compliant, AF-EXCELLENCE)",
      check_prompt_excellence),
