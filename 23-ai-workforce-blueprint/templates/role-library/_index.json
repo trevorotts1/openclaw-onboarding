@@ -10146,9 +10146,9 @@
       "slug": "SOP-INTEGRATION-00-LOADABLE-BLOCK-AND-VERIFICATION-GATE",
       "dept": "presentations",
       "path": "templates/role-library/presentations/sops/SOP-INTEGRATION-00-LOADABLE-BLOCK-AND-VERIFICATION-GATE.md",
-      "content_sha": "sha256:ca1982c8bb00f6902f9486d68a4f7dc29bfc66877a73a8be66dec020831d7d68",
-      "content_version": "1.0.1",
-      "content_hashed_at": "2026-11-09T23:25:05.532974+00:00"
+      "content_sha": "sha256:bc2546c27d20f5447389c77530c14b42b671a574a62efeafac692d73cf7b07db",
+      "content_version": "1.0.2",
+      "content_hashed_at": "2026-11-13T16:15:41.980701+00:00"
     },
     {
       "slug": "SOP-MODE-00-THREE-CREATION-MODES",
@@ -10162,9 +10162,9 @@
       "slug": "SOP-NORTHSTAR-00-ATTENTION-IS-THE-PRODUCT",
       "dept": "presentations",
       "path": "templates/role-library/presentations/sops/SOP-NORTHSTAR-00-ATTENTION-IS-THE-PRODUCT.md",
-      "content_sha": "sha256:e3789f0a8e6220a7d3b397794a9ec2576109f8dbdffbd3f815ab582163cc9457",
-      "content_version": "1.0.2",
-      "content_hashed_at": "2026-11-09T23:25:05.532974+00:00"
+      "content_sha": "sha256:3cc9103db75189ffdaa4cf12cee0d70d3322dc3b26b94ab6fd9a9d9e57632cfb",
+      "content_version": "1.0.3",
+      "content_hashed_at": "2026-11-13T16:15:41.980701+00:00"
     },
     {
       "slug": "SOP-OBJECTION-01-PRICE-IS-A-VALUE-PROBLEM",
@@ -10242,17 +10242,17 @@
       "slug": "SOP-PRIORITY-01-SEVEN-P-MODEL-AND-DIAGNOSTIC",
       "dept": "presentations",
       "path": "templates/role-library/presentations/sops/SOP-PRIORITY-01-SEVEN-P-MODEL-AND-DIAGNOSTIC.md",
-      "content_sha": "sha256:a2f3c1a248e30dabe6ad3ec2ca3d07f630f26fb61f08d0aa0bfb0ddd50be215e",
-      "content_version": "1.0.2",
-      "content_hashed_at": "2026-11-09T23:25:05.532974+00:00"
+      "content_sha": "sha256:0f583bdb6fbbf95e7e6b0c3c3dbe1eef05d296e3dfa833bee0b8e4046e4607b1",
+      "content_version": "1.0.3",
+      "content_hashed_at": "2026-11-13T16:15:41.980701+00:00"
     },
     {
       "slug": "SOP-PRIORITY-02-EIGHT-MOVE-BUILD-SEQUENCE",
       "dept": "presentations",
       "path": "templates/role-library/presentations/sops/SOP-PRIORITY-02-EIGHT-MOVE-BUILD-SEQUENCE.md",
-      "content_sha": "sha256:1dea8364521ab5c03793530a4cc759e8dc25f1f33f9041a51f442dda1cf11396",
-      "content_version": "1.0.1",
-      "content_hashed_at": "2026-11-09T23:25:05.532974+00:00"
+      "content_sha": "sha256:aefe733b60f4eba6268e38a285c6977c25da9b06e1a359b30e0c56e4d521e367",
+      "content_version": "1.0.2",
+      "content_hashed_at": "2026-11-13T16:15:41.980701+00:00"
     },
     {
       "slug": "SOP-PROCLAMATION-01-DARE-TO-CHALLENGE-THE-NORM",
