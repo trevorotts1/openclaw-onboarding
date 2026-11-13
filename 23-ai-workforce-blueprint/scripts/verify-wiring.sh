@@ -277,6 +277,8 @@ fi
 # absent, detection is the only honest option available to this gate.
 #
 # Candidate order is preference, not authority — the score decides:
+#   0. the LIVE departments tree                (BU-58: the folder _qc_paths
+#                                                resolves, printed first here)
 #   1. state.workspaceRoot/departments          (explicit, when present)
 #   2. $OC_ROOT/workspace/departments           (the tree the floor-fill repair
 #                                                pipeline maintains — see
@@ -294,6 +296,14 @@ _add_candidate() {
   done
   DEPT_TREE_CANDIDATES+=("$c")
 }
+
+# BU-58: the live tree goes FIRST. _qc_paths.resolve_live_departments_dir() is the
+# ONE definition of "which departments tree is live" (BU-103); its CLI prints that
+# folder only when it resolves to an existing directory and prints nothing
+# otherwise, so the candidates below stay exactly as they were when it cannot
+# answer. The score still decides — this only puts the live tree in the race first.
+_LIVE_DEPTS_DIR="$(python3 -B "$SCRIPT_DIR/_qc_paths.py" --print-live-departments-dir 2>/dev/null || true)"
+_add_candidate "$_LIVE_DEPTS_DIR"
 
 _STATE_WS_ROOT=$(jq -r '.workspaceRoot // empty' "$STATE_FILE" 2>/dev/null || true)
 _add_candidate "$_STATE_WS_ROOT/departments"
