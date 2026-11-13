@@ -246,7 +246,7 @@ def test_face_model_install_pins_sha256():
     prereqs = json.load(open(os.path.join(HERE, "..", "..", "..", "..", "PREREQS.json")))
     ids = {e["id"]: e for e in prereqs["prerequisites"]}
     # PREREQS type is "manual" (lint-valid); the pinned sha256 lives in its note
-    assert IM.MODEL_SHA256 in ids["face-landmarker-model"]["check"]["note"]
+    assert IM.MODEL_SHA256 in ids["face-landmarker-model"]["satisfy"]
     assert "install_face_model.py" in ids["face-landmarker-model"]["satisfy"]
     assert "mediapipe" in ids["python-mediapipe"]["satisfy"]
     # S75-046 / U-U05: the address is pinned to the versioned segment, never
