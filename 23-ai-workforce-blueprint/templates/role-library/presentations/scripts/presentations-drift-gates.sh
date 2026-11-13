@@ -331,11 +331,32 @@ if "presentation-intake-poll.plist.template" not in inst_text:
 # (`command -v ... || install_intake_poll_schedule() { return 1; }`, which does
 # not match the anchored header) and reported GATE 8 red on every tree. The
 # definition is now looked for in install.sh first, then — ONLY when install.sh
-# actually references that lib, so a def in an unsourced file is still a dead
+# actually SOURCES that lib, so a def in an unsourced file is still a dead
 # letter — in the lib itself. The CALL is still required in install.sh, outside
 # the definition; a defined-but-never-called installer still fails.
+# PD-922: "sources" used to be the SUBSTRING test `_LIB_NAME in inst_text`, so a
+# COMMENT that merely mentioned the lib counted as sourced and a def inside a
+# file install.sh never loads turned GATE 8 green — exactly the dead letter the
+# comment above claims to refuse. Only a real `source <path>` / `. <path>` at a
+# command position, on a line that is not a comment, whose argument basename is
+# the lib name, counts as sourced.
 _inst_lines = inst_text.splitlines()
 _LIB_NAME = "lib-presentation-schedules.sh"
+_SOURCE_RE = re.compile(
+    r"(?:^|[;&|]|\bthen\b|\bdo\b|\belse\b|\{|\()\s*(?:source|\.)\s+"
+    r"(\"[^\"]*\"|'[^']*'|[^\s;]+)"
+)
+
+def _sources_lib(lines, lib_name):
+    for _line in lines:
+        _s = _line.strip()
+        if not _s or _s.startswith("#"):
+            continue
+        for _m in _SOURCE_RE.finditer(_line):
+            _arg = _m.group(1).strip("\"'").rsplit("/", 1)[-1].strip("\"'")
+            if _arg == lib_name:
+                return True
+    return False
 
 def _installer_def(lines):
     start = None
@@ -356,7 +377,7 @@ _def_in_install = True
 if _d_start is None or _d_end is None:
     _lib = inst.parent / _LIB_NAME
     _lib_lines = []
-    if _lib.is_file() and _LIB_NAME in inst_text:
+    if _lib.is_file() and _sources_lib(_inst_lines, _LIB_NAME):
         _lib_lines = _lib.read_text(encoding="utf-8", errors="replace").splitlines()
     _d_start, _d_end = _installer_def(_lib_lines)
     _def_in_install = False
