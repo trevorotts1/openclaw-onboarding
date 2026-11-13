@@ -514,6 +514,43 @@ def test_gutting_the_entrypoint_turns_reachability_red():
         assert _clauses(payload)["no_missing_advertised_steps"] is False
 
 
+def test_gutted_carrier_makes_the_entrypoint_receipt_fail_closed():
+    """A carrier that advertises a surface but raises must not crash the run.
+
+    The entrypoint itself fails closed: exit 1, a JSON receipt naming the
+    carrier, and nothing on stderr.
+    """
+    carriers = (("scripts/core/music_styles/catalog.py",
+                 "music_styles.catalog"),
+                ("scripts/core/story_first_contracts.py",
+                 "story_first_contracts"))
+    for rel, module in carriers:
+        with _source_copy("gut-receipt") as root:
+            with open(os.path.join(root, rel), "w", encoding="utf-8") as fh:
+                fh.write("raise ImportError('gutted by negative control')\n")
+            proc = subprocess.run(
+                [sys.executable, A.ENTRYPOINT_REL, "carriers"],
+                cwd=root, capture_output=True, text=True, timeout=180)
+            assert proc.returncode == 1, "%s: rc %d" % (rel, proc.returncode)
+            assert proc.stderr == "", "%s: stderr %r" % (rel, proc.stderr)
+            payload = json.loads(proc.stdout)
+            assert payload["ok"] is False, rel
+            failed = [row["module"] for row in payload["failed_carriers"]]
+            assert module in failed, "%s: receipt named %r" % (rel, failed)
+            assert any("ImportError" in row["error"]
+                       for row in payload["failed_carriers"]), rel
+
+
+def test_entrypoint_receipt_is_green_when_every_carrier_loads():
+    """Control for the receipt: an intact tree loads every declared carrier."""
+    proc = subprocess.run([sys.executable, A.ENTRYPOINT_REL, "carriers"],
+                          cwd=SKILL_ROOT, capture_output=True, text=True,
+                          timeout=180)
+    assert proc.returncode == 0, proc.stderr
+    payload = json.loads(proc.stdout)
+    assert sorted(payload["loaded"]) == sorted(payload["routed"])
+
+
 # ---------------------------------------------------------------------------
 # emergency fixes stay read-only
 # ---------------------------------------------------------------------------
