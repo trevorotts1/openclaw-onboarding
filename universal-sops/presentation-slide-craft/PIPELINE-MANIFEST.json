@@ -1286,7 +1286,7 @@
     },
     {
       "id": "P-U-FORM-GATE",
-      "order": 5.6,
+      "order": 9.04,
       "name": "Upsell VSL Email/Phone Gate Form + Workflow (Skill 44)",
       "client_label": "Building your video sales page",
       "client_visible": false,
@@ -1321,7 +1321,7 @@
     },
     {
       "id": "P-U-GHL-SALES",
-      "order": 6.2,
+      "order": 8.78,
       "name": "Upsell Sales + Checkout GHL Funnel Build (Skill 6)",
       "client_label": "Building your sales page",
       "client_visible": false,
@@ -1354,7 +1354,7 @@
     },
     {
       "id": "P-U-GHL-VSL",
-      "order": 6.4,
+      "order": 9.06,
       "name": "Upsell VSL GHL Funnel Build (Skill 6; gate form SKILL44_WIDGET)",
       "client_label": "Building your video sales page",
       "client_visible": false,
@@ -1615,7 +1615,7 @@
     },
     {
       "id": "P9-SPEECH",
-      "order": 8.5,
+      "order": 7.9,
       "name": "Presenter Speech (length gate)",
       "client_label": "Writing your speech",
       "client_visible": true,
@@ -1938,7 +1938,7 @@
     },
     {
       "id": "P-U-COLLATERAL",
-      "order": 8.8,
+      "order": 9.07,
       "name": "Upsell Collateral Backup (delivery/<SLUG>-FINAL/upsell/*)",
       "client_label": "Final checks and delivery",
       "client_visible": true,
@@ -1969,7 +1969,7 @@
     },
     {
       "id": "P9.2-GHL-UPLOAD",
-      "order": 8.9,
+      "order": 9.02,
       "name": "GHL Media Library Upload",
       "client_label": "Final checks and delivery",
       "client_visible": false,
@@ -2002,7 +2002,7 @@
     },
     {
       "id": "P9.6-WEBINAR-VIDEO",
-      "order": 8.92,
+      "order": 9.01,
       "name": "Webinar Video Build (ffmpeg Ken Burns + xfade slideshow; GHL v3 500MB video upload)",
       "client_label": "Recording audio and video",
       "client_visible": false,
@@ -2035,7 +2035,7 @@
     },
     {
       "id": "P-U-VSL-BUILD",
-      "order": 8.93,
+      "order": 9.03,
       "name": "Upsell VSL Page Build (video sales letter -> kie design -> HTML; funnel install is P-U-GHL-VSL; depends on P9.6 webinar video)",
       "client_label": "Building your video sales page",
       "client_visible": false,
