@@ -38,12 +38,20 @@ fixtures in a temp dir):
  13. the client message carries a stable message_key and a message_kind
      (progress, needs_you, problem, done, stopped) so the same news is told
      once, and the reminder wording is the reminder, not the first message.
+ 14. the client message is plain words only: every stall path says its fixed
+     sentence, with no machine state name, no lease or worker word, no code,
+     no clock stamp and none of the operator's own detail text.
+ 15. a progress message answers how long, what next, do you need me: the
+     expected duration is a table by the client's own song length (doubled on
+     the Agnes path), the message is three short lines, only the twelve
+     canonical stages are counted, and the next stage's approval is named.
 
 Run: python3 scripts/core/heartbeat/test_run_watch.py
 """
 import hashlib
 import json
 import os
+import re
 import shlex
 import sqlite3
 import sys
@@ -128,6 +136,21 @@ def decisions_of(env, kind):
     return [d for d in env["decisions_pending"] if d["kind"] == kind]
 
 
+#: Words a client message must never carry: a machine state name, the lease
+#: and worker words, a code, and the "Z" that ends an ISO clock stamp. An
+#: upper-case token of six or more characters with an underscore is a code
+#: (HEARTBEAT_STALLED and its family).
+CLIENT_BANNED_WORDS = ("Z", "UTC", "lease", "stale", "worker", "FAILED")
+
+
+def machine_words_in(text):
+    """Every machine word or clock mark a client message still carries."""
+    hits = [w for w in CLIENT_BANNED_WORDS if w in text]
+    hits += [tok for tok in re.findall(r"\b[A-Z][A-Z0-9_]*\b", text)
+             if "_" in tok and len(tok) >= 6]
+    return hits
+
+
 def tree_digest(run):
     out = {}
     for p in sorted(run.rglob("*")):
@@ -188,8 +211,10 @@ def main():
     check("1: plain-English stage phrase",
           "your ad's music is being created" in env["message_for_client"],
           env["message_for_client"])
-    check("1: message carries the progress count",
-          "3 of 12 steps are finished" in env["message_for_client"])
+    check("1: message names this step of the twelve",
+          "Step 4 of 12: your ad's music is being created."
+          in env["message_for_client"],
+          env["message_for_client"])
 
     # 2. every pending decision in front of the client ------------------------
     run = make_run(tmp, "run2")
@@ -323,7 +348,8 @@ def main():
     check("4: the client gets honest progress, no stopping story",
           "10 of 12 steps are finished" in env["message_for_client"]
           and "Time's up for this round" not in env["message_for_client"]
-          and "staying with it" in env["message_for_client"],
+          and "taking longer than usual" in env["message_for_client"]
+          and "nothing is lost" in env["message_for_client"],
           env["message_for_client"])
     check("4: the cap never stops supervision",
           env["loop_should_stop"] is False and env["supervising"] is True)
@@ -705,6 +731,162 @@ def main():
     check("13: a first message never uses the reminder wording",
           "Just a reminder" not in e13d["message_for_client"],
           e13d["message_for_client"])
+
+    # 14. the client message is plain words only -----------------------------
+    #     Every stall path says the same news in fixed, human wording: no
+    #     machine state name, no lease or worker word, no code, no clock stamp,
+    #     and none of the operator's own detail text.
+    r14a = make_run(tmp, "run14a")                       # a STALE row
+    set_stage(r14a, "run14a", "research", "STALE", age_s=0,
+              reason="upstream brief changed")
+    r14b = make_run(tmp, "run14b")                       # an expired lease
+    set_stage(r14b, "run14b", "research", "COMPLETE", age_s=20 * 60)
+    set_stage(r14b, "run14b", "creative-strategy", "RUNNING", age_s=0,
+              lease_in=-60, owner="helper-one")
+    r14c = make_run(tmp, "run14c")                       # 45 minutes of silence
+    set_stage(r14c, "run14c", "music", "RUNNING", age_s=45 * 60,
+              lease_in=3600, owner="helper-two")
+    r14d = make_run(tmp, "run14d", base_ago_s=185 * 60)  # past the cap
+    for s in ("research", "creative-strategy", "script-lyrics", "music",
+              "continuity-bible", "storyboard", "image-keyframes",
+              "video-generation", "qc-retakes", "assembly"):
+        set_stage(r14d, "run14d", s, "COMPLETE", age_s=185 * 60)
+    set_stage(r14d, "run14d", "final-qc", "RUNNING", age_s=2 * 60,
+              lease_in=300, owner="helper-three")
+
+    plain_cases = (
+        ("a STALE row", r14a, "that step needs a restart"),
+        ("an expired lease", r14b, "the helper working on it stopped answering"),
+        ("45 minutes of silence", r14c, "nothing has moved for a while"),
+        ("a run past the cap", r14d, None),
+    )
+    for label, run14, expected in plain_cases:
+        e14 = RW.build(run14, now=NOW)
+        check("14: %s says the fixed plain reason" % label,
+              expected is None or expected in e14["message_for_client"],
+              e14["message_for_client"])
+        check("14: %s carries no machine word or clock stamp" % label,
+              machine_words_in(e14["message_for_client"]) == [],
+              machine_words_in(e14["message_for_client"]))
+        check("14: %s carries no clock time" % label,
+              not re.search(r"\d{1,2}:\d{2}", e14["message_for_client"]),
+              e14["message_for_client"])
+    check("14: a STALE row's stored reason never reaches the client",
+          "upstream brief changed"
+          not in RW.build(r14a, now=NOW)["message_for_client"])
+    check("14: the operator detail still carries the machine facts",
+          "stale" in RW.build(r14a, now=NOW)["stall_detail"]
+          and "upstream brief changed"
+          in RW.build(r14a, now=NOW)["stall_detail"])
+    state14, _ = RW.read_state(r14a)
+    _stalled14, _detail14, reason14 = RW.stall_check(
+        state14, RW.current_stage(state14["stages"]), NOW)
+    check("14: stall_check returns a fixed client reason, never stored text",
+          reason14 == "that step needs a restart"
+          and "upstream brief" not in reason14, reason14)
+    check("14: the fixed reasons cover every stall path",
+          set(RW.STALL_CLIENT_REASONS) == {"stale", "expired-lease", "quiet"}
+          and all(machine_words_in(t) == []
+                  for t in RW.STALL_CLIENT_REASONS.values()),
+          RW.STALL_CLIENT_REASONS)
+
+    # 15. progress messages answer how long, what next, do you need me -----
+    #     The expected duration is a table by the client's own song length,
+    #     doubled on the Agnes path; a run that records no length keeps 3.
+    bands = ((None, 3.0), (0, 3.0), (60, 1.5), (90, 1.5), (120, 3.0),
+             (180, 3.0), (300, 6.0), (600, 10.0))
+    for length, want in bands:
+        check("15: expected hours for length %r is %s" % (length, want),
+              RW.expected_hours(length, False) == want,
+              RW.expected_hours(length, False))
+    check("15: the Agnes path doubles the expected hours",
+          [RW.expected_hours(n, True) for n in (60, 180, 300, 600)]
+          == [3.0, 6.0, 12.0, 20.0],
+          [RW.expected_hours(n, True) for n in (60, 180, 300, 600)])
+    check("15: the 10-minute row stays even if the card hides it",
+          RW.expected_hours(600, False) == 10.0)
+
+    run15 = make_run(tmp, "run15")
+    (run15 / "control" / "method.json").write_text(
+        json.dumps({"chosen_length_s": 300}), encoding="utf-8")
+    hours, length, agnes = RW.run_expected_hours(run15)
+    check("15: the run's own method length is read",
+          (hours, length, agnes) == (6.0, 300, False),
+          (hours, length, agnes))
+    (run15 / "control" / "card-receipt.json").write_text(
+        json.dumps({"agnes": {"answer": "yes"}}), encoding="utf-8")
+    hours, _length, agnes = RW.run_expected_hours(run15)
+    check("15: the receipt's Agnes answer doubles it",
+          (hours, agnes) == (12.0, True), (hours, agnes))
+    check("15: that run's cap is its own expected hours",
+          RW.build(run15, now=NOW)["expected_hours"] == 12.0,
+          RW.build(run15, now=NOW)["expected_hours"])
+    check("15: an explicit max-hours still wins",
+          RW.build(run15, max_hours=1.0, now=NOW)["expired"] is True)
+
+    # the progress shape: three short lines, in that order
+    run15b = make_run(tmp, "run15b")
+    for s in ("research", "creative-strategy", "script-lyrics"):
+        set_stage(run15b, "run15b", s, "COMPLETE", age_s=10 * 60)
+    set_stage(run15b, "run15b", "music", "RUNNING", age_s=60,
+              lease_in=600, owner="worker-15")
+    msg15 = RW.build(run15b, now=NOW)["message_for_client"]
+    check("15: progress names this step and the twelve-step total",
+          msg15.split("\n")[0]
+          == "Step 4 of 12: your ad's music is being created.", msg15)
+    check("15: progress names the next stage",
+          "Next: your ad's look and characters are being kept consistent."
+          in msg15, msg15)
+    check("15: progress says the client can leave it with us",
+          "You don't need to do anything right now." in msg15, msg15)
+    check("15: a progress message is three short lines",
+          len(msg15.split("\n")) == 3, msg15)
+
+    # the approval-next sentence when the next stage wants the client's OK
+    run15c = make_run(tmp, "run15c")
+    for s in ("research", "creative-strategy"):
+        set_stage(run15c, "run15c", s, "COMPLETE", age_s=10 * 60)
+    set_stage(run15c, "run15c", "script-lyrics", "RUNNING", age_s=60,
+              lease_in=600, owner="worker-15c")
+    msg15c = RW.build(run15c, now=NOW)["message_for_client"]
+    check("15: the next stage's approval is named for the client",
+          "I'll need your OK on the song next." in msg15c, msg15c)
+
+    run15d = make_run(tmp, "run15d")
+    for s in ("research", "creative-strategy", "script-lyrics", "music"):
+        set_stage(run15d, "run15d", s, "COMPLETE", age_s=10 * 60)
+    set_stage(run15d, "run15d", "continuity-bible", "RUNNING", age_s=60,
+              lease_in=600, owner="worker-15d")
+    msg15d = RW.build(run15d, now=NOW)["message_for_client"]
+    check("15: the storyboard approval is named too",
+          "I'll need your OK on the storyboard pictures next." in msg15d,
+          msg15d)
+
+    # the last stage omits Next, and says plainly there is nothing to do
+    run15e = make_run(tmp, "run15e")
+    for s in STAGES[:-1]:
+        set_stage(run15e, "run15e", s, "COMPLETE", age_s=10 * 60)
+    set_stage(run15e, "run15e", "delivery", "RUNNING", age_s=60,
+              lease_in=600, owner="worker-15e")
+    msg15e = RW.build(run15e, now=NOW)["message_for_client"]
+    check("15: the last stage omits the Next line",
+          "Next:" not in msg15e
+          and "Step 12 of 12: your ad is being packaged for you." in msg15e
+          and "You don't need to do anything right now." in msg15e, msg15e)
+
+    # only the twelve canonical stages are counted, never the extras
+    run15f = make_run(tmp, "run15f")
+    con = sqlite3.connect(str(run15f / "control" / "state.sqlite3"))
+    con.execute("INSERT INTO stages(run_id, stage, state, owner,"
+                " lease_expires, reason, updated_at)"
+                " VALUES(?,?,?,?,?,?,?)",
+                ("run15f", "trailers", "COMPLETE", None, None, None,
+                 NOW - 10 * 60))
+    con.commit()
+    con.close()
+    env15f = RW.build(run15f, now=NOW)
+    check("15: a presentation stage is not an extra step for the client",
+          env15f["stages_total"] == 12, env15f["stages_total"])
 
     print()
     if FS:
