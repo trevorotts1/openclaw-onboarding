@@ -1555,11 +1555,17 @@ def constituent_receipt(take, rcpt, plan=None):
     return rec
 
 
+#: WW-08: the reason a receipt on a take is not constituent evidence at all.
+#: S75-018 (C6): song_choices asserts on this exact reason -- a paid take
+#: carrying such a receipt is a producer bug, never a soft "not accepted".
+NOT_CONSTITUENT_REASON = "no constituent-evidence receipt"
+
+
 def constituent_ok(rec):
     """(ok, reason) for a constituent-evidence receipt recorded with a take.
     WW-08: a missing, non-current or blocked receipt never counts."""
     if not isinstance(rec, dict) or rec.get("schema") != _QC.CONSTITUENT_SCHEMA:
-        return False, "no constituent-evidence receipt"
+        return False, NOT_CONSTITUENT_REASON
     if not rec.get("accepted"):
         return False, "; ".join(str(x) for x in (rec.get("blocked") or
                                                  ["required gates did not all PASS"]))
