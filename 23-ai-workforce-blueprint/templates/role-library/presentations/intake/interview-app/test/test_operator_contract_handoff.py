@@ -234,9 +234,16 @@ def test_launcher_writes_ultra_mode_and_client_route_sidecars(tmp_path, monkeypa
         'provider': 'deepseek-direct', 'presence': True, 'detected': True,
         'wired_models': ['deepseek-flash', 'deepseek-v4.1-flash'], 'consented': True,
     }
+    # image_render (P-STYLE-PREVIEW / P4-RENDER) routes only via provider kie; ultra
+    # refuses any non-mechanical phase with no eligible route, so the profile the test
+    # asserts against must own kie or the launch it asserts is impossible by fixture.
+    profile['providers']['kie'] = {
+        'provider': 'kie', 'presence': True, 'detected': True,
+        'wired_models': [], 'consented': True,
+    }
     profile['model_plan'] = _profile_with_direct_flash()['model_plan']
     resource_profile.save_profile(profile, profile_dir)
-    monkeypatch.setattr(model_router, 'provider_key_resolves', lambda provider: provider == 'deepseek-direct')
+    monkeypatch.setattr(model_router, 'provider_key_resolves', lambda provider: provider in ('deepseek-direct', 'kie'))
     monkeypatch.setattr(launcher, 'notify_gate', lambda run: True)
     monkeypatch.setattr(launcher, 'ocr_launch_gate', lambda run: True)
     monkeypatch.setattr(launcher, 'capacity_gate', lambda: (100, {'status': 'MEASURED', 'provider': 'deepseek-direct', 'plan': 'test', 'detection_source': 'test'}))
