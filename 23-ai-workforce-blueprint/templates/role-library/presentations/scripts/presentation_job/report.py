@@ -5,7 +5,7 @@ import json
 import os
 import shlex
 import subprocess
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 from .result import CheckResult
 from .state import StateStore, utcnow
@@ -169,9 +169,26 @@ def dispatch(chat_id: str, kind: str, message: str) -> bool:
 
 
 class Reporter:
-    def __init__(self, state: Dict[str, Any], store: StateStore) -> None:
+    def __init__(self, state: Dict[str, Any], store: StateStore,
+                 manifest: Optional[Any] = None) -> None:
         self.state = state
         self.store = store
+        # PD-018b: the loaded manifest is the ONLY source of the phase ids and
+        # client labels the client-facing sanitizer uses -- the id list is
+        # never derived by pattern-matching the outgoing text. A Reporter built
+        # without a manifest (subsystem alerts, legacy call sites) keeps both
+        # empty and therefore sanitizes nothing; the engine always passes its
+        # own pinned manifest (phases.py Engine.__init__).
+        self._phase_ids: List[str] = []
+        self._client_labels: Dict[str, str] = {}
+        raw = getattr(manifest, "raw", None) if manifest is not None else None
+        if isinstance(raw, dict):
+            for entry in raw.get("phases") or []:
+                if isinstance(entry, dict) and entry.get("id"):
+                    pid = str(entry["id"])
+                    self._phase_ids.append(pid)
+                    self._client_labels[pid] = str(
+                        entry.get("client_label") or "").strip()
         # PD-019: the three throttle values live in the job state so a resume
         # (a new Reporter over the same state.json) does not repeat messages
         # the previous process already sent. A state file written before this
@@ -233,6 +250,7 @@ class Reporter:
         """
         req = self.state.get("requester") or {}
         chat_id = req.get("chat_id")
+        message = self._sanitize_for_client(message, phase_id)
         self.event(f"report.{kind}", message, requester=bool(chat_id))
         if not chat_id:
             self.event("report.undeliverable",
@@ -302,6 +320,38 @@ class Reporter:
                  "chat_id": chat_id, "attempts": 1, "outcome": result.value})
         self.store.save(self.state)
 
+    def _sanitize_for_client(self, message: str,
+                             phase_id: Optional[str] = None) -> str:
+        """PD-018b: nothing internal reaches the client transport.
+
+        If the outgoing text carries a manifest phase id (id list read from the
+        loaded manifest, never a pattern over the message) or a token starting
+        `AF-`, the client receives one plain sentence instead and the run
+        records `report.sanitized` with the withheld text for the operator.
+        """
+        text = str(message or "")
+        if not self._phase_ids and "AF-" not in text:
+            return text
+        leaked = ""
+        for pid in self._phase_ids:
+            if pid and pid in text:
+                leaked = pid
+                break
+        if not leaked:
+            for token in text.split():
+                if token.lstrip("([{\"'").startswith("AF-"):
+                    leaked = token
+                    break
+        if not leaked:
+            return text
+        label = self._client_labels.get(phase_id or "", "")
+        replacement = (f"Your presentation is moving ahead: {label}."
+                       if label else "Your presentation is moving ahead.")
+        self.event("report.sanitized",
+                   f"internal text withheld from the client ({leaked}): {text}",
+                   phase_id=phase_id)
+        return replacement
+
     @staticmethod
     def _blocked_key(phase_id: str, reason: str) -> str:
         # PD-019: " | " instead of a NUL byte. The key now survives a JSON
@@ -344,7 +394,7 @@ class Reporter:
             if self.state.get("throttle_probe"):
                 return False
             now_min = _parse_minutes(utcnow())
-            if self._is_milestone(message):
+            if self._is_milestone(phase_id):
                 self._last_progress_at["__milestone__"] = now_min
                 self._persist_throttle()
                 return True
@@ -361,11 +411,11 @@ class Reporter:
             return False
         return True
 
-    def _is_milestone(self, message: str) -> bool:
-        for m in _PROGRESS_MILESTONES:
-            if m in message:
-                return True
-        return False
+    def _is_milestone(self, phase_id: Optional[str]) -> bool:
+        """PD-018b: a milestone is the phase's own ID, passed through from
+        _throttle_decision -- never id text searched for inside the message
+        (a client message no longer carries a phase id at all)."""
+        return bool(phase_id) and phase_id in _PROGRESS_MILESTONES
 
     def _relay_observe(self, kind: str, message: str, outcome: str,
                        phase_id: Optional[str]) -> None:
