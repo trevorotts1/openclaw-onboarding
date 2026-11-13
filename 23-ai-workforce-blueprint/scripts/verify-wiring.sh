@@ -1141,12 +1141,15 @@ PYEOF
     # workforce lives in a company-shaped tree, so the front-door assertions
     # checked (or skipped) a directory the client never uses.
     PRES_SCRIPTS_DEPLOYED="$DEPT_DIR/scripts"
-    # Prefer the resolved department folder; fall back to the template source
-    # (repo context).
-    if [[ -d "$PRES_SCRIPTS_DEPLOYED" ]]; then
-      _PRES_SCRIPTS="$PRES_SCRIPTS_DEPLOYED"
-    elif [[ -d "$PRES_SCRIPTS_TEMPLATE" ]]; then
+    # Prefer the template source (repo context), which ships the full runner
+    # suite; fall back to the resolved department folder. The deployed folder
+    # is a RUNTIME directory the builders create empty beside the roles — an
+    # empty dir must not win over the populated source, or the front-door and
+    # process-integrity assertions check an empty room and fail a wired dept.
+    if [[ -d "$PRES_SCRIPTS_TEMPLATE" ]]; then
       _PRES_SCRIPTS="$PRES_SCRIPTS_TEMPLATE"
+    elif [[ -d "$PRES_SCRIPTS_DEPLOYED" ]]; then
+      _PRES_SCRIPTS="$PRES_SCRIPTS_DEPLOYED"
     else
       _PRES_SCRIPTS=""
     fi
