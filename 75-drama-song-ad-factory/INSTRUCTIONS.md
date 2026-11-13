@@ -109,14 +109,17 @@ guard that already failed.
    music-generation route is RETIRED with no fallback). Images -> Skill 66.
    Video clips -> Skill 67.
    Paid transport, poll and credits -> Skill 74 (shadow-first; submit
-   never chooses or changes a model). Callbacks -> Skill 46. Spoken voice
-   -> Skill 30 (Fish Audio). Account setup -> Skill 07. FFmpeg/editor
+   never chooses or changes a model). Results are polled through Skill 74;
+   no callback relay is used. Spoken voice ->
+   inside the Suno track; Velvet Voiceover -> Google text-to-speech through
+   Skill 74 (Fish Audio is not used by drama song ads). Account setup ->
+   Skill 07. FFmpeg/editor
    work -> Skills 25/27. Storyboard reuse -> Skill 24. Do not build a
    competing adapter inside this skill.
 
 4. **Run the shared intake/preflight controls (step 4, section 24).**
-   Reuse supplied information and settings, bundle at most three missing
-   essentials into one message, record the compact authorized summary
+   Reuse supplied information and settings, ask at most three missing
+   essentials ONE per message, record the compact authorized summary
    (summary digest), and never restart intake on resume:
 
    ```bash
@@ -185,7 +188,7 @@ guard that already failed.
    creative beats and twelve production stages stay separate contracts
    (section 14).
 
-   **Stage 3 stop rule (script-lyrics, v2.9.70).** Run the lyric validator (`lyric_writer.py`), the hook/recipe check (`suno_recipe.check_lyric_sheet`) and the words-fit check (`words_fit.preflight`) at most **3 rounds**. If a gate still fails after round 3, STOP: report the exact gate, its reason code and the failing lines, and ask the client ONE question (AskUserQuestion) with the concrete choices (for example: use these client words as written, pick a longer length, cut the named lines). Never grid-search word counts or rewrites, never spend more than about 10 minutes on this stage, and never edit, bypass or monkey-patch a validator during a run -- a gate that contradicts another gate is a skill defect to report, not a puzzle to solve.
+   **Stage 3 stop rule (script-lyrics, v2.9.70).** Run the lyric validator (`lyric_writer.py`), the hook/recipe check (`suno_recipe.check_lyric_sheet`) and the words-fit check (`words_fit.preflight`) at most **3 rounds**. If a gate still fails after round 3, STOP: report the exact gate, its reason code and the failing lines, and ask the client ONE question with the concrete choices, numbered, in one message (in a Claude Code session use the AskUserQuestion tool; on an OpenClaw box send it on the client's own channel with `openclaw message send` and wait for the reply) (for example: use these client words as written, pick a longer length, cut the named lines). Never grid-search word counts or rewrites, never spend more than about 10 minutes on this stage, and never edit, bypass or monkey-patch a validator during a run -- a gate that contradicts another gate is a skill defect to report, not a puzzle to solve.
 
 9. **Persist every provider task and result (step 9).** Every paid call
    reserves through `scripts/core/spend_ledger.py` with a recorded
@@ -353,10 +356,7 @@ or an equivalent self-scheduled wakeup. Every tick:
    lists every question with its options. Never answer a card question for the
    client.
 3. If `stalled` is true, run `recovery_command` once, then report.
-4. **The loop MUST stop itself at 3 hours**: `expired` true ends it (or
-   `loop_should_stop` true on a COMPLETE run), and `--interval-check` exits 10
-   at the same point. Never keep looping past the cap, and never say the video
-   is done unless `stage_state` is `COMPLETE`.
+4. **The loop stops only on `loop_should_stop`** (verified COMPLETE or cancelled; `--interval-check` exits 10). Reaching 3 hours does not stop it. Never say the video is done unless `stage_state` is `COMPLETE`.
 
 **On an OpenClaw box.** The same watcher runs as one cron:
 `timer-artifacts/install-keepalive-cron.sh --apply` registers `skill75-keepalive`
@@ -431,27 +431,57 @@ their own story. Directive 24.3 still caps intake at three story questions, and
 they are asked ONE per message - send the one question from the envelope, wait
 for the answer, run intake again with that answer to get the next (Trevor
 2026-10-21: never more than one question in a message). None is about money;
-the card asks it once. The options are presented as ONE choice card with every default
-pre-selected, so a client can approve with a single click. On resume the
-card shows only what changed.
+the card asks it once. The card carries the RECOMMENDED option marked on every
+question, and the client answers each question explicitly - never from an
+assistant recap, silence or an inferred choice. On resume the card shows only
+what changed.
 
-**Asking the seven intake questions (H9).** Build them with
-`python3 scripts/core/intake_preflight/factory.py card` (Claude Code chat:
-show stdout as is; Telegram: `--format openclaw-json --target <chat id>`,
-run each argv without a shell). Never type them free hand or send them as one
-line: one block per question, one numbered option per line, a blank line
-between questions. See `references/choice-card-spec.md` section 2.1.
+## Durable interactive intake (current entrypoint)
+
+For every new interactive run, use `factory.py card --step --run-dir "$RUN"
+--format session-json`. Send its returned `message` verbatim, wait for one
+explicit client reply, and return that raw reply with the returned
+`--question-id` and `--question-digest`; record its actual origin with
+`--answer-source-ref`. The session saves accepted answers before advancing.
+Resume the same run with no reply to retrieve the pending turn; never ask the
+client to type the answer history again.
+
+This path supersedes the older cumulative `--reply`, preselected-default and
+fixed-count intake instructions. Never answer from an assistant recap,
+silence or an inferred choice; never remap numbers across changed menus.
+`answered_count`, `total_count` and `done` come from the session response, and
+`done` requires all current valid answers plus explicit recap confirmation.
+SCRIPT/SONG/STORYBOARD preferences and intake confirmation do not approve the
+actual assets or authorize paid generation.
+
+Preserve explicit known client facts with `--seed-answers-file` only when each
+raw answer has its stable question ID and actual source reference; unknown
+legacy numbers and unprovenanced Studio bulk replies cannot be accepted.
+The complete flags, seed format, refusals, resume behavior and artifact
+approval boundaries are in [the intake session contract](references/intake-session-contract.md).
+
+**Run binding and bootstrap.** A run-bound `card` call is durable even without
+`--step`; explicit Studio exports and unbound previews stay static. Confirming
+the recap binds the exact client-selected builder/checker pair to this run;
+build admission uses the builder, QC and repair use the checker. Configured
+aliases stay literal, with no chain-member or global-setting change. Missing
+canonical stages start `NOT_STARTED`; existing run state, approvals, bindings
+and attempts are preserved. A pending research command or
+`admitted_not_called` plan is not provider execution. Router-chain attempts
+remain `CHAIN_RESOLUTION_UNVERIFIED` until supported identity evidence proves
+the actual call. See the intake session contract's model-role evidence section.
+
+**Production admission.** Use `factory.py preflight --run-dir "$RUN"` for
+confirmed-intake planning and add `--stage "<canonical stage>"` for that stage.
+An unbound preflight is a dependency diagnostic. Its success does not authorize
+production. Follow the admitted stage command from `next`; manual authorization
+JSON, four-pick receipts and stage rows cannot replace authoritative intake,
+predecessor completion or current artifact approvals. The paid dispatch
+boundary rechecks the run and request immediately before submission. Offline
+simulations are marked non-authoritative. See the intake session contract for
+scope and legacy resume behavior.
 
 **Script approval.** The card's last question (SCRIPT APPROVAL) lets the client read and approve the story and song lyrics before the song is made. On Yes, send the script, pause, and do not generate the song until "approve"; save the card answers (the `answers` list of `intake_card.conversation`) to `$RUN/card-answers.json` and the script to `$RUN/creative/script.json`; `factory.py next` then sends the script and pauses by itself, and `factory.py script-reply` carries the client's answer; see SKILL.md "Script approval before the song".
-
-**Ask them one at a time (I7).** Do not send the whole card. Run
-`factory.py card --step` (add one `--reply <what the client said>` per answer so
-far, in order; Telegram: `--format openclaw-json --target <chat id>`), send
-only the one message it prints, wait for the client's answer, run it again
-with that reply added, and repeat until it prints the recap. When the client
-replies yes to the recap, the command prints "Locked in" (JSON `done: true`)
-and you start. Each message holds one question, a one-sentence why, numbered
-options, and the RECOMMENDED option with its reason. See spec section 2.2.
 
 **F15 gate (Critical, owner order 2026-10-08): no run starts any paid job
 until the choice card is shown and its four answers - video style, audio
@@ -467,7 +497,8 @@ card. The answers and the time answered go into the receipt
 - **PURPOSE is question 1** and asks what the video is for: 1 Grow my business (the
   full package - a full episode plus 60 s and 90 s trailers and 60 s and 90 s ad
   clips), 2 tell a client's success story, 3 teach a lesson, 4 a social media video
-  (a paid ad or a free post). It replaces nothing; AI MODELS moves to question 2.
+  (a paid ad or a free post). It replaces nothing; AI MODELS follows the
+  purpose and its one follow-up.
   Each choice adds at most **one** follow-up: EPISODE LENGTH for 1 (it takes LENGTH's
   own place, so it adds no screen), PERMISSION for 2 ("Do you have your client's
   permission to use their testimonial?" - No pauses the order, nothing is generated or
@@ -482,30 +513,32 @@ card. The answers and the time answered go into the receipt
   lip-sync close-ups stay on KIE, and the card's video and image lines then read
   "included in your Agnes plan". A remembered "no" hides the question on later cards
   (one recap line; reply `agnes` at the recap to change it). The question is not
-  shown for 7- and 10-minute episodes, which are KIE-only. Ask it exactly like every
+  shown for the 10-minute long version, which is KIE-only. Ask it exactly like every
   other question - `factory.py card --step`, one question per message, never typed
   free hand.
 - At recap confirmation the run records the purpose, platform, lengths, output types
   and the permission answer in its `control/method.json`, alongside the card answers;
   without that record a run behaves exactly as it did before the method existed.
 
-**The card, in order:**
+**The card's options (the questions themselves are ordered by the card, PURPOSE first):**
 
 | Row | Values | Default |
 |---|---|---|
 | Length | 60 seconds, 90 seconds, 2 minutes, 3 minutes, 5 minutes, 10-minute long version | brief pre-fills the RECOMMENDED pick, else 60 seconds - the card still shows and the answers still record |
-| Shape | 9:16, 16:9, both | 9:16 |
+| Shape | Vertical (9:16), Wide (16:9) | Vertical |
 | Style | Lifelike 3D, 2D Hand-Painted, Sketch to Life, Canvas to Life, Canvas to 3D | Lifelike 3D |
-| Music | Soul Ballad, R&B Flow, Soul Rise | Soul Ballad |
+| Music | the eighteen canonical styles from `music_styles.catalog.choice_rows()` | Soul Ballad (recommended, listed first) |
 | Voice | All Suno, Velvet Voiceover | All Suno |
 | Clips | 60-second and 90-second clips | come with the 3-minute, 5-minute and 10-minute lengths, included in the price |
-| Video model | Hailuo 02 Standard 768P (RECOMMENDED), Seedance 2.5, Seedance 2.0 Mini, Google Veo 3.1 - each priced for the chosen length (`core/choice_card/video_models`) | Hailuo 02 Standard at 768P |
+| Video model | MiniMax H3 768P (RECOMMENDED), Seedance 2.5, Seedance 2.0 Mini, Google Veo 3.1 - each priced for the chosen length from `core/choice_card/video_models/video_model_rates.json` | MiniMax H3 at 768P |
 
 - **Lengths** 60 s / 90 s / **2 minutes (new, added by F15)** / 3 min /
   5 min / **10-minute long version**; each is its own song and timing map,
   never a cut-down.
-- **Shapes** 9:16, 16:9 or both, each generated natively - never a squash
-  or crop of the other. "Both shapes" shows its own price before approval.
+- **Shapes** Vertical (9:16) or Wide (16:9), each generated natively - never a
+  squash or crop of the other. The card asks these two; it has no "both
+  shapes" answer (`intake_card._shape_q`): that promise is a product gap, not
+  an offered choice (see the U-F05 report).
 - **Clips:** the 3-minute, 5-minute and 10-minute ads each come with one
   automatic 60-second clip and one 90-second clip (`core/clip_cutdown`).
   Cutting is free (FFmpeg edit, no new AI media), so the price already
@@ -583,8 +616,10 @@ card. The answers and the time answered go into the receipt
   sung)`; an 8-frame mouth strip at `<delivery folder>/mouth-strips/<segment>.png` for
   every UNDETERMINED or flagged segment, listed in the receipt; edit placement (trim to
   audio length, place at the Suno word time corrected by the stem offset, lanczos upscale
-  to 1080x1920, drop frames to the native fps and never invent them, all ffmpeg through
-  `load_governor`); QC items 8 and 11 accept `KEPT_BEST` and flagged rows with a strip. Model order is
+  to 1080x1920, conform to the 30 fps master under SKILL.md "Frame rate (Part H H3)"
+  (a native-30 Kling clip passes through; a 24 fps source is motion-interpolated, never
+  the plain `fps` filter), all ffmpeg through `load_governor`); QC items 8 and 11 accept
+  `KEPT_BEST` and flagged rows with a strip. Model order is
   Kling avatar `kling/ai-avatar-standard` first (a front-facing close-up
   image plus that character's own isolated line; THE lip-sync model), InfiniTalk
   `infinitalk/from-audio` manual backup only (never called by the code, not on by
@@ -597,7 +632,9 @@ card. The answers and the time answered go into the receipt
   the one speaking it, or the voice's source device; measured pitch must sit
   in the character's gender range (roughly 85-155 Hz male, 165-255 Hz
   female) with same-gender characters measurably different - an octave
-  error fails QC and the line is regenerated.
+  error fails QC. The checker never regenerates the take: the failure is
+  recorded and presented to the client under the one fork question, and only
+  the client's recorded answer authorises a new paid round.
 - **Suno extend** is used only to hit an exact length or to repair a
   section, never as routine billing.
 - **Unknown KIE job results** are resolved by querying KIE task status;
@@ -607,55 +644,12 @@ card. The answers and the time answered go into the receipt
   its own campaign folder, receipt, spend-ledger run and Command Center
   deliverable. Books and authors are never mixed. The card shows the batch
   total.
-- **Prices:** every figure on the card - video, both shapes, lip-sync
-  close-ups, voice packs, clips and the batch total - comes from Skill 74
-  `price`. Nothing here computes a rate.
+- **Prices:** the VIDEO MODEL line comes from the one rates table,
+  `scripts/core/choice_card/video_models/video_model_rates.json`, through the
+  shared price function; Skill 74 `price` returns the highest listed tier, so
+  the chosen model's video line is priced from that table instead. Every
+  OTHER figure on the card - the chosen shape, lip-sync close-ups, voice
+  packs, clips and the batch total - comes from Skill 74 `price`. Nothing
+  here hard-codes a rate.
 - **Command Center:** one deliverable per ad (VPS boxes), one Kanban card
   per ad and one parent card per batch.
-
-
-## Durable interactive intake (current entrypoint)
-
-For every new interactive run, use `factory.py card --step --run-dir "$RUN"
---format session-json`. Send its returned `message` verbatim, wait for one
-explicit client reply, and return that raw reply with the returned
-`--question-id` and `--question-digest`; record its actual origin with
-`--answer-source-ref`. The session saves accepted answers before advancing.
-Resume the same run with no reply to retrieve the pending turn; never ask the
-client to type the answer history again.
-
-This path supersedes the older cumulative `--reply`, preselected-default and
-fixed-count intake instructions above. Never answer from an assistant recap,
-silence or an inferred choice; never remap numbers across changed menus.
-`answered_count`, `total_count` and `done` come from the session response, and
-`done` requires all current valid answers plus explicit recap confirmation.
-SCRIPT/SONG/STORYBOARD preferences and intake confirmation do not approve the
-actual assets or authorize paid generation.
-
-Preserve explicit known client facts with `--seed-answers-file` only when each
-raw answer has its stable question ID and actual source reference; unknown
-legacy numbers and unprovenanced Studio bulk replies cannot be accepted.
-The complete flags, seed format, refusals, resume behavior and artifact
-approval boundaries are in [the intake session contract](references/intake-session-contract.md).
-
-**Run binding and bootstrap.** A run-bound `card` call is durable even without
-`--step`; explicit Studio exports and unbound previews stay static. Confirming
-the recap binds the exact client-selected builder/checker pair to this run;
-build admission uses the builder, QC and repair use the checker. Configured
-aliases stay literal, with no chain-member or global-setting change. Missing
-canonical stages start `NOT_STARTED`; existing run state, approvals, bindings
-and attempts are preserved. A pending research command or
-`admitted_not_called` plan is not provider execution. Router-chain attempts
-remain `CHAIN_RESOLUTION_UNVERIFIED` until supported identity evidence proves
-the actual call. See the intake session contract's model-role evidence section.
-
-
-**Production admission.** Use `factory.py preflight --run-dir "$RUN"` for
-confirmed-intake planning and add `--stage "<canonical stage>"` for that stage.
-An unbound preflight is a dependency diagnostic. Its success does not authorize
-production. Follow the admitted stage command from `next`; manual authorization
-JSON, four-pick receipts and stage rows cannot replace authoritative intake,
-predecessor completion or current artifact approvals. The paid dispatch boundary
-rechecks the run and request immediately before submission. Offline simulations
-are marked non-authoritative. See the intake session contract for scope and
-legacy resume behavior.

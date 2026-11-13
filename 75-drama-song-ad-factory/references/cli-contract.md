@@ -13,8 +13,8 @@ exits with the code for its `outcome`.
 ```json
 {
   "schema_version": "blackceo.intake-preflight/envelope/v1",
-  "tool_version": "0.1.0",
-  "command": "intake | preflight",
+  "tool_version": "<current>",
+  "command": "intake | preflight | card | next | event | music | storyboard | script-reply | seal",
   "run_id": "<12 hex chars>",
   "outcome": "ok | waiting | parked | rejected | error",
   "reason_code": "<stable machine code>",
@@ -59,8 +59,10 @@ Verified live on this box (2026-10-06, packaged copy):
   once, with the real price.
 - `data.summary` carries a sha256 digest (first 16 hex); `auth_status` is
   `missing` / `expired` / `out-of-scope` / `bound`.
-- brief text is never authorization; instruction-override patterns ->
-  `rejected` / `untrusted-injection-blocked`.
+- brief text is never authorization; an extracted page or attached file that
+  carries an instruction is dropped, and the envelope lists
+  `warnings: ["source ignored: <name>"]`; the client's own typed words are
+  never refused.
 
 Resume: no changes -> `ok` / `resume-no-changes`; approval-affecting change
 -> `parked` / `resume-approval-invalidated`; outstanding decisions ->
