@@ -353,9 +353,22 @@ $ git ls-remote --heads origin refs/heads/pd/fl24-role-procedures-c
 MATCH: remote head == local HEAD, 40/40 characters
 ```
 
-The commit that carries **this report** is pushed after it, so the branch head at report time is that
-report commit; its parent is `88dc5c45a`, the last build commit whose artefact the rows above were proven
-on.
+The commit that carries **this report** is `3538e19cac160d5f5162deaaeb1a7bf43c9c4f1f`; its parent is
+`88dc5c45a`, the last build commit whose artefact the rows above were proven on. Measured after that push:
+
+```
+$ git rev-parse HEAD
+3538e19cac160d5f5162deaaeb1a7bf43c9c4f1f
+$ git ls-remote --heads origin refs/heads/pd/fl24-role-procedures-c
+3538e19cac160d5f5162deaaeb1a7bf43c9c4f1f	refs/heads/pd/fl24-role-procedures-c
+MATCH: remote head == local HEAD, 40/40 characters
+```
+
+The lane clone `<PROJECT ROOT>/worktrees/onboarding/FL24` was never written to: `git status --porcelain`
+returned no lines at the end of the unit, and it still sits at `ac6c3a86a` on branch
+`pd/fl24-role-procedures-c`. All work happened in a throwaway worktree under the unit's scratch folder,
+which is pruned when the unit closes. This addendum is the last commit of the unit; the branch head after
+it is stated in the builder's final message, because a commit cannot name its own sha.
 
 ---
 
