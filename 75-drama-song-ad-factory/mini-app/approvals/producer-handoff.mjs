@@ -17,6 +17,7 @@
 //   5  refused  — the item is unknown or unapproved; nothing on stdout
 //   2  bad input (an argument is missing or malformed)
 // =============================================================================
+import { realpathSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 import { fileStore, producerPayload, ApprovalError, REFUSED_EXIT } from "./approvals.mjs";
 
@@ -62,6 +63,15 @@ export function main(argv = process.argv.slice(2)) {
   }
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  process.exit(main());
+// Run only when executed directly. Node puts the RESOLVED realpath in
+// import.meta.url, so argv[1] is resolved the same way first: a symlinked
+// invocation must still run main(), not exit 0 doing nothing.
+if (process.argv[1]) {
+  let selfUrl = null;
+  try {
+    selfUrl = pathToFileURL(realpathSync(process.argv[1])).href;
+  } catch {
+    selfUrl = null;
+  }
+  if (import.meta.url === selfUrl) process.exit(main());
 }
