@@ -617,7 +617,7 @@ def frame_text_gate(plan, ffmpeg=None, dry_run=False, frame_count=3,
                              "the planned words or overlay them at assembly"
                              % (r["clip"], r.get("expected"))),
                          evidence={"frame_text": rows})
-        elif r["text_frames"]:
+        elif r.get("check") != "onscreen_text" and r["text_frames"]:
             fail = _fail(GARBLED_TEXT_FRAME, next_action=(
                 "lip-sync clip %s shows readable invented text in sampled "
                 "frame(s) %s; regenerate that clip (no OCR text is allowed "
