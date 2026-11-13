@@ -344,5 +344,94 @@ def test_pd069_a1_control_stripping_vsl_flat_fields_turns_the_check_red(tmp_path
     assert _shape_reasons(reasons), reasons
 
 
+# ---------------------------------------------------------------------------
+# PD-217 -- the install receipt must match RECORDED ids.
+#
+# THE DEFECT: the ledger-agreement loop only failed when the receipt's id and
+# the ops ledger's id were BOTH present and DIFFERENT. A receipt naming an id
+# this run's ledger never recorded (ledger value absent) sailed through, so a
+# fabricated id was accepted as proof of an install. The rule now fails on an
+# absent ledger value exactly as on a mismatch, with one named message.
+#
+# Each row is its own BEFORE/AFTER pair on the same run dir: the completed
+# install validates with the ledger intact, then the ledger loses the id (or
+# records a different one) and the SAME receipt stops validating, naming it.
+# ---------------------------------------------------------------------------
+PD217_MSG = "receipt id not recorded in this run's operations ledger"
+
+
+def _edit_ledger_remote(rd: Path, phase_id: str, key: str, value) -> None:
+    """Rewrite ONE id in this run's ops ledger: value=None deletes it."""
+    ops = gx.load_ops(rd)
+    remote = ops[phase_id].setdefault("remote", {})
+    if value is None:
+        remote.pop(key, None)
+    else:
+        remote[key] = value
+    gx._write_json_atomic(rd / gx.OPS_LEDGER_REL, ops)
+
+
+def _complete_install(rd: Path, phase_id: str) -> None:
+    if phase_id == gx.PHASE_FORM_GATE:
+        rc, receipt = gx.execute_phase(rd, phase_id,
+                                       gate_adapter=gx.MemoryGateAdapter(LOC),
+                                       env=ENV)
+    else:
+        rc, receipt = gx.execute_phase(rd, phase_id,
+                                       page_adapter=gx.MemoryPageAdapter(LOC),
+                                       env=ENV)
+    assert rc == gx.EXIT_OK, receipt
+    assert receipt["status"] == gx.STATUS_COMPLETE
+    ok, detail, _d = gx.validate_receipt(rd, phase_id, env=ENV)
+    assert ok is True, detail
+
+
+@pytest.mark.parametrize("phase,key,pre", [
+    (gx.PHASE_GHL_SALES, "funnel_id", SALES_PRE),
+    (gx.PHASE_GHL_SALES, "sales_page_id", SALES_PRE),
+    (gx.PHASE_GHL_SALES, "checkout_page_id", SALES_PRE),
+    (gx.PHASE_GHL_VSL, "funnel_id", VSL_PRE),
+    (gx.PHASE_GHL_VSL, "vsl_page_id", VSL_PRE),
+])
+def test_pd217_a1_page_receipt_id_absent_from_the_ledger_fails(
+        tmp_path, phase, key, pre):
+    rd = _intake(tmp_path, pre)
+    _seed_pages(rd)
+    _complete_install(rd, phase)
+    _edit_ledger_remote(rd, phase, key, None)
+    ok, detail, _d = gx.validate_receipt(rd, phase, env=ENV)
+    assert ok is False, detail
+    assert PD217_MSG in detail, detail
+    assert key in detail, detail
+
+
+@pytest.mark.parametrize("key", ["form_id", "workflow_id"])
+def test_pd217_a1_gate_receipt_id_absent_from_the_ledger_fails(tmp_path, key):
+    rd = _intake(tmp_path, VSL_PRE)
+    _seed_pages(rd)
+    _complete_install(rd, gx.PHASE_FORM_GATE)
+    _edit_ledger_remote(rd, gx.PHASE_FORM_GATE, key, None)
+    ok, detail, _d = gx.validate_receipt(rd, gx.PHASE_FORM_GATE, env=ENV)
+    assert ok is False, detail
+    assert PD217_MSG in detail, detail
+    assert key in detail, detail
+
+
+@pytest.mark.parametrize("phase,key,pre", [
+    (gx.PHASE_GHL_SALES, "sales_page_id", SALES_PRE),
+    (gx.PHASE_FORM_GATE, "workflow_id", VSL_PRE),
+])
+def test_pd217_a1_a_different_ledger_id_fails_with_the_same_message(
+        tmp_path, phase, key, pre):
+    """The old mismatch branch keeps its teeth, now under one message."""
+    rd = _intake(tmp_path, pre)
+    _seed_pages(rd)
+    _complete_install(rd, phase)
+    _edit_ledger_remote(rd, phase, key, "page_someone_elses")
+    ok, detail, _d = gx.validate_receipt(rd, phase, env=ENV)
+    assert ok is False, detail
+    assert PD217_MSG in detail, detail
+
+
 if __name__ == "__main__":
     sys.exit(pytest.main([__file__, "-v"]))

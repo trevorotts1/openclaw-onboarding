@@ -876,13 +876,19 @@ def validate_receipt(run_dir: Path, phase_id: str,
                 scope.get("location_id"), bound, "unbound-test", None, "") \
                 and scope.get("location_id") != rb_pages[pid].get("location_id"):
             return False, (f"{phase_id}: readback location mismatch on {pid}"), data
-    # Ledger agreement: the receipt's remote IDs must equal the ops ledger's
-    # recorded IDs. A receipt naming IDs the ledger never recorded is
-    # fabricated, even when the execution_id matches.
-    for key in ("funnel_id", *[f"{pg}_page_id" for pg in ("sales", "checkout", "vsl")]):
-        if remote.get(key) and ops_remote.get(key) and remote[key] != ops_remote[key]:
-            return False, (f"{phase_id}: receipt {key} {remote[key]!r} != ops "
-                           f"ledger {ops_remote[key]!r} -- fabricated"), data
+    # Ledger agreement (PD-217): every remote id the receipt NAMES must be
+    # recorded in this run's ops ledger AND equal it. A receipt naming an ID
+    # the ledger never recorded is fabricated even when the execution_id
+    # matches, so an ABSENT ledger value now fails exactly like a mismatch.
+    for key in sorted(k for k in remote
+                      if k == "funnel_id" or k.endswith("_page_id")):
+        val = remote.get(key)
+        if not isinstance(val, str) or not val:
+            continue
+        if ops_remote.get(key) != val:
+            return False, (f"{phase_id}: receipt id not recorded in this run's "
+                           f"operations ledger ({key} {val!r} vs ledger "
+                           f"{ops_remote.get(key)!r})"), data
     # Input freshness: inputs changed since the install need a re-install.
     recorded = data.get("input_hashes") if isinstance(
         data.get("input_hashes"), dict) else {}
@@ -936,10 +942,13 @@ def _validate_gate_receipts(run_dir: Path, data: dict, scope: dict,
             return False, (f"{PHASE_FORM_GATE}: {label} readback location "
                            f"{loc!r} != receipt scope {scope['location_id']!r}"), data
     ops_remote = ops_remote or {}
+    # PD-217: the same rule as the page branch -- an id the ledger never
+    # recorded is not proof of an install, whether it differs or is missing.
     for key, val in (("form_id", form_id), ("workflow_id", workflow_id)):
-        if ops_remote.get(key) and val != ops_remote[key]:
-            return False, (f"{PHASE_FORM_GATE}: receipt {key} {val!r} != ops "
-                           f"ledger {ops_remote[key]!r} -- fabricated"), data
+        if ops_remote.get(key) != val:
+            return False, (f"{PHASE_FORM_GATE}: receipt id not recorded in this "
+                           f"run's operations ledger ({key} {val!r} vs ledger "
+                           f"{ops_remote.get(key)!r})"), data
     recorded = data.get("input_hashes") if isinstance(
         data.get("input_hashes"), dict) else {}
     if not recorded:
