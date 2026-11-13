@@ -185,6 +185,8 @@ excluded from this run; it is run separately above at 5 passed.)
 
 ## 5. Remote-head proof
 
+Push 1 — the merge commit:
+
 ```
 $ git push origin HEAD:refs/heads/pd/fl35-sealed-record
    74d48abe6..94fd1c918  HEAD -> pd/fl35-sealed-record
@@ -193,8 +195,19 @@ $ git ls-remote --heads origin refs/heads/pd/fl35-sealed-record
 94fd1c9182fd8d8a5dcf4c07a7bca3d5a4864415	refs/heads/pd/fl35-sealed-record
 ```
 
-Full 40 characters, literal: `94fd1c9182fd8d8a5dcf4c07a7bca3d5a4864415`.
-Fast-forward from `74d48abe6581fe2a191e7e697d70a8b59348e797`; no force.
+Push 2 — this report:
+
+```
+$ git push origin HEAD:refs/heads/pd/fl35-sealed-record
+   94fd1c918..7da3a8e41  HEAD -> pd/fl35-sealed-record
+
+$ git ls-remote --heads origin refs/heads/pd/fl35-sealed-record
+7da3a8e41ef519ca5e5affd21744b4d49c27cbcf	refs/heads/pd/fl35-sealed-record
+```
+
+Current remote head, full 40 characters, literal:
+`7da3a8e41ef519ca5e5affd21744b4d49c27cbcf`. Both pushes are fast-forwards
+from `74d48abe6581fe2a191e7e697d70a8b59348e797`; no force anywhere.
 
 ## 6. What I could not prove
 
