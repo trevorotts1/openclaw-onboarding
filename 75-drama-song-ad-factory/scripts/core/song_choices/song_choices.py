@@ -250,67 +250,14 @@ def _held_result(n, variant, env, hold):
             "hold": hold, "envelope": env, "counts": env["counts"]}
 
 
-def save_only_plan(env):
-    """X05: the exact adapter ``save`` command for a held attempt, or [] when
-    the envelope is not a resumable save hold. Generation is never in it."""
-    hold = _save_hold(env)
-    if not hold:
-        return []
-    argv = ["save", "--task-id", hold["task_id"], "--json"]
-    if hold["save_dir"]:
-        argv += ["--save-dir", str(hold["save_dir"])]
-    if hold["info"]:
-        argv += ["--info", str(hold["info"])]
-    return argv
-
-
-def resume_save_only(env, call):
-    """X05: resume ONE held attempt by RE-SAVING its existing task id.
-
-    ``call`` is the dispatcher's adapter call (``_call(runner, adapter, argv)``
-    shape): it takes argv and returns ``(rc, json_or_None, raw)``. Nothing here
-    can submit or generate, so a recovery adds ZERO provider submissions. The
-    re-saved files are verified (present, regular, non-empty) before any is
-    reported; a recovery that yields nothing usable stays a hold."""
-    argv = save_only_plan(env)
-    if not argv:
-        return {"ok": False, "reason_code": "NOT_A_SAVE_HOLD",
-                "detail": "the envelope carries no resumable save recovery",
-                "argv": [], "saved_paths": []}
-    try:
-        rc, v, raw = call(argv)
-    except Exception as exc:                     # noqa: BLE001 - reported, never raised
-        return {"ok": False, "reason_code": "KIE_SAVE_FAILED",
-                "detail": "the save command raised: %s" % exc,
-                "argv": argv, "saved_paths": []}
-    listed = v.get("saved_paths") if isinstance(v, dict) else None
-    if not isinstance(listed, list):
-        return {"ok": False, "reason_code": "KIE_SAVE_PATHS_UNSUPPORTED",
-                "detail": "saved_paths answered %s, not a list"
-                          % type(listed).__name__,
-                "argv": argv, "saved_paths": []}
-    good, missing, empty = [], [], []
-    for p in listed:
-        try:
-            if isinstance(p, str) and os.path.isfile(p):
-                if os.path.getsize(p) > 0:
-                    good.append(p)
-                else:
-                    empty.append(p)
-                continue
-        except OSError:
-            pass
-        missing.append(repr(p)[:80])
-    if listed and not (missing or empty):
-        return {"ok": True, "reason_code": "", "detail": "",
-                "argv": argv, "saved_paths": good, "rc": rc}
-    return {"ok": False,
-            "reason_code": ("KIE_SAVE_OUTPUT_MISSING" if missing else
-                            "KIE_SAVE_OUTPUT_EMPTY" if empty else "KIE_SAVE_EMPTY"),
-            "detail": ("no verified file: %s" % ", ".join(missing[:5])) if missing
-                      else ("zero-byte: %s" % ", ".join(empty[:5])) if empty
-                      else "the save command listed no output file",
-            "argv": argv, "saved_paths": good, "rc": rc}
+# X05 deletion (U-GEN304): ``save_only_plan`` and ``resume_save_only`` are
+# gone. They were a finished save-only resume with ZERO callers -- no production
+# recovery step resumes a held attempt, so the pair promised an act nothing
+# could take. The retained charge and the operator's exact resume inputs stay on
+# the HELD result's ``recovery``/``hold`` blocks, and the on-disk envelope keeps
+# the task id, so an operator can still run Skill 74 ``save --task-id`` by hand.
+# Adding an automated caller needs a new authorized recovery surface, not an
+# uncalled function pair inside this module.
 
 
 def _brief_refusals(variant):
