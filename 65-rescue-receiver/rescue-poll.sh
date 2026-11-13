@@ -2809,7 +2809,10 @@ for p in (d.get("unreadable") or []):
     exit 0
 fi
 
-_rr_notification_enqueue initial "Rescue Rangers received your request and is applying the authorized recovery."
+# RRX-021: no "initial" owner message is sent from here. It was sent when the
+# finished instruction was collected (not when the case was received), and it
+# claimed something was being applied even for advice-only cases. The agent
+# already tells the owner the case was sent, at the moment it is sent.
 
 # Decode the payload and run the local delivery command. The message is
 # base64-transported (never shell-quoted, never executed as shell).
