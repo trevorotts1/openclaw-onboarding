@@ -1,6 +1,6 @@
 ---
 name: drama-song-ad-factory
-description: > End-to-end drama-song advertisement factory on OpenClaw: a sung direct-response story (twelve-beat drama song) carried through intake, preflight, storyboard, shot planning, KIE music/lyric/vocal generation (Suno via Skill 68's createTask contract), timed film assembly (FFmpeg), independent music/timing/QC gates, Command Center ad-campaigns delivery, delivery variants and retake management. Standard-library Python control layer with transactional state, spend ledger with recorded ceilings, bounded worker leases and fail-closed recovery. Same canonical methodology and control CLI as the Claude-Nine / Claude Code distribution (999-setup .claude/skills/drama-song-ad-factory) — one skill folder per runtime, shared core, shared exit codes, no bypass of a failed shared guard. Use when asked to produce a drama song ad or song-driven video ad, or to run intake, preflight, resume or QC gates for an existing drama-song campaign run. Not for motion graphics (use motion-video-plus), plain AI video generation (use 67-kie-video), or landing pages (use blackceo-signature-page).
+description: End-to-end drama-song advertisement factory on OpenClaw: a sung direct-response story (twelve-beat drama song) carried through intake, preflight, storyboard, shot planning, KIE music/lyric/vocal generation (Suno via Skill 68's createTask contract), timed film assembly (FFmpeg), independent music/timing/QC gates, Command Center ad-campaigns delivery, delivery variants and retake management. Standard-library Python control layer with transactional state, spend ledger with recorded ceilings, bounded worker leases and fail-closed recovery. Same canonical methodology and control CLI as the Claude-Nine / Claude Code distribution (999-setup .claude/skills/drama-song-ad-factory) — one skill folder per runtime, shared core, shared exit codes, no bypass of a failed shared guard. Use when asked to produce a drama song ad or song-driven video ad, or to run intake, preflight, resume or QC gates for an existing drama-song campaign run. Not for motion graphics (use motion-video-plus), plain AI video generation (use 67-kie-video), or landing pages (use blackceo-signature-page).
 version: v2.9.164
 priority: MEDIUM
 ---
@@ -27,6 +27,7 @@ The adapter calls the shared module in
 counter lives outside every skill folder, so a second strike locks THIS
 skill folder and only its own files. Unlock is operator-only: restore this
 skill folder from GitHub. This gate never touches another skill's files.
+
 OpenClaw distribution of the BlackCEO drama-song ad factory. One canonical
 methodology, two runtime distributions: this folder and the Claude-Nine /
 Claude Code skill (`.claude/skills/drama-song-ad-factory/` in 999-setup)
@@ -183,7 +184,7 @@ silently.
   receipt's `warnings` list. Code: `scripts/core/loud_failure.py`; proof:
   `tests/test_loud_failure.py`.
 
-**Stage 3 stop rule (script-lyrics, v2.9.70).** Run the lyric validator (`lyric_writer.py`), the hook/recipe check (`suno_recipe.check_lyric_sheet`) and the words-fit check (`words_fit.preflight`) at most **3 rounds**. If a gate still fails after round 3, STOP: report the exact gate, its reason code and the failing lines, and ask the client ONE question (AskUserQuestion) with the concrete choices (for example: use these client words as written, pick a longer length, cut the named lines). Never grid-search word counts or rewrites, never spend more than about 10 minutes on this stage, and never edit, bypass or monkey-patch a validator during a run -- a gate that contradicts another gate is a skill defect to report, not a puzzle to solve.
+**Stage 3 stop rule (script-lyrics, v2.9.70).** Run the lyric validator (`lyric_writer.py`), the hook/recipe check (`suno_recipe.check_lyric_sheet`) and the words-fit check (`words_fit.preflight`) at most **3 rounds**. If a gate still fails after round 3, STOP: report the exact gate, its reason code and the failing lines, and ask the client ONE question with the concrete choices, numbered, in one message (in a Claude Code session use the AskUserQuestion tool; on an OpenClaw box send it on the client's own channel with `openclaw message send` and wait for the reply) (for example: use these client words as written, pick a longer length, cut the named lines). Never grid-search word counts or rewrites, never spend more than about 10 minutes on this stage, and never edit, bypass or monkey-patch a validator during a run -- a gate that contradicts another gate is a skill defect to report, not a puzzle to solve.
 
 ## Run keepalive: the client hears from us every 10 minutes (v2.9.77)
 
@@ -198,17 +199,11 @@ the spend ledger's `runs.created_at`) and prints one JSON envelope: `run_id`,
 `stage`, `stage_state`, `elapsed_minutes`, `decisions_pending` (intake
 outstanding, approval gates, a cost fork still on the safe default `wait` -
 each with its own question text and options), `stalled`, `loud`, `expired`,
-`message_for_client`. It NEVER mutates a run: stall recovery is the printed
-`recovery_command` (`factory.py next --run-dir $RUN`), run by the agent, never
-by the watcher.
+`message_for_client`. Without `--recovery-act` it never changes a run. With `--recovery-act` AND a written `control/recovery-authorization.json`, it runs the one supported recovery step (`factory.py next`) itself and records a receipt.
 
 - **Stall** = the current stage made no progress for 30 minutes, its lease ran
   out, or it is `STALE`. Loud code `HEARTBEAT_STALLED`.
-- **Cap** = 3 hours from the run's own start (the earlier of spend_ledger
-  `runs.created_at` and the state store's first row). At the cap the client
-  gets a final wrap-up and `HEARTBEAT_EXPIRED` is a FAILURE unless the run is
-  COMPLETE. The cap is a FLAG with a client-facing wrap-up, never a silent
-  pass and never a claim that unfinished work is done.
+- **Check-in point** = 3 hours of the studio's own working time (time spent waiting for the client's answer does not count). Past it the run is NOT stopped: the client gets one plain "this is taking longer than usual" message, a person is alerted (`HEARTBEAT_EXPIRED`), and supervision continues until the run is verified COMPLETE or the client cancels.
 - **Unreadable state** = `HEARTBEAT_STATE_UNREADABLE`, loud, exit 1.
 
 Two drivers, one watcher:
@@ -225,9 +220,7 @@ Two drivers, one watcher:
    AND writes the durable tombstone.
 2. **claude-nine / Claude Code session.** `INSTRUCTIONS.md`, section "RUN
    KEEPALIVE (10-MINUTE HEARTBEAT)": a 10-minute loop while a run is active.
-   The loop stops itself when the envelope's `expired` flag is true (or
-   `loop_should_stop` on a COMPLETE run), and `--interval-check` exits 10 for
-   the same stop.
+   The loop stops only when the envelope's `loop_should_stop` is true (the run is verified COMPLETE, or the client cancelled); `--interval-check` exits 10 at that point and never because of elapsed time.
 
 Tests: `python3 scripts/core/heartbeat/test_run_watch.py`,
 `python3 timer-artifacts/checks/test_keepalive_cron.py`.
@@ -365,8 +358,8 @@ The layers and the assembler are the same in both distributions (U15a-U15i):
 ## Suno song recipe (read this first when you build audio)
 
 Every Suno music style (Soul Ballad, R&B Flow, Soul Rise, and any Suno style
-added later) follows this recipe by default. It is what made the Kiesett and
-the client songs land. The code is `scripts/core/suno_recipe/`; every Suno
+added later) follows this recipe by default. It is what made the first
+client songs land. The code is `scripts/core/suno_recipe/`; every Suno
 request goes through `suno_recipe.prepare()` and the `music_director` seam
 refuses a raw Suno style that skipped it.
 
@@ -405,8 +398,8 @@ timestamps of every take, regenerates whole tracks only, and refuses
 openai-whisper.
 
 The targets (Trevor, 2026-10-08, SPK001): speaking is **20-25% of the
-runtime** by default (center 22.5; each ad can set its own, Black Successful
-Women uses 15-20), and the lyric writer derives its spoken word budget from the ad's
+runtime** by default (center 22.5; each ad can set its own - one client run set
+15-20), and the lyric writer derives its spoken word budget from the ad's
 own spoken target and the length formula's measured word rates (no fixed
 word percent). Singing is measured against **voice time**, sung / (sung + spoken),
 with a default target of **77.5%** (75-80): a music-only intro, gaps and the
@@ -664,7 +657,7 @@ and a VERIFIED or UNVERIFIED status.
 
 Captions are the approved lyric sheet's own words, timed by the Suno
 timestamps. Speech-to-text is never a caption text source. Character and
-brand names (for example Stale, Stop Stale) are protected words:
+brand names carried by the approved sheet are protected words:
 
 - When the lyric sheet is BUILT, the lyric writer may not change a protected
   name or rewrite a packet line (`core/protected_names.py::check_sheet`,
@@ -675,7 +668,7 @@ brand names (for example Stale, Stop Stale) are protected words:
   (`music_qc.check_song_qc(..., protected=...)`).
 - Build captions with `protected_names.build_captions(sheet, aligned_words)`;
   QC fails any caption mismatch (`delivery_variants.checks.check_captions(...,
-  protected=...)`): "the house went still" for "Stale" is a FAIL.
+  protected=...)`): "the house went still" for a protected word is a FAIL.
 - **Caption and lyric QC run on measured timing (Part F F18):** word timings
   come from the ONE transcription step (`audio_c3/lyric_timing.provide_word_timings`,
   F17 — Suno alignedWords → faster-whisper local → client cloud STT). Pass
@@ -731,8 +724,8 @@ frames were read. The checker that reports this is `UNAVAILABLE`, never PASS.
   `core/kie_dispatch` like every other paid call (same reserve/submit/wait/
   reconcile protocol, no private KIE client). Fish Audio (Skill 30) is not
   used by drama song ads.
-- Account setup: Skill 07 (`07-kie-setup`); callback relay: Skill 46
-  (`46-kie-callback-relay`).
+- Account setup: Skill 07 (`07-kie-setup`). Results are polled through
+  Skill 74; no callback relay is used.
 - Ordinary FFmpeg editing needs ride Skills 25 / 27.
 
 Every paid path reserves through `core/spend_ledger.py` with a recorded
@@ -825,24 +818,6 @@ top. A render attempt that carries a blur fill is refused with a named error
 before any money is spent, the quality check fails a deliverable whose height
 came from a fill, and the repair is the crop-in re-lip-sync of that shot,
 never a fill. Proof: `tests/test_no_blur_fill/`.
-
-## Scenes must match the song and the faces (Part I I2)
-
-Plain rules, no exceptions:
-
-1. At storyboard time every shot carries four facts: the exact line, what the
-   viewer must understand from it, where the person is and what they are doing,
-   and the emotion on their face. A shot missing any of the four is not
-   approved and no clip money is spent on it (`scene_match.check_cards`).
-2. A pain line never gets a smiling face. Warm is a lighting word, never a
-   face word. A joyful line may smile.
-3. After the clips exist, quality control samples at least three frames per
-   shot and checks two things against the line: the picture shows the planned
-   place and action, and the face shows the planned emotion
-   (`scene_match.qc_scene_match`, built on the face-emotion gate).
-4. A shot that fails either check is regenerated by itself. The other shots
-   and the song are never redone for one bad shot, and a shot with no sampled
-   frames is never passed unseen.
 
 ## Scenes must match the song and the faces (Part I I2)
 
@@ -1195,7 +1170,7 @@ SOP named above.
   sketch is pure black-and-white line art, the base fully photoreal, exactly
   two figures; the sketch eyeline lands on the photoreal lead (a mirrored pose
   fails). Storyboard field `DUAL_PRESENCE {shot_id, start_pct, duration_s,
-  composition TWO_SHOT_SIDE_BY_SIDE, sketch_character INNER-NAME, eyeline
+  composition TWO_SHOT_SIDE_BY_SIDE, sketch_character SKETCH-NAME, eyeline
   SKETCH-TO-REAL, ad_card TRUE}` must be complete **before any generation
   spend**; shot list entry `DUAL-01` carries `BASE_REAL` (photoreal clip) and
   `OVERLAY_SKETCH` (alpha PNG, matched pose frame). Assembly is a 100% opacity
@@ -1208,11 +1183,7 @@ SOP named above.
   the single-style "some time later" phone shot at **112.0-114.3 s** must each
   return **zero passing frames**; the flagship beat is the positive control.
   Bands are starting values - calibrate on both controls. This is a **planned
-  shot with its own storyboard field, never a patch**: INNER CHANEL is a named
-  cast member, receipt line 252 names S6 (S030 to S031 two-shot), built as
-  still `IMG-SHOT-S031-T2` and clip `VID-S031-T3` with the overlay assembled
-  by `FIX0010/RR/BUILD_BASES.PY`; stills and clips by Hailuo 02 Standard 768P, Kling
-  for lip-sync only.
+  shot with its own storyboard field, never a patch**.
 - **Music (decision 30):** Soul Ballad (default), R&B Flow, Soul Rise.
 - **Style questions on the intake card:** each music and video option shows
   one plain line saying what it is; Sketch to Life shows as "Sketch to Life
@@ -1234,14 +1205,14 @@ SOP named above.
 - **Per-character voice packs:** the distinct-voice registry still stands --
   no two characters share a voice. Its spoken-only separate-take packs are
   SUPERSEDED by the one-track rule: spoken words inside the song's lyrics.
-- **Close-up picture gate, enforced in the dispatcher (LPG001/LPG002/LPG003, 2026-10-08):** the
-  30-Day Reset close-up (face 28% of frame, smile 0.62) and the Perfect Daughter close-up
-  (34%, teeth, roll -7.8) went to paid lip-sync unmeasured. Now
+- **Close-up picture gate, enforced in the dispatcher (LPG001/LPG002/LPG003, 2026-10-08):** two
+  client close-ups went to paid lip-sync unmeasured - one at face 28% of frame with smile
+  0.62, one at 34% with teeth showing and roll -7.8. Now
   `lip_gate/picture_gate.gate_picture()` MEASURES every close-up with mediapipe
   FaceLandmarker (one rule set: the constants block at the top of `picture_gate.py`, same
   names in the onboarding repo). LPG003 loosened it (Trevor: "loosen the checks so it's not
-  as strict"), calibrated so every Trevor-approved Kiesett version 2 and client
-  picture passes or flags. Three verdicts. FAIL (refused) is for clear problems only: face
+  as strict"), calibrated so every approved reference ad and client picture
+  passes or flags. Three verdicts. FAIL (refused) is for clear problems only: face
   count not 1, face height under 20%, |roll| over 20 deg, |yaw| over 0.25 (side profile),
   jawOpen over 0.30 (wide-open mouth), sharpness under 60. ACCEPT_WITH_FLAG (goes to Kling,
   flags written to the receipt): smile over 0.60, lip gap over 1.0% (teeth), face under 25%,
@@ -1346,7 +1317,7 @@ SOP named above.
   followed by the agent; code check not yet shipped**: `scripts/core/lip_sync/`
   carries `narrator_rule/` only, no `kling_first/` (see CHANGELOG.md
   "Not shipped here, on record").
-- **Lip-sync process (Trevor approved, 2026-10-08, first used on the Stephanie Brown
+- **Lip-sync process (Trevor approved, 2026-10-08, first used on a client's
   ads; LSP001, built on LSC001).** Every run follows these six rules
   (`lip_sync/lip_gate/lip_process.py`):
   1. **Reuse first.** Before any paid lip-sync job, re-measure every take already on
