@@ -994,10 +994,6 @@ deps_check() {
         echo "        $PROC_MANIFEST." >&2
     fi
     local missing=()
-    # Record resolved native tools while retaining video-only optional dependencies.
-    for _t in soffice pdftoppm ffmpeg ffprobe tesseract; do
-        echo "  [tools] $_t: $(command -v "$_t" 2>/dev/null || echo ABSENT)"
-    done
     local video_missing=()
     # PRES-033: the pipeline python deps live in the DEPARTMENT VENV (FIX 71),
     # never the system interpreter. Resolve the SAME interpreter
@@ -1014,30 +1010,78 @@ deps_check() {
         done
     fi
     [ -n "$_gate_py" ] || _gate_py="python3"
-    command -v soffice  >/dev/null 2>&1 || missing+=("soffice (LibreOffice/libreoffice-impress)")
-    command -v pdftoppm >/dev/null 2>&1 || missing+=("pdftoppm (poppler/poppler-utils)")
-    if command -v "$_gate_py" >/dev/null 2>&1; then
-        "$_gate_py" -c "import reportlab, pptx" >/dev/null 2>&1 \
-            || missing+=("python(reportlab+python-pptx under $_gate_py)")
-        # Feature L2-D (P8.25-WORKBOOK): pypdf is a REAL runtime dep of the workbook
-        # phase (workbook_builder.py reads the assembled PDF back with pypdf to prove
-        # the AcroForm fields + /NeedAppearances survived before it may upload). It is
-        # NOT gated by the pdf_export/guide phase's own checks, so it must be gated
-        # here so a box without pypdf fails the dep gate BEFORE the workbook phase runs
-        # (owner-token skippable via PRESENTATION_DEPS_MISSING exactly like the other
-        # deps).
-        "$_gate_py" -c "import pypdf" >/dev/null 2>&1 \
-            || missing+=("python(pypdf under $_gate_py)")
-    else
-        missing+=("$_gate_py (interpreter not executable)")
+    # PD-010: the dependency LIST is presentation-deps.json, the one canon every
+    # consumer reads. This function holds no tool list of its own; a missing or
+    # unreadable canon REFUSES the run rather than falling back to a stale list.
+    local _deps_json="$SCRIPTS_DIR/presentation-deps.json"
+    local _deps_rows=""
+    if ! have_py; then
+        echo "PRESENTATION_DEPS_MISSING: dependency list presentation-deps.json unreadable" >&2
+        echo "    no working Python interpreter ($PRESENTATION_PY) can read $_deps_json" >&2
+        return 6
     fi
-    # PRES-033: ffmpeg/ffprobe are classified OPTIONAL (video-only) in
-    # presentation-deps.json. A missing optional video dep must NOT block
-    # independent deck work — it lands in the video-only set and disables only
-    # the P9.6-WEBINAR-VIDEO branch. It can never hide a required gap either:
-    # required deps are checked above and stay in `missing`.
-    command -v ffmpeg >/dev/null 2>&1 || video_missing+=("ffmpeg (webinar video render; brew install ffmpeg)")
-    command -v ffprobe >/dev/null 2>&1 || video_missing+=("ffprobe (webinar video probe; part of ffmpeg)")
+    if [ ! -f "$_deps_json" ]; then
+        echo "PRESENTATION_DEPS_MISSING: dependency list presentation-deps.json unreadable" >&2
+        echo "    expected at: $_deps_json" >&2
+        return 6
+    fi
+    if ! _deps_rows="$("$PRESENTATION_PY" - "$_deps_json" <<'PYDEPS'
+import json, re, sys
+try:
+    doc = json.load(open(sys.argv[1], encoding="utf-8"))
+    deps = doc["deps"]
+    if not isinstance(deps, list) or not deps:
+        raise ValueError("no deps")
+    rows = []
+    for dep in deps:
+        kind = dep["kind"]
+        name = str(dep["name"]).strip()
+        required = "1" if dep.get("required") is True else "0"
+        if kind == "binary":
+            target = str(dep["binary_name"]).strip()
+            pattern = r"^[A-Za-z0-9._+-]+$"
+        elif kind == "python_import":
+            target = str(dep["import_spec"]).strip()
+            pattern = r"^[A-Za-z_][A-Za-z0-9_.]*(\s*,\s*[A-Za-z_][A-Za-z0-9_.]*)*$"
+        else:
+            raise ValueError("unknown dependency kind: %r" % (kind,))
+        if not name or not re.match(pattern, target):
+            raise ValueError("bad dependency row: %r" % (name,))
+        rows.append("\t".join((required, kind, name, target)))
+    sys.stdout.write("\n".join(rows))
+except Exception:
+    sys.exit(3)
+PYDEPS
+)"; then
+        echo "PRESENTATION_DEPS_MISSING: dependency list presentation-deps.json unreadable" >&2
+        echo "    could not read $_deps_json (absent, not JSON, or not the dependency canon)" >&2
+        return 6
+    fi
+    local _req _kind _name _target _why
+    while IFS=$'\t' read -r _req _kind _name _target; do
+        [ -n "$_name" ] || continue
+        _why=""
+        if [ "$_kind" = "binary" ]; then
+            echo "  [tools] $_name: $(command -v "$_target" 2>/dev/null || echo ABSENT)"
+            command -v "$_target" >/dev/null 2>&1 || _why="($_target not on PATH)"
+        else
+            if command -v "$_gate_py" >/dev/null 2>&1; then
+                "$_gate_py" -c "import $_target" >/dev/null 2>&1 \
+                    || _why="(python $_target under $_gate_py)"
+            else
+                _why="($_gate_py interpreter not executable)"
+            fi
+        fi
+        [ -n "$_why" ] || continue
+        if [ "$_req" = "1" ]; then
+            missing+=("$_name $_why")
+        else
+            video_missing+=("$_name $_why")
+        fi
+    done <<< "$_deps_rows"
+    # PRES-033: a dependency marked optional (required=false) in the canon is a
+    # video-only branch dep. It never blocks independent deck work, and it can
+    # never hide a required gap: required rows stay in `missing` above.
     if [ "${#video_missing[@]}" -gt 0 ]; then
         echo "  ℹ PRESENTATION_VIDEO_DEPS_MISSING (optional branch): ${video_missing[*]} — deck, presenter guide, workbook and QC can still run; the P9.6-WEBINAR-VIDEO branch is disabled until these resolve." >&2
     fi
