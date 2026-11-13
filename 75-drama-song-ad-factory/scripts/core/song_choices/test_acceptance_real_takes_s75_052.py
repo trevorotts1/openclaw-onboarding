@@ -16,6 +16,10 @@ build and copy the audio, is the same local tool the shipped tests use).
   (b) with three PASS records, ``fan_in`` offers three and pick 2 succeeds;
   (c) with variant 1 FAIL, ``fan_in`` offers two, names variant 1 as blocked,
       and pick 2 still succeeds;
+  (d) D-4: with every take failed, pick 1 is REFUSED until the client's
+      "keep one of these" decision for version 1 is recorded, then SUCCEEDS;
+      the record lives at song-choices/client-kept/<variant>.json and carries
+      who, when, the judge's named concerns and the client's own words;
   (e) deleting one record makes the offer refuse with "never judged";
   (f) a one-voice, no-rap fixture with measured PASS on story and pace is
       offered and pickable when the policy is ``applicable``;
@@ -364,10 +368,81 @@ def case_i(tmp):
           and any("D5" in x for x in reasons), reasons[:6])
 
 
+def case_d(tmp):
+    """(d) D-4: the client's "keep one of these" is HONOURED with a record.
+
+    Every take failed the judge (nothing is offered), the client keeps version
+    1: pick 1 is refused until that decision is recorded, then succeeds. The
+    record is keyed by the take's own variant id, lives OUTSIDE
+    music/acceptance/ (h), and never rewrites a measured gate to PASS."""
+    run, plan = _run_three(tmp)
+    results = SC.results_from_run(run)
+    bad = _failure_receipt(plan)
+    if bad["gates"]["pace_change"]["verdict"] != "FAIL":     # fixture drift guard
+        check("(d) fixture: the pace gate measures FAIL", False,
+              bad["gates"]["pace_change"])
+        return
+    for r in results:
+        binding = SD.take_binding(r["take"]["audio_path"], "u-s01-r1")
+        res = SD.audio_results_for(r["take"], bad, plan, run, binding=binding)
+        SD.record_acceptance(run, r["variant"]["id"], binding, res,
+                             required=SD.required_for(plan, "applicable"))
+    SC.fan_in(results, run, os.path.join(tmp, "D-d1"))
+    state = _state(run)
+    check("(d) nothing is offered when every take failed", state["offered"] == {},
+          state["offered"])
+    try:
+        SC.record_pick(run, "1")
+        refused = False
+    except SC.ChoiceError:
+        refused = True
+    check("(d) pick 1 is refused until a keep-one decision for version 1 is recorded",
+          refused)
+    check("(d) no pick.json before the keep-one decision",
+          not os.path.exists(os.path.join(run, "song-choices", "pick.json")))
+    vid = results[0]["variant"]["id"]
+    doc = SC.record_client_kept(run, "1", "keep one of these three",
+                                who="client", channel="card")
+    check("(d) the client-kept record is keyed by the take's variant id",
+          doc.get("variant") == vid and os.path.isfile(SC.client_kept_path(run, vid)),
+          doc)
+    check("(d) the record carries who, when, the concerns and the client's words",
+          doc.get("who") == "client" and len(str(doc.get("at") or "")) >= 10
+          and isinstance(doc.get("concerns"), list) and doc["concerns"]
+          and doc.get("client_words") == "keep one of these three", doc)
+    acc = SD.acceptance_from_run(run)
+    check("(d) the kept take is CLIENT_KEPT, never PASS",
+          (acc["variants"].get(vid) or {}).get("verdict") == "CLIENT_KEPT",
+          acc["variants"].get(vid))
+    label = SC.record_pick(run, "1")
+    with open(os.path.join(run, "song-choices", "pick.json"), encoding="utf-8") as f:
+        pick = json.load(f)
+    check("(d) pick 1 succeeds once the keep-one decision is recorded",
+          label.startswith("1") and pick.get("client_kept") is True
+          and pick.get("variant") == vid, pick)
+    try:
+        SC.record_pick(run, "2")
+        v2_refused = False
+    except SC.ChoiceError:
+        v2_refused = True
+    check("(d) a version with neither record is still refused", v2_refused)
+    check("(d) the delivery boundary releases the picked kept take",
+          SD.acceptance_refusal(run, "the pick") is None,
+          SD.acceptance_refusal(run, "the pick"))
+    files = _acceptance_files(run)
+    ids = {r["variant"]["id"] for r in results}
+    check("(h) music/acceptance holds only <variant>.json files",
+          all(n.endswith(".json") and (n[:-5] in ids
+                                       or n == SD.OPERATOR_DECISION_FILE)
+              for n in files), files)
+    check("(h) no client-kept record under music/acceptance/",
+          not any("client-kept" in n for n in files), files)
+
+
 def main():
     tmp = tempfile.mkdtemp(prefix="s75-052-")
     for name, fn in (("a", case_a), ("b", case_b), ("c", case_c),
-                     ("e", case_e), ("f", case_f), ("g", case_g),
+                     ("d", case_d), ("e", case_e), ("f", case_f), ("g", case_g),
                      ("i", case_i)):
         print("case (%s)" % name)
         fn(tmp)
