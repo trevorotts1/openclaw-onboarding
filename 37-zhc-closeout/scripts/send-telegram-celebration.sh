@@ -60,12 +60,20 @@ if ! source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib-closeout-state.sh
   state_set() { local tmp; tmp=$(mktemp); jq "$1" "$STATE_FILE" > "$tmp" && mv "$tmp" "$STATE_FILE"; }
 fi
 
-OWNER_CHAT=$(state_get '.ownerChat')
-OWNER_NAME=$(state_get '.ownerName'); [[ -z "$OWNER_NAME" ]] && OWNER_NAME="there"
-COMPANY_NAME=$(state_get '.companyName'); [[ -z "$COMPANY_NAME" ]] && COMPANY_NAME="your company"
-AGENT_NAME=$(state_get '.agentName'); [[ -z "$AGENT_NAME" ]] && AGENT_NAME="your CEO Agent"
-N_DEPTS=$(jq -r '[.departments[] | select(.status == "done")] | length' "$STATE_FILE")
-N_ROLES=$(jq -r '[.departments[].rolesDone // 0] | add' "$STATE_FILE")
+# BU-64: one call to closeout_facts.py replaces this script's own reads of the
+# company name, owner, agent and chat, and the department / role counts.
+CLOSEOUT_FACTS=$(python3 -B "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/closeout_facts.py" "$STATE_FILE" --json 2>/dev/null)
+[[ -z "$CLOSEOUT_FACTS" ]] && CLOSEOUT_FACTS='{}'
+facts_get() { printf '%s' "$CLOSEOUT_FACTS" | jq -r "$1 // empty" 2>/dev/null; }
+
+OWNER_CHAT=$(facts_get '.ownerChat')
+OWNER_NAME=$(facts_get '.ownerName'); [[ -z "$OWNER_NAME" ]] && OWNER_NAME="there"
+COMPANY_NAME=$(facts_get '.companyName'); [[ -z "$COMPANY_NAME" ]] && COMPANY_NAME="your company"
+AGENT_NAME=$(facts_get '.agentName'); [[ -z "$AGENT_NAME" ]] && AGENT_NAME="your CEO Agent"
+N_DEPTS=$(printf '%s' "$CLOSEOUT_FACTS" | jq -r '.departments | length' 2>/dev/null)
+[[ -z "$N_DEPTS" || "$N_DEPTS" == "null" ]] && N_DEPTS=0
+N_ROLES=$(printf '%s' "$CLOSEOUT_FACTS" | jq -r '.roleTotal // 0' 2>/dev/null)
+[[ -z "$N_ROLES" || "$N_ROLES" == "null" ]] && N_ROLES=0
 INFO_1=$(state_get '.infographic1Url')
 INFO_1_LOCAL=$(state_get '.infographic1LocalPath')
 INFO_2=$(state_get '.infographic2Url')
@@ -296,10 +304,16 @@ if is_delivered 1; then
   log "INFO" "msg 1: already delivered (has messageId) -- skipping"
 else
   log "INFO" "msg 1: sending announcement"
+  # BU-64 wording rule: no numbers when roleTotal is 0 or unknown.
+  if [[ "$N_ROLES" =~ ^[0-9]+$ ]] && [[ "$N_ROLES" -gt 0 ]]; then
+    MSG1_SUMMARY="${N_DEPTS} departments. ${N_ROLES} AI employees. All hired, briefed, and ready to work for you."
+  else
+    MSG1_SUMMARY="Your departments are hired, briefed, and ready to work for you."
+  fi
   MSG1="🎉 ${OWNER_NAME}, your zero-human company is built.
 
 Over the past few hours your AI workforce has been getting itself set up.
-${N_DEPTS} departments. ${N_ROLES} AI employees. All hired, briefed, and ready to work for you.
+${MSG1_SUMMARY}
 
 Here's what I want to show you:"
   if send_text 1 "$MSG1"; then
