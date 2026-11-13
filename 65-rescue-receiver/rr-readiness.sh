@@ -43,6 +43,7 @@
 #   1  SCHEDULED       scheduled by readback, no verified receipt yet
 #   2  ENROLLED_PENDING enrolled, scheduling not proven (reason names why)
 #   3  UNENROLLED      not enrolled, or the enrollment store is unreadable
+#   4  FLAGGED (--strict only): a claim_unauthorized, slug_mismatch or intake-auth flag is recorded
 #   78 ENVIRONMENT     no openclaw root resolved (nothing downstream is valid)
 # Never treat a nonzero exit as "broken" without reading the printed reason.
 #
@@ -55,11 +56,13 @@ set -u
 MODE="human"
 DO_PROBE=0
 DO_RECONCILE=0
+STRICT=0
 ROOT_OVERRIDE=""
 
 while [ $# -gt 0 ]; do
   case "$1" in
     --json) MODE="json" ;;
+    --strict) STRICT=1 ;;
     --probe) DO_PROBE=1 ;;
     --reconcile) DO_RECONCILE=1 ;;
     --root) shift; ROOT_OVERRIDE="${1:-}" ;;
@@ -261,6 +264,13 @@ except Exception: print(json.dumps({"class": "UNREADABLE", "since": ""}))' "$RR_
   fi
   rr_enrollment_flag_lines
   rr_intake_auth_flag_line
+  # RRX-023: with --strict, any recorded problem is a non-zero exit, so a caller
+  # that reads only the exit code can never see "ready" on a box the receiver is refusing.
+  if [ "${STRICT:-0}" = "1" ]; then
+    if [ -n "$RRF_UNAUTH" ] || [ -n "$RRF_MISMATCH" ] || [ -r "$RR_ROOT/state/rr-intake-auth.flag" ]; then
+      return 4
+    fi
+  fi
   case "$RRR_STATE" in
     VERIFIED)         return 0 ;;
     SCHEDULED)        return 1 ;;
