@@ -449,7 +449,7 @@ progress_score() {
       ([.departments[]? | select(.status == "done")] | length)
       + (if ((.roleLibraryStatus // "") == "done") then 1 else 0 end)
       + (if ((.sopLibraryStatus // "") == "done") then 1 else 0 end)
-      + (if ((.commsAutomationStatus // "") | IN("done","not-applicable")) then 1 else 0 end)
+      + (if ((.commsAutomationStatus // "") | IN("done","not-applicable","deferred")) then 1 else 0 end)
       + (if ((.closeoutStatus // "") | IN("done","sent")) then 1 else 0 end)
       + (if ((.buildCompletedAt // "") != "") then 1 else 0 end)
     ' "$STATE_FILE" 2>/dev/null || echo 0
@@ -1030,8 +1030,10 @@ fi
 # comms automations. Enforced the SAME way as the library gate: a state field
 # (commsAutomationStatus) + this verify/resume dirty check, NOT prose. Dirty when
 # all departments are done AND libraries are clean but commsAutomationStatus is
-# neither 'done' nor 'not-applicable'. Fires AFTER libraries are clean (comms
-# automations sit on top of a complete workforce) and may run alongside closeout.
+# neither 'done' nor 'not-applicable' nor 'deferred' (BU-54: a recorded deferral
+# of the Skill 38 handoff is terminal - it never blocks the company build).
+# Fires AFTER libraries are clean (comms automations sit on top of a complete
+# workforce) and may run alongside closeout.
 comms_automation_status=$(jq -r '.commsAutomationStatus // "pending"' "$STATE_FILE")
 comms_automation_dirty=0
 if (( pending_count == 0 )) && (( stale_building_count == 0 )) && (( library_dirty == 0 )) \
@@ -1040,7 +1042,7 @@ if (( pending_count == 0 )) && (( stale_building_count == 0 )) && (( library_dir
         || { [[ "$build_type" == "standard-first" ]] \
              && (( _sf_all_nonprebuilt_done == 1 )) && (( _sf_depts_settled == 1 )); }; }; then
   case "$comms_automation_status" in
-    done|not-applicable) comms_automation_dirty=0 ;;
+    done|not-applicable|deferred) comms_automation_dirty=0 ;;
     *) comms_automation_dirty=1 ;;
   esac
 fi
@@ -1356,6 +1358,30 @@ elif (( comms_automation_dirty == 1 )); then
   # A workforce that built a Communications / Sales / Customer-Support department
   # is NOT fully delivered until Skill 38 has scaffolded the matching comms
   # automations (THE TRINITY: playbook + Build-with-AI prompt + registry row).
+  # BU-54 / D-6: the handoff is RECORDED AS DEFERRED, never waited on. When the
+  # status is absent or still pending, stamp deferred + its time and append one
+  # closeoutBlockers entry of class comms-automation-deferred (replacing any
+  # earlier entry of that class). From then on every gate in this file and in
+  # closeout-readiness-watchdog.sh treats "deferred" as terminal, so the board
+  # can reach buildCompletedAt instead of stalling on Skill 38.
+  if [[ "$comms_automation_status" == "pending" ]]; then
+    _comms_deferred_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+    if workforce_state_set "$STATE_FILE" --arg now "$_comms_deferred_at" '
+      .commsAutomationStatus = "deferred"
+      | .commsAutomationDeferredAt = $now
+      | .closeoutBlockers = (
+          [(.closeoutBlockers // [])[] | select(.class != "comms-automation-deferred")]
+          + [{"class": "comms-automation-deferred",
+              "reason": "Skill 38 handoff not done; company build not blocked",
+              "since": $now, "cleared": false}]
+        )
+    '; then
+      comms_automation_status="deferred"
+      log "COMMS-DEFERRED (BU-54): Skill 38 handoff recorded as deferred at ${_comms_deferred_at} - the company build is not blocked by it."
+    else
+      log "COMMS-DEFERRED (BU-54): could not record the deferral (non-fatal; retried on the next fire)."
+    fi
+  fi
   comms_depts=$(jq -r '(.commsAutomationDepartments // []) | join(", ")' "$STATE_FILE")
   msg="[COMMS-AUTOMATION-RESUME] ${agent_name}: all departments + libraries are done, but the comms-automation handoff to Skill 38 is incomplete (commsAutomationStatus=${comms_automation_status}). This workforce built a comms/sales/support department (${comms_depts:-communications/sales/customer-support}) - per the Skill 23 -> Skill 38 cross-skill chain, you MUST scaffold the matching conversational automations. DO THIS: (1) read ~/.openclaw/skills/38-conversational-ai-system/SKILL.md + protocols/conversation-workflows-protocol.md; (2) set commsAutomationStatus=scaffolding; (3) build at MINIMUM the appointment-booking starter via THE TRINITY - communications playbook + its Build-with-AI prompt + a registry row in the client's conversation-workflows/ (plus a pricing/FAQ or lead-followup playbook matching the department that triggered this); (4) run ~/.openclaw/skills/38-conversational-ai-system/scripts/qc-trinity-registry.sh - it must PASS (every registered workflow has its playbook + prompt); (5) ONLY THEN set commsAutomationStatus=done + commsAutomationVerifiedAt in .workforce-build-state.json. Resume attempt $((attempts + 1)) of $max_attempts. Do NOT message the owner about this - this is internal; the owner hears from you via Skill 37 Step 6 only."
 elif (( closeout_dirty == 1 )) && (( pending_count == 0 )) && (( stale_building_count == 0 )); then
@@ -1376,6 +1402,10 @@ elif (( closeout_dirty == 1 )) && (( pending_count == 0 )) && (( stale_building_
   _osh_out="$(python3 "$SCRIPT_DIR/../../shared-utils/owner_sends_hold.py" check "$STATE_FILE" 2>&1)"; _osh_rc=$?
   if [[ "$_osh_rc" -ne 1 ]]; then
     log "HOP-4: OWNER SENDS HELD: ${_osh_out:-owner_sends_hold.py unavailable (rc $_osh_rc)} -- run-closeout.sh NOT launched."
+    _CLOSEOUT_SCRIPT=""
+  fi
+  if [[ "$(jq -r '.closeoutResumePaused // false' "$STATE_FILE" 2>/dev/null)" == "true" ]]; then
+    log "HOP-4: closeoutResumePaused=true -- run-closeout.sh NOT launched."
     _CLOSEOUT_SCRIPT=""
   fi
   if [[ -n "$_CLOSEOUT_SCRIPT" ]]; then
