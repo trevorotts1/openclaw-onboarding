@@ -2886,7 +2886,8 @@ def discover_speech_chunks(run_dir: Path, bundle_dir: Path) -> Optional[dict]:
                   f"per-slide notes (non-fatal) ===", flush=True)
         return chunks
     print("=== SPEAKER NOTES: no presenter speech found yet (searched "
-          "working/presenter-speech/, working/delivery/, and the bundle dir). This is "
+          "working/deliverables/, working/presenter-speech/, working/delivery/, and "
+          "the bundle dir). This is "
           "a phase-4 render; the speech is a phase-9 artifact. Rendering the deck "
           "WITHOUT per-slide notes (non-fatal — never blocks the render). ===",
           flush=True)
@@ -5073,11 +5074,7 @@ def check_speech_qc_teeth(run_dir: Path) -> str:
     # Locate the speech artifact with the SAME resolution _chk_speech_length uses
     # (canonical plural PRESENTERS-SPEECH.md first, legacy singular/scratch names after).
     speech = None
-    for rel in ("working/presenter-speech/speech.md",
-                "working/delivery/PRESENTERS-SPEECH.md",
-                "working/presenter-speech/PRESENTERS-SPEECH.md",
-                "working/delivery/PRESENTER-SPEECH.md",
-                "working/presenter-speech/PRESENTER-SPEECH.md"):
+    for rel in SPEECH_CANDIDATE_RELS:
         p = run_dir / rel
         if p.exists():
             speech = p
@@ -5089,55 +5086,18 @@ def check_speech_qc_teeth(run_dir: Path) -> str:
         # on disk. That is present-input-but-broken and FAILS (never a defer).
         if report_path.exists():
             return ("AF-SPEECH-QC: the speech-QC report exists but the speech file it "
-                    "grades is MISSING (no working/presenter-speech/speech.md or "
-                    "PRESENTERS-SPEECH.md under working/delivery) — a report grading a "
+                    "grades is MISSING (no PRESENTERS-SPEECH.md under "
+                    "working/deliverables/, working/delivery/, working/presenter-speech/) "
+                    "— a report grading a "
                     "nonexistent speech is a FABRICATED pass. Write the speech, then "
                     "re-run the Speech QC Specialist.")
         return ""  # no speech AND no report — genuine pre-speech state: defer (D10).
 
     problems = []
 
-    # --- A. DURATION FLOOR RE-MEASURE (AF-SPEECH-SHORT) ---
-    target = None
-    for rel in ("working/copy/intake.json", "intake.json", "working/intake.json"):
-        p = run_dir / rel
-        if p.exists():
-            obj = _read_json(p)
-            if isinstance(obj, dict) and "__parse_error__" not in obj:
-                raw = obj.get("target_talk_minutes")
-                try:
-                    target = float(raw) if raw is not None else None
-                except (TypeError, ValueError):
-                    target = None
-            break
-    if not target or target <= 0:
-        return ""  # no usable duration target — the intake gate owns that case.
-
-    words = len(speech.read_text(errors="replace").split())
-    floor = int(round(target * SPEECH_WPM_FLOOR))
-    if words < floor:
-        problems.append(
-            f"the real speech {speech.name} has {words} words; the floor for a "
-            f"{target:g}-minute talk is {floor} words (target_talk_minutes x "
-            f"{SPEECH_WPM_FLOOR} wpm) — the speech-QC report marked pass over a speech "
-            f"that does not fill the requested duration (AF-SPEECH-SHORT)")
-    # Fix 97: pacing band ADVISORY only. Above the hard floor, the deviation from
-    # the target rate (|words/TARGET_WPM - target_minutes| / target_minutes) is
-    # reported on stderr — it NEVER becomes a problem[] item / hard fail. A speech
-    # at 120 wpm effective on a 140 wpm target is outside the band and still PASSES.
-    _dev = _speech_pacing_deviation(words, target)
-    if _dev is not None and _dev > SPEECH_PACING_BAND:
-        _eff_wpm = words / target
-        # AF-SPEECH-PACING: named here per the manifest enforcement row so the code is
-        # citable (sync_check af-coverage); the condition itself stays ADVISORY by
-        # design — AF-SPEECH-SHORT above is the only hard duration reject (Fix 97).
-        print(f"{SPEECH_PACING_ADVISORY_PREFIX} (AF-SPEECH-PACING): {speech.name} measured "
-              f"{_eff_wpm:.0f} wpm effective ({words} words / {target:g} min) — "
-              f"{_dev:.0%} off the {SPEECH_TARGET_WPM} wpm target band. Advisory only; "
-              f"the AF-SPEECH-SHORT floor ({SPEECH_WPM_FLOOR} wpm) is the only hard "
-              f"duration reject.", file=sys.stderr)
-
-    # --- B. HOOK-COUNT RE-MEASURE (AF-SPEECH-HOOK-COUNT, the SOP 9.1 step 2a engine) ---
+    # --- A. HOOK-COUNT RE-MEASURE (AF-SPEECH-HOOK-COUNT, the SOP 9.1 step 2a engine) ---
+    # Runs BEFORE the duration section: with no usable talk length the AF-SPEECH-SHORT
+    # half defers, but the hook half still fires (see the docstring's DEFER SEMANTICS).
     pec = _import_pitch_engines_check()
     if pec is not None:
         try:
@@ -5151,6 +5111,49 @@ def check_speech_qc_teeth(run_dir: Path) -> str:
                 "intake.hook sung 5-20x in PRESENTERS-SPEECH.md) TRIGGERED on the real "
                 "speech: " + "; ".join(
                     f"{h.get('code')}: {h.get('detail')}" for h in hook_codes[:3]))
+
+    # --- B. DURATION FLOOR RE-MEASURE (AF-SPEECH-SHORT) ---
+    target = None
+    for rel in ("working/copy/intake.json", "intake.json", "working/intake.json"):
+        p = run_dir / rel
+        if p.exists():
+            obj = _read_json(p)
+            if isinstance(obj, dict) and "__parse_error__" not in obj:
+                raw = obj.get("target_talk_minutes")
+                try:
+                    target = float(raw) if raw is not None else None
+                except (TypeError, ValueError):
+                    target = None
+            break
+    if not target or target <= 0:
+        # no usable duration target — the intake gate owns that case. The hook-count
+        # problems above (if any) still decide the verdict below.
+        if not problems:
+            return ""
+    else:
+        words = len(speech.read_text(errors="replace").split())
+        floor = int(round(target * SPEECH_WPM_FLOOR))
+        if words < floor:
+            problems.append(
+                f"the real speech {speech.name} has {words} words; the floor for a "
+                f"{target:g}-minute talk is {floor} words (target_talk_minutes x "
+                f"{SPEECH_WPM_FLOOR} wpm) — the speech-QC report marked pass over a speech "
+                f"that does not fill the requested duration (AF-SPEECH-SHORT)")
+        # Fix 97: pacing band ADVISORY only. Above the hard floor, the deviation from
+        # the target rate (|words/TARGET_WPM - target_minutes| / target_minutes) is
+        # reported on stderr — it NEVER becomes a problem[] item / hard fail. A speech
+        # at 120 wpm effective on a 140 wpm target is outside the band and still PASSES.
+        _dev = _speech_pacing_deviation(words, target)
+        if _dev is not None and _dev > SPEECH_PACING_BAND:
+            _eff_wpm = words / target
+            # AF-SPEECH-PACING: named here per the manifest enforcement row so the code is
+            # citable (sync_check af-coverage); the condition itself stays ADVISORY by
+            # design — AF-SPEECH-SHORT above is the only hard duration reject (Fix 97).
+            print(f"{SPEECH_PACING_ADVISORY_PREFIX} (AF-SPEECH-PACING): {speech.name} measured "
+                  f"{_eff_wpm:.0f} wpm effective ({words} words / {target:g} min) — "
+                  f"{_dev:.0%} off the {SPEECH_TARGET_WPM} wpm target band. Advisory only; "
+                  f"the AF-SPEECH-SHORT floor ({SPEECH_WPM_FLOOR} wpm) is the only hard "
+                  f"duration reject.", file=sys.stderr)
 
     if problems:
         return ("AF-SPEECH-QC: the speech-QC report passed its shape check but the REAL "
@@ -6498,6 +6501,19 @@ def _chk_kie_baked(run_dir: Path, slides_path: Optional[Path] = None, *,
 # advisory (Fix 97, MASTER Part 8 ruling 9.3-B): the measured
 # |words / SPEECH_TARGET_WPM - target_minutes| deviation within 10% is reported,
 # never fails — the band follows the target, it does not gate.
+# Where the render's speech checks look for the presenter speech. The P9-SPEECH
+# step writes working/deliverables/PRESENTERS-SPEECH.md; the five older names
+# follow in their existing order so a speech written by an older flow is still
+# found (legacy tolerance). One list, so the length gate and the QC teeth can
+# never disagree about which file they measured.
+SPEECH_CANDIDATE_RELS = (
+    "working/deliverables/PRESENTERS-SPEECH.md",
+    "working/presenter-speech/speech.md",
+    "working/delivery/PRESENTERS-SPEECH.md",
+    "working/presenter-speech/PRESENTERS-SPEECH.md",
+    "working/delivery/PRESENTER-SPEECH.md",
+    "working/presenter-speech/PRESENTER-SPEECH.md",
+)
 SPEECH_WPM_FLOOR = 120    # hard SHORT floor (low end of the verified band)
 SPEECH_TARGET_WPM = 140   # MASTER Part 8 ruling 9.3-B; the advisory band centers on it
 SPEECH_PACING_BAND = 0.10  # +/-10% around target (Fix 97, band advisory only)
@@ -6556,11 +6572,7 @@ def _chk_speech_length(run_dir: Path) -> str:
     # and scratch speech.md names are still accepted so the gate keeps finding a speech
     # written by an older flow.
     speech = None
-    for rel in ("working/presenter-speech/speech.md",
-                "working/delivery/PRESENTERS-SPEECH.md",
-                "working/presenter-speech/PRESENTERS-SPEECH.md",
-                "working/delivery/PRESENTER-SPEECH.md",
-                "working/presenter-speech/PRESENTER-SPEECH.md"):
+    for rel in SPEECH_CANDIDATE_RELS:
         p = run_dir / rel
         if p.exists():
             speech = p
