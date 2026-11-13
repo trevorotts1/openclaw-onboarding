@@ -9,8 +9,8 @@
 #   2. Infographic #1 (Workforce Structure) -- org-chart connector-tree ASSERTED
 #   3. Infographic #2 (How Work Flows)
 #   4. Celebration video (Gemini Omni / Veo fallback)
-#   5. Notion page tree (9 sections)
 #   5.5. GHL media upload (conditional)
+#   5. Notion page tree (9 sections)
 #   6. Telegram delivery (6 paced messages) + delivery confirmation gate
 #   6.5. n8n wire-up (optional, non-blocking)
 #   7. Operator summary
@@ -1095,6 +1095,23 @@ if [[ "${GATE_VIDEO_RESULT:-}" != "pass" && "$STEP_VIDEO_STATUS" != "ok" \
 fi
 
 # ----------------------------------------------------------------------
+# STEP 5.5 -- GHL media-library upload (conditional) -- v10.x
+#
+# Runs BEFORE the Notion step so the durable, public media URLs
+# (.ghlInfographic1PublicUrl / .ghlInfographic2PublicUrl) are already in state
+# when the permanent Notion document is built -- the document embeds those, never
+# a generator's temporary link. Also runs before the Telegram step so the
+# shareable media-library link (.ghlMediaLibraryUrl) is in state when the
+# celebration messages are composed.
+# Uploads the gate-passed closeout media (real local files only) to the client's
+# Convert and Flow / GHL media library. Skips gracefully when GHL is absent or
+# the LOCATION PIT does not verify. Never blocks closeout.
+# ----------------------------------------------------------------------
+if [[ -x "$SKILL_DIR/scripts/upload-ghl-media.sh" ]]; then
+  bash "$SKILL_DIR/scripts/upload-ghl-media.sh" || log "WARN" "ghl-media upload step returned non-zero (non-fatal)"
+fi
+
+# ----------------------------------------------------------------------
 # STEP 5 -- Notion Page Tree
 # ----------------------------------------------------------------------
 # NOTION PARENT-PAGE PROVISIONING (runs every closeout, idempotent): ensure a
@@ -1135,19 +1152,6 @@ fi
 if [[ "${GATE_NOTION_RESULT:-}" != "pass" && "${GATE_NOTION_RC:-0}" -eq 2 ]]; then
   log "WARN" "step=5 notion: exited 2 (no verified client-owned parent page) -- WAIVING the leg (booklet stays staged; closeout completes without the Notion tree)"
   state_set ".closeoutWaivedLegs = (((.closeoutWaivedLegs // []) + [\"notion\"]) | unique) | .qualityHeld = ((.qualityHeld // []) - [\"closeout_docs\"])" || true
-fi
-
-# ----------------------------------------------------------------------
-# STEP 5.5 -- GHL media-library upload (conditional) -- v10.x
-#
-# Moved BEFORE the Telegram step (v10.x) so the shareable media-library link is
-# in state (.ghlMediaLibraryUrl) when the celebration messages are composed.
-# Uploads the gate-passed closeout media (real local files only) to the client's
-# Convert and Flow / GHL media library. Skips gracefully when GHL is absent or
-# the LOCATION PIT does not verify. Never blocks closeout.
-# ----------------------------------------------------------------------
-if [[ -x "$SKILL_DIR/scripts/upload-ghl-media.sh" ]]; then
-  bash "$SKILL_DIR/scripts/upload-ghl-media.sh" || log "WARN" "ghl-media upload step returned non-zero (non-fatal)"
 fi
 
 # ----------------------------------------------------------------------
