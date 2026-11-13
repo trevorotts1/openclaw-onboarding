@@ -53,13 +53,23 @@ if (fixture) {
   rule("the fixture carries every video model", Object.keys(models).length > 0,
     `${Object.keys(models).length} model(s)`);
 
+  // U-E02 saves the picture rate, the song rate and the planning allowance ONCE
+  // at the top of the fixture (`keyframe_usd`, `song_usd`, `redo_rate`), with
+  // `keyframe_count_extra` beside them; a model may override any of the three.
+  // Reading them off the model object alone gives undefined, the page rightly
+  // refuses to price, and this check goes red for the wrong reason.
+  const priceInputs = (model) => ({
+    keyframe_usd: model.keyframe_usd ?? fixture.keyframe_usd,
+    song_usd: model.song_usd ?? fixture.song_usd,
+    redo_rate: model.redo_rate ?? fixture.redo_rate,
+    keyframe_count_extra: fixture.keyframe_count_extra,
+  });
+
   for (const [n, model] of Object.entries(models)) {
     for (const length of lengths) {
       const option = {
         n: Number(n), text: model.name, unit: model.unit, shot_s: model.shot_s,
-        rate_usd: model.rate_usd, keyframe_usd: model.keyframe_usd,
-        song_usd: model.song_usd, redo_rate: model.redo_rate,
-        keyframe_count_extra: fixture.keyframe_count_extra,
+        rate_usd: model.rate_usd, ...priceInputs(model),
       };
       const got = optionPriceUsd(option, Number(length));
       const want = model.prices_usd[length];
@@ -74,9 +84,7 @@ if (fixture) {
     const [n, model] = first;
     const option = {
       n: Number(n), text: model.name, unit: model.unit, shot_s: model.shot_s,
-      rate_usd: model.rate_usd, keyframe_usd: model.keyframe_usd,
-      song_usd: model.song_usd, redo_rate: model.redo_rate,
-      keyframe_count_extra: fixture.keyframe_count_extra,
+      rate_usd: model.rate_usd, ...priceInputs(model),
     };
     rule("a priced option with no length says so, no number",
       optionPriceLine(option, null) === "price shown after you pick a length",
@@ -87,6 +95,13 @@ if (fixture) {
     rule("an option with no rates shows no price at all",
       optionPriceLine({ n: 1, text: "Soul Ballad" }, 60) === "",
       optionPriceLine({ n: 1, text: "Soul Ballad" }, 60));
+    // `Number(null)` and `Number("")` are both 0, so a blank rate must never be
+    // read as a free video. U-Z09 QC repair.
+    rule("a blank rate is not a free video",
+      optionPriceLine({ n: 1, text: "Soul Ballad", rate_usd: null }, 60) === "" &&
+      optionPriceLine({ n: 1, text: "Soul Ballad", rate_usd: "", shot_s: 15,
+        keyframe_usd: 0.02, song_usd: 0.06, redo_rate: 0.5 }, 60) === "",
+      optionPriceLine({ n: 1, text: "Soul Ballad", rate_usd: null }, 60));
   }
 }
 
