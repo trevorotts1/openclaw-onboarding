@@ -7,6 +7,10 @@ commit before vs after.
 
 Default base is the merge-base of HEAD and origin/main (the pre-fold tree while
 this change is in review). Exit 1 on any mismatch or parse error.
+
+Only the guards folded BY THIS CHANGE are compared (their `was` workflow exists in the base
+tree); guards folded by earlier changes have no base workflow left and are skipped. The
+workflows changed on purpose by the checks-compress change are listed below.
 """
 import argparse, glob, os, subprocess, sys, yaml
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -18,6 +22,20 @@ os.chdir(ROOT)
 
 def sh(*a):
     return subprocess.check_output(a, text=True)
+
+
+# Pre-existing: the workflow had no concurrency block before this change and is kept as is (a two-OS matrix).
+KNOWN_NO_CONCURRENCY = {'skill6-recipes-portability'}
+# Workflow files that keep one or more jobs after a partial fold (the rest of the file stays).
+PARTIAL_KEEP = {'embedding-integrity-guard.yml', 'hardening-and-fleet-standards-exec-guard.yml',
+                'script-defect-classes-guard.yml', 'prebuilt-index-section-tagged-guard.yml',
+                'version-consistency.yml', 'presentation-release-matrix.yml'}
+# Guards whose path filter was widened on purpose when folded (plan step 2.2).
+INTENDED_PATH_CHANGES = {'unwired-checks-guard'}
+# Workflows whose pull_request/push triggers were changed on purpose (plan steps 1 and 6, and the
+# prebuilt-index file whose only job left is release/manual).
+INTENDED_TRIGGER_CHANGES = {'launch-family-parity', 'claim-provenance-advisory',
+                            'presentation-release-matrix', 'prebuilt-index-section-tagged-guard'}
 
 
 def triggers(d):
@@ -61,8 +79,8 @@ def main():
     base = a.base or sh('git', 'merge-base', 'HEAD', 'origin/main').strip()
     before = load_tree(base)
     after = {os.path.basename(f)[:-4]: yaml.safe_load(open(f)) for f in glob.glob('.github/workflows/*.yml')}  # parse check
-    guards = fg.load()
-    folded = {g['name'] for g in guards}
+    guards = [g for g in fg.load() if g['was'][:-4] in before]  # folded by this change
+    folded = {g['was'][:-4] for g in guards}
     bad = 0
 
     # glob semantics sanity
@@ -72,27 +90,34 @@ def main():
 
     # structural: every folded guard has its script, bash-parses, and was a real pre-fold workflow
     for g in guards:
-        if g['name'] not in before: print('FAIL not in base tree:', g['name']); bad += 1
-        if g['name'] in after: print('FAIL still present as workflow:', g['name']); bad += 1
+        if g['was'] in PARTIAL_KEEP:
+            if g['was'][:-4] not in after: print('FAIL partial-fold workflow was removed:', g['was']); bad += 1
+        elif g['was'][:-4] in after: print('FAIL still present as workflow:', g['was']); bad += 1
         if subprocess.run(['bash', '-n', g['script']]).returncode: print('FAIL bash -n', g['script']); bad += 1
     # triggers of folded guards equal the base workflows' (branches/paths), push forced to main-only
     for g in guards:
-        t = triggers(before[g['name']])
+        t = triggers(before[g['was'][:-4]])
         for e in ('push', 'pull_request'):
             if (e in t) != (e in g['events']): print('FAIL event set differs', g['name'], e); bad += 1; continue
             if e in t:
-                if t[e].get('paths') != g['events'][e]['paths']: print('FAIL paths differ', g['name'], e); bad += 1
+                if g['was'][:-4] not in INTENDED_PATH_CHANGES and t[e].get('paths') != g['events'][e]['paths']: print('FAIL paths differ', g['name'], e); bad += 1
                 if t[e].get('branches') != g['events'][e]['branches']: print('FAIL branches differ', g['name'], e); bad += 1
     # every unfolded workflow: same pull_request trigger as before; push is main-only or unchanged
     for n, d in after.items():
         if n == 'fast-guards': continue
+        if n not in before:
+            print('new workflow (intended):', n)
+            if 'concurrency' not in d: print('FAIL no concurrency', n); bad += 1
+            continue
+        if n in INTENDED_TRIGGER_CHANGES:
+            print('trigger change (intended):', n); continue
         tb, ta = triggers(before[n]), triggers(d)
         if tb.get('pull_request') != ta.get('pull_request'): print('FAIL pull_request trigger changed', n); bad += 1
         pb, pa = tb.get('push'), ta.get('push')
         if pb is not None and 'branches' not in pb and 'tags' not in pb:
             if pa.get('branches') != ['main'] or pa.get('paths') != pb.get('paths'): print('FAIL push not main-only', n); bad += 1
         elif pb != pa: print('FAIL push changed unexpectedly', n); bad += 1
-        if 'concurrency' not in d: print('FAIL no concurrency', n); bad += 1
+        if 'concurrency' not in d and n not in KNOWN_NO_CONCURRENCY: print('FAIL no concurrency', n); bad += 1
 
     # sample diffs: recent commits on origin/main plus synthetic file lists
     samples = []
@@ -104,28 +129,22 @@ def main():
                 ('syn:workflow-file', ['.github/workflows/model-selector-guard.yml']),
                 ('syn:nothing-matches', ['zzz/unmatched.txt']),
                 ('syn:persona', ['22-book-to-persona-coaching-leadership-system/SKILL.md', 'scripts/foo.sh'])]
-    tot_b = tot_a = 0
     for label, files in samples:
         for ev in ('pull_request', 'push'):
-            b = {n for n, d in before.items() if fires(d, ev, 'main', files)}
-            af = {n for n, d in after.items() if n != 'fast-guards' and fires(d, ev, 'main', files)}
-            af |= {g['name'] for g in guards if fg.selected(g, ev, 'main', files)}
+            skip = folded & INTENDED_PATH_CHANGES
+            b = {n for n in folded - skip if fires(before[n], ev, 'main', files)}
+            af = {g['was'][:-4] for g in guards if g['was'][:-4] not in skip and fg.selected(g, ev, 'main', files)}
             # push on a non-main (PR) branch: before = all unfiltered push workflows, after = none
             if ev == 'push':
-                bb = {n for n, d in before.items() if fires(d, 'push', 'feature-branch', files)}
-                aa = {n for n, d in after.items() if n != 'fast-guards' and fires(d, 'push', 'feature-branch', files)}
-                if aa: print('FAIL after-fold push on feature branch still fires', label, sorted(aa)); bad += 1
-                if label == samples[0][0]: pass
-                tot_b += sum(len(before[n]['jobs']) for n in bb)
+                aa = {n for n, d in after.items() if n != 'fast-guards' and n in before and n not in INTENDED_TRIGGER_CHANGES
+                      and fires(d, 'push', 'feature-branch', files) and not fires(before[n], 'push', 'feature-branch', files)}
+                if aa: print('FAIL after-fold push on feature branch fires where it did not', label, sorted(aa)); bad += 1
             if b != af:
                 print(f'FAIL {label} {ev}: before-only={sorted(b - af)} after-only={sorted(af - b)}'); bad += 1
-            if ev == 'pull_request':
-                tot_b += sum(len(before[n]['jobs']) for n in b)
-                tot_a += sum(len(after[n]['jobs']) for n in af if n in after) + (1 if af & folded else 1)  # fast-guards job always boots
-        print(f'ok  {label:22} files={len(files):3}  guards-run(PR)={len({n for n, d in before.items() if fires(d, "pull_request", "main", files)})}')
+        print(f'ok  {label:22} files={len(files):3}  folded workflows fired (PR)={len({n for n in folded if fires(before[n], "pull_request", "main", files)})}')
     n = len(samples)
-    print(f'\nsamples={n}  avg jobs per PR commit (PR+push-dup): before={tot_b / n:.1f}  after={tot_a / n:.1f}')
-    print('workflow files before=%d after=%d (%d folded into 1)' % (len(before), len(after), len(guards)))
+    print(f'\nsamples={n}')
+    print('workflow files before=%d after=%d (%d guards folded from %d workflows)' % (len(before), len(after), len(guards), len(folded)))
     print('RESULT:', 'FAIL (%d)' % bad if bad else 'PASS - identical guard set before vs after for every sample')
     return 1 if bad else 0
 

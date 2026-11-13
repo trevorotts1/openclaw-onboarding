@@ -35,18 +35,15 @@ on:
       - "lib-presentation-schedules.sh"
       - ".github/workflows/presentation-release-matrix.yml"
   pull_request:
+    # Narrowed (checks-compress): the macOS and Docker legs are slow and need a real
+    # runner image, so a pull request runs them only when the release-matrix files
+    # (Dockerfiles, pins, profile requirement files) or this workflow change. Every
+    # other presentation change is still checked here on push to main and every night.
     paths:
       - "23-ai-workforce-blueprint/templates/role-library/presentations/release-matrix/**"
-      - "23-ai-workforce-blueprint/templates/role-library/presentations/scripts/pdf_export.py"
-      - "23-ai-workforce-blueprint/templates/role-library/presentations/scripts/presenter_guide.py"
-      - "23-ai-workforce-blueprint/templates/role-library/presentations/scripts/presentation-watchdog.sh"
-      - "23-ai-workforce-blueprint/templates/role-library/presentations/scripts/presentation_job/ocr_verify.py"
-      - "23-ai-workforce-blueprint/templates/role-library/presentations/scripts/presentation_job/auto_resume.py"
-      - "23-ai-workforce-blueprint/templates/role-library/presentations/scripts/cc_board.py"
-      - "23-ai-workforce-blueprint/templates/role-library/presentations/scripts/tests/test_pres043_release_matrix.py"
-      - "23-ai-workforce-blueprint/templates/role-library/presentations/scripts/tests/pres043_live_smoke.py"
-      - "lib-presentation-schedules.sh"
       - ".github/workflows/presentation-release-matrix.yml"
+  schedule:
+    - cron: "23 7 * * *"
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
@@ -169,24 +166,3 @@ jobs:
         run: |
           set -euo pipefail
           docker run --rm -v "$PWD:/opt/engine:ro" -w /opt/engine/23-ai-workforce-blueprint/templates/role-library/presentations/scripts/tests pres043-contabo bash -lc 'python3 -m pytest test_pres043_release_matrix.py::test_fault_readonly_output_volume -q -p no:cacheprovider'
-
-  # Real provider/GHL smoke is a SEPARATE job that NEVER runs in CI: it
-  # requires PRES043_LIVE_SMOKE=1 plus sandbox credentials plus an authorized
-  # sandbox run. Its only CI presence is the refusal leg (proving the module
-  # refuses without authorization). Record NOT VERIFIED until authorized
-  # sandbox execution produces actual remote IDs and readback.
-  live-smoke-refusal:
-    # Batch pull requests run only the required checks (Trevor order 2026-11-13).
-    if: ${{ !startsWith(github.head_ref, 'batch/') }}
-    name: Live GHL smoke stays refused in CI (NOT VERIFIED)
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Prove live smoke refuses without sandbox authorization
-        run: |
-          set -euo pipefail
-          python3 -m pip install --quiet --disable-pip-version-check pytest==8.3.4
-          cd 23-ai-workforce-blueprint/templates/role-library/presentations/scripts/tests
-          python3 -m pytest test_pres043_release_matrix.py::test_live_ghl_smoke_requires_sandbox_credentials -q

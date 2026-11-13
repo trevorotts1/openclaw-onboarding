@@ -17,13 +17,8 @@ name: claim-provenance-advisory
 # docs/TRUTH-ENFORCEMENT-ADVISORY.md.
 
 on:
-  pull_request:
-    paths:
-      - 'ledgers/**'
-      - 'docs/**'
-      - CHANGELOG.md
-      - scripts/check-claim-provenance.py
-      - .github/workflows/claim-provenance-advisory.yml
+  # The pull_request trigger was removed (checks-compress): an advisory check that
+  # "never blocks" does not need its own runner on every pull request. Run it by hand.
   workflow_dispatch:
 
 concurrency:

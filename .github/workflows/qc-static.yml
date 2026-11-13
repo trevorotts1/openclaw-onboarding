@@ -3824,6 +3824,10 @@ jobs:
   # of adding ~11 minutes to it. qc-static's pytest step waits for this job
   # and fails unless it succeeded, so it still gates "QC static invariants".
   # Same tools the empty-home step installs, so no suite skips itself here.
+  # The job always runs and always reports (the required `QC static invariants` job
+  # waits for it and fails closed on anything but success), but its work steps run
+  # only when Skill 75 changed or on a push to main: a pull request that leaves
+  # 75-drama-song-ad-factory/ alone skips the ~5 minute suite and the job ends green.
   skill75-one-process:
     name: Skill 75 whole-tree pytest (one process)
     runs-on: ubuntu-latest
@@ -3834,12 +3838,35 @@ jobs:
       - name: Checkout repo
         uses: actions/checkout@v4
 
+      - name: Did this pull request change Skill 75?
+        id: changed
+        shell: bash
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          set -uo pipefail
+          # Fail-closed: anything but a clean "no change under 75-drama-song-ad-factory/"
+          # on a pull request (push to main, no base commit, a failed fetch) runs the suite.
+          if [ "${GITHUB_EVENT_NAME}" != "pull_request" ] || [ -z "${BASE_SHA:-}" ]; then
+            echo "run=true" >> "$GITHUB_OUTPUT"; echo "not a pull request: running the Skill 75 suite"; exit 0
+          fi
+          if ! git fetch --no-tags --depth=1 origin "$BASE_SHA"; then
+            echo "run=true" >> "$GITHUB_OUTPUT"; echo "could not fetch the base commit: running the Skill 75 suite"; exit 0
+          fi
+          if git diff --name-only "$BASE_SHA" HEAD -- 75-drama-song-ad-factory/ | grep -q .; then
+            echo "run=true" >> "$GITHUB_OUTPUT"; echo "Skill 75 changed: running the suite"
+          else
+            echo "run=false" >> "$GITHUB_OUTPUT"; echo "Skill 75 untouched by this pull request: whole-tree pytest not needed"
+          fi
+
       - name: Set up Python
+        if: steps.changed.outputs.run == 'true'
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
 
       - name: Skill 75 whole-tree pytest, one process
+        if: steps.changed.outputs.run == 'true'
         shell: bash
         run: |
           set -uo pipefail

@@ -1,0 +1,473 @@
+# skill-44 checks in one workflow (checks-compress). Two workflows used to run these:
+#   skill44-e2e          -- AC 19 merge gate, AC 20 rollback, AC 21 serialization, regression
+#                           guard: 4 jobs plus a "gate PASSED" summary job.
+#   skill44-install-path -- wrapper exec line, CORE_UPDATES auto-apply, GHL env wiring:
+#                           3 jobs plus a "gate PASSED" summary job.
+# Now two jobs: `e2e` (the Python engine tests, dependencies installed once) and
+# `install-path` (static checks, no Python). Every step runs even when an earlier one
+# fails (`!cancelled()`), so a red run names each failing check; a failed step fails its
+# job, which is what the two summary jobs used to restate, so they are gone.
+# HARD MERGE REQUIREMENT (unchanged): no skill-44 PR merges unless both jobs are green.
+# All env values below are sandbox/fixture values -- no live CRM credentials, no secrets.
+name: skill-44
+on:
+  pull_request:
+    branches:
+    - main
+    - skill-44/**
+    - fix/skill44**
+    paths:
+    - 44-convert-and-flow-operator/**
+    - .github/workflows/skill44.yml
+  push:
+    branches:
+    - skill-44/**
+    - fix/skill44**
+  workflow_dispatch:
+env:
+  CAF_ALLOWED_LOCATION_IDS: SANDBOX_LOC_001
+  CAF_APPROVAL_TOKEN: ci-sandbox-approval-token
+  GHL_FIREBASE_REFRESH_TOKEN: ci-sandbox-refresh-token
+  CAF_DRAFT_ONLY: 'true'
+  CAF_STEP_BACKOFF_MS: '0'
+  CAF_INTERNAL_STEP_BACKOFF_MS: '0'
+  PYTHONUNBUFFERED: '1'
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' && !startsWith(github.ref, 'refs/tags/') }}
+jobs:
+  e2e:
+    if: ${{ !startsWith(github.head_ref, 'batch/') }}
+    name: skill-44 e2e (AC 19 merge gate, AC 20 rollback, AC 21 serialization, regression guard)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: 44-convert-and-flow-operator/tools/engine
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.12'
+    - name: Install dependencies
+      run: |
+        pip install --upgrade pip
+        pip install -e ".[dev]" 2>/dev/null || pip install -e .
+        pip install pytest
+    - name: Event timing intelligence and pre-write refusal (offline)
+      run: python3 -m pytest tests/test_workflow_timing.py -q
+      if: ${{ !cancelled() }}
+    - name: AC 19 — Router picks Tier 0 for nurture intent
+      run: |
+        python3 -m pytest tests/test_e2e_unit11.py \
+          -v \
+          -k "test_router_picks_tier0_for_nurture_intent" \
+          --tb=short \
+          -p no:warnings
+      env:
+        CAF_DATA_DIR: /tmp/ci-e2e-ac19-router
+      if: ${{ !cancelled() }}
+    - name: AC 19 — Router correctly assigns Tier 1 for blogs (not CLI-covered)
+      run: |
+        python3 -m pytest tests/test_e2e_unit11.py \
+          -v \
+          -k "test_router_picks_tier1_for_blog_intent" \
+          --tb=short \
+          -p no:warnings
+      env:
+        CAF_DATA_DIR: /tmp/ci-e2e-ac19-router-blog
+      if: ${{ !cancelled() }}
+    - name: AC 19 — CLI build --from-plan exits 0 (SANDBOX fixture, API mocked)
+      run: |
+        python3 -m pytest tests/test_e2e_unit11.py \
+          -v \
+          -k "test_cli_build_from_plan_exits_zero or test_cli_build_result_is_json" \
+          --tb=short \
+          -p no:warnings
+      env:
+        CAF_DATA_DIR: /tmp/ci-e2e-ac19-cli-build
+      if: ${{ !cancelled() }}
+    - name: AC 19 — Build NEVER auto-publishes (all PUT bodies are DRAFT)
+      run: |
+        python3 -m pytest tests/test_e2e_unit11.py \
+          -v \
+          -k "test_cli_build_never_auto_publishes or test_cli_build_mock_returns_draft_status" \
+          --tb=short \
+          -p no:warnings
+      env:
+        CAF_DATA_DIR: /tmp/ci-e2e-ac19-draft-check
+      if: ${{ !cancelled() }}
+    - name: AC 19 — TRINITY gate stub passes ZHC-prefixed workflow
+      run: |
+        python3 -m pytest tests/test_e2e_unit11.py \
+          -v \
+          -k "trinity_gate" \
+          --tb=short \
+          -p no:warnings
+      env:
+        CAF_DATA_DIR: /tmp/ci-e2e-ac19-trinity
+      if: ${{ !cancelled() }}
+    - name: AC 19 — 23-key gate stub passes fixture workflow structure
+      run: |
+        python3 -m pytest tests/test_e2e_unit11.py \
+          -v \
+          -k "23key_gate" \
+          --tb=short \
+          -p no:warnings
+      env:
+        CAF_DATA_DIR: /tmp/ci-e2e-ac19-23key
+      if: ${{ !cancelled() }}
+    - name: AC 19 — FULL E2E PIPELINE (authoritative merge gate assertion)
+      run: |
+        python3 -m pytest tests/test_e2e_unit11.py \
+          -v \
+          -k "test_full_e2e_pipeline" \
+          --tb=long \
+          -p no:warnings
+      env:
+        CAF_DATA_DIR: /tmp/ci-e2e-ac19-full
+      if: ${{ !cancelled() }}
+    - name: AC 20 — Pre-write snapshot captured before update PUT
+      run: |
+        python3 -m pytest tests/test_e2e_unit11.py \
+          -v \
+          -k "test_pre_write_snapshot_captured_before_update_put" \
+          --tb=short \
+          -p no:warnings
+      env:
+        CAF_DATA_DIR: /tmp/ci-e2e-ac20-snap
+      if: ${{ !cancelled() }}
+    - name: AC 20 — Restore reverses mutation via PUT (body matches snapshot)
+      run: |
+        python3 -m pytest tests/test_e2e_unit11.py \
+          -v \
+          -k "test_restore_reverses_update" \
+          --tb=short \
+          -p no:warnings
+      env:
+        CAF_DATA_DIR: /tmp/ci-e2e-ac20-restore
+      if: ${{ !cancelled() }}
+    - name: AC 20 — snapshot_manager.capture() auto-called (not manual)
+      run: |
+        python3 -m pytest tests/test_e2e_unit11.py \
+          -v \
+          -k "test_rollback_snapshot_automatically_captured" \
+          --tb=short \
+          -p no:warnings
+      env:
+        CAF_DATA_DIR: /tmp/ci-e2e-ac20-auto
+      if: ${{ !cancelled() }}
+    - name: AC 20 — Snapshot precedes mutation in full update cycle
+      run: |
+        python3 -m pytest tests/test_e2e_unit11.py \
+          -v \
+          -k "test_snapshot_precedes_mutation_in_full_update_cycle" \
+          --tb=short \
+          -p no:warnings
+      env:
+        CAF_DATA_DIR: /tmp/ci-e2e-ac20-precedes
+      if: ${{ !cancelled() }}
+    - name: AC 20 — Full rollback suite
+      run: |
+        python3 -m pytest tests/test_e2e_unit11.py \
+          -v \
+          -k "TestCriterion20Rollback" \
+          --tb=long \
+          -p no:warnings
+      env:
+        CAF_DATA_DIR: /tmp/ci-e2e-ac20-full
+      if: ${{ !cancelled() }}
+    - name: AC 21 — WriteLock serializes two concurrent builds (same location)
+      run: |
+        python3 -m pytest tests/test_e2e_unit11.py \
+          -v \
+          -k "test_write_lock_serializes_two_concurrent_builds" \
+          --tb=short \
+          -p no:warnings
+      env:
+        CAF_DATA_DIR: /tmp/ci-e2e-ac21-lock
+      if: ${{ !cancelled() }}
+    - name: AC 21 — Independent locations run concurrently (no deadlock)
+      run: |
+        python3 -m pytest tests/test_e2e_unit11.py \
+          -v \
+          -k "test_independent_locations_run_concurrently" \
+          --tb=short \
+          -p no:warnings
+      env:
+        CAF_DATA_DIR: /tmp/ci-e2e-ac21-independent
+      if: ${{ !cancelled() }}
+    - name: AC 21 — Step backoff fires between sequential write steps (not only 429)
+      run: |
+        python3 -m pytest tests/test_e2e_unit11.py \
+          -v \
+          -k "test_step_backoff_fires_between_sequential_write_steps" \
+          --tb=short \
+          -p no:warnings
+      env:
+        CAF_DATA_DIR: /tmp/ci-e2e-ac21-backoff
+        CAF_INTERNAL_STEP_BACKOFF_MS: '60'
+      if: ${{ !cancelled() }}
+    - name: AC 21 — No backoff on first write (step_index=0)
+      run: |
+        python3 -m pytest tests/test_e2e_unit11.py \
+          -v \
+          -k "test_no_step_backoff_on_first_write" \
+          --tb=short \
+          -p no:warnings
+      env:
+        CAF_DATA_DIR: /tmp/ci-e2e-ac21-first-write
+        CAF_INTERNAL_STEP_BACKOFF_MS: '200'
+      if: ${{ !cancelled() }}
+    - name: AC 21 — Full concurrent build cycle (WriteLock enforced)
+      run: |
+        python3 -m pytest tests/test_e2e_unit11.py \
+          -v \
+          -k "test_concurrent_builds_same_location_serialized_full_cycle" \
+          --tb=long \
+          -p no:warnings
+      env:
+        CAF_DATA_DIR: /tmp/ci-e2e-ac21-concurrent
+      if: ${{ !cancelled() }}
+    - name: AC 21 — Full serialization suite
+      run: |
+        python3 -m pytest tests/test_e2e_unit11.py \
+          -v \
+          -k "TestCriterion21Serialization" \
+          --tb=long \
+          -p no:warnings
+      env:
+        CAF_DATA_DIR: /tmp/ci-e2e-ac21-full
+      if: ${{ !cancelled() }}
+    - name: Run full test suite (safety gate + adapter probe + unit 2 + unit 11)
+      run: |
+        python3 -m pytest tests/ \
+          -v \
+          --tb=short \
+          -p no:warnings \
+          --junit-xml=test-results.xml
+      env:
+        CAF_DATA_DIR: /tmp/ci-regression
+        CAF_ALLOWED_LOCATION_IDS: SANDBOX_LOC_001
+        CAF_APPROVAL_TOKEN: ci-sandbox-approval-token
+        GHL_FIREBASE_REFRESH_TOKEN: ci-sandbox-refresh-token
+        CAF_DRAFT_ONLY: 'true'
+        CAF_STEP_BACKOFF_MS: '0'
+        CAF_INTERNAL_STEP_BACKOFF_MS: '0'
+      if: ${{ !cancelled() }}
+    - name: Upload test results
+      uses: actions/upload-artifact@v4
+      if: ${{ always() }}
+      with:
+        name: skill44-e2e-test-results
+        path: 44-convert-and-flow-operator/tools/engine/test-results.xml
+        retention-days: 14
+  install-path:
+    if: ${{ !startsWith(github.head_ref, 'batch/') }}
+    name: skill-44 install-path (wrapper exec line, CORE_UPDATES auto-apply, GHL env wiring)
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+    - name: 'caf wrapper: exec line correct (no .main suffix)'
+      run: |
+        WRAPPER="44-convert-and-flow-operator/tools/engine/caf"
+        echo "--- Checking $WRAPPER ---"
+        cat "$WRAPPER"
+        echo ""
+        # Must contain the correct entrypoint
+        if grep -q 'cli_anything\.gohighlevel "$@"' "$WRAPPER"; then
+          echo "PASS: exec line uses cli_anything.gohighlevel"
+        else
+          echo "FAIL: exec line missing or wrong in $WRAPPER"
+          grep 'cli_anything' "$WRAPPER" || true
+          exit 1
+        fi
+        # Must NOT contain the stale .main suffix
+        if grep -q 'cli_anything\.gohighlevel\.main' "$WRAPPER"; then
+          echo "FAIL: stale .main suffix found in $WRAPPER (pre-#167 entrypoint)"
+          exit 1
+        fi
+        echo "PASS: .main suffix absent"
+      if: ${{ !cancelled() }}
+    - name: 'convertandflow wrapper: exec line correct (no .main suffix)'
+      run: |
+        WRAPPER="44-convert-and-flow-operator/tools/engine/convertandflow"
+        echo "--- Checking $WRAPPER ---"
+        if grep -q 'cli_anything\.gohighlevel "$@"' "$WRAPPER"; then
+          echo "PASS: exec line uses cli_anything.gohighlevel"
+        else
+          echo "FAIL: exec line missing or wrong in $WRAPPER"
+          grep 'cli_anything' "$WRAPPER" || true
+          exit 1
+        fi
+        if grep -q 'cli_anything\.gohighlevel\.main' "$WRAPPER"; then
+          echo "FAIL: stale .main suffix found in $WRAPPER"
+          exit 1
+        fi
+        echo "PASS: .main suffix absent"
+      if: ${{ !cancelled() }}
+    - name: 'ghl wrapper: exec line correct (no .main suffix)'
+      run: |
+        WRAPPER="44-convert-and-flow-operator/tools/engine/ghl"
+        echo "--- Checking $WRAPPER ---"
+        if grep -q 'cli_anything\.gohighlevel "$@"' "$WRAPPER"; then
+          echo "PASS: exec line uses cli_anything.gohighlevel"
+        else
+          echo "FAIL: exec line missing or wrong in $WRAPPER"
+          grep 'cli_anything' "$WRAPPER" || true
+          exit 1
+        fi
+        if grep -q 'cli_anything\.gohighlevel\.main' "$WRAPPER"; then
+          echo "FAIL: stale .main suffix found in $WRAPPER"
+          exit 1
+        fi
+        echo "PASS: .main suffix absent"
+      if: ${{ !cancelled() }}
+    - name: 'INSTALL.md Action 3: uses cp (single-source wrapper — no inline heredoc)'
+      run: |
+        INSTALL="44-convert-and-flow-operator/INSTALL.md"
+        echo "--- Checking Action 3 in $INSTALL ---"
+        # The single-source fix replaces the heredoc with a cp of the committed wrapper.
+        # Assert the cp form is present.
+        if grep -q 'cp.*tools/engine/caf\|cp.*engine.*caf' "$INSTALL"; then
+          echo "PASS: Action 3 uses cp (single-source)"
+        else
+          echo "FAIL: Action 3 does not use cp — may still have inline heredoc"
+          grep -A5 'Action 3' "$INSTALL" || true
+          exit 1
+        fi
+        # Assert the stale heredoc exec form is gone.
+        # Pattern is intentionally narrow: only matches the Python -m invocation form
+        # (e.g. `-m cli_anything.gohighlevel.main`) so prose references like
+        # "the gohighlevel.main bug" in CHANGELOG/comments don't false-positive.
+        if grep -qE '\-m cli_anything\.gohighlevel\.main' "$INSTALL"; then
+          echo "FAIL: stale '-m cli_anything.gohighlevel.main' exec form still present in INSTALL.md"
+          grep -E '\-m cli_anything\.gohighlevel\.main' "$INSTALL" || true
+          exit 1
+        fi
+        echo "PASS: no stale -m cli_anything.gohighlevel.main exec form in INSTALL.md"
+      if: ${{ !cancelled() }}
+    - name: 'INSTALL.md: sentinel string present in Action 7 block'
+      run: |
+        INSTALL="44-convert-and-flow-operator/INSTALL.md"
+        SENTINEL="skill:44-convert-and-flow-operator:core-update-applied"
+        echo "--- Checking CORE_UPDATES auto-apply in $INSTALL ---"
+        if grep -qF "$SENTINEL" "$INSTALL"; then
+          echo "PASS: sentinel $SENTINEL found in INSTALL.md"
+        else
+          echo "FAIL: sentinel not found — INSTALL.md is missing the CORE_UPDATES auto-apply (Action 7)"
+          echo "Hint: agents on boxes installed without Action 7 will not know Skill 44 exists."
+          exit 1
+        fi
+      if: ${{ !cancelled() }}
+    - name: 'INSTALL.md: CORE_UPDATES block writes to AGENTS.md'
+      run: |
+        INSTALL="44-convert-and-flow-operator/INSTALL.md"
+        if grep -q 'AGENTS.md' "$INSTALL" && grep -q 'TOOLS.md' "$INSTALL" && grep -q 'MEMORY.md' "$INSTALL"; then
+          echo "PASS: INSTALL.md references AGENTS.md, TOOLS.md, MEMORY.md in CORE_UPDATES block"
+        else
+          echo "FAIL: INSTALL.md missing CORE_UPDATES target file references"
+          exit 1
+        fi
+      if: ${{ !cancelled() }}
+    - name: 'CORE_UPDATES.md: sentinel matches INSTALL.md sentinel'
+      run: |
+        CORE_UPDATES="44-convert-and-flow-operator/CORE_UPDATES.md"
+        SENTINEL="skill:44-convert-and-flow-operator:core-update-applied"
+        if grep -qF "$SENTINEL" "$CORE_UPDATES"; then
+          echo "PASS: CORE_UPDATES.md sentinel matches"
+        else
+          echo "FAIL: CORE_UPDATES.md sentinel mismatch — install and CORE_UPDATES.md are out of sync"
+          exit 1
+        fi
+      if: ${{ !cancelled() }}
+    - name: Both env scripts exist and are syntactically valid
+      run: |
+        WIRE="44-convert-and-flow-operator/tools/engine/wire-ghl-env.sh"
+        VERIFY="44-convert-and-flow-operator/tools/engine/verify-ghl-live.sh"
+        for f in "$WIRE" "$VERIFY"; do
+          [ -f "$f" ] || { echo "FAIL: missing $f"; exit 1; }
+          bash -n "$f" || { echo "FAIL: $f has a syntax error"; exit 1; }
+          echo "PASS: $f present + valid"
+        done
+      if: ${{ !cancelled() }}
+    - name: 'wire-ghl-env.sh: deep-merge fallback + all 5 vars + docker placeholder-replace'
+      run: |
+        WIRE="44-convert-and-flow-operator/tools/engine/wire-ghl-env.sh"
+        # JSON deep-merge fallback (config-set-rejects-nested-key path on 2026.5.20+)
+        grep -q 'JSON deep-merge fallback' "$WIRE" || { echo "FAIL: no JSON deep-merge fallback"; exit 1; }
+        grep -q "setdefault('env'" "$WIRE" || { echo "FAIL: deep-merge does not target env.vars"; exit 1; }
+        # All 5 canonical vars wired
+        for v in GOHIGHLEVEL_API_KEY GOHIGHLEVEL_LOCATION_ID GOHIGHLEVEL_FIREBASE_REFRESH_TOKEN GOHIGHLEVEL_ALLOWED_LOCATION_IDS GOHIGHLEVEL_DRAFT_ONLY; do
+          grep -q "wire_var $v" "$WIRE" || { echo "FAIL: $v not wired"; exit 1; }
+        done
+        # VPS docker env_file placeholder REPLACE-in-place (not append-after)
+        grep -q 'removing empty placeholder' "$WIRE" || { echo "FAIL: no empty-placeholder removal"; exit 1; }
+        grep -q 'replacing existing' "$WIRE" || { echo "FAIL: no in-place replace"; exit 1; }
+        grep -q 'force-recreate' "$WIRE" || { echo "FAIL: no force-recreate guidance"; exit 1; }
+        # Mac rescue rule: no gateway restart
+        grep -qi 'NOT restarting the gateway' "$WIRE" || { echo "FAIL: missing rescue-Mac no-restart note"; exit 1; }
+        echo "PASS: wire-ghl-env.sh has deep-merge fallback, all 5 vars, placeholder-replace, force-recreate + rescue-Mac notes"
+      if: ${{ !cancelled() }}
+    - name: 'verify-ghl-live.sh: real read, inherited env only, fail-loud, missing-prereqs'
+      run: |
+        VERIFY="44-convert-and-flow-operator/tools/engine/verify-ghl-live.sh"
+        grep -q 'workflows list' "$VERIFY" || { echo "FAIL: does not run a workflows read"; exit 1; }
+        grep -q 'contacts list' "$VERIFY" || { echo "FAIL: no PIT-only fallback read"; exit 1; }
+        grep -q 'exit 1' "$VERIFY" || { echo "FAIL: no fail-loud exit"; exit 1; }
+        grep -q 'exit 2' "$VERIFY" || { echo "FAIL: no missing-prereqs exit-2 path"; exit 1; }
+        # Must NOT hand-source a secrets file before invoking caf (would feed env
+        # the gateway would not have — defeats the purpose of the gate).
+        if grep -qE '^\s*source .*secrets/\.env' "$VERIFY"; then
+          echo "FAIL: verify gate sources secrets/.env (must use inherited env only)"; exit 1
+        fi
+        echo "PASS: verify gate runs a real read on inherited env, fails loud, has exit-2 missing-prereqs path"
+      if: ${{ !cancelled() }}
+    - name: 'Functional: wire-ghl-env.sh exit-2 when required creds absent'
+      run: |
+        WIRE="44-convert-and-flow-operator/tools/engine/wire-ghl-env.sh"
+        SB="$(mktemp -d)"; mkdir -p "$SB/.openclaw/secrets"
+        printf '{"version":1}\n' > "$SB/.openclaw/openclaw.json"
+        printf 'ANTHROPIC_API_KEY=sk-ant-x\n' > "$SB/.openclaw/secrets/.env"
+        set +e
+        OC_JSON="$SB/.openclaw/openclaw.json" OC_SECRETS_ENV="$SB/.openclaw/secrets/.env" SKILL44_NO_DOCKER_ENV=1 bash "$WIRE" >/dev/null 2>&1
+        rc=$?
+        set -e
+        [ "$rc" -eq 2 ] || { echo "FAIL: expected exit 2 (missing prereqs), got $rc"; exit 1; }
+        echo "PASS: exit 2 on absent required creds"
+      if: ${{ !cancelled() }}
+    - name: 'Functional: wire-ghl-env.sh deep-merges all 5 vars + replaces docker placeholders'
+      run: |
+        WIRE="44-convert-and-flow-operator/tools/engine/wire-ghl-env.sh"
+        SB="$(mktemp -d)"; mkdir -p "$SB/.openclaw/secrets" "$SB/docker/oc"
+        printf '{"version":1,"agents":{"defaults":{}}}\n' > "$SB/.openclaw/openclaw.json"
+        printf 'GOHIGHLEVEL_API_KEY=pit-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\nGOHIGHLEVEL_LOCATION_ID=Loc12345678901234567890\n' > "$SB/.openclaw/secrets/.env"
+        printf 'OPENCLAW_OWNER_NAME=Test\nGOHIGHLEVEL_API_KEY=\nGOHIGHLEVEL_LOCATION_ID=\n' > "$SB/docker/oc/.env"
+        # openclaw is not installed in CI → forces the JSON deep-merge fallback.
+        OC_JSON="$SB/.openclaw/openclaw.json" OC_SECRETS_ENV="$SB/.openclaw/secrets/.env" DOCKER_ENV_FILE="$SB/docker/oc/.env" bash "$WIRE"
+        # Assert all present vars landed in env.vars (python -c avoids YAML heredoc indent traps).
+        OCJ="$SB/.openclaw/openclaw.json" python3 -c 'import json,os; v=json.load(open(os.environ["OCJ"]))["env"]["vars"]; [__import__("sys").exit("missing env.vars."+k) for k in ("GOHIGHLEVEL_API_KEY","GOHIGHLEVEL_LOCATION_ID","GOHIGHLEVEL_ALLOWED_LOCATION_IDS","GOHIGHLEVEL_DRAFT_ONLY") if not v.get(k)]; assert v["GOHIGHLEVEL_DRAFT_ONLY"]=="true"; assert v["GOHIGHLEVEL_ALLOWED_LOCATION_IDS"]==v["GOHIGHLEVEL_LOCATION_ID"]; print("PASS: openclaw.json env.vars has all present vars via deep-merge")'
+        # docker .env: no empty placeholder remains; real values present.
+        if grep -qE '^GOHIGHLEVEL_API_KEY=$' "$SB/docker/oc/.env"; then echo "FAIL: empty placeholder survived"; exit 1; fi
+        grep -qE '^GOHIGHLEVEL_API_KEY=pit-' "$SB/docker/oc/.env" || { echo "FAIL: real API key not in docker .env"; exit 1; }
+        grep -qE '^GOHIGHLEVEL_LOCATION_ID=Loc' "$SB/docker/oc/.env" || { echo "FAIL: real location id not in docker .env"; exit 1; }
+        echo "PASS: docker env_file placeholders replaced in place with real values"
+      if: ${{ !cancelled() }}
+    - name: INSTALL.md Action 5 calls wire-ghl-env.sh; Action 6b runs verify-ghl-live.sh
+      run: |
+        INSTALL="44-convert-and-flow-operator/INSTALL.md"
+        grep -q 'wire-ghl-env.sh' "$INSTALL" || { echo "FAIL: INSTALL.md does not call wire-ghl-env.sh"; exit 1; }
+        grep -q 'verify-ghl-live.sh' "$INSTALL" || { echo "FAIL: INSTALL.md does not run verify-ghl-live.sh (Action 6b)"; exit 1; }
+        grep -qi 'installed-with-missing-prereqs' "$INSTALL" || { echo "FAIL: INSTALL.md missing the missing-prereqs handling"; exit 1; }
+        echo "PASS: INSTALL.md wires env (Action 5) + runs fail-loud verify (Action 6b)"
+      if: ${{ !cancelled() }}
+    - name: 'Root install.sh: Step 14e wires env + runs verify'
+      run: |
+        ROOT="install.sh"
+        grep -q 'install_skill_44_convert_and_flow_operator_env' "$ROOT" || { echo "FAIL: install.sh has no Step 14e env-wiring function"; exit 1; }
+        grep -q 'wire-ghl-env.sh' "$ROOT" || { echo "FAIL: install.sh does not invoke wire-ghl-env.sh"; exit 1; }
+        grep -q 'verify-ghl-live.sh' "$ROOT" || { echo "FAIL: install.sh does not invoke verify-ghl-live.sh"; exit 1; }
+        echo "PASS: install.sh Step 14e wires env + runs fail-loud verify"
+      if: ${{ !cancelled() }}

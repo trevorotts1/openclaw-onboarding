@@ -154,50 +154,6 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
-  defect-classes:
-    # Batch pull requests run only the required checks (Trevor order 2026-11-13).
-    if: ${{ !startsWith(github.head_ref, 'batch/') }}
-    name: defect classes A-G stay fixed
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout repo
-        uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-
-      - name: A — agents.entries roster readers/writers
-        run: |
-          python3 tests/unit/agents-entries-roster-readers.test.py -v
-          python3 tests/unit/agents-entries-remaining-readers.test.py -v
-
-      # (shared-utils/test-resolve-db.sh is not run here: its selector case
-      # needs an installed persona library and is not hermetic on a bare runner.)
-      - name: B — mission-control.db decoy resolver
-        run: python3 tests/unit/cc-db-decoy-resolver.test.py -v
-
-      - name: C — GNU stat first (native GNU on this runner)
-        run: bash tests/unit/gnu-stat-first.test.sh
-
-      - name: D — retire on a separate workspace departments tree
-        run: python3 tests/unit/retire-decline-separate-workspace.test.py -v
-
-      - name: E — update.sh path stamps commandCenterBuildFresh
-        run: |
-          bash tests/unit/cc-update-path-build-fresh.test.sh
-          bash tests/unit/cc-done-degraded-retry-gate.test.sh
-
-      - name: F — embedding probe vs shipped asset
-        run: python3 tests/unit/embedding-probe-shipped-asset.test.py -v
-
-      - name: G — platform detection parity
-        run: bash tests/unit/platform-detection-parity.test.sh
-
-      - name: H — wiring gate skips department runtime dirs, still gates real roles
-        run: bash 23-ai-workforce-blueprint/scripts/test-wiring-gate-role-dir-walk.sh
-
   bash32-parse:
     # Batch pull requests run only the required checks (Trevor order 2026-11-13).
     if: ${{ !startsWith(github.head_ref, 'batch/') }}

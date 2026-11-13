@@ -71,66 +71,6 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
-  structural:
-    # Batch pull requests run only the required checks (Trevor order 2026-11-13).
-    if: ${{ !startsWith(github.head_ref, 'batch/') }}
-    name: structural gates (brew bounds, streamed log, exec.mode translation)
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-
-      - name: Bounded non-interactive brew + whisper probe + streamed log
-        run: |
-          chmod +x tests/unit/hardening-bounded-brew-and-whisper-probe.test.sh
-          bash tests/unit/hardening-bounded-brew-and-whisper-probe.test.sh
-
-      - name: Fleet standards keeps tools.exec.mode (no legacy security/ask rewrite)
-        run: |
-          chmod +x tests/unit/fleet-standards-legacy-exec-mode.test.sh
-          bash tests/unit/fleet-standards-legacy-exec-mode.test.sh
-
-      - name: Version detector parses line 2; unknown version never writes the poison key
-        run: |
-          # 2026-11-06: a CLI shim that writes a banner to stderr made the old
-          # line-1-only detector read the wrong schema, write agents.defaults.tools
-          # on 2026.10.8, and ROLL BACK the entire standards apply. This leg runs
-          # the real script against that exact CLI shape and asserts the standards
-          # actually land -- plus that a genuine validator failure still rolls back.
-          chmod +x tests/unit/fleet-standards-version-detector-rollback.test.sh
-          bash tests/unit/fleet-standards-version-detector-rollback.test.sh
-
-      - name: Model-sovereignty repair never truncates fallback chains
-        run: bash tests/unit/repair-model-sovereignty-no-truncate.test.sh
-
-      - name: No rule against Anthropic models (the whole roll keeps an Anthropic fallback/provider/plugin)
-        run: bash tests/unit/no-anthropic-rule.test.sh
-
-      - name: Burn guard keeps skill-collection-review crons off (unset/auto -> the value the installed build accepts)
-        run: bash tests/unit/burn-guard.test.sh
-
-      - name: CAN014 workshop mode follows the installed build's schema (propose -> off on 2026.10.5+)
-        run: bash tests/unit/workshop-mode-compat.test.sh
-
-      - name: Both scripts parse
-        run: |
-          bash -n scripts/install-hardening.sh
-          bash -n scripts/apply-fleet-standards.sh
-          bash -n update-skills.sh
-
-      - name: install-hardening.sh is bash 3.2 safe (macOS /bin/bash)
-        run: |
-          # macOS ships bash 3.2 at /bin/bash and cron/launchd resolve
-          # `env bash` straight back to it, so this script must parse there.
-          # ubuntu has no bash 3.2, so assert the portability constraint the
-          # only way a linux runner honestly can: no bash-4-only syntax.
-          bash tests/unit/bash4-syntax-guard.test.sh
-
   live-darwin:
     # Batch pull requests run only the required checks (Trevor order 2026-11-13).
     if: ${{ !startsWith(github.head_ref, 'batch/') }}

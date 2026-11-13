@@ -13,27 +13,37 @@ jobs:
   reliability-contracts:
     # Batch pull requests run only the required checks (Trevor order 2026-11-13).
     if: ${{ !startsWith(github.head_ref, 'batch/') }}
-    name: State, post-interview recovery and authoritative delivery (${{ matrix.python }})
+    name: State, post-interview recovery and authoritative delivery (Python 3.9 then 3.12)
     # Pinned: setup-python ships no CPython 3.9 build for the ubuntu-26.04 image
     # (the versions manifest lists 3.9 for 22.04/24.04 only), so ubuntu-latest
     # floats the 3.9 leg into a setup failure before any test runs. 24.04 is the
-    # image this job last went green on (run 41154594329) and keeps both matrix
-    # legs executing.
+    # image this job last went green on (run 41154594329) and keeps both
+    # interpreters running.
+    # One job, two interpreters in turn (checks-compress): client Macs run Python 3.9,
+    # so the suite still runs on 3.9 and on 3.12, but on one runner instead of two.
     runs-on: ubuntu-24.04
-    timeout-minutes: 8
-    strategy:
-      matrix:
-        python: ["3.9", "3.12"]
+    timeout-minutes: 12
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
-          python-version: ${{ matrix.python }}
-      - name: Atomic state, runner ownership, routing and completion contracts
+          python-version: "3.9"
+      - name: Atomic state, runner ownership, routing and completion contracts (Python 3.9)
         run: python3 23-ai-workforce-blueprint/scripts/test_reliability_contracts.py
-      - name: Company retirement and recovery cleanup contracts
+      - name: Company retirement and recovery cleanup contracts (Python 3.9)
         run: python3 23-ai-workforce-blueprint/scripts/test_postinterview_recovery.py
-      - name: Retained authoritative JSON delivery receipts
+      - name: Retained authoritative JSON delivery receipts (Python 3.9)
         run: python3 37-zhc-closeout/scripts/test_delivery_receipts.py
-      - name: Read-only authoritative SQLite delivery receipts
+      - name: Read-only authoritative SQLite delivery receipts (Python 3.9)
+        run: python3 37-zhc-closeout/scripts/test_sqlite_delivery_receipts.py
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Atomic state, runner ownership, routing and completion contracts (Python 3.12)
+        run: python3 23-ai-workforce-blueprint/scripts/test_reliability_contracts.py
+      - name: Company retirement and recovery cleanup contracts (Python 3.12)
+        run: python3 23-ai-workforce-blueprint/scripts/test_postinterview_recovery.py
+      - name: Retained authoritative JSON delivery receipts (Python 3.12)
+        run: python3 37-zhc-closeout/scripts/test_delivery_receipts.py
+      - name: Read-only authoritative SQLite delivery receipts (Python 3.12)
         run: python3 37-zhc-closeout/scripts/test_sqlite_delivery_receipts.py
