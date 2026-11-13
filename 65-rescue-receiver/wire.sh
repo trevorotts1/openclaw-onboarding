@@ -157,35 +157,6 @@ fi
 # registered. Registering a poller for a box the poll itself would dark-exit
 # (rescue-poll.sh requires all three) is a false success, so the wiring gate is
 # the same set the poll enforces.
-if [ -z "${RR_RECEIVER_URL:-}" ] || [ -z "${RR_BOX_TOKEN:-}" ] || [ -z "${RR_BOX_SLUG:-}" ]; then
-  # Report WHY, by NAME, from the engine's explicit state machine when it is
-  # installed; otherwise fall back to the historical prose line.
-  _ENGINE_EARLY=""
-  for _cand in "$_OCROOT/skills/shared-utils/rr-readiness.sh" \
-               "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/shared-utils/rr-readiness.sh"; do
-    [ -n "$_cand" ] && [ -f "$_cand" ] && { _ENGINE_EARLY="$_cand"; break; }
-  done
-  _MISSING_EARLY=""
-  [ -n "${RR_RECEIVER_URL:-}" ] || _MISSING_EARLY="$_MISSING_EARLY RR_RECEIVER_URL"
-  [ -n "${RR_BOX_TOKEN:-}" ]    || _MISSING_EARLY="$_MISSING_EARLY RR_BOX_TOKEN"
-  [ -n "${RR_BOX_SLUG:-}" ]     || _MISSING_EARLY="$_MISSING_EARLY RR_BOX_SLUG"
-  if [ -n "$_ENGINE_EARLY" ]; then
-    # shellcheck disable=SC1090
-    . "$_ENGINE_EARLY"
-    # Enrollment-only resolution: the cron view is NOT consulted on the dark
-    # path (a box that is not enrolled must not spawn CLI probes).
-    rrr_tools_resolve
-    rrr_enrollment_resolve "$_SECRETS"
-    rrr_evaluate
-    echo "65-rescue-receiver: readiness=$RRR_STATE reason=$RRR_REASON detail=$RRR_DETAIL"
-  else
-    echo "65-rescue-receiver: box not enrolled (missing:${_MISSING_EARLY}) — poll cron NOT registered"
-  fi
-  unset RR_RECEIVER_URL RR_BOX_TOKEN RR_BOX_SLUG
-  exit 0
-fi
-unset RR_RECEIVER_URL RR_BOX_TOKEN RR_BOX_SLUG
-
 _NAME="rescue-rr-box-poll"
 _LEGACY_NAME="rescue-rangers-poll"
 # RR INTAKE AUTH SELF-CHECK (daily). Separate leg, separate cron, separate name.
@@ -225,8 +196,10 @@ esac
 # Reads `cron list --json --all`: without --all a job an operator DISABLED is
 # hidden, so it looked absent and was re-added as a duplicate on every roll. A
 # disabled job counts as present and is never re-enabled or re-added. Exact name
-# match on parsed JSON (node, then python3); the old grep only when neither
-# exists. `--all` can print nothing at all, so an empty answer retries without it.
+# match on parsed JSON (node, then python3). When NEITHER can read the list the
+# answer is UNKNOWN (_CRON_N=-1), never a grep guess: the function then returns
+# success so every caller does nothing. `--all` can print nothing at all, so an
+# empty answer retries without it.
 # ---------------------------------------------------------------------------
 _cron_count() {
   _CRON_N=0; _CRON_IDS=""
@@ -251,13 +224,16 @@ w(json.load(sys.stdin));print(len(h),",".join(h))'
   fi
   if [ -n "$_cc_out" ]; then
     _CRON_N="${_cc_out%% *}"; _CRON_IDS="${_cc_out#* }"
-  elif printf '%s' "$_cc_json" | grep -q "\"name\": *\"$1\""; then
-    _CRON_N=1
+  else
+    # RRX-018: neither node nor python3 could read the cron list. That is
+    # UNKNOWN, not "absent". Callers must not add a job on an unknown.
+    _CRON_N=-1
+    echo "65-rescue-receiver: cannot read the cron list as JSON (node and python3 both unavailable or the list was not JSON); treating $1 as UNKNOWN and adding nothing" >&2
   fi
   if [ "$_CRON_N" -gt 1 ]; then
     echo "65-rescue-receiver: WARNING $_CRON_N crons named $1 exist (ids: $_CRON_IDS); not deleting anything" >&2
   fi
-  [ "$_CRON_N" -gt 0 ]
+  [ "$_CRON_N" -ne 0 ]
 }
 
 # ---------------------------------------------------------------------------
@@ -283,7 +259,7 @@ register_intake_auth_cron() {
     return 0
   fi
   if _cron_count "$_AUTH_NAME"; then
-    echo "65-rescue-receiver: cron $_AUTH_NAME already declared (idempotent by name; not re-added)"
+    echo "65-rescue-receiver: cron $_AUTH_NAME present or unknown (count=$_CRON_N); not added"
     return 0
   fi
   if "$_OC_BIN" cron add --name "$_AUTH_NAME" --cron "$_AUTH_CRON" --no-deliver \
@@ -298,6 +274,86 @@ register_intake_auth_cron() {
   fi
   return 0
 }
+
+# ---------------------------------------------------------------------------
+# register_escalate_flush_cron
+#
+# Declares the OUTBOX FLUSH as its own openclaw cron. Cases written to the
+# outbox are only sent when something drains it; without this job a case sits
+# unsent until somebody happens to run the flush by hand.
+# Idempotent by DECLARATION KEY (the cron name): present means leave it alone,
+# absent means add it once.
+#
+# GUARDED ON THE SCRIPT EXISTING. A cron whose command is not on disk is a cron
+# that fails every five minutes forever, and an older bundle that predates this
+# file must not get one. This is the same gate wire.sh already applies to
+# rescue-poll.sh.
+#
+# DELIVERY NONE IS NOT OPTIONAL. This job runs unattended every five minutes on
+# a client box. If the CLI will not accept --no-deliver, NOTHING is registered
+# and the refusal is reported: a delivering five-minute cron is client spam on a
+# timer, and a missing flush is the lesser harm.
+# ---------------------------------------------------------------------------
+register_escalate_flush_cron() {
+  local _FLUSH_NAME="rr-escalate-flush"
+  local _FLUSH_CHECK="$_OCROOT/skills/65-rescue-receiver/rr_escalate.py"
+  local _FLUSH_CRON="*/5 * * * *"
+  if [ ! -f "$_FLUSH_CHECK" ]; then
+    echo "65-rescue-receiver: $_FLUSH_NAME NOT registered - rr_escalate.py is not installed at $_FLUSH_CHECK (older bundle); a cron whose command does not exist would fail every day" >&2
+    return 0
+  fi
+  if _cron_count "$_FLUSH_NAME"; then
+    echo "65-rescue-receiver: cron $_FLUSH_NAME present or unknown (count=$_CRON_N); not added"
+    return 0
+  fi
+  if "$_OC_BIN" cron add --name "$_FLUSH_NAME" --cron "$_FLUSH_CRON" --no-deliver \
+       --command "python3 $_FLUSH_CHECK flush" >&2; then
+    if _cron_count "$_FLUSH_NAME"; then
+      echo "65-rescue-receiver: registered cron $_FLUSH_NAME ($_FLUSH_CRON, delivery none) -> python3 $_FLUSH_CHECK flush (READ BACK)"
+    else
+      echo "65-rescue-receiver: cron $_FLUSH_NAME add returned 0 but did NOT read back; not claiming it is scheduled" >&2
+    fi
+  else
+    echo "65-rescue-receiver: cron $_FLUSH_NAME NOT registered - the CLI refused the add with --no-deliver. Nothing was registered WITHOUT it on purpose: a delivering daily auth check would route operator-facing credential diagnostics into the client chat." >&2
+  fi
+  return 0
+}
+
+if [ -z "${RR_RECEIVER_URL:-}" ] || [ -z "${RR_BOX_TOKEN:-}" ] || [ -z "${RR_BOX_SLUG:-}" ]; then
+  # Report WHY, by NAME, from the engine's explicit state machine when it is
+  # installed; otherwise fall back to the historical prose line.
+  _ENGINE_EARLY=""
+  for _cand in "$_OCROOT/skills/shared-utils/rr-readiness.sh" \
+               "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/shared-utils/rr-readiness.sh"; do
+    [ -n "$_cand" ] && [ -f "$_cand" ] && { _ENGINE_EARLY="$_cand"; break; }
+  done
+  _MISSING_EARLY=""
+  [ -n "${RR_RECEIVER_URL:-}" ] || _MISSING_EARLY="$_MISSING_EARLY RR_RECEIVER_URL"
+  [ -n "${RR_BOX_TOKEN:-}" ]    || _MISSING_EARLY="$_MISSING_EARLY RR_BOX_TOKEN"
+  [ -n "${RR_BOX_SLUG:-}" ]     || _MISSING_EARLY="$_MISSING_EARLY RR_BOX_SLUG"
+  if [ -n "$_ENGINE_EARLY" ]; then
+    # shellcheck disable=SC1090
+    . "$_ENGINE_EARLY"
+    # Enrollment-only resolution for the STATE machine. RRX-012: the cron view
+    # is still not consulted for readiness here, but an unenrolled box now
+    # registers the two daily jobs (intake check + outbox flush) and no poll.
+    rrr_tools_resolve
+    rrr_enrollment_resolve "$_SECRETS"
+    rrr_evaluate
+    echo "65-rescue-receiver: readiness=$RRR_STATE reason=$RRR_REASON detail=$RRR_DETAIL"
+  else
+    echo "65-rescue-receiver: box not enrolled (missing:${_MISSING_EARLY}) — poll cron NOT registered"
+  fi
+  unset RR_RECEIVER_URL RR_BOX_TOKEN RR_BOX_SLUG
+  # RRX-012: a box that is not enrolled on the reply leg can still SEND cases.
+  # It gets the daily check of the sending channel and the outbox flush too.
+  if [ -n "$_OC_BIN" ]; then
+    register_intake_auth_cron
+    register_escalate_flush_cron
+  fi
+  exit 0
+fi
+unset RR_RECEIVER_URL RR_BOX_TOKEN RR_BOX_SLUG
 
 # ---------------------------------------------------------------------------
 # RR-028 engine. Absent (an older skills bundle, or a self-test fixture that
@@ -379,7 +435,7 @@ if [ "$_RRR_LOADED" = "1" ]; then
     fi
   done
 elif _cron_count "$_LEGACY_NAME"; then
-  echo "65-rescue-receiver: legacy cron $_LEGACY_NAME is present but the RR-028 engine is NOT installed, so its enabled state cannot be checked — NOT removed (remove it by hand if it is genuinely yours)" >&2
+  echo "65-rescue-receiver: legacy cron $_LEGACY_NAME is present or unknown but the RR-028 engine is NOT installed, so its enabled state cannot be checked — NOT removed (remove it by hand if it is genuinely yours)" >&2
 fi
 
 if [ -n "$_ENGINE" ]; then
@@ -406,7 +462,21 @@ if [ -n "$_ENGINE" ]; then
     rrr_receipt_read "$RRR_STATE_DIR" "$RRR_DIGEST"
   fi
   rrr_evaluate
-  echo "65-rescue-receiver: files-installed=1 (this installer claims INSTALLATION; receiver readiness is a separate claim)"
+  # RRX-019: the claim is checked, not printed. Every file the poll needs must
+  # exist, be non-empty and parse.
+  _iv_tool="$_OCROOT/skills/65-rescue-receiver/rr_install_verify.py"
+  _iv_ok=0
+  if [ -f "$_iv_tool" ] && command -v python3 >/dev/null 2>&1; then
+    _iv_out="$(python3 "$_iv_tool" --skills-root "$_OCROOT/skills" --include-added 2>/dev/null)"; _iv_rc=$?
+    [ "$_iv_rc" -eq 0 ] && _iv_ok=1
+  else
+    _iv_out='{"why":"rr_install_verify.py or python3 missing"}'
+  fi
+  if [ "$_iv_ok" = "1" ]; then
+    echo "65-rescue-receiver: files-installed=1 (every required file exists, is non-empty and parses; receiver readiness is a separate claim)"
+  else
+    echo "65-rescue-receiver: files-installed=0 detail=$_iv_out" >&2
+  fi
   [ "$_RECONCILE_ONLY" = "1" ] && echo "65-rescue-receiver: reconcile-only pass (files are copied by the roll; this pass reconciles and reports)"
   echo "65-rescue-receiver: readiness=$RRR_STATE reason=$RRR_REASON digest=${RRR_DIGEST:-none} runtime=${RRR_RUNTIME_ID:-unresolved} coverage=$RRR_COVERAGE"
   echo "65-rescue-receiver: detail=$RRR_DETAIL"
@@ -414,11 +484,13 @@ if [ -n "$_ENGINE" ]; then
     echo "65-rescue-receiver: receiver readiness NOT verified — prove it in the intended runtime: bash $_OCROOT/skills/65-rescue-receiver/rr-readiness.sh --probe"
   fi
   register_intake_auth_cron
+  register_escalate_flush_cron
   # The exit code repeats the reconciler's own verdict (see the header contract):
   # 3/4/5/7 mean the desired cron is NOT proven, so this script must not exit 0;
   # 6/8 are deliberate no-mutation outcomes (operator intent respected, or a
   # fail-closed refusal) and are honestly zero. There is no fall-through: an
   # unexpected code is a failure, never a silent success.
+  [ "$_iv_ok" = "1" ] || exit 1
   case "$_recon_rc" in
     0|6|8) exit 0 ;;
     *)     exit 1 ;;
@@ -433,14 +505,17 @@ echo "65-rescue-receiver: readiness=UNKNOWN reason=engine_not_installed detail=s
 if _cron_count "$_NAME"; then
   echo "65-rescue-receiver: cron $_NAME already registered (presence only; NOT read back)"
   register_intake_auth_cron
+  register_escalate_flush_cron
   exit 0
 fi
 if "$_OC_BIN" cron add --name "$_NAME" --cron "*/2 * * * *" --no-deliver --command "sh $_POLL" >&2; then
   :
-elif "$_OC_BIN" cron add --name "$_NAME" --cron "*/2 * * * *" --command "sh $_POLL" >&2; then
-  :
 else
-  echo "65-rescue-receiver: cron add FAILED" >&2; exit 1
+  # RRX-018: never fall back to a poll that DELIVERS. A job that runs every 2
+  # minutes with delivery on can post into the owner's chat every 2 minutes.
+  echo "65-rescue-receiver: cron add FAILED - the CLI refused the add with --no-deliver, and nothing was registered without it on purpose" >&2
+  exit 1
 fi
 echo "65-rescue-receiver: registered cron $_NAME (*/2) -> sh $_POLL (presence path; NOT read back)"
 register_intake_auth_cron
+register_escalate_flush_cron
