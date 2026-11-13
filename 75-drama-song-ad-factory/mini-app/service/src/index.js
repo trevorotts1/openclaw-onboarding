@@ -33,6 +33,7 @@ import { AF_PAIR_LOCKED, PAIRING_MAX_TRIES, attemptPairing, buildKeyRecord, mint
 import { MAX_WAITING_ORDERS, checkIn, readInbox, writeInbox } from './inbox.js';
 import { acceptUpload, pollUpload } from './uploads.js';
 import { resolveOrderState, transition, writeOperatorRecord } from './lifecycle.js';
+import { dueForDeletion } from './retention.js';
 import { AF_OPT_APPROVAL, lastCheckIn, optionLine, setOption, staleVerdict } from './options.js';
 import { listKeys, randomConnectHex } from './support.js';
 import { AF_PUSH_DISABLED, pushEnabled, registerSubscription, revokeSubscription, sendPush } from './push.js';
@@ -326,8 +327,17 @@ export async function handle(request, env, store, objects, deps = {}) {
 
   // POST /api/studio/checkin — the 2-minute network call. Zero model tokens.
   if (request.method === 'POST' && url.pathname === '/api/studio/checkin') {
+    // S75-083: the retention sweep runs on this path. The box already calls it
+    // every two minutes, so the service's own deletion rule gets a caller
+    // without a second service, a scheduler or a timer.
+    const swept = await sweepExpiredRecords(store, clientId, nowMs);
     const result = await checkIn(objects, { clientId, nowMs, orders: body.orders });
     if (Array.isArray(body.orders)) await writeInbox(objects, { clientId, orders: body.orders, nowMs });
+    if (swept.swept > 0) {
+      // A record the sweep deleted must leave the box's mirror too, or the box
+      // keeps replaying an order the service no longer holds.
+      await writeInbox(objects, { clientId, orders: await waitingList(store, clientId), nowMs });
+    }
     return ok(result);
   }
 
@@ -546,6 +556,47 @@ async function serveAsset(request, env, assetPath) {
 async function clientRecord(store, clientId) {
   const raw = await store.kvGet(`client:${clientId}`);
   return raw ? JSON.parse(raw) : { client_id: clientId, option: 1, last_check_in: null };
+}
+
+/**
+ * S75-083 — the retention sweep. `retention.js` held the whole deletion rule
+ * and production never imported it, so every stored class lived forever.
+ *
+ * It runs on the check-in route, the one path the box already calls on a
+ * clock: the sweep lists the caller's OWN order records, hands them to
+ * `dueForDeletion`, and deletes exactly what the rule names. Nothing here
+ * invents a kind, a column or a key — the tag is written by the module that
+ * stores the record, and a record carrying no tag is not a retention object,
+ * so it is never swept. A record with no event yet is kept by the rule itself.
+ *
+ * The scope is the caller's `order:<client_id>:` namespace only: a sweep can
+ * never reach another client's records, and a record this parser cannot read
+ * is skipped, never guessed at.
+ *
+ * Ceiling: the adapter has no R2 delete (page-api.deleteDraft stores a marker
+ * instead), so this sweeps the KV records the retention kinds tag and leaves
+ * the R2 copies to the bucket's own lifecycle rule. Upgrade when the adapter
+ * gains objectDelete.
+ */
+export async function sweepExpiredRecords(store, clientId, nowMs) {
+  const keys = await listKeys(store, `order:${clientId}:`);
+  const items = [];
+  for (const key of keys) {
+    const raw = await store.kvGet(key);
+    if (!raw) continue;
+    let record;
+    try {
+      record = JSON.parse(raw);
+    } catch {
+      continue;
+    }
+    if (!record || typeof record.retention_kind !== 'string') continue;
+    items.push({ ...record, kind: record.retention_kind, path: key });
+  }
+  if (items.length === 0) return { swept: 0 };
+  const due = dueForDeletion(items, nowMs);
+  for (const key of due.delete) await store.kvDelete(key);
+  return { swept: due.delete.length };
 }
 
 async function waitingList(store, clientId) {
