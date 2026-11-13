@@ -80,8 +80,10 @@ async function loadPage({ hash, answer }) {
   };
 
   await expect("getSession", "GET", "/api/studio/session", () => svc.getSession());
+  // U-Z08 — the draft keeps the upload ids with the answers.
   await expect("saveDraft", "PUT", "/api/studio/draft",
-    () => svc.saveDraft({ replies: ["1", "yes"] }), { replies: ["1", "yes"] });
+    () => svc.saveDraft({ replies: ["1", "yes"], upload_ids: ["u_1"] }),
+    { replies: ["1", "yes"], upload_ids: ["u_1"] });
   await expect("getQuestions", "GET", "/questions.json", () => svc.getQuestions());
   await expect("lockIn", "POST", "/api/studio/orders",
     () => svc.lockIn({ title: "Drama video", replies: ["1", "yes"], upload_ids: ["u_1"], order_id: "r_0123abcd" }),
@@ -107,9 +109,11 @@ async function loadPage({ hash, answer }) {
     () => svc.listApprovals("r_abc123"));
   await expect("answerApproval", "POST", "/api/studio/orders/r_abc123/approvals/script/answer",
     () => svc.answerApproval("r_abc123", "script", 2, "approve"), { version: 2, value: "approve" });
+  // U-Z08 — the real service refuses a channel it does not know and a body
+  // with no header bytes, so the check names what a real upload sends.
   await expect("requestUpload", "POST", "/api/studio/uploads",
-    () => svc.requestUpload({ channel: "photo", filename: "a.jpg", content_type: "image/jpeg", size_bytes: 12 }),
-    { channel: "photo", filename: "a.jpg", content_type: "image/jpeg", size_bytes: 12 });
+    () => svc.requestUpload({ channel: "image", filename: "a.jpg", content_type: "image/jpeg", size_bytes: 12, header_bytes: [255, 216, 255, 224] }),
+    { channel: "image", filename: "a.jpg", content_type: "image/jpeg", size_bytes: 12, header_bytes: [255, 216, 255, 224] });
   await expect("getDelivery", "GET", "/api/studio/orders/r_abc123",
     () => svc.getDelivery("r_abc123"));
 

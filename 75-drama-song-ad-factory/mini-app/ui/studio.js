@@ -31,6 +31,7 @@
 // =============================================================================
 import { studio, serviceConnected, ServiceUnavailableError } from "./api-client.js";
 import { encode, toElement } from "./qr.js";
+import { sendFile } from "./upload/upload.js";
 
 // ── sibling modules, each owned by another unit ──────────────────────────────
 // service-client.js (W1-studio-page-U1) installs globalThis.studioService;
@@ -152,6 +153,10 @@ const state = {
   locked: false,
   sending: false,       // Lock it in is in flight — a second tap sends nothing
   orderId: null,        // S75-071 — ONE id for the recap on screen, until accepted
+  // U-Z08 — the photos, logos and voice notes the client added, in order. The
+  // ids ride the draft and the order; the names are what the screen reads back.
+  uploadIds: [],
+  uploadLines: [],
   delivery: null,
   sessionFailure: null, // S75-077 — "link" (the service refused the key) or "unreachable"
   // S75-073 — what the project page is showing and what it last drew.
@@ -448,7 +453,7 @@ function answerChanged(i, value) {
 
 async function saveDraft() {
   try {
-    await svc().saveDraft({ replies: state.replies });
+    await svc().saveDraft({ replies: state.replies, upload_ids: state.uploadIds });
     announce("Saved. Your answers are safe.");
   } catch (err) {
     announce(serviceMessage(err));
@@ -474,6 +479,9 @@ async function advance() {
 }
 
 async function startOrder() {
+  // A new order starts from nothing of the last one — its photos included.
+  state.uploadIds = [];
+  state.uploadLines = [];
   await loadQuestions();
   if (!state.questions.length) { render(); return; }
   hydrateReplies(state.replies);
@@ -555,6 +563,42 @@ function projectList() {
   }))];
 }
 
+/** U-Z08 — the PHOTOS screen's uploader, under its text box. Each file goes
+ *  straight to the studio and its id is kept for the order; every accepted file
+ *  leaves a line "Added: <name>" so the client sees what the studio has. */
+function photoUploadBox() {
+  const wrap = el("div", { class: "panel" });
+  const label = el("label", { for: "add-photo", text: "Add a photo, logo or voice note" });
+  const input = el("input", { id: "add-photo", type: "file", accept: ".jpg,.jpeg,.png,.heic,.webp,.mp3,.m4a,.wav,.mp4,.mov" });
+  const added = el("ul", { class: "upload-list" });
+  for (const text of state.uploadLines) added.append(el("li", { text }));
+  input.addEventListener("change", async () => {
+    const files = [...(input.files || [])];
+    if (!files.length) return;
+    input.disabled = true;
+    try {
+      for (const file of files) {
+        try {
+          const result = await sendFile(file, readHash().key);
+          state.uploadIds.push(result.upload_id);
+          state.uploadLines.push(`Added: ${file.name}`);
+          added.append(el("li", { text: `Added: ${file.name}` }));
+          announce(`Added: ${file.name}`);
+        } catch (err) {
+          // The sentence is already the client's: the service's own message
+          // when it sent one, else upload.js's plain line.
+          announce(err && err.message ? err.message : "That file could not be added. Please try again.");
+        }
+      }
+    } finally {
+      input.disabled = false;
+      input.value = "";
+    }
+  });
+  wrap.append(label, input, added);
+  return wrap;
+}
+
 function answerBox(value, onInput, question) {
   const wrap = el("div", {});
   const id = "q-answer";
@@ -570,6 +614,8 @@ function answerBox(value, onInput, question) {
   box.value = value;
   box.addEventListener("input", () => onInput(box.value));
   wrap.append(box);
+  // U-Z08 — the PHOTOS screen is where a client adds the pictures themselves.
+  if (question && question.id === "photos") wrap.append(photoUploadBox());
   return wrap;
 }
 
@@ -703,11 +749,14 @@ async function lockIn(button) {
     const out = await svc().lockIn({
       title: orderTitle(),
       replies: [...currentReplies(), "yes"],
-      upload_ids: [],
+      upload_ids: [...state.uploadIds],
       order_id: state.orderId,
     });
     state.locked = true;
     state.orderId = null;
+    // The order holds the files now; a fresh order starts empty.
+    state.uploadIds = [];
+    state.uploadLines = [];
     if (out && out.order) {
       state.order = out.order;
       state.orders = [out.order, ...state.orders.filter((o) => o.order_id !== out.order.order_id)];
@@ -1134,6 +1183,9 @@ async function boot() {
       state.orders = Array.isArray(session.orders) ? session.orders : [];
       state.replies = Array.isArray(session.draft && session.draft.replies)
         ? [...session.draft.replies] : [];
+      // U-Z08 — the photos a saved draft already carries come back with it.
+      state.uploadIds = Array.isArray(session.draft && session.draft.upload_ids)
+        ? [...session.draft.upload_ids] : [];
       // The remembered Agnes answer and the Agnes job's progress ride the same
       // session (W2-wiring-U3). Absent until that lands: "unknown" keeps AGNES
       // on the card (its shows_when names "unknown") and no progress line shows.

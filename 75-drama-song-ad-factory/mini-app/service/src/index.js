@@ -31,7 +31,7 @@ import { AF_ID_INVALID, isClientId, ownsPath } from './ids.js';
 import { AF_ISO_CROSS, authorizeClient, enrollClient } from './isolation.js';
 import { AF_PAIR_EXPIRED, AF_PAIR_LOCKED, PAIRING_MAX_TRIES, attemptPairing, buildKeyRecord, mintKey, mintPairingCode, pairRecordKey } from './keys.js';
 import { MAX_WAITING_ORDERS, checkIn, readInbox, writeInbox } from './inbox.js';
-import { acceptUpload, pollUpload } from './uploads.js';
+import { AF_UP_KIND, AF_UP_NOT_ARRIVED, AF_UP_UNKNOWN, acceptUpload, pollUpload } from './uploads.js';
 import { resolveOrderState, transition, writeOperatorRecord } from './lifecycle.js';
 import { AF_OPT_APPROVAL, lastCheckIn, optionLine, setOption, staleVerdict } from './options.js';
 import { listKeys, randomConnectHex } from './support.js';
@@ -49,6 +49,8 @@ export { randomConnectHex };
 /** S75-071 — the order id the page mints for one recap: `r_` plus eight
  *  lower-case hex. The service still invents one when the page sends none. */
 const ORDER_ID_FORMAT = /^r_[0-9a-f]{8}$/;
+/** The upload id shape acceptUpload mints (uploads.js). */
+const UPLOAD_ID_FORMAT = /^u_[0-9a-f]{24}$/;
 
 // ---------------------------------------------------------------------------
 // DSR-105 — the story brief
@@ -385,6 +387,19 @@ export async function handle(request, env, store, objects, deps = {}) {
     // (they used to be dropped — only the title survived).
     const checked = validateReplies(body.replies === undefined ? [] : body.replies, body.upload_ids);
     if (!checked.ok) return fail(400, checked.code, checked.message);
+    // U-Z08 — every id the page names that is one of OUR ids (`u_` + 24 hex,
+    // the shape acceptUpload mints) must be an upload THIS client asked for.
+    // Without this an order could point at a file that was never accepted, and
+    // the box would go looking for something no record exists for. A string
+    // outside that shape is not an id this service ever issued and is left to
+    // the box, which treats a missing file as a warning, never a refusal.
+    for (const uploadId of checked.uploadIds) {
+      if (!UPLOAD_ID_FORMAT.test(uploadId)) continue;
+      const job = await pollUpload(store, { clientId, uploadId });
+      if (!job.ok) {
+        return fail(400, AF_UP_UNKNOWN, 'One of the files you added is not with your studio. Add it again.');
+      }
+    }
     const orderId = askedId || `r_${randomConnectHex(4)}`;
     const read = readBrief(checked.replies);
     const order = {
@@ -515,6 +530,34 @@ export async function handle(request, env, store, objects, deps = {}) {
   if (parts.length === 5 && parts[4] === 'complete' && request.method === 'POST') {
     const poll = await pollUpload(store, { clientId, uploadId: parts[3] });
     return poll.ok ? ok(poll.job) : fail(poll.status, poll.code, poll.message);
+  }
+
+  // GET /api/studio/uploads/<id>/file — U-Z08: the studio's own computer (or a
+  // paired machine) reads the bytes a client uploaded, so it can put them in
+  // the run's intake folder. The phone's link key never opens this: a link is
+  // for one client's screen, not for pulling that client's files.
+  if (request.method === 'GET' && parts.length === 5
+      && parts[0] === 'api' && parts[1] === 'studio' && parts[2] === 'uploads' && parts[4] === 'file') {
+    const kind = auth.record && auth.record.kind;
+    if (kind !== 'box' && kind !== 'machine') {
+      return fail(403, AF_UP_KIND, 'Only the studio computer may read an uploaded file.');
+    }
+    const poll = await pollUpload(store, { clientId, uploadId: parts[3] });
+    // A job this client does not own and an id that never existed answer the
+    // same 404, so the route cannot be used to probe another studio's ids.
+    if (!poll.ok || !ownsPath(clientId, poll.job && poll.job.object_path)) {
+      return fail(404, AF_UP_NOT_ARRIVED, 'No such upload for this studio.');
+    }
+    // Streamed from the bucket binding itself, never through the text adapter.
+    const object = env && env.DRAMA_STUDIO ? await env.DRAMA_STUDIO.get(poll.job.object_path) : null;
+    if (!object) return fail(404, AF_UP_NOT_ARRIVED, 'That file has not arrived yet.');
+    const headers = new Headers({
+      'Content-Type': (poll.job && poll.job.content_type) || 'application/octet-stream',
+      'Cache-Control': 'no-store',
+      'X-Content-Type-Options': 'nosniff',
+    });
+    if (typeof object.size === 'number') headers.set('Content-Length', String(object.size));
+    return new Response(object.body, { status: 200, headers });
   }
 
   return fail(404, 'AF-DS-NOT-FOUND', `No route for ${request.method} ${url.pathname}.`);

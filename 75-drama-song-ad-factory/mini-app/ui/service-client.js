@@ -137,7 +137,9 @@ let lockInOrderId = null;
 const service = {
   getSession: () => call("GET", "/api/studio/session"),
 
-  saveDraft: ({ replies }) => call("PUT", "/api/studio/draft", { replies }),
+  // U-Z08 — the photos the client added are part of the draft: a page closed
+  // between an upload and Lock it in comes back with those ids still on it.
+  saveDraft: ({ replies, upload_ids }) => call("PUT", "/api/studio/draft", { replies, upload_ids }),
 
   // Static asset served with the page; the key rides along for uniformity.
   getQuestions: async () => {
