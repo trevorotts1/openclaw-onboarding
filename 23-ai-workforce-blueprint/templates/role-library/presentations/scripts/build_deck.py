@@ -14425,9 +14425,12 @@ def run_postflight_gate(bundle_dir: Path, ledger_path: Path, deck_slug: str,
                 print(f"           produce a real per-slide report "
                       f"(AF-QC-PLACEHOLDER).", file=sys.stderr)
             else:
-                print(f"  TOO SMALL [{key}] {fname}  ({label})", file=sys.stderr)
-                print(f"           actual={actual_b:,} bytes  minimum={min_b:,} bytes",
-                      file=sys.stderr)
+                # PD-074: a reason with no size arm of its own is NOT a size
+                # failure. Say FAILED and name the reason code — "TOO SMALL …
+                # 0 bytes" lied about every non-size reason (empty notes pane,
+                # monotone deck, off-brand, casting park, …).
+                print(f"  FAILED   [{key}] {fname}  ({label})", file=sys.stderr)
+                print(f"           {reason}", file=sys.stderr)
         # Also surface any ledger entries that are not verified but not in our scan list
         # (edge case: previously-failed entries from a prior run).
         extra_unverified = [e for e in ledger_entries
