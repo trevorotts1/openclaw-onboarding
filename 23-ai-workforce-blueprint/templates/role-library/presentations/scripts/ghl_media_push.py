@@ -32,9 +32,11 @@ For every GHL-enabled deck it HARD-FAILS unless media_library.json records ALL T
   (1) ghl_folder_id   — a real folder id OR "root" (the per-deck folder was resolved),
   (2) per-slide PNG uploads — each with a real ghl_media_id (status "complete"),
   (3) pptx_ghl_media_id — the final assembled PPTX is in the GHL media library.
-The gate may be skipped by exactly ONE thing: a LOGGED owner/founder approval token in
-working/checkpoints/process_manifest.json under `owner_skip_approval` (owner_approved:
-true + approved_by + reason + a matching gate name). An agent setting `has_ghl:false`
+The gate may be skipped by exactly ONE thing: an owner approval in
+working/checkpoints/process_manifest.json under `owner_skip_approval` that
+`presentation_job.approvals.verify_owner_skip_approvals` verifies (its owner_msg_id must
+resolve to a real owner-authored message; the four typed fields alone authorize
+nothing). An agent setting `has_ghl:false`
 on its own does NOT skip the gate — the skip must be an explicit owner decision.
 
 FORBIDDEN: driving the GoHighLevel UI in a browser (agent-browser / Playwright /
@@ -1116,30 +1118,39 @@ def push_deck_media(run_dir: Path, images: list, *, deck_slug: str | None = None
 # CLOSEOUT GATE — no delivery without the GHL upload (folds under AF-DELIVERY-COMPLETE).
 # ---------------------------------------------------------------------------
 def _valid_owner_skip(run_dir: Path):
-    """Return the owner-skip record that authorizes skipping the GHL-upload gate, or
-    None. The ONLY legitimate skip: a LOGGED token in
-    working/checkpoints/process_manifest.json under `owner_skip_approval` with
-    owner_approved:true + a non-empty approved_by + a non-empty reason + a gate name
-    that matches this gate. A list or a single dict are both accepted. An agent's own
-    `has_ghl:false` is NOT a skip — only an explicit owner/founder decision is."""
-    pm = _read_json(run_dir / "working" / "checkpoints" / "process_manifest.json")
-    raw = pm.get("owner_skip_approval") if isinstance(pm, dict) else None
-    if raw is None:
-        return None
-    records = raw if isinstance(raw, list) else [raw]
-    for rec in records:
-        if not isinstance(rec, dict):
-            continue
-        if rec.get("owner_approved") is not True:
-            continue
-        if not str(rec.get("approved_by", "")).strip():
-            continue
-        if not str(rec.get("reason", "")).strip():
-            continue
-        gate = str(rec.get("gate") or rec.get("gate_id") or rec.get("phase_id") or "").strip()
-        if gate in _GATE_ALIASES:
-            return rec
-    return None
+    """Return `(record, reasons)` for the closeout gate's owner skip.
+
+    A skip opens the gate ONLY for an approval `presentation_job.approvals`
+    VERIFIES: `verify_owner_skip_approvals` resolves the record's `owner_msg_id`
+    through the owner-message oracle (Command Center board, else the gateway
+    oracle). The four typed fields — owner_approved / approved_by / reason / gate —
+    authorize NOTHING by themselves; any agent can type them, so a record carrying
+    only those is DENIED with the approval module's reason. A record that names
+    this gate and fails verification is returned as a failure reason (fail-closed);
+    no record naming this gate returns `(None, [])`, leaving the gate's other
+    checks to speak. An agent's own `has_ghl:false` is NOT a skip."""
+    run_dir = Path(run_dir)
+    try:
+        from presentation_job import approvals  # noqa: PLC0415 — lazy, matches peers
+    except Exception:  # noqa: BLE001 — no validator on this machine = no skip
+        return None, [f"{GHL_UPLOAD_GATE}: owner approvals cannot be checked on "
+                      "this machine"]
+
+    for gate in sorted(_GATE_ALIASES):
+        try:
+            rec = approvals.verify_owner_skip_approvals(run_dir, gate)
+        except approvals.ApprovalError as exc:
+            if "UNDETERMINED" in str(exc):
+                return None, [f"{GHL_UPLOAD_GATE}: owner approvals cannot be checked "
+                              "on this machine"]
+            return None, [f"{GHL_UPLOAD_GATE}: owner skip for gate {gate!r} is not a "
+                          f"verified owner approval — {exc}"]
+        except Exception as exc:  # noqa: BLE001 — any oracle failure is DENIED
+            return None, [f"{GHL_UPLOAD_GATE}: owner approvals cannot be checked on "
+                          f"this machine ({exc!r})"]
+        if rec is not None:
+            return rec, []
+    return None, []
 
 
 def _collect_slide_uploads(media: dict) -> list:
@@ -1187,9 +1198,12 @@ def gate_ghl_media_complete(run_dir, *, expected_slide_count: int | None = None)
     GHL-enabled deck with no upload record is exactly the failure it exists to catch."""
     run_dir = Path(run_dir)
 
-    # The ONLY skip path: an explicit, logged owner/founder approval token.
-    if _valid_owner_skip(run_dir) is not None:
+    # The ONLY skip path: an owner approval the approvals oracle VERIFIES.
+    skip, skip_reasons = _valid_owner_skip(run_dir)
+    if skip is not None:
         return True, []
+    if skip_reasons:
+        return False, skip_reasons
 
     intake = _read_json(run_dir / "working" / "copy" / "intake.json")
     media = _read_json(_ledger_path(run_dir))
@@ -1198,9 +1212,10 @@ def gate_ghl_media_complete(run_dir, *, expected_slide_count: int | None = None)
     if intake.get("has_ghl") is False:
         return False, [
             f"{GHL_UPLOAD_GATE}: intake has_ghl:false but no logged owner_skip_approval in "
-            "working/checkpoints/process_manifest.json. The GHL media-upload gate may be "
-            "skipped ONLY by an explicit owner/founder token (owner_approved:true + "
-            "approved_by + reason + gate). An agent cannot opt out of the upload on its own."]
+            "working/checkpoints/process_manifest.json that the approvals oracle can "
+            "verify. The GHL media-upload gate may be skipped ONLY by an owner approval "
+            "whose owner_msg_id resolves to a real owner-authored message. An agent "
+            "cannot opt out of the upload on its own."]
 
     if not media:
         return False, [
@@ -1611,14 +1626,25 @@ def _selftest() -> int:
         if ok or not any("owner_skip_approval" in x for x in r):
             fails.append(f"F agent-skip: expected owner-token FAIL, got ok={ok} {r}")
 
-    # G — has_ghl:false WITH a valid logged owner skip -> PASS (carve-out).
+    # G — has_ghl:false WITH a VERIFIED logged owner skip -> PASS (carve-out).
+    # PD-316b: the four typed fields alone authorize nothing; the record needs an
+    # owner_msg_id the approvals oracle resolves, so the oracle is stubbed here.
     with tempfile.TemporaryDirectory() as t:
         base = Path(t)
         _setup(base, intake={"has_ghl": False}, media={},
                pm={"owner_skip_approval": {"owner_approved": True, "approved_by": "owner",
                                            "reason": "client has no GHL account",
-                                           "gate": "AF-DELIVERY-COMPLETE"}})
-        ok, r = gate_ghl_media_complete(base)
+                                           "gate": "AF-DELIVERY-COMPLETE",
+                                           "owner_msg_id": "selftest-msg-1",
+                                           "granted_at": "2026-11-13T10:00:00-05:00"}})
+        from presentation_job import approvals as _approvals
+        _board, _gateway = _approvals._cc_board_oracle, _approvals._gateway_owner_oracle
+        _approvals._cc_board_oracle = lambda run_dir=None: frozenset({"selftest-msg-1"})
+        _approvals._gateway_owner_oracle = lambda mid: None
+        try:
+            ok, r = gate_ghl_media_complete(base)
+        finally:
+            _approvals._cc_board_oracle, _approvals._gateway_owner_oracle = _board, _gateway
         if not ok:
             fails.append(f"G owner-skip: expected PASS, got {r}")
 
