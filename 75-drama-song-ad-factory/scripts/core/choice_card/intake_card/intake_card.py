@@ -285,6 +285,13 @@ def _music_q():
             "reason": "it is the style that tests best for emotional stories.",
             "label": "MUSIC STYLE", "ask": "Which sound fits your story?",
             "options": styles[:3] + [("Show me all %d styles" % len(styles), None)],
+            #: U-GEN437: the last option answers nothing -- it opens the
+            #: ``music_full`` screen. The chat card serves that (`_shaped`
+            #: places it); the Studio export cannot, because the page branches
+            #: on no answer (mini-app/ui/studio.js `screenIsOn` knows only
+            #: purpose, agnes_remembered and length_s_max, and hides a key it
+            #: does not know), so the export does not offer this option.
+            "opens_screen": {"n": len(styles[:3]) + 1, "id": "music_full"},
             "full_options": styles, "recommended": 0}
 
 
@@ -2241,8 +2248,16 @@ def _studio_screen(q, answers):
     if typed and not example:
         raise StudioExportError(
             "STUDIO_JSON_FIELD_MISSING id=%r field=example" % qid)
+    offered = list(q.get("options") or [])
+    opens = q.get("opens_screen") or {}
+    if opens:
+        #: U-GEN437: an option that only opens another screen is not a choice on
+        #: this one. The export carries every screen it can show, and it cannot
+        #: show one opened by an answer, so it does not offer the opener either --
+        #: an option nothing serves is the defect, not a feature.
+        offered = [o for n, o in enumerate(offered, 1) if n != opens.get("n")]
     options = [] if typed else [_studio_option(q, n, o, priced=priced)
-                                for n, o in enumerate(q.get("options") or [], 1)]
+                                for n, o in enumerate(offered, 1)]
     if not typed and not options:
         raise StudioExportError(
             "STUDIO_JSON_FIELD_MISSING id=%r field=options" % qid)
