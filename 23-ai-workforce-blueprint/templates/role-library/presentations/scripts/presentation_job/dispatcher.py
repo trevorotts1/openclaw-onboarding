@@ -1277,8 +1277,9 @@ ARTIFACT_CONTRACTS: Dict[str, str] = {
         "graded_by='qc-specialist-prompt-presentations', no foreign rubric "
         "language) with ONE difference: `gate` must be the exact string "
         "`Phase Prompt-QC`. Grade the real per-slide prompts in working/prompts/ "
-        "against length (9,000-18,000 chars), the negative-class block, spelling-"
-        "lock, and verbatim-copy-baked criteria -- never rubber-stamp a thin prompt."
+        "against length (__PROMPT_FLOOR__-__PROMPT_CEILING__ chars), the negative-"
+        "class block, spelling-lock, and verbatim-copy-baked criteria -- never "
+        "rubber-stamp a thin prompt."
     ),
     "P-TYPO-QC": (
         "OUTPUT CONTRACT (mechanically enforced LATER by build_deck's "
@@ -1301,9 +1302,10 @@ ARTIFACT_CONTRACTS: Dict[str, str] = {
         "OUTPUT CONTRACT (mechanically enforced by build_deck.check_prompt_qc_"
         "deterministic -- LITERAL, MECHANICALLY-CHECKED requirements, every one of "
         "these is graded by a token/regex scan of your output, not a vibe):\n"
-        "1. LENGTH: 9,000-18,000 characters (stripped of leading/trailing "
-        "whitespace). Under 9,000 is a fatal fail; do NOT pad with filler to hit "
-        "the floor -- every added sentence must be real, specific art direction.\n"
+        "1. LENGTH: __PROMPT_FLOOR__-__PROMPT_CEILING__ characters (stripped of "
+        "leading/trailing whitespace). Under __PROMPT_FLOOR__ is a fatal fail; do "
+        "NOT pad with filler to hit the floor -- every added sentence must be real, "
+        "specific art direction.\n"
         "2. REQUIRED STRUCTURAL BLOCKS, all three present verbatim (case-"
         "insensitive): a layout header starting `[ARCHETYPE` (e.g. `[ARCHETYPE: "
         "A2 recognition]`); a final block headed exactly `DO-NOT BLOCK` (a list of "
@@ -1396,6 +1398,26 @@ def _shared_prompt_gate():
             "band cannot be stated. Refusing to author a prompt blind "
             f"against the shared gate ({type(exc).__name__}: {exc}).") from exc
     return prompt_gate
+
+# PD-065: the two prompt-authoring contracts state the length band the shared
+# gate will actually enforce. It is READ AT CALL TIME, never typed as a literal:
+# a hard-coded band drifts silently from rule 12 and the author is then graded
+# against numbers it was never told. If the gate cannot be read this raises
+# (RuntimeError from _shared_prompt_gate) -- refusing to author blind is the
+# existing rule, and it costs nothing before a paid unit is dispatched.
+_PROMPT_BAND_PHASES = ("P4-PROMPT", "P-PROMPT-QC")
+
+def _prompt_band_contract(phase_id: str) -> str:
+    """The P4-PROMPT / P-PROMPT-QC contract with the gate's own numbers."""
+    budget = _shared_prompt_gate().length_budget()
+    return (ARTIFACT_CONTRACTS[phase_id]
+            .replace("__PROMPT_FLOOR__", f"{budget['floor']:,}")
+            .replace("__PROMPT_CEILING__", f"{budget['ceiling']:,}"))
+
+def _prompt_band_text() -> str:
+    """The gate's band as the per-slide instruction states it, e.g. "<floor>-<ceiling>-char"."""
+    budget = _shared_prompt_gate().length_budget()
+    return f"{budget['floor']:,}-{budget['ceiling']:,}-char"
 
 
 # ---------------------------------------------------------------------------
@@ -2752,8 +2774,9 @@ def gather_upstream_context(run_dir: Path, *, max_chars: int = 150_000,
     # and correctly failed (average=1.0) rather than hallucinate scores over
     # content it never saw. That was an HONEST failure of a REAL gap, not a
     # rubber stamp -- the fix is to actually deliver the files, not to loosen
-    # the report requirements. 25 slides x up to 18,000 chars is at most
-    # 450,000 chars (~115K tokens) -- comfortably inside DeepSeek's very large
+    # the report requirements. 25 slides x the shared gate's ceiling is at
+    # most ~450,000 chars (~115K tokens) at the current model pin -- comfortably
+    # inside DeepSeek's very large
     # context window (see the module comment above _UPSTREAM_CANDIDATES), so
     # this phase alone gets a raised budget rather than quietly truncating
     # mid-file, which would just move the same "can't verify what I can't see"
@@ -2808,6 +2831,9 @@ def compose_prompt(*, phase_id: str, owning_role: str, dept_root: Path, run_dir:
     # no static entry" comment in ARTIFACT_CONTRACTS for why.
     if phase_id == "P-SP-STRUCTURE":
         contract = _sp_structure_contract(run_dir)
+    elif phase_id in _PROMPT_BAND_PHASES:
+        # PD-065: the band is the shared gate's own numbers, read right now.
+        contract = _prompt_band_contract(phase_id)
     else:
         contract = ARTIFACT_CONTRACTS.get(phase_id, GENERIC_CONTRACT)
 
@@ -3461,18 +3487,35 @@ def _verify_single_prompt(run_dir: Path, ordinal: int) -> Tuple[bool, List[str]]
     (build_deck.check_prompt_qc_deterministic), reading out just that ordinal's
     own deficiency list so a per-slide dispatch loop can verify incrementally --
     correctly ignoring the (expected, irrelevant at this point) "missing" verdicts
-    for every OTHER ordinal that has not been authored yet. Falls back to a bare
-    length-floor/ceiling check if build_deck is unavailable (defensive; matches
-    the degraded-mode pattern phase_verifiers.py already uses elsewhere)."""
+    for every OTHER ordinal that has not been authored yet. When build_deck (and
+    so its real rich-prompt gate) is unavailable this FAILS CLOSED with a reason
+    naming the missing module -- a length-only pass must never be mistaken for a
+    real gate pass. The only exception is an explicit test/CI context, signalled
+    through ``phase_verifiers._degraded_allowed`` (same contract that module
+    already applies to its own degraded checks)."""
     if _bd is None or not hasattr(_bd, "check_prompt_qc_deterministic"):
+        missing = ("build_deck" if _bd is None
+                   else "build_deck.check_prompt_qc_deterministic")
         p = run_dir / "working" / "prompts" / f"slide-{ordinal:02d}.txt"
         if not p.is_file():
             return False, ["no prompt file"]
         probs = _shared_prompt_gate().length_problems(p.read_text(encoding="utf-8", errors="replace").strip())
         if probs:  # KIE rule 12 band through the shared enforcer (names the exact characters to add or cut)
             return False, probs
+        try:
+            from phase_verifiers import _degraded_allowed as _degraded  # noqa: PLC0415
+            degraded = bool(_degraded(run_dir))
+        except Exception:  # noqa: BLE001 -- a check that cannot answer is not a pass
+            degraded = False
+        if not degraded:
+            detail = ("the module could not be imported" if _bd is None
+                      else "the module has no check_prompt_qc_deterministic")
+            return False, [
+                f"missing module: {missing} is unavailable ({detail}), so the real "
+                "rich-prompt gate cannot run; refusing to pass on length alone "
+                "(AF-P1/AF-P2 are not the whole gate)"]
         return True, ["NOTE: build_deck.check_prompt_qc_deterministic unavailable "
-                       "-- degraded to a length-only check"]
+                       "-- degraded to a length-only check (explicit test/CI context)"]
     try:
         verdict = _bd.check_prompt_qc_deterministic(run_dir)
     except Exception as exc:  # noqa: BLE001 -- fail-closed, never crash the loop
@@ -3608,7 +3651,7 @@ def _dispatch_prompt_phase_serial(run_dir: Path, order: Dict[str, Any], *, dept_
                 f"Find slide {ordinal}'s block in slides_copy.md above (the line "
                 f"reading exactly `SLIDE {ordinal}`) and author ONLY its rich "
                 f"image-generation prompt. Output ONLY that one slide's complete "
-                f"9,000-18,000-char prompt body -- no slide-number header, no "
+                f"{_prompt_band_text()} prompt body -- no slide-number header, no "
                 f"preamble, no other slide's content.\n\n" + user_prompt
             )
 
@@ -5243,7 +5286,7 @@ def _make_slide_worker(*, run_dir: Path, order: Dict[str, Any], dept_root: Path,
                 f"Find slide {ordinal}'s block in slides_copy.md above (the line "
                 f"reading exactly `SLIDE {ordinal}`) and author ONLY its rich "
                 f"image-generation prompt. Output ONLY that one slide's complete "
-                f"9,000-18,000-char prompt body -- no slide-number header, no "
+                f"{_prompt_band_text()} prompt body -- no slide-number header, no "
                 f"preamble, no other slide's content.\n\n" + user_prompt
             )
 
