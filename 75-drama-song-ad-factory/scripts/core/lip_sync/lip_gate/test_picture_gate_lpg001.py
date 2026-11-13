@@ -161,6 +161,32 @@ def test_only_one_free_crop():
         assert res["verdict"] == "FAIL" and len(n) == 1
 
 
+def test_a_changed_picture_carries_its_derivation_record():
+    """U-U03: a crop is recorded as a derivation of the approved still; a paid
+    regeneration is recorded as `regenerate`, a NEW picture."""
+    with tempfile.TemporaryDirectory() as d:
+        a = pic(d, "a.png", b"small")
+        meas = lambda p: RESET_CROP if p.endswith("-crop.png") else BAD["tiny_face"]
+        res = G.gate_picture(
+            a, measure=meas, crop=lambda p, o: pic(d, os.path.basename(o), b"crop"),
+            regenerate=lambda p, q: (_ for _ in ()).throw(AssertionError("paid")))
+        rec = res["derivation"]
+        assert rec["operation"] == "crop", rec
+        assert rec["source_sha256"] == G.sha256_file(a), rec
+        assert rec["derived_sha256"] == G.sha256_file(res["image"]), rec
+        assert G.read_derivation(rec["derived_sha256"], os.path.join(d, ".lipgate")) == rec
+    with tempfile.TemporaryDirectory() as d:
+        a = pic(d, "a.png", b"tilt")
+        meas = lambda p: GOOD if p.endswith("r1.png") else BAD["strong_tilt"]
+        res = G.gate_picture(a, measure=meas, crop=lambda p, o: None,
+                             regenerate=lambda p, q: pic(d, "r1.png", b"regen"))
+        assert res["verdict"] == "PASS" and res["derivation"]["operation"] == "regenerate", res
+    with tempfile.TemporaryDirectory() as d:              # unchanged: no record at all
+        a = pic(d, "a.png", b"fine")
+        res = G.gate_picture(a, measure=lambda p: GOOD)
+        assert "derivation" not in res and res["image"] == a, res
+
+
 def test_paid_regen_only_for_a_fail_a_crop_cannot_fix_max_two():
     with tempfile.TemporaryDirectory() as d:
         a = pic(d, "a.png", b"tilt")
@@ -219,12 +245,12 @@ def test_missing_mediapipe_or_model_refuses_and_names_install():
 def test_face_model_install_pins_sha256():
     prereqs = json.load(open(os.path.join(HERE, "..", "..", "..", "..", "PREREQS.json")))
     ids = {e["id"]: e for e in prereqs["prerequisites"]}
-    # PREREQS type is "manual" (lint-valid); the pinned sha256 lives in its note
-    assert IM.MODEL_SHA256 in ids["face-landmarker-model"]["check"]["note"]
+    # the shell checker cannot stat the model, so the pinned sha256 lives in satisfy
+    assert IM.MODEL_SHA256 in ids["face-landmarker-model"]["satisfy"]
     assert "install_face_model.py" in ids["face-landmarker-model"]["satisfy"]
     assert "mediapipe" in ids["python-mediapipe"]["satisfy"]
     assert IM.MODEL_URL.startswith("https://storage.googleapis.com/mediapipe-models/"
-                                   "face_landmarker/face_landmarker/float16/latest/")
+                                   "face_landmarker/face_landmarker/float16/1/")
     data = b"pretend model"
     import hashlib, io
     sha = hashlib.sha256(data).hexdigest()
