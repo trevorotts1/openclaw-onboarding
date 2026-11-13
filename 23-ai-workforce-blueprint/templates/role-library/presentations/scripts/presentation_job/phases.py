@@ -744,6 +744,205 @@ def _client_need_line(state: Dict[str, Any]) -> str:
     return CLIENT_INTERNAL_SENTENCE
 
 
+#: PD-042. The one sentence a client receives when the style-pick wait expires
+#: without a verifiable pick. Plain words, names no phase, asks for nothing but
+#: the pick itself, and says the work is safe.
+STYLE_PICK_TIMEOUT_SENTENCE = (
+    "I still need your style pick (A, B or C). Nothing is lost — reply any "
+    "time and I will pick right back up.")
+
+#: PD-042. The one sentence a client receives when the finished message cannot
+#: be composed because no delivery destination is recorded as verified. The
+#: engine sends NOTHING and logs `report.done_withheld` instead of claiming a
+#: readiness it cannot point at.
+DONE_WITHHELD_EVENT = "report.done_withheld"
+
+#: PD-042 / PD-210. The sentence the finished message carries for a teleprompter
+#: whose publish record is anything other than `published`. A URL that was
+#: recorded but never verified live is not a link the client may be handed.
+TELEPROMPTER_NO_LINK_SENTENCE = (
+    "Your teleprompter file is included. No web link was made for it.")
+
+#: PD-042. The relative paths the finished message is built from: the verified
+#: destination plan and the media library the publish record lives in.
+DELIVERY_PLAN_REL = "working/checkpoints/delivery_plan.json"
+MEDIA_LIBRARY_REL = "working/checkpoints/media_library.json"
+
+#: PD-042. The style-pick records: the samples P-STYLE-PREVIEW rendered (with
+#: one `render` path per variant/slide) and the spec whose `style_directive`
+#: per variant is the one-sentence description the client is shown.
+SAMPLES_MANIFEST_REL = "working/style-preview/style_samples_manifest.json"
+STYLE_SPEC_REL = "working/copy/style_preview_spec.json"
+
+#: PD-042. The literal line the engine reports when it must ask for a pick
+#: without having attached the images -- the reporter's transport carries JSON
+#: text, never an image. Reported so the operator can decide; the messages
+#: themselves still carry each variant's description and its three file paths.
+STYLE_PICK_TRANSPORT_LINE = "BLOCKED: transport cannot carry images"
+
+#: PD-042. The literal line the engine reports when it refuses to ask for a
+#: pick at all: the samples manifest gives the client nothing to look at.
+STYLE_PICK_UNDELIVERED_LINE = "BLOCKED: samples are not delivered to the client"
+
+
+def _read_run_json(run_dir: Path, rel: str) -> Dict[str, Any]:
+    """Read one run-dir JSON object, or {} when it is absent/unreadable.
+
+    PD-042: every message this unit builds reads real records, and a missing
+    record must degrade to "nothing to say" -- never to an exception on the
+    client transport path, and never to an invented destination.
+    """
+    try:
+        obj = json.loads((Path(run_dir) / rel).read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return {}
+    return obj if isinstance(obj, dict) else {}
+
+
+def _verified_destination_lines(run_dir: Path) -> List[str]:
+    """PD-042: one plain line per VERIFIED delivery destination.
+
+    Only a destination whose own `status` is `verified` counts (the spec's
+    "destinations with status verified"); a `planned`, `uploaded` or absent
+    status is not a place the client can reach, so it is never named.
+    """
+    plan = _read_run_json(run_dir, DELIVERY_PLAN_REL)
+    lines: List[str] = []
+    for dest in plan.get("destinations") or []:
+        if not isinstance(dest, dict):
+            continue
+        if str(dest.get("status") or "").strip() != "verified":
+            continue
+        where = str(dest.get("url") or dest.get("path")
+                    or dest.get("verify_anchor") or "").strip()
+        kind = str(dest.get("type") or "file").strip()
+        lines.append(f"{kind}: {where}" if where else kind)
+    return lines
+
+
+def _teleprompter_publish(run_dir: Path) -> Tuple[str, bool]:
+    """PD-042 / PD-210: (verified web link, a publish record exists at all).
+
+    The publish record (build_deck.publish_teleprompter) writes `status` and
+    `public_url`. ONLY a `published` record may put a web link in the client's
+    message: a `warned_no_credentials` record carries a URL that was never
+    verified live, and handing it over is the defect PD-210 names. The link is
+    the record's own verified URL; `media_library.json.teleprompter_public_url`
+    is used only when it names that same verified URL.
+    """
+    rec: Dict[str, Any] = {}
+    media_url = str(_read_run_json(run_dir, MEDIA_LIBRARY_REL)
+                    .get("teleprompter_public_url") or "").strip()
+    try:
+        import fix_bundle_complete as _fbc  # flat module beside the package
+        rec = _read_run_json(_fbc.resolve_bundle_dir(Path(run_dir)),
+                             "teleprompter_publish.json")
+    except Exception:  # noqa: BLE001 -- an unreadable record proves nothing
+        return "", bool(media_url)
+    if not rec:
+        # No publish record at all: a media-library URL was never a verified
+        # publish, so it is not a link and the client is told so when one exists.
+        return "", bool(media_url)
+    if str(rec.get("status") or "").strip() != "published":
+        return "", True
+    live = str(rec.get("public_url") or "").strip()
+    if not live:
+        return "", True
+    if media_url and media_url != live:
+        # The two records disagree: the media library names a URL the publish
+        # record never verified, so the verified publish URL is the only link.
+        return live, True
+    return live, True
+
+
+def _compose_done_message(run_dir: Path) -> str:
+    """PD-042: the client's finished message, built from verified records only.
+
+    Returns the ready sentence with one line per verified destination, or ""
+    when NO destination is recorded as verified. The caller sends nothing on ""
+    and logs `report.done_withheld` -- a deck that cannot say where the work is
+    is not a delivered deck. PD-313 calls this same function.
+    """
+    lines = _verified_destination_lines(run_dir)
+    tele, attempted = _teleprompter_publish(run_dir)
+    if tele:
+        lines.append(f"teleprompter: {tele}")
+    if not lines:
+        return ""
+    body = "\n".join(f"  - {line}" for line in lines)
+    msg = f"Your presentation is ready. Here is where to find it:\n{body}"
+    if not tele and attempted:
+        msg = f"{msg}\n{TELEPROMPTER_NO_LINK_SENTENCE}"
+    return msg
+
+
+def _style_pick_samples_were_sent(run_dir: Path) -> bool:
+    """PD-042: True only when the samples manifest records that the images
+    actually reached the client on the transport."""
+    manifest = _read_run_json(run_dir, SAMPLES_MANIFEST_REL)
+    return bool(str(manifest.get("samples_sent_to_client") or "").strip())
+
+
+def _style_pick_messages(run_dir: Path) -> List[str]:
+    """PD-042: the client's style-pick messages, one per variant.
+
+    THE DELIVERY FINDING (recorded in the build report): nothing sends the
+    sample images -- `build_deck.run_style_preview_samples` writes the nine
+    PNGs and the manifest, and no step attaches them to the client's chat.
+    The reporter's transport (a JSON text payload to
+    `PRESENTATION_NOTIFY_CMD`) cannot carry an image at all, so the engine
+    takes the addendum's fallback branch: ONE message per variant carrying the
+    variant letter, its one-sentence style description from
+    `working/copy/style_preview_spec.json` (`variants[].style_directive`) and
+    the three file paths. It never sends only letters.
+
+    Returns [] when no variant has anything a client could act on -- a pick
+    request with no sample, no description and no path is unanswerable, and
+    the caller must not send one.
+    """
+    manifest = _read_run_json(run_dir, SAMPLES_MANIFEST_REL)
+    spec = _read_run_json(run_dir, STYLE_SPEC_REL)
+    descriptions: Dict[str, str] = {}
+    for v in spec.get("variants") or []:
+        if isinstance(v, dict):
+            vid = str(v.get("id") or "").strip()
+            if vid:
+                descriptions[vid] = str(v.get("style_directive") or "").strip()
+    order: List[str] = []
+    renders: Dict[str, List[str]] = {}
+    for s in manifest.get("samples") or []:
+        if not isinstance(s, dict):
+            continue
+        vid = str(s.get("variant") or "").strip()
+        path = str(s.get("render") or "").strip()
+        if not vid or not path:
+            continue
+        if vid not in renders:
+            renders[vid] = []
+            order.append(vid)
+        renders[vid].append(path)
+    for v in manifest.get("variants") or []:
+        vid = str(v).strip()
+        if vid and vid not in order:
+            order.append(vid)
+    messages: List[str] = []
+    for vid in order:
+        paths = renders.get(vid) or []
+        desc = descriptions.get(vid) or ""
+        if not paths and not desc:
+            continue  # nothing this variant can show the client
+        parts: List[str] = []
+        if desc:
+            parts.append(f"Style {vid} — {desc}")
+        where = ", ".join(paths)
+        parts.append(f"Your 3 style samples are ready: {where}." if where
+                     else "Your 3 style samples are ready.")
+        parts.append("Reply A, B or C to pick the look for your whole "
+                     "presentation. I will wait for you.")
+        messages.append("\n".join(parts))
+    return messages
+
+
 def _first_check_reason(reason: str) -> str:
     """The FIRST reason a failed step check reported, out of the single string
     the call path carries.
@@ -4150,14 +4349,30 @@ class Engine:
         with self._state_lock:
             already_sent = bool(ps.get("pick_request_sent_at"))
         if not already_sent:
-            variant_lines = "\n".join(
-                f"  {i + 1}. Variant {v}" for i, v in enumerate(variants)
-            ) or "  (variant list unavailable — see style_samples_manifest.json)"
-            msg = (
-                f"Your presentation has 3 style directions ready. "
-                f"Please pick ONE by replying A, B or C:\n{variant_lines}\n"
-                f"(Phase {phase.id} — the deck renders only after your pick.)"
-            )
+            # PD-042: the pick request carries what the client needs to answer
+            # it -- each variant's own one-sentence style description from the
+            # spec, and where that variant's three samples are. The phase id
+            # line the old message carried is gone (PD-018b's rule: no phase id
+            # ever reaches the client).
+            pick_msgs = _style_pick_messages(self.run_dir)
+            if not pick_msgs:
+                reason = (
+                    f"{phase.id}: {STYLE_PICK_UNDELIVERED_LINE} — the samples "
+                    f"manifest at {SAMPLES_MANIFEST_REL} records no sample path "
+                    "and the style spec records no directive, so a pick request "
+                    "would be unanswerable. Parked instead of asking.")
+                self.report.event("phase.style_pick.samples_missing", reason)
+                return self._block(phase, reason)
+            if not _style_pick_samples_were_sent(self.run_dir):
+                # The reporter's transport is a JSON text payload; it cannot
+                # carry an image. The addendum's fallback branch is in force:
+                # one message per variant, each naming the variant's own
+                # description and its three file paths -- never letters alone.
+                self.report.event(
+                    "phase.style_pick.transport_text_only",
+                    f"{phase.id}: {STYLE_PICK_TRANSPORT_LINE} — the reporter "
+                    "transport carries text; each variant message names its "
+                    "description and its three sample paths instead.")
             # Delivered as kind="ack", deliberately: "progress" is the one kind
             # _throttle_decision may suppress (PROGRESS_MIN_INTERVAL_MINUTES), and
             # a pick request that the throttle eats is an owner never asked — the
@@ -4165,17 +4380,19 @@ class Engine:
             # (the "Got it, building your presentation" class) bypasses the
             # throttle unconditionally, so the ask is always on the wire exactly
             # once per run (the pick_request_sent_at stamp guards re-entry).
-            self.report.to_requester("ack", msg)
+            for msg in pick_msgs:
+                self.report.to_requester("ack", msg)
             self._relay_emit("waiting_configuration",
                              f"{phase.id} waiting on configuration — style pick "
-                             f"requested ({len(variants) or 3} variants). "
-                             "Deck renders only after the owner pick.",
+                             f"requested ({len(variants) or len(pick_msgs)} "
+                             "variants). Deck renders only after the owner pick.",
                              stage=phase.id)
             self._checkpoint(phase.id, pick_request_sent_at=utcnow())
             self.report.event(
                 "phase.style_pick.request_delivered",
                 f"{phase.id}: pick request delivered to the requester "
-                f"({len(variants) or 3} variants; waiting on "
+                f"({len(variants) or len(pick_msgs)} variants, "
+                f"{len(pick_msgs)} message(s); waiting on "
                 f"{self._STYLE_PICK_CHOICE_REL} with a verified owner_msg_id).")
 
         # 2. WAIT + PROVE on the standard 15 s cadence.
@@ -4235,7 +4452,7 @@ class Engine:
             "of variant 1)."
         )
         self.report.event("phase.style_pick.timeout", reason)
-        return self._block(phase, reason)
+        return self._block(phase, reason, client_text=STYLE_PICK_TIMEOUT_SENTENCE)
 
     def _fail_unit(self, phase: Phase, reason: str) -> int:
         """FIX 9a (MASTER Part 8 Fix 9): quarantine ONE unit, park nothing.
@@ -4305,13 +4522,20 @@ class Engine:
         print("=" * 72 + "\n", file=sys.stderr)
         return EXIT_GATE_BLOCKED
 
-    def _block(self, phase: Phase, reason: str) -> int:
+    def _block(self, phase: Phase, reason: str,
+               client_text: str = "") -> int:
         """Park resumable. Never die, never restart from scratch (decision #5).
 
         FIX 9a: this is now the OPERATOR/GATE park only (intake gate, missing
         executor wiring). Unit-level execution failures go through _fail_unit
         (status='quarantined', run continues) instead of parking the whole
-        run mid-flight."""
+        run mid-flight.
+
+        PD-042: `client_text` lets a caller whose park has a SPECIFIC, client-
+        answerable need (the style pick: reply A, B or C) send its own one
+        sentence instead of the generic pause sentence. It is still client
+        copy the caller is responsible for: no phase id, no AF- code. Empty
+        means the generic park sentence stays."""
         # Count banked artifacts BEFORE checkpointing, so the current
         # phase is still "done" when we look for done phases.
         with self._state_lock:
@@ -4336,10 +4560,13 @@ class Engine:
                 title, description = self._child_card_meta(phase)
                 self.board.child_report(phase.id, title, description, "blocked", reason)
             # PD-018b: the raw reason (phase id, AF- code, path) never reaches
-            # the client; the plain need comes from the park record. The banked/
-            # lost accounting stays on the operator console below.
+            # the client; the plain need comes from the park record. PD-042: a
+            # caller with a specific client-answerable need passes its own
+            # sentence. The banked/lost accounting stays on the operator
+            # console below.
             self.report.to_requester(
                 "blocked",
+                client_text or
                 f"Your presentation is paused. {_client_need_line(self.state)} "
                 "Everything you sent is saved.",
                 phase_id=phase.id, reason=reason)
@@ -5790,6 +6017,27 @@ class Engine:
             return True
         return False
 
+    def _send_done_message(self) -> None:
+        """PD-042: send the client their finished message, or send nothing.
+
+        The message is `_compose_done_message`'s output: the ready sentence
+        plus one line per verified destination. PD-313 calls the same compose
+        function for its own path. When it returns "" there is no verified
+        destination -- the client is NOT told "ready" and `report.done_withheld`
+        records why, so the run stays visible to the delivery step instead of
+        claiming a handoff nobody can point at.
+        """
+        msg = _compose_done_message(self.run_dir)
+        if not msg:
+            self.report.event(
+                DONE_WITHHELD_EVENT,
+                "no verified delivery destination is recorded "
+                f"({DELIVERY_PLAN_REL} carries no destination with status "
+                "'verified'), so no 'ready' message was sent to the client; "
+                "the run is left for the delivery step.")
+            return
+        self.report.to_requester("done", msg)
+
     def close(self) -> int:
         gates = Gates(self.run_dir, self.state).evaluate_all()
 
@@ -5923,8 +6171,10 @@ class Engine:
                 self.state["terminal"] = "DONE"
                 self.state["completed_at"] = utcnow()
                 self.store.save(self.state)
-                self.report.to_requester(
-                    "done", "Your presentation is ready. All quality checks passed.")
+                # PD-042: the finished message says WHERE the deck is, from the
+                # verified delivery record. No verified destination -> nothing
+                # is sent and the withholding is logged (PD-313 reuses this).
+                self._send_done_message()
                 print("DONE — all gates passed after re-evaluation.", flush=True)
                 return EXIT_OK
             self.state["terminal"] = "BLOCKED"
