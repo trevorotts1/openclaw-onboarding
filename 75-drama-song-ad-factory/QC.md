@@ -171,6 +171,11 @@ it advances. Standard library only; no credential value is ever printed.
       -> `STALE_SEQ`; `recover` returns POLL plans with
       "no job re-dispatched"; unknown run -> exit 1 `NO_SUCH_RUN`.
 - [ ] EXAMPLES.md command list contains ONLY these implemented commands.
+- [ ] Exit codes: read each tool's own row in `references/cli-contract.md`,
+      "Exit codes by tool", before applying a child's exit code. The maps
+      differ by tool (for example `spend_ledger.py` and `qc_gate.py` use
+      3 waiting / 4 parked / 5 rejected); a raw number is never read against
+      another tool's row.
 
 TODO (U4): FU-U4 adds intake modes (`--brief-file`, `--packet-file`,
 `PACKET_REQUIRED_IN_CONCEPT_MODE`); refresh the functional checks above when it

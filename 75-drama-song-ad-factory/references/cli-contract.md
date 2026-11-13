@@ -41,6 +41,23 @@ runtime adapter stops on a nonzero exit instead of guessing from prose.
 Note: the spend-ledger CLI uses a different map (`ok 0, waiting 3, parked 4,
 rejected 5, error 1`). Read `command` before applying a code.
 
+## Exit codes by tool
+
+One row per tool. A child's number is read against its own tool's row, never
+as a bare number and never against another tool's map. `factory.py` carries
+this table as `CHILD_EXIT_CODES` and publishes the row for the command `next`
+hands out on `data.exit_codes` (S75-041).
+
+| Tool | Exit code -> meaning |
+|---|---|
+| `factory.py` | 0 ok, 1 error, 2 waiting, 3 parked, 4 rejected |
+| `spend_ledger.py` | 0 ok, 1 error, 3 waiting, 4 parked, 5 rejected |
+| `qc_gate.py` | 0 ok, 1 error, 3 waiting, 4 parked, 5 rejected |
+| `run_watch.py` | 0 keep watching, 10 stop the loop |
+| Skill 74 `prompt-budget` | 0 ok, 3 waiting, 4 parked, 5 rejected |
+| `video_router.py`, `narrator_rule.py`, `ceiling_cli.py` (lip-sync windows) | 0 ok, 1 error, 3 waiting, 4 parked, 5 rejected |
+| `delivery_checklist.py` | 0 ok, 1 error, 5 rejected |
+
 ## `intake`
 
 ```bash

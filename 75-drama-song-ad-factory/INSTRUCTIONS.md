@@ -142,6 +142,17 @@ guard that already failed.
    `variants/`, `checkpoints/`, `receipts/`, `delivery/`,
    `lessons/`. One run state authority only - never two writers.
 
+   **Stage output files (the audited twelve).** research - `research/evidence.json`,
+   `research/manifest.json`, `research/bundle.json`; creative-strategy -
+   `creative/story.json`, `creative/blueprint.json`; script-lyrics -
+   `creative/lyrics.json`; music - `music/picked-song.mp3`,
+   `song-choices/pick.json`; continuity-bible - `continuity/qc-records.json`,
+   `continuity/makers.json`; storyboard - `storyboard/shot-list.json`,
+   `storyboard/contracts.json`; image-keyframes - `keyframes/manifest.json`;
+   video-generation - `generation/clips-manifest.json`; qc-retakes -
+   `qc/retakes-plan.json`; assembly - `edit/ad.mp4`; final-qc -
+   `qc/final-qc-verdict.json`; delivery - `delivery/delivery-receipt.json`.
+
    **Order of stages (Part H H5): audio, then timestamps, then shot plan, then
    pictures.** Never generate pictures before the song exists. Plan shots with
    `shot_planner.plan_from_timestamps` from the REAL Suno timestamps
@@ -174,7 +185,7 @@ guard that already failed.
 
    **Reconciled music direction (WW-29).** Do not mandate wordless held-note openings or a premature hook; the vocalise is an OPTIONAL one-note lead-in, never a forced opening, and the hook is the payoff — the sheet's own hook plan places it at or after `true_at_beat`, and the gate measures it. R&B Flow consistently directs rhythmic speech-rhythm RAP verses contrasted with a fully sung melodic R&B hook (`references/prompt-templates/music/rnb-flow.json`). Cast, pace, hook, ending and the exclusions (`negative_tags`) survive into the exact serialized createTask request (the envelope's nested `input`) and are checked there by `song_dispatch.validate_request` on every entry path; a style text over its 1000-character cap refuses `STYLE_TOO_LONG` rather than dropping a required clause. Delivered-audio acceptance has FIVE gates only (WW-21, `song_dispatch.accept_audio_results`) — real rap, story start, both pace changes, three audibly different versions including an upbeat option, and multiple character voices — never a sixth. Rejected paid files are preserved, there is no automatic paid retry, and nothing regenerates until Trevor approves.
 
-   **The song-failure verdict belongs to the client.** When the song judge fails a take, nothing regenerates and nothing loops: `song_choices.one_variant` makes ONE generation per variant, keeps the paid take, records the judge's named concerns, and presents every take — the passing ones to pick, the failed ones in `SONG-CHOICES/FOR-LISTENING/` to listen to — with ONE question: "Want me to redo all of them, keep one of these three, or generate three new options?" The client's answer is authoritative and recorded in `$RUN/song-choices/fork-decision.json` (`song_choices.py fork`, or `pick --reply` with words): `redo_all` / `new_three` reopen the music row for a round the client asked for, and `keep_one` is recorded but never writes a PASS — the WW-18/WW-21 measured gates still hold, so a kept take whose required gates failed needs the documented `--operator-decision` route. Say the concerns plainly and say the client may decide a take is fine.
+   **The song-failure verdict belongs to the client.** When the song judge fails a take, nothing regenerates and nothing loops: `song_choices.one_variant` makes ONE generation per variant, keeps the paid take, records the judge's named concerns, and presents every take — the passing ones to pick, the failed ones in `SONG-CHOICES/FOR-LISTENING/` to listen to — with ONE question: "Want me to redo all of them, keep one of these three, or generate three new options?" The client's answer is authoritative and recorded in `$RUN/song-choices/fork-decision.json` (`song_choices.py fork`, or `pick --reply` with words): `redo_all` / `new_three` reopen the music row for a round the client asked for, and `keep_one` is recorded but never writes a PASS — the WW-18/WW-21 measured gates still hold, so a kept take whose required gates failed needs the documented `--operator-decision` route. Say the concerns plainly and say the client may decide a take is fine. `song_choices.py offer --run-dir "$RUN"` rebuilds the offer from the run's own saved takes, and a failed version blocks only itself — the passing versions stay offered and pickable.
 
    **QC duration overshoot is a flag, not a stop.** One rule (`master_length.judge_duration`) governs the song length gate (`song_dispatch.judge_take`, target = delivered seconds) and the video master check (`master_length.check_master`, target = chosen length − 2 s; the client-facing line names the chosen length). At or under the target passes clean. An overshoot of up to 10 seconds PASSES and records the named warning `QC_DURATION_OVERSHOOT` ("62s of 60s — within the 10-second allowance") on the receipt through `loud_failure.warn`; an overshoot past 10 seconds ALSO passes and records `QC_DURATION_OVERSHOOT_SEVERE` with the exact seconds over. Neither ever stops the run: whether a long master is redone belongs to the client. An undershoot is unchanged — the song gate keeps the 5/10 band (past 10 points is still FAIL) and the video master stays free on the short side.
 
@@ -607,11 +618,15 @@ card. The answers and the time answered go into the receipt
   its own campaign folder, receipt, spend-ledger run and Command Center
   deliverable. Books and authors are never mixed. The card shows the batch
   total.
-- **Prices:** every figure on the card - video, both shapes, lip-sync
-  close-ups, voice packs, clips and the batch total - comes from Skill 74
-  `price`. Nothing here computes a rate.
-- **Command Center:** one deliverable per ad (VPS boxes), one Kanban card
-  per ad and one parent card per batch.
+- **Prices:** the VIDEO MODEL line comes from the one rates table,
+  `scripts/core/choice_card/video_models/video_model_rates.json`, through the
+  shared price function; Skill 74 `price` returns the highest listed tier, so
+  the chosen model's video line is priced from that table instead. Every
+  OTHER figure on the card - the chosen shape, lip-sync close-ups, voice
+  packs, clips and the batch total - comes from Skill 74 `price`. Nothing
+  here hard-codes a rate.
+- **Command Center:** one parent card and twelve stage cards per ad, one
+  deliverable per ad (VPS boxes), and one parent card per batch.
 
 
 ## Durable interactive intake (current entrypoint)

@@ -297,7 +297,18 @@ If you accept Lifelike 3D, we move on.
 
 ---
 
+## What You See Before Any Video Money Is Spent
+
+You choose how much of the work you want to approve first. Option 1 shows the script, three song versions
+and the storyboard before any video is made; option 2 shows only the storyboard; option 3 makes the video
+straight away. Approving early is cheap; redoing a finished video is not.
+
+**Great answer:** "1. Everything." Show me the script, three song versions and the storyboard before any video money is spent.
+
+---
+
 ## STEP 11: Question 8, Set Your Ceiling (Budget)
+
 
 **What happens.** The last question sets your spending limit. We ask: *What's the most you want to spend on this video?* Option 1 is the cost on your card, which already includes a 50% redo allowance (recommended). Option 2 is a different maximum that you name.
 

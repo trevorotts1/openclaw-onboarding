@@ -66,8 +66,9 @@ audience feels the pain and the problem in the depth of their soul.
   cases. The pain share of runtime is a target band of 20-35 percent;
   outside it is a FLAG carrying the measured seconds, never a block. Pain
   gets real screen time; the rise is earned, never rushed.
-- **The checker.** `delivery_checklist.measure_villain_doctrine` reports a
-  `VILLAIN_DOCTRINE` row: villain shots, villain screen seconds, pain
+- **The checker.** Built, not yet connected to the run (tracked as U-R01).
+  `delivery_checklist.measure_villain_doctrine` builds a `VILLAIN_DOCTRINE`
+  row: villain shots, villain screen seconds, pain
   seconds and rise seconds. The approval card carries
   `Villain: <name>, shown in N shots`.
 
@@ -741,12 +742,10 @@ reserved/submitted/unknown/reconciled protocol, and never auto-resubmits an
 uncertain outcome. Always show the client the sentence from
 `references/client-messages.md`, never the reason code.
 
-- **All ready KIE clips go out at once (Part F F5):** once reference images
-  and keyframes exist, EVERY ready clip is submitted together in one pass —
-  no "test batch first" unless the owner orders it. Stage order stays
-  reference images → keyframes → clips; the clips stage is the single
-  all-ready pass. `core/kie_dispatch/kie_dispatch.py::submit_all_ready(jobs,
-  max_concurrency=None)` runs it and the receipt carries
+- **All ready KIE clips go out at once (Part F F5):** Built, not yet
+  connected to the run (tracked as U-R01). Stage order stays
+  reference images → keyframes → clips. `core/kie_dispatch/kie_dispatch.py::submit_all_ready(jobs,
+  max_concurrency=None)` is the built all-ready pass and the receipt carries
   `max_at_once = len(submitted)` (or the provider cap, named in
   `capped_by`, when that binds). Never submit clips in dribbles or wait for
   one clip before sending the next.
@@ -870,7 +869,10 @@ build - byte-identical; packaging re-checked on a clean copy by
 `state_store.py` (CAS + leases), `artifact_graph.py`, `spend_ledger.py` +
 `job_recovery.py`, `contracts/` (campaign/artifact/qc schema) +
 `acceptance-profile.json`, `intake_preflight/`, `qc_gate.py`, and
-`timing_guard.py`.
+`timing_guard.py`. `artifact_graph.py` and `job_recovery.py` are Built, not
+yet connected to the run (tracked as U-R01); `state_store.py`,
+`spend_ledger.py`, `qc_gate.py`, `timing_guard.py` and `intake_preflight/` are
+live.
 
 - `qc_gate.py` enforces Maker Self-Review; a maker's own PASS is never
   independent QC evidence.
@@ -882,10 +884,11 @@ build - byte-identical; packaging re-checked on a clean copy by
   source material, and plan how many seconds connect the story to the
   product: about 10-15% of runtime (`length_formula.plan_product_connection`,
   carried on the plan as `product_connection` and shown on the choice card).
-  It is a TARGET, never a hard cap: the delivery checklist measures the
-  delivered run (`delivery_checklist.measure_product_connection`, row
-  `PRODUCT_CONNECTION`) and reports seconds and percent -- inside the band
-  is PASS, outside is FLAG, never a blocker by itself.
+  It is a TARGET, never a hard cap. Built, not yet connected to the run
+  (tracked as U-R01): `delivery_checklist.measure_product_connection` (row
+  `PRODUCT_CONNECTION`) is built to measure the delivered run and report
+  seconds and percent; inside the band is PASS, outside is FLAG, never a
+  blocker by itself.
 - Every campaign artifact's twelve creative beats and twelve production
   stages stay separate contracts (directive 14).
 - QC independence: checkers are fresh lanes, never members of the build
@@ -893,11 +896,13 @@ build - byte-identical; packaging re-checked on a clean copy by
 
 ## No hand-written pipeline scripts (Part H H12)
 
-Assembly, lip-sync placement and captions run only through the skill's own
-modules (`final_assembler/assembler.py` and its siblings). A run folder with its
-own ffmpeg or caption script, or a master whose receipt lacks
-`produced_by.module` and a matching `master_sha256`, fails QC
-(`final_assembler/master_provenance.py`).
+Built, not yet connected to the run (tracked as U-R01). Assembly, lip-sync
+placement and captions run only through the skill's own modules
+(`final_assembler/assembler.py` and its siblings). The built check refuses a
+run folder with its own ffmpeg or caption script, or a master whose receipt
+lacks `produced_by.module` and a matching `master_sha256`
+(`final_assembler/master_provenance.py::check_master_provenance`); nothing in
+the run calls it yet.
 
 ## Model and agent choice: the user's choice wins
 
@@ -963,14 +968,15 @@ already route through it, and a test fails if one stops.
 
 ## Parallel minute-lanes (ads 120 s and up, W-G-008)
 
-A song **under 120 seconds** keeps today's flow exactly: **one lane, nothing
-changes**. At **120 s and up** the ad runs as **N = ceil(L / 60)** parallel
-minute-lanes, about 60 seconds each (`scripts/core/lane_planner.py`). The split
-is planned by `lane_planner.plan_lanes(shots, song_length_s)` and every cut
-lands **on a shot boundary** — a shot is never split; an unreachable boundary
-fails closed (`LANE_BOUNDARY_INSIDE_SHOT`), never cuts mid-shot.
+Built, not yet connected to the run (tracked as U-R01). A song **under 120
+seconds** keeps today's flow exactly: **one lane, nothing changes**. At **120 s
+and up** the planned split is **N = ceil(L / 60)** parallel minute-lanes, about
+60 seconds each (`scripts/core/lane_planner.py`), planned by
+`lane_planner.plan_lanes(shots, song_length_s)`; every cut lands **on a shot
+boundary** — a shot is never split; an unreachable boundary fails closed
+(`LANE_BOUNDARY_INSIDE_SHOT`), never cuts mid-shot.
 
-**Shared steps run ONCE, before the split** (`SHARED_STEPS_BEFORE`): song +
+**Shared steps are planned to run ONCE, before the split** (`SHARED_STEPS_BEFORE`): song +
 song checker, plan/shot list, character, close-up picture gate. Each lane then
 makes its own stills, motion clips and lip-sync segments **at the same time**
 as the others, on the same character, through the picture gate, with **at most
@@ -1056,7 +1062,10 @@ changed answer at the recap replaces it, and a resumed run keeps what was
 recorded once versions exist. The three files and the message go to the client
 in one `openclaw message send` (`song_choices.send_choices`, files attached
 in order 1, 2, 3) before any later stage; the client's reply 1, 2 or 3 is
-recorded with `song_choices.py pick`.
+recorded with `song_choices.py pick`. The offer is rebuilt from the run's own
+saved takes with `song_choices.py offer --run-dir "$RUN"` (optionally
+`--delivery-dir`); a failed version blocks only itself - the other versions
+stay offered and pickable.
 
 **ONE music mode at a time; all three versions at once (WWFIX D2, money
 safety).** The three versions are ONE job, not three, so the music stage runs
@@ -1405,22 +1414,31 @@ SOP named above.
     both cards carry a Book shots approval block (approvals and notices, never a
     new choice); an optional client-supplied `excerpt_lines` (max 3) goes to the
     overlay only and is never sent to a video model.
-- **The song mp3 is part of the deliverable (FU-U14):** every delivered ad
-  folder holds, beside the captioned and clean-master mp4s, the FINAL SONG as
-  an mp3 (320 kbps, the exact song used in the ad, full length) plus the wav
-  when one exists, named `<Author> - <Title> - Song.mp3` — clients release the
-  songs as an album. `delivery_checklist.check_song_mp3()` gates it (present,
-  duration matches the ad audio within 0.1 s, cross-correlation >= 0.95 with
-  the ad's audio; missing or mismatched = FAIL, fail closed). When a
-  book/batch campaign finishes, one zip per client ships every ad's three
-  files in one folder per author plus a README listing every file, duration,
-  resolution and banner link: `scripts/core/batch_zip/batch_zip.py
-  build_batch_zip(client, ads, out_path)`.
-- **Pricing:** every figure on the card - video, both shapes, lip-sync
-  close-ups, voice packs, clips and the batch total - comes from Skill 74
-  `price`. This skill never computes or hard-codes a rate.
-- **Command Center:** one deliverable per ad, one Kanban card per ad and one
-  parent card per batch; department lead role
+- **The song mp3 is part of the deliverable (FU-U14):** Built, not yet
+  connected to the run (tracked as U-R01). Every delivered ad folder is
+  planned to hold, beside the captioned and clean-master mp4s, the FINAL SONG
+  as an mp3 (320 kbps, the exact song used in the ad, full length) plus the
+  wav when one exists, named `<Author> - <Title> - Song.mp3` — clients release
+  the songs as an album. `delivery_checklist.check_song_mp3()` is the built
+  gate (present, duration matches the ad audio within 0.1 s,
+  cross-correlation >= 0.95 with the ad's audio; missing or mismatched =
+  FAIL, fail closed). Built, not yet connected to the run (tracked as
+  U-R01): when a book/batch campaign finishes, one zip per client is planned
+  to ship every ad's three files in one folder per author plus a README
+  listing every file, duration, resolution and banner link:
+  `scripts/core/batch_zip/batch_zip.py build_batch_zip(client, ads,
+  out_path)`.
+- **Pricing:** the VIDEO MODEL line comes from the one rates table,
+  `scripts/core/choice_card/video_models/video_model_rates.json`, through the
+  shared price function (`card_render.price_envelope`): video + one keyframe
+  per shot + the character reference pictures + the song, then the planning
+  allowance. Skill 74 `price` returns the highest listed tier, so the chosen
+  model's video line is priced from that table instead. Every OTHER figure on
+  the card - the chosen shape, lip-sync close-ups, voice packs, clips and the
+  batch total - comes from Skill 74 `price`. This skill never hard-codes a
+  rate.
+- **Command Center:** one parent card and twelve stage cards per ad, one
+  deliverable per ad, and one parent card per batch; department lead role
   `vsl-video-sales-letter-specialist`.
 
 ## Ready-to-Post Kit (DEL-07)
@@ -1490,8 +1508,9 @@ it and the check that proves it; nothing below describes a plan.
    `approve both`); the purpose rides that same package and every edit is
    re-checked. Code: `script_approval/script_approval.py`,
    `script_approval/stage.py`.
-5. **The opening is carried into the shot plan.** The opening scene is derived
-   from the approved script and written into the first shot in song order as
+5. **The opening is carried into the shot plan.** Built, not yet connected to
+   the run (tracked as U-R01). The built code derives the opening scene from
+   the approved script and writes it into the first shot in song order as
    `shot["opening"]` (line, action, intended emotion, reading context,
    ambiguity), with the same line and action on its 14.3 contract. Shot order
    is never changed and no other shot is touched; a missing scene or a shot
