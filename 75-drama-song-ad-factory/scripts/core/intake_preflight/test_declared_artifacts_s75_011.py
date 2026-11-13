@@ -46,7 +46,8 @@ from intake_preflight import factory
 #: qc/retakes-plan.json -- PENDING: retake_manager.py must write it.
 #: edit/ad.mp4 -- the rendered master the assembly command writes.
 #: qc/final-qc-verdict.json -- PENDING: qc_gate.py must write it (S75-002 B).
-#: delivery/delivery-receipt.json -- the delivery modules' receipt.
+#: delivery/01..12 -- the twelve numbered package slots, the exact file names
+#:   delivery_package.contract.PACKAGE_ITEMS verifies (U-A13, U-T05).
 ARTIFACT_TRUTH = {
     "research": ("research/evidence.json", "research/manifest.json",
                  "research/bundle.json"),
@@ -61,7 +62,24 @@ ARTIFACT_TRUTH = {
     "qc-retakes": ("qc/retakes-plan.json",),
     "assembly": ("edit/ad.mp4",),
     "final-qc": ("qc/final-qc-verdict.json",),
-    "delivery": ("delivery/delivery-receipt.json",),
+    "delivery": ("delivery/01 - Full Song.mp3",
+                 "delivery/01 - Instrumental.mp3",
+                 "delivery/01 - Voice Only.mp3",
+                 "delivery/01 - About These Audio Files.txt",
+                 "delivery/02 - Character Bible.pdf",
+                 "delivery/02 - Character Bible Images",
+                 "delivery/03 - SCRIPT.pdf",
+                 "delivery/04 - Storyboard.pdf",
+                 "delivery/05 - Video Captioned.mp4",
+                 "delivery/05 - Video Clean.mp4",
+                 "delivery/06 - Clip 60s.mp4",
+                 "delivery/06 - Clip 90s.mp4",
+                 "delivery/07 - Ready-to-Post Kit.pdf",
+                 "delivery/08 - Cover Thumbnail.png",
+                 "delivery/09 - Lyric Sheet.pdf",
+                 "delivery/10 - Captions.srt",
+                 "delivery/11 - Character Images",
+                 "delivery/12 - Welcome Sheet.pdf"),
 }
 
 #: The only declared artifacts whose writer does not exist yet. Each names the

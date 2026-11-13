@@ -7,8 +7,8 @@ Exit codes: ok 0, waiting 2, parked 3, rejected 4, error 1. stdlib only.
 
 `next` (manual 02 B1) reads the run's control/state.sqlite3 through
 state_store.py and answers one question: which stage is next and what exact
-command runs it. It prints the same envelope as intake/preflight (outcome
-ok/error; waiting/parked/rejected never come out of `next`) and exits 0/1.
+command runs it. It prints the same envelope as intake/preflight (any of ok,
+waiting, rejected, error; exit code per the EXIT map).
 
 Stage IDs come from batch_mode.batch.STAGES verbatim (never a second list).
 Command lines come from the ONE source, scripts/core/intake_preflight/
@@ -2629,17 +2629,40 @@ STAGE_DESCRIPTORS = {
         "artifacts": ("qc/final-qc-verdict.json",),
     },
     "delivery": {
+        # U-A13 (S75-055): the stage command is the packaging module
+        # (`python3 -m delivery_package package`, U-T05). The script named here
+        # stays the delivery gate's, which the recovery row and the QC record
+        # still run.
         "script": "scripts/core/qc_gate.py",
-        "verbs": ("evaluate",),
+        "verbs": ("package", "evaluate"),
         "command": _stage_command("delivery"),
         "recovery": 'scripts/core/qc_gate.py evaluate --run "$RUN_ID" '
                     '--stage delivery --records "$RUN/qc/records.json" '
                     '--makers "$RUN/qc/makers.json" --required "$REQUIRED_CHECKS"',
-        # S75-011: the delivery modules write delivery/delivery-receipt.json
-        # (delivery_clips.py 98, delivery_package/packaging.py 48).
-        # delivery/receipts.json was written by nothing. The final delivery
-        # artifact list is set by U-A13 after U-T05.
-        "artifacts": ("delivery/delivery-receipt.json",),
+        # U-A13 (S75-055): the twelve numbered package slots -- the exact file
+        # names `delivery_package.contract.PACKAGE_ITEMS` verifies (U-T05's
+        # list). delivery/receipts.json was written by nothing; the hand-written
+        # receipt is no longer declared.
+        "artifacts": (
+            "delivery/01 - Full Song.mp3",
+            "delivery/01 - Instrumental.mp3",
+            "delivery/01 - Voice Only.mp3",
+            "delivery/01 - About These Audio Files.txt",
+            "delivery/02 - Character Bible.pdf",
+            "delivery/02 - Character Bible Images",
+            "delivery/03 - SCRIPT.pdf",
+            "delivery/04 - Storyboard.pdf",
+            "delivery/05 - Video Captioned.mp4",
+            "delivery/05 - Video Clean.mp4",
+            "delivery/06 - Clip 60s.mp4",
+            "delivery/06 - Clip 90s.mp4",
+            "delivery/07 - Ready-to-Post Kit.pdf",
+            "delivery/08 - Cover Thumbnail.png",
+            "delivery/09 - Lyric Sheet.pdf",
+            "delivery/10 - Captions.srt",
+            "delivery/11 - Character Images",
+            "delivery/12 - Welcome Sheet.pdf",
+        ),
     },
 }
 
@@ -2662,6 +2685,10 @@ def _command_verb(command):
     tokens = str(command or "").split()
     if tokens and tokens[0] in _INTERPRETERS:
         tokens = tokens[1:]
+    if len(tokens) >= 2 and tokens[0] == "-m":
+        # U-A13: a module invocation is ``python3 -m <module> <verb> ...`` --
+        # the module plays the script's part, so the verb follows it.
+        tokens = tokens[1:]
     if len(tokens) < 2:
         return ""
     tok = tokens[1]
@@ -2680,6 +2707,19 @@ def _command_script(command):
             return ""
         return tokens[1]
     return tokens[0]
+
+
+def _command_module(command):
+    """The module a ``python3 -m <module>`` command runs, else ``""``.
+
+    U-A13 (S75-055): the delivery and lip-sync rows are module invocations, so
+    there is no script path for ``_command_script`` to return; the module is
+    the thing that must resolve under ``scripts/core``.
+    """
+    tokens = str(command or "").split()
+    if len(tokens) >= 3 and tokens[0] in _INTERPRETERS and tokens[1] == "-m":
+        return tokens[2]
+    return ""
 
 
 #: S75-005: how long one stage script's ``--help`` probe may take before the
@@ -2974,11 +3014,16 @@ STAGE_REGISTRY = {
         "operator", "independent final QC PASS",
         STAGE_DESCRIPTORS["final-qc"]["recovery"], "final-qc-complete",
         artifacts=STAGE_DESCRIPTORS["final-qc"]["artifacts"]),
+    # U-A13 (S75-055): the produced artifact and the required evidence are the
+    # package items the descriptor declares -- the twelve numbered slots have
+    # no single receipt any more, so the first item is the primary output and
+    # every owed file is the evidence.
     "delivery": _stage(
         ["final-qc"], "delivery-agent",
         STAGE_DESCRIPTORS["delivery"]["command"],
-        "delivery/<run-id>", "delivery/delivery-receipt.json",
-        "delivery/qc-record.json", ["delivery/delivery-receipt.json"],
+        "delivery/<run-id>", STAGE_DESCRIPTORS["delivery"]["artifacts"][0],
+        "delivery/qc-record.json",
+        list(STAGE_DESCRIPTORS["delivery"]["artifacts"]),
         "none", "successful destination delivery receipts",
         STAGE_DESCRIPTORS["delivery"]["recovery"], "delivery-complete",
         artifacts=STAGE_DESCRIPTORS["delivery"]["artifacts"]),
@@ -3055,12 +3100,22 @@ def validate_registry(registry=None, skill_root=None, runbook_rows=None,
         for s, row in sorted(runbook_rows.items()):
             cmd = str((row or {}).get("command") or "")
             head = _command_script(cmd)
-            if not head:
+            module = _command_module(cmd)
+            if not head and not module:
                 # An addition row may legitimately be an inline `python3 -c`
                 # probe; a CANONICAL stage row never may.
                 if s not in STAGE_DESCRIPTORS:
                     continue
                 problems.append("runbook row %r has no resolvable script" % s)
+                continue
+            if module:
+                # U-A13: a module row (python3 -m <module>) has no script path;
+                # the module it runs must still resolve under scripts/core.
+                mod_path = root / "scripts" / "core" / module.replace(".", "/")
+                if not (mod_path.is_dir()
+                        or mod_path.with_suffix(".py").is_file()):
+                    problems.append("runbook row %r module %r does not resolve "
+                                    "on disk" % (s, module))
                 continue
             if any(t in head for t in PLACEHOLDER_TOKENS):
                 problems.append("runbook row %r names a placeholder script: %r"
@@ -3305,7 +3360,13 @@ def _collect_completion_evidence(run_dir, got, stages=None, registry=None):
         for rel in reg.get(s, {}).get("required_artifacts", []):
             p = rd / rel
             try:
-                if not (p.is_file() and p.stat().st_size > 0):
+                present = p.is_file() and p.stat().st_size > 0
+                if not present and p.is_dir():
+                    # U-A13: two delivery slots are image SETS (directories of
+                    # separate files), so a non-empty directory is present.
+                    present = any(q.is_file() and q.stat().st_size > 0
+                                  for q in p.iterdir())
+                if not present:
                     missing.append(rel)
             except OSError:
                 missing.append(rel)

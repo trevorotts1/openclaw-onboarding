@@ -59,6 +59,19 @@
       "RUN_ID"
     ]
   },
+  "music-offer": {
+    "argv": [
+      "python3",
+      "scripts/core/song_choices/song_choices.py",
+      "offer",
+      "--run-dir",
+      "{RUN}"
+    ],
+    "produces": "Checks and delivers the three saved versions after `generate`: rebuilds the three delivery results from the run's own saved takes, computes D4 (three audibly different versions) once across them, writes/refreshes each take's acceptance record and delivers the offered versions (`SONG-CHOICES/` folder, title tags, README.txt, client message). `generate` alone never offers anything. The stage holds at the pick until `song_choices.py pick --run-dir \"$RUN\" --reply <1|2|3>` records the client's choice; the picked file is `$RUN/music/picked-song.mp3`.",
+    "placeholders": [
+      "RUN"
+    ]
+  },
   "continuity-bible": {
     "argv": [
       "python3",
@@ -261,6 +274,20 @@
       "RUN"
     ]
   },
+  "lip-sync": {
+    "argv": [
+      "python3",
+      "-m",
+      "lip_sync",
+      "run",
+      "--run-dir",
+      "{RUN}"
+    ],
+    "produces": "Lip-sync windows only, after the `clips` row: the whole lip-sync chain in one command for every approved shot that carries `lip_sync_line_ids` - the measured picture gate and its sha256-bound upload, the own-line cut from the ONE vocal stem the music stage already separated (`music/vocal-stem.mp3`), the stem uploaded under its own receipt, the paid `kling/ai-avatar-standard` job through `kie_dispatch`, then `lip_gate.run_gate` (the 2-try rule, the attempt ceiling, `load_governor.kie_request`). Writes one evidence row and one dispatch receipt per clip under `$RUN/control/lip-sync/`; `final_assembler`'s `check_plan` reads the receipt each row's `artifact.provenance.receipt_path` names and REFUSES when the command was never run. This row is a module invocation: run it from `scripts/core` (or with `scripts/core` on `PYTHONPATH`). The lip-sync windows keep the plain `video-generation` row for everything that is not a mouth: nothing here re-plans clips.",
+    "placeholders": [
+      "RUN"
+    ]
+  },
   "trailers": {
     "argv": [
       "python3",
@@ -305,24 +332,15 @@
   "delivery": {
     "argv": [
       "python3",
-      "scripts/core/qc_gate.py",
-      "evaluate",
-      "--run",
-      "{RUN_ID}",
-      "--stage",
-      "delivery",
-      "--records",
-      "{RUN}/qc/records.json",
-      "--makers",
-      "{RUN}/qc/makers.json",
-      "--required",
-      "{REQUIRED_CHECKS}"
+      "-m",
+      "delivery_package",
+      "package",
+      "--run-dir",
+      "{RUN}"
     ],
-    "produces": "Delivery gate record over the final package (master + `delivery_variants` plan + receipts); board event follows via `cc_sync` (import-only).",
+    "produces": "Packages the run into `$RUN/delivery` through the run's own resolved obligations (the twelve numbered items, or eleven when the chosen length owes no clips) and prints one JSON envelope (`ok`, `items`, `missing`, `problems`); exit 0 only when `contract.verify_folder` opens every owed file. This row is a module invocation: run it from `scripts/core` (or with `scripts/core` on `PYTHONPATH`). A missing packaging input is refused by STAGE (`music/word-timings.json` and the two stems -> the music stage, `edit/timeline.json` -> the edit stage). Then the delivery gate record: `python3 scripts/core/qc_gate.py evaluate --run \"$RUN_ID\" --stage delivery --records \"$RUN/qc/records.json\" --makers \"$RUN/qc/makers.json\" --required <required-checks>`; board event follows via `cc_sync` (import-only).",
     "placeholders": [
-      "REQUIRED_CHECKS",
-      "RUN",
-      "RUN_ID"
+      "RUN"
     ]
   },
   "platform-fit": {
