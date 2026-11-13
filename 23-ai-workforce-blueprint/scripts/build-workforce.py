@@ -6172,16 +6172,47 @@ def build_dept_to_suggested_roles():
 DEPT_TO_SUGGESTED_ROLES = build_dept_to_suggested_roles()
 
 
+def _platform_department_norms():
+    """Normalized ids the PLATFORM owns: the canonical floor, the
+    universal-primary verticals and every vertical-pack department.
+
+    These must always resolve to a roster file of their own. Anything else an
+    id resolves to is an owner-added custom department (WF-086).
+    """
+    norms = set()
+    for _fid in load_canonical_floor().keys():
+        norms.add(_decline_norm(_fid))
+        norms.add(_decline_norm(CANONICAL_ID_ALIASES.get(_fid, _fid)))
+        for _variant in CANONICAL_VARIANT_SLUGS.get(_fid, []):
+            norms.add(_decline_norm(_variant))
+    for _uid in _universal_primary_ids():
+        norms.add(_decline_norm(_uid))
+    for _pack in (_load_vertical_packs() or {}).values():
+        if not isinstance(_pack, dict):
+            continue
+        for _dept in _pack.get("auto_add_departments", []) or []:
+            if isinstance(_dept, dict) and _dept.get("id"):
+                norms.add(_decline_norm(_dept["id"]))
+    return norms
+
+
 def assert_dept_map_resolves(dept_ids):
     """
-    BUILD-TIME HARD ASSERTION (v10.15.18): every dept id we are about to build
-    MUST resolve to a suggested-roles file that ACTUALLY EXISTS on disk.
-    Previously a missing/mismatched entry produced a silent WARNING and a
-    zero-role department. Now the build HARD-FAILS so the gap is impossible to
+    BUILD-TIME HARD ASSERTION (v10.15.18): every platform-owned dept id we are
+    about to build MUST resolve to a suggested-roles file that ACTUALLY EXISTS
+    on disk. Previously a missing/mismatched entry produced a silent WARNING and
+    a zero-role department. Now the build HARD-FAILS so the gap is impossible to
     ship. The resume cron re-fires and the operator sees the failure.
 
-    Raises SystemExit(78) listing every unresolved dept. Returns the resolved
-    {dept_id: abspath} map on success.
+    WF-086: an OWNER-ADDED custom department has no roster file by definition, so
+    failing the whole build for it is wrong. Such a department (not on the
+    canonical floor and not a vertical-pack department) is recorded in the
+    returned `scaffolded` list and left to the existing path — parse_suggested_roles
+    returns [], library_floor_roles adds nothing, and _crw_ensure_director_role
+    supplies the director role. A floor or pack department without its file still
+    raises SystemExit(78).
+
+    Returns (resolved {dept_id: abspath}, scaffolded [dept_id]) on success.
     """
     # Locate the suggested-roles directory (same search order as parse_suggested_roles)
     search_paths = [
@@ -6197,25 +6228,23 @@ def assert_dept_map_resolves(dept_ids):
             + "; ".join(search_paths)
         )
 
+    platform_norms = _platform_department_norms()
     resolved = {}
+    scaffolded = []
     unresolved = []
     for did in dept_ids:
         fname = DEPT_TO_SUGGESTED_ROLES.get(did)
         if not fname:
-            # last-resort pattern + fuzzy match (mirrors parse_suggested_roles)
+            # Exact filename only. The old substring/fuzzy match handed one
+            # department another department's roster (WF-086).
             cand = os.path.join(roles_dir, f"{did}-suggested-roles.md")
             if os.path.isfile(cand):
                 resolved[did] = cand
                 continue
-            fuzzy = None
-            for f in os.listdir(roles_dir):
-                if did.replace("-", "") in f.replace("-", "").replace("_", ""):
-                    fuzzy = os.path.join(roles_dir, f)
-                    break
-            if fuzzy:
-                resolved[did] = fuzzy
+            if _decline_norm(did) not in platform_norms:
+                scaffolded.append(did)
                 continue
-            unresolved.append(f"{did} (no map entry, no {did}-suggested-roles.md, no fuzzy match)")
+            unresolved.append(f"{did} (no map entry, no {did}-suggested-roles.md)")
             continue
         path = os.path.join(roles_dir, fname)
         if not os.path.isfile(path):
@@ -6230,9 +6259,12 @@ def assert_dept_map_resolves(dept_ids):
         for u in unresolved:
             print(f"  - {u}", file=sys.stderr)
         raise SystemExit(78)
+    if scaffolded:
+        print("[DEPT-MAP ASSERT] Scaffolding owner-added custom department(s) with no "
+              "roster file (director role only): " + ", ".join(scaffolded), file=sys.stderr)
     print(f"[DEPT-MAP ASSERT] OK - all {len(resolved)} departments resolve to an existing "
           f"suggested-roles file in {roles_dir}", file=sys.stderr)
-    return resolved
+    return resolved, scaffolded
 
 
 def _clean_role_slug(name):
@@ -6381,13 +6413,10 @@ def parse_suggested_roles(dept_id):
 
     filepath = os.path.join(suggested_roles_dir, filename)
     if not os.path.isfile(filepath):
-        # Try exact match by scanning directory
-        for f in os.listdir(suggested_roles_dir):
-            if dept_id.replace("-", "") in f.replace("-", "").replace("_", ""):
-                filepath = os.path.join(suggested_roles_dir, f)
-                break
-
-    if not os.path.isfile(filepath):
+        # WF-086: an owner-added custom department has no roster file of its own.
+        # Never borrow one by substring match — that shipped another department's
+        # roles into the custom department. No file means no roster roles; the
+        # caller scaffolds the director role and nothing else.
         print(f"[ROLE-WORKSPACE WARNING] No suggested-roles file for dept '{dept_id}' (tried {filename})",
               file=sys.stderr)
         return []
