@@ -325,24 +325,47 @@ if "presentation-intake-poll.plist.template" not in inst_text:
 # optional whitespace) to the first line that is a bare `}` at column 0, and a
 # call must appear OUTSIDE it, on a line that is not a comment, with
 # `install_intake_poll_schedule` as its FIRST token.
+# PD-919: F12 moved the canonical definition OUT of install.sh into
+# lib-presentation-schedules.sh, which install.sh sources near its top. Parsing
+# install.sh alone therefore found only the fail-closed stub
+# (`command -v ... || install_intake_poll_schedule() { return 1; }`, which does
+# not match the anchored header) and reported GATE 8 red on every tree. The
+# definition is now looked for in install.sh first, then — ONLY when install.sh
+# actually references that lib, so a def in an unsourced file is still a dead
+# letter — in the lib itself. The CALL is still required in install.sh, outside
+# the definition; a defined-but-never-called installer still fails.
 _inst_lines = inst_text.splitlines()
-_d_start = None
-for _i, _line in enumerate(_inst_lines):
-    if re.match(r"^\s*install_intake_poll_schedule\(\)\s*\{\s*$", _line):
-        _d_start = _i
-        break
-_d_end = None
-if _d_start is not None:
-    for _j in range(_d_start + 1, len(_inst_lines)):
-        if _inst_lines[_j].startswith("}"):
-            _d_end = _j
+_LIB_NAME = "lib-presentation-schedules.sh"
+
+def _installer_def(lines):
+    start = None
+    for i, line in enumerate(lines):
+        if re.match(r"^\s*install_intake_poll_schedule\(\)\s*\{\s*$", line):
+            start = i
             break
+    end = None
+    if start is not None:
+        for j in range(start + 1, len(lines)):
+            if lines[j].startswith("}"):
+                end = j
+                break
+    return start, end
+
+_d_start, _d_end = _installer_def(_inst_lines)
+_def_in_install = True
 if _d_start is None or _d_end is None:
-    fails.append("(4) install.sh defines no install_intake_poll_schedule() body ending at a column-0 `}` -- the door cannot prove the installer is callable, so the poll is never scheduled")
+    _lib = inst.parent / _LIB_NAME
+    _lib_lines = []
+    if _lib.is_file() and _LIB_NAME in inst_text:
+        _lib_lines = _lib.read_text(encoding="utf-8", errors="replace").splitlines()
+    _d_start, _d_end = _installer_def(_lib_lines)
+    _def_in_install = False
+if _d_start is None or _d_end is None:
+    fails.append("(4) neither install.sh nor the " + _LIB_NAME + " it sources defines an install_intake_poll_schedule() body ending at a column-0 `}` -- the door cannot prove the installer is callable, so the poll is never scheduled")
 else:
     _calls = [
         _line for _i, _line in enumerate(_inst_lines)
-        if not (_d_start <= _i <= _d_end)
+        if not (_def_in_install and _d_start <= _i <= _d_end)
         and not _line.lstrip().startswith("#")
         and _line.split()
         and _line.split()[0] == "install_intake_poll_schedule"
@@ -357,7 +380,8 @@ if fails:
         print("  - " + f)
     sys.exit(1)
 print("GATE8_PASS: intake-poll scheduled path wired -- template + poll script exist, "
-      "install.sh defines and CALLS install_intake_poll_schedule, rc is latched (FIX 61).")
+      "install.sh (or the " + _LIB_NAME + " it sources) defines and install.sh CALLS "
+      "install_intake_poll_schedule, rc is latched (FIX 61).")
 PYEOF
 if [ "$GATE8_RC" -ne 0 ]; then
   echo "GATE 8 FAILED: FIX 61 intake-poll schedule wiring violated -- see GATE8_FAIL above." >&2
