@@ -2,12 +2,16 @@
 """U5 — the studio bridge's claim / replay / lease ledger.
 
 Copied from the skill-23 `launch_ledger.py` pattern (atomic claim, time limit,
-backoff) into skill 75, with two deliberate Windows corrections:
+backoff) into skill 75, with two deliberate corrections:
 
-  1. `os.kill(pid, 0)` is NOT a liveness check on Windows — `os.kill` there
-     calls `TerminateProcess` and KILLS the process. `pid_is_alive()` below
-     never sends a signal on Windows (plan 3.12 / risk table: "Windows
-     `os.kill(pid, 0)` kills instead of checking — fixed in U5").
+  1. The claim path NEVER probes liveness. The contract is OPTION A: a claim
+     outlives its process, so a dead holder's claim stands until its lease
+     lapses. The default claim lease is `DEFAULT_CLAIM_TTL_S = 3600.0`
+     seconds — one hour — so a crashed holder can block its order for that
+     long. `owner_pid` is recorded for diagnostics only; the claim path never
+     reads it. No pid probe exists here, so the Windows `os.kill(pid, 0)`
+     trap (plan 3.12 / risk table: "Windows `os.kill(pid, 0)` kills instead
+     of checking") cannot be triggered by this module.
   2. launch_ledger claims with an `O_CREAT|O_EXCL` LOCK FILE named from the
      record key. A studio key is `order:<client_id>:<order_id>`; a colon is an
      illegal filename character on Windows, so that mechanism cannot carry the
@@ -28,7 +32,7 @@ One authoritative SQLite store per bridge. Three guarantees:
                  expired or already ours, and is refused (rowcount 0) when a
                  live holder exists.
 
-Stdlib only: sqlite3, os, time, ctypes, hashlib, json.
+Stdlib only: sqlite3, os, time, uuid, hashlib, json.
 """
 from __future__ import annotations
 
@@ -42,7 +46,9 @@ import uuid
 LEDGER_VERSION = 2
 DEFAULT_LEASE_TTL_S = 120.0
 #: A claim lease outlives one poll gap, so a live order is never taken over
-#: while its owner is simply between ticks.
+#: while its owner is simply between ticks. It is also how long a DEAD
+#: holder's claim stands (OPTION A: the claim path never probes the pid) —
+#: one hour by default; see `_holder_live`.
 DEFAULT_CLAIM_TTL_S = 3600.0
 
 #: The durable handoff steps (SPEC 9.4). Monotonic: a step only moves forward,
@@ -122,53 +128,6 @@ def _migrate(con):
             con.execute("ALTER TABLE orders ADD COLUMN %s" % ddl)
 
 
-# --- Windows-safe liveness ---------------------------------------------------
-
-def _win_pid_alive(pid):  # pragma: no cover - exercised only on Windows
-    """OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION) handle == alive.
-
-    Query-only rights: the handle can never terminate the process. Fail
-    closed — any failure to probe reports "not alive" rather than risk a kill.
-    """
-    import ctypes
-    from ctypes import wintypes
-
-    PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
-    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
-    handle = kernel32.OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, False, int(pid))
-    if not handle:
-        return False
-    try:
-        kernel32.CloseHandle(wintypes.HANDLE(handle))
-        return True
-    except Exception:  # noqa: BLE001 - never raise out of a liveness probe
-        return False
-
-
-def pid_is_alive(pid, *, os_name=None, kill=None, win_probe=None):
-    """True when `pid` is a live process — WITHOUT signalling it on Windows.
-
-    `os_name`/`kill`/`win_probe` are injectable so the Windows branch is
-    provable on any host: a check can assert `os.kill` is never reached when
-    os_name == "nt".
-    """
-    if isinstance(pid, bool) or not isinstance(pid, int) or pid <= 0:
-        return False
-    name = os.name if os_name is None else os_name
-    if name == "nt":
-        probe = win_probe or _win_pid_alive
-        try:
-            return bool(probe(pid))
-        except Exception:  # noqa: BLE001
-            return False
-    posix_kill = kill or os.kill
-    try:
-        posix_kill(pid, 0)  # POSIX only: signal 0 is never delivered
-        return True
-    except OSError:
-        return False
-
-
 def _host_name():
     """The host that owns a claim row. Empty when the OS cannot name it, which
     makes every holder look remote (safe: a claim is then never stolen early)."""
@@ -185,7 +144,10 @@ def _holder_live(host, pid, lease_at, now):
     Takeover happens ONLY on lease expiry, never on a dead-pid probe. A
     live lease is therefore always respected, whatever the holder's pid
     state: simultaneous racers are refused deterministically. The cost is
-    that a dead holder's claim is not recoverable until its lease expires.
+    that a dead holder's claim is not recoverable until its lease expires —
+    by default one hour (`DEFAULT_CLAIM_TTL_S = 3600.0`). `pid` is accepted
+    so the contract names the recorded holder; it is deliberately never
+    probed here.
     That is the contract checks/test_st10a_claim_fence.py T6 asserts: the
     dead holder is refused while the lease is live, and taken over with a
     new fence once it has expired.
