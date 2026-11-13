@@ -3705,6 +3705,11 @@ def apply_standard_edits(config):
         print("INTERVIEW_NOT_COMPLETE: apply-diff build refused — verified "
               "interview completion required.", file=sys.stderr)
         sys.exit(EXIT_INTERVIEW_PENDING)
+    if build_state.get("interviewComplete") is not True:
+        print("[STANDARD-FIRST] REFUSING apply-diff build: the owner has not finished "
+              "the interview (interviewComplete is not true).", file=sys.stderr)
+        print("INTERVIEW_NOT_COMPLETE: apply-diff build refused.", file=sys.stderr)
+        sys.exit(EXIT_INTERVIEW_PENDING)
 
     # Resolve paths exactly like the legacy lane (config safety + discovery dir).
     if not MASTER_FILES:
@@ -4327,9 +4332,19 @@ def build_from_config(config):
         # sees interviewComplete=true and finds the genuine answers file. The
         # recorded path is the GENUINE transcript (_genuine_interview_answers_file),
         # never the synthetic config summary.
-        _write_interview_complete_to_state(
-            answers_path=_genuine_interview_answers_file()
-        )
+        # BU-65 (WF-085): the build never marks the interview complete on its own
+        # unless the owner explicitly consented to a self-setup/fast build. For
+        # every other build the flag belongs to the completion step; without it
+        # the build refuses instead of stamping its own completion.
+        if _validate_owner_consent(config, _load_build_state())[0]:
+            _write_interview_complete_to_state(
+                answers_path=_genuine_interview_answers_file()
+            )
+        elif _load_build_state().get("interviewComplete") is not True:
+            _refuse_interview_pending(
+                "interview not marked complete by the completion step",
+                str(config.get("option", "")),
+            )
 
     # Issue #9: emit the first build-progress.json so the onboarding "building"
     # page leaves its "Connecting to build status..." null state immediately and
