@@ -4455,6 +4455,10 @@ def build_from_config(config):
                 _sop_populate_rc = rc
                 if rc == 0:
                     print(f"[NON-INTERACTIVE] SOPs auto-populated successfully", file=sys.stderr)
+                elif rc == 1:
+                    print(f"[NON-INTERACTIVE] SOP population could not run: the manifest was "
+                          f"missing or malformed (rc=1); SOPs remain as DMAIC stubs. "
+                          f"Rerun: python3 {populate_script}", file=sys.stderr)
                 elif rc == 2:
                     print(f"[NON-INTERACTIVE] Some SOP sub-agents failed; rerun with: "
                           f"python3 {populate_script}", file=sys.stderr)
@@ -7067,6 +7071,15 @@ def write_sop_research_manifest(company_name, industry, departments, interview_a
 
     with open(manifest_path, "w") as f:
         json.dump(manifest, f, indent=2)
+
+    if not entries:
+        # An empty entry list means no custom department needs authoring (every
+        # dept was handled by the role-library copy path). The file is still
+        # written for the boundary gate, but None tells every caller to skip the
+        # populate step instead of running it against an empty manifest.
+        print(f"[SOP-MANIFEST] Wrote {manifest_path} with 0 custom dept(s) — "
+              f"no custom departments to author; populate step skipped", file=sys.stderr)
+        return None
 
     print(f"[SOP-MANIFEST] Wrote {manifest_path} with {len(entries)} custom dept(s) queued for authoring", file=sys.stderr)
     return manifest_path
