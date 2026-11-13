@@ -17,6 +17,11 @@
 #   T9: Watchdog self-removes when closeoutStatus==done (SELF-REMOVAL v12.3.13)
 #   T10: resume-closeout-cron PAUSES (no heavy dispatch) on unchanged human-block (v11.11.0)
 #   T11: resume-closeout-cron auto-resumes (clears pause) when the blocker clears (v11.11.0)
+#   T12: closeoutStatus=partial is a stuck closeout (BU-67)
+#   T13: closeoutStatus=blocked-routing-defect is a stuck closeout (BU-67)
+#   T14: generating is stuck only at twice the threshold, and a zone-less
+#        timestamp is read as LOCAL time, not UTC (BU-67)
+#   T15: the escalated name falls back to companySlug when companyName is absent (BU-67)
 #
 # v12.3.13 / PRD-2.15
 # =============================================================================
@@ -687,6 +692,166 @@ else
   else
     fail "T11b: stall counter not reset (closeoutResumeStallPasses=$t11_passes)"
   fi
+fi
+
+echo ""
+
+# ════════════════════════════════════════════════════════════
+# T12: closeoutStatus=partial is a stuck closeout (BU-67)
+# ════════════════════════════════════════════════════════════
+echo "T12: closeoutStatus=partial with buildCompletedAt 20h ago escalates STUCK_CLOSEOUT_BLOCKED (BU-67)"
+
+# No closeoutStartedAt on purpose: the age clock must fall back to buildCompletedAt.
+write_state "{
+  \"version\": 1,
+  \"interviewComplete\": true,
+  \"buildCompletedAt\": \"$(hours_ago_iso 20)\",
+  \"closeoutStatus\": \"partial\",
+  \"ownerChat\": 12345,
+  \"companyName\": \"PartialCo\",
+  \"companySlug\": \"partial-co\",
+  \"agentName\": \"TestAgent\",
+  \"departments\": []
+}"
+
+ZHC_STUCK_CLOSEOUT_HOURS=12 \
+  run_script bash "$WATCHDOG" >/dev/null 2>&1 || true
+
+t12_notified=$(read_state_field '.stuckEscalations.STUCK_CLOSEOUT_BLOCKED.notifiedAt')
+if [[ -n "$t12_notified" && "$t12_notified" != "null" ]]; then
+  pass "T12a: stuckEscalations.STUCK_CLOSEOUT_BLOCKED.notifiedAt written (partial, 20h)"
+else
+  fail "T12a: stuckEscalations.STUCK_CLOSEOUT_BLOCKED.notifiedAt NOT written for partial/20h"
+fi
+
+t12_class=$(read_state_field '.stuckEscalations.STUCK_CLOSEOUT_BLOCKED.class')
+if [[ "$t12_class" == "STUCK_CLOSEOUT_BLOCKED" ]]; then
+  pass "T12b: stuckEscalations.STUCK_CLOSEOUT_BLOCKED.class=STUCK_CLOSEOUT_BLOCKED"
+else
+  fail "T12b: stuckEscalations.STUCK_CLOSEOUT_BLOCKED.class='$t12_class'"
+fi
+
+echo ""
+
+# ════════════════════════════════════════════════════════════
+# T13: blocked-routing-defect is a stuck closeout (BU-67)
+# ════════════════════════════════════════════════════════════
+echo "T13: closeoutStatus=blocked-routing-defect with buildCompletedAt 20h ago escalates (BU-67)"
+
+write_state "{
+  \"version\": 1,
+  \"interviewComplete\": true,
+  \"buildCompletedAt\": \"$(hours_ago_iso 20)\",
+  \"closeoutStatus\": \"blocked-routing-defect\",
+  \"ownerChat\": 12345,
+  \"companyName\": \"RoutingCo\",
+  \"companySlug\": \"routing-co\",
+  \"agentName\": \"TestAgent\",
+  \"departments\": []
+}"
+
+ZHC_STUCK_CLOSEOUT_HOURS=12 \
+  run_script bash "$WATCHDOG" >/dev/null 2>&1 || true
+
+t13_notified=$(read_state_field '.stuckEscalations.STUCK_CLOSEOUT_BLOCKED.notifiedAt')
+if [[ -n "$t13_notified" && "$t13_notified" != "null" ]]; then
+  pass "T13: stuckEscalations.STUCK_CLOSEOUT_BLOCKED written for blocked-routing-defect"
+else
+  fail "T13: stuckEscalations.STUCK_CLOSEOUT_BLOCKED NOT written for blocked-routing-defect"
+fi
+
+echo ""
+
+# ════════════════════════════════════════════════════════════
+# T14: generating at twice the threshold; zone-less timestamps are LOCAL (BU-67)
+# ════════════════════════════════════════════════════════════
+echo "T14: generating is stuck only at twice the threshold, and a zone-less stamp is local time (BU-67)"
+
+TEST_TZ="America/New_York"
+# Local wall-clock text with NO zone: 22h ago. Threshold 12h -> 2x is 24h.
+# Read as local it is 22h (NOT stuck); read as UTC it would be 27h (stuck).
+GENERATING_TS=$(TZ="$TEST_TZ" python3 -c "
+from datetime import datetime, timedelta
+print((datetime.now() - timedelta(hours=22)).strftime('%Y-%m-%dT%H:%M:%S'))
+")
+
+write_state "{
+  \"version\": 1,
+  \"interviewComplete\": true,
+  \"buildCompletedAt\": \"$GENERATING_TS\",
+  \"closeoutStatus\": \"generating\",
+  \"ownerChat\": 12345,
+  \"companyName\": \"GeneratingCo\",
+  \"companySlug\": \"generating-co\",
+  \"agentName\": \"TestAgent\",
+  \"departments\": []
+}"
+
+(
+  export TZ="$TEST_TZ"
+  ZHC_STUCK_CLOSEOUT_HOURS=12 run_script bash "$WATCHDOG" >/dev/null 2>&1 || true
+)
+t14a_notified=$(read_state_field '.stuckEscalations.STUCK_CLOSEOUT_BLOCKED.notifiedAt')
+if [[ -z "$t14a_notified" || "$t14a_notified" == "null" ]]; then
+  pass "T14a: generating at 22h local is NOT stuck (not past twice the 12h threshold; zone-less stamp read as local)"
+else
+  fail "T14a: generating at 22h local escalated (notifiedAt=$t14a_notified) - zone-less stamp likely read as UTC"
+fi
+
+# Same status, 30h ago in UTC with a Z: past twice the 12h threshold -> escalates.
+write_state "{
+  \"version\": 1,
+  \"interviewComplete\": true,
+  \"buildCompletedAt\": \"$(hours_ago_iso 30)\",
+  \"closeoutStatus\": \"generating\",
+  \"ownerChat\": 12345,
+  \"companyName\": \"GeneratingCo\",
+  \"companySlug\": \"generating-co\",
+  \"agentName\": \"TestAgent\",
+  \"departments\": []
+}"
+
+ZHC_STUCK_CLOSEOUT_HOURS=12 \
+  run_script bash "$WATCHDOG" >/dev/null 2>&1 || true
+
+t14b_notified=$(read_state_field '.stuckEscalations.STUCK_CLOSEOUT_BLOCKED.notifiedAt')
+if [[ -n "$t14b_notified" && "$t14b_notified" != "null" ]]; then
+  pass "T14b: generating at 30h escalates (past twice the threshold)"
+else
+  fail "T14b: generating at 30h did NOT escalate"
+fi
+
+echo ""
+
+# ════════════════════════════════════════════════════════════
+# T15: name fallback companyName -> companySlug (BU-67)
+# ════════════════════════════════════════════════════════════
+echo "T15: escalation names the box by companySlug when companyName is absent (BU-67)"
+
+write_state "{
+  \"version\": 1,
+  \"interviewComplete\": true,
+  \"buildCompletedAt\": \"$(hours_ago_iso 20)\",
+  \"closeoutStatus\": \"partial\",
+  \"ownerChat\": 12345,
+  \"companySlug\": \"slug-only-co\",
+  \"agentName\": \"TestAgent\",
+  \"departments\": []
+}"
+
+t15_out=$(ZHC_STUCK_CLOSEOUT_HOURS=12 run_script bash "$WATCHDOG" 2>&1) || true
+
+if printf '%s' "$t15_out" | grep -q "slug-only-co"; then
+  pass "T15a: escalation/log names the box by companySlug"
+else
+  fail "T15a: companySlug not used - got: $(printf '%s' "$t15_out" | head -3)"
+fi
+
+t15_notified=$(read_state_field '.stuckEscalations.STUCK_CLOSEOUT_BLOCKED.notifiedAt')
+if [[ -n "$t15_notified" && "$t15_notified" != "null" ]]; then
+  pass "T15b: STUCK_CLOSEOUT_BLOCKED still written with only companySlug in state"
+else
+  fail "T15b: STUCK_CLOSEOUT_BLOCKED not written when companyName is absent"
 fi
 
 echo ""
