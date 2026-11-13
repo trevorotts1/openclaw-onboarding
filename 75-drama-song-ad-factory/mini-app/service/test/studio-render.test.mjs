@@ -188,15 +188,23 @@ test('studio render: the budget screen offers the recommended limit and a single
 
 test('studio render: identical option wording, opposite shape, decided by typed', () => {
   const wording = 'Reply with your own words.';
+  // The typed screen keeps the OLD export's single "reply with" row on purpose:
+  // the same option text the choice screen below carries. The typed flag alone must
+  // decide the shape, so the row is never drawn beside the box.
   const typedScreen = {
     id: 'probe-typed', label: 'PROBE', title: 'Say the thing', typed: true,
     question: 'Say the thing.',
-    options: [],
+    options: [{ n: 1, text: 'Type it in', detail: wording, price: null, recommended: false }],
   };
+  // Two options: ensurePick auto-selects a one-option screen (the legacy
+  // single-option card), which would draw the box before the client picked.
   const choiceScreen = {
     id: 'probe-choice', label: 'PROBE', title: 'Pick one', typed: false,
     question: 'Pick one.',
-    options: [{ n: 1, text: 'Type it in', detail: wording, price: null, recommended: false }],
+    options: [
+      { n: 1, text: 'Type it in', detail: wording, price: null, recommended: false },
+      { n: 2, text: 'Not this one', detail: '', price: null, recommended: false },
+    ],
   };
 
   const typedTree = renderQuestion(typedScreen);
@@ -206,7 +214,7 @@ test('studio render: identical option wording, opposite shape, decided by typed'
   assert.equal(textInputs(typedTree).length, 0);
 
   let untypedTree = renderQuestion(choiceScreen);
-  assert.equal(radios(untypedTree).length, 1, 'the choice keeps its option row');
+  assert.equal(radios(untypedTree).length, 2, 'the choice keeps its option row');
   assert.equal(byTag(untypedTree, 'TEXTAREA').length, 0);
   assert.equal(textInputs(untypedTree).length, 0, 'no box before the typeable option is picked');
   untypedTree = pick(untypedTree, '1');

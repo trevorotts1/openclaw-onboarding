@@ -45,7 +45,7 @@ const committed = JSON.parse(
 
 // Imported BEFORE any `document` exists, so boot() does not run.
 const studio = await import("../studio.js");
-const { state, render, headingFor } = studio;
+const { state, render, headingFor, visibleScreens } = studio;
 
 // ── the DOM shim (the same idea as checks/price-check.mjs) ──────────────────
 function makeElement(tag) {
@@ -103,6 +103,25 @@ const tags = () => walk(registry.main)
   .filter((n) => /(^|\s)tag(\s|$)/.test(String(n.attrs.class || "")))
   .map((n) => String(n.textContent).trim());
 
+// A committed screen is only drawn when its own `shows_when` is satisfied — AGNES
+// asks for a short length, WHERE only runs on one purpose, for two. So each screen
+// is drawn the way a client reaches it: PURPOSE answered, LENGTH answered when the
+// screen needs one, and the screen itself last.
+const COMMITTED_PICKS = [["1"], ["2"], ["3"], ["4"], ["2", "1"], ["3", "1"], ["4", "1"], ["1", "1"]];
+
+/** The answers that make a committed screen on, and its place in that list. */
+function onScreen(screen) {
+  const purpose = committed.questions.find((q) => q.id === "purpose");
+  const length = committed.questions.find((q) => q.id === "length");
+  const list = [purpose, length, screen].filter(Boolean);
+  for (const replies of COMMITTED_PICKS) {
+    const shown = visibleScreens(list, replies, "yes");
+    const at = shown.findIndex((q) => q.id === screen.id);
+    if (at >= 0) return { list, replies, at, on: true };
+  }
+  return { list, replies: [], at: -1, on: false };
+}
+
 /** Render ONE screen on the real question page and return the page text. */
 function draw(screen, opts = {}) {
   const questions = opts.questions || [screen];
@@ -114,6 +133,9 @@ function draw(screen, opts = {}) {
   state.picks = opts.picks || [];
   state.texts = opts.texts || [];
   state.replies = opts.replies || [];
+  // The card remembers whether this client has an Agnes plan; "yes" keeps the
+  // AGNES screen eligible so its tag can be judged.
+  state.agnesRemembered = "yes";
   state.note = "";
   render();
   return pageText();
@@ -123,7 +145,11 @@ const countOf = (haystack, needle) => String(haystack).split(needle).length - 1;
 
 // ── (1) no heading is all capitals ───────────────────────────────────────────
 for (const screen of committed.questions) {
-  draw(screen);
+  const where = onScreen(screen);
+  rule(`(1) ${screen.id}: the screen is on with these answers`, where.on,
+    where.on ? `at ${where.at}` : "shows_when hid it");
+  if (!where.on) continue;
+  draw(screen, { questions: where.list, replies: where.replies, qIndex: where.at });
   const drawn = headings().map((n) => String(n.textContent || "").trim());
   const heading = drawn[0] || "";
   const upper = heading.length > 0 && heading === heading.toUpperCase();
@@ -255,7 +281,12 @@ const budget = {
 // ── (5) the tag count follows the export, screen by screen ──────────────────
 for (const screen of committed.questions) {
   const recommended = (screen.options || []).filter((o) => o.recommended).length;
-  draw(screen);
+  const where = onScreen(screen);
+  if (!where.on) {
+    rule(`(5) ${screen.id}: the screen is on with these answers`, false, "shows_when hid it");
+    continue;
+  }
+  draw(screen, { questions: where.list, replies: where.replies, qIndex: where.at });
   const drawn = tags().length;
   const ok = recommended === 0 ? drawn === 0 : drawn === 1;
   rule(`(5) ${screen.id}: ${recommended} recommended option(s) — ${drawn} tag(s) drawn`,
