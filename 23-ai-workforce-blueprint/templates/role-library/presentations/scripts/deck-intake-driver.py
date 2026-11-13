@@ -2811,9 +2811,9 @@ def _sp_bank_prompt(qid: str) -> str:
         spec = _load_sp_spec()
         _SP_BANK_PROMPTS_CACHE = {sq["id"]: sq.get("prompt", "") for sq in spec.get("questions", [])}
         _SP_BANK_PROMPTS_CACHE["sp_mode"] = _SP_MODE_PROMPT
-        _SP_BANK_PROMPTS_CACHE["signature_frame"] = (
-            "Choose a Signature frame: The Rulebook / The Vault / "
-            "The Quest / The Original.")
+        # PD-016: the frame prompt is the spec's own text, never a literal.
+        _SP_BANK_PROMPTS_CACHE["signature_frame"] = \
+            _frame_selection_spec().get("prompt", "")
         # PD-001: an IN-DEPTH follow-up turn is a real assistant turn in the
         # transcript, so it must carry the exact prompt _sig_next emitted.
         for _fq in _SP_FOLLOWUP_QIDS:
@@ -2871,6 +2871,14 @@ def _load_sp_spec() -> Dict[str, Any]:
         file=sys.stderr,
     )
     sys.exit(3)
+
+
+def _frame_selection_spec() -> Dict[str, Any]:
+    """PD-016: the spec's `frame_selection_question` block, or {} when the
+    spec lacks it. ONE source for both the emitted question and the
+    transcript bank prompt, so the two can never drift out of byte-identity."""
+    block = _load_sp_spec().get("frame_selection_question")
+    return block if isinstance(block, dict) else {}
 
 
 def cmd_signature(args) -> int:
@@ -3000,22 +3008,27 @@ def _sig_next(run_dir: Path) -> int:
 
 
 def _emit_frame_question() -> int:
-    """Emit the frame-selection question."""
+    """Emit the frame-selection question, using the spec's own wording.
+
+    PD-016: prompt, allowed_values, value_labels and help come verbatim from
+    `frame_selection_question` in sp-8-questions.json. No invented text -- a
+    spec without that block is a fatal configuration error (exit 3).
+    """
+    frame_q = _frame_selection_spec()
+    if not frame_q:
+        print(json.dumps({
+            "status": "error",
+            "error": "frame question spec missing",
+        }))
+        return 3
     print(json.dumps({
         "question_id": "signature_frame",
-        "prompt": "Choose a Signature frame: The Rulebook / The Vault / "
-                  "The Quest / The Original.",
-        "kind": "enum",
-        "allowed_values": ["rulebook", "vault", "quest", "original"],
-        "value_labels": {
-            "rulebook": "The Rulebook -- your methodology codified",
-            "vault": "The Vault -- your unique IP/proprietary system",
-            "quest": "The Quest -- the client's transformation journey",
-            "original": "The Original -- a new signature frame you define",
-        },
-        "required": True,
-        "help": "This frame shapes every slide in the deck. The Signature "
-                "Presentation Architect will enforce it at every QC gate.",
+        "prompt": frame_q["prompt"],
+        "kind": frame_q.get("kind", "enum"),
+        "allowed_values": frame_q.get("allowed_values", []),
+        "value_labels": frame_q.get("value_labels", {}),
+        "required": frame_q.get("required", True),
+        "help": frame_q.get("help", ""),
     }))
     return 0
 
