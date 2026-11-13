@@ -494,6 +494,22 @@ def test_breaking_entrypoint_routing_turns_reachability_red():
             "character_library.sync_protocol" in p for p in detail["problems"])
 
 
+def test_unparseable_entrypoint_still_emits_a_receipt():
+    """A surface that cannot be parsed fails closed: a receipt, never a traceback."""
+    with _source_copy("unparseable") as root:
+        with open(os.path.join(root, A.ENTRYPOINT_REL), "w",
+                  encoding="utf-8") as fh:
+            fh.write("try:\nexcept Exception:\n    pass\n")
+        proc = subprocess.run([sys.executable, "package/999_adapter.py", "check"],
+                              cwd=root, capture_output=True, text=True,
+                              timeout=900)
+        assert proc.returncode == 1, proc.returncode
+        assert proc.stderr == "", proc.stderr[-400:]
+        payload = json.loads(proc.stdout)
+        assert payload["ok"] is False
+        assert _clauses(payload)["entrypoint_reachability"] is False
+
+
 def test_gutting_any_declared_carrier_turns_the_check_red():
     carriers = ("scripts/core/character_bible/identity.py",
                 "scripts/core/character_library/notion_adapter.py",
