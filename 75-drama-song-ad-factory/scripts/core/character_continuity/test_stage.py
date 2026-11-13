@@ -2,13 +2,16 @@
 """S75-W06-U2: continuity-bible stage runner — typed readers, declared
 required evidence, registry predicate, executable advancement.
 
-Proves (findings D08, D33):
+Proves (findings D08, D33, S75-016):
   * qc-records.json is read as a LIST (the dict-only reader bug class cannot
     pass); a legacy {"records": [...]} wrapper migrates with a note; any
     other shape is an explicit bad state, never an empty pass;
   * REQUIRED_CHECKS is declared independently of what arrives: missing
     evidence fails the gate and NEVER shrinks the required set;
   * gate PASS needs an independent maker/reviewer pair (qc_gate rules);
+  * S75-016: the stage SEALS the finished bible before it advances — a run
+    holding only ``continuity/qc-records.json`` and ``continuity/makers.json``
+    does NOT advance, and the refusal names the missing record;
   * advance() moves the continuity-bible row to COMPLETE through state_store
     guarded transitions in ONE call (no separate manual action) and reports
     the seven downstream stages' rows;
@@ -29,6 +32,8 @@ if CORE not in sys.path:
 import character_continuity.stage as ST                     # noqa: E402
 import state_store as SS                                    # noqa: E402
 from batch_mode import batch as BATCH                       # noqa: E402
+
+SG = ST.step_gate_module()                                  # noqa: E402
 
 FAILS = []
 
@@ -82,6 +87,39 @@ def make_store(run):
     with SS.Store(db) as st:
         st.init_run("run1", [s for s, _ in BATCH.STAGES])
     return db
+
+
+def write_finished_bible(run, approved=True):
+    """The two records a FINISHED continuity bible consists of, written the way
+    ``character_approval`` writes them (save_bible, then approve)."""
+    char = os.path.join(run, "character")
+    os.makedirs(char, exist_ok=True)
+    json.dump({"schema": "blackceo.character-bible/v2", "revision": 1,
+               "fingerprint": "0" * 64,
+               "characters": [{"slug": "mia", "name": "Mia",
+                               "role": "protagonist",
+                               "background": "raised in the same town",
+                               "appearance": "brown eyes, short hair",
+                               "voice_notes": "warm and low",
+                               "images": {"close-up": {"path": "refs/mia.png"}}}]},
+              open(os.path.join(char, "bible.json"), "w"))
+    json.dump({"schema": "blackceo.character-approval/v1",
+               "status": "approved" if approved else "pending",
+               "bible_revision": 1, "approved_by": "the client",
+               "image_hashes": {"mia": {"close-up": "0" * 64}}},
+              open(os.path.join(char, "approval.json"), "w"))
+
+
+def gate_contract():
+    """The SHIPPED contract's continuity-bible rows, declared as the only stage
+    so this test needs no seal for the stages before it. The artifact list is
+    the real one, read from stage_contracts.json — never a copy."""
+    real = SG.load_contract()
+    path = os.path.join(tempfile.mkdtemp(prefix="cont-gate-"), "contract.json")
+    with open(path, "w") as fh:
+        json.dump({"order": [ST.STAGE],
+                   "stages": {ST.STAGE: real["stages"][ST.STAGE]}}, fh)
+    return path
 
 
 def test_typed_readers():
@@ -152,12 +190,51 @@ def test_gate_pass_and_proven():
     check("wrong run_id never proves", not ok2, ev2)
 
 
-def test_advance_moves_the_row_and_reports_the_seven():
+def test_contract_declares_the_finished_bible():
+    real = SG.load_contract()
+    artifacts = real["stages"][ST.STAGE]["artifacts"]
+    paths = [a["path"] for a in artifacts]
+    check("the declared set is exactly the finished bible's records",
+          sorted(paths) == sorted(ST.CONTRACT_ARTIFACTS), paths)
+    approval = [a for a in artifacts if a["path"] == "character/approval.json"]
+    check("the approval event must be the approved one",
+          bool(approval) and approval[0].get("equals") == {"status": "approved"},
+          approval)
+
+
+def test_records_alone_never_advance():
+    """S75-016: qc-records.json + makers.json alone are not a continuity bible."""
     good, makers = clean([record()])
     run = write_run(good, makers)
     make_store(run)
-    res = ST.advance(run)
+    res = ST.advance(run, contract=gate_contract())
+    check("only qc records and makers: NOT advanced",
+          res["outcome"] == "not-proven", res)
+    check("the gate names the missing bible record",
+          res.get("reason_code") == "ARTIFACT_MISSING"
+          and "character/bible.json" in str(res.get("detail")), res)
+    with SS.Store(os.path.join(run, "control", "state.sqlite3")) as st:
+        check("row untouched",
+              st.get("run1", "continuity-bible")["state"] == "NOT_STARTED")
+    # and on the SHIPPED chain, the stage before it is still unproven: the
+    # seal can never be opened by skipping the stages it follows.
+    res2 = ST.advance(run)
+    check("the shipped chain refuses a stage before its own seal is proven",
+          res2["outcome"] == "not-proven"
+          and res2.get("reason_code") == "PREVIOUS_STAGE_NOT_PROVEN", res2)
+
+
+def test_advance_moves_the_row_and_reports_the_seven():
+    good, makers = clean([record()])
+    run = write_run(good, makers)
+    write_finished_bible(run)
+    make_store(run)
+    contract = gate_contract()
+    res = ST.advance(run, contract=contract)
     check("advance() outcome advanced", res["outcome"] == "advanced", res)
+    check("the advancement carries the gate's sealed records",
+          sorted(res["evidence"].get("sealed") or []) == sorted(ST.CONTRACT_ARTIFACTS),
+          res["evidence"])
     check("continuity-bible row COMPLETE via guarded transitions",
           res["row"]["state"] == "COMPLETE", res["row"])
     seven = res["downstream"]
@@ -166,7 +243,7 @@ def test_advance_moves_the_row_and_reports_the_seven():
     check("downstream rows readable with registry entrypoints",
           all(seven[s]["state"] == "NOT_STARTED" for s in ST.DOWNSTREAM_STAGES)
           and all(seven[s].get("entrypoint") for s in ST.DOWNSTREAM_STAGES), seven)
-    again = ST.advance(run)
+    again = ST.advance(run, contract=contract)
     check("advance() is idempotent", again["outcome"] == "already-complete", again)
     # no manual action was needed: nothing but the records + the one call
     status = ST.downstream_status(run)
@@ -200,6 +277,8 @@ if __name__ == "__main__":
     test_typed_readers()
     test_required_checks_are_declared_not_received()
     test_gate_pass_and_proven()
+    test_contract_declares_the_finished_bible()
+    test_records_alone_never_advance()
     test_advance_moves_the_row_and_reports_the_seven()
     test_not_proven_never_advances()
     test_register_wires_the_registry()
