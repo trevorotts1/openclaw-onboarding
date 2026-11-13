@@ -162,9 +162,23 @@ _INTAKE_PRODUCER_PHASES = ("P-CONVERTER", "P0A-INTAKE", "P-SP-CLAIM")
 def _intake_provenance_refusal(phase_id: str, run_dir: Path) -> Optional[str]:
     """Return the AF-INTAKE-PROVENANCE refusal line when this phase may not run
     against the current intake sha, else None. Regime-aware: a run with no
-    provenance log at all (pre-FIX-109) is never refused by this check."""
+    provenance log at all (pre-FIX-109) is never refused by this check.
+
+    PD-921: an UNBOUND binding is not an exempt run. If presentation_job.runfacts
+    could not be loaded, this check cannot verify anything, so every phase —
+    producers included — is refused with the same AF-INTAKE-PROVENANCE line the
+    engine door emits in that state (phases.PhaseExecutor._check_intake_provenance),
+    rather than returning None, which every caller reads as PASS."""
     if _rf109 is None:
-        return None
+        # Bind failure precedes the producer exemption on purpose: the engine
+        # door has no producer exemption for a missing runfacts module either
+        # (it is a fail-closed module-load gate, not a run-content gate), so the
+        # funnel and the door must refuse the same phases. A bound run is
+        # untouched — this branch cannot run when _rf109 imported.
+        return ("AF-INTAKE-PROVENANCE: runfacts unavailable — refusing to run "
+                "without the intake provenance check (fail-closed). "
+                "[PD-921 funnel: presentation_job.runfacts could not be loaded, "
+                "so this verifier cannot bind and cannot verify]")
     if phase_id in _INTAKE_PRODUCER_PHASES:
         return None
     try:
