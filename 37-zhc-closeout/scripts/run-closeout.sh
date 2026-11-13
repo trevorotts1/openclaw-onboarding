@@ -1063,8 +1063,13 @@ fi
 # a permanent block. Record the leg so `--closeout` stops requiring it, and drop
 # the quality hold so the step matrix can reach done. The operator summary
 # reports the waived leg.
+# The gate stops its loop on a generator hard-failure (it will not re-spend on a
+# paid backend), so a vendor that keeps failing arrives here with ATTEMPTS=1 and
+# a non-zero generator rc -- that rc IS the exhausted vendor attempt budget.
+# ponytail: any hard generator failure waives the video for this closeout; the
+# celebration video is regenerated only by a fresh closeout (clear the leg).
 if [[ "${GATE_VIDEO_RESULT:-}" != "pass" && "$STEP_VIDEO_STATUS" != "ok" \
-      && "${GATE_VIDEO_ATTEMPTS:-0}" -ge "$ZHC_QUALITY_MAX_ATTEMPTS" ]]; then
+      && ( "${GATE_VIDEO_RC:-0}" != "0" || "${GATE_VIDEO_ATTEMPTS:-0}" -ge "$ZHC_QUALITY_MAX_ATTEMPTS" ) ]]; then
   log "WARN" "step=4 celebration-video: failed ${GATE_VIDEO_ATTEMPTS} attempts -- WAIVING the leg (closeout completes without the video; operator summary reports it)"
   state_set ".closeoutWaivedLegs = (((.closeoutWaivedLegs // []) + [\"celebration-video\"]) | unique) | .qualityHeld = ((.qualityHeld // []) - [\"celebration_video\"])" || true
 fi
@@ -1215,11 +1220,18 @@ fi
 # ----------------------------------------------------------------------
 critical_failed=()
 soft_failed=()
+# WF-080/WF-090 (decision D-8): a leg recorded in closeoutWaivedLegs was
+# deliberately NOT delivered. It is not a soft failure -- otherwise the matrix
+# would write "partial" and exit before `--closeout` and the operator summary,
+# and the closeout would stay partial forever, which is the very block the
+# waiver exists to remove.
+_waived_csv=",$(state_get '.closeoutWaivedLegs // [] | join(",")'),"
+_is_waived_leg() { case "$_waived_csv" in *",$1,"*) return 0 ;; *) return 1 ;; esac; }
 [[ "$STEP_INF1_STATUS"     == "failed" ]] && critical_failed+=("infographic-1")
 [[ "$STEP_INF2_STATUS"     == "failed" ]] && critical_failed+=("infographic-2")
 [[ "$STEP_TELEGRAM_STATUS" == "failed" ]] && critical_failed+=("telegram")
-[[ "$STEP_VIDEO_STATUS"    == "failed" ]] && soft_failed+=("celebration-video")
-[[ "$STEP_NOTION_STATUS"   == "failed" ]] && soft_failed+=("notion")
+[[ "$STEP_VIDEO_STATUS"    == "failed" ]] && ! _is_waived_leg celebration-video && soft_failed+=("celebration-video")
+[[ "$STEP_NOTION_STATUS"   == "failed" ]] && ! _is_waived_leg notion && soft_failed+=("notion")
 [[ "${STEP_N8N_STATUS:-skipped}" == "failed" ]] && soft_failed+=("n8n")
 # Visual intelligence set failure is soft -- the individual infographics serve as fallback
 [[ "$STEP_VISUAL_STATUS"   == "failed" ]] && soft_failed+=("visual-intelligence-set")
