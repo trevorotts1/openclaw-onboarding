@@ -308,6 +308,30 @@ def migrate_origin(run_dir):
     return uniq, None
 
 
+#: The channel a legacy bare chat id has always meant (the sender's documented
+#: deprecated contract for a caller that hands in a chat id alone). It is DATA
+#: here: an origin record that names its own channel always wins.
+LEGACY_CHAT_CHANNEL = "telegram"
+
+
+def delivery_argv(channel_send, origin, run_dir, text):
+    """The ONE channel-neutral send argv for one origin record.
+
+    Every origin kind rides the same sender -- ``channel_send.py`` -- so the
+    send rules cannot drift between channels: a studio order goes out on the
+    studio channel, and a chat origin travels on the channel the run itself
+    recorded. This program builds no telegram command of its own.
+    """
+    argv = [sys.executable, channel_send, "send", "--run-dir", run_dir,
+            "--message", text]
+    if str(origin.get("kind") or "chat") == "studio":
+        return argv + ["--channel", "studio"]
+    return argv + [
+        "--channel", "app", "--origin",
+        json.dumps({"channel": str(origin.get("channel") or LEGACY_CHAT_CHANNEL),
+                    "conversation_id": str(origin["target"])})]
+
+
 # --- one tick ----------------------------------------------------------------
 def tick(runs_dir, skill_root=SKILL_ROOT):
     """One full keepalive pass over the runs; returns the tick summary."""
@@ -457,14 +481,7 @@ def tick(runs_dir, skill_root=SKILL_ROOT):
                 delivered = False
                 for origin in origins:
                     try:
-                        if origin.get("kind") == "studio":
-                            send = [sys.executable, channel_send, "send",
-                                    "--channel", "studio", "--run-dir", run_dir,
-                                    "--message", text]
-                        else:
-                            send = ["openclaw", "message", "send", "--channel",
-                                    "telegram", "--target",
-                                    str(origin["target"]), "--message", text]
+                        send = delivery_argv(channel_send, origin, run_dir, text)
                         r = subprocess.run(send, capture_output=True, text=True,
                                            timeout=60)
                         if r.returncode == 0:
@@ -569,7 +586,10 @@ def tick(runs_dir, skill_root=SKILL_ROOT):
                                 row, rid, outcome_rc
                                 if outcome_rc is not None else act.returncode)
             if proc.returncode == 10:
-                row["state"] = ("expired" if envelope.get("expired")
+                # Supervision ends on verified completion or an explicit
+                # cancellation -- never on the reached cap. "expired" stays in
+                # FINISHED only for rows written by older versions.
+                row["state"] = ("canceled" if envelope.get("canceled")
                                 else "complete")
             row["last_useful_progress_at"] = max(
                 row.get("last_useful_progress_at") or 0,
