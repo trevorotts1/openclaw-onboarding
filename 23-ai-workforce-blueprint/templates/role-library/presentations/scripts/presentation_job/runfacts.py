@@ -1305,11 +1305,27 @@ class NotesSyncInfo:
 # per seal. None of these may ever raise into seal().
 # ---------------------------------------------------------------------------
 
+def deliverables_bundle_patterns() -> Dict[str, str]:
+    """PD-315: the ten P9-DELIVER bundle keys -> run-dir glob, derived from the
+    ONE path table (``presentation_job.deliverable_paths.CANONICAL_PATHS``).
+
+    ``{deck_slug}`` is a literal template in the table; the run-dir scan uses a
+    glob, so it expands to ``*``. Both this sealed record and
+    ``verifier_registry.slice3_verifiers`` build their lists here, so the two
+    can never drift from the canon again. A hand-kept copy previously existed
+    in both places and both pointed ``infographic_png`` at a
+    ``working/delivery/`` path no producer writes.
+    """
+    from presentation_job.deliverable_paths import CANONICAL_PATHS
+    return {key: rel.replace("{deck_slug}", "*")
+            for key, rel in CANONICAL_PATHS.items()}
+
+
 def _deliverables_fact(run_dir: Path) -> Fact:
     """Seal the P9-DELIVER bundle: every DELIVERABLE_AUDIT_SPEC key, measured.
     Uses the canonical spec's min_bytes / magic_bytes / magic_offset, and the
-    same per-key pre-curation globs the legacy phase verifier uses
-    (phase_verifiers._DELIVERY_PATTERN_BY_KEY / _DELIVERY_CONTENT_CHECK_BY_KEY).
+    canon globs from ``deliverable_paths.CANONICAL_PATHS`` (PD-315); the legacy
+    phase verifier's own map is ``phase_verifiers._DELIVERY_PATTERN_BY_KEY``.
     The content-substance probes mirror _deliverable_content_check: fish tags
     for speech_fish_md, HTML structure for teleprompter_html, ftyp/moov for
     webinar_mp4."""
@@ -1321,19 +1337,8 @@ def _deliverables_fact(run_dir: Path) -> Fact:
             "imported — the P9-DELIVER bundle cannot be measured. This is a "
             "module-level packaging break, not a run-dir state.")
 
-    # Pre-curation glob per key — mirrors phase_verifiers._DELIVERY_PATTERN_BY_KEY.
-    _pattern = {
-        "deck_pptx":         "working/delivery/*-FINAL.pptx",
-        "deck_pdf":          "working/delivery/*-FINAL.pdf",
-        "guide_pdf":         "working/deliverables/PRESENTER-GUIDE.pdf",
-        "speech_md":         "working/deliverables/PRESENTERS-SPEECH.md",
-        "speech_pdf":        "working/deliverables/PRESENTERS-SPEECH.pdf",
-        "speech_fish_md":    "working/deliverables/PRESENTERS-SPEECH-FISH-TAGGED.md",
-        "audio_mp3":         "working/delivery/PRESENTER-AUDIO.mp3",
-        "infographic_png":   "working/delivery/infographic.png",
-        "teleprompter_html": "working/deliverables/presenter-teleprompter.html",
-        "webinar_mp4":       "working/delivery/*-WEBINAR.mp4",
-    }
+    # PD-315: ONE path table — the canon in presentation_job.deliverable_paths.
+    _pattern = deliverables_bundle_patterns()
 
     infos = []
     for spec in _DAS:

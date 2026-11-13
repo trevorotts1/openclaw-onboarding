@@ -559,18 +559,9 @@ def slice3_verifiers() -> Tuple[VerifierSpec, ...]:
         composite_verifier(
             "deliverables:bundle",
             _rf.verify_deliverables,
-            (
-                "working/delivery/*-FINAL.pptx",
-                "working/delivery/*-FINAL.pdf",
-                "working/deliverables/PRESENTER-GUIDE.pdf",
-                "working/deliverables/PRESENTERS-SPEECH.md",
-                "working/deliverables/PRESENTERS-SPEECH.pdf",
-                "working/deliverables/PRESENTERS-SPEECH-FISH-TAGGED.md",
-                "working/delivery/PRESENTER-AUDIO.mp3",
-                "working/delivery/infographic.png",
-                "working/deliverables/presenter-teleprompter.html",
-                "working/delivery/*-WEBINAR.mp4",
-            ),
+            # PD-315: the canon table is the one source — the same list the
+            # sealed record measures (runfacts.deliverables_bundle_patterns).
+            tuple(_rf.deliverables_bundle_patterns().values()),
         ),
         composite_verifier(
             "ghl_upload:ledger",
