@@ -125,7 +125,7 @@ RUN_MODE_APP_COPY = {
     # location presentation-intake-poll.sh's read_run_mode() already reads.
     "storeOn": "pre_presentation_capture.RUN_MODE",
     "value_labels": {
-        "ultra": "Ultra: the strongest models you choose, up to 16x faster",
+        "ultra": "Ultra: fastest, uses the strongest models, costs the most",
         "standard": "Standard — the department default",
         "economy": "Economy — leaner and cheaper",
     },
