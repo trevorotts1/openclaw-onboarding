@@ -337,6 +337,37 @@ def _find_remote_match(entries: list, *, remote_name: str, file_id: str | None =
     return None
 
 
+_LIST_BACK_PAGE_SIZE = 200
+_LIST_BACK_MAX_PAGES = 1000  # hard stop: 200k entries; a library this big is a bug
+
+
+def _list_back_deck(location_id: str, pit: str, *, remote_name: str,
+                    file_id: str | None, opener=None) -> tuple:
+    """PD-316 — page the read-only media listing until the deck is found or the
+    listing ends. Returns ``(found_entry_or_None, error_or_None)``.
+
+    The completion list-back used to read only the FIRST page (limit=200), so a
+    deck beyond page 1 of a busy library was reported missing and closeout failed
+    on a healthy deck. Page by the size the API actually returns so an API-side
+    cap below the requested limit cannot silently stop the walk early."""
+    offset = 0
+    for _ in range(_LIST_BACK_MAX_PAGES):
+        try:
+            listing = ghl_media.list_media(location_id, pit, media_type="file",
+                                           limit=_LIST_BACK_PAGE_SIZE, offset=offset,
+                                           opener=opener)
+        except Exception as exc:  # noqa: BLE001 — readback failed: caller adds the NOTE
+            return None, repr(exc)
+        entries = listing.get("data") or []
+        found = _find_remote_match(entries, remote_name=remote_name, file_id=file_id)
+        if found:
+            return found, None
+        if not entries:
+            return None, None
+        offset += len(entries)
+    return None, None
+
+
 def _deck_pdf(uploaded):
     """The DECK PDF (named *-FINAL.pdf, kind "pdf") among the uploads — the client-facing
     deck as hosted when the assembled PPTX exceeds GHL's 25MB media-upload cap (HTTP 413,
@@ -1263,13 +1294,14 @@ def gate_ghl_media_complete(run_dir, *, expected_slide_count: int | None = None)
             loc = ghl_media.resolve_location_id()
         except Exception:  # noqa: BLE001
             return (len([r for r in reasons if not str(r).startswith("NOTE")]) == 0), reasons
-        try:
-            listing = ghl_media.list_media(loc, pit, media_type="file", limit=200)
-        except Exception:  # noqa: BLE001
-            return (len([r for r in reasons if not str(r).startswith("NOTE")]) == 0), reasons
-        entries = listing.get("data") or []
         deck_name = str(media.get("pptx_ghl_remote_name") or "")
-        found = _find_remote_match(entries, remote_name=deck_name, file_id=hosted_id)
+        found, list_error = _list_back_deck(loc, pit, remote_name=deck_name,
+                                            file_id=hosted_id)
+        if list_error is not None:
+            # PD-316: a list-back that cannot run is not proof the deck is gone —
+            # say so in the reasons instead of failing silently.
+            reasons.append("NOTE: remote list-back not performed")
+            return (len([r for r in reasons if not str(r).startswith("NOTE")]) == 0), reasons
         if not found:
             reasons.append(
                 f"{GHL_UPLOAD_GATE}: the recorded deck id {hosted_id[:24]}… is NOT "
