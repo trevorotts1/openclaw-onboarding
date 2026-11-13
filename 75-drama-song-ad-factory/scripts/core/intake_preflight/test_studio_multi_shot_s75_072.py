@@ -10,6 +10,10 @@ Proves, behaviourally, in this folder only:
   * a two-line answer marks TWO shots for revision -- each note lands in its
     own shot's contract, and the invalidation history records both shots,
     instead of the second line being folded into the first shot's change;
+  * a two-line answer whose stills are NOT made yet loses nothing: the first
+    note stops at its still, every note stays queued on the run, and the next
+    `next` after each still lands applies the rest -- a client's second note is
+    never dropped;
   * a one-line answer still produces the one `storyboard --reply` command it
     always did, and changes nothing on disk (the command path is unchanged);
   * a plain GO answer is untouched (still `storyboard --reply GO`).
@@ -84,6 +88,71 @@ def test_two_line_answer_marks_two_shots_for_revision():
         assert ["s2"] in revised and ["s3"] in revised, revised
 
 
+def test_two_line_answer_without_a_redone_still_keeps_every_note():
+    """The real path: nothing is made yet, so the first note stops at its still."""
+    with TS.tmpdir("ds-shot-") as tmp:
+        run = presented_run(tmp)                      # NO redo/<sid>.png written
+        with TS.bridge():
+            env = F._studio_apply("next", Path(run).name, run, STAGE,
+                                  "storyboard", TWO_NOTES)
+        assert env["outcome"] == "waiting", env
+        assert env["reason_code"] == "regenerate_still", env
+        assert env["data"]["shot_ids"] == ["s2"], env
+        queued = json.loads((Path(run) / "control" / "studio-shot-notes.json")
+                            .read_text(encoding="utf-8"))
+        assert queued == ["shot 2: tighter close-up", "shot 3: brighter light"], queued
+        got = contracts(run)
+        assert got["s2"]["character_action"] == "sitting at table 2", got["s2"]
+        assert got["s3"]["character_action"] == "sitting at table 3", got["s3"]
+
+
+def test_queued_notes_apply_once_each_still_lands():
+    with TS.tmpdir("ds-shot-") as tmp:
+        run = presented_run(tmp)
+        with TS.bridge():
+            F._studio_apply("next", Path(run).name, run, STAGE, "storyboard", TWO_NOTES)
+        clear_redos(run, ("s2",))
+        with TS.bridge():
+            env = F._studio_notes_drain("next", Path(run).name, run, STAGE)
+        assert env["outcome"] == "waiting", env          # shot 3 still owes a still
+        assert env["data"]["shot_ids"] == ["s2", "s3"], env
+        got = contracts(run)
+        assert got["s2"]["character_action"] == "tighter close-up", got["s2"]
+        assert got["s3"]["character_action"] == "sitting at table 3", got["s3"]
+        clear_redos(run, ("s3",))
+        with TS.bridge():
+            env = F._studio_notes_drain("next", Path(run).name, run, STAGE)
+        assert env["outcome"] == "ok", env
+        got = contracts(run)
+        assert got["s2"]["character_action"] == "tighter close-up", got["s2"]
+        assert got["s3"]["character_action"] == "brighter light", got["s3"]
+        assert got["s1"]["character_action"] == "sitting at table 1", got["s1"]
+        assert not (Path(run) / "control" / "studio-shot-notes.json").exists()
+
+
+def test_next_drains_the_queued_notes_after_the_stills_land():
+    """`next` itself resumes the queue -- no new client answer is needed."""
+    with TS.tmpdir("ds-state-") as tmp:
+        run = TS.make_state_run(tmp, "video-generation")
+        (Path(run) / "control" / "studio-order.json").write_text(json.dumps(
+            {"order_id": "o-1", "base_url": "https://studio.example"}), "utf-8")
+        with TS.bridge():
+            TS.F.cmd_storyboard(TS.ns(run_dir=str(run)))
+        with TS.bridge(answer=TWO_NOTES):
+            TS.F.cmd_next(TS.ns(run_dir=str(run)))
+        queued = json.loads((Path(run) / "control" / "studio-shot-notes.json")
+                            .read_text(encoding="utf-8"))
+        assert queued[0] == "shot 2: tighter close-up", queued
+        clear_redos(run, ("s2", "s3"))
+        with TS.bridge():                       # no new answer: the run owes these
+            TS.F.cmd_next(TS.ns(run_dir=str(run)))
+        got = json.loads((Path(run) / "storyboard" / "contracts.json")
+                         .read_text(encoding="utf-8"))
+        assert got["s2"]["character_action"] == "tighter close-up", got["s2"]
+        assert got["s3"]["character_action"] == "brighter light", got["s3"]
+        assert not (Path(run) / "control" / "studio-shot-notes.json").exists()
+
+
 def test_one_line_answer_keeps_the_single_command():
     with TS.tmpdir("ds-shot-") as tmp:
         run = presented_run(tmp)
@@ -110,6 +179,9 @@ def test_plain_go_answer_is_unchanged():
 
 TESTS = [
     test_two_line_answer_marks_two_shots_for_revision,
+    test_two_line_answer_without_a_redone_still_keeps_every_note,
+    test_queued_notes_apply_once_each_still_lands,
+    test_next_drains_the_queued_notes_after_the_stills_land,
     test_one_line_answer_keeps_the_single_command,
     test_plain_go_answer_is_unchanged,
 ]
