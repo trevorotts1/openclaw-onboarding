@@ -58,6 +58,7 @@ EXIT CODES (CLI)
 """
 
 import argparse
+import hashlib
 import json
 import re
 import sys
@@ -84,9 +85,11 @@ UNSKIPPABLE_QC_PHASES = frozenset({
 })
 
 # Canonical, sanctioned scripts. These ARE the governed render path; the patterns
-# below (createTask, per-deck render functions, etc.) legitimately live here. They
-# are allow-listed by BASENAME so that even if copied into a run dir they pass. The
-# set is seeded from the scripts dir this guard ships in, plus an explicit core.
+# below (createTask, per-deck render functions, etc.) legitimately live here.
+# PD-311: a copy in a run dir is allowed by CONTENT only — its sha256 must equal the
+# shipped file's hash (see iter_governed_script_files); the basename alone is not a
+# pass. The set is seeded from the scripts dir this guard ships in, plus an explicit
+# core.
 _CORE_CANONICAL = {
     "build_deck.py", "run_signature_deck.py", "canonical_render_guard.py",
     "build_teleprompter.py", "sync_check.py", "kie_generate.py", "ghl_media.py",
@@ -108,6 +111,81 @@ def canonical_script_names() -> set:
     except Exception:  # noqa: BLE001
         pass
     return names
+
+
+# PD-311 — the allow rule is CONTENT, not name. A script in the run folder is
+# sanctioned only when its sha256 equals the sha256 of the shipped script of the
+# same name in this scripts dir. A renamed or edited copy is a hand-rolled script.
+GOVERNED_SCRIPT_SUFFIXES = (".py", ".sh", ".js", ".mjs", ".ts")
+_SKIP_DIR_PARTS = {".venv", "venv", "site-packages", "node_modules", "__pycache__",
+                   ".git", ".pytest_cache"}
+
+
+def _sha256(path: Path) -> str:
+    h = hashlib.sha256()
+    with open(path, "rb") as fh:
+        for chunk in iter(lambda: fh.read(1 << 20), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def shipped_script_hash(name: str):
+    """sha256 of the shipped script with this basename in this scripts dir, or
+    None when no such file ships here."""
+    p = HERE / name
+    try:
+        if p.is_file():
+            return _sha256(p)
+    except Exception:  # noqa: BLE001 — unhashable: treat as not shipped
+        return None
+    return None
+
+
+def is_shipped_copy(path: Path) -> bool:
+    """True ONLY when the file's bytes hash equal the shipped file of the same
+    name. The name alone authorizes nothing (PD-311)."""
+    want = shipped_script_hash(path.name)
+    if want is None:
+        return False
+    try:
+        return _sha256(path) == want
+    except Exception:  # noqa: BLE001 — unreadable file is not a proven copy
+        return False
+
+
+def iter_governed_script_files(run_dir: Path):
+    """Yield every governed script (.py/.sh/.js/.mjs/.ts) under run_dir that is NOT
+    a byte-identical copy of the shipped script of the same name and NOT inside the
+    canonical scripts dir this guard ships in. Shared by both guards (PD-311)."""
+    for p in run_dir.rglob("*"):
+        try:
+            if not p.is_file():
+                continue
+        except Exception:  # noqa: BLE001
+            continue
+        if p.suffix.lower() not in GOVERNED_SCRIPT_SUFFIXES:
+            continue
+        try:
+            rp = p.resolve()
+        except Exception:  # noqa: BLE001
+            rp = p
+        # Skip the canonical scripts home (defensive — run dirs are normally separate).
+        try:
+            rp.relative_to(HERE)
+            continue
+        except ValueError:
+            pass
+        # Skip virtualenvs / vendored site-packages noise.
+        if set(p.parts) & _SKIP_DIR_PARTS:
+            continue
+        if is_shipped_copy(p):
+            continue
+        yield p
+
+
+def _iter_run_py_files(run_dir: Path):
+    """Back-compat alias: the governed-script scanner above."""
+    return iter_governed_script_files(run_dir)
 
 
 # ---------------------------------------------------------------------------
@@ -145,30 +223,6 @@ _BYPASS_PATTERNS = [
 ]
 
 
-def _iter_run_py_files(run_dir: Path):
-    """Yield every *.py under run_dir that is NOT a canonical sanctioned script and
-    NOT inside the canonical scripts dir this guard ships in."""
-    allow = canonical_script_names()
-    for p in run_dir.rglob("*.py"):
-        try:
-            rp = p.resolve()
-        except Exception:  # noqa: BLE001
-            rp = p
-        # Skip the canonical scripts home (defensive — run dirs are normally separate).
-        try:
-            rp.relative_to(HERE)
-            continue
-        except ValueError:
-            pass
-        if p.name in allow:
-            continue
-        # Skip virtualenvs / vendored site-packages noise.
-        parts = set(p.parts)
-        if parts & {".venv", "venv", "site-packages", "node_modules", "__pycache__"}:
-            continue
-        yield p
-
-
 def _line_of(text: str, idx: int) -> int:
     return text.count("\n", 0, idx) + 1
 
@@ -178,7 +232,7 @@ def scan_run_dir(run_dir: Path) -> list:
         {file, af_code, line, reason, snippet}
     A finding means a hand-rolled renderer/assembler was detected in the run dir."""
     findings = []
-    for path in _iter_run_py_files(run_dir):
+    for path in iter_governed_script_files(run_dir):
         try:
             text = path.read_text(errors="replace")
         except Exception:  # noqa: BLE001
@@ -452,16 +506,34 @@ _FIX2_SYMBOLS = [
 ]
 
 
+def _guard_degraded_allowed(run_dir: Path) -> bool:
+    """PD-317: a missing instrument may degrades to a pass ONLY under the engine's
+    own explicit test/CI contract. Delegates to phase_verifiers._degraded_allowed;
+    when that helper is unavailable the answer is NO (fail-closed)."""
+    try:
+        import phase_verifiers  # noqa: WPS433
+        return bool(phase_verifiers._degraded_allowed(run_dir))
+    except Exception:  # noqa: BLE001
+        return False
+
+
 def run_fix2_checks(run_dir: Path, slides_path=None) -> list:
     """Call the Fix-2 exported check symbols on build_deck if present. Returns a list
-    of (af_code, message) failures. Missing symbols are skipped (not failures)."""
+    of (af_code, message) failures. PD-317: a missing engine is a NAMED failure, not
+    a silent pass, unless phase_verifiers._degraded_allowed(run_dir) permits it."""
     failures = []
     try:
         import build_deck as bd  # noqa: WPS433
-    except ImportError:
+    except ImportError as exc:
         # U023 step 4: a genuinely ABSENT build_deck (standalone --mode pre-delivery
-        # CLI run from a directory without the engine) still degrades
-        return failures
+        # CLI run from a directory without the engine). PD-317: that is a named
+        # failure unless the explicit test/CI degrade contract is in force.
+        if _guard_degraded_allowed(run_dir):
+            return failures
+        return [(af_code,
+                 f"{af_code}: build_deck is unavailable ({exc!r}), so the Fix-2 "
+                 f"check {sym} cannot run — refusing to pass on a missing instrument.")
+                for sym, af_code in _FIX2_SYMBOLS]
     except Exception as exc:  # noqa: BLE001
         raise RuntimeError(
             "canonical_render_guard: build_deck is present but not importable "
@@ -524,12 +596,16 @@ def _qc_generator_block(run_dir: Path) -> str:
     rolled QC generators (word-count prompt rubric, overlay-readiness/blank-canvas
     reward, out-of-scope escape, sub-8.5 threshold) are a DIFFERENT class than the
     hand-rolled renderers this guard detects, so they are enforced by the sibling
-    qc_generator_guard. If that module is unavailable the surface degrades to
-    renderer-only detection (never crashes)."""
+    qc_generator_guard. PD-317: a missing qc_generator_guard is a NAMED failure, not
+    a silent pass, unless phase_verifiers._degraded_allowed(run_dir) permits it."""
     try:
         import qc_generator_guard as qcg  # noqa: WPS433
-    except Exception:  # noqa: BLE001
-        return ""
+    except Exception as exc:  # noqa: BLE001
+        if _guard_degraded_allowed(run_dir):
+            return ""
+        return (f"AF-QC-GENERATOR-UNGOVERNED: qc_generator_guard is unavailable "
+                f"({exc!r}) — could not prove the run dir is free of ungoverned QC "
+                "generators (refusing to pass on a missing instrument).")
     try:
         return qcg.guard_qc_generators(run_dir)
     except Exception as exc:  # noqa: BLE001
@@ -588,6 +664,10 @@ def guard_pre_render(run_dir: Path) -> str:
                  "explicit owner_skip_approval token (owner_approved:true + approved_by "
                  "+ reason + gate=<AF code>) in working/checkpoints/process_manifest.json. "
                  "An agent may NOT waive this on its own.")
+    lines.append("A script in the run folder is sanctioned ONLY when it is a "
+                 "byte-identical copy of the shipped script of the same name (sha256 "
+                 "match against the scripts dir). A renamed or edited copy is a "
+                 "hand-rolled script and is blocked.")
     if qc_gen_reason:
         lines.append("")
         lines.append(qc_gen_reason)
