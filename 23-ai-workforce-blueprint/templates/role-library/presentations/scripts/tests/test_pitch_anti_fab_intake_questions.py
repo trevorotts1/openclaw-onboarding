@@ -36,6 +36,7 @@ directory (test_upsell_intake_shape.py, test_upsell_verifiers.py).
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import sys
 import tempfile
@@ -72,6 +73,8 @@ def _run_driver(run_dir: Path, *args: str) -> subprocess.CompletedProcess:
     return subprocess.run(
         [sys.executable, str(DRIVER_PATH), "--run-dir", str(run_dir), *args],
         capture_output=True, text=True,
+        # PD-004c: this file proves anti-fabrication, not provenance.
+        env={**os.environ, "PRESENTATION_INTAKE_PROVENANCE": "warn"},
     )
 
 

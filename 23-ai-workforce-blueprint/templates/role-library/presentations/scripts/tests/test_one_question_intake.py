@@ -38,8 +38,14 @@ def interview(tmp_path):
     run.mkdir()
 
     def call(*args, entry=SCRIPTS / "deck-intake-driver.py", ok=True):
+        # PD-004b: a test may flip the intake-provenance switch on the real
+        # process by setting it in os.environ (the driver reads it per run).
+        call_env = dict(env)
+        if "PRESENTATION_INTAKE_PROVENANCE" in os.environ:
+            call_env["PRESENTATION_INTAKE_PROVENANCE"] = \
+                os.environ["PRESENTATION_INTAKE_PROVENANCE"]
         result = subprocess.run([sys.executable, str(entry), "--run-dir", str(run), *args],
-                                env=env, capture_output=True, text=True, timeout=20)
+                                env=call_env, capture_output=True, text=True, timeout=20)
         if ok:
             assert result.returncode == 0, result.stdout + result.stderr
         return result, json.loads(result.stdout)
@@ -182,13 +188,16 @@ def test_scanner_rejects_compound_bank_prompts_and_accepts_atomic_questions():
         {"role": "assistant", "text": "What is the purpose of this presentation?"}], bank)["pass"]
 
 
-def test_real_cli_walk_completes_and_proves_a_single_question_transcript(interview):
-    run, call = interview
-    values = {"presentation_type": "from_scratch", "pitch_included": "yes",
-              "duration_min": "45", "provider_plan": "use conservative default",
-              "standard_mode": "QUICK", "run_mode": "standard",
-              "event_price": "free", "price_mode": "straight", "final_price": "$97",
-              "vip_tier": "no", "style_pick_auto": "no"}
+WALK_VALUES = {"presentation_type": "from_scratch", "pitch_included": "yes",
+               "duration_min": "45", "provider_plan": "use conservative default",
+               "standard_mode": "QUICK", "run_mode": "standard",
+               "event_price": "free", "price_mode": "straight", "final_price": "$97",
+               "vip_tier": "no", "style_pick_auto": "no"}
+
+
+def _walk_to_complete(call, values):
+    """Answer the live turn gate until every question is answered; return the
+    last (complete) question payload."""
     seen = []
     _, q = call("--next")
     for _ in range(80):
@@ -210,6 +219,15 @@ def test_real_cli_walk_completes_and_proves_a_single_question_transcript(intervi
             answer = "Client supplied " + qid
         _, q = call("--answer", qid, answer)
     assert q["status"] == "complete", q
+    return q
+
+
+def test_real_cli_walk_completes_and_proves_a_single_question_transcript(interview, monkeypatch):
+    # PD-004c: enforce is now the default, and this walk records no client
+    # message ids -- it exercises the walk, so it asks for warn explicitly.
+    monkeypatch.setenv("PRESENTATION_INTAKE_PROVENANCE", "warn")
+    run, call = interview
+    _walk_to_complete(call, WALK_VALUES)
     _, complete = call("--complete")
     assert complete["status"] == "complete"
     trace = json.loads((run / "working/interview/intake_transcript.json").read_text())
@@ -218,3 +236,16 @@ def test_real_cli_walk_completes_and_proves_a_single_question_transcript(intervi
     entries = ledger(run)
     for field in ("AUDIENCE", "GOAL", "CTA_ACTION", "DURATION_MIN", "WANT_MOTION_GRAPHICS", "MOTION_GRAPHICS_DECLINED_REASON"):
         assert entries[field]["validated"] is True
+
+def test_complete_under_enforce_refuses_an_interview_with_no_message_ids(interview, monkeypatch):
+    """PD-004b: the same real walk, under ENFORCE, cannot complete -- none of
+    its answers names the client message it came from."""
+    monkeypatch.setenv("PRESENTATION_INTAKE_PROVENANCE", "enforce")
+    run, call = interview
+    _walk_to_complete(call, WALK_VALUES)
+    result, payload = call("--complete", ok=False)
+    assert result.returncode == 6, result.stdout + result.stderr
+    assert payload["status"] == "unproven", result.stdout
+    assert payload["mode"] == "enforce", result.stdout
+    assert payload["unproven_questions"], result.stdout
+    assert json.loads((run / "working/interview/intake_ledger.json").read_text()).get("complete") is not True
