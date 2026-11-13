@@ -232,7 +232,23 @@ $ git ls-remote --heads origin refs/heads/pd/fl02-intake-driver
 a2887c8977141451682da40485e0ef8e89854754	refs/heads/pd/fl02-intake-driver
 ```
 
-After push (full 40 hex compared literally in §10 below).
+Push of the two commits (retarget + SHA record):
+
+```
+$ git push origin HEAD:refs/heads/pd/fl02-intake-driver
+To https://github.com/trevorotts1/openclaw-onboarding.git
+   a2887c897..827a1b450  HEAD -> pd/fl02-intake-driver
+```
+
+Full 40-hex comparison, literal:
+
+```
+REMOTE_AFTER=827a1b450a1ddbcac3a154c005602339a8cc74d2
+LOCAL_HEAD  =827a1b450a1ddbcac3a154c005602339a8cc74d2
+```
+
+Equal. This report has since received its own documentation-only commits; `git ls-remote` is the
+live truth for the final head, and every push is repeated with the same literal comparison.
 
 ---
 
