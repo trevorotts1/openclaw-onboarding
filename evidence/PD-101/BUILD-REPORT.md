@@ -68,7 +68,7 @@ Occurrence counts below are measured by the A1 checker (§4), on the pre-edit bl
 
 | Row | Before (count) | After (count) |
 |---|---|---|
-| presenter-speech path — **mirror only** | `working/presenter-speech/presenters_speech.md` (1, mirror L19) | `working/deliverables/PRESENTERS-SPEECH-FISH-TAGGED.md` (1). The role file never carried the old string; it is now named in the role's SOP 9.1 Inputs too so the pair agrees (see §6, coherence edit 1). |
+| presenter-speech path — **mirror only** | `working/presenter-speech/presenters_speech.md` (1, mirror L19) | `working/deliverables/PRESENTERS-SPEECH-FISH-TAGGED.md` (1). The role file never carried the old string; it is now named in the role's SOP 9.1 Inputs too so the pair agrees (coherence edit 1, below). |
 | demo mp3 path | `working/audio-demo/<deck>_demo.mp3` (role 4, mirror 4 = 8) | `working/delivery/PRESENTER-AUDIO.mp3` (all 8 replaced; role now 7 total mentions incl. pre-existing ones, mirror 4) |
 | engine script path | `Presentations/scripts/synthesize_full_speech.py` (role 1, mirror 1) | `scripts/synthesize_full_speech.py` (role 1 in that line, mirror 1 in that line) |
 | SOP 9.1 step 4 tag rule | `MAX 2 TAGS PER LINE` (role 1, mirror 1) | `at most 2 emotion tags per line and at most 3 cues of any kind per sentence` (role 1, mirror 1) |
