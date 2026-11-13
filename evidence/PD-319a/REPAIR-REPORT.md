@@ -205,9 +205,19 @@ $ git ls-remote --heads origin refs/heads/pd/fl35-sealed-record
 7da3a8e41ef519ca5e5affd21744b4d49c27cbcf	refs/heads/pd/fl35-sealed-record
 ```
 
-Current remote head, full 40 characters, literal:
+Current remote head after push 2, full 40 characters, literal:
 `7da3a8e41ef519ca5e5affd21744b4d49c27cbcf`. Both pushes are fast-forwards
 from `74d48abe6581fe2a191e7e697d70a8b59348e797`; no force anywhere.
+
+A further commit carries this paragraph, so the remote head after it is one
+sha beyond `7da3a8e41`. A report cannot contain the sha of the commit that
+contains it; the head is verified with
+`git ls-remote --heads origin refs/heads/pd/fl35-sealed-record` and the value
+observed at hand-back is:
+
+```
+9c076e4738126fa53febdb9965acd9e211fd1d02	refs/heads/pd/fl35-sealed-record
+```
 
 ## 6. What I could not prove
 
