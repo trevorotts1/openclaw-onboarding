@@ -577,6 +577,13 @@ def resolve_cc_task_id(run_dir: Optional[Path]) -> str:
     exactly the confusion this ordering exists to prevent, so it fails closed
     rather than picking a side.
     """
+    return _task_id_sources(run_dir)[0]
+
+
+def _task_id_sources(run_dir: Optional[Path]) -> Tuple[str, bool]:
+    """(task_id, disagreed). `task_id` is "" when unknown; `disagreed` is True
+    only when BOTH files named a task and the two names differ, so a caller can
+    tell "no task recorded anywhere" from "two files contradict each other"."""
     state_tid = ""
     manifest_tid = ""
     if run_dir is not None:
@@ -601,15 +608,20 @@ def resolve_cc_task_id(run_dir: Optional[Path]) -> str:
             manifest_tid = ""
     if state_tid and manifest_tid and state_tid != manifest_tid:
         _log_reason(TASK_ID_DISAGREEMENT)
-        return ""
-    return state_tid or manifest_tid
+        return "", True
+    return state_tid or manifest_tid, False
 
 
 def _cc_board_oracle(run_dir: Optional[Path]) -> Optional[frozenset]:
     """Resolve the run's real owner message ids via cc_board. Returns a
     frozenset on success, None when the board is disabled/unreachable/unknown
     (UNDETERMINED). Never raises."""
-    task_id = resolve_cc_task_id(run_dir)
+    task_id, disagreed = _task_id_sources(run_dir)
+    if disagreed:
+        # Two files named different tasks. Falling through to the manifest-only
+        # helper below would silently pick one of them, which is the exact
+        # confusion item (3) exists to prevent.
+        return None
     try:
         import sys as _sys
         _sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
