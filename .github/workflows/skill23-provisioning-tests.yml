@@ -142,6 +142,7 @@ on:
       - "tests/unit/test_skill23_build_nondestructive.py"
       - ".github/workflows/skill23-provisioning-tests.yml"
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
     branches: [main]
     paths:
       - "23-ai-workforce-blueprint/**"
@@ -153,11 +154,12 @@ on:
       - ".github/workflows/skill23-provisioning-tests.yml"
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
   skill23-provisioning-tests:
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     name: Skill-23 provisioning tests (12 hermetic suites)
     runs-on: ubuntu-latest
     env:

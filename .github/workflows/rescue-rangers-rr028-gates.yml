@@ -37,6 +37,7 @@ on:
       - "tests/unit/rr027-*.test.sh"
       - ".github/workflows/rescue-rangers-rr028-gates.yml"
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
     paths:
       - "shared-utils/rr-readiness.sh"
       - "65-rescue-receiver/wire.sh"
@@ -50,11 +51,12 @@ on:
       - ".github/workflows/rescue-rangers-rr028-gates.yml"
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
   rescue-rangers-rr028-gates:
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     name: RR-028 gates (states + readback + probe + argv safety)
     runs-on: ubuntu-latest
     steps:

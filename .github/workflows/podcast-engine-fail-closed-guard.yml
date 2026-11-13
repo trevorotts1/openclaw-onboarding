@@ -87,6 +87,7 @@ on:
       - "58-podcast-production-engine/scripts/tests/test_duplicate_guest_guard.py"
       - ".github/workflows/podcast-engine-fail-closed-guard.yml"
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
     branches: [main]
     paths:
       - "58-podcast-production-engine/scripts/podbean_publish.sh"
@@ -105,11 +106,12 @@ on:
   workflow_dispatch:
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
   podcast-engine-fail-closed:
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     name: Channel scoping + loudness + webhook ordering + ledger linkage + smoke-test blindness
     runs-on: ubuntu-latest
     steps:
