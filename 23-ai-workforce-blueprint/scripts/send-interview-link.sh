@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 # Verified public interview invitation through the OpenClaw gateway.
-# Usage: send-interview-link.sh [--dry-run | --mint-only] [--resume] [--renew]
+# Usage: send-interview-link.sh [--dry-run | --mint-only] [--resume] [--renew] [--allow-declared]
+# --allow-declared (operator use) sends the link when the owner has DECLARED a
+#   prior completion; without the flag that case stops with exit 3.
 # --dry-run proves readiness ONLY: nothing is minted and nothing is sent, and
 #   the output says exactly that (invitation=unproven delivery=not-attempted).
 # --mint-only proves issuance through the real invitation route, then DISCARDS
@@ -21,11 +23,13 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 DRY_RUN=0
 MINT_ONLY=0
 RESUME_REQUESTED=0
+ALLOW_DECLARED=0
 while [ $# -gt 0 ]; do
   case "$1" in
     --dry-run) DRY_RUN=1; shift ;;
     --mint-only) MINT_ONLY=1; shift ;;
     --resume) RESUME_REQUESTED=1; shift ;;
+    --allow-declared) ALLOW_DECLARED=1; shift ;;
     --renew) export FORCE=1; RESUME_REQUESTED=1; shift ;;
     -h|--help) sed -n '1,10p' "$0"; exit 0 ;;
     *) echo "Unknown arg: $1" >&2; exit 2 ;;
@@ -83,7 +87,15 @@ COMPLETION_READER="$SCRIPT_DIR/../../shared-utils/interview_completion.py"
 if [ ! -f "$COMPLETION_READER" ]; then COMPLETION_READER="$SCRIPT_DIR/../../../shared-utils/interview_completion.py"; fi
 COMPLETION_STATUS="$(python3 "$COMPLETION_READER" "$STATE_FILE" 2>/dev/null)" || COMPLETION_STATUS="UNKNOWN"
 case "$COMPLETION_STATUS" in
-  COMPLETE|DECLARED) echo "[send-interview-link] REFUSED: prior interview completion recorded." >&2; exit 3 ;;
+  COMPLETE) echo "[send-interview-link] REFUSED: prior interview completion recorded." >&2; exit 3 ;;
+  DECLARED)
+    # A declared prior completion is the owner's word, not a finished interview:
+    # an operator may send anyway (BU-35).
+    if [ "$ALLOW_DECLARED" -eq 0 ]; then
+      echo "owner declared a prior completion; pass --allow-declared to send anyway" >&2
+      exit 3
+    fi
+    ;;
   INCOMPLETE) ;;
   *) echo "[send-interview-link] PENDING: completion scope/store unknown; no invitation sent." >&2; exit 8 ;;
 esac

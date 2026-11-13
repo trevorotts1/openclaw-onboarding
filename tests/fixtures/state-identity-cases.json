@@ -1,0 +1,62 @@
+{
+  "version": 1,
+  "note": "The three-way identity rule shared by ONB shared-utils/interview_completion.py prompt_status and the Command Center src/lib/interview/state-identity.ts classifyStateIdentity (BU-35). NONE of the three stamps present is legacy (the Command Center calls it unstamped); a present stamp that differs, or only some stamps present, is mismatched. Only mismatched refuses the interview link.",
+  "context": {
+    "companyId": "co-shared-1",
+    "installationId": "in-shared-1",
+    "tenantId": "te-shared-1"
+  },
+  "declarationTable": "interview_prior_completion_declarations",
+  "cases": [
+    {
+      "name": "legacy: no identity stamps, no declaration",
+      "stamps": {},
+      "declared": false,
+      "class": "legacy",
+      "commandCenterClass": "unstamped",
+      "word": "INCOMPLETE"
+    },
+    {
+      "name": "matched: all three stamps present and equal, no declaration",
+      "stamps": {
+        "companyId": "co-shared-1",
+        "installationId": "in-shared-1",
+        "tenantId": "te-shared-1"
+      },
+      "declared": false,
+      "class": "matched",
+      "commandCenterClass": "scoped",
+      "word": "INCOMPLETE"
+    },
+    {
+      "name": "mismatched: all three present, one differs",
+      "stamps": {
+        "companyId": "co-shared-1",
+        "installationId": "in-shared-1",
+        "tenantId": "te-foreign"
+      },
+      "declared": false,
+      "class": "mismatched",
+      "commandCenterClass": "mismatched",
+      "word": "UNKNOWN"
+    },
+    {
+      "name": "mismatched: only one stamp present",
+      "stamps": {
+        "companyId": "co-foreign"
+      },
+      "declared": false,
+      "class": "mismatched",
+      "commandCenterClass": "mismatched",
+      "word": "UNKNOWN"
+    },
+    {
+      "name": "legacy with the declaration flag true",
+      "stamps": {},
+      "declared": true,
+      "class": "legacy",
+      "commandCenterClass": "unstamped",
+      "word": "COMPLETE"
+    }
+  ]
+}
