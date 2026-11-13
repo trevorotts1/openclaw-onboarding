@@ -171,6 +171,8 @@ it governs only when no persona is assigned. In all cases honor the company miss
 
 ### SOP 9.0 -- PRE-PRESENTATION HARD-REQUIRED CAPTURE (runs FIRST, before mode offer)
 
+HOW TO ASK. Every question in this procedure is asked through the intake driver, one at a time: run deck-intake-driver.py --run-dir <RUN_DIR> --next, say the question it returns to the owner in your own warm voice (you may add the example given in this procedure for that field), wait for the owner's reply, then record it with --answer <id> "<the owner's exact words>" --owner-msg-id <the id of the owner's message>. Never keep answers only in brief.json. Never answer a question for the owner. When the driver reports "complete", run --complete. The driver is the record the build door checks.
+
 **When to run:** The instant a new deck request arrives, before the mode offer and before
 any other question is asked. This SOP is MANDATORY and NON-SKIPPABLE. It cannot be
 deferred to the main interview. No brief may be locked without the six hard-required fields
@@ -194,6 +196,7 @@ DARK_OK, HOOK SEED) plus the three scope fields and the style branch captured or
    break down? Give me percentages. For example: 70% African-American women, 20% mixed
    race, 10% men. Or: 100% women, diverse. Or: no people at all."
    Capture as: `REPRESENTATION_MIX` (list of {group, percent}).
+   Driver question id: `representation_mix`.
    If the owner cannot or will not answer: set `representation_uncaptured: true`, flag the
    operator ("REPRESENTATION_MIX not captured -- deck will generate with NO PEOPLE; confirm
    before build starts"), and proceed. A racial or gender default is NEVER invented.
@@ -202,6 +205,7 @@ DARK_OK, HOOK SEED) plus the three scope fields and the style branch captured or
    Ask: "In plain words, who is this audience -- for example: all women, or multicultural
    Black + white + Hispanic professionals, or mixed gender diverse?"
    Capture as: `AUDIENCE_COMPOSITION_NOTE` (a single plain-language sentence).
+   Driver question id: `audience_composition_note`.
    Derive from REPRESENTATION_MIX if the owner just answered it; no need to re-ask if the
    answer is already clear from Field 1.
 
@@ -210,6 +214,7 @@ DARK_OK, HOOK SEED) plus the three scope fields and the style branch captured or
    I need the name and a one-line description so every image is grounded in YOUR content,
    not generic inspiration."
    Capture as: `GROUNDED_CONTENT` (free text: name + one-line description).
+   Driver question id: `grounded_content`.
    If the owner does not have a name yet: capture whatever they describe and mark
    `grounded_content_provisional: true`. The build cannot start with a blank GROUNDED_CONTENT;
    if still empty at lock, block handoff and ask once more.
@@ -217,18 +222,21 @@ DARK_OK, HOOK SEED) plus the three scope fields and the style branch captured or
    **Field 4 -- VISUAL_MIX (people balance)**
    Ask: "Should the slides be people-heavy, some people, typography-led, or a mix?"
    Capture as: `VISUAL_MIX` (people-heavy / some-people / typography-led / mix).
+   Driver question id: `visual_mix`.
    Default if owner says "no preference": `mix`. Mark `visual_mix_defaulted: true`.
 
    **Field 5 -- DARK_OK (dark background permission; default: false)**
    Ask: "Default is a clean white base -- the standard that makes premium decks pop. Do
    you specifically want any dark-styled slides?"
    Capture as: `DARK_OK` (true / false). Default if owner does not answer: `false`.
+   Driver question id: `dark_ok`.
    Note: the proven gold standard eliminated all black backgrounds -- recommend false.
 
    **Field 6 -- HOOK SEED (the strongest-promise line)**
    Ask: "Is there one line you already say all the time -- the phrase you want them
    humming when they leave? The hook the whole deck will be built around?"
    Capture as: `HOOK_SEED` (free text).
+   Driver question id: `hook_seed`.
    If none: mark `hook_seed_missing: true`. The Hook Strategist will derive one from the
    offer; note this in brief.json so the Director knows to trigger the Hook Lab.
 
@@ -238,6 +246,7 @@ DARK_OK, HOOK SEED) plus the three scope fields and the style branch captured or
    SPEECH script, and even an AUDIO demo of the talk in a chosen voice. Pick one:
    deck only / +guide / +guide+speech / +audio."
    Capture as: `DELIVERABLE_SET` (one of: deck-only / +guide / +guide+speech / +audio).
+   Driver question ids: `want_teleprompter`, `want_speech_script`, `want_audio_deliverable`.
    Default if owner says "just the deck" or "no preference": `deck-only`. The Director uses
    this to decide whether to dispatch the speech chain -- Presenters Guide Specialist
    (P8.2-GUIDE, order 8.2), Presenters Speech Writer (P9-SPEECH, order 8.5), Fish Audio
@@ -250,6 +259,7 @@ DARK_OK, HOOK SEED) plus the three scope fields and the style branch captured or
    what voice or persona should it use -- your own cloned voice, a warm female narrator, a
    high-energy male host, or something else?"
    Capture as: `WANT_AUDIO_DEMO` (true / false) and `AUDIO_VOICE_PERSONA` (free text).
+   Driver question id: `want_audio_demo`.
    If "+audio" with no voice named: set `WANT_AUDIO_DEMO: true`, `audio_voice_unset: true`
    (the Audio Demonstration Specialist asks the owner via the Director before synthesizing;
    a voice is never defaulted silently). Default when not "+audio": `WANT_AUDIO_DEMO: false`.
@@ -263,12 +273,14 @@ DARK_OK, HOOK SEED) plus the three scope fields and the style branch captured or
    defaulted. The captured value is the downstream pacing authority: the speech-QC pacing
    band (target +/-10 percent, Fix 97) and the audio duration gate follow whatever was
    captured -- they never re-derive the pace from a fixed constant.
+   Driver question id: `speech_speed_preference`.
 
    **STYLE BRANCH -- "do you have a style or want me to create one?"**
    Ask: "Do you have an existing deck or visual style you want matched, a reference deck I
    should analyze, or should we CREATE a fresh signature style for you?"
    Capture as: `STYLE_SOURCE` (one of: match-existing / analyze-reference / create-new) plus
    `STYLE_REFERENCE` (a deck/file/URL when match-existing or analyze-reference).
+   Driver question id: `style_source`.
    - On match-existing or analyze-reference: note that the Brand Steward (the only permitted
      crossing) submits the reference to the Graphics DIU Style Analyst for a PPT-tier style
      card whose ID flows to the Slide Image Creator.
