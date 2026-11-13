@@ -677,9 +677,12 @@ class PollBridgeTests(unittest.TestCase):
 
     def test_reordered_option_text_asks_the_client_never_guesses(self):
         numbered = self._numbered(self._card_replies("3"))   # a lesson
+        slots = [i for i, r in enumerate(numbered) if ". " in r]
+        self.assertGreaterEqual(len(slots), 2, numbered)
+        first, second = slots[0], slots[1]
         swapped = list(numbered)
-        swapped[0] = "%s. %s" % (numbered[0].split(". ", 1)[0],
-                                 numbered[1].split(". ", 1)[1])
+        swapped[first] = "%s. %s" % (numbered[first].split(". ", 1)[0],
+                                     numbered[second].split(". ", 1)[1])
         STUDIO["line"] = 'DRAMA_ORDER r_text01 "Spring Sale"'
         STUDIO["order"] = {"order_id": "r_text01", "client_id": CLIENT,
                            "title": "Spring Sale", "replies": swapped}
