@@ -20,8 +20,8 @@ cd "$HERE/.."
 status=0
 ran=0
 separate=0
-# ui-contract, a11y-check, qr-roundtrip, download-bytes-check, approvals-view-check
-# and delivery-page-check live here. service-client-check.mjs (W1-studio-page-U1)
+# ui-contract, a11y-check, qr-roundtrip, download-bytes-check, approvals-view-check,
+# delivery-page-check and home-page-check live here. service-client-check.mjs (W1-studio-page-U1)
 # and questions-drift.mjs (W1-studio-page-U4) are wired in here as their own units'
 # files; each runs the moment it exists on this branch, and a check that is not
 # there yet is reported as skipped, never as passed.
