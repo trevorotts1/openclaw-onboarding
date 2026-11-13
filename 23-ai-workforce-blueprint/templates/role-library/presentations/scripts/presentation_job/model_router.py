@@ -919,7 +919,7 @@ def plan_report(profile: Optional[Dict[str, Any]]) -> Dict[str, Any]:
 # ---------------------------------------------------------------------------
 # FIX 11: Ultra / Standard / Economy modes -- measured-capacity concurrency
 # ---------------------------------------------------------------------------
-# DEFAULT RULING (fix spec, binding): Ultra's operator ceiling is 100
+# DEFAULT RULING (fix spec, binding): Ultra's operator ceiling is 400
 # concurrent tasks -- even when a provider advertises a larger number. It is never
 # raised by provider advertising, never "learned", and only revisited through
 # an explicit config revision with Trevor approval, gated on a REAL 7-day
@@ -1228,16 +1228,11 @@ def _cosmetic_axis_notice() -> str:
     verbatim and `.mode-plan.json` already records, so no caller had to
     change. F15's rule: a record that cannot state a difference must not
     imply one."""
-    return (f" MODE WIDTH AXIS: ultra runs at {ULTRA_OPERATOR_CEILING}, "
-            f"standard at {STANDARD_MODE_CEILING} "
-            f"(ULTRA_OPERATOR_CEILING {ULTRA_OPERATOR_CEILING}, "
-            f"STANDARD_MODE_CEILING {STANDARD_MODE_CEILING}), so declaring a "
-            f"mode changes the width. FIX 61 made the axis real. "
-            f"{STANDARD_MODE_CEILING} after it was narrowed to 25 without "
-            f"his approval; making ultra mean something again is an OPERATOR "
-            f"decision -- raise ultra above {ULTRA_OPERATOR_CEILING}, or set "
-            f"both numbers -- and is deliberately NOT taken here. Economy "
-            f"still differs, by COST policy rather than by this ceiling.")
+    shared = next(iter({MODE_OPERATOR_CEILING.get(m, ULTRA_OPERATOR_CEILING)
+                        for m in MODES}))
+    return (f" MODE WIDTH AXIS: every mode is held to the same operator "
+            f"ceiling ({shared}), so declaring a mode changes no width and "
+            f"this axis buys nothing.")
 
 
 def mode_operator_ceiling(mode: str, measured: Any) -> Tuple[int, bool]:
@@ -1323,7 +1318,7 @@ def mode_concurrency(mode: str, *,
     mode_ceiling()'s: the cap capped_width() will apply. The wave then runs
     min(what the probe measures, this) -- an upper bound, stated as one.
 
-    Hard ceilings, unchanged: no mode exceeds ULTRA_OPERATOR_CEILING (100) or
+    Hard ceilings, unchanged: no mode exceeds ULTRA_OPERATOR_CEILING (400) or
     a lower measured client ceiling -- provider advertising changes
     nothing. FIX 16 adds the per-mode share (ultra ULTRA_OPERATOR_CEILING /
     standard STANDARD_MODE_CEILING), which applies only where the client
@@ -1332,11 +1327,12 @@ def mode_concurrency(mode: str, *,
     floor dressed up as a mode decision. Economy is unchanged: its width is a
     COST policy. Unknown mode -> ValueError.
 
-    U3 -- since standard was restored to 100 the two shares are equal, so
-    ultra and standard plan and run the SAME width. The number below is still
-    exactly what capped_width() will apply (that is F15, and it is kept); it
-    is simply the same number for both modes, and the reason string says so
-    in the word COSMETIC rather than leaving a reader to infer a difference.
+    FIX 61.5 (2026-09-27 fix orders) settled the shares the other way: ultra
+    400, standard 25, economy 100, read from MODE_OPERATOR_CEILING on every
+    run. The shares are NOT equal, so ultra and standard plan and run
+    DIFFERENT widths. The number below is still exactly what capped_width()
+    will apply (that is F15, and it is kept), and the reason string states the
+    applied number rather than leaving a reader to infer a difference.
     """
     m = normalize_mode(mode)
     measured = measured_client_ceiling(profile)
@@ -1420,15 +1416,17 @@ def mode_ceiling(mode: str, *,
 
     The binding text, with the owner ruling of 2026-10-15 applied to its
     DeepSeek example (DeepSeek Direct has no provider cap to advertise):
-    "Ultra's operator ceiling is 100 concurrent
+    "Ultra's operator ceiling is 400 concurrent
     tasks -- even when a provider advertises more ... Standard and Economy
     derive from the MEASURED client capacity/cost policy and may never exceed
     the same client/provider ceiling."
     min(the mode's share of ULTRA_OPERATOR_CEILING, the client's MEASURED
     ceiling when one exists). An unmeasured client contributes no ceiling of
     its own -- the absence of a reading is not a ceiling any more than it is a
-    capability -- so only the operator's 100 applies, to every mode alike, and
-    the width still comes from what was measured.
+    capability -- so FIX 61.5 gives it its OWN mode ceiling from
+    MODE_OPERATOR_CEILING (ultra 400, standard 25, economy 100), with
+    mode_axis_in_force False because no client ceiling was determined, and the
+    width still comes from what was measured.
 
     FIX 16 -- THE MODE'S SHARE. This used to hand ULTRA_OPERATOR_CEILING to
     every mode, which made capped_width() (a min()) produce byte-identical
@@ -1436,14 +1434,15 @@ def mode_ceiling(mode: str, *,
     engine (review section 6). mode_operator_ceiling() supplies the per-mode
     share instead -- but ONLY where the client ceiling is a determined fact.
 
-    U3 -- AND THAT SHARE IS AGAIN THE SAME FOR EVERY MODE. F16 made ultra
-    differ by narrowing STANDARD_MODE_CEILING to 25, which the operator never
-    approved; U3 restored it to 100. So ultra and standard are byte-identical
-    in width once more, this ceiling included. The mode is not deleted and
-    standard is not re-narrowed to manufacture a difference -- both are the
-    operator's call. The difference between now and before F16 is that the
-    record no longer implies a difference that is not there: the reason
-    string below says COSMETIC, and mode_axis_in_force is False.
+    FIX 61.5 -- THE SHARE DIFFERS BY MODE AGAIN, AND IT IS ENFORCED. F16
+    narrowed STANDARD_MODE_CEILING to 25; U3 (2026-09-07) restored it to 100;
+    FIX 61.5 (2026-09-27 fix orders, the operator's own call) set it back to
+    25 alongside ultra 400 and economy 100. So ultra and standard are NOT
+    byte-identical in width, this ceiling included: mode_operator_ceiling()
+    reads MODE_OPERATOR_CEILING on every run, mode_axis_in_force is True on a
+    measured client, and each mode applies its own ceiling. The unmeasured
+    client gets its own mode's ceiling too, with in_force False because no
+    client ceiling was determined.
 
     WHY THIS IS NOT mode_concurrency(): that function answers "how wide will
     this mode PLAN to run" and includes Economy's COST width, which is a
