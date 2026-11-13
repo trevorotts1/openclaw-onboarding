@@ -9,7 +9,8 @@ Prove for BUILD-PLAN.md section W1-card-questions-U1:
 * a remembered "no" hides AGNES, a remembered "yes" still asks;
 * Agnes Yes turns VIDEO MODEL into the backup wording (same options, same prices);
 * ``--run-dir`` writes control/method.json and the receipt's agnes block;
-* studio-json carries ``shows_when`` and an example on every screen.
+* studio-json carries ``shows_when``, a plain heading and an example on every
+  typed screen (S75-074).
 
 Nothing here calls a provider: the card builds text and reads one local guide.
 
@@ -46,6 +47,10 @@ def _reply(q):
         return "$25"
     if q.get("free_text"):
         return TYPED
+    if q.get("recommended") is None:
+        # S75-020: AGNES marks a pick only for a client who said yes before, so
+        # "recommended" is refused there; answer the first option by number.
+        return "1"
     return "recommended"
 
 
@@ -54,10 +59,13 @@ def _plan(purpose=None, where=None, client_dir=None, overrides=None):
     FINAL question list with the replies that reached it. Building the list
     first and the replies second is what makes the two agree: the AGNES screen
     only exists once a length has been answered, so the list is still growing
-    while the early replies are being parsed."""
+    while the early replies are being parsed.
+
+    S75-006: the defaulted screens (video model, shape, photos) ride at the end
+    of the list and are NEVER asked one by one, so the walk stops there."""
     answers, qs, replies = [], IC._shaped(IC.QUESTIONS, [], client_dir), []
     overrides = dict(overrides or {})
-    while len(answers) < len(qs):
+    while len(answers) < len(qs) and not qs[len(answers)].get("defaulted"):
         q = qs[len(answers)]
         if q["id"] == "purpose" and purpose is not None:
             r = str(purpose)
@@ -128,7 +136,8 @@ def test_purpose_is_first_and_carries_its_own_wording():
     qs, _ = _plan()
     assert _ids(qs)[0] == "purpose"
     msg = IC.render_step(1, qs)
-    assert msg.splitlines()[0] == "Question 1 of %d - PURPOSE" % len(qs)
+    #: U-GEN425: the live counter numbers the screens asked one by one.
+    assert msg.splitlines()[0] == "Question 1 of %d - PURPOSE" % len(IC.askable(qs))
     assert "What is this video for?" in msg
     assert "(RECOMMENDED)" in msg
     assert ("I recommend option 1 (Grow my business) because one production gives "
@@ -180,7 +189,7 @@ def test_each_purpose_gets_the_right_follow_up_and_the_right_lengths():
 def test_the_permission_block_is_the_wording_in_the_method_doc():
     qs, _ = _plan(purpose=2)
     lines = IC.render_step(2, qs).splitlines()
-    assert lines[0] == "Question 2 of %d - PERMISSION" % len(qs)
+    assert lines[0] == "Question 2 of %d - PERMISSION" % len(IC.askable(qs))
     assert lines[1] == "Do you have your client's permission to use their testimonial?"
     assert lines[2] == "1. Yes"
     assert lines[3] == "2. No - pause this order until I have it."
@@ -358,7 +367,10 @@ def test_studio_json_carries_shows_when_and_an_example_on_every_screen(capsys):
         assert qid in by_id, qid
     for s in screens:                       # every screen, card and conditional
         assert s["shows_when"], s["id"]
-        assert s["example"], s["id"]
+        # S75-074 step 3: only a typed screen shows an example; a choice screen
+        # shows its option text instead.
+        if s["typed"]:
+            assert s["example"], s["id"]
         assert s["question"], s["id"]
     assert by_id["purpose"]["shows_when"] == {"purpose": [1, 2, 3, 4]}
     assert by_id["episode_length"]["shows_when"] == {"purpose": [1]}

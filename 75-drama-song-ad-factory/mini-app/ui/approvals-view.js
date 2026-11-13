@@ -8,17 +8,23 @@
 // approvals and draws one card per item into `root`. It resolves with the items
 // it rendered.
 //
-// `mini-app/approvals/ui.mjs` holds the same card model but that folder is NOT
-// served to the phone, so nothing is imported from it: the headings are copied
-// verbatim, and its rules are kept here — a plain `el()` builder, `textContent`
-// only (never `innerHTML`), and every state carried in words.
+// `mini-app/approvals/ui.mjs` holds an older card model but that folder is NOT
+// served to the phone, so nothing is imported from it: the headings are this
+// page's own plain words (a second revision is named), and the same rules are
+// kept here — a plain `el()` builder, `textContent` only (never `innerHTML`),
+// and every state carried in words.
 //
 // Buttons and the exact value each one sends (SPEC §4):
 //   script      Looks great        -> "approve"
 //               Change something   -> the typed text
 //   song        Pick this one      -> "1" .. "3" (which of the players)
 //   storyboard  Approve all        -> "GO"
-//               Change this shot   -> "shot N: <text>"
+//               Send my changes    -> ONE answer, one line per filled box:
+//                                     "shot 2: <text>" newline "shot 5: <text>"
+//
+// S75-072: the storyboard card has no per-shot button any more. Every note the
+// client types goes out in a single answer, so no note can be left behind, and
+// the box side (U-A09) splits that answer back into one change per shot.
 //
 // ST5 — MEDIA IS FETCHED, NOT HOT-LINKED.
 // Every file URL the service hands back sits behind the same `x-ds-key`
@@ -39,7 +45,7 @@
 // is fetched: an item can never point the page at another origin.
 //
 // The first answer wins: a second answer comes back as HTTP 409
-// APPROVAL_ANSWER_TAKEN and the card says "Already answered".
+// APPROVAL_ANSWER_TAKEN and the card says it was already answered elsewhere.
 //
 // Checked by checks/approvals-view-check.mjs (fake service + DOM shim).
 // =============================================================================
@@ -47,13 +53,19 @@
 // The page's link key parser — T07 owns service-client.js (32 or 64 hex).
 import { linkKey } from "./service-client.js";
 
-// Copied from mini-app/approvals/ui.mjs (APPROVAL_HEADINGS) — that path is not
-// served to the phone, so the words travel with this file.
-const APPROVAL_HEADINGS = Object.freeze({
-  script: "Approval 1 — the script",
-  song: "Approval 2 — the song (pick 1 of 3)",
-  storyboard: "Approval 3 — the storyboard",
+// The page's own heading words. A card past its first version says so, so the
+// client can tell a first look from a second one.
+const STAGE_WORDS = Object.freeze({
+  script: "Your script",
+  song: "Your song — pick 1 of 3",
+  storyboard: "Your storyboard",
 });
+
+function headingFor(item) {
+  const base = STAGE_WORDS[item.stage] || `Your ${item.stage}`;
+  const version = Number(item.version);
+  return version > 1 ? `${base} (revision ${version})` : base;
+}
 
 // The order the three cards are shown in (same as ui.mjs APPROVAL_ITEMS).
 const STAGE_ORDER = Object.freeze(["script", "song", "storyboard"]);
@@ -116,8 +128,19 @@ function disable(node) {
   else node.disabled = true;
 }
 
-const answerWords = (item) =>
-  `You answered: “${item.answer.value}”. That answer is recorded and stays on the page.`;
+// What the card says once an answer is recorded. The recorded value is the
+// service's own ("approve", "GO", a song number, or the typed sentence), so the
+// sentence is chosen from it and never from a guess about the answerer.
+function answerWords(item) {
+  const value = item.answer && item.answer.value != null ? String(item.answer.value) : "";
+  if (item.stage === "song" && /^[1-9][0-9]*$/.test(value)) {
+    return `You picked version ${value}.`;
+  }
+  if (value === "approve" || value === "GO") {
+    return "Approved. We are moving to the next step.";
+  }
+  return "Your changes were sent. A new version will appear here.";
+}
 
 function messageCard(heading, text) {
   return el("div", { class: "card approval-card" }, [
@@ -198,6 +221,14 @@ const isRevisionRequired = (err) => !!err && (
 // Metadata says only that the browser read the header; HAVE_FUTURE_DATA (3) is
 // the first state that says it can actually start playing.
 const PLAYABLE_READY_STATE = 3;
+
+// A card's card-wide answer buttons. A song pick gates itself (one button per
+// version) and lists none here; a storyboard card gates its two buttons
+// ("Approve all" and "Send my changes"), which unlock together once every still
+// is on the page.
+function gateButtons(gate) {
+  return gate && Array.isArray(gate.answerButtons) ? gate.answerButtons : [];
+}
 
 function imageReady(img) {
   if (typeof img.decode === "function") return img.decode();
@@ -306,15 +337,17 @@ async function hydrateMedia(ctx, job, generation) {
         disable(job.button);
         if (job.gate) {
           job.gate.failed = true;
-          disable(job.gate.approveButton);
+          for (const b of gateButtons(job.gate)) disable(b);
         }
-        mediaFailed(ctx, job.item, "the browser reported a media error");
+        mediaFailed(ctx, job.item);
       });
     }
     enable(job.button);
     if (job.gate) {
       job.gate.pending -= 1;
-      if (job.gate.pending === 0 && !job.gate.failed) enable(job.gate.approveButton);
+      if (job.gate.pending === 0 && !job.gate.failed) {
+        for (const b of gateButtons(job.gate)) enable(b);
+      }
     }
   } catch (err) {
     if (generation !== ctx.generation || ctx.disposed) return;
@@ -325,10 +358,10 @@ async function hydrateMedia(ctx, job, generation) {
     if (job.gate) {
       job.gate.pending -= 1;
       job.gate.failed = true;
-      disable(job.gate.approveButton);
+      for (const b of gateButtons(job.gate)) disable(b);
     }
     disable(job.button);
-    mediaFailed(ctx, job.item, errText(err));
+    mediaFailed(ctx, job.item);
   }
 }
 
@@ -362,11 +395,20 @@ async function reloadApprovalsInto(ctx) {
   if (!ctx.disposed && live.get(ctx.target) === ctx) paint(ctx);
 }
 
-function mediaFailed(ctx, item, text) {
-  const card = ctx.cards.get(cardKey(item));
-  const line = `That file could not be shown (${text}). The answer stays locked until it can.`;
-  if (card) card.append(el("p", { class: "refusal", text: line }));
-  announce(line);
+function mediaFailed(ctx, item) {
+  const key = cardKey(item);
+  const card = ctx.cards.get(key);
+  if (!card) return;
+  if (ctx.failed.has(key)) return; // one notice per card until the next paint
+  ctx.failed.add(key);
+  card.append(el("p", { class: "refusal", text: "This file would not load." }));
+  card.append(el("div", { class: "actions" }, [
+    // A fresh paint re-runs the load: a file that never arrived is fetched
+    // again, and the answer unlocks once every file on the card is ready.
+    actionBtn("Try again", () => { paint(ctx); return Promise.resolve(); }),
+  ]));
+  card.append(el("p", { class: "muted", text: "If it still will not load, answer in your chat instead." }));
+  announce("This file would not load.");
 }
 
 // ── removed-root cleanup ─────────────────────────────────────────────────────
@@ -421,7 +463,7 @@ if (typeof globalThis.addEventListener === "function") {
 // ── the three card bodies ────────────────────────────────────────────────────
 function scriptControls(ctx, item) {
   const id = `change-${item.stage}-${item.version}`;
-  const input = el("input", { id, type: "text", autocomplete: "off" });
+  const input = el("textarea", { id, rows: "4", autocomplete: "off" });
   input.value = "";
   return [
     el("label", { class: "hint", for: id, text: "What should change? Type it here." }),
@@ -444,7 +486,7 @@ function songControls(ctx, item) {
   const key = cardKey(item);
   const files = Array.isArray(item.files) ? item.files : [];
   const choices = Array.isArray(item.choices) ? item.choices : [];
-  const gate = ctx.gates.get(key) || { pending: 0, failed: false, approveButton: null };
+  const gate = ctx.gates.get(key) || { pending: 0, failed: false, answerButtons: [] };
   const options = files.length
     ? files.slice(0, 3).map((f, i) => ({ n: i + 1, file: f, label: choices[i] ? choices[i].label : null }))
     : choices.map((c, i) => ({
@@ -468,7 +510,7 @@ function songControls(ctx, item) {
       gate.pending += 1;
       ctx.jobs.push({ item, file: o.file, node: player, button: pick, gate, kind: "audio" });
     }
-    return el("div", { class: "option" }, [
+    return el("div", { class: "media-row" }, [
       player,
       o.label ? el("p", { class: "hint", text: `Version ${o.n}: ${o.label}` }) : null,
       pick,
@@ -488,35 +530,41 @@ function storyboardControls(ctx, item) {
   const shots = files.length
     ? files.map((f, i) => ({ n: i + 1, file: f }))
     : [{ n: 1, file: null }];
-  const gate = ctx.gates.get(key) || { pending: 0, failed: false, approveButton: null };
+  const gate = ctx.gates.get(key) || { pending: 0, failed: false, answerButtons: [] };
 
+  const boxes = [];
   const rows = shots.map((s) => {
     const id = `shot-${item.version}-${s.n}`;
     const input = el("input", { id, type: "text", autocomplete: "off" });
     input.value = "";
+    boxes.push({ n: s.n, input });
     const still = s.file ? el("img", { alt: `Shot ${s.n} of the storyboard` }) : null;
-    const change = actionBtn("Change this shot", () => {
-      const value = String(input.value || "").trim();
-      if (!value) {
-        announce("Write what should change, then tap Change this shot.");
-        return Promise.resolve();
-      }
-      return submit(ctx, item, `shot ${s.n}: ${value}`);
-    }, Boolean(s.file));
     if (s.file) {
       gate.pending += 1;
-      ctx.jobs.push({ item, file: s.file, node: still, button: change, gate, kind: "image" });
+      ctx.jobs.push({ item, file: s.file, node: still, button: null, gate, kind: "image" });
     }
-    return el("div", { class: "option" }, [
+    return el("div", { class: "media-row" }, [
       still,
       el("label", { class: "hint", for: id, text: `What should change in shot ${s.n}?` }),
       input,
-      change,
     ]);
   });
 
   const approve = actionBtn("Approve all", () => submit(ctx, item, "GO"), files.length > 0);
-  gate.approveButton = approve;
+  // S75-072: every filled box leaves in ONE answer ("shot N: text" per line),
+  // so the box side never sees a second note folded into the first shot's text.
+  const sendAll = actionBtn("Send my changes", () => {
+    const lines = boxes
+      .map(({ n, input }) => ({ n, text: String(input.value || "").trim() }))
+      .filter((b) => b.text)
+      .map(({ n, text }) => `shot ${n}: ${text}`);
+    if (!lines.length) {
+      announce("Write what should change under at least one shot first.");
+      return Promise.resolve();
+    }
+    return submit(ctx, item, lines.join("\n"));
+  }, files.length > 0);
+  gate.answerButtons = [approve, sendAll];
   ctx.gates.set(key, gate);
 
   return [
@@ -524,13 +572,13 @@ function storyboardControls(ctx, item) {
       el("legend", { text: "Every shot, in order." }),
       ...rows,
     ]),
-    el("div", { class: "actions" }, [approve]),
+    el("div", { class: "actions" }, [approve, sendAll]),
   ];
 }
 
 // ── one card ─────────────────────────────────────────────────────────────────
 function cardFor(ctx, item) {
-  const heading = APPROVAL_HEADINGS[item.stage] || `Approval — ${item.stage}`;
+  const heading = headingFor(item);
   const body = [el("h2", { text: heading })];
 
   if (item.text) body.push(el("p", { class: "approval-text", text: String(item.text) }));
@@ -563,6 +611,7 @@ function paint(ctx) {
   ctx.cards = new Map();
   ctx.gates = new Map();
   ctx.jobs = [];
+  ctx.failed = new Set();
   const cards = ctx.items.length
     ? ctx.items.map((item) => cardFor(ctx, item))
     : [messageCard("Your approvals", "Nothing is waiting for your approval right now.")];
@@ -589,7 +638,7 @@ async function submit(ctx, item, value) {
     announce(`Answered: ${value}`);
     paint(ctx);
   } catch (err) {
-    if (isTaken(err)) showNotice(ctx, item, "Already answered");
+    if (isTaken(err)) showNotice(ctx, item, "This was already answered, from your chat or another device. Nothing more to do here.");
     else showNotice(ctx, item, `That answer was not saved (${errText(err)}). Nothing was lost — try again.`);
   }
 }
@@ -642,6 +691,7 @@ export async function renderApprovalsFor(order, root) {
     jobs: [],
     media: new Map(),
     nodes: new Set(),
+    failed: new Set(),
     generation: 0,
     reloadSeq: 0,
     disposed: false,
