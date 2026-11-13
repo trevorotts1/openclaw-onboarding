@@ -35,6 +35,7 @@ class TestIntakeWriter(unittest.TestCase):
                 "tone": "Inspirational",
                 "final_price": "$497",
                 "speech_speed_preference": "default",
+                "duration_min": "45 minutes",
                 "want_sales_checkout": "yes",
                 "want_vsl_page": "no",
             }
@@ -61,7 +62,8 @@ class TestIntakeWriter(unittest.TestCase):
                            "final_price": "$1", "speech_speed_preference": "default",
                            "want_sales_checkout": "yes", "want_vsl_page": "no",
                            "want_email_sequences": "no",
-                           "want_motion_graphics": "no"}}
+                           "want_motion_graphics": "no",
+                           "duration_min": "45 minutes"}}
         intake = iw.assemble_intake(raw, run_id="R2")
         with tempfile.TemporaryDirectory() as tmp:
             run_dir = pathlib.Path(tmp) / "runs" / "R2"
@@ -83,6 +85,7 @@ class TestIntakeWriter(unittest.TestCase):
             "tone": "Inspirational",
             "final_price": "$497",
             "want_sales_checkout": "yes",
+            "duration_min": "45 minutes",
             "presentation_type": "from_scratch",  # kept last: turns[0] below must stay offer_name
         }}
         intake = iw.assemble_intake(raw, run_id="R3")
@@ -179,7 +182,8 @@ class TestIntakeWriter(unittest.TestCase):
         provenance than this bridge's own synthetic Q&A transcript, and
         silently replacing it would be a real provenance loss. This proves
         the guard: raises, writes nothing, leaves the signed envelope intact."""
-        raw = {"answers": {"offer_name": "X", "presentation_type": "from_scratch"}}
+        raw = {"answers": {"offer_name": "X", "presentation_type": "from_scratch",
+                           "duration_min": "45 minutes"}}
         intake = iw.assemble_intake(raw, run_id="R6")
         with tempfile.TemporaryDirectory() as tmp:
             run_dir = pathlib.Path(tmp) / "runs" / "R6"
@@ -205,7 +209,8 @@ class TestIntakeWriter(unittest.TestCase):
     def test_write_transcript_still_writes_normally_when_no_envelope_present(self):
         """Negative control: the guard must not block the normal case (no
         pre-existing transcript, or a pre-existing non-envelope transcript)."""
-        raw = {"answers": {"offer_name": "X", "presentation_type": "from_scratch"}}
+        raw = {"answers": {"offer_name": "X", "presentation_type": "from_scratch",
+                           "duration_min": "45 minutes"}}
         intake = iw.assemble_intake(raw, run_id="R7")
         with tempfile.TemporaryDirectory() as tmp:
             run_dir = pathlib.Path(tmp) / "runs" / "R7"
@@ -324,6 +329,7 @@ class TestIntakeWriter(unittest.TestCase):
                 "tone": "Inspirational",
                 "final_price": "$497",
                 "speech_speed_preference": "default",
+                "duration_min": "45 minutes",
                 "want_sales_checkout": "yes",
                 "want_vsl_page": "no",
             }
@@ -372,6 +378,29 @@ class TestIntakeWriter(unittest.TestCase):
         self.assertEqual(set(prov), {"VISUAL_MIX", "DARK_OK"})
         self.assertEqual(prov["VISUAL_MIX"]["source"], "constant")
 
+
+    def test_talk_length_comes_from_the_client_never_a_constant(self):
+        """PD-082b A1: the writer used to hardcode target_talk_minutes=20, so
+        a client who asked for 45 minutes got a deck sized to 20. The
+        client's own duration answer sets it, under BOTH keys the speech
+        harness may read."""
+        raw = {"answers": {
+            "presentation_type": "from_scratch",
+            "offer_name": "The Momentum Method",
+            "duration_min": "45 minutes",
+        }}
+        intake = iw.assemble_intake(raw, run_id="R9")
+        self.assertEqual(intake["target_talk_minutes"], 45)
+        self.assertEqual(intake["DURATION_MIN"], 45)
+
+    def test_no_duration_fails_closed_naming_duration_min(self):
+        """PD-082b A1: an absent talk length raises IntakeIncompleteError
+        naming duration_min -- never a silent 20-minute default."""
+        raw = {"answers": {"presentation_type": "from_scratch",
+                           "offer_name": "The Momentum Method"}}
+        with self.assertRaises(iw.IntakeIncompleteError) as ctx:
+            iw.assemble_intake(raw, run_id="R10")
+        self.assertIn("duration_min", str(ctx.exception))
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
