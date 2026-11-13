@@ -15,13 +15,17 @@ from character_library import character_library as CL  # noqa: E402
 from choice_card.intake_card import intake_card as IC  # noqa: E402
 
 
-#: DSR-105: the story brief opens the card, so the saved-character pick sits
-#: where the brief's own typed CHARACTER question would have sat -- one
-#: "who stars" question either way.
-AT = len(IC.BRIEF_IDS) - 1                      # 0-based slot
+#: S75-006: CHARACTER is the fourth screen of the card a new run asks (the OFFER
+#: reply carries the web address, so OFFER LINK is never a screen of its own), and
+#: the saved-character pick takes that same slot -- one "who stars" question
+#: either way. Read the slot off the card so a re-ordered card cannot drift.
+AT = [q["id"] for q in IC.QUESTIONS].index("character")   # 0-based slot
 N = len(IC.QUESTIONS)
-#: the brief typed answers, then the saved-character pick.
-BRIEF = IC.example_replies()[:AT]
+#: the count the chat numbers its one-at-a-time questions by: every screen that
+#: is asked (the defaulted recap lines are not).
+ASKED = len([q for q in IC.QUESTIONS if not q.get("defaulted")])
+#: the answers that come before the saved-character pick.
+BRIEF = IC.example_replies(IC.QUESTIONS)[:AT]
 
 NEW = ("Question %d of %d - CHARACTER\n"
        "Do you want to create a new character for this ad, or use one you've used before?\n"
@@ -66,7 +70,7 @@ class SavedCharacterQuestion(unittest.TestCase):
         empty = IC._with_saved_character(os.path.join(self.t, "empty"))
         self.assertEqual(len(empty), len(IC.QUESTIONS))
         first = IC.conversation([], empty)["message"]
-        self.assertTrue(first.startswith(NO_SAVED + "\n\nQuestion 1 of %d - OFFER" % len(IC.QUESTIONS)))
+        self.assertTrue(first.startswith(NO_SAVED + "\n\nQuestion 1 of %d - OFFER" % ASKED))
         self.assertTrue(IC.render_card(empty).startswith(NO_SAVED + "\n\nQuestion 1 of %d" % len(IC.QUESTIONS)))
         self.assertNotIn("CHARACTER", first)
         self.assertNotIn(NO_SAVED, IC.conversation(["1"], empty)["message"])   # shown once
@@ -74,7 +78,9 @@ class SavedCharacterQuestion(unittest.TestCase):
         self.assertNotIn(NO_SAVED, IC.render_card(self.qs))                    # saved: no such line
 
     def test_recap_plain_english_and_change_by_number(self):
-        rest = ["recommended"] * 5 + ["$25"] + ["recommended"] * 3      # models..look, model, budget, three approvals
+        #: every screen the card asks after CHARACTER (S75-006): AI MODELS,
+        #: LENGTH, MUSIC STYLE, VIDEO STYLE, CHECKPOINTS, BUDGET.
+        rest = ["1", "1", "1", "1", "1", "$25"]
         line = AT + 1                                                   # the saved-character line number
         st = IC.conversation(BRIEF + ["3"] + rest, self.qs)
         self.assertIn("%d. Character: Maya Lee (saved)" % line, st["message"])
@@ -83,7 +89,13 @@ class SavedCharacterQuestion(unittest.TestCase):
         st = IC.conversation(BRIEF + ["1"] + rest + [str(line), "2"], self.qs)
         self.assertIn("%d. Character: Dre (saved)" % line, st["message"])
         st = IC.conversation(BRIEF + ["1"] + rest + [str(line)], self.qs)
-        self.assertEqual(st["message"], IC.render_step(line, self.qs))
+        #: the re-asked screen is the CHARACTER question itself. The chat counts
+        #: only the screens it asks one at a time (S75-006), the card counts every
+        #: line, so only that count differs -- compare the question body exactly.
+        self.assertEqual(st["message"].split("\n", 1)[1],
+                         IC.render_step(line, self.qs).split("\n", 1)[1])
+        self.assertRegex(st["message"].splitlines()[0],
+                         r"^Question %d of \d+ - CHARACTER$" % line)
 
 
 if __name__ == "__main__":

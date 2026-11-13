@@ -74,8 +74,11 @@ class RoundTrip(unittest.TestCase):
             out = subprocess.run([sys.executable, card, "--client-dir", self.client],
                                  capture_output=True, text=True, check=True).stdout
             self.assertIn("saved with us", out)
-            n = len(IC.QUESTIONS)          # five story-brief questions then the nine choices (DSR-105)
-            self.assertIn("Question %d of %d - AI MODELS" % (len(IC.BRIEF_IDS) + 1, n), out)
+            n = len(IC.QUESTIONS)          # the card a new run asks (S75-006)
+            #: OFFER now carries the web address, so the screens after it are
+            #: AUDIENCE, CHARACTER, AI MODELS. Read the slot off the card.
+            models_at = [q["id"] for q in IC.QUESTIONS].index("models") + 1
+            self.assertIn("Question %d of %d - AI MODELS" % (models_at, n), out)
             self.assertIn("Question 2 of %d - " % n, out)
 
 
