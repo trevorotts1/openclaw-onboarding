@@ -547,7 +547,8 @@ def test_the_mode_is_recorded_and_handed_to_the_engine(monkeypatch, tmp_path,
     assert record["declared"] is True
     assert record["mode_source"] == "--mode"
     assert record["ceiling"]["ceiling"] == 100
-    assert record["concurrency"]["operator_ceiling"] == 100
+    # FIX 61 (7e5c4d6f3): the global operator ceiling is 400.
+    assert record["concurrency"]["operator_ceiling"] == model_router.ULTRA_OPERATOR_CEILING
     # 3. the banner
     out = capsys.readouterr()
     assert "run mode ULTRA" in (out.out + out.err), (out.out + out.err)[-1500:]
