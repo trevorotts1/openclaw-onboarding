@@ -289,38 +289,46 @@ def copy_to_flat(source_path: str, dest_dir: str, dest_name: str) -> Tuple[str, 
 
 
 def _read_owner_skip_approvals(run_dir: Path) -> set:
-    """Read owner_skip_approval tokens from the run's process manifest or waivers.
+    """Deliverable keys the owner has authentically approved for skipping (PD-314).
 
-    Returns a set of deliverable keys that the owner has explicitly approved for skipping.
+    The ONE source is the run's operator-signed waiver ledger — ``waivers.json``
+    at the run root, read through ``waivers.load_waivers`` (the file
+    ``waivers.py`` itself reads: the old code looked in ``working/waivers.json``
+    and therefore never saw a real waiver). A key counts only when its record
+    passes ``waivers.validate_waiver``: the client's own quoted words, a
+    captured_at, and — for owner-claimed records — the approvals oracle. A
+    record the validator rejects approves nothing.
+
+    The old ``working/checkpoints/process_manifest.json`` branch is deleted: the
+    engine writes that ledger itself, so a typed string there is a self-mint and
+    can never authorize a skip.
+
+    A validated record names the deliverable it covers in its ``deliverable``
+    field (one key); a record whose ``rule`` is itself a deliverable key is also
+    honored, for a waiver vocabulary that names keys directly. Malformed or
+    unreadable ledgers approve nothing (fail-closed).
     """
+    try:
+        from presentation_job.waivers import WaiverError, load_waivers, validate_waiver
+    except ImportError:  # pragma: no cover — mid-fleet-roll box safety
+        return set()
+
+    try:
+        records = load_waivers(Path(run_dir))
+    except WaiverError:
+        return set()
+
     approved: set = set()
-
-    # Check process_manifest.json
-    pm = run_dir / "working" / "checkpoints" / "process_manifest.json"
-    try:
-        if pm.is_file():
-            obj = json.loads(pm.read_text(encoding="utf-8"))
-            skips = obj.get("owner_skip_approval") or []
-            if isinstance(skips, list):
-                for s in skips:
-                    if isinstance(s, str):
-                        approved.add(s)
-                    elif isinstance(s, dict):
-                        approved.add(s.get("key", ""))
-    except (json.JSONDecodeError, OSError):
-        pass
-
-    # Check waivers.json for skipped deliverables
-    wf = run_dir / "working" / "waivers.json"
-    try:
-        if wf.is_file():
-            obj = json.loads(wf.read_text(encoding="utf-8"))
-            for w in obj if isinstance(obj, list) else []:
-                if isinstance(w, dict) and w.get("rule") in REQUIRED_KEYS:
-                    approved.add(w["rule"])
-    except (json.JSONDecodeError, OSError):
-        pass
-
+    for rec in records:
+        if not isinstance(rec, dict):
+            continue
+        try:
+            validate_waiver(rec, Path(run_dir))
+        except WaiverError:
+            continue
+        for named in (rec.get("deliverable"), rec.get("rule")):
+            if isinstance(named, str) and named in REQUIRED_KEYS:
+                approved.add(named)
     return approved
 
 
@@ -548,6 +556,9 @@ def curate(run_dir: str | Path, deck_slug: Optional[str] = None, force: bool = F
         "total_required": len(REQUIRED_DELIVERABLES),
         "curated_count": sum(1 for c in curated if c.get("status") == "curated"),
         "skipped_count": sum(1 for c in curated if c.get("status") == "skipped-by-owner"),
+        # PD-314: the skipped keys, named, so self_audit reports the same skips
+        # the curation took instead of failing them as missing.
+        "skipped_keys": sorted(owner_skip),
         "missing_count": len(missing),
         "files": curated,
     }

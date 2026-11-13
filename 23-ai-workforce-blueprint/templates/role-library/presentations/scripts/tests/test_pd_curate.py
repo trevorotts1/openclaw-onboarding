@@ -1,4 +1,4 @@
-"""PD-303 — Curate from declared paths only (D-32).
+"""PD-303 — Curate from declared paths only (D-32). PD-314 — one skip rule.
 
 Bar (01-BUILD-SPEC.md, section PD-303):
   * curation resolves each key from ``deliverable_paths.CANONICAL_PATHS`` and a
@@ -242,3 +242,137 @@ def test_self_audit_real_ftyp_video_passes(tmp_path):
     result = self_audit.audit_deliverable(str(good), item)
 
     assert result["verdict"] == "PASS", result["reason"]
+
+
+# ---------------------------------------------------------------------------
+# PD-314 — ONE skip rule for curation and self-audit
+#
+# Bar (01-BUILD-SPEC.md, section PD-314):
+#   * `curate._read_owner_skip_approvals` reads `run_dir/waivers.json` through
+#     `waivers.load_waivers` and accepts a skip only for a record
+#     `validate_waiver` accepts; the unvalidated process_manifest branch is gone;
+#   * the skipped keys are written to working/checkpoints/curation_manifest.json;
+#   * `self_audit.audit_all` reports those keys as SKIPPED (owner), not failed.
+# ---------------------------------------------------------------------------
+def _audit_bytes(item: dict) -> bytes:
+    """Bytes that clear one audit row: its magic prefix, its byte floor."""
+    size = item["min_bytes"] + 2048
+    if item["key"] == "webinar_mp4":
+        head = b"\x00\x00\x00\x18ftypmp42"
+    elif item["key"] == "teleprompter_html":
+        head = b"<!DOCTYPE html><html><body>teleprompter</body></html>"
+    else:
+        head = item.get("magic_bytes") or b""
+    return head + b"\x00" * (size - len(head))
+
+
+def _seed_auditable_bundle(run_dir: pathlib.Path, *, skip=()) -> None:
+    """Seed all ten deliverables at their declared paths, sized for the audit."""
+    run_dir.mkdir(parents=True, exist_ok=True)
+    _write(run_dir / "working" / "copy" / "intake.json",
+           json.dumps({"deck_slug": SLUG}).encode())
+    for item in self_audit.DELIVERABLE_AUDIT_LIST:
+        if item["key"] in skip:
+            continue
+        _write(_declared_path(run_dir, item["key"]), _audit_bytes(item))
+
+
+def _write_waiver(run_dir: pathlib.Path, *, rule: str, deliverable: str | None,
+                  quote: str, intra_run_path: str = "waivers.json") -> None:
+    """Write a client-sourced waiver; the quote is recorded in the client's intake."""
+    intake = run_dir / "working" / "copy" / "intake.json"
+    obj = json.loads(intake.read_text(encoding="utf-8"))
+    obj["special_instructions"] = f"Please {quote} for this deck."
+    intake.write_text(json.dumps(obj), encoding="utf-8")
+    record = {
+        "rule": rule,
+        "source": "intake_field",
+        "intake_field": "special_instructions",
+        "client_request_quote": quote,
+        "captured_at": "2026-11-13T00:00:00Z",
+        "captured_from": "operator",
+    }
+    if deliverable:
+        record["deliverable"] = deliverable
+    path = run_dir / intra_run_path
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps([record]), encoding="utf-8")
+
+
+def test_validated_waiver_skips_one_key_in_curation_and_self_audit(tmp_path):
+    """A1 half 1: a validated waiver for one key → curation AND self-audit close."""
+    run_dir = tmp_path / "run-waiver"
+    _seed_auditable_bundle(run_dir, skip=("teleprompter_html",))
+    _write_waiver(run_dir, rule="teleprompter", deliverable="teleprompter_html",
+                  quote="skip the teleprompter")
+
+    result = curate.curate(run_dir)  # would raise AFBundleIncomplete without the skip
+
+    assert result["skipped_count"] == 1
+    assert _manifest(run_dir)["skipped_keys"] == ["teleprompter_html"]
+    row = _entry(run_dir, "teleprompter_html")
+    assert row["status"] == "skipped-by-owner"
+    assert row["dest"] is None
+
+    audit = self_audit.audit_all(str(run_dir / "deliverables"))
+    assert audit["fail_count"] == 0, audit["summary"]
+    assert audit["authorized"] is True, audit["summary"]
+    tel = next(r for r in audit["results"] if r["key"] == "teleprompter_html")
+    assert tel["verdict"] == "SKIPPED (owner)"
+    assert "teleprompter_html" not in audit["missing"]
+    assert audit["skipped"] == ["teleprompter_html"]
+
+
+def test_typed_string_in_process_manifest_is_not_a_skip(tmp_path):
+    """A1 half 2: a typed string in process_manifest.json → NO skip."""
+    run_dir = tmp_path / "run-selfmint"
+    _seed_auditable_bundle(run_dir, skip=("teleprompter_html",))
+    manifest_path = run_dir / "working" / "checkpoints" / "process_manifest.json"
+    manifest_path.parent.mkdir(parents=True, exist_ok=True)
+    manifest_path.write_text(
+        json.dumps({"owner_skip_approval": ["teleprompter_html"]}), encoding="utf-8")
+
+    with pytest.raises(curate.AFBundleIncomplete) as exc_info:
+        curate.curate(run_dir)
+
+    assert "teleprompter_html" in exc_info.value.missing_keys
+    assert _manifest(run_dir)["skipped_keys"] == []
+
+
+def test_unvalidated_waiver_record_is_not_a_skip(tmp_path):
+    """A record whose quote the client never said approves nothing."""
+    run_dir = tmp_path / "run-forged"
+    _seed_auditable_bundle(run_dir, skip=("teleprompter_html",))
+    _write_waiver(run_dir, rule="teleprompter", deliverable="teleprompter_html",
+                  quote="skip the teleprompter")
+    # Forge the quote AFTER the intake was written: the words are nobody's.
+    forged = json.loads((run_dir / "waivers.json").read_text(encoding="utf-8"))
+    forged[0]["client_request_quote"] = "the client said we may drop the teleprompter"
+    (run_dir / "waivers.json").write_text(json.dumps(forged), encoding="utf-8")
+
+    with pytest.raises(curate.AFBundleIncomplete) as exc_info:
+        curate.curate(run_dir)
+
+    assert "teleprompter_html" in exc_info.value.missing_keys
+    assert _manifest(run_dir)["skipped_keys"] == []
+
+
+def test_waiver_in_working_folder_is_not_read(tmp_path):
+    """The wrong-file defect: the ledger is run_dir/waivers.json, not working/."""
+    run_dir = tmp_path / "run-wrongfile"
+    _seed_auditable_bundle(run_dir, skip=("teleprompter_html",))
+    _write_waiver(run_dir, rule="teleprompter", deliverable="teleprompter_html",
+                  quote="skip the teleprompter", intra_run_path="working/waivers.json")
+
+    with pytest.raises(curate.AFBundleIncomplete) as exc_info:
+        curate.curate(run_dir)
+
+    assert "teleprompter_html" in exc_info.value.missing_keys
+    assert _manifest(run_dir)["skipped_keys"] == []
+
+
+def test_self_audit_without_manifest_records_no_skips(tmp_path):
+    """Fail-closed: an absent curation manifest means no skipped keys."""
+    flat = tmp_path / "deliverables"
+    flat.mkdir()
+    assert self_audit._owner_skipped_keys(str(flat)) == set()
