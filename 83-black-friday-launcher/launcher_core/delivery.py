@@ -242,12 +242,36 @@ def plan(normalized: Mapping[str, Any], answers: Optional[Mapping[str, Any]] = N
             "delivery_url": url,
             "human_service": decision["kind"] == KIND_SCHEDULE,
             "promises": _promises(offer),
-            "price": dict(offer["price"]),
+            "price": _price_with_billing(offer),
             "exclusions": list((offer.get("canonical") or {}).get("exclusions") or []),
         })
     return {"kind": decision["kind"], "kind_state": decision["state"],
             "kind_source": decision["source"], "offers": offers,
             "unused_access_url": decision["unused_access_url"]}
+
+
+def _price_with_billing(offer: Mapping[str, Any]) -> Dict[str, Any]:
+    """The offer's price, plus its billing terms ONLY when it recurs (a one-payment sheet stays exactly
+    what it has always been). The recurring terms come from the answers-bound canonical price, the same
+    authority the checkout request reads, so the sheet can never say "one payment" for a monthly offer."""
+    price = dict(offer["price"])
+    canon = ((offer.get("canonical") or {}).get("prices") or [{}])[0]
+    canon = canon if isinstance(canon, Mapping) else {}
+    if canon.get("billing_type") == "recurring" and _nonempty(canon.get("recurring_interval")):
+        price["billing_type"] = "recurring"
+        price["recurring_interval"] = str(canon["recurring_interval"]).strip()
+    return price
+
+
+def _cost_phrase(price: Mapping[str, Any]) -> str:
+    """What it costs, as the sheet says it: one payment, or the amount per interval until cancelled."""
+    shown = _money(price)
+    if price.get("billing_type") == "recurring" and _nonempty(price.get("recurring_interval")):
+        from .intake import billing_module  # the one billing vocabulary
+        bill = billing_module()
+        bill.price_per_interval(shown, price["recurring_interval"])  # refuses an interval nobody approved
+        return f"{shown} per {price['recurring_interval']}, until cancelled."
+    return f"{shown}, one payment."
 
 
 def _money(price: Mapping[str, Any]) -> str:
@@ -298,7 +322,7 @@ def _render(entry: Mapping[str, Any], launch: Mapping[str, Any]) -> str:
         f"  <h2>What you get</h2>\n    <ul>\n{promises}\n    </ul>{excludes_block}\n"
         f"  <h2>{e(heading)}</h2>\n    <p>{where}</p>\n"
         f"  <h2>What it costs</h2>\n"
-        f"    <p>{e(_money(price))}, one payment.</p>\n"
+        f"    <p>{e(_cost_phrase(price))}</p>\n"
         "</body></html>\n"
     )
 

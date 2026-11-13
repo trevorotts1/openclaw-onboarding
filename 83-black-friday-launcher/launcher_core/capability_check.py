@@ -212,7 +212,7 @@ def _proof_billing(normalized: Mapping[str, Any]) -> Dict[str, Any]:
                     f"offer(s) {missing} record no billing type, so the native order form's "
                     "billing cannot be proved",
                     "Some prices have no confirmed billing type.",
-                    "Confirm one-time billing for those prices in the client's answers.")
+                    "Confirm how each of those prices is billed (one payment, weekly, monthly, quarterly or yearly) in the client's answers.")
     return _row("proven", False, {"billing_types": seen},
                 f"billing type recorded for every selling offer: {seen}")
 
