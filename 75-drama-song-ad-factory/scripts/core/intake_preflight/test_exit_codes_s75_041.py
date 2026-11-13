@@ -40,7 +40,10 @@ DECLARERS = {
     "ceiling_cli.py": None,
     "delivery_checklist.py": (SKILL / "scripts/core/delivery_checklist/"
                                      "delivery_checklist.py"),
-    "run_watch.py": SKILL / "scripts/core/heartbeat/run_watch.py",
+    # run_watch.py declares no EXIT map -- only TICK_EXIT_STOP = 10, which the
+    # dedicated checks below compare against; None keeps it out of the EXIT-map
+    # comparison instead of asserting a map the tool never declares.
+    "run_watch.py": None,
     "prompt-budget": None,
 }
 
