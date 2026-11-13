@@ -1563,20 +1563,42 @@ class Engine:
             visible.append(ph)
         return visible
 
+    def _client_rendered_phases(self, phases: List[Phase]) -> List[Phase]:
+        """The phases that WILL actually send this deck's client a message:
+        in the deck-filtered visible list (`_client_visible_phases`) AND
+        declared `client_visible: true` with a non-empty plain client_label.
+
+        PD-018b item-4 ruling: N in "Step {k} of {N}" must be the number of
+        RENDERED phases, not the deck-filtered count. A hidden or
+        deck-deferred phase sends nothing, so counting it left the client's
+        step numbers gapped (16 rendered phases read as k of 46).
+
+        Ceiling: a manifest template that formats to an empty string (e.g. a
+        template that is only `{eta}` with no eta) is still counted here; no
+        real manifest phase declares one, and the fallback default always
+        renders a label.
+        """
+        out: List[Phase] = []
+        for ph in self._client_visible_phases(phases):
+            label, client_visible = self._phase_client_meta(ph)
+            if client_visible and label:
+                out.append(ph)
+        return out
+
     def _client_phase_index(self, phase_id: str,
                             phases: List[Phase]) -> Tuple[Optional[int], int]:
-        """CLIENT-FACING (k, N) for phase_id against THIS deck's filtered
-        client-visible phase list. k is None when phase_id is being
-        walked/attested (the 36-phase enforcement never skips it) but is NOT
-        one of the N steps this deck's client was told to expect -- e.g.
-        P-CONVERTER dispatched on a non-content-conversion deck, or an
-        SP-only phase on a non-signature deck. N is always the filtered
-        count (len(_client_visible_phases(...)))."""
-        visible = self._client_visible_phases(phases)
-        for i, ph in enumerate(visible):
+        """CLIENT-FACING (k, N) for phase_id against the phases this deck's
+        client is actually told about (`_client_rendered_phases`). k is None
+        when phase_id is being walked/attested (the phase enforcement never
+        skips it) but is NOT one of the N steps the client was told to expect
+        -- e.g. a hidden phase, P-CONVERTER on a non-content-conversion deck,
+        or an SP-only phase on a non-signature deck. N is always the rendered
+        count."""
+        rendered = self._client_rendered_phases(phases)
+        for i, ph in enumerate(rendered):
             if ph.id == phase_id:
-                return i + 1, len(visible)
-        return None, len(visible)
+                return i + 1, len(rendered)
+        return None, len(rendered)
 
     def _phase_client_meta(self, phase: Phase) -> Tuple[str, bool]:
         """(client_label, client_visible) for `phase` from the loaded manifest.
@@ -1603,8 +1625,9 @@ class Engine:
         template or default that would is replaced by the plain default.
 
         Fails safe in two independent ways:
-          1. deck shape unknown  -> _client_visible_phases widens N to the
-             full phase superset instead of asserting a smaller number.
+          1. deck shape unknown  -> the deck filter widens to the full phase
+             superset instead of asserting a smaller number (only phases the
+             manifest marks client_visible and labels count toward N).
           2. a malformed manifest template (stray brace) -> caught and
              replaced with the plain default message, never raised, never
              leaked partially-formatted.
