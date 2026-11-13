@@ -76,43 +76,57 @@ Every deck must carry, and the QC Specialist gates, the operator's ten named req
 > below are copied FROM each file's header, not the other way around; `scripts/tests/test_fix77_roster_uniqueness.py`
 > fails CI if the roster and the file headers ever disagree or if a number is claimed twice.
 
-| ROLE | Slug | Role type | File |
-|------|------|-----------|------|
-| ROLE-01 | director-of-presentations | leadership | director-of-presentations.md |
-| ROLE-02 | brand-steward | specialist | brand-steward.md |
-| ROLE-03 | capacity-reliability-engineer | specialist | capacity-reliability-engineer.md |
-| ROLE-04 | deep-research-specialist-presentations | deep-research | deep-research-specialist-presentations.md |
-| ROLE-05 | devils-advocate-presentations | on-call | devils-advocate-presentations.md |
-| ROLE-06 | media-librarian-ghl-updater | specialist | media-librarian-ghl-updater.md |
-| ROLE-07 | offer-price-strategist | specialist | offer-price-strategist.md |
-| ROLE-08 | pptx-assembly-specialist | specialist | pptx-assembly-specialist.md |
-| ROLE-09 | qc-specialist-presentations | qc | qc-specialist-presentations.md |
-| ROLE-10 | slide-copywriter | specialist | slide-copywriter.md |
-| ROLE-11 | slide-image-creator | specialist | slide-image-creator.md |
-| ROLE-12 | slide-submitter | specialist | slide-submitter.md |
-| ROLE-13 | delivery-concierge | specialist | delivery-concierge.md |
-| ROLE-14 | presenter-coach | specialist | presenter-coach.md |
-| ROLE-15 | hook-strategist | specialist | hook-strategist.md |
-| ROLE-16 | healer-presentations | healer | healer-presentations.md |
-| ROLE-17 | brainstorming-buddy-presentations | specialist | brainstorming-buddy-presentations.md |
-| ROLE-18 | typography-architect | specialist | typography-architect.md |
-| ROLE-19 | presenters-guide-specialist | specialist | presenters-guide-specialist.md |
-| ROLE-20 | presenters-speech-writer | specialist | presenters-speech-writer.md |
-| ROLE-21 | audio-demonstration-specialist | specialist | audio-demonstration-specialist.md |
-| ROLE-22 | first-time-onboarding-presentations | specialist | first-time-onboarding-presentations.md |
-| ROLE-23 | content-to-presentation-architect | specialist | content-to-presentation-architect.md |
-| ROLE-23B | attention-content-strategist | strategist | attention-content-strategist.md |
-| ROLE-24 | prompt-author-presentations | specialist | prompt-author-presentations.md |
-| ROLE-25 | qc-specialist-prompt-presentations | qc | qc-specialist-prompt-presentations.md |
-| ROLE-26 | qc-specialist-image-presentations | qc | qc-specialist-image-presentations.md |
-| ROLE-27 | qc-specialist-typography-presentations | qc | qc-specialist-typography-presentations.md |
-| ROLE-28 | qc-specialist-speech-presentations | qc | qc-specialist-speech-presentations.md |
-| ROLE-29 | fish-audio-expression-specialist | specialist | fish-audio-expression-specialist.md |
-| ROLE-30 | qc-specialist-signature-presentations | qc | qc-specialist-signature-presentations.md |
-| ROLE-31 | signature-presentation-architect | specialist | signature-presentation-architect.md |
-| ROLE-32 | representation-casting-director | specialist | representation-casting-director.md |
-| ROLE-33 | image-grounding-steward | specialist | image-grounding-steward.md |
-| ROLE-34 | scripts-specialist | specialist | scripts-specialist.md |
+| ROLE | Slug | Role type | File | How it is called |
+|------|------|-----------|------|------------------|
+| ROLE-01 | director-of-presentations | leadership | director-of-presentations.md | engine phase |
+| ROLE-02 | brand-steward | specialist | brand-steward.md | engine phase |
+| ROLE-03 | capacity-reliability-engineer | specialist | capacity-reliability-engineer.md | called by another role |
+| ROLE-04 | deep-research-specialist-presentations | deep-research | deep-research-specialist-presentations.md | engine phase |
+| ROLE-05 | devils-advocate-presentations | on-call | devils-advocate-presentations.md | on call |
+| ROLE-06 | media-librarian-ghl-updater | specialist | media-librarian-ghl-updater.md | engine phase |
+| ROLE-07 | offer-price-strategist | specialist | offer-price-strategist.md | engine phase |
+| ROLE-08 | pptx-assembly-specialist | specialist | pptx-assembly-specialist.md | engine phase |
+| ROLE-09 | qc-specialist-presentations | qc | qc-specialist-presentations.md | engine phase |
+| ROLE-10 | slide-copywriter | specialist | slide-copywriter.md | engine phase |
+| ROLE-11 | slide-image-creator | specialist | slide-image-creator.md | engine phase |
+| ROLE-12 | slide-submitter | specialist | slide-submitter.md | called by another role |
+| ROLE-13 | delivery-concierge | specialist | delivery-concierge.md | engine phase |
+| ROLE-14 | presenter-coach | specialist | presenter-coach.md | called by another role |
+| ROLE-15 | hook-strategist | specialist | hook-strategist.md | called by another role |
+| ROLE-16 | healer-presentations | healer | healer-presentations.md | on call |
+| ROLE-17 | brainstorming-buddy-presentations | specialist | brainstorming-buddy-presentations.md | front door, before the engine |
+| ROLE-18 | typography-architect | specialist | typography-architect.md | engine phase |
+| ROLE-19 | presenters-guide-specialist | specialist | presenters-guide-specialist.md | engine phase |
+| ROLE-20 | presenters-speech-writer | specialist | presenters-speech-writer.md | engine phase |
+| ROLE-21 | audio-demonstration-specialist | specialist | audio-demonstration-specialist.md | engine phase |
+| ROLE-22 | first-time-onboarding-presentations | specialist | first-time-onboarding-presentations.md | front door, before the engine |
+| ROLE-23 | content-to-presentation-architect | specialist | content-to-presentation-architect.md | engine phase |
+| ROLE-23B | attention-content-strategist | strategist | attention-content-strategist.md | engine phase |
+| ROLE-24 | prompt-author-presentations | specialist | prompt-author-presentations.md | engine phase |
+| ROLE-25 | qc-specialist-prompt-presentations | qc | qc-specialist-prompt-presentations.md | engine phase |
+| ROLE-26 | qc-specialist-image-presentations | qc | qc-specialist-image-presentations.md | engine phase |
+| ROLE-27 | qc-specialist-typography-presentations | qc | qc-specialist-typography-presentations.md | engine phase |
+| ROLE-28 | qc-specialist-speech-presentations | qc | qc-specialist-speech-presentations.md | engine phase |
+| ROLE-29 | fish-audio-expression-specialist | specialist | fish-audio-expression-specialist.md | engine phase |
+| ROLE-30 | qc-specialist-signature-presentations | qc | qc-specialist-signature-presentations.md | engine phase |
+| ROLE-31 | signature-presentation-architect | specialist | signature-presentation-architect.md | engine phase |
+| ROLE-32 | representation-casting-director | specialist | representation-casting-director.md | called by another role |
+| ROLE-33 | image-grounding-steward | specialist | image-grounding-steward.md | called by another role |
+| ROLE-34 | scripts-specialist | specialist | scripts-specialist.md | called by another role |
+
+A role marked 'called by another role' is not started by the engine. Its work happens only when the role named in its own procedure calls it.
+
+### Files a procedure requires that no phase produces
+
+| File | Read by (procedures under `sops/`) | Role that is supposed to write it |
+|------|--------------------------------------|-----------------------------------|
+| hook_package.json | `audio-demonstration-specialist-sops.md`, `hook-strategist-sops.md`, `qc-specialist-presentations-sops.md`, `slide-copywriter-sops.md`, `SOP-DESIGN-02-PURE-TYPOGRAPHY-HOOK-SLIDES.md`, `SOP-SIGPRES-06-FRAMES-HOOK-DOCTRINE-AND-STRUCTURE-GATE.md`, `SOP-SLIDE-03-HOOK-DOCTRINE.md`, `SOP-SLIDE-00-MASTER-QC-AUTOFAIL-RULESET.md` | Hook Strategist |
+| mission_prd.json | `capacity-reliability-engineer-sops.md`, `director-of-presentations-sops.md`, `hook-strategist-sops.md`, `media-librarian-ghl-updater-sops.md`, `pptx-assembly-specialist-sops.md`, `qc-specialist-presentations-sops.md`, `slide-copywriter-sops.md`, `SOP-SLIDE-00-MASTER-QC-AUTOFAIL-RULESET.md` | Director of Presentations |
+| price_ladder.json | `audio-demonstration-specialist-sops.md`, `devils-advocate-presentations-sops.md`, `director-of-presentations-sops.md`, `offer-price-strategist-sops.md`, `qc-specialist-presentations-sops.md`, `SALES-CHECKOUT-BUILDER-SOP.md`, `signature-presentation-architect-sops.md`, `slide-copywriter-sops.md`, `slide-image-creator-sops.md`, `SOP-PITCH-06-PITCH-ENGINES.md`, `SOP-SLIDE-00-MASTER-QC-AUTOFAIL-RULESET.md`, `typography-architect-sops.md` | Offer Price Strategist |
+| offer_stack.json | `offer-price-strategist-sops.md`, `qc-specialist-presentations-sops.md`, `SOP-DESIGN-01-CREATIVE-TYPOGRAPHY-GUIDE.md`, `SOP-PITCH-02-VALUE-STACK-AND-PROMISES.md`, `SOP-PITCH-06-PITCH-ENGINES.md` | Offer Price Strategist |
+| audience_say_tags.json | `qc-specialist-presentations-sops.md`, `slide-copywriter-sops.md`, `SOP-SLIDE-02-AUDIENCE-FACING-ONLY.md`, `SOP-SLIDE-00-MASTER-QC-AUTOFAIL-RULESET.md` | Slide Copywriter |
+| presenter_notes.json | `director-of-presentations-sops.md`, `pptx-assembly-specialist-sops.md`, `presenter-coach-sops.md`, `qc-specialist-presentations-sops.md` | Director of Presentations |
+| approval_record.json | `director-of-presentations-sops.md` | Director of Presentations |
 
 **New in the density-floor overhaul (2026-06-14):** ROLE-18 Typography Architect (locks the type/layout/treatment system in Phase 1.5, before any prompt), ROLE-19 Presenter's Guide Specialist (speaker-facing outline PDF + Notion), ROLE-20 Presenter's Speech Writer (word-for-word script at 130 wpm + audio demo via Fish > ElevenLabs > local + ffmpeg chunk/stitch), ROLE-29 Fish Audio / Expression Specialist (expression-tags the speech), ROLE-22 First-Time-User Onboarding (orients a newcomer once, then hands to the Brainstorming Buddy).
 
