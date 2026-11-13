@@ -35,12 +35,16 @@ fixtures in a temp dir):
   9. watchdog clocks advance only from durable events: copied/touched decision
      files and file mtime never reset them, and a durable event outranks a
      fresh state stamp.
+ 13. the client message carries a stable message_key and a message_kind
+     (progress, needs_you, problem, done, stopped) so the same news is told
+     once, and the reminder wording is the reminder, not the first message.
 
 Run: python3 scripts/core/heartbeat/test_run_watch.py
 """
 import hashlib
 import json
 import os
+import shlex
 import sqlite3
 import sys
 import tempfile
@@ -261,12 +265,28 @@ def main():
           env["stalled"] is True, str(env))
     check("3: HEARTBEAT_STALLED is named",
           "HEARTBEAT_STALLED" in env["loud"], env["loud"])
+    # The printed command is a SHELL line: assert on shlex.split, never on a
+    # substring -- the quote is the fix, so a run folder with a space in it
+    # must come back as ONE argument.
+    parts = shlex.split(env["recovery_command"])
     check("3: the recovery command is the factory's own next",
-          "factory.py next --run-dir" in env["recovery_command"],
+          len(parts) == 5 and parts[1].endswith("factory.py")
+          and parts[2:4] == ["next", "--run-dir"] and parts[4] == str(run),
           env["recovery_command"])
+    spaced = str(Path(tmp) / "run 3 spaced")
+    spaced_parts = shlex.split(RW.recovery_command(spaced))
+    check("3: a run folder with a space stays one argument",
+          spaced_parts[-2:] == ["--run-dir", spaced]
+          and spaced_parts[1] == str(Path(RW.__file__).resolve().parent.parent
+                                     / "intake_preflight" / "factory.py"),
+          spaced_parts)
     check("3: the client hears it plainly, no codes",
           "I hit a problem with the script and lyrics step" in env["message_for_client"]
           and "HEARTBEAT" not in env["message_for_client"],
+          env["message_for_client"])
+    check("3: an un-acted stall promises no pickup, it names a person",
+          "picking it back up" not in env["message_for_client"]
+          and "flagged it for a person to look at" in env["message_for_client"],
           env["message_for_client"])
     check("3: a stall is not an expiry", env["expired"] is False)
 
@@ -404,8 +424,29 @@ def main():
     check("7: the run's own files are untouched outside the fence ledger",
           before == tree_digest_skip(run, "control/recovery/"),
           sorted(set(before) ^ set(tree_digest_skip(run, "control/recovery/"))))
+    check("7: recovery that really acted and returned 0 promises the pickup",
+          "I'm picking it back up now." in env["message_for_client"],
+          env["message_for_client"])
     rc = RW.main(["--run-dir", str(run), "--interval-check", "--now", str(NOW)])
     check("7: --interval-check keeps looping at four hours", rc == 0, rc)
+
+    # 7c. recovery that ran but FAILED is not announced as a pickup ----------
+    run = make_run(tmp, "run7c")
+    set_stage(run, "run7c", "music", "RUNNING", age_s=45 * 60, lease_in=300,
+              owner="worker-7c")
+    write_auth(run)
+    env = RW.build(run, now=NOW, recovery_act=True,
+                   runner=lambda argv: {"returncode": 2,
+                                        "stdout_sha256": "0" * 64,
+                                        "stderr_tail": ""})
+    check("7c: a failed recovery is not a promise to the client",
+          "picking it back up" not in env["message_for_client"]
+          and "flagged it for a person to look at" in env["message_for_client"],
+          env["message_for_client"])
+    check("7c: the failed control's own return code is carried in the receipt",
+          (env.get("recovery") or {}).get("acted") is True
+          and ((env["recovery"].get("control") or {}).get("outcome")
+               or {}).get("returncode") == 2, env.get("recovery"))
 
     # 7b. four hours parked on the client is a NAMED legitimate wait --------
     run = make_run(tmp, "run7b", base_ago_s=240 * 60)
@@ -602,6 +643,68 @@ def main():
           (env.get("wait") or {}).get("kind", "").startswith("client"),
           env.get("wait"))
 
+
+    # 13. the message key and kind: the same news, told once -----------------
+    run13 = make_run(tmp, "run13")
+    for s in ("research", "creative-strategy"):
+        set_stage(run13, "run13", s, "COMPLETE", age_s=20 * 60)
+    set_stage(run13, "run13", "script-lyrics", "RUNNING", age_s=5 * 60,
+              lease_in=600, owner="worker-13")
+    e13 = RW.build(run13, now=NOW)
+    check("13: a healthy run's message kind is progress",
+          e13["message_kind"] == "progress", e13["message_kind"])
+    check("13: the message key is 16 hex characters",
+          len(e13["message_key"]) == 16
+          and all(c in "0123456789abcdef" for c in e13["message_key"]),
+          e13["message_key"])
+    e13b = RW.build(run13, now=NOW)
+    check("13: an unchanged run carries the same key",
+          e13b["message_key"] == e13["message_key"], e13b["message_key"])
+    set_stage(run13, "run13", "script-lyrics", "COMPLETE", age_s=0)
+    set_stage(run13, "run13", "music", "RUNNING", age_s=0, lease_in=600,
+              owner="worker-13")
+    e13c = RW.build(run13, now=NOW)
+    check("13: a stage change changes the key",
+          e13c["message_key"] != e13["message_key"], e13c["message_key"])
+    run13d = make_run(tmp, "run13d")
+    set_stage(run13d, "run13d", "storyboard", "WAITING_APPROVAL", age_s=60)
+    e13d = RW.build(run13d, now=NOW)
+    check("13: a run waiting on the client is needs_you",
+          e13d["message_kind"] == "needs_you", e13d["message_kind"])
+    run13e = make_run(tmp, "run13e")
+    set_stage(run13e, "run13e", "music", "RUNNING", age_s=45 * 60,
+              lease_in=600, owner="worker-13e")
+    e13e = RW.build(run13e, now=NOW)
+    check("13: a stalled run is a problem",
+          e13e["message_kind"] == "problem", e13e["message_kind"])
+    run13f = make_run(tmp, "run13f")
+    for s in STAGES:
+        set_stage(run13f, "run13f", s, "COMPLETE", age_s=10 * 60)
+    e13f = RW.build(run13f, now=NOW)
+    check("13: a finished run is done", e13f["message_kind"] == "done",
+          e13f["message_kind"])
+    run13g = make_run(tmp, "run13g")
+    set_stage(run13g, "run13g", "research", "RUNNING", age_s=5 * 60,
+              lease_in=600, owner="worker-13g")
+    write_json(run13g / "control" / "run-state.json", {"canceled": True})
+    e13g = RW.build(run13g, now=NOW)
+    check("13: a cancelled run is stopped", e13g["message_kind"] == "stopped",
+          e13g["message_kind"])
+    reminder = RW.client_message(
+        "run13d", {"stage": "storyboard", "state": "WAITING_APPROVAL"},
+        e13d["decisions_pending"], False, "", False, False, 30, 5, 12, 3.0,
+        reminder_number=1)
+    check("13: the reminder wording is the reminder, not the first message",
+          reminder.startswith("Just a reminder - your video is paused until "
+                              "you answer:")
+          and "Nothing is being charged while it waits." in reminder,
+          reminder)
+    check("13: the reminder carries the question waiting on the client",
+          all(d["question"] in reminder for d in e13d["decisions_pending"]),
+          reminder)
+    check("13: a first message never uses the reminder wording",
+          "Just a reminder" not in e13d["message_for_client"],
+          e13d["message_for_client"])
 
     print()
     if FS:
