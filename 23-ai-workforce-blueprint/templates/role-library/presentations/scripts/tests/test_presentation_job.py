@@ -910,6 +910,21 @@ class TestQCAggregatePhaseEndToEnd:
                 "items": [{"item": f"item_{i}", "pass": passing, "evidence": "ok"}
                           for i in range(15)]}
 
+    def _genuine_image_report(self, average=9.4):
+        """The IMAGE domain report with the FIX 33 vision-UNIT provenance a real
+        dispatcher route leaves behind: a vision model stamp that differs from
+        the report's authoring identity, the route's request id, and a per-slide
+        row carrying the route's observed_text. Without these the aggregate's
+        AF-IMAGE-QC-UNIT contract blocks the image domain (fail-closed)."""
+        obj = self._genuine_domain_report("Phase Image-QC", average)
+        obj.update({
+            "graded_by_provider": "glm",
+            "graded_by_model": "glm-4.6v",  # != qc_independence.graded_by
+            "request_id": "req-vision-unit-001",
+            "slides": [{"slide": 1, "observed_text": "slide 01 render read"}],
+        })
+        return obj
+
     def _seed_six_domain_reports(self, run_dir, average=9.4):
         qc = run_dir / "working" / "qc"
         qc.mkdir(parents=True, exist_ok=True)
@@ -920,11 +935,61 @@ class TestQCAggregatePhaseEndToEnd:
         (qc / "prompt_qc_report.json").write_text(
             json.dumps(self._genuine_domain_report("Phase Prompt-QC", average)))
         (qc / "image_qc_report.json").write_text(
-            json.dumps(self._genuine_domain_report("Phase Image-QC", average)))
+            json.dumps(self._genuine_image_report(average)))
         (qc / "speech_qc_report.json").write_text(
             json.dumps(self._genuine_domain_report("Phase Speech-QC", average)))
         (qc / "priority_shift_report.json").write_text(
             json.dumps(self._genuine_priority_shift_report(True)))
+        self._seed_execution_stamps(run_dir)
+
+    # PRES-042: report filename -> the manifest's producing QC phase id.
+    _STAMPED_REPORTS = (
+        ("copy_qc_report.json", "P1Q-COPY-QC"),
+        ("typography_qc_report.json", "P-TYPO-QC"),
+        ("prompt_qc_report.json", "P-PROMPT-QC"),
+        ("image_qc_report.json", "P-IMAGE-QC"),
+        ("speech_qc_report.json", "P-SPEECH-QC"),
+        ("priority_shift_report.json", "P-SHIFT-QC"),
+    )
+    # The manifest `consumes` inputs this fixture actually stages; each must
+    # carry a producer author stamp AND a reviewer stamp from its QC phase
+    # (QC-SONNET-R5 consumed-upstream coverage).
+    _STAMPED_CONSUMES = (
+        ("P-PROMPT-QC", "working/prompts/slide-01.txt"),
+        ("P-SPEECH-QC", "working/deliverables/PRESENTERS-SPEECH-FISH-TAGGED.md"),
+    )
+
+    def _seed_execution_stamps(self, run_dir):
+        """PRES-042: the TRUSTED DISPATCHER's half of a real run. Every produced
+        artifact gets an immutable AUTHOR stamp (separate execution, model,
+        provider, artifact sha) and every review a REVIEWER stamp covering the
+        same bytes -- minted through the REAL execution_stamp API, so the
+        fixture writes exactly the rows the verifier reads (no hand-rolled
+        shape to drift out of lockstep). Without this the aggregate's
+        AF-EXEC-STAMP surface fails closed, which is the shipped contract."""
+        import uuid
+        from presentation_job import execution_stamp as es
+
+        author_model, reviewer_model = "deepseek-v4.1-flash", "kimi-v4-a"
+        reviewer_exec = f"exec-reviewer-{uuid.uuid4().hex[:8]}"
+        for name, phase_id in self._STAMPED_REPORTS:
+            p = run_dir / "working" / "qc" / name
+            es.author_stamp(run_dir, phase_id, p,
+                            model=author_model, provider="deepseek-direct")
+            es.qc_stamp(run_dir, phase_id, p,
+                        reviewer_execution_id=reviewer_exec,
+                        model=reviewer_model, provider="moonshot",
+                        rubric_version="manifest-fixture")
+        for phase_id, rel in self._STAMPED_CONSUMES:
+            p = run_dir / rel
+            if not p.is_file():
+                continue
+            es.author_stamp(run_dir, "P-PRODUCER-FIXTURE", p,
+                            model=author_model, provider="deepseek-direct")
+            es.qc_stamp(run_dir, phase_id, p,
+                        reviewer_execution_id=reviewer_exec,
+                        model=reviewer_model, provider="moonshot",
+                        rubric_version="manifest-fixture")
 
     def _run_qc_aggregate(self, run_dir, phase_mode=True):
         """Runs the REAL qc_aggregate.py as a subprocess -- exactly the command
@@ -971,6 +1036,16 @@ class TestQCAggregatePhaseEndToEnd:
         assert final["pass"] is True, final
         assert final["average"] == 9.4, final
 
+        # A1: the run carries a POPULATED execution stamp for every domain --
+        # an author row AND a reviewer row per QC phase, written by the
+        # dispatcher, not the report prose (PRES-042).
+        for phase_id in ("P1Q-COPY-QC", "P-TYPO-QC", "P-PROMPT-QC", "P-IMAGE-QC",
+                         "P-SPEECH-QC", "P-SHIFT-QC"):
+            stamp_file = run_dir / "working" / "execution-stamps" / f"{phase_id}.stamp.json"
+            rows = json.loads(stamp_file.read_text())["rows"]
+            kinds = [r["kind"] for r in rows]
+            assert "author" in kinds and "reviewer" in kinds, (phase_id, kinds)
+
         engine = self._make_engine(run_dir)
         rc = engine.close()
         captured = capsys.readouterr()
@@ -1002,7 +1077,7 @@ class TestQCAggregatePhaseEndToEnd:
         self._seed_other_gates_passing(run_dir)
         self._seed_six_domain_reports(run_dir)
         (run_dir / "working" / "qc" / "image_qc_report.json").write_text(
-            json.dumps(self._genuine_domain_report("Phase Image-QC", 6.0)))
+            json.dumps(self._genuine_image_report(6.0)))
 
         agg = self._run_qc_aggregate(run_dir)
         assert agg.returncode == 0
