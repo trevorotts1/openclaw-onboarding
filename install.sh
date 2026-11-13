@@ -4121,9 +4121,14 @@ for SKILL_DIR in "$ONBOARDING_DIR"/[0-9]*/; do
     esac
     
     # >>> X11-GATE-BEGIN (S75-X11 release gate; tests/test_x11_install_gate.py)
-    # Skill 75 only. Default is warn-and-preserve: this copy only overlays and
-    # never deletes, so a missing backup-authorization record just logs. Only
-    # refuse mode (record present or S75_X11_GATE_MODE=refuse) can skip the skill.
+    # Skill 75 only. Default is warn-and-preserve: a missing
+    # s75.x11.backup-authorization/v1 record just logs, and every file the
+    # reviewed manifest targets (the gate's `preserve-list`) is set aside here
+    # and put back below wherever this release does not ship it -- the same
+    # contract update-skills.sh meets, so the gate's "kept, never deleted"
+    # sentence is true at both call sites. Only refuse mode (record present or
+    # S75_X11_GATE_MODE=refuse) can skip the skill.
+    _x11_keep=""
     if [ "$SKILL_NAME" = "75-drama-song-ad-factory" ]; then
         _x11_rc=0
         _x11_out="$(bash "$SKILL_DIR/scripts/core/x11_install_gate.sh" 2>&1)" || _x11_rc=$?
@@ -4131,6 +4136,17 @@ for SKILL_DIR in "$ONBOARDING_DIR"/[0-9]*/; do
         if [ "$_x11_rc" = "20" ]; then
             warn "X11 gate REFUSED skill 75 install (refuse mode); $SKILLS_DIR/$SKILL_NAME left untouched"
             continue
+        fi
+        if [ "$_x11_rc" != "0" ]; then
+            _x11_keep="$(mktemp -d "${TMPDIR:-$HOME}/oc-x11-install-keep.XXXXXX" 2>/dev/null || true)"
+            while IFS= read -r _x11_rel; do
+                [ -n "$_x11_rel" ] && [ -n "$_x11_keep" ] && [ -f "$SKILLS_DIR/$SKILL_NAME/$_x11_rel" ] || continue
+                mkdir -p "$_x11_keep/$(dirname "$_x11_rel")" \
+                  && cp -p "$SKILLS_DIR/$SKILL_NAME/$_x11_rel" "$_x11_keep/$_x11_rel" \
+                  || warn "X11 gate could not set aside $_x11_rel"
+            done <<X11EOF
+$(bash "$SKILL_DIR/scripts/core/x11_install_gate.sh" preserve-list 2>/dev/null)
+X11EOF
         fi
     fi
     # <<< X11-GATE-END
@@ -4152,7 +4168,23 @@ for SKILL_DIR in "$ONBOARDING_DIR"/[0-9]*/; do
                 ;;
         esac
     done
-    
+
+    # >>> X11-GATE-RESTORE-BEGIN (S75-X11 preserve contract; tests/test_x11_install_gate.py)
+    # Put back any manifest-targeted file this release does not ship. Mirrors
+    # update-skills.sh; the overlay copy above keeps such files already, so this
+    # is the explicit half of the contract and repairs a copy that dropped one.
+    if [ -n "${_x11_keep:-}" ]; then
+        (cd "$_x11_keep" && find . -type f) | while IFS= read -r _x11_rel; do
+            if [ -e "$SKILLS_DIR/$SKILL_NAME/$_x11_rel" ]; then continue; fi
+            mkdir -p "$SKILLS_DIR/$SKILL_NAME/$(dirname "$_x11_rel")" \
+              && cp -p "$_x11_keep/$_x11_rel" "$SKILLS_DIR/$SKILL_NAME/$_x11_rel" \
+              && note "X11 gate kept manifest-targeted file the release does not ship: $_x11_rel"
+        done
+        rm -rf "$_x11_keep"
+        _x11_keep=""
+    fi
+    # <<< X11-GATE-RESTORE-END
+
     # FIX 11.3: verify what was copied. Every post-copy verify.sh call in this
     # file used to sit inside `|| true`, so a skill that landed incomplete was
     # silent. Warn (never fail) on the same "continuing" rule update-skills.sh
