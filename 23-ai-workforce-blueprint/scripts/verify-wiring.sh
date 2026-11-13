@@ -1237,8 +1237,12 @@ done
 # Write wiringStatus per-dept into build-state.json (atomic)
 # ==============================================================================
 if [[ -f "$STATE_FILE" ]]; then
-  TMP_STATE="$(mktemp)"
-  jq \
+  # Through the shared state protocol: it holds the state lock across
+  # read/filter/replace, so a reminder stamp or a department decision landing
+  # at the same moment is merged instead of overwritten.
+  # shellcheck source=/dev/null
+  source "$SCRIPT_DIR/lib-workforce-state.sh"
+  workforce_state_set "$STATE_FILE" \
     --argjson perdept "$DEPT_RESULTS_JSON" \
     '
       .departments = ((.departments // []) | map(
@@ -1249,8 +1253,8 @@ if [[ -f "$STATE_FILE" ]]; then
         + (if ($pd | has("wiringCheckedAt")) then {wiringCheckedAt: $pd.wiringCheckedAt} else {} end)
         + (if ($pd | has("wiringFailReasons")) then {wiringFailReasons: $pd.wiringFailReasons} else {} end)
       ))
-    ' "$STATE_FILE" > "$TMP_STATE" 2>/dev/null && mv "$TMP_STATE" "$STATE_FILE" \
-    || { rm -f "$TMP_STATE"; echo "[verify-wiring] WARN: could not update state file (reporting only)" >&2; }
+    ' \
+    || echo "[verify-wiring] WARN: could not update state file (reporting only)" >&2
 fi
 
 # ==============================================================================

@@ -80,6 +80,14 @@ command -v jq >/dev/null 2>&1 || { log "ERROR" "jq not installed"; exit 2; }
 
 state_get() { jq -r "$1 // empty" "$STATE_FILE" 2>/dev/null; }
 
+# State writes go through the shared state protocol (workforce_state.py jq
+# mode): it holds the state lock across read/filter/replace, so a reminder
+# stamp or a department decision landing at the same moment is merged instead
+# of overwritten, and a lock conflict is a logged failure rather than a lost
+# rating.
+# shellcheck source=/dev/null
+source "$SCRIPT_DIR/../../23-ai-workforce-blueprint/scripts/lib-workforce-state.sh"
+
 # SK1-10: optional INDEPENDENT content judge. The deterministic raters below are
 # a reachability/existence FLOOR (does the artifact resolve, is it a non-trivial
 # image/video, does the doc have its sections) — NOT a judgment of content
@@ -147,20 +155,15 @@ ZHC_REQUIRE_CONTENT_JUDGE="${ZHC_REQUIRE_CONTENT_JUDGE:-0}"
 # write_materialization <materialized:true|false> <detail>
 # Records WHAT WAS MEASURED, separately from any verdict about content.
 write_materialization() {
-  local materialized="$1" detail="$2" tmp
-  tmp=$(mktemp)
-  if jq \
+  local materialized="$1" detail="$2"
+  if ! workforce_state_set "$STATE_FILE" \
       --arg k "$KEY" \
       --argjson m "$materialized" \
       --arg d "$detail" \
       --arg at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
       '.materializationChecks = (.materializationChecks // {}) |
        .materializationChecks[$k] = {materialized:$m, detail:$d,
-                                     checkedBy:"qc-rate-artifacts", checkedAt:$at}' \
-      "$STATE_FILE" > "$tmp"; then
-    mv "$tmp" "$STATE_FILE"
-  else
-    rm -f "$tmp"
+                                     checkedBy:"qc-rate-artifacts", checkedAt:$at}'; then
     log "ERROR" "failed to write .materializationChecks.$KEY"
   fi
 }
@@ -203,8 +206,7 @@ write_rating() {
     fi
   fi
 
-  tmp=$(mktemp)
-  if jq \
+  if ! workforce_state_set "$STATE_FILE" \
       --arg k "$KEY" \
       --argjson score "$score" \
       --arg qc "$qc" \
@@ -221,11 +223,7 @@ write_rating() {
        .contentJudgeMissing = (
          if ($cj|not) and $qc == "pass"
          then (((.contentJudgeMissing // []) + [$k]) | unique)
-         else ((.contentJudgeMissing // []) - [$k]) end)' \
-      "$STATE_FILE" > "$tmp"; then
-    mv "$tmp" "$STATE_FILE"
-  else
-    rm -f "$tmp"
+         else ((.contentJudgeMissing // []) - [$k]) end)'; then
     log "ERROR" "failed to write .qualityRatings.$KEY"
     return 2
   fi
