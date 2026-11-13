@@ -75,6 +75,13 @@ globalThis.document = {
 };
 // setPage reads the hash; a check has no browser location of its own.
 globalThis.location = { hash: "", origin: "https://studio.example", pathname: "/" };
+// setPage keeps the personal key through history.replaceState — stub it so the
+// check can click "Watch it now" without a browser.
+globalThis.history = {
+  replaceState(_state, _title, url) {
+    if (typeof url === "string") globalThis.location.hash = url.startsWith("#") ? url : `#${url}`;
+  },
+};
 
 const textOf = (nodes) => nodes.map((n) => n.textContent).filter(Boolean).join(" | ");
 const click = (node) => { for (const fn of node.listeners.click || []) fn(); };
