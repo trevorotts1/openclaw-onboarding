@@ -3851,15 +3851,20 @@ def _verify_style_spec(run_dir: Path) -> Tuple[bool, List[str]]:
 
 _INFOGRAPHIC_CHECKLIST_VERDICT_REL = "working/qc/infographic_checklist_verdict.json"
 
+# PD-105: the eight bytes every PNG file starts with (PNG spec 5.2, the
+# signature). The infographic is checked for a real PNG, not for a large file
+# named one — a 102,400-byte file of letters used to pass the size test alone.
+_PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
+
 
 def _verify_infographic_checklist(run_dir: Path) -> Tuple[bool, List[str]]:
     """P8.3-INFOGRAPHIC: the infographic-checklist QC unit's verdict. Passes
-    only when (a) the rendered PNG exists at/above the deliverable floor,
-    (b) build_infographic's own status is clean, and (c) the QC unit's verdict
-    file exists, parses, and its own verdict is pass with the render inputs
-    named. The verifier re-derives (a)/(b) itself — a hand-typed pass on a
-    dirty render never passes, and a missing verdict file is a FAIL (the QC
-    unit ran, or it did not — absence is not a pass)."""
+    only when (a) the rendered PNG exists, carries the PNG signature and is
+    at/above the deliverable floor, (b) build_infographic's own status is clean,
+    and (c) the QC unit's verdict file exists, parses, and its own verdict is
+    pass with the render inputs named. The verifier re-derives (a)/(b) itself —
+    a hand-typed pass on a dirty render never passes, and a missing verdict
+    file is a FAIL (the QC unit ran, or it did not — absence is not a pass)."""
     import json as _json
     reasons: List[str] = []
 
@@ -3869,6 +3874,17 @@ def _verify_infographic_checklist(run_dir: Path) -> Tuple[bool, List[str]]:
                        "the render under QC is missing")
     else:
         floor = 102_400  # manifest-declared byte floor (P8.3-INFOGRAPHIC name)
+        # PD-105: the signature test runs BEFORE the size test — a large file
+        # of letters is not an infographic. An unreadable file fails here too.
+        try:
+            with open(png, "rb") as fh:
+                head = fh.read(len(_PNG_SIGNATURE))
+        except OSError as exc:  # noqa: BLE001
+            head = None
+            reasons.append(f"infographic.png: unreadable ({exc!r})")
+        if head is not None and head != _PNG_SIGNATURE:
+            reasons.append(f"infographic.png: not a PNG — expected "
+                           f"{_PNG_SIGNATURE!r} at offset 0, got {head!r}")
         if png.stat().st_size < floor:
             reasons.append(f"infographic.png: {png.stat().st_size} bytes < the "
                            f"{floor}-byte deliverable floor")
@@ -3881,8 +3897,11 @@ def _verify_infographic_checklist(run_dir: Path) -> Tuple[bool, List[str]]:
         if status.get("status") != "ready":
             reasons.append(f"infographic_status.json: status is "
                            f"{status.get('status')!r}, not 'ready'")
-        if status.get("qc_passed") is not True:
-            reasons.append("infographic_status.json: qc_passed is not true")
+        # PD-215 change-over: the builder's status file carries render_verified
+        # in place of qc_passed; accept either key while both are in use.
+        if status.get("qc_passed") is not True and status.get("render_verified") is not True:
+            reasons.append("infographic_status.json: qc_passed is not true "
+                           "(nor render_verified)")
 
     verdict_path = run_dir / _INFOGRAPHIC_CHECKLIST_VERDICT_REL
     verdict = _read_json(verdict_path)
