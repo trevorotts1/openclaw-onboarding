@@ -575,6 +575,31 @@ def tick(runs_dir, skill_root=SKILL_ROOT):
                         if rec.get("acted") is True and outcome_rc == 0:
                             row["last_recovery_ok_at"] = now()
                             summary["recovered"].append(rid)
+                            # The look above already told the client a person
+                            # was looking; the recovery pass's OWN envelope is
+                            # the one that says it is picked back up. Send it
+                            # now, so that promise is kept on the same tick
+                            # instead of never. Only an acted, successful
+                            # recovery carries this wording (run_watch's
+                            # recovery_acted_ok); a refusal or a failure does
+                            # not, so nothing is promised there.
+                            pickup = (act_env or {}).get(
+                                "message_for_client") or ""
+                            if pickup and origins and not row.get("origin_error"):
+                                for origin in origins:
+                                    try:
+                                        send = delivery_argv(channel_send, origin,
+                                                             run_dir, pickup)
+                                        r = subprocess.run(
+                                            send, capture_output=True, text=True,
+                                            timeout=60)
+                                        if r.returncode != 0:
+                                            note("KEEPALIVE_DELIVERY_FAILED",
+                                                 "%s rc=%d"
+                                                 % (rid, r.returncode))
+                                    except Exception as e:      # noqa: BLE001
+                                        note("KEEPALIVE_DELIVERY_FAILED",
+                                             "%s %s" % (rid, e))
                         elif (rec.get("refused") or {}).get("code") \
                                 == "RECOVERY_NOT_AUTHORIZED":
                             # announce-only box: say it ONCE, never per tick
