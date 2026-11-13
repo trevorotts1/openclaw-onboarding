@@ -56,8 +56,11 @@ produced — and is FAIL-CLOSED:
 
 The ONLY bypass is an explicit, LOGGED owner_skip_approval token (reuse of the audited
 canonical_render_guard token: owner_approved:true + approved_by + reason + gate=<AF
-code>) recorded in process_manifest.json or, for an out-of-pipeline artifact, an
-owner_skip_approval.json adjacent to the artifact. No agent may self-approve.
+code> + a non-empty owner_msg_id that presentation_job.approvals.verify resolves to a
+REAL owner-authored message) recorded in process_manifest.json of a GOVERNED run dir.
+An owner_skip_approval.json beside the artifact is NOT read. AF-NO-RUN-DIR is never
+waivable: a deck with no run folder cannot be delivered on a typed token (D-28). No
+agent may self-approve.
 
 ZERO third-party deps (stdlib json / re / os / sys / zipfile / zlib / pathlib /
 argparse / tempfile only) so it runs identically in the repo and on a deployed client
@@ -66,7 +69,8 @@ box — it does NOT rely on python-pptx being installed.
 PUBLIC API (imported by test_preflight.py + run_signature_deck.py):
     delivery_gate(run_dir: Path) -> tuple[bool, list[str]]
         in-pipeline run-dir helper (AF-DH1 / upload-record / destination). Defers
-        pre-delivery.
+        pre-delivery; the CLI prints "DELIVERY GATE: NOT CHECKED — no package and no
+        plan yet" and --json carries the field "deferred": true.
     gate_delivered_artifact(artifact_path, run_dir=None) -> tuple[bool, list[str]]
         the FAIL-CLOSED delivery boundary gate over the SHIPPED ARTIFACT.
     inspect_pptx_artifact(pptx_path) -> list[tuple[str, str]]
@@ -301,12 +305,62 @@ def _categorize(name: str) -> str:
     return ""
 
 
+# ---------------------------------------------------------------------------
+# PD-203 (1): a whitelisted NAME is not a deliverable. The U05 canon carries a
+# byte floor AND the leading bytes each kind must start with; the gate now reads
+# the floor from the canon and checks the head of every found file. Leading-byte
+# rules are the canon's own magic_bytes/magic_offset where it carries them, plus
+# the two the canon leaves to a content scan: audio accepts an MPEG frame sync
+# (0xFF 0xEx) as well as ID3, and HTML must open a tag that says html/doctype.
+# Stdlib only.
+# ---------------------------------------------------------------------------
+try:
+    from presentation_job.deliverables import (
+        DELIVERABLE_AUDIT_SPEC as _DELIVERABLE_AUDIT_SPEC,
+    )
+except ImportError:  # pragma: no cover - canon module unreadable: fail loud, not stale
+    raise
+
+_AUDIT_SPEC_BY_KEY = {s["key"]: s for s in _DELIVERABLE_AUDIT_SPEC}
+
+_HTML_OPENINGS = (b"<html", b"<!doctype")
+
+def _leading_ok(cat: str, head: bytes) -> bool:
+    """True when `head` (the first bytes of the file) is what this kind must start
+    with. deck = ZIP container, PDFs = %PDF, audio = ID3 or an MPEG frame sync,
+    HTML = an opening html/doctype tag, video = the ftyp box at offset 4."""
+    if cat == "deck_pptx":
+        return head.startswith(b"PK\x03\x04")
+    if cat in ("deck_pdf", "guide_pdf", "speech_pdf"):
+        return head.startswith(b"%PDF")
+    if cat == "audio_mp3":
+        return head.startswith(b"ID3") or (
+            len(head) >= 2 and head[0] == 0xFF and (head[1] & 0xE0) == 0xE0)
+    if cat == "teleprompter_html":
+        low = head[:512].lower()
+        return any(marker in low for marker in _HTML_OPENINGS)
+    if cat == "webinar_mp4":
+        return head[4:8] == b"ftyp"
+    return False
+
+def _leading_desc(cat: str) -> str:
+    return {
+        "deck_pptx": "a ZIP/OOXML container (PK\\x03\\x04)",
+        "deck_pdf": "a PDF (%PDF)",
+        "guide_pdf": "a PDF (%PDF)",
+        "speech_pdf": "a PDF (%PDF)",
+        "audio_mp3": "an MP3 (ID3 tag or MPEG frame sync)",
+        "teleprompter_html": "an HTML document (<!DOCTYPE or <html)",
+        "webinar_mp4": "an MP4 (ftyp box at offset 4)",
+    }.get(cat, "the bytes this kind must start with")
+
 def check_af_dh1(package_dir: Path) -> str:
     """AF-DH1 hygiene gate over the resolved client package dir. Returns '' on PASS,
     or a specific failure reason. Enforces: exactly the seven whitelisted client files,
     correctly named; no extra/wrongly-named file; no forbidden subdir; pptx/pdf carry
-    the -FINAL suffix; no .md guide/speech. (teleprompter_html is warn-only at stage 1
-    — see CLIENT_PACKAGE_WARN_ONLY.)"""
+    the -FINAL suffix; no .md guide/speech; and — PD-203 — every found file clears the
+    DELIVERABLE_AUDIT_SPEC byte floor for its slot and starts with the bytes that kind
+    requires. (teleprompter_html is warn-only at stage 1 — see CLIENT_PACKAGE_WARN_ONLY.)"""
     if not package_dir.is_dir():
         return f"AF-DH1: client package dir {package_dir} does not exist"
     found = {}
@@ -330,6 +384,22 @@ def check_af_dh1(package_dir: Path) -> str:
         if cat in found:
             return (f"AF-DH1: two files map to the same client slot {cat!r}: "
                     f"{found[cat]} + {nm}")
+        # PD-203 (1): the name is not the deliverable — the FILE must clear the
+        # canon's byte floor and start with the bytes its kind requires.
+        spec = _AUDIT_SPEC_BY_KEY.get(cat) or {}
+        floor = int(spec.get("min_bytes") or 0)
+        size = child.stat().st_size
+        if floor and size < floor:
+            return (f"AF-DH1: {nm} is {size} bytes, below the {floor}-byte floor "
+                    f"for {cat} in DELIVERABLE_AUDIT_SPEC")
+        try:
+            with child.open("rb") as fh:
+                head = fh.read(512)
+        except OSError as exc:
+            return f"AF-DH1: {nm} could not be read ({exc}) — fail-closed"
+        if not _leading_ok(cat, head):
+            return (f"AF-DH1: {nm} does not start with the bytes a {cat} must — "
+                    f"expected {_leading_desc(cat)}, got {head[:8]!r}")
         found[cat] = nm
     # W02-B4 (FIX 4): the required set is CLIENT_PACKAGE_KEYS — the same derived
     # set _categorize's map was built from — not a second hand-maintained literal.
@@ -611,19 +681,43 @@ def _coerce_owner_skip(raw):
             continue
         approved = rec.get("owner_approved") is True or rec.get("approved") is True
         gate = rec.get("gate") or rec.get("af_code") or rec.get("phase_id")
+        # PD-203 (2): a typed token is not an owner. The schema requires a
+        # non-empty owner_msg_id; without one the record authorizes nothing.
         if (approved and gate
                 and str(rec.get("approved_by", "")).strip()
-                and str(rec.get("reason", "")).strip()):
+                and str(rec.get("reason", "")).strip()
+                and str(rec.get("owner_msg_id", "")).strip()):
             out[str(gate)] = rec
     return out
 
+def _verify_owner_skips(index, run_dir):
+    """PD-203 (2): with a run folder, a token counts ONLY when
+    presentation_job.approvals.verify accepts it (its owner_msg_id resolves to a
+    real owner-authored message). Unverifiable / undetermined -> dropped."""
+    if run_dir is None or not index:
+        return {}
+    try:
+        from presentation_job.approvals import verify as _verify
+    except Exception:  # noqa: BLE001 — approvals absent: fail closed, no waiver
+        return {}
+    out = {}
+    for gate, rec in index.items():
+        try:
+            _verify(rec, Path(run_dir))
+        except Exception:  # noqa: BLE001 — forged / undetermined: authorizes nothing
+            continue
+        out[gate] = rec
+    return out
 
-def _load_owner_skips(run_dir, artifact_path=None):
-    """Load logged owner_skip_approval tokens. Reuses the audited canonical_render_guard
-    loader for the governed run dir, and ALSO honors an owner_skip_approval.json placed
-    adjacent to an out-of-pipeline artifact (so an owner can authorize an out-of-band
-    delivery with a logged, audited token even when there is no run dir). A malformed /
-    owner_approved:false token authorizes nothing."""
+def _load_owner_skips(run_dir):
+    """Load logged owner_skip_approval tokens from a GOVERNED run dir's
+    process_manifest.json. Reuses the audited canonical_render_guard loader (which
+    already calls presentation_job.approvals.verify on every token) when it is
+    importable; otherwise reads the manifest here and verifies each token through
+    the same approvals.verify. A malformed / owner_approved:false / unverifiable
+    token authorizes nothing. PD-203 (3): a token file placed BESIDE the artifact is
+    no longer a source — an out-of-pipeline deck has no governed run dir, and
+    AF-NO-RUN-DIR is not waivable (D-28)."""
     skips = {}
     if run_dir is not None:
         try:
@@ -632,17 +726,9 @@ def _load_owner_skips(run_dir, artifact_path=None):
         except Exception:  # noqa: BLE001
             pm = Path(run_dir) / "working" / "checkpoints" / "process_manifest.json"
             obj = _load_json(pm) or {}
-            skips.update(_coerce_owner_skip(
-                obj.get("owner_skip_approval", obj.get("owner_skip_approvals", []))))
-    if artifact_path is not None:
-        adj = Path(artifact_path).resolve().parent / "owner_skip_approval.json"
-        if adj.is_file():
-            obj = _load_json(adj)
-            if isinstance(obj, dict):
-                skips.update(_coerce_owner_skip(
-                    obj.get("owner_skip_approval", obj.get("owner_skip_approvals", obj))))
-            else:
-                skips.update(_coerce_owner_skip(obj))
+            index = _coerce_owner_skip(
+                obj.get("owner_skip_approval", obj.get("owner_skip_approvals", [])))
+            skips.update(_verify_owner_skips(index, run_dir))
     return skips
 
 
@@ -768,7 +854,7 @@ def gate_delivered_artifact(artifact_path, run_dir=None, *, verify_destinations:
                        f"{artifact_path.name} (fail-closed)."]
 
     resolved = _resolve_governed_run_dir(artifact_path, run_dir)
-    owner_skips = _load_owner_skips(resolved, artifact_path)
+    owner_skips = _load_owner_skips(resolved)
 
     def waived(code):
         return code in owner_skips
@@ -777,15 +863,15 @@ def gate_delivered_artifact(artifact_path, run_dir=None, *, verify_destinations:
 
     # (3) NO-RUN-DIR FAIL-CLOSED — a deck with no governed run dir was hand-built
     # OUTSIDE run_signature_deck.py. This is the flip of the legacy pre-delivery defer.
+    # PD-203 (3) + D-28: this is NOT waivable, even by a fully-shaped owner token — a
+    # deck with no run folder is never delivered on a typed token.
     if resolved is None:
-        if not waived(AF_NO_RUN_DIR):
-            return False, [
-                f"{AF_NO_RUN_DIR}: no governed run dir "
-                "(working/checkpoints/process_manifest.json) could be resolved for "
-                f"{artifact_path.name}. A deck with no governed run dir was hand-built "
-                "OUTSIDE run_signature_deck.py and CANNOT be delivered. The only bypass is "
-                "a logged owner_skip_approval token (gate=AF-NO-RUN-DIR)."]
-        reasons.append(f"NOTE: {AF_NO_RUN_DIR} waived by logged owner_skip_approval.")
+        return False, [
+            f"{AF_NO_RUN_DIR}: no governed run dir "
+            "(working/checkpoints/process_manifest.json) could be resolved for "
+            f"{artifact_path.name}. A deck with no governed run dir was hand-built "
+            "OUTSIDE run_signature_deck.py and CANNOT be delivered. AF-NO-RUN-DIR is "
+            "not waivable (D-28): run the deck through run_signature_deck.py."]
 
     # (1) ARTIFACT PROVENANCE — selectable-text / unreadable-artifact inspection.
     prov = inspect_pptx_artifact(artifact_path) if suffix == ".pptx" \
@@ -813,9 +899,19 @@ def gate_delivered_artifact(artifact_path, run_dir=None, *, verify_destinations:
     return (len(hard) == 0), reasons
 
 
+def _deferred_run(run_dir) -> bool:
+    """PD-203 (4): True when no delivery has been attempted yet — no client package
+    dir AND no delivery_plan.json. The CLI turns this into the explicit NOT CHECKED
+    line and the --json field deferred: true (the 2-tuple public API is unchanged)."""
+    run_dir = Path(run_dir)
+    return (find_client_package(run_dir) is None
+            and not (run_dir / "working" / "checkpoints" / "delivery_plan.json").is_file())
+
+
 def delivery_gate(run_dir: Path, *, verify_destinations: bool = True):
     """Mechanical last-mile gate. Returns (ok, reasons). Defers (ok=True, []) when no
-    delivery has been attempted yet (no package dir AND no delivery_plan.json).
+    delivery has been attempted yet (no package dir AND no delivery_plan.json) — the
+    CLI reports that state as "NOT CHECKED", never as a pass (PD-203 (4)).
 
     verify_destinations=False runs the PRE-TRANSPORT subset: AF-DH1 package hygiene + any
     recorded af_dh1_triggered flag, but SKIPS the SOP-9.4 destination ground-truth (the
@@ -864,11 +960,37 @@ def delivery_gate(run_dir: Path, *, verify_destinations: bool = True):
 # ---------------------------------------------------------------------------
 # SELF-TEST — built-in pass + fail fixtures (no external deps, no network).
 # ---------------------------------------------------------------------------
+def _minimal_file_bytes(cat: str) -> bytes:
+    """PD-203 (5): a REAL minimal file for a client-package slot — the leading bytes
+    its kind requires + zero padding to the DELIVERABLE_AUDIT_SPEC byte floor. The
+    fixtures use this so cases B-G exercise the byte/magic checks instead of the old
+    one-byte placeholders that the name-only gate accepted."""
+    floor = int((_AUDIT_SPEC_BY_KEY.get(cat) or {}).get("min_bytes") or 0)
+    prefix = {
+        "deck_pdf": b"%PDF-1.4\n",
+        "guide_pdf": b"%PDF-1.4\n",
+        "speech_pdf": b"%PDF-1.4\n",
+        "audio_mp3": b"ID3\x04\x00\x00\x00\x00\x00\x00",
+        "teleprompter_html": b"<!DOCTYPE html><html><body></body></html>",
+        "webinar_mp4": b"\x00\x00\x00\x18ftypisom",
+    }.get(cat, b"")
+    return prefix + b"\x00" * max(0, floor - len(prefix))
+
+def _write_minimal(path: Path, cat: str) -> Path:
+    path.write_bytes(_minimal_file_bytes(cat))
+    return path
+
 def _mk_pkg(base: Path, files):
     d = base / "delivery" / "demo-deck-FINAL"
     d.mkdir(parents=True, exist_ok=True)
     for nm in files:
-        (d / nm).write_text("x")
+        cat = _categorize(nm)
+        if cat == "deck_pptx":
+            _mk_pptx(d / nm, with_text=False)
+        elif cat:
+            _write_minimal(d / nm, cat)
+        else:
+            (d / nm).write_text("x")  # deliberately not a whitelisted slot
     return d
 
 
@@ -903,12 +1025,16 @@ _SLIDE_WITH_TEXT = (
 
 def _mk_pptx(path: Path, with_text: bool):
     """Write a minimal OOXML .pptx zip with one slide part — image-only or with a
-    selectable <a:t> text run — using stdlib zipfile only (no python-pptx)."""
+    selectable <a:t> text run — using stdlib zipfile only (no python-pptx). PD-203 (5):
+    one stored pad entry lifts the archive over the DELIVERABLE_AUDIT_SPEC byte floor,
+    so a fixture deck is a real deliverable by size as well as by magic bytes."""
     path.parent.mkdir(parents=True, exist_ok=True)
+    floor = int(_AUDIT_SPEC_BY_KEY["deck_pptx"]["min_bytes"])
     with zipfile.ZipFile(str(path), "w") as zf:
         zf.writestr("[Content_Types].xml", "<Types/>")
         zf.writestr("ppt/slides/slide1.xml",
                     _SLIDE_WITH_TEXT if with_text else _SLIDE_IMG_ONLY)
+        zf.writestr("pad.bin", b"\x00" * floor, compress_type=zipfile.ZIP_STORED)
     return path
 
 
@@ -939,7 +1065,7 @@ def _mk_full_run(base: Path, with_text=False, task_ids=("kie-1",), teleprompter=
     for nm in ("demo-deck-FINAL.pdf", "PRESENTER-GUIDE.pdf",
                "PRESENTERS-SPEECH.pdf", "PRESENTER-AUDIO.mp3",
                "demo-deck-WEBINAR.mp4"):
-        (pkg / nm).write_text("x")
+        _write_minimal(pkg / nm, _categorize(nm))
     # Complete GHL upload record (R3 U09 ten-piece contract): the per-deck
     # folder id, per-slide PNG uploads, and the final PPTX upload — the HARD
     # closeout gate (ghl_media_push.gate_ghl_media_complete) requires all three
@@ -956,21 +1082,24 @@ def _mk_full_run(base: Path, with_text=False, task_ids=("kie-1",), teleprompter=
     ]})
     _write_render_manifest(base, list(task_ids))
     if teleprompter:
-        (pkg / "presenter-teleprompter.html").write_text("<html></html>")
+        _write_minimal(pkg / "presenter-teleprompter.html", "teleprompter_html")
         tp = base / "working" / "teleprompter"
         tp.mkdir(parents=True, exist_ok=True)
-        (tp / "teleprompter.html").write_text("<html></html>")
+        _write_minimal(tp / "teleprompter.html", "teleprompter_html")
     return deck
 
 
 def _selftest() -> int:
     fails = []
 
-    # CASE A — pre-delivery render (nothing) -> DEFER (ok, no reasons).
+    # CASE A — pre-delivery render (nothing) -> DEFER (ok, no reasons), and the
+    # deferral is identifiable so the CLI can say NOT CHECKED (PD-203 (4)).
     with tempfile.TemporaryDirectory() as t:
         ok, reasons = delivery_gate(Path(t))
         if not ok or reasons:
             fails.append(f"A defer: expected ok/empty, got ok={ok} reasons={reasons}")
+        if not _deferred_run(Path(t)):
+            fails.append("A defer: _deferred_run did not report the empty run dir")
 
     # CASE B — clean 6-file package + verified GHL + mac anchor -> PASS.
     with tempfile.TemporaryDirectory() as t:
@@ -1085,15 +1214,24 @@ def _selftest() -> int:
         if ok or not any("AF-BUNDLE-COMPLETE" in r and "teleprompter" in r for r in reasons):
             fails.append(f"K bundle: expected AF-BUNDLE-COMPLETE teleprompter REJECT, got ok={ok} {reasons}")
 
-    # CASE L — owner_skip_approval waives the no-run-dir block (the ONLY bypass).
+    # CASE L — PD-203 (3) + D-28: a typed token beside the artifact is NOT an owner.
+    # A deck with no governed run folder is REJECTED even with an adjacent
+    # owner_skip_approval.json present, and a token with no owner_msg_id authorizes
+    # nothing at the schema level.
     with tempfile.TemporaryDirectory() as t:
         deck = _mk_pptx(Path(t) / "loose-deck.pptx", with_text=False)
         (Path(t) / "owner_skip_approval.json").write_text(json.dumps({
             "owner_approved": True, "gate": "AF-NO-RUN-DIR",
-            "approved_by": "owner", "reason": "audited out-of-band delivery"}))
+            "approved_by": "owner", "reason": "audited out-of-band delivery",
+            "owner_msg_id": "msg-123"}))
         ok, reasons = gate_delivered_artifact(deck, None)
-        if not ok:
-            fails.append(f"L owner-skip: expected PASS via owner_skip_approval, got {reasons}")
+        if ok or not any("AF-NO-RUN-DIR" in r for r in reasons):
+            fails.append(f"L owner-skip: expected AF-NO-RUN-DIR REJECT despite the "
+                         f"adjacent token, got ok={ok} {reasons}")
+        if _coerce_owner_skip({"owner_approved": True, "gate": "AF-NO-RUN-DIR",
+                               "approved_by": "owner",
+                               "reason": "audited out-of-band delivery"}):
+            fails.append("L owner-skip: a token with no owner_msg_id was accepted")
 
     # CASE M — a non-zip / decoy .pptx -> AF-NOT-KIE-RENDERED (fail-closed).
     with tempfile.TemporaryDirectory() as t:
@@ -1253,11 +1391,14 @@ def main() -> int:
         print(f"delivery_gate: run_dir not a directory: {rd}", file=sys.stderr)
         return 2
     ok, reasons = delivery_gate(rd)
+    deferred = ok and not reasons and _deferred_run(rd)
     if args.json:
-        print(json.dumps({"ok": ok, "reasons": reasons}, indent=2))
+        print(json.dumps({"ok": ok, "deferred": deferred, "reasons": reasons}, indent=2))
     else:
-        if ok:
-            print("DELIVERY GATE: PASS (last mile complete or pre-delivery defer)")
+        if deferred:
+            print("DELIVERY GATE: NOT CHECKED — no package and no plan yet")
+        elif ok:
+            print("DELIVERY GATE: PASS (last mile complete)")
         else:
             print("DELIVERY GATE: FAIL")
             for r in reasons:
