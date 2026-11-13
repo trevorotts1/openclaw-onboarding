@@ -7147,11 +7147,18 @@ def check_image_qc_present(run_dir: Path, slides_path: Optional[Path] = None) ->
         return ""  # absence is AF-IMAGE-QC's job; we only check freshness + coverage.
 
     # Staleness check: report must be NEWER than ALL rendered PNGs.
+    def _date_of(path: Path) -> float:
+        """A file date, or an OSError that NAMES the file it came from (PD-218a)."""
+        try:
+            return path.stat().st_mtime
+        except OSError as exc:
+            raise OSError(exc.errno, f"{path}: {exc.strerror}") from None
+
     try:
-        report_mtime = report_path.stat().st_mtime
-        png_mtimes = [p.stat().st_mtime for p in pngs if p.exists()]
+        report_mtime = _date_of(report_path)
+        png_mtimes = [_date_of(p) for p in pngs if p.exists()]
         if png_mtimes and report_mtime < max(png_mtimes):
-            newest_png = max(pngs, key=lambda p: p.stat().st_mtime)
+            newest_png = max(pngs, key=_date_of)
             return (
                 f"AF-IMAGE-QC-RAN: image-QC report is STALE — it was last written "
                 f"before {newest_png.name} was rendered. The report must be re-run after "
@@ -7160,9 +7167,10 @@ def check_image_qc_present(run_dir: Path, slides_path: Optional[Path] = None) ->
             )
     except OSError as exc:
         # PD-218a: an unreadable file date is a FAILURE, not a skipped check — with no
-        # readable date the gate cannot prove the report is newer than the renders.
+        # readable date the gate cannot prove the report is newer than the renders. The
+        # error text carries the exact file whose date failed.
         return (
-            f"AF-IMAGE-QC-RAN: the image-QC report's file date could not be read "
+            f"AF-IMAGE-QC-RAN: a file date could not be read "
             f"({type(exc).__name__}: {exc}) — freshness against the rendered slides "
             f"cannot be established, so the report cannot prove the rendered slides "
             f"were reviewed after the last render. Re-run the Image QC Specialist "

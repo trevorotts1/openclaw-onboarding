@@ -237,3 +237,26 @@ def test_image_qc_unreadable_file_date_fails_naming_it(tmp_path, monkeypatch):
     assert reason.startswith("AF-IMAGE-QC-RAN:"), reason
     assert "file date could not be read" in reason, reason
     assert "OSError" in reason, reason
+    assert "image_qc_report.json" in reason, reason
+
+
+def test_image_qc_unreadable_render_date_names_the_render(tmp_path, monkeypatch):
+    """PD-218a: the failure must name the file whose date failed — here the RENDER,
+    not the report. A message that always blames the report would send the operator
+    to re-run the Image QC Specialist when the render batch is what is unreadable."""
+    rd = _image_run(tmp_path)
+    assert bd.check_image_qc_present(rd) == ""  # control: same fixture passes
+
+    png = rd / "renders" / "slide-1.png"
+    real_stat = pathlib.Path.stat
+
+    def fake_stat(self, *args, **kwargs):
+        if self == png:
+            raise OSError(5, "Input/output error")
+        return real_stat(self, *args, **kwargs)
+
+    monkeypatch.setattr(pathlib.Path, "stat", fake_stat)
+    reason = bd.check_image_qc_present(rd)
+    assert reason.startswith("AF-IMAGE-QC-RAN:"), reason
+    assert "slide-1.png" in reason, reason
+    assert "image_qc_report.json" not in reason, reason
