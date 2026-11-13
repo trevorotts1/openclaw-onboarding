@@ -16,7 +16,7 @@ name: KIE owner prompt cap present for every GPT Image 2.6 route (G-7)
 
 on:
   push:
-    branches: [main, "batch/**"]
+    branches: [main]
     paths:
       - "66-kie-image/models.json"
       - "71-blackceo-signature-page/references/prompt-budget-policy.json"

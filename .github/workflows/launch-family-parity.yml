@@ -12,7 +12,7 @@ name: launch-family-parity
 
 on:
   push:
-    branches: [main, "batch/**"]
+    branches: [main]
     paths:
       - '49-signature-funnel/**'
       - '50-email-engine/**'

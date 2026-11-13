@@ -117,8 +117,9 @@ def main() -> int:
     #    never reports and the PR hangs with zero failing checks. This is the
     #    shape that blocks a PR forever, so it must be a hard mapping failure.
     def add_pr_paths(wd: Path) -> None:
-        rewrite(wd / "qc-static.yml", "  pull_request:\n    branches: [main]\n",
-                "  pull_request:\n    branches: [main]\n    paths:\n"
+        rewrite(wd / "qc-static.yml",
+                "  pull_request:\n    types: [opened, synchronize, reopened, ready_for_review]\n    branches: [main]\n",
+                "  pull_request:\n    types: [opened, synchronize, reopened, ready_for_review]\n    branches: [main]\n    paths:\n"
                 "      - '49-signature-funnel/**'\n")
     cases.append(("path filter re-added on pull_request", add_pr_paths,
                   "pull_request trigger is path-filtered"))

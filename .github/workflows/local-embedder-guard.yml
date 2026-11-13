@@ -5,7 +5,7 @@ name: local-embedder-guard
 
 on:
   push:
-    branches: [main, "batch/**"]
+    branches: [main]
     paths:
       - 76-local-embedder/**
       - install.sh

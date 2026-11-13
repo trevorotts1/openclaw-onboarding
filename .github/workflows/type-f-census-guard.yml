@@ -13,7 +13,7 @@ name: Type-f Census Guard
 
 on:
   push:
-    branches: [main, "batch/**"]
+    branches: [main]
     paths:
       - '**/*.sh'
       - '**/*.py'

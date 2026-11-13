@@ -54,7 +54,7 @@ name: legacy-agents-list-gate
 
 on:
   push:
-    branches: [main, "batch/**"]
+    branches: [main]
     paths:
       - scripts/qc-assert-legacy-agents-list.sh
       - scripts/oc-atomic-upgrade.sh

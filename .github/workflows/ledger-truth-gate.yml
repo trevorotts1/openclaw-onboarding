@@ -44,7 +44,7 @@ name: Ledger-truth gate
 
 on:
   push:
-    branches: [main, "batch/**"]
+    branches: [main]
     paths:
       - "ledgers/**"
       - ".github/workflows/ledger-truth-gate.yml"

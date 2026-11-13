@@ -16,7 +16,7 @@ name: downsell-wrapper-pins
 
 on:
   push:
-    branches: [main, "batch/**"]
+    branches: [main]
     paths:
       - "49-signature-funnel/scripts/**"
       - "81-signature-downsell/**"

@@ -18,7 +18,7 @@ on:
       - 'tests/unit/test_ceo_*.py'
       - '.github/workflows/ceo-fallback-execution-guard.yml'
   push:
-    branches: [main, "batch/**"]
+    branches: [main]
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}

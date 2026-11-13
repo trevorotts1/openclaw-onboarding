@@ -17,7 +17,7 @@ name: prebuilt-index-section-tagged-guard
 
 on:
   push:
-    branches: [main, "batch/**"]
+    branches: [main]
     paths:
       - install.sh
       - update-skills.sh

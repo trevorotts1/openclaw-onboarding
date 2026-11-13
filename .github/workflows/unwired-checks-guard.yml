@@ -44,7 +44,7 @@ name: unwired-checks guard (Skill 25 video-creator contract suite)
 
 on:
   push:
-    branches: [main, "batch/**"]
+    branches: [main]
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
     branches: [main]

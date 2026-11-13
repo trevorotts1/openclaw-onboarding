@@ -31,7 +31,6 @@ on:
     branches:
       - "fix/skill44**"
       - "skill-44/**"
-      - "batch/**"
   workflow_dispatch:
 
 concurrency:

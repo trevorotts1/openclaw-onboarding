@@ -31,7 +31,7 @@ name: hardening bounded-brew + fleet-standards legacy exec.mode guard
 
 on:
   push:
-    branches: [main, "batch/**"]
+    branches: [main]
     paths:
       - scripts/install-hardening.sh
       - scripts/apply-fleet-standards.sh

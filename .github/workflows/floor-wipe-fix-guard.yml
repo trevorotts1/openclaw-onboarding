@@ -104,7 +104,7 @@ name: Floor-wipe fix guard (P2-06)
 
 on:
   push:
-    branches: [main, "batch/**"]
+    branches: [main]
     paths:
       - "23-ai-workforce-blueprint/scripts/department-floor.py"
       - "23-ai-workforce-blueprint/scripts/materialize-missing-departments.py"

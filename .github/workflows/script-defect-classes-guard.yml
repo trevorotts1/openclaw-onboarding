@@ -23,7 +23,7 @@ name: script defect classes guard (roster shape, CC DB decoys, GNU stat, retire,
 
 on:
   push:
-    branches: [main, "batch/**"]
+    branches: [main]
     paths:
       - "23-ai-workforce-blueprint/scripts/refresh-build-state-from-index.py"
       - "23-ai-workforce-blueprint/scripts/retire-confirmed-decline.sh"

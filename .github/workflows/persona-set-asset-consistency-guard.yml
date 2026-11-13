@@ -16,7 +16,7 @@ name: persona-set-asset-consistency-guard
 
 on:
   push:
-    branches: [main, "batch/**"]
+    branches: [main]
     paths:
       - 22-book-to-persona-coaching-leadership-system/personas/**
       - 22-book-to-persona-coaching-leadership-system/persona-categories.json

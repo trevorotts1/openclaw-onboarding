@@ -27,7 +27,7 @@ name: Skill 72 motion graphics tests (MG-043)
 
 on:
   push:
-    branches: [main, "batch/**"]
+    branches: [main]
     paths:
       - "72-motion-video-plus/**"
       - ".github/workflows/skill72-motion-graphics-tests.yml"

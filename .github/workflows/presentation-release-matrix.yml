@@ -21,7 +21,7 @@ name: presentation-release-matrix
 
 on:
   push:
-    branches: [main, "batch/**"]
+    branches: [main]
     paths:
       - "23-ai-workforce-blueprint/templates/role-library/presentations/release-matrix/**"
       - "23-ai-workforce-blueprint/templates/role-library/presentations/scripts/pdf_export.py"

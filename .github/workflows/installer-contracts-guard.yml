@@ -2,7 +2,7 @@ name: Installer and handoff contracts guard (A45 / A46 / A47)
 
 on:
   push:
-    branches: [main, "batch/**"]
+    branches: [main]
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
     branches: [main]

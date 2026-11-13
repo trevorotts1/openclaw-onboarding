@@ -18,7 +18,7 @@ name: FB/IG ad pipeline lockstep (Skill 48)
 
 on:
   push:
-    branches: [main, "batch/**"]
+    branches: [main]
     paths:
       - "48-facebook-ad-generator/scripts/ad_director.py"
       - "48-facebook-ad-generator/scripts/ad_build_check.py"

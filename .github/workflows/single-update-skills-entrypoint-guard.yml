@@ -21,7 +21,7 @@ name: Single update-skills.sh entrypoint guard
 
 on:
   push:
-    branches: [main, "batch/**"]
+    branches: [main]
     paths:
       - "update-skills.sh"
       - "scripts/update-skills.sh"

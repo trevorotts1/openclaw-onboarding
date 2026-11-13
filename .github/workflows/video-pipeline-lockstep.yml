@@ -26,7 +26,7 @@ name: Video pipeline lockstep (Movie Producer)
 
 on:
   push:
-    branches: [main, "batch/**"]
+    branches: [main]
     paths:
       - "47-movie-producer/scripts/executive_producer.py"
       - "47-movie-producer/scripts/video_build_check.py"

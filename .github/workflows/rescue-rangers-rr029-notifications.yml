@@ -2,7 +2,7 @@ name: rescue-rangers-rr029-notifications
 
 on:
   push:
-    branches: [main, "batch/**"]
+    branches: [main]
     paths:
       - "65-rescue-receiver/rescue-poll.sh"
       - "65-rescue-receiver/rescue-notification.py"

@@ -20,7 +20,7 @@ on:
       - 'tests/unit/qc-assert-unit-lane-laws.test.sh'
       - '.github/workflows/unit-lane-laws-guard.yml'
   push:
-    branches: [main, "batch/**"]
+    branches: [main]
     paths:
       - 'scripts/qc-assert-unit-lane-laws.sh'
       - 'tests/unit/qc-assert-unit-lane-laws.test.sh'

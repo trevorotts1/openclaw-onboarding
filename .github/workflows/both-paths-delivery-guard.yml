@@ -38,7 +38,7 @@ name: both-paths-delivery-guard
 
 on:
   push:
-    branches: [main, "batch/**"]
+    branches: [main]
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
     branches: [main]

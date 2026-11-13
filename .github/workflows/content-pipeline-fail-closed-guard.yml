@@ -31,7 +31,7 @@ name: content-pipeline fail-closed guards (T0-59/60/61/62/63/64, T2-36/38)
 
 on:
   push:
-    branches: [main, "batch/**"]
+    branches: [main]
     paths:
       - "19-humanizer/**"
       - "24-storyboard-writer/**"

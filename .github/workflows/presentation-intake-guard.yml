@@ -8,7 +8,7 @@ name: presentation-intake-guard
 # copies of lib.js and tenant.js canonical.
 on:
   push:
-    branches: [main, "batch/**"]
+    branches: [main]
     paths:
       - 23-ai-workforce-blueprint/templates/role-library/presentations/intake/interview-app/**
       - 23-ai-workforce-blueprint/templates/role-library/presentations/intake/deck-intake-questions.json

@@ -9,7 +9,7 @@ name: signature-page-tests
 
 on:
   push:
-    branches: [main, "batch/**"]
+    branches: [main]
     paths:
       - "71-blackceo-signature-page/**"
       - ".github/workflows/signature-page-tests.yml"

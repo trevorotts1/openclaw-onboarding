@@ -132,7 +132,7 @@ name: Skill-23 provisioning tests
 
 on:
   push:
-    branches: [main, "batch/**"]
+    branches: [main]
     paths:
       - "23-ai-workforce-blueprint/**"
       - "shared-utils/create-role-workspaces.py"

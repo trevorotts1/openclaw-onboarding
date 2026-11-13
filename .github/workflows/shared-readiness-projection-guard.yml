@@ -8,7 +8,7 @@ name: shared readiness projection guard (T-40)
 
 on:
   push:
-    branches: [main, "batch/**"]
+    branches: [main]
     paths:
       - "shared-utils/shared_readiness.py"
       - "tests/unit/shared-readiness-projection.test.py"

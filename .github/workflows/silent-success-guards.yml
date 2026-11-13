@@ -30,7 +30,7 @@ name: silent-success guards (ONB-46-001 / ONB-50-001)
 
 on:
   push:
-    branches: [main, "batch/**"]
+    branches: [main]
     paths:
       - "46-kie-callback-relay/**"
       - "50-email-engine/tools/prove-email.py"

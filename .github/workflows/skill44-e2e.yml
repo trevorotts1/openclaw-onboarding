@@ -34,7 +34,8 @@ on:
       - "44-convert-and-flow-operator/tools/engine/**"
       - ".github/workflows/skill44-e2e.yml"
   push:
-    branches: ["batch/**"]
+    branches:
+      - "skill-44/**"
   workflow_dispatch:
 
 # No live CRM credentials are needed or present.

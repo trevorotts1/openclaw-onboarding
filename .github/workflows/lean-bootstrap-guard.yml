@@ -29,7 +29,7 @@ name: lean-bootstrap guard
 
 on:
   push:
-    branches: [main, "batch/**"]
+    branches: [main]
     paths:
       - scripts/compact-bootstrap.py
       - scripts/bootstrap-pointerize.py

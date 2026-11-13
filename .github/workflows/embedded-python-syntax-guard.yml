@@ -42,7 +42,7 @@ name: embedded-python syntax guard (ONB-STATE-001)
 
 on:
   push:
-    branches: [main, "batch/**"]
+    branches: [main]
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
     branches: [main]

@@ -71,7 +71,7 @@ name: podcast-engine-fail-closed-guard
 
 on:
   push:
-    branches: [main, "batch/**"]
+    branches: [main]
     paths:
       - "58-podcast-production-engine/scripts/podbean_publish.sh"
       - "58-podcast-production-engine/scripts/generate_podcast_audio.sh"

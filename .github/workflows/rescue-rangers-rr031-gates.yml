@@ -33,7 +33,7 @@ name: rescue-rangers-rr031-gates
 
 on:
   push:
-    branches: [main, "batch/**"]
+    branches: [main]
     paths:
       - "scripts/reconcile-rr-agent-map.sh"
       - "scripts/_rr_registry_lib.py"
