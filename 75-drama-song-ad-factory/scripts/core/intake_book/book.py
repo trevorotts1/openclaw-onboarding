@@ -495,12 +495,16 @@ def evaluate(brief, settings=None, resume_state=None, run_id=None, now_unix=None
     invented = reject_any_invented(brief)
     mapped = to_intake_brief(fields, brief)
     base = _base.evaluate(mapped, settings, resume_state, run_id, now_unix)
-    # U-E05: the mapped brief never carries extracted text, so screen the raw
-    # brief here. An instruction-bearing source is dropped and named, never a
-    # refusal -- the run continues on the client's own words.
+    # U-E05: an instruction-bearing source is dropped and named, never a
+    # refusal -- the run continues on the client's own words. U-GEN423 now
+    # forwards extracted_sources into the mapped brief, so the engine's own
+    # warnings already name them; the raw-brief screen stays for any path that
+    # maps nothing, and a name is never listed twice.
     warnings = list(base.get("warnings") or [])
-    warnings.extend("source ignored: %s" % name
-                    for name in _base.detect_injection(brief))
+    for name in _base.detect_injection(brief):
+        w = "source ignored: %s" % name
+        if w not in warnings:
+            warnings.append(w)
 
     base_fields, _ = _base.normalize(mapped, settings)
     base_summary = dict(base.get("summary") or {})
