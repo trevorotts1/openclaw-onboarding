@@ -27,7 +27,7 @@
 
 'use strict';
 
-import { AF_ID_INVALID, isClientId } from './ids.js';
+import { AF_ID_INVALID, isClientId, ownsPath } from './ids.js';
 import { AF_ISO_CROSS, authorizeClient, enrollClient } from './isolation.js';
 import { AF_PAIR_EXPIRED, AF_PAIR_LOCKED, PAIRING_MAX_TRIES, attemptPairing, buildKeyRecord, mintKey, mintPairingCode, pairRecordKey } from './keys.js';
 import { MAX_WAITING_ORDERS, checkIn, readInbox, writeInbox } from './inbox.js';
@@ -41,6 +41,7 @@ import { AF_PUSH_DISABLED, pushEnabled, registerSubscription, revokeSubscription
 import { AF_LINK_KIND, linkRoute } from './link.js';
 import { deleteDraft, pageRoute, validateReplies } from './page-api.js';
 import { approvalsRoute } from './approvals-api.js';
+import { authorityPrefix } from './approval-store.js';
 
 export const SERVICE_VERSION = '0.1.0';
 export { randomConnectHex };
@@ -124,6 +125,19 @@ export function r2Store(bucket) {
       return o ? { value: await o.text() } : null;
     },
     objectPut: (p, v) => bucket.put(p, v),
+    objectDelete: (p) => bucket.delete(p),
+    // U-Z07 — a staging object's name is never written on the order record, so
+    // the cleanup after a finished order has to ask the bucket which ones exist.
+    objectList: async (prefix) => {
+      const keys = [];
+      let cursor = null;
+      do {
+        const page = await bucket.list({ prefix, cursor, limit: 1000 });
+        keys.push(...(page.objects || []).map((o) => o.key));
+        cursor = page.truncated ? page.cursor : null;
+      } while (cursor);
+      return keys;
+    },
   };
 }
 
@@ -462,6 +476,16 @@ export async function handle(request, env, store, objects, deps = {}) {
         // https link of the two known kinds.
         moved.order.delivery = { url: body.delivery.url, kind: body.delivery.kind };
       }
+      // U-Z07 — the order is finished (delivered, done) or abandoned (cancel):
+      // the intake files and the approval staging copies have done their job
+      // and are deleted. A store that refuses never fails the state change.
+      if (CLEANUP_EVENTS.includes(body.event)) {
+        const cleaned = await cleanupOrderFiles({
+          store, objects, clientId, orderId, uploadIds: moved.order.upload_ids,
+        });
+        if (cleaned.pending) moved.order.cleanup_pending = true;
+        else if (moved.order.cleanup_pending) delete moved.order.cleanup_pending;
+      }
       await store.kvPut(`order:${clientId}:${orderId}`, JSON.stringify(moved.order));
       await writeInbox(objects, { clientId, orders: await waitingList(store, clientId), nowMs });
       return ok({ order: project(moved.order, nowMs) });
@@ -470,6 +494,11 @@ export async function handle(request, env, store, objects, deps = {}) {
     if (verb === 'cancel' && request.method === 'POST') {
       const moved = transition(JSON.parse(raw), 'cancel', { nowMs, actor: auth.record.kind });
       if (!moved.ok) return fail(409, moved.code, moved.message);
+      // U-Z07 — a cancelled order keeps none of its intake files either.
+      const cleaned = await cleanupOrderFiles({
+        store, objects, clientId, orderId, uploadIds: moved.order.upload_ids,
+      });
+      if (cleaned.pending) moved.order.cleanup_pending = true;
       await store.kvPut(`order:${clientId}:${orderId}`, JSON.stringify(moved.order));
       await writeInbox(objects, { clientId, orders: await waitingList(store, clientId), nowMs });
       return ok({ order: project(moved.order, nowMs) });
@@ -580,6 +609,76 @@ async function serveAsset(request, env, assetPath) {
   // (S75-070 — a player must not be a hole in the page's own rules).
   headers.set('Content-Security-Policy', "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' blob:; media-src 'self' blob: https://storage.googleapis.com https://*.r2.dev; connect-src 'self' https://*.r2.cloudflarestorage.com; frame-ancestors 'none'; form-action 'self'; base-uri 'none'");
   return new Response(asset.body, { status: asset.status, headers });
+}
+
+// ---------------------------------------------------------------------------
+// U-Z07 (S75-083) — a finished order does not keep its working files
+//
+// Intake answers and photos are asked for a reason only until the order is
+// delivered, done or cancelled; approval `staging/` copies exist only until the
+// frozen `files/` copy is made. Both are the client's own bytes, so both are
+// removed here, at the one moment the order is finished — never on a timer that
+// could not be undone.
+//
+// What is NOT deleted here: `files/` (the page still plays them), `ready.json`
+// (the card stays answerable) and `decision.json` (the client's answer). The
+// bucket's own 45-day rule removes those later (deploy.manifest.json, U-DP2).
+//
+// A store that refuses a delete is recorded on the order as
+// `cleanup_pending: true`; it NEVER fails the state change. A delivery the page
+// can show is worth more than a cleanup that has to be retried.
+// ---------------------------------------------------------------------------
+
+/** The events after which an order's working files are no longer needed. */
+const CLEANUP_EVENTS = ['deliver', 'done', 'cancel'];
+
+/**
+ * Delete one order's intake objects and approval staging objects.
+ * @returns {{pending: boolean}} pending = at least one delete did not happen
+ */
+async function cleanupOrderFiles({ store, objects, clientId, orderId, uploadIds }) {
+  const targets = new Set();
+  let pending = false;
+
+  // Intake: the object path lives on the upload job, never on the order, and it
+  // is re-checked with ownsPath so a corrupt record can never name another
+  // client's object.
+  for (const uploadId of Array.isArray(uploadIds) ? uploadIds : []) {
+    try {
+      const raw = await store.kvGet(`upload:${clientId}:${uploadId}`);
+      if (!raw) continue;
+      const job = JSON.parse(raw);
+      const path = job && typeof job.object_path === 'string' ? job.object_path : '';
+      if (path && ownsPath(clientId, path)) targets.add(path);
+    } catch {
+      pending = true;
+    }
+  }
+
+  // Approval staging: found by prefix under this order's own namespace. Only
+  // `/staging/` segments are named, so `files/`, `ready.json` and
+  // `decision.json` can never match. A store with no list capability (an
+  // injected test adapter) knows of no staging object and is not an error.
+  if (typeof objects.objectList === 'function') {
+    try {
+      const listed = await objects.objectList(`${authorityPrefix(clientId, orderId)}/`);
+      for (const key of listed) {
+        if (typeof key === 'string' && key.includes('/staging/') && ownsPath(clientId, key)) targets.add(key);
+      }
+    } catch {
+      pending = true;
+    }
+  }
+
+  for (const path of targets) {
+    try {
+      if (typeof objects.objectDelete !== 'function') throw new Error('AF-DS-NO-DELETE');
+      await objects.objectDelete(path);
+    } catch {
+      pending = true;
+    }
+  }
+  return { pending };
 }
 
 async function clientRecord(store, clientId) {
