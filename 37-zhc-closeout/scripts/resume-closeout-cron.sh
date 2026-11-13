@@ -124,14 +124,6 @@ if owner_sends_held; then
   exit 0
 fi
 
-# ---- run count (defense-in-depth cap) ----
-run_count=0
-if [[ -f "$RUN_COUNT_FILE" ]]; then
-  run_count=$(cat "$RUN_COUNT_FILE" 2>/dev/null | tr -d '[:space:]' | grep -E '^[0-9]+$' || echo 0)
-fi
-run_count=$((run_count + 1))
-printf '%d\n' "$run_count" > "$RUN_COUNT_FILE"
-
 # ---- resolve operator ESCALATION chat for escalations ----
 # CO-MINGLING GUARD (v12.4.0): destination is OPT-IN. NO hardcoded personal chat.
 # Empty result = escalation destination not configured; callers MUST skip the send.
@@ -202,6 +194,14 @@ if [[ -z "$build_completed" || "$build_completed" == "null" ]]; then
   log "buildCompletedAt not set -- build not done yet; nothing to resume"
   exit 0
 fi
+
+# ---- run count (defense-in-depth cap) ----
+run_count=0
+if [[ -f "$RUN_COUNT_FILE" ]]; then
+  run_count=$(cat "$RUN_COUNT_FILE" 2>/dev/null | tr -d '[:space:]' | grep -E '^[0-9]+$' || echo 0)
+fi
+run_count=$((run_count + 1))
+printf '%d\n' "$run_count" > "$RUN_COUNT_FILE"
 
 # Kill condition 2: already done or sent
 if [[ "$closeout_status" == "done" || "$closeout_status" == "sent" ]] && "$WORKFORCE_PYTHON" "$COMPLETION_SCRIPT" "$STATE_FILE" --closeout >>"$LOG_FILE" 2>&1; then
@@ -393,7 +393,7 @@ if (( _stall_passes >= MAX_STALL_PASSES )) && _is_human_or_stuck_blocker; then
     _agent_nm=$(state_get '.agentName'); [[ -z "$_agent_nm" || "$_agent_nm" == "null" ]] && _agent_nm="client"
     if [[ -n "$operator_chat" ]] && command -v openclaw >/dev/null 2>&1; then
       openclaw message send --channel telegram --target "$operator_chat" \
-        --message "⏸️ ZHC closeout PAUSED (awaiting human action) for ${_agent_nm}. closeoutStatus=${closeout_status:-unset}. Reason: $(state_get '.closeoutBlockReason')$(state_get '.notionFailureReason'). The resume cron stopped re-running the model and will auto-continue when the blocker clears. State: $STATE_FILE" \
+        --message "⏸️ ZHC closeout PAUSED (awaiting human action) for ${_agent_nm}. closeoutStatus=${closeout_status:-unset}. Reason: $(state_get '.closeoutBlockReason') $(state_get '.notionFailureReason') Unmet: $(state_get '.closeoutVerification.unmetRequirements | join(", ")'). The resume cron stopped re-running the model and will auto-continue when the blocker clears. State: $STATE_FILE" \
         >/dev/null 2>&1 || true
     else
       log "operator escalation chat not configured -- pause logged only (no operator notify; state marker written)"
