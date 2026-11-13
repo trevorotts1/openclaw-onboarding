@@ -6923,17 +6923,23 @@ def _reduce_qc_union(ordered: List[Tuple[Dict[str, Any], str]]) -> Optional[str]
     # route id while each row keeps its own.
     if row_routes and row_routes[0][2]:
         report["route_request_id"] = row_routes[0][2]
-    # PD-205c: the image check's own provenance under the names the FIX 33
-    # vision-unit contract (_fix33_check_report) and build_deck's render leg
-    # read. Same recorded facts PD-300 stamps above — an alias layer, never a
-    # second source: `vision_provider`/`vision_model` are written only when
-    # every row agrees (a merge whose units used different engines makes no
-    # deck-wide claim), and an unknown value stays null.
+    # PD-205c: the image check's own provenance under the names the RENDER leg
+    # reads. phase_verifiers' FIX 33 contract accepts graded_by_model (and
+    # vision_model as a fallback), but build_deck._image_qc_report_defects
+    # scans (vision_model, multimodal_model, vision_provider, ocr_engine,
+    # vision_engine, reviewer_vision_model) — graded_by_model is NOT in that
+    # list, so the image phase must also publish the vision_* aliases or the
+    # render leg refuses the report as "declares no vision engine". Both facts
+    # come from the dispatch RECORD (each row's own route), never from the
+    # model's prose about itself; an unknown value is null, never a guess. Per
+    # row always; at the top level only when every row agrees (a merge whose
+    # units used different routes keeps each row's own truth and makes no
+    # deck-wide claim).
     if phase_id == "P-IMAGE-QC":
-        if row_routes and len(providers) == 1:
-            report["vision_provider"] = next(iter(providers))
-        if row_routes and len(models) == 1:
-            report["vision_model"] = next(iter(models))
+        if len(providers) == 1:
+            report["vision_provider"] = next(iter(providers)) if row_routes else None
+        if len(models) == 1:
+            report["vision_model"] = next(iter(models)) if row_routes else None
     return json.dumps(report, indent=2, ensure_ascii=False)
 
 
@@ -8103,12 +8109,15 @@ def _dispatch_phase_fanout_units(
                 content, usage, route = dispatch_complete(
                     system_prompt, user_prompt, phase_id=phase_id, run_dir=run_dir,
                     worker_id=worker_id, reasoning_effort=effort,
-                    # PD-205c: this unit's rendered slide rides the request.
+                    # PD-205c: the rendered slide image rides the request --
+                    # the P-IMAGE-QC unit is a PIXEL read, and image is None
+                    # for every other phase.
+                    image=image,
                     # PD-068: a quality step's other-family pin applies to every
                     # unit exactly as it does to the serial path.
-                    image=image, route_override=_grader_override)
+                    route_override=_grader_override)
         except ImageRouteIneligible:
-            # Zero transport calls, zero paid attempts (raised inside
+            # PD-205c: zero transport calls, zero paid attempts (raised inside
             # dispatch_complete before both). The reason is the whole story.
             return fanout.UnitResult(key=unit.key, status="failed", attempts=0,
                                      reasons=[IMAGE_ROUTE_INELIGIBLE_REASON])
@@ -8381,7 +8390,10 @@ def _dispatch_phase_fanout_units(
         # PD-300: the unit's OWN route, from this dispatch's UnitResult meta
         # or — for a reused/banked unit that paid nothing this call — from the
         # durable unit record the previous dispatch stamped. Never invented:
-        # a unit with no recorded route carries nulls.
+        # a unit with no recorded route carries nulls. (PD-205c's reducer read
+        # the same three facts from `r.meta` alone; this superset keeps that
+        # source first, so the merged image report still stamps graded_by_*,
+        # request_id and the vision_* aliases.)
         meta = r.meta if isinstance(r.meta, dict) else {}
         prior = _store_state.get(r.key)
         prior_route = (prior.get("author_route")
