@@ -149,6 +149,21 @@ python3 -m pytest -q <scripts>/tests/test_pd_paths.py <scripts>/tests/test_deliv
 `presentation_job/deliverable_paths.py`, `pdf_export.py`, `tests/test_pd_paths.py`, `evidence/PD-216/BUILD-REPORT.md`.
 No sibling-unit hunks on this branch (no other lane commits are on it).
 
+## Remote head proof
+
+```
+$ git ls-remote --heads origin refs/heads/pd/fl30-path-table--hold-d12
+5a60f54c9d4f902429e27dfe144f36d85b849666	refs/heads/pd/fl30-path-table--hold-d12
+```
+
+Pushed chain: `1a476d2cb` (base) -> `1c6358215ede5691f6ab680fb9a8a0d5c131c941` (code + test) ->
+`09d50d9543fb0900a2d2f0f680b87cde55f599ec` (report) -> `5a60f54c9d4f902429e27dfe144f36d85b849666` (report wording).
+
+The pushed tree was re-checked from a clean checkout of the remote head (not the build tree): `10 passed`,
+`AUDIT_TODAY_EXIT=1`, `AUDIT_PD062_EXIT=0`, and `git diff --stat base..HEAD` showing exactly the four files above.
+The lane clone `/Volumes/mac mini m4/swarm-contract/pd-fix/worktrees/onboarding/FL30--hold-d12` was left clean and at
+base (`git status --short` empty, `HEAD 1a476d2c`); all builds ran in worktrees under `$TMPDIR`.
+
 ## Unproved / observed, not fixed (not owned by this lane)
 
 - `phase_verifiers.py:1615-1616`, `presentation_job/runfacts.py:1331-1332`, `verifier_registry.py:563-564` still
