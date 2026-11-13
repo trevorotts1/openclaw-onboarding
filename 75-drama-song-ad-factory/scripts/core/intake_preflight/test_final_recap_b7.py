@@ -265,3 +265,7 @@ def main():
 
 if __name__ == "__main__":
     sys.exit(main())
+
+
+def test_final_recap_b7():
+    assert main() == 0
