@@ -288,19 +288,15 @@ if [[ -n "$_early_build_done" && "$_early_build_done" != "null" ]] && ! _qc_clos
     # them into the jq program. _early_block_reason embeds .interviewQc.status
     # (state-file data); a value containing a double-quote or jq syntax would
     # otherwise corrupt the state write or inject into the filter.
-    _tmp_s=$(mktemp)
-    jq --arg reason "$_early_block_reason" --arg status "$_early_block_status" \
-      '.closeoutStatus = $status | .closeoutBlockReason = $reason' \
-      "$STATE_FILE" > "$_tmp_s" && mv "$_tmp_s" "$STATE_FILE" || rm -f "$_tmp_s"
+    workforce_state_set "$STATE_FILE" --arg reason "$_early_block_reason" --arg status "$_early_block_status" \
+      '.closeoutStatus = $status | .closeoutBlockReason = $reason' || true
     _TS_EARLY=$(now_iso)
-    _tmp_b=$(mktemp)
-    jq --arg reason "$_early_block_reason" --arg since "$_TS_EARLY" \
+    workforce_state_set "$STATE_FILE" --arg reason "$_early_block_reason" --arg since "$_TS_EARLY" \
       '.closeoutBlockers = (
         (.closeoutBlockers // [])
         | map(select(.class != "STUCK_QC_FAILED"))
         | . + [{"class":"STUCK_QC_FAILED","reason":$reason,"since":$since,"escalatedAt":null,"cleared":false}]
-      )' \
-      "$STATE_FILE" > "$_tmp_b" && mv "$_tmp_b" "$STATE_FILE" || rm -f "$_tmp_b"
+      )' || true
     # CO-MINGLING GUARD (v12.4.0): operator escalation is OPT-IN. NO hardcoded chat.
     # Resolved once, near the top of this file, via the shared resolver.
     _OP_CHAT="${OPERATOR_CHAT_ID:-}"

@@ -767,7 +767,7 @@ def apply_semantic_merges(selected_departments, core_answers):
             prior_mi[tgt] = prior
         existing["mergedInto"] = prior_mi
         state["canonicalReconciliation"] = existing
-        _state_commit(path, state)
+        _commit(path, state)
         print(f"[MERGE] Wrote semanticMerges record ({len(merged)} merged, "
               f"{len(kept)} kept, {len(pending)} pending) to {path}", file=sys.stderr)
     except OSError as e:
@@ -952,6 +952,44 @@ def _load_build_state():
     except ValueError as e:
         print(f"[BUILD-STATE] cannot parse {path}: {e}", file=sys.stderr)
         raise
+
+
+_STATE_MISSING = object()
+
+
+def _commit(path, state):
+    """Commit a build-state snapshot; never let a concurrent writer crash the build.
+
+    A reminder stamp or a department decision can land between this call's read
+    and its write. `workforce_state.commit` raises `StateConflict` when that
+    happens, and the old code let that escape past its `except OSError` handlers
+    and end the build with a traceback. Retry ONCE here: re-read the file and
+    re-apply only the keys this call changed, so the other writer's field
+    survives. A second conflict is logged and swallowed — the record this call
+    writes is best-effort telemetry, never a reason to abort a build.
+    """
+    from workforce_state import StateConflict
+    try:
+        return _state_commit(path, state)
+    except StateConflict as _conflict:
+        print(f"[STATE-CONFLICT] retrying state write to {path}: {_conflict}", file=sys.stderr)
+    intent = {}
+    for _key in set(state) | set(state.base):
+        _new = state.get(_key, _STATE_MISSING)
+        if _new != state.base.get(_key, _STATE_MISSING):
+            intent[_key] = _new
+    try:
+        fresh = _state_read(path)
+        for _key, _new in intent.items():
+            if _new is _STATE_MISSING:
+                fresh.pop(_key, None)
+            else:
+                fresh[_key] = _new
+        return _state_commit(path, fresh)
+    except StateConflict as _conflict:
+        print(f"[STATE-CONFLICT WARNING] gave up on state write to {path}: {_conflict}",
+              file=sys.stderr)
+        return None
 
 
 # ============================================================
@@ -1205,7 +1243,7 @@ def _refuse_interview_pending(reason, option):
         state["interviewBuildStatus"] = "INTERVIEW_PENDING"
         state["interviewBuildRefusedReason"] = reason
         state["interviewBuildRefusedAt"] = datetime.now().isoformat()
-        _state_commit(path, state)
+        _commit(path, state)
     except OSError as e:
         print(f"[FABRICATION-GUARD] Could not record interviewBuildStatus: {e}", file=sys.stderr)
 
@@ -1378,7 +1416,7 @@ def _refuse_reconciliation_pending(missing_ids, rejections=None):
         }
         if rejections:
             state["declineRejections"] = rejections
-        _state_commit(path, state)
+        _commit(path, state)
     except OSError as e:
         print(f"[DECISION-COVERAGE] Could not record decisionCoverage: {e}", file=sys.stderr)
 
@@ -1464,7 +1502,7 @@ def _enforce_decision_coverage_or_refuse(config, departments_config):
                          "no recorded decision are kept); only recorded declines/adds "
                          "+ net-new customs + vertical additions require decisions."),
             }
-            _state_commit(path, state)
+            _commit(path, state)
         except OSError as e:
             print(f"[DECISION-COVERAGE] Could not record clean decisionCoverage: {e}",
                   file=sys.stderr)
@@ -1497,7 +1535,7 @@ def _enforce_decision_coverage_or_refuse(config, departments_config):
             "checkedAt": datetime.now().isoformat(),
             "expectedCount": len(expected),
         }
-        _state_commit(path, state)
+        _commit(path, state)
     except OSError as e:
         print(f"[DECISION-COVERAGE] Could not record clean decisionCoverage: {e}", file=sys.stderr)
     print(f"[DECISION-COVERAGE] PASS — all {len(expected)} expected departments carry a "
@@ -1659,7 +1697,7 @@ def _write_provisioning_receipt(company_name, selected_departments, config, core
                 "missingFromBuilt": missing_from_built,
                 "generatedAt": receipt["generatedAt"],
             }
-            _state_commit(path, state)
+            _commit(path, state)
         except OSError as e:
             print(f"[PROVISIONING-RECEIPT] could not ledger verdict: {e}", file=sys.stderr)
 
@@ -1816,7 +1854,7 @@ def _flush_artifact_provenance_to_state():
             "personaSetSha": persona_set_sha,
         }
         state["artifactProvenance"] = ap
-        _state_commit(path, state)
+        _commit(path, state)
         print(f"[PROVENANCE] Wrote artifactProvenance ({len(ap['roles'])} roles, "
               f"{len(depts_out)} depts, {len(sops_out)} sops, "
               f"{len(personas_out)} personas) to {path}",
@@ -1850,7 +1888,7 @@ def _write_canonical_reconciliation(record):
         existing["floorSize"] = record.get("floorSize", 0)
         existing["source"] = record.get("source", "build-workforce.py")
         state["canonicalReconciliation"] = existing
-        _state_commit(path, state)
+        _commit(path, state)
         print(f"[CANONICAL] Wrote canonicalReconciliation to {path}", file=sys.stderr)
     except OSError as e:
         print(f"[CANONICAL WARNING] Could not write reconciliation to {path}: {e}", file=sys.stderr)
@@ -2332,7 +2370,7 @@ def write_chosen_departments_artifact(selected_departments, *, company_dir=None,
             "source": source,
         }
         state["canonicalReconciliation"] = recon
-        _state_commit(path, state)
+        _commit(path, state)
         print(f"[CHOSEN-LIST] Recorded {len(slugs)} chosen departments in build-state "
               f"(canonicalReconciliation.chosenDepartments)", file=sys.stderr)
     except OSError as e:
@@ -2432,7 +2470,7 @@ def _write_interview_complete_to_state(answers_path=None):
                 touched = True
             if touched:
                 state["interviewProgress"] = progress
-                _state_commit(path, state)
+                _commit(path, state)
                 if answers_path:
                     print(f"[INTERVIEW] answers file path recorded: {answers_path}", file=sys.stderr)
             return
@@ -2459,7 +2497,7 @@ def _write_interview_complete_to_state(answers_path=None):
             state["interviewQc"] = {"status": "pending"}
         elif not __import__("interview_eligibility").eligible_status(state["interviewQc"].get("status")):
             state["interviewQc"]["status"] = "pending"
-        _state_commit(path, state)
+        _commit(path, state)
         print(f"[INTERVIEW] Wrote interviewComplete=true to {path}", file=sys.stderr)
         if answers_path:
             print(f"[INTERVIEW] answers file path recorded: {answers_path}", file=sys.stderr)
@@ -3053,7 +3091,7 @@ def _write_vertical_pack_record(record):
             "appliedAt": datetime.now().isoformat(),
             "source": "build-workforce.py apply_vertical_packs",
         }
-        _state_commit(path, state)
+        _commit(path, state)
         print(f"[VERTICAL] Wrote verticalPacks audit record to {path}", file=sys.stderr)
     except OSError as e:
         print(f"[VERTICAL WARNING] Could not write verticalPacks record to {path}: {e}", file=sys.stderr)
@@ -3447,7 +3485,7 @@ def materialize_custom_roles(dept_id, dept_info, dept_config, interview_answers)
                     prior.append(r)
             existing["customRolesBuilt"] = prior
             state["canonicalReconciliation"] = existing
-            _state_commit(path, state)
+            _commit(path, state)
         except OSError as e:
             print(f"[CUSTOM-ROLE WARNING] Could not record customRolesBuilt: {e}", file=sys.stderr)
 
@@ -3568,7 +3606,7 @@ def capture_custom_sops(dept_id, dept_info, dept_config, interview_answers):
                 prior.append(entry)
         existing["customSopsCaptured"] = prior
         state["canonicalReconciliation"] = existing
-        _state_commit(path, state)
+        _commit(path, state)
     except OSError as e:
         print(f"[CUSTOM-SOP WARNING] Could not record customSopsCaptured: {e}", file=sys.stderr)
 
@@ -4133,7 +4171,7 @@ def apply_standard_edits(config):
             "registrationFailures": registration_failures,
             "source": "build-workforce.py apply_standard_edits",
         }
-        _state_commit(path, state)
+        _commit(path, state)
         if _sp_superseded and company_name:
             # Display name only (slug is immutable); best-effort across CC db / env / config.
             try:
@@ -4797,16 +4835,19 @@ def build_from_config(config):
         registration_failures = ["all:openclaw_json_absent"]
         # Write wiringStatus to build-state (use the canonical path resolver,
         # NOT a bare WORKSPACE global which does not exist in this module).
+        # Through workforce_state.update so the read/modify/write holds the
+        # state lock: a reminder stamp landing at the same moment must never be
+        # lost, and must never abort the build.
+        from workforce_state import update
+
+        def _mark_wiring_blocked_no_config(state):
+            state["wiringStatus"] = "blocked-no-config"
+            state["wiringFailureReason"] = f"openclaw.json absent at {OPENCLAW_CONFIG}"
+
         try:
             _state_f = _build_state_path()
             if os.path.isfile(_state_f):
-                import tempfile as _tf
-                _s = _state_read(_state_f)
-                _s["wiringStatus"] = "blocked-no-config"
-                _s["wiringFailureReason"] = f"openclaw.json absent at {OPENCLAW_CONFIG}"
-                _tmp = _tf.mktemp(dir=os.path.dirname(_state_f), prefix=".bws.", suffix=".tmp")
-                json.dump(_s, open(_tmp, "w"), indent=2)
-                os.replace(_tmp, _state_f)
+                update(_state_f, _mark_wiring_blocked_no_config)
         except Exception as _ws_e:
             print(f"[NON-INTERACTIVE WARN] could not write wiringStatus to build-state: {_ws_e}", file=sys.stderr)
 
@@ -4913,18 +4954,19 @@ def build_from_config(config):
             f"{registration_failures}. Roles are on disk but not wired into openclaw.json. "
             f"Re-run after fixing config."
         )
-        # Write wiringStatus:failed to build-state (canonical path resolver)
+        # Write wiringStatus:failed to build-state (canonical path resolver),
+        # through workforce_state.update so the write holds the state lock.
+        from workforce_state import update
+
+        def _mark_wiring_failed(state):
+            if state.get("wiringStatus") not in ("blocked-no-config",):
+                state["wiringStatus"] = "failed"
+                state["wiringFailureReason"] = f"registration_failures={registration_failures}"
+
         try:
             _state_f = _build_state_path()
             if os.path.isfile(_state_f):
-                import tempfile as _tf2
-                _s2 = _state_read(_state_f)
-                if _s2.get("wiringStatus") not in ("blocked-no-config",):
-                    _s2["wiringStatus"] = "failed"
-                    _s2["wiringFailureReason"] = f"registration_failures={registration_failures}"
-                    _tmp2 = _tf2.mktemp(dir=os.path.dirname(_state_f), prefix=".bws.", suffix=".tmp")
-                    json.dump(_s2, open(_tmp2, "w"), indent=2)
-                    os.replace(_tmp2, _state_f)
+                update(_state_f, _mark_wiring_failed)
         except Exception as _ws_e2:
             print(f"[NON-INTERACTIVE WARN] could not write wiringStatus:failed to build-state: {_ws_e2}", file=sys.stderr)
 
@@ -5183,7 +5225,7 @@ def resolve_company_paths(company_name: str):
         identity['companyId'] = canonical_identity
     identity['companySlug'] = COMPANY_SLUG
     identity['companyRoot'] = canonical
-    _state_commit(_build_state_path(), identity)
+    _commit(_build_state_path(), identity)
     os.environ['OPENCLAW_COMPANY_SLUG'] = COMPANY_SLUG
     if canonical_identity:
         # Post-interview entry can run outside the installer shell. Child tools
@@ -5537,9 +5579,13 @@ def load_openclaw_config():
 
 
 def save_openclaw_config(config):
-    """Save openclaw.json with validation."""
-    with open(OPENCLAW_CONFIG, 'w') as f:
-        json.dump(config, f, indent=2)
+    """Save openclaw.json atomically, then validate.
+
+    Was `open(..., 'w')` + `json.dump` + validate: a crash mid-write truncated
+    the live configuration and the validation then read the truncated file. The
+    atomic write lands a complete file or leaves the previous one untouched.
+    """
+    _state_atomic_write(OPENCLAW_CONFIG, config)
     validate_json(OPENCLAW_CONFIG)
 
 
