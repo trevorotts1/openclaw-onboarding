@@ -1,0 +1,111 @@
+{
+  "order": [
+    "research",
+    "creative-strategy",
+    "script-lyrics",
+    "music",
+    "continuity-bible",
+    "storyboard",
+    "image-keyframes",
+    "video-generation",
+    "qc-retakes",
+    "assembly",
+    "final-qc",
+    "delivery"
+  ],
+  "stages": {
+    "research": {
+      "artifacts": [
+        {"path": "research/evidence.json", "kind": "json", "min_bytes": 50},
+        {"path": "research/manifest.json", "kind": "json", "required_keys": ["files", "digest"]},
+        {"path": "research/bundle.json", "kind": "json", "min_bytes": 50}
+      ]
+    },
+    "creative-strategy": {
+      "artifacts": [
+        {"path": "creative/story.json", "kind": "json", "min_bytes": 200},
+        {"path": "creative/blueprint.json", "kind": "json", "min_bytes": 50}
+      ]
+    },
+    "script-lyrics": {
+      "artifacts": [
+        {"path": "creative/lyrics.json", "kind": "json", "min_bytes": 200,
+         "validator": "step_gate:validate_lyrics_artifact"}
+      ]
+    },
+    "music": {
+      "artifacts": [
+        {"path": "music/picked-song.mp3", "kind": "media", "min_bytes": 100000,
+         "validator": "step_gate:validate_song_artifact"},
+        {"path": "song-choices/pick.json", "kind": "json", "min_bytes": 20}
+      ]
+    },
+    "continuity-bible": {
+      "artifacts": [
+        {"path": "character/bible.json", "kind": "json", "min_bytes": 50,
+         "required_keys": ["schema", "revision", "characters"]},
+        {"path": "character/approval.json", "kind": "json", "min_bytes": 50,
+         "required_keys": ["schema", "status", "bible_revision"],
+         "equals": {"status": "approved"}},
+        {"path": "continuity/qc-records.json", "kind": "json"},
+        {"path": "continuity/makers.json", "kind": "json"}
+      ]
+    },
+    "storyboard": {
+      "artifacts": [
+        {"path": "storyboard/shot-list.json", "kind": "json", "min_bytes": 100},
+        {"path": "storyboard/contracts.json", "kind": "json"}
+      ]
+    },
+    "image-keyframes": {
+      "artifacts": [
+        {"path": "keyframes/manifest.json", "kind": "json"}
+      ]
+    },
+    "video-generation": {
+      "artifacts": [
+        {"path": "generation/clips-manifest.json", "kind": "json"}
+      ]
+    },
+    "qc-retakes": {
+      "artifacts": [
+        {"path": "qc/retakes-plan.json", "kind": "json"}
+      ]
+    },
+    "assembly": {
+      "artifacts": [
+        {"path": "edit/ad.mp4", "kind": "media", "min_bytes": 500000,
+         "validator": "step_gate:validate_master_artifact"}
+      ]
+    },
+    "final-qc": {
+      "artifacts": [
+        {"path": "qc/final-qc-verdict.json", "kind": "json",
+         "required_keys": ["gate", "measured_master_s"],
+         "equals": {"gate": "PASS"}}
+      ]
+    },
+    "delivery": {
+      "artifacts": [
+        {"path": "delivery/01 - Full Song.mp3", "kind": "media", "min_bytes": 100000},
+        {"path": "delivery/01 - Instrumental.mp3", "kind": "media", "min_bytes": 100000},
+        {"path": "delivery/01 - Voice Only.mp3", "kind": "media", "min_bytes": 100000},
+        {"path": "delivery/01 - About These Audio Files.txt", "kind": "file", "min_bytes": 50},
+        {"path": "delivery/02 - Character Bible.pdf", "kind": "file", "min_bytes": 50},
+        {"path": "delivery/02 - Character Bible Images", "kind": "dir", "min_bytes": 1},
+        {"path": "delivery/03 - SCRIPT.pdf", "kind": "file", "min_bytes": 50},
+        {"path": "delivery/04 - Storyboard.pdf", "kind": "file", "min_bytes": 50},
+        {"path": "delivery/05 - Video Captioned.mp4", "kind": "media", "min_bytes": 100000},
+        {"path": "delivery/05 - Video Clean.mp4", "kind": "media", "min_bytes": 100000},
+        {"path": "delivery/06 - Clip 60s.mp4", "kind": "media", "min_bytes": 100000},
+        {"path": "delivery/06 - Clip 90s.mp4", "kind": "media", "min_bytes": 100000},
+        {"path": "delivery/07 - Ready-to-Post Kit.pdf", "kind": "file", "min_bytes": 50},
+        {"path": "delivery/08 - Cover Thumbnail.png", "kind": "file", "min_bytes": 50},
+        {"path": "delivery/09 - Lyric Sheet.pdf", "kind": "file", "min_bytes": 50},
+        {"path": "delivery/10 - Captions.srt", "kind": "file", "min_bytes": 20},
+        {"path": "delivery/11 - Character Images", "kind": "dir", "min_bytes": 1},
+        {"path": "delivery/12 - Welcome Sheet.pdf", "kind": "file", "min_bytes": 50}
+      ]
+    }
+  }
+}
