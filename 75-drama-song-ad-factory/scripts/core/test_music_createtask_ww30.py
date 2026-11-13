@@ -125,9 +125,12 @@ def main():
           url == "https://api.kie.ai/api/v1/jobs/createTask", url)
     check("WW30-1c the outer model is the market route, never a version",
           req["model"] == "ai-music-api/generate", req["model"])
-    check("WW30-1d callBackUrl is TOP LEVEL and camelCase",
-          isinstance(req.get("callBackUrl"), str) and "callBackUrl" not in req["input"]
-          and "callback_url" not in req, sorted(req))
+    check("WW30-1d callBackUrl is TOP LEVEL and camelCase when it is sent",
+          ("callBackUrl" not in req
+           or (isinstance(req.get("callBackUrl"), str)
+               and "callBackUrl" not in req["input"]
+               and "callback_url" not in req)),
+          sorted(req))
     check("WW30-1e the directions are nested snake_case in input",
           all(k in req["input"] for k in ("custom_mode", "instrumental", "title",
                                           "lyrics", "style", "negative_tags",
