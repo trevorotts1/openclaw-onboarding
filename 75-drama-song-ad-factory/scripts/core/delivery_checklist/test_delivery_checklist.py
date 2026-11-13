@@ -66,6 +66,41 @@ import delivery_package.run_inputs as run_inputs  # noqa: E402
 _PKG_TMP = Path(tempfile.mkdtemp(prefix="del13-checklist-"))
 _PKG_FOLDER = _PKG_TMP / "delivery"
 package_contract.write_reference_package(_PKG_FOLDER)
+_REAL_MASTERS = {}
+#: The CLI round trip runs the checker in a child process: S75-057 means Q8
+#: decodes the clean cut, so that child needs the box's ffmpeg/ffprobe too.
+_CLI_PATH = ":".join(
+    ["/usr/bin", "/bin"] +
+    [str(Path(bin_).parent) for name in ("ffmpeg", "ffprobe")
+     for bin_ in [shutil.which(name)] if bin_])
+
+
+def real_master(picture="red"):
+    """(master, clean): REAL 10 s media, cleaned by video_delivery.clean_argv.
+
+    S75-057: Q8 compares the DECODED picture and the audio (duration and
+    loudness), so the fixture cannot be synthetic bytes any more. The master
+    is a 10 s 30 fps synthetic clip and the clean cut is the one production
+    makes of it. Built once per picture; every receipt keeps its own copy.
+    """
+    if not (shutil.which("ffmpeg") and shutil.which("ffprobe")):
+        raise unittest.SkipTest("ffmpeg + ffprobe required")
+    if picture not in _REAL_MASTERS:
+        from delivery_variants import video_delivery as VD
+        root = Path(tempfile.mkdtemp(prefix="master-%s-" % picture,
+                                     dir=_PKG_TMP))
+        master, clean = root / "master.mp4", root / "clean.mp4"
+        subprocess.run(
+            ["ffmpeg", "-v", "error", "-y",
+             "-f", "lavfi", "-i", "color=c=%s:s=64x64:r=30:d=10" % picture,
+             "-f", "lavfi", "-i", "sine=frequency=440:duration=10",
+             "-c:v", "libx264", "-pix_fmt", "yuv420p", "-c:a", "aac",
+             "-shortest", str(master)],
+            check=True, capture_output=True, text=True)
+        subprocess.run(VD.clean_argv(master, clean), check=True,
+                       capture_output=True, text=True)
+        _REAL_MASTERS[picture] = (master, clean)
+    return _REAL_MASTERS[picture]
 
 #: What the fixture client actually typed to the real intake card. Three
 #: minutes + the two short cuts: the run owes the twelve base items, item 6
@@ -147,7 +182,7 @@ def final_edit_record(run=RUN, stage=STAGE, verdict="PASS"):
     }
 
 
-def full_answered_receipt():
+def full_answered_receipt(picture="red"):
     """A receipt answering all 7 questions with measured evidence."""
     run, _run_id = real_run()
     receipt = {
@@ -230,9 +265,11 @@ def full_answered_receipt():
     for seg in plan["segments"]:
         seg["source_dur"] = 5
     master = root / "master.mp4"
-    master.write_bytes(b"synthetic-export:" + str(root).encode())
+    real_master_file, real_clean_file = real_master(picture)
+    shutil.copyfile(real_master_file, master)
     folder = package_contract.write_reference_package(root / "delivery")
-    shutil.copyfile(master, folder / package_contract.ITEMS_BY_KEY["video"].files[1])
+    shutil.copyfile(real_clean_file,
+                    folder / package_contract.ITEMS_BY_KEY["video"].files[1])
     receipt["PACKAGE_COMPLETE"]["delivery_folder"] = str(folder)
     rc = {"outcome": "ok", "produced_by": {"module": "final_assembler.assembler"},
           "master_sha256": sha256_file(master),
@@ -384,11 +421,17 @@ class G7DoneWhen(unittest.TestCase):
         self.assertIn("HONEST_RECEIPT", res["repair_scope"])
 
     def test_wrong_model_fails(self):
+        # S75-057: a wrong video model is caught by the run's OWN clip
+        # evidence against the card's lock (F16), never by a fixed table of
+        # model names -- the fixed table also refused legitimate runs.
         receipt = full_answered_receipt()
-        receipt["MODELS"]["used"]["video"] = "Runway Gen-3"
+        receipt["clips"] = [{"id": "c0",
+                             "model": "bytedance/seedance-2-mini"}]
+        receipt["locked_video_model"] = "hailuo/02-image-to-video-*"
         res = dc.evaluate(receipt)
         self.assertFalse(res["pass"])
         self.assertIn("MODELS", res["repair_scope"])
+        self.assertIn("VIDEO_MODEL_MISMATCH", res["detail"])
 
     def test_face_mismatch_names_frame_and_line(self):
         receipt = full_answered_receipt()
@@ -768,7 +811,7 @@ class G7DoneWhen(unittest.TestCase):
                 [sys.executable, str(_HERE / "delivery_checklist.py"),
                  "check", "--receipt", rp],
                 capture_output=True, text=True,
-                env={"HOME": td, "PATH": "/usr/bin:/bin"})
+                env={"HOME": td, "PATH": _CLI_PATH})
             self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
             out = json.loads(p.stdout)
             self.assertEqual(out["outcome"], "ok")
@@ -780,7 +823,7 @@ class G7DoneWhen(unittest.TestCase):
                 [sys.executable, str(_HERE / "delivery_checklist.py"),
                  "check", "--receipt", rp],
                 capture_output=True, text=True,
-                env={"HOME": td, "PATH": "/usr/bin:/bin"})
+                env={"HOME": td, "PATH": _CLI_PATH})
             self.assertEqual(p.returncode, 5, p.stdout + p.stderr)
             out = json.loads(p.stdout)
             self.assertEqual(out["repair_scope"], ["WORDS"])
@@ -794,7 +837,7 @@ class G7DoneWhen(unittest.TestCase):
                  "--reviewer-session", REVIEWER["session"],
                  "--reviewer-authority", REVIEWER["authority"]],
                 capture_output=True, text=True,
-                env={"HOME": td, "PATH": "/usr/bin:/bin"})
+                env={"HOME": td, "PATH": _CLI_PATH})
             self.assertEqual(p.returncode, 5, p.stdout + p.stderr)
             rec = json.loads(Path(qp).read_text(encoding="utf-8"))
             err = qc_gate.validate_record(rec)
@@ -912,9 +955,44 @@ class ExportIdentityTests(unittest.TestCase):
 
     def test_other_package_master_refused(self):
         receipt = full_answered_receipt()
-        other = full_answered_receipt()
+        other = full_answered_receipt(picture="blue")   # another PICTURE
         receipt["PACKAGE_COMPLETE"] = other["PACKAGE_COMPLETE"]
         self.assertEqual(dc.evaluate(receipt)["repair_scope"], ["LIP_SYNC"])
+
+    # ---- S75-057: Q8 compares the picture and the audio, not the file ----
+    def test_q8_clean_video_from_clean_argv_answers_yes(self):
+        """A clean cut made by video_delivery.clean_argv from the master: yes.
+
+        The old whole-file SHA-256 could never match (clean_argv re-encodes
+        the audio), so this legitimate delivery was always reported failed.
+        """
+        receipt = full_answered_receipt()
+        res = dc.evaluate(receipt)
+        self.assertNotIn("LIP_SYNC", res["repair_scope"], res["detail"])
+        self.assertEqual(res["answers"]["LIP_SYNC"]["answer"], "yes")
+        measured = res["evidence"]["clean_video"]
+        self.assertTrue(measured["picture_equal"])
+        self.assertLessEqual(measured["duration_delta_s"], 0.1)
+        self.assertLessEqual(measured["loudness_delta_lu"], 0.5)
+
+    def test_q8_frame_removed_answers_no(self):
+        """One frame removed from the clean cut changes the picture: no."""
+        receipt = full_answered_receipt()
+        folder = Path(receipt["PACKAGE_COMPLETE"]["delivery_folder"])
+        clean = folder / package_contract.ITEMS_BY_KEY["video"].files[1]
+        dropped = Path(receipt["LIP_SYNC"]["master_path"]).parent \
+            / "clean-dropped.mp4"
+        subprocess.run(
+            ["ffmpeg", "-v", "error", "-y", "-i", str(clean),
+             "-vf", "select='not(eq(n,5))'", "-fps_mode", "passthrough",
+             "-c:v", "libx264", "-pix_fmt", "yuv420p",
+             "-c:a", "copy", str(dropped)],
+            check=True, capture_output=True, text=True)
+        shutil.copyfile(dropped, clean)
+        res = dc.evaluate(receipt)
+        self.assertFalse(res["pass"])
+        self.assertIn("LIP_SYNC", res["repair_scope"])
+        self.assertIn("picture", res["detail"])
 
     def test_replaced_package_clean_video_refused(self):
         receipt = full_answered_receipt()

@@ -23,7 +23,9 @@ from __future__ import annotations
 
 import json
 import math
+import shutil
 import struct
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -68,6 +70,80 @@ def write_wav(path, seconds=1.0, pattern="tone"):
         w.setsampwidth(2)
         w.setframerate(RATE)
         w.writeframes(b"".join(frames))
+
+
+def _pack_sample(v, width):
+    """One sample (v in -1..1) at the given byte width, little-endian."""
+    if width == 1:
+        return bytes((max(0, min(255, int(round(v * 127 + 128)))),))
+    peak = float(1 << (8 * width - 1))
+    n = max(-int(peak), min(int(peak) - 1, int(round(v * peak))))
+    return int(n).to_bytes(width, "little", signed=True)
+
+
+def write_wav_ex(path, seconds=1.0, pattern="tone", channels=1, width=2):
+    """Same shapes as write_wav(), at any channel count and sample width."""
+    n = int(RATE * seconds)
+    data = bytearray()
+    for i in range(n):
+        t = i / RATE
+        if pattern == "tone":
+            amp = 0.6 if int(t * 4) % 2 else 0.3
+            v = math.sin(2 * math.pi * 440.0 * t) * amp
+        elif pattern == "other":
+            v = math.sin(2 * math.pi * 300.0 * t) * 0.5 if t < seconds / 2 else 0.0
+        else:
+            v = 0.0
+        for _ in range(channels):
+            data += _pack_sample(v, width)
+    with wave.open(str(path), "wb") as w:
+        w.setnchannels(channels)
+        w.setsampwidth(width)
+        w.setframerate(RATE)
+        w.writeframes(bytes(data))
+
+
+HAVE_FFMPEG = bool(shutil.which("ffmpeg") and shutil.which("ffprobe"))
+
+
+class SongWavWidths(unittest.TestCase):
+    """S75-080: every real PCM width measures the same second of audio."""
+
+    def test_mono16_stereo16_stereo24_measure_and_correlate(self):
+        with tempfile.TemporaryDirectory() as td:
+            d = Path(td)
+            cases = {"mono16": (1, 2), "stereo16": (2, 2), "stereo24": (2, 3)}
+            envs = {}
+            for name, (channels, width) in cases.items():
+                p = d / (name + ".wav")
+                write_wav_ex(p, 1.0, "tone", channels=channels, width=width)
+                m = dc.measure_audio(p)
+                self.assertIsNotNone(m, name)
+                self.assertAlmostEqual(m["duration_s"], 1.0, delta=0.01)
+                envs[name] = m["envelope"]
+            names = sorted(envs)
+            for i in range(len(names)):
+                for j in range(i + 1, len(names)):
+                    corr = dc._pearson(envs[names[i]], envs[names[j]])
+                    self.assertIsNotNone(corr)
+                    self.assertGreaterEqual(
+                        corr, 0.95, "%s vs %s" % (names[i], names[j]))
+
+    def test_stereo_wav_song_passes_against_mp3_ad(self):
+        if not HAVE_FFMPEG:
+            print("SKIP S75-080 mp3 case: ffmpeg/ffprobe not on PATH")
+            self.skipTest("ffmpeg/ffprobe not on PATH")
+        with tempfile.TemporaryDirectory() as td:
+            d = Path(td)
+            src = d / "source.wav"
+            write_wav_ex(src, 1.0, "tone", channels=2, width=2)
+            ad_mp3 = d / "ad-audio.mp3"
+            subprocess.run(["ffmpeg", "-y", "-v", "error", "-i", str(src),
+                            str(ad_mp3)], check=True, timeout=120)
+            name = dc.safe_song_name(AUTHOR, TITLE) + ".wav"
+            write_wav_ex(d / name, 1.0, "tone", channels=2, width=2)
+            bat = dc.delivery_battery(d, ad_mp3, TITLE, AUTHOR)
+            self.assertTrue(bat["pass"], bat["detail"])
 
 
 class SongMp3DoneWhen(unittest.TestCase):
