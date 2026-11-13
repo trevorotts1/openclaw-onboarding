@@ -243,6 +243,33 @@ def test_engine_doors_refuse():
             if _pkg_attr is not None:
                 _pj.runfacts = _pkg_attr
 
+
+        # 2c (PD-921): runfacts import failure stays fail-closed — hide the
+        # module, probe the funnel, then prove the module is put back.
+        saved = sys.modules.pop("presentation_job.runfacts", None)
+        try:
+            import phase_verifiers as _pv_probe
+        finally:
+            if saved is not None:
+                sys.modules["presentation_job.runfacts"] = saved
+        _check("2c runfacts re-importable after probe", saved is not None)
+
+        # 2c2 (PD-921): an UNBOUND binding is a refusal, not a pass. Force the
+        # module-level binding to its import-failure value and assert the funnel
+        # names the AF code and says the binding could not be loaded — the same
+        # state Engine._check_intake_provenance refuses at the door.
+        _bound = pv._rf109
+        try:
+            pv._rf109 = None
+            unbound = pv._intake_provenance_refusal("P-CONSUMER", r.run)
+            _check("2c2 unbound funnel refuses instead of passing",
+                   unbound is not None and "AF-INTAKE-PROVENANCE" in unbound
+                   and "could not be loaded" in unbound, str(unbound)[:80])
+            _check("2c2b unbound funnel refuses producers too (door parity)",
+                   pv._intake_provenance_refusal("P0A-INTAKE", r.run) is not None)
+        finally:
+            pv._rf109 = _bound
+        _check("2c3 binding restored for the bound cases below", pv._rf109 is _bound)
         _check("2d producer exempt in funnel",
                pv._intake_provenance_refusal("P0A-INTAKE", r.run) is None)
         refusal = pv._intake_provenance_refusal("P-CONSUMER", r.run)
