@@ -55,6 +55,17 @@ def atomic_questions(schema):
                 q["help"] = "Provide one brand reference, such as a logo link or primary color."
             q["help"] = copy.get("help", q.get("help", ""))
             q.update(copy)
+            # PD-014: declining a toggle that DEFAULTS to "no" is not a
+            # waiver, so its reason is asked only when the client's
+            # preference record shows a YES for that toggle. This ask_if is
+            # the prior-YES half; conditional_on keeps the answer=="no"
+            # half, so a client who merely accepts the default is never
+            # asked why not.
+            if (annotation.get("ask_only_if_previously_wanted")
+                    or q.get("ask_only_if_previously_wanted")):
+                toggle = (q.get("conditional_on") or {}).get("id")
+                if toggle:
+                    q["ask_if"] = {"question_id": toggle, "equals": "yes"}
             if field in derivations and derivations[field] in sub:
                 derived = derivations[field]
                 q["derived_fields"] = {derived: deepcopy(sub[derived])}
