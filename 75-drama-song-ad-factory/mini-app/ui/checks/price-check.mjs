@@ -95,6 +95,13 @@ if (fixture) {
     rule("an option with no rates shows no price at all",
       optionPriceLine({ n: 1, text: "Soul Ballad" }, 60) === "",
       optionPriceLine({ n: 1, text: "Soul Ballad" }, 60));
+    // `Number(null)` and `Number("")` are both 0, so a blank rate must never be
+    // read as a free video. U-Z09 QC repair.
+    rule("a blank rate is not a free video",
+      optionPriceLine({ n: 1, text: "Soul Ballad", rate_usd: null }, 60) === "" &&
+      optionPriceLine({ n: 1, text: "Soul Ballad", rate_usd: "", shot_s: 15,
+        keyframe_usd: 0.02, song_usd: 0.06, redo_rate: 0.5 }, 60) === "",
+      optionPriceLine({ n: 1, text: "Soul Ballad", rate_usd: null }, 60));
   }
 }
 
