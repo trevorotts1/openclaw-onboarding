@@ -42,7 +42,7 @@ if str(_HERE) not in sys.path:
     sys.path.insert(0, str(_HERE))
 
 import ews_common as C  # noqa: E402
-from ews_ledger import Ledger, default_state_dir, openclaw_root  # noqa: E402
+from ews_ledger import Ledger, default_state_dir, openclaw_root, now_utc  # noqa: E402
 import ews_baseline as B  # noqa: E402
 import ews_snapshot as SNAP  # noqa: E402
 
@@ -771,10 +771,18 @@ def run_tick(state_dir=None, config_path=None, send=True, probe=None, role=None)
             res = B.repin(config, state_dir, baseline)
             baseline = res["baseline"]
             absorbed = res["absorbed"]
+            # fresh start for alerting: every event still active from before
+            # 1.3.0 was never delivered (client boxes had no working route), so
+            # none of it is escalated now. Anything still true is re-detected.
+            _ph = ",".join("?" * len(led.ACTIVE_ACK_STATES))
+            cleared = led.conn.execute(
+                "UPDATE events SET ack_state='resolved', ack_ts=? WHERE ack_state IN (%s)" % _ph,
+                (now_utc(), *led.ACTIVE_ACK_STATES)).rowcount or 0
+            led.conn.commit()
             s0 = led.record_event("S0", "INFO", key_path="baseline", klass="baseline",
-                             detail=("baseline upgraded to schema %d and re-pinned; absorbed %d "
-                                     "standing difference(s): %s" % (
-                                         B.BASELINE_SCHEMA, len(absorbed),
+                             detail=("baseline upgraded to schema %d and re-pinned; %d pre-1.3.0 "
+                                     "active event(s) cleared; absorbed %d standing difference(s): %s" % (
+                                         B.BASELINE_SCHEMA, cleared, len(absorbed),
                                          ", ".join("%s (%s)" % (a["path"], a["direction"])
                                                    for a in absorbed)[:900] or "none")),
                              dedup_key="S0|baseline-upgrade|%d" % B.BASELINE_SCHEMA)
@@ -1297,6 +1305,9 @@ def self_test():
         v1.pop("skills_versions", None); v1["skills_manifest"] = {"x": "hash"}
         v1["monitored"]["agents.defaults.model.primary"]["value"] = "old-model"
         bp.write_text(json.dumps(v1), encoding="utf-8")
+        with Ledger() as led:
+            legacy = led.record_event("S7", "P1", key_path="alert.operator_target",
+                                      dedup_key="S7|no_operator_target")
         s3, rec3 = run_tick(send=False, probe={"gateway": "unknown"})
         nb = json.loads(bp.read_text(encoding="utf-8"))
         assert nb["version"] == B.BASELINE_SCHEMA and "skills_manifest" not in nb
@@ -1304,6 +1315,9 @@ def self_test():
         with Ledger() as led:
             s0 = [e for e in led.events_since("2000-01-01T00:00:00+00:00") if e["signal"] == "S0"]
         assert len(s0) == 1 and s0[0]["ack_state"] == "resolved" and "model.primary" in s0[0]["detail"]
+        with Ledger() as led:
+            assert led.conn.execute("SELECT ack_state FROM events WHERE event_id=?",
+                                    (legacy,)).fetchone()[0] == "resolved", "legacy P1 must not escalate"
         print("  baseline-upgrade case: PASS (v1 re-pinned once; absorbed drift logged, not alerted)")
 
         # B1/B2: only STATE findings auto-resolve. Evidence findings (S2), the
