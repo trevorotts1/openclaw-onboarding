@@ -142,7 +142,10 @@ def test_recap_line_is_plain_and_priced():
     assert len(recap) == 1, msg
     cents = _expect(*EXPECT["Seedance 2.5"], 180)
     price = "%d.%02d" % (cents // 100, cents % 100)
-    assert ("%d. Video model: Seedance 2.5 - about $%s" % (MODEL_N, price)) in recap[0], recap[0]
+    #: the WHOLE line, not a prefix of it: a price that merely starts with the
+    #: right digits ("$85.715") must fail as surely as a plain line does.
+    expected = "%d. Video model: Seedance 2.5 - about $%s" % (MODEL_N, price)
+    assert recap[0] == expected, recap[0]
     assert _question_price(_length_reply(180), "Seedance 2.5") == price
 
 
