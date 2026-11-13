@@ -224,6 +224,18 @@ a12d14f9e1ed1eb49a3d4b7c03f46c43cd3a31f2
 
 Remote head equals local head, 40 characters, literal.
 
+### Head sequence
+
+| Commit | Meaning |
+|---|---|
+| `2a2b072fbf057a588c7754fc4bbca994b07b295f` | PRE — branch head at the start (not rewritten) |
+| `a12d14f9e1ed1eb49a3d4b7c03f46c43cd3a31f2` | merge of `origin/pd/fl05-engine-reporting` — proven above |
+| `d186967211f4fb5ffbd78c18ffece47c393f8e07` | this report's own commit, a fast-forward on the merge |
+
+The proofs in §8 and §9 were taken at `a12d14f9e` and re-taken after the report commit; the result of the final
+push is `a12d14f9e..d18696721  HEAD -> pd/fl04-manifest`, and the ancestry and sibling `merge-tree` checks were
+re-run at the final head with `rc=0` both times.
+
 ## 10. What could not be proven
 
 - **The batch engine's own verdict.** Only the git-level pair test is proven (`merge-tree` rc=0 against the sibling
