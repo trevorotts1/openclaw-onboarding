@@ -73,9 +73,11 @@ The rescue AI self-fixes reachable boxes with the operator's access. Everything 
 is referenced by NAME ONLY — the values live in the operator secrets env, never in
 any doc, ticket, or transcript:
 
-- **Box access:** the operator's `~/.ssh/config` provides a `rescue-<firstname>-
-  <lastname>` alias for every fleet box (Mac-via-Cloudflare-tunnel), plus
-  `contabo-host` for Contabo VPS. `ssh <alias> 'command'` is the reachability check;
+- **Box access:** use the operator's fleet access resolver for every box; it tries
+  every access path and names the sources it checked. The operator's `~/.ssh/config`
+  provides `rescue-<firstname>-<lastname>` aliases for MAC boxes only (plus
+  `contabo-host`), so a missing alias is never proof that a box is unreachable. For a
+  Mac box, `ssh <alias> 'command'` is the reachability check;
   `ssh <alias> 'bash -lc "…"'` is the login-shell form. Headless only — never a
   command that opens a browser (Cloudflare Access would hang on a login prompt).
 - **Provider credentials (env var NAMES in `~/.openclaw/secrets/.env`):**
