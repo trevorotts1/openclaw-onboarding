@@ -1,7 +1,7 @@
 ---
 name: signature-funnel
 description: Builds a Trevor Otts Signature Funnel — the SACRED 12-section Hero copy system, per-section long-form image prompts sized to the model's own character budget (95 to 100 percent of its maximum, never below 80 percent), GHL media + funnel build, and a configurable 3/5/7-step funnel (Main -> Checkout -> Upsell-1 -> Downsell-1 -> Upsell-2 -> Downsell-2 -> Thank-You with accept/decline branching). Gates the sacred method with fail-closed deterministic provers: the intake gate, the 12-section copy contract (per-section char/word bands, six page profiles), the image-prompt two-floor gate (length and structure), and a no-pitch (clean thank-you) + image-provenance gate. A canonical fail-closed entry (deps/version/dept-map/hash-pin/bypass-scan/operator key) drives a no-skip orchestrator that issues a signed PROCESS-CERTIFICATE only on all-phases-pass. Delegates image generation to Skill 66 (model policy) then Skill 74 (the one approved KIE transport) and the media hosting (P4) and funnel/page build (P7) to the delivery rail the brief names, which proves them with signed receipts. Client runtime uses the client's own providers, never Anthropic.
-version: v2.1.59
+version: v2.1.60
 ---
 
 # Signature Funnel (Skill 49)
@@ -64,6 +64,18 @@ searching for the answer instead of reading the source, stop and read the source
 - `scripts/legacy_downsell_images.py` — desktop wireframes, mobile wireframes and the visual mockup for EVERY page of a 3/5/7-step funnel (sales page, upsell, `upsell-2`, `downsell`, `downsell-2` in the 7-step, thank-you), run from the P1 copy ledger through Skill 71's own pipeline. Only the design-only checkout is left to `checkout_wrapper.py`, and the receipt says so. Launch mode has one downsell by design; its wrapper is `downsell_wrapper.py`.
 - `signature-funnel-entry.sh` — the canonical fail-closed front door.
 - `verify.sh` — the read-only self-verification gate.
+
+## Prices that repeat (weekly, monthly, quarterly, yearly)
+
+Any offer in a launch (the main offer, a package, the bump, an upsell or the downsell) may be a repeating price, not
+only one payment. The client says it in their own words ("$49 a month", "quarterly", "every year") and the cadence
+is recorded beside THAT offer: `billing` on the offer or package payload, or the interview's billing answer for the
+main offer. The launch record then carries `billing_type: "recurring"` and `recurring_interval` (`week`, `month`,
+`quarter` or `year`) on the price. The plan the client approves shows it ("$49.00/month, billed monthly"), the order
+form and the upsell and downsell pages state it beside the price, and the interval is never guessed: a repeating price
+with no interval, or a cadence outside those four ("every other month"), is named as a missing fact before approval.
+The vocabulary lives once in `shared-utils/signature_launch_contract/billing.py`. Paying in parts and a trial first
+are still refused at plan time with the same sentence ("payment plans are not supported in this release").
 
 ## The 12-section system in one screen (SACRED)
 
