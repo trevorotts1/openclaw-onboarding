@@ -33,6 +33,8 @@ concurrency:
 
 jobs:
   check-no-standalone-release-pr:
+    # Batch pull requests run only the required checks (Trevor order 2026-11-13).
+    if: ${{ !startsWith(github.head_ref, 'batch/') }}
     name: No standalone CHANGELOG/version-only PR
     runs-on: ubuntu-latest
     steps:

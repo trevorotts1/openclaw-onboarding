@@ -12,6 +12,8 @@ permissions:
 
 jobs:
   runtime-preflight:
+    # Batch pull requests run only the required checks (Trevor order 2026-11-13).
+    if: ${{ !startsWith(github.head_ref, 'batch/') }}
     strategy:
       fail-fast: false
       matrix:
