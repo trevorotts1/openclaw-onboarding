@@ -225,7 +225,9 @@ class FactoryToOutbox(unittest.TestCase):
         self._patched_sender(real_cc_sync, board)
         sb._board_epic(str(SKILL_ROOT), "order-77", "Order Seventy-Seven")
         # exactly one durable create row, acked, carrying the canonical mapping
-        db = real_cc_sync.Outbox(db_path=os.path.join(tmp, WS, "default.sqlite3"),
+        # PR 3279: _board_epic binds the outbox to the run, so the row lands in
+        # the run-scoped order-<id>.sqlite3 file, not the 'default' run file.
+        db = real_cc_sync.Outbox(db_path=os.path.join(tmp, WS, "order-77.sqlite3"),
                                  workspace=WS, sender=board.sender)
         creates = db.db.execute(
             "SELECT state, payload FROM outbox WHERE kind='create'").fetchall()
@@ -248,7 +250,7 @@ class FactoryToOutbox(unittest.TestCase):
         board.down = True                       # Command Center is down
         self._patched_sender(real_cc_sync, board)
         sb._board_epic(str(SKILL_ROOT), "order-88", "Order Eighty-Eight")
-        path = os.path.join(tmp, WS, "default.sqlite3")
+        path = os.path.join(tmp, WS, "order-88.sqlite3")   # run-scoped (PR 3279)
         db = real_cc_sync.Outbox(db_path=path, workspace=WS, sender=board.sender)
         # the factory call is fail-soft, but the intent is durably queued and
         # the pending synchronization state is visible -- no manual DB edits
