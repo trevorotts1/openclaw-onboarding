@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import subprocess
 import sys
 import time
@@ -138,6 +139,104 @@ def classify_failure(reason: Any, failure_kind: Optional[str] = None) -> str:
     if any(m in text for m in _VERIFIER_MARKERS):
         return FAILURE_VERIFIER_SUBSTANCE
     return FAILURE_TRANSIENT
+
+# ---------------------------------------------------------------------------
+# PD-048b -- A PAGE INSTALL THAT IS WAITING ON A PERSON IS A PAUSE, NOT A
+# FAILURE LOOP.
+#
+# P-U-GHL-SALES / P-U-GHL-VSL / P-U-FORM-GATE run ghl_external_installer.py.
+# With no Skill 06/44 adapter in this process -- the production DELEGATED path
+# -- the installer emits the install plan and a receipt whose status is
+# `pending_external_execution`, then exits 0: a PERSON still has to execute
+# that plan in GoHighLevel. The engine used to read the pending receipt as
+# missing substance: substance check failed -> regenerate -> the CLIENT was
+# told "<phase id> artifact check failed (AF-U-...) -- Regenerating" -> still
+# pending -> regenerate again -> quarantine. That is a failure loop wrapped
+# around a wait.
+#
+# waiting_on_person() is the ONE detector for that wait. It reads the phase's
+# own declared receipts (the manifest's produces_artifact) and returns a pause
+# record only when EVERY written receipt says the install is waiting on that
+# person. A complete/verified receipt is never a wait -- it takes the normal
+# verifier path, which is what lets the pause lift by itself once the install
+# is done.
+WAITING_ON_PERSON_STATUSES = ("pending_external_execution",)
+PAGE_INSTALL_PHASE_IDS = frozenset({
+    "P-U-GHL-SALES", "P-U-GHL-VSL", "P-U-FORM-GATE",
+})
+#: What the CLIENT is told. Plain words: no phase id, no AF- code, no file
+#: path, no internal vocabulary (the same rule every other client message
+#: obeys).
+_WAITING_FOR_TEXT = (
+    "our team still has to finish the GoHighLevel page and form setup for "
+    "this deck -- the install plan is written and waiting on that step")
+
+def _receipt_rels(run_dir: Any, phase: Any) -> List[str]:
+    """The phase's declared output paths, token-resolved when the Phase object
+    supports it, else its raw produces_artifact. Never raises."""
+    try:
+        rels = list(phase.resolve_artifact_patterns(run_dir))
+    except Exception:  # noqa: BLE001 -- a degraded Phase still yields its raw list
+        rels = [str(r) for r in (getattr(phase, "produces_artifact", None) or [])]
+    out: List[str] = []
+    for rel in rels:
+        text = str(rel)
+        parts = [p.strip() for p in text.split(" + ")] if " + " in text else [text]
+        out.extend(p for p in parts if p)
+    return out
+
+def _is_external_install(phase: Any) -> bool:
+    pid = str(getattr(phase, "id", "") or "")
+    cmd = str(getattr(phase, "executor_cmd", "") or "")
+    return pid in PAGE_INSTALL_PHASE_IDS or "ghl_external_installer.py" in cmd
+
+def _receipt_statuses(run_dir: Any, phase: Any) -> Dict[str, str]:
+    """Read every declared receipt that exists and carries a status. Never
+    raises; unreadable/absent files simply contribute nothing."""
+    from pathlib import Path as _Path
+    rd = _Path(str(run_dir))
+    statuses: Dict[str, str] = {}
+    for rel in _receipt_rels(rd, phase):
+        try:
+            obj = json.loads((rd / rel).read_text(encoding="utf-8",
+                                                  errors="replace"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        if not isinstance(obj, dict):
+            continue
+        status = str(obj.get("status") or "").strip()
+        if status:
+            statuses[rel] = status
+    return statuses
+
+def waiting_on_person(run_dir: Any, phase: Any) -> Optional[Dict[str, Any]]:
+    """PD-048b: is this phase an external page install whose receipts say a
+    person still has to execute the delegated install?
+
+    Returns a pause record {"phase", "phase_label", "status", "receipts",
+    "waiting_for"}, or None when the phase is not an external install, has
+    written no receipt yet, or any receipt is NOT a person-wait. Never raises:
+    an unreadable receipt is simply not a positive wait.
+    """
+    try:
+        if not _is_external_install(phase):
+            return None
+        statuses = _receipt_statuses(run_dir, phase)
+        if not statuses:
+            return None
+        if any(s not in WAITING_ON_PERSON_STATUSES for s in statuses.values()):
+            return None
+        pid = str(getattr(phase, "id", "") or "")
+        return {
+            "phase": pid,
+            "phase_label": str(getattr(phase, "name", "") or pid),
+            "status": sorted(set(statuses.values()))[0],
+            "receipts": sorted(statuses),
+            "waiting_for": _WAITING_FOR_TEXT,
+        }
+    except Exception:  # noqa: BLE001 -- a wait probe can never break a run
+        return None
+
 
 
 # Cap: ONE alternate-provider failover per phase per run (MASTER Fix 10 cap

@@ -53,7 +53,9 @@ fi
 #                                forward progress for >= ZHC_STUCK_CLOSEOUT_HOURS. Such a box
 #                                previously matched NO class at all - the watchdog logged
 #                                "all clear" every 6h through a multi-day silent stall.
-#   STUCK_CLOSEOUT_BLOCKED     - closeoutStatus in blocked-* | failed >= ZHC_STUCK_CLOSEOUT_HOURS
+#   STUCK_CLOSEOUT_BLOCKED     - closeoutStatus in blocked-* | failed | partial |
+#                                deferred-cc-not-complete >= ZHC_STUCK_CLOSEOUT_HOURS,
+#                                or generating >= twice ZHC_STUCK_CLOSEOUT_HOURS
 #
 # PLUS one INDEPENDENT finding, escalated separately so it can neither mask nor be
 # masked by the mutually-exclusive classes above (it is about the machinery, not the client):
@@ -117,7 +119,19 @@ REPO_ROOT="$(cd "$SKILL_DIR/.." && pwd)"
 # build-state lock (BU-36). The lib resolves WORKFORCE_PYTHON and puts this
 # skill's scripts/ folder on PYTHONPATH exactly the way every other writer does,
 # so the watchdog can never clobber a field another writer just committed.
-source "$SCRIPT_DIR/lib-workforce-state.sh"
+# A lone copy of this file (a partial install, a staged fixture, a single-file
+# rollout) has no lib next to it: guard the source and stand up the same two
+# exports inline so a missing sibling can never abort the escalation pass -
+# an unbound WORKFORCE_PYTHON under `set -u` kills the shell mid-escalation,
+# which is exactly how a recovery-lane finding masked the client stuck class
+# behind it. ponytail: the degraded writer below duplicates workforce_state's
+# lock; re-adding the shared lib as a hard dependency is the upgrade path.
+if [[ -f "$SCRIPT_DIR/lib-workforce-state.sh" ]]; then
+  source "$SCRIPT_DIR/lib-workforce-state.sh" 2>/dev/null || true
+fi
+: "${WORKFORCE_PYTHON:=$(command -v python3)}"
+export WORKFORCE_PYTHON
+export PYTHONPATH="$SCRIPT_DIR${PYTHONPATH:+:$PYTHONPATH}"
 
 STATE_FILE="${ZHC_STATE_FILE:-${OC_ROOT}/workspace/.workforce-build-state.json}"
 LOCK_FILE="${OC_ROOT}/workspace/.closeout-watchdog.lock"
@@ -214,13 +228,30 @@ PY
 
 # Set a single top-level build-state key to JSON null (replaces the old bare
 # read-modify-write). $1 = bare key name (no leading dot). Locked, best-effort.
+# ponytail: the file-lock fallback below duplicates workforce_state.update's
+# locking; re-adding the shared lib as a hard dependency is the upgrade path.
 state_set_null() {
   [ -f "$STATE_FILE" ] || return 1
   "$WORKFORCE_PYTHON" - "$STATE_FILE" "$1" <<'PY' 2>/dev/null || return 1
 import sys
-from workforce_state import update
-
 state_path, key = sys.argv[1:3]
+try:
+    from workforce_state import update
+except ImportError:
+    import fcntl, json, os
+    from pathlib import Path
+    _lk = Path(str(state_path) + '.write.lock')
+    _lk.parent.mkdir(parents=True, exist_ok=True)
+    def update(path, mutate):
+        with _lk.open('a+') as _h:
+            fcntl.flock(_h, fcntl.LOCK_EX)
+            _s = json.loads(Path(path).read_text())
+            mutate(_s)
+            _s['stateRevision'] = int(_s.get('stateRevision', 0)) + 1
+            _tmp = str(path) + '.tmp'
+            Path(_tmp).write_text(json.dumps(_s, indent=2) + '\n')
+            os.replace(_tmp, path)
+            fcntl.flock(_h, fcntl.LOCK_UN)
 
 def mutate(state):
     state[key] = None
@@ -236,9 +267,24 @@ state_append_blocker_and_throttle() {
   [ -f "$STATE_FILE" ] || return 1
   "$WORKFORCE_PYTHON" - "$STATE_FILE" "$1" "$2" "$3" <<'PY' 2>/dev/null || return 1
 import sys
-from workforce_state import update
-
 state_path, cls, reason, ts = sys.argv[1:5]
+try:
+    from workforce_state import update
+except ImportError:
+    import fcntl, json, os
+    from pathlib import Path
+    _lk = Path(str(state_path) + '.write.lock')
+    _lk.parent.mkdir(parents=True, exist_ok=True)
+    def update(path, mutate):
+        with _lk.open('a+') as _h:
+            fcntl.flock(_h, fcntl.LOCK_EX)
+            _s = json.loads(Path(path).read_text())
+            mutate(_s)
+            _s['stateRevision'] = int(_s.get('stateRevision', 0)) + 1
+            _tmp = str(path) + '.tmp'
+            Path(_tmp).write_text(json.dumps(_s, indent=2) + '\n')
+            os.replace(_tmp, path)
+            fcntl.flock(_h, fcntl.LOCK_UN)
 
 def mutate(state):
     # closeoutBlockers: keep only not-yet-cleared entries, append the new one, cap at 20.
@@ -385,7 +431,7 @@ escalate_class() {
   # ── Rescue Rangers n8n webhook ─────────────────────────────────────────────
   if command -v curl >/dev/null 2>&1 && [[ -n "${RESCUE_RANGERS_WEBHOOK_URL:-}" && "${ZHC_SKIP_TG_PREFLIGHT:-0}" != "1" ]]; then
     # D17: the RR-01 intake answers 400 invalid_payload "unresolvable box" to a post with
-    # no box identity (Lyric Hawkins: every weekly escalation rejected since Sep 6). Send
+    # no box identity (<client>: every weekly escalation rejected since Sep 6). Send
     # the canonical fleet slug as boxName/box, same as scripts/disk-usage-alert.sh and
     # rescue_admission.build_payload. No slug = nothing the intake can accept, so say so
     # instead of posting a request that is rejected and hidden.
@@ -497,6 +543,9 @@ closeout_status="$(_norm_status "$(state_get '.closeoutStatus')")"
 resume_attempts=$(state_get '.resumeAttempts')
 max_resume_attempts=$(state_get '.maxResumeAttempts')
 company_name=$(state_get '.companyName')
+# Name fallback (BU-67): companyName, else companySlug. A box whose state carries
+# only the slug used to escalate as "(unknown)", which tells the operator nothing.
+[[ -z "$company_name" || "$company_name" == "null" ]] && company_name=$(state_get '.companySlug')
 agent_name=$(state_get '.agentName')
 # PRD-3.3 R3.4: signals for the fast "content complete but flag missing" class and
 # for tightening STUCK_PRE_CLOSEOUT. dept_total/dept_pending let us detect a build
@@ -572,14 +621,22 @@ fi
 # ── Compute idle times ────────────────────────────────────────────────────────
 NOW_EPOCH=$(now_epoch)
 
+# Hours since an ISO timestamp. (BU-67) A timestamp that carries a zone (Z, or a
+# ±HH:MM offset) is read in that zone; one that does NOT is the machine's LOCAL
+# time, never UTC. The old code forced UTC onto every string, so a local stamp
+# written by host-side tooling was misread by the box's UTC offset.
 compute_hours_idle_from_ts() {
   local ts="$1"
   [[ -z "$ts" || "$ts" == "null" ]] && { echo 0; return; }
   python3 -c "
-from datetime import datetime, timezone
-ts='${ts}'.rstrip('Z')
+from datetime import datetime
+ts='${ts}'.strip()
+if ts.endswith('Z') or ts.endswith('z'):
+    ts=ts[:-1]+'+00:00'
 try:
-    dt=datetime.fromisoformat(ts).replace(tzinfo=timezone.utc)
+    dt=datetime.fromisoformat(ts)
+    if dt.tzinfo is None:
+        dt=dt.astimezone()
     print(int((${NOW_EPOCH} - dt.timestamp()) / 3600))
 except:
     print(0)
@@ -599,9 +656,27 @@ if command -v stat >/dev/null 2>&1; then
   fi
 fi
 
-# Closeout status age - when did current closeout status start?
+# "Never started" age (BU-67): hours since the first present of
+# launchBootstrap.createdAt, standardPrebuild.prebuildStartedAt, else the state
+# file's own time as computed just above. File time alone made a box provisioned
+# long before anything wrote state look young forever.
+never_started_age_hours="$state_file_age_hours"
+_never_started_ts=$(state_get '.launchBootstrap.createdAt')
+[[ -z "$_never_started_ts" || "$_never_started_ts" == "null" ]] && _never_started_ts=$(state_get '.standardPrebuild.prebuildStartedAt')
+if [[ -n "$_never_started_ts" && "$_never_started_ts" != "null" ]]; then
+  never_started_age_hours=$(compute_hours_idle_from_ts "$_never_started_ts")
+fi
+
+# Closeout status age - when did the current closeout status start? (BU-67) The
+# clock is the FIRST present of closeoutStartedAt, closeoutCompletedAt and
+# buildCompletedAt: a box that reached a blocked/partial status without ever
+# stamping closeoutStartedAt used to measure 0h and could never escalate.
 closeout_started_at=$(state_get '.closeoutStartedAt')
-closeout_age_hours=$(compute_hours_idle_from_ts "$closeout_started_at")
+closeout_completed_at=$(state_get '.closeoutCompletedAt')
+closeout_clock_ts="$closeout_started_at"
+[[ -z "$closeout_clock_ts" || "$closeout_clock_ts" == "null" ]] && closeout_clock_ts="$closeout_completed_at"
+[[ -z "$closeout_clock_ts" || "$closeout_clock_ts" == "null" ]] && closeout_clock_ts="$build_completed_at"
+closeout_age_hours=$(compute_hours_idle_from_ts "$closeout_clock_ts")
 
 # Hours since the last REAL forward motion in the build (see the departments read
 # above for how last_progress_at is chosen). Falls back to the interview clock when
@@ -698,10 +773,10 @@ if [[ "$interview_complete" != "true" ]]; then
     fi
   else
     # lastQuestionAt never set - interview never started
-    if (( state_file_age_hours >= ZHC_STUCK_NOSTART_DAYS * 24 )); then
+    if (( never_started_age_hours >= ZHC_STUCK_NOSTART_DAYS * 24 )); then
       STUCK_CLASS="STUCK_INTERVIEW_NEVER_STARTED"
-      STUCK_REASON="Box provisioned ~${state_file_age_hours}h ago but interview has never started (threshold: ${ZHC_STUCK_NOSTART_DAYS}d)"
-      STUCK_IDLE_LABEL="${state_file_age_hours}h"
+      STUCK_REASON="Box provisioned ~${never_started_age_hours}h ago but interview has never started (threshold: ${ZHC_STUCK_NOSTART_DAYS}d)"
+      STUCK_IDLE_LABEL="${never_started_age_hours}h"
     fi
   fi
 elif [[ "$qc_status" == "fail" ]]; then
@@ -765,12 +840,25 @@ elif [[ (-z "$build_completed_at" || "$build_completed_at" == "null") ]]; then
     fi
   fi
 else
-  # buildCompletedAt set - check closeout
+  # buildCompletedAt set - check closeout.
+  # (BU-67) EVERY blocked-* status counts, plus failed, partial and
+  # deferred-cc-not-complete. The old four-name list meant any other blocked
+  # reason - blocked-routing-defect, blocked-org-chart, ... - was invisible, and
+  # `partial` (a closeout that stopped halfway) matched no class at all.
+  # `generating` counts only once it has run at least TWICE the threshold:
+  # generation is normally long, and a young one is not stuck.
   case "${closeout_status:-}" in
-    blocked-floor-incomplete|blocked-libraries-incomplete|blocked-interview-incomplete|blocked-qc-pending|failed)
+    blocked-*|failed|partial|deferred-cc-not-complete)
       if (( closeout_age_hours >= ZHC_STUCK_CLOSEOUT_HOURS )); then
         STUCK_CLASS="STUCK_CLOSEOUT_BLOCKED"
         STUCK_REASON="closeoutStatus=${closeout_status} for ${closeout_age_hours}h (threshold: ${ZHC_STUCK_CLOSEOUT_HOURS}h)"
+        STUCK_IDLE_LABEL="${closeout_age_hours}h"
+      fi
+      ;;
+    generating)
+      if (( closeout_age_hours >= ZHC_STUCK_CLOSEOUT_HOURS * 2 )); then
+        STUCK_CLASS="STUCK_CLOSEOUT_BLOCKED"
+        STUCK_REASON="closeoutStatus=generating for ${closeout_age_hours}h (threshold: $(( ZHC_STUCK_CLOSEOUT_HOURS * 2 ))h, twice the ${ZHC_STUCK_CLOSEOUT_HOURS}h stuck threshold)"
         STUCK_IDLE_LABEL="${closeout_age_hours}h"
       fi
       ;;

@@ -30,8 +30,8 @@ figures out who handles it and routes it for you.
 
 Reach for this department when you want any of the following:
 
-- Primary relationship ambassador  -  the named, trusted face that founding members associate with their entire.
-- Operational backbone of the founding member program  -  the person responsible for ensuring.
+- Primary relationship ambassador  -  the named.
+- Operational backbone of the founding member program  -  the person responsible for ensuring that every benefit promised to a founding member is configured, accessible, functional.
 
 If you are not sure whether a request belongs here, ask anyway. The department
 head will either take it or hand it to the right department. You never have to
@@ -68,20 +68,18 @@ and it will pick the right one, or you can ask for a specialist by name.
 
 | Specialist | What it is for |
 | --- | --- |
-| **Concierge Lead** | Primary relationship ambassador  -  the named, trusted face that founding members associate with their entire lived. |
-| **Membership Specialist** | Operational backbone of the founding member program  -  the person responsible for ensuring that every benefit promised. |
+| **Concierge Lead** | Primary relationship ambassador  -  the named. |
+| **Membership Specialist** | Operational backbone of the founding member program  -  the person responsible for ensuring that every benefit promised to a founding member is configured, accessible, functional. |
 
-### What each specialist is for, with an example request
+### What each specialist is for
 
 **Concierge Lead**
 
-- *What it is for:* Primary relationship ambassador  -  the named, trusted face that founding members associate with their entire lived.
-- *Example request:* "Have the Concierge Lead take this on: Primary relationship ambassador  -  the named, trusted face that founding members."
+- *What it is for:* Primary relationship ambassador  -  the named.
 
 **Membership Specialist**
 
-- *What it is for:* Operational backbone of the founding member program  -  the person responsible for ensuring that every benefit promised.
-- *Example request:* "Have the Membership Specialist take this on: Operational backbone of the founding member program  -  the person responsible."
+- *What it is for:* Operational backbone of the founding member program  -  the person responsible for ensuring that every benefit promised to a founding member is configured, accessible, functional.
 
 
 ---

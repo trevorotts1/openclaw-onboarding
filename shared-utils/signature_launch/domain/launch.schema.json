@@ -236,6 +236,15 @@
                     "null"
                   ]
                 },
+                "recurring_interval": {
+                  "enum": [
+                    "week",
+                    "month",
+                    "quarter",
+                    "year"
+                  ],
+                  "description": "How often a recurring price bills. Present only with billing_type recurring; the interval is material disclosure and is never guessed."
+                },
                 "approval_status": {
                   "enum": [
                     "provided",

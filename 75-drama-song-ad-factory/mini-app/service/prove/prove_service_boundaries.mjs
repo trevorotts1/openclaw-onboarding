@@ -105,7 +105,7 @@ async function proveIsolation(results) {
   const B = await clientFixture(store, 'link');
 
   // A real order for A, and a real uploaded object under A's namespace.
-  const created = await handle(post('/api/studio/orders', { title: 'Spring Sale', order_id: 'r_alpha' }, A.key), ENV, store, objects);
+  const created = await handle(post('/api/studio/orders', { title: 'Spring Sale', order_id: 'r_aaaaaa01' }, A.key), ENV, store, objects);
   const orderA = (await created.json()).order;
   await objects.objectPut(`clients/${A.clientId}/intake/secret.bin`, 'a-only-bytes');
 
@@ -117,7 +117,7 @@ async function proveIsolation(results) {
     `status=${ownA.status} reads_on_A=${store.readsFor(`order:${A.clientId}:`)}`]);
 
   // ---- C2 POSITIVE CONTROL: B's key opens B's own order -------------------
-  const createdB = await handle(post('/api/studio/orders', { title: 'Example B', order_id: 'r_beta' }, B.key), ENV, store, objects);
+  const createdB = await handle(post('/api/studio/orders', { title: 'Example B', order_id: 'r_bbbbbb02' }, B.key), ENV, store, objects);
   const orderB = (await createdB.json()).order;
   store.log.length = 0;
   const ownB = await handle(get(`/api/studio/orders/${orderB.order_id}`, B.key), ENV, store, objects);
@@ -181,28 +181,28 @@ async function proveIsolation(results) {
 async function proveRetention(results) {
   const day = DAY_MS;
   const rows = [
-    ['intake deleted at pickup', retentionVerdict('intake_answer', { eventAtMs: T0, nowMs: T0 }).delete === true],
+    ['intake deleted at pickup', retentionVerdict('intake_answer', { in_production_at: T0, nowMs: T0 }).delete === true],
     ['intake kept before pickup', retentionVerdict('intake_answer', { nowMs: T0 }).delete === false],
-    ['approval file deleted at stage approval', retentionVerdict('approval_file', { eventAtMs: T0, nowMs: T0 }).delete === true],
-    ['r2 fallback kept on day 6', retentionVerdict('r2_fallback_video', { eventAtMs: T0, nowMs: T0 + 6 * day }).delete === false],
-    ['r2 fallback deleted on day 7', retentionVerdict('r2_fallback_video', { eventAtMs: T0, nowMs: T0 + 7 * day }).delete === true],
-    ['status record deleted on day 30', retentionVerdict('status_record', { eventAtMs: T0, nowMs: T0 + 30 * day }).delete === true],
-    ['unclaimed waiting order expires at 45 days', retentionVerdict('waiting_unclaimed', { createdAtMs: T0, nowMs: T0 + 45 * day }).delete === true],
-    ['project object swept at 45 days', retentionVerdict('project_object', { createdAtMs: T0, nowMs: T0 + 45 * day }).delete === true],
+    ['approval file deleted at stage approval', retentionVerdict('approval_file', { finalized_at: T0, nowMs: T0 }).delete === true],
+    ['r2 fallback kept on day 6', retentionVerdict('r2_fallback_video', { delivered_at: T0, nowMs: T0 + 6 * day }).delete === false],
+    ['r2 fallback deleted on day 7', retentionVerdict('r2_fallback_video', { delivered_at: T0, nowMs: T0 + 7 * day }).delete === true],
+    ['status record deleted on day 30', retentionVerdict('status_record', { delivered_at: T0, nowMs: T0 + 30 * day }).delete === true],
+    ['unclaimed waiting order expires at 45 days', retentionVerdict('waiting_unclaimed', { created_at: T0, nowMs: T0 + 45 * day }).delete === true],
+    ['project object swept at 45 days', retentionVerdict('project_object', { created_at: T0, nowMs: T0 + 45 * day }).delete === true],
     ['unknown kind is refused, never deleted', retentionVerdict('mystery', { nowMs: T0 }).code === 'AF-DS-RET-UNKNOWN-KIND'],
   ];
   // The never-delete classes, at ten years.
   for (const kind of ['enrollment_record', 'delivery_receipt', 'ghl_media']) {
-    const v = retentionVerdict(kind, { createdAtMs: T0, eventAtMs: T0, nowMs: T0 + 3650 * day });
+    const v = retentionVerdict(kind, { created_at: T0, delivered_at: T0, nowMs: T0 + 3650 * day });
     rows.push([`${kind} never deleted (10 years)`, v.delete === false && v.never === true && RETENTION_RULES[kind].never === true]);
   }
 
   // A sweep must partition the never-delete classes OUT of the delete list.
   const sweep = dueForDeletion([
-    { kind: 'enrollment_record', path: 'clients/x/enrollment.json', created_at_ms: T0 },
-    { kind: 'delivery_receipt', path: 'clients/x/receipt.json', created_at_ms: T0 },
-    { kind: 'ghl_media', path: 'clients/x/ghl.json', created_at_ms: T0 },
-    { kind: 'status_record', path: 'clients/x/status.json', event_at_ms: T0 },
+    { kind: 'enrollment_record', path: 'clients/x/enrollment.json', created_at: T0 },
+    { kind: 'delivery_receipt', path: 'clients/x/receipt.json', created_at: T0 },
+    { kind: 'ghl_media', path: 'clients/x/ghl.json', created_at: T0 },
+    { kind: 'status_record', path: 'clients/x/status.json', delivered_at: T0 },
   ], T0 + 3650 * day);
   rows.push(['a sweep never lists a protected class for deletion',
     sweep.never.length === 3 && !sweep.delete.some((p) => sweep.never.includes(p))]);

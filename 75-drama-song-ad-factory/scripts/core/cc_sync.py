@@ -12,6 +12,12 @@ run's requester record, and a move may carry an approval and a review envelope
 (Skill75ApprovalEnvelopeSchema / Skill75ReviewEnvelopeSchema), which the board
 persists as the durable records its Skill 75 completion guard reads.
 
+Completion contract (S75-033): the create carries the typed marker
+contract={"kind": "skill75", "version": 1} (CampaignContractSchema) plus the
+run's requester record, and a move may carry an approval and a review envelope
+(Skill75ApprovalEnvelopeSchema / Skill75ReviewEnvelopeSchema), which the board
+persists as the durable records its Skill 75 completion guard reads.
+
 Directive 20.5 rules enforced here:
   stable keys (job_id == campaign_id == tasks.campaign_id, stage_slug);
   retries update existing cards, stale transitions rejected, never duplicated;

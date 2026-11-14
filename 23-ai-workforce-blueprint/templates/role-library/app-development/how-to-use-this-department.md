@@ -86,72 +86,59 @@ and it will pick the right one, or you can ask for a specialist by name.
 | **PWA Specialist Phase2** | **** for the department of the company, a company whose mission is "". |
 | **QA Tester Phase2** | Last line of defense between a half-finished build and a founder's public brand. |
 
-### What each specialist is for, with an example request
+### What each specialist is for
 
 **Android Specialist**
 
 - *What it is for:* Android-native app development (Kotlin / Jetpack Compose).
-- *Example request:* "Have the Android Specialist take this on: Android-native app development (Kotlin / Jetpack Compose)."
 
 **Api Backend Specialist**
 
 - *What it is for:* Backend API design and implementation.
-- *Example request:* "Have the Api Backend Specialist take this on: Backend API design and implementation."
 
 **App Analytics Specialist**
 
 - *What it is for:* Instruments apps for analytics (Mixpanel, Amplitude, Firebase Analytics).
-- *Example request:* "Have the App Analytics Specialist take this on: Instruments apps for analytics (Mixpanel, Amplitude, Firebase Analytics)."
 
 **App Store Optimization ASO Specialist**
 
 - *What it is for:* App listing optimization - title, keywords, description, screenshots, ratings management.
-- *Example request:* "Have the App Store Optimization ASO Specialist take this on: App listing optimization - title, keywords, description, screenshots, ratings management."
 
 **Cloud Infrastructure Specialist**
 
 - *What it is for:* AWS / GCP / Azure setup.
-- *Example request:* "Have the Cloud Infrastructure Specialist take this on: AWS / GCP / Azure setup."
 
 **Desktop App Specialist**
 
 - *What it is for:* Electron, Tauri, native macOS/Windows desktop apps.
-- *Example request:* "Have the Desktop App Specialist take this on: Electron, Tauri, native macOS/Windows desktop apps."
 
 **Ios Specialist**
 
 - *What it is for:* iOS-native app development (Swift / SwiftUI).
-- *Example request:* "Have the Ios Specialist take this on: iOS-native app development (Swift / SwiftUI)."
 
 **PWA Progressive Web App Specialist**
 
 - *What it is for:* Builds PWAs - installable web apps that work offline.
-- *Example request:* "Have the PWA Progressive Web App Specialist take this on: Builds PWAs - installable web apps that work offline."
 
 **QA Tester App**
 
 - *What it is for:* Manual and automated app testing.
-- *Example request:* "Have the QA Tester App take this on: Manual and automated app testing."
 
 **UX UI Specialist**
 
 - *What it is for:* App-specific design (different from web design).
-- *Example request:* "Have the UX UI Specialist take this on: App-specific design (different from web design)."
 
 **App Store Optimization Specialist Phase2**
 
 - *What it is for:* You sit at the point where a finished build becomes a discoverable product.
-- *Example request:* "Have the App Store Optimization Specialist Phase2 take this on: You sit at the point where a finished build becomes a discoverable product."
 
 **PWA Specialist Phase2**
 
 - *What it is for:* **** for the department of the company, a company whose mission is "".
-- *Example request:* "Have the PWA Specialist Phase2 take this on: **** for the department of the company, a company whose mission is ""."
 
 **QA Tester Phase2**
 
 - *What it is for:* Last line of defense between a half-finished build and a founder's public brand.
-- *Example request:* "Have the QA Tester Phase2 take this on: Last line of defense between a half-finished build and a founder's public brand."
 
 
 ---
