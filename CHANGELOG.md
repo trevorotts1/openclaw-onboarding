@@ -6,6 +6,19 @@
 - `shared-utils/client_intake/engine.py` reads a cadence word in the billing answer (`weekly`, `quarterly`, `every year`) as a recurring price with its interval. A quarter is every 3 months where a billing platform has no quarter unit (`terms_for_interval`).
 - Known limit: Skill 06's native price binding still knows day, week, month and year only, so a quarterly offer is named as unresolved there (existing behavior for an unsupported interval) until Skill 06 learns an interval count.
 - Pinned files changed; the Skill 49 prover pin needs a CI mint. Not merged, deployed or rolled onto any client box.
+## [Unreleased]  -  2026-11-13  -  Batch pull requests run only the required checks
+
+- Every pull_request workflow that does not produce one of the 8 required checks (69 workflows, 105 jobs) now skips its jobs when the head branch starts with `batch/`. The three workflows that produce the required checks (`ghl-mcp-supervised-guard.yml`, `qc-static.yml`, `version-consistency.yml`) are untouched, and push-to-main triggers are unchanged, so main still runs everything after a merge.
+- New guard `scripts/ci/batch-required-only-check.py` (folded into fast-guards as `batch-required-only-guard`, with a self-test) fails if a required-check workflow gets the skip or a new pull_request workflow lacks it.
+- No guard or workflow is removed; duplicate findings are listed in the PR description for the separate audit.
+- No skill content changed, so no version bump. Migration: CI only; not rolled onto any client box.
+- Risk: LOW. Members run their own checks before QC; a skipped job reports "skipped", not failed.
+## [Unreleased]  -  2026-11-13  -  SF prover pin authority: a manual mint on a batch branch commits onto that branch
+
+- `.github/workflows/sf-prover-pin-authority.yml` (mint job only): a manual dispatch on a branch other than main now pushes the one pin-only github-actions[bot] commit onto the dispatched branch itself (fast-forward), instead of creating a `pin/mint-*` ref and a pull request to main. The built-in token cannot create a new ref when the batch also changes workflow files ("workflows scope may be required"); a fast-forward by a pin-only commit carries no workflow change. Push-to-main and dispatch-on-main are unchanged. Source: batch-merge diagnosis 2026-11-13, section 5.2.
+- No skill version bump: the pinned Skill 49 inputs are untouched, so the pin does not change.
+- Migration: repository change only; not merged, deployed or rolled onto any client box.
+- Risk: LOW. A dispatch on a non-branch ref is refused; a non-fast-forward push fails loudly.
 
 ## [Unreleased]  -  2026-11-12  -  Owner approval flow: the owner always gets a link (Skills 35, 44, 83 + shared helper)
 
