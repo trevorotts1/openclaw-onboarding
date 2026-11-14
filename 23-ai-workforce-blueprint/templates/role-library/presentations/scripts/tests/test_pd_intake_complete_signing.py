@@ -33,6 +33,8 @@ def _env(tmp_path: Path) -> dict:
     """Isolated profile/capacity dirs, no provider probes, no paid call."""
     env = dict(os.environ)
     env.update({
+        # PD-004c: this suite proves --complete signing, not provenance.
+        "PRESENTATION_INTAKE_PROVENANCE": "warn",
         "PRESENTATION_RESOURCE_PROFILE_DIR": str(tmp_path / "profile"),
         "PRESENTATION_CAPACITY_CONFIG_DIR": str(tmp_path / "profile"),
         "PRESENTATION_PROVIDER_PROBES": "0",

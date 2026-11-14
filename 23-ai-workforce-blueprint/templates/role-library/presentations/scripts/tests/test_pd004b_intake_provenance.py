@@ -13,7 +13,8 @@ contract (an id in `working/interview/inbound_messages.jsonl` resolves to its
 row, else None). Same harness shape as PD-015's tests.
 
 A1-A5 and A7 run with PRESENTATION_INTAKE_PROVENANCE=enforce (the variable this
-unit's switch ships as `warn`; PD-004c flips the default). A6 runs unset.
+unit's switch shipped as `warn`; PD-004c flipped the default to enforce). A6
+sets it to `warn` explicitly.
 """
 from __future__ import annotations
 
@@ -327,11 +328,11 @@ def test_a5_sig_record_without_provenance_exits_6(run, tmp_path):
 
 
 # ---------------------------------------------------------------------------
-# A6 -- with the variable UNSET (the shipped default) the proof reports but
-#       never blocks, and --complete still exits 0 with findings on stderr
+# A6 -- with the variable set to `warn` (PD-004c's opt-out) the proof reports
+#       but never blocks, and --complete still exits 0 with findings on stderr
 # ---------------------------------------------------------------------------
 def test_a6_warn_mode_reports_and_does_not_block(run):
-    run_dir, call = run(mode=None)
+    run_dir, call = run(mode="warn")
     _answer_all(call, EIGHT)
     _walk_to_complete(call, run_dir)
 
@@ -396,5 +397,5 @@ def test_a8_operator_contract_passes_until_the_receipt_changes(run):
 def test_proof_module_is_standalone_and_documents_the_switch():
     source = PROOF.read_text(encoding="utf-8")
     assert "PRESENTATION_INTAKE_PROVENANCE" in source
-    assert 'DEFAULT_MODE = "warn"' in source
+    assert 'DEFAULT_MODE = "enforce"' in source
     assert "PD-004c" in source

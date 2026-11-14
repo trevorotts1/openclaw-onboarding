@@ -59,6 +59,7 @@ stubs it.
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -97,7 +98,9 @@ def _host_turn() -> dict:
 def _run_driver(run_dir: Path, *args: str) -> subprocess.CompletedProcess:
     return subprocess.run(
         [sys.executable, str(DRIVER), "--run-dir", str(run_dir), *args],
-        capture_output=True, text=True, timeout=180)
+        capture_output=True, text=True, timeout=180,
+        # PD-004c: this file proves the style-pick opt-in, not provenance.
+        env={**os.environ, "PRESENTATION_INTAKE_PROVENANCE": "warn"})
 
 
 def _seed_samples(run_dir: Path, variants=("A", "B", "C")) -> None:

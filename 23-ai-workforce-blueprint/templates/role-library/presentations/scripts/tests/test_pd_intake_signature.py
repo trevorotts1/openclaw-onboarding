@@ -39,6 +39,8 @@ def _env(tmp_path: Path) -> dict:
     answers."""
     env = dict(os.environ)
     env.update({
+        # PD-004c: this suite proves signature signing, not provenance.
+        "PRESENTATION_INTAKE_PROVENANCE": "warn",
         "PRESENTATION_RESOURCE_PROFILE_DIR": str(tmp_path / "profile"),
         "PRESENTATION_CAPACITY_CONFIG_DIR": str(tmp_path / "profile"),
         "PRESENTATION_PROVIDER_PROBES": "0",
