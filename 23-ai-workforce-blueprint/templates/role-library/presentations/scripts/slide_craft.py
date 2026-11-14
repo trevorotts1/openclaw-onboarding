@@ -235,56 +235,130 @@ CHECK_RULE_CODES = {
 }
 
 
+# PD-309 / D-15: "ALL" — a waiver with no slide attribution — is accepted ONLY
+# for AF-DEN-4, whose ORDER-only finding names no slide. Every other rule
+# attributes at least one slide, so a deck-wide waiver for it is refused.
+ALL_SLIDES_CODES = ("AF-DEN-4",)
+
+
+def _approvals_module():
+    """presentation_job.approvals — THE one owner-approval validator (FIX 32), or
+    None when it cannot be imported (an oracle that cannot run rejects every
+    record: see _verified_waiver_records). Mirrors _scanners_35's lazy import so
+    slide_craft keeps loading standalone."""
+    try:
+        from presentation_job import approvals as _approvals_mod
+        return _approvals_mod
+    except Exception:
+        try:
+            import sys as _sys
+            _parent = str(Path(__file__).resolve().parent)
+            if _parent not in _sys.path:
+                _sys.path.insert(0, _parent)
+            from presentation_job import approvals as _approvals_mod
+            return _approvals_mod
+        except Exception:
+            return None
+
+
+def _verified_waiver_records(run_dir):
+    """The waiver records in WAIVER_REL that PROVE an owner decision — the ONE
+    loader both this module and craft_judgement.py use (PD-309 / D-15).
+
+    A record is a waiver only when it carries an `owner_msg_id` that
+    presentation_job.approvals.verify resolves to a real owner-authored message,
+    with the record's own af_code as the gate it waives. The validator also
+    enforces the FIX 32 shape (named gate, named approver with no self-grant
+    marker, a real reason of at least 8 characters, a timezone-aware granted_at
+    that is never the midnight placeholder). Anything else — a missing message
+    id, an id the oracle cannot resolve, an oracle that cannot run, malformed
+    JSON, a non-list document — contributes NO record, so the gate it named
+    stays blocking (fail-closed; undetermined never opens a gate)."""
+    p = Path(run_dir) / WAIVER_REL
+    if not p.is_file():
+        return []
+    try:
+        data = json.loads(p.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError, ValueError):
+        return []
+    if not isinstance(data, list):
+        return []
+    approvals = _approvals_module()
+    if approvals is None:  # an oracle that cannot run rejects every record
+        return []
+    verified = []
+    for rec in data:
+        if not isinstance(rec, dict):
+            continue
+        code = str(rec.get("af_code") or rec.get("gate") or "").strip().upper()
+        if not code:
+            continue
+        candidate = dict(rec)
+        # FIX 32: the gate an approval waives is the record's own af_code.
+        candidate["gate"] = code
+        try:
+            approvals.verify(candidate, Path(run_dir))
+        except Exception:  # noqa: BLE001 — forged or unprovable: not a waiver
+            continue
+        verified.append(candidate)
+    return verified
+
+
+def _waiver_scope(rec):
+    """(af_code, {slide ordinals}, all_slides) one VERIFIED record declares, or
+    None. Shared by both loaders so the slide-naming rule is stated once: "ALL"
+    counts only for ALL_SLIDES_CODES, and a record with no usable slide, or no
+    usable ordinal, is not a waiver."""
+    if not isinstance(rec, dict):
+        return None
+    code = str(rec.get("af_code") or rec.get("gate") or "").strip().upper()
+    if not code:
+        return None
+    slides = rec.get("slides")
+    if not isinstance(slides, list) or not slides:
+        return None
+    ordinals = set()
+    all_slides = False
+    for s in slides:
+        if s == "ALL" and code in ALL_SLIDES_CODES:
+            all_slides = True
+            continue
+        try:
+            n = int(s)
+        except (TypeError, ValueError):
+            continue
+        if n > 0:
+            ordinals.add(n)
+    if not ordinals and not all_slides:
+        return None
+    return code, ordinals, all_slides
+
+
 def _load_waivers(run_dir):
-    """Return {af_code: {"slides": set, "all_slides": bool}} from WAIVER_REL, or {} per
-    invalid record. Waivers are scoped ONE RULE / ONE RUN / NAMED SLIDES:
+    """Return {af_code: {"slides": set, "all_slides": bool}} for the OWNER
+    APPROVALS recorded in WAIVER_REL; {} when no record proves one.
+
+    Waivers are scoped ONE RULE / ONE RUN / NAMED SLIDES:
 
     - The file lives inside the run dir, so its scope is exactly this run — there is no
       cross-run and no environment-wide waiver, and ENFORCE_ENV=0 is NOT honored as a
       production escape (see run_all_checks).
     - Each record: {"af_code": "AF-OBI-1", "slides": [3, 7], "approved_by": "...",
-      "reason": "..."} — slides are named slide ordinals. "ALL" is accepted in the
-      slides list ONLY for AF-DEN-4, whose ORDER-only finding has no slide attribution.
-    - A record missing af_code, approved_by, reason, or slides is INVALID and ignored:
-      a malformed waiver never silences a gate (fail-closed).
+      "owner_msg_id": "<verified owner message>", "reason": "..."} — slides are named
+      slide ordinals. "ALL" is accepted in the slides list ONLY for AF-DEN-4, whose
+      ORDER-only finding has no slide attribution.
+    - Authenticity is not a free-text field: every record goes through
+      _verified_waiver_records, so a record without an owner message id that the
+      oracle resolves is not a waiver and the rule still blocks (fail-closed).
 
     Malformed JSON or a non-list document yields {} — same fail-closed direction."""
-    p = run_dir / WAIVER_REL
-    if not p.is_file():
-        return {}
-    try:
-        data = json.loads(p.read_text(encoding="utf-8"))
-    except (json.JSONDecodeError, OSError):
-        return {}
-    if not isinstance(data, list):
-        return {}
     waivers = {}
-    for rec in data:
-        if not isinstance(rec, dict):
+    for rec in _verified_waiver_records(run_dir):
+        scope = _waiver_scope(rec)
+        if scope is None:
             continue
-        code = str(rec.get("af_code", "")).strip().upper()
+        code, ordinals, all_slides = scope
         if code not in CHECK_RULE_CODES.values():
-            continue
-        if not str(rec.get("approved_by", "")).strip():
-            continue
-        if not str(rec.get("reason", "")).strip():
-            continue
-        slides = rec.get("slides")
-        if not isinstance(slides, list) or not slides:
-            continue
-        ordinals = set()
-        all_slides = False
-        for s in slides:
-            if s == "ALL" and code == "AF-DEN-4":
-                all_slides = True
-                continue
-            try:
-                n = int(s)
-            except (TypeError, ValueError):
-                continue
-            if n > 0:
-                ordinals.add(n)
-        if not ordinals and not all_slides:
             continue
         entry = waivers.setdefault(code, {"slides": set(), "all_slides": False})
         entry["slides"].update(ordinals)
@@ -292,10 +366,22 @@ def _load_waivers(run_dir):
     return waivers
 
 
-def _finding_slides(record):
+# PD-309: the only rule whose offender tuple leads with a beat slide AND carries
+# the NEXT beat slide as its second element (check_den_ladder_gaps writes
+# (a_slide, b_slide, gap)). Every other rule's second element is a copy-block
+# index — 0 for the headline — which is not a slide and must never be matched
+# against slide ordinals (a headline hit could otherwise never be waived).
+_SECOND_ELEMENT_IS_SLIDE_FOR = ("check_den_ladder_gaps",)
+
+
+def _finding_slides(record, check_name=None):
     """Slide ordinals a provenance record attributes its findings to. {} / unknown
     shape -> empty set, which makes any waiver inapplicable (fail-closed): an
-    unattributable finding can only be waived via the explicit AF-DEN-4 ALL path."""
+    unattributable finding can only be waived via the explicit AF-DEN-4 ALL path.
+
+    The SECOND tuple element is a slide only for the rules named in
+    _SECOND_ELEMENT_IS_SLIDE_FOR (AF-DEN-1); for every other rule the first
+    element alone is the slide (PD-309)."""
     if not isinstance(record, dict):
         return set()
     offs = record.get("offenders")
@@ -309,7 +395,8 @@ def _finding_slides(record):
                 # second element is the next beat slide.
                 if isinstance(first, int):
                     slides.add(first)
-                    if len(o) > 2 and isinstance(o[1], int):
+                    if (check_name in _SECOND_ELEMENT_IS_SLIDE_FOR
+                            and len(o) > 1 and isinstance(o[1], int)):
                         slides.add(o[1])
                 elif isinstance(first, str):
                     m = re.match(r"slide-(\d+)", first)
@@ -331,8 +418,8 @@ def enforce_active():
     escape. ENFORCE_ENV is READ (the historic dead-env defect) and accepted values are
     '1'/'true'/'yes'/'on' (explicit ON, same behavior as the default) and anything else
     including '0' is REFUSED with a loud note — '0' does NOT disarm the gate; the only
-    documented bypass is an owner-token waiver (WAIVER_REL) scoped to one rule, one run,
-    named slides."""
+    documented bypass is an owner approval (a verified owner message id) recorded in
+    WAIVER_REL, scoped to one rule, one run, named slides."""
     raw = (os.environ.get(ENFORCE_ENV) or "").strip().lower()
     if raw in ("", "1", "true", "yes", "on"):
         return True
@@ -373,7 +460,7 @@ def run_all_checks(run_dir, slides_path=None):
         prov = _read_provenance_entry(run_dir, fn.__name__)
         entry = waivers.get(code)
         if entry:
-            offenders = _finding_slides(prov)
+            offenders = _finding_slides(prov, fn.__name__)
             if entry["all_slides"] and not offenders:
                 waived.append(f"{code} (waived for the whole deck): {reason}")
                 continue
