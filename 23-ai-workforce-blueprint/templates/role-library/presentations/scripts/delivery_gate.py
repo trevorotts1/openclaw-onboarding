@@ -1198,10 +1198,12 @@ def _selftest() -> int:
         for f in fails:
             print("  -", f)
         return 1
-    print("delivery_gate selftest -> PASS (18 cases: defer/pass/extra-md/singular/"
-          "no-upload/missing-anchor/incomplete + boundary: clean-pass/overlay/no-run-dir/"
-          "not-kie/bundle/owner-skip/decoy + pre-transport: upload-pending-pass/overlay-reject "
-          "+ chokepoint: direct-upload_media(deck)-BLOCKED/image-unaffected)")
+    print("delivery_gate selftest -> PASS (18 cases: A defer/pass, B clean-pass, "
+          "C extra-md, D singular, E no-upload, F missing-anchor, G incomplete, "
+          "H boundary-clean-pass, H2 overlay, I no-run-dir, J not-kie, K bundle, "
+          "L owner-skip, M decoy, N pre-transport-upload-pending-pass, "
+          "O pre-transport-overlay-reject, P direct-upload_media(deck)-BLOCKED, "
+          "P2 image-unaffected)")
     return 0
 
 
