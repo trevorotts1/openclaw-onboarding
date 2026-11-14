@@ -94,8 +94,11 @@ def _req_and_plan():
 
 def _run(rec, calls):
     req, plan = _req_and_plan()
+    #: S75-001: every dispatch passes a cap at or below the module's declared
+    #: per-run maximum; the package __init__ does not re-export it.
     return SD.run_takes(req, plan, lambda rq: calls.append(1) or [], lambda t: {}, lambda t, r: None,
-                        "", "", script_approval=rec, kie=lambda fn, label, generation=False: fn()), req
+                        "", "", script_approval=rec, cap_cents=SD.song_dispatch.MAX_RUN_CAP_CENTS,
+                        kie=lambda fn, label, generation=False: fn()), req
 
 
 def test_yes_pauses_before_any_music_submit_and_sends_script():
