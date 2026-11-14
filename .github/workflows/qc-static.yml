@@ -3249,8 +3249,25 @@ jobs:
         run: |
           set -uo pipefail
           python3 -m pip install --quiet pytest
+          # U-GEN439: this --collect-only must be judged, not decorative.
+          # With no `-e` the next command used to swallow its exit code, so a
+          # genuinely broken collection (missing file, syntax error, import
+          # error -> pytest exit 2, or 3/4) left the step green. Exit 5 means
+          # "no items collected in the whole tree"; that is not a collection
+          # failure and empty files are judged by the per-file loop below
+          # (U-GEN435), so it is reported, not failed, here.
+          collect_log="$(mktemp)"
+          collect_rc=0
           HOME="$(mktemp -d)" python3 -m pytest -q \
-            75-drama-song-ad-factory/scripts --collect-only
+            75-drama-song-ad-factory/scripts --collect-only >"$collect_log" 2>&1 || collect_rc=$?
+          cat "$collect_log"
+          if [ "$collect_rc" = 5 ]; then
+            echo "· pytest --collect-only collected 0 items for 75-drama-song-ad-factory/scripts (exit 5)"
+          elif [ "$collect_rc" != 0 ]; then
+            sed -n 's/^ERROR /  broken file: /p' "$collect_log"
+            echo "✗ pytest --collect-only FAILED: 75-drama-song-ad-factory/scripts (exit $collect_rc)"
+            exit 1
+          fi
           # Both of pytest's default file patterns (test_*.py and *_test.py),
           # the same set the whole-tree run collects.
           mapfile -t tests < <(find 75-drama-song-ad-factory/scripts -type f \( -name 'test_*.py' -o -name '*_test.py' \) -not -path '*/__pycache__/*' | sort)
