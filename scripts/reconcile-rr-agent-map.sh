@@ -329,8 +329,10 @@ WRITE=0
 
 if [ "$WRITE" -eq 1 ]; then
   if [ -z "${N8N_API_KEY:-}" ]; then
+    # RRX-046: a WRITE run that cannot write is not a success. Exit 2
+    # (configuration), so a wrapper can never read it as "ok".
     echo "$SCRIPT_TAG: N8N_API_KEY not set — operator-only path, nothing written." >&2
-    exit 0
+    exit 2
   fi
   acquire_lock
 fi
@@ -445,6 +447,9 @@ if [ "$WRITE" -eq 1 ] && [ "$CHANGED" -gt 0 ]; then
   mkdir -p "$RUN_DIR/chunks"
   while IFS= read -r job; do
     op="${job%%|*}"; cf="$RUN_DIR/chunks/${job#*|}"
+    # RRX-046: the row this job writes. The old messages printed $slug, which
+    # still held the LAST box of the probe loop above, not the box that failed.
+    _job_file="${job#*|}"; job_slug="${_job_file%.patch.json}"; job_slug="${job_slug%.insert.json}"
     [ -f "$cf" ] || continue
     dl="$(deadline_left)"
     if [ "$dl" -le 0 ]; then echo "$SCRIPT_TAG: run deadline hit mid-write — remaining rows unwritten" >&2; RC=1; break; fi
@@ -454,9 +459,9 @@ if [ "$WRITE" -eq 1 ] && [ "$CHANGED" -gt 0 ]; then
         -o "$RUN_DIR/patch.out" -w '%{http_code}' --data-binary "@$cf" \
         "$N8N_ROWS_URL/update" 2>/dev/null || printf '000')"
       case "$code" in
-        2*) python3 -c 'import json,sys;print("true" if json.load(open(sys.argv[1])) is True else "not-true")' "$RUN_DIR/patch.out" 2>/dev/null | grep -q '^true$' \
-              && { UPD=$((UPD + 1)); } || { FAILED=$((FAILED + 1)); RC=1; printf '  patch %s: HTTP %s but not the documented true verdict\n' "$slug" "$code" >&2; } ;;
-        *)  FAILED=$((FAILED + 1)); RC=1; printf '  patch %s: HTTP %s FAILED\n' "$slug" "${code:-none}" >&2 ;;
+        2*) python3 -c 'import json,sys;sys.exit(0 if json.load(open(sys.argv[1])) is True else 1)' "$RUN_DIR/patch.out" 2>/dev/null \
+              && { UPD=$((UPD + 1)); } || { FAILED=$((FAILED + 1)); RC=1; printf '  patch %s: HTTP %s but not the documented true verdict\n' "$job_slug" "$code" >&2; } ;;
+        *)  FAILED=$((FAILED + 1)); RC=1; printf '  patch %s: HTTP %s FAILED\n' "$job_slug" "${code:-none}" >&2 ;;
       esac
     else
       code="$(curl -sS --max-time "$dl" --connect-timeout 10 -X POST \
@@ -467,9 +472,9 @@ if [ "$WRITE" -eq 1 ] && [ "$CHANGED" -gt 0 ]; then
         2*) n="$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1])).get("insertedRows",0))' "$RUN_DIR/post.out" 2>/dev/null || printf 0)"
             case "$n" in ''|*[!0-9]*) n=0 ;; esac
             INS=$((INS + n))
-            [ "$n" -gt 0 ] || { FAILED=$((FAILED + 1)); RC=1; printf '  insert %s: HTTP %s insertedRows=%s (unproved)\n' "$slug" "$code" "$n" >&2; }
+            [ "$n" -gt 0 ] || { FAILED=$((FAILED + 1)); RC=1; printf '  insert %s: HTTP %s insertedRows=%s (unproved)\n' "$job_slug" "$code" "$n" >&2; }
             printf '  insert: HTTP %s insertedRows=%s\n' "$code" "$n" ;;
-        *)  FAILED=$((FAILED + 1)); RC=1; printf '  insert %s: HTTP %s FAILED\n' "$slug" "${code:-none}" >&2 ;;
+        *)  FAILED=$((FAILED + 1)); RC=1; printf '  insert %s: HTTP %s FAILED\n' "$job_slug" "${code:-none}" >&2 ;;
       esac
     fi
   done < <(py jobs "$FINAL")
@@ -491,12 +496,14 @@ if [ "$PENDING" -gt 0 ]; then
   echo "$SCRIPT_TAG: PENDING entries ($PENDING) — roster is NOT complete (owner=$PENDING_OWNER)"
   py pending "$FINAL"
 fi
+COMPLETE=1
+[ "$PENDING" -eq 0 ] && [ "$FAILED" -eq 0 ] && [ "$RC" -eq 0 ] && [ "$VRC" -eq 0 ] || COMPLETE=0
 # Persist the pending set (unresolved/inaccessible mappings with an owner) so
 # the follow-up work survives this process. A zero-pending run still writes the
 # ledger — an empty ledger is the proof that the roster reconciled clean.
 if mkdir -p "$(dirname "$PENDING_LEDGER_PATH")" 2>/dev/null; then
   chmod 700 "$(dirname "$PENDING_LEDGER_PATH")" 2>/dev/null || true
-  if py ledger "$FINAL" "$PENDING_LEDGER_PATH" "$PENDING_OWNER" "$IDENTITY_SOURCE" "$TABLE_ID" "$PAGES_READ" 2>/dev/null; then
+  if py ledger "$FINAL" "$PENDING_LEDGER_PATH" "$PENDING_OWNER" "$IDENTITY_SOURCE" "$TABLE_ID" "$PAGES_READ" "$COMPLETE" 2>/dev/null; then
     chmod 600 "$PENDING_LEDGER_PATH" 2>/dev/null || true
     echo "$SCRIPT_TAG: pending ledger -> $PENDING_LEDGER_PATH"
   else
@@ -507,8 +514,7 @@ else
   echo "$SCRIPT_TAG: WARNING — pending ledger directory not writable ($PENDING_LEDGER_PATH)" >&2
   [ "$PENDING" -gt 0 ] && RC=1
 fi
-COMPLETE=1
-[ "$PENDING" -eq 0 ] && [ "$FAILED" -eq 0 ] && [ "$RC" -eq 0 ] && [ "$VRC" -eq 0 ] || COMPLETE=0
+[ "$RC" -eq 0 ] || COMPLETE=0
 if [ "$MODE" = "dry" ]; then
   py emit "$FINAL" "aborted=0 complete=$COMPLETE pages=$PAGES_READ"
 else

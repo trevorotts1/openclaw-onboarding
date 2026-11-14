@@ -72,7 +72,7 @@ EXPECT_DENY=""
 # retired deny did — memoryFlush then ordered a memory write the agent could not
 # perform, and it looped. Emptying EXPECT_DENY was not sufficient; this set is the
 # other half of the same fix. Removing them here re-creates the two-week outage.
-EXPECT_ALLOW="cron discord edit exec gateway mc-route__route_task memory_get memory_search message nodes read sessions_history sessions_list sessions_send slack telegram web_fetch web_search write"
+EXPECT_ALLOW="cron discord edit exec gateway mc-route__route_task memory_get memory_search message nodes read read_skill sessions_history sessions_list sessions_send slack telegram web_fetch web_search write"
 EXPECT_MCP="ghl-community-mcp ghl-mcp"
 
 # ── 1. lib-ceo-tool-gate.sh is the reference; extract its canonical sets ───────

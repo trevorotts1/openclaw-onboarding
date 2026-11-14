@@ -187,7 +187,14 @@ class TestEndToEndBuild:
             slide_no = int(m.group(1)) if m else 1
             anchors = research_map.get(slide_no, [])
             anchor_txt = " and ".join(a.anchor for a in anchors) if anchors else "default"
-            return f"Spoken words mentioning {anchor_txt}. " * 12
+            # PD-077: a real build now FAILS (exit 4) on a speech outside +/-10 % of
+            # its budget, so the stub writer honours the slide's stated WORD BUDGET
+            # instead of returning a fixed 48 words.
+            b = re.search(r"WORD BUDGET: exactly (\d+) words", prompt)
+            budget = int(b.group(1)) if b else 60
+            sentence = f"Spoken words mentioning {anchor_txt}. "
+            n = max(1, budget // len(sentence.split()))
+            return (sentence * n).strip()
 
         # Replace the transport in the module namespace under test.
         orig = sbh._llm_generate_once

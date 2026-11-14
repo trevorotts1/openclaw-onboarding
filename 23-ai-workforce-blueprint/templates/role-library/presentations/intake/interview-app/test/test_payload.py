@@ -60,20 +60,23 @@ class TestPayload(unittest.TestCase):
         self.assertEqual(offer["storeOn"], "deck_brief.OFFER_NAME")
         # The waiver follow-ups are asked ONLY on a "no" and store to the
         # canonical nested location both builder gates read first.
-        for rid, toggle, field in (
+        for rid, toggle, field, required in (
                 ("sales_checkout_declined_reason", "want_sales_checkout",
-                 "SALES_CHECKOUT_DECLINED_REASON"),
+                 "SALES_CHECKOUT_DECLINED_REASON", True),
                 ("vsl_page_declined_reason", "want_vsl_page",
-                 "VSL_PAGE_DECLINED_REASON")):
+                 "VSL_PAGE_DECLINED_REASON", False)):
             q = next(q for q in payload["questions"] if q["id"] == rid)
             self.assertEqual(q["conditional_on"], {"id": toggle, "equals": "no"})
             self.assertEqual(q["storeOn"], f"pre_presentation_capture.{field}")
-            self.assertTrue(q["required"])
+            self.assertEqual(q["required"], required)
+            if not required:
+                self.assertFalse(q["block_gate"])
+                self.assertTrue(q["ask_only_if_previously_wanted"])
 
     def test_email_election_pair_is_pinned(self):
         """Item 33c: the Skill 50 email election rides the curated set beside
         the other upsell elections. The toggle is an opt-in (default "no");
-        its declined-reason follow-up is conditional on the "no", required,
+        its declined-reason follow-up is conditional on the "no", optional,
         and stored at the canonical pre_presentation_capture home -- the
         same waiver shape as the sales/VSL pairs."""
         intake_dir = self._canonical_intake_dir()
@@ -98,7 +101,11 @@ class TestPayload(unittest.TestCase):
         self.assertEqual(reason["storeOn"], "pre_presentation_capture.EMAIL_SEQUENCES_DECLINED_REASON")
         self.assertEqual(reason["conditional_on"],
                          {"id": "want_email_sequences", "equals": "no"})
-        self.assertTrue(reason["required"])
+        # Defaults to "no": the reason is optional, never a gate, and asked
+        # only when the client earlier wanted email sequences.
+        self.assertFalse(reason["required"])
+        self.assertFalse(reason["block_gate"])
+        self.assertTrue(reason["ask_only_if_previously_wanted"])
         # The follow-up sits immediately after its toggle in the ask order.
         ids = [q["id"] for q in payload["questions"]]
         self.assertEqual(ids.index("email_sequences_declined_reason"),
@@ -108,7 +115,7 @@ class TestPayload(unittest.TestCase):
         """Item 34 (B34-FOLLOW): the motion-graphics election rides the
         curated set beside the other upsell elections, in the email pair's
         exact shape. The toggle is an opt-in (default "no"); its
-        declined-reason follow-up is conditional on the "no", required,
+        declined-reason follow-up is conditional on the "no", optional,
         and stored at the canonical pre_presentation_capture home -- the
         same waiver shape as the sales/VSL/email pairs. Without the pair
         in DEFAULT_CURATED the hosted payload never mints the motion
@@ -135,7 +142,11 @@ class TestPayload(unittest.TestCase):
         self.assertEqual(reason["storeOn"], "pre_presentation_capture.MOTION_GRAPHICS_DECLINED_REASON")
         self.assertEqual(reason["conditional_on"],
                          {"id": "want_motion_graphics", "equals": "no"})
-        self.assertTrue(reason["required"])
+        # Defaults to "no": the reason is optional, never a gate, and asked
+        # only when the client earlier wanted motion graphics.
+        self.assertFalse(reason["required"])
+        self.assertFalse(reason["block_gate"])
+        self.assertTrue(reason["ask_only_if_previously_wanted"])
         # The follow-up sits immediately after its toggle in the ask order.
         ids = [q["id"] for q in payload["questions"]]
         self.assertEqual(ids.index("motion_graphics_declined_reason"),
