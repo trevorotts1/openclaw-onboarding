@@ -57,6 +57,9 @@
 // rescan, no serial fetch of every object).
 //
 // Bindings: STORE (R2 bucket). Secret: INTAKE_ADMIN_TOKEN (box auth),
+// INTAKE_BOX_TOKENS (PD-086: optional JSON map installation id -> SHA-256 of a
+// per-installation token; such a token is scoped to its own installation and
+// may not mint, renew, list or fetch for another tenant),
 // COMMAND_CENTER_URL (CC board base URL), CC_HANDOFF_SECRET (PRES-007: scoped
 // server-only HMAC over the ingest handoff body — no INTAKE_ADMIN_TOKEN
 // fallback), CC_DEPT_START_TOKEN (optional bearer; no admin-token fallback).
@@ -149,10 +152,12 @@ function tenantErrorResponse(errors) {
  * expired first), never by a read-modify-write race.
  */
 async function mintSession(request, env) {
-  const admin = env.INTAKE_ADMIN_TOKEN;
-  if (!admin) return errorResponse("server not configured", 503);
-  if (!authorized(request, admin)) return errorResponse("unauthorized", 401);
+  if (!env.INTAKE_ADMIN_TOKEN && !env.INTAKE_BOX_TOKENS) return errorResponse("server not configured", 503);
+  const auth = await authenticate(request, env);
+  if (!auth) return errorResponse("unauthorized", 401);
   let body; try { body = await request.json(); } catch { return errorResponse("invalid JSON body", 400); }
+  const mintScopeErr = boxScopeError(auth, body && body.company_id, body && body.installation_id);
+  if (mintScopeErr) return errorResponse(mintScopeErr, 403);
 
   // PRES-009: durable tenant identity REQUIRED. The caller's run_id is
   // display-only; the storage run key is the minted opaque id. R2 run indexes
@@ -242,9 +247,9 @@ async function expirePreviousSession(bucket, token) {
  * question. Wrong company -> 403. Complete -> 409.
  */
 async function renewSession(request, env) {
-  const admin = env.INTAKE_ADMIN_TOKEN;
-  if (!admin) return errorResponse("server not configured", 503);
-  if (!authorized(request, admin)) return errorResponse("unauthorized", 401);
+  if (!env.INTAKE_ADMIN_TOKEN && !env.INTAKE_BOX_TOKENS) return errorResponse("server not configured", 503);
+  const auth = await authenticate(request, env);
+  if (!auth) return errorResponse("unauthorized", 401);
   let body; try { body = await request.json(); } catch { return errorResponse("invalid JSON body", 400); }
   const sessionId = typeof body.session_id === "string" ? body.session_id : "";
   const runId = typeof body.run_id === "string" ? body.run_id : "";
@@ -253,6 +258,8 @@ async function renewSession(request, env) {
 
   const latest = await latestGrantFor(env, sessionId, runId);
   if (!latest) return errorResponse("session not found", 404);
+  const renewScopeErr = boxScopeError(auth, latest.company_id, latest.installation_id);
+  if (renewScopeErr) return errorResponse(renewScopeErr, 403);
   const sid = latest.session_id || latest.token;
   if (runId && latest.run_id !== runId) return errorResponse("session/run mismatch", 409);
   const now = nowSeconds();
@@ -928,10 +935,13 @@ function validateIntakeCompleteness(intake) {
 }
 
 async function storeIntake(request, env) {
-  if (!requireAdmin(request, env)) return errorResponse("unauthorized", 401);
+  const auth = await authenticate(request, env);
+  if (!auth) return errorResponse("unauthorized", 401);
   let body; try { body = await request.json(); } catch { return errorResponse("invalid JSON body", 400); }
   const intake = body.intake;
   if (!intake || typeof intake !== "object") return errorResponse("intake object required", 400);
+  const storeScopeErr = boxScopeError(auth, intake.company_id, intake.installation_id);
+  if (storeScopeErr) return errorResponse(storeScopeErr, 403);
   const missingFields = validateIntakeCompleteness(intake);
   if (missingFields.length) {
     return jsonResponse({ status: "rejected", error: "intake incomplete — required fields missing or empty", missing: missingFields }, 422);
@@ -967,13 +977,16 @@ async function storeIntake(request, env) {
  * outbox to worker_accepted (best-effort, non-fatal on miss).
  */
 async function fetchIntake(request, env) {
-  if (!requireAdmin(request, env)) return errorResponse("unauthorized", 401);
+  const auth = await authenticate(request, env);
+  if (!auth) return errorResponse("unauthorized", 401);
   const params = new URL(request.url).searchParams;
   const id = params.get("id");
   if (!id) return errorResponse("id query param required", 400);
   // Scoped fetch (preferred): tuple + opaque id, exact-key read.
   const company = params.get("company_id") || "";
   const installation = params.get("installation_id") || "";
+  const fetchScopeErr = boxScopeError(auth, company, installation);
+  if (fetchScopeErr) return errorResponse(fetchScopeErr, 403);
   const presentation = params.get("presentation_id") || "";
   const run = params.get("run_id") || "";
   if (!opaqueIdError("company_id", company) && !opaqueIdError("installation_id", installation)
@@ -1030,10 +1043,13 @@ async function fetchIntake(request, env) {
  * Returns { intakes: [{ session_id, file_name, stored_at }], truncated, cursor? }.
  */
 async function listIntakes(request, env) {
-  if (!requireAdmin(request, env)) return errorResponse("unauthorized", 401);
+  const auth = await authenticate(request, env);
+  if (!auth) return errorResponse("unauthorized", 401);
   const url = new URL(request.url);
   const company = url.searchParams.get("company_id") || "";
   const installation = url.searchParams.get("installation_id") || "";
+  const listScopeErr = boxScopeError(auth, company, installation);
+  if (listScopeErr) return errorResponse(listScopeErr, 403);
   if ((company || installation) && (opaqueIdError("company_id", company) || opaqueIdError("installation_id", installation))) return errorResponse("both valid tenant ids required", 400);
   const bucket = scopedIndexBucket(env.STORE, company, installation);
   // Ack: repeatable `ack=<session_id>&stored_at=<ts>` pairs (and a bare ack
@@ -1386,6 +1402,47 @@ function requireAdmin(request, env) {
   const admin = env.INTAKE_ADMIN_TOKEN;
   if (!admin) return false;
   return authorized(request, admin);
+}
+
+// PD-086 — a second bearer kind: one token per installation (box). The token's
+// SHA-256 is listed in the `INTAKE_BOX_TOKENS` worker secret as a JSON map
+// installation id -> hex hash (or {sha256, company_id}). A box token is scoped
+// to its own installation — and to a company when the entry names one — so it
+// cannot list, fetch, mint or renew for another tenant. The admin token keeps
+// full access. A presented token is never logged or echoed.
+function boxTokenEntries(env) {
+  const raw = env.INTAKE_BOX_TOKENS;
+  if (!raw) return [];
+  let map;
+  try { map = JSON.parse(raw); } catch { return []; }
+  if (!map || typeof map !== "object" || Array.isArray(map)) return [];
+  return Object.entries(map).map(([installationId, v]) => (
+    typeof v === "string"
+      ? { installationId, hash: v, companyId: null }
+      : { installationId, hash: String((v && (v.sha256 || v.hash)) || ""), companyId: (v && v.company_id) || null }
+  ));
+}
+
+async function authenticate(request, env) {
+  const auth = request.headers.get("authorization") || "";
+  const bearer = auth.startsWith("Bearer ") ? auth.slice(7) : "";
+  if (!bearer) return null;
+  const admin = env.INTAKE_ADMIN_TOKEN;
+  if (admin && timingSafeEqual(bearer, admin)) return { kind: "admin" };
+  const entries = boxTokenEntries(env);
+  if (!entries.length) return null;
+  const hash = await sha256Hex(bearer);
+  let found = null;
+  for (const e of entries) if (timingSafeEqual(hash, e.hash)) found = e; // no early exit
+  return found ? { kind: "box", installationId: found.installationId, companyId: found.companyId } : null;
+}
+
+/** null when the caller may act for this tenant; a 403 reason otherwise. */
+function boxScopeError(auth, companyId, installationId) {
+  if (!auth || auth.kind !== "box") return null;
+  if (String(installationId || "") !== auth.installationId) return "box token not valid for this installation";
+  if (auth.companyId && String(companyId || "") !== auth.companyId) return "box token not valid for this company";
+  return null;
 }
 
 function timingSafeEqual(a, b) {
