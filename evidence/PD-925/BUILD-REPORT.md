@@ -2,13 +2,13 @@
 
 - Unit: **PD-925** (ADDED unit, counted outside the 164 lock), lane **FL35**
 - Branch: `pd/fl35-sealed-record--hold-d23-d24`
-- Worktree: `/Volumes/mac mini m4/swarm-contract/pd-fix/worktrees/onboarding/FL35--hold-d23-d24`
+- Worktree: `<LOOP_ROOT>/worktrees/onboarding/FL35--hold-d23-d24`
 - Repository: `trevorotts1/openclaw-onboarding`
 - **Commit: `167622602545de863f0a6d7838a7f3c98b8b4548`**
 - Base at start: `f3933631bd0ac5b0c412c3debf30cf860b183989` (PD-300b attempt-3 report commit; tree clean)
 - Builder: `[deepseek-chain] PD-925 build`. Report written 2026-11-13.
-- Scratchpad: `/Volumes/mac mini m4/swarm-contract/pd-fix/scratchpads/PD-925`
-- Temp: `TMPDIR=/Volumes/mac mini m4/swarm-contract/pd-fix/tmp` (no `/tmp`, `/private/tmp` or `/var/folders` path used anywhere)
+- Scratchpad: `<LOOP_ROOT>/scratchpads/PD-925`
+- Temp: `TMPDIR=<LOOP_ROOT>/tmp` (no `/tmp`, `/private/tmp` or `/var/folders` path used anywhere)
 
 ## 1. First action
 
@@ -106,7 +106,7 @@ JUDGE_STAMP = "glm-ocr"             # GLM-OCR via Ollama Cloud (registry: vision
 
 ## 4. Mutation proofs — each retargeted assertion can still FAIL
 
-Scratch copy of the whole `scripts/` tree at `/Volumes/mac mini m4/swarm-contract/pd-fix/scratchpads/PD-925/scripts`, with `sops/PIPELINE-MANIFEST.json` and `sops/MASTER-QC-AUTOFAIL-RULESET.md` symlinked from the branch's `universal-sops/presentation-slide-craft/` so the tree imports (the scratch copy sits outside the repo root and cannot walk up to the cluster manifest). Scratch baseline reproduces the branch exactly: **1 failed, 42 passed**.
+Scratch copy of the whole `scripts/` tree at `<LOOP_ROOT>/scratchpads/PD-925/scripts`, with `sops/PIPELINE-MANIFEST.json` and `sops/MASTER-QC-AUTOFAIL-RULESET.md` symlinked from the branch's `universal-sops/presentation-slide-craft/` so the tree imports (the scratch copy sits outside the repo root and cannot walk up to the cluster manifest). Scratch baseline reproduces the branch exactly: **1 failed, 42 passed**.
 
 ### 4.1 Mutation 1 — assertion 1 (`:276`) goes red again
 
@@ -174,7 +174,7 @@ After each mutation the scratch file was restored and the scratch baseline re-ru
 
 ## 5. Before and after — the two named test files, branch tip vs working tree
 
-Target subset = `tests/test_verifier_registry.py` + `tests/test_negative_fixtures.py`, run from `23-ai-workforce-blueprint/templates/role-library/presentations/scripts` with `TMPDIR=/Volumes/mac mini m4/swarm-contract/pd-fix/tmp`.
+Target subset = `tests/test_verifier_registry.py` + `tests/test_negative_fixtures.py`, run from `23-ai-workforce-blueprint/templates/role-library/presentations/scripts` with `TMPDIR=<LOOP_ROOT>/tmp`.
 
 ### 5.1 BEFORE — at `f3933631b` (branch tip, unmodified working tree)
 

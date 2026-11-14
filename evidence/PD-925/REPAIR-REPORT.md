@@ -5,12 +5,12 @@
 - Branch: `pd/fl35-sealed-record--hold-d23-d24`
 - Repair branch: `repair-PD-925` (local), pushed fast-forward onto the unit branch
 - Reporter: `[deepseek-chain] PD-925 repair lane`
-- Scratch: `TMPDIR=/Volumes/mac mini m4/swarm-contract/loop-control/pd-fix/tmp/PD-925/work.zgwkLd`
+- Scratch: `TMPDIR=<SWARM_ROOT>/loop-control/pd-fix/tmp/PD-925/work.zgwkLd`
 
 ## 1. The conflict as given — and what the evidence actually says
 
 The lane brief pointed at
-`/Volumes/mac mini m4/swarm-contract/_batch-merger/runs/openclaw-onboarding-20261113-145033/evidence/3324-CONFLICT.txt`.
+`<SWARM_ROOT>/_batch-merger/runs/openclaw-onboarding-20261113-145033/evidence/3324-CONFLICT.txt`.
 
 **That file does not exist.** Named sources checked:
 
@@ -19,7 +19,7 @@ The lane brief pointed at
   No `3324-CONFLICT.txt`.
 - `find` over the whole `_batch-merger` tree for `3324*` → one hit only,
   `mirrors/trevorotts1__openclaw-onboarding.git/refs/remotes/pr/3324`. No evidence artifact.
-- Not checked: any merger state outside `/Volumes/mac mini m4/swarm-contract/_batch-merger`.
+- Not checked: any merger state outside `<SWARM_ROOT>/_batch-merger`.
 
 So **no conflicted path is named anywhere** — the engine recorded the ejection without a path.
 

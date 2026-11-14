@@ -2,7 +2,7 @@
 
 - Unit: PD-300b, lane FL35, repo `trevorotts1/openclaw-onboarding`
 - Branch: `pd/fl35-sealed-record--hold-d23-d24`
-- Worktree: `/Volumes/mac mini m4/swarm-contract/pd-fix/worktrees/onboarding/FL35--hold-d23-d24`
+- Worktree: `<LOOP_ROOT>/worktrees/onboarding/FL35--hold-d23-d24`
 - **Commit: `c28474c1e752d2c06a335ea7e68c93e1a04362e3`** (attempt 3, merge commit; attempt 2's build is `c1887fb48`)
 - Remote proven equal: `git ls-remote origin refs/heads/pd/fl35-sealed-record--hold-d23-d24` → `c28474c1e752d2c06a335ea7e68c93e1a04362e3` (MATCH)
 - Attempt: 3. Builder: `[deepseek-chain] PD-300b build`. Report written 2026-11-13, Eastern.
@@ -404,12 +404,12 @@ Preflight (spec rule 2):
 
 ```
 $ python3 -I "<FINAL>/scripts/preflight_portable_drive.py" "<worktree>" "<scratch>"
-{"volume": "/Volumes/mac mini m4", "paths": [{… "ok": true}, {… "ok": true}],
+{"volume": "<VOLUME_ROOT>", "paths": [{… "ok": true}, {… "ok": true}],
  "volume_uuid_matches": true, "free_gib": 1333.7}
 rc=0
 ```
 
-All temp files went to `$TMPDIR` = `/Volumes/mac mini m4/swarm-contract/pd-fix/tmp`; scratch to `/Volumes/mac mini m4/swarm-contract/pd-fix/scratchpads/PD-300b`.
+All temp files went to `$TMPDIR` = `<LOOP_ROOT>/tmp`; scratch to `<LOOP_ROOT>/scratchpads/PD-300b`.
 
 ## 10. Commit
 
