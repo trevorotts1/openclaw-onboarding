@@ -202,22 +202,13 @@ except Exception as _e:  # pragma: no cover - defensive
 
 # PRD-2.15: helper to resolve the build state file path (no tildes; mirrors detect_platform.py).
 def _resolve_build_state_path():
-    """Return Path to .workforce-build-state.json or None if workspace not found.
+    """Return Path to the build-state file.
 
-    SCRATCH ISOLATION (standard-first redesign): $WORKFORCE_BUILD_STATE_FILE
-    overrides resolution (mirrors _build_state_path) so scratch/prebuild runs
-    never read the live box state.
+    ONE RESOLVER (WF-097): defers to _build_state_path(), the single rule every
+    script follows ($WORKFORCE_BUILD_STATE_FILE first, then the box's live file),
+    so a scratch/prebuild run and the apply build never read two state files.
     """
-    _env_state = os.environ.get("WORKFORCE_BUILD_STATE_FILE", "").strip()
-    if _env_state:
-        return Path(_env_state)
-    vps = Path("/data/.openclaw/workspace")
-    if vps.is_dir():
-        return vps / ".workforce-build-state.json"
-    mac = Path(os.environ.get("HOME", "")).expanduser() / ".openclaw" / "workspace"
-    if mac.is_dir():
-        return mac / ".workforce-build-state.json"
-    return None
+    return Path(_build_state_path())
 
 # WS-2: build-wide tally of how roles were staffed, for the visible ratio log.
 _LIBRARY_FILL_STATS = {"instantiated_from_library": 0, "llm_generated": 0,
