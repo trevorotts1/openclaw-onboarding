@@ -44,7 +44,8 @@ trap 'kill "${MOCK_PID:-}" 2>/dev/null; rm -rf "$WORK"' EXIT
 MODE_FILE="$WORK/mode"
 REFLOG="$WORK/job-image-urls.log"   # every image_urls array the job was given
 UPLOG="$WORK/uploads.log"            # every upload the script performed
-: > "$REFLOG"; : > "$UPLOG"
+PROMPTLOG="$WORK/job-prompts.log"    # every prompt the job was given (BU-76)
+: > "$REFLOG"; : > "$UPLOG"; : > "$PROMPTLOG"
 echo "success" > "$MODE_FILE"        # default scenario
 
 cat > "$WORK/mock.py" <<'PY'
@@ -55,6 +56,7 @@ WORK = os.environ["WORK"]
 MODE_FILE = os.path.join(WORK, "mode")
 REFLOG = os.path.join(WORK, "job-image-urls.log")
 UPLOG  = os.path.join(WORK, "uploads.log")
+PROMPTLOG = os.path.join(WORK, "job-prompts.log")
 # per-task poll counter so we can fail-then-succeed
 POLLS = {}
 
@@ -96,6 +98,8 @@ class H(BaseHTTPRequestHandler):
         if p == "/api/v1/jobs/createTask":
             imgs = (body.get("input", {}) or {}).get("image_urls", [])
             with open(REFLOG, "a") as f: f.write(json.dumps(imgs) + "\n")
+            prompt = (body.get("input", {}) or {}).get("prompt", "")
+            with open(PROMPTLOG, "a") as f: f.write(json.dumps({"prompt": prompt}) + "\n")
             tid = "task-%d" % (sum(1 for _ in open(REFLOG)) )
             POLLS[tid] = 0
             return self._send(200, {"code": 200, "data": {"taskId": tid}})
@@ -297,6 +301,33 @@ LIB="$SCRIPT_DIR/lib-kie74.sh"
 if ! grep -qE 'api\.kie\.ai|redpandaai|Authorization: Bearer|recordInfo|jobs/createTask' "$TARGET" "$LIB"; then pass "T6: no KIE host, endpoint or auth header in the script or its lib (one KIE path)"; else fail "T6: a second KIE client crept back in"; fi
 if grep -qE 'INFOGRAPHIC1_URL" == https://\*' "$TARGET" || grep -q '== https://\*' "$TARGET"; then pass "T6: https-only guard on image_urls (no non-https reference ever sent)"; else fail "T6: https-only guard missing"; fi
 if grep -qi 'image fetch failed' "$TARGET"; then pass "T6: image-fetch-failed transient classification present"; else fail "T6: image-fetch transient handling missing"; fi
+
+# ==========================================================================
+echo "=== TEST 7: a company name with & and | reaches the prompt verbatim (BU-76) ==="
+# WF-094: the old sed ``s|{{COMPANY_NAME}}|${COMPANY_NAME}|g`` pipeline treated
+# ``&`` as the matched text and ``|`` as the delimiter, corrupting the prompt.
+: > "$REFLOG"; : > "$UPLOG"; : > "$PROMPTLOG"
+echo "success" > "$MODE_FILE"
+make_png "$ORG_PNG"
+jq -n --arg i1 "file://$ORG_PNG" --arg i1l "$ORG_PNG" --arg cn "Smith & Sons | Co" \
+  '{companyName:$cn,ownerName:"Owner",agentName:"CEO",industry:"testing",
+    infographic1Url:$i1, infographic1LocalPath:$i1l}' > "$STATE"
+rc=$(HOME="$WORK/nohome" ZHC_STATE_FILE="$STATE" ZHC_LOG_FILE="$LOG" \
+  KIE_API_KEY="zhc-test-key-0123456789" KIE_UPLOAD_BASE="$BASE" KIE_API_BASE="$BASE" \
+  ZHC_CELEBRATION_VIDEO_MODEL="gemini-omni-video" ZHC_VIDEO_POLL_TIMEOUT_SEC=30 \
+  bash "$TARGET" >"$WORK/t7.out" 2>&1; echo $?)
+if [[ "$rc" == "0" ]]; then pass "T7: exited 0 with & and | in the company name"; else fail "T7: exited $rc"; info "$(tail -5 "$WORK/t7.out")"; fi
+req_prompt=$(tail -1 "$PROMPTLOG" | jq -r '.prompt // empty')
+if printf '%s' "$req_prompt" | grep -Fq 'Smith & Sons | Co'; then
+  pass "T7: the request handed to the stub contains 'Smith & Sons | Co' exactly"
+else
+  fail "T7: the exact company name is not in the request prompt"; info "prompt=$req_prompt"
+fi
+if printf '%s' "$req_prompt" | grep -q '{{'; then
+  fail "T7: an unreplaced '{{' placeholder leaked into the request prompt"
+else
+  pass "T7: no '{{' placeholder left in the request prompt"
+fi
 
 # ==========================================================================
 echo
