@@ -14,6 +14,7 @@ import assert from 'node:assert/strict';
 
 import { buildKeyRecord, mintKey } from '../src/keys.js';
 import { authorizeClient } from '../src/isolation.js';
+import { handle } from '../src/index.js';
 import { randomClientId, scopePath } from '../src/ids.js';
 import { AF_DRAFT_KIND, AF_ORDER_INVALID, MAX_REPLIES, MAX_REPLY_CHARS, deleteDraft, pageRoute, validateReplies } from '../src/page-api.js';
 import { memObjects, memStore } from './fakes.mjs';
@@ -202,6 +203,44 @@ test('session: a box key and no machine key reads the fifth sentence', async () 
   // sentence returns to the box one.
   await store.kvPut(`key:${machine.record.fingerprint}`, JSON.stringify({ ...machine.record, status: 'revoked' }));
   assert.match((await session()).option_line, /^Your studio is on\./);
+});
+
+// U-Z14 repair — Lock it in may not LIST KV (DSF-611), so the order answer
+// reads the box verdict enrollment kept on the client record.
+test('orders: an OpenClaw-box client is answered with the fifth sentence and no KV LIST', async () => {
+  const store = memStore();
+  const objects = memObjects();
+  const env = { DS_ENROLLMENT_SECRET: 'enrollment-secret-placeholder-for-tests' };
+
+  const enrolled = await handle(
+    new Request('https://studio.example/api/studio/enroll', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ enrollment_secret: env.DS_ENROLLMENT_SECRET }),
+    }),
+    env,
+    store,
+    objects,
+  );
+  assert.equal(enrolled.status, 201);
+  const me = await json(enrolled);
+
+  store.kvList = async () => { throw new Error('kvList must not be consulted while creating an order'); };
+  const created = await handle(
+    new Request('https://studio.example/api/studio/orders', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-ds-key': me.key },
+      body: JSON.stringify({ title: 'Spring Sale' }),
+    }),
+    env,
+    store,
+    objects,
+  );
+  assert.equal(created.status, 201);
+  assert.match(
+    (await json(created)).option_line,
+    /^Your studio is on\. Orders start within about 2 minutes\. Last check-in: not yet\.$/,
+  );
 });
 
 // ---------------------------------------------------------------------------

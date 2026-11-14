@@ -140,12 +140,16 @@ export async function lastCheckIn(objectStore, clientId) {
  * record that already carries one — nothing in this service writes it after
  * the record is created. `keys` is the client's own key records (clientKeys):
  * a box key and no machine key means the studio runs on an OpenClaw box, and
- * the page says so (U-Z14). Absent, the option sentence is used unchanged.
+ * the page says so (U-Z14). A caller that passes no keys is one that may not
+ * LIST KV (the order route, DSF-611): the `box_only` verdict that key minting
+ * and revocation keep on the client record decides, and a record without one
+ * keeps its option sentence.
  */
 export function optionLine(record, nowMs, lastCheckMs, keys) {
   const option = OPTIONS.includes(record && record.option) ? record.option : DEFAULT_OPTION;
   const last = typeof lastCheckMs === 'number' ? lastCheckMs : (record ? record.last_check_in : null);
-  const sentence = boxOnlyClient(keys) ? BOX_LINE : PENNY[option];
+  const box = Array.isArray(keys) ? boxOnlyClient(keys) : Boolean(record && record.box_only === true);
+  const sentence = box ? BOX_LINE : PENNY[option];
   return `${sentence} Last check-in: ${ageText(nowMs, last)}.`;
 }
 
