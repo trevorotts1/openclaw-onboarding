@@ -631,15 +631,10 @@ def _base_card(run_dir=None, purpose_flow=None):
     ``LEGACY_QUESTIONS``, the frozen pre-S75-006 list that run was asked with
     (S75-006 step 5). With no run folder at all there is no run to resume, so
     the unbound preview lists the new card's own screens.
-
-    Reading only ``_run_history`` here made the two entry points disagree: for a
-    chat run already past its intro the launcher printed the old list while
-    ``conversation`` printed the new one for the same folder. One run folder,
-    one answer.
     """
     if purpose_flow:
         return QUESTIONS
-    return LEGACY_QUESTIONS if run_dir and os.path.isdir(run_dir) else QUESTIONS
+    return LEGACY_QUESTIONS if run_dir else QUESTIONS
 
 
 def _loud(kind, code, detail):
