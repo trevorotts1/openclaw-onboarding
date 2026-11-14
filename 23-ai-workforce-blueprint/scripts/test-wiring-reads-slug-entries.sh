@@ -90,6 +90,7 @@ write_fixture_secrets() {
     printf 'GOHIGHLEVEL_API_KEY=test-value-not-a-real-credential-0001\n'
     printf 'GOHIGHLEVEL_LOCATION_ID=test-location-not-a-real-credential-0002\n'
   } > "$OC/secrets/.env"
+  chmod 600 "$OC/secrets/.env"
 }
 
 # reset_fixture <roster-json> <agent-dir-name>
