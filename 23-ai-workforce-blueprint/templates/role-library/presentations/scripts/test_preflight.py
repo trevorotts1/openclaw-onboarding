@@ -1303,11 +1303,14 @@ def _write_publish_ledger(bundle_dir: Path, status="published",
     """Write a teleprompter_publish.json into the bundle dir. The TELEPROMPTER-PUBLISH
     sub-check of run_postflight_gate keys on this artifact — a full bundle without it
     now fails (exit 5), so the PASS-path fixtures must include a published record."""
+    import hashlib as _hashlib
     import json as _json
+    _html_path = bundle_dir / "presenter-teleprompter.html"
     rec = {
         "platform": "mac",
         "host_target": "cloudflare-central",
-        "local_file": str(bundle_dir / "presenter-teleprompter.html"),
+        "local_file": str(_html_path),
+        "local_sha256": _hashlib.sha256(_html_path.read_bytes()).hexdigest() if _html_path.is_file() else None,
         "public_url": public_url,
         "published_at": "2026-06-17T00:00:00Z",
         "verified_http_status": verified_http_status,
@@ -1554,16 +1557,25 @@ def test_postflight_speech_length_reverify():
         # with independent verdicts so this fixture isolates the speech-length
         # re-check, as its docstring promises.
         (root / "working" / "qc").mkdir(parents=True, exist_ok=True)
+        # PD-206a (decision D-34): the two human verdicts live in their OWN files
+        # (working/qc/human-review/*.json), not as blocks inside the graded reports.
+        (root / "working" / "qc" / "human-review").mkdir(parents=True, exist_ok=True)
+        (root / "working" / "qc" / "human-review" / "image_grounding.json").write_text(json.dumps(
+            {"pass": True, "reviewed_by": "vision-review-steward",
+             "reviewed_at": "2026-06-17T00:00:00Z",
+             "note": "each slide image shows what its prompt asked for"}))
+        (root / "working" / "qc" / "human-review" / "representation_casting.json").write_text(json.dumps(
+            {"pass": True, "reviewed_by": "casting-director",
+             "reviewed_at": "2026-06-17T00:00:00Z",
+             "note": "people described in the slide prompts match the audience"}))
         (root / "working" / "qc" / "image_qc_report.json").write_text(json.dumps(
-            {"image_grounding": {"pass": True, "reviewed_by": "vision-review-steward"},
-             "vision_model": "gpt-image-2",
+            {"vision_model": "gpt-image-2",
              "slides": [{"slide": n, "pass": True, "score": 9.0,
                          "observed_text": "rendered slide carries the section title and body copy",
                          "visual_subject": "photographic hero with grounding-consistent scene"
                          } for n in range(1, 25)]}))
         (root / "working" / "qc" / "prompt_qc_report.json").write_text(json.dumps(
-            {"representation_casting": {"pass": True, "reviewed_by": "casting-director"},
-             "slides": [{"slide": n, "pass": True, "score": 9.0,
+            {"slides": [{"slide": n, "pass": True, "score": 9.0,
                          "notes": "cast parity verified against the intake mix"
                          } for n in range(1, 25)]},
             indent=2))
