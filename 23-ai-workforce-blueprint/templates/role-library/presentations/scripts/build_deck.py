@@ -221,6 +221,8 @@ import ipaddress
 import json
 import os
 import re
+import shutil
+import subprocess
 import sys
 import time
 import urllib.request
@@ -632,7 +634,7 @@ COPY_HOOK_EXEMPTION_ENFORCED = False
 # carries the load-bearing structural scaffolding: an [ARCHETYPE ...] layout declaration,
 # the final-paragraph negative block (the header our gold exemplars + the SOP 9.8 template
 # emit is literally "DO-NOT BLOCK"), and at least one "Do not " imperative inside it. A
-# 9,000-char file with none of these is a verbose stub, not a slide spec. This is the
+# 16,000-char file with none of these is a verbose stub, not a slide spec. This is the
 # structural-block check FOLDED IN from the retired presentation-render/render_deck.py
 # (_validate_prompt) so build_deck.py is the ONE canonical renderer — it now enforces
 # every invariant render_deck.py used to, with no separate render module to drift.
@@ -779,7 +781,7 @@ SPELLING_LOCK_TOKENS = [
 
 # AF-P-DENSITY — concrete specificity signals. A genuinely rich prompt that carries the
 # 15-element spec necessarily declares: a brand palette HEX, an explicit type SIZE
-# (pt/px), and a COMPOSITION/zone instruction. A 9,000-char file padded with boilerplate
+# (pt/px), and a COMPOSITION/zone instruction. A 16,000-char file padded with boilerplate
 # can clear the length floor while carrying none of these. Each signal below is required.
 PROMPT_COMPOSITION_TOKENS = [
     "thirds", "rule of thirds", "grid", "left third", "right third", "upper third",
@@ -3019,7 +3021,7 @@ def discover_speech_chunks(run_dir: Path, bundle_dir: Path) -> Optional[dict]:
 # component.mp4 + poster.png + final-qc.json).
 #
 # Nothing here waves a motion slide through. validate_motion_slide_
-# artifacts authenticates the package in the current run (election,
+# artifacts judges the package's INTERNAL CONSISTENCY in the current run (election,
 # slot, package record, the MG-034 QC verdict it binds, poster parity,
 # receipt binding, artifact hashes, the B14 clip limits, playback
 # parity, webinar policy, the temporal copy inventory, and the motion
@@ -3031,7 +3033,7 @@ def discover_speech_chunks(run_dir: Path, bundle_dir: Path) -> Optional[dict]:
 # hard cap 2 pieces per deck, Slot A slide 1, Slot B a section
 # divider. Still slides keep every image-generation and copy-QC gate
 # exactly as before; the ONLY new allowance is the narrow one Section
-# 14.2 grants a complete, authenticated motion composition.
+# 14.2 grants a complete, internally consistent motion composition.
 # ---------------------------------------------------------------------------
 
 _MOTION_PLAYBACK_VALUES = {
@@ -3136,13 +3138,92 @@ def _motion_receipt_artifact_hash(receipt: dict):
     return None
 
 
+# ---------------------------------------------------------------------------
+# PD-212 — the clip is MEASURED, not just cross-checked against the
+# package record's own probe block. The record's probe block is a CLAIM
+# about the delivered bytes; when ffprobe is on PATH the claim is
+# checked against the file. No ffprobe means no measurement, and no
+# measurement is a named degrade, never a pass on the record's word.
+# ---------------------------------------------------------------------------
+
+_MOTION_PROBED_FIELDS = ("codec", "pixel_format", "width", "height",
+                         "fps", "duration_seconds", "audio_streams")
+
+
+def _probe_component_media(clip_path: Path) -> Optional[dict]:
+    """Measure one clip with ffprobe into the same key set the package
+    record's probe block uses (codec, pixel_format, width, height, fps,
+    duration_seconds, audio_streams). Returns None when ffprobe is
+    absent or cannot read the file: unmeasurable is a degrade the
+    caller names, never a silent pass."""
+    ffprobe = shutil.which("ffprobe")
+    if ffprobe is None:
+        return None
+    try:
+        out = subprocess.run(
+            [ffprobe, "-v", "error", "-show_streams", "-show_format",
+             "-of", "json", str(clip_path)],
+            capture_output=True, text=True, timeout=120)
+    except Exception:  # noqa: BLE001 -- unmeasurable is a named degrade
+        return None
+    if out.returncode != 0:
+        return None
+    try:
+        info = json.loads(out.stdout or "{}")
+        streams = info.get("streams") or []
+        video = next(s for s in streams
+                     if s.get("codec_type") == "video")
+        num, den = str(video.get("avg_frame_rate") or "0/1").split("/")
+        fps = (int(num) / int(den)) if int(den or 0) else 0.0
+        return {
+            "codec": video.get("codec_name"),
+            "pixel_format": video.get("pix_fmt"),
+            "width": video.get("width"),
+            "height": video.get("height"),
+            "fps": round(fps, 3),
+            "duration_seconds": round(
+                float((info.get("format") or {}).get("duration") or 0), 3),
+            "audio_streams": sum(1 for s in streams
+                                 if s.get("codec_type") == "audio"),
+        }
+    except Exception:  # noqa: BLE001 -- an unparseable probe measures
+        return None      # nothing, so the caller degrades by name
+
+
+def _motion_probe_diffs(measured: dict, claimed: dict) -> list:
+    """Every field where what ffprobe MEASURED differs from what the
+    package record CLAIMS, as human-readable strings. Codec, pixel
+    format, width, height and audio-stream count compare exactly;
+    frame rate and duration compare within the same tolerances the
+    B14 fixture checks already use."""
+    diffs = []
+    for field in _MOTION_PROBED_FIELDS:
+        got, said = measured.get(field), claimed.get(field)
+        if field in ("fps", "duration_seconds"):
+            try:
+                got_f, said_f = float(got or 0), float(said or 0)
+            except (TypeError, ValueError):
+                diffs.append(f"{field} is {said!r} in the record but "
+                             f"{got!r} on disk")
+                continue
+            if abs(got_f - said_f) > (0.01 if field == "fps" else 0.05):
+                diffs.append(f"{field} is {said_f:g} in the record but "
+                             f"{got_f:g} on disk")
+        elif got != said:
+            diffs.append(f"{field} is {said!r} in the record but "
+                         f"{got!r} on disk")
+    return diffs
+
+
 def validate_motion_slide_artifacts(run_dir: Path, slide_ord: int,
                                     media: dict, *, election: dict,
                                     arc_tag_blob: str = "",
                                     copy_lines: Optional[list] = None
                                     ) -> dict:
-    """P02: authenticate ONE declared motion slide against its governed
-    MG-035 package. Returns an outcome dict:
+    """P02: judge ONE declared motion slide against its governed
+    MG-035 package, on INTERNAL CONSISTENCY — the package's own records
+    agreeing with each other and, where ffprobe is available, with the
+    delivered bytes. Returns an outcome dict:
 
       {"slide": n, "kind": "motion", "status": "validated"|"degraded",
        "reason_code": None | MOTION_* code, "detail": str, "slot": ...,
@@ -3368,6 +3449,24 @@ def validate_motion_slide_artifacts(run_dir: Path, slide_ord: int,
                       "record's artifact.sha256")
     outcome["artifact_sha256"] = artifact_sha
     outcome["clip_path"] = str(clip_path.relative_to(run_dir.resolve()))
+
+    # PD-212: the hash proves the bytes are the bytes the record names;
+    # it proves nothing about what those bytes ARE. Everything below
+    # judges the record's own probe block, so measure the file first.
+    measured = _probe_component_media(clip_path)
+    if measured is None:
+        return refuse(_motion.MOTION_PROBE_UNAVAILABLE,
+                      "ffprobe is not on PATH (or cannot read the "
+                      "component), so the clip's stream facts are "
+                      "unmeasured; the package record's probe block is "
+                      "not evidence about these bytes, and the piece "
+                      "degrades to the static slide")
+    probe_diffs = _motion_probe_diffs(measured, probe)
+    if probe_diffs:
+        return refuse(_motion.MOTION_HASH_MISMATCH,
+                      "the clip does not match its own record: "
+                      + "; ".join(probe_diffs))
+
     artifact_bytes = clip_path.stat().st_size
     if artifact_bytes > _motion.MOTION_CLIP_MAX_BYTES:
         return refuse(_motion.MOTION_CLIP_TOO_LARGE,
@@ -3418,8 +3517,11 @@ def validate_motion_slide_artifacts(run_dir: Path, slide_ord: int,
                       "the render receipt approves a different artifact "
                       "than the package carries")
     status = receipt.get("status")
-    if isinstance(status, str) \
-            and status.strip().lower() not in _MOTION_RECEIPT_OK_STATUSES:
+    if not isinstance(status, str) or not status.strip():
+        return refuse(_motion.MOTION_RECEIPT_UNREADABLE,
+                      "the render receipt carries no status string, so "
+                      "there is no approved-render verdict to read")
+    if status.strip().lower() not in _MOTION_RECEIPT_OK_STATUSES:
         return refuse(_motion.MOTION_RECEIPT_MISMATCH,
                       f"the render receipt's status is {status!r}, not "
                       f"an approved render")
@@ -3605,11 +3707,11 @@ def _chk_motion_media(run_dir: Path,
 
     NEVER returns a fatal string. That is deliberate, not softness:
     the B14 seam rule is that every motion failure degrades its slide
-    to static with a reason code, and the teeth are structural (an
-    unauthenticated package is never embedded, and phase
-    P8.15-MOTION's verifier fails the phase when the record and the
-    delivered deck disagree). Defers silently when no slides.json can
-    be read yet; the absence is owned by the copy/arc gates."""
+    to static with a reason code, and the teeth are structural (a
+    package that is not internally consistent is never embedded, and
+    phase P8.15-MOTION's verifier fails the phase when the record and
+    the delivered deck disagree). Defers silently when no slides.json
+    can be read yet; the absence is owned by the copy/arc gates."""
     slides = _load_slides_list(run_dir, slides_path)
     if slides is None:
         return ""
@@ -3630,10 +3732,10 @@ def _chk_motion_media(run_dir: Path,
 def finalize_motion_record(run_dir: Path, deck_path: Path) -> Optional[dict]:
     """Post-assembly embed proof: reopen the assembled deck, hash its
     media parts, and mark every planned-validated slide embedded when
-    its authenticated artifact bytes are inside the deck, or degraded
-    MOTION_EMBED_MISSING when they are not. Rewrites motion.json and
-    the slide-media manifest. Never raises; returns the record (or
-    None when no record exists)."""
+    its internally consistent artifact bytes are inside the deck, or
+    degraded MOTION_EMBED_MISSING when they are not. Rewrites
+    motion.json and the slide-media manifest. Never raises; returns the
+    record (or None when no record exists)."""
     run_dir = Path(run_dir)
     record = _motion.read_motion_record(run_dir)
     if record is None:
@@ -3662,7 +3764,7 @@ def finalize_motion_record(run_dir: Path, deck_path: Path) -> Optional[dict]:
             entry["reason_code"] = _motion.MOTION_EMBED_MISSING
             entry["detail"] = ("the assembled deck carries no media "
                                "part byte-identical to the "
-                               "authenticated component")
+                               "internally consistent component")
     _motion.write_motion_record(run_dir, record)
     _motion.write_slide_media_manifest(run_dir, record)
     return record
@@ -3734,12 +3836,12 @@ def add_motion_media(slide, media: dict) -> dict:
 def _authenticated_motion_outcomes(run_dir: Path,
                                    slides_path: Optional[Path] = None
                                    ) -> dict:
-    """Recompute, RIGHT NOW, which declared motion slides authenticate
-    (full validate_motion_slide_artifacts). Returns {ordinal: outcome}
-    for validated slides only. The P03 checks consult this rather than
-    trusting motion.json, so a stale or forged record can bless
-    nothing: authentication is a live recomputation plus, for the
-    poster exemption, a live hash comparison."""
+    """Recompute, RIGHT NOW, which declared motion slides are
+    internally consistent (full validate_motion_slide_artifacts).
+    Returns {ordinal: outcome} for validated slides only. The P03
+    checks consult this rather than trusting motion.json, so a stale or
+    forged record can bless nothing: the check is a live recomputation
+    plus, for the poster exemption, a live hash comparison."""
     slides = _load_slides_list(run_dir, slides_path)
     if not slides:
         return {}
@@ -3766,9 +3868,15 @@ def _authenticated_motion_posters(run_dir: Path,
                                   slides_path: Optional[Path] = None
                                   ) -> set:
     """Resolved paths of renders/slide-NN.png files that are, right
-    now, the authenticated poster derivative of a validated motion
-    slide (package validates AND the PNG's bytes hash to the package
-    poster). Consumed by check_image_qc_vision (P03)."""
+    now, the poster derivative of a validated motion slide (package
+    validates AND the PNG's bytes hash to the package poster).
+    Consumed by check_image_qc_vision (P03).
+
+    The exemption this backs rests on INTERNAL CONSISTENCY: the
+    package's own records agree with each other and with the delivered
+    bytes. It is not a claim that the composition was independently
+    judged as craft, and it is never a claim about PowerPoint
+    playback."""
     out = set()
     for ord_, outcome in _authenticated_motion_outcomes(
             run_dir, slides_path).items():
@@ -3784,10 +3892,11 @@ def _authenticated_motion_package_dirs(run_dir: Path,
                                        ) -> set:
     """Resolved workspace directories of validated motion slides.
     Consumed by check_canonical_render_path (P03): files inside an
-    authenticated Skill 72 job workspace are the governed package's
-    own records, not a hand-rolled per-deck renderer. Only the
-    workspace of a slide whose package validates RIGHT NOW earns the
-    exemption; an unauthenticated working/motion tree earns nothing."""
+    internally consistent Skill 72 job workspace are the governed
+    package's own records, not a hand-rolled per-deck renderer. Only
+    the workspace of a slide whose package validates RIGHT NOW earns
+    the exemption; a working/motion tree that fails that internal
+    consistency earns nothing."""
     out = set()
     validated = _authenticated_motion_outcomes(run_dir, slides_path)
     slides = _load_slides_list(run_dir, slides_path) or []
@@ -4955,7 +5064,8 @@ def check_copy_qc_teeth(run_dir: Path) -> str:
          deterministic character bands (HEADLINE 12-60 / SUBHEAD 20-110 / KICKER <= 40 /
          <= 3 BULLETS each 8-30 / SLIDE TOTAL 40-180) that AF-COPY-BAND enforces
          first-party. A pass:true report over copy that violates a band is REJECTED,
-         naming the exact discrepancy (slide + field + chars + band).
+         naming the exact discrepancy (slide + field + chars + band). A rendered slide
+         with no copy at all is named ("slide NN has no copy"), never skipped.
 
     It DEFERS (returns "") ONLY when the rendered copy is genuinely not produced yet —
     no readable slides.json (its absence is owned by the schema / AF-P1 / slide-count
@@ -5007,8 +5117,14 @@ def check_copy_qc_teeth(run_dir: Path) -> str:
     for ordinal in range(1, n + 1):
         copy_val = copy_map.get(ordinal)
         if not isinstance(copy_val, list) or not copy_val:
-            continue  # missing/malformed copy — schema validation / AF-P1 own this.
+            # PD-211: a rendered slide with no copy is a failure, not a silent skip —
+            # the copy-QC report cannot have graded it.
+            problems.append(f"slide {ordinal:02d} has no copy")
+            continue
         fields = [str(c) if c is not None else "" for c in copy_val]
+        if not any(f.strip() for f in fields):
+            problems.append(f"slide {ordinal:02d} has no copy")
+            continue
         headline = fields[0]
         subhead = fields[1] if len(fields) > 1 else None
         kicker = fields[2] if len(fields) > 2 else None
@@ -5076,10 +5192,12 @@ def check_typography_qc_teeth(run_dir: Path) -> str:
     SHAPE and never opened a design-system artifact, so an agent could type 8.8/pass:true
     over a design system whose declared tokens violate the AF-FONT-FLOOR deterministic
     floors (min_body_pt / type_scale_steps / min_contrast_ratio) and it sailed through.
-    This is the equivalent upgrade the prompt/image gates already got: it RE-MEASURES the
-    ACTUAL design-system tokens in working/typography/type_layout_system.md (the gate-of-
-    record artifact AF-FONT-FLOOR parses) against the shared floors, and rejects a
-    typography-QC report whose pass claims do not match the on-disk design system.
+    This reads the type sizes and contrast the design file DECLARES in
+    working/typography/type_layout_system.md (the gate-of-record artifact AF-FONT-FLOOR
+    parses) and checks those declared values against the shared floors. It does NOT
+    measure type in the rendered pixels — _chk_type_size is the only check that does,
+    and it runs in a report-only stage. It rejects a typography-QC report whose pass
+    claims do not match the design system the file declares.
 
     Two independent classes of failure, both fatal:
       A. FONT-FLOOR RE-MEASURE — the declared tokens must clear the deterministic floors
@@ -5183,11 +5301,12 @@ def check_typography_qc_teeth(run_dir: Path) -> str:
 
     if problems:
         return ("AF-TYPOGRAPHY-QC: the typography-QC report passed its shape check but "
-                "the ACTUAL design-system artifacts (working/typography/"
+                "the declared design-system artifacts (working/typography/"
                 "type_layout_system.md tokens) CONTRADICT it — a real typography-QC pass "
-                "RE-MEASURES the declared type system against the deterministic floors; a "
-                "typed pass:true over a missing/sub-floor design is a fabricated pass. Fix "
-                "the design tokens and re-run the Typography QC Specialist. "
+                "checks the type sizes and contrast the design file DECLARES against the "
+                "deterministic floors; a typed pass:true over a missing/sub-floor design "
+                "is a fabricated pass. Fix the design tokens and re-run the Typography QC "
+                "Specialist. "
                 "Discrepancies: " + "; ".join(problems[:10])
                 + ("" if len(problems) <= 10 else f" (+{len(problems) - 10} more)") + ".")
     return ""
@@ -5329,8 +5448,10 @@ def check_speech_qc_teeth(run_dir: Path) -> str:
 def _chk_prompt_qc(path: Optional[Path]) -> str:
     """PROMPT-QC gate (AF-PROMPT-QC). After Prompt-Authoring (P4-PROMPT), an
     INDEPENDENT QC specialist grades every per-slide prompt against the written
-    9,000–14,000-char prompt standard rubric (length, the 15-element structural blocks,
-    8-class negative block, per-string spelling-locks, verbatim copy). Self/builder grade
+    16,000–20,000-char prompt standard (floor 16,000, target 19,000 to 20,000, ceiling
+    20,000 characters for the current image model; read from the shared gate) rubric
+    (length, the 15-element structural blocks, 8-class negative block, per-string
+    spelling-locks, verbatim copy). Self/builder grade
     refused — AND the report's pass is cross-checked against the on-disk prompts.
 
     The legacy gate validated only the report's SHAPE and never opened a prompt (a JSON
@@ -8984,13 +9105,15 @@ def check_image_qc_vision(run_dir: Path, slides_path: Optional[Path] = None) -> 
            per-slide observation) — a self-typed number is refused;
          * the eliminated typography-overlay-readiness rubric may not appear.
 
-    MG-036 (P03) — the narrow authenticated Skill 72 artifact path: a rendered
-    PNG that IS the authenticated poster derivative of a validated motion
+    MG-036 (P03) — the narrow Skill 72 artifact path: a rendered
+    PNG that IS the poster derivative of a validated motion
     slide is exempt from the flat-fill sub-check ONLY (never the byte floor).
     A data chart on a light ground is the component's subject, judged by the
     motion path's own proofs (motion proof + the MG-034 QC bound into its
     package record), not by the photographic-noise expectation this check
-    applies to KIE bakes. Authentication is recomputed live
+    applies to KIE bakes. This exemption rests on the package being
+    INTERNALLY CONSISTENT — its records agreeing with each other and with
+    the delivered bytes — and it is recomputed live
     (_authenticated_motion_posters): the package must validate in full AND
     the PNG's bytes must hash to the package poster. A filename, a slide
     declaration, or a stale motion.json record earns NOTHING here.
@@ -9017,8 +9140,8 @@ def check_image_qc_vision(run_dir: Path, slides_path: Optional[Path] = None) -> 
     if not pngs and report_obj is None:
         return ""
 
-    # MG-036 (P03): live-authenticated motion poster derivatives (see
-    # the docstring). Computed only when PNGs exist to judge.
+    # MG-036 (P03): live-checked motion poster derivatives (see the
+    # docstring). Computed only when PNGs exist to judge.
     motion_posters = _authenticated_motion_posters(run_dir, slides_path) \
         if pngs else set()
 
@@ -9043,10 +9166,11 @@ def check_image_qc_vision(run_dir: Path, slides_path: Optional[Path] = None) -> 
             except OSError:
                 _resolved_png = png
             if _resolved_png in motion_posters:
-                # MG-036 (P03): authenticated motion poster. The byte
-                # floor above already applied; the flat-fill judgment
-                # does not apply to a governed component's poster
-                # (its subject is data, proven by the motion path).
+                # MG-036 (P03): internally consistent motion poster.
+                # The byte floor above already applied; the flat-fill
+                # judgment does not apply to a governed component's
+                # poster (its subject is data, proven by the motion
+                # path).
                 continue
         frac, rgb = _png_flatfill_fraction(png)
         if frac is None:
@@ -9196,16 +9320,18 @@ def check_canonical_render_path(run_dir: Path, slides_path: Optional[Path] = Non
     no hand-rolled renderer. A failure may be waived ONLY by a logged
     owner_skip_approval token (AF-CANONICAL-RENDER-BYPASS or AF-LOCAL-CANVAS).
 
-    MG-036 (P03) — the narrow authenticated Skill 72 artifact path: files
-    inside the motion workspace of a slide whose Skill 72 package
-    authenticates RIGHT NOW (validate_motion_slide_artifacts passes in
+    MG-036 (P03) — the narrow Skill 72 artifact path: files inside the
+    motion workspace of a slide whose Skill 72 package is internally
+    consistent RIGHT NOW (validate_motion_slide_artifacts passes in
     full) are the governed package's own records, not a hand-rolled
-    per-deck renderer, and are exempt from this scan. The exemption is
-    earned per workspace by live validation, never by directory name:
-    a working/motion tree whose package is missing, forged, or failed
+    per-deck renderer, and are exempt from this scan. The exemption
+    rests on that internal consistency — the package's records agreeing
+    with each other and with the delivered bytes — and it is earned per
+    workspace by live validation, never by directory name: a
+    working/motion tree whose package is missing, forged, or failed
     earns nothing and is scanned like everything else. This does NOT
     globally allow local canvases: the exemption covers only the
-    authenticated package tree of a validated motion slide."""
+    internally consistent package tree of a validated motion slide."""
     skip = (_owner_skip_approved(run_dir, AF_CANONICAL_RENDER_BYPASS)
             or _owner_skip_approved(run_dir, AF_LOCAL_CANVAS))
     if skip is not None:
@@ -9220,8 +9346,8 @@ def check_canonical_render_path(run_dir: Path, slides_path: Optional[Path] = Non
     # working/scripts/. Skip only the canonical scripts dir, by resolved path
     # (the canonical_render_guard.py pattern) — every other scripts/ dir is scanned.
     _canonical_scripts_dir = Path(__file__).resolve().parent
-    # MG-036 (P03): authenticated Skill 72 motion workspaces (live
-    # validation, see the docstring).
+    # MG-036 (P03): internally consistent Skill 72 motion workspaces
+    # (live validation, see the docstring).
     _motion_pkg_dirs = _authenticated_motion_package_dirs(run_dir,
                                                           slides_path)
     offenders = []
@@ -9245,7 +9371,7 @@ def check_canonical_render_path(run_dir: Path, slides_path: Optional[Path] = Non
             pass
         if _motion_pkg_dirs and any(
                 _rp == _d or _d in _rp.parents for _d in _motion_pkg_dirs):
-            continue  # inside an authenticated Skill 72 motion workspace
+            continue  # inside an internally consistent motion workspace
         try:
             text = py.read_text(errors="replace")
         except OSError:
@@ -9675,10 +9801,10 @@ def check_intelligence_engines_prompt(run_dir: Path, slides_path: Optional[Path]
 # (before any kie.ai render is paid for); deck-level HARMONY fires pre-assembly.
 # ===========================================================================
 
-# EXCELLENCE quality floor (§3.4 / G6). A prompt must clear BOTH the 9,000-char
+# EXCELLENCE quality floor (§3.4 / G6). A prompt must clear BOTH the 16,000-char
 # LENGTH floor (necessary) AND this richness floor (sufficient): a floor-grazing,
 # boilerplate-padded prompt scores below this and routes back even though it clears
-# 9,000 chars — the two floors are independent (§1.1a). Env-overridable for tuning.
+# 16,000 chars — the two floors are independent (§1.1a). Env-overridable for tuning.
 try:
     PROMPT_EXCELLENCE_FLOOR = float(os.environ.get("PROMPT_EXCELLENCE_FLOOR", "0.70"))
 except (TypeError, ValueError):
@@ -9974,7 +10100,7 @@ def check_pitch_engines(run_dir: Path, slides_path: Optional[Path] = None) -> st
 def _excellence_score(prompt_text: str):
     """G6 — the EXCELLENCE dimension. Returns (score 0.0-1.0, reasons) measuring whether the
     prompt's character budget was spent on DEFECT-PREVENTING SPECIFICITY (richness) rather
-    than boilerplate padding. A prompt can clear the 9,000-char LENGTH floor and still score
+    than boilerplate padding. A prompt can clear the 16,000-char LENGTH floor and still score
     low here — that is the design: length is necessary, excellence is the independent QUALITY
     gate (two floors, §1.1a), so a compliant-but-soulless prompt does NOT pass.
 
@@ -10043,8 +10169,8 @@ def check_prompt_excellence(run_dir: Path, slides_path: Optional[Path] = None) -
     """G6 preflight gate (AF-EXCELLENCE) — fires at PROMPT-QC, BEFORE any render. Every
     per-slide rich prompt must score >= PROMPT_EXCELLENCE_FLOOR on the EXCELLENCE dimension:
     the budget must be spent on defect-preventing specificity, not padding. This is the
-    QUALITY floor that sits ALONGSIDE the 9,000-char LENGTH floor (§1.1a) — a floor-grazing,
-    boilerplate-padded prompt clears 9,000 chars yet routes back here. Defers pre-prompt
+    QUALITY floor that sits ALONGSIDE the 16,000-char LENGTH floor (§1.1a) — a floor-grazing,
+    boilerplate-padded prompt clears 16,000 chars yet routes back here. Defers pre-prompt
     (no prompts dir); the slide-count / missing-file failures are owned by _chk_rich_prompts.
     Returns "" on pass, or a fatal AF-EXCELLENCE message naming the under-floor slides."""
     prompts_dir = run_dir / "working" / "prompts"
@@ -10064,7 +10190,7 @@ def check_prompt_excellence(run_dir: Path, slides_path: Optional[Path] = None) -
             offenders.append(f"slide {ordinal:02d}: excellence {score:.2f} < "
                              f"{PROMPT_EXCELLENCE_FLOOR:.2f} ({'; '.join(reasons[:4])})")
     if offenders:
-        return ("AF-EXCELLENCE: one or more prompts clear the 9,000-char LENGTH floor but "
+        return ("AF-EXCELLENCE: one or more prompts clear the 16,000-char LENGTH floor but "
                 "fail the EXCELLENCE QUALITY floor — the budget was spent on padding, not "
                 "defect-preventing specificity (full 8-class negative block, per-string "
                 "spelling-lock, people-anatomy + world-grounding, brand HEX + type SIZE + "
@@ -11997,7 +12123,7 @@ PREFLIGHT_REQUIRED = [
      "Phase F — Typography Architect SOP 9.1 (emits type_layout_system.md tokens) (AF-FONT-FLOOR)",
      check_font_floor),
     # PROMPT-QC gate (AF-PROMPT-QC). After Prompt-Authoring, an INDEPENDENT QC
-    # specialist grades every per-slide prompt against the 9,000–14,000-char prompt standard
+    # specialist grades every per-slide prompt against the 16,000–20,000-char prompt standard
     # AND the gate RE-MEASURES every on-disk prompt (check_prompt_qc_teeth) — no rubber stamp.
     ("working/qc/prompt_qc_report.json",
      "prompt QC report (gate Phase Prompt-QC, average >= 8.5, independent reviewer)",
@@ -12062,11 +12188,11 @@ PREFLIGHT_REQUIRED = [
      "Mission PRD — source_slide_count (Mode A=0 always passes)",
      _chk_coverage),
     # 8th check — RICH-PROMPT-REQUIRED gate (AF-P1). EVERY slide must have a
-    # hand-authored rich prompt >= 9,000 chars (clearing the quality floor) in working/prompts/. Like coverage,
+    # hand-authored rich prompt >= 16,000 chars (clearing the quality floor) in working/prompts/. Like coverage,
     # this needs the whole run dir (it counts slides AND reads every prompt file),
     # so it uses the rel sentinel None.
     (None,
-     "rich per-slide prompt — every slide has a >=9,000-char prompt in working/prompts/ "
+     "rich per-slide prompt — every slide has a >=16,000-char prompt in working/prompts/ "
      "that clears the quality floor (8-class negative block / spelling-lock / density / "
      "verbatim copy baked), rendered VERBATIM",
      "Phase 2 — Slide Image Creator SOP 9.1 (15-element rich prompt; rendered verbatim, no thin fallback)",
@@ -12086,13 +12212,13 @@ PREFLIGHT_REQUIRED = [
     # G6 — EXCELLENCE quality floor (AF-EXCELLENCE), fired at PROMPT-QC, BEFORE any render
     # (the money step). Every prompt must score >= PROMPT_EXCELLENCE_FLOOR on the EXCELLENCE
     # dimension: the char budget must buy defect-preventing specificity, not padding. This
-    # is the QUALITY floor that sits ALONGSIDE the 9,000-char LENGTH floor (two independent
-    # gates, §1.1a) — a floor-grazing boilerplate-padded prompt clears 9,000 chars yet
+    # is the QUALITY floor that sits ALONGSIDE the 16,000-char LENGTH floor (two independent
+    # gates, §1.1a) — a floor-grazing boilerplate-padded prompt clears 16,000 chars yet
     # routes back here. Run-dir-scoped (None sentinel); defers pre-prompt.
     (None,
      "prompt excellence — every rich prompt scores above the EXCELLENCE floor (full 8-class "
      "negative block, per-string spelling-lock, people-anatomy + world-grounding, brand HEX "
-     "+ type SIZE + composition, lexical richness); padding to clear 9,000 chars routes back "
+     "+ type SIZE + composition, lexical richness); padding to clear 16,000 chars routes back "
      "(AF-EXCELLENCE)",
      "Phase Prompt-QC — Slide Image Creator / Prompt QC (amazing-not-compliant, AF-EXCELLENCE)",
      check_prompt_excellence),
@@ -12347,9 +12473,8 @@ PREFLIGHT_REQUIRED = [
      _chk_persuasion_beats),
     # AF-STYLE-UNPICKED / AF-STYLE-DOUBLECHARGE (P-STYLE-PREVIEW, 4.85).
     (None,
-     "style preview picked + locked — the owner picked one of 3 attention-grade variants and "
-     "the winner's 3 representative renders are locked + reused, never re-charged "
-     "(AF-STYLE-UNPICKED / AF-STYLE-DOUBLECHARGE)",
+     "style preview picked — the owner picked one of 3 attention-grade variants and the pick "
+     "is on file (AF-STYLE-UNPICKED / AF-STYLE-DOUBLECHARGE)",
      "Phase 4.85 — Attention Designer 3-style-preview (owner gateway sign-off)",
      _chk_style_preview),
     # AF-PRIORITY-SHIFT (composite, P-SHIFT-QC 7.5) — the 14-item pre-output ship gate.
@@ -13117,6 +13242,10 @@ TELEPROMPTER_PUBLISH_LEDGER = "teleprompter_publish.json"
 TELEPROMPTER_HOST = "teleprompter.zerohumanworkforce.com"
 TELEPROMPTER_R2_BUCKET = "zhw-teleprompter"
 TELEPROMPTER_HTML_NAME = "teleprompter.html"
+# PD-210: with the flag False a 3xx verify response is recorded (verify_redirected)
+# and treated as today (a followed redirect that lands on 200 still publishes);
+# with the flag True any redirect is a verify failure. Do not flip this flag.
+TELEPROMPTER_VERIFY_STRICT = False
 # The R2 PutObject endpoint is the account-scoped REST path. The serving Worker maps
 # https://<host>/<client>/<deck>/teleprompter.html -> the same object key in R2.
 _CF_API_BASE = "https://api.cloudflare.com/client/v4"
@@ -13203,22 +13332,40 @@ def _client_slug_from_run(run_dir: Path, bundle_dir: Path) -> str:
     return "client"
 
 
-def _http_status(url: str, timeout: int = 60) -> int:
-    """Live GET of a public URL; return the HTTP status code. Reuses the C1 SSRF
-    guard (http(s) only). A network/timeout error surfaces as a RuntimeError so the
-    caller records a verify failure rather than a false 200. Behind Cloudflare Access
-    an unauthenticated GET may 302 to the Access login — that is NOT a 200 and is a
-    correct verify-failure signal for an automated check; for the published-object
-    check we GET the object directly through the serving Worker which returns 200 for
-    a present object (Access challenges the human browser, not the object existence
-    probe path). We only need the status code."""
+class _NoRedirect(urllib.request.HTTPRedirectHandler):
+    """PD-210: do NOT follow a redirect. Behind Cloudflare Access an unauthenticated
+    GET may 302 to the Access login, and a followed redirect returns 200 — so the
+    follow hides the redirect and a login page passes as the published object."""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):  # noqa: D401
+        return None
+
+
+def _sha256_file(path: Path) -> Optional[str]:
+    """Hex sha256 of a file, or None when it cannot be read (PD-210)."""
+    try:
+        return hashlib.sha256(path.read_bytes()).hexdigest()
+    except OSError:
+        return None
+
+
+def _http_status(url: str, timeout: int = 60) -> Tuple[int, str]:
+    """Live GET of a public URL; return (status code, redirect Location). Reuses the
+    C1 SSRF guard (http(s) only). A redirect is NOT followed (PD-210): a 3xx is
+    returned as-is with its Location so the caller can record it. A network/timeout
+    error surfaces as a RuntimeError so the caller records a verify failure rather
+    than a false 200."""
     assert_url_scheme_allowed(url, what="teleprompter public_url")
     req = urllib.request.Request(url, headers={"User-Agent": "build_deck-teleprompter-verify/1.0"})
+    opener = urllib.request.build_opener(_NoRedirect)
     try:
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
-            return int(resp.getcode())
+        with opener.open(req, timeout=timeout) as resp:
+            return int(resp.getcode()), ""
     except urllib.error.HTTPError as exc:
-        return int(exc.code)
+        location = ""
+        if exc.headers is not None:
+            location = str(exc.headers.get("Location", "") or "")
+        return int(exc.code), location
     except urllib.error.URLError as exc:
         raise RuntimeError(f"teleprompter verify GET failed for {url}: {exc}") from exc
 
@@ -13290,6 +13437,7 @@ def publish_teleprompter(bundle_dir: Path, deck_slug: str, run_dir: Path,
             "host_target": "cloudflare-central",
             "local_file": str(local_file),
             "public_url": None,
+            "local_sha256": _sha256_file(local_file),
             "published_at": now,
             "verified_http_status": None,
             "verified_at": None,
@@ -13302,7 +13450,7 @@ def publish_teleprompter(bundle_dir: Path, deck_slug: str, run_dir: Path,
     if not local_file.exists():
         record = {
             "platform": platform, "host_target": "cloudflare-central",
-            "local_file": str(local_file), "public_url": None,
+            "local_file": str(local_file), "public_url": None, "local_sha256": None,
             "published_at": now, "verified_http_status": None, "verified_at": None,
             "status": "verify_failed",
             "note": "presenter-teleprompter.html absent from bundle_dir — nothing to publish.",
@@ -13326,7 +13474,8 @@ def publish_teleprompter(bundle_dir: Path, deck_slug: str, run_dir: Path,
         # _check_teleprompter_published branch below).
         record = {
             "platform": platform, "host_target": "cloudflare-central",
-            "local_file": str(local_file), "public_url": public_url,
+            "local_file": str(local_file), "public_url": None,
+            "intended_url": public_url, "local_sha256": _sha256_file(local_file),
             "published_at": now, "verified_http_status": None, "verified_at": None,
             "status": "warned_no_credentials",
             "warn_code": "AF-TELEPROMPTER-UNPUBLISHED",
@@ -13361,6 +13510,7 @@ def publish_teleprompter(bundle_dir: Path, deck_slug: str, run_dir: Path,
         record = {
             "platform": platform, "host_target": "cloudflare-central",
             "local_file": str(local_file), "public_url": public_url,
+            "local_sha256": _sha256_file(local_file),
             "published_at": now, "verified_http_status": None, "verified_at": None,
             "status": "verify_failed",
             "note": f"R2 upload failed: {exc}",
@@ -13376,11 +13526,12 @@ def publish_teleprompter(bundle_dir: Path, deck_slug: str, run_dir: Path,
     #    failure.
     published_at = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
     try:
-        status = _http_status(public_url, timeout=60)
+        status, redirect_location = _http_status(public_url, timeout=60)
     except RuntimeError as exc:
         record = {
             "platform": platform, "host_target": "cloudflare-central",
             "local_file": str(local_file), "public_url": public_url,
+            "local_sha256": _sha256_file(local_file),
             "published_at": published_at, "verified_http_status": None,
             "verified_at": None, "status": "verify_failed",
             "note": f"upload succeeded but verify GET errored: {exc}",
@@ -13392,17 +13543,25 @@ def publish_teleprompter(bundle_dir: Path, deck_slug: str, run_dir: Path,
         ) from exc
 
     verified_at = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
-    status_ok = (status == 200)
+    redirected = 300 <= status < 400
+    # PD-210: with the flag False a redirect is recorded and treated as today (the
+    # old opener followed it and a followed 200 published); with it True any 3xx is
+    # a verify failure.
+    status_ok = (status == 200) or (redirected and not TELEPROMPTER_VERIFY_STRICT)
     record = {
         "platform": platform,
         "host_target": "cloudflare-central",
         "local_file": str(local_file),
         "public_url": public_url,
+        "local_sha256": _sha256_file(local_file),
         "published_at": published_at,
         "verified_http_status": status,
         "verified_at": verified_at,
+        "verify_redirected": redirected,
         "status": "published" if status_ok else "verify_failed",
     }
+    if redirected:
+        record["redirect_host"] = urlparse(redirect_location).hostname or ""
     _write_publish_ledger(pub_path, record)
 
     # Record the URL on the teleprompter_html deliverable entry (additive field).
@@ -13440,8 +13599,10 @@ def _check_teleprompter_published(bundle_dir: Path, skip_gate: bool = False,
       * file absent                                  -> fail (WARN when creds absent)
       * status != 'published'                        -> fail (carry the recorded status;
                                                         WARN when creds absent)
+      * local_sha256 missing or != the HTML on disk  -> fail (PD-210)
       * public_url missing / not http(s)             -> fail
-      * verified_http_status != 200                  -> fail
+      * verified_http_status != 200 unless a redirect is recorded and
+        TELEPROMPTER_VERIFY_STRICT is False          -> fail (PD-210)
 
     M7 HARDENING: the gate is bypassed ONLY when the caller passes the explicit
     per-run --skip-teleprompter-gate CLI flag (skip_gate=True). It is NEVER bypassed
@@ -13479,12 +13640,17 @@ def _check_teleprompter_published(bundle_dir: Path, skip_gate: bool = False,
         if creds_absent:
             return (reason, True)  # FIX 5: WARN — publish not enforced without credentials
         return (reason, False)
+    # PD-210: the record must describe the file that is actually in the bundle now.
+    recorded_sha = obj.get("local_sha256")
+    if not recorded_sha or recorded_sha != _sha256_file(bundle_dir / "presenter-teleprompter.html"):
+        return ("publish record does not match the teleprompter file", False)
     url = str(obj.get("public_url", "")).strip()
     try:
         assert_url_scheme_allowed(url, what="teleprompter public_url")
     except ValueError as exc:
         return (f"teleprompter public_url invalid: {exc}", False)
-    if obj.get("verified_http_status") != 200:
+    redirect_ok = bool(obj.get("verify_redirected")) and not TELEPROMPTER_VERIFY_STRICT
+    if obj.get("verified_http_status") != 200 and not redirect_ok:
         return ((f"teleprompter public_url not verified live (status="
                  f"{obj.get('verified_http_status')!r}); a live HTTP 200 is required."),
                 False)
@@ -14259,9 +14425,12 @@ def run_postflight_gate(bundle_dir: Path, ledger_path: Path, deck_slug: str,
                 print(f"           produce a real per-slide report "
                       f"(AF-QC-PLACEHOLDER).", file=sys.stderr)
             else:
-                print(f"  TOO SMALL [{key}] {fname}  ({label})", file=sys.stderr)
-                print(f"           actual={actual_b:,} bytes  minimum={min_b:,} bytes",
-                      file=sys.stderr)
+                # PD-074: a reason with no size arm of its own is NOT a size
+                # failure. Say FAILED and name the reason code — "TOO SMALL …
+                # 0 bytes" lied about every non-size reason (empty notes pane,
+                # monotone deck, off-brand, casting park, …).
+                print(f"  FAILED   [{key}] {fname}  ({label})", file=sys.stderr)
+                print(f"           {reason}", file=sys.stderr)
         # Also surface any ledger entries that are not verified but not in our scan list
         # (edge case: previously-failed entries from a prior run).
         extra_unverified = [e for e in ledger_entries
@@ -15072,9 +15241,9 @@ def main():
     speech_chunks = discover_speech_chunks(run_dir, bundle_dir)
 
     # MG-036 (P02/P04): plan the governed motion path for THIS deck and
-    # embed only authenticated packages. Recomputed here, never trusted
-    # from the preflight write, so poster parity is judged against the
-    # renders that now exist. A still-only deck gets an empty map and
+    # embed only internally consistent packages. Recomputed here, never
+    # trusted from the preflight write, so poster parity is judged
+    # against the renders that now exist. A still-only deck gets an empty map and
     # the assembly below is the unchanged still path.
     motion_record, motion_media = plan_motion_media(run_dir, slides)
     if motion_media:
@@ -15101,7 +15270,7 @@ def main():
         sys.exit(1)
 
     # MG-036: prove the embeds landed in the assembled deck (media part
-    # bytes hash to the authenticated artifacts) and finalize the run
+    # bytes hash to the validated artifacts) and finalize the run
     # record BEFORE the bundle copy below carries the deck onward.
     if motion_media:
         finalize_motion_record(run_dir, out_path)
