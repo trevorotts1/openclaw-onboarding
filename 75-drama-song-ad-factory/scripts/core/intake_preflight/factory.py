@@ -1145,6 +1145,111 @@ def _read_json(path, default=None):
     return doc if isinstance(doc, dict) else default
 
 
+# ── S75-002: the signed step gate, wired into this tool ────────────────────
+#
+# step_gate (scripts/core/step_gate) seals each stage's REAL artifacts with an
+# HMAC chain, so a later stage cannot start on work nobody proved. This tool was
+# the path that could still write a COMPLETE row without it, so four points are
+# wired here: the run key at run start, `open` before a stage is handed out, a
+# `seal` subcommand, and the completion guard the state store already calls
+# (state_store.COMPLETE_GUARD). A run created BEFORE this change has no key; it
+# keeps its old behaviour and is named as legacy wherever the gate is asked.
+
+
+def _step_gate():
+    """(module, contract); (None, None) when the box has no step gate."""
+    sg = _core_mod("step_gate")
+    if sg is None:
+        return None, None
+    try:
+        return sg, sg.load_contract()
+    except Exception:                                # noqa: BLE001
+        return None, None
+
+
+def _gate_keyed(run_dir):
+    """True when this run has a gate key (created on or after the gate)."""
+    sg, _contract = _step_gate()
+    return sg is not None and os.path.exists(sg.key_path(str(run_dir)))
+
+
+def _gate_init(run_dir, got=None):
+    """Create the per-run gate key for a NEW run; never for a legacy one.
+
+    A run that already holds a COMPLETE row was produced before the gate:
+    creating a key for it would seal work nobody verified, so it stays legacy.
+    """
+    sg, _contract = _step_gate()
+    if sg is None:
+        return "step-gate-missing"
+    run_dir = str(run_dir)
+    if os.path.exists(sg.key_path(run_dir)):
+        return "step-gate-active"
+    if any(state == "COMPLETE" for state in (got or {}).values()):
+        return "legacy-run-no-gate"
+    try:
+        sg.cmd_init(run_dir)
+    except sg.Refused:
+        return "step-gate-active" if os.path.exists(sg.key_path(run_dir)) \
+            else "legacy-run-no-gate"
+    return "step-gate-active"
+
+
+def _gate_verify(run_dir, through, contract=None):
+    """None when the sealed chain through ``through`` verifies, else the text."""
+    sg, own = _step_gate()
+    if sg is None:
+        return "step-gate-missing: scripts/core/step_gate is not installed"
+    try:
+        sg.cmd_verify(str(run_dir), contract or own, through=through)
+    except sg.Refused as exc:
+        return "%s: %s" % (exc.code, exc.detail)
+    except Exception as exc:                         # noqa: BLE001
+        return "GATE_TOOL_ERROR: %s" % (exc,)
+    return None
+
+
+def _install_complete_guard(run_dir):
+    """Point state_store.COMPLETE_GUARD at this run's sealed chain.
+
+    Amendment 1: a run with NO gate key was created before this change; its
+    transitions are not guarded, and no key is ever added to it later. Returns
+    the installed callable, or None when the gate is not installed here.
+    """
+    import state_store
+    sg, contract = _step_gate()
+    if sg is None:
+        # No gate on this box: no guard at all, so a guard installed for an
+        # earlier run in this process can never answer for a different run.
+        state_store.COMPLETE_GUARD = None
+        return None
+    run_dir = str(run_dir)
+
+    def guard(run_id, stage, proof):
+        if not os.path.exists(sg.key_path(run_dir)):
+            return None                              # a run from before the gate
+        return _gate_verify(run_dir, stage, contract)
+
+    state_store.COMPLETE_GUARD = guard
+    return guard
+
+
+def _gate_open(run_dir, stage):
+    """(True, None) when ``stage`` may start; (False, Refused) when it may not.
+
+    `open` re-reads the stage before this one — its seal AND the files that seal
+    names — so a deleted or edited predecessor artifact stops the next stage.
+    """
+    sg, contract = _step_gate()
+    if sg is None:
+        return False, "step-gate-missing"
+    try:
+        sg.cmd_open(str(run_dir), stage, contract)
+    except sg.Refused as exc:
+        return False, exc
+    return True, None
+
+
 class ShapeError(ValueError):
     """A typed saved-state object/list had the wrong shape (SPEC 8.5).
 
@@ -2675,12 +2780,20 @@ def _collect_completion_evidence(run_dir, got, stages=None, registry=None):
                                "detail": str(exc)}
         approvals_current = False
 
-    # independent final QC: a record whose producer is a dedicated final-QC
-    # reviewer, gate PASS. A stage's own output never counts as final QC.
-    fq = _read_json(rd / "final-qc" / "record.json", {}) or {}
-    fq_producer = str(fq.get("producer") or "")
-    final_qc_ok = (fq.get("gate") == "PASS"
-                   and fq_producer == reg.get("final-qc", {}).get("qc_producer", "final-qc-reviewer"))
+    # independent final QC: with a gate key the proof is the SEALED CHAIN
+    # through delivery (S75-002) — a hand-written verdict file cannot make it
+    # pass. A run created before the gate keeps the old record test, unchanged.
+    final_qc_ok = None
+    if _gate_keyed(rd):
+        final_qc_ok = _gate_verify(rd, "delivery") is None
+    if final_qc_ok is None:
+        # a record whose producer is a dedicated final-QC reviewer, gate PASS.
+        # A stage's own output never counts as final QC.
+        fq = _read_json(rd / "final-qc" / "record.json", {}) or {}
+        fq_producer = str(fq.get("producer") or "")
+        final_qc_ok = (fq.get("gate") == "PASS"
+                       and fq_producer == reg.get("final-qc", {}).get("qc_producer",
+                                                                     "final-qc-reviewer"))
 
     # required artifacts present and reachable (non-empty files).
     missing = []
@@ -2977,6 +3090,72 @@ def _intake_session_gate(run_dir, sid):
                           "resume_command": resume}, evidence=[str(path)])
 
 
+def cmd_seal(a):
+    """seal --run-dir D --stage S --maker M --checker C (S75-002).
+
+    The seal comes FIRST and only on success does the row move to COMPLETE, so
+    the two can never disagree. The row move goes through state_store with the
+    completion guard installed, which is this same sealed chain.
+    """
+    run_dir = Path(a.run_dir or ".").expanduser().resolve()
+    sid = run_dir.name or "run"
+    sg, contract = _step_gate()
+    if sg is None:
+        return envelope("seal", str(sid), "error", "STEP_GATE_MISSING",
+                        "scripts/core/step_gate is not installed on this box, so "
+                        "no stage can be sealed.", data={"stage": a.stage})
+    # S75-002: `seal` may be the FIRST gate command a caller reaches on a new
+    # run, and both open and seal need the key, so create it here with `next`'s
+    # own semantics: never for a run that already holds a COMPLETE row.
+    _gate_init(run_dir, _stage_states(run_dir))
+    try:
+        # An open record is the gate's own precondition. Opening here keeps
+        # `seal` usable on a resumed run (and still refuses a stage whose
+        # predecessor does not verify), never as a second, weaker path.
+        sg.cmd_open(str(run_dir), a.stage, contract)
+        sealed = sg.cmd_seal(str(run_dir), a.stage, a.maker, a.checker, contract)
+    except sg.Refused as exc:
+        return envelope("seal", str(sid), "rejected", exc.code, exc.detail,
+                        data={"stage": a.stage})
+    except Exception as exc:                         # noqa: BLE001
+        return envelope("seal", str(sid), "error", "GATE_TOOL_ERROR", str(exc),
+                        data={"stage": a.stage})
+    import state_store
+    db = run_dir / "control" / "state.sqlite3"
+    rid, problem = resolved_run_id(run_dir, getattr(a, "run_id", None))
+    if problem or not db.exists():
+        return envelope("seal", str(sid), "rejected",
+                        str(problem or "state-file-missing").upper().replace("-", "_"),
+                        "The stage is sealed, but the run's state store cannot be "
+                        "resolved (%s), so no row was moved." % (problem or db),
+                        data={"stage": a.stage, "sealed": sealed})
+    _install_complete_guard(run_dir)
+    try:
+        with state_store.Store(db) as store:
+            row = store.get(rid, a.stage)
+            if row["state"] not in ("NOT_STARTED", "READY", "STALE",
+                                    "FAILED_RETRYABLE", "RUNNING"):
+                return envelope("seal", str(sid), "rejected", "STAGE_NOT_CLAIMABLE",
+                                "Stage %r is %s; only an unfinished stage is "
+                                "sealed." % (a.stage, row["state"]),
+                                data={"stage": a.stage, "sealed": sealed})
+            if row["state"] != "RUNNING":
+                if row["state"] != "READY":
+                    store.transition(rid, a.stage, "READY", a.maker)
+                store.claim(rid, a.stage, a.maker)
+            fresh = store.transition(rid, a.stage, "COMPLETE", a.maker,
+                                     proof={"stage": a.stage,
+                                            "artifacts": sealed.get("artifacts", [])})
+    except state_store.StoreError as exc:
+        return envelope("seal", str(sid), "rejected", exc.code, str(exc),
+                        data={"stage": a.stage, "sealed": sealed})
+    return envelope("seal", str(sid), "ok", "stage-sealed",
+                    "Stage %r is sealed and COMPLETE." % a.stage,
+                    data={"stage": a.stage,
+                          "state": (fresh or {}).get("state", "COMPLETE"),
+                          "sealed": sealed}, evidence=["%s" % db])
+
+
 def _next_ai_roles(run_dir):
     """Admit the run's persisted AI bindings without calling any model.
 
@@ -3127,6 +3306,11 @@ def _next_stage(a, *, boot_snapshot=None):
     except sqlite3.DatabaseError as e:
         return envelope("next", str(sid), "error", "state-unreadable",
                         "state file unreadable (%s): %s" % (db, str(e)[:120]))
+    # S75-002: a NEW run gets its gate key here (never a run that already holds
+    # a COMPLETE row), and every COMPLETE transition this process makes — the
+    # reconcile moves below included — is guarded by the sealed chain.
+    gate_state = _gate_init(run_dir, got)
+    _install_complete_guard(run_dir)
     # L4.1: reconcile the rows from proven artifacts on disk BEFORE the
     # answer — through state_store's guarded transitions only; rows the
     # artifacts do not prove are never touched, and every move it made is
@@ -3529,6 +3713,17 @@ def _next_stage(a, *, boot_snapshot=None):
             pass
     if reconciled:
         nxt["reconciled"] = reconciled
+    # S75-002: the sealed chain is what lets this stage start. A refusal is
+    # named here, before the command is handed out; a run created before the
+    # gate keeps its old behaviour and says so on the envelope.
+    if gate_state == "step-gate-active":
+        opened, refusal = _gate_open(run_dir, next_stage)
+        if not opened:
+            return envelope("next", str(sid), "rejected",
+                            getattr(refusal, "code", "STEP_GATE_REFUSED"),
+                            getattr(refusal, "detail", str(refusal)),
+                            data={"stage": next_stage, "step_gate": gate_state})
+    nxt["step_gate"] = gate_state
     return envelope("next", str(sid), "ok", "next-stage",
                     "Run this command for stage %r; after it passes its QC "
                     "gate, run `next` again." % present_id,
@@ -3666,6 +3861,17 @@ def main(argv=None):
                    help="With SONG APPROVAL = Yes, select the ORCHESTRATED mode "
                         "(three units, one variant each) instead of the umbrella "
                         "three-up runner. Exactly one mode is ever emitted.")
+    sl = sub.add_parser("seal", help="S75-002: seal one stage's real artifacts "
+                        "with the signed step gate, then move its row to COMPLETE.")
+    sl.add_argument("--run-dir", required=True,
+                    help="Run dir that holds control/state.sqlite3.")
+    sl.add_argument("--stage", required=True, choices=tuple(CANONICAL_STAGES))
+    sl.add_argument("--maker", required=True,
+                    help="Who made the stage's work; never the checker.")
+    sl.add_argument("--checker", required=True,
+                    help="Who checked it; a stage never checks itself.")
+    sl.add_argument("--run-id", default=None,
+                    help="Store run id; default: the only one.")
     ev = sub.add_parser("event", help="Continuation controller: record an "
                         "approval/provider/QC/recovery/restart event and "
                         "enqueue this run's next eligible action.")
@@ -3855,6 +4061,8 @@ def main(argv=None):
         env = cmd_owner(a)
     elif a.cmd == "event":
         env = cmd_event(a)
+    elif a.cmd == "seal":
+        env = cmd_seal(a)
     else:
         env = cmd_next(a)
     json.dump(env, sys.stdout, indent=2, sort_keys=True, default=str)

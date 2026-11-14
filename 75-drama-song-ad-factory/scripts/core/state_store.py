@@ -70,6 +70,21 @@ TERMINAL_OWNER_CLEAR = {"READY", "COMPLETE", "FAILED_RETRYABLE",
                         "FAILED_BLOCKED", "PARKED", "STALE"}
 REASON_REQUIRED = {"FAILED_BLOCKED", "PARKED"}
 
+#: U-C02 (S75-002): the twelve canonical stages, word for word with
+#: batch_mode.batch.STAGES. A COMPLETE row for one of these is a shipping
+#: claim, so it is the one transition that may be asked for proof.
+CANONICAL_STAGES = frozenset({
+    "research", "creative-strategy", "script-lyrics", "music",
+    "continuity-bible", "storyboard", "image-keyframes", "video-generation",
+    "qc-retakes", "assembly", "final-qc", "delivery",
+})
+
+#: The completion guard: ``COMPLETE_GUARD(run_id, stage, proof)`` returns None
+#: when the proof holds, or a refusal string. None (the default) keeps the old
+#: behaviour, so a store with no guard installed transitions as it always did.
+#: Lane A installs the real guard; this module only calls it.
+COMPLETE_GUARD = None
+
 
 class StoreError(Exception):
     def __init__(self, code, message):
@@ -402,8 +417,15 @@ class Store:
         return self._row(run_id, stage)
 
     def transition(self, run_id, stage, to_state, actor,
-                   expected_version=None, reason=None):
-        """Guarded transition: legal edge + lease held + version CAS."""
+                   expected_version=None, reason=None, proof=None):
+        """Guarded transition: legal edge + lease held + version CAS.
+
+        U-C02 (S75-002): a COMPLETE row for a canonical stage also needs the
+        completion guard's acceptance. ``proof`` is whatever the guard needs to
+        verify; the guard is a module-level hook (``COMPLETE_GUARD``) set by the
+        caller, and a refusal string raises COMPLETION_NOT_PROVEN before any
+        write, so an unproven completion leaves the row untouched.
+        """
         if to_state not in STATES:
             raise StoreError("ILLEGAL_TRANSITION", "unknown %s" % to_state)
         if to_state == "STALE":
@@ -430,6 +452,17 @@ class Store:
             owner, lease = row["owner"], row["lease_expires"]
             if to_state in TERMINAL_OWNER_CLEAR:
                 owner, lease = None, None
+            # U-C02: the completion guard runs BEFORE the write, inside the
+            # writer transaction, so a refusal cannot leave a half-finished
+            # COMPLETE row or a lost version bump behind it.
+            guard = COMPLETE_GUARD
+            if to_state == "COMPLETE" and stage in CANONICAL_STAGES \
+                    and guard is not None:
+                refusal = guard(run_id, stage, proof)
+                if refusal:
+                    raise StoreError(
+                        "COMPLETION_NOT_PROVEN",
+                        "%s/%s not proven: %s" % (run_id, stage, refusal))
             fresh = self._cas(
                 run_id, stage, row["version"],
                 "state=?, version=version+1, owner=?, lease_expires=?,"
