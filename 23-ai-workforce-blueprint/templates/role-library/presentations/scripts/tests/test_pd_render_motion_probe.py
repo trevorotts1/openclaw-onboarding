@@ -6,8 +6,10 @@ What this proves, in the words of the unit's acceptance row
     "package whose record says 6.0 seconds over a 2-second clip ->
      degraded; receipt without status -> degraded; `ffprobe` hidden from
      the path -> `MOTION_PROBE_UNAVAILABLE`; a correct package ->
-     validated. Tests build clips only when `ffmpeg` is present and skip
-     otherwise, saying so."
+     validated. Tests build clips with `ffmpeg` and FAIL LOUDLY when it
+     is not on PATH." (L1 binding law forbids a test-level skip; the
+     ffmpeg/ffprobe precondition is asserted instead, so a missing
+     instrument is a named failure rather than a silently unrun row.)
 
 Before this unit the validator read the package record's own `probe`
 block and nothing else: a clip could hash to the record's sha256 while
@@ -15,8 +17,9 @@ the record described a different duration, codec or stream count, and
 the piece was embedded on that paperwork. The four tests below are the
 four acceptance rows, in order.
 
-Every test here needs real media, so the module skips LOUDLY (with the
-reason that names ffmpeg/ffprobe) rather than silently passing.
+Every test here needs real media. Rather than a skip, the `media`
+fixture ASSERTS ffmpeg and ffprobe are on PATH (named failure), so a
+missing instrument can never look like a pass.
 """
 
 from __future__ import annotations
@@ -38,16 +41,14 @@ import test_mg036_motion_integration as base  # noqa: E402
 import build_deck  # noqa: E402
 from presentation_job import motion as pm  # noqa: E402
 
-needs_media = pytest.mark.skipif(
-    not (base.FFMPEG and base.FFPROBE),
-    reason="PD-212 builds a real clip with ffmpeg and measures it with "
-           "ffprobe; skipped because ffmpeg/ffprobe are not on PATH")
-
-
 @pytest.fixture(scope="module")
 def media(tmp_path_factory):
     """The canonical 6.0 s governed component plus its poster and the
     probe ffprobe reports for the real file."""
+    assert base.FFMPEG and base.FFPROBE, (
+        "ffmpeg and ffprobe must both be on PATH for the PD-212 rows: the "
+        "acceptance row builds a real clip and measures it, so a missing "
+        "instrument is a failure here, never a pass")
     d = tmp_path_factory.mktemp("pd212-media")
     clip = d / "component.mp4"
     base._make_component_clip(clip)
@@ -79,7 +80,6 @@ def _receipt_path(run_dir: Path, ordinal: int = 1) -> Path:
 # otherwise pass.
 # ---------------------------------------------------------------------------
 
-@needs_media
 def test_pd212_correct_package_is_validated(media, tmp_path):
     run_dir = base.build_run(tmp_path, media)
     outcome = _validate(run_dir)
@@ -94,7 +94,6 @@ def test_pd212_correct_package_is_validated(media, tmp_path):
 # nothing but measuring the file can catch this.
 # ---------------------------------------------------------------------------
 
-@needs_media
 def test_pd212_record_duration_lie_over_a_two_second_clip_degrades(
         tmp_path):
     d = tmp_path / "media-2s"
@@ -128,7 +127,6 @@ def test_pd212_record_duration_lie_over_a_two_second_clip_degrades(
 # A1 row 2 — a receipt with no status string is refused as unreadable.
 # ---------------------------------------------------------------------------
 
-@needs_media
 def test_pd212_receipt_without_status_degrades(media, tmp_path):
     run_dir = base.build_run(tmp_path, media)
     receipt_path = _receipt_path(run_dir)
@@ -147,7 +145,6 @@ def test_pd212_receipt_without_status_degrades(media, tmp_path):
 # pass on the record's word.
 # ---------------------------------------------------------------------------
 
-@needs_media
 def test_pd212_ffprobe_absent_degrades_probe_unavailable(
         media, tmp_path, monkeypatch):
     run_dir = base.build_run(tmp_path, media)
