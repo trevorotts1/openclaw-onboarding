@@ -1343,16 +1343,19 @@ def _resolve_owner_msg_ids(run_dir: Path) -> frozenset | None:
 
 
 def _verify_skip_record_authentic(rec: dict, run_dir: Path) -> None:
-    """MASTER Part 8 Fix 32: prove ONE skip record's owner_msg_id authentic via
-    presentation_job.approvals.verify — the single shared oracle.
+    """MASTER Part 8 Fix 32 + PD-305: prove ONE skip record's owner_msg_id
+    authentic via presentation_job.approvals.verify_with_gate_text — the single
+    shared oracle, PLUS the owner message text must name the gate.
 
     Raises ForgedApprovalError (AF-FORGED-APPROVAL) when the record carries no
-    owner_msg_id, the oracle is UNDETERMINED, or the id does not resolve to a real
-    owner-authored message. When approvals is unavailable (legacy box), falls back
-    to the inline oracle check (same fail-closed contract)."""
+    owner_msg_id, the oracle is UNDETERMINED, the id does not resolve to a real
+    owner-authored message, no text can be read for that message (ids-only
+    oracle), or the text does not name the gate. When approvals is unavailable
+    (legacy box), falls back to the inline oracle check (same fail-closed
+    contract, without the text source this box does not have)."""
     if _approvals is not None:
         try:
-            _approvals.verify(rec, run_dir)
+            _approvals.verify_with_gate_text(rec, run_dir)
             return
         except _approvals.ApprovalError as _exc:
             raise ForgedApprovalError(str(_exc)) from _exc
@@ -1988,7 +1991,7 @@ def emit_next(run_dir: Path, phases: list) -> None:
 # ---------------------------------------------------------------------------
 # adhoc authorization (owner-authorized + logged; refused without the record)
 # ---------------------------------------------------------------------------
-def assert_adhoc_authorized(run_dir: Path) -> None:
+def assert_adhoc_authorized(run_dir: Path, phase_id: str = "") -> None:
     p = run_dir / "working" / "checkpoints" / "adhoc_authorization.json"
     ok = False
     if p.exists():
@@ -2035,6 +2038,38 @@ def assert_adhoc_authorized(run_dir: Path) -> None:
               "owner-authored message in Command Center task_activities. A "
               "self-written ad-hoc authorization is not a genuine owner approval.",
               file=sys.stderr)
+        sys.exit(2)
+    # PD-305: an id proves a message exists, never what the owner authorized. The
+    # message TEXT must name the gate this adhoc run waives (the phase named on the
+    # command line). `verify()` is not used here because its schema forbids this
+    # record's historical shape; the text proof is the same one it performs.
+    _adhoc_gate = str(phase_id or "").strip()
+    if not _adhoc_gate:
+        print("FATAL: AF-FORGED-APPROVAL — --adhoc names no phase, so the adhoc "
+              "authorization names no gate. An authorization that targets nothing "
+              "authorizes nothing; pass --phase with the gate it waives.",
+              file=sys.stderr)
+        sys.exit(2)
+    _adhoc_row = None
+    if _approvals is not None:
+        try:
+            _adhoc_row = _approvals.resolve_owner_message(_adhoc_owner_msg_id,
+                                                          run_dir)
+        except Exception:  # noqa: BLE001 — unreadable text is a refusal, never a pass
+            _adhoc_row = None
+    _adhoc_text = str((_adhoc_row or {}).get("text") or "")
+    if not _adhoc_text:
+        print("FATAL: AF-FORGED-APPROVAL — --adhoc owner_msg_id "
+              f"{_adhoc_owner_msg_id!r} resolves to a real message but its TEXT "
+              "could not be read (ids-only oracle / no inbound message log). An id "
+              "proves a message exists, never what the owner authorized — DENIED.",
+              file=sys.stderr)
+        sys.exit(2)
+    if not _approvals.text_names_gate(_adhoc_text, _adhoc_gate):
+        print("FATAL: AF-FORGED-APPROVAL — --adhoc owner message "
+              f"{_adhoc_owner_msg_id!r} does not name phase {_adhoc_gate!r} "
+              f"(text={_adhoc_text[:80]!r}). The message must contain the gate name "
+              "to authorize this adhoc run — DENIED.", file=sys.stderr)
         sys.exit(2)
     bar = "!" * 78
     print(bar, flush=True)
@@ -2677,7 +2712,7 @@ def main():
         sys.exit(2)
 
     if args.adhoc:
-        assert_adhoc_authorized(run_dir)
+        assert_adhoc_authorized(run_dir, str(args.phase or ""))
 
     if not args.slides:
         print("FATAL: --slides is required to run (use --plan to inspect only).",
