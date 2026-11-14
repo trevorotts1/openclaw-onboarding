@@ -362,6 +362,50 @@ def make_measure(pace_plan=None, ffmpeg=None, timings=None):
 
 
 # --------------------------------------------------------------- the save ---
+#: S75-055: where each take's OWN measured timing file is kept. The pick copies
+#: this file to ``music/word-timings.json``, the receipt the delivery packager
+#: reads (``delivery_package/run_inputs.TIMING_PATH``).
+WORD_TIMINGS_DIR = os.path.join("music", "word-timings")
+
+
+def _timing_doc(take):
+    """The take's measured words as a delivery timing document, or None.
+
+    Same shape ``caption_timing.words_of`` accepts: ``{"words": [...],
+    "source": ...}``. A take with no words yields None -- the pick then refuses
+    by name; a timing is never invented.
+    """
+    words = [dict(w) for w in ((take or {}).get("aligned_words") or [])
+             if isinstance(w, dict)]
+    if not words:
+        return None
+    owners = ((take or {}).get("measurement_owners") or {}) \
+        .get("transcription_and_timing") or {}
+    return {"words": words, "source": owners.get("source") or "measured"}
+
+
+def _write_timing_file(run_dir, vid, take_name, doc):
+    """Write ``music/word-timings/<variant>-<take NN>.json`` atomically; return
+    the path relative to the run (forward slashes)."""
+    folder = os.path.join(run_dir, WORD_TIMINGS_DIR)
+    os.makedirs(folder, exist_ok=True)
+    dest = os.path.join(folder, "%s-%s.json" % (vid, take_name))
+    partial = dest + ".partial"
+    try:
+        with open(partial, "w", encoding="utf-8") as f:
+            json.dump(doc, f, indent=2, sort_keys=True, default=str)
+        os.replace(partial, dest)
+    except OSError:
+        try:
+            os.unlink(partial)
+        except OSError:
+            pass
+        raise TransportError("the take's word timing could not be saved to %s"
+                             % os.path.join(WORD_TIMINGS_DIR,
+                                            os.path.basename(dest)))
+    return os.path.relpath(dest, run_dir).replace(os.sep, "/")
+
+
 def make_save(run_dir):
     """Build the production ``save(variant, take, receipt)``: every paid take is kept.
 
@@ -373,6 +417,11 @@ def make_save(run_dir):
     Writes ``<run>/music/takes/<variant>/take-NN/`` holding a copy of the
     audio, the measurements, the aligned words and the receipt. Called for
     EVERY take, accepted or not: a rejected paid take is evidence, not waste.
+
+    S75-055: a take with measured words ALSO lands its own timing file at
+    ``<run>/music/word-timings/<variant>-take-NN.json`` and records that path
+    on the take (``word_timings_path``), so the pick copies the RIGHT take's
+    clock instead of guessing.
     """
     root = os.path.join(run_dir, "music", "takes")
 
@@ -386,11 +435,19 @@ def make_save(run_dir):
         base = os.path.join(root, vid)
         os.makedirs(base, exist_ok=True)
         n = len([d for d in os.listdir(base) if os.path.isdir(os.path.join(base, d))])
-        dest = os.path.join(base, "take-%02d" % (n + 1))
+        take_name = "take-%02d" % (n + 1)
+        dest = os.path.join(base, take_name)
         os.makedirs(dest, exist_ok=True)
         kept = os.path.join(dest, os.path.basename(path))
         if os.path.abspath(kept) != os.path.abspath(path):
             shutil.copyfile(path, kept)
+        # The timing path rides ON the take BEFORE its measurements are
+        # serialized, so `take-measurements.json` (read back by
+        # song_choices._latest_take) carries it too.
+        doc = _timing_doc(take)
+        if doc is not None and isinstance(take, dict):
+            take["word_timings_path"] = _write_timing_file(run_dir, vid,
+                                                           take_name, doc)
         for name, payload in (("take-measurements.json", take or {}),
                               ("aligned-words.json", take.get("aligned_words") or []),
                               ("receipt.json", rcpt or {})):
