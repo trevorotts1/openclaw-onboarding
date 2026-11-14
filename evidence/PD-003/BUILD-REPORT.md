@@ -13,7 +13,7 @@
 
 The ledger row for PD-003 carries `acceptance_rows: ["A1"]` with no expansion table, so the row
 was taken from the unit's own spec entry in
-`/Volumes/mac mini m4/swarm-contract/_scratch-pd-docs/acc.txt` (line 9074), quoted verbatim:
+`$SCRATCH_ROOT/_scratch-pd-docs/acc.txt` (line 9074), quoted verbatim:
 
 > ## PD-003
 > **Acceptance:** a new test asserts producer order is lower than consumer order for every edge;
@@ -122,7 +122,7 @@ FAILED tests/test_pd_manifest_order.py::test_every_producer_comes_before_its_con
 
 ```
 $ python3 -I 23-ai-workforce-blueprint/templates/role-library/presentations/scripts/sync_check.py
-  (M1 skipped: no peer manifest copy at /Users/blackceomacmini/clawd/departments/Presentations/sops/PIPELINE-MANIFEST.json [materialized department default] — single-copy checkout, nothing to compare)
+  (M1 skipped: no peer manifest copy at $HOME/clawd/departments/Presentations/sops/PIPELINE-MANIFEST.json [materialized department default] — single-copy checkout, nothing to compare)
 === sync_check: PRESENTATIONS SOP <-> build_deck.py LOCKSTEP ===
 manifest_version: 75
 phases: 56  autofails: 196  roles: 36
@@ -316,7 +316,7 @@ My hunks (this unit's commit) are exactly:
   `ls-remote` vs `rev-parse HEAD` equality was re-proven after every push. The final branch tip
   40-char hash is printed in this report's return text (a commit cannot contain its own sha).
 - Trees clean after the push: build worktree `git status --porcelain` = empty; lane clone
-  `/Volumes/mac mini m4/swarm-contract/pd-fix/worktrees/onboarding/FL04--hold-d1` status = empty on
+  `$SCRATCH_ROOT/pd-fix/worktrees/onboarding/FL04--hold-d1` status = empty on
   `pd/fl04-manifest--hold-d1`.
 - **D-1 HOLD: no merge, no PR opened.**
 
