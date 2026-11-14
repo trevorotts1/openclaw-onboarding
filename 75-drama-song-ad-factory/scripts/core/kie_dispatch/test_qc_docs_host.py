@@ -125,3 +125,7 @@ def main():
 
 if __name__ == "__main__":
     sys.exit(main())
+
+
+def test_qc_docs_host():
+    assert main() == 0

@@ -131,3 +131,7 @@ def main():
 
 if __name__ == "__main__":
     sys.exit(main())
+
+
+def test_attempt_ceiling_v2973():
+    assert main() == 0

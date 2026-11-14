@@ -117,3 +117,7 @@ def main():
 
 if __name__ == "__main__":
     sys.exit(main())
+
+
+def test_next_decision_hold_b5():
+    assert main() == 0

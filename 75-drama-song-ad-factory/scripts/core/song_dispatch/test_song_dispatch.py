@@ -30,170 +30,174 @@ SHEET = [{"tag": "Intro", "delivery": "spoken", "lines": ["One closed door."]},
          {"tag": "Outro", "delivery": "spoken", "lines": ["She Found Power in the Climb. Get the book. Link below."]}]
 #: WW-23: the FINAL provider style carries BOTH approved pace directions, so
 #: the request is built with the same order the dispatching plan carries.
-req = R.build_request("soul-ballad", SHEET, CLIENT, "T", 58, hook_plan=HOOK_PLAN,
-                      pace_plan=PACE_ORDER)
-INP = req["input"]   # WW-30: directions live in the createTask envelope input
-assert SD.validate_request(req, "soul-ballad", CLIENT, 58) == [], SD.validate_request(req, "soul-ballad", CLIENT, 58)
-# refusals: spoken word in negatives, missing dry negatives, wrong model, style naming spoken twice
-for k, v in (("negative_tags", INP["negative_tags"] + ", spoken word"), ("negative_tags", "rap"),
-             ("model", "V5"), ("style", INP["style"] + " Spoken spoken."), ("style_weight", 0.5)):
-    assert SD.validate_request(dict(req, input=dict(INP, **{k: v})), "soul-ballad", CLIENT, 58), k
-# WW-30: a mutation at the TOP level is the retired flat contract and is named
-for bad in (dict(req, input=None, lyrics=INP["lyrics"]),
-            dict(req, callBackUrl=None),
-            dict(req, input=dict(INP, prompt="a competing prompt")),
-            dict(req, input={k: v for k, v in INP.items() if k != "negative_tags"}),
-            dict(req, input=dict(INP, model="V7_INVENTED")),
-            dict(req, model="V6")):
-    errs = SD.validate_request(bad, "soul-ballad", CLIENT, 58)
-    assert errs, bad
-    assert any(e.split(":")[0] in ("LEGACY_FLAT_CONTRACT", "CALLBACK_NOT_TOP_LEVEL",
-                                   "COMPETING_LYRICS", "MISSING_DIRECTION",
-                                   "UNSUPPORTED_MODEL", "UNSUPPORTED_MODEL_VALUE",
-                                   "ENVELOPE_INPUT_MISSING") for e in errs), (bad, errs)
-# the researched negatives and band wording are NOT refused
-assert "band dropout" in INP["negative_tags"] and "keeps playing" in INP["style"]
-OAI = "openai-" + "wh" + "isper"
-for bad in (OAI, "wh" + "isper", OAI.replace("-", "_")):
+def test_song_dispatch():
+    req = R.build_request("soul-ballad", SHEET, CLIENT, "T", 58, hook_plan=HOOK_PLAN,
+                          pace_plan=PACE_ORDER)
+    INP = req["input"]   # WW-30: directions live in the createTask envelope input
+    assert SD.validate_request(req, "soul-ballad", CLIENT, 58) == [], SD.validate_request(req, "soul-ballad", CLIENT, 58)
+    # refusals: spoken word in negatives, missing dry negatives, wrong model, style naming spoken twice
+    for k, v in (("negative_tags", INP["negative_tags"] + ", spoken word"), ("negative_tags", "rap"),
+                 ("model", "V5"), ("style", INP["style"] + " Spoken spoken."), ("style_weight", 0.5)):
+        assert SD.validate_request(dict(req, input=dict(INP, **{k: v})), "soul-ballad", CLIENT, 58), k
+    # WW-30: a mutation at the TOP level is the retired flat contract and is named
+    for bad in (dict(req, input=None, lyrics=INP["lyrics"]),
+                dict(req, callBackUrl=None),
+                dict(req, input=dict(INP, prompt="a competing prompt")),
+                dict(req, input={k: v for k, v in INP.items() if k != "negative_tags"}),
+                dict(req, input=dict(INP, model="V7_INVENTED")),
+                dict(req, model="V6")):
+        errs = SD.validate_request(bad, "soul-ballad", CLIENT, 58)
+        assert errs, bad
+        assert any(e.split(":")[0] in ("LEGACY_FLAT_CONTRACT", "CALLBACK_NOT_TOP_LEVEL",
+                                       "COMPETING_LYRICS", "MISSING_DIRECTION",
+                                       "UNSUPPORTED_MODEL", "UNSUPPORTED_MODEL_VALUE",
+                                       "ENVELOPE_INPUT_MISSING") for e in errs), (bad, errs)
+    # the researched negatives and band wording are NOT refused
+    assert "band dropout" in INP["negative_tags"] and "keeps playing" in INP["style"]
+    OAI = "openai-" + "wh" + "isper"
+    for bad in (OAI, "wh" + "isper", OAI.replace("-", "_")):
+        try:
+            SD.refuse_asr(bad)
+        except SD.DispatchError:
+            pass
+        else:
+            raise AssertionError(bad)
+    assert SD.refuse_asr("faster-" + "wh" + "isper").startswith("faster-")
+
+    # FU-HOOK-PLACEMENT: the plan carries the sheet sent to Suno, the style and
+    # the hook_plan, so the always-on hook_placement gate can measure every take
+    plan = dict(LF.plan(60, (15, 20)), sheet_text=INP["lyrics"], style_id="soul-ballad",
+                hook_plan=HOOK_PLAN, pace_change=PACE_ORDER)
+    def _suno_words(lyrics):
+        """Aligned words the way Suno returns them: each section header rides
+        inline on the section's first word (FU-HOOK-PLACEMENT reads them)."""
+        out = []
+        for block in lyrics.split("\n\n"):
+            head, *lines = block.split("\n")
+            toks = " ".join(lines).split() or [""]
+            out += [{"word": (head + "\n" + t + " ") if k == 0 else t + " "} for k, t in enumerate(toks)]
+        return out
+
+
+    words = [dict(w, startS=i, endS=i + 0.5) for i, w in enumerate(_suno_words(INP["lyrics"]))]
+    #: The MEASURED gear change of a fully-measured take (music_qc.pace_change
+    #: windows): the drop at the ordered seam and a return to the opening groove at
+    #: the second seam. Both turns are required and measured on every run
+    #: (BUILD-PLAN W1-method-song-U1), so a "GOOD" take carries them like it
+    #: carries its segments and aligned words.
+    PACE_EVIDENCE = {"pace_before": {"onset_rate_per_s": 3.0, "rms_dbfs": -14.0},
+                     "pace_problem": {"onset_rate_per_s": 1.4, "rms_dbfs": -18.5},
+                     "pace_after": {"onset_rate_per_s": 3.0, "rms_dbfs": -14.0}}
+    GOOD = {"segments": [{"delivery": "spoken", "start": 0, "end": 2, "source": "measured"},
+                         {"delivery": "sung", "start": 2.5, "end": 45, "source": "measured"},
+                         {"delivery": "spoken", "start": 45, "end": 54, "source": "measured"}],
+            "aligned_words": [dict(w, startS=3 + i * 1.0, endS=3.5 + i * 1.0) for i, w in enumerate(words)],
+            "detector": "singing_detector 2.0.0", "duration_s": 57.5, "music_under_speech_ratio": 0.6,
+            "tail_rms_dbfs": -30.0, "first_sung_s": 2.5, **PACE_EVIDENCE}
+    script = "One closed door. She Found Power in the Climb. Get the book. Link below."
+    hook = " ".join(HOOK)
+    j = SD.judge_take(GOOD, dict(plan, sheet_text=INP["lyrics"]), script, hook, (15, 20))
+    assert j["verdict"] in ("PASS", "FLAG"), j
+    # each gate bites
+    for k, v, gate in (("tail_rms_dbfs", -70.0, "clean_ending"), ("music_under_speech_ratio", 0.05, "music_under_speech"),
+                       ("duration_s", 45.0, "length"), ("first_sung_s", 30.0, "first_sung"),
+                       ("detector", "singcheck v1", "detector"),
+                       ("aligned_words", words[:5], "script_words")):
+        r = SD.judge_take(dict(GOOD, **{k: v}), dict(plan, sheet_text=INP["lyrics"]), script, hook, (15, 20))
+        assert r["verdict"] == "FAIL" and gate in r["failed"], (gate, r)
+
+    # ORDER 2026-10-21: an overshoot is a FLAG, never a stop. A take 2 s over the
+    # delivered target keeps the take moving and names the warning on the gate.
+    _over = SD.judge_take(dict(GOOD, duration_s=60.0), dict(plan, sheet_text=INP["lyrics"]),
+                          script, hook, (15, 20))
+    assert _over["gates"]["length"]["verdict"] == "PASS", _over["gates"]["length"]
+    assert "within the 10-second allowance" in _over["gates"]["length"]["detail"], _over["gates"]["length"]
+    assert "length" not in _over["failed"], _over["failed"]
+
+    # FU-HOOK-PLACEMENT: Suno moving/adding a hook earlier than the sheet fails
+    # the take before any picture spend (the One-Check Chanel v2 shape).
+    lyr = INP["lyrics"]
+    hook_block = lyr[lyr.index("[Hook 1"):lyr.index("\n\n", lyr.index("[Hook 1"))]
+    early = lyr.replace("\n\n[Verse", "\n\n" + hook_block + "\n\n[Verse", 1)
+    EARLY = dict(GOOD, aligned_words=[dict(w, startS=3 + i * 1.0, endS=3.5 + i * 1.0)
+                                      for i, w in enumerate(_suno_words(early))])
+    r = SD.judge_take(EARLY, plan, script, hook, (15, 20), "soul-ballad", lyr)
+    assert r["verdict"] == "FAIL" and "hook_placement" in r["failed"], r
+    assert "added at 7.0 s" in r["gates"]["hook_placement"]["detail"], r["gates"]["hook_placement"]
+    r = SD.judge_take(GOOD, plan, script, hook, (15, 20), "soul-ballad", lyr)
+    assert r["gates"]["hook_placement"]["verdict"] == "PASS", r["gates"]["hook_placement"]
+    # the gate never switches itself off: no sheet, style or hook_plan = FAIL, UNMEASURED
+    bare = {k: v for k, v in plan.items() if k not in ("sheet_text", "style_id", "hook_plan")}
+    r = SD.judge_take(GOOD, bare, script, hook, (15, 20))
+    assert "hook_placement" in r["failed"], r
+    assert r["gates"]["hook_placement"]["detail"] == ("UNMEASURED: sheet_text; UNMEASURED: style_id; "
+                                                      "UNMEASURED: hook_plan"), r
+    # the take is measured against the plan's beat: hook 1 at about 13 s, the
+    # turn starts at 33.1 s of 58 s
+    r = SD.judge_take(GOOD, dict(plan, hook_plan={"true_at_beat": "the_turn"}), script, hook, (15, 20))
+    assert "before 'the_turn' starts at 33.1 s" in r["gates"]["hook_placement"]["detail"], r["gates"]["hook_placement"]
+    # a true_at_beat that is not a beat, or the opening beat, FAILS the take with
+    # the same reason the sheet check gives: the story-beat check is never dropped
+    for beat, why in (("bogus", "is not a beat of the story arc"), ("hook", "never the opener")):
+        r = SD.judge_take(GOOD, dict(plan, hook_plan={"true_at_beat": beat}), script, hook, (15, 20))
+        assert "hook_placement" in r["failed"], (beat, r["gates"]["hook_placement"])
+        assert why in r["gates"]["hook_placement"]["detail"], (beat, r["gates"]["hook_placement"])
+
+    # loop: stops at the first pass, saves stem for every take, whole tracks only, cap respected
+    calls, saved = [], []
+    seq = [dict(GOOD, detector="singcheck v1")] * 2 + [GOOD, GOOD]
+    def gen(rq):
+        calls.append(rq["input"]["duration"]); return [seq[2 * (len(calls) - 1)], seq[2 * (len(calls) - 1) + 1]]
+    out = SD.run_takes(req, plan, gen, lambda t: {}, lambda t, r: saved.append(r["verdict"]), script, hook, (15, 20))
+    assert out["verdict"] in ("PASS", "FLAG") and len(calls) == 2 and len(saved) == 3, (out["verdict"], calls, saved)
+    out = SD.run_takes(req, plan, lambda rq: [dict(GOOD, detector="x")] * 2, lambda t: {}, lambda t, r: saved.append(1),
+                       script, hook, cap_cents=18)
+    assert out["verdict"] == "FAIL" and out["spent_cents"] == 18 and out["delivered"] is None
     try:
-        SD.refuse_asr(bad)
+        SD.run_takes(dict(req, duration=30), plan, gen, lambda t: {}, lambda t, r: None, script, hook)
     except SD.DispatchError:
         pass
     else:
-        raise AssertionError(bad)
-assert SD.refuse_asr("faster-" + "wh" + "isper").startswith("faster-")
+        raise AssertionError("patch/short duration accepted")
+    # FU-HOOK-PLACEMENT: the director's _hook_plan rides the request into run_takes,
+    # moves into the judge's plan, and never reaches KIE
+    sent = []
+    noplan = {k: v for k, v in plan.items() if k != "hook_plan"}
+    out = SD.run_takes(dict(req, _hook_plan={"true_at_beat": "the_turn"}), noplan,
+                       lambda rq: sent.append(rq) or [dict(GOOD), dict(GOOD)], lambda t: {},
+                       lambda t, r: None, script, hook, (15, 20), cap_cents=6)
+    assert sent and all("_hook_plan" not in rq for rq in sent), sent
+    assert "before 'the_turn'" in out["receipts"][0]["gates"]["hook_placement"]["detail"], out["receipts"][0]
+    out = SD.run_takes(req, noplan, lambda rq: [dict(GOOD), dict(GOOD)], lambda t: {}, lambda t, r: None,
+                       script, hook, (15, 20), cap_cents=6)
+    assert out["receipts"][0]["gates"]["hook_placement"]["detail"] == "UNMEASURED: hook_plan", out["receipts"][0]
+    print("ok: song_dispatch")
 
-# FU-HOOK-PLACEMENT: the plan carries the sheet sent to Suno, the style and
-# the hook_plan, so the always-on hook_placement gate can measure every take
-plan = dict(LF.plan(60, (15, 20)), sheet_text=INP["lyrics"], style_id="soul-ballad",
-            hook_plan=HOOK_PLAN, pace_change=PACE_ORDER)
-def _suno_words(lyrics):
-    """Aligned words the way Suno returns them: each section header rides
-    inline on the section's first word (FU-HOOK-PLACEMENT reads them)."""
-    out = []
-    for block in lyrics.split("\n\n"):
-        head, *lines = block.split("\n")
-        toks = " ".join(lines).split() or [""]
-        out += [{"word": (head + "\n" + t + " ") if k == 0 else t + " "} for k, t in enumerate(toks)]
-    return out
+    # load governor wiring: every generation is a NEW request on the 20-per-10-s bucket; a 429 is resubmitted
+    calls = []
+    def _kie(fn, label, generation=False):
+        calls.append((label, generation))
+        r = fn()
+        return r if r else _kie(fn, label, generation)
+    tries = []
+    def flaky(rq):
+        tries.append(1)
+        return [] if len(tries) == 1 else [dict(GOOD), dict(GOOD)]
+    SD.run_takes(req, plan, flaky, lambda t: {}, lambda t, r: None, script, hook, (15, 20), kie=_kie)
+    assert calls and all(g is True for _, g in calls), calls
+    import load_governor as LG  # noqa: E402
+    seen = []
+    n429 = []
+    def g429(rq):
+        n429.append(1)
+        if len(n429) == 1:
+            raise RuntimeError("HTTP 429 rate limit")
+        return [dict(GOOD), dict(GOOD)]
+    SD.run_takes(req, plan, g429, lambda t: {}, lambda t, r: None, script, hook, (15, 20),
+                 kie=lambda fn, label, generation=False: LG.kie_request(fn, label, generation=generation,
+                                                                          sleep=lambda s: None, acquire=lambda: seen.append(1)))
+    assert len(n429) == 2 and len(seen) == 2, (n429, seen)
+    print("PASS song_dispatch load-governor wiring")
 
-
-words = [dict(w, startS=i, endS=i + 0.5) for i, w in enumerate(_suno_words(INP["lyrics"]))]
-#: The MEASURED gear change of a fully-measured take (music_qc.pace_change
-#: windows): the drop at the ordered seam and a return to the opening groove at
-#: the second seam. Both turns are required and measured on every run
-#: (BUILD-PLAN W1-method-song-U1), so a "GOOD" take carries them like it
-#: carries its segments and aligned words.
-PACE_EVIDENCE = {"pace_before": {"onset_rate_per_s": 3.0, "rms_dbfs": -14.0},
-                 "pace_problem": {"onset_rate_per_s": 1.4, "rms_dbfs": -18.5},
-                 "pace_after": {"onset_rate_per_s": 3.0, "rms_dbfs": -14.0}}
-GOOD = {"segments": [{"delivery": "spoken", "start": 0, "end": 2, "source": "measured"},
-                     {"delivery": "sung", "start": 2.5, "end": 45, "source": "measured"},
-                     {"delivery": "spoken", "start": 45, "end": 54, "source": "measured"}],
-        "aligned_words": [dict(w, startS=3 + i * 1.0, endS=3.5 + i * 1.0) for i, w in enumerate(words)],
-        "detector": "singing_detector 2.0.0", "duration_s": 57.5, "music_under_speech_ratio": 0.6,
-        "tail_rms_dbfs": -30.0, "first_sung_s": 2.5, **PACE_EVIDENCE}
-script = "One closed door. She Found Power in the Climb. Get the book. Link below."
-hook = " ".join(HOOK)
-j = SD.judge_take(GOOD, dict(plan, sheet_text=INP["lyrics"]), script, hook, (15, 20))
-assert j["verdict"] in ("PASS", "FLAG"), j
-# each gate bites
-for k, v, gate in (("tail_rms_dbfs", -70.0, "clean_ending"), ("music_under_speech_ratio", 0.05, "music_under_speech"),
-                   ("duration_s", 45.0, "length"), ("first_sung_s", 30.0, "first_sung"),
-                   ("detector", "singcheck v1", "detector"),
-                   ("aligned_words", words[:5], "script_words")):
-    r = SD.judge_take(dict(GOOD, **{k: v}), dict(plan, sheet_text=INP["lyrics"]), script, hook, (15, 20))
-    assert r["verdict"] == "FAIL" and gate in r["failed"], (gate, r)
-
-# ORDER 2026-10-21: an overshoot is a FLAG, never a stop. A take 2 s over the
-# delivered target keeps the take moving and names the warning on the gate.
-_over = SD.judge_take(dict(GOOD, duration_s=60.0), dict(plan, sheet_text=INP["lyrics"]),
-                      script, hook, (15, 20))
-assert _over["gates"]["length"]["verdict"] == "PASS", _over["gates"]["length"]
-assert "within the 10-second allowance" in _over["gates"]["length"]["detail"], _over["gates"]["length"]
-assert "length" not in _over["failed"], _over["failed"]
-
-# FU-HOOK-PLACEMENT: Suno moving/adding a hook earlier than the sheet fails
-# the take before any picture spend (the One-Check Chanel v2 shape).
-lyr = INP["lyrics"]
-hook_block = lyr[lyr.index("[Hook 1"):lyr.index("\n\n", lyr.index("[Hook 1"))]
-early = lyr.replace("\n\n[Verse", "\n\n" + hook_block + "\n\n[Verse", 1)
-EARLY = dict(GOOD, aligned_words=[dict(w, startS=3 + i * 1.0, endS=3.5 + i * 1.0)
-                                  for i, w in enumerate(_suno_words(early))])
-r = SD.judge_take(EARLY, plan, script, hook, (15, 20), "soul-ballad", lyr)
-assert r["verdict"] == "FAIL" and "hook_placement" in r["failed"], r
-assert "added at 7.0 s" in r["gates"]["hook_placement"]["detail"], r["gates"]["hook_placement"]
-r = SD.judge_take(GOOD, plan, script, hook, (15, 20), "soul-ballad", lyr)
-assert r["gates"]["hook_placement"]["verdict"] == "PASS", r["gates"]["hook_placement"]
-# the gate never switches itself off: no sheet, style or hook_plan = FAIL, UNMEASURED
-bare = {k: v for k, v in plan.items() if k not in ("sheet_text", "style_id", "hook_plan")}
-r = SD.judge_take(GOOD, bare, script, hook, (15, 20))
-assert "hook_placement" in r["failed"], r
-assert r["gates"]["hook_placement"]["detail"] == ("UNMEASURED: sheet_text; UNMEASURED: style_id; "
-                                                  "UNMEASURED: hook_plan"), r
-# the take is measured against the plan's beat: hook 1 at about 13 s, the
-# turn starts at 33.1 s of 58 s
-r = SD.judge_take(GOOD, dict(plan, hook_plan={"true_at_beat": "the_turn"}), script, hook, (15, 20))
-assert "before 'the_turn' starts at 33.1 s" in r["gates"]["hook_placement"]["detail"], r["gates"]["hook_placement"]
-# a true_at_beat that is not a beat, or the opening beat, FAILS the take with
-# the same reason the sheet check gives: the story-beat check is never dropped
-for beat, why in (("bogus", "is not a beat of the story arc"), ("hook", "never the opener")):
-    r = SD.judge_take(GOOD, dict(plan, hook_plan={"true_at_beat": beat}), script, hook, (15, 20))
-    assert "hook_placement" in r["failed"], (beat, r["gates"]["hook_placement"])
-    assert why in r["gates"]["hook_placement"]["detail"], (beat, r["gates"]["hook_placement"])
-
-# loop: stops at the first pass, saves stem for every take, whole tracks only, cap respected
-calls, saved = [], []
-seq = [dict(GOOD, detector="singcheck v1")] * 2 + [GOOD, GOOD]
-def gen(rq):
-    calls.append(rq["input"]["duration"]); return [seq[2 * (len(calls) - 1)], seq[2 * (len(calls) - 1) + 1]]
-out = SD.run_takes(req, plan, gen, lambda t: {}, lambda t, r: saved.append(r["verdict"]), script, hook, (15, 20))
-assert out["verdict"] in ("PASS", "FLAG") and len(calls) == 2 and len(saved) == 3, (out["verdict"], calls, saved)
-out = SD.run_takes(req, plan, lambda rq: [dict(GOOD, detector="x")] * 2, lambda t: {}, lambda t, r: saved.append(1),
-                   script, hook, cap_cents=18)
-assert out["verdict"] == "FAIL" and out["spent_cents"] == 18 and out["delivered"] is None
-try:
-    SD.run_takes(dict(req, duration=30), plan, gen, lambda t: {}, lambda t, r: None, script, hook)
-except SD.DispatchError:
-    pass
-else:
-    raise AssertionError("patch/short duration accepted")
-# FU-HOOK-PLACEMENT: the director's _hook_plan rides the request into run_takes,
-# moves into the judge's plan, and never reaches KIE
-sent = []
-noplan = {k: v for k, v in plan.items() if k != "hook_plan"}
-out = SD.run_takes(dict(req, _hook_plan={"true_at_beat": "the_turn"}), noplan,
-                   lambda rq: sent.append(rq) or [dict(GOOD), dict(GOOD)], lambda t: {},
-                   lambda t, r: None, script, hook, (15, 20), cap_cents=6)
-assert sent and all("_hook_plan" not in rq for rq in sent), sent
-assert "before 'the_turn'" in out["receipts"][0]["gates"]["hook_placement"]["detail"], out["receipts"][0]
-out = SD.run_takes(req, noplan, lambda rq: [dict(GOOD), dict(GOOD)], lambda t: {}, lambda t, r: None,
-                   script, hook, (15, 20), cap_cents=6)
-assert out["receipts"][0]["gates"]["hook_placement"]["detail"] == "UNMEASURED: hook_plan", out["receipts"][0]
-print("ok: song_dispatch")
-
-# load governor wiring: every generation is a NEW request on the 20-per-10-s bucket; a 429 is resubmitted
-calls = []
-def _kie(fn, label, generation=False):
-    calls.append((label, generation))
-    r = fn()
-    return r if r else _kie(fn, label, generation)
-tries = []
-def flaky(rq):
-    tries.append(1)
-    return [] if len(tries) == 1 else [dict(GOOD), dict(GOOD)]
-SD.run_takes(req, plan, flaky, lambda t: {}, lambda t, r: None, script, hook, (15, 20), kie=_kie)
-assert calls and all(g is True for _, g in calls), calls
-import load_governor as LG  # noqa: E402
-seen = []
-n429 = []
-def g429(rq):
-    n429.append(1)
-    if len(n429) == 1:
-        raise RuntimeError("HTTP 429 rate limit")
-    return [dict(GOOD), dict(GOOD)]
-SD.run_takes(req, plan, g429, lambda t: {}, lambda t, r: None, script, hook, (15, 20),
-             kie=lambda fn, label, generation=False: LG.kie_request(fn, label, generation=generation,
-                                                                      sleep=lambda s: None, acquire=lambda: seen.append(1)))
-assert len(n429) == 2 and len(seen) == 2, (n429, seen)
-print("PASS song_dispatch load-governor wiring")
+if __name__ == "__main__":
+    test_song_dispatch()

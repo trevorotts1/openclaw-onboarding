@@ -613,3 +613,7 @@ def main():
 
 if __name__ == "__main__":
     raise SystemExit(main())
+
+
+def test_run_watch():
+    assert main() == 0

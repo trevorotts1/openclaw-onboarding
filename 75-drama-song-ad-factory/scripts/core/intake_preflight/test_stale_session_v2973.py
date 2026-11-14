@@ -197,3 +197,7 @@ def main():
 
 if __name__ == "__main__":
     sys.exit(main())
+
+
+def test_stale_session_v2973():
+    assert main() == 0

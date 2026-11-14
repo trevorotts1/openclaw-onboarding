@@ -283,3 +283,7 @@ def main():
 
 if __name__ == "__main__":
     raise SystemExit(main())
+
+
+def test_music_createtask_ww30():
+    assert main() == 0
