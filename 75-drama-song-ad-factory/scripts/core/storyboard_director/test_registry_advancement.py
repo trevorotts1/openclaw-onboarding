@@ -55,6 +55,78 @@ def check(name, cond, detail=""):
         FAILS.append(name)
 
 
+def _seal_prestages(run):
+    """Seal research through music so the continuity-bible advance runs on the
+    shipped chain. Writes honest fixture artifacts the step gate validates
+    (sourced research notes, a drafted story and blueprint, the lyric
+    fixture's valid lines, a rendered song master), then opens and seals
+    each pre-stage in order through the gate itself. ffmpeg renders the
+    song master; without it there is no sealable song."""
+    import shutil
+    import subprocess
+    SG = ST.step_gate_module()
+    doc = SG.load_contract()
+    os.makedirs(os.path.join(run, "research"), exist_ok=True)
+    json.dump({"recorded beats, persona interviews, market notes": "sourced"},
+              open(os.path.join(run, "research", "evidence.json"), "w"))
+    json.dump({"files": ["beat-sheet"], "digest": "ab" * 32},
+              open(os.path.join(run, "research", "manifest.json"), "w"))
+    json.dump({"cards": ["persona material, story beats, sourced claims"]},
+              open(os.path.join(run, "research", "bundle.json"), "w"))
+    os.makedirs(os.path.join(run, "creative"), exist_ok=True)
+    story = ("Maya runs the night market stall while rain drums the tin "
+             "awning overhead. " * 8)
+    json.dump({"draft": story},
+              open(os.path.join(run, "creative", "story.json"), "w"))
+    blue = ("Character arc from doubt to resolve across three beat turns "
+            "with product tie. " * 4)
+    json.dump({"plan": blue},
+              open(os.path.join(run, "creative", "blueprint.json"), "w"))
+    fx = os.path.join(CORE, "lyric_writer", "fixtures", "valid.json")
+    valid = json.load(open(fx))
+    json.dump({"lines": valid["lines"], "brief": valid["brief"]},
+              open(os.path.join(run, "creative", "lyrics.json"), "w"))
+    os.makedirs(os.path.join(run, "control"), exist_ok=True)
+    method = os.path.join(run, "control", "method.json")
+    if not os.path.exists(method):
+        json.dump({"purpose": "lesson", "platform": None,
+                   "output_types": ["MASTER_EPISODE"], "chosen_length_s": 60,
+                   "runtime_targets": {}, "testimonial_permission": None,
+                   "gates": {g: "planned" for g in "ABCDEF"}},
+                  open(method, "w"))
+    os.makedirs(os.path.join(run, "music"), exist_ok=True)
+    master = os.path.join(run, "music", "picked-song.mp3")
+    if not (os.path.isfile(master) and os.path.getsize(master) >= 100000):
+        ff = shutil.which("ffmpeg")
+        if ff is None:
+            raise AssertionError("sealing music needs ffmpeg on PATH")
+        subprocess.run([ff, "-y", "-v", "error", "-f", "lavfi",
+                        "-i", "sine=frequency=440:duration=58",
+                        "-ar", "44100", "-ac", "2", master],
+                       check=True)
+    pick = os.path.join(run, "song-choices", "pick.json")
+    # The pick always binds to the sealed bytes: re-digest whenever the
+    # master was (re-)rendered, so Gate 4's soundtrack and the seal agree.
+    import hashlib
+    os.makedirs(os.path.dirname(pick), exist_ok=True)
+    with open(master, "rb") as fh:
+        digest = hashlib.sha256(fh.read()).hexdigest()
+    prev = None
+    if os.path.exists(pick):
+        try:
+            prev = json.load(open(pick)).get("sha256")
+        except (OSError, ValueError):
+            prev = None
+    if prev != digest:
+        json.dump({"pick": 1, "label": "warm-live-band", "sha256": digest},
+                  open(pick, "w"))
+    if not os.path.exists(SG.key_path(run)):
+        SG.cmd_init(run)
+    for stage in ("research", "creative-strategy", "script-lyrics", "music"):
+        SG.cmd_open(run, stage, doc)
+        SG.cmd_seal(run, stage, "fixture-writer", "fixture-reviewer", doc)
+
+
 def qc_record(run_id="run1"):
     return {"schema_version": "1.0.0", "check_id": "continuity-dna-1",
             "run_id": run_id, "stage": "continuity-bible", "check": "continuity",
@@ -64,6 +136,28 @@ def qc_record(run_id="run1"):
             "checker_version": "1.0.0",
             "reviewer": {"identity": "qc-reviewer-1", "session": "s1",
                          "authority": "qc"}}
+
+
+def write_finished_bible(run):
+    """The finished bible the continuity seal reads: the two character
+    records the way character_approval writes them (save_bible, then
+    approve), beside this stage's own QC records."""
+    char = os.path.join(run, "character")
+    os.makedirs(char, exist_ok=True)
+    json.dump({"schema": "blackceo.character-bible/v2", "revision": 1,
+               "fingerprint": "0" * 64,
+               "characters": [{"slug": "mia", "name": "Mia",
+                               "role": "protagonist",
+                               "background": "raised in the same town",
+                               "appearance": "brown eyes, short hair",
+                               "voice_notes": "warm and low",
+                               "images": {"close-up": {"path": "refs/mia.png"}}}]},
+              open(os.path.join(char, "bible.json"), "w"))
+    json.dump({"schema": "blackceo.character-approval/v1",
+               "status": "approved",
+               "bible_revision": 1, "approved_by": "the client",
+               "image_hashes": {"mia": {"close-up": "0" * 64}}},
+              open(os.path.join(char, "approval.json"), "w"))
 
 
 def make_run(up_to=None, storyboard_files=True):
@@ -130,7 +224,14 @@ def make_run(up_to=None, storyboard_files=True):
             complete_fixture_stage(run, stage)
             if stage == "script-lyrics":
                 approve_script(run)
+    # The picked song first (Gate 4 material), then the seal chain over
+    # those same bytes: research through music, in order, through the gate
+    # itself -- the rows alone never seal.
     _seed_gate4(run)
+    # The finished bible the continuity seal re-reads: the two character
+    # records beside the QC records make_run already wrote.
+    write_finished_bible(run)
+    _seal_prestages(run)
     return run
 
 
@@ -145,13 +246,37 @@ def _seed_gate4(run):
     import spend_ledger as L
     os.makedirs(os.path.join(run, "music"), exist_ok=True)
     master = os.path.join(run, "music", "picked-song.mp3")
-    with open(master, "wb") as fh:
-        fh.write(b"the picked master")
+    # A rendered song master, not a stub: the step gate seals music through
+    # this same file (100 KB floor + ffprobe song-length check), and Gate 4's
+    # pick digest binds to exactly these bytes.
+    if not (os.path.isfile(master) and os.path.getsize(master) >= 100000):
+        import shutil
+        import subprocess
+        ff = shutil.which("ffmpeg")
+        if ff is None:
+            raise AssertionError("the picked song needs ffmpeg on PATH")
+        subprocess.run([ff, "-y", "-v", "error", "-f", "lavfi",
+                        "-i", "sine=frequency=440:duration=58",
+                        "-ar", "44100", "-ac", "2", master],
+                       check=True)
     os.makedirs(os.path.join(run, "song-choices"), exist_ok=True)
     with open(master, "rb") as fh:
         digest = hashlib.sha256(fh.read()).hexdigest()
     json.dump({"pick": 1, "label": "warm-live-band", "sha256": digest},
               open(os.path.join(run, "song-choices", "pick.json"), "w"))
+    # The song-length judgment reads the recorded length before the recap is
+    # built, so it lands here with the other Gate 4 sources -- never after.
+    # Purpose lesson: a real purpose value with no delivery detour (campaign
+    # would present the trailers row in front of delivery, which this walk
+    # does not exercise; paid_ad/short_post would require platform-fit).
+    os.makedirs(os.path.join(run, "control"), exist_ok=True)
+    method = os.path.join(run, "control", "method.json")
+    if not os.path.exists(method):
+        json.dump({"purpose": "lesson", "platform": None,
+                   "output_types": ["MASTER_EPISODE"], "chosen_length_s": 60,
+                   "runtime_targets": {}, "testimonial_permission": None,
+                   "gates": {g: "planned" for g in "ABCDEF"}},
+                  open(method, "w"))
     assert ML.read_locked_model(os.path.join(run, "control", "state.sqlite3"), "run1") == VIDEO_MODEL
     L.init_run(os.path.join(run, "spend.sqlite3"), "run1", 10_000_000)
     doc = FR.build(run)
