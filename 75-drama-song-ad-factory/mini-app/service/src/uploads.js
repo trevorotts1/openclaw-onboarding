@@ -7,8 +7,12 @@
 // request body: the service validates the SHAPE, mints a presigned direct R2
 // PUT, and stores only {object_path, sha256, status: queued}.
 //
-// Every object lands under clients/<client_id>/intake/... — the caller's own
-// scope, from the key record, never from the body (isolation.js).
+// Every object lands under clients/<client_id>/ inside one known folder —
+// intake/ for anything sent in, video/ for the studio's own 7-day R2 fallback
+// copy of a finished video. The folder is picked from `upload_kind` by an exact
+// whitelist, never spelled by the caller, so no other segment can be reached.
+// The client's own scope comes from the key record, never from the body
+// (isolation.js).
 //
 // A rejection always names its code. A silent blank is a defect.
 // ============================================================================
@@ -114,6 +118,12 @@ export async function acceptUpload({ store, env, clientId, body, nowUtc, entropy
   if (body.client_id !== undefined && body.client_id !== null && body.client_id !== clientId) {
     return { ok: false, status: 403, code: AF_UP_CROSS, message: 'That upload does not belong to this key.' };
   }
+  // Exact whitelist, not a lookup on an attacker-controlled string.
+  const uploadKind = body.upload_kind === undefined || body.upload_kind === null ? 'intake' : body.upload_kind;
+  const segment = uploadKind === 'r2_fallback' ? 'video' : uploadKind === 'intake' ? 'intake' : null;
+  if (!segment) {
+    return { ok: false, status: 422, code: AF_UP_FIELD, message: 'upload_kind must be intake or r2_fallback.' };
+  }
   const check = validateUpload({
     channel: body.channel,
     filename: typeof body.filename === 'string' ? body.filename : '',
@@ -124,11 +134,12 @@ export async function acceptUpload({ store, env, clientId, body, nowUtc, entropy
   if (!check.ok) return { ok: false, status: 422, code: check.code, message: check.message };
 
   const uploadId = `u_${randomHex(12)}`;
-  const objectPath = scopePath(clientId, 'intake', `${uploadId}.${check.ext}`);
+  const objectPath = scopePath(clientId, segment, `${uploadId}.${check.ext}`);
   const job = {
     client_id: clientId,
     upload_id: uploadId,
     channel: body.channel,
+    upload_kind: uploadKind,
     object_path: objectPath,
     source_sha256: typeof body.source_sha256 === 'string' ? body.source_sha256 : null,
     content_type: body.content_type || null,

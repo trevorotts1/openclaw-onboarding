@@ -90,6 +90,11 @@ STUDIO_USER_AGENT = "drama-studio-client/2.7.48 (+https://studio.zerohumanworkfo
 CHANNELS = ("audio", "image", "video")
 MAX_UPLOAD_BYTES = {"image": 25 * 1024 * 1024, "audio": 25 * 1024 * 1024,
                     "video": 200 * 1024 * 1024}
+#: What an object is FOR, which picks its folder. `intake` is everything a
+#: client or the studio sends in; `r2_fallback` is the studio's own 7-day copy of
+#: a finished video (decision 5), which lives under clients/<id>/video/.
+UPLOAD_KINDS = ("intake", "r2_fallback")
+UPLOAD_SEGMENT = {"intake": "intake", "r2_fallback": "video"}
 UPLOAD_TYPES = {
     "jpg": ("image", "image/jpeg"), "jpeg": ("image", "image/jpeg"),
     "png": ("image", "image/png"), "heic": ("image", "image/heic"),
@@ -265,11 +270,14 @@ def photo_request(path):
     return upload_request(path, channel="image")
 
 
-def upload_request(path, channel=None):
+def upload_request(path, channel=None, upload_kind=None):
     """Build the service request, checking file bytes, extension and channel cap."""
     p = pathlib.Path(path)
     if not p.is_file():
         raise LedgerError("NO_FILE", "photo not found: %s" % p.name)
+    if upload_kind is not None and upload_kind not in UPLOAD_KINDS:
+        raise LedgerError("UNSUPPORTED_KIND",
+                          "upload_kind must be intake or r2_fallback")
     size = p.stat().st_size
     if size <= 0:
         raise LedgerError("EMPTY_FILE", "photo is empty: %s" % p.name)
@@ -296,13 +304,16 @@ def upload_request(path, channel=None):
     if len(header) < 4 or not matches:
         raise LedgerError("UNSUPPORTED_TYPE",
                           "%s is not a recognised photo format" % p.name)
-    return {
+    body = {
         "channel": channel,
         "filename": p.name,
         "size_bytes": size,
         "content_type": ctype,
         "header_bytes": list(header[:16]),
     }
+    if upload_kind is not None:
+        body["upload_kind"] = upload_kind
+    return body
 
 
 def _put_file(url, file_handle, content_type, size, *, timeout=120):
@@ -324,12 +335,12 @@ def _put_file(url, file_handle, content_type, size, *, timeout=120):
         return 0
 
 
-def upload_file(path, *, channel=None, env=None, post=None, put=None):
+def upload_file(path, *, channel=None, upload_kind=None, env=None, post=None, put=None):
     """POST metadata then PUT bytes. Returns identifiers only, never a signed URL."""
     key = load_key(env)
     if not key:
         raise LedgerError("NO_KEY", "DS_KEY not set in env")
-    body = upload_request(path, channel)
+    body = upload_request(path, channel, upload_kind)
     status, result = (post or _http)("POST", STUDIO_BASE_URL + "/api/studio/uploads",
                                     key=key, body=body)
     if status == 0:
@@ -342,9 +353,11 @@ def upload_file(path, *, channel=None, env=None, post=None, put=None):
     parts = urllib.parse.urlsplit(upload.get("url", ""))
     # Validate the destination before sending any file bytes; no redirects.
     import re
+    expected_segment = UPLOAD_SEGMENT[upload_kind or "intake"]
     if (parts.scheme != "https" or parts.username or parts.password or parts.port
             or not re.fullmatch(r"[a-f0-9]{32}\.r2\.cloudflarestorage\.com", parts.hostname or "")
-            or not re.fullmatch(r"clients/c-[a-f0-9]{32}/intake/u_[a-f0-9]{24}\.[a-z0-9]+", object_path)
+            or not re.fullmatch(r"clients/c-[a-f0-9]{32}/" + expected_segment
+                                + r"/u_[a-f0-9]{24}\.[a-z0-9]+", object_path)
             or parts.path != "/zhw-drama-studio/" + object_path
             or upload_id != object_path.rsplit("/", 1)[-1].split(".")[0]
             or upload.get("content_type") != body["content_type"]):
@@ -360,6 +373,17 @@ def upload_file(path, *, channel=None, env=None, post=None, put=None):
     if put_status // 100 != 2:
         raise LedgerError("UPLOAD_PUT_REFUSED", "storage upload refused (HTTP %d)" % put_status)
     return {"upload_id": upload_id, "object_path": object_path}
+
+
+def upload_fallback_video(path, **options):
+    """The production writer for the R2 fallback copy of a finished video.
+
+    The copy lands under `clients/<id>/video/` (the studio's own 7-day object,
+    decision 5) instead of `intake/`. It is the same uploader, not a second
+    control service: the module still only answers "which link may be handed
+    over", and this only decides where the studio's own copy is stored.
+    """
+    return upload_file(path, channel="video", upload_kind="r2_fallback", **options)
 
 
 # --- delivery ----------------------------------------------------------------
@@ -589,7 +613,8 @@ def cmd_photo(args):
 
 def cmd_upload(args):
     try:
-        _emit(upload_file(args.path, channel=args.channel))
+        _emit(upload_file(args.path, channel=args.channel,
+                          upload_kind=args.upload_kind))
         return EXIT["ok"]
     except LedgerError as exc:
         _emit({"code": exc.code, "message": str(exc)})
@@ -1706,6 +1731,9 @@ def main(argv=None):
     u = sub.add_parser("upload", help="send a photo, audio or video directly to storage")
     u.add_argument("path")
     u.add_argument("--channel", choices=CHANNELS)
+    u.add_argument("--upload-kind", choices=UPLOAD_KINDS,
+                   help="intake (default), or r2_fallback for the studio's own "
+                        "7-day copy, which is stored under clients/<id>/video/")
     u.set_defaults(func=cmd_upload)
 
     r = sub.add_parser("cleanup-receipt", help="write the owned-run cleanup receipt")
