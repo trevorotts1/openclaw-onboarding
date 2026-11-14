@@ -270,10 +270,20 @@ def test_no_min_bytes_drift_across_all_known_copies():
         ("P9.1-SPEECH-PDF", "working/deliverables/PRESENTERS-SPEECH.pdf", "speech_pdf"),
     ):
         pv_floor = canonical[key]
+        # PD-208: the PDF steps are BINARY checks now (%PDF at offset 0 plus a
+        # byte-length floor). A text file named *.pdf is rejected for its magic,
+        # which would let the "one byte under the floor" case below pass for the
+        # WRONG reason and the "exactly at the floor" case fail spuriously. Seed
+        # real %PDF bytes of the exact length under test so the only variable
+        # here is the SIZE floor. PD-209: the teleprompter step now also runs
+        # the content check, so seed real HTML structure for the same reason —
+        # a filler file would fail for its content, not its size.
+        _head = (b"%PDF" if rel_path.endswith(".pdf")
+                 else b"<html><body><div class=\"slide\">")
         rd_pv_short = pathlib.Path(tempfile.mkdtemp())
         p = rd_pv_short / rel_path
         p.parent.mkdir(parents=True, exist_ok=True)
-        p.write_text("z" * (pv_floor - 1), encoding="utf-8")
+        p.write_bytes(_head + b"z" * (pv_floor - 1 - len(_head)))
         ok_short, _ = pv.PHASE_VERIFIERS[phase_id](rd_pv_short)
         if ok_short:
             mismatches.append(
@@ -284,7 +294,7 @@ def test_no_min_bytes_drift_across_all_known_copies():
         rd_pv_ok = pathlib.Path(tempfile.mkdtemp())
         p = rd_pv_ok / rel_path
         p.parent.mkdir(parents=True, exist_ok=True)
-        p.write_text("z" * pv_floor, encoding="utf-8")
+        p.write_bytes(_head + b"z" * (pv_floor - len(_head)))
         ok_at_floor, reasons = pv.PHASE_VERIFIERS[phase_id](rd_pv_ok)
         if not ok_at_floor:
             mismatches.append(

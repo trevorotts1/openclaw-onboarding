@@ -100,8 +100,9 @@ def _phase(engine: Engine):
 
 def _mint_artifact(engine: Engine) -> None:
     """Satisfy P8.1's produces_artifact glob AND its registered substance
-    verifier (_verify_text_artifact("working/deliverables/*-FINAL.pdf", 51200))
-    so the ONLY thing that can stop the phase is the verifier import."""
+    verifier (_verify_binary_artifact("working/deliverables/*-FINAL.pdf",
+    magic=b"%PDF")) so the ONLY thing that can stop the phase is the verifier
+    import."""
     out = engine.run_dir / "working" / "deliverables"
     out.mkdir(parents=True, exist_ok=True)
     (out / "DECK-FINAL.pdf").write_bytes(b"%PDF-1.4 fixture " + (b"x" * 60000))
