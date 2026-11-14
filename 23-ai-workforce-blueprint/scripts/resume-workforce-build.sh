@@ -807,11 +807,36 @@ state_path = Path(sys.argv[1])
 depts_dir  = Path(sys.argv[2])
 HOW_TO_MIN = 256  # bytes — anything smaller is effectively empty/stub
 
+
+def _candidate_trees(state, fallback):
+    seen, out = set(), []
+    def add(p):
+        try:
+            p = Path(p)
+            if str(p) not in seen and p.is_dir():
+                seen.add(str(p)); out.append(p)
+        except OSError:
+            pass
+    root = state.get("companyRoot")
+    if isinstance(root, str) and os.path.isabs(root):
+        add(Path(root) / "departments")
+    ws = state.get("workspaceRoot")
+    if isinstance(ws, str) and ws:
+        add(Path(ws) / "departments")
+    add(fallback)
+    return out
+
+
 try:
     from workforce_state import read, commit
     state = read(state_path)
 except Exception as e:
     print(f"STALE_CHECK_ERROR: cannot read state: {e}", file=sys.stderr)
+    sys.exit(0)
+
+trees = _candidate_trees(state, depts_dir)
+if not trees:
+    print("STALE_CHECK_SKIPPED: no departments folder found; nothing reset")
     sys.exit(0)
 
 departments = state.get("departments", [])
@@ -841,19 +866,26 @@ for dept in departments:
     if not claims_done:
         continue
 
-    # Check for at least one real how-to.md under departments/<id>/
-    dept_dir = depts_dir / dept_id
+    # Check for at least one real how-to.md under every place the company can
+    # live: <tree>/<id> and <tree>/<id>-dept, for each candidate tree in turn.
     has_real_howto = False
-    if dept_dir.is_dir():
-        for role_dir in dept_dir.iterdir():
-            if not role_dir.is_dir() or role_dir.name.startswith("."):
+    for tree in trees:
+        for dept_dir in (tree / dept_id, tree / f"{dept_id}-dept"):
+            if not dept_dir.is_dir():
                 continue
-            how_to = role_dir / "how-to.md"
-            if how_to.exists() and how_to.stat().st_size >= HOW_TO_MIN:
-                content = how_to.read_text(encoding="utf-8", errors="replace")
-                if "[PENDING" not in content:
-                    has_real_howto = True
-                    break
+            for role_dir in dept_dir.iterdir():
+                if not role_dir.is_dir() or role_dir.name.startswith("."):
+                    continue
+                how_to = role_dir / "how-to.md"
+                if how_to.exists() and how_to.stat().st_size >= HOW_TO_MIN:
+                    content = how_to.read_text(encoding="utf-8", errors="replace")
+                    if "[PENDING" not in content:
+                        has_real_howto = True
+                        break
+            if has_real_howto:
+                break
+        if has_real_howto:
+            break
 
     if not has_real_howto:
         reset_ids.append(dept_id)
@@ -897,6 +929,8 @@ STALE_PY
     case "$_stale_line" in
       STALE_CHECK_CLEAN)
         log "STALE-CHECK: all 'done' departments verified against disk — state is clean" ;;
+      STALE_CHECK_SKIPPED*)
+        log "STALE-CHECK: $_stale_line" ;;
       STALE_RESET:*)
         log "STALE-CHECK [WARN]: $_stale_line"
         _stale_reset_count=$(( _stale_reset_count + 1 )) ;;
