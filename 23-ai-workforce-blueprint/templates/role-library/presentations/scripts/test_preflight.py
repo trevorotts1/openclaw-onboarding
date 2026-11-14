@@ -3215,10 +3215,20 @@ def test_runner_next_turn_gate():
     #     resolves to a real owner message. Seed the CC owner-ids oracle so "42" is
     #     a GENUINE owner message id (the positive control); a forged id must fail
     #     closed (covered by test_forged_owner_msg_id_* below).
+    #     PD-305 / PD-912: an id proves a message EXISTS, never what the owner
+    #     authorized — the message TEXT must name the gate. Stage the owner message
+    #     the skip points at, with text naming this phase, exactly as the channel
+    #     bridge writes it for approvals.resolve_owner_message.
     _pm_path = rd / "working" / "checkpoints" / "process_manifest.json"
     _pm_obj = json.loads(_pm_path.read_text()) if _pm_path.exists() else {}
     _pm_obj["cc_task_id"] = "task-oracle-seeded"  # merge — keep the attestation from (b)
     _pm_path.write_text(json.dumps(_pm_obj))
+    _msg_log = rd / "working" / "interview" / "inbound_messages.jsonl"
+    _msg_log.parent.mkdir(parents=True, exist_ok=True)
+    _msg_log.write_text(json.dumps({
+        "msg_id": "42", "chat_id": "owner-chat-fixture",
+        "text": f"approve skip {second_id} for this deck",
+        "received_at": "2026-07-10T12:00:00Z"}) + "\n")
     (rd / "working" / "checkpoints" / "phase_skip_approvals.json").write_text(json.dumps(
         {"approvals": [{"phase_id": second_id, "owner_approved": True,
                         "approved_by": "owner", "reason": "not applicable to this deck",
