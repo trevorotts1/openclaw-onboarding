@@ -117,7 +117,17 @@ REPO_ROOT="$(cd "$SKILL_DIR/.." && pwd)"
 # build-state lock (BU-36). The lib resolves WORKFORCE_PYTHON and puts this
 # skill's scripts/ folder on PYTHONPATH exactly the way every other writer does,
 # so the watchdog can never clobber a field another writer just committed.
-source "$SCRIPT_DIR/lib-workforce-state.sh"
+#
+# FAIL CLOSED when it is missing. Without the lib, WORKFORCE_PYTHON is unbound and
+# every state writer below dies inside its own subshell, so the watchdog would log
+# an escalation it could never persist and never reach the classification that
+# follows - the exact silent strand this lane exists to end. Every other consumer
+# (resume-workforce-build.sh, retire-confirmed-decline.sh, run-full-install.sh)
+# aborts on a failed source; this one does too.
+if ! source "$SCRIPT_DIR/lib-workforce-state.sh"; then
+  echo "[closeout-readiness-watchdog] FATAL: $SCRIPT_DIR/lib-workforce-state.sh could not be sourced - refusing a half-run that would escalate without persisting" >&2
+  exit 1
+fi
 
 STATE_FILE="${ZHC_STATE_FILE:-${OC_ROOT}/workspace/.workforce-build-state.json}"
 LOCK_FILE="${OC_ROOT}/workspace/.closeout-watchdog.lock"
