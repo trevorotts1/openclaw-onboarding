@@ -206,10 +206,10 @@ def test_verify_ghl_upload_missing_pptx_id(tmp_path):
 
 
 def test_verify_ghl_upload_no_ledger(tmp_path):
-    """No ledger at all -> PASS with a NOTE (deferred; the runner already fails on a
-    missing produces_artifact)."""
+    """PD-207: no record at all -> FAIL. media_library.json IS the upload record;
+    without it the upload step did not run."""
     import phase_verifiers as pv
     base = tmp_path / "empty"
     ok, reasons = pv._verify_ghl_upload(base)
-    assert ok is True
-    assert any("media_library.json not found" in str(r) for r in reasons)
+    assert ok is False
+    assert reasons == ["media_library.json is missing — the upload did not run"]
