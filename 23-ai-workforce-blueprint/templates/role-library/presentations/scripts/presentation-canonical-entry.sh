@@ -26,22 +26,37 @@
 # not a single guardrail fired because the thing that runs them was never run.
 #
 # This script closes that gap. It is the SINGLE governed entry point. Before it
-# hands off to the canonical orchestrator it runs three fail-closed gates:
+# hands off to the canonical orchestrator it runs seven gates: 0 intake ledger,
+# 0b intake transcript, 0c drift (warning), 1 dependencies, 1b GoHighLevel
+# module, 2 bypass scan, 3 version and hash pin.
 #
-#   1. DEPS CHECK      — the runtime deps (soffice, pdftoppm, reportlab,
-#                        python-pptx, pypdf) must be present, or the build refuses to
-#                        start (exit 6, PRESENTATION_DEPS_MISSING). Mirrors the
-#                        qc-completeness.sh dep gate so a deck cannot half-build.
-#   2. BYPASS-SCAN     — refuse if any HAND-ROLLED renderer/assembler exists in
-#                        the run directory: any non-canonical *.py that defines a
-#                        slide canvas (Image.new for 2048x1152 — AF-LOCAL-CANVAS),
-#                        a native PowerPoint text overlay (add_textbox /
-#                        add_text_box), or a direct kie createTask outside
-#                        build_deck.py (AF-CANONICAL-RENDER-BYPASS).
-#   3. VERSION/HASH PIN— the deployed build_deck.py / run_signature_deck.py must
-#                        be in lockstep with the SOP/manifest stack (sync_check.py,
-#                        exit 4 on drift) and their content hash is computed and
-#                        recorded. If a pin file is present the hash MUST match.
+#   GATE 0  INTAKE LEDGER  — the intake interview must be complete (exit 5,
+#                            INTAKE-INTERVIEW). Owner-token skippable.
+#   GATE 0b INTAKE TRACE   — intake_transcript.json must be a real signed driver
+#                            envelope (exit 5, INTAKE-TRACE-MISSING/INVALID).
+#                            NO owner override: it is evidence, not a gate.
+#   GATE 0c DRIFT          — repo/department/provenance drift gates run and
+#                            REPORT; drift is a warning, the build continues.
+#   GATE 1  DEPENDENCIES   — the runtime deps (soffice, pdftoppm, reportlab,
+#                            python-pptx, pypdf) must be present, or the build
+#                            refuses to start (exit 6, PRESENTATION_DEPS_MISSING).
+#                            Mirrors the qc-completeness.sh dep gate so a deck
+#                            cannot half-build.
+#   GATE 1b GHL MODULE     — ghl_media must import under the render interpreter
+#                            (exit 8, PRESENTATION_GHL_MODULE_MISSING) or a deck
+#                            renders on paid credits and dies at delivery.
+#   GATE 2  BYPASS SCAN    — refuse if any HAND-ROLLED renderer/assembler exists
+#                            in the run directory: any non-canonical *.py that
+#                            defines a slide canvas (Image.new for 2048x1152 —
+#                            AF-LOCAL-CANVAS), a native PowerPoint text overlay
+#                            (add_textbox / add_text_box), or a direct kie
+#                            createTask outside build_deck.py
+#                            (AF-CANONICAL-RENDER-BYPASS, exit 5).
+#   GATE 3  VERSION/HASH   — the deployed build_deck.py / run_signature_deck.py
+#                            must be in lockstep with the SOP/manifest stack
+#                            (sync_check.py, exit 4 on drift) and their content
+#                            hash is computed and recorded. If a pin file is
+#                            present the hash MUST match (exit 7).
 #
 # A gate may be skipped ONLY by an explicit, LOGGED owner/founder approval token
 # recorded in <run-dir>/working/checkpoints/process_manifest.json under
@@ -49,8 +64,10 @@
 # gate code). Never silently; never by an agent's own choice.
 #
 # THE FORBIDDEN PATH:  python3 working/*.py   (the ungoverned, hand-rolled path)
-# THE ONLY PATH:       bash presentation-canonical-entry.sh --run-dir ... \
-#                           --slides slides.json --out out.pptx
+# THE ONLY PATH:       bash presentation-canonical-entry.sh --run-dir ...
+#                      (--slides / --out are LEGACY RUNNER ONLY -- PD-002a. The
+#                      engine reads and writes inside the run dir, so a deck is
+#                      never required to invent slides.json before copywriting.)
 #
 # EXIT CODES
 #   0  — gates passed; canonical orchestrator dispatched (its own exit is returned)
@@ -61,8 +78,17 @@
 #   8  — GHL MODULE CO-LOCATION failed (PRESENTATION_GHL_MODULE_MISSING, GATE 1b)
 #   9  — ENGINE DISPATCH FAILED: the manifest-phase engine is installed but refused the
 #        job (AF-DECK-TYPE-UNKNOWN / AF-ENGINE-NEW-FAILED / AF-ENGINE-COMPONENT-
-#        MISSING). BLOCKING -- never a silent downgrade to run_signature_deck.py.
-#        (See engine_fail() / fix/deck-type-routing-bypass.)
+#        MISSING), OR the engine is not installed on this box and the owner has not
+#        logged owner_skip_approval for LEGACY-RUNNER-FALLBACK (AF-ENGINE-ABSENT).
+#        BLOCKING -- never a silent downgrade to run_signature_deck.py.
+#        (See engine_fail() / fix/deck-type-routing-bypass / PD-005.)
+#  10 — LEGACY BUILD ONLY (PD-005): presentation_job.py is not installed and the owner
+#        DID log owner_skip_approval for LEGACY-RUNNER-FALLBACK. The legacy runner
+#        (run_signature_deck.py, 2 of the manifest's phases) ran and exited 0. That
+#        is NOT a full deliverable bundle; exit 10 says so. Never report it as success.
+#  12 — ATTEMPT CAP (FIX-23 / PD-008): the door was DISPATCHED 3 times inside the
+#        last 6 hours and did not finish. Nothing is lost -- continue the same
+#        build with --resume. Writing a custom driver is never the answer.
 #   (3/4 propagate from run_signature_deck.py: 3 render fail, 4 kie balance abort)
 # ============================================================================
 
@@ -101,14 +127,19 @@ usage() {
 $PROG — the ONE sanctioned command to build a Presentations deck.
 
 USAGE:
-  bash $PROG --run-dir DIR --slides slides.json --out out.pptx [options]
+  bash $PROG --run-dir DIR [options]
 
 REQUIRED:
   --run-dir DIR       the deck run directory (contains working/)
-  --slides FILE       slides.json (the deck spec)
-  --out FILE          output .pptx path
 
 OPTIONS:
+  --slides FILE       slides.json (the deck spec) -- LEGACY RUNNER ONLY
+  --out FILE          output .pptx path -- LEGACY RUNNER ONLY
+                      Both are required ONLY by the legacy fallback (no
+                      presentation_job.py on this box). The engine reads and
+                      writes inside --run-dir, so neither is needed for a
+                      normal build. Supplying them to the engine prints a NOTE
+                      and changes nothing.
   --phase ID          canonical phase to dispatch (default: P4-RENDER)
   --platform mac|vps  box-type override (default: auto-detect)
   --scripts-dir DIR   location of build_deck.py / run_signature_deck.py
@@ -116,7 +147,8 @@ OPTIONS:
   --intake-depth quick|in-depth
                       intake interview depth (FIX 30's standard_mode: the
                       deck-intake-questions.json order-8 question, stored as
-                      pre_presentation_capture.STANDARD_MODE). Default: quick.
+                      pre_presentation_capture.STANDARD_MODE). When omitted,
+                      the answer the client gave in the interview stands.
                       May also be set via PRESENTATION_INTAKE_DEPTH. This is
                       the INTERVIEW-DEPTH axis ONLY — it selects how much
                       optional detail the intake asks for and never changes
@@ -174,8 +206,11 @@ done
 # gate runs. Legal values are exactly quick|in-depth (case-insensitive). A
 # run-mode value (Ultra/Standard/Economy) passed to this flag is the exact
 # collision the spec forbids: refuse it with the message naming both axes.
+# PD-007: an ABSENT depth stays absent. There is no "QUICK" default any more —
+# the door stamps a depth ONLY when one was stated, so the answer the client
+# gave in the interview is never silently overwritten with a default.
 case "$(printf '%s' "$INTAKE_DEPTH" | tr '[:upper:]' '[:lower:]')" in
-    "")          INTAKE_DEPTH="QUICK" ;;
+    "")          ;;
     quick)       INTAKE_DEPTH="QUICK" ;;
     in-depth)    INTAKE_DEPTH="IN-DEPTH" ;;
     in_depth)    INTAKE_DEPTH="IN-DEPTH" ;;   # tolerated shell-friendly spelling
@@ -187,12 +222,16 @@ two vocabularies are never interchangeable."
         ;;
     *)
         die "--intake-depth: invalid value '$INTAKE_DEPTH'. Allowed: quick|in-depth \
-(env PRESENTATION_INTAKE_DEPTH). Default: quick."
+(env PRESENTATION_INTAKE_DEPTH). When omitted, the answer the client gave in the \
+interview stands."
         ;;
 esac
 case "$INTAKE_DEPTH" in
     *d*|*D*) INTAKE_DEPTH="IN-DEPTH" ;;
 esac
+# PD-007: a stated-but-empty value states nothing. Only a non-empty depth is
+# ever stamped or handed to the resolver.
+[ -n "$INTAKE_DEPTH" ] || INTAKE_DEPTH_STATED=""
 
 # ---------------------------------------------------------------------------
 # FIX 36(3) — stamp_intake_depth: persist the resolved intake-depth into
@@ -204,7 +243,7 @@ esac
 # logged but never blocks (depth tunes optional detail, not a quality gate).
 stamp_intake_depth() {
     local depth="$1"
-    command -v python3 >/dev/null 2>&1 || { note "intake-depth not stamped (no python3)"; return 0; }
+    have_py || { note "intake-depth not stamped (no working interpreter: $PRESENTATION_PY)"; return 0; }
     DEPTH="$depth" INTAKE_COPY="$RUN_DIR/working/copy/intake.json" "$PRESENTATION_PY" - <<'PY' || note "intake-depth stamp: non-fatal write failure (logged, build continues)"
 import json, os, time
 p = os.environ["INTAKE_COPY"]
@@ -248,15 +287,24 @@ except Exception as exc:
 PY
 }
 
+# PD-007 — the ONLY caller of stamp_intake_depth: after every gate has passed,
+# on a real build, and only when a depth was actually stated. --plan is a
+# read-only inspection and never writes; a gate-failed run never writes; no
+# flag and no PRESENTATION_INTAKE_DEPTH means the interview's own answer stands.
+stamp_intake_depth_after_gates() {
+    [ "$PLAN" -eq 0 ] || return 0
+    [ -n "$INTAKE_DEPTH_STATED" ] || return 0
+    stamp_intake_depth "$INTAKE_DEPTH"
+}
+
 [ -n "$RUN_DIR" ] || usage
 [ -d "$RUN_DIR" ] || die "--run-dir not found: $RUN_DIR"
 RUN_DIR="$(cd "$RUN_DIR" && pwd)"
-stamp_intake_depth "$INTAKE_DEPTH"
-if [ "$PLAN" -eq 0 ] && [ "$RESUME" -eq 0 ]; then
-    [ -n "$SLIDES" ] || die "--slides is required (use --plan to inspect only)"
-    [ -f "$SLIDES" ] || die "slides.json not found: $SLIDES"
-    [ -n "$OUT" ] || die "--out is required to build a deck"
-fi
+# PD-002a: --slides / --out are NOT required here. They are legacy-runner inputs
+# only; requiring them at the door forced a slides.json to be invented before
+# copywriting, on a path (the engine) that reads and writes inside --run-dir.
+# The requirement now lives in the legacy fallback branch, immediately before the
+# legacy dispatch — see "PD-002a: the LEGACY runner is the only dispatch".
 
 # ---------------------------------------------------------------------------
 # FIX-23(b) — CANONICAL-ENTRY ATTEMPT CAP (loop-breaker; Error 4/5 residual).
@@ -264,26 +312,118 @@ fi
 # missing GHL sibling). What must NEVER happen is the door failing and the
 # agent "engineering around it" by writing a custom driver (the ungoverned
 # path, AF-CANONICAL-RENDER-BYPASS) — the exact Error-5 behavior this loop
-# exists to stop. Cap canonical-entry invocations per run dir at 3; the 4th
-# invocation dies with an explicit message naming the sanctioned recovery path
-# (open a maintenance ticket / apply the sync + GHL fix) instead of letting the
-# agent improvise. --plan (read-only inspection) is EXEMPT: inspecting a run
-# dir must never consume its entry budget.
+# exists to stop.
+#
+# PD-008 — THE CAP MUST NOT BRICK A RUN:
+#   * ONLY A REAL DISPATCH COUNTS. _attempt_budget_gate is called immediately
+#     before the engine run (Step 3) and immediately before the legacy fallback
+#     dispatch, so gate-repair cycles and --plan inspections never burn budget.
+#   * The window is 6 HOURS. The count stays a BARE INTEGER in
+#     .canonical-entry-attempts (the door tests read it that way); the window
+#     timestamps live beside it in .canonical-entry-attempts.meta.json
+#     ({"first_at": "...", "last_at": "..."}). A count whose last_at is older
+#     than 6 hours resets to 0; a missing/unreadable meta file is treated as
+#     "now" (never a silent reset).
+#   * The 4th dispatch inside 6 hours exits 12 with the documented recovery
+#     (--resume), never a bare brick.
+#   * A --resume that continues an existing state.json is a continuation, not a
+#     new attempt (FIX 11).
 # ---------------------------------------------------------------------------
-# FIX 11: a --resume of an existing run is a continuation, not a new
-# attempt — it must not consume the entry budget.
-# FIX 11: declare a safe default so the success-path reset below is a no-op
-# when the increment is skipped (set -u is active; rm -f "" is harmless).
 _ATTEMPT_FILE=""
-if [ "$PLAN" -eq 0 ] && { [ "$RESUME" -eq 0 ] || [ ! -f "$RUN_DIR/state.json" ]; }; then
-    _ATTEMPT_FILE="$RUN_DIR/working/checkpoints/.canonical-entry-attempts"
-    mkdir -p "$(dirname "$_ATTEMPT_FILE")"
-    _ATTEMPTS=$(( $(cat "$_ATTEMPT_FILE" 2>/dev/null | tr -d ' ') + 1 ))
-    echo "$_ATTEMPTS" > "$_ATTEMPT_FILE"
-    if [ "$_ATTEMPTS" -gt 3 ]; then
-        die "canonical entry attempted $_ATTEMPTS times (>3). Do NOT write a custom driver. The sanctioned door is failing — open a maintenance ticket, apply the sync/ghl fix, then retry."
+_ATTEMPT_META=""
+_attempt_budget_gate() {
+    if [ "$PLAN" -eq 0 ]; then
+        # FIX 11: a resume of an existing run is a continuation, not an attempt.
+        if [ "$RESUME" -eq 1 ] && [ -f "$RUN_DIR/state.json" ]; then
+            return 0
+        fi
+        _ATTEMPT_DIR="$RUN_DIR/working/checkpoints"
+        mkdir -p "$_ATTEMPT_DIR" 2>/dev/null || true
+        _ATTEMPT_FILE="$_ATTEMPT_DIR/.canonical-entry-attempts"
+        _ATTEMPT_META="$_ATTEMPT_DIR/.canonical-entry-attempts.meta.json"
+        have_py || return 0
+        _ATTEMPT_OUT="$(ATTEMPT_FILE="$_ATTEMPT_FILE" ATTEMPT_META="$_ATTEMPT_META" \
+            RUN_DIR="$RUN_DIR" "$PRESENTATION_PY" - <<'PY'
+import json, os, sys, time
+from datetime import datetime, timezone
+
+path = os.environ["ATTEMPT_FILE"]
+meta_path = os.environ["ATTEMPT_META"]
+run_dir = os.environ["RUN_DIR"]
+WINDOW_S = 6 * 3600.0
+now = time.time()
+
+
+def _epoch(value):
+    """ISO-8601 -> epoch seconds, or None when unreadable."""
+    if not isinstance(value, str) or not value.strip():
+        return None
+    txt = value.strip().replace("Z", "+00:00")
+    try:
+        dt = datetime.fromisoformat(txt)
+    except Exception:
+        return None
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt.timestamp()
+
+
+try:
+    with open(path, encoding="utf-8") as fh:
+        count = int((fh.read() or "0").strip() or "0")
+except Exception:
+    count = 0
+
+first_at = None
+last_at = None
+try:
+    with open(meta_path, encoding="utf-8") as fh:
+        meta = json.load(fh)
+    if isinstance(meta, dict):
+        first_at = meta.get("first_at")
+        last_at = meta.get("last_at")
+except Exception:
+    meta = None
+
+last_epoch = _epoch(last_at)
+if last_epoch is None:
+    # Missing/unreadable window -> treat it as "now": never a silent reset.
+    last_epoch = now
+if now - last_epoch > WINDOW_S:
+    count = 0
+    first_at = None
+
+count += 1
+stamp = datetime.fromtimestamp(now, timezone.utc).isoformat()
+first_stamp = first_at if _epoch(first_at) is not None else stamp
+try:
+    with open(path, "w", encoding="utf-8") as fh:
+        fh.write(str(count))
+    tmp = meta_path + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as fh:
+        json.dump({"first_at": first_stamp, "last_at": stamp}, fh)
+    os.replace(tmp, meta_path)
+except Exception:
+    pass
+
+if count > 3:
+    sys.stderr.write(
+        "The build was started 3 times in the last 6 hours and did not finish. "
+        "Nothing is lost. To continue the same build run: "
+        "bash presentation-canonical-entry.sh --run-dir %s --resume . "
+        "Do not write your own build script.\n" % run_dir)
+    sys.exit(13)
+sys.exit(0)
+PY
+)"
+        _ATTEMPT_RC=$?
+        [ -n "$_ATTEMPT_OUT" ] && printf '%s\n' "$_ATTEMPT_OUT" >&2
+        if [ "$_ATTEMPT_RC" -eq 13 ]; then
+            exit 12
+        fi
     fi
-fi
+    return 0
+}
 
 # ---------------------------------------------------------------------------
 # Locate the canonical render scripts (single source of truth).
@@ -342,6 +482,56 @@ carries its own manifest and is not the governed department. Use \
 --scripts-dir $DEPT_SCRIPTS_DEFAULT" ;;
 esac
 
+# ---------------------------------------------------------------------------
+# PD-009 — PRES-035 interpreter resolution runs HERE, immediately after argument
+# parsing and the scripts-dir resolution, so $PRESENTATION_PY is FINAL before
+# the first gate evaluates anything through it. It used to sit six hundred lines
+# down, after GATE 0 had already run python under a guessed `python3`.
+# Precedence: PRESENTATION_PIPELINE_INTERPRETER when non-blank, absolute
+# and executable (the selected client config / per-client override — a
+# set-but-unusable value is REPORTED and falls through, never silently
+# skipped); else the client venv via pipeline_interp.py; else PATH python3
+# last-resort. Validated (must actually execute) before the gates; every
+# python below runs through $PRESENTATION_PY. Rollback:
+# PRESENTATION_PIPELINE_PIN=0 restores bare `python3` everywhere.
+# ---------------------------------------------------------------------------
+PRESENTATION_PY="python3"
+_pres35_resolve_entry_interpreter() {
+    local _pin="${PRESENTATION_PIPELINE_INTERPRETER:-}" _resolved=""
+    if [ "${PRESENTATION_PIPELINE_PIN:-1}" = "0" ]; then
+        PRESENTATION_PY="python3"; export PRESENTATION_PY; return 0
+    fi
+    if [ -n "$_pin" ]; then
+        case "$_pin" in /*)
+            if [ -x "$_pin" ]; then _resolved="$_pin"; fi ;;
+        esac
+        if [ -z "$_resolved" ]; then
+            echo "  [interp] PRESENTATION_PIPELINE_INTERPRETER=$_pin unusable (missing or not executable) — resolving the client venv instead; fix the pin or re-run update-skills.sh" >&2
+        fi
+    fi
+    if [ -z "$_resolved" ] && [ -f "$SCRIPTS_DIR/presentation_job/pipeline_interp.py" ]; then
+        _resolved="$(cd "$SCRIPTS_DIR" && python3 -m presentation_job.pipeline_interp --resolve 2>/dev/null || true)"
+    fi
+    [ -n "$_resolved" ] || _resolved="python3"
+    if ! "$_resolved" -c 'import sys' >/dev/null 2>&1; then
+        echo "PRESENTATION_INTERPRETER_INVALID: $_resolved does not execute — refusing before any gate runs" >&2
+        return 1
+    fi
+    PRESENTATION_PY="$_resolved"
+    export PRESENTATION_PY PRESENTATION_PIPELINE_INTERPRETER="$_resolved"
+    _PRES35_VER="$("$_resolved" -c 'import sys; print(sys.version.split()[0])' 2>/dev/null || echo unknown)"
+    echo "  [interp] pipeline interpreter: $PRESENTATION_PY (Python $_PRES35_VER)"
+    return 0
+}
+_pres35_resolve_entry_interpreter || exit 2
+
+# PD-009 — the ONE interpreter test every gate uses. `command -v python3` asked
+# whether a BINARY NAMED python3 was on PATH, which is not the same question as
+# "will $PRESENTATION_PY run": a resolved department interpreter (an absolute
+# venv path) is executable with no python3 on PATH at all. Every fail-open
+# branch keyed on `command -v python3` skipped its gate in exactly that case.
+have_py() { [ -x "$PRESENTATION_PY" ] || command -v "$PRESENTATION_PY" >/dev/null 2>&1; }
+
 PROC_MANIFEST="$RUN_DIR/working/checkpoints/process_manifest.json"
 
 # ---------------------------------------------------------------------------
@@ -354,7 +544,7 @@ PROC_MANIFEST="$RUN_DIR/working/checkpoints/process_manifest.json"
 owner_skip_approved() {
     local gate="$1"
     [ -f "$PROC_MANIFEST" ] || return 1
-    command -v python3 >/dev/null 2>&1 || return 1
+    have_py || return 1
     GATE="$gate" PM="$PROC_MANIFEST" "$PRESENTATION_PY" - <<'PY'
 import json, os, sys
 gate = os.environ["GATE"]
@@ -392,7 +582,7 @@ PY
 # ---------------------------------------------------------------------------
 _record_dep_gate_bypassed() {
     local via="$1" reason="${2:-}"
-    command -v python3 >/dev/null 2>&1 || return 0
+    have_py || return 0
     VIA="$via" REASON="$reason" PM="$PROC_MANIFEST" "$PRESENTATION_PY" - <<'PY' || true
 import json, os, time
 pm = os.environ["PM"]
@@ -473,7 +663,7 @@ trace_fail() {
 # the guard was unreachable from the door. Relocated here so the door owns
 # its own front-door precondition and the silent-skip `else` branch is gone.
 # ===========================================================================
-note "GATE 0 — INTAKE-LEDGER CHECK"
+note "GATE 1 of 7 (GATE 0) — INTAKE-LEDGER CHECK"
 
 # owner_skip_intake — ported verbatim from deck-build-guard.sh:177-207.
 # Returns 0 iff a logged owner approval waives the intake-interview gate
@@ -484,7 +674,7 @@ owner_skip_intake() {
     local run_dir="$1"
     local pm="$run_dir/working/checkpoints/process_manifest.json"
     [ -f "$pm" ] || return 1
-    command -v python3 >/dev/null 2>&1 || return 1
+    have_py || return 1
     PM="$pm" "$PRESENTATION_PY" - <<'PY'
 import json, os, sys
 try:
@@ -533,9 +723,13 @@ check_intake_ledger() {
         fi
         gate_fail "INTAKE-INTERVIEW" 5 "intake ledger missing ($_INTAKE_LEDGER) — run the Brainstorming Buddy interview (deck-intake-driver.py --next/--answer/--complete) before building. Owner override: log an owner_skip_approval for gate INTAKE-INTERVIEW (approved:true, approved_by, reason) in working/checkpoints/process_manifest.json."
     fi
-    if command -v python3 >/dev/null 2>&1; then
-        local complete
-        complete="$("$PRESENTATION_PY" -c "
+    # PD-009: no interpreter means NO gate. The old grep fallback parsed
+    # the ledger with a regex — a hand-written file carrying the word "complete"
+    # in a comment passed — and the branch that reached it was a silent skip on a
+    # box whose interpreter is a resolved venv path, not a binary named python3.
+    have_py || die "no working Python interpreter ($PRESENTATION_PY); the intake gates cannot be evaluated. Refusing to build."
+    local complete
+    complete="$("$PRESENTATION_PY" -c "
 import json, sys
 try:
     d = json.load(open('$_INTAKE_LEDGER'))
@@ -543,24 +737,13 @@ try:
 except Exception:
     print('')
 " 2>/dev/null || true)"
-        if [ -z "$complete" ]; then
-            if owner_skip_intake "$run_dir"; then
-                echo "!! [$PROG] GATE 0: intake ledger INCOMPLETE but an OWNER-APPROVED skip is logged (INTAKE-INTERVIEW); proceeding." >&2
-                note "  GATE 0 PASSED (owner-approved skip)"
-                return 0
-            fi
-            gate_fail "INTAKE-INTERVIEW" 5 "intake interview not complete ($_INTAKE_LEDGER status is not 'complete'). Finish the deck-intake interview with deck-intake-driver.py --complete before building. Owner override: owner_skip_approval gate INTAKE-INTERVIEW in working/checkpoints/process_manifest.json."
+    if [ -z "$complete" ]; then
+        if owner_skip_intake "$run_dir"; then
+            echo "!! [$PROG] GATE 0: intake ledger INCOMPLETE but an OWNER-APPROVED skip is logged (INTAKE-INTERVIEW); proceeding." >&2
+            note "  GATE 0 PASSED (owner-approved skip)"
+            return 0
         fi
-    else
-        # python3 absent: parse crudely with grep
-        if ! grep -qE '"status"[[:space:]]*:[[:space:]]*"complete"|"complete"[[:space:]]*:[[:space:]]*true' "$_INTAKE_LEDGER" 2>/dev/null; then
-            if owner_skip_intake "$run_dir"; then
-                echo "!! [$PROG] GATE 0: intake ledger incomplete but OWNER-APPROVED skip logged; proceeding." >&2
-                note "  GATE 0 PASSED (owner-approved skip)"
-                return 0
-            fi
-            gate_fail "INTAKE-INTERVIEW" 5 "intake interview not complete ($_INTAKE_LEDGER). Complete the deck-intake interview with deck-intake-driver.py --complete before building."
-        fi
+        gate_fail "INTAKE-INTERVIEW" 5 "intake interview not complete ($_INTAKE_LEDGER status is not 'complete'). Finish the deck-intake interview with deck-intake-driver.py --complete before building. Owner override: owner_skip_approval gate INTAKE-INTERVIEW in working/checkpoints/process_manifest.json."
     fi
     note "  GATE 0 PASSED"
     return 0
@@ -585,44 +768,65 @@ check_intake_ledger "$RUN_DIR"
 # owner waiver; the trace is evidence, not a gate you can waive"). A hand-written
 # intake_ledger.json with no transcript FAILS the build.
 #
-# Fail-closed: absent file, empty file, or a sub-200-byte placeholder all fail
-# with INTAKE-TRACE-MISSING. --plan (read-only inspection) is exempt exactly as
-# GATE 0 is. A signature-presentation intake (intake.json deck_type ==
-# signature_presentation) is additionally held to the signed driver-envelope
-# requirement by the engine's P-SP-INTAKE-TRACE preflight (AF-INTAKE-BATCH).
+# Fail-closed: absent file or a transcript that fails the envelope check
+# (INTAKE-TRACE-MISSING / INTAKE-TRACE-INVALID). --plan (read-only inspection)
+# is exempt exactly as GATE 0 is. A signature-presentation intake (intake.json
+# deck_type == signature_presentation) is additionally held to the signed
+# driver-envelope requirement by the engine's P-SP-INTAKE-TRACE preflight
+# (AF-INTAKE-BATCH).
 # ===========================================================================
-note "GATE 0b — INTAKE-TRACE CHECK (intake_transcript.json required; NO owner override)"
+note "GATE 2 of 7 (GATE 0b) — INTAKE-TRACE CHECK (intake_transcript.json required; NO owner override)"
 check_intake_trace() {
     local run_dir="$1"
     [ -n "$run_dir" ] || return 0
     [ "$PLAN" -eq 1 ] && return 0
     _INT_TRACE="$run_dir/working/interview/intake_transcript.json"
+    # PD-009 — ONE message for both deck types, shared by the missing case and
+    # the malformed case. The old pair named only the signature driver.
+    local _TRACE_MSG='intake_transcript.json is missing or too small. The driver writes it when the interview is finished: standard deck: deck-intake-driver.py --run-dir <RUN_DIR> --complete ; signature deck: deck-intake-driver.py --run-dir <RUN_DIR> --signature --sig-next (until it reports complete). Never hand-write this file. This gate has no owner override.'
     if [ ! -f "$_INT_TRACE" ]; then
-        trace_fail "INTAKE-TRACE-MISSING" 5 "intake_transcript.json missing ($_INT_TRACE) — the intake interview must be a REAL conversation (deck-intake-driver.py --signature --sig-next/--sig-answer). A hand-written intake_ledger.json is NOT an interview. This gate has NO owner override: the trace is evidence of the conversation, not a skippable gate."
+        trace_fail "INTAKE-TRACE-MISSING" 5 "$_TRACE_MSG (looked for $_INT_TRACE)"
     fi
-    if command -v python3 >/dev/null 2>&1; then
-        local _trace_bytes
-        _trace_bytes="$("$PRESENTATION_PY" -c "
-import json, sys
-p = '$run_dir/working/interview/intake_transcript.json'
+    # PD-009: the gate used to ask ONLY "is it bigger than 200 bytes", so 300
+    # bytes of the letter x passed. The envelope is the contract (S51 SKILL.md
+    # lines 41-48): format sp-intake-transcript-v1, a signed driver signature,
+    # at least two turns, and a qid_sequence. The check RUNS: no interpreter
+    # means no gate, never a size-only pass.
+    have_py || die "no working Python interpreter ($PRESENTATION_PY); the intake gates cannot be evaluated. Refusing to build."
+    local _trace_bad _trace_rc
+    _trace_bad="$(TRACE="$_INT_TRACE" "$PRESENTATION_PY" - <<'PY' 2>/dev/null
+import json, os, sys
 try:
-    with open(p, encoding='utf-8') as f:
-        raw = f.read()
+    with open(os.environ["TRACE"], encoding="utf-8") as f:
+        obj = json.load(f)
 except OSError:
-    print('0'); sys.exit(0)
-print('%d' % len(raw.strip()))
-" 2>/dev/null)"
-        _trace_bytes="$(printf '%s' "$_trace_bytes" | tr -d ' ')"
-        if [ -z "$_trace_bytes" ] || [ "$_trace_bytes" -lt 200 ]; then
-            trace_fail "INTAKE-TRACE-MISSING" 5 "intake_transcript.json is ${_trace_bytes:-0} bytes — a real one-at-a-time intake conversation produces a multi-KB transcript. Run deck-intake-driver.py --signature --sig-next/--sig-answer/--sig-record and do NOT hand-write the transcript. No owner override for the trace."
-        fi
-    else
-        # python3 absent: size-only fallback.
-        local _sz
-        _sz="$(wc -c < "$_INT_TRACE" 2>/dev/null | tr -d ' ')"
-        [ -n "$_sz" ] && [ "$_sz" -ge 200 ] || trace_fail "INTAKE-TRACE-MISSING" 5 "intake_transcript.json is ${_sz:-0} bytes — a real interview produces a multi-KB transcript. No owner override for the trace."
+    print("file unreadable"); sys.exit(0)
+except ValueError:
+    print("not valid JSON"); sys.exit(0)
+if not isinstance(obj, dict):
+    print("not a JSON object"); sys.exit(0)
+if obj.get("format") != "sp-intake-transcript-v1":
+    print("format"); sys.exit(0)
+if not isinstance(obj.get("driver_signature"), str) or not obj["driver_signature"].strip():
+    print("driver_signature"); sys.exit(0)
+turns = obj.get("turns")
+if not isinstance(turns, list) or len(turns) < 2:
+    print("turns"); sys.exit(0)
+qids = obj.get("qid_sequence")
+if not isinstance(qids, list) or len(qids) < 1:
+    print("qid_sequence"); sys.exit(0)
+print("")
+PY
+)"
+    _trace_rc=$?
+    _trace_bad="$(printf '%s' "$_trace_bad" | tr -d '\r\n')"
+    if [ "$_trace_rc" -ne 0 ]; then
+        trace_fail "INTAKE-TRACE-INVALID" 5 "intake_transcript.json could not be evaluated by the interpreter ($PRESENTATION_PY exited $_trace_rc on $_INT_TRACE). The trace gate never passes on a check it could not run. No owner override for the trace."
     fi
-    note "  GATE 0b PASSED (intake transcript present and non-trivial)"
+    if [ -n "$_trace_bad" ]; then
+        trace_fail "INTAKE-TRACE-INVALID" 5 "envelope check failed at '$_trace_bad' ($_INT_TRACE). $_TRACE_MSG"
+    fi
+    note "  GATE 0b PASSED (intake transcript envelope valid)"
     return 0
 }
 
@@ -639,31 +843,38 @@ check_intake_trace "$RUN_DIR"
 #     build STILL continues — a missing gate must not brick a render.
 # The _ENGINE_RC reset below ensures a GATE 0c warning never leaks into the
 # engine's exit-code accounting.
-note "GATE 0c — DRIFT GATES (FIX 113; warning-only, build continues on drift)"
+note "GATE 3 of 7 (GATE 0c) — DRIFT GATES (FIX 113; warning-only, build continues on drift)"
 _GATE0C_SCRIPT="$SELF_DIR/presentations-drift-gates.sh"
 _ENGINE_RC=0
-if [ ! -f "$_GATE0C_SCRIPT" ]; then
-  note "GATE 0c ERROR: drift-gate script not found at $_GATE0C_SCRIPT (build continues)"
-elif [ ! -x "$_GATE0C_SCRIPT" ] && [ ! -r "$_GATE0C_SCRIPT" ]; then
-  note "GATE 0c ERROR: drift-gate script not runnable at $_GATE0C_SCRIPT (build continues)"
-else
-  _GATE0C_OUT="$("$_GATE0C_SCRIPT" 2>&1)"
-  _GATE0C_RC=$?
-  if [ "$_GATE0C_RC" -ne 0 ]; then
-    note "GATE 0c WARNING: presentations drift detected (gate exit $_GATE0C_RC) -- build CONTINUES per D6. Operator: review drift before ship."
-    note "GATE 0c drift detail (operator channel, never client-facing):"
-    echo "$_GATE0C_OUT" | while IFS= read -r _line; do note "  [drift] $_line"; done
+# PD-028 static anchor: the drift gate lives BESIDE this script and is invoked
+# from SELF_DIR, never from a guessed path. The door's hygiene test pins this
+# shape; the branch below behaves EXACTLY as before (missing -> ERROR, present
+# but unreadable -> ERROR, otherwise run) — the anchor only makes the location
+# a stated precondition instead of an implicit one.
+if [ -f "$SELF_DIR/presentations-drift-gates.sh" ]; then
+  if [ ! -x "$_GATE0C_SCRIPT" ] && [ ! -r "$_GATE0C_SCRIPT" ]; then
+    note "GATE 0c ERROR: drift-gate script not runnable at $_GATE0C_SCRIPT (build continues)"
   else
-    note "GATE 0c PASSED (no drift)"
+    _GATE0C_OUT="$(bash "$_GATE0C_SCRIPT" 2>&1)"
+    _GATE0C_RC=$?
+    if [ "$_GATE0C_RC" -ne 0 ]; then
+      note "GATE 0c WARNING: presentations drift detected (gate exit $_GATE0C_RC) -- build CONTINUES per D6. Operator: review drift before ship."
+      note "GATE 0c drift detail (operator channel, never client-facing):"
+      echo "$_GATE0C_OUT" | while IFS= read -r _line; do note "  [drift] $_line"; done
+    else
+      note "GATE 0c PASSED (no drift)"
+    fi
+    unset _GATE0C_OUT _GATE0C_RC
   fi
-  unset _GATE0C_OUT _GATE0C_RC
+else
+  note "GATE 0c ERROR: drift-gate script not found at $_GATE0C_SCRIPT (build continues)"
 fi
 _ENGINE_RC=0
 unset _GATE0C_SCRIPT
 
 # GATE 1 — DEPS CHECK (the four runtime deps; exit 6 PRESENTATION_DEPS_MISSING)
 # ===========================================================================
-note "GATE 1/3 — DEPS CHECK (soffice, pdftoppm, reportlab, python-pptx, pypdf)"
+note "GATE 4 of 7 (GATE 1) — DEPS CHECK (soffice, pdftoppm, reportlab, python-pptx, pypdf)"
 # FIX-PRES-01: the bare env short-circuit that used to sit at the TOP of this
 # function (`QC_SKIP_PRESENTATION_DEPS=1 -> return 0`) was a live process-skip
 # vector — any agent could export it, sail past GATE 1, burn the full Kie render
@@ -673,43 +884,6 @@ note "GATE 1/3 — DEPS CHECK (soffice, pdftoppm, reportlab, python-pptx, pypdf)
 # drops in the run dir — and every honored bypass is recorded as a
 # dep_gate_bypassed entry in process_manifest.json so no skip is ever silent.
 _TEST_CONTEXT_MARKER="$RUN_DIR/working/checkpoints/.test-context"
-# PRES-035 — resolve ONE pipeline interpreter BEFORE any gate runs python.
-# Precedence: PRESENTATION_PIPELINE_INTERPRETER when non-blank, absolute
-# and executable (the selected client config / per-client override — a
-# set-but-unusable value is REPORTED and falls through, never silently
-# skipped); else the client venv via pipeline_interp.py; else PATH python3
-# last-resort. Validated (must actually execute) before the gates; every
-# python below runs through $PRESENTATION_PY. Rollback:
-# PRESENTATION_PIPELINE_PIN=0 restores bare `python3` everywhere.
-PRESENTATION_PY="python3"
-_pres35_resolve_entry_interpreter() {
-    local _pin="${PRESENTATION_PIPELINE_INTERPRETER:-}" _resolved=""
-    if [ "${PRESENTATION_PIPELINE_PIN:-1}" = "0" ]; then
-        PRESENTATION_PY="python3"; export PRESENTATION_PY; return 0
-    fi
-    if [ -n "$_pin" ]; then
-        case "$_pin" in /*)
-            if [ -x "$_pin" ]; then _resolved="$_pin"; fi ;;
-        esac
-        if [ -z "$_resolved" ]; then
-            echo "  [interp] PRESENTATION_PIPELINE_INTERPRETER=$_pin unusable (missing or not executable) — resolving the client venv instead; fix the pin or re-run update-skills.sh" >&2
-        fi
-    fi
-    if [ -z "$_resolved" ] && [ -f "$SCRIPTS_DIR/presentation_job/pipeline_interp.py" ]; then
-        _resolved="$(cd "$SCRIPTS_DIR" && python3 -m presentation_job.pipeline_interp --resolve 2>/dev/null || true)"
-    fi
-    [ -n "$_resolved" ] || _resolved="python3"
-    if ! "$_resolved" -c 'import sys' >/dev/null 2>&1; then
-        echo "PRESENTATION_INTERPRETER_INVALID: $_resolved does not execute — refusing before any gate runs" >&2
-        return 1
-    fi
-    PRESENTATION_PY="$_resolved"
-    export PRESENTATION_PY PRESENTATION_PIPELINE_INTERPRETER="$_resolved"
-    _PRES35_VER="$("$_resolved" -c 'import sys; print(sys.version.split()[0])' 2>/dev/null || echo unknown)"
-    echo "  [interp] pipeline interpreter: $PRESENTATION_PY (Python $_PRES35_VER)"
-    return 0
-}
-_pres35_resolve_entry_interpreter || exit 2
 # read_run_mode <run_dir> prints the declared mode, or NOTHING AT ALL.
 # Absence is absence: the launcher's own default (model_router.DEFAULT_MODE,
 # "standard") then applies. It never guesses ultra -- nothing silently
@@ -723,7 +897,9 @@ _pres35_resolve_entry_interpreter || exit 2
 # helper that dies inside this heredoc must be loud, not silent.
 # ---------------------------------------------------------------------------
 read_run_mode() {
-    python3 - "$1" "$SCRIPTS_DIR" <<'PYMODE'
+    # PD-026: the resolved pin, never a bare `python3`. This runs after
+    # _pres35_resolve_entry_interpreter has finalised $PRESENTATION_PY.
+    "$PRESENTATION_PY" - "$1" "$SCRIPTS_DIR" <<'PYMODE'
 import json
 import sys
 from pathlib import Path
@@ -820,10 +996,6 @@ deps_check() {
         echo "        $PROC_MANIFEST." >&2
     fi
     local missing=()
-    # Record resolved native tools while retaining video-only optional dependencies.
-    for _t in soffice pdftoppm ffmpeg ffprobe tesseract; do
-        echo "  [tools] $_t: $(command -v "$_t" 2>/dev/null || echo ABSENT)"
-    done
     local video_missing=()
     # PRES-033: the pipeline python deps live in the DEPARTMENT VENV (FIX 71),
     # never the system interpreter. Resolve the SAME interpreter
@@ -840,30 +1012,78 @@ deps_check() {
         done
     fi
     [ -n "$_gate_py" ] || _gate_py="python3"
-    command -v soffice  >/dev/null 2>&1 || missing+=("soffice (LibreOffice/libreoffice-impress)")
-    command -v pdftoppm >/dev/null 2>&1 || missing+=("pdftoppm (poppler/poppler-utils)")
-    if command -v "$_gate_py" >/dev/null 2>&1; then
-        "$_gate_py" -c "import reportlab, pptx" >/dev/null 2>&1 \
-            || missing+=("python(reportlab+python-pptx under $_gate_py)")
-        # Feature L2-D (P8.25-WORKBOOK): pypdf is a REAL runtime dep of the workbook
-        # phase (workbook_builder.py reads the assembled PDF back with pypdf to prove
-        # the AcroForm fields + /NeedAppearances survived before it may upload). It is
-        # NOT gated by the pdf_export/guide phase's own checks, so it must be gated
-        # here so a box without pypdf fails the dep gate BEFORE the workbook phase runs
-        # (owner-token skippable via PRESENTATION_DEPS_MISSING exactly like the other
-        # deps).
-        "$_gate_py" -c "import pypdf" >/dev/null 2>&1 \
-            || missing+=("python(pypdf under $_gate_py)")
-    else
-        missing+=("$_gate_py (interpreter not executable)")
+    # PD-010: the dependency LIST is presentation-deps.json, the one canon every
+    # consumer reads. This function holds no tool list of its own; a missing or
+    # unreadable canon REFUSES the run rather than falling back to a stale list.
+    local _deps_json="$SCRIPTS_DIR/presentation-deps.json"
+    local _deps_rows=""
+    if ! have_py; then
+        echo "PRESENTATION_DEPS_MISSING: dependency list presentation-deps.json unreadable" >&2
+        echo "    no working Python interpreter ($PRESENTATION_PY) can read $_deps_json" >&2
+        return 6
     fi
-    # PRES-033: ffmpeg/ffprobe are classified OPTIONAL (video-only) in
-    # presentation-deps.json. A missing optional video dep must NOT block
-    # independent deck work — it lands in the video-only set and disables only
-    # the P9.6-WEBINAR-VIDEO branch. It can never hide a required gap either:
-    # required deps are checked above and stay in `missing`.
-    command -v ffmpeg >/dev/null 2>&1 || video_missing+=("ffmpeg (webinar video render; brew install ffmpeg)")
-    command -v ffprobe >/dev/null 2>&1 || video_missing+=("ffprobe (webinar video probe; part of ffmpeg)")
+    if [ ! -f "$_deps_json" ]; then
+        echo "PRESENTATION_DEPS_MISSING: dependency list presentation-deps.json unreadable" >&2
+        echo "    expected at: $_deps_json" >&2
+        return 6
+    fi
+    if ! _deps_rows="$("$PRESENTATION_PY" - "$_deps_json" <<'PYDEPS'
+import json, re, sys
+try:
+    doc = json.load(open(sys.argv[1], encoding="utf-8"))
+    deps = doc["deps"]
+    if not isinstance(deps, list) or not deps:
+        raise ValueError("no deps")
+    rows = []
+    for dep in deps:
+        kind = dep["kind"]
+        name = str(dep["name"]).strip()
+        required = "1" if dep.get("required") is True else "0"
+        if kind == "binary":
+            target = str(dep["binary_name"]).strip()
+            pattern = r"^[A-Za-z0-9._+-]+$"
+        elif kind == "python_import":
+            target = str(dep["import_spec"]).strip()
+            pattern = r"^[A-Za-z_][A-Za-z0-9_.]*(\s*,\s*[A-Za-z_][A-Za-z0-9_.]*)*$"
+        else:
+            raise ValueError("unknown dependency kind: %r" % (kind,))
+        if not name or not re.match(pattern, target):
+            raise ValueError("bad dependency row: %r" % (name,))
+        rows.append("\t".join((required, kind, name, target)))
+    sys.stdout.write("\n".join(rows))
+except Exception:
+    sys.exit(3)
+PYDEPS
+)"; then
+        echo "PRESENTATION_DEPS_MISSING: dependency list presentation-deps.json unreadable" >&2
+        echo "    could not read $_deps_json (absent, not JSON, or not the dependency canon)" >&2
+        return 6
+    fi
+    local _req _kind _name _target _why
+    while IFS=$'\t' read -r _req _kind _name _target; do
+        [ -n "$_name" ] || continue
+        _why=""
+        if [ "$_kind" = "binary" ]; then
+            echo "  [tools] $_name: $(command -v "$_target" 2>/dev/null || echo ABSENT)"
+            command -v "$_target" >/dev/null 2>&1 || _why="($_target not on PATH)"
+        else
+            if command -v "$_gate_py" >/dev/null 2>&1; then
+                "$_gate_py" -c "import $_target" >/dev/null 2>&1 \
+                    || _why="(python $_target under $_gate_py)"
+            else
+                _why="($_gate_py interpreter not executable)"
+            fi
+        fi
+        [ -n "$_why" ] || continue
+        if [ "$_req" = "1" ]; then
+            missing+=("$_name $_why")
+        else
+            video_missing+=("$_name $_why")
+        fi
+    done <<< "$_deps_rows"
+    # PRES-033: a dependency marked optional (required=false) in the canon is a
+    # video-only branch dep. It never blocks independent deck work, and it can
+    # never hide a required gap: required rows stay in `missing` above.
     if [ "${#video_missing[@]}" -gt 0 ]; then
         echo "  ℹ PRESENTATION_VIDEO_DEPS_MISSING (optional branch): ${video_missing[*]} — deck, presenter guide, workbook and QC can still run; the P9.6-WEBINAR-VIDEO branch is disabled until these resolve." >&2
     fi
@@ -914,6 +1134,64 @@ deps_check || {
 }
 
 # ===========================================================================
+# READINESS (PD-043 / PD-077 / PD-318) — say BEFORE any spend what this box
+# cannot do. Three presence-only lines, computed by $PRESENTATION_PY:
+#   TELEPROMPTER-PUBLISH  both Cloudflare names the delivery procedure needs
+#   SPEECH-KEY            any key speech_build_harness.py's resolve_api_key accepts
+#   AUDIO-KEY             FISH_AUDIO_API_KEY (synthesize_full_speech.py:516)
+# Presence of a NAME in the process environment only. No value is ever read
+# out, printed, or written; no secrets file is opened. Non-blocking: a missing
+# key degrades a later step, it does not stop the door.
+# ===========================================================================
+readiness_lines() {
+    if ! have_py; then
+        echo "  readiness lines not evaluated: no working Python interpreter ($PRESENTATION_PY)" >&2
+        return 0
+    fi
+    RUN_DIR="$RUN_DIR" "$PRESENTATION_PY" - <<'PY'
+import json, os, sys
+from pathlib import Path
+
+checks = (
+    ("TELEPROMPTER-PUBLISH",
+     ("CLOUDFLARE_ZHW_APPS_API_TOKEN", "CLOUDFLARE_ZHW_ACCOUNT_ID"), "all",
+     "this box cannot publish the teleprompter link; the teleprompter will not "
+     "be hosted and the client will get the teleprompter file with no web link"),
+    ("SPEECH-KEY",
+     ("SPEECH_LLM_API_KEY", "OLLAMA_API_KEY", "OPENROUTER_API_KEY", "OPENAI_API_KEY"),
+     "any",
+     "no key the speech builder accepts is set on this box; the speech step will "
+     "stop after the deck is rendered"),
+    ("AUDIO-KEY", ("FISH_AUDIO_API_KEY",), "all",
+     "the audio key is not set on this box; the audio step will stop after the "
+     "deck is rendered"),
+)
+
+log = Path(os.environ["RUN_DIR"]) / "working" / "checkpoints" / "gate_log.jsonl"
+try:
+    log.parent.mkdir(parents=True, exist_ok=True)
+except OSError:
+    pass
+
+for tag, names, mode, text in checks:
+    present = [n for n in names if os.environ.get(n, "").strip()]
+    missing = [n for n in names if n not in present]
+    ok = bool(present) if mode == "any" else not missing
+    if ok:
+        continue
+    print("WARN [%s]: %s" % (tag, text), file=sys.stderr)
+    row = {"gate": "READINESS", "warning": tag, "result": "unset", "missing": missing}
+    try:
+        with log.open("a") as fh:
+            fh.write(json.dumps(row, sort_keys=True) + "\n")
+    except OSError:
+        print("  readiness row could not be appended to %s" % log, file=sys.stderr)
+PY
+    return 0
+}
+readiness_lines
+
+# ===========================================================================
 # GATE 1b — SKILL-48 GHL MODULE CO-LOCATION (FIX-PRES-03 / FIX-23(d))
 # ghl_media.py re-exports Skill-48 helpers; delivery_gate.py requires the
 # resulting pptx_ghl_media_id. If the module is absent, a deck renders on PAID
@@ -935,10 +1213,16 @@ deps_check || {
 #     co-located _skill48_ghl_media.py copy, so a materialized department
 #     works without a manual symlink.
 # ===========================================================================
-note "GATE 1b/3 — SKILL-48 GHL MODULE CO-LOCATION (ghl_media importable)"
+note "GATE 5 of 7 (GATE 1b) — SKILL-48 GHL MODULE CO-LOCATION (ghl_media importable)"
 ghl_module_check() {
-    command -v python3 >/dev/null 2>&1 || {
-        echo "  (pipeline interpreter absent; GHL module check skipped)"; return 0; }
+    # PD-009: a missing interpreter is a REFUSAL, never a skip. This gate exists
+    # precisely so a deck does not render on paid credits and die at delivery;
+    # skipping it because no binary named python3 was on PATH skipped it on every
+    # box with a resolved venv interpreter.
+    if ! have_py; then
+        gate_fail "PRESENTATION_GHL_MODULE_MISSING" 8 "no working Python interpreter ($PRESENTATION_PY); the GHL module check cannot be evaluated. Refusing to build."
+        return 8
+    fi
     local _ghl_err
     _ghl_err="$(PYTHONPATH="$SCRIPTS_DIR${PYTHONPATH:+:$PYTHONPATH}" \
         "$PRESENTATION_PY" -c "import ghl_media" 2>&1)" && {
@@ -971,9 +1255,14 @@ ghl_module_check || {
 # GATE 2 — BYPASS-SCAN (refuse hand-rolled renderers in the run directory)
 # AF-LOCAL-CANVAS / AF-CANONICAL-RENDER-BYPASS
 # ===========================================================================
-note "GATE 2/3 — BYPASS-SCAN (hand-rolled renderer detection in $RUN_DIR)"
+note "GATE 6 of 7 (GATE 2) — BYPASS-SCAN (hand-rolled renderer detection in $RUN_DIR)"
 bypass_scan() {
-    command -v python3 >/dev/null 2>&1 || { echo "  (python3 absent; scan skipped)"; return 0; }
+    # PD-009: a missing interpreter is a REFUSAL, never a silent "scan skipped".
+    # A scan that could not run must never read as a scan that found nothing.
+    if ! have_py; then
+        echo "  bypass scan could not run: no working Python interpreter ($PRESENTATION_PY)" >&2
+        return 5
+    fi
     RUN_DIR="$RUN_DIR" SCRIPTS_DIR="$SCRIPTS_DIR" "$PRESENTATION_PY" - <<'PY'
 import os, re, sys
 run_dir = os.path.realpath(os.environ["RUN_DIR"])
@@ -1041,7 +1330,13 @@ printf '%s\n' "$SCAN_OUT"
 if [ "$SCAN_RC" -eq 5 ]; then
     # Determine which AF codes tripped and require a logged owner skip for EACH.
     CODES="$(printf '%s\n' "$SCAN_OUT" | sed -n 's/^BYPASS_CODES=//p' | tr ',' ' ')"
-    [ -n "$CODES" ] || CODES="AF-CANONICAL-RENDER-BYPASS"
+    # PD-009: NO CODES LINE MEANS THE SCAN DID NOT RUN. The old `|| CODES=
+    # AF-CANONICAL-RENDER-BYPASS` fallback reported every scanner crash as "a
+    # hand-rolled renderer is present" — a fail-closed message on a fail-open
+    # check. A scan that produced no verdict is its own failure.
+    if [ -z "$CODES" ]; then
+        gate_fail "AF-CANONICAL-RENDER-BYPASS" 5 "bypass scan could not run: the scanner exited 5 without reporting a verdict (see the block above). Refusing to build on an unperformed scan."
+    fi
     for c in $CODES; do
         if ! owner_skip_approved "$c"; then
             gate_fail "$c" 5 "a hand-rolled renderer/assembler is present in $RUN_DIR. \
@@ -1055,7 +1350,7 @@ fi
 # ===========================================================================
 # GATE 3 — VERSION/HASH PIN (renderer lockstep + content hash)
 # ===========================================================================
-note "GATE 3/3 — VERSION/HASH PIN (renderer lockstep + content hash)"
+note "GATE 7 of 7 (GATE 3) — VERSION/HASH PIN (renderer lockstep + content hash)"
 version_hash_pin() {
     # (a) Lockstep: the Python renderer must not have drifted from the SOP/manifest
     #     stack. sync_check.py exits 0 in sync, 4 on drift.
@@ -1074,15 +1369,20 @@ version_hash_pin() {
     #   * Any OTHER drift class (A1-A4/A7/A8, B*, C*, D*, E*, V*) is render-path:
     #     it means the actual renderer has drifted from the manifest/ruleset and
     #     the door FAILS CLOSED exactly as before.
-    if [ -f "$SCRIPTS_DIR/sync_check.py" ] && command -v python3 >/dev/null 2>&1; then
-        if "$PRESENTATION_PY" "$SCRIPTS_DIR/sync_check.py" --json >/tmp/_pce_sync.$$ 2>&1; then
+    if [ -f "$SCRIPTS_DIR/sync_check.py" ] && have_py; then
+        # PD-026: the raw sync_check JSON lands under THIS run's own checkpoints
+        # directory, never the system temp folder, and it is removed on every
+        # exit path of this block.
+        local _sync_tmp="$RUN_DIR/working/checkpoints/.sync-check.$$.json"
+        mkdir -p "$(dirname "$_sync_tmp")" 2>/dev/null || true
+        if "$PRESENTATION_PY" "$SCRIPTS_DIR/sync_check.py" --json >"$_sync_tmp" 2>&1; then
             echo "  OK: sync_check.py — renderer in lockstep with the SOP/manifest stack"
-            rm -f /tmp/_pce_sync.$$
+            rm -f "$_sync_tmp"
         else
             # sync_check exited 4 (drift). Classify: only A5/A6 (library-only) -> proceed evented.
             # NOTE: the temp path is passed via env var because the heredoc is
-            # QUOTED ('PY') and bash does not expand $$ inside it.
-            if _PCE_SYNC_TMP="/tmp/_pce_sync.$$" "$PRESENTATION_PY" - <<'PY'
+            # QUOTED ('PY') and bash does not expand it inside.
+            if _PCE_SYNC_TMP="$_sync_tmp" "$PRESENTATION_PY" - <<'PY'
 import json, os, sys
 try:
     d = json.load(open(os.environ["_PCE_SYNC_TMP"]))
@@ -1098,27 +1398,43 @@ if blocking:
 sys.exit(0)      # library-only drift -> proceed, evented
 PY
             then
-                sed 's/^/    sync_check> /' /tmp/_pce_sync.$$ >&2 || true
+                sed 's/^/    sync_check> /' "$_sync_tmp" >&2 || true
                 echo "  OK: render-path lockstep clean (library-only A5/A6 drift deferred, logged)"
-                "$PRESENTATION_PY" - <<'PY' || true
-# write a CC event so the drift debt is surfaced, not hidden
-import json, os, urllib.request
-try:
-    from cc_board import cc_post
-    cc_post("/api/events", {"type": "sync_drift_deferred",
-       "message": "sync_check library-only drift (A5/A6) deferred on canonical render", "severity": "warn"})
-except Exception:
-    pass
-PY
-                rm -f /tmp/_pce_sync.$$
+                # PD-026: the sync_drift_deferred board event is DEFERRED here, never
+                # posted from an inline module import — that import was dead in every
+                # shipped board helper and a bare except hid the failure. The board
+                # helper's own main offers NO posting verb (it exposes --reconcile
+                # only), so per the unit text the event is appended to this run's gate
+                # log and printed. The contract it would have used is named in the
+                # row: endpoint /api/events, header x-webhook-signature. A write
+                # failure is PRINTED, never hidden.
+                _SYNC_DEFER_ROW='{"event":"sync_drift_deferred","endpoint":"/api/events","signature_header":"x-webhook-signature","message":"sync_check library-only drift (A5/A6) deferred on canonical render","severity":"warn"}'
+                _SYNC_DEFER_LOG="$RUN_DIR/working/checkpoints/gate_log.jsonl"
+                mkdir -p "$(dirname "$_SYNC_DEFER_LOG")" 2>/dev/null || true
+                if printf '%s\n' "$_SYNC_DEFER_ROW" >> "$_SYNC_DEFER_LOG" 2>/dev/null; then
+                    echo "  sync_drift_deferred event deferred to the gate log: $_SYNC_DEFER_LOG"
+                else
+                    echo "  sync_drift_deferred event not posted: could not write $_SYNC_DEFER_LOG" >&2
+                    printf '%s\n' "$_SYNC_DEFER_ROW" >&2
+                fi
+                rm -f "$_sync_tmp"
             else
-                sed 's/^/    sync_check> /' /tmp/_pce_sync.$$ >&2 || true
-                rm -f /tmp/_pce_sync.$$
+                sed 's/^/    sync_check> /' "$_sync_tmp" >&2 || true
+                rm -f "$_sync_tmp"
                 return 4
             fi
         fi
     else
-        echo "  (sync_check.py absent; lockstep check skipped)"
+        # PD-009: both of these used to be a silent skip that returned 0, so the
+        # gate that is supposed to PROVE lockstep passed on a box where it never
+        # ran. Each now returns a distinct code and the caller fails closed
+        # through gate_fail (owner-token skippable, like every other gate).
+        if ! have_py; then
+            echo "  no working Python interpreter ($PRESENTATION_PY) — the lockstep check could not be evaluated" >&2
+            return 10
+        fi
+        echo "  sync_check.py is missing beside the renderer ($SCRIPTS_DIR/sync_check.py)" >&2
+        return 8
     fi
 
     # (b) Content hash of the canonical renderer pair. If a pin file exists next to
@@ -1130,8 +1446,9 @@ PY
     elif command -v shasum >/dev/null 2>&1; then
         computed="$(cat "$BUILD_DECK" "$RUNNER" | shasum -a 256 | awk '{print $1}')"
     else
-        echo "  (no sha256 tool; hash pin skipped)"
-        return 0
+        # PD-009: no digest tool is a FAILED pin, never a skipped one.
+        echo "  no sha256 tool (need shasum or sha256sum) — the renderer hash cannot be computed" >&2
+        return 9
     fi
     echo "  renderer hash (sha256 of build_deck.py+run_signature_deck.py): $computed"
     local pin="$SCRIPTS_DIR/CANONICAL-RENDERER-PIN.sha256"
@@ -1146,7 +1463,15 @@ PY
         fi
         echo "  OK: renderer hash matches the pinned head ($pin)"
     else
-        echo "  (no CANONICAL-RENDERER-PIN.sha256; hash recorded, not enforced)"
+        # PD-009: no pin file does NOT stop the run — but it is never silent. The
+        # warning goes to the operator channel (stderr, prefixed) and the computed
+        # hash is recorded in the gate log so an unpinned box is auditable.
+        echo "WARN [PIN-ABSENT] no CANONICAL-RENDERER-PIN.sha256 beside the renderer; hash recorded, not enforced: $computed" >&2
+        _PIN_ABSENT_LOG="$RUN_DIR/working/checkpoints/gate_log.jsonl"
+        mkdir -p "$(dirname "$_PIN_ABSENT_LOG")" 2>/dev/null || true
+        if ! printf '{"gate":"VERSION-HASH-PIN","result":"pin_file_absent","hash":"%s"}\n' "$computed" >> "$_PIN_ABSENT_LOG" 2>/dev/null; then
+            echo "  (pin-absent record could not be appended to $_PIN_ABSENT_LOG)" >&2
+        fi
     fi
     return 0
 }
@@ -1156,6 +1481,17 @@ if [ "$VHP_RC" -ne 0 ]; then
         gate_fail "AF-CANONICAL-RENDER-BYPASS" 7 "renderer/SOP lockstep drift (sync_check.py exit 4): \
 the deployed build_deck.py has drifted from the SOP/manifest stack. Re-sync to the pinned \
 governed version before building."
+    elif [ "$VHP_RC" -eq 8 ]; then
+        gate_fail "AF-CANONICAL-RENDER-BYPASS" 7 "sync_check.py is missing beside the renderer \
+($SCRIPTS_DIR/sync_check.py) — the lockstep check cannot be performed, so no lockstep is proven. \
+Re-sync the Presentations department."
+    elif [ "$VHP_RC" -eq 9 ]; then
+        gate_fail "AF-CANONICAL-RENDER-BYPASS" 7 "no sha256 tool (need shasum or sha256sum) — the \
+renderer hash cannot be computed or compared to the pinned head. Install one, or the pin is \
+unverifiable."
+    elif [ "$VHP_RC" -eq 10 ]; then
+        gate_fail "AF-CANONICAL-RENDER-BYPASS" 7 "no working Python interpreter ($PRESENTATION_PY) — \
+the lockstep check cannot be evaluated. Refusing to build on an unperformed check."
     else
         gate_fail "AF-CANONICAL-RENDER-BYPASS" 7 "renderer hash does not match the pinned governed \
 head. Re-sync the canonical build_deck.py / run_signature_deck.py to the fleet-pinned version."
@@ -1216,8 +1552,14 @@ engine_fail() {
     echo >&2
     printf '!%.0s' {1..78} >&2; echo >&2
     echo "ENGINE DISPATCH FAILED [$code]: $*" >&2
-    echo "presentation_job.py (the manifest-phase engine) is installed on this box but" >&2
-    echo "refused this job. This is a BLOCKING failure -- it does NOT fall back to" >&2
+    if [ "$code" = "AF-ENGINE-ABSENT" ]; then
+        echo "presentation_job.py (the manifest-phase engine) is NOT installed on this" >&2
+        echo "box, and no owner approval covers the legacy fallback." >&2
+    else
+        echo "presentation_job.py (the manifest-phase engine) is installed on this box but" >&2
+        echo "refused this job." >&2
+    fi
+    echo "This is a BLOCKING failure -- it does NOT fall back to" >&2
     echo "the legacy runner, and it is never reported as success." >&2
     printf '!%.0s' {1..78} >&2; echo >&2
     exit "$exitcode"
@@ -1281,8 +1623,21 @@ if [ "$PLAN" -eq 1 ]; then
     exit 0
 fi
 
-if [ -f "$ENGINE_ENTRY" ] && { [ -x "$PRESENTATION_PY" ] || command -v "$PRESENTATION_PY" >/dev/null 2>&1; }; then
+# PD-007: every gate above has passed and this is a real build, so NOW the
+# stated depth may be stamped. --plan exited before this line; a gate failure
+# exits inside the gate. No flag and no PRESENTATION_INTAKE_DEPTH means no
+# stamp at all — the answer the client gave in the interview stands.
+stamp_intake_depth_after_gates
+
+if [ -f "$ENGINE_ENTRY" ] && have_py; then
     note "ALL GATES PASSED -- dispatching the presentation engine (all $_PHASE_COUNT manifest phases, mechanical)"
+
+    # PD-002a: --slides/--out belong to the legacy runner. On the engine path they
+    # are accepted and ignored (never required) — say so instead of ignoring them
+    # silently.
+    if [ -n "$SLIDES" ] || [ -n "$OUT" ]; then
+        echo "NOTE: --slides/--out are used only by the legacy runner; the engine reads and writes inside --run-dir"
+    fi
 
     # Step 1: Resolve the intake ledger into the engine's --new intake JSON
     # through the ONE shared resolver (single-sourced deck-type vocabulary,
@@ -1298,7 +1653,7 @@ engine install, not a genuinely absent one, so this does NOT fall back to \
 run_signature_deck.py. Re-sync the Presentations department."
     fi
     _RESOLVE_DEPTH_ARGS=""
-    if [ -n "$INTAKE_DEPTH" ]; then
+    if [ -n "$INTAKE_DEPTH_STATED" ]; then
         # F36 (SMOKE-1, 2026-09-01): this shell keeps INTAKE_DEPTH in display
         # case ("QUICK"/"IN-DEPTH") for stamp_intake_depth, but resolve_intake.py's
         # argparse choices are exactly quick|in-depth (resolve_intake.py:544) --
@@ -1345,6 +1700,11 @@ $_CREATE_RC and wrote no state.json:
 $_CREATE_OUT"
         fi
     fi
+
+    # PD-008: a REAL engine dispatch is what consumes an entry attempt. Every
+    # gate above has passed, so a gate-repair cycle can never brick the run; the
+    # 4th dispatch inside 6 hours exits 12 with the --resume recovery.
+    _attempt_budget_gate
 
     # Step 3: Run the engine. This walks every manifest phase (count derived
     # from PIPELINE-MANIFEST.json, never a hardcoded number), refuses to skip,
@@ -1394,8 +1754,12 @@ $_CREATE_OUT"
     note "run: ${_ENGINE_RUN_CMD[*]}"
     "${_ENGINE_RUN_CMD[@]}"
     _ENGINE_RC=$?
-    # FIX 11: a successful engine run resets the entry-attempt budget.
-    [ "$_ENGINE_RC" -eq 0 ] && rm -f "$_ATTEMPT_FILE"
+    # FIX 11 / PD-008 — canonical-entry attempt budget reset: a successful engine
+    # run (exit 0) clears the counter AND its 6-hour window.
+    if [ "$_ENGINE_RC" -eq 0 ]; then
+        [ -n "$_ATTEMPT_FILE" ] && rm -f "$_ATTEMPT_FILE"
+        [ -n "$_ATTEMPT_META" ] && rm -f "$_ATTEMPT_META"
+    fi
     rm -f "$NONCE_FILE" "$NONCE_PHASE_FILE" "$_ENGINE_INTAKE_TMP" 2>/dev/null || true
     exit "$_ENGINE_RC"
 else
@@ -1415,6 +1779,26 @@ else
     mkdir -p "$(dirname "$_FALLBACK_RECORD")" 2>/dev/null || true
     printf '%s reason=engine_component_missing engine_entry=%s\n' \
         "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$ENGINE_ENTRY" >> "$_FALLBACK_RECORD" 2>/dev/null || true
+    # PD-005: the legacy runner builds 2 of the manifest's phases -- it is NOT a
+    # deliverable build. Running it silently is the failure this door exists to
+    # refuse, so it is allowed ONLY behind a logged owner token, and even then the
+    # run ends at exit 10 (LEGACY BUILD ONLY), never 0.
+    if ! owner_skip_approved "LEGACY-RUNNER-FALLBACK"; then
+        engine_fail "AF-ENGINE-ABSENT" 9 "presentation_job.py is not installed on this \
+box. The legacy runner builds 2 of the manifest's phases and is not a deliverable \
+build. Update the Presentations department, or have the owner log owner_skip_approval \
+for LEGACY-RUNNER-FALLBACK."
+    fi
+    # PD-002a: the LEGACY runner is the only dispatch that needs --slides/--out, so
+    # the requirement lives HERE and not at the top of the door. It sits behind the
+    # PD-005 owner-token gate on purpose: an unapproved fallback must still fail as
+    # AF-ENGINE-ABSENT (exit 9), whatever arguments were supplied. A --resume that
+    # continues an existing run keeps its old exemption.
+    if [ "$RESUME" -eq 0 ]; then
+        [ -n "$SLIDES" ] || die "--slides is required (use --plan to inspect only)"
+        [ -f "$SLIDES" ] || die "slides.json not found: $SLIDES"
+        [ -n "$OUT" ] || die "--out is required to build a deck"
+    fi
 fi
 
 # ===========================================================================
@@ -1476,7 +1860,8 @@ export OC_DECK_CANONICAL_ENTRY=1
 
 # FIX P3-01(c)4 — close the kie_generate.py / kie-slide-submitter.js side door:
 # both are SHARED scripts (also reused by Skills 06/47/49/59 for non-presentations
-# image work), so their full 9,000-18,000-char rich-prompt floor gate is opt-in via
+# image work), so their full rule 12 prompt band (16,000 to 20,000 characters
+# for the current pin) gate is opt-in via
 # KIE_PROMPT_GATE=presentations (see prompt_gate.py / kie_generate.py). This entry
 # point IS the presentations context — force the full gate on for the ENTIRE process
 # tree it spawns so a Mode-B reference-image call made anywhere inside a canonical
@@ -1496,9 +1881,24 @@ export PRESENTATION_SLIDE_GEOMETRY_ENFORCE="${PRESENTATION_SLIDE_GEOMETRY_ENFORC
 # concurrent sibling's phase-keyed file is a different path and is never touched.
 trap 'rm -f "$NONCE_FILE" "$NONCE_PHASE_FILE" 2>/dev/null || true' EXIT INT TERM HUP
 
+# PD-008: the legacy fallback is a REAL dispatch too — it consumes one attempt,
+# and the 4th dispatch inside 6 hours exits 12 with the --resume recovery.
+_attempt_budget_gate
+
 "${cmd[@]}"
 _rc=$?
-# FIX 11: a successful fallback run resets the entry-attempt budget.
-[ "$_rc" -eq 0 ] && rm -f "$_ATTEMPT_FILE"
+# FIX 11 / PD-008 — canonical-entry attempt budget reset: a successful fallback
+# run (exit 0) clears the counter AND its 6-hour window.
+if [ "$_rc" -eq 0 ]; then
+    [ -n "$_ATTEMPT_FILE" ] && rm -f "$_ATTEMPT_FILE"
+    [ -n "$_ATTEMPT_META" ] && rm -f "$_ATTEMPT_META"
+fi
+# PD-005: the legacy run reaching exit 0 still built 2 of the manifest's phases,
+# not a deliverable bundle. Say so on stderr and leave with the documented code
+# 10 instead of pretending this door produced a deck.
+if [ "$_rc" -eq 0 ]; then
+    echo "LEGACY BUILD ONLY — not a full deliverable bundle" >&2
+    _rc=10
+fi
 rm -f "$NONCE_FILE" "$NONCE_PHASE_FILE" 2>/dev/null || true
 exit "$_rc"
