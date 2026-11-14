@@ -196,6 +196,52 @@ def test_engine_doors_refuse():
         blocked = [e for e in st.get("events", []) if "AF-INTAKE-PROVENANCE" in json.dumps(e)]
         _check("2b block names the sha in state events", bool(blocked) and bad[:12] in json.dumps(blocked))
 
+        import phase_verifiers as pv
+
+        # 2c: the FUNNEL refuses — not "the module is still importable". Hide
+        # presentation_job.runfacts from sys.modules, drop the package
+        # attribute (a `from presentation_job import runfacts` would otherwise
+        # resolve off the stale attribute) and block every new import of it,
+        # then call the refusal oracle itself. phase_verifiers keeps the
+        # binding it took at ITS import time, so the check stays live here; if
+        # that bound call raised, the funnel's except branch returns a refusal
+        # too (fail-closed), never a silent pass.
+        import importlib
+        import presentation_job as _pj
+        _hidden = sys.modules.pop("presentation_job.runfacts", None)
+        _pkg_attr = getattr(_pj, "runfacts", None)
+
+        class _BlockRunfacts:
+            """Make runfacts unimportable, so a lazy re-import cannot pass."""
+
+            def find_spec(self, name, path=None, target=None):
+                if name in ("presentation_job.runfacts", "runfacts"):
+                    raise ImportError(
+                        "PD-099a: presentation_job.runfacts deliberately unimportable")
+                return None
+
+        _blocker = _BlockRunfacts()
+        if _pkg_attr is not None:
+            delattr(_pj, "runfacts")
+        sys.meta_path.insert(0, _blocker)
+        try:
+            import_failed = False
+            try:
+                importlib.import_module("presentation_job.runfacts")
+            except ImportError:
+                import_failed = True
+            _check("2c runfacts is unimportable (control)", import_failed)
+            hidden_refusal = pv._intake_provenance_refusal("P-CONSUMER", r.run)
+            _check("2c2 funnel refuses the consumer with runfacts unimportable",
+                   hidden_refusal is not None and bad in hidden_refusal,
+                   str(hidden_refusal)[:80])
+        finally:
+            sys.meta_path.remove(_blocker)
+            if _hidden is not None:
+                sys.modules["presentation_job.runfacts"] = _hidden
+            if _pkg_attr is not None:
+                _pj.runfacts = _pkg_attr
+
         # runfacts import failure stays fail-closed (FIX 17 pattern): hide the
         # module and re-verify through the funnel.
         import importlib
@@ -207,8 +253,25 @@ def test_engine_doors_refuse():
                 sys.modules["presentation_job.runfacts"] = saved
         _check("2c runfacts re-importable after probe", saved is not None)
 
-        # producer exemption lives in the funnel
+        # 2c2 (PD-921): an UNBOUND binding is a refusal, not a pass. Force the
+        # module-level binding to its import-failure value and assert the funnel
+        # names the AF code and says the binding could not be loaded — the same
+        # state Engine._check_intake_provenance refuses at the door.
         import phase_verifiers as pv
+        _bound = pv._rf109
+        try:
+            pv._rf109 = None
+            unbound = pv._intake_provenance_refusal("P-CONSUMER", r.run)
+            _check("2c2 unbound funnel refuses instead of passing",
+                   unbound is not None and "AF-INTAKE-PROVENANCE" in unbound
+                   and "could not be loaded" in unbound, str(unbound)[:80])
+            _check("2c2b unbound funnel refuses producers too (door parity)",
+                   pv._intake_provenance_refusal("P0A-INTAKE", r.run) is not None)
+        finally:
+            pv._rf109 = _bound
+        _check("2c3 binding restored for the bound cases below", pv._rf109 is _bound)
+
+        # producer exemption lives in the funnel
         _check("2d producer exempt in funnel",
                pv._intake_provenance_refusal("P0A-INTAKE", r.run) is None)
         refusal = pv._intake_provenance_refusal("P-CONSUMER", r.run)
