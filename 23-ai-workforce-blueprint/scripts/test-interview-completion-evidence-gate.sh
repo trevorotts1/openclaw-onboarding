@@ -11,9 +11,6 @@
 # The client was told she was finished when she was not.
 #
 # What this battery pins:
-#   R1  the EXACT incident fixture (19 Q, 5 missing fields, counter frozen at
-#       11) currently marks complete on unpatched code -> proves the bug
-#       (skipped automatically when run against ALREADY-patched code; see R2)
 #   R2  --complete on the incident fixture REFUSES: exit 87, interviewComplete
 #       stays false/absent, interviewQc.status is NOT "pass"
 #   R3  a genuinely complete interview still marks complete: exit 0,
@@ -37,8 +34,6 @@
 #       anti-fabrication substance floor + all other checks still apply) —
 #       completion must not trade a false-complete for a false-incomplete on
 #       the standard-first lane
-#   R7  mutation proof: reverting update-interview-state.sh's evidence gate
-#       makes R2 go RED (the incident fixture marks complete again)
 #   R8  a completed interview is mirrored into the Command Center database
 #       (clients.interview_complete on the is_self=1 row, which task ingest
 #       reads) -- and a REFUSED completion leaves that flag at 0
@@ -565,5 +560,8 @@ echo "=========================================="
 echo "  PASSED: $NPASSED / $TOTAL"
 echo "  FAILED: $NFAILED / $TOTAL"
 echo "=========================================="
-[ "$NFAILED" -eq 0 ]
+# A battery that records nothing must never report success. The known-good run
+# records at least 12 results (the ten top-level cases plus the two timestamp
+# retry loops); fewer means cases silently stopped running.
+[ "$TOTAL" -ge 12 ] && [ "$NFAILED" -eq 0 ]
 exit $?
