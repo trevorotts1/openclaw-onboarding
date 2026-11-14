@@ -45,6 +45,11 @@ the build pipeline is allowed to proceed. Five checks:
      checks still apply in full, and the flag can never launder an empty or
      faked transcript (same shape as the legacy exemption). It never applies
      to a legacy box (absent buildType): those keep the 25-35 bar.
+     COUNTER RULE (BU-02 / WF-002): the state's lastQuestionNumber may REFUSE an
+     interview only when it claims MORE questions than the transcript holds (more
+     than 3 above the distinct answered question count). A counter frozen BELOW
+     the transcript is a warning, not a failure — that is the progress-writer
+     bug class, not an unanswered question.
   2. Zero forbidden-jargon hits in AI-authored text (loads from forbidden-jargon.json).
   3. Every mandatory data field populated (branding required:true + structural fields).
      (2026-07-30 fix, client Mac mini box / its rescue agent incident): a
@@ -367,9 +372,20 @@ def count_questions(transcript: str, state: dict) -> dict:
     Count answered questions from the transcript.
     Primary: count Q-blocks in the transcript.
     Cross-check against interviewProgress.lastQuestionNumber from state.
+
+    COUNTER RULE (WF-002, BU-02): the state counter may only FAIL the gate when
+    it claims MORE than the transcript holds (state_qnum > distinct_questions,
+    by more than 3). A counter that sits BELOW the transcript is the frozen-
+    counter writer bug class (v10.15.x: no per-question writer, absent jq), not
+    evidence the owner failed to answer — the transcript is authoritative and
+    the disagreement is reported as a warning (`transcriptAheadWarning`), never
+    a hard failure. The comparison base is the number of DISTINCT normalized
+    question texts the transcript actually holds (`parse_answer_blocks()`), so
+    re-asking/re-drilling one question can never inflate the evidence.
     """
     # Count Q-blocks: lines starting with **Q** or Q- or a numbered Q pattern
     q_patterns = [
+        r"^\*\*Q:\*\*",           # **Q:** <text> — the format log_answer() writes
         r"^\*\*Q\*\*",            # **Q** <text>
         r"^\*\*Q-\w+",            # **Q-D5** <text>
         r"^Q-\w+[:.]",            # Q-D5: <text>
@@ -402,19 +418,51 @@ def count_questions(transcript: str, state: dict) -> dict:
         or state.get("lastQuestionNumber")  # legacy fallback
     )
 
+    # Distinct question texts the transcript actually holds (BU-02). Repeated
+    # rounds on the SAME question (the structured deck drills fields: the proven
+    # real fixture asked customer_feeling x6) collapse to ONE — a counter may
+    # never be legitimated by re-asking a question the owner already answered.
+    distinct_questions = len({
+        norm_prompt(b.get("question") or "")
+        for b in parse_answer_blocks(transcript)
+        if (b.get("question") or "").strip()
+    })
+    if distinct_questions == 0 and transcript_count > 0:
+        # Legacy transcripts use the colon-less "**Q** <text>" form, which
+        # parse_answer_blocks() (the "**Q:**"/"**A:**" format log_answer writes)
+        # cannot match. Fall back to the counted Q-blocks so an old interview is
+        # never refused by a counter comparison it could never satisfy.
+        distinct_questions = transcript_count
+
     disagree_warning = None
-    if state_qnum is not None and abs(transcript_count - state_qnum) > 3:
-        disagree_warning = (
-            f"Transcript count ({transcript_count}) and state.interviewProgress.lastQuestionNumber "
-            f"({state_qnum}) disagree by >{abs(transcript_count - state_qnum)} questions. "
-            f"Using transcript count as authoritative. "
-            f"A frozen lastQuestionNumber is the v10.15.0 bug class — check update-interview-state.sh invocations."
-        )
+    transcript_ahead_warning = None
+    if state_qnum is not None:
+        claimed_more = state_qnum - distinct_questions
+        transcript_more = distinct_questions - state_qnum
+        if claimed_more > 3:
+            disagree_warning = (
+                f"state.interviewProgress.lastQuestionNumber ({state_qnum}) claims "
+                f"{claimed_more} more questions than the transcript holds "
+                f"({distinct_questions} distinct answered question(s)). A counter that "
+                f"claims MORE than the transcript is fabricated progress, not evidence "
+                f"of a complete interview — check the update-interview-state.sh invocations."
+            )
+        elif transcript_more > 3:
+            transcript_ahead_warning = (
+                f"The transcript holds {distinct_questions} distinct answered question(s), "
+                f"{transcript_more} more than state.interviewProgress.lastQuestionNumber "
+                f"({state_qnum}). The counter is BEHIND the transcript (the frozen-counter "
+                f"writer bug class) — the transcript is authoritative, so this is a warning, "
+                f"not a failure. Repair the counter with "
+                f"update-interview-state.sh --sync-from-gate."
+            )
 
     return {
         "transcriptCount": transcript_count,
+        "distinctQuestions": distinct_questions,
         "stateCount": state_qnum,
         "disagreeWarning": disagree_warning,
+        "transcriptAheadWarning": transcript_ahead_warning,
     }
 
 
@@ -1855,21 +1903,18 @@ def build_verdict(
             f"Question count {count} is borderline (target 25-35). Human review required."
         )
     if count_result.get("disagreeWarning"):
-        # HARD FAIL (2026-07-30 fix, a client Mac mini box incident): a
-        # lastQuestionNumber that disagrees with the transcript's real Q-block
-        # count by more than 3 questions used to be a WARNING ONLY — the count
-        # check above still used the (correct) transcript count, so a genuinely
-        # complete interview could pass check #1 even while the disagreement
-        # itself, which is direct evidence the progress-counter write path is
-        # broken, sat in `warnings[]` where nothing reads it before marking
-        # complete. In the incident this covers, the transcript held 19
-        # questions while state.interviewProgress.lastQuestionNumber was frozen
-        # at 11 (a gap of 8) — the interview was ALSO short on count and
-        # mandatory fields, but the disagreement itself must independently
-        # refuse: "a completion claim that disagrees with the transcript by 8
-        # questions should refuse, not warn." A stale counter is evidence the
-        # write pipeline lost data even when unrelated checks would pass.
+        # HARD FAIL (2026-07-30 fix, a client Mac mini box incident; narrowed by
+        # BU-02/WF-002): only a counter that claims MORE than the transcript
+        # holds is fabricated progress and refuses. A counter frozen BELOW the
+        # transcript is the writer bug class (v10.15.x) — the interview really
+        # was answered, so that direction is a warning (below), never a refusal.
         hard_failures.append(count_result["disagreeWarning"])
+
+    # The counter sitting BEHIND the transcript: advisory only (BU-02/WF-002).
+    # Refusing here was the false-incomplete that made a complete interview
+    # unmarkable whenever the progress writer broke.
+    if count_result.get("transcriptAheadWarning"):
+        warnings.append(count_result["transcriptAheadWarning"])
 
     # Jargon check
     if jargon_hits:
