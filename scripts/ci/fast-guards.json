@@ -3612,5 +3612,33 @@
     ]
    }
   }
+ },
+ {
+  "name": "batch-required-only-guard",
+  "was": "new in batch-required-only (not folded from a workflow)",
+  "script": "scripts/ci/fast-guards.d/batch-required-only-guard.sh",
+  "python311": true,
+  "events": {
+   "push": {
+    "branches": [
+     "main"
+    ],
+    "paths": [
+     ".github/workflows/**",
+     "scripts/ci/batch-required-only-check.py",
+     "scripts/ci/fast-guards.d/batch-required-only-guard.sh"
+    ]
+   },
+   "pull_request": {
+    "branches": [
+     "main"
+    ],
+    "paths": [
+     ".github/workflows/**",
+     "scripts/ci/batch-required-only-check.py",
+     "scripts/ci/fast-guards.d/batch-required-only-guard.sh"
+    ]
+   }
+  }
  }
 ]
