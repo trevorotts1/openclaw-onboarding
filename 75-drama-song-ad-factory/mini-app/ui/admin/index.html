@@ -16,9 +16,14 @@
   U13's `studio.py pair`, which this page never calls.
 
   It is ONE self-contained shell: inline CSS only, zero external dependencies,
-  and the two local scripts beside it (lib/qr.js, lib/admin_client.js). No
-  framework, no CDN, no build step — the same shape 53-book-writer/mini-app/
-  pages/ uses, so the repo keeps one page pattern.
+  and the three local scripts beside it (lib/qr.js, lib/admin_client.js,
+  lib/admin_page.js). No framework, no CDN, no build step — the same shape
+  53-book-writer/mini-app/pages/ uses, so the repo keeps one page pattern.
+
+  NO INLINE SCRIPT. The studio service serves every page with
+  `Content-Security-Policy: script-src 'self'`, so an inline script block is
+  refused by the browser. The wiring lives in lib/admin_page.js and every
+  script tag below carries an absolute path.
 
   WHAT IT TALKS TO (U2's measured contract, service/README.md):
     POST /api/studio/admin/pairing-code  { admin_key, client_id }
@@ -150,7 +155,7 @@
   <div class="field">
     <label for="pair-client">Client id</label>
     <input id="pair-client" name="client_id" type="text" autocomplete="off" spellcheck="false" aria-describedby="pair-client-hint">
-    <p class="hint" id="pair-client-hint">The studio&rsquo;s id for this client, like <code class="inline">c_9f2&hellip;</code>. Never a name.</p>
+    <p class="hint" id="pair-client-hint">The studio&rsquo;s id for this client, like <code class="inline">c-9f2&hellip;</code> (the letter c, a dash, 32 characters). Never a name.</p>
   </div>
 
   <div class="field">
@@ -259,18 +264,12 @@
 <!-- ======================= 5. PERSONAL LINK ======================= -->
 <section aria-labelledby="link-h">
   <h2 id="link-h">5. Make a personal link</h2>
-  <p class="hint">The link a client opens on their phone, as a QR they can scan. Making a new one stops the old link working at once, so only the link you hand over works.</p>
+  <p class="hint">The link a client opens on their phone, as a QR they can scan. Making a new one stops the old link working at once, so only the link you hand over works. It uses the admin key from section 1.</p>
 
   <div class="field">
     <label for="link-client">Client id</label>
     <input id="link-client" name="link_client_id" type="text" autocomplete="off" spellcheck="false" aria-describedby="link-client-hint">
-    <p class="hint" id="link-client-hint">The studio&rsquo;s id for this client, like <code class="inline">c_9f2&hellip;</code>. Never a name.</p>
-  </div>
-
-  <div class="field">
-    <label for="link-admin-key">Admin key</label>
-    <input id="link-admin-key" name="link_admin_key" type="password" autocomplete="off" spellcheck="false" aria-describedby="link-admin-key-hint">
-    <p class="hint" id="link-admin-key-hint">Sent in the request body only. It is never stored in this page, never put in a URL and never shown back.</p>
+    <p class="hint" id="link-client-hint">The studio&rsquo;s id for this client, like <code class="inline">c-9f2&hellip;</code> (the letter c, a dash, 32 characters). Never a name.</p>
   </div>
 
   <button type="button" id="make-link">Make personal link</button>
@@ -287,239 +286,8 @@
   </div>
 </section>
 
-<script src="lib/qr.js"></script>
-<script src="lib/admin_client.js"></script>
-<script>
-/* ---------------------------------------------------------------------------
- * Page wiring. All judgement lives in lib/admin_client.js; this file only
- * moves values between the DOM and that module, and renders what came back.
- * ------------------------------------------------------------------------ */
-(function () {
-  'use strict';
-  var A = globalThis.DSAdmin;
-  var Q = globalThis.DSQR;
-
-  var studioMeta = document.querySelector('meta[name="studio-origin"]');
-  var STUDIO = (studioMeta && studioMeta.content) || '';
-
-  function el(id) { return document.getElementById(id); }
-  function say(statusId, errorId, text, isError) {
-    el(statusId).textContent = isError ? '' : text;
-    el(errorId).textContent = isError ? text : '';
-  }
-  /** POST a JSON body. The key is inside the body, never the URL. */
-  function sendPost(path, body) {
-    return fetch(STUDIO + path, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-      credentials: 'omit',
-      cache: 'no-store',
-    }).then(function (res) {
-      return res.json().catch(function () { return null; }).then(function (json) {
-        return A.readReply(res.status, json);
-      });
-    });
-  }
-
-  /** GET with the key in the x-ds-key header. Never a query string. */
-  function sendKeyedGet(path, key) {
-    return fetch(STUDIO + path, {
-      method: 'GET',
-      headers: { 'x-ds-key': key },
-      credentials: 'omit',
-      cache: 'no-store',
-    }).then(function (res) {
-      return res.json().catch(function () { return null; }).then(function (json) {
-        return A.readReply(res.status, json);
-      });
-    });
-  }
-
-  // ---- 1. pairing -------------------------------------------------------
-  var countdown = null;
-
-  function stopCountdown() {
-    if (countdown) { clearInterval(countdown); countdown = null; }
-  }
-
-  el('mint').addEventListener('click', function () {
-    stopCountdown();
-    var built = A.mintPairingCodeRequest(el('admin-key').value, el('pair-client').value);
-    if (!built.ok) {
-      el('pairing-result').hidden = true;
-      say('mint-status', 'mint-error', built.code + ' — ' + built.message, true);
-      return;
-    }
-    say('mint-status', 'mint-error', 'Asking the studio…', false);
-    sendPost(built.path, built.body).then(function (reply) {
-      if (!reply.ok) {
-        el('pairing-result').hidden = true;
-        say('mint-status', 'mint-error', reply.code + ' — ' + reply.message, true);
-        return;
-      }
-      showCode(reply.data.code, reply.data.expires_in);
-      say('mint-status', 'mint-error', 'Code minted for ' + built.body.client_id + '.', false);
-    }).catch(function () {
-      el('pairing-result').hidden = true;
-      say('mint-status', 'mint-error', 'The studio could not be reached, so no code was minted.', true);
-    });
-  });
-
-  function showCode(code, expiresIn) {
-    var checked = A.checkCode(code);
-    if (!checked.ok) {
-      el('pairing-result').hidden = true;
-      say('mint-status', 'mint-error', checked.code + ' — the studio returned a code this page does not recognise.', true);
-      return;
-    }
-    el('code-text').textContent = checked.code;
-    var qr = Q.encode(checked.code, { level: 'M' });
-    if (!qr.ok) {
-      el('qr-holder').innerHTML = '';
-      el('qr-holder').textContent = 'The square could not be drawn; read the code out instead.';
-    } else {
-      el('qr-holder').innerHTML = Q.toSvg(qr, { label: 'Pairing code ' + checked.code, width: '168', height: '168' });
-    }
-    el('pairing-result').hidden = false;
-
-    var left = typeof expiresIn === 'number' ? expiresIn : A.PAIRING_TTL_SECONDS;
-    var tick = function () {
-      if (left <= 0) {
-        el('code-expiry').textContent = 'This code has expired. Mint another one.';
-        stopCountdown();
-        return;
-      }
-      var m = Math.floor(left / 60);
-      var s = left % 60;
-      el('code-expiry').textContent = 'Expires in ' + m + ':' + (s < 10 ? '0' : '') + s + ', or when it is used once.';
-      left -= 1;
-    };
-    tick();
-    countdown = setInterval(tick, 1000);
-  }
-
-  // ---- 2. key surface ---------------------------------------------------
-  el('check').addEventListener('click', function () {
-    var built = A.checkKeyRequest(el('check-key').value);
-    if (!built.ok) {
-      say('key-status', 'key-error', built.code + ' — ' + built.message, true);
-      return;
-    }
-    say('key-status', 'key-error', 'Asking the studio…', false);
-    sendKeyedGet(built.path, built.header['x-ds-key']).then(function (reply) {
-      if (!reply.ok) {
-        say('key-status', 'key-error', reply.code + ' — ' + reply.message, true);
-        return;
-      }
-      say('key-status', 'key-error', 'Accepted. ' + A.keyLabel(built.header['x-ds-key']) + '. Option ' + reply.data.option + ': ' + reply.data.line, false);
-    }).catch(function () {
-      say('key-status', 'key-error', 'The studio could not be reached.', true);
-    });
-  });
-
-  el('revoke').addEventListener('click', function () {
-    var refused = A.revokeKeyRequest();
-    say('key-status', 'key-error', refused.code + ' — ' + refused.message, true);
-  });
-
-  // ---- 3. options -------------------------------------------------------
-  function optionValue() {
-    var picked = document.querySelector('input[name="option"]:checked');
-    return picked ? parseInt(picked.value, 10) : null;
-  }
-
-  function syncApproval() {
-    var isThree = optionValue() === 3;
-    el('approval-block').hidden = !isThree;
-    el('opt-3').setAttribute('aria-expanded', isThree ? 'true' : 'false');
-  }
-  for (var i = 0; i < 3; i++) document.querySelectorAll('input[name="option"]')[i].addEventListener('change', syncApproval);
-  syncApproval();
-
-  el('set-option').addEventListener('click', function () {
-    var option = optionValue();
-    var approval = option === 3
-      ? { option3: el('approval-given').checked, client_name: el('approval-name').value }
-      : undefined;
-    var built = A.setOptionRequest(el('admin-key').value, el('option-client').value, option, approval);
-    if (!built.ok) {
-      say('option-status', 'option-error', built.code + ' — ' + built.message, true);
-      return;
-    }
-    say('option-status', 'option-error', 'Asking the studio…', false);
-    sendPost(built.path, built.body).then(function (reply) {
-      if (!reply.ok) {
-        say('option-status', 'option-error', reply.code + ' — ' + reply.message, true);
-        return;
-      }
-      say('option-status', 'option-error', 'Option ' + reply.data.option + ' is set. ' + reply.data.line, false);
-    }).catch(function () {
-      say('option-status', 'option-error', 'The studio could not be reached, so nothing was changed.', true);
-    });
-  });
-
-  // ---- 4. cutoff --------------------------------------------------------
-  function cutoffMinutes() {
-    var raw = el('cutoff-time').value;
-    if (!/^\d{2}:\d{2}$/.test(raw)) return NaN;
-    return parseInt(raw.slice(0, 2), 10) * 60 + parseInt(raw.slice(3, 5), 10);
-  }
-
-  el('compute-cutoff').addEventListener('click', function () {
-    var verdict = A.cutoffVerdict(cutoffMinutes(), el('cutoff-zone').value.trim(), Date.now());
-    if (!verdict.ok) {
-      say('cutoff-status', 'cutoff-error', verdict.code + ' — ' + verdict.message, true);
-      return;
-    }
-    say('cutoff-status', 'cutoff-error',
-      verdict.line + ' Right now the studio is ' + (verdict.before ? 'before' : 'past') + ' that cutoff.', false);
-  });
-
-  el('save-cutoff').addEventListener('click', function () {
-    var saved = A.setCutoffRequest(cutoffMinutes(), el('cutoff-zone').value.trim());
-    say('cutoff-status', 'cutoff-error', saved.code + ' — ' + saved.message, true);
-  });
-
-  // ---- 5. personal link --------------------------------------------------
-  el('make-link').addEventListener('click', function () {
-    var built = A.makeLinkRequest(el('link-admin-key').value, el('link-client').value);
-    if (!built.ok) {
-      el('link-result').hidden = true;
-      say('link-status', 'link-error', built.code + ' — ' + built.message, true);
-      return;
-    }
-    say('link-status', 'link-error', 'Asking the studio…', false);
-    sendPost(built.path, built.body).then(function (reply) {
-      var link = reply.ok && typeof reply.data.link === 'string' ? reply.data.link : '';
-      if (link === '') {
-        el('link-result').hidden = true;
-        say('link-status', 'link-error', reply.ok
-          ? A.AF_REPLY_UNREADABLE + ' — the studio made no link, so nothing is shown.'
-          : reply.code + ' — ' + reply.message, true);
-        return;
-      }
-      showLink(link);
-      say('link-status', 'link-error', 'A personal link was made for ' + built.body.client_id + '.', false);
-    }).catch(function () {
-      el('link-result').hidden = true;
-      say('link-status', 'link-error', 'The studio could not be reached, so no link was made.', true);
-    });
-  });
-
-  function showLink(link) {
-    el('link-text').textContent = link;
-    // A link is long, so the encoder gets the level with the most room (L).
-    var qr = Q.encode(link, { level: 'L' });
-    if (!qr.ok) {
-      el('link-qr-holder').innerHTML = '';
-      el('link-qr-holder').textContent = 'The square could not be drawn; copy the link instead.';
-    } else {
-      el('link-qr-holder').innerHTML = Q.toSvg(qr, { label: 'Personal link', width: '168', height: '168' });
-    }
-    el('link-result').hidden = false;
-  }
-})();
-</script>
+<script src="/admin/lib/qr.js"></script>
+<script src="/admin/lib/admin_client.js"></script>
+<script src="/admin/lib/admin_page.js"></script>
 </body>
 </html>
