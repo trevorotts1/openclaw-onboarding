@@ -192,7 +192,8 @@ def test_no_gate_is_warn_only_anymore():
     _wj(rd, "working/checkpoints/media_library.json",
         {"ghl_folder_id": "root", "slides": [{"slide_number": 1, "ghl_media_id": "m1", "ghl_upload_status": "complete"}], "pptx_ghl_media_id": "p9"})
     _wj(rd, "renders/slide-01.ocr.json", {"checked": True, "matched": True})
-    _wj(rd, "working/qc/final_qc_report.json", {"average": 9.0})
+    _wj(rd, "working/qc/final_qc_report.json",
+        {"schema": "final_qc_report/v1", "pass": True, "average": 9.0})
     gates = Gates(rd, {}).evaluate_all()
     assert gates["ocr_readback"]["state"] == "pass", gates["ocr_readback"]
     assert gates["qc"]["state"] == "pass", gates["qc"]
@@ -229,14 +230,16 @@ def test_qc_gate_no_numeric_score_is_hard_failure():
     assert g["warn_only"] is False
 
 def test_qc_gate_below_threshold_is_hard_failure():
-    rd = _rd(); _wj(rd, "working/qc/final_qc_report.json", {"average": 7.9})
+    rd = _rd(); _wj(rd, "working/qc/final_qc_report.json",
+        {"schema": "final_qc_report/v1", "pass": True, "average": 7.9})
     g = Gates(rd, {})._qc_gate()
     assert g["state"] == "fail", g
     assert g["warn_only"] is False
     assert "7.9" in g["reason"]
 
 def test_qc_gate_passes_on_genuine_report_at_or_above_threshold():
-    rd = _rd(); _wj(rd, "working/qc/final_qc_report.json", {"average": 8.5})
+    rd = _rd(); _wj(rd, "working/qc/final_qc_report.json",
+        {"schema": "final_qc_report/v1", "pass": True, "average": 8.5})
     g = Gates(rd, {})._qc_gate()
     assert g["state"] == "pass", g
     assert g["warn_only"] is False
@@ -267,7 +270,8 @@ def test_qc_gate_blocking_reasons_do_not_leak_into_a_passing_score():
     turn a genuinely passing numeric score into anything other than a pass."""
     rd = _rd()
     _wj(rd, "working/qc/final_qc_report.json",
-        {"average": 9.1, "blocking_reasons": []})
+        {"schema": "final_qc_report/v1", "pass": True, "average": 9.1,
+         "blocking_reasons": []})
     g = Gates(rd, {})._qc_gate()
     assert g["state"] == "pass", g
     assert g["score"] == 9.1
