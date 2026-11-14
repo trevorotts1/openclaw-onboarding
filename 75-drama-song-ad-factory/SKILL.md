@@ -1406,8 +1406,9 @@ SOP named above.
   5. **Edit placement.** Trim each Kling clip to its audio length (Kling pads the
      tail); place it at the Suno word timestamp, corrected by the measured stem offset
      (`stem_offset.py`; it was 66 ms late); upscale 720x1280 to 1080x1920 with lanczos;
-     conform to the 30 fps master under the "Frame rate (Part H H3)" rule above
-     (a native-30 Kling clip passes through; a 24 fps source is
+     conform to the 30 fps master under the "Frame rate (Part H H3)" rule above,
+     which replaced the old DROPPING frames rule for lip-sync clips (a native-30
+     Kling clip passes through; a 24 fps source is
      motion-interpolated, never the plain `fps` filter); all ffmpeg through
      `load_governor` (`heavy_slot`, bounded threads) (`edit_plan`).
   6. **QC.** Checklist items 8 and 11 accept `KEPT_BEST` and flagged rows that carry a
