@@ -161,6 +161,36 @@ def _format_size(num_bytes: int) -> str:
         return f"{num_bytes / (1024 * 1024):.1f}MB"
 
 
+# PD-314: the keys curation recorded as owner-approved skips. One list, written
+# by curate.py into the curation manifest, read here so the audit and the
+# curation agree about what was skipped instead of the audit failing it.
+CURATION_MANIFEST_REL = os.path.join("working", "checkpoints", "curation_manifest.json")
+
+
+def _owner_skipped_keys(deliverables_dir: str) -> set:
+    """Deliverable keys the owner approved for skipping, per the curation manifest.
+
+    The run root is the PARENT of the flat ``deliverables/`` folder; a folder
+    given directly is tried as a root too. A missing or unreadable manifest
+    means no skips (fail-closed: a skip must be recorded to count).
+    """
+    target = os.path.abspath(deliverables_dir or ".")
+    for root in (os.path.dirname(target), target):
+        path = os.path.join(root, CURATION_MANIFEST_REL)
+        if not os.path.isfile(path):
+            continue
+        try:
+            with open(path, encoding="utf-8") as fh:
+                obj = json.load(fh)
+        except (json.JSONDecodeError, OSError):
+            return set()
+        keys = obj.get("skipped_keys") if isinstance(obj, dict) else None
+        if isinstance(keys, list):
+            return {k for k in keys if isinstance(k, str)}
+        return set()
+    return set()
+
+
 def _find_file(target_dir: str, filename: str) -> str | None:
     """Locate *filename* inside *target_dir* (flat or shallow subdirectories).
 
@@ -414,6 +444,7 @@ def audit_all(deliverables_dir: str) -> dict:
     # calibration — scaling it would make an honest 12-slide speech PDF
     # ("below the 3KB stub floor it always passed") structurally unpassable.
     n_slides = _count_deck_slides(deliverables_dir)
+    owner_skipped = _owner_skipped_keys(deliverables_dir)
     for item in DELIVERABLE_AUDIT_LIST:
         item = dict(item)
         # FIX 103: each row scales with ITS OWN helper formula — guide_pdf via
@@ -428,6 +459,11 @@ def audit_all(deliverables_dir: str) -> dict:
                 item["min_bytes"] = pdf_floor(n_slides)
         fp = _find_file(deliverables_dir, item["filename"])
         r = audit_deliverable(fp, item)
+        # PD-314: a key the curation recorded as an owner-approved skip is
+        # SKIPPED (owner) here too — never failed, never counted as missing.
+        if r["key"] in owner_skipped:
+            r["verdict"] = "SKIPPED (owner)"
+            r["reason"] = "owner-approved skip recorded in the curation manifest"
         results.append(r)
 
     for bonus in BONUS_ITEMS:
@@ -463,19 +499,24 @@ def audit_all(deliverables_dir: str) -> dict:
 
     pass_count = sum(1 for r in results if r["verdict"] == "PASS")
     fail_count = sum(1 for r in results if r["verdict"] == "FAIL")
-    missing = [r["key"] for r in results if not r["present"]]
+    skipped = [r["key"] for r in results if r["verdict"] == "SKIPPED (owner)"]
+    missing = [r["key"] for r in results
+               if not r["present"] and r["verdict"] != "SKIPPED (owner)"]
 
     authorized = fail_count == 0
     summary = (
         f"Self-audit: {pass_count}/{len(DELIVERABLE_AUDIT_LIST)} deliverables present. "
         f"Handoff {'authorized' if authorized else 'REJECTED'}."
     )
+    if skipped:
+        summary += f" ({len(skipped)} owner-approved skip(s): {', '.join(skipped)})"
 
     return {
         "results": results,
         "bonus_results": bonus_results,
         "pass_count": pass_count,
         "fail_count": fail_count,
+        "skipped": skipped,
         "missing": missing,
         "summary": summary,
         "authorized": authorized,
@@ -491,7 +532,7 @@ def format_line(result: dict) -> str:
     tag = f"[{result['verdict']}]"
     size_str = _format_size(result["size_bytes"]) if result["present"] else "0B"
     line = f"  {tag:6s} {result['filename']:<42s} ({size_str:>8s})"
-    if result["verdict"] == "FAIL" and result["reason"]:
+    if result["verdict"] != "PASS" and result["reason"]:
         line += f"  -- {result['reason']}"
     return line
 
