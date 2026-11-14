@@ -15,11 +15,11 @@ CORE = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(CORE))
 from intake_preflight import factory
 import production_process
-import state_store
 from batch_mode import batch as batch_mod
 import final_recap
 import spend_ledger
-from test_production_process import confirmed_run, approve_script, approve_storyboard
+from test_production_process import (confirmed_run, complete_stage, approve_script,
+                                     approve_storyboard)
 
 
 def cli(*argv):
@@ -30,16 +30,12 @@ def cli(*argv):
 
 
 def complete(run, stage, registry):
-    for rel in registry[stage].get("required_artifacts", []):
-        p = run / rel
-        if not p.exists():
-            p.parent.mkdir(parents=True, exist_ok=True)
-            p.write_text(json.dumps({"fixture": stage}), encoding="utf-8")
-    with state_store.Store(run / "control" / "state.sqlite3") as s:
-        if s.get(run.name, stage)["state"] != "READY":
-            s.transition(run.name, stage, "READY", "fixture-worker")
-        s.claim(run.name, stage, "fixture-worker")
-        s.transition(run.name, stage, "COMPLETE", "fixture-worker")
+    """S75-002: complete through the signed step gate, never by hand.
+
+    `registry` is kept in the signature because every call site passes it; the
+    gate helper writes the registry's required artifacts itself.
+    """
+    complete_stage(run, stage)
 
 
 def elect_song(run):
