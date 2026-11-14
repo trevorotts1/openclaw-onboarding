@@ -33,9 +33,10 @@ DESIGN RULES
   * F03 — FAIL CLOSED on missing evidence: a checker that RAISES, or an engine
     that is entirely unavailable, is a FAILED verifier in production, not a NOTE
     pass. Degraded (NOTE) passes survive ONLY in an explicit test/CI context:
-    PRESENTATION_ALLOW_DEGRADED_VERIFIERS=1, CI / OPENCLAW_TEST env markers, or
-    the `.test-context` run-dir marker (see _degraded_allowed — the same contract
-    as run_signature_deck._degraded_verifiers_allowed). A crashed measurer equals
+    PRESENTATION_ALLOW_DEGRADED_VERIFIERS=1 or the CI / OPENCLAW_TEST env markers
+    (see _degraded_allowed — the same contract as
+    run_signature_deck._degraded_verifiers_allowed, except PD-201 removed the
+    `.test-context` file signal here). A crashed measurer equals
     no measurement; no measurement cannot equal pass.
   * NO network calls, NO side effects. Pure filesystem reads + engine checks.
   * FAIL-with-reason is mechanically enforced. After each verifier returns,
@@ -404,23 +405,37 @@ def _bd_fn(name: str):
 
 
 def _degraded_allowed(run_dir) -> bool:
-    """F03: mirror of run_signature_deck._degraded_verifiers_allowed — a degraded
-    (skipped / filesystem-fallback) substance check is permitted ONLY in an explicit
-    test/CI context. Signals: PRESENTATION_ALLOW_DEGRADED_VERIFIERS=1, CI /
-    OPENCLAW_TEST env markers, or the `.test-context` run-dir marker file. A real
-    production run has NONE of these signals, so an engine crash or whole-engine
-    unavailability inside a governed verifier FAILS CLOSED instead of silently
-    passing on weaker evidence."""
+    """F03: a degraded (skipped / filesystem-fallback) substance check is permitted
+    ONLY in an explicit test/CI context. Signals: PRESENTATION_ALLOW_DEGRADED_VERIFIERS=1
+    or the CI / OPENCLAW_TEST env markers. A real production run has NONE of these
+    signals, so an engine crash or whole-engine unavailability inside a governed
+    verifier FAILS CLOSED instead of silently passing on weaker evidence.
+
+    PD-201: the `.test-context` file under the run folder NO LONGER opens this gate —
+    a file a production run could create must not switch off checks in production."""
     if os.environ.get("PRESENTATION_ALLOW_DEGRADED_VERIFIERS") == "1":
         return True
     if os.environ.get("CI") or os.environ.get("OPENCLAW_TEST"):
         return True
-    try:
-        if (Path(run_dir) / "working" / "checkpoints" / ".test-context").exists():
-            return True
-    except Exception:  # noqa: BLE001 — a marker-read hiccup must not open the gate
-        pass
     return False
+
+
+def _log_degraded_pass(run_dir, gate: str, reasons) -> None:
+    """PD-201: a degraded (NOTE) pass is never silent. Append one audit line to
+    working/checkpoints/gate_log.jsonl so a certificate can refuse to call the run
+    an integrity pass while any degraded-pass line exists. Logging must never turn
+    a pass into a crash, hence the swallow."""
+    try:
+        path = Path(run_dir) / "working" / "checkpoints" / "gate_log.jsonl"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with path.open("a", encoding="utf-8") as fh:
+            fh.write(json.dumps({
+                "gate": gate,
+                "result": "degraded_pass",
+                "reason": " | ".join(str(r) for r in reasons),
+            }) + "\n")
+    except Exception:  # noqa: BLE001
+        pass
 
 
 def _checker_pass(result) -> bool:
@@ -531,7 +546,7 @@ def _verify_research(run_dir: Path) -> Tuple[bool, List[str]]:
                 "could not run. A filesystem-existence check alone cannot attest "
                 "P-0.5-RESEARCH in production (degraded pass allowed ONLY with an "
                 "explicit test/CI marker: PRESENTATION_ALLOW_DEGRADED_VERIFIERS=1 / "
-                "CI / OPENCLAW_TEST / .test-context run-dir marker)."]
+                "CI / OPENCLAW_TEST env markers)."]
         return True, ["NOTE: build_deck not importable — research engine checks degraded (pass)"]
 
     # FIX-E2E: _chk_research_brief / _chk_research_cited take a FILE path (they
@@ -588,7 +603,7 @@ def _verify_copy(run_dir: Path) -> Tuple[bool, List[str]]:
                 "its substance checks. A filesystem-existence check alone cannot attest "
                 "P4-COPY in production (degraded pass allowed ONLY with an explicit "
                 "test/CI marker: PRESENTATION_ALLOW_DEGRADED_VERIFIERS=1 / CI / "
-                "OPENCLAW_TEST / .test-context run-dir marker)."]
+                "OPENCLAW_TEST env marker)."]
         return True, ["NOTE: engine checkers not importable — copy verifier degraded (pass)"]
 
     # ROOT CAUSE (live run pj_34a56a26caca04532ec6e9cba6, 2026-08-18): both
@@ -674,8 +689,8 @@ def _verify_prompt(run_dir: Path) -> Tuple[bool, List[str]]:
                 "the deterministic prompt measurer did not run. A filesystem-existence "
                 "check alone cannot attest P4-PROMPT/P-PROMPT-QC in production "
                 "(degraded pass allowed ONLY with an explicit test/CI marker: "
-                "PRESENTATION_ALLOW_DEGRADED_VERIFIERS=1 / CI / OPENCLAW_TEST / "
-                ".test-context run-dir marker)."]
+                "PRESENTATION_ALLOW_DEGRADED_VERIFIERS=1 / CI / OPENCLAW_TEST env "
+                "markers)."]
         return True, ["NOTE: build_deck.check_prompt_qc_deterministic unavailable — prompt verifier degraded (pass)"]
 
     try:
@@ -775,7 +790,7 @@ def _verify_qc_report(report_rel: str, bd_fn_name: str, af_code: str,
                     f"gate could not run. A bare-existence check cannot attest this "
                     "phase in production (degraded pass allowed ONLY with an explicit "
                     "test/CI marker: PRESENTATION_ALLOW_DEGRADED_VERIFIERS=1 / CI / "
-                    "OPENCLAW_TEST / .test-context run-dir marker)."]
+                    "OPENCLAW_TEST env marker)."]
             reasons = [f"NOTE: build_deck.{bd_fn_name} unavailable — degraded to a bare "
                        f"existence check (pass)"]
             return True, reasons
@@ -875,7 +890,7 @@ def _verify_render(run_dir: Path) -> Tuple[bool, List[str]]:
             "render image-QC never ran. A PNG-existence check alone cannot attest "
             "P4-RENDER/P-IMAGE-QC in production (degraded pass allowed ONLY with an "
             "explicit test/CI marker: PRESENTATION_ALLOW_DEGRADED_VERIFIERS=1 / CI / "
-            "OPENCLAW_TEST / .test-context run-dir marker)."]
+            "OPENCLAW_TEST env marker)."]
     return True, ["NOTE: canonical_render_guard image-QC unavailable — filesystem-only check (pass)"]
 
 
@@ -1637,7 +1652,7 @@ def _verify_assemble(run_dir: Path) -> Tuple[bool, List[str]]:
             "was never measured. A container-sanity check alone cannot attest "
             "P8-ASSEMBLE in production (degraded pass allowed ONLY with an explicit "
             "test/CI marker: PRESENTATION_ALLOW_DEGRADED_VERIFIERS=1 / CI / "
-            "OPENCLAW_TEST / .test-context run-dir marker)."]
+            "OPENCLAW_TEST env marker)."]
     return True, ["NOTE: build_deck.check_deck_harmony unavailable — filesystem-only check (pass)"]
 
 
@@ -4995,6 +5010,7 @@ def verify(phase_id: str, run_dir: Path) -> Tuple[bool, List[str]]:
     # NOTE-degraded pass directly — a SIMULATED phase does not get substance-
     # checked because the whole point is the credential is absent.
     if sim_reasons:
+        _log_degraded_pass(run_dir, phase_id, sim_reasons)
         return True, sim_reasons
     # ---- end SIMULATED rejection ----
 
@@ -5019,6 +5035,10 @@ def verify(phase_id: str, run_dir: Path) -> Tuple[bool, List[str]]:
                 f"missing file, empty field, or violated gate code."
             ]
         # ---- end FAIL-with-reason validation ----
+
+        # PD-201: every degraded (NOTE) pass leaves one audit line behind.
+        if ok and any(str(r).startswith("NOTE") for r in reasons):
+            _log_degraded_pass(run_dir, phase_id, reasons)
 
         return bool(ok), list(reasons)
     except Exception as exc:  # noqa: BLE001
@@ -5218,12 +5238,23 @@ def _selftest() -> None:
             for k, v in env_backup.items():
                 if v is not None:
                     os.environ[k] = v
-        # With the .test-context marker the held state NOTE-passes (degraded path).
+        # PD-201: only the ENV signal opens the degraded path — a marker file in
+        # the run folder must not. The .test-context file is written too, and the
+        # held state must still FAIL while only that file exists.
         (t10rd / "working" / "checkpoints").mkdir(parents=True, exist_ok=True)
         (t10rd / "working" / "checkpoints" / ".test-context").write_text("phase-b selftest")
+        ok_m, _ = verify("P-IMAGE-QC", t10rd)
+        if ok_m:
+            fails.append("T10: held P-IMAGE-QC under ONLY .test-context must fail "
+                         "(PD-201 removed the file signal), got ok=True")
+        os.environ["PRESENTATION_ALLOW_DEGRADED_VERIFIERS"] = "1"
         ok_i2, _ = verify("P-IMAGE-QC", t10rd)
         if not ok_i2:
-            fails.append("T10: held P-IMAGE-QC under .test-context must NOTE-pass (degraded), got fail")
+            fails.append("T10: held P-IMAGE-QC under PRESENTATION_ALLOW_DEGRADED_VERIFIERS=1 "
+                         "must NOTE-pass (degraded), got fail")
+        if not (t10rd / "working" / "checkpoints" / "gate_log.jsonl").is_file():
+            fails.append("T10: a degraded pass must append a working/checkpoints/"
+                         "gate_log.jsonl line (PD-201), got no log file")
         # Verdict files present with pass:true + a non-builder reviewed_by => pass,
         # and the graded reports' bytes are unchanged by the verdict.
         before_i = (qdir / "image_qc_report.json").read_bytes()
@@ -5262,6 +5293,7 @@ def _selftest() -> None:
            PHASE_VERIFIERS["P-IMAGE-QC"] is _verify_render:
             fails.append("T10: P-IMAGE-QC must be an aggregate distinct from raw _verify_render (FIX 16)")
     finally:
+        os.environ.pop("PRESENTATION_ALLOW_DEGRADED_VERIFIERS", None)
         if t10rd is not None:
             import shutil as _sh
             _sh.rmtree(t10rd, ignore_errors=True)
