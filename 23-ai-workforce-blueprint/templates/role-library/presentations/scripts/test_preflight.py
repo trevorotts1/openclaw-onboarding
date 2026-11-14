@@ -1560,6 +1560,17 @@ def test_postflight_speech_length_reverify():
         # ANY run-dir-scoped postflight call since the round-5 wiring: satisfy both
         # with independent verdicts so this fixture isolates the speech-length
         # re-check, as its docstring promises.
+        # PD-206a (decision D-34): each verdict is read from its OWN file under
+        # working/qc/human-review/ — never from a block inside the graded report.
+        (root / "working" / "qc" / "human-review").mkdir(parents=True, exist_ok=True)
+        (root / "working" / "qc" / "human-review" / "image_grounding.json").write_text(
+            json.dumps({"pass": True, "reviewed_by": "image-grounding-steward",
+                        "reviewed_at": "2026-11-14T00:00:00Z",
+                        "note": "fixture: every people/scene prompt carries its research anchor"}))
+        (root / "working" / "qc" / "human-review" / "representation_casting.json").write_text(
+            json.dumps({"pass": True, "reviewed_by": "representation-casting-director",
+                        "reviewed_at": "2026-11-14T00:00:00Z",
+                        "note": "fixture: cast targets match the client's representation mix"}))
         (root / "working" / "qc").mkdir(parents=True, exist_ok=True)
         # PD-206a (decision D-34): the two human verdicts live in their OWN files
         # (working/qc/human-review/*.json), not as blocks inside the graded reports.
