@@ -558,6 +558,35 @@ def tick(runs_dir, skill_root=SKILL_ROOT):
                         if rec.get("acted") is True and outcome_rc == 0:
                             row["last_recovery_ok_at"] = now()
                             summary["recovered"].append(rid)
+                            # The look above already told the client a person
+                            # was looking; the recovery pass's OWN envelope is
+                            # the one that says it is picked back up. Send it
+                            # now, so the promise is kept on the same tick
+                            # instead of never. Only an acted, successful
+                            # recovery carries this wording.
+                            pickup = (act_env or {}).get(
+                                "message_for_client") or ""
+                            for origin in (origins or []):
+                                try:
+                                    if origin.get("kind") == "studio":
+                                        send = [sys.executable, channel_send,
+                                                "send", "--channel", "studio",
+                                                "--run-dir", run_dir,
+                                                "--message", pickup]
+                                    else:
+                                        send = ["openclaw", "message", "send",
+                                                "--channel", "telegram",
+                                                "--target",
+                                                str(origin["target"]),
+                                                "--message", pickup]
+                                    r = subprocess.run(send, capture_output=True,
+                                                       text=True, timeout=60)
+                                    if r.returncode != 0:
+                                        note("KEEPALIVE_DELIVERY_FAILED",
+                                             "%s rc=%d" % (rid, r.returncode))
+                                except Exception as e:     # noqa: BLE001
+                                    note("KEEPALIVE_DELIVERY_FAILED",
+                                         "%s %s" % (rid, e))
                         elif (rec.get("refused") or {}).get("code") \
                                 == "RECOVERY_NOT_AUTHORIZED":
                             # announce-only box: say it ONCE, never per tick
@@ -569,7 +598,10 @@ def tick(runs_dir, skill_root=SKILL_ROOT):
                                 row, rid, outcome_rc
                                 if outcome_rc is not None else act.returncode)
             if proc.returncode == 10:
-                row["state"] = ("expired" if envelope.get("expired")
+                # Supervision ends on verified completion or an explicit
+                # cancellation -- never on the reached cap. "expired" stays in
+                # FINISHED only for rows written by older versions.
+                row["state"] = ("canceled" if envelope.get("canceled")
                                 else "complete")
             row["last_useful_progress_at"] = max(
                 row.get("last_useful_progress_at") or 0,

@@ -79,7 +79,7 @@ exit 0
 
 def check(name, cond, detail=""):
     print("%s %s%s" % ("ok" if cond else "FAIL", name,
-                       (" (%s)" % detail) if detail and not cond else ""))
+                       (" (%s)" % (detail,)) if detail and not cond else ""))
     if not cond:
         FS.append(name)
 
