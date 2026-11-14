@@ -153,6 +153,9 @@ const state = {
   locked: false,
   sending: false,       // Lock it in is in flight — a second tap sends nothing
   orderId: null,        // S75-071 — ONE id for the recap on screen, until accepted
+  // U-Z11 — the order a "Continue" on a needs_you order came from. Locking in
+  // again posts a NEW order; this is the old one that is cancelled after it.
+  continueFrom: null,
   // U-Z08 — the photos, logos and voice notes the client added, in order. The
   // ids ride the draft and the order; the names are what the screen reads back.
   uploadIds: [],
@@ -534,6 +537,12 @@ function replyFor(i) {
 
 const currentReplies = () => state.visible.map((_, i) => replyFor(i));
 
+/** U-Z11 (S75-106) — the id of the question each reply answers, in the same
+ *  order. Lock it in also appends one "yes" (the recap's confirmation), so the
+ *  list carries one empty id at the end to stay the same length; the service
+ *  reads only the ids it knows the brief by. */
+const currentReplyIds = () => [...state.visible.map((q) => String((q && q.id) || "")), ""];
+
 function firstUnanswered() {
   for (let i = 0; i < state.visible.length; i++) if (!replyFor(i)) return i;
   return state.visible.length;
@@ -597,6 +606,7 @@ async function advance() {
 
 async function startOrder() {
   // A new order starts from nothing of the last one — its photos included.
+  state.continueFrom = null;
   state.uploadIds = [];
   state.uploadLines = [];
   await loadQuestions();
@@ -919,6 +929,9 @@ async function lockIn(button) {
     const out = await svc().lockIn({
       title: orderTitle(),
       replies: [...currentReplies(), "yes"],
+      // U-Z11 — every answer travels with the id of the question it answers,
+      // so the service reads the brief by screen and never by position.
+      reply_ids: currentReplyIds(),
       upload_ids: [...state.uploadIds],
       order_id: state.orderId,
     });
@@ -927,6 +940,12 @@ async function lockIn(button) {
     // The order holds the files now; a fresh order starts empty.
     state.uploadIds = [];
     state.uploadLines = [];
+    // U-Z11 — this order was continued from one the studio sent back. The new
+    // order owns the work now, so the old one is cancelled. Best effort: the
+    // new order is the client's, and a refused cancel must not undo it.
+    const previous = state.continueFrom;
+    state.continueFrom = null;
+    if (previous) await cancelOrder(previous);
     if (out && out.order) {
       state.order = out.order;
       state.orders = [out.order, ...state.orders.filter((o) => o.order_id !== out.order.order_id)];
@@ -986,13 +1005,16 @@ export function timelineFor(order) {
 // box on the page, because a redraw would throw away what has been typed.
 export const PROJECT_REFRESH_MS = 30000;
 
-/** What the project page is showing: state + stale line + approval versions. */
+/** What the project page is showing: state + the studio's note + stale line +
+ *  approval versions. */
 export function projectSignature(order, staleLine, approvalItems) {
   const versions = (approvalItems || [])
     .map((it) => `${(it && (it.stage || it.item_id)) || ""}@${it && it.version != null ? it.version : ""}`)
     .sort()
     .join(",");
-  return `${(order && order.state) || ""}|${staleLine || ""}|${versions}`;
+  // U-Z11 — the note is part of what is drawn: a new reason under an unchanged
+  // state must still reach the page.
+  return `${(order && order.state) || ""}|${(order && order.note) || ""}|${staleLine || ""}|${versions}`;
 }
 
 /** Every input and textarea drawn on the page, wherever it sits. */
@@ -1114,6 +1136,28 @@ function startAgainButton(order) {
   return primary("Start it again", () => startAgain(order));
 }
 
+/** U-Z11 — "Continue" on an order the studio sent back (needs_you): the recap
+ *  reopens with this order's own answers, and locking in posts a NEW order and
+ *  cancels this one. The answer event moves an order back to in_production for
+ *  the box, never from the page, so the client's change is a new order. */
+async function continueOrder(order) {
+  state.continueFrom = (order && order.order_id) || null;
+  await startAgain(order);
+}
+
+/** The cancel itself belongs to service-client.js, which owns the transport.
+ *  Until that client carries `cancelOrder` there is none on the wire and the
+ *  old order simply stays where it is; the new order is unaffected. */
+async function cancelOrder(orderId) {
+  try {
+    const client = globalThis.studioService;
+    const cancel = client && typeof client.cancelOrder === "function" ? client.cancelOrder : null;
+    if (cancel) await cancel(orderId);
+  } catch {
+    // The new order is the client's; the old one ends later.
+  }
+}
+
 async function startAgain(order) {
   const kept = Array.isArray(order && order.replies) ? order.replies.filter((r) => typeof r === "string") : [];
   state.replies = kept;
@@ -1155,6 +1199,9 @@ function pageProject() {
   nodes.push(el("div", { class: "card" }, [
     el("h2", { text: order.title || "Your video" }),
     el("p", { text: `Status: ${statusWords(order)}` }),
+    // U-Z11 (S75-106) — why the studio needs them, or why the order was
+    // cancelled: the service's own words, right under the status.
+    order.note ? el("p", { class: "inline-note", text: order.note }) : null,
     // S75-073 — the service's own line when this page has fallen behind.
     state.staleLine ? el("p", { class: "muted", text: state.staleLine }) : null,
     ...timelineFor(order),
@@ -1173,6 +1220,13 @@ function pageProject() {
       }),
       startAgainButton(order),
     ]));
+  }
+
+  // U-Z11 — an order the studio sent back is never a dead end: Continue opens
+  // the recap with this order's own answers, and locking in posts a new order
+  // and cancels this one.
+  if (order.state === "needs_you") {
+    nodes.push(el("div", { class: "actions" }, [primary("Continue", () => continueOrder(order))]));
   }
 
   const approvalsCard = el("div", { class: "card" }, [el("h2", { text: "Your approvals" })]);
