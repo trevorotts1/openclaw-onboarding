@@ -13420,22 +13420,13 @@ PY
     elif command -v python3 >/dev/null 2>&1; then
       _pres_missing="${_pres_missing} venv(missing at $_PRES_VENV)"
     fi
-    command -v ffmpeg  >/dev/null 2>&1 || _pres_missing="${_pres_missing} ffmpeg"
-    command -v ffprobe >/dev/null 2>&1 || _pres_missing="${_pres_missing} ffprobe"
     command -v tesseract >/dev/null 2>&1 || _pres_missing="${_pres_missing} tesseract"
+    # PD-917: ffmpeg/ffprobe are NOT classified by hand here. presentation-deps.json
+    # is the one canon (both required=false) and pres_deps_verify_rows reads that
+    # classification: a missing optional dep lands in _pres_video_missing only, so a
+    # deck-only run is never blocked. Change the canon, not this block, to change
+    # the verdict.
     pres_deps_verify_rows
-    # PRES-033: the canonical classification RE-CLASSIFIES the hardcoded checks
-    # above: ffmpeg/ffprobe are optional video deps per presentation-deps.json,
-    # so a bare missing ffmpeg/ffprobe moves from the required set to the
-    # optional video set. A required dep that ALSO gates video (none today) stays
-    # required. Never double-count: remove the token from _pres_missing if it was
-    # classified optional, then append to the optional set.
-    for _opt in ffmpeg ffprobe; do
-      if command -v "$_opt" >/dev/null 2>&1; then :; else
-        _pres_missing="$(printf '%s' "$_pres_missing" | sed "s/ ${_opt}//")"
-        _pres_video_missing_add "$_opt"
-      fi
-    done
     if [ -n "$_pres_missing" ]; then
       echo "  ⚠⚠ PRESENTATION_DEPS_MISSING after converge:${_pres_missing}. The Skill 23 presentation pipeline will refuse every deck build at GATE 1 until these resolve. Department venv (FIX 71): python3 -m venv ${OC_CONFIG:-$HOME/.openclaw}/.venv-presentations && ${OC_CONFIG:-$HOME/.openclaw}/.venv-presentations/bin/python -m pip install reportlab python-pptx pypdf pytesseract. Mac system deps: brew install poppler; brew install --cask libreoffice; brew install ffmpeg; brew install tesseract. VPS: bash $_PRES_OC_ROOT/scripts/reassert-presentation-deps.sh"
       echo "  [pres-readiness] aggregated updater result PRESERVED: unrelated department updates already performed are NOT rolled back; the final exit code latches this readiness verdict."
