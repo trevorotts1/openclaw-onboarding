@@ -210,7 +210,7 @@ Both reverted, each to `RESULT: ALL PASS`, and the mirror was confirmed byte-ide
 
 ## 7. Tests, by id, on base and on the build
 
-Test census over the repository for anything naming `presenters-speech-writer` / `presenters_speech_writer` in a runnable test file returns four suites. All four: same command, same interpreter, `TMPDIR` under the unit's own scratch, no `/tmp`.
+Test census over the repository for anything naming `presenters-speech-writer` / `presenters_speech_writer` in a runnable test file returns four suites. All four: same command, same interpreter, a private temp directory under the unit's own scratch, no system temp path.
 
 ```
 python3 -m pytest -q test_preflight.py test_fix10_teleprompter.py \
