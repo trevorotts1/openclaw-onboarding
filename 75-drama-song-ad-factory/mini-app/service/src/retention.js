@@ -7,7 +7,7 @@
 //
 // | Kind                 | Deleted                                          |
 // | -------------------- | ------------------------------------------------ |
-// | intake_answer        | when the order is locked and picked up by the box |
+// | intake_answer        | at delivery, done or cancel (index.js, U-Z07)    |
 // | intake_photo         | same as intake_answer                            |
 // | approval_file        | when the stage is approved                       |
 // | r2_fallback_video    | 7 days after delivery                            |
@@ -23,6 +23,11 @@
 // |                      | for an optional version-2 push record, so the       |
 // |                      | studio takes the never-surprise choice: a client    |
 // |                      | never stops hearing from the studio on a timer.    |
+//
+// The approval `staging/` copies (approvals-v2) go at the same moment as the
+// intake files: on deliver, done or cancel (index.js, U-Z07). The frozen
+// `files/`, `ready.json` and `decision.json` are NOT deleted there — the page
+// still shows them — and the bucket's 45-day rule removes them later.
 //
 // Section 3.15: "Deletion code does not exist in either live mini app today.
 // It is new work (U2)." This module IS that work: it decides, it never
