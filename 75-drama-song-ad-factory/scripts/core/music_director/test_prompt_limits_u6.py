@@ -203,6 +203,7 @@ def test_dispatch_allows_headroom_duration():
     try:
         SD.run_takes(req, plan, lambda rq: [dict(GOOD), dict(GOOD)], lambda t: {},
                      lambda t, r: None, script, hook, (15, 20),
+                     cap_cents=SD.song_dispatch.MAX_RUN_CAP_CENTS,
                      kie=lambda fn, lbl, generation=False: fn(), style_id="soul-ballad")
         check("bare headroom duration is refused before any spend", False, "no DispatchError")
     except SD.DispatchError:
@@ -210,18 +211,20 @@ def test_dispatch_allows_headroom_duration():
     approved = dict(plan, duration_headroom_approved={"owner": "trevor", "reason": "test stub"})
     out = SD.run_takes(req, approved, lambda rq: [dict(GOOD), dict(GOOD)], lambda t: {},
                        lambda t, r: None, script, hook, (15, 20),
+                       cap_cents=SD.song_dispatch.MAX_RUN_CAP_CENTS,
                        kie=lambda fn, lbl, generation=False: fn(), style_id="soul-ballad")
     check("owner-selected headroom is honored and recorded",
           out["spent_cents"] == 6 and out["duration"]["mode"] == "headroom_override"
           and out["duration"]["headroom_approved"] == approved["duration_headroom_approved"], out)
     out2 = SD.run_takes(dict(req, input=dict(req["input"], duration=plan["delivered_s"])), plan, lambda rq: [dict(GOOD), dict(GOOD)],
                         lambda t: {}, lambda t, r: None, script, hook, (15, 20),
+                        cap_cents=SD.song_dispatch.MAX_RUN_CAP_CENTS,
                         kie=lambda fn, lbl, generation=False: fn(), style_id="soul-ballad")
     check("exact planned duration still accepted",
           out2["spent_cents"] == 6 and out2["duration"]["mode"] == "exact", out2)
     try:
         SD.run_takes(dict(req, input=dict(req["input"], duration=30)), plan, lambda rq: [], lambda t: {}, lambda t, r: None,
-                     script, hook, (15, 20))
+                     script, hook, (15, 20), cap_cents=SD.song_dispatch.MAX_RUN_CAP_CENTS)
         check("a patch/short duration is still refused", False, "30 s accepted")
     except SD.DispatchError:
         check("a patch/short duration is still refused", True)
