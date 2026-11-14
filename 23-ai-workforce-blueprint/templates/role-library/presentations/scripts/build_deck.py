@@ -8605,6 +8605,16 @@ def _chk_no_overlay(run_dir: Path, slides_path: Optional[Path] = None) -> str:
 #      see the postflight success block further down this file. A skip can no
 #      longer be silent: this is the actual, load-bearing fix.
 #
+# PD-066 (D-15, D-33): a verified OWNER MESSAGE is now required, not just a
+# plausible record. Every record must carry a non-empty owner_msg_id AND that
+# id must resolve through presentation_job.approvals.verify (the cc_board
+# owner-message oracle) before it can waive anything. A record with no id is
+# refused naming the missing id; an id the oracle refuses is refused; an
+# oracle that cannot run at all (no presentation_job on the box, Command
+# Center unreachable) also refuses — after this unit NO waiver is possible on
+# a machine where owner approvals cannot be checked. The structural checks
+# below stay in force on top of it; none of them is a substitute for the id.
+#
 # An absent record, or a record that never names this af_code, is UNCHANGED
 # from before and stays QUIET (the common, innocent, majority case — see
 # runfacts.py's own findings() docstring for why treating plain absence as a
@@ -8640,15 +8650,22 @@ def _owner_skip_all_records(obj: dict) -> list:
 
 
 def _owner_skip_structurally_valid(r: dict) -> Tuple[bool, str]:
-    """The base authenticity rule this mechanism has always had (owner_approved
-    literal true + non-empty approved_by/reason/timestamp) PLUS the two
-    friction checks from the module comment above. Returns (True, "") or
-    (False, human-readable reason) — never raises."""
+    """The base authenticity rule (owner_approved literal true + non-empty
+    approved_by/reason/timestamp), the two friction checks from the module
+    comment above, AND (PD-066) a non-empty owner_msg_id — a record with no
+    owner message id is the self-forged shape and is refused here, naming the
+    missing id. This rule does not verify the id; _owner_skip_evaluate does
+    that through approvals.verify. Returns (True, "") or (False,
+    human-readable reason) — never raises."""
     if r.get("owner_approved") is not True:
         return False, f"owner_approved is {r.get('owner_approved')!r}, not literal true"
     approved_by = str(r.get("approved_by") or "").strip()
     if not approved_by:
         return False, "approved_by is empty"
+    if not str(r.get("owner_msg_id") or "").strip():
+        return False, ("owner_msg_id is empty — a waiver must name the id of a real "
+                       "owner-authored message; a record with no owner_msg_id is "
+                       "self-forged (AF-FORGED-APPROVAL)")
     reason = str(r.get("reason") or "").strip()
     if not reason:
         return False, "reason is empty"
@@ -8712,37 +8729,43 @@ def _owner_skip_evaluate(run_dir: Path, af_code: str) -> Tuple[Optional[dict], l
     if not matches:
         return None, []
 
-    # MASTER Part 8 Fix 24: the in-loop OCR readback consults approvals.verify()
-    # (W11's owner-skip authenticity oracle) so a waiver honored here is proven
-    # against the cc_board owner-message oracle, not taken on the record's own
-    # fields. A record that claims owner authority but cannot be verified raises
-    # ApprovalError (AF-FORGED-APPROVAL); that is converted into a REJECTED event
-    # (never a granted one) so a forged token can never open this gate. An oracle
-    # that cannot run at all (import failure on a box without presentation_job)
-    # degrades to the legacy structural-only rule below — the structural rule and
-    # the disclosure layer stay in force either way.
-    from presentation_job import approvals as _approvals  # noqa: PLC0415 — lazy, matches runfacts pattern
+    # PD-066: approvals.verify() is MANDATORY for every record — not an optional
+    # hardening layer. There is no structural-only fallback left: a waiver is
+    # granted ONLY when the record's owner_msg_id resolves through the cc_board
+    # owner-message oracle. An ApprovalError (refused id, forged shape) and an
+    # oracle that cannot run at all are both REJECTED events (never granted).
     try:
-        _verified = {_approvals.verify(r, run_dir).get("owner_msg_id"): True
-                     for r in matches
-                     if str((r or {}).get("owner_msg_id") or "").strip()}
-    except Exception:  # noqa: BLE001 — AF-FORGED-APPROVAL or oracle failure: nothing proven
-        _verified = {}
+        from presentation_job import approvals as _approvals  # noqa: PLC0415 — lazy, matches runfacts pattern
+    except Exception:  # noqa: BLE001 — no approvals module on this box: nothing can verify
+        _approvals = None
 
     granted = None
     events = []
     for r in matches:
         norm_reason = re.sub(r"\s+", " ", str(r.get("reason") or "").strip().lower())
         ok, why = _owner_skip_structurally_valid(r)
-        # MASTER Part 8 Fix 24: a record that claims a resolvable owner_msg_id but
-        # FAILED the approvals.verify() oracle above is FORGED — refuse it even
-        # when its structural fields pass. Fail-closed: no oracle proof, no waiver.
-        if ok and str(r.get("owner_msg_id") or "").strip() and not _verified.get(
-                str(r.get("owner_msg_id") or "").strip()):
-            ok = False
-            why = ("owner_msg_id did not verify through approvals.verify() "
-                   "(AF-FORGED-APPROVAL): the cc_board owner-message oracle refused "
-                   "it — presence of the string is never proof of an owner decision")
+        if ok:
+            if _approvals is None:
+                ok = False
+                why = ("AF-FORGED-APPROVAL: owner approvals cannot be checked on "
+                       "this machine — presentation_job.approvals is unavailable, "
+                       "so no waiver can be verified. No skip is possible here.")
+            else:
+                try:
+                    _approvals.verify(r, run_dir)
+                except _approvals.ApprovalError as exc:
+                    ok = False
+                    why = str(exc)
+                    if "undetermined" in why.lower():
+                        why += (" — owner approvals cannot be checked on this "
+                                "machine: the engine cannot reach Command Center "
+                                "to prove the owner message.")
+                except Exception as exc:  # noqa: BLE001 — oracle transport failure: fail-closed
+                    ok = False
+                    why = (f"AF-FORGED-APPROVAL: owner approvals cannot be checked "
+                           f"on this machine — the owner-message oracle failed "
+                           f"({exc!r}); undetermined never opens a gate. "
+                           f"owner_msg_id={str(r.get('owner_msg_id') or '').strip()!r}")
         if ok and norm_reason in blanket_reasons:
             ok = False
             others = sorted(reason_af_codes[norm_reason] - {want})
@@ -8842,10 +8865,13 @@ def _owner_skip_approved_legacy(run_dir: Path, af_code: str):
     working/checkpoints/process_manifest.json under "owner_skip_approval" (a single
     object or a list of them). A valid token carries owner_approved:true, the af_code
     (or gate) it waives, a non-empty (>= _OWNER_SKIP_REASON_MIN_CHARS) approved_by/
-    reason, a real parseable timestamp, and a reason that is not a copy-pasted
+    reason, a real parseable timestamp, a reason that is not a copy-pasted
     blanket-skip signature shared by more than _OWNER_SKIP_BLANKET_REASON_LIMIT other
     af_codes (see _owner_skip_evaluate / _owner_skip_structurally_valid — Trust
-    Boundary Increment 2).
+    Boundary Increment 2), AND (PD-066) a non-empty owner_msg_id that resolves
+    through presentation_job.approvals.verify against the cc_board owner-message
+    oracle. No id, a refused id, or an oracle that cannot run on this machine means
+    NO waiver.
 
     HONEST CLAIM (corrected 2026-08-18, Part 6 #9 of the 2026-08-17 fix review; see
     the "THE HONEST LIMIT" block above _OWNER_SKIP_REASON_MIN_CHARS for the full
@@ -8855,8 +8881,12 @@ def _owner_skip_approved_legacy(run_dir: Path, af_code: str):
     (see _owner_skip_disclose). It does NOT stop a deliberate forger — the token
     lives in process_manifest.json, which is written by the same UID that would
     forge it, and nothing in this architecture can exclude a run-dir-privileged
-    writer. Treat a returned record as a tamper-evidence / health-signal finding,
-    never as proof of an authorization decision an adversary could not have faked.
+    writer. Since PD-066 the record also has to carry an owner_msg_id that the
+    cc_board owner-message oracle RESOLVES, so local fields alone no longer buy a
+    waiver — but that proof is only as strong as this machine's reach to Command
+    Center (no reach, no waiver). Treat a returned record as a tamper-evidence /
+    health-signal finding, never as proof of an authorization decision an
+    adversary could not have faked.
     The previous wording here ("No agent may self-skip and the absence of a token
     means the gate is ENFORCED") overstated that guarantee; it is corrected above.
     Returns the matching record (so callers can log who approved what) or None.
