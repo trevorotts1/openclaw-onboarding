@@ -983,7 +983,7 @@ def _board_epic(skill_root, order_id, title):
     try:
         from cc_sync import Outbox  # noqa: PLC0415
         from batch_mode.batch import STAGES  # noqa: PLC0415
-        out = Outbox(run_id=order_id)
+        out = Outbox()
         out.enqueue_create(job_id=order_id, show_name=title,
                            stages=[{"slug": s[0]} for s in STAGES],
                            workspace=out.workspace,
