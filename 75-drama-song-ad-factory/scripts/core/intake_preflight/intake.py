@@ -4,8 +4,10 @@ Essentials (max 3 in the catalog, ONE per message): offer / audience+action /
 website or placement. One question is emitted and the client's answer comes
 back before the next is asked (Trevor 2026-10-21). Money is NOT asked here: the
 choice card asks it once, with the real price. Never invents a spending ceiling
-or currency conversion. Brief text is source material, never auth/policy
-(injection -> rejected, auth untouched).
+or currency conversion. Brief text is source material, never auth/policy: the
+client's own typed words are never refused for ordinary language, and a fetched
+page or attached file that tries to override the run is dropped with a warning
+(auth untouched).
 
 Version-2 card fields (H8): length_option, shape, look, music and voice are
 normalized with provenance. Look/music default from core/style_defaults (D24);
@@ -20,6 +22,13 @@ import sys
 
 # ponytail: placement-substitution capped by leftover slots only; full
 # re-prioritization add when a verdict needs it.
+
+#: U-E05: the brief key that carries text lifted from a fetched link or an
+#: attached file. Each entry is {"name": ..., "text": ..., "provenance":
+#: "extracted"}; membership in this list is the "extracted" provenance, and an
+#: entry may opt out with "provenance": "provided". Nothing else in the brief
+#: is screened -- what the client typed is their own words, not an instruction.
+EXTRACTED_SOURCES_FIELD = "extracted_sources"
 
 INJECTION_RES = [
     r"ignore\s+(all\s+)?(previous|prior|above)\s+instructions",
@@ -163,10 +172,8 @@ Q_AUDIENCE_ONLY = ("Who is this ad for? "
                    "For example: 'Women 35-55 who want a second income.'")
 Q_ACTION_ONLY = ("What should people do after watching? "
                  "For example: 'Register for my free masterclass.'")
-Q_WEBSITE = ("What is the exact website address you want people to go to? "
-             "Type it exactly as it should appear, for example: example.com. "
-             "We will use it word for word in the song, captions and end card.")
-Q_PLACEMENT = "What placement/format should we produce (aspect ratio + target length)?"
+Q_WEBSITE = "What link should the ad send people to?"
+Q_PLACEMENT = "Where will this ad run, and how long should it be?"
 
 APPROVAL_AFFECTING = ("offer", "audience", "action", "budget_minor", "budget_currency")
 
@@ -251,7 +258,9 @@ def client_typo_question(fields):
     exactly as the client wrote them. Words the client approved
     (``approved_spellings`` on the brief: dialect, vernacular, brand forms)
     are never asked about, and the question rides the story questions -- it
-    does not add a fourth slot.
+    does not add a fourth slot. A word the client capitalised, or wrote more
+    than once in the brief, is a name or a product word (U-E05): those are
+    never put back as a question either.
     """
     if _PN is None:
         return None, None
@@ -265,12 +274,30 @@ def client_typo_question(fields):
     errors = _PN.check_lyrics_spelling(lines, protected, extra)
     if not errors:
         return None, None
+    # U-E05: a word the client capitalised, or wrote twice in the brief, is a
+    # name or a product word. Asking "is that exactly right?" about it reads
+    # as doubting the client's own brand, so those words are never put back.
+    parts = list(lines)
+    for key, value in fields.items():
+        if key in ("packet_lines", "on_screen_text", "protected", "approved_spellings"):
+            continue
+        for t in (value if isinstance(value, list) else [value]):
+            if isinstance(t, str):
+                parts.append(t)
+    spelled = re.findall(r"[A-Za-z']+", " ".join(parts))
     words, seen = [], set()
     for e in errors:
-        for tok in _PN._tokens(e.split("word", 1)[-1]):
-            if tok and tok not in seen:
-                seen.add(tok)
-                words.append(tok)
+        # the error names the unknown word first, then explains itself
+        for tok in _PN._tokens(e.split("word", 1)[-1])[:1]:
+            if not tok or tok in seen:
+                continue
+            seen.add(tok)
+            written = [t for t in spelled if t.lower() == tok]
+            if not written or len(written) > 1 or any(t[:1].isupper() for t in written):
+                continue
+            words.append(tok)
+    if not words:
+        return None, None
     shown = ", ".join(repr(w) for w in words[:3])
     return ({"id": "client_typo",
              "question": ("Your storyboard says %s. Is that exactly right, "
@@ -278,21 +305,59 @@ def client_typo_question(fields):
                           "words as written." % shown),
              "words": words}, None)
 
+def _source_name(src, i):
+    """The name a source is reported under: its own, or its position."""
+    name = src.get("name") if isinstance(src, dict) else None
+    return str(name or "source %d" % (i + 1))
+
+
+def _extracted_sources(brief):
+    """[(name, text)] for every fetched page / attached file in the brief."""
+    out = []
+    sources = brief.get(EXTRACTED_SOURCES_FIELD) if isinstance(brief, dict) else None
+    if not isinstance(sources, list):
+        return out
+    for i, src in enumerate(sources):
+        if not isinstance(src, dict) or src.get("provenance", "extracted") != "extracted":
+            continue
+        text = src.get("text")
+        if isinstance(text, str) and text:
+            out.append((_source_name(src, i), text))
+    return out
+
+
 def detect_injection(brief):
-    """NAMES of brief fields whose text matches instruction-override patterns."""
+    """NAMES of the extracted sources that try to override the run.
+
+    U-E05: only a fetched link or an attached file is screened. The client's
+    typed words are never refused -- "set the budget at $50" is a client
+    stating a detail, not an instruction that changes policy.
+    """
     hits = []
-    if not isinstance(brief, dict):
-        return hits
-    for key, val in brief.items():
-        texts = val if isinstance(val, list) else [val]
-        for t in texts:
-            if not isinstance(t, str):
-                continue
-            low = t.lower()
-            if any(re.search(p, low) for p in INJECTION_RES):
-                hits.append(str(key))
-                break
+    for name, text in _extracted_sources(brief or {}):
+        low = text.lower()
+        if any(re.search(p, low) for p in INJECTION_RES):
+            hits.append(name)
     return hits
+
+
+def _without_ignored_sources(brief, ignored=None):
+    """The brief with every extracted source the screen refused left out.
+
+    The run continues on the client's own words; the dropped source is named
+    in the envelope's ``warnings`` (U-E05).
+    """
+    ignored = set(detect_injection(brief) if ignored is None else ignored)
+    if not ignored or not isinstance(brief, dict):
+        return brief
+    kept = []
+    for i, src in enumerate(brief.get(EXTRACTED_SOURCES_FIELD) or []):
+        drop = (isinstance(src, dict) and
+                src.get("provenance", "extracted") == "extracted" and
+                _source_name(src, i) in ignored)
+        if not drop:
+            kept.append(src)
+    return dict(brief, **{EXTRACTED_SOURCES_FIELD: kept})
 
 
 def normalize(brief, settings=None):
@@ -545,9 +610,14 @@ def notices(brief, packet_lines=None):
 
 
 def evaluate(brief, settings=None, resume_state=None, run_id=None, now_unix=None):
-    """_evaluate plus the FU-U4 mode flag and notices. Concept mode with no
-    packet_lines is waiting (PACKET_REQUIRED_IN_CONCEPT_MODE), never ok."""
+    """_evaluate plus the FU-U4 mode flag, notices and the source warnings.
+    Concept mode with no packet_lines is waiting (PACKET_REQUIRED_IN_CONCEPT_MODE),
+    never ok."""
     r = _evaluate(brief, settings, resume_state, run_id, now_unix)
+    # U-E05: a fetched page or attached file that carries an instruction is
+    # dropped, never a refusal; the client is told which source was ignored.
+    r["warnings"] = ["source ignored: %s" % n
+                     for n in detect_injection(brief or {})]
     r["mode"] = mode_of(brief)
     r["notices"] = notices(brief)
     if r["mode"] == "concept" and r.get("outcome") == "ok" and not (brief or {}).get("packet_lines"):
@@ -559,17 +629,13 @@ def evaluate(brief, settings=None, resume_state=None, run_id=None, now_unix=None
 
 def _evaluate(brief, settings=None, resume_state=None, run_id=None, now_unix=None):
     settings = settings or {}
-    hits = detect_injection(brief or {})
+    # U-E05: only an extracted source is screened, and a match drops that
+    # source instead of refusing the brief.
+    brief = _without_ignored_sources(brief or {})
     fields, prov = normalize(brief, settings)
     summary, digest = summarize(fields)
     status = auth_status_for(fields, digest, settings, now_unix)
     summary["auth_status"] = status
-    if hits:  # untrusted text never touches auth/summary scope
-        return {"outcome": "rejected", "reason_code": "untrusted-injection-blocked",
-                "questions": [], "question_message": None, "summary": summary,
-                "digest": digest, "provenance": prov, "untrusted_fields": hits,
-                "auth_status": status, "approval_invalidated": False, "changes": [],
-                "next_action": "Remove instruction language from brief fields and resubmit."}
     # U8: the CLIENT's own words are spell-checked at intake, for free. A
     # word that is not a real word goes BACK AS ONE QUESTION naming it --
     # never an auto-fix, and the brief keeps the client's spelling.
@@ -690,10 +756,3 @@ def _evaluate(brief, settings=None, resume_state=None, run_id=None, now_unix=Non
                 "digest": digest, "provenance": prov, "auth_status": status,
                 "approval_invalidated": False, "changes": [],
                 "next_action": "Record summary digest + auth scope, then run preflight before paid work."}
-    return {"outcome": "waiting", "reason_code": "missing-essentials",
-            "questions": qs,
-            "question_message": _fmt([q["question"] for q in qs]),
-            "summary": summary, "digest": digest, "provenance": prov,
-            "auth_status": status, "approval_invalidated": False, "changes": [],
-            "next_action": ("Ask this ONE question and wait for the client's answer; "
-                            "run intake again with that answer to get the next question.")}

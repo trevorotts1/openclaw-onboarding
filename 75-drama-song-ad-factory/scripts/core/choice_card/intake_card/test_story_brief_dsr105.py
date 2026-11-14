@@ -1,11 +1,15 @@
 #!/usr/bin/env python3
 """DSR-105: the story brief is asked by the card, so it reaches every run.
 
-The chat intake asks for the offer, the link, the audience, the character and
-the photos (SKILL.md); the Drama Studio page asked only the nine production
-choices, so an order placed on the page carried no brief at all and the crew
-had nothing to write from. intake_card.py stays the ONE place questions are
-defined, and these five are now part of the card.
+The chat intake asks for the offer, the web address, the audience, the
+character and the photos (SKILL.md); the Drama Studio page asked only the
+production choices, so an order placed on the page carried no brief at all and
+the crew had nothing to write from. intake_card.py stays the ONE place
+questions are defined, and the brief is part of the card.
+
+S75-006 moved the brief's screens: OFFER now takes the web address in the same
+reply, and PHOTOS is a recap line rather than a screen the client must get
+past. The brief and its ids are unchanged.
 
 Run: python3 core/choice_card/intake_card/test_story_brief_dsr105.py
 """
@@ -17,41 +21,51 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.dirname(os.path.dirname(HERE)))
 from choice_card.intake_card import intake_card as IC  # noqa: E402
 
-#: The nine production choices, in the order they were asked before DSR-105.
-PRODUCTION = ["models", "length", "music", "look", "model",
-              "spend", "storyboard", "song", "script"]
+#: The ids the brief is stored under. `photos` rides the recap (S75-006).
+TYPED_ON_CARD = ("offer", "link", "audience", "character")
 
 
-def test_the_brief_opens_the_card_and_the_nine_follow_unchanged():
+def test_the_brief_screens_open_the_card_and_the_ids_are_unchanged():
     ids = [q["id"] for q in IC.QUESTIONS]
-    assert ids == list(IC.BRIEF_IDS) + PRODUCTION, ids
-    assert len(ids) == 14
+    assert ids[:len(TYPED_ON_CARD)] == list(TYPED_ON_CARD), ids
+    assert ids.count("photos") == 1 and IC.QUESTIONS[-1]["id"] == "photos", ids
     assert IC.BRIEF_REQUIRED == ("offer", "link", "audience", "character")
-    assert "photos" not in IC.BRIEF_REQUIRED        # asked and stored, never required
+    assert "photos" not in IC.BRIEF_REQUIRED        # stored, never required
 
 
 def test_each_brief_question_is_typed_with_one_option_the_page_reads():
-    for q in IC.QUESTIONS[:len(IC.BRIEF_IDS)]:
-        assert q["free_text"] is True, q["id"]
-        assert len(q["options"]) == 1, q["id"]
-        assert q["options"][0][1].lower().startswith("reply with"), q["id"]
-        assert "recommended" not in q, q["id"]      # nothing to recommend: it is typed
-        assert q["ask"].strip() and q["why"].strip(), q["id"]
-    for q in IC.QUESTIONS[len(IC.BRIEF_IDS):]:
-        assert not q.get("free_text"), q["id"]
+    for qid in IC.BRIEF_IDS:
+        q = next(x for x in IC.QUESTIONS if x["id"] == qid)
+        assert q["free_text"] is True, qid
+        assert len(q["options"]) == 1, qid
+        assert q["options"][0][1].lower().startswith("reply with"), qid
+        assert "recommended" not in q, qid          # nothing to recommend: it is typed
+        assert q["ask"].strip(), qid
+    for q in IC.QUESTIONS:
+        if q["id"] not in IC.BRIEF_IDS:
+            assert not q.get("free_text"), q["id"]
 
 
 def test_the_chat_card_asks_them_as_typed_blocks_not_menus():
-    for i in range(1, len(IC.BRIEF_IDS) + 1):
+    #: the counter reads the screens asked one by one (U-GEN425): the card and
+    #: the live chat agree, and the defaulted recap lines are not questions.
+    total = len(IC.askable(IC.QUESTIONS))
+    for i, qid in enumerate(TYPED_ON_CARD, 1):
         block = IC.render_step(i)
         lines = block.split("\n")
-        assert lines[0].startswith("Question %d of 14 - " % i), block
-        assert lines[2] == "" and lines[1].endswith("."), block      # the one-sentence why
+        label = IC.QUESTIONS[i - 1]["label"]        # OFFER, OFFER LINK, ...
+        assert lines[0] == "Question %d of %d - %s" % (i, total, label), block
         assert lines[-1] == IC.FREE_TEXT_HINT, block
-        assert not [l for l in lines if l[:2] in ("1.", "2.")], block   # no menu to pick from
-    # and the whole card carries the same five blocks
+        assert not [x for x in lines if x[:2] in ("1.", "2.")], block   # no menu
+    # the OFFER screen is one sentence of why; the address follow-up asks only
+    # its own sentence, because the offer is already in hand
+    offer = IC.render_step(1).split("\n")
+    assert offer[1].endswith(".") and offer[2] == ""
+    link = IC.render_step(2).split("\n")
+    assert link[1] == "Thanks. What web address should the video send people to?"
+    # and the whole card carries one typed block per brief screen
     card = IC.render_card()
-    assert card.startswith("Question 1 of 14 - OFFER\n")
+    assert card.startswith("Question 1 of %d - OFFER\n" % total)
     assert card.count(IC.FREE_TEXT_HINT) == len(IC.BRIEF_IDS)
 
 
@@ -65,14 +79,35 @@ def test_a_typed_answer_is_stored_verbatim_and_the_pick_words_are_refused():
     assert IC._parse("x" * (IC.MAX_TYPED_ANSWER_CHARS + 1), q) is None
 
 
+def test_one_reply_carries_the_offer_and_its_address():
+    q = IC.QUESTIONS[0]
+    got = IC._parse("My course, https://example.com/course", q)
+    assert got["text"] == "My course" and got["address"] == "https://example.com/course", got
+    # a reply with no address stores the offer and asks for the address after it
+    plain = IC._parse("My course", q)
+    assert plain.get("address") is None and plain["text"] == "My course", plain
+
+
 def test_the_recap_lists_the_brief_and_the_run_carries_it():
-    replies = IC.example_replies()
-    recap = IC.conversation(replies)["message"]
-    for n, label in enumerate(["Offer", "Offer Link", "Audience", "Character", "Photos"], 1):
-        assert "%d. %s: Sweet Details Cookie-Decorating Class" % (n, label) in recap, recap
-    # the nine still land on their own lines, after the brief
-    assert "6. Ai models: " in recap and "14. Script Approval: " in recap
-    assert IC.conversation(replies + ["yes"])["done"] is True
+    # one reply per ASKED screen of the campaign card: PURPOSE, the brief, the
+    # AI setup (no saved pair here), EPISODE LENGTH, MUSIC, VIDEO STYLE, AGNES,
+    # CHECKPOINTS, BUDGET
+    replies = ["1", "My course, example.com/course", "Women 35-55", "Tasha, 40, locs",
+               "1", "5", "1", "1", "2", "2", "$25"]
+    st = IC.conversation(replies, purpose_flow=True)
+    recap = st["message"]
+    # S75-030: the address screen's card label is "OFFER LINK"; the recap calls
+    # it "Web address" so the client reads what it is.
+    for n, label in ((2, "Offer"), (3, "Web address"), (4, "Audience"), (5, "Character")):
+        assert "%d. %s: " % (n, label) in recap, recap
+    assert "2. Offer: My course" in recap and "3. Web address: example.com/course" in recap
+    assert "Photos: none yet - send them any time (default - reply" in recap, recap
+    # the run records the offer AND the address as their own answers
+    qs = IC._shaped(IC.QUESTIONS, st["answers"])
+    rq, ra = IC._record_lists(st["answers"], qs)
+    rows = dict(zip((q["id"] for q in rq), ra))
+    assert rows["offer"]["text"] == "My course" and rows["link"]["text"] == "example.com/course"
+    assert IC.conversation(replies + ["yes"], purpose_flow=True)["done"] is True
 
 
 def test_the_saved_character_pick_replaces_the_brief_character_question():
@@ -87,10 +122,10 @@ def test_the_saved_character_pick_replaces_the_brief_character_question():
     CL.save_character(client, "Maya Lee", "Warm, 40s, silver braids", [img])
     qs = IC._with_saved_character(client)
     ids = [q["id"] for q in qs]
-    assert len(qs) == 14, ids                       # the same count either way
+    assert len(qs) == len(IC.QUESTIONS), ids         # the same count either way
     assert ids.count("character") == 0 and ids.count("saved_character") == 1, ids
-    assert "saved_character" in ids and ids.index("saved_character") == len(IC.BRIEF_IDS) - 1
-    # no folder at all: the plain fourteen, typed CHARACTER included
+    assert ids.index("saved_character") == [q["id"] for q in IC.QUESTIONS].index("character")
+    # no folder at all: the plain card, typed CHARACTER included
     assert IC._with_saved_character("") == IC.QUESTIONS
 
 
@@ -98,8 +133,9 @@ def test_the_studio_export_marks_the_brief_as_typed_and_still_refuses_a_half_scr
     screens = {s["id"]: s for s in IC.studio_json()["questions"]}
     for qid in IC.BRIEF_IDS:
         assert screens[qid]["typed"] is True, qid
-        assert screens[qid]["options"][0]["detail"].lower().startswith("reply with"), qid
-    for qid in PRODUCTION:
+        # S75-074 step 2: the page asks for the words itself; no option row.
+        assert screens[qid]["options"] == [], qid
+    for qid in ("models", "length", "music", "look", "checkpoints", "spend"):
         assert screens[qid]["typed"] is False, qid
     # the export still refuses a screen the studio cannot render
     bad = [dict(q) for q in IC.QUESTIONS]

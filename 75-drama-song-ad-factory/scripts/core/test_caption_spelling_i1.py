@@ -72,7 +72,8 @@ class IntakeAsksWebsite(unittest.TestCase):
                  "budget_minor": 2500, "budget_currency": "USD", "placement": "9:16 vertical"}
         r = I.evaluate(brief)
         self.assertEqual([q["id"] for q in r["questions"]], ["website"])
-        self.assertIn("exact website address", r["question_message"])
+        self.assertIn("What link should the ad send people to?",
+                      r["question_message"])
 
     def test_no_question_once_answered_and_stored(self):
         brief = {"offer": "Coaching", "audience": "moms", "action": "Visit her website",

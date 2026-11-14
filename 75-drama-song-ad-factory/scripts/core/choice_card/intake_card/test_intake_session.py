@@ -267,9 +267,21 @@ class IntakeSessionTest(unittest.TestCase):
         self.assertEqual(self.read()["answer_records"], {})
 
     def model_turns(self, n=2):
-        qs = [next(q for q in card.QUESTIONS if q["id"] == "model")]
+        """Answer LENGTH, then the video model through its recap line.
+
+        S75-006: the VIDEO MODEL screen is defaulted, so it is never asked one
+        by one; the recap's own line number opens it, and the answer recorded
+        there is the client's change over the default. LENGTH is answered first
+        so the card has a real asked screen (as every real run does)."""
+        qs = [next(q for q in card.QUESTIONS if q["id"] == qid)
+              for qid in ("length", "model")]
         session.process([], qs, run_dir=self.run, purpose_flow=False)
+        st = session.process(["1"], qs, run_dir=self.run, purpose_flow=False)
+        self.assertEqual(st["question_id"], "recap", st)
+        st = session.process(["2"], qs, run_dir=self.run, purpose_flow=False)
+        self.assertEqual(st["question_id"], "model", st)
         st = session.process([str(n)], qs, run_dir=self.run, purpose_flow=False)
+        self.assertEqual(st["question_id"], "recap", st)
         self.assertFalse(st["done"])
         return qs, st
 
@@ -397,6 +409,9 @@ class IntakeSessionTest(unittest.TestCase):
         session.process([], qs, run_dir=self.run, purpose_flow=False, runtime=runtime)
         st = session.process(["opus-chain builds, haiku-chain checks"], qs,
                              run_dir=self.run, purpose_flow=False, source_ref="message:synthetic-explicit-pair")
+        # S75-006: the video model is a recap line, so its line number opens it.
+        self.assertEqual(st["question_id"], "recap", st)
+        st = session.process(["2"], qs, run_dir=self.run, purpose_flow=False)
         self.assertEqual(st["question_id"], "model", st)
         st = session.process(["2"], qs, run_dir=self.run, purpose_flow=False)
         self.assertEqual(st["question_id"], "recap", st)
@@ -487,10 +502,13 @@ class IntakeSessionTest(unittest.TestCase):
         from choice_card.intake_card import ai_models
         from batch_mode.batch import STAGES
         import sqlite3
+        # S75-006: the three approval screens are one CHECKPOINTS question now,
+        # and the video model is the last (defaulted) recap line.
         qs = [next(q for q in card.QUESTIONS if q["id"] == qid) for qid in
-              ("offer", "audience", "models", "model", "storyboard", "song", "script")]
+              ("offer", "audience", "models", "checkpoints", "model")]
         state = session.process([], qs, run_dir=self.run, purpose_flow=False, target="original-fixture-target")
-        replies = ["New Chapter Coaching", "Founders 45–60", "opus-chain builds, haiku-chain checks", "2", "yes", "yes", "yes", "yes"]
+        replies = ["New Chapter Coaching", "Founders 45–60",
+                   "opus-chain builds, haiku-chain checks", "1", "5", "2", "yes"]
         for raw in replies:
             state = session.process([raw], qs, run_dir=self.run, purpose_flow=False,
                                     target="original-fixture-target", source_ref="message:original-synthetic-source")
