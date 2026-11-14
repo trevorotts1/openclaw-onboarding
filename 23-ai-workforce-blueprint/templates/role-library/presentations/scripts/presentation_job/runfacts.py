@@ -59,7 +59,7 @@ import sys
 import tempfile
 import threading
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from enum import Enum
 from pathlib import Path
 from typing import Any, Dict, Generic, Optional, Tuple, TypeVar
@@ -684,6 +684,18 @@ def _import_build_deck():
     return _BD_MODULE
 
 
+def _degraded_allowed(run_dir: Path) -> bool:
+    """PD-317 asks the PD-201 test rule's ONE owner (phase_verifiers._degraded_allowed)
+    instead of re-implementing it: after PD-201 lands, "the rule as it stands on the
+    lane branch" is whatever that function says, including its marker-file removal.
+    Fails CLOSED — a rule we cannot read is not permission to degrade."""
+    try:
+        from phase_verifiers import _degraded_allowed as _rule  # noqa: PLC0415
+        return bool(_rule(run_dir))
+    except Exception:  # noqa: BLE001 — an unreadable rule must never open the gate
+        return False
+
+
 # ---------------------------------------------------------------------------
 # RunFacts — the one sealed record.
 # ---------------------------------------------------------------------------
@@ -1215,8 +1227,10 @@ class WorkbookInfo:
 
     The regular workbook must be image-only (zero AcroForm fields), the fillable
     must carry fields + /NeedAppearances, both must exist with >= 2048 bytes and
-    at least one page. pypdf absence NOTE-degrades exactly like the legacy
-    verifier (existence+size only, pass with a note)."""
+    at least one page. pypdf absence FAILS the verdict naming pypdf (PD-317: a
+    missing instrument is not a pass) unless the PD-201 test rule allows the
+    degrade — that allowance is resolved at seal time and sealed in
+    `degraded_allowed`, so the verdict itself stays pure."""
 
     regular_found: bool
     regular_path: str
@@ -1227,8 +1241,9 @@ class WorkbookInfo:
     fillable_pages: int
     fillable_fields: int
     fillable_need_appearances: bool
-    pypdf_available: bool           # False -> verdict must degrade, never false-fail
+    pypdf_available: bool           # False -> verdict FAILS naming pypdf (PD-317)
     too_small: tuple                 # tuple[str] — names of workbook PDFs under 2048 bytes
+    degraded_allowed: bool = False   # PD-201 test rule resolved at seal (with pypdf missing)
 
 
 @dataclass(frozen=True)
@@ -1285,36 +1300,32 @@ class NotesSyncInfo:
     notes_pane_result: str           # "" = no empty notes panes; else AF-EMPTY-NOTES-PANE finding
 
 
-@dataclass(frozen=True)
-class FishTagInfo:
-    """Sealed P8.4-FISH-TAG dual-file measurement (AF-FISH-TAG).
-
-    The tagged speech must be the source speech with [fish] expression tags
-    (and parens) inserted — the strip-equals prover removes every bracket/paren
-    span and whitespace from BOTH files and requires the stripped texts to be
-    identical. Both texts are sealed raw; the verdict does the pure strip
-    comparison (mirrors phase_verifiers._verify_fish_tag's rubric)."""
-
-    tagged_found: bool
-    source_found: bool
-    tagged_path: str
-    source_path: str
-    tagged_size: int
-    source_size: int
-    tagged_text: str                 # "" when unreadable
-    source_text: str                 # "" when unreadable
-
-
 # ---------------------------------------------------------------------------
 # Seal-time readers for the slice-3 facts. Each reads its source EXACTLY ONCE
 # per seal. None of these may ever raise into seal().
 # ---------------------------------------------------------------------------
 
+def deliverables_bundle_patterns() -> Dict[str, str]:
+    """PD-315: the ten P9-DELIVER bundle keys -> run-dir glob, derived from the
+    ONE path table (``presentation_job.deliverable_paths.CANONICAL_PATHS``).
+
+    ``{deck_slug}`` is a literal template in the table; the run-dir scan uses a
+    glob, so it expands to ``*``. Both this sealed record and
+    ``verifier_registry.slice3_verifiers`` build their lists here, so the two
+    can never drift from the canon again. A hand-kept copy previously existed
+    in both places and both pointed ``infographic_png`` at a
+    ``working/delivery/`` path no producer writes.
+    """
+    from presentation_job.deliverable_paths import CANONICAL_PATHS
+    return {key: rel.replace("{deck_slug}", "*")
+            for key, rel in CANONICAL_PATHS.items()}
+
+
 def _deliverables_fact(run_dir: Path) -> Fact:
     """Seal the P9-DELIVER bundle: every DELIVERABLE_AUDIT_SPEC key, measured.
     Uses the canonical spec's min_bytes / magic_bytes / magic_offset, and the
-    same per-key pre-curation globs the legacy phase verifier uses
-    (phase_verifiers._DELIVERY_PATTERN_BY_KEY / _DELIVERY_CONTENT_CHECK_BY_KEY).
+    canon globs from ``deliverable_paths.CANONICAL_PATHS`` (PD-315); the legacy
+    phase verifier's own map is ``phase_verifiers._DELIVERY_PATTERN_BY_KEY``.
     The content-substance probes mirror _deliverable_content_check: fish tags
     for speech_fish_md, HTML structure for teleprompter_html, ftyp/moov for
     webinar_mp4."""
@@ -1326,19 +1337,8 @@ def _deliverables_fact(run_dir: Path) -> Fact:
             "imported — the P9-DELIVER bundle cannot be measured. This is a "
             "module-level packaging break, not a run-dir state.")
 
-    # Pre-curation glob per key — mirrors phase_verifiers._DELIVERY_PATTERN_BY_KEY.
-    _pattern = {
-        "deck_pptx":         "working/delivery/*-FINAL.pptx",
-        "deck_pdf":          "working/delivery/*-FINAL.pdf",
-        "guide_pdf":         "working/deliverables/PRESENTER-GUIDE.pdf",
-        "speech_md":         "working/deliverables/PRESENTERS-SPEECH.md",
-        "speech_pdf":        "working/deliverables/PRESENTERS-SPEECH.pdf",
-        "speech_fish_md":    "working/deliverables/PRESENTERS-SPEECH-FISH-TAGGED.md",
-        "audio_mp3":         "working/delivery/PRESENTER-AUDIO.mp3",
-        "infographic_png":   "working/delivery/infographic.png",
-        "teleprompter_html": "working/deliverables/presenter-teleprompter.html",
-        "webinar_mp4":       "working/delivery/*-WEBINAR.mp4",
-    }
+    # PD-315: ONE path table — the canon in presentation_job.deliverable_paths.
+    _pattern = deliverables_bundle_patterns()
 
     infos = []
     for spec in _DAS:
@@ -1473,8 +1473,9 @@ def _media_library_fact(run_dir: Path) -> Fact:
 
 def _workbook_fact(run_dir: Path) -> Fact:
     """Seal the P8.25-WORKBOOK dual-PDF measurement. pypdf is opened lazily and
-    defensively — a box without pypdf records pypdf_available=False and the
-    verdict degrades to existence+size, exactly like the legacy verifier."""
+    defensively — a box without pypdf records pypdf_available=False and, per
+    PD-317, the verdict FAILS naming pypdf unless the PD-201 test rule allows
+    the existence+size degrade (that allowance is sealed here, at seal time)."""
     dl = run_dir / "working" / "deliverables"
     regulars = sorted(dl.glob("*-WORKBOOK.pdf")) if dl.is_dir() else []
     fillables = sorted(dl.glob("*-WORKBOOK-FILLABLE.pdf")) if dl.is_dir() else []
@@ -1529,9 +1530,11 @@ def _workbook_fact(run_dir: Path) -> Fact:
             pypdf_available=True, too_small=too_small)
         return Fact.known(info, detail="workbook dual-PDF sealed via pypdf")
     except ImportError:
-        return Fact.known(info, detail="pypdf not importable — workbook fact degraded (existence+size only)")
+        return Fact.known(replace(info, degraded_allowed=_degraded_allowed(run_dir)),
+                          detail="pypdf not importable — workbook fact degraded (existence+size only)")
     except Exception as exc:  # noqa: BLE001 — never let pypdf blow up the seal
-        return Fact.known(info, detail=f"pypdf read failed ({exc!r}) — workbook fact degraded")
+        return Fact.known(replace(info, degraded_allowed=_degraded_allowed(run_dir)),
+                          detail=f"pypdf read failed ({exc!r}) — workbook fact degraded")
 
 
 def _webinar_video_fact(run_dir: Path) -> Fact:
@@ -1601,11 +1604,16 @@ def _webinar_video_fact(run_dir: Path) -> Fact:
     return Fact.known(info, detail="webinar video + timing track sealed")
 
 
+NOTES_PANE_UNMEASURED = "AF-EMPTY-NOTES-PANE: could not be measured"
+
+
 def _notes_sync_fact(run_dir: Path) -> Fact:
     """Seal the P9.5-NOTES-SYNC measurement: the sync record + the empty-notes-pane
     scan of the bundle PPTX it names (via build_deck._chk_notes_pane — the single
     source of the AF-EMPTY-NOTES-PANE rubric; same call the legacy verifier makes,
-    made once at seal time)."""
+    made once at seal time). PD-317: if that renderer is missing or crashes, the
+    pane is UNMEASURED and `notes_pane_result` carries NOTES_PANE_UNMEASURED —
+    never an empty string, which would read as "scanned and clean"."""
     p = run_dir / "working" / "checkpoints" / "notes_sync.json"
     if not p.is_file():
         return Fact.absent("working/checkpoints/notes_sync.json: file not found")
@@ -1622,9 +1630,11 @@ def _notes_sync_fact(run_dir: Path) -> Fact:
                 notes_pane_result = _bd._chk_notes_pane(
                     Path(bundle_pptx).parent, run_dir=run_dir, slides_path=None) or ""
             else:
-                notes_pane_result = ""
-        except Exception as exc:  # noqa: BLE001 — degrade, never crash the seal
-            notes_pane_result = ""
+                # PD-317: a missing renderer is not "no empty panes" — it is a
+                # pane that was never measured, and the verdict must say so.
+                notes_pane_result = NOTES_PANE_UNMEASURED
+        except Exception:  # noqa: BLE001 — degrade, never crash the seal
+            notes_pane_result = NOTES_PANE_UNMEASURED
     info = NotesSyncInfo(
         status=status,
         reason=str(obj.get("reason") or "").strip(),
@@ -1739,8 +1749,8 @@ def verify_workbook(facts: RunFacts) -> Tuple[Verdict, str]:
     """PURE. P8.25-WORKBOOK verdict (AF-WORKBOOK-BOTH). Mirrors
     phase_verifiers._verify_workbook: both PDFs exist and exceed 2048 bytes,
     the regular is image-only (zero AcroForm fields), the fillable carries
-    fields and /NeedAppearances. pypdf absence NOTE-degrades to existence+size
-    (never a false fail on a genuine box)."""
+    fields and /NeedAppearances. pypdf absence FAILS naming pypdf (PD-317) unless
+    the PD-201 test rule allowed the degrade at seal time."""
     fact = facts.workbook
     if fact.state is not Epistemic.KNOWN:
         return Verdict.FAIL, f"workbook {fact.state.value} ({fact.detail})"
@@ -1756,7 +1766,12 @@ def verify_workbook(facts: RunFacts) -> Tuple[Verdict, str]:
     if problems:
         return Verdict.FAIL, "; ".join(problems)
     if not info.pypdf_available:
-        return Verdict.PASS, "NOTE: pypdf not importable — workbook verdict degraded to existence+size check (pass)"
+        if info.degraded_allowed:
+            return Verdict.PASS, ("NOTE: pypdf not importable — workbook verdict degraded "
+                                  "to existence+size check (pass) under the PD-201 test rule")
+        return Verdict.FAIL, (f"workbook cannot be measured: {fact.detail or 'pypdf unavailable'} "
+                              "— a missing or failed instrument is not a pass; "
+                              "AF-WORKBOOK-BOTH needs pypdf to read both PDFs")
     if info.regular_pages < 1:
         problems.append(f"regular workbook {info.regular_path}: pypdf read {info.regular_pages} pages")
     if info.regular_fields != 0:

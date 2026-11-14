@@ -196,19 +196,53 @@ def test_engine_doors_refuse():
         blocked = [e for e in st.get("events", []) if "AF-INTAKE-PROVENANCE" in json.dumps(e)]
         _check("2b block names the sha in state events", bool(blocked) and bad[:12] in json.dumps(blocked))
 
-        # runfacts import failure stays fail-closed (FIX 17 pattern): hide the
-        # module and re-verify through the funnel.
-        import importlib
-        saved = sys.modules.pop("presentation_job.runfacts", None)
-        try:
-            import phase_verifiers as _pv_probe
-        finally:
-            if saved is not None:
-                sys.modules["presentation_job.runfacts"] = saved
-        _check("2c runfacts re-importable after probe", saved is not None)
-
         # producer exemption lives in the funnel
         import phase_verifiers as pv
+
+        # 2c: the FUNNEL refuses — not "the module is still importable". Hide
+        # presentation_job.runfacts from sys.modules, drop the package
+        # attribute (a `from presentation_job import runfacts` would otherwise
+        # resolve off the stale attribute) and block every new import of it,
+        # then call the refusal oracle itself. phase_verifiers keeps the
+        # binding it took at ITS import time, so the check stays live here; if
+        # that bound call raised, the funnel's except branch returns a refusal
+        # too (fail-closed), never a silent pass.
+        import importlib
+        import presentation_job as _pj
+        _hidden = sys.modules.pop("presentation_job.runfacts", None)
+        _pkg_attr = getattr(_pj, "runfacts", None)
+
+        class _BlockRunfacts:
+            """Make runfacts unimportable, so a lazy re-import cannot pass."""
+
+            def find_spec(self, name, path=None, target=None):
+                if name in ("presentation_job.runfacts", "runfacts"):
+                    raise ImportError(
+                        "PD-099a: presentation_job.runfacts deliberately unimportable")
+                return None
+
+        _blocker = _BlockRunfacts()
+        if _pkg_attr is not None:
+            delattr(_pj, "runfacts")
+        sys.meta_path.insert(0, _blocker)
+        try:
+            import_failed = False
+            try:
+                importlib.import_module("presentation_job.runfacts")
+            except ImportError:
+                import_failed = True
+            _check("2c runfacts is unimportable (control)", import_failed)
+            hidden_refusal = pv._intake_provenance_refusal("P-CONSUMER", r.run)
+            _check("2c2 funnel refuses the consumer with runfacts unimportable",
+                   hidden_refusal is not None and bad in hidden_refusal,
+                   str(hidden_refusal)[:80])
+        finally:
+            sys.meta_path.remove(_blocker)
+            if _hidden is not None:
+                sys.modules["presentation_job.runfacts"] = _hidden
+            if _pkg_attr is not None:
+                _pj.runfacts = _pkg_attr
+
         _check("2d producer exempt in funnel",
                pv._intake_provenance_refusal("P0A-INTAKE", r.run) is None)
         refusal = pv._intake_provenance_refusal("P-CONSUMER", r.run)
