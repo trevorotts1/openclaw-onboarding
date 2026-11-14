@@ -869,6 +869,10 @@ def one_variant(n, variant, request, plan, generate, measure, save, script_words
             "concerns": [] if got else failure_concerns(r),
             "receipt": got.get("receipt") if got else (r.get("receipt")),
             "attempt": 1, "attempts": 1, "receipts": r["receipts"],
+            # S75-018: the review block is WHY a take was withheld. Carried
+            # here so the client-facing message can name it; it never changes
+            # whether the take is delivered.
+            "review_required": r.get("review_required"),
             "envelope": env, "counts": env["counts"]}
 
 
@@ -1385,9 +1389,22 @@ def parse_fork_answer(reply):
     return None
 
 
+def _review_concern(result):
+    """S75-018: the reason a take was withheld for a pending bounded review,
+    in the module's own words. ``take_accepted`` owns that sentence and its
+    fallback -- nothing new is written here."""
+    rv = (result if isinstance(result, dict) else {}).get("review_required")
+    if not isinstance(rv, dict):
+        return None
+    if not rv.get("required") or rv.get("satisfied"):
+        return None
+    ok, why = _SD.take_accepted({"review": rv})
+    return None if ok else why
+
+
 def failure_concerns(result):
     """The song judge's NAMED concerns for a take that did not pass, as plain
-    lines. Empty when every gate passed."""
+    lines. Empty when every gate passed and no review was withheld."""
     r = result if isinstance(result, dict) else {}
     judged = r.get("receipt") if isinstance(r.get("receipt"), dict) else None
     if not judged or "gates" not in judged:
@@ -1402,6 +1419,10 @@ def failure_concerns(result):
         detail = ((g or {}).get("detail") if isinstance(g, dict) else "") or ""
         out.append("%s: %s%s" % (name, str(v or "").strip().upper() or "UNKNOWN",
                                  (" - " + str(detail)) if detail else ""))
+    # S75-018: a withheld take still owes the client the reason it was held.
+    why = _review_concern(r)
+    if why:
+        out.append(why)
     return out
 
 
