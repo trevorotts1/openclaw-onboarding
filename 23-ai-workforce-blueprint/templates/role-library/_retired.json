@@ -1,7 +1,7 @@
 {
   "schema": "openclaw/retired-artifacts@2",
-  "generated_at": "2026-11-14T00:22:46.443048+00:00",
-  "source_ref": "ebf5c769a2ad5b2582bf2256588095cbef20cfac",
+  "generated_at": "2026-11-14T03:28:20.343821+00:00",
+  "source_ref": "235f892b4b506288833ff5a644e1c254dafa34ac",
   "tracked_trees": [
     "23-ai-workforce-blueprint/templates/role-library"
   ],
@@ -9,9 +9,9 @@
     "content_sha": "sha256 over hash-content-manifest.py normalize_canonical()"
   },
   "counts": {
-    "artifacts": 54,
+    "artifacts": 53,
     "sops": 8,
-    "roles": 46,
+    "roles": 45,
     "departments": 17
   },
   "artifacts": [
@@ -615,18 +615,6 @@
       ],
       "retired_in": "f5942a6867316b41cda71111a5a5e79ec1be081a",
       "retired_at": "2026-06-12T14:00:15-04:00"
-    },
-    {
-      "lib_path": "templates/role-library/presentations/infographic-checklist.md",
-      "repo_path": "23-ai-workforce-blueprint/templates/role-library/presentations/infographic-checklist.md",
-      "dept": "presentations",
-      "file": "infographic-checklist.md",
-      "kind": "role",
-      "content_shas": [
-        "sha256:1c355e73a07e1f24b514c63f6080c6eb4d09ed02f005d1300b5eca060272d902"
-      ],
-      "retired_in": "8c77c86c83c184eecb3b4ff5e9fbaeba4074e0cf",
-      "retired_at": "2026-09-04T06:20:48-04:00"
     },
     {
       "lib_path": "templates/role-library/presentations/intake-miniapp/DEPLOY.md",
