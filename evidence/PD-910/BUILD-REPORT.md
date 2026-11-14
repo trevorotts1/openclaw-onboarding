@@ -7,7 +7,7 @@
     `pd/fl17-phase-checks`, its `--hold-*` children, and
     `pd/fl17-phase-checks--qc-merge`). Per the unit instruction, the FL17 lane's
     existing branch `pd/fl17-phase-checks` was used.
-- Worktree: `/Volumes/mac mini m4/swarm-contract/pd-fix/worktrees/onboarding/FL17`
+- Worktree: `<LOOP_ROOT>/worktrees/onboarding/FL17`
 - Commit sha: `08a6cdcd78796b29716bace0750c28f2ad06c1fb`
 
 ## Files changed
@@ -27,7 +27,7 @@
 
 ## Commands and results
 
-All run with `TMPDIR=/Volumes/mac mini m4/swarm-contract/pd-fix/tmp` from
+All run with `TMPDIR=<LOOP_ROOT>/tmp` from
 `.../FL17/23-ai-workforce-blueprint/templates/role-library/presentations/scripts`.
 
 1. `python3 -m pytest tests/test_pres012_strict_pu_verifiers.py -q`
