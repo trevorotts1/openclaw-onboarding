@@ -61,6 +61,15 @@ STEP_EXECUTION_ACCEPTED = "execution_accepted"
 STEPS = (STEP_CLAIMED, STEP_ORDER_FETCHED, STEP_MATERIALIZED,
          STEP_WAKE_QUEUED, STEP_EXECUTION_ACCEPTED)
 
+#: The order lifecycle the studio itself runs — the same words as
+#: `mini-app/service/src/lifecycle.js` STATES. The `orders.state` column carries
+#: THIS vocabulary (see `record_order_state`); the bridge's own handoff
+#: progression is `step` above, which is a different ladder and is never
+#: written here. A row that still reads the DDL default `'claimed'` has no
+#: recorded studio state yet (the default is legacy, not a lifecycle word).
+ORDER_STATES = ("waiting", "in_production", "needs_you", "ready",
+                "delivered", "done", "cancelled", "expired")
+
 #: Studio order keys and lease names are `<kind>:<client_id>:<id>`. The colon
 #: is the reason this ledger is SQLite and not a lock file (see module doc).
 DDL = """
@@ -339,7 +348,12 @@ class ClaimLedger:
         return row[0] if row else None
 
     def order_state(self, order_id):
-        """The claim row as a dict (owner, step, fence, token, lease), or None."""
+        """The claim row as a dict (owner, step, fence, token, lease), or None.
+
+        `state` is the studio's own order state as last recorded by
+        `record_order_state` — `'claimed'` (the legacy DDL default) means no
+        studio state has been recorded for this row yet.
+        """
         row = self.con.execute(
             "SELECT owner, claimed_at, state, step, fence, lease_expires_at,"
             " claim_token, owner_pid FROM orders WHERE order_id=?",
@@ -350,6 +364,33 @@ class ClaimLedger:
                 "state": row[2], "step": row[3], "fence": row[4],
                 "lease_expires_at": row[5], "claim_token": row[6],
                 "owner_pid": row[7]}
+
+    def record_order_state(self, order_id, state, *, owner=None, fence=None):
+        """Record the studio's lifecycle state for `order_id`. True = written.
+
+        `state` is the order state the service projects (lifecycle.js STATES),
+        so the claim row carries the last thing the studio said about this
+        order — that is what `orders.state` is for; `step` already records the
+        bridge's own handoff progression. A word outside `ORDER_STATES` is
+        refused and nothing is written: a newer service adding a state must
+        never corrupt the column, and a refusal here never blocks the poll.
+        `owner`/`fence` narrow the write to the live claim, like every other
+        fenced write, so a taken-over worker cannot stamp a stale state.
+        """
+        word = str(state or "").strip().lower()
+        if word not in ORDER_STATES:
+            return False
+        sql = "UPDATE orders SET state=? WHERE order_id=?"
+        args = [word, order_id]
+        if owner is not None:
+            sql += " AND owner=?"
+            args.append(owner)
+        if fence is not None:
+            sql += " AND fence=?"
+            args.append(int(fence))
+        cur = self.con.execute(sql, tuple(args))
+        self.con.commit()
+        return cur.rowcount == 1
 
     def advance_step(self, order_id, owner, step, *, now=None, fence=None,
                      ttl_s=DEFAULT_CLAIM_TTL_S):
