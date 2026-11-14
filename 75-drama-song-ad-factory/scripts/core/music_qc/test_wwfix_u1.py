@@ -2837,9 +2837,10 @@ def test_ww27_h_the_exact_payload_carries_the_cast_and_the_traded_reply():
           and "[Verse Mara (sung):" in lyrics,
           "WW-27: each character's vocal direction rides its own payload tag")
     check("_cast" not in req
-          and sorted(req) == ["_hook_plan", "_style_id", "callBackUrl", "endpoint",
-                              "input", "model"],
-          "WW-27: no provider field was invented -- the cast rides the script, not a new key")
+          and sorted(req) == ["_hook_plan", "_style_id", "endpoint", "input",
+                              "model"],
+          "WW-27: no provider field was invented -- the cast rides the script, not a new key"
+          " (U-M01: no callback address is set, so no callBackUrl key)")
     check("_cast" not in payload,
           "WW-27: the serialized payload carries no internal cast key")
 
