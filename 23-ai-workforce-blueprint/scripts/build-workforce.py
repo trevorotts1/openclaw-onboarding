@@ -983,6 +983,44 @@ def _commit(path, state):
         return None
 
 
+_STATE_MISSING = object()
+
+
+def _commit(path, state):
+    """Commit a build-state snapshot; never let a concurrent writer crash the build.
+
+    A reminder stamp or a department decision can land between this call's read
+    and its write. `workforce_state.commit` raises `StateConflict` when that
+    happens, and the old code let that escape past its `except OSError` handlers
+    and end the build with a traceback. Retry ONCE here: re-read the file and
+    re-apply only the keys this call changed, so the other writer's field
+    survives. A second conflict is logged and swallowed — the record this call
+    writes is best-effort telemetry, never a reason to abort a build.
+    """
+    from workforce_state import StateConflict
+    try:
+        return _state_commit(path, state)
+    except StateConflict as _conflict:
+        print(f"[STATE-CONFLICT] retrying state write to {path}: {_conflict}", file=sys.stderr)
+    intent = {}
+    for _key in set(state) | set(state.base):
+        _new = state.get(_key, _STATE_MISSING)
+        if _new != state.base.get(_key, _STATE_MISSING):
+            intent[_key] = _new
+    try:
+        fresh = _state_read(path)
+        for _key, _new in intent.items():
+            if _new is _STATE_MISSING:
+                fresh.pop(_key, None)
+            else:
+                fresh[_key] = _new
+        return _state_commit(path, fresh)
+    except StateConflict as _conflict:
+        print(f"[STATE-CONFLICT WARNING] gave up on state write to {path}: {_conflict}",
+              file=sys.stderr)
+        return None
+
+
 # ============================================================
 # STANDARD-FIRST MODE READER (AI Workforce standard-first redesign, 2026-08-04)
 # ============================================================
