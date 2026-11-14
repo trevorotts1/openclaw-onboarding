@@ -2,7 +2,7 @@
 name: zhc-closeout
 version: "v13.2.18"
 description: Delivers the full ZeroHumanWorkforce closeout experience — KIE.ai infographics, Veo celebration video, 9-section Notion page tree, 7-message Telegram sequence, Command Center fire, and n8n wire-up. Every deliverable must pass the 8.5 quality gate before delivery.
-version: v13.2.8
+version: v13.2.18
 ---
 
 # Skill 37: ZHC Closeout
