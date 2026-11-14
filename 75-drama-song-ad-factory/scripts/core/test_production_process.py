@@ -293,7 +293,7 @@ class ProductionProcessTest(unittest.TestCase):
     def test_offline_dispatch_success_cannot_prove_a_predecessor(self):
         confirmed_run(self.run)
         complete_stage(self.run, "research")
-        write_json(self.run / "research" / "receipt.json",
+        write_json(self.run / "research" / "evidence.json",
                    {"outcome": "ok", "reason_code": "KIE_DISPATCH_OK", "execution_mode": "offline", "production_admitted": False})
         result = process.admit_production(self.run, "creative-strategy")
         self.assertEqual(result["reason_code"], "PRODUCTION_PREDECESSOR_OFFLINE_ONLY")
@@ -401,7 +401,7 @@ class ProductionProcessTest(unittest.TestCase):
     def test_complete_predecessor_with_deleted_artifact_is_an_order_violation(self):
         rid = confirmed_run(self.run)
         complete_stage(self.run, "research")
-        (self.run / "research" / "receipt.json").unlink()
+        (self.run / "research" / "evidence.json").unlink()
         r = process.admit_production(self.run, "creative-strategy", run_id=rid)
         self.assertFalse(r["ok"], r)
         self.assertEqual(r["reason_code"], "PRODUCTION_ORDER_VIOLATION")
@@ -411,7 +411,7 @@ class ProductionProcessTest(unittest.TestCase):
     def test_empty_predecessor_artifact_keeps_the_governed_evidence_code(self):
         rid = confirmed_run(self.run)
         complete_stage(self.run, "research")
-        (self.run / "research" / "receipt.json").write_text("", encoding="utf-8")
+        (self.run / "research" / "evidence.json").write_text("", encoding="utf-8")
         r = process.admit_production(self.run, "creative-strategy", run_id=rid)
         self.assertFalse(r["ok"], r)
         self.assertEqual(r["reason_code"], "PRODUCTION_PREDECESSOR_EVIDENCE_MISSING")

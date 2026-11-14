@@ -562,7 +562,10 @@ def _resolve_skill_dir():
         # co-located in-repo fallback instead.
         if (candidate / "templates" / "role-library" / "_index.json").exists():
             return candidate
-    except Exception:
+    # SystemExit is not an Exception: detect_platform.get_openclaw_paths() raises
+    # it on a bare CI runner (no /data/.openclaw, ~/.openclaw or ~/clawd), so the
+    # documented fall-through below could never run there. Catch it too.
+    except (Exception, SystemExit):
         pass
     # Fallback: assume this file is at skills/23-ai-workforce-blueprint/scripts/
     # (in-repo / dev / CI execution, or an install whose skills dir carries no
@@ -815,7 +818,7 @@ def _load_company_config():
         cfg_path = paths.get("company_config")
         if cfg_path and Path(cfg_path).exists():
             return json.loads(Path(cfg_path).read_text(encoding="utf-8"))
-    except Exception:
+    except (Exception, SystemExit):
         pass
     return {}
 
@@ -827,7 +830,7 @@ def _load_user_md_excerpt():
         if user_md and Path(user_md).exists():
             text = Path(user_md).read_text(encoding="utf-8")
             return text[:2000]
-    except Exception:
+    except (Exception, SystemExit):
         pass
     return ""
 
@@ -2069,6 +2072,26 @@ def write_governing_personas_md(dept_path, dept_id, dept_name=None):
     if not dept_path.exists():
         return None
 
+    # BU-114: a department's CANONICAL persona guide ships WITH the role library
+    # (templates/role-library/<dept>/governing-personas.md). When present it
+    # GOVERNS: copy it verbatim instead of rendering the generic runtime list
+    # from persona-categories.json. Rationale: qc-completeness.sh only counts
+    # this file when it EXISTS, and the render below produces a valid file but
+    # one driven by whatever persona catalog happened to be installed — so a box
+    # with no Skill 22 catalog (or a dept absent from DEPT_DOMAIN_HINTS) gets a
+    # thinner guide and no reviewed content at all. The library copy is reviewed
+    # content that ships with the repo, so it wins.
+    try:
+        _canon = (_resolve_skill_dir() / "templates" / "role-library"
+                  / normalize_dept(dept_id) / "governing-personas.md")
+        if _canon.is_file():
+            _out = dept_path / "governing-personas.md"
+            _out.write_text(_canon.read_text(encoding="utf-8"), encoding="utf-8")
+            print(f"  ✓ wrote {_out} (canonical role-library guide)")
+            return _out
+    except Exception:
+        pass  # fall through to the runtime render
+
     if dept_name is None:
         dept_name = dept_path.name.replace("-dept", "").replace("-", " ").title()
 
@@ -2195,6 +2218,10 @@ def write_governing_personas_md(dept_path, dept_id, dept_name=None):
                     "|------------|--------|--------|--------|\n"
                     + "\n".join(rows)
                 )
+    except SystemExit:
+        # detect_platform: no platform marker on a bare CI runner. Best-effort
+        # read — the placeholder text below is the correct outcome there.
+        pass
     except Exception as e:
         persona_list_text = f"_(error reading persona-categories.json: {e})_"
 

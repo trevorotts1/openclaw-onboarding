@@ -52,6 +52,7 @@ ZERO third-party deps (stdlib only), matching the rest of this package.
 from __future__ import annotations
 
 import hashlib
+import hmac
 import json
 import os
 import re
@@ -59,7 +60,7 @@ import sys
 import tempfile
 import threading
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from enum import Enum
 from pathlib import Path
 from typing import Any, Dict, Generic, Optional, Tuple, TypeVar
@@ -90,6 +91,37 @@ ERROR_PREFIX = "TRUST-BOUNDARY-SHADOW-ERROR"
 INTAKE_ARTIFACT = "working/copy/intake.json"
 INTAKE_PROVENANCE_REL = "working/checkpoints/intake.provenance.jsonl"
 AF_INTAKE_PROVENANCE = "AF-INTAKE-PROVENANCE"
+
+# PD-308 — the provenance check cannot be switched off from the run folder.
+# Before this, deleting the log (or writing a row with any hand-typed
+# writer_phase) re-armed the run: "no rows" read as "pre-regime". Two locked
+# doors replace that:
+#   1. only these writer names may append a row, and only rows carrying one of
+#      them are honoured by the refusal oracle;
+#   2. when intake.json exists and no trusted row does, the run is refused IF
+#      state.json records a completed intake step (the log was deleted);
+#      only a run whose intake step never completed keeps the pre-regime
+#      tolerance.
+INTAKE_WRITERS: Tuple[str, ...] = ("P0A-INTAKE", "P-SP-INTAKE", "resolve_intake")
+
+# Phases whose state.json record being `done` means the intake step completed.
+# Mirrors phase_verifiers._INTAKE_PRODUCER_PHASES (which cannot be imported
+# here — it imports this module) plus P-SP-INTAKE; a phase whose artifacts name
+# the intake artifact counts too (below), so a manifest rename cannot re-open
+# the door. ponytail: this is a name list, not a manifest read; upgrade path is
+# to resolve producers from the pinned manifest when the oracle grows a
+# manifest_path argument.
+INTAKE_STEP_PHASES: Tuple[str, ...] = ("P-CONVERTER", "P0A-INTAKE", "P-SP-INTAKE", "P-SP-CLAIM")
+
+# PD-308 — the per-run key the engine already holds for step nonces: phases.py
+# _script_nonce_env mints it per script phase and exports it to the child as
+# OC_DECK_ENTRY_NONCE. Rows are keyed with it when it is present in the
+# writer's environment; the engine process itself does not retain it after the
+# phase, so a row's hash is verified only in a process that holds the same key.
+# ponytail: keyed rows are write-time attestation, not a boundary against a
+# same-UID reader (the module header already says so); upgrade path is an
+# out-of-process attestor that retains the run key.
+INTAKE_PROVENANCE_KEY_ENV = "OC_DECK_ENTRY_NONCE"
 
 
 def _sha256_file(path: Path) -> Optional[str]:
@@ -143,9 +175,76 @@ def load_intake_provenance(run_dir) -> list:
     return rows
 
 
+def _intake_provenance_key() -> str:
+    """The per-run step-nonce key, when this process holds it (PD-308)."""
+    return (os.environ.get(INTAKE_PROVENANCE_KEY_ENV) or "").strip()
+
+
+def _intake_row_hash(row: dict, key: str) -> str:
+    """Keyed hash over every row field except row_hash itself (PD-308)."""
+    payload = {k: v for k, v in row.items() if k != "row_hash"}
+    return hmac.new(key.encode("utf-8"),
+                    json.dumps(payload, sort_keys=True).encode("utf-8"),
+                    hashlib.sha256).hexdigest()
+
+
+def _trusted_intake_rows(run_dir) -> list:
+    """Rows the refusal oracle may honour (PD-308).
+
+    A row whose writer_phase is not one of INTAKE_WRITERS is never honoured —
+    a hand-typed or out-of-band writer cannot re-arm a run. When this process
+    holds the per-run key, a row that carries a row_hash must match it
+    (compare_digest); a row with no hash is still readable as a legacy
+    pre-PD-308 row, which is the ceiling named at
+    INTAKE_PROVENANCE_KEY_ENV."""
+    rows = [r for r in load_intake_provenance(run_dir)
+            if str(r.get("writer_phase") or "") in INTAKE_WRITERS]
+    key = _intake_provenance_key()
+    if not key:
+        return rows
+    out: list = []
+    for row in rows:
+        stored = str(row.get("row_hash") or "")
+        if stored and not hmac.compare_digest(stored, _intake_row_hash(row, key)):
+            continue
+        out.append(row)
+    return out
+
+
+def _intake_step_done(run_dir) -> bool:
+    """True iff state.json records a COMPLETED intake step (PD-308).
+
+    A done phase whose id is in INTAKE_STEP_PHASES, or any done phase whose
+    artifacts name the intake artifact. An absent/unreadable/malformed
+    state.json is False (a run that cannot prove the step ran keeps the
+    pre-regime tolerance; the engine's own gates still refuse a bad intake)."""
+    p = Path(run_dir) / "state.json"
+    try:
+        state = json.loads(p.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return False
+    if not isinstance(state, dict):
+        return False
+    for ps in state.get("phases") or []:
+        if not isinstance(ps, dict) or ps.get("status") != "done":
+            continue
+        if str(ps.get("id") or "") in INTAKE_STEP_PHASES:
+            return True
+        for a in ps.get("artifacts") or []:
+            if str(a) == INTAKE_ARTIFACT:
+                return True
+    return False
+
+
 def append_intake_provenance(run_dir, writer_phase: str, *, previous_sha: Optional[str] = None,
                              note: str = "") -> dict:
     """Append ONE provenance row for a sanctioned intake.json write.
+
+    PD-308: only a writer named in INTAKE_WRITERS may append — any other name
+    raises ValueError before a row exists (a row that names an unsanctioned
+    writer is exactly the "anything-typed" bypass). The row is stamped with a
+    keyed hash over its fields when the per-run step-nonce key is in this
+    process's environment (INTAKE_PROVENANCE_KEY_ENV).
 
     MUST be called immediately AFTER the atomic write lands: sha_after is
     computed from the file as it exists on disk right now, sha_before is the
@@ -156,13 +255,18 @@ def append_intake_provenance(run_dir, writer_phase: str, *, previous_sha: Option
     visible to the caller, because the engine will refuse every phase until a
     row exists."""
     run_dir = Path(run_dir)
+    writer = str(writer_phase)
+    if writer not in INTAKE_WRITERS:
+        raise ValueError(
+            f"{AF_INTAKE_PROVENANCE}: {writer!r} is not a sanctioned intake writer — "
+            f"only {', '.join(INTAKE_WRITERS)} may append a provenance row.")
     sha_after = current_intake_sha(run_dir)
     if sha_after is None:
         raise OSError(
             f"{AF_INTAKE_PROVENANCE}: cannot append a provenance row — "
             f"{INTAKE_ARTIFACT} is not on disk in {run_dir}")
     row = {
-        "writer_phase": str(writer_phase),
+        "writer_phase": writer,
         "writer_pid": os.getpid(),
         "ts": _iso_now(),
         "sha_before": previous_sha or "",
@@ -170,6 +274,9 @@ def append_intake_provenance(run_dir, writer_phase: str, *, previous_sha: Option
     }
     if note:
         row["note"] = str(note)[:400]
+    key = _intake_provenance_key()
+    if key:
+        row["row_hash"] = _intake_row_hash(row, key)
     log_path = run_dir / INTAKE_PROVENANCE_REL
     log_path.parent.mkdir(parents=True, exist_ok=True)
     line = json.dumps(row, sort_keys=True) + "\n"
@@ -187,16 +294,26 @@ def intake_sha_has_provenance(run_dir) -> Tuple[bool, str]:
 
     Returns (ok, reason). reason names the sha when refusing — the engine's
     refusal message is required to name the sha (QC proof). A run with no
-    intake.json yet passes (the intake phase itself must be able to run); a
-    run with no provenance log at all passes ONLY until the log exists — once
-    any provenance row exists the regime is active for this run and the
-    current sha must appear as some row's sha_after."""
+    intake.json yet passes (the intake phase itself must be able to run). A run
+    with no TRUSTED provenance row passes ONLY while state.json records no
+    completed intake step (PD-308: once the intake step is done, a missing/empty
+    log is a DELETED log, not a pre-regime run, and is refused). Once any
+    trusted row exists the regime is active for this run and the current sha
+    must appear as some row's sha_after."""
     run_dir = Path(run_dir)
     sha = current_intake_sha(run_dir)
     if sha is None:
         return True, "no intake.json yet — provenance check not applicable"
-    rows = load_intake_provenance(run_dir)
+    rows = _trusted_intake_rows(run_dir)
     if not rows:
+        if _intake_step_done(run_dir):
+            return False, (
+                f"{AF_INTAKE_PROVENANCE}: current {INTAKE_ARTIFACT} sha256={sha} has no "
+                f"trusted row in {INTAKE_PROVENANCE_REL}, and state.json records the intake "
+                "step as done — the provenance log was deleted or emptied, or every row in "
+                "it names an unsanctioned writer. A run whose intake step completed must "
+                "carry the provenance row its sanctioned write appended; re-write the "
+                "intake through the approval path (resolve_intake.py / the intake phase).")
         return True, "no provenance log yet — pre-FIX-109 run, regime not active"
     for row in rows:
         if row.get("sha_after") == sha:
@@ -682,6 +799,18 @@ def _import_build_deck():
     except Exception:  # noqa: BLE001
         _BD_MODULE = None
     return _BD_MODULE
+
+
+def _degraded_allowed(run_dir: Path) -> bool:
+    """PD-317 asks the PD-201 test rule's ONE owner (phase_verifiers._degraded_allowed)
+    instead of re-implementing it: after PD-201 lands, "the rule as it stands on the
+    lane branch" is whatever that function says, including its marker-file removal.
+    Fails CLOSED — a rule we cannot read is not permission to degrade."""
+    try:
+        from phase_verifiers import _degraded_allowed as _rule  # noqa: PLC0415
+        return bool(_rule(run_dir))
+    except Exception:  # noqa: BLE001 — an unreadable rule must never open the gate
+        return False
 
 
 # ---------------------------------------------------------------------------
@@ -1215,8 +1344,10 @@ class WorkbookInfo:
 
     The regular workbook must be image-only (zero AcroForm fields), the fillable
     must carry fields + /NeedAppearances, both must exist with >= 2048 bytes and
-    at least one page. pypdf absence NOTE-degrades exactly like the legacy
-    verifier (existence+size only, pass with a note)."""
+    at least one page. pypdf absence FAILS the verdict naming pypdf (PD-317: a
+    missing instrument is not a pass) unless the PD-201 test rule allows the
+    degrade — that allowance is resolved at seal time and sealed in
+    `degraded_allowed`, so the verdict itself stays pure."""
 
     regular_found: bool
     regular_path: str
@@ -1227,8 +1358,9 @@ class WorkbookInfo:
     fillable_pages: int
     fillable_fields: int
     fillable_need_appearances: bool
-    pypdf_available: bool           # False -> verdict must degrade, never false-fail
+    pypdf_available: bool           # False -> verdict FAILS naming pypdf (PD-317)
     too_small: tuple                 # tuple[str] — names of workbook PDFs under 2048 bytes
+    degraded_allowed: bool = False   # PD-201 test rule resolved at seal (with pypdf missing)
 
 
 @dataclass(frozen=True)
@@ -1283,26 +1415,6 @@ class NotesSyncInfo:
     speech_source: str
     bundle_pptx: str                 # recorded bundle_pptx path ("" if absent)
     notes_pane_result: str           # "" = no empty notes panes; else AF-EMPTY-NOTES-PANE finding
-
-
-@dataclass(frozen=True)
-class FishTagInfo:
-    """Sealed P8.4-FISH-TAG dual-file measurement (AF-FISH-TAG).
-
-    The tagged speech must be the source speech with [fish] expression tags
-    (and parens) inserted — the strip-equals prover removes every bracket/paren
-    span and whitespace from BOTH files and requires the stripped texts to be
-    identical. Both texts are sealed raw; the verdict does the pure strip
-    comparison (mirrors phase_verifiers._verify_fish_tag's rubric)."""
-
-    tagged_found: bool
-    source_found: bool
-    tagged_path: str
-    source_path: str
-    tagged_size: int
-    source_size: int
-    tagged_text: str                 # "" when unreadable
-    source_text: str                 # "" when unreadable
 
 
 # ---------------------------------------------------------------------------
@@ -1473,8 +1585,9 @@ def _media_library_fact(run_dir: Path) -> Fact:
 
 def _workbook_fact(run_dir: Path) -> Fact:
     """Seal the P8.25-WORKBOOK dual-PDF measurement. pypdf is opened lazily and
-    defensively — a box without pypdf records pypdf_available=False and the
-    verdict degrades to existence+size, exactly like the legacy verifier."""
+    defensively — a box without pypdf records pypdf_available=False and, per
+    PD-317, the verdict FAILS naming pypdf unless the PD-201 test rule allows
+    the existence+size degrade (that allowance is sealed here, at seal time)."""
     dl = run_dir / "working" / "deliverables"
     regulars = sorted(dl.glob("*-WORKBOOK.pdf")) if dl.is_dir() else []
     fillables = sorted(dl.glob("*-WORKBOOK-FILLABLE.pdf")) if dl.is_dir() else []
@@ -1529,9 +1642,11 @@ def _workbook_fact(run_dir: Path) -> Fact:
             pypdf_available=True, too_small=too_small)
         return Fact.known(info, detail="workbook dual-PDF sealed via pypdf")
     except ImportError:
-        return Fact.known(info, detail="pypdf not importable — workbook fact degraded (existence+size only)")
+        return Fact.known(replace(info, degraded_allowed=_degraded_allowed(run_dir)),
+                          detail="pypdf not importable — workbook fact degraded (existence+size only)")
     except Exception as exc:  # noqa: BLE001 — never let pypdf blow up the seal
-        return Fact.known(info, detail=f"pypdf read failed ({exc!r}) — workbook fact degraded")
+        return Fact.known(replace(info, degraded_allowed=_degraded_allowed(run_dir)),
+                          detail=f"pypdf read failed ({exc!r}) — workbook fact degraded")
 
 
 def _webinar_video_fact(run_dir: Path) -> Fact:
@@ -1601,11 +1716,16 @@ def _webinar_video_fact(run_dir: Path) -> Fact:
     return Fact.known(info, detail="webinar video + timing track sealed")
 
 
+NOTES_PANE_UNMEASURED = "AF-EMPTY-NOTES-PANE: could not be measured"
+
+
 def _notes_sync_fact(run_dir: Path) -> Fact:
     """Seal the P9.5-NOTES-SYNC measurement: the sync record + the empty-notes-pane
     scan of the bundle PPTX it names (via build_deck._chk_notes_pane — the single
     source of the AF-EMPTY-NOTES-PANE rubric; same call the legacy verifier makes,
-    made once at seal time)."""
+    made once at seal time). PD-317: if that renderer is missing or crashes, the
+    pane is UNMEASURED and `notes_pane_result` carries NOTES_PANE_UNMEASURED —
+    never an empty string, which would read as "scanned and clean"."""
     p = run_dir / "working" / "checkpoints" / "notes_sync.json"
     if not p.is_file():
         return Fact.absent("working/checkpoints/notes_sync.json: file not found")
@@ -1622,9 +1742,11 @@ def _notes_sync_fact(run_dir: Path) -> Fact:
                 notes_pane_result = _bd._chk_notes_pane(
                     Path(bundle_pptx).parent, run_dir=run_dir, slides_path=None) or ""
             else:
-                notes_pane_result = ""
-        except Exception as exc:  # noqa: BLE001 — degrade, never crash the seal
-            notes_pane_result = ""
+                # PD-317: a missing renderer is not "no empty panes" — it is a
+                # pane that was never measured, and the verdict must say so.
+                notes_pane_result = NOTES_PANE_UNMEASURED
+        except Exception:  # noqa: BLE001 — degrade, never crash the seal
+            notes_pane_result = NOTES_PANE_UNMEASURED
     info = NotesSyncInfo(
         status=status,
         reason=str(obj.get("reason") or "").strip(),
@@ -1739,8 +1861,8 @@ def verify_workbook(facts: RunFacts) -> Tuple[Verdict, str]:
     """PURE. P8.25-WORKBOOK verdict (AF-WORKBOOK-BOTH). Mirrors
     phase_verifiers._verify_workbook: both PDFs exist and exceed 2048 bytes,
     the regular is image-only (zero AcroForm fields), the fillable carries
-    fields and /NeedAppearances. pypdf absence NOTE-degrades to existence+size
-    (never a false fail on a genuine box)."""
+    fields and /NeedAppearances. pypdf absence FAILS naming pypdf (PD-317) unless
+    the PD-201 test rule allowed the degrade at seal time."""
     fact = facts.workbook
     if fact.state is not Epistemic.KNOWN:
         return Verdict.FAIL, f"workbook {fact.state.value} ({fact.detail})"
@@ -1756,7 +1878,12 @@ def verify_workbook(facts: RunFacts) -> Tuple[Verdict, str]:
     if problems:
         return Verdict.FAIL, "; ".join(problems)
     if not info.pypdf_available:
-        return Verdict.PASS, "NOTE: pypdf not importable — workbook verdict degraded to existence+size check (pass)"
+        if info.degraded_allowed:
+            return Verdict.PASS, ("NOTE: pypdf not importable — workbook verdict degraded "
+                                  "to existence+size check (pass) under the PD-201 test rule")
+        return Verdict.FAIL, (f"workbook cannot be measured: {fact.detail or 'pypdf unavailable'} "
+                              "— a missing or failed instrument is not a pass; "
+                              "AF-WORKBOOK-BOTH needs pypdf to read both PDFs")
     if info.regular_pages < 1:
         problems.append(f"regular workbook {info.regular_path}: pypdf read {info.regular_pages} pages")
     if info.regular_fields != 0:

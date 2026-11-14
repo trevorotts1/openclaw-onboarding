@@ -71,17 +71,15 @@ and it will pick the right one, or you can ask for a specialist by name.
 | **Procedure Auditor** | You audit standard operating procedures, one department at a time, on both axes. |
 | **Auditor** | You audit role documents, one department at a time, on both axes. |
 
-### What each specialist is for, with an example request
+### What each specialist is for
 
 **Procedure Auditor**
 
 - *What it is for:* You audit standard operating procedures, one department at a time, on both axes.
-- *Example request:* "Have the Procedure Auditor take this on: You audit standard operating procedures, one department at a time, on both axes."
 
 **Auditor**
 
 - *What it is for:* You audit role documents, one department at a time, on both axes.
-- *Example request:* "Have the Auditor take this on: You audit role documents, one department at a time, on both axes."
 
 
 ---

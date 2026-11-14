@@ -35,6 +35,7 @@ Run: python3 core/audio_c3/test_soundtrack_f1.py
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 
 try:  # package import (audio_c3.soundtrack) and flat script import both work
@@ -73,7 +74,18 @@ AUDIO_C3_SPOKEN_ROUTING = (
 _DEFAULTS = {"route": "ai-music-api/generate",
              "endpoint": "/api/v1/jobs/createTask",
              "version": "V6"}
-CALLBACK_URL = "https://example.invalid/cb"
+
+
+def _callback_from_env():
+    """The callback address to send, or None (KIE_CALLBACK_URL is the source).
+
+    Skill 68's music reference (references/music.md, section 1) lists the
+    CURRENT createTask song request's required input as ``custom_mode``,
+    ``instrumental`` and ``model`` only: no callback address is required, so
+    with ``KIE_CALLBACK_URL`` unset the request carries no ``callBackUrl`` and
+    the run polls the task. No placeholder is invented.
+    """
+    return (os.environ.get("KIE_CALLBACK_URL") or "").strip() or None
 
 
 def _loud(kind, code, detail):
@@ -162,11 +174,15 @@ def generate_soundtrack_request(package):
     request = {
         "endpoint": _DEFAULTS["endpoint"],
         "model": picked[0],
-        "callBackUrl": CALLBACK_URL,
         "input": {"custom_mode": True, "instrumental": False,
                   "model": picked[1], "style": package["style_text"],
                   "title": package["title"], "lyrics": lyrics},
     }
+    # U-M01: no callback address is required by the CURRENT createTask song
+    # request, and none is invented -- the address rides only when one exists.
+    cb = _callback_from_env()
+    if cb:
+        request["callBackUrl"] = cb
     if package.get("vocal_gender") is not None:
         request["input"]["vocal_gender"] = package["vocal_gender"]
     if package.get("duration") is not None:

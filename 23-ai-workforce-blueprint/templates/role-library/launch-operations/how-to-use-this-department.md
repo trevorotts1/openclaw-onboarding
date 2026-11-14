@@ -70,17 +70,15 @@ and it will pick the right one, or you can ask for a specialist by name.
 | **Go To Market Specialist** | Owns the Go To Market Specialist work. |
 | **Launch Manager** | Operational engine that keeps every active launch on track  -  tracking every milestone, chasing every owner. |
 
-### What each specialist is for, with an example request
+### What each specialist is for
 
 **Go To Market Specialist**
 
 - *What it is for:* Owns the Go To Market Specialist work.
-- *Example request:* "Have the Go To Market Specialist take on a task in its area."
 
 **Launch Manager**
 
 - *What it is for:* Operational engine that keeps every active launch on track  -  tracking every milestone, chasing every owner.
-- *Example request:* "Have the Launch Manager take this on: Operational engine that keeps every active launch on track  -  tracking every milestone."
 
 
 ---
