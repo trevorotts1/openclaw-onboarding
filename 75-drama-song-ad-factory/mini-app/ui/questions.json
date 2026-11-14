@@ -211,13 +211,6 @@
           "detail": "starts slow and sad, then lifts into an upbeat, hopeful groove.",
           "price": null,
           "recommended": false
-        },
-        {
-          "n": 4,
-          "text": "Show me all 18 styles",
-          "detail": "",
-          "price": null,
-          "recommended": false
         }
       ],
       "shows_when": {
