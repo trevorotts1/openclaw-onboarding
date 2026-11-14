@@ -41,6 +41,19 @@ set PRESENTATION_NOTIFY_DIRECT_TELEGRAM=1 to restore the legacy direct-Bot-API
 path (reads OPERATOR_TELEGRAM_BOT_TOKEN again); that flag is the only supported
 pre-fix coexistence mode, and it stays opt-in -- the gateway is the default.
 
+PD-926 (FL05 engine reporting, Trevor's option (a)): the style-pick message
+may carry the ACTUAL style-sample images. The payload field
+`style_pick_samples` (a list of image paths) is honoured ONLY for that
+message -- no other notification sets it, so the other 21 call sites are
+unchanged. Hard caps (the gateway's own channel ceilings, not invented
+numbers): at most 10 images (the Telegram album limit), at most 10 MiB per
+image (the Telegram photo limit) and at most 20 MiB in total. An image that
+breaks a cap is DROPPED, never silently shrunk and never sent as a path.
+Whenever the field is present the text is scrubbed of every filesystem path
+(`.../x.png`), so the message never names a path the recipient cannot open;
+if no image survives the caps the send is REFUSED (exit 6) rather than
+sending a pick request that promises samples it does not carry.
+
 Exit codes (stable dispatch3 contract, see tests/test_report.py):
   0  -- sent via the gateway (or dry-run dispatch succeeded)
   2  -- transport misconfiguration (gateway CLI absent AND no legacy flag)
@@ -48,10 +61,29 @@ Exit codes (stable dispatch3 contract, see tests/test_report.py):
   4  -- no chat_id in payload and no OWNER_CHAT_ID fallback, OR a subsystem
         name chat_id that could not be resolved to a numeric target
   5  -- gateway send rejected/failed (non-zero gateway exit, timeout, OSError)
+  6  -- PD-926: style_pick_samples was supplied but no image survived the
+        count/size caps (or the text-only legacy transport is active)
 """
 import os, re, sys, json, shutil, subprocess
 
 DEFAULT_NOTIFY_TIMEOUT_S = 30  # matches CC src/lib/notify.ts OWNER_SEND_TIMEOUT_MS
+
+# PD-926: the style-pick message's image field and its hard caps. The numbers
+# are the CHANNEL ceilings (Telegram: 10 items per album, 10 MiB per photo), so
+# a cap breach is the platform's own limit, not a policy invented here. The
+# total cap bounds one send at twice a single photo's ceiling; today's nine
+# samples total ~27 MB, so the total cap (not the count cap) is what trims them.
+STYLE_PICK_MEDIA_KEY = "style_pick_samples"
+STYLE_PICK_RUN_DIR_KEY = "run_dir"      # optional: resolves run-relative paths
+STYLE_PICK_MAX_IMAGES = 10
+STYLE_PICK_MAX_IMAGE_BYTES = 10 * 1024 * 1024
+STYLE_PICK_MAX_TOTAL_BYTES = 20 * 1024 * 1024
+_STYLE_PICK_IMAGE_EXTS = (".png", ".jpg", ".jpeg", ".webp")
+# a bare path token ending in an image extension, plus the separator that joined
+# it to its neighbours ("a/b/x.png, "), so removing the samples leaves clean prose
+_PATH_TOKEN_RE = re.compile(
+    r"[ \t]*(?:[,;]\s*)*[^\s,;]*[/\\][^\s,;]*\.(?:png|jpe?g|webp)\b[ \t]*,?",
+    re.IGNORECASE)
 
 # The gateway transport contract (openclaw 2026.x CLI flags). --target and
 # --message are the real flags; the old --to/--text do not exist (commander
@@ -152,6 +184,74 @@ def resolve_chat_id_for_transport(chat_id, env=None, config_path=None) -> tuple:
     return ("", "")
 
 
+def select_style_pick_media(raw, run_dir=None) -> tuple:
+    """PD-926: the style-sample images ONE send may attach.
+
+    Returns (attached, rejected): attached is a list of absolute paths that
+    fit the count/per-image/total caps in input order; rejected is a list of
+    (path, reason) for everything dropped. Run-relative paths (what the
+    samples manifest records) resolve against `run_dir` when it is supplied.
+    A path that is not an image, not a readable regular file, or over a cap
+    is dropped -- never shrunk, never sent as text instead."""
+    attached, rejected, total = [], [], 0
+    if isinstance(raw, str):
+        raw = [raw]
+    if not isinstance(raw, list):
+        return attached, [("(payload)", "style_pick_samples is not a list")]
+    for item in raw:
+        p = str(item or "").strip()
+        if not p:
+            continue
+        if not os.path.isabs(p) and run_dir:
+            p = os.path.join(str(run_dir), p)
+        p = os.path.abspath(os.path.expanduser(p))
+        if not p.lower().endswith(_STYLE_PICK_IMAGE_EXTS):
+            rejected.append((p, "not an image"))
+            continue
+        if not os.path.isfile(p):
+            rejected.append((p, "not a readable regular file"))
+            continue
+        if len(attached) >= STYLE_PICK_MAX_IMAGES:
+            rejected.append((p, f"over the {STYLE_PICK_MAX_IMAGES}-image cap"))
+            continue
+        try:
+            size = os.path.getsize(p)
+        except OSError:
+            rejected.append((p, "size unreadable"))
+            continue
+        if size > STYLE_PICK_MAX_IMAGE_BYTES:
+            rejected.append((p, f"{size} bytes is over the "
+                                f"{STYLE_PICK_MAX_IMAGE_BYTES}-byte per-image cap"))
+            continue
+        if total + size > STYLE_PICK_MAX_TOTAL_BYTES:
+            rejected.append((p, f"{total + size} bytes is over the "
+                                f"{STYLE_PICK_MAX_TOTAL_BYTES}-byte total cap"))
+            continue
+        attached.append(p)
+        total += size
+    return attached, rejected
+
+
+def strip_style_sample_paths(text) -> str:
+    """PD-926: the style-pick message names no filesystem path.
+
+    Once the images themselves are attached a path is at best redundant and at
+    worst unopenable by the recipient, so every `.../x.png` token (and the
+    comma that joined it to the next one) is removed, and the punctuation the
+    removal leaves behind is tidied (`ready: .` -> `ready.`)."""
+    out = str(text or "")
+    prev = None
+    while prev != out:
+        prev = out
+        out = _PATH_TOKEN_RE.sub("", out)
+    out = re.sub(r"\s+([:,;])", r"\1", out)          # ": ," -> ":"
+    out = re.sub(r"([:,;])\s*(?=[,;.])", "", out)   # ": ." -> "."
+    out = re.sub(r"([:,;])[ \t]*$", ".", out, flags=re.M)  # dangling ":" -> "."
+    out = re.sub(r"[ \t]{2,}", " ", out)
+    out = re.sub(r"[ \t]+\.", ".", out)
+    return out.strip()
+
+
 def _notify_timeout_s() -> float:
     raw = os.environ.get("PRESENTATION_NOTIFY_TIMEOUT_S", "")
     if not raw:
@@ -163,9 +263,11 @@ def _notify_timeout_s() -> float:
     return val if val > 0 else DEFAULT_NOTIFY_TIMEOUT_S
 
 
-def _send_via_gateway(chat_id: str, text: str) -> int:
+def _send_via_gateway(chat_id: str, text: str, media=()) -> int:
     """Route through `openclaw message send` (the fleet gateway). Returns the
-    gateway process exit code; 0 means the send was dispatched/accepted."""
+    gateway process exit code; 0 means the send was dispatched/accepted.
+    `media` is the PD-926 style-sample attachment list (empty for every other
+    notification); each path becomes one repeated --media flag."""
     cli = shutil.which("openclaw") or "openclaw"
     channel = (os.environ.get("PRESENTATION_NOTIFY_CHANNEL")
                or _GATEWAY_CHANNEL_DEFAULT).strip() or _GATEWAY_CHANNEL_DEFAULT
@@ -176,6 +278,8 @@ def _send_via_gateway(chat_id: str, text: str) -> int:
         "--message", text,
         "--json",
     ]
+    for path in media or ():
+        argv.extend(["--media", str(path)])
     if os.environ.get("PRESENTATION_NOTIFY_DRY_RUN") == "1":
         argv.append("--dry-run")
     try:
@@ -288,14 +392,34 @@ def main() -> int:
     text = (f"[Presentation Dept] {label_prefix}{str(kind).upper()}: {msg}"
             if msg
             else f"[Presentation Dept] {label_prefix}{str(kind).upper()}")
+    # PD-926: the style-pick message's images. Only this field turns the
+    # attachment path on -- no other notification sets it.
+    media = []
+    if STYLE_PICK_MEDIA_KEY in payload:
+        media, rejected = select_style_pick_media(
+            payload.get(STYLE_PICK_MEDIA_KEY), payload.get(STYLE_PICK_RUN_DIR_KEY))
+        text = strip_style_sample_paths(text)
+        for path, why in rejected:
+            print(f"PD-926: style sample NOT attached ({why}): {path}",
+                  file=sys.stderr)
+        if not media:
+            print("FATAL: PD-926 style_pick_samples was supplied but no image "
+                  "survived the caps -- refusing to send a style-pick message "
+                  "that promises samples it does not carry", file=sys.stderr)
+            return 6
     if direct_rollback:
+        if media:
+            print("FATAL: PD-926 the legacy direct-Telegram transport is "
+                  "text-only and cannot carry the style-sample images",
+                  file=sys.stderr)
+            return 6
         return _send_direct_telegram(chat_id, text)
     if not shutil.which("openclaw"):
         print("FATAL: openclaw gateway CLI not found on PATH; the gateway-only "
               "transport cannot deliver. Set PRESENTATION_NOTIFY_DIRECT_TELEGRAM=1 "
               "only for a documented, temporary rollback.", file=sys.stderr)
         return 2
-    return _send_via_gateway(chat_id, text)
+    return _send_via_gateway(chat_id, text, media)
 
 
 if __name__ == "__main__":
