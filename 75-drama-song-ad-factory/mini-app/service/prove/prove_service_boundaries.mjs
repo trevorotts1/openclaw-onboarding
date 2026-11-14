@@ -105,7 +105,7 @@ async function proveIsolation(results) {
   const B = await clientFixture(store, 'link');
 
   // A real order for A, and a real uploaded object under A's namespace.
-  const created = await handle(post('/api/studio/orders', { title: 'Spring Sale', order_id: 'r_alpha' }, A.key), ENV, store, objects);
+  const created = await handle(post('/api/studio/orders', { title: 'Spring Sale', order_id: 'r_aaaaaa01' }, A.key), ENV, store, objects);
   const orderA = (await created.json()).order;
   await objects.objectPut(`clients/${A.clientId}/intake/secret.bin`, 'a-only-bytes');
 
@@ -117,7 +117,7 @@ async function proveIsolation(results) {
     `status=${ownA.status} reads_on_A=${store.readsFor(`order:${A.clientId}:`)}`]);
 
   // ---- C2 POSITIVE CONTROL: B's key opens B's own order -------------------
-  const createdB = await handle(post('/api/studio/orders', { title: 'Example B', order_id: 'r_beta' }, B.key), ENV, store, objects);
+  const createdB = await handle(post('/api/studio/orders', { title: 'Example B', order_id: 'r_bbbbbb02' }, B.key), ENV, store, objects);
   const orderB = (await createdB.json()).order;
   store.log.length = 0;
   const ownB = await handle(get(`/api/studio/orders/${orderB.order_id}`, B.key), ENV, store, objects);
