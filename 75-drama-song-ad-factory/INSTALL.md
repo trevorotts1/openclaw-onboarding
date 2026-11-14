@@ -128,7 +128,7 @@ The venv then has to be the interpreter for every later run of the skill.
 `install_face_model.py` downloads Google's official float16 model from
 
 ```text
-https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/latest/face_landmarker.task
+https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task
 ```
 
 verifies the pinned sha256 `64184e229b263107bc2b804c6625db1341ff2bb731874b0bcc2fe6544e0bc9ff`

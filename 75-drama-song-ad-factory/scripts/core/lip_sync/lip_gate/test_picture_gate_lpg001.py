@@ -245,12 +245,12 @@ def test_missing_mediapipe_or_model_refuses_and_names_install():
 def test_face_model_install_pins_sha256():
     prereqs = json.load(open(os.path.join(HERE, "..", "..", "..", "..", "PREREQS.json")))
     ids = {e["id"]: e for e in prereqs["prerequisites"]}
-    # PREREQS type is "manual" (lint-valid); the pinned sha256 lives in its note
-    assert IM.MODEL_SHA256 in ids["face-landmarker-model"]["check"]["note"]
+    # the shell checker cannot stat the model, so the pinned sha256 lives in satisfy
+    assert IM.MODEL_SHA256 in ids["face-landmarker-model"]["satisfy"]
     assert "install_face_model.py" in ids["face-landmarker-model"]["satisfy"]
     assert "mediapipe" in ids["python-mediapipe"]["satisfy"]
     assert IM.MODEL_URL.startswith("https://storage.googleapis.com/mediapipe-models/"
-                                   "face_landmarker/face_landmarker/float16/latest/")
+                                   "face_landmarker/face_landmarker/float16/1/")
     data = b"pretend model"
     import hashlib, io
     sha = hashlib.sha256(data).hexdigest()
