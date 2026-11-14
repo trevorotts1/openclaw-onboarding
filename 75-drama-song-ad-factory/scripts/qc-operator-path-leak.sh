@@ -1,11 +1,4 @@
 #!/usr/bin/env bash
-# bash >= 4 required (mapfile); macOS ships 3.2 at /bin/bash.
-if [ "${BASH_VERSINFO[0]:-0}" -lt 4 ] && [ -z "${_OC_BASH_REEXEC:-}" ]; then
-  for _oc_b in /opt/homebrew/bin/bash /usr/local/bin/bash; do
-    [ -x "$_oc_b" ] && _OC_BASH_REEXEC=1 exec "$_oc_b" "$0" "$@"
-  done
-  echo "FATAL: bash >= 4 required (macOS ships 3.2): brew install bash" >&2; exit 3
-fi
 # Manual 02 B6 static check — no operator/build-workspace paths in core code.
 #
 # Fails when any non-test file under 75-drama-song-ad-factory/scripts/core/
@@ -21,10 +14,18 @@ fi
 # reintroduction of an operator path as a load-bearing search root is a red
 # build, not a silent pass. test_*.py files are exempt (they plant the
 # needles at run time to prove the ban bites); generated __pycache__ is
-# skipped; binary-ish files are skipped (grep -I).
+# skipped; binary-ish files are skipped.
 #
 # Fails closed: no scanned files found == fail (a moved/deleted tree must
-# not produce a green check). Stdlib-only bash; no network; no writes.
+# not produce a green check). No network; no writes. The scan itself is done
+# by qc_static_checks.py (S75-013), which opens every file and treats an
+# unreadable one as a failure instead of a silent pass — a Python parse, so
+# the old bash >= 4 / mapfile requirement is gone.
+#
+# Exit numbers are THIS script's historical ones, which the workflow and the
+# manual are written against: 0 clean, 1 offender(s), 2 could not run or no
+# files found. qc_static_checks.py uses the shared 0/2/1 contract, so the
+# mapping is done here, not there.
 set -uo pipefail
 
 SKILL_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -35,38 +36,10 @@ if [ ! -d "$CORE" ]; then
   exit 2
 fi
 
-# Collect non-test files: everything except test_*.py, __pycache__, .pyc.
-mapfile -t FILES < <(
-  find "$CORE" -type f \
-    ! -name 'test_*.py' ! -name '*.pyc' \
-    ! -path '*/__pycache__/*' -print
-)
-
-if [ "${#FILES[@]}" -eq 0 ] || [ -z "${FILES[0]}" ]; then
-  echo "operator-path-leak: FAIL — no non-test files found under scripts/core/ (fail closed)"
-  exit 2
-fi
-
-offenders=0
-for f in "${FILES[@]}"; do
-  # -I: skip binary files. The three needles, verbatim as the manual words
-  # them: 'Downloads', 'drama-song-factory-build', path-like
-  # 'openclaw-onboarding/'.
-  if grep -Iqn -e 'Downloads' -e 'drama-song-factory-build' -e 'openclaw-onboarding/' -- "$f"; then
-    if [ "$offenders" -eq 0 ]; then
-      echo "operator-path-leak: FAIL — operator/build-workspace path string(s) in non-test core file(s):"
-    fi
-    echo "  $f"
-    grep -In -e 'Downloads' -e 'drama-song-factory-build' -e 'openclaw-onboarding/' -- "$f" | sed 's/^/      /'
-    offenders=$((offenders + 1))
-  fi
-done
-
-if [ "$offenders" -gt 0 ]; then
-  echo "operator-path-leak: $offenders offending file(s) — remove the operator path(s); resolve dependencies as install-time data, never an operator-box literal"
-  exit 1
-fi
-
-n="${#FILES[@]}"
-echo "operator-path-leak: clean — scanned $n non-test file(s) under scripts/core/, zero operator/build-workspace path strings"
-exit 0
+rc=0
+python3 -I "$SKILL_DIR/scripts/qc_static_checks.py" no-operator-paths --core "$CORE" || rc=$?
+case "$rc" in
+  0) exit 0 ;;   # clean
+  2) exit 1 ;;   # offender(s) found
+  *) exit 2 ;;   # could not run: missing/unreadable files, empty tree, bad args
+esac
