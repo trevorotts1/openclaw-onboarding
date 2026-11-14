@@ -186,7 +186,8 @@ test('draft: round-trips through R2 and shows up on the next session', async () 
   const shown = await makeCtx(store, objects, me.key);
   shown.url = new URL('https://studio.example/api/studio/session');
   const body = await json(await pageRoute(get('/api/studio/session', me.key), shown));
-  assert.deepEqual(body.draft, { replies: ['1', '2'], updated_at: T0 });
+  // U-Z08 — the draft keeps the upload ids, so the session hands them back.
+  assert.deepEqual(body.draft, { replies: ['1', '2'], upload_ids: ['u_9'], updated_at: T0 });
 
   // The stored object sits in this client's own scope and nowhere else.
   assert.ok(objects._mem.has(scopePath(me.clientId, 'draft.json')));
