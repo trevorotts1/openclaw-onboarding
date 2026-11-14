@@ -1365,6 +1365,8 @@ _FIX33_PROVIDER_KEYS = ("graded_by_provider", "vision_provider", "provider")
 _FIX33_MODEL_KEYS = ("graded_by_model", "vision_model", "multimodal_model",
                      "ocr_engine", "vision_engine", "reviewer_vision_model")
 _FIX33_REQUEST_KEYS = ("request_id", "route_request_id", "vision_request_id")
+# PD-300's stamp: the model that WROTE the deck (the author, not the grader).
+_FIX33_AUTHOR_KEYS = ("author_model", "authored_by_model", "writer_model")
 
 # Per-slide observation fields (mirrors build_deck._image_qc_report_defects
 # VIS_FIELDS so the two rubrics agree on what counts as an observation).
@@ -1406,6 +1408,32 @@ def _fix33_row_ordinal(row: dict, index: int) -> Optional[int]:
     return index + 1
 
 
+def _fix33_model_modality(model_id: str) -> str:
+    """The modality the router's capability registry declares for `model_id`,
+    lower-cased; '' when nothing declares it (UNKNOWN never clears the floor).
+
+    PD-205b: the image check is decided by CAPABILITY, not by spelling. Before
+    this, the contract only compared the grader's name with the report's
+    authoring stamp, so an OCR model typed as the grader passed and a text
+    model that read the stamp passed too. The registry is the table that
+    actually states modality (DEFAULT_ALIAS_REGISTRY / MODEL_CAPABILITY_META)."""
+    try:
+        from presentation_job.model_router import _registry_capability_meta
+    except ImportError:  # pragma: no cover — scripts dir not on sys.path yet
+        _scripts_dir = Path(__file__).resolve().parent
+        if str(_scripts_dir) not in sys.path:
+            sys.path.insert(0, str(_scripts_dir))
+        try:
+            from presentation_job.model_router import _registry_capability_meta
+        except ImportError:
+            return ""
+    try:
+        meta = _registry_capability_meta(model_id)
+    except Exception:  # pragma: no cover — capability lookup never crashes a gate
+        return ""
+    return str((meta or {}).get("modality") or "").strip().lower()
+
+
 def _fix33_check_report(run_dir: Path, degraded: bool) -> Tuple[bool, List[str]]:
     """FIX 33 vision-unit contract over working/qc/image_qc_report.json.
 
@@ -1414,9 +1442,11 @@ def _fix33_check_report(run_dir: Path, degraded: bool) -> Tuple[bool, List[str]]
       * a per-slide LIST is present covering every rendered PNG (the same LIST
         shape build_deck._image_qc_report_defects already demands — a dict
         keyed by slide can silently drop rows);
-      * top-level graded_by_model present AND different from the authoring
-        stamp (qc_independence/builder identity) — the model that graded the
-        deck cannot be the model that wrote it;
+      * top-level graded_by_model present AND declared VISION by the router's
+        capability registry (an unknown id fails — capability, never spelling);
+      * author_model (PD-300's stamp) present AND different from
+        graded_by_model — the model that graded the deck cannot be the model
+        that wrote it;
       * a request_id is present (the vision route's request id);
       * EVERY per-slide row carries a non-empty observed_text (pixel-blind
         rows are refused), and the row count covers every rendered PNG.
@@ -1434,20 +1464,7 @@ def _fix33_check_report(run_dir: Path, degraded: bool) -> Tuple[bool, List[str]]
         return True, ["NOTE: image_qc_report.json missing — FIX 33 vision-unit "
                       "contract not checkable (test/CI degraded NOTE pass)"]
 
-    # --- the authoring stamp: who WROTE the report (builder/driver identity) ---
-    blk = report.get("qc_independence")
-    blk = blk if isinstance(blk, dict) else {}
-    authoring_stamp = ""
-    for src in (blk, report):
-        for key in ("graded_by", "builder", "built_by", "reviewer", "reviewed_by"):
-            v = src.get(key)
-            if isinstance(v, str) and v.strip():
-                authoring_stamp = v.strip()
-                break
-        if authoring_stamp:
-            break
-
-    # --- graded_by_model must exist and DIFFER from the authoring stamp ---
+    # --- graded_by_model must NAME A VISION MODEL (capability, not spelling) ---
     graded_model = _fix33_first_str(report, _FIX33_MODEL_KEYS)
     if not graded_model:
         reasons.append(
@@ -1455,12 +1472,28 @@ def _fix33_check_report(run_dir: Path, degraded: bool) -> Tuple[bool, List[str]]
             "FIX 33 requires the dispatcher's vision-unit stamp "
             "(graded_by_provider/graded_by_model/request_id) in every QC artifact; "
             "a report that only SAYS a model name carries no route provenance.")
-    elif authoring_stamp and graded_model.strip().lower() == authoring_stamp.strip().lower():
+    else:
+        modality = _fix33_model_modality(graded_model)
+        if modality != "vision":
+            reasons.append(
+                "AF-IMAGE-QC-UNIT: the image check was graded by a model that "
+                "cannot read images — graded_by_model "
+                f"{graded_model!r} declares modality {modality or 'unknown'}, "
+                "never vision (PD-205b).")
+
+    # --- PD-300's author_model must be present and differ from the grader ---
+    author_model = _fix33_first_str(report, _FIX33_AUTHOR_KEYS)
+    if not author_model:
         reasons.append(
-            f"AF-IMAGE-QC-UNIT: graded_by_model {graded_model!r} equals the report's "
-            f"authoring stamp {authoring_stamp!r} — the author graded its own work. "
+            "AF-IMAGE-QC-UNIT: image_qc_report.json carries no author_model — "
+            "the grader cannot be compared with the author without the author's "
+            "model stamp (PD-300), and an uncompared grader is an unproven one.")
+    elif graded_model and author_model.strip().lower() == graded_model.strip().lower():
+        reasons.append(
+            f"AF-IMAGE-QC-UNIT: graded_by_model {graded_model!r} equals "
+            f"author_model {author_model!r} — the author graded its own work. "
             "FIX 33: the vision route that graded the deck must be a DIFFERENT "
-            "model from the authoring stamp (cross-graded, never self-graded).")
+            "model from the author (cross-graded, never self-graded).")
 
     # --- request_id: the vision route's request id must appear ---
     request_id = _fix33_first_str(report, _FIX33_REQUEST_KEYS)
@@ -2747,81 +2780,6 @@ def _verify_sp_intake_trace(run_dir: Path) -> Tuple[bool, List[str]]:
     result = fn(run_dir)
     return (True, []) if _checker_pass(result) else (False, [str(result)])
 
-
-
-def _verify_fish_tag(run_dir: Path) -> Tuple[bool, List[str]]:
-    reasons: List[str] = []
-    tagged_p = run_dir / "working" / "deliverables" / "PRESENTERS-SPEECH-FISH-TAGGED.md"
-    source_p = run_dir / "working" / "deliverables" / "PRESENTERS-SPEECH.md"
-    if not tagged_p.exists():
-        reasons.append("AF-BUNDLE-INCOMPLETE: PRESENTERS-SPEECH-FISH-TAGGED.md not found")
-        return False, reasons
-    if not source_p.exists():
-        reasons.append("AF-BUNDLE-INCOMPLETE: PRESENTERS-SPEECH.md (source) not found")
-        return False, reasons
-    size = tagged_p.stat().st_size
-    if size < 2048: reasons.append(f"PRESENTERS-SPEECH-FISH-TAGGED.md: {size} bytes < 2048")
-    try: tagged_text = tagged_p.read_text(encoding="utf-8",errors="replace"); source_text = source_p.read_text(encoding="utf-8",errors="replace")
-    except:
-        reasons.append("AF-FISH-TAG: cannot read tagged or source speech file")
-        return False, reasons
-    import re
-    def strip_tags(t):
-        t = re.sub(r'\[.*?\]', ' ', t); t = re.sub(r'\(.*?\)', ' ', t)
-        return re.sub(r'\s+', ' ', t).strip()
-    if strip_tags(tagged_text) != strip_tags(source_text):
-        reasons.append("AF-FISH-TAG: strip-equals prover failed")
-    return (len(reasons) == 0), reasons
-
-
-def _sp_claim_matches_intake(run_dir: Path) -> Tuple[bool, List[str]]:
-    """Prove P-SP-CLAIM recorded the selected type, rather than selecting one.
-
-    The claim phase is a router.  It may document a signature request, but it
-    cannot promote a from-scratch deck into one.  The sealed intake remains the
-    authority and an incomplete/malformed claim fails closed.
-    """
-    try:
-        intake = json.loads((run_dir / "working" / "copy" / "intake.json").read_text())
-        claim = json.loads((run_dir / "working" / "copy" / "sp_claims.json").read_text())
-    except (OSError, json.JSONDecodeError) as exc:
-        return False, [f"AF-SP-CLAIM-INTAKE-MISMATCH: unreadable intake or claim: {exc}"]
-    if not isinstance(intake, dict) or not isinstance(claim, dict):
-        return False, ["AF-SP-CLAIM-INTAKE-MISMATCH: intake and claim must be JSON objects"]
-    selected = str(intake.get("deck_type") or "").strip()
-    recorded = str(claim.get("deck_type") or "").strip()
-    if not selected or recorded != selected:
-        return False, ["AF-SP-CLAIM-INTAKE-MISMATCH: claim deck_type must exactly match "
-                       "the selected intake deck_type"]
-    claimed = claim.get("claimed")
-    if selected == "signature_presentation":
-        if claimed is not True:
-            return False, ["AF-SP-CLAIM-INTAKE-MISMATCH: selected signature deck requires "
-                           "claimed:true"]
-    elif claimed is not False:
-        return False, ["AF-SP-CLAIM-INTAKE-MISMATCH: non-signature deck requires "
-                       "claimed:false; P-SP-CLAIM cannot promote the intake"]
-    return True, []
-
-
-def _verify_sp_claim(run_dir: Path) -> Tuple[bool, List[str]]:
-    ok, notes = _sp_claim_matches_intake(run_dir)
-    if not ok:
-        return ok, notes
-    fn = _bd_fn("_chk_sp_claim")
-    if fn is None:
-        return True, []
-    result = fn(run_dir)
-    return (True, []) if _checker_pass(result) else (False, [str(result)])
-
-
-def _verify_sp_intake_trace(run_dir: Path) -> Tuple[bool, List[str]]:
-    fn = _bd_fn("_chk_sp_intake_trace")
-    if fn is None: return _check_json_nonempty(run_dir, "working/interview/intake_transcript.json")
-    result = fn(run_dir)
-    return (True, []) if _checker_pass(result) else (False, [str(result)])
-
-
 def _verify_webinar_video(run_dir: Path) -> Tuple[bool, List[str]]:
     """Feature L2-G verifier (P9.6-WEBINAR-VIDEO): the webinar mp4 exists, is non-empty,
     is a real MP4 (ftyp box), and the timing track records a sane per-slide mapping.
@@ -3851,15 +3809,20 @@ def _verify_style_spec(run_dir: Path) -> Tuple[bool, List[str]]:
 
 _INFOGRAPHIC_CHECKLIST_VERDICT_REL = "working/qc/infographic_checklist_verdict.json"
 
+# PD-105: the eight bytes every PNG file starts with (PNG spec 5.2, the
+# signature). The infographic is checked for a real PNG, not for a large file
+# named one — a 102,400-byte file of letters used to pass the size test alone.
+_PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
+
 
 def _verify_infographic_checklist(run_dir: Path) -> Tuple[bool, List[str]]:
     """P8.3-INFOGRAPHIC: the infographic-checklist QC unit's verdict. Passes
-    only when (a) the rendered PNG exists at/above the deliverable floor,
-    (b) build_infographic's own status is clean, and (c) the QC unit's verdict
-    file exists, parses, and its own verdict is pass with the render inputs
-    named. The verifier re-derives (a)/(b) itself — a hand-typed pass on a
-    dirty render never passes, and a missing verdict file is a FAIL (the QC
-    unit ran, or it did not — absence is not a pass)."""
+    only when (a) the rendered PNG exists, carries the PNG signature and is
+    at/above the deliverable floor, (b) build_infographic's own status is clean,
+    and (c) the QC unit's verdict file exists, parses, and its own verdict is
+    pass with the render inputs named. The verifier re-derives (a)/(b) itself —
+    a hand-typed pass on a dirty render never passes, and a missing verdict
+    file is a FAIL (the QC unit ran, or it did not — absence is not a pass)."""
     import json as _json
     reasons: List[str] = []
 
@@ -3869,6 +3832,17 @@ def _verify_infographic_checklist(run_dir: Path) -> Tuple[bool, List[str]]:
                        "the render under QC is missing")
     else:
         floor = 102_400  # manifest-declared byte floor (P8.3-INFOGRAPHIC name)
+        # PD-105: the signature test runs BEFORE the size test — a large file
+        # of letters is not an infographic. An unreadable file fails here too.
+        try:
+            with open(png, "rb") as fh:
+                head = fh.read(len(_PNG_SIGNATURE))
+        except OSError as exc:  # noqa: BLE001
+            head = None
+            reasons.append(f"infographic.png: unreadable ({exc!r})")
+        if head is not None and head != _PNG_SIGNATURE:
+            reasons.append(f"infographic.png: not a PNG — expected "
+                           f"{_PNG_SIGNATURE!r} at offset 0, got {head!r}")
         if png.stat().st_size < floor:
             reasons.append(f"infographic.png: {png.stat().st_size} bytes < the "
                            f"{floor}-byte deliverable floor")
@@ -3881,8 +3855,11 @@ def _verify_infographic_checklist(run_dir: Path) -> Tuple[bool, List[str]]:
         if status.get("status") != "ready":
             reasons.append(f"infographic_status.json: status is "
                            f"{status.get('status')!r}, not 'ready'")
-        if status.get("qc_passed") is not True:
-            reasons.append("infographic_status.json: qc_passed is not true")
+        # PD-215 change-over: the builder's status file carries render_verified
+        # in place of qc_passed; accept either key while both are in use.
+        if status.get("qc_passed") is not True and status.get("render_verified") is not True:
+            reasons.append("infographic_status.json: qc_passed is not true "
+                           "(nor render_verified)")
 
     verdict_path = run_dir / _INFOGRAPHIC_CHECKLIST_VERDICT_REL
     verdict = _read_json(verdict_path)
