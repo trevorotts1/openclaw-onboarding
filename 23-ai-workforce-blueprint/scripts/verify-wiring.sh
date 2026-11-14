@@ -169,7 +169,9 @@ else
   exit 9
 fi
 
-STATE_FILE="$OC_ROOT/workspace/.workforce-build-state.json"
+# One rule for the state file: WORKFORCE_BUILD_STATE_FILE, then ZHC_STATE_FILE,
+# then WORKFORCE_BUILD_STATE_PATH, then this script's own default.
+STATE_FILE="${WORKFORCE_BUILD_STATE_FILE:-${ZHC_STATE_FILE:-${WORKFORCE_BUILD_STATE_PATH:-$OC_ROOT/workspace/.workforce-build-state.json}}}"
 OPENCLAW_CFG="$OC_ROOT/openclaw.json"
 
 # B3: default — missing config is a HARD FAIL (not advisory)
