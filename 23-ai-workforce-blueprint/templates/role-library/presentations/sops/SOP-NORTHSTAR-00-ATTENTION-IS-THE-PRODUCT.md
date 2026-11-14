@@ -20,7 +20,7 @@
 >
 > **Acceptance test:** a deck passes only if (a) it engineers a deliberate **peak** and a deliberate **ending** (peak-end rule), and (b) **the owner's thing is the single most vivid element in the room by the end.**
 
-**This rule sits ABOVE every slide-craft rule in the department.** One-idea-per-slide (AF-C6), the 30-word ceiling (AF-C8), gallery-grade art (AF-C1), the hook cadence (AF-C2) -- all of them are *instruments of attention*, never ends in themselves. When a slide-craft rule and the #1 job appear to conflict, the #1 job wins, and the slide-craft rule is being misread. Clarity, density discipline, and craft are how you HOLD attention; they were never the goal. The goal is to keep the audience leaning in until their priorities have moved.
+**This rule sits ABOVE every slide-craft rule in the department.** One-idea-per-slide (AF-C6), the 30-word ceiling (AF-C8), gallery-grade art (AF-P11), the hook cadence (the AF-HOOK rules) -- all of them are *instruments of attention*, never ends in themselves. When a slide-craft rule and the #1 job appear to conflict, the #1 job wins, and the slide-craft rule is being misread. Clarity, density discipline, and craft are how you HOLD attention; they were never the goal. The goal is to keep the audience leaning in until their priorities have moved.
 
 **The dogfood warning.** A department that defines itself by its *activity* ("we produce a branded deck") has already committed the framework's founding error: serving the surface goal and forgetting the true goal. We do not produce decks. We produce **priority shifts**, and the deck is the vehicle.
 
@@ -159,7 +159,7 @@ The 14-item checklist that closes the loadable block is the department's ship ga
 
 This SOP introduces no checker of its own; it is the parent that the gates report up to. Registered in lockstep (per §7.4 frozen spec of the integration plan):
 
-- **AF-PRIORITY-SHIFT** (composite, runner, P-SHIFT-QC 7.5) -- the 14-item ledger gate. Doctrine + item list authored here; checker `run_signature_deck.check_priority_shift_ledger`, enforced in build_deck as `_chk_priority_shift_ledger`.
+- **AF-PRIORITY-SHIFT** (composite, runner, P-SHIFT-QC 7.5) -- the 14-item ledger gate. Doctrine + item list authored here; checker `build_deck._chk_priority_shift_ledger`, enforced in build_deck as `_chk_priority_shift_ledger`.
 - **AF-PEAK-END** (build_deck, order 3) -- acceptance test (a). Owned/specified in SOP-PRIORITY-02.
 - **AF-NO-SALIENCE-APEX** (build_deck, image-QC 4.95) -- acceptance test (b). Owned by the Attention Designer (slide-image-creator re-charter).
 - Optional manifest pointer only: top-level `"north_star": "<one line> -> SOP-NORTHSTAR-00"`. Do NOT move doctrine prose into PIPELINE-MANIFEST.json (it is the machine SSOT, scanned by sync_check.py).
