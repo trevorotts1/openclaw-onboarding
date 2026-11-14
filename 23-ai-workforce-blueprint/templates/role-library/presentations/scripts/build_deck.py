@@ -1813,6 +1813,11 @@ def _gov_max_inflight() -> int:
 # MUST pass this allowlist FIRST or we refuse, loud.
 ALLOWED_URL_SCHEMES = ("http", "https")
 
+# PD-091: a slide may feed the client's own photos to the image service as reference
+# images (image-to-image input_urls, beside the official logo). KIE accepts at most
+# 15 input images per generation, so the reference list is capped here, loud.
+MAX_SLIDE_REFERENCE_URLS = 15
+
 
 def assert_url_scheme_allowed(url: str, what: str = "URL") -> None:
     """Refuse (ValueError) unless the URL's scheme is http or https. This is the
@@ -2011,7 +2016,41 @@ def _verify_aspect_and_readback(out_path: Path, slide: dict, ordinal: int) -> No
               f"(AF-OCR-READBACK, approved_by={_skip.get('approved_by')!r}).", file=sys.stderr, flush=True)
 
 
-def submit_task(prompt: str, api_key: str, logo_url: Optional[str] = None) -> str:
+def _slide_reference_urls(slide) -> list:
+    """PD-091 — the client-supplied reference photos a slide row declares.
+
+    A slides.json row may carry ``reference_urls`` (the client's own photos, uploaded
+    by the Media-Librarian to stable public URLs). They ride the SAME ``input_urls``
+    channel the official logo already uses, so KIE renders them as reference images
+    instead of the deck describing photos nobody ever sees. https only, at most
+    MAX_SLIDE_REFERENCE_URLS; every URL passes the C1 scheme allowlist first.
+    """
+    raw = slide.get("reference_urls") if isinstance(slide, dict) else None
+    if not raw:
+        return []
+    if not isinstance(raw, list):
+        raise ValueError(
+            f"slide {slide.get('slide')!r}: reference_urls must be a LIST of URLs, "
+            f"got {type(raw).__name__}")
+    refs: list = []
+    for u in raw:
+        u = str(u).strip()
+        if not u:
+            continue
+        assert_url_scheme_allowed(u, what="slide reference_urls")
+        if (urlparse(u).scheme or "").lower() != "https":
+            raise ValueError(
+                f"slide {slide.get('slide')!r}: reference_urls entries must be https, "
+                f"got {u!r} (the client's photos are fetched by KIE over the public web)")
+        refs.append(u)
+    if len(refs) > MAX_SLIDE_REFERENCE_URLS:
+        raise ValueError(
+            f"slide {slide.get('slide')!r}: {len(refs)} reference_urls exceed the cap of "
+            f"{MAX_SLIDE_REFERENCE_URLS} input images per generation")
+    return refs
+
+def submit_task(prompt: str, api_key: str, logo_url: Optional[str] = None,
+                reference_urls: Optional[list] = None) -> str:
     # Make the English/Latin anti-garble pin REAL: append it (belt-and-braces) if the
     # authored rich prompt does not already carry it. Before this, ENGLISH_PIN was a dead
     # constant — defined and appended nowhere — so the #1 defense against garbled/CJK baked
@@ -2020,15 +2059,26 @@ def submit_task(prompt: str, api_key: str, logo_url: Optional[str] = None) -> st
 
     # OFFICIAL-LOGO mode = IMAGE-TO-IMAGE: pass the real logo URL as input_urls so
     # KIE composites the ACTUAL logo into the slide (the verified technique).
-    # No logo_url -> plain text-to-image. FIX 13: re-resolve the alias per submit so
-    # a catalog bump changes what renders WITHOUT editing this pipeline code.
+    # PD-091: the client's own photos (reference_urls) ride the same channel, after
+    # the logo, so the payload order is [logo, ref1, ref2, ...].
+    # No logo_url and no references -> plain text-to-image, byte for byte as before.
+    # FIX 13: re-resolve the alias per submit so a catalog bump changes what renders
+    # WITHOUT editing this pipeline code.
+    refs = [str(u).strip() for u in (reference_urls or []) if str(u).strip()]
+    if len(refs) > MAX_SLIDE_REFERENCE_URLS:
+        raise ValueError(
+            f"{len(refs)} reference_urls exceed the cap of "
+            f"{MAX_SLIDE_REFERENCE_URLS} input images per generation")
+    for u in refs:
+        assert_url_scheme_allowed(u, what="slide reference_urls")
     model_t2i, model_i2i = _resolve_image_models()
-    if logo_url:
+    input_urls = ([logo_url] if logo_url else []) + refs
+    if input_urls:
         payload = {
             "model": model_i2i,
             "input": {
                 "prompt": prompt,
-                "input_urls": [logo_url],
+                "input_urls": input_urls,
                 "aspect_ratio": ASPECT_RATIO,
                 "resolution": RESOLUTION,
             },
@@ -2405,7 +2455,8 @@ def render_slide(slide: dict, api_key: str, renders_dir: Path, run_dir: Path,
             _rl_streak = 0
             while True:
                 try:
-                    task_id = submit_task(prompt, api_key, logo_url=logo_url)
+                    task_id = submit_task(prompt, api_key, logo_url=logo_url,
+                                          reference_urls=_slide_reference_urls(slide))
                     break
                 except RateLimited:
                     _rl_streak += 1
@@ -2624,7 +2675,8 @@ def render_slides_batch(slides: list, api_key: str, renders_dir: Path, run_dir: 
         _rl_streak = 0
         while True:
             try:
-                task_id = submit_task(prompt, api_key, logo_url=logo_url)
+                task_id = submit_task(prompt, api_key, logo_url=logo_url,
+                                      reference_urls=_slide_reference_urls(slide))
                 break
             except RateLimited:
                 _rl_streak += 1
@@ -7817,6 +7869,21 @@ def _chk_assets_manifest(run_dir: Path, slides_path: Optional[Path] = None) -> s
                 "provided but carries no assets[] entries. Each provided asset must be "
                 "recorded with a public_url + a non-empty consumed_by list.")
     unconsumed = []
+    # PD-091: consumed_by alone no longer proves consumption. The asset's public_url
+    # must also appear in some slide's reference_urls — that list is exactly what the
+    # renderer posts to the image service as image-to-image input_urls, so an asset
+    # listed on paper but wired to no slide never reaches a generation.
+    # ponytail: enforced only once a slides list is readable; before slides.json
+    # exists the slide-count / rich-prompt gates own the absence (same defer rule as
+    # the rest of this check).
+    _slides = _load_slides_list(run_dir, slides_path)
+    referenced: set = set()
+    for _s in (_slides or []):
+        if not isinstance(_s, dict):
+            continue
+        for _u in (_s.get("reference_urls") or []):
+            if str(_u).strip():
+                referenced.add(str(_u).strip())
     for idx, a in enumerate(assets):
         if not isinstance(a, dict):
             unconsumed.append(f"asset#{idx} (not an object)")
@@ -7828,11 +7895,15 @@ def _chk_assets_manifest(run_dir: Path, slides_path: Optional[Path] = None) -> s
             unconsumed.append(f"{kind}#{idx} (empty consumed_by)")
         elif not url:
             unconsumed.append(f"{kind}#{idx} (no public_url to pass as input_urls)")
+        elif _slides and url not in referenced:
+            unconsumed.append(
+                f"{kind}#{idx} (public_url {url} is in no slide's reference_urls)")
     if unconsumed:
         return ("AF-MANIFEST-UNREFERENCED: one or more provided assets are not provably "
                 "consumed downstream — " + "; ".join(unconsumed[:8]) + ". Every provided "
-                "asset must carry a public_url AND a non-empty consumed_by (e.g. "
-                "['brand-steward','slide-image-creator']) so it is actually fed to "
+                "asset must carry a public_url, a non-empty consumed_by (e.g. "
+                "['brand-steward','slide-image-creator']) AND appear in at least one "
+                "slide's reference_urls, so it is actually fed to "
                 "gpt-image-2-6 as input_urls, not collected and ignored.")
     return ""
 
