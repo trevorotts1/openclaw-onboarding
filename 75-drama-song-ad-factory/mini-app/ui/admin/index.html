@@ -181,7 +181,7 @@
 
 <!-- ======================= 2. KEY SURFACE ======================= -->
 <section aria-labelledby="key-h">
-  <h2 id="key-h">2. Check a key</h2>
+  <h2 id="key-h">2. Check a key, or cut one off</h2>
   <p class="hint">Paste a key to see whether the studio still accepts it, and whose record it opens. The key is sent in the <code class="inline">x-ds-key</code> header, never in the address bar.</p>
 
   <div class="field">
@@ -191,10 +191,19 @@
   </div>
 
   <button type="button" id="check">Check this key</button>
-  <button type="button" class="secondary" id="revoke" aria-describedby="revoke-hint">Cut this key off</button>
-  <p class="hint" id="revoke-hint">Version 0 has no revoke route on the studio service, so this refuses and says so. It never reports a cut-off that did not happen.</p>
   <div role="status" id="key-status"></div>
   <div role="alert" id="key-error"></div>
+
+  <div class="field">
+    <label for="revoke-client">Client id to cut keys off for</label>
+    <input id="revoke-client" name="revoke_client_id" type="text" autocomplete="off" spellcheck="false" aria-describedby="revoke-client-hint">
+    <p class="hint" id="revoke-client-hint">Uses the admin key from section 1. It marks every key of that client and that kind revoked, so a leaked key stops working at its next check-in. It never asks for, shows or returns a key value.</p>
+  </div>
+
+  <button type="button" class="secondary" id="revoke-machine">Cut off this client&rsquo;s computer key</button>
+  <button type="button" class="secondary" id="revoke-box">Cut off this client&rsquo;s box key</button>
+  <div role="status" id="revoke-status"></div>
+  <div role="alert" id="revoke-error"></div>
 </section>
 
 <!-- ======================= 3. OPTIONS ======================= -->
