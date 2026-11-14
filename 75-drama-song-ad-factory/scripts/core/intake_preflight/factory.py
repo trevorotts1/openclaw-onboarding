@@ -2987,6 +2987,45 @@ def drain_continuation(run_dir):
         return []
 
 
+def _board_completion(run_dir, run_id):
+    """The epic's move to done, carrying the run's completion evidence (S75-033).
+
+    Issued at the one place a run is proven delivered (cmd_event's delivered
+    branch). A chat or manual run carries no studio order, and a box with no
+    workspace bound has no board: neither enqueues a move and neither says
+    anything. Every field the move carries is read from the run's own records -
+    cc_completion.build raises CompletionEvidenceMissing before anything is
+    queued, and cc_sync refuses a done move with no registered deliverable or a
+    reviewer equal to the actor. Nothing here fills a blank in.
+    """
+    order = _studio_order(run_dir)
+    if not order:
+        return None
+    workspace = (os.environ.get("CC_WORKSPACE") or "").strip()
+    if not workspace:
+        return None
+    core = Path(__file__).resolve().parents[1]
+    if str(core) not in sys.path:
+        sys.path.insert(0, str(core))
+    import cc_completion  # noqa: PLC0415
+    import media_campaign_adapter  # noqa: PLC0415
+
+    completion = cc_completion.build(str(run_dir))
+    review = completion["review"]
+    outbox = media_campaign_adapter.open_outbox(workspace, str(run_id))
+    # ponytail: the row stays pending; flush() is the operator's switch, so a
+    # down board never blocks a delivery that already happened. Wire the flush
+    # into the delivery path when the board projection stops being optional.
+    return media_campaign_adapter.complete(
+        outbox, str(order["order_id"]), "epic", "skill75:%s" % (run_id,),
+        review["reviewer"],
+        "delivered run %s: final approval revision %s over the delivered "
+        "package (sha256 %s), independently reviewed by %s"
+        % (run_id, completion["approval"]["revision"],
+           completion["approval"].get("sha256"), review["reviewer"]),
+        approval=completion["approval"], review=review)
+
+
 def cmd_event(a):
     """event --run-dir <dir> --event <kind>: the continuation controller.
 
@@ -3029,6 +3068,10 @@ def cmd_event(a):
     if admission.get("ok") is False:
         return _production_refusal("event", run_dir, admission)
     if action.get("delivered"):
+        # Proven delivered: the epic's final move carries the completion
+        # evidence (S75-033). Nothing is enqueued for a run without a studio
+        # order, and a run whose evidence is missing raises before it queues.
+        _board_completion(run_dir, sid)
         return envelope("event", sid, "ok", "run-complete",
                         "Event %r: the run is delivered (strict completion)."
                         % event, data=action)
