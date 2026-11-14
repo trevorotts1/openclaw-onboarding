@@ -36,6 +36,25 @@ def _write(p: Path, obj_or_text) -> None:
         p.write_text(json.dumps(obj_or_text))
 
 
+# --- PD-924 retarget helpers (module level: two test classes need them) ----
+def _pd924_tokens(run_dir: Path, min_body_pt="12") -> None:
+    """PD-924: the design tokens AF-FONT-FLOOR re-measures. A sub-floor
+    min_body_pt makes the LEGACY teeth refuse a report whose SHAPE is a clean
+    pass — which is the divergence these tests construct."""
+    _write(run_dir / "working" / "typography" / "type_layout_system.md",
+           f"min_body_pt: {min_body_pt}\ntype_scale_steps: 4\n"
+           f"min_contrast_ratio: 7.0\n")
+
+
+def _pd924_clean_report() -> dict:
+    return {
+        "gate": "Phase Typography-QC", "average": 9.1, "pass": True,
+        "triggered_autofails": [],
+        "qc_independence": {"graded_by": "typography-qc-specialist",
+                            "independent": True},
+    }
+
+
 class FactAndVerdictPrimitivesTest(unittest.TestCase):
     def test_verdict_has_no_truthiness(self):
         for v in (rf.Verdict.PASS, rf.Verdict.FAIL, rf.Verdict.UNDETERMINED):
@@ -170,18 +189,31 @@ class SealTypographyQcTest(unittest.TestCase):
         self.assertEqual(wired_reasons, [])
 
     def test_proven_gap_pass_false_report_still_returns_legacy_true_in_report_only(self):
-        """THE EXECUTED PROOF this increment is built around: a report that
-        explicitly says pass:false, with a wrong gate label and no
-        independence provenance, is STILL accepted as a phase PASS by the
-        legacy verifier (file exists, non-empty, parses — nothing more is
-        checked) — and, in report-only mode (the default), the WIRED gate
-        must return the exact same permissive result so this increment cannot
-        brick any currently-passing real run. The RunFacts verdict must
-        independently and correctly compute FAIL, proving the gap is
-        detected even though it isn't (yet) enforced."""
+        """DIVERGENCE, retargeted by PD-924.
+
+        PD-075 closed the old acceptance gap: a pass:false report no longer
+        sails through the legacy gate, so a STATIC pass:false fixture can no
+        longer produce the divergence this test is named for. The fixture is
+        now the stale-seal shape, which reproduces the same disagreement
+        without asserting the defect:
+
+          1. admit the run while the report on disk is untrusted (the seal
+             RunFacts holds from here on);
+          2. repair the artifact on disk into a SHAPE-VALID PASSING report over
+             tokens at min_body_pt 18 (the legacy teeth then PASS it);
+          3. run the wired gate: legacy PASS, RunFacts FAIL on the sealed bytes.
+
+        Every assertion below is the ORIGINAL one, unchanged in polarity and in
+        what it names — this test's name is about the legacy TRUE surviving
+        report-only mode, so that is exactly what it still pins."""
         self._report('{"gate":"typography","pass":false,"average":2.1,'
                      '"failures":["everything is broken"]}')
+        rf.reset_cache_for_tests()
+        rf.get_or_seal(self.run_dir)          # (1) the seal of record
+        self._report(_pd924_clean_report())   # (2) repaired on disk
+        _pd924_tokens(self.run_dir, min_body_pt="18")
         os.environ.pop(rf.ENFORCE_ENV, None)
+
         ok, reasons = pv.verify("P-TYPO-QC", self.run_dir)
         self.assertTrue(ok, "report-only mode must not change the legacy PASS result")
         self.assertEqual(reasons, [])
@@ -195,6 +227,20 @@ class SealTypographyQcTest(unittest.TestCase):
         findings = facts.findings()
         self.assertEqual(len(findings), 1)
         self.assertIn("qc[typography]", findings[0])
+
+    def test_the_font_floor_teeth_still_bite_a_shape_valid_report(self):
+        """PD-924 control for the fixture above: the repaired report is a
+        genuine PASS for the legacy SHAPE gate and is refused ONLY because the
+        design tokens sit under the font floor. Drop min_body_pt to 12 and the
+        legacy gate flips to REFUSE — so the token value is load-bearing in
+        the retargeted fixture, not decoration."""
+        self._report(_pd924_clean_report())
+        _pd924_tokens(self.run_dir, min_body_pt="18")
+        path = self.run_dir / "working" / "qc" / "typography_qc_report.json"
+        self.assertEqual(bd._chk_typography_qc(path), "",
+                         "tokens at the floor must pass the legacy teeth")
+        _pd924_tokens(self.run_dir, min_body_pt="12")
+        self.assertIn("below the 18pt body floor", bd._chk_typography_qc(path))
 
     def test_enforcing_flag_flips_the_gate_and_never_regresses_a_legit_report(self):
         os.environ[rf.ENFORCE_ENV] = "1"
@@ -293,16 +339,28 @@ class EnforcementModeSealedAtAdmissionTest(unittest.TestCase):
             os.environ.pop(rf.ENFORCE_ENV, None)
 
     def test_a_real_gate_verdict_does_not_flip_when_env_changes_mid_run(self):
-        """End-to-end via the front-door (get_or_seal) path: seal a run with a
-        proven-tampered typography report (gate:'typography', pass:false --
-        the module's own documented P-TYPO-QC gap) while the flag is OFF,
-        THEN flip the flag ON without re-admitting. The wired gate must
-        return the SAME (permissive, report-only) result both times -- pre-
-        fix, this flipped to a FAIL the instant the flag was set, on the SAME
-        already-sealed run."""
+        """End-to-end via the front-door (get_or_seal) path, retargeted by
+        PD-924. PD-075 gave the legacy half real teeth, so a pass:false report
+        is no longer the gap; the fixture is now a SHAPE-VALID PASSING report
+        over sub-floor design tokens — legacy FAIL, RunFacts PASS.
+
+        The property is unchanged: admit the run with the flag OFF, then flip
+        it ON without re-admitting, and the wired gate must return the SAME
+        result both times. It now bites HARDER than before, because the two
+        halves disagree: pre-fix the enforcing branch returned RunFacts' PASS
+        and LIFTED the legacy FAIL (True after, False before — the equality
+        assertion goes red). PD-075's `and legacy_ok` guard is what keeps the
+        legacy refusal standing, so this test now pins that guard too."""
         p = self.run_dir / "working" / "qc" / "typography_qc_report.json"
         p.parent.mkdir(parents=True, exist_ok=True)
-        p.write_text(json.dumps({"gate": "typography", "pass": False, "average": 2.1}))
+        # PD-924 fixture: seal the run while the artifact is untrusted, then
+        # repair it on disk. The sealed mode is what this test pins, and it is
+        # resolved on the FIRST touch — which is the admission below.
+        p.write_text('{"gate": "typography", "pass": false, "average": 2.1}')
+        rf.reset_cache_for_tests()
+        rf.get_or_seal(self.run_dir)
+        p.write_text(json.dumps(_pd924_clean_report()))
+        _pd924_tokens(self.run_dir, min_body_pt="18")
 
         self.assertNotIn(rf.ENFORCE_ENV, os.environ)
         ok_before, reasons_before = pv.verify("P-TYPO-QC", self.run_dir)
