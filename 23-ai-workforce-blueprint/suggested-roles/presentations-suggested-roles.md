@@ -1,8 +1,8 @@
 # Suggested Roles -- presentations-dept
 **Version:** 2.1 | 2026-07-29
-**Status:** The v12.20.0 canonical 24-role roster is extended with the **2 Skill-51 Signature-Presentation methodology roles** (`signature-presentation-architect`, `qc-specialist-signature-presentations`), the **6 attention-strategy + prompt-authoring + specialist-QC roles** (`attention-content-strategist`, `prompt-author-presentations`, `qc-specialist-prompt-presentations`, `qc-specialist-image-presentations`, `qc-specialist-typography-presentations`, `qc-specialist-speech-presentations`), the **2 image-grounding + representation roles** (`image-grounding-steward`, `representation-casting-director`), and the **text-layer Scripts Specialist** (`scripts-specialist`) -> **35 roster roles**. Every roster role resolves to a role-library `_index.json` entry (verified green by `qc-assert-repo-consistency.py --only consistency` and `register-library-additions.py --check`). Every role header is CLEAN (no `(NEW)`, no `-- vX.Y`, no `renamed from ...`, no `&`/`+`/`'` decorations) and carries an explicit `**Slug:**` that matches its role-library `.md` file exactly. The slug is the canonical key for folder naming (`NN-<slug>/`) and role-library lookup.
+**Status:** The v12.20.0 canonical 24-role roster is extended with the **2 Skill-51 Signature-Presentation methodology roles** (`signature-presentation-architect`, `qc-specialist-signature-presentations`), the **6 attention-strategy + prompt-authoring + specialist-QC roles** (`attention-content-strategist`, `prompt-author-presentations`, `qc-specialist-prompt-presentations`, `qc-specialist-image-presentations`, `qc-specialist-typography-presentations`, `qc-specialist-speech-presentations`), the **2 image-grounding + representation roles** (`image-grounding-steward`, `representation-casting-director`), the **text-layer Scripts Specialist** (`scripts-specialist`), and the **independent infographic QC unit** (`infographic-checklist`) -> **36 roster roles**. Every roster role resolves to a role-library `_index.json` entry (verified green by `qc-assert-repo-consistency.py --only consistency` and `register-library-additions.py --check`). Every role header is CLEAN (no `(NEW)`, no `-- vX.Y`, no `renamed from ...`, no `&`/`+`/`'` decorations) and carries an explicit `**Slug:**` that matches its role-library `.md` file exactly. The slug is the canonical key for folder naming (`NN-<slug>/`) and role-library lookup.
 
-## Canonical Role Count: 35
+## Canonical Role Count: 36
 The canonical set is one role per role-library `.md` file under
 `templates/role-library/presentations/` (excluding the `00-START-HERE.md` meta
 doc, `BUILDER-PROMPT.md`, `how-to-use-this-department.md`, `IDENTITY.md`,
@@ -376,6 +376,15 @@ End-to-end branded webinar and slide deck production: copy writing, price ladder
 - 07-Runtime-Audit-and-Archive-Reconciliation.md
 - 08-Phrase-Bank-Maintenance.md
 - 09-Handoff-to-the-Deck-Builder.md
+**Role type:** specialist
+
+### 35. Infographic Checklist QC
+**Slug:** infographic-checklist
+**What it does:** Independently QC-grades the rendered infographic before P-BUNDLE-GATE. Reads the infographic prompt, the rendered PNG, and build_infographic's render record, then answers one question mechanically: does the rendered PNG deliver the checklist the prompt promised? Never renders, never edits, never re-runs the image job. Writes a verdict file that P-BUNDLE-GATE consumes (FIX 112).
+**Core SOPs to build:**
+- 01-Read-the-Prompt-the-PNG-and-the-Render-Record.md
+- 02-Grade-Checklist-Coverage-Against-the-Prompt.md
+- 03-Write-the-Verdict-File.md
 **Role type:** specialist
 
 ---
