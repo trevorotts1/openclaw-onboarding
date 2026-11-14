@@ -169,7 +169,9 @@ else
   exit 9
 fi
 
-STATE_FILE="$OC_ROOT/workspace/.workforce-build-state.json"
+# One rule for the state file: WORKFORCE_BUILD_STATE_FILE, then ZHC_STATE_FILE,
+# then WORKFORCE_BUILD_STATE_PATH, then this script's own default.
+STATE_FILE="${WORKFORCE_BUILD_STATE_FILE:-${ZHC_STATE_FILE:-${WORKFORCE_BUILD_STATE_PATH:-$OC_ROOT/workspace/.workforce-build-state.json}}}"
 OPENCLAW_CFG="$OC_ROOT/openclaw.json"
 
 # B3: default — missing config is a HARD FAIL (not advisory)
@@ -216,17 +218,19 @@ now_iso() { date -u +%Y-%m-%dT%H:%M:%SZ; }
 # BUG FIX (v1.0.2): runtime .workforce-build-state.json stores departments with field
 # "id" not "slug" (the schema name). Using .slug produced an always-empty ALL_DEPTS,
 # causing the gate to WARN and exit 0 vacuously — a false pass.  Use .id instead.
+# BU-51: accept either field — `.id // .slug` — because a department entry may be
+# keyed by slug only; a slug-only state file used to hard-fail here.
 ALL_DEPTS=()
 while IFS= read -r _dept_line; do
   [[ -n "$_dept_line" ]] && ALL_DEPTS+=("$_dept_line")
-done < <(jq -r '.departments[]?.id // empty' "$STATE_FILE" 2>/dev/null || true)
+done < <(jq -r '.departments[]? | (.id // .slug // empty)' "$STATE_FILE" 2>/dev/null || true)
 
 if [[ ${#ALL_DEPTS[@]} -eq 0 ]]; then
   # Guard: if the state file has a non-empty departments array but we got no IDs,
   # that is a BUG (wrong field name or unreadable state) — hard-fail, not a vacuous pass.
   _raw_dept_count=$(jq -r '(.departments // []) | length' "$STATE_FILE" 2>/dev/null || echo 0)
   if (( _raw_dept_count > 0 )); then
-    echo "[verify-wiring] FATAL: state file has ${_raw_dept_count} department(s) but .id was empty for all of them — schema mismatch or corrupted state. Aborting to prevent a vacuous false pass." >&2
+    echo "[verify-wiring] FATAL: state file has ${_raw_dept_count} department(s) but neither .id nor .slug was present on them — schema mismatch or corrupted state. Aborting to prevent a vacuous false pass." >&2
     exit 9
   fi
   echo "[verify-wiring] WARN: no departments found in state file — nothing to check" >&2
@@ -275,6 +279,8 @@ fi
 # absent, detection is the only honest option available to this gate.
 #
 # Candidate order is preference, not authority — the score decides:
+#   0. the LIVE departments tree                (BU-58: the folder _qc_paths
+#                                                resolves, printed first here)
 #   1. state.workspaceRoot/departments          (explicit, when present)
 #   2. $OC_ROOT/workspace/departments           (the tree the floor-fill repair
 #                                                pipeline maintains — see
@@ -292,6 +298,14 @@ _add_candidate() {
   done
   DEPT_TREE_CANDIDATES+=("$c")
 }
+
+# BU-58: the live tree goes FIRST. _qc_paths.resolve_live_departments_dir() is the
+# ONE definition of "which departments tree is live" (BU-103); its CLI prints that
+# folder only when it resolves to an existing directory and prints nothing
+# otherwise, so the candidates below stay exactly as they were when it cannot
+# answer. The score still decides — this only puts the live tree in the race first.
+_LIVE_DEPTS_DIR="$(python3 -B "$SCRIPT_DIR/_qc_paths.py" --print-live-departments-dir 2>/dev/null || true)"
+_add_candidate "$_LIVE_DEPTS_DIR"
 
 _STATE_WS_ROOT=$(jq -r '.workspaceRoot // empty' "$STATE_FILE" 2>/dev/null || true)
 _add_candidate "$_STATE_WS_ROOT/departments"
@@ -340,6 +354,14 @@ resolve_one_dept() {
     fi
   done
   return 0
+}
+
+# real_path <path> — the path with symlinks and "." / ".." resolved, or nothing
+# when it does not resolve. Used for the roster-vs-folder comparison below: two
+# names for one folder must compare equal, and a path that does not exist must
+# never match anything.
+real_path() {
+  (cd "$1" 2>/dev/null && pwd -P)
 }
 
 DEPTS_DIR=""
@@ -618,7 +640,9 @@ for DEPT_SLUG in "${DEPTS_TO_CHECK[@]}"; do
       echo "  [MATERIALIZED] SKIP (not roles, no how-to.md expected): ${SKIPPED_NON_ROLE[*]}"
     fi
 
-    for ROLE_DIR in "${ROLE_DIRS[@]}"; do
+    # ponytail: bash-3.2-safe empty-array expansion (set -u treats "${A[@]}" on an
+    # empty array as unbound); upgrade path is dropping bash 3.2 / older macOS shells.
+    for ROLE_DIR in ${ROLE_DIRS[@]+"${ROLE_DIRS[@]}"}; do
       ROLE_SLUG="$(basename "$ROLE_DIR")"
       HOW_TO="$ROLE_DIR/how-to.md"
       if [[ ! -f "$HOW_TO" ]]; then
@@ -679,22 +703,48 @@ for DEPT_SLUG in "${DEPTS_TO_CHECK[@]}"; do
     AGENT_IDS_IN_CFG=$(jq -r '((.agents.entries // {}) | keys[]), (.agents.list[]?.id // empty)' "$OPENCLAW_CFG" 2>/dev/null || true)
     # The dept agent id is typically "dept-<slug>"
     EXPECTED_AGENT_ID="dept-${DEPT_SLUG}"
-    if echo "$AGENT_IDS_IN_CFG" | grep -qx "$EXPECTED_AGENT_ID"; then
+    # BU-75 (WF-093, WF-089): the roster id is not always "dept-<slug>". A box
+    # may register the department under an owner-chosen id ("marketing-lead")
+    # whose workspace IS the department folder. That entry is this department's
+    # registration: measuring it as "agent-not-in-config" failed a department
+    # that was wired correctly, and the runtime-dir check then failed too.
+    # Only when the canonical id is ABSENT do we match on workspace identity;
+    # a canonical "dept-<slug>" entry always wins so the existing behaviour is
+    # unchanged wherever it already worked.
+    EFFECTIVE_AGENT_ID="$EXPECTED_AGENT_ID"
+    if ! echo "$AGENT_IDS_IN_CFG" | grep -qx "$EXPECTED_AGENT_ID"; then
+      _DEPT_DIR_REAL="$(real_path "$DEPT_DIR")"
+      if [[ -n "$_DEPT_DIR_REAL" ]]; then
+        while IFS=$'\t' read -r _roster_id _roster_ws; do
+          [[ -n "$_roster_id" ]] || continue
+          [[ -n "$_roster_ws" && "$_roster_ws" != "null" ]] || continue
+          _roster_ws_real="$(real_path "$_roster_ws")"
+          if [[ -n "$_roster_ws_real" && "$_roster_ws_real" == "$_DEPT_DIR_REAL" ]]; then
+            EFFECTIVE_AGENT_ID="$_roster_id"
+            echo "  [REGISTERED]   OK:   registered as $_roster_id (its workspace is this department folder; $EXPECTED_AGENT_ID is not in the roster)"
+            break
+          fi
+        done < <(jq -r '((.agents.entries // {}) | to_entries[] | [.key, (.value.workspace // "")] | @tsv),
+                        (.agents.list[]? | [(.id // ""), (.workspace // "")] | @tsv)' \
+                 "$OPENCLAW_CFG" 2>/dev/null || true)
+      fi
+    fi
+    if echo "$AGENT_IDS_IN_CFG" | grep -qx "$EFFECTIVE_AGENT_ID"; then
       # Also verify workspace path resolves
-      REG_WORKSPACE=$(jq -r --arg aid "$EXPECTED_AGENT_ID" \
+      REG_WORKSPACE=$(jq -r --arg aid "$EFFECTIVE_AGENT_ID" \
         '(.agents.entries[$aid].workspace? // ([.agents.list[]? | select(.id==$aid) | .workspace][0])) // empty' \
         "$OPENCLAW_CFG" 2>/dev/null || true)
       if [[ -n "$REG_WORKSPACE" && "$REG_WORKSPACE" != "null" ]]; then
         if [[ -d "$REG_WORKSPACE" ]]; then
-          echo "  [REGISTERED]   OK:   agent $EXPECTED_AGENT_ID → workspace $REG_WORKSPACE"
+          echo "  [REGISTERED]   OK:   agent $EFFECTIVE_AGENT_ID → workspace $REG_WORKSPACE"
         else
-          echo "  [REGISTERED]   FAIL: agent $EXPECTED_AGENT_ID registered but workspace path does not exist: $REG_WORKSPACE" >&2
+          echo "  [REGISTERED]   FAIL: agent $EFFECTIVE_AGENT_ID registered but workspace path does not exist: $REG_WORKSPACE" >&2
           REG_PASS=0
           REG_GAPS+=("workspace-path-missing:$REG_WORKSPACE")
           FAIL_REGISTERED+=("$DEPT_SLUG:workspace-path-missing")
         fi
       else
-        echo "  [REGISTERED]   FAIL: agent $EXPECTED_AGENT_ID registered but has no workspace path" >&2
+        echo "  [REGISTERED]   FAIL: agent $EFFECTIVE_AGENT_ID registered but has no workspace path" >&2
         REG_PASS=0
         REG_GAPS+=("no-workspace-path")
         FAIL_REGISTERED+=("$DEPT_SLUG:no-workspace-path")
@@ -731,7 +781,10 @@ for DEPT_SLUG in "${DEPTS_TO_CHECK[@]}"; do
   # of openclaw.json presence because the dispatcher reads the dir, not the
   # config, at routing time. A case-insensitive fallback covers mixed-case
   # slugs (e.g. AI-Workforce-Build-Office) on a case-sensitive filesystem.
-  RUNTIME_AGENT_ID="dept-${DEPT_SLUG}"
+  # BU-75: the dispatcher keys on the id the department is REGISTERED under, so
+  # when the roster serves this folder under another id (matched by workspace
+  # above) the runtime dir is $OC_ROOT/agents/<that id>/, not dept-<slug>.
+  RUNTIME_AGENT_ID="${EFFECTIVE_AGENT_ID:-dept-${DEPT_SLUG}}"
   RUNTIME_DIR="$OC_ROOT/agents/$RUNTIME_AGENT_ID"
   if [[ -d "$RUNTIME_DIR" ]]; then
     echo "  [RUNTIME-DIR]  OK:   $RUNTIME_DIR exists (dispatcher entry point)"
@@ -1096,12 +1149,21 @@ PYEOF
   # --------------------------------------------------------------------------
   if [[ "$DEPT_SLUG" == "presentations" ]]; then
     PRES_SCRIPTS_TEMPLATE="$SKILL_DIR/templates/role-library/presentations/scripts"
-    PRES_SCRIPTS_DEPLOYED="$HOME/departments/Presentations/scripts"
-    # Prefer the deployed location; fall back to the template source (repo context).
-    if [[ -d "$PRES_SCRIPTS_DEPLOYED" ]]; then
-      _PRES_SCRIPTS="$PRES_SCRIPTS_DEPLOYED"
-    elif [[ -d "$PRES_SCRIPTS_TEMPLATE" ]]; then
+    # BU-75: the scripts folder belongs to the department folder THIS RUN
+    # RESOLVED — the same one the materialization check measured. The old fixed
+    # "$HOME/departments/Presentations/scripts" guess missed every box whose
+    # workforce lives in a company-shaped tree, so the front-door assertions
+    # checked (or skipped) a directory the client never uses.
+    PRES_SCRIPTS_DEPLOYED="$DEPT_DIR/scripts"
+    # Prefer the template source (repo context), which ships the full runner
+    # suite; fall back to the resolved department folder. The deployed folder
+    # is a RUNTIME directory the builders create empty beside the roles — an
+    # empty dir must not win over the populated source, or the front-door and
+    # process-integrity assertions check an empty room and fail a wired dept.
+    if [[ -d "$PRES_SCRIPTS_TEMPLATE" ]]; then
       _PRES_SCRIPTS="$PRES_SCRIPTS_TEMPLATE"
+    elif [[ -d "$PRES_SCRIPTS_DEPLOYED" ]]; then
+      _PRES_SCRIPTS="$PRES_SCRIPTS_DEPLOYED"
     else
       _PRES_SCRIPTS=""
     fi
@@ -1235,20 +1297,24 @@ done
 # Write wiringStatus per-dept into build-state.json (atomic)
 # ==============================================================================
 if [[ -f "$STATE_FILE" ]]; then
-  TMP_STATE="$(mktemp)"
-  jq \
+  # Through the shared state protocol: it holds the state lock across
+  # read/filter/replace, so a reminder stamp or a department decision landing
+  # at the same moment is merged instead of overwritten.
+  # shellcheck source=/dev/null
+  source "$SCRIPT_DIR/lib-workforce-state.sh"
+  workforce_state_set "$STATE_FILE" \
     --argjson perdept "$DEPT_RESULTS_JSON" \
     '
       .departments = ((.departments // []) | map(
         . as $d
-        | ($perdept[$d.id] // {}) as $pd
+        | ($perdept[($d.id // $d.slug // "")] // {}) as $pd
         | $d
         + (if ($pd | has("wiringStatus"))    then {wiringStatus: $pd.wiringStatus}       else {} end)
         + (if ($pd | has("wiringCheckedAt")) then {wiringCheckedAt: $pd.wiringCheckedAt} else {} end)
         + (if ($pd | has("wiringFailReasons")) then {wiringFailReasons: $pd.wiringFailReasons} else {} end)
       ))
-    ' "$STATE_FILE" > "$TMP_STATE" 2>/dev/null && mv "$TMP_STATE" "$STATE_FILE" \
-    || { rm -f "$TMP_STATE"; echo "[verify-wiring] WARN: could not update state file (reporting only)" >&2; }
+    ' \
+    || echo "[verify-wiring] WARN: could not update state file (reporting only)" >&2
 fi
 
 # ==============================================================================

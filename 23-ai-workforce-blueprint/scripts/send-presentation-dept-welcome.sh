@@ -76,7 +76,9 @@ else
   exit 9
 fi
 
-STATE_FILE="$OC_ROOT/workspace/.workforce-build-state.json"
+# One rule for the state file: WORKFORCE_BUILD_STATE_FILE, then ZHC_STATE_FILE,
+# then WORKFORCE_BUILD_STATE_PATH, then this script's own default.
+STATE_FILE="${WORKFORCE_BUILD_STATE_FILE:-${ZHC_STATE_FILE:-${WORKFORCE_BUILD_STATE_PATH:-$OC_ROOT/workspace/.workforce-build-state.json}}}"
 
 # ---- args --------------------------------------------------------------------
 DRY_RUN=0
@@ -122,7 +124,7 @@ fi
 if [[ "$FORCE" -eq 0 ]]; then
   ALREADY_SENT=$(jq -r '
     (.departments // [])
-    | map(select(.slug == "presentations"))
+    | map(select(((.slug // .id // "") | ascii_downcase) == "presentations"))
     | first
     | .presentationDeptWelcomeSent // false
   ' "$STATE_FILE" 2>/dev/null || echo "false")
@@ -135,7 +137,7 @@ fi
 # ---- gate check --------------------------------------------------------------
 PRESENTATIONS_ENTRY=$(jq -r '
   (.departments // [])
-  | map(select(.slug == "presentations"))
+  | map(select(((.slug // .id // "") | ascii_downcase) == "presentations"))
   | first // null
 ' "$STATE_FILE" 2>/dev/null || echo "null")
 
@@ -218,16 +220,19 @@ fi
 
 # ---- write idempotency marker ------------------------------------------------
 TS_NOW=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-TMP_STATE=$(mktemp)
-jq --arg ts "$TS_NOW" '
+# Through the shared state protocol: it holds the state lock across
+# read/filter/replace, so a concurrent reminder stamp or department decision is
+# merged instead of overwritten.
+# shellcheck source=/dev/null
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib-workforce-state.sh"
+workforce_state_set "$STATE_FILE" --arg ts "$TS_NOW" '
   .departments = ((.departments // []) | map(
-    if .slug == "presentations"
+    if ((.slug // .id // "") | ascii_downcase) == "presentations"
     then . + {presentationDeptWelcomeSent: true, presentationDeptWelcomeSentAt: $ts}
     else .
     end
   ))
-' "$STATE_FILE" > "$TMP_STATE" 2>/dev/null && mv "$TMP_STATE" "$STATE_FILE" \
-  || { rm -f "$TMP_STATE"; echo "[send-presentation-dept-welcome] WARN: could not write idempotency marker to state file (send succeeded)" >&2; }
+' || echo "[send-presentation-dept-welcome] WARN: could not write idempotency marker to state file (send succeeded)" >&2
 
 echo "[send-presentation-dept-welcome] Welcome sent and idempotency marker written (presentationDeptWelcomeSent=true at $TS_NOW)."
 exit 0
