@@ -11,14 +11,19 @@ Two legs, mirroring test_canonical_entry_scripts_dir.py's structure:
   1. STATIC — the flag, the env fallback, the FIX 30 vocabulary and the
      never-reuse--mode collision message must all be present in BOTH copies
      (the canonical source and the byte-identical generated mirror).
-  2. DYNAMIC — actually run the entry script in --plan mode and observe:
+  2. DYNAMIC — run the entry script and observe:
      - --intake-depth in-depth stamps pre_presentation_capture.STANDARD_MODE
        = "IN-DEPTH" (the schema's stored form) in working/copy/intake.json;
-     - default (no flag, no env) stamps "QUICK" (the schema default);
+     - no flag and no env leaves the intake file UNTOUCHED — PD-007: the door
+       honors a stated depth only, so a client's interview answer stands;
      - PRESENTATION_INTAKE_DEPTH is honored as the env fallback;
      - run-mode vocabulary (Ultra/Standard/Economy) is REFUSED with a message
        naming the collision — never accepted as intake depth;
      - a garbage value is refused, never silently coerced.
+
+   PD-007: the depth stamp is a BUILD-time side effect (after every gate, never
+   under --plan), so the stamping legs below drive a stubbed engine through the
+   full door instead of using --plan.
 """
 from __future__ import annotations
 
@@ -65,16 +70,30 @@ def test_run_mode_vocabulary_collision_guard_present():
 
 
 def test_no_bare_mode_flag_added():
-    """--mode must NOT be a parsable flag on the entry script: one vocabulary
-    per axis. (Mentions of --mode in explanatory comments are fine; a case
-    pattern or env var definition is not.)"""
+    """--mode must NOT be a parsable flag on the entry script and the entry
+    must never READ the run-mode env var: one vocabulary per axis. (Mentions of
+    --mode in explanatory comments are fine; a case pattern is not.)
+
+    FIX 8 (bd7650a07, 2026-09-28) deliberately EXPORTS PRESENTATION_MODE from
+    the intake ledger's RUN_MODE — the documented env seam for non-launcher
+    callers that speech_build_harness.py reads. That export is the fix for the
+    chat path silently running standard. What this test defends is that the
+    entry is not a run-mode DOOR: no --mode flag, and no READ of the env var
+    (a read would let the entry pick a run mode itself). The previous assertion
+    banned the bare substring instead, contradicting its own "the entry script
+    reads PRESENTATION_MODE" message; it went red the day FIX 8 landed."""
     src = _read(ENTRY)
     assert "--mode)" not in src, (
         "the entry script defines a --mode case in its arg parser — the "
         "run-mode axis must never be a canonical-entry flag")
-    assert 'PRESENTATION_MODE' not in src, (
-        "the entry script reads PRESENTATION_MODE — that is the run-mode "
-        "axis (FIX 11), which the canonical entry must not expose")
+    for read in ("$PRESENTATION_MODE", "${PRESENTATION_MODE"):
+        assert read not in src, (
+            "the entry script reads PRESENTATION_MODE — that is the run-mode "
+            "axis (FIX 11), which the canonical entry must not expose")
+    assert "export PRESENTATION_MODE=" in src, (
+        "the entry script must still EXPORT PRESENTATION_MODE from the intake "
+        "ledger's RUN_MODE (FIX 8) — dropping the export makes the chat path "
+        "silently run standard, the exact defect FIX 8 corrected")
 
 
 def test_mirror_is_byte_identical():
@@ -99,6 +118,13 @@ def _make_fixture(tmp_path: Path) -> tuple[Path, Path]:
     (scripts / "build_deck.py").write_text("# stub build_deck\n")
     (scripts / "run_signature_deck.py").write_text("# stub runner\n")
     (scripts / "ghl_media.py").write_text("# stub ghl_media\n")
+    # PD-009: GATE 3 treats an absent sync_check.py as a FAILED check, never a
+    # skipped one, so every fixture that reaches a gate must carry the stub.
+    (scripts / "sync_check.py").write_text(
+        "import json, sys\n"
+        "print(json.dumps({'in_sync': True, 'manifest_version': 39, 'drift': [],\n"
+        "                  'drift_summary': {'total': 0, 'render_path': 0, 'library_only': 0}}))\n"
+        "sys.exit(0)\n", encoding="utf-8")
     return run_dir, scripts
 
 
@@ -123,24 +149,88 @@ def _stamped(run_dir: Path):
         "pre_presentation_capture", {}).get("STANDARD_MODE")
 
 
-def test_intake_depth_flag_stamps_in_depth(tmp_path):
+def _make_build_fixture(tmp_path: Path) -> tuple[Path, Path]:
+    """PD-007: a fixture the door can take through every gate to a real
+    dispatch. The depth stamp fires only AFTER the gates and only on a build, so
+    it is observable only on a non---plan run. Stubs only; nothing live."""
     run_dir, scripts = _make_fixture(tmp_path)
-    r = _run(run_dir, scripts, ["--intake-depth", "in-depth", "--scripts-dir", str(scripts)])
+    (run_dir / "working" / "interview").mkdir(parents=True, exist_ok=True)
+    (run_dir / "working" / "checkpoints" / ".test-context").write_text("")
+    (run_dir / "working" / "interview" / "intake_ledger.json").write_text(
+        json.dumps({"status": "complete", "complete": True}), encoding="utf-8")
+    # PD-009: GATE 0b checks the sp-intake-transcript-v1 envelope, not a size.
+    (run_dir / "working" / "interview" / "intake_transcript.json").write_text(
+        json.dumps({"format": "sp-intake-transcript-v1",
+                    "driver_signature": "fixture-signed",
+                    "qid_sequence": ["q1", "q2"],
+                    "turns": [{"q": "What topic?", "a": "A long enough answer " * 40}] * 10}),
+        encoding="utf-8")
+    (run_dir / "slides.json").write_text("{}", encoding="utf-8")
+    (scripts / "presentation_job.py").write_text("import sys\nsys.exit(0)\n", encoding="utf-8")
+    (scripts / "presentation_job").mkdir(exist_ok=True)
+    (scripts / "presentation_job" / "resolve_intake.py").write_text(
+        "import argparse, json, sys\n"
+        "p = argparse.ArgumentParser()\n"
+        "p.add_argument('--ledger'); p.add_argument('--out'); p.add_argument('--source')\n"
+        "p.add_argument('--intake-depth', default=None)\n"
+        "a = p.parse_args()\n"
+        "json.dump({'presentation_type': 'signature_presentation'}, open(a.out, 'w'))\n"
+        "sys.exit(0)\n", encoding="utf-8")
+    (scripts / "sync_check.py").write_text(
+        "import json, sys\n"
+        "print(json.dumps({'in_sync': True, 'manifest_version': 39, 'drift': [],\n"
+        "                  'drift_summary': {'total': 0, 'render_path': 0, 'library_only': 0}}))\n"
+        "sys.exit(0)\n", encoding="utf-8")
+    return run_dir, scripts
+
+
+def _run_build(run_dir: Path, scripts: Path, extra_args, env_overrides=None):
+    """Drive the door as a BUILD (no --plan), against the stubbed engine."""
+    env = dict(os.environ)
+    env["OPENCLAW_WORKSPACE"] = str(run_dir.parent / "no-such-workspace")
+    env["QC_SKIP_PRESENTATION_DEPS"] = "1"
+    env.pop("SCRIPTS_DIR", None)
+    env.pop("PRESENTATION_INTAKE_DEPTH", None)
+    for k, v in (env_overrides or {}).items():
+        if v is None:
+            env.pop(k, None)
+        else:
+            env[k] = v
+    return subprocess.run(
+        ["bash", str(ENTRY), "--run-dir", str(run_dir),
+         "--slides", str(run_dir / "slides.json"),
+         "--out", str(run_dir / "out.pptx"),
+         "--scripts-dir", str(scripts), *extra_args],
+        env=env, capture_output=True, text=True, timeout=120)
+
+
+def test_intake_depth_flag_stamps_in_depth(tmp_path):
+    run_dir, scripts = _make_build_fixture(tmp_path)
+    r = _run_build(run_dir, scripts, ["--intake-depth", "in-depth"])
     assert r.returncode == 0, f"rc={r.returncode}\nstderr: {r.stderr}"
     assert _stamped(run_dir) == "IN-DEPTH"
 
 
-def test_default_is_quick(tmp_path):
-    run_dir, scripts = _make_fixture(tmp_path)
-    r = _run(run_dir, scripts, ["--scripts-dir", str(scripts)])
+def test_no_stated_depth_leaves_the_interview_answer_unchanged(tmp_path):
+    """PD-007: with no flag and no env there is no default. The answer the
+    client gave in the interview stands, byte for byte, and no depth_audit row
+    is added."""
+    run_dir, scripts = _make_build_fixture(tmp_path)
+    intake = run_dir / "working" / "copy" / "intake.json"
+    before = intake.read_text(encoding="utf-8")
+    r = _run_build(run_dir, scripts, [])
     assert r.returncode == 0, f"rc={r.returncode}\nstderr: {r.stderr}"
-    assert _stamped(run_dir) == "QUICK"
+    after = json.loads(intake.read_text(encoding="utf-8"))
+    assert "depth_audit" not in after, "no depth was stated, so no audit row may be written"
+    assert intake.read_text(encoding="utf-8") == before, (
+        "no depth was stated — the door must leave the intake file untouched")
+    assert _stamped(run_dir) is None
 
 
 def test_env_fallback_honored(tmp_path):
-    run_dir, scripts = _make_fixture(tmp_path)
-    r = _run(run_dir, scripts, ["--scripts-dir", str(scripts)],
-             {"PRESENTATION_INTAKE_DEPTH": "in-depth"})
+    run_dir, scripts = _make_build_fixture(tmp_path)
+    r = _run_build(run_dir, scripts, [],
+                   {"PRESENTATION_INTAKE_DEPTH": "in-depth"})
     assert r.returncode == 0, f"rc={r.returncode}\nstderr: {r.stderr}"
     assert _stamped(run_dir) == "IN-DEPTH"
 
@@ -190,6 +280,19 @@ def _fixture_with_manifest(tmp_path: Path, n_phases: int) -> tuple[Path, Path]:
     manifest = {"manifest_version": 999,
                 "phases": [{"id": f"P{i}"} for i in range(n_phases)]}
     (sops / "PIPELINE-MANIFEST.json").write_text(json.dumps(manifest), encoding="utf-8")
+    # PD-920: since PD-010, GATE 1 takes its dependency LIST from
+    # $SCRIPTS_DIR/presentation-deps.json and refuses the run (exit 6) when that
+    # canon is absent — gates run before --plan prints "Manifest phases". This
+    # fixture's subject is the manifest count, not the deps gate, so stage a
+    # minimal canon with one OPTIONAL row: the gate resolves and enumerates a
+    # real canon, and no machine's installed binaries can change the verdict.
+    (scripts / "presentation-deps.json").write_text(json.dumps({
+        "$id": "presentation-deps",
+        "deps": [{"name": "pd920-fixture-optional-probe",
+                  "kind": "binary",
+                  "binary_name": "pd920_optional_probe",
+                  "required": False}],
+    }), encoding="utf-8")
     return run_dir, scripts
 
 
