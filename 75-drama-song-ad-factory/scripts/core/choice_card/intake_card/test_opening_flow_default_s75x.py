@@ -87,8 +87,10 @@ def test_a_new_run_opens_on_the_opening_flow_through_the_launcher(tmp_path, caps
     run.mkdir()
     assert IC.main(["--step", "--run-dir", str(run)]) == 0
     first = capsys.readouterr().out
+    #: S75-006: the chat numbers the screens it ASKS one by one; the defaulted
+    #: recap screens carry no number, so the count is the askable list.
     assert _first_line(first) == "Question 1 of %d - PURPOSE" % len(
-        IC._shaped(IC.QUESTIONS, []))
+        IC.askable(IC._shaped(IC.QUESTIONS, [])))
     assert "What is this video for?" in first
 
 
@@ -140,7 +142,8 @@ def test_the_flow_asks_one_question_per_message():
         msg = IC.conversation(replies[:i], purpose_flow=True)["message"]
         assert msg.count("Question ") == 1, (i, msg)
         answers.append(r)
-    assert len(answers) == len(qs)
+    #: S75-006: one message per ASKED screen; the defaulted tail rides on the recap.
+    assert len(answers) == len(IC.askable(qs))
 
 
 # ------------------------------------------------------------- resumed run ----

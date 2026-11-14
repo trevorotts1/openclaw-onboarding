@@ -27,7 +27,11 @@ QUESTION_SHA256 = {
     "character": "1e6bdbaacc82d59de35b56734913b9df23b0fba1bcc6ba49bc1d8bd306f2b0f2",
     "photos": "fca6e105bd1fd50fad8b3e69e5fbfb587d1903d6c197aa99cda43ca7293cc590",
     "models": "919c74f6bc6b3d43f5fedf2caa75fec466d3149b5f541fcb631f332f25bf491e",
-    "music": "951199b62baeef6579fa39434dc9a42404ccdbbd941f75329d7c70c9d35108e5",
+    # Re-pinned for U-GEN437: the last MUSIC STYLE option answers nothing -- it
+    # opens the ``music_full`` screen -- and the question now carries that as
+    # ``opens_screen``. Every visible word, option and recommendation is
+    # unchanged; only the screen-opening key is new.
+    "music": "774ace65739dcd05d0262f09552c8b5ad9522ee59ecdcc780adb54a923baeabc",
     # Re-pinned for S75-074, which replaces "I start as soon as the card is
     # approved." with plain client words on the CHECKPOINTS screen.
     "checkpoints": "ddd7d0c083f4276a3e6896eab1e13a64c7e6108b844e61e00bd59f209612c812",
