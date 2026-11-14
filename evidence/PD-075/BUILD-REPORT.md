@@ -4,7 +4,7 @@
 - Lane: FL17
 - Severity: Moderate
 - Branch: `pd/fl17-phase-checks` (`git branch --show-current` = `pd/fl17-phase-checks`, exact match to the ledger row, no `--hold-dNN` suffix)
-- Worktree: `/Volumes/mac mini m4/swarm-contract/pd-fix/worktrees/onboarding/FL17`
+- Worktree: `<LOOP_ROOT>/worktrees/onboarding/FL17`
 - Base head at start: `5288f07a903d048458157dcba93d6e78c0669822` (`git rev-parse HEAD`)
 - Fix commit: `c6d702160b063ef4b441bf53d3b758d7d2034aed`
 - Remote proof: `git ls-remote origin refs/heads/pd/fl17-phase-checks` →
