@@ -2898,33 +2898,49 @@ def _board_completion(run_dir, run_id):
     cc_completion.build raises CompletionEvidenceMissing before anything is
     queued, and cc_sync refuses a done move with no registered deliverable or a
     reviewer equal to the actor. Nothing here fills a blank in.
+
+    The board is reached, not trusted: a board that cannot be opened or that
+    refuses the move locally is reported back as ``{"ok": False, ...}`` instead
+    of raising, because the delivery this move describes has already happened.
+    Missing completion evidence still raises -- that is a fact about the run,
+    checked before the board is touched, not a fact about the board.
     """
     order = _studio_order(run_dir)
     if not order:
-        return None
+        return {"ok": True, "skipped": "no-studio-order"}
     workspace = (os.environ.get("CC_WORKSPACE") or "").strip()
     if not workspace:
-        return None
+        return {"ok": True, "skipped": "no-workspace"}
     core = Path(__file__).resolve().parents[1]
     if str(core) not in sys.path:
         sys.path.insert(0, str(core))
     import cc_completion  # noqa: PLC0415
+    import cc_sync  # noqa: PLC0415
     import media_campaign_adapter  # noqa: PLC0415
 
     completion = cc_completion.build(str(run_dir))
     review = completion["review"]
-    outbox = media_campaign_adapter.open_outbox(workspace, str(run_id))
     # ponytail: the row stays pending; flush() is the operator's switch, so a
     # down board never blocks a delivery that already happened. Wire the flush
     # into the delivery path when the board projection stops being optional.
-    return media_campaign_adapter.complete(
-        outbox, str(order["order_id"]), "epic", "skill75:%s" % (run_id,),
-        review["reviewer"],
-        "delivered run %s: final approval revision %s over the delivered "
-        "package (sha256 %s), independently reviewed by %s"
-        % (run_id, completion["approval"]["revision"],
-           completion["approval"].get("sha256"), review["reviewer"]),
-        approval=completion["approval"], review=review)
+    try:
+        outbox = media_campaign_adapter.open_outbox(workspace, str(run_id))
+        move = media_campaign_adapter.complete(
+            outbox, str(order["order_id"]), "epic", "skill75:%s" % (run_id,),
+            review["reviewer"],
+            "delivered run %s: final approval revision %s over the delivered "
+            "package (sha256 %s), independently reviewed by %s"
+            % (run_id, completion["approval"]["revision"],
+               completion["approval"].get("sha256"), review["reviewer"]),
+            approval=completion["approval"], review=review)
+    except (OSError, sqlite3.Error, cc_sync.BoardSyncError) as exc:
+        # An unopenable outbox (a dropped mount, a full disk, a path replaced
+        # by a file) and a board that refuses the move locally are both "the
+        # board did not take it". Nothing was queued, so a retry cannot
+        # double-queue the done move.
+        return {"ok": False, "reason_code": "board-unreachable",
+                "detail": "%s: %s" % (type(exc).__name__, exc)}
+    return {"ok": True, "move": move}
 
 
 def cmd_event(a):
@@ -2972,7 +2988,15 @@ def cmd_event(a):
         # Proven delivered: the epic's final move carries the completion
         # evidence (S75-033). Nothing is enqueued for a run without a studio
         # order, and a run whose evidence is missing raises before it queues.
-        _board_completion(run_dir, sid)
+        # A board that cannot be reached or that refuses the move locally is
+        # reported, never raised: the delivery already happened and a down
+        # board must not unwind it.
+        board = _board_completion(run_dir, sid)
+        action["board"] = board
+        if not board["ok"]:
+            sys.stderr.write(
+                "board completion failed (%s): %s -- the run stays delivered\n"
+                % (board["reason_code"], board["detail"]))
         return envelope("event", sid, "ok", "run-complete",
                         "Event %r: the run is delivered (strict completion)."
                         % event, data=action)
