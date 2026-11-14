@@ -25,6 +25,9 @@ SCRIPTS = pathlib.Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(SCRIPTS))
 
 from presentation_job import runfacts as rf  # noqa: E402
+from presentation_job.priority_shift_items import (  # noqa: E402
+    PRIORITY_SHIFT_ITEM_IDS,
+)
 from verifier_registry import (  # noqa: E402
     VerifierSpec,
     Verdict,
@@ -239,28 +242,36 @@ def test_slice2_speech_absent_fails_closed(tmp_path):
 
 def test_slice2_priority_shift_both_directions(tmp_path):
     """P-SHIFT-QC: fabricated ledger (pass:true headline over failing rows —
-    a rubber stamp) rejected naming the failing items; genuine 14-row all-pass
-    ledger passes."""
+    a rubber stamp) rejected naming the failing items; genuine all-pass ledger
+    over the ship gate's own id list passes.
+
+    Both directions build their rows from PRIORITY_SHIFT_ITEM_IDS (PD-304's
+    one list, the same constant the check reads): a fixture with synthetic ids
+    would prove only that the check rejects synthetic ids, not that it accepts
+    a real ledger."""
     spec = priority_shift_verifier()
     assert spec.gate == "qc:priority_shift"
 
     def fabricate(rd):
-        # Headline says pass but the ledger contradicts it.
+        # Headline says pass but the ledger contradicts it: every ship-gate id
+        # is present and passing except the salience apex.
         write_fixture(rd, "working/qc/priority_shift_report.json", {
             "schema": "priority_shift_report/v1", "gate": "AF-PRIORITY-SHIFT",
             "pass": True,
-            "items": [{"item": f"item_{i}", "pass": True, "evidence": "ok"}
-                      for i in range(13)]
-                     + [{"item": "13_most_vivid_by_the_end", "pass": False,
-                         "evidence": "AF-NO-SALIENCE-APEX"}],
+            "items": [{"item": item_id,
+                       "pass": item_id != "13_most_vivid_by_the_end",
+                       "evidence": ("AF-NO-SALIENCE-APEX"
+                                    if item_id == "13_most_vivid_by_the_end"
+                                    else "ok")}
+                      for item_id in PRIORITY_SHIFT_ITEM_IDS],
         })
 
     def genuine(rd):
         write_fixture(rd, "working/qc/priority_shift_report.json", {
             "schema": "priority_shift_report/v1", "gate": "AF-PRIORITY-SHIFT",
             "phase": "P-SHIFT-QC (order 7.5)", "pass": True,
-            "items": [{"item": f"item_{i}", "pass": True, "evidence": "ok"}
-                      for i in range(15)],
+            "items": [{"item": item_id, "pass": True, "evidence": "ok"}
+                      for item_id in PRIORITY_SHIFT_ITEM_IDS],
             "slides": [{"slide": 1, "pass": True, "verdict": "pass"}],
         })
 
@@ -305,8 +316,8 @@ def _seed_six_domains(rd):
     write_fixture(rd, "working/qc/priority_shift_report.json", {
         "schema": "priority_shift_report/v1", "gate": "AF-PRIORITY-SHIFT",
         "phase": "P-SHIFT-QC (order 7.5)", "pass": True,
-        "items": [{"item": f"item_{i}", "pass": True, "evidence": "ok"}
-                  for i in range(15)],
+        "items": [{"item": item_id, "pass": True, "evidence": "ok"}
+                  for item_id in PRIORITY_SHIFT_ITEM_IDS],
     })
 
 
