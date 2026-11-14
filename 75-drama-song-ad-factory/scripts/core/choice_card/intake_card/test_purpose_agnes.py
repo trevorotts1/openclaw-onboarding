@@ -154,7 +154,7 @@ def test_each_purpose_gets_the_right_follow_up_and_the_right_lengths():
     assert "episode_length" in ids and "length" not in ids
     assert ids.index("episode_length") == ids.index("models") + 1
     assert _labels(camp, "episode_length") == [
-        "60 seconds", "90 seconds", "2 minutes", "3 minutes", "5 minutes", "10 minutes"]
+        "60 seconds", "90 seconds", "2 minutes", "3 minutes", "5 minutes"]
     assert "shape" in ids
 
     # choice 2: PERMISSION sits right after PURPOSE, and no other screen
@@ -163,7 +163,7 @@ def test_each_purpose_gets_the_right_follow_up_and_the_right_lengths():
     assert "episode_length" not in _ids(test)
     assert _labels(test, "length") == [
         "60 seconds", "90 seconds", "2 minutes", "3 minutes + 60s and 90s clips",
-        "5 minutes + 60s and 90s clips", "10 minutes (the long version) + 60s and 90s clips"]
+        "5 minutes + 60s and 90s clips"]
     assert "shape" in _ids(test)
 
     # choice 3: no follow-up at all
@@ -172,7 +172,7 @@ def test_each_purpose_gets_the_right_follow_up_and_the_right_lengths():
     assert "where" not in _ids(lesson)
     assert _labels(lesson, "length") == [
         "60 seconds", "90 seconds", "2 minutes", "3 minutes + 60s and 90s clips",
-        "5 minutes + 60s and 90s clips", "10 minutes (the long version) + 60s and 90s clips"]
+        "5 minutes + 60s and 90s clips"]
 
     # choice 4: WHERE right after PURPOSE, then the platform's own lengths
     paid, _ = _plan(purpose=4, where=1)
@@ -249,14 +249,14 @@ def test_a_missing_agnes_access_is_unknown_and_loud_never_a_crash(monkeypatch):
 
 
 def test_the_agnes_question_stops_past_five_minutes(monkeypatch):
+    """S75-105: the card no longer offers a length past five minutes (the song
+    stage refuses it), so five minutes is the longest answer a client can give
+    and it still asks Agnes. The suppression rule stays for an old card."""
     _fake_agnes(monkeypatch, "unknown", [])
     short, _ = _plan(purpose=1, client_dir="/client",
                      overrides={"episode_length": "5"})
     assert "agnes" in _ids(short)                    # 5 minutes is still Agnes
-    long, _ = _plan(purpose=1, client_dir="/client",
-                    overrides={"episode_length": "6"})
-    assert "agnes" not in _ids(long)                 # 10 minutes is KIE-only
-    assert _labels(long, "episode_length")[5] == "10 minutes"
+    assert _labels(short, "episode_length")[-1] == "5 minutes"
 
 
 def test_agnes_yes_turns_the_video_model_into_the_backup(monkeypatch):
