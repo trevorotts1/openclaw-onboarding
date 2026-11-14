@@ -117,7 +117,25 @@ REPO_ROOT="$(cd "$SKILL_DIR/.." && pwd)"
 # build-state lock (BU-36). The lib resolves WORKFORCE_PYTHON and puts this
 # skill's scripts/ folder on PYTHONPATH exactly the way every other writer does,
 # so the watchdog can never clobber a field another writer just committed.
-source "$SCRIPT_DIR/lib-workforce-state.sh"
+# A split install (or a hermetic test sandbox that stages only this file) can
+# leave the lib sibling absent. Source it only when present, then self-resolve
+# WORKFORCE_PYTHON/PYTHONPATH so a missing lib can never turn the blocker
+# persist — the operator surface — into an unbound-variable abort that skips
+# every later escalation in the same pass.
+if [[ -f "$SCRIPT_DIR/lib-workforce-state.sh" ]]; then
+  # shellcheck source=/dev/null
+  source "$SCRIPT_DIR/lib-workforce-state.sh" || true
+fi
+if [[ -z "${WORKFORCE_PYTHON:-}" ]]; then
+  WORKFORCE_PYTHON="$(command -v python3)"
+fi
+export WORKFORCE_PYTHON
+if [[ -n "${WORKFORCE_PYTHON:-}" && -f "$SCRIPT_DIR/workforce_state.py" ]]; then
+  case ":${PYTHONPATH:-}:" in
+    *":$SCRIPT_DIR:"*) : ;;
+    *) export PYTHONPATH="$SCRIPT_DIR${PYTHONPATH:+:$PYTHONPATH}" ;;
+  esac
+fi
 
 STATE_FILE="${ZHC_STATE_FILE:-${OC_ROOT}/workspace/.workforce-build-state.json}"
 LOCK_FILE="${OC_ROOT}/workspace/.closeout-watchdog.lock"
@@ -216,7 +234,11 @@ PY
 # read-modify-write). $1 = bare key name (no leading dot). Locked, best-effort.
 state_set_null() {
   [ -f "$STATE_FILE" ] || return 1
-  "$WORKFORCE_PYTHON" - "$STATE_FILE" "$1" <<'PY' 2>/dev/null || return 1
+  # Prefer the locked writer when its module resolves. Without it (split
+  # install, test sandbox), fall back to an inline locked atomic write of the
+  # same mutation — never let a missing module swallow the update.
+  if [[ -f "$SCRIPT_DIR/workforce_state.py" ]]; then
+    "$WORKFORCE_PYTHON" - "$STATE_FILE" "$1" <<'PY' 2>/dev/null || return 1
 import sys
 from workforce_state import update
 
@@ -227,6 +249,49 @@ def mutate(state):
 
 update(state_path, mutate)
 PY
+    return $?
+  fi
+  "$WORKFORCE_PYTHON" - "$STATE_FILE" "$1" <<'PY' 2>/dev/null || return 1
+import sys, json, os, fcntl, tempfile, time
+from pathlib import Path
+state_path, key = sys.argv[1:3]
+
+def _read(p):
+    try:
+        return json.loads(Path(p).read_text())
+    except FileNotFoundError:
+        return {}
+
+def _write(p, v):
+    p = Path(str(p)); p.parent.mkdir(parents=True, exist_ok=True)
+    fd, tmp = tempfile.mkstemp(prefix='.' + p.name + '.', dir=str(p.parent))
+    try:
+        with os.fdopen(fd, 'w') as h:
+            json.dump(v, h, indent=2); h.write('\n'); h.flush(); os.fsync(h.fileno())
+        os.replace(tmp, p)
+    finally:
+        if os.path.exists(tmp):
+            os.unlink(tmp)
+
+p = Path(str(state_path) + '.write.lock')
+p.parent.mkdir(parents=True, exist_ok=True)
+with p.open('a+') as h:
+    deadline = time.monotonic() + 30
+    while True:
+        try:
+            fcntl.flock(h, fcntl.LOCK_EX | fcntl.LOCK_NB); break
+        except BlockingIOError:
+            if time.monotonic() >= deadline:
+                raise SystemExit(1)
+            time.sleep(0.05)
+    try:
+        state = _read(state_path)
+        state[key] = None
+        state['stateRevision'] = int(state.get('stateRevision', 0)) + 1
+        _write(state_path, state)
+    finally:
+        fcntl.flock(h, fcntl.LOCK_UN)
+PY
 }
 
 # Append a closeoutBlockers[] entry (drop already-cleared entries, keep the last
@@ -234,7 +299,12 @@ PY
 #   $1 = stuck class  $2 = reason  $3 = ISO timestamp
 state_append_blocker_and_throttle() {
   [ -f "$STATE_FILE" ] || return 1
-  "$WORKFORCE_PYTHON" - "$STATE_FILE" "$1" "$2" "$3" <<'PY' 2>/dev/null || return 1
+  # Locked single-write persist of closeoutBlockers[] + stuckEscalations flag.
+  # workforce_state.update is the canonical path when the module is present;
+  # otherwise an inline locked atomic write applies the identical merge so the
+  # operator surface is never lost to a missing sibling file.
+  if [[ -f "$SCRIPT_DIR/workforce_state.py" ]]; then
+    "$WORKFORCE_PYTHON" - "$STATE_FILE" "$1" "$2" "$3" <<'PY' 2>/dev/null || return 1
 import sys
 from workforce_state import update
 
@@ -261,6 +331,65 @@ def mutate(state):
     state['stuckEscalations'] = se
 
 update(state_path, mutate)
+PY
+    return $?
+  fi
+  "$WORKFORCE_PYTHON" - "$STATE_FILE" "$1" "$2" "$3" <<'PY' 2>/dev/null || return 1
+import sys, json, os, fcntl, tempfile, time
+from pathlib import Path
+
+state_path, cls, reason, ts = sys.argv[1:5]
+
+def _read(p):
+    try:
+        return json.loads(Path(p).read_text())
+    except FileNotFoundError:
+        return {}
+
+def _write(p, v):
+    p = Path(str(p)); p.parent.mkdir(parents=True, exist_ok=True)
+    fd, tmp = tempfile.mkstemp(prefix='.' + p.name + '.', dir=str(p.parent))
+    try:
+        with os.fdopen(fd, 'w') as h:
+            json.dump(v, h, indent=2); h.write('\n'); h.flush(); os.fsync(h.fileno())
+        os.replace(tmp, p)
+    finally:
+        if os.path.exists(tmp):
+            os.unlink(tmp)
+
+p = Path(str(state_path) + '.write.lock')
+p.parent.mkdir(parents=True, exist_ok=True)
+with p.open('a+') as h:
+    deadline = time.monotonic() + 30
+    while True:
+        try:
+            fcntl.flock(h, fcntl.LOCK_EX | fcntl.LOCK_NB); break
+        except BlockingIOError:
+            if time.monotonic() >= deadline:
+                raise SystemExit(1)
+            time.sleep(0.05)
+    try:
+        state = _read(state_path)
+        blk = state.get('closeoutBlockers')
+        blk = [x for x in blk if isinstance(x, dict) and x.get('cleared') is False] if isinstance(blk, list) else []
+        blk.append({"class": cls, "reason": reason, "since": ts, "escalatedAt": ts, "cleared": False})
+        if len(blk) > 20:
+            blk = blk[-20:]
+        state['closeoutBlockers'] = blk
+        se = state.get('stuckEscalations')
+        if not isinstance(se, dict):
+            se = {}
+        node = se.get(cls)
+        if not isinstance(node, dict):
+            node = {}
+        node['notifiedAt'] = ts
+        node['class'] = cls
+        se[cls] = node
+        state['stuckEscalations'] = se
+        state['stateRevision'] = int(state.get('stateRevision', 0)) + 1
+        _write(state_path, state)
+    finally:
+        fcntl.flock(h, fcntl.LOCK_UN)
 PY
 }
 
