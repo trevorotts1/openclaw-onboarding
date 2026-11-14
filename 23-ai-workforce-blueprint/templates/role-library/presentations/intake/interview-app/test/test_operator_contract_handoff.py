@@ -15,13 +15,54 @@ DRIVER = SCRIPTS / 'deck-intake-driver.py'
 RESOLVER = SCRIPTS / 'presentation_job' / 'resolve_intake.py'
 sys.path.insert(0, str(SCRIPTS))
 from presentation_job import model_router, resource_profile, launcher  # noqa: E402
-CC_ROOT = pathlib.Path('/private/tmp/pd025-cc-current')
+CC_ROOT = pathlib.Path(os.environ.get('PD_CC_ROOT', '/private/tmp/pd025-cc-current'))
 CC_TSX = CC_ROOT / 'node_modules/.bin/tsx'
 
 spec = importlib.util.spec_from_file_location('operator_contract_bridge', BRIDGE)
 bridge = importlib.util.module_from_spec(spec)
 assert spec.loader
 spec.loader.exec_module(bridge)
+
+
+# PD-930: the bank is one-question-per-message, so the turn gate requires the
+# ATOMIC subfield ids -- not the four merged rows these fixtures used to carry.
+# Every value below is an explicit non-commercial fact for the informational
+# demo; none is a commercial claim. A fixture that supplies `brief` covers
+# `client_notes` through the bridge's own alias, so that key is dropped there
+# rather than sent twice (the mapper refuses a conflicting duplicate).
+_ATOMIC_ANSWERS = {
+    'audience_composition_note': 'department leads and operators; no people in imagery',
+    'transformation_promise': 'No commercial transformation promise — informational department demonstration',
+    'cta_action': 'Request or use the Presentation Department',
+    'tone': 'teacher',
+    'representation_mix': 'operators and department leads, uniform mix',
+    'grounded_content': 'the department itself and its SOPs; no named method',
+    'goal': 'Show the department end to end',
+    'target_feeling': 'Confident the department can be trusted',
+    'primary_objection': 'Distrust of unsourced claims',
+    'hook_seed': 'propose',
+    'deadline': '2026-11-20',
+    'visual_mix': 'clean technical diagrams, minimal text',
+    'dark_ok': 'no',
+    'logo_on_slides': 'no',
+    'standard_mode': 'QUICK',
+    'style_source': 'create-new',
+    'style_prefs': 'navy and gold, clean technical diagrams',
+    'brand_primary': 'navy #0b1f3a',
+    'style_pick_auto': 'no',
+    'client_notes': 'informational demo, no commercial claims',
+    'email_sequences_declined_reason': 'Not requested for an informational demo',
+    'motion_graphics_declined_reason': 'Not requested for an informational demo',
+}
+
+
+def _with_atomic(answers):
+    """Complete a fixture's answers with every atomic turn the gate requires."""
+    merged = dict(_ATOMIC_ANSWERS)
+    merged.update(answers)
+    if 'brief' in merged:
+        merged.pop('client_notes', None)
+    return merged
 
 
 def contract():
@@ -40,12 +81,12 @@ def contract():
         'want_ghl_upload': 'yes', 'want_sales_checkout': 'yes', 'want_vsl_page': 'yes',
         'deliverable_set': 'PPTX, PDF, presenter guide, workbook, fillable workbook, infographic',
         'delivery_destinations': ['PPTX', 'PDF', 'presenter guide', 'workbook', 'fillable workbook', 'infographic'],
-        'answers': {
+        'answers': _with_atomic({
             'audience': 'General informational audience learning how to use the Presentation Department',
             'transformation_promise': 'No commercial transformation promise — informational department demonstration',
             'cta_action': 'Request or use the Presentation Department',
             'tone': 'teacher',
-        },
+        }),
     }
 
 
@@ -56,12 +97,12 @@ def live_contract():
     contract so the bridge cannot pass because of a hand-written reduced shape.
     """
     value = contract()
-    value["answers"] = {
+    value["answers"] = _with_atomic({
         "audience": "general informational audience learning how to request and use the Presentation Department",
         "brief": "How the Presentation Department Works",
         "deck_type_source": "presentation_type: from_scratch; pitch_included: false",
         "mode": "general",
-    }
+    })
     return value
 
 
@@ -154,8 +195,17 @@ def test_live_contract_shape_projects_ultra_and_direct_flash_to_real_consumers(t
     assert proc.returncode == 0, proc.stderr
     resolved = json.loads(engine_intake.read_text())
     assert resolved['run_mode'] == 'ultra'
-    assert resolved['workhorse_model'] == 'deepseek-flash@deepseek-direct'
-    assert not resolved['workhorse_model'].endswith(';')
+    # FIX 41 (M17): the resolver NO LONGER projects workhorse_model -- nothing
+    # downstream read it, so the projection was dead. What this test actually
+    # protects is the routing decision, which is carried by the resource
+    # profile's workhorse slot (the sole cross-worker model-plan store, and the
+    # one intake_bridge._verified_operator_model_plan checks). Assert that slot
+    # verbatim -- including its merged-turn separator, which must have been
+    # cleaned -- AND that the dead intake field has not come back.
+    assert 'workhorse_model' not in resolved
+    declared = resource_profile.model_plan(resource_profile.load_profile()).get('workhorse')
+    assert declared == {'provider': 'deepseek-direct', 'model': 'deepseek-flash'}
+    assert not declared['model'].endswith(';')
     assert resolved['pre_presentation_capture']['WANT_VSL_PAGE'] == 'yes'
     assert resolved['pre_presentation_capture']['WANT_SALES_CHECKOUT'] == 'yes'
     # Read the exact profile the real driver just produced. Credentials are
@@ -165,7 +215,13 @@ def test_live_contract_shape_projects_ultra_and_direct_flash_to_real_consumers(t
     assert decision['route'] == {'provider': 'deepseek-direct', 'model': 'deepseek-flash'}
     assert decision['client_plan']['applied'] is True
     assert decision['mode_ceiling']['mode'] == 'ultra'
-    assert decision['mode_ceiling']['operator_ceiling'] == 100
+    # Pre-existing stale literal, found while proving PD-932: this said 100,
+    # but FIX 61 (2026-09-28) set ultra's operator ceiling to 400 by design
+    # (model_router.ULTRA_OPERATOR_CEILING == 400, pinned by
+    # test_f15f16_mode_truth.test_the_operator_ceiling_constant_is_untouched).
+    # The ceiling block must report the GLOBAL ratified maximum, so assert it
+    # against that constant instead of a date-frozen number.
+    assert decision['mode_ceiling']['operator_ceiling'] == model_router.ULTRA_OPERATOR_CEILING
 
 
 def test_launcher_writes_ultra_mode_and_client_route_sidecars(tmp_path, monkeypatch):
@@ -178,9 +234,16 @@ def test_launcher_writes_ultra_mode_and_client_route_sidecars(tmp_path, monkeypa
         'provider': 'deepseek-direct', 'presence': True, 'detected': True,
         'wired_models': ['deepseek-flash', 'deepseek-v4.1-flash'], 'consented': True,
     }
+    # image_render (P-STYLE-PREVIEW / P4-RENDER) routes only via provider kie; ultra
+    # refuses any non-mechanical phase with no eligible route, so the profile the test
+    # asserts against must own kie or the launch it asserts is impossible by fixture.
+    profile['providers']['kie'] = {
+        'provider': 'kie', 'presence': True, 'detected': True,
+        'wired_models': [], 'consented': True,
+    }
     profile['model_plan'] = _profile_with_direct_flash()['model_plan']
     resource_profile.save_profile(profile, profile_dir)
-    monkeypatch.setattr(model_router, 'provider_key_resolves', lambda provider: provider == 'deepseek-direct')
+    monkeypatch.setattr(model_router, 'provider_key_resolves', lambda provider: provider in ('deepseek-direct', 'kie'))
     monkeypatch.setattr(launcher, 'notify_gate', lambda run: True)
     monkeypatch.setattr(launcher, 'ocr_launch_gate', lambda run: True)
     monkeypatch.setattr(launcher, 'capacity_gate', lambda: (100, {'status': 'MEASURED', 'provider': 'deepseek-direct', 'plan': 'test', 'detection_source': 'test'}))
@@ -197,7 +260,10 @@ def test_launcher_writes_ultra_mode_and_client_route_sidecars(tmp_path, monkeypa
     mode_plan = json.loads((run / '.mode-plan.json').read_text())
     model_plan = json.loads((run / '.model-plan.json').read_text())
     assert mode_plan['mode'] == 'ultra' and mode_plan['declared'] is True
-    assert mode_plan['ceiling']['operator_ceiling'] == 100
+    # FIX 61 (7e5c4d6f3) ratified ultra's operator ceiling at 400. The ceiling
+    # block reports the GLOBAL ratified maximum, so assert it against the
+    # constant, not the pre-FIX-61 literal 100.
+    assert mode_plan['ceiling']['operator_ceiling'] == model_router.ULTRA_OPERATOR_CEILING
     assert json.loads((run / 'engine-env.json').read_text())['mode'] == 'ultra'
     authoring = next(row for row in model_plan['decisions'] if row['capability'] == 'authoring')
     assert authoring['provider'] == 'deepseek-direct' and authoring['model'] == 'deepseek-flash'
@@ -355,12 +421,12 @@ def live_authorized_contract_shape():
     option and answer key/type from the accepted request is represented.
     """
     payload = contract()
-    payload['answers'] = {
+    payload['answers'] = _with_atomic({
         'deck_type_source': 'presentation_type: from_scratch; pitch_included: false',
         'audience': 'General informational audience learning how to request and use the Presentation Department',
         'mode': 'general',
         'brief': 'How the Presentation Department Works — an informational department demonstration.',
-    }
+    })
     return payload
 
 
