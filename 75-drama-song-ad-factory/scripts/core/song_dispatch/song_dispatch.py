@@ -9,13 +9,14 @@ Rules (Trevor 2026-10-08):
     wording (it never refuses the researched negatives or the "band keeps
     playing" line), is refused before spend;
   * EVERY take is judged per variant; three variants run in parallel lanes:
-    singing detector v2, spoken share band (per-ad
-    target), sung share of voice, 6 s sung stretch, hook sung 2+, all script
-    words, length (L-2), music level under spoken lines, clean ending (no
-    near-silent final 2 s), first sung time, and hook placement (FU-HOOK-
-    PLACEMENT: Suno added or moved no hook block earlier than the sheet and
-    sang the first hook after the build-up window) -- before any picture or
-    video spend;
+    singing detector v2, spoken share band, sung share of voice, 6 s sung
+    stretch, hook sung 2+, all script words, length (L-2), music level under
+    spoken lines, clean ending (no near-silent final 2 s), first sung time,
+    and hook placement (FU-HOOK-PLACEMENT: Suno added or moved no hook block
+    earlier than the sheet and sang the first hook after the build-up window)
+    -- before any picture or video spend. The spoken band is the style's
+    constant target (22.5% of runtime, the 5/10 band), never a per-ad band:
+    no run document supplies one;
   * WW-21: the aggregation/evidence-binding boundary (`accept_audio_results`)
     is TOTAL and fail-closed -- missing, empty, malformed, unknown,
     unavailable, unmeasured, flagged, failed or stale-bound evidence BLOCKS,
