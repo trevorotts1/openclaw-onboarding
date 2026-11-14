@@ -3104,6 +3104,10 @@ def cmd_seal(a):
         return envelope("seal", str(sid), "error", "STEP_GATE_MISSING",
                         "scripts/core/step_gate is not installed on this box, so "
                         "no stage can be sealed.", data={"stage": a.stage})
+    # S75-002: `seal` may be the FIRST gate command a caller reaches on a new
+    # run, and both open and seal need the key, so create it here with `next`'s
+    # own semantics: never for a run that already holds a COMPLETE row.
+    _gate_init(run_dir, _stage_states(run_dir))
     try:
         # An open record is the gate's own precondition. Opening here keeps
         # `seal` usable on a resumed run (and still refuses a stage whose
