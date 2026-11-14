@@ -55,7 +55,6 @@ def make_run_dir(base: Path, transcript=ENVELOPE) -> Path:
     run_dir = base / "run"
     (run_dir / "working" / "checkpoints").mkdir(parents=True)
     (run_dir / "working" / "interview").mkdir(parents=True)
-    (run_dir / "working" / "checkpoints" / ".test-context").write_text("")
     (run_dir / "working" / "interview" / "intake_ledger.json").write_text(
         json.dumps({"status": "complete", "complete": True}))
     (run_dir / "working" / "interview" / "intake_transcript.json").write_text(
@@ -85,6 +84,8 @@ def make_scripts_dir(base: Path, *, with_sync_check: bool = True) -> Path:
 def _run(run_dir: Path, scripts: Path, *, plan: bool, env_extra=None):
     env = dict(os.environ)
     env["QC_SKIP_PRESENTATION_DEPS"] = "1"
+    # PD-201b: the test seam is an environment name, not a marker file.
+    env["PRESENTATION_ALLOW_DEGRADED_VERIFIERS"] = "1"
     env["OPENCLAW_WORKSPACE"] = str(run_dir.parent / "no-ws")
     env.update(env_extra or {})
     cmd = ["/bin/bash", str(ENTRY), "--run-dir", str(run_dir),
