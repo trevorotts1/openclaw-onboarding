@@ -3,6 +3,9 @@
 ## v15.2.6 - 2026-11-14 - PD-027 repair lane superseded PR #3420 (rebase onto main be80ff86d; no content change)
 
 - Version roll only: this branch rebases PD-027 PR #3420 onto current main. All ten PR commits were already present on main (byte-identical or main-newer), so the rebase contributes no content; Skill 47 is bumped to next patch per G3 (`skill-version.txt` + `SKILL.md` frontmatter) so the G3 guard passes on the rebased range. `kie_image.py` is byte-identical to main.
+## v15.2.6 - 2026-11-14 - PD-028 linear recut superseded fl06-documents (rebase onto main 628ae0ba; no content change)
+
+- Version roll only: linear recut of fl06-documents (tip 6189e0b6) onto current main. All ten commits already landed on main (9 patch-identical via cherry, 1 effect-landed with newer manifest restamp), so the recut contributes no content; Skill 47 is bumped to next patch per G3 (`skill-version.txt` + `SKILL.md` frontmatter) so the G3 guard passes on the rebased range.
 
 ## v15.2.5 - 2026-11-13 - embedded Skill 74 client re-embedded (video-pipeline-lockstep red on main)
 
