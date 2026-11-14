@@ -46,4 +46,4 @@ rc=0
 ## Excluded / not done
 
 - Builders do not run test suites or acceptance commands (builder rule 9). No test was run here; QC runs A1.
-- No live action, no network, no client box. All temp files under `TMPDIR=/Volumes/mac mini m4/swarm-contract/pd-fix/tmp`; scratch under `.../scratchpads/PD-018a`.
+- No live action, no network, no client box. All temp files under `TMPDIR=$SCRATCH_ROOT/pd-fix/tmp`; scratch under `.../scratchpads/PD-018a`.
