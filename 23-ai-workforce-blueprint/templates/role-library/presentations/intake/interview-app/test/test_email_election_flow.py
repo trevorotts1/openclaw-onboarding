@@ -94,16 +94,24 @@ class TestPayloadMintsThePair(unittest.TestCase):
         self.assertEqual(toggle["storeOn"],
                          "pre_presentation_capture.WANT_EMAIL_SEQUENCES")
         self.assertEqual(toggle["default"], "no")
-        reason = by_id["email_sequences_declined_reason"]
-        self.assertEqual(reason["storeOn"],
+        followup = by_id["email_sequences_declined_reason"]
+        self.assertEqual(followup["storeOn"],
                          "pre_presentation_capture.EMAIL_SEQUENCES_DECLINED_REASON")
-        self.assertEqual(reason["conditional_on"],
+        self.assertEqual(followup["conditional_on"],
                          {"id": "want_email_sequences", "equals": "no"})
-        # Defaults to "no": the reason is optional, never a gate, and asked
-        # only when the client earlier wanted email sequences.
-        self.assertFalse(reason["required"])
-        self.assertFalse(reason["block_gate"])
-        self.assertTrue(reason["ask_only_if_previously_wanted"])
+        # PD-933 / PD-014: an opt-in that DEFAULTS to "no" owes no reason,
+        # so the follow-up is optional and asked only after an earlier YES.
+        # The required canonical field is the election TOGGLE itself (see
+        # the module docstring), so the toggle is the owner the next line
+        # pins. The follow-up's new optional shape is pinned here so the
+        # change is proven, not silently dropped.
+        self.assertFalse(followup["required"])
+        self.assertFalse(followup["block_gate"])
+        self.assertTrue(followup["ask_only_if_previously_wanted"])
+        self.assertEqual(followup["ask_if"],
+                         {"question_id": "want_email_sequences", "equals": "yes"})
+        reason = toggle
+        self.assertTrue(reason["required"])
 
 
 class TestHostedRoundTrip(unittest.TestCase):

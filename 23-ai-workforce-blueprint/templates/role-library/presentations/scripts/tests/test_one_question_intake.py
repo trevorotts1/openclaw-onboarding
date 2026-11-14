@@ -141,7 +141,19 @@ def test_conditionals_are_individual_and_still_apply():
     assert not DRIVER.should_ask(by_id["vip_price"], {"vip_tier": False})[0]
     assert DRIVER.should_ask(by_id["vip_price"], {"vip_tier": True})[0]
     assert not DRIVER.should_ask(by_id["motion_graphics_declined_reason"], {"want_motion_graphics": "yes"})[0]
-    assert DRIVER.should_ask(by_id["motion_graphics_declined_reason"], {"want_motion_graphics": "no"})[0]
+    # PD-014: a toggle that DEFAULTS to "no" owes no reason when the client
+    # merely accepts that default, so its follow-up is optional and never
+    # blocking. The prior-YES half rides as ask_if; the default decline is
+    # never asked and owes nothing.
+    motion_reason = by_id["motion_graphics_declined_reason"]
+    assert motion_reason["required"] is False
+    assert motion_reason["block_gate"] is False
+    assert motion_reason["ask_if"] == {"question_id": "want_motion_graphics",
+                                       "equals": "yes"}
+    assert not DRIVER.should_ask(motion_reason, {"want_motion_graphics": "no"})[0]
+    # A default-YES toggle keeps its blocking reason: no quiet disarming.
+    assert DRIVER.should_ask(by_id["teleprompter_declined_reason"],
+                             {"want_teleprompter": "no"})[0]
 
 
 def test_hosted_embedded_and_signature_prompts_are_single_questions():
@@ -220,5 +232,8 @@ def test_real_cli_walk_completes_and_proves_a_single_question_transcript(intervi
     bank = SCANNER.load_bank_questions()
     assert SCANNER.scan_transcript(trace["turns"], bank)["pass"]
     entries = ledger(run)
-    for field in ("AUDIENCE", "GOAL", "CTA_ACTION", "DURATION_MIN", "WANT_MOTION_GRAPHICS", "MOTION_GRAPHICS_DECLINED_REASON"):
+    for field in ("AUDIENCE", "GOAL", "CTA_ACTION", "DURATION_MIN", "WANT_MOTION_GRAPHICS"):
         assert entries[field]["validated"] is True
+    # PD-014: accepting the default "no" owes no reason, so the optional
+    # follow-up is never asked on that path and must not reach the ledger.
+    assert "MOTION_GRAPHICS_DECLINED_REASON" not in entries

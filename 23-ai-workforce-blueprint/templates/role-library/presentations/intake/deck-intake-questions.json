@@ -211,13 +211,13 @@
         "audience_composition_note": {
           "storeOn": "AUDIENCE_COMPOSITION_NOTE",
           "question": {
-            "prompt": "What should we know about the audience’s demographic composition?"
+            "prompt": "In plain words, who will be in the room?"
           }
         },
         "representation_mix": {
           "storeOn": "REPRESENTATION_MIX",
           "question": {
-            "prompt": "What demographic mix should the people in the slide images represent?"
+            "prompt": "How should the people shown in the slide pictures break down? Give percentages, or say \"no people\". Example: 70% Black women, 20% mixed, 10% men."
           }
         }
       },
@@ -236,7 +236,7 @@
         "grounded_content": {
           "storeOn": "GROUNDED_CONTENT",
           "question": {
-            "prompt": "What source material should ground this presentation?"
+            "prompt": "What book, program, method, or message is this presentation built around? Give me its name and one line about it."
           }
         },
         "named_methodology": {
@@ -296,13 +296,13 @@
         "transformation_promise": {
           "storeOn": "TRANSFORMATION_PROMISE",
           "question": {
-            "prompt": "What transformation does your offer promise?"
+            "prompt": "What change will people get from this? Describe the before and the after."
           }
         },
         "primary_objection": {
           "storeOn": "PRIMARY_OBJECTION",
           "question": {
-            "prompt": "What is the main reason someone might decline your offer?"
+            "prompt": "What is the number one reason someone might say no?"
           }
         },
         "time_to_result": {
@@ -332,7 +332,7 @@
           "storeOn": "HOOK_SEED",
           "none_value": "propose (never canonized as a client line)",
           "question": {
-            "prompt": "What memorable line should the audience leave with?"
+            "prompt": "Is there one line you say all the time that you want people repeating when they leave? Say \"suggest one\" if you want ideas."
           }
         },
         "tone": {
@@ -619,7 +619,7 @@
         "event_price": {
           "storeOn": "EVENT_PRICE",
           "question": {
-            "prompt": "What does access to the event cost?",
+            "prompt": "Is there a ticket price to attend? Say \"free\" if not, or \"not an event\".",
             "help": "Say “free” if access is free. This is separate from the price of the offer sold at the end."
           }
         },
@@ -773,7 +773,7 @@
         "brand_primary": {
           "storeOn": "BRAND_PRIMARY",
           "question": {
-            "prompt": "Which brand reference should guide the slides?",
+            "prompt": "Send me your logo or your main brand color. Say \"on file\" if I already have it.",
             "help": "A logo link or a primary brand color can serve as the reference."
           }
         },
@@ -826,7 +826,7 @@
           "storeOn": "VISUAL_MIX",
           "default": "mix",
           "question": {
-            "prompt": "What balance of people, product imagery, and text should the slides use?"
+            "prompt": "Should the slides be mostly people, mostly words, or a mix?"
           }
         }
       },
@@ -910,7 +910,7 @@
         "delivery_destinations": {
           "storeOn": "DELIVERY_DESTINATIONS",
           "question": {
-            "prompt": "Where should I deliver the finished deck?"
+            "prompt": "Where should I send the finished presentation? (For example: this chat, an email address, or your Google Drive.)"
           }
         },
         "want_ghl_upload": {
@@ -1097,6 +1097,9 @@
             "id": "want_vsl_page",
             "equals": "no"
           },
+          "required": false,
+          "block_gate": false,
+          "ask_only_if_previously_wanted": true,
           "no_note": true,
           "question": {
             "prompt": "In your own words, why are you declining the video sales letter page?",
@@ -1109,6 +1112,9 @@
             "id": "want_email_sequences",
             "equals": "no"
           },
+          "required": false,
+          "block_gate": false,
+          "ask_only_if_previously_wanted": true,
           "no_note": true,
           "question": {
             "prompt": "In your own words, why are you declining email follow-up sequences?",
@@ -1121,6 +1127,9 @@
             "id": "want_motion_graphics",
             "equals": "no"
           },
+          "required": false,
+          "block_gate": false,
+          "ask_only_if_previously_wanted": true,
           "no_note": true,
           "question": {
             "prompt": "In your own words, why are you declining motion graphics?",
@@ -1291,7 +1300,7 @@
       "id": "transformation_promise",
       "section": "deck-intake",
       "order": 4.01,
-      "prompt": "What transformation does your offer promise?",
+      "prompt": "What change will people get from this? Describe the before and the after.",
       "kind": "text",
       "storeOn": "TRANSFORMATION_PROMISE",
       "required": true,
@@ -1372,7 +1381,7 @@
       "id": "brand_primary",
       "section": "deck-intake",
       "order": 15.01,
-      "prompt": "Which brand reference should guide the slides?",
+      "prompt": "Send me your logo or your main brand color. Say \"on file\" if I already have it.",
       "help": "Skip if already on file for this client.",
       "kind": "text",
       "storeOn": "BRAND_PRIMARY",
@@ -1429,7 +1438,7 @@
       "section": "deck-intake",
       "order": 20.03,
       "prompt": "Would you like email follow-up sequences prepared as drafts?",
-      "help": "Default no. If yes, the follow-up emails are written as drafts and nothing is sent until a person approves them.",
+      "help": "Default NO -- the email sequences are an opt-in delivery option, not a standard deliverable, and only an explicit 'yes' opens the branch. A 'no' is recorded as a CLIENT WAIVER with the client's own words -- it is never inferred from silence and never written by the assistant. A 'no' gates OUT the email branch entirely: nothing is prepared at delivery.",
       "kind": "text",
       "allowed_values": [
         "yes",
@@ -1631,7 +1640,7 @@
     }
   ],
   "waiver_field_mapping": {
-    "_comment": "U026 — the CONSENT record. Each entry maps a gate key (see the engine's Gates class) to the intake question that captures the client's own decision, plus the conditional follow-up that captures their VERBATIM words when they decline. A gate may be waived ONLY by a record carrying a non-empty client_request_quote. Silence is NOT consent: every toggle here is required+block_gate, so --complete cannot pass while one is unanswered. prompt_floor and qc are deliberately ABSENT — a client cannot consent to a thinner prompt or a lower quality bar; those are craft floors, not options.",
+    "_comment": "U026 — the CONSENT record. Each entry maps a gate key (see the engine's Gates class) to the intake question that captures the client's own decision, plus the conditional follow-up that captures their VERBATIM words when they decline. A gate may be waived ONLY by a record carrying a non-empty client_request_quote. Silence is NOT consent: every toggle here is required+block_gate, so --complete cannot pass while one is unanswered. The three opt-ins that DEFAULT to no (vsl_page, email_sequences, motion_graphics) are the exception: declining them is not a waiver, so their entries carry waiver_required false and their reason questions are optional. prompt_floor and qc are deliberately ABSENT — a client cannot consent to a thinner prompt or a lower quality bar; those are craft floors, not options.",
     "teleprompter": {
       "toggle": "want_teleprompter",
       "reason": "teleprompter_declined_reason"
@@ -1654,11 +1663,15 @@
     },
     "vsl_page": {
       "toggle": "want_vsl_page",
-      "reason": "vsl_page_declined_reason"
+      "reason": "vsl_page_declined_reason",
+      "waiver_required": false,
+      "waiver_comment": "Declining an opt-in that defaults to no is not a waiver; no reason is required."
     },
     "email_sequences": {
       "toggle": "want_email_sequences",
-      "reason": "email_sequences_declined_reason"
+      "reason": "email_sequences_declined_reason",
+      "waiver_required": false,
+      "waiver_comment": "Declining an opt-in that defaults to no is not a waiver; no reason is required."
     },
     "motion_graphics": {
       "toggle": "want_motion_graphics",
