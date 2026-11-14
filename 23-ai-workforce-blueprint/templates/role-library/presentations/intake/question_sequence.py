@@ -55,6 +55,25 @@ def atomic_questions(schema):
                 q["help"] = "Provide one brand reference, such as a logo link or primary color."
             q["help"] = copy.get("help", q.get("help", ""))
             q.update(copy)
+            # PD-014: declining a toggle that DEFAULTS to "no" is not a
+            # waiver, so its reason owes the client no answer. The projection
+            # deliberately sets NO ask_if here. The bank marks the reason
+            # required=false / block_gate=false / ask_only_if_previously_wanted
+            # true, and the driver's should_ask() gates ASKING on the
+            # prior-YES record -- an ask_if of equals-yes can never coexist
+            # with the conditional_on equals-no half (both read the same
+            # answer value, they can never both be true), so projecting it
+            # made the first-decline ask impossible and broke
+            # test_one_question_intake. Keeping only conditional_on preserves
+            # first-decline asking; the OPTIONAL nature is carried by the
+            # required/block_gate flags, not by gating the ask.
+            for _k in ("ask_only_if_previously_wanted",):
+                pass
+            # Flag passthrough for the atomic projection: the reason's own
+            # ask-policy marker must survive the alias merge so the driver
+            # can treat the ask as optional even though it is asked.
+            if annotation.get("ask_only_if_previously_wanted"):
+                q["ask_only_if_previously_wanted"] = True
             if field in derivations and derivations[field] in sub:
                 derived = derivations[field]
                 q["derived_fields"] = {derived: deepcopy(sub[derived])}
