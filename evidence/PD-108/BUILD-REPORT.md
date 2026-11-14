@@ -4,7 +4,7 @@
 **Builder:** deepseek-chain (build and prove only; no verdict)
 **Repo:** trevorotts1/openclaw-onboarding
 **Branch:** `pd/fl24-role-procedures-c`
-**Lane clone:** `/Volumes/mac mini m4/swarm-contract/pd-fix/worktrees/onboarding/FL24` (left clean — see §8)
+**Lane clone:** `<worktree>/onboarding/FL24` (left clean — see §8)
 **Build commit:** `871d96010f5224c4c1e2b0a395b78fd3b8fe8aa1`
 **Remote head after the code push:** `871d96010f5224c4c1e2b0a395b78fd3b8fe8aa1`
 **Remote head at the end:** the report commit you are reading, whose sha cannot appear inside itself.
@@ -15,7 +15,7 @@ The measured 40-character remote head is stated in the returned build report and
 
 ## 1. Spec quoted
 
-From `/Volumes/mac mini m4/swarm-contract/fable-reviews-2026-11-11/03-presentation-department/FINAL/01-BUILD-SPEC.md`,
+From `<specs>/fable-reviews-2026-11-11/03-presentation-department/FINAL/01-BUILD-SPEC.md`,
 section `### PD-108`:
 
 > **Read first — consolidation amendments (binding; they override the carried-over text below wherever the two differ):**
@@ -346,7 +346,7 @@ Blob sha of the product file at the pushed commit:
 `e4b88ad9a303a8ecccf83c55d95fef3335db680b`
 
 **Lane clone untouched.** All work happened in a scratch worktree created under
-`/Volumes/mac mini m4/swarm-contract/pd-fix/tmp/PD-108/wt.1794579788` at the remote head. The lane clone's
+`<scratch>/PD-108/wt.1794579788` at the remote head. The lane clone's
 `FL24` worktree was read only; `git status --porcelain` on it was empty before and after. No file was
 written under `/tmp`, `/private/tmp` or `/var/folders`; every scratch path was made with
 `mktemp -p "$TMPDIR"`.

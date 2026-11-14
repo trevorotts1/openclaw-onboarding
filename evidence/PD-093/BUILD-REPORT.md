@@ -2,7 +2,7 @@
 
 **Unit:** PD-093 · "An assembly procedure that can be followed" · Severe · logic
 **Lane:** FL24 · **Branch:** `pd/fl24-role-procedures-c`
-**Worktree:** `/Volumes/mac mini m4/swarm-contract/pd-fix/worktrees/onboarding/FL24`
+**Worktree:** `<worktree>/onboarding/FL24`
 **Base:** `579c937ae` (PD-094's accepted head; branch was reset to it before any edit)
 **Build commit:** `66bf69c97eb655f2a9bcac2f4893d2141401821c`
 **Report commit:** see the commit that carries this file (parent is the build commit)
@@ -97,7 +97,7 @@ deleting it, so it is preserved and reported, not removed.
 
 ## 5. Exact commands run and results
 
-All temp files under `/Volumes/mac mini m4/swarm-contract/pd-fix/tmp`; all fixtures made with
+All temp files under `<scratch>/tmp`; all fixtures made with
 `mktemp -d -p "$TMPDIR"`. Scratch: `…/pd-fix/scratchpads/fl24-role-procedures-c/`.
 
 ```
