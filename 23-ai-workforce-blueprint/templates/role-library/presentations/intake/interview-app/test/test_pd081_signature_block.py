@@ -71,7 +71,7 @@ class _Recorder:
         self.board_calls.append({"slug": str(run_dir)})
         return "registered", "CC-STUB-1"
 
-    def launch(self, run_dir, intake, session_id, doc, policy, verbose):
+    def launch_worker(self, run_dir, intake, session_id, doc, policy, verbose):
         self.launch_calls.append({"slug": str(run_dir)})
         return "acknowledged", "stub worker acknowledged"
 
@@ -94,7 +94,7 @@ class Pd081SignatureBlockTest(unittest.TestCase):
         self._patches = [
             mock.patch.object(ib, "_record_run_dir_files", self.rec.record),
             mock.patch.object(ib, "_ensure_board_card", self.rec.board),
-            mock.patch.object(ib, "_dispatch_launch", self.rec.launch),
+            mock.patch.object(ib, "_dispatch_launch", self.rec.launch_worker),
             mock.patch.object(ib, "_make_notifier", self.rec.notifier),
         ]
         for p in self._patches:
