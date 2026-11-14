@@ -1290,8 +1290,8 @@ ARTIFACT_CONTRACTS: Dict[str, str] = {
         "string `Phase Prompt-QC`. Grade the real per-slide prompts in "
         "working/prompts/ against length (__PROMPT_FLOOR__-__PROMPT_CEILING__ "
         "chars), the negative-class block, spelling-lock, and verbatim-copy-baked "
-        "criteria. Name every real failure you find -- a thin prompt reported "
-        "failing is the correct output; never rubber-stamp one."
+        "criteria -- never rubber-stamp a thin prompt. Name every real failure you "
+        "find; a failing report is the correct output, never rubber-stamp one."
     ),
     "P-TYPO-QC": (
         "OUTPUT CONTRACT (mechanically enforced LATER by build_deck's "

@@ -98,6 +98,8 @@ FIX33_MODEL_KEYS = ("graded_by_model", "vision_model", "multimodal_model",
 FIX33_REQUEST_KEYS = ("request_id", "route_request_id", "vision_request_id")
 FIX33_AUTHORING_KEYS = ("graded_by", "builder", "built_by", "reviewer",
                         "reviewed_by")
+#: PD-300b: the report's AUTHOR model, PD-300's top-level field.
+FIX33_AUTHOR_MODEL_KEYS = ("author_model",)
 FIX33_AF_CODE = "AF-IMAGE-QC-UNIT"
 
 # (qc_key, sha256) -> {"graded_model": str, "authoring_stamp": str,
@@ -121,14 +123,23 @@ def _fix33_first_str(src: dict, keys) -> str:
     return ""
 
 
-def _fix33_capture(qc_key: str, obj: Optional[dict], sha256: str) -> None:
+def _fix33_capture(qc_key: str, obj: Optional[dict], sha256: str, *,
+                   run_dir: Optional[Path] = None,
+                   report_rel: Optional[str] = None) -> None:
     """Seal-time capture of a report's FIX 33 vision-unit stamp. Called from
     the qc_report_verifier's front-door read; stores the snapshot the pure
     verdict later consumes. Only reports that carry (or should carry) the
     dispatcher's stamp are captured — a report with none of the FIX 33 keys
     anywhere is snapshotted with has_stamp=False and the verdict treats a
     captured report for the IMAGE range as missing its stamp (fail), while
-    other ranges are not FIX-33-judged unless they DO carry a stamp."""
+    other ranges are not FIX-33-judged unless they DO carry a stamp.
+
+    PD-300b: the snapshot ALSO carries the author side, because the pure
+    verdict may not read a file. `author_model` is PD-300's top-level field;
+    `has_author_stamp` is whether an ACTIVE author stamp row covers the report
+    at the sha the seal just measured; `graded_modality` is the registry
+    capability for the grading model. All three are captured HERE, at the one
+    allowed read, and judged later from the snapshot alone."""
     if obj is None:
         _FIX33_SNAPSHOTS.pop((qc_key, sha256), None)
         return
@@ -144,11 +155,38 @@ def _fix33_capture(qc_key: str, obj: Optional[dict], sha256: str) -> None:
             break
     has_stamp = bool(graded_model or request_id
                      or _fix33_first_str(obj, FIX33_PROVIDER_KEYS))
+
+    # --- PD-300b author side (captured, never read again by the verdict) ---
+    author_model = _fix33_first_str(obj, FIX33_AUTHOR_MODEL_KEYS)
+    stamps_on = False
+    has_author_stamp = False
+    try:
+        from presentation_job import execution_stamp as _es
+        stamps_on = bool(_es.stamps_enabled())
+        if stamps_on and run_dir is not None and report_rel:
+            rows = _es._all_stamp_rows(Path(run_dir))
+            has_author_stamp = _es._active_author_row(
+                rows, str(report_rel), sha256) is not None
+    except Exception:  # noqa: BLE001 — capture must never break a seal
+        stamps_on = False
+
+    graded_modality = ""
+    try:
+        from presentation_job.model_router import _registry_capability_meta
+        graded_modality = str((_registry_capability_meta(graded_model) or {})
+                              .get("modality") or "").strip().lower()
+    except Exception:  # noqa: BLE001 — an unimportable table proves nothing
+        graded_modality = ""
+
     _FIX33_SNAPSHOTS[(qc_key, sha256)] = {
         "graded_model": graded_model,
         "authoring_stamp": authoring_stamp,
         "request_id": request_id,
         "has_stamp": has_stamp,
+        "author_model": author_model,
+        "stamps_on": stamps_on,
+        "has_author_stamp": has_author_stamp,
+        "graded_modality": graded_modality,
     }
 
 
@@ -160,7 +198,14 @@ def _fix33_verdict_problems(qc_key: str, fact_value: Any) -> List[str]:
     """PURE. FIX 33 verdict contribution for one sealed QC report fact:
     a report whose graded_by_model equals the authoring stamp for the same
     range, or that lacks a request_id, FAILS. Reads ONLY the snapshot the
-    seal captured — never a file, never the environment."""
+    seal captured — never a file, never the environment.
+
+    PD-300b part (1): for the IMAGE range the verdict ALSO fails when the
+    report carries no `author_model`, when `graded_by_model` equals it, when
+    no ACTIVE author stamp covered the report's current bytes at seal time, or
+    when the grading model is not a vision model. The stamp-derived rules are
+    skipped when execution stamps are rolled back (the snapshot records that
+    fact at seal time, so the verdict stays pure)."""
     if not _fix33_registry_enabled():
         return []
     snap = _FIX33_SNAPSHOTS.get((qc_key, getattr(fact_value, "sha256", "")))
@@ -194,6 +239,42 @@ def _fix33_verdict_problems(qc_key: str, fact_value: Any) -> List[str]:
             "no request_id — FIX 33 requires the vision route's request id in "
             "the report so every grade is traceable to the unit call that "
             "produced it.")
+
+    # --- PD-300b part (1): grader vs author, the stamp row, the modality ---
+    if qc_key == "image":
+        # `author_model` and the stamp row are BOTH stamp-derived (PD-300's
+        # dispatcher writes null under the PRESENTATION_EXECUTION_STAMPS=0
+        # rollback), so requiring them during a deliberate rollback would fail
+        # every run — the same reasoning qc_aggregate applies. The vision rule
+        # is not stamp-derived and always applies.
+        if snap.get("stamps_on"):
+            author_model = snap.get("author_model", "")
+            if not author_model:
+                problems.append(
+                    f"{FIX33_AF_CODE}: {getattr(fact_value, 'rel_path', qc_key)} "
+                    "declares no author_model — PD-300 writes the graded files' "
+                    "author model from the trusted execution stamps, so a merged "
+                    "report without it cannot prove the grader differed from the "
+                    "author (fail-closed).")
+            elif (graded_model
+                  and author_model.strip().lower() == graded_model.strip().lower()):
+                problems.append(
+                    f"{FIX33_AF_CODE}: graded_by_model {graded_model!r} equals "
+                    f"author_model {author_model!r} — the model that wrote the deck "
+                    "also graded it. FIX 33: the grading route must be a DIFFERENT "
+                    "model from the author (cross-graded, never self-graded).")
+            if not snap.get("has_author_stamp"):
+                problems.append(
+                    f"{FIX33_AF_CODE}: no ACTIVE author stamp covers "
+                    f"{getattr(fact_value, 'rel_path', qc_key)} at its current bytes "
+                    "— the report changed after it was stamped (or was never "
+                    "stamped), so who wrote it is unproven (PRES-042).")
+        if graded_model and snap.get("graded_modality") != "vision":
+            problems.append(
+                f"{FIX33_AF_CODE}: graded_by_model {graded_model!r} is not a "
+                "vision model (registry modality "
+                f"{snap.get('graded_modality') or 'unknown'!r}) — the image "
+                "range must be graded by a model that can read pixels.")
     return problems
 
 
@@ -391,7 +472,9 @@ def qc_report_verifier(qc_key: str) -> VerifierSpec:
                     obj = None
             except Exception:  # noqa: BLE001 — capture must never break a seal
                 obj = None
-            _fix33_capture(qc_key, obj, getattr(info, "sha256", ""))
+            _fix33_capture(qc_key, obj, getattr(info, "sha256", ""),
+                           run_dir=Path(run_dir),
+                           report_rel=QC_REPORTS[qc_key]["path"])
         return facts, bool(had)
 
     def _verdict(facts: RunFacts) -> Tuple[Verdict, str]:
