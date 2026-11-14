@@ -198,7 +198,7 @@ def _genuine_bundle(rd: pathlib.Path) -> None:
     (dls / "PRESENTERS-SPEECH-FISH-TAGGED.md").write_text(
         "This [fish calm] is the presenter [fish slow] speech. [fish warm] " * 300)
     _write_mp3(dl / "PRESENTER-AUDIO.mp3", 512_000)  # doctrine floor (split-brain fix, was 100_000)
-    _write_png(dl / "infographic.png", 102_400)  # doctrine floor, Part 6 #8 (was 10_000)
+    _write_png(dls / "infographic.png", 102_400)  # PD-315: canon is working/deliverables/ (build_infographic.py writes it there; the delivery/ spelling was a phantom)
     _write_html(dls / "presenter-teleprompter.html", 20_000)  # doctrine floor (split-brain fix, was 5_000)
     _write_mp4(dl / "demo-WEBINAR.mp4", 1_048_576)  # doctrine floor (split-brain fix, was 500_000)
 
