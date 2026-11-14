@@ -55,6 +55,7 @@ def _complete_answers(**overrides):
         "tone": "Bold",
         "final_price": "$5,000",
         "speech_speed_preference": "conversational ~150 wpm",
+        "duration_min": "45 minutes",
         "want_sales_checkout": "yes",
         "want_vsl_page": "yes",
         "want_email_sequences": "no",

@@ -1022,6 +1022,34 @@ def _promote_anti_fabrication_fields(intake: dict) -> dict:
     return intake
 
 
+# PD-082b: the client's own talk length. This writer used to hardcode
+# "target_talk_minutes": 20, so a client who asked for a 45-minute talk got a
+# deck sized to 20 -- a fabricated answer sitting in the field the speech
+# gates read. A number, "45", "45 minutes" and "1.5 hours" all read; anything
+# else is ABSENT, and absence fails closed rather than defaulting.
+_DURATION_RE = re.compile(r"(\d+(?:\.\d+)?)\s*([A-Za-z]*)")
+
+
+def _talk_minutes(answers: dict):
+    """The client's duration_min answer in minutes, or None when unreadable."""
+    raw = answers.get("duration_min")
+    if isinstance(raw, dict):
+        raw = raw.get("value")
+    if isinstance(raw, bool) or raw is None:
+        return None
+    if isinstance(raw, (int, float)):
+        return raw if raw > 0 else None
+    match = _DURATION_RE.search(str(raw))
+    if not match:
+        return None
+    value = float(match.group(1))
+    if match.group(2).lower().startswith("h"):
+        value *= 60
+    if value <= 0:
+        return None
+    return int(value) if value.is_integer() else value
+
+
 def assemble_intake(app_payload: dict, run_id: str = "") -> dict:
     """Turn the app's answer map into the dept-format intake record.
 
@@ -1034,6 +1062,9 @@ def assemble_intake(app_payload: dict, run_id: str = "") -> dict:
         base = dict(app_payload["intake"])
         base["answers"] = app_payload.get("answers") or base.get("answers") or {}
         _stamp_derived_provenance(base)
+        # PD-082b: the speech harness may read either key; keep them equal.
+        if base.get("target_talk_minutes") and not base.get("DURATION_MIN"):
+            base["DURATION_MIN"] = base["target_talk_minutes"]
         return base
 
     answers = app_payload.get("answers") or {}
@@ -1060,9 +1091,19 @@ def assemble_intake(app_payload: dict, run_id: str = "") -> dict:
     # hardcoded "webinar" here; see UngroundedDeckTypeError.__doc__.
     deck_type_fields = _grounded_deck_type_fields(answers)
 
+    # PD-082b: after the deck-type refusal (which keeps its own error first),
+    # the talk length is the CLIENT'S answer or nothing is written at all.
+    talk_minutes = _talk_minutes(answers)
+    if talk_minutes is None:
+        raise IntakeIncompleteError(
+            "intake incomplete -- duration_min (the client's talk length) is "
+            "missing or unreadable; refusing to write a talk length the "
+            "client never gave")
+
     intake = {
         "interview_confirmed": True,
-        "target_talk_minutes": 20,
+        "target_talk_minutes": talk_minutes,
+        "DURATION_MIN": talk_minutes,
         "created_at": now,
         "source": "presentation-interview-app",
         "run_id": run_id,

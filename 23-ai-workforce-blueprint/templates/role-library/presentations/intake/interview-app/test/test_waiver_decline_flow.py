@@ -73,6 +73,7 @@ def _hosted_answers(**overrides) -> dict:
         "tone": "Inspirational",
         "final_price": "$497",
         "speech_speed_preference": "default",
+        "duration_min": "45 minutes",
         "want_sales_checkout": "no",
         "sales_checkout_declined_reason": SALES_REASON,
         "want_vsl_page": "no",

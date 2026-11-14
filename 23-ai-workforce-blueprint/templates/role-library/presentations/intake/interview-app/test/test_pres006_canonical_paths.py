@@ -55,6 +55,7 @@ def _complete_answers() -> dict:
         "tone": "Inspirational",
         "final_price": "$497",
         "speech_speed_preference": "default",
+        "duration_min": "45 minutes",
         "want_sales_checkout": "yes",
         "want_vsl_page": "no",
         "want_email_sequences": "no",
