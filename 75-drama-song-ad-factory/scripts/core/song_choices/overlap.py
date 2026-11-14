@@ -258,10 +258,15 @@ def overlap_seconds(receipts, min_s=MIN_OVERLAP_S):
 def overlap_gate(receipts, min_s=MIN_OVERLAP_S):
     """PASS / FAIL / UNAVAILABLE over the three INITIAL attempts.
 
-    PASS opens approval and delivery; FAIL and UNAVAILABLE both refuse. PASS
-    needs >= 1,000,000 microseconds of common overlap across THREE DISTINCT
-    initial identities. The result never authorizes a paid redo: ``paid_redo``
-    is always False and ``requires_owner_authority`` is always True."""
+    This returns the MEASUREMENT and its verdict. Since S75-053 the song-choices
+    boundary records it on the choices receipt and raises the named
+    ``SONG_OVERLAP_NOT_SHOWN`` warning when it is not PASS -- it no longer refuses
+    the offer or the pick, because a provider that finished one take before the
+    last was accepted is not a client fault. ``assert_overlap`` is what still
+    raises, for a caller that wants the concurrency proof itself. PASS needs
+    >= 1,000,000 microseconds of common overlap across THREE DISTINCT initial
+    identities. The result never authorizes a paid redo: ``paid_redo`` is always
+    False and ``requires_owner_authority`` is always True."""
     v = _validate(receipts)
     us = v["microseconds"]
     if v["status"] == "UNAVAILABLE":
