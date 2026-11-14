@@ -195,10 +195,16 @@ fi
 # Skill 74 is required from here on (the idempotent skip above does not need it).
 kie74_locate || exit 1
 
-COMPANY_NAME=$(state_get '.companyName'); [[ -z "$COMPANY_NAME" ]] && COMPANY_NAME="Your Company"
-OWNER_NAME=$(state_get '.ownerName'); [[ -z "$OWNER_NAME" ]] && OWNER_NAME="the Owner"
-AGENT_NAME=$(state_get '.agentName'); [[ -z "$AGENT_NAME" ]] && AGENT_NAME="the CEO Agent"
-INDUSTRY=$(state_get '.industry'); [[ -z "$INDUSTRY" ]] && INDUSTRY="modern business"
+# BU-64: one call to closeout_facts.py replaces this script's own reads of the
+# company name, owner, agent and industry.
+CLOSEOUT_FACTS=$(python3 -B "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/closeout_facts.py" "$STATE_FILE" --json 2>/dev/null)
+[[ -z "$CLOSEOUT_FACTS" ]] && CLOSEOUT_FACTS='{}'
+facts_get() { printf '%s' "$CLOSEOUT_FACTS" | jq -r "$1 // empty" 2>/dev/null; }
+
+COMPANY_NAME=$(facts_get '.companyName'); [[ -z "$COMPANY_NAME" ]] && COMPANY_NAME="Your Company"
+OWNER_NAME=$(facts_get '.ownerName'); [[ -z "$OWNER_NAME" ]] && OWNER_NAME="the Owner"
+AGENT_NAME=$(facts_get '.agentName'); [[ -z "$AGENT_NAME" ]] && AGENT_NAME="the CEO Agent"
+INDUSTRY=$(facts_get '.industry'); [[ -z "$INDUSTRY" ]] && INDUSTRY="modern business"
 INFOGRAPHIC1_URL=$(state_get '.infographic1Url')
 # Read client logo URL from branding-questions.json capture (PRD step 4 -- logo fix)
 LOGO_URL=$(state_get '.logoUrl // .logo_url')
