@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
-# test-standard-first-orchestrator-settles.py (shell runner: .py extension is
-# historical) — BU-52 acceptance test.
+# test-standard-first-orchestrator-settles.sh (shell runner) — BU-52 acceptance test.
 #
 # Builds a fixture state exactly as the prebuild's final write does (entries
 # for the floor including master-orchestrator, all prebuilt), creates
