@@ -10,7 +10,10 @@ facts, not source-text claims.
 Proves:
   A  --dry-run writes nothing anywhere and registers nothing
   B  --apply registers exactly ONE job, named skill75-keepalive, every 10
-     minutes, with --no-deliver, an isolated session and a pinned model
+     minutes, whose payload is the keepalive PROGRAM itself -- no model, no
+     agent turn, no isolated session, no delivery flag. The same job in
+     --agent-wrapper form carries --no-deliver, an isolated session and a
+     pinned model
   C  a second --apply is a no-op (exactly one registration, ever)
   D  a durable tombstone makes --apply a no-op (never resurrected)
   E  an UNKNOWN `cron list --json` refuses to register (no duplicate risk)
@@ -20,7 +23,10 @@ Proves:
      scripts/core/heartbeat/keepalive_core.py) and no code block of its own;
      the installer substitutes the runs dir; and that program, run against a
      stand-in skill tree, delivers exactly one first message for a healthy run
-     and nothing more 10 minutes later
+     and nothing more 10 minutes later. The program sends through the client's
+     own channel sender (channel_send.py), never a bare telegram argv; a
+     cancelled run is labelled canceled; a run whose origin names another
+     channel sends on THAT channel
   H  stall recovery through the shipped program, cases a-d: a run folder with
      a SPACE in it reaches the native control as one argument and the client is
      told the pickup; an unauthorized box calls the control zero times and is
@@ -63,7 +69,7 @@ STATE="${STUB_STATE:?}"
 # one line per call: a multi-line --message must not split the record
 printf '%s\n' "$(printf '%s' "$*" | tr '\n' ' ')" >> "$LOG"
 case "$*" in
-  "cron add --help") echo "--name --cron --message --agent --no-deliver --session --model"; exit 0 ;;
+  "cron add --help") echo "--name --cron --message --command --agent --no-deliver --session --model"; exit 0 ;;
   "cron rm --help"|"cron remove --help"|"cron delete --help") echo "usage"; exit 0 ;;
   "cron list --json")
     if [ -n "${STUB_LIST_FAIL:-}" ]; then exit 1; fi
@@ -123,9 +129,14 @@ class Box(object):
 #: the REAL watcher and the REAL keepalive program, copied into the stand-in
 #: tree (a symlink would resolve __file__ back into the repository and lose
 #: the fake control).
-HEARTBEAT = HERE.parent.parent / "scripts" / "core" / "heartbeat"
+CORE = HERE.parent.parent / "scripts" / "core"
+HEARTBEAT = CORE / "heartbeat"
 WATCHER = HEARTBEAT / "run_watch.py"
 KEEPALIVE = HEARTBEAT / "keepalive_core.py"
+#: modules that must stay STAND-INS (they see the fake control and the fake
+#: factory); every other core module is symlinked in as the repository's own
+#: code, so the send path under test is the shipped one
+STAND_IN_CORE = ("heartbeat", "intake_preflight")
 
 #: the stand-in native control: one JSON argv line per call, then FACTORY_RC.
 FACTORY = '''#!/usr/bin/env python3
@@ -149,7 +160,7 @@ def write_json(path, doc):
 
 def make_stage_run(runs_dir, name, stamp, stage="research", state="RUNNING",
                    authorized=False, target="5550001",
-                   timezone="America/New_York"):
+                   timezone="America/New_York", channel=""):
     """One run folder whose single stage carries this state and stamp."""
     run = Path(runs_dir) / name
     (run / "control").mkdir(parents=True)
@@ -162,8 +173,10 @@ def make_stage_run(runs_dir, name, stamp, stage="research", state="RUNNING",
                 (name, stage, state, "worker-1", None, None, int(stamp)))
     con.commit()
     con.close()
-    write_json(run / "control" / "origin.json",
-               {"kind": "chat", "target": target, "timezone": timezone})
+    origin = {"kind": "chat", "target": target, "timezone": timezone}
+    if channel:
+        origin["channel"] = channel
+    write_json(run / "control" / "origin.json", origin)
     if authorized:
         write_json(run / "control" / "recovery-authorization.json",
                    {"authorized": True, "scope": ["resume"], "by": "operator",
@@ -202,13 +215,20 @@ def core_box(work):
     """(box, skill, runs): the shipped program in a stand-in skill tree."""
     box = Box(work)
     skill = Path(work) / "skill"
-    hb = skill / "scripts" / "core" / "heartbeat"
+    core = skill / "scripts" / "core"
+    hb = core / "heartbeat"
     hb.mkdir(parents=True)
-    (skill / "scripts" / "core" / "intake_preflight").mkdir(parents=True)
+    (core / "intake_preflight").mkdir(parents=True)
     shutil.copy2(str(WATCHER), str(hb / "run_watch.py"))
     shutil.copy2(str(KEEPALIVE), str(hb / "keepalive_core.py"))
-    (skill / "scripts" / "core" / "intake_preflight" / "factory.py").write_text(
+    (core / "intake_preflight" / "factory.py").write_text(
         FACTORY, encoding="utf-8")
+    # the client's channel sender, and everything it imports, are the
+    # repository's OWN modules: the send path under test is the shipped one
+    for name in sorted(os.listdir(CORE)):
+        if name in STAND_IN_CORE or name == "__pycache__":
+            continue
+        os.symlink(CORE / name, core / name)
     runs = Path(work) / "runs"
     runs.mkdir()
     return box, skill, runs
@@ -283,21 +303,48 @@ def main():
     add = adds[0] if adds else ""
     check("B: named skill75-keepalive", "--name skill75-keepalive" in add, add)
     check("B: every 10 minutes", "--cron */10 * * * *" in add, add)
-    check("B: silent (--no-deliver)", "--no-deliver" in add, add)
-    check("B: isolated session", "--session isolated" in add, add)
-    check("B: cheap/local model pinned", "--model ollama/deepseek-v4.1-flash:cloud" in add, add)
+    check("B: the payload is the keepalive program itself",
+          "--command" in add
+          and "scripts/core/heartbeat/keepalive_core.py" in add, add)
+    check("B: the runs dir is baked into the command",
+          str(box.root / "runs") in add, add)
+    check("B: no model in the loop", "--model" not in add, add)
+    check("B: no agent turn (no isolated session)", "--session" not in add, add)
+    check("B: no delivery flag on a command payload", "--no-deliver" not in add, add)
     check("B: no agent guessed on a one-agent box", "--agent" not in add, add)
     check("B: no second cron kind (one job only)",
           len([c for c in box.calls() if c.startswith("cron add --name")]) == 1)
 
-    # an explicit agent and model are honored
+    # B2. --agent-wrapper keeps the model-wrapped form; agent and model apply
     box = Box(os.path.join(tmp, "b2"))
-    box.run(INSTALLER, "--apply", "--agent", "video", "--model", "ollama/qwen3:4b")
+    box.run(INSTALLER, "--apply", "--agent-wrapper", "--agent", "video",
+            "--model", "ollama/qwen3:4b")
     add = [c for c in box.calls() if c.startswith("cron add --name")][0]
+    check("B2: the wrapper form sends the prompt, not a command",
+          "--message" in add and "--command" not in add, add)
     check("B2: an explicit agent is passed", "--agent video" in add, add)
     check("B2: an explicit model is passed", "--model ollama/qwen3:4b" in add, add)
+    check("B2: an isolated session and a silent job",
+          "--session isolated" in add and "--no-deliver" in add, add)
+
+    # B3. the wrapper form still pins its own cheap default model
+    box = Box(os.path.join(tmp, "b3"))
+    box.run(INSTALLER, "--apply", "--agent-wrapper")
+    add = [c for c in box.calls() if c.startswith("cron add --name")][0]
+    check("B3: the wrapper form pins the cheap default model",
+          "--model ollama/deepseek-v4.1-flash:cloud" in add, add)
+
+    # B4. a model/agent flag without --agent-wrapper is refused, not dropped
+    box = Box(os.path.join(tmp, "b4"))
+    r = box.run(INSTALLER, "--apply", "--model", "ollama/qwen3:4b")
+    check("B4: --model without --agent-wrapper is refused", r.returncode == 2,
+          (r.returncode, r.stderr))
+    check("B4: and it registers nothing",
+          not any(c.startswith("cron add --name") for c in box.calls()), box.calls())
 
     # C. idempotent: a second --apply adds nothing ------------------------
+    box = Box(os.path.join(tmp, "c"))
+    box.run(INSTALLER, "--apply")
     calls_before = len([c for c in box.calls() if c.startswith("cron add --name")])
     r = box.run(INSTALLER, "--apply")
     check("C: second --apply exits 0", r.returncode == 0, r.stderr)
@@ -355,8 +402,14 @@ def main():
           prompt[-400:])
     check("G: the prompt carries no code block of its own",
           "PY_KEEPALIVE_CORE" not in prompt)
-    check("G: the prompt uses the client's own Telegram sender",
-          "openclaw message send --channel telegram" in prompt)
+    check("G: the prompt names the client's own sender",
+          "the choice card's own sender" in prompt)
+    program = KEEPALIVE.read_text(encoding="utf-8")
+    check("G: the shipped program sends through the channel sender",
+          "channel_send.py" in program, program[-400:])
+    check("G: and builds no telegram command of its own",
+          '"openclaw"' not in program,
+          "the program still builds its own openclaw argv")
     check("G: the prompt forbids inventing a target", "do NOT guess one" in prompt)
     check("G: the prompt keeps the run folder off-limits to the agent, and spend",
           "Do not write to the run folder yourself" in prompt
@@ -370,7 +423,10 @@ def main():
 
     # G (run). a healthy run gets exactly one first message ---------------
     box, skill, runs = core_box(os.path.join(tmp, "g1"))
-    base = int(time.time())
+    # A fixed 9:00 AM AT THE CLIENT: an ordinary progress update is held
+    # during the client's quiet hours, so a real clock makes this case pass
+    # by day and fail by night. The clock is pinned, as case I (a) does.
+    base = ny_ts(2026, 6, 10, 9, 0)
     run = make_stage_run(runs, "run-g", base - 60, stage="music",
                          state="RUNNING")
     flog = Path(box.root) / "factory.log"
@@ -457,7 +513,7 @@ def main():
           "picking it back up" in msg_a
           and "picking it back up" not in msg_b
           and "picking it back up" not in msg_c,
-          (msg_a, msg_b, msg_c))
+          repr((msg_a, msg_b, msg_c)))
 
     # I (a). 54 ticks over 9 hours of an unchanged needs_you state ----------
     box, skill, runs = core_box(os.path.join(tmp, "k1"))
@@ -546,6 +602,45 @@ def main():
     check("I (e): a later tick repeats nothing and sends nothing more",
           codes_e.count("KEEPALIVE_CLIENT_SILENT") == 1
           and len(sent_messages(box)) == 3, (codes_e, sent_messages(box)))
+
+    # J. a cancelled run is labelled canceled, never expired or complete ----
+    box, skill, runs = core_box(os.path.join(tmp, "l1"))
+    base = int(time.time())
+    run = make_stage_run(runs, "run-cancel", base - 60, stage="music",
+                         state="RUNNING")
+    write_json(run / "control" / "run-state.json", {"canceled": True})
+    flog = Path(box.root) / "factory.log"
+    r = run_core(box, skill, runs, flog, now=base)
+    check("J: a cancelled tick exits 0", r.returncode == 0, r.stderr)
+    reg = json.loads((Path(runs) / ".keepalive" / "run-registry.json")
+                     .read_text(encoding="utf-8"))
+    check("J: the row says canceled",
+          reg["runs"].get("run-cancel", {}).get("state") == "canceled",
+          reg["runs"].get("run-cancel"))
+    run_core(box, skill, runs, flog, now=base + 600)
+    reg = json.loads((Path(runs) / ".keepalive" / "run-registry.json")
+                     .read_text(encoding="utf-8"))
+    check("J: and a later tick never relabels it",
+          reg["runs"].get("run-cancel", {}).get("state") == "canceled",
+          reg["runs"].get("run-cancel"))
+
+    # K. the run's OWN channel is the channel it sends on -------------------
+    box, skill, runs = core_box(os.path.join(tmp, "l2"))
+    # daytime at the client, for the same reason as G (run): a progress
+    # message is held during the client's quiet hours
+    base = ny_ts(2026, 6, 10, 9, 0)
+    make_stage_run(runs, "run-app", base - 60, stage="music", state="RUNNING",
+                   channel="app")
+    make_stage_run(runs, "run-chat", base - 60, stage="music", state="RUNNING")
+    flog = Path(box.root) / "factory.log"
+    run_core(box, skill, runs, flog, now=base)
+    sent = sent_messages(box)
+    app_calls = [c for c in sent if "--channel app" in c]
+    chat_calls = [c for c in sent if "--channel telegram" in c]
+    check("K: the app-origin run sends on the app channel",
+          len(app_calls) == 1, sent)
+    check("K: the chat-origin run sends on telegram (the control)",
+          len(chat_calls) == 1, sent)
 
     print()
     if FS:
