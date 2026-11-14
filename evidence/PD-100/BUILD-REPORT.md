@@ -2,7 +2,7 @@
 
 **Unit:** PD-100 · "The Speech Writer procedure reads files, hands off delivery and names the engine's paths" · Moderate
 **Lane:** FL24 · **Repository:** trevorotts1/openclaw-onboarding · **Branch:** `pd/fl24-role-procedures-c`
-**Worktree:** `/Volumes/mac mini m4/swarm-contract/pd-fix/tmp/PD-100/work.WU49CC/tree` (own scratch worktree; the lane clone was left clean)
+**Worktree:** `<project-root>/pd-fix/tmp/PD-100/work.WU49CC/tree` (own scratch worktree; the lane clone was left clean)
 **Base:** `f026a56d8857b61121f9fdae519c7309fa6f99ce` — confirmed on the remote (`git ls-remote --heads origin refs/heads/pd/fl24-role-procedures-c`) **before** any edit
 **Build commit:** `976856b38123df9dcfac196af086d75ef6083c2a`
 **Report commit:** the commit carrying this file; its parent is the build commit
@@ -12,7 +12,7 @@
 
 ## 1. The spec text this unit implements
 
-`/Volumes/mac mini m4/swarm-contract/fable-reviews-2026-11-11/03-presentation-department/FINAL/01-BUILD-SPEC.md`,
+`<project-root>/fable-reviews-2026-11-11/03-presentation-department/FINAL/01-BUILD-SPEC.md`,
 section **PD-100** (lines 3968-3991), read in full.
 
 Binding consolidation amendment (line 3987), quoted:
@@ -252,7 +252,7 @@ $ git ls-remote --heads origin refs/heads/pd/fl24-role-procedures-c
 f026a56d8857b61121f9fdae519c7309fa6f99ce	refs/heads/pd/fl24-role-procedures-c
 ```
 
-The lane clone at `/Volumes/mac mini m4/swarm-contract/pd-fix/worktrees/onboarding/FL24` was **behind** that head (it sat at `ac6c3a86a`, PD-101), so the build was made from a fresh scratch worktree at the fetched remote head — not from the lane clone. After pushing the build:
+The lane clone at `<project-root>/pd-fix/worktrees/onboarding/FL24` was **behind** that head (it sat at `ac6c3a86a`, PD-101), so the build was made from a fresh scratch worktree at the fetched remote head — not from the lane clone. After pushing the build:
 
 ```
 $ git push origin HEAD:refs/heads/pd/fl24-role-procedures-c
@@ -274,7 +274,7 @@ $ git ls-remote --heads origin refs/heads/pd/fl24-role-procedures-c
 
 `4891897a0` is the report commit (parent `976856b38`). This paragraph's own commit is its child and cannot appear in its own bytes — PD-101 and PD-108 took the same step on this branch. The live head is re-measured in the hand-back, not claimed here.
 
-The lane clone `/Volumes/mac mini m4/swarm-contract/pd-fix/worktrees/onboarding/FL24` was left clean (`git status --porcelain` empty after the push).
+The lane clone `<project-root>/pd-fix/worktrees/onboarding/FL24` was left clean (`git status --porcelain` empty after the push).
 
 ---
 
