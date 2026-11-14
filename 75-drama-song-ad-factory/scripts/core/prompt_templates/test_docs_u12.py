@@ -5,7 +5,8 @@
     music_styles.OFFERED_LENGTHS_S;
 (b) SKILL.md names the request-limit section and the not-built captions check;
 (c) the onboarding SOP (when present) no longer says "three to four lip-sync
-    lines, 15 to 20 seconds" and DS-2 lists the 2-minute length.
+    lines, 15 to 20 seconds" or a fixed "6 to 8" clip count, states the new
+    lip-sync share of runtime, and DS-2 lists the 2-minute length.
 Run: python3 scripts/core/prompt_templates/test_docs_u12.py (pytest-collectable)."""
 import re
 import sys
@@ -45,7 +46,9 @@ def test_sop_lipsync_counts_and_lengths():
         return  # 999-setup carries no SOP
     t = SOP.read_text(encoding="utf-8")
     assert "three to four lines" not in t, "stale DS-4 step 5 lip-sync count"
-    assert "6 to 8" in t and "2 minutes" in t.split("### DS-3")[0]
+    assert "6 to 8" not in t, "stale fixed lip-sync clip count"
+    assert "25-30%" in t and "35% HARD MAXIMUM" in t, "lip-sync share of runtime missing"
+    assert "2 minutes" in t.split("### DS-3")[0]
 
 
 if __name__ == "__main__":
