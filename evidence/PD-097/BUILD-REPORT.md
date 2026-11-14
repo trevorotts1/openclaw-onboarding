@@ -11,7 +11,7 @@
 ## 0. Row taken from the gate, and branch state proved before editing
 
 ```
-$ python3 -I .../FINAL/scripts/step_gate.py ready --control /Volumes/mac mini m4/swarm-contract/loop-control/pd-fix
+$ python3 -I .../FINAL/scripts/step_gate.py ready --control <loop-control>/pd-fix
 {"ready": [], "waiting": {..., "PD-111": ["waits for PD-097 (BUILDING)", "branch pd/fl15-renderer is busy"], ...}, "count": 0}
 ```
 
@@ -37,7 +37,7 @@ ebf5c769a2ad5b2582bf2256588095cbef20cfac	refs/heads/main
 ```
 
 **Discrepancy, stated in full:** the lane worktree
-(`/Volumes/mac mini m4/swarm-contract/pd-fix/worktrees/onboarding/FL15`) was checked out at
+(`<worktree>/FL15`) was checked out at
 `fde9282bb6c33c73363ec0baeea63b75a968b7f2` ("PD-070: a failed slide is retried inside the batch"),
 which is **not** an ancestor of the remote head (`git merge-base --is-ancestor 5dc81e9 HEAD` → NO).
 After `git fetch origin --prune` the branch is present at `5dc81e96e`. I did **not** edit, commit,
@@ -45,7 +45,7 @@ checkout, reset or clean the lane clone; every write of this unit happened in a 
 worktree cut from `origin/pd/fl15-renderer` = `5dc81e96e`.
 
 ```
-$ S=$(mktemp -d -p "$TMPDIR" work.XXXXXX)   # $TMPDIR = .../loop-control/pd-fix/tmp/PD-097
+$ S=$(mktemp -d work.XXXXXX)   # scratch temp root under <loop-control>/pd-fix
 $ git worktree add --detach "$S/wt" origin/pd/fl15-renderer
 HEAD is now at 5dc81e96e PD-218a: report records the repo-wide sweep as abandoned, not clean
 ```
@@ -144,7 +144,7 @@ file. That third writer is **not** an owned path of this unit — see section 8,
 ## 4. Each acceptance row proven (real output, by test id)
 
 Commands (integration tree `$S/integ` = `origin/pd/fl15-renderer` + merge of `origin/pd/fl18-dispatcher`
-(PD-304); never pushed). Python is `python3 -I`; all writes go to the scratch TMPDIR; no network.
+(PD-304); never pushed). Python is `python3 -I`; all writes go to the scratch temp dir; no network.
 
 ```
 $ cd "$S/integ/23-ai-workforce-blueprint/templates/role-library/presentations/scripts"
