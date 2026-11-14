@@ -136,14 +136,12 @@ if [[ -n "$OUT" ]] && openclaw cron list 2>/dev/null | grep -qi "closeout-resume
   rm -f "$_RC_FILE"  # D25: fresh registration, fresh run budget
   UUID=$(printf '%s' "$OUT" | jq -r '.uuid // .id // empty' 2>/dev/null || true)
   if [[ -n "$UUID" && "$UUID" != "null" ]] && [[ -f "$STATE_FILE" ]] && command -v jq >/dev/null 2>&1; then
-    _TMP=$(mktemp)
-    if jq --arg uuid "$UUID" --arg ts "$(_now_iso)" \
-        '.closeoutResumeUuid = $uuid | .closeoutResumeRegisteredAt = $ts' \
-        "$STATE_FILE" > "$_TMP" 2>/dev/null; then
-      mv "$_TMP" "$STATE_FILE"
-    else
-      rm -f "$_TMP"
-    fi
+    # Through the shared state protocol: it holds the state lock across
+    # read/filter/replace, so a concurrent writer is merged, not overwritten.
+    # shellcheck source=/dev/null
+    source "$SCRIPT_DIR/../../23-ai-workforce-blueprint/scripts/lib-workforce-state.sh"
+    workforce_state_set "$STATE_FILE" --arg uuid "$UUID" --arg ts "$(_now_iso)" \
+      '.closeoutResumeUuid = $uuid | .closeoutResumeRegisteredAt = $ts' || true
   fi
   _log "closeout-resume cron installed (*/15, command mode, --no-deliver — dedicated REDUNDANT closeout trigger, no owner chat needed)."
   exit 0
