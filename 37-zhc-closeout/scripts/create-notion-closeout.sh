@@ -847,7 +847,7 @@ else
 fi
 
 sec6_blocks_arr+=( "$(h "Accessing the Dashboard")" )
-sec6_blocks_arr+=( "$(p "Open the Command Center URL in any browser. You will see your Kanban board with all departments and their active tasks. The dashboard updates automatically every 30 seconds.")" )
+sec6_blocks_arr+=( "$(p "Open the Command Center URL in any browser. You will see your Kanban board with all departments and their active tasks.")" )
 
 sec6_blocks_arr+=( "$(h "The Kanban Board")" )
 sec6_blocks_arr+=( "$(p "Your board has 5 columns:")" )
@@ -866,16 +866,6 @@ sec6_blocks_arr+=( "$(p "Drag and drop tasks between columns, or click a task an
 sec6_blocks_arr+=( "$(h "Left Sidebar")" )
 sec6_blocks_arr+=( "$(p "Click any department name to filter tasks to just that department. Click 'All Departments' to see everything. This is your fastest way to see what any one team is working on.")" )
 
-sec6_blocks_arr+=( "$(h "Talking to Department Heads")" )
-sec6_blocks_arr+=( "$(p "Each department has its own Telegram topic in your Command Center group. Tap the topic for the department you want (e.g. Marketing), type your message, and the department head responds directly.")" )
-sec6_blocks_arr+=( "$(bul "Example: 'We need a social media campaign for our new product launch'")" )
-sec6_blocks_arr+=( "$(bul "Example: 'Review last month's sales numbers and give me insights'")" )
-sec6_blocks_arr+=( "$(bul "Example: 'Help me prepare for tomorrow's investor meeting'")" )
-
-sec6_blocks_arr+=( "$(h "The 3-Check Rhythm")" )
-sec6_blocks_arr+=( "$(p "Your department heads will proactively check in three times a day: morning (9 AM), midday (1 PM), and end of day (5 PM). At each check-in, they report what was completed, what is in progress, and any questions for you. You just reply with approvals, changes, or new priorities.")" )
-sec6_blocks_arr+=( "$(p "To change the schedule, tell ${AGENT_NAME}: 'Change standup times to 8 AM, 12 PM, and 4 PM.' The agents will update their schedule immediately.")" )
-
 sec6_blocks=$(printf '%s\n' "${sec6_blocks_arr[@]}" | jq -s '.')
 create_child_page "6. How to Use Your Command Center" "$sec6_blocks" >/dev/null
 
@@ -885,7 +875,7 @@ sec7_blocks=$(jq -s '.' \
   <(p "The hierarchy: Owner -- ${AGENT_NAME} (CEO Agent) -- Department Heads -- AI Employees.") \
   <(p "Why you talk to ${AGENT_NAME} by default: ${AGENT_NAME} knows everything that is happening across all departments. ${AGENT_NAME} picks the right team and the right role, routes the work, and reports back.") \
   <(p "Department Heads spawn temporary sub-agents to get specific jobs done. For example, the Marketing Head might spin up a Black-Friday-Promo-Writer sub-agent for one campaign, use it, then dismiss it. You do not see that -- but it is how scale happens behind the scenes.") \
-  <(p "When you SHOULD talk to a Department Head directly: when you want to go deep on one department's strategy. Drop into that department's Telegram topic and have a focused conversation.") \
+  <(p "When you SHOULD talk to a Department Head directly: when you want to go deep on one department's strategy. Ask your CEO agent to bring that department head into the conversation.") \
   <(p "When you should NEVER talk to an AI Employee directly: in normal day-to-day. The CEO and Department Heads exist to route. Do not bypass them -- you will just confuse the workflow.") )
 create_child_page "7. Communication Hierarchy" "$sec7_blocks" >/dev/null
 
@@ -902,15 +892,14 @@ sec8_blocks=$(jq -s '.' \
   <(bul "MEASURE -- Track what is happening: tasks completed, errors made, time-to-output, quality scores. Every SOP has estimated minutes and confidence ratings so throughput per role is measurable.") \
   <(bul "ANALYZE -- When something goes wrong, root-cause it. Do not just patch the symptom. Update the department's MEMORY.md so the same mistake does not repeat.") \
   <(bul "IMPROVE -- Make the change. Update the prompt, the workflow, the trigger phrase, whatever.") \
-  <(bul "CONTROL -- Lock the improvement in. Re-test on real work. Make sure the fix sticks. The Persona Tasks Alignment Matrix is the Control phase -- it locks in WHO does WHAT, preventing scope drift, mis-routing, and persona overload.") \
-  <(p "Every Friday, ${AGENT_NAME} runs a DMAIC review across all departments and reports gaps. That is how the workforce gets sharper over time. Continuous improvement is not a project -- it is a rhythm built into the system.") )
+  <(bul "CONTROL -- Lock the improvement in. Re-test on real work. Make sure the fix sticks. The Persona Tasks Alignment Matrix is the Control phase -- it locks in WHO does WHAT, preventing scope drift, mis-routing, and persona overload.") )
 create_child_page "8. Lean Six Sigma in Your ZHC" "$sec8_blocks" >/dev/null
 
 # ---- Section 9: Book-to-Persona System ----
 log "INFO" "creating section 9: Book-to-Persona System"
 sec9_blocks=$(jq -s '.' \
   <(p "The Book-to-Persona System is how your AI workforce decides HOW to handle every task -- not just what to do, but the voice, style, and frame of reference to use.") \
-  <(p "Every task gets scored on 5 dimensions: Relevance, Authority, Recency, Depth, Fit. Based on the scoring, the agent picks the right persona -- a book or expert framework that has been pre-trained into your workforce -- to guide the work.") \
+  <(p "For every task the agent checks five things in order: your company mission, your own values, your company goals, the department's goals, and the task itself. Based on the scoring, the agent picks the right persona -- a book or expert framework that has been pre-trained into your workforce -- to guide the work.") \
   <(p "Example: a sales task scores high on Relevance and Authority for Cialdini's Influence -- the agent writes the outreach using Cialdini's principles. A coaching task scores high for Brene Brown -- the agent uses her vulnerability-first framing.") \
   <(p "This is why your outputs feel coherent and not random. The persona system imposes a consistent intelligence behind every department's work. See Skill 22 (Book-to-Persona Coaching Leadership System) in your installer for the full framework.") )
 create_child_page "9. Book-to-Persona System" "$sec9_blocks" >/dev/null
