@@ -103,7 +103,7 @@ message says "About 20 minutes to go."; empty history → no sentence.*
 ### BEFORE — `afd4a7571`, the new test file copied into a clean detached worktree at that base
 
 ```
-$ cd /Volumes/mac mini m4/swarm-contract/pd-fix/scratchpads/PD-031/base-afd4a7571/23-ai-workforce-blueprint/templates/role-library/presentations/scripts
+$ cd $SCRATCH_ROOT/pd-fix/scratchpads/PD-031/base-afd4a7571/23-ai-workforce-blueprint/templates/role-library/presentations/scripts
 $ grep -c _client_eta_sentence presentation_job/phases.py
 0
 $ python3 -m pytest tests/test_pd_engine_eta.py -q
@@ -123,7 +123,7 @@ change too, by absence — that is exactly the control.)
 ### AFTER — this commit, same test file
 
 ```
-$ cd /Volumes/mac mini m4/swarm-contract/pd-fix/worktrees/onboarding/FL05/23-ai-workforce-blueprint/templates/role-library/presentations/scripts
+$ cd $SCRATCH_ROOT/pd-fix/worktrees/onboarding/FL05/23-ai-workforce-blueprint/templates/role-library/presentations/scripts
 $ python3 -m pytest tests/test_pd_engine_eta.py -q
 ....                                                                     [100%]
 4 passed in 0.07s
@@ -197,7 +197,7 @@ between the two is this report file.
 ## Temp discipline
 
 Every temp file in this unit was made with `mktemp -p "$TMPDIR"` where
-`TMPDIR="/Volumes/mac mini m4/swarm-contract/pd-fix/tmp"`. No `/tmp`,
+`TMPDIR="$SCRATCH_ROOT/pd-fix/tmp"`. No `/tmp`,
 `/private/tmp` or `/var/folders` path was named or written by this unit's own
 commands. Scratch lives at
-`/Volumes/mac mini m4/swarm-contract/pd-fix/scratchpads/PD-031`.
+`$SCRATCH_ROOT/pd-fix/scratchpads/PD-031`.

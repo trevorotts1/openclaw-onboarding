@@ -1,7 +1,7 @@
 # PD-307m — build report
 
 **Unit:** PD-307m — The webinar video step declares the audio it needs
-**Lane:** FL04 · branch `pd/fl04-manifest` · worktree `/Volumes/mac mini m4/swarm-contract/pd-fix/worktrees/onboarding/FL04`
+**Lane:** FL04 · branch `pd/fl04-manifest` · worktree `$SCRATCH_ROOT/pd-fix/worktrees/onboarding/FL04`
 **Commit:** `4243522a599e5e921dd154949068efdf226c6624`
 **Base at start:** `fe19a5d25` (PD-021, accepted-in-progress) on top of `98a3ff093` (PD-038, ACCEPTED)
 **Rows:** A1, A2, A3, A4 — all delivered.
@@ -72,9 +72,9 @@ generated=2026-11-13T00:11:55Z
 
 ## Acceptance rows
 
-Script: `/Volumes/mac mini m4/swarm-contract/pd-fix/scratchpads/PD-307m/check_rows.py`
+Script: `$SCRATCH_ROOT/pd-fix/scratchpads/PD-307m/check_rows.py`
 (control manifest materialized at
-`/Volumes/mac mini m4/swarm-contract/pd-fix/scratchpads/PD-307m/MANIFEST-head-control.json`
+`$SCRATCH_ROOT/pd-fix/scratchpads/PD-307m/MANIFEST-head-control.json`
 = `git show HEAD:...PIPELINE-MANIFEST.json`, sha `9e0bfc79…8b65c`).
 
 ```
