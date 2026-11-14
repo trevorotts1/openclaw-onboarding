@@ -3925,6 +3925,23 @@ def apply_standard_edits(config):
                     depts.append(e)
                 e["status"] = "done"
                 e.setdefault("completedAt", _now)
+            # BU-52: settle the orchestrator's own entry on a newer box. A
+            # prebuilt orchestrator entry becomes done once its foundation
+            # (SOUL.md) exists on disk; otherwise the entry is left alone and
+            # the missing foundation is recorded for the resume job.
+            for e in depts:
+                if not isinstance(e, dict) or e.get("status") != "prebuilt":
+                    continue
+                _entry_slug = e.get("slug") or e.get("id") or ""
+                if _decline_norm(_entry_slug) not in (
+                        "masterorchestrator", "ceo", "deptceo"):
+                    continue
+                if os.path.isfile(os.path.join(DEPARTMENTS_DIR, _entry_slug,
+                                               "SOUL.md")):
+                    e["status"] = "done"
+                    e.setdefault("completedAt", _now)
+                else:
+                    registration_failures.append("orchestrator-foundation-missing")
             # Departments the diff dropped (declined customs never in
             # departments[]): mark done too if they were prebuilt-kept? No —
             # they were retired by the retire script; leave their entry alone.
