@@ -1304,10 +1304,17 @@ def _write_publish_ledger(bundle_dir: Path, status="published",
     sub-check of run_postflight_gate keys on this artifact — a full bundle without it
     now fails (exit 5), so the PASS-path fixtures must include a published record."""
     import json as _json
+    import hashlib as _hashlib
+    # PD-210: the record must name the bytes of the teleprompter that is actually in
+    # the bundle (`local_sha256`), so a publisher's record cannot describe a different
+    # file. A PASS-path fixture therefore has to carry the real hash, exactly as
+    # publish_teleprompter writes it.
+    _html = bundle_dir / "presenter-teleprompter.html"
     rec = {
         "platform": "mac",
         "host_target": "cloudflare-central",
-        "local_file": str(bundle_dir / "presenter-teleprompter.html"),
+        "local_file": str(_html),
+        "local_sha256": _hashlib.sha256(_html.read_bytes()).hexdigest(),
         "public_url": public_url,
         "published_at": "2026-06-17T00:00:00Z",
         "verified_http_status": verified_http_status,
@@ -1567,6 +1574,20 @@ def test_postflight_speech_length_reverify():
                          "notes": "cast parity verified against the intake mix"
                          } for n in range(1, 25)]},
             indent=2))
+        # PD-206a (decision D-34): each human verdict is its OWN file, never a block
+        # embedded in the graded report, so the closeout sub-checks read these two
+        # paths. A complete bundle now carries both; write them here so this fixture
+        # still isolates the speech-length re-check and nothing else.
+        _hr = root / "working" / "qc" / "human-review"
+        _hr.mkdir(parents=True, exist_ok=True)
+        (_hr / "image_grounding.json").write_text(json.dumps(
+            {"pass": True, "reviewed_by": "image-grounding-steward",
+             "reviewed_at": "2026-11-14 09:00 Eastern",
+             "note": "render prompts traced to research anchors"}, indent=2))
+        (_hr / "representation_casting.json").write_text(json.dumps(
+            {"pass": True, "reviewed_by": "representation-casting-director",
+             "reviewed_at": "2026-11-14 09:00 Eastern",
+             "note": "cast parity verified against the intake mix"}, indent=2))
         import hashlib as _hashlib
         (root / "working" / "checkpoints" / "process_manifest.json").write_text(json.dumps({
                 "phase_attestations": [],
