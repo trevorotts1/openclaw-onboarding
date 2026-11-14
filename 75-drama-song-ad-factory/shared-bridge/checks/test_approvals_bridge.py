@@ -2,8 +2,10 @@
 
 Proves, per SPEC.md §4 / BUILD-PLAN W1-box-bridge-U2:
 
-  1  publish() POSTs exactly the documented JSON and PUTs every file (bytes
-     and content type as declared) and returns the service's item
+  1  publish() POSTs exactly the documented JSON (every file with its
+     sha256), PUTs every file (bytes and content type as declared), calls the
+     finalize route with the publish reply's presentation digest, and returns
+     the service's ready item
   2  answer() is None while unanswered, then the value; another stage's
      version is never mistaken for this one
   3  a wrong key is refused by the service (control: the key really travels)
@@ -11,14 +13,15 @@ Proves, per SPEC.md §4 / BUILD-PLAN W1-box-bridge-U2:
   4  the key never reaches stdout/stderr, with a positive control proving the
      detector can see the sentinel when it is present
   5  the User-Agent is studio_bridge's own constant, and the server saw it
-  6  the box-side publish gate is image/*, audio/*, video/* and application/pdf:
-     those four pass, while a .json/.log/.py or an unknown extension is
-     refused LOCALLY -- zero requests made -- and the refusal names the file
-     and its content type
+  6  the box-side publish gate is image/* and audio/* -- the service's own
+     allow-list -- while a video, a pdf, a .json/.log/.py or an unknown
+     extension is refused LOCALLY: zero requests made, and the refusal names
+     the file and its content type
 
 Run: python3 checks/test_approvals_bridge.py
 """
 import contextlib
+import hashlib
 import io
 import json
 import mimetypes
@@ -39,18 +42,47 @@ from studio_claim import LedgerError  # noqa: E402
 KEY = "k-" + "deadbeef" * 4
 ORDER = "o_0123456789abcdef01234567"
 NAME = r"^[A-Za-z0-9._-]{1,80}$"
+DIGEST = r"^[0-9a-f]{64}$"
+
+
+def _presentation_digest(body):
+    """The service's own digest: stage, version, text, choices and each file
+    declaration, in the order the producer wrote them (approvals-api.js)."""
+    canonical = json.dumps({
+        "stage": body["stage"], "version": body["version"], "text": body["text"],
+        "choices": [[c["n"], c["label"]] for c in body.get("choices") or []],
+        "files": [[f["name"], f["content_type"], f["bytes"], f["sha256"]]
+                  for f in body.get("files") or []],
+    }, separators=(",", ":"))
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
 
 class Fake:
-    """The service contract of SPEC §4, enforced — a real server, not a mock."""
+    """The service contract of SPEC §4 / approvals-api.js, enforced -- a real
+    server, not a mock. Only a FINALIZED version is listed."""
 
     def __init__(self):
         self.key = KEY
-        self.items = {}          # (stage, version) -> item
+        self.items = {}          # (stage, version) -> ready item (listed)
+        self.intents = {}        # (stage, version) -> published body (staged)
+        self.digests = {}        # (stage, version) -> presentation digest
         self.published = []      # bodies as received
         self.puts = {}           # name -> (content_type, body)
+        self.calls = []          # ("publish"|"put"|"finalize"|"list", ...)
+        self.finalized = []      # presentation_digest values finalize received
         self.seen_ua = set()
         self.base_url = ""
+
+    def item(self, body, digest, ready):
+        return {"stage": body["stage"], "version": body["version"],
+                "text": body["text"], "choices": body.get("choices") or [],
+                "presentation_digest": digest, "ready": ready,
+                "files": [{"name": f["name"],
+                           "url": None,
+                           "content_type": f["content_type"],
+                           "bytes": f["bytes"], "sha256": f["sha256"]}
+                          for f in body.get("files") or []],
+                "answer": None}
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -79,8 +111,11 @@ class Handler(BaseHTTPRequestHandler):
         st = self.server.state
         if not self._auth():
             return self._send(403, {"ok": False, "code": "AF-DS-KEY", "message": "key refused"})
-        parsed = urllib.parse.urlsplit(self.path)
-        if parsed.path != "/api/studio/orders/%s/approvals" % ORDER:
+        path = urllib.parse.urlsplit(self.path).path
+        base = "/api/studio/orders/%s/approvals" % ORDER
+        if path.startswith(base + "/") and path.endswith("/finalize"):
+            return self._finalize(path[len(base):])
+        if path != base:
             return self._send(404, {"ok": False, "code": "NOT_FOUND", "message": "no route"})
         body = self._body()
         if body.get("stage") not in AB.STAGES:
@@ -99,21 +134,62 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(400, {"ok": False, "code": "BAD_TYPE", "message": "content type"})
             if not isinstance(f.get("bytes"), int) or f["bytes"] < 0:
                 return self._send(400, {"ok": False, "code": "BAD_BYTES", "message": "bytes"})
+            if not isinstance(f.get("sha256"), str) or not re.fullmatch(DIGEST, f["sha256"]):
+                return self._send(400, {"ok": False, "code": "BAD_DIGEST",
+                                        "message": "every file needs its sha256"})
         st.published.append(body)
+        st.calls.append(("publish", body["stage"], body["version"]))
         key = (body["stage"], body["version"])
-        if key in st.items:  # same stage + version: the existing item, created:false
-            item = dict(st.items[key])
-            created = False
-        else:
-            item = {"stage": body["stage"], "version": body["version"],
-                    "text": body["text"], "choices": body.get("choices") or [],
-                    "files": [f["name"] for f in files], "answer": None}
-            st.items[key] = item
-            created = True
+        digest = _presentation_digest(body)
+        if key in st.items:        # already ready: nothing to upload
+            return self._send(200, {"ok": True, "item": st.items[key],
+                                    "created": False, "ready": True, "uploads": []})
+        if key in st.intents and st.digests[key] != digest:
+            return self._send(409, {"ok": False, "code": "AF-APPROVAL-REVISION",
+                                    "message": "that version is published with different content"})
+        st.intents[key] = body
+        st.digests[key] = digest
         uploads = [{"name": f["name"], "method": "PUT",
                     "url": st.base_url + "/presigned/" + f["name"]} for f in files]
-        return self._send(201, {"ok": True, "item": item, "created": created,
-                                "uploads": uploads})
+        return self._send(201, {"ok": True, "item": st.item(body, digest, False),
+                                "created": True, "ready": not files, "uploads": uploads})
+
+    def _finalize(self, rest):
+        st = self.server.state
+        parts = [p for p in rest.split("/") if p]
+        if len(parts) != 3:
+            return self._send(404, {"ok": False, "code": "NOT_FOUND", "message": "no route"})
+        stage, version, _ = parts
+        try:
+            version = int(version)
+        except ValueError:
+            return self._send(400, {"ok": False, "code": "BAD_VERSION", "message": "version"})
+        key = (stage, version)
+        body = self._body()
+        st.calls.append(("finalize", stage, version))
+        if key in st.items:
+            return self._send(200, {"ok": True, "item": st.items[key],
+                                    "ready": True, "created": False})
+        if key not in st.intents:
+            return self._send(404, {"ok": False, "code": "AF-APPROVAL-UNKNOWN",
+                                    "message": "no such approval to finalize"})
+        if body.get("presentation_digest") is not None:
+            st.finalized.append(body["presentation_digest"])
+            if body["presentation_digest"] != st.digests[key]:
+                return self._send(409, {"ok": False, "code": "AF-APPROVAL-REVISION",
+                                        "message": "that finalize names a different presentation"})
+        intent = st.intents[key]
+        for f in intent.get("files") or []:
+            put = st.puts.get(f["name"])
+            if not put:
+                return self._send(409, {"ok": False, "code": "AF-APPROVAL-UPLOAD",
+                                        "message": "%s has not finished uploading" % f["name"]})
+            if hashlib.sha256(put[1]).hexdigest() != f["sha256"]:
+                return self._send(409, {"ok": False, "code": "AF-APPROVAL-BYTES",
+                                        "message": "%s does not match its digest" % f["name"]})
+        ready = st.item(intent, st.digests[key], True)
+        st.items[key] = ready
+        return self._send(201, {"ok": True, "item": ready, "ready": True, "created": True})
 
     def do_GET(self):
         st = self.server.state
@@ -121,7 +197,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(403, {"ok": False, "code": "AF-DS-KEY", "message": "key refused"})
         if urllib.parse.urlsplit(self.path).path != "/api/studio/orders/%s/approvals" % ORDER:
             return self._send(404, {"ok": False, "code": "NOT_FOUND", "message": "no route"})
-        items = [dict(i) for i in st.items.values()]
+        st.calls.append(("list",))
+        items = [dict(i) for i in st.items.values()]   # FINALIZED only
         return self._send(200, {"ok": True, "items": items})
 
     def do_PUT(self):
@@ -129,6 +206,7 @@ class Handler(BaseHTTPRequestHandler):
         name = urllib.parse.unquote(urllib.parse.urlsplit(self.path).path.rsplit("/", 1)[-1])
         body = self.rfile.read(int(self.headers.get("content-length") or 0))
         st.puts[name] = (self.headers.get("Content-Type"), body)
+        st.calls.append(("put", name))
         return self._send(200, {"ok": True})
 
 
@@ -151,8 +229,12 @@ class ApprovalsBridgeTests(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
         self.st.items.clear()
+        self.st.intents.clear()
+        self.st.digests.clear()
         self.st.published.clear()
         self.st.puts.clear()
+        self.st.calls.clear()
+        self.st.finalized.clear()
         self.song = pathlib.Path(self.tmp.name) / "pick1.mp3"
         self.song.write_bytes(b"ID3\x03\x00\x00\x00song-bytes")
         self.still = pathlib.Path(self.tmp.name) / "shot-1.png"
@@ -174,10 +256,12 @@ class ApprovalsBridgeTests(unittest.TestCase):
             "choices": [{"n": 1, "label": "Cut A"}, {"n": 2, "label": "Cut B"}],
             "files": [{"name": "pick1.mp3",
                        "content_type": body["files"][0]["content_type"],
-                       "bytes": self.song.stat().st_size},
+                       "bytes": self.song.stat().st_size,
+                       "sha256": hashlib.sha256(self.song.read_bytes()).hexdigest()},
                       {"name": "shot-1.png",
                        "content_type": body["files"][1]["content_type"],
-                       "bytes": self.still.stat().st_size}],
+                       "bytes": self.still.stat().st_size,
+                       "sha256": hashlib.sha256(self.still.read_bytes()).hexdigest()}],
         })
         self.assertTrue(body["files"][0]["content_type"].startswith("audio/"))
         self.assertTrue(body["files"][1]["content_type"].startswith("image/"))
@@ -186,14 +270,26 @@ class ApprovalsBridgeTests(unittest.TestCase):
                                                      self.song.read_bytes()))
         self.assertEqual(self.st.puts["shot-1.png"], (body["files"][1]["content_type"],
                                                       self.still.read_bytes()))
+        # upload, then finalize, with the digest the publish reply carried
+        kinds = [c[0] for c in self.st.calls]
+        self.assertLess(kinds.index("publish"), kinds.index("put"))
+        self.assertLess(max(i for i, k in enumerate(kinds) if k == "put"),
+                        kinds.index("finalize"))
+        self.assertEqual(self.st.finalized, [self.st.digests[("song", 1)]])
+        self.assertTrue(item["ready"])
+        self.assertEqual([f["name"] for f in item["files"]], ["pick1.mp3", "shot-1.png"])
         self.assertEqual(item["stage"], "song")
-        self.assertEqual(item["files"], ["pick1.mp3", "shot-1.png"])
         self.assertIsNone(item["answer"])
+        # and the version is now listed for the client
+        self.assertEqual(list(self.st.items), [("song", 1)])
 
     def test_publish_twice_same_version_returns_the_existing_item(self):
         first, second = self.publish(), self.publish()
         self.assertEqual(len(self.st.published), 2)  # the service dedups
         self.assertEqual(first["stage"], second["stage"])
+        self.assertTrue(first["ready"] and second["ready"])
+        # the second publish was told the version is ready: nothing re-uploaded
+        self.assertEqual([c[0] for c in self.st.calls].count("finalize"), 1)
 
     def test_missing_file_is_refused_before_any_request(self):
         with self.assertRaises(LedgerError) as caught:
@@ -209,6 +305,48 @@ class ApprovalsBridgeTests(unittest.TestCase):
             self.publish(version=0)
         self.assertEqual(caught.exception.code, "BAD_VERSION")
         self.assertEqual(self.st.published, [])
+
+    def test_a_finalize_refusal_is_named(self):
+        # the service refuses a finalize whose digest names other content
+        real_http = AB._http
+        calls = []
+
+        def fake_http(method, url, *, key=None, body=None, timeout=20):
+            calls.append((method, url, body))
+            if url.endswith("/finalize"):
+                return 409, {"ok": False, "code": "AF-APPROVAL-REVISION",
+                             "message": "that finalize names a different presentation"}
+            return 201, {"ok": True, "ready": False,
+                         "item": {"presentation_digest": "0" * 64},
+                         "uploads": [{"name": "pick1.mp3",
+                                      "url": self.st.base_url + "/presigned/pick1.mp3"},
+                                     {"name": "shot-1.png",
+                                      "url": self.st.base_url + "/presigned/shot-1.png"}]}
+
+        AB._http = fake_http
+        self.addCleanup(setattr, AB, "_http", real_http)
+        with self.assertRaises(LedgerError) as caught:
+            self.publish()
+        self.assertEqual(caught.exception.code, "APPROVAL_FINALIZE_REFUSED")
+        self.assertTrue(calls[-1][1].endswith("/approvals/song/1/finalize"))
+
+    def test_a_finalize_transport_error_is_unknown_not_failed(self):
+        real_http = AB._http
+
+        def fake_http(method, url, *, key=None, body=None, timeout=20):
+            if url.endswith("/finalize"):
+                return 0, {"code": "TRANSPORT_UNKNOWN", "message": "timed out"}
+            return 201, {"ok": True, "ready": False, "item": {},
+                         "uploads": [{"name": "pick1.mp3",
+                                      "url": self.st.base_url + "/presigned/pick1.mp3"},
+                                     {"name": "shot-1.png",
+                                      "url": self.st.base_url + "/presigned/shot-1.png"}]}
+
+        AB._http = fake_http
+        self.addCleanup(setattr, AB, "_http", real_http)
+        with self.assertRaises(LedgerError) as caught:
+            self.publish()
+        self.assertEqual(caught.exception.code, "TRANSPORT_UNKNOWN")
 
     # 2 ------------------------------------------------------------------
     def test_answer_is_none_then_the_value_and_scoped_to_stage_version(self):
@@ -259,31 +397,36 @@ class ApprovalsBridgeTests(unittest.TestCase):
         self.assertEqual(self.st.seen_ua, {SB.STUDIO_USER_AGENT})
 
     # 6 ------------------------------------------------------------------
-    def test_image_audio_video_and_pdf_pass_the_local_gate(self):
+    def test_image_and_audio_pass_the_local_gate(self):
         for name, data in {"pick1.mp3": b"ID3\x03\x00\x00\x00song-bytes",
                            "shot-1.png": b"\x89PNG\r\n\x1a\nstill-bytes",
-                           "clip.mp4": b"\x00\x00\x00\x18ftypmp42vid-bytes",
-                           "score.pdf": b"%PDF-1.4\npdf-bytes"}.items():
+                           "take.wav": b"RIFF\x00\x00\x00\x00WAVEwave-bytes"}.items():
             f = pathlib.Path(self.tmp.name) / name
             f.write_bytes(data)
             spec = AB._file_spec(f)
             self.assertEqual(spec["name"], name)
             self.assertEqual(spec["content_type"], mimetypes.guess_type(name)[0])
             self.assertEqual(spec["bytes"], len(data))
+            self.assertEqual(spec["sha256"], hashlib.sha256(data).hexdigest())
         # png and mp3 also survive the WHOLE publish, file and all
         item = self.publish()
-        self.assertEqual(item["files"], ["pick1.mp3", "shot-1.png"])
+        self.assertEqual([f["name"] for f in item["files"]], ["pick1.mp3", "shot-1.png"])
         self.assertEqual(set(self.st.puts), {"pick1.mp3", "shot-1.png"})
 
-    def test_video_is_stopped_by_the_service_not_by_the_local_gate(self):
-        f = pathlib.Path(self.tmp.name) / "clip.mp4"
-        f.write_bytes(b"\x00\x00\x00\x18ftypmp42vid-bytes")
-        with self.assertRaises(LedgerError) as caught:
-            self.publish(files=[f])
-        # the SERVICE only takes audio/image, so the code is the service's --
-        # proof the local gate let the mp4 through instead of refusing it
-        self.assertEqual(caught.exception.code, "APPROVAL_PUBLISH_REFUSED")
+    def test_video_and_pdf_are_refused_locally_with_zero_requests(self):
+        # the service accepts audio/image only; the video is now refused HERE
+        # instead of after a request and a key use.
+        for name, data in {"clip.mp4": b"\x00\x00\x00\x18ftypmp42vid-bytes",
+                           "score.pdf": b"%PDF-1.4\npdf-bytes"}.items():
+            f = pathlib.Path(self.tmp.name) / name
+            f.write_bytes(data)
+            with self.assertRaises(LedgerError) as caught:
+                self.publish(files=[f])
+            self.assertEqual(caught.exception.code, "BAD_FILE_TYPE", name)
+            self.assertIn(name, str(caught.exception))
+        self.assertEqual(self.st.published, [])      # zero requests made
         self.assertEqual(self.st.puts, {})
+        self.assertEqual(self.st.calls, [])
 
     def test_non_media_files_are_refused_locally_with_zero_requests(self):
         for name, data in {"config.json": b"{}", "run.log": b"one\n",
