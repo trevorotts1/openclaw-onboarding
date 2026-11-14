@@ -2,12 +2,16 @@
 """U5 — the studio bridge's claim / replay / lease ledger.
 
 Copied from the skill-23 `launch_ledger.py` pattern (atomic claim, time limit,
-backoff) into skill 75, with two deliberate Windows corrections:
+backoff) into skill 75, with two deliberate corrections:
 
-  1. `os.kill(pid, 0)` is NOT a liveness check on Windows — `os.kill` there
-     calls `TerminateProcess` and KILLS the process. `pid_is_alive()` below
-     never sends a signal on Windows (plan 3.12 / risk table: "Windows
-     `os.kill(pid, 0)` kills instead of checking — fixed in U5").
+  1. The claim path NEVER probes liveness. The contract is OPTION A: a claim
+     outlives its process, so a dead holder's claim stands until its lease
+     lapses. The default claim lease is `DEFAULT_CLAIM_TTL_S = 3600.0`
+     seconds — one hour — so a crashed holder can block its order for that
+     long. `owner_pid` is recorded for diagnostics only; the claim path never
+     reads it. No pid probe exists here, so the Windows `os.kill(pid, 0)`
+     trap (plan 3.12 / risk table: "Windows `os.kill(pid, 0)` kills instead
+     of checking") cannot be triggered by this module.
   2. launch_ledger claims with an `O_CREAT|O_EXCL` LOCK FILE named from the
      record key. A studio key is `order:<client_id>:<order_id>`; a colon is an
      illegal filename character on Windows, so that mechanism cannot carry the
@@ -28,7 +32,7 @@ One authoritative SQLite store per bridge. Three guarantees:
                  expired or already ours, and is refused (rowcount 0) when a
                  live holder exists.
 
-Stdlib only: sqlite3, os, time, ctypes, hashlib, json.
+Stdlib only: sqlite3, os, time, uuid, hashlib, json.
 """
 from __future__ import annotations
 
@@ -42,7 +46,9 @@ import uuid
 LEDGER_VERSION = 2
 DEFAULT_LEASE_TTL_S = 120.0
 #: A claim lease outlives one poll gap, so a live order is never taken over
-#: while its owner is simply between ticks.
+#: while its owner is simply between ticks. It is also how long a DEAD
+#: holder's claim stands (OPTION A: the claim path never probes the pid) —
+#: one hour by default; see `_holder_live`.
 DEFAULT_CLAIM_TTL_S = 3600.0
 
 #: The durable handoff steps (SPEC 9.4). Monotonic: a step only moves forward,
@@ -54,6 +60,15 @@ STEP_WAKE_QUEUED = "wake_queued"
 STEP_EXECUTION_ACCEPTED = "execution_accepted"
 STEPS = (STEP_CLAIMED, STEP_ORDER_FETCHED, STEP_MATERIALIZED,
          STEP_WAKE_QUEUED, STEP_EXECUTION_ACCEPTED)
+
+#: The order lifecycle the studio itself runs — the same words as
+#: `mini-app/service/src/lifecycle.js` STATES. The `orders.state` column carries
+#: THIS vocabulary (see `record_order_state`); the bridge's own handoff
+#: progression is `step` above, which is a different ladder and is never
+#: written here. A row that still reads the DDL default `'claimed'` has no
+#: recorded studio state yet (the default is legacy, not a lifecycle word).
+ORDER_STATES = ("waiting", "in_production", "needs_you", "ready",
+                "delivered", "done", "cancelled", "expired")
 
 #: Studio order keys and lease names are `<kind>:<client_id>:<id>`. The colon
 #: is the reason this ledger is SQLite and not a lock file (see module doc).
@@ -122,53 +137,6 @@ def _migrate(con):
             con.execute("ALTER TABLE orders ADD COLUMN %s" % ddl)
 
 
-# --- Windows-safe liveness ---------------------------------------------------
-
-def _win_pid_alive(pid):  # pragma: no cover - exercised only on Windows
-    """OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION) handle == alive.
-
-    Query-only rights: the handle can never terminate the process. Fail
-    closed — any failure to probe reports "not alive" rather than risk a kill.
-    """
-    import ctypes
-    from ctypes import wintypes
-
-    PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
-    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
-    handle = kernel32.OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, False, int(pid))
-    if not handle:
-        return False
-    try:
-        kernel32.CloseHandle(wintypes.HANDLE(handle))
-        return True
-    except Exception:  # noqa: BLE001 - never raise out of a liveness probe
-        return False
-
-
-def pid_is_alive(pid, *, os_name=None, kill=None, win_probe=None):
-    """True when `pid` is a live process — WITHOUT signalling it on Windows.
-
-    `os_name`/`kill`/`win_probe` are injectable so the Windows branch is
-    provable on any host: a check can assert `os.kill` is never reached when
-    os_name == "nt".
-    """
-    if isinstance(pid, bool) or not isinstance(pid, int) or pid <= 0:
-        return False
-    name = os.name if os_name is None else os_name
-    if name == "nt":
-        probe = win_probe or _win_pid_alive
-        try:
-            return bool(probe(pid))
-        except Exception:  # noqa: BLE001
-            return False
-    posix_kill = kill or os.kill
-    try:
-        posix_kill(pid, 0)  # POSIX only: signal 0 is never delivered
-        return True
-    except OSError:
-        return False
-
-
 def _host_name():
     """The host that owns a claim row. Empty when the OS cannot name it, which
     makes every holder look remote (safe: a claim is then never stolen early)."""
@@ -185,7 +153,10 @@ def _holder_live(host, pid, lease_at, now):
     Takeover happens ONLY on lease expiry, never on a dead-pid probe. A
     live lease is therefore always respected, whatever the holder's pid
     state: simultaneous racers are refused deterministically. The cost is
-    that a dead holder's claim is not recoverable until its lease expires.
+    that a dead holder's claim is not recoverable until its lease expires —
+    by default one hour (`DEFAULT_CLAIM_TTL_S = 3600.0`). `pid` is accepted
+    so the contract names the recorded holder; it is deliberately never
+    probed here.
     That is the contract checks/test_st10a_claim_fence.py T6 asserts: the
     dead holder is refused while the lease is live, and taken over with a
     new fence once it has expired.
@@ -212,6 +183,9 @@ class ClaimLedger:
         #: claim_token of each order THIS instance claimed, so a same-instance
         #: re-claim resumes; another invocation naming itself alike cannot.
         self._own_tokens = {}
+        #: the fence of that same claim: a resume advances the fence, so the
+        #: in-memory continuity proof must carry the current one to land.
+        self._own_fences = {}
 
     @staticmethod
     def _connect(path):
@@ -258,7 +232,7 @@ class ClaimLedger:
 
     # -- claim ------------------------------------------------------------
     def claim_order(self, order_id, owner, *, now=None, ttl_s=DEFAULT_CLAIM_TTL_S,
-                    resume_token=None):
+                    resume_token=None, resume_fence=None):
         """Claim `order_id` for `owner`, or RESUME it. True = we hold it now.
 
         Ways to True:
@@ -269,10 +243,12 @@ class ClaimLedger:
                        it received, so a failed fetch/wake is retryable inside
                        one process.
           token resume a caller re-presenting the row's CURRENT claim token
-                       (read back from its own stored poll line) resumes the
-                       SAME claim across processes: same fence, same token,
+                       AND the fence frozen on the SAME stored poll line
+                       resumes the SAME claim across processes: same token,
                        same steps; only the lease and the holder pid roll
-                       forward. Presenting any other token — a second
+                       forward, and the fence advances by one, so the stored
+                       line must be refreshed from the row after every resume.
+                       Presenting any other token or fence — a second
                        materializer's guess, a replayed older line — is a
                        refusal when the holder is live. A crash-resume, never
                        a second materializer.
@@ -284,13 +260,14 @@ class ClaimLedger:
 
         A live lease is REFUSED whatever the holder's pid state — even when the
         caller names itself with the SAME owner string but presents no
-        continuity proof. A continuity proof (this instance's token or the
-        current stored-line token) resumes at any lease state, live or dead.
-        Simultaneous re-claims race like ST10A's original T1 case: a bare
-        presenter's fate turns on the live-lease refusal, while a continuity
-        proof decides nothing between two holders — only the first to re-seed
-        the line survives, which the ledger cannot order. Only expiry hands the
-        claim on without a continuity proof.
+        continuity proof. A continuity proof (this instance's token, or the
+        stored line's token AND fence) resumes at any lease state, live or
+        dead. Two presenters of ONE stored line are ordered by that fence: the
+        resume is a fence-guarded UPDATE that advances it, so the first
+        presenter lands, refreshes its line, and the second's stale fence is
+        refused without a write. A cross-process presenter that carries a
+        token but no fence has no continuity proof and is refused. Only expiry
+        hands the claim on without a continuity proof.
         """
         if not order_id or not owner:
             raise LedgerError("BAD_CLAIM", "order_id and owner are required")
@@ -305,6 +282,7 @@ class ClaimLedger:
             (order_id, owner, ts, STEP_CLAIMED, lease, pid, host, token))
         if cur.rowcount == 1:
             self._own_tokens[order_id] = token
+            self._own_fences[order_id] = 1
             self.con.commit()
             return True
         row = self.con.execute(
@@ -318,22 +296,34 @@ class ClaimLedger:
         if cur_owner == owner and cur_token is not None \
                 and (presented == cur_token or resume_token == cur_token):
             # The same logical owner continuing its own claim — in this
-            # process (token held in memory) or across a restart (the token
-            # carried back from the stored poll line). Same fence, same steps,
-            # same token: only the lease and the holder pid roll forward.
-            # ponytail: two simultaneous same-token presenters both resume;
-            # ST10A T1's serialized second-instance refusal already fails then
-            # (T1 uses bare same-owner claims, not tokens — proven below).
-            # Serializingsame-token resume needs a fence-guarded UPDATE plus
-            # a stored-line refresh per resume; add it when evidence shows a
-            # same-token race in the field.
-            self.con.execute(
+            # process (token held in memory) or across a restart (token AND
+            # fence carried back from the stored poll line). The resume is
+            # serialized on the fence: the guarded UPDATE advances it, so the
+            # write lands only for the presenter that still holds the row's
+            # current fence. Two presenters of one stored line race; the first
+            # moves the fence and refreshes its line, the second's guard misses
+            # and it is refused without touching the row. A cross-process
+            # presenter carrying a token but no fence has no continuity proof.
+            guard_fence = resume_fence
+            if presented == cur_token and guard_fence is None:
+                guard_fence = self._own_fences.get(order_id, fence)
+            if guard_fence is None:
+                self.con.commit()
+                return False
+            cur = self.con.execute(
                 "UPDATE orders SET lease_expires_at=?, owner_pid=?,"
-                " owner_host=? WHERE order_id=? AND owner=?"
-                " AND claim_token=?",
-                (lease, pid, host, order_id, owner, cur_token))
+                " owner_host=?, fence=fence+1 WHERE order_id=? AND owner=?"
+                " AND claim_token=? AND fence=?",
+                (lease, pid, host, order_id, owner, cur_token,
+                 int(guard_fence)))
             self.con.commit()
+            if cur.rowcount != 1:
+                # A concurrent presenter of the same stored line resumed first
+                # and moved the fence. This caller is the second materializer,
+                # not the continuity proof: refuse it without a write.
+                return False
             self._own_tokens[order_id] = cur_token
+            self._own_fences[order_id] = int(guard_fence) + 1
             return True
         if _holder_live(cur_host, cur_pid, lease_at, ts):
             # Live holder, same name or not: this caller is a SECOND
@@ -348,6 +338,7 @@ class ClaimLedger:
         self.con.commit()
         if cur.rowcount == 1:
             self._own_tokens[order_id] = token
+            self._own_fences[order_id] = fence + 1
             return True
         return False
 
@@ -357,7 +348,12 @@ class ClaimLedger:
         return row[0] if row else None
 
     def order_state(self, order_id):
-        """The claim row as a dict (owner, step, fence, token, lease), or None."""
+        """The claim row as a dict (owner, step, fence, token, lease), or None.
+
+        `state` is the studio's own order state as last recorded by
+        `record_order_state` — `'claimed'` (the legacy DDL default) means no
+        studio state has been recorded for this row yet.
+        """
         row = self.con.execute(
             "SELECT owner, claimed_at, state, step, fence, lease_expires_at,"
             " claim_token, owner_pid FROM orders WHERE order_id=?",
@@ -368,6 +364,33 @@ class ClaimLedger:
                 "state": row[2], "step": row[3], "fence": row[4],
                 "lease_expires_at": row[5], "claim_token": row[6],
                 "owner_pid": row[7]}
+
+    def record_order_state(self, order_id, state, *, owner=None, fence=None):
+        """Record the studio's lifecycle state for `order_id`. True = written.
+
+        `state` is the order state the service projects (lifecycle.js STATES),
+        so the claim row carries the last thing the studio said about this
+        order — that is what `orders.state` is for; `step` already records the
+        bridge's own handoff progression. A word outside `ORDER_STATES` is
+        refused and nothing is written: a newer service adding a state must
+        never corrupt the column, and a refusal here never blocks the poll.
+        `owner`/`fence` narrow the write to the live claim, like every other
+        fenced write, so a taken-over worker cannot stamp a stale state.
+        """
+        word = str(state or "").strip().lower()
+        if word not in ORDER_STATES:
+            return False
+        sql = "UPDATE orders SET state=? WHERE order_id=?"
+        args = [word, order_id]
+        if owner is not None:
+            sql += " AND owner=?"
+            args.append(owner)
+        if fence is not None:
+            sql += " AND fence=?"
+            args.append(int(fence))
+        cur = self.con.execute(sql, tuple(args))
+        self.con.commit()
+        return cur.rowcount == 1
 
     def advance_step(self, order_id, owner, step, *, now=None, fence=None,
                      ttl_s=DEFAULT_CLAIM_TTL_S):

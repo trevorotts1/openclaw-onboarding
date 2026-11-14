@@ -52,6 +52,8 @@ concurrency:
 
 jobs:
   launch-family-seams:
+    # Batch pull requests run only the required checks (Trevor order 2026-11-13).
+    if: ${{ !startsWith(github.head_ref, 'batch/') }}
     name: launch-family-seams
     runs-on: ubuntu-latest
     timeout-minutes: 45

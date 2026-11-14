@@ -33,6 +33,7 @@ import { AF_PAIR_EXPIRED, AF_PAIR_LOCKED, PAIRING_MAX_TRIES, attemptPairing, bui
 import { MAX_WAITING_ORDERS, checkIn, readInbox, writeInbox } from './inbox.js';
 import { AF_UP_KIND, AF_UP_NOT_ARRIVED, AF_UP_UNKNOWN, acceptUpload, pollUpload } from './uploads.js';
 import { resolveOrderState, transition, writeOperatorRecord } from './lifecycle.js';
+import { dueForDeletion } from './retention.js';
 import { AF_OPT_APPROVAL, lastCheckIn, optionLine, setOption, staleVerdict } from './options.js';
 import { listKeys, randomConnectHex } from './support.js';
 import { AF_PUSH_DISABLED, pushEnabled, registerSubscription, revokeSubscription, sendPush } from './push.js';
@@ -42,6 +43,7 @@ import { AF_LINK_KIND, linkRoute } from './link.js';
 import { deleteDraft, pageRoute, validateReplies } from './page-api.js';
 import { approvalsRoute } from './approvals-api.js';
 import { authorityPrefix } from './approval-store.js';
+import { orderRetentionKind, withRetentionKind } from './retention.js';
 
 export const SERVICE_VERSION = '0.1.0';
 export { randomConnectHex };
@@ -51,6 +53,14 @@ export { randomConnectHex };
 const ORDER_ID_FORMAT = /^r_[0-9a-f]{8}$/;
 /** The upload id shape acceptUpload mints (uploads.js). */
 const UPLOAD_ID_FORMAT = /^u_[0-9a-f]{24}$/;
+/** U-Z11 (S75-106) — the one line an order carries for the client: why the
+ *  studio needs them, or why the order was cancelled. The page draws it under
+ *  the status, so it is trimmed to what one line holds. */
+const NOTE_MAX_CHARS = 300;
+/** U-Z12 (S75-103) — the key kinds an admin may cut off here. `link` is absent
+ *  on purpose: a personal link is rotated by minting a new one (link.js), and
+ *  the admin page offers only the computer key and the box key. */
+const REVOKE_KINDS = ['box', 'machine'];
 
 // ---------------------------------------------------------------------------
 // DSR-105 — the story brief
@@ -58,22 +68,25 @@ const UPLOAD_ID_FORMAT = /^u_[0-9a-f]{24}$/;
 // The chat intake asks for the offer, the link, the audience, the character
 // and the photos; the studio page used to ask only the nine production
 // choices, so an order placed here carried no brief and the crew had nothing
-// to write from. intake_card.py now asks those five first, and this reads them
-// back out of the leading replies.
+// to write from. intake_card.py now asks those first, and this reads them
+// back out of the replies.
 //
-// They are read positionally because the page's service client forwards only
-// `title`, `replies` and `upload_ids` — there is no separate brief field on
-// the wire, and adding one would have meant a second place that defines which
-// questions exist. `test/brief.test.mjs` reads the committed ui/questions.json
-// and fails if these ids ever stop being the card's first five questions, so
-// the position cannot drift without a red test.
+// U-Z11 (S75-106) — the page sends `reply_ids` alongside `replies`: the id of
+// the question each answer belongs to, in the same order. When they are
+// present the brief is read BY ID, so a card that reorders or merges screens
+// can never put one answer where another belonged. A page older than this
+// change sends no ids, and its answers are read by position exactly as before.
+// `test/brief.test.mjs` checks these ids against the committed ui/questions.json
+// and fails if the card stops asking one of them.
 //
 // An order is NEVER refused for a thin brief: the answers are the client's
 // work, and a refusal would throw them away. It is stored marked, so the box
 // sees `brief_complete`/`brief_missing` and can ask for the rest.
 // ---------------------------------------------------------------------------
 
-/** The card's leading questions, in the order intake_card.py asks them. */
+/** The card's questions that carry the brief, in the order intake_card.py asks
+ *  them. With `reply_ids` the order below does not matter — each answer is read
+ *  by the id it travels with. */
 export const BRIEF_QUESTION_IDS = ['offer', 'link', 'audience', 'character', 'photos'];
 
 /** An option pick on the wire: "1" (a page older than S75-059) or
@@ -87,21 +100,32 @@ export const BRIEF_REQUIRED_IDS = ['offer', 'link', 'audience', 'character'];
 
 /**
  * @param {string[]} replies the client's answers, in card order
+ * @param {string[]} [replyIds] U-Z11 — the question id each answer belongs to,
+ *   same order as `replies`. Absent on a page older than S75-106.
  * @returns {{brief: Record<string,string>, complete: boolean, missing: string[]}}
  */
-export function readBrief(replies) {
+export function readBrief(replies, replyIds) {
   const list = Array.isArray(replies) ? replies : [];
   const brief = {};
-  BRIEF_QUESTION_IDS.forEach((id, i) => {
-    const value = typeof list[i] === 'string' ? list[i].trim() : '';
+  const take = (id, value) => {
+    const text = typeof value === 'string' ? value.trim() : '';
     // An OPTION PICK is not an answer someone typed. A page loaded before this
     // fix sends the nine production choices as bare numbers; since S75-059 the
     // page sends them as "<n>. <option text>" so the box can compare the text
     // with its own card. Neither shape is the client's own words, so neither
     // is stored as the brief: the number "1" or "1. MiniMax H3" must never be
     // read as their offer. Everything is still in `replies`, the replay channel.
-    if (value && !OPTION_PICK_REPLY.test(value)) brief[id] = value;
-  });
+    if (text && !OPTION_PICK_REPLY.test(text)) brief[id] = text;
+  };
+  if (Array.isArray(replyIds)) {
+    // U-Z11 — the answer names its screen; a duplicate id is read last-wins and
+    // an id the brief does not want is skipped.
+    replyIds.forEach((id, i) => {
+      if (BRIEF_QUESTION_IDS.includes(id)) take(id, list[i]);
+    });
+  } else {
+    BRIEF_QUESTION_IDS.forEach((id, i) => take(id, list[i]));
+  }
   const missing = BRIEF_REQUIRED_IDS.filter((id) => !brief[id]);
   return { brief, complete: missing.length === 0, missing };
 }
@@ -281,6 +305,26 @@ export async function handle(request, env, store, objects, deps = {}) {
     return ok({ code: code.code, expires_in: 900 }, 201);
   }
 
+  // POST /api/studio/admin/revoke — U-Z12 (S75-103): cut off a leaked key.
+  // It names a CLIENT and a KIND, never a key: the route lists the stored
+  // `key:` records, marks every ACTIVE record of that client and kind
+  // `revoked`, and answers how many it cut. A revoked key is refused by
+  // isolation.resolveKey with AF-DS-KEY-REVOKED on its next check-in. The
+  // route never takes, returns, logs or renders a key value — the fingerprint
+  // in the record name is the only form the service ever knows.
+  if (request.method === 'POST' && url.pathname === '/api/studio/admin/revoke') {
+    if (!isAdmin(env, body.admin_key)) return fail(403, 'AF-DS-ADMIN-REFUSED', 'Not the admin.');
+    if (!body.client_id) return fail(400, 'AF-DS-ADMIN-INVALID', 'client_id is required.');
+    if (!isClientId(body.client_id)) {
+      return fail(400, 'AF-DS-ADMIN-INVALID', 'client_id must be a studio-issued id (c-<32 hex>).');
+    }
+    if (!REVOKE_KINDS.includes(body.kind)) {
+      return fail(400, 'AF-DS-ADMIN-INVALID', 'kind must be "box" or "machine".');
+    }
+    const cut = await revokeKeys(store, { clientId: body.client_id, kind: body.kind });
+    return ok({ client_id: body.client_id, kind: body.kind, revoked: cut });
+  }
+
   // POST /api/studio/options — admin sets the option (Option 3 behind approval)
   if (request.method === 'POST' && url.pathname === '/api/studio/options') {
     if (!isAdmin(env, body.admin_key)) return fail(403, 'AF-DS-ADMIN-REFUSED', 'Not the admin.');
@@ -289,7 +333,8 @@ export async function handle(request, env, store, objects, deps = {}) {
     const record = await clientRecord(store, target);
     const set = setOption(record, body.option, { nowMs, approval: body.approval });
     if (!set.ok) return fail(set.code === AF_OPT_APPROVAL ? 403 : 400, set.code, set.message);
-    await store.kvPut(`client:${target}`, JSON.stringify(set.record));
+    // The client record is the enrollment record: the table's never-delete class.
+    await store.kvPut(`client:${target}`, JSON.stringify(withRetentionKind(set.record, 'enrollment_record')));
     return ok({ option: set.record.option, line: optionLine(set.record, nowMs, await lastCheckIn(objects, target)) });
   }
 
@@ -358,8 +403,17 @@ export async function handle(request, env, store, objects, deps = {}) {
 
   // POST /api/studio/checkin — the 2-minute network call. Zero model tokens.
   if (request.method === 'POST' && url.pathname === '/api/studio/checkin') {
+    // S75-083: the retention sweep runs on this path. The box already calls it
+    // every two minutes, so the service's own deletion rule gets a caller
+    // without a second service, a scheduler or a timer.
+    const swept = await sweepExpiredRecords(store, clientId, nowMs);
     const result = await checkIn(objects, { clientId, nowMs, orders: body.orders });
     if (Array.isArray(body.orders)) await writeInbox(objects, { clientId, orders: body.orders, nowMs });
+    if (swept.swept > 0) {
+      // A record the sweep deleted must leave the box's mirror too, or the box
+      // keeps replaying an order the service no longer holds.
+      await writeInbox(objects, { clientId, orders: await waitingList(store, clientId), nowMs });
+    }
     return ok(result);
   }
 
@@ -393,7 +447,7 @@ export async function handle(request, env, store, objects, deps = {}) {
     // The answers are the order: the box replays them through factory.py, so
     // they are validated against the SPEC §4 limits and stored on the record
     // (they used to be dropped — only the title survived).
-    const checked = validateReplies(body.replies === undefined ? [] : body.replies, body.upload_ids);
+    const checked = validateReplies(body.replies === undefined ? [] : body.replies, body.upload_ids, body.reply_ids);
     if (!checked.ok) return fail(400, checked.code, checked.message);
     // U-Z08 — every id the page names that is one of OUR ids (`u_` + 24 hex,
     // the shape acceptUpload mints) must be an upload THIS client asked for.
@@ -409,12 +463,16 @@ export async function handle(request, env, store, objects, deps = {}) {
       }
     }
     const orderId = askedId || `r_${randomConnectHex(4)}`;
-    const read = readBrief(checked.replies);
+    const read = readBrief(checked.replies, checked.replyIds);
     const order = {
       order_id: orderId,
       client_id: clientId,
       title: String(body.title || 'your video'),
       replies: checked.replies,
+      // U-Z11 — the id of the question each answer belongs to, kept beside the
+      // answers so the box can compare them with its own card. An old page
+      // sends none and the field is simply absent.
+      ...(checked.replyIds === undefined ? {} : { reply_ids: checked.replyIds }),
       upload_ids: checked.uploadIds,
       // DSR-105 — the brief the card asked first, beside the replies the box
       // replays. `brief` is what factory.py reads when the run starts; the
@@ -427,7 +485,8 @@ export async function handle(request, env, store, objects, deps = {}) {
       created_at: nowMs,
       updated_at: nowMs,
     };
-    await store.kvPut(`order:${clientId}:${orderId}`, JSON.stringify(order));
+    // A brand-new order is the waiting class (45 days from creation).
+    await store.kvPut(`order:${clientId}:${orderId}`, JSON.stringify(withRetentionKind(order, orderRetentionKind(order))));
     // Lock it in ends the draft: the order holds the answers now.
     await deleteDraft(objects, clientId);
     // DSF-611 — the box must see this order on its VERY first poll.
@@ -493,11 +552,28 @@ export async function handle(request, env, store, objects, deps = {}) {
       const moved = transition(JSON.parse(raw), body.event, { nowMs, actor: body.actor || auth.record.kind });
       if (!moved.ok) return fail(409, moved.code, moved.message);
       if (body.event === 'claim' || body.event === 'needs_you') moved.order.paid_started = Boolean(body.paid_started);
+      // U-Z11 (S75-106) — a refused or cancelled order says why, in the same
+      // words the client is waiting on, and the page draws that line under the
+      // status. `answer` clears it: the client has seen it and acted.
+      if (body.event === 'needs_you' || body.event === 'cancel') {
+        moved.order.note = (typeof body.reason === 'string' ? body.reason : '').trim().slice(0, NOTE_MAX_CHARS);
+      } else if (body.event === 'answer') {
+        delete moved.order.note;
+      }
       if (body.event === 'deliver' && body.delivery) {
         // The page shows WHERE the video is (GHL library first, R2 copy
-        // second). The guard above already refused anything that is not an
-        // https link of the two known kinds.
-        moved.order.delivery = { url: body.delivery.url, kind: body.delivery.kind };
+        // second). Only an https URL and one of the two known kinds are stored.
+        const deliveryUrl = typeof body.delivery.url === 'string' ? body.delivery.url : '';
+        const deliveryKind = body.delivery.kind === 'ghl' || body.delivery.kind === 'r2' ? body.delivery.kind : null;
+        if (deliveryUrl.startsWith('https://') && deliveryKind) {
+          // Plan 3.15: the GHL library copy is never deleted by the studio; the
+          // R2 fallback goes 7 days after delivery. The copy is tagged HERE, at
+          // the only place that records where the video lives.
+          const delivery = { url: deliveryUrl, kind: deliveryKind };
+          moved.order.delivery = deliveryKind === 'ghl'
+            ? withRetentionKind(delivery, 'ghl_media')
+            : withRetentionKind(delivery, 'r2_fallback_video');
+        }
       }
       // U-Z07 — the order is finished (delivered, done) or abandoned (cancel):
       // the intake files and the approval staging copies have done their job
@@ -509,7 +585,7 @@ export async function handle(request, env, store, objects, deps = {}) {
         if (cleaned.pending) moved.order.cleanup_pending = true;
         else if (moved.order.cleanup_pending) delete moved.order.cleanup_pending;
       }
-      await store.kvPut(`order:${clientId}:${orderId}`, JSON.stringify(moved.order));
+      await store.kvPut(`order:${clientId}:${orderId}`, JSON.stringify(withRetentionKind(moved.order, orderRetentionKind(moved.order))));
       await writeInbox(objects, { clientId, orders: await waitingList(store, clientId), nowMs });
       return ok({ order: project(moved.order, nowMs) });
     }
@@ -522,7 +598,7 @@ export async function handle(request, env, store, objects, deps = {}) {
         store, objects, clientId, orderId, uploadIds: moved.order.upload_ids,
       });
       if (cleaned.pending) moved.order.cleanup_pending = true;
-      await store.kvPut(`order:${clientId}:${orderId}`, JSON.stringify(moved.order));
+      await store.kvPut(`order:${clientId}:${orderId}`, JSON.stringify(withRetentionKind(moved.order, orderRetentionKind(moved.order))));
       await writeInbox(objects, { clientId, orders: await waitingList(store, clientId), nowMs });
       return ok({ order: project(moved.order, nowMs) });
     }
@@ -732,9 +808,75 @@ async function cleanupOrderFiles({ store, objects, clientId, orderId, uploadIds 
   return { pending };
 }
 
+/** U-Z12 (S75-103) — cut every ACTIVE key of one client and one kind off.
+ *  A record that is already revoked is left alone and not counted, so a second
+ *  call answers 0 and changes nothing. Records of other clients, and of other
+ *  kinds (link, machine when box is asked for), are never read past the test.
+ *  @returns {Promise<number>} how many keys this call cut off. */
+async function revokeKeys(store, { clientId, kind }) {
+  let cut = 0;
+  for (const name of await listKeys(store, 'key:')) {
+    const raw = await store.kvGet(name);
+    if (!raw) continue;
+    let record;
+    try {
+      record = JSON.parse(raw);
+    } catch {
+      continue;
+    }
+    if (!record || record.client_id !== clientId || record.kind !== kind) continue;
+    if (record.status !== 'active') continue;
+    record.status = 'revoked';
+    await store.kvPut(name, JSON.stringify(record));
+    cut += 1;
+  }
+  return cut;
+}
+
 async function clientRecord(store, clientId) {
   const raw = await store.kvGet(`client:${clientId}`);
   return raw ? JSON.parse(raw) : { client_id: clientId, option: 1, last_check_in: null };
+}
+
+/**
+ * S75-083 — the retention sweep. `retention.js` held the whole deletion rule
+ * and production never imported it, so every stored class lived forever.
+ *
+ * It runs on the check-in route, the one path the box already calls on a
+ * clock: the sweep lists the caller's OWN order records, hands them to
+ * `dueForDeletion`, and deletes exactly what the rule names. Nothing here
+ * invents a kind, a column or a key — the tag is written by the module that
+ * stores the record, and a record carrying no tag is not a retention object,
+ * so it is never swept. A record with no event yet is kept by the rule itself.
+ *
+ * The scope is the caller's `order:<client_id>:` namespace only: a sweep can
+ * never reach another client's records, and a record this parser cannot read
+ * is skipped, never guessed at.
+ *
+ * Ceiling: the adapter has no R2 delete (page-api.deleteDraft stores a marker
+ * instead), so this sweeps the KV records the retention kinds tag and leaves
+ * the R2 copies to the bucket's own lifecycle rule. Upgrade when the adapter
+ * gains objectDelete.
+ */
+export async function sweepExpiredRecords(store, clientId, nowMs) {
+  const keys = await listKeys(store, `order:${clientId}:`);
+  const items = [];
+  for (const key of keys) {
+    const raw = await store.kvGet(key);
+    if (!raw) continue;
+    let record;
+    try {
+      record = JSON.parse(raw);
+    } catch {
+      continue;
+    }
+    if (!record || typeof record.retention_kind !== 'string') continue;
+    items.push({ ...record, kind: record.retention_kind, path: key });
+  }
+  if (items.length === 0) return { swept: 0 };
+  const due = dueForDeletion(items, nowMs);
+  for (const key of due.delete) await store.kvDelete(key);
+  return { swept: due.delete.length };
 }
 
 async function waitingList(store, clientId) {

@@ -29,6 +29,8 @@ concurrency:
 
 jobs:
   shared-readiness-projection-tests:
+    # Batch pull requests run only the required checks (Trevor order 2026-11-13).
+    if: ${{ !startsWith(github.head_ref, 'batch/') }}
     name: "T-40 — shared readiness projection acceptance suite"
     runs-on: ubuntu-latest
     steps:

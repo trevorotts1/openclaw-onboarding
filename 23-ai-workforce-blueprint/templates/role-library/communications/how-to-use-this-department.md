@@ -82,52 +82,43 @@ and it will pick the right one, or you can ask for a specialist by name.
 | **Press Release Statement Specialist** | Drafts press releases, official statements, announcements. |
 | **Speech Talking Points Specialist** | Talking points for the owner - podcast guest appearances, keynote bullets, interview prep, media training docs. |
 
-### What each specialist is for, with an example request
+### What each specialist is for
 
 **Brand Messaging Specialist**
 
 - *What it is for:* Defines and maintains the brand voice + messaging hierarchy.
-- *Example request:* "Have the Brand Messaging Specialist take this on: Defines and maintains the brand voice + messaging hierarchy."
 
 **Crisis Communications Specialist**
 
 - *What it is for:* Owns crisis comms playbook.
-- *Example request:* "Have the Crisis Communications Specialist take this on: Owns crisis comms playbook."
 
 **Internal Communications Manager**
 
 - *What it is for:* Owner-to-AI-workforce + AI-workforce-to-owner messaging norms.
-- *Example request:* "Have the Internal Communications Manager take this on: Owner-to-AI-workforce + AI-workforce-to-owner messaging norms."
 
 **Investor Stakeholder Comms Specialist**
 
 - *What it is for:* Investor updates (if applicable), stakeholder communications, advisory board briefings, partner updates.
-- *Example request:* "Have the Investor Stakeholder Comms Specialist take this on: Investor updates (if applicable), stakeholder communications, advisory board briefings."
 
 **Media Pitching Specialist**
 
 - *What it is for:* Active media pitching.
-- *Example request:* "Have the Media Pitching Specialist take this on: Active media pitching."
 
 **Op Ed Ghostwriter**
 
 - *What it is for:* Writes op-eds, byline articles, LinkedIn thought-leadership posts in the owner's voice.
-- *Example request:* "Have the Op Ed Ghostwriter take this on: Writes op-eds, byline articles, LinkedIn thought-leadership posts in the owner's voice."
 
 **PR Media Relations Specialist**
 
 - *What it is for:* Relationships with reporters, journalists, podcast hosts.
-- *Example request:* "Have the PR Media Relations Specialist take this on: Relationships with reporters, journalists, podcast hosts."
 
 **Press Release Statement Specialist**
 
 - *What it is for:* Drafts press releases, official statements, announcements.
-- *Example request:* "Have the Press Release Statement Specialist take this on: Drafts press releases, official statements, announcements."
 
 **Speech Talking Points Specialist**
 
 - *What it is for:* Talking points for the owner - podcast guest appearances, keynote bullets, interview prep, media training docs.
-- *Example request:* "Have the Speech Talking Points Specialist take this on: Talking points for the owner - podcast guest appearances, keynote bullets, interview prep."
 
 
 ---

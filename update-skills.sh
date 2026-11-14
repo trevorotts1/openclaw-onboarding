@@ -708,6 +708,10 @@ fi
 #  FLEET_PREFLIGHT_ENFORCE_FROM; storage and memory pressure are enforced now.
 #  A missing helper or python3, or any internal error, PROCEEDS (fail open).
 #  FLEET_PREFLIGHT_BYPASS=1 skips it (operator).
+#  SCOPE (BFX-010): --onboarding-only / ONBOARDING_ONLY=1 is a repo-only run, and --only
+#  "<skills>" is judged by the providers those skills use (PROVIDER_SKILLS in the helper): a
+#  provider billing failure that the run cannot touch never pauses it. FLEET_PREFLIGHT_NO_NOTIFY=1
+#  sends no client note.
 # ============================================================
 fleet_preflight_checks() {
     if [ "${FLEET_PREFLIGHT_BYPASS:-0}" = "1" ]; then
@@ -722,8 +726,24 @@ fleet_preflight_checks() {
     if [ -z "$_py" ] || ! command -v python3 >/dev/null 2>&1; then
         echo "  [preflight] helper or python3 not available on this box -- proceeding (fail open)"; return 0
     fi
+    # BFX-010 scope: a repo-only run (--onboarding-only / ONBOARDING_ONLY=1) and an --only run
+    # of provider-unrelated skills skip the provider-billing gates; storage and memory still
+    # apply. This block runs before main() parses its arguments, so read the saved ones here.
+    local _scope="" _only="" _a _next=0
+    [ "${ONBOARDING_ONLY:-0}" = "1" ] && _scope="repo-only"
+    for _a in ${SELF_SYNC_ARGS[@]+"${SELF_SYNC_ARGS[@]}"}; do
+        if [ "$_next" = "1" ]; then _only="$_a"; _next=0; continue; fi
+        case "$_a" in
+            --onboarding-only) _scope="repo-only" ;;
+            --only) _next=1 ;;
+            --only=*) _only="${_a#--only=}" ;;
+        esac
+    done
+    local _scope_args=()
+    [ -n "$_scope" ] && _scope_args+=(--scope "$_scope")
+    [ -n "$_only" ] && _scope_args+=(--only "$_only")
     _rc=0
-    _out="$(python3 "$_py" --phase checks --root "${OC_CONFIG:-}" 2>&1)" || _rc=$?
+    _out="$(python3 "$_py" --phase checks --root "${OC_CONFIG:-}" ${_scope_args[@]+"${_scope_args[@]}"} 2>&1)" || _rc=$?
     printf '%s\n' "$_out" | sed 's/^/  /'
     if [ "$_rc" = "10" ]; then
         echo ""
@@ -1664,7 +1684,15 @@ oc_skill_box_state_paths() {
     # the exact two paths tests/w10-canary/upgrade_canary.py seeds and asserts
     # survive ("interrupted-run state preserved"). A shipped copy would still
     # win: neither path is in oc_skill_box_state_overrides_shipped.
-    75-drama-song-ad-factory) printf '%s\n' ".checkpoint-pending" "scripts/core/state_store.py.part" ;;
+    # assets/face_landmarker.task is the third path (S75-046). It is the
+    # sha256-pinned mediapipe face model both lip-sync gates read, downloaded
+    # once per box INTO the skill folder, and the release ships no copy of it.
+    # Without this entry the wholesale remove+copy deleted the only copy on
+    # disk on every roll, and the gates -- which are fail-closed on purpose --
+    # then refused every lip-sync job until the box downloaded it again. Same
+    # default rule as the two above: a shipped copy would win, and there is
+    # none, so the box copy is put back.
+    75-drama-song-ad-factory) printf '%s\n' ".checkpoint-pending" "scripts/core/state_store.py.part" "assets/face_landmarker.task" ;;
   esac
   return 0
 }
@@ -1977,12 +2005,18 @@ else:
             "Nothing was written. Fix the read error and re-run the updater.")
 
 # Remove any "## ... UPDATE PENDING ..." or "## ... ONBOARDING PENDING ..."
+# The body ALSO stops at any '<!-- BEGIN ... -->' / '<!-- END ... -->' marker
+# comment (fixed 2026-11-13): the notice is appended at EOF, and a block a
+# skill installer re-renders at EOF (Skill 38's SKILL38_RUNTIME_INVARIANTS)
+# lands directly after it. The old body pattern ran to the next '## ' line,
+# which is the block's OWN heading, so it deleted the BEGIN marker on every
+# run (BEGIN=0 / END=1) and the block re-broke after every repair.
 # section: from its "## " header up to (but not including) the next top-level
 # "## " heading, or EOF. Non-greedy, multiline. This sweeps EVERY such section,
 # including stale ones left by earlier waves, not just the newest.
 pattern = re.compile(
     r'(?m)^##[^\n]*(?:UPDATE PENDING|ONBOARDING PENDING)[^\n]*\n'   # the header
-    r'(?:(?!^##\s).*\n?)*',                                         # body until next "## "
+    r'(?:(?!^##\s)(?!^[ \t]*<!--\s*(?:BEGIN|END)\b).*\n?)*',                                         # body until next "## "
 )
 # Measured in BYTES, because it is compared against byte sizes below. Counting
 # CHARACTERS here under-counted every non-ASCII character in a removed section
@@ -7730,26 +7764,41 @@ PYEOF
     # keep the files the reviewed manifest targets (stashed here, put back below
     # only where the release does not ship them). No manifest = empty list =
     # the update behaves exactly as before, so existing installs are not broken.
+    # This block only sets _x11_skip; the `continue` that skips this skill's
+    # remaining steps sits on the first line after the end marker below, so the
+    # marked text stays runnable on its own and the test can prove the skip.
     _x11_rc=0
     _x11_keep=""
+    _x11_keep_list=""
+    _x11_skip=0
     if [ "$SKILL_NAME" = "75-drama-song-ad-factory" ]; then
       _x11_out="$(bash "$SKILL_DIR/scripts/core/x11_install_gate.sh" 2>&1)" || _x11_rc=$?
       echo "$_x11_out"
     fi
     if [ "$_x11_rc" = "20" ]; then
       echo "  ✗ [x11-gate] skill $SKILL_NAME NOT updated (refuse mode); existing copy left intact"
-    else
-      if [ "$_x11_rc" != "0" ]; then
+      _x11_skip=1
+    elif [ "$_x11_rc" != "0" ]; then
+      _x11_keep_list="$(bash "$SKILL_DIR/scripts/core/x11_install_gate.sh" preserve-list 2>/dev/null || true)"
+      if [ -n "$_x11_keep_list" ]; then
         _x11_keep="$(mktemp -d "${TMPDIR:-/tmp}/oc-x11-keep.XXXXXX" 2>/dev/null || true)"
-        while IFS= read -r _x11_rel; do
-          [ -n "$_x11_rel" ] && [ -n "$_x11_keep" ] && [ -f "$SKILLS_DIR/$SKILL_NAME/$_x11_rel" ] || continue
-          mkdir -p "$_x11_keep/$(dirname "$_x11_rel")" \
-            && cp -p "$SKILLS_DIR/$SKILL_NAME/$_x11_rel" "$_x11_keep/$_x11_rel" \
-            || echo "  ⚠ [x11-gate] could not set aside $_x11_rel"
-        done <<X11EOF
-$(bash "$SKILL_DIR/scripts/core/x11_install_gate.sh" preserve-list 2>/dev/null)
+        if [ -z "$_x11_keep" ]; then
+          echo "  ✗ [x11-gate] could not make a keep folder - skill 75 left untouched this roll"
+          _x11_skip=1
+        else
+          while IFS= read -r _x11_rel; do
+            [ -n "$_x11_rel" ] || continue
+            [ -f "$SKILLS_DIR/$SKILL_NAME/$_x11_rel" ] || continue
+            mkdir -p "$_x11_keep/$(dirname "$_x11_rel")" \
+              && cp -p "$SKILLS_DIR/$SKILL_NAME/$_x11_rel" "$_x11_keep/$_x11_rel" \
+              || echo "  ⚠ [x11-gate] could not set aside $_x11_rel"
+          done <<X11EOF
+$_x11_keep_list
 X11EOF
+        fi
       fi
+    fi
+    if [ "$_x11_skip" = "0" ]; then
     oc_skill_box_state_save "$SKILL_NAME" "$SKILLS_DIR/$SKILL_NAME" || true
     oc_remove_tree_guarded "$SKILLS_DIR/$SKILL_NAME" "skill"
 
@@ -7774,7 +7823,9 @@ X11EOF
       fi
     fi
     # <<< X11-GATE-END
+    [ "${_x11_skip:-0}" = 1 ] && continue
 
+    # >>> X11-GATE-TAIL-BEGIN (S75-X11 gate tail: pin, verify, Updated; extracted verbatim by tests/test_x11_install_gate.py)
     # ENGINE-PIN RE-STAMP (2026-10-13). Skill 59's `verify.sh stamp-pin`
     # recomputes ENGINE-PIN.sha256 over its enforcement set (the entry script,
     # ENGINE-MANIFEST.json and the four guard scripts), and the entry's own
@@ -7819,6 +7870,7 @@ X11EOF
     echo "    Updated: $SKILL_NAME"
     # FIX 1: state transition -- files are on disk = DOWNLOADED (NOT installed).
     command -v obs_set_status >/dev/null 2>&1 && obs_set_status "$SKILL_NAME" "downloaded"
+    # <<< X11-GATE-TAIL-END
   done
 
   # ----------------------------------------------------------
@@ -12112,6 +12164,33 @@ LEPY
     bash "$_ACT_LOOP" --role client --skills-dir "$SKILLS_DIR" 2>&1 | tail -6 || true
   else
     echo "  ℹ activate-loop-protection.sh not in bundle — loop protection wiring skipped (older bundle)"
+  fi
+
+  # Skill 60 baseline refresh (v1.3.0). A fleet update is the operator-sanctioned
+  # change, so the early-warning baseline is re-pinned at the end of it. Without
+  # this a box compared itself against the baseline from its FIRST install
+  # forever (one box: August), and every approved model/skill change since was
+  # a permanent "drift" finding. Only re-pins a box that already has a baseline;
+  # never installs Skill 60. Best-effort.
+  # Never as root over a box-user-owned baseline: the rewrite would leave a
+  # root-owned 0600 file the box user's tick can no longer read.
+  _EWS_ENTRY="$SKILLS_DIR/60-zhc-early-warning-system/ews-entry.sh"
+  _EWS_BASE_OK=1
+  if [ "$(id -u)" = "0" ]; then
+    _EWS_BASE_OK="$(python3 -c 'import os,sys
+sys.path.insert(0, sys.argv[1])
+from ews_ledger import default_state_dir
+p = default_state_dir() / "baseline.json"
+print(1 if (not p.exists() or os.stat(p).st_uid == 0) else 0)' "$SKILLS_DIR/60-zhc-early-warning-system/scripts" 2>/dev/null || echo 0)"
+  fi
+  if [ "$_EWS_BASE_OK" != "1" ]; then
+    echo "  ℹ Skill 60 baseline refresh skipped (running as root; baseline owned by the box user)"
+  elif [ -f "$_EWS_ENTRY" ] && bash "$_EWS_ENTRY" baseline show >/dev/null 2>&1; then
+    if bash "$_EWS_ENTRY" baseline pin >/dev/null 2>&1; then
+      echo "  ✓ Skill 60 early-warning baseline refreshed after the update"
+    else
+      echo "  ⚠ Skill 60 baseline refresh failed (update continues; re-run: ews-entry.sh baseline pin)"
+    fi
   fi
 
   # ----------------------------------------------------------

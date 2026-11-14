@@ -25,14 +25,21 @@ EXACTLY — see docstring there):
 
 KEY RESOLUTION (mirrors crypto.ts resolveInterviewKey(), READ-ONLY on the
 Python side — this module NEVER creates key material, only reads what the
-Node side already created; a missing salt file / unset env means decryption
+Node side already created; a missing key file / unset env means decryption
 is genuinely impossible, not a bug to paper over):
   1. MC_INTERVIEW_SECRET env var (trimmed, SHA-256 -> 32 bytes)
   2. MC_BOX_SECRET env var (same treatment)
-  3. Per-box salt file ~/.openclaw/.interview-key-salt (>=32 bytes, written by
-     the Node side on first encrypt) + os.uname hostname, SHA-256(hostname
-     bytes + salt[:32]) -> 32 bytes.
-  If none of the three are available, key resolution fails explicitly — the
+  3. Per-box key file ~/.openclaw/.interview-key-salt.v2 (64 bytes: 32 salt
+     bytes followed by the 32-byte key; written by the Node side on first
+     use). Bytes 32 to 63 ARE the key — the machine name takes no part.
+  4. LEGACY, older boxes: ~/.openclaw/.interview-key-salt (exactly 32 bytes)
+     + socket.gethostname(), SHA-256(hostname bytes + salt) -> 32 bytes. Read
+     only; the Node side writes the v2 file and re-encrypts on its first
+     successful decrypt. A legacy file whose box was renamed cannot open its
+     own answers — which is the defect WF-011 fixes, and why v2 exists.
+  A key file that exists but is unreadable or the wrong size is reported as
+  unusable key material and is never overwritten or guessed around.
+  If none of the sources are available, key resolution fails explicitly — the
   caller gets a clear "no key material available" reason, never a silent
   wrong-key decrypt attempt (AEAD would reject it anyway, but we want the
   diagnostic to say WHY).
@@ -80,16 +87,56 @@ except Exception:  # noqa: BLE001
 
 # ── Key resolution (mirrors crypto.ts resolveInterviewKey(), read-only) ──────
 
-def _salt_path() -> Path:
-    return Path(os.environ.get("HOME", "~")).expanduser() / ".openclaw" / ".interview-key-salt"
+LEGACY_SALT_FILE = ".interview-key-salt"      # v1: 32 salt bytes, key = hostname + salt
+KEY_FILE_V2 = ".interview-key-salt.v2"        # v2: 32 salt bytes + 32 key bytes, no hostname
+V2_FILE_BYTES = 64
+LEGACY_FILE_BYTES = 32
+
+
+def _key_dir() -> Path:
+    return Path(os.environ.get("HOME", "~")).expanduser() / ".openclaw"
+
+
+def _legacy_salt_path() -> Path:
+    return _key_dir() / LEGACY_SALT_FILE
+
+
+def _v2_key_path() -> Path:
+    return _key_dir() / KEY_FILE_V2
+
+
+def _read_key_file(path: Path, expected_bytes: int, label: str) -> tuple:
+    """
+    Read one key file. Returns (bytes, None) when it exists at exactly the
+    expected size, (None, None) when it does not exist, and (None, reason)
+    when it exists but cannot be used. A file that exists is never overwritten
+    or guessed around — an unreadable or wrongly sized one is evidence of a
+    damaged box, and the caller gets a reason instead of a wrong-key attempt.
+    """
+    try:
+        data = path.read_bytes()
+    except FileNotFoundError:
+        return None, None
+    except OSError as exc:
+        return None, f"no key material: {label} at {path} is unreadable ({exc})"
+    if len(data) != expected_bytes:
+        return None, (
+            f"no key material: {label} at {path} is {len(data)} bytes, expected "
+            f"{expected_bytes}; it is never overwritten"
+        )
+    return data, None
 
 
 def resolve_interview_key() -> tuple:
     """
     Resolve the 32-byte chacha20-poly1305 key using the EXACT same priority
     order as crypto.ts resolveInterviewKey(), but READ-ONLY: this side never
-    creates a salt file (only the Node encrypt path does that; on a box where
-    encryption happened, the salt file the encrypter created is already there).
+    creates key material (only the Node encrypt path writes key files).
+
+    The v2 key file carries the key itself (bytes 32 to 63), so the machine
+    name is not part of the derivation and a renamed box still reads its own
+    answers (WF-011). A LEGACY 32-byte salt file is still accepted with today's
+    hostname derivation, for answers encrypted before v2 existed.
 
     Returns (key: bytes|None, reason: str). key is None iff no key material
     could be resolved (reason explains which sources were tried and why each
@@ -100,22 +147,28 @@ def resolve_interview_key() -> tuple:
     if from_env:
         return hashlib.sha256(from_env.encode("utf-8")).digest(), "env"
 
-    salt_path = _salt_path()
-    try:
-        salt = salt_path.read_bytes()
-    except OSError:
-        return None, (
-            f"no key material: MC_INTERVIEW_SECRET/MC_BOX_SECRET unset and no salt "
-            f"file at {salt_path} (the Node encrypter creates this on first use — "
-            f"its absence means either encryption never ran on this box, or this "
-            f"reader is running as a different user/HOME than the encrypter)"
-        )
-    if len(salt) < 32:
-        return None, f"salt file at {salt_path} is shorter than 32 bytes (corrupt)"
+    v2_path = _v2_key_path()
+    material, reason = _read_key_file(v2_path, V2_FILE_BYTES, "v2 interview key file")
+    if reason is not None:
+        return None, reason
+    if material is not None:
+        return material[32:64], "key-file-v2"
 
-    hostname = socket.gethostname() or "unknown-box"
-    key = hashlib.sha256(hostname.encode("utf-8") + salt[:32]).digest()
-    return key, "salt-file"
+    legacy_path = _legacy_salt_path()
+    salt, reason = _read_key_file(legacy_path, LEGACY_FILE_BYTES, "legacy interview salt file")
+    if reason is not None:
+        return None, reason
+    if salt is not None:
+        hostname = socket.gethostname() or "unknown-box"
+        return hashlib.sha256(hostname.encode("utf-8") + salt).digest(), "legacy-salt-file"
+
+    return None, (
+        f"no key material: MC_INTERVIEW_SECRET/MC_BOX_SECRET unset and neither "
+        f"{v2_path} nor {legacy_path} exists (the Node encrypter creates the v2 "
+        f"file on first use — its absence means either encryption never ran on "
+        f"this box, or this reader is running as a different user/HOME than the "
+        f"encrypter)"
+    )
 
 
 def is_encrypted_envelope(value: str | None) -> bool:

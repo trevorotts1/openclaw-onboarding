@@ -34,6 +34,37 @@ echo "== marked block shape =="
 grep -qxF '<!-- RESCUE_ESCALATION_BOXNAME_V3 -->' "$TPL" && ok "start marker is RESCUE_ESCALATION_BOXNAME_V3 (own line)" || bad "start marker line missing or changed"
 grep -qxF '<!-- END RESCUE_ESCALATION_BOXNAME_V3 -->' "$TPL" && ok "end marker is RESCUE_ESCALATION_BOXNAME_V3 (own line)" || bad "end marker line missing or changed"
 
+echo "== rescue-identity contract =="
+"$PY" - "$TPL" <<'PY'
+import json, re, sys
+t = open(sys.argv[1], encoding="utf-8").read()
+lines = t.splitlines()
+i = lines.index("<!-- RESCUE_ESCALATION_BOXNAME_V3 -->")
+j = lines.index("<!-- END RESCUE_ESCALATION_BOXNAME_V3 -->")
+assert i < j, "END marker must come after the start marker"
+ident_line = lines[i + 1]
+print("  second line: " + ident_line)
+assert ident_line.startswith("<!-- rescue-identity"), "line after the start marker must be the rescue-identity line"
+m = re.search(r"rescue-identity.*?:\s*(\{.*\})\s*-->", ident_line)
+assert m, "rescue-identity line must carry a JSON object"
+ident = json.loads(m.group(1))
+expected = {"boxName", "clientName", "agentName", "boxType", "returnTo"}
+assert set(ident) == expected, "identity keys are %r, expected %r" % (sorted(ident), sorted(expected))
+assert ident["boxName"] == "{{BOX_NAME}}", "boxName token is not {{BOX_NAME}}"
+assert ident["clientName"] == "{{CLIENT}}", "clientName token is not {{CLIENT}}"
+assert ident["agentName"] == "{{AGENT}}", "agentName token is not {{AGENT}}"
+assert ident["boxType"] == "{{BOX_TYPE}}", "boxType token is not {{BOX_TYPE}}"
+assert ident["returnTo"] == "{{RETURN_TO}}", "returnTo token is not {{RETURN_TO}}"
+blocks = [b for b in re.findall(r"```[^\n]*\n(.*?)\n```", t, re.S) if "rr_escalate.py" in b and " send " in b]
+assert blocks, "the template no longer teaches an rr_escalate.py send command"
+send = blocks[0]
+assert "--person" in send, "the taught send command lost its --person flag"
+assert "--client" in send and "--agent" in send and "--box-type" in send, "the taught send command lost its identity flags"
+assert "--problem-file" in send and "--tried-file" in send, "the taught send command lost its problem/tried file flags"
+assert not [ln for ln in t.splitlines() if ln.startswith("curl ")], "a hand-built curl line is back in the template"
+PY
+if [ $? -eq 0 ]; then ok "identity line and taught send command match the contract"; else bad "identity line or taught send command broke the contract"; fi
+
 SECOND="$("$PY" - "$TPL" <<'PY'
 import sys
 lines = open(sys.argv[1], encoding="utf-8").read().splitlines()

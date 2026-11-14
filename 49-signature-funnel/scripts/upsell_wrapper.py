@@ -193,6 +193,23 @@ def plan_document_hash(launch: Mapping[str, Any]) -> str:
         bindable, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
 
 
+def _billing_vocab():
+    """The shared billing vocabulary (shared-utils/signature_launch_contract/billing.py), loaded by path;
+    missing = the recurring terms cannot be derived, so the caller fails closed."""
+    import importlib.util
+    mod = sys.modules.get("signature_launch_billing")
+    if mod is None:
+        path = (Path(__file__).resolve().parents[2] / "shared-utils" / "signature_launch_contract" / "billing.py")
+        if not path.is_file():
+            raise EnrichmentError(["the shared billing vocabulary (billing.py) is not installed, so a "
+                                   "recurring upsell's terms cannot be derived"])
+        spec = importlib.util.spec_from_file_location("signature_launch_billing", path)
+        mod = importlib.util.module_from_spec(spec)
+        sys.modules["signature_launch_billing"] = mod
+        spec.loader.exec_module(mod)
+    return mod
+
+
 def format_amount_minor(amount_minor: int, currency: str) -> str:
     """Integer minor units rendered without floats (doc 02 section 3);
     the same rule adapter_common.render_disclosure applies."""
@@ -218,15 +235,17 @@ def render_disclosure_text(amount_minor: int, currency: str, billing_type: str,
     terms = recurring_terms or {}
     interval = terms["interval"]
     count = terms["interval_count"]
-    per = interval if count == 1 else "every %d %ss" % (count, interval)
+    # The recurrence phrase is adapter_common._interval_phrase's: "per month" for a single
+    # interval, "every 3 months" for a count (a quarter is three months), never "per every 3 months".
+    per = "per %s" % interval if count == 1 else "every %d %ss" % (count, interval)
     cycles = terms.get("cycles")
     parts = ["%s today," % amount]
     if cycles is None:
-        parts.append("then %s per %s until cancelled, charged to your "
+        parts.append("then %s %s until cancelled, charged to your "
                      "original payment method when you accept."
                      % (amount, per))
     elif cycles >= 2:
-        parts.append("then %s per %s for %d further payments (%d payments "
+        parts.append("then %s %s for %d further payments (%d payments "
                      "total), charged to your original payment method "
                      "when you accept." % (amount, per, cycles - 1, cycles))
     else:
@@ -425,6 +444,30 @@ def _disclosure_block(offer: Mapping[str, Any], sidecar: Mapping[str, Any],
             return None
         terms = None
     else:
+        record_interval = price.get("recurring_interval") if billing == "recurring" else None
+        if record_interval and not side_terms:
+            # The record price states how often it bills (recurring_interval): the disclosure terms come
+            # from that approved fact, so no separate sidecar is needed for a plain recurring upsell.
+            try:
+                unit, count = _billing_vocab().terms_for_interval(record_interval)
+            except ValueError as exc:
+                problems.append(f"disclosure.recurring_terms: {exc}")
+                return None
+            side_terms = {"interval": unit, "interval_count": count, "cycles": None,
+                          "first_recurring_charge": None, "trial_amount_minor": None,
+                          "trial_period": None}
+        elif record_interval and isinstance(side_terms, dict):
+            try:
+                unit, count = _billing_vocab().terms_for_interval(record_interval)
+            except ValueError as exc:
+                problems.append(f"disclosure.recurring_terms: {exc}")
+                return None
+            if (side_terms.get("interval"), side_terms.get("interval_count")) != (unit, count):
+                problems.append(
+                    f"disclosure.recurring_terms: the sidecar says {side_terms.get('interval')!r} x "
+                    f"{side_terms.get('interval_count')!r} but the record price bills {record_interval!r} "
+                    f"({unit!r} x {count}); the contradiction fails closed")
+                return None
         if not isinstance(side_terms, dict) or \
                 "interval" not in side_terms or "interval_count" not in side_terms:
             problems.append(

@@ -15,6 +15,9 @@
 //   * a 409 answer rejects with the service's own code;
 //   * two taps of Lock it in before the first resolves send ONE order request
 //     (S75-071), and both taps see the same answer;
+//   * lockIn forwards reply_ids, so the service reads the brief by the id each
+//     answer travels with and never by position (U-Z11, S75-006);
+//   * cancelOrder posts one cancel event to that order's own state route;
 //   * listInbox/postInbox keep their "not built yet" answer.
 //
 // It does NOT drive a real browser or talk to the real service, so it cannot
@@ -85,9 +88,23 @@ async function loadPage({ hash, answer }) {
     () => svc.saveDraft({ replies: ["1", "yes"], upload_ids: ["u_1"] }),
     { replies: ["1", "yes"], upload_ids: ["u_1"] });
   await expect("getQuestions", "GET", "/questions.json", () => svc.getQuestions());
+  // U-Z11 — the ids travel WITH the answers. This rule names them, so a
+  // transport that stops forwarding reply_ids goes red here (JSON.stringify
+  // would otherwise drop an undefined and the rule would pass, which is how
+  // the ids were lost once already).
   await expect("lockIn", "POST", "/api/studio/orders",
-    () => svc.lockIn({ title: "Drama video", replies: ["1", "yes"], upload_ids: ["u_1"], order_id: "r_0123abcd" }),
-    { title: "Drama video", replies: ["1", "yes"], upload_ids: ["u_1"], order_id: "r_0123abcd" });
+    () => svc.lockIn({ title: "Drama video", replies: ["1", "yes"], reply_ids: ["offer", ""], upload_ids: ["u_1"], order_id: "r_0123abcd" }),
+    { title: "Drama video", replies: ["1", "yes"], reply_ids: ["offer", ""], upload_ids: ["u_1"], order_id: "r_0123abcd" });
+
+  // U-Z11 — "Continue" closes the old order: one cancel event on the order's
+  // own state route, and the id is encoded into the path.
+  await expect("cancelOrder", "POST", "/api/studio/orders/r_abc123/state",
+    () => svc.cancelOrder("r_abc123"), { event: "cancel" });
+  calls.length = 0;
+  await svc.cancelOrder("r/../x");
+  rule("cancelOrder encodes the order id into the path",
+    calls[0] && calls[0].path === "/api/studio/orders/r%2F..%2Fx/state",
+    calls[0] ? calls[0].path : "no fetch");
 
   // S75-071 — one tap, one order. Two lockIn calls made before the first one
   // resolves join ONE request only when they name the same order id, and both

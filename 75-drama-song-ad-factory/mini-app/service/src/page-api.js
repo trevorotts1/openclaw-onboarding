@@ -19,7 +19,7 @@
 // itself is index.js's. A check-in carrying neither field costs nothing.
 //
 // ALSO EXPORTS (consumed by index.js in W2, not routes themselves):
-//   validateReplies(replies, uploadIds) — the SPEC §4 limits, one place
+//   validateReplies(replies, uploadIds, replyIds) — the SPEC §4 limits, one place
 //   deleteDraft(objects, clientId)      — R2 has no delete, so `{}` marker
 //
 // ctx (the shape W2 builds after authorizeClient; the same object link.js and
@@ -34,6 +34,7 @@
 import { scopePath } from './ids.js';
 import { DEFAULT_OPTION, OPTIONS, lastCheckIn, optionLine } from './options.js';
 import { listKeys } from './support.js';
+import { orderRetentionKind, withRetentionKind } from './retention.js';
 
 export const AF_ORDER_INVALID = 'AF-DS-ORDER-INVALID';
 export const AF_DRAFT_KIND = 'AF-DS-DRAFT-KIND';
@@ -41,12 +42,13 @@ export const AF_DRAFT_KIND = 'AF-DS-DRAFT-KIND';
 /** SPEC §4 limits. */
 export const MAX_REPLIES = 20;
 export const MAX_REPLY_CHARS = 2000;
+/** U-Z11 — a question id is a short slug ("offer", "episode_length"), never a
+ *  block of text a client can post at the service. */
+export const MAX_REPLY_ID_CHARS = 64;
 export const MAX_UPLOAD_IDS = 10;
 export const MAX_SESSION_ORDERS = 20;
 
 const DRAFT_FILE = 'draft.json';
-/** The R2 object carries no delete in the adapter, so "no draft" is `{}`. */
-const DRAFT_NONE = '{}';
 
 /** SPEC A2/B1 — the remembered Agnes answer as the page reads it. A value
  *  outside this list is never stored: an unrecognised report leaves the stored
@@ -60,10 +62,16 @@ const AGNES_REMEMBERED_DEFAULT = 'unknown';
  * the box unchanged — intake_card.py stays the only semantic validator; this
  * is the size/type gate that keeps a bad body from reaching storage.
  *
- * @returns {{ok:true, replies:string[], uploadIds:string[]} |
+ * U-Z11 (S75-106) — `replyIds` is the third, optional list: the id of the
+ * question each answer belongs to, in the same order as `replies`. A page older
+ * than this change sends none, and its answers are read by position as before.
+ * A page that sends them must send one per answer: a list that has drifted out
+ * of step would put the brief on the wrong screens, so it is refused here.
+ *
+ * @returns {{ok:true, replies:string[], uploadIds:string[], replyIds?:string[]} |
  *           {ok:false, code:string, message:string}}
  */
-export function validateReplies(replies, uploadIds) {
+export function validateReplies(replies, uploadIds, replyIds) {
   if (!Array.isArray(replies)) {
     return { ok: false, code: AF_ORDER_INVALID, message: 'replies must be the list of answers you gave.' };
   }
@@ -90,7 +98,19 @@ export function validateReplies(replies, uploadIds) {
       return { ok: false, code: AF_ORDER_INVALID, message: 'every upload id must be text.' };
     }
   }
-  return { ok: true, replies, uploadIds: ids };
+  const out = { ok: true, replies, uploadIds: ids };
+  // Absent means an old page: no ids to check, and the brief reads by position.
+  if (replyIds === undefined || replyIds === null) return out;
+  if (!Array.isArray(replyIds) || replyIds.length !== replies.length) {
+    return { ok: false, code: AF_ORDER_INVALID, message: 'Every answer travels with the question it answers.' };
+  }
+  for (const replyId of replyIds) {
+    if (typeof replyId !== 'string' || replyId.length > MAX_REPLY_ID_CHARS) {
+      return { ok: false, code: AF_ORDER_INVALID, message: 'every question id must be short text.' };
+    }
+  }
+  out.replyIds = replyIds;
+  return out;
 }
 
 /**
@@ -141,7 +161,7 @@ async function absorbAgnesCheckIn(ctx) {
   if (AGNES_REMEMBERED.includes(body.agnes_remembered)) {
     const record = await clientRecord(store, clientId);
     if (record.agnes_remembered !== body.agnes_remembered) {
-      await store.kvPut(`client:${clientId}`, JSON.stringify({ ...record, agnes_remembered: body.agnes_remembered }));
+      await store.kvPut(`client:${clientId}`, JSON.stringify(withRetentionKind({ ...record, agnes_remembered: body.agnes_remembered }, 'enrollment_record')));
       stored += 1;
     }
   }
@@ -156,16 +176,17 @@ async function absorbAgnesCheckIn(ctx) {
       continue;
     }
     if (JSON.stringify(order.agnes_progress || null) === JSON.stringify(progress)) continue;
-    await store.kvPut(`order:${clientId}:${orderId}`, JSON.stringify({ ...order, agnes_progress: progress, agnes_progress_at: nowMs }));
+    await store.kvPut(`order:${clientId}:${orderId}`, JSON.stringify(withRetentionKind({ ...order, agnes_progress: progress, agnes_progress_at: nowMs }, orderRetentionKind(order))));
     stored += 1;
   }
   return { stored };
 }
 
 /** R2 has no delete in the adapter, so an empty marker stands for "no draft".
- *  W2 calls this after Lock it in. */
+ *  W2 calls this after Lock it in. The draft holds the client's intake answers,
+ *  so it carries the intake_answer class even when it is only the `{}` marker. */
 export async function deleteDraft(objects, clientId) {
-  await objects.objectPut(scopePath(clientId, DRAFT_FILE), DRAFT_NONE);
+  await objects.objectPut(scopePath(clientId, DRAFT_FILE), JSON.stringify(withRetentionKind({}, 'intake_answer')));
 }
 
 // ---------------------------------------------------------------------------
@@ -222,7 +243,8 @@ async function draftRoute(ctx) {
   // between an upload and Lock it in still sends the ids with the order.
   await objects.objectPut(
     scopePath(auth.client_id, DRAFT_FILE),
-    JSON.stringify({ replies: checked.replies, upload_ids: checked.uploadIds, updated_at }),
+    // The draft is the client's intake answers: the intake_answer class.
+    JSON.stringify(withRetentionKind({ replies: checked.replies, upload_ids: checked.uploadIds, updated_at }, 'intake_answer')),
   );
   return ok({ updated_at });
 }

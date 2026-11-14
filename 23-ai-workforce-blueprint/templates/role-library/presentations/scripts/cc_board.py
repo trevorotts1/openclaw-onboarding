@@ -1596,11 +1596,21 @@ def register_deliverables(
 # None (UNDETERMINED), which the caller treats as DENIED — undetermined never
 # opens the gate. See the CC route GET /api/tasks/[id]/messages/owner-ids.
 # ---------------------------------------------------------------------------
-def list_owner_message_ids(task_id: str, env: Optional[dict] = None) -> Optional[frozenset]:
-    """Resolve `task_id` to the set of REAL owner-authored message ids in CC
-    task_activities. Returns a frozenset of ids on success; None when the board
-    is disabled, the endpoint errors, or the result cannot be proven (the caller
-    must fail CLOSED on None — a skip that cannot be verified is DENIED)."""
+def list_owner_message_ids(task_id: str, env: Optional[dict] = None) -> Optional[dict]:
+    """Resolve `task_id` to the REAL owner-authored messages in CC
+    task_activities. Returns a mapping ``{message_id: text}`` when the endpoint
+    supplies each row's text, a frozenset of ids when it supplies ids only, and
+    None when the board is disabled, the endpoint errors, or the result cannot
+    be proven (the caller must fail CLOSED on None — a skip that cannot be
+    verified is DENIED).
+
+    PD-305: an id proves a message EXISTS; only its text proves WHAT the owner
+    approved. So the text is carried through when the board can return it
+    (PD-305b's read endpoint), and the ids-only shape stays a frozenset — the
+    caller treats that as UNDETERMINED for any gate-naming check. Membership
+    (`owner_msg_id in result`) means the same thing for both shapes, which is
+    why every existing consumer keeps working unchanged.
+    """
     if not task_id or not str(task_id).strip():
         return None
     cfg = board_config(env)
@@ -1618,13 +1628,22 @@ def list_owner_message_ids(task_id: str, env: Optional[dict] = None) -> Optional
              "treated as DENIED (undetermined never opens the gate).")
         return None
     ids = set()
+    texts = {}
     for item in parsed:
         if isinstance(item, str) and item.strip():
             ids.add(item.strip())
         elif isinstance(item, dict):
             v = item.get("id")
             if isinstance(v, str) and v.strip():
-                ids.add(v.strip())
+                mid = v.strip()
+                ids.add(mid)
+                text = item.get("text")
+                if isinstance(text, str) and text.strip():
+                    texts[mid] = text
+    if texts:
+        # A row WITH text makes the whole answer a text answer: a run whose
+        # board can return text is never silently downgraded to ids-only.
+        return {mid: texts.get(mid, "") for mid in ids}
     return frozenset(ids)
 
 

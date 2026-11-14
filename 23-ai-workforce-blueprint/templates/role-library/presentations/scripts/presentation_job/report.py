@@ -232,7 +232,11 @@ class Reporter:
                      phase_id: Optional[str] = None,
                      reason: Optional[str] = None,
                      force: bool = False) -> None:
-        """kind in {ack, progress, blocked, done}. BLOCKED and DONE ignore quiet hours.
+        """kind in {ack, progress, blocked, done, waiting}. BLOCKED, DONE and
+        WAITING ignore quiet hours. WAITING is the PD-048b person-pause notice:
+        it is never throttled away, because a client who is the reason the run
+        is paused must actually be told (it counts under sent["waiting"], not
+        under the progress budget).
 
         PD-206b: `force=True` bypasses the throttle for a message the caller has
         already proven is due exactly once (the operator-review sentence is
@@ -375,7 +379,9 @@ class Reporter:
         if force:
             # PD-206b: the caller has already proven this message is due once.
             return True
-        if kind in ("ack", "done"):
+        if kind in ("ack", "done", "waiting"):
+            # PD-048b: a WAITING notice is the message that explains the pause;
+            # the 10-minute progress budget must never swallow it.
             return True
         if kind == "blocked":
             if phase_id and reason:

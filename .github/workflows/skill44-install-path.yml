@@ -44,6 +44,8 @@ jobs:
   # (no `.main` suffix).
   # ─────────────────────────────────────────────────────────────────────────────
   install-path-wrapper-exec:
+    # Batch pull requests run only the required checks (Trevor order 2026-11-13).
+    if: ${{ !startsWith(github.head_ref, 'batch/') }}
     name: "Install-path: wrapper exec line is cli_anything.gohighlevel (no .main)"
     runs-on: ubuntu-latest
 
@@ -135,6 +137,8 @@ jobs:
   # is installed (the root cause this PR fixes).
   # ─────────────────────────────────────────────────────────────────────────────
   install-path-core-updates-action:
+    # Batch pull requests run only the required checks (Trevor order 2026-11-13).
+    if: ${{ !startsWith(github.head_ref, 'batch/') }}
     name: "Install-path: INSTALL.md contains CORE_UPDATES auto-apply (Action 7)"
     runs-on: ubuntu-latest
 
@@ -184,6 +188,8 @@ jobs:
   # dead caf. These checks are pure static + bash -n + functional exit-code tests.
   # ─────────────────────────────────────────────────────────────────────────────
   install-path-env-wiring:
+    # Batch pull requests run only the required checks (Trevor order 2026-11-13).
+    if: ${{ !startsWith(github.head_ref, 'batch/') }}
     name: "Install-path: GHL env wired into gateway-inherited env + fail-loud verify"
     runs-on: ubuntu-latest
 
@@ -289,7 +295,7 @@ jobs:
       - install-path-wrapper-exec
       - install-path-core-updates-action
       - install-path-env-wiring
-    if: always()
+    if: ${{ !startsWith(github.head_ref, 'batch/') && (always()) }}
     steps:
       - name: Check all install-path jobs passed
         run: |

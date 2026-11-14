@@ -12,11 +12,15 @@
 > department?" or "how do I use the Audio Demonstration Specialist?", this is the
 > document your agent reads to answer you.
 
+## What to say
+
+Say: "I need a presentation." I will ask a few questions, one at a time. You will pick a look from 3 samples. Then I build it and send it to you.
+
 ---
 
 ## 1. What This Department Does (in plain language)
 
-End-to-end branded webinar and slide deck production: copy writing, price ladder choreography, image prompt authoring, brand consistency, QC at every phase, image generation submission, media library management, PPTX assembly, adversarial review, hook development, live-presentation coaching, verified delivery, and department self-healing. Coordinates with Marketing (deck brief), CRM (GHL media library), Research (proof gaps), and the client's OpenClaw agent (discovery interview, approval gates, final delivery). **Canonical Render Module (mandatory for all producing roles):** All image generation in this department MUST use the shared module at `23-ai-workforce-blueprint/templates/role-library/presentations/scripts/build_deck.py`. Per-deck renderers are FORBIDDEN (AF-RENDERER auto-fail). The canonical module validates model sovereignty, prompt character floor, and structural block requirements before any API call, and writes the render record to `working/checkpoints/process_manifest.json` (via `write_process_manifest`) for QC verification. The older `templates/presentation-render/render_deck.py` + `render_manifest.json` path is RETIRED - its checks were folded into `build_deck.py` and nothing imports it; see `docs/LEGACY-RETIREMENT.md`. **The Intelligence Engines (the department's named capability set):** Every deck is run against NINE named INTELLIGENCE ENGINES  -  Facial, Lighting, Typography, Story, World, Pricing, Hook, Recap, and Product (roadmap)  -  each defined with a verification check and auto-failed failure modes in `sops/SOP-ENGINE-00-INTELLIGENCE-ENGINES-FRAMEWORK.md`. The framework promotes the three engines the image pipeline already ran by name (Facial, Audience, World) and the two pitch mechanics (Hook, Recap) into the full set, and wires each engine to its enforcement (SOP-SLIDE-00 Section 8).
+This department turns an idea you want to present into a finished slide deck. It writes the words, plans the story, generates the images, checks the work, and delivers the final file. You answer a few questions at the start, pick a look from three samples, and the team builds the rest.
 
 In one sentence: **End-to-end branded webinar/slide decks: copy, price ladder, images, QC, delivery**
 
@@ -31,11 +35,11 @@ figures out who handles it and routes it for you.
 Reach for this department when you want any of the following:
 
 - Turns the QC-passed Presenters Speech into a marketable AUDIO DEMO.
-- Creates and owns the STYLE BLOCK (800-1,500 characters).
-- Capacity and Reliability Engineer for BlackCEO, the specialist responsible for ensuring every deck run has.
-- The front door for one specific request.
+- The department Step -1 (runs BEFORE the Director).
+- Creates and owns the STYLE BLOCK (800-1,500 characters): 3 hex codes with roles, typography system.
+- Capacity and Reliability Engineer for the company.
+- The front door for one specific request: "turn THIS into a presentation." The owner hands over a source (a video, an audio training, a webpage, a blog post, a report, a white paper, a recorded meeting) and this role turns it into a build-ready presentation BRIEF the existing deck pipeline can build from directly.
 - Owns P9-DELIVER multi-destination deck delivery.
-- First-Time-User Onboarding specialist for the Presentations department at the company, the Onboarding Host.
 
 If you are not sure whether a request belongs here, ask anyway. The department
 head will either take it or hand it to the right department. You never have to
@@ -73,151 +77,132 @@ and it will pick the right one, or you can ask for a specialist by name.
 | Specialist | What it is for |
 | --- | --- |
 | **Audio Demonstration Specialist** | Turns the QC-passed Presenters Speech into a marketable AUDIO DEMO. |
-| **Brand Steward** | Creates and owns the STYLE BLOCK (800-1,500 characters). |
-| **Capacity Reliability Engineer** | Capacity and Reliability Engineer for BlackCEO, the specialist responsible for ensuring every deck run has. |
-| **Content To Presentation Architect** | The front door for one specific request. |
+| **Brainstorming Buddy Presentations** | The department Step -1 (runs BEFORE the Director). |
+| **Brand Steward** | Creates and owns the STYLE BLOCK (800-1,500 characters): 3 hex codes with roles, typography system, logo placement rule. |
+| **Capacity Reliability Engineer** | Capacity and Reliability Engineer for the company. |
+| **Content To Presentation Architect** | The front door for one specific request: "turn THIS into a presentation." The owner hands over a source (a video, an audio training, a webpage, a blog post, a report, a white paper, a recorded meeting) and this role turns it into a build-ready presentation BRIEF the existing deck pipeline can build from directly. |
 | **Delivery Concierge** | Owns P9-DELIVER multi-destination deck delivery. |
 | **First Time Onboarding Presentations** | First-Time-User Onboarding specialist for the Presentations department at the company, the Onboarding Host. |
 | **Fish Audio / Expression Specialist** | Makes the audio demonstration of the Presenter's Speech sound like a real. |
 | **Hook Strategist** | Owns the Hook Lab end-to-end. |
-| **Media Librarian GHL Updater** | Media Librarian and GHL Updater for BlackCEO, the specialist responsible for two critical tasks in the CLIENT WEBINAR. |
-| **Offer Price Strategist** | Offer and Price Strategist for BlackCEO, the specialist who owns the single highest-stakes choreography in any webinar. |
-| **Pptx Assembly Specialist** | Assembles the final PowerPoint from the verified renders through the shipped `build_deck.assemble_pptx()` (python-pptx. |
+| **Media Librarian GHL Updater** | Media Librarian and GHL Updater for the company. |
+| **Offer Price Strategist** | Offer and Price Strategist for the company. |
+| **Pptx Assembly Specialist** | Assembles the final PowerPoint from the verified renders through the shipped `build_deck.assemble_pptx()` (python-pptx, 10 x 5.625 inch slides, full-bleed), never a per-deck assembler. |
 | **Presenter Coach** | Owns the live-presentation preparation layer. |
-| **Presenters Guide Specialist** | Converts the QC-passed deck + the Presenter Coach talk track into a beautiful speaker-facing OUTLINE (one block per. |
+| **Presenters Guide Specialist** | Converts the QC-passed deck + the Presenter Coach talk track into a beautiful speaker-facing OUTLINE (one block per section and per slide: slide thumbnail ref, the one point to drive home, the beat/transition, the time budget, ladder/hook cues). |
 | **Presenters Speech Writer** | Writes the FULL word-for-word "here is what you say" script keyed to each slide. |
-| **Slide Copywriter** | Writes every word on every slide (P4-COPY). |
+| **Slide Copywriter** | Writes every word on every slide (P4-COPY): headlines (max 9 words), subheads (max 18 words), body bullets (max 3). |
 | **Slide Image Creator** | Writes one 15-element image prompt per slide (P-STYLE-PREVIEW, P4-RENDER). |
 | **Slide Submitter** | Supervises the one canonical render command that sends every prompt to Kie.ai. |
 | **Typography Architect** | Runs as a PF-DESIGN gate AFTER the Brand Steward emits the STYLE BLOCK and the Director emits arc_allocation.json. |
-| **Prompt Author** | You write each slide's rich image prompt to the prompt budget of the pinned image model (rule 12. |
+| **Prompt Author** | You write each slide's rich image prompt to the prompt budget of the pinned image model (rule 12 of `07-kie-setup/references/kie-common-rules.md`)  -  the full per-slide specification that the renderer sends to the image model VERBATIM. |
 | **Attention Content Strategist** | Owns the strategic CONTENT SPINE of every deck at Phase P0B-PRIORITY (order 0.2), between intake and the arc. |
-| **Signature Presentation Architect** | Owns the Signature Presentation deck type end to end (Skill 51). |
-| **Image-Grounding Steward ("The Witness")** | You own one question no other role owns. |
-| **Per-Client Representation and Casting Director ("The Mirror")** | You own one question end to end. |
-| **Scripts Specialist** | Owns the text layer of every deck. |
+| **Signature Presentation Architect** | Owns the Signature Presentation deck type end to end (Skill 51): the 4-phase methodology (Avatar 1-11 -> Signature Story 12-24 -> Transformational Teaching 25-60 -> Purpose Pitch 61-100, expanding to >=100 slides), the 8-Questions-in-ONE-block intake, frame selection (rulebook / vault / quest / original), and the structure ledger. |
+| **Image-Grounding Steward ("The Witness")** | You own one question no other role owns: does this slide's imagery depict a concrete moment from THIS client's specific method, message, book, or offer. |
+| **Per-Client Representation and Casting Director ("The Mirror")** | You own one question end to end: does the finished deck's cast match THIS client's actual audience? |
+| **Scripts Specialist** | Owns the text layer of every deck: the word-for-word narration track, the headline and body copy on each slide. |
 
-### What each specialist is for, with an example request
+### What each specialist is for
 
 **Audio Demonstration Specialist**
 
 - *What it is for:* Turns the QC-passed Presenters Speech into a marketable AUDIO DEMO.
-- *Example request:* "Have the Audio Demonstration Specialist take this on: Turns the QC-passed Presenters Speech into a marketable AUDIO DEMO."
+
+**Brainstorming Buddy Presentations**
+
+- *What it is for:* The department Step -1 (runs BEFORE the Director).
 
 **Brand Steward**
 
-- *What it is for:* Creates and owns the STYLE BLOCK (800-1,500 characters).
-- *Example request:* "Have the Brand Steward take this on: Creates and owns the STYLE BLOCK (800-1,500 characters)."
+- *What it is for:* Creates and owns the STYLE BLOCK (800-1,500 characters): 3 hex codes with roles, typography system, logo placement rule.
 
 **Capacity Reliability Engineer**
 
-- *What it is for:* Capacity and Reliability Engineer for BlackCEO, the specialist responsible for ensuring every deck run has.
-- *Example request:* "Have the Capacity Reliability Engineer take this on: Capacity and Reliability Engineer for BlackCEO."
+- *What it is for:* Capacity and Reliability Engineer for the company.
 
 **Content To Presentation Architect**
 
-- *What it is for:* The front door for one specific request.
-- *Example request:* "Have the Content To Presentation Architect take this on: The front door for one specific request."
+- *What it is for:* The front door for one specific request: "turn THIS into a presentation." The owner hands over a source (a video, an audio training, a webpage, a blog post, a report, a white paper, a recorded meeting) and this role turns it into a build-ready presentation BRIEF the existing deck pipeline can build from directly.
 
 **Delivery Concierge**
 
 - *What it is for:* Owns P9-DELIVER multi-destination deck delivery.
-- *Example request:* "Have the Delivery Concierge take this on: Owns P9-DELIVER multi-destination deck delivery."
 
 **First Time Onboarding Presentations**
 
 - *What it is for:* First-Time-User Onboarding specialist for the Presentations department at the company, the Onboarding Host.
-- *Example request:* "Have the First Time Onboarding Presentations take this on: First-Time-User Onboarding specialist for the Presentations department at the company."
 
 **Fish Audio / Expression Specialist**
 
 - *What it is for:* Makes the audio demonstration of the Presenter's Speech sound like a real.
-- *Example request:* "Have the Fish Audio / Expression Specialist take this on: Makes the audio demonstration of the Presenter's Speech sound like a real."
 
 **Hook Strategist**
 
 - *What it is for:* Owns the Hook Lab end-to-end.
-- *Example request:* "Have the Hook Strategist take this on: Owns the Hook Lab end-to-end."
 
 **Media Librarian GHL Updater**
 
-- *What it is for:* Media Librarian and GHL Updater for BlackCEO, the specialist responsible for two critical tasks in the CLIENT WEBINAR.
-- *Example request:* "Have the Media Librarian GHL Updater take this on: Media Librarian and GHL Updater for BlackCEO, the specialist responsible for two."
+- *What it is for:* Media Librarian and GHL Updater for the company.
 
 **Offer Price Strategist**
 
-- *What it is for:* Offer and Price Strategist for BlackCEO, the specialist who owns the single highest-stakes choreography in any webinar.
-- *Example request:* "Have the Offer Price Strategist take this on: Offer and Price Strategist for BlackCEO, the specialist who owns the single."
+- *What it is for:* Offer and Price Strategist for the company.
 
 **Pptx Assembly Specialist**
 
-- *What it is for:* Assembles the final PowerPoint from the verified renders through the shipped `build_deck.assemble_pptx()` (python-pptx.
-- *Example request:* "Have the Pptx Assembly Specialist take this on: Assembles the final PowerPoint from the verified renders through the shipped."
+- *What it is for:* Assembles the final PowerPoint from the verified renders through the shipped `build_deck.assemble_pptx()` (python-pptx, 10 x 5.625 inch slides, full-bleed), never a per-deck assembler.
 
 **Presenter Coach**
 
 - *What it is for:* Owns the live-presentation preparation layer.
-- *Example request:* "Have the Presenter Coach take this on: Owns the live-presentation preparation layer."
 
 **Presenters Guide Specialist**
 
-- *What it is for:* Converts the QC-passed deck + the Presenter Coach talk track into a beautiful speaker-facing OUTLINE (one block per.
-- *Example request:* "Have the Presenters Guide Specialist take this on: Converts the QC-passed deck + the Presenter Coach talk track into a beautiful."
+- *What it is for:* Converts the QC-passed deck + the Presenter Coach talk track into a beautiful speaker-facing OUTLINE (one block per section and per slide: slide thumbnail ref, the one point to drive home, the beat/transition, the time budget, ladder/hook cues).
 
 **Presenters Speech Writer**
 
 - *What it is for:* Writes the FULL word-for-word "here is what you say" script keyed to each slide.
-- *Example request:* "Have the Presenters Speech Writer take this on: Writes the FULL word-for-word "here is what you say" script keyed to each slide."
 
 **Slide Copywriter**
 
-- *What it is for:* Writes every word on every slide (P4-COPY).
-- *Example request:* "Have the Slide Copywriter take this on: Writes every word on every slide (P4-COPY)."
+- *What it is for:* Writes every word on every slide (P4-COPY): headlines (max 9 words), subheads (max 18 words), body bullets (max 3).
 
 **Slide Image Creator**
 
 - *What it is for:* Writes one 15-element image prompt per slide (P-STYLE-PREVIEW, P4-RENDER).
-- *Example request:* "Have the Slide Image Creator take this on: Writes one 15-element image prompt per slide (P-STYLE-PREVIEW, P4-RENDER)."
 
 **Slide Submitter**
 
 - *What it is for:* Supervises the one canonical render command that sends every prompt to Kie.ai.
-- *Example request:* "Have the Slide Submitter take this on: Supervises the one canonical render command that sends every prompt to Kie.ai."
 
 **Typography Architect**
 
 - *What it is for:* Runs as a PF-DESIGN gate AFTER the Brand Steward emits the STYLE BLOCK and the Director emits arc_allocation.json.
-- *Example request:* "Have the Typography Architect take this on: Runs as a PF-DESIGN gate AFTER the Brand Steward emits the STYLE BLOCK and the Director."
 
 **Prompt Author**
 
-- *What it is for:* You write each slide's rich image prompt to the prompt budget of the pinned image model (rule 12.
-- *Example request:* "Have the Prompt Author take this on: You write each slide's rich image prompt to the prompt budget of the pinned image model."
+- *What it is for:* You write each slide's rich image prompt to the prompt budget of the pinned image model (rule 12 of `07-kie-setup/references/kie-common-rules.md`)  -  the full per-slide specification that the renderer sends to the image model VERBATIM.
 
 **Attention Content Strategist**
 
 - *What it is for:* Owns the strategic CONTENT SPINE of every deck at Phase P0B-PRIORITY (order 0.2), between intake and the arc.
-- *Example request:* "Have the Attention Content Strategist take this on: Owns the strategic CONTENT SPINE of every deck at Phase P0B-PRIORITY (order 0.2)."
 
 **Signature Presentation Architect**
 
-- *What it is for:* Owns the Signature Presentation deck type end to end (Skill 51).
-- *Example request:* "Have the Signature Presentation Architect take this on: Owns the Signature Presentation deck type end to end (Skill 51)."
+- *What it is for:* Owns the Signature Presentation deck type end to end (Skill 51): the 4-phase methodology (Avatar 1-11 -> Signature Story 12-24 -> Transformational Teaching 25-60 -> Purpose Pitch 61-100, expanding to >=100 slides), the 8-Questions-in-ONE-block intake, frame selection (rulebook / vault / quest / original), and the structure ledger.
 
 **Image-Grounding Steward ("The Witness")**
 
-- *What it is for:* You own one question no other role owns.
-- *Example request:* "Have the Image-Grounding Steward ("The Witness") take this on: You own one question no other role owns."
+- *What it is for:* You own one question no other role owns: does this slide's imagery depict a concrete moment from THIS client's specific method, message, book, or offer.
 
 **Per-Client Representation and Casting Director ("The Mirror")**
 
-- *What it is for:* You own one question end to end.
-- *Example request:* "Have the Per-Client Representation and Casting Director ("The Mirror") take this on: You own one question end to end."
+- *What it is for:* You own one question end to end: does the finished deck's cast match THIS client's actual audience?
 
 **Scripts Specialist**
 
-- *What it is for:* Owns the text layer of every deck.
-- *Example request:* "Have the Scripts Specialist take this on: Owns the text layer of every deck."
+- *What it is for:* Owns the text layer of every deck: the word-for-word narration track, the headline and body copy on each slide.
 
 
 ---
@@ -285,53 +270,3 @@ document:
 *This guide is generated for {{COMPANY_NAME}} by the AI Workforce Blueprint
 (Skill 23). It is regenerated whenever the department's roster changes so it
 always matches the specialists you actually have.*
-
----
-
-## Canonical Entry Command (the only way to build a deck)
-
-A deck is built by running, and ONLY by running, the single sanctioned entry script:
-
-```
-23-ai-workforce-blueprint/scripts/presentation-canonical-entry.sh   --run-dir <RUN_DIR> --slides slides.json --out <OUT>.pptx
-```
-
-That entry script runs three fail-closed gates before dispatching the canonical orchestrator (`run_signature_deck.py` -> `build_deck.py`):
-
-1. **Deps check** - all required runtime dependencies are present.
-2. **Bypass-scan** - refuses to start if any hand-rolled renderer or assembler exists in the run directory. Specifically: any non-canonical `*.py` defining a 2048x1152 `Image.new` slide canvas (AF-LOCAL-CANVAS), a native `add_textbox`/`add_text_box` overlay (AF-CANONICAL-RENDER-BYPASS), or a direct kie `createTask` call outside `build_deck.py` (AF-CANONICAL-RENDER-BYPASS).
-3. **Version/hash pin** - the deployed renderer must be in lockstep with the SOP/manifest stack and match the pinned governed head.
-
-**`python3 working/*.py` (writing and running your own per-deck driver/submit/assemble scripts) is the ungoverned path and is FORBIDDEN (AF-CANONICAL-RENDER-BYPASS).**
-
-A gate may be skipped ONLY by an explicit, logged owner/founder approval token recorded in `working/checkpoints/process_manifest.json` (`owner_skip_approval`: `approved:true` + `approved_by` + `reason`, naming the exact gate code). Agents may NEVER skip a gate silently or by their own choice.
-
----
-
-## AF-CANONICAL-RENDER-BYPASS - No Hand-Rolled Renderer (AUTO-FAIL)
-
-All image generation MUST route through the canonical module `build_deck.py`. A hand-rolled per-deck assembler or renderer is FORBIDDEN. Specifically, the presence of `add_textbox` / `add_text_box` calls or a direct kie `createTask` call outside `build_deck.py` in any run-directory `*.py` file triggers AF-CANONICAL-RENDER-BYPASS. This auto-fail also fires when the entry check detects an attempt to bypass the sanctioned entry script.
-
----
-
-## AF-LOCAL-CANVAS - No Local Canvas Fabrication (AUTO-FAIL)
-
-A slide image MUST be generated via kie.ai GPT Image 2.6 Sunburst. A slide image fabricated locally (e.g. `canvas = Image.new('RGB', (2048, 1152), ...)`) is FORBIDDEN. The presence of a 2048x1152 `Image.new` call in any run-directory `*.py` file triggers AF-LOCAL-CANVAS.
-
----
-
-## AF-IMAGE-QC-VISION - Real Pixel Image QC Required (AUTO-FAIL)
-
-The image-QC pass is NOT satisfied by a JSON score alone. The QC report at `working/qc/image_qc_report.json` MUST declare a `vision_model` (the AI model that performed the pixel/vision read) and a `slides` list with at least one per-slide entry containing `baked: true`. A QC report that lacks the `vision_model` field or an empty `slides` list triggers AF-IMAGE-QC-VISION.
-
----
-
-## AF-DARK-SLIDE - No Dark Slides (AUTO-FAIL)
-
-Slides MUST use LIGHT / bright backgrounds by DEFAULT. DARK or black-background slides are NOT ALLOWED unless the CLIENT EXPLICITLY requests a dark theme via the intake flag `client_dark_theme: true`. Light is the default; dark is opt-in by client request only.
-
-- DEFAULT: Light / bright background slides
-- ALLOWED dark: Only when `client_dark_theme: true` is set in working/copy/intake.json
-- AUTO-FAIL: Any dark/black/near-black default background without `client_dark_theme: true`
-
-**To enable a dark theme:** during onboarding, explicitly tell the Director of Presentations you want dark slides. The Director will record `client_dark_theme: true` in your intake.json. Without this explicit request, all slides default to light/bright backgrounds and any dark background specification is an AUTO-FAIL blocked by the build pipeline.
