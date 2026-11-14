@@ -29,7 +29,8 @@ import wave
 
 ENV_RATE = 1000          # envelope samples per second -> 1 ms resolution
 MAX_LAG_S = 0.5          # search window either side
-LEAD_S = 0.35            # lead-in before the first word (H2 input spec)
+LEAD_S = 0.30            # lead-in before the first word: ONE value everywhere
+                         # (lip_gate.IMPROVED_INPUT, lipsync_clips.PRE_S; U-U03)
 TAIL_S = 0.2             # tail after the last word
 
 

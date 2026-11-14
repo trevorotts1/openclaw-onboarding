@@ -17,8 +17,9 @@ Brown ads). One place, six rules; every later run follows it.
                    input. Never on a checker verdict.
   5. EDIT          trim to audio length, place at the Suno word time corrected
                    by the measured stem offset, lanczos 720x1280 -> 1080x1920,
-                   conform to native fps by DROPPING frames (never invented),
-                   all ffmpeg through load_governor.
+                   conform to the 30 fps master by MOTION INTERPOLATION
+                   (minterpolate mci -- the assembler's rule, fps_conform),
+                   never by dropping frames, all ffmpeg through load_governor.
   6. QC            items 8 and 11 accept KEPT_BEST and flagged rows that carry
                    a strip path.
 
@@ -174,6 +175,37 @@ def mouth_strip_argv(clip, out_png, duration_s, crop=None, ffmpeg="ffmpeg"):
                            ffmpeg=ffmpeg)
 
 
+#: The stage name this question asks for, and the stages the Studio approvals
+#: service accepts. Read 2026-11-12: mini-app/service/src/approvals-api.js
+#: STAGES = ['script', 'song', 'storyboard'] and shared-bridge/approvals_bridge
+#: refuses any other stage with BAD_STAGE. A "lipsync" question therefore takes
+#: the CHAT channel: it is never published on the approvals page (U-U03).
+HELD_STAGE = "lipsync"
+STUDIO_STAGES = ("script", "song", "storyboard")
+
+
+def held_question(segment, strip, line_id=None):
+    """The ONE ``needs_you`` question for a clip HELD FOR A PERSON.
+
+    A sung line whose take the checker cannot confirm (lip_gate's UNDETERMINED /
+    LIP_HELD_FOR_PERSON) stops for a person: they look at the mouth strip and
+    answer. This builds the question the existing channel sends -- event
+    "needs_you", one question, the mouth strip attached -- and nothing else; it
+    spends nothing and opens no network.
+    """
+    strip = str(strip or "")
+    if not strip:
+        raise ValueError("LIP_HELD_NEEDS_STRIP")
+    return {"event": "needs_you", "stage": HELD_STAGE,
+            "line_id": line_id if line_id is not None else safe_name(segment),
+            "channel": "studio" if HELD_STAGE in STUDIO_STAGES else "chat",
+            "text": "This line could not be confirmed by the checker. Look at "
+                    "the mouth strip: is the mouth moving with the words?",
+            "choices": [{"n": 1, "label": "The mouth is fine"},
+                        {"n": 2, "label": "Redo this line"}],
+            "files": [strip]}
+
+
 # 5 -----------------------------------------------------------------------
 
 def placement_s(word_start, lead_s, stem_offset_s, cut_corrected):
@@ -186,9 +218,15 @@ def placement_s(word_start, lead_s, stem_offset_s, cut_corrected):
 
 
 def fps_filter(src_fps, dst_fps):
-    """Frame-rate conform by DROPPING frames only. Equal or lower source: no
-    filter (a missing frame is never invented, no minterpolate, no dup)."""
-    return "fps=%g" % dst_fps if float(src_fps) > float(dst_fps) + 1e-3 else ""
+    """Frame-rate conform to the master: the assembler's rule wins.
+
+    Equal rates pass through with no filter; a differing rate is motion
+    interpolated (``minterpolate=fps=<dst>:mi_mode=mci``, final_assembler
+    fps_conform.build_conform_argv) and NEVER dropped or duplicated by the
+    plain ``fps`` filter -- the old frame-dropping rule is gone (U-U03).
+    """
+    from final_assembler import fps_conform as FC
+    return FC.build_conform_argv(src_fps, dst_fps)
 
 
 def edit_plan(clip, out, audio_len_s, word_start, lead_s, stem_offset_s,
