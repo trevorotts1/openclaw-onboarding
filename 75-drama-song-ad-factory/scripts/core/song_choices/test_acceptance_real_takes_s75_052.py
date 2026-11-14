@@ -46,7 +46,7 @@ sys.dont_write_bytecode = True
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 CORE = os.path.dirname(HERE)
-for _sub in ("", "song_choices", "song_dispatch", "suno_recipe"):
+for _sub in ("suno_recipe", "song_dispatch", "song_choices", ""):
     _p = os.path.join(CORE, _sub)
     if _p not in sys.path:
         sys.path.insert(0, _p)
