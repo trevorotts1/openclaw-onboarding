@@ -194,8 +194,16 @@ def test_card_studio_json_prints_the_export():
     env = json.loads(p.stdout)
     assert env["format"] == "studio-json" and env["version"] == 0
     assert env["question_count"] == len(env["questions"]) > 0
-    q = env["questions"][0]
-    assert q["question"] and q["example"] and q["options"]
+    # post-U-E01 schema: a typed screen sends no option row (the page asks for
+    # the words itself) and carries the example it shows; a choice screen sends
+    # its options. The pre-U-E01 "Type it in" option row is gone.
+    typed = [q for q in env["questions"] if q["typed"]]
+    choice = [q for q in env["questions"] if not q["typed"]]
+    assert typed and choice, (len(typed), len(choice))
+    for q in typed:
+        assert q["question"] and q["example"] and q["options"] == [], q["id"]
+    for q in choice:
+        assert q["question"] and q["options"], q["id"]
 
 
 def test_card_studio_json_is_a_real_choice():
