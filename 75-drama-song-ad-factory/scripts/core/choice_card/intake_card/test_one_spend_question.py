@@ -17,14 +17,17 @@ from choice_card.intake_card import intake_card as IC  # noqa: E402
 import intake as I  # noqa: E402
 
 MONEY = re.compile(r"spend|budget|cost|price|\$|dollar", re.I)
-N = len(IC.QUESTIONS)
-SPEND_AT = [q["id"] for q in IC.QUESTIONS].index("spend")
+#: The card a plain replay asks (S75-006): a run with no folder keeps the list
+#: a resumed run keeps, so the fixture and the list it replays agree.
+LEGACY = IC.LEGACY_QUESTIONS
+N = len(LEGACY)
+SPEND_AT = [q["id"] for q in LEGACY].index("spend")
 #: the answers that come before BUDGET -- the story brief is typed, the choices picked
-BEFORE = IC.example_replies()[:SPEND_AT]
+BEFORE = IC.example_replies(LEGACY)[:SPEND_AT]
 
 
 def _qs(price=None, limit=None):
-    return [IC.spend_question(price, limit) if q["id"] == "spend" else q for q in IC.QUESTIONS]
+    return [IC.spend_question(price, limit) if q["id"] == "spend" else q for q in LEGACY]
 
 
 def test_no_story_question_mentions_money():
@@ -107,7 +110,7 @@ def test_no_price_no_limit_recommends_nothing_and_asks_for_a_dollar_amount():
 
 
 def _ask(price=None, limit=None, from_brief=False):
-    m = IC.render_step(SPEND_AT + 1, [IC.spend_question(price, limit, from_brief) if q["id"] == "spend" else q for q in IC.QUESTIONS])
+    m = IC.render_step(SPEND_AT + 1, [IC.spend_question(price, limit, from_brief) if q["id"] == "spend" else q for q in LEGACY])
     return m[m.index("What's the most"):m.index("\n\nI recommend") if "\n\nI recommend" in m else None].strip()
 
 
