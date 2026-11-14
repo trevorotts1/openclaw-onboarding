@@ -136,7 +136,7 @@ def _space_free_run_dir(td):
 
     trust_boundary_observability._DIVERGENCE_RE matches `run_dir=(\\S+)` — one
     whitespace-free token — so a checkout living under a path WITH a space
-    ('/Volumes/mac mini m4/...') makes every real divergence line degrade to
+    ('<EXTERNAL-VOLUME>/...') makes every real divergence line degrade to
     UNRECOGNISED-SHAPE. That is a property of the parser's contract, not of
     these tests, and it is invisible on CI (space-free checkout). Returning a
     RELATIVE path (resolved from inside the temp dir) keeps the emitted
