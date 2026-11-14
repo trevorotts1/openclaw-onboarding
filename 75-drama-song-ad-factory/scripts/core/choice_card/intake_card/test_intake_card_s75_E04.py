@@ -79,29 +79,33 @@ def test_a_bare_yes_answers_only_an_approval_question():
 
 
 # ------------------------------------------------------------- S75-021 --------
-def test_changing_the_length_drops_the_answers_given_to_the_later_questions():
+def test_changing_an_answer_that_moves_the_later_screens_drops_them():
     qs, replies = _campaign_replies()
     ids = [q["id"] for q in qs]
     assert "agnes" in ids, ids                         # 3 minutes still asks Agnes
-    length_at = ids.index("episode_length")
+    music_at = ids.index("music")
+    music = qs[music_at]
+    #: S75-105 removed the only length that moved the later screens: the
+    #: 10-minute row was KIE-only, and no length the card may offer now drops a
+    #: screen. The moved-list rule is proved on MUSIC STYLE instead, whose last
+    #: choice adds the all-styles screen right after it.
+    last = str(len(music["options"]))
+    assert music["options"][-1][0].startswith("Show me all"), music["options"][-1]
 
     recap = IC.conversation(replies, purpose_flow=True)
     assert recap["message"].startswith("Here is what you picked:")
 
-    # S75-105: the card offers no length past five minutes (the song stage
-    # refuses it), so five minutes is the last answer it can take. Changing the
-    # length must still drop every answer given after it.
     # The saved-setup answer carries no "id" key (production pairs answers
     # with questions by position), so prove the pairing positionally: every
     # kept answer is exactly what its own reply parses to against the question
     # now in that slot, and no answer outlives the changed question.
-    st = IC.conversation(replies + [str(length_at + 1), "5"], purpose_flow=True)
+    st = IC.conversation(replies + [str(music_at + 1), last], purpose_flow=True)
     later = IC._shaped(IC.QUESTIONS, st["answers"])
-    assert len(st["answers"]) == length_at + 1
-    assert [q["id"] for q in later[:len(st["answers"])]] == ids[:length_at + 1]
-    for i, q in enumerate(later[:length_at]):
+    assert len(st["answers"]) == music_at + 1
+    assert [q["id"] for q in later[:len(st["answers"])]] == ids[:music_at + 1]
+    for i, q in enumerate(later[:music_at]):
         assert st["answers"][i] == IC._parse(replies[i], q), (i, q["id"])
-    assert st["answers"][length_at]["n"] == 5
+    assert st["answers"][music_at]["n"] == len(music["options"])
     assert "That changes a few of the later choices" in st["message"], st["message"]
     assert st["done"] is False
 
