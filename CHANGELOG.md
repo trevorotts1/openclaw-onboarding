@@ -6,6 +6,13 @@
 - `shared-utils/client_intake/engine.py` reads a cadence word in the billing answer (`weekly`, `quarterly`, `every year`) as a recurring price with its interval. A quarter is every 3 months where a billing platform has no quarter unit (`terms_for_interval`).
 - Known limit: Skill 06's native price binding still knows day, week, month and year only, so a quarterly offer is named as unresolved there (existing behavior for an unsupported interval) until Skill 06 learns an interval count.
 - Pinned files changed; the Skill 49 prover pin needs a CI mint. Not merged, deployed or rolled onto any client box.
+## [Unreleased]  -  2026-11-13  -  Batch pull requests run only the required checks
+
+- Every pull_request workflow that does not produce one of the 8 required checks (69 workflows, 105 jobs) now skips its jobs when the head branch starts with `batch/`. The three workflows that produce the required checks (`ghl-mcp-supervised-guard.yml`, `qc-static.yml`, `version-consistency.yml`) are untouched, and push-to-main triggers are unchanged, so main still runs everything after a merge.
+- New guard `scripts/ci/batch-required-only-check.py` (folded into fast-guards as `batch-required-only-guard`, with a self-test) fails if a required-check workflow gets the skip or a new pull_request workflow lacks it.
+- No guard or workflow is removed; duplicate findings are listed in the PR description for the separate audit.
+- No skill content changed, so no version bump. Migration: CI only; not rolled onto any client box.
+- Risk: LOW. Members run their own checks before QC; a skipped job reports "skipped", not failed.
 
 ## [Unreleased]  -  2026-11-12  -  Owner approval flow: the owner always gets a link (Skills 35, 44, 83 + shared helper)
 
