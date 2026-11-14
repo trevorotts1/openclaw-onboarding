@@ -1212,7 +1212,18 @@ def verify_priority_shift(facts: RunFacts) -> Tuple[Verdict, str]:
     the file existed. The verdict re-derives the exact contract the ledger's
     writer enforces: schema matches, pass is literal True, and every ledger
     item row is structurally pass:true. A ledger whose rows contradict its
-    pass flag is a rubber stamp and is REJECTED naming the failing rows."""
+    pass flag is a rubber stamp and is REJECTED naming the failing rows.
+
+    PD-300b part (2): the row set must ALSO be exactly the ship gate's own item
+    list. The ids come from presentation_job/priority_shift_items.py (PD-304's
+    module, the ONE list both the writer and this check read) — never a copy
+    here. Before the per-row pass test, so a missing or duplicated id is named
+    as an id problem even when every present row passes. A ledger missing an id
+    is incomplete; one with an extra id or a repeated id is not this gate's
+    artifact. Imported lazily inside the function so a tree without PD-304's
+    module (this branch before the merge, or a partial deployment) still
+    imports runfacts itself: a missing module is reported as an unproven id
+    contract, never an ImportError at module load."""
     fact = facts.qc["priority_shift"]
     if fact.state is Epistemic.ABSENT:
         return Verdict.FAIL, f"qc[priority_shift] ABSENT ({fact.detail})"
@@ -1227,6 +1238,54 @@ def verify_priority_shift(facts: RunFacts) -> Tuple[Verdict, str]:
     if not info.items:
         problems.append("ledger carries no item rows — the 14-item ship checklist is empty")
     else:
+        # PD-300b: the id SET, before the per-row pass rule, so A4/A5 name ids.
+        try:  # normal package import
+            from .priority_shift_items import (PRIORITY_SHIFT_ID_KEY,
+                                               PRIORITY_SHIFT_ITEM_IDS)
+        except ImportError:  # pragma: no cover -- scripts dir on sys.path
+            try:
+                from priority_shift_items import (PRIORITY_SHIFT_ID_KEY,  # type: ignore[no-redef]
+                                                  PRIORITY_SHIFT_ITEM_IDS)
+            except ImportError:
+                problems.append(
+                    "AF-PRIORITY-SHIFT: presentation_job.priority_shift_items is "
+                    "not importable — the ship gate's item list cannot be "
+                    "resolved, so the ledger's ids are unproven (fail-closed).")
+                PRIORITY_SHIFT_ID_KEY = None  # type: ignore[assignment]
+                PRIORITY_SHIFT_ITEM_IDS = ()  # type: ignore[assignment]
+        if PRIORITY_SHIFT_ID_KEY is not None:
+            expected = tuple(PRIORITY_SHIFT_ITEM_IDS)
+            got = []  # type: list
+            for r in info.items:
+                if isinstance(r, dict):
+                    v = r.get(PRIORITY_SHIFT_ID_KEY)
+                    got.append(v.strip() if isinstance(v, str) else "")
+            seen = []  # type: list
+            dupes = []  # type: list
+            for g in got:
+                if g and g in seen and g not in dupes:
+                    dupes.append(g)
+                seen.append(g)
+            missing = [i for i in expected if i not in seen]
+            extra = [g for g in seen if g and g not in expected]
+            unnamed = len(got) - len([g for g in got if g])
+            if missing:
+                problems.append(
+                    "AF-PRIORITY-SHIFT: ledger is missing ship-gate item ids: "
+                    + ", ".join(missing[:12]))
+            if extra:
+                problems.append(
+                    "AF-PRIORITY-SHIFT: ledger carries ids the ship gate does not "
+                    "define: " + ", ".join(sorted(set(extra))[:12]))
+            if dupes:
+                problems.append(
+                    "AF-PRIORITY-SHIFT: ledger repeats ship-gate item ids (each id "
+                    "must appear exactly once): " + ", ".join(dupes[:12]))
+            if unnamed:
+                problems.append(
+                    f"AF-PRIORITY-SHIFT: {unnamed} ledger row(s) carry no "
+                    f"{PRIORITY_SHIFT_ID_KEY!r} id — every row must name its "
+                    "ship-gate item.")
         failed = [str(r.get("item") or r.get("id") or f"row#{i}")
                   for i, r in enumerate(info.items)
                   if isinstance(r, dict) and r.get("pass") is not True]
