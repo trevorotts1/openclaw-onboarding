@@ -81,7 +81,7 @@ Key functions:
 - log_fallback(): tracks when clients hesitate during interview
 
 Options:
-- Option A (Full Interview): AI asks 3-7 questions per department, builds everything
+- Option A (Full Interview): 15 required steps from interview/questions.v2.json, then builds everything
 - Option B (Quick Setup): uses existing workspace context + industry best practices
 - Option C (Audit/Resume): scans existing folders, fills gaps, does not overwrite
 
@@ -159,8 +159,8 @@ per-company files, not shared.
 ```
 ## 🔴 Skill 23 Interview Resume Protocol (Added with v6.1.2; updated v9.6.0 for ZHC paths)
 At the START of every session, check the per-company handoff file:
-- v9.6.0+ path: ~/clawd/zero-human-company/[company-slug]/interview-handoff.md
-- Legacy path: ~/Downloads/openclaw-master-files/company-discovery/interview-handoff.md
+- Path: <workspace>/company-discovery/interview-handoff.md (written by scripts/interview_gate.py)
+- To see where the owner is: python3 ~/.openclaw/skills/23-ai-workforce-blueprint/scripts/interview_gate.py status
 
 - If it exists and status is "in_progress": resume the interview from the next unanswered question. Do NOT start over.
 - If interview-handoff.md is missing but workforce-interview-answers.md exists: reconstruct progress from the answers file, rebuild the handoff, and resume.
@@ -173,7 +173,7 @@ Save-on-break protocol: ANY time the client says they want to stop, are overwhel
 1. Append current answer to workforce-interview-answers.md
 2. Update interview-handoff.md with last_question_number and next_question_number
 3. Update MEMORY.md "## AI Workforce Build" section status to IN_PROGRESS
-4. Reply: "Everything is saved. When you come back, just say: 'Resume my AI workforce setup' — I'll pick up at department X of 17."
+4. Reply: "Everything is saved. When you come back, just say: 'Resume my AI workforce setup' and I will pick up exactly where you left off."
 ```
 
 ---
