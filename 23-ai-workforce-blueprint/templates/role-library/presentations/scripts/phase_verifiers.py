@@ -2747,81 +2747,6 @@ def _verify_sp_intake_trace(run_dir: Path) -> Tuple[bool, List[str]]:
     result = fn(run_dir)
     return (True, []) if _checker_pass(result) else (False, [str(result)])
 
-
-
-def _verify_fish_tag(run_dir: Path) -> Tuple[bool, List[str]]:
-    reasons: List[str] = []
-    tagged_p = run_dir / "working" / "deliverables" / "PRESENTERS-SPEECH-FISH-TAGGED.md"
-    source_p = run_dir / "working" / "deliverables" / "PRESENTERS-SPEECH.md"
-    if not tagged_p.exists():
-        reasons.append("AF-BUNDLE-INCOMPLETE: PRESENTERS-SPEECH-FISH-TAGGED.md not found")
-        return False, reasons
-    if not source_p.exists():
-        reasons.append("AF-BUNDLE-INCOMPLETE: PRESENTERS-SPEECH.md (source) not found")
-        return False, reasons
-    size = tagged_p.stat().st_size
-    if size < 2048: reasons.append(f"PRESENTERS-SPEECH-FISH-TAGGED.md: {size} bytes < 2048")
-    try: tagged_text = tagged_p.read_text(encoding="utf-8",errors="replace"); source_text = source_p.read_text(encoding="utf-8",errors="replace")
-    except:
-        reasons.append("AF-FISH-TAG: cannot read tagged or source speech file")
-        return False, reasons
-    import re
-    def strip_tags(t):
-        t = re.sub(r'\[.*?\]', ' ', t); t = re.sub(r'\(.*?\)', ' ', t)
-        return re.sub(r'\s+', ' ', t).strip()
-    if strip_tags(tagged_text) != strip_tags(source_text):
-        reasons.append("AF-FISH-TAG: strip-equals prover failed")
-    return (len(reasons) == 0), reasons
-
-
-def _sp_claim_matches_intake(run_dir: Path) -> Tuple[bool, List[str]]:
-    """Prove P-SP-CLAIM recorded the selected type, rather than selecting one.
-
-    The claim phase is a router.  It may document a signature request, but it
-    cannot promote a from-scratch deck into one.  The sealed intake remains the
-    authority and an incomplete/malformed claim fails closed.
-    """
-    try:
-        intake = json.loads((run_dir / "working" / "copy" / "intake.json").read_text())
-        claim = json.loads((run_dir / "working" / "copy" / "sp_claims.json").read_text())
-    except (OSError, json.JSONDecodeError) as exc:
-        return False, [f"AF-SP-CLAIM-INTAKE-MISMATCH: unreadable intake or claim: {exc}"]
-    if not isinstance(intake, dict) or not isinstance(claim, dict):
-        return False, ["AF-SP-CLAIM-INTAKE-MISMATCH: intake and claim must be JSON objects"]
-    selected = str(intake.get("deck_type") or "").strip()
-    recorded = str(claim.get("deck_type") or "").strip()
-    if not selected or recorded != selected:
-        return False, ["AF-SP-CLAIM-INTAKE-MISMATCH: claim deck_type must exactly match "
-                       "the selected intake deck_type"]
-    claimed = claim.get("claimed")
-    if selected == "signature_presentation":
-        if claimed is not True:
-            return False, ["AF-SP-CLAIM-INTAKE-MISMATCH: selected signature deck requires "
-                           "claimed:true"]
-    elif claimed is not False:
-        return False, ["AF-SP-CLAIM-INTAKE-MISMATCH: non-signature deck requires "
-                       "claimed:false; P-SP-CLAIM cannot promote the intake"]
-    return True, []
-
-
-def _verify_sp_claim(run_dir: Path) -> Tuple[bool, List[str]]:
-    ok, notes = _sp_claim_matches_intake(run_dir)
-    if not ok:
-        return ok, notes
-    fn = _bd_fn("_chk_sp_claim")
-    if fn is None:
-        return True, []
-    result = fn(run_dir)
-    return (True, []) if _checker_pass(result) else (False, [str(result)])
-
-
-def _verify_sp_intake_trace(run_dir: Path) -> Tuple[bool, List[str]]:
-    fn = _bd_fn("_chk_sp_intake_trace")
-    if fn is None: return _check_json_nonempty(run_dir, "working/interview/intake_transcript.json")
-    result = fn(run_dir)
-    return (True, []) if _checker_pass(result) else (False, [str(result)])
-
-
 def _verify_webinar_video(run_dir: Path) -> Tuple[bool, List[str]]:
     """Feature L2-G verifier (P9.6-WEBINAR-VIDEO): the webinar mp4 exists, is non-empty,
     is a real MP4 (ftyp box), and the timing track records a sane per-slide mapping.
@@ -3851,15 +3776,20 @@ def _verify_style_spec(run_dir: Path) -> Tuple[bool, List[str]]:
 
 _INFOGRAPHIC_CHECKLIST_VERDICT_REL = "working/qc/infographic_checklist_verdict.json"
 
+# PD-105: the eight bytes every PNG file starts with (PNG spec 5.2, the
+# signature). The infographic is checked for a real PNG, not for a large file
+# named one — a 102,400-byte file of letters used to pass the size test alone.
+_PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
+
 
 def _verify_infographic_checklist(run_dir: Path) -> Tuple[bool, List[str]]:
     """P8.3-INFOGRAPHIC: the infographic-checklist QC unit's verdict. Passes
-    only when (a) the rendered PNG exists at/above the deliverable floor,
-    (b) build_infographic's own status is clean, and (c) the QC unit's verdict
-    file exists, parses, and its own verdict is pass with the render inputs
-    named. The verifier re-derives (a)/(b) itself — a hand-typed pass on a
-    dirty render never passes, and a missing verdict file is a FAIL (the QC
-    unit ran, or it did not — absence is not a pass)."""
+    only when (a) the rendered PNG exists, carries the PNG signature and is
+    at/above the deliverable floor, (b) build_infographic's own status is clean,
+    and (c) the QC unit's verdict file exists, parses, and its own verdict is
+    pass with the render inputs named. The verifier re-derives (a)/(b) itself —
+    a hand-typed pass on a dirty render never passes, and a missing verdict
+    file is a FAIL (the QC unit ran, or it did not — absence is not a pass)."""
     import json as _json
     reasons: List[str] = []
 
@@ -3869,6 +3799,17 @@ def _verify_infographic_checklist(run_dir: Path) -> Tuple[bool, List[str]]:
                        "the render under QC is missing")
     else:
         floor = 102_400  # manifest-declared byte floor (P8.3-INFOGRAPHIC name)
+        # PD-105: the signature test runs BEFORE the size test — a large file
+        # of letters is not an infographic. An unreadable file fails here too.
+        try:
+            with open(png, "rb") as fh:
+                head = fh.read(len(_PNG_SIGNATURE))
+        except OSError as exc:  # noqa: BLE001
+            head = None
+            reasons.append(f"infographic.png: unreadable ({exc!r})")
+        if head is not None and head != _PNG_SIGNATURE:
+            reasons.append(f"infographic.png: not a PNG — expected "
+                           f"{_PNG_SIGNATURE!r} at offset 0, got {head!r}")
         if png.stat().st_size < floor:
             reasons.append(f"infographic.png: {png.stat().st_size} bytes < the "
                            f"{floor}-byte deliverable floor")
@@ -3881,8 +3822,11 @@ def _verify_infographic_checklist(run_dir: Path) -> Tuple[bool, List[str]]:
         if status.get("status") != "ready":
             reasons.append(f"infographic_status.json: status is "
                            f"{status.get('status')!r}, not 'ready'")
-        if status.get("qc_passed") is not True:
-            reasons.append("infographic_status.json: qc_passed is not true")
+        # PD-215 change-over: the builder's status file carries render_verified
+        # in place of qc_passed; accept either key while both are in use.
+        if status.get("qc_passed") is not True and status.get("render_verified") is not True:
+            reasons.append("infographic_status.json: qc_passed is not true "
+                           "(nor render_verified)")
 
     verdict_path = run_dir / _INFOGRAPHIC_CHECKLIST_VERDICT_REL
     verdict = _read_json(verdict_path)
@@ -4932,6 +4876,53 @@ for _pid, _arts in (
 
 
 # ---------------------------------------------------------------------------
+# PD-310b — the human-only craft holds, called from the engine's step checks
+# ---------------------------------------------------------------------------
+# The two step ids PD-310's report names (craft_judgement.HUMAN_VERDICT_PHASES):
+# the copy QC and the prompt QC. PD-310's module docstring says the older
+# runner applies these holds (run_signature_deck.attest_phase) while the
+# phase-verifier engine path did not — that gap is what this hook closes.
+_CRAFT_HOLD_PHASES = ("P1Q-COPY-QC", "P-PROMPT-QC")
+
+# The one switch. Unset (or anything but the literal "1") = off = no import,
+# no call, no change.
+_CRAFT_HOLD_SWITCH_ENV = "PRESENTATION_CRAFT_ENGINE_HOLDS"
+
+
+def _craft_hold_reasons(phase_id: str, run_dir) -> List[str]:
+    """PD-310b: craft_judgement.engine_attestation_reasons for the two QC step
+    ids, only when PRESENTATION_CRAFT_ENGINE_HOLDS is exactly "1".
+
+    With the switch off this imports nothing and returns [] — both step checks
+    return exactly what they returned before. With it on, a missing independent
+    human verdict (AF-OBI-4 / AF-OBI) or an unacknowledged warning hold is an
+    OPERATOR-REVIEW reason (PD-206's operator-channel prefix).
+
+    Fails closed in every direction: with the switch on, a craft module that
+    cannot be imported, a missing engine_attestation_reasons, or a hook that
+    raises is an OPERATOR-REVIEW reason, never a pass."""
+    if os.environ.get(_CRAFT_HOLD_SWITCH_ENV) != "1":
+        return []
+    if phase_id not in _CRAFT_HOLD_PHASES:
+        return []
+    try:
+        try:
+            import craft_judgement as _cj
+        except ImportError:
+            _scripts_dir = Path(__file__).resolve().parent
+            if str(_scripts_dir) not in sys.path:
+                sys.path.insert(0, str(_scripts_dir))
+            import craft_judgement as _cj
+        reason = _cj.engine_attestation_reasons(Path(run_dir), phase_id)
+    except Exception as exc:  # noqa: BLE001 — fail closed, never pass on doubt
+        return [
+            f"OPERATOR-REVIEW: the craft holds are on and {phase_id!r} could not "
+            f"be re-checked ({exc!r}) — refusing to pass on an unreadable hold "
+            f"state"]
+    return [reason] if reason else []
+
+
+# ---------------------------------------------------------------------------
 # Public entry point (called by run_signature_deck.py)
 # ---------------------------------------------------------------------------
 
@@ -5000,6 +4991,15 @@ def verify(phase_id: str, run_dir: Path) -> Tuple[bool, List[str]]:
                 f"missing file, empty field, or violated gate code."
             ]
         # ---- end FAIL-with-reason validation ----
+
+        # ---- PD-310b: the craft holds, behind a switch that is off ----
+        # Switch unset -> [] -> this block changes nothing (A1). Switch "1" and
+        # a hold is outstanding -> OPERATOR-REVIEW reason(s) and the step does
+        # not attest (A2); every verdict present -> [] and the step passes (A3).
+        _holds = _craft_hold_reasons(phase_id, run_dir)
+        if _holds:
+            return False, list(reasons) + _holds
+        # ---- end PD-310b ----
 
         return bool(ok), list(reasons)
     except Exception as exc:  # noqa: BLE001
