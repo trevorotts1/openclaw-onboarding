@@ -2,6 +2,7 @@ name: Council approved Skill 22 personas (read-only)
 
 on:
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
     paths:
       - "22-book-to-persona-coaching-leadership-system/personas/**"
       - "22-book-to-persona-coaching-leadership-system/persona-categories.json"
@@ -15,8 +16,13 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
 jobs:
   approved-roster:
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false

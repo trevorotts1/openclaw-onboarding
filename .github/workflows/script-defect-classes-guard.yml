@@ -86,6 +86,7 @@ on:
       - ".github/workflows/script-defect-classes-guard.yml"
       - "**.sh"
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
     branches: [main]
     paths:
       - "23-ai-workforce-blueprint/scripts/refresh-build-state-from-index.py"
@@ -150,11 +151,12 @@ on:
       - "**.sh"
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
   defect-classes:
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     name: defect classes A-G stay fixed
     runs-on: ubuntu-latest
     steps:
@@ -197,6 +199,7 @@ jobs:
         run: bash 23-ai-workforce-blueprint/scripts/test-wiring-gate-role-dir-walk.sh
 
   bash32-parse:
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     # macOS ships bash 3.2 at /bin/bash, and every Mac in the fleet runs these
     # scripts with it (`bash script.sh` / `#!/usr/bin/env bash`). bash 3.2
     # pairs quotes and parens inside a heredoc nested in $(...): one apostrophe,

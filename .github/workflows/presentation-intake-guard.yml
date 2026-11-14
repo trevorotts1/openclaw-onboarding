@@ -20,6 +20,7 @@ on:
       - tests/unit/u054-interview-a11y.test.sh
       - .github/workflows/presentation-intake-guard.yml
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
     branches: [main]
     paths:
       - 23-ai-workforce-blueprint/templates/role-library/presentations/intake/interview-app/**
@@ -32,11 +33,12 @@ on:
       - tests/unit/u054-interview-a11y.test.sh
       - .github/workflows/presentation-intake-guard.yml
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
   intake-guard:
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     name: Presentation intake guard
     runs-on: ubuntu-latest
     steps:

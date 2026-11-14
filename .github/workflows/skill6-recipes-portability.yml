@@ -2,6 +2,7 @@ name: Skill 6 recipe portability
 
 on:
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
     paths:
       - '06-ghl-install-pages/tools/playwright_recipes/**'
       - '06-ghl-install-pages/tools/browser_manager.py'
@@ -14,8 +15,13 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
 jobs:
   browser-fixture:
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     name: Python and Chromium fixture (${{ matrix.os }})
     strategy:
       fail-fast: false

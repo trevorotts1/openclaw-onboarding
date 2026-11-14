@@ -38,6 +38,7 @@ on:
       - "50-email-engine/EMAIL-MANIFEST.json"
       - ".github/workflows/silent-success-guards.yml"
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
     branches: [main]
     paths:
       - "46-kie-callback-relay/**"
@@ -47,11 +48,12 @@ on:
       - ".github/workflows/silent-success-guards.yml"
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
   onb-46-001:
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     name: "ONB-46-001: a run with zero deliverables is never marked done"
     runs-on: ubuntu-latest
     steps:
@@ -95,6 +97,7 @@ jobs:
           NODE
 
   onb-50-001:
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     name: "ONB-50-001: the impersonation guard covers every recipient-visible field"
     runs-on: ubuntu-latest
     steps:

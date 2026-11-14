@@ -2,6 +2,7 @@ name: Council Node and SQLite preflight
 
 on:
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
     paths:
       - "77-council-of-wise-elders/**"
       - ".github/workflows/council-runtime-node-preflight.yml"
@@ -10,8 +11,13 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
 jobs:
   runtime-preflight:
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     strategy:
       fail-fast: false
       matrix:

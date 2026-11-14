@@ -38,14 +38,16 @@ on:
   push:
     branches: [main]
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
     branches: [main]
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
   ghl-auth-fallback-guard:
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     name: GHL Tier-2 email-2FA auth-fallback guard (contained, gated, bounded, self-healing)
     runs-on: ubuntu-latest
     steps:

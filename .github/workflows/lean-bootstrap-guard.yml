@@ -48,6 +48,7 @@ on:
       - 38-conversational-ai-system/scripts/05-update-agents-md.sh
       - .github/workflows/lean-bootstrap-guard.yml
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
     paths:
       - scripts/compact-bootstrap.py
       - scripts/bootstrap-pointerize.py
@@ -68,11 +69,12 @@ on:
   workflow_dispatch:
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
   lean-bootstrap:
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     name: compact core + pointer stamping contracts
     # Pinned: the 3.9 interpreter below is a real guarantee (the fleet's oldest
     # python3 is the Mac's 3.9.6, see docs/COMPACT-CORE-SOP.md), and setup-python

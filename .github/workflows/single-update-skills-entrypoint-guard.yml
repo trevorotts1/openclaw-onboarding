@@ -35,6 +35,7 @@ on:
       - "32-command-center-setup/CORE_UPDATES.md"
       - ".github/workflows/single-update-skills-entrypoint-guard.yml"
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
     branches: [main]
     paths:
       - "update-skills.sh"
@@ -50,11 +51,12 @@ on:
       - ".github/workflows/single-update-skills-entrypoint-guard.yml"
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
   single-update-skills-entrypoint-guard:
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     name: scripts/update-skills.sh can never succeed; no live doc points at it
     runs-on: ubuntu-latest
     steps:
