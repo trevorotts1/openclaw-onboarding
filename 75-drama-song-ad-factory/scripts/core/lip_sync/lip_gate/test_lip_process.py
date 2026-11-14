@@ -163,13 +163,15 @@ class T5Edit(unittest.TestCase):
     def test_lanczos_upscale(self):
         self.assertIn("scale=1080:1920:flags=lanczos", self.plan()["vf"])
 
-    def test_fps_drops_never_invents(self):
-        self.assertEqual(P.fps_filter(60, 30), "fps=30")
+    def test_fps_interpolates_to_the_master_never_drops(self):
+        # U-U03: the assembler's rule wins -- minterpolate mci, never the
+        # plain fps filter that dropped or duplicated frames.
         self.assertEqual(P.fps_filter(30, 30), "")
-        self.assertEqual(P.fps_filter(24, 30), "")
-        for src in (24, 30, 60):
-            self.assertNotIn("minterpolate", self.plan(src_fps=src)["vf"])
-        self.assertIn("fps=30", self.plan(src_fps=60)["vf"])
+        self.assertEqual(P.fps_filter(24, 30), "minterpolate=fps=30:mi_mode=mci")
+        self.assertEqual(P.fps_filter(60, 30), "minterpolate=fps=30:mi_mode=mci")
+        self.assertNotIn("minterpolate", self.plan(src_fps=30)["vf"])
+        self.assertIn("minterpolate=fps=30:mi_mode=mci", self.plan(src_fps=24)["vf"])
+        self.assertIn("minterpolate=fps=30:mi_mode=mci", self.plan(src_fps=60)["vf"])
 
     def test_through_load_governor(self):
         a = self.plan()["argv"]

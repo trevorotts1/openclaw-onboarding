@@ -23,6 +23,12 @@ unmeasured. The check existed on paper only. Now:
                        that is not the bound upload of those bytes = no paid
                        lip-sync job.
 
+A picture the gate CHANGED carries a derivation record beside its receipt
+({source_sha256: the picture handed in, derived_sha256, operation: "crop" or
+"regenerate", numbers}). The evidence layer accepts a crop of the approved
+still and refuses a regenerated picture with LIPSYNC_PICTURE_NEEDS_APPROVAL
+(U-U03, S75-048).
+
 LPG003 loosened the rules (Trevor: "loosen the checks so it's not as strict").
 Three verdicts: PASS, ACCEPT_WITH_FLAG (goes to Kling, flags are written to the
 receipt), FAIL (refused). FAIL is for clear problems only: face count not 1, a
@@ -114,6 +120,14 @@ NO_REGEN_CODES = frozenset({"GATE_UNAVAILABLE", "MEASURE_ERROR", "UNMEASURED"})
 
 REFUSED = "LIPSYNC_PICTURE_NOT_GATED"
 
+# U-U03 (S75-048): a picture the gate CHANGED is recorded beside its receipt
+# as a derivation of the picture handed in (the approved still), so the
+# evidence layer can tell a crop (still the approved picture) from a
+# regenerated picture (a NEW picture that needs its own approval).
+DERIVATION_SCHEMA = "blackceo.lipsync-picture-derivation/v1"
+OPERATION_CROP = "crop"
+OPERATION_REGENERATE = "regenerate"
+
 
 class LipsyncPictureNotGated(Exception):
     """kie_dispatch refuses the paid lip-sync job. .reason is the full text."""
@@ -129,6 +143,40 @@ def sha256_file(path):
         for b in iter(lambda: f.read(1 << 20), b""):
             h.update(b)
     return h.hexdigest()
+
+
+def derivation_path(sha, receipt_dir):
+    return os.path.join(receipt_dir, sha + ".derivation.json")
+
+
+def write_derivation(source_sha256, derived_path, numbers, operation, receipt_dir):
+    """Write the record of how a changed picture was derived from the one handed in.
+
+    ``source_sha256`` is the picture gate_picture() was given (the approved
+    still), ``derived_sha256`` the picture it returns, ``operation`` "crop" or
+    "regenerate", plus the final numbers. The record sits beside the receipt,
+    named by the derived sha256.
+    """
+    derived_sha = sha256_file(derived_path)
+    rec = {"schema": DERIVATION_SCHEMA,
+           "source_sha256": source_sha256, "derived_sha256": derived_sha,
+           "operation": operation, "numbers": numbers or {},
+           "derived_path": os.path.abspath(derived_path),
+           "created": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())}
+    os.makedirs(receipt_dir, exist_ok=True)
+    with open(derivation_path(derived_sha, receipt_dir), "w") as f:
+        json.dump(rec, f, indent=1, sort_keys=True)
+    return rec
+
+
+def read_derivation(sha, receipt_dir):
+    """The derivation record for `sha`, or {} when the picture was never derived."""
+    try:
+        with open(derivation_path(sha, receipt_dir)) as f:
+            rec = json.load(f)
+    except (OSError, ValueError):
+        return {}
+    return rec if isinstance(rec, dict) else {}
 
 
 def check_numbers(n):
@@ -279,6 +327,19 @@ def gate_picture(path, receipt_dir=None, measure=None, crop=None,
     rdir = receipt_dir or default_receipt_dir(path)
     root = os.path.splitext(path)[0]                # rung names never nest
     attempts, cur, crops, regens, remakes, rung = [], path, 0, 0, 0, 0
+    source_sha = sha256_file(path)                  # the picture handed in
+    op = {"last": None}
+
+    def finish(record_, image, **extra):
+        """The final picture, with its derivation record when the gate changed it."""
+        out = dict(record_, image=image)
+        if sha256_file(image) != source_sha:
+            out["derivation"] = write_derivation(
+                source_sha, image, out.get("numbers") or {},
+                op["last"] or OPERATION_CROP, rdir)
+        out.update(extra)
+        return out
+
     while True:
         sha = sha256_file(cur)
         nums, reasons, flags = _measure_all(cur, measure)
@@ -300,7 +361,7 @@ def gate_picture(path, receipt_dir=None, measure=None, crop=None,
                          "flags": [list(x) for x in flags]})
         rec = write_receipt(cur, sha, verdict, nums, reasons, flags, attempts, rdir)
         if refused_smile:
-            return dict(rec, image=cur)
+            return finish(rec, cur)
         if smiling and verdict in ACCEPTED:                  # free remake, capped
             remakes += 1
             try:
@@ -309,11 +370,12 @@ def gate_picture(path, receipt_dir=None, measure=None, crop=None,
                 reasons = reasons + [("REMAKE_FAILED", "%s: %s" % (type(exc).__name__, exc))]
                 attempts = attempts + [dict(attempts[-1], verdict=FAIL,
                                             reasons=[list(x) for x in reasons])]
-                return dict(write_receipt(cur, sha, FAIL, nums, reasons, flags,
-                                          attempts, rdir), image=cur)
+                return finish(write_receipt(cur, sha, FAIL, nums, reasons, flags,
+                                            attempts, rdir), cur)
+            op["last"] = OPERATION_REGENERATE               # a new picture, not a crop
             continue
         if verdict in ACCEPTED or codes & NO_REGEN_CODES:
-            return dict(rec, image=cur)
+            return finish(rec, cur)
         if nums.get("face_count") == 0 and rung < len(CROP_LADDER_WIDTHS):
             rung += 1                                        # free, local, capped
             out = root + "-ladder%d.png" % rung
@@ -323,6 +385,7 @@ def gate_picture(path, receipt_dir=None, measure=None, crop=None,
                 made = None
             if made:
                 cur = made
+                op["last"] = OPERATION_CROP
                 continue
         small = "FACE_SIZE" in codes and nums.get("face_h_pct", 100) < MIN_FACE_HEIGHT_PCT
         if small and crops < MAX_FREE_CROPS:
@@ -334,9 +397,10 @@ def gate_picture(path, receipt_dir=None, measure=None, crop=None,
                 made = None
             if made:
                 cur = made
+                op["last"] = OPERATION_CROP
                 continue
         if regenerate is None or regens >= max_regens:
-            return dict(rec, image=cur)
+            return finish(rec, cur)
         # L4.4 (v2.9.73): the attempt ceiling over THIS call's history —
         # three consecutive identical structural failures stop before the
         # next paid regeneration, with the cause named. picture_gate's own
@@ -346,16 +410,16 @@ def gate_picture(path, receipt_dir=None, measure=None, crop=None,
         ceil = _ceiling().ceiling_check(attempts)
         if ceil.get("stop"):
             reasons = reasons + [(ceil["cause"], ceil["message"])]
-            return dict(write_receipt(cur, sha, FAIL, nums, reasons, flags,
-                                      attempts, rdir), image=cur,
-                    ceiling=ceil)
+            return finish(write_receipt(cur, sha, FAIL, nums, reasons, flags,
+                                        attempts, rdir), cur, ceiling=ceil)
         regens += 1                                          # paid, capped
         try:
             cur = regenerate(cur, REGEN_PROMPT)
+            op["last"] = OPERATION_REGENERATE                # a NEW picture
         except Exception as exc:                             # refuse, loudly
-            rec = dict(rec, image=cur, reasons=rec["reasons"] + [
-                ["REGEN_FAILED", "%s: %s" % (type(exc).__name__, exc)]])
-            return rec
+            reasons_now = rec["reasons"] + [
+                ["REGEN_FAILED", "%s: %s" % (type(exc).__name__, exc)]]
+            return finish(dict(rec, reasons=reasons_now), cur)
 
 
 def require_receipt(path, receipt_dir=None):
