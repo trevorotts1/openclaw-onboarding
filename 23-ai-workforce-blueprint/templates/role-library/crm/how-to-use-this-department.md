@@ -79,37 +79,31 @@ and it will pick the right one, or you can ask for a specialist by name.
 | **SMS WhatsApp DM Sequence Specialist** | You own the conversational messaging layer of the CRM ecosystem - every SMS text message. |
 | **Tag Segmentation Specialist** | You own the customer taxonomy - the system of tags, segments, lists. |
 
-### What each specialist is for, with an example request
+### What each specialist is for
 
 **Automation Workflow Specialist**
 
 - *What it is for:* Invisible engine that makes the CRM department operate at 10x capacity.
-- *Example request:* "Have the Automation Workflow Specialist take this on: Invisible engine that makes the CRM department operate at 10x capacity."
 
 **CRM Platform Administrator**
 
 - *What it is for:* You own the technical foundation upon which every revenue-generating department operates.
-- *Example request:* "Have the CRM Platform Administrator take this on: You own the technical foundation upon which every revenue-generating department operates."
 
 **Email Deliverability Optimization Specialist**
 
 - *What it is for:* Email Deliverability & Optimization Specialist for the company, responsible for ensuring every marketing, transactional.
-- *Example request:* "Have the Email Deliverability Optimization Specialist take this on: Email Deliverability & Optimization Specialist for the company."
 
 **Pipeline Stage Specialist**
 
 - *What it is for:* Pipeline / Stage Specialist for the company, the person who designs, maintains.
-- *Example request:* "Have the Pipeline Stage Specialist take this on: Pipeline / Stage Specialist for the company, the person who designs, maintains."
 
 **SMS WhatsApp DM Sequence Specialist**
 
 - *What it is for:* You own the conversational messaging layer of the CRM ecosystem - every SMS text message.
-- *Example request:* "Have the SMS WhatsApp DM Sequence Specialist take this on: You own the conversational messaging layer of the CRM ecosystem - every SMS text message."
 
 **Tag Segmentation Specialist**
 
 - *What it is for:* You own the customer taxonomy - the system of tags, segments, lists.
-- *Example request:* "Have the Tag Segmentation Specialist take this on: You own the customer taxonomy - the system of tags, segments, lists."
 
 
 ---

@@ -30,9 +30,9 @@ figures out who handles it and routes it for you.
 
 Reach for this department when you want any of the following:
 
-- Operational backbone of the client experience pipeline  -  the role that transforms a newly booked.
-- Your mandate is the most consequential 30-day window in the entire client lifecycle.
-- Your mandate is the 24-to-72-hour window after every completed session - the period when a client's.
+- Operational backbone of the client experience pipeline  -  the role that transforms a newly booked appointment in into a client who actually shows up, arrives on time.
+- Your mandate is the most consequential 30-day window in the entire client lifecycle: the period from a new client's first session through their conversion into a retained.
+- Your mandate is the 24-to-72-hour window after every completed session - the period when a client's experience is freshest, their emotional connection is strongest.
 
 If you are not sure whether a request belongs here, ask anyway. The department
 head will either take it or hand it to the right department. You never have to
@@ -69,26 +69,23 @@ and it will pick the right one, or you can ask for a specialist by name.
 
 | Specialist | What it is for |
 | --- | --- |
-| **Booking Coordinator** | Operational backbone of the client experience pipeline  -  the role that transforms a newly booked appointment. |
-| **Client Onboarding Specialist** | Your mandate is the most consequential 30-day window in the entire client lifecycle. |
-| **Post Session Followup Specialist** | Your mandate is the 24-to-72-hour window after every completed session - the period when a client's experience. |
+| **Booking Coordinator** | Operational backbone of the client experience pipeline  -  the role that transforms a newly booked appointment in into a client who actually shows up, arrives on time. |
+| **Client Onboarding Specialist** | Your mandate is the most consequential 30-day window in the entire client lifecycle: the period from a new client's first session through their conversion into a retained. |
+| **Post Session Followup Specialist** | Your mandate is the 24-to-72-hour window after every completed session - the period when a client's experience is freshest, their emotional connection is strongest. |
 
-### What each specialist is for, with an example request
+### What each specialist is for
 
 **Booking Coordinator**
 
-- *What it is for:* Operational backbone of the client experience pipeline  -  the role that transforms a newly booked appointment.
-- *Example request:* "Have the Booking Coordinator take this on: Operational backbone of the client experience pipeline  -  the role that transforms."
+- *What it is for:* Operational backbone of the client experience pipeline  -  the role that transforms a newly booked appointment in into a client who actually shows up, arrives on time.
 
 **Client Onboarding Specialist**
 
-- *What it is for:* Your mandate is the most consequential 30-day window in the entire client lifecycle.
-- *Example request:* "Have the Client Onboarding Specialist take this on: Your mandate is the most consequential 30-day window in the entire client lifecycle."
+- *What it is for:* Your mandate is the most consequential 30-day window in the entire client lifecycle: the period from a new client's first session through their conversion into a retained.
 
 **Post Session Followup Specialist**
 
-- *What it is for:* Your mandate is the 24-to-72-hour window after every completed session - the period when a client's experience.
-- *Example request:* "Have the Post Session Followup Specialist take this on: Your mandate is the 24-to-72-hour window after every completed session - the period when."
+- *What it is for:* Your mandate is the 24-to-72-hour window after every completed session - the period when a client's experience is freshest, their emotional connection is strongest.
 
 
 ---

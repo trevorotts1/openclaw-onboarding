@@ -71,17 +71,15 @@ and it will pick the right one, or you can ask for a specialist by name.
 | **Audio Post Producer** | Audio Post-Producer for the company's podcast operation. |
 | **Podcast Host** | Podcast Host for - the voice, the presence, and the editorial intelligence that the listener hears and trusts. |
 
-### What each specialist is for, with an example request
+### What each specialist is for
 
 **Audio Post Producer**
 
 - *What it is for:* Audio Post-Producer for the company's podcast operation.
-- *Example request:* "Have the Audio Post Producer take this on: Audio Post-Producer for the company's podcast operation."
 
 **Podcast Host**
 
 - *What it is for:* Podcast Host for - the voice, the presence, and the editorial intelligence that the listener hears and trusts.
-- *Example request:* "Have the Podcast Host take this on: Podcast Host for - the voice, the presence, and the editorial intelligence."
 
 
 ---
