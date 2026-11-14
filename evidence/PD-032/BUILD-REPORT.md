@@ -3,7 +3,7 @@
 Unit PD-032 · repo `trevorotts1/openclaw-onboarding` · branch `pd/fl03-question-bank`
 Worktree used for the build: scratch copy under the unit TMPDIR, created from the branch head
 `5a9743c2d690c7f4c43fdc48898c4fd8048ad1b4`; the lane clone
-`/Volumes/mac mini m4/swarm-contract/pd-fix/worktrees/onboarding/FL03` was left clean.
+`<lane FL03 worktree — host path never committed>` was left clean.
 
 This is a build report, not a verdict. A fresh opus-chain reviewer checks it.
 
@@ -298,5 +298,5 @@ head (e7c631fd):  1 failed, 27 passed
 ```
 
 `tempfile.gettempdir()` inside that run resolved to
-`/Volumes/mac mini m4/swarm-contract/pd-fix/tmp/PD-032`, and the count of `pytest-*` directories under
+`<unit TMPDIR — host path never committed>`, and the count of `pytest-*` directories under
 the machine temp root was 23 before and 23 after each run.

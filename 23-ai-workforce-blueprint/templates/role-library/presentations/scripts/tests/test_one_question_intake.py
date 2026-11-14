@@ -148,6 +148,16 @@ def test_conditionals_are_individual_and_still_apply():
     assert DRIVER.should_ask(by_id["vip_price"], {"vip_tier": True})[0]
     assert not DRIVER.should_ask(by_id["motion_graphics_declined_reason"], {"want_motion_graphics": "yes"})[0]
     assert DRIVER.should_ask(by_id["motion_graphics_declined_reason"], {"want_motion_graphics": "no"})[0]
+    # PD-014: the shape behind that ask. conditional_on is the ONLY gate
+    # (no ask_if, which could never be true at the same time); the ask
+    # itself is optional (required=false, block_gate=false), and the
+    # ask_only_if_previously_wanted marker carries the bank's prior-YES
+    # policy as data, not as a second gate.
+    mg = by_id["motion_graphics_declined_reason"]
+    assert mg["required"] is False
+    assert mg["block_gate"] is False
+    assert mg.get("ask_only_if_previously_wanted") is True
+    assert "ask_if" not in mg
 
 
 def test_hosted_embedded_and_signature_prompts_are_single_questions():
@@ -238,8 +248,19 @@ def test_real_cli_walk_completes_and_proves_a_single_question_transcript(intervi
     bank = SCANNER.load_bank_questions()
     assert SCANNER.scan_transcript(trace["turns"], bank)["pass"]
     entries = ledger(run)
-    for field in ("AUDIENCE", "GOAL", "CTA_ACTION", "DURATION_MIN", "WANT_MOTION_GRAPHICS", "MOTION_GRAPHICS_DECLINED_REASON"):
+    for field in ("AUDIENCE", "GOAL", "CTA_ACTION", "DURATION_MIN", "WANT_MOTION_GRAPHICS"):
         assert entries[field]["validated"] is True
+    # PD-014: MOTION_GRAPHICS_DECLINED_REASON is optional (required=false,
+    # block_gate=false) and the walk answers every want_ toggle "no", so
+    # the reason is asked but the walk may answer it with the "no note"
+    # sentinel or leave it blank. It must never be required to appear;
+    # if it does appear, it must be the sentinel or a real reason.
+    # The walk answers the reason with "Client supplied
+    # motion_graphics_declined_reason" (the generic fallback), which is a
+    # real non-empty reason. So if the entry exists, its value is either
+    # that fallback, the "" blank, or the "no note." sentinel.
+    mg_entry = entries.get("MOTION_GRAPHICS_DECLINED_REASON")
+    assert mg_entry is None or mg_entry.get("value", "") in ("", "no note.", "Client supplied motion_graphics_declined_reason")
 
 def test_complete_under_enforce_refuses_an_interview_with_no_message_ids(interview, monkeypatch):
     """PD-004b: the same real walk, under ENFORCE, cannot complete -- none of
