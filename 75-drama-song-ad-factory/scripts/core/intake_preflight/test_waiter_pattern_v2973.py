@@ -165,3 +165,7 @@ def main():
 
 if __name__ == "__main__":
     sys.exit(main())
+
+
+def test_waiter_pattern_v2973():
+    assert main() == 0

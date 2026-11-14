@@ -198,3 +198,14 @@ def _run():
 
 if __name__ == "__main__":
     _run()
+
+
+def test_brief_exemption_v2972():
+    # _run() ends in sys.exit(0 if not fails else 1); pytest turns any
+    # SystemExit into a test failure, so the code is the assertion.
+    try:
+        _run()
+    except SystemExit as exc:
+        assert exc.code == 0, exc.code
+    else:
+        raise AssertionError("_run() returned without reporting a result")

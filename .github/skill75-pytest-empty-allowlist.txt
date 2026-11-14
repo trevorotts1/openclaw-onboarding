@@ -1,0 +1,40 @@
+# Skill 75 per-file pytest gate -- files ALLOWED to collect zero test items.
+#
+# Read by the step "Skill 75 pytest collection + run (no hidden failures)" in
+# .github/workflows/qc-static.yml. pytest exits 5 for "no tests collected".
+# Exit 5 is tolerated ONLY for a path listed here; every other test_*.py /
+# *_test.py under 75-drama-song-ad-factory/scripts that collects nothing now
+# FAILS the build.
+#
+# Why exit 5 used to be free for every file: commit 83121e15c ("CI speed:
+# single-pass Skill 75 suite, deflake 2 tests, fix compact-core", 2026-11-02)
+# split the whole-tree run into one pytest process per file. Per file, a suite
+# with no pytest items returns 5, where the old single-process run returned 0
+# because OTHER files had items. 5 was whitelisted to keep that parity, not
+# because an empty test file is acceptable. The parity it bought was silence:
+# a file could be named like a test, sit in a test directory, collect zero
+# items forever, and the gate stayed green (U-GEN434 found the shape, U-GEN435
+# measured it: 42 files under scripts/).
+#
+# DO NOT ADD A PATH HERE TO SILENCE A FAILURE. Exit 5 means "collected
+# nothing", so a file with a real failing test can never be listed: it exits
+# non-zero for a different reason and still fails.
+#
+# [A] Self-running suites. The file calls pytest.skip(allow_module_level=True)
+#     on purpose, with the reason in its own docstring; its assertions run
+#     under `python3 <file>`, which the "Skill 75 empty-home test suite" step
+#     already executes. Legitimate by design. Keep these.
+# ---------------------------------------------------------------------------
+75-drama-song-ad-factory/scripts/core/singing_detector/test_receipt_evidence_g5.py
+75-drama-song-ad-factory/scripts/core/singing_detector/test_singing_detector_amend_g2.py
+75-drama-song-ad-factory/scripts/core/singing_detector/test_singing_detector.py
+# ---------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
+# [B] Script-style runners converted to real collected tests (U-GEN438).
+#     This section is EMPTY on purpose. Each of the 39 files that used to be
+#     named here was wrapped in `def test_<name>()` so pytest collects at
+#     least one real assertion from it, and its line was deleted in the same
+#     change. Adding a path back here would re-open the U-GEN434 defect (a
+#     file named test_*.py that contributes nothing while the gate is green),
+#     so it must not grow back.
+# ---------------------------------------------------------------------------
