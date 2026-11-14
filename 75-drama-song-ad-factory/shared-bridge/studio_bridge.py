@@ -1755,15 +1755,18 @@ def cmd_poll(args):
         # handoff is unfinished, so a crashed claim is found here, not lost.
         pending = led.unfinished_orders(BRIDGE_OWNER)
         resume_token = None
+        resume_fence = None
         from_recovery = bool(pending)
         if pending:
-            # A stored poll line carries the claim token this owner proved
-            # with last time: present it back so the ledger can tell a
+            # A stored poll line carries the claim token AND fence this owner
+            # proved with last time: present both back so the ledger can tell a
             # crash-resume apart from a second live materializer.
             order_id, title = pending[0], ""
             for rec in reversed(led.receipts(order_id)):
                 if rec.get("kind") == "poll_line":
-                    resume_token = (rec.get("payload") or {}).get("claim_token")
+                    line = rec.get("payload") or {}
+                    resume_token = line.get("claim_token")
+                    resume_fence = line.get("fence")
                     break
         else:
             if not line:
@@ -1779,19 +1782,30 @@ def cmd_poll(args):
                 return EXIT["refused"]
 
         won = led.claim_order(order_id, BRIDGE_OWNER,
-                              resume_token=resume_token)
+                              resume_token=resume_token,
+                              resume_fence=resume_fence)
         if not won:
             return EXIT["ok"]                   # a live holder keeps it
         recs = led.receipts(order_id)
         st = led.order_state(order_id) or {}
         fence = st.get("fence")
+        stored_line = next((r["payload"] for r in reversed(recs)
+                            if r["kind"] == "poll_line"), None)
+        if stored_line is not None and stored_line.get("fence") != fence:
+            # A resume advances the fence, so refresh the stored line NOW — in
+            # the same ledger step as the claim — or a crash before
+            # materialization finishes would leave a line the next poll is
+            # refused on.
+            refreshed = dict(stored_line)
+            refreshed["fence"] = fence
+            refreshed["claim_token"] = st.get("claim_token")
+            led.write_receipt(order_id, "poll_line", refreshed)
+            stored_line = refreshed
         if st.get("step") == STEP_EXECUTION_ACCEPTED:
             return EXIT["ok"]   # acknowledged: silent, no duplicate campaign
         kinds = {r["kind"] for r in recs}
         stored_order = next((r["payload"].get("order") for r in reversed(recs)
                              if r["kind"] == "order_fetched"), None)
-        stored_line = next((r["payload"] for r in reversed(recs)
-                            if r["kind"] == "poll_line"), None)
 
         # Carry the studio's CURRENT state into the resume (ITEM 29 step 4).
         # The stored order was fetched before the crash; the client can cancel
