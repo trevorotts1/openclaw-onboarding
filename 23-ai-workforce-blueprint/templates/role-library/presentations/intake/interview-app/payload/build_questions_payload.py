@@ -43,17 +43,28 @@ _PASSTHROUGH = ("id", "order", "prompt", "help", "kind", "required",
                 "conditional_on", "ask_if", "block_gate", "storeOn", "key",
                 "refuse_values", "refuse_message")
 
-# The curated core set the Presentation Interview app asks. Cap 21 binds the
-# set excluding the declined-reason waiver follow-ups; a follow-up (asked
-# only when its toggle is answered "no") rides on its toggle and does not
-# count against the cap -- the selftest pins that shape per follow-up.
-# (The counted set stood at exactly 20 before Item 34; the motion toggle
-# is a required election asked on every run, so it counts, and its reason
-# follow-up rides excluded like every other follow-up. Cap is 21.)
+# The curated core set the Presentation Interview app asks. Cap 22 binds the
+# set excluding the conditional follow-ups (the declined-reason waivers and
+# PD-082a's recipient_name / extracted_substance); a follow-up rides on its
+# condition and does not count against the cap -- the selftest pins each
+# follow-up's shape.
+# (The counted set stood at exactly 20 before Item 34, then 21 with the
+# always-asked motion election, then 22 with PD-082a's always-asked
+# duration_min. recipient_name and extracted_substance ride conditions.)
 # Every id must exist in deck-intake-questions.json, upsell-questions.json, or
 # APP_ONLY_QUESTIONS below.
 DEFAULT_CURATED = [
     "presentation_type",          # type-picker (order 0) -- MUST be first, see selftest guard
+    # PD-082a: how long the talk runs -- bank wording, bank field. Always
+    # asked, so it counts against the cap. The slide count is derived from
+    # it and is never asked.
+    "duration_min",
+    # PD-082a: asked only for a one-recipient (content_personal) deck; rides
+    # its condition and does not count against the cap.
+    "recipient_name",
+    # PD-082a: asked only when the deck is built from existing content (the
+    # two content types). Bank wording and bank condition (`in`).
+    "extracted_substance",
     "offer_name",                 # company/offer
     "named_methodology",          # branded method name (order 17.5) -- FIX-PITCH-ANTI-FAB,
                                    # feeds pitch_engines_check.chk_branded_method; unconditional
@@ -444,21 +455,36 @@ def selftest() -> int:
     if specs.get("questions"):
         payload = build_curated_payload("RUNTEST", specs, DEFAULT_CURATED, store_target)
         ids = [q["id"] for q in payload["questions"]]
-        # Cap 21 binds the set WITHOUT the declined-reason waiver follow-ups.
-        # A waiver follow-up rides on its toggle (asked only on a "no") and
-        # is pinned individually below instead of counted against the cap.
-        # (Other conditional questions, e.g. the pitch_included pair, are
-        # ordinary curated questions and stay inside the count, as before.)
+        # Cap 22 binds the set WITHOUT the conditional follow-ups. A
+        # follow-up rides on its condition (a "no" toggle, a personal type,
+        # a content type) and is pinned individually below instead of
+        # counted against the cap.
         waiver_followups = [q for q in payload["questions"]
                             if q["id"].endswith("_declined_reason")]
-        assert len(ids) - len(waiver_followups) <= 21, \
-            "curated set must respect cap 21 (excluding waiver follow-ups)"
+        conditional = [q for q in payload["questions"] if q.get("conditional_on")]
+        assert len(ids) - len(conditional) <= 22, \
+            "curated set must respect cap 22 (excluding conditional follow-ups)"
         for q in waiver_followups:
             assert q.get("conditional_on", {}).get("equals") == "no", q
             assert str(q.get("storeOn", "")).startswith("pre_presentation_capture."), q
             assert q.get("required") is True, q
         assert len(ids) >= 7, "curated set must keep 7-9 core"
         assert ids[0] == "presentation_type", "first standard question must be the type-picker (presentation_type)"
+        # PD-082a: how long (bank wording, bank field), directly after the
+        # type-picker; who for (personal only); what the source is (content
+        # types only).
+        assert ids[1] == "duration_min", "PD-082a: duration_min must directly follow the type-picker"
+        _dur = next(q for q in payload["questions"] if q["id"] == "duration_min")
+        assert _dur["prompt"] == "How many minutes should the talk run?", _dur
+        assert _dur.get("storeOn") == "deck_brief.DURATION_MIN", _dur
+        assert _dur.get("kind") == "integer" and _dur.get("required") is True, _dur
+        _rec = next(q for q in payload["questions"] if q["id"] == "recipient_name")
+        assert _rec.get("conditional_on") == {"id": "presentation_type", "equals": "content_personal"}, _rec
+        assert _rec.get("storeOn") == "pre_presentation_capture.RECIPIENT_NAME", _rec
+        _ext = next(q for q in payload["questions"] if q["id"] == "extracted_substance")
+        assert _ext.get("conditional_on", {}).get("in") == ["content_personal", "content_general"], _ext
+        assert _ext["prompt"] == "What is the one core idea your existing material must convey?", _ext
+        assert _ext.get("storeOn") == "pre_presentation_capture.EXTRACTED_SUBSTANCE", _ext
         assert "speech_speed_preference" in ids, "speech-speed question must be included"
         assert "want_sales_checkout" in ids, "sales/checkout yes-no must be included"
         assert "want_vsl_page" in ids, "VSL yes-no must be included"
