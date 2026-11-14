@@ -276,15 +276,30 @@ def test_qc_gate_blocking_reasons_do_not_leak_into_a_passing_score():
     assert g["state"] == "pass", g
     assert g["score"] == 9.1
 
-def test_qc_is_waivable_with_genuine_client_quote():
-    """Unlike ocr_readback, qc stays in GATE_KEYS -- a client-quoted waiver (validated by
-    waivers.py against the client's own recorded words) is the ONLY bypass. This is not
-    weakened by the fail-closed fix."""
-    rd = _rd(); _wj(rd, "working/copy/intake.json", {"skip_qc": "Please skip the QC check for this run."})
+def test_qc_waiver_must_cite_a_field_the_interview_offers():
+    """PD-202: `qc` stays in GATE_KEYS (not NON_WAIVABLE_GATES), but the question
+    bank offers the client NO question that declines a quality bar -- its own
+    waiver_field_mapping omits qc and prompt_floor on purpose, "a client cannot
+    consent to a thinner prompt or a lower quality bar". So a qc waiver citing an
+    intake field is refused: a typed waiver is not a request about this gate."""
+    rd = _rd(); _wj(rd, "working/copy/intake.json", {"skip_qc": "Please skip the QC check for this run, we need it."})
     w = {"rule": "qc", "source": "intake_field", "intake_field": "skip_qc",
-         "client_request_quote": "skip the QC check", "captured_at": "2026-01-01T00:00:00Z"}
-    validate_waiver(w, rd)  # must not raise
+         "client_request_quote": "skip the QC check for this run", "captured_at": "2026-01-01T00:00:00Z"}
+    with pytest.raises(WaiverError, match="cannot be waived from an intake field"):
+        validate_waiver(w, rd)
     assert "qc" not in NON_WAIVABLE_GATES
+
+def test_a_deliverable_waiver_still_validates_with_a_genuine_client_quote():
+    """The bypass that survives: a gate the interview DOES ask the client to
+    decline, quoting their own recorded words from that gate's decline question."""
+    rd = _rd()
+    _wj(rd, "working/copy/intake.json",
+        {"teleprompter_declined_reason": "Not for this one, skip the teleprompter quality check."})
+    w = {"rule": "teleprompter", "source": "intake_field",
+         "intake_field": "teleprompter_declined_reason",
+         "client_request_quote": "skip the teleprompter quality check",
+         "captured_at": "2026-01-01T00:00:00Z"}
+    validate_waiver(w, rd)  # must not raise
 
 def test_ocr_readback_unchecked_is_hard_failure_not_warn_only():
     """MASTER-SPEC 7.4 / D10: an unchecked readback BLOCKS -- it must never be routed
@@ -332,19 +347,20 @@ def test_duplicate_waivers_rejected():
     with pytest.raises(WaiverError, match="(?i)two waivers"): load_waivers(rd)
 
 def test_valid_intake_waiver_loads():
-    # The quote must genuinely appear in the intake field's recorded value —
-    # a bare presence check on a boolean flag is the defect this guards against.
+    # PD-202: the quote must genuinely appear in the intake field's recorded value
+    # AND that field must be one the question bank offers for the gate -- a bare
+    # presence check on an arbitrary field is the defect this guards against.
     rd = _rd()
-    _wj(rd, "working/copy/intake.json", {"skip_qc": "Please skip the QC check for this run."})
-    _wj(rd, "waivers.json", [{"rule": "qc", "source": "intake_field", "intake_field": "skip_qc",
-        "client_request_quote": "skip the QC check", "captured_at": "2026-01-01T00:00:00Z"}])
+    _wj(rd, "working/copy/intake.json", {"teleprompter_declined_reason": "Please skip the teleprompter quality check for this run."})
+    _wj(rd, "waivers.json", [{"rule": "teleprompter", "source": "intake_field", "intake_field": "teleprompter_declined_reason",
+        "client_request_quote": "skip the teleprompter quality check", "captured_at": "2026-01-01T00:00:00Z"}])
     waivers = load_waivers(rd)
     validate_waiver(waivers[0], rd)
     wk = {w.get("rule") for w in waivers if w.get("rule")}
-    assert "qc" in wk
+    assert "teleprompter" in wk
     gates = Gates(rd, {}).evaluate_all()
-    g = gates.get("qc", {})
-    if "qc" in wk:
+    g = gates.get("teleprompter", {})
+    if "teleprompter" in wk:
         g["state"] = "waived"
     assert g["state"] == "waived"
 

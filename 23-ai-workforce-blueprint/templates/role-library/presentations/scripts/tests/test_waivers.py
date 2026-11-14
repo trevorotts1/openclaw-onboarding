@@ -43,12 +43,16 @@ def test_duplicate_waivers_exit():
         load_waivers(rd)
 
 def test_valid_intake_waiver():
-    # The quote must be genuinely present in the cited intake field's value —
-    # not merely reference a field that happens to exist (that was the hole).
+    # PD-202: the quote must be genuinely present in the cited intake field's
+    # value (not merely reference a field that happens to exist), AND that field
+    # must be one the question bank offers for THIS gate — the teleprompter
+    # decline question — not a free-text notes field the agent could fill in.
     rd = _rd()
     _wj(rd, "working/copy/intake.json",
-        {"special_instructions": "Please skip the teleprompter quality check for this one."})
-    w = {"rule": "teleprompter", "source": "intake_field", "intake_field": "special_instructions",
+        {"teleprompter_declined_reason":
+             "Please skip the teleprompter quality check for this one."})
+    w = {"rule": "teleprompter", "source": "intake_field",
+         "intake_field": "teleprompter_declined_reason",
          "client_request_quote": "skip the teleprompter quality check",
          "captured_at": "2026-01-01T00:00:00Z"}
     validate_waiver(w, rd)
@@ -56,8 +60,10 @@ def test_valid_intake_waiver():
 def test_intake_waiver_quote_matches_ignoring_case_and_whitespace():
     rd = _rd()
     _wj(rd, "working/copy/intake.json",
-        {"special_instructions": "Please   SKIP   the   Teleprompter check for this one."})
-    w = {"rule": "teleprompter", "source": "intake_field", "intake_field": "special_instructions",
+        {"teleprompter_declined_reason":
+             "Please   SKIP   the   Teleprompter check for this one."})
+    w = {"rule": "teleprompter", "source": "intake_field",
+         "intake_field": "teleprompter_declined_reason",
          "client_request_quote": "skip the teleprompter check",
          "captured_at": "2026-01-01T00:00:00Z"}
     validate_waiver(w, rd)
@@ -66,8 +72,9 @@ def test_intake_forged_quote_rejected():
     # This is the reproduced defect: a quote nobody said, attached to a real
     # intake field, must be rejected — not accepted because the field exists.
     rd = _rd()
-    _wj(rd, "working/copy/intake.json", {"topic": "Our Q3 sales roadmap"})
-    w = {"rule": "teleprompter", "source": "intake_field", "intake_field": "topic",
+    _wj(rd, "working/copy/intake.json", {"teleprompter_declined_reason": "Our Q3 sales roadmap"})
+    w = {"rule": "teleprompter", "source": "intake_field",
+         "intake_field": "teleprompter_declined_reason",
          "client_request_quote": "the client said we can skip the teleprompter check entirely",
          "captured_at": "2026-01-01T00:00:00Z"}
     with pytest.raises(WaiverError, match="(?i)does not appear in intake field"):
@@ -76,17 +83,20 @@ def test_intake_forged_quote_rejected():
 def test_intake_non_string_field_value_rejected():
     # A boolean/flag field carries no client words to quote against, so a
     # waiver citing it must be rejected rather than trusted on presence alone.
-    rd = _rd(); _wj(rd, "working/copy/intake.json", {"skip_qc": True})
-    w = {"rule": "qc", "source": "intake_field", "intake_field": "skip_qc",
-         "client_request_quote": "please skip the qc gate for us",
+    rd = _rd(); _wj(rd, "working/copy/intake.json", {"teleprompter_declined_reason": True})
+    w = {"rule": "teleprompter", "source": "intake_field",
+         "intake_field": "teleprompter_declined_reason",
+         "client_request_quote": "please skip the teleprompter check for us",
          "captured_at": "2026-01-01T00:00:00Z"}
     with pytest.raises(WaiverError, match="(?i)not text"):
         validate_waiver(w, rd)
 
 def test_missing_intake_field_rejected():
     rd = _rd(); _wj(rd, "working/copy/intake.json", {})
-    w = {"rule": "teleprompter", "source": "intake_field", "intake_field": "no_tp",
-         "client_request_quote": "please skip", "captured_at": "2026-01-01T00:00:00Z"}
+    w = {"rule": "teleprompter", "source": "intake_field",
+         "intake_field": "teleprompter_declined_reason",
+         "client_request_quote": "please skip the teleprompter check",
+         "captured_at": "2026-01-01T00:00:00Z"}
     with pytest.raises(WaiverError, match="not present"):
         validate_waiver(w, rd)
 
