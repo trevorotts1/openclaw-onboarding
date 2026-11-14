@@ -1,3 +1,5 @@
+## [v27.1.72]  -  2026-11-12  -  Full-read guard: fleet-roll install wiring (installer, read_skill allow-lists, AGENTS.md rule stamper)
+
 ## [Unreleased]  -  2026-11-12  -  Owner approval flow: the owner always gets a link (Skills 35, 44, 83 + shared helper)
 
 - New `shared-utils/owner_approval/` (`owner_approval.py`, README, 15 tests): register a pending approval request with Command Center, build the owner message (plain summary, preview, one-tap link), poll for the minted approval id, answer a chat "approved" with the link, re-send the link on reminders. The agent never mints approval; the Skill 44 write gate is unchanged.
