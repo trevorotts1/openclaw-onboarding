@@ -70,7 +70,7 @@ def main() -> int:
     assert len(payload["gaps"]) == 1, [g["context"] for g in payload["gaps"]]
     gap = payload["gaps"][0]
     assert gap["context"].startswith("G1 — version file change"), gap["context"]
-    assert gap["pr_skip_condition"] == "github.event_name == 'push'", gap["pr_skip_condition"]
+    assert gap["pr_skip_condition"] == "github.event_name == 'push' && github.ref == 'refs/heads/main'", gap["pr_skip_condition"]
     for row in payload["contexts"]:
         assert row.get("workflow") and row.get("job"), row
         assert row.get("proves"), row
@@ -93,7 +93,7 @@ def main() -> int:
 
     # 4. G1's skip removed -> the declared gap is stale, not silently kept.
     def close_gap(wd: Path) -> None:
-        rewrite(wd / "version-consistency.yml", "    if: github.event_name == 'push'\n", "")
+        rewrite(wd / "version-consistency.yml", "    if: github.event_name == 'push' && github.ref == 'refs/heads/main'\n", "")
     cases.append(("G1 gap closed without registry update", close_gap,
                   "declared PR-skip gap is stale"))
 
@@ -117,8 +117,9 @@ def main() -> int:
     #    never reports and the PR hangs with zero failing checks. This is the
     #    shape that blocks a PR forever, so it must be a hard mapping failure.
     def add_pr_paths(wd: Path) -> None:
-        rewrite(wd / "qc-static.yml", "  pull_request:\n    branches: [main]\n",
-                "  pull_request:\n    branches: [main]\n    paths:\n"
+        rewrite(wd / "qc-static.yml",
+                "  pull_request:\n    types: [opened, synchronize, reopened, ready_for_review]\n    branches: [main]\n",
+                "  pull_request:\n    types: [opened, synchronize, reopened, ready_for_review]\n    branches: [main]\n    paths:\n"
                 "      - '49-signature-funnel/**'\n")
     cases.append(("path filter re-added on pull_request", add_pr_paths,
                   "pull_request trigger is path-filtered"))

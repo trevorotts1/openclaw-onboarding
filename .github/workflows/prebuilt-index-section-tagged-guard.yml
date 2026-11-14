@@ -27,6 +27,7 @@ on:
       - tests/fixtures/prebuilt-index-section-tagged.fixture.sqlite
       - .github/workflows/prebuilt-index-section-tagged-guard.yml
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
     paths:
       - install.sh
       - update-skills.sh
@@ -45,11 +46,12 @@ on:
         default: "false"
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
   static-manifest-fixture:
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     name: "Static + manifest + fixture (offline)"
     runs-on: ubuntu-latest
     env:
