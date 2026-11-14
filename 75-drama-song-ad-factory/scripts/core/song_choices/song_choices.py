@@ -1233,6 +1233,10 @@ def deliver_choices(results, delivery_dir, run_dir, runner=_run_ffmpeg, target=N
     # name one the client was not sent.
     rec = recommend(results) if method_run(run_dir) and offered else None
     st["presented"] = presented
+    # The recommendation is part of the delivered message, so it is recorded
+    # with it: a resend (send_choices without a message) rebuilds the SAME text
+    # instead of silently dropping the Step 14 line.
+    st["recommend"] = rec
     _write(run_dir, "state.json", st)
     failed_nums = sorted(int(r["n"]) for r in heard)
     if not offered:
@@ -1270,7 +1274,8 @@ def send_choices(run_dir, target, send=None, message=None):
         media = [offered[n]["file"] for n in sorted(offered, key=int)]
     if not media:
         raise ChoiceError("no song versions are ready yet; nothing to send")
-    argv = _IC.openclaw_send_argv(target, message or client_message(offered), media=media)
+    argv = _IC.openclaw_send_argv(target, message or client_message(
+        offered, recommend=st.get("recommend")), media=media)
     (send or _run_send)(argv)
     return argv
 

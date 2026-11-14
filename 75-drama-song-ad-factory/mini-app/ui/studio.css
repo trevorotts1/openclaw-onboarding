@@ -264,3 +264,11 @@ p  { margin: 0 0 14px; }
   body { font-size: 16px; padding-left: 16px; padding-right: 16px; }
   h1 { font-size: 26px; }
 }
+
+.approval-text { white-space: pre-wrap; overflow-wrap: anywhere; }
+.media-row { display: grid; gap: 10px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 12px; }
+.media-row img { max-width: 100%; height: auto; border-radius: 8px; }
+.media-row audio { width: 100%; }
+textarea, input[type="text"] { width: 100%; font: inherit; padding: 10px 12px; border: 1px solid var(--line);
+  border-radius: 10px; background: var(--surface); color: var(--ink); }
+.inline-note { color: var(--warn-ink); font-size: 15px; margin: 6px 0 0; }

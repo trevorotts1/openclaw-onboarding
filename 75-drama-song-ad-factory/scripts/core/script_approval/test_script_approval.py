@@ -19,7 +19,38 @@ import script_approval as SA  # noqa: E402
 import song_dispatch as SD  # noqa: E402
 import suno_recipe as R  # noqa: E402
 
-N = len(IC.QUESTIONS)
+#: The card asks PURPOSE first and puts the three approval screens behind
+#: CHECKPOINTS: "Choose each one" is the only answer that asks STORYBOARD, SONG
+#: and SCRIPT one by one. The replies are walked off the LIVE shaped list.
+def _reply_for(q):
+    """One valid reply for a screen of the purpose-flow card."""
+    if q.get("free_text"):
+        return "Sweet Details Cookie-Decorating Class"
+    if q["id"] == "spend":
+        return "$25"
+    if q["id"] == "checkpoints":
+        return "4"                      # "Choose each one" -- asks the three approvals
+    return "1"
+
+
+def _plan():
+    """(asked, replies) for the whole card, built as conversation() builds it."""
+    answers, replies = [], []
+    while True:
+        qs = IC._shaped(IC.QUESTIONS, answers)
+        at = len(answers)
+        if at >= len(qs) or qs[at].get("defaulted"):
+            break
+        reply = _reply_for(qs[at])
+        replies.append(reply)
+        answers.append(IC._parse(reply, qs[at]))
+    return IC.askable(IC._shaped(IC.QUESTIONS, answers)), replies
+
+
+ASKED, REPLIES = _plan()
+N = len(ASKED)
+IDS = [q["id"] for q in ASKED]
+SCRIPT_N = IDS.index("script") + 1
 TITLE = "The Climb"
 STORY = [("The world", ["She runs a small shop.", "Nobody knows her name."]),
          ("The turn", ["One seed of truth changes it."])]
@@ -48,26 +79,28 @@ def _edit(reply, story, sheet):
 
 
 def test_question_renders_last_with_right_count_and_text():
-    q = IC.QUESTIONS[-1]
+    # SCRIPT APPROVAL is the LAST of the three approvals CHECKPOINTS asks in place.
+    assert IDS[SCRIPT_N - 3:SCRIPT_N] == ["storyboard", "song", "script"]
+    q = ASKED[SCRIPT_N - 1]
     assert q["label"] == "SCRIPT APPROVAL" and q["id"] == "script"
-    text = IC.render_card().split("\n\n")[N - 1]
-    assert text == ("Question %d of %d - SCRIPT APPROVAL\n"
-                    "Do you want to read and approve the script - your story and the song lyrics - "
-                    "before the song is made?\n"
-                    "1. Yes, show me first - Nothing is generated until you say go. (RECOMMENDED)\n"
-                    "2. No, just make it - I start as soon as the card is approved." % (N, N))
-    assert "Question %d of %d - " % (1, N) in IC.render_card()
+    block = IC.render_step(SCRIPT_N, ASKED).split("\n")
+    assert block[0] == "Question %d of %d - SCRIPT APPROVAL" % (SCRIPT_N, N)
+    assert block[3] == ("Do you want to read and approve the script - your story and the song lyrics - "
+                        "before the song is made?")
+    assert block[4] == ("1. Yes, show me first - Nothing is generated until you say go. (RECOMMENDED)")
+    assert block[5].startswith("2. No, just make it - ")
+    assert IC.render_step(1, ASKED).startswith("Question 1 of %d - PURPOSE" % N)
 
 
 def test_recap_and_change_by_number():
-    base = IC.example_replies()     # the story brief is typed, the choices picked, spend a dollar amount
-    recap = IC.conversation(base)["message"]
-    assert "%d. Script Approval: Yes, show me first" % N in recap
-    st = IC.conversation(base + [str(N)])                      # change the last line
-    assert st["message"].startswith("Question %d of %d - SCRIPT APPROVAL" % (N, N))
-    st = IC.conversation(base + [str(N), "2"])
-    assert st["answers"][-1]["n"] == 2 and "Script Approval: No, just make it" in st["message"]
-    assert SA.wants_approval(IC.conversation(base)["answers"], IC.QUESTIONS) is True
+    recap = IC.conversation(REPLIES, purpose_flow=True)["message"]
+    assert "%d. Script approval: Yes, show me first" % SCRIPT_N in recap
+    st = IC.conversation(REPLIES + [str(SCRIPT_N)], purpose_flow=True)   # change its line
+    assert st["message"].startswith("Question %d of %d - SCRIPT APPROVAL" % (SCRIPT_N, N))
+    st = IC.conversation(REPLIES + [str(SCRIPT_N), "2"], purpose_flow=True)
+    changed = next(a for a in st["answers"] if a.get("id") == "script")
+    assert changed["n"] == 2 and "%d. Script approval: No, just make it" % SCRIPT_N in st["message"]
+    assert SA.wants_approval(IC.conversation(REPLIES, purpose_flow=True)["answers"], IC.QUESTIONS) is True
     assert SA.wants_approval(st["answers"], IC.QUESTIONS) is False
 
 

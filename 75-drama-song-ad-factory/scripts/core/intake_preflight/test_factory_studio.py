@@ -195,7 +195,13 @@ def test_card_studio_json_prints_the_export():
     assert env["format"] == "studio-json" and env["version"] == 0
     assert env["question_count"] == len(env["questions"]) > 0
     q = env["questions"][0]
-    assert q["question"] and q["example"] and q["options"]
+    # The card opens on a TYPED brief screen (OFFER): it carries an example, not
+    # a menu. Every screen is still askable: a menu or a typed example.
+    assert q["question"] and q["example"]
+    for row in env["questions"]:
+        assert row["question"], row
+        assert row.get("options") or row.get("example"), row
+    assert any(row.get("options") for row in env["questions"])   # the menus are still exported
 
 
 def test_card_studio_json_is_a_real_choice():

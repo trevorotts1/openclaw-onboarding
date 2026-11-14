@@ -22,8 +22,13 @@ model prompt.
 The cover becomes the product image path and is stored as a product
 reference with provenance (origin, field provenance, sha256 when the file is
 readable). The story's mentor/turning point is the book; the call to action
-is to get the book. Brief text is source material, never instructions:
-injection -> rejected, authorization untouched.
+is to get the book. Brief text is source material, never instructions, and
+authorization is untouched. Besides offer / audience / action and the cover,
+the engine-read fields a book brief may carry (mode, extracted_sources,
+packet_lines, sfx, the length and fps) are mapped too, each only when the
+brief supplies it. Extracted sources are screened by the engine: one that
+carries an instruction is dropped and named once in ``warnings``, and typed
+words are never refused.
 """
 from __future__ import annotations
 
@@ -296,13 +301,22 @@ def excerpt_lines(brief):
     return list(lines), prov, []
 
 
-def to_intake_brief(fields):
+def to_intake_brief(fields, brief=None):
     """Map book fields onto the standard intake brief.
 
     A slot counts as answered only when ALL of its book fields are present,
     so a half-filled slot still opens exactly the one question that already
     exists -- the ask folds in, it never multiplies.
+
+    U-GEN423: the shared engine also reads ``mode``, ``extracted_sources``,
+    ``packet_lines``, ``sfx``, ``length``/``length_option``, ``target_length_s``
+    and ``fps`` from the brief itself. A book brief may carry them; they used
+    to be dropped here, which left mode/notices/warnings structurally constant
+    on the book path. Each is forwarded ONLY when the brief actually supplies
+    it -- nothing is defaulted, because a fabricated value would read as if
+    the client had asked for it.
     """
+    brief = brief if isinstance(brief, dict) else {}
     offer = None
     if fields.get("book_title") and fields.get("author") and fields.get("buy_link"):
         offer = "%s by %s -- get it at %s" % (
@@ -321,6 +335,22 @@ def to_intake_brief(fields):
     }
     if fields.get("cover"):
         mapped["assets"] = [fields["cover"]]
+    # U-GEN423: pass-through fields the shared engine reads from the brief.
+    # Scalars go over verbatim (each reader -- mode_of, notices -- coerces its
+    # own type); list-shaped fields are forwarded only as lists, which is the
+    # shape the engine walks. A key the brief does not have is left out.
+    for key in ("mode", "fps", "target_length_s"):
+        if brief.get(key) is not None:
+            mapped[key] = brief[key]
+    for key in ("extracted_sources", "packet_lines", "sfx"):
+        if isinstance(brief.get(key), list):
+            mapped[key] = brief[key]
+    # The book brief spells a length as ``length``; the engine reads
+    # ``length_option`` and parses it with its own ``_as_length`` ("90s"/"2m"
+    # and plain seconds all convert). An explicit length_option wins.
+    length = brief.get("length_option", brief.get("length"))
+    if length is not None:
+        mapped["length_option"] = length
     return mapped
 
 
@@ -458,7 +488,6 @@ def evaluate(brief, settings=None, resume_state=None, run_id=None, now_unix=None
             "next_action": "Resubmit the brief as a JSON object.",
         }
 
-    hits = _base.detect_injection(brief)
     try:
         fields, prov = normalize(brief, settings)
     except BookBriefError as exc:
@@ -466,8 +495,18 @@ def evaluate(brief, settings=None, resume_state=None, run_id=None, now_unix=None
     # F6: menus and numbers come from Trevor's words or the skill's tables,
     # never invented. Checked at compile time, before any question is asked.
     invented = reject_any_invented(brief)
-    mapped = to_intake_brief(fields)
+    mapped = to_intake_brief(fields, brief)
     base = _base.evaluate(mapped, settings, resume_state, run_id, now_unix)
+    # U-E05: an instruction-bearing source is dropped and named, never a
+    # refusal -- the run continues on the client's own words. U-GEN423 now
+    # forwards extracted_sources into the mapped brief, so the engine's own
+    # warnings already name them; the raw-brief screen stays for any path that
+    # maps nothing, and a name is never listed twice.
+    warnings = list(base.get("warnings") or [])
+    for name in _base.detect_injection(brief):
+        w = "source ignored: %s" % name
+        if w not in warnings:
+            warnings.append(w)
 
     base_fields, _ = _base.normalize(mapped, settings)
     base_summary = dict(base.get("summary") or {})
@@ -511,19 +550,11 @@ def evaluate(brief, settings=None, resume_state=None, run_id=None, now_unix=None
         "product_reference": product_reference(fields, prov),
         "next_action": base.get("next_action"),
         "next_stage": base.get("next_stage"),
+        "mode": base.get("mode"),
+        "notices": base.get("notices"),
+        "warnings": warnings,
     }
-    if hits:  # untrusted text never reaches questions or auth scope
-        out.update({
-            "outcome": "rejected",
-            "reason_code": "untrusted-injection-blocked",
-            "questions": [],
-            "question_message": None,
-            "untrusted_fields": hits,
-            "approval_invalidated": False,
-            "changes": [],
-            "next_action": "Remove instruction language from brief fields and resubmit.",
-        })
-    elif invented:  # F6: an invented style/number/gate refuses the brief
+    if invented:  # F6: an invented style/number/gate refuses the brief
         out.update({
             "outcome": "rejected",
             "reason_code": invented["reason_code"],
@@ -703,7 +734,8 @@ def main(argv=None):
             "questions", "question_message", "summary", "digest", "provenance",
             "auth_status", "approval_invalidated", "changes", "untrusted_fields",
             "invented_fields",
-            "product_reference", "next_stage")}
+            "product_reference", "next_stage",
+            "mode", "notices", "warnings")}
         expected = (resume or {}).get("digest") if resume else None
         state_version = {"expected": expected, "current": r.get("digest")}
     except Exception as e:                                  # noqa: BLE001

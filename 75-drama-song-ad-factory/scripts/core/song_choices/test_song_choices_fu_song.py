@@ -23,15 +23,47 @@ import kie_dispatch.kie_dispatch as KD                          # noqa: E402
 import factory as F                                             # noqa: E402
 from test_production_process import confirmed_run, complete_stage, approve_script
 
-N = len(IC.QUESTIONS)
-IDS = [q["id"] for q in IC.QUESTIONS]
+#: The card asks PURPOSE first, and the three approval screens (STORYBOARD, SONG,
+#: SCRIPT) sit behind CHECKPOINTS: "Choose each one" is the only answer that asks
+#: them one by one. The replies are therefore walked off the LIVE shaped list
+#: instead of a fixed index, so the gate questions keep their own slots.
+def _reply_for(q):
+    """One valid reply for a screen of the purpose-flow card."""
+    if q.get("free_text"):
+        return "Sweet Details Cookie-Decorating Class"
+    if q["id"] == "spend":
+        return "$25"
+    if q["id"] == "checkpoints":
+        return "4"                                   # "Choose each one" -- asks the gates
+    return "1"
+
+
+def _walk_card():
+    """(answers, replies) for the whole card, built exactly as conversation() does."""
+    answers, replies = [], []
+    while True:
+        qs = IC._shaped(IC.QUESTIONS, answers)
+        at = len(answers)
+        if at >= len(qs) or qs[at].get("defaulted"):
+            break
+        reply = _reply_for(qs[at])
+        replies.append(reply)
+        answers.append(IC._parse(reply, qs[at]))
+    return answers, replies
+
+
+_ANSWERS, _REPLIES = _walk_card()
+ASKED = IC.askable(IC._shaped(IC.QUESTIONS, _ANSWERS))
+N = len(ASKED)
+IDS = [q["id"] for q in ASKED]
 SONG_N = IDS.index("song") + 1
 
 
 def ANS(song="1", upto=None):
-    """Replies for every card question in order (AI models, length ... script): the
-    spend question takes a dollar amount, SONG APPROVAL takes ``song``, the rest take 1."""
-    r = IC.example_replies()                     # the story brief is typed, the choices picked
+    """Replies for every card question in order: the spend question takes a dollar
+    amount, SONG APPROVAL takes ``song``, CHECKPOINTS says "choose each one" so the
+    three approval screens are asked, and the rest take 1."""
+    r = list(_REPLIES)
     r[SONG_N - 1] = song
     return r if upto is None else r[:upto]
 CLIENT = "I am not small. I never was. One seed of truth made me strong. She Found Power in the Climb."
@@ -162,28 +194,32 @@ def _pipeline(tmp, bad_first=(), bad_always=()):
 
 
 def test_card_has_song_approval_after_storyboard():
-    labels = [q["label"] for q in IC.QUESTIONS]
-    # five story-brief questions then the nine production choices (DSR-105)
-    assert N == 14 and labels[:5] == ["OFFER", "OFFER LINK", "AUDIENCE", "CHARACTER", "PHOTOS"], labels
-    assert labels[-3:] == ["STORYBOARD APPROVAL", "SONG APPROVAL", "SCRIPT APPROVAL"], labels
-    block = IC.render_card().split("\n\n")[SONG_N - 1].split("\n")
+    labels = [q["label"] for q in ASKED]
+    # PURPOSE first, then the story brief, then the production choices; the three
+    # approval screens are asked in place after CHECKPOINTS ("Choose each one").
+    assert N == 15 and labels[0] == "PURPOSE", labels
+    assert labels[:6] == ["PURPOSE", "OFFER", "OFFER LINK", "AUDIENCE", "CHARACTER",
+                          "AI MODELS"], labels
+    assert labels[-5:] == ["CHECKPOINTS", "STORYBOARD APPROVAL", "SONG APPROVAL",
+                           "SCRIPT APPROVAL", "BUDGET"], labels
+    block = IC.render_step(SONG_N, ASKED).split("\n")
     assert block[0] == "Question %d of %d - SONG APPROVAL" % (SONG_N, N)
-    assert block[1] == "Do you want to hear and pick the song before any video is made?"
-    assert block[2].startswith("1. Yes, send me 3 versions to choose from - ") and IC.REC in block[2]
-    assert block[3].startswith("2. No, just make it - ") and IC.REC not in block[3]
-    step = IC.conversation(ANS(upto=SONG_N - 1))["message"]
+    assert block[3] == "Do you want to hear and pick the song before any video is made?"
+    assert block[4].startswith("1. Yes, send me 3 versions to choose from - ") and IC.REC in block[4]
+    assert block[5].startswith("2. No, just make it - ") and IC.REC not in block[5]
+    step = IC.conversation(ANS(upto=SONG_N - 1), purpose_flow=True)["message"]
     assert step.startswith("Question %d of %d - SONG APPROVAL" % (SONG_N, N)) and 'say "recommended".' in step
-    assert IC.conversation(ANS(upto=SONG_N - 1) + ["recommended"])["answers"][SONG_N - 1]["n"] == 1
+    assert IC.conversation(ANS(upto=SONG_N - 1) + ["recommended"], purpose_flow=True)["answers"][SONG_N - 1]["n"] == 1
 
 
 def test_recap_lists_it_and_line_change_works():
-    st = IC.conversation(ANS())
-    assert "%d. Song Approval: Yes, send me 3 versions to choose from" % SONG_N in st["message"]
+    st = IC.conversation(ANS(), purpose_flow=True)
+    assert "%d. Song approval: Yes, send me 3 versions to choose from" % SONG_N in st["message"]
     assert IC.song_required(st["answers"]) is True
-    fix = IC.conversation(ANS() + [str(SONG_N)])
+    fix = IC.conversation(ANS() + [str(SONG_N)], purpose_flow=True)
     assert fix["message"].startswith("Question %d of %d - SONG APPROVAL" % (SONG_N, N))
-    no = IC.conversation(ANS() + [str(SONG_N), "2"])
-    assert IC.song_required(no["answers"]) is False and "%d. Song Approval: No, just make it" % SONG_N in no["message"]
+    no = IC.conversation(ANS() + [str(SONG_N), "2"], purpose_flow=True)
+    assert IC.song_required(no["answers"]) is False and "%d. Song approval: No, just make it" % SONG_N in no["message"]
 
 
 def test_three_distinct_variants_per_style_all_pass_the_request_check():
