@@ -107,8 +107,13 @@ def _cli_stage_run(tmp):
 
 
 def _confirm_cli_card(run, replies, target=None):
-    """Present each renderer receipt before its one client reply, then confirm."""
-    args = ["card", "--step", "--run-dir", run, "--no-purpose-flow", "--format", "session-json"]
+    """Present each renderer receipt before its one client reply, then confirm.
+
+    The card asks PURPOSE first and puts STORYBOARD / SONG / SCRIPT behind
+    CHECKPOINTS ("Choose each one"), so this is the purpose flow -- the only one
+    that asks the SONG APPROVAL screen the gate is driven from.
+    """
+    args = ["card", "--step", "--run-dir", run, "--purpose-flow", "--format", "session-json"]
     if target is not None:
         args += ["--target", target]
 

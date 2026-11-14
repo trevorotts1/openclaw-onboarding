@@ -107,12 +107,33 @@ def run(a, questions=None, purpose_flow=None, stdout=None):
         return _emit(a, _error("INTAKE_SESSION_UNAVAILABLE", str(exc)), stdout)
     try:
         from choice_card.intake_card import intake_card as card
+        intro, purpose_flow = _intro(a, purpose_flow, session)
         if questions is None:
+            # The launcher's own card choice (S75-006 step 5), made AFTER the
+            # session's flow is known: the frozen list for a run that recorded
+            # it, the new one otherwise -- the same decision intake_card.main
+            # makes. A session that already exists keeps the flow IT recorded,
+            # so turn 2 of one run is never asked a different card than turn 1.
+            session_path = _session_path(a)
+            base = card._base_card(getattr(a, "run_dir", "") or None, purpose_flow)
+            if session_path.exists():
+                # A session that already exists keeps the EXACT base it started
+                # with: its recorded digest names it, and turn 2 of one run is
+                # never asked a different card than turn 1. (purpose_flow=False
+                # records "no purpose screen", not "the frozen old list".)
+                try:
+                    st = json.loads(session_path.read_text(encoding="utf-8"))
+                except (OSError, ValueError):
+                    st = {}
+                digest = st.get("base_definition_digest") if isinstance(st, dict) else None
+                for candidate in (card.QUESTIONS, card.LEGACY_QUESTIONS):
+                    if digest is not None and digest == session._digest(candidate):
+                        base = candidate
+                        break
             questions = [card.spend_question(
                 getattr(a, "price", None), getattr(a, "limit", None),
                 getattr(a, "limit_from_brief", False)) if q["id"] == "spend" else q
-                for q in card._with_saved_character(getattr(a, "client_dir", ""))]
-        intro, purpose_flow = _intro(a, purpose_flow, session)
+                for q in card._with_saved_character(getattr(a, "client_dir", ""), base)]
         if intro is not None:
             state = {"done": False, "answers": [], "outcome": "ok",
                      "reason_code": "INTAKE_INTRO", "message": intro,

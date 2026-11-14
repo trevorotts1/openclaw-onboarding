@@ -27,7 +27,37 @@ import script_approval as SA  # noqa: E402
 import test_kie_dispatch as TK  # noqa: E402
 from test_production_process import complete_stage  # noqa: E402
 
-N = len(IC.QUESTIONS)
+#: The card asks PURPOSE first and puts the three approval screens behind
+#: CHECKPOINTS: "Choose each one" is the only answer that asks STORYBOARD, SONG
+#: and SCRIPT one by one. The replies are walked off the LIVE shaped list.
+def _reply_for(q):
+    """One valid reply for a screen of the purpose-flow card."""
+    if q.get("free_text"):
+        return "Sweet Details Cookie-Decorating Class"
+    if q["id"] == "spend":
+        return "$25"
+    if q["id"] == "checkpoints":
+        return "4"                      # "Choose each one" -- asks the three approvals
+    return "1"
+
+
+def _plan():
+    """(asked, replies) for the whole card, built as conversation() builds it."""
+    answers, replies = [], []
+    while True:
+        qs = IC._shaped(IC.QUESTIONS, answers)
+        at = len(answers)
+        if at >= len(qs) or qs[at].get("defaulted"):
+            break
+        reply = _reply_for(qs[at])
+        replies.append(reply)
+        answers.append(IC._parse(reply, qs[at]))
+    return IC.askable(IC._shaped(IC.QUESTIONS, answers)), replies
+
+
+ASKED, REPLIES = _plan()
+N = len(ASKED)
+SCRIPT_N = [q["id"] for q in ASKED].index("script") + 1
 SHEET = [{"tag": "Intro", "lines": ["One closed door."]},
          {"tag": "Hook 1", "lines": ["I am not sma-a-all", "I ne-ever wa-a-as"]}]
 STAGES = ("research", "creative-strategy", "script-lyrics", "music", "continuity-bible", "storyboard",
@@ -41,8 +71,9 @@ def lyrics_of(sheet):
 
 
 def ones():
-    """One reply per question: option 1, or a dollar amount for the spend question."""
-    return IC.example_replies()
+    """One reply per ASKED screen: option 1, a dollar amount for BUDGET, and
+    "choose each one" on CHECKPOINTS so the three approval screens are asked."""
+    return list(REPLIES)
 
 
 def make_run(yes=True, *, confirmed=True):
@@ -211,8 +242,10 @@ def test_delivery_uses_openclaw_send_and_failure_resends_on_resume():
 
 def confirm_card(run, script_answer):
     """Drive the REAL card (factory.py card --step --run-dir) to a confirmed recap."""
-    replies = ones()[:-1] + [script_answer] + ["yes"]
-    args = ["card", "--step", "--run-dir", run, "--no-purpose-flow", "--format", "session-json"]
+    replies = list(REPLIES)
+    replies[SCRIPT_N - 1] = script_answer       # the SCRIPT APPROVAL line it names
+    replies.append("yes")
+    args = ["card", "--step", "--run-dir", run, "--purpose-flow", "--format", "session-json"]
 
     def turn(extra=()):
         out = io.StringIO()
@@ -237,7 +270,9 @@ def test_confirmed_recap_writes_answers_yes_pauses():
     if isinstance(rows, dict):                 # the versioned envelope
         assert rows.get("schema_version") == 2
         rows = rows.get("answers")
-    assert [r["id"] for r in rows] == [q["id"] for q in IC.QUESTIONS]
+    # every ASKED screen, then the defaulted recap tail (S75-006)
+    assert [r["id"] for r in rows] == ([q["id"] for q in ASKED]
+                                       + [q["id"] for q in IC.QUESTIONS if q.get("defaulted")])
     env = next_(run)
     assert env["outcome"] == "waiting" and env["reason_code"] == "SCRIPT_AWAITING_APPROVAL", env
     assert "THE SONG LYRICS" in "\n".join(env["data"]["delivered"])

@@ -221,11 +221,30 @@ def card_then_run(storyboard_reply):
     """Real intake card, answered end to end, then the runner on the same run dir."""
     from choice_card.intake_card import intake_card as IC
     run, w = make_run(None), World()
-    ids = [q["id"] for q in IC.QUESTIONS]
-    replies = IC.example_replies()          # the story brief is typed, the choices picked
-    replies[ids.index("storyboard")] = storyboard_reply
+    # The card asks PURPOSE first and puts STORYBOARD / SONG / SCRIPT behind
+    # CHECKPOINTS: "Choose each one" is the only answer that asks them. The
+    # replies are walked off the LIVE shaped list, so the gate keeps its slot.
+    answers, replies = [], []
+    while True:
+        qs = IC._shaped(IC.QUESTIONS, answers)
+        at = len(answers)
+        if at >= len(qs) or qs[at].get("defaulted"):
+            break
+        q = qs[at]
+        if q["id"] == "storyboard":
+            reply = storyboard_reply
+        elif q["id"] == "spend":
+            reply = "$25"
+        elif q["id"] == "checkpoints":
+            reply = "4"                     # "Choose each one" -- asks the three approvals
+        elif q.get("free_text"):
+            reply = "Sweet Details Cookie-Decorating Class"
+        else:
+            reply = "1"
+        replies.append(reply)
+        answers.append(IC._parse(reply, q))
     replies += ["yes"]
-    st = IC.conversation(replies, IC.QUESTIONS, run_dir=run, target="555")
+    st = IC.conversation(replies, purpose_flow=True, run_dir=run, target="555")
     check("card done (%s)" % storyboard_reply, st["done"])
     return run, w, AR.run(run, w.send)
 

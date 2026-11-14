@@ -36,11 +36,26 @@ class AgnesExplanation(unittest.TestCase):
         self.assertIn("still charged to your studio balance", text)
         self.assertIn("Option 2 uses the studio's own models for everything", text)
         self.assertIn("see the cost before anything is made", text)
+        lines = explanation.lines(env={})
+        self.assertEqual(len(lines), 2)                       # one plain sentence per option
+        self.assertTrue(text.startswith("Option 1"))
+        self.assertTrue(text.endswith("."))
+        self.assertNotIn("\n\n", text)                        # no blank line inside the copy
+        self.assertNotIn("$", text)                           # no money figure reaches the client here
+        self.assertNotIn("%", text)                           # no percentage either
+        self.assertEqual(text.count("Option 1"), 1)
+        self.assertEqual(text.count("Option 2"), 1)
+        self.assertTrue(all(len(line.split()) <= 40 for line in lines))
+        self.assertTrue(all(line.rstrip().endswith(".") for line in lines))
 
     def test_no_vendor_name_or_provider_jargon_reaches_the_client(self):
         text = "\n".join(explanation.lines(env={}))
-        for word in ("KIE", "Suno", "Kling", "OpenRouter", "Ollama", "sqlite"):
-            self.assertNotIn(word, text, word)
+        self.assertNotIn("KIE", text)
+        self.assertNotIn("Suno", text)
+        self.assertNotIn("Kling", text)
+        self.assertNotIn("OpenRouter", text)
+        self.assertNotIn("Ollama", text)
+        self.assertNotIn("sqlite", text)
 
     def test_no_balance_claim_and_no_setting_or_credential_is_read(self):
         # the old text printed daily quota figures; the page forbids them
@@ -52,6 +67,9 @@ class AgnesExplanation(unittest.TestCase):
         self.assertEqual(text, "\n".join(EXPECTED))
         self.assertNotIn("secret-value", text)
         self.assertNotIn("daily planning limits", text)
+        self.assertNotIn("AGNES_DAILY", text)
+        self.assertNotIn("1200", text)                        # the image quota figure never prints
+        self.assertNotIn("350 video", text)                   # nor the video-seconds figure
 
     def test_explanation_preserves_question_and_option_identity(self):
         q = card._agnes_q("unknown")

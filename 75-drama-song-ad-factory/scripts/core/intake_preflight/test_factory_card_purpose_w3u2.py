@@ -87,7 +87,9 @@ def purpose_replies():
     answers, replies = [], []
     for _ in range(60):
         qs = IC._shaped(IC.QUESTIONS, answers)
-        if len(answers) >= len(qs):
+        if len(answers) >= len(qs) or qs[len(answers)].get("defaulted"):
+            # S75-006: the defaulted recap tail (video model, shape, photos)
+            # is never asked, so the walk ends when it reaches it.
             return replies + ["yes"]
         q = qs[len(answers)]
         if q["id"] == "spend":
@@ -106,8 +108,8 @@ def purpose_replies():
 
 
 def legacy_replies():
-    """The pre-method card's replies (one per question of IC.QUESTIONS)."""
-    return IC.example_replies()[:-1] + ["1", "yes"]
+    """The frozen pre-method card's replies, one per screen it asks."""
+    return IC.example_replies(IC.LEGACY_QUESTIONS) + ["yes"]
 
 
 def drive(run, replies, fmt="text", extra=()):
@@ -245,11 +247,11 @@ def main():
                               indent=2, sort_keys=True)
         (run / "storyboard" / "approval.json").write_text(approved, encoding="utf-8")
         (run / "storyboard" / "gate.json").write_text(approved, encoding="utf-8")
-        saved = json.dumps([{"id": "song", "n": 1, "text": "Yes"}], indent=2)
+        saved = json.dumps([{"id": "offer", "n": 1, "text": "Old Offer"}], indent=2)
         (run / "card-answers.json").write_text(saved, encoding="utf-8")
         check("launcher keeps the legacy card for a resumed run",
               F._purpose_flow_for(str(run), None), False)
-        code, text = drive(run, legacy_replies())
+        code, text = drive(run, legacy_replies())          # the preserved answers are not re-imported
         check("exit 0", code, 0)
         check_true("the legacy recap locked in", "Locked in" in text)
         check("no method.json invented",
@@ -260,14 +262,16 @@ def main():
         rows = json.loads((run / "card-answers.json").read_text(encoding="utf-8"))
         rows = rows.get("answers") if isinstance(rows, dict) else rows
         check("the resumed run stayed on the legacy list",
-              [r["id"] for r in rows], [q["id"] for q in IC.QUESTIONS])
+              [r["id"] for r in rows], [q["id"] for q in IC.LEGACY_QUESTIONS])
 
         # -- 5: the explicit switches still win ------------------------------
         print("[5] the explicit switches still win")
         run = make_run(Path(tmp) / "forced-off")
         code, text = drive(run, legacy_replies(), extra=["--no-purpose-flow"])
         check("exit 0", code, 0)
-        check("--no-purpose-flow keeps the legacy card",
+        check("--no-purpose-flow asks the new card without the purpose screen",
+              ("PURPOSE" in text), False)
+        check("and no method record is invented",
               (run / "control" / "method.json").exists(), False)
         run = make_run(Path(tmp) / "forced-on", advanced=3)
         code, text = drive(run, replies, extra=["--purpose-flow"])
