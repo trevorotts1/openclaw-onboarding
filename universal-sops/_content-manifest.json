@@ -1,7 +1,7 @@
 {
   "algo": "sha256(CRLF->LF normalized bytes)",
   "generator": "scripts/hash-universal-sops-manifest.py",
-  "generated_at": "2026-11-13T12:48:10Z",
+  "generated_at": "2026-11-14T14:20:37Z",
   "file_count": 116,
   "files": {
     "CLIENT-WEBINAR-DECK-SOP.md": {
@@ -25,8 +25,8 @@
       "bytes": 43337
     },
     "SOP-RR-LOOP-TRIAGE.md": {
-      "sha256": "b67c2bbdf6518f787e41e5787efadcfd019a26dd19857c15283db8fa80889d95",
-      "bytes": 14728
+      "sha256": "f918e81ba3c463ee93c648612b99446456148582c940db0a367fed6ee46fad0a",
+      "bytes": 14812
     },
     "adding-capability-after-build.md": {
       "sha256": "c76d22285751b707c6d58d14e930c042122cc1f7f0426b43210e3f7979b947b8",
