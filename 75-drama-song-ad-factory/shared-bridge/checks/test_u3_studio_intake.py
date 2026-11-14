@@ -152,19 +152,65 @@ class U3Tests(unittest.TestCase):
                               text=True, env=self.env(**over))
 
     def stub_skill_root(self):
+        """A skill root whose factory.py records its argv and answers the card.
+
+        The bridge drives the card with `--format session-json` (S75-106), so
+        the stand-in answers a completed session - the same shape the real
+        durable session prints.
+        """
         core = self.tmp / "stub-skill" / "scripts" / "core" / "intake_preflight"
         core.mkdir(parents=True, exist_ok=True)
         (core / "factory.py").write_text(
             "import json, os, sys\n"
             "with open(os.environ['STUB_FACTORY_LOG'], 'a', encoding='utf-8') as fh:\n"
             "    fh.write(json.dumps(sys.argv[1:]) + '\\n')\n"
-            "sys.stdout.write('next question\\n')\n",
+            "sys.stdout.write(json.dumps({'done': True, 'outcome': 'ok',\n"
+            "                             'reason_code': 'INTAKE_CONFIRMED',\n"
+            "                             'question_id': None}) + '\\n')\n",
             encoding="utf-8")
         return self.tmp / "stub-skill"
 
     def poll(self, skill_root, **over):
         return self.bridge(["poll", "--skill-root", str(skill_root),
                             "--runs", str(self.runs), "--base-url", self.base], **over)
+
+    #: The card's own complete reply list, built once (the card is
+    #: deterministic). A one-reply order leaves a session whose `done` is false,
+    #: which the bridge HALTS (S75-106), so these end-to-end runs carry a real,
+    #: complete order: every screen of a campaign answered, then the one recap
+    #: confirmation the studio page sends.
+    _CARD_REPLIES = None
+
+    def card_replies(self):
+        if U3Tests._CARD_REPLIES is not None:
+            return list(U3Tests._CARD_REPLIES)
+        factory = str(SKILL_ROOT / "scripts" / "core"
+                      / "intake_preflight" / "factory.py")
+        probe = self.tmp / "card-probe"
+        probe.mkdir(parents=True, exist_ok=True)   # a run folder: purpose flow on
+        replies = []
+        for _ in range(40):
+            argv = [PY, factory, "card", "--step", "--format", "session-json",
+                    "--run-dir", str(probe)]
+            for reply in replies:
+                argv.extend(["--reply", reply])
+            done = subprocess.run(argv, capture_output=True, text=True,
+                                  env=self.env(), cwd=str(SKILL_ROOT))
+            state = json.loads(done.stdout) if done.stdout.strip() else {}
+            question_id = state.get("question_id")
+            if question_id == "recap" or not question_id:
+                break
+            if question_id in ("offer", "link", "audience", "character", "photos"):
+                replies.append("Spring cookie class for local families")
+            elif question_id == "spend":
+                replies.append("$25")
+            elif question_id == "purpose":
+                replies.append("1")            # a campaign: no permission screen
+            else:
+                replies.append("1")
+        replies.append("yes")
+        U3Tests._CARD_REPLIES = list(replies)
+        return replies
 
     # -- 1: capability states + quiet optional poller (D24) --------------------
 
@@ -379,7 +425,7 @@ class U3Tests(unittest.TestCase):
         self.assertEqual(rows, 1)                    # same order, resumed
         self.assertEqual(posts, 1)                   # no second claim post
         self.assertEqual(state_posts, 1)
-        self.assertEqual(len(log.read_text().splitlines()), 1)  # one card replay
+        self.assertEqual(len(log.read_text().splitlines()), 2)  # prime + 1 reply
         # wake failure keeps the request queued; the poll re-emits for retry
         wf = self.bridge(["wake", "--fail", "--reason", "NO_CLI",
                           "--order", "r_fetch01", "--db", out["db"]])
@@ -429,9 +475,10 @@ class U3Tests(unittest.TestCase):
         (state / "machine.key").chmod(0o600)
         (state / "machine.url").write_text(self.base + "\n")
         (state / "machine.url").chmod(0o600)
+        replies = self.card_replies()
         STUDIO["line"] = 'DRAMA_ORDER r_timer01 "Spring Sale"'
         STUDIO["order"] = {"order_id": "r_timer01", "client_id": CLIENT,
-                           "title": "Spring Sale", "replies": ["yes"]}
+                           "title": "Spring Sale", "replies": replies}
         bindings = json.dumps(
             [{"agentId": "drama", "match": {"channel": "telegram",
                                             "accountId": "*"}}])
@@ -453,7 +500,7 @@ class U3Tests(unittest.TestCase):
         # poll's success — named in the log, carried in the exit code
         STUDIO["line"] = 'DRAMA_ORDER r_timer02 "Spring Sale"'
         STUDIO["order"] = {"order_id": "r_timer02", "client_id": CLIENT,
-                           "title": "Spring Sale", "replies": ["yes"]}
+                           "title": "Spring Sale", "replies": replies}
         bad = run_timer("openclaw-bad", 3)
         self.assertEqual(bad.returncode, 3, bad.stdout + bad.stderr)
         self.assertIn("poll succeeded but the WAKE failed", bad.stderr)
@@ -461,7 +508,7 @@ class U3Tests(unittest.TestCase):
         # and no-CLI is the same contract: named, exit 70, never silent success
         STUDIO["line"] = 'DRAMA_ORDER r_timer03 "Spring Sale"'
         STUDIO["order"] = {"order_id": "r_timer03", "client_id": CLIENT,
-                           "title": "Spring Sale", "replies": ["yes"]}
+                           "title": "Spring Sale", "replies": replies}
         env = {"PATH": "%s:%s" % (bindir, os.environ.get("PATH", "")),
                "HOME": str(thome), "DS_PLATFORM": "mac",
                "DS_SKILL_ROOT": str(SKILL_ROOT),
