@@ -437,14 +437,19 @@ test('page: every control is labelled, every id is unique, every id the script u
     assert.ok(labelled || wrapped || /type="hidden"/.test(attrs), `an unlabelled <${control[1]}> would be invisible to a screen reader`);
   }
 
-  // The inline wiring runs after the two libraries and reaches the DOM by id.
-  const script = html.slice(html.indexOf('<script src="lib/qr.js"'));
-  const used = [...script.matchAll(/el\('([^']+)'\)/g)].map((m) => m[1]);
-  assert.ok(used.length > 8, 'the wiring looks empty — did the page stop using the libs?');
-  for (const id of new Set(used)) assert.ok(ids.includes(id), `the script reaches for #${id}, which the page never defines`);
+  // The page carries three absolute scripts and NO inline script: the studio
+  // service serves every page with `script-src 'self'`, so an inline block is
+  // refused by the browser. The wiring lives in lib/admin_page.js.
+  const scripts = [...html.matchAll(/<script\b[^>]*\ssrc="([^"]+)"/g)].map((m) => m[1]);
+  assert.deepEqual(scripts, ['/admin/lib/qr.js', '/admin/lib/admin_client.js', '/admin/lib/admin_page.js']);
+  assert.equal(/<script(?![^>]*\ssrc=)[^>]*>/.test(html), false, 'no <script> tag may go without a src');
 
-  assert.match(script, /<script src="lib\/qr\.js"><\/script>/);
-  assert.match(script, /<script src="lib\/admin_client\.js"><\/script>/);
+  // The wiring still reaches the DOM by id.
+  const wiring = readFileSync(join(LIB, 'admin_page.js'), 'utf8');
+  const used = [...wiring.matchAll(/el\('([^']+)'\)/g)].map((m) => m[1]);
+  assert.ok(used.length > 8, 'the wiring looks empty — did the page stop using the libs?');
+  for (const id of new Set(used)) assert.ok(ids.includes(id), `the wiring reaches for #${id}, which the page never defines`);
+
   assert.equal(/localStorage|sessionStorage|document\.cookie/.test(html), false, 'nothing may be persisted in the page');
 });
 
