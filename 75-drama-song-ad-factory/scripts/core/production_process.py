@@ -199,8 +199,36 @@ def _session_authority(run_dir, state, run_id, live_model):
         if not isinstance(actual, dict) or any(actual.get(k) != v for k, v in parsed.items()):
             return _result(False, "PRODUCTION_ANSWER_HANDOFF_MISMATCH",
                            "The saved %s answer differs from its authoritative raw client reply." % qid)
+    # C05 (S75-018 / U-GEN314): the run's MUSIC answer IS its style, and a
+    # resumed run resolves that style HERE, at the one production place that
+    # admits a confirmed session -- through the snapshot-checked reader, never
+    # through a caller string. `bind_run` re-checks the frozen question, its
+    # definition digest, the rendered question and its digest, and only then
+    # maps the label shown at answer time to one catalog id. A saved label is
+    # therefore never re-resolved against the current eighteen-style menu
+    # (the rule `music_styles.catalog._style_key:896-901` states). No second
+    # style source is added: a caller-supplied style id is not accepted here
+    # or anywhere else. `bind_saved_answer`'s checks are untouched, so a
+    # frozen-question mismatch still refuses.
+    # ponytail: the MUSIC answer only. Loop over more answer ids if another
+    # one ever needs the same frozen-snapshot binding.
+    music_style = None
+    records = state.get("answer_records")
+    if isinstance(records, dict) and records.get("music") is not None:
+        # Imported lazily: answer_binding reaches intake_session and
+        # music_styles through its own functions, so this cannot cycle.
+        from choice_card.intake_card import answer_binding  # noqa: PLC0415
+        try:
+            bound = answer_binding.bind_run(run_dir)
+        except answer_binding.BindingError as exc:
+            return _result(False, exc.code, str(exc))
+        music_style = {key: bound[key] for key in (
+            "style_id", "style_label", "catalog_revision", "recipe_revision",
+            "number_shown", "production_fact", "test_only",
+            "question_digest", "definition_digest", "session_path")}
     return _result(True, "PRODUCTION_INTAKE_CONFIRMED", "Exact client answers and recap confirmation are preserved.",
                    authority="intake-session", preferences=_preferences(rows),
+                   music_style=music_style,
                    confirmation_digest=state["confirmation"]["question_digest"])
 
 
