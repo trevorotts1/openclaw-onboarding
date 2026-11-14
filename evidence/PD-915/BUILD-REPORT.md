@@ -2,7 +2,7 @@
 
 - Unit: PD-915 (added unit, not in the 164 lock), lane FL17
 - Branch: `pd/fl17-phase-checks`
-- Worktree: `<EXTERNAL-VOLUME>/swarm-contract/pd-fix/worktrees/onboarding/FL17`
+- Worktree: `$LOOP_ROOT/worktrees/onboarding/FL17`
 - Fix commit: `2d85e9d1bda5c9cb1202412af5e87033da0d6d6d`
 - Pushed: **yes** — `git ls-remote origin refs/heads/pd/fl17-phase-checks`
   returned `2d85e9d1bda5c9cb1202412af5e87033da0d6d6d` after the push.
@@ -72,7 +72,7 @@ producing nothing.
 
 ## Exact commands and output
 
-All runs: `TMPDIR=<EXTERNAL-VOLUME>/swarm-contract/pd-fix/tmp`,
+All runs: `TMPDIR=$LOOP_ROOT/tmp`,
 `PYTHONDONTWRITEBYTECODE=1`, from
 `.../FL17/23-ai-workforce-blueprint/templates/role-library/presentations/scripts`.
 
@@ -164,5 +164,5 @@ No `phase_verifiers.py` line was touched by PD-915.
 
 No merge, no push to main, no rebase, no force-push, no client box, no live
 system. Work stayed in the FL17 worktree and the pd-fix room; temp files under
-`<EXTERNAL-VOLUME>/swarm-contract/pd-fix/tmp`, scratch under
-`<EXTERNAL-VOLUME>/swarm-contract/pd-fix/scratchpads/PD-915`.
+`$LOOP_ROOT/tmp`, scratch under
+`$LOOP_ROOT/scratchpads/PD-915`.

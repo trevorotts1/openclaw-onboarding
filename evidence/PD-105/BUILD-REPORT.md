@@ -8,7 +8,7 @@ This report commit: the one that adds this file.
 All scratch work was done in an independent clone at
 `<EXTERNAL-VOLUME>/swarm-contract/loop-control/pd-fix/tmp/PD-105/work.y94gGY/repo`
 (`work.y94gGY/base` = untouched `1b24dac`). The lane clone
-`<EXTERNAL-VOLUME>/swarm-contract/pd-fix/clones/onboarding` was only read and is clean; the
+`$LOOP_ROOT/clones/onboarding` was only read and is clean; the
 lane worktree `.../pd-fix/worktrees/onboarding/FL17` was not touched and is clean.
 
 ## 1. Spec, quoted

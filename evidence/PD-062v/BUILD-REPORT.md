@@ -36,4 +36,4 @@ Two pre-existing failures, proven on the base head with the change stashed (same
 - `test_fix17_verifier_import_failclosed.py` — 5 failures, identical with `phase_verifiers.py` stashed.
 - `tests/test_negative_fixtures.py::TestSameModelJudge::test_independent_judge_full_set_passes` — 1 failure, identical with the change stashed.
 
-No `/tmp`, no client box, no live system, no paid model. Temp files under `<EXTERNAL-VOLUME>/swarm-contract/pd-fix/tmp`.
+No `/tmp`, no client box, no live system, no paid model. Temp files under `$LOOP_ROOT/tmp`.

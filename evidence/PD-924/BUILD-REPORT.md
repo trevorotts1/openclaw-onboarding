@@ -194,5 +194,5 @@ Touched: the two test files above, plus this report. No product code, no
 `build_deck.py`, no `phase_verifiers.py`, no `runfacts.py`, no
 `trust_boundary_observability.py`. No merge, no push to main, no client box, no
 live system, no paid model call. Temp files under
-`<EXTERNAL-VOLUME>/swarm-contract/pd-fix/tmp`; scratch under
-`<EXTERNAL-VOLUME>/swarm-contract/pd-fix/scratchpads/PD-924`.
+`$LOOP_ROOT/tmp`; scratch under
+`$LOOP_ROOT/scratchpads/PD-924`.

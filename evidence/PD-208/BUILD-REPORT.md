@@ -6,9 +6,9 @@ Code + tests commit: `993f6fb9ce917c5eaf0d48644304f82029e33bb1`
 This report commit: the one that adds this file.
 
 All scratch work was done in worktrees under
-`<EXTERNAL-VOLUME>/swarm-contract/pd-fix/tmp/PD-208` (`work.VLS8fP/onboarding` = my tree,
+`$LOOP_ROOT/tmp/PD-208` (`work.VLS8fP/onboarding` = my tree,
 `work.VLS8fP/base` = untouched `bc264097b`, `work.VLS8fP/mut` = mutation copy). The lane clone
-`<EXTERNAL-VOLUME>/swarm-contract/pd-fix/worktrees/onboarding/FL17` was never edited and is clean.
+`$LOOP_ROOT/worktrees/onboarding/FL17` was never edited and is clean.
 
 ## 1. Spec, quoted
 
