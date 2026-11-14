@@ -17,8 +17,11 @@ owes the client no reason:
   * the five toggles that default to YES (teleprompter, speech script,
     GHL upload, audio, sales and checkout) keep their required reasons
     and their blocking gate, so this change did not quietly disarm them;
-  * question_sequence projects the prior-YES half as ask_if on those
-    three only.
+  * question_sequence projects NO ask_if on those three (an ask_if of
+    equals-yes can never coexist with conditional_on equals-no on the
+    same answer value, so projecting it made the first-decline ask
+    impossible); the OPTIONAL nature is carried by required=false /
+    block_gate=false / ask_only_if_previously_wanted=true instead.
 
 The end-to-end half of PD-014's acceptance (an all-defaults interview is
 never asked a _declined_reason, and a teleprompter "no" is still asked its
@@ -117,13 +120,19 @@ def test_waiver_mapping_marks_the_three_as_not_required():
         assert "waiver_comment" not in entry, toggle
 
 
-def test_question_sequence_projects_the_prior_yes_half():
+def test_question_sequence_projects_no_impossible_ask_if():
     by_id = _atomic_questions()
     for toggle, reason_id in DEFAULT_NO.items():
         q = by_id[reason_id]
-        assert q["ask_if"] == {"question_id": toggle, "equals": "yes"}, reason_id
+        # An ask_if of equals-yes on the same id as conditional_on
+        # equals-no can never be satisfied (one answer value cannot be
+        # both). It used to be projected here and made the first-decline
+        # ask impossible; the fix keeps only conditional_on and carries
+        # OPTIONAL via the flags below.
+        assert "ask_if" not in q, reason_id
         assert q["conditional_on"] == {"id": toggle, "equals": "no"}, reason_id
         assert q["required"] is False, reason_id
         assert q["block_gate"] is False, reason_id
+        assert q.get("ask_only_if_previously_wanted") is True, reason_id
     for reason_id in DEFAULT_YES.values():
         assert "ask_if" not in by_id[reason_id], reason_id
