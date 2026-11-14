@@ -603,6 +603,30 @@ def _drive_submission_claimed(run_dir: pathlib.Path, intake: dict,
         return _out(2, {"verdict": "retry_scheduled",
                         "detail": "run-dir record unavailable; retry scheduled"})
 
+    # PD-081: a web "Signature" choice starts NO build until the 8 questions
+    # have been answered. The run-dir record is written by now, so the run dir
+    # exists; the driver's turn-gate record is working/copy/sp_intake.json and
+    # it is written only when all 8 answers and the frame are in. Without it,
+    # stop here — before the board card — with the one remediation that ends
+    # the block, and stop consuming retries (this is not an environment fault).
+    if str(intake.get("presentation_type") or "").strip() == "signature":
+        sp_intake = pathlib.Path(run_dir) / "working" / "copy" / "sp_intake.json"
+        if not sp_intake.exists():
+            _blocked_reason = ("signature interview not done: the 8 questions "
+                               "have not been asked")
+            doc = _ll.load(run_dir, session_id) or doc
+            _ll.mark_blocked(
+                run_dir, session_id, doc,
+                reason=_blocked_reason,
+                remediation=("ask the 8 questions in chat with "
+                             f"deck-intake-driver.py --run-dir {run_dir} "
+                             "--signature --sig-next, then delete this "
+                             "submission state file to re-drive"),
+                notify=True, notifier=_make_notifier())
+            return _out(8, {"verdict": "blocked",
+                            "state": _ll.BLOCKED_ACTIONABLE,
+                            "detail": _blocked_reason})
+
     # 2) the board card — persisted BEFORE any launch attempt, so the binding
     #    survives launch retries and the card is never duplicated.
     board_state, task_id = _ensure_board_card(run_dir, intake, session_id, doc, policy)
@@ -1312,6 +1336,7 @@ def cmd_new(args) -> int:
             args.worker_url, token=admin, run_id=args.title, box_id=box_id,
             company_id=args.company_id, installation_id=args.installation_id,
             presentation_id=presentation_id, questions_payload=payload,
+            confirm_code=getattr(args, "confirm_code", False),
             recipient_chat_id=args.recipient_chat_id)
         if rc != 0:
             print(f"error: {out['error']}", file=sys.stderr)
@@ -1347,6 +1372,10 @@ def cmd_new(args) -> int:
         print(f"session_id: {out.get('session_id')}")
         print(f"run_dir: {run_dir}")
         print(f"title: {args.title}")
+        # PD-106: the box speaks the code to the client in chat, so it prints on
+        # its own line (never inside the JSON blob) and only when one was minted.
+        if out.get("confirm_code"):
+            print(f"confirm_code: {out['confirm_code']}")
         return 0
     print("error: mint kept reusing an existing session after 3 attempts",
           file=sys.stderr)
@@ -1380,8 +1409,16 @@ def cmd_resume(args) -> int:
         print("error: session.json has no session_id; cannot resume",
               file=sys.stderr)
         return 2
+    # PD-085: the worker binds a session to its company and answers 403 to a
+    # renew that omits or mismatches it. Send the company from the record.
+    company_id = record.get("company_id") or ""
+    if not company_id:
+        print("error: session.json has no company_id; cannot resume",
+              file=sys.stderr)
+        return 2
     status, resp = _http("POST", args.worker_url.rstrip("/") + "/api/sessions/renew",
-                         token=admin, body={"session_id": session_id})
+                         token=admin,
+                         body={"session_id": session_id, "company_id": company_id})
     if status not in (200, 201):
         print(f"error: resume failed (HTTP {status}): {resp.get('error')}",
               file=sys.stderr)
@@ -1987,6 +2024,8 @@ def main(argv=None) -> int:
     n.add_argument("--installation-id", required=True, help="PRES-009: fleet installation id")
     n.add_argument("--title", required=True, help="deck name (display-only; stored as the session display name)")
     n.add_argument("--recipient-chat-id", default=None, help="bind the delivery recipient for retry links")
+    n.add_argument("--confirm-code", action="store_true",
+                   help="PD-106: mint a 6-digit high-trust code (default off; prints the code on its own line)")
     n.add_argument("--runs-dir", default="", help="root for per-presentation run dirs (default: PRESENTATIONS_RUNS_DIR env, else <interview-app>/runs)")
     n.set_defaults(func=cmd_new)
     r = sub.add_parser("resume", help="Fix 63: re-mint an expired/lost interview link for an existing session")
