@@ -26,6 +26,13 @@ class UploadTests(unittest.TestCase):
         self.file = pathlib.Path(self.tmp.name) / 'photo.png'
         self.file.write_bytes(PNG)
 
+    def env(self, **over):
+        # HOME is the empty temp folder: the address falls back to the built-in
+        # studio, never to a machine.url this test machine happens to hold.
+        env = {'HOME': self.tmp.name, 'DS_KEY': 'client-key-sentinel'}
+        env.update(over)
+        return env
+
     def post(self, method, url, *, key, body):
         self.assertEqual(method, 'POST')
         self.assertEqual(url, bridge.STUDIO_BASE_URL + '/api/studio/uploads')
@@ -41,7 +48,7 @@ class UploadTests(unittest.TestCase):
             self.assertEqual(size, len(PNG))
             self.assertEqual(fh.read(), PNG)
             return 200
-        result = bridge.upload_file(self.file, env={'DS_KEY': 'client-key-sentinel'}, post=self.post, put=put)
+        result = bridge.upload_file(self.file, env=self.env(), post=self.post, put=put)
         self.assertEqual(result, {'upload_id': UPLOAD, 'object_path': OBJECT})
         self.assertNotIn('private-sentinel', json.dumps(result))
 
@@ -61,7 +68,7 @@ class UploadTests(unittest.TestCase):
         with self.assertRaises(LedgerError): bridge.photo_request(self.file)
 
     def test_put_failure_never_prints_signed_url_or_key(self):
-        with patch.object(bridge, '_http', self.post), patch.object(bridge, '_put_file', return_value=403), patch.dict('os.environ', {'DS_KEY': 'client-key-sentinel'}):
+        with patch.object(bridge, '_http', self.post), patch.object(bridge, '_put_file', return_value=403), patch.dict('os.environ', self.env()):
             stream = io.StringIO()
             with contextlib.redirect_stdout(stream): code = bridge.main(['upload', str(self.file)])
         self.assertEqual(code, 2)
@@ -76,12 +83,35 @@ class UploadTests(unittest.TestCase):
             result['upload']['url'] = 'https://example.com/file'
             return status, result
         with self.assertRaises(LedgerError) as caught:
-            bridge.upload_file(self.file, env={'DS_KEY': 'client-key-sentinel'}, post=post, put=lambda *a: self.fail('bytes sent to wrong host'))
+            bridge.upload_file(self.file, env=self.env(), post=post, put=lambda *a: self.fail('bytes sent to wrong host'))
         self.assertEqual(caught.exception.code, 'UPLOAD_RESPONSE_INVALID')
 
     def test_unknown_put_outcome_is_not_success(self):
         with self.assertRaises(LedgerError) as caught:
-            bridge.upload_file(self.file, env={'DS_KEY': 'client-key-sentinel'}, post=self.post, put=lambda *a: 0)
+            bridge.upload_file(self.file, env=self.env(), post=self.post, put=lambda *a: 0)
         self.assertEqual(caught.exception.code, 'TRANSPORT_UNKNOWN')
+
+    def test_bucket_name_comes_from_the_returned_path(self):
+        other = URL.replace('/zhw-drama-studio/', '/zhw-drama-studio-v2/')
+        def post(method, url, *, key, body):
+            status, result = self.post(method, url, key=key, body=body)
+            result['upload']['url'] = other
+            return status, result
+        def put(url, fh, content_type, size):
+            self.assertEqual(url, other)
+            self.assertEqual(fh.read(), PNG)
+            return 200
+        result = bridge.upload_file(self.file, env=self.env(), post=post, put=put)
+        self.assertEqual(result['object_path'], OBJECT)
+
+    def test_upload_uses_the_boxes_own_studio_address(self):
+        with tempfile.TemporaryDirectory() as state:
+            pathlib.Path(state, 'machine.url').write_text('https://box.example\n', encoding='utf-8')
+            def post(method, url, *, key, body):
+                self.assertEqual(url, 'https://box.example/api/studio/uploads')
+                return 201, {'ok': True, 'upload_id': UPLOAD, 'object_path': OBJECT,
+                             'upload': {'url': URL, 'content_type': 'image/png'}}
+            bridge.upload_file(self.file, env=self.env(DRAMA_STUDIO_STATE=state),
+                               post=post, put=lambda *a: 200)
 
 if __name__ == '__main__': unittest.main()
