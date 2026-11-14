@@ -539,7 +539,8 @@ def cmd_claim(args):
             st = led.order_state(args.order) or {}
             _emit({"order_id": args.order, "owner": args.owner, "won": True,
                    "fence": st.get("fence"),
-                   "claim_token": st.get("claim_token")})
+                   "claim_token": st.get("claim_token"),
+                   "state": st.get("state")})
             return EXIT["ok"]
     _emit({"order_id": args.order, "won": False,
            "code": "ALREADY_CLAIMED",
@@ -1467,9 +1468,22 @@ def cmd_poll(args):
             status, out = _http("GET", base + "/api/studio/orders/%s" % order_id,
                                 key=key)
             if status // 100 == 2 and out.get("ok"):
-                closed = _terminal_state(out.get("order"))
+                order_now = out.get("order")
+                led.record_order_state(
+                    order_id,
+                    order_now.get("state") if isinstance(order_now, dict) else None,
+                    owner=BRIDGE_OWNER, fence=fence)
+                closed = _terminal_state(order_now)
                 if closed:
                     return _drop_terminal(led, order_id, closed, "resume")
+            else:
+                # The re-read failed: the last state the studio gave us is
+                # still on the claim row, and a TERMINAL one stops the resume
+                # just the same (a terminal order never moves again). The
+                # claim is not wedged by an unreachable service.
+                closed = _terminal_state({"state": st.get("state")})
+                if closed:
+                    return _drop_terminal(led, order_id, closed, "recorded")
 
         # Claim event: sent once. A repeat poll after a crash must never
         # re-post a claim the studio could reject as its own replay (D35).
@@ -1492,6 +1506,12 @@ def cmd_poll(args):
                 # claimed-and-forgotten state.
                 return _refusal(out, status, "order fetch")
             order = out.get("order") or {}
+            # Keep the ledger's order state current on the studio's terms: this
+            # is the one place the bridge sees a freshly fetched order, so the
+            # claim row's `state` records what the studio said (lifecycle.js
+            # STATES vocabulary), not the bridge's own handoff step.
+            led.record_order_state(order_id, order.get("state"),
+                                   owner=BRIDGE_OWNER, fence=fence)
             # The order can be cancelled between the check-in line and this
             # fetch; the fetched payload already carries that state, so it is
             # honoured here too — nothing is materialized for a closed order.
