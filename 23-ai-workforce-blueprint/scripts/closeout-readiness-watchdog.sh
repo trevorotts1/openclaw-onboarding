@@ -133,7 +133,9 @@ fi
 export WORKFORCE_PYTHON
 export PYTHONPATH="$SCRIPT_DIR${PYTHONPATH:+:$PYTHONPATH}"
 
-STATE_FILE="${ZHC_STATE_FILE:-${OC_ROOT}/workspace/.workforce-build-state.json}"
+# One rule for the state file: WORKFORCE_BUILD_STATE_FILE, then ZHC_STATE_FILE,
+# then WORKFORCE_BUILD_STATE_PATH, then this script's own default.
+STATE_FILE="${WORKFORCE_BUILD_STATE_FILE:-${ZHC_STATE_FILE:-${WORKFORCE_BUILD_STATE_PATH:-${OC_ROOT}/workspace/.workforce-build-state.json}}}"
 LOCK_FILE="${OC_ROOT}/workspace/.closeout-watchdog.lock"
 LOG_FILE="${OC_ROOT}/workspace/.closeout-watchdog.log"
 STALE_LOCK_MINUTES=10
