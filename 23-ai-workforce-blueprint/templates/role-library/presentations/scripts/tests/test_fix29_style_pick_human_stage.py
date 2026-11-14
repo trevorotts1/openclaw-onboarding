@@ -85,7 +85,9 @@ def _manifest() -> Manifest:
 
 def _seed_run(tmp_path: Path, style_pick_auto=None) -> Path:
     """A fresh run dir: sealed intake, the samples manifest P-STYLE-PREVIEW
-    produces (3 variant ids), and the minimal schema-complete state dict."""
+    produces (3 variant ids, and the 3 representative renders per variant the
+    pick request must name), the style spec whose directives the samples were
+    rendered from (PD-042), and the minimal schema-complete state dict."""
     rd = tmp_path / "run"
     (rd / "working" / "copy").mkdir(parents=True)
     (rd / "working" / "style-preview").mkdir(parents=True)
@@ -98,8 +100,19 @@ def _seed_run(tmp_path: Path, style_pick_auto=None) -> Path:
         "phase": "P-STYLE-PREVIEW (order 4.85)",
         "variants": ["A", "B", "C"],
         "representative_slides": [1, 2, 3],
+        "samples": [{"variant": vid, "slide": ordn,
+                     "render": f"working/style-preview/variant-{vid}-slide-{ordn:02d}.png"}
+                    for vid in ("A", "B", "C") for ordn in (1, 2, 3)],
         "owner_pick_required": True,
         "owner_pick_artifact": CHOICE_REL,
+    }))
+    # PD-042: the style-pick request carries each variant's own one-sentence
+    # description from this spec, so a pick request is answerable.
+    (rd / "working" / "copy" / "style_preview_spec.json").write_text(json.dumps({
+        "variants": [{"id": "A", "style_directive": "warm editorial, soft gold light"},
+                     {"id": "B", "style_directive": "high-contrast navy and gold"},
+                     {"id": "C", "style_directive": "clean minimal, muted neutrals"}],
+        "representative_slides": [1, 2, 3],
     }))
     return rd
 
@@ -174,6 +187,17 @@ def _signed_choice(variant: str, msg_id: str = "owner-msg-42") -> dict:
 
 def _phase_record(eng: Engine) -> dict:
     return next(ps for ps in eng.state["phases"] if ps["id"] == PICK)
+
+
+def _pick_requests(sent: list) -> list:
+    """PD-042: the pick request is now ONE `ack` message PER VARIANT -- the
+    reporter transport carries JSON text and cannot attach the sample images,
+    so each message names its variant's description and that variant's three
+    sample paths. Identify them by the sentence every one of them ends with."""
+    return [s["message"] for s in sent
+            if s["kind"] == "ack"
+            and "Reply A, B or C to pick the look for your whole presentation."
+            in s["message"]]
 
 
 # ---------------------------------------------------------------------------
@@ -345,14 +369,17 @@ class TestLiveProofRun:
         assert rec["status"] == "blocked"
         assert eng.state["terminal"] == "BLOCKED"
         assert eng.state["blocked"]["phase"] == PICK
-        # The delivered message: exactly ONE pick request on the stub transport
-        # log, listing the three variants, stamped so a resume never re-spams.
-        picks = [s for s in sent if s["kind"] == "ack"
-                 and "style directions" in s["message"]]
-        assert len(picks) == 1, sent
-        assert "Variant A" in picks[0]["message"]
-        assert "Variant B" in picks[0]["message"]
-        assert "Variant C" in picks[0]["message"]
+        # The delivered message: exactly ONE pick request PER VARIANT on the
+        # stub transport log (PD-042: the reporter transport carries text, not
+        # images, so each variant gets its own message naming that variant's
+        # description and its three sample paths), stamped so a resume never
+        # re-spams.
+        picks = _pick_requests(sent)
+        assert len(picks) == 3, sent
+        joined = "\n".join(picks)
+        assert "Variant A" in joined or "Style A" in joined
+        assert "Variant B" in joined or "Style B" in joined
+        assert "Variant C" in joined or "Style C" in joined
         assert rec.get("pick_request_sent_at")
         assert not (rd / CHOICE_REL).exists(), (
             "a run that stops at the pick must not pick anything by itself")
@@ -380,10 +407,8 @@ class TestLiveProofRun:
         received = [e for e in eng.state["events"]
                     if e["kind"] == "phase.style_pick.choice_received"]
         assert received and "owner_msg_id verified" in received[-1]["message"]
-        # No re-delivery on resume: still exactly one pick request total.
-        picks = [s for s in sent if s["kind"] == "ack"
-                 and "style directions" in s["message"]]
-        assert len(picks) == 1
+        # No re-delivery on resume: still exactly one pick request per variant.
+        assert len(_pick_requests(sent)) == 3
 
     def test_timeout_without_optin_parks_and_never_auto_picks(
             self, tmp_path, monkeypatch):
