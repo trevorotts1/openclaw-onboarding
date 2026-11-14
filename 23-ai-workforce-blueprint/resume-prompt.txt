@@ -23,10 +23,11 @@ min on done builds (multi-client incident, 2026-05-24) AND the stuck-build
 furnace where it re-fired ~96x/day on a box nobody was advancing.
 
 ```bash
-bash /data/.openclaw/skills/23-ai-workforce-blueprint/scripts/resume-workforce-build.sh 2>/dev/null \
-  || bash "$HOME/.openclaw/skills/23-ai-workforce-blueprint/scripts/resume-workforce-build.sh" 2>/dev/null \
-  || true
+# Run exactly ONE of these two lines, chosen by whether /data/.openclaw is a directory.
+bash /data/.openclaw/skills/23-ai-workforce-blueprint/scripts/resume-workforce-build.sh
+bash "$HOME/.openclaw/skills/23-ai-workforce-blueprint/scripts/resume-workforce-build.sh"
 ```
+Report the exit code and the last 20 lines of its output.
 
 PARK-STOP (v14.1.5) — READ THE GUARD OUTPUT: if it printed "PARKED" or
 "PARKED + DISABLED" (or otherwise told you to STOP), the build is INTENTIONALLY
@@ -54,6 +55,8 @@ ingestion was a bounded one-shot pre-pass; the resume layer never reopens it.)
 Read `/data/.openclaw/workspace/.workforce-build-state.json` (Mac: `~/.openclaw/workspace/.workforce-build-state.json`).
 
 Decision tree:
+
+A0. If interviewComplete is true AND departments is an empty list → run the Post-Interview Handoff Protocol Moment 1 (plan the departments, write each as pending), then continue to BUILD FLOW. On a box whose buildType is "standard-first" run build-workforce.py --apply-standard-edits instead.
 
 A. If `buildCompletedAt` is null AND any department has `status` in {pending, failed, stale-building} → CONTINUE TO BUILD FLOW (below).
 
@@ -86,7 +89,7 @@ BUILD FLOW (Skill 23 - per the Post-Interview Handoff Protocol)
    a. Flip its `status` to `"building"` and set `lastAttemptAt` to now (UTC ISO-8601).
    b. Write the state file back to disk atomically (tmp + rename).
 
-3. Generate the department per the standard Skill 23 build (read `workforce-interview-answers.md` or the equivalent v2.0/v10.14.14 dossier, DO NOT re-interview, and DO NOT mine the owner's chat history as a content source; the saved answers + the role/SOP libraries are the only sources).
+3. Generate the department per the standard Skill 23 build (read company-discovery/interview-answers.jsonl (and, for an older interview, workforce-interview-answers.md), DO NOT re-interview, and DO NOT mine the owner's chat history as a content source; the saved answers + the role/SOP libraries are the only sources).
 
 4. After EACH department finishes (or fails), update its entry:
    - `status` → `"done"` (success) or `"failed"` (with `failureReason`)
@@ -181,6 +184,6 @@ INVARIANTS (BOTH FLOWS)
 
 - The state file is the contract. Every step writes state before moving on.
 - The owner is silent until Skill 37 Step 6 fires. No "build complete" message from you. No "I'm working on your closeout" message. Silence is the celebration's setup.
-- All state writes are atomic (jq + tmp file + mv).
+- All state writes are atomic (python3 workforce_state: temp file, then rename). Never use jq.
 - Don't increment `resumeAttempts` - the resume script handles that.
 - Don't ever talk to api.telegram.org directly. Use `openclaw message send` (or in Skill 37, the wrapper scripts handle this for you).
