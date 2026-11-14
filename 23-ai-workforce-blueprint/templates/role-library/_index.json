@@ -5463,10 +5463,10 @@
       "path": "templates/role-library/presentations/audio-demonstration-specialist.md",
       "capability_class": "WRITING",
       "vision_flag": false,
-      "content_sha": "sha256:a1dcf75dacee90251a2cd749063efe0aa85d4663d40bad780b8a7ad87b49e869",
+      "content_sha": "sha256:7650fb39c2c40dba6277a8c806e7faf20633377175aedda125ad30c829202da5",
       "render_sha": "sha256:UNAVAILABLE",
-      "content_version": "1.0.9",
-      "content_hashed_at": "2026-11-09T23:25:05.532974+00:00"
+      "content_version": "1.0.10",
+      "content_hashed_at": "2026-11-14T00:44:39.542489+00:00"
     },
     {
       "slug": "brainstorming-buddy-presentations",
@@ -5671,10 +5671,10 @@
       "path": "templates/role-library/presentations/media-librarian-ghl-updater.md",
       "capability_class": "MECHANICAL",
       "vision_flag": false,
-      "content_sha": "sha256:806918cb2d3cdb7056cf1b8e33a33288aedcd3167e172ce58a03dd6de5f3e7e8",
+      "content_sha": "sha256:428ba67cbbbe2a23adda1269de2143fa67e176d21308c2e2d04fd87d5d310a8d",
       "render_sha": "sha256:UNAVAILABLE",
-      "content_version": "1.0.13",
-      "content_hashed_at": "2026-11-09T23:25:05.532974+00:00"
+      "content_version": "1.0.14",
+      "content_hashed_at": "2026-11-14T00:44:39.542489+00:00"
     },
     {
       "slug": "offer-price-strategist",
@@ -5703,10 +5703,10 @@
       "path": "templates/role-library/presentations/pptx-assembly-specialist.md",
       "capability_class": "WRITING",
       "vision_flag": false,
-      "content_sha": "sha256:04d412234f50faa0826cffdee7e418265877d75708105e095a12f3d84dce4852",
+      "content_sha": "sha256:3ed20b455a9b68f8c2985c4f6418da447446abe78d437942a6c4c0432000ef4b",
       "render_sha": "sha256:UNAVAILABLE",
-      "content_version": "1.0.27",
-      "content_hashed_at": "2026-11-09T23:25:05.532974+00:00"
+      "content_version": "1.0.28",
+      "content_hashed_at": "2026-11-14T00:44:39.542489+00:00"
     },
     {
       "slug": "presenter-coach",
@@ -5746,15 +5746,15 @@
       "title": "Presenters Speech Writer",
       "role_type": "specialist",
       "word_count": 3637,
-      "sop_count": 9,
+      "sop_count": 6,
       "sop_min": 1,
       "path": "templates/role-library/presentations/presenters-speech-writer.md",
       "capability_class": "WRITING",
       "vision_flag": false,
-      "content_sha": "sha256:09a8ab62442be74478f930b90eeafaa98c3f51436b5b3f4dbe5797290fb01a8c",
+      "content_sha": "sha256:9cebb98cb5f468d36f45eff5bdc8dd3b5098f44cf60b79b752cf0f2d8dfe2d6a",
       "render_sha": "sha256:UNAVAILABLE",
-      "content_version": "1.0.12",
-      "content_hashed_at": "2026-11-09T23:25:05.532974+00:00"
+      "content_version": "1.0.13",
+      "content_hashed_at": "2026-11-14T00:44:39.542489+00:00"
     },
     {
       "slug": "qc-specialist-presentations",
@@ -5799,10 +5799,10 @@
       "path": "templates/role-library/presentations/slide-image-creator.md",
       "capability_class": "GENERATION",
       "vision_flag": false,
-      "content_sha": "sha256:dd42aba3c1872bf632b0324ea6eeedaf92d8b9b855bd12f58fbe394445cb08e2",
+      "content_sha": "sha256:62931325238a8924ccbd5a735e717de08ace3ae90a9a183272bda72b28714100",
       "render_sha": "sha256:UNAVAILABLE",
-      "content_version": "1.0.41",
-      "content_hashed_at": "2026-11-10T05:00:35.850842+00:00"
+      "content_version": "1.0.42",
+      "content_hashed_at": "2026-11-14T00:44:39.542489+00:00"
     },
     {
       "slug": "slide-submitter",
@@ -5831,10 +5831,10 @@
       "path": "templates/role-library/presentations/typography-architect.md",
       "capability_class": "HEAVY-REASONING",
       "vision_flag": true,
-      "content_sha": "sha256:8645d3678ff80ceb26de1c433947b09864f25a7309f2dbfe02295586095aac8a",
+      "content_sha": "sha256:3e0d91bb175a2d1452b10b0546048de8bee6b8fcfdd51b7d7a70f60d2cb47461",
       "render_sha": "sha256:UNAVAILABLE",
-      "content_version": "1.0.10",
-      "content_hashed_at": "2026-11-09T23:25:05.532974+00:00"
+      "content_version": "1.0.11",
+      "content_hashed_at": "2026-11-14T00:44:39.542489+00:00"
     },
     {
       "slug": "director-of-product-production",
@@ -10402,9 +10402,9 @@
       "slug": "WORKBOOK-BUILDER-SOP",
       "dept": "presentations",
       "path": "templates/role-library/presentations/sops/WORKBOOK-BUILDER-SOP.md",
-      "content_sha": "sha256:fed7cebade8695f4558f613b1c99183315bb3f8807aa8a2315786bdab81ba335",
-      "content_version": "1.0.6",
-      "content_hashed_at": "2026-11-09T23:25:05.532974+00:00"
+      "content_sha": "sha256:71028bb90fdaf4e4b3dc9fbcfeba5fb74e0ed71df7b15ce8bc376942704ec943",
+      "content_version": "1.0.7",
+      "content_hashed_at": "2026-11-14T00:44:39.542489+00:00"
     },
     {
       "slug": "assembled-slide-legibility-qc-sops",
@@ -10418,9 +10418,9 @@
       "slug": "audio-demonstration-specialist-sops",
       "dept": "presentations",
       "path": "templates/role-library/presentations/sops/audio-demonstration-specialist-sops.md",
-      "content_sha": "sha256:7b48c0f224dc7c60ec149c2ccb957f270d773fbff1458c70054cf8f4f484e289",
-      "content_version": "1.0.3",
-      "content_hashed_at": "2026-11-09T23:25:05.532974+00:00"
+      "content_sha": "sha256:3dcc13f1e3c906773d9b4849fb23760fcb9e3e73236252b7e3e6e514088191ff",
+      "content_version": "1.0.4",
+      "content_hashed_at": "2026-11-14T00:44:39.542489+00:00"
     },
     {
       "slug": "brainstorming-buddy-presentations-sops",
@@ -10530,9 +10530,9 @@
       "slug": "media-librarian-ghl-updater-sops",
       "dept": "presentations",
       "path": "templates/role-library/presentations/sops/media-librarian-ghl-updater-sops.md",
-      "content_sha": "sha256:8f119d01a261784a0eb8f100156b0188a40fb93988e63ac46b469253e9dda16c",
-      "content_version": "1.0.15",
-      "content_hashed_at": "2026-11-09T23:25:05.532974+00:00"
+      "content_sha": "sha256:efb44f3a1f35ec9990cc81964ef3806454dd8c50c5d2b24b0733106c37a2cfc9",
+      "content_version": "1.0.16",
+      "content_hashed_at": "2026-11-14T00:44:39.542489+00:00"
     },
     {
       "slug": "offer-price-strategist-sops",
@@ -10546,9 +10546,9 @@
       "slug": "pptx-assembly-specialist-sops",
       "dept": "presentations",
       "path": "templates/role-library/presentations/sops/pptx-assembly-specialist-sops.md",
-      "content_sha": "sha256:e37b987908aedb044326df32325f7b2404c02d4b62f22752dca0bcfb3541b424",
-      "content_version": "1.0.16",
-      "content_hashed_at": "2026-11-09T23:25:05.532974+00:00"
+      "content_sha": "sha256:0ccada45a5b68a4fe21356ec0ec2223c3ad207f09d56fef696241ce5b4d8df23",
+      "content_version": "1.0.17",
+      "content_hashed_at": "2026-11-14T00:44:39.542489+00:00"
     },
     {
       "slug": "presenter-coach-sops",
@@ -10570,9 +10570,9 @@
       "slug": "presenters-speech-writer-sops",
       "dept": "presentations",
       "path": "templates/role-library/presentations/sops/presenters-speech-writer-sops.md",
-      "content_sha": "sha256:f52a8f67fe3acc3502ef41666cfc4fc212c26b71f63036d872307243ab9acb88",
-      "content_version": "1.0.5",
-      "content_hashed_at": "2026-11-09T23:25:05.532974+00:00"
+      "content_sha": "sha256:969d0be76e39afcd66db44bb15aa63211a73f944a9b394cdfcb4fa669de0eb5a",
+      "content_version": "1.0.6",
+      "content_hashed_at": "2026-11-14T00:44:39.542489+00:00"
     },
     {
       "slug": "prompt-author-presentations-sops",
@@ -10658,9 +10658,9 @@
       "slug": "slide-image-creator-sops",
       "dept": "presentations",
       "path": "templates/role-library/presentations/sops/slide-image-creator-sops.md",
-      "content_sha": "sha256:5d0230f6afbfb1509d753331675d247b7dfef124d0acd4190ce75026d618a80a",
-      "content_version": "1.0.22",
-      "content_hashed_at": "2026-11-09T23:25:05.532974+00:00"
+      "content_sha": "sha256:1a8a5c0e2147eae183a45145caf95f0093c3d77ffa0b44e722cc5ddf98dab1e3",
+      "content_version": "1.0.23",
+      "content_hashed_at": "2026-11-14T00:44:39.542489+00:00"
     },
     {
       "slug": "slide-submitter-sops",
@@ -10674,9 +10674,9 @@
       "slug": "typography-architect-sops",
       "dept": "presentations",
       "path": "templates/role-library/presentations/sops/typography-architect-sops.md",
-      "content_sha": "sha256:f6ee6c73dad2e7e37a5f7f31961a21583b8bddc38f44b7f810960038a29ff81e",
-      "content_version": "1.0.5",
-      "content_hashed_at": "2026-11-09T23:25:05.532974+00:00"
+      "content_sha": "sha256:60917566794e095cf990ea0e053e58a6b860ff21138aaba801bb442b6983f97d",
+      "content_version": "1.0.6",
+      "content_hashed_at": "2026-11-14T00:44:39.542489+00:00"
     },
     {
       "slug": "audit-a-departments-procedures-sops",

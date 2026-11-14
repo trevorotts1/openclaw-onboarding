@@ -5,8 +5,8 @@
 **Owning role:** `pptx-assembly-specialist` (this role already owns reportlab PDF deliverables).
 **Executor:** `scripts/workbook_builder.py` (rewritten) + `scripts/workbook_mapper.py` (new).
 **Prompt template:** `scripts/WORKBOOK-PAGE-PROMPT-TEMPLATE.md` (rewritten — content-in-image).
-**Research:** `~/Downloads/GAUNTLET-LOOP-WORK/WORKBOOK-PDF-RESEARCH.md` (its §4.2 "background only"
-conclusion is the piece this SOP supersedes) + `~/Downloads/GAUNTLET-LOOP-WORK/WORKBOOK-REDESIGN-PLAN.md`.
+**Research:** the workbook research notes and the workbook redesign plan (the "background only"
+conclusion is the piece this SOP supersedes).
 
 ---
 
@@ -47,6 +47,8 @@ It consumes the deck-pipeline sources (all already produced; nothing new to auth
 | Brand ledger | `working/brand/casting_ledger.json` | representation_mix (people / no people) |
 | Render record | `working/checkpoints/process_manifest.json` (P4-RENDER resultUrls) | harmony reference URLs for I2I |
 | Client logo | intake `brand.logo_image_path` / brand working dir | the real logo image for `input_urls` (I2I only — never T2I a logo) |
+
+The engine starts this phase when the deck, the intake and the copy exist. The speech rows are used when present.
 
 It produces:
 - `working/deliverables/{deck_slug}-WORKBOOK.pdf` — regular (share/print) workbook
@@ -162,7 +164,7 @@ structurally impossible.
 - **No browser / no UI automation for GHL** — REST media path only.
 - **BOTH deliverables must exist + verify before the phase attests** (AF-WORKBOOK-BOTH).
 - **Operator credits for tests; never a client.** A sample workbook is built on the operator
-  account and saved to `~/Downloads`. No client messaging.
+  account and saved to a scratch folder the operator names. No client messaging.
 - The workbook does NOT go through `build_deck.py` and is NOT a deck render. It does NOT call the
   dead `/api/v1/image/gpt-image` endpoint.
 
@@ -170,7 +172,7 @@ structurally impossible.
 
 ```bash
 python3 scripts/workbook_builder.py --run-dir <sample-run-dir> \
-    --out ~/Downloads/WORKBOOK-SAMPLE.pdf --no-upload
+    --out <SCRATCH>/WORKBOOK-SAMPLE.pdf --no-upload
 ```
 
 Expect: BOTH PDFs exist; the OCR content gate PASSes on every page (100% of content_strings read

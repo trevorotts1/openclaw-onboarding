@@ -103,34 +103,45 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
 - Current date (ISO format, YYYY-MM-DD)
 
 **Steps:**
-1. Determine the local workdir path:
-   - Mac clients: `~/webinar-decks/<client-slug>/<deck-slug>/<YYYY-MM-DD>/`
-   - VPS clients: `/data/.openclaw/workspace/webinar-decks/<client-slug>/<deck-slug>/<YYYY-MM-DD>/`
-   Use today's date for YYYY-MM-DD.
-2. Create the directory tree with all required subdirectories:
+1. Determine the run directory. This is the engine's run folder -- the `--run-dir` the run is dispatched
+   with (`bash scripts/presentation-canonical-entry.sh --run-dir DIR …`, where DIR is "the deck run directory
+   (contains `working/`)"). The engine's runs root is `departments/Presentations/runs/` under the client
+   workspace (`presentation_job/launcher.py` `resolve_runs_root()`; `presentation-intake-poll.sh` `RUNS_ROOT`):
+   - Mac clients: `~/.openclaw/workspace/departments/Presentations/runs/<run-slug>/`
+   - VPS clients: `/data/.openclaw/workspace/departments/Presentations/runs/<run-slug>/`
+   Use today's date in the run slug. A run directory under another root is legitimate --
+   `PRESENTATION_SCAN_ROOTS` (or `config/scan-roots.conf`) names every extra root the watchdog, the sweep and
+   `run_discovery.py` scan. Never build a `~/webinar-decks/` tree: the engine reads and writes no such layout.
+2. Create the directory tree with all required subdirectories. These are the engine's paths: the run directory
+   holds `working/`, and the renderer writes `renders/` at the run-directory root, not under `working/`:
    ```
-   <workdir>/
-     media-library/               (passed images -- the deliverable folder; files named slide-NN.png)
-       assets/
-         logo/                    (client logo files: logo-full.png, logo-chip.png)
-         founder-portrait/        (founder / host portrait photos passed in as A5 reference images)
-         proof-assets/            (before/after photos, testimonial screenshots, product images)
+   <run_dir>/                     (the engine's run directory; contains working/)
+     renders/                     (the phase-4 renderer's output: `slide-NN.png`, each with a
+                                    `slide-NN.ocr.json` readback sidecar; the render receipts live in
+                                    `working/checkpoints/pending_tasks.json`)
      working/
-       prompts/                   (per-slide prompt files: slide-NN-prompt.txt)
-       renders/                   (downloads from Phase 4 -- pre-QC: `slide-NN.png` as the renderer writes it, each with a `slide-NN.ocr.json` readback sidecar; the render receipts live in `checkpoints/pending_tasks.json`)
+       copy/                      (slides.json, intake.json, the PRD, approval records)
+       prompts/                   (per-slide prompt files: slide-NN.txt)
        checkpoints/               (all checkpoint JSON files)
-         media_library.json       (run ledger: paths, GHL folder id, version number)
-         run_ledger.json          (per-phase completion log)
+         media_library.json       (this role's run ledger: paths, GHL folder id, version number)
+         process_manifest.json    (the engine's phase manifest and closeout verdicts)
          (no pptx_text_overlays.json — native-text overlays are eliminated, Decision 5C; its presence is AF-OVERLAY-DELIVERED)
        qc/                        (QC reports from all phases)
          copy_qc_report.json
          prompt_qc_report.json
          image_qc_report.json
          final_qc_report.json
-         finalrender/             (QC-passed final render copies, before upload to GHL)
-       copy/                      (slide copy, intake, PRD, approval records)
+       deliverables/              (files written at their producing phase)
+         <deck-slug>-FINAL.pptx   (the assembled deck)
+       delivery/                  (files staged for delivery)
+         PRESENTER-AUDIO.mp3
+         <deck-slug>-WEBINAR.mp4
        brand/                     (STYLE BLOCK, brand registry, representation audit)
-     output/                      (final assembled deck: <deck-slug>_v<N>.pptx)
+       media-library/             (this role's passed-image folder; files named slide-NN.png)
+         assets/
+           logo/                  (client logo files: logo-full.png, logo-chip.png)
+           founder-portrait/      (founder / host portrait photos passed in as A5 reference images)
+           proof-assets/          (before/after photos, testimonial screenshots, product images)
    ```
    **Naming conventions:**
    - Local slide files: `slide-NN.png` (zero-padded two digits, lowercase, kebab-case)
@@ -138,7 +149,7 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
    - GHL slide title: `Slide NN v<N>` (title-case, space-separated)
    - Founder portrait: `founder-portrait-[slug].png` (client-supplied, not generated)
    - Logo: `logo-full.png` (full color) and `logo-chip.png` (small lockup for slide placement)
-3. Verify: `ls -la <workdir>` confirms all subdirectories exist. If any creation failed, halt and notify the Director.
+3. Verify: `ls -la <run_dir> <run_dir>/working` confirms all subdirectories exist. If any creation failed, halt and notify the Director.
 4. Determine version number N for this run. Check the GHL media library for existing folders with the naming pattern `<Client> <Deck> v<N>`. If none exist, N=1. If v1 exists, N=2. Etc.
 5. Record all paths in working/checkpoints/media_library.json:
    ```json
@@ -147,8 +158,8 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
      "deck_slug": "...",
      "run_date": "YYYY-MM-DD",
      "version_number": N,
-     "local_workdir": "<full path>",
-     "local_media_library": "<full path>/media-library/",
+     "local_workdir": "<run_dir>/",
+     "local_media_library": "<run_dir>/working/media-library/",
      "ghl_folder_name": "<Client> <Deck> v<N>",
      "ghl_folder_id": null,
      "drive_folder_id": null,
@@ -183,7 +194,7 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
    b. Copy (do not move) the image from working/renders/slide-NN.png to working/media-library/slide-NN.png.
    c. Naming convention MUST be: `slide-NN.png` (zero-padded slide number, kebab-case). This naming is mandatory for python-pptx assembly order.
 3. Update media_library.json: add an entry for this image: `{ "slide_number": N, "local_media_library_path": "...", "ghl_upload_status": "pending" }`.
-4. After copying: trigger SOP 9.3 (GHL upload) for this image immediately. Do not batch -- upload as images pass.
+4. After copying: record the ledger entry. The upload runs in the `P9.2-GHL-UPLOAD` phase (manifest order 8.9), after `P8-ASSEMBLE` (order 8.0) has assembled the deck -- not here, and not as images pass. SOP 9.3 runs then.
 
 **Outputs:**
 - working/media-library/slide-NN.png (copied from renders)
@@ -200,14 +211,14 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
 **Status:** MANDATORY for every GHL-enabled client. This SOP is a hard gate: the GHL media
 destination MUST be resolved and every passed slide PNG MUST be uploaded, with `ghl_folder_id`
 (a real pre-made folder id OR `"root"`) and each `ghl_media_id` recorded in media_library.json.
-Skipping this step is only permitted under the `has_ghl: false` carve-out (write
-`ghl_delivery_skipped: true`). A deck that omits these records is NOT done.
+Skipping is permitted only with the logged owner_skip_approval token described in the box above.
+A deck that omits these records is NOT done.
 
 > **BINDING -- GHL is touched ONE WAY ONLY: the Tier-3 REST API via the SHARED
 > `scripts/ghl_media.py` tool.** Two calls, both with the CLIENT's GHL **LOCATION** PIT
 > (the Agency token 401s for media; token `GOHIGHLEVEL_API_KEY` (preferred) / legacy
 > `GHL_API_KEY`; location id `GOHIGHLEVEL_LOCATION_ID` (preferred) / `GHL_LOCATION_ID`):
-> (1) **CREATE the per-deck folder** `ghl_media.create_media_folder(name, location_id, pit)`
+> (1) **Resolve the per-deck folder** `ghl_media.create_media_folder(name, location_id, pit)`
 > -> `POST https://services.leadconnectorhq.com/medias/folder` (Version: 2021-07-28,
 > JSON `{name, locationId[, parentId]}`) — **FAIL-CLOSED as of FIX 36(2)**: the folder-create
 > POST is NEVER issued. A folder MUST be pre-created by a human in the GHL UI (its id passed
@@ -219,7 +230,7 @@ Skipping this step is only permitted under the `has_ghl: false` carve-out (write
 > declines: human-supplied folder id, else media **root**. Driving the GHL UI in a browser
 > (agent-browser / Playwright / Puppeteer / any UI automation) is **STRICTLY FORBIDDEN**.
 
-**When to run:** Immediately after each image is intaked (SOP 9.2), and after SOP 9.1 records the media destination.
+**When to run:** In the `P9.2-GHL-UPLOAD` phase (manifest order 8.9), which runs after `P8-ASSEMBLE` (order 8.0) has assembled the deck, and after SOP 9.2 has intaked the passed images and SOP 9.1 records the media destination.
 
 **Inputs:**
 - media_library.json (`ghl_folder_id` -- a pre-made folder id, or `"root"`; resolved in the first step below)
@@ -227,9 +238,9 @@ Skipping this step is only permitted under the `has_ghl: false` carve-out (write
 - working/media-library/slide-NN.png (the image to upload)
 - GHL **LOCATION** PIT from the client's env stores (`GOHIGHLEVEL_API_KEY` / legacy `GHL_API_KEY`) + location id (`GOHIGHLEVEL_LOCATION_ID` / legacy `GHL_LOCATION_ID`)
 
-**Steps (Resolve the GHL media destination -- run once per deck run; the folder is NEVER created by software):**
+**Steps -- Resolve the media destination (software never creates a folder); run once per deck run:**
 1. If media_library.json still has `ghl_folder_id: null`, resolve the destination (or just run `scripts/ghl_media_push.py`, which does this + the uploads):
-   a. **CREATE the per-deck folder (FAIL-CLOSED, FIX 36(2)):** `ghl_media.create_media_folder("DECK <deck-slug>", location_id, pit)` — NO network call. With an `approved_folder_id` (a folder a human pre-created in the GHL UI) it returns that id with `approved: true`; set `ghl_folder_id` to it and pass it as `parentId` on every upload. Without one it returns the documented decline (`{"folderId": None, "http": 404, "fallback": "name-prefix"}`) — proceed to step c (media root + name prefix). The folder-create POST is never issued by this pipeline.
+   a. **Resolve the per-deck folder (FAIL-CLOSED, FIX 36(2)):** `ghl_media.create_media_folder("DECK <deck-slug>", location_id, pit)` — NO network call. With an `approved_folder_id` (a folder a human pre-created in the GHL UI) it returns that id with `approved: true`; set `ghl_folder_id` to it and pass it as `parentId` on every upload. Without one it returns the documented decline (`{"folderId": None, "http": 404, "fallback": "name-prefix"}`) — proceed to step c (media root + name prefix). The folder-create POST is never issued by this pipeline.
    b. **If create DECLINES** AND a human supplied `ghl_media_folder_id` in intake.json: use that id as `parentId`.
    c. **Else:** omit `parentId` and upload to the shareable GHL media **root**; set `ghl_folder_id: "root"` (a PASSING value), prefixing each upload `name` with `"<deck-slug> — "`.
    d. **Never drive the GHL web UI in a browser** -- folder-create is the REST API (step a), not UI automation.
@@ -249,7 +260,7 @@ Skipping this step is only permitted under the `has_ghl: false` carve-out (write
 
 **Hand to:** SOP 9.4 (delivery verification, run after all images are uploaded)
 
-**Failure mode:** If GHL API is completely unavailable (authentication failure, service outage): log all failed uploads in media_library.json. Notify the Director: "[N] images could not be uploaded to GHL. Local copies are in [path]. GHL upload is pending resolution." The PPTX Assembly Specialist can still work from the local media-library/ folder; GHL upload can be retried separately.
+**Failure mode:** If GHL API is completely unavailable (authentication failure, service outage): log all failed uploads in media_library.json. Notify the Director: "[N] images could not be uploaded to GHL. Local copies are in [path]. GHL upload is pending resolution." A failed upload never blocks assembly (assembly runs first, at `P8-ASSEMBLE`); the GHL records stay open and the upload can be retried with `scripts/ghl_media_push.py --repair --run-dir <run_dir>`.
 
 ---
 
@@ -262,7 +273,7 @@ Skipping this step is only permitted under the `has_ghl: false` carve-out (write
 - GHL media library (live API check)
 
 **Steps:**
-1. Count local images in working/media-library/: `ls working/media-library/*.png | wc -l`. Record as `local_count`.
+1. Count local images in working/media-library/ with a Python listing, which reports zero for an empty folder instead of failing: `python3 -c 'import pathlib,sys; p=sorted(pathlib.Path(sys.argv[1]).glob("*.png")); print(len(p)); print(*[q.name for q in p], sep="\n")' working/media-library`. The first line is `local_count`; the rest are the files counted.
 2. Call the GHL API to list files in the deck's GHL folder. Count files with names matching `Slide NN v<N>` pattern. Record as `ghl_count`.
 3. Compare local_count to slide_count_final from mission_prd.json.
 4. Compare ghl_count to slide_count_final.
@@ -270,15 +281,15 @@ Skipping this step is only permitted under the `has_ghl: false` carve-out (write
 6. All three counts must match. Any mismatch = delivery verification FAILED.
 7. For any GHL file that is missing (present locally but not in GHL): attempt a one-time re-upload.
 8. If all counts match after any necessary re-uploads: write `delivery_verified: true, verified_at: "ISO timestamp", local_count: N, ghl_count: N` to media_library.json.
-9. Notify the Director and the PPTX Assembly Specialist: "Delivery verification PASSED. [N] images confirmed in local media-library/ and GHL. PPTX assembly can begin."
+9. Notify the Director: "Delivery verification PASSED. [N] images confirmed in local media-library/ and GHL." The upload this verification covers is the manifest phase `P9.2-GHL-UPLOAD` (order 8.9), which runs after `P8-ASSEMBLE` (order 8.0) has assembled the deck -- the upload runs after assembly, never before it.
 
 **Outputs:**
 - media_library.json (delivery_verified: true)
-- Notification to Director and PPTX Assembly Specialist
+- Notification to the Director
 
-**Hand to:** PPTX Assembly Specialist (who reads local media-library/ for assembly)
+**Hand to:** Director of Presentations (the media-library records and the GHL upload closeout gate are now complete); the Delivery Concierge (ROLE-13) reads the same ledger for its SOP 9.4 ground-truth check
 
-**Failure mode:** If after one re-upload attempt the GHL count still does not match: notify the Director with the specific gap: "[N] images are missing from GHL. See media_library.json for the list. PPTX assembly can proceed from local copies; GHL delivery is incomplete and requires manual resolution." Mark `delivery_verified: "partial"` in media_library.json.
+**Failure mode:** If after one re-upload attempt the GHL count still does not match: notify the Director with the specific gap: "[N] images are missing from GHL. See media_library.json for the list. GHL delivery is incomplete and requires manual resolution." Mark `delivery_verified: "partial"` in media_library.json.
 
 ---
 
@@ -433,7 +444,7 @@ through `ghl_external_installer.py` under PRES-011 -- neither is this role's usu
 and `GHL-EXTERNAL-INSTALLER-SOP.md` for why that distinction matters operationally). Folding that into this file's SOP-9.x numbering would
 bury a distinct capability inside the media-library/upload procedure it isn't part of. The manifest's
 `owning_role` assignment to this role stands because this role is the department's only other
-GHL-push-terminating deliverable owner (`P9.6-WEBINAR-VIDEO`, SOP 9.6 above) -- the same precedent the
+GHL-push-terminating deliverable owner (`P9.6-WEBINAR-VIDEO`, `WEBINAR-BUILDER-SOP.md`) -- the same precedent the
 two builder SOPs cite for that choice.
 
 **Status as of this entry (re-verified 2026-10-14, FIX-PLAN Item 23):** the four phases above ARE
