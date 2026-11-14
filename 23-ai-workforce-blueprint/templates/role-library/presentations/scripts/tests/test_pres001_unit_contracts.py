@@ -254,8 +254,9 @@ def test_qc_union_carries_independence_provenance():
              json.dumps({"slide": 2, "slide_id": "slide-02",
                          "pass": True, "average": 9.0}))]
     rep = json.loads(D._reduce_qc_union(rows))
-    assert rep["qc_independence"] == {"graded_by": "qc-specialist-x",
-                                      "independent": True}
+    # PD-067: the merge writes `graded_by` and claims nothing further — no
+    # `independent: True` stamped by code.
+    assert rep["qc_independence"] == {"graded_by": "qc-specialist-x"}
     # a row's OWN provenance block wins over the role fallback
     rows2 = [(p, json.dumps({"slide": 1, "slide_id": "slide-01", "pass": True,
                              "average": 9.0,
