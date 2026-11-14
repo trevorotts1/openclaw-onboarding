@@ -154,12 +154,18 @@ if [[ ${#DEPTS[@]} -eq 0 ]]; then
 fi
 
 # ── resolve the build-state file (explicit scratch file wins; never guess) ──
+# One rule for the state file: WORKFORCE_BUILD_STATE_FILE, then ZHC_STATE_FILE,
+# then WORKFORCE_BUILD_STATE_PATH, then this script's own default (the box's
+# live file). A scratch path passed through any of them is still a scratch path.
 if [[ -z "$STATE_FILE" ]]; then
+  _default_state_file=""
   if [[ -f "/data/.openclaw/workspace/.workforce-build-state.json" ]]; then
-    STATE_FILE="/data/.openclaw/workspace/.workforce-build-state.json"
+    _default_state_file="/data/.openclaw/workspace/.workforce-build-state.json"
   elif [[ -f "$HOME/.openclaw/workspace/.workforce-build-state.json" ]]; then
-    STATE_FILE="$HOME/.openclaw/workspace/.workforce-build-state.json"
-  else
+    _default_state_file="$HOME/.openclaw/workspace/.workforce-build-state.json"
+  fi
+  STATE_FILE="${WORKFORCE_BUILD_STATE_FILE:-${ZHC_STATE_FILE:-${WORKFORCE_BUILD_STATE_PATH:-$_default_state_file}}}"
+  if [[ -z "$STATE_FILE" ]]; then
     echo "[retire-confirmed-decline] FATAL: no live build-state found and no --build-state-file given (refusing to guess)" >&2
     exit 3
   fi

@@ -118,12 +118,12 @@ SKILL_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 source "$SCRIPT_DIR/lib-workforce-state.sh"
 
 # Explicit state is authoritative for paired company/build operations.
-if [ -n "${WORKFORCE_BUILD_STATE_FILE:-}" ]; then
-  STATE_FILE="$WORKFORCE_BUILD_STATE_FILE"
-elif [ -d /data/.openclaw ]; then
-  STATE_FILE="/data/.openclaw/workspace/.workforce-build-state.json"
+# One rule for the state file: WORKFORCE_BUILD_STATE_FILE, then ZHC_STATE_FILE,
+# then WORKFORCE_BUILD_STATE_PATH, then this script's own default.
+if [ -d /data/.openclaw ]; then
+  STATE_FILE="${WORKFORCE_BUILD_STATE_FILE:-${ZHC_STATE_FILE:-${WORKFORCE_BUILD_STATE_PATH:-/data/.openclaw/workspace/.workforce-build-state.json}}}"
 else
-  STATE_FILE="$HOME/.openclaw/workspace/.workforce-build-state.json"
+  STATE_FILE="${WORKFORCE_BUILD_STATE_FILE:-${ZHC_STATE_FILE:-${WORKFORCE_BUILD_STATE_PATH:-$HOME/.openclaw/workspace/.workforce-build-state.json}}}"
 fi
 
 now_iso() { date -u +%Y-%m-%dT%H:%M:%SZ; }
