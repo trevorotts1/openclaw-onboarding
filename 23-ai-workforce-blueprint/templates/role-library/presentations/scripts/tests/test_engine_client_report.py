@@ -6,8 +6,9 @@ fixed -- see the entry script's ENGINE_ENTRY dispatch block).
 
 Ground truth this file pins (FABLE-TRUTH.md SS1 / MASTER-WORK-ORDER B2, same
 as test_client_step_count.py's ground truth for the runner side):
-  * 36 is the enforced, machine-walked phase count in PIPELINE-MANIFEST.json --
-    UNCHANGED here. This file never touches self.manifest.phases, the DAG,
+  * the manifest's phase count (56 at manifest version 75) is the enforced,
+    machine-walked count in PIPELINE-MANIFEST.json -- UNCHANGED here. This file
+    never touches self.manifest.phases, the DAG,
     declared_plan.json, or the attestation chain -- only proves the
     CLIENT-FACING helper methods (_client_deck_shape / _client_visible_phases /
     _client_phase_index / _render_client_report_msg) added to Engine.
@@ -20,9 +21,10 @@ as test_client_step_count.py's ground truth for the runner side):
     phase.client_report["start_template"]/["done_template"] straight off the
     manifest -- literally "Step {k} of {N} -- {name} -- starting{eta}" -- and
     handed that STRING, UNFORMATTED, to the client. No .format()/format_map()
-    call existed anywhere in phases.py. This is worse than the "Step 5 of 36"
+    call existed anywhere in phases.py. This is worse than the "Step 5 of N"
     over-count problem B2 fixed in the runner (which is not even the
-    production dispatch path -- see presentation-canonical-entry.sh): it is
+    production dispatch path -- see presentation-canonical-entry.sh), where N
+    is the manifest's phase count (56 at manifest version 75): it is
     unreadable, not just numerically dishonest.
 
 Flat file inside tests/, manages its own import path -- matching every
@@ -108,11 +110,25 @@ def _engine(tmp_path, deck_type=None, creation_mode=None, no_intake=False) -> En
     return Engine(rd, manifest, store, state, dry_run=True)
 
 
+def _labelled_step_line(msg: str, suffix: str) -> bool:
+    """True only for a rendered step line that CARRIES a non-empty label
+    between its two ' — ' separators. PD-018b: startswith("Step ") plus
+    endswith("— starting") alone also accepts the empty-label leak form
+    'Step 19 of 46 —  — starting', so the label is the thing to prove."""
+    if not (msg.startswith("Step ") and msg.endswith(suffix)):
+        return False
+    _head, sep, rest = msg.partition(" — ")
+    label, sep2, _tail = rest.partition(" — ")
+    return bool(sep and sep2 and label.strip())
+
+
 # ---------------------------------------------------------------------------
 # 0. The enforced 36 -- proof it is untouched by this unit.
 # ---------------------------------------------------------------------------
 class TestEnforcedCountUnchanged:
-    def test_manifest_has_36_phases(self):
+    def test_manifest_phase_count_is_pinned(self):
+        """Pin the manifest's phase count (56 at manifest version 75); proof it
+        is untouched by this unit."""
         assert len(_manifest().phases) == 56  # 65 at the rebase base (64 + Skill 72's P8.15-MOTION) - the 9 produce-only phases the 2026-10-15 Path A retirement removed (P-U-DESIGN-*, P-U-DESIGN-RENDER-*, P-U-HTML-*)
 
     def test_client_visible_phases_never_mutates_input(self, tmp_path):
@@ -122,9 +138,11 @@ class TestEnforcedCountUnchanged:
         after = [p.id for p in eng.manifest.phases]
         assert before == after, "the raw manifest phase list must never be filtered in place"
 
-    def test_verifier_registry_covers_all_36(self):
-        """Independent proof (not just phases[]) that the 36-phase enforcement
-        surface phase_verifiers.py registers is untouched by this unit."""
+    def test_verifier_registry_covers_every_phase(self):
+        """Independent proof (not just phases[]) that phase_verifiers.py
+        registers a verifier for every phase -- the manifest's phase count
+        (56 at manifest version 75) -- and that this unit does not touch that
+        enforcement surface."""
         import phase_verifiers
         ids = {p.id for p in _manifest().phases}
         registered = set(phase_verifiers.PHASE_VERIFIERS.keys())
@@ -205,31 +223,33 @@ class TestClientPhaseIndexConsistency:
     def test_counted_phase_gets_a_real_k_within_n(self, tmp_path):
         eng = _engine(tmp_path, deck_type="webinar", creation_mode="from_scratch")
         k, n = eng._client_phase_index("P-0.5-RESEARCH", eng.manifest.phases)
-        assert n == 46
-        assert k is not None and 1 <= k <= n
+        assert n == 16  # PD-018b: rendered phases, not the 46 deck-filtered ones
+        assert k == 1
 
     def test_deferred_phase_gets_k_none_but_real_n(self, tmp_path):
         eng = _engine(tmp_path, deck_type="webinar", creation_mode="from_scratch")
         k, n = eng._client_phase_index("P-CONVERTER", eng.manifest.phases)
         assert k is None
-        assert n == 46
+        assert n == 16
 
     def test_every_visible_phase_has_a_unique_k_covering_1_to_n_exactly(self, tmp_path):
         """The hard consistency proof, mirroring test_client_step_count.py's
-        twin: k for every client-visible phase, taken together, is exactly
-        {1..N} with no gaps and no duplicates -- for all three named deck
-        types. This is the check that catches 'a filtered N with an
-        unfiltered k' -- the failure mode the work order names as most
-        likely."""
-        for deck_type, creation_mode, expected_n in (
-            ("webinar", "from_scratch", 46),
-            ("signature_presentation", "from_scratch", 50),
-            ("webinar", "content_personal", 47),
+        twin: k for every phase the client is actually told about, taken
+        together, is exactly {1..N} with no gaps and no duplicates -- for all
+        three named deck types. This is the check that catches 'a filtered N
+        with an unfiltered k' -- the failure mode the work order names as most
+        likely. PD-018b: N is the RENDERED count (hidden and deck-deferred
+        phases send nothing, so they must not leave a gap in the numbering)."""
+        for deck_type, creation_mode, deck_visible_n, expected_n in (
+            ("webinar", "from_scratch", 46, 16),
+            ("signature_presentation", "from_scratch", 50, 16),
+            ("webinar", "content_personal", 47, 17),
         ):
             eng = _engine(tmp_path / f"consist-{deck_type}-{creation_mode}",
                           deck_type=deck_type, creation_mode=creation_mode)
             visible = eng._client_visible_phases(eng.manifest.phases)
-            assert len(visible) == expected_n
+            assert len(visible) == deck_visible_n
+            assert len(eng._client_rendered_phases(eng.manifest.phases)) == expected_n
             ks = []
             for ph in eng.manifest.phases:
                 k, n = eng._client_phase_index(ph.id, eng.manifest.phases)
@@ -244,7 +264,7 @@ class TestClientPhaseIndexConsistency:
         eng = _engine(tmp_path, deck_type="webinar", creation_mode="from_scratch")
         k, n = eng._client_phase_index("P-DOES-NOT-EXIST", eng.manifest.phases)
         assert k is None
-        assert n == 46
+        assert n == 16
 
 
 # ---------------------------------------------------------------------------
@@ -280,21 +300,41 @@ class TestRenderClientReportMsgNoLiteralBraces:
         eng = _engine(tmp_path, deck_type="webinar", creation_mode="from_scratch")
         ph = eng.manifest.phase("P-0.5-RESEARCH")
         assert ph.name == "Deep Research"
+        # PD-018a moved every manifest template from {name} to {client_label};
+        # PD-018b (lane FL05) teaches _render_client_report_msg to fill that
+        # token. The {k}/{N} substitution this test exists for is unchanged, so
+        # pin it and prove no raw token (old or new) leaks to the client.
         msg = eng._render_client_report_msg(ph, "start")
-        assert msg == "Step 1 of 46 — Deep Research — starting", msg
+        assert msg == "Step 1 of 16 — Researching your topic — starting", msg
         done = eng._render_client_report_msg(ph, "done")
-        assert done == "Step 1 of 46 — Deep Research — complete", done
+        assert done == "Step 1 of 16 — Researching your topic — complete", done
+        # PD-018b: the plain client label replaces the internal Phase.name.
+        assert ph.name not in msg and ph.name not in done
+        # PD-018a: every template now carries {client_label}, so no raw token --
+        # old ({name}) or new ({client_label}) -- may reach the client.
+        for tok in ("{k}", "{N}", "{name}", "{client_label}"):
+            assert tok not in msg and tok not in done
 
     def test_name_field_used_not_bare_phase_id(self, tmp_path):
-        """{name} resolves to the manifest's declared 'name' (a human string),
-        not the machine phase id -- proves Phase.name (manifest.py) is wired,
-        not just defaulting to phase.id every time."""
+        """The client-facing line names the step with the manifest's plain
+        `client_label` -- PD-018a declares it on every phase and drops {name}
+        from every template; PD-018b renders it. Never the technical Phase.name,
+        never the machine phase id (both are internal text the client must not
+        see)."""
         eng = _engine(tmp_path, deck_type="webinar", creation_mode="from_scratch")
         ph = eng.manifest.phase("P4-RENDER")
-        assert ph.name and ph.name != ph.id
+        label, client_visible = eng._phase_client_meta(ph)
+        assert client_visible and label == "Creating your slide images"
+        assert ph.name and ph.name != ph.id and ph.name != label
+        template = ph.client_report["start_template"]
+        assert "{client_label}" in template
+        assert "{name}" not in template
         msg = eng._render_client_report_msg(ph, "start")
-        assert ph.name in msg
-        assert "{name}" not in msg
+        assert label in msg
+        assert ph.name not in msg, f"internal Phase.name leaked to the client: {msg!r}"
+        assert ph.id not in msg
+        assert "{name}" not in msg and "{client_label}" not in msg
+        assert "{" not in msg and "}" not in msg
 
     def test_eta_placeholder_empty_when_no_eta_declared(self, tmp_path):
         """None of the 36 manifest phases declare eta_minutes today -- {eta}
@@ -317,41 +357,52 @@ class TestRenderClientReportMsgNoLiteralBraces:
         done = eng._render_client_report_msg(ph, "done")
         assert "ETA" not in done  # ETA only ever appended to the start message
 
-    def test_deferred_phase_gets_honest_wording_not_a_wrong_step_number(self, tmp_path):
+    def test_deferred_phase_gets_no_client_message(self, tmp_path):
         """P-CONVERTER on a standard from-scratch deck: walked/attested (the
-        36-phase enforcement never skips it) but NOT one of this deck's 31
-        client-visible steps. Must not fabricate 'Step <n> of 31'."""
+        phase enforcement never skips it) but NOT one of this deck's 46
+        client-visible steps. PD-018b changed the honest-wording branch to an
+        EMPTY string -- the caller sends nothing rather than a sentence that
+        carries a phase id or a fabricated step number."""
         eng = _engine(tmp_path, deck_type="webinar", creation_mode="from_scratch")
         ph = eng.manifest.phase("P-CONVERTER")
-        msg = eng._render_client_report_msg(ph, "start")
-        assert "Step" not in msg or "46-step plan" in msg
-        assert "P-CONVERTER" in msg
-        assert "46" in msg  # still names the honest total for context (the composed client-visible count on this base)
-        assert "{" not in msg and "}" not in msg
+        assert eng._render_client_report_msg(ph, "start") == ""
+        assert eng._render_client_report_msg(ph, "done") == ""
 
     def test_sp_only_phase_deferred_on_standard_deck(self, tmp_path):
         eng = _engine(tmp_path, deck_type="webinar", creation_mode="from_scratch")
         ph = eng.manifest.phase("P-SP-INTAKE")
-        msg = eng._render_client_report_msg(ph, "start")
-        assert "46-step plan" in msg
-        assert "{" not in msg and "}" not in msg
+        assert eng._render_client_report_msg(ph, "start") == ""
 
     def test_malformed_template_falls_back_to_default_not_a_crash_or_leak(self, tmp_path):
         """A manifest client_report template with a stray unmatched brace must
-        never propagate to the client verbatim, and must never raise."""
+        never propagate to the client verbatim, and must never raise. PD-018b:
+        the fallback is the plain labelled step line -- never "Starting
+        <phase id> (<role>)", which put internal text in front of a client."""
         eng = _engine(tmp_path, deck_type="webinar", creation_mode="from_scratch")
         ph = eng.manifest.phase("P4-COPY")
         ph.client_report = {"start_template": "Step {k of {N} -- broken"}
         msg = eng._render_client_report_msg(ph, "start")
-        assert msg == f"Starting {ph.id} ({ph.owning_role})"
+        assert _labelled_step_line(msg, "— starting"), msg
+        # The empty-label form must NOT satisfy the same check -- otherwise
+        # startswith/endswith alone would let 'Step 19 of 46 —  — starting'
+        # through and prove nothing.
+        assert not _labelled_step_line("Step 19 of 46 —  — starting", "— starting")
+        assert ph.id not in msg and ph.owning_role not in msg
         assert "{" not in msg and "}" not in msg
 
     def test_no_template_declared_uses_plain_default(self, tmp_path):
         eng = _engine(tmp_path, deck_type="webinar", creation_mode="from_scratch")
         ph = eng.manifest.phase("P4-COPY")
         ph.client_report = {}
-        assert eng._render_client_report_msg(ph, "start") == f"Starting {ph.id} ({ph.owning_role})"
-        assert eng._render_client_report_msg(ph, "done") == f"{ph.id} complete"
+        start = eng._render_client_report_msg(ph, "start")
+        done = eng._render_client_report_msg(ph, "done")
+        assert _labelled_step_line(start, "— starting"), start
+        assert _labelled_step_line(done, "— complete"), done
+        # Both empty-label forms are rejected by the same check.
+        assert not _labelled_step_line("Step 19 of 46 —  — starting", "— starting")
+        assert not _labelled_step_line("Step 19 of 46 —  — complete", "— complete")
+        for msg in (start, done):
+            assert ph.id not in msg and ph.owning_role not in msg
 
     def test_unrecognized_token_in_template_drops_cleanly(self):
         """_SafeFormatDict: a template referencing a token this engine does
