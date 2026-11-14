@@ -97,6 +97,12 @@ _mkbox() {
   # Run a COPY from inside the sandbox so SCRIPT_DIR/REPO_ROOT resolve here, not
   # into the checkout — that keeps the registrar lookup under test control.
   cp "$WATCHDOG" "$skill/closeout-readiness-watchdog.sh"
+  # ...and stage the state-writer dependency beside it, exactly as the sister
+  # fixture (closeout-resume-cron-routing.test.sh) and every other box-shaped
+  # sandbox in the repo does. A real box always has these in the same scripts/
+  # folder the watchdog resolves, so a sandbox without them is not a box: the
+  # watchdog would refuse to run there for a reason no box ever hits.
+  cp "$REPO_ROOT/23-ai-workforce-blueprint/scripts/"{lib-workforce-state.sh,workforce_state.py,workforce_completion.py,interview_eligibility.py} "$skill/"
 
   cat > "$h/bin/openclaw" <<SHIM
 #!/usr/bin/env bash
