@@ -31,10 +31,10 @@
     }
   },
   "snapshots": {
-    "retention_count": 60,
-    "retention_days": 45,
+    "retention_count": 3,
+    "retention_hours": 72,
     "retention_rule": "max",
-    "_locked": "D7: keep the LARGER of 60 snapshots or 45 days. Pruning is a P3 digest line."
+    "_locked": "D7 (v1.2.6): keep 72 hours of history - snapshots, events and digests - plus the newest 3 config snapshots so a revert always has a last-known-good. Every cron-tick prunes. Digest rows are never cut below the 24h alert cap / dedup window."
   },
   "furnace": {
     "idle_window_minutes": 60,
