@@ -236,6 +236,9 @@ export async function handle(request, env, store, objects, deps = {}) {
     const minted = await mintKey();
     const record = await buildKeyRecord({ clientId: enrolled.client_id, kind: 'box', label: body.label, secret: minted.secret, nowMs });
     await store.kvPut(`key:${record.fingerprint}`, JSON.stringify(record));
+    // U-Z14 — enrollment registers a NEW client (never adopts one), so it has
+    // a box key and no machine key: the box sentence, decided without a LIST.
+    await markBoxOnly(store, enrolled.client_id, true);
     // The key is returned exactly once, to its owner. It is never stored raw.
     return ok({ client_id: enrolled.client_id, key: minted.secret }, 201);
   }
@@ -275,6 +278,8 @@ export async function handle(request, env, store, objects, deps = {}) {
       nowMs,
     });
     await store.kvPut(`key:${machine.fingerprint}`, JSON.stringify(machine));
+    // U-Z14 — a paired computer means this studio is no longer box-only.
+    await markBoxOnly(store, attempt.record.client_id, false);
     return ok({ client_id: attempt.record.client_id, key: minted.secret, tools: body.tools || null }, 201);
   }
 
@@ -428,7 +433,7 @@ export async function handle(request, env, store, objects, deps = {}) {
       if (already) {
         return ok({
           order: project(JSON.parse(already), nowMs),
-          option_line: optionLine(await clientRecord(store, clientId), nowMs, await lastCheckIn(objects, clientId), await clientKeys(store, clientId)),
+          option_line: optionLine(await clientRecord(store, clientId), nowMs, await lastCheckIn(objects, clientId)),
         }, 201);
       }
     }
@@ -494,7 +499,7 @@ export async function handle(request, env, store, objects, deps = {}) {
     });
     return ok({
       order: project(order, nowMs),
-      option_line: optionLine(await clientRecord(store, clientId), nowMs, await lastCheckIn(objects, clientId), await clientKeys(store, clientId)),
+      option_line: optionLine(await clientRecord(store, clientId), nowMs, await lastCheckIn(objects, clientId)),
     }, 201);
   }
 
@@ -793,6 +798,10 @@ async function cleanupOrderFiles({ store, objects, clientId, orderId, uploadIds 
  *  @returns {Promise<number>} how many keys this call cut off. */
 async function revokeKeys(store, { clientId, kind }) {
   let cut = 0;
+  // U-Z14 — a revocation can restore the box sentence (cutting a computer key),
+  // so the active kinds of this client are read off the same listing.
+  let hasBox = false;
+  let hasMachine = false;
   for (const name of await listKeys(store, 'key:')) {
     const raw = await store.kvGet(name);
     if (!raw) continue;
@@ -802,13 +811,29 @@ async function revokeKeys(store, { clientId, kind }) {
     } catch {
       continue;
     }
-    if (!record || record.client_id !== clientId || record.kind !== kind) continue;
+    if (!record || record.client_id !== clientId) continue;
+    if (record.kind !== kind) {
+      if (record.status === 'active' && record.kind === 'box') hasBox = true;
+      if (record.status === 'active' && record.kind === 'machine') hasMachine = true;
+      continue;
+    }
     if (record.status !== 'active') continue;
     record.status = 'revoked';
     await store.kvPut(name, JSON.stringify(record));
     cut += 1;
   }
+  await markBoxOnly(store, clientId, hasBox && !hasMachine);
   return cut;
+}
+
+/** U-Z14 — keep the box verdict on the client record. Creating an order may
+ *  not LIST KV at all (DSF-611), so the routes that mint or revoke a key, which
+ *  already know the answer, are the ones that write it. One KV write, and only
+ *  when the verdict changed. */
+async function markBoxOnly(store, clientId, boxOnly) {
+  const record = await clientRecord(store, clientId);
+  if (record.box_only === boxOnly) return;
+  await store.kvPut(`client:${clientId}`, JSON.stringify({ ...record, box_only: boxOnly }));
 }
 
 async function clientRecord(store, clientId) {
