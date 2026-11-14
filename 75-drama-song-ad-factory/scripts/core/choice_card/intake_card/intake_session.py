@@ -316,6 +316,69 @@ def _option(q, parsed):
             "description": description, "value": parsed.get("value"), "number_shown": n}
 
 
+def _answer_record(question, raw, *, source, source_ref, rendered, at_utc=None,
+                   sequence=None, provenance_kind=None):
+    """One accepted answer record: the one shape every answer writer stores.
+
+    Seeded prior answers and reused saved answers are built here, so neither
+    invents a second record shape; a fresh client answer stores the same keys.
+    """
+    parsed = _parse(raw, question)
+    if not parsed or parsed.get("error"):
+        raise ValueError("saved raw answer is not an offered option")
+    parsed["id"] = question["id"]
+    receipt = {"id": question["id"], "definition": question, "message": rendered}
+    record = {"sequence": sequence, "raw_answer": raw, "source": source,
+              "source_ref": source_ref, "at_utc": at_utc or _now(),
+              "question_id": question["id"], "question_digest": _digest(receipt),
+              "rendered_question": rendered, "accepted": True,
+              "option": _option(question, parsed), "parsed": parsed,
+              "definition_digest": _digest(question),
+              "question": copy.deepcopy(question)}
+    if provenance_kind:
+        record["provenance_kind"] = provenance_kind
+    if question["id"] == "model":
+        record["provider_identity"] = _provider_identity(parsed)
+    return record
+
+
+def _store_reused(state, qs, verdict):
+    """Write every reusable saved answer through the one answer writer.
+
+    ``apply_reuse`` only decides. A question whose definition changed is never
+    listed as applied, so its saved record is preserved byte for byte; there is
+    no best-effort fallback.
+    """
+    by_id = {q["id"]: q for q in qs}
+    applied, refused, wrote = [], list(verdict["refused"]), False
+    for qid in verdict["applied"]:
+        saved, q = verdict["records"].get(qid), by_id.get(qid)
+        if (not saved or q is None or saved.get("definition_digest") != _digest(q)
+                or not isinstance(saved.get("raw_answer"), str)
+                or not isinstance(saved.get("rendered_question"), str)):
+            continue
+        rebuilt = _answer_record(q, saved["raw_answer"],
+                                 source=saved.get("source", "client"),
+                                 source_ref=saved.get("source_ref"),
+                                 rendered=saved["rendered_question"],
+                                 at_utc=saved.get("at_utc"), sequence=saved.get("sequence"),
+                                 provenance_kind=saved.get("provenance_kind"))
+        prior = dict(saved)
+        prior.pop("reused_at_utc", None)
+        if _dump(rebuilt) != _dump(prior):
+            # The saved answer does not re-derive from its own raw reply. It is
+            # not applied and it is not overwritten: the record stays as saved.
+            refused.append({"question_id": qid,
+                            "reason": "the saved answer no longer matches its own question"})
+            continue
+        applied.append(qid)
+        stamp = saved.get("reused_at_utc") or _now()
+        if saved.get("reused_at_utc") != stamp:
+            state["answer_records"][qid] = dict(rebuilt, reused_at_utc=stamp)
+            wrote = True
+    return {"applied": applied, "refused": refused, "wrote": wrote}
+
+
 def _persist_ai_roles(state, answers, run_dir, *, prepare_only=False):
     selected = next((a for a in answers if a.get("id") == "models"), None)
     if selected is None or not run_dir:
@@ -417,6 +480,8 @@ def _result(state, path, answers, qs, code="INTAKE_WAITING", outcome="ok", detai
               "video_model": next((a.get("n") for a in answers if a.get("id") == "model"), None)}
     if state.get("legacy_answers"):
         result["legacy_answers"] = copy.deepcopy(state["legacy_answers"])
+    if state.get("reuse"):
+        result["reuse"] = copy.deepcopy(state["reuse"])
     if detail:
         result["detail"] = detail
     return result
@@ -491,6 +556,19 @@ def _process_locked(path, replies, questions, run_dir, run_state_file, target,
                 except (OSError, ValueError):
                     state["legacy_answers"] = {"status": "unreadable_preserved", "path": str(legacy)}
     answers, qs, drift = _active(state, base, client_dir)
+    if existed:
+        # S75-018 C05: a resumed run applies the answers it already holds. Every
+        # reusable saved answer is written back through the one answer writer; a
+        # question whose definition changed stays refused and is never
+        # overwritten. apply_reuse only decides -- this caller does the writing.
+        from . import answer_reuse as reuse
+        records = state.get("answer_records") or {}
+        held = [q["id"] for q in qs if q["id"] in records]
+        held += [qid for qid in records if qid not in held]
+        stored = _store_reused(state, qs, reuse.apply_reuse(state, held, qs))
+        state["reuse"] = dict(stored, at_utc=_now())
+        if stored["wrote"]:
+            _write(path, state)
     if runtime is not None:
         if runtime not in ("openclaw", "claude-nine", "openrouter-direct"):
             return _result(state, path, answers, qs, "AI_MODEL_RUNTIME_UNKNOWN", "waiting")
@@ -802,19 +880,12 @@ def seed_answers(records, questions=None, *, run_dir=None, run_state_file=None,
                 parsed = _parse(raw, q)
                 if not parsed or parsed.get("error"):
                     return _result(state, path, answers, qs, "INVALID_OPTION", "waiting")
-                parsed["id"] = qid
                 at = next(i for i, entry in enumerate(qs) if entry["id"] == qid)
                 rendered = card.render_step(at + 1, qs)
-                receipt = {"id": qid, "definition": q, "message": rendered}
-                event = {"sequence": len(state["events"]) + len(candidates) + 1,
-                         "raw_answer": raw, "source": "client", "source_ref": row["source_ref"],
-                         "provenance_kind": "explicit_prior_client_answer", "at_utc": _now(),
-                         "question_id": qid, "question_digest": _digest(receipt),
-                         "rendered_question": rendered, "accepted": True,
-                         "option": _option(q, parsed), "parsed": parsed}
-                record = dict(event, definition_digest=_digest(q), question=copy.deepcopy(q))
-                if qid == "model":
-                    record["provider_identity"] = _provider_identity(parsed)
+                record = _answer_record(q, raw, source="client",
+                                        source_ref=row["source_ref"], rendered=rendered,
+                                        sequence=len(state["events"]) + len(candidates) + 1,
+                                        provenance_kind="explicit_prior_client_answer")
                 prior = state["answer_records"].get(qid)
                 if prior is not None and prior.get("raw_answer") != raw:
                     return _result(state, path, answers, qs, "SEED_CONFLICTS_WITH_SAVED_ANSWER", "waiting")
