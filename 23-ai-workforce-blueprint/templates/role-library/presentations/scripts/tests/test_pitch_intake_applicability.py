@@ -20,6 +20,44 @@ def _ledger(run_dir: Path) -> dict:
     return json.loads((run_dir / "working" / "interview" / "intake_ledger.json").read_text())
 
 
+def _call(run_dir: Path, *args: str) -> subprocess.CompletedProcess:
+    return subprocess.run(
+        [sys.executable, str(DRIVER), "--run-dir", str(run_dir), *args],
+        capture_output=True, text=True, timeout=180)
+
+
+def _walk_to_complete(run_dir: Path) -> None:
+    """PD-913: --complete refuses an interview the turn gate has not finished,
+    so a fixture that wants a finished intake answers the gate's own pending
+    turns first. SETUP ONLY -- it reuses the live gate (--next) and makes no
+    claim about the product; the test's own assertions decide pass/fail.
+    Each turn is answered with the bank's own first allowed value."""
+    for _ in range(120):
+        q = json.loads(_call(run_dir, "--next").stdout or "{}")
+        if q.get("status") == "complete":
+            return
+        qid = q.get("question_id")
+        if not qid:
+            return
+        vals = q.get("allowed_values") or []
+        if qid == "pitch_included" and "no" in vals:
+            # SETUP: an informational deck. The commercial turns are then not
+            # asked at all, so a fixture about some OTHER behaviour does not
+            # have to supply commercial values it never asserts on.
+            answer = "no"
+        elif qid in ("workhorse_model", "reasoning_model", "qc_model",
+                     "deepseek_variant", "openrouter_model", "provider_plan",
+                     "thinking_mode", "ollama_plan"):
+            answer = ""       # the client's wired provider is not probed here
+        elif vals:
+            answer = vals[0]
+        elif q.get("kind") == "integer":
+            answer = "20"
+        else:
+            answer = "Client supplied " + qid
+        _call(run_dir, "--answer", qid, answer)
+
+
 def test_explicit_informational_selection_skips_method_and_timing_without_fake_values(tmp_path):
     run_dir = tmp_path / "run"
     assert _answer(run_dir, "deck_type_source", "presentation_type: from_scratch; pitch_included: false").returncode == 0
@@ -30,6 +68,7 @@ def test_explicit_informational_selection_skips_method_and_timing_without_fake_v
     assert entries["named_methodology"]["skipped"] is True
     assert entries["time_to_result"]["skipped"] is True
 
+    _walk_to_complete(run_dir)
     complete = subprocess.run(
         [sys.executable, str(DRIVER), "--run-dir", str(run_dir), "--complete"],
         capture_output=True, text=True, timeout=30)

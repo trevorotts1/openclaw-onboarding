@@ -386,7 +386,8 @@ def test_the_launcher_banner_carries_it_end_to_end(monkeypatch, tmp_path,
         (run_dir / ".mode-plan.json").read_text(encoding="utf-8"))
     assert record["concurrency"]["concurrency"] == 400, record["concurrency"]
     assert record["mode_axis"]["in_force"] is True, record["mode_axis"]
-    assert record["concurrency"]["operator_ceiling"] == 400
+    # FIX 61 (7e5c4d6f3): the global operator ceiling is 400.
+    assert record["concurrency"]["operator_ceiling"] == model_router.ULTRA_OPERATOR_CEILING
 
 
 # ===========================================================================
