@@ -788,7 +788,7 @@ On offer-component slides, the slide face carries the PROMISE / OUTCOME of each 
 - FAIL: "Day 1 Strategy Session | Value: $997"
 - PASS: "Day 1: The one conversation that changes how your family reads money forever"
 
-The only authorized dollar figure on the deck face is the SINGLE big callout (the final price, e.g., "$97") on the main offer slide. Every other slide states promises, outcomes, and transformations. The value-stack math (total stack dollar value, running tally) lives in the presenter notes and the re-pitch, not on the audience-facing slide copy.
+On slides that are not offer-arc slides listed in AF-PRICE-FACE, the face carries promises and outcomes, not dollar values.
 
 ---
 
