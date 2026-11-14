@@ -62,6 +62,31 @@ def test_every_screen_carries_a_plain_heading_and_a_question():
             assert OPTION_KEYS <= set(o), (screen["id"], o)
 
 
+def test_no_exported_option_opens_a_screen_the_export_does_not_carry():
+    """U-GEN437: the export never offers an option that only opens another screen.
+
+    The page branches on an ANSWER, not on a follow-up screen, so an option that
+    just opens one is a dead end. The card marks such an option with
+    ``opens_screen``; the export drops the opener and never carries the screen it
+    would have opened. MUSIC STYLE therefore exports its three styles, not the
+    "Show me all N styles" row."""
+    screens = _screens(conditional=True)
+    ids, checked = set(screens), 0
+    for q in list(IC.QUESTIONS) + IC._conditional_questions():
+        opens = q.get("opens_screen") or {}
+        if not opens:
+            continue
+        checked += 1
+        assert opens["id"] not in ids, (q["id"], opens["id"])
+        opener = q["options"][opens["n"] - 1][0]
+        shown = [o["text"] for o in screens[q["id"]]["options"]]
+        assert opener not in shown, (q["id"], opener)
+        assert len(shown) == len(q["options"]) - 1, q["id"]
+    assert checked, "no screen carries an opens_screen marker any more"
+    assert "music_full" not in ids
+    assert len(screens["music"]["options"]) == 3
+
+
 def test_headings_come_from_the_page_table():
     # the purpose screens ride only on the conditional export (SPEC B1), and
     # this test names all of them
