@@ -76,10 +76,15 @@ def _presentations_dir() -> Path:
 
 
 def _price_face_row(path: Path) -> str:
-    """Return the AF-PRICE-FACE table row text from one procedure file."""
+    """Return the AF-PRICE-FACE table row text from one procedure file.
+
+    PD-098 marks every unregistered code cell with "(role-level; not in the
+    registry)", which lands between the code and the cell's closing pipe, so the
+    locator matches the code and its separator rather than the bare cell.
+    """
     for line in path.read_text(encoding="utf-8").splitlines():
         stripped = line.strip()
-        if stripped.startswith("| AF-PRICE-FACE |"):
+        if stripped.startswith("| AF-PRICE-FACE"):
             return stripped
     raise AssertionError("PD-090: no AF-PRICE-FACE row in %s" % path)
 
