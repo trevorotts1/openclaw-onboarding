@@ -46,6 +46,7 @@ Runnable two ways (both exercise the exact same code):
 """
 
 import argparse
+import base64
 import contextlib
 import fcntl
 import functools
@@ -856,7 +857,14 @@ ARTIFACT_TARGET_OVERRIDE: Dict[str, List[str]] = {
 # decision, it is a stuck record). Parking it writes a VISIBLE marker file and
 # still auto-un-parks the moment the work order is reissued or state changes.
 _FAILING_STATUSES = frozenset({"error", "exhausted", "declined",
-                               "partial_failure"})  # PRES-014: some-units-failed
+                               "partial_failure",  # PRES-014: some-units-failed
+                               # PD-068: a grader that honestly reports pass:false
+                               # has FINISHED its work -- the failure is the
+                               # finding, not a transient fault, so it must never
+                               # be retried into a different answer. It is still a
+                               # failing OUTCOME (the phase did not pass), so it
+                               # parks/blocks exactly like the others.
+                               "qc_failed"})
 
 # ---------------------------------------------------------------------------
 # Per-phase artifact contracts -- the EXACT, mechanical requirements each
@@ -1240,8 +1248,8 @@ ARTIFACT_CONTRACTS: Dict[str, str] = {
     "P1Q-COPY-QC": (
         "OUTPUT CONTRACT (mechanically enforced LATER by build_deck._chk_copy_qc at "
         "the canonical-entry preflight -- write it right the first time). File path: "
-        "working/qc/copy_qc_report.json (a single JSON object). Required top-level "
-        "fields, EXACTLY:\n"
+        "working/qc/copy_qc_report.json (a single JSON object). Report what you "
+        "found; a failing report is a correct output. Required top-level fields:\n"
         "1. `gate`: the exact string `Phase 1Q` (case-sensitive, no variation).\n"
         "2. `criteria`: an array of objects, each `{\"name\": <criterion>, \"score\": "
         "<number 1-10>}`, covering the real writing-engine criteria you actually "
@@ -1250,14 +1258,17 @@ ARTIFACT_CONTRACTS: Dict[str, str] = {
         "price, etc.) -- at least 6 criteria, each scored HONESTLY from the real "
         "content (see upstream slides_copy.md).\n"
         "3. `average`: the arithmetic mean of every `criteria[].score`, rounded to 1 "
-        "decimal -- must be >= 8.5 AND must NOT exceed that real mean by more than "
-        "1.0 (a headline score inflated over your own cited criteria is rejected).\n"
-        "4. `triggered_autofails`: `[]` (empty array) -- if slides_copy.md genuinely "
-        "still has an open AF-* issue, name it here instead of inflating scores to "
-        "hide it.\n"
-        "5. `pass`: boolean `true` (only if average >= 8.5 and triggered_autofails is "
-        "empty -- these must be mutually consistent, never pass:true over a failing "
-        "score).\n"
+        "decimal -- it must NOT exceed that real mean by more than 1.0 (a headline "
+        "score inflated over your own cited criteria is rejected). Report the mean "
+        "you actually measured; the gate, not your optimism, decides a pass.\n"
+        "4. `triggered_autofails`: `[]` only when slides_copy.md genuinely has no "
+        "open AF-* issue; otherwise the AF-* ids you found, never hidden and never "
+        "inflated.\n"
+        "5. `pass`: `true` when the graded copy genuinely meets the bar, `false` "
+        "when it does not -- a failing report is a correct output, so report what "
+        "you found instead of inflating scores or emptying `triggered_autofails` to "
+        "force a pass. `pass` must agree with the rest of the report: never "
+        "`true` over a real AF-* entry or over a mean below 8.5.\n"
         "6. `qc_independence`: an object `{\"graded_by\": \"qc-specialist-"
         "presentations\", \"independent\": true, \"self_graded\": false}` -- `graded_by` "
         "must be the QC role, NEVER `slide-copywriter`/`build_deck.py`/`self`/"
@@ -1272,23 +1283,29 @@ ARTIFACT_CONTRACTS: Dict[str, str] = {
         "OUTPUT CONTRACT (mechanically enforced LATER by build_deck's "
         "_qc_report_gate at the canonical-entry preflight -- write it right the "
         "first time). File path: working/qc/prompt_qc_report.json (a single JSON "
-        "object). Same shape and rules as the P1Q-COPY-QC contract (criteria array, "
-        "honest average, triggered_autofails, pass:true, qc_independence with "
-        "graded_by='qc-specialist-prompt-presentations', no foreign rubric "
-        "language) with ONE difference: `gate` must be the exact string "
-        "`Phase Prompt-QC`. Grade the real per-slide prompts in working/prompts/ "
-        "against length (9,000-18,000 chars), the negative-class block, spelling-"
-        "lock, and verbatim-copy-baked criteria -- never rubber-stamp a thin prompt."
+        "object). Report what you found; a failing report is a correct output. "
+        "Same fields and rules as the P1Q-COPY-QC contract (criteria array, honest "
+        "average, triggered_autofails, a `pass` that agrees with the report, "
+        "qc_independence with graded_by='qc-specialist-prompt-presentations', no "
+        "foreign rubric language) with ONE difference: `gate` must be the exact "
+        "string `Phase Prompt-QC`. Grade the real per-slide prompts in "
+        "working/prompts/ against length (__PROMPT_FLOOR__-__PROMPT_CEILING__ "
+        "chars), the negative-class block, spelling-lock, and verbatim-copy-baked "
+        "criteria. Name every real failure you find -- a thin prompt reported "
+        "failing is the correct output; never rubber-stamp one."
     ),
     "P-TYPO-QC": (
         "OUTPUT CONTRACT (mechanically enforced LATER by build_deck's "
         "_qc_report_gate at the canonical-entry preflight -- write it right the "
         "first time). File path: working/qc/typography_qc_report.json (a single "
-        "JSON object). Same shape and rules as the P1Q-COPY-QC contract (criteria "
-        "array, honest average, triggered_autofails, pass:true, qc_independence "
-        "with graded_by='qc-specialist-typography-presentations', no foreign rubric "
+        "JSON object). Report what you found; a failing report is a correct "
+        "output. Same fields and rules as the P1Q-COPY-QC contract (criteria "
+        "array, honest average, triggered_autofails, a `pass` that agrees with the "
+        "report, qc_independence with "
+        "graded_by='qc-specialist-typography-presentations', no foreign rubric "
         "language) with ONE difference: `gate` must be the exact string "
-        "`Phase Typography-QC`."
+        "`Phase Typography-QC`. A typography defect you honestly report as failing "
+        "is the correct output; never rubber-stamp one."
     ),
     # PROACTIVE (found before P4-PROMPT was ever reached this run, live run
     # pj_34a56a26caca04532ec6e9cba6, 2026-08-18, iteration 3): extracted verbatim
@@ -1301,9 +1318,10 @@ ARTIFACT_CONTRACTS: Dict[str, str] = {
         "OUTPUT CONTRACT (mechanically enforced by build_deck.check_prompt_qc_"
         "deterministic -- LITERAL, MECHANICALLY-CHECKED requirements, every one of "
         "these is graded by a token/regex scan of your output, not a vibe):\n"
-        "1. LENGTH: 9,000-18,000 characters (stripped of leading/trailing "
-        "whitespace). Under 9,000 is a fatal fail; do NOT pad with filler to hit "
-        "the floor -- every added sentence must be real, specific art direction.\n"
+        "1. LENGTH: __PROMPT_FLOOR__-__PROMPT_CEILING__ characters (stripped of "
+        "leading/trailing whitespace). Under __PROMPT_FLOOR__ is a fatal fail; do "
+        "NOT pad with filler to hit the floor -- every added sentence must be real, "
+        "specific art direction.\n"
         "2. REQUIRED STRUCTURAL BLOCKS, all three present verbatim (case-"
         "insensitive): a layout header starting `[ARCHETYPE` (e.g. `[ARCHETYPE: "
         "A2 recognition]`); a final block headed exactly `DO-NOT BLOCK` (a list of "
@@ -1396,6 +1414,26 @@ def _shared_prompt_gate():
             "band cannot be stated. Refusing to author a prompt blind "
             f"against the shared gate ({type(exc).__name__}: {exc}).") from exc
     return prompt_gate
+
+# PD-065: the two prompt-authoring contracts state the length band the shared
+# gate will actually enforce. It is READ AT CALL TIME, never typed as a literal:
+# a hard-coded band drifts silently from rule 12 and the author is then graded
+# against numbers it was never told. If the gate cannot be read this raises
+# (RuntimeError from _shared_prompt_gate) -- refusing to author blind is the
+# existing rule, and it costs nothing before a paid unit is dispatched.
+_PROMPT_BAND_PHASES = ("P4-PROMPT", "P-PROMPT-QC")
+
+def _prompt_band_contract(phase_id: str) -> str:
+    """The P4-PROMPT / P-PROMPT-QC contract with the gate's own numbers."""
+    budget = _shared_prompt_gate().length_budget()
+    return (ARTIFACT_CONTRACTS[phase_id]
+            .replace("__PROMPT_FLOOR__", f"{budget['floor']:,}")
+            .replace("__PROMPT_CEILING__", f"{budget['ceiling']:,}"))
+
+def _prompt_band_text() -> str:
+    """The gate's band as the per-slide instruction states it, e.g. "<floor>-<ceiling>-char"."""
+    budget = _shared_prompt_gate().length_budget()
+    return f"{budget['floor']:,}-{budget['ceiling']:,}-char"
 
 
 # ---------------------------------------------------------------------------
@@ -1564,6 +1602,28 @@ def _compose_p3_arc_contract(base: str) -> str:
 
 
 ARTIFACT_CONTRACTS["P3-ARC"] = _compose_p3_arc_contract(ARTIFACT_CONTRACTS["P3-ARC"])
+
+# PD-205c: the image check gets an output contract of its own. Without one the
+# phase fell to GENERIC_CONTRACT, which asks the model to WRITE an artifact
+# file -- a shape with no place for "here are the words I can read on this
+# picture". The unit's own validator (_validate_qc_slide) and the FIX 33 step
+# check (phase_verifiers._fix33_check_report) grade per-slide `observed_text`;
+# this is the shape those readers accept.
+ARTIFACT_CONTRACTS["P-IMAGE-QC"] = (
+    "OUTPUT CONTRACT: this unit grades exactly ONE rendered slide, and that "
+    "slide's image is attached to this message. Answer with ONE JSON object "
+    "and nothing else:\n"
+    '{"pass": true|false, "observed_text": "<the words you can read on the '
+    'slide>", "findings": ["<one line per defect you see>"]}\n'
+    "- `pass` is a real boolean verdict for THIS slide only.\n"
+    "- `observed_text` quotes the text you can actually SEE in the image, as it "
+    "appears. If no text is readable, say what you do see -- never leave it "
+    "empty, and never describe the picture from the prompt text instead.\n"
+    "- `findings` lists every defect you see (overflow, clipping, unreadable or "
+    "contrast-lost text, collision, missing subject); an empty list is a clean "
+    "slide.\n"
+    "Report what you see. A failing slide is a correct output."
+)
 
 
 GENERIC_CONTRACT = (
@@ -1904,6 +1964,69 @@ def _load_deepseek_key() -> str:
 class DeepSeekCallError(RuntimeError):
     pass
 
+# ---------------------------------------------------------------------------
+# PD-205c — image carriage. The image check is the ONE phase whose unit is a
+# multimodal read: the rendered slide PNG must ride the request. The two
+# transports are:
+#   * deepseek-complete (native DeepSeek chat endpoint) — text messages only.
+#     Its endpoint takes no image part, so it is NOT eligible for this phase.
+#   * _openai_compat_complete (openrouter / ollama-cloud / agnes, all speaking
+#     the OpenAI chat-completions shape) — accepts an image part as
+#     {"type": "image_url", "image_url": {"url": "data:image/png;base64,..."}}.
+# A route that cannot carry an image is refused BEFORE any transport work, and
+# the unit fails with this one plain reason. There is no text-only fallback:
+# a model shown no picture cannot honestly say what it saw.
+# ---------------------------------------------------------------------------
+IMAGE_PART_PROVIDERS: Tuple[str, ...] = ("openrouter", "ollama-cloud", "agnes")
+IMAGE_ROUTE_INELIGIBLE_REASON = "this route cannot carry an image"
+
+
+class ImageRouteIneligible(DeepSeekCallError):
+    """The route selected for an image-bearing phase cannot carry an image."""
+
+    reason = IMAGE_ROUTE_INELIGIBLE_REASON
+
+
+def unit_slide_image(run_dir: Path,
+                     payload: Dict[str, Any]) -> Optional[Tuple[bytes, str]]:
+    """(bytes, mime) of the ONE rendered slide a P-IMAGE-QC unit grades.
+
+    Read from `renders/slide-NN.png` for the unit's ordinal (the path the
+    render phase writes, the manifest's own P-IMAGE-QC consumes glob). Returns
+    None when no file is there — the caller refuses the unit rather than
+    sending the prompt text alone."""
+    if not isinstance(payload, dict):
+        return None
+    cands: List[Path] = []
+    ordinal = payload.get("ordinal")
+    if isinstance(ordinal, int) and not isinstance(ordinal, bool):
+        cands.append(run_dir / "renders" / f"slide-{ordinal:02d}.png")
+    sid = str(payload.get("slide_id") or "").strip()
+    if sid and sid.startswith("slide-"):
+        cands.append(run_dir / "renders" / f"{sid}.png")
+    for cand in cands:
+        try:
+            if cand.is_file():
+                return cand.read_bytes(), "image/png"
+        except OSError:
+            return None
+    return None
+
+
+def image_user_content(user_prompt: str,
+                       image: Tuple[bytes, str]) -> List[Dict[str, Any]]:
+    """The OpenAI-shape user content list carrying ONE image part. The bytes are
+    the render's own bytes, base64'd — nothing else (not the deck, not the
+    prompt files) leaves the machine with it."""
+    raw, mime = image
+    b64 = base64.b64encode(raw).decode("ascii")
+    return [
+        {"type": "text", "text": user_prompt},
+        {"type": "image_url",
+         "image_url": {"url": f"data:{mime or 'image/png'};base64,{b64}"}},
+    ]
+
+
 
 def deepseek_complete(system_prompt: str, user_prompt: str, *,
                       model: Optional[str] = None,
@@ -2004,6 +2127,10 @@ def deepseek_complete(system_prompt: str, user_prompt: str, *,
                 # so the two were indistinguishable after the fact.
                 if isinstance(usage, dict):
                     usage["finish_reason"] = choice.get("finish_reason")
+                    # PD-205c: the provider's OWN response id, so a merged QC
+                    # report can name the call that graded it. None when the
+                    # provider returns none -- never invented.
+                    usage["request_id"] = obj.get("id")
                 _govern_ok("deepseek-direct")
                 return content, usage
             except urllib.error.HTTPError as exc:
@@ -2135,11 +2262,36 @@ def _provider_key_names(provider: str) -> Tuple[str, ...]:
     return (f"{token.upper().replace('-', '_')}_API_KEY",)
 
 
+def openai_compat_body(system_prompt: str, user_prompt: str, *, model: str,
+                       max_tokens: int,
+                       image: Optional[Tuple[bytes, str]] = None) -> Dict[str, Any]:
+    """The ONE request body the OpenAI-compatible transport sends.
+
+    PD-205c: with an `image`, the user turn becomes the two-part content list
+    (text + one image_url data URI) and the picture rides the same request as
+    the instructions. Without one it is the untouched plain string body, so
+    every non-image phase sends byte-identical requests to before."""
+    user_content: Any = user_prompt
+    if image is not None:
+        user_content = image_user_content(user_prompt, image)
+    return {
+        "model": model,
+        "messages": [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_content},
+        ],
+        "max_tokens": max_tokens,
+        "temperature": DEEPSEEK_TEMPERATURE,
+    }
+
+
 def _openai_compat_complete(system_prompt: str, user_prompt: str, *,
                             provider: str, model: str,
                             max_tokens: int = DEEPSEEK_MAX_OUTPUT_TOKENS,
                             retries: int = 3,
-                            run_dir: Optional[Path] = None) -> Tuple[str, Dict[str, Any]]:
+                            run_dir: Optional[Path] = None,
+                            image: Optional[Tuple[bytes, str]] = None,
+                            ) -> Tuple[str, Dict[str, Any]]:
     """OpenAI-compatible chat-completions transport for NON-DeepSeek client-owned
     providers (openrouter, ollama-cloud text classes, ...). Mirrors
     deepseek_complete's retry/timeout semantics. Credentials resolve per
@@ -2174,15 +2326,8 @@ def _openai_compat_complete(system_prompt: str, user_prompt: str, *,
         raise DeepSeekCallError(
             f"no base URL known for provider {provider} -- set "
             f"PRESENTATION_{provider.upper().replace('-', '_')}_BASE_URL")
-    body = {
-        "model": model,
-        "messages": [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_prompt},
-        ],
-        "max_tokens": max_tokens,
-    "temperature": DEEPSEEK_TEMPERATURE,
-    }
+    body = openai_compat_body(system_prompt, user_prompt, model=model,
+                              max_tokens=max_tokens, image=image)
     data = json.dumps(body).encode("utf-8")
     last_exc: Optional[Exception] = None
     for attempt in range(1, retries + 1):
@@ -2208,6 +2353,9 @@ def _openai_compat_complete(system_prompt: str, user_prompt: str, *,
                 choice = (obj.get("choices") or [{}])[0]
                 content = ((choice.get("message") or {}).get("content")) or ""
                 usage = obj.get("usage") or {}
+                # PD-205c: the provider's OWN response id (None when absent).
+                if isinstance(usage, dict):
+                    usage["request_id"] = obj.get("id")
                 _govern_ok(provider)
                 return content, usage
             except urllib.error.HTTPError as exc:
@@ -2246,6 +2394,8 @@ def _openai_compat_complete(system_prompt: str, user_prompt: str, *,
                             choice2 = (obj2.get("choices") or [{}])[0]
                             content2 = ((choice2.get("message") or {}).get("content")) or ""
                             usage2 = obj2.get("usage") or {}
+                            if isinstance(usage2, dict):
+                                usage2["request_id"] = obj2.get("id")
                             _govern_ok(provider)
                             return content2, usage2
                         except Exception as exc2:  # noqa: BLE001
@@ -2347,6 +2497,7 @@ def dispatch_complete(system_prompt: str, user_prompt: str, *,
                       retries: int = 3,
                       route_override: Optional[Dict[str, Any]] = None,
                       reasoning_effort: Optional[str] = None,
+                      image: Optional[Tuple[bytes, str]] = None,
                       ) -> Tuple[str, Dict[str, Any], Dict[str, Any]]:
     """THE routed completion entrypoint: every dispatcher LLM call site goes
     through here. Returns (content, usage, route_dict) where route_dict carries
@@ -2414,6 +2565,25 @@ def dispatch_complete(system_prompt: str, user_prompt: str, *,
     _route_unknown_yet = (route is None or router_id == "disabled")
     _dispatch_provider = "deepseek-direct" if _route_unknown_yet \
         else str(route.get("provider") or "deepseek-direct")
+    # PD-205c: an image-bearing call is dispatched ONLY to a route whose
+    # transport can carry an image part. Refused HERE -- before the governor
+    # admission, before any paid reservation, before any transport work -- so
+    # an ineligible route costs zero calls and the unit fails with the one
+    # plain reason. No text-only fallback exists.
+    if image is not None:
+        _img_provider = _dispatch_provider
+        try:
+            _img_provider = _model_router._norm_provider(_img_provider)
+        except Exception:  # noqa: BLE001 -- a fold failure must not change the gate
+            pass
+        # A route that is None WITH client providers present parks with
+        # RoutingUnavailable below (its own, more precise reason); every other
+        # unresolved route is the native text-only transport.
+        if not (route is None and profile_state == "has_providers") \
+                and _img_provider not in IMAGE_PART_PROVIDERS:
+            raise ImageRouteIneligible(
+                f"phase {phase_id}: provider {_img_provider!r} transports text "
+                f"only -- {IMAGE_ROUTE_INELIGIBLE_REASON}")
     _dispatch_admission = _govern_admit(_dispatch_provider)
     if not _dispatch_admission.admitted:
         raise DeepSeekCallError(
@@ -2503,7 +2673,7 @@ def dispatch_complete(system_prompt: str, user_prompt: str, *,
         _reserve_paid_attempt(run_dir, phase_id, worker_id)
         content, usage = _openai_compat_complete(
             system_prompt, user_prompt, provider=ctx.provider, model=ctx.model,
-            max_tokens=max_tokens, retries=1, run_dir=run_dir)
+            max_tokens=max_tokens, retries=1, run_dir=run_dir, image=image)
         _emit_model_route_telemetry(run_dir, ctx, phase_id)
         return content, usage, ctx.as_dict()
     finally:
@@ -2752,8 +2922,9 @@ def gather_upstream_context(run_dir: Path, *, max_chars: int = 150_000,
     # and correctly failed (average=1.0) rather than hallucinate scores over
     # content it never saw. That was an HONEST failure of a REAL gap, not a
     # rubber stamp -- the fix is to actually deliver the files, not to loosen
-    # the report requirements. 25 slides x up to 18,000 chars is at most
-    # 450,000 chars (~115K tokens) -- comfortably inside DeepSeek's very large
+    # the report requirements. 25 slides x the shared gate's ceiling is at
+    # most ~450,000 chars (~115K tokens) at the current model pin -- comfortably
+    # inside DeepSeek's very large
     # context window (see the module comment above _UPSTREAM_CANDIDATES), so
     # this phase alone gets a raised budget rather than quietly truncating
     # mid-file, which would just move the same "can't verify what I can't see"
@@ -2808,6 +2979,9 @@ def compose_prompt(*, phase_id: str, owning_role: str, dept_root: Path, run_dir:
     # no static entry" comment in ARTIFACT_CONTRACTS for why.
     if phase_id == "P-SP-STRUCTURE":
         contract = _sp_structure_contract(run_dir)
+    elif phase_id in _PROMPT_BAND_PHASES:
+        # PD-065: the band is the shared gate's own numbers, read right now.
+        contract = _prompt_band_contract(phase_id)
     else:
         contract = ARTIFACT_CONTRACTS.get(phase_id, GENERIC_CONTRACT)
 
@@ -3216,26 +3390,7 @@ def _stamp_qc_reviewer(run_dir: Path, phase_id: str, report_artifact: Path, *,
     verifies (reviewer stamp from THIS phase on each consumed input at its
     current sha, with the producer's author stamp and model classes on record)
     plus the legacy graded_by text provenance that still runs alongside."""
-    consumed: List[Path] = []
-    try:
-        from presentation_job.manifest import Manifest
-        # QC-OPUS seam repair: resolve via the run's pinned manifest / dept
-        # sops / walk-up — the SAME resolution the aggregate's consumed-
-        # coverage check uses, so stamps minted here always match what the
-        # aggregate verifies (the old hand-rolled candidates missed in BOTH
-        # layouts and silently downgraded to report-stamp-only).
-        cand = _qc_manifest_for_run(run_dir)
-        if cand is not None:
-            man = Manifest(cand)
-            ph = man.phase_or_none(phase_id)
-            import glob as _glob
-            for pat in (ph.consumes if ph else []) or []:
-                for hit in _glob.glob(str(run_dir / pat)):
-                    hp = Path(hit)
-                    if hp.is_file():
-                        consumed.append(hp)
-    except Exception:
-        consumed = []
+    consumed = _graded_artifacts(run_dir, phase_id)
     reviewer_execution_id = f"qc-{phase_id}-{os.getpid()}-{utcnow()}"
     rubric_version = _qc_rubric_version()
     for artifact in consumed:
@@ -3264,6 +3419,209 @@ def _stamp_qc_reviewer(run_dir: Path, phase_id: str, report_artifact: Path, *,
         except Exception:
             pass
 
+
+def _graded_artifacts(run_dir: Path, phase_id: str) -> List[Path]:
+    """PD-300: the files a QC phase GRADES, resolved from the run's own pinned
+    manifest consumes list — the same resolution the reviewer stamps use, so a
+    stamp minted here and the stamped author read back below always agree
+    (QC-OPUS seam repair: the old hand-rolled candidates missed in BOTH
+    layouts and silently downgraded to report-stamp-only).
+
+    Returns [] when no manifest resolves or the phase declares no consumes —
+    the caller then has no graded file to name, which is honest, not a guess."""
+    consumed: List[Path] = []
+    try:
+        from presentation_job.manifest import Manifest
+        cand = _qc_manifest_for_run(run_dir)
+        if cand is not None:
+            man = Manifest(cand)
+            ph = man.phase_or_none(phase_id)
+            import glob as _glob
+            for pat in (ph.consumes if ph else []) or []:
+                for hit in _glob.glob(str(run_dir / pat)):
+                    hp = Path(hit)
+                    if hp.is_file():
+                        consumed.append(hp)
+    except Exception:
+        consumed = []
+    return consumed
+
+
+def _graded_author_model(run_dir: Path, phase_id: str) -> str:
+    """PD-300: the AUTHOR model of the files this QC phase grades, taken from
+    the trusted execution stamps (PRES-042), never from the report's prose.
+
+    Returns "" when the stamps are off, when no graded file resolves, when any
+    graded file has no ACTIVE author stamp for its CURRENT bytes (a repaired
+    file is a new revision with no stamp — unproven), or when the graded files
+    carry different author models. "" means UNKNOWN; a caller must never turn
+    it into a name (decision D-29: the stamp is recorded, never invented)."""
+    try:
+        if not _estamp.stamps_enabled():
+            return ""
+        graded = _graded_artifacts(run_dir, phase_id)
+        if not graded:
+            return ""
+        rows = _estamp._all_stamp_rows(run_dir)
+        models: set = set()
+        for art in graded:
+            try:
+                sha = _estamp.sha256_file(art)
+                rel = str(art.relative_to(run_dir))
+            except (OSError, ValueError):
+                return ""
+            row = _estamp._active_author_row(rows, rel, sha)
+            if row is None:
+                return ""
+            models.add(str(row.get("model") or ""))
+        if len(models) != 1:
+            return ""
+        model = models.pop()
+        return "" if model in ("", "unknown") else model
+    except Exception:  # noqa: BLE001 — a stamp read must never block a merge
+        return ""
+
+# ---------------------------------------------------------------------------
+# PD-068 (D-13) — the grader is not told its grade and never grades its own
+# model's work. Three pieces, all on this module:
+#   1. the three QC report contracts above now say "report what you found; a
+#      failing report is a correct output";
+#   2. a quality step whose report PARSES and says `pass: false` returns the
+#      new `qc_failed` status with the report's own reasons -- no retry, because
+#      a second paid call cannot turn an honest finding into a different one;
+#   3. before a quality step's model call, the routed model FAMILY is compared
+#      with the AUTHOR stamp of the files it grades. Same family and no other
+#      eligible candidate -> `error` with "no independent model is available to
+#      grade this step", ZERO calls. Same family with an eligible candidate on
+#      another family -> that candidate is pinned for the call.
+# PD-204 (lane FL28) puts the same rule in the router; this is the second check
+# behind it. The family helper is deliberately ONE function: when PD-204's
+# `_model_family` is on the base it is used verbatim, never duplicated.
+# ---------------------------------------------------------------------------
+def _model_family(model_id: Any) -> str:
+    """The model's family: the text after the last `/`, lower-cased, up to the
+    first character that is not a letter (the PD-204 definition, so the router's
+    rule and this refusal can never disagree). PD-204's own helper wins when it
+    is present. "" means the id names no family; callers treat that as UNKNOWN,
+    never as a match."""
+    shared = getattr(_model_router, "_model_family", None) if _model_router else None
+    if callable(shared):
+        try:
+            return str(shared(model_id) or "")
+        except Exception:  # noqa: BLE001 -- fall through to the same rule
+            pass
+    tail = str(model_id or "").rsplit("/", 1)[-1].lower()
+    letters = []
+    for ch in tail:
+        if not ("a" <= ch <= "z"):
+            break
+        letters.append(ch)
+    return "".join(letters)
+
+def _grader_route_decision(phase_id: str) -> Dict[str, Any]:
+    """The router's own decision for this phase, read BEFORE the call so the
+    candidate list can be inspected. {} when the router is unavailable
+    (PRESENTATION_MODEL_ROUTER=0 rollback): the DeepSeek-direct path publishes
+    no candidates, so the dispatcher cannot prove a same-family route and must
+    not invent a refusal."""
+    if _model_router is None:
+        return {}
+    try:
+        return dict(_model_router.resolve_route(phase_id, mode=_active_mode()[0]) or {})
+    except Exception:  # noqa: BLE001 -- a broken router is dispatch_complete's problem
+        return {}
+
+def _independent_grader_decision(run_dir: Path, phase_id: str,
+                                 owning_role: str) -> Tuple[str, Optional[Dict[str, Any]]]:
+    """PD-068: may this quality step be graded by the route it would use?
+
+    Returns (refusal_reason, route_override). `refusal_reason` non-empty means
+    ZERO calls: the only available grader shares the author's model family.
+    `route_override` is a {provider, model} pin when the router's pick shares
+    the author's family but another ELIGIBLE candidate does not (dispatch_complete
+    re-checks eligibility, so an ineligible pin can never slip through).
+
+    Every unknown is permissive, never a fabricated refusal: a non-QC phase, an
+    unstamped/revised author ("" = UNKNOWN), an unknown family, a disabled or
+    broken router, or a route that is absent altogether (dispatch_complete owns
+    that park) all return ("", None)."""
+    if not _is_qc_phase(owning_role, phase_id):
+        return "", None
+    author_model = _graded_author_model(run_dir, phase_id)
+    if not author_model:
+        return "", None
+    author_family = _model_family(author_model)
+    if not author_family:
+        return "", None
+    decision = _grader_route_decision(phase_id)
+    route = decision.get("route") or None
+    if not route:
+        return "", None
+    if _model_family(str(route.get("model") or "")) != author_family:
+        return "", None
+    for cand in decision.get("candidates") or []:
+        if not isinstance(cand, dict) or not cand.get("eligible"):
+            continue
+        cand_family = _model_family(str(cand.get("model") or ""))
+        if cand_family and cand_family != author_family:
+            return "", {"provider": cand.get("provider"),
+                        "model": cand.get("model")}
+    return ("no independent model is available to grade this step", None)
+
+def _qc_report_failure(phase_id: str, owning_role: str, target: Optional[Path],
+                       run_dir: Path) -> Optional[List[str]]:
+    """PD-068: read a quality step's OWN report and return its reasons when it
+    says `pass: false`, else None.
+
+    Only a report that PARSES as a JSON object carrying `pass: false` counts --
+    an unreadable file, a non-JSON target, `pass: true`, or a missing `pass`
+    key all return None, leaving the verdict to the phase verifier (which owns
+    every other failure shape). A failing report stays ON DISK: it is the
+    phase's correct output, so the real finding is never deleted."""
+    if not _is_qc_phase(owning_role, phase_id):
+        return None
+    if target is None or not target.is_file():
+        return None
+    try:
+        report = json.loads(target.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    if not isinstance(report, dict) or report.get("pass") is not False:
+        return None
+    reasons: List[str] = []
+
+    def _add(value: Any) -> None:
+        if isinstance(value, dict):
+            text = str(value.get("id") or value.get("name") or value).strip()
+        else:
+            text = str(value).strip()
+        if text and text not in reasons:
+            reasons.append(text)
+
+    for key in ("reasons", "findings", "failures"):
+        val = report.get(key)
+        if isinstance(val, list):
+            for item in val:
+                _add(item)
+    for key in ("triggered_autofails", "autofails_triggered"):
+        val = report.get(key)
+        if isinstance(val, list):
+            for item in val:
+                _add(item)
+    criteria = report.get("criteria")
+    if isinstance(criteria, list):
+        for row in criteria:
+            if not isinstance(row, dict):
+                continue
+            try:
+                below = float(row.get("score")) < 8.5
+            except (TypeError, ValueError):
+                below = False
+            if below:
+                _add(f"{row.get('name')}: {row.get('score')}")
+    if not reasons:
+        reasons = [f"{phase_id} report says pass: false"]
+    return reasons
 
 def _qc_manifest_for_run(run_dir: Optional[Path] = None) -> Optional[Path]:
     """PRES-042 (QC-OPUS seam repair): resolve the PIPELINE-MANIFEST.json the
@@ -3418,18 +3776,35 @@ def _verify_single_prompt(run_dir: Path, ordinal: int) -> Tuple[bool, List[str]]
     (build_deck.check_prompt_qc_deterministic), reading out just that ordinal's
     own deficiency list so a per-slide dispatch loop can verify incrementally --
     correctly ignoring the (expected, irrelevant at this point) "missing" verdicts
-    for every OTHER ordinal that has not been authored yet. Falls back to a bare
-    length-floor/ceiling check if build_deck is unavailable (defensive; matches
-    the degraded-mode pattern phase_verifiers.py already uses elsewhere)."""
+    for every OTHER ordinal that has not been authored yet. When build_deck (and
+    so its real rich-prompt gate) is unavailable this FAILS CLOSED with a reason
+    naming the missing module -- a length-only pass must never be mistaken for a
+    real gate pass. The only exception is an explicit test/CI context, signalled
+    through ``phase_verifiers._degraded_allowed`` (same contract that module
+    already applies to its own degraded checks)."""
     if _bd is None or not hasattr(_bd, "check_prompt_qc_deterministic"):
+        missing = ("build_deck" if _bd is None
+                   else "build_deck.check_prompt_qc_deterministic")
         p = run_dir / "working" / "prompts" / f"slide-{ordinal:02d}.txt"
         if not p.is_file():
             return False, ["no prompt file"]
         probs = _shared_prompt_gate().length_problems(p.read_text(encoding="utf-8", errors="replace").strip())
         if probs:  # KIE rule 12 band through the shared enforcer (names the exact characters to add or cut)
             return False, probs
+        try:
+            from phase_verifiers import _degraded_allowed as _degraded  # noqa: PLC0415
+            degraded = bool(_degraded(run_dir))
+        except Exception:  # noqa: BLE001 -- a check that cannot answer is not a pass
+            degraded = False
+        if not degraded:
+            detail = ("the module could not be imported" if _bd is None
+                      else "the module has no check_prompt_qc_deterministic")
+            return False, [
+                f"missing module: {missing} is unavailable ({detail}), so the real "
+                "rich-prompt gate cannot run; refusing to pass on length alone "
+                "(AF-P1/AF-P2 are not the whole gate)"]
         return True, ["NOTE: build_deck.check_prompt_qc_deterministic unavailable "
-                       "-- degraded to a length-only check"]
+                       "-- degraded to a length-only check (explicit test/CI context)"]
     try:
         verdict = _bd.check_prompt_qc_deterministic(run_dir)
     except Exception as exc:  # noqa: BLE001 -- fail-closed, never crash the loop
@@ -3565,7 +3940,7 @@ def _dispatch_prompt_phase_serial(run_dir: Path, order: Dict[str, Any], *, dept_
                 f"Find slide {ordinal}'s block in slides_copy.md above (the line "
                 f"reading exactly `SLIDE {ordinal}`) and author ONLY its rich "
                 f"image-generation prompt. Output ONLY that one slide's complete "
-                f"9,000-18,000-char prompt body -- no slide-number header, no "
+                f"{_prompt_band_text()} prompt body -- no slide-number header, no "
                 f"preamble, no other slide's content.\n\n" + user_prompt
             )
 
@@ -5200,7 +5575,7 @@ def _make_slide_worker(*, run_dir: Path, order: Dict[str, Any], dept_root: Path,
                 f"Find slide {ordinal}'s block in slides_copy.md above (the line "
                 f"reading exactly `SLIDE {ordinal}`) and author ONLY its rich "
                 f"image-generation prompt. Output ONLY that one slide's complete "
-                f"9,000-18,000-char prompt body -- no slide-number header, no "
+                f"{_prompt_band_text()} prompt body -- no slide-number header, no "
                 f"preamble, no other slide's content.\n\n" + user_prompt
             )
 
@@ -5479,10 +5854,14 @@ def dispatch_one(run_dir: Path, phase_id: str, order: Dict[str, Any], *,
     # ROOT CAUSE (live run pj_34a56a26caca04532ec6e9cba6, 2026-08-18, iteration 3):
     # verify()==True does NOT mean THIS phase's own produces_artifact file exists --
     # for a QC/audit phase whose phase_verifiers mapping re-runs an UPSTREAM check
-    # (P1Q-COPY-QC maps to the exact same _verify_copy() P4-COPY already passed,
-    # which only ever reads working/copy/slides_copy.md and never looks at
-    # working/qc/copy_qc_report.json at all), verify() can be True forever while the
-    # phase's own artifact is never written. Before this fix, `ok` alone was treated
+    # instead of opening the phase's own artifact (P1Q-COPY-QC was exactly that: it
+    # used to map to the same _verify_copy() P4-COPY already passed, which only ever
+    # reads working/copy/slides_copy.md and never opened
+    # working/qc/copy_qc_report.json at all. phase_verifiers.py now wires it to the
+    # independent report gate _verify_qc_report("working/qc/copy_qc_report.json",
+    # "_chk_copy_qc", "AF-COPY-QC"), so that instance is fixed; this guard is what
+    # makes the remaining class of bug harmless), verify() can be True forever while
+    # the phase's own artifact is never written. Before this fix, `ok` alone was treated
     # as "already satisfied" and dispatch_one returned WITHOUT writing anything. But
     # the Engine's separate poll loop (phases.py._run_agent_phase) gates PURELY on
     # _artifacts_present(phase) -- literal file existence at produces_artifact -- and
@@ -5537,6 +5916,23 @@ def dispatch_one(run_dir: Path, phase_id: str, order: Dict[str, Any], *,
     # the fanout branch above already passes.
     prior_reasons: Optional[List[str]] = reasons if reasons else None
 
+    # PD-068 (D-13): a quality step must never be graded by the model family
+    # that authored the files it reads. Resolved ONCE, before any paid call, so
+    # "same family, no other route" costs ZERO calls and the refusal is the
+    # phase's whole outcome. A pin to a different family rides into every
+    # attempt through route_override (dispatch_complete re-checks eligibility).
+    grader_override: Optional[Dict[str, Any]] = None
+    if _is_qc_phase(owning_role, phase_id):
+        grader_refusal, grader_override = _independent_grader_decision(
+            run_dir, phase_id, owning_role)
+        if grader_refusal:
+            _append_sidecar(run_dir, phase_id, {
+                "worker": worker_id, "attempt": 0, "status": "error",
+                "reason": grader_refusal,
+                "author_model": _graded_author_model(run_dir, phase_id),
+            })
+            return DispatchResult(phase_id, "error", 0, [grader_refusal])
+
     for attempt in range(1, DISPATCH_RETRY_CAP + 1):
         try:
             system_prompt, user_prompt = compose_prompt(
@@ -5559,9 +5955,12 @@ def dispatch_one(run_dir: Path, phase_id: str, order: Dict[str, Any], *,
                 worker_id=worker_id,
                 # F10: a heal rung's provider pin, if this order carries one.
                 # Ignored unless the router already lists it as eligible --
-                # see _apply_route_override.
-                route_override=(order.get("route_override")
-                                if isinstance(order, dict) else None))
+                # see _apply_route_override. PD-068: the grader-independence
+                # pin WINS over it -- a heal rung must never re-point a quality
+                # step back onto the author's own model family.
+                route_override=(grader_override or
+                                (order.get("route_override")
+                                 if isinstance(order, dict) else None)))
         except RoutingUnavailable as exc:
             reason = f"RoutingUnavailable: {exc}"
             _append_sidecar(run_dir, phase_id, {
@@ -5654,6 +6053,26 @@ def dispatch_one(run_dir: Path, phase_id: str, order: Dict[str, Any], *,
                 "status": "publication_rolled_back", "reason": publication_error,
             })
             return DispatchResult(phase_id, "error", attempt, [publication_error])
+
+        # PD-068 (D-13): a quality step that PARSED its own report and found
+        # `pass: false` has delivered a correct output -- the finding. Retrying
+        # would spend a second paid call trying to turn that honest verdict into
+        # a different one, so the loop ends here with `qc_failed` and the
+        # report's OWN reasons. The published report stays on disk untouched;
+        # `qc_failed` is in _FAILING_STATUSES, so the phase still blocks/parks
+        # like any other failing outcome.
+        qc_failure = _qc_report_failure(phase_id, owning_role, target, run_dir)
+        if qc_failure is not None:
+            _append_sidecar(run_dir, phase_id, {
+                "worker": worker_id, "attempt": attempt, "status": "qc_failed",
+                "reasons": qc_failure,
+                "target": str(target.relative_to(run_dir)),
+                "model": route_dict2.get("model") or DEEPSEEK_MODEL,
+                "provider": route_dict2.get("provider") or "deepseek-direct",
+                "usage": usage,
+            })
+            return DispatchResult(phase_id, "qc_failed", attempt, qc_failure,
+                                  str(target.relative_to(run_dir)))
 
         verifier_ok, verifier_reasons = _verify(phase_id, run_dir)
         _append_sidecar(run_dir, phase_id, {
@@ -5883,7 +6302,7 @@ _UNIT_QC_GATE_LABELS: Dict[str, str] = {
 _UNIT_CONTRACT_OUTPUT: Dict[str, str] = {
     "P4-COPY": "markdown-section: `SLIDE <n>` blocks, contiguous ordinals",
     "P-PROMPT-QC": "json: {slide_id, slide, criteria[], average, pass}",
-    "P-IMAGE-QC": "json: {slide_id, slide, observed_text, pass}",
+    "P-IMAGE-QC": "json: {slide_id, slide, observed_text, pass, findings[]}",
     "P-STYLE-SPEC": "json: {id, style_directive, representative_slide} — id is "
         "YOUR ASSIGNED VARIANT ID (A/B/C), style_directive the ONE attention-grade "
         "art-direction sentence for that variant, representative_slide the single "
@@ -6102,10 +6521,16 @@ def _unit_scope_text_base(payload: Dict[str, Any]) -> Optional[str]:
                         "bounded three; the deck-level spec carries exactly "
                         "three variants, never one per slide).\n"
                         if variant else "")
+        # PD-205c: the image check reads PIXELS. Say so, or the model answers
+        # from the prompt text it was handed and never mentions the picture.
+        image_line = ("THE RENDERED SLIDE IMAGE IS ATTACHED to this message: "
+                      "grade what the pixels show, never what the prompt text "
+                      "says the slide should show.\n"
+                      if payload.get("phase_id") == "P-IMAGE-QC" else "")
         return (
             f"=== THIS CALL IS EXACTLY ONE UNIT: {kind} for SLIDE {ordinal} "
             f"OF {n} ===\n"
-            + variant_line +
+            + variant_line + image_line +
             "Produce ONLY this one unit's output for ONLY this slide — never "
             "the whole deck, never another slide's content, no preamble, no "
             "fences around the whole answer.\n\n")
@@ -6214,18 +6639,13 @@ def _validate_qc_slide(payload: Dict[str, Any], text: str) -> Tuple[bool, List[s
     got_id = str(doc.get("slide_id") or "")
     if expected_id and got_id and got_id != expected_id:
         return False, [f"slide_id {got_id!r} != scope slide_id {expected_id!r}"]
-    real = False
-    for key in ("pass", "verdict", "score", "status", "result", "grade", "ok",
-                "pass_fail", "passed"):
-        val = doc.get(key)
-        if isinstance(val, bool) or isinstance(val, (int, float)):
-            real = True
-            break
-        if isinstance(val, str) and val.strip():
-            real = True
-            break
-    if not real:
-        return False, ["QC unit verdict carries no real pass/fail/score value"]
+    # PD-067: the verdict key is EXACTLY `pass`, and it must be a JSON boolean.
+    # A row saying "verdict": "FAIL", "passed": false or "pass": 0 used to be
+    # accepted here while the reducer only read `pass` — so a failed slide
+    # merged into a passing report. No other key stands in for the verdict.
+    if "pass" not in doc or not isinstance(doc.get("pass"), bool):
+        return False, ["QC unit verdict must carry `pass` as true or false "
+                       "(no other key stands in for the verdict)"]
     if payload.get("needs_observed_text") and \
             not str(doc.get("observed_text") or "").strip():
         return False, ["image-QC unit carries no observed_text (pixel-blind)"]
@@ -6363,6 +6783,9 @@ def _reduce_qc_union(ordered: List[Tuple[Dict[str, Any], str]]) -> Optional[str]
         if sid:
             expected[sid] = int(payload.get("ordinal") or 0)
     merged_rows: List[Dict[str, Any]] = []
+    # PD-300: parallel to merged_rows — (graded_by_provider, graded_by_model,
+    # request_id) for THAT row's own unit, straight from its recorded route.
+    row_routes: List[Tuple[Optional[str], Optional[str], Optional[str]]] = []
     seen: set = set()
     seen_ordinals: set = set()
     for payload, text in ordered:
@@ -6371,6 +6794,11 @@ def _reduce_qc_union(ordered: List[Tuple[Dict[str, Any], str]]) -> Optional[str]
         except (json.JSONDecodeError, TypeError):
             return None
         if not isinstance(doc, dict):
+            return None
+        # PD-067: a row without a boolean `pass` refuses the whole merge. The
+        # validator rejects such a unit upstream; this is the reducer's own
+        # independent guard (a reducer must never trust its caller).
+        if not isinstance(doc.get("pass"), bool):
             return None
         sid = str(payload.get("slide_id") or "")
         if not sid and payload.get("ordinal") is not None:
@@ -6383,6 +6811,18 @@ def _reduce_qc_union(ordered: List[Tuple[Dict[str, Any], str]]) -> Optional[str]
         if payload.get("ordinal") is not None:
             row.setdefault("slide", payload.get("ordinal"))
             seen_ordinals.add(int(payload["ordinal"]))
+        # PD-300 (decision D-29): stamp the GRADER, per row, from the unit's
+        # own recorded route — overwriting anything the model wrote about
+        # itself (identity comes from the dispatch record, never the report's
+        # prose). An unknown value is null, never a name.
+        _provider = str(payload.get("route_provider") or "").strip() or None
+        _model = str(payload.get("route_model") or "").strip() or None
+        _rid = payload.get("route_request_id")
+        _rid = str(_rid).strip() if _rid not in (None, "") else None
+        row["graded_by_provider"] = _provider
+        row["graded_by_model"] = _model
+        row["request_id"] = _rid
+        row_routes.append((_provider, _model, _rid))
         merged_rows.append(row)
     missing = sorted(set(expected) - seen)
     if missing:
@@ -6393,17 +6833,13 @@ def _reduce_qc_union(ordered: List[Tuple[Dict[str, Any], str]]) -> Optional[str]
             return None  # ordinal coverage gap: the union is NOT the whole deck
 
     # All-results pass: the union passes only when EVERY preserved row passed.
-    # A row with no real verdict (validator already refused those upstream)
-    # or a failed row fails the union — the reduced report can never stamp
-    # pass over a sibling's failure.
+    # PD-067: every surviving row carries a boolean `pass` (the guard above
+    # refuses the rest), so the union can never read a word, a number or a
+    # missing key as a pass. One failed row fails the reduced report.
     all_pass = True
     scores: List[float] = []
     for row in merged_rows:
-        val = row.get("pass")
-        if isinstance(val, bool):
-            all_pass = all_pass and val
-        elif isinstance(val, str) and val.strip():
-            all_pass = all_pass and val.strip().lower() in ("pass", "passed", "ok")
+        all_pass = all_pass and bool(row.get("pass"))
         if isinstance(row.get("score"), (int, float)) and \
                 not isinstance(row.get("score"), bool):
             scores.append(float(row["score"]))
@@ -6453,11 +6889,57 @@ def _reduce_qc_union(ordered: List[Tuple[Dict[str, Any], str]]) -> Optional[str]
         if role:
             independence = role
     if independence:
-        report["qc_independence"] = {
-            "graded_by": independence, "independent": True}
-    request_id = str(ordered[0][0].get("route_request_id") or "").strip()
-    if request_id:
-        report["request_id"] = request_id
+        # PD-067: the merge writes the NAME it can see and claims nothing more.
+        # It used to also stamp `"independent": True` by code — a claim the
+        # merge cannot prove (it never compared grader and author), and one the
+        # report gate then read as proof. Independence is judged downstream.
+        report["qc_independence"] = {"graded_by": independence}
+    # PD-300 (finding PD-300, decision D-29 default): a merged QC report that
+    # cannot say WHO graded it is unscorable — the image check and every later
+    # grader-vs-author comparison read these keys. Per row they are already
+    # written above; at the top level they are written ONLY when every row
+    # agrees (a merge whose units used different grading models keeps them per
+    # row and makes no top-level claim). `author_model` is one fact about the
+    # graded files, sourced from the trusted execution stamps; null when no
+    # active author stamp covers them — never an invented name.
+    # PD-067: `author_route` / `reviewer_route` are the SAME facts as PD-300's
+    # `author_model` / `graded_by_model`. One set of names is written (PD-300's)
+    # so the report gate compares one pair, not two spellings of it.
+    providers = {r[0] for r in row_routes}
+    models = {r[1] for r in row_routes}
+    if len(providers) == 1:
+        report["graded_by_provider"] = next(iter(providers)) if row_routes else None
+    if len(models) == 1:
+        report["graded_by_model"] = next(iter(models)) if row_routes else None
+    author_model = str(ordered[0][0].get("author_model") or "").strip() or None
+    report["author_model"] = author_model
+    request_ids = {r[2] for r in row_routes}
+    if len(request_ids) <= 1:
+        report["request_id"] = (next(iter(request_ids)) if row_routes else None)
+    # The legacy report-level key the FIX 33 readers already accept
+    # (_FIX33_REQUEST_KEYS). It names the FIRST unit's real id — an id the
+    # transport actually returned, never a fabricated one — so a multi-call
+    # merge (one id per slide, nothing shared) still hands the consumer a real
+    # route id while each row keeps its own.
+    if row_routes and row_routes[0][2]:
+        report["route_request_id"] = row_routes[0][2]
+    # PD-205c: the image check's own provenance under the names the RENDER leg
+    # reads. phase_verifiers' FIX 33 contract accepts graded_by_model (and
+    # vision_model as a fallback), but build_deck._image_qc_report_defects
+    # scans (vision_model, multimodal_model, vision_provider, ocr_engine,
+    # vision_engine, reviewer_vision_model) — graded_by_model is NOT in that
+    # list, so the image phase must also publish the vision_* aliases or the
+    # render leg refuses the report as "declares no vision engine". Both facts
+    # come from the dispatch RECORD (each row's own route), never from the
+    # model's prose about itself; an unknown value is null, never a guess. Per
+    # row always; at the top level only when every row agrees (a merge whose
+    # units used different routes keeps each row's own truth and makes no
+    # deck-wide claim).
+    if phase_id == "P-IMAGE-QC":
+        if len(providers) == 1:
+            report["vision_provider"] = next(iter(providers)) if row_routes else None
+        if len(models) == 1:
+            report["vision_model"] = next(iter(models)) if row_routes else None
     return json.dumps(report, indent=2, ensure_ascii=False)
 
 
@@ -7071,6 +7553,26 @@ def _dispatch_phase_fanout_units(
     phase_id = phase_obj.id if phase_obj is not None else "P-UNKNOWN-FANOUT"
     owning_role = order.get("owning_role") or (phase_obj.owning_role if phase_obj else "")
 
+    # PD-068 (D-13) seam repair: the grader-independence check in dispatch_one
+    # sits AFTER its fan-out branch, so a FAN-OUT quality step (P-PROMPT-QC and
+    # P-IMAGE-QC declare `fanout: {by: slide}` in the manifest) used to reach
+    # this function with no independent-grader check at all -- every per-slide
+    # unit was graded by the author's own model family. The SAME helper runs
+    # here, before the preflight, before enumerate, before one paid token:
+    # refusal -> `error` with the plain reason and ZERO unit calls; otherwise
+    # the other-family pin rides into every unit's dispatch_complete.
+    _grader_override: Optional[Dict[str, Any]] = None
+    if _is_qc_phase(owning_role, phase_id):
+        _grader_refusal, _grader_override = _independent_grader_decision(
+            run_dir, phase_id, owning_role)
+        if _grader_refusal:
+            _append_sidecar(run_dir, phase_id, {
+                "worker": worker_id, "attempt": 0, "status": "error",
+                "reason": _grader_refusal,
+                "author_model": _graded_author_model(run_dir, phase_id),
+            })
+            return DispatchResult(phase_id, "error", 0, [_grader_refusal])
+
     # PRES-001 preflight: an incompatible manifest fanout (no UnitContract,
     # scope/shape disagreement, dead script-executor declaration) is refused
     # HERE — before enumerate, before compose, before one paid token.
@@ -7578,6 +8080,24 @@ def _dispatch_phase_fanout_units(
             if isinstance(prior_rec, dict) else ""
         _was_success = _prior_status in (
             _us.BANKED_STATUSES if _us is not None else ("ok", "verified", "banked"))
+        # PD-205c: this phase's unit is a PIXEL read -- the rendered slide image
+        # rides the request. No PNG on disk means no honest grade is possible,
+        # so the unit is refused (attempts=0: nothing was paid for) instead of
+        # falling back to the prompt text alone.
+        image: Optional[Tuple[bytes, str]] = None
+        if phase_id == "P-IMAGE-QC":
+            image = unit_slide_image(run_dir, payload)
+            if image is None:
+                _want = (f"renders/slide-{int(payload['ordinal']):02d}.png"
+                         if isinstance(payload.get("ordinal"), int)
+                         and not isinstance(payload.get("ordinal"), bool)
+                         else "renders/slide-NN.png")
+                return fanout.UnitResult(
+                    key=unit.key, status="failed", attempts=0,
+                    reasons=[f"image-QC unit has no rendered slide at {_want} -- "
+                             "refusing to send the prompt text alone (a "
+                             "pixel-blind unit cannot grade a slide it was never "
+                             "shown)"])
         try:
             with paid_unit_scope(unit.key,
                                  allow_reauthor=bool(_force_reauthor or _was_success)):
@@ -7588,7 +8108,19 @@ def _dispatch_phase_fanout_units(
                 )
                 content, usage, route = dispatch_complete(
                     system_prompt, user_prompt, phase_id=phase_id, run_dir=run_dir,
-                    worker_id=worker_id, reasoning_effort=effort)
+                    worker_id=worker_id, reasoning_effort=effort,
+                    # PD-205c: the rendered slide image rides the request --
+                    # the P-IMAGE-QC unit is a PIXEL read, and image is None
+                    # for every other phase.
+                    image=image,
+                    # PD-068: a quality step's other-family pin applies to every
+                    # unit exactly as it does to the serial path.
+                    route_override=_grader_override)
+        except ImageRouteIneligible:
+            # PD-205c: zero transport calls, zero paid attempts (raised inside
+            # dispatch_complete before both). The reason is the whole story.
+            return fanout.UnitResult(key=unit.key, status="failed", attempts=0,
+                                     reasons=[IMAGE_ROUTE_INELIGIBLE_REASON])
         except Exception as exc:  # noqa: BLE001 — a raised unit is a failed unit
             return fanout.UnitResult(key=unit.key, status="failed", attempts=1,
                                      reasons=[f"{type(exc).__name__}: {exc}"])
@@ -7839,6 +8371,11 @@ def _dispatch_phase_fanout_units(
     # spec, ordered text join for the design prompts. The legacy generic
     # dict.update remains ONLY on the PRESENTATION_UNIT_CONTRACTS=0 rollback
     # path (or for a phase with no contract, which preflight already refused).
+    # PD-300: the AUTHOR model of the files this phase grades, read once from
+    # the trusted execution stamps -- the reducer stamps it into the merged
+    # report, so the report carries who wrote what it graded. "" means UNKNOWN.
+    _author_model = (_graded_author_model(run_dir, phase_id)
+                     if _is_qc_phase(owning_role, phase_id) else "")
     ordered_parts: List[Tuple[Dict[str, Any], str]] = []
     for r in results:  # run_units returns INPUT order — merge order (S2.1)
         text: Optional[str] = reuse.get(r.key)
@@ -7850,8 +8387,25 @@ def _dispatch_phase_fanout_units(
         if text is None:
             text = ""
         payload = by_key.get(r.key, {})
-        payload = {**payload, "route_request_id":
-                   (r.meta or {}).get("request_id") if isinstance(r.meta, dict) else None,
+        # PD-300: the unit's OWN route, from this dispatch's UnitResult meta
+        # or — for a reused/banked unit that paid nothing this call — from the
+        # durable unit record the previous dispatch stamped. Never invented:
+        # a unit with no recorded route carries nulls. (PD-205c's reducer read
+        # the same three facts from `r.meta` alone; this superset keeps that
+        # source first, so the merged image report still stamps graded_by_*,
+        # request_id and the vision_* aliases.)
+        meta = r.meta if isinstance(r.meta, dict) else {}
+        prior = _store_state.get(r.key)
+        prior_route = (prior.get("author_route")
+                       if isinstance(prior, dict)
+                       and isinstance(prior.get("author_route"), dict) else {})
+        payload = {**payload,
+                   "route_provider": meta.get("provider") or prior_route.get("provider"),
+                   "route_model": meta.get("model") or prior_route.get("model"),
+                   "route_request_id": (meta.get("request_id")
+                                        if "request_id" in meta
+                                        else prior_route.get("request_id")),
+                   "author_model": _author_model,
                    "reviewer_role": owning_role}
         ordered_parts.append((payload, text))
     if unit_contracts_enabled() and contract is not None:
@@ -8306,17 +8860,20 @@ def resolve_scripts_dir_for_run(run_dir: Path) -> Path:
 
 def _json_load_manifest_fallback() -> Dict[str, Any]:
     """Load the pinned PIPELINE-MANIFEST.json for phase-definition fallbacks.
-    Resolution: PRESENTATION_MANIFEST env first (the launcher pins it), then the
-    universal-sops repo copy two conventions up from this module. Raises on
-    absence — callers degrade, never crash the sweep."""
-    from pathlib import Path as _P
+    Resolution: PRESENTATION_MANIFEST env first (the launcher pins it), then
+    _qc_manifest_for_run() -- the same canonical resolver the reviewer stamps and
+    the aggregate use (the run's pinned state.json path, the deployed
+    <dept_root>/sops/ layout, then the manifest_source.find_repo_root() walk-up).
+    Never a guessed home-folder copy. Raises on absence -- callers degrade, never
+    crash the sweep."""
     import json as _json
     candidates = []
     env_path = os.environ.get("PRESENTATION_MANIFEST")
     if env_path:
-        candidates.append(_P(env_path))
-    candidates.append(_P.home() / "openclaw-onboarding" / "universal-sops" /
-                      "presentation-slide-craft" / "PIPELINE-MANIFEST.json")
+        candidates.append(Path(env_path))
+    resolved = _qc_manifest_for_run()
+    if resolved is not None:
+        candidates.append(resolved)
     for c in candidates:
         try:
             if c.is_file():
@@ -10588,11 +11145,7 @@ def watch_run_dir(run_dir: Path, *, interval: float = SWEEP_INTERVAL_S,
 #      large deck cannot own every slot; AGE PRIORITY inside a run (oldest
 #      eligible order first). The per-run max_workers ceiling still binds:
 #      total capacity = sum of per-run caps the box can actually serve.
-#   3. QC/recovery reserve: while the pool is saturated, the LAST slot is
-#      held for a QC-owning phase (P1Q-COPY-QC / P-TYPo-QC / P-PROMPT-QC /
-#      P-IMAGE-QC / P-SHIFT-QC / P-SPEECH-QC / P-QC-AGGREGATE / P-U-QC) so
-#      queued authors do not starve QC (QC.md QC-PRES-036 check 2).
-#   4. DURABLE REPORT: working/scan-root-queue.json carries, per run, the
+#   3. DURABLE REPORT: working/scan-root-queue.json carries, per run, the
 #      queued vs running counts, the last claim-scan time and the oldest
 #      queued age -- the progress/ETA surface the operator reads.
 #
@@ -10604,10 +11157,6 @@ def watch_run_dir(run_dir: Path, *, interval: float = SWEEP_INTERVAL_S,
 #
 # ROLLBACK: PRESENTATION_SCAN_ROOT_SCHEDULER=0 selects the old serial
 # watch_scan_root loop byte-for-byte.
-_SCAN_ROOT_SCHEDULER_QC_IDS = frozenset({
-    "P1Q-COPY-QC", "P-TYPO-QC", "P-PROMPT-QC", "P-IMAGE-QC",
-    "P-SHIFT-QC", "P-SPEECH-QC", "P-QC-AGGREGATE", "P-U-QC",
-})
 
 def _scan_root_scheduler_enabled() -> bool:
     """PRES-036: default ON; only exactly "0" disables (same quote/whitespace
@@ -10985,7 +11534,8 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--authorize-paid-retry-reset", metavar="PHASE_ID", default=None,
                    help="local-operator repair action: issue one bounded reset receipt for PHASE_ID")
     p.add_argument("--reset-allowance", type=int, default=None,
-                   help="provider calls allowed by --authorize-paid-retry-reset (1..retry cap)")
+                   help="provider calls allowed by --authorize-paid-retry-reset "
+                        f"(1..{PHASE_TOTAL_PAID_HARD_CAP}, PHASE_TOTAL_PAID_HARD_CAP)")
     return p
 
 
@@ -11052,6 +11602,85 @@ def main(argv: Optional[List[str]] = None) -> int:
                         args.max_lifetime_minutes, run_dir_mode=False) * 60,
                     max_workers=args.max_workers)
     return 0
+
+
+# ---------------------------------------------------------------------------
+# PD-304: P-SHIFT-QC's output contract, composed from the ONE shared item list.
+#
+# THE DEFECT: P-SHIFT-QC had no entry in ARTIFACT_CONTRACTS, so the grading model
+# was handed GENERIC_CONTRACT ("write a substantive JSON file") while
+# `presentation_job.runfacts.verify_priority_shift` grades the ledger against
+# `schema == "priority_shift_report/v1"`, a literal top-level `pass: true`, and an
+# `items` array whose every row is `pass: true`. A model that was never told the
+# shape could not converge on it, so the check could not be passed honestly.
+#
+# THE SHAPE is stated from the two things that judge it, never invented:
+#   * `runfacts.verify_priority_shift` (the step check, reached through
+#     PHASE_VERIFIERS["P-SHIFT-QC"]); and
+#   * `build_deck._chk_priority_shift_ledger` (the report's other writer, whose own
+#     local `add(item, ok, evidence)` emits exactly these three row keys).
+# The id list and the row key come from presentation_job.priority_shift_items --
+# the same tuple PD-300b (the step check) and PD-097 (the writer) import -- so this
+# text can never enumerate a different set than the check requires.
+#
+# It lives at the END of this module, not beside the table, so the table's own line
+# numbers (quoted by the build spec and by this lane's later units) do not move.
+# ---------------------------------------------------------------------------
+def _compose_p_shift_qc_contract() -> str:
+    """Build the P-SHIFT-QC output contract from presentation_job.priority_shift_items.
+
+    A failing row is a CORRECT output: the gate exists to block ship, so a contract
+    that only teaches how to pass would buy a fabricated pass. Point 5 says so
+    explicitly. Extra top-level keys are allowed and ignored, because the writer
+    today adds `gate`, `phase`, `generated_at` and a per-slide `slides` list and
+    the check ignores them -- telling the grader they are forbidden would make a
+    correct report look wrong.
+    """
+    # Lazy import (same pattern as _shared_prompt_gate): keeps this module's import
+    # header unchanged, so no line above this block shifts.
+    from presentation_job import priority_shift_items as _pshift  # noqa: PLC0415
+
+    key = _pshift.PRIORITY_SHIFT_ID_KEY
+    ids = "\n".join(
+        f"   - `{key}`: `{item_id}`" for item_id in _pshift.PRIORITY_SHIFT_ITEM_IDS
+    )
+    return (
+        "OUTPUT CONTRACT (mechanically enforced by the P-SHIFT-QC step check, "
+        "presentation_job.runfacts.verify_priority_shift -- graded literally against "
+        "the shape stated here). File path: working/qc/priority_shift_report.json "
+        "(a single JSON object). You are the priority-shift ship gate: READ the deck "
+        "(working/copy/slides_copy.md, working/copy/priority_shift_spec.json and the "
+        "rendered slides under renders/) and WRITE this one report. Report what you "
+        "actually found.\n"
+        "1. `schema`: the exact string `priority_shift_report/v1` (case-sensitive, "
+        "no variation).\n"
+        "2. `pass`: boolean `true` only when EVERY item row below is `pass: true`. "
+        "The step passes only when this top-level `pass` is literally true AND every "
+        "row's `pass` is true; a report whose rows contradict its own flag is "
+        "rejected as a rubber stamp.\n"
+        "3. `items`: a JSON array holding EXACTLY one row for each of these "
+        f"{len(_pshift.PRIORITY_SHIFT_ITEM_IDS)} item ids -- every id present, none "
+        "missing, none extra, none twice, in this order:\n"
+        + ids
+        + "\n"
+        "4. Every `items[]` row is an object with these three keys:\n"
+        f"   - `{key}`: the id string, copied character-for-character from the list "
+        "above (this is the row key that carries the id -- do not rename it).\n"
+        "   - `pass`: boolean.\n"
+        "   - `evidence`: a short QUOTED excerpt from the deck or the artifact you "
+        "read that justifies the verdict -- never a placeholder, never 'looks good'.\n"
+        "5. A FAILING row is a correct output. If an item genuinely fails, write "
+        "`pass: false` on that row (and on the top-level `pass` if any row fails, "
+        "as point 2 requires) and quote what is wrong. Do not inflate a weak item to "
+        "`pass: true`: a failing report is a correct answer, a fabricated pass is a "
+        "rejected one.\n"
+        "6. Extra top-level keys you need (for example `gate`, a `phase` label, or a "
+        "per-slide `slides` list) are ALLOWED and ignored by the mechanical check. Do "
+        "not rename, skip, merge or reorder the item rows."
+    )
+
+
+ARTIFACT_CONTRACTS["P-SHIFT-QC"] = _compose_p_shift_qc_contract()
 
 
 if __name__ == "__main__":
