@@ -228,9 +228,12 @@ def main():
         with redirect_stdout(capture):
             code, factory_path = SB._replay(str(SKILL), bad, ["purple banana"])
         check("a refused Studio reply fails the replay closed",
-              code, SB.EXIT["error"])
-        check("bridge exposes a named replay refusal",
-              json.loads(capture.getvalue()).get("code"), "REPLAY_FAILED")
+              code, SB.EXIT["halted"])
+        halted = bad / "control" / "replay-halted.json"
+        check_true("bridge persists a named replay refusal", halted.is_file())
+        check("the refused reply has the invalid option reason",
+              json.loads(halted.read_text()).get("reason_code"), "INVALID_OPTION")
+        check("a halted replay emits no stdout", capture.getvalue(), "")
         check("no method record claimed without accepted replies",
               (bad / "control" / "method.json").exists(), False)
         stored = json.loads((bad / "control" / "intake-session.json").read_text())
