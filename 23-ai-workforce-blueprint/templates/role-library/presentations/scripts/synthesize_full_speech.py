@@ -64,6 +64,7 @@ USAGE
       [--voice-id <reference_id>] [--api-key <key>] \
       [--model s2.1-pro] [--bitrate 192] [--wpm 140] [--min-ratio 0.80] \
       [--chunk-chars 280] [--workdir <dir>] \
+      [--normalize | --no-normalize] \
       [--temperature 0.9] [--top-p 0.8] [--repetition-penalty 1.2] \
       [--prosody-speed 1.25] [--prosody-volume 0] \
       [--pause-short 0.8] [--pause 1.2] [--pause-long 2.5] \
@@ -89,6 +90,7 @@ converted to measured silence or dropped rather than spoken.
 """
 
 import argparse
+import hashlib
 import json
 import os
 import re
@@ -97,6 +99,7 @@ import sys
 import time
 import urllib.request
 import urllib.error
+from pathlib import Path
 
 
 # ----------------------------------------------------------------------------
@@ -150,6 +153,20 @@ def strip_cues(text: str) -> str:
 
 def word_count(text: str) -> int:
     return len(text.split())
+
+
+def default_workdir(out_path: str) -> str:
+    """The chunk folder for ONE synthesis, beside its own deliverable (PD-307).
+
+    Named after the out file stem, so `PRESENTER-AUDIO.mp3` writes its per-chunk
+    mp3s to `<out_dir>/_audio_chunks_PRESENTER-AUDIO` — the folder
+    `build_webinar_video.resolve_required_inputs` reads — and two syntheses of two
+    different out files in one delivery folder leave two chunk folders instead of
+    overwriting each other's chunks.
+    """
+    out_path = os.path.abspath(out_path)
+    return os.path.join(os.path.dirname(out_path),
+                        "_audio_chunks_" + os.path.splitext(os.path.basename(out_path))[0])
 
 
 # ----------------------------------------------------------------------------
@@ -438,6 +455,78 @@ def verify_mp3(path: str) -> str:
         return f"probe error: {exc!r}"
 
 
+# ----------------------------------------------------------------------------
+# CHUNK BANK (PD-318) — a retry must not re-buy the whole speech.
+#
+# Every chunk mp3 carries a sidecar `chunk_NNN.sha` holding the hash of the exact
+# request that produced it: the chunk text plus the voice, the model and the
+# speaking speed. A chunk is reused only when the sidecar hash still matches AND
+# the banked mp3 still probes as real audio (`verify_mp3`). A different voice, a
+# different model or a different speed is DIFFERENT audio and is re-synthesized.
+# ----------------------------------------------------------------------------
+def chunk_signature(text, voice_id, model, prosody_speed):
+    """The bank key for one chunk: chunk text + voice + model + speed."""
+    payload = json.dumps({
+        "text": text,
+        "voice_id": voice_id or "",
+        "model": model,
+        "prosody_speed": round(float(prosody_speed), 6),
+    }, sort_keys=True, ensure_ascii=False)
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+def banked_chunk_is_good(mp3_path, sha_path, signature):
+    """True iff a banked chunk may be reused: sidecar hash matches and the mp3
+    still probes as real audio. Any read error means 'not reusable'."""
+    try:
+        if not (os.path.isfile(mp3_path) and os.path.isfile(sha_path)):
+            return False
+        with open(sha_path, encoding="utf-8") as f:
+            if f.read().strip() != signature:
+                return False
+    except OSError:
+        return False
+    return verify_mp3(mp3_path) == ""
+
+
+def bank_chunk_signature(sha_path, signature):
+    """Write the sidecar atomically, so a killed run never leaves a half hash
+    vouching for an mp3 that is not there."""
+    tmp = sha_path + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        f.write(signature + "\n")
+    os.replace(tmp, sha_path)
+
+
+def chunk_or_bank(text, index, workdir, signature, synthesize):
+    """Produce `chunk_<index>.mp3` in *workdir*, banked (PD-318).
+
+    Reuses the banked mp3 when its sidecar hash matches *signature* and the mp3
+    still probes as real audio; otherwise calls `synthesize(text, out_path)`,
+    proves the result is real audio, then banks its hash.
+
+    Returns (path, reused). Raises RuntimeError carrying the probe reason when a
+    freshly synthesized chunk is not decodable audio — an invalid chunk is never
+    banked and never reaches the concat.
+    """
+    mp3_path = os.path.join(workdir, f"chunk_{index:03d}.mp3")
+    sha_path = os.path.join(workdir, f"chunk_{index:03d}.sha")
+    if banked_chunk_is_good(mp3_path, sha_path, signature):
+        return mp3_path, True
+    # A stale sidecar must never outlive the file it vouched for.
+    try:
+        if os.path.exists(sha_path):
+            os.remove(sha_path)
+    except OSError:
+        pass
+    synthesize(text, mp3_path)
+    reason = verify_mp3(mp3_path)
+    if reason:
+        raise RuntimeError(reason)
+    bank_chunk_signature(sha_path, signature)
+    return mp3_path, False
+
+
 def ffmpeg_concat_normalize(chunk_paths, raw_out, final_out, bitrate):
     list_path = raw_out + ".concat.txt"
     with open(list_path, "w") as f:
@@ -459,7 +548,7 @@ def ffmpeg_concat_normalize(chunk_paths, raw_out, final_out, bitrate):
 # ----------------------------------------------------------------------------
 # Main
 # ----------------------------------------------------------------------------
-def main():
+def build_parser():
     ap = argparse.ArgumentParser(description="Full-length presenter-audio synthesis with duration gate.")
     ap.add_argument("--speech", required=True, help="Path to PRESENTERS-SPEECH.md (UNTAGGED — used for the word-count / duration gate)")
     ap.add_argument("--tagged-speech", default=None,
@@ -480,8 +569,16 @@ def main():
     ap.add_argument("--min-ratio", type=float, default=0.80,
                     help="Hard floor: audio_sec must be >= min_ratio * expected_sec")
     ap.add_argument("--chunk-chars", type=int, default=280, help="Max chars per Fish request (API cap is 300)")
-    ap.add_argument("--workdir", default=None, help="Where to write per-chunk mp3s (default: <out_dir>/_audio_chunks_full)")
-    ap.add_argument("--normalize", action="store_true", default=True)
+    ap.add_argument("--workdir", default=None,
+                    help="Where to write per-chunk mp3s (default: "
+                         "<out_dir>/_audio_chunks_<out file stem>, e.g. "
+                         "_audio_chunks_PRESENTER-AUDIO next to PRESENTER-AUDIO.mp3)")
+    ap.add_argument("--normalize", dest="normalize", action="store_true", default=True,
+                    help="Send normalize=true to the Fish API (the default). Use "
+                         "--no-normalize to turn it off.")
+    ap.add_argument("--no-normalize", dest="normalize", action="store_false",
+                    help="Send normalize=false to the Fish API (the switch --normalize "
+                         "could not previously be turned off).")
     # ---- WEBINAR FRAMING (Feature L2-H): welcome / Q&A / crescendo close ----
     ap.add_argument("--webinar-intro-outro", action="store_true",
                     help="Prepend the ~5-min WELCOME section before Slide 1 and append "
@@ -510,7 +607,11 @@ def main():
                     help="Seconds for [pause]/[break]/[PAUSE]")
     ap.add_argument("--pause-long", type=float, default=DEFAULT_PAUSE_SECONDS["long pause"],
                     help="Seconds for [long pause]/[long-break]")
-    args = ap.parse_args()
+    return ap
+
+
+def main():
+    args = build_parser().parse_args()
 
     if not args.api_key:
         sys.exit("FAIL: no Fish Audio API key (set FISH_AUDIO_API_KEY or --api-key).")
@@ -533,9 +634,12 @@ def main():
                         args.prosody_speed = _SPEED_PRESETS[_pref]
                         print(f"[speed] intake speech_speed_preference={_pref!r} -> "
                               f"prosody.speed {args.prosody_speed}")
+                    else:
+                        print(f"[speed] unknown speech_speed_preference={_pref!r}; "
+                              f"keeping default prosody.speed 1.25")
                     break
-        except Exception:  # noqa: BLE001 — intake absence is non-fatal; keep 1.25
-            pass
+        except Exception as _exc:  # noqa: BLE001 — intake absence is non-fatal; keep 1.25
+            print(f"[speed] could not read intake: {_exc}")
 
     # ffmpeg presence
     for tool in ("ffmpeg", "ffprobe"):
@@ -637,7 +741,12 @@ def main():
 
     # Build ordered chunks: speech segments chunked to --chunk-chars, silence
     # segments as exact silent mp3s. Order is preserved for the concat.
-    workdir = args.workdir or os.path.join(os.path.dirname(os.path.abspath(args.out)), "_audio_chunks_full")
+    # Chunk folder is named after the OUT FILE, not a fixed name (PD-307): two
+    # syntheses into one delivery folder leave two chunk folders, and the webinar
+    # video builder can find the chunks that belong to ITS audio file. The old
+    # fixed `_audio_chunks_full` is still resolved as a read-only fallback by
+    # build_webinar_video.resolve_required_inputs.
+    workdir = args.workdir or default_workdir(args.out)
     os.makedirs(workdir, exist_ok=True)
 
     speech_segments = [p for k, p in items if k == "speech"]
@@ -666,8 +775,19 @@ def main():
             ordered_speech.extend(chunk_text(payload, args.chunk_chars))
         else:
             ordered_speech.append(("silence", payload))
+    def _synthesize_chunk(text, out_path):
+        """One paid Fish request (PD-318 keeps this call behind the chunk bank)."""
+        return synth_chunk(text, args.api_key, args.voice_id, args.model, args.bitrate,
+                           out_path, normalize=args.normalize,
+                           temperature=args.temperature, top_p=args.top_p,
+                           repetition_penalty=args.repetition_penalty,
+                           prosody_speed=args.prosody_speed,
+                           prosody_volume=args.prosody_volume,
+                           prosody_normalize_loudness=not args.prosody_no_normalize_loudness)
+
     chunk_index = 0
     n_speech_rendered = 0
+    n_reused = 0
     for entry in ordered_speech:
         if isinstance(entry, tuple) and entry[0] == "silence":
             seconds = entry[1]
@@ -681,24 +801,28 @@ def main():
                   f"{seconds:.1f}s -> {os.path.basename(sp)}", flush=True)
         else:
             c = entry
-            cp = os.path.join(workdir, f"chunk_{chunk_index:03d}.mp3")
+            idx = chunk_index
             chunk_index += 1
-            n = synth_chunk(c, args.api_key, args.voice_id, args.model, args.bitrate, cp,
-                            normalize=args.normalize,
-                            temperature=args.temperature, top_p=args.top_p,
-                            repetition_penalty=args.repetition_penalty,
-                            prosody_speed=args.prosody_speed,
-                            prosody_volume=args.prosody_volume,
-                            prosody_normalize_loudness=not args.prosody_no_normalize_loudness)
-            # FIX-9 MP3 validity probe per chunk — a chunk that is not real audio
-            # must fail BEFORE it can poison the concat.
-            _mp3_reason = verify_mp3(cp)
-            if _mp3_reason:
-                sys.exit(f"FAIL (MP3 PROBE): chunk {chunk_index} is not a valid MP3 ({_mp3_reason}). "
+            # Bank this chunk's request (PD-318): a chunk already synthesized for
+            # this exact text, voice, model and speed is reused, not re-bought.
+            sig = chunk_signature(c, args.voice_id, args.model, args.prosody_speed)
+            try:
+                cp, reused = chunk_or_bank(c, idx, workdir, sig, _synthesize_chunk)
+            except RuntimeError as exc:
+                # FIX-9 MP3 validity probe per chunk — a chunk that is not real
+                # audio must fail BEFORE it can poison the concat.
+                sys.exit(f"FAIL (MP3 PROBE): chunk {chunk_index} is not a valid MP3 ({exc}). "
                          f"Aborting before concat — a corrupt chunk must never reach the deliverable.")
             render_items.append(("file", cp))
             n_speech_rendered += 1
-            print(f"  [{n_speech_rendered}/{len(speech_chunks)}] {len(c)} chars -> {os.path.basename(cp)} ({n:,} bytes)", flush=True)
+            if reused:
+                n_reused += 1
+                print(f"  [{n_speech_rendered}/{len(speech_chunks)}] {len(c)} chars -> "
+                      f"{os.path.basename(cp)} (banked, {os.path.getsize(cp):,} bytes; "
+                      f"not re-synthesized)", flush=True)
+            else:
+                print(f"  [{n_speech_rendered}/{len(speech_chunks)}] {len(c)} chars -> "
+                      f"{os.path.basename(cp)} ({os.path.getsize(cp):,} bytes)", flush=True)
 
     chunk_paths = [p for _, p in render_items]
     raw_out = os.path.join(workdir, "concat_raw_full.mp3")
