@@ -55,6 +55,8 @@ concurrency:
 
 jobs:
   skill25-contract-tests:
+    # Batch pull requests run only the required checks (Trevor order 2026-11-13).
+    if: ${{ !startsWith(github.head_ref, 'batch/') }}
     name: "Skill 25 — video-creator contract tests (PR #686's 16 blockers)"
     runs-on: ubuntu-latest
     steps:

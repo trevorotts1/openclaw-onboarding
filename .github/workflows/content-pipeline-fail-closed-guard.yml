@@ -57,6 +57,8 @@ concurrency:
 
 jobs:
   captions-and-storyboards:
+    # Batch pull requests run only the required checks (Trevor order 2026-11-13).
+    if: ${{ !startsWith(github.head_ref, 'batch/') }}
     name: "T0-59/T0-60: captions gated on content, storyboard failures exit non-zero"
     runs-on: ubuntu-latest
     steps:
@@ -93,6 +95,8 @@ jobs:
         run: python3 24-storyboard-writer/test/test_storyboard_failure_contract.py
 
   humanizer-predicate:
+    # Batch pull requests run only the required checks (Trevor order 2026-11-13).
+    if: ${{ !startsWith(github.head_ref, 'batch/') }}
     name: "T0-61: the em-dash check is not satisfied by an em dash"
     runs-on: ubuntu-latest
     steps:
@@ -150,6 +154,8 @@ jobs:
           fi
 
   video-editor-merge:
+    # Batch pull requests run only the required checks (Trevor order 2026-11-13).
+    if: ${{ !startsWith(github.head_ref, 'batch/') }}
     name: "T0-62/T2-36: merge inputs are probed and --dry-run exists"
     runs-on: ubuntu-latest
     steps:
@@ -203,6 +209,8 @@ jobs:
           echo "OK: expected inputs are declared, not fabricated"
 
   email-engine-proofs:
+    # Batch pull requests run only the required checks (Trevor order 2026-11-13).
+    if: ${{ !startsWith(github.head_ref, 'batch/') }}
     name: "T0-63/T0-64/T2-38: the email-engine proofs hold"
     runs-on: ubuntu-latest
     steps:
@@ -275,6 +283,8 @@ jobs:
           echo "OK: enforcement hash matches the pinned head"
 
   kie-resume-reconciliation:
+    # Batch pull requests run only the required checks (Trevor order 2026-11-13).
+    if: ${{ !startsWith(github.head_ref, 'batch/') }}
     name: "T0-58: a resumed slide is reconciled against disk"
     runs-on: ubuntu-latest
     steps:

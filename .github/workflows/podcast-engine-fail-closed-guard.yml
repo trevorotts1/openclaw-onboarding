@@ -110,6 +110,8 @@ concurrency:
 
 jobs:
   podcast-engine-fail-closed:
+    # Batch pull requests run only the required checks (Trevor order 2026-11-13).
+    if: ${{ !startsWith(github.head_ref, 'batch/') }}
     name: Channel scoping + loudness + webhook ordering + ledger linkage + smoke-test blindness
     runs-on: ubuntu-latest
     steps:

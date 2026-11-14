@@ -148,6 +148,8 @@ concurrency:
 
 jobs:
   floor-wipe-fix-guard:
+    # Batch pull requests run only the required checks (Trevor order 2026-11-13).
+    if: ${{ !startsWith(github.head_ref, 'batch/') }}
     name: P2-06 floor-wipe fix (5 hermetic suites)
     runs-on: ubuntu-latest
     env:

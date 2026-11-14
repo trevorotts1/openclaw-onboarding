@@ -140,8 +140,8 @@ def routing_how_to(role_name, dept_name, dept_slug, company_name, industry,
     to prevent.
     """
     cfg = _load_company_config()
-    company_name = (company_name or cfg.get("companyName")
-                    or cfg.get("company_name") or cfg.get("name") or "")
+    company_name = (company_name or cfg.get("companyName") or cfg.get("company_name")
+                    or cfg.get("name") or "")
     industry = industry or cfg.get("industry", "")
     desc = role_description.strip() or "(no description supplied in the install spec)"
     return f"""# {role_name} — how-to.md  [ROUTED — WORK HANDLED BY GENERAL-TASK]

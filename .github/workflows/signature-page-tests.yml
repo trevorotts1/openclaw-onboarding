@@ -25,6 +25,8 @@ concurrency:
 
 jobs:
   signature-page-tests:
+    # Batch pull requests run only the required checks (Trevor order 2026-11-13).
+    if: ${{ !startsWith(github.head_ref, 'batch/') }}
     name: signature-page-tests
     runs-on: ubuntu-latest
     timeout-minutes: 30

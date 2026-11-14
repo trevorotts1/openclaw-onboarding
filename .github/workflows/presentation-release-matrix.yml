@@ -54,6 +54,8 @@ concurrency:
 
 jobs:
   macos-acceptance:
+    # Batch pull requests run only the required checks (Trevor order 2026-11-13).
+    if: ${{ !startsWith(github.head_ref, 'batch/') }}
     name: macOS runner acceptance (native render + OCR + tick)
     runs-on: macos-latest
     steps:
@@ -99,6 +101,8 @@ jobs:
           bash tests/unit/presentation-schedules-installed.test.sh
 
   docker-hostinger:
+    # Batch pull requests run only the required checks (Trevor order 2026-11-13).
+    if: ${{ !startsWith(github.head_ref, 'batch/') }}
     name: Docker leg — Hostinger profile
     runs-on: ubuntu-latest
     steps:
@@ -132,6 +136,8 @@ jobs:
           docker run --rm -v "$PWD:/opt/engine:ro" pres043-hostinger bash -lc 'cd /opt/engine/23-ai-workforce-blueprint/templates/role-library/presentations/scripts/tests && python3 -m pytest test_pres043_release_matrix.py::test_restart_resume_only_incomplete_units -q -p no:cacheprovider'
 
   docker-contabo:
+    # Batch pull requests run only the required checks (Trevor order 2026-11-13).
+    if: ${{ !startsWith(github.head_ref, 'batch/') }}
     name: Docker leg — Contabo profile
     runs-on: ubuntu-latest
     steps:
@@ -170,6 +176,8 @@ jobs:
   # refuses without authorization). Record NOT VERIFIED until authorized
   # sandbox execution produces actual remote IDs and readback.
   live-smoke-refusal:
+    # Batch pull requests run only the required checks (Trevor order 2026-11-13).
+    if: ${{ !startsWith(github.head_ref, 'batch/') }}
     name: Live GHL smoke stays refused in CI (NOT VERIFIED)
     runs-on: ubuntu-latest
     steps:

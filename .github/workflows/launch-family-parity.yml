@@ -56,6 +56,8 @@ concurrency:
 
 jobs:
   parity:
+    # Batch pull requests run only the required checks (Trevor order 2026-11-13).
+    if: ${{ !startsWith(github.head_ref, 'batch/') }}
     runs-on: ubuntu-latest
     steps:
       - name: Checkout openclaw-onboarding (the sync source, this repository)

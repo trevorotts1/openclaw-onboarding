@@ -1,5 +1,9 @@
 # Changelog — Skill 47 (Movie Producer / Automated Video Production)
 
+## v15.2.6 - 2026-11-14 - PD-027 repair lane superseded PR #3420 (rebase onto main be80ff86d; no content change)
+
+- Version roll only: this branch rebases PD-027 PR #3420 onto current main. All ten PR commits were already present on main (byte-identical or main-newer), so the rebase contributes no content; Skill 47 is bumped to next patch per G3 (`skill-version.txt` + `SKILL.md` frontmatter) so the G3 guard passes on the rebased range. `kie_image.py` is byte-identical to main.
+
 ## v15.2.5 - 2026-11-13 - embedded Skill 74 client re-embedded (video-pipeline-lockstep red on main)
 
 - `kie-adapters/tools/graphics/kie_image.py`: regenerated with `scripts/embed_kie_client.py`. Skill 74's client had moved on and the embedded block no longer matched the generator output or the verbatim slice of Skill 74's source, so `test_kie_embedded_client_hashlock.py` (run by qc-movie-producer.sh, hence by `video-pipeline-lockstep`) failed on main from 2026-11-09. Real code drift, guard unchanged. Hashlock test: 19 passed 2 failed before, 21 passed 0 failed after.

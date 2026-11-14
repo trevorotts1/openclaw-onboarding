@@ -170,6 +170,8 @@ concurrency:
 
 jobs:
   presentations-drift-gates:
+    # Batch pull requests run only the required checks (Trevor order 2026-11-13).
+    if: ${{ !startsWith(github.head_ref, 'batch/') }}
     name: drift-gates + Skill-51 verify.sh (${{ matrix.platform }})
     runs-on: ubuntu-latest
     strategy:

@@ -55,6 +55,8 @@ concurrency:
 
 jobs:
   rescue-rangers-rr028-gates:
+    # Batch pull requests run only the required checks (Trevor order 2026-11-13).
+    if: ${{ !startsWith(github.head_ref, 'batch/') }}
     name: RR-028 gates (states + readback + probe + argv safety)
     runs-on: ubuntu-latest
     steps:

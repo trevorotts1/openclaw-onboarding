@@ -40,6 +40,8 @@ concurrency:
 
 jobs:
   persona-set-triad:
+    # Batch pull requests run only the required checks (Trevor order 2026-11-13).
+    if: ${{ !startsWith(github.head_ref, 'batch/') }}
     name: "Persona-SET count triad (offline)"
     runs-on: ubuntu-latest
     steps:

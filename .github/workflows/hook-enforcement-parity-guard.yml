@@ -9,6 +9,8 @@ concurrency:
 
 jobs:
   hook-enforcement-parity:
+    # Batch pull requests run only the required checks (Trevor order 2026-11-13).
+    if: ${{ !startsWith(github.head_ref, 'batch/') }}
     name: hook-enforcement parity guard
     runs-on: ubuntu-latest
     steps:

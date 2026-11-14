@@ -46,6 +46,8 @@ concurrency:
 
 jobs:
   persona-selector:
+    # Batch pull requests run only the required checks (Trevor order 2026-11-13).
+    if: ${{ !startsWith(github.head_ref, 'batch/') }}
     name: "persona-selector (web-dev funnel surface + A7)"
     runs-on: ubuntu-latest
     steps:
@@ -106,6 +108,8 @@ jobs:
           bash 23-ai-workforce-blueprint/scripts/test-persona-selector-stickiness-staleness.sh
 
   funnel-pipeline-pytest:
+    # Batch pull requests run only the required checks (Trevor order 2026-11-13).
+    if: ${{ !startsWith(github.head_ref, 'batch/') }}
     name: "funnel pipeline pytest (T-1..T-9 + T-N1..T-N6 + T-PRE-1/4 + T-N5 + graduation)"
     runs-on: ubuntu-latest
     steps:
@@ -135,6 +139,8 @@ jobs:
           echo "✓ P0→P5 integration + negatives + T-PRE-1/4 + T-N5 fail-closed + graduation green"
 
   seed-normalize:
+    # Batch pull requests run only the required checks (Trevor order 2026-11-13).
+    if: ${{ !startsWith(github.head_ref, 'batch/') }}
     name: "seed-workspaces departments normalizer (converge Step-4 crash fix)"
     runs-on: ubuntu-latest
     steps:
@@ -154,6 +160,8 @@ jobs:
           echo "✓ installer hardening: archived workspaces skipped, name match updates, company split logged"
 
   rubric-scorecard-gate:
+    # Batch pull requests run only the required checks (Trevor order 2026-11-13).
+    if: ${{ !startsWith(github.head_ref, 'batch/') }}
     name: "rubric scorecard gate (11 GRADUATED rubrics >= 8.5 from RAW evidence)"
     runs-on: ubuntu-latest
     steps:
@@ -216,6 +224,8 @@ jobs:
           echo "✓ committed live-run: 10 of 11 rubrics >= 8.5; R-PERSONA-GROUNDING=8.20 is a documented environmental residual (OpenRouter 402 + no fixture company-config), surfaced not faked"
 
   funnel-rollback-prose-guard:
+    # Batch pull requests run only the required checks (Trevor order 2026-11-13).
+    if: ${{ !startsWith(github.head_ref, 'batch/') }}
     name: "funnel_rollback executable (not prose-only)"
     runs-on: ubuntu-latest
     steps:

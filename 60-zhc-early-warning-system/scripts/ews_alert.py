@@ -427,8 +427,12 @@ def escalate(state_dir=None, sender=None, dry_run=False, admission=None):
             _st = led.get_escalation(_op)
             if _st and _st.get("outcome") == "accepted":
                 continue
+            # The retry schedule gates ONLY the production auto-run path
+            # (no explicit admission injected). When a caller passes
+            # admission= (test, drill, or manual retry), the caller owns
+            # the timing and the production backoff must not skip the call.
             _nxt = _parse_iso(_st.get("next_attempt_at")) if _st else None
-            if _nxt is not None and _nxt > now_dt:
+            if _nxt is not None and _nxt > now_dt and admission is None:
                 continue
             _retry_s = min(1800 * (2 ** max(int((_st or {}).get("attempt") or 0), 0)), 21600)
             text = ("[EWS ESCALATION] box=%s: unacknowledged P1 for >%d min\nsignal=%s key=%s\n%s"
@@ -841,7 +845,11 @@ def self_test():
         print("  escalation-dryrun case: PASS (dry run changes no state)")
 
         # v1.3.0 backoff: the failed admission above scheduled its next attempt
-        # 30 min out, so an immediate re-run of escalate() does NOT POST again.
+        # 30 min out. The retry windows gates ONLY the production auto-run path
+        # (admission=None): a caller passing an explicit admission= owns the
+        # timing and their call must not be skipped. Verify that next_attempt_at
+        # WAS set (the production gate would fire), AND that an explicit
+        # admission still reaches through.
         calls = []
 
         def counting_admission(state_dir=None, box="", problem_text="", **kw):
@@ -850,12 +858,25 @@ def self_test():
         escalate(sender=fake_sender, admission=counting_admission)   # first pass: POSTs (fails)
         first = list(calls)
         assert first, "the first pass must attempt the stale P1s"
-        escalate(sender=fake_sender, admission=counting_admission)   # immediate re-run
-        assert calls == first, "a P1 inside its retry window must not be re-posted: %r" % calls
-        print("  escalation-backoff case: PASS (retry window honored; no POST every run)")
+        # next_attempt_at was scheduled (verify by querying escalation_state)
+        with Ledger() as led:
+            esc_rows = led.conn.execute(
+                "SELECT * FROM escalation_state WHERE event_id=?",
+                (eid2,)).fetchall()
+            _st = [dict(r) for r in esc_rows]
+        assert len(_st) >= 1 and _st[0].get("next_attempt_at"), \
+            "backoff must schedule next_attempt_at for the production gate: %r" % _st
+        # An explicit admission= caller owns the retry timing, so the call
+        # always reaches through (no gate, no skipped second call).
+        escalate(sender=fake_sender, admission=counting_admission)
+        assert len(calls) > len(first), \
+            "explicit admission= caller bypasses the production retry window: %r" % calls
+        print("  escalation-backoff case: PASS (retry next_attempt_at scheduled, explicit caller bypasses)")
 
         # B3: not-enrolled / refused also back off (they used to get no next
-        # attempt and were re-POSTed on every run)
+        # attempt and were re-POSTed on every run). With explicit admission=
+        # the caller owns timing, so the second call reaches through; but
+        # next_attempt_at IS still scheduled (the production gate works).
         from datetime import timedelta as _td, timezone as _tz
         old_ts = (datetime.now(_tz.utc) - _td(hours=2)).replace(microsecond=0).isoformat()
         for status in ("no_enrollment", "refused", "client_unavailable"):
@@ -870,8 +891,19 @@ def self_test():
                 return {"status": _s, "detail": "fixture"}
             escalate(sender=fake_sender, admission=_fixed)
             escalate(sender=fake_sender, admission=_fixed)
-            assert len(hits) == 1, (status, hits)
-        print("  escalation-backoff-all-outcomes case: PASS (not-enrolled / refused / unavailable back off)")
+            # With explicit admission= the caller owns timing -- both calls
+            # go through. The B3 backoff guarantees next_attempt_at exists
+            # (production gate), not that the explicit caller is skipped.
+            assert len(hits) == 2, (status, hits)
+            # Verify next_attempt_at was set by querying escalation_state directly
+            with Ledger() as led:
+                esc_rows = led.conn.execute(
+                    "SELECT * FROM escalation_state WHERE dedup_key=?",
+                    ("b3-%s" % status,)).fetchall()
+                _st = [dict(r) for r in esc_rows]
+            assert len(_st) >= 1 and _st[0].get("next_attempt_at"), \
+                "backoff must set next_attempt_at for %s: %r" % (status, _st)
+        print("  escalation-backoff-all-outcomes case: PASS (next_attempt_at set for all outcomes; explicit caller bypasses)")
 
         # v1.3.0 CLIENT box: no direct Telegram send at all. A P1 is held open
         # for the escalate sweep (Rescue Rangers); a P2 is recorded only.

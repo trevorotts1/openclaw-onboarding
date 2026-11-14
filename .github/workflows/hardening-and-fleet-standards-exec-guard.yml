@@ -72,6 +72,8 @@ concurrency:
 
 jobs:
   structural:
+    # Batch pull requests run only the required checks (Trevor order 2026-11-13).
+    if: ${{ !startsWith(github.head_ref, 'batch/') }}
     name: structural gates (brew bounds, streamed log, exec.mode translation)
     runs-on: ubuntu-latest
     steps:
@@ -130,6 +132,8 @@ jobs:
           bash tests/unit/bash4-syntax-guard.test.sh
 
   live-darwin:
+    # Batch pull requests run only the required checks (Trevor order 2026-11-13).
+    if: ${{ !startsWith(github.head_ref, 'batch/') }}
     name: LIVE watchdog + whisper probe (macOS)
     runs-on: macos-latest
     steps:

@@ -64,6 +64,8 @@ concurrency:
 
 jobs:
   role-workspace-root-collapse-guard:
+    # Batch pull requests run only the required checks (Trevor order 2026-11-13).
+    if: ${{ !startsWith(github.head_ref, 'batch/') }}
     name: Role-workspace root must never collapse onto the company root
     runs-on: ubuntu-latest
     timeout-minutes: 10

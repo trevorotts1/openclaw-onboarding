@@ -66,6 +66,8 @@ concurrency:
 
 jobs:
   control:
+    # Batch pull requests run only the required checks (Trevor order 2026-11-13).
+    if: ${{ !startsWith(github.head_ref, 'batch/') }}
     name: Prove the binding-laws guard discriminates
     runs-on: ubuntu-latest
     steps:
@@ -86,7 +88,7 @@ jobs:
   laws:
     name: Enforce binding laws on the pull request range
     needs: control
-    if: github.event_name == 'pull_request'
+    if: ${{ !startsWith(github.head_ref, 'batch/') && (github.event_name == 'pull_request') }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
