@@ -41,7 +41,7 @@ MODEL_NAME = "face_landmarker.task"
 MODEL_SHA256 = "64184e229b263107bc2b804c6625db1341ff2bb731874b0bcc2fe6544e0bc9ff"
 MODEL_BYTES = 3758596
 MODEL_URL = ("https://storage.googleapis.com/mediapipe-models/face_landmarker/"
-             "face_landmarker/float16/latest/face_landmarker.task")
+             "face_landmarker/float16/1/face_landmarker.task")
 
 #: <skill root> = two levels above scripts/core/ (this file lives in core/).
 SKILL_ROOT = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)),
