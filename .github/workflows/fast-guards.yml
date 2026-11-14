@@ -23,6 +23,8 @@ concurrency:
 
 jobs:
   fast-guards:
+    # Batch pull requests run only the required checks (Trevor order 2026-11-13).
+    if: ${{ !startsWith(github.head_ref, 'batch/') }}
     name: fast-guards (all folded guards)
     runs-on: ubuntu-latest
     timeout-minutes: 45

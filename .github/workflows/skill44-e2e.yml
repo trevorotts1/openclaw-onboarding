@@ -60,6 +60,8 @@ jobs:
   # TRINITY stub → 23-key stub → DRAFT workflow, NOT published.
   # ─────────────────────────────────────────────────────────────────────────────
   unit11-e2e-merge-gate:
+    # Batch pull requests run only the required checks (Trevor order 2026-11-13).
+    if: ${{ !startsWith(github.head_ref, 'batch/') }}
     name: "AC 19 — E2E Merge Gate (intent → Tier 0 → build → gates → DRAFT)"
     runs-on: ubuntu-latest
     defaults:
@@ -161,6 +163,8 @@ jobs:
   # matches the pre-mutation snapshot (server-managed keys stripped).
   # ─────────────────────────────────────────────────────────────────────────────
   unit11-rollback:
+    # Batch pull requests run only the required checks (Trevor order 2026-11-13).
+    if: ${{ !startsWith(github.head_ref, 'batch/') }}
     name: "AC 20 — Rollback (pre-write snapshot + restore)"
     runs-on: ubuntu-latest
     needs: unit11-e2e-merge-gate
@@ -241,6 +245,8 @@ jobs:
   # lock so it cannot run builds in parallel on a box.
   # ─────────────────────────────────────────────────────────────────────────────
   unit11-serialization:
+    # Batch pull requests run only the required checks (Trevor order 2026-11-13).
+    if: ${{ !startsWith(github.head_ref, 'batch/') }}
     name: "AC 21 — Serialization (WriteLock + step backoff)"
     runs-on: ubuntu-latest
     needs: unit11-e2e-merge-gate
@@ -331,6 +337,8 @@ jobs:
   # A failing regression here means the e2e changes broke something upstream.
   # ─────────────────────────────────────────────────────────────────────────────
   regression-guard:
+    # Batch pull requests run only the required checks (Trevor order 2026-11-13).
+    if: ${{ !startsWith(github.head_ref, 'batch/') }}
     name: "Regression guard (existing engine tests must stay green)"
     runs-on: ubuntu-latest
     needs:
@@ -392,7 +400,7 @@ jobs:
       - unit11-rollback
       - unit11-serialization
       - regression-guard
-    if: always()
+    if: ${{ !startsWith(github.head_ref, 'batch/') && (always()) }}
     steps:
       - name: Check all required jobs passed
         run: |
