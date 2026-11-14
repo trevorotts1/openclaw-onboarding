@@ -87,7 +87,9 @@ else
   exit 0
 fi
 
-STATE_FILE="$OC_ROOT/workspace/.workforce-build-state.json"
+# One rule for the state file: WORKFORCE_BUILD_STATE_FILE, then ZHC_STATE_FILE,
+# then WORKFORCE_BUILD_STATE_PATH, then this script's own default.
+STATE_FILE="${WORKFORCE_BUILD_STATE_FILE:-${ZHC_STATE_FILE:-${WORKFORCE_BUILD_STATE_PATH:-$OC_ROOT/workspace/.workforce-build-state.json}}}"
 LOCK_FILE="$OC_ROOT/workspace/.closeout-resume.lock"
 LOG_FILE="$OC_ROOT/workspace/.zhc-closeout.log"
 RUN_COUNT_FILE="$OC_ROOT/workspace/.closeout-resume-runs.count"
