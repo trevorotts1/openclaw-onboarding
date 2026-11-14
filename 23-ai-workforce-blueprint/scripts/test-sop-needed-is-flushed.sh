@@ -1,69 +1,105 @@
 #!/usr/bin/env bash
-# test-sop-needed-is-flushed.sh — BU-108 acceptance test.
+# test-sop-needed-is-flushed.sh — CI guard for BU-108.
 #
-# Phase 1: a roles file naming one role in no library, run through
-# create_role_workspaces.py --roles-json; SOP-NEEDED.json must exist with
-# open_count == 1. Phase 2: an empty role folder under a second department,
-# run post-build-role-workspaces.py; open_count must become 2.
+# WHAT IT TESTS:
+#   A role that matches no role-library template must leave a machine-readable
+#   SOP-NEEDED record on disk, not only in memory, on EVERY exit path.
 #
-# The company lives where post-build resolves it:
-# $HOME/.openclaw/workspace/zero-human-company/acme (OPENCLAW_PLATFORM=mac,
-# empty HOME). Phase 1 runs there directly so both phases share one root.
-# Exit non-zero on any mismatch.
-set -u
+#     1. create_role_workspaces.py --roles-json on a department inside
+#        <company>/departments/ writes <company>/SOP-NEEDED.json with
+#        open_count == 1.
+#     2. post-build-role-workspaces.py, pointed at the same scratch company
+#        through the platform variables, augments a second department's role
+#        and the same manifest then holds open_count == 2.
+#
+#   A scratch company is used throughout; nothing outside it is written.
+#
+# Exit 0 = every check passed; non-zero = at least one check failed.
+set -uo pipefail
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-T="$(mktemp -d -p "${TMPDIR:-/tmp}")"
-trap 'rm -rf "$T"' EXIT
-export HOME="$T/home" OPENCLAW_PLATFORM=mac MASTER_FILES_DIR="$T/mf" \
-  WORKFORCE_BUILD_STATE_FILE="$T/state.json"
-Z="$T/home/.openclaw/workspace/zero-human-company"
-mkdir -p "$T/home" "$Z/acme/departments/widgets" "$T/ws"
+CREATE="$SCRIPT_DIR/create_role_workspaces.py"
+POSTBUILD="$SCRIPT_DIR/post-build-role-workspaces.py"
+
 PASS=0; FAIL=0
-pass() { PASS=$((PASS+1)); echo "[PASS] $1"; }
-fail() { FAIL=$((FAIL+1)); echo "[FAIL] $1"; }
+ok()  { echo "  PASS: $*"; PASS=$((PASS+1)); }
+bad() { echo "  FAIL: $*"; FAIL=$((FAIL+1)); }
 
-echo "--- phase 1: create_role_workspaces.py --roles-json ---"
-python3 - "$T" >"$T/roles.json" <<'PYEOF'
+# Temp on the drive when TMPDIR points there (the room exports it); never /tmp.
+WORK="$(mktemp -d "${TMPDIR:-$PWD}/sopneeded.XXXXXXXX")"
+cleanup() { rm -rf "$WORK"; }
+trap cleanup EXIT
+
+HOME_DIR="$WORK/home"
+MASTER="$WORK/master"
+COMPANY="$MASTER/zero-human-company/acme"
+WIDGETS="$COMPANY/departments/widgets"
+GADGETS="$COMPANY/departments/gadgets"
+WS="$WORK/ws"
+mkdir -p "$HOME_DIR" "$WIDGETS" "$GADGETS" "$WS"
+# A CEO that already exists with a how-to.md: post-build then augments it
+# without recording a miss, so the only new record is the one this test adds.
+mkdir -p "$COMPANY/master-orchestrator"
+printf '# Master Orchestrator\n\nExisting how-to; not the subject of this test.\n' \
+  > "$COMPANY/master-orchestrator/how-to.md"
+
+open_count() {  # open_count of the manifest, or MISSING
+  python3 -B - "$COMPANY/SOP-NEEDED.json" <<'PY'
 import json, sys
-json.dump([{"name": "Quantum Widget Wrangler", "type": "full-time-permanent",
-            "number": 1, "description": "QC probe, no library match"}],
-          open(sys.argv[1] + "/roles.json", "w"))
-PYEOF
-if python3 -B "$SCRIPT_DIR/create_role_workspaces.py" \
-    --dept-path "$Z/acme/departments/widgets" --roles-json "$T/roles.json" \
-    --workspace-root "$T/ws" >"$T/run1.log" 2>"$T/run1.err"; then
-  pass "create exit 0"
+from pathlib import Path
+p = Path(sys.argv[1])
+if not p.is_file():
+    print("MISSING")
+else:
+    print(json.loads(p.read_text(encoding="utf-8")).get("open_count"))
+PY
+}
+
+# ── 1. create_role_workspaces.py --roles-json flushes the record ─────────────
+ROLES="$WORK/roles.json"
+cat > "$ROLES" <<'JSON'
+[{"name": "Zyzzyva Compliance Wrangler", "type": "full-time-permanent", "is_ceo": false}]
+JSON
+
+env -i HOME="$HOME_DIR" PATH="$PATH" OPENCLAW_PLATFORM=mac \
+  MASTER_FILES_DIR="$MASTER" \
+  python3 -B "$CREATE" --dept-path "$WIDGETS" --roles-json "$ROLES" \
+    --workspace-root "$WS" >"$WORK/create.log" 2>&1
+RC=$?
+if [ "$RC" -eq 0 ]; then ok "create_role_workspaces.py exited 0"; else
+  bad "create_role_workspaces.py exited $RC (log: $WORK/create.log)"; fi
+OC="$(open_count)"
+if [ "$OC" = "1" ]; then ok "manifest written with open_count == 1"; else
+  bad "expected open_count == 1, got '$OC'"; fi
+if grep -q "SOP-NEEDED" "$WORK/create.log"; then
+  ok "the library miss is named in the run log"
 else
-  fail "create exit $?"
-fi
-OPEN1="$(python3 -B -c "import json; print(json.load(open('$Z/acme/SOP-NEEDED.json'))['open_count'])" 2>/dev/null || echo MISSING)"
-if [ "$OPEN1" = "1" ]; then
-  pass "SOP-NEEDED.json exists with open_count == 1"
-else
-  fail "phase 1 open_count is '$OPEN1', want 1"
+  bad "no SOP-NEEDED line in the create run log"
 fi
 
-echo "--- phase 2: post-build-role-workspaces.py ---"
-mkdir -p "$Z/acme/departments/gadgets/01-empty-role"
-# A complete master-orchestrator folder: post-build then augments nothing for
-# the CEO (no new record), so phase 2 adds exactly the one empty-role record.
-mkdir -p "$Z/acme/master-orchestrator/SOP"
-for f in IDENTITY.md SOUL.md MEMORY.md HEARTBEAT.md how-to.md; do
-  echo "complete" > "$Z/acme/master-orchestrator/$f"
-done
-echo "index" > "$Z/acme/master-orchestrator/SOP/00-INDEX.md"
-if OPENCLAW_COMPANY_SLUG=acme python3 -B "$SCRIPT_DIR/post-build-role-workspaces.py" \
-    --company-slug acme >"$T/run2.log" 2>"$T/run2.err"; then
-  pass "post-build exit 0"
+# ── 2. post-build-role-workspaces.py flushes its own records ────────────────
+# A role folder with no library template: augmentation records the miss.
+mkdir -p "$GADGETS/Vexing Gadget Overseer"
+env -i HOME="$HOME_DIR" PATH="$PATH" OPENCLAW_PLATFORM=mac \
+  MASTER_FILES_DIR="$MASTER" \
+  python3 -B "$POSTBUILD" >"$WORK/post.log" 2>&1
+RC=$?
+if [ "$RC" -eq 0 ]; then ok "post-build-role-workspaces.py exited 0"; else
+  bad "post-build-role-workspaces.py exited $RC (log: $WORK/post.log)"; fi
+OC="$(open_count)"
+if [ "$OC" = "2" ]; then ok "after post-build the manifest holds open_count == 2"; else
+  bad "expected open_count == 2, got '$OC'"; fi
+
+# ── housekeeping: nothing outside the scratch folder ────────────────────────
+if [ -z "$(ls -A "$HOME_DIR" 2>/dev/null)" ]; then
+  ok "HOME stayed empty (no stray install files)"
 else
-  fail "post-build exit $?"
-fi
-OPEN2="$(python3 -B -c "import json; print(json.load(open('$Z/acme/SOP-NEEDED.json'))['open_count'])" 2>/dev/null || echo MISSING)"
-if [ "$OPEN2" = "2" ]; then
-  pass "SOP-NEEDED.json exists with open_count == 2"
-else
-  fail "phase 2 open_count is '$OPEN2', want 2"
+  bad "HOME is not empty: $(ls -A "$HOME_DIR" | head -3 | tr '\n' ' ')"
 fi
 
-echo "RESULTS: $PASS passed, $FAIL failed"
+echo ""
+echo "=========================================="
+echo "SOP-NEEDED flush guard: PASS=$PASS FAIL=$FAIL"
+echo "=========================================="
 [ "$FAIL" -eq 0 ]
+exit $?
