@@ -34,6 +34,11 @@ segments (stub mode on dry runs, the render's ffmpeg on real renders),
 attaches "frame_text" rows to the receipt, and fails with
 GARBLED_TEXT_FRAME -- before any ffmpeg spend -- when a row flags text.
 
+S75-045: the same wiring also checks every segment that plans to show
+words (text_check_rows): three sampled frames per segment, compared to the
+planned words. No real reader (no tesseract) -> the row is UNAVAILABLE with
+reason OCR_UNAVAILABLE and the receipt carries a warning, never a PASS.
+
 stdlib only, no network, no spend. Runs without ffmpeg in stub mode.
 """
 from __future__ import annotations
@@ -59,6 +64,7 @@ GARBLED_TEXT_FRAME = "GARBLED_TEXT_FRAME"       # readable invented text
 FRAME_EXTRACT_UNAVAILABLE = "FRAME_EXTRACT_UNAVAILABLE"  # no probe/frames
 BAD_INPUT = "BAD_INPUT"                          # bad shape, fail closed
 BAD_EXTRACTOR = "BAD_EXTRACTOR"                  # bad extractor contract
+OCR_UNAVAILABLE = "OCR_UNAVAILABLE"              # no real reader: never PASS
 
 EXIT = {"ok": 0, "error": 1}
 
@@ -249,6 +255,7 @@ def clip_rows(segments, ffmpeg=None, frame_count=3, extractor=None,
 UNAVAILABLE = "UNAVAILABLE"
 TEXT_CHANGED = "TEXT_CHANGED"
 PASS = "PASS"
+FAIL = "FAIL"
 
 # SPEC A6's bar for "a readable word": 3 or more letters.
 _WORD_3_RE = re.compile(r"[A-Za-z]{3,}")
@@ -319,6 +326,92 @@ def agnes_clip_rows(segments, expected_by_segment=None, extractor=None,
                    "mode": STUB_NAME if ffmpeg is None else "extract"}
             status = UNAVAILABLE
         row.update({"segment": i, "expected": expected, "status": status})
+        rows.append(row)
+    return rows
+
+
+# --------------------------------------- planned on-screen text (S75-045) --
+#
+# The on-screen text check answers ONE question per segment that plans to show
+# words: do the words the picture really carries match the planned words? It
+# has three verdicts and no fourth:
+#
+#   PASS         a REAL reader (tesseract, registered by onscreen_text) read
+#                every sampled frame and the words are the planned words.
+#   FAIL         a real reader ran and the words are NOT the planned words.
+#   UNAVAILABLE  nobody read a pixel (the stub) or the read failed. The row's
+#                reason code says why (OCR_UNAVAILABLE when there was no
+#                reader at all) and the receipt carries a warning: a check that
+#                never ran is never a pass.
+
+
+def planned_text(segment):
+    """The words a segment plans to show, or None.
+
+    Reads the shot plan's own keys -- ``on_screen_text`` (a string, a list of
+    strings, or ``[{"text": ...}]``) and ``text`` -- the same shapes the shot
+    plan and kie_dispatch's spelling gate already use.
+    """
+    if not isinstance(segment, dict):
+        return None
+    for key in ("on_screen_text", "text"):
+        value = segment.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+        if isinstance(value, list):
+            words = []
+            for item in value:
+                if isinstance(item, str) and item.strip():
+                    words.append(item.strip())
+                elif isinstance(item, dict):
+                    inner = item.get("text") or item.get("on_screen_text")
+                    if isinstance(inner, str) and inner.strip():
+                        words.append(inner.strip())
+            if words:
+                return " ".join(words)
+    return None
+
+
+def _text_verdict(row, expected):
+    """(status, reason_code) for one planned-text row; the stub is never PASS."""
+    if row["extractor"] == STUB_NAME:
+        return UNAVAILABLE, OCR_UNAVAILABLE
+    if _word_set(row.get("texts") or []) == _word_set(expected):
+        return PASS, None
+    return FAIL, TEXT_CHANGED
+
+
+def text_check_rows(segments, ffmpeg=None, extractor=None, frame_count=3,
+                    ffprobe="ffprobe"):
+    """One named verdict row per segment that plans to show words (S75-045).
+
+    Segments with no planned words are skipped (there is nothing to compare).
+    A row is the ``sample_frames_for_text`` shape plus ``segment``,
+    ``expected``, ``status`` (PASS / FAIL / UNAVAILABLE) and ``reason_code``.
+    Sampling and extraction failures become an UNAVAILABLE row instead of
+    raising, so one unreadable clip cannot hide the other rows.
+    """
+    name, _fn = _resolve_extractor(extractor)   # same fail-closed contract
+    rows = []
+    for i, seg in enumerate(segments or []):
+        expected = planned_text(seg)
+        if not expected:
+            continue
+        src = seg.get("src") if isinstance(seg, dict) else seg
+        try:
+            row = dict(sample_frames_for_text(src, ffmpeg=ffmpeg,
+                                              frame_count=frame_count,
+                                              extractor=extractor,
+                                              ffprobe=ffprobe))
+            status, reason = _text_verdict(row, expected)
+        except FrameTextError as exc:
+            row = {"clip": src, "sampled": 0, "text_frames": [],
+                   "texts": [], "extractor": name,
+                   "mode": STUB_NAME if ffmpeg is None else "extract"}
+            status, reason = UNAVAILABLE, getattr(
+                exc, "code", FRAME_EXTRACT_UNAVAILABLE) or OCR_UNAVAILABLE
+        row.update({"segment": i, "expected": expected, "status": status,
+                    "reason_code": reason})
         rows.append(row)
     return rows
 
