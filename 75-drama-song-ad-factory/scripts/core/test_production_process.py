@@ -56,18 +56,108 @@ def confirmed_run(run, *, script=True, song=True, storyboard=True):
     raise AssertionError("full intake did not reach its explicit confirmation: %r" % turn)
 
 
+def gate_module():
+    """The installed signed step gate (S75-002), imported from scripts/core."""
+    from step_gate import step_gate
+    return step_gate
+
+
+def gate_test_contract(gate):
+    """Fixture contract: the shipped stage PATHS, relaxed to plain files.
+
+    The gate compares a seal's artifact set to the declared set, so the fixture
+    must declare exactly the shipped paths. What it cannot do is measure a real
+    mp3, master or lyric sheet, so the per-artifact checks are the shipped
+    contract's job on a real run; here every path only has to be a non-empty
+    file. `factory.py next` verifies the chain under the SHIPPED contract, and
+    the two agree on the paths — which is what the chain is checked on.
+    """
+    shipped = gate.load_contract()
+    return {"order": list(shipped["order"]),
+            "stages": {stage: {"artifacts": [
+                {"path": spec["path"], "kind": "file", "min_bytes": 2}
+                for spec in data.get("artifacts") or []]}
+                for stage, data in shipped["stages"].items()}}
+
+
+def _gate_fixture_files(run, contract, stage):
+    for spec in contract["stages"][stage]["artifacts"]:
+        path = run / spec["path"]
+        if not path.exists():
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(("fixture %s %s" % (stage, spec["path"])).encode("utf-8"))
+
+
+def seal_stage(run, stage, contract=None):
+    """Seal ONE stage through the signed gate; no state-store move.
+
+    S75-002: the shared fixture helper used to write stand-in files and let a
+    test move the row to COMPLETE by hand — the exact bypass the gate closes.
+    """
+    run = Path(run)
+    gate = gate_module()
+    contract = contract or gate_test_contract(gate)
+    _gate_fixture_files(run, contract, stage)
+    key = gate.key_path(str(run))
+    if not Path(key).exists():
+        try:
+            gate.cmd_init(str(run))
+        except gate.Refused:
+            pass
+    try:
+        gate.cmd_open(str(run), stage, contract)
+        return gate.cmd_seal(str(run), stage, "fixture-maker", "fixture-checker",
+                             contract)
+    except gate.Refused as exc:
+        raise AssertionError("stage %r cannot seal: %s %s"
+                             % (stage, exc.code, exc.detail))
+
+
+def seal_chain(run, stages=None):
+    """Seal every stage of the shipped order, first to last."""
+    run = Path(run)
+    gate = gate_module()
+    contract = gate_test_contract(gate)
+    for stage in (stages if stages is not None else contract["order"]):
+        seal_stage(run, stage, contract)
+
+
 def complete_stage(run, stage):
-    """Use existing legal Store transitions; synthetic artifacts are local only."""
+    """Seal the stage through the signed gate, then make the legal transition.
+
+    S75-002: the seal is written first and the transition runs with the gate's
+    completion guard installed, so a row can never claim what the gate has not
+    proven. Same name and signature: importers in other lanes need no edit.
+    """
     run = Path(run)
     _, registry = process._graph()
     for rel in registry[stage].get("required_artifacts", []):
         path = run / rel
         if not path.exists():
             write_json(path, {"fixture": stage})
-    with state_store.Store(run / "control" / "state.sqlite3") as store:
-        store.transition(run.name, stage, "READY", "fixture-worker")
-        store.claim(run.name, stage, "fixture-worker")
-        store.transition(run.name, stage, "COMPLETE", "fixture-worker")
+    gate = gate_module()
+    contract = gate_test_contract(gate)
+    seal_stage(run, stage, contract)
+
+    def guard(run_id, name, proof):
+        try:
+            gate.cmd_verify(str(run), contract, through=name)
+        except gate.Refused as exc:
+            return "%s: %s" % (exc.code, exc.detail)
+        return None
+
+    previous = state_store.COMPLETE_GUARD
+    state_store.COMPLETE_GUARD = guard
+    try:
+        with state_store.Store(run / "control" / "state.sqlite3") as store:
+            row = store.get(run.name, stage)
+            if row["state"] == "NOT_STARTED":
+                store.transition(run.name, stage, "READY", "fixture-worker")
+            if store.get(run.name, stage)["state"] != "RUNNING":
+                store.claim(run.name, stage, "fixture-worker")
+            store.transition(run.name, stage, "COMPLETE", "fixture-worker")
+    finally:
+        state_store.COMPLETE_GUARD = previous
 
 
 def approve_script(run):
