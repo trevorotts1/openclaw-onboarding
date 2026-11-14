@@ -21,16 +21,23 @@
 >     --run-dir <RUN_DIR> --slides slides.json --out <OUT>.pptx
 > ```
 >
-> The entry script runs three **fail-closed** gates and only then dispatches the canonical
-> orchestrator `run_signature_deck.py` → `build_deck.py` (kie.ai GPT Image 2.6 Sunburst only, words baked
-> into each image, zero native on-slide text, full phase-attestation chain):
-> 1. **deps check** — the four runtime deps (`soffice`, `pdftoppm`, `reportlab`, `python-pptx`)
+> The entry script runs seven **fail-closed** gates and only then starts the presentation
+> engine (`presentation_job.py`), which walks every phase of `PIPELINE-MANIFEST.json` in
+> order and refuses to skip (kie.ai GPT Image 2.6 Sunburst only, words baked into each
+> image, zero native on-slide text, full phase-attestation chain). For a phase a person or
+> an AI role must author, the engine writes a work order to
+> `working/work-orders/<phase>.json` and waits for the product:
+> 1. **intake-ledger check** (GATE 0) — the interview ledger must exist and be complete.
+> 2. **intake-trace check** (GATE 0b) — intake must be a real conversation, no owner override.
+> 3. **drift gates** (GATE 0c) — warning-only: drift is reported and the build continues.
+> 4. **deps check** (GATE 1) — the four runtime deps (`soffice`, `pdftoppm`, `reportlab`, `python-pptx`)
 >    or the build refuses to start.
-> 2. **bypass-scan** — refuses to start if any hand-rolled renderer/assembler is present in the
+> 5. **Skill-48 GHL module co-location** (GATE 1b) — the `ghl_media` module must be importable.
+> 6. **bypass-scan** (GATE 2) — refuses to start if any hand-rolled renderer/assembler is present in the
 >    run directory: a non-canonical `*.py` defining a 2048×1152 `Image.new` slide canvas
 >    (`AF-LOCAL-CANVAS`), a native `add_textbox`/`add_text_box` overlay, or a direct kie
 >    `createTask` outside `build_deck.py` (`AF-CANONICAL-RENDER-BYPASS`).
-> 3. **version/hash pin** — the deployed renderer must be in lockstep with the SOP/manifest
+> 7. **version/hash pin** (GATE 3) — the deployed renderer must be in lockstep with the SOP/manifest
 >    stack (`sync_check.py`) and match the pinned governed head.
 >
 > **`python3 working/*.py` — writing and running your own per-deck driver/submit/assemble
@@ -69,49 +76,64 @@ Every deck must carry, and the QC Specialist gates, the operator's ten named req
 
 ---
 
-## Role Roster (34 roles, one unique ROLE number per file)
+## Role Roster (35 roles, one unique ROLE number per file)
 
 > **Fix-77 uniqueness rule:** every role file in this directory carries exactly one ROLE number
 > (the `**Role number:**` header line inside the file), and no two files share one. The numbers
 > below are copied FROM each file's header, not the other way around; `scripts/tests/test_fix77_roster_uniqueness.py`
 > fails CI if the roster and the file headers ever disagree or if a number is claimed twice.
 
-| ROLE | Slug | Role type | File |
-|------|------|-----------|------|
-| ROLE-01 | director-of-presentations | leadership | director-of-presentations.md |
-| ROLE-02 | brand-steward | specialist | brand-steward.md |
-| ROLE-03 | capacity-reliability-engineer | specialist | capacity-reliability-engineer.md |
-| ROLE-04 | deep-research-specialist-presentations | deep-research | deep-research-specialist-presentations.md |
-| ROLE-05 | devils-advocate-presentations | on-call | devils-advocate-presentations.md |
-| ROLE-06 | media-librarian-ghl-updater | specialist | media-librarian-ghl-updater.md |
-| ROLE-07 | offer-price-strategist | specialist | offer-price-strategist.md |
-| ROLE-08 | pptx-assembly-specialist | specialist | pptx-assembly-specialist.md |
-| ROLE-09 | qc-specialist-presentations | qc | qc-specialist-presentations.md |
-| ROLE-10 | slide-copywriter | specialist | slide-copywriter.md |
-| ROLE-11 | slide-image-creator | specialist | slide-image-creator.md |
-| ROLE-12 | slide-submitter | specialist | slide-submitter.md |
-| ROLE-13 | delivery-concierge | specialist | delivery-concierge.md |
-| ROLE-14 | presenter-coach | specialist | presenter-coach.md |
-| ROLE-15 | hook-strategist | specialist | hook-strategist.md |
-| ROLE-16 | healer-presentations | healer | healer-presentations.md |
-| ROLE-17 | brainstorming-buddy-presentations | specialist | brainstorming-buddy-presentations.md |
-| ROLE-18 | typography-architect | specialist | typography-architect.md |
-| ROLE-19 | presenters-guide-specialist | specialist | presenters-guide-specialist.md |
-| ROLE-20 | presenters-speech-writer | specialist | presenters-speech-writer.md |
-| ROLE-21 | audio-demonstration-specialist | specialist | audio-demonstration-specialist.md |
-| ROLE-22 | first-time-onboarding-presentations | specialist | first-time-onboarding-presentations.md |
-| ROLE-23 | content-to-presentation-architect | specialist | content-to-presentation-architect.md |
-| ROLE-23B | attention-content-strategist | strategist | attention-content-strategist.md |
-| ROLE-24 | prompt-author-presentations | specialist | prompt-author-presentations.md |
-| ROLE-25 | qc-specialist-prompt-presentations | qc | qc-specialist-prompt-presentations.md |
-| ROLE-26 | qc-specialist-image-presentations | qc | qc-specialist-image-presentations.md |
-| ROLE-27 | qc-specialist-typography-presentations | qc | qc-specialist-typography-presentations.md |
-| ROLE-28 | qc-specialist-speech-presentations | qc | qc-specialist-speech-presentations.md |
-| ROLE-29 | fish-audio-expression-specialist | specialist | fish-audio-expression-specialist.md |
-| ROLE-30 | qc-specialist-signature-presentations | qc | qc-specialist-signature-presentations.md |
-| ROLE-31 | signature-presentation-architect | specialist | signature-presentation-architect.md |
-| ROLE-32 | representation-casting-director | specialist | representation-casting-director.md |
-| ROLE-33 | image-grounding-steward | specialist | image-grounding-steward.md |
+| ROLE | Slug | Role type | File | How it is called |
+|------|------|-----------|------|------------------|
+| ROLE-01 | director-of-presentations | leadership | director-of-presentations.md | engine phase |
+| ROLE-02 | brand-steward | specialist | brand-steward.md | engine phase |
+| ROLE-03 | capacity-reliability-engineer | specialist | capacity-reliability-engineer.md | called by another role |
+| ROLE-04 | deep-research-specialist-presentations | deep-research | deep-research-specialist-presentations.md | engine phase |
+| ROLE-05 | devils-advocate-presentations | on-call | devils-advocate-presentations.md | on call |
+| ROLE-06 | media-librarian-ghl-updater | specialist | media-librarian-ghl-updater.md | engine phase |
+| ROLE-07 | offer-price-strategist | specialist | offer-price-strategist.md | engine phase |
+| ROLE-08 | pptx-assembly-specialist | specialist | pptx-assembly-specialist.md | engine phase |
+| ROLE-09 | qc-specialist-presentations | qc | qc-specialist-presentations.md | engine phase |
+| ROLE-10 | slide-copywriter | specialist | slide-copywriter.md | engine phase |
+| ROLE-11 | slide-image-creator | specialist | slide-image-creator.md | engine phase |
+| ROLE-12 | slide-submitter | specialist | slide-submitter.md | called by another role |
+| ROLE-13 | delivery-concierge | specialist | delivery-concierge.md | engine phase |
+| ROLE-14 | presenter-coach | specialist | presenter-coach.md | called by another role |
+| ROLE-15 | hook-strategist | specialist | hook-strategist.md | called by another role |
+| ROLE-16 | healer-presentations | healer | healer-presentations.md | on call |
+| ROLE-17 | brainstorming-buddy-presentations | specialist | brainstorming-buddy-presentations.md | front door, before the engine |
+| ROLE-18 | typography-architect | specialist | typography-architect.md | engine phase |
+| ROLE-19 | presenters-guide-specialist | specialist | presenters-guide-specialist.md | engine phase |
+| ROLE-20 | presenters-speech-writer | specialist | presenters-speech-writer.md | engine phase |
+| ROLE-21 | audio-demonstration-specialist | specialist | audio-demonstration-specialist.md | engine phase |
+| ROLE-22 | first-time-onboarding-presentations | specialist | first-time-onboarding-presentations.md | front door, before the engine |
+| ROLE-23 | content-to-presentation-architect | specialist | content-to-presentation-architect.md | engine phase |
+| ROLE-23B | attention-content-strategist | strategist | attention-content-strategist.md | engine phase |
+| ROLE-24 | prompt-author-presentations | specialist | prompt-author-presentations.md | engine phase |
+| ROLE-25 | qc-specialist-prompt-presentations | qc | qc-specialist-prompt-presentations.md | engine phase |
+| ROLE-26 | qc-specialist-image-presentations | qc | qc-specialist-image-presentations.md | engine phase |
+| ROLE-27 | qc-specialist-typography-presentations | qc | qc-specialist-typography-presentations.md | engine phase |
+| ROLE-28 | qc-specialist-speech-presentations | qc | qc-specialist-speech-presentations.md | engine phase |
+| ROLE-29 | fish-audio-expression-specialist | specialist | fish-audio-expression-specialist.md | engine phase |
+| ROLE-30 | qc-specialist-signature-presentations | qc | qc-specialist-signature-presentations.md | engine phase |
+| ROLE-31 | signature-presentation-architect | specialist | signature-presentation-architect.md | engine phase |
+| ROLE-32 | representation-casting-director | specialist | representation-casting-director.md | called by another role |
+| ROLE-33 | image-grounding-steward | specialist | image-grounding-steward.md | called by another role |
+| ROLE-34 | scripts-specialist | specialist | scripts-specialist.md | called by another role |
+
+A role marked 'called by another role' is not started by the engine. Its work happens only when the role named in its own procedure calls it.
+
+### Files a procedure requires that no phase produces
+
+| File | Read by (procedures under `sops/`) | Role that is supposed to write it |
+|------|--------------------------------------|-----------------------------------|
+| hook_package.json | `audio-demonstration-specialist-sops.md`, `hook-strategist-sops.md`, `qc-specialist-presentations-sops.md`, `slide-copywriter-sops.md`, `SOP-DESIGN-02-PURE-TYPOGRAPHY-HOOK-SLIDES.md`, `SOP-SIGPRES-06-FRAMES-HOOK-DOCTRINE-AND-STRUCTURE-GATE.md`, `SOP-SLIDE-03-HOOK-DOCTRINE.md`, `SOP-SLIDE-00-MASTER-QC-AUTOFAIL-RULESET.md` | Hook Strategist |
+| mission_prd.json | `capacity-reliability-engineer-sops.md`, `director-of-presentations-sops.md`, `hook-strategist-sops.md`, `media-librarian-ghl-updater-sops.md`, `pptx-assembly-specialist-sops.md`, `qc-specialist-presentations-sops.md`, `slide-copywriter-sops.md`, `SOP-SLIDE-00-MASTER-QC-AUTOFAIL-RULESET.md` | Director of Presentations |
+| price_ladder.json | `audio-demonstration-specialist-sops.md`, `devils-advocate-presentations-sops.md`, `director-of-presentations-sops.md`, `offer-price-strategist-sops.md`, `qc-specialist-presentations-sops.md`, `SALES-CHECKOUT-BUILDER-SOP.md`, `signature-presentation-architect-sops.md`, `slide-copywriter-sops.md`, `slide-image-creator-sops.md`, `SOP-PITCH-06-PITCH-ENGINES.md`, `SOP-SLIDE-00-MASTER-QC-AUTOFAIL-RULESET.md`, `typography-architect-sops.md` | Offer Price Strategist |
+| offer_stack.json | `offer-price-strategist-sops.md`, `qc-specialist-presentations-sops.md`, `SOP-DESIGN-01-CREATIVE-TYPOGRAPHY-GUIDE.md`, `SOP-PITCH-02-VALUE-STACK-AND-PROMISES.md`, `SOP-PITCH-06-PITCH-ENGINES.md` | Offer Price Strategist |
+| audience_say_tags.json | `qc-specialist-presentations-sops.md`, `slide-copywriter-sops.md`, `SOP-SLIDE-02-AUDIENCE-FACING-ONLY.md`, `SOP-SLIDE-00-MASTER-QC-AUTOFAIL-RULESET.md` | Slide Copywriter |
+| presenter_notes.json | `director-of-presentations-sops.md`, `pptx-assembly-specialist-sops.md`, `presenter-coach-sops.md`, `qc-specialist-presentations-sops.md` | Director of Presentations |
+| approval_record.json | `director-of-presentations-sops.md` | Director of Presentations |
 
 **New in the density-floor overhaul (2026-06-14):** ROLE-18 Typography Architect (locks the type/layout/treatment system in Phase 1.5, before any prompt), ROLE-19 Presenter's Guide Specialist (speaker-facing outline PDF + Notion), ROLE-20 Presenter's Speech Writer (word-for-word script at 130 wpm + audio demo via Fish > ElevenLabs > local + ffmpeg chunk/stitch), ROLE-29 Fish Audio / Expression Specialist (expression-tags the speech), ROLE-22 First-Time-User Onboarding (orients a newcomer once, then hands to the Brainstorming Buddy).
 
@@ -155,7 +177,7 @@ All 56 declared phases are listed once, in the sequence below, in the manifest's
 19. **`P-U-BRIEF-VSL`** (order 4.42, script: `scripts/page_brief.py`, CONDITIONAL -- defers unless `intake.want_vsl_page == "yes"`) -- Upsell VSL Page Brief Emit (Item 20 page-brief seam: writes the versioned page-brief JSON the page builder consumes). Owned by `media-librarian-ghl-updater`. Produces `working/pages/page-brief-vsl.v*.json`. Full contract: the `P-U-BRIEF-VSL` row in [`PIPELINE-MANIFEST.json`](../../../../universal-sops/presentation-slide-craft/PIPELINE-MANIFEST.json).
 20. **`PF-DESIGN`** (order 4.5) -- typography-architect locks `type_system` + `layout_map` + `treatment_table` and runs the self-audit before any prompt is written.
 21. **`P-TYPO-QC`** (order 4.6) -- qc-specialist-typography-presentations independently reviews the design brief.
-22. **`P4-PROMPT`** (order 4.7, fanout by slide, max None units) -- prompt-author-presentations writes each slide's image prompt to the treatment table, to the 9,000-character standard.
+22. **`P4-PROMPT`** (order 4.7, fanout by slide, max None units) -- prompt-author-presentations writes each slide's image prompt to the treatment table, to the rule 12 prompt band (16,000 to 20,000 characters for the current image model).
 23. **`P-PROMPT-QC`** (order 4.8, fanout by slide, max None units) -- qc-specialist-prompt-presentations independently (dual-scored) reviews the prompts.
 24. **`P-STYLE-SPEC`** (order 4.84, fanout by slide, max None units) -- Style Preview Spec (fanout unit: 3 slide-bound units each author one attention-grade variant + representative slide, aggregated to the spec before the 9 samples render). Owned by `brand-steward`. Produces `working/copy/style_preview_spec.json`. Full contract: [`sops/brand-steward-sops.md`](sops/brand-steward-sops.md) and the `P-STYLE-SPEC` row in [`PIPELINE-MANIFEST.json`](../../../../universal-sops/presentation-slide-craft/PIPELINE-MANIFEST.json).
 25. **`P-STYLE-PREVIEW`** (order 4.85, script: `scripts/build_deck.py`) -- slide-image-creator renders 9 samples across 3 style variants; the owner picks 1 via their OWN gateway before the full render, and the winner's 3 representative renders are LOCKED + reused so Kie never double-charges.
