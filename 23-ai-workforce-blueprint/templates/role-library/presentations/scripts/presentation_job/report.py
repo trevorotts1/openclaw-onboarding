@@ -245,13 +245,6 @@ class Reporter:
         the ten-minute window seconds earlier -- a sentence the client must
         receive, never a duplicate.
 
-        PD-206b: `force=True` bypasses the throttle for a message the caller has
-        already proven is due exactly once (the operator-review sentence is
-        guarded by the phase's own `operator_review_notified` flag). Without it
-        the message could be swallowed because the phase's start message stamped
-        the ten-minute window seconds earlier -- a sentence the client must
-        receive, never a duplicate.
-
         PRES-052: every dispatch outcome is ALSO observed into the supervised
         relay ledger (presentation_job.relay.observe_dispatch) with the
         phase as the stage — the relay is the live, acknowledged view active
