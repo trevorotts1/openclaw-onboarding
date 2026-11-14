@@ -173,6 +173,9 @@ if (look) {
   draw(look);
   rule("(2) the page never draws \"Tap a link to watch a sample.\"",
     !/Tap a link to watch a sample/i.test(pageText()), pageText().slice(0, 200));
+  // the rule is about a card with NO sample_url, not about the export's own
+  // look screen: lane E's export now carries the real links, so strip them.
+  draw({ ...look, options: look.options.map(({ sample_url, ...rest }) => rest) });
   rule("(2) no sample link is drawn when no option carries a sample_url",
     !walk(registry.main).some((n) => n.tagName === "A" && String(n.textContent) === "Watch a sample"));
 }
