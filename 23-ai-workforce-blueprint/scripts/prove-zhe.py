@@ -310,6 +310,7 @@ def _load_decline():
 # checks that need them FAIL CLOSED — a missing checker can never silently green a gate.
 _floor_module = None
 _board_join_module = None
+_qc_paths_module = None
 
 
 def _load_floor_module():
@@ -342,6 +343,46 @@ def _load_board_join_module():
     except Exception:
         _board_join_module = None
     return _board_join_module
+
+
+def _load_qc_paths_module():
+    """_qc_paths.py — the ONE live-departments-tree resolver (BU-103). Loaded the
+    same defensive way as the sibling modules above: None on failure, and every
+    caller treats None as "no resolver answer" (today's roots stay in force)."""
+    global _qc_paths_module
+    if _qc_paths_module is not None:
+        return _qc_paths_module
+    try:
+        import importlib.util
+        path = os.path.join(HERE, "_qc_paths.py")
+        spec = importlib.util.spec_from_file_location("qc_paths_zhe", path)
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        _qc_paths_module = mod
+    except Exception:
+        _qc_paths_module = None
+    return _qc_paths_module
+
+
+def _live_departments_dir(fs, ws, state):
+    """The live departments folder from _qc_paths.resolve_live_departments_dir()
+    (BU-103; BU-58 makes this prover consume it), or None when it names none.
+
+    Local roots only: for a RemoteFS these paths belong to another machine, and a
+    Path test here would measure THIS host's disk instead of the box's — a wrong
+    answer, not a missing one (the same trap verify-wiring.sh's scoring avoids).
+    A remote box keeps the roots this file has always used."""
+    if not isinstance(fs, LocalFS):
+        return None
+    mod = _load_qc_paths_module()
+    if mod is None:
+        return None
+    try:
+        folder, _reason = mod.resolve_live_departments_dir(
+            state if isinstance(state, dict) else {}, ws)
+    except Exception:  # noqa: BLE001
+        return None
+    return str(folder) if folder is not None else None
 
 
 # ---------------------------------------------------------------------------
@@ -605,13 +646,24 @@ def workspace_root(fs, oc_root, cfg):
     return os.path.join(oc_root, "workspace")
 
 
-def discover_departments(fs, oc_root):
+def discover_departments(fs, oc_root, ws=None, state=None):
     """Discover department folders (built-as-files). Mirrors materialize-dept-agents.sh
-    DEPT_ROOTS. Returns a dict slug -> workspace_path (first root wins)."""
-    roots = [
+    DEPT_ROOTS. Returns a dict slug -> workspace_path (first root wins).
+
+    The LIVE tree comes first (BU-58): _qc_paths.resolve_live_departments_dir() is
+    the one resolver this prover, the repair pipeline and the other gates share
+    (BU-103), so a box whose departments live outside <oc_root>/workspace — the
+    launch layout, where the agents run from a company folder's tree while state
+    records a sparse second copy — is measured on the tree the agents actually use.
+    No resolver answer (or a remote box) => the roots below, unchanged."""
+    roots = []
+    live = _live_departments_dir(fs, ws or os.path.join(oc_root, "workspace"), state)
+    if live:
+        roots.append(live)
+    roots.extend([
         os.path.join(oc_root, "workspace", "departments"),
         os.path.join(oc_root, "workspaces", "command-center"),
-    ]
+    ])
     found = {}
     for root in roots:
         if not fs.isdir(root):
@@ -654,7 +706,7 @@ def required_departments(fs, oc_root, ws, state, folders):
     canon = bj._load_canonical_slug()
     key = bj.make_keyer(df, canon)
 
-    company_dir, _ = _resolve_company_dirs(fs, ws, oc_root)
+    company_dir, _ = _resolve_company_dirs(fs, ws, oc_root, state)
     chosen = check_standard_ready_chosen_artifact(fs, company_dir, None).get("chosen") or []
     source = "departments.json"
     if not chosen:
@@ -713,10 +765,11 @@ def registered_agent_ids(cfg):
     return ids
 
 
-def check_depts_registered(fs, oc_root, cfg, required=None):
+def check_depts_registered(fs, oc_root, cfg, required=None, ws=None, state=None):
     """`required` is required_departments()'s label -> spellings map; None holds
-    every discovered folder (the pre-requirement behaviour)."""
-    depts = discover_departments(fs, oc_root)
+    every discovered folder (the pre-requirement behaviour). `ws`/`state` reach
+    discover_departments() so check (a) measures the same live tree it reports."""
+    depts = discover_departments(fs, oc_root, ws, state)
     if required is None:
         required = {s: {s} for s in depts}
     agent_ids = {a.lower() for a in registered_agent_ids(cfg)}
@@ -1233,12 +1286,16 @@ def check_provisioning_receipt(fs, oc_root, ws, dept_slugs):
 # recorded as skipped (not pass, not fail): agents-registered, personas-canonical,
 # AGENTS.md doctrine, provisioning-receipt equality.
 
-def _resolve_company_dirs(fs, ws, oc_root):
+def _resolve_company_dirs(fs, ws, oc_root, state=None):
     """Resolve (company_dir, departments_dir) for the standard-ready subset.
 
     A LocalFS root is walked DIRECTLY (the fixture/test layout the phase-4 verification
     gate pins). A remote box is probed with the same shell probes the rest of the prover
     uses (RemoteFS). Candidates, first hit wins:
+      0. the PARENT of the live departments folder  (BU-58: the folder
+                                                 _qc_paths.resolve_live_departments_dir()
+                                                 names first — the tree the agents run
+                                                 from, never a recorded companyRoot)
       1. <ws>/zero-human-company/<company>/     (legacy ZHC layout)
       2. <ws>/workspaces/command-center/        (CC-workspace layout: departments/ +
                                                  departments.json at its root)
@@ -1257,6 +1314,12 @@ def _resolve_company_dirs(fs, ws, oc_root):
 
     def _isfile(p):
         return fs.isfile(p)
+
+    live = _live_departments_dir(fs, ws, state)
+    if live:
+        cd = os.path.dirname(live.rstrip(os.sep))
+        if _isdir(live) and _isfile(os.path.join(cd, "departments.json")):
+            return cd, live
 
     zhc = os.path.join(ws, "zero-human-company")
     if _isdir(zhc):
@@ -1775,7 +1838,7 @@ def prove(box_id, client, fs, local_root=None, with_subprovers=False):
                 "agents_md_doctrine",                # stamped at interviewComplete
                 "provisioning_receipt_equality",     # written by the apply-diff build
             ]
-            company_dir, departments_dir = _resolve_company_dirs(fs, ws, oc_root)
+            company_dir, departments_dir = _resolve_company_dirs(fs, ws, oc_root, state)
             # Hermetic for local roots: prove the SAME tree the artifact/board checks
             # use. Remote boxes resolve via evaluate_floor's own resolver.
             floor_dd = departments_dir if isinstance(fs, LocalFS) else None
@@ -1803,9 +1866,9 @@ def prove(box_id, client, fs, local_root=None, with_subprovers=False):
         return receipt
 
     # ----- THE FOUR ZHE WRAPPINGS -----
-    folders = discover_departments(fs, oc_root)
+    folders = discover_departments(fs, oc_root, ws, state)
     required, required_source, stray = required_departments(fs, oc_root, ws, state, folders)
-    a = check_depts_registered(fs, oc_root, cfg, required)
+    a = check_depts_registered(fs, oc_root, cfg, required, ws, state)
     a["required_source"] = required_source
     a["stray_template_folders"] = stray
     dept_slugs = a["departments_present"]
