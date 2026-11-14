@@ -708,6 +708,10 @@ fi
 #  FLEET_PREFLIGHT_ENFORCE_FROM; storage and memory pressure are enforced now.
 #  A missing helper or python3, or any internal error, PROCEEDS (fail open).
 #  FLEET_PREFLIGHT_BYPASS=1 skips it (operator).
+#  SCOPE (BFX-010): --onboarding-only / ONBOARDING_ONLY=1 is a repo-only run, and --only
+#  "<skills>" is judged by the providers those skills use (PROVIDER_SKILLS in the helper): a
+#  provider billing failure that the run cannot touch never pauses it. FLEET_PREFLIGHT_NO_NOTIFY=1
+#  sends no client note.
 # ============================================================
 fleet_preflight_checks() {
     if [ "${FLEET_PREFLIGHT_BYPASS:-0}" = "1" ]; then
@@ -722,8 +726,24 @@ fleet_preflight_checks() {
     if [ -z "$_py" ] || ! command -v python3 >/dev/null 2>&1; then
         echo "  [preflight] helper or python3 not available on this box -- proceeding (fail open)"; return 0
     fi
+    # BFX-010 scope: a repo-only run (--onboarding-only / ONBOARDING_ONLY=1) and an --only run
+    # of provider-unrelated skills skip the provider-billing gates; storage and memory still
+    # apply. This block runs before main() parses its arguments, so read the saved ones here.
+    local _scope="" _only="" _a _next=0
+    [ "${ONBOARDING_ONLY:-0}" = "1" ] && _scope="repo-only"
+    for _a in ${SELF_SYNC_ARGS[@]+"${SELF_SYNC_ARGS[@]}"}; do
+        if [ "$_next" = "1" ]; then _only="$_a"; _next=0; continue; fi
+        case "$_a" in
+            --onboarding-only) _scope="repo-only" ;;
+            --only) _next=1 ;;
+            --only=*) _only="${_a#--only=}" ;;
+        esac
+    done
+    local _scope_args=()
+    [ -n "$_scope" ] && _scope_args+=(--scope "$_scope")
+    [ -n "$_only" ] && _scope_args+=(--only "$_only")
     _rc=0
-    _out="$(python3 "$_py" --phase checks --root "${OC_CONFIG:-}" 2>&1)" || _rc=$?
+    _out="$(python3 "$_py" --phase checks --root "${OC_CONFIG:-}" ${_scope_args[@]+"${_scope_args[@]}"} 2>&1)" || _rc=$?
     printf '%s\n' "$_out" | sed 's/^/  /'
     if [ "$_rc" = "10" ]; then
         echo ""
