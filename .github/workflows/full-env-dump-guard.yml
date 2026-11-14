@@ -36,6 +36,8 @@ concurrency:
 
 jobs:
   full-env-dump-guard:
+    # Batch pull requests run only the required checks (Trevor order 2026-11-13).
+    if: ${{ !startsWith(github.head_ref, 'batch/') }}
     name: full-env-dump guard (pm2 jlist/prettylist/--json ban, warn-mode)
     runs-on: ubuntu-latest
     steps:

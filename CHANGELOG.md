@@ -1,4 +1,11 @@
 ## [v27.1.72]  -  2026-11-12  -  Full-read guard: fleet-roll install wiring (installer, read_skill allow-lists, AGENTS.md rule stamper)
+## [Unreleased]  -  2026-11-13  -  Batch pull requests run only the required checks
+
+- Every pull_request workflow that does not produce one of the 8 required checks (69 workflows, 105 jobs) now skips its jobs when the head branch starts with `batch/`. The three workflows that produce the required checks (`ghl-mcp-supervised-guard.yml`, `qc-static.yml`, `version-consistency.yml`) are untouched, and push-to-main triggers are unchanged, so main still runs everything after a merge.
+- New guard `scripts/ci/batch-required-only-check.py` (folded into fast-guards as `batch-required-only-guard`, with a self-test) fails if a required-check workflow gets the skip or a new pull_request workflow lacks it.
+- No guard or workflow is removed; duplicate findings are listed in the PR description for the separate audit.
+- No skill content changed, so no version bump. Migration: CI only; not rolled onto any client box.
+- Risk: LOW. Members run their own checks before QC; a skipped job reports "skipped", not failed.
 
 ## [Unreleased]  -  2026-11-12  -  Owner approval flow: the owner always gets a link (Skills 35, 44, 83 + shared helper)
 
