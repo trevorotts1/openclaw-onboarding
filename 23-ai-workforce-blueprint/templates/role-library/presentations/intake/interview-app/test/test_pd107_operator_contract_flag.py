@@ -85,9 +85,10 @@ def pd004b_driver(tmp_path: pathlib.Path) -> pathlib.Path:
     archive = subprocess.run(["git", "-C", str(_repo_root()), "archive",
                               PD004B_COMMIT, f"{REL}/intake", f"{REL}/scripts"],
                              capture_output=True)
-    if archive.returncode:
-        pytest.skip(f"PD-004b tree unavailable ({PD004B_COMMIT}) and the "
-                    "checked-out driver does not carry --operator-contract yet")
+    assert archive.returncode == 0, (
+        f"PD-004b tree unavailable ({PD004B_COMMIT}) and the checked-out "
+        f"driver does not carry --operator-contract yet: "
+        f"{archive.stderr.decode(errors='replace')}")
     untar = subprocess.run(["tar", "-x", "-C", str(root)],
                            input=archive.stdout, capture_output=True)
     assert untar.returncode == 0, untar.stderr
