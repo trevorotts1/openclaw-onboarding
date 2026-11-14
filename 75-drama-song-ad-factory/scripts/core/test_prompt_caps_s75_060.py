@@ -12,6 +12,10 @@ Proves (zero network, zero spend, no repository writes):
   4. ``suno_extend.catalog()`` loads the 68 work copy with NO path argument, in
      the repository layout and in an installed layout built in a temp folder
      (75-... beside 68-kie-audio).
+  5. that resolution follows module position, not import resolution: a tree
+     whose locator and walk disagree returns the copy beside the module, and
+     the 999-setup installer layout (walk finds nothing) still resolves via
+     the locator.
 
 Run: python3 -B scripts/core/test_prompt_caps_s75_060.py
 Exit 0 = all pass, 1 = failures.
@@ -186,11 +190,141 @@ def test_catalog_loads_with_no_path_argument():
         shutil.rmtree(tmp, ignore_errors=True)
 
 
+def _write_catalog(directory, marker):
+    """A minimal 68 catalog whose extend route names ``marker``."""
+    os.makedirs(os.path.join(directory, "68-kie-audio"), exist_ok=True)
+    doc = {"entries": [{
+        "canonical_model_id": "suno-extend",
+        "route_models": {"current": "suno-extend/" + marker,
+                         "current_endpoint": "https://" + marker + ".invalid/x"},
+        "model_enum": ["V6"],
+    }]}
+    with open(os.path.join(directory, "68-kie-audio", "models.json"), "w",
+              encoding="utf-8") as f:
+        json.dump(doc, f)
+
+
+def _run_loader(script, cwd):
+    env = dict(os.environ, PYTHONDONTWRITEBYTECODE="1")
+    run = subprocess.run([sys.executable, "-B", "-c", script], cwd=cwd,
+                         capture_output=True, text=True, timeout=120, env=env)
+    try:
+        out = json.loads(run.stdout.strip().split("\n")[-1])
+    except (ValueError, IndexError):
+        out = {}
+    return run, out
+
+
+# ---- 5. ordering is module position, not import resolution ---------------
+def test_catalog_order_is_module_position_not_import():
+    """Locator and walk disagree -> the copy beside THIS module wins.
+
+    Tree A holds the module copy and its own 68-kie-audio; tree B holds a
+    ``prompt_limits`` (and a different 68-kie-audio) that is the one an
+    ``import`` resolves. Resolution must follow module position: before the
+    fix, ``find_catalogs()`` won and the shadow catalog came back silently.
+    """
+    extend_src = os.path.join(HERE, "audio_c3", "extend", "suno_extend.py")
+    shadow_src = os.path.join(HERE, "prompt_limits.py")
+    tmp = tempfile.mkdtemp(prefix="s75-060-divergence-")
+    try:
+        a = os.path.join(tmp, "A")
+        b = os.path.join(tmp, "B")
+        a_extend = os.path.join(a, "75-drama-song-ad-factory", "scripts",
+                                "core", "audio_c3", "extend")
+        os.makedirs(a_extend)
+        os.makedirs(b)
+        shutil.copy(extend_src, os.path.join(a_extend, "suno_extend.py"))
+        shutil.copy(shadow_src, os.path.join(b, "prompt_limits.py"))
+        _write_catalog(a, "tree-a-walk")
+        _write_catalog(b, "shadow-b-locator")
+        script = (
+            "import importlib.util, json, sys\n"
+            "R = %r\n"
+            "s = importlib.util.spec_from_file_location('prompt_limits',\n"
+            "        R + '/B/prompt_limits.py')\n"
+            "pl = importlib.util.module_from_spec(s)\n"
+            "s.loader.exec_module(pl)\n"
+            "sys.modules['prompt_limits'] = pl\n"
+            "m = R + '/A/75-drama-song-ad-factory/scripts/core/audio_c3/"
+            "extend/suno_extend.py'\n"
+            "s2 = importlib.util.spec_from_file_location('se_divergence', m)\n"
+            "SE = importlib.util.module_from_spec(s2)\n"
+            "s2.loader.exec_module(SE)\n"
+            "print(json.dumps({'chosen': str(SE._catalog_path()),\n"
+            "                  'locator': str(pl.find_catalogs()[0]),\n"
+            "                  'route': SE.route_model()}))\n"
+            % tmp
+        )
+        run, out = _run_loader(script, tmp)
+        check("the divergent tree loads cleanly", run.returncode == 0,
+              (run.returncode, run.stderr[-800:]))
+        chosen = out.get("chosen", "")
+        locator = out.get("locator", "")
+        check("the locator really disagrees in this tree",
+              os.path.join(b, "68-kie-audio", "models.json") == os.path.abspath(locator),
+              locator)
+        check("the catalog beside the module wins over the shadow locator",
+              os.path.abspath(chosen) == os.path.join(
+                  a, "68-kie-audio", "models.json"), chosen)
+        check("the winning catalog is the one actually read",
+              out.get("route") == "suno-extend/tree-a-walk", out.get("route"))
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+def test_installed_layout_still_resolves_via_the_locator():
+    """The 999-setup installer layout: the walk finds nothing, the locator does."""
+    extend_src = os.path.join(HERE, "audio_c3", "extend", "suno_extend.py")
+    core_src = os.path.dirname(os.path.abspath(PL.__file__))
+    tmp = tempfile.mkdtemp(prefix="s75-060-installer-")
+    try:
+        core = os.path.join(tmp, "skills", "75-drama-song-ad-factory",
+                            "scripts", "core")
+        os.makedirs(os.path.join(core, "audio_c3", "extend"))
+        os.makedirs(os.path.join(tmp, "installer-registration", "helpers",
+                                 "68-kie-audio"))
+        shutil.copy(extend_src, os.path.join(core, "audio_c3", "extend",
+                                             "suno_extend.py"))
+        shutil.copy(os.path.join(core_src, "prompt_limits.py"),
+                    os.path.join(core, "prompt_limits.py"))
+        target = os.path.join(tmp, "installer-registration", "helpers",
+                              "68-kie-audio", "models.json")
+        with open(target, "w", encoding="utf-8") as f:
+            json.dump({"entries": [{
+                "canonical_model_id": "suno-extend",
+                "route_models": {"current": "suno-extend/installer-locator",
+                                 "current_endpoint": "https://installer.invalid/x"},
+                "model_enum": ["V6"]}]}, f)
+        script = (
+            "import importlib.util, json\n"
+            "m = %r\n"
+            "s = importlib.util.spec_from_file_location('se_installer', m)\n"
+            "SE = importlib.util.module_from_spec(s)\n"
+            "s.loader.exec_module(SE)\n"
+            "print(json.dumps({'chosen': str(SE._catalog_path()),\n"
+            "                  'route': SE.route_model()}))\n"
+            % os.path.join(core, "audio_c3", "extend", "suno_extend.py")
+        )
+        run, out = _run_loader(script, tmp)
+        check("the installer layout runs the loader cleanly",
+              run.returncode == 0, (run.returncode, run.stderr[-800:]))
+        check("the walk finds nothing there, so the locator names the catalog",
+              os.path.abspath(out.get("chosen", "")) == target, out.get("chosen"))
+        check("the installer catalog is the one actually read",
+              out.get("route") == "suno-extend/installer-locator",
+              out.get("route"))
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
 def main():
     test_every_sold_model_has_a_cap_or_a_named_refusal()
     test_the_two_new_rows_carry_their_source()
     test_a_sold_model_with_no_cap_refuses()
     test_catalog_loads_with_no_path_argument()
+    test_catalog_order_is_module_position_not_import()
+    test_installed_layout_still_resolves_via_the_locator()
     print()
     if FAILS:
         print("FAILED: %d" % len(FAILS))
