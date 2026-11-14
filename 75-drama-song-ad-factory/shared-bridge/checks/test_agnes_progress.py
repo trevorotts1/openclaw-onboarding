@@ -15,8 +15,9 @@ check discriminates rather than that nothing ran:
      absent when it is finished - the same file, the same command, one field
   C  a reply set the card cannot complete refuses the order with
      REPLAY_QUESTION_MISMATCH naming both counts (the accepted answers and the
-     card's own question count), cancels it with that reason, and writes no run
-     folder: one set that stops short, one with a reply that does not fit
+     card's own question count), asks the client for a second look with a
+     `needs_you` state event - never a cancel - and writes no run folder: one
+     set that stops short, one with a reply that does not fit
   D  a complete replay still runs - including one that only completes because a
      remembered "no" removed the AGNES screen
   E  the refusal discriminates: the same card and the same replies do not
@@ -53,6 +54,7 @@ SENTINEL = "sk-DEADBEEF-not-a-real-key-1234567890"
 #: One order, one title: what the fake studio answers `GET /api/studio/orders/<id>`.
 STATE = {"line": None, "order": {}}
 RECORDED = []          # every request the bridge made: method, path, body, host
+STDERR = {"text": ""}  # the last poll's stderr: the operator's own line
 
 
 def _run(args, env=None):
@@ -336,6 +338,7 @@ def _scenario(name, replies, order_id=None, skill_root=None, client_dir="",
     if client_dir:
         argv += ["--client-dir", str(client_dir)]
     proc = _run(argv, env=_env("state-" + name))
+    STDERR["text"] = proc.stderr
     out = {}
     if proc.stdout.strip():
         try:
@@ -412,18 +415,27 @@ def check_b_progress_only_while_active():
                 % (carried, finished_absent, none_absent, code, code2, code3))
 
 
+#: What the bridge asks the service to show the client when a replay count
+#: cannot complete the card (`studio_bridge._refuse_mismatch`).
+CLIENT_MISMATCH_REASON = ("A few of your answers need a second look. "
+                          "Open your studio page and tap Continue.")
+
+
 def _replay_scenario(name, replies, client_dir="", skill_root=None):
     code, out, rec, run_dir = _scenario(name, replies, client_dir=client_dir,
                                         skill_root=skill_root)
-    cancels = [r["body"] for r in rec
-               if r["method"] == "POST" and "/state" in r["path"]
-               and r["body"].get("event") == "cancel"]
-    reason = cancels[0].get("reason", "") if cancels else ""
+    needs_you = [r["body"] for r in rec
+                 if r["method"] == "POST" and "/state" in r["path"]
+                 and r["body"].get("event") == "needs_you"]
+    cancelled = [r["body"] for r in rec
+                 if r["method"] == "POST" and "/state" in r["path"]
+                 and r["body"].get("event") == "cancel"]
     factory_ran = (run_dir / "control" / "card-answers.json").exists()
-    return code, out, reason, cancels, run_dir, factory_ran, rec
+    return (code, out, needs_you, cancelled, run_dir, factory_ran, rec,
+            STDERR["text"])
 
 
-def check_c_mismatch_refused_and_cancelled():
+def check_c_mismatch_refused_and_waiting():
     # 8 questions on this shape: purpose + its two follow-ups + four plain
     # screens + AGNES. A set that stops short, and one with a reply that does
     # not fit the screen it landed on (the shifted replay this guard exists for).
@@ -431,7 +443,8 @@ def check_c_mismatch_refused_and_cancelled():
     shifted = _replay_scenario("c-shifted",
                                ["1"] * 3 + ["9"] + ["1"] * 3 + ["yes"])
     bad = []
-    for label, (code, out, reason, cancels, run_dir, factory_ran, _) in (
+    for label, (code, out, needs_you, cancelled, run_dir, factory_ran, _,
+                stderr) in (
             ("too few replies", short), ("one reply that does not fit", shifted)):
         want_code = "REPLAY_QUESTION_MISMATCH"
         if code != SB.EXIT["refused"]:
@@ -445,18 +458,27 @@ def check_c_mismatch_refused_and_cancelled():
                        % (label, {k: out.get(k) for k in ("replies", "questions")}))
         if want_code not in str(out.get("message", "")):
             bad.append("%s: message %r" % (label, out.get("message")))
-        if not (cancels and want_code in reason
-                and str(out.get("replies")) in reason
-                and str(out.get("questions")) in reason):
-            bad.append("%s: cancel reason %r" % (label, reason))
+        # the client is asked for a second look, in plain words, and NOT cancelled
+        if not needs_you:
+            bad.append("%s: no needs_you state event: %r" % (label, needs_you))
+        elif needs_you[-1].get("reason") != CLIENT_MISMATCH_REASON:
+            bad.append("%s: client reason %r" % (label, needs_you[-1].get("reason")))
+        if cancelled:
+            bad.append("%s: the order was cancelled: %r" % (label, cancelled))
+        # the operator still gets the code and BOTH counts on stderr
+        if not (want_code in stderr
+                and ("%d replies" % out.get("replies")) in stderr
+                and ("%d questions" % out.get("questions")) in stderr):
+            bad.append("%s: operator line %r" % (label, stderr))
         if run_dir.exists():
             bad.append("%s: run folder was written" % label)
         if factory_ran:
             bad.append("%s: the card replay ran (shifted replay)" % label)
     ok = not bad
     return ok, ("too few: card accepted %d of %d; one bad reply: card accepted "
-                "%d of %d - both refused, cancelled with both counts named, no "
-                "run folder, no replay"
+                "%d of %d - both refused, both put in needs_you for the client "
+                "with both counts on the operator line, no cancel, no run "
+                "folder, no replay"
                 % (short[1]["replies"], short[1]["questions"],
                    shifted[1]["replies"], shifted[1]["questions"])
                 if ok else " | ".join(bad))
@@ -470,14 +492,16 @@ def check_d_complete_replay_runs():
     remembered_no = _replay_scenario("d-remembered-no", _replies(7),
                                      client_dir=no)
     bad = []
-    for label, (code, out, reason, cancels, run_dir, factory_ran, _) in (
+    for label, (code, out, needs_you, cancelled, run_dir, factory_ran, _,
+                _stderr) in (
             ("complete", good), ("complete with remembered no", remembered_no)):
         if code != SB.EXIT["ok"]:
             bad.append("%s: exit %s want 0 (out=%r)" % (label, code, out))
         if "next" not in out:
             bad.append("%s: no next command: %r" % (label, out))
-        if cancels:
-            bad.append("%s: cancelled: %r" % (label, cancels))
+        if cancelled or needs_you:
+            bad.append("%s: asked the client / cancelled: %r %r"
+                       % (label, needs_you, cancelled))
         if not factory_ran:
             bad.append("%s: the card replay never ran" % label)
         if not run_dir.exists():
@@ -531,8 +555,9 @@ CHECKS = (
     ("A check-in carries the remembered Agnes answer", check_a_remembered_answer),
     ("B progress rides the check-in only while the job is active",
      check_b_progress_only_while_active),
-    ("C a reply count that cannot complete the card is refused and cancelled",
-     check_c_mismatch_refused_and_cancelled),
+    ("C a reply count that cannot complete the card is refused, the client is"
+     " asked in needs_you, never cancelled",
+     check_c_mismatch_refused_and_waiting),
     ("D a complete replay still runs, remembered answer included",
      check_d_complete_replay_runs),
     ("E the refusal discriminates: no purpose-flow card, no refusal",
