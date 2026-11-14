@@ -180,6 +180,29 @@ def test_no_screen_text_uses_internal_or_vendor_jargon():
         assert "the card" not in text.lower(), screen["id"]
 
 
+def test_no_exported_option_only_opens_a_screen_the_export_cannot_show():
+    """U-GEN437, the card-versus-screen agreement: every option in an exported
+    screen must ANSWER that screen. An option whose only job is to open another
+    screen may be offered only where that screen is in the same export -- and
+    the page branches on no answer (studio.js `screenIsOn`), so it cannot be."""
+    screens = _screens(conditional=True)
+    card = next(q for q in IC.QUESTIONS if q["id"] == "music")
+    opener = card["opens_screen"]
+    assert opener["n"] == len(card["options"]), (opener, len(card["options"]))
+    opener_text = card["options"][opener["n"] - 1][0]
+    assert opener_text == "Show me all %d styles" % len(IC._musics()), opener_text
+    # no screen in the export serves the opener, so it is not offered there
+    assert opener["id"] == "music_full" and opener["id"] not in screens
+    offered = [o["text"] for o in screens["music"]["options"]]
+    assert offered == [o[0] for o in card["options"][:opener["n"] - 1]], offered
+    assert opener_text not in offered
+    # and the chat card keeps its promise, from choice_rows(): never a second list
+    from music_styles import catalog as CAT
+    rows = [r["label"] for r in CAT.choice_rows()]
+    assert len(rows) == 18, rows
+    assert [o[0] for o in IC._music_full_q()["options"]] == rows
+
+
 def test_cli_writes_the_export_and_exits_zero():
     p = _cli("--format", "studio-json")
     assert p.returncode == 0, p.stderr
