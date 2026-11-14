@@ -26,6 +26,7 @@ import os
 import subprocess
 import sys
 import tempfile
+import wave
 
 CORE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if CORE not in sys.path:
@@ -145,8 +146,14 @@ def _seed_gate4(run):
     import spend_ledger as L
     os.makedirs(os.path.join(run, "music"), exist_ok=True)
     master = os.path.join(run, "music", "picked-song.mp3")
-    with open(master, "wb") as fh:
-        fh.write(b"the picked master")
+    # A real, decodable master: the step gate measures the picked song with
+    # ffprobe and refuses anything under its 100 kB media floor, so the seal
+    # this fixture feeds is a seal over a real artifact, not a text file.
+    with wave.open(master, "wb") as w:
+        w.setnchannels(1)
+        w.setsampwidth(2)
+        w.setframerate(8000)
+        w.writeframes(b"\x01\x00" * 50000)          # 6.25 s, 100 kB
     os.makedirs(os.path.join(run, "song-choices"), exist_ok=True)
     with open(master, "rb") as fh:
         digest = hashlib.sha256(fh.read()).hexdigest()
@@ -217,6 +224,53 @@ def complete_row(run, stage):
     complete_fixture_stage(run, stage)
 
 
+def _seal_the_chain(run):
+    """A run that has reached continuity-bible: the four stages before it,
+    each sealed through the SHIPPED step gate, plus a FINISHED bible.
+
+    ``stage.py advance`` opens the shipped chain, and the gate refuses a stage
+    whose predecessor is not sealed — the whole point of the signed chain
+    (``test_stage.py`` proves that refusal on the shipped contract). The
+    registry fixture therefore carries what a real run carries: the contract's
+    own artifact for each predecessor, a real decodable master for ``music``
+    and its recorded chosen length, and the two records
+    ``character_approval`` writes.
+    """
+    def write_json(rel, doc):
+        path = os.path.join(run, rel)
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "w", encoding="utf-8") as fh:
+            json.dump(doc, fh)
+
+    write_json("research/evidence.json",
+               {"fixture": "research", "note": "synthetic evidence for the chain"})
+    write_json("research/manifest.json", {"files": [], "digest": "0" * 64})
+    write_json("creative/story.json",
+               {"fixture": "creative-story",
+                "story": "A founder mid-career walks into a kitchen at midnight, decides the "
+                         "next chapter starts tonight, and says it out loud to the one person "
+                         "still awake. The beat is warm and plain-spoken and ends on a choice "
+                         "rather than a promise."})
+    # the shipped fixture the lyric gate itself validates, not an invented sheet
+    with open(os.path.join(CORE, "lyric_writer", "fixtures", "valid.json"),
+              encoding="utf-8") as fh:
+        write_json("creative/lyrics.json", json.load(fh))
+    write_json("control/method.json", {"chosen_length_s": 60})
+    write_json("character/bible.json",
+               {"schema": "blackceo.character-bible/v2", "revision": 1,
+                "characters": [{"slug": "mia", "name": "Mia", "role": "protagonist"}]})
+    write_json("character/approval.json",
+               {"schema": "blackceo.character-approval/v1", "status": "approved",
+                "bible_revision": 1, "approved_by": "the client"})
+    SG = ST.step_gate_module()
+    contract = SG.load_contract()
+    if not os.path.exists(SG.key_path(run)):
+        SG.cmd_init(run)
+    for stage in ("research", "creative-strategy", "script-lyrics", "music"):
+        SG.cmd_open(run, stage, contract)
+        SG.cmd_seal(run, stage, stage + "-maker", stage + "-checker", contract)
+
+
 def test_registry_row_is_a_real_executable():
     rows, path = FACTORY._runbook_rows()
     row = rows.get("continuity-bible") or {}
@@ -227,6 +281,7 @@ def test_registry_row_is_a_real_executable():
     # and the command actually runs: the registry's executable path end to end
     import shlex
     run = make_run()
+    _seal_the_chain(run)
     argv = [tok.replace("$RUN_ID", "run1").replace("$RUN", run)
             for tok in shlex.split(row["command"])]
     res = subprocess.run([sys.executable] + argv[1:], capture_output=True,
