@@ -96,6 +96,7 @@ and it will pick the right one, or you can ask for a specialist by name.
 | **Image-Grounding Steward ("The Witness")** | You own one question no other role owns. |
 | **Per-Client Representation and Casting Director ("The Mirror")** | You own one question end to end. |
 | **Scripts Specialist** | Owns the text layer of every deck. |
+| **infographic-checklist - Independent Infographic QC Unit (Presentations)** | Owns the infographic-checklist - Independent Infographic QC Unit (Presentations) work. |
 
 ### What each specialist is for, with an example request
 
@@ -218,6 +219,11 @@ and it will pick the right one, or you can ask for a specialist by name.
 
 - *What it is for:* Owns the text layer of every deck.
 - *Example request:* "Have the Scripts Specialist take this on: Owns the text layer of every deck."
+
+**infographic-checklist - Independent Infographic QC Unit (Presentations)**
+
+- *What it is for:* Owns the infographic-checklist - Independent Infographic QC Unit (Presentations) work.
+- *Example request:* "Have the infographic-checklist - Independent Infographic QC Unit (Presentations) take on a task in its area."
 
 
 ---
