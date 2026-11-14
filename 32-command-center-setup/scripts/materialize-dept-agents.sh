@@ -260,7 +260,7 @@ export OC_CONFIG_FILE="$CONFIG_FILE"
 export OC_ROOT_PATH="$OC_ROOT"
 export OC_DRY_RUN="$DRY_RUN"
 # U-24 repair: DEPT_SCAN_ROOTS is a real bash array whose members may contain
-# spaces (the swarm drive itself is "/Volumes/mac mini m4/..."). Join on
+# spaces (a portable drive's own path can contain spaces). Join on
 # newlines, not spaces, so a spaced HOME does not split one root into many.
 export OC_DEPT_ROOTS
 OC_DEPT_ROOTS="$(printf '%s\n' "${DEPT_SCAN_ROOTS[@]}")"
@@ -272,8 +272,34 @@ _RESOLVE_DB="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/../../shared-utils/re
 OC_CC_DB=""
 [[ -f "$_RESOLVE_DB" ]] && OC_CC_DB="$(python3 "$_RESOLVE_DB" --path 2>/dev/null || true)"
 export OC_CC_DB
+# The workforce state lock (BU-75 change 2): openclaw.json is shared state — other
+# workforce writers mutate it — so the read-modify-write below runs under
+# workforce_state.lock(CONFIG_FILE). Resolve the module from this skill's sibling
+# (repo / installed skills tree) and REFUSE to write unlocked if it is absent.
+OC_WORKFORCE_STATE_PY=""
+for _ws_cand in \
+    "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/../../23-ai-workforce-blueprint/scripts/workforce_state.py" \
+    "$HOME/.openclaw/skills/23-ai-workforce-blueprint/scripts/workforce_state.py" \
+    "/data/.openclaw/skills/23-ai-workforce-blueprint/scripts/workforce_state.py"; do
+  if [[ -f "$_ws_cand" ]]; then
+    OC_WORKFORCE_STATE_PY="$_ws_cand"
+    break
+  fi
+done
+if [[ -z "$OC_WORKFORCE_STATE_PY" ]]; then
+  echo "[materialize-dept-agents] FATAL: workforce_state.py not found (looked in this skill's sibling 23-ai-workforce-blueprint, \$HOME/.openclaw/skills and /data/.openclaw/skills) — refusing to rewrite openclaw.json without the shared state lock." >&2
+  exit 1
+fi
+export OC_WORKFORCE_STATE_PY
+unset _ws_cand
 
-python3 <<'PYEOF'
+_MUTATE_ATTEMPT=0
+RC=0
+while :; do
+  _MUTATE_ATTEMPT=$((_MUTATE_ATTEMPT + 1))
+  RC=0
+  python3 <<'PYEOF' || RC=$?
+import importlib.util
 import json
 import os
 import re
@@ -286,6 +312,16 @@ OC_ROOT = os.environ["OC_ROOT_PATH"]
 DRY_RUN = os.environ.get("OC_DRY_RUN", "0") == "1"
 DEPT_ROOTS = os.environ["OC_DEPT_ROOTS"].splitlines()
 SCRIPTS_DIR = os.environ.get("OC_SCRIPTS_DIR", "")
+
+# Shared state lock (BU-75 change 2). Loaded by path: this script lives in Skill
+# 32 while workforce_state.py is Skill 23's, and both are installed side by side.
+_ws_spec = importlib.util.spec_from_file_location(
+    "workforce_state_for_materialize", os.environ["OC_WORKFORCE_STATE_PY"])
+workforce_state = importlib.util.module_from_spec(_ws_spec)
+_ws_spec.loader.exec_module(workforce_state)
+
+# Exit code that means "another writer changed openclaw.json; run me again".
+RESTART_RC = 75
 
 # STRIP A DEPT AFFIX, nothing else.
 #
@@ -413,9 +449,13 @@ if not discovered:
     sys.exit(0)
 
 # ─── Load openclaw.json ─────────────────────────────────────────────────────
+# The exact bytes are kept: the write below re-reads the file INSIDE the state
+# lock and compares against this snapshot, so a concurrent writer's change is
+# never overwritten with this run's stale roster (BU-75 change 2).
 try:
-    with open(CONFIG_FILE, "r") as f:
-        cfg = json.load(f)
+    with open(CONFIG_FILE, "rb") as f:
+        FIRST_READ_BYTES = f.read()
+    cfg = json.loads(FIRST_READ_BYTES.decode("utf-8"))
 except json.JSONDecodeError as e:
     print(f"[materialize-dept-agents] FATAL: openclaw.json is malformed JSON: {e}", file=sys.stderr)
     sys.exit(1)
@@ -812,19 +852,39 @@ if DRY_RUN:
     print(f"added {added} agents, updated {updated} agents, total in {ROSTER_LABEL}: {total}")
     sys.exit(0)
 
-# ─── Atomic write (tmp + rename) ────────────────────────────────────────────
+# ─── Re-read inside the lock, then atomic write (tmp + rename) ──────────────
+# BU-75 change 2: workforce_state.lock(CONFIG_FILE) is held across the
+# read-modify-write. Re-reading INSIDE the lock detects a writer that changed
+# the file while this run built its roster; the bash wrapper then starts this
+# run again ONCE on the fresh file instead of overwriting that writer's change.
+# A lock timeout raises StateConflict, which is a fatal error here: better to
+# write nothing than to write unlocked.
 try:
-    cfg_dir = os.path.dirname(CONFIG_FILE)
-    fd, tmp_path = tempfile.mkstemp(prefix=".openclaw.", suffix=".json.tmp", dir=cfg_dir)
-    try:
-        with os.fdopen(fd, "w") as f:
-            json.dump(cfg, f, indent=2)
-            f.write("\n")
-        os.replace(tmp_path, CONFIG_FILE)
-    except Exception:
-        if os.path.exists(tmp_path):
-            os.remove(tmp_path)
-        raise
+    with workforce_state.lock(CONFIG_FILE):
+        try:
+            with open(CONFIG_FILE, "rb") as f:
+                locked_bytes = f.read()
+        except OSError as e:
+            print(f"[materialize-dept-agents] FATAL: openclaw.json became unreadable under the lock: {e}", file=sys.stderr)
+            sys.exit(1)
+        if locked_bytes != FIRST_READ_BYTES:
+            print(
+                "[materialize-dept-agents] openclaw.json changed while this run's roster was "
+                "built — re-reading and starting again once",
+                file=sys.stderr,
+            )
+            sys.exit(RESTART_RC)
+        cfg_dir = os.path.dirname(CONFIG_FILE)
+        fd, tmp_path = tempfile.mkstemp(prefix=".openclaw.", suffix=".json.tmp", dir=cfg_dir)
+        try:
+            with os.fdopen(fd, "w") as f:
+                json.dump(cfg, f, indent=2)
+                f.write("\n")
+            os.replace(tmp_path, CONFIG_FILE)
+        except Exception:
+            if os.path.exists(tmp_path):
+                os.remove(tmp_path)
+            raise
 except Exception as e:
     print(f"[materialize-dept-agents] FATAL: atomic write failed: {e}", file=sys.stderr)
     sys.exit(1)
@@ -848,8 +908,17 @@ try:
 except OSError as e:
     print(f"[materialize-dept-agents] WARN: could not write scaffolder manifest: {e}", file=sys.stderr)
 PYEOF
+  # BU-75 change 2: 75 means a concurrent writer changed openclaw.json while this
+  # run built its roster. Start again ONCE on the fresh file (the first attempt
+  # wrote nothing, so this is not a double write); a second change is left to
+  # the next run rather than restarted forever.
+  if [[ $RC -eq 75 && $_MUTATE_ATTEMPT -lt 2 ]]; then
+    echo "[materialize-dept-agents] retrying once on the re-read openclaw.json" >&2
+    continue
+  fi
+  break
+done
 
-RC=$?
 if [[ $RC -ne 0 ]]; then
   echo "[materialize-dept-agents] FATAL: python mutation failed (rc=$RC)" >&2
   exit $RC
