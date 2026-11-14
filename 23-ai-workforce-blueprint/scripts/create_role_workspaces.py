@@ -562,7 +562,10 @@ def _resolve_skill_dir():
         # co-located in-repo fallback instead.
         if (candidate / "templates" / "role-library" / "_index.json").exists():
             return candidate
-    except Exception:
+    # SystemExit is not an Exception: detect_platform.get_openclaw_paths() raises
+    # it on a bare CI runner (no /data/.openclaw, ~/.openclaw or ~/clawd), so the
+    # documented fall-through below could never run there. Catch it too.
+    except (Exception, SystemExit):
         pass
     # Fallback: assume this file is at skills/23-ai-workforce-blueprint/scripts/
     # (in-repo / dev / CI execution, or an install whose skills dir carries no
@@ -815,7 +818,7 @@ def _load_company_config():
         cfg_path = paths.get("company_config")
         if cfg_path and Path(cfg_path).exists():
             return json.loads(Path(cfg_path).read_text(encoding="utf-8"))
-    except Exception:
+    except (Exception, SystemExit):
         pass
     return {}
 
@@ -827,7 +830,7 @@ def _load_user_md_excerpt():
         if user_md and Path(user_md).exists():
             text = Path(user_md).read_text(encoding="utf-8")
             return text[:2000]
-    except Exception:
+    except (Exception, SystemExit):
         pass
     return ""
 
@@ -2195,6 +2198,10 @@ def write_governing_personas_md(dept_path, dept_id, dept_name=None):
                     "|------------|--------|--------|--------|\n"
                     + "\n".join(rows)
                 )
+    except SystemExit:
+        # detect_platform: no platform marker on a bare CI runner. Best-effort
+        # read — the placeholder text below is the correct outcome there.
+        pass
     except Exception as e:
         persona_list_text = f"_(error reading persona-categories.json: {e})_"
 
