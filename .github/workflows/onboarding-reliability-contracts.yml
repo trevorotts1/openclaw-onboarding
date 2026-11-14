@@ -11,6 +11,8 @@ concurrency:
 
 jobs:
   reliability-contracts:
+    # Batch pull requests run only the required checks (Trevor order 2026-11-13).
+    if: ${{ !startsWith(github.head_ref, 'batch/') }}
     name: State, post-interview recovery and authoritative delivery (${{ matrix.python }})
     # Pinned: setup-python ships no CPython 3.9 build for the ubuntu-26.04 image
     # (the versions manifest lists 3.9 for 22.04/24.04 only), so ubuntu-latest

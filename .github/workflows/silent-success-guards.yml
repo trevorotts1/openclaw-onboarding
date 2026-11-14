@@ -52,6 +52,8 @@ concurrency:
 
 jobs:
   onb-46-001:
+    # Batch pull requests run only the required checks (Trevor order 2026-11-13).
+    if: ${{ !startsWith(github.head_ref, 'batch/') }}
     name: "ONB-46-001: a run with zero deliverables is never marked done"
     runs-on: ubuntu-latest
     steps:
@@ -95,6 +97,8 @@ jobs:
           NODE
 
   onb-50-001:
+    # Batch pull requests run only the required checks (Trevor order 2026-11-13).
+    if: ${{ !startsWith(github.head_ref, 'batch/') }}
     name: "ONB-50-001: the impersonation guard covers every recipient-visible field"
     runs-on: ubuntu-latest
     steps:
