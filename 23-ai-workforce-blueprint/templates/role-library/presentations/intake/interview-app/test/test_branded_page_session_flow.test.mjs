@@ -11,7 +11,8 @@
 //      the declined-reason waiver captured, and derived_field_provenance
 //      stamped for the six derived fields;
 //   3. once the box-side fetch flips the outbox to worker_accepted, the
-//      page's own polling shows Worker accepted.
+//      page's own polling says the answers were RECEIVED, never that the
+//      build has started.
 // No live deploy is involved; this is the repo-state proof that the live
 // fix is a deploy of these files.
 //   node --test test/test_branded_page_session_flow.test.mjs
@@ -333,11 +334,12 @@ test("branded page drives a minted session end to end into the canonical record"
 
   // 3. The fetch flipped the outbox; the page's own poll shows it.
   const accepted = await until(
-    () => { const s = documentStub.getElementById("sessionStatus"); return s && s.textContent.includes("Worker accepted") ? s : null; },
-    "page shows Worker accepted", 9000);
-  assert.ok(accepted.textContent.includes("Worker accepted"));
+    () => { const s = documentStub.getElementById("sessionStatus"); return s && s.textContent.includes("Received by your presentation team") ? s : null; },
+    "page shows Received by your presentation team", 9000);
+  assert.ok(accepted.textContent.includes("Received by your presentation team"));
   const note2 = documentStub.getElementById("sessionNote");
-  assert.ok(note2 && note2.textContent.includes("deck build has started"), "accepted note: " + (note2 || {}).textContent);
+  assert.ok(note2 && note2.textContent.includes("when the build starts"), "accepted note: " + (note2 || {}).textContent);
+  assert.ok(note2 && !note2.textContent.includes("build has started"), "accepted note never claims the build started: " + (note2 || {}).textContent);
 });
 
 test("standalone mode (no token): honest NOT SUBMITTED outcome + page-stamped provenance", async () => {
