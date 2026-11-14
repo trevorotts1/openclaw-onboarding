@@ -5582,8 +5582,8 @@ def _ensure_company_discovery_dir():
     """
     global MASTER_FILES, COMPANY_DISCOVERY_DIR
     if not COMPANY_DISCOVERY_DIR:
-        # Use the folder the platform resolver chose at import. Scan ~/Downloads
-        # only when that resolver produced nothing.
+        # Use the folder the platform resolver chose at import (honours
+        # MASTER_FILES_DIR); scan ~/Downloads only when it produced nothing.
         if not MASTER_FILES:
             MASTER_FILES = find_master_files_folder()
         COMPANY_DISCOVERY_DIR = os.path.join(MASTER_FILES, "company-discovery")
