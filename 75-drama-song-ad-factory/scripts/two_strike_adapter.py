@@ -34,8 +34,15 @@ def _shared_scripts() -> Path | None:
 
 
 def gate(message: str, *, suspicious: bool | None = None,
-         skill_dir: str | None = None) -> dict:
-    """Run the shared two-strike entry check on one turn."""
+         skill_dir: str | None = None, intake_answer: bool = False,
+         run_active: bool = False) -> dict:
+    """Run the shared two-strike entry check on one turn.
+
+    ``intake_answer`` marks text typed as an answer to an intake card
+    question (never tested). ``run_active`` marks a run with paid work in
+    flight: a strike two then blocks the reply at once and the wipe waits
+    for the park or completion.
+    """
     scripts = _shared_scripts()
     if scripts is None:
         # ponytail: fail-open when the pilot module is not installed yet, so a
@@ -61,6 +68,8 @@ def gate(message: str, *, suspicious: bool | None = None,
         message,
         skill_dir=skill_dir or default_dir,
         suspicious=suspicious,
+        intake_answer=intake_answer,
+        run_active=run_active,
     )
 
 
@@ -73,9 +82,15 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--suspicious", choices=("auto", "yes", "no"),
                         default="auto",
                         help="force the extraction verdict instead of auto-detect")
+    parser.add_argument("--intake-answer", action="store_true",
+                        help="the text answers an intake card question; never tested")
+    parser.add_argument("--run-active", action="store_true",
+                        help="paid work is in flight; a strike two defers its wipe")
     args = parser.parse_args(argv)
     forced = None if args.suspicious == "auto" else args.suspicious == "yes"
-    result = gate(args.message, suspicious=forced)
+    result = gate(args.message, suspicious=forced,
+                  intake_answer=args.intake_answer,
+                  run_active=args.run_active)
     if args.json:
         print(json.dumps(result, sort_keys=True))
     elif result.get("blocked"):
