@@ -380,21 +380,71 @@ class CheckoutFacts(IntakeCase):  # CHK-16
             offer(payload, "U1")["delivery"]["owner_confirmed"] = bad
             self.refuses(payload, "AF-LAUNCH-INTAKE-DELIVERY", "owner_confirmed")
 
-    def test_instalments_and_recurring_refused_by_name(self):
+    def test_instalments_are_refused_by_name_and_stated_recurring_is_accepted(self):
         said = "payment plans are not supported in this release"
-        cases = (
+        # The vocabulary the checkout can carry is one_time plus recurring (from the shared
+        # billing module); instalments stay refused everywhere, including as separate keys.
+        refused = (
             lambda p: offer(p, "MAIN-ESS").setdefault("checkout", {}).update(billing_type="installment"),
-            lambda p: offer(p, "MAIN-ESS").setdefault("checkout", {}).update(billing_type="recurring"),
             lambda p: offer(p, "MAIN-ESS").setdefault("checkout", {}).update(
                 schedule=[{"sequence": 1, "due": "now", "amount_minor": 4850}]),
             lambda p: offer(p, "MAIN-ESS").update(installments=3),
             lambda p: offer(p, "MAIN-ESS")["price"].update(recurring="monthly"),
             lambda p: p.update(payment_plan={"parts": 3}),
         )
-        for mutate in cases:
+        for mutate in refused:
             payload = load("elevation")
             mutate(payload)
             self.refuses(payload, "AF-LAUNCH-INTAKE-PAYMENT-PLAN", "", said)
+        # a billing word the release carries as recurring, stated as a checkout billing_type,
+        # is vocabulary-checked: the shared sentence names the plan-time refusal for trial.
+        for bad in ("trial", "payment_plan", "unknown billing", 5, True):
+            payload = load("elevation")
+            offer(payload, "MAIN-ESS").setdefault("checkout", {})["billing_type"] = bad
+            if bad == "trial":  # in the shared vocabulary but plan-time refused, by the shared sentence
+                self.refuses(payload, "AF-LAUNCH-INTAKE-PAYMENT-PLAN", "billing_type", said)
+            else:
+                self.refuses(payload, "AF-LAUNCH-INTAKE-PAYMENT-PLAN", "billing_type")
+
+    def test_stated_recurring_checkout_rides_verbatim_and_agrees_with_the_answers(self):
+        payload = load("elevation")
+        doc = answers_for("elevation")
+        for oid in ("U1", "D1"):
+            offer(payload, oid).setdefault("checkout", {})["billing_type"] = "recurring"
+            entry(doc, oid)["price"]["billing_type"] = "recurring"
+            entry(doc, oid)["billing"] = "monthly" if oid == "U1" else "quarterly"
+        normalized = intake.validate(use_answers(payload, doc))
+        for oid, cadence in (("U1", "month"), ("D1", "quarter")):
+            got = next(o for o in normalized["offers"] if o["offer_id"] == oid)
+            self.assertEqual(got["checkout"]["billing_type"], "recurring")
+            canon = got["canonical"]["prices"][0]
+            self.assertEqual((canon["billing_type"], canon["recurring_interval"]), ("recurring", cadence))
+
+    def test_the_answers_cadence_word_is_the_billing_fact_when_nothing_is_stated(self):
+        """The shape: the intake states no billing, the client's per-offer answer does."""
+        for oid, word, interval in (("U1", "monthly", "month"), ("D1", "quarterly", "quarter")):
+            payload = load("elevation")
+            doc = answers_for("elevation")
+            entry(doc, oid)["billing"] = word
+            normalized = intake.validate(use_answers(payload, doc))
+            canon = next(o for o in normalized["offers"] if o["offer_id"] == oid)["canonical"]["prices"][0]
+            self.assertEqual((canon["billing_type"], canon["recurring_interval"]), ("recurring", interval),
+                             (oid, word))
+
+    def test_recurring_without_any_cadence_is_refused_at_plan_time_not_at_checkout(self):
+        payload = load("elevation")
+        doc = answers_for("elevation")
+        entry(doc, "U1")["price"]["billing_type"] = "recurring"
+        err = self.refuses(use_answers(payload, doc), "AF-LAUNCH-INTAKE-PAYMENT-PLAN", "price", "no recurring_interval")
+        self.assertIn("material disclosure", err.detail)
+
+    def test_a_cadence_word_the_release_does_not_carry_is_refused_not_flattened(self):
+        payload = load("elevation")
+        doc = answers_for("elevation")
+        entry(doc, "U1")["billing"] = "every other month"
+        err = self.refuses(use_answers(payload, doc), "AF-LAUNCH-INTAKE-PROVENANCE", "price",
+                           "every other month")
+        self.assertIn("not one this release carries", err.detail)
 
     def test_one_time_checkout_block_normalizes_with_native_ids_unset(self):
         normalized = intake.validate(load("elevation"))
