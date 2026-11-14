@@ -1985,12 +1985,18 @@ else:
             "Nothing was written. Fix the read error and re-run the updater.")
 
 # Remove any "## ... UPDATE PENDING ..." or "## ... ONBOARDING PENDING ..."
+# The body ALSO stops at any '<!-- BEGIN ... -->' / '<!-- END ... -->' marker
+# comment (fixed 2026-11-13): the notice is appended at EOF, and a block a
+# skill installer re-renders at EOF (Skill 38's SKILL38_RUNTIME_INVARIANTS)
+# lands directly after it. The old body pattern ran to the next '## ' line,
+# which is the block's OWN heading, so it deleted the BEGIN marker on every
+# run (BEGIN=0 / END=1) and the block re-broke after every repair.
 # section: from its "## " header up to (but not including) the next top-level
 # "## " heading, or EOF. Non-greedy, multiline. This sweeps EVERY such section,
 # including stale ones left by earlier waves, not just the newest.
 pattern = re.compile(
     r'(?m)^##[^\n]*(?:UPDATE PENDING|ONBOARDING PENDING)[^\n]*\n'   # the header
-    r'(?:(?!^##\s).*\n?)*',                                         # body until next "## "
+    r'(?:(?!^##\s)(?!^[ \t]*<!--\s*(?:BEGIN|END)\b).*\n?)*',                                         # body until next "## "
 )
 # Measured in BYTES, because it is compared against byte sizes below. Counting
 # CHARACTERS here under-counted every non-ASCII character in a removed section
