@@ -18,7 +18,7 @@ from choice_card.intake_card import intro as INTRO  # noqa: E402
 
 EXPECTED = (
     "Turn your offer into a video dramatization with music that people actually feel.\n\n"
-    "Answer a few quick questions, and we handle the rest:\n"
+    "I'll ask about 9 short questions, and we handle the rest:\n"
     "- Write the story and script, with the song lyrics woven in\n"
     "- Create your characters (or bring back ones you've saved)\n"
     "- Compose an original song in the music style you choose\n"
@@ -30,7 +30,7 @@ EXPECTED = (
     "60- and 90-second clips for social media.\n\n"
     "Before we start: if your video uses KIE.ai or OpenRouter models, top up your "
     "credits there first so your video doesn't stop halfway.\n\n"
-    "Let's start - just a few quick questions."
+    "Let's start."
 )
 
 

@@ -17,14 +17,17 @@ from choice_card.intake_card import intake_card as IC  # noqa: E402
 import intake as I  # noqa: E402
 
 MONEY = re.compile(r"spend|budget|cost|price|\$|dollar", re.I)
-N = len(IC.QUESTIONS)
-SPEND_AT = [q["id"] for q in IC.QUESTIONS].index("spend")
+#: The frozen card this file replays explicitly (S75-006: a bare
+#: ``conversation`` asks the NEW card, so the list is named here).
+LEGACY = IC.LEGACY_QUESTIONS
+N = len(LEGACY)
+SPEND_AT = [q["id"] for q in LEGACY].index("spend")
 #: the answers that come before BUDGET -- the story brief is typed, the choices picked
-BEFORE = IC.example_replies()[:SPEND_AT]
+BEFORE = IC.example_replies(LEGACY)[:SPEND_AT]
 
 
 def _qs(price=None, limit=None):
-    return [IC.spend_question(price, limit) if q["id"] == "spend" else q for q in IC.QUESTIONS]
+    return [IC.spend_question(price, limit) if q["id"] == "spend" else q for q in LEGACY]
 
 
 def test_no_story_question_mentions_money():
@@ -83,7 +86,7 @@ def test_no_reply_means_no_spend():
 
 
 def test_recap_shows_the_limit():
-    full = IC.example_replies()
+    full = IC.example_replies(LEGACY)
     full[SPEND_AT] = "1"
     recap = IC.conversation(full, _qs(18.5, 25))["message"]
     assert "Budget: up to $25.00" in recap, recap
@@ -107,7 +110,7 @@ def test_no_price_no_limit_recommends_nothing_and_asks_for_a_dollar_amount():
 
 
 def _ask(price=None, limit=None, from_brief=False):
-    m = IC.render_step(SPEND_AT + 1, [IC.spend_question(price, limit, from_brief) if q["id"] == "spend" else q for q in IC.QUESTIONS])
+    m = IC.render_step(SPEND_AT + 1, [IC.spend_question(price, limit, from_brief) if q["id"] == "spend" else q for q in LEGACY])
     return m[m.index("What's the most"):m.index("\n\nI recommend") if "\n\nI recommend" in m else None].strip()
 
 
@@ -128,7 +131,7 @@ def QUESTION_TEXT():
 
 
 def test_recap_line_exact():
-    recap = IC.conversation(IC.example_replies(), _qs(18.5, 25))["message"]
+    recap = IC.conversation(IC.example_replies(LEGACY), _qs(18.5, 25))["message"]
     assert "%d. Budget: up to $25.00\n" % (SPEND_AT + 1) in recap and "Spend" not in recap, recap
 
 

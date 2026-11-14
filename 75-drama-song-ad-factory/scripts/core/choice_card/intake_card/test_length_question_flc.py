@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """FU-LENGTH-CLIPS: the LENGTH question is a full question with numbered options
-that say what the client gets; 3, 5 and 10 minutes name their clips; the recap
-is plain; the card price for 3 minutes includes the clips.
+that say what the client gets; 3 and 5 minutes name their clips (S75-105: the
+10-minute row is gone, because the song stage refuses it); the recap is plain;
+the card price for 3 minutes includes the clips.
 
 Run: python3 core/choice_card/intake_card/test_length_question_flc.py
 """
@@ -16,6 +17,12 @@ CORE = os.path.dirname(os.path.dirname(HERE))
 sys.path.insert(0, CORE)
 from choice_card.intake_card import intake_card as IC  # noqa: E402
 from clip_cutdown import clips_for  # noqa: E402
+import prompt_limits  # noqa: E402
+from music_styles import music_styles as MS  # noqa: E402
+
+#: S75-105: the card offers only the durations the song stage can make.
+ALLOWED_S = tuple(s for s in MS.CANONICAL_DURATION_S
+                  if s <= prompt_limits.suno_caps()["duration"]["max_seconds"])
 
 STEP = IC.render_step([q["id"] for q in IC.QUESTIONS].index("length") + 1)
 OPTS = [l for l in STEP.split("\n") if re.match(r"^\d\. ", l)]
@@ -43,12 +50,12 @@ class T(unittest.TestCase):
     def test_full_question_with_numbered_options(self):
         self.assertIn("How long do you want your ad to be?", STEP)
         self.assertIn("also come with short clips you can post on social media", STEP)
-        self.assertEqual(len(OPTS), 6)
+        self.assertEqual(len(OPTS), len(ALLOWED_S))
         self.assertIn("Reply with a number", STEP)
         self.assertIn('"recommended"', STEP)
 
-    def test_clip_wording_on_3_5_10_minutes_only(self):
-        for line, mins in zip(OPTS[3:], ("3", "5", "10")):
+    def test_clip_wording_on_3_and_5_minutes_only(self):
+        for line, mins in zip(OPTS[3:], ("3", "5")):
             self.assertIn(mins + " minutes", line)
             self.assertIn("60s and 90s clips", line)
             self.assertIn("Plus a 60-second clip and a 90-second clip", line)
@@ -56,7 +63,7 @@ class T(unittest.TestCase):
             self.assertNotIn("clip", line)
 
     def test_card_wording_matches_what_the_code_cuts(self):
-        for line, secs in zip(OPTS, (60, 90, 120, 180, 300, 600)):
+        for line, secs in zip(OPTS, ALLOWED_S):
             self.assertEqual("clip" in line, bool(clips_for(secs)), line)
 
     def test_recap_is_plain(self):
