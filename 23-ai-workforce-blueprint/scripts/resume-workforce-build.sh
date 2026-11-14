@@ -3,8 +3,8 @@
 #
 # Reads /data/.openclaw/workspace/.workforce-build-state.json. If the state
 # shows pending or stale-building departments, sends a self-message via
-# `openclaw message send` from the operator's chat (owner OR operator) to the
-# bot's own chat so the agent gets invoked and continues the build.
+# `openclaw message send` from the operator's chat to the bot's own chat.
+# A Telegram send does not start an agent turn (see the dispatch-result note near the end of this file). Builds are started by start-workforce-build.py; the closeout by run-closeout.sh.
 #
 # This is the ONLY autonomous-recovery layer in the workforce-build pipeline.
 # If this script doesn't run on a cron, an interrupted build will sit forever.
@@ -315,7 +315,14 @@ if ! "$WORKFORCE_PYTHON" "$COMPLETION_SCRIPT" "$STATE_FILE" --has-identity >>"$L
   exit 0
 fi
 normalize_status_vocabulary
-"$WORKFORCE_PYTHON" "$COMPLETION_SCRIPT" "$STATE_FILE" >>"$LOG_FILE" 2>&1 || true
+# A box whose closeout is finished is never re-opened by this job.
+_recheck_closeout="$(jq -r '.closeoutStatus // ""' "$STATE_FILE" 2>/dev/null || true)"
+case "$_recheck_closeout" in
+  done|sent)
+    log "completion re-check skipped: closeoutStatus=$_recheck_closeout (a finished box is not re-opened by the resume job)" ;;
+  *)
+    "$WORKFORCE_PYTHON" "$COMPLETION_SCRIPT" "$STATE_FILE" >>"$LOG_FILE" 2>&1 || true ;;
+esac
 
 # ---- v10.14.36: BELT - explicit self-stop on terminal state ----
 # v10.15.26 / v10.16.25 HARD FLOOR: a terminal state in the build-state JSON
@@ -800,11 +807,36 @@ state_path = Path(sys.argv[1])
 depts_dir  = Path(sys.argv[2])
 HOW_TO_MIN = 256  # bytes — anything smaller is effectively empty/stub
 
+
+def _candidate_trees(state, fallback):
+    seen, out = set(), []
+    def add(p):
+        try:
+            p = Path(p)
+            if str(p) not in seen and p.is_dir():
+                seen.add(str(p)); out.append(p)
+        except OSError:
+            pass
+    root = state.get("companyRoot")
+    if isinstance(root, str) and os.path.isabs(root):
+        add(Path(root) / "departments")
+    ws = state.get("workspaceRoot")
+    if isinstance(ws, str) and ws:
+        add(Path(ws) / "departments")
+    add(fallback)
+    return out
+
+
 try:
     from workforce_state import read, commit
     state = read(state_path)
 except Exception as e:
     print(f"STALE_CHECK_ERROR: cannot read state: {e}", file=sys.stderr)
+    sys.exit(0)
+
+trees = _candidate_trees(state, depts_dir)
+if not trees:
+    print("STALE_CHECK_SKIPPED: no departments folder found; nothing reset")
     sys.exit(0)
 
 departments = state.get("departments", [])
@@ -834,19 +866,26 @@ for dept in departments:
     if not claims_done:
         continue
 
-    # Check for at least one real how-to.md under departments/<id>/
-    dept_dir = depts_dir / dept_id
+    # Check for at least one real how-to.md under every place the company can
+    # live: <tree>/<id> and <tree>/<id>-dept, for each candidate tree in turn.
     has_real_howto = False
-    if dept_dir.is_dir():
-        for role_dir in dept_dir.iterdir():
-            if not role_dir.is_dir() or role_dir.name.startswith("."):
+    for tree in trees:
+        for dept_dir in (tree / dept_id, tree / f"{dept_id}-dept"):
+            if not dept_dir.is_dir():
                 continue
-            how_to = role_dir / "how-to.md"
-            if how_to.exists() and how_to.stat().st_size >= HOW_TO_MIN:
-                content = how_to.read_text(encoding="utf-8", errors="replace")
-                if "[PENDING" not in content:
-                    has_real_howto = True
-                    break
+            for role_dir in dept_dir.iterdir():
+                if not role_dir.is_dir() or role_dir.name.startswith("."):
+                    continue
+                how_to = role_dir / "how-to.md"
+                if how_to.exists() and how_to.stat().st_size >= HOW_TO_MIN:
+                    content = how_to.read_text(encoding="utf-8", errors="replace")
+                    if "[PENDING" not in content:
+                        has_real_howto = True
+                        break
+            if has_real_howto:
+                break
+        if has_real_howto:
+            break
 
     if not has_real_howto:
         reset_ids.append(dept_id)
@@ -890,6 +929,8 @@ STALE_PY
     case "$_stale_line" in
       STALE_CHECK_CLEAN)
         log "STALE-CHECK: all 'done' departments verified against disk — state is clean" ;;
+      STALE_CHECK_SKIPPED*)
+        log "STALE-CHECK: $_stale_line" ;;
       STALE_RESET:*)
         log "STALE-CHECK [WARN]: $_stale_line"
         _stale_reset_count=$(( _stale_reset_count + 1 )) ;;
@@ -958,18 +999,23 @@ stale_building_count=$(jq --arg min "$STALE_BUILDING_MINUTES" -r '
 # Standard-first prebuilt counters (always 0 on legacy boxes).
 prebuilt_count=$(jq -r '[.departments[]? | select(.status == "prebuilt")] | length' "$STATE_FILE" 2>/dev/null || echo 0)
 # "Confirmed or declined" decisions for prebuilt departments are recorded by
-# the interview review board (record-dept-decision.sh) as provenanced decline
-# records; KEEP is implicit (no record). prebuilt_decided_count therefore
-# counts ONLY the prebuilt departments carrying a provenanced decline — the
-# ones the apply-diff build will archive. A confirmationsComplete=true state
-# flag is the authoritative "every prebuilt dept was reviewed" signal (see the
-# HOP-4 standard-first completion contract below); this count is diagnostic.
+# the interview review board (record-dept-decision.sh) under
+# canonicalReconciliation.decisions[<dept>] = {decision, source, decidedAt,
+# decidedBy, sessionId}; KEEP is implicit (no record). prebuilt_decided_count
+# therefore counts ONLY the prebuilt departments whose recorded decision is "no"
+# - the ones the apply-diff build will archive. standardPrebuild.
+# prebuiltDepartments is a list of department id STRINGS (interface contract
+# section 2.2), so each entry is compared as an id and never read as an object.
+# A confirmationsComplete=true state flag is the authoritative "every prebuilt
+# dept was reviewed" signal (see the HOP-4 standard-first completion contract
+# below); this count is diagnostic.
 prebuilt_decided_count=$(jq -r '
-  [((.standardPrebuild.prebuiltDepartments // [])[]) as $p
-    | (($p.decision // "") | ascii_downcase) as $d
-    | select(($d == "decline" or $d == "declined" or $d == "remove")
-             and (($p.provenance // "") != ""))
-  ] | length
+  . as $root
+  | [ (($root.canonicalReconciliation.decisions // {}) | to_entries[])
+      | . as $entry
+      | select((($entry.value.decision // "") | tostring | ascii_downcase) == "no")
+      | select((($root.standardPrebuild.prebuiltDepartments // []) | map(tostring)) | index($entry.key))
+    ] | length
 ' "$STATE_FILE" 2>/dev/null || echo 0)
 
 build_completed_at=$(jq -r '.buildCompletedAt // empty' "$STATE_FILE")
@@ -1102,6 +1148,31 @@ fi
 
 # B4: Ensure wiring_dirty is defined (set to 0 if not already computed above)
 wiring_dirty=${wiring_dirty:-0}
+
+# ---- START THE BUILD (BU-21): a Telegram send cannot start an agent turn ----
+# The self-ping lanes below are OUTBOUND messages; an outbound message never
+# becomes an inbound agent turn (see the dispatch-result note at the end of this
+# file), so they cannot start a build. start-workforce-build.py can:
+#   * standard-first box, prebuild done, owner review not settled -> it writes
+#     the build config and launches the apply-diff build detached; or
+#   * any other lane -> it records .workforce-build-wanted.json so the Command
+#     Center's build-kick job can start an agent turn (a script cannot).
+# Either way there is nothing left for the self-ping lanes to do on this fire, so
+# this exits after logging the script's one JSON line. An install that predates
+# the start script falls through to those lanes unchanged (no silent exit).
+if [[ "$interview_complete" == "true" ]] && [[ -z "$build_completed_at" ]] \
+   && { [[ "$total_count_now" == "0" ]] \
+        || { [[ "$build_type" == "standard-first" ]] \
+             && [[ "$confirmations_complete" != "true" ]]; }; }; then
+  _swb_script="$SCRIPT_DIR/start-workforce-build.py"
+  if [[ -f "$_swb_script" ]]; then
+    _swb_out=$("$WORKFORCE_PYTHON" "$_swb_script" --state "$STATE_FILE" 2>>"$LOG_FILE" || true)
+    log "start-workforce-build: ${_swb_out:-no output}"
+    exit 0
+  fi
+  log "start-workforce-build: no script at $_swb_script (install predates BU-21) - falling through to the self-ping lanes"
+fi
+
 total_attention=$(( pending_count + stale_building_count + library_dirty + wiring_dirty + comms_automation_dirty + closeout_dirty ))
 if (( total_attention == 0 )); then
   done_count=$(jq -r '[.departments[] | select(.status == "done")] | length' "$STATE_FILE")
@@ -1402,6 +1473,10 @@ elif (( closeout_dirty == 1 )) && (( pending_count == 0 )) && (( stale_building_
   _osh_out="$(python3 "$SCRIPT_DIR/../../shared-utils/owner_sends_hold.py" check "$STATE_FILE" 2>&1)"; _osh_rc=$?
   if [[ "$_osh_rc" -ne 1 ]]; then
     log "HOP-4: OWNER SENDS HELD: ${_osh_out:-owner_sends_hold.py unavailable (rc $_osh_rc)} -- run-closeout.sh NOT launched."
+    _CLOSEOUT_SCRIPT=""
+  fi
+  if [[ "$(jq -r '.closeoutResumePaused // false' "$STATE_FILE" 2>/dev/null)" == "true" ]]; then
+    log "HOP-4: closeoutResumePaused=true -- run-closeout.sh NOT launched."
     _CLOSEOUT_SCRIPT=""
   fi
   if [[ -n "$_CLOSEOUT_SCRIPT" ]]; then
