@@ -5,9 +5,10 @@
 // client's studio record. Option 3 can only be set when Trevor's approval for
 // that client is recorded — by name, one client at a time (decision 8).
 //
-// The studio page always shows the option and the real wait. These four strings
-// are copied verbatim from the approved plan; U3 renders them, it does not
-// reword them.
+// The studio page always shows the option and the real wait. The first three
+// strings are copied verbatim from the approved plan; U3 renders them, it does
+// not reword them. The box sentence is Trevor's approved wording (U-Z14,
+// package default D-5) and is used in the same slot.
 //
 //   1  "Your crew starts when you open Claude Code on your computer. Last
 //       check-in: 3 hours ago."
@@ -21,14 +22,20 @@
 //       a time zone) plus ONE quiet line in the operator inbox; with no
 //       check-in yet, "Your order is safe. It starts as soon as your studio
 //       computer is on."
+//   box (U-Z14, decision D-5; replaces the three above for a client whose
+//      studio runs on an OpenClaw box — its key records include a `box` key and
+//      no `machine` key)
+//      "Your studio is on. Orders start within about 2 minutes."
 //
-// PURE apart from lastCheckIn, the ONE store read this surface needs: the store
-// is injected, there are no bindings, and the clock is always passed in.
+// PURE apart from lastCheckIn and clientKeys, the two store reads this surface
+// needs: the stores are injected, there are no bindings, and the clock is
+// always passed in.
 // ============================================================================
 
 'use strict';
 
 import { checkinKey } from './ids.js';
+import { listKeys } from './support.js';
 
 export const OPTIONS = [1, 2, 3];
 export const DEFAULT_OPTION = 1;
@@ -46,6 +53,41 @@ const PENNY = {
   2: 'Your crew is watching. Orders start within about 2 minutes while your computer is on.',
   3: 'Your crew starts automatically within about 2 minutes while your computer is on and awake.',
 };
+
+/** U-Z14 (S75-077, decision D-5) — the sentence a client reads when their
+ *  studio runs on an OpenClaw box. Approved wording, never reworded: it fills
+ *  the same slot as the three above, so the real wait is appended the same way. */
+export const BOX_LINE = 'Your studio is on. Orders start within about 2 minutes.';
+
+/** True when `keys` — a client's stored key records — include an ACTIVE box key
+ *  and no ACTIVE machine key. A revoked key is no longer one of the client's
+ *  keys (U-Z12), so it never decides the sentence. Everything else keeps one of
+ *  the three option sentences unchanged. */
+export function boxOnlyClient(keys) {
+  const active = (Array.isArray(keys) ? keys : []).filter((k) => k && k.status === 'active');
+  return active.some((k) => k.kind === 'box') && !active.some((k) => k.kind === 'machine');
+}
+
+/** Every stored key record that belongs to one client, read through the same
+ *  `key:` listing the admin revoke route uses. Unreadable records and other
+ *  clients' records are skipped, never guessed at; no listing means no box key
+ *  is proven, so the client keeps its option sentence.
+ *  ponytail: one KV listing per call. A client-scoped key index would remove
+ *  it; nothing writes one yet. */
+export async function clientKeys(store, clientId) {
+  const out = [];
+  for (const name of await listKeys(store, 'key:')) {
+    const raw = await store.kvGet(name);
+    if (!raw) continue;
+    try {
+      const record = JSON.parse(raw);
+      if (record && record.client_id === clientId) out.push(record);
+    } catch {
+      // A record this module cannot read is skipped, never guessed at.
+    }
+  }
+  return out;
+}
 
 /** "3 hours ago" / "1 minute ago" / "just now" / "not yet". */
 export function ageText(nowMs, sinceMs) {
@@ -96,12 +138,15 @@ export async function lastCheckIn(objectStore, clientId) {
  * The line the studio page shows under the option. `lastCheckMs` is the stored
  * check-in (lastCheckIn); `record.last_check_in` is only a fallback for a
  * record that already carries one — nothing in this service writes it after
- * the record is created.
+ * the record is created. `keys` is the client's own key records (clientKeys):
+ * a box key and no machine key means the studio runs on an OpenClaw box, and
+ * the page says so (U-Z14). Absent, the option sentence is used unchanged.
  */
-export function optionLine(record, nowMs, lastCheckMs) {
+export function optionLine(record, nowMs, lastCheckMs, keys) {
   const option = OPTIONS.includes(record && record.option) ? record.option : DEFAULT_OPTION;
   const last = typeof lastCheckMs === 'number' ? lastCheckMs : (record ? record.last_check_in : null);
-  return `${PENNY[option]} Last check-in: ${ageText(nowMs, last)}.`;
+  const sentence = boxOnlyClient(keys) ? BOX_LINE : PENNY[option];
+  return `${sentence} Last check-in: ${ageText(nowMs, last)}.`;
 }
 
 /**

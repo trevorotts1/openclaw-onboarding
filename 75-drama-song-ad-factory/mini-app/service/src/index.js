@@ -34,7 +34,7 @@ import { MAX_WAITING_ORDERS, checkIn, readInbox, writeInbox } from './inbox.js';
 import { AF_UP_KIND, AF_UP_NOT_ARRIVED, AF_UP_UNKNOWN, acceptUpload, pollUpload } from './uploads.js';
 import { resolveOrderState, transition, writeOperatorRecord } from './lifecycle.js';
 import { dueForDeletion } from './retention.js';
-import { AF_OPT_APPROVAL, lastCheckIn, optionLine, setOption, staleVerdict } from './options.js';
+import { AF_OPT_APPROVAL, clientKeys, lastCheckIn, optionLine, setOption, staleVerdict } from './options.js';
 import { listKeys, randomConnectHex } from './support.js';
 import { AF_PUSH_DISABLED, pushEnabled, registerSubscription, revokeSubscription, sendPush } from './push.js';
 // W2 wiring: the page, the personal link and the approvals live in their own
@@ -335,7 +335,7 @@ export async function handle(request, env, store, objects, deps = {}) {
     if (!set.ok) return fail(set.code === AF_OPT_APPROVAL ? 403 : 400, set.code, set.message);
     // The client record is the enrollment record: the table's never-delete class.
     await store.kvPut(`client:${target}`, JSON.stringify(withRetentionKind(set.record, 'enrollment_record')));
-    return ok({ option: set.record.option, line: optionLine(set.record, nowMs, await lastCheckIn(objects, target)) });
+    return ok({ option: set.record.option, line: optionLine(set.record, nowMs, await lastCheckIn(objects, target), await clientKeys(store, target)) });
   }
 
   // POST /api/studio/admin/push/send — operator-triggered, explicitly opt-in (U20)
@@ -440,7 +440,7 @@ export async function handle(request, env, store, objects, deps = {}) {
       if (already) {
         return ok({
           order: project(JSON.parse(already), nowMs),
-          option_line: optionLine(await clientRecord(store, clientId), nowMs, await lastCheckIn(objects, clientId)),
+          option_line: optionLine(await clientRecord(store, clientId), nowMs, await lastCheckIn(objects, clientId), await clientKeys(store, clientId)),
         }, 201);
       }
     }
@@ -507,7 +507,7 @@ export async function handle(request, env, store, objects, deps = {}) {
     });
     return ok({
       order: project(order, nowMs),
-      option_line: optionLine(await clientRecord(store, clientId), nowMs, await lastCheckIn(objects, clientId)),
+      option_line: optionLine(await clientRecord(store, clientId), nowMs, await lastCheckIn(objects, clientId), await clientKeys(store, clientId)),
     }, 201);
   }
 
@@ -607,7 +607,7 @@ export async function handle(request, env, store, objects, deps = {}) {
   // GET /api/studio/options — the real-wait line for the client's record
   if (request.method === 'GET' && url.pathname === '/api/studio/options') {
     const record = await clientRecord(store, clientId);
-    return ok({ option: record.option || 1, line: optionLine(record, nowMs, await lastCheckIn(objects, clientId)) });
+    return ok({ option: record.option || 1, line: optionLine(record, nowMs, await lastCheckIn(objects, clientId), await clientKeys(store, clientId)) });
   }
 
   // POST /api/studio/uploads/<id>/complete — the poll view for a phone
