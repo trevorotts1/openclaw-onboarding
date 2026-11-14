@@ -4,12 +4,12 @@ Repo: `trevorotts1/openclaw-onboarding` · branch `pd/fl17-phase-checks`
 Branch head when I started: `b7d16fe6ba6709d65260086339ae97b6f095f1c1`
 Branch head now: `bb54443f943cb045794caabdc15539516d880648` (code + tests), then the report commit.
 All scratch work was done in worktrees under
-`/Volumes/mac mini m4/swarm-contract/pd-fix/tmp/PD-207` (`wt/` = after, `base/` = unchanged HEAD).
+`<LOOP_ROOT>/tmp/PD-207` (`wt/` = after, `base/` = unchanged HEAD).
 The lane clone was never edited and is clean.
 
 ## 1. Spec, quoted
 
-`/Volumes/mac mini m4/swarm-contract/fable-reviews-2026-11-11/03-presentation-department/FINAL/01-BUILD-SPEC.md`
+`<SWARM_ROOT>/fable-reviews-2026-11-11/03-presentation-department/FINAL/01-BUILD-SPEC.md`
 lines 2911–2931, section `### PD-207 — The upload step needs an upload record`:
 
 > | Lane and repository | FL17 · trevorotts1/openclaw-onboarding |
