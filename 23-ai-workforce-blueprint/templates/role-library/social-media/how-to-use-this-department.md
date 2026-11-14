@@ -30,12 +30,12 @@ figures out who handles it and routes it for you.
 
 Reach for this department when you want any of the following:
 
-- You own the company's presence on Bluesky - the decentralized social networking platform built.
+- You own the company's presence on Bluesky - the decentralized social networking platform built on the AT Protocol that has emerged as a significant alternative to X (formerly Twitter), attracting users seeking a platform with chronological feeds, user-controlled moderation, and an open, federated architecture.
 - You own the relationships between the brand and its community - not the content on any single platform.
-- You own the company's presence on Discord - the real-time community platform that began as a gamer's chat.
-- You own the company's presence on Facebook - the Facebook Business Page that serves as the company's.
+- You own the company's presence on Discord - the real-time community platform that began as a gamer's chat app and has evolved into the central hub for online communities of every kind, from developer ecosystems and creator fanbases to professional networks and customer communities.
+- You own the company's presence on Facebook - the Facebook Business Page that serves as the company's official hub.
 - You own the company's visual presence on Instagram - the grid that tells the brand story at a glance.
-- You own the company's professional presence on LinkedIn - the Company Page that serves as the brand's.
+- You own the company's professional presence on LinkedIn - the Company Page that serves as the brand's professional home.
 
 If you are not sure whether a request belongs here, ask anyway. The department
 head will either take it or hand it to the right department. You never have to
@@ -72,86 +72,73 @@ and it will pick the right one, or you can ask for a specialist by name.
 
 | Specialist | What it is for |
 | --- | --- |
-| **Bluesky Specialist** | You own the company's presence on Bluesky - the decentralized social networking platform built on the AT Protocol. |
+| **Bluesky Specialist** | You own the company's presence on Bluesky - the decentralized social networking platform built on the AT Protocol that has emerged as a significant alternative to X (formerly Twitter), attracting users seeking a platform with chronological feeds, user-controlled moderation, and an open, federated architecture. |
 | **Community Manager** | You own the relationships between the brand and its community - not the content on any single platform. |
-| **Discord Community Specialist** | You own the company's presence on Discord - the real-time community platform that began as a gamer's chat app and has. |
+| **Discord Community Specialist** | You own the company's presence on Discord - the real-time community platform that began as a gamer's chat app and has evolved into the central hub for online communities of every kind, from developer ecosystems and creator fanbases to professional networks and customer communities. |
 | **Facebook Specialist** | You own the company's presence on Facebook - the Facebook Business Page that serves as the company's official hub. |
 | **Instagram Specialist** | You own the company's visual presence on Instagram - the grid that tells the brand story at a glance. |
 | **LinkedIn Specialist** | You own the company's professional presence on LinkedIn - the Company Page that serves as the brand's professional home. |
-| **Pinterest Specialist** | You own the company's presence on Pinterest - the visual discovery engine that is less a social network and more. |
-| **Quora Specialist** | You own the company's presence on Quora - the world's largest question-and-answer platform with over 300 million. |
+| **Pinterest Specialist** | You own the company's presence on Pinterest - the visual discovery engine that is less a social network and more a search-and-save platform where over 450 million monthly active users come to plan, discover, and shop. |
+| **Quora Specialist** | You own the company's presence on Quora - the world's largest question-and-answer platform with over 300 million monthly active users who come to ask questions, share knowledge. |
 | **Reddit Specialist** | You own the company's presence on Reddit - the "front page of the internet" and the most authentic. |
-| **Threads Specialist** | You own the company's presence on Threads - Meta's text-first social platform that launched in 2023 and rapidly grew. |
-| **TikTok Specialist** | You own the company's presence on TikTok - the short-form vertical video platform that has fundamentally reshaped how. |
-| **Twitter X Specialist** | You own the company's presence on X (formerly Twitter) - the real-time public conversation platform that remains. |
-| **YouTube Channel Specialist Organic Only** | You own the company's presence on YouTube, the world's second-largest search engine and the dominant platform. |
+| **Threads Specialist** | You own the company's presence on Threads - Meta's text-first social platform that launched in 2023 and rapidly grew to over 200 million users. |
+| **TikTok Specialist** | You own the company's presence on TikTok - the short-form vertical video platform that has fundamentally reshaped how content is discovered, consumed. |
+| **Twitter X Specialist** | You own the company's presence on X (formerly Twitter) - the real-time public conversation platform that remains the internet's town square for breaking news, industry discourse. |
+| **YouTube Channel Specialist Organic Only** | You own the company's presence on YouTube. |
 
-### What each specialist is for, with an example request
+### What each specialist is for
 
 **Bluesky Specialist**
 
-- *What it is for:* You own the company's presence on Bluesky - the decentralized social networking platform built on the AT Protocol.
-- *Example request:* "Have the Bluesky Specialist take this on: You own the company's presence on Bluesky - the decentralized social networking platform."
+- *What it is for:* You own the company's presence on Bluesky - the decentralized social networking platform built on the AT Protocol that has emerged as a significant alternative to X (formerly Twitter), attracting users seeking a platform with chronological feeds, user-controlled moderation, and an open, federated architecture.
 
 **Community Manager**
 
 - *What it is for:* You own the relationships between the brand and its community - not the content on any single platform.
-- *Example request:* "Have the Community Manager take this on: You own the relationships between the brand and its community - not the content on any."
 
 **Discord Community Specialist**
 
-- *What it is for:* You own the company's presence on Discord - the real-time community platform that began as a gamer's chat app and has.
-- *Example request:* "Have the Discord Community Specialist take this on: You own the company's presence on Discord - the real-time community platform that began."
+- *What it is for:* You own the company's presence on Discord - the real-time community platform that began as a gamer's chat app and has evolved into the central hub for online communities of every kind, from developer ecosystems and creator fanbases to professional networks and customer communities.
 
 **Facebook Specialist**
 
 - *What it is for:* You own the company's presence on Facebook - the Facebook Business Page that serves as the company's official hub.
-- *Example request:* "Have the Facebook Specialist take this on: You own the company's presence on Facebook - the Facebook Business Page that serves."
 
 **Instagram Specialist**
 
 - *What it is for:* You own the company's visual presence on Instagram - the grid that tells the brand story at a glance.
-- *Example request:* "Have the Instagram Specialist take this on: You own the company's visual presence on Instagram - the grid that tells the brand story."
 
 **LinkedIn Specialist**
 
 - *What it is for:* You own the company's professional presence on LinkedIn - the Company Page that serves as the brand's professional home.
-- *Example request:* "Have the LinkedIn Specialist take this on: You own the company's professional presence on LinkedIn - the Company Page that serves."
 
 **Pinterest Specialist**
 
-- *What it is for:* You own the company's presence on Pinterest - the visual discovery engine that is less a social network and more.
-- *Example request:* "Have the Pinterest Specialist take this on: You own the company's presence on Pinterest - the visual discovery engine that is less."
+- *What it is for:* You own the company's presence on Pinterest - the visual discovery engine that is less a social network and more a search-and-save platform where over 450 million monthly active users come to plan, discover, and shop.
 
 **Quora Specialist**
 
-- *What it is for:* You own the company's presence on Quora - the world's largest question-and-answer platform with over 300 million.
-- *Example request:* "Have the Quora Specialist take this on: You own the company's presence on Quora - the world's largest question-and-answer."
+- *What it is for:* You own the company's presence on Quora - the world's largest question-and-answer platform with over 300 million monthly active users who come to ask questions, share knowledge.
 
 **Reddit Specialist**
 
 - *What it is for:* You own the company's presence on Reddit - the "front page of the internet" and the most authentic.
-- *Example request:* "Have the Reddit Specialist take this on: You own the company's presence on Reddit - the "front page of the internet" and the most."
 
 **Threads Specialist**
 
-- *What it is for:* You own the company's presence on Threads - Meta's text-first social platform that launched in 2023 and rapidly grew.
-- *Example request:* "Have the Threads Specialist take this on: You own the company's presence on Threads - Meta's text-first social platform."
+- *What it is for:* You own the company's presence on Threads - Meta's text-first social platform that launched in 2023 and rapidly grew to over 200 million users.
 
 **TikTok Specialist**
 
-- *What it is for:* You own the company's presence on TikTok - the short-form vertical video platform that has fundamentally reshaped how.
-- *Example request:* "Have the TikTok Specialist take this on: You own the company's presence on TikTok - the short-form vertical video platform."
+- *What it is for:* You own the company's presence on TikTok - the short-form vertical video platform that has fundamentally reshaped how content is discovered, consumed.
 
 **Twitter X Specialist**
 
-- *What it is for:* You own the company's presence on X (formerly Twitter) - the real-time public conversation platform that remains.
-- *Example request:* "Have the Twitter X Specialist take this on: You own the company's presence on X (formerly Twitter) - the real-time public."
+- *What it is for:* You own the company's presence on X (formerly Twitter) - the real-time public conversation platform that remains the internet's town square for breaking news, industry discourse.
 
 **YouTube Channel Specialist Organic Only**
 
-- *What it is for:* You own the company's presence on YouTube, the world's second-largest search engine and the dominant platform.
-- *Example request:* "Have the YouTube Channel Specialist Organic Only take this on: You own the company's presence on YouTube, the world's second-largest search engine."
+- *What it is for:* You own the company's presence on YouTube.
 
 
 ---
