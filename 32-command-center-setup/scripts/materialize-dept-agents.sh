@@ -259,7 +259,11 @@ DEPT_SCAN_ROOTS+=(
 export OC_CONFIG_FILE="$CONFIG_FILE"
 export OC_ROOT_PATH="$OC_ROOT"
 export OC_DRY_RUN="$DRY_RUN"
-export OC_DEPT_ROOTS="${DEPT_SCAN_ROOTS[*]}"
+# U-24 repair: DEPT_SCAN_ROOTS is a real bash array whose members may contain
+# spaces (the operator's portable drive has spaces in its name). Join on
+# newlines, not spaces, so a spaced HOME does not split one root into many.
+export OC_DEPT_ROOTS
+OC_DEPT_ROOTS="$(printf '%s\n' "${DEPT_SCAN_ROOTS[@]}")"
 # The Command Center DB, resolved ONCE by the shared resolver
 # (shared-utils/resolve_db.py: env/.env.local first, 0-byte decoys skipped,
 # layout candidates only with a `workspaces` table). Empty when unresolvable;
@@ -280,7 +284,7 @@ from pathlib import Path
 CONFIG_FILE = os.environ["OC_CONFIG_FILE"]
 OC_ROOT = os.environ["OC_ROOT_PATH"]
 DRY_RUN = os.environ.get("OC_DRY_RUN", "0") == "1"
-DEPT_ROOTS = os.environ["OC_DEPT_ROOTS"].split()
+DEPT_ROOTS = os.environ["OC_DEPT_ROOTS"].splitlines()
 SCRIPTS_DIR = os.environ.get("OC_SCRIPTS_DIR", "")
 
 # STRIP A DEPT AFFIX, nothing else.
@@ -887,7 +891,11 @@ if [[ $DRY_RUN -eq 0 && -f "$MANIFEST" && -x "$SCAFFOLDER" ]]; then
     fi
   done < "$MANIFEST"
   echo "[materialize-dept-agents] scaffolded $scaffold_ok agents ($scaffold_fail failures)"
-  rm -f "$MANIFEST"
+  # U-24: the manifest is DELIBERATELY left in place here. Phase 3 below reads
+  # it to know which departments to seed; deleting it at the end of Phase 2 made
+  # Phase 3 always fall back to a `type`-column query the `workspaces` table does
+  # not have, so the whole trio/quad step silently never ran. Phase 3 removes it
+  # once it has been used.
 elif [[ ! -x "$SCAFFOLDER" ]]; then
   echo "[materialize-dept-agents] WARN: scaffold-agent-files.sh not executable at $SCAFFOLDER -- skipping per-agent file scaffolding" >&2
 fi
@@ -971,19 +979,48 @@ def _ws_has_archived_at(conn):
 
 manifest_path = os.path.join(OC_ROOT, ".materialize-dept-agents.manifest")
 if not os.path.isfile(manifest_path):
-    # Manifest was already consumed by Phase 2 scaffolder -- try workspaces table
+    # Roster file absent (Phase 1 found no department folders, or its write
+    # failed) -- fall back to the workspaces table.
+    #
+    # The workspaces table has NO kind/type/role column (src/lib/db/schema.ts:
+    # id, name, slug, description, icon, company_id, user_md, sort_order,
+    # head_agent_id, original_slug, archived_at, archived_reason, created_at,
+    # updated_at). The rows that are NOT departments are the ones the Command
+    # Center seeds under fixed identities, so this filter names exactly those
+    # identities on the two columns that exist:
+    #   'default'                              seed.ts:138 structural default row
+    #   'general-task','dept-general-task'     migrations.ts 166/167 no-fit catch-all
+    #   '<company>-general'                    readiness/setup.ts:748 setup General lane
+    #   'podcast','anthology','presentations'  migrations.ts 113/114 (ENGINE_WORKSPACE_SLUGS)
+    #   'smoke-test-dept','no-script-dept'     test-residue.ts fixture residue
+    # Everything else the seeding code writes IS a department (departments.json
+    # rows, /api/departments rows, 'funnels', 'master-orchestrator') and keeps
+    # its rows. This is an exclusion list: a NEW structural row class needs a
+    # term here. The upgrade path is a real workspaces.kind column.
+    _NON_DEPARTMENT = (
+        "'default', 'general-task', 'dept-general-task',"
+        " 'podcast', 'anthology', 'presentations',"
+        " 'smoke-test-dept', 'no-script-dept'"
+    )
     try:
         db = sqlite3.connect(db_path)
-        cur = db.execute(
-            "SELECT id, name, slug FROM workspaces WHERE type != 'main' AND type != 'system'"
+        _where = (
+            f" WHERE lower(id) NOT IN ({_NON_DEPARTMENT})"
+            f" AND lower(COALESCE(slug, '')) NOT IN ({_NON_DEPARTMENT})"
+            " AND lower(id) NOT LIKE '%-general'"
+            " AND lower(COALESCE(slug, '')) NOT LIKE '%-general'"
             + (" AND archived_at IS NULL" if _ws_has_archived_at(db) else "")
         )
+        cur = db.execute("SELECT id, name, slug FROM workspaces" + _where)
         rows = cur.fetchall()
         db.close()
         entries = [(ws_id, name, slug or name.lower().replace(" ", "-")) for ws_id, name, slug in rows]
     except Exception as e:
         print(f"[materialize] WARN: could not read workspaces table: {e}", file=sys.stderr)
-        sys.exit(0)
+        # U-24: an unreadable roster is a FAILURE, not a silent success. The
+        # shell runs under `set -e`, so this status becomes the script's exit
+        # code instead of the old exit 0.
+        sys.exit(3)
 else:
     entries = []
     with open(manifest_path) as f:
@@ -1066,6 +1103,9 @@ print(
     + (f"; {skipped_archived} archived workspace(s) skipped" if skipped_archived else "")
 )
 PHASE3EOF
+  # U-24: remove the roster file only AFTER Phase 3 has finished reading it, on
+  # every path that reaches the end of Phase 3. Phase 2 no longer deletes it.
+  rm -f "$MANIFEST"
 fi
 
 # ---- Phase 4: role-file materialization (write healer-<dept>.md if missing) -
