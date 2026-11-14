@@ -90,9 +90,13 @@ def test_individual_answers_do_not_invent_sibling_answers(interview):
     assert "audience_composition_note" not in entries
     call("--answer", "want_motion_graphics", "no")
     assert "want_email_sequences" not in ledger(run)
-    rejected, _ = call("--answer", "motion_graphics_declined_reason", "", ok=False)
-    assert rejected.returncode != 0
-    assert "motion_graphics_declined_reason" not in ledger(run)
+    # PD-901: declining an opt-in that defaults to "no" is not a waiver, so
+    # this reason is optional -- a blank answer is accepted. It must never
+    # invent a reason: the bank's documented "no note" sentinel is the only
+    # value a blank may leave behind.
+    accepted, _ = call("--answer", "motion_graphics_declined_reason", "", ok=False)
+    assert accepted.returncode == 0
+    assert ledger(run).get("MOTION_GRAPHICS_DECLINED_REASON", {}).get("value", "") in ("", "no note.")
     reason = "Our own team handles ALL motion."
     call("--answer", "motion_graphics_declined_reason", reason)
     assert ledger(run)["MOTION_GRAPHICS_DECLINED_REASON"]["value"] == reason
