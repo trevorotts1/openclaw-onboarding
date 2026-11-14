@@ -5127,21 +5127,22 @@ echo "[$(ts)] reassert-presentation-deps starting" >> "$LOG"
 APT_GET="/usr/bin/apt-get"
 PY3="$(command -v python3 || echo /usr/bin/python3)"
 
-# --- System packages: libreoffice-impress (soffice) + poppler-utils (pdftoppm) + ffmpeg.
+# --- System packages: libreoffice-impress (soffice) + poppler-utils (pdftoppm) + ffmpeg
+# --- + tesseract-ocr (the OCR readback binary pytesseract shells out to).
 if [ -x "$APT_GET" ]; then
     if ! command -v soffice >/dev/null 2>&1 || ! command -v pdftoppm >/dev/null 2>&1 \
-       || ! command -v ffmpeg >/dev/null 2>&1; then
-        echo "[$(ts)] apt-get update + install libreoffice-impress poppler-utils ffmpeg" >> "$LOG"
+       || ! command -v ffmpeg >/dev/null 2>&1 || ! command -v tesseract >/dev/null 2>&1; then
+        echo "[$(ts)] apt-get update + install libreoffice-impress poppler-utils ffmpeg tesseract-ocr" >> "$LOG"
         ( "$APT_GET" update -y && \
           DEBIAN_FRONTEND=noninteractive "$APT_GET" install -y --no-install-recommends \
-              libreoffice-impress poppler-utils ffmpeg ) >> "$LOG" 2>&1 \
+              libreoffice-impress poppler-utils ffmpeg tesseract-ocr ) >> "$LOG" 2>&1 \
             && echo "[$(ts)] apt packages OK" >> "$LOG" \
             || echo "[$(ts)] WARN: apt install failed (see above)" >> "$LOG"
     else
-        echo "[$(ts)] soffice + pdftoppm + ffmpeg already present — apt install skipped" >> "$LOG"
+        echo "[$(ts)] soffice + pdftoppm + ffmpeg + tesseract already present — apt install skipped" >> "$LOG"
     fi
 else
-    echo "[$(ts)] WARN: real apt-get not found at $APT_GET — cannot install soffice/pdftoppm/ffmpeg" >> "$LOG"
+    echo "[$(ts)] WARN: real apt-get not found at $APT_GET — cannot install soffice/pdftoppm/ffmpeg/tesseract" >> "$LOG"
 fi
 
 # --- Python deps into the FIX 71 department venv (NEVER system python, never
@@ -5367,6 +5368,22 @@ else
             || warn "brew install ffmpeg failed — the webinar video (P9.6) cannot render. Manual fix: brew install ffmpeg"
     else
         warn "Homebrew not found — cannot install ffmpeg. The webinar video (P9.6-WEBINAR-VIDEO) cannot render. Manual fix: brew install ffmpeg"
+    fi
+
+    # tesseract (OCR readback): Homebrew formula. pytesseract is already in the
+    # department venv and IMPORTS without the binary, so the venv check above
+    # stays green on a box that cannot OCR — this install closes that gap on a
+    # fresh install. Mirrors the install on the update path (update-skills.sh,
+    # FIX 70); this is the install-side half only.
+    if command -v tesseract >/dev/null 2>&1; then
+        success "tesseract (OCR readback binary) already on PATH"
+    elif command -v brew >/dev/null 2>&1; then
+        note "Installing tesseract (OCR readback binary) via Homebrew formula..."
+        brew install tesseract 2>&1 | tee -a "$LOG_FILE" | tail -3 \
+            && success "tesseract installed" \
+            || warn "brew install tesseract failed — image QC OCR readback will fail. Manual fix: brew install tesseract"
+    else
+        warn "Homebrew not found — cannot install tesseract. Image QC OCR readback will fail. Manual fix: brew install tesseract"
     fi
 fi
 
