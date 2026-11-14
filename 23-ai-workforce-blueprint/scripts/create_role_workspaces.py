@@ -139,8 +139,10 @@ def routing_how_to(role_name, dept_name, dept_slug, company_name, industry,
     matched playbook would be improvisation, the exact failure this exists
     to prevent.
     """
-    company_name = company_name or _load_company_config().get("companyName", "")
-    industry = industry or _load_company_config().get("industry", "")
+    cfg = _load_company_config()
+    company_name = (company_name or cfg.get("companyName")
+                    or cfg.get("company_name") or cfg.get("name") or "")
+    industry = industry or cfg.get("industry", "")
     desc = role_description.strip() or "(no description supplied in the install spec)"
     return f"""# {role_name} — how-to.md  [ROUTED — WORK HANDLED BY GENERAL-TASK]
 
@@ -305,6 +307,24 @@ def write_sop_needed_manifest(company_dir):
           f"({payload['open_count']} open / {payload['record_count']} total)",
           file=sys.stderr)
     return str(json_path)
+
+def _flush_sop_needed(dept_path):
+    """Flush SOP-needed records to disk on every exit path (BU-108).
+
+    The manifest lives at the COMPANY root. When the caller points at a
+    department inside `<company>/departments/`, the company root is derivable;
+    otherwise the records cannot be written and the miss is named on stderr so
+    it can never go quiet.
+    """
+    dept_path = Path(dept_path)
+    if not SOP_NEEDED_RECORDS:
+        return
+    if dept_path.parent.name == "departments":
+        write_sop_needed_manifest(dept_path.parent.parent)
+    elif SOP_NEEDED_RECORDS:
+        print(f"[SOP-NEEDED] {len(SOP_NEEDED_RECORDS)} record(s) could not be "
+              f"written: {dept_path} is not inside a <company>/departments/ "
+              f"tree, so no company root is derivable", file=sys.stderr)
 
 
 # ─── DEFERRAL CLAUSES ─────────────────────────────────────────────────────────
@@ -3856,12 +3876,15 @@ def main():
         # never received it. Idempotent; never overwrites IDENTITY/SOUL/MEMORY.
         if not args.dry_run:
             write_governing_personas_md(dept_path, dept_slug)
+            _flush_sop_needed(dept_path)
         return 0
 
     if args.augment:
         results = augment_all_existing_role_folders(dept_path, workspace_root,
                                                      dry_run=args.dry_run)
         print(f"\nAugmented {len(results)} role folders in {dept_path.name}")
+        if not args.dry_run:
+            _flush_sop_needed(dept_path)
         return 0
 
     if not args.roles_json:
@@ -3871,6 +3894,8 @@ def main():
 
     created = build_all_roles_for_dept(dept_path, dept_path.name, roles, workspace_root)
     print(f"\nCreated {len(created)} role workspaces in {dept_path.name}")
+    if not args.dry_run:
+        _flush_sop_needed(dept_path)
     return 0
 
 if __name__ == "__main__":
