@@ -168,6 +168,42 @@ test('session: the option line carries the real last check-in', async () => {
   assert.match(body.option_line, /Last check-in: just now\.$/);
 });
 
+// U-Z14 (S75-077, decision D-5) — the sentence for a client whose studio runs
+// on an OpenClaw box: its keys are a box key and no machine key.
+test('session: a box key and no machine key reads the fifth sentence', async () => {
+  const store = memStore();
+  const objects = memObjects();
+  const me = await clientWithKey(store, 'link');
+  await store.kvPut(`client:${me.clientId}`, JSON.stringify({ client_id: me.clientId, option: 1 }));
+
+  const session = async () => {
+    const ctx = await makeCtx(store, objects, me.key);
+    ctx.url = new URL('https://studio.example/api/studio/session');
+    return json(await pageRoute(get('/api/studio/session', me.key), ctx));
+  };
+
+  await clientWithKey(store, 'box', me.clientId);
+  // ANOTHER client's machine key must never decide this client's sentence.
+  await clientWithKey(store, 'machine');
+  assert.match(
+    (await session()).option_line,
+    /^Your studio is on\. Orders start within about 2 minutes\. Last check-in: not yet\.$/,
+  );
+
+  // One machine key of the client's own: no longer a box-only studio, so the
+  // option 1 sentence comes back unchanged.
+  const machine = await clientWithKey(store, 'machine', me.clientId);
+  assert.match(
+    (await session()).option_line,
+    /^Your crew starts when you open Claude Code on your computer\. Last check-in: not yet\.$/,
+  );
+
+  // A revoked key is no longer one of the client's keys (U-Z12), so the
+  // sentence returns to the box one.
+  await store.kvPut(`key:${machine.record.fingerprint}`, JSON.stringify({ ...machine.record, status: 'revoked' }));
+  assert.match((await session()).option_line, /^Your studio is on\./);
+});
+
 // ---------------------------------------------------------------------------
 // PUT /api/studio/draft
 // ---------------------------------------------------------------------------

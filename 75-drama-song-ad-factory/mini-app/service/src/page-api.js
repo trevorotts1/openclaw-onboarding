@@ -32,7 +32,7 @@
 'use strict';
 
 import { scopePath } from './ids.js';
-import { DEFAULT_OPTION, OPTIONS, lastCheckIn, optionLine } from './options.js';
+import { DEFAULT_OPTION, OPTIONS, clientKeys, lastCheckIn, optionLine } from './options.js';
 import { listKeys } from './support.js';
 
 export const AF_ORDER_INVALID = 'AF-DS-ORDER-INVALID';
@@ -215,7 +215,7 @@ async function sessionRoute(ctx) {
     client_id: clientId,
     key_kind: auth.record.kind,
     option: OPTIONS.includes(record.option) ? record.option : DEFAULT_OPTION,
-    option_line: optionLine(record, nowMs, await lastCheckIn(objects, clientId)),
+    option_line: optionLine(record, nowMs, await lastCheckIn(objects, clientId), await clientKeys(store, clientId)),
     draft: await readDraft(objects, clientId),
     orders: shown.map((order) => project(order, nowMs)),
     // SPEC A11 / A2 — read straight off the two records above: this route
