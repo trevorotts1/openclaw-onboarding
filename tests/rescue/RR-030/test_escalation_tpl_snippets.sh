@@ -65,6 +65,24 @@ assert not [ln for ln in t.splitlines() if ln.startswith("curl ")], "a hand-buil
 PY
 if [ $? -eq 0 ]; then ok "identity line and taught send command match the contract"; else bad "identity line or taught send command broke the contract"; fi
 
+SECOND="$("$PY" - "$TPL" <<'PY'
+import sys
+lines = open(sys.argv[1], encoding="utf-8").read().splitlines()
+try:
+    i = lines.index("<!-- RESCUE_ESCALATION_BOXNAME_V3 -->")
+except ValueError:
+    print(""); raise SystemExit(0)
+print(lines[i + 1] if i + 1 < len(lines) else "")
+PY
+)"
+echo "  second line: $SECOND"
+for _pat in '"clientName": "' '"agentName": "' '"boxType": "' '"returnTo": "'; do
+  case "$SECOND" in
+    *"$_pat"*) ok "second line of the marked block carries $_pat" ;;
+    *)         bad "second line of the marked block is missing $_pat" ;;
+  esac
+done
+
 echo "== fenced RR_ROOT= blocks are valid bash =="
 NB="$("$PY" - "$TPL" "$W" <<'PY'
 import os, re, sys

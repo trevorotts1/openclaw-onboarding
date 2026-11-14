@@ -52,6 +52,32 @@ rr028_make_box() {
   cp "$RR028_REPO/shared-utils/rescue-env.sh"        "$_box/.openclaw/skills/shared-utils/"
   cp "$RR028_REPO/shared-utils/rr-readiness.sh"      "$_box/.openclaw/skills/shared-utils/"
   cp "$RR028_REPO/shared-utils/oc-env-descriptor.sh" "$_box/.openclaw/skills/shared-utils/"
+  # RRX-019h: the fixture carries the FULL file set the installer's own claim
+  # checks (rr_install_verify.py --include-added), so a case can never fail --
+  # or pass -- for a file this basket never installed. The four files other
+  # lanes add get a one-line valid Python placeholder when the repository does
+  # not have them yet; the placeholder carries no fixture token, so the
+  # credential-leak case (test_safe_probe.sh) stays honest.
+  mkdir -p "$_box/.openclaw/skills/65-rescue-receiver/contracts"
+  for _rr028_rel in \
+      65-rescue-receiver/rescue-notification.py \
+      65-rescue-receiver/rr-intake-auth-check.sh \
+      65-rescue-receiver/rr_install_verify.py \
+      65-rescue-receiver/rr_escalate.py \
+      65-rescue-receiver/rr_journal_check.py \
+      65-rescue-receiver/rr_owner_message.py \
+      65-rescue-receiver/rr_intake_classify.py \
+      65-rescue-receiver/contracts/result-v3.schema.json \
+      shared-utils/rescue-supervise.py; do
+    _rr028_dst="$_box/.openclaw/skills/$_rr028_rel"
+    if [ -f "$RR028_REPO/$_rr028_rel" ]; then
+      cp "$RR028_REPO/$_rr028_rel" "$_rr028_dst"
+    else
+      case "$_rr028_rel" in
+        *.py) printf 'pass  # rr028 fixture placeholder for a file another lane adds\n' > "$_rr028_dst" ;;
+      esac
+    fi
+  done
   if [ -n "$_store" ] && [ -f "$_store" ]; then
     cp "$_store" "$_box/.openclaw/secrets/.env"
   else
@@ -87,6 +113,32 @@ if LOG:
         fh.write("CALL %d\n" % len(argv))
         for a in argv:
             fh.write("ARG " + a.replace("\n", "\\n") + "\n")
+
+# RRX-019h: the two DAILY jobs wire.sh registers (the intake auth check and the
+# outbox flush) are NOT the poll job. They live in their own file so every
+# assertion about the poll job -- jobs_len, job_field, "no cron.add was issued"
+# -- keeps meaning what it says. A missing aux file is an EMPTY list: most
+# fixtures never run wire.sh and never create it. `rm` / `edit` / `enable` /
+# `disable` act on jobs.json only, on purpose.
+AUX = (JOBS + ".aux") if JOBS else ""
+AUX_NAMES = ("rr-intake-auth-check", "rr-escalate-flush")
+
+def load_aux():
+    try:
+        with open(AUX, encoding="utf-8") as fh:
+            d = json.load(fh)
+    except Exception:
+        d = {"jobs": []}
+    if not isinstance(d, dict):
+        d = {"jobs": []}
+    d.setdefault("jobs", [])
+    return d
+
+def save_aux(d):
+    tmp = AUX + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as fh:
+        json.dump(d, fh)
+    os.replace(tmp, AUX)
 
 def load():
     try:
@@ -221,15 +273,18 @@ if action == "list":
         sys.exit(int(os.environ.get("RR028_MOCK_LIST_EXIT", "0")))
     d = load()
     show_all = flag("--all") and os.environ.get("RR028_MOCK_NO_ALL") != "1"
-    if os.environ.get("RR028_MOCK_LIST_ALL_DEFAULT") == "1":
-        # A build whose DEFAULT `cron list --json` lists EVERY job, disabled
-        # ones included. Each row still carries its own `enabled` value (or
+    # RRX-019h: a listing is the union of both files. `_cron_count` reads this
+    # answer to decide "already present", so the daily jobs must be visible here
+    # even though they are kept out of jobs.json.
+    jobs = d["jobs"] + (load_aux()["jobs"] if AUX else [])
+    if os.environ.get("RR028_MOCK_LIST_ALL_DEFAULT") != "1" and not show_all:
+        # A build whose DEFAULT `cron list --json` lists EVERY job (disabled
+        # ones included) is modelled by RR028_MOCK_LIST_ALL_DEFAULT=1, which
+        # skips this filter. Each row still carries its own `enabled` value (or
         # omits it), so the engine can refuse to touch a disabled row — but the
         # historical legacy-cleanup `cron list --json | grep` + `cron rm` path
         # saw the disabled row, resolved its id and DELETED it (AD-6).
-        jobs = d["jobs"]
-    else:
-        jobs = d["jobs"] if show_all else [j for j in d["jobs"] if j.get("enabled", True)]
+        jobs = [j for j in jobs if j.get("enabled", True)]
     print(json.dumps({"jobs": jobs}))
     sys.exit(0)
 
@@ -264,6 +319,15 @@ if action == "add":
         "payload": job_payload(val("--command")),
         "delivery": {"mode": "none" if flag("--no-deliver") else "announce"},
     }
+    if AUX and job["name"] in AUX_NAMES:
+        # RRX-019h: a DAILY job goes to its own file, never to jobs.json, so the
+        # poll job's assertions cannot see it. Its id is namespaced so it can
+        # never collide with a jobs.json id in the merged listing.
+        a = load_aux()
+        job["id"] = "aux-%d" % (len(a["jobs"]) + 1)
+        a["jobs"].append(job)
+        save_aux(a)
+        sys.exit(0)
     d["jobs"].append(job)
     save(d)
     sys.exit(0)
@@ -423,21 +487,58 @@ print(o if isinstance(o, str) else json.dumps(o))
 
 # rr028_argv_blocks <box> — print the recorded argv vectors, one per line,
 # elements joined with \x1f so a split argument is visible.
+#
+# RRX-019h: a recorded `cron add` for one of the two DAILY jobs (the intake auth
+# check, the outbox flush) is EXCLUDED here, and only here, so every existing
+# "no cron.add was issued" assertion keeps meaning what it says about the POLL
+# job. rr028_aux_argv prints those two and nothing else.
+RR028_AUX_JOB_NAMES="rr-intake-auth-check rr-escalate-flush"
 rr028_argv_blocks() {
-  python3 - "$1/calls.log" <<'PY'
+  python3 - "$1/calls.log" "${RR028_AUX_JOB_NAMES}" <<'PY'
 import sys
+names = tuple(sys.argv[2].split())
+try:
+    lines = open(sys.argv[1], encoding="utf-8").read().splitlines()
+except Exception:
+    sys.exit(0)
+blocks, cur = [], []
+for ln in lines:
+    if ln.startswith("CALL "):
+        if cur: blocks.append(cur)
+        cur = []
+    elif ln.startswith("ARG "):
+        cur.append(ln[4:])
+if cur: blocks.append(cur)
+for b in blocks:
+    if len(b) >= 2 and b[0] == "cron" and b[1] == "add" \
+       and any(n in x for x in b for n in names):
+        continue
+    print("\x1f".join(b))
+PY
+}
+
+# rr028_aux_argv <box> — print ONLY the recorded `cron add` vectors for the two
+# DAILY jobs. Same one-line-per-vector, \x1f-joined form as rr028_argv_blocks.
+rr028_aux_argv() {
+  python3 - "$1/calls.log" "${RR028_AUX_JOB_NAMES}" <<'PY'
+import sys
+names = tuple(sys.argv[2].split())
 try:
     lines = open(sys.argv[1], encoding="utf-8").read().splitlines()
 except Exception:
     sys.exit(0)
 cur = []
+def emit(b):
+    if len(b) >= 2 and b[0] == "cron" and b[1] == "add" \
+       and any(n in x for x in b for n in names):
+        print("\x1f".join(b))
 for ln in lines:
     if ln.startswith("CALL "):
-        if cur: print("\x1f".join(cur))
+        if cur: emit(cur)
         cur = []
     elif ln.startswith("ARG "):
         cur.append(ln[4:])
-if cur: print("\x1f".join(cur))
+if cur: emit(cur)
 PY
 }
 

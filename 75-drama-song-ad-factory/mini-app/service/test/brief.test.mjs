@@ -10,11 +10,12 @@
 // out of the leading replies onto the order record.
 //
 // Proves four things:
-//   1. the ids this service reads are the card's FIRST five questions, checked
+//   1. the ids this service reads are the card's own questions, checked
 //      against the committed ui/questions.json -- the same file the page is
-//      served, which questions-drift.mjs regenerates from intake_card.py, so a
-//      reordering of the card turns this test red instead of silently moving
-//      the brief onto the wrong answers;
+//      served, which questions-drift.mjs regenerates from intake_card.py, so
+//      dropping a brief question turns this test red instead of silently
+//      losing that answer (U-Z11: the answers no longer sit at a fixed
+//      position, so this checks membership, not the leading five);
 //   2. an order posted with the brief stores it and reads it back;
 //   3. an order WITHOUT the brief is not refused -- the answers are the
 //      client's work -- but is stored clearly marked incomplete, naming what
@@ -83,12 +84,17 @@ async function postOrder(store, objects, key, body) {
 // 1. the ids are the card's first five questions
 // ---------------------------------------------------------------------------
 
-test('brief: the ids this service reads are the card\'s first five questions', () => {
+test('brief: the ids this service reads are the card\'s own questions', () => {
   const committed = JSON.parse(readFileSync(QUESTIONS_JSON, 'utf8'));
-  const leading = committed.questions.slice(0, BRIEF_QUESTION_IDS.length).map((q) => q.id);
-  assert.deepEqual(leading, BRIEF_QUESTION_IDS,
-    'the committed questions.json no longer opens with the brief; readBrief would read the wrong replies');
-  // the five before them are the production choices, so nothing was dropped
+  // U-Z11 — the brief is no longer the LEADING five answers: U-E01 put PURPOSE
+  // first and moved PHOTOS to the recap, and every answer now travels with the
+  // id of the question it answers. What must still hold is that each id the
+  // service reads as the brief is a question the card actually asks.
+  const asked = committed.questions.map((q) => q.id);
+  for (const id of BRIEF_QUESTION_IDS) {
+    assert.ok(asked.includes(id),
+      `questions.json no longer asks "${id}"; the brief would lose that answer`);
+  }
   assert.equal(committed.question_count, committed.questions.length);
   assert.ok(committed.questions.length > BRIEF_QUESTION_IDS.length);
 
@@ -96,9 +102,16 @@ test('brief: the ids this service reads are the card\'s first five questions', (
   // never a menu, without sniffing the option wording
   const typed = committed.questions.filter((q) => q.typed).map((q) => q.id);
   assert.deepEqual(typed, BRIEF_QUESTION_IDS);
+  // S75-074 (U-Z10) — a typed screen carries no option row at all. Until the
+  // re-export lands (U-E02), an older export still carries the single
+  // "reply with" row; the page draws the box directly for both shapes, so this
+  // pins that a typed screen can never offer alternatives to pick between.
   for (const q of committed.questions.filter((x) => x.typed)) {
-    assert.equal(q.options.length, 1, q.id);
-    assert.match(q.options[0].detail, /^reply with/i, q.id);
+    const rows = q.options || [];
+    const legacyFreeTextRow = rows.length === 1
+      && /^reply with/i.test(String(rows[0].detail || "").trim());
+    assert.ok(rows.length === 0 || legacyFreeTextRow,
+      `${q.id}: a typed screen must carry no option row`);
   }
 });
 
@@ -130,6 +143,38 @@ test('brief: readBrief takes the typed answers, trims them and names what is mis
 
   assert.deepEqual(BRIEF_REQUIRED_IDS, ['offer', 'link', 'audience', 'character']);
   assert.ok(!BRIEF_REQUIRED_IDS.includes('photos'), 'photos must stay optional');
+});
+
+test('brief: readBrief reads BY ID, so answers that arrive in another order still land right', () => {
+  // U-Z11 — the order U-E01's card gives: the four typed screens, the choices,
+  // and PHOTOS last on the recap. Read positionally this would put "1" where
+  // the photos belong; read by id it is exact.
+  const ids = ['offer', 'link', 'audience', 'character', 'models', 'length', 'music',
+    'look', 'checkpoints', 'spend', 'model', 'shape', 'photos', ''];
+  const replies = [BRIEF_ANSWERS.offer, BRIEF_ANSWERS.link, BRIEF_ANSWERS.audience,
+    BRIEF_ANSWERS.character, '1', '1', '1', '1', '1', '$25', '1', '1',
+    BRIEF_ANSWERS.photos, 'yes'];
+
+  const read = readBrief(replies, ids);
+  assert.equal(read.complete, true, `expected a complete brief, missing ${read.missing}`);
+  assert.deepEqual(read.brief, {
+    offer: BRIEF_ANSWERS.offer,
+    link: BRIEF_ANSWERS.link,
+    audience: BRIEF_ANSWERS.audience,
+    character: BRIEF_ANSWERS.character,
+    photos: BRIEF_ANSWERS.photos,
+  });
+
+  // an id this service does not keep as part of the brief is skipped, never
+  // stored under its own name
+  assert.equal('length' in read.brief, false);
+  // and an option pick stays out of the brief whichever screen it came from
+  const picked = readBrief(['1. MiniMax H3', 'https://x.example.com'], ['offer', 'link']);
+  assert.deepEqual(picked.brief, { link: 'https://x.example.com' });
+  assert.deepEqual(picked.missing, ['offer', 'audience', 'character']);
+
+  // with no ids at all, the old positional read is unchanged
+  assert.equal(readBrief(fullReplies()).brief.offer, BRIEF_ANSWERS.offer);
 });
 
 // ---------------------------------------------------------------------------

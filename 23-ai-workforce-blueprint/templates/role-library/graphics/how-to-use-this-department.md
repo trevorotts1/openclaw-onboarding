@@ -30,12 +30,12 @@ figures out who handles it and routes it for you.
 
 Reach for this department when you want any of the following:
 
-- Ad Creative Specialist of the company, the designer responsible for visual creative that appears in paid.
+- Ad Creative Specialist of the company.
 - You sit at the intersection of creative direction and prompt engineering.
-- Every byte produced by the DIU pipeline flows through you before it is considered delivered.
-- Book Cover Designer of the company, responsible for designing the visual packaging of every published work.
+- Every byte produced by the DIU pipeline flows through you before it is considered delivered: downloaded from ephemeral CDN links onto local disk, fingerprinted, labeled.
+- Book Cover Designer of the company, responsible for designing the visual packaging of every published work that carries the company's name.
 - Brand Identity Specialist of the company, the guardian and architect of the company's visual DNA.
-- Brand Systems Specialist - "The Standard" - for the company's Design Intelligence Unit inside the Graphics.
+- Brand Systems Specialist - "The Standard" - for the company's Design Intelligence Unit inside the Graphics department.
 
 If you are not sure whether a request belongs here, ask anyway. The department
 head will either take it or hand it to the right department. You never have to
@@ -72,170 +72,143 @@ and it will pick the right one, or you can ask for a specialist by name.
 
 | Specialist | What it is for |
 | --- | --- |
-| **Ad Creative Specialist** | Ad Creative Specialist of the company, the designer responsible for visual creative that appears in paid advertising. |
-| **AI Image Generator Specialist** | You sit at the intersection of creative direction and prompt engineering, wielding generative AI tools (Midjourney. |
-| **Asset Provenance Librarian** | Every byte produced by the DIU pipeline flows through you before it is considered delivered. |
-| **Book Cover Designer** | Book Cover Designer of the company, responsible for designing the visual packaging of every published work. |
+| **Ad Creative Specialist** | Ad Creative Specialist of the company, the designer responsible for visual creative that appears in paid advertising channels. |
+| **AI Image Generator Specialist** | You sit at the intersection of creative direction and prompt engineering, wielding generative AI tools (Midjourney, DALL-E, Stable Diffusion, Firefly, ComfyUI) as your primary production instruments. |
+| **Asset Provenance Librarian** | Every byte produced by the DIU pipeline flows through you before it is considered delivered: downloaded from ephemeral CDN links onto local disk, fingerprinted, labeled. |
+| **Book Cover Designer** | Book Cover Designer of the company, responsible for designing the visual packaging of every published work that carries the company's name. |
 | **Brand Identity Specialist Logo Color Type** | Brand Identity Specialist of the company, the guardian and architect of the company's visual DNA. |
 | **Brand Systems Specialist** | Brand Systems Specialist - "The Standard" - for the company's Design Intelligence Unit inside the Graphics department. |
-| **Course Slide Designer** | Course Slide Designer of the company, the specialist responsible for designing the visual learning materials. |
+| **Course Slide Designer** | Course Slide Designer of the company, the specialist responsible for designing the visual learning materials that deliver the company's educational content to students, clients. |
 | **Deck Systems Specialist** | Deck Systems Specialist ("The Architect") of the Design Intelligence Unit. |
 | **Design Producer** | Design Producer ("The Producer") of the company's Design Intelligence Unit (DIU). |
-| **Email Designer** | Email Designer of the company, the specialist responsible for the visual design and production of all email marketing. |
-| **Fidelity Tester** | Your nickname is "The Critic." You are the gatekeeper that no style card passes without earning its place. |
+| **Email Designer** | Email Designer of the company, the specialist responsible for the visual design and production of all email marketing communications. |
+| **Fidelity Tester** | Your nickname is "The Critic." You are the gatekeeper that no style card passes without earning its place: no drafted card reaches production status, no client sees a deliverable. |
 | **Generation Operator** | Generation Operator - "The Operator" - of the company's Design Intelligence Unit (DIU). |
 | **Infographic Specialist** | Infographic Specialist of the company, the designer who transforms complex information into clear, compelling. |
 | **Likeness Rights Officer** | Likeness Rights Officer of the company's Design Intelligence Unit - the only DIU role with authority to gate, clear. |
-| **Motion Systems Specialist** | Your nickname is "The Animator." You extend every client's static style card DNA into time - motion style systems. |
+| **Motion Systems Specialist** | Your nickname is "The Animator." You extend every client's static style card DNA into time - motion style systems for animated social content (Reels, TikTok, Stories). |
 | **Photo Shoot Director** | Photo Shoot Director for the company, operating inside the Design Intelligence Unit within the Graphics department. |
 | **Presentation Designer Slides Decks** | Presentation Designer of the company, the specialist responsible for translating ideas, data. |
-| **Print Asset Design Specialist** | Print / Asset Design Specialist of the company, the expert responsible for all physical and production-ready visual. |
+| **Print Asset Design Specialist** | Print / Asset Design Specialist of the company. |
 | **Render Dispatcher** | Render Dispatcher - "The Dispatcher" - for the company's Design Intelligence Unit inside the Graphics department. |
 | **Social Media Graphics Specialist** | Owns the Social Media Graphics Specialist work. |
 | **Style Analyst** | Style Analyst for - nicknamed "The Eye" within the Design Intelligence Unit (DIU). |
 | **Style Librarian** | Style Librarian for the company's Design Intelligence Unit - the role responsible for every style asset's findability. |
 | **Style Steward** | Style Steward - "The Broker" - for the company's Design Intelligence Unit inside the Graphics department. |
-| **Thumbnail Cover Designer** | Thumbnail / Cover Designer of the company, the specialist responsible for the small-scale visual assets that determine. |
-| **Prompt Author** | Prompt Author for the company's Graphics department  -  the ONE role that assembles every final AI-image-generation. |
+| **Thumbnail Cover Designer** | Thumbnail / Cover Designer of the company. |
+| **Prompt Author** | Prompt Author for the company's Graphics department  -  the ONE role that assembles every final AI-image-generation prompt from any requesting role's creative brief. |
 | **Brand Identity Specialist Phase2** | **** for the department of the company, reporting to the . |
 | **Presentation Designer Phase2** | **** for the department of the company, reporting to the . |
 
-### What each specialist is for, with an example request
+### What each specialist is for
 
 **Ad Creative Specialist**
 
-- *What it is for:* Ad Creative Specialist of the company, the designer responsible for visual creative that appears in paid advertising.
-- *Example request:* "Have the Ad Creative Specialist take this on: Ad Creative Specialist of the company, the designer responsible for visual creative."
+- *What it is for:* Ad Creative Specialist of the company, the designer responsible for visual creative that appears in paid advertising channels.
 
 **AI Image Generator Specialist**
 
-- *What it is for:* You sit at the intersection of creative direction and prompt engineering, wielding generative AI tools (Midjourney.
-- *Example request:* "Have the AI Image Generator Specialist take this on: You sit at the intersection of creative direction and prompt engineering."
+- *What it is for:* You sit at the intersection of creative direction and prompt engineering, wielding generative AI tools (Midjourney, DALL-E, Stable Diffusion, Firefly, ComfyUI) as your primary production instruments.
 
 **Asset Provenance Librarian**
 
-- *What it is for:* Every byte produced by the DIU pipeline flows through you before it is considered delivered.
-- *Example request:* "Have the Asset Provenance Librarian take this on: Every byte produced by the DIU pipeline flows through you before it is considered."
+- *What it is for:* Every byte produced by the DIU pipeline flows through you before it is considered delivered: downloaded from ephemeral CDN links onto local disk, fingerprinted, labeled.
 
 **Book Cover Designer**
 
-- *What it is for:* Book Cover Designer of the company, responsible for designing the visual packaging of every published work.
-- *Example request:* "Have the Book Cover Designer take this on: Book Cover Designer of the company, responsible for designing the visual packaging."
+- *What it is for:* Book Cover Designer of the company, responsible for designing the visual packaging of every published work that carries the company's name.
 
 **Brand Identity Specialist Logo Color Type**
 
 - *What it is for:* Brand Identity Specialist of the company, the guardian and architect of the company's visual DNA.
-- *Example request:* "Have the Brand Identity Specialist Logo Color Type take this on: Brand Identity Specialist of the company, the guardian and architect of the company's."
 
 **Brand Systems Specialist**
 
 - *What it is for:* Brand Systems Specialist - "The Standard" - for the company's Design Intelligence Unit inside the Graphics department.
-- *Example request:* "Have the Brand Systems Specialist take this on: Brand Systems Specialist - "The Standard" - for the company's Design Intelligence Unit."
 
 **Course Slide Designer**
 
-- *What it is for:* Course Slide Designer of the company, the specialist responsible for designing the visual learning materials.
-- *Example request:* "Have the Course Slide Designer take this on: Course Slide Designer of the company, the specialist responsible for designing."
+- *What it is for:* Course Slide Designer of the company, the specialist responsible for designing the visual learning materials that deliver the company's educational content to students, clients.
 
 **Deck Systems Specialist**
 
 - *What it is for:* Deck Systems Specialist ("The Architect") of the Design Intelligence Unit.
-- *Example request:* "Have the Deck Systems Specialist take this on: Deck Systems Specialist ("The Architect") of the Design Intelligence Unit."
 
 **Design Producer**
 
 - *What it is for:* Design Producer ("The Producer") of the company's Design Intelligence Unit (DIU).
-- *Example request:* "Have the Design Producer take this on: Design Producer ("The Producer") of the company's Design Intelligence Unit (DIU)."
 
 **Email Designer**
 
-- *What it is for:* Email Designer of the company, the specialist responsible for the visual design and production of all email marketing.
-- *Example request:* "Have the Email Designer take this on: Email Designer of the company, the specialist responsible for the visual design."
+- *What it is for:* Email Designer of the company, the specialist responsible for the visual design and production of all email marketing communications.
 
 **Fidelity Tester**
 
-- *What it is for:* Your nickname is "The Critic." You are the gatekeeper that no style card passes without earning its place.
-- *Example request:* "Have the Fidelity Tester take this on: Your nickname is "The Critic." You are the gatekeeper that no style card passes without."
+- *What it is for:* Your nickname is "The Critic." You are the gatekeeper that no style card passes without earning its place: no drafted card reaches production status, no client sees a deliverable.
 
 **Generation Operator**
 
 - *What it is for:* Generation Operator - "The Operator" - of the company's Design Intelligence Unit (DIU).
-- *Example request:* "Have the Generation Operator take this on: Generation Operator - "The Operator" - of the company's Design Intelligence Unit (DIU)."
 
 **Infographic Specialist**
 
 - *What it is for:* Infographic Specialist of the company, the designer who transforms complex information into clear, compelling.
-- *Example request:* "Have the Infographic Specialist take this on: Infographic Specialist of the company, the designer who transforms complex information."
 
 **Likeness Rights Officer**
 
 - *What it is for:* Likeness Rights Officer of the company's Design Intelligence Unit - the only DIU role with authority to gate, clear.
-- *Example request:* "Have the Likeness Rights Officer take this on: Likeness Rights Officer of the company's Design Intelligence Unit - the only DIU role."
 
 **Motion Systems Specialist**
 
-- *What it is for:* Your nickname is "The Animator." You extend every client's static style card DNA into time - motion style systems.
-- *Example request:* "Have the Motion Systems Specialist take this on: Your nickname is "The Animator." You extend every client's static style card DNA."
+- *What it is for:* Your nickname is "The Animator." You extend every client's static style card DNA into time - motion style systems for animated social content (Reels, TikTok, Stories).
 
 **Photo Shoot Director**
 
 - *What it is for:* Photo Shoot Director for the company, operating inside the Design Intelligence Unit within the Graphics department.
-- *Example request:* "Have the Photo Shoot Director take this on: Photo Shoot Director for the company, operating inside the Design Intelligence Unit."
 
 **Presentation Designer Slides Decks**
 
 - *What it is for:* Presentation Designer of the company, the specialist responsible for translating ideas, data.
-- *Example request:* "Have the Presentation Designer Slides Decks take this on: Presentation Designer of the company, the specialist responsible for translating ideas."
 
 **Print Asset Design Specialist**
 
-- *What it is for:* Print / Asset Design Specialist of the company, the expert responsible for all physical and production-ready visual.
-- *Example request:* "Have the Print Asset Design Specialist take this on: Print / Asset Design Specialist of the company."
+- *What it is for:* Print / Asset Design Specialist of the company.
 
 **Render Dispatcher**
 
 - *What it is for:* Render Dispatcher - "The Dispatcher" - for the company's Design Intelligence Unit inside the Graphics department.
-- *Example request:* "Have the Render Dispatcher take this on: Render Dispatcher - "The Dispatcher" - for the company's Design Intelligence Unit inside."
 
 **Social Media Graphics Specialist**
 
 - *What it is for:* Owns the Social Media Graphics Specialist work.
-- *Example request:* "Have the Social Media Graphics Specialist take on a task in its area."
 
 **Style Analyst**
 
 - *What it is for:* Style Analyst for - nicknamed "The Eye" within the Design Intelligence Unit (DIU).
-- *Example request:* "Have the Style Analyst take this on: Style Analyst for - nicknamed "The Eye" within the Design Intelligence Unit (DIU)."
 
 **Style Librarian**
 
 - *What it is for:* Style Librarian for the company's Design Intelligence Unit - the role responsible for every style asset's findability.
-- *Example request:* "Have the Style Librarian take this on: Style Librarian for the company's Design Intelligence Unit - the role responsible."
 
 **Style Steward**
 
 - *What it is for:* Style Steward - "The Broker" - for the company's Design Intelligence Unit inside the Graphics department.
-- *Example request:* "Have the Style Steward take this on: Style Steward - "The Broker" - for the company's Design Intelligence Unit inside."
 
 **Thumbnail Cover Designer**
 
-- *What it is for:* Thumbnail / Cover Designer of the company, the specialist responsible for the small-scale visual assets that determine.
-- *Example request:* "Have the Thumbnail Cover Designer take this on: Thumbnail / Cover Designer of the company, the specialist responsible."
+- *What it is for:* Thumbnail / Cover Designer of the company.
 
 **Prompt Author**
 
-- *What it is for:* Prompt Author for the company's Graphics department  -  the ONE role that assembles every final AI-image-generation.
-- *Example request:* "Have the Prompt Author take this on: Prompt Author for the company's Graphics department  -  the ONE role that assembles."
+- *What it is for:* Prompt Author for the company's Graphics department  -  the ONE role that assembles every final AI-image-generation prompt from any requesting role's creative brief.
 
 **Brand Identity Specialist Phase2**
 
 - *What it is for:* **** for the department of the company, reporting to the .
-- *Example request:* "Have the Brand Identity Specialist Phase2 take this on: **** for the department of the company, reporting to the ."
 
 **Presentation Designer Phase2**
 
 - *What it is for:* **** for the department of the company, reporting to the .
-- *Example request:* "Have the Presentation Designer Phase2 take this on: **** for the department of the company, reporting to the ."
 
 
 ---

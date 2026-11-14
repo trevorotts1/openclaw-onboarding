@@ -1,5 +1,9 @@
 # Changelog — Skill 47 (Movie Producer / Automated Video Production)
 
+## v15.2.5 - 2026-11-13 - embedded Skill 74 client re-embedded (video-pipeline-lockstep red on main)
+
+- `kie-adapters/tools/graphics/kie_image.py`: regenerated with `scripts/embed_kie_client.py`. Skill 74's client had moved on and the embedded block no longer matched the generator output or the verbatim slice of Skill 74's source, so `test_kie_embedded_client_hashlock.py` (run by qc-movie-producer.sh, hence by `video-pipeline-lockstep`) failed on main from 2026-11-09. Real code drift, guard unchanged. Hashlock test: 19 passed 2 failed before, 21 passed 0 failed after.
+
 ## v15.1.12 - 2026-10-20 - embedded Skill 74 client re-embedded (v1.1.9)
 
 - Re-embedded the Skill 74 client block in `kie-adapters/tools/graphics/kie_image.py` from Skill 74 v1.1.9, so a bare clone and the Docker image carry the sync createTask answer as a finished job (`state=success`, payload in `data.response`, no `bad_response`) and the URL-less save that persists it as `<task>_0.json`. `python3 scripts/embed_kie_client.py --check` reports OK; `scripts/test_kie_embedded_client_hashlock.py` is 21/21.

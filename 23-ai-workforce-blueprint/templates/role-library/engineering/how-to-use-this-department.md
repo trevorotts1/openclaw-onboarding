@@ -71,17 +71,15 @@ and it will pick the right one, or you can ask for a specialist by name.
 | **QA Engineer** | Systematic guardian of software quality  -  the engineer who builds and executes the testing frameworks. |
 | **Systems Engineer** | You own the infrastructure layer that everything else runs on  -  cloud provisioning, networking, CI/CD pipelines. |
 
-### What each specialist is for, with an example request
+### What each specialist is for
 
 **QA Engineer**
 
 - *What it is for:* Systematic guardian of software quality  -  the engineer who builds and executes the testing frameworks.
-- *Example request:* "Have the QA Engineer take this on: Systematic guardian of software quality  -  the engineer who builds and executes."
 
 **Systems Engineer**
 
 - *What it is for:* You own the infrastructure layer that everything else runs on  -  cloud provisioning, networking, CI/CD pipelines.
-- *Example request:* "Have the Systems Engineer take this on: You own the infrastructure layer that everything else runs on  -  cloud provisioning."
 
 
 ---

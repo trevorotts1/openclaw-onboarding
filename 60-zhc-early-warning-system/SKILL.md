@@ -1,7 +1,7 @@
 ---
 name: zhc-early-warning-system
 description: The fleet Early Warning System, a deterministic, zero-model-call sentinel that runs on every OpenClaw box and tells the OPERATOR (never the client) the moment something breaks or drifts. It pins a per-box baseline, tails the native config-audit event stream, and detects ten failure classes the fleet has actually suffered - a silent model or paid-provider downgrade, a runtime fallback the config never shows, a subtractive compaction misconfig that will crash the box, a safety-cap raised without sign-off, heartbeat/idle furnace token-burn in BOTH subscription and metered billing, a root-owned config write that freezes the gateway, a dark dashboard or tunnel, a secret shape leaked into a transcript, a stale skills downgrade, and a client-spamming announce cron. Every config write is snapshotted with a one-line revert command placed in the operator's hand; it never auto-changes a client box by default (alert-only fleet-wide). One skill directory holds BOTH the per-box sentinel and the companion that can audit, install, verify, and troubleshoot the sentinel on any box, plus the operator-box aggregator with a dead-man switch for boxes too broken to self-report. Zero model calls, one cron, CPU-cheap, operator-verbose and client-silent by construction. Trigger with "audit the early warning system", "why did the model switch", "install the sentinel", "did a safety cap get raised", "check for idle token burn", "verify the early warning system", "run the fleet digest", or "revert the last config change".
-version: v1.2.4
+version: v1.3.0
 ---
 
 # ZHC Early Warning System (Skill 60)
@@ -26,8 +26,15 @@ anything, and (by default) not an auto-healer.
    still ships and rides the merge gate, statically, because a future contributor
    might be tempted to add an LLM-judged anomaly check. They must not: deterministic
    or it does not ship.
-2. OPERATOR-ONLY, CLIENT-SILENT, STRUCTURALLY. Every alert routes through the box's
-   OWN OpenClaw gateway to the OPERATOR account, with `deliver:false` semantics on
+2. OPERATOR-ONLY, CLIENT-SILENT, STRUCTURALLY. DELIVERY (v1.3.0): on a CLIENT box
+   a P1 that stays open for 30 minutes is admitted to Rescue Rangers (durable
+   ticket via the shared rescue admission client, run after every cron-tick, with
+   backoff on failure); P2/P3 are recorded in the ledger only (`ews-entry.sh
+   audit`), never messaged. Each problem is recorded and routed ONCE, when it
+   appears, and resolved when it goes away. Client boxes carry no "operator"
+   Telegram account, so the old direct send failed on every attempt. On the
+   OPERATOR box alerts still route through its own OpenClaw gateway to the
+   OPERATOR account, with `deliver:false` semantics on
    any agent-loop injected event. The client's bot, chats, and Telegram account are
    never recipients. Move in silence toward clients is structural here, not policy.
    ONE narrow, approved exception: on the OPERATOR's OWN box only (never a client
@@ -72,7 +79,8 @@ anything, and (by default) not an auto-healer.
 | Skill 58 `alert-dedup.py` pattern | Operator-only gateway send, per-class dedup windows, storm cap. Reused, not rebuilt (`ews_alert.py`). |
 | Skill 58 `guard-cron-inventory.py` pattern | One-cron / no-heartbeat / no-poller inventory law and the cadence-bound math. |
 | Skill 59 four-scanner merge-gate family | `guard-no-anthropic-runtime.py`, `scan-no-secrets.sh`, `scan-no-client-identifiers.sh`, `scan-no-json-exports.sh`, same 0/1/2/3/4 exit contract and value-free doctrine. |
-| `scripts/skill-content-hash.sh` (repo root) | Auto-picks up `60-*` as a hashed skill dir; the update stamp gate covers Skill 60 with no extra wiring. Also the algorithm S9 uses to detect local skills drift / stale downgrade. |
+| `scripts/skill-content-hash.sh` (repo root) | Auto-picks up `60-*` as a hashed skill dir; the update stamp gate covers Skill 60 with no extra wiring. (S9 no longer runs it per tick - v1.3.0.) |
+| `update-skills.sh` | Re-pins the Skill 60 baseline at the end of every fleet update (the operator-sanctioned change), so approved changes never become permanent drift. |
 | Skill 59 single-writer ledger pattern | One SQLite-WAL writer (`ews_ledger.py`); every other script goes through it. |
 
 ## The ten detection signals (full catalog in docs/SIGNAL-CATALOG.md)
@@ -87,7 +95,7 @@ anything, and (by default) not an auto-healer.
 | S6 | Config-write hygiene + reversibility | `config-audit.jsonl` tail + ownership stat | P1 root-owned; SNAPSHOT on every write |
 | S7 | Surfaces dark (gateway / dashboard / tunnel) | local process/port probes + build marker | P1 gateway unreachable; dead-man covers a box that cannot speak |
 | S8 | Secret leaked into transcript/log | new bytes scanned with the secret-CLASS detector | P1, value-free (file:line + class only) |
-| S9 | Skills integrity drift / stale downgrade | installed tree hashed vs pinned manifest | P2 drift, P1 version regression |
+| S9 | Skills missing / stale downgrade | each skill's `skill-version.txt` vs the pinned versions (v1.3.0: no tree hashing; upgrades raise the pinned level) | P2 missing, P2 version went down |
 | S10 | Cron / delivery drift | `cron` entries vs baseline | P2 new cron, P1 announce cron on a non-operator chat |
 
 Two deliberate NON-signals, stated so nobody adds them later: (a) the sentinel

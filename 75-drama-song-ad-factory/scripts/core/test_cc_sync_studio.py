@@ -20,7 +20,13 @@ suite proves cc_sync against the contract instead of against itself:
      is never re-sent;
   6. an illegal jump is rejected once and never re-sent;
   7. base URL order: CC_BASE_URL -> COMMAND_CENTER_URL -> MISSION_CONTROL_URL
-     -> http://127.0.0.1:${CC_PORT|4000}.
+     -> http://127.0.0.1:${CC_PORT|4000};
+  8. a 408/425/429 reply is a transport outage (retry later), so the row stays
+     pending and a later flush sends it once -- never a terminal rejection;
+  9. the outbox file: a run already queued at the old path keeps its own file;
+     a new run uses the box's drama-runs tree;
+ 10. an ask longer than the board's 500-character limit is refused before it
+     queues.
 
 HTTP is stubbed at the ``sender`` seam: zero sockets, zero network, zero spend.
 
@@ -29,9 +35,12 @@ Run: python3 -m pytest -q test_cc_sync_studio.py   (also unittest-collectable)
 from __future__ import annotations
 
 import importlib.util
+import io
 import os
 import sys
+import tempfile
 import unittest
+import urllib.error
 from pathlib import Path
 
 CORE = Path(__file__).resolve().parent                 # scripts/core
@@ -354,6 +363,132 @@ class StudioBoard(unittest.TestCase):
         # an explicit argument still wins
         self.assertEqual(base(both, base_url="http://explicit.example/"),
                          "http://explicit.example")
+
+
+class RetryClassification(unittest.TestCase):
+    """A transient board reply (408/425/429) is a transport outage: the row
+    stays pending and is sent later, never terminally rejected."""
+
+    def test_429_stays_pending_and_is_retried_on_a_later_flush(self):
+        # (a) the stdlib transport maps the three transient codes to an
+        # un-dispatched TransportOutage instead of returning a terminal 4xx.
+        outbox = CS.Outbox(db_path=":memory:", workspace=WS)
+        original = CS.urllib.request.urlopen
+        self.addCleanup(setattr, CS.urllib.request, "urlopen", original)
+        for code in (408, 425, 429):
+            def transient(*args, **kwargs):
+                raise urllib.error.HTTPError("http://cc.test/api/ad-campaigns/j",
+                                             code, "transient", {}, io.BytesIO(b""))
+            CS.urllib.request.urlopen = transient
+            with self.assertRaises(CS.TransportOutage) as caught:
+                outbox._http_sender("PATCH", "/api/ad-campaigns/j",
+                                    {"stage_slug": "research", "status": "in_progress"})
+            self.assertFalse(caught.exception.dispatched, code)
+
+        # (b) the queued row itself: it stays pending, then acks on the next
+        # flush with exactly one send.
+        board = FakeBoard()
+        real = CS.Outbox(db_path=":memory:", workspace=WS, sender=board.sender)
+        real.enqueue_create("job-429", "Rate Limited Show",
+                            [{"slug": s} for s, _ in BM.STAGES], workspace=WS)
+        real.flush()
+        slug = BM.STAGES[0][0]
+        mid = real.enqueue_move("job-429", slug, "in_progress", actor="studio",
+                                workspace=WS, reason="picked up")
+
+        def limited(method, path, payload):
+            raise CS.TransportOutage("board 429 (retry later)", dispatched=False)
+
+        real.sender = limited
+        report = real.flush()
+        self.assertIn(mid, report["pending"])
+        self.assertEqual(report["rejected"], [])
+        state = real.db.execute("SELECT state FROM outbox WHERE id=?", (mid,)).fetchone()[0]
+        self.assertEqual(state, "pending", "a 429 is retried later, never rejected")
+
+        real.sender = board.sender
+        report = real.flush()
+        self.assertIn(mid, report["acked"])
+        moves = [c for c in board.calls if c["method"] == "PATCH"]
+        self.assertEqual(len(moves), 1, "one send, not one per outage")
+
+
+class OutboxLocation(unittest.TestCase):
+    """Where unsent updates live: the box's drama-runs tree once it exists, but
+    a file already queued at the old path is never orphaned."""
+
+    def setUp(self):
+        self.home = tempfile.TemporaryDirectory(prefix="s75outbox-home-")
+        self.addCleanup(self.home.cleanup)
+        keys = ("HOME", "OPENCLAW_HOME", "CC_OUTBOX_DIR", "CC_RUN_ID")
+        saved = {k: os.environ.get(k) for k in keys}
+
+        def restore():
+            for k, v in saved.items():
+                if v is None:
+                    os.environ.pop(k, None)
+                else:
+                    os.environ[k] = v
+
+        self.addCleanup(restore)
+        os.environ["HOME"] = self.home.name
+        for k in ("OPENCLAW_HOME", "CC_OUTBOX_DIR", "CC_RUN_ID"):
+            os.environ.pop(k, None)
+
+    def test_old_path_outbox_is_reused_and_new_runs_use_drama_runs(self):
+        home = Path(self.home.name)
+        old_root = home / ".claude" / "drama-song-factory" / "outbox"
+        old = old_root / WS / "job-old.sqlite3"
+        old.parent.mkdir(parents=True)
+        old.write_text("", encoding="utf-8")
+        (home / ".openclaw" / "drama-runs").mkdir(parents=True)
+
+        self.assertEqual(Path(CS.default_outbox_path(WS, "job-old")), old,
+                         "rows queued before the move stay in their own file")
+        self.assertEqual(
+            Path(CS.default_outbox_path(WS, "job-new")),
+            home / ".openclaw" / "drama-runs" / ".cc-outbox" / WS / "job-new.sqlite3")
+
+        # an explicit CC_OUTBOX_DIR still wins over both
+        os.environ["CC_OUTBOX_DIR"] = str(home / "chosen")
+        self.assertEqual(Path(CS.default_outbox_path(WS, "job-new")),
+                         home / "chosen" / WS / "job-new.sqlite3")
+        os.environ.pop("CC_OUTBOX_DIR")
+
+        # OPENCLAW_HOME moves the drama-runs tree
+        (home / "oc" / "drama-runs").mkdir(parents=True)
+        os.environ["OPENCLAW_HOME"] = str(home / "oc")
+        self.assertEqual(
+            Path(CS.default_outbox_path(WS, "job-new")),
+            home / "oc" / "drama-runs" / ".cc-outbox" / WS / "job-new.sqlite3")
+
+        # no drama-runs tree anywhere: the old root is still the answer
+        os.environ["OPENCLAW_HOME"] = str(home / "absent")
+        self.assertEqual(Path(CS.default_outbox_path(WS, "job-new")),
+                         old_root / WS / "job-new.sqlite3")
+
+
+class AskLimit(unittest.TestCase):
+    def test_501_character_ask_is_refused_before_it_queues(self):
+        board = FakeBoard()
+        outbox = CS.Outbox(db_path=":memory:", workspace=WS, sender=board.sender)
+        outbox.enqueue_create("job-ask", "Ask Show",
+                              [{"slug": s} for s, _ in BM.STAGES], workspace=WS)
+        outbox.flush()
+        slug = BM.STAGES[0][0]
+        rows = outbox.db.execute("SELECT COUNT(*) FROM outbox").fetchone()[0]
+        with self.assertRaises(CS.BlockedGateError):
+            outbox.enqueue_move("job-ask", slug, "blocked", actor="studio",
+                                workspace=WS, blocked_reason="approval",
+                                blocked_on_human="owner", ask="x" * 501)
+        self.assertEqual(
+            outbox.db.execute("SELECT COUNT(*) FROM outbox").fetchone()[0], rows,
+            "a refused ask queues nothing")
+        # exactly the board limit still passes
+        rid = outbox.enqueue_move("job-ask", slug, "blocked", actor="studio",
+                                  workspace=WS, blocked_reason="approval",
+                                  blocked_on_human="owner", ask="y" * 500)
+        self.assertIsInstance(rid, int)
 
 
 if __name__ == "__main__":
