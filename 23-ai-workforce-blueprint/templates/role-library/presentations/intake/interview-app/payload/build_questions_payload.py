@@ -43,6 +43,15 @@ _PASSTHROUGH = ("id", "order", "prompt", "help", "kind", "required",
                 "conditional_on", "ask_if", "block_gate", "storeOn", "key",
                 "refuse_values", "refuse_message")
 
+#: PD-014: the opt-ins that DEFAULT to "no". Accepting such a default is not
+#: a decline, so it owes no reason -- their declined-reason follow-up stays in
+#: the curated set (asked when the client says "no") but is optional and never
+#: blocking. Every other follow-up still blocks.
+DEFAULT_NO_REASONS = frozenset({
+    "vsl_page_declined_reason",
+    "email_sequences_declined_reason",
+    "motion_graphics_declined_reason"})
+
 # The curated core set the Presentation Interview app asks. Cap 21 binds the
 # set excluding the declined-reason waiver follow-ups; a follow-up (asked
 # only when its toggle is answered "no") rides on its toggle and does not
@@ -456,7 +465,8 @@ def selftest() -> int:
         for q in waiver_followups:
             assert q.get("conditional_on", {}).get("equals") == "no", q
             assert str(q.get("storeOn", "")).startswith("pre_presentation_capture."), q
-            assert q.get("required") is True, q
+            # PD-014: a follow-up on a default-NO opt-in is optional.
+            assert q.get("required") is (q["id"] not in DEFAULT_NO_REASONS), q
         assert len(ids) >= 7, "curated set must keep 7-9 core"
         assert ids[0] == "presentation_type", "first standard question must be the type-picker (presentation_type)"
         assert "speech_speed_preference" in ids, "speech-speed question must be included"
@@ -475,7 +485,9 @@ def selftest() -> int:
             _q = next(q for q in payload["questions"] if q["id"] == _rid)
             assert _q.get("conditional_on") == {"id": _toggle, "equals": "no"}, _q
             assert _q.get("storeOn") == f"pre_presentation_capture.{_field}", _q
-            assert _q.get("required") is True, _q
+            # PD-014: sales/checkout defaults to YES, so its reason still
+            # blocks; the VSL toggle defaults to NO, so its reason is optional.
+            assert _q.get("required") is (_rid not in DEFAULT_NO_REASONS), _q
         assert "want_email_sequences" in ids, "Skill 50 email election yes-no must be included"
         em = next(q for q in payload["questions"] if q["id"] == "want_email_sequences")
         assert em.get("storeOn") == "pre_presentation_capture.WANT_EMAIL_SEQUENCES", f"email toggle storeOn not qualified: {em.get('storeOn')}"
