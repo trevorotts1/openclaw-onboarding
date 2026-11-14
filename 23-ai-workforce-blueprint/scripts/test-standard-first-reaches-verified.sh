@@ -159,11 +159,21 @@ PYDB
 
 # A standard-first edit-mode interview: 4 substantive **Q:** blocks (the
 # verify_interview_complete substance bar: >=3 blocks, >512 bytes) PLUS the
-# 8-question colonless owner review of the prebuilt set. The review answers are
+# 8-question owner review of the prebuilt set. The review answers are
 # time-bearing (lastQuestionAt) and the state carries the buildType +
 # standardPrebuild the edit-mode exemption requires — the same shape the
 # evidence-gate battery's R6 case pins. The transcript is planted in BOTH
 # discovery dirs so the gate, the QC writer and the build all resolve it.
+#
+# SEPARATOR LAYOUT IS LOAD-BEARING. qc-interview-completion.py's check #1 does
+# not recognise the canonical "**Q:**" line (its raw-count regexes match the
+# colonless "**Q**" form), so for a **Q:**-only transcript it falls back to
+# counting "---" separator lines as Q/A blocks. build-workforce.py's
+# log_answer() and every sibling fixture write exactly ONE separator per
+# block, so the fallback reads the real block count. Plant a doubled
+# separator (a trailing "---" plus the next block's leading "---") and the
+# same 12 blocks read as 16 — a fixture-side count that trips the
+# lastQuestionNumber disagreement gate (>3) and refuses completion with 87.
 DISCOVERY="$SANDBOX_HOME/.openclaw/workspace/company-discovery"
 DISCOVERY2="$MASTER/company-discovery"
 mkdir -p "$DISCOVERY" "$DISCOVERY2"
@@ -177,8 +187,10 @@ qa = [
 ("What does your business do?", "We consult for small businesses and deliver done-for-you operations: scheduling, invoicing, client follow-up, weekly performance reporting."),
 ("What is your biggest challenge?", "Scaling delivery without hiring more people; absorb recurring coordination with the AI workforce."),
 ]
+# ONE "---" per block, the layout log_answer() writes and the sibling fixtures
+# use: the counter's separator fallback then reads 12 for 12 blocks, not 16.
 for q, a in qa:
-    lines += ['---', '', '**Q:** ' + q, '**A:** ' + a, '', '---', '']
+    lines += ['---', '', '**Q:** ' + q, '**A:** ' + a, '']
 for i in range(1, 9):
     lines += ['---', '', '**Q:** Review question %d: walk through department %d with me - keep, tune, or remove?' % (i, i),
               '**A:** A real owner answer for question %d: keep this department and focus it on our core service line and main offer.' % i, '', '']
@@ -208,7 +220,8 @@ s["unique_differentiator"] = "We build what big agencies ignore"
 s["departments"] = [{"slug": "marketing", "status": "pending"}]
 # Counter rule (R4/R4b): the state counter must never claim MORE than the
 # transcript holds. The transcript carries 4 substantive intake blocks plus
-# 8 review blocks = 12 Q-blocks; the counter records 12, exactly in sync.
+# 8 review blocks = 12 Q-blocks, and one "---" separator each, so the gate's
+# separator fallback reads 12; the counter records 12, exactly in sync.
 s["interviewProgress"] = {"lastQuestionNumber": 12, "lastQuestionPhase": "phase5.5", "lastQuestionAskedBy": "TestCEO", "lastQuestionAt": "2026-08-04T10:00:00Z"}
 json.dump(s, open(p, "w"), indent=2)
 PYEDITSTATE
@@ -336,6 +349,16 @@ EOFAGENTS
 # exporting a database path.
 mkdir -p "$SANDBOX_HOME/projects/command-center"
 cp "$DB" "$SANDBOX_HOME/projects/command-center/mission-control.db"
+# The ZHE prover discovers built departments from the roots
+# materialize-dept-agents.sh also scans — <oc_root>/workspace/departments
+# first. The canonical home for the built tree is
+# master-files/zero-human-company/<company>/departments (PRD 1.9, see
+# migrate-zhc-to-master-files.sh), which the prover does not scan, so expose
+# the SAME tree at that first root with a link: one tree, no copy drift, and
+# the prover proves the department folders and agent rows the build actually
+# wrote.
+[ -e "$SANDBOX_HOME/.openclaw/workspace/departments" ] || \
+  ln -s "$COMPANY/departments" "$SANDBOX_HOME/.openclaw/workspace/departments"
 
 # ══ STEP 3: reseed the board, then the completion refresh ══
 # The first apply added the industry vertical-pack departments AFTER the
