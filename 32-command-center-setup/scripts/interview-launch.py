@@ -322,7 +322,11 @@ def bind_database(path, app):
 
 def prebuild(path, app, root):
     s=read(path)
-    if s.get('interviewComplete') is True: return
+    # A finished interview does not by itself skip the prebuild: return early only
+    # when the foundation is already done. A pending, failed or absent foundation
+    # is completed here (the prebuild script decides the same way).
+    foundation=s.get('standardPrebuild')
+    if s.get('interviewComplete') is True and isinstance(foundation,dict) and foundation.get('status')=='done': return
     if s.get('buildType') != 'standard-first':
         if s.get('buildType') == 'legacy': return
         raise ValueError('onboarding lane pending: explicitly configure ONBOARDING_LANE and operator consent')

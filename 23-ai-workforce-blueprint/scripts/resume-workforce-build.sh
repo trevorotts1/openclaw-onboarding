@@ -315,7 +315,14 @@ if ! "$WORKFORCE_PYTHON" "$COMPLETION_SCRIPT" "$STATE_FILE" --has-identity >>"$L
   exit 0
 fi
 normalize_status_vocabulary
-"$WORKFORCE_PYTHON" "$COMPLETION_SCRIPT" "$STATE_FILE" >>"$LOG_FILE" 2>&1 || true
+# A box whose closeout is finished is never re-opened by this job.
+_recheck_closeout="$(jq -r '.closeoutStatus // ""' "$STATE_FILE" 2>/dev/null || true)"
+case "$_recheck_closeout" in
+  done|sent)
+    log "completion re-check skipped: closeoutStatus=$_recheck_closeout (a finished box is not re-opened by the resume job)" ;;
+  *)
+    "$WORKFORCE_PYTHON" "$COMPLETION_SCRIPT" "$STATE_FILE" >>"$LOG_FILE" 2>&1 || true ;;
+esac
 
 # ---- v10.14.36: BELT - explicit self-stop on terminal state ----
 # v10.15.26 / v10.16.25 HARD FLOOR: a terminal state in the build-state JSON
@@ -800,11 +807,36 @@ state_path = Path(sys.argv[1])
 depts_dir  = Path(sys.argv[2])
 HOW_TO_MIN = 256  # bytes — anything smaller is effectively empty/stub
 
+
+def _candidate_trees(state, fallback):
+    seen, out = set(), []
+    def add(p):
+        try:
+            p = Path(p)
+            if str(p) not in seen and p.is_dir():
+                seen.add(str(p)); out.append(p)
+        except OSError:
+            pass
+    root = state.get("companyRoot")
+    if isinstance(root, str) and os.path.isabs(root):
+        add(Path(root) / "departments")
+    ws = state.get("workspaceRoot")
+    if isinstance(ws, str) and ws:
+        add(Path(ws) / "departments")
+    add(fallback)
+    return out
+
+
 try:
     from workforce_state import read, commit
     state = read(state_path)
 except Exception as e:
     print(f"STALE_CHECK_ERROR: cannot read state: {e}", file=sys.stderr)
+    sys.exit(0)
+
+trees = _candidate_trees(state, depts_dir)
+if not trees:
+    print("STALE_CHECK_SKIPPED: no departments folder found; nothing reset")
     sys.exit(0)
 
 departments = state.get("departments", [])
@@ -834,19 +866,26 @@ for dept in departments:
     if not claims_done:
         continue
 
-    # Check for at least one real how-to.md under departments/<id>/
-    dept_dir = depts_dir / dept_id
+    # Check for at least one real how-to.md under every place the company can
+    # live: <tree>/<id> and <tree>/<id>-dept, for each candidate tree in turn.
     has_real_howto = False
-    if dept_dir.is_dir():
-        for role_dir in dept_dir.iterdir():
-            if not role_dir.is_dir() or role_dir.name.startswith("."):
+    for tree in trees:
+        for dept_dir in (tree / dept_id, tree / f"{dept_id}-dept"):
+            if not dept_dir.is_dir():
                 continue
-            how_to = role_dir / "how-to.md"
-            if how_to.exists() and how_to.stat().st_size >= HOW_TO_MIN:
-                content = how_to.read_text(encoding="utf-8", errors="replace")
-                if "[PENDING" not in content:
-                    has_real_howto = True
-                    break
+            for role_dir in dept_dir.iterdir():
+                if not role_dir.is_dir() or role_dir.name.startswith("."):
+                    continue
+                how_to = role_dir / "how-to.md"
+                if how_to.exists() and how_to.stat().st_size >= HOW_TO_MIN:
+                    content = how_to.read_text(encoding="utf-8", errors="replace")
+                    if "[PENDING" not in content:
+                        has_real_howto = True
+                        break
+            if has_real_howto:
+                break
+        if has_real_howto:
+            break
 
     if not has_real_howto:
         reset_ids.append(dept_id)
@@ -890,6 +929,8 @@ STALE_PY
     case "$_stale_line" in
       STALE_CHECK_CLEAN)
         log "STALE-CHECK: all 'done' departments verified against disk — state is clean" ;;
+      STALE_CHECK_SKIPPED*)
+        log "STALE-CHECK: $_stale_line" ;;
       STALE_RESET:*)
         log "STALE-CHECK [WARN]: $_stale_line"
         _stale_reset_count=$(( _stale_reset_count + 1 )) ;;
@@ -1402,6 +1443,10 @@ elif (( closeout_dirty == 1 )) && (( pending_count == 0 )) && (( stale_building_
   _osh_out="$(python3 "$SCRIPT_DIR/../../shared-utils/owner_sends_hold.py" check "$STATE_FILE" 2>&1)"; _osh_rc=$?
   if [[ "$_osh_rc" -ne 1 ]]; then
     log "HOP-4: OWNER SENDS HELD: ${_osh_out:-owner_sends_hold.py unavailable (rc $_osh_rc)} -- run-closeout.sh NOT launched."
+    _CLOSEOUT_SCRIPT=""
+  fi
+  if [[ "$(jq -r '.closeoutResumePaused // false' "$STATE_FILE" 2>/dev/null)" == "true" ]]; then
+    log "HOP-4: closeoutResumePaused=true -- run-closeout.sh NOT launched."
     _CLOSEOUT_SCRIPT=""
   fi
   if [[ -n "$_CLOSEOUT_SCRIPT" ]]; then

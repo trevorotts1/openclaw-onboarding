@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
 """
+This gate applies only to interviews whose build-state has no `interviewProgress.engine == 'gate-v2'`.
+
 qc-interview-completion.py — PRD-2.15 + PRD-2.16: Interview Completion QC Gate.
 
 Checks that a completed interview transcript meets quality standards before
@@ -45,6 +47,11 @@ the build pipeline is allowed to proceed. Five checks:
      checks still apply in full, and the flag can never launder an empty or
      faked transcript (same shape as the legacy exemption). It never applies
      to a legacy box (absent buildType): those keep the 25-35 bar.
+     COUNTER RULE (BU-02 / WF-002): the state's lastQuestionNumber may REFUSE an
+     interview only when it claims MORE questions than the transcript holds (more
+     than 3 above the distinct answered question count). A counter frozen BELOW
+     the transcript is a warning, not a failure — that is the progress-writer
+     bug class, not an unanswered question.
   2. Zero forbidden-jargon hits in AI-authored text (loads from forbidden-jargon.json).
   3. Every mandatory data field populated (branding required:true + structural fields).
      (2026-07-30 fix, client Mac mini box / its rescue agent incident): a
@@ -55,10 +62,11 @@ the build pipeline is allowed to proceed. Five checks:
      (those are logged solely to the transcript), so it reported these five fields
      "missing" for every client, always: brand_evokes, customer_feeling,
      brand_descriptors, ideal_customer, unique_differentiator.
-  4. Nudge cadence wired: interview-nudge-cron.sh exists + ensure-pipeline-crons.sh
-     (the shared registrar BOTH install.sh and update-skills.sh call) wires it.
-     (2026-07-30 fix, hot-patched-box false-failure): a SOFT/advisory finding, not
-     a hard block — see build_verdict() below and check_nudges_wired() docstring.
+  4. Nudge cadence: NOT CHECKED at completion time (WF-026 / BU-26). The old
+     check searched another script's text for cron wiring — box plumbing for an
+     earlier lifecycle stage, and no evidence about this interview. It now
+     reports wired: null with the note "not checked at completion time" and
+     adds nothing to warnings. See check_nudges_wired().
   5. NO-FABRICATION (v12.3.4): if interview-context-map.json exists, every answer whose
      text is a verbatim copy of a context snippet WITHOUT a 'confirmed-from-context:'
      provenance note is flagged as HARD FAIL (exit 3, reason 'unconfirmed-context-as-answer').
@@ -84,13 +92,13 @@ EXIT CODES (mirror qc-completeness.sh):
   3 — HARD FAIL (jargon hit, missing mandatory field, count way off,
                  or unconfirmed-context-as-answer)
 
-Nudge cadence wiring (check 4) is reported (nudgesWired / nudgeIssues) but is a
-WARNING, not a HARD FAIL (2026-07-30): it is box/infrastructure plumbing for a
-DIFFERENT, already-past lifecycle stage (nudging an owner who has not yet
-finished) — unlike checks 1/2/3/5/6/7, it says nothing about whether THIS
-transcript or these decisions are legitimate/complete. Blocking a client's
-already-complete, substantively-valid interview over an operator-facing cron
-gap is the wrong trade — see check_nudges_wired() and build_verdict() below.
+Nudge cadence wiring (check 4) is NOT CHECKED here (WF-026 / BU-26): it is
+reported as nudgesWired: null with the note "not checked at completion time" and
+adds nothing to warnings. It was box/infrastructure plumbing for a DIFFERENT,
+already-past lifecycle stage (nudging an owner who has not yet finished) and was
+decided by searching another script's text — that says nothing about whether THIS
+transcript or these decisions are legitimate/complete. See check_nudges_wired()
+and build_verdict() below.
 
 LEGACY/PRE-STANDARD INTERVIEW EXEMPTION (v12.4.0)
   Why: real, owner-authored interviews that were conducted BEFORE the 25-35 question
@@ -367,9 +375,20 @@ def count_questions(transcript: str, state: dict) -> dict:
     Count answered questions from the transcript.
     Primary: count Q-blocks in the transcript.
     Cross-check against interviewProgress.lastQuestionNumber from state.
+
+    COUNTER RULE (WF-002, BU-02): the state counter may only FAIL the gate when
+    it claims MORE than the transcript holds (state_qnum > distinct_questions,
+    by more than 3). A counter that sits BELOW the transcript is the frozen-
+    counter writer bug class (v10.15.x: no per-question writer, absent jq), not
+    evidence the owner failed to answer — the transcript is authoritative and
+    the disagreement is reported as a warning (`transcriptAheadWarning`), never
+    a hard failure. The comparison base is the number of DISTINCT normalized
+    question texts the transcript actually holds (`parse_answer_blocks()`), so
+    re-asking/re-drilling one question can never inflate the evidence.
     """
     # Count Q-blocks: lines starting with **Q** or Q- or a numbered Q pattern
     q_patterns = [
+        r"^\*\*Q:\*\*",           # **Q:** <text> — the format log_answer() writes
         r"^\*\*Q\*\*",            # **Q** <text>
         r"^\*\*Q-\w+",            # **Q-D5** <text>
         r"^Q-\w+[:.]",            # Q-D5: <text>
@@ -402,19 +421,51 @@ def count_questions(transcript: str, state: dict) -> dict:
         or state.get("lastQuestionNumber")  # legacy fallback
     )
 
+    # Distinct question texts the transcript actually holds (BU-02). Repeated
+    # rounds on the SAME question (the structured deck drills fields: the proven
+    # real fixture asked customer_feeling x6) collapse to ONE — a counter may
+    # never be legitimated by re-asking a question the owner already answered.
+    distinct_questions = len({
+        norm_prompt(b.get("question") or "")
+        for b in parse_answer_blocks(transcript)
+        if (b.get("question") or "").strip()
+    })
+    if distinct_questions == 0 and transcript_count > 0:
+        # Legacy transcripts use the colon-less "**Q** <text>" form, which
+        # parse_answer_blocks() (the "**Q:**"/"**A:**" format log_answer writes)
+        # cannot match. Fall back to the counted Q-blocks so an old interview is
+        # never refused by a counter comparison it could never satisfy.
+        distinct_questions = transcript_count
+
     disagree_warning = None
-    if state_qnum is not None and abs(transcript_count - state_qnum) > 3:
-        disagree_warning = (
-            f"Transcript count ({transcript_count}) and state.interviewProgress.lastQuestionNumber "
-            f"({state_qnum}) disagree by >{abs(transcript_count - state_qnum)} questions. "
-            f"Using transcript count as authoritative. "
-            f"A frozen lastQuestionNumber is the v10.15.0 bug class — check update-interview-state.sh invocations."
-        )
+    transcript_ahead_warning = None
+    if state_qnum is not None:
+        claimed_more = state_qnum - distinct_questions
+        transcript_more = distinct_questions - state_qnum
+        if claimed_more > 3:
+            disagree_warning = (
+                f"state.interviewProgress.lastQuestionNumber ({state_qnum}) claims "
+                f"{claimed_more} more questions than the transcript holds "
+                f"({distinct_questions} distinct answered question(s)). A counter that "
+                f"claims MORE than the transcript is fabricated progress, not evidence "
+                f"of a complete interview — check the update-interview-state.sh invocations."
+            )
+        elif transcript_more > 3:
+            transcript_ahead_warning = (
+                f"The transcript holds {distinct_questions} distinct answered question(s), "
+                f"{transcript_more} more than state.interviewProgress.lastQuestionNumber "
+                f"({state_qnum}). The counter is BEHIND the transcript (the frozen-counter "
+                f"writer bug class) — the transcript is authoritative, so this is a warning, "
+                f"not a failure. Repair the counter with "
+                f"update-interview-state.sh --sync-from-gate."
+            )
 
     return {
         "transcriptCount": transcript_count,
+        "distinctQuestions": distinct_questions,
         "stateCount": state_qnum,
         "disagreeWarning": disagree_warning,
+        "transcriptAheadWarning": transcript_ahead_warning,
     }
 
 
@@ -771,26 +822,13 @@ OPERATIONS_QUESTIONS_CANONICAL = [
     },
 ]
 
-# Substance floors — REUSED, not invented:
-#   - STRUCTURED_SUBSTANCE_MIN_CHARS reuses the EXACT numeric floor
-#     check_no_fabrication() above already uses for "a snippet long enough to
-#     be meaningful, not a tiny/coincidental match" (its context_snippets
-#     filter: `len(snippet) >= 30`). Applied here to any canonical question the
-#     branding JSON itself flags as needing a specific, non-generic answer (a
-#     non-empty `interviewGuidance` field) — brand_evokes, customer_feeling,
-#     brand_descriptors, brand_voice, ideal_customer, unique_differentiator.
-#     This floor is exactly what catches that guidance's OWN worked examples of
-#     an insufficient answer: "'Professional' is NOT an answer" (12 chars),
-#     "'Happy' is not specific enough" (5 chars), "'Small business owners' ...
-#     re-drill" (22 chars) — all below 30.
-#   - STRUCTURED_EXISTENCE_MIN_CHARS reuses LEGACY_MIN_ANSWER_CHARS as-is (the
-#     SAME "is this a real, non-empty answer line" floor legacy_substance_ok()
-#     above already applies) for canonical questions the branding JSON does NOT
-#     flag as needing drilled specificity (company name, industry, hex color,
-#     logo URL, command-center name) — a short factual answer to these is
-#     normal and correct, not shallow.
-STRUCTURED_SUBSTANCE_MIN_CHARS = 30
-STRUCTURED_EXISTENCE_MIN_CHARS = LEGACY_MIN_ANSWER_CHARS
+# Substance floors for the structured-web path.
+# The cards accept any non-empty answer. The gate must not demand more than the
+# card demanded, or an owner who answered everything is refused for a reason the
+# page never showed. Length is advisory (see shallowAdvisory), never a failure.
+STRUCTURED_SUBSTANCE_MIN_CHARS = 1
+STRUCTURED_EXISTENCE_MIN_CHARS = 1
+STRUCTURED_ADVISORY_MIN_CHARS = 30
 
 
 def load_canonical_structured_questions(branding_questions_path: Path) -> list:
@@ -842,9 +880,9 @@ def check_structured_coverage(transcript: str, branding_questions_path: Path) ->
     customer_feeling x6); the BEST substantive answer is what counts, not how
     many rounds it took to get there:
       - no matching block at all               -> MISSING
-      - matched, but below its substance floor  -> SHALLOW (see the floor
-        constants above)
-      - matched, at/above its floor              -> ANSWERED
+      - matched, any non-empty answer           -> ANSWERED (the cards accept any
+        non-empty answer, so nothing is shallow; a short prose answer is also
+        listed in advisoryShortIds for a warning, never as a failure)
 
     `complete` is True only when NO required canonical question is missing or
     shallow (optional questions — brand_primary_color, brand_logo, brand_voice,
@@ -873,7 +911,7 @@ def check_structured_coverage(transcript: str, branding_questions_path: Path) ->
         if len(ans) > best_len.get(qid, -1):
             best_len[qid] = len(ans)
 
-    answered_ids, missing_ids, shallow_ids = [], [], []
+    answered_ids, missing_ids, shallow_ids, advisory_short_ids = [], [], [], []
     for q in questions:
         qid = q["id"]
         length = best_len.get(qid)
@@ -892,8 +930,15 @@ def check_structured_coverage(transcript: str, branding_questions_path: Path) ->
             floor = STRUCTURED_EXISTENCE_MIN_CHARS
         if length < floor:
             shallow_ids.append(qid)
-        else:
-            answered_ids.append(qid)
+            continue
+        answered_ids.append(qid)
+        # A short prose answer is never a failure -- it is advisory only.
+        if (
+            q.get("kind", "text") == "text"
+            and q.get("needsSubstance")
+            and length < STRUCTURED_ADVISORY_MIN_CHARS
+        ):
+            advisory_short_ids.append(qid)
 
     required_ids = [q["id"] for q in questions if q.get("required")]
     required_set = set(required_ids)
@@ -906,6 +951,7 @@ def check_structured_coverage(transcript: str, branding_questions_path: Path) ->
         "answeredIds": answered_ids,
         "missingIds": missing_ids,
         "shallowIds": shallow_ids,
+        "advisoryShortIds": advisory_short_ids,
         "missingRequiredIds": missing_required_ids,
         "shallowRequiredIds": shallow_required_ids,
         "complete": not missing_required_ids and not shallow_required_ids,
@@ -1035,7 +1081,11 @@ _ANSWER_BLOCK_SPLIT_RE = re.compile(r"\n\s*-{3,}\s*\n")
 # Byte-identical to seam.ts's qMatch / aMatch regexes (note the REQUIRED colon —
 # this is the format build-workforce.py's own log_answer() writes: "**Q:** ... **A:** ...").
 _Q_BLOCK_RE = re.compile(r"\*\*Q:\*\*\s*([\s\S]*?)(?=\n\*\*A:\*\*)")
-_A_BLOCK_RE = re.compile(r"\*\*A:\*\*\s*([\s\S]*?)(?=\n\*\*(?:Provenance|Logged|Updated)\b|$)")
+# NOTE (BU-01 QC repair): after **A:** match spaces/tabs only, never the newline.
+# \s* ate the newline of an empty answer, so the lookahead below could not match
+# and the **Logged:** line was captured as the answer -- an empty answer block
+# then counted as answered. An empty answer must parse as empty (missing).
+_A_BLOCK_RE = re.compile(r"\*\*A:\*\*[ \t]*([\s\S]*?)(?=\n\*\*(?:Provenance|Logged|Updated)\b|$)")
 
 
 def parse_answer_blocks(text: str) -> list:
@@ -1259,94 +1309,29 @@ def check_mandatory_fields(state: dict, branding_questions_path: Path,
 
 def check_nudges_wired(repo_root: Path) -> dict:
     """
-    Static "is it wired" check — does not require a live cron or gateway.
-      (a) interview-nudge-cron.sh exists and is executable
-      (b) the box's shared cron REGISTRAR (ensure-pipeline-crons.sh) actually
-          wires interview-nudge-cron.sh into the "interview-nudge" cron
-      (c) nudge-incomplete-interviews.py has NUDGE_CONFIG with 24/72/168h
+    Check #4 (WF-026 / BU-26): NOT CHECKED AT COMPLETION TIME.
 
-    (b) — 2026-07-30 fix (hot-patched-box false-HARD-FAIL, third defect of this
-    shape in this file after the transcript-path fix / PR #772 and the
-    mandatory-fields fix / PR #775): this USED to grep repo_root/"install.sh"
-    for the string "interview-nudge-cron". install.sh is a PROVISIONING-TIME
-    script — it runs once during a full install and is NEVER copied into the
-    skills tree. Verified live on a hot-patched box (rescue-<client>):
-    install.sh is absent from ~/.openclaw entirely. Every box patched via
-    update-skills.sh (the fleet hot-patch path) therefore hard-failed this
-    check permanently, for a reason with nothing to do with the client's
-    interview.
+    This used to decide "wired" by searching the box's plumbing — an existence
+    test on interview-nudge-cron.sh, a substring search of
+    ensure-pipeline-crons.sh's text, and a text search of the nudge worker's
+    cadence constants. That is the wrong instrument for this gate: nudge
+    cadence is box plumbing for an EARLIER lifecycle stage (nudging an owner
+    who has not yet finished) and says nothing about whether THIS interview is
+    complete. Deciding it by substring search of another script also made it
+    a false authority — text can match while the mechanism is broken, and vice
+    versa.
 
-    ensure-pipeline-crons.sh is the ACTUAL, current source of truth: per its
-    own header, it is "the SHARED, IDEMPOTENT registrar/backfiller ... called
-    by BOTH install.sh (end of run) and update-skills.sh (after the wiring
-    phase) so files AND triggers always land together" — its _ensure_
-    interview_nudge() function is what registers cron name "interview-nudge"
-    (`openclaw cron add`) pointed at interview-nudge-cron.sh. It is persisted
-    to <openclaw-root>/scripts/ensure-pipeline-crons.sh on EVERY successful
-    run of either install.sh (canonical-scripts copy step) OR update-skills.sh
-    (deliver_canonical_scripts_tree(), which runs before that script's
-    same-version early-exit) — so, unlike install.sh, it is present on a
-    hot-patched box.
-
-    Deliberately NOT a live `openclaw cron list` check: interview-nudge is a
-    LIFECYCLE cron. ensure-pipeline-crons.sh's own _ensure_interview_nudge()
-    refuses to (re-)register it once state.interviewComplete==true, and
-    _sweep_stale_lifecycle_crons() ACTIVELY REMOVES it once that flag flips.
-    Since THIS gate runs at/after interview completion, a live "is the cron
-    currently present" check would be checking for something a healthy box is
-    expected to have already torn down — that would trade this false failure
-    for a new one of the identical shape (checking a signal that is correct
-    when negative). Checking the REGISTRAR's own wiring (capability) rather
-    than a lifecycle-dependent live snapshot avoids that trap while still
-    proving the mechanism is genuinely present and correctly configured.
-
-    Two candidate locations are checked for the registrar, matching this
-    script's two real call shapes: repo_root may be a live deployed skills
-    tree (default; no --repo-root — ensure-pipeline-crons.sh lives at the
-    SIBLING <openclaw-root>/scripts/, found via _resolve_openclaw_root()) or
-    an explicit full repo checkout (--repo-root; scripts/ is a direct child
-    of repo_root, as used by this script's own test suite / CI).
+    It now reports that the wiring was not checked here:
+        wired: None
+        note: "not checked at completion time"
+    and contributes NOTHING to warnings. `repo_root` stays in the signature
+    because the call site and the tests still pass it; this function reads no
+    files.
     """
-    issues = []
-
-    nudge_cron = repo_root / "23-ai-workforce-blueprint" / "scripts" / "interview-nudge-cron.sh"
-    if not nudge_cron.exists():
-        issues.append(f"interview-nudge-cron.sh not found at {nudge_cron}")
-    elif not os.access(nudge_cron, os.X_OK):
-        issues.append(f"interview-nudge-cron.sh exists but is not executable: {nudge_cron}")
-
-    registrar_candidates = [
-        repo_root / "scripts" / "ensure-pipeline-crons.sh",
-        _resolve_openclaw_root() / "scripts" / "ensure-pipeline-crons.sh",
-    ]
-    registrar = next((p for p in registrar_candidates if p.exists()), None)
-    if registrar is None:
-        issues.append(
-            "ensure-pipeline-crons.sh (the shared cron registrar run by BOTH "
-            "install.sh and update-skills.sh) not found at any of: "
-            + ", ".join(str(p) for p in registrar_candidates)
-        )
-    else:
-        content = registrar.read_text(encoding="utf-8", errors="replace")
-        if "interview-nudge-cron.sh" not in content or '"interview-nudge"' not in content:
-            issues.append(
-                f"{registrar} does not register the interview-nudge cron "
-                "(expected both a reference to interview-nudge-cron.sh and "
-                "the cron name \"interview-nudge\")"
-            )
-
-    nudge_worker = repo_root / "shared-utils" / "nudge-incomplete-interviews.py"
-    if nudge_worker.exists():
-        worker_text = nudge_worker.read_text(encoding="utf-8", errors="replace")
-        for expected_h in [24, 72, 168]:
-            if f'"hours_idle": {expected_h}' not in worker_text and f"'hours_idle': {expected_h}" not in worker_text and f"hours_idle: {expected_h}" not in worker_text:
-                issues.append(f"nudge-incomplete-interviews.py: missing {expected_h}h nudge cadence in NUDGE_CONFIG")
-    else:
-        issues.append(f"nudge-incomplete-interviews.py not found at {nudge_worker}")
-
     return {
-        "wired": len(issues) == 0,
-        "issues": issues,
+        "wired": None,
+        "note": "not checked at completion time",
+        "issues": [],
     }
 
 
@@ -1794,6 +1779,34 @@ def build_verdict(
             soft_failures.append(
                 f"Question count {count} is borderline (target 25-35). Human review required."
             )
+    # The over-long ceiling is ABSOLUTE — no exemption lifts it. (Conversational
+    # path only; a fully-covered structured interview is granted above.) It is
+    # checked BEFORE the granted exemptions so no flag can lift it.
+    elif count > 36:
+        hard_failures.append(
+            f"Question count {count} is outside the acceptable range (25-35). "
+            f"Too many — interview may have drifted long."
+        )
+    elif legacy_granted:
+        # Count floor lifted for this verified pre-standard interview. We still record
+        # the count, and we still surface an unusually tiny interview as a soft note.
+        # Evaluated BEFORE the structured hard-fail below: a granted exemption must
+        # not be refused on the structured path for a floor it is exempt from.
+        if count < LEGACY_MIN_QUESTIONS:
+            # Should be unreachable (substance floor would have failed) — defensive.
+            soft_failures.append(
+                f"Legacy interview question count {count} is unexpectedly low; review."
+            )
+    elif edit_mode_granted:
+        # Count floor lifted for this verified standard-first edit-mode interview.
+        # We still record the count, and still surface an unusually tiny interview
+        # as a soft note. Evaluated BEFORE the structured hard-fail below, for the
+        # same reason as the legacy branch.
+        if count < EDIT_MODE_MIN_QUESTIONS:
+            # Should be unreachable (substance floor would have failed) — defensive.
+            soft_failures.append(
+                f"Edit-mode interview question count {count} is unexpectedly low; review."
+            )
     elif is_structured:
         # Neither standard satisfied — the original structured hard fail, intact.
         missing_named = sc.get("missingRequiredIds", [])
@@ -1811,30 +1824,6 @@ def build_verdict(
             f"NEITHER standard is met; coverage of the "
             f"{sc.get('total', '?')}-question canonical deck is the standard for this path."
         )
-    # The over-long ceiling is ABSOLUTE — no exemption lifts it. (Conversational
-    # path only; a fully-covered structured interview is granted above.)
-    elif count > 36:
-        hard_failures.append(
-            f"Question count {count} is outside the acceptable range (25-35). "
-            f"Too many — interview may have drifted long."
-        )
-    elif legacy_granted:
-        # Count floor lifted for this verified pre-standard interview. We still record
-        # the count, and we still surface an unusually tiny interview as a soft note.
-        if count < LEGACY_MIN_QUESTIONS:
-            # Should be unreachable (substance floor would have failed) — defensive.
-            soft_failures.append(
-                f"Legacy interview question count {count} is unexpectedly low; review."
-            )
-    elif edit_mode_granted:
-        # Count floor lifted for this verified standard-first edit-mode interview.
-        # We still record the count, and still surface an unusually tiny interview
-        # as a soft note.
-        if count < EDIT_MODE_MIN_QUESTIONS:
-            # Should be unreachable (substance floor would have failed) — defensive.
-            soft_failures.append(
-                f"Edit-mode interview question count {count} is unexpectedly low; review."
-            )
     elif count < 24:
         if tailored:
             # Tailored/founder-self-build: downgrade low count to NEEDS-REVIEW (exit 2).
@@ -1855,21 +1844,28 @@ def build_verdict(
             f"Question count {count} is borderline (target 25-35). Human review required."
         )
     if count_result.get("disagreeWarning"):
-        # HARD FAIL (2026-07-30 fix, a client Mac mini box incident): a
-        # lastQuestionNumber that disagrees with the transcript's real Q-block
-        # count by more than 3 questions used to be a WARNING ONLY — the count
-        # check above still used the (correct) transcript count, so a genuinely
-        # complete interview could pass check #1 even while the disagreement
-        # itself, which is direct evidence the progress-counter write path is
-        # broken, sat in `warnings[]` where nothing reads it before marking
-        # complete. In the incident this covers, the transcript held 19
-        # questions while state.interviewProgress.lastQuestionNumber was frozen
-        # at 11 (a gap of 8) — the interview was ALSO short on count and
-        # mandatory fields, but the disagreement itself must independently
-        # refuse: "a completion claim that disagrees with the transcript by 8
-        # questions should refuse, not warn." A stale counter is evidence the
-        # write pipeline lost data even when unrelated checks would pass.
+        # HARD FAIL (2026-07-30 fix, a client Mac mini box incident; narrowed by
+        # BU-02/WF-002): only a counter that claims MORE than the transcript
+        # holds is fabricated progress and refuses. A counter frozen BELOW the
+        # transcript is the writer bug class (v10.15.x) — the interview really
+        # was answered, so that direction is a warning (below), never a refusal.
         hard_failures.append(count_result["disagreeWarning"])
+
+    # The counter sitting BEHIND the transcript: advisory only (BU-02/WF-002).
+    # Refusing here was the false-incomplete that made a complete interview
+    # unmarkable whenever the progress writer broke.
+    if count_result.get("transcriptAheadWarning"):
+        warnings.append(count_result["transcriptAheadWarning"])
+
+    # Cards accept any non-empty answer, so a short prose answer is advisory
+    # only. It is surfaced for the operator and never fail-closed.
+    advisory_short = sc.get("advisoryShortIds") or []
+    if advisory_short:
+        warnings.append(
+            f"[short-answers] {len(advisory_short)} answered question(s) are under "
+            f"{STRUCTURED_ADVISORY_MIN_CHARS} characters — advisory only, never a "
+            f"failure: " + ", ".join(advisory_short)
+        )
 
     # Jargon check
     if jargon_hits:
@@ -1901,19 +1897,11 @@ def build_verdict(
             "build-kick can address the right recipient."
         )
 
-    # Nudge wiring check (2026-07-30: WARNING, not a HARD FAIL — see the
-    # check_nudges_wired() docstring and the EXIT CODES note at the top of this
-    # file. Unlike checks 1/2/3/5/6/7, this says nothing about whether THIS
-    # transcript/decision set is legitimate — it is box plumbing for nudging an
-    # owner who has ALREADY finished the interview by the time this gate runs.
-    # Still fail-closed at the detection level: a genuine wiring gap is still
-    # named here and surfaced in nudgesWired/nudgeIssues for operational
-    # follow-up (ensure-pipeline-crons.sh backfill / fleet sweep) — it just no
-    # longer blocks recognizing a substantively-complete interview.)
-    if not nudge_result["wired"]:
-        warnings.append(
-            "[nudge-cadence] Nudge cadence not fully wired: " + "; ".join(nudge_result["issues"])
-        )
+    # Nudge wiring (WF-026 / BU-26): not checked at completion time. The check
+    # inspected box plumbing for a different, already-past lifecycle stage and
+    # decided it by searching another script's text, so it is not evidence about
+    # THIS interview and adds nothing to warnings. Its result is reported as
+    # nudgesWired: null plus a note.
 
     # Check #5: No-fabrication (v12.3.4)
     fabrication_violations = []
@@ -2010,6 +1998,7 @@ def build_verdict(
         "missingFields": missing_fields,
         "checkedFields": field_result.get("checked", []),
         "nudgesWired": nudge_result["wired"],
+        "nudgeNote": nudge_result.get("note", ""),
         "nudgeIssues": nudge_result.get("issues", []),
         "fabricationViolations": fabrication_violations,
         "declineProvenanceViolations": decline_violations,
@@ -2042,10 +2031,7 @@ def build_verdict(
                 + (" [edit-mode exemption GRANTED]" if edit_mode_granted else "")
                 + (" [structured-web coverage standard applied]" if is_structured else "")
                 + ", 0 jargon hits, all fields present"
-                + (
-                    ", nudges wired" if nudge_result["wired"]
-                    else " [nudge cadence NOT wired — see warnings, not blocking]"
-                )
+                + ", nudge wiring not checked at completion time"
             )
             if verdict == "PASS" else
             f"{verdict}: " + "; ".join(hard_failures + soft_failures)
@@ -2356,7 +2342,7 @@ def main():
                   f"[askedBy=interview-web — 25-35 raw count standard N/A]")
         print(f"  Jargon hits    : {len(details['jargonHits'])}")
         print(f"  Missing fields : {len(details['missingFields'])}")
-        print(f"  Nudges wired   : {'yes' if details['nudgesWired'] else 'NO'}")
+        print(f"  Nudges wired   : {details.get('nudgeNote') or 'not checked at completion time'}")
         fab_violations = details.get("fabricationViolations", [])
         print(f"  No-fabrication : {'PASS' if not fab_violations else f'FAIL ({len(fab_violations)} violation(s))'}")
         decline_viol = details.get("declineProvenanceViolations", [])
@@ -2385,7 +2371,7 @@ def main():
         if details["missingFields"]:
             print(f"\n  MISSING FIELDS: {', '.join(details['missingFields'])}")
 
-        if not details["nudgesWired"] and details["nudgeIssues"]:
+        if details["nudgeIssues"]:
             print("\n  NUDGE ISSUES:")
             for iss in details["nudgeIssues"]:
                 print(f"    - {iss}")
