@@ -114,7 +114,7 @@
     },
     "note": "Ask one actual question per turn. Reuse validated answers and applicable locked preferences. Duration and interaction targets are measurements, never reasons to merge questions or omit required decisions. max_turns and quick_max_turns are measured by question_sequence.measure_budget() and pinned by test_pd013_short_interview.py; a number typed here is a stale ceiling.",
     "max_turns": 69,
-    "quick_max_turns": 29
+    "quick_max_turns": 24
   },
   "questions": [
     {

@@ -197,20 +197,27 @@ def test_a1_quick_from_scratch_deck_asks_at_most_fourteen(tmp_path):
 
 
 def test_a1_quick_pitch_deck_is_measured(tmp_path):
-    """A from-scratch PITCH deck: nineteen questions including the review.
+    """A from-scratch PITCH deck: 14 or fewer including the review.
 
-    The spec's A1 ceiling is 14. Under the spec's own 25-field "both" set a
-    deck that carries a pitch cannot reach it: offer_name, offer_stack,
-    price_mode, final_price and proof_assets are both-depth fields with no
-    bank default, so a QUICK interview must ask them. 14 + 5 = 19. This test
-    pins the real number so the gap is visible and cannot drift silently.
+    A1's row is worded for a PITCH deck and its ceiling is 14. The five
+    pitch/commercial fields (offer_name, offer_stack, price_mode,
+    final_price, proof_assets) are both-depth with no bank default; asking
+    them in QUICK pushed a pitch deck to 19. question_sequence.quick_skip()
+    now defers the pitch block in QUICK and leaves those fields unrecorded,
+    so the count is the same 14 as the no-pitch deck. The both set is still
+    the spec's 25 (test_the_both_set_is_the_spec_list pins it); only the
+    QUICK ask changed.
     """
-    ids = Walk(tmp_path).walk(pitch="yes")
+    walk = Walk(tmp_path)
+    ids = walk.walk(pitch="yes")
     print("A1 pitch ids:", ids)
     assert ids[-1] == "defaults_review"
-    assert len(ids) == 19, ids
-    assert {"offer_name", "offer_stack", "price_mode", "final_price",
-            "proof_assets"} <= set(ids)
+    assert len(ids) <= 14, ids
+    assert not ({"offer_name", "offer_stack", "price_mode", "final_price",
+                 "proof_assets"} & set(ids)), ids
+    proc, done = walk.call("--complete")
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    assert done["status"] == "complete"
 
 
 # ---------------------------------------------------------------------------

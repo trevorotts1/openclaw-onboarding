@@ -146,6 +146,18 @@ def quick_skip(question, answers):
     # for a real deck; the review question is where the client overrides it.
     if depth_of(question) == "both" and has_default(question):
         return True, "quick: default"
+    # PD-013 A1 ceiling: the pitch/commercial rows (pitchless_skip) carry five
+    # both-depth fields with no bank default -- offer_name, offer_stack,
+    # price_mode, final_price, proof_assets. Asking them makes a from-scratch
+    # QUICK pitch deck 19 turns, over A1's 14 ceiling. QUICK defers the pitch
+    # block and leaves those fields unrecorded; the downstream pitch role
+    # decides, exactly as item 3 leaves a no-default in-depth field
+    # unrecorded. Item 2's both set (and the agreement test that pins it) is
+    # untouched: depth is still "both"; only the QUICK ask changes. Ceiling:
+    # a QUICK pitch deck reaches the pitch role with no offer/price/proof; if
+    # a real deck needs them before the pitch role, ask them there.
+    if depth_of(question) == "both" and question.get("pitchless_skip"):
+        return True, "quick: pitch block deferred"
     if depth_of(question) == "both":
         return False, None
     return True, "quick: in-depth"
