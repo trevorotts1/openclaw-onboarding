@@ -28,7 +28,8 @@ ones that make a client-facing PDF unshippable:
 Files written into the delivery folder, merged (never clobbered) alongside the
 other deliverables:
   * `03 - SCRIPT.pdf`
-  * `delivery-receipt.json` gains a `script_pdf` entry with the sha256
+  * `delivery-receipt.json` gains a `script_pdf` entry with the sha256 and the
+    count of characters the page could not print (`characters_replaced`)
   * `README.md` gains the script block between its own markers
 
 Run: python3 script_pdf/test_script_pdf.py
@@ -40,6 +41,7 @@ import os
 from pathlib import Path
 import re
 import sys
+import unicodedata
 
 _CORE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if _CORE not in sys.path:
@@ -75,6 +77,11 @@ REASON_PRICE = "SCRIPT_PDF_PRICE_IN_COPY"
 REASON_INCOME = "SCRIPT_PDF_INCOME_PROMISE"
 REASON_TOOL = "SCRIPT_PDF_TOOL_NAME_IN_COPY"
 REASON_LAYOUT = "SCRIPT_PDF_BAD_LAYOUT"
+
+# A character the page cannot print is not a refusal -- the name still goes out,
+# with the letter that prints in its place -- but it is never silent: the count
+# lands on the receipt and this warning names it.
+WARN_REPLACED = "PDF_CHARACTERS_REPLACED"
 
 DETAILS = {
     REASON_NOT_APPROVED: "the run's script approval record is missing or is "
@@ -150,6 +157,44 @@ def _fail(code, detail=None):
     return {"ok": False, "reason_code": code,
             "detail": detail or DETAILS.get(code, code), "file": None,
             "name": None}
+
+
+def _warn(code, detail):
+    """Named warning on the receipt (loud_failure.py; the core dir is on
+    sys.path). A warning is never allowed to stop the page from printing."""
+    try:
+        import loud_failure  # noqa: PLC0415 - sibling module, same core dir
+        loud_failure.warn(code, detail)
+    except Exception:                     # noqa: BLE001 - print rather than lose it
+        print("WARNING %s: %s" % (code, detail), file=sys.stderr)
+
+
+def replaced_characters(texts):
+    """(count, sorted distinct characters) the printed page cannot draw.
+
+    Uses `pdf_writer.to_page_text` -- the writer's own substitution rule -- so
+    the count can never drift from what the page prints: the text is composed
+    first (NFC), then any character whose printed form differs from the
+    character itself is a substitution, and is counted.
+    """
+    hits = []
+    for text in texts:
+        for ch in unicodedata.normalize("NFC", str(text)):
+            if PW.to_page_text(ch) != ch:
+                hits.append(ch)
+    return len(hits), sorted(set(hits))
+
+
+def _printed_copy(source):
+    """Every piece of approved copy that goes through the page, in order."""
+    out = [source["title"]]
+    for act, lines in source["story"]:
+        out.append(str(act))
+        out.extend(str(x) for x in (lines or []))
+    for sec in source["sheet"]:
+        out.append(str(sec.get("tag") or ""))
+        out.extend(str(x) for x in (sec.get("lines") or []))
+    return out
 
 
 # --- source --------------------------------------------------------------
@@ -379,16 +424,25 @@ def render(run_dir, delivery_dir, *, approval=None, doc=None,
         f.write(data)
     digest = sha256_file(path)
     pages = len(layout.pages)
+    replaced, chars = replaced_characters(_printed_copy(source))
+    if replaced:
+        _warn(WARN_REPLACED,
+              "%d character%s in %s cannot be printed as written; each is "
+              "replaced by its plain letter or '?' (%s)"
+              % (replaced, "" if replaced == 1 else "s", name,
+                 ", ".join(chars)))
     _update_receipt(delivery_dir, {
         "file": name, "sha256": digest, "pages": pages,
         "title": source["title"], "lyrics_sha": source["sha"],
+        "characters_replaced": replaced,
         "schema_version": SCHEMA_VERSION})
     _update_readme(delivery_dir, name, pages)
     return {"ok": True, "reason_code": None,
             "detail": "wrote %s (%d page%s)" % (name, pages,
                                                 "" if pages == 1 else "s"),
             "file": path, "name": name, "pages": pages,
-            "sha256": digest, "title": source["title"]}
+            "sha256": digest, "title": source["title"],
+            "characters_replaced": replaced}
 
 
 # --- QC ------------------------------------------------------------------
