@@ -555,12 +555,52 @@ def make_workdir(with_artifacts: bool, *, rich_prompts: bool = True,
                       + [{"slide": i + 1, "section": "Teaching",
                           "assigned": [{"item_id": f"C-{i:02d}", "type": "stat",
                                         "anchor": f"stat-{i:02d}",
-                                        "source_url": "https://www.cdc.gov/x",
                                         "confidence": "HIGH", "category": "C"}]}
                          for i in range(1, 11)],
             "distinct_items_used": 10,
             "content_slides_total": _floor_slides,
             "content_slides_with_research": 10}))
+        # PD-218a — a FIX 19 run carries a retrieval ledger. This fixture is a
+        # full modern pipeline run, so the citation gate (_chk_citation_validated)
+        # now requires the ledger once a research brief exists: with no ledger it
+        # correctly FAILS ("no evidence any cited URL was fetched"). The ledger rows
+        # below record the 8 brief sources as already fetched (status 200 + a 200+
+        # char extraction), so validation runs against those immutable baselines
+        # with ZERO network — exactly the PRES-029 no-refetch path — and this
+        # fixture stays a clean real run rather than a carved-out exception.
+        #
+        # The map's assigned items intentionally carry NO source_url: their anchors
+        # (stat-01..stat-10) are copy-weave ids, not claims about a fetched page,
+        # and an anchor citation must survive the semantic reviewer (>= 3 shared
+        # content tokens), which a slug anchor never can. The brief URLs are the
+        # citation set.
+        _brief_urls = [
+            "https://pmc.ncbi.nlm.nih.gov/articles/PMC12674523/",
+            "https://www.researchgate.net/publication/369670311",
+            "https://www.ncbi.nlm.nih.gov/pmc/articles/PMC9135772/",
+            "https://www.jsr.org/hs/index.php/path/article/view/3679",
+            "https://www.ncbi.nlm.nih.gov/books/NBK608531/",
+            "https://www.pewresearch.org/social-trends/2023/01/24/",
+            "https://www.apa.org/topics/parenting/positive-discipline",
+            "https://www.cdc.gov/childrensmentalhealth/data.html",
+        ]
+        _ledger_rows = []
+        for _u in _brief_urls:
+            _canon = _u if _u.endswith(".html") else _u.rstrip("/")
+            _excerpt = ("Independent audited evidence paragraph about the cited "
+                        "claim, recorded when the research phase fetched this "
+                        "page, long enough to clear the two hundred character "
+                        "content floor: " + _canon)
+            _ledger_rows.append({
+                "url": _u,
+                "canonical_url": _canon,
+                "content_sha256": hashlib.sha256(_excerpt.encode()).hexdigest(),
+                "status": 200,
+                "extracted": _excerpt,
+                "retrieved_at": "2026-01-01T00:00:00Z",
+            })
+        (root / "working" / "research" / "retrieval_ledger.jsonl").write_text(
+            json.dumps({"rows": _ledger_rows}))
         # Phase F — typography/design brief (per-slide art direction).
         (root / "working" / "research" / "design-brief-demo.md").write_text(
             "# Design brief\n" + ("Per-slide art direction and typography. " * 20) + "\n")
