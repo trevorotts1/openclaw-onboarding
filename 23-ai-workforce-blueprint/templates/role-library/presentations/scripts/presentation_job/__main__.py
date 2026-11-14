@@ -264,7 +264,8 @@ def cmd_new(args, scripts_dir: Path) -> int:
         die(EXIT_USAGE,
             f"intake.presentation_type is {ptype!r}; must be one of {legal}.\n"
             "  This is the ONE question that derives both creation_mode and deck_type "
-            "(deck-intake-driver.py:380-401). An unset value is AF-MODE-UNSET at preflight.")
+            "(deck-intake-driver.py, function derive_legacy_fields). An unset value "
+            "is AF-MODE-UNSET at preflight.")
     if ptype == "signature" and intake.get("signature_source") not in \
             ("from_scratch", "existing_content"):
         die(EXIT_USAGE,

@@ -5,7 +5,7 @@ import json
 import os
 import shlex
 import subprocess
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 from .result import CheckResult
 from .state import StateStore, utcnow
@@ -169,12 +169,49 @@ def dispatch(chat_id: str, kind: str, message: str) -> bool:
 
 
 class Reporter:
-    def __init__(self, state: Dict[str, Any], store: StateStore) -> None:
+    def __init__(self, state: Dict[str, Any], store: StateStore,
+                 manifest: Optional[Any] = None) -> None:
         self.state = state
         self.store = store
-        self._last_progress_at: Dict[str, float] = {}
-        self._blocked_dedupe: Dict[str, float] = {}
-        self._first_phase_sent = False
+        # PD-018b: the loaded manifest is the ONLY source of the phase ids and
+        # client labels the client-facing sanitizer uses -- the id list is
+        # never derived by pattern-matching the outgoing text. A Reporter built
+        # without a manifest (subsystem alerts, legacy call sites) keeps both
+        # empty and therefore sanitizes nothing; the engine always passes its
+        # own pinned manifest (phases.py Engine.__init__).
+        self._phase_ids: List[str] = []
+        self._client_labels: Dict[str, str] = {}
+        raw = getattr(manifest, "raw", None) if manifest is not None else None
+        if isinstance(raw, dict):
+            for entry in raw.get("phases") or []:
+                if isinstance(entry, dict) and entry.get("id"):
+                    pid = str(entry["id"])
+                    self._phase_ids.append(pid)
+                    self._client_labels[pid] = str(
+                        entry.get("client_label") or "").strip()
+        # PD-019: the three throttle values live in the job state so a resume
+        # (a new Reporter over the same state.json) does not repeat messages
+        # the previous process already sent. A state file written before this
+        # key existed reads as an empty throttle -- today's behaviour.
+        throttle = state.get("report_throttle")
+        if not isinstance(throttle, dict):
+            throttle = {}
+        last_progress_at = throttle.get("last_progress_at")
+        self._last_progress_at: Dict[str, float] = (
+            dict(last_progress_at) if isinstance(last_progress_at, dict) else {})
+        blocked_dedupe = throttle.get("blocked_dedupe")
+        self._blocked_dedupe: Dict[str, float] = (
+            dict(blocked_dedupe) if isinstance(blocked_dedupe, dict) else {})
+        self._first_phase_sent = bool(throttle.get("first_phase_sent"))
+
+    def _persist_throttle(self) -> None:
+        """PD-019: mirror the in-memory throttle into the job state and save it."""
+        self.state["report_throttle"] = {
+            "last_progress_at": dict(self._last_progress_at),
+            "blocked_dedupe": dict(self._blocked_dedupe),
+            "first_phase_sent": bool(self._first_phase_sent),
+        }
+        self.store.save(self.state)
 
     def event(self, kind: str, message: str, **extra: Any) -> None:
         ev = {"at": utcnow(), "kind": kind, "message": message}
@@ -193,12 +230,20 @@ class Reporter:
 
     def to_requester(self, kind: str, message: str, *,
                      phase_id: Optional[str] = None,
-                     reason: Optional[str] = None) -> None:
+                     reason: Optional[str] = None,
+                     force: bool = False) -> None:
         """kind in {ack, progress, blocked, done, waiting}. BLOCKED, DONE and
         WAITING ignore quiet hours. WAITING is the PD-048b person-pause notice:
         it is never throttled away, because a client who is the reason the run
         is paused must actually be told (it counts under sent["waiting"], not
         under the progress budget).
+
+        PD-206b: `force=True` bypasses the throttle for a message the caller has
+        already proven is due exactly once (the operator-review sentence is
+        guarded by the phase's own `operator_review_notified` flag). Without it
+        the message could be swallowed because the phase's start message stamped
+        the ten-minute window seconds earlier -- a sentence the client must
+        receive, never a duplicate.
 
         PRES-052: every dispatch outcome is ALSO observed into the supervised
         relay ledger (presentation_job.relay.observe_dispatch) with the
@@ -209,6 +254,7 @@ class Reporter:
         """
         req = self.state.get("requester") or {}
         chat_id = req.get("chat_id")
+        message = self._sanitize_for_client(message, phase_id)
         self.event(f"report.{kind}", message, requester=bool(chat_id))
         if not chat_id:
             self.event("report.undeliverable",
@@ -216,7 +262,7 @@ class Reporter:
             self._relay_observe(kind, message, "fail", phase_id)
             return
 
-        should_send = self._throttle_decision(kind, message, phase_id, reason)
+        should_send = self._throttle_decision(kind, message, phase_id, reason, force)
         if not should_send:
             throttled = self.state.setdefault("throttled", 0)
             self.state["throttled"] = throttled + 1
@@ -241,6 +287,7 @@ class Reporter:
                 # transport's unknown must keep trying, never be treated as if it
                 # had already gotten through (see result.py).
                 self._blocked_dedupe[self._blocked_key(phase_id, reason)] = _parse_minutes(utcnow())
+                self._persist_throttle()
         else:
             # FAIL (no transport configured) or UNDETERMINED (timeout / non-zero
             # exit / could not start): never discard. Queue for the sweeper
@@ -277,9 +324,43 @@ class Reporter:
                  "chat_id": chat_id, "attempts": 1, "outcome": result.value})
         self.store.save(self.state)
 
+    def _sanitize_for_client(self, message: str,
+                             phase_id: Optional[str] = None) -> str:
+        """PD-018b: nothing internal reaches the client transport.
+
+        If the outgoing text carries a manifest phase id (id list read from the
+        loaded manifest, never a pattern over the message) or a token starting
+        `AF-`, the client receives one plain sentence instead and the run
+        records `report.sanitized` with the withheld text for the operator.
+        """
+        text = str(message or "")
+        if not self._phase_ids and "AF-" not in text:
+            return text
+        leaked = ""
+        for pid in self._phase_ids:
+            if pid and pid in text:
+                leaked = pid
+                break
+        if not leaked:
+            for token in text.split():
+                if token.lstrip("([{\"'").startswith("AF-"):
+                    leaked = token
+                    break
+        if not leaked:
+            return text
+        label = self._client_labels.get(phase_id or "", "")
+        replacement = (f"Your presentation is moving ahead: {label}."
+                       if label else "Your presentation is moving ahead.")
+        self.event("report.sanitized",
+                   f"internal text withheld from the client ({leaked}): {text}",
+                   phase_id=phase_id)
+        return replacement
+
     @staticmethod
     def _blocked_key(phase_id: str, reason: str) -> str:
-        return f"{phase_id}\x00{reason}"
+        # PD-019: " | " instead of a NUL byte. The key now survives a JSON
+        # round-trip in state["report_throttle"]["blocked_dedupe"].
+        return f"{phase_id} | {reason}"
 
     def _stamp_sent(self, kind: str) -> None:
         sent = self.state.setdefault("sent", {})
@@ -293,7 +374,11 @@ class Reporter:
 
     def _throttle_decision(self, kind: str, message: str,
                            phase_id: Optional[str],
-                           reason: Optional[str]) -> bool:
+                           reason: Optional[str],
+                           force: bool = False) -> bool:
+        if force:
+            # PD-206b: the caller has already proven this message is due once.
+            return True
         if kind in ("ack", "done", "waiting"):
             # PD-048b: a WAITING notice is the message that explains the pause;
             # the 10-minute progress budget must never swallow it.
@@ -315,25 +400,28 @@ class Reporter:
             if self.state.get("throttle_probe"):
                 return False
             now_min = _parse_minutes(utcnow())
-            if self._is_milestone(message):
+            if self._is_milestone(phase_id):
                 self._last_progress_at["__milestone__"] = now_min
+                self._persist_throttle()
                 return True
             if not self._first_phase_sent:
                 self._first_phase_sent = True
                 self._last_progress_at["__any__"] = now_min
+                self._persist_throttle()
                 return True
             last = self._last_progress_at.get("__any__", 0)
             if (now_min - last) >= PROGRESS_MIN_INTERVAL_MINUTES:
                 self._last_progress_at["__any__"] = now_min
+                self._persist_throttle()
                 return True
             return False
         return True
 
-    def _is_milestone(self, message: str) -> bool:
-        for m in _PROGRESS_MILESTONES:
-            if m in message:
-                return True
-        return False
+    def _is_milestone(self, phase_id: Optional[str]) -> bool:
+        """PD-018b: a milestone is the phase's own ID, passed through from
+        _throttle_decision -- never id text searched for inside the message
+        (a client message no longer carries a phase id at all)."""
+        return bool(phase_id) and phase_id in _PROGRESS_MILESTONES
 
     def _relay_observe(self, kind: str, message: str, outcome: str,
                        phase_id: Optional[str]) -> None:
