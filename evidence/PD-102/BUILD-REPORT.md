@@ -120,7 +120,7 @@ No new rule was added.
     pre-create … this pipeline never creates a folder."
 13. **§12 escalation row** — "GHL folder creation fails" became "GHL media destination cannot be resolved".
 14. **SOP 9.1 Outputs and §13 Example A** — the ledger example paths follow the run directory
-    (`<run_dir>/`, `<run_dir>/working/media-library/`), and Example A's `/Users/…` paths are gone (spec
+    (`<run_dir>/`, `<run_dir>/working/media-library/`), and Example A's absolute user-home paths are gone (spec
     rule 8). This is the whole of build commit `88dc5c45a`.
 
 ### Deliberate asymmetry, stated not hidden

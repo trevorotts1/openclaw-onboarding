@@ -2,7 +2,7 @@
 
 **Unit:** PD-101 · "The Audio procedure names the engine's files" · Moderate · mechanical
 **Lane:** FL24 · **Branch:** `pd/fl24-role-procedures-c`
-**Worktree:** `/Volumes/mac mini m4/swarm-contract/pd-fix/worktrees/onboarding/FL24`
+**Worktree:** `<project-root>/pd-fix/worktrees/onboarding/FL24`
 **Base:** `16988928f` (PD-093's accepted head; branch confirmed on the right branch before any edit)
 **Build commit:** `80e5bc39218b9078989813302eada7f09af896b9`
 **Report commit:** the commit that carries this file (its parent is the build commit)
@@ -12,7 +12,7 @@
 
 ## 1. Which spec text this row came from
 
-`/Volumes/mac mini m4/swarm-contract/fable-reviews-2026-11-11/03-presentation-department/FINAL/01-BUILD-SPEC.md`,
+`<project-root>/fable-reviews-2026-11-11/03-presentation-department/FINAL/01-BUILD-SPEC.md`,
 unit section **PD-101 — The Audio procedure names the engine's files** (lines 3897-3919), read in full:
 
 > - **Build unit PD-101 (Moderate, Haiku: exact path replacements in one role file; lane FL24).**
@@ -104,8 +104,8 @@ It reads the two files and the manifest, asserts every row, and exits non-zero o
 Command and result on HEAD:
 
 ```
-$ cd /Volumes/mac mini m4/swarm-contract/pd-fix/worktrees/onboarding/FL24
-$ python3 -I /Volumes/mac mini m4/swarm-contract/pd-fix/scratchpads/PD-101/check_pd101.py .
+$ cd <project-root>/pd-fix/worktrees/onboarding/FL24
+$ python3 -I <project-root>/pd-fix/scratchpads/PD-101/check_pd101.py .
 PASS  old-string-absent :: 'working/presenter-speech/presenters_speech.md' role=0 mirror=0
 PASS  old-string-absent :: 'working/audio-demo/<deck>_demo.mp3' role=0 mirror=0
 PASS  old-string-absent :: 'Presentations/scripts/synthesize_full_speech.py' role=0 mirror=0
