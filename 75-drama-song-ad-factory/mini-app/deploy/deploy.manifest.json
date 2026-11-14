@@ -21,14 +21,14 @@
   "bucket": {
     "name": "zhw-drama-studio",
     "retention_days": 45,
-    "retention_prefix": "projects/"
+    "retention_prefix": "clients/"
   },
   "secrets": [
     { "name": "DS_ENROLLMENT_SECRET", "value_source": "env", "required": true },
     { "name": "DS_ADMIN_KEY",         "value_source": "env", "required": true },
     { "name": "R2_ACCOUNT_ID",        "value_source": "env", "required": true },
-    { "name": "R2_ACCESS_KEY_ID",     "value_source": "env", "required": false },
-    { "name": "R2_SECRET_ACCESS_KEY", "value_source": "env", "required": false }
+    { "name": "R2_ACCESS_KEY_ID",     "value_source": "env", "required": true },
+    { "name": "R2_SECRET_ACCESS_KEY", "value_source": "env", "required": true }
   ],
   "env": {
     "token_var": "CLOUDFLARE_DRAMA_STUDIO_API_TOKEN",
