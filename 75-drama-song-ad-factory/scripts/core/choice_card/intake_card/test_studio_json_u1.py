@@ -1,15 +1,16 @@
 #!/usr/bin/env python3
-"""U1: the studio-json export (question / price / example).
+"""U1 / S75-074: the studio-json export (heading / question / example / price inputs).
 
-The Drama Studio renders one screen per intake question. Every screen needs the
-question text, the price line it shows (when it shows one) and a "See a great
-answer" example from the client guide. ``intake_card.py --format studio-json``
-emits exactly those, from the SAME question list the card asks, so the card and
-the studio cannot disagree.
+The Drama Studio renders one screen per intake question. Every screen needs a
+plain heading (never the shouting LABEL), its question text, and -- when it
+shows one -- a "See a great answer" example. A typed question carries no option
+row: the page asks for the words itself. A priced option carries the price
+inputs the page turns into a true price for the length the client picks, never
+a fixed dollar string.
 
-The negative control: a screen missing its question text (or its example) must
-make the export REFUSE -- a real non-zero exit and a named field on stderr --
-never a json file the studio would render half-empty.
+The negative controls: a screen missing its question text, and a typed screen
+with no example, must make the export REFUSE -- a real non-zero exit and a
+named field on stderr -- never a json file the studio would render half-empty.
 
 Run: python3 core/choice_card/intake_card/test_studio_json_u1.py
 """
@@ -20,11 +21,20 @@ import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.dirname(os.path.dirname(HERE)))
+from choice_card.intake_card import agnes_explanation as AE  # noqa: E402
 from choice_card.intake_card import intake_card as IC  # noqa: E402
 
 SCRIPT = os.path.join(HERE, "intake_card.py")
-REQUIRED = ("question", "price", "example")
+REQUIRED = ("title", "question", "example", "why", "typed", "options")
 OPTION_KEYS = {"n", "text", "detail", "price", "recommended"}
+RATE_KEYS = {"rate_usd", "unit", "shot_s", "keyframe_usd", "song_usd",
+             "redo_rate", "keyframe_count_extra"}
+#: S75-074 step 3: the exact examples a typed answer shows on the page.
+TYPED_EXAMPLES = {
+    "link": '"https://example.com/speaker"',
+    "photos": '"My logo and one product photo. I will send them after this."',
+    "character": '"Tasha, a warm 40-year-old braider with locs, in a denim apron."',
+}
 
 
 def _cli(*args, **kw):
@@ -32,7 +42,11 @@ def _cli(*args, **kw):
                           capture_output=True, text=True, **kw)
 
 
-def test_export_has_question_price_and_example_for_every_screen():
+def _screens(**kw):
+    return {s["id"]: s for s in IC.studio_json(**kw)["questions"]}
+
+
+def test_every_screen_carries_a_plain_heading_and_a_question():
     payload = IC.studio_json()
     assert payload["format"] == "studio-json" and payload["version"] == 0
     assert payload["question_count"] == len(IC.QUESTIONS) == len(payload["questions"])
@@ -40,46 +54,140 @@ def test_export_has_question_price_and_example_for_every_screen():
         for field in REQUIRED:
             assert field in screen, (screen.get("id"), field)
         assert screen["question"].strip(), screen["id"]
-        assert screen["example"].strip(), screen["id"]
-        src = next(q for q in IC.QUESTIONS if q["id"] == screen["id"])
-        assert len(screen["options"]) == len(src["options"]), screen["id"]
+        assert screen["title"].strip(), screen["id"]
+        # S75-074 step 1: a heading is a sentence, never the shouting LABEL
+        assert screen["title"] != screen["label"], screen["id"]
+        assert screen["title"] != screen["title"].upper(), screen["id"]
         for o in screen["options"]:
-            assert set(o) == OPTION_KEYS, o
+            assert OPTION_KEYS <= set(o), (screen["id"], o)
 
 
-def test_model_screen_carries_the_live_prices_and_the_model_example():
-    screen = next(s for s in IC.studio_json()["questions"] if s["id"] == "model")
-    assert screen["price"] == ("Prices are for your 60-second ad, with the song, "
-                               "pictures and a 50% redo allowance.")
-    assert screen["question"].endswith(screen["price"])       # card ask and export agree
-    prices = [o["price"] for o in screen["options"]]
-    assert len(prices) == 4 and all(p and p.startswith("$") for p in prices), prices
-    assert screen["example"].startswith('"Hailuo 02 Standard.'), screen["example"]
+def test_headings_come_from_the_page_table():
+    #: purpose, permission, where, episode_length and agnes only ride the
+    #: conditional export, so the table is checked there, not on the plain card.
+    screens = _screens(conditional=True)
+    for qid, title in (("purpose", "What is this video for?"),
+                       ("permission", "Your client's permission"),
+                       ("where", "Where it will run"),
+                       ("offer", "What you are promoting"),
+                       ("link", "Where to send people"),
+                       ("audience", "Who it is for"),
+                       ("character", "Who stars in it"),
+                       ("photos", "Photos and logos"),
+                       ("models", "Who builds and who checks"),
+                       ("length", "How long"),
+                       ("shape", "Tall or wide"),
+                       ("music", "The sound"),
+                       ("look", "The look"),
+                       ("model", "Picture quality"),
+                       ("spend", "Your spending limit"),
+                       ("checkpoints", "What you want to see first")):
+        assert screens[qid]["title"] == title, (qid, screens[qid]["title"])
+    assert _screens(conditional=True)["episode_length"]["title"] == "How long"
+    conditional = _screens(conditional=True)
+    for qid in ("script", "song", "storyboard"):
+        assert qid not in conditional          # CHECKPOINTS replaces all three
+    assert conditional["agnes"]["title"] == "Your Agnes plan"
 
 
-def test_every_other_screen_has_no_price_but_still_an_example():
-    screens = {s["id"]: s for s in IC.studio_json()["questions"]}
-    assert screens["length"]["price"] is None
-    assert screens["length"]["example"].startswith('"60 seconds.'), screens["length"]
-    for qid in ("models", "music", "look", "storyboard", "song", "script"):
-        assert screens[qid]["example"].startswith('"'), (qid, screens[qid]["example"])
+def test_typed_screens_carry_no_option_row_and_the_exact_example():
+    screens = _screens()
+    for qid in IC.BRIEF_IDS:
+        assert screens[qid]["typed"] is True, qid
+        assert screens[qid]["options"] == [], qid
+        assert screens[qid]["example"].strip(), qid
+    for qid, example in TYPED_EXAMPLES.items():
+        assert screens[qid]["example"] == example, (qid, screens[qid]["example"])
+    # the offer and the audience keep the guide's own example for their step
+    assert screens["offer"]["example"].startswith('"My 6-week Confident Speaker')
+    assert screens["audience"]["example"].startswith('"Women 35-55')
+    for qid in ("models", "length", "music", "look", "checkpoints", "spend",
+                "model", "shape"):
+        assert screens[qid]["typed"] is False, qid
 
 
-def test_budget_screen_shows_the_card_total_when_given():
-    qs = [IC.spend_question(18.5, 25, True) if q["id"] == "spend" else q
-          for q in IC.QUESTIONS]
-    screen = next(s for s in IC.studio_json(qs)["questions"] if s["id"] == "spend")
-    assert screen["price"] == "$18.50", screen["price"]
-    assert [o["price"] for o in screen["options"]] == ["$25.00", "$18.50", None]
+def test_a_choice_screen_shows_no_example_and_no_verbatim_option_row():
+    screens = _screens(conditional=True)
+    for qid in ("purpose", "episode_length", "permission", "where", "agnes",
+                "models", "length", "music", "look", "checkpoints", "spend",
+                "model", "shape"):
+        assert screens[qid]["example"] is None, (qid, screens[qid]["example"])
+        assert screens[qid]["options"], qid
+
+
+def test_model_screen_carries_price_inputs_not_a_fixed_dollar_string():
+    screen = _screens()["model"]
+    # S75-059 step 2: the fixed sentence is gone from the page's question
+    assert "50% redo allowance" not in screen["question"], screen["question"]
+    assert screen["question"] == "Which video model should make your shots?"
+    assert screen["price"] is None
+    assert screen["example"] is None                 # the Hailuo example is gone
+    assert len(screen["options"]) == 4
+    for o in screen["options"]:
+        assert o["price"] is None, o
+        assert "$" not in o["detail"], o          # no fixed dollar string travels
+        assert RATE_KEYS <= set(o), o
+        assert o["unit"] in ("second", "clip"), o
+    # the live allowance, not the stale 0.2 in the table
+    assert all(o["redo_rate"] == 0.5 for o in screen["options"])
+    # exactly one option is marked recommended
+    assert sum(1 for o in screen["options"] if o["recommended"]) == 1
+
+
+def test_budget_screen_is_in_the_page_words_with_the_computed_limit():
+    screen = _screens()["spend"]
+    assert screen["question"] == ("What is the most this video may spend? Work stops "
+                                  "and asks you before going over.")
+    assert screen["price"] is None and screen["example"] is None
+    assert screen["options"][0]["text"].startswith("Use the recommended limit - about $")
+    assert screen["options"][0]["recommended"] is True
+    assert RATE_KEYS <= set(screen["options"][0])
+    assert screen["options"][-1]["text"] == "Set my own limit"
+    assert not screen["options"][-1]["recommended"]
+    assert screen["options"][-1]["n"] == len(screen["options"])
+
+
+def test_sample_links_ride_with_their_option_only_when_one_exists():
+    look = _screens()["look"]
+    with_link = [o for o in look["options"] if o.get("sample_url")]
+    assert with_link and all(o["sample_url"].startswith("http") for o in with_link)
+    for screen in (_screens(conditional=True)).values():
+        for o in screen["options"]:
+            if screen["id"] != "look":
+                assert "sample_url" not in o, (screen["id"], o["n"])
+
+
+def test_agnes_carries_no_recommended_mark_in_the_export():
+    agnes = _screens(conditional=True)["agnes"]
+    assert agnes["options"] and not any(o["recommended"] for o in agnes["options"])
+    assert agnes["supplementary_explanation"] == AE.lines()
+    text = " ".join(agnes["supplementary_explanation"])
+    for vendor in ("KIE", "Suno", "Kling"):
+        assert vendor not in text, vendor
+
+
+def test_no_screen_text_uses_internal_or_vendor_jargon():
+    import re
+    screens = _screens(conditional=True)
+    for screen in screens.values():
+        words = [screen["title"], screen["question"],
+                 screen.get("why") or "", screen["example"] or ""]
+        for o in screen["options"]:
+            words += [o["text"], o["detail"]]
+        words += list(screen.get("supplementary_explanation") or [])
+        text = " ".join(words)
+        assert not re.search(r"reply with", text, re.I), (screen["id"], text)
+        assert "the card" not in text.lower(), screen["id"]
 
 
 def test_cli_writes_the_export_and_exits_zero():
     p = _cli("--format", "studio-json")
     assert p.returncode == 0, p.stderr
     payload = json.loads(p.stdout)
-    # DSR-105: the story brief opens the card, the nine production choices follow.
-    assert [q["id"] for q in payload["questions"][:5]] == list(IC.BRIEF_IDS)
-    assert payload["questions"][5]["id"] == "models"
+    # DSR-105 + S75-006: the typed brief opens the card, then the AI setup
+    assert [q["id"] for q in payload["questions"][:4]] == ["offer", "link", "audience",
+                                                           "character"]
+    assert payload["questions"][4]["id"] == "models"
     assert set(payload["questions"][0]) >= set(REQUIRED)
 
 
@@ -95,30 +203,15 @@ def test_negative_control_missing_question_text_fails_loudly():
         raise AssertionError("export accepted a screen with no question text")
 
 
-def test_negative_control_example_missing_fails_loudly():
+def test_negative_control_typed_example_missing_fails_loudly():
     bad = [dict(q) for q in IC.QUESTIONS]
-    bad[1]["id"] = "not_a_guide_step"     # the OFFER LINK screen loses its guide example
+    bad[1]["id"] = "not_a_guide_step"     # a typed screen with no example anywhere
     try:
         IC.studio_json(bad)
     except IC.StudioExportError as e:
         assert "field=example" in str(e), e
     else:
-        raise AssertionError("export accepted a screen with no example")
-
-
-def test_the_story_brief_screens_are_typed_and_carry_a_guide_example():
-    """DSR-105: the page must be able to ask the brief, so every brief screen
-    has a question, a guide example and one option the page reads as "type it"."""
-    screens = {s["id"]: s for s in IC.studio_json()["questions"]}
-    for qid in IC.BRIEF_IDS:
-        s = screens[qid]
-        assert s["question"].strip() and s["example"].strip(), qid
-        assert s["price"] is None, qid
-        assert len(s["options"]) == 1, qid
-        assert s["options"][0]["detail"].lower().startswith("reply with"), qid
-        assert not s["options"][0]["recommended"], qid
-    assert [s["example"] for s in (screens["offer"], screens["link"], screens["photos"])] \
-        == [screens["offer"]["example"]] * 3          # one STEP 4 example, three screens
+        raise AssertionError("export accepted a typed screen with no example")
 
 
 def test_negative_control_process_exit_is_non_zero():
