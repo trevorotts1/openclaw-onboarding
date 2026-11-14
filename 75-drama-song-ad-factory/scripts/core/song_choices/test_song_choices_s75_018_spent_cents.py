@@ -49,10 +49,17 @@ def _find_skill_root():
 
 SKILL = _find_skill_root()
 CORE = os.path.join(SKILL, "scripts", "core")
-for _sub in ("", "song_choices", "song_dispatch", "suno_recipe"):
+# CORE is inserted LAST so it ends up FIRST on sys.path. `core/song_dispatch`
+# holds BOTH the package dir and `song_dispatch/song_dispatch.py`: with that
+# subdir ahead of CORE, `import song_dispatch` binds the inner module file and
+# `from song_dispatch import song_dispatch` (song_choices.py) dies. Re-inserting
+# (not just when absent) keeps the order deterministic under pytest's
+# `-o pythonpath=`, which already puts a subdir on sys.path.
+for _sub in ("suno_recipe", "song_dispatch", "song_choices", ""):
     _p = os.path.join(CORE, _sub)
-    if _p not in sys.path:
-        sys.path.insert(0, _p)
+    if _p in sys.path:
+        sys.path.remove(_p)
+    sys.path.insert(0, _p)
 
 import suno_recipe as R                        # noqa: E402
 from song_choices import song_choices as SC    # noqa: E402
