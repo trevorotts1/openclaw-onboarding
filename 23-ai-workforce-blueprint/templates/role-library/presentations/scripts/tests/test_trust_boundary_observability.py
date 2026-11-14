@@ -131,14 +131,34 @@ def _write(p: pathlib.Path, obj) -> None:
         p.write_text(json.dumps(obj))
 
 
+def _space_free_run_dir(td):
+    """PD-924: the run_dir STRING handed to the gate, made free of spaces.
+
+    trust_boundary_observability._DIVERGENCE_RE matches `run_dir=(\\S+)` — one
+    whitespace-free token — so a checkout living under a path WITH a space
+    (e.g. an external volume mounted under a name with a space) makes every
+    real divergence line degrade to
+    UNRECOGNISED-SHAPE. That is a property of the parser's contract, not of
+    these tests, and it is invisible on CI (space-free checkout). Returning a
+    RELATIVE path (resolved from inside the temp dir) keeps the emitted
+    run_dir space-free on any host, so these assertions test the divergence
+    they name rather than the checkout's directory name. No product code is
+    changed and no assertion is relaxed.
+    """
+    os.chdir(td)
+    return pathlib.Path("run")
+
+
 class TestEndToEndCapture:
     def setup_method(self):
+        self._prev_cwd = os.getcwd()
         self._td = tempfile.TemporaryDirectory()
-        self.run_dir = pathlib.Path(self._td.name)
+        self.run_dir = _space_free_run_dir(self._td.name)
         rf.reset_cache_for_tests()
         os.environ.pop(rf.ENFORCE_ENV, None)
 
     def teardown_method(self):
+        os.chdir(self._prev_cwd)
         self._td.cleanup()
         os.environ.pop(rf.ENFORCE_ENV, None)
         rf.reset_cache_for_tests()
@@ -173,16 +193,37 @@ class TestEndToEndCapture:
 
     # -- Tampered run: detected + recorded, run still proceeds --------------
     def test_tampered_run_detected_recorded_and_still_proceeds(self):
-        # THE PROVEN GAP, verbatim from phase_verifiers.py's own module
-        # docstring and test_runfacts.py's proven-gap fixture: a report that
-        # says pass:false is accepted as a PASS by the legacy (file-exists-
-        # only) verifier.
-        _write(self._report_path(),
-               '{"gate":"typography","pass":false,"average":2.1,'
-               '"failures":["everything is broken"]}')
+        # RETARGETED BY PD-924. PD-075 gave the legacy half real teeth, so a
+        # pass:false report is no longer accepted by it and can no longer be
+        # the divergence fixture. The shape below is the one that still yields
+        # the exact same observed record PD-075 left intact: SEAL the run while
+        # the artifact on disk is untrusted, repair it on disk afterwards, and
+        # let the gate run. runfacts seals ONCE per run_dir (that is its
+        # documented front-door property), so its verdict still says FAIL over
+        # the sealed bytes, while the legacy gate reads the repaired file and
+        # PASSES. Legacy PASS vs RunFacts FAIL — a genuine would-have-blocked
+        # divergence, with no assertion weakened.
+        untrusted = ('{"gate":"typography","pass":false,"average":2.1,'
+                     '"failures":["everything is broken"]}')
+        _write(self._report_path(), untrusted)
 
         captured = []
         with obs.capture_stderr(self.run_dir, observations=captured):
+            # Admit the run AT the untrusted state (the seal this test diverges
+            # on). Admission happens INSIDE the capture window so the
+            # SEAL-FINDING emitter is counted by this test, exactly as it was
+            # before PD-924 retargeted the fixture.
+            rf.reset_cache_for_tests()
+            rf.get_or_seal(self.run_dir)
+            # The artifact is then repaired on disk — the gate still holds the seal.
+            _write(self._report_path(), {
+                "gate": "Phase Typography-QC", "average": 9.1, "pass": True,
+                "triggered_autofails": [],
+                "qc_independence": {"graded_by": "typography-qc-specialist",
+                                    "independent": True},
+            })
+            _write(self.run_dir / "working" / "typography" / "type_layout_system.md",
+                   "min_body_pt: 18\ntype_scale_steps: 4\nmin_contrast_ratio: 7.0\n")
             ok, reasons = pv.verify("P-TYPO-QC", self.run_dir)
 
         # ACCEPTANCE: "a tampered run is DETECTED and recorded (but still
@@ -191,12 +232,12 @@ class TestEndToEndCapture:
         assert ok is True, "report-only mode must not change the legacy PASS result"
         assert reasons == []
 
-        # DETECTED: this single verify() call touches BOTH existing signal
-        # emitters -- get_or_seal() prints its own TRUST-BOUNDARY-SEAL-FINDING
-        # for the same untrusted report, and shadow_compare() separately
-        # prints the TRUST-BOUNDARY-DIVERGENCE for the gate check itself.
-        # Both are real, both are captured -- this module doesn't privilege
-        # one emitter over the other.
+        # DETECTED: this test touches BOTH existing signal emitters --
+        # get_or_seal() prints its own TRUST-BOUNDARY-SEAL-FINDING for the same
+        # untrusted report at admission (inside this capture window), and
+        # shadow_compare() separately prints the TRUST-BOUNDARY-DIVERGENCE for
+        # the gate check itself. Both are real, both are captured -- this
+        # module doesn't privilege one emitter over the other.
         assert len(captured) == 2
         by_kind = {o.kind: o for o in captured}
         assert obs.FINDING_PREFIX in by_kind
@@ -241,8 +282,23 @@ class TestEndToEndCapture:
         assert json_rendered["total"] == 2
 
     def test_capture_is_a_true_pass_through_real_stderr_still_receives_the_line(self, capsys):
+        """RETARGETED BY PD-924: same stale-seal divergence as the test above
+        (seal while untrusted, repair on disk, gate reads the repair) — that is
+        the construction that still emits a real DIVERGENCE line after PD-075
+        gave the legacy half teeth. The assertion's subject is unchanged: the
+        line must reach the REAL stderr, not just the capture list."""
         _write(self._report_path(),
                '{"gate":"typography","pass":false,"average":2.1}')
+        rf.reset_cache_for_tests()
+        rf.get_or_seal(self.run_dir)
+        _write(self._report_path(), {
+            "gate": "Phase Typography-QC", "average": 9.1, "pass": True,
+            "triggered_autofails": [],
+            "qc_independence": {"graded_by": "typography-qc-specialist",
+                                "independent": True},
+        })
+        _write(self.run_dir / "working" / "typography" / "type_layout_system.md",
+               "min_body_pt: 18\ntype_scale_steps: 4\nmin_contrast_ratio: 7.0\n")
         with obs.capture_stderr(self.run_dir):
             pv.verify("P-TYPO-QC", self.run_dir)
         captured_stderr = capsys.readouterr().err
@@ -277,28 +333,43 @@ class TestEndToEndCapture:
 
 class TestEnforcingIsOrthogonalToRecording:
     def setup_method(self):
+        self._prev_cwd = os.getcwd()
         self._td = tempfile.TemporaryDirectory()
-        self.run_dir = pathlib.Path(self._td.name)
+        self.run_dir = _space_free_run_dir(self._td.name)
         rf.reset_cache_for_tests()
         os.environ.pop(rf.ENFORCE_ENV, None)
 
     def teardown_method(self):
+        os.chdir(self._prev_cwd)
         self._td.cleanup()
         os.environ.pop(rf.ENFORCE_ENV, None)
         rf.reset_cache_for_tests()
 
     def test_enforcing_on_still_gets_recorded_with_enforcing_true(self):
+        """RETARGETED BY PD-924 — fixture only. A pass:false report no longer
+        diverges now that the legacy half has teeth (PD-075), so the fixture
+        is the stale-seal shape: seal against the untrusted artifact, repair it
+        on disk, then gate. Both original assertions are kept verbatim —
+        `ok is False` (enforcing refuses) and the single recorded divergence
+        stamped `enforcing is True`."""
         p = self.run_dir / "working" / "qc" / "typography_qc_report.json"
         _write(p, '{"gate":"typography","pass":false,"average":2.1}')
         os.environ[rf.ENFORCE_ENV] = "1"
         try:
             rf.reset_cache_for_tests()
+            rf.get_or_seal(self.run_dir)
+            _write(p, {
+                "gate": "Phase Typography-QC", "average": 9.1, "pass": True,
+                "triggered_autofails": [],
+                "qc_independence": {"graded_by": "typography-qc-specialist",
+                                    "independent": True},
+            })
+            _write(self.run_dir / "working" / "typography" /
+                   "type_layout_system.md",
+                   "min_body_pt: 18\ntype_scale_steps: 4\nmin_contrast_ratio: 7.0\n")
             with obs.capture_stderr(self.run_dir):
                 ok, reasons = pv.verify("P-TYPO-QC", self.run_dir)
-            # This file makes NO claim about what the caller does when
-            # enforcing -- that is runfacts.py's contract, not this
-            # module's. It only asserts the observation is still captured,
-            # and captured with enforcing=True this time.
+            # The enforcing refusal stands — the original assertion, verbatim.
             assert ok is False
             persisted = obs.load_observations(self.run_dir)
             divergences = [o for o in persisted if o.kind == obs.DIVERGENCE_PREFIX]

@@ -26,8 +26,11 @@ atomic write, real phase verifier.
 """
 from __future__ import annotations
 
+import binascii
 import json
+import struct
 import sys
+import zlib
 from pathlib import Path
 
 import pytest
@@ -192,6 +195,82 @@ def test_aggregator_refuses_a_broken_spec_never_writes_one(tmp_path, monkeypatch
 # Proof half 2: the infographic-checklist phase exists in the manifest with a
 # role file and a verifier, and the verdict file makes the phase pass.
 # ---------------------------------------------------------------------------
+PNG_SIG = b"\x89PNG\r\n\x1a\n"
+INFOGRAPHIC_FLOOR = 102_400
+
+
+def _png_chunk(kind: bytes, data: bytes) -> bytes:
+    return (struct.pack(">I", len(data)) + kind + data
+            + struct.pack(">I", binascii.crc32(kind + data) & 0xFFFFFFFF))
+
+
+def _real_png_bytes(width: int = 32, height: int = 32,
+                    size: int = INFOGRAPHIC_FLOOR) -> bytes:
+    """PD-099b: a genuinely decodable RGB PNG, not the signature plus letters.
+
+    IHDR/IDAT/IEND are real — the IDAT decompresses to the filter byte plus
+    `width * 3` RGB bytes per scanline. The file is brought up to the
+    manifest's 102,400-byte deliverable floor with a tEXt chunk, which is a
+    legal ancillary PNG chunk, so the image data itself is never padded.
+    """
+    ihdr = _png_chunk(b"IHDR", struct.pack(">IIBBBBB", width, height, 8, 2, 0, 0, 0))
+    raw = b"".join(b"\x00" + bytes(width * 3) for _ in range(height))
+    idat = _png_chunk(b"IDAT", zlib.compress(raw, 9))
+    iend = _png_chunk(b"IEND", b"")
+    fixed = len(PNG_SIG) + len(ihdr) + len(idat) + len(iend)
+    text_len = size - fixed - 12  # 12 = the tEXt chunk's length/type/CRC
+    keyword = b"Comment\x00"
+    assert text_len > len(keyword), f"{size} bytes is too small for this PNG"
+    body = PNG_SIG + ihdr + idat + _png_chunk(b"tEXt", keyword + b"p" * (text_len - len(keyword))) + iend
+    assert len(body) == size, (len(body), size)
+    return body
+
+
+def _png_chunks(data: bytes):
+    """Parse every chunk and re-check its CRC — a filler blob raises instead."""
+    assert data.startswith(PNG_SIG), "no PNG signature"
+    i, out = len(PNG_SIG), []
+    while i < len(data):
+        (n,) = struct.unpack(">I", data[i:i + 4])
+        kind, chunk = data[i + 4:i + 8], data[i + 8:i + 8 + n]
+        (crc,) = struct.unpack(">I", data[i + 8 + n:i + 12 + n])
+        assert crc == binascii.crc32(kind + chunk) & 0xFFFFFFFF, f"bad CRC in {kind!r}"
+        out.append((kind, chunk))
+        i += 12 + n
+    return out
+
+
+def _seed_infographic_run(tmp_path: Path) -> Path:
+    """A run dir satisfying every P8.3-INFOGRAPHIC requirement except the
+    infographic-checklist verdict, which each test writes itself."""
+    run_dir = tmp_path / "run"
+    for sub in ("working/qc", "working/deliverables", "working/checkpoints",
+                "working/prompts"):
+        (run_dir / sub).mkdir(parents=True)
+    (run_dir / "working" / "prompts" / "infographic-prompt.txt").write_text("PROMPT" * 2000)
+    (run_dir / "working" / "deliverables" / "infographic.png").write_bytes(_real_png_bytes())
+    (run_dir / "working" / "checkpoints" / "infographic_status.json").write_text(json.dumps(
+        {"infographic_format": "checklist", "status": "ready", "qc_passed": True,
+         "prompt_path": "working/prompts/infographic-prompt.txt",
+         "render_path": "working/deliverables/infographic.png",
+         "deliverable_path": "working/deliverables/infographic.png"}))
+    return run_dir
+
+
+def test_infographic_verifier_rejects_letters_named_png(tmp_path):
+    """PD-099b negative case: 102,400 letters 'x' is not an image.
+
+    The verifier must fail it AND name the PNG signature test. Reverting
+    PD-105's signature check in phase_verifiers turns this test RED.
+    """
+    import phase_verifiers as pv
+    run_dir = _seed_infographic_run(tmp_path)
+    (run_dir / "working" / "deliverables" / "infographic.png").write_bytes(b"x" * INFOGRAPHIC_FLOOR)
+    ok, reasons = pv.verify("P8.3-INFOGRAPHIC", run_dir)
+    assert not ok, "a 102,400-byte file of letters passed the infographic check"
+    assert any("not a PNG" in r for r in reasons), reasons
+
+
 def test_infographic_checklist_phase_exists_with_role_file_and_verifier():
     m = _manifest()
     ph = _phase(m, "P8.3-INFOGRAPHIC")
@@ -216,18 +295,19 @@ def test_infographic_checklist_writes_a_verdict_file_and_verifier_passes(tmp_pat
     in the role doc's exact contract shape — makes the verifier pass; removing
     it (or a fail verdict) fails the phase. Negative controls included."""
     import phase_verifiers as pv
-    run_dir = tmp_path / "run"
-    (run_dir / "working" / "qc").mkdir(parents=True)
-    (run_dir / "working" / "deliverables").mkdir(parents=True)
-    (run_dir / "working" / "checkpoints").mkdir(parents=True)
-    (run_dir / "working" / "prompts").mkdir(parents=True)
-    (run_dir / "working" / "prompts" / "infographic-prompt.txt").write_text("PROMPT" * 2000)
-    (run_dir / "working" / "deliverables" / "infographic.png").write_bytes(b"x" * 102_400)
-    (run_dir / "working" / "checkpoints" / "infographic_status.json").write_text(json.dumps(
-        {"infographic_format": "checklist", "status": "ready", "qc_passed": True,
-         "prompt_path": "working/prompts/infographic-prompt.txt",
-         "render_path": "working/deliverables/infographic.png",
-         "deliverable_path": "working/deliverables/infographic.png"}))
+    run_dir = _seed_infographic_run(tmp_path)
+    # PD-099b: the fixture is a REAL image. Parse its chunks, verify every
+    # CRC, and decompress the IDAT back to filter-byte + RGB scanlines —
+    # a signature pasted onto letters fails right here.
+    png_bytes = (run_dir / "working" / "deliverables" / "infographic.png").read_bytes()
+    chunks = _png_chunks(png_bytes)
+    assert [k for k, _ in chunks][0] == b"IHDR"
+    assert [k for k, _ in chunks][-1] == b"IEND"
+    width, height = struct.unpack(">II", next(b for k, b in chunks if k == b"IHDR")[:8])
+    assert (width, height) == (32, 32), (width, height)
+    idat = b"".join(b for k, b in chunks if k == b"IDAT")
+    assert len(zlib.decompress(idat)) == height * (1 + width * 3)
+    assert len(png_bytes) == INFOGRAPHIC_FLOOR, len(png_bytes)
 
     # The QC unit runs → writes the verdict (the exact shape the role doc
     # mandates). This write IS the unit's implementation of "writes a verdict
