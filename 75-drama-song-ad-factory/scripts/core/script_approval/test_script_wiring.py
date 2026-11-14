@@ -27,7 +27,9 @@ import script_approval as SA  # noqa: E402
 import test_kie_dispatch as TK  # noqa: E402
 from test_production_process import complete_stage  # noqa: E402
 
-N = len(IC.QUESTIONS)
+#: S75-006 moved the three approval screens onto CHECKPOINTS; this suite drives
+#: the frozen pre-S75-006 card, which still asks SCRIPT APPROVAL by name.
+N = len(IC.LEGACY_QUESTIONS)
 SHEET = [{"tag": "Intro", "lines": ["One closed door."]},
          {"tag": "Hook 1", "lines": ["I am not sma-a-all", "I ne-ever wa-a-as"]}]
 STAGES = ("research", "creative-strategy", "script-lyrics", "music", "continuity-bible", "storyboard",
@@ -42,7 +44,7 @@ def lyrics_of(sheet):
 
 def ones():
     """One reply per question: option 1, or a dollar amount for the spend question."""
-    return IC.example_replies()
+    return IC.example_replies(IC.LEGACY_QUESTIONS)
 
 
 def make_run(yes=True, *, confirmed=True):
@@ -237,7 +239,7 @@ def test_confirmed_recap_writes_answers_yes_pauses():
     if isinstance(rows, dict):                 # the versioned envelope
         assert rows.get("schema_version") == 2
         rows = rows.get("answers")
-    assert [r["id"] for r in rows] == [q["id"] for q in IC.QUESTIONS]
+    assert [r["id"] for r in rows] == [q["id"] for q in IC.LEGACY_QUESTIONS]
     env = next_(run)
     assert env["outcome"] == "waiting" and env["reason_code"] == "SCRIPT_AWAITING_APPROVAL", env
     assert "THE SONG LYRICS" in "\n".join(env["data"]["delivered"])
