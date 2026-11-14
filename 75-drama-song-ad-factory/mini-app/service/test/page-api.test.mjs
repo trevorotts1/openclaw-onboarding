@@ -254,7 +254,7 @@ test('draft: an empty marker and a missing object both read as no draft', async 
   assert.equal((await json(await pageRoute(get('/api/studio/session', me.key), ctx))).draft, null, 'nothing stored yet');
 
   await deleteDraft(objects, me.clientId);
-  assert.deepEqual(await objects.objectGet(scopePath(me.clientId, 'draft.json')), { value: '{}' });
+  assert.deepEqual(await objects.objectGet(scopePath(me.clientId, 'draft.json')), { value: '{"retention_kind":"intake_answer"}' });
   assert.equal((await json(await pageRoute(get('/api/studio/session', me.key), ctx))).draft, null, 'the {} marker reads as no draft');
 
   // One draft of another client's is still invisible.
