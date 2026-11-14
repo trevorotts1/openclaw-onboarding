@@ -41,7 +41,7 @@ IDENTICAL: [        self.assertTrue(reason["required"])]
 
 Command per tree (test module path): `python3 -m unittest
 23-ai-workforce-blueprint.templates.role-library.presentations.intake.interview-app.test.test_email_election_flow`
-Scratch root: `/Volumes/mac mini m4/swarm-contract/pd-fix/scratchpads/pd-014-pair/`
+Scratch root: `scratchpads/pd-014-pair/` under the pd-fix root
 
 | tree | head | patched? | result | git status --porcelain |
 |---|---|---|---|---|
