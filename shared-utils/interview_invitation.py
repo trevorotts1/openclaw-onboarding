@@ -132,11 +132,16 @@ def reject_public_redirect(status):
         raise Pending('public authentication required (redirect); configure this client Cloudflare Access service credentials or use the verified local operator recovery route')
 
 
-def resolve_public_origin(state, env, fetch=None):
+def completion_permits_invitation(completion, allow_declared=False):
+    """An operator may send past a DECLARED prior completion; nothing else passes."""
+    return completion == 'INCOMPLETE' or (completion == 'DECLARED' and allow_declared)
+
+
+def resolve_public_origin(state, env, fetch=None, allow_declared=False):
     if not isinstance(state,dict): raise Pending('canonical workforce state must be an object')
     env=load_service_environment(state,env)
     completion = prompt_status(state, env)
-    if completion != 'INCOMPLETE':
+    if not completion_permits_invitation(completion, allow_declared):
         raise Pending('prior interview completion recorded' if completion in ('COMPLETE', 'DECLARED') else 'completion scope/store unknown; invitation suppressed')
     expected = expected_identity(state,env)
     record = state.get('commandCenterPublicOrigin')
@@ -505,12 +510,14 @@ def send_gateway(message, target, ledger, context, force=False, timeout=30, prep
         return 0,outcome
 
 def main():
-    parser=argparse.ArgumentParser(); parser.add_argument('action',choices=['resolve','send','mint']);parser.add_argument('--state',required=True);parser.add_argument('--message-file');parser.add_argument('--target');parser.add_argument('--ledger');parser.add_argument('--resolution-file');parser.add_argument('--mode',default='start');parser.add_argument('--lane',default='legacy')
+    parser=argparse.ArgumentParser(); parser.add_argument('action',choices=['resolve','send','mint']);parser.add_argument('--state',required=True);parser.add_argument('--message-file');parser.add_argument('--target');parser.add_argument('--ledger');parser.add_argument('--resolution-file');parser.add_argument('--mode',default='start');parser.add_argument('--lane',default='legacy');parser.add_argument('--allow-declared',action='store_true')
     args=parser.parse_args()
     try:
+        # Operator-only: the link sender's --allow-declared flag sets ALLOW_DECLARED.
+        allow_declared = args.allow_declared or os.environ.get('ALLOW_DECLARED') == '1'
         state=json.loads(Path(args.state).read_text())
         env=load_service_environment(state,os.environ)
-        resolved=resolve_public_origin(state,env)
+        resolved=resolve_public_origin(state,env,allow_declared=allow_declared)
         if args.action=='resolve':
             if args.resolution_file: atomic_json(args.resolution_file,{key:resolved[key] for key in ['origin','companyId','tenantId','installationId']})
             print(resolved['origin']);return 0
@@ -522,7 +529,7 @@ def main():
             # this process, so an operator can prove issuance works without a
             # client-facing send and without a link existing anywhere on disk.
             if not args.target or not isinstance(args.target,str): raise Pending('mint requires the intended recipient target for binding')
-            if prompt_status(json.loads(Path(args.state).read_text()), env) != 'INCOMPLETE':
+            if not completion_permits_invitation(prompt_status(json.loads(Path(args.state).read_text()), env), allow_declared):
                 raise Pending('completion changed or unavailable; invitation suppressed')
             metadata={}
             issue_invitation(resolved,env,args.target,metadata)
@@ -536,7 +543,7 @@ def main():
         delivery_context=dict(origin=resolved['origin'],companyId=resolved['companyId'],tenantId=resolved['tenantId'],installationId=resolved['installationId'],mode=args.mode,lane=args.lane)
         def enroll(text):
             latest = json.loads(Path(args.state).read_text())
-            if prompt_status(latest, env) != 'INCOMPLETE':
+            if not completion_permits_invitation(prompt_status(latest, env), allow_declared):
                 raise Pending('completion changed or unavailable; invitation suppressed')
             private_entry=resolved['origin']+'/interview'
             if private_entry not in text:
