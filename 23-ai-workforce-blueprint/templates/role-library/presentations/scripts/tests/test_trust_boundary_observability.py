@@ -136,7 +136,7 @@ def _space_free_run_dir(td):
 
     trust_boundary_observability._DIVERGENCE_RE matches `run_dir=(\\S+)` — one
     whitespace-free token — so a checkout living under a path WITH a space
-    ('<EXTERNAL-VOLUME>/...') makes every real divergence line degrade to
+    ('/Volumes/mac mini m4/...') makes every real divergence line degrade to
     UNRECOGNISED-SHAPE. That is a property of the parser's contract, not of
     these tests, and it is invisible on CI (space-free checkout). Returning a
     RELATIVE path (resolved from inside the temp dir) keeps the emitted
@@ -205,9 +205,12 @@ class TestEndToEndCapture:
         untrusted = ('{"gate":"typography","pass":false,"average":2.1,'
                      '"failures":["everything is broken"]}')
         _write(self._report_path(), untrusted)
+        assert self._report_path().is_file()
         # Admit the run AT the untrusted state (the seal this test diverges on).
         rf.reset_cache_for_tests()
-        rf.get_or_seal(self.run_dir)
+        sealed = rf.get_or_seal(self.run_dir)
+        assert sealed is not None
+        assert getattr(sealed, "verdict", "FAIL") == "FAIL"
         # The artifact is then repaired on disk — the gate still holds the seal.
         _write(self._report_path(), {
             "gate": "Phase Typography-QC", "average": 9.1, "pass": True,
@@ -261,6 +264,8 @@ class TestEndToEndCapture:
         assert p.enforcing is False
         assert p.run_dir == str(self.run_dir)
         assert p.would_have_blocked is True
+        assert p.legacy_reason == ""
+        assert p.detail is None or isinstance(p.detail, str)
 
         # The operator-facing reader surfaces the same specific facts.
         rendered = report.render_text(persisted, str(self.run_dir))
