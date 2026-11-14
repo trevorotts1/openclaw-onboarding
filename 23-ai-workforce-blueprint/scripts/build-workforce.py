@@ -8644,6 +8644,7 @@ def add_agent_to_config(config, dept_id, dept_info):
         "tts",
         "exec",
         "read",
+        "read_skill",
         "write",
         "edit",
         "web_fetch",
@@ -8681,6 +8682,7 @@ def add_agent_to_config(config, dept_id, dept_info):
     ]
     CEO_TOOL_ALLOW = [
         "read",
+        "read_skill",
         "web_fetch",
         "web_search",
         # Messaging: "message" is the channel-agnostic send tool seen in live
