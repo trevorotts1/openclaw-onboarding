@@ -133,13 +133,16 @@ studio link sent to the client.
 8. **Video model:** default **MiniMax H3 at 768P** (decision 5). No choice
    means MiniMax H3, and the card states that. `[see all models and prices]`
    opens `references/price-menu.md` content for the selected length.
-9. **Price:** every figure comes from Skill 74 `price --model <id> --units
-   <n>` - video, both shapes, lip-sync close-ups, voice packs, clips and the
-   batch total. The pipeline never computes a rate itself and never reads a
-   price table.
-10. Approval records the ceiling: chosen price **plus the 20% retake
-    allowance**, in USD with the KIE credit equivalent. No paid call happens
-    before that record exists.
+9. **Price:** the VIDEO MODEL line is priced from
+   `scripts/core/choice_card/video_models/video_model_rates.json` through the
+   shared price function (`card_render.price_envelope`), because Skill 74
+   `price` returns the highest listed tier; every OTHER figure - the chosen
+   shape, lip-sync close-ups, voice packs, clips and the batch total - comes
+   from Skill 74 `price --model <id> --units <n>`. The pipeline never computes
+   a rate.
+10. Approval records the ceiling: chosen price **plus the planning
+    allowance `budget_contingency.label()` returns**, in USD with the KIE
+    credit equivalent. No paid call happens before that record exists.
 
 **Outputs:** Approved card, recorded ceiling, listed lip-sync lines.
 **Hand to:** DS-3.
@@ -321,8 +324,9 @@ without an identity lock.
 
 **Steps:**
 
-1. One keyframe image per shot per shape (Imagen 4 Fast via Skill 66 through
-   Skill 74).
+1. One keyframe image per shot per shape (gpt-image sunburst via Skill 66
+   through Skill 74; the locked image model is in
+   `delivery_checklist.LOCKED_MODELS`).
 2. Restyle a supplied product image into the chosen look for the product
    reveal and the call-to-action ending; product QC checks it stays
    recognisable. A skipped image is designed from the brief and the card says
@@ -470,7 +474,8 @@ table then.
 
 **Steps:**
 
-1. Register only real files as deliverables: `delivery/final.mp4`,
+1. Register only real files as deliverables:
+   `delivery/05 - Video Captioned.mp4` and `delivery/05 - Video Clean.mp4`,
    `campaign-manifest.json`, `cost-report.json`, `provenance.json`, the
    captioned and clean variants, each clip and its SRT, **and the song mp3**:
    every ad folder carries `<Author> - <Title> - Song.mp3` (320 kbps, the
@@ -548,10 +553,10 @@ title, author, cover, buy link, audience and the pain it solves - still
 inside the three-question cap. One ad per book, built in parallel lanes, each
 with its own campaign folder, receipt, spend-ledger run and Command Center
 deliverable. **Never mix books or authors.** The approval card shows the
-batch total, computed from Skill 74 `price` for every book plus the 20%
-retake allowance. The first real batch run is scheduled by the owner, on the
-client's own box and the client's own KIE key; it is never run from an
-operator key.
+batch total, computed from Skill 74 `price` for every book plus the
+planning allowance `budget_contingency.label()` returns. The first real
+batch run is scheduled by the owner, on the client's own box and the
+client's own KIE key; it is never run from an operator key.
 
 ---
 
@@ -596,9 +601,10 @@ planner side lives in `35-social-media-planner`.
   `social-planner-row-append` webhook (`core/smp/sheet_schema_130/`,
   `core/smp/sheet_migration/`). The SOP never names a column itself.
 - **Ceiling.** The weekly ad reserves against the run's existing ceiling —
-  approved price plus the 20% retake allowance — through the same spend
-  ledger and Skill 74 `preflight`. A weekly run never opens a second ceiling
-  and never widens this one; Rule-Zero announce and the ceiling still apply.
+  approved price plus the planning allowance `budget_contingency.label()`
+  returns — through the same spend ledger and Skill 74 `preflight`. A weekly
+  run never opens a second ceiling and never widens this one; Rule-Zero
+  announce and the ceiling still apply.
 - **QC.** The independent checker (`qc-specialist-video`) judges the weekly
   cut the same way it judges any other ad, and `35-social-media-planner/QC.md`
   carries the planner-side checklist (length, routing, teaser, skip
