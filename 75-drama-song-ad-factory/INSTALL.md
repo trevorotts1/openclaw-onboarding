@@ -193,6 +193,29 @@ launchctl list | grep drama-studio     # Mac: the loaded 2-minute timer
 crontab -l | grep drama-studio         # VPS: the 2-minute poll line
 ```
 
+## Step 2d: X11 install gate (skill 75) - warn by default, and it cannot allow
+
+`scripts/core/x11_install_gate.sh` runs before `install.sh` or
+`update-skills.sh` touch an installed skill 75. Read this before expecting it to
+pass. The six records it reads (`target.json`, `backup-authorization.json`,
+`preservation.json`, `reviewed-manifest.json`, `applied-verification.json`,
+`operator-decision.json`) have **no production writer** in this tree: the only
+code that writes all six at once is `tests/test_x11_release_gate_wiring.py`
+`records()`, a test fixture. A real install therefore has an empty records
+directory.
+
+What that means on a real box:
+
+- Default (warn-and-preserve): exit 10. The gate logs `REFUSED MISSING_TARGET`
+  plus the fact above, keeps the manifest-targeted files, never deletes, and the
+  roll continues.
+- Refuse mode (`backup-authorization.json` present, or `S75_X11_GATE_MODE=refuse`):
+  exit 20. Skill 75 is left untouched.
+
+So on a box that has not been handed the records by hand, this gate can never
+allow. It states that in its own output in both modes. Supplying the records is
+an owner decision; nothing in this tree produces them.
+
 ## Step 3: Credentials (canonical paths, canonical names)
 
 Needed for paid KIE paths (required):
