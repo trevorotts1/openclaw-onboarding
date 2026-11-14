@@ -11,7 +11,7 @@
 ## 0. Row taken from the gate, and branch state proved before editing
 
 ```
-$ python3 -I .../FINAL/scripts/step_gate.py ready --control /Volumes/mac mini m4/swarm-contract/loop-control/pd-fix
+$ python3 -I .../FINAL/scripts/step_gate.py ready --control $SWARM/loop-control/pd-fix
 {"ready": [], "waiting": {..., "PD-111": ["waits for PD-097 (BUILDING)", "branch pd/fl15-renderer is busy"], ...}, "count": 0}
 ```
 
@@ -37,7 +37,7 @@ ebf5c769a2ad5b2582bf2256588095cbef20cfac	refs/heads/main
 ```
 
 **Discrepancy, stated in full:** the lane worktree
-(`/Volumes/mac mini m4/swarm-contract/pd-fix/worktrees/onboarding/FL15`) was checked out at
+(`$SWARM/pd-fix/worktrees/onboarding/FL15`) was checked out at
 `fde9282bb6c33c73363ec0baeea63b75a968b7f2` ("PD-070: a failed slide is retried inside the batch"),
 which is **not** an ancestor of the remote head (`git merge-base --is-ancestor 5dc81e9 HEAD` → NO).
 After `git fetch origin --prune` the branch is present at `5dc81e96e`. I did **not** edit, commit,
@@ -316,3 +316,12 @@ e04e7de8fc62acec9a442cc1f78971dc254bc8f9
 Unit commit `3b57687be` (code + tests), report commit `e04e7de8f`. Fast-forward only: the push
 was `5dc81e96e..3b57687be` then `3b57687be..e04e7de8f`; no rebase, no force-push, `main` never
 written.
+
+## Cure note (repair lane, 2026-11-14)
+
+The cross-lane dependency above (`presentation_job/priority_shift_items.py`, PD-304) was
+landed as its own file in this branch by the repair lane, byte-identical to PD-304's blob
+`e959fd04510ec933ae825a784d6efadc5388d3b4` on `pd/fl18-dispatcher`. Without it the writer's
+lazy import fails closed with `AF-PRIORITY-SHIFT`, which turned `test_preflight.py`'s
+POSTFLIGHT-A / PF-SPEECH-B / TELE-B / DOCTRINE-PASS / C2-CTRL positive cases red. No unit
+work of PD-097 was changed: the fix is the missing dependency, not a relaxed check.

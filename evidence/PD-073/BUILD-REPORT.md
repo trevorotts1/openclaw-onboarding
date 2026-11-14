@@ -1,10 +1,12 @@
 # PD-073 — BUILD REPORT (deepseek-chain, build worker; no verdict)
 
 Unit PD-073 · repo `trevorotts1/openclaw-onboarding` · branch `pd/fl15-renderer`
-Lane clone (read-only, left clean): `/Volumes/mac mini m4/swarm-contract/pd-fix/worktrees/onboarding/FL15`
-Build worktree (throw-away): `/Volumes/mac mini m4/swarm-contract/pd-fix/tmp/PD-073/pd073.9pQq8m/wt`
-Base comparison worktree: `/Volumes/mac mini m4/swarm-contract/pd-fix/tmp/PD-073/pd073.9pQq8m/base`
-Everything is under `TMPDIR=/Volumes/mac mini m4/swarm-contract/pd-fix/tmp/PD-073` created by this worker; every scratch dir came from `mktemp -p "$TMPDIR" -d`.
+Lane clone (read-only, left clean): `$SWARM/pd-fix/worktrees/onboarding/FL15`
+(`$SWARM` = the swarm-contract root on the lane host; the absolute prefix is
+elided because the repo's added-paths guard bans host-specific absolute paths)
+Build worktree (throw-away): `$SWARM/pd-fix/tmp/PD-073/pd073.9pQq8m/wt`
+Base comparison worktree: `$SWARM/pd-fix/tmp/PD-073/pd073.9pQq8m/base`
+Everything is under `TMPDIR=$SWARM/pd-fix/tmp/PD-073` created by this worker; every scratch dir came from `mktemp -p "$TMPDIR" -d`.
 
 Branch confirmed live before any work:
 
