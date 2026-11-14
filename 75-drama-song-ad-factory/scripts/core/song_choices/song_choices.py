@@ -238,13 +238,19 @@ def _save_hold(env):
             "actual_cost": ev.get("actual_cost")}
 
 
-def _held_result(n, variant, env, hold):
+def _held_result(n, variant, env, hold, submitted_digest=None):
     """X05: ONE held attempt reported as itself -- never ``ok``, never
     ``FAILED``. The paid task and its charge are retained, delivery is not
-    claimed, and ``recovery`` names the save-only resume: no resubmit."""
+    claimed, and ``recovery`` names the save-only resume: no resubmit.
+
+    S75-018 (X06): a hold reached AFTER the transport returned carries the
+    admitted-snapshot digest too, so the held submission is still provably the
+    admitted one. A hold raised before the transport returned has no digest to
+    carry and reports ``None`` -- never a fabricated value."""
     return {"n": n, "variant": variant, "status": "HELD", "take": None,
             "heard": None, "concerns": [], "receipt": None,
             "attempt": 1, "attempts": 1, "receipts": [],
+            "submitted_digest": submitted_digest,
             "delivery": False, "resubmit": False,
             "recovery": {"command": "save", "task_id": hold["task_id"],
                          "save_dir": hold["save_dir"], "info": hold["info"]},
@@ -920,7 +926,7 @@ def one_variant(n, variant, request, plan, generate, measure, save, script_words
     # id and charge -- never a failure that invites a resubmit.
     hold = _save_hold(env)
     if hold:
-        return _held_result(n, variant, env, hold)
+        return _held_result(n, variant, env, hold, r.get("submitted_digest"))
     return {"n": n, "variant": variant,
             "status": got["verdict"] if got else "FAILED",
             "take": got["delivered"] if got else None,
@@ -930,6 +936,12 @@ def one_variant(n, variant, request, plan, generate, measure, save, script_words
             "concerns": [] if got else failure_concerns(r),
             "receipt": got.get("receipt") if got else (r.get("receipt")),
             "attempt": 1, "attempts": 1, "receipts": r["receipts"],
+            # S75-018 (X06): the digest run_takes computed over the EXACT
+            # outbound snapshot it re-admitted inside the governor callback.
+            # It used to stop at this boundary and survive only into a test
+            # assertion; it now rides the result to the reported block, which
+            # is what proves "the admitted snapshot is the submitted one".
+            "submitted_digest": r.get("submitted_digest"),
             "envelope": env, "counts": env["counts"]}
 
 
@@ -2434,8 +2446,16 @@ def cmd_generate(a, generate=None, measure=None, save=None, plan=None):
     dispatched = (counts["submitted"] if any(r.get("counts") for r in results)
                 else sum(int(r.get("attempts") or 0) for r in results))
     if a.variant or a.unit_id:
+        # S75-018 (X06): the run's REPORTED block is where the digest must be
+        # readable. Orchestrated mode runs exactly ONE unit, so exactly one
+        # snapshot was admitted and one digest names it. The umbrella run
+        # admits three and keeps each variant's digest on its own row under
+        # "results" -- never one digest standing in for three.
         out = {"mode": "orchestrated", "outcome": run_outcome,
-               "dispatched": dispatched, "counts": counts, "results": results}
+               "dispatched": dispatched, "counts": counts,
+               "submitted_digest": (results[0].get("submitted_digest")
+                                    if results else None),
+               "results": results}
     else:
         out = {"mode": "umbrella", "outcome": run_outcome,
                "dispatched": dispatched, "counts": counts, "results": results,
