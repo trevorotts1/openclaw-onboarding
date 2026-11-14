@@ -1,4 +1,11 @@
 ## [v27.1.72]  -  2026-11-12  -  Full-read guard: fleet-roll install wiring (installer, read_skill allow-lists, AGENTS.md rule stamper)
+## [Unreleased]  -  2026-11-13  -  Recurring prices (weekly, monthly, quarterly, yearly) for the signature launch family (Skills 83, 49, 71, 79)
+
+- A client can make any offer in a Black Friday launch (Skill 83) or signature funnel (Skill 49) a repeating price, not only one payment: main offer, package, bump, upsell or downsell. The cadence the client says per offer ("monthly", "every three months", "yearly") is read by one table, `shared-utils/signature_launch_contract/billing.py` (cadence words, the four intervals, "$49/month" phrasing, the unit and count a billing platform takes), and travels as `billing_type: recurring` plus `recurring_interval` through the offer mapper, the launch record and its schema, the plan the client approves, the delivery sheet, the checkout instances and the upsell disclosure. Installments and a trial first are still refused at plan time with the same shared sentence.
+- Skill 83 0.2.38 -> 0.2.39 (no per-skill CHANGELOG file): intake accepts exactly the types computed from the shared billing module, the plan and delivery sheet say how often a price is charged, `SKILL.md` no longer implies one payment only, new DECIDED entry `recurring_billing_carried_by_intake`. Skill 49 v2.1.59 -> v2.1.60 and Skill 71 1.3.37 -> 1.3.38 (schema byte copy); see their CHANGELOG files. Skill 79 0.1.10 -> 0.1.11 (no per-skill CHANGELOG file): the order-form manuscript prints a repeating price as "$49.00/month on a recurring basis (billing interval: month)".
+- `shared-utils/client_intake/engine.py` reads a cadence word in the billing answer (`weekly`, `quarterly`, `every year`) as a recurring price with its interval. A quarter is every 3 months where a billing platform has no quarter unit (`terms_for_interval`).
+- Known limit: Skill 06's native price binding still knows day, week, month and year only, so a quarterly offer is named as unresolved there (existing behavior for an unsupported interval) until Skill 06 learns an interval count.
+- Pinned files changed; the Skill 49 prover pin needs a CI mint. Not merged, deployed or rolled onto any client box.
 
 ## [Unreleased]  -  2026-11-12  -  Owner approval flow: the owner always gets a link (Skills 35, 44, 83 + shared helper)
 
