@@ -221,11 +221,13 @@ def card_then_run(storyboard_reply):
     """Real intake card, answered end to end, then the runner on the same run dir."""
     from choice_card.intake_card import intake_card as IC
     run, w = make_run(None), World()
-    ids = [q["id"] for q in IC.QUESTIONS]
-    replies = IC.example_replies()          # the story brief is typed, the choices picked
+    #: S75-006 moved STORYBOARD APPROVAL onto CHECKPOINTS, so this walks the frozen
+    #: pre-S75-006 card -- the one that still asks it by name.
+    ids = [q["id"] for q in IC.LEGACY_QUESTIONS]
+    replies = IC.example_replies(IC.LEGACY_QUESTIONS)   # the story brief is typed, the choices picked
     replies[ids.index("storyboard")] = storyboard_reply
     replies += ["yes"]
-    st = IC.conversation(replies, IC.QUESTIONS, run_dir=run, target="555")
+    st = IC.conversation(replies, IC.LEGACY_QUESTIONS, run_dir=run, target="555")
     check("card done (%s)" % storyboard_reply, st["done"])
     return run, w, AR.run(run, w.send)
 
