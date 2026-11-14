@@ -385,7 +385,7 @@ escalate_class() {
   # ── Rescue Rangers n8n webhook ─────────────────────────────────────────────
   if command -v curl >/dev/null 2>&1 && [[ -n "${RESCUE_RANGERS_WEBHOOK_URL:-}" && "${ZHC_SKIP_TG_PREFLIGHT:-0}" != "1" ]]; then
     # D17: the RR-01 intake answers 400 invalid_payload "unresolvable box" to a post with
-    # no box identity (Lyric Hawkins: every weekly escalation rejected since Sep 6). Send
+    # no box identity (<client>: every weekly escalation rejected since Sep 6). Send
     # the canonical fleet slug as boxName/box, same as scripts/disk-usage-alert.sh and
     # rescue_admission.build_payload. No slug = nothing the intake can accept, so say so
     # instead of posting a request that is rejected and hidden.
