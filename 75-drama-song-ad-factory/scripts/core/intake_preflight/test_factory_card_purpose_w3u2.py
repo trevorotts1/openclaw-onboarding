@@ -216,9 +216,9 @@ def main():
               stored["answered_count"], len(replies) - 1)
         check("no turn was silently skipped",
               len(stored.get("events") or []), len(replies))
-        # ...and a reply the card refuses still fails closed: a studio marker
-        # does not authorize an answer the card would not take one turn at a
-        # time, and no method record is claimed without accepted replies.
+        # ...and a reply the card refuses HALTS the replay: a studio marker does
+        # not authorize an answer the card would not take one turn at a time,
+        # the durable halt record names the reason, and no wake line is printed.
         bad = make_run(Path(tmp) / "studio-bad")
         (bad / "control" / "studio-order.json").write_text(
             json.dumps({"order_id": "ord-w3u2-bad", "client_id": "c1",
@@ -227,10 +227,14 @@ def main():
         capture = io.StringIO()
         with redirect_stdout(capture):
             code, factory_path = SB._replay(str(SKILL), bad, ["purple banana"])
-        check("a refused Studio reply fails the replay closed",
-              code, SB.EXIT["error"])
-        check("bridge exposes a named replay refusal",
-              json.loads(capture.getvalue()).get("code"), "REPLAY_FAILED")
+        check("a refused Studio reply halts the replay",
+              code, SB.EXIT["halted"])
+        halt_file = bad / "control" / "replay-halted.json"
+        check_true("the halt is durable and named", halt_file.is_file())
+        check_true("the halt record carries a reason code",
+                   json.loads(halt_file.read_text(encoding="utf-8"))
+                   .get("reason_code"))
+        check("a halt prints no wake line", capture.getvalue(), "")
         check("no method record claimed without accepted replies",
               (bad / "control" / "method.json").exists(), False)
         stored = json.loads((bad / "control" / "intake-session.json").read_text())
