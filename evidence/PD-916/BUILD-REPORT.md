@@ -98,7 +98,7 @@ assert "does not resolve to a real" in denial
 ## Proof — exact commands and output
 
 All commands run from
-`.../presentations/scripts`, with `TMPDIR=<scratchpad>/tmp`.
+`.../presentations/scripts`, with the temporary directory redirected under `<scratchpad>/tmp`.
 
 1. BEFORE the edit (head 99c98880a) — the fourth ids-only test already failed
    against PD-912's contract:
