@@ -74,6 +74,21 @@ printf '{"decision":"prebuild","source":"operator-prebuild","decidedAt":"2026-08
 printf '{"models":{"list":[{"id":"ollama/qwen3-vl:cloud"}]},"agents":{"list":[],"defaults":{"model":{"primary":"ollama/box-default:cloud"}}}}\n' > "$SANDBOX_HOME/.openclaw/openclaw.json"
 echo '{}' > "$STATE"
 
+# The company's department tree lives at its canonical master-files home
+# (PRD 1.9: master-files/zero-human-company/<company>/departments; see
+# migrate-zhc-to-master-files.sh). Two product readers resolve it through the
+# WORKSPACE instead — resume-workforce-build.sh's DISK-REALITY stale-state
+# reset (<workspaceRoot>/departments) and prove-zhe.py's discover_departments
+# (<oc_root>/workspace/departments, the first root materialize-dept-agents.sh
+# scans) — so expose the SAME tree at that path with a link, from the very
+# start: one tree, no copy drift, and both readers see the department folders
+# and how-to.md files the build actually wrote. Created before the first
+# resume fire on purpose — a resume that cannot see the tree demotes every
+# department the apply-diff build marked done back to "pending" (the
+# false-done guard has no way to tell "built elsewhere" from "never built").
+[ -e "$SANDBOX_HOME/.openclaw/workspace/departments" ] || \
+  ln -s "$COMPANY/departments" "$SANDBOX_HOME/.openclaw/workspace/departments"
+
 # Stub CLI: records every call, never reaches a real gateway.
 printf '#!/usr/bin/env bash\nprintf "%%s\\n" "$*" >> "$STUB_LOG"\nexit 0\n' > "$STUB_BIN/openclaw"
 chmod +x "$STUB_BIN/openclaw"
@@ -217,7 +232,11 @@ s["customer_feeling"] = "empowered"
 s["brand_descriptors"] = "bold, direct, warm"
 s["ideal_customer"] = "Black women entrepreneurs over 40"
 s["unique_differentiator"] = "We build what big agencies ignore"
-s["departments"] = [{"slug": "marketing", "status": "pending"}]
+# departments[] is NOT overwritten: the prebuild wrote the canonical floor with
+# its "id" field and status=prebuilt, and verify-wiring keys on .id (a
+# slug-only entry set is what makes it abort ".id was empty for all of them").
+# Clobbering the array here also threw away the "prebuilt is never pending"
+# guarantee the lane is supposed to carry into the interview.
 # Counter rule (R4/R4b): the state counter must never claim MORE than the
 # transcript holds. The transcript carries 4 substantive intake blocks plus
 # 8 review blocks = 12 Q-blocks, and one "---" separator each, so the gate's
@@ -349,16 +368,6 @@ EOFAGENTS
 # exporting a database path.
 mkdir -p "$SANDBOX_HOME/projects/command-center"
 cp "$DB" "$SANDBOX_HOME/projects/command-center/mission-control.db"
-# The ZHE prover discovers built departments from the roots
-# materialize-dept-agents.sh also scans — <oc_root>/workspace/departments
-# first. The canonical home for the built tree is
-# master-files/zero-human-company/<company>/departments (PRD 1.9, see
-# migrate-zhc-to-master-files.sh), which the prover does not scan, so expose
-# the SAME tree at that first root with a link: one tree, no copy drift, and
-# the prover proves the department folders and agent rows the build actually
-# wrote.
-[ -e "$SANDBOX_HOME/.openclaw/workspace/departments" ] || \
-  ln -s "$COMPANY/departments" "$SANDBOX_HOME/.openclaw/workspace/departments"
 
 # ══ STEP 3: reseed the board, then the completion refresh ══
 # The first apply added the industry vertical-pack departments AFTER the
