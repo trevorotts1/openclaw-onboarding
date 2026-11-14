@@ -1,9 +1,13 @@
 # PD-068 — BUILD REPORT (deepseek-chain, D-13 HOLD branch)
 
 Unit: PD-068 · repo `trevorotts1/openclaw-onboarding` · branch `pd/fl18-dispatcher--hold-d13`
-Lane clone: `/Volumes/mac mini m4/swarm-contract/pd-fix/worktrees/onboarding/FL18--hold-d13`
-Build worktree (mine, detached): `/Volumes/mac mini m4/swarm-contract/pd-fix/tmp/PD-068/wt-n2tQQI`
-Base worktree (pristine comparison): `/Volumes/mac mini m4/swarm-contract/pd-fix/tmp/PD-068/base-1kUEZo`
+Paths below are relative to the lane's scratch root (`<PD_FIX_ROOT>`), which is
+redacted per owner decision D-27 — a host-specific absolute path is banned in
+added lines.
+
+Lane clone: `<PD_FIX_ROOT>/worktrees/onboarding/FL18--hold-d13`
+Build worktree (mine, detached): `<PD_FIX_ROOT>/tmp/PD-068/wt-n2tQQI`
+Base worktree (pristine comparison): `<PD_FIX_ROOT>/tmp/PD-068/base-1kUEZo`
 
 This is a BUILD report. It states what was built and what the commands returned. It issues
 no verdict — the opus-chain reviewer does that.
