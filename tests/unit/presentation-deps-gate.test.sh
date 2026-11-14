@@ -218,6 +218,7 @@ ENTRY="$REPO_ROOT/23-ai-workforce-blueprint/scripts/presentation-canonical-entry
 PRES_DIR="$REPO_ROOT/23-ai-workforce-blueprint/templates/role-library/presentations"
 BUILDER_PROMPT="$PRES_DIR/BUILDER-PROMPT.md"
 HOWTO="$PRES_DIR/how-to-use-this-department.md"
+TOOLS="$PRES_DIR/TOOLS.md"
 START_HERE="$PRES_DIR/00-START-HERE.md"
 
 assert_entry_has() {
@@ -268,10 +269,12 @@ assert_entry_lacks() {
 assert_entry_lacks "entry: seven-candidate list is gone" 'RUN_DIR/\.\./scripts'
 
 # Agent-facing doctrine: exactly one sanctioned command; python3 working/*.py forbidden.
+# PD-022: the developer appendix (sanctioned entry + forbidden path) moved out of the
+# client guide into TOOLS.md, so it is asserted there, not in how-to-use-this-department.md.
 assert_file_has "BUILDER-PROMPT names the canonical command" "$BUILDER_PROMPT" 'presentation-canonical-entry\.sh'
 assert_file_has "BUILDER-PROMPT forbids python3 working/*.py" "$BUILDER_PROMPT" 'python3 working/\*\.py'
-assert_file_has "how-to-use names the canonical command"      "$HOWTO" 'presentation-canonical-entry\.sh'
-assert_file_has "how-to-use forbids python3 working/*.py"     "$HOWTO" 'python3 working/\*\.py'
+assert_file_has "TOOLS.md names the canonical command"        "$TOOLS" 'presentation-canonical-entry\.sh'
+assert_file_has "TOOLS.md forbids python3 working/*.py"       "$TOOLS" 'python3 working/\*\.py'
 assert_file_has "00-START-HERE names the canonical command"   "$START_HERE" 'presentation-canonical-entry\.sh'
 assert_file_has "00-START-HERE forbids python3 working/*.py"  "$START_HERE" 'python3 working/\*\.py'
 
