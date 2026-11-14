@@ -174,6 +174,9 @@ class ClaimLedger:
         #: claim_token of each order THIS instance claimed, so a same-instance
         #: re-claim resumes; another invocation naming itself alike cannot.
         self._own_tokens = {}
+        #: the fence of that same claim: a resume advances the fence, so the
+        #: in-memory continuity proof must carry the current one to land.
+        self._own_fences = {}
 
     @staticmethod
     def _connect(path):
@@ -220,7 +223,7 @@ class ClaimLedger:
 
     # -- claim ------------------------------------------------------------
     def claim_order(self, order_id, owner, *, now=None, ttl_s=DEFAULT_CLAIM_TTL_S,
-                    resume_token=None):
+                    resume_token=None, resume_fence=None):
         """Claim `order_id` for `owner`, or RESUME it. True = we hold it now.
 
         Ways to True:
@@ -231,10 +234,12 @@ class ClaimLedger:
                        it received, so a failed fetch/wake is retryable inside
                        one process.
           token resume a caller re-presenting the row's CURRENT claim token
-                       (read back from its own stored poll line) resumes the
-                       SAME claim across processes: same fence, same token,
+                       AND the fence frozen on the SAME stored poll line
+                       resumes the SAME claim across processes: same token,
                        same steps; only the lease and the holder pid roll
-                       forward. Presenting any other token — a second
+                       forward, and the fence advances by one, so the stored
+                       line must be refreshed from the row after every resume.
+                       Presenting any other token or fence — a second
                        materializer's guess, a replayed older line — is a
                        refusal when the holder is live. A crash-resume, never
                        a second materializer.
@@ -246,13 +251,14 @@ class ClaimLedger:
 
         A live lease is REFUSED whatever the holder's pid state — even when the
         caller names itself with the SAME owner string but presents no
-        continuity proof. A continuity proof (this instance's token or the
-        current stored-line token) resumes at any lease state, live or dead.
-        Simultaneous re-claims race like ST10A's original T1 case: a bare
-        presenter's fate turns on the live-lease refusal, while a continuity
-        proof decides nothing between two holders — only the first to re-seed
-        the line survives, which the ledger cannot order. Only expiry hands the
-        claim on without a continuity proof.
+        continuity proof. A continuity proof (this instance's token, or the
+        stored line's token AND fence) resumes at any lease state, live or
+        dead. Two presenters of ONE stored line are ordered by that fence: the
+        resume is a fence-guarded UPDATE that advances it, so the first
+        presenter lands, refreshes its line, and the second's stale fence is
+        refused without a write. A cross-process presenter that carries a
+        token but no fence has no continuity proof and is refused. Only expiry
+        hands the claim on without a continuity proof.
         """
         if not order_id or not owner:
             raise LedgerError("BAD_CLAIM", "order_id and owner are required")
@@ -267,6 +273,7 @@ class ClaimLedger:
             (order_id, owner, ts, STEP_CLAIMED, lease, pid, host, token))
         if cur.rowcount == 1:
             self._own_tokens[order_id] = token
+            self._own_fences[order_id] = 1
             self.con.commit()
             return True
         row = self.con.execute(
@@ -280,22 +287,34 @@ class ClaimLedger:
         if cur_owner == owner and cur_token is not None \
                 and (presented == cur_token or resume_token == cur_token):
             # The same logical owner continuing its own claim — in this
-            # process (token held in memory) or across a restart (the token
-            # carried back from the stored poll line). Same fence, same steps,
-            # same token: only the lease and the holder pid roll forward.
-            # ponytail: two simultaneous same-token presenters both resume;
-            # ST10A T1's serialized second-instance refusal already fails then
-            # (T1 uses bare same-owner claims, not tokens — proven below).
-            # Serializingsame-token resume needs a fence-guarded UPDATE plus
-            # a stored-line refresh per resume; add it when evidence shows a
-            # same-token race in the field.
-            self.con.execute(
+            # process (token held in memory) or across a restart (token AND
+            # fence carried back from the stored poll line). The resume is
+            # serialized on the fence: the guarded UPDATE advances it, so the
+            # write lands only for the presenter that still holds the row's
+            # current fence. Two presenters of one stored line race; the first
+            # moves the fence and refreshes its line, the second's guard misses
+            # and it is refused without touching the row. A cross-process
+            # presenter carrying a token but no fence has no continuity proof.
+            guard_fence = resume_fence
+            if presented == cur_token and guard_fence is None:
+                guard_fence = self._own_fences.get(order_id, fence)
+            if guard_fence is None:
+                self.con.commit()
+                return False
+            cur = self.con.execute(
                 "UPDATE orders SET lease_expires_at=?, owner_pid=?,"
-                " owner_host=? WHERE order_id=? AND owner=?"
-                " AND claim_token=?",
-                (lease, pid, host, order_id, owner, cur_token))
+                " owner_host=?, fence=fence+1 WHERE order_id=? AND owner=?"
+                " AND claim_token=? AND fence=?",
+                (lease, pid, host, order_id, owner, cur_token,
+                 int(guard_fence)))
             self.con.commit()
+            if cur.rowcount != 1:
+                # A concurrent presenter of the same stored line resumed first
+                # and moved the fence. This caller is the second materializer,
+                # not the continuity proof: refuse it without a write.
+                return False
             self._own_tokens[order_id] = cur_token
+            self._own_fences[order_id] = int(guard_fence) + 1
             return True
         if _holder_live(cur_host, cur_pid, lease_at, ts):
             # Live holder, same name or not: this caller is a SECOND
@@ -310,6 +329,7 @@ class ClaimLedger:
         self.con.commit()
         if cur.rowcount == 1:
             self._own_tokens[order_id] = token
+            self._own_fences[order_id] = fence + 1
             return True
         return False
 
