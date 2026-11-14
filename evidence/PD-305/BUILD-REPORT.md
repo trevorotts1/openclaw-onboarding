@@ -80,7 +80,7 @@ clause-1 board-text half, and its own A1 test.
 ## Commands run, and their results
 
 Builder does not run the acceptance suite (rule 9); QC does. These are the direct proofs of the logic, run
-with `TMPDIR=/Volumes/mac mini m4/swarm-contract/pd-fix/tmp`, `python3 -I`, stub transport, no network.
+with `python3 -I`, a stub transport and no network.
 
 ```
 $ python3 -I -m py_compile presentation_job/approvals.py cc_board.py tests/test_pd_approvals.py
