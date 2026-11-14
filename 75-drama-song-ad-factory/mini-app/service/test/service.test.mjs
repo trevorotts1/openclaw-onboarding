@@ -260,16 +260,16 @@ test('uploads: bytes never ride the Worker — a scoped presigned PUT comes back
 
 test('retention: each class is deleted when the plan says, and never-delete is proven', () => {
   const day = DAY_MS;
-  assert.equal(retentionVerdict('intake_answer', { eventAtMs: T0, nowMs: T0 + day }).delete, true, 'intake goes at pickup');
-  assert.equal(retentionVerdict('approval_file', { eventAtMs: T0, nowMs: T0 }).delete, true, 'approval goes at stage approval');
-  assert.equal(retentionVerdict('r2_fallback_video', { eventAtMs: T0, nowMs: T0 + 7 * day - 1 }).keep, true);
-  assert.equal(retentionVerdict('r2_fallback_video', { eventAtMs: T0, nowMs: T0 + 7 * day }).delete, true);
-  assert.equal(retentionVerdict('status_record', { eventAtMs: T0, nowMs: T0 + 30 * day }).delete, true);
-  assert.equal(retentionVerdict('waiting_unclaimed', { createdAtMs: T0, nowMs: T0 + 45 * day }).delete, true);
-  assert.equal(retentionVerdict('project_object', { createdAtMs: T0, nowMs: T0 + 45 * day }).delete, true);
+  assert.equal(retentionVerdict('intake_answer', { in_production_at: T0, nowMs: T0 + day }).delete, true, 'intake goes at pickup');
+  assert.equal(retentionVerdict('approval_file', { finalized_at: T0, nowMs: T0 }).delete, true, 'approval goes at stage approval');
+  assert.equal(retentionVerdict('r2_fallback_video', { delivered_at: T0, nowMs: T0 + 7 * day - 1 }).keep, true);
+  assert.equal(retentionVerdict('r2_fallback_video', { delivered_at: T0, nowMs: T0 + 7 * day }).delete, true);
+  assert.equal(retentionVerdict('status_record', { delivered_at: T0, nowMs: T0 + 30 * day }).delete, true);
+  assert.equal(retentionVerdict('waiting_unclaimed', { created_at: T0, nowMs: T0 + 45 * day }).delete, true);
+  assert.equal(retentionVerdict('project_object', { created_at: T0, nowMs: T0 + 45 * day }).delete, true);
 
   for (const kind of ['enrollment_record', 'delivery_receipt', 'ghl_media']) {
-    const v = retentionVerdict(kind, { createdAtMs: T0, eventAtMs: T0, nowMs: T0 + 3650 * day });
+    const v = retentionVerdict(kind, { created_at: T0, delivered_at: T0, nowMs: T0 + 3650 * day });
     assert.equal(v.delete, false, `${kind} must never be deleted`);
     assert.equal(v.never, true);
     assert.ok(RETENTION_RULES[kind].never);
@@ -280,11 +280,11 @@ test('retention: each class is deleted when the plan says, and never-delete is p
 test('retention: a sweep partitions never-delete items out of the delete list', () => {
   const day = DAY_MS;
   const out = dueForDeletion([
-    { kind: 'enrollment_record', path: 'clients/x/enrollment.json', created_at_ms: T0 },
-    { kind: 'delivery_receipt', path: 'clients/x/receipt.json', created_at_ms: T0 },
-    { kind: 'ghl_media', path: 'clients/x/ghl.json', created_at_ms: T0 },
-    { kind: 'r2_fallback_video', path: 'clients/x/video.mp4', event_at_ms: T0 },
-    { kind: 'status_record', path: 'clients/x/status.json', event_at_ms: T0 },
+    { kind: 'enrollment_record', path: 'clients/x/enrollment.json', created_at: T0 },
+    { kind: 'delivery_receipt', path: 'clients/x/receipt.json', created_at: T0 },
+    { kind: 'ghl_media', path: 'clients/x/ghl.json', created_at: T0 },
+    { kind: 'r2_fallback_video', path: 'clients/x/video.mp4', delivered_at: T0 },
+    { kind: 'status_record', path: 'clients/x/status.json', delivered_at: T0 },
   ], T0 + 400 * day);
   assert.deepEqual(out.delete.sort(), ['clients/x/status.json', 'clients/x/video.mp4']);
   assert.equal(out.never.length, 3);
