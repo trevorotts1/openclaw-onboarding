@@ -7,12 +7,14 @@ Exit codes: ok 0, waiting 2, parked 3, rejected 4, error 1. stdlib only.
 
 `next` (manual 02 B1) reads the run's control/state.sqlite3 through
 state_store.py and answers one question: which stage is next and what exact
-command runs it. It prints the same envelope as intake/preflight (outcome
-ok/error; waiting/parked/rejected never come out of `next`) and exits 0/1.
+command runs it. It prints the same envelope as intake/preflight (any of ok,
+waiting, rejected, error; exit code per the EXIT map).
 
 Stage IDs come from batch_mode.batch.STAGES verbatim (never a second list).
-Command lines come from references/stage-runbook.md, parsed from its stage |
-command | produces table. Lane counts come from scripts/core/lane_size.py
+Command lines come from the ONE source, scripts/core/intake_preflight/
+stage_commands.json (S75-010); references/stage-runbook.md is a human copy and
+test_stage_commands_s75_010.py fails when the two disagree. Lane counts come
+from scripts/core/lane_size.py
 when that module is importable; otherwise the Part D fallback defaults below
 are used (agents >= 1, kie_inflight <= 8, one machine-sized ffmpeg pool).
 
@@ -33,11 +35,14 @@ the caller must supply them from the reply's presentation, never from a default.
 Approval -> `next` hands out music; an edit is re-checked and re-sent.
 """
 import argparse
+import fcntl
+import hashlib
 import json
 import os
 import re
 import shlex
 import sqlite3
+import subprocess
 import sys
 import time
 import uuid
@@ -70,6 +75,59 @@ except Exception:  # noqa: BLE001 - package-or-module missing: try sibling
         _lane_size = _lane_size_mod
     except Exception:  # noqa: BLE001 - module missing: fallback stays
         _lane_size = None
+
+#: S75-041: one meaning per exit code, by tool. The tools never agreed on a
+#: single numbering (2 is "waiting" here but "waiting" is 3 for the ledger and
+#: the lip-sync modules), so a raw number is never passed upward as-is: every
+#: child code is named by the tool that produced it.
+_CHILD_EXIT_PREFLIGHT = {0: "ok", 1: "error", 2: "waiting",
+                         3: "parked", 4: "rejected"}
+#: spend_ledger.py and qc_gate.py share this one (no 2; waiting is 3).
+_CHILD_EXIT_LEDGER = {0: "ok", 1: "error", 3: "waiting",
+                      4: "parked", 5: "rejected"}
+#: video_router.py and narrator_rule.py use this (no 2; waiting is 3).
+_CHILD_EXIT_LIPSYNC = dict(_CHILD_EXIT_LEDGER)
+
+CHILD_EXIT_CODES = {
+    "factory.py": _CHILD_EXIT_PREFLIGHT,
+    "spend_ledger.py": _CHILD_EXIT_LEDGER,
+    "qc_gate.py": _CHILD_EXIT_LEDGER,
+    "run_watch.py": {0: "ok", 10: "stop"},
+    "prompt-budget": {0: "ok", 3: "waiting", 4: "parked", 5: "rejected"},
+    "video_router.py": _CHILD_EXIT_LIPSYNC,
+    "narrator_rule.py": _CHILD_EXIT_LIPSYNC,
+    #: ceiling_cli.py declares no EXIT map and uses its own numbering: its
+    #: docstring and main() answer only 0 (ceiling not reached), 1 (history
+    #: unreadable) and 4 (the ceiling says STOP). 4 is a stop, never "parked".
+    "ceiling_cli.py": {0: "ok", 1: "error", 4: "stop"},
+    "delivery_checklist.py": {0: "ok", 1: "error", 5: "rejected"},
+}
+
+
+def child_exit(tool, code):
+    """S75-041: the outcome a child tool's raw exit code means, by tool name.
+
+    ``tool`` is a name or a path (only its basename is used). A tool or code
+    the table does not know answers ``"error"`` -- never the raw number, so a
+    caller can never read one tool's ``2`` as another tool's meaning.
+    """
+    table = CHILD_EXIT_CODES.get(Path(str(tool or "")).name)
+    if not table:
+        return "error"
+    try:
+        code = int(code)
+    except (TypeError, ValueError):
+        return "error"
+    return table.get(code, "error")
+
+
+class _ExitOneParser(argparse.ArgumentParser):
+    """S75-041: a mistyped command is an ERROR (exit 1), never 2 (waiting)."""
+
+    def error(self, message):
+        self.print_usage(sys.stderr)
+        self.exit(EXIT["error"], "%s: error: %s\n" % (self.prog, message))
+
 
 #: Part D fallback when lane_size.py is not importable (W2-A-U1 not landed).
 #: Same constants a live lane_size exposes; agents floor 1, never 0.
@@ -171,7 +229,8 @@ def cmd_intake(a):
                     data={k: r.get(k) for k in ("questions", "question_message", "summary",
                                                 "digest", "provenance", "auth_status",
                                                 "approval_invalidated", "changes",
-                                                "untrusted_fields", "next_stage", "mode", "notices")},
+                                                "untrusted_fields", "next_stage", "mode", "notices",
+                                                "warnings")},
                     state_version={"expected": (resume or {}).get("digest") if resume else None,
                                    "current": r.get("digest")})
 
@@ -277,53 +336,126 @@ def _stages():
     return tuple(sid for sid, _title in batch_mod.STAGES)
 
 
-def _runbook_rows():
-    """{stage_id: {"command":…, "produces":…}} from references/stage-runbook.md.
+#: S75-010: the ONE source for stage commands. The Markdown runbook is a human
+#: copy; test_stage_commands_s75_010.py fails when the two disagree.
+_STAGE_COMMANDS_FILE = Path(__file__).resolve().parent / "stage_commands.json"
 
-    Table format (W2-A-U3): lines starting with '|' whose first cell matches a
-    stage id win; the header/separator rows do not.
+
+def _stage_commands():
+    """{stage_id: {"argv": [...], "produces": str, "placeholders": [...]}}.
+
+    One object per stage id, read from ``stage_commands.json`` beside this
+    file -- never from the Markdown table (S75-010). An unreadable or malformed
+    file returns ``{}`` so the caller can refuse by name rather than guess.
     """
-    ref = Path(__file__).resolve()
-    skill_root = ref.parent.parent.parent.parent   # core/intake_preflight -> skill root
-    md = skill_root / "references" / "stage-runbook.md"
-    rows = {}
-    text = None
     try:
-        text = md.read_text(encoding="utf-8")
-    except OSError:
-        return rows, str(md)
-    for line in text.splitlines():
-        if not line.strip().startswith("|"):
-            continue
-        cells = [c.strip() for c in line.strip().strip("|").split("|")]
-        if len(cells) < 3:
-            continue
-        sid = cells[0]
-        # U3's table: the command cell is wrapped in backticks; produces is
-        # free prose. Header ("stage id") and separator ("---") never match.
-        if re.fullmatch(r"[a-z0-9-]+", sid) and (
-                cells[1].startswith("`") and cells[1].endswith("`")
-                and cells[2]):
-            rows[sid] = {"command": cells[1][1:-1],
-                         "produces": cells[2]}
-    return rows, str(md)
+        doc = json.loads(_STAGE_COMMANDS_FILE.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    if not isinstance(doc, dict):
+        return {}
+    return {sid: row for sid, row in doc.items() if isinstance(row, dict)}
 
 
-def lane_size_payload():
-    """One sizing payload. Live module when importable; else Part D defaults."""
-    if _lane_size is not None:
+def _stage_command(stage):
+    """The published command string for one stage, ``shlex.join`` of its argv.
+
+    Every consumer (the ``next`` row, the published descriptor and the registry
+    built from it) reads this same string, so the three copies cannot drift.
+    """
+    row = _stage_commands().get(stage) or {}
+    argv = [str(x) for x in (row.get("argv") or [])]
+    return shlex.join(argv) if argv else ""
+
+
+def _runbook_rows():
+    """{stage_id: {"command":…, "produces":…, "argv": […]}} from the ONE source.
+
+    ``stage_commands.json`` replaces the Markdown table that used to be parsed
+    at run time (S75-010). The returned shape is unchanged, plus the raw
+    ``argv``; ``references/stage-runbook.md`` stays as the human copy.
+    """
+    rows = {}
+    for sid, row in _stage_commands().items():
+        argv = [str(x) for x in (row.get("argv") or [])]
+        if not argv:
+            continue
+        rows[sid] = {"command": shlex.join(argv),
+                     "produces": str(row.get("produces") or ""),
+                     "argv": argv}
+    return rows, str(_STAGE_COMMANDS_FILE)
+
+
+#: The runtime and provider names ``lane_size.size`` sizes with (lane_size.py:
+#: runtime "openclaw"|"claude-code"; provider "ollama-cloud", "openrouter",
+#: "deepseek-direct", or any other id, which sizes machine-only). A run's
+#: ``model-bindings.json`` names them in ai_models terms; these maps translate.
+_LANE_SIZE_RUNTIMES = {"claude-nine": "claude-code", "claude-code": "claude-code",
+                       "openclaw": "openclaw"}
+_LANE_SIZE_ROUTES = {"ollama": "ollama-cloud", "openrouter": "openrouter",
+                     "deepseek-direct": "deepseek-direct", "router-alias": "router-alias",
+                     "anthropic": "anthropic"}
+
+
+def _lane_size_binding(run_dir):
+    """Translate the run's own model bindings into lane_size's names.
+
+    ``(runtime, route, status)``: "bound" when both names translate, "none"
+    when the run has no valid builder binding, "unknown" when the binding
+    names a runtime or route that neither side lists (S75-024).
+    """
+    if run_dir is None:
+        return None, None, "none"
+    try:
+        from choice_card.intake_card import ai_models as models
+        doc = models.load_bindings(run_dir)
+    except Exception:  # noqa: BLE001 - no bindings module on this box: Part D
+        return None, None, "none"
+    if not isinstance(doc, dict) or doc.get("schema") != models.STORE_SCHEMA:
+        return None, None, "none"
+    row = (doc.get("bindings") or {}).get(models.ROLE_BUILD)
+    if not isinstance(row, dict):
+        return None, None, "none"
+    raw_runtime = doc.get("runtime") or ((row.get("dispatch") or {}).get("runtime")) or ""
+    runtime = _LANE_SIZE_RUNTIMES.get(str(raw_runtime).strip().lower())
+    route = _LANE_SIZE_ROUTES.get(str(row.get("route") or "").strip().lower())
+    if runtime is None or route is None:
+        return runtime, route, "unknown"
+    return runtime, route, "bound"
+
+
+def lane_size_payload(run_dir=None):
+    """One sizing payload, from the run's own model choice where it can be read.
+
+    S75-024: the sizing follows the runtime and builder route the run's
+    ``model-bindings.json`` names. No bindings, no lane_size module, or a pair
+    lane_size does not size with -> the Part D defaults, and ``source`` says
+    which one ran and why.
+    """
+    runtime, route, status = _lane_size_binding(run_dir)
+    if _lane_size is not None and status == "bound":
         try:
-            line = _lane_size.size("claude-code", "openrouter")
+            line = _lane_size.size(runtime, route)
             return {"agents": line["agents"],
                     "kie_inflight": line["kie_inflight"],
                     "ffmpeg_jobs": line["ffmpeg_jobs"],
                     "ffmpeg_threads": line["ffmpeg_threads"],
-                    "source": "lane_size.module"}
+                    "source": "lane_size.module (%s/%s)" % (runtime, route)}
         except Exception as exc:  # noqa: BLE001 - broken module: fall through
             _loud("warn", "LANE_SIZE_BROKEN",
                   "using Part D default lane sizes: %r" % (exc,))
+    if status == "unknown":
+        _loud("warn", "LANE_SIZE_UNKNOWN_PAIR",
+              "model bindings name runtime %r and route %r; lane_size sizes "
+              "claude-code/openclaw only, so Part D defaults apply"
+              % (runtime, route))
     out = dict(PART_D_DEFAULTS)
-    out["source"] = "part_d_defaults"
+    if status == "none":
+        out["source"] = "part_d_defaults (no model bindings on this run)"
+    elif status == "unknown":
+        out["source"] = "part_d_defaults (unknown model binding pair)"
+    else:
+        out["source"] = "part_d_defaults"
     return out
 
 
@@ -408,47 +540,378 @@ def _studio_bump_version(run_dir, stage):
 
 
 # The approvals service stores choices as {n: whole number, label: string}.
-STUDIO_CHOICES = {"storyboard": ({"n": 1, "label": "GO"},)}
+def _studio_song_choices(st):
+    """S75-037: the choices the studio page shows for the song stage -- one per
+    OFFERED number, built from the numbers the run really offered, never from a
+    fixed list (a failed take is presented for listening, never offered)."""
+    offered = (st or {}).get("offered") if isinstance(st, dict) else None
+    if not isinstance(offered, dict) or not offered:
+        return ()
+    rows = []
+    try:
+        numbers = sorted(offered, key=lambda k: int(k))
+    except (TypeError, ValueError):
+        return ()
+    for n in numbers:
+        entry = offered.get(n) if isinstance(offered.get(n), dict) else {}
+        rows.append({"n": int(n), "label": str(entry.get("label") or n)})
+    return tuple(rows)
+
+
+STUDIO_CHOICES = {"storyboard": ({"n": 1, "label": "GO"},),
+                  # built per run from the offered numbers (never a fixed list)
+                  "song": _studio_song_choices}
+
+
+def _studio_item_digest(ab, item):
+    """The presentation digest of one published item (S75-036): the bridge's
+    own digest when it has one, so the value is the SAME bytes its answer_item
+    binds, else the same canonical form the bridge uses."""
+    fn = getattr(ab, "_item_digest", None)
+    if callable(fn):
+        return fn(item)
+    canonical = {"stage": item.get("stage"), "version": item.get("version"),
+                 "text": item.get("text"), "choices": item.get("choices") or []}
+    raw = json.dumps(canonical, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    return hashlib.sha256(raw).hexdigest()
 
 
 def _studio_publish(run_dir, order, stage, text, files, choices=()):
     """One approval item on the studio page (approvals_bridge.publish). Returns
-    the item dict, or None when the bridge module is not on this box."""
+    the item dict, or None when the bridge module is not on this box. S75-036:
+    the digest the page confirmed for this version is kept, so a later answer
+    can be proved against the presentation it names."""
     ab = _approvals_bridge()
     if ab is None:
         return None
     version = _studio_bump_version(run_dir, stage)
-    return ab.publish(order.get("base_url") or "", _studio_key(),
+    item = ab.publish(order.get("base_url") or "", _studio_key(),
                       order.get("order_id"), stage, version,
                       text, list(choices), list(files))
+    if isinstance(item, dict) and item:
+        _studio_record_publish(run_dir, stage, version, _studio_item_digest(ab, item))
+    return item
+
+
+def _studio_publish_record(run_dir):
+    """{stage: {version: digest}} this run published, or {} when unreadable."""
+    try:
+        doc = json.loads((Path(run_dir) / "control" / "studio-publish.json")
+                         .read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    return doc if isinstance(doc, dict) else {}
+
+
+def _studio_record_publish(run_dir, stage, version, digest):
+    """Remember the presentation digest the page confirmed for this version, so
+    an answer that names a different presentation is refused (S75-036)."""
+    if not digest:
+        return
+    path = Path(run_dir) / "control" / "studio-publish.json"
+    doc = _studio_publish_record(run_dir)
+    entry = doc.get(stage) if isinstance(doc.get(stage), dict) else {}
+    entry = dict(entry)
+    entry[str(version)] = digest
+    doc[stage] = entry
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(doc, indent=2, sort_keys=True), encoding="utf-8")
+
+
+def _studio_published_digest(run_dir, stage, version):
+    """The digest this run published for one stage+version, or None."""
+    entry = _studio_publish_record(run_dir).get(stage)
+    value = (entry or {}).get(str(version)) if isinstance(entry, dict) else None
+    return value if isinstance(value, str) else None
 
 
 def _studio_answer(run_dir, stage):
     """The client's studio answer for one approval stage, or None — never opens
-    a gate on a studio error, a missing bridge, or a never-published stage."""
+    a gate on a studio error, a missing bridge, or a never-published stage.
+
+    S75-036: returns the bridge's WHOLE verified record (value, who, when,
+    version and the presentation digest), never a bare scalar, so an approval
+    can be bound to the exact bytes the page showed. A bridge that only offers
+    the legacy scalar read yields a record with no digest: it may inform a
+    command, but it can never approve the script in-process.
+    """
     order = _studio_order(run_dir)
     ab = _approvals_bridge() if order else None
     if not order or ab is None:
         return None
     version = int(_studio_versions(run_dir).get(stage) or 1)
     try:
-        return ab.answer(order.get("base_url") or "", _studio_key(),
-                         order.get("order_id"), stage, version)
+        read_item = getattr(ab, "answer_item", None)
+        if callable(read_item):
+            record = read_item(order.get("base_url") or "", _studio_key(),
+                               order.get("order_id"), stage, version)
+            if isinstance(record, dict) and record.get("value") is not None:
+                return record
+            return None
+        value = ab.answer(order.get("base_url") or "", _studio_key(),
+                          order.get("order_id"), stage, version)
+        if value is None:
+            return None
+        return {"stage": stage, "version": version, "value": value, "digest": None}
     except Exception:   # noqa: BLE001 - a studio outage keeps the gate waiting
         return None
 
 
-def _studio_apply(cmd, sid, run_dir, stage, approval, value):
-    """A studio ANSWER becomes the EXISTING apply command (script-reply /
-    song pick / storyboard --reply). No new approval logic here."""
+#: S75-072: the page sends every storyboard note in ONE answer, one line per
+#: shot ("shot 2: text" newline "shot 5: text"). A line of that shape is one
+#: shot's note; each one takes the apply path on its own, so a second note is
+#: never folded into the first shot's change text.
+_STUDIO_SHOT_NOTE = re.compile(r"^shots?\s+[A-Za-z0-9_,.&\s#-]+?\s*[:\-]\s*\S", re.I)
+
+
+def _studio_shot_notes(value):
+    """The non-empty ``shot N: text`` lines of one studio storyboard answer."""
+    lines = [ln.strip() for ln in str(value or "").splitlines() if ln.strip()]
+    return [ln for ln in lines if _STUDIO_SHOT_NOTE.match(ln)]
+
+
+#: S75-072: the notes of one answer that a still regeneration interrupted. The
+#: runner's redo record holds the change, so they are kept on the run and the
+#: next `next` after the still lands applies them -- never dropped.
+_STUDIO_NOTES_FILE = ("control", "studio-shot-notes.json")
+
+
+def _studio_notes_path(run_dir):
+    return Path(run_dir).joinpath(*_STUDIO_NOTES_FILE)
+
+
+def _studio_notes_queue(run_dir):
+    """The shot notes still owed to the client (empty when none are)."""
+    try:
+        doc = json.loads(_studio_notes_path(run_dir).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return []
+    return [str(n) for n in doc] if isinstance(doc, list) else []
+
+
+def _studio_notes_save(run_dir, notes):
+    p = _studio_notes_path(run_dir)
+    if not notes:
+        try:
+            p.unlink()
+        except OSError:
+            pass
+        return
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_text(json.dumps(list(notes), indent=2), encoding="utf-8")
+
+
+def _studio_notes_drain(cmd, sid, run_dir, stage):
+    """Apply the notes a still regeneration interrupted; None when none owed."""
+    if _approval_runner() is None:
+        return None
+    notes = _studio_notes_queue(run_dir)
+    if not notes:
+        return None
+    return _studio_apply_shot_notes(cmd, sid, run_dir, stage, notes,
+                                    "\n".join(notes))
+
+
+def _studio_apply_shot_notes(cmd, sid, run_dir, stage, notes, answer):
+    """S75-072: one studio answer carrying notes for several shots.
+
+    Applying the whole answer as ONE reply let the runner read only the first
+    shot and fold every later line into that shot's change. Each note takes the
+    EXISTING apply path (``storyboard --reply <line>``) once, in the order the
+    client wrote them, so every named shot gets its own revision record.
+
+    The first note whose still has to be made again stops the pass: the
+    runner's redo record already holds that change, and it and every note after
+    it stay on the run (``control/studio-shot-notes.json``) so the next `next`
+    after the still is on disk applies them. A note is never folded into
+    another shot and never silently dropped.
+    """
+    applied, shot_ids, rest = [], [], list(notes)
+    while rest:
+        note = rest[0]
+        env = cmd_storyboard(argparse.Namespace(run_dir=str(run_dir),
+                                                target="", reply=note))
+        data = env.get("data") or {}
+        action = data.get("action") or env.get("reason_code")
+        row = {"note": note, "action": action,
+               "shot_ids": data.get("shot_ids") or (
+                   [data["shot_id"]] if data.get("shot_id") else []),
+               "reason_code": env.get("reason_code")}
+        applied.append(row)
+        shot_ids.extend(s for s in row["shot_ids"] if s not in shot_ids)
+        rest.pop(0)
+        if action in ("revised", "approved"):
+            continue
+        if action == "regenerate_still":     # transient: the still is not there yet
+            _studio_notes_save(run_dir, [note] + rest)
+            return envelope(
+                cmd, sid, "waiting", "regenerate_still",
+                "The client's storyboard answer names several shots. Shot %s "
+                "needs its still made again before that change is recorded; "
+                "%d note(s) stay queued and apply on the next `next` once the "
+                "still is on disk."
+                % (", ".join(row["shot_ids"]) or "?", len(rest) + 1),
+                data={"stage": stage, "approval": "storyboard",
+                      "answer": answer, "notes": [note] + rest,
+                      "applied": applied, "shot_ids": shot_ids,
+                      "command": None})
+        # A note that can never apply (unknown shot, unusable text): its row
+        # carries the refusal and the remaining notes still get their turn.
+    _studio_notes_save(run_dir, [])
+    done = [r for r in applied if r["action"] in ("revised", "approved")]
+    if len(done) == len(applied):
+        return envelope(cmd, sid, "ok", "next-stage",
+                        "The client answered the storyboard approval with %d shot "
+                        "note(s) on the studio page; each note took the apply path "
+                        "on its own shot. Run `next` again." % len(applied),
+                        data={"stage": stage, "approval": "storyboard",
+                              "answer": answer, "notes": notes,
+                              "applied": applied, "shot_ids": shot_ids,
+                              "command": None})
+    return envelope(cmd, sid, "waiting", "shot-note-not-applied",
+                    "%d of %d storyboard note(s) were applied; the refused ones "
+                    "are named in the applied rows and no shot was changed for "
+                    "them." % (len(done), len(applied)),
+                    data={"stage": stage, "approval": "storyboard",
+                          "answer": answer, "notes": notes,
+                          "applied": applied, "shot_ids": shot_ids,
+                          "command": None})
+
+
+def _script_ask_context(run_dir):
+    """The run id and the open presentation ask a studio script answer binds to.
+
+    The ask comes from the run's own approval record (the same ask the chat
+    reply must name), never from the page or a default. An unreadable record
+    answers {} and the gate refuses for want of context -- fail closed.
+    """
+    try:
+        core = Path(__file__).resolve().parent.parent
+        if str(core) not in sys.path:
+            sys.path.insert(0, str(core))
+        from script_approval import script_approval as _appr  # noqa: PLC0415
+        from script_approval import approval_events as _ev    # noqa: PLC0415
+        rec = _appr.record_for(str(run_dir))
+        if not isinstance(rec, dict):
+            return {}
+        asks = _ev.open_asks(rec)
+        run_id = ((rec.get("run") or {}).get("run_id")
+                  or (rec.get("reply_contract") or {}).get("run_id"))
+        return {"ask_id": (asks[-1] or {}).get("ask_id") if asks else None,
+                "run_id": run_id}
+    except (ImportError, OSError, ValueError, TypeError, KeyError):
+        return {}
+
+
+def _studio_source_ref(run_dir, answer):
+    """<order>/<stage>/<version>/<presentation digest> -- the distinct studio
+    reply reference a script approval is recorded under (S75-036)."""
+    order = _studio_order(run_dir) or {}
+    return "%s/%s/%s/%s" % (order.get("order_id"), answer.get("stage") or "script",
+                            answer.get("version"), answer.get("digest"))
+
+
+def _studio_script_command(run_dir, value, answer):
+    """The script-reply command carrying the provenance the studio answer did.
+
+    Used only as the fallback; a legacy answer with no digest gets the plain
+    command, which the gate then refuses for want of provenance."""
+    q = shlex.quote
+    command = ("python3 scripts/core/intake_preflight/factory.py script-reply "
+               "--run-dir %s --reply %s" % (q(str(run_dir)), q(str(value))))
+    if not isinstance(answer, dict) or not answer.get("digest"):
+        return command
+    context = _script_ask_context(run_dir)
+    for flag, val in (("--reply-source", "studio"),
+                      ("--answer-source-ref", _studio_source_ref(run_dir, answer)),
+                      ("--presentation-ask-id", context.get("ask_id")),
+                      ("--run-id", context.get("run_id"))):
+        if val:
+            command += " %s %s" % (flag, q(str(val)))
+    return command
+
+
+def _studio_apply_script(cmd, sid, run_dir, stage, answer):
+    """Apply a verified studio script answer in-process (S75-036).
+
+    None means the answer carries no presentation digest, so the caller keeps
+    the command form. Otherwise the answer is proved against the digest this
+    run published for that version, then handed to the SAME function
+    `script-reply` calls. A mismatch leaves the stage waiting: it never opens.
+    """
+    if not isinstance(answer, dict) or not answer.get("digest"):
+        return None
+    published = _studio_published_digest(run_dir, "script", answer.get("version"))
+    detail = {"stage": stage, "approval": "script", "version": answer.get("version"),
+              "presentation_digest": answer.get("digest")}
+    if not published:
+        return envelope(cmd, sid, "waiting", "studio-presentation-unverified",
+                        "The studio answer names a script presentation this run has "
+                        "no publish record for; nothing was approved. Present the "
+                        "script again, then answer the new version.",
+                        data=detail)
+    if published != answer.get("digest"):
+        return envelope(cmd, sid, "waiting", "studio-presentation-mismatch",
+                        "The studio answer names a different presentation than the "
+                        "script this run published; it is refused and the script "
+                        "stage stays waiting for an answer to the current version.",
+                        data=dict(detail, published_digest=published))
+    context = _script_ask_context(run_dir)
+    # The same attribute names `script-reply --reply-source / --answer-source-ref`
+    # produce, so the in-process call and the CLI carry one contract.
+    ns = argparse.Namespace(run_dir=str(run_dir), reply=answer.get("value"),
+                            reply_source="studio", target="",
+                            answer_source_ref=_studio_source_ref(run_dir, answer),
+                            presentation_ask_id=context.get("ask_id"),
+                            run_id=context.get("run_id"))
+    try:
+        return cmd_script_reply(ns)
+    except Exception:   # noqa: BLE001 - the command form stays the fallback
+        return None
+
+
+def _song_choices_state(run_dir):
+    """The run's song-choices record (offered numbers, presented files), or {}
+    when it is absent or unreadable -- no record means no numbers to check."""
+    try:
+        _c = str(Path(__file__).resolve().parent.parent)
+        if _c not in sys.path:
+            sys.path.insert(0, _c)
+        from song_choices import song_choices as _sc   # noqa: PLC0415
+        return _sc._state(str(run_dir)) or {}
+    except Exception:   # noqa: BLE001 - a broken record never invents an offer
+        return {}
+
+
+def _studio_apply(cmd, sid, run_dir, stage, approval, answer):
+    """A studio ANSWER becomes the EXISTING apply path (script-reply in-process
+    when it carries verified provenance / song pick / storyboard --reply). No
+    new approval logic here."""
     q = shlex.quote
     run = q(str(run_dir))
+    value = answer.get("value") if isinstance(answer, dict) else answer
+    notes = _studio_shot_notes(value) if approval == "storyboard" else []
+    if len(notes) > 1 and _approval_runner() is not None:
+        return _studio_apply_shot_notes(cmd, sid, run_dir, stage, notes, value)
     if approval == "script":
-        command = ("python3 scripts/core/intake_preflight/factory.py script-reply "
-                   "--run-dir %s --reply %s" % (run, q(str(value))))
+        applied = _studio_apply_script(cmd, sid, run_dir, stage, answer)
+        if applied is not None:
+            return applied
+        command = _studio_script_command(run_dir, value, answer)
     elif approval == "song":
-        command = ("python3 scripts/core/song_choices/song_choices.py pick "
-                   "--run-dir %s --reply %s" % (run, q(str(value))))
+        # S75-037: a studio song answer becomes the music command's own reply
+        # path, using the SAME choices the page published (the offered numbers).
+        numbers = [str(c["n"]) for c in STUDIO_CHOICES["song"](_song_choices_state(run_dir))]
+        picked = str(value if value is not None else "").strip()
+        if numbers and picked not in numbers:
+            return envelope(cmd, sid, "rejected", "studio-song-choice-unknown",
+                            "The studio answer %r is not one of the songs offered (%s); "
+                            "nothing was picked."
+                            % (picked, ", ".join(numbers)),
+                            data={"stage": stage, "approval": "song",
+                                  "offered": numbers, "answer": value})
+        command = ("python3 scripts/core/intake_preflight/factory.py music "
+                   "--run-dir %s --reply %s" % (run, q(picked)))
     else:
         command = ("python3 scripts/core/intake_preflight/factory.py storyboard "
                    "--run-dir %s --reply %s" % (run, q(str(value))))
@@ -475,13 +938,19 @@ def cmd_storyboard(a):
     studio = _studio_order(run_dir)
     target = a.target or ar.receipt_target(run_dir)
     sent, stills = [], []
+    studio_failure = {}
 
     def send(message, images):
         delivered = False
         if studio:
-            delivered = _studio_publish(run_dir, studio, "storyboard", message,
-                                        [p for _n, p in images],
-                                        choices=list(STUDIO_CHOICES["storyboard"])) is not None or delivered
+            try:
+                delivered = _studio_publish(run_dir, studio, "storyboard", message,
+                                            [p for _n, p in images],
+                                            choices=list(STUDIO_CHOICES["storyboard"])) is not None or delivered
+            except Exception as e:   # S75-037: a studio outage must not silence the chat
+                if not target:
+                    raise
+                studio_failure["detail"] = str(e)[:300]
         if target:
             ar.openclaw_sender(target)(message, images)
             delivered = True
@@ -498,6 +967,16 @@ def cmd_storyboard(a):
     data = dict(r)
     if sent:
         data["messages"], data["stills"] = sent, stills
+    if studio_failure:
+        # S75-037: the chat copy went out; the studio page is the thing that
+        # failed, so the stage waits on the chat instead of aborting both.
+        data.update(reason="studio-publish-failed",
+                    studio_publish={"outcome": "failed",
+                                    "detail": studio_failure["detail"]})
+        return envelope("storyboard", sid, "waiting", "studio-publish-failed",
+                        "The studio page did not take the storyboard (%s); the client "
+                        "chat copy was sent and the stage waits for the client's reply."
+                        % studio_failure["detail"], data=data)
     return envelope("storyboard", sid, out, r["action"],
                     "Run `next` for the video stage." if r["action"] == "approved"
                     else "Waiting for the client's reply (GO, or 'shot N: change ...').",
@@ -620,6 +1099,42 @@ def cmd_script_reply(a):
                         _script_gate(run_dir, a, reply=a.reply))
 
 
+def _studio_publish_song(run_dir):
+    """S75-037: put the delivered songs on a Studio order's page as stage `song`.
+
+    Published ONCE per run: the client's answer binds the version the page
+    showed, so a repeated `next` must not move that version out from under them.
+    The text is the SAME client message the chat delivery built, the files are
+    the audio files the run presented, and the choices are the offered numbers.
+    A run with no studio order, no bridge, or nothing offered publishes nothing;
+    a studio outage never blocks the music stage.
+    """
+    if not _studio_order(run_dir):
+        return None
+    if _studio_publish_record(run_dir).get("song"):
+        return None
+    st = _song_choices_state(run_dir)
+    choices = list(STUDIO_CHOICES["song"](st))
+    if not choices:
+        return None
+    concerns = st.get("concerns") or {}
+    try:
+        _c = str(Path(__file__).resolve().parent.parent)
+        if _c not in sys.path:
+            sys.path.insert(0, _c)
+        from song_choices import song_choices as _sc   # noqa: PLC0415
+        failed = sorted(int(k) for k in concerns if str(k).isdigit())
+        text = _sc.client_message(st.get("offered") or {}, failed, concerns=concerns)
+    except Exception:   # noqa: BLE001 - no message, no publish; the page keeps waiting
+        return None
+    files = [str(p) for p in (st.get("presented") or [])]
+    try:
+        return _studio_publish(run_dir, _studio_order(run_dir), "song", text, files,
+                               choices=choices)
+    except Exception:   # noqa: BLE001 - a studio outage never blocks the music stage
+        return None
+
+
 def _song_choices_next(run_dir, orchestrated=False):
     """SONG APPROVAL = Yes -> the three-version music runner descriptors.
 
@@ -640,6 +1155,8 @@ def _song_choices_next(run_dir, orchestrated=False):
     if not st or not st.get("required"):
         return None
     rd = str(run_dir)
+    # S75-037: a Studio order sees the three songs on its page, not only in chat.
+    _studio_publish_song(run_dir)
     units = _sc.plan_units(rd)["units"]
     base = ("python3 scripts/core/song_choices/song_choices.py generate "
             "--run-dir \"$RUN\" --request \"$RUN/music/req.json\" "
@@ -955,8 +1472,45 @@ def music_stage(run_dir, owner, action, run_id=None, reason=None,
         st.close()
 
 
+def _music_song_pick(a, run_dir):
+    """S75-037: `music --run-dir D --reply N` is the command form a studio song
+    answer becomes. Routes to the SAME pick the song_choices `pick` CLI records
+    (never a second pick path); a worded answer to the song-failure fork is
+    recorded the same way that CLI records it."""
+    sid = run_dir.name or "run"
+    try:
+        _c = str(Path(__file__).resolve().parent.parent)
+        if _c not in sys.path:
+            sys.path.insert(0, _c)
+        from song_choices import song_choices as _sc   # noqa: PLC0415
+        try:
+            label = _sc.record_pick(str(run_dir), a.reply)
+        except _sc.ChoiceError:
+            if _sc.parse_fork_answer(a.reply) is None:
+                raise
+            rec = _sc.record_fork_decision(str(run_dir), a.reply)
+            return envelope("music", sid, "ok", "song-fork-recorded",
+                            "The client answered the song-failure fork; the answer is "
+                            "%r." % rec["answer"],
+                            data={"stage": MUSIC, "fork": rec})
+        return envelope("music", sid, "ok", "song-picked",
+                        "Picked: %s. Run `next` for the next stage." % label,
+                        data={"stage": MUSIC, "pick": label})
+    except Exception as e:   # noqa: BLE001 - a refused pick never becomes a pick
+        return envelope("music", sid, "error", "SONG_PICK_REFUSED", str(e)[:300])
+
+
 def cmd_music(a):
     run_dir = Path(a.run_dir).expanduser().resolve()
+    if getattr(a, "reply", None) is not None and not a.action:
+        return _music_song_pick(a, run_dir)
+    if not a.action:
+        return envelope("music", run_dir.name or "run", "error", "MUSIC_ACTION_REQUIRED",
+                        "Name the music action (start, resume, complete, ...), or give "
+                        "the client's song pick with --reply.")
+    if not a.owner:
+        return envelope("music", run_dir.name or "run", "error", "MUSIC_OWNER_REQUIRED",
+                        "Name the worker id that holds the music lease with --owner.")
     guarded = a.action in ("start", "resume", "complete")
     admission = (_production_admission(run_dir, MUSIC if a.action == "start" else None,
                                         run_id=getattr(a, "run_id", None)) if guarded else
@@ -1143,6 +1697,111 @@ def _read_json(path, default=None):
     except (OSError, ValueError):
         return default
     return doc if isinstance(doc, dict) else default
+
+
+# ── S75-002: the signed step gate, wired into this tool ────────────────────
+#
+# step_gate (scripts/core/step_gate) seals each stage's REAL artifacts with an
+# HMAC chain, so a later stage cannot start on work nobody proved. This tool was
+# the path that could still write a COMPLETE row without it, so four points are
+# wired here: the run key at run start, `open` before a stage is handed out, a
+# `seal` subcommand, and the completion guard the state store already calls
+# (state_store.COMPLETE_GUARD). A run created BEFORE this change has no key; it
+# keeps its old behaviour and is named as legacy wherever the gate is asked.
+
+
+def _step_gate():
+    """(module, contract); (None, None) when the box has no step gate."""
+    sg = _core_mod("step_gate")
+    if sg is None:
+        return None, None
+    try:
+        return sg, sg.load_contract()
+    except Exception:                                # noqa: BLE001
+        return None, None
+
+
+def _gate_keyed(run_dir):
+    """True when this run has a gate key (created on or after the gate)."""
+    sg, _contract = _step_gate()
+    return sg is not None and os.path.exists(sg.key_path(str(run_dir)))
+
+
+def _gate_init(run_dir, got=None):
+    """Create the per-run gate key for a NEW run; never for a legacy one.
+
+    A run that already holds a COMPLETE row was produced before the gate:
+    creating a key for it would seal work nobody verified, so it stays legacy.
+    """
+    sg, _contract = _step_gate()
+    if sg is None:
+        return "step-gate-missing"
+    run_dir = str(run_dir)
+    if os.path.exists(sg.key_path(run_dir)):
+        return "step-gate-active"
+    if any(state == "COMPLETE" for state in (got or {}).values()):
+        return "legacy-run-no-gate"
+    try:
+        sg.cmd_init(run_dir)
+    except sg.Refused:
+        return "step-gate-active" if os.path.exists(sg.key_path(run_dir)) \
+            else "legacy-run-no-gate"
+    return "step-gate-active"
+
+
+def _gate_verify(run_dir, through, contract=None):
+    """None when the sealed chain through ``through`` verifies, else the text."""
+    sg, own = _step_gate()
+    if sg is None:
+        return "step-gate-missing: scripts/core/step_gate is not installed"
+    try:
+        sg.cmd_verify(str(run_dir), contract or own, through=through)
+    except sg.Refused as exc:
+        return "%s: %s" % (exc.code, exc.detail)
+    except Exception as exc:                         # noqa: BLE001
+        return "GATE_TOOL_ERROR: %s" % (exc,)
+    return None
+
+
+def _install_complete_guard(run_dir):
+    """Point state_store.COMPLETE_GUARD at this run's sealed chain.
+
+    Amendment 1: a run with NO gate key was created before this change; its
+    transitions are not guarded, and no key is ever added to it later. Returns
+    the installed callable, or None when the gate is not installed here.
+    """
+    import state_store
+    sg, contract = _step_gate()
+    if sg is None:
+        # No gate on this box: no guard at all, so a guard installed for an
+        # earlier run in this process can never answer for a different run.
+        state_store.COMPLETE_GUARD = None
+        return None
+    run_dir = str(run_dir)
+
+    def guard(run_id, stage, proof):
+        if not os.path.exists(sg.key_path(run_dir)):
+            return None                              # a run from before the gate
+        return _gate_verify(run_dir, stage, contract)
+
+    state_store.COMPLETE_GUARD = guard
+    return guard
+
+
+def _gate_open(run_dir, stage):
+    """(True, None) when ``stage`` may start; (False, Refused) when it may not.
+
+    `open` re-reads the stage before this one — its seal AND the files that seal
+    names — so a deleted or edited predecessor artifact stops the next stage.
+    """
+    sg, contract = _step_gate()
+    if sg is None:
+        return False, "step-gate-missing"
+    try:
+        sg.cmd_open(str(run_dir), stage, contract)
+    except sg.Refused as exc:
+        return False, exc
+    return True, None
 
 
 class ShapeError(ValueError):
@@ -1952,18 +2611,22 @@ STAGE_DESCRIPTORS = {
     "research": {
         "script": "scripts/core/research_engine/research.py",
         "verbs": ("",),
-        "command": 'scripts/core/research_engine/research.py --governed '
-                   '--brief "$RUN/brief.json" --outdir "$RUN"',
-        "recovery": 'scripts/core/research_engine/research.py --governed '
+        "command": _stage_command("research"),
+        # S75-005: the recovery command is the command that really runs.
+        # research.py defines no --governed option, so naming it here made the
+        # published recovery row unrunnable.
+        "recovery": 'scripts/core/research_engine/research.py '
                     '--brief "$RUN/brief.json" --outdir "$RUN"',
-        "artifacts": ("research/receipt.json", "research/claims.json",
-                      "research/captures.json"),
+        # S75-005: exactly the files research.render() writes unconditionally
+        # (research.py 292, 305-319). receipt/claims/captures were written by
+        # nothing.
+        "artifacts": ("research/evidence.json", "research/manifest.json",
+                      "research/bundle.json"),
     },
     "creative-strategy": {
         "script": "scripts/core/story_arc/story_arc.py",
         "verbs": ("",),
-        "command": 'scripts/core/story_arc/story_arc.py '
-                   '--story "$RUN/creative/story.json"',
+        "command": _stage_command("creative-strategy"),
         "recovery": 'scripts/core/story_arc/story_arc.py '
                     '--story "$RUN/creative/story.json"',
         "artifacts": ("creative/story.json", "creative/blueprint.json"),
@@ -1971,19 +2634,19 @@ STAGE_DESCRIPTORS = {
     "script-lyrics": {
         "script": "scripts/core/lyric_writer/lyric_writer.py",
         "verbs": ("",),
-        "command": 'scripts/core/lyric_writer/lyric_writer.py '
-                   '--lyrics "$RUN/creative/lyrics.json" '
-                   '--brief "$RUN/brief.json"',
+        "command": _stage_command("script-lyrics"),
         "recovery": 'scripts/core/lyric_writer/lyric_writer.py '
                     '--lyrics "$RUN/creative/lyrics.json" '
                     '--brief "$RUN/brief.json"',
-        "artifacts": ("script/lyrics.json",),
+        # S75-011: the lyric sheet lives at creative/lyrics.json -- the file
+        # lyric_writer reads and script_approval/stage.py 83-86 requires.
+        # script/lyrics.json was named by nothing that ran.
+        "artifacts": ("creative/lyrics.json",),
     },
     "music": {
         "script": "scripts/core/intake_preflight/factory.py",
-        "verbs": ("music",),
-        "command": 'scripts/core/intake_preflight/factory.py music '
-                   '--run-dir "$RUN" --owner "$OWNER" --action start',
+        "verbs": ("music", "generate"),
+        "command": _stage_command("music"),
         "recovery": 'scripts/core/intake_preflight/factory.py music '
                     '--run-dir "$RUN" --owner "$OWNER" --action resume',
         "artifacts": ("music/picked-song.mp3", "song-choices/pick.json"),
@@ -1992,17 +2655,15 @@ STAGE_DESCRIPTORS = {
     "continuity-bible": {
         "script": "scripts/core/character_continuity/stage.py",
         "verbs": ("check", "advance", "proven", "downstream"),
-        "command": 'scripts/core/character_continuity/stage.py advance '
-                   '--run-dir "$RUN" --run-id "$RUN_ID"',
+        "command": _stage_command("continuity-bible"),
         "recovery": 'scripts/core/character_continuity/stage.py advance '
                     '--run-dir "$RUN" --run-id "$RUN_ID"',
         "artifacts": ("continuity/qc-records.json", "continuity/makers.json"),
     },
     "storyboard": {
         "script": "scripts/core/intake_preflight/factory.py",
-        "verbs": ("storyboard",),
-        "command": 'scripts/core/intake_preflight/factory.py storyboard '
-                   '--run-dir "$RUN"',
+        "verbs": ("storyboard", "check"),
+        "command": _stage_command("storyboard"),
         "recovery": 'scripts/core/intake_preflight/factory.py storyboard '
                     '--run-dir "$RUN" --reply "$REPLY"',
         "artifacts": ("storyboard/shot-list.json", "storyboard/contracts.json"),
@@ -2011,12 +2672,7 @@ STAGE_DESCRIPTORS = {
     "image-keyframes": {
         "script": "scripts/core/kie_dispatch/kie_dispatch.py",
         "verbs": ("dispatch",),
-        "command": 'scripts/core/kie_dispatch/kie_dispatch.py dispatch '
-                   '--model <image-model-id> --request "$RUN/generation/req.json" '
-                   '--prompt-file "$RUN/generation/req.prompt.txt" '
-                   '--save-dir "$RUN/generation" --ledger "$RUN/spend.sqlite3" '
-                   '--run-id "$RUN_ID" --logical-key keyframes '
-                   '--attempt-id "$ATTEMPT" --cost "$COST"',
+        "command": _stage_command("image-keyframes"),
         "recovery": 'scripts/core/kie_dispatch/kie_dispatch.py dispatch '
                     '--model <image-model-id> --request "$RUN/generation/req.json" '
                     '--prompt-file "$RUN/generation/req.prompt.txt" '
@@ -2028,59 +2684,90 @@ STAGE_DESCRIPTORS = {
     "video-generation": {
         "script": "scripts/core/kie_dispatch/kie_dispatch.py",
         "verbs": ("dispatch",),
-        "command": 'scripts/core/kie_dispatch/kie_dispatch.py dispatch '
-                   '--model <video-model-id> --request "$RUN/generation/req.json" '
-                   '--prompt-file "$RUN/generation/req.prompt.txt" '
-                   '--save-dir "$RUN/generation" --ledger "$RUN/spend.sqlite3" '
-                   '--run-id "$RUN_ID" --logical-key video '
-                   '--attempt-id "$ATTEMPT" --cost "$COST"',
+        "command": _stage_command("video-generation"),
         "recovery": 'scripts/core/kie_dispatch/kie_dispatch.py dispatch '
                     '--model <video-model-id> --request "$RUN/generation/req.json" '
                     '--prompt-file "$RUN/generation/req.prompt.txt" '
                     '--save-dir "$RUN/generation" --ledger "$RUN/spend.sqlite3" '
                     '--run-id "$RUN_ID" --logical-key video '
                     '--attempt-id "$ATTEMPT" --cost "$COST"',
-        "artifacts": ("video/clips.json",),
+        # S75-011: video-generation wrote no file of its own (video/clips.json
+        # was written by nothing). The stage's own dispatcher writes this
+        # manifest for every produced clip with its sha256; the writer is
+        # kie_dispatch.py, a lane-B file -- reported, not edited here.
+        "artifacts": ("generation/clips-manifest.json",),
     },
     "qc-retakes": {
         "script": "scripts/core/retake_manager/retake_manager.py",
         "verbs": ("",),
-        "command": 'scripts/core/retake_manager/retake_manager.py '
-                   '--request "$RUN/qc/retake-request.json"',
+        "command": _stage_command("qc-retakes"),
         "recovery": 'scripts/core/retake_manager/retake_manager.py '
                     '--request "$RUN/qc/retake-request.json"',
-        "artifacts": ("qc/retakes.json",),
+        # S75-011: retake_manager.py writes no file today (qc/retakes.json was
+        # written by nothing). The stage's own script writes this plan listing
+        # every retake with its sha256; retake_manager.py is owned by no lane
+        # in this build -- reported, not edited here.
+        "artifacts": ("qc/retakes-plan.json",),
     },
     "assembly": {
         "script": "scripts/core/final_assembler/assembler.py",
         "verbs": ("",),
-        "command": 'scripts/core/final_assembler/assembler.py '
-                   '"$RUN/edit/timeline.json" "$RUN/edit/ad.mp4"',
+        "command": _stage_command("assembly"),
         "recovery": 'scripts/core/final_assembler/assembler.py '
                     '"$RUN/edit/timeline.json" "$RUN/edit/ad.mp4"',
-        "artifacts": ("edit/timeline.json", "edit/ad.mp4"),
+        # S75-011: the assembled master is the file this stage writes (plus its
+        # own <master>.receipt.json, assembler.py 1682). edit/timeline.json is
+        # an INPUT to the render, never an output of it -- the timeline is
+        # written by the assembler's planning step (lane V, U-V03).
+        "artifacts": ("edit/ad.mp4",),
     },
     "final-qc": {
         "script": "scripts/core/qc_gate.py",
         "verbs": ("evaluate",),
-        "command": 'scripts/core/qc_gate.py evaluate --run "$RUN_ID" '
-                   '--stage final-qc --records "$RUN/qc/records.json" '
-                   '--makers "$RUN/qc/makers.json" --required "$REQUIRED_CHECKS"',
+        "command": _stage_command("final-qc"),
         "recovery": 'scripts/core/qc_gate.py evaluate --run "$RUN_ID" '
                     '--stage final-qc --records "$RUN/qc/records.json" '
                     '--makers "$RUN/qc/makers.json" --required "$REQUIRED_CHECKS"',
-        "artifacts": ("final-qc/record.json",),
+        # S75-011: qc_gate.py writes this verdict (S75-002 part B). The old
+        # final-qc/record.json was written by nothing; qc_gate.py is a lane-C
+        # file -- reported, not edited here.
+        "artifacts": ("qc/final-qc-verdict.json",),
     },
     "delivery": {
+        # U-A13 (S75-055): the stage command is the packaging module
+        # (`python3 -m delivery_package package`, U-T05). The script named here
+        # stays the delivery gate's, which the recovery row and the QC record
+        # still run.
         "script": "scripts/core/qc_gate.py",
-        "verbs": ("evaluate",),
-        "command": 'scripts/core/qc_gate.py evaluate --run "$RUN_ID" '
-                   '--stage delivery --records "$RUN/qc/records.json" '
-                   '--makers "$RUN/qc/makers.json" --required "$REQUIRED_CHECKS"',
+        "verbs": ("package", "evaluate"),
+        "command": _stage_command("delivery"),
         "recovery": 'scripts/core/qc_gate.py evaluate --run "$RUN_ID" '
                     '--stage delivery --records "$RUN/qc/records.json" '
                     '--makers "$RUN/qc/makers.json" --required "$REQUIRED_CHECKS"',
-        "artifacts": ("delivery/receipts.json",),
+        # U-A13 (S75-055): the twelve numbered package slots -- the exact file
+        # names `delivery_package.contract.PACKAGE_ITEMS` verifies (U-T05's
+        # list). delivery/receipts.json was written by nothing; the hand-written
+        # receipt is no longer declared.
+        "artifacts": (
+            "delivery/01 - Full Song.mp3",
+            "delivery/01 - Instrumental.mp3",
+            "delivery/01 - Voice Only.mp3",
+            "delivery/01 - About These Audio Files.txt",
+            "delivery/02 - Character Bible.pdf",
+            "delivery/02 - Character Bible Images",
+            "delivery/03 - SCRIPT.pdf",
+            "delivery/04 - Storyboard.pdf",
+            "delivery/05 - Video Captioned.mp4",
+            "delivery/05 - Video Clean.mp4",
+            "delivery/06 - Clip 60s.mp4",
+            "delivery/06 - Clip 90s.mp4",
+            "delivery/07 - Ready-to-Post Kit.pdf",
+            "delivery/08 - Cover Thumbnail.png",
+            "delivery/09 - Lyric Sheet.pdf",
+            "delivery/10 - Captions.srt",
+            "delivery/11 - Character Images",
+            "delivery/12 - Welcome Sheet.pdf",
+        ),
     },
 }
 
@@ -2090,20 +2777,27 @@ def _skill_root():
     return Path(__file__).resolve().parents[3]
 
 
+#: Command prefixes that are an interpreter, not the script under contract.
+_INTERPRETERS = ("python3", "python", "/opt/homebrew/bin/python3")
+
+
 def _command_verb(command):
     """The declared verb token of a descriptor command: the first token after
     the script, and only when it really is a bare verb (never an option, never
     a path). ``""`` means the CLI is option/positional-only -- a real contract,
-    not a missing one."""
+    not a missing one. One leading interpreter token (``python3``) is skipped,
+    because a published command now reads ``python3 <script> <verb> ...``."""
     tokens = str(command or "").split()
+    if tokens and tokens[0] in _INTERPRETERS:
+        tokens = tokens[1:]
+    if len(tokens) >= 2 and tokens[0] == "-m":
+        # U-A13: a module invocation is ``python3 -m <module> <verb> ...`` --
+        # the module plays the script's part, so the verb follows it.
+        tokens = tokens[1:]
     if len(tokens) < 2:
         return ""
     tok = tokens[1]
     return tok if re.fullmatch(r"[a-z][a-z0-9-]*", tok) else ""
-
-
-#: Command prefixes that are an interpreter, not the script under contract.
-_INTERPRETERS = ("python3", "python", "/opt/homebrew/bin/python3")
 
 
 def _command_script(command):
@@ -2120,9 +2814,72 @@ def _command_script(command):
     return tokens[0]
 
 
-def _descriptor_problems(skill_root=None):
+def _command_module(command):
+    """The module a ``python3 -m <module>`` command runs, else ``""``.
+
+    U-A13 (S75-055): the delivery and lip-sync rows are module invocations, so
+    there is no script path for ``_command_script`` to return; the module is
+    the thing that must resolve under ``scripts/core``.
+    """
+    tokens = str(command or "").split()
+    if len(tokens) >= 3 and tokens[0] in _INTERPRETERS and tokens[1] == "-m":
+        return tokens[2]
+    return ""
+
+
+#: S75-005: how long one stage script's ``--help`` probe may take before the
+#: script is reported by name rather than left unproven.
+HELP_PROBE_TIMEOUT_S = 30
+
+
+def _help_problems(stage, d, root):
+    """S75-005: the script a descriptor hands out must answer ``--help``.
+
+    ``python3 -B <script> --help`` exiting 0 is the minimum proof that the
+    published command runs a real argument parser -- the check S75-005 asks
+    for. An unknown-option check would need a ``build_parser()`` inside the
+    script itself, and only the lane that owns that script may add one.
+    Nothing else runs: no run dir is created, no network, no provider. The
+    proof is the parser's own usage text on stdout: a script that merely
+    exits 0 (an empty file, a JSON document, any module with no parser)
+    answers nothing and is refused. A script that does not resolve on disk
+    is already named by the caller, so it is skipped here rather than
+    reported twice.
+    """
+    script = str((d or {}).get("script") or "")
+    if not script:
+        return []
+    path = root / script
+    if not path.is_file():
+        return []
+    try:
+        proc = subprocess.run(
+            [sys.executable, "-B", str(path), "--help"],
+            cwd=str(root), capture_output=True, text=True,
+            timeout=HELP_PROBE_TIMEOUT_S)
+    except (OSError, subprocess.SubprocessError) as exc:
+        return ["stage %r script %r could not be probed with --help: %s"
+                % (stage, script, str(exc)[:200])]
+    detail = (proc.stderr or proc.stdout or "").strip().splitlines()
+    if proc.returncode != 0:
+        return ["stage %r script %r does not answer --help (exit %d)%s"
+                % (stage, script, proc.returncode,
+                   ": %s" % detail[-1][:200] if detail else "")]
+    if not any(line.lstrip().lower().startswith("usage:") for line in detail):
+        return ["stage %r script %r does not answer --help (exit 0 with no usage text)"
+                % (stage, script)]
+    return []
+
+
+def _descriptor_problems(skill_root=None, help_probe=False):
     """F4 named checks over the descriptors themselves. Each problem names the
-    stage, the field and the reason -- never a bare False."""
+    stage, the field and the reason -- never a bare False.
+
+    ``help_probe`` adds the S75-005 check: every stage's script is asked for
+    its own ``--help``. It is off by default because ``next`` validates the
+    registry on every call and a probe is a real subprocess; the contract test
+    turns it on for all twelve stages, which is where it belongs.
+    """
     root = _skill_root() if skill_root is None else Path(skill_root)
     problems = []
     for stage in CANONICAL_STAGES:
@@ -2161,6 +2918,8 @@ def _descriptor_problems(skill_root=None):
             problems.append("stage %r declares no emitted output inventory" % stage)
         elif len(set(arts)) != len(arts):
             problems.append("stage %r output inventory has duplicates" % stage)
+        if help_probe:
+            problems.extend(_help_problems(stage, d, root))
     return problems
 
 
@@ -2268,10 +3027,10 @@ STAGE_REGISTRY = {
     "research": _stage(
         [], "research-analyst",
         STAGE_DESCRIPTORS["research"]["command"],
-        "research/<request-digest>", "research/receipt.json",
+        "research/<request-digest>", "research/evidence.json",
         "research/receipt.json",
-        ["research/receipt.json", "research/claims.json",
-         "research/captures.json"],
+        ["research/evidence.json", "research/manifest.json",
+         "research/bundle.json"],
         "none", "research brief + sources on disk + independent semantic review",
         STAGE_DESCRIPTORS["research"]["recovery"],
         "research-complete",
@@ -2288,8 +3047,8 @@ STAGE_REGISTRY = {
         artifacts=STAGE_DESCRIPTORS["creative-strategy"]["artifacts"]),
     "script-lyrics": _stage(
         ["creative-strategy"], "lyricist",
-        STAGE_DESCRIPTORS["script-lyrics"]["command"], "script/<plan-revision>",
-        "script/lyrics.json", "script/qc-record.json", ["script/lyrics.json"],
+        STAGE_DESCRIPTORS["script-lyrics"]["command"], "creative/<plan-revision>",
+        "creative/lyrics.json", "script/qc-record.json", ["creative/lyrics.json"],
         "delivered-approval", "approved lyric sheet",
         STAGE_DESCRIPTORS["script-lyrics"]["recovery"], "script-approved",
         artifacts=STAGE_DESCRIPTORS["script-lyrics"]["artifacts"]),
@@ -2332,46 +3091,52 @@ STAGE_REGISTRY = {
     "video-generation": _stage(
         ["image-keyframes"], "video-generator",
         STAGE_DESCRIPTORS["video-generation"]["command"],
-        "video/<segment-set-digest>", "video/clips.json",
-        "video/qc-record.json", ["video/clips.json"],
+        "generation/<segment-set-digest>", "generation/clips-manifest.json",
+        "video/qc-record.json", ["generation/clips-manifest.json"],
         "none", "all clips materialized",
         STAGE_DESCRIPTORS["video-generation"]["recovery"], "provider-completion",
         artifacts=STAGE_DESCRIPTORS["video-generation"]["artifacts"]),
     "qc-retakes": _stage(
         ["video-generation"], "qc-reviewer",
         STAGE_DESCRIPTORS["qc-retakes"]["command"], "qc/<clip-set-digest>",
-        "qc/retakes.json", "qc/qc-record.json", ["qc/retakes.json"],
+        "qc/retakes-plan.json", "qc/qc-record.json", ["qc/retakes-plan.json"],
         "operator", "QC verdict recorded (retakes or accept)",
         STAGE_DESCRIPTORS["qc-retakes"]["recovery"], "qc-complete",
         required=False, artifacts=STAGE_DESCRIPTORS["qc-retakes"]["artifacts"]),
     "assembly": _stage(
         ["qc-retakes"], "editor",
         STAGE_DESCRIPTORS["assembly"]["command"],
-        "edit/<timeline-digest>", "edit/timeline.json",
-        "assembly/qc-record.json", ["edit/timeline.json", "edit/ad.mp4"],
-        "none", "assembled timeline on disk",
+        "edit/<timeline-digest>", "edit/ad.mp4",
+        "assembly/qc-record.json", ["edit/ad.mp4"],
+        "none", "assembled master on disk",
         STAGE_DESCRIPTORS["assembly"]["recovery"], "assembly-complete",
         artifacts=STAGE_DESCRIPTORS["assembly"]["artifacts"]),
     "final-qc": _stage(
         ["assembly"], "final-qc-reviewer",
         STAGE_DESCRIPTORS["final-qc"]["command"],
-        "final-qc/<assembly-digest>", "final-qc/record.json",
-        "final-qc/record.json", ["final-qc/record.json"],
+        "qc/<assembly-digest>", "qc/final-qc-verdict.json",
+        "qc/final-qc-verdict.json", ["qc/final-qc-verdict.json"],
         "operator", "independent final QC PASS",
         STAGE_DESCRIPTORS["final-qc"]["recovery"], "final-qc-complete",
         artifacts=STAGE_DESCRIPTORS["final-qc"]["artifacts"]),
+    # U-A13 (S75-055): the produced artifact and the required evidence are the
+    # package items the descriptor declares -- the twelve numbered slots have
+    # no single receipt any more, so the first item is the primary output and
+    # every owed file is the evidence.
     "delivery": _stage(
         ["final-qc"], "delivery-agent",
         STAGE_DESCRIPTORS["delivery"]["command"],
-        "delivery/<run-id>", "delivery/receipts.json",
-        "delivery/qc-record.json", ["delivery/receipts.json"],
+        "delivery/<run-id>", STAGE_DESCRIPTORS["delivery"]["artifacts"][0],
+        "delivery/qc-record.json",
+        list(STAGE_DESCRIPTORS["delivery"]["artifacts"]),
         "none", "successful destination delivery receipts",
         STAGE_DESCRIPTORS["delivery"]["recovery"], "delivery-complete",
         artifacts=STAGE_DESCRIPTORS["delivery"]["artifacts"]),
 }
 
 
-def validate_registry(registry=None, skill_root=None, runbook_rows=None):
+def validate_registry(registry=None, skill_root=None, runbook_rows=None,
+                      help_probe=False):
     """Validate the published 12-stage registry (SPEC 8.6). Returns a list of
     problems; empty list == valid. Checks: all 12 canonical stages present,
     no extras, every required stage carries every required field non-empty,
@@ -2435,17 +3200,27 @@ def validate_registry(registry=None, skill_root=None, runbook_rows=None):
             problems.append("stage %r output inventory %r != descriptor %r"
                             % (s, arts, want))
         problems.extend(_evidence_contract_problems(s, entry, d))
-    problems.extend(_descriptor_problems(root))
+    problems.extend(_descriptor_problems(root, help_probe=help_probe))
     if runbook_rows:
         for s, row in sorted(runbook_rows.items()):
             cmd = str((row or {}).get("command") or "")
             head = _command_script(cmd)
-            if not head:
+            module = _command_module(cmd)
+            if not head and not module:
                 # An addition row may legitimately be an inline `python3 -c`
                 # probe; a CANONICAL stage row never may.
                 if s not in STAGE_DESCRIPTORS:
                     continue
                 problems.append("runbook row %r has no resolvable script" % s)
+                continue
+            if module:
+                # U-A13: a module row (python3 -m <module>) has no script path;
+                # the module it runs must still resolve under scripts/core.
+                mod_path = root / "scripts" / "core" / module.replace(".", "/")
+                if not (mod_path.is_dir()
+                        or mod_path.with_suffix(".py").is_file()):
+                    problems.append("runbook row %r module %r does not resolve "
+                                    "on disk" % (s, module))
                 continue
             if any(t in head for t in PLACEHOLDER_TOKENS):
                 problems.append("runbook row %r names a placeholder script: %r"
@@ -2675,12 +3450,21 @@ def _collect_completion_evidence(run_dir, got, stages=None, registry=None):
                                "detail": str(exc)}
         approvals_current = False
 
-    # independent final QC: a record whose producer is a dedicated final-QC
-    # reviewer, gate PASS. A stage's own output never counts as final QC.
-    fq = _read_json(rd / "final-qc" / "record.json", {}) or {}
-    fq_producer = str(fq.get("producer") or "")
-    final_qc_ok = (fq.get("gate") == "PASS"
-                   and fq_producer == reg.get("final-qc", {}).get("qc_producer", "final-qc-reviewer"))
+    # independent final QC: with a gate key the proof is the SEALED CHAIN
+    # through delivery (S75-002) — a hand-written verdict file cannot make it
+    # pass. A run created before the gate keeps the record test, read from the
+    # file qc_gate.py really writes (S75-011): a record whose producer is a
+    # dedicated final-QC reviewer, gate PASS. A stage's own output never counts
+    # as final QC.
+    final_qc_ok = None
+    if _gate_keyed(rd):
+        final_qc_ok = _gate_verify(rd, "delivery") is None
+    if final_qc_ok is None:
+        fq = _read_json(rd / "qc" / "final-qc-verdict.json", {}) or {}
+        fq_producer = str(fq.get("producer") or "")
+        final_qc_ok = (fq.get("gate") == "PASS"
+                       and fq_producer == reg.get("final-qc", {}).get("qc_producer",
+                                                                     "final-qc-reviewer"))
 
     # required artifacts present and reachable (non-empty files).
     missing = []
@@ -2688,13 +3472,22 @@ def _collect_completion_evidence(run_dir, got, stages=None, registry=None):
         for rel in reg.get(s, {}).get("required_artifacts", []):
             p = rd / rel
             try:
-                if not (p.is_file() and p.stat().st_size > 0):
+                present = p.is_file() and p.stat().st_size > 0
+                if not present and p.is_dir():
+                    # U-A13: two delivery slots are image SETS (directories of
+                    # separate files), so a non-empty directory is present.
+                    present = any(q.is_file() and q.stat().st_size > 0
+                                  for q in p.iterdir())
+                if not present:
                     missing.append(rel)
             except OSError:
                 missing.append(rel)
     artifacts_present = not missing
 
     # destination delivery receipts: all destinations delivered successfully.
+    # S75-011: the declared delivery artifact is delivery/delivery-receipt.json
+    # (the delivery modules' merged receipt); U-A13 settles the destination-list
+    # reader against that file's real shape, so it keeps its current path here.
     receipts = _read_json_list(rd / "delivery" / "receipts.json", required=False)
     rows = [r for r in receipts if isinstance(r, dict)]
     dests = [r.get("destination") for r in rows]
@@ -2857,23 +3650,40 @@ def continuation_enqueue(run_dir, event, run_id=None, stages=None,
                                                 evidence=evidence)
         action["delivered"] = delivered
         action["completion_report"] = report
-    # durable append to the continuation queue
-    qpath = rd / "control" / _CONTINUATION_QUEUE
+    # Durable append to the continuation queue, under an exclusive lock so two
+    # events landing at once never lose each other's write (S75-023). A queue
+    # that exists but does not parse is preserved under a corrupt-<epoch> name,
+    # never silently replaced; a write that fails is loud and says so on the
+    # returned action instead of pretending the write happened.
+    qdir = rd / "control"
+    qpath = qdir / _CONTINUATION_QUEUE
     try:
-        qpath.parent.mkdir(parents=True, exist_ok=True)
-        queue = []
-        if qpath.is_file():
-            try:
-                with open(qpath, encoding="utf-8") as f:
-                    prev = json.load(f)
-                queue = prev if isinstance(prev, list) else []
-            except (OSError, ValueError):
-                queue = []
-        queue.append(action)
-        with open(qpath, "w", encoding="utf-8") as f:
-            json.dump(queue, f, indent=2)
-    except OSError:
-        pass
+        qdir.mkdir(parents=True, exist_ok=True)
+        with open(qdir / "continuation-queue.lock", "a") as lock_f:
+            fcntl.flock(lock_f.fileno(), fcntl.LOCK_EX)
+            queue = []
+            if qpath.is_file():
+                try:
+                    with open(qpath, encoding="utf-8") as f:
+                        prev = json.load(f)
+                    queue = prev if isinstance(prev, list) else []
+                except (OSError, ValueError) as exc:
+                    corrupt = qdir / ("continuation-queue.corrupt-%d.json"
+                                      % int(time.time()))
+                    os.replace(qpath, corrupt)
+                    _loud("fail", "CONTINUATION_QUEUE_CORRUPT",
+                          "%s: %s" % (corrupt, exc))
+                    queue = []
+            queue.append(action)
+            queue = queue[-500:]
+            tmp_path = qdir / ("." + _CONTINUATION_QUEUE + ".tmp")
+            with open(tmp_path, "w", encoding="utf-8") as f:
+                json.dump(queue, f, indent=2)
+            os.replace(tmp_path, qpath)
+        action["queue_persisted"] = True
+    except OSError as exc:
+        _loud("fail", "CONTINUATION_QUEUE_WRITE_FAILED", str(exc))
+        action["queue_persisted"] = False
     return action
 
 
@@ -2975,6 +3785,72 @@ def _intake_session_gate(run_dir, sid):
                     status.get("message") or "Finish the pending intake question and explicitly confirm its recap.",
                     data={"stage": None, "command": None, "intake": status,
                           "resume_command": resume}, evidence=[str(path)])
+
+
+def cmd_seal(a):
+    """seal --run-dir D --stage S --maker M --checker C (S75-002).
+
+    The seal comes FIRST and only on success does the row move to COMPLETE, so
+    the two can never disagree. The row move goes through state_store with the
+    completion guard installed, which is this same sealed chain.
+    """
+    run_dir = Path(a.run_dir or ".").expanduser().resolve()
+    sid = run_dir.name or "run"
+    sg, contract = _step_gate()
+    if sg is None:
+        return envelope("seal", str(sid), "error", "STEP_GATE_MISSING",
+                        "scripts/core/step_gate is not installed on this box, so "
+                        "no stage can be sealed.", data={"stage": a.stage})
+    # S75-002: `seal` may be the FIRST gate command a caller reaches on a new
+    # run, and both open and seal need the key, so create it here with `next`'s
+    # own semantics: never for a run that already holds a COMPLETE row.
+    _gate_init(run_dir, _stage_states(run_dir))
+    try:
+        # An open record is the gate's own precondition. Opening here keeps
+        # `seal` usable on a resumed run (and still refuses a stage whose
+        # predecessor does not verify), never as a second, weaker path.
+        sg.cmd_open(str(run_dir), a.stage, contract)
+        sealed = sg.cmd_seal(str(run_dir), a.stage, a.maker, a.checker, contract)
+    except sg.Refused as exc:
+        return envelope("seal", str(sid), "rejected", exc.code, exc.detail,
+                        data={"stage": a.stage})
+    except Exception as exc:                         # noqa: BLE001
+        return envelope("seal", str(sid), "error", "GATE_TOOL_ERROR", str(exc),
+                        data={"stage": a.stage})
+    import state_store
+    db = run_dir / "control" / "state.sqlite3"
+    rid, problem = resolved_run_id(run_dir, getattr(a, "run_id", None))
+    if problem or not db.exists():
+        return envelope("seal", str(sid), "rejected",
+                        str(problem or "state-file-missing").upper().replace("-", "_"),
+                        "The stage is sealed, but the run's state store cannot be "
+                        "resolved (%s), so no row was moved." % (problem or db),
+                        data={"stage": a.stage, "sealed": sealed})
+    _install_complete_guard(run_dir)
+    try:
+        with state_store.Store(db) as store:
+            row = store.get(rid, a.stage)
+            if row["state"] not in ("NOT_STARTED", "READY", "STALE",
+                                    "FAILED_RETRYABLE", "RUNNING"):
+                return envelope("seal", str(sid), "rejected", "STAGE_NOT_CLAIMABLE",
+                                "Stage %r is %s; only an unfinished stage is "
+                                "sealed." % (a.stage, row["state"]),
+                                data={"stage": a.stage, "sealed": sealed})
+            if row["state"] != "RUNNING":
+                if row["state"] != "READY":
+                    store.transition(rid, a.stage, "READY", a.maker)
+                store.claim(rid, a.stage, a.maker)
+            fresh = store.transition(rid, a.stage, "COMPLETE", a.maker,
+                                     proof={"stage": a.stage,
+                                            "artifacts": sealed.get("artifacts", [])})
+    except state_store.StoreError as exc:
+        return envelope("seal", str(sid), "rejected", exc.code, str(exc),
+                        data={"stage": a.stage, "sealed": sealed})
+    return envelope("seal", str(sid), "ok", "stage-sealed",
+                    "Stage %r is sealed and COMPLETE." % a.stage,
+                    data={"stage": a.stage,
+                          "state": (fresh or {}).get("state", "COMPLETE"),
+                          "sealed": sealed}, evidence=["%s" % db])
 
 
 def _next_ai_roles(run_dir):
@@ -3079,6 +3955,167 @@ def cmd_next(a):
     return result
 
 
+#: S75-010 step 4: where an unfilled stage-command placeholder comes from. A
+#: placeholder the run cannot answer is a NAMED need, never an invented value.
+_PLACEHOLDER_WHERE = {
+    "RUN": "the run directory (`--run-dir`)",
+    "RUN_ID": "the run id (the run directory's own name)",
+    "OWNER": "the live worker id that owns the music lease (`factory.py music --owner`)",
+    "MODEL": "the model locked for this stage in the run's model-lock record (`kie_dispatch.model_lock`)",
+    "COST_MINOR": "the request's estimated cost in minor units, reserved on the spend ledger",
+    "REQUIRED_CHECKS": "qc_gate.STAGE_REQUIRED for this stage",
+    "SEGMENT": "the segment number this job makes (one job per segment, 1-based)",
+    "LENGTH_S": "the chosen ad length in seconds (`control/method.json` chosen_length_s)",
+}
+
+
+def _placeholder_where(name, stage):
+    """One sentence naming where this stage's placeholder value comes from.
+
+    ``MODEL`` is the video model only for the video stage; the image stage's
+    model is a different model, so its need must not point at the video lock.
+    """
+    if name == "MODEL" and stage == "image-keyframes":
+        return ("the image model this run's keyframe plan buys (the card's "
+                "image plan in `catalog_calculator`; `kie_dispatch.model_lock` "
+                "holds the video model and cannot answer it)")
+    return _PLACEHOLDER_WHERE.get(name, "the runner supplies it")
+
+
+def _stage_command_values(run_dir, sid, stage, extra=None):
+    """The placeholder values this run can answer, and nothing it cannot.
+
+    ``next`` substitutes what the run already knows (the run dir, the run id,
+    the locked video model for the video stage, the QC gate's own
+    required-check list) and leaves the rest to named needs.
+    ``extra`` carries a value only ``next`` can compute (``COST_MINOR``, for a
+    paid stage whose price was read off the card): it never comes from a guess.
+    """
+    values = {"RUN": str(run_dir), "RUN_ID": str(sid)}
+    if isinstance(extra, dict):
+        values.update({k: v for k, v in extra.items() if v is not None})
+    core = str(Path(__file__).resolve().parent.parent)
+    if core not in sys.path:
+        sys.path.insert(0, core)
+    if stage == "video-generation":
+        # S75-010 step 4: {MODEL} is the locked MODEL OF THE VIDEO STAGE. The
+        # lock holds a video model only, so the image stage must never take it
+        # (its image model comes from the card's image plan). An import failure
+        # is the one thing swallowed: the need below stays named. A store error
+        # is already fail-closed inside read_locked_model, and `next` refuses an
+        # unreadable store before it ever reaches this function.
+        try:
+            from kie_dispatch import model_lock  # noqa: PLC0415
+        except ImportError:
+            pass
+        else:
+            locked = model_lock.read_locked_model(
+                str(Path(run_dir) / "control" / "state.sqlite3"), str(sid))
+            if locked:
+                values["MODEL"] = str(locked)
+    try:
+        import qc_gate  # noqa: PLC0415
+        required = getattr(qc_gate, "STAGE_REQUIRED", None)
+        if isinstance(required, dict) and required.get(stage):
+            values["REQUIRED_CHECKS"] = ",".join(str(x) for x in required[stage])
+    except Exception:                                    # noqa: BLE001
+        pass
+    return values
+
+
+def _stage_needs(argv, run_dir, sid, stage, extra=None):
+    """(filled argv, needs) for one stage-command row.
+
+    Every ``{PLACEHOLDER}`` the run can answer is filled from the run; each one
+    it cannot is a named need with one sentence saying where its value comes
+    from. The published ``command`` stays the canonical template, which is what
+    the runbook documents for the agent loop.
+    """
+    tokens = [str(t) for t in (argv or [])]
+    if not tokens:
+        return [], []
+    values = _stage_command_values(run_dir, sid, stage, extra=extra)
+    filled, missing = [], set()
+    for tok in tokens:
+        out = tok
+        for name in re.findall(r"\{([A-Z_]+)\}", tok):
+            if name in values:
+                out = out.replace("{%s}" % name, str(values[name]))
+            else:
+                missing.add(name)
+        filled.append(out)
+    needs = [{"placeholder": name,
+              "where": _placeholder_where(name, stage)}
+             for name in sorted(missing)]
+    return filled, needs
+
+
+#: S75-001: which priced card line each paid stage buys. One source for the
+#: mapping; a stage absent here has no card line and therefore no price.
+_PAID_STAGE_LINE = {"music": "music", "image-keyframes": "image",
+                    "video-generation": "video"}
+
+
+def price_for_stage(run_dir, stage):
+    """Estimated cost in ledger minor units for this stage's paid work, or None.
+
+    Read from the same price function the choice card uses
+    (``catalog_calculator.card_render.price_envelope``), through the run's own
+    recorded four-pick card receipt and its video-model lock. ``None`` means no
+    price could be computed -- never a zero and never a made-up number, because
+    a zero cost on a paid job is the defect this function removes (S75-001).
+    """
+    component = _PAID_STAGE_LINE.get(stage)
+    if component is None:
+        return None
+    receipt = _read_json(Path(run_dir) / "control" / "card-receipt.json", {}) or {}
+    answers = receipt.get("answers")
+    if not isinstance(answers, dict):
+        answers = receipt
+    if not isinstance(answers, dict):
+        return None
+    card = {"length": answers.get("length"),
+            "style": answers.get("video_style"),
+            "music": answers.get("audio_style"),
+            "main_characters": 1}
+    core = str(Path(__file__).resolve().parent.parent)
+    if core not in sys.path:
+        sys.path.insert(0, core)
+    try:
+        from catalog_calculator import card_render          # noqa: PLC0415
+    except Exception:                                        # noqa: BLE001
+        return None
+    # ponytail: price_fn None prices every line from the shipped rate table
+    # (no adapter subprocess). Give it price_fn_default() when the live Skill
+    # 74 adapter must override a table rate.
+    try:
+        env, _model = card_render.price_envelope(
+            card, None,
+            state_store=str(Path(run_dir) / "control" / "state.sqlite3"),
+            run_id=Path(run_dir).name or "run")
+    except Exception:                                        # noqa: BLE001
+        return None
+    priced = env.get("card") if isinstance(env, dict) and env.get("state") == "ok" else None
+    if not isinstance(priced, dict):
+        return None
+    for line in (priced.get("line_items") or []):
+        if not isinstance(line, dict) or line.get("component") != component:
+            continue
+        usd = line.get("usd")
+        if isinstance(usd, (int, float)) and not isinstance(usd, bool) and usd >= 0:
+            return int(round(float(usd) * 100))
+        return None
+    return None
+
+
+def _price_refusal(sid, stage):
+    """S75-001: a paid stage whose price cannot be computed hands out nothing."""
+    return envelope("next", str(sid), "rejected", "UNKNOWN_PRICE",
+                    "No price could be computed for stage %s; nothing was "
+                    "handed out." % stage,
+                    data={"stage": stage})
+
+
 def _next_stage(a, *, boot_snapshot=None):
     """next --run-dir <dir>: which stage, which command, how many lanes."""
     # L4.2: a process whose skill was updated since it started refuses to
@@ -3127,6 +4164,11 @@ def _next_stage(a, *, boot_snapshot=None):
     except sqlite3.DatabaseError as e:
         return envelope("next", str(sid), "error", "state-unreadable",
                         "state file unreadable (%s): %s" % (db, str(e)[:120]))
+    # S75-002: a NEW run gets its gate key here (never a run that already holds
+    # a COMPLETE row), and every COMPLETE transition this process makes — the
+    # reconcile moves below included — is guarded by the sealed chain.
+    gate_state = _gate_init(run_dir, got)
+    _install_complete_guard(run_dir)
     # L4.1: reconcile the rows from proven artifacts on disk BEFORE the
     # answer — through state_store's guarded transitions only; rows the
     # artifacts do not prove are never touched, and every move it made is
@@ -3202,6 +4244,10 @@ def _next_stage(a, *, boot_snapshot=None):
         if decision["next_stage"] == "video-generation":
             _ar = _approval_runner()
             if _ar is not None and not _ar.gate_open(str(run_dir)):
+                _owed = _studio_notes_drain("next", str(sid), run_dir,
+                                            decision["next_stage"])
+                if _owed:
+                    return _owed
                 _ans = _studio_answer(run_dir, "storyboard")
                 if _ans:
                     return _studio_apply("next", str(sid), run_dir,
@@ -3240,6 +4286,9 @@ def _next_stage(a, *, boot_snapshot=None):
     if next_stage == "video-generation":      # storyboard approval point
         ar = _approval_runner()
         if ar is not None and not ar.gate_open(str(run_dir)):
+            owed = _studio_notes_drain("next", str(sid), run_dir, next_stage)
+            if owed:
+                return owed
             ans = _studio_answer(run_dir, "storyboard")
             if ans:
                 return _studio_apply("next", str(sid), run_dir, next_stage,
@@ -3290,6 +4339,9 @@ def _next_stage(a, *, boot_snapshot=None):
             hold = {"reason_code": "SONG_GATE_BROKEN", "next_action": "song gate failed: %r" % (exc,)}
         if hold:
             if hold["reason_code"] == "SONG_PICK_MISSING":   # the client's pick, via the studio
+                # S75-037: the songs are delivered and the pick is what waits --
+                # put them on the Studio page before reading its answer.
+                _studio_publish_song(run_dir)
                 ans = _studio_answer(run_dir, "song")
                 if ans:
                     return _studio_apply("next", str(sid), run_dir, next_stage, "song", ans)
@@ -3327,7 +4379,7 @@ def _next_stage(a, *, boot_snapshot=None):
                 "Agnes path: these keyframes come from Agnes Image with no words "
                 "in the picture; onscreen_text decides bake or overlay per shot.",
                 data={"stage": next_stage, "command": arow["command"],
-                      "produces": arow["produces"], "lane_size": lane_size_payload(),
+                      "produces": arow["produces"], "lane_size": lane_size_payload(run_dir),
                       "stages_source": stages_source, "agnes": agnes,
                       "method": method_block},
                 evidence=["%s" % db, runbook_path])
@@ -3368,7 +4420,7 @@ def _next_stage(a, *, boot_snapshot=None):
         kie = (rows.get("video-generation") or {}).get("command", "")
         vrow = rows.get("agnes-video-segment") or {"command": "", "produces": ""}
         jobs = [{"segment": n,
-                 "command": vrow["command"].replace("<segment>", str(n))}
+                 "command": vrow["command"].replace("{SEGMENT}", str(n))}
                 for n in range(done + 1, total + 1)] if vrow["command"] else []
         agnes["segment_jobs"] = jobs
         agnes["segment_produces"] = vrow.get("produces", "")
@@ -3386,7 +4438,7 @@ def _next_stage(a, *, boot_snapshot=None):
                 "next", str(sid), "ok", "next-stage", why,
                 data={"stage": next_stage, "command": kie,
                       "produces": (rows.get("video-generation") or {}).get("produces", ""),
-                      "lane_size": lane_size_payload(),
+                      "lane_size": lane_size_payload(run_dir),
                       "stages_source": stages_source, "agnes": agnes,
                       "method": method_block},
                 evidence=["%s" % db, runbook_path])
@@ -3397,7 +4449,7 @@ def _next_stage(a, *, boot_snapshot=None):
             "while they run.",
             data={"stage": next_stage, "command": jobs[0]["command"],
                   "produces": agnes["segment_produces"],
-                  "lane_size": lane_size_payload(),
+                  "lane_size": lane_size_payload(run_dir),
                   "stages_source": stages_source, "agnes": agnes,
                   "method": method_block},
             evidence=["%s" % db, runbook_path])
@@ -3431,6 +4483,16 @@ def _next_stage(a, *, boot_snapshot=None):
                      if method is not None and next_stage == "music" else None)
     shot_seeds = (_seeds_into_storyboard(run_dir, method)
                   if method is not None and next_stage == "storyboard" else None)
+    # S75-001: a paid stage never hands out a made-up price. The estimate is
+    # read from the run's own card receipt through the card's price function;
+    # when it cannot be computed, NOTHING is handed out (a `--cost 0` and a
+    # fixed `--attempt-id a1` were the defect: a zero that read as a real
+    # reservation and a ledger attempt id shared by every job).
+    needs_price = (next_stage in _PAID_STAGES
+                   and not (agnes_answer == "yes"
+                            and next_stage in ("image-keyframes",
+                                               "video-generation")))
+    stage_price = price_for_stage(run_dir, next_stage) if needs_price else None
     sa = None
     if next_stage == "music":
         sa = _script_gate(run_dir, a, reply=None)
@@ -3448,10 +4510,13 @@ def _next_stage(a, *, boot_snapshot=None):
             return envelope("next", str(sid), "rejected", sc["reason_code"],
                             sc["note"], data={"stage": next_stage, "song_choices": sc})
         if sc is not None:
-            lane = lane_size_payload()
+            if stage_price is None:
+                return _price_refusal(sid, next_stage)
+            lane = lane_size_payload(run_dir)
             data = {"stage": next_stage, "command": sc["command"],
                     "produces": row.get("produces", ""), "lane_size": lane,
                     "stages_source": stages_source, "song_choices": sc,
+                    "cost_minor": stage_price,
                     "lifecycle": _music_lifecycle()}
             if method_block is not None:
                 data["method"] = method_block
@@ -3463,6 +4528,8 @@ def _next_stage(a, *, boot_snapshot=None):
                 "one submission pass, overlap receipt, no paid redo for a missing overlap."
                 % sc["mode"],
                 data=data, evidence=["%s" % db, runbook_path])
+    if needs_price and stage_price is None:
+        return _price_refusal(sid, next_stage)
     # F4: the normal `next` path and the continuation controller must hand out
     # the SAME executable contract. A placeholder descriptor, a drifted entry
     # or a runbook row naming a different script is refused here, by name --
@@ -3489,10 +4556,27 @@ def _next_stage(a, *, boot_snapshot=None):
         refusal["data"].update(stage=next_stage,
                                missing_artifacts=order.get("missing_artifacts", []))
         return refusal
-    lane = lane_size_payload()
-    nxt = {"stage": present_id, "production_stage": next_stage, "command": row["command"],
+    lane = lane_size_payload(run_dir)
+    # S75-001: the paid number rides in cost_minor, never as a made-up flag.
+    # The published command stays the canonical template ({COST_MINOR} named
+    # in needs/argv), per S75-010 step 4 -- substituting the number into
+    # the command string drifted the row the runbook and the registry share.
+    # S75-041 step 3 below still reads the child tool's name off that same
+    # canonical string, so `published` names the template, not a substituted
+    # copy -- one string, both invariants.
+    published = row["command"]
+    nxt = {"stage": present_id, "production_stage": next_stage, "command": published,
            "produces": row.get("produces", ""), "lane_size": lane,
            "stages_source": stages_source}
+    # S75-041 step 3: the child tool's code is read through ITS table, by
+    # name -- `next` never hands a bare number upward for the caller to guess.
+    _tool = Path(_command_script(published)).name
+    if _tool in CHILD_EXIT_CODES:
+        nxt["exit_codes"] = {str(code): outcome
+                             for code, outcome in
+                             sorted(CHILD_EXIT_CODES[_tool].items())}
+    if stage_price is not None:
+        nxt["cost_minor"] = stage_price
     if row_id != present_id:
         nxt["method_stage"] = row_id
     if method_block is not None:
@@ -3505,6 +4589,15 @@ def _next_stage(a, *, boot_snapshot=None):
         nxt["music_request"] = music_request
     if shot_seeds is not None:
         nxt["shot_seeds"] = shot_seeds
+    # S75-010 step 4: fill every placeholder the run can answer and name the
+    # rest -- the published command stays the canonical template.
+    _filled, _needs = _stage_needs(
+        row.get("argv"), run_dir, sid, next_stage,
+        extra={"COST_MINOR": stage_price} if stage_price is not None else None)
+    if _filled:
+        nxt["argv"] = _filled
+    if _needs:
+        nxt["needs"] = _needs
     if next_stage == "music":
         nxt["lifecycle"] = _music_lifecycle()
         # L4.5: the SONG PICK / next paid step is a cost fork. Record the
@@ -3529,6 +4622,17 @@ def _next_stage(a, *, boot_snapshot=None):
             pass
     if reconciled:
         nxt["reconciled"] = reconciled
+    # S75-002: the sealed chain is what lets this stage start. A refusal is
+    # named here, before the command is handed out; a run created before the
+    # gate keeps its old behaviour and says so on the envelope.
+    if gate_state == "step-gate-active":
+        opened, refusal = _gate_open(run_dir, next_stage)
+        if not opened:
+            return envelope("next", str(sid), "rejected",
+                            getattr(refusal, "code", "STEP_GATE_REFUSED"),
+                            getattr(refusal, "detail", str(refusal)),
+                            data={"stage": next_stage, "step_gate": gate_state})
+    nxt["step_gate"] = gate_state
     return envelope("next", str(sid), "ok", "next-stage",
                     "Run this command for stage %r; after it passes its QC "
                     "gate, run `next` again." % present_id,
@@ -3621,8 +4725,8 @@ def _card_help():
 
 
 def main(argv=None):
-    ap = argparse.ArgumentParser(prog="factory.py",
-                                 description="Drama-song factory control CLI (intake/preflight/next).")
+    ap = _ExitOneParser(prog="factory.py",
+                        description="Drama-song factory control CLI (intake/preflight/next).")
     sub = ap.add_subparsers(dest="cmd", required=True)
     i = sub.add_parser("intake", help="Normalize brief, ask ONE missing essential per turn.")
     i.add_argument("--brief", default=None, help="Brief as JSON string.")
@@ -3666,6 +4770,17 @@ def main(argv=None):
                    help="With SONG APPROVAL = Yes, select the ORCHESTRATED mode "
                         "(three units, one variant each) instead of the umbrella "
                         "three-up runner. Exactly one mode is ever emitted.")
+    sl = sub.add_parser("seal", help="S75-002: seal one stage's real artifacts "
+                        "with the signed step gate, then move its row to COMPLETE.")
+    sl.add_argument("--run-dir", required=True,
+                    help="Run dir that holds control/state.sqlite3.")
+    sl.add_argument("--stage", required=True, choices=tuple(CANONICAL_STAGES))
+    sl.add_argument("--maker", required=True,
+                    help="Who made the stage's work; never the checker.")
+    sl.add_argument("--checker", required=True,
+                    help="Who checked it; a stage never checks itself.")
+    sl.add_argument("--run-id", default=None,
+                    help="Store run id; default: the only one.")
     ev = sub.add_parser("event", help="Continuation controller: record an "
                         "approval/provider/QC/recovery/restart event and "
                         "enqueue this run's next eligible action.")
@@ -3687,8 +4802,14 @@ def main(argv=None):
                        "wait-provider, wait-approval, resume, complete (song gate + audio "
                        "+ independent qc_gate PASS), fail, park, reopen.")
     m.add_argument("--run-dir", required=True)
-    m.add_argument("--owner", required=True, help="Worker id that holds the music lease.")
-    m.add_argument("--action", required=True, choices=_MUSIC_ACTIONS)
+    m.add_argument("--owner", default="",
+                   help="Worker id that holds the music lease; required for every action.")
+    m.add_argument("--action", default=None, choices=_MUSIC_ACTIONS,
+                   help="The lifecycle move. Omitted with --reply: that is the client's pick.")
+    m.add_argument("--reply", default=None,
+                   help="The client's song pick (or the song-failure fork answer) from the "
+                        "studio page or the chat; records the same pick the song_choices "
+                        "pick CLI writes.")
     m.add_argument("--run-id", default=None, help="Store run id; default: the only one.")
     m.add_argument("--reason", default=None, help="Required for fail and park.")
     m.add_argument("--retryable", action="store_true", help="fail -> FAILED_RETRYABLE.")
@@ -3855,6 +4976,8 @@ def main(argv=None):
         env = cmd_owner(a)
     elif a.cmd == "event":
         env = cmd_event(a)
+    elif a.cmd == "seal":
+        env = cmd_seal(a)
     else:
         env = cmd_next(a)
     json.dump(env, sys.stdout, indent=2, sort_keys=True, default=str)

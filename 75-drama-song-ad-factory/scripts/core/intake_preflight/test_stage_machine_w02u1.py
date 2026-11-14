@@ -27,7 +27,8 @@ sys.path.insert(0, str(HERE))
 
 import factory as F  # noqa: E402
 import state_store as ss  # noqa: E402
-from test_production_process import confirmed_run, complete_stage, approve_script
+from test_production_process import (confirmed_run, complete_stage, seal_chain,
+                                     approve_script)
 
 PASS = []
 
@@ -199,12 +200,17 @@ def _make_full_run(run, stages=F.CANONICAL_STAGES):
     record["stage"] = "final-qc"
     verdict = qc_gate.evaluate(run.name, "final-qc", [record],
                                {record["check_id"]: "fixture-build-worker"}, ["continuity"])
-    (run / "final-qc" / "record.json").write_text(json.dumps({
+    # S75-011: the declared final-qc artifact is qc/final-qc-verdict.json.
+    (run / "qc" / "final-qc-verdict.json").write_text(json.dumps({
         "gate": verdict["gate"], "producer": F.STAGE_REGISTRY["final-qc"]["qc_producer"],
         "evaluation": verdict}))
     # Controlled successful sink receipt; this fixture sends nothing externally.
     (run / "delivery" / "receipts.json").write_text(json.dumps([
         {"destination": "chat", "status": "delivered"}]))
+    # S75-002: a keyed run proves final QC from the SEALED CHAIN through
+    # delivery, not from the record file, so the fixture seals all twelve
+    # stages in order (the shared helper, shipped contract paths).
+    seal_chain(run)
     return run
 
 
