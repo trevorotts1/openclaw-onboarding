@@ -1799,17 +1799,20 @@ def acceptance_from_run(run_dir):
             d = os.path.join(takes, name)
             if not os.path.isdir(d) or not _take_exists(d):
                 continue
-            if name in records:
-                continue
             # D-4: a take the client KEPT carries a complete client-kept record.
-            # That is NOT a PASS on any measured gate -- the take-level record is
-            # untouched (there is none) and the verdict stays CLIENT_KEPT.
+            # That is NOT a PASS on any measured gate, and the verdict stays
+            # CLIENT_KEPT. This is read BEFORE the "already has a record" skip:
+            # the lane-S baseline writes an acceptance record for EVERY judged
+            # take, so an existing FAIL record must never hide the client's own
+            # decision. The record on disk under music/acceptance/ is untouched.
             kept = read_client_kept(run_dir, name)
             kreasons = client_kept_reasons(kept, name) if kept is not None else []
             if kept is not None and not kreasons:
                 records[name] = {
                     "variant_id": name, "verdict": "CLIENT_KEPT", "blocked": False,
                     "reasons": [], "client_kept": kept, "purchases": 0}
+                continue
+            if name in records:
                 continue
             unjudged.append(name)
             records[name] = {
