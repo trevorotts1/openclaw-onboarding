@@ -163,13 +163,6 @@
           "detail": "Plus a 60-second clip and a 90-second clip.",
           "price": null,
           "recommended": false
-        },
-        {
-          "n": 6,
-          "text": "10 minutes (the long version) + 60s and 90s clips",
-          "detail": "Plus a 60-second clip and a 90-second clip.",
-          "price": null,
-          "recommended": false
         }
       ],
       "shows_when": {
@@ -603,13 +596,6 @@
           "n": 5,
           "text": "5 minutes",
           "detail": "a deeper story with more of the solution at work.",
-          "price": null,
-          "recommended": false
-        },
-        {
-          "n": 6,
-          "text": "10 minutes",
-          "detail": "the long version, a full show episode.",
           "price": null,
           "recommended": false
         }

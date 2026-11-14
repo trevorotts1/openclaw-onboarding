@@ -218,14 +218,34 @@ def _ai_setup_q():
             "recommended": 0}
 
 
+def _song_length_ceiling_s():
+    """The longest song the song stage will make, in seconds (S75-105).
+
+    Read from the one cap table (``prompt_limits.suno_caps``), never typed
+    here. The duration registry itself stays unchanged; the card simply never
+    offers a length that the song stage refuses. ``None`` when the table
+    declares no number, and the card then keeps the registry's own list.
+    """
+    import prompt_limits as PL
+    return (PL.suno_caps().get("duration") or {}).get("max_seconds")
+
+
+def _offered_duration_s():
+    """The registry durations the card may offer: never over the song limit."""
+    from music_styles import music_styles as MS
+    limit = _song_length_ceiling_s()
+    return tuple(s for s in MS.CANONICAL_DURATION_S
+                 if not isinstance(limit, int) or s <= limit)
+
+
 def _duration_options(episode=False):
-    """The owner's six durations, in the canonical registry's order.
+    """The owner's durations the song stage can make, in registry order.
 
     Retained card labels and descriptions are unchanged. The restored 120 s
     row uses the registry's existing "2 minutes" label; no new story claim is
-    invented for it. A purpose never removes a chosen canonical duration.
+    invented for it. A purpose never removes a chosen canonical duration; the
+    song limit removes one the stage would refuse (S75-105).
     """
-    from music_styles import music_styles as MS
     rows = {
         60: ("60 seconds", "The standard ad length."),
         90: ("90 seconds", "Room for a fuller story."),
@@ -240,7 +260,7 @@ def _duration_options(episode=False):
             300: ("5 minutes", "a deeper story with more of the solution at work."),
             600: ("10 minutes", "the long version, a full show episode."),
         })
-    return [rows[seconds] for seconds in MS.CANONICAL_DURATION_S]
+    return [rows[seconds] for seconds in _offered_duration_s()]
 
 
 def _length_prices(options):
@@ -262,7 +282,7 @@ def _length_prices(options):
 
 
 def _length_question(options=None, recommended=None):
-    """LENGTH: the owner's six durations, each ending with its price (S75-006)."""
+    """LENGTH: the durations the song stage can make, each ending with its price (S75-006)."""
     from music_styles import music_styles as MS
     options = _duration_options() if options is None else options
     return {"id": "length", "why": "Length decides the story size and the price.",
@@ -673,7 +693,6 @@ def _purpose_q():
 def _episode_length_q():
     """The campaign's one follow-up (METHOD-INTEGRATION 3.2). It takes LENGTH's
     own slot, so a campaign grows by the PURPOSE question and nothing else."""
-    from music_styles import music_styles as MS
     options = _duration_options(episode=True)
     return {"id": "episode_length", "label": "EPISODE LENGTH",
             "why": "The full episode lives on your YouTube channel; the trailers bring "
@@ -682,7 +701,8 @@ def _episode_length_q():
             "ask": "How long should the full episode be? Your 60-second and 90-second "
                    "trailers and ad clips are included.",
             "options": options, "prices": _length_prices(options),
-            "recommended": MS.CANONICAL_DURATION_S.index(180)}
+            "recommended": (list(_offered_duration_s()).index(180)
+                            if 180 in _offered_duration_s() else 0)}
 
 
 def _shape_q():
@@ -753,7 +773,7 @@ def _agnes_q(remembered):
 
 
 def _length_q(key):
-    """Every purpose retains the owner's six canonical duration choices."""
+    """Every purpose retains the duration choices the song stage can make."""
     return next(q for q in QUESTIONS if q["id"] == "length")
 
 

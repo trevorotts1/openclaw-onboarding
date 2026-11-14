@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-"""Owner contract: exact six durations without changing unrelated intake text."""
+"""Owner contract: the canonical durations under the song limit, without
+changing unrelated intake text (S75-105 drops only the 10-minute row)."""
 import hashlib
 import json
 import os
@@ -9,6 +10,7 @@ import unittest
 HERE = os.path.dirname(os.path.abspath(__file__))
 CORE = os.path.dirname(os.path.dirname(HERE))
 sys.path.insert(0, CORE)
+import prompt_limits
 from choice_card.intake_card import intake_card as IC
 from music_styles import music_styles as MS
 
@@ -50,6 +52,13 @@ def seconds(question):
     return tuple(IC._vm().length_seconds(row[0]) for row in question["options"])
 
 
+def allowed_durations():
+    """The registry durations the card may offer (S75-105: never over the song
+    stage's own limit, read from the one cap table)."""
+    cap = prompt_limits.suno_caps()["duration"]["max_seconds"]
+    return tuple(s for s in MS.CANONICAL_DURATION_S if s <= cap)
+
+
 class DurationOwnerContract(unittest.TestCase):
     def test_non_duration_questions_are_byte_exact_to_accepted_baseline(self):
         questions = IC.QUESTIONS + IC._conditional_questions()
@@ -75,30 +84,31 @@ class DurationOwnerContract(unittest.TestCase):
         self.assertEqual(q["options"], expected_options)
         self.assertEqual([o["text"] for o in screen["options"]], [o[0] for o in expected_options])
 
-    def test_ordinary_menu_is_canonical_six(self):
+    def test_ordinary_menu_stops_at_the_song_limit(self):
+        # S75-105: the song stage refuses anything over its own limit, so the
+        # registry's 600 s row is never offered on the LENGTH screen.
         q = next(q for q in IC.QUESTIONS if q["id"] == "length")
-        self.assertEqual(seconds(q), MS.CANONICAL_DURATION_S)
+        self.assertEqual(seconds(q), allowed_durations())
         self.assertEqual(q["options"][2], ("2 minutes", None))
         self.assertEqual(q["options"][0], ("60 seconds", "The standard ad length."))
         self.assertEqual(q["options"][1], ("90 seconds", "Room for a fuller story."))
         self.assertEqual(q["options"][3], ("3 minutes + 60s and 90s clips", "Plus a 60-second clip and a 90-second clip."))
         self.assertEqual(q["options"][4], ("5 minutes + 60s and 90s clips", "Plus a 60-second clip and a 90-second clip."))
-        self.assertEqual(q["options"][5], ("10 minutes (the long version) + 60s and 90s clips", "Plus a 60-second clip and a 90-second clip."))
+        self.assertEqual(len(q["options"]), len(allowed_durations()))
 
-    def test_campaign_uses_six_and_preserves_its_existing_descriptions(self):
+    def test_campaign_preserves_its_existing_descriptions_under_the_limit(self):
         q = IC._episode_length_q()
-        self.assertEqual(seconds(q), MS.CANONICAL_DURATION_S)
+        self.assertEqual(seconds(q), allowed_durations())
         self.assertEqual(IC._vm().length_seconds(q["options"][q["recommended"]][0]), 180)
         self.assertEqual(q["options"][3], ("3 minutes", "one full story with room for the turn and the offer."))
         self.assertEqual(q["options"][4], ("5 minutes", "a deeper story with more of the solution at work."))
-        # S75-006: no vendor name in a client question, so the row no longer
-        # carries "(made with KIE, not Agnes)".
-        self.assertEqual(q["options"][5], ("10 minutes", "the long version, a full show episode."))
+        # S75-006: no vendor name in a client question; S75-105: no 10-minute row.
+        self.assertEqual(q["options"][-1], ("5 minutes", "a deeper story with more of the solution at work."))
 
     def test_purpose_never_removes_a_canonical_duration(self):
         for purpose in ("testimonial", "lesson", "paid_ad", "short_post"):
             with self.subTest(purpose=purpose):
-                self.assertEqual(seconds(IC._length_q(purpose)), MS.CANONICAL_DURATION_S)
+                self.assertEqual(seconds(IC._length_q(purpose)), allowed_durations())
 
     def test_campaign_120_survives_shaping_and_method_record(self):
         answers = []
