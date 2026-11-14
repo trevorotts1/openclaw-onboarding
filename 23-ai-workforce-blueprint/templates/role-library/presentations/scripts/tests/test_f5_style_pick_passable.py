@@ -111,14 +111,57 @@ def _seed_samples(run_dir: Path, variants=("A", "B", "C")) -> None:
     }), encoding="utf-8")
 
 
+def _walk_to_complete(run_dir: Path) -> None:
+    """PD-913: --complete refuses an interview the turn gate has not finished,
+    so a fixture that wants a finished intake answers the gate's own pending
+    turns first. SETUP ONLY -- it reuses the live gate (--next) and makes no
+    claim about the product; the test's own assertions decide pass/fail."""
+    for _ in range(120):
+        q = json.loads(_run_driver(run_dir, "--next").stdout or "{}")
+        if q.get("status") == "complete":
+            return
+        qid = q.get("question_id")
+        if not qid:
+            return
+        vals = q.get("allowed_values") or []
+        if qid == "style_pick_auto":
+            # SETUP: this file is ABOUT the opt-in, so the walker never makes
+            # the client's opt-in decision for it. It answers the merged STYLE
+            # PARENT turn in plain prose, which records the style subfields and
+            # leaves the opt-in ABSENT -- exactly the state F5's own
+            # test_a_deck_that_never_answered_the_style_turn_never_opts_in
+            # asserts. A test that wants a real opt-in answered the parent
+            # itself already, so re-answering prose cannot withdraw it.
+            _run_driver(run_dir, "--answer", HOST_TURN,
+                        "match brand, navy and gold, dark is fine")
+            continue
+        if qid == "pitch_included" and "no" in vals:
+            # SETUP: an informational deck. The commercial turns are then not
+            # asked at all, so a fixture about some OTHER behaviour does not
+            # have to supply commercial values it never asserts on.
+            answer = "no"
+        elif qid in ("workhorse_model", "reasoning_model", "qc_model",
+                     "deepseek_variant", "openrouter_model", "provider_plan",
+                     "thinking_mode", "ollama_plan"):
+            answer = ""       # the client's wired provider is not probed here
+        elif vals:
+            answer = vals[0]
+        elif q.get("kind") == "integer":
+            answer = "20"
+        else:
+            answer = "Client supplied " + qid
+        _run_driver(run_dir, "--answer", qid, answer)
+
 def _drive_intake(run_dir: Path, style_answer: str | None) -> dict:
     """Drive the REAL driver CLI through presentation_type (+ the style turn
-    when given) and --complete. Returns the written intake.json."""
+    when given), finish the gate's remaining turns, and --complete. Returns
+    the written intake.json."""
     r = _run_driver(run_dir, "--answer", "presentation_type", "from_scratch")
     assert r.returncode == 0, f"presentation_type: {r.stdout}\n{r.stderr}"
     if style_answer is not None:
         r = _run_driver(run_dir, "--answer", HOST_TURN, style_answer)
         assert r.returncode == 0, f"{HOST_TURN}: {r.stdout}\n{r.stderr}"
+    _walk_to_complete(run_dir)
     r = _run_driver(run_dir, "--complete")
     assert r.returncode == 0, f"--complete: {r.stdout}\n{r.stderr}"
     return json.loads((run_dir / "working" / "copy" / "intake.json")
@@ -294,6 +337,7 @@ class TestDriverRecordsTheOptIn:
         r = _run_driver(rd, "--answer", HOST_TURN,
                         "actually make it navy; brand_primary: #001F3F")
         assert r.returncode == 0, r.stderr
+        _walk_to_complete(rd)
         r = _run_driver(rd, "--complete")
         assert r.returncode == 0, r.stderr
         intake = json.loads((rd / "working" / "copy" / "intake.json")
@@ -307,6 +351,8 @@ class TestDriverRecordsTheOptIn:
                      ("--answer", HOST_TURN, "brand; style pick auto: yes"),
                      ("--answer", HOST_TURN, "brand; style pick auto: no"),
                      ("--complete",)):
+            if args == ("--complete",):
+                _walk_to_complete(rd)  # PD-913: finish the gate first (SETUP)
             r = _run_driver(rd, *args)
             assert r.returncode == 0, f"{args}: {r.stdout}\n{r.stderr}"
         intake = json.loads((rd / "working" / "copy" / "intake.json")

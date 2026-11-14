@@ -54,6 +54,7 @@ every sibling in this directory (see test_f19_requester_stamp.py).
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -97,12 +98,63 @@ pytestmark = pytest.mark.skipif(
 # ---------------------------------------------------------------------------
 # fixture plumbing
 # ---------------------------------------------------------------------------
-def _run_driver(run_dir: Path, *args: str) -> subprocess.CompletedProcess:
+def _run_driver(run_dir: Path, *args: str, env: dict | None = None) -> subprocess.CompletedProcess:
     return subprocess.run(
         [sys.executable, str(DRIVER_PATH), "--run-dir", str(run_dir), *args],
-        capture_output=True, text=True,
+        capture_output=True, text=True, env=env,
     )
 
+
+#: PD-001: every signature answer now reaches --sig-finalize (QUICK asks the
+#: same eight questions as IN-DEPTH), and finalize signs the turn ledger. A
+#: throwaway per-process key keeps that signing off the box's provisioned
+#: record -- the same pattern the two signature suites already use.
+_SP_QUESTION_IDS = ("q1", "q2", "q3", "q4", "q5", "q6", "q7", "q8")
+
+
+def _sp_env() -> dict:
+    env = dict(os.environ)
+    env["PRESENTATION_SP_TURN_LEDGER_KEYS_FILE"] = ""
+    env["PRESENTATION_SP_TURN_LEDGER_CURRENT_KEY"] = "f21-f22-test-key-material"
+    env["PRESENTATION_SP_TURN_LEDGER_CURRENT_KEY_ID"] = "f21-f22-test-1"
+    env["PRESENTATION_SP_TURN_LEDGER_ROTATION_STARTED_AT"] = "2026-01-01T00:00:00+00:00"
+    return env
+
+
+def _walk_to_complete(run_dir: Path, env: dict | None = None) -> None:
+    """PD-913: --complete refuses an interview the turn gate has not finished,
+    so a fixture that wants a finished intake answers the gate's own pending
+    turns first. SETUP ONLY -- it reuses the live gate (--next) and makes no
+    claim about the product; the test's own assertions decide pass/fail."""
+    for _ in range(120):
+        q = json.loads(_run_driver(run_dir, "--next", env=env).stdout or "{}")
+        if q.get("status") == "complete":
+            return
+        qid = q.get("question_id")
+        if not qid:
+            return
+        vals = q.get("allowed_values") or []
+        if qid == "pitch_included" and "no" in vals:
+            # SETUP: an informational deck. The commercial turns are then not
+            # asked at all, so a fixture about some OTHER behaviour does not
+            # have to supply commercial values it never asserts on.
+            answer = "no"
+        elif qid in ("workhorse_model", "reasoning_model", "qc_model",
+                     "deepseek_variant", "openrouter_model", "provider_plan",
+                     "thinking_mode", "ollama_plan"):
+            answer = ""       # the client's wired provider is not probed here
+        elif vals:
+            answer = vals[0]
+        elif q.get("kind") == "integer":
+            answer = "20"
+        else:
+            answer = "Client supplied " + qid
+        _run_driver(run_dir, "--answer", qid, answer, env=env)
+
+def _drive_complete(run_dir: Path, env: dict | None = None) -> subprocess.CompletedProcess:
+    """Finish the walk, then --complete. SETUP ONLY (see _walk_to_complete)."""
+    _walk_to_complete(run_dir, env)
+    return _run_driver(run_dir, "--complete", env=env)
 
 def _envelope(run_dir: Path) -> dict:
     path = run_dir / "working" / "interview" / "intake_transcript.json"
@@ -122,7 +174,7 @@ class TestFault22StandardCompleteSigns:
         run_dir = tmp_path / "run"
         r = _run_driver(run_dir, "--answer", "presentation_type", "from_scratch")
         assert r.returncode == 0, f"--answer failed: {r.stdout}\n{r.stderr}"
-        r = _run_driver(run_dir, "--complete")
+        r = _drive_complete(run_dir)
         assert r.returncode == 0, f"--complete failed: {r.stdout}\n{r.stderr}"
         payload = json.loads(r.stdout)
         assert payload.get("intake_transcript_signed") is True
@@ -136,7 +188,7 @@ class TestFault22StandardCompleteSigns:
     def test_standard_complete_envelope_passes_real_provenance_checker(self, tmp_path):
         run_dir = tmp_path / "run"
         _run_driver(run_dir, "--answer", "presentation_type", "from_scratch")
-        r = _run_driver(run_dir, "--complete")
+        r = _drive_complete(run_dir)
         assert r.returncode == 0
         env = _envelope(run_dir)
         fails = ITC.check_driver_provenance(env)
@@ -148,7 +200,7 @@ class TestFault22StandardCompleteSigns:
         must not find anything BROKEN on the path it takes before deferring."""
         run_dir = tmp_path / "run"
         _run_driver(run_dir, "--answer", "presentation_type", "from_scratch")
-        r = _run_driver(run_dir, "--complete")
+        r = _drive_complete(run_dir)
         assert r.returncode == 0
         result = build_deck._chk_sp_intake_trace(run_dir)
         assert result == "", f"expected PASS/DEFER, got: {result!r}"
@@ -163,7 +215,7 @@ class TestFault21PostCompletionAnswerSurvives:
     def test_answer_after_complete_envelope_survives_as_dict_and_grows(self, tmp_path):
         run_dir = tmp_path / "run"
         _run_driver(run_dir, "--answer", "presentation_type", "from_scratch")
-        r = _run_driver(run_dir, "--complete")
+        r = _drive_complete(run_dir)
         assert r.returncode == 0
         before = _envelope(run_dir)
         before_turns = len(before["turns"])
@@ -187,7 +239,7 @@ class TestFault21PostCompletionAnswerSurvives:
     def test_answer_after_complete_is_never_silent(self, tmp_path):
         run_dir = tmp_path / "run"
         _run_driver(run_dir, "--answer", "presentation_type", "from_scratch")
-        _run_driver(run_dir, "--complete")
+        _drive_complete(run_dir)
         r = _run_driver(run_dir, "--answer", "offer_name", "The Momentum Method")
         assert r.returncode == 0
         payload = json.loads(r.stdout)
@@ -215,9 +267,25 @@ class TestFault21PostCompletionAnswerSurvives:
 # ---------------------------------------------------------------------------
 class TestSignatureModeRegressionAndFault21Sibling:
     def _quick_signature_complete(self, run_dir: Path):
-        r = _run_driver(run_dir, "--signature", "--sig-answer", "sp_mode", "QUICK")
+        """Drive the signature turn-gate to completion. PD-001 (decision D-7
+        default): QUICK asks the SAME eight questions as IN-DEPTH -- the old
+        QUICK branch skipped them and finalized on a frame answer alone. And
+        --sig-finalize now reports "complete" ONLY for a record whose prover
+        passed with every answer confirmed, so each answer is confirmed
+        quote-back exactly as a client conversation would be."""
+        env = _sp_env()
+        r = _run_driver(run_dir, "--signature", "--sig-answer", "sp_mode",
+                        "QUICK", env=env)
         assert r.returncode == 0, f"sp_mode failed: {r.stdout}\n{r.stderr}"
-        r = _run_driver(run_dir, "--signature", "--sig-answer", "signature_frame", "vault")
+        for n, qid in enumerate(_SP_QUESTION_IDS, 1):
+            r = _run_driver(run_dir, "--signature", "--sig-answer", qid,
+                            f"Client answer {n}", env=env)
+            assert r.returncode == 0, f"{qid} failed: {r.stdout}\n{r.stderr}"
+            r = _run_driver(run_dir, "--signature", "--sig-confirm", qid,
+                            "--sig-confirmed", env=env)
+            assert r.returncode == 0, f"{qid} confirm failed: {r.stdout}\n{r.stderr}"
+        r = _run_driver(run_dir, "--signature", "--sig-answer",
+                        "signature_frame", "vault", env=env)
         assert r.returncode == 0, f"signature_frame failed: {r.stdout}\n{r.stderr}"
         return r
 
@@ -240,7 +308,8 @@ class TestSignatureModeRegressionAndFault21Sibling:
 
         # A newly-synced bank question answered after the signature intake
         # already finalized -- the sibling of FAULT-21's own trigger scenario.
-        r = _run_driver(run_dir, "--signature", "--sig-answer", "sp_mode", "QUICK")
+        r = _run_driver(run_dir, "--signature", "--sig-answer", "sp_mode",
+                        "QUICK", env=_sp_env())
         assert r.returncode == 0, f"post-finalize sig-answer failed: {r.stdout}\n{r.stderr}"
         assert "POST-COMPLETION-APPEND" in r.stderr
 

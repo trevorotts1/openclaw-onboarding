@@ -75,11 +75,43 @@ def _run_driver(run_dir: Path, *args: str) -> subprocess.CompletedProcess:
     )
 
 
+def _walk_to_complete(run_dir: Path) -> None:
+    """PD-913: --complete refuses an interview the turn gate has not finished,
+    so a fixture that wants a finished intake answers the gate's own pending
+    turns first. SETUP ONLY -- it reuses the live gate (--next) and makes no
+    claim about the product; the test's own assertions decide pass/fail."""
+    for _ in range(120):
+        q = json.loads(_run_driver(run_dir, "--next").stdout or "{}")
+        if q.get("status") == "complete":
+            return
+        qid = q.get("question_id")
+        if not qid:
+            return
+        vals = q.get("allowed_values") or []
+        if qid == "pitch_included" and "no" in vals:
+            # SETUP: an informational deck. The commercial turns are then not
+            # asked at all, so a fixture about some OTHER behaviour does not
+            # have to supply commercial values it never asserts on.
+            answer = "no"
+        elif qid in ("workhorse_model", "reasoning_model", "qc_model",
+                     "deepseek_variant", "openrouter_model", "provider_plan",
+                     "thinking_mode", "ollama_plan"):
+            answer = ""       # the client's wired provider is not probed here
+        elif vals:
+            answer = vals[0]
+        elif q.get("kind") == "integer":
+            answer = "20"
+        else:
+            answer = "Client supplied " + qid
+        _run_driver(run_dir, "--answer", qid, answer)
+
+
 def _drive_minimal_intake(run_dir: Path, named_methodology: str | None,
                           time_to_result: str | None) -> dict:
     """Drive the REAL deck-intake-driver.py CLI (never a hand-authored
     intake.json) through presentation_type + the two anti-fab questions
-    (when given), then --complete. Returns the written intake.json.
+    (when given), finish the gate's remaining turns, then --complete. Returns
+    the written intake.json.
     """
     r = _run_driver(run_dir, "--answer", "presentation_type", "from_scratch")
     assert r.returncode == 0, f"--answer presentation_type failed: {r.stdout}\n{r.stderr}"
@@ -89,6 +121,7 @@ def _drive_minimal_intake(run_dir: Path, named_methodology: str | None,
     if time_to_result is not None:
         r = _run_driver(run_dir, "--answer", "time_to_result", time_to_result)
         assert r.returncode == 0, f"--answer time_to_result failed: {r.stdout}\n{r.stderr}"
+    _walk_to_complete(run_dir)
     r = _run_driver(run_dir, "--complete")
     assert r.returncode == 0, f"--complete failed: {r.stdout}\n{r.stderr}"
     intake_path = run_dir / "working" / "copy" / "intake.json"

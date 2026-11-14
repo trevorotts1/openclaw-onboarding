@@ -972,6 +972,17 @@ def _operator_driver_answers(contract: dict, driver: pathlib.Path) -> dict[str, 
                       if isinstance(row, dict) and isinstance(row.get("id"), str)}
     except (OSError, ValueError, TypeError, KeyError) as exc:
         raise RuntimeError(f"canonical intake question schema is unavailable: {exc}") from exc
+    # PD-927: a one-question-per-message bank answers ATOMIC subfield ids, and
+    # the driver resolves --answer against that atomic sequence too. Accept the
+    # same ids here or a caller cannot supply the very turns the turn gate
+    # requires -- the refusal at :1102 was this whitelist being too narrow, not
+    # the gate being too broad. Merged parents stay answerable as well.
+    for row in schema.get("questions", []):
+        if not isinstance(row, dict):
+            continue
+        subfields = row.get("subfields")
+        if isinstance(subfields, dict):
+            driver_ids.update(k for k in subfields if isinstance(k, str))
     # The driver permits this typed merged-turn subfield directly.
     driver_ids.add("pitch_included")
 
@@ -1037,6 +1048,17 @@ def _verified_operator_model_plan(contract: dict) -> dict:
             f"resource profile (expected {provider}/{model}, got {slot!r})")
     return {"provider": provider, "model": model,
             "run_mode": str(contract["run_mode"])}
+
+
+def _driver_stderr(proc) -> str:
+    """The driver's refusal text, whichever stream it used.
+
+    PD-927: `--complete` prints its "incomplete" refusal as JSON on STDOUT and
+    writes nothing to stderr, so a caller that reported only stderr reported an
+    empty reason. Prefer stderr when it carries something (real crashes), else
+    fall back to the tail of stdout.
+    """
+    return (proc.stderr or "").strip()[-500:] or (proc.stdout or "").strip()[-500:]
 
 
 def drive_operator_contract(contract: dict, run_dir: pathlib.Path, *,
@@ -1122,11 +1144,14 @@ def drive_operator_contract(contract: dict, run_dir: pathlib.Path, *,
                                    "--answer", str(question_id), str(text)],
                                   text=True, capture_output=True, check=False)
             if proc.returncode:
-                raise RuntimeError("driver refused %s: %s" % (question_id, proc.stderr[-500:]))
+                raise RuntimeError("driver refused %s: %s" % (question_id, _driver_stderr(proc)))
         proc = subprocess.run([sys.executable, str(driver), "--run-dir", str(rd), "--complete"],
                               text=True, capture_output=True, check=False)
         if proc.returncode:
-            raise RuntimeError("driver completion refused: " + proc.stderr[-500:])
+            # PD-927: the driver prints a refusal as JSON on STDOUT (stderr is
+            # empty), so reporting only stderr reported an empty reason. Name
+            # the refusal the driver actually gave.
+            raise RuntimeError("driver completion refused: " + _driver_stderr(proc))
     # The direct CC bridge bypasses scheduler shells, so load their sanctioned
     # selected-box environment before the launcher/model consumers run.
     launch_environment = _load_operator_launch_environment()
