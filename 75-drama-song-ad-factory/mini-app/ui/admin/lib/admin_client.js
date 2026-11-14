@@ -23,6 +23,10 @@
  *           approval: { option3: true, client_name }
  *   POST /api/studio/admin/link          { admin_key, client_id }
  *        -> 200 { ok, link: "https://…/#k=…" }   (always rotates; W1-U1 link.js)
+ *   POST /api/studio/admin/revoke        { admin_key, client_id, kind }
+ *        -> 200 { ok, client_id, kind, revoked }  (U-Z12; kind "box" or
+ *           "machine"; marks every matching key record revoked and answers how
+ *           many it cut — it never takes or returns a key value)
  *
  * THE ONE RULE ABOUT SECRETS: the presented key ALWAYS travels in the `x-ds-key`
  * header and NEVER in a query string, so it cannot land in a URL log. The admin
@@ -54,9 +58,12 @@
   var AF_PAIR_SHAPE = 'AF-DS-PAIR-SHAPE';
   var AF_CUTOFF_NO_ROUTE = 'AF-DS-CUTOFF-NO-ROUTE';
   var AF_CUTOFF_INVALID = 'AF-DS-CUTOFF-INVALID';
+  var AF_REVOKE_INVALID = 'AF-DS-REVOKE-INVALID';
   var AF_REPLY_UNREADABLE = 'AF-DS-ADMIN-UNREADABLE';
 
   var OPTIONS = [1, 2, 3];
+  // The kinds the revoke route accepts (service/src/index.js REVOKE_KINDS).
+  var REVOKE_KINDS = ['machine', 'box'];
 
   // ---------------------------------------------------------------------------
   // Pairing codes
@@ -289,13 +296,24 @@
     };
   }
 
-  /** Cutting a key off needs a revoke route the service does not have yet. */
-  function revokeKeyRequest() {
+  /** Cutting a key off: the studio's revoke route names a CLIENT and a KIND,
+   *  never a key. It marks every key of that client and kind revoked and says
+   *  how many it cut, so a leaked key stops working at its next check-in. */
+  function revokeKeyRequest(adminKey, clientId, kind) {
+    if (typeof adminKey !== 'string' || adminKey === '') {
+      return { ok: false, code: AF_REVOKE_INVALID, message: 'Paste the admin key first.' };
+    }
+    if (typeof clientId !== 'string' || clientId.trim() === '') {
+      return { ok: false, code: AF_REVOKE_INVALID, message: 'A client id is required to cut a key off for.' };
+    }
+    if (REVOKE_KINDS.indexOf(kind) < 0) {
+      return { ok: false, code: AF_REVOKE_INVALID, message: 'The key kind is "machine" (a computer) or "box".' };
+    }
     return {
-      ok: false,
-      code: AF_CUTOFF_NO_ROUTE,
-      message: 'Version 0 has no revoke route on the studio service, so no key was cut off. '
-        + 'The upgrade path is POST /api/studio/admin/revoke { admin_key, fingerprint }.',
+      ok: true,
+      method: 'POST',
+      path: '/api/studio/admin/revoke',
+      body: { admin_key: adminKey, client_id: clientId.trim(), kind: kind },
     };
   }
 
@@ -304,6 +322,7 @@
     PAIRING_LENGTH: PAIRING_LENGTH,
     PAIRING_TTL_SECONDS: PAIRING_TTL_SECONDS,
     OPTIONS: OPTIONS,
+    REVOKE_KINDS: REVOKE_KINDS,
     normalizeCode: normalizeCode,
     formatCode: formatCode,
     pairingCodeProblem: pairingCodeProblem,
@@ -329,6 +348,7 @@
     AF_PAIR_SHAPE: AF_PAIR_SHAPE,
     AF_CUTOFF_NO_ROUTE: AF_CUTOFF_NO_ROUTE,
     AF_CUTOFF_INVALID: AF_CUTOFF_INVALID,
+    AF_REVOKE_INVALID: AF_REVOKE_INVALID,
     AF_REPLY_UNREADABLE: AF_REPLY_UNREADABLE,
   };
 })(typeof globalThis !== 'undefined' ? globalThis : this);
