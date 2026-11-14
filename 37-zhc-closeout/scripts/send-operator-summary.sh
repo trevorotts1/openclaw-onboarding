@@ -90,6 +90,9 @@ GHL_VID="$(state_get '.ghlVideoPublicUrl')"
 GHL_INF1="$(state_get '.ghlInfographic1PublicUrl')"
 GHL_INF2="$(state_get '.ghlInfographic2PublicUrl')"
 HELD="$(state_get '.qualityHeld | join(", ")')"
+# WF-090 (decision D-8): legs deliberately not delivered are REPORTED here so the
+# operator sees exactly what the owner did not receive.
+WAIVED="$(state_get '.closeoutWaivedLegs | join(", ")')"
 
 line() { local label="$1" val="$2"; [[ -n "$val" && "$val" != "null" ]] && printf -- '- %s: %s\n' "$label" "$val"; }
 
@@ -97,8 +100,10 @@ line() { local label="$1" val="$2"; [[ -n "$val" && "$val" != "null" ]] && print
 # (ephemeral) KIE/remote URL. So the operator summary links match what the client
 # can actually open.
 MSG="$(
-  printf 'ZHC Closeout COMPLETE -- %s\n\n' "${COMPANY:-(unnamed company)}"
-  printf 'Every artifact passed the 8.5 quality gate and was delivered to the client. Links:\n\n'
+  printf 'ZHC Closeout finished -- %s\n\n' "${COMPANY:-(unnamed company)}"
+  printf 'Delivered to the client. Links:\n'
+  if [[ -n "$WAIVED" && "$WAIVED" != "null" ]]; then printf 'Not delivered (waived): %s\n' "$WAIVED"; fi
+  printf '\n'
   line "Command Center dashboard" "$DASH"
   line "Infographic 1 (Workforce Structure)" "${GHL_INF1:-${DRIVE1:-$INF1}}"
   line "Infographic 2 (How Work Flows)" "${GHL_INF2:-${DRIVE2:-$INF2}}"

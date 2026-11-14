@@ -11,7 +11,7 @@ Proves, behaviourally:
     stage "storyboard";
   * the real studio adapter proposes the EXISTING apply command for its
     (stubbed) answer: storyboard -> `storyboard --reply`, song pick ->
-    `song_choices.py pick`, script -> `script-reply`; public `next` still
+    `music --reply`, script -> `script-reply`; public `next` still
     requires the actual artifact/pick handler to record the decision, and a
     contextless script reply cannot fabricate client provenance;
   * a chat run (no studio order) answers nothing: the storyboard gate still
@@ -311,7 +311,10 @@ def test_next_song_pick_answer_becomes_song_pick():
         assert public["data"]["command"] is None and run_hashes(run) == before
         env = routed[-1]
         assert env["outcome"] == "ok" and env["data"]["approval"] == "song", env
-        assert "song_choices.py pick" in env["data"]["command"]
+        # S75-037: the answer becomes the music command's own reply path (the
+        # song_choices pick loop stays reachable through it, not as a second
+        # command the caller has to know).
+        assert "factory.py music" in env["data"]["command"]
         assert "--reply 2" in env["data"]["command"]
 
 

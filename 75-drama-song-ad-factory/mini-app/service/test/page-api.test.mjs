@@ -186,7 +186,8 @@ test('draft: round-trips through R2 and shows up on the next session', async () 
   const shown = await makeCtx(store, objects, me.key);
   shown.url = new URL('https://studio.example/api/studio/session');
   const body = await json(await pageRoute(get('/api/studio/session', me.key), shown));
-  assert.deepEqual(body.draft, { replies: ['1', '2'], updated_at: T0 });
+  // U-Z08 — the draft keeps the upload ids, so the session hands them back.
+  assert.deepEqual(body.draft, { replies: ['1', '2'], upload_ids: ['u_9'], updated_at: T0 });
 
   // The stored object sits in this client's own scope and nowhere else.
   assert.ok(objects._mem.has(scopePath(me.clientId, 'draft.json')));
@@ -253,7 +254,7 @@ test('draft: an empty marker and a missing object both read as no draft', async 
   assert.equal((await json(await pageRoute(get('/api/studio/session', me.key), ctx))).draft, null, 'nothing stored yet');
 
   await deleteDraft(objects, me.clientId);
-  assert.deepEqual(await objects.objectGet(scopePath(me.clientId, 'draft.json')), { value: '{}' });
+  assert.deepEqual(await objects.objectGet(scopePath(me.clientId, 'draft.json')), { value: '{"retention_kind":"intake_answer"}' });
   assert.equal((await json(await pageRoute(get('/api/studio/session', me.key), ctx))).draft, null, 'the {} marker reads as no draft');
 
   // One draft of another client's is still invisible.

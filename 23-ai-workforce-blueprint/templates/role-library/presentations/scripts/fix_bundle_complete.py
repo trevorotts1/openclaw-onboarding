@@ -189,8 +189,7 @@ def resolve_bundle_dir(run_dir, explicit_bundle_dir=None):
       1. an explicit bundle dir (--out override / --bundle-dir arg);
       2. the `bundleDir` recorded in working/checkpoints/process_manifest.json;
       3. ~/Downloads/<deck-slug>/ (build_deck's BUNDLE_DIR_DEFAULT convention,
-         deck-slug from the run dir's intake/config or the run dir name);
-      4. the run dir itself (some flows keep the bundle in the run dir).
+         deck-slug from the run dir's intake/config or the run dir name).
 
     Returns a Path (never None) — callers must still treat a partial/missing
     bundle as fail-closed regardless of which candidate was chosen."""
@@ -416,7 +415,7 @@ def main(argv=None) -> int:
         print(f"BUNDLE COMPLETE: all {len(REQUIRED_DELIVERABLES)} deliverables "
               f"present and non-empty. Gate artifact: {gate}")
         return 0
-    print(f"FATAL [{AF_BUNDLE_INCOMPLETE}]: the full 9-deliverable bundle is "
+    print(f"FATAL [{AF_BUNDLE_INCOMPLETE}]: the full 10-deliverable bundle is "
           f"INCOMPLETE. Missing/empty:", file=sys.stderr)
     for key in sorted(missing):
         label = next((d["label"] for d in REQUIRED_DELIVERABLES if d["key"] == key), key)

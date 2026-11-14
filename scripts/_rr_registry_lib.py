@@ -417,7 +417,7 @@ def cmd_pending(final_path):
     return 0
 
 
-def cmd_ledger(final_path, ledger_path, owner, identity_source, table_id, pages):
+def cmd_ledger(final_path, ledger_path, owner, identity_source, table_id, pages, complete=""):
     """Write the DURABLE pending ledger: one entry per unresolved/inaccessible
     mapping, each carrying its owner, plus the run's actual counts. Written
     atomically (temp + rename) so a concurrent reader never sees a half file,
@@ -437,7 +437,7 @@ def cmd_ledger(final_path, ledger_path, owner, identity_source, table_id, pages)
             "table_rows": d.get("table_rows", 0),
             "roster_count": d.get("roster_count", 0),
         },
-        "complete": 1 if (d.get("pending", 0) == 0 and d.get("changed", 0) == 0) or d.get("pending", 0) == 0 else 0,
+        "complete": (1 if complete == "1" else 0) if complete in ("0", "1") else (1 if d.get("pending", 0) == 0 else 0),
         "pending": [{"box_slug": p["box_slug"], "status": "pending",
                      "owner": p.get("owner") or owner,
                      "reason": p.get("reason") or "unresolved"}
@@ -563,7 +563,7 @@ def main(argv):
     if c == "pending":
         return cmd_pending(a[0])
     if c == "ledger":
-        return cmd_ledger(a[0], a[1], a[2], a[3], a[4], a[5])
+        return cmd_ledger(a[0], a[1], a[2], a[3], a[4], a[5], a[6] if len(a) > 6 else "")
     if c == "verify":
         return cmd_verify(a[0], a[1])
     if c == "emit":

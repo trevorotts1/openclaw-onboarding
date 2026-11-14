@@ -32,6 +32,8 @@ concurrency:
 
 jobs:
   control:
+    # Batch pull requests run only the required checks (Trevor order 2026-11-13).
+    if: ${{ !startsWith(github.head_ref, 'batch/') }}
     name: Control suite (the gate must discriminate)
     runs-on: ubuntu-latest
     steps:

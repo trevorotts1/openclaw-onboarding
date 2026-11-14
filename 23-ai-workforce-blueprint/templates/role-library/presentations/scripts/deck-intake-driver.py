@@ -2043,6 +2043,52 @@ def cmd_answer(args) -> int:
         print(json.dumps({"error": f"Unknown question id: {qid}"}))
         return 1
 
+    # PD-004b step 2: an answer is tied to the client's own message, to the
+    # operator contract, or to the message in which the client accepted a
+    # default. PD-004b's proof reads these stamps at every completion door.
+    owner_msg_id = str(getattr(args, "owner_msg_id", None) or "").strip()
+    operator_contract = bool(getattr(args, "operator_contract", False))
+    accept_default = bool(getattr(args, "accept_default", False))
+    prov_stamp: Dict[str, Any] = {}
+    if operator_contract and owner_msg_id:
+        print(json.dumps({"error": "--operator-contract replaces "
+                                   "--owner-msg-id; give one, not both"}))
+        return 1
+    if operator_contract:
+        prov = _intake_provenance()
+        if prov is not None:
+            receipt_ok, digest = prov.contract_receipt_ok(run_dir), prov.receipt_sha256(run_dir)
+        else:
+            receipt = run_dir / "working" / "interview" / "operator_contract.json"
+            receipt_ok, digest = receipt.is_file(), None
+        if not receipt_ok or not digest:
+            print(json.dumps({"error": "--operator-contract needs "
+                                       "working/interview/operator_contract.json "
+                                       "carrying receipt_hmac"}))
+            return 1
+        prov_stamp = {"source": "operator-contract", "contract_sha256": digest}
+    elif owner_msg_id:
+        prov_stamp["owner_msg_id"] = owner_msg_id
+    if accept_default:
+        if not owner_msg_id:
+            print(json.dumps({"error": "--accept-default requires "
+                                       "--owner-msg-id naming the message in "
+                                       "which the client accepted it"}))
+            return 1
+        if qdef.get("default") is None and qdef.get("answer_field"):
+            # Plain rows carry the default on their answer_field's annotation.
+            qdef = dict(qdef)
+            qdef["default"] = _skip_default_value(
+                (qdef.get("subfields") or {}).get(qdef["answer_field"], {}))
+        if qdef.get("default") is None:
+            print(json.dumps({"error": f"{qid} has no documented default to "
+                                       f"accept"}))
+            return 1
+        text = str(qdef.get("default"))
+        prov_stamp.update({"defaulted": True,
+                           "default_accepted_msg_id": owner_msg_id,
+                           "owner_msg_id": owner_msg_id})
+
     if qdef.get("answer_field") and qdef.get("required") and not text.strip():
         print(json.dumps({"error": f"{qid} requires the client's answer"}))
         return 1
@@ -2092,7 +2138,8 @@ def cmd_answer(args) -> int:
                      if key in entries and prior_answers.get(key) not in (None, "")}
     entries[store_on] = {"value": text.strip(), "validated": True,
                          "source": "deck-intake-driver",
-                         "answered_at": datetime.now(timezone.utc).isoformat()}
+                         "answered_at": datetime.now(timezone.utc).isoformat(),
+                         **prov_stamp}
     # Also store by question id for lookup
     entries[qid] = entries[store_on]
     if qid == "pitch_included":
@@ -2121,7 +2168,11 @@ def cmd_answer(args) -> int:
         store_target = schema.get("storeTarget") or {}
         for k, v in derived.items():
             rec = {"value": v, "validated": True, "source": "deck-intake-driver",
-                   "answered_at": now_iso, "normalized": v, "answer": str(v)}
+                   "answered_at": now_iso, "normalized": v, "answer": str(v),
+                   **prov_stamp}
+            if prov_stamp.get("owner_msg_id"):
+                # One client message can carry several labelled values.
+                rec["from_same_message"] = True
             entries[k] = rec
             so = str((qdef["subfields"].get(k) or {}).get("storeOn") or "")
             if so in store_target and so != k:
@@ -2478,6 +2529,106 @@ def _emit_question(qdef: Dict[str, Any],
     return 0
 
 
+def _intake_provenance():
+    """The PD-004b proof module, or None on a box that does not carry it."""
+    try:
+        import intake_provenance  # noqa: PLC0415
+        return intake_provenance
+    except Exception:  # noqa: BLE001 -- absent module: the caller decides
+        return None
+
+
+def _provenance_mode() -> str:
+    """The rollout mode; a box without the module fails CLOSED (enforce).
+
+    PD-004c: the module's own default is enforce, so the missing-module
+    fallback must agree. Only an explicit `warn` opts a box out.
+    """
+    prov = _intake_provenance()
+    if prov is not None:
+        return prov.provenance_mode()
+    raw = str(os.environ.get("PRESENTATION_INTAKE_PROVENANCE") or "").strip().lower()
+    return "warn" if raw == "warn" else "enforce"
+
+
+def _provenance_requester(intake: Dict[str, Any]) -> str:
+    """The chat id this run's answers must come from (same rule as PD-015)."""
+    chat = str((intake.get("requester") or {}).get("chat_id")
+               or intake.get("requester_chat_id") or "").strip()
+    if not chat:
+        try:
+            chat = str(
+                _resolve_requester_from_env(intake).get("requester_chat_id") or ""
+            ).strip()
+        except Exception:  # noqa: BLE001
+            chat = ""
+    return chat
+
+
+def _question_ids() -> set:
+    ids = set()
+    try:
+        for q in get_questions(load_question_schema()):
+            ids.add(str(q.get("id") or ""))
+            ids.add(str(q.get("answer_field") or ""))
+    except Exception:  # noqa: BLE001 -- names are cosmetic, never the proof
+        pass
+    return {q for q in ids if q}
+
+
+def _provenance_gate(run_dir: Path, ledger: Dict[str, Any],
+                     question_ids=None, door: str = "intake") -> int:
+    """PD-004b proof at a completion door: 0 continue, 6 refuse.
+
+    A box without intake_provenance.py cannot prove anything -- under
+    `enforce` that is a refusal, never a silent pass.
+    """
+    prov = _intake_provenance()
+    if prov is None:
+        if _provenance_mode() != "enforce":
+            print("  WARN  [INTAKE-PROVENANCE] intake_provenance.py is missing; "
+                  "no answer can be proven (mode=warn, not blocking).",
+                  file=sys.stderr)
+            return 0
+        print(json.dumps({
+            "status": "unproven",
+            "door": door,
+            "mode": "enforce",
+            "unproven_questions": [],
+            "error": "intake_provenance.py is missing; nothing can be proven.",
+        }, indent=2))
+        return 6
+    return prov.apply(
+        run_dir, ledger,
+        requester_chat=_provenance_requester(read_intake_json(run_dir)),
+        question_ids=question_ids if question_ids is not None else _question_ids(),
+        door=door)
+
+
+def _provenance_block_problems(block: Any) -> List[str]:
+    """Every answer_provenance entry must name a provenance class.
+
+    A batch record (--sig-record) has to CARRY its provenance: an owner message
+    id, an operator-contract digest, or the message in which the client
+    accepted a default.
+    """
+    if not isinstance(block, dict) or not block:
+        return ["answer_provenance block is missing from the record"]
+    problems: List[str] = []
+    for qid in sorted(block):
+        entry = block[qid]
+        if not isinstance(entry, dict):
+            problems.append(f"{qid}: answer_provenance entry is not an object")
+            continue
+        if (str(entry.get("owner_msg_id") or "").strip()
+                or str(entry.get("contract_sha256") or "").strip()
+                or (entry.get("defaulted")
+                    and str(entry.get("default_accepted_msg_id") or "").strip())):
+            continue
+        problems.append(f"{qid}: answer_provenance entry carries no owner_msg_id")
+    return problems
+
+
 def cmd_complete(args) -> int:
     """Finalize the intake: write merged intake.json, run SP claim gate,
     mark ledger complete."""
@@ -2492,6 +2643,14 @@ def cmd_complete(args) -> int:
     # Merge all answers into intake.json
     entries = ledger.get("entries", {})
     intake = read_intake_json(run_dir)
+
+    # PD-004b: no answer reaches a "complete" intake without proof it came
+    # from a message the client sent. Runs BEFORE anything is written, so an
+    # `enforce` refusal leaves intake.json and the ledger exactly as they were.
+    prov_rc = _provenance_gate(run_dir, ledger, door="--complete")
+    if prov_rc:
+        return prov_rc
+
     for store_key, entry in entries.items():
         if isinstance(entry, dict):
             # A commercial-only field skipped because the owner selected an
@@ -2589,12 +2748,30 @@ def cmd_complete(args) -> int:
     # local reimplementation), so the two completion paths can never drift.
     # Built for every deck_type, not just signature_presentation, so the
     # transcript's provenance is always true regardless of which gate happens
-    # to check it today. Fail-soft (mirrors _sig_finalize's own posture): a
-    # missing intake_trace_check.py or an empty turn log degrades to a loud
-    # stderr WARN, never a blocked completion -- P-SP-INTAKE-TRACE itself
-    # already defers for every non-signature deck_type and fails closed at
-    # BUILD time (not here) for a signature deck with no real transcript.
+    # to check it today. PD-011 (this unit): a --complete that cannot sign is
+    # now BLOCKED (exit 5, ledger never marked complete, no transcript
+    # written) instead of failing soft. The old fail-soft posture let a run
+    # reach the build door with an unsigned transcript; the door then refused
+    # it with a message that never said the signer was missing. The refusal
+    # names the cause and every path that was searched.
     envelope, envelope_warning = _finalize_transcript_envelope(run_dir)
+    if envelope is None:
+        _signer, searched = _import_skill51_module("intake_trace_check")
+        if _signer is None:
+            error = ("The interview transcript could not be signed because "
+                     "Skill 51 (51-signature-presentation/scripts/"
+                     "intake_trace_check.py) was not found. The build door "
+                     "will refuse this run. Install or update Skill 51, then "
+                     "run --complete again.")
+        else:
+            # The signer resolved, so the only other way to get no envelope
+            # is an empty turn log -- state that cause, never blame Skill 51.
+            error = ("The interview transcript could not be signed because no "
+                     "interview turns were recorded for this run. Answer the "
+                     "intake with --answer first, then run --complete again.")
+        print(json.dumps({"status": "blocked", "error": error,
+                          "searched": searched}, indent=2))
+        return 5
     if envelope_warning:
         print(f"  WARN  {envelope_warning}", file=sys.stderr)
 
@@ -2647,7 +2824,10 @@ SP_EIGHT_QUESTIONS_SPEC: Optional[Dict[str, Any]] = None
 def _import_skill51_module(mod_name: str):
     """Lazily import a Skill-51 module (prove_sp_intake / intake_trace_check) by
     file, same candidate-path search _run_prove_sp_intake already uses below.
-    Returns the module or None. Used so the driver signs turn-ledger/transcript
+    Returns a 2-tuple ``(module_or_None, searched_paths)``. The paths are every
+    candidate this search actually tried, in order, so a caller that has to
+    refuse (PD-011: --complete with no signer) can name them instead of telling
+    the operator to guess. Used so the driver signs turn-ledger/transcript
     provenance with the EXACT SAME canonicalization + key the prover verifies
     with -- never a hand-rolled reimplementation that could silently drift.
 
@@ -2672,10 +2852,10 @@ def _import_skill51_module(mod_name: str):
                 spec = importlib_util.spec_from_file_location(mod_name, cand)
                 mod = importlib_util.module_from_spec(spec)
                 spec.loader.exec_module(mod)
-                return mod
+                return mod, [str(c) for c in cands]
             except Exception:
                 continue
-    return None
+    return None, [str(c) for c in cands]
 
 
 # ---------------------------------------------------------------------------
@@ -2717,7 +2897,7 @@ def _build_signed_transcript_envelope(
     /--answer)."""
     if not raw_turns:
         return None, None
-    mod = _import_skill51_module("intake_trace_check")
+    mod, _searched = _import_skill51_module("intake_trace_check")
     if mod is None:
         return None, (
             "51-signature-presentation/scripts/intake_trace_check.py could not "
@@ -2759,6 +2939,23 @@ def _finalize_transcript_envelope(
 # both real, using the provers' own signing functions (never a local
 # reimplementation) so the signature is byte-identical to what gets verified.
 
+# PD-001 (decision D-7 default): QUICK and IN-DEPTH ask the SAME eight
+# questions. The choice now names what actually differs (answer length, one
+# follow-up per answer) instead of promising a shorter interview. ONE literal,
+# used both by _sig_next's question and by _sp_bank_prompt's transcript turn,
+# so the two can never drift out of byte-identity.
+_SP_MODE_PROMPT = (
+    "Would you like the QUICK interview or the IN-DEPTH interview? Both ask "
+    "the same 8 questions, one at a time. QUICK takes short answers. IN-DEPTH "
+    "adds one follow-up after each answer so the talk sounds more like you.")
+
+# PD-001 step 3: the one optional IN-DEPTH follow-up after q3/q4/q5/q7.
+_SP_FOLLOWUP_QIDS = ("q3", "q4", "q5", "q7")
+_SP_FOLLOWUP_IDS = tuple(q + "_more" for q in _SP_FOLLOWUP_QIDS)
+_SP_FOLLOWUP_PROMPT = (
+    'Anything you want to add to that before we move on? Say "no" to keep '
+    'going.')
+
 _SP_BANK_PROMPTS_CACHE: Optional[Dict[str, str]] = None
 
 
@@ -2772,13 +2969,14 @@ def _sp_bank_prompt(qid: str) -> str:
     if _SP_BANK_PROMPTS_CACHE is None:
         spec = _load_sp_spec()
         _SP_BANK_PROMPTS_CACHE = {sq["id"]: sq.get("prompt", "") for sq in spec.get("questions", [])}
-        _SP_BANK_PROMPTS_CACHE["sp_mode"] = (
-            "QUICK or IN-DEPTH? QUICK = 1-2hr build. IN-DEPTH = full "
-            "4-phase signature talk (100+ slides, 8 Questions, frame "
-            "selection).")
-        _SP_BANK_PROMPTS_CACHE["signature_frame"] = (
-            "Choose a Signature frame: The Rulebook / The Vault / "
-            "The Quest / The Original.")
+        _SP_BANK_PROMPTS_CACHE["sp_mode"] = _SP_MODE_PROMPT
+        # PD-016: the frame prompt is the spec's own text, never a literal.
+        _SP_BANK_PROMPTS_CACHE["signature_frame"] = \
+            _frame_selection_spec().get("prompt", "")
+        # PD-001: an IN-DEPTH follow-up turn is a real assistant turn in the
+        # transcript, so it must carry the exact prompt _sig_next emitted.
+        for _fq in _SP_FOLLOWUP_QIDS:
+            _SP_BANK_PROMPTS_CACHE[_fq + "_more"] = _SP_FOLLOWUP_PROMPT
     return _SP_BANK_PROMPTS_CACHE.get(qid, qid)
 
 
@@ -2834,6 +3032,14 @@ def _load_sp_spec() -> Dict[str, Any]:
     sys.exit(3)
 
 
+def _frame_selection_spec() -> Dict[str, Any]:
+    """PD-016: the spec's `frame_selection_question` block, or {} when the
+    spec lacks it. ONE source for both the emitted question and the
+    transcript bank prompt, so the two can never drift out of byte-identity."""
+    block = _load_sp_spec().get("frame_selection_question")
+    return block if isinstance(block, dict) else {}
+
+
 def cmd_signature(args) -> int:
     """SIGNATURE mode entry. With --sig-next: return the choice-first offer
     (QUICK vs IN-DEPTH). With --sig-answer ID TEXT: record one answer. With
@@ -2872,7 +3078,8 @@ def cmd_signature(args) -> int:
         if isinstance(sig_answer_val, list) and len(sig_answer_val) == 2:
             origin = getattr(args, 'sig_origin', None) or "client"
             return _sig_answer(run_dir, sig_answer_val[0], sig_answer_val[1],
-                               origin=origin)
+                               origin=origin,
+                               owner_msg_id=getattr(args, 'owner_msg_id', None))
         else:
             print(json.dumps({"error": "--sig-answer requires ID and TEXT"}))
             return 2
@@ -2906,13 +3113,11 @@ def _sig_next(run_dir: Path) -> int:
     if "sp_mode" not in sp_entries:
         print(json.dumps({
             "question_id": "sp_mode",
-            "prompt": "QUICK or IN-DEPTH? QUICK = 1-2hr build. IN-DEPTH = full "
-                      "4-phase signature talk (100+ slides, 8 Questions, frame "
-                      "selection).",
+            "prompt": _SP_MODE_PROMPT,
             "kind": "enum",
             "allowed_values": ["QUICK", "IN-DEPTH"],
-            "value_labels": {"QUICK": "QUICK (1-2hr build)",
-                             "IN-DEPTH": "IN-DEPTH (full signature talk)"},
+            "value_labels": {"QUICK": "QUICK (short answers)",
+                             "IN-DEPTH": "IN-DEPTH (one follow-up per answer)"},
             "required": True,
         }))
         return 0
@@ -2920,13 +3125,11 @@ def _sig_next(run_dir: Path) -> int:
     mode = sp_entries.get("sp_mode", {}).get("value", "IN-DEPTH") \
         if isinstance(sp_entries.get("sp_mode"), dict) else "IN-DEPTH"
 
-    # QUICK mode: skip the 8 Questions
-    if mode == "QUICK":
-        if "signature_frame" not in sp_entries:
-            return _emit_frame_question()
-        return _sig_finalize(run_dir, ledger, sp_entries)
-
-    # IN-DEPTH: ask the 8 Questions one at a time
+    # PD-001 (decision D-7 default): BOTH modes walk the eight questions, then
+    # the frame question. The old QUICK branch skipped the Sacred 8 outright,
+    # so a "quick" signature deck was assembled from a frame answer alone while
+    # the driver reported success. The only difference between the modes is
+    # answer length and the one optional IN-DEPTH follow-up below.
     spec = _load_sp_spec()
     sp_questions = spec.get("questions", [])
 
@@ -2941,6 +3144,21 @@ def _sig_next(run_dir: Path) -> int:
                 "help": sq.get("help", ""),
             }))
             return 0
+        # IN-DEPTH: one optional follow-up after q3/q4/q5/q7. Stored under
+        # "<qid>_more" in sp_entries; it is never one of the eight required
+        # answers and never enters the answers/answer_provenance record.
+        more_id = sqid + "_more"
+        if mode == "IN-DEPTH" and sqid in _SP_FOLLOWUP_QIDS \
+                and more_id not in sp_entries:
+            print(json.dumps({
+                "question_id": more_id,
+                "prompt": _SP_FOLLOWUP_PROMPT,
+                "kind": "text",
+                "required": False,
+                "help": "Optional. Answer with what you want to add, or say "
+                        "\"no\" to keep going.",
+            }))
+            return 0
 
     # After all 8 Questions: frame selection
     if "signature_frame" not in sp_entries:
@@ -2950,28 +3168,80 @@ def _sig_next(run_dir: Path) -> int:
 
 
 def _emit_frame_question() -> int:
-    """Emit the frame-selection question."""
+    """Emit the frame-selection question, using the spec's own wording.
+
+    PD-016: prompt, allowed_values, value_labels and help come verbatim from
+    `frame_selection_question` in sp-8-questions.json. No invented text -- a
+    spec without that block is a fatal configuration error (exit 3).
+    """
+    frame_q = _frame_selection_spec()
+    if not frame_q:
+        print(json.dumps({
+            "status": "error",
+            "error": "frame question spec missing",
+        }))
+        return 3
     print(json.dumps({
         "question_id": "signature_frame",
-        "prompt": "Choose a Signature frame: The Rulebook / The Vault / "
-                  "The Quest / The Original.",
-        "kind": "enum",
-        "allowed_values": ["rulebook", "vault", "quest", "original"],
-        "value_labels": {
-            "rulebook": "The Rulebook -- your methodology codified",
-            "vault": "The Vault -- your unique IP/proprietary system",
-            "quest": "The Quest -- the client's transformation journey",
-            "original": "The Original -- a new signature frame you define",
-        },
-        "required": True,
-        "help": "This frame shapes every slide in the deck. The Signature "
-                "Presentation Architect will enforce it at every QC gate.",
+        "prompt": frame_q["prompt"],
+        "kind": frame_q.get("kind", "enum"),
+        "allowed_values": frame_q.get("allowed_values", []),
+        "value_labels": frame_q.get("value_labels", {}),
+        "required": frame_q.get("required", True),
+        "help": frame_q.get("help", ""),
     }))
     return 0
 
 
+_OWNER_TEXT_WS = re.compile(r"\s+")
+
+def _normalize_owner_text(text: str) -> str:
+    """One normalization for BOTH sides of the owner-message proof: collapse
+    whitespace, strip, casefold. Punctuation stays significant."""
+    return _OWNER_TEXT_WS.sub(" ", str(text or "")).strip().casefold()
+
+def _prove_owner_message(run_dir: Path, owner_msg_id: str,
+                         text: str) -> Tuple[Optional[Dict[str, Any]], str]:
+    """Prove one `--owner-msg-id` against the message the client really sent.
+
+    PD-015: the id proves the answer DIRECTLY only when the message
+    (1) exists, (2) came from THIS run's requester, and (3) carries the same
+    normalized text as the answer. The resolver is PD-004a's
+    `presentation_job.approvals.resolve_owner_message` -- this unit only
+    calls it. A box without that module (or without a record of the text)
+    cannot prove anything, so the answer stays unconfirmed.
+
+    Returns (row, reason) where reason is one of 'proven', 'text_mismatch',
+    'no_resolver', 'unresolved', 'no_requester', 'other_chat'. Only 'proven'
+    carries a row."""
+    try:
+        from presentation_job.approvals import resolve_owner_message  # noqa: PLC0415
+    except Exception:  # noqa: BLE001 -- absent dependency is "cannot prove"
+        return None, "no_resolver"
+    try:
+        row = resolve_owner_message(owner_msg_id, run_dir)
+    except Exception:  # noqa: BLE001 -- a resolver failure proves nothing
+        return None, "unresolved"
+    if not isinstance(row, dict):
+        return None, "unresolved"
+    if (_normalize_owner_text(row.get("text"))
+            != _normalize_owner_text(text)):
+        return None, "text_mismatch"
+    intake = read_intake_json(run_dir)
+    requester_chat = str(intake.get("requester_chat_id") or "").strip()
+    if not requester_chat:
+        requester_chat = str(
+            _resolve_requester_from_env(intake).get("requester_chat_id") or ""
+        ).strip()
+    if not requester_chat:
+        return None, "no_requester"
+    if str(row.get("chat_id") or "").strip() != requester_chat:
+        return None, "other_chat"
+    return row, "proven"
+
 def _sig_answer(run_dir: Path, qid: str, text: str,
-                origin: str = "client") -> int:
+                origin: str = "client",
+                owner_msg_id: Optional[str] = None) -> int:
     """Record one signature answer and return the next question.
 
     CONTENT-PROVENANCE contract (2026-08-27 live defect: 2 of 8 answers on a
@@ -2983,7 +3253,16 @@ def _sig_answer(run_dir: Path, qid: str, text: str,
     refuses it until the client confirms it via --sig-confirm. The flag is a
     DECLARATION by the caller, not proof — the proof is the --sig-confirm
     quote-back step, which is the only thing that can flip
-    confirmed_by_client to True (origin stays visible either way)."""
+    confirmed_by_client to True (origin stays visible either way).
+
+    PD-015: when --owner-msg-id is supplied, PD-004a's resolver must PROVE the
+    message exists, came from this run's requester, and carries this answer's
+    text. Proven → the answer is recorded as confirmed_by_client=True,
+    confirmation="direct", owner_msg_id=... (the client typed it themselves;
+    no quote-back is needed). An id whose text differs is a caller error
+    (exit 1, nothing stored). An id that cannot be resolved stays unconfirmed
+    and takes the quote-back path — "cannot resolve" is never treated as
+    proven."""
     ledger = read_intake_ledger(run_dir)
     # FAULT-21 sibling fix: capture completion state BEFORE this call flips
     # ledger["status"] back to "in_progress" below. _sig_finalize() (reached
@@ -3008,18 +3287,44 @@ def _sig_answer(run_dir: Path, qid: str, text: str,
                                        f"Must be one of: {allowed}"}))
             return 1
 
+    # PD-015: an owner message id is a CLAIM until the resolver proves it.
+    # A mismatch in text is a hard caller error (nothing stored); anything
+    # the resolver cannot prove leaves the answer on the quote-back path.
+    owner_proven = False
+    if owner_msg_id:
+        _row, _reason = _prove_owner_message(run_dir, str(owner_msg_id), text)
+        if _reason == "text_mismatch":
+            print(json.dumps({
+                "status": "error",
+                "question_id": qid,
+                "owner_msg_id": str(owner_msg_id),
+                "message": "the owner message id does not carry this "
+                           "answer's text; nothing was stored.",
+            }))
+            return 1
+        owner_proven = _reason == "proven"
+        if not owner_proven:
+            print(f"  WARN  [OWNER-MSG-UNPROVEN] --owner-msg-id "
+                  f"{owner_msg_id!r} for {qid} was not proven ({_reason}); "
+                  "the answer stays unconfirmed and needs the quote-back "
+                  "step (--sig-confirm).", file=sys.stderr)
+
     asked_at = datetime.now(timezone.utc).isoformat()
     # CONTENT-PROVENANCE: the answer entry records WHO the words came from and
-    # whether the client has confirmed them. Only --sig-confirm sets
-    # confirmed_by_client=True (it is the one step that reads the answer back
-    # to the client); a fresh --sig-answer always (re)opens unconfirmed, so an
+    # whether the client has confirmed them. --sig-confirm sets
+    # confirmed_by_client=True after reading the answer back to the client
+    # (confirmation="quote_back"); PD-015's proven owner message sets it
+    # directly (confirmation="direct") because the client typed the words
+    # themselves. A fresh --sig-answer otherwise (re)opens unconfirmed, so an
     # edited answer can never ride a confirmation captured for older wording.
     sp_entries[qid] = {"value": text.strip(), "validated": True,
                        "source": "deck-intake-driver --signature",
                        "origin": origin,
-                       "confirmed_by_client": False,
-                       "confirmation": None,
+                       "confirmed_by_client": owner_proven,
+                       "confirmation": "direct" if owner_proven else None,
                        "answered_at": asked_at}
+    if owner_proven:
+        sp_entries[qid]["owner_msg_id"] = str(owner_msg_id)
     ledger["sp_entries"] = sp_entries
     ledger["status"] = "in_progress"
     ledger["updated_at"] = asked_at
@@ -3049,13 +3354,19 @@ def _sig_answer(run_dir: Path, qid: str, text: str,
     # text to be byte-identical to the bank prompt to resolve to exactly one
     # question id (never a multi-question-per-turn false positive).
     #
+    # PD-001: an IN-DEPTH follow-up (<qid>_more) is NOT a bank question. Its
+    # answer is stored in sp_entries (and in the turn log) only; the signed
+    # transcript envelope stays the bank's eight questions, which is the shape
+    # intake_trace_check.py resolves turn by turn.
+    #
     # FAULT-21 sibling fix: this now appends to the RAW turn log, never the
     # signed envelope file itself -- same hazard, same fix as cmd_answer's
     # (see write_intake_transcript()'s docstring).
-    raw_turns = read_intake_transcript_raw(run_dir)
-    raw_turns.append({"role": "assistant", "text": _sp_bank_prompt(qid), "qid": qid})
-    raw_turns.append({"role": "owner", "text": text.strip(), "qid": qid})
-    write_intake_transcript_raw(run_dir, raw_turns)
+    if qid not in _SP_FOLLOWUP_IDS:
+        raw_turns = read_intake_transcript_raw(run_dir)
+        raw_turns.append({"role": "assistant", "text": _sp_bank_prompt(qid), "qid": qid})
+        raw_turns.append({"role": "owner", "text": text.strip(), "qid": qid})
+        write_intake_transcript_raw(run_dir, raw_turns)
 
     if already_complete:
         _envelope, _warning = _finalize_transcript_envelope(run_dir)
@@ -3082,8 +3393,10 @@ def _sig_confirm(run_dir: Path, qid: str, confirmed: bool = False) -> int:
     behalf — a confirmation requires a second, explicit --confirmed call).
 
     The confirmation mode is recorded as 'quote_back'. The gate also accepts
-    'direct' (the client voiced/typed the answer themselves) which --sig-answer
-    stamps when the caller declares it; origin stays visible on every path."""
+    'direct' (the client voiced/typed the answer themselves): PD-015 stamps it
+    from --sig-answer only when --owner-msg-id is PROVEN to be the client's own
+    message carrying this exact text. This quote-back step is therefore needed
+    only for answers the client did not type themselves."""
     ledger = read_intake_ledger(run_dir)
     sp_entries = ledger.get("sp_entries", {})
     entry = sp_entries.get(qid)
@@ -3139,6 +3452,19 @@ def _sig_confirm(run_dir: Path, qid: str, confirmed: bool = False) -> int:
 def _sig_finalize(run_dir: Path, ledger: Dict[str, Any],
                   sp_entries: Dict[str, Any]) -> int:
     """Assemble the ONE atomic record, write sp_intake.json, run prove_sp_intake."""
+    # PD-004b: the same proof guards the signature door, before any record is
+    # written. Under `enforce` an unproven answer refuses with exit 6 and the
+    # ledger keeps its in-progress state.
+    _prov_view = dict(ledger)
+    _prov_view["sp_entries"] = sp_entries
+    _prov_rc = _provenance_gate(
+        run_dir, _prov_view,
+        question_ids={str(sq.get("id")) for sq in
+                      _load_sp_spec().get("questions", []) if sq.get("id")},
+        door="--signature")
+    if _prov_rc:
+        return _prov_rc
+
     mode_value = (sp_entries.get("sp_mode", {}).get("value", "IN-DEPTH")
                  if isinstance(sp_entries.get("sp_mode"), dict)
                  else sp_entries.get("sp_mode", "IN-DEPTH"))
@@ -3178,6 +3504,22 @@ def _sig_finalize(run_dir: Path, ledger: Dict[str, Any],
         answers[sqid] = val or ""
         record[sqid] = val or ""
     record["answers"] = answers
+
+    # PD-001 step 4: never announce a finished signature interview that is not
+    # finished. A required answer that is present-but-empty (a blank typed
+    # answer, a hand-edited ledger, a resumed run) or an empty frame leaves the
+    # record incomplete: say so in JSON, write NO sp_intake.json, and leave the
+    # ledger exactly as it was.
+    missing = [sq["id"] for sq in spec.get("questions", [])
+               if not answers.get(sq["id"])]
+    if missing or not record.get("signature_frame"):
+        print(json.dumps({
+            "status": "incomplete",
+            "missing": missing,
+            "message": "The signature interview is not finished.",
+        }))
+        return 3
+
     q7_offer = answers.get("q7") or ""
     record["offer_token_ledger"] = [q7_offer] if q7_offer else []
 
@@ -3219,7 +3561,7 @@ def _sig_finalize(run_dir: Path, ledger: Dict[str, Any],
     ledger_turns = [{"question_id": t["question_id"], "turn": t["turn"],
                      "asked_at": t.get("asked_at"), "validated_at": t.get("validated_at")}
                     for t in turn_log if t.get("question_id") in req_ids]
-    prove_sp_intake_mod = _import_skill51_module("prove_sp_intake")
+    prove_sp_intake_mod, _searched = _import_skill51_module("prove_sp_intake")
     if ledger_turns and prove_sp_intake_mod is not None:
         # FIX 29: prefer the one-time envelope API so this record carries
         # key_id + signed_at INSIDE the authenticated payload, signed with the
@@ -3271,7 +3613,10 @@ def _sig_finalize(run_dir: Path, ledger: Dict[str, Any],
     # Run prove_sp_intake if available (fail-soft warn -- the claim gate in
     # build_deck.py's preflight is the real enforcement). The driver's early
     # prove is advisory only; it must never block intake completion.
-    prove_warnings = _run_prove_sp_intake(run_dir)
+    # PD-001 step 5: the pair distinguishes "the prover was not found"
+    # (not_run) from "the prover passed" (found, no failures) -- the old bare
+    # list made both look like an empty pass.
+    prover_found, prove_warnings = _run_prove_sp_intake(run_dir)
     if prove_warnings:
         for code, reason in prove_warnings:
             print(f"  WARN  [{code}] {reason}", file=sys.stderr)
@@ -3295,25 +3640,44 @@ def _sig_finalize(run_dir: Path, ledger: Dict[str, Any],
               f"(then --confirmed after the client approves the verbatim quote).",
               file=sys.stderr)
 
-    # Mark ledger complete
-    ledger["status"] = "complete"
-    ledger["complete"] = True
-    ledger["completed_at"] = datetime.now(timezone.utc).isoformat()
+    # PD-001 step 5: the verdict is built from FACTS, never a hard-coded
+    # success sentence. "complete" requires all three: the prover actually ran
+    # and passed, every answer is confirmed by the client, and none was
+    # authored by the system. Anything else is needs_attention (exit 4) and the
+    # ledger is left NOT complete, so no downstream gate can mistake it.
+    prover = "not_run" if not prover_found else (
+        "passed" if not prove_warnings else "failed")
+    needs_attention = bool(prover != "passed" or unconfirmed or agent_authored)
+    status = "needs_attention" if needs_attention else "complete"
+
     ledger["answer_provenance"] = answer_provenance
-    write_intake_ledger(run_dir, ledger)
+    if needs_attention:
+        # Only the provenance is stamped; status/complete stay untouched.
+        write_intake_ledger(run_dir, ledger)
+    else:
+        ledger["status"] = "complete"
+        ledger["complete"] = True
+        ledger["completed_at"] = datetime.now(timezone.utc).isoformat()
+        write_intake_ledger(run_dir, ledger)
 
     print(json.dumps({
-        "status": "complete",
+        "status": status,
         "deck_type": "signature_presentation",
         "signature_frame": record.get("signature_frame"),
         "mode": record.get("mode"),
         "sp_intake_path": str(sp_path),
+        "prover": prover,
+        "prover_failures": [f"{code}: {reason}"
+                            for code, reason in prove_warnings],
         "unconfirmed_answers": unconfirmed,
         "agent_authored_answers": agent_authored,
-        "message": "Signature intake complete. Atomic record written. "
-                   "SP intake prover passed.",
+        "message": ("Signature intake complete. Atomic record written."
+                    if not needs_attention else
+                    "Signature intake needs attention before it counts as "
+                    "complete: see prover, prover_failures, "
+                    "unconfirmed_answers and agent_authored_answers."),
     }))
-    return 0
+    return 0 if not needs_attention else 4
 
 
 def _sig_record(run_dir: Path, record_file: str) -> int:
@@ -3332,6 +3696,35 @@ def _sig_record(run_dir: Path, record_file: str) -> int:
         print(json.dumps({"error": "Record is missing signature_frame. "
                                    "A signature intake MUST select a frame."}))
         return 1
+
+    # PD-004b step 4: the batch door carries its own provenance. A record file
+    # that does not name, per answer, the client message (or the operator
+    # contract) that proves it cannot become an atomic record.
+    prov_problems = _provenance_block_problems(answers.get("answer_provenance"))
+    if prov_problems:
+        if _provenance_mode() == "enforce":
+            print(json.dumps({
+                "status": "unproven",
+                "door": "--sig-record",
+                "mode": "enforce",
+                "unproven_questions": [],
+                "problems": prov_problems,
+                "message": "The record file carries no usable answer_provenance "
+                           "block; nothing was written.",
+            }, indent=2))
+            return 6
+        print("  WARN  [INTAKE-PROVENANCE] the record carries no usable "
+              "answer_provenance block (mode=warn, not blocking):",
+              file=sys.stderr)
+        for line in prov_problems:
+            print(f"  WARN  [INTAKE-PROVENANCE] {line}", file=sys.stderr)
+
+    # The same proof the completion doors run, before ANY file is written.
+    prov_view = read_intake_ledger(run_dir)
+    prov_view["sp_entries"] = dict(answers)
+    prov_rc = _provenance_gate(run_dir, prov_view, door="--sig-record")
+    if prov_rc:
+        return prov_rc
 
     # Write the atomic record
     record = dict(answers)
@@ -3362,7 +3755,7 @@ def _sig_record(run_dir: Path, record_file: str) -> int:
     write_intake_json(run_dir, intake)
 
     # Prove it (fail-soft -- build_deck.py preflight is the real gate)
-    prove_warnings = _run_prove_sp_intake(run_dir)
+    _, prove_warnings = _run_prove_sp_intake(run_dir)
     if prove_warnings:
         for code, reason in prove_warnings:
             print(f"  WARN  [{code}] {reason}", file=sys.stderr)
@@ -3405,14 +3798,19 @@ def _sig_plan() -> int:
     return 0
 
 
-def _run_prove_sp_intake(run_dir: Path) -> List[Tuple[str, str]]:
-    """Run prove_sp_intake.py if available. Returns list of (code, reason)
-    failures, or empty list on pass. Fail-closed: a missing prover is a
-    non-blocking warn (the claim gate in build_deck.py will catch it)."""
+def _run_prove_sp_intake(run_dir: Path) -> Tuple[bool, List[Tuple[str, str]]]:
+    """Run prove_sp_intake.py if available.
+
+    Returns (found, failures): `found` is False only when the prover file is
+    on none of the search paths -- so "the prover never ran" is a fact the
+    caller can report, never an empty pass; `failures` is the prover's own
+    list of (code, reason), empty when it passed. Fail-closed: a missing
+    prover stays a non-blocking warn here (the claim gate in build_deck.py
+    will catch it), but it is NAMED as not_run by the caller."""
     sp_intake = run_dir / "working" / "copy" / "sp_intake.json"
     if not sp_intake.is_file():
-        return [("AF-SP-8Q-MISSING",
-                 "working/copy/sp_intake.json was not written")]
+        return True, [("AF-SP-8Q-MISSING",
+                       "working/copy/sp_intake.json was not written")]
 
     # Try importing prove_sp_intake
     from importlib import util as importlib_util
@@ -3438,15 +3836,15 @@ def _run_prove_sp_intake(run_dir: Path) -> List[Tuple[str, str]]:
                 with open(sp_intake, "r", encoding="utf-8") as _fh:
                     sp_intake_obj = json.load(_fh)
                 fails = mod.evaluate(sp_intake_obj)
-                return fails if fails else []
+                return True, (fails if fails else [])
             except Exception as exc:
-                return [("AF-SP-8Q-MISSING",
-                         f"prove_sp_intake raised {exc} -- fail-closed")]
+                return True, [("AF-SP-8Q-MISSING",
+                               f"prove_sp_intake raised {exc} -- fail-closed")]
     # Prover not found -- warn but don't block (build_deck.py will catch)
     print(f"  WARN  prove_sp_intake.py not found -- SP intake prover not run. "
           f"The claim gate in build_deck.py will verify at preflight.",
           file=sys.stderr)
-    return []
+    return False, []
 
 
 # ---------------------------------------------------------------------------
@@ -4387,12 +4785,20 @@ def cmd_selftest() -> int:
         check("--sig-next returns sp_mode choice-first",
               out.get("question_id") == "sp_mode", f"out={buf.getvalue()[:200]}")
 
-        # 2. --signature --sig-answer records the choice.
+        # 2. --signature --sig-answer records the choice. PD-001: BOTH modes
+        # then ask the eight Sacred Questions, so QUICK's next question is q1
+        # (the old QUICK branch jumped straight to the frame question).
         buf = io.StringIO()
         with redirect_stdout(buf):
             rc = main(["--run-dir", rd, "--signature", "--sig-answer",
                        "sp_mode", "QUICK"])
+        try:
+            out = json.loads(buf.getvalue())
+        except (json.JSONDecodeError, ValueError):
+            out = {}
         check("--sig-answer exits 0", rc == 0, f"rc={rc}")
+        check("QUICK asks q1 next (both modes walk the 8 questions)",
+              out.get("question_id") == "q1", f"out={buf.getvalue()[:200]}")
 
         # 3. Legacy --signature --next is rejected (non-zero, names --sig-next).
         buf = io.StringIO()
@@ -4450,6 +4856,18 @@ def build_parser() -> argparse.ArgumentParser:
     std.add_argument("--complete", action="store_true",
                      help="finalize intake: merge fields, run SP claim gate, "
                           "mark ledger complete")
+    std.add_argument("--accept-default", dest="accept_default",
+                     action="store_true",
+                     help="with --answer: record the question's documented "
+                          "default as the value (defaulted=true). Requires "
+                          "--owner-msg-id naming the message in which the "
+                          "client accepted it")
+    std.add_argument("--operator-contract", dest="operator_contract",
+                     action="store_true",
+                     help="with --answer: the answer came over the signed "
+                          "operator-contract path. Replaces --owner-msg-id; "
+                          "needs working/interview/operator_contract.json "
+                          "carrying receipt_hmac")
 
     # Signature mode
     sig = p.add_argument_group("signature mode (8 Sacred Questions + frame)")
@@ -4469,7 +4887,10 @@ def build_parser() -> argparse.ArgumentParser:
     sig.add_argument("--sig-confirm", dest="sig_confirm", metavar="ID",
                      help="signature: quote-back confirmation -- print the recorded "
                           "answer verbatim for the client to approve (no flag), or "
-                          "mark it confirmed after the client approved (--sig-confirmed)")
+                          "mark it confirmed after the client approved (--sig-confirmed). "
+                          "Needed only for answers the client did not type themselves: "
+                          "an answer given with a PROVEN --owner-msg-id is already "
+                          "directly confirmed")
     sig.add_argument("--sig-confirmed", dest="sig_confirmed", action="store_true",
                      help="with --sig-confirm: record the client's approval of the "
                           "quoted answer (confirmed_by_client=true, mode=quote_back)")
@@ -4512,7 +4933,11 @@ def build_parser() -> argparse.ArgumentParser:
     pick.add_argument("--owner-msg-id", dest="owner_msg_id", metavar="ID",
                       help="with --style-pick: the message id of the CLIENT's "
                            "own A/B/C reply. Mandatory -- a pick without a "
-                           "resolvable owner message id is a forged approval")
+                           "resolvable owner message id is a forged approval. "
+                           "With --sig-answer ID TEXT: the client's own message "
+                           "carrying that answer; when the resolver proves its "
+                           "text matches, the answer is recorded as directly "
+                           "confirmed and needs no --sig-confirm")
     pick.add_argument("--approved-by", dest="approved_by", metavar="WHO",
                       default="owner",
                       help="with --style-pick: who approved (default 'owner')")

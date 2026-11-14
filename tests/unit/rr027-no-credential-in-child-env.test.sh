@@ -75,6 +75,10 @@ make_box() {  # make_box <dir> <store-lines-file>
   # bundle as rescue-env.sh (both are required for a delivery to start), so the
   # synthetic box must carry it too or the poll correctly fails closed.
   [ -n "${SUPERVISE:-}" ] && cp "$SUPERVISE" "$root/.openclaw/skills/shared-utils/rescue-supervise.py"
+  # RRX-010 / RRX-002: the poll needs these two beside it before it starts a turn.
+  for _rr027_extra in rr_journal_check.py rr_owner_message.py; do
+    [ -f "$REPO/65-rescue-receiver/$_rr027_extra" ] && cp "$REPO/65-rescue-receiver/$_rr027_extra" "$root/.openclaw/skills/65-rescue-receiver/"
+  done
   cp "$store" "$root/.openclaw/secrets/.env"
   # Synthetic hermetic fixture only (sentinel values, never real credentials):
   # the repo chmod-600 invariant requires every .sh that writes secrets/.env

@@ -63,7 +63,11 @@ DESIGN PRINCIPLES
 - This file does NOT touch build_deck.py, sync_check.py, or PIPELINE-MANIFEST.json.
 - Word budget math is the same formula as SOP 9.1: net_spoken_sec = (DURATION_MIN*60) - pause_budget_sec;
   target_words = net_spoken_sec * (WPM/60); per-slide = target_words * slide_type_weight.
-- The length gate at the end is unchanged — it is a backstop, not the primary control.
+- The length gate at the end is a backstop, not the primary control — but it is NOT
+  silent (PD-077): a total outside +/-10 % of the target writes the speech, prints the
+  measured ratio to stderr and exits 4. Exit codes: 2 = no talk length / missing or
+  empty intake.json outside --dry-run, 3 = no key name set (checked before any model
+  call), 4 = speech length outside the band. There is no assumed 30-minute length.
 - Retryable status codes: 429, 500, 502, 503, 529 (upstream overload / gateway), and any body
   containing "overloaded_error", "overloaded", or "rate_limit".
 """
@@ -242,6 +246,31 @@ def resolve_api_key(url: str = "") -> str:
         if v:
             return v
     return ""
+
+
+#: PD-077: every key NAME this script accepts, across both endpoints. The up-front
+#: check reads NAMES only — a key value is never read out of this list or printed.
+ACCEPTED_KEY_NAMES = (
+    "SPEECH_LLM_API_KEY",
+    "OLLAMA_API_KEY",
+    "OPENROUTER_API_KEY",
+    "OPENAI_API_KEY",
+)
+
+KEY_MISSING_MSG = (
+    "FAIL: no LLM API key set. Set OLLAMA_API_KEY (Ollama Cloud, default endpoint) "
+    "or OPENROUTER_API_KEY (OpenRouter). Run with --dry-run to test without a key."
+)
+
+
+def key_present_in_environment() -> bool:
+    """True when any key NAME this script accepts holds a non-empty value.
+
+    PD-077: the check runs before any model call so a keyless box fails fast with
+    exit 3 instead of starting a paid build that cannot authenticate. Names only —
+    no value is ever returned, logged or printed by this function.
+    """
+    return any(os.environ.get(name, "").strip() for name in ACCEPTED_KEY_NAMES)
 
 
 
@@ -1047,12 +1076,63 @@ class DryRunSimulator:
 # Main speech-build pipeline
 # ---------------------------------------------------------------------------
 
-def load_intake(path: str) -> dict:
+NO_TALK_LENGTH_MSG = (
+    "no talk length in intake.json (target_talk_minutes); refusing to assume one"
+)
+
+
+class SpeechLengthError(Exception):
+    """The finished speech left the +/-10 % band around its word budget (PD-077).
+
+    Raised AFTER the speech file and the ledger are written, so the work is on disk
+    and main() only has to report the measured ratio on stderr and exit 4.
+    """
+
+    def __init__(self, total_actual: int, target_words: int, ratio: float):
+        self.total_actual = total_actual
+        self.target_words = target_words
+        self.ratio = ratio
+        super().__init__(
+            "speech length outside +/-10% of budget: "
+            f"total_actual={total_actual} target={target_words} ratio={ratio:.2%}"
+        )
+
+
+def load_intake(path: str, dry_run: bool = False) -> dict:
+    """Read intake.json. Outside --dry-run a missing or empty file is refused (exit 2).
+
+    PD-077: the old behaviour returned a 30-minute stub on a missing file, which made
+    the build invent a talk length the client never gave.
+    """
     if not os.path.exists(path) or os.path.getsize(path) == 0:
-        # Stub for dry-run
-        return {"DURATION_MIN": 30, "TONE": "warm and passionate", "HOOK": "There is a difference.", "DECK_SLUG": "dryrun"}
+        if dry_run:
+            # Stub for dry-run only — --dry-run needs no intake file.
+            return {"DURATION_MIN": 30, "TONE": "warm and passionate", "HOOK": "There is a difference.", "DECK_SLUG": "dryrun"}
+        print(
+            f"intake.json is missing or empty: {path}. A real build needs the client's "
+            f"intake; run with --dry-run to prove the mechanisms without one.",
+            file=sys.stderr,
+        )
+        sys.exit(2)
     with open(path) as f:
         return json.load(f)
+
+
+def resolve_talk_minutes(intake: dict) -> float:
+    """The client's talk length, or exit 2. Never assumes a length (PD-077).
+
+    `target_talk_minutes` (the intake field the driver writes) wins over the legacy
+    `DURATION_MIN`. A missing, non-numeric or non-positive value is refused.
+    """
+    raw = intake.get("target_talk_minutes") or intake.get("DURATION_MIN")
+    try:
+        minutes = float(raw)
+    except (TypeError, ValueError):
+        minutes = 0.0
+    if minutes <= 0:
+        print(NO_TALK_LENGTH_MSG, file=sys.stderr)
+        sys.exit(2)
+    return minutes
 
 
 def load_slides(slides_path: str, arc_path: str) -> list[SlideSpec]:
@@ -1152,7 +1232,7 @@ def run_build(
     """
     workdir.mkdir(parents=True, exist_ok=True)
 
-    duration_min = float(intake.get("DURATION_MIN", 30))
+    duration_min = resolve_talk_minutes(intake)
     deck_slug    = intake.get("DECK_SLUG", "untitled")
     tone         = intake.get("TONE", "warm and passionate")
     hook         = intake.get("HOOK", "")
@@ -1235,8 +1315,6 @@ def run_build(
         f"\n[gate]   Total actual words = {total_actual}  target = {target_words}  "
         f"ratio = {ratio:.2%}  {'PASS' if within_band else 'FAIL (outside +/-10%)'}"
     )
-    if not within_band:
-        print("[gate]   WARNING: total word count is outside the +/-10% band after auto-expand.")
 
     # --- Write final speech.md ---
     out_path.parent.mkdir(parents=True, exist_ok=True)
@@ -1277,6 +1355,11 @@ def run_build(
     save_ledger(ledger, workdir)
     print(f"\n[done]   Speech written to {out_path}")
     print(f"[done]   Ledger saved to {ledger_path(workdir)}")
+    if not within_band:
+        # PD-077: a wrong-length speech is a FAILED build. The file and the ledger are
+        # already on disk (the work is not lost); main() prints the ratio to stderr
+        # and exits 4.
+        raise SpeechLengthError(total_actual, target_words, ratio)
     return ledger
 
 
@@ -1322,7 +1405,9 @@ def main():
     workdir  = Path(args.workdir)
     out_path = Path(args.out)
 
-    intake = load_intake(args.intake)
+    intake = load_intake(args.intake, dry_run=args.dry_run)
+    # PD-077: refuse to invent a talk length before anything else costs work.
+    duration_min = resolve_talk_minutes(intake)
     slides = load_slides(args.slides, args.arc)
 
     # Workstream 3: resolve the research map. Default = the standard P-3.5 path
@@ -1342,7 +1427,6 @@ def main():
             f"{total_items} research items — speech will cite these on stage."
         )
 
-    duration_min = float(intake.get("DURATION_MIN", 30))
     drop_count   = sum(1 for s in slides if s.kind in {"drop", "final"})
     misc_pauses  = max(4, len(slides) // 5)
 
@@ -1374,30 +1458,40 @@ def main():
         print("=" * 60)
         sys.exit(0 if all_pass else 1)
 
-    # Real run
+    # Real run. PD-077: the key check comes FIRST — before any model call, before the
+    # first paid request. It reads key NAMES only and never prints a value.
+    if not key_present_in_environment():
+        print(KEY_MISSING_MSG, file=sys.stderr)
+        sys.exit(3)
     if os.environ.get("PRESENTATION_MODE") == "ultra":
         api_key = resolve_api_key("https://openrouter.ai/api/v1/chat/completions")
     else:
         api_key = resolve_api_key()
     if not api_key:
-        sys.exit(
-            "FAIL: no LLM API key set. Set OLLAMA_API_KEY (Ollama Cloud, default endpoint) "
-            "or OPENROUTER_API_KEY (OpenRouter). Run with --dry-run to test without a key."
-        )
+        # A name is present but not for the endpoint this run would call — still a
+        # keyless build. Same message, same exit code.
+        print(KEY_MISSING_MSG, file=sys.stderr)
+        sys.exit(3)
 
-    run_build(
-        intake=intake,
-        slides=slides,
-        workdir=workdir,
-        out_path=out_path,
-        model=args.model,
-        fallback_model=args.fallback_model,
-        api_key=api_key,
-        wpm=args.wpm,
-        max_expand_rounds=args.max_expand_rounds,
-        research_map=research_map,
-        research_map_path=research_map_path,
-    )
+    try:
+        run_build(
+            intake=intake,
+            slides=slides,
+            workdir=workdir,
+            out_path=out_path,
+            model=args.model,
+            fallback_model=args.fallback_model,
+            api_key=api_key,
+            wpm=args.wpm,
+            max_expand_rounds=args.max_expand_rounds,
+            research_map=research_map,
+            research_map_path=research_map_path,
+        )
+    except SpeechLengthError as exc:
+        # The speech file and the ledger are already written; report the measured
+        # ratio on stderr and fail the build.
+        print(f"FAIL: {exc}", file=sys.stderr)
+        sys.exit(4)
 
 
 if __name__ == "__main__":

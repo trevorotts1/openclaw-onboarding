@@ -73,22 +73,19 @@ and it will pick the right one, or you can ask for a specialist by name.
 | **Dispatcher** | Dispatcher for the company's Scheduling & Dispatch department. |
 | **Scheduler** | Scheduler for the company's Scheduling & Dispatch department. |
 
-### What each specialist is for, with an example request
+### What each specialist is for
 
 **Capacity Planning Specialist**
 
 - *What it is for:* Capacity Planning Specialist for the company's Scheduling & Dispatch department.
-- *Example request:* "Have the Capacity Planning Specialist take this on: Capacity Planning Specialist for the company's Scheduling & Dispatch department."
 
 **Dispatcher**
 
 - *What it is for:* Dispatcher for the company's Scheduling & Dispatch department.
-- *Example request:* "Have the Dispatcher take this on: Dispatcher for the company's Scheduling & Dispatch department."
 
 **Scheduler**
 
 - *What it is for:* Scheduler for the company's Scheduling & Dispatch department.
-- *Example request:* "Have the Scheduler take this on: Scheduler for the company's Scheduling & Dispatch department."
 
 
 ---

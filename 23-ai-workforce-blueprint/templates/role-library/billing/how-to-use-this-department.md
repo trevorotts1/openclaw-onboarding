@@ -84,62 +84,51 @@ and it will pick the right one, or you can ask for a specialist by name.
 | **CRM Specialist Phase2** | **** in the department of the company, reporting to the . |
 | **Fp A Forecasting Analyst Phase2** | **** for the department of the company, reporting to the . |
 
-### What each specialist is for, with an example request
+### What each specialist is for
 
 **Bookkeeping Specialist**
 
 - *What it is for:* Records every transaction.
-- *Example request:* "Have the Bookkeeping Specialist take this on: Records every transaction."
 
 **Cash Flow Forecasting Specialist**
 
 - *What it is for:* Maintains 13-week rolling cash flow forecast.
-- *Example request:* "Have the Cash Flow Forecasting Specialist take this on: Maintains 13-week rolling cash flow forecast."
 
 **Collections Specialist**
 
 - *What it is for:* Pursues overdue accounts receivable.
-- *Example request:* "Have the Collections Specialist take this on: Pursues overdue accounts receivable."
 
 **CRM Specialist Billing Version**
 
 - *What it is for:* Bridges Billing and CRM departments.
-- *Example request:* "Have the CRM Specialist Billing Version take this on: Bridges Billing and CRM departments."
 
 **Financial Reporting Specialist**
 
 - *What it is for:* Produces monthly P&L, balance sheet, and cash flow statement.
-- *Example request:* "Have the Financial Reporting Specialist take this on: Produces monthly P&L, balance sheet, and cash flow statement."
 
 **FP&A Forecasting Analyst**
 
 - *What it is for:* Annual budgeting, multi-year financial models, variance analysis (budget vs actual).
-- *Example request:* "Have the FP&A Forecasting Analyst take this on: Annual budgeting, multi-year financial models, variance analysis (budget vs actual)."
 
 **Invoicing And AR Specialist**
 
 - *What it is for:* Invoicing & Accounts Receivable (AR) Specialist at the company, the guardian of the company's incoming cash flow.
-- *Example request:* "Have the Invoicing And AR Specialist take this on: Invoicing & Accounts Receivable (AR) Specialist at the company."
 
 **Subscription Recurring Revenue Specialist**
 
 - *What it is for:* Manages subscription billing - sign-ups, upgrades, downgrades, cancellations, dunning for failed payments.
-- *Example request:* "Have the Subscription Recurring Revenue Specialist take this on: Manages subscription billing - sign-ups, upgrades, downgrades, cancellations."
 
 **Tax Liaison Specialist**
 
 - *What it is for:* Manages relationship with external tax preparers.
-- *Example request:* "Have the Tax Liaison Specialist take this on: Manages relationship with external tax preparers."
 
 **CRM Specialist Phase2**
 
 - *What it is for:* **** in the department of the company, reporting to the .
-- *Example request:* "Have the CRM Specialist Phase2 take this on: **** in the department of the company, reporting to the ."
 
 **Fp A Forecasting Analyst Phase2**
 
 - *What it is for:* **** for the department of the company, reporting to the .
-- *Example request:* "Have the Fp A Forecasting Analyst Phase2 take this on: **** for the department of the company, reporting to the ."
 
 
 ---

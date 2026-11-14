@@ -18,6 +18,7 @@
 
 import { checkinKey, scopePath } from './ids.js';
 import { CHECKIN_SAVE_EVERY_MS, lastCheckIn } from './options.js';
+import { withRetentionKind } from './retention.js';
 
 export const MAX_WAITING_ORDERS = 50;
 export const INBOX_LINE_PREFIX = 'DRAMA_ORDER';
@@ -41,7 +42,8 @@ export async function writeInbox(objectStore, { clientId, orders, nowMs }) {
   const waiting = waitingOrders(orders);
   await objectStore.objectPut(
     inboxPath(clientId),
-    JSON.stringify({ client_id: clientId, updated_at: nowMs, orders: waiting }),
+    // A stored object in the client's own scope: the 45-day storage class.
+    JSON.stringify(withRetentionKind({ client_id: clientId, updated_at: nowMs, orders: waiting }, 'project_object')),
   );
   return { ok: true, path: inboxPath(clientId), waiting: waiting.length };
 }
@@ -75,6 +77,9 @@ export function inboxLine(orders) {
 export async function checkIn(objectStore, { clientId, nowMs, orders }) {
   const last = await lastCheckIn(objectStore, clientId);
   if (last === null || nowMs - last >= CHECKIN_SAVE_EVERY_MS) {
+    // A bare millisecond count read back with Number() (options.lastCheckIn),
+    // not a record: it carries no retention kind on purpose, because re-shaping
+    // it would change that reader and the table names no class for it.
     await objectStore.objectPut(checkinKey(clientId), String(nowMs));
   }
   const inbox = Array.isArray(orders) ? { waiting: waitingOrders(orders) } : await readInbox(objectStore, clientId);

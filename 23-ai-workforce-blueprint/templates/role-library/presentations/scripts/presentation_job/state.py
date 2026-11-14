@@ -5,6 +5,7 @@ import fcntl
 import hashlib
 import json
 import os
+import secrets
 import sys
 import tempfile
 from datetime import datetime, timezone
@@ -87,6 +88,51 @@ def sha256_file(path: Path) -> str:
 
 def sha256_text(text: str) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+# ---------------------------------------------------------------------------
+# PD-906: the PER-RUN key.
+#
+# The per-phase front-door nonce (phases._script_nonce_env) is minted per
+# phase AND per invocation and is never linked or kept -- it proves a child
+# was dispatched by the engine's front door, nothing more. Consumers that must
+# key rows by RUN (e.g. execution_stamp rows, PD-306) need an identity that is
+# stable across every phase, every retry and every resume of one run, so it
+# lives in state.json and is read back rather than regenerated.
+#
+# It is a capability-like secret: never log it, never print it, never place it
+# in a report or telemetry row. Only its presence is reportable.
+# ---------------------------------------------------------------------------
+RUN_KEY_FIELD = "run_key"
+RUN_KEY_BYTES = 32
+
+
+def mint_run_key() -> str:
+    """Mint a fresh per-run key (hex, RUN_KEY_BYTES of entropy)."""
+    return secrets.token_hex(RUN_KEY_BYTES)
+
+
+def run_key_of(state: Dict[str, Any]) -> Optional[str]:
+    """Read-only accessor: this run's persisted key, or None when the run
+    predates PD-906 / was never started. Never mints, never writes, never
+    logs. This is the function a consumer (execution_stamp.py) imports."""
+    key = state.get(RUN_KEY_FIELD)
+    return key if isinstance(key, str) and key else None
+
+
+def ensure_run_key(state: Dict[str, Any],
+                   store: Optional["StateStore"] = None) -> str:
+    """Return this run's key, minting it once and persisting it into
+    state.json so it survives resume. Idempotent: an existing key is returned
+    untouched. The key is never printed or logged."""
+    key = run_key_of(state)
+    if key:
+        return key
+    key = mint_run_key()
+    state[RUN_KEY_FIELD] = key
+    if store is not None:
+        store.save(state)
+    return key
 
 
 # ---------------------------------------------------------------------------

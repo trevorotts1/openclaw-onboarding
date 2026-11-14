@@ -457,8 +457,13 @@ def render_plan(normalized: dict, launch: dict) -> str:
     for offer in launch["offers"]:
         price = offer["prices"][0]
         term = _BILLING.get(price.get("billing_type"), str(price.get("billing_type")))
-        lines.append(f"  - {offer['slot']}: {offer['display_name']}, "
-                     f"{li._money_display(price['amount_minor'], price['currency'])}, {term}")
+        shown = li._money_display(price["amount_minor"], price["currency"])
+        if price.get("billing_type") == "recurring" and price.get("recurring_interval"):
+            # the shared billing vocabulary names the cadence ("monthly") and phrases the price ("$49.00/month")
+            bill = li._billing_vocab()
+            term = f"{term} ({bill.interval_word(price['recurring_interval'])})"
+            shown = bill.price_per_interval(shown, price["recurring_interval"])
+        lines.append(f"  - {offer['slot']}: {offer['display_name']}, {shown}, {term}")
     graph = route.compile_route(normalized)
     prefix = launch_bridge.STRUCTURE_PREFIX
     structure = dict(r[len(prefix):].split("=", 1) for r in launch["source_refs"] if r.startswith(prefix))

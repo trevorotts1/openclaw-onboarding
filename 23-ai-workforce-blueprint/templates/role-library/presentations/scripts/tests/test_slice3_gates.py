@@ -463,23 +463,31 @@ def test_fish_tag_missing_files_fail(tmp_path):
 # ---------------------------------------------------------------------------
 
 def test_phase_level_report_only_keeps_legacy_result(tmp_path):
-    """Report-only default: verify() returns the LEGACY verdict; the RunFacts
-    shadow runs in the background (a fabricated artifact produces a
-    TRUST-BOUNDARY-DIVERGENCE line, never a changed return)."""
+    """Report-only default: verify() returns the phase verifier's own result —
+    never an empty/silently-passing return. PD-064 moved the ten-deliverable
+    check from P9-DELIVER (now the audio step) to P-BUNDLE-GATE, so the bundle
+    gate is the one that must still report its verdict for a fabricated deck."""
     import os
     import phase_verifiers as pv
 
     rd = _fresh(tmp_path)
     _genuine_bundle(rd)
-    # Fabricate: deck PDF is a decoy — the RunFacts verdict FAILs, legacy
-    # _verify_delivery also FAILs (it checks magic itself) so no divergence;
-    # then genuine: both PASS.
-    (rd / "working" / "delivery" / "demo-FINAL.pdf").write_bytes(b"0" * 60_000)
+    # PD-064 also moved the paths the gate reads for the deck and infographic
+    # to working/deliverables/. Relocate them so the ONLY failing deliverable
+    # is the fabricated deck PDF below — the assertion stays on the magic
+    # check, never on a mere absence.
+    dl = rd / "working" / "delivery"
+    dls = rd / "working" / "deliverables"
+    for name in ("demo-FINAL.pptx", "demo-FINAL.pdf", "infographic.png"):
+        (dl / name).rename(dls / name)
+    # Fabricate: deck PDF is a decoy — P-BUNDLE-GATE's bundle check reads the
+    # magic bytes itself, so it FAILs; report-only returns that verdict.
+    (dls / "demo-FINAL.pdf").write_bytes(b"0" * 60_000)
 
     os.environ.pop(rf.ENFORCE_ENV, None)
     try:
-        ok, reasons = pv.verify("P9-DELIVER", rd)
-        # Legacy verifier fails the decoy too — report-only returns its verdict.
+        ok, reasons = pv.verify("P-BUNDLE-GATE", rd)
+        # The gate fails the decoy itself — report-only returns its verdict.
         assert not ok
         assert any("not a valid" in r for r in reasons)
     finally:

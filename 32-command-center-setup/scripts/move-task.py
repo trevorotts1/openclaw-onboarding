@@ -8,6 +8,7 @@ AGENTS.md with no enforcement — agents hand-wrote SQL UPDATEs to tasks.status 
 the Review→Complete gate was unenforceable in code. This tool makes it real.
 
 Doctrine (CORE_UPDATES.md v9.6.5+):
+  Client-facing column names for the same stages: Being Prepared → Ready to Start → In Progress → Review / QC → Done ("Complete" here = "Done" on the board). When talking to a client, use the client-facing names.
   Backlog → Ready → In Progress → REVIEW → (Devil's Advocate validates) → Complete
   - A worker NEVER moves a card straight from In Progress to Complete.
   - A worker NEVER marks a card Complete on its own behalf — only a DA sign-off

@@ -10,7 +10,8 @@
 #
 #   stamp_full_context_handoff  <AGENTS_FILE>      # FULL_CONTEXT_HANDOFF_V1
 #   stamp_reporting_contract    <AGENTS_FILE>      # REPORTING_CONTRACT_V1
-#   stamp_agents_doctrine_blocks <AGENTS_FILE>     # both, in order
+#   stamp_full_read_guard       <AGENTS_FILE>      # FULL_READ_GUARD_V1
+#   stamp_agents_doctrine_blocks <AGENTS_FILE>     # all three, in order
 #
 # Each stamper is idempotent (no-op when its marker is already present) and
 # ADDITIVE — it only appends its block; it never edits or deletes existing
@@ -30,7 +31,8 @@
 # Idempotency markers — the exact strings the stampers write and grep for.
 FULL_CONTEXT_HANDOFF_MARKER="<!-- FULL_CONTEXT_HANDOFF_V1 -->"
 REPORTING_CONTRACT_MARKER="<!-- REPORTING_CONTRACT_V1 -->"
-export FULL_CONTEXT_HANDOFF_MARKER REPORTING_CONTRACT_MARKER
+FULL_READ_GUARD_MARKER="<!-- FULL_READ_GUARD_V1 -->"
+export FULL_CONTEXT_HANDOFF_MARKER REPORTING_CONTRACT_MARKER FULL_READ_GUARD_MARKER
 
 # ---------------------------------------------------------------------------
 # emit_full_context_handoff_block
@@ -193,6 +195,26 @@ stamp_reporting_contract() {
 }
 
 # ---------------------------------------------------------------------------
+# emit_full_read_guard_block / stamp_full_read_guard <AGENTS_FILE>
+#
+# The one-line full-read rule (Trevor's order 2026-11-12). It points at the
+# read_skill tool shipped by the full-read-guard plugin (installed by
+# scripts/install-full-read-guard.sh). Marker FULL_READ_GUARD_V1.
+# ---------------------------------------------------------------------------
+emit_full_read_guard_block() {
+    cat <<'FRGEOF'
+<!-- FULL_READ_GUARD_V1 -->
+Before you use a skill, call `read_skill <skill-name>`. It gives you the whole skill and everything it depends on, in order. Do not search or partly read a skill's instruction files; the rules will refuse it. Lookup files named by the skill may be searched.
+
+FRGEOF
+}
+
+stamp_full_read_guard() {
+    _adb_stamp_block "$1" "$FULL_READ_GUARD_MARKER" \
+        emit_full_read_guard_block "FULL READ GUARD"
+}
+
+# ---------------------------------------------------------------------------
 # stamp_agents_doctrine_blocks <AGENTS_FILE>
 #
 # Convenience: stamp both blocks in canonical order. Returns non-zero if EITHER
@@ -202,5 +224,6 @@ stamp_agents_doctrine_blocks() {
     local _file="$1" _rc=0
     stamp_full_context_handoff "$_file" || _rc=1
     stamp_reporting_contract   "$_file" || _rc=1
+    stamp_full_read_guard      "$_file" || _rc=1
     return "$_rc"
 }

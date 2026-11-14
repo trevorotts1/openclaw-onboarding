@@ -12,6 +12,8 @@ concurrency:
 
 jobs:
   credential-store:
+    # Batch pull requests run only the required checks (Trevor order 2026-11-13).
+    if: ${{ !startsWith(github.head_ref, 'batch/') }}
     name: A45 — credentials land where the skill's own check reads them (T2-21)
     runs-on: ubuntu-latest
     steps:
@@ -23,6 +25,8 @@ jobs:
         run: bash scripts/test-installer-credential-store.sh
 
   installer-config-blocks:
+    # Batch pull requests run only the required checks (Trevor order 2026-11-13).
+    if: ${{ !startsWith(github.head_ref, 'batch/') }}
     name: A46 — every configuration block an installer merges must parse (T2-22)
     runs-on: ubuntu-latest
     steps:
@@ -39,6 +43,8 @@ jobs:
         run: python3 scripts/check-installer-config-blocks.py
 
   provider-status-contract:
+    # Batch pull requests run only the required checks (Trevor order 2026-11-13).
+    if: ${{ !startsWith(github.head_ref, 'batch/') }}
     name: A46 — skill 39 provider-status producer and consumer share one contract (T2-32)
     runs-on: ubuntu-latest
     steps:
@@ -50,6 +56,8 @@ jobs:
         run: bash scripts/test-provider-status-contract.sh
 
   closeout-rating-separation:
+    # Batch pull requests run only the required checks (Trevor order 2026-11-13).
+    if: ${{ !startsWith(github.head_ref, 'batch/') }}
     name: A47 — materialisation must not write a rubric score (T0-08)
     runs-on: ubuntu-latest
     steps:

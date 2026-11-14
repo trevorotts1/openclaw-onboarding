@@ -1,3 +1,12 @@
+## [v2.1.60] - 2026-11-13 - recurring prices (weekly, monthly, quarterly, yearly) end to end
+
+- A client can now make any offer a repeating price. `scripts/launch_intake.py` reads the cadence word per offer or package (`billing`) and for the main offer from the interview's billing answer, records `recurring_interval` beside `billing_type: recurring`, and the plan summary shows it ("$49.00/month, billed monthly"); a cadence it cannot carry is a named missing fact, never one payment. Extra offers and packages no longer hard-code `one_time`.
+- `scripts/validate_launch_plan.py` takes its billing vocabulary from the shared `billing.py` (it kept a local copy) and checks `recurring_interval` (one of week, month, quarter, year; only on a recurring price; a recurring price states an interval or a schedule). `scripts/launch_plan.py` carries the interval into each package and accepts it as the recurring terms.
+- `scripts/upsell_wrapper.py` derives a recurring upsell's disclosure terms from the record price's interval (a quarter is every 3 months) and fails closed when a sidecar contradicts it; the disclosure sentence no longer reads "per every 3 months".
+- `schema/launch.schema.json` gains `recurring_interval` on the price (byte copy in `shared-utils/signature_launch/domain/` and Skill 71 `references/`).
+- Installments and a trial first stay refused at plan time with "payment plans are not supported in this release".
+- Tests: `scripts/test_recurring_billing.py`. Pinned files changed; the prover pin needs a CI mint.
+
 ## [v2.1.59] - 2026-11-12 - owner approvals reach the owner in chat, by button, or in Command Center
 
 - Every owner approval point (plan, copy, Design Board, wireframes and mockups, paid budget, placeholder run, GHL write, go-live) delivers its review material into the owner chat (copy inline, images or PDF attached) through `shared-utils/owner_approval/owner_approval.py`, and the owner may approve by replying, by Telegram button, or in Command Center. `SKILL.md` and `LAUNCH_MODE.md` say so; the refusal wording in `dispatch_launch.py`, `legacy_downsell_images.py` and `prove_sf_build.py` no longer implies Command Center only. Pinned file change: the prover pin needs a CI mint.

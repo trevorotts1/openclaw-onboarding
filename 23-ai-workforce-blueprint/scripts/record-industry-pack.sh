@@ -50,6 +50,11 @@ SKILL_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 REPO_ROOT="$(cd "$SKILL_DIR/.." && pwd)"
 DETECTOR="${REPO_ROOT}/shared-utils/industry-detector.py"
 
+# One state protocol for this write: the lock, the read and the write are owned
+# by workforce_state so a concurrent writer can never lose this field (BU-36).
+# It also supplies WORKFORCE_PYTHON and the import path for workforce_state.
+source "$SCRIPT_DIR/lib-workforce-state.sh"
+
 # ── Parse args ───────────────────────────────────────────────────────────────
 BLOB_FILE=""
 SLUG_OVERRIDE=""
@@ -121,30 +126,43 @@ case "$SOURCE" in
   *) echo "ERROR: --source must be auto-detected|owner-confirmed|owner-corrected, got: $SOURCE" >&2; exit 1 ;;
 esac
 
-# Build the industryPack object
-INDUSTRY_PACK_JSON=$(python3 - <<PYEOF
+# Build the industryPack object. Every value passes as an ARGUMENT, never pasted
+# into Python source: a slug that carries a quote (o'neil "coaching") must be
+# stored byte-for-byte and must not be able to alter the program (BU-36).
+INDUSTRY_PACK_JSON="$("$WORKFORCE_PYTHON" - "$SLUG" "$CONFIDENCE" "$SOURCE" "$MATCHED_SIGNALS" "$NOW" <<'PYEOF'
 import json
+import sys
+
+slug, confidence, source, matched_signals, now = sys.argv[1:6]
 print(json.dumps({
-    "slug": "${SLUG}",
-    "confidence": float("${CONFIDENCE}"),
-    "source": "${SOURCE}",
-    "matchedSignals": ${MATCHED_SIGNALS},
-    "detectedAt": "${NOW}",
+    "slug": slug,
+    "confidence": float(confidence),
+    "source": source,
+    "matchedSignals": json.loads(matched_signals),
+    "detectedAt": now,
 }))
 PYEOF
-)
+)"
 
 if [ "$DRY_RUN" = true ]; then
   echo "[DRY-RUN] Would write industryPack to $STATE:"
-  echo "$INDUSTRY_PACK_JSON" | python3 -m json.tool
+  echo "$INDUSTRY_PACK_JSON" | "$WORKFORCE_PYTHON" -m json.tool
   exit 0
 fi
 
-# ── Atomic write ─────────────────────────────────────────────────────────────
-TMP="${STATE}.tmp.$$"
-jq --argjson pack "$INDUSTRY_PACK_JSON" \
-   '.industryPack = $pack' \
-   "$STATE" > "$TMP"
-mv -f "$TMP" "$STATE"
+# ── Locked write (BU-36): workforce_state.update ──────────────────────────────
+"$WORKFORCE_PYTHON" - "$STATE" "$INDUSTRY_PACK_JSON" <<'PYWRITE'
+import json
+import sys
+from workforce_state import update
+
+state_path, pack_json = sys.argv[1:3]
+pack = json.loads(pack_json)
+
+def mutate(state):
+    state["industryPack"] = pack
+
+update(state_path, mutate)
+PYWRITE
 
 echo "record-industry-pack: wrote industryPack.slug=${SLUG} source=${SOURCE} confidence=${CONFIDENCE} to $STATE"

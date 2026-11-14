@@ -127,7 +127,7 @@ def _price_phrase(price: dict) -> str:
     if _blank(interval):
         raise ManuscriptError("S79-MANUSCRIPT-FACT-MISSING", "a recurring price names no recurring_interval")
     if kind == "recurring":
-        return f"{total} on a recurring basis (billing interval: {interval})"
+        return f"{total}/{interval.strip()} on a recurring basis (billing interval: {interval})"
     trial = price.get("trial_period")
     if _blank(trial):
         raise ManuscriptError("S79-MANUSCRIPT-FACT-MISSING", "a trial price names no trial_period")

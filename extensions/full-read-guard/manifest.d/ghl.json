@@ -1,0 +1,244 @@
+{
+  "version": 1,
+  "skills": [
+    {
+      "skill": "05-ghl-setup",
+      "depends_on": [
+        "36-ghl-mcp-setup"
+      ]
+    },
+    {
+      "skill": "06-ghl-install-pages",
+      "depends_on": [
+        "03-agent-browser",
+        "05-ghl-setup",
+        "44-convert-and-flow-operator",
+        "62-cinematic-web-funnel-engine"
+      ],
+      "lookup": [
+        {
+          "glob": "references/golden/**",
+          "why": "golden reference captures"
+        },
+        {
+          "glob": "references/PLAYWRIGHT-BUILD-STATUS.json",
+          "why": "build status log"
+        },
+        {
+          "glob": "references/PLAYWRIGHT-COMPLETION-MATRIX.md",
+          "why": "status matrix"
+        },
+        {
+          "glob": "references/PLAYWRIGHT-PROGRESS.md",
+          "why": "progress log"
+        },
+        {
+          "glob": "references/SIXTH-BUILD-ADDITIONS.md",
+          "why": "build status log"
+        },
+        {
+          "glob": "references/SURVEY-BUILD-REMAINDER.md",
+          "why": "build status log"
+        },
+        {
+          "glob": "schedule/**",
+          "why": "schedule data"
+        }
+      ]
+    },
+    {
+      "skill": "29-ghl-convert-and-flow",
+      "depends_on": [
+        "05-ghl-setup",
+        "36-ghl-mcp-setup"
+      ],
+      "lookup": [
+        {
+          "glob": "references/*.md",
+          "why": "per-module GoHighLevel API reference (endpoints, fields); SKILL.md says read the matching reference at query time"
+        }
+      ]
+    },
+    {
+      "skill": "36-ghl-mcp-setup",
+      "depends_on": [
+        "05-ghl-setup",
+        "29-ghl-convert-and-flow",
+        "44-convert-and-flow-operator"
+      ]
+    },
+    {
+      "skill": "37-zhc-closeout",
+      "depends_on": [
+        "23-ai-workforce-blueprint",
+        "74-kie-live-adapter",
+        "32-command-center-setup"
+      ]
+    },
+    {
+      "skill": "38-conversational-ai-system",
+      "depends_on": [
+        "05-ghl-setup",
+        "07-kie-setup",
+        "10-github-setup",
+        "29-ghl-convert-and-flow",
+        "44-convert-and-flow-operator",
+        "46-kie-callback-relay",
+        "66-kie-image",
+        "23-ai-workforce-blueprint"
+      ],
+      "lookup": [
+        {
+          "glob": "references/ghl-api-quick-reference.md",
+          "why": "API reference"
+        },
+        {
+          "glob": "references/ghl-coupons-api.md",
+          "why": "API reference"
+        },
+        {
+          "glob": "references/shopify-graphql-reference.md",
+          "why": "API reference"
+        },
+        {
+          "glob": "references/stripe-coupons-api.md",
+          "why": "API reference"
+        },
+        {
+          "glob": "references/stripe-webhooks-reference.md",
+          "why": "API reference"
+        },
+        {
+          "glob": "references/tag-migration-notes.md",
+          "why": "migration notes"
+        }
+      ]
+    },
+    {
+      "skill": "39-real-estate-playbook",
+      "depends_on": [
+        "38-conversational-ai-system",
+        "40-zhc-public-records-scraper"
+      ],
+      "lookup": [
+        {
+          "glob": "references/state-disclosure-matrix.md",
+          "why": "state-by-state disclosure matrix (data)"
+        },
+        {
+          "glob": "references/property-providers.md",
+          "why": "property data provider list"
+        }
+      ]
+    },
+    {
+      "skill": "40-zhc-public-records-scraper",
+      "depends_on": [
+        "39-real-estate-playbook"
+      ],
+      "lookup": [
+        {
+          "glob": "references/county-platform-map.md",
+          "why": "county platform map (data)"
+        }
+      ]
+    },
+    {
+      "skill": "41-build-with-ai-playbook",
+      "depends_on": [
+        "38-conversational-ai-system",
+        "44-convert-and-flow-operator"
+      ],
+      "lookup": [
+        {
+          "glob": "references/ghl-triggers-catalog.md",
+          "why": "GoHighLevel trigger catalog"
+        },
+        {
+          "glob": "references/ghl-actions-catalog.md",
+          "why": "GoHighLevel action catalog"
+        },
+        {
+          "glob": "references/ghl-conditions-reference.md",
+          "why": "GoHighLevel condition reference"
+        }
+      ]
+    },
+    {
+      "skill": "44-convert-and-flow-operator",
+      "depends_on": [
+        "36-ghl-mcp-setup",
+        "38-conversational-ai-system",
+        "49-signature-funnel",
+        "06-ghl-install-pages",
+        "50-email-engine",
+        "71-blackceo-signature-page"
+      ],
+      "lookup": [
+        {
+          "glob": "platform/**",
+          "why": "platform install overlays (code) (3 files)"
+        },
+        {
+          "glob": "platform/**",
+          "why": "platform install overlays"
+        },
+        {
+          "glob": "references/workflow-build-checklist-template.md",
+          "why": "template"
+        },
+        {
+          "glob": "references/fleet-announcement-template.md",
+          "why": "template"
+        }
+      ]
+    },
+    {
+      "skill": "85-android-sms-system",
+      "lookup": [
+        {
+          "glob": "00-INDEX.md",
+          "why": "documentation index"
+        },
+        {
+          "glob": "articles/**",
+          "why": "myCRMSIM support articles, searched by question"
+        },
+        {
+          "glob": "categories/**",
+          "why": "article categories"
+        },
+        {
+          "glob": "docs/**",
+          "why": "offline documentation set beside SKILL.md"
+        },
+        {
+          "glob": "mycrmsim/**",
+          "why": "offline documentation set"
+        },
+        {
+          "glob": "_manifest.json",
+          "why": "article manifest"
+        },
+        {
+          "glob": "_labels.json",
+          "why": "article labels"
+        }
+      ],
+      "external_lookup_roots": [
+        {
+          "path": "$ASMS_DOCS_DIR",
+          "optional": true
+        },
+        {
+          "path": "{skills}/85-android-sms-system/docs",
+          "optional": true
+        },
+        {
+          "path": "$HOME/Downloads/openclaw-master-files/mycrmsim",
+          "optional": true
+        }
+      ]
+    }
+  ]
+}

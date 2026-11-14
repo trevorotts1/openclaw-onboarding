@@ -54,6 +54,45 @@ _fail() { printf '[provider-smoke] FATAL %s\n' "$*" >&2; }
 _info() { [ "$QUIET" = "0" ] && printf '[provider-smoke] INFO  %s\n' "$*"; }
 _warn() { printf '[provider-smoke] WARN  %s\n' "$*" >&2; }
 
+# _json_verdict MODE — reads a command's output on stdin, prints one verdict line.
+#   MODE=reply (S3): PASS only when the output is a JSON object with no top-level
+#     "error" key and one of reply/text/output/result/content/response is a
+#     non-empty string (or a non-empty list/object).
+#   MODE=plain (S4): PASS when the output parses as JSON (any shape) and, when it
+#     is an object, carries no top-level "error" key.
+# A regex over the raw text cannot tell a real reply from an error string that
+# merely mentions one; the verdict reads the parsed value instead.
+_json_verdict() {
+  python3 -B -c '
+import json, sys
+mode = sys.argv[1] if len(sys.argv) > 1 else "plain"
+raw = sys.stdin.read()
+try:
+    obj = json.loads(raw)
+except Exception:
+    print("FAIL: output is not JSON")
+    raise SystemExit(0)
+if isinstance(obj, dict) and "error" in obj:
+    print("FAIL: top-level error key: " + json.dumps(obj.get("error"))[:300])
+    raise SystemExit(0)
+if mode == "plain":
+    print("PASS")
+    raise SystemExit(0)
+if not isinstance(obj, dict):
+    print("FAIL: not a JSON object")
+    raise SystemExit(0)
+for key in ("reply", "text", "output", "result", "content", "response"):
+    value = obj.get(key)
+    if isinstance(value, str) and value.strip():
+        print("PASS: " + key)
+        raise SystemExit(0)
+    if isinstance(value, (list, dict)) and len(value) > 0:
+        print("PASS: " + key)
+        raise SystemExit(0)
+print("FAIL: none of reply/text/output/result/content/response is non-empty")
+' "$1"
+}
+
 FAILURES=0
 WARNINGS=0
 
@@ -88,13 +127,33 @@ if [ -z "$STATE_FILE" ]; then
   done
 fi
 
+# ─── State writer: the ONE state protocol (lib-workforce-state.sh) ────────────
+# closeoutStatus/closeoutBlockReason are written through workforce_state_set
+# (jq mode holds the lock across read/filter/replace), never a bare jq + mv here.
+_SMOKE_SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+_SMOKE_STATE_LIB="$_SMOKE_SCRIPT_DIR/../23-ai-workforce-blueprint/scripts/lib-workforce-state.sh"
+_SMOKE_STATE_LIB_OK=0
+if [ -f "$_SMOKE_STATE_LIB" ]; then
+  # shellcheck source=/dev/null
+  if . "$_SMOKE_STATE_LIB" 2>/dev/null && declare -F workforce_state_set >/dev/null 2>&1; then
+    _SMOKE_STATE_LIB_OK=1
+  fi
+fi
+
 _state_set_blocked() {
   local reason="$1"
-  if [ -n "$STATE_FILE" ] && [ -f "$STATE_FILE" ] && command -v jq >/dev/null 2>&1; then
-    local _tmp
-    _tmp=$(mktemp)
-    jq ".closeoutStatus = \"blocked-provider-mismatch\" | .closeoutBlockReason = $(printf '%s' "$reason" | jq -Rs '.')" \
-      "$STATE_FILE" > "$_tmp" && mv "$_tmp" "$STATE_FILE" || rm -f "$_tmp"
+  if [ -z "$STATE_FILE" ] || [ ! -f "$STATE_FILE" ]; then
+    _warn "state not written: no build-state file to update (closeoutStatus=blocked-provider-mismatch not set)"
+    return 0
+  fi
+  if [ "$_SMOKE_STATE_LIB_OK" != "1" ]; then
+    _warn "state not written: lib-workforce-state.sh could not be sourced from $_SMOKE_STATE_LIB"
+    return 0
+  fi
+  if ! workforce_state_set "$STATE_FILE" \
+      '.closeoutStatus = "blocked-provider-mismatch" | .closeoutBlockReason = $reason' \
+      --arg reason "$reason" >/dev/null 2>&1; then
+    _warn "state not written: workforce_state_set failed for $STATE_FILE"
   fi
 }
 
@@ -315,21 +374,13 @@ else
     # nothing is sent to any channel. This preserves the live-turn semantics.
     PROBE_OUT=$(openclaw agent --message "ping" --json --timeout 30 2>&1 || true)
   fi
-  PROBE_OK=0
-  # Accept any non-empty reply that isn't a connectivity/auth error. Cover both
-  # the message-send shape ("reply"/"content"/"message"/"response") and the
-  # `openclaw agent --json` shape ("text"/"reply"/"output"/"result").
-  if printf '%s' "$PROBE_OUT" | grep -qiE '"reply"|"content"|"message"|"response"|"text"|"output"|"result"'; then
-    PROBE_OK=1
-  fi
-  # Explicit failure signals (genuine provider/gateway failure → keep fail-loud).
-  if printf '%s' "$PROBE_OUT" | grep -qiE '4[0-9]{2}|ECONNREFUSED|402|model.*error|authentication.*fail|unauthorized|Unknown channel'; then
-    PROBE_OK=0
-  fi
-  if [ "$PROBE_OK" = "1" ]; then
-    _pass "S3: live agent probe returned a real reply"
+  # Verdict comes from the parsed JSON — never a pattern over the raw text, which
+  # cannot tell a real reply from an error message that merely mentions one.
+  PROBE_VERDICT=$(printf '%s' "$PROBE_OUT" | _json_verdict reply)
+  if [[ "$PROBE_VERDICT" == PASS* ]]; then
+    _pass "S3: live agent probe returned a real reply (${PROBE_VERDICT})"
   else
-    _fail "S3: live agent probe FAILED — gateway returned no valid reply. Output: $(printf '%s' "$PROBE_OUT" | head -3 | tr '\n' ' ')"
+    _fail "S3: live agent probe FAILED — ${PROBE_VERDICT#FAIL: }. Output: $(printf '%s' "$PROBE_OUT" | head -3 | tr '\n' ' ')"
     FAILURES=$((FAILURES + 1))
     _state_set_blocked "S3: live agent probe failed (no valid reply from gateway)"
     _operator_alert "🚨 PROVIDER SMOKE FAIL on $(hostname): live agent probe returned no valid reply. Check gateway + provider credentials before closeout."
@@ -348,14 +399,16 @@ elif ! command -v openclaw >/dev/null 2>&1; then
 elif [ "$MEMORY_ENABLED" != "true" ]; then
   _info "S4: memorySearch.enabled is not true — skipping memory probe (memory not configured)"
 else
-  MEM_OUT=$(openclaw memory search --query "smoke test probe" --limit 1 --json 2>&1 || true)
-  if printf '%s' "$MEM_OUT" | grep -qiE 'multimodal.*adapter.*throw|TypeError|Error.*embed|embedding.*fail|memory.*error'; then
-    _fail "S4: memory search threw an error — likely multimodal adapter throw or embedding provider failure. Output: $(printf '%s' "$MEM_OUT" | head -3 | tr '\n' ' ')"
-    FAILURES=$((FAILURES + 1))
-    _state_set_blocked "S4: memory search threw — $(printf '%s' "$MEM_OUT" | head -1)"
-    _operator_alert "🚨 MEMORY SEARCH THREW on $(hostname): $(printf '%s' "$MEM_OUT" | head -2 | tr '\n' ' '). Likely multimodal adapter / text-only provider mismatch."
+  MEM_OUT=$(openclaw memory search --query "smoke test probe" --limit 1 --json 2>&1)
+  MEM_RC=$?
+  MEM_VERDICT=$(printf '%s' "$MEM_OUT" | _json_verdict plain)
+  if [ "$MEM_RC" -eq 0 ] && [[ "$MEM_VERDICT" == PASS* ]]; then
+    _pass "S4: memory search probe completed without throwing (rc=0, JSON)"
   else
-    _pass "S4: memory search probe completed without throwing"
+    _fail "S4: memory search probe FAILED — rc=$MEM_RC, ${MEM_VERDICT#FAIL: }. Likely multimodal adapter throw or embedding provider failure. Output: $(printf '%s' "$MEM_OUT" | head -3 | tr '\n' ' ')"
+    FAILURES=$((FAILURES + 1))
+    _state_set_blocked "S4: memory search failed — rc=$MEM_RC verdict=${MEM_VERDICT}"
+    _operator_alert "🚨 MEMORY SEARCH THREW on $(hostname): $(printf '%s' "$MEM_OUT" | head -2 | tr '\n' ' '). Likely multimodal adapter / text-only provider mismatch."
   fi
 fi
 

@@ -22,8 +22,11 @@
 //     -> { ok, updated_at }
 //   getQuestions()                                -> GET  /questions.json
 //     -> the intake_card studio-json export ({ format, version, questions… })
-//   lockIn({ title, replies, upload_ids })        -> POST /api/studio/orders
+//   lockIn({ title, replies, reply_ids, upload_ids, order_id })
+//                                                 -> POST /api/studio/orders
 //     -> { ok, order, option_line }
+//   cancelOrder(orderId)                          -> POST /api/studio/orders/<id>/state
+//     -> { ok, order }                            (event "cancel")
 //   listApprovals(orderId)                        -> GET  /api/studio/orders/<id>/approvals
 //     -> { ok, items }
 //   answerApproval(orderId, stage, version, value)
@@ -33,6 +36,8 @@
 //     -> { ok, upload_id, upload_url, … }          (body passed through unchanged)
 //   getDelivery(orderId)                          -> GET  /api/studio/orders/<id>
 //     -> order.delivery (null until the run delivers)
+//   getOrder(orderId)                             -> GET  /api/studio/orders/<id>
+//     -> { order, stale_page_line }   (S75-073 — the project page re-reads this)
 //   listInbox()      -> { messages: [] }            (not built yet — SPEC.md §1)
 //   postInbox()      -> rejects STUDIO_INBOX_UNAVAILABLE (not built yet — SPEC.md §1)
 //
@@ -122,10 +127,22 @@ export async function fetchApprovalMedia(url) {
   };
 }
 
+/**
+ * S75-071 — one tap, one order. While a lock-in is in flight, a second tap
+ * joins the SAME request only when it names the same order id; a tap naming
+ * a DIFFERENT order id sends its own request. The next tap after a settle
+ * starts fresh. Without the id check, a concurrent tap with different answers
+ * would silently resolve with the first tap's order.
+ */
+let lockInInFlight = null;
+let lockInOrderId = null;
+
 const service = {
   getSession: () => call("GET", "/api/studio/session"),
 
-  saveDraft: ({ replies }) => call("PUT", "/api/studio/draft", { replies }),
+  // U-Z08 — the photos the client added are part of the draft: a page closed
+  // between an upload and Lock it in comes back with those ids still on it.
+  saveDraft: ({ replies, upload_ids }) => call("PUT", "/api/studio/draft", { replies, upload_ids }),
 
   // Static asset served with the page; the key rides along for uniformity.
   getQuestions: async () => {
@@ -139,8 +156,26 @@ const service = {
     return data;
   },
 
-  lockIn: ({ title, replies, upload_ids }) =>
-    call("POST", "/api/studio/orders", { title, replies, upload_ids }),
+  // U-Z11 — reply_ids travels with the answers. studio.js builds one id per
+  // answer, and the service reads the brief by id instead of by position the
+  // moment this key arrives. Dropping it here silently returns the service to
+  // the positional read (S75-006), so the check pins it on the wire.
+  lockIn: ({ title, replies, upload_ids, order_id, reply_ids }) => {
+    if (lockInInFlight && lockInOrderId !== order_id) {
+      return call("POST", "/api/studio/orders", { title, replies, reply_ids, upload_ids, order_id });
+    }
+    if (!lockInInFlight) {
+      lockInOrderId = order_id;
+      lockInInFlight = call("POST", "/api/studio/orders", { title, replies, reply_ids, upload_ids, order_id })
+        .finally(() => { lockInInFlight = null; lockInOrderId = null; });
+    }
+    return lockInInFlight;
+  },
+
+  // U-Z11 — "Continue" on a needs_you order posts a new order and closes the
+  // old one here. The service's state route takes `cancel` from a link.
+  cancelOrder: (orderId) =>
+    call("POST", `/api/studio/orders/${encodeURIComponent(orderId)}/state`, { event: "cancel" }),
 
   listApprovals: (orderId) =>
     call("GET", `/api/studio/orders/${encodeURIComponent(orderId)}/approvals`),
@@ -159,6 +194,17 @@ const service = {
   getDelivery: async (orderId) => {
     const data = await call("GET", `/api/studio/orders/${encodeURIComponent(orderId)}`);
     return (data.order && data.order.delivery) || null;
+  },
+
+  // S75-073 — the project page's own read: the order as it stands now, plus
+  // the service's line about a page that has fallen behind. Never throws for a
+  // missing line; the page shows nothing rather than inventing a warning.
+  getOrder: async (orderId) => {
+    const data = await call("GET", `/api/studio/orders/${encodeURIComponent(orderId)}`);
+    return {
+      order: data.order || null,
+      stale_page_line: typeof data.stale_page_line === "string" ? data.stale_page_line : "",
+    };
   },
 
   listInbox: async () => ({ messages: [] }),

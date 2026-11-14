@@ -155,6 +155,10 @@ F_CC_COMPAT="$REPO_ROOT/cc-compat.json"
 # their OWN independent skill versions — NOT the repo version — so they are
 # deliberately EXCLUDED here; rolling them to the repo version would corrupt them.
 F_23_SKILL_MD="$REPO_ROOT/23-ai-workforce-blueprint/SKILL.md"
+# Skill 51 (51-signature-presentation) has its OWN version line and its own JSON
+# record; it is NOT a repo marker (BUMP_CHECKED_MARKERS is unchanged). Step 3b
+# keeps skill.json equal to skill-version.txt on every bump.
+F_S51_DIR="$REPO_ROOT/51-signature-presentation"
 
 # ─── Read current values ─────────────────────────────────────────────────────
 read_current() {
@@ -165,6 +169,17 @@ read_current() {
     V_INDEX=$(python3 -c "import json; print(json.load(open('$F_INDEX_JSON')).get('version','MISSING'))" 2>/dev/null || echo "MISSING")
   else
     V_INDEX="MISSING"
+  fi
+  # Skill 51 carries its own version, independent of the repo /version, so it is
+  # NOT one of BUMP_CHECKED_MARKERS. Read the pair so --check reports it.
+  V_S51="MISSING"; V_S51_JSON="MISSING"
+  if [ -f "$F_S51_DIR/skill-version.txt" ]; then
+    V_S51=$(head -1 "$F_S51_DIR/skill-version.txt" 2>/dev/null | tr -d '[:space:]' || echo "MISSING")
+    if [ -z "$V_S51" ]; then V_S51="MISSING"; fi
+  fi
+  if [ -f "$F_S51_DIR/skill.json" ]; then
+    V_S51_JSON=$(python3 -c "import json; print(json.load(open('$F_S51_DIR/skill.json')).get('version','MISSING'))" 2>/dev/null || echo "MISSING")
+    if [ -z "$V_S51_JSON" ]; then V_S51_JSON="MISSING"; fi
   fi
   # New trackers (v10.14.34) — guards must not abort under set -e
   if [ -f "$F_README" ]; then
@@ -347,6 +362,8 @@ print_state() {
   printf "  %-50s %s\n" "DIRECT-TO-AGENT-UPDATE-MESSAGE.md (**vX.Y.Z**)" "$V_DIRECT"
   printf "  %-50s %s\n" "cc-compat.json onboardingVersion" "$V_CC_COMPAT"
   printf "  %-50s %s\n" "23-ai-workforce-blueprint/SKILL.md [version:]" "$V_23_SKILL_MD"
+  printf "  %-50s %s\n" "51-signature-presentation/skill-version.txt" "$V_S51"
+  printf "  %-50s %s\n" "51-signature-presentation/skill.json [version]" "$V_S51_JSON"
   skill38_doc_selfcount_advisory
 }
 
@@ -580,6 +597,35 @@ PYEOF
 
 # 3. /23-ai-workforce-blueprint/skill-version.txt (no v prefix)
 echo "$TARGET_NOV" > "$F_SKILL_VERSION"
+
+# 3b. Skill 51 (51-signature-presentation) — keep skill.json's "version" equal to
+#     the skill's OWN skill-version.txt (no leading v). Skill 51 bumps on its own
+#     line, not with /version, so this reads THAT file and never TARGET. Only the
+#     first "version" value is rewritten and every other byte of skill.json is
+#     kept, so no other skill's path is touched by this step (scripts/bump-version.sh
+#     is shared with the Skill 75 batch — see 02-SWARM-PLAN.md section 7).
+#     .claude-plugin/plugin.json is deliberately NOT written: the plugin carries
+#     its own version line.
+if [ -f "$F_S51_DIR/skill-version.txt" ] && [ -f "$F_S51_DIR/skill.json" ]; then
+  python3 - "$F_S51_DIR/skill-version.txt" "$F_S51_DIR/skill.json" <<'PYEOF'
+import re, sys
+vf, sj = sys.argv[1], sys.argv[2]
+target = (open(vf, encoding='utf-8').readline().strip() or '').lstrip('vV')
+if not re.fullmatch(r'\d+\.\d+\.\d+', target):
+    print(f"WARN: {vf} is not X.Y.Z (got {target!r}) — skill.json left untouched", file=sys.stderr)
+    sys.exit(0)
+with open(sj, encoding='utf-8', newline='') as fh:
+    src = fh.read()
+new, n = re.subn(r'("version"\s*:\s*")[^"]*(")',
+                 lambda m: m.group(1) + target + m.group(2), src, count=1)
+if n == 0:
+    print(f"WARN: no \"version\" field in {sj}", file=sys.stderr)
+elif new != src:
+    with open(sj, 'w', encoding='utf-8', newline='') as fh:
+        fh.write(new)
+    print(f"Skill 51 skill.json version -> {target}")
+PYEOF
+fi
 
 # 4. /_index.json (JSON-safe update)
 if [ -f "$F_INDEX_JSON" ]; then

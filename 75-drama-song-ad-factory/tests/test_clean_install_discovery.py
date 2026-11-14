@@ -231,12 +231,15 @@ def factory_checks(root: Path, tmp: Path):
           and env.get("schema_version") == ENVELOPE)
     check("factory: intake CLI envelope", ok, f"rc={rc} outcome={got} {tail}")
 
-    # preflight without approval must stop fail-closed (names only, no exec)
+    # preflight without approval must stop fail-closed (names only, no exec).
+    # Live behaviour: the auth object only RESTRICTS (preflight.py:799-813), so
+    # an absent one cannot refuse; the first refusal is the choice-card gate
+    # (preflight.py:816-821) -> waiting / CARD_UNANSWERED, exit 2.
     rc, env, tail = factory_cli(factory, ["preflight", "--root", str(tmp),
                                           "--run-id", "w302u7"])
-    ok = (rc == 4 and isinstance(env, dict)
-          and env.get("outcome") == "rejected"
-          and env.get("reason_code") == "approval-missing")
+    ok = (rc == 2 and isinstance(env, dict)
+          and env.get("outcome") == "waiting"
+          and env.get("reason_code") == "CARD_UNANSWERED")
     check("factory: preflight CLI rejects without approval",
           ok, f"rc={rc} {tail}")
 

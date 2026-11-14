@@ -71,17 +71,15 @@ and it will pick the right one, or you can ask for a specialist by name.
 | **Client Relationship Manager** | Primary relationship steward for a defined portfolio of healthy. |
 | **Retention Specialist** | Your singular mandate is to prevent preventable churn. |
 
-### What each specialist is for, with an example request
+### What each specialist is for
 
 **Client Relationship Manager**
 
 - *What it is for:* Primary relationship steward for a defined portfolio of healthy.
-- *Example request:* "Have the Client Relationship Manager take this on: Primary relationship steward for a defined portfolio of healthy."
 
 **Retention Specialist**
 
 - *What it is for:* Your singular mandate is to prevent preventable churn.
-- *Example request:* "Have the Retention Specialist take this on: Your singular mandate is to prevent preventable churn."
 
 
 ---

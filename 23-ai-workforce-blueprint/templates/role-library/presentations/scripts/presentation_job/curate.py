@@ -56,6 +56,13 @@ except ImportError:
         "deliverable whitelist). Cannot resolve the canonical deliverable whitelist."
     )
 
+# PD-303 / D-32: the ONE key -> declared run-dir path map. Curation resolves a
+# key from the path its producing step declares, never from a whole-tree guess.
+try:
+    from presentation_job.deliverable_paths import CANONICAL_PATHS
+except ImportError:  # pragma: no cover — mid-fleet-roll box safety
+    CANONICAL_PATHS = None
+
 # Derived from the SINGLE SOURCE OF TRUTH (DELIVERABLE_AUDIT_SPEC) — never edit by hand.
 DESTINATION_FILENAMES: Dict[str, str] = {
     s["key"]: s["standardized_dest"] for s in DELIVERABLE_AUDIT_SPEC
@@ -64,6 +71,9 @@ DESTINATION_FILENAMES: Dict[str, str] = {
 # Subdirectories within the run tree to search for deliverable files, in priority order.
 SEARCH_SUBDIRS = [
     "working/deliverables",
+    # PD-303 item (3): the audio, the -FINAL deck pair and the webinar video are
+    # STAGED here by their producing phases (deliverable_paths.CANONICAL_PATHS).
+    "working/delivery",
     "working",
     "renders",
     "working/presenter-speech",
@@ -192,6 +202,43 @@ def _name_matches_type(filename: str, key: str) -> bool:
     return suffix == expected.lower()
 
 
+def _canonical_source(run_dir: str | Path, key: str, deck_slug: str) -> Optional[str]:
+    """Resolve one deliverable key from its DECLARED run-dir path (PD-303/D-32).
+
+    The path comes from ``deliverable_paths.CANONICAL_PATHS`` — the single place a
+    key maps to the path its producing phase writes — with ``{deck_slug}``
+    expanded. A file present at that path is authoritative even when a larger file
+    with the same suffix exists elsewhere in the tree, which is the defect D-32
+    closes (the workbook delivered as the deck PDF, the webinar audio as the
+    presenter audio). Returns None when the key has no canon or the declared file
+    is absent.
+    """
+    rel = (CANONICAL_PATHS or {}).get(key)
+    if not rel:
+        return None
+    declared = Path(run_dir) / rel.replace("{deck_slug}", deck_slug)
+    try:
+        if declared.is_file() and not declared.is_symlink():
+            return str(declared.resolve())
+    except OSError:
+        pass
+    return None
+
+
+def _sha256_file(path: str | Path) -> Optional[str]:
+    """SHA-256 of a file, streamed. Returns None when the file cannot be read."""
+    import hashlib
+
+    try:
+        digest = hashlib.sha256()
+        with open(path, "rb") as fh:
+            for chunk in iter(lambda: fh.read(1024 * 1024), b""):
+                digest.update(chunk)
+        return digest.hexdigest()
+    except OSError:
+        return None
+
+
 def copy_to_flat(source_path: str, dest_dir: str, dest_name: str) -> Tuple[str, int]:
     """Copy (or hardlink) the source file into dest_dir with the given filename.
 
@@ -277,7 +324,8 @@ def _read_owner_skip_approvals(run_dir: Path) -> set:
     return approved
 
 
-def curate(run_dir: str | Path, deck_slug: str = "deck", force: bool = False) -> dict:
+def curate(run_dir: str | Path, deck_slug: Optional[str] = None, force: bool = False,
+           fuzzy: bool = False) -> dict:
     """Assemble the flat deliverables/ folder at the run root.
 
     Called from the engine's close() path after all 6 gates pass and after
@@ -309,6 +357,11 @@ def curate(run_dir: str | Path, deck_slug: str = "deck", force: bool = False) ->
     run_dir = Path(run_dir)
     deliverables_dir = run_dir / "deliverables"
     deliverables_dir.mkdir(parents=True, exist_ok=True)
+
+    # PD-303 item (1): when the caller names no deck, resolve the slug from the
+    # run's own intake (the engine's close() path calls curate(self.run_dir)).
+    if deck_slug is None:
+        deck_slug = _resolve_deck_slug(run_dir)
 
     # Idempotency guard (FIX-6 R2): if a prior curation run already produced the
     # manifest AND every standardized destination file exists in the flat folder,
@@ -349,13 +402,14 @@ def curate(run_dir: str | Path, deck_slug: str = "deck", force: bool = False) ->
         # The destination name in the flat folder.
         dest_name = _resolve_destination_name(key)
 
-        # Try finding the file: first by the standardized destination name,
-        # then by the deck-slug-templated source name, then by any filename
-        # that fuzzy-matches the key's expected suffix pattern.
-        source_path = None
+        # PD-303 item (1)/D-32: the DECLARED path wins. Only when nothing is at
+        # the declared path do the legacy exact-name passes run; the whole-tree
+        # fuzzy locate is opt-in (--fuzzy) and never runs by default.
+        source_path = _canonical_source(run_dir, key, deck_slug)
 
         # Search pass 1: standardized destination name.
-        source_path = locate_deliverable(run_dir, key, dest_name)
+        if source_path is None:
+            source_path = locate_deliverable(run_dir, key, dest_name)
 
         # Search pass 2: deck-slug-templated source filename.
         if source_path is None and deck_slug != "deck":
@@ -370,7 +424,8 @@ def curate(run_dir: str | Path, deck_slug: str = "deck", force: bool = False) ->
                 source_path = locate_deliverable(run_dir, key, src_name)
 
         # Search pass 4: fuzzy search by suffix pattern in the whole tree.
-        if source_path is None:
+        # PD-303 item (2): retained for the command-line --fuzzy flag ONLY.
+        if source_path is None and fuzzy:
             source_path = _fuzzy_locate(run_dir, key)
 
         if source_path is None:
@@ -473,6 +528,13 @@ def curate(run_dir: str | Path, deck_slug: str = "deck", force: bool = False) ->
             })
         except OSError:
             bundle_src_path = None
+
+    # PD-303 item (4): record the source hash of every file in the manifest, so a
+    # later reader can prove the delivered bytes are the bytes that were curated.
+    for entry in curated:
+        hash_target = entry.get("source") or entry.get("dest")
+        if hash_target:
+            entry["source_sha256"] = _sha256_file(hash_target)
 
     # Write curation manifest into working/checkpoints/ — NOT into the flat
     # deliverables/ folder. The flat folder must contain ONLY client-facing
@@ -667,6 +729,9 @@ def main(argv: Optional[List[str]] = None) -> int:
                          "(idempotency guard override)")
     ap.add_argument("--json", action="store_true",
                     help="emit JSON result")
+    ap.add_argument("--fuzzy", action="store_true",
+                    help="allow the legacy whole-tree fuzzy locate when nothing is "
+                         "at a key's declared path (default off — PD-303/D-32)")
     args = ap.parse_args(argv)
 
     run_dir = args.run_dir.expanduser().resolve()
@@ -699,7 +764,7 @@ def main(argv: Optional[List[str]] = None) -> int:
         return 0 if is_clean else 1
 
     try:
-        result = curate(run_dir, deck_slug=deck_slug, force=args.force)
+        result = curate(run_dir, deck_slug=deck_slug, force=args.force, fuzzy=args.fuzzy)
     except CurateAlreadyRan as exc:
         if args.json:
             print(json.dumps({"ok": False, "error": str(exc)}, indent=2))

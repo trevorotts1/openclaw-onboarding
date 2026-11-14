@@ -453,7 +453,7 @@ def main():
         check("segments outcome", doc.get("outcome"), "ok")
         check("six segment jobs", len(jobs), 6)
         check("command is the first segment job", d.get("command"),
-              ROWS["agnes-video-segment"]["command"].replace("<segment>", "1"))
+              ROWS["agnes-video-segment"]["command"].replace("{SEGMENT}", "1"))
         check("every job is the Agnes video door",
               all("agnes_dispatch.py video" in j["command"] for j in jobs), True)
         check("every job is a fixed 10 s clip",
@@ -462,7 +462,7 @@ def main():
               all("--poll-s 15" in j["command"] for j in jobs), True)
         check("segment numbers substituted",
               [j["segment"] for j in jobs], [1, 2, 3, 4, 5, 6])
-        check("no placeholder left", any("<segment>" in j["command"]
+        check("no placeholder left", any("{SEGMENT}" in j["command"]
                                          for j in jobs), False)
         check("two in flight", ag.get("in_flight_max"), 2)
         check("background job", ag.get("background"), True)

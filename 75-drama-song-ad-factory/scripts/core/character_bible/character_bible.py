@@ -987,7 +987,7 @@ def _produce_ensemble(run_dir, item, out, doc):
         slug_dir = os.path.join(img_dir, slug or "character")
         os.makedirs(slug_dir, exist_ok=True)
         for view, src in imgs.items():
-            shutil.copy2(src, os.path.join(slug_dir, view + os.path.splitext(src)[1].lower() or ".png"))
+            shutil.copy2(src, os.path.join(slug_dir, view + (os.path.splitext(src)[1].lower() or ".png")))
     shutil.rmtree(os.path.join(out, ".ensemble-pdfs"), ignore_errors=True)
     return RI_stage(item, out)
 
@@ -1179,7 +1179,7 @@ def write_ensemble_delivery(delivery_dir, chapters, images=None):
         os.makedirs(slug_dir, exist_ok=True)
         for view in IMAGE_VIEWS:
             src = imgs[view]
-            shutil.copy2(src, os.path.join(slug_dir, view + os.path.splitext(src)[1].lower() or ".png"))
+            shutil.copy2(src, os.path.join(slug_dir, view + (os.path.splitext(src)[1].lower() or ".png")))
     return os.path.join(delivery_dir, DELIVERY_PDF_NAME)
 
 

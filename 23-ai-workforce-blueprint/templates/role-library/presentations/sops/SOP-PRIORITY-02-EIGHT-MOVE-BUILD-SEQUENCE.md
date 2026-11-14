@@ -58,7 +58,7 @@ The Attention Content Strategist records the eight-move map into `working/copy/p
 
 ## 6. FOR AGENT W3 -- ENFORCEMENT CODES THIS SOP DECLARES
 
-Register all four in lockstep (manifest v17->18 + ruleset Section 5 + SOP-SLIDE-00 mirror + qc-specialist wiring + test_preflight fixtures), per the §7.4 frozen spec:
+Register all four in lockstep (ruleset Section 5 + SOP-SLIDE-00 mirror + qc-specialist wiring + test_preflight fixtures), per the §7.4 frozen spec:
 
 - **AF-NO-PRIORITY-STACK** (qc_check, COPY-QC 4.2) -- `intelligence_engines_check.check_copy`: PRIORITY_STACK_NAMED beat before first ladder beat. (Move 1.)
 - **AF-NO-RERANK** (qc_check, COPY-QC 4.2) -- `intelligence_engines_check.check_copy`: explicit re-rank/decision-demand beat after PRICE. (Move 7.)

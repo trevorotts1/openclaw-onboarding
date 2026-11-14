@@ -240,10 +240,10 @@ async function proveIsolation(results) {
 
 function proveRetention(results) {
   const tenYears = T0 + 3650 * DAY_MS;
-  const v = retentionVerdict('push_subscription', { createdAtMs: T0, eventAtMs: T0, nowMs: tenYears });
+  const v = retentionVerdict('push_subscription', { created_at: T0, delivered_at: T0, nowMs: tenYears });
   const sweep = dueForDeletion([
     { kind: 'push_subscription', path: 'push:c-x/one' },
-    { kind: 'status_record', path: 'clients/c-x/status.json', event_at_ms: T0 },
+    { kind: 'status_record', path: 'clients/c-x/status.json', delivered_at: T0 },
   ], tenYears);
   const rows = [
     ['push_subscription is a known retention kind', Boolean(RETENTION_RULES.push_subscription)],

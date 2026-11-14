@@ -45,14 +45,27 @@ import canonical_render_guard as guard  # noqa: E402
 import qc_aggregate  # noqa: E402
 
 
-def _stub_cc_oracle(monkeypatch, msg_id: str = "msg-777") -> None:
+def _stub_cc_oracle(monkeypatch, msg_id: str = "msg-777",
+                    text: str | None = "approve skip P4-COPY") -> None:
     """Stub the Command Center owner-message oracle so a record carrying
     owner_msg_id=msg_id RESOLVES (the positive control). sys.modules stub works
-    for both pytest and the standalone runner."""
+    for both pytest and the standalone runner.
+
+    PD-305: an id alone is never proof — the oracle must also return the owner
+    message TEXT that names the gate. text=None leaves the ids-only shape the
+    contract now REFUSES (the flip rows assert that refusal)."""
     stub = types.ModuleType("cc_board")
     stub.owner_message_ids_match = lambda run_dir, _x, env=None: frozenset({msg_id})
     stub.list_owner_message_ids = lambda task_id, env=None: frozenset({msg_id})
     monkeypatch.setitem(sys.modules, "cc_board", stub)
+    if text is not None:
+        from presentation_job import approvals as _approvals
+        monkeypatch.setattr(
+            _approvals, "BOARD_TEXT_RESOLVER",
+            lambda mid, _run_dir=None: (
+                {"msg_id": mid, "chat_id": "owner-chat-fixture", "text": text,
+                 "received_at": nf.VALID_TS} if mid == msg_id else None),
+            raising=False)
 
 
 def _capture_stderr(fn, *a, **k):
@@ -82,12 +95,25 @@ class TestForgedApproval:
             rsd.load_skip_approvals(rd)
 
     def test_verified_owner_msg_id_control_accepted(self, monkeypatch):
-        """Positive control: same instrument, verified owner_msg_id -> ACCEPTED."""
+        """Positive control: same instrument, verified owner_msg_id PLUS the
+        owner message text naming the gate -> ACCEPTED (PD-305: the text, not
+        the id alone, is what proves the approval)."""
         _stub_cc_oracle(monkeypatch)
         rd = nf.fixture_forged_approval(with_owner_msg_id=True,
                                         owner_msg_id="msg-777")
         approvals = rsd.load_skip_approvals(rd)
         assert approvals.get("P4-COPY", {}).get("phase_id") == "P4-COPY"
+
+    def test_ids_only_oracle_without_gate_text_is_refused(self, monkeypatch):
+        """FLIP (PD-305): the same verified owner_msg_id with NO owner message
+        text — the old ids-only acceptance — is now REFUSED. An id proves a
+        message exists; only its text proves what the owner approved."""
+        _stub_cc_oracle(monkeypatch, text=None)  # oracle returns ids only
+        rd = nf.fixture_forged_approval(with_owner_msg_id=True,
+                                        owner_msg_id="msg-777",
+                                        owner_msg_text=None)
+        with pytest.raises(rsd.ForgedApprovalError, match="AF-FORGED-APPROVAL"):
+            rsd.load_skip_approvals(rd)
 
     def test_build_deck_preconditions_refuse_forged_record(self):
         """build_deck.check_phase_preconditions: the msg-id-less record prints
@@ -123,7 +149,7 @@ class TestForgedApproval:
         (tmp_path / "working" / "checkpoints").mkdir(parents=True)
         (tmp_path / "working" / "checkpoints" / "phase_skip_approvals.json").write_text(
             json.dumps({"approvals": [rec]}), encoding="utf-8")
-        _stub_cc_oracle(monkeypatch)  # oracle would accept the id; the marker must not
+        _stub_cc_oracle(monkeypatch)  # oracle would accept the id AND its text; the marker must not
         approvals = rsd.load_skip_approvals(tmp_path)
         assert approvals == {}
 
@@ -283,9 +309,12 @@ class TestStylisedTypeOcrWaiver:
         """The ruling-9.11(b) path: with a well-formed, ORACLE-VERIFIED
         AF-OCR-READBACK owner skip in process_manifest.json the SAME run
         PASSES by design. The waiver token carries an owner_msg_id (the
-        Fix-32-authentic shape); the stubbed cc_board oracle proves the id
-        resolves to a real owner-authored message."""
-        _stub_cc_oracle(monkeypatch, msg_id="msg-ocr-waiver-001")
+        Fix-32-authentic shape) and the run stages the owner message text
+        naming the gate (PD-305 — never an ids-only oracle); the stubbed
+        cc_board oracle proves the id resolves, and the message text proves
+        WHAT the owner approved."""
+        _stub_cc_oracle(monkeypatch, msg_id="msg-ocr-waiver-001",
+                        text="approve AF-OCR-READBACK")
         rd = nf.fixture_stylised_type_run_dir(
             waiver=True, owner_msg_id="msg-ocr-waiver-001")
         out, err = _capture_stderr(bd.check_ocr_readback, rd)

@@ -10,6 +10,12 @@ standing, (c) storage, (d) memory pressure.
   fleet_preflight.py --phase checks                        (b, c, d)
   fleet_preflight.py --phase early                         (c, d; the roll runner, before its snapshot)
 
+SCOPE (BFX-010): provider-billing gates (b) only run for providers the run can touch.
+  --scope repo-only | FLEET_PREFLIGHT_SCOPE=repo-only   no provider gate at all (repo-only update)
+  --only "66,63"    | FLEET_PREFLIGHT_ONLY="66,63"      only the providers those skills use (PROVIDER_SKILLS)
+Storage and memory (c, d) and the account standing gate (a) are never skipped by scope.
+FLEET_PREFLIGHT_NO_NOTIFY=1 is the same as --no-notify (no client note).
+
 Exit: 0 = proceed, 10 = PAUSED-PREFLIGHT (reasons on stdout, status in
 <root>/fleet-preflight/status.json), 2 = bad arguments. Any other internal error
 also exits 0 (fail open: a broken check never freezes a box; same stance as the
@@ -86,6 +92,15 @@ PROVIDERS = {  # key -> name a client sees
 # ONE read point per provider for results produced by other systems. Each entry
 # is read from the single standing file (see read_external_provider_standing).
 EXTERNAL_STANDING_KEYS = {p: p for p in PROVIDERS}
+# Skill number prefix -> providers whose billing standing that skill's install or QC can touch.
+# A skill not listed is provider-unrelated: an --only run of it skips every provider gate.
+PROVIDER_SKILLS = {
+    "kie": {"07", "28", "46", "47", "48", "66", "67", "68", "72", "74", "75"},
+    "openrouter": {"12"},
+    "gemini": {"31"},
+    "agnes": {"63", "64"},
+    "ollama": set(),   # skill 76 is a LOCAL embedder; nothing here uses Ollama Cloud billing
+}
 # Providers that have a check in this repo: embedding_health's smoke embeds.
 REPO_SMOKE = {"gemini": "gemini", "openrouter": "openrouter"}
 _AUTH_BILLING = re.compile(r"\b(401|402|403|429)\b|quota|billing|credit|insufficient|depleted|exhausted|"
@@ -176,9 +191,22 @@ def _repo_smoke(provider: str, root: Path) -> tuple[str, str] | None:
     return ("fail" if _AUTH_BILLING.search(detail) else "warn"), detail
 
 
-def check_providers(root: Path) -> dict:
+def providers_in_scope(scope: str = "", only: str = "") -> set:
+    """The providers this run may be paused for. repo-only = none; --only = those its skills use."""
+    if (scope or "").strip().lower() == "repo-only":
+        return set()
+    wanted = {s.strip().split("-")[0] for s in (only or "").split(",") if s.strip()}
+    if not wanted:
+        return set(PROVIDERS)
+    return {p for p, skills in PROVIDER_SKILLS.items() if skills & wanted}
+
+
+def check_providers(root: Path, wanted: set | None = None) -> dict:
     out = {}
     for p in PROVIDERS:
+        if wanted is not None and p not in wanted:
+            out[p] = {"status": "skipped", "source": "scope", "detail": "not used by this run"}
+            continue
         repo = _repo_smoke(p, root) if p in REPO_SMOKE else None
         if repo and repo[0] != "warn":
             out[p] = {"status": repo[0], "source": "repo-smoke", "detail": repo[1]}
@@ -361,7 +389,10 @@ def send_note(root: Path, issue_key: str, text: str, now: datetime | None = None
 
 
 # --- orchestration -----------------------------------------------------------
-def run(phase: str, root: Path, standing: str = "unknown", notify: bool = True, run_id: str = "") -> dict:
+def run(phase: str, root: Path, standing: str = "unknown", notify: bool = True, run_id: str = "",
+        scope: str = "", only: str = "") -> dict:
+    if os.environ.get("FLEET_PREFLIGHT_NO_NOTIFY") == "1":
+        notify = False
     now = now_utc()
     grace = grace_active(now)
     run_id = run_id or os.environ.get("FLEET_PREFLIGHT_RUN_ID") or str(os.getpid())
@@ -378,7 +409,7 @@ def run(phase: str, root: Path, standing: str = "unknown", notify: bool = True, 
             if not grace:
                 pauses.append("account standing")
     if phase == "checks":
-        checks["providers"] = check_providers(root)
+        checks["providers"] = check_providers(root, providers_in_scope(scope, only))
         for p, r in checks["providers"].items():
             if r["status"] == "fail":
                 r["enforced"] = not grace
@@ -411,10 +442,12 @@ def main(argv=None) -> int:
     ap.add_argument("--standing", choices=("allowed", "blocked", "unknown"), default="unknown")
     ap.add_argument("--root", default="")
     ap.add_argument("--no-notify", action="store_true")
+    ap.add_argument("--scope", default=os.environ.get("FLEET_PREFLIGHT_SCOPE", ""), choices=("", "repo-only"))
+    ap.add_argument("--only", default=os.environ.get("FLEET_PREFLIGHT_ONLY", ""))
     ap.add_argument("--json", action="store_true")
     a = ap.parse_args(argv)
     try:
-        res = run(a.phase, resolve_root(a.root), a.standing, not a.no_notify)
+        res = run(a.phase, resolve_root(a.root), a.standing, not a.no_notify, scope=a.scope, only=a.only)
     except Exception as e:  # noqa: BLE001 -- fail open
         print(f"[fleet-preflight] internal error ({e.__class__.__name__}); proceeding (fail open)")
         return 0

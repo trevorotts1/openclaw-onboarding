@@ -1,0 +1,14 @@
+{
+  "version": 1,
+  "evaluate_in_order": true,
+  "rules": [
+    {"id": "R0", "when": "the box is at or over its daily cap, or the live cap table could not be read", "route": "page_operator"},
+    {"id": "R1", "when": "this is a test, a duplicate, or a routine question the agent can answer itself", "route": "not_an_incident"},
+    {"id": "R2", "when": "the fix would rotate, regenerate or revoke a credential; change DNS or Cloudflare; delete data or files; or change the client's model or provider", "route": "page_operator", "one_way_door": true},
+    {"id": "R3", "when": "only the client can do it in their own account: sign in again, approve access, add a payment method, top up a balance, confirm a choice", "route": "tell_agent"},
+    {"id": "R4", "when": "the client's agent cannot act: gateway down, looping, not answering, or the same instruction already failed once on this ticket", "route": "fix_ourselves"},
+    {"id": "R5", "when": "the fault is in something we shipped, or the same failure is open on two or more boxes", "route": "fix_ourselves", "also": "open a repository fix"},
+    {"id": "R6", "when": "the fix matches a listed, reversible fix card on a reachable box with a one-line undo", "route": "fix_ourselves"},
+    {"id": "R7", "when": "anything else", "route": "tell_agent"}
+  ]
+}

@@ -25,12 +25,17 @@ One script phase, P8.3-INFOGRAPHIC (order 8.3, executor kind script,
 CONTRACT:
   * Reads:  working/prompts/infographic-prompt.txt   (VERBATIM, never re-composed —
             the same VERBATIM rule build_deck.py applies to slide prompts)
+            working/copy/intake.json                   (brand.logo_image_path)
+            working/copy/assets_manifest.json          (a "logo" asset's public_url —
+            the only web address a local-only logo can ride; none recorded exits 1)
+            working/checkpoints/pending_tasks.json     (a completed sha256 to reuse)
   * Writes: working/deliverables/infographic.png
             working/renders/infographic.png            (raw render, per SOP 9.10 step 6)
             working/checkpoints/pending_tasks.json     (task id, via the U028 shape)
             working/checkpoints/infographic_status.json (SOP 9.10 step 9 shape)
   * Exits:  0 produced + verified; 1 failure (lists the reason on stderr, FAIL LOUD —
-            never a placeholder, never a stub PNG).
+            never a placeholder, never a stub PNG). A measured shape outside the
+            pinned 9:16 tolerance exits 1 after the file and the status are written.
 
 FRONT DOOR:
   The canonical-entry nonce handshake (AF-CANONICAL-RENDER-BYPASS) is enforced EXACTLY
@@ -417,20 +422,22 @@ def verify_png(path: Path) -> int:
 
 
 def verify_shape(path: Path, *, spec: str = "infographic") -> dict:
-    """Read the real IHDR dimensions and check the pinned shape (9:16 portrait
-    for the infographic). REPORTED, not a hard gate:
-    the FIX 2 proof contract (QC.md) pins magic + 102,400 floor as the PASS
-    conditions, and the submit payload already pins the aspect — so a shape deviation
-    is a loud WARN + recorded in the status/task record, never a silent pass. Returns
-    {"width", "height", "ratio_ok", "warn"}."""
+    """Read the real IHDR dimensions and measure the pinned shape (9:16 portrait
+    for the infographic). Returns {"width", "height", "ratio_ok", "dims_read",
+    "warn"}. The measurement itself never raises; `run` is the one place that acts
+    on it — a measured shape outside tolerance fails the render after the file and
+    the status are written (PD-215), while unreadable dimensions are reported, not
+    failed, because "I could not measure it" is not "it is the wrong shape"."""
     import prompt_gate as _pg
     warn = None
     width = height = 0
     ratio_ok = False
+    dims_read = False
     pinned_w, pinned_h = WIDTH_PX, HEIGHT_PX
     pinned_name = ASPECT_RATIO
     try:
         width, height = _pg.read_png_dimensions(path)
+        dims_read = True
         ratio = width / height if height else 0.0
         expected = pinned_w / pinned_h
         ratio_ok = abs(ratio - expected) <= _pg.ASPECT_RATIO_TOLERANCE * expected
@@ -441,10 +448,11 @@ def verify_shape(path: Path, *, spec: str = "infographic") -> dict:
                     f"was {pinned_name}; a non-{pinned_name} result should be "
                     "re-rendered --force.")
             print(warn, flush=True)
-    except Exception as exc:  # noqa: BLE001 — dims are a report, never a gate
+    except Exception as exc:  # noqa: BLE001 — unmeasurable is a report, never a gate
         warn = f"WARN: cannot read PNG dimensions of {path} ({exc})."
         print(warn, flush=True)
-    return {"width": width, "height": height, "ratio_ok": ratio_ok, "warn": warn}
+    return {"width": width, "height": height, "ratio_ok": ratio_ok,
+            "dims_read": dims_read, "warn": warn}
 
 
 def verify_infographic_shape(path: Path) -> dict:
@@ -509,7 +517,13 @@ def hashlib_sha256(path: Path) -> str:
 # ---------------------------------------------------------------------------
 def _write_status(run_dir: Path, *, fmt: str, deliverable: Path,
                   qc_note: str = "engine-rendered via build_infographic.py",
-                  shape: dict | None = None) -> None:
+                  shape: dict | None = None,
+                  size_bytes: int | None = None,
+                  render_verified: bool = True) -> None:
+    """SOP 9.10 step 9 status record. `render_verified` states exactly what this
+    script proved (PNG magic, the 102,400-byte floor, the measured shape); it never
+    claims a QC pass — QC is a different model's verdict, and `qc_passed` here was a
+    script grading its own homework (PD-215)."""
     status = {
         "infographic_format": fmt,
         "prompt_path": str(INFOGRAPHIC_PROMPT_REL),
@@ -518,11 +532,13 @@ def _write_status(run_dir: Path, *, fmt: str, deliverable: Path,
         if deliverable.is_relative_to(run_dir) else str(deliverable),
         "width_px": WIDTH_PX,
         "height_px": HEIGHT_PX,
-        "qc_passed": True,
+        "render_verified": bool(render_verified),
         "qc_note": qc_note,
         "status": "ready",
         "recorded_at": datetime.now(timezone.utc).isoformat(),
     }
+    if size_bytes is not None:
+        status["size_bytes"] = size_bytes
     if shape:
         status["actual_width_px"] = shape["width"]
         status["actual_height_px"] = shape["height"]
@@ -673,11 +689,43 @@ def _gate_prompt_via_build_deck(prompt_text: str) -> list:
     return problems
 
 
+def _logo_public_url_from_assets(run_dir: Path) -> str | None:
+    """The logo's web address from working/copy/assets_manifest.json: an asset whose
+    `kind` contains "logo" that carries an http(s) `public_url` (the same shape
+    build_deck._chk_assets_manifest reads). None when no such asset is recorded."""
+    p = run_dir / "working" / "copy" / "assets_manifest.json"
+    if not p.is_file():
+        return None
+    try:
+        obj = json.loads(p.read_text(encoding="utf-8", errors="replace"))
+    except (json.JSONDecodeError, OSError):
+        return None
+    if not isinstance(obj, dict):
+        return None
+    assets = obj.get("assets")
+    if not isinstance(assets, list):
+        return None
+    for asset in assets:
+        if not isinstance(asset, dict):
+            continue
+        if "logo" not in str(asset.get("kind") or "").lower():
+            continue
+        url = str(asset.get("public_url") or "").strip()
+        if url.startswith(("http://", "https://")):
+            return url
+    return None
+
+
 def resolve_logo(run_dir: Path) -> str | None:
-    """intake.json brand.logo_image_path -> logo URL/file for image-to-image mode
-    (mirrors build_deck.resolve_logo_path's priority: intake first). Only a URL or an
-    existing PNG is used; anything else falls back to text-to-image (the infographic is
-    still valid without the chip — build_deck's full intake gate already ran upstream)."""
+    """intake.json brand.logo_image_path -> a web address for image-to-image mode
+    (mirrors build_deck.resolve_logo_path's priority: intake first).
+
+    Kie's image-to-image takes URLs, not local paths, so a local file name cannot
+    ride `input_urls`. A recorded web address (the intake value itself, or the
+    logo asset's `public_url` in working/copy/assets_manifest.json) is used; when
+    the interview names a local file and no web address is recorded for it, this
+    exits 1 instead of silently degrading to text-to-image — a logo-less infographic
+    that reports success is the defect (PD-215)."""
     intake = run_dir / "working" / "copy" / "intake.json"
     if not intake.is_file():
         return None
@@ -691,20 +739,21 @@ def resolve_logo(run_dir: Path) -> str | None:
     raw = str((brand.get("logo_image_path") or "")).strip() if isinstance(brand, dict) else ""
     if not raw:
         return None
-    p = Path(raw).expanduser()
-    if p.exists() and p.is_file():
-        with open(p, "rb") as f:
-            magic = f.read(8)
-        if magic[:4] != PNG_MAGIC:
-            return None
-        # Kie's image-to-image needs a URL, not a local path — a local file alone
-        # cannot ride input_urls. Only an http(s) reference or intake-declared URL is
-        # usable; a local-only logo degrades to text-to-image (the prompt already
-        # carries the full logo-chip spec from the 15-element template).
-        return None
     if raw.startswith(("http://", "https://")):
         return raw
-    return None
+    url = _logo_public_url_from_assets(run_dir)
+    if url:
+        return url
+    print(
+        "FATAL: the infographic needs the logo as a web address; none is recorded for "
+        f"this run. intake.json names the local file {raw!r}, and "
+        "working/copy/assets_manifest.json records no logo asset with an http(s) "
+        "public_url. Kie image-to-image takes URLs, not local paths — have the "
+        "Media-Librarian upload the logo and record its public_url (kind contains "
+        "\"logo\"), then re-run. Text-to-image is NOT used as a silent fallback: it "
+        "would ship an infographic with no logo and call it done.",
+        file=sys.stderr)
+    raise SystemExit(1)
 
 
 def _infographic_format(run_dir: Path) -> str:
@@ -722,24 +771,54 @@ def _infographic_format(run_dir: Path) -> str:
     return "checklist"
 
 
+def _prior_completed_render(run_dir: Path, out_path: Path) -> dict | None:
+    """The completed `infographic` record in pending_tasks.json, but ONLY when its
+    sha256 equals this file's — the proof that this file is a render this script
+    finished. A PNG sitting at the output path with no such record is a stray and
+    is never adopted (PD-215)."""
+    rec = _read_pending_tasks(run_dir).get(PENDING_KEY)
+    if not isinstance(rec, dict) or rec.get("completed") is not True:
+        return None
+    recorded = str(rec.get("sha256") or "").strip()
+    if not recorded:
+        return None
+    try:
+        if hashlib_sha256(out_path) != recorded:
+            return None
+    except OSError:
+        return None
+    return rec
+
+
 def run(run_dir: Path, out_arg: Path | None = None, force: bool = False) -> int:
     """One infographic render end to end. Returns 0 on a verified deliverable."""
     prompt_text, prompt_path = resolve_prompt(run_dir)
 
-    # Idempotency: an existing verified deliverable is reused unless --force, so a
-    # resume never re-burns a paid Kie render (same doctrine as locked_renders).
+    # Idempotency: an existing deliverable is reused only when pending_tasks.json
+    # records a completed infographic task whose sha256 IS this file, so a resume
+    # never re-burns a paid Kie render — and a stray PNG dropped at the output path
+    # is never mistaken for one.
     out_path = out_arg or (run_dir / "working" / "deliverables" / "infographic.png")
     if out_path.is_file() and not force:
-        try:
-            size = verify_png(out_path)
-            print(f"SKIP: {out_path} already exists and verifies ({size} bytes) — "
-                  "pass --force to re-render.")
-            return 0
-        except RuntimeError as exc:
-            print(f"NOTE: existing {out_path} failed verification ({exc}); re-rendering.")
+        if _prior_completed_render(run_dir, out_path) is None:
+            print(f"NOTE: {out_path} exists but pending_tasks.json[{PENDING_KEY!r}] "
+                  "records no completed render with its sha256 — a stray file is not "
+                  "a prior render; rendering again.", flush=True)
+        else:
+            try:
+                size = verify_png(out_path)
+                print(f"SKIP: {out_path} already exists and verifies ({size} bytes) "
+                      "and pending_tasks.json records it complete — pass --force to "
+                      "re-render.")
+                return 0
+            except RuntimeError as exc:
+                print(f"NOTE: existing {out_path} failed verification ({exc}); "
+                      "re-rendering.")
 
-    api_key = load_api_key()
+    # The logo is resolved before the key and the models: a local-only logo has no
+    # web address to send, and that refusal must land before any paid call is set up.
     logo_url = resolve_logo(run_dir)
+    api_key = load_api_key()
     model_t2i, model_i2i = _resolve_image_models()
     model = model_i2i if logo_url else model_t2i
     fmt = _infographic_format(run_dir)
@@ -770,9 +849,21 @@ def run(run_dir: Path, out_arg: Path | None = None, force: bool = False) -> int:
         out_path.write_bytes(render_path.read_bytes())  # SOP 9.10 step 8
     final_size = verify_png(out_path)
     shape = verify_infographic_shape(out_path)
+    shape_bad = bool(shape.get("dims_read")) and not bool(shape.get("ratio_ok"))
+
+    # The status is always written, before the shape verdict is acted on: it carries
+    # the measured size and shape, so the run folder says what was produced even when
+    # the render is refused.
+    _write_status(run_dir, fmt=fmt, deliverable=out_path, shape=shape,
+                  size_bytes=final_size, render_verified=not shape_bad)
+    if shape_bad:
+        print(f"FATAL: {out_path} measured {shape['width']}x{shape['height']} — outside "
+              f"the pinned {ASPECT_RATIO} {WIDTH_PX}x{HEIGHT_PX} shape within tolerance. "
+              "The file and the status are written (size and measured shape recorded); "
+              "the render is refused, not adopted. Re-render with --force.", file=sys.stderr)
+        return 1
 
     _record_completed_task(run_dir, task_id, out_path)
-    _write_status(run_dir, fmt=fmt, deliverable=out_path, shape=shape)
 
     print(f"  OK: infographic.png verified — {final_size} bytes (>= {PNG_MIN_BYTES}), "
           f"PNG magic ok, {ASPECT_RATIO} {WIDTH_PX}x{HEIGHT_PX}", flush=True)

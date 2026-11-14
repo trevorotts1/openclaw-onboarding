@@ -144,6 +144,17 @@ def _fetch_ok(args) -> dict:
     return {"intake": _intake(args.session_id)}
 
 
+def _seed_sp_intake(run_root: pathlib.Path, session_id: str) -> None:
+    """PD-081: a signature intake starts NO build until the 8 questions are
+    answered, proven by working/copy/sp_intake.json in the run dir. These
+    scenarios exercise the durable handoff, not the interview, so the fixture
+    states that the interview is already done (the gate itself is covered by
+    test/test_pd081_signature_block.py)."""
+    path = run_root / session_id / "working" / "copy" / "sp_intake.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("{}", encoding="utf-8")
+
+
 class TestPres008DurableStates(unittest.TestCase):
     def setUp(self) -> None:
         self._tmp = tempfile.TemporaryDirectory()
@@ -165,6 +176,7 @@ class TestPres008DurableStates(unittest.TestCase):
         w = self.world
         w.next_dispatch_rc = -7  # AF-NOTIFY-UNCONFIGURED: retryable refusal
         root = w.runs
+        _seed_sp_intake(root, "sess-r1")
 
         with contextlib.redirect_stderr(io.StringIO()):
             rc1 = ib.cmd_ingest(_ingest_ns("http://w", "sess-r1", root))
@@ -200,6 +212,7 @@ class TestPres008DurableStates(unittest.TestCase):
         w = self.world
         root = w.runs
         rd = root / "sess-c1"
+        _seed_sp_intake(root, "sess-c1")
 
         # The engine "starts" (state.json names a live pid) but the bridge
         # process dies BEFORE writing the state document. Simulate: create
@@ -239,6 +252,7 @@ class TestPres008DurableStates(unittest.TestCase):
     def test_03_worker_202_deferred_is_not_processed(self):
         w = self.world
         root = w.runs
+        _seed_sp_intake(root, "sess-202")
 
         def fake_dept_start(session_id, intake):
             return 202, ("worker returned 202 deferred (COMMAND_CENTER_URL unset) — "
@@ -265,6 +279,7 @@ class TestPres008DurableStates(unittest.TestCase):
         root = w.runs
         healthy = "sess-ok"
         poisoned = "sess-bad"
+        _seed_sp_intake(root, healthy)
 
         real_fetch = ib._fetch_intake
 
@@ -308,6 +323,7 @@ class TestPres008DurableStates(unittest.TestCase):
         w = self.world
         root = w.runs
         rd = root / "sess-dual"
+        _seed_sp_intake(root, "sess-dual")
 
         # Poller A holds the claim (a genuinely live process: THIS test proc
         # writes its claim via _submission_hold, then a SECOND poller process

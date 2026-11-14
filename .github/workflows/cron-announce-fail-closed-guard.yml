@@ -32,6 +32,8 @@ concurrency:
 
 jobs:
   cron-announce-fail-closed:
+    # Batch pull requests run only the required checks (Trevor order 2026-11-13).
+    if: ${{ !startsWith(github.head_ref, 'batch/') }}
     name: Cron delivery born silent + reconcile lockstep
     runs-on: ubuntu-latest
     timeout-minutes: 5

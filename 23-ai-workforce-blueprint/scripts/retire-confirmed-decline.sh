@@ -28,10 +28,17 @@
 #      explicit-signal-only discipline seed-workspaces.py + the prebuild driver
 #      use; never ambient discovery). Absent db or absent archived_at column
 #      (migration 095 not applied) -> step SKIPPED + recorded, never faked.
+#      A missing database does NOT refuse the retirement (BU-56): the script
+#      sets CC_LANE_PENDING=1, prints the NOT-APPLICABLE line for step 3 and
+#      writes `ccLanePending: true` into the settle receipt.
 #   4. Append the removed-with-provenance record to the chosen artifact
 #      (company_dir/departments.json): the entry is dropped from the chosen
 #      list and the full provenanced decline is appended to a
 #      `retiredDepartments` audit array.
+#
+# ORDER (BU-56): step 1 (agent roster) runs BEFORE step 2 (archive), because it
+# is the only step that can fail on a concurrent change; a step-1 failure exits
+# 1 with every tree still in place.
 #
 # GATE (binding): this script must NEVER run without a provenanced decline
 # object. The provenance reader is the SAME shared module every other decline
@@ -151,6 +158,15 @@ done
 if [[ ${#DEPTS[@]} -eq 0 ]]; then
   echo "[retire-confirmed-decline] FATAL: at least one --dept <slug> (or --dept __declined__) is REQUIRED" >&2
   exit 3
+fi
+
+# BU-56: the Command Center database is OPTIONAL, exactly as the header contract
+# says ("Absent db ... -> step SKIPPED + recorded, never faked"). Without one and
+# without --skip-cc the retirement still runs: the lane step is recorded as
+# pending in the settle receipt instead of refusing the whole un-build.
+CC_LANE_PENDING=0
+if [[ "$SKIP_CC" -ne 1 && ( -z "$DB_PATH" || ! -f "$DB_PATH" ) ]]; then
+  CC_LANE_PENDING=1
 fi
 
 # ── resolve the build-state file (explicit scratch file wins; never guess) ──
@@ -303,9 +319,8 @@ if config.is_file():
     if len(ids)>1 or (company_id and ids and company_id not in ids):
         raise SystemExit('retirement company state/config identity mismatch')
     company_id=company_id or next(iter(ids),None)
-if sys.argv[4] != '1':
+if sys.argv[4] != '1' and sys.argv[3] and pathlib.Path(sys.argv[3]).is_file():
     dbpath=pathlib.Path(sys.argv[3])
-    if not sys.argv[3] or not dbpath.is_file():raise SystemExit('Retirement pending: explicit company database required')
     with sqlite3.connect(dbpath.resolve().as_uri()+'?mode=ro',uri=True) as db:
         cols={r[1] for r in db.execute('PRAGMA table_info(companies)')}
         if not {'id','slug'} <= cols:raise SystemExit('Retirement pending: canonical companies registry required')
@@ -317,8 +332,7 @@ if sys.argv[4] != '1':
 print(company_id or '')
 PYIDENTITY
 )" || exit 2
-if [[ "$SKIP_CC" -ne 1 ]]; then
-  [[ -n "$DB_PATH" && -f "$DB_PATH" ]] || { echo 'Retirement pending: explicit company database required' >&2; exit 3; }
+if [[ "$SKIP_CC" -ne 1 && "$CC_LANE_PENDING" -ne 1 ]]; then
   python3 - "$DB_PATH" "$COMPANY_ID" <<'PYSCOPE'
 import sqlite3,sys
 with sqlite3.connect(sys.argv[1]) as db:
@@ -334,13 +348,19 @@ fi
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib-workforce-state.sh" || exit 1
 
 if [[ -n "$COMPANY_ID" ]]; then
-  workforce_state_set "$STATE_FILE" --arg company_id "$COMPANY_ID" '.companyId = $company_id' || exit 1
+  # BU-56: stamp the identity through workforce_state.update (the same pattern as
+  # the settle block below) instead of the jq-filter helper — no jq on the path.
+  "$WORKFORCE_PYTHON" - "$STATE_FILE" "$COMPANY_ID" <<'PYIDENTITYSET'
+import sys
+from workforce_state import update
+path, company_id = sys.argv[1], sys.argv[2]
+def stamp(state):
+    state['companyId'] = company_id
+update(path, stamp)
+PYIDENTITYSET
+  [[ "$?" -eq 0 ]] || exit 1
 fi
 
-# ── STEP 2: ARCHIVE each department tree to company_dir/.retired/<slug>-<ts>/ ──
-# NEVER delete. Runs FIRST so a declined tree can never linger on the board's
-# provisioned layer after the lane is dropped.
-TS="$(date +%Y%m%d-%H%M%S)"
 # SCRATCH ISOLATION (explicit-signal-only, same doctrine as the prebuild
 # driver): a build-state file that is NOT one of the box's two live locations
 # is a scratch run — it never touches the live config (step 1) or the live
@@ -350,68 +370,16 @@ if [[ "$STATE_FILE" == "/data/.openclaw/workspace/.workforce-build-state.json" \
    || "$STATE_FILE" == "$HOME/.openclaw/workspace/.workforce-build-state.json" ]]; then
   _SCRATCH_STATE=0
 fi
-WS_DEPTS="$WS_DEPTS_OVERRIDE"
-if [[ -z "$WS_DEPTS" && "$_SCRATCH_STATE" -eq 0 ]]; then
-  WS_DEPTS="$(dirname "$STATE_FILE")/departments"
-fi
-if [[ -n "$COMPANY_DIR" && -d "$COMPANY_DIR/departments" ]]; then
-  while IFS= read -r SLUG; do
-    [[ -z "$SLUG" ]] && continue
-    SRC="$COMPANY_DIR/departments/$SLUG"
-    if [[ ! -d "$SRC" ]]; then
-      echo "[retire-confirmed-decline] step 2: '$SLUG' — no tree at $SRC (nothing to archive; continuing)" >&2
-      continue
-    fi
-    DEST="$COMPANY_DIR/.retired/$SLUG-$TS"
-    mkdir -p "$COMPANY_DIR/.retired"
-    if mv "$SRC" "$DEST"; then
-      echo "[retire-confirmed-decline] step 2: archived $SRC -> $DEST (NEVER deleted)" >&2
-    else
-      echo "[retire-confirmed-decline] step 2 FAILED for '$SLUG': could not move $SRC -> $DEST" >&2
-      FAILURES=$((FAILURES + 1))
-    fi
-  done < <(echo "$TARGETS_JSON" | python3 -c "import json,sys; [print(s) for s in json.load(sys.stdin)]")
-else
-  echo "[retire-confirmed-decline] step 2 SKIPPED: no company dir with departments/ resolvable ($COMPANY_DIR)" >&2
-fi
-
-# ── STEP 2b: the workspace departments tree the vertical-derivation gate reads ──
-# run-full-install.sh phase 3b audits <oc-root>/workspace/departments. On boxes
-# where that is a SEPARATE folder (not a link into the company tree), archiving
-# only the company copy left the declined department on disk there, so the gate
-# kept counting it. Archive it the same way (mv, never delete). A symlink or a
-# path that resolves into the company tree is the company copy — already moved.
-if [[ -n "$WS_DEPTS" && -d "$WS_DEPTS" ]]; then
-  _company_real=""
-  [[ -n "$COMPANY_DIR" ]] && _company_real="$(cd "$COMPANY_DIR" 2>/dev/null && pwd -P)"
-  while IFS= read -r SLUG; do
-    [[ -z "$SLUG" ]] && continue
-    WSRC="$WS_DEPTS/$SLUG"
-    if [[ -L "$WSRC" || ! -d "$WSRC" ]]; then
-      continue
-    fi
-    _wreal="$(cd "$WSRC" 2>/dev/null && pwd -P)"
-    if [[ -n "$_company_real" && "$_wreal" == "$_company_real"/* ]]; then
-      continue
-    fi
-    WDEST="$(dirname "$WS_DEPTS")/.retired/$SLUG-$TS"
-    mkdir -p "$(dirname "$WDEST")"
-    if mv "$WSRC" "$WDEST"; then
-      echo "[retire-confirmed-decline] step 2b: archived workspace copy $WSRC -> $WDEST (NEVER deleted)" >&2
-    else
-      echo "[retire-confirmed-decline] step 2b FAILED for '$SLUG': could not move $WSRC -> $WDEST" >&2
-      FAILURES=$((FAILURES + 1))
-    fi
-  done < <(echo "$TARGETS_JSON" | python3 -c "import json,sys; [print(s) for s in json.load(sys.stdin)]")
-elif [[ -z "$WS_DEPTS" ]]; then
-  echo "[retire-confirmed-decline] step 2b SKIPPED: scratch build-state without an explicit --workspace-departments-dir (live workspace never touched by a scratch run)" >&2
-fi
 
 # ── STEP 1: deregister dept agents (only if lazily registered) ─────────────
-# SCRATCH ISOLATION (see step 2): with a scratch build-state the deregistration
-# is SKIPPED unless an explicit --oc-config was passed — a scratch run must
-# never touch the live config (a scratch test once deregistered a live box's
-# dept row for exactly this reason; the guard is the fix).
+# BU-56 ORDER: this runs BEFORE the archive step. It is the only step that can
+# fail on a concurrent change (openclaw.json rewritten underneath us), so it
+# runs while nothing has moved yet; a failure exits 1 with every tree still in
+# place. SCRATCH ISOLATION (see above): with a scratch build-state the
+# deregistration is SKIPPED unless an explicit --oc-config was passed — a
+# scratch run must never touch the live config (a scratch test once
+# deregistered a live box's dept row for exactly this reason; the guard is the
+# fix).
 OC_CONFIG=""
 if [[ -n "$OC_CONFIG_OVERRIDE" ]]; then
   OC_CONFIG="$OC_CONFIG_OVERRIDE"
@@ -483,10 +451,71 @@ print(f"[retire-confirmed-decline] step 1: deregistered {removed} from the agent
 PY
   then
     echo "[retire-confirmed-decline] step 1 FAILED (agent deregistration)" >&2
-    FAILURES=$((FAILURES + 1))
+    exit 1
   fi
 else
   echo "[retire-confirmed-decline] step 1 SKIPPED: no openclaw.json found (nothing registered)" >&2
+fi
+
+# ── STEP 2: ARCHIVE each department tree to company_dir/.retired/<slug>-<ts>/ ──
+# NEVER delete. Runs AFTER step 1 (BU-56) so nothing is moved before the one
+# step that can fail on a concurrent change has succeeded.
+TS="$(date +%Y%m%d-%H%M%S)"
+WS_DEPTS="$WS_DEPTS_OVERRIDE"
+if [[ -z "$WS_DEPTS" && "$_SCRATCH_STATE" -eq 0 ]]; then
+  WS_DEPTS="$(dirname "$STATE_FILE")/departments"
+fi
+if [[ -n "$COMPANY_DIR" && -d "$COMPANY_DIR/departments" ]]; then
+  while IFS= read -r SLUG; do
+    [[ -z "$SLUG" ]] && continue
+    SRC="$COMPANY_DIR/departments/$SLUG"
+    if [[ ! -d "$SRC" ]]; then
+      echo "[retire-confirmed-decline] step 2: '$SLUG' — no tree at $SRC (nothing to archive; continuing)" >&2
+      continue
+    fi
+    DEST="$COMPANY_DIR/.retired/$SLUG-$TS"
+    mkdir -p "$COMPANY_DIR/.retired"
+    if mv "$SRC" "$DEST"; then
+      echo "[retire-confirmed-decline] step 2: archived $SRC -> $DEST (NEVER deleted)" >&2
+    else
+      echo "[retire-confirmed-decline] step 2 FAILED for '$SLUG': could not move $SRC -> $DEST" >&2
+      FAILURES=$((FAILURES + 1))
+    fi
+  done < <(echo "$TARGETS_JSON" | python3 -c "import json,sys; [print(s) for s in json.load(sys.stdin)]")
+else
+  echo "[retire-confirmed-decline] step 2 SKIPPED: no company dir with departments/ resolvable ($COMPANY_DIR)" >&2
+fi
+
+# ── STEP 2b: the workspace departments tree the vertical-derivation gate reads ──
+# run-full-install.sh phase 3b audits <oc-root>/workspace/departments. On boxes
+# where that is a SEPARATE folder (not a link into the company tree), archiving
+# only the company copy left the declined department on disk there, so the gate
+# kept counting it. Archive it the same way (mv, never delete). A symlink or a
+# path that resolves into the company tree is the company copy — already moved.
+if [[ -n "$WS_DEPTS" && -d "$WS_DEPTS" ]]; then
+  _company_real=""
+  [[ -n "$COMPANY_DIR" ]] && _company_real="$(cd "$COMPANY_DIR" 2>/dev/null && pwd -P)"
+  while IFS= read -r SLUG; do
+    [[ -z "$SLUG" ]] && continue
+    WSRC="$WS_DEPTS/$SLUG"
+    if [[ -L "$WSRC" || ! -d "$WSRC" ]]; then
+      continue
+    fi
+    _wreal="$(cd "$WSRC" 2>/dev/null && pwd -P)"
+    if [[ -n "$_company_real" && "$_wreal" == "$_company_real"/* ]]; then
+      continue
+    fi
+    WDEST="$(dirname "$WS_DEPTS")/.retired/$SLUG-$TS"
+    mkdir -p "$(dirname "$WDEST")"
+    if mv "$WSRC" "$WDEST"; then
+      echo "[retire-confirmed-decline] step 2b: archived workspace copy $WSRC -> $WDEST (NEVER deleted)" >&2
+    else
+      echo "[retire-confirmed-decline] step 2b FAILED for '$SLUG': could not move $WSRC -> $WDEST" >&2
+      FAILURES=$((FAILURES + 1))
+    fi
+  done < <(echo "$TARGETS_JSON" | python3 -c "import json,sys; [print(s) for s in json.load(sys.stdin)]")
+elif [[ -z "$WS_DEPTS" ]]; then
+  echo "[retire-confirmed-decline] step 2b SKIPPED: scratch build-state without an explicit --workspace-departments-dir (live workspace never touched by a scratch run)" >&2
 fi
 
 # ── STEP 3: Command Center lane removal via the existing delete surface ──────
@@ -615,16 +644,17 @@ fi
 
 if [[ "$FAILURES" -eq 0 ]]; then
   source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib-workforce-state.sh" || exit 1
-  "$WORKFORCE_PYTHON" - "$STATE_FILE" "$TARGETS_JSON" "$COMPANY_ID" <<'PYSETTLE'
+  "$WORKFORCE_PYTHON" - "$STATE_FILE" "$TARGETS_JSON" "$COMPANY_ID" "$CC_LANE_PENDING" <<'PYSETTLE'
 import sys,json
 from datetime import datetime,timezone
 from workforce_state import update
-path,targets,company_id=sys.argv[1:];targets=json.loads(targets)
+path,targets,company_id,cc_pending=sys.argv[1:];targets=json.loads(targets)
+cc_lane_pending = cc_pending == '1'
 norm=lambda s:''.join(c for c in str(s).lower() if c.isalnum())
 keys={norm(t) for t in targets}
 def settle(state):
     state['departments']=[d for d in state.get('departments',[]) if norm(d.get('slug') or d.get('id')) not in keys]
-    state.setdefault('departmentRetirementReceipts',[]).append({'targets':targets,'companyId':company_id,'buildId':state.get('buildId'),'status':'verified','verifiedAt':datetime.now(timezone.utc).isoformat()})
+    state.setdefault('departmentRetirementReceipts',[]).append({'targets':targets,'companyId':company_id,'buildId':state.get('buildId'),'status':'verified','ccLanePending':cc_lane_pending,'verifiedAt':datetime.now(timezone.utc).isoformat()})
 update(path,settle)
 PYSETTLE
   [[ "$?" -eq 0 ]] || exit 1

@@ -1,0 +1,85 @@
+{
+  "version": 1,
+  "skills": [
+    {
+      "skill": "01-teach-yourself-protocol"
+    },
+    {
+      "skill": "02-back-yourself-up-protocol"
+    },
+    {
+      "skill": "03-agent-browser"
+    },
+    {
+      "skill": "04-superpowers"
+    },
+    {
+      "skill": "08-vercel-setup"
+    },
+    {
+      "skill": "09-context7"
+    },
+    {
+      "skill": "10-github-setup"
+    },
+    {
+      "skill": "12-openrouter-setup"
+    },
+    {
+      "skill": "14-google-workspace-integration"
+    },
+    {
+      "skill": "15-blackceo-team-management"
+    },
+    {
+      "skill": "16-summarize-youtube"
+    },
+    {
+      "skill": "17-self-improving-agent"
+    },
+    {
+      "skill": "18-proactive-agent"
+    },
+    {
+      "skill": "19-humanizer",
+      "lookup": [
+        {
+          "glob": "test/**",
+          "why": "test files (1 files)"
+        }
+      ]
+    },
+    {
+      "skill": "20-youtube-watcher"
+    },
+    {
+      "skill": "30-fish-audio-api-reference"
+    },
+    {
+      "skill": "31-upgraded-memory-system"
+    },
+    {
+      "skill": "43-graphify-knowledge-graph"
+    },
+    {
+      "skill": "65-rescue-receiver"
+    },
+    {
+      "skill": "70-lean-core-file-system"
+    },
+    {
+      "skill": "73-diagnose-explain-fix"
+    },
+    {
+      "skill": "76-local-embedder"
+    },
+    {
+      "skill": "84-purple-billboard-blueprint",
+      "depends_on": [
+        "38-conversational-ai-system",
+        "35-social-media-planner",
+        "44-convert-and-flow-operator"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,192 @@
+{
+  "version": 1,
+  "skills": [
+    {
+      "skill": "22-book-to-persona-coaching-leadership-system",
+      "depends_on": [
+        "23-ai-workforce-blueprint"
+      ],
+      "lookup": [
+        {
+          "glob": "personas/**",
+          "why": "persona library (lookup library) (231 files)"
+        },
+        {
+          "glob": "pipeline/**",
+          "why": "pipeline code and data (13 files)"
+        },
+        {
+          "glob": "personas/**",
+          "why": "persona library, searched by name"
+        }
+      ]
+    },
+    {
+      "skill": "23-ai-workforce-blueprint",
+      "depends_on": [
+        "38-conversational-ai-system",
+        "32-command-center-setup",
+        "37-zhc-closeout",
+        "22-book-to-persona-coaching-leadership-system"
+      ],
+      "lookup": [
+        {
+          "glob": "lib/**",
+          "why": "library code (1 files)"
+        },
+        {
+          "glob": "suggested-roles/**",
+          "why": "role library (lookup library) (37 files)"
+        },
+        {
+          "glob": "suggested-roles/**",
+          "why": "role library"
+        }
+      ]
+    },
+    {
+      "skill": "32-command-center-setup",
+      "depends_on": [
+        "23-ai-workforce-blueprint",
+        "22-book-to-persona-coaching-leadership-system"
+      ]
+    },
+    {
+      "skill": "35-social-media-planner",
+      "depends_on": [
+        "74-kie-live-adapter",
+        "38-conversational-ai-system",
+        "75-drama-song-ad-factory",
+        "45-design-intelligence-library",
+        "44-convert-and-flow-operator"
+      ]
+    },
+    {
+      "skill": "42-personal-assistant-library",
+      "depends_on": [
+        "23-ai-workforce-blueprint",
+        "22-book-to-persona-coaching-leadership-system"
+      ],
+      "lookup": [
+        {
+          "glob": "specialists/**",
+          "why": "specialist role library (lookup library) (372 files)"
+        },
+        {
+          "glob": "specialists/**",
+          "why": "specialist role library, searched by role"
+        }
+      ]
+    },
+    {
+      "skill": "45-design-intelligence-library",
+      "depends_on": [
+        "07-kie-setup",
+        "72-motion-video-plus",
+        "74-kie-live-adapter",
+        "universal-sops/CLIENT-WEBINAR-DECK-SOP.md"
+      ],
+      "lookup": [
+        {
+          "glob": "library/**",
+          "why": "design libraries, searched by need"
+        }
+      ],
+      "instruction": [
+        "library/INDEX.md",
+        "library/README.md",
+        "**/DEPARTMENT-BUILD-BRIEF.md"
+      ]
+    },
+    {
+      "skill": "52-avatar-alchemist",
+      "depends_on": [
+        "53-book-writer",
+        "55-product-bio"
+      ]
+    },
+    {
+      "skill": "53-book-writer",
+      "depends_on": [
+        "52-avatar-alchemist",
+        "51-signature-presentation"
+      ],
+      "lookup": [
+        {
+          "glob": "mini-app/**",
+          "why": "mini app code (71 files)"
+        }
+      ]
+    },
+    {
+      "skill": "54-anthology-writer",
+      "depends_on": [
+        "52-avatar-alchemist",
+        "59-anthology-engine",
+        "53-book-writer"
+      ]
+    },
+    {
+      "skill": "55-product-bio",
+      "depends_on": [
+        "52-avatar-alchemist"
+      ]
+    },
+    {
+      "skill": "57-social-media-in-a-box"
+    },
+    {
+      "skill": "58-podcast-production-engine",
+      "depends_on": [
+        "23-ai-workforce-blueprint",
+        "57-social-media-in-a-box",
+        "35-social-media-planner",
+        "44-convert-and-flow-operator"
+      ],
+      "lookup": [
+        {
+          "glob": "command-center/**",
+          "why": "dashboard code (35 files)"
+        }
+      ]
+    },
+    {
+      "skill": "59-anthology-engine",
+      "depends_on": [
+        "54-anthology-writer",
+        "53-book-writer"
+      ]
+    },
+    {
+      "skill": "60-zhc-early-warning-system"
+    },
+    {
+      "skill": "61-loop-protection-system",
+      "depends_on": [
+        "60-zhc-early-warning-system"
+      ]
+    },
+    {
+      "skill": "69-archify",
+      "lookup": [
+        {
+          "glob": "test/**",
+          "why": "test files (131 files)"
+        }
+      ]
+    },
+    {
+      "skill": "77-council-of-wise-elders",
+      "lookup": [
+        {
+          "glob": "advisors/**",
+          "why": "advisor data files (91 files)"
+        },
+        {
+          "glob": "references/install-matrix.md",
+          "why": "install matrix (data)"
+        }
+      ]
+    }
+  ]
+}

@@ -187,3 +187,30 @@ test("renew by server-minted run id preserves answers", async () => {
   assert.equal(r.body.session_id, s.session_id);
   assert.equal(r.body.answered_count, 1);
 });
+
+// PD-085: a renew must present the company the session was minted under.
+// Without it the worker cannot tell tenants apart and answers 403; with it the
+// renew succeeds and the superseded token is 410 (renewed), never unknown.
+test("PD-085 [deployed-r2]: renew without company_id is 403; with it 201 and the old token is 410", async () => {
+  const env = makeEnv();
+  const h = new WorkerHarness(worker, env);
+  const s = await mint(h, "run-r2-pd085");
+  await answer(h, s.token, "offer_name", "Bound Answer");
+
+  let r = await h.handle("POST", "/api/sessions/renew", { token: "admin-tok", body: { session_id: s.session_id } });
+  assert.equal(r.status, 403, "renew with no company_id rejected: " + JSON.stringify(r));
+
+  r = await h.handle("POST", "/api/sessions/renew", { token: "admin-tok", body: { session_id: s.session_id, company_id: "acme" } });
+  assert.equal(r.status, 201, JSON.stringify(r));
+  assert.equal(r.body.session_id, s.session_id, "same stable identity");
+  assert.equal(r.body.answered_count, 1, "prior answers intact");
+  const nt = r.body.token;
+  assert.notEqual(nt, s.token);
+
+  r = await h.handle("GET", `/api/sessions/${s.token}`);
+  assert.equal(r.status, 410, "old token revoked by the renew");
+  assert.match(r.body.error, /renewed|revoked/i);
+
+  r = await h.handle("GET", `/api/sessions/${nt}`);
+  assert.equal(r.status, 200, "fresh token works");
+});

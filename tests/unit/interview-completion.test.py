@@ -124,7 +124,8 @@ class Completion(unittest.TestCase):
             self.assertEqual(prompt_status(self.state, dict(unpinned, DATABASE_PATH=str(canonical))),
                              'DECLARED' if declared_database == canonical else 'INCOMPLETE')
         missing = home / 'missing.db'
-        self.assertEqual(prompt_status(self.state, dict(unpinned, DATABASE_PATH=str(missing))), 'UNKNOWN')
+        # A missing database cannot prove a declaration; the flag is not true (BU-35).
+        self.assertEqual(prompt_status(self.state, dict(unpinned, DATABASE_PATH=str(missing))), 'INCOMPLETE')
         self.assertFalse(missing.exists())
         with patch('interview_completion.sqlite3.connect', side_effect=sqlite3.OperationalError('read denied')):
             self.assertEqual(prompt_status(self.state, dict(unpinned, DATABASE_PATH=str(canonical))), 'UNKNOWN')
@@ -181,7 +182,7 @@ class Completion(unittest.TestCase):
         dump.write_text(json.dumps([process]))
         self.assertEqual(prompt_status(self.state, env), 'DECLARED')
         canonical.unlink()
-        self.assertEqual(prompt_status(self.state, env), 'UNKNOWN')
+        self.assertEqual(prompt_status(self.state, env), 'INCOMPLETE')
         self.assertFalse(canonical.exists())
         dump.write_text('{')
         self.assertEqual(prompt_status(self.state, env), 'UNKNOWN')
@@ -194,7 +195,8 @@ class Completion(unittest.TestCase):
     def test_missing_corrupt_unreadable_and_unmigrated_stores_are_unknown(self):
         missing = self.root / 'missing.db'
         env = dict(self.env, DATABASE_PATH=str(missing), DASHBOARD_DB_PATH=str(missing))
-        self.assertEqual(prompt_status(self.state, env), 'UNKNOWN')
+        # A missing database cannot prove a declaration (BU-35).
+        self.assertEqual(prompt_status(self.state, env), 'INCOMPLETE')
         self.assertFalse(missing.exists())
         with patch('interview_completion.sqlite3.connect', side_effect=sqlite3.OperationalError('read denied')):
             self.assertEqual(prompt_status(self.state, self.env), 'UNKNOWN')
@@ -226,7 +228,9 @@ class Completion(unittest.TestCase):
             if declared:
                 self.declare()
             else:
-                self.db.unlink()
+                # An unreadable store is still UNKNOWN; an ABSENT one is now
+                # INCOMPLETE (a missing database cannot prove a declaration).
+                self.db.write_bytes(b'not sqlite')
             with self.subTest(declared=declared), patch.dict(os.environ, self.env, clear=True), patch.object(nudge, 'get_openclaw_paths', return_value=paths), patch.object(nudge, 'send_telegram_nudge', side_effect=AssertionError('must not send')):
                 self.assertEqual(nudge.scan_and_nudge()['nudged'], 0)
                 with self.assertRaises(Pending):
@@ -241,7 +245,8 @@ class Completion(unittest.TestCase):
         scripts = ROOT / '23-ai-workforce-blueprint/scripts'
         for declared in [True, False]:
             if not declared:
-                self.db.unlink()
+                # Unreadable, not absent: an absent database is INCOMPLETE now.
+                self.db.write_bytes(b'not sqlite')
             sent = subprocess.run(['bash',str(scripts/'send-interview-link.sh'),'--dry-run'],env=env,capture_output=True,text=True,timeout=15)
             self.assertEqual(sent.returncode, 3 if declared else 8, sent.stderr)
             cron = subprocess.run(['bash',str(scripts/'interview-nudge-cron.sh')],env=env,capture_output=True,text=True,timeout=15)

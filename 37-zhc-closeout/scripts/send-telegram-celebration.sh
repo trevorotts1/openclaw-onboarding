@@ -60,12 +60,20 @@ if ! source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib-closeout-state.sh
   state_set() { local tmp; tmp=$(mktemp); jq "$1" "$STATE_FILE" > "$tmp" && mv "$tmp" "$STATE_FILE"; }
 fi
 
-OWNER_CHAT=$(state_get '.ownerChat')
-OWNER_NAME=$(state_get '.ownerName'); [[ -z "$OWNER_NAME" ]] && OWNER_NAME="there"
-COMPANY_NAME=$(state_get '.companyName'); [[ -z "$COMPANY_NAME" ]] && COMPANY_NAME="your company"
-AGENT_NAME=$(state_get '.agentName'); [[ -z "$AGENT_NAME" ]] && AGENT_NAME="your CEO Agent"
-N_DEPTS=$(jq -r '[.departments[] | select(.status == "done")] | length' "$STATE_FILE")
-N_ROLES=$(jq -r '[.departments[].rolesDone // 0] | add' "$STATE_FILE")
+# BU-64: one call to closeout_facts.py replaces this script's own reads of the
+# company name, owner, agent and chat, and the department / role counts.
+CLOSEOUT_FACTS=$(python3 -B "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/closeout_facts.py" "$STATE_FILE" --json 2>/dev/null)
+[[ -z "$CLOSEOUT_FACTS" ]] && CLOSEOUT_FACTS='{}'
+facts_get() { printf '%s' "$CLOSEOUT_FACTS" | jq -r "$1 // empty" 2>/dev/null; }
+
+OWNER_CHAT=$(facts_get '.ownerChat')
+OWNER_NAME=$(facts_get '.ownerName'); [[ -z "$OWNER_NAME" ]] && OWNER_NAME="there"
+COMPANY_NAME=$(facts_get '.companyName'); [[ -z "$COMPANY_NAME" ]] && COMPANY_NAME="your company"
+AGENT_NAME=$(facts_get '.agentName'); [[ -z "$AGENT_NAME" ]] && AGENT_NAME="your CEO Agent"
+N_DEPTS=$(printf '%s' "$CLOSEOUT_FACTS" | jq -r '.departments | length' 2>/dev/null)
+[[ -z "$N_DEPTS" || "$N_DEPTS" == "null" ]] && N_DEPTS=0
+N_ROLES=$(printf '%s' "$CLOSEOUT_FACTS" | jq -r '.roleTotal // 0' 2>/dev/null)
+[[ -z "$N_ROLES" || "$N_ROLES" == "null" ]] && N_ROLES=0
 INFO_1=$(state_get '.infographic1Url')
 INFO_1_LOCAL=$(state_get '.infographic1LocalPath')
 INFO_2=$(state_get '.infographic2Url')
@@ -289,6 +297,13 @@ send_video() {
 _held_list=",${ZHC_QUALITY_HELD:-},"
 _is_held() { case "$_held_list" in *",$1,"*) return 0 ;; *) return 1 ;; esac; }
 
+# WF-090 (decision D-8): a leg recorded in closeoutWaivedLegs was deliberately
+# not delivered (Notion never shared, celebration video failed every attempt).
+# Its slot is SKIPPED and is NOT counted as a failure -- a waiver must never
+# fail the owner's delivery or leave a retry loop running for it.
+_waived_list=",$(state_get '.closeoutWaivedLegs // [] | join(",")'),"
+_is_waived() { case "$_waived_list" in *",$1,"*) return 0 ;; *) return 1 ;; esac; }
+
 failed_messages=()
 
 # ---- Message 1: Announcement ----
@@ -296,10 +311,16 @@ if is_delivered 1; then
   log "INFO" "msg 1: already delivered (has messageId) -- skipping"
 else
   log "INFO" "msg 1: sending announcement"
+  # BU-64 wording rule: no numbers when roleTotal is 0 or unknown.
+  if [[ "$N_ROLES" =~ ^[0-9]+$ ]] && [[ "$N_ROLES" -gt 0 ]]; then
+    MSG1_SUMMARY="${N_DEPTS} departments. ${N_ROLES} AI employees. All hired, briefed, and ready to work for you."
+  else
+    MSG1_SUMMARY="Your departments are hired, briefed, and ready to work for you."
+  fi
   MSG1="🎉 ${OWNER_NAME}, your zero-human company is built.
 
 Over the past few hours your AI workforce has been getting itself set up.
-${N_DEPTS} departments. ${N_ROLES} AI employees. All hired, briefed, and ready to work for you.
+${MSG1_SUMMARY}
 
 Here's what I want to show you:"
   if send_text 1 "$MSG1"; then
@@ -363,13 +384,16 @@ fi
 # cron will re-attempt the video tonight when vendor congestion clears.
 if is_delivered 4; then
   log "INFO" "msg 4: already delivered -- skipping"
+elif _is_waived celebration-video; then
+  log "WARN" "msg 4: celebration video WAIVED (closeoutWaivedLegs) -- skipping slot; not counted as a failure"
 elif _is_held celebration_video; then
   log "WARN" "msg 4: celebration video HELD by 8.5 quality gate -- NOT delivering; leaving slot for regeneration"
   failed_messages+=("msg-4-held")
 elif [[ "${ZHC_VIDEO_STATUS:-}" == "failed" ]]; then
   log "INFO" "msg 4: video generation failed upstream -- sending text-only deferred notice"
-  MSG4_DEFERRED="🎬 Your celebration video is queued but deferred for tonight -- the video vendor is hitting congestion right now. It'll show up in this thread automatically when it lands. Everything else below is ready to go."
-  if send_text 4 "$MSG4_DEFERRED"; then
+  MSG4_DEFERRED="🎬 Your celebration video is not ready yet. Everything else below is ready to go."
+  if send_text 40 "$MSG4_DEFERRED"; then
+    record_failed 4 "video-deferred"
     log "INFO" "msg 4: deferred-notice delivered"
     sleep 4
   else
@@ -395,6 +419,8 @@ fi
 # ---- Message 5: Notion doc link ----
 if is_delivered 5; then
   log "INFO" "msg 5: already delivered -- skipping"
+elif _is_waived notion; then
+  log "WARN" "msg 5: Notion closeout doc WAIVED (closeoutWaivedLegs) -- skipping slot; not counted as a failure"
 elif _is_held closeout_docs; then
   log "WARN" "msg 5: onboarding doc HELD by 8.5 quality gate -- NOT delivering incomplete doc; leaving slot for regeneration"
   failed_messages+=("msg-5-held")
@@ -465,16 +491,6 @@ else
     GHL_MEDIA_LINE="
 
 📁 Your celebration media is also saved in your Convert and Flow media library -- open any of these directly:${GHL_PUBLIC_LINES}"
-    if [[ -n "$GHL_MEDIA_URL" && "$GHL_MEDIA_URL" == https://* ]]; then
-      GHL_MEDIA_LINE="${GHL_MEDIA_LINE}
-
-(Browse them all in your account: ${GHL_MEDIA_URL})"
-    fi
-  elif [[ -n "$GHL_MEDIA_URL" && "$GHL_MEDIA_URL" == https://* ]]; then
-    GHL_MEDIA_LINE="
-
-📁 Your celebration video and graphics are also in your Convert and Flow media library:
-${GHL_MEDIA_URL}"
   fi
   MSG6="🎛️ Your BlackCEO Command Center:
 ${CC_URL}
@@ -519,9 +535,7 @@ ${CC_URL}
 
 -- ${AGENT_NAME}"
   else
-    MSG7="🔖 Your Command Center link is in this thread just above — bookmark it so it's always one tap away, and message me any time if you need it resent.
-
--- ${AGENT_NAME}"
+    MSG7="🔖 Your Command Center link is not ready yet. Message me any time and I will send it as soon as it is."
   fi
   if send_text 7 "$MSG7"; then
     log "INFO" "msg 7: delivered"

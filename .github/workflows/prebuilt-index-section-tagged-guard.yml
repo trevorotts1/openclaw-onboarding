@@ -50,6 +50,8 @@ concurrency:
 
 jobs:
   static-manifest-fixture:
+    # Batch pull requests run only the required checks (Trevor order 2026-11-13).
+    if: ${{ !startsWith(github.head_ref, 'batch/') }}
     name: "Static + manifest + fixture (offline)"
     runs-on: ubuntu-latest
     env:
@@ -73,10 +75,7 @@ jobs:
     name: "Full artifact verify (download + sha256 + 54-persona count)"
     runs-on: ubuntu-latest
     # Only runs on workflow_dispatch (with opt-in flag) or release published
-    if: |
-      github.event_name == 'release' ||
-      (github.event_name == 'workflow_dispatch' && github.event.inputs.run_artifact_verify == 'true')
-
+    if: ${{ !startsWith(github.head_ref, 'batch/') && (github.event_name == 'release' || (github.event_name == 'workflow_dispatch' && github.event.inputs.run_artifact_verify == 'true')) }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4

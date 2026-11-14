@@ -1330,9 +1330,20 @@ def do_self_test(_args):
             rr = subprocess.run([sys.executable, router, "self-test"],
                                 capture_output=True, text=True, timeout=60)
             check("model_router self-test passes", rr.returncode == 0)
-            dd = subprocess.run([sys.executable, router, "deny-check", "vendor-opus-preview"],
+            # The shipped deny list is EMPTY (the no-Anthropic rule was removed), so the
+            # refusal path is proven against a fixture config that arms a deny pattern,
+            # and the shipped config is proven NOT to refuse an arbitrary id.
+            deny_cfg = os.path.join(state_dir, "deny-fixture-models.json")
+            with open(deny_cfg, "w", encoding="utf-8") as fh:
+                json.dump({"podcast_engine": {"models": {
+                    "deny_patterns": ["vendor-opus-preview"]}}}, fh)
+            dd = subprocess.run([sys.executable, router, "--path", deny_cfg,
+                                 "deny-check", "vendor-opus-preview"],
                                 capture_output=True, text=True, timeout=30)
             check("model_router refuses a denied id (exit 2)", dd.returncode == 2)
+            ok = subprocess.run([sys.executable, router, "deny-check", "vendor-opus-preview"],
+                                capture_output=True, text=True, timeout=30)
+            check("model_router shipped deny list is empty (exit 0)", ok.returncode == 0)
         except Exception as exc:
             check("model_router self-test invocable (%s)" % exc, False)
     else:

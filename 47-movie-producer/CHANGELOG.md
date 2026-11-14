@@ -1,5 +1,16 @@
 # Changelog — Skill 47 (Movie Producer / Automated Video Production)
 
+## v15.2.6 - 2026-11-14 - PD-027 repair lane superseded PR #3420 (rebase onto main be80ff86d; no content change)
+
+- Version roll only: this branch rebases PD-027 PR #3420 onto current main. All ten PR commits were already present on main (byte-identical or main-newer), so the rebase contributes no content; Skill 47 is bumped to next patch per G3 (`skill-version.txt` + `SKILL.md` frontmatter) so the G3 guard passes on the rebased range. `kie_image.py` is byte-identical to main.
+## v15.2.6 - 2026-11-14 - PD-028 linear recut superseded fl06-documents (rebase onto main 628ae0ba; no content change)
+
+- Version roll only: linear recut of fl06-documents (tip 6189e0b6) onto current main. All ten commits already landed on main (9 patch-identical via cherry, 1 effect-landed with newer manifest restamp), so the recut contributes no content; Skill 47 is bumped to next patch per G3 (`skill-version.txt` + `SKILL.md` frontmatter) so the G3 guard passes on the rebased range.
+
+## v15.2.5 - 2026-11-13 - embedded Skill 74 client re-embedded (video-pipeline-lockstep red on main)
+
+- `kie-adapters/tools/graphics/kie_image.py`: regenerated with `scripts/embed_kie_client.py`. Skill 74's client had moved on and the embedded block no longer matched the generator output or the verbatim slice of Skill 74's source, so `test_kie_embedded_client_hashlock.py` (run by qc-movie-producer.sh, hence by `video-pipeline-lockstep`) failed on main from 2026-11-09. Real code drift, guard unchanged. Hashlock test: 19 passed 2 failed before, 21 passed 0 failed after.
+
 ## v15.1.12 - 2026-10-20 - embedded Skill 74 client re-embedded (v1.1.9)
 
 - Re-embedded the Skill 74 client block in `kie-adapters/tools/graphics/kie_image.py` from Skill 74 v1.1.9, so a bare clone and the Docker image carry the sync createTask answer as a finished job (`state=success`, payload in `data.response`, no `bad_response`) and the URL-less save that persists it as `<task>_0.json`. `python3 scripts/embed_kie_client.py --check` reports OK; `scripts/test_kie_embedded_client_hashlock.py` is 21/21.

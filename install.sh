@@ -26,7 +26,7 @@
 #  because VPS container re-exec uses conditional commands that may fail.
 # ============================================================
 
-ONBOARDING_VERSION="v27.1.71"
+ONBOARDING_VERSION="v27.1.72"
 
 # ----------------------------------------------------------
 # Platform detection + bootstrap (MUST run before set -euo pipefail)
@@ -1212,17 +1212,40 @@ inject_shared_operator_secrets() {
         # after inject_shared_operator_secrets has returned, under set -u.
         [ -f "${OC_JSON:-}" ] || return 0
         # Use python to safely merge into env.vars (preserves other keys)
-        VAR="$var" VAL="$val" OC_JSON="$OC_JSON" python3 - <<'PYEOF' 2>/dev/null || true
+        VAR="$var" VAL="$val" OC_JSON="$OC_JSON" python3 - <<'PYEOF' || warn "openclaw.json was not updated for $var (left unchanged; see the line above)"
 import json, os
 p = os.environ['OC_JSON']
 v = os.environ['VAR']
 val = os.environ['VAL']
+import sys, tempfile
 try:
-    d = json.load(open(p))
-except Exception:
-    d = {}
-d.setdefault('env', {}).setdefault('vars', {})[v] = val
-json.dump(d, open(p, 'w'), indent=2)
+    with open(p, encoding='utf-8') as fh:
+        d = json.load(fh)
+except Exception as exc:
+    # RRX-105: a file that cannot be read is LEFT ALONE. The old code started
+    # from an empty object here and wrote it over the whole configuration.
+    sys.stderr.write('shared-secrets: %s was not changed (%s could not be set: the file did not parse: %s)\n' % (p, v, type(exc).__name__))
+    sys.exit(3)
+if not isinstance(d, dict):
+    sys.stderr.write('shared-secrets: %s was not changed (top level is not an object)\n' % p)
+    sys.exit(3)
+env = d.get('env')
+if env is None:
+    env = d['env'] = {}
+vars_ = env.get('vars') if isinstance(env, dict) else None
+if isinstance(env, dict) and vars_ is None:
+    vars_ = env['vars'] = {}
+if not isinstance(vars_, dict):
+    sys.stderr.write('shared-secrets: %s was not changed (env.vars is not an object)\n' % p)
+    sys.exit(3)
+if vars_.get(v) == val:
+    sys.exit(0)          # already set: the file is not rewritten
+vars_[v] = val
+fd, tmp = tempfile.mkstemp(prefix='.openclaw-json-', dir=os.path.dirname(p) or '.')
+with os.fdopen(fd, 'w', encoding='utf-8') as fh:
+    json.dump(d, fh, indent=2); fh.write('\n'); fh.flush(); os.fsync(fh.fileno())
+os.chmod(tmp, os.stat(p).st_mode & 0o777)
+os.replace(tmp, p)
 PYEOF
     }
 
@@ -1345,8 +1368,7 @@ PYEOF
     # escalation SENDER on this box (the AGENTS.md curl + the Skill-6 safety alarms
     # + the resume/closeout watchdogs) includes that header ONLY WHEN this var is
     # set — so seeding it here makes the box's escalations survive the webhook's
-    # auth enforcement, and leaving it unset stays fully backward-compatible (no
-    # header; the relay accepts it during the soft phase). UNLIKE the webhook URL
+    # auth enforcement. UNLIKE the webhook URL
     # above, the secret is NEVER a committed default — it flows ONLY from the
     # operator's OWN env var of the same name at install time, gateway-inherited
     # via openclaw.json env.vars (the SAME mechanism that delivers
@@ -1356,10 +1378,10 @@ PYEOF
     if [ -n "${RESCUE_RANGERS_WEBHOOK_SECRET:-}" ]; then
         _shared_write_env    "RESCUE_RANGERS_WEBHOOK_SECRET" "$RESCUE_RANGERS_WEBHOOK_SECRET"
         _shared_write_ocjson "RESCUE_RANGERS_WEBHOOK_SECRET" "$RESCUE_RANGERS_WEBHOOK_SECRET"
-        success "Rescue Rangers webhook secret seeded (RESCUE_RANGERS_WEBHOOK_SECRET, length=${#RESCUE_RANGERS_WEBHOOK_SECRET})"
+        success "Rescue Rangers webhook secret seeded (RESCUE_RANGERS_WEBHOOK_SECRET)"
         injected_count=$((injected_count + 1))
     else
-        warn "RESCUE_RANGERS_WEBHOOK_SECRET not in operator env — client agents on this box will POST without the auth header (backward-compatible until relay enforces auth). Backfill with ~/clawd/fleet-heartbeat/scripts/propagate-rescue-webhook.sh."
+        warn "RESCUE_RANGERS_WEBHOOK_SECRET not in operator env — client agents on this box will POST without the auth header and the intake will refuse them with HTTP 403: this box cannot ask Rescue Rangers for help until the secret is seeded. Backfill with ~/clawd/fleet-heartbeat/scripts/propagate-rescue-webhook.sh."
     fi
 
     # Rescue Rangers escalation CHAT ID (operator Telegram GROUP). The Skill-6
@@ -4535,6 +4557,25 @@ else
 fi
 unset _PODCAST_WIRE
 
+# RRX-121: register the Rescue Rangers jobs at install time. Step 5 copied the
+# receiver but ran only two other skills' wiring scripts, so a new box had no
+# poll job and no daily check until its first update roll. wire.sh is safe on
+# every box: with no enrollment values it registers the daily checks only and
+# exits 0. It is never run as root (a root-owned openclaw.json freezes the gateway).
+# The two flags are the ones update-skills.sh passes on every roll, so the
+# install path and the update path reconcile identically.
+_RR_WIRE="$SKILLS_DIR/65-rescue-receiver/wire.sh"
+if [ -f "$_RR_WIRE" ]; then
+    if [ "$(id -u)" = "0" ]; then
+        warn "Rescue Rangers: skipped wire.sh because this install is running as root; the first update roll registers the jobs"
+    elif bash "$_RR_WIRE" --idempotent --reconcile-only >>"$LOG_FILE" 2>&1; then
+        success "Rescue Rangers wiring ran (see $LOG_FILE for the readiness line)"
+    else
+        warn "Rescue Rangers wiring reported a problem (see $LOG_FILE); the box can still be used and the next update roll retries"
+    fi
+fi
+unset _RR_WIRE
+
 send_telegram_progress "✓ Skills + helpers installed. Setting up your AI engines next…"
 
 # ----------------------------------------------------------
@@ -5127,21 +5168,22 @@ echo "[$(ts)] reassert-presentation-deps starting" >> "$LOG"
 APT_GET="/usr/bin/apt-get"
 PY3="$(command -v python3 || echo /usr/bin/python3)"
 
-# --- System packages: libreoffice-impress (soffice) + poppler-utils (pdftoppm) + ffmpeg.
+# --- System packages: libreoffice-impress (soffice) + poppler-utils (pdftoppm) + ffmpeg
+# --- + tesseract-ocr (the OCR readback binary pytesseract shells out to).
 if [ -x "$APT_GET" ]; then
     if ! command -v soffice >/dev/null 2>&1 || ! command -v pdftoppm >/dev/null 2>&1 \
-       || ! command -v ffmpeg >/dev/null 2>&1; then
-        echo "[$(ts)] apt-get update + install libreoffice-impress poppler-utils ffmpeg" >> "$LOG"
+       || ! command -v ffmpeg >/dev/null 2>&1 || ! command -v tesseract >/dev/null 2>&1; then
+        echo "[$(ts)] apt-get update + install libreoffice-impress poppler-utils ffmpeg tesseract-ocr" >> "$LOG"
         ( "$APT_GET" update -y && \
           DEBIAN_FRONTEND=noninteractive "$APT_GET" install -y --no-install-recommends \
-              libreoffice-impress poppler-utils ffmpeg ) >> "$LOG" 2>&1 \
+              libreoffice-impress poppler-utils ffmpeg tesseract-ocr ) >> "$LOG" 2>&1 \
             && echo "[$(ts)] apt packages OK" >> "$LOG" \
             || echo "[$(ts)] WARN: apt install failed (see above)" >> "$LOG"
     else
-        echo "[$(ts)] soffice + pdftoppm + ffmpeg already present — apt install skipped" >> "$LOG"
+        echo "[$(ts)] soffice + pdftoppm + ffmpeg + tesseract already present — apt install skipped" >> "$LOG"
     fi
 else
-    echo "[$(ts)] WARN: real apt-get not found at $APT_GET — cannot install soffice/pdftoppm/ffmpeg" >> "$LOG"
+    echo "[$(ts)] WARN: real apt-get not found at $APT_GET — cannot install soffice/pdftoppm/ffmpeg/tesseract" >> "$LOG"
 fi
 
 # --- Python deps into the FIX 71 department venv (NEVER system python, never
@@ -5367,6 +5409,22 @@ else
             || warn "brew install ffmpeg failed — the webinar video (P9.6) cannot render. Manual fix: brew install ffmpeg"
     else
         warn "Homebrew not found — cannot install ffmpeg. The webinar video (P9.6-WEBINAR-VIDEO) cannot render. Manual fix: brew install ffmpeg"
+    fi
+
+    # tesseract (OCR readback): Homebrew formula. pytesseract is already in the
+    # department venv and IMPORTS without the binary, so the venv check above
+    # stays green on a box that cannot OCR — this install closes that gap on a
+    # fresh install. Mirrors the install on the update path (update-skills.sh,
+    # FIX 70); this is the install-side half only.
+    if command -v tesseract >/dev/null 2>&1; then
+        success "tesseract (OCR readback binary) already on PATH"
+    elif command -v brew >/dev/null 2>&1; then
+        note "Installing tesseract (OCR readback binary) via Homebrew formula..."
+        brew install tesseract 2>&1 | tee -a "$LOG_FILE" | tail -3 \
+            && success "tesseract installed" \
+            || warn "brew install tesseract failed — image QC OCR readback will fail. Manual fix: brew install tesseract"
+    else
+        warn "Homebrew not found — cannot install tesseract. Image QC OCR readback will fail. Manual fix: brew install tesseract"
     fi
 fi
 
@@ -6544,7 +6602,7 @@ except Exception:
     text = ""
 pattern = re.compile(
     r'(?m)^##[^\n]*(?:UPDATE PENDING|ONBOARDING PENDING|ONBOARDING COMPLETE)[^\n]*\n'
-    r'(?:(?!^##\s).*\n?)*',
+    r'(?:(?!^##\s)(?!^[ \t]*<!--\s*(?:BEGIN|END)\b).*\n?)*',
 )
 new = re.sub(r'\n{3,}', '\n\n', pattern.sub("", text))
 open(p, "w", encoding="utf-8").write(new)
@@ -10716,6 +10774,20 @@ PY
     fi
 else
     warn "agent-exchange-telemetry extension not found in repo ($_TE_SRC) — skipping install"
+fi
+
+# ----------------------------------------------------------
+# Full-read guard plugin (Trevor's order 2026-11-12): force agents to read a skill and its
+# dependencies in full. Installed into the RESOLVED OpenClaw root (not a hard-coded
+# $HOME/.openclaw), enabled in openclaw.json, idempotent, advisory-only, and a logged no-op
+# when extensions/full-read-guard is not in this release.
+# ----------------------------------------------------------
+note "Installing Full-read guard plugin..."
+_FRG_INSTALLER="$ONBOARDING_DIR/scripts/install-full-read-guard.sh"
+if [ -f "$_FRG_INSTALLER" ]; then
+    bash "$_FRG_INSTALLER" --install --source "$ONBOARDING_DIR/extensions" || true
+else
+    warn "install-full-read-guard.sh not found in repo ($_FRG_INSTALLER) — skipping"
 fi
 echo ""
 

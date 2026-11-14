@@ -1,5 +1,104 @@
 # Changelog - 65 Rescue Receiver (65-rescue-receiver)
 
+## [next] - 2026-11-13 - Rescue Rangers reply loop repair
+
+`RECEIVER_VERSION` 1.8.0 to 1.9.0.
+
+**RRX-039. A lock left behind by a dead poll stopped the poll for ever, and said nothing.**
+THE DEFECT. After one unclean exit the poll's single-flight lock was never taken over, so the poll never ran again on that box and nothing was written about why. A blocked poll could not tell an unreadable lock record from a live owner either.
+THE FIX. The lock record's generation is read as JSON behind its `G:` prefix; an unreadable record sets `_LOCK_BLOCK_REASON=lock_record_unreadable`, and a refused takeover records `takeover_refused`, so a blocked poll states its reason instead of going quiet.
+Test: `tests/rescue/RRX-POLL/test_stale_lock_takeover.sh`.
+
+**RRX-003. The box gave up on the receiver long before the receiver answered.**
+THE DEFECT. The box asked the receiver for work with a 25-second limit while the receiver was measured answering in 70 to 110 seconds, so the claim timed out and the work was claimed again.
+THE FIX. All seven changes land: the claim limit is raised from the reply-margin constant (`RR_ACK_MARGIN_S`), and a claim that still times out is made visible in the log and the state file instead of passing as an empty queue.
+Test: `tests/rescue/RRX-POLL/test_claim_timeout.sh`.
+
+**RRX-010. A text search decided whether an agent turn ran a second time.**
+THE DEFECT. `_rr_prior_interrupted` read the journal with `grep -lF`; an unreadable journal file, or any grep error, produced no output, which the function read as "no earlier attempt" — so a killed turn was re-run blind.
+THE FIX. The decision now comes from `rr_journal_check.py`: undetermined means no turn and no ack, an unreadable journal file is quarantined to `<state>/reconcile/journal-<name>` with one `journal-quarantined` line, and the pending-ack resend loop iterates `op_*` names directly instead of filtering through grep.
+Test: `tests/rescue/RRX-POLL/test_journal_unreadable.sh`.
+
+**RRX-022. A dead text-matching classifier was still in the poll.**
+THE DEFECT. `_is_escalation` (a grep for phrases such as "could not" and "unable to") was defined at the top of the poll and no call to it existed; `escalation_language` was still accepted as a failure reason in the ack branch.
+THE FIX. The function, its comment block and the dead vocabulary are deleted; no other line is touched.
+Test: none added by this unit — it deletes a function no test called.
+
+**RRX-002. The owner could only ever receive one of three fixed sentences.**
+THE DEFECT. The answer body was assembled from fixed phrases, so a case whose remedy was advice was reported to the owner as "still working", and the real outcome never reached them.
+THE FIX. The final body is built by `rr_owner_message.py` from the ticket id, the result-v3 object, the claim's `owner_message` (accepted only as an object with kind `solved`, `owner_action` or `answer` and a non-blank text) and the transport verdict; empty output falls back to the specialist-follow-up sentence.
+Test: `tests/rescue/RRX-POLL/test_owner_outcome.sh`.
+
+**RRX-001a. The conversation a case came from was never recorded on the box.**
+THE DEFECT. The answer was delivered to a hidden side session because nothing on the box knew which conversation the escalation came from.
+THE FIX. `rr_escalate.py` resolves the owner chat id through the shared resolver on the box and writes it only to `origins/<ticket>.json`; the request body never carries it and the printed JSON never carries it. `--origin-json` still wins when given, and with no origin the accepted wording says the owner will be followed up with directly.
+Test: `tests/rescue/RRX-ESC/test_escalate_origin.py`.
+
+**RRX-001b. The answer now lands in the conversation the case came from.**
+THE DEFECT. The delivery side of the same finding: the poll had no origin to deliver into, and left no record the agent could read afterwards.
+THE FIX. In `_parse_claim`, the box's own origin record is used only when the claim sets `notify_authorized` true and the server sent no `notification_origin`, and only a well-formed telegram origin whose ticket id matches `[A-Za-z0-9._-]` and does not start with a dot is accepted. After the final notification is enqueued, a per-ticket case-outcome document is written under `state/rr-receiver/case-outcomes/`; the single-flight lock is untouched.
+Test: `tests/rescue/RRX-POLL/test_box_origin.sh`.
+
+**RRX-021. The first message to the owner went out at the wrong moment, in the wrong words.**
+THE DEFECT. "Rescue Rangers received your request and is applying the authorized recovery." was sent when the box claimed the finished instruction, not when the ticket arrived, and it was sent for advice-only cases where nothing was being applied.
+THE FIX. That initial enqueue is removed from the claim path and replaced by the comment recording why no first message is sent; the agent prompt and the structured-result tests are untouched.
+Test: none added by this unit — `tests/rescue/RR-029/test_notification_poll.py` and `test_notification_recovery.py` must pass unchanged.
+
+**RRX-011. An escalation that failed to send was lost, and a resend could create a second ticket.**
+THE DEFECT. On HTTP 429, 503 or no answer the agent was told to wait two minutes and send once more; nothing was saved on the box, and the request carried no identifier of its own, so a resend after a lost answer was a new request.
+THE FIX. New `rr_escalate.py`: dotenv parsing that follows the shell parser on all six rules, the answer classification, a durable outbox that survives a lost send, and one operation id per request so a resend is the same request.
+Test: `tests/rescue/RRX-ESC/test_escalate_outbox.py`.
+
+**RRX-011w. The outbox had nothing to flush it.**
+THE DEFECT. A queued escalation sat in the outbox with no job to send it, so the new durable outbox would have been a write-only file.
+THE FIX. `wire.sh` gains `register_escalate_flush_cron`, called from the engine path, the historical already-registered path and the historical end path: job `rr-escalate-flush`, every five minutes, `python3 <path> flush`, with the same existence gate and the same `--no-deliver` requirement as the daily check.
+Test: `tests/rescue/RRX-WIRE/test_wire_unenrolled.sh`.
+
+**RRX-007. The box could not close its own ticket.**
+THE DEFECT. The resolution block required an `attempt_id` that exists only inside the poll's claim and is never shown to the agent or written where the agent is told to read, and it used `shasum`, which is not guaranteed on every Linux box.
+THE FIX. `rr_escalate.py` gains `resolve --ticket <id> --fixed "<line>"` and `status --ticket <id>`: `resolve` validates the ticket id, builds `res-<ticket>-<first 16 hex of sha1(ticket|fixed)>`, reads the newest done record's `attempt_id`, takes the client and agent names from the sent record (falling back to the box slug and `main`), and sends the nine-field body through the same outbox and delivery path, classifying `resolved` and `unknown_incident` beside the existing answers.
+Test: `tests/rescue/RRX-ESC/test_escalate_resolve.py`.
+
+**RRX-012. The daily channel check ran only on enrolled boxes, and its result never left the box.**
+THE DEFECT. The daily check of the escalation channel ran only where the box was already enrolled, it read the answer with text matching, and what it found stayed on the box.
+THE FIX. `wire.sh` calls the check on the unenrolled path too; `rr_intake_classify.py` (byte-identical copy of the package script) parses the answer; `rr-readiness.sh` reports the result; three cases are added to `65-rescue-receiver/tests/test_intake_auth_check.sh`.
+Test: `tests/rescue/RRX-WIRE/test_wire_unenrolled.sh`.
+
+**RRX-018. One installer path registered the poll with delivery switched on, and a grep decided whether a job existed.**
+THE DEFECT. When `cron add ... --no-deliver` failed, the same job was added again without the flag, so the poll could deliver into a channel it should not touch; the presence check fell back to a grep on raw JSON.
+THE FIX. The delivering fallback is removed and the command line's refusal of `--no-deliver` is final (message plus exit 1); `_cron_count`'s text-grep branch becomes `_CRON_N=-1` (unknown) with a stderr line, and both `-1` and a positive count mean "do not add".
+Test: `tests/rescue/RRX-WIRE/test_wire_no_deliver.sh`.
+
+**RRX-043. The readiness engine could register the poll with delivery switched on.**
+THE DEFECT. When the tool's help text could not be read, the job was added with `--no-deliver` and, if that failed, added again without it; when the help text did not mention `--no-deliver`, the job was added without it.
+THE FIX. The two-form fallback in the absent-help arm becomes a single `cron add --no-deliver`, and a refused add now reaches `mutation_failed` (exit 7); the mismatch branch's cron edit calls are left as they were.
+Test: `tests/rescue/RRX-WIRE/test_engine_no_deliver.sh`.
+
+**RRX-019. The installer printed `files-installed=1` without checking the files.**
+THE DEFECT. The line was an unconditional `echo`, so an install that was missing the poll's own dependencies still reported the files as installed.
+THE FIX. `wire.sh` calls `rr_install_verify.py` against the skill directory with `--include-added` and prints `files-installed=1` only when every required file exists, is non-empty and parses; otherwise the run exits 1 before the reconcile block.
+Test: `tests/rescue/RRX-WIRE/test_wire_files_installed.sh`.
+
+**RRX-019h. The readiness fixtures did not carry the full file set.**
+THE DEFECT. The RR-028 harness built a box from six files, so a case that needed a newer script failed for the fixture's reason rather than the change under test.
+THE FIX. `rr028_make_box` copies the whole set when present — including `rr_install_verify.py`, `rr_escalate.py`, `rr_journal_check.py`, `rr_owner_message.py`, `rr_intake_classify.py`, `rescue-supervise.py` and the result-v3 schema — writes a one-line placeholder for a Python file another lane has not added yet, and keeps the two daily jobs out of the poll job's assertions.
+Test: `tests/rescue/RR-028/lib-readiness-harness.sh`.
+
+**RRX-023. Readiness flags never changed the state or the exit code.**
+THE DEFECT. Flags were documented as information only, so a script that read the exit code saw a healthy box with an unauthorized claim or a slug mismatch.
+THE FIX. `rr-readiness.sh` gains `--strict` (`STRICT=0` by default) and exit code 4, FLAGGED, returned when a claim-unauthorized, slug-mismatch or intake-auth flag is recorded.
+Test: `tests/rescue/RRX-WIRE/test_readiness_strict.sh`.
+
+**RRX-042. The installer reported success when the poll job was not registered.**
+THE DEFECT. `wire.sh` exited 0 for reconcile results 0, 6 and 8, and for five paths that printed that nothing was wired; the only trace was one line on standard error, and nothing wrote these outcomes to a file or sent them anywhere.
+THE FIX. Every finishing path writes `<root>/state/rr-receiver/wire-status.json` (schema `rrx-042/wire-status/1`, mode 0600) holding the outcome and the reason, which other lanes read instead of parsing stderr.
+Test: `tests/rescue/RRX-WIRE/test_wire_status.sh`.
+
+**RRX-016. Nothing tested the whole loop from escalation to owner message.**
+THE DEFECT. The daily intake check stops at admission and creates no ticket by design, and the readiness probe claims with capacity 0, so no test in the repository sent a real escalation and waited for the reply to land on the box.
+THE FIX. New `rr_e2e_canary.py`: it refuses to run (exit 20, "this test runs on the operator's own box only") unless `<root>/.operator-is-owner` exists, then sends an escalation through `rr_escalate.py`, waits for the claim and the owner message, and writes a verdict.
+Test: `65-rescue-receiver/rr_e2e_canary.py` is itself the check; no test file was added.
+
 ## [23.6.1] - 2026-10-06 - the daily intake auth check ran under dash and died
 
 THE DEFECT. `wire.sh` registered the daily `rr-intake-auth-check` cron as `sh <script>`, but the script is bash-only (`set -o pipefail`, `BASH_SOURCE`). Cron payloads run as `sh -lc`, and on Linux (every VPS and docker box) `sh` is dash, which exits 2 before doing anything: the cron errored daily and the self-check never ran. macOS is unaffected (`sh` is bash). Separately, the presence checks for all three cron names used `cron list --json` without `--all`, which hides disabled jobs, so a job an operator disabled was re-added as a duplicate on the next roll.

@@ -15,8 +15,11 @@ resolve_platform_paths
 # the check. Default it here, matching the fallback stub's own value.
 : "${CC_PORT:=4000}"
 red(){ printf "\033[31m%s\033[0m\n" "$1"; }; green(){ printf "\033[32m%s\033[0m\n" "$1"; }; yellow(){ printf "\033[33m%s\033[0m\n" "$1"; }
-assert(){ if eval "$2" >/dev/null 2>&1; then green "  ✓ PASS — $1"; PASS=$((PASS+1)); else red "  ✗ FAIL — $1"; FAIL=$((FAIL+1)); fi; }
-warn_only(){ if eval "$2" >/dev/null 2>&1; then green "  ✓ PASS — $1"; PASS=$((PASS+1)); else yellow "  ⚠ WARN — $1"; WARN=$((WARN+1)); fi; }
+# The failing command's combined output is kept, not discarded (CC-005): a WARN
+# or FAIL now points at the exact text that produced it.
+_QC_LAST_ERROR="${TMPDIR:-/tmp}/skill32-qc-last-error.txt"
+assert(){ if eval "$2" >"$_QC_LAST_ERROR" 2>&1; then green "  ✓ PASS — $1"; PASS=$((PASS+1)); else red "  ✗ FAIL — $1 (output: $_QC_LAST_ERROR)"; FAIL=$((FAIL+1)); fi; }
+warn_only(){ if eval "$2" >"$_QC_LAST_ERROR" 2>&1; then green "  ✓ PASS — $1"; PASS=$((PASS+1)); else yellow "  ⚠ WARN — $1 (output: $_QC_LAST_ERROR)"; WARN=$((WARN+1)); fi; }
 
 if [ -f "$SECRETS_ENV" ]; then set +u; set -a; . "$SECRETS_ENV" 2>/dev/null || true; set +a; set -u; fi
 : "${CLOUDFLARE_TUNNEL_TOKEN:=}"; : "${TUNNEL_TOKEN:=}"
@@ -87,7 +90,19 @@ assert "npm installed" "command -v npm"
 warn_only "PM2 installed" "command -v pm2"
 warn_only "cloudflared installed (Mac only — VPS skip)" "[ \"${OPENCLAW_PLATFORM:-}\" = 'vps' ] || command -v cloudflared"
 warn_only "Cloudflare tunnel token present" "[ -n \"$CLOUDFLARE_TUNNEL_TOKEN\" ] || [ -n \"$TUNNEL_TOKEN\" ]"
-warn_only "Port ${CC_PORT} reachable (CC running locally)" "curl -sS -m 3 http://localhost:${CC_PORT}/ -o /dev/null -w '%{http_code}' 2>/dev/null | grep -qE '^(200|301|302|404|307)'"
+# Port reachability, read from the app's own health JSON instead of a grep of a
+# status code (CC-005): 0 = answering, 1 = not running, 2 = could not check.
+_CC_TRUTH="$SKILL_DIR/scripts/cc_truth_check.py"
+cc_qc_port_check() {
+  local rc=0
+  python3 "$_CC_TRUTH" http --port "${CC_PORT}" >"$_QC_LAST_ERROR" 2>&1 || rc=$?
+  case "$rc" in
+    0) green "  ✓ PASS — Port ${CC_PORT} reachable (CC running locally)"; PASS=$((PASS+1)) ;;
+    1) yellow "  ⚠ WARN — Port ${CC_PORT} not running (CC is not answering) (output: $_QC_LAST_ERROR)"; WARN=$((WARN+1)) ;;
+    *) yellow "  ⚠ WARN — Port ${CC_PORT} could not check (output: $_QC_LAST_ERROR)"; WARN=$((WARN+1)) ;;
+  esac
+}
+cc_qc_port_check
 assert "Python 3 installed" "command -v python3"
 
 # ---- ISSUE-04: the shipped self-heal that nothing scheduled ----------------
@@ -99,9 +114,19 @@ assert "Python 3 installed" "command -v python3"
 # HARD assert on the installer (it is the thing this skill owns and ships);
 # WARN on the live job, because a box QC'd while its gateway is down would
 # otherwise fail for a reason that is not a Skill 32 defect.
-_CC_INSTALLER="$SKILLS_DIR_DEFAULT/32-command-center-setup/scripts/run-full-install.sh"
-assert "run-full-install.sh registers the cc-watchdog self-heal cron" "grep -q '^cc_register_watchdog_cron$' \"$_CC_INSTALLER\" && grep -q 'CC_WATCHDOG_CRON_NAME=' \"$_CC_INSTALLER\""
-warn_only "cc-watchdog cron live on this box (*/5 self-heal)" "command -v openclaw && openclaw cron list --all --json 2>/dev/null | grep -q 'cc-watchdog'"
+# Is the cc-watchdog self-heal job registered and enabled on this box? Read from
+# the cron listing's own JSON by exact name (CC-005): 0 = live, 1 = absent or
+# disabled, 2 = could not check.
+cc_qc_watchdog_check() {
+  local rc=0
+  python3 "$_CC_TRUTH" cron --name cc-watchdog >"$_QC_LAST_ERROR" 2>&1 || rc=$?
+  case "$rc" in
+    0) green "  ✓ PASS — cc-watchdog cron live on this box (*/5 self-heal)"; PASS=$((PASS+1)) ;;
+    1) yellow "  ⚠ WARN — cc-watchdog cron not registered or not enabled (output: $_QC_LAST_ERROR)"; WARN=$((WARN+1)) ;;
+    *) yellow "  ⚠ WARN — cc-watchdog cron could not check (output: $_QC_LAST_ERROR)"; WARN=$((WARN+1)) ;;
+  esac
+}
+cc_qc_watchdog_check
 echo ""
 echo "═══ Result: $PASS passed | $FAIL failed | $WARN warnings ═══"
 [ $FAIL -gt 0 ] && { red "Skill 32 QC FAILED"; exit 1; } || { green "Skill 32 QC PASS"; exit 0; }

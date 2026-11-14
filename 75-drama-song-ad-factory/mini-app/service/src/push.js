@@ -43,6 +43,7 @@
 'use strict';
 
 import { isClientId, randomHex } from './ids.js';
+import { withRetentionKind } from './retention.js';
 
 // ---------------------------------------------------------------------------
 // Named refusals — a refusal always names itself, never a silent blank
@@ -196,7 +197,9 @@ export async function registerSubscription(store, { clientId, subscription, user
         updated_at: nowMs,
       }
     : buildSubscriptionRecord({ clientId, subscriptionId, subscription: norm.value, userAgent, nowMs });
-  await store.kvPut(subscriptionKey(clientId, subscriptionId), JSON.stringify(record));
+  // A subscription is the table's never-delete class (U20): a client never
+  // stops hearing from the studio on a timer.
+  await store.kvPut(subscriptionKey(clientId, subscriptionId), JSON.stringify(withRetentionKind(record, 'push_subscription')));
   return { ok: true, record, replaced: Boolean(existing) };
 }
 
@@ -221,7 +224,7 @@ export async function revokeSubscription(store, { clientId, subscriptionId, nowM
     return { ok: false, code: AF_PUSH_MISSING, message: 'No such subscription for this key.' };
   }
   const revoked = { ...record, status: 'revoked', revoked_at: nowMs, updated_at: nowMs };
-  await store.kvPut(key, JSON.stringify(revoked));
+  await store.kvPut(key, JSON.stringify(withRetentionKind(revoked, 'push_subscription')));
   return { ok: true, record: revoked };
 }
 
@@ -260,13 +263,13 @@ export async function sendPush({ env, store, clientId, payload, transport, nowMs
     const status = result && typeof result.status === 'number' ? result.status : 0;
     if (status >= 200 && status < 300) {
       out.sent += 1;
-      await store.kvPut(subscriptionKey(clientId, sub.subscription_id), JSON.stringify({ ...sub, last_sent_at: nowMs }));
+      await store.kvPut(subscriptionKey(clientId, sub.subscription_id), JSON.stringify(withRetentionKind({ ...sub, last_sent_at: nowMs }, 'push_subscription')));
     } else if (status === 404 || status === 410) {
       out.failed += 1;
       out.pruned.push(sub.subscription_id);
       await store.kvPut(
         subscriptionKey(clientId, sub.subscription_id),
-        JSON.stringify({ ...sub, status: 'revoked', revoked_at: nowMs, updated_at: nowMs }),
+        JSON.stringify(withRetentionKind({ ...sub, status: 'revoked', revoked_at: nowMs, updated_at: nowMs }, 'push_subscription')),
       );
     } else {
       out.failed += 1;

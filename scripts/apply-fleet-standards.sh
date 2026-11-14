@@ -670,7 +670,7 @@ _CEO_TOOL_DENY = [
     "ghl-community-mcp__*", "ghl-mcp__*",
 ]
 _CEO_TOOL_ALLOW = [
-    "read", "web_fetch", "web_search",
+    "read", "read_skill", "web_fetch", "web_search",
     "message", "telegram", "slack", "discord",
     "sessions_send", "sessions_list", "sessions_history",
     # mc-route__route_task = the SHIPPED signed routing tool (scripts/mc-route.sh);
@@ -3663,6 +3663,20 @@ FCHEOF
   fi
   unset _ADB_LIB _adb_candidate
 fi
+
+# FULL_READ_GUARD_V1 (Trevor's order 2026-11-12): the one-line full-read rule, stamped through
+# the same managed-block writer, additive and idempotent. Skipped silently when the stamper
+# is not in this bundle (older bundle); never fails the run.
+for _frg_candidate in "${ONBOARDING_DIR:-}/shared-utils/agents-doctrine-blocks.sh" \
+                      "${_FS_SCRIPT_DIR:-}/../shared-utils/agents-doctrine-blocks.sh" \
+                      "$OC_ROOT/skills/shared-utils/agents-doctrine-blocks.sh"; do
+  if [ -f "$_frg_candidate" ]; then
+    # shellcheck source=/dev/null
+    ( . "$_frg_candidate"; declare -F stamp_full_read_guard >/dev/null 2>&1 && stamp_full_read_guard "$AGENTS_FILE" ) || echo "[apply-fleet-standards] FULL_READ_GUARD_V1 stamp skipped or failed (advisory)" >&2
+    break
+  fi
+done
+unset _frg_candidate
 
 if [ "$OC_ROOT" = "/data/.openclaw" ]; then
   chown "$OC_USER:$OC_USER" "$AGENTS_FILE" 2>/dev/null || true

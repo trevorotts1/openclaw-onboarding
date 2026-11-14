@@ -51,6 +51,7 @@ from create_role_workspaces import (  # type: ignore
     augment_all_existing_role_folders,
     create_role_workspace,
     augment_role_folder,
+    write_sop_needed_manifest,
 )
 
 
@@ -108,6 +109,7 @@ def process_company(company_root: Path, workspace_root: Path, dry_run: bool = Fa
             if not r.get("dry_run"):
                 counts["role_files_written"] += len(r.get("written", []))
 
+    write_sop_needed_manifest(company_root)
     return counts
 
 

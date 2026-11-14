@@ -84,62 +84,51 @@ and it will pick the right one, or you can ask for a specialist by name.
 | **Vendor Contract Specialist** | Vendor-side contracts - SaaS subscriptions, freelance contractors, service providers. |
 | **Contract Drafter Phase2** | **** for the company's department. |
 
-### What each specialist is for, with an example request
+### What each specialist is for
 
 **Affiliate Agreement Specialist**
 
 - *What it is for:* Affiliate contracts - commission terms, payout schedules, exclusivity clauses, anti-piracy.
-- *Example request:* "Have the Affiliate Agreement Specialist take this on: Affiliate contracts - commission terms, payout schedules, exclusivity clauses, anti-piracy."
 
 **Compliance Monitor Specialist**
 
 - *What it is for:* Industry compliance - depends on vertical.
-- *Example request:* "Have the Compliance Monitor Specialist take this on: Industry compliance - depends on vertical."
 
 **Contract Drafter Client Agreements**
 
 - *What it is for:* Drafts client-facing contracts - service agreements, MSAs, SOWs.
-- *Example request:* "Have the Contract Drafter Client Agreements take this on: Drafts client-facing contracts - service agreements, MSAs, SOWs."
 
 **Customer Agreement Specialist**
 
 - *What it is for:* Customer-side contracts - purchase agreements, refund policies, end-user agreements.
-- *Example request:* "Have the Customer Agreement Specialist take this on: Customer-side contracts - purchase agreements, refund policies, end-user agreements."
 
 **Dispute Resolution Specialist**
 
 - *What it is for:* Handles legal disputes - customer chargebacks (with Billing), contract disputes, IP infringement disputes.
-- *Example request:* "Have the Dispute Resolution Specialist take this on: Handles legal disputes - customer chargebacks (with Billing), contract disputes."
 
 **Employment Contract Specialist**
 
 - *What it is for:* When the owner eventually hires humans - employment agreements, contractor agreements, NDAs, IP assignment.
-- *Example request:* "Have the Employment Contract Specialist take this on: When the owner eventually hires humans - employment agreements, contractor agreements."
 
 **Industry Specific Regulatory Specialist**
 
 - *What it is for:* Industry-specific regulatory expertise.
-- *Example request:* "Have the Industry Specific Regulatory Specialist take this on: Industry-specific regulatory expertise."
 
 **IP Trademark Specialist**
 
 - *What it is for:* Trademark applications, copyright management, IP infringement responses, DMCA takedowns.
-- *Example request:* "Have the IP Trademark Specialist take this on: Trademark applications, copyright management, IP infringement responses, DMCA takedowns."
 
 **Terms Privacy Policy Specialist**
 
 - *What it is for:* Website Terms of Service, Privacy Policy, Cookie Policy, Acceptable Use Policy.
-- *Example request:* "Have the Terms Privacy Policy Specialist take this on: Website Terms of Service, Privacy Policy, Cookie Policy, Acceptable Use Policy."
 
 **Vendor Contract Specialist**
 
 - *What it is for:* Vendor-side contracts - SaaS subscriptions, freelance contractors, service providers.
-- *Example request:* "Have the Vendor Contract Specialist take this on: Vendor-side contracts - SaaS subscriptions, freelance contractors, service providers."
 
 **Contract Drafter Phase2**
 
 - *What it is for:* **** for the company's department.
-- *Example request:* "Have the Contract Drafter Phase2 take this on: **** for the company's department."
 
 
 ---

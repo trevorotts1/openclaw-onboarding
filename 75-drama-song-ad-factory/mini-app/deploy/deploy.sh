@@ -314,17 +314,25 @@ resolve_account_and_zone() {
     return 0
   fi
 
-  # Zone id: resolve by NAME only when the operator did not supply one.
+  # Zone id: resolve by NAME only when the operator did not supply one. The list
+  # answer carries the account as well, so the account is taken from that same
+  # answer and no second call is made.
   if [ -z "$R_ZONE_ID" ]; then
-    R_ZONE_ID="$(cf_api GET "/zones?name=$TARGET_ZONE_NAME&per_page=1" | json_field "result.0.id")"
+    local zone_answer
+    zone_answer="$(cf_api GET "/zones?name=$TARGET_ZONE_NAME&per_page=1")"
+    R_ZONE_ID="$(printf '%s\n' "$zone_answer" | json_field "result.0.id")"
+    if [ -z "$R_ACCOUNT_ID" ]; then
+      R_ACCOUNT_ID="$(printf '%s\n' "$zone_answer" | json_field "result.0.account.id")"
+    fi
   fi
 
-  # Account id: resolved INDEPENDENTLY of the zone. A supplied STUDIO_ZONE_ID
-  # must never skip account resolution — the live G4 guard needs a real account
-  # id — so fetch the zone by id and read the account it belongs to. An empty
-  # result is left empty, so G4 still fails hard.
+  # Account id: still resolved when the operator supplied a zone id. A supplied
+  # STUDIO_ZONE_ID must never skip account resolution — the live G4 guard needs a
+  # real account id — so fetch the zone by id and read `result.account.id`: ONE
+  # zone answers as an OBJECT, not as a one-item list. An empty result is left
+  # empty, so G4 still fails hard.
   if [ -z "$R_ACCOUNT_ID" ] && [ -n "$R_ZONE_ID" ]; then
-    R_ACCOUNT_ID="$(cf_api GET "/zones/$R_ZONE_ID" | json_field "result.0.account.id")"
+    R_ACCOUNT_ID="$(cf_api GET "/zones/$R_ZONE_ID" | json_field "result.account.id")"
   fi
 }
 
@@ -506,7 +514,32 @@ preflight() {
 ensure_bucket() {
   step "r2-bucket: ensure bucket '$BUCKET_NAME' exists"
   if [ "$DRY_RUN" -eq 1 ]; then return 0; fi
-  if wr r2 bucket list 2>&1 | grep -q "$BUCKET_NAME"; then
+  # Read the whole listing into a variable first. Piping wrangler straight into
+  # `grep -q` let grep exit on its first match, so wrangler died of SIGPIPE and a
+  # failed listing looked exactly like a missing bucket. The name is matched
+  # whole, never as a substring of another bucket's name.
+  local listing
+  listing="$(wr r2 bucket list --json 2>&1 || true)"
+  if printf '%s\n' "$listing" | node -e '
+    let s = "";
+    process.stdin.on("data", d => s += d).on("end", () => {
+      const want = process.argv[1];
+      let names = [];
+      try {
+        const j = JSON.parse(s);
+        const arr = Array.isArray(j) ? j : (j && Array.isArray(j.result) ? j.result : null);
+        if (arr) names = arr.map(b => b && (b.name || b.bucket_name)).filter(Boolean);
+      } catch { names = []; }
+      if (!names.length) {
+        // Not JSON: read the printed listing, one "name: <bucket>" line each.
+        for (const line of s.split("\n")) {
+          const m = line.match(/^\s*name:\s*(\S+)\s*$/);
+          if (m) names.push(m[1]);
+        }
+      }
+      process.exit(names.includes(want) ? 0 : 1);
+    });
+  ' "$BUCKET_NAME"; then
     say "r2-bucket: '$BUCKET_NAME' already exists — skipping create"
     return 0
   fi
@@ -761,6 +794,23 @@ self_test() {
     say "SELFTEST OK: --dry-run is PLAN-only, no fabricated PASS"
   fi
 
+  # 6. An unknown argument is an error and plans nothing. `--dryrun` (one typo)
+  #    must NOT fall through to a deploy.
+  if bash "$0" --dryrun deploy >"$out" 2>&1; then
+    warn "SELFTEST FAIL: an unknown argument (--dryrun) was accepted"
+    pass=0
+  elif grep -q "unknown argument '--dryrun'" "$out"; then
+    if grep -q "^PLAN " "$out"; then
+      warn "SELFTEST FAIL: an unknown argument was refused but steps were still planned"
+      pass=0
+    else
+      say "SELFTEST OK: an unknown argument (--dryrun) is refused with no plan"
+    fi
+  else
+    warn "SELFTEST FAIL: an unknown argument was refused without the unknown-argument message"
+    pass=0
+  fi
+
   # ── DEPLOY-FIX: one case per fixed deploy defect (RED without its fix) ─────
 
   # F1: deploy_worker's temp config must carry an ABSOLUTE `main`. The temp
@@ -825,9 +875,15 @@ self_test() {
   fi
 
   # F2: a supplied STUDIO_ZONE_ID must still resolve the account — the live G4
-  #     guard needs a real account id. Stub the API; assert the account.
+  #     guard needs a real account id. The stand-in answers the REAL shapes: a
+  #     one-item LIST for /zones?name=, an OBJECT for /zones/<id>.
   _t_f2() {
-    cf_api() { printf '{"result":[{"id":"zone-xyz","account":{"id":"acct-live"}}]}'; }
+    cf_api() {
+      case "$2" in
+        /zones\?name=*) printf '{"result":[{"id":"zone-xyz","account":{"id":"acct-live"}}]}' ;;
+        *)              printf '{"result":{"id":"zone-xyz","account":{"id":"acct-live"}}}' ;;
+      esac
+    }
     DRY_RUN=0; R_ZONE_ID=""; R_ACCOUNT_ID=""
     TARGET_ZONE_ID="zone-xyz"; TARGET_ACCOUNT_ID=""; TARGET_ZONE_NAME="zerohumanworkforce.com"
     TOKEN_VAR="SELFTEST_DUMMY_VAR"
@@ -835,9 +891,32 @@ self_test() {
     printf '%s' "$R_ACCOUNT_ID"
   }
   if [ "$( ( _t_f2 ) 2>/dev/null )" = "acct-live" ]; then
-    say "SELFTEST OK (F2): account resolved even though STUDIO_ZONE_ID was supplied"
+    say "SELFTEST OK (F2): the object-shaped zone answer resolved the account (a supplied STUDIO_ZONE_ID did not skip it)"
   else
-    warn "SELFTEST FAIL (F2): a supplied STUDIO_ZONE_ID skipped account resolution"
+    warn "SELFTEST FAIL (F2): the object-shaped zone answer did not resolve the account"
+    pass=0
+  fi
+
+  # F2b: a zone looked up BY NAME takes the account from that same answer, so no
+  #      second call is made. The /zones/<id> answer is starved here: a second
+  #      call would fail and leave the account empty.
+  _t_f2b() {
+    cf_api() {
+      case "$2" in
+        /zones\?name=*) printf '{"result":[{"id":"zone-xyz","account":{"id":"acct-from-name"}}]}' ;;
+        *) return 1 ;;
+      esac
+    }
+    DRY_RUN=0; R_ZONE_ID=""; R_ACCOUNT_ID=""
+    TARGET_ZONE_ID=""; TARGET_ACCOUNT_ID=""; TARGET_ZONE_NAME="zerohumanworkforce.com"
+    TOKEN_VAR="SELFTEST_DUMMY_VAR"
+    resolve_account_and_zone >/dev/null 2>&1
+    printf '%s' "$R_ACCOUNT_ID"
+  }
+  if [ "$( ( _t_f2b ) 2>/dev/null )" = "acct-from-name" ]; then
+    say "SELFTEST OK (F2): the account came from the name lookup's own answer, with no second call"
+  else
+    warn "SELFTEST FAIL (F2): the name lookup did not supply the account (a second call was made)"
     pass=0
   fi
 
@@ -1120,14 +1199,26 @@ EOF
 }
 
 main() {
-  local cmd=""
+  local cmd="" version=""
   while [ $# -gt 0 ]; do
     case "$1" in
       --dry-run)   DRY_RUN=1; shift ;;
       --self-test) load_manifest; self_test ;;
       -h|--help)   usage; exit 0 ;;
-      deploy|status) cmd="$1"; shift ;;
-      *) shift ;;
+      deploy|status)
+        cmd="$1"; shift
+        # One optional version word, accepted ONLY directly after `deploy`.
+        if [ "$cmd" = "deploy" ] && [ $# -gt 0 ]; then
+          case "$1" in
+            -*) ;;
+            deploy|status) ;;
+            *) version="$1"; shift ;;
+          esac
+        fi
+        ;;
+      # An unknown argument is an error: a live run must never sit one typo away
+      # (`--dryrun` used to fall through and plan a deploy).
+      *) die "unknown argument '$1' (did you mean --dry-run?)" ;;
     esac
   done
   [ -n "$cmd" ] || { usage; exit 1; }
@@ -1144,7 +1235,7 @@ main() {
   case "$cmd" in
     status) cmd_status ;;
     deploy)
-      say "deploy: worker=$WORKER_NAME route=$ROUTE_HOST"
+      say "deploy: worker=$WORKER_NAME route=$ROUTE_HOST${version:+ version=$version}"
       preflight
       ensure_bucket
       ensure_retention

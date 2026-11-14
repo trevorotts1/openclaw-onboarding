@@ -273,7 +273,7 @@ arc_beats_missing: [count from Category K]
 
 ### SOP 9.5 -- Research-to-Slide Mapping (Phase 3.5, BEFORE copy)
 
-**When to run:** Phase 3.5, AFTER the Signature Presentation Architect locks `working/copy/arc_allocation.json` (the per-slide arc plan) and BEFORE the Slide Copywriter writes any copy (Phase 4). A short second pass -- the heavy discovery already ran at Phase -0.5; this pass only ASSIGNS the already-gathered findings to specific slides so the writer builds copy ON TOP of mapped research. Dispatched by the Director SOP 9.x right after the arc phase.
+**When to run:** Phase 3.5, AFTER the P3-ARC phase (Offer and Price Strategist) writes `working/copy/arc_allocation.json` (the per-slide arc plan) and BEFORE the Slide Copywriter writes any copy (Phase 4). A short second pass -- the heavy discovery already ran at Phase -0.5; this pass only ASSIGNS the already-gathered findings to specific slides so the writer builds copy ON TOP of mapped research. Dispatched by the Director SOP 9.x right after the arc phase.
 
 **Why it exists:** the brief is real and early, but organised by CATEGORY (A-L), never mapped to a slide. That is the root cause of "ONE fact on ONE slide": the writer is handed a category bucket and funnels research to the proof beat. This SOP produces the missing slide-level artifact so research is woven ACROSS the deck.
 

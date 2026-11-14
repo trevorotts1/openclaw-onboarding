@@ -22,9 +22,11 @@ schedule.
 | status   | meaning                                                                 | exit |
 |----------|-------------------------------------------------------------------------|------|
 | healthy  | ≥80% SOP embedding coverage, persona index present, < 7 days old        | 0    |
-| degraded | coverage 40–79%, OR 7–30 days stale, OR recall ratio < 0.5              | 1    |
+| partial  | coverage 40–79%, OR 7–30 days stale, OR recall ratio < 0.5              | 1    |
 | dark     | embeddings table missing/empty, persona index empty, <40% cov, >30d old | 2    |
 | error    | DB not found / script failure                                           | 3    |
+
+These four words describe the search index only. They are not the Command Center's header badge.
 
 **Manual run (operator box):**
 
@@ -45,7 +47,8 @@ openclaw cron create "0 */6 * * *" \
 ```
 
 Idempotency: before creating, check it is not already registered —
-`openclaw cron list | grep -qi fleet-embedding-probe` — and skip if present.
+`python3 ~/.openclaw/skills/32-command-center-setup/scripts/cc_truth_check.py cron --name fleet-embedding-probe`
+— create the job only on exit 1; on exit 2 stop and report.
 
 **If the probe reports `dark`:** the SOP embeddings or persona index are not
 built/stale. Re-running the SOP library ingest (`ingest-sop-library.sh`) does
@@ -77,5 +80,5 @@ Then re-run the probe to confirm it returns to `healthy`.
 ## Command Center Activation / liveness
 
 (See `CORE_UPDATES.md` → "HEARTBEAT.md Addition" for the twice-daily activation
-check and the `pm2 list | grep blackceo-command-center` liveness probe. The
+check and the `python3 ~/.openclaw/skills/32-command-center-setup/scripts/cc_truth_check.py app` liveness probe — exit 0 means the app is online, 1 means it is not, 2 means the check itself failed and proves nothing. The
 dashboard runs on **:4000**.)

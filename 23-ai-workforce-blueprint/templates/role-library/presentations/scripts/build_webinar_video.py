@@ -285,11 +285,23 @@ def resolve_required_inputs(run_dir: Path) -> Dict[str, Any]:
         else:
             raise WebinarBuildError(
                 f"presenter speech not found: tried {speech!r} and {alt!r}")
-    chunks_dir = run_dir / "working" / "delivery" / "_audio_chunks_full"
+    # PD-307: the video reads the chunk folder named after ITS OWN audio file
+    # (`_audio_chunks_PRESENTER-AUDIO` next to PRESENTER-AUDIO.mp3). The old fixed
+    # `_audio_chunks_full` is still accepted as a fallback so a run mid-upgrade does
+    # not lose its timing track.
+    own_name = "_audio_chunks_" + audio.stem
+    chunks_dir = run_dir / "working" / "delivery" / own_name
     if not chunks_dir.is_dir():
-        raise WebinarBuildError(
-            f"Fish chunk audio dir not found: {chunks_dir!r} — the webinar timing track "
-            "is derived from the REAL per-chunk durations, never a planned estimate.")
+        legacy = run_dir / "working" / "delivery" / "_audio_chunks_full"
+        if legacy.is_dir():
+            log(f"PD-307: using the legacy chunk folder {legacy} "
+                f"(the audio now names its chunks {own_name!r})")
+            chunks_dir = legacy
+        else:
+            raise WebinarBuildError(
+                f"Fish chunk audio dir not found: looked for {chunks_dir!r} and "
+                f"{legacy!r} — the webinar timing track is derived from the REAL "
+                "per-chunk durations, never a planned estimate.")
     return {
         "slides_dir": slides_dir,
         "audio": audio,
@@ -306,11 +318,22 @@ def resolve_required_inputs(run_dir: Path) -> Dict[str, Any]:
 # Step 1 — timing track (webinar_timing.py)
 # ---------------------------------------------------------------------------
 
+def _timing_verdict_ok(verdict: str) -> bool:
+    """True only when the cross-check actually PASSED. `webinar_timing.verify_timing`
+    returns a human verdict string and never raises, so before PD-307 a DRIFT
+    verdict (or an audio cross-check that could not run) was printed and the build
+    carried on into the render — the slides then drifted off the narration with
+    nobody told. Anything that is not an explicit PASS is a failure."""
+    return "-> PASS" in (verdict or "")
+
+
 def build_timing(inputs: Dict[str, Path], run_dir: Path, deck_slug: str,
                  chunk_chars: int, verbose: bool) -> Path:
     """Run webinar_timing.py to derive the per-slide timing track.
 
     Returns the timing-track path (working/checkpoints/webinar_timing.json).
+    Raises WebinarBuildError when the cross-check against the real audio is not a
+    PASS (PD-307: a timing failure is an error, never a log line).
     """
     from webinar_timing import derive_timing, verify_timing, TimingError
     try:
@@ -321,6 +344,11 @@ def build_timing(inputs: Dict[str, Path], run_dir: Path, deck_slug: str,
         raise WebinarBuildError(f"timing track derivation failed: {exc}") from exc
     verdict = verify_timing(result, str(inputs["audio"]))
     log(verdict)
+    if not _timing_verdict_ok(verdict):
+        raise WebinarBuildError(
+            f"timing cross-check did not pass: {verdict} — the per-slide timing track "
+            "does not match the real audio, so the slides would drift off the "
+            "narration. Re-synthesize the audio (or fix the chunk folder) and rebuild.")
     if not result.get("timing"):
         raise WebinarBuildError("timing track is empty — no per-slide entries")
     out_path = run_dir / "working" / "checkpoints" / "webinar_timing.json"
@@ -390,18 +418,32 @@ def _ledger_path(run_dir: Path) -> Path:
 
 
 def _record_webinar_in_ledger(run_dir: Path, record: dict) -> None:
-    """MERGE the webinar upload record into the shared media ledger (never clobber)."""
+    """MERGE the webinar upload record into the shared media ledger (never clobber).
+
+    PD-307: the shared ledger is written by the uploader (`ghl_media_push`) and by
+    this builder, and a plain read-modify-write loses whichever write lands second.
+    The merge therefore runs under the uploader's own exclusive file lock —
+    `ghl_media_push._locked_ledger_update`, imported, never copied (one lock, one
+    implementation). Two writers in two processes leave both entries.
+    """
     ledger_path = _ledger_path(run_dir)
-    ledger = _read_json(ledger_path) if ledger_path.exists() else {}
-    ledger["webinar_mp4"] = record
-    # Also append to the normalized 'uploaded' list so readers that scan it see the video.
-    uploaded = ledger.get("uploaded")
-    if not isinstance(uploaded, list):
-        uploaded = []
-    uploaded.append({"kind": "webinar_mp4", **record})
-    ledger["uploaded"] = uploaded
-    ledger_path.parent.mkdir(parents=True, exist_ok=True)
-    ledger_path.write_text(json.dumps(ledger, indent=2))
+    here = Path(__file__).resolve().parent
+    if str(here) not in sys.path:
+        sys.path.insert(0, str(here))
+    from ghl_media_push import _locked_ledger_update
+
+    def _mut(ledger: dict):
+        ledger["webinar_mp4"] = record
+        # Also append to the normalized 'uploaded' list so readers that scan it see
+        # the video.
+        uploaded = ledger.get("uploaded")
+        if not isinstance(uploaded, list):
+            uploaded = []
+        uploaded.append({"kind": "webinar_mp4", **record})
+        ledger["uploaded"] = uploaded
+        return None, True
+
+    _locked_ledger_update(ledger_path, _mut)
 
 
 def upload_webinar(out_path: Path, run_dir: Path, deck_slug: str,

@@ -55,6 +55,8 @@ concurrency:
 
 jobs:
   single-update-skills-entrypoint-guard:
+    # Batch pull requests run only the required checks (Trevor order 2026-11-13).
+    if: ${{ !startsWith(github.head_ref, 'batch/') }}
     name: scripts/update-skills.sh can never succeed; no live doc points at it
     runs-on: ubuntu-latest
     steps:

@@ -99,9 +99,25 @@ def _sanitize(text):
     }
     for bad, good in replacements.items():
         text = text.replace(bad, good)
+    # A company name comes from the {{COMPANY_NAME}} token, never from a
+    # hard-coded brand baked into a role file.
+    text = _scrub_brand(text)
     # Collapse any doubled spaces the dash replacement may have introduced.
     text = re.sub(r"[ \t]{2,}", " ", text)
     return text.strip()
+
+
+# Hard-coded brand names that must never reach a client-facing guide. Role files
+# carry the operator's own brand in their prose ("... for BlackCEO"); the guide
+# is generated for every client, so those read as "the company".
+_BRAND_RE = re.compile(r"\bBlackCEO('s)?\b", re.IGNORECASE)
+
+
+def _scrub_brand(text):
+    if not text:
+        return text
+    return _BRAND_RE.sub(
+        lambda m: "the company's" if m.group(1) else "the company", text)
 
 
 # Characters the fleet style bans, mapped to their plain-ASCII replacements.
@@ -263,6 +279,7 @@ def _parse_suggested_roles_md(path):
             current = {
                 "number": number,
                 "name": name.strip(),
+                "slug": re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-"),
                 "description": "",
                 "is_head": number == 0,
                 "is_qc": "quality control" in low or "qc " in low or low.startswith("qc"),
@@ -476,6 +493,7 @@ def _roles_from_index(dept_folder, meta):
         roles.append({
             "number": 0 if is_head else len(roles) + 1,
             "name": title,
+            "slug": slug,
             "description": desc,
             "is_head": is_head,
             "is_qc": is_qc,
@@ -547,17 +565,46 @@ def _is_internal(role):
     return any(h in name_low for h in INTERNAL_ROLE_NAME_HINTS)
 
 
-def _client_specialists(roles):
-    """Filter to the specialists a client would actually ask for: drop the head,
-    drop QC and internal-only roles. Keep order (by role number)."""
+def _roster_specialist_slugs(dept_folder):
+    """The client-facing specialist slugs from the department's own roster table
+    in `00-START-HERE.md` (the file PD-039/PD-028 treat as the roster).
+
+    Returns None when the department has no roster table, so every department
+    without one keeps the name-hint filter below. When a roster exists, the
+    roster IS the source of truth: a role is client-facing iff its roster row's
+    type is `specialist` or `strategist`. That keeps the guide's list equal to
+    the roster (and drops role files that are not in it).
+    """
+    path = os.path.join(ROLE_LIBRARY_DIR, dept_folder, "00-START-HERE.md")
+    try:
+        with open(path) as f:
+            content = f.read()
+    except OSError:
+        return None
+    rows = re.findall(
+        r"^\|\s*[A-Z]+-[0-9A-Za-z]+\s*\|\s*([a-z0-9-]+)\s*\|\s*([a-z-]+)\s*\|",
+        content, re.M)
+    if not rows:
+        return None
+    return {slug for slug, rtype in rows if rtype in ("specialist", "strategist")}
+
+
+def _client_specialists(roles, roster_slugs=None):
+    """Filter to the specialists a client would actually ask for. When the
+    department has a roster table, membership in it decides; otherwise drop the
+    head, QC and internal-only roles. Keep order (by role number)."""
     out = []
     for r in sorted(roles, key=lambda x: x.get("number", 999)):
-        if r.get("is_head"):
-            continue
-        if r.get("is_qc"):
-            continue
-        if _is_internal(r):
-            continue
+        if roster_slugs is not None:
+            if r.get("slug") not in roster_slugs:
+                continue
+        else:
+            if r.get("is_head"):
+                continue
+            if r.get("is_qc"):
+                continue
+            if _is_internal(r):
+                continue
         out.append(r)
     return out
 
@@ -583,18 +630,17 @@ def _first_sentence(text, cap=160):
     if not t:
         return ""
     first = t.split(". ")[0].strip()
-    # Also stop at the first colon - role files often pack a long clause list
-    # after a colon that reads as an internal spec, not an owner-facing summary.
-    first = first.split(": ")[0].strip()
     if len(first) > cap:
         cut = first[:cap]
         # Prefer the last clause boundary (comma) within the cap; it reads as a
-        # complete thought far more often than an arbitrary word boundary.
-        if "," in cut and cut.rfind(",") >= cap // 2:
-            cut = cut[:cut.rfind(",")]
-        elif " " in cut:
-            cut = cut[:cut.rstrip().rfind(" ")]
-        first = cut
+        # complete thought far more often than an arbitrary word boundary. If
+        # that cut would leave an unbalanced parenthesis or a dangling word, keep
+        # the WHOLE sentence instead: a long line is honest, a fragment that
+        # ends "... every deck run has." is not.
+        if "," in cut and cut.rfind(",") >= cap // 3:
+            cand = cut[:cut.rfind(",")].rstrip(" ,;-")
+            if cand.count("(") == cand.count(")") and cand.split()[-1].lower() not in _DANGLING_TAIL_WORDS:
+                first = cand
     first = first.rstrip(" ,;-")
     # Drop trailing connector/function words so we never end on a fragment.
     words = first.split()
@@ -608,19 +654,18 @@ def _first_sentence(text, cap=160):
     return first
 
 
-def _example_request(role):
-    """A plain-language example request for this specialist, derived from its
-    'what it does' description. Generic and tokenized-safe (no client names).
-
-    The description is used as a label after a colon (NOT conjugated against a
-    verb), so phrasings like "Top-of-funnel outreach." or acronyms like "CRM"
-    stay grammatical and correctly cased.
-    """
-    desc = _first_sentence(role.get("description", ""), cap=90)
-    name = role.get("name", "this specialist")
-    if not desc:
-        return f"\"Have the {name} take on a task in its area.\""
-    return f"\"Have the {name} take this on: {desc}\""
+def _client_clean(text):
+    """Strip developer-only references from a description that lands in the
+    owner-facing guide: code-file paths and a bare pipe (which would split a
+    markdown table row). The guide says what the specialist does, not how the
+    repo is wired."""
+    if not text:
+        return text
+    text = re.sub(r"\s*\([^()]*\.py[^()]*\)", "", text)
+    text = re.sub(r"`[^`]*\.py`", "the canonical tool", text)
+    text = text.replace("|", "/")
+    text = re.sub(r"[ \t]{2,}", " ", text)
+    return text.strip()
 
 
 def _humanize_one_liner(meta, purpose):
@@ -652,7 +697,8 @@ def render_how_to_use(dept_folder, roles=None, tokens=None, meta_table=None):
 
     sr_file = meta.get("suggested_roles_file") or f"{dept_folder}-suggested-roles.md"
     sr_path = os.path.join(SUGGESTED_ROLES_DIR, sr_file)
-    purpose = _dept_purpose_from_md(sr_path)
+    purpose = (_DEPT_PLAIN_PURPOSE.get(dept_folder)
+               or _dept_purpose_from_md(sr_path))
 
     # Role source of truth, in order:
     #   1. an explicit roles list passed in (build time, from
@@ -689,16 +735,33 @@ def render_how_to_use(dept_folder, roles=None, tokens=None, meta_table=None):
         # fall back to the suggested-roles parse so the guide is never empty.
         if not roles and sr_roles:
             roles = sr_roles
+        # A roster row whose role file is not in _index.json yet still belongs in
+        # the guide: the roster is the source of truth, so read the role file.
+        roster_slugs = _roster_specialist_slugs(dept_folder)
+        if roster_slugs:
+            have = {r.get("slug") for r in roles}
+            for slug in sorted(roster_slugs - have):
+                path = os.path.join(ROLE_LIBRARY_DIR, dept_folder, slug + ".md")
+                if not os.path.isfile(path):
+                    continue
+                roles.append({
+                    "number": len(roles) + 1,
+                    "name": _humanize_role_title(slug.replace("-", " ").title()),
+                    "slug": slug,
+                    "description": _who_you_are_first_sentence(path),
+                    "is_head": False,
+                    "is_qc": False,
+                })
 
     # Sanitize every role name + description that flows into the guide.
     for r in roles:
         r["name"] = _sanitize(r.get("name", ""))
-        r["description"] = _sanitize(r.get("description", ""))
+        r["description"] = _client_clean(_sanitize(r.get("description", "")))
 
     head_name = _sanitize(
         meta.get("director_title") or f"Director of {meta['display_name']}"
     )
-    specialists = _client_specialists(roles)
+    specialists = _client_specialists(roles, _roster_specialist_slugs(dept_folder))
 
     # Specialist example used in the prose tokens (first client specialist).
     spec_example = specialists[0]["name"] if specialists else f"{meta['display_name']} specialist"
@@ -728,7 +791,6 @@ def render_how_to_use(dept_folder, roles=None, tokens=None, meta_table=None):
             detail_blocks.append(
                 f"**{r['name']}**\n\n"
                 f"- *What it is for:* {what}\n"
-                f"- *Example request:* {_example_request(r)}\n"
             )
         spec_table = "\n".join(table_rows)
         spec_details = "\n".join(detail_blocks)
@@ -792,6 +854,14 @@ def render_how_to_use(dept_folder, roles=None, tokens=None, meta_table=None):
     out = _sanitize_block(out)
     out = out.replace("\x00CN\x00", fill["COMPANY_NAME"]).replace(
         "\x00GD\x00", fill["GENERATION_DATE"])
+
+    # Department-specific "What to say" opener, inserted at the top of the guide
+    # (after the header block, before Section 1).
+    top_block = _DEPT_TOP_BLOCK.get(dept_folder, "")
+    if top_block:
+        idx = out.find("\n---\n")
+        if idx != -1:
+            out = out[:idx] + "\n" + top_block.strip("\n") + "\n" + out[idx:]
 
     # Department-specific appendix sections. These carry rules that are
     # enforced at the BUILD pipeline level (AUTO-FAIL gates) and must be
@@ -968,6 +1038,30 @@ silently dropped.
 `23-ai-workforce-blueprint/master-orchestrator-dept/SOP-01-Blocked-vs-Return.md`
 """
 
+# Plain-language department purpose for the owner guide, for departments whose
+# suggested-roles "Department Purpose" paragraph is a developer brief rather
+# than something a client can read.
+_DEPT_PLAIN_PURPOSE = {
+    "presentations": (
+        "This department turns an idea you want to present into a finished "
+        "slide deck. It writes the words, plans the story, generates the "
+        "images, checks the work, and delivers the final file. You answer a "
+        "few questions at the start, pick a look from three samples, and the "
+        "team builds the rest."
+    ),
+}
+
+# Department-specific opener inserted at the top of the owner guide, above
+# Section 1. Presentations names the exact words an owner can say.
+_DEPT_TOP_BLOCK = {
+    "presentations": (
+        "## What to say\n\n"
+        'Say: "I need a presentation." I will ask a few questions, one at a '
+        "time. You will pick a look from 3 samples. Then I build it and send "
+        "it to you.\n"
+    ),
+}
+
 # Department-specific appendix blocks. Each value is appended verbatim after
 # the generated guide body (after the _sanitize_block pass, so they must
 # already be em-dash-free). Keep entries sorted by dept_folder key.
@@ -975,93 +1069,6 @@ _DEPT_APPENDIX = {
     "communications": _TELEGRAM_TARGET_APPENDIX,
     "crm": _REUSABLE_LIBRARIES_APPENDIX,
     "marketing": _REUSABLE_LIBRARIES_APPENDIX,
-    "presentations": """\
----
-
-## Canonical Entry Command (the only way to build a deck)
-
-A deck is built by running, and ONLY by running, the single sanctioned \
-entry script:
-
-```
-23-ai-workforce-blueprint/scripts/presentation-canonical-entry.sh \
-  --run-dir <RUN_DIR> --slides slides.json --out <OUT>.pptx
-```
-
-That entry script runs three fail-closed gates before dispatching the \
-canonical orchestrator (`run_signature_deck.py` -> `build_deck.py`):
-
-1. **Deps check** - all required runtime dependencies are present.
-2. **Bypass-scan** - refuses to start if any hand-rolled renderer or assembler \
-exists in the run directory. Specifically: any non-canonical `*.py` defining a \
-2048x1152 `Image.new` slide canvas (AF-LOCAL-CANVAS), a native \
-`add_textbox`/`add_text_box` overlay (AF-CANONICAL-RENDER-BYPASS), or a direct \
-kie `createTask` call outside `build_deck.py` (AF-CANONICAL-RENDER-BYPASS).
-3. **Version/hash pin** - the deployed renderer must be in lockstep with the \
-SOP/manifest stack and match the pinned governed head.
-
-**`python3 working/*.py` (writing and running your own per-deck \
-driver/submit/assemble scripts) is the ungoverned path and is FORBIDDEN \
-(AF-CANONICAL-RENDER-BYPASS).**
-
-A gate may be skipped ONLY by an explicit, logged owner/founder approval token \
-recorded in `working/checkpoints/process_manifest.json` \
-(`owner_skip_approval`: `approved:true` + `approved_by` + `reason`, naming \
-the exact gate code). Agents may NEVER skip a gate silently or by their own \
-choice.
-
----
-
-## AF-CANONICAL-RENDER-BYPASS - No Hand-Rolled Renderer (AUTO-FAIL)
-
-All image generation MUST route through the canonical module \
-`build_deck.py`. A hand-rolled per-deck assembler or renderer is FORBIDDEN. \
-Specifically, the presence of `add_textbox` / `add_text_box` calls or a \
-direct kie `createTask` call outside `build_deck.py` in any run-directory \
-`*.py` file triggers AF-CANONICAL-RENDER-BYPASS. This auto-fail also fires \
-when the entry check detects an attempt to bypass the sanctioned entry script.
-
----
-
-## AF-LOCAL-CANVAS - No Local Canvas Fabrication (AUTO-FAIL)
-
-A slide image MUST be generated via kie.ai GPT Image 2.6 Sunburst. A slide image \
-fabricated locally (e.g. `canvas = Image.new('RGB', (2048, 1152), ...)`) \
-is FORBIDDEN. The presence of a 2048x1152 `Image.new` call in any \
-run-directory `*.py` file triggers AF-LOCAL-CANVAS.
-
----
-
-## AF-IMAGE-QC-VISION - Real Pixel Image QC Required (AUTO-FAIL)
-
-The image-QC pass is NOT satisfied by a JSON score alone. The QC report at \
-`working/qc/image_qc_report.json` MUST declare a `vision_model` (the AI \
-model that performed the pixel/vision read) and a `slides` list with at \
-least one per-slide entry containing `baked: true`. A QC report that lacks \
-the `vision_model` field or an empty `slides` list triggers \
-AF-IMAGE-QC-VISION.
-
----
-
-## AF-DARK-SLIDE - No Dark Slides (AUTO-FAIL)
-
-Slides MUST use LIGHT / bright backgrounds by DEFAULT. DARK or \
-black-background slides are NOT ALLOWED unless the CLIENT EXPLICITLY requests \
-a dark theme via the intake flag `client_dark_theme: true`. Light is the \
-default; dark is opt-in by client request only.
-
-- DEFAULT: Light / bright background slides
-- ALLOWED dark: Only when `client_dark_theme: true` is set in \
-working/copy/intake.json
-- AUTO-FAIL: Any dark/black/near-black default background without \
-`client_dark_theme: true`
-
-**To enable a dark theme:** during onboarding, explicitly tell the Director \
-of Presentations you want dark slides. The Director will record \
-`client_dark_theme: true` in your intake.json. Without this explicit request, \
-all slides default to light/bright backgrounds and any dark background \
-specification is an AUTO-FAIL blocked by the build pipeline.
-""",
     "sales": _REUSABLE_LIBRARIES_APPENDIX,
     "social-media": _REUSABLE_LIBRARIES_APPENDIX,
     "web-development": _REUSABLE_LIBRARIES_APPENDIX,

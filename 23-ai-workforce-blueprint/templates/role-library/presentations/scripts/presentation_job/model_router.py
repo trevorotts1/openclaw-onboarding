@@ -307,6 +307,27 @@ def _served_model(alias_def: Dict[str, Any], provider: str) -> str:
     return str(alias_def.get("model") or "")
 
 
+def _model_family(model_id: Any) -> str:
+    """PD-204: the vendor family a model id belongs to.
+
+    The text after the last "/", lower-cased, up to the first character that is
+    not a letter: "deepseek-v4.1-flash" -> "deepseek", "z-ai/glm-5.3" -> "glm".
+    Deliberately the SAME family the catalog's aliases group under, so a
+    "deepseek-flash" grader can never be mistaken for independent of a
+    "deepseek-v4.1-flash" author.
+
+    An empty answer ("", or an id that starts with a non-letter) means the
+    family is UNKNOWN -- absence of a reading is never evidence of a
+    difference, so callers must not treat two unknowns as a match."""
+    text = str(model_id or "").rsplit("/", 1)[-1].lower()
+    family = ""
+    for ch in text:
+        if not ("a" <= ch <= "z"):
+            break
+        family += ch
+    return family
+
+
 # ---------------------------------------------------------------------------
 # Phase -> capability class (the fix-spec routing table)
 # ---------------------------------------------------------------------------
@@ -368,6 +389,20 @@ PHASE_CAPABILITY: Dict[str, str] = {
 # is authoring work (the loop exists to author artifacts) -- same class as
 # P4-COPY. Never invents a capability the phase did not declare.
 DEFAULT_CAPABILITY = "authoring"
+
+# PD-204: A GRADER NEVER RIDES THE MODEL THAT WROTE THE ARTIFACT.
+# Each QC phase is mapped to the phase whose output it grades. resolve_route()
+# resolves that author's route first (same profile, same mode), then refuses
+# every candidate in the author's model family -- and only those. A client's
+# declared judge model faces the same rule, so no declaration can re-open the
+# hole this module was written to close ("QC judges could silently ride the
+# same model identity that authored the artifact", header, WHAT THIS IS).
+GRADER_OF: Dict[str, str] = {
+    "P1Q-COPY-QC": "P4-COPY",
+    "P-PROMPT-QC": "P4-PROMPT",
+    "P-SPEECH-QC": "P9-SPEECH",
+    "P-SHIFT-QC": "P4-COPY",
+}
 
 
 # Ordered (alias, allow) candidates per capability class, straight from the
@@ -919,7 +954,7 @@ def plan_report(profile: Optional[Dict[str, Any]]) -> Dict[str, Any]:
 # ---------------------------------------------------------------------------
 # FIX 11: Ultra / Standard / Economy modes -- measured-capacity concurrency
 # ---------------------------------------------------------------------------
-# DEFAULT RULING (fix spec, binding): Ultra's operator ceiling is 100
+# DEFAULT RULING (fix spec, binding): Ultra's operator ceiling is 400
 # concurrent tasks -- even when a provider advertises a larger number. It is never
 # raised by provider advertising, never "learned", and only revisited through
 # an explicit config revision with Trevor approval, gated on a REAL 7-day
@@ -1228,16 +1263,11 @@ def _cosmetic_axis_notice() -> str:
     verbatim and `.mode-plan.json` already records, so no caller had to
     change. F15's rule: a record that cannot state a difference must not
     imply one."""
-    return (f" MODE WIDTH AXIS: ultra runs at {ULTRA_OPERATOR_CEILING}, "
-            f"standard at {STANDARD_MODE_CEILING} "
-            f"(ULTRA_OPERATOR_CEILING {ULTRA_OPERATOR_CEILING}, "
-            f"STANDARD_MODE_CEILING {STANDARD_MODE_CEILING}), so declaring a "
-            f"mode changes the width. FIX 61 made the axis real. "
-            f"{STANDARD_MODE_CEILING} after it was narrowed to 25 without "
-            f"his approval; making ultra mean something again is an OPERATOR "
-            f"decision -- raise ultra above {ULTRA_OPERATOR_CEILING}, or set "
-            f"both numbers -- and is deliberately NOT taken here. Economy "
-            f"still differs, by COST policy rather than by this ceiling.")
+    shared = next(iter({MODE_OPERATOR_CEILING.get(m, ULTRA_OPERATOR_CEILING)
+                        for m in MODES}))
+    return (f" MODE WIDTH AXIS: every mode is held to the same operator "
+            f"ceiling ({shared}), so declaring a mode changes no width and "
+            f"this axis buys nothing.")
 
 
 def mode_operator_ceiling(mode: str, measured: Any) -> Tuple[int, bool]:
@@ -1323,7 +1353,7 @@ def mode_concurrency(mode: str, *,
     mode_ceiling()'s: the cap capped_width() will apply. The wave then runs
     min(what the probe measures, this) -- an upper bound, stated as one.
 
-    Hard ceilings, unchanged: no mode exceeds ULTRA_OPERATOR_CEILING (100) or
+    Hard ceilings, unchanged: no mode exceeds ULTRA_OPERATOR_CEILING (400) or
     a lower measured client ceiling -- provider advertising changes
     nothing. FIX 16 adds the per-mode share (ultra ULTRA_OPERATOR_CEILING /
     standard STANDARD_MODE_CEILING), which applies only where the client
@@ -1332,11 +1362,12 @@ def mode_concurrency(mode: str, *,
     floor dressed up as a mode decision. Economy is unchanged: its width is a
     COST policy. Unknown mode -> ValueError.
 
-    U3 -- since standard was restored to 100 the two shares are equal, so
-    ultra and standard plan and run the SAME width. The number below is still
-    exactly what capped_width() will apply (that is F15, and it is kept); it
-    is simply the same number for both modes, and the reason string says so
-    in the word COSMETIC rather than leaving a reader to infer a difference.
+    FIX 61.5 (2026-09-27 fix orders) settled the shares the other way: ultra
+    400, standard 25, economy 100, read from MODE_OPERATOR_CEILING on every
+    run. The shares are NOT equal, so ultra and standard plan and run
+    DIFFERENT widths. The number below is still exactly what capped_width()
+    will apply (that is F15, and it is kept), and the reason string states the
+    applied number rather than leaving a reader to infer a difference.
     """
     m = normalize_mode(mode)
     measured = measured_client_ceiling(profile)
@@ -1420,15 +1451,17 @@ def mode_ceiling(mode: str, *,
 
     The binding text, with the owner ruling of 2026-10-15 applied to its
     DeepSeek example (DeepSeek Direct has no provider cap to advertise):
-    "Ultra's operator ceiling is 100 concurrent
+    "Ultra's operator ceiling is 400 concurrent
     tasks -- even when a provider advertises more ... Standard and Economy
     derive from the MEASURED client capacity/cost policy and may never exceed
     the same client/provider ceiling."
     min(the mode's share of ULTRA_OPERATOR_CEILING, the client's MEASURED
     ceiling when one exists). An unmeasured client contributes no ceiling of
     its own -- the absence of a reading is not a ceiling any more than it is a
-    capability -- so only the operator's 100 applies, to every mode alike, and
-    the width still comes from what was measured.
+    capability -- so FIX 61.5 gives it its OWN mode ceiling from
+    MODE_OPERATOR_CEILING (ultra 400, standard 25, economy 100), with
+    mode_axis_in_force False because no client ceiling was determined, and the
+    width still comes from what was measured.
 
     FIX 16 -- THE MODE'S SHARE. This used to hand ULTRA_OPERATOR_CEILING to
     every mode, which made capped_width() (a min()) produce byte-identical
@@ -1436,14 +1469,15 @@ def mode_ceiling(mode: str, *,
     engine (review section 6). mode_operator_ceiling() supplies the per-mode
     share instead -- but ONLY where the client ceiling is a determined fact.
 
-    U3 -- AND THAT SHARE IS AGAIN THE SAME FOR EVERY MODE. F16 made ultra
-    differ by narrowing STANDARD_MODE_CEILING to 25, which the operator never
-    approved; U3 restored it to 100. So ultra and standard are byte-identical
-    in width once more, this ceiling included. The mode is not deleted and
-    standard is not re-narrowed to manufacture a difference -- both are the
-    operator's call. The difference between now and before F16 is that the
-    record no longer implies a difference that is not there: the reason
-    string below says COSMETIC, and mode_axis_in_force is False.
+    FIX 61.5 -- THE SHARE DIFFERS BY MODE AGAIN, AND IT IS ENFORCED. F16
+    narrowed STANDARD_MODE_CEILING to 25; U3 (2026-09-07) restored it to 100;
+    FIX 61.5 (2026-09-27 fix orders, the operator's own call) set it back to
+    25 alongside ultra 400 and economy 100. So ultra and standard are NOT
+    byte-identical in width, this ceiling included: mode_operator_ceiling()
+    reads MODE_OPERATOR_CEILING on every run, mode_axis_in_force is True on a
+    measured client, and each mode applies its own ceiling. The unmeasured
+    client gets its own mode's ceiling too, with in_force False because no
+    client ceiling was determined.
 
     WHY THIS IS NOT mode_concurrency(): that function answers "how wide will
     this mode PLAN to run" and includes Economy's COST width, which is a
@@ -2217,6 +2251,22 @@ def resolve_route(phase_id: str, *,
                 "fallback_alias": requested_alias or None,
             }
 
+    # PD-204: resolve the AUTHOR's route before grading anything it wrote.
+    # Same profile, same mode -- so the comparison is against the model this
+    # run would really have used, never against a hypothetical. The author
+    # phase is never itself a grader, so this recursion terminates at depth 1.
+    author_phase = GRADER_OF.get(phase_id)
+    author_family = ""
+    if author_phase:
+        author_decision = resolve_route(author_phase, profile=profile,
+                                        config_dir=config_dir, mode=mode)
+        decision["author_phase"] = author_phase
+        decision["author_route"] = author_decision.get("route")
+        if author_decision.get("route"):
+            author_route = author_decision["route"]
+            author_family = _model_family(
+                _served_model(author_route, author_route.get("provider")))
+    family_skipped = 0
     candidates: List[Dict[str, Any]] = []
     route: Optional[Dict[str, str]] = None
     reason = ""
@@ -2236,12 +2286,6 @@ def resolve_route(phase_id: str, *,
         _ultra_or_model = None
         if mode == "ultra" and alias_def and _norm_provider(alias_def.get("provider")) == "ollama-cloud":
             _ultra_or_model = (alias_def.get("served_ids") or {}).get("openrouter")
-            if not _ultra_or_model:
-                _oc_model = alias_def.get("model")
-                for _a, _d in ROUTER_CATALOG.items():
-                    if (_d.get("served_ids") or {}).get("ollama-cloud") == _oc_model:
-                        _ultra_or_model = (_d.get("served_ids") or {}).get("openrouter")
-                        break
             if _ultra_or_model:
                 alias_def = {**alias_def, "provider": "openrouter",
                              "model": _ultra_or_model,
@@ -2255,6 +2299,17 @@ def resolve_route(phase_id: str, *,
             _m = alias_def.get("model")
             row.update({"eligible": False,
                         "reason": "ultra: no OpenRouter served id for " + str(_m)})
+            candidates.append(row)
+            continue
+        # PD-204: a grader in the author's family is not an independent
+        # grader. Recorded as its own skip so the decision says WHY the
+        # candidate was passed over, never a silent omission.
+        cand_family = _model_family(
+            _served_model(alias_def, alias_def.get("provider")))
+        if author_family and cand_family and cand_family == author_family:
+            family_skipped += 1
+            row.update({"eligible": False,
+                        "reason": "same model family as the author"})
             candidates.append(row)
             continue
         ok, why = _eligible(providers, alias_def)
@@ -2356,16 +2411,25 @@ def resolve_route(phase_id: str, *,
         rec = _recommendation_for(capability)
         rec_text = (f"{rec['provider']}/{rec['model']}" if rec.get("model")
                     else f"alias {rec['alias']!r}")
+        # PD-204: when the only thing standing between this grader and a
+        # route is the author's own family, say that plainly instead of the
+        # generic park text -- the fix is a second family, not another alias.
+        if author_phase and family_skipped:
+            no_route_reason = ("no independent model is available to grade "
+                               "this step")
+        else:
+            no_route_reason = (
+                f"no eligible route for capability '{capability}' "
+                f"({rejected}) -- park/fail-closed. Recommendation "
+                f"from capability data: {rec_text} ({rec['basis']}). "
+                f"Ask the client which model they want to use for "
+                f"this class, or have them configure a default model; "
+                f"no model was selected for them.")
         decision.update({
             "route": None,
             "recommendation": rec,
             "model_source": None,
-            "reason": f"no eligible route for capability '{capability}' "
-                      f"({rejected}) -- park/fail-closed. Recommendation "
-                      f"from capability data: {rec_text} ({rec['basis']}). "
-                      f"Ask the client which model they want to use for "
-                      f"this class, or have them configure a default model; "
-                      f"no model was selected for them.",
+            "reason": no_route_reason,
         })
     decision["candidates"] = candidates
     return decision

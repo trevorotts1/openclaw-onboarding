@@ -206,6 +206,8 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
 
    - No em dashes anywhere in any field. Use a comma or parenthesis instead.
    - No fabricated proof: if a slide calls for a testimonial and none is in the proof inventory, write `[TESTIMONIAL PENDING -- client must supply]` as a placeholder. Never invent a quote or a number.
+
+   The code gate AF-COPY-BAND counts characters and is binding: HEADLINE 12-60, SUBHEAD 20-110, at most 3 bullets of 8-30 characters each, slide total 40-180 characters. When a word limit and a character limit disagree, the smaller wins.
 4. For every slide in the Proof section (per arc_allocation.json), include PROOF USED field referencing a specific item from the proof inventory.
 5. For every slide in the Offer Stack and Price Ladder sections, coordinate with the Offer Price Strategist's output in working/copy/price_ladder.json. Do not write price numbers yourself -- pull them from price_ladder.json.
 6. **(density-floor overhaul) Place the hook ONLY on the 3 to 4 dedicated slides from hook_package.json** (SOP 9.2). Track in a comment at the top of slides_copy.md: `# HOOK-CARRYING SLIDES: [N, N, N]` (must be 3 to 4). Every other slide is `HOOK_REFRAIN: no`. Do NOT insert refrains to reach a count; there is no count floor anymore, there is a ceiling of 4.
@@ -281,7 +283,7 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
 1. List every PROOF USED value across all slide blocks in slides_copy.md. Write the list to working/copy/proof_audit.txt.
 2. For each item in proof_audit.txt, verify: does this item appear verbatim (or as a direct paraphrase) in intake.json? If yes: mark VERIFIED. If no: mark UNVERIFIED.
 3. For every UNVERIFIED item: replace the proof content on that slide with `[PROOF PENDING -- client must supply]` and add a comment in proof_audit.txt.
-4. Scan every slide's HEADLINE, SUBHEAD, and BODY for fabricated statistics. A fabricated statistic is any number, percentage, or named study that does not appear in intake.json. Replace any found with `[STAT PENDING]`.
+4. Scan every slide's HEADLINE, SUBHEAD, and BODY for fabricated statistics. A fabricated statistic is any number, percentage, or named study that appears in neither intake.json, nor a VERIFIED row of working/research/fact-validation-[DECK_SLUG].json, nor this slide's assigned item in working/research/research_map.json. Replace any found with `[STAT PENDING]`. When research_map.json assigns an item to a slide, weave its `anchor` into HEADLINE, SUBHEAD or SUPPORTING (on-slide copy only; an anchor placed only in the PRESENTER NOTE fails AF-RESEARCH-REACHES-RENDER) and record the item_id in RESEARCH_USED.
 4a. THE FORBIDDEN-ON-SLIDE SCAN (FIX-3; mirrors the QC audience-facing AUTO-FAIL battery). Scan every slide's HEADLINE, SUBHEAD, SUPPORTING, and any BODY field for the following, none of which may ever appear as ON-SLIDE (audience-facing) text. Each is an AUTO-FAIL at the same severity as the em-dash ban:
    - (1) PRESENTER NARRATION / what-to-say lines. The spoken words live in the PRESENTER NOTE, never on the slide (rule 15, the slide is never the script). If a slide field reads like something the speaker says aloud, move it to the PRESENTER NOTE.
    - (2) THE AI'S OWN META-COMMENTARY or reasoning (any "here I will...", "this slide should...", model-voice text). Strip it; it is never copy.

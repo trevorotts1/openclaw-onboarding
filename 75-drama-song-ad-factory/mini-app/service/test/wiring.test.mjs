@@ -248,16 +248,22 @@ test('wiring: a deliver event stores the https delivery link on the order', asyn
     s,
   );
   assert.equal(delivered.status, 200);
-  assert.deepEqual((await delivered.json()).order.delivery, { url: 'https://media.example/v/1', kind: 'ghl' });
+  assert.deepEqual((await delivered.json()).order.delivery, { url: 'https://media.example/v/1', kind: 'ghl', retention_kind: 'ghl_media' });
 
-  // An http URL is never stored.
+  // An http URL is refused with a real error, and the order stays ready: the
+  // page cannot show a link that is not https, so accepting it hid the fault.
   const otherId = await readyOrder('Second Sale');
   const dropped = await call(
     req('POST', `/api/studio/orders/${otherId}/state`, { event: 'deliver', delivery: { url: 'http://media.example/v/2', kind: 'r2' } }, { key: s.box }),
     s,
   );
-  assert.equal(dropped.status, 200);
-  assert.equal((await dropped.json()).order.delivery, undefined);
+  assert.equal(dropped.status, 400);
+  assert.equal((await dropped.json()).code, 'AF-DS-DELIVERY-INVALID');
+  const after = await call(req('GET', `/api/studio/orders/${otherId}`, undefined, { key: s.box }), s);
+  assert.equal(after.status, 200);
+  const afterBody = (await after.json()).order;
+  assert.equal(afterBody.state, 'ready');
+  assert.equal(afterBody.delivery, undefined);
 });
 
 // ---------------------------------------------------------------------------

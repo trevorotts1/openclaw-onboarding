@@ -179,6 +179,14 @@
       "severity": "optional",
       "when": "singing-detector",
       "satisfy": "pip install numpy (needed to run the singing detector and its tests; the rest of the control layer stays standard library only)."
+    },
+    {
+      "id": "resilia-study-requirements",
+      "type": "manual",
+      "label": "Resilia study requirements - MISSING (the delivered document is not in this repository and nothing here is integrated)",
+      "check": { "note": "MISSING: no file in this repository is the delivered Resilia study requirements document. What the tree does hold is a record of it: evidence/SKILL75/SKILL75-65-ITEM-STATUS-2026-10-31.txt lines 63-67 carry audit row C10, which says the delivered Resilia study requirements remain unintegrated and gives a truncated sha256 prefix only. The full document and its full digest are not in the tree, and no file in this skill folder integrates it. This entry cannot be marked required: scripts/qc-prereqs-json.sh Rule 16c forces type 'manual' to severity 'optional', so the requirement is stated here and never enforced by a check." },
+      "severity": "optional",
+      "satisfy": "MISSING - nothing in this repository can satisfy it. A decision clears it: the owner supplies the delivered Resilia study requirements document (with its full sha256 recorded alongside it), or the owner records that those requirements are withdrawn. Integrating them afterwards is its own unit; this entry never blocks a run."
     }
   ]
 }

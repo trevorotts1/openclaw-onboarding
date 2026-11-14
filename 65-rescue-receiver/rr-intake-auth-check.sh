@@ -291,47 +291,23 @@ _bodytext="$(cat "$_out" 2>/dev/null)"
 rm -rf "$_work"
 
 # ---- Classify ----------------------------------------------------------------
-case "$_code" in
-  ""|000)
-    settle "UNDETERMINED" 0 \
-      "the request did not complete (transport error or timeout after ${_timeout}s). A failed connection says nothing about the credential." 75
-    ;;
-  401|403)
-    settle "RR_SECRET_STALE" "$_code" \
-      "the intake refused this box's credential (HTTP $_code). Per the escalation self-check contract, that is a wrong secret, not a rejected incident." 3
-    ;;
-  429)
-    settle "UNDETERMINED" "$_code" "the intake throttled this probe (HTTP 429); nothing about the credential was established" 75
-    ;;
-  2*)
-    case "$_bodytext" in
-      *test_suppressed*)
-        settle "OK" "$_code" "the intake answered test_suppressed: the escalation channel works end to end with zero ticket residue" 0
-        ;;
-      *missing_message*)
-        settle "RR_OLD_RELAY_URL" "$_code" \
-          "the intake answered missing_message, which is the OLD relay's shape. The URL is wrong, so the credential was never the thing under test (url_source=$URL_SRC)." 4
-        ;;
-      *unauthorized*|*forbidden*|*invalid_credential*|*not_enrolled*)
-        settle "RR_SECRET_STALE" "$_code" \
-          "a 2xx whose body reports an auth refusal; this box's credential is not accepted" 3
-        ;;
-      *)
-        settle "UNDETERMINED" "$_code" \
-          "a 2xx this check does not recognise. It is NOT reported as stale: an unrecognised answer is not a verdict about the credential." 75
-        ;;
-    esac
-    ;;
-  3*)
-    settle "UNDETERMINED" "$_code" \
-      "the intake answered with a redirect (HTTP $_code). A redirect wall is not proof of a wrong credential or a wrong URL." 75
-    ;;
-  5*)
-    settle "UNDETERMINED" "$_code" \
-      "the intake returned a server error (HTTP $_code). That is the RECEIVER's problem, and it says nothing about this box's credential." 75
-    ;;
-  *)
-    settle "UNDETERMINED" "$_code" \
-      "unexpected HTTP $_code; no verdict about the credential is claimed" 75
-    ;;
+_cls_tool="$SELF_DIR/rr_intake_classify.py"
+if [ ! -f "$_cls_tool" ] || ! command -v python3 >/dev/null 2>&1; then
+  settle "UNDETERMINED" "${_code:-0}" "rr_intake_classify.py or python3 is missing, so the answer could not be read; nothing is claimed" 75
+fi
+_cls_body="$(mktemp "${TMPDIR:-/tmp}/rr-intake-body.XXXXXX" 2>/dev/null)" || _cls_body=""
+if [ -z "$_cls_body" ]; then
+  settle "UNDETERMINED" "${_code:-0}" "no temp file for the answer body; nothing is claimed" 75
+fi
+printf '%s' "$_bodytext" > "$_cls_body"
+_cls_json="$(python3 "$_cls_tool" --http-code "${_code:-}" --body-file "$_cls_body")"; _cls_rc=$?
+rm -f "$_cls_body"
+_cls_detail="$(printf '%s' "$_cls_json" | python3 -c 'import json,sys
+try: print(json.load(sys.stdin).get("detail",""))
+except Exception: print("")')"
+case "$_cls_rc" in
+  0)  settle "OK" "${_code:-0}" "$_cls_detail" 0 ;;
+  3)  settle "RR_SECRET_STALE" "${_code:-0}" "$_cls_detail" 3 ;;
+  4)  settle "RR_OLD_RELAY_URL" "${_code:-0}" "$_cls_detail (url_source=$URL_SRC)" 4 ;;
+  *)  settle "UNDETERMINED" "${_code:-0}" "$_cls_detail" 75 ;;
 esac

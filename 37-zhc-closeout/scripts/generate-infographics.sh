@@ -66,7 +66,6 @@ fi
 # state file (Skill-23-class split-brain guard).
 STATE_FILE="${ZHC_STATE_FILE:-$OC_ROOT/workspace/.workforce-build-state.json}"
 LOG_FILE="$OC_ROOT/workspace/.zhc-closeout.log"
-WS_ANSWERS_DEFAULT="$OC_ROOT/workspace/workforce-interview-answers.md"
 SKILL_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 if [[ "$KIND" == "structure" ]]; then
@@ -94,53 +93,44 @@ if ! source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib-closeout-state.sh
 fi
 
 # ---- gather placeholder values (shared) ----
-COMPANY_NAME=$(state_get '.companyName')
-[[ -z "$COMPANY_NAME" ]] && COMPANY_NAME=$(grep -E -i '^(company name|business name)[: ]' "$WS_ANSWERS_DEFAULT" 2>/dev/null | head -1 | sed -E 's/^[^:]+:\s*//')
+# BU-64: one call to closeout_facts.py replaces this script's own reads of the
+# company name, owner, agent, industry, brand colour and department / role counts.
+CLOSEOUT_FACTS=$(python3 -B "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/closeout_facts.py" "$STATE_FILE" --json 2>/dev/null)
+[[ -z "$CLOSEOUT_FACTS" ]] && CLOSEOUT_FACTS='{}'
+facts_get() { printf '%s' "$CLOSEOUT_FACTS" | jq -r "$1 // empty" 2>/dev/null; }
+
+COMPANY_NAME=$(facts_get '.companyName')
 [[ -z "$COMPANY_NAME" ]] && COMPANY_NAME="Your Company"
 
-OWNER_NAME=$(state_get '.ownerName')
+OWNER_NAME=$(facts_get '.ownerName')
 [[ -z "$OWNER_NAME" ]] && OWNER_NAME="the Owner"
 
-AGENT_NAME=$(state_get '.agentName')
+AGENT_NAME=$(facts_get '.agentName')
 [[ -z "$AGENT_NAME" ]] && AGENT_NAME="the CEO Agent"
 
-INDUSTRY=$(state_get '.industry')
+INDUSTRY=$(facts_get '.industry')
 [[ -z "$INDUSTRY" ]] && INDUSTRY="the client's industry"
 
-BRAND_COLOR=$(state_get '.brandColor')
+BRAND_COLOR=$(facts_get '.brandPrimary')
 [[ -z "$BRAND_COLOR" ]] && BRAND_COLOR="#1a1a1a (with #D4AF37 BlackCEO gold accent)"
 
-# ---- shape-tolerant department enumeration ----
-# Schema declares .departments as an array, but production state files (e.g.
-# a 22-dept client box) have it as a keyed object. Normalize into a uniform
-# [{slug, name, roles, emoji}] list.
-DEPT_TYPE=$(jq -r '.departments | type' "$STATE_FILE" 2>/dev/null)
-case "$DEPT_TYPE" in
-  array)
-    DEPT_JSON=$(jq -c '[.departments[] | {
-        slug:  (.slug // .name // "dept"),
-        name:  (.name // .slug // "dept"),
-        roles: (.rolesDone // .roles // 0),
-        emoji: (.emoji // "")
-      }]' "$STATE_FILE" 2>/dev/null)
-    ;;
-  object)
-    DEPT_JSON=$(jq -c '[.departments | to_entries[] | {
-        slug:  .key,
-        name:  (.value.name // (.key | gsub("[-_]"; " "))),
-        roles: (.value.rolesDone // .value.roles // 0),
-        emoji: (.value.emoji // "")
-      }]' "$STATE_FILE" 2>/dev/null)
-    ;;
-  *)
-    DEPT_JSON="[]"
-    ;;
-esac
+# ---- department list from the helper ----
+# The renderer's optional emoji is still taken from state so the org chart keeps
+# the same icons.
+STATE_EMOJI=$(jq -c '[ (.departments // []) | (if type == "array" then .[] else to_entries[] | (.value + {slug: .key}) end) | {slug: (.slug // .name // ""), emoji: (.emoji // "")} ]' "$STATE_FILE" 2>/dev/null)
+[[ -z "$STATE_EMOJI" || "$STATE_EMOJI" == "null" ]] && STATE_EMOJI='[]'
+DEPT_JSON=$(printf '%s' "$CLOSEOUT_FACTS" | jq -c --argjson emoji "$STATE_EMOJI" '[.departments[]? | . as $d | {
+    slug:  $d.slug,
+    name:  $d.name,
+    roles: ($d.roles // 0),
+    emoji: (first($emoji[] | select(.slug == $d.slug) | .emoji) // "")
+  }]' 2>/dev/null)
+[[ -z "$DEPT_JSON" || "$DEPT_JSON" == "null" ]] && DEPT_JSON="[]"
 
 DEPT_LIST=$(echo "$DEPT_JSON" | jq -r '[.[].name] | join(", ")' 2>/dev/null)
 [[ -z "$DEPT_LIST" ]] && DEPT_LIST="(departments)"
 
-ROLE_COUNT=$(echo "$DEPT_JSON" | jq -r '[.[].roles] | add // 0' 2>/dev/null)
+ROLE_COUNT=$(printf '%s' "$CLOSEOUT_FACTS" | jq -r '.roleTotal // 0' 2>/dev/null)
 [[ -z "$ROLE_COUNT" || "$ROLE_COUNT" == "null" ]] && ROLE_COUNT="0"
 
 # ----------------------------------------------------------------------

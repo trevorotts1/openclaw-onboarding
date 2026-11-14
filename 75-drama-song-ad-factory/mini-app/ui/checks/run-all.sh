@@ -19,13 +19,21 @@ cd "$HERE/.."
 
 status=0
 ran=0
-# ui-contract, a11y-check, qr-roundtrip and download-bytes-check live here.
-# service-client-check.mjs (W1-studio-page-U1) and questions-drift.mjs
-# (W1-studio-page-U4) are wired in here as their own units' files; each runs the
-# moment it exists on this branch, and a check that is not there yet is
-# reported as skipped, never as passed.
+separate=0
+# ui-contract, a11y-check, qr-roundtrip, download-bytes-check, approvals-view-check,
+# delivery-page-check and home-page-check live here. service-client-check.mjs (W1-studio-page-U1)
+# and questions-drift.mjs (W1-studio-page-U4) are wired in here as their own units'
+# files; each runs the moment it exists on this branch, and a check that is not
+# there yet is reported as skipped, never as passed. project-page-check.mjs (U-Z03)
+# and photo-upload-check.mjs (U-Z08) are wired in here for the same reason.
+#
+# Exit 3 from a check means its instrument is missing on this machine (the QR
+# check has no zbarimg), not that the page is wrong: it is reported separately
+# and does not fail the suite.
 for check in ui-contract a11y-check qr-roundtrip download-bytes-check \
-             service-client-check questions-drift; do
+             approvals-view-check delivery-page-check home-page-check \
+             service-client-check questions-drift \
+             project-page-check photo-upload-check; do
   if [ ! -f "checks/${check}.mjs" ]; then
     echo "==================================================================="
     echo "== checks/${check}.mjs — not present on this branch (owned by another unit): SKIPPED"
@@ -39,7 +47,12 @@ for check in ui-contract a11y-check qr-roundtrip download-bytes-check \
   rc=$?
   ran=$((ran + 1))
   echo "-- checks/${check}.mjs exit ${rc}"
-  if [ "$rc" -ne 0 ]; then status="$rc"; fi
+  if [ "$rc" -eq 3 ]; then
+    separate=$((separate + 1))
+    echo "-- checks/${check}.mjs: instrument missing on this machine — reported separately, not a page failure"
+  elif [ "$rc" -ne 0 ]; then
+    status="$rc"
+  fi
   echo
 done
 
@@ -47,6 +60,10 @@ echo "==================================================================="
 if [ "$status" -ne 0 ]; then
   echo "UI check suite FAILED (last non-zero exit ${status})"
   exit 2
+fi
+if [ "$separate" -ne 0 ]; then
+  echo "UI check suite OK: all $((ran - separate)) of ${ran} present checks passed; ${separate} reported separately (instrument missing)"
+  exit 0
 fi
 echo "UI check suite OK: all ${ran} present checks passed"
 exit 0

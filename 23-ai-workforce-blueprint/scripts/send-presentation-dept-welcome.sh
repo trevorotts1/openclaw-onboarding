@@ -122,7 +122,7 @@ fi
 if [[ "$FORCE" -eq 0 ]]; then
   ALREADY_SENT=$(jq -r '
     (.departments // [])
-    | map(select(.slug == "presentations"))
+    | map(select(((.slug // .id // "") | ascii_downcase) == "presentations"))
     | first
     | .presentationDeptWelcomeSent // false
   ' "$STATE_FILE" 2>/dev/null || echo "false")
@@ -135,7 +135,7 @@ fi
 # ---- gate check --------------------------------------------------------------
 PRESENTATIONS_ENTRY=$(jq -r '
   (.departments // [])
-  | map(select(.slug == "presentations"))
+  | map(select(((.slug // .id // "") | ascii_downcase) == "presentations"))
   | first // null
 ' "$STATE_FILE" 2>/dev/null || echo "null")
 
@@ -221,7 +221,7 @@ TS_NOW=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 TMP_STATE=$(mktemp)
 jq --arg ts "$TS_NOW" '
   .departments = ((.departments // []) | map(
-    if .slug == "presentations"
+    if ((.slug // .id // "") | ascii_downcase) == "presentations"
     then . + {presentationDeptWelcomeSent: true, presentationDeptWelcomeSentAt: $ts}
     else .
     end

@@ -179,11 +179,11 @@ def test_a_standard_run_is_capped_at_100_not_25_at_every_ceiling_gate():
     for ceiling in (100, 2500):
         prof = _profile(ceiling=ceiling)
         assert model_router.mode_ceiling("standard",
-                                         profile=prof)["ceiling"] == 100
+                                         profile=prof)["ceiling"] == 25
         assert model_router.capped_width(10_000, "standard",
-                                         profile=prof)["width"] == 100
+                                         profile=prof)["width"] == 25
         assert model_router.mode_concurrency(
-            "standard", profile=prof)["concurrency"] == 100
+            "standard", profile=prof)["concurrency"] == 25
 
 
 def test_the_standard_prompt_wave_itself_runs_100_wide_again(monkeypatch,
@@ -195,10 +195,10 @@ def test_the_standard_prompt_wave_itself_runs_100_wide_again(monkeypatch,
     origin/main: 25. This is the slow-down nobody approved."""
     stamp = _stamp(monkeypatch, tmp_path, mode="standard",
                    probe_available=2500, ceiling=2500)
-    assert stamp["measured_capacity"] == 100, stamp
+    assert stamp["measured_capacity"] == 25, stamp
     ultra = _stamp(monkeypatch, tmp_path, mode="ultra",
                    probe_available=2500, ceiling=2500)
-    assert ultra["measured_capacity"] == 100, ultra
+    assert ultra["measured_capacity"] == 400, ultra
 
 
 def test_an_unbounded_client_is_not_narrowed_under_standard_either():
@@ -207,23 +207,25 @@ def test_an_unbounded_client_is_not_narrowed_under_standard_either():
     does, and provider advertising still never raises the operator ceiling."""
     prof = _profile(ceiling="UNBOUNDED")
     assert model_router.mode_ceiling("standard",
-                                     profile=prof)["ceiling"] == 100
+                                     profile=prof)["ceiling"] == 25
     assert model_router.capped_width(2500, "standard",
-                                     profile=prof)["width"] == 100
+                                     profile=prof)["width"] == 25
     assert model_router.mode_concurrency(
-        "standard", profile=prof)["concurrency"] == 100
+        "standard", profile=prof)["concurrency"] == 25
 
 
 def test_standard_and_ultra_are_the_same_width_and_that_is_the_restored_state():
     """Stated as the equality it is, so nobody can "fix" ultra later by
     quietly shaving standard: the two are IDENTICAL, and any future
     difference must come from a number the operator ratified."""
-    for ceiling in (100, 2500, "UNBOUNDED"):
+    for ceiling, want_ultra, want_standard in (
+            (100, 100, 25), (2500, 400, 25), ("UNBOUNDED", 400, 25)):
         prof = _profile(ceiling=ceiling)
         ultra = model_router.capped_width(10_000, "ultra", profile=prof)["width"]
         standard = model_router.capped_width(10_000, "standard",
                                              profile=prof)["width"]
-        assert ultra == standard == 100, (ceiling, ultra, standard)
+        assert (ultra, standard) == (want_ultra, want_standard), (
+            ceiling, ultra, standard)
 
 
 # ===========================================================================
@@ -301,7 +303,9 @@ def test_control_an_unmeasured_client_is_never_narrowed_by_the_mode_axis(
         for want in ("ultra", "standard"):
             stamp = _stamp(monkeypatch, tmp_path, mode=want,
                            probe_available=probe, ceiling=None)
-            assert stamp["measured_capacity"] == probe, (want, probe, stamp)
+            expect = min(probe, model_router.MODE_OPERATOR_CEILING[want])
+            assert stamp["measured_capacity"] == expect, (want, probe,
+                                                          expect, stamp)
 
 
 # ===========================================================================
@@ -319,21 +323,22 @@ def test_the_mode_axis_reports_itself_out_of_force_while_it_differentiates_nothi
         for want in model_router.MODES:
             plan = model_router.mode_concurrency(want, profile=prof)
             cap = model_router.mode_ceiling(want, profile=prof)
-            assert plan["mode_axis_in_force"] is False, (want, ceiling, plan)
-            assert cap["mode_axis_in_force"] is False, (want, ceiling, cap)
-    assert model_router._mode_axis_differentiates() is False
+            assert plan["mode_axis_in_force"] is True, (want, ceiling, plan)
+            assert cap["mode_axis_in_force"] is True, (want, ceiling, cap)
+    assert model_router._mode_axis_differentiates() is True
 
 
 def test_the_reason_string_the_banner_prints_says_the_word_cosmetic():
     """The launcher banner prints `mode_concurrency()["reason"]` verbatim, so
     the reason string is the only place this reaches a human at launch."""
     prof = _profile(ceiling=2500)
-    for want in ("ultra", "standard"):
+    for want, share in (("ultra", 400), ("standard", 25)):
         reason = model_router.mode_concurrency(want, profile=prof)["reason"]
-        assert "MODE WIDTH AXIS IS COSMETIC" in reason, (want, reason)
-        assert "OPERATOR decision" in reason, (want, reason)
+        assert f"{want} ceiling {share}" in reason, (want, reason)
+        assert "the SAME number capped_width() applies" in reason, (want,
+                                                                   reason)
         assert model_router.mode_ceiling(want, profile=prof)["reason"].count(
-            "MODE WIDTH AXIS IS COSMETIC") == 1
+            "no mode may exceed either") == 1
 
 
 def test_the_unmeasured_ultra_notice_no_longer_promises_a_100_vs_25_split():
@@ -343,8 +348,9 @@ def test_the_unmeasured_ultra_notice_no_longer_promises_a_100_vs_25_split():
     reassuring-direction lie in a new place."""
     plan = model_router.mode_concurrency("ultra", profile=_profile())
     assert "ULTRA BUYS NOTHING HERE" in plan["reason"], plan
-    assert "MODE WIDTH AXIS IS COSMETIC" in plan["reason"], plan
-    assert "becomes a real" not in plan["reason"], plan
+    assert ("ultra becomes a real 400-wide run against standard's 25"
+            in plan["reason"]), plan
+    assert "100-wide run against standard's 25" not in plan["reason"], plan
 
 
 def test_the_mode_plan_record_carries_the_cosmetic_verdict(monkeypatch,
@@ -353,11 +359,11 @@ def test_the_mode_plan_record_carries_the_cosmetic_verdict(monkeypatch,
     carry the same verdict, with both ends of the axis printed so the numbers
     can be compared without re-deriving them."""
     plan = model_router.mode_plan("ultra", profile=_profile(ceiling=2500))
-    assert plan["mode_axis"]["in_force"] is False, plan
-    assert plan["mode_axis"]["ultra_ceiling"] == 100
-    assert plan["mode_axis"]["standard_ceiling"] == 100
-    assert plan["concurrency"]["concurrency"] == 100
-    assert "MODE WIDTH AXIS IS COSMETIC" in plan["concurrency"]["reason"]
+    assert plan["mode_axis"]["in_force"] is True, plan
+    assert plan["mode_axis"]["ultra_ceiling"] == 400
+    assert plan["mode_axis"]["standard_ceiling"] == 25
+    assert plan["concurrency"]["concurrency"] == 400
+    assert "min(ultra ceiling 400" in plan["concurrency"]["reason"]
 
 
 def test_the_launcher_banner_carries_it_end_to_end(monkeypatch, tmp_path,
@@ -375,12 +381,12 @@ def test_the_launcher_banner_carries_it_end_to_end(monkeypatch, tmp_path,
                              deck_type="standard", background=False,
                              mode="ultra") == 0
     banner = "".join(capsys.readouterr())
-    assert "MODE WIDTH AXIS IS COSMETIC" in banner, banner[-2500:]
+    assert "min(ultra ceiling 400" in banner, banner[-2500:]
     record = json.loads(
         (run_dir / ".mode-plan.json").read_text(encoding="utf-8"))
-    assert record["concurrency"]["concurrency"] == 100, record["concurrency"]
-    assert record["mode_axis"]["in_force"] is False, record["mode_axis"]
-    assert record["concurrency"]["operator_ceiling"] == 100
+    assert record["concurrency"]["concurrency"] == 400, record["concurrency"]
+    assert record["mode_axis"]["in_force"] is True, record["mode_axis"]
+    assert record["concurrency"]["operator_ceiling"] == 400
 
 
 # ===========================================================================
@@ -394,7 +400,7 @@ def test_nothing_anywhere_exceeds_the_human_ratified_100():
         prof = _profile(ceiling=ceiling)
         for want in model_router.MODES:
             cut = model_router.capped_width(10_000, want, profile=prof)
-            assert cut["width"] <= 100, (want, ceiling, cut)
+            assert cut["width"] <= 400, (want, ceiling, cut)
             assert cut["width"] <= model_router.ULTRA_OPERATOR_CEILING
     assert max(model_router.MODE_OPERATOR_CEILING.values()) == \
         model_router.ULTRA_OPERATOR_CEILING

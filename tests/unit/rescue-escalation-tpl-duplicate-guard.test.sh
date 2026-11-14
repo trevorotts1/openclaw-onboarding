@@ -49,18 +49,20 @@ if grep -q "RESCUE_ESCALATION_BOXNAME_V3" "$ROLE_LIB"; then
 else
   bad "role-library copy is missing the V3 marker"
 fi
-# RR-002: the resolution protocol must carry the canonical correlation fields
-# in BOTH copies, or a box materialized from the role-library learns a
-# resolution shape the intake cannot correlate.
+# RRX-020: the escalation section now teaches ONE command with three
+# sub-commands. Both copies must carry each of the three invocation texts
+# exactly once, or a box materialized from the role-library learns a shape
+# the command does not offer.
 for _f in "$CANONICAL" "$ROLE_LIB"; do
   _miss=""
-  for _k in incident_id operation_id attempt_id result_digest runtime_id; do
-    grep -q "\"$_k\"" "$_f" || _miss="$_miss $_k"
+  for _k in 'rr_escalate.py" send' 'rr_escalate.py" resolve' 'rr_escalate.py" status'; do
+    _n="$(grep -cF "$_k" "$_f" 2>/dev/null || true)"
+    [ "${_n:-0}" = "1" ] || _miss="$_miss [$_k]x${_n:-0}"
   done
   if [ -z "$_miss" ]; then
-    ok "carries the RR-002 correlation fields: $(basename "$(dirname "$(dirname "$_f")")")/$_k-set"
+    ok "carries the three rr_escalate sub-commands once each: $_f"
   else
-    bad "MISSING RR-002 correlation fields in $_f:$_miss"
+    bad "SUB-COMMAND text wrong, missing or repeated in $_f:$_miss"
   fi
 done
 if grep -q "LOOP:" "$ROLE_LIB"; then

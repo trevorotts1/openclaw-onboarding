@@ -667,7 +667,9 @@ def approve(run_dir, reply, approved_by=None, run_id="", now=None):
     generic reply while several distinct approvals are pending asks ONE
     clarifying question instead of guessing.
 
-    Returns {"status": approved|clarify|needs-edit|error, ...}.
+    Returns {"status": approved|clarify|needs-edit|error, ...}. The approver is
+    part of the record: a missing or empty ``approved_by`` is refused with
+    ``APPROVER_MISSING`` and writes nothing.
     """
     now = now or time.time()
     doc = load_bible(run_dir)
@@ -688,6 +690,10 @@ def approve(run_dir, reply, approved_by=None, run_id="", now=None):
         return {"status": CLARIFY,
                 "question": "Which approval do you mean - the character bible, "
                             "or the %s? Reply naming it." % " or ".join(others)}
+    if not str(approved_by or "").strip():
+        return {"status": "error", "reason_code": "APPROVER_MISSING",
+                "detail": "an approval must name who approved it; no record "
+                          "was written"}
     origin = origin_of(run_dir)
     event = {
         "schema": SCHEMA_APPROVAL, "status": APPROVED,

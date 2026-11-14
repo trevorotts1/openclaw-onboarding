@@ -85,7 +85,7 @@ export const INTAKE_CONTRACT = {
           "from_scratch": "From scratch — brainstorm and build a brand-new presentation",
           "content_personal": "From something I already have, for ONE specific person",
           "content_general": "From something I already have, for a room or wider audience",
-          "signature": "The full Signature Presentation (100+ slides, multi-part keynote)"
+          "signature": "The full Signature Presentation (100+ slides). You will answer 8 more questions in chat after this form."
         }
       }
     },
@@ -409,7 +409,7 @@ export const INTAKE_CONTRACT = {
         order: 11.2,
         kind: "enum",
         prompt: "Would you like <span class=\"emph\">email follow-up sequences</span> prepared for this launch?",
-        help: "Default no. A yes elects the Skill 50 (Email Engine) delivery option: the sequences are prepared as drafts at delivery and deployed draft-only through Skill 44 after a human approves them. Nothing is sent automatically.",
+        help: "Default no. If yes, the follow-up emails are written as drafts and nothing is sent until a person approves them.",
         label: "Email sequences",
         required: true,
         storeOn: "pre_presentation_capture.WANT_EMAIL_SEQUENCES",
@@ -512,7 +512,7 @@ export const INTAKE_CONTRACT = {
         default: "",
         allowed_values: ["ultra", "standard", "economy"],
         value_labels: {
-          "ultra": "Ultra: the strongest models you choose, up to 16x faster",
+          "ultra": "Ultra: fastest, uses the strongest models, costs the most",
           "standard": "Standard — the department default",
           "economy": "Economy — leaner and cheaper"
         }

@@ -195,10 +195,16 @@ fi
 # Skill 74 is required from here on (the idempotent skip above does not need it).
 kie74_locate || exit 1
 
-COMPANY_NAME=$(state_get '.companyName'); [[ -z "$COMPANY_NAME" ]] && COMPANY_NAME="Your Company"
-OWNER_NAME=$(state_get '.ownerName'); [[ -z "$OWNER_NAME" ]] && OWNER_NAME="the Owner"
-AGENT_NAME=$(state_get '.agentName'); [[ -z "$AGENT_NAME" ]] && AGENT_NAME="the CEO Agent"
-INDUSTRY=$(state_get '.industry'); [[ -z "$INDUSTRY" ]] && INDUSTRY="modern business"
+# BU-64: one call to closeout_facts.py replaces this script's own reads of the
+# company name, owner, agent and industry.
+CLOSEOUT_FACTS=$(python3 -B "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/closeout_facts.py" "$STATE_FILE" --json 2>/dev/null)
+[[ -z "$CLOSEOUT_FACTS" ]] && CLOSEOUT_FACTS='{}'
+facts_get() { printf '%s' "$CLOSEOUT_FACTS" | jq -r "$1 // empty" 2>/dev/null; }
+
+COMPANY_NAME=$(facts_get '.companyName'); [[ -z "$COMPANY_NAME" ]] && COMPANY_NAME="Your Company"
+OWNER_NAME=$(facts_get '.ownerName'); [[ -z "$OWNER_NAME" ]] && OWNER_NAME="the Owner"
+AGENT_NAME=$(facts_get '.agentName'); [[ -z "$AGENT_NAME" ]] && AGENT_NAME="the CEO Agent"
+INDUSTRY=$(facts_get '.industry'); [[ -z "$INDUSTRY" ]] && INDUSTRY="modern business"
 INFOGRAPHIC1_URL=$(state_get '.infographic1Url')
 # Read client logo URL from branding-questions.json capture (PRD step 4 -- logo fix)
 LOGO_URL=$(state_get '.logoUrl // .logo_url')
@@ -261,11 +267,23 @@ if [[ ! -f "$TEMPLATE" ]]; then
   exit 1
 fi
 
-PROMPT=$(cat "$TEMPLATE" \
-  | sed "s|{{COMPANY_NAME}}|${COMPANY_NAME}|g" \
-  | sed "s|{{OWNER_NAME}}|${OWNER_NAME}|g" \
-  | sed "s|{{AGENT_NAME}}|${AGENT_NAME}|g" \
-  | sed "s|{{INDUSTRY}}|${INDUSTRY}|g")
+# BU-76: values are substituted literally, never through sed. A company name with
+# `&` or `|` used to corrupt the prompt: sed treats `&` as the matched text in the
+# replacement, and `|` ended the `s|..|..|g` delimiter early. _literal_replace is
+# copied from generate-infographics.sh so both generators share one substitution.
+_literal_replace() {  # <haystack> <needle> <replacement> -> stdout (literal)
+  local needle="$2" repl="$3" out="" rest="$1"
+  while [[ "$rest" == *"$needle"* ]]; do
+    out+="${rest%%"$needle"*}$repl"
+    rest="${rest#*"$needle"}"
+  done
+  printf '%s' "$out$rest"
+}
+PROMPT="$(cat "$TEMPLATE")"
+PROMPT="$(_literal_replace "$PROMPT" '{{COMPANY_NAME}}' "$COMPANY_NAME")"
+PROMPT="$(_literal_replace "$PROMPT" '{{OWNER_NAME}}'   "$OWNER_NAME")"
+PROMPT="$(_literal_replace "$PROMPT" '{{AGENT_NAME}}'   "$AGENT_NAME")"
+PROMPT="$(_literal_replace "$PROMPT" '{{INDUSTRY}}'     "$INDUSTRY")"
 
 MODEL="${ZHC_CELEBRATION_VIDEO_MODEL:-${ZHC_VIDEO_MODEL:-gemini-omni-video}}"
 

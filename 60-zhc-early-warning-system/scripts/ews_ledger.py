@@ -326,6 +326,59 @@ class Ledger:
                 "SELECT * FROM events WHERE ack_state='open' ORDER BY event_id").fetchall()
         return [dict(r) for r in rows]
 
+    # ---- change-only recording (v1.3.0) ----------------------------------
+    ACTIVE_ACK_STATES = ("open", "acked", "escalated")
+
+    def active_event(self, dedup_key):
+        """The newest event for dedup_key that is still ACTIVE (open, acked or
+        escalated - i.e. not resolved/reverted), else None. The sentinel records
+        a finding only when no active event exists, so a standing problem is
+        ONE row, not one row per tick."""
+        row = self.conn.execute(
+            "SELECT * FROM events WHERE dedup_key=? AND ack_state IN (%s) "
+            "ORDER BY event_id DESC LIMIT 1" % ",".join("?" * len(self.ACTIVE_ACK_STATES)),
+            (dedup_key, *self.ACTIVE_ACK_STATES)).fetchone()
+        return dict(row) if row else None
+
+    def resolve_absent(self, present_keys, stateful_prefixes):
+        """Mark ACTIVE events 'resolved' when their dedup_key belongs to a
+        STATE check that ran this tick (it starts with one of
+        stateful_prefixes) and the key is not among this tick's findings - the
+        problem went away. Findings from one-shot EVIDENCE (trajectory deltas,
+        a single config write, a leaked secret, the fleet dead-man, the
+        no-operator-target condition) are never auto-resolved: absence on the
+        next tick only means no NEW evidence. Returns the number resolved."""
+        prefixes = tuple(stateful_prefixes or ())
+        if not prefixes:
+            return 0
+        present = set(present_keys)
+        rows = self.conn.execute(
+            "SELECT event_id, dedup_key FROM events WHERE ack_state IN (%s)"
+            % ",".join("?" * len(self.ACTIVE_ACK_STATES)), self.ACTIVE_ACK_STATES).fetchall()
+        n = 0
+        for r in rows:
+            k = r["dedup_key"] or ""
+            if k not in present and k.startswith(prefixes):
+                self.conn.execute("UPDATE events SET ack_state='resolved', ack_ts=? WHERE event_id=?",
+                                  (now_utc(), r["event_id"]))
+                n += 1
+        self.conn.commit()
+        return n
+
+    def collapse_duplicate_active(self):
+        """Keep only the NEWEST active event per dedup_key; resolve the older
+        duplicates. Boxes upgraded from pre-1.3.0 carry one open row per tick
+        per standing problem; without this the escalate sweep would admit each
+        duplicate separately. Idempotent and cheap. Returns rows resolved."""
+        ph = ",".join("?" * len(self.ACTIVE_ACK_STATES))
+        cur = self.conn.execute(
+            "UPDATE events SET ack_state='resolved', ack_ts=? WHERE ack_state IN (%s) "
+            "AND event_id NOT IN (SELECT MAX(event_id) FROM events WHERE ack_state IN (%s) "
+            "GROUP BY dedup_key)" % (ph, ph),
+            (now_utc(), *self.ACTIVE_ACK_STATES, *self.ACTIVE_ACK_STATES))
+        self.conn.commit()
+        return int(cur.rowcount or 0)
+
     def events_since(self, since_iso):
         rows = self.conn.execute(
             "SELECT * FROM events WHERE tick_ts >= ? ORDER BY event_id", (since_iso,)).fetchall()
@@ -379,20 +432,22 @@ class Ledger:
                 return dict(r)
         return None
 
-    def prune_snapshots(self, keep_count, keep_days):
+    def prune_snapshots(self, keep_count, keep_days=None, keep_hours=None):
         """Delete snapshot ROWS beyond the retention rule (keep the LARGER of the two
         windows, per D7). Returns the file paths of pruned rows so the caller (ews_snapshot)
         can unlink the files. The row set kept = union of (newest keep_count) and
-        (all within keep_days)."""
+        (all within the time window). The window is keep_hours when given, else
+        keep_days (kept for older callers)."""
         rows = self.list_snapshots()
         if not rows:
             return []
-        cutoff = datetime.now(timezone.utc) - timedelta(days=keep_days)
+        hours = float(keep_hours) if keep_hours is not None else float(keep_days or 0) * 24
+        cutoff = datetime.now(timezone.utc) - timedelta(hours=hours)
         keep_ids = set()
         # newest keep_count
         for r in rows[:keep_count]:
             keep_ids.add(r["snapshot_id"])
-        # all within keep_days
+        # all within the time window
         for r in rows:
             ts = _parse_iso(r["ts"])
             if ts is not None and ts >= cutoff:
@@ -402,6 +457,57 @@ class Ledger:
             self.conn.execute("DELETE FROM snapshots WHERE snapshot_id=?", (r["snapshot_id"],))
         self.conn.commit()
         return [r["path"] for r in pruned]
+
+    def prune_history(self, keep_hours, digest_keep_hours=None):
+        """Delete event and digest rows older than the retention window.
+
+        Nothing ever acknowledges events, so without this the events table grew by
+        every finding on every tick, forever (one live box: 200,000 rows, 56 MB).
+        A finding that still exists is recorded again on the next tick, so dropping
+        old rows loses nothing the sentinel reads. Digest rows back the alert
+        dedup window and the per-day alert cap, so the digest window is never
+        shorter than digest_keep_hours. Timestamps are compared on their first
+        19 characters (YYYY-MM-DDTHH:MM:SS), which ignores a Z / +00:00 suffix.
+        The newest OPEN P1 per dedup_key is always kept (escalation retry).
+        Returns (events_deleted, digests_deleted)."""
+        now = datetime.now(timezone.utc)
+        ev_cut = (now - timedelta(hours=float(keep_hours))).strftime("%Y-%m-%dT%H:%M:%S")
+        dg_hours = max(float(keep_hours), float(digest_keep_hours or 0))
+        dg_cut = (now - timedelta(hours=dg_hours)).strftime("%Y-%m-%dT%H:%M:%S")
+        # An OPEN P1 is the escalate sweep's retry queue (a failed admission
+        # leaves it open on purpose). Keep the newest open P1 per dedup_key at
+        # any age, so an unresolved P1 is never lost; older duplicates of the
+        # same problem still go, so the table stays bounded.
+        ev = self.conn.execute(
+            "DELETE FROM events WHERE substr(tick_ts,1,19) < ? AND event_id NOT IN ("
+            "  SELECT MAX(event_id) FROM events WHERE severity='P1' AND ack_state='open' "
+            "  GROUP BY dedup_key)", (ev_cut,)).rowcount
+        dg = self.conn.execute(
+            "DELETE FROM digests WHERE substr(sent_ts,1,19) < ?", (dg_cut,)).rowcount
+        # the per-attempt rescue admission journal grows by one row per attempt;
+        # it follows the same window (escalation_state keeps one row per
+        # operation and is left alone).
+        self.conn.execute(
+            "DELETE FROM rescue_admissions WHERE substr(attempted_at,1,19) < ?", (ev_cut,))
+        self.conn.commit()
+        return int(ev or 0), int(dg or 0)
+
+    def vacuum_if_bloated(self, min_free_ratio=0.25):
+        """Give freed pages back to the disk when at least min_free_ratio of the
+        file is free space. Deleting rows alone never shrinks the file."""
+        pages = self.conn.execute("PRAGMA page_count").fetchone()[0] or 0
+        free = self.conn.execute("PRAGMA freelist_count").fetchone()[0] or 0
+        if pages and free / pages >= min_free_ratio:
+            try:
+                self.conn.execute("VACUUM")
+            except sqlite3.OperationalError:
+                return False  # busy (a concurrent tick); the next prune retries
+            try:
+                self.conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+            except sqlite3.Error:
+                pass
+            return True
+        return False
 
     # ---- baseline stamps (S4) -------------------------------------------
     def record_stamp(self, key_path, new_value_hash, operator=None) -> int:
@@ -506,13 +612,16 @@ class Ledger:
             outcome = "dry_run"
             nxt = None
             err = last_error
-        elif receipt_status in ("no_enrollment", "client_unavailable"):
-            outcome = "deferred"
-            nxt = None
-            err = last_error
-        elif receipt_status == "refused":
-            outcome = "failed"
-            nxt = None
+        elif receipt_status in ("no_enrollment", "client_unavailable", "refused"):
+            # v1.3.0: these used to carry no next attempt, so the escalate
+            # sweep re-POSTed them on every run. They now back off like any
+            # other non-accepted outcome (the event itself stays open).
+            outcome = "deferred" if receipt_status != "refused" else "failed"
+            try:
+                base = datetime.now(timezone.utc) + timedelta(seconds=retry_seconds)
+                nxt = base.replace(microsecond=0).isoformat()
+            except (OverflowError, ValueError):
+                nxt = None
             err = last_error
         else:
             outcome = "attempted"
@@ -771,6 +880,40 @@ def self_test():
         assert len(pruned) == 3, pruned
         assert len(led.list_snapshots()) == 2
         print("  snapshots/prune case: PASS (D7 keeps the LARGER window)")
+
+        # history prune (72h retention): old events/digests go, recent ones stay,
+        # and the digest window never drops below the alert windows it backs.
+        old_ts = (datetime.now(timezone.utc) - timedelta(hours=100)).replace(microsecond=0).isoformat()
+        mid_ts = (datetime.now(timezone.utc) - timedelta(hours=50)).replace(microsecond=0).isoformat()
+        led.conn.execute("DELETE FROM events"); led.conn.execute("DELETE FROM digests")
+        led.record_event("S1", "P2", key_path="a", tick_ts=old_ts)
+        led.record_event("S1", "P2", key_path="b", tick_ts=old_ts.replace("+00:00", "Z"))
+        led.record_event("S1", "P2", key_path="c", tick_ts=mid_ts)
+        led.record_event("S1", "P2", key_path="d")
+        for ts in (old_ts, mid_ts):
+            led.conn.execute("INSERT INTO digests(kind,dedup_key,sent_ts) VALUES('alert','k',?)", (ts,))
+        led.record_digest("alert", "k")
+        led.conn.commit()
+        assert led.prune_history(72, 24) == (2, 1), "72h prune must drop exactly the 2 old events + 1 old digest"
+        left = sorted(e["key_path"] for e in led.events_since("2000-01-01T00:00:00+00:00"))
+        assert left == ["c", "d"], left
+        assert led.prune_history(24, 168) == (1, 0), "digest window must never shrink below digest_keep_hours"
+        # an OPEN P1 older than the window is the escalation retry queue: the
+        # newest one per dedup_key survives, an older duplicate does not, and an
+        # escalated (no longer open) old P1 is pruned normally.
+        led.conn.execute("DELETE FROM events"); led.conn.commit()
+        older = (datetime.now(timezone.utc) - timedelta(hours=200)).replace(microsecond=0).isoformat()
+        led.record_event("S9", "P1", key_path="p1", tick_ts=older, dedup_key="S9|dead")
+        keep_id = led.record_event("S9", "P1", key_path="p1", tick_ts=old_ts, dedup_key="S9|dead")
+        esc_id = led.record_event("S3", "P1", key_path="p1b", tick_ts=old_ts, dedup_key="S3|x")
+        led.ack_event(esc_id, "escalated")
+        assert led.prune_history(72, 24) == (2, 0)
+        ids = [e["event_id"] for e in led.events_since("2000-01-01T00:00:00+00:00")]
+        assert ids == [keep_id], ids
+        assert [e["event_id"] for e in led.unacked_p1_older_than(30)] == [keep_id]
+        print("  open-P1 retention case: PASS (newest open P1 per key survives the window)")
+        assert led.recent_digest("k", 6) is not None
+        print("  history prune case: PASS (72h window, digest floor honored)")
 
         # ts lookup for revert
         led.record_snapshot("%s/snapshots/openclaw.json.20260202T120000.bb" % td, sha256="cafe")

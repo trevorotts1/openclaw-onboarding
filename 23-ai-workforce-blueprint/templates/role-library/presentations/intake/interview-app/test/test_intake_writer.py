@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import json
 import pathlib
+import re
 import sys
 import tempfile
 import unittest
@@ -36,6 +37,7 @@ class TestIntakeWriter(unittest.TestCase):
                 "speech_speed_preference": "default",
                 "want_sales_checkout": "yes",
                 "want_vsl_page": "no",
+                "duration_min": "45 minutes",
             }
         }
         intake = iw.assemble_intake(raw, run_id="R1")
@@ -60,7 +62,8 @@ class TestIntakeWriter(unittest.TestCase):
                            "final_price": "$1", "speech_speed_preference": "default",
                            "want_sales_checkout": "yes", "want_vsl_page": "no",
                            "want_email_sequences": "no",
-                           "want_motion_graphics": "no"}}
+                           "want_motion_graphics": "no",
+                           "duration_min": "45 minutes"}}
         intake = iw.assemble_intake(raw, run_id="R2")
         with tempfile.TemporaryDirectory() as tmp:
             run_dir = pathlib.Path(tmp) / "runs" / "R2"
@@ -83,6 +86,7 @@ class TestIntakeWriter(unittest.TestCase):
             "final_price": "$497",
             "want_sales_checkout": "yes",
             "presentation_type": "from_scratch",  # kept last: turns[0] below must stay offer_name
+            "duration_min": "45 minutes",
         }}
         intake = iw.assemble_intake(raw, run_id="R3")
         with tempfile.TemporaryDirectory() as tmp:
@@ -98,6 +102,77 @@ class TestIntakeWriter(unittest.TestCase):
             self.assertEqual(tr["turns"][0]["question_id"], "offer_name")
             self.assertEqual(tr["turns"][0]["answer"], "The Momentum Method")
 
+    def test_transcript_quotes_the_question_the_page_really_asks(self):
+        """PD-049 A1: every question the interview page asks is quoted in the
+        transcript as the page's own prompt with its inline markup removed --
+        never a label table, never a paraphrase, never a guess."""
+        page = json.loads((HERE.parent / "pages" / "questions.json").read_text(encoding="utf-8"))
+        rows = page["questions"]
+        intake = {"answers": {r["id"]: "answer" for r in rows}, "deck_brief": {}}
+        with tempfile.TemporaryDirectory() as tmp:
+            tpath = iw.write_transcript(pathlib.Path(tmp) / "runs" / "R8", intake)
+            tr = json.loads(tpath.read_text(encoding="utf-8"))
+        by_id = {t["question_id"]: t["question"] for t in tr["turns"]}
+        self.assertEqual(len(by_id), len(rows))
+        for row in rows:
+            expected = re.sub(r"<[^>]+>", "", row["prompt"]).strip()
+            self.assertEqual(by_id[row["id"]], expected, row["id"])
+            self.assertNotIn("<", by_id[row["id"]], row["id"])
+
+    def test_unknown_question_id_is_never_an_invented_question(self):
+        """PD-049 A2: an id the page never asked gets the explicit marker, and
+        an id it did ask is still quoted -- so the marker is not blanket."""
+        intake = {"answers": {"not_a_real_question_id": "x", "offer_name": "O"},
+                  "deck_brief": {}}
+        with tempfile.TemporaryDirectory() as tmp:
+            tpath = iw.write_transcript(pathlib.Path(tmp) / "runs" / "R9", intake)
+            tr = json.loads(tpath.read_text(encoding="utf-8"))
+        by_id = {t["question_id"]: t["question"] for t in tr["turns"]}
+        self.assertEqual(by_id["not_a_real_question_id"],
+                         "(question text not recorded for not_a_real_question_id)")
+        self.assertNotIn("not recorded", by_id["offer_name"])
+        self.assertTrue(by_id["offer_name"])
+
+    def test_session_question_payload_is_the_source_of_record(self):
+        """PD-049 (amendment): the box-minted session payload carries the
+        question list the client answered from; when the intake record carries
+        it, that list wins over the page set, and ids it omits still resolve
+        from the page."""
+        intake = {
+            "answers": {"offer_name": "O", "audience": "A"},
+            "deck_brief": {},
+            "questions": [{"id": "offer_name",
+                           "prompt": "What <b>exactly</b> are you selling?"}],
+        }
+        with tempfile.TemporaryDirectory() as tmp:
+            tpath = iw.write_transcript(pathlib.Path(tmp) / "runs" / "R10", intake)
+            tr = json.loads(tpath.read_text(encoding="utf-8"))
+        by_id = {t["question_id"]: t["question"] for t in tr["turns"]}
+        self.assertEqual(by_id["offer_name"], "What exactly are you selling?")
+        self.assertIn("the intake record's own question payload",
+                      tr["reconstructed_note"])
+        self.assertTrue(by_id["audience"])
+        self.assertNotIn("not recorded", by_id["audience"])
+
+    def test_transcript_is_marked_reconstructed_and_claims_no_validation(self):
+        """PD-049: the rebuilt transcript says it is a reconstruction, names
+        where the question text came from, and each turn carries the source
+        only -- a blanket "validated": true is a claim this writer cannot
+        honestly make."""
+        intake = {"answers": {"offer_name": "O"}, "deck_brief": {}}
+        with tempfile.TemporaryDirectory() as tmp:
+            tpath = iw.write_transcript(pathlib.Path(tmp) / "runs" / "R11", intake)
+            tr = json.loads(tpath.read_text(encoding="utf-8"))
+        self.assertIs(tr["reconstructed"], True)
+        self.assertEqual(
+            tr["reconstructed_note"],
+            "Built on the client's machine from answers saved by the interview "
+            "web application; question text taken from the interview page's "
+            "question set (pages/questions.json).")
+        for turn in tr["turns"]:
+            self.assertEqual(turn["source"], "presentation-interview-app")
+            self.assertNotIn("validated", turn)
+
     def test_write_transcript_refuses_to_overwrite_a_signed_driver_envelope(self):
         """FIX F21-SIBLING (2026-08-20): write_transcript() used to overwrite
         working/interview/intake_transcript.json unconditionally -- no
@@ -107,7 +182,8 @@ class TestIntakeWriter(unittest.TestCase):
         provenance than this bridge's own synthetic Q&A transcript, and
         silently replacing it would be a real provenance loss. This proves
         the guard: raises, writes nothing, leaves the signed envelope intact."""
-        raw = {"answers": {"offer_name": "X", "presentation_type": "from_scratch"}}
+        raw = {"answers": {"offer_name": "X", "presentation_type": "from_scratch",
+                           "duration_min": "45 minutes"}}
         intake = iw.assemble_intake(raw, run_id="R6")
         with tempfile.TemporaryDirectory() as tmp:
             run_dir = pathlib.Path(tmp) / "runs" / "R6"
@@ -133,7 +209,8 @@ class TestIntakeWriter(unittest.TestCase):
     def test_write_transcript_still_writes_normally_when_no_envelope_present(self):
         """Negative control: the guard must not block the normal case (no
         pre-existing transcript, or a pre-existing non-envelope transcript)."""
-        raw = {"answers": {"offer_name": "X", "presentation_type": "from_scratch"}}
+        raw = {"answers": {"offer_name": "X", "presentation_type": "from_scratch",
+                           "duration_min": "45 minutes"}}
         intake = iw.assemble_intake(raw, run_id="R7")
         with tempfile.TemporaryDirectory() as tmp:
             run_dir = pathlib.Path(tmp) / "runs" / "R7"
@@ -254,6 +331,7 @@ class TestIntakeWriter(unittest.TestCase):
                 "speech_speed_preference": "default",
                 "want_sales_checkout": "yes",
                 "want_vsl_page": "no",
+                "duration_min": "45 minutes",
             }
         }
         intake = iw.assemble_intake(raw, run_id="R1")
@@ -299,6 +377,37 @@ class TestIntakeWriter(unittest.TestCase):
         prov = intake.get("derived_field_provenance") or {}
         self.assertEqual(set(prov), {"VISUAL_MIX", "DARK_OK"})
         self.assertEqual(prov["VISUAL_MIX"]["source"], "constant")
+
+    def test_pd082b_no_duration_raises_naming_duration_min(self):
+        """PD-082b A1: a record with no talk-length answer must fail closed and
+        name duration_min -- never size the deck to the old constant of 20."""
+        raw = {"answers": {
+            "presentation_type": "from_scratch",
+            "offer_name": "X",
+            "transformation_promise": "T",
+            "audience": "A",
+            "cta_action": "book a call",
+            "tone": "Teacher",
+        }}
+        with self.assertRaises(iw.IntakeIncompleteError) as ctx:
+            iw.assemble_intake(raw, run_id="R9")
+        self.assertIn("duration_min", str(ctx.exception))
+
+    def test_pd082b_client_talk_length_writes_both_keys(self):
+        """PD-082b A1: the client's own '45 minutes' is written as 45 to BOTH
+        target_talk_minutes (deck sizing) and DURATION_MIN (speech pacing)."""
+        raw = {"answers": {
+            "presentation_type": "from_scratch",
+            "offer_name": "X",
+            "transformation_promise": "T",
+            "audience": "A",
+            "cta_action": "book a call",
+            "tone": "Teacher",
+            "duration_min": "45 minutes",
+        }}
+        intake = iw.assemble_intake(raw, run_id="R10")
+        self.assertEqual(intake["target_talk_minutes"], 45)
+        self.assertEqual(intake["DURATION_MIN"], 45)
 
 
 if __name__ == "__main__":

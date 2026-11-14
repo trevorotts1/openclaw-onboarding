@@ -348,7 +348,7 @@ def audit_deliverable(filepath: str | None, item: dict) -> dict:
     result["magic_ok"] = True
 
     # 4. Type-specific content checks
-    if item["key"] == "webinar_video":
+    if item["key"] == "webinar_mp4":
         ftyp_ok, ftyp_reason = check_mp4_ftyp(filepath)
         if not ftyp_ok:
             result["reason"] = ftyp_reason

@@ -30,9 +30,9 @@ figures out who handles it and routes it for you.
 
 Reach for this department when you want any of the following:
 
-- Code Editor for the company's Project Architecture Office - the implementation arm that executes the actual.
+- Code Editor for the company's Project Architecture Office - the implementation arm that executes the actual code, configuration, and content work items defined in `todo.md`.
 - Code Monitor for the company's Project Architecture Office - the watchdog that observes CI/CD pipelines.
-- Research Agent for the company's Project Architecture Office - the deep-research function that gathers.
+- Research Agent for the company's Project Architecture Office - the deep-research function that gathers the requirements, prior art, API documentation.
 
 If you are not sure whether a request belongs here, ask anyway. The department
 head will either take it or hand it to the right department. You never have to
@@ -73,22 +73,19 @@ and it will pick the right one, or you can ask for a specialist by name.
 | **Code Monitor** | Code Monitor for the company's Project Architecture Office - the watchdog that observes CI/CD pipelines, build logs. |
 | **Research Agent** | Research Agent for the company's Project Architecture Office - the deep-research function that gathers the requirements. |
 
-### What each specialist is for, with an example request
+### What each specialist is for
 
 **Code Editor**
 
 - *What it is for:* Code Editor for the company's Project Architecture Office - the implementation arm that executes the actual code.
-- *Example request:* "Have the Code Editor take this on: Code Editor for the company's Project Architecture Office - the implementation arm."
 
 **Code Monitor**
 
 - *What it is for:* Code Monitor for the company's Project Architecture Office - the watchdog that observes CI/CD pipelines, build logs.
-- *Example request:* "Have the Code Monitor take this on: Code Monitor for the company's Project Architecture Office - the watchdog that observes."
 
 **Research Agent**
 
 - *What it is for:* Research Agent for the company's Project Architecture Office - the deep-research function that gathers the requirements.
-- *Example request:* "Have the Research Agent take this on: Research Agent for the company's Project Architecture Office - the deep-research."
 
 
 ---

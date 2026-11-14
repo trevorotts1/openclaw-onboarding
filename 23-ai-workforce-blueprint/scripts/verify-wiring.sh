@@ -216,17 +216,19 @@ now_iso() { date -u +%Y-%m-%dT%H:%M:%SZ; }
 # BUG FIX (v1.0.2): runtime .workforce-build-state.json stores departments with field
 # "id" not "slug" (the schema name). Using .slug produced an always-empty ALL_DEPTS,
 # causing the gate to WARN and exit 0 vacuously — a false pass.  Use .id instead.
+# BU-51: accept either field — `.id // .slug` — because a department entry may be
+# keyed by slug only; a slug-only state file used to hard-fail here.
 ALL_DEPTS=()
 while IFS= read -r _dept_line; do
   [[ -n "$_dept_line" ]] && ALL_DEPTS+=("$_dept_line")
-done < <(jq -r '.departments[]?.id // empty' "$STATE_FILE" 2>/dev/null || true)
+done < <(jq -r '.departments[]? | (.id // .slug // empty)' "$STATE_FILE" 2>/dev/null || true)
 
 if [[ ${#ALL_DEPTS[@]} -eq 0 ]]; then
   # Guard: if the state file has a non-empty departments array but we got no IDs,
   # that is a BUG (wrong field name or unreadable state) — hard-fail, not a vacuous pass.
   _raw_dept_count=$(jq -r '(.departments // []) | length' "$STATE_FILE" 2>/dev/null || echo 0)
   if (( _raw_dept_count > 0 )); then
-    echo "[verify-wiring] FATAL: state file has ${_raw_dept_count} department(s) but .id was empty for all of them — schema mismatch or corrupted state. Aborting to prevent a vacuous false pass." >&2
+    echo "[verify-wiring] FATAL: state file has ${_raw_dept_count} department(s) but neither .id nor .slug was present on them — schema mismatch or corrupted state. Aborting to prevent a vacuous false pass." >&2
     exit 9
   fi
   echo "[verify-wiring] WARN: no departments found in state file — nothing to check" >&2
@@ -618,7 +620,7 @@ for DEPT_SLUG in "${DEPTS_TO_CHECK[@]}"; do
       echo "  [MATERIALIZED] SKIP (not roles, no how-to.md expected): ${SKIPPED_NON_ROLE[*]}"
     fi
 
-    for ROLE_DIR in "${ROLE_DIRS[@]}"; do
+    for ROLE_DIR in ${ROLE_DIRS[@]+"${ROLE_DIRS[@]}"}; do
       ROLE_SLUG="$(basename "$ROLE_DIR")"
       HOW_TO="$ROLE_DIR/how-to.md"
       if [[ ! -f "$HOW_TO" ]]; then
@@ -1241,7 +1243,7 @@ if [[ -f "$STATE_FILE" ]]; then
     '
       .departments = ((.departments // []) | map(
         . as $d
-        | ($perdept[$d.id] // {}) as $pd
+        | ($perdept[($d.id // $d.slug // "")] // {}) as $pd
         | $d
         + (if ($pd | has("wiringStatus"))    then {wiringStatus: $pd.wiringStatus}       else {} end)
         + (if ($pd | has("wiringCheckedAt")) then {wiringCheckedAt: $pd.wiringCheckedAt} else {} end)

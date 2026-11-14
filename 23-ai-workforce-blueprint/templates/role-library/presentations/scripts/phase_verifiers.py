@@ -53,6 +53,7 @@ import json
 import os
 import re
 import sys
+import zipfile
 from pathlib import Path
 from typing import Callable, List, Optional, Tuple
 
@@ -161,9 +162,23 @@ _INTAKE_PRODUCER_PHASES = ("P-CONVERTER", "P0A-INTAKE", "P-SP-CLAIM")
 def _intake_provenance_refusal(phase_id: str, run_dir: Path) -> Optional[str]:
     """Return the AF-INTAKE-PROVENANCE refusal line when this phase may not run
     against the current intake sha, else None. Regime-aware: a run with no
-    provenance log at all (pre-FIX-109) is never refused by this check."""
+    provenance log at all (pre-FIX-109) is never refused by this check.
+
+    PD-921: an UNBOUND binding is not an exempt run. If presentation_job.runfacts
+    could not be loaded, this check cannot verify anything, so every phase —
+    producers included — is refused with the same AF-INTAKE-PROVENANCE line the
+    engine door emits in that state (phases.PhaseExecutor._check_intake_provenance),
+    rather than returning None, which every caller reads as PASS."""
     if _rf109 is None:
-        return None
+        # Bind failure precedes the producer exemption on purpose: the engine
+        # door has no producer exemption for a missing runfacts module either
+        # (it is a fail-closed module-load gate, not a run-content gate), so the
+        # funnel and the door must refuse the same phases. A bound run is
+        # untouched — this branch cannot run when _rf109 imported.
+        return ("AF-INTAKE-PROVENANCE: runfacts unavailable — refusing to run "
+                "without the intake provenance check (fail-closed). "
+                "[PD-921 funnel: presentation_job.runfacts could not be loaded, "
+                "so this verifier cannot bind and cannot verify]")
     if phase_id in _INTAKE_PRODUCER_PHASES:
         return None
     try:
@@ -220,9 +235,10 @@ _VERIFIER_SYMBOL_CONTRACT: "Dict[str, Tuple[str, ...]]" = {
         "_load_slide_copy_map",
         "FORBIDDEN_DEMOGRAPHIC_DEFAULTS",
         "FORBIDDEN_QC_GRADER_IDENTITIES",
-        # independent QC-report gates (P1Q-COPY-QC / P-PROMPT-QC)
+        # independent QC-report gates (P1Q-COPY-QC / P-PROMPT-QC / P-TYPO-QC)
         "_chk_copy_qc",
         "_chk_prompt_qc",
+        "_chk_typography_qc",
         # Signature-Presentation verifiers
         "_chk_sp_intake",
         "_chk_sp_structure",
@@ -684,8 +700,24 @@ def _verify_prompt(run_dir: Path) -> Tuple[bool, List[str]]:
                     continue
                 if str(d.get("severity", "")).lower() == "ok":
                     continue
+                # PD-072: the deficiency record carries code / severity / measured /
+                # required / intelligence / fix — NOT "detail". Reading "detail" dropped
+                # every word, so the regenerate order and the client pause message read
+                # "AF-PROMPT-FLOOR slide-3: AF-P1 — " with nothing after the dash.
+                detail = d.get("detail")
+                if not detail:
+                    bits = []
+                    measured = d.get("measured")
+                    if measured:
+                        required = d.get("required")
+                        bits.append(
+                            f"measured {measured}" + (f" (required {required})" if required else "")
+                        )
+                    if d.get("fix"):
+                        bits.append(str(d["fix"]))
+                    detail = "; ".join(bits) or str(d.get("intelligence") or "")
                 reasons.append(
-                    f"AF-PROMPT-FLOOR slide-{sid}: {d.get('code', '?')} — {d.get('detail', '')}"
+                    f"AF-PROMPT-FLOOR slide-{sid}: {d.get('code', '?')} — {detail}"
                 )
         if not reasons:
             reasons.append("AF-PROMPT-FLOOR: check_prompt_qc_deterministic returned pass:false")
@@ -715,14 +747,20 @@ def _verify_prompt(run_dir: Path) -> Tuple[bool, List[str]]:
 # deterministically re-measure the underlying artifact) via the report FILE it
 # actually produces, never the upstream artifact a sibling phase already checked.
 # ---------------------------------------------------------------------------
-def _verify_qc_report(report_rel: str, bd_fn_name: str, af_code: str) -> Callable:
+def _verify_qc_report(report_rel: str, bd_fn_name: str, af_code: str,
+                      artifact_pattern: Optional[str] = None) -> Callable:
     """Build a verifier for an independent QC-report phase: open
     <run_dir>/<report_rel>, hand its path to the real build_deck report-shape+teeth
     gate named `bd_fn_name` (e.g. "_chk_copy_qc"), and translate its "" == pass /
     non-empty-string == fail convention into the (ok, reasons) shape every other
     verifier here returns. Degrades to a bare-existence check (never a silent
     pass) when build_deck is unavailable, matching this module's existing
-    degraded-mode pattern elsewhere."""
+    degraded-mode pattern elsewhere.
+
+    `artifact_pattern` (PD-075): the checked report path, exposed on the returned
+    callable for the PD-061 parity walk when this verifier sits behind a wrapper
+    that copies the attribute (e.g. the P-TYPO-QC shadow verifier). Off by
+    default so existing registrations keep the walk's coverage set unchanged."""
     def _v(run_dir: Path) -> Tuple[bool, List[str]]:
         report_path = run_dir / report_rel
         fn = _bd_fn(bd_fn_name)
@@ -748,6 +786,8 @@ def _verify_qc_report(report_rel: str, bd_fn_name: str, af_code: str) -> Callabl
         if result:
             return False, [str(result)]
         return True, []
+    if artifact_pattern is not None:
+        _v.artifact_pattern = artifact_pattern
     return _v
 
 
@@ -848,12 +888,18 @@ def _verify_render(run_dir: Path) -> Tuple[bool, List[str]]:
 #   * representation-casting-director -> owns P-PROMPT-QC
 # At the PHASE_VERIFIERS wiring point below, each phase verifier is AGGREGATED
 # (via _merge) with its role's REQUIRED sub-verifier:
-#   * "image_grounding"         sub-verdict inside working/qc/image_qc_report.json
-#   * "representation_casting"  sub-verdict inside working/qc/prompt_qc_report.json
-# Both sub-verdicts must be present before attestation; a MISSING sub-verdict
-# parks for human vision review instead of passing (there is no automated vision
-# route in this tree — the park IS the operative production behavior). Only an
-# explicit test/CI context (_degraded_allowed) may NOTE-pass the parked state.
+#   * image_grounding      -> working/qc/human-review/image_grounding.json
+#   * representation_casting -> working/qc/human-review/representation_casting.json
+# PD-206a (decision D-34): each verdict is read from its OWN file, never from a
+# block inside the graded report — editing the report changes its hash and
+# breaks its execution stamp. Each file is:
+#   {"pass": true|false, "reviewed_by": "<person or role>",
+#    "reviewed_at": "<time>", "note": "<free text>"}
+# A MISSING file before attestation is an OPERATOR HOLD: the reason starts
+# "OPERATOR-REVIEW:" and names the file (there is no automated vision route in
+# this tree — the park IS the operative production behavior). Nothing tells a
+# model to write either file (decision D-25). Only an explicit test/CI context
+# (_degraded_allowed) may NOTE-pass the held state.
 # Rollback: set PRESENTATION_FIX16_QC_WIRING=0 — the registry then carries the
 # pre-fix objects exactly (P-IMAGE-QC -> _verify_render, P-PROMPT-QC -> the raw
 # _verify_qc_report gate) and no sub-verdict is required. Default is ON.
@@ -995,21 +1041,85 @@ def anchors_iter(anchors):
             yield a.strip()
 
 
+# --- PD-206a: the two human verdicts live in their OWN files -----------------
+# Decision D-34: a person's verdict is recorded in a file of its own, not as a
+# block inside the graded report (a report edit changes the report's hash and
+# breaks its execution stamp — finding PD-306).
+OPERATOR_REVIEW_PREFIX = "OPERATOR-REVIEW:"
+
+FIX16_GROUNDING_REVIEW_REL = "working/qc/human-review/image_grounding.json"
+FIX16_CASTING_REVIEW_REL = "working/qc/human-review/representation_casting.json"
+
+# The two park reasons (verbatim; each starts with OPERATOR_REVIEW_PREFIX and
+# names the file a person records the decision in).
+FIX16_GROUNDING_PARK = (
+    OPERATOR_REVIEW_PREFIX + " A person needs to confirm that each slide image "
+    "shows what its prompt asked for. Record the decision in "
+    + FIX16_GROUNDING_REVIEW_REL + ".")
+FIX16_CASTING_PARK = (
+    OPERATOR_REVIEW_PREFIX + " A person needs to confirm that the people "
+    "described in the slide prompts match the client's audience. Record the "
+    "decision in " + FIX16_CASTING_REVIEW_REL + ".")
+
+
+def _fix16_human_verdict(run_dir: Path, rel: str, park_text: str,
+                         label: str) -> Optional[Tuple[bool, List[str]]]:
+    """PD-206a: read one human verdict from its own file.
+
+    Returns None when the verdict passes (the caller keeps its own reasons), or
+    the (ok, reasons) pair the step must return:
+      * no readable file    -> operator hold (reason starts OPERATOR-REVIEW: and
+                               names the file); NOTE-pass only under
+                               _degraded_allowed (explicit test/CI context)
+      * pass != true        -> fail with the reviewer's note as the reason
+      * reviewed_by absent  -> fail (who decided is unprovenanced)
+      * builder/self byline -> fail (a self-cleared verdict cannot pass)
+    """
+    path = run_dir / rel
+    verdict = _read_json(path) if path.is_file() else None
+    if not isinstance(verdict, dict):
+        if _degraded_allowed(run_dir):
+            return True, [
+                f"NOTE: {rel} is absent — parked for a person's {label} verdict "
+                "(test/CI degraded NOTE pass)"]
+        return False, [park_text]
+    if verdict.get("pass") is not True:
+        note = verdict.get("note")
+        detail = note.strip() if isinstance(note, str) and note.strip() else \
+            f"pass is not true in {rel}"
+        return False, [
+            f"{OPERATOR_REVIEW_PREFIX} the reviewer recorded a failing {label} "
+            f"verdict in {rel}: {detail}"]
+    reviewer = verdict.get("reviewed_by")
+    if not (isinstance(reviewer, str) and reviewer.strip()):
+        return False, [
+            f"{OPERATOR_REVIEW_PREFIX} {rel} names no reviewed_by identity — who "
+            f"recorded the {label} verdict is unprovenanced. Record the decision "
+            f"in {rel}."]
+    forb_ids = _bd_fn("FORBIDDEN_QC_GRADER_IDENTITIES") or frozenset()
+    if reviewer.strip().lower() in forb_ids:
+        return False, [
+            f"{OPERATOR_REVIEW_PREFIX} {rel} names a builder/self identity "
+            f"({reviewer!r}) — a self-cleared {label} verdict cannot pass. Record "
+            f"the decision in {rel} with a person's identity."]
+    return None
+
+
 def _verify_image_grounding(run_dir: Path) -> Tuple[bool, List[str]]:
     """image-grounding-steward sub-verifier at P-IMAGE-QC (FIX 16).
 
-    Two checks plus a REQUIRED sub-verdict:
+    Two checks plus a REQUIRED human verdict:
       1. SCENE GROUNDING — every people/scene-bearing render prompt must carry at
          least one client-specific research anchor token (generic/unanchored
          scene = FAIL; pure abstract/typography = exempt).
       2. OBSERVED-RENDER PARITY — the anchor tokens must also appear in the
          slides.json copy the renderer bakes verbatim (same semantics as
          AF-RESEARCH-REACHES-RENDER), so prompt claims cannot outrun the pixels.
-      3. REQUIRED SUB-VERDICT — working/qc/image_qc_report.json must carry an
-         explicit {"pass": true, "reviewed_by": <independent identity>} block
-         under "image_grounding". A MISSING image_grounding sub-verdict PARKS
-         the run for human vision review: it FAILS with AF-IMAGE-GROUNDING-PARK
-         naming the park path. NOTE-pass only under _degraded_allowed."""
+      3. REQUIRED HUMAN VERDICT — working/qc/human-review/image_grounding.json
+         must carry {"pass": true, "reviewed_by": <independent identity>}. A
+         MISSING file is an OPERATOR HOLD: the step fails with a reason starting
+         OPERATOR-REVIEW: that names the file (decision D-34).
+         NOTE-pass only under _degraded_allowed."""
     reasons: List[str] = []
     # --- 1+2. scene grounding / render parity ---
     prompts = _fix16_load_prompt_texts(run_dir)
@@ -1060,41 +1170,12 @@ def _verify_image_grounding(run_dir: Path) -> Tuple[bool, List[str]]:
                         f"demographic default {tok!r} — image-grounding-steward "
                         "forbids defaulting a scene's people from a generic "
                         "demographic stereotype (AF-DEMO-DEFAULT).")
-    # --- 3. REQUIRED image_grounding sub-verdict in the image-QC report ---
-    report_path = run_dir / "working" / "qc" / "image_qc_report.json"
-    report = _read_json(report_path) if report_path.is_file() else None
-    verdict = report.get("image_grounding") if isinstance(report, dict) else None
-    if not isinstance(verdict, dict):
-        if not _degraded_allowed(run_dir):
-            return False, reasons + [
-                "AF-IMAGE-GROUNDING-PARK: the image-QC report carries NO "
-                "image_grounding sub-verdict — image-grounding-steward (owns "
-                "P-IMAGE-QC, FIX 16) has not rendered its verdict. There is no "
-                "automated vision route in the scripts tree, so the deck PARKS FOR "
-                "HUMAN VISION REVIEW: park at working/qc/human-review/ "
-                "(image-grounding-steward review queue) and record the verdict in "
-                "image_qc_report.json under image_grounding={pass, reviewed_by} "
-                "before attesting P-IMAGE-QC."]
-        return True, ["NOTE: image_grounding sub-verdict absent — parked for human "
-                      "vision review (test/CI degraded NOTE pass)"] + reasons
-    if verdict.get("pass") is not True:
-        return False, reasons + [
-            "AF-IMAGE-GROUNDING: the image_grounding sub-verdict marks pass!=true — "
-            "grounding failed; per image-grounding-steward the run parks for human "
-            "vision review."]
-    reviewer = verdict.get("reviewed_by")
-    if not (isinstance(reviewer, str) and reviewer.strip()):
-        return False, reasons + [
-            "AF-IMAGE-GROUNDING: the image_grounding sub-verdict names no reviewed_by "
-            "identity — who performed the grounding review is unprovenance'd; "
-            "parking for human vision review."]
-    if verdict.get("reviewed_by") and _bd_fn("FORBIDDEN_QC_GRADER_IDENTITIES"):
-        ident = reviewer.strip().lower()
-        if ident in _bd_fn("FORBIDDEN_QC_GRADER_IDENTITIES"):
-            return False, reasons + [
-                "AF-IMAGE-GROUNDING: image_grounding.reviewed_by is a builder/self "
-                f"identity ({reviewer!r}) — a self-cleared grounding verdict cannot "
-                "pass. Park for independent human vision review."]
+    # --- 3. REQUIRED human grounding verdict (its own file, PD-206a) ---
+    held = _fix16_human_verdict(run_dir, FIX16_GROUNDING_REVIEW_REL,
+                                FIX16_GROUNDING_PARK, "image-grounding")
+    if held is not None:
+        ok_held, r_held = held
+        return ok_held, reasons + r_held
     return (not reasons), reasons
 
 
@@ -1107,11 +1188,13 @@ def _verify_representation_casting(run_dir: Path) -> Tuple[bool, List[str]]:
          P0A-INTAKE owns absence; casting never invents a mix.
       2. Every people/scene-bearing prompt's cast targets must not contain an
          invented demographic default (FORBIDDEN_DEMOGRAPHIC_DEFAULTS).
-      3. REQUIRED SUB-VERDICT — working/qc/prompt_qc_report.json must carry
-         {"pass": true, "reviewed_by": <independent identity>} under
-         "representation_casting". A MISSING sub-verdict PARKS for human review
-         (AF-CASTING-PARK); NOTE-pass only under _degraded_allowed. Observed-render
-         parity for the same mix is performed at P-IMAGE-QC by the steward."""
+      3. REQUIRED HUMAN VERDICT —
+         working/qc/human-review/representation_casting.json must carry
+         {"pass": true, "reviewed_by": <independent identity>}. A MISSING file is
+         an OPERATOR HOLD: the step fails with a reason starting OPERATOR-REVIEW:
+         that names the file (decision D-34). NOTE-pass only under
+         _degraded_allowed. Observed-render parity for the same mix is performed
+         at P-IMAGE-QC by the steward."""
     reasons: List[str] = []
     prompts = _fix16_load_prompt_texts(run_dir)
     mix = _fix16_representation_mix(run_dir)
@@ -1168,37 +1251,13 @@ def _verify_representation_casting(run_dir: Path) -> Tuple[bool, List[str]]:
                     "does not reflect the client's mix. Align prompt cast descriptions "
                     "with intake.representation_mix (representation-casting-director, "
                     "FIX 16).")
-    # REQUIRED representation_casting sub-verdict in the prompt-QC report — checked
-    # even when prompts are absent: the verdicts gate ATTESTATION, not convenience.
-    report_path = run_dir / "working" / "qc" / "prompt_qc_report.json"
-    report = _read_json(report_path) if report_path.is_file() else None
-    verdict = report.get("representation_casting") if isinstance(report, dict) else None
-    if not isinstance(verdict, dict):
-        if not _degraded_allowed(run_dir):
-            return False, reasons + [
-                "AF-CASTING-PARK: the prompt-QC report carries NO representation_casting "
-                "sub-verdict — representation-casting-director (owns P-PROMPT-QC, "
-                "FIX 16) has not recorded its cast-parity review. Park the run for "
-                "human review at working/qc/human-review/ (casting review queue) and "
-                "record the verdict in prompt_qc_report.json under "
-                "representation_casting={pass, reviewed_by} before attesting "
-                "P-PROMPT-QC."]
-        return True, ["NOTE: representation_casting sub-verdict absent — parked for "
-                      "human review (test/CI degraded NOTE pass)"] + reasons
-    if verdict.get("pass") is not True:
-        return False, reasons + [
-            "AF-CASTING: the representation_casting sub-verdict marks pass!=true — "
-            "casting parity failed; park for human review."]
-    reviewer = verdict.get("reviewed_by")
-    if not (isinstance(reviewer, str) and reviewer.strip()):
-        return False, reasons + [
-            "AF-CASTING: the representation_casting sub-verdict names no reviewed_by "
-            "identity — park for independent human review."]
-    forb_ids = _bd_fn("FORBIDDEN_QC_GRADER_IDENTITIES")
-    if forb_ids and reviewer.strip().lower() in forb_ids:
-        return False, reasons + [
-            "AF-CASTING: representation_casting.reviewed_by is a builder/self identity "
-            f"({reviewer!r}) — park for independent human review."]
+    # REQUIRED human casting verdict (its own file, PD-206a) — checked even when
+    # prompts are absent: the verdict gates ATTESTATION, not convenience.
+    held = _fix16_human_verdict(run_dir, FIX16_CASTING_REVIEW_REL,
+                                FIX16_CASTING_PARK, "representation-casting")
+    if held is not None:
+        ok_held, r_held = held
+        return ok_held, reasons + r_held
     return (not reasons), reasons
 
 
@@ -1492,18 +1551,71 @@ def _fix16_apply(pv_registry: dict) -> dict:
         pv_registry["P-PROMPT-QC"] = _fix16_get_verifier("P-PROMPT-QC")
     return pv_registry
 
-def _verify_assemble(run_dir: Path) -> Tuple[bool, List[str]]:
-    """P8-ASSEMBLE: build_deck.check_deck_harmony (arc + visual consistency).
-    Falls back to filesystem PPTX existence + size check when unavailable.
+# PD-062v: the paths the assembled deck can be at. `working/deliverables/` is
+# where the render writes it; the run top is the manifest's own
+# `produces_artifact` ("*-FINAL.pptx") and stays accepted until PD-062 retargets
+# that declaration, so this unit is safe to merge before or after PD-062.
+_ASSEMBLE_DECK_PATTERNS = (
+    "working/deliverables/*-FINAL.pptx",
+    "*-FINAL.pptx",
+)
+_ASSEMBLE_DECK_EXPECTED = ("working/deliverables/*-FINAL.pptx "
+                           "(or *-FINAL.pptx at the run top)")
 
-    check_deck_harmony only proves cross-slide cohesion (recurring character,
-    palette, archetype rhythm) from the RENDERED PNGs / prompts — it never opens
-    the assembled PPTX itself. Delegating straight to it let a decoy file (e.g. a
-    40-byte text file renamed 'deck.pptx') pass this phase outright, because a
-    harmony PASS was returned before anything checked the artifact was a real
-    PPTX. Mirror the same magic-bytes idiom _DELIVERY_DELIVERABLES already uses
-    (PK\\x03\\x04 header) on every passing harmony result, so a decoy cannot ride
-    a harmony pass through assembly."""
+
+def _assemble_deck_candidates(run_dir: Path) -> List[Path]:
+    """Every assembled deck under the two accepted patterns, deduplicated."""
+    hits: List[Path] = []
+    for pattern in _ASSEMBLE_DECK_PATTERNS:
+        for p in sorted(run_dir.glob(pattern)):
+            if p.is_file() and not p.name.startswith("~$") and p not in hits:
+                hits.append(p)
+    return hits
+
+
+def _is_real_deck(path: Path) -> bool:
+    """A deck is a ZIP container holding ppt/presentation.xml — not a renamed
+    text file (magic bytes alone let any ZIP-shaped decoy through)."""
+    try:
+        if path.stat().st_size < 1000:
+            return False
+        with zipfile.ZipFile(path) as zf:
+            return "ppt/presentation.xml" in zf.namelist()
+    except (OSError, zipfile.BadZipFile):
+        return False
+
+
+def _verify_assemble(run_dir: Path) -> Tuple[bool, List[str]]:
+    """P8-ASSEMBLE: exactly one real assembled deck, plus build_deck.check_deck_harmony.
+
+    PD-062v: the deck is resolved where the render writes it —
+    `working/deliverables/*-FINAL.pptx` — with the run-top `*-FINAL.pptx`
+    (the manifest's current declaration) still accepted. A stray `.pptx`
+    elsewhere never stands in for the deck, and a text file named
+    `*-FINAL.pptx` fails as "not a deck" because the container must hold
+    `ppt/presentation.xml`.
+
+    check_deck_harmony only proves cross-slide cohesion from the RENDERED PNGs /
+    prompts — it never opens the assembled PPTX itself, so the deck proof runs
+    here regardless of whether harmony is available.
+    """
+    decks = _assemble_deck_candidates(run_dir)
+    if not decks:
+        stray = [p for p in run_dir.glob("**/*.pptx") if not p.name.startswith("~$")]
+        detail = (f" (found only {', '.join(str(p.relative_to(run_dir)) for p in stray)} — "
+                  f"a stray .pptx is not the deck)" if stray else "")
+        return False, [f"AF-HARMONY: no assembled deck found — expected "
+                       f"{_ASSEMBLE_DECK_EXPECTED}{detail}"]
+    if len(decks) > 1:
+        names = ", ".join(str(p.relative_to(run_dir)) for p in decks)
+        return False, [f"AF-HARMONY: {len(decks)} assembled decks found ({names}) — "
+                       f"expected exactly one at {_ASSEMBLE_DECK_EXPECTED}"]
+    bad = [p for p in decks if not _is_real_deck(p)]
+    if bad:
+        return False, [f"AF-HARMONY: {p.name} is not a deck — it is not a ZIP "
+                       f"holding ppt/presentation.xml (a renamed non-PPTX file "
+                       f"cannot pass assembly)" for p in bad]
+
     fn = _bd_fn("check_deck_harmony")
     if fn is not None:
         try:
@@ -1511,46 +1623,12 @@ def _verify_assemble(run_dir: Path) -> Tuple[bool, List[str]]:
             if not _checker_pass(result):
                 detail = result if isinstance(result, str) else json.dumps(result)
                 return False, [f"AF-HARMONY: deck harmony check failed: {detail}"]
-            # Harmony passed — but harmony never inspects the assembled PPTX
-            # itself. Prove each candidate PPTX is a real one before letting the
-            # delegated pass stand.
-            hits = [p for p in run_dir.glob("**/*.pptx") if not p.name.startswith("~$")]
-            if not hits:
-                return False, ["AF-HARMONY: deck harmony check passed but no .pptx "
-                               "found in run dir (assembly not complete)"]
-            pptx_reasons: List[str] = []
-            for p in hits:
-                size = p.stat().st_size
-                if size < 1000:
-                    pptx_reasons.append(
-                        f"AF-HARMONY: {p.name} is suspiciously small ({size} bytes) "
-                        f"— not a real assembled PPTX")
-                    continue
-                try:
-                    with open(p, "rb") as fh:
-                        head = fh.read(4)
-                except OSError as exc:  # noqa: BLE001
-                    pptx_reasons.append(f"AF-HARMONY: cannot read {p.name} for "
-                                        f"magic-bytes check: {exc!r}")
-                    continue
-                if head != b"PK\x03\x04":
-                    pptx_reasons.append(
-                        f"AF-HARMONY: {p.name} is not a valid ZIP/PPTX container "
-                        f"(expected b'PK\\x03\\x04' at offset 0, got {head!r}) — "
-                        f"a renamed non-PPTX file cannot pass assembly")
-            if pptx_reasons:
-                return False, pptx_reasons
             return True, []
         except Exception as exc:  # noqa: BLE001
             pass  # fall through to filesystem check
 
-    # Filesystem fallback: a non-trivially-sized PPTX must exist.
-    hits = [p for p in run_dir.glob("**/*.pptx") if not p.name.startswith("~$")]
-    if not hits:
-        return False, ["AF-HARMONY: no .pptx found in run dir (assembly not complete)"]
-    biggest = max(hits, key=lambda p: p.stat().st_size)
-    if biggest.stat().st_size < 1000:
-        return False, [f"AF-HARMONY: {biggest.name} is suspiciously small ({biggest.stat().st_size} bytes)"]
+    # Filesystem fallback: the validated deck exists, but cohesion was not
+    # measured, so a production pass is not allowed on container sanity alone.
     if not _degraded_allowed(run_dir):
         # F03: cross-slide cohesion was never measured; container sanity alone
         # cannot attest assembly in production.
@@ -1610,16 +1688,26 @@ def _verify_notes_sync(run_dir: Path) -> Tuple[bool, List[str]]:
 #    top, because this verifier runs BEFORE curate.py assembles the flat
 #    deliverables/ bundle the other consumers check. --
 
-# Pre-curation search pattern (glob, relative to run_dir) per canonical key.
+# Search pattern (glob, relative to run_dir) per canonical key.
+#
+# PD-064: each pattern is the path the phase that PRODUCES the deliverable
+# declares in PIPELINE-MANIFEST.json — not where a folder-shaped guess puts it.
+# The deck, the deck PDF and the infographic are written to
+# working/deliverables/ (pdf_export.py writes the PDF only there;
+# build_infographic.py writes only working/deliverables/ and working/renders/);
+# the audio, the webinar video and their peers stay where their own steps
+# write them. The old table looked for the deck, the deck PDF and the
+# infographic under working/delivery/, so a real bundle reported three of ten
+# deliverables missing.
 _DELIVERY_PATTERN_BY_KEY = {
-    "deck_pptx":         "working/delivery/*-FINAL.pptx",
-    "deck_pdf":          "working/delivery/*-FINAL.pdf",
+    "deck_pptx":         "working/deliverables/*-FINAL.pptx",
+    "deck_pdf":          "working/deliverables/*-FINAL.pdf",
     "guide_pdf":         "working/deliverables/PRESENTER-GUIDE.pdf",
     "speech_md":         "working/deliverables/PRESENTERS-SPEECH.md",
     "speech_pdf":        "working/deliverables/PRESENTERS-SPEECH.pdf",
     "speech_fish_md":    "working/deliverables/PRESENTERS-SPEECH-FISH-TAGGED.md",
     "audio_mp3":         "working/delivery/PRESENTER-AUDIO.mp3",
-    "infographic_png":   "working/delivery/infographic.png",
+    "infographic_png":   "working/deliverables/infographic.png",
     "teleprompter_html": "working/deliverables/presenter-teleprompter.html",
     "webinar_mp4":       "working/delivery/*-WEBINAR.mp4",
 }
@@ -2046,10 +2134,13 @@ def _deliverable_content_check(key: str, path: Path, reasons: list) -> None:
                            f"for video verification: {exc!r}")
 
 
-def _verify_delivery(run_dir: Path) -> Tuple[bool, List[str]]:
-    """P9-DELIVER: hard-fail on ANY missing or substance-less whitelist deliverable.
+def _verify_delivery(run_dir: Path, keys: Optional[tuple] = None) -> Tuple[bool, List[str]]:
+    """The bundle check: hard-fail on ANY missing or substance-less whitelist
+    deliverable.
 
-    Checks ALL 10 deliverables in _DELIVERY_DELIVERABLES.  Each is verified for
+    Checks ALL 10 deliverables in _DELIVERY_DELIVERABLES — or, when ``keys`` is
+    given, only those keys (PD-064: P9-DELIVER asks it for the audio alone; the
+    full ten-key check runs at P-BUNDLE-GATE).  Each is verified for
     existence, non-empty, min bytes, magic-byte signature (where applicable),
     AND content substance (where content_check is configured).  A missing or
     substance-less deliverable produces FAIL with the specific deficiency —
@@ -2063,6 +2154,8 @@ def _verify_delivery(run_dir: Path) -> Tuple[bool, List[str]]:
     reasons: List[str] = []
 
     for item in _DELIVERY_DELIVERABLES:
+        if keys is not None and item["key"] not in keys:
+            continue
         key = item["key"]
         pattern = item["pattern"]
         min_bytes = item["min_bytes"]
@@ -2142,10 +2235,44 @@ def _verify_delivery(run_dir: Path) -> Tuple[bool, List[str]]:
     return (len(hard) == 0), reasons
 
 
+def _verify_delivery_scoped(keys: tuple) -> Callable:
+    """A delivery verifier narrowed to ``keys`` (PD-064).
+
+    P9-DELIVER is the audio step: it must be checked for the audio it produces,
+    not for all ten deliverables at once. It used to run the whole bundle
+    check, so a run whose audio was never made still passed the step whenever
+    the rest of the bundle happened to be present — the step reported a pass
+    for a file it never looked at.
+
+    The narrowed check still delegates to the ONE ten-key machinery
+    (``_verify_delivery``), so the whitelist, each byte floor and each
+    magic-byte rule can never drift into a second copy. The whole-bundle
+    verdict lives at P-BUNDLE-GATE now, which is where the bundle belongs.
+
+    ``_verify_delivery`` is bound as a local so the returned verifier carries
+    it in its closure: the deliverable single-source test pins P9-DELIVER's
+    delegation to that function, and that pin stays true here.
+    """
+    _shared_delivery_check = _verify_delivery
+    _keys = tuple(keys)
+
+    def _v(run_dir: Path) -> Tuple[bool, List[str]]:
+        return _shared_delivery_check(run_dir, _keys)
+
+    _v.scoped_keys = _keys  # PD-064: the keys this check was narrowed to
+    return _v
+
+
 def _verify_json_artifact(pattern: str, required_keys: tuple = ()):
-    """Factory returning a verifier that checks a JSON artifact."""
+    """Factory returning a verifier that checks a JSON artifact.
+
+    PD-061: the checked path is exposed as ``artifact_pattern`` on the returned
+    function so a parity test can compare the WHOLE registry against each
+    phase's manifest ``produces_artifact`` without re-deriving it from source.
+    """
     def _v(run_dir: Path) -> Tuple[bool, List[str]]:
         return _check_json_nonempty(run_dir, pattern, required_keys)
+    _v.artifact_pattern = pattern  # PD-061: the path this check reads
     return _v
 
 
@@ -2319,6 +2446,55 @@ def _verify_text_artifact(pattern: str, min_bytes: int = 50,
         except Exception:  # noqa: BLE001 — fall back to the fixed floor
             _scaled = min_bytes
         return _check_text_nonempty(run_dir, pattern, _scaled)
+    _v.artifact_pattern = pattern  # PD-061: the path this check reads
+    return _v
+
+
+def _verify_binary_artifact(pattern: str, min_bytes: int = 50,
+                            magic: bytes = b"%PDF",
+                            scale_by_slides: bool = False,
+                            floor_formula: str = "pdf"):
+    """Factory returning a verifier that checks a BINARY artifact (PD-208).
+
+    A PDF step was checked by _verify_text_artifact, which measures DECODED
+    TEXT length and never looks at the bytes: a text file named ``*.pdf``
+    passed as long as it was long enough. This factory measures the file's
+    byte length on disk (never a decoded-text length) and requires the first
+    ``len(magic)`` bytes to equal ``magic``.
+
+    Floors scale by slide count exactly as _verify_text_artifact does — the
+    same one helper (presentation_job/deliverable_floors — FIX 103), the same
+    ``floor_formula`` select, the same raw-min_bytes fallback when the module
+    is unavailable.
+    """
+    def _v(run_dir: Path) -> Tuple[bool, List[str]]:
+        p = _resolve_glob(run_dir, pattern)
+        if p is None:
+            return False, [f"{pattern}: file not found — phase artifact missing"]
+        floor = min_bytes
+        if scale_by_slides:
+            try:
+                _n = _floors.slide_count(run_dir) if _floors is not None else 0
+                _n = _n or 1
+                floor = (_floors.guide_floor(_n) if floor_formula == "guide"
+                         else _floors.pdf_floor(_n)) if _floors is not None else min_bytes
+            except Exception:  # noqa: BLE001 — fall back to the fixed floor
+                floor = min_bytes
+        try:
+            with open(p, "rb") as fh:
+                head = fh.read(len(magic))
+            size = p.stat().st_size
+        except OSError as exc:  # noqa: BLE001
+            return False, [f"{pattern}: unreadable ({exc!r})"]
+        if head != magic:
+            return False, [
+                f"{pattern}: not a PDF — expected {magic!r} at offset 0, "
+                f"got {head!r}"
+            ]
+        if size < floor:
+            return False, [f"{pattern}: {size} bytes < {floor} — not a usable PDF"]
+        return True, []
+    _v.artifact_pattern = pattern  # PD-061: the path this check reads
     return _v
 
 
@@ -2399,12 +2575,15 @@ def _verify_fish_tag(run_dir: Path) -> Tuple[bool, List[str]]:
 
 
 def _verify_ghl_upload(run_dir: Path) -> Tuple[bool, List[str]]:
-    """FIX-11 verifier: the local GHL ledger AND — when the LOCATION PIT resolves —
-    a READ-ONLY media-library list-back proving the deck is genuinely in the GHL
-    library (the QC gate: "the deck appears in the listing").
+    """FIX-11 + PD-207 verifier: the upload record AND — when the LOCATION PIT
+    resolves — a READ-ONLY media-library list-back proving the deck is genuinely in
+    the GHL library (the QC gate: "the deck appears in the listing").
 
-    The local ledger (working/checkpoints/media_library.json) is the fast first
-    check. When `pptx_ghl_media_id` + the canonical GHL env names resolve, this
+    PD-207: working/checkpoints/media_library.json IS the record that the upload
+    ran. A missing, unreadable or non-object record fails the phase with
+    "media_library.json is missing — the upload did not run", and so does a record
+    with no ghl_folder_id — an upload step with no upload record did not upload.
+    When `pptx_ghl_media_id` + the canonical GHL env names resolve, this
     verifier additionally calls the read-only GET /medias/files list-back (via the
     shared ghl_media.list_media) and confirms the deck entry is present by name or
     fileId. The list-back is deliberately FAIL-SOFT (NOTE on any transport/scope
@@ -2413,12 +2592,15 @@ def _verify_ghl_upload(run_dir: Path) -> Tuple[bool, List[str]]:
     the listing is a real AF-BUNDLE-COMPLETE finding, not a silent pass. It NEVER
     mutates the media library (read-only GET only)."""
     ledger_p = run_dir / "working" / "checkpoints" / "media_library.json"
-    if not ledger_p.exists(): return True, ["NOTE: media_library.json not found"]
+    no_record = "media_library.json is missing — the upload did not run"
+    if not ledger_p.exists(): return False, [no_record]
     try: obj = json.loads(ledger_p.read_text(encoding="utf-8",errors="replace"))
-    except: return True, ["NOTE: media_library.json unreadable"]
+    except: return False, [no_record]
     reasons: List[str] = []
-    if not isinstance(obj, dict): return True, reasons
-    if "ghl_folder_id" not in obj: reasons.append("NOTE: ghl_folder_id absent")
+    if not isinstance(obj, dict): return False, [no_record]
+    if "ghl_folder_id" not in obj:
+        reasons.append("AF-BUNDLE-COMPLETE: media_library.json has no ghl_folder_id "
+                       "— the upload did not run.")
     pptx_id = str(obj.get("pptx_ghl_media_id") or obj.get("pptx_ghl_url") or "").strip()
     pptx_name = str(obj.get("pptx_ghl_remote_name") or "").strip()
     if not pptx_id:
@@ -2432,13 +2614,13 @@ def _verify_ghl_upload(run_dir: Path) -> Tuple[bool, List[str]]:
         pit = ghl_media.resolve_location_pit()
         loc = ghl_media.resolve_location_id()
     except Exception as exc:  # noqa: BLE001
-        return True, reasons + [f"NOTE: GHL list-back skipped (env/import: {exc})"]
+        return (len(reasons) == 0), reasons + [f"NOTE: GHL list-back skipped (env/import: {exc})"]
     if not pit or not loc:
-        return True, reasons + ["NOTE: GHL list-back skipped (no LOCATION PIT/location id)"]
+        return (len(reasons) == 0), reasons + ["NOTE: GHL list-back skipped (no LOCATION PIT/location id)"]
     try:
         listing = ghl_media.list_media(loc, pit, media_type="file", limit=200)
     except Exception as exc:  # noqa: BLE001 — read-only transport issue -> NOTE, never block
-        return True, reasons + [f"NOTE: GHL read-only list-back failed ({exc})"]
+        return (len(reasons) == 0), reasons + [f"NOTE: GHL read-only list-back failed ({exc})"]
     entries = listing.get("data") or []
     found = [
         e for e in entries if isinstance(e, dict)
@@ -2589,62 +2771,6 @@ def _verify_fish_tag(run_dir: Path) -> Tuple[bool, List[str]]:
         return re.sub(r'\s+', ' ', t).strip()
     if strip_tags(tagged_text) != strip_tags(source_text):
         reasons.append("AF-FISH-TAG: strip-equals prover failed")
-    return (len(reasons) == 0), reasons
-
-
-def _verify_ghl_upload(run_dir: Path) -> Tuple[bool, List[str]]:
-    """FIX-11 verifier: the local GHL ledger AND — when the LOCATION PIT resolves —
-    a READ-ONLY media-library list-back proving the deck is genuinely in the GHL
-    library (the QC gate: "the deck appears in the listing").
-
-    The local ledger (working/checkpoints/media_library.json) is the fast first
-    check. When `pptx_ghl_media_id` + the canonical GHL env names resolve, this
-    verifier additionally calls the read-only GET /medias/files list-back (via the
-    shared ghl_media.list_media) and confirms the deck entry is present by name or
-    fileId. The list-back is deliberately FAIL-SOFT (NOTE on any transport/scope
-    issue): a box with no GHL env, or whose LOCATION PIT lacks medias.read, must
-    not block the run — but on a box where the PIT DOES resolve, a missing deck in
-    the listing is a real AF-BUNDLE-COMPLETE finding, not a silent pass. It NEVER
-    mutates the media library (read-only GET only)."""
-    ledger_p = run_dir / "working" / "checkpoints" / "media_library.json"
-    if not ledger_p.exists(): return True, ["NOTE: media_library.json not found"]
-    try: obj = json.loads(ledger_p.read_text(encoding="utf-8",errors="replace"))
-    except: return True, ["NOTE: media_library.json unreadable"]
-    reasons: List[str] = []
-    if not isinstance(obj, dict): return True, reasons
-    if "ghl_folder_id" not in obj: reasons.append("NOTE: ghl_folder_id absent")
-    pptx_id = str(obj.get("pptx_ghl_media_id") or obj.get("pptx_ghl_url") or "").strip()
-    pptx_name = str(obj.get("pptx_ghl_remote_name") or "").strip()
-    if not pptx_id:
-        reasons.append("AF-BUNDLE-COMPLETE: media_library.json has no pptx_ghl_media_id "
-                       "— the final assembled deck was never recorded as uploaded to GHL.")
-        return (len(reasons) == 0), reasons
-    # READ-ONLY LIST-BACK (FIX-11 QC gate). Lazy + fail-soft: only when the shared
-    # module AND the canonical LOCATION PIT resolve. Never blocks on absence.
-    try:
-        import ghl_media
-        pit = ghl_media.resolve_location_pit()
-        loc = ghl_media.resolve_location_id()
-    except Exception as exc:  # noqa: BLE001
-        return True, reasons + [f"NOTE: GHL list-back skipped (env/import: {exc})"]
-    if not pit or not loc:
-        return True, reasons + ["NOTE: GHL list-back skipped (no LOCATION PIT/location id)"]
-    try:
-        listing = ghl_media.list_media(loc, pit, media_type="file", limit=200)
-    except Exception as exc:  # noqa: BLE001 — read-only transport issue -> NOTE, never block
-        return True, reasons + [f"NOTE: GHL read-only list-back failed ({exc})"]
-    entries = listing.get("data") or []
-    found = [
-        e for e in entries if isinstance(e, dict)
-        and (str(e.get("fileId") or e.get("_id") or "") == pptx_id
-             or (pptx_name and str(e.get("name") or "") == pptx_name))
-    ]
-    if not found:
-        reasons.append(
-            "AF-BUNDLE-COMPLETE: the final deck is NOT present in the GHL media "
-            "library listing (read-only GET /medias/files) — the local ledger claims "
-            f"pptx_ghl_media_id={pptx_id[:24]}… but the library has no matching entry. "
-            "An upload record that does not survive a real list-back is not an upload.")
     return (len(reasons) == 0), reasons
 
 
@@ -2840,19 +2966,21 @@ def _verify_webinarized_speech(run_dir: Path) -> Tuple[bool, List[str]]:
 # PHASE_VERIFIERS entries (currently just P-TYPO-QC) so their verdict is
 # shadow-compared against a sealed RunFacts read, without changing what the
 # verifier returns unless the operator has explicitly opted into enforcing
-# mode. P-TYPO-QC was chosen because it is the PROVEN gap, executed against
-# this exact checkout:
+# mode. P-TYPO-QC was chosen because it WAS the proven gap, executed against
+# this exact checkout before PD-075:
 #
 #   >>> phase_verifiers.verify("P-TYPO-QC", <run_dir with
 #   ...     typography_qc_report.json = {"gate":"typography","pass":false,
 #   ...                                  "average":2.1, ...}>)
-#   (True, [])   # <-- a report that says pass:false is reported as a PASS
+#   (True, [])   # was: a report that says pass:false reported as a PASS
 #
-# because the registered verifier is _verify_json_artifact(pattern) with NO
-# required_keys — it only proves the file exists, is non-empty, and parses;
-# it never opens "gate", "pass", "average", or independence. The RunFacts
-# verdict re-derives the SAME rubric build_deck._qc_report_gate already
-# enforces on other paths for this exact report and rejects it on five
+# because the registered verifier was then _verify_json_artifact(pattern) with
+# NO required_keys — it only proved the file existed, was non-empty, and parsed;
+# it never opened "gate", "pass", "average", or independence. PD-075 closed that
+# gap: the legacy half is now _verify_qc_report against build_deck's real
+# report-shape+teeth gate (_chk_typography_qc), so the same report now FAILS.
+# The RunFacts verdict re-derives the SAME rubric build_deck._qc_report_gate
+# already enforces on other paths for this exact report and rejects it on five
 # independent grounds (see the demo in the acceptance evidence).
 # ---------------------------------------------------------------------------
 def _shadow_qc_verifier(qc_key: str, legacy_fn: Callable) -> Callable:
@@ -2876,8 +3004,17 @@ def _shadow_qc_verifier(qc_key: str, legacy_fn: Callable) -> Callable:
             # _resolve_enforcing_mode()) -- never a live os.environ re-read --
             # so this decision cannot drift mid-run.
             if facts.enforcing:
-                if verdict is _rf.Verdict.PASS:
+                if verdict is _rf.Verdict.PASS and legacy_ok:
                     return True, []
+                if verdict is _rf.Verdict.PASS:
+                    # PD-075: the legacy half now carries build_deck's
+                    # deterministic teeth (AF-FONT-FLOOR re-measure) which the
+                    # report-only RunFacts read cannot see. Enforcing must
+                    # never LIFT a legacy FAIL — the docstring's "can only ever
+                    # make the gate STRICTER" is the invariant, so the legacy
+                    # refusal stands even when RunFacts passes.
+                    return False, list(legacy_reasons) or [
+                        f"[RunFacts enforcing] qc[{qc_key}]: legacy gate failed"]
                 return False, [f"[RunFacts enforcing] qc[{qc_key}]: {detail}"]
         except Exception as exc:  # noqa: BLE001 — shadow must never break a gate
             try:
@@ -2885,6 +3022,11 @@ def _shadow_qc_verifier(qc_key: str, legacy_fn: Callable) -> Callable:
             except Exception:  # noqa: BLE001
                 pass
         return legacy_ok, legacy_reasons
+    # PD-061: the checked path survives the shadow wrapper, so the parity walk
+    # below can classify the WHOLE registry (not a hand-picked sample).
+    _pat = getattr(legacy_fn, "artifact_pattern", None)
+    if _pat is not None:
+        _v.artifact_pattern = _pat
     return _v
 
 
@@ -3800,32 +3942,19 @@ def _verify_style_pick(run_dir: Path) -> Tuple[bool, List[str]]:
 
 def _verify_bundle_gate(run_dir: Path) -> Tuple[bool, List[str]]:
     """P-BUNDLE-GATE (order 9.95, script bundle_gate.py): the terminal
-    bundle-completeness gate's own verdict record. The script exits 5 naming
-    any missing/under-threshold deliverable; the verifier re-measures the
-    bundle it attests (every consumed deliverable pattern must resolve) and
-    requires the gate's own checkpoint record to exist and pass."""
-    import json as _json
-    consumed = [
-        "working/deliverables/{deck_slug}-FINAL.pptx",
-        "working/deliverables/{deck_slug}-FINAL.pdf",
-        "working/deliverables/PRESENTER-GUIDE.pdf",
-        "working/deliverables/PRESENTERS-SPEECH.md",
-        "working/deliverables/PRESENTERS-SPEECH.pdf",
-        "working/deliverables/PRESENTERS-SPEECH-FISH-TAGGED.md",
-        "working/delivery/PRESENTER-AUDIO.mp3",
-        "working/deliverables/infographic.png",
-        "working/deliverables/presenter-teleprompter.html",
-        "working/delivery/{deck_slug}-WEBINAR.mp4",
-    ]
-    missing: List[str] = []
-    for pat in consumed:
-        if "{deck_slug}" in pat:
-            # The slug resolves per run; match the glob the engine itself uses.
-            pat = pat.replace("{deck_slug}", "*")
-        if _resolve_glob(run_dir, pat) is None:
-            missing.append(pat)
-    if missing:
-        return False, [f"bundle deliverable(s) absent: {', '.join(missing)}"]
+    bundle-completeness gate's own verdict record.
+
+    PD-064: the ten-deliverable check lives HERE. P9-DELIVER used to run it, so
+    the audio step passed for a run with no audio. The check itself is
+    `_verify_delivery` — the one canonical whitelist, each key resolved through
+    `_DELIVERY_PATTERN_BY_KEY` at the path its phase's producer declares — and
+    this gate additionally requires the gate's own checkpoint record to exist
+    and pass."""
+    bundle_ok, bundle_reasons = _verify_delivery(run_dir)
+    if not bundle_ok:
+        return False, [
+            f"bundle deliverable(s) absent: {r}" for r in bundle_reasons
+        ]
     gate = _read_json(_resolve_glob(run_dir, "working/checkpoints/bundle_gate.json")
                       or Path("/nonexistent"))
     if not isinstance(gate, dict):
@@ -3932,6 +4061,73 @@ def _verify_motion_phase(run_dir: Path) -> Tuple[bool, List[str]]:
 
 
 
+_DESIGN_BRIEF_PATTERN = "working/research/design-brief-*.md"
+_TYPE_LAYOUT_SYSTEM_REL = "working/typography/type_layout_system.md"
+_DESIGN_SYSTEM_REL = "working/typography/design_system.json"
+
+
+def _verify_design_phase(run_dir: Path) -> Tuple[bool, List[str]]:
+    """PF-DESIGN — the typography step proves TYPOGRAPHY work, not a brief.
+
+    PD-088. This entry used to be ``_verify_text_artifact(
+    "working/research/design-brief-*.md", 50)``: 50 characters of art direction
+    flipped the typography step to `done` with no declared type system and no
+    design system behind it, so a run reached render with no weights at all.
+    The step passes only when ALL THREE artifacts exist and are valid:
+
+      1. the design brief, >= 200 characters of text;
+      2. ``working/typography/type_layout_system.md``, whose declared tokens
+         pass ``build_deck.check_font_floor`` (the deterministic numeric floor);
+      3. ``working/typography/design_system.json``, an object carrying a
+         non-empty ``weight_ladder`` and a non-empty ``archetype_plan``.
+
+    Each miss returns its own reason. Run-dir-scoped.
+    """
+    reasons: List[str] = []
+
+    _ok_brief, brief_reasons = _check_text_nonempty(
+        run_dir, _DESIGN_BRIEF_PATTERN, 200)
+    reasons.extend(brief_reasons)
+
+    layout = run_dir / _TYPE_LAYOUT_SYSTEM_REL
+    if not layout.is_file():
+        reasons.append(
+            f"{_TYPE_LAYOUT_SYSTEM_REL}: file not found — the typography step "
+            f"must emit the deterministic type tokens (min_body_pt, "
+            f"type_scale_steps, min_contrast_ratio), not the research brief alone")
+    elif _bd is None:
+        # F03 — fail closed: an unmeasurable font floor is not a pass.
+        reasons.append("AF-FONT-FLOOR: build_deck.check_font_floor is unavailable, "
+                       "so the declared type system cannot be measured")
+    else:
+        try:
+            floor_reason = _bd.check_font_floor(run_dir)
+        except Exception as exc:  # noqa: BLE001 — a crashed measurer is a FAIL
+            reasons.append(f"AF-FONT-FLOOR: check raised: {exc!r}")
+        else:
+            if floor_reason:
+                reasons.append(floor_reason)
+
+    system = _read_json(run_dir / _DESIGN_SYSTEM_REL)
+    if not isinstance(system, dict):
+        reasons.append(f"{_DESIGN_SYSTEM_REL}: missing, unreadable or not a "
+                       f"JSON object")
+    else:
+        for _key in ("weight_ladder", "archetype_plan"):
+            if not system.get(_key):
+                reasons.append(f"{_DESIGN_SYSTEM_REL}: {_key} is empty — the "
+                               f"design system must declare it")
+
+    if reasons:
+        return False, reasons
+    return True, []
+
+
+# PD-061: the brief IS the phase artifact the manifest declares, so the parity
+# walk still classifies this entry (the check's two further inputs are the
+# type system and the design system PD-088 added).
+_verify_design_phase.artifact_pattern = _DESIGN_BRIEF_PATTERN
+
 PHASE_VERIFIERS: dict[str, Callable] = {
     # Phase -1    Content-to-Presentation Conversion
     "P-CONVERTER":        _verify_converter,
@@ -3961,11 +4157,19 @@ PHASE_VERIFIERS: dict[str, Callable] = {
     "P1Q-COPY-QC":        _verify_qc_report(
         "working/qc/copy_qc_report.json", "_chk_copy_qc", "AF-COPY-QC"),
     # Phase 4.5   Typography / Design Brief
-    "PF-DESIGN":          _verify_text_artifact("working/research/design-brief-*.md", 50),
+    # PD-088: the brief alone proved nothing — the step now also requires the
+    # deterministic type tokens and the design system (see _verify_design_phase).
+    "PF-DESIGN":          _verify_design_phase,
     # Phase 4.6   Typography QC
     # Trust Boundary Increment 1 (report-only) — see _shadow_qc_verifier above.
+    # PD-075: the legacy half is the REAL report-shape+teeth gate, not the
+    # existence-only _verify_json_artifact — so a report that says pass:false
+    # now fails this step instead of passing on the file merely existing.
     "P-TYPO-QC":          _shadow_qc_verifier(
-        "typography", _verify_json_artifact("working/qc/typography_qc_report.json")),
+        "typography", _verify_qc_report(
+            "working/qc/typography_qc_report.json", "_chk_typography_qc",
+            "AF-TYPOGRAPHY-QC",
+            artifact_pattern="working/qc/typography_qc_report.json")),
     # Phase 4.7   Prompt Authoring
     "P4-PROMPT":          _verify_prompt,
     # Phase 4.8   Prompt QC — INDEPENDENT report gate (root-cause fix, iteration
@@ -3975,8 +4179,9 @@ PHASE_VERIFIERS: dict[str, Callable] = {
     # caused: a report honestly recording average=1.0/pass=false still flipped
     # state.json done=true).
     # FIX 16 (presentation rev2): representation-casting-director owns P-PROMPT-QC -
-    # aggregated with the required representation_casting sub-verifier at the
-    # wiring point (see _fix16_get_verifier; rollback flag doc there).
+    # aggregated with the required human casting verdict at the wiring point
+    # (working/qc/human-review/representation_casting.json, PD-206a; the
+    # rollback flag is documented at _fix16_get_verifier).
     "P-PROMPT-QC":        _fix16_get_verifier("P-PROMPT-QC"),
     # Phase 4.85  Style Preview
     "P-STYLE-PREVIEW":    _verify_json_artifact("working/style-preview/style_samples_manifest.json"),
@@ -3997,7 +4202,13 @@ PHASE_VERIFIERS: dict[str, Callable] = {
     # Phase 8     PPTX Assembly
     "P8-ASSEMBLE":        _verify_assemble,
     # Phase 8.5   Presenter Speech
-    "P9-SPEECH":          _verify_text_artifact("working/presenter-speech/PRESENTERS-SPEECH.md", 200),
+    # PD-061: the CHECK reads the path the MANIFEST declares. It used to read
+    # working/presenter-speech/PRESENTERS-SPEECH.md — speech_build_harness
+    # writes its --workdir there, but the artifact it delivers (manifest
+    # produces_artifact, and its own --out) is working/deliverables/
+    # PRESENTERS-SPEECH.md. Checking the workdir parked every run that had
+    # produced the speech.
+    "P9-SPEECH":          _verify_text_artifact("working/deliverables/PRESENTERS-SPEECH.md", 200),
     # Phase 8.6   Speech QC
     # TRUST BOUNDARY, SLICE 2 — converted to the sealed-RunFacts verifier
     # pattern (verifier_registry.qc_report_verifier("speech"), gate
@@ -4022,9 +4233,13 @@ PHASE_VERIFIERS: dict[str, Callable] = {
     # (verify_notes_sync) — report-only unless PRES_TRUST_BOUNDARY_ENFORCE=1.
     "P9.5-NOTES-SYNC":    _shadow_composite_verifier("notes_sync:sync", _verify_notes_sync),
     # Phase 9     Delivery
-    # Slice 3: shadowed against the sealed 10-key bundle verdict
-    # (verify_deliverables) — report-only unless PRES_TRUST_BOUNDARY_ENFORCE=1.
-    "P9-DELIVER":         _shadow_composite_verifier("deliverables:bundle", _verify_delivery),
+    # PD-064: the step named Delivery is checked for the AUDIO it produces
+    # (exists, the canonical size floor, ID3 magic). It used to run the whole
+    # ten-file bundle check, so a run with no audio passed this step as long as
+    # the other nine were there. The ten-file check now runs at P-BUNDLE-GATE
+    # (_verify_bundle_gate) — its proper owner — and this check is the same
+    # single-sourced whitelist narrowed to the audio key.
+    "P9-DELIVER":         _verify_delivery_scoped(("audio_mp3",)),
     # Phase 0.15  Signature-Presentation Intake Gate (Skill 51)
     "P-SP-INTAKE":        _verify_sp_intake,
     # Phase 4.1   Signature-Presentation SACRED Structure (Skill 51)
@@ -4042,15 +4257,18 @@ PHASE_VERIFIERS: dict[str, Callable] = {
     # FIX 103: both PDF floors scale by THIS deck's slide count from THE one
     # helper (deliverable_floors) — deck_pdf via pdf_floor(n)=max(1506n, 8192),
     # guide_pdf via guide_floor(n)=max(1600n, 12000). No 51,200 / 34-slide
-    # literal is enforced here any more (the verifier registry fixture in
-    # tests/test_fix17_verifier_import_failclosed.py mirrors this call shape).
-    "P8.1-PDF-EXPORT":    _verify_text_artifact("working/deliverables/*-FINAL.pdf",
-                                                _MIN_BYTES["deck_pdf"],
-                                                scale_by_slides=True, floor_formula="pdf"),
+    # literal is enforced here any more. PD-208: the three PDF steps are checked
+    # by _verify_binary_artifact, which measures BYTE length and requires %PDF
+    # at offset 0 — a text file named *.pdf no longer satisfies them.
+    "P8.1-PDF-EXPORT":    _verify_binary_artifact("working/deliverables/*-FINAL.pdf",
+                                                  _MIN_BYTES["deck_pdf"],
+                                                  magic=b"%PDF",
+                                                  scale_by_slides=True, floor_formula="pdf"),
     # MG-036: governed motion audit (Skill 72) — record-vs-deck embed proof.
     "P8.15-MOTION":       _verify_motion_phase,
-    "P8.2-GUIDE":         _verify_text_artifact("working/deliverables/PRESENTER-GUIDE.pdf",
+    "P8.2-GUIDE":         _verify_binary_artifact("working/deliverables/PRESENTER-GUIDE.pdf",
                                                 _MIN_BYTES["guide_pdf"],
+                                                magic=b"%PDF",
                                                 scale_by_slides=True, floor_formula="guide"),
     # Slice 3: shadowed against the sealed dual-file strip-equals verdict
     # (verify_fish_tag) — report-only unless PRES_TRUST_BOUNDARY_ENFORCE=1.
@@ -4061,8 +4279,9 @@ PHASE_VERIFIERS: dict[str, Callable] = {
     # never-cited pre-doctrine number found in PIPELINE-MANIFEST.json and
     # presenters_speech_pdf.py's own PDF_MIN_BYTES self-check during this pass.
     # Now derived from the canonical spec (speech_pdf: 3_000, the doctrine floor).
-    "P9.1-SPEECH-PDF":    _verify_text_artifact("working/deliverables/PRESENTERS-SPEECH.pdf",
-                                                  _MIN_BYTES["speech_pdf"]),
+    "P9.1-SPEECH-PDF":    _verify_binary_artifact("working/deliverables/PRESENTERS-SPEECH.pdf",
+                                                  _MIN_BYTES["speech_pdf"],
+                                                  magic=b"%PDF"),
     # Slice 3: shadowed against the sealed media-library ledger verdict
     # (verify_media_library) — report-only unless PRES_TRUST_BOUNDARY_ENFORCE=1.
     # The READ-ONLY GHL list-back stays inside _verify_ghl_upload (network —
@@ -4137,10 +4356,26 @@ def artifact_path(run_dir: Path, key: str) -> Optional[Path]:
     This is THE single resolution rule for the engine's presence check
     (presentation_job.phases._artifacts_present) and every verifier here —
     one function, one ordering, no mirror to drift.
+
+    PD-062v: a key that carries a folder (``working/deliverables/*-FINAL.pptx``)
+    resolves AS WRITTEN relative to the run folder first. Keys with no folder
+    keep the run-top then working/upsell/ lookups below.
     """
     key = (key or "").strip()
     if not key:
         return None
+    if "/" in key:
+        # PD-062v: folder-carrying pattern — as written, relative to the run dir.
+        if key.endswith("/*"):
+            literal = run_dir / key[:-2]
+            if literal.is_dir() and any(literal.iterdir()):
+                return literal
+        elif any(c in key for c in "*?["):
+            literal_matches = [p for p in sorted(run_dir.glob(key)) if p.is_file()]
+            if literal_matches:
+                return max(literal_matches, key=lambda p: p.stat().st_mtime)
+        elif (run_dir / key).is_file():
+            return run_dir / key
     if key.endswith("/*"):
         base = run_dir / "working" / "upsell" / key[:-2]
         if base.is_dir() and any(base.iterdir()):
@@ -4349,7 +4584,13 @@ def _pu_check_receipt_identity(run_dir: Path, p: Path, *, scope_key: str) -> Lis
             except Exception:  # noqa: BLE001
                 placeholder_hosts = ()
             loc_l = location_id.lower()
-            if any(ph in loc_l for ph in ("placeholder", "example", "test", "changeme", "todo")):
+            # "unbound-test" is the installer's DOCUMENTED unbound sentinel
+            # (checkout_form_builder.resolve_scope / ghl_external_installer
+            # write it when no location is bound). It is an honest "not bound"
+            # declaration, not a made-up placeholder, so the "test" token must
+            # not swallow it -- PD-048a keys on this exact spelling.
+            if loc_l != "unbound-test" and any(
+                    ph in loc_l for ph in ("placeholder", "example", "test", "changeme", "todo")):
                 reasons.append(
                     f"{tag}: location_id {location_id!r} reads as a placeholder -- a made-up "
                     "location is a fabrication, not a push record")
@@ -4650,9 +4891,15 @@ def _make_pu_verifier(phase_id: str, artifacts: List[str]):
                 reasons.extend(_pu_check_json_object(run_dir, rel))
             else:
                 reasons.extend(_pu_check_text(run_dir, rel))
-        if reasons:
-            return False, [f"AF-U-{phase_id}: " + r for r in reasons]
-        return True, []
+        # A NOTE reason is a DEGRADED PASS, never a failure (see verify()'s
+        # own contract). A skipped remote readback stays visible as a note so
+        # no caller can mistake it for a verified pass, while every real
+        # finding still fails the phase.
+        notes = [r for r in reasons if r.startswith("NOTE:")]
+        failures = [r for r in reasons if not r.startswith("NOTE:")]
+        if failures:
+            return False, [f"AF-U-{phase_id}: " + r for r in failures] + notes
+        return True, notes
     _verify.__name__ = f"_verify_{phase_id.lower().replace('-', '_')}"
     return _verify
 
@@ -4892,56 +5139,22 @@ def _selftest() -> None:
                 f"got reasons={reasons}"
             )
 
-    # T10 (FIX 16): BOTH mandated QC sub-verifiers are wired at the registry
-    # wiring point, and a run WITHOUT the sub-verdicts parks (fails) in a
-    # production context — with a valid QC report, no env markers, and no
-    # .test-context marker.
+    # T10 (FIX 16 + PD-206a): BOTH mandated human verdicts are wired at the
+    # registry wiring point and are read from THEIR OWN FILES. A run WITHOUT
+    # them is an operator hold (fails) in a production context — with valid QC
+    # reports, no env markers, and no .test-context marker.
     t10rd = None
     try:
         import tempfile as _tf
         _t10tmp = _tf.TemporaryDirectory(prefix="phase_verifiers_selftest_fix16_")
         t10rd = Path(_t10tmp.name)
         # A production-looking run dir: valid-shape image-QC + prompt-QC reports,
-        # a render PNG, and NO sub-verdict blocks, NO degraded markers.
+        # a render PNG, and NO human-review files, NO degraded markers.
         qdir = t10rd / "working" / "qc"
         qdir.mkdir(parents=True, exist_ok=True)
         (t10rd / "renders").mkdir(parents=True, exist_ok=True)
         (t10rd / "renders" / "slide-01.png").write_bytes(b"\x89PNG\r\n\x1a\n" + b"x" * 64)
-        (qdir / "image_qc_report.json").write_text(json.dumps({
-            "gate": "Phase Image-QC", "average": 9.1, "pass": True,
-            "qc_independence": {"graded_by": "qc-specialist-image-presentations",
-                                 "independent": True}}))
-        (qdir / "prompt_qc_report.json").write_text(json.dumps({
-            "gate": "Phase Prompt-QC", "average": 9.1, "pass": True,
-            "qc_independence": {"graded_by": "qc-specialist-prompt-presentations",
-                                 "independent": True}}))
-        # P-IMAGE-QC must PARK (fail closed) with the park code when the
-        # image_grounding sub-verdict is missing and no test/CI marker exists.
-        ok_i, reasons_i = verify("P-IMAGE-QC", t10rd)
-        if ok_i:
-            fails.append("T10: P-IMAGE-QC without an image_grounding sub-verdict "
-                         "must PARK (fail) in production, got ok=True")
-        if not any("AF-IMAGE-GROUNDING-PARK" in r for r in reasons_i):
-            fails.append(f"T10: missing image_grounding must name AF-IMAGE-GROUNDING-PARK, got {reasons_i}")
-        # But P4-RENDER (same _verify_render base) must NOT demand the sub-verdict.
-        env_backup = {k: os.environ.get(k) for k in ("PRESENTATION_ALLOW_DEGRADED_VERIFIERS", "CI", "OPENCLAW_TEST")}
-        for k in ("PRESENTATION_ALLOW_DEGRADED_VERIFIERS", "CI", "OPENCLAW_TEST"):
-            os.environ.pop(k, None)
-        try:
-            ok_r, _ = verify("P4-RENDER", t10rd)
-            if ok_r:
-                fails.append("T10: P4-RENDER in production with no PNG-QC route should fail closed, got ok=True")
-        finally:
-            for k, v in env_backup.items():
-                if v is not None:
-                    os.environ[k] = v
-        # With the .test-context marker the parked state NOTE-passes (degraded path).
-        (t10rd / "working" / "checkpoints").mkdir(parents=True, exist_ok=True)
-        (t10rd / "working" / "checkpoints" / ".test-context").write_text("phase-b selftest")
-        ok_i2, _ = verify("P-IMAGE-QC", t10rd)
-        if not ok_i2:
-            fails.append("T10: parked P-IMAGE-QC under .test-context must NOTE-pass (degraded), got fail")
-        # Sub-verdict present with pass:true + reviewed_by => the FIX 16 layer passes.
+        # A4: the OLD report-embedded blocks, typed in — they must NOT clear the hold.
         (qdir / "image_qc_report.json").write_text(json.dumps({
             "gate": "Phase Image-QC", "average": 9.1, "pass": True,
             "qc_independence": {"graded_by": "qc-specialist-image-presentations",
@@ -4956,12 +5169,75 @@ def _selftest() -> None:
             "representation_casting": {"pass": True,
                                         "reviewed_by": "representation-casting-director"},
             "slides": []}))
+        # P-IMAGE-QC / P-PROMPT-QC must hold for a person when their verdict file
+        # is absent, with a reason that starts OPERATOR-REVIEW: and names the file.
+        ok_i, reasons_i = verify("P-IMAGE-QC", t10rd)
+        if ok_i:
+            fails.append("T10: P-IMAGE-QC without working/qc/human-review/"
+                         "image_grounding.json must hold (fail) in production, got ok=True")
+        if not any(r.startswith("OPERATOR-REVIEW:") and
+                   FIX16_GROUNDING_REVIEW_REL in r for r in reasons_i):
+            fails.append(f"T10: missing image_grounding.json must name it in an "
+                         f"OPERATOR-REVIEW reason, got {reasons_i}")
+        ok_p, reasons_p = verify("P-PROMPT-QC", t10rd)
+        if ok_p:
+            fails.append("T10: P-PROMPT-QC without working/qc/human-review/"
+                         "representation_casting.json must hold (fail) in production, got ok=True")
+        if not any(r.startswith("OPERATOR-REVIEW:") and
+                   FIX16_CASTING_REVIEW_REL in r for r in reasons_p):
+            fails.append(f"T10: missing representation_casting.json must name it in an "
+                         f"OPERATOR-REVIEW reason, got {reasons_p}")
+        # But P4-RENDER (same _verify_render base) must NOT demand the verdict file.
+        env_backup = {k: os.environ.get(k) for k in ("PRESENTATION_ALLOW_DEGRADED_VERIFIERS", "CI", "OPENCLAW_TEST")}
+        for k in ("PRESENTATION_ALLOW_DEGRADED_VERIFIERS", "CI", "OPENCLAW_TEST"):
+            os.environ.pop(k, None)
+        try:
+            ok_r, _ = verify("P4-RENDER", t10rd)
+            if ok_r:
+                fails.append("T10: P4-RENDER in production with no PNG-QC route should fail closed, got ok=True")
+        finally:
+            for k, v in env_backup.items():
+                if v is not None:
+                    os.environ[k] = v
+        # With the .test-context marker the held state NOTE-passes (degraded path).
+        (t10rd / "working" / "checkpoints").mkdir(parents=True, exist_ok=True)
+        (t10rd / "working" / "checkpoints" / ".test-context").write_text("phase-b selftest")
+        ok_i2, _ = verify("P-IMAGE-QC", t10rd)
+        if not ok_i2:
+            fails.append("T10: held P-IMAGE-QC under .test-context must NOTE-pass (degraded), got fail")
+        # Verdict files present with pass:true + a non-builder reviewed_by => pass,
+        # and the graded reports' bytes are unchanged by the verdict.
+        before_i = (qdir / "image_qc_report.json").read_bytes()
+        before_p = (qdir / "prompt_qc_report.json").read_bytes()
+        hdir = t10rd / "working" / "qc" / "human-review"
+        hdir.mkdir(parents=True, exist_ok=True)
+        (hdir / "image_grounding.json").write_text(json.dumps({
+            "pass": True, "reviewed_by": "image-grounding-steward",
+            "reviewed_at": "2026-11-12 16:40 Eastern", "note": ""}))
+        (hdir / "representation_casting.json").write_text(json.dumps({
+            "pass": True, "reviewed_by": "representation-casting-director",
+            "reviewed_at": "2026-11-12 16:40 Eastern", "note": ""}))
         ok_i3, reasons_i3 = verify("P-IMAGE-QC", t10rd)
         if not ok_i3:
-            fails.append(f"T10: P-IMAGE-QC with valid image_grounding sub-verdict must pass (degraded ctx), got {reasons_i3}")
+            fails.append(f"T10: P-IMAGE-QC with a passing human verdict must pass (degraded ctx), got {reasons_i3}")
         ok_p3, reasons_p3 = verify("P-PROMPT-QC", t10rd)
         if not ok_p3:
-            fails.append(f"T10: P-PROMPT-QC with valid representation_casting sub-verdict must pass (degraded ctx), got {reasons_p3}")
+            fails.append(f"T10: P-PROMPT-QC with a passing human verdict must pass (degraded ctx), got {reasons_p3}")
+        if (qdir / "image_qc_report.json").read_bytes() != before_i or \
+           (qdir / "prompt_qc_report.json").read_bytes() != before_p:
+            fails.append("T10: recording a human verdict must never edit the graded report")
+        # pass:false fails with the reviewer's note; a builder byline is refused.
+        (hdir / "representation_casting.json").write_text(json.dumps({
+            "pass": False, "reviewed_by": "jill-bulluck",
+            "note": "slide 4 shows a different audience"}))
+        ok_f, reasons_f = verify("P-PROMPT-QC", t10rd)
+        if ok_f or not any("slide 4 shows a different audience" in r for r in reasons_f):
+            fails.append(f"T10: pass:false must fail naming the reviewer's note, got ok={ok_f} {reasons_f}")
+        (hdir / "image_grounding.json").write_text(json.dumps({
+            "pass": True, "reviewed_by": "builder"}))
+        ok_b, reasons_b = verify("P-IMAGE-QC", t10rd)
+        if ok_b or not any("builder" in r for r in reasons_b):
+            fails.append(f"T10: a builder byline must be refused, got ok={ok_b} {reasons_b}")
         # Registry wiring identity: the two entries are aggregates, P4-RENDER is not.
         if PHASE_VERIFIERS["P4-RENDER"] is _verify_render and \
            PHASE_VERIFIERS["P-IMAGE-QC"] is _verify_render:

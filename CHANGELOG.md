@@ -1,3 +1,25 @@
+## [v27.1.72]  -  2026-11-12  -  Full-read guard: fleet-roll install wiring (installer, read_skill allow-lists, AGENTS.md rule stamper)
+## [Unreleased]  -  2026-11-13  -  Recurring prices (weekly, monthly, quarterly, yearly) for the signature launch family (Skills 83, 49, 71, 79)
+
+- A client can make any offer in a Black Friday launch (Skill 83) or signature funnel (Skill 49) a repeating price, not only one payment: main offer, package, bump, upsell or downsell. The cadence the client says per offer ("monthly", "every three months", "yearly") is read by one table, `shared-utils/signature_launch_contract/billing.py` (cadence words, the four intervals, "$49/month" phrasing, the unit and count a billing platform takes), and travels as `billing_type: recurring` plus `recurring_interval` through the offer mapper, the launch record and its schema, the plan the client approves, the delivery sheet, the checkout instances and the upsell disclosure. Installments and a trial first are still refused at plan time with the same shared sentence.
+- Skill 83 0.2.38 -> 0.2.39 (no per-skill CHANGELOG file): intake accepts exactly the types computed from the shared billing module, the plan and delivery sheet say how often a price is charged, `SKILL.md` no longer implies one payment only, new DECIDED entry `recurring_billing_carried_by_intake`. Skill 49 v2.1.59 -> v2.1.60 and Skill 71 1.3.37 -> 1.3.38 (schema byte copy); see their CHANGELOG files. Skill 79 0.1.10 -> 0.1.11 (no per-skill CHANGELOG file): the order-form manuscript prints a repeating price as "$49.00/month on a recurring basis (billing interval: month)".
+- `shared-utils/client_intake/engine.py` reads a cadence word in the billing answer (`weekly`, `quarterly`, `every year`) as a recurring price with its interval. A quarter is every 3 months where a billing platform has no quarter unit (`terms_for_interval`).
+- Known limit: Skill 06's native price binding still knows day, week, month and year only, so a quarterly offer is named as unresolved there (existing behavior for an unsupported interval) until Skill 06 learns an interval count.
+- Pinned files changed; the Skill 49 prover pin needs a CI mint. Not merged, deployed or rolled onto any client box.
+## [Unreleased]  -  2026-11-13  -  Batch pull requests run only the required checks
+
+- Every pull_request workflow that does not produce one of the 8 required checks (69 workflows, 105 jobs) now skips its jobs when the head branch starts with `batch/`. The three workflows that produce the required checks (`ghl-mcp-supervised-guard.yml`, `qc-static.yml`, `version-consistency.yml`) are untouched, and push-to-main triggers are unchanged, so main still runs everything after a merge.
+- New guard `scripts/ci/batch-required-only-check.py` (folded into fast-guards as `batch-required-only-guard`, with a self-test) fails if a required-check workflow gets the skip or a new pull_request workflow lacks it.
+- No guard or workflow is removed; duplicate findings are listed in the PR description for the separate audit.
+- No skill content changed, so no version bump. Migration: CI only; not rolled onto any client box.
+- Risk: LOW. Members run their own checks before QC; a skipped job reports "skipped", not failed.
+## [Unreleased]  -  2026-11-13  -  SF prover pin authority: a manual mint on a batch branch commits onto that branch
+
+- `.github/workflows/sf-prover-pin-authority.yml` (mint job only): a manual dispatch on a branch other than main now pushes the one pin-only github-actions[bot] commit onto the dispatched branch itself (fast-forward), instead of creating a `pin/mint-*` ref and a pull request to main. The built-in token cannot create a new ref when the batch also changes workflow files ("workflows scope may be required"); a fast-forward by a pin-only commit carries no workflow change. Push-to-main and dispatch-on-main are unchanged. Source: batch-merge diagnosis 2026-11-13, section 5.2.
+- No skill version bump: the pinned Skill 49 inputs are untouched, so the pin does not change.
+- Migration: repository change only; not merged, deployed or rolled onto any client box.
+- Risk: LOW. A dispatch on a non-branch ref is refused; a non-fast-forward push fails loudly.
+
 ## [Unreleased]  -  2026-11-12  -  Owner approval flow: the owner always gets a link (Skills 35, 44, 83 + shared helper)
 
 - New `shared-utils/owner_approval/` (`owner_approval.py`, README, 15 tests): register a pending approval request with Command Center, build the owner message (plain summary, preview, one-tap link), poll for the minted approval id, answer a chat "approved" with the link, re-send the link on reminders. The agent never mints approval; the Skill 44 write gate is unchanged.

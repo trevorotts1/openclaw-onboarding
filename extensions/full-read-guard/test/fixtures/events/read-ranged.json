@@ -1,0 +1,19 @@
+{
+  "_provenance": "Built from the OpenClaw 2026.11.3 tool schemas (read: readToolInputSchema in the installed dist; exec: docs/tools/exec.md Parameters) and the before_tool_call event shape in docs/plugins/hooks/tool-policy.md. Not a live capture; a builder with a scratch OpenClaw config directory may replace these with recorded events.",
+  "event": {
+    "toolName": "read",
+    "params": {
+      "path": "{{SKILLS}}/10-alpha/SKILL.md",
+      "offset": 20,
+      "limit": 40
+    },
+    "runId": "run-1",
+    "toolCallId": "call-1"
+  },
+  "ctx": {
+    "agentId": "main",
+    "sessionKey": "agent:main:fixture",
+    "sessionId": "fixture-session",
+    "runId": "run-1"
+  }
+}

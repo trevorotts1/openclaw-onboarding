@@ -91,7 +91,32 @@ EXIT_FAILCLOSED = 3
 SLOTS = ("main", "bump", "upsell_1", "downsell_1", "upsell_2")
 SOURCE_KINDS = ("owner", "existing_verified_catalog", "recommendation", "test_fixture")
 PRICE_STATUSES = ("provided", "recommended_unapproved", "approved", "unknown")
-BILLING_TYPES = ("one_time", "recurring", "installment", "trial")
+
+
+def _shared_billing():
+    """The one billing vocabulary (shared-utils/signature_launch_contract/billing.py), loaded by path
+    (49 has same-named modules on sys.path). Missing raises ImportError (the caller falls back to the same words)."""
+    import importlib.util
+    mod = sys.modules.get("signature_launch_billing")
+    if mod is None:
+        path = (Path(__file__).resolve().parents[2] / "shared-utils" / "signature_launch_contract" / "billing.py")
+        if not path.is_file():
+            raise ImportError("the shared billing vocabulary (billing.py) is not installed, so a launch "
+                              "record's billing types cannot be checked")
+        spec = importlib.util.spec_from_file_location("signature_launch_billing", path)
+        mod = importlib.util.module_from_spec(spec)
+        sys.modules["signature_launch_billing"] = mod
+        spec.loader.exec_module(mod)
+    return mod
+
+
+try:
+    _BILLING_VOCAB = _shared_billing()
+except ImportError:  # a layout without shared-utils beside it: the same words, held to the shared ones by a test
+    _BILLING_VOCAB = None
+BILLING_TYPES = _BILLING_VOCAB.BILLING_TYPES if _BILLING_VOCAB else ("one_time", "recurring", "installment", "trial")
+RECURRING_INTERVALS = (_BILLING_VOCAB.RECURRING_INTERVALS if _BILLING_VOCAB
+                       else ("week", "month", "quarter", "year"))
 JOURNEY_MODES = ("single_simple", "multiple_options", "free_entry", "folded_levels")
 # The unit receipt's own ladder (83-black-friday-launcher/receipt.schema.json
 # definitions.unit_receipt.status) plus "failed" — one vocabulary, never a second.
@@ -277,6 +302,20 @@ def validate_launch(launch: Any) -> List[str]:
                 if p.get("billing_type") not in BILLING_TYPES:
                     fail(f"offer {oid!r} price billing_type "
                          f"{p.get('billing_type')!r} is unknown")
+                interval = p.get("recurring_interval")
+                if p.get("billing_type") == "recurring" and interval is not None \
+                        and interval not in RECURRING_INTERVALS:
+                    fail(f"offer {oid!r} price recurring_interval {interval!r} is not "
+                         f"one of {RECURRING_INTERVALS}")
+                if p.get("billing_type") == "recurring" and interval is None \
+                        and not p.get("schedule"):
+                    fail(f"offer {oid!r} recurring price states neither a "
+                         "recurring_interval nor a schedule — the billing "
+                         "cadence is material disclosure and is never guessed")
+                if p.get("billing_type") != "recurring" and interval is not None:
+                    fail(f"offer {oid!r} price carries recurrence terms "
+                         f"(recurring_interval {interval!r}) with billing_type "
+                         f"{p.get('billing_type')!r}")
 
     # Delivery bindings: a binding may only name an entitlement some
     # offer grants (R-DB-1). An orphan binding is a record error, most

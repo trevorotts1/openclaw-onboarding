@@ -1,213 +1,70 @@
 <!-- RESCUE_ESCALATION_BOXNAME_V3 -->
+<!-- rescue-identity (read by the fleet roll; do not edit): {"boxName": "{{BOX_NAME}}", "clientName": "{{CLIENT}}", "agentName": "{{AGENT}}", "boxType": "{{BOX_TYPE}}", "returnTo": "{{RETURN_TO}}"} -->
 ## Escalate to Rescue Rangers (when you are stuck)
 
-When you hit a problem you cannot solve on your own, escalate to Rescue Rangers by POSTing to the n8n webhook. Your gateway CAN reach this public URL outbound.
+Rescue Rangers is the support team for this computer. When you cannot fix a problem yourself, you ask them for help by running ONE command. Never build the request by hand, and never use Telegram or a personal chat to reach them.
 
-**When to escalate:** triple-failure on the same symptom; a schema/validation error that `openclaw doctor --fix` did not resolve; an unknown error class you cannot match in docs.openclaw.ai or the GitHub repo; anything needing a credential rotation, a Hostinger/Cloudflare/DNS change, or another box. Do NOT escalate for routine ops you handle competently.
+**Ask for help when any one of these is true:**
+- You tried to fix the same problem three times and it is still broken.
+- `openclaw doctor --fix` ran and the error is still there.
+- You cannot find the error in the OpenClaw documentation.
+- The fix needs something you are not allowed to do yourself: changing a password or key, a domain or Cloudflare setting, or anything on another computer.
 
-**IDENTITY IS MANDATORY AND IT IS NOT FREE TEXT.** The `boxName` field MUST be this box's canonical fleet slug, which is the value of the environment variable `FLEET_STANDING_BOX_SLUG`. For this box that value is `{{BOX_NAME}}`.
+Do not ask for help with ordinary work you know how to do.
 
-Never send any of these as `boxName`:
-- a hostname (anything ending `.local`, or `mac.lan`)
-- a Docker container id
-- a company, brand, or trading name
-- the word `TBD`, `unknown`, `n/a`, or a blank string
+**Step 1. Write two short text files** in any folder you can write to:
+- `problem.txt`: one paragraph. What is broken, what the owner sees, and the exact error text. Never paste a password, key or token. Name the setting instead.
+- `tried.txt`: a numbered list of everything you already tried, so nobody repeats it.
 
-An escalation that arrives with the wrong `boxName` cannot be attributed to you, is not counted against your own daily cap, and cannot be checked against your account standing. Getting this field right is the whole point of the field.
-
-**The escalation payload MUST carry all nine fields** -- partial payloads are rejected.
-
-**Loop / stuck / no-reply symptoms get a `LOOP:` prefix.** If the problem you are escalating is "it keeps looping", "it's stuck", "I got nothing back", or anything else where the client experience is repetition or silence, prefix the `problem` field with `LOOP:` (e.g. `"problem": "LOOP: agent re-ran the same tool call five times with no reply"`). This routes the ticket to the loop/stuck/no-reply triage runbook (`universal-sops/SOP-RR-LOOP-TRIAGE.md`) so a responder -- or an automated first pass running `scripts/rr-triage.sh` -- starts at that runbook's Step 0 instead of guessing the mechanism from free text. Do not prefix anything else with `LOOP:` -- it is a routing signal, not emphasis.
-
-**How to escalate (the ONLY supported method):**
+**Step 2. Run this command exactly.** Change only the owner's name. If you are a department assistant and not the main assistant, also change the value after `--agent` to your own agent name.
 
 ```
-_RR_SECRET_ARGS=()
-[ -n "${RESCUE_RANGERS_WEBHOOK_SECRET:-}" ] && _RR_SECRET_ARGS=(-H "X-Rescue-Secret: ${RESCUE_RANGERS_WEBHOOK_SECRET}")
-export _RR_BOX="${FLEET_STANDING_BOX_SLUG:-{{BOX_NAME}}}"
-# Free text goes in QUOTED heredocs (<<'TXT'): nothing you paste there is ever
-# expanded or run. Replace each <...> line with your own words; leave the
-# IFS=/read and TXT lines exactly as they are.
-IFS= read -r -d '' _RR_PERSON <<'TXT' || true
-<real name of the owner or end user this agent serves>
-TXT
-IFS= read -r -d '' _RR_PROBLEM <<'TXT' || true
-<one paragraph, plain text; quotes, backticks and dollar signs are safe here>
-TXT
-IFS= read -r -d '' _RR_TRIED <<'TXT' || true
-<numbered list of everything you already tried, plain text>
-TXT
-export _RR_PERSON _RR_PROBLEM _RR_TRIED
-python3 - <<'PY'
-import json, os
-e = os.environ
-body = {
-    "action": "escalate",
-    "person": e["_RR_PERSON"].strip(),
-    "clientName": "{{CLIENT}}",
-    "agentName": "{{AGENT}}",
-    "boxName": e["_RR_BOX"],
-    "boxType": "{{BOX_TYPE}}",
-    "openclawVersion": "<run: openclaw --version>",
-    "problem": e["_RR_PROBLEM"].strip(),
-    "alreadyTried": e["_RR_TRIED"].strip(),
-    "returnTo": "{{RETURN_TO}}",
-}
-with open("/tmp/rr-escalation.json", "w", encoding="utf-8") as fh:
-    fh.write(json.dumps(body))
-PY
-_RR_RESP="$(curl -s -w '\n%{http_code}' -X POST "$RESCUE_RANGERS_WEBHOOK_URL" \
-  -H "Content-Type: application/json" \
-  "${_RR_SECRET_ARGS[@]}" \
-  --data-binary @/tmp/rr-escalation.json)"
-rm -f /tmp/rr-escalation.json
-# RR-002: KEEP THE ADMISSION TICKET ID. The response carries `ticketId`; that
-# id IS the canonical `incident_id` for this incident and it is the ONLY thing
-# that lets your later resolution name the exact ticket it closes. Record it in
-# your task journal (and anywhere you keep this incident's state) as
-# `incident_id`. A resolution that does not carry it cannot be correlated and
-# will NOT close anything automatically.
-# The last line of the reply is the HTTP status; the rest is the JSON answer.
-# Read the printed rescue_rangers_state= line and follow the table below.
-# Never assume the escalation was accepted just because curl ran.
-export _RR_CODE="${_RR_RESP##*$'\n'}"
-export _RR_BODY="${_RR_RESP%$'\n'*}"
-python3 - <<'PY'
-import json, os
-code = os.environ.get("_RR_CODE", "").strip()
-try:
-    doc = json.loads(os.environ.get("_RR_BODY", ""))
-except ValueError:
-    doc = {}
-if not isinstance(doc, dict):
-    doc = {}
-status = str(doc.get("status") or "")
-ticket = str(doc.get("ticketId") or "")
-if code in ("000", "429", "503"):
-    state = "retry_once_in_2_minutes"
-elif code == "403":
-    state = "secret_problem"
-elif code == "400":
-    state = "fix_payload"
-elif code == "200" and status == "duplicate_ignored":
-    state = "already_being_worked"
-elif code == "200" and status in ("accepted_human_followup", "held_account_standing"):
-    state = "relay_message_and_stop"
-elif code == "200" and status == "non_incident":
-    state = "not_an_incident"
-elif code == "200" and ticket:
-    state = "accepted"
-else:
-    state = "unknown_do_not_assume_accepted"
-print("rescue_rangers_state=%s http=%s ticket=%s" % (state, code or "none", ticket or "none"))
-if doc.get("message"):
-    print("rescue_rangers_message=" + str(doc["message"]).replace("\n", " "))
-if doc.get("notificationCapped") is True:
-    print("rescue_rangers_capped=true")
-if ticket:
-    print("incident_id=" + ticket)   # <-- journal this against the incident
-PY
+RR_ROOT=/data/.openclaw; [ -d "$RR_ROOT" ] || RR_ROOT="$HOME/.openclaw"
+python3 "$RR_ROOT/skills/65-rescue-receiver/rr_escalate.py" send \
+  --person "<the real name of the owner you work for>" \
+  --client "{{CLIENT}}" --agent "{{AGENT}}" --box-type "{{BOX_TYPE}}" \
+  --problem-file problem.txt --tried-file tried.txt
 ```
 
-Free text (`person`, `problem`, `alreadyTried`) always goes through the QUOTED heredocs above and python3 turns it into valid JSON. Never paste it into an unquoted heredoc or into `-d '...'`: a quote would break the JSON, and `$VAR`, backticks or `$(...)` in pasted error output would be expanded or RUN on this box (that can leak secrets into the ticket). Only `$_RR_BOX` is a shell variable. Do not hand-write the JSON.
+If the problem is that something keeps looping, is stuck, or gives no reply, add `--loop` at the end of the command. It puts the `LOOP:` prefix on the problem for you.
 
-**What the `rescue_rangers_state=` line means -- do exactly this:**
+**Step 3. Read the one line the command prints.** It is JSON. Read `state`, then tell your owner the text in `say_to_owner`, word for word.
 
-| `rescue_rangers_state` | What you do |
-|-------|-------------|
-| `accepted` | Tell your owner: "I asked Rescue Rangers for help, ticket `<ticket>`." Journal the `incident_id`. The answer arrives later as a NEW message to you; it is not posted anywhere you can poll. |
-| `already_being_worked` | This problem already has a ticket. Do NOT send it again. |
-| `relay_message_and_stop` | Relay `rescue_rangers_message` to your owner in your own words and STOP re-sending this problem. |
-| `not_an_incident` | Rescue Rangers decided this is not an incident. Do NOT re-send it. |
-| `secret_problem` | HTTP 403: the secret is missing or wrong. Tell your owner it is a setup problem. Do NOT retry in a loop. |
-| `fix_payload` | HTTP 400: a required field is missing or empty. Fix the payload and send it once more. |
-| `retry_once_in_2_minutes` | HTTP 429, 503 or no answer: wait 2 minutes and send once more. If it fails again, tell your owner and stop. |
-| `unknown_do_not_assume_accepted` | No usable answer. Do NOT tell your owner help is coming. |
+| `state` | What it means | What you do |
+|---|---|---|
+| `accepted` | The support team has the case. `ticket_id` is the reference. | Say `say_to_owner`. Write the `ticket_id` in your task notes. Do not send the same problem again. |
+| `already_being_worked` | This problem already has a case. | Say `say_to_owner`. Do not send it again. |
+| `queued_will_retry` | The team could not be reached. The request is saved on this computer and will be sent automatically. | Say `say_to_owner`. Do not run the command again for this problem. |
+| `needs_owner_action` | The team answered with a message for the owner. | Say `say_to_owner`. Stop sending this problem. |
+| `not_an_incident` | The team decided this does not need a repair. | Say `say_to_owner`. Do not send it again. |
+| `setup_problem` | This computer is not connected to the support team correctly. | Say `say_to_owner`. Do not retry. |
+| `invalid_request` | One of your values was empty. | Fix the value named in `detail` and run the command once more. |
 
-**Field guide:**
+Never tell your owner that help is coming unless `state` is `accepted` or `already_being_worked`.
 
-| Field | What to put |
-|-------|-------------|
-| `person` | The real name of the owner or end user whose experience is broken |
-| `clientName` | Pre-filled: {{CLIENT}} |
-| `agentName` | Pre-filled: {{AGENT}} |
-| `boxName` | The value of `$FLEET_STANDING_BOX_SLUG`. For this box: `{{BOX_NAME}}` |
-| `boxType` | Pre-filled: {{BOX_TYPE}} |
-| `openclawVersion` | Exact string from `openclaw --version` -- no paraphrasing |
-| `problem` | Short, self-contained description of what is happening |
-| `alreadyTried` | Numbered list of every fix already attempted (avoids repeat advice) |
-| `returnTo` | Audit only: recorded on the ticket. Rescue Rangers does NOT post the answer here; the answer reaches you as a new message. |
+**What happens next.** The answer comes back to this computer by itself. Your owner gets a message in their usual chat with one of four results: the problem is fixed and checked; there is one thing only they can do, with the steps; here is the answer; or a person on the team now has it. You do not need to check for it.
 
-- `RESCUE_RANGERS_WEBHOOK_URL` is set in your environment. If it is missing, you cannot reach Rescue Rangers: tell your owner it is a setup problem (the same as `secret_problem` in the table above) and do NOT message any personal chat.
-- `RESCUE_RANGERS_WEBHOOK_SECRET` is set alongside the URL. The array pattern above skips the header when unset.
-- `FLEET_STANDING_BOX_SLUG` is set in your environment. If it is missing, that is itself a setup gap -- use the literal `{{BOX_NAME}}` and tell your owner about the setup gap (state `secret_problem`); do NOT message any personal chat.
-- Never put real secrets (API keys, tokens, passwords) in any field. Reference the env var name instead.
-
-**When the fix works**, POST the resolution signal and STOP escalating:
+**If your owner asks about a case**, run this and tell them what it says in plain words:
 
 ```
-_RR_SECRET_ARGS=()
-[ -n "${RESCUE_RANGERS_WEBHOOK_SECRET:-}" ] && _RR_SECRET_ARGS=(-H "X-Rescue-Secret: ${RESCUE_RANGERS_WEBHOOK_SECRET}")
-export _RR_BOX="${FLEET_STANDING_BOX_SLUG:-{{BOX_NAME}}}"
-export _RR_INCIDENT='<the incident_id journalled from the escalation response>'
-export _RR_ATTEMPT='<the attempt id that produced the fix>'
-IFS= read -r -d '' _RR_FIXED <<'TXT' || true
-<one line: what fixed it>
-TXT
-_RR_FIXED="${_RR_FIXED%$'\n'}"
-export _RR_FIXED
-export _RR_OP="res-$_RR_INCIDENT-$(date -u +%Y%m%dT%H%M%SZ)"
-export _RR_DIGEST="sha256-$(printf '%s' "RESOLVED: $_RR_FIXED" | shasum -a 256 | cut -d' ' -f1)"
-python3 - <<'PY'
-import json, os
-e = os.environ
-body = {
-    "action": "escalate",
-    "clientName": "{{CLIENT}}",
-    "agentName": "{{AGENT}}",
-    "boxName": e["_RR_BOX"],
-    "runtime_id": e["_RR_BOX"],
-    "incident_id": e["_RR_INCIDENT"],
-    "operation_id": e["_RR_OP"],
-    "attempt_id": e["_RR_ATTEMPT"],
-    "result_digest": e["_RR_DIGEST"],
-    "problem": "RESOLVED: " + e["_RR_FIXED"],
-}
-with open("/tmp/rr-resolved.json", "w", encoding="utf-8") as fh:
-    fh.write(json.dumps(body))
-PY
-_RR_RESP="$(curl -s -w '\n%{http_code}' -X POST "$RESCUE_RANGERS_WEBHOOK_URL" \
-  -H "Content-Type: application/json" \
-  "${_RR_SECRET_ARGS[@]}" \
-  --data-binary @/tmp/rr-resolved.json)"
-rm -f /tmp/rr-resolved.json
-# The last line is the HTTP status. 200 = recorded. 403 = the X-Rescue-Secret
-# header was missing or wrong (the ticket is STILL OPEN). 409 = the incident_id
-# did not match. Anything else: the ticket is still open -- do not tell the end
-# user it is closed.
-printf '%s\n' "$_RR_RESP"
+RR_ROOT=/data/.openclaw; [ -d "$RR_ROOT" ] || RR_ROOT="$HOME/.openclaw"
+python3 "$RR_ROOT/skills/65-rescue-receiver/rr_escalate.py" status --ticket "<ticket_id>"
 ```
 
-**A resolution MUST name the incident it closes.** `incident_id` is the ticket
-id the escalation response returned (journalled as `incident_id` above).
-`operation_id` is unique to THIS resolution attempt and is what makes a replayed
-post an idempotent receipt instead of a second close. Without `incident_id` the
-resolution is treated as LEGACY: it can never guess which ticket to close, so
-nothing is closed and you get a visible correlation error naming same-box
-candidates instead. Re-posting a resolution whose `operation_id` you already
-sent is a no-op receipt -- never a second close, and never a different ticket.
-If you did not journal the `incident_id`, say so and ask the operator; do NOT
-substitute a different ticket id or invent one.
+**When the fix works**, close the case and stop:
 
-**You MUST tell the end user the outcome** in clear language. State which of these three it was:
-- **(a) We solved it** -- describe what was fixed and confirm normal operation is restored.
-- **(b) Here is what you should do** -- give the owner/user the actionable next step they must take.
-- **(c) Here is the answer** -- relay the Rescue Rangers response verbatim if it is informational.
-Never leave the end user in the dark about what happened or what comes next. This is non-negotiable.
+```
+RR_ROOT=/data/.openclaw; [ -d "$RR_ROOT" ] || RR_ROOT="$HOME/.openclaw"
+python3 "$RR_ROOT/skills/65-rescue-receiver/rr_escalate.py" resolve --ticket "<ticket_id>" --fixed "<one line: what fixed it>"
+```
 
-**Daily cap.** Rescue Rangers takes up to 25 escalations per client per day. When the reply sets `notificationCapped` (you will see `rescue_rangers_capped=true`), the ticket still exists and a person sees it, but you will get no more automatic help today: stop sending new escalations for that problem and tell your owner a person on the Rescue Rangers team will follow up. Do not loop endlessly.
+If you did not write down the `ticket_id`, say so. Never make one up and never use a different case's reference.
 
-> DEPRECATED -- do NOT use the old bot-to-bot method `openclaw message send --channel telegram -t "$RESCUE_RANGERS_HELP_CHAT_ID"`. Bots cannot read other bots, so that escalation never reached the rescue agent. The webhook above is the replacement.
+**Daily limit.** Rescue Rangers takes up to 25 cases from one computer in a day. After that a case is still recorded and a person on the team takes it over. The command tells you so in `say_to_owner`. Say it and stop sending.
+
+**Never** put a real password, key or token in `problem.txt`, `tried.txt` or the command.
+
+> RETIRED: do not use `openclaw message send --channel telegram -t "$RESCUE_RANGERS_HELP_CHAT_ID"` to reach Rescue Rangers, and do not build a `curl` request by hand. Both are replaced by the command above.
 <!-- END RESCUE_ESCALATION_BOXNAME_V3 -->
 
 ## What Rescue Rangers IS + your own wiring (READ BEFORE ANSWERING)
@@ -225,12 +82,8 @@ HARD RULE — never tell a client "I don't have your credentials" before reading
 SELF-VERIFY before asking the client for anything (headless):
 
 ```bash
-curl -s -o /dev/null -w '%{http_code} %{redirect_url}\n' "$RESCUE_RANGERS_WEBHOOK_URL" || true   # 404 or 302 is NORMAL (webhook is POST-only)
-_RR_SECRET_ARGS=()
-[ -n "${RESCUE_RANGERS_WEBHOOK_SECRET:-}" ] && _RR_SECRET_ARGS=(-H "X-Rescue-Secret: ${RESCUE_RANGERS_WEBHOOK_SECRET}")
-curl -s -X POST "$RESCUE_RANGERS_WEBHOOK_URL" -H "Content-Type: application/json" \
-  "${_RR_SECRET_ARGS[@]}" \
-  -d '{"action":"escalate","clientName":"__AUTHTEST__","problem":"channel self-check"}'; echo
+RR_ROOT=/data/.openclaw; [ -d "$RR_ROOT" ] || RR_ROOT="$HOME/.openclaw"
+bash "$RR_ROOT/skills/65-rescue-receiver/rr-intake-auth-check.sh"; echo "exit=$?"
 ```
 
-`{"accepted":true,"ticketId":null,"status":"test_suppressed"}` = the channel works end-to-end with zero ticket residue. 403 = wrong secret. 200 `missing_message` = OLD relay (wrong URL).
+Exit 0 = the channel works end to end and no case was created. Exit 3 = this computer's secret is refused. Exit 4 = the address points at the old, retired relay. Exit 5 = no secret is set here. Exit 75 = nothing could be established (network, throttling or a server error); that is not a verdict about this computer.

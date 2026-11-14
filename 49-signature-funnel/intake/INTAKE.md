@@ -66,6 +66,10 @@ unrelated brand and context answer is kept.
 - The first package is saved as a valid partial record before the next one is collected.
 - A free item is its own `free_entry` record with its own opt-in and thank-you journey: it never goes
   through the paid checkout, and paid offers keep the positive-price rule.
+- A repeating price is carried with how often it repeats: the client's own words (`weekly`, `monthly`, `quarterly`,
+  `yearly`, `every three months`) become `billing_type: recurring` plus `recurring_interval` (`week`, `month`,
+  `quarter`, `year`) from the one table in `shared-utils/signature_launch_contract/billing.py`. The bank's three billing
+  choices still work; a client can say any of the four cadences instead, for any offer.
 - Billing is carried whole (`engine.billing_terms`). Where the chosen execution path cannot serve a
   plan, `engine.billing_supported` names the specific limit and exactly one supported alternative and
   keeps the request unresolved until the client accepts it — never flattened into a one-time payment.

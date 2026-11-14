@@ -21,6 +21,8 @@ concurrency:
 
 jobs:
   rr029-notification-contract:
+    # Batch pull requests run only the required checks (Trevor order 2026-11-13).
+    if: ${{ !startsWith(github.head_ref, 'batch/') }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

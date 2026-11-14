@@ -174,9 +174,9 @@ class ProbeRequestTests(unittest.TestCase):
         self.assertEqual(mapping["missing_facts"], ["fulfillment_mapping_ref"])
 
     def test_bookkeeping_never_reaches_the_request(self):
-        mapping = build(normalized())  # incomplete: price and bump carry annotations
+        mapping = build(normalized())  # billing is answered by the canonical (one_time): no annotation needed
         request = checkout.contract_request(mapping["supplied"], mapping["operational_defaults"])
-        self.assertIn("unknown", mapping["supplied"]["main_price"])  # the record still explains itself
+        self.assertNotIn("unknown", mapping["supplied"]["main_price"])
         self.assertNotIn("unknown", request["main_price"])
         request = checkout.contract_request(build(normalized(bump=True))["supplied"])
         self.assertIn("unresolved", build(normalized(bump=True))["supplied"]["bump"])
@@ -204,13 +204,37 @@ class DerivedExponentTests(unittest.TestCase):
         rb = {"native": {"main-1": {"currency_exponent": 3}}}
         self.assertEqual(checkout._price_choice(offer_, {}, rb)["currency_exponent"], 3)
 
+    def test_recurring_billing_comes_from_the_canonical_not_the_intake_default(self):
+        # the flattening: a canonical recurring price behind an intake checkout block
+        # that carries no stated billing must not be charged as one payment.
+        offer_ = {"offer_id": "U1", "price": {"amount_minor": 4900, "currency": "USD"},
+                  "checkout": {"billing_type": "one_time"},
+                  "canonical": {"prices": [{"billing_type": "recurring", "recurring_interval": "month"}]}}
+        choice = checkout._price_choice(offer_, {}, None)
+        self.assertEqual(choice["billing_type"], "recurring")
+        self.assertEqual(choice["recurring_interval"], "month")
+
+    def test_recurring_without_an_interval_is_named_never_silently_one_payment(self):
+        offer_ = {"offer_id": "U1", "price": {"amount_minor": 4900, "currency": "USD"},
+                  "checkout": {},
+                  "canonical": {"prices": [{"billing_type": "recurring"}]}}
+        choice = checkout._price_choice(offer_, {}, None)
+        self.assertEqual(choice["billing_type"], "recurring")
+        self.assertIn("recurring_interval", choice.get("unknown", []))
+        self.assertNotIn("billing_type", choice.get("unknown", []))
+
+    def test_the_stated_block_stands_in_only_when_no_canonical_exists(self):
+        offer_ = {"offer_id": "MAIN-1", "price": {"amount_minor": 12900, "currency": "USD"},
+                  "checkout": {"billing_type": "one_time"}}
+        self.assertEqual(checkout._price_choice(offer_, {}, None)["billing_type"], "one_time")
+
     def test_the_package_replay_does_not_choke_on_bookkeeping(self):
-        # no billing_type: the price keeps an "unknown" annotation, which must never reach the S79 request
+        # a cleared checkout block never hides the answers' billing: the canonical decides
         n = normalized(complete=True)
         for o in n["offers"]:
             o["checkout"] = {}
         mapping = build(n, self.NO_NATIVE)
-        self.assertIn("unknown", mapping["supplied"]["main_price"])
+        self.assertNotIn("unknown", mapping["supplied"]["main_price"])
         verdict = checks._checkout_probe_violations(mapping, mapping["validator"])
         self.assertEqual(verdict, [])
 

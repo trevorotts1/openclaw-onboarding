@@ -30,6 +30,8 @@ concurrency:
 
 jobs:
   ghl-activation-resilience-guard:
+    # Batch pull requests run only the required checks (Trevor order 2026-11-13).
+    if: ${{ !startsWith(github.head_ref, 'batch/') }}
     name: GHL Layer-2 activation resilience guard (no single-shot regression)
     runs-on: ubuntu-latest
     steps:

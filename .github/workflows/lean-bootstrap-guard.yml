@@ -73,6 +73,8 @@ concurrency:
 
 jobs:
   lean-bootstrap:
+    # Batch pull requests run only the required checks (Trevor order 2026-11-13).
+    if: ${{ !startsWith(github.head_ref, 'batch/') }}
     name: compact core + pointer stamping contracts
     # Pinned: the 3.9 interpreter below is a real guarantee (the fleet's oldest
     # python3 is the Mac's 3.9.6, see docs/COMPACT-CORE-SOP.md), and setup-python

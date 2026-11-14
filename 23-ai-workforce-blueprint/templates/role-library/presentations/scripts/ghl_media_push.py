@@ -71,6 +71,9 @@ import delivery_gate  # noqa: E402  (the OUT-OF-BAND delivery boundary gate)
 # over the 25 MB cap, the PDF twin is the hosted deck" is machine-readable at the
 # gate instead of an improvised per-incident shape.
 import ghl_media_upload  # noqa: E402  (the FIX 111 rule + receipt + gate-reader layer)
+# PD-301: the declared deck paths (deck_pptx / deck_pdf) have ONE canon; the
+# no-flag upload step sends the files at those paths instead of a hand-typed list.
+from presentation_job.deliverable_paths import deliverable_path  # noqa: E402
 
 # The closeout code this GHL-upload gate folds under (diagnosis 4.6 / Fix-Goal 5).
 GHL_UPLOAD_GATE = "AF-DELIVERY-COMPLETE"
@@ -698,6 +701,15 @@ def push_deck_media(run_dir: Path, images: list, *, deck_slug: str | None = None
     intake = _read_json(run_dir / "working" / "copy" / "intake.json")
     slug = (deck_slug or intake.get("deck_slug") or run_dir.name).strip()
 
+    # PD-301 (2): an over-cap deck PPTX cannot be hosted — GHL caps media uploads at
+    # 25MB (HTTP 413). Leave it OUT of the upload list before the gate, the plan and
+    # the loop, so the DECK-PDF twin branch below runs instead of the oversize POST
+    # raising first. extra_files keeps the ORIGINAL list: _deck_pptx_local_path needs
+    # the over-cap local file to build the standard over-cap receipt.
+    upload_extras = [f for f in (extra_files or [])
+                     if not (_classify(str(f)) == "pptx"
+                             and ghl_media_upload.is_over_cap(str(f)))]
+
     # OUT-OF-BAND DELIVERY BOUNDARY GATE (fail-closed) — runs BEFORE any credential
     # resolution or network call, so a deck not produced by the governed kie.ai pipeline
     # (overlay text / no kie taskIds / no governed run dir / incomplete bundle) is
@@ -708,7 +720,7 @@ def push_deck_media(run_dir: Path, images: list, *, deck_slug: str | None = None
     # run dir — never for production pushes (the default stays fail-closed).
     if not skip_boundary_gate:
         gate_ok, gate_reasons = gate_deck_artifacts(
-            run_dir, list(images) + list(extra_files or []))
+            run_dir, list(images) + upload_extras)
         if not gate_ok:
             raise DeliveryGateRejected(gate_reasons)
 
@@ -754,7 +766,7 @@ def push_deck_media(run_dir: Path, images: list, *, deck_slug: str | None = None
     # re-uploaded.
     legacy_done = {e.get("local_path"): e for e in ledger.get("uploaded", [])
                    if isinstance(e, dict) and e.get("local_path") and not e.get("job_key")}
-    plans = _plan_upload_jobs(list(images) + list(extra_files or []),
+    plans = _plan_upload_jobs(list(images) + upload_extras,
                               scope=scope, ledger=ledger)
     for plan in plans:
         leg = legacy_done.get(plan["local_path"])
@@ -1455,17 +1467,32 @@ def main():
         return 0
 
     imgs = args.images
+    extras = args.extra
+    # PD-301: `--run-dir` alone means "send the deck". With neither --images nor
+    # --extra, the upload list IS the assembled deck pair at its declared canon —
+    # deliverable_paths.deck_pptx / deck_pdf. A run dir without the assembled deck
+    # fails loud instead of uploading nothing (or something else) and calling it done.
+    if args.images is None and args.extra is None:
+        slug = (args.deck_slug
+                or _read_json(rd / "working" / "copy" / "intake.json").get("deck_slug")
+                or rd.name).strip()
+        deck_pptx = rd / deliverable_path("deck_pptx", slug)
+        deck_pdf = rd / deliverable_path("deck_pdf", slug)
+        if not deck_pptx.is_file():
+            print(f"FATAL: the assembled deck is not at {deck_pptx}", file=sys.stderr)
+            return 1
+        extras = [str(deck_pptx)] + ([str(deck_pdf)] if deck_pdf.is_file() else [])
     if not imgs:
         imgs = sorted(str(p) for p in (rd / "renders").glob("slide-*.png"))
     # A deck-only push (just --extra, no slide PNGs) is legitimate (host the final
     # assembled deck) and MUST still pass through the boundary gate, so only bail when
     # there is nothing at all to host.
-    if not imgs and not (args.extra or []):
+    if not imgs and not (extras or []):
         print("FATAL: no images or deliverables to host (pass --images/--extra or "
               "populate renders/).", file=sys.stderr)
         return 2
     try:
-        res = push_deck_media(rd, imgs, deck_slug=args.deck_slug, extra_files=args.extra)
+        res = push_deck_media(rd, imgs, deck_slug=args.deck_slug, extra_files=extras)
     except DeliveryGateRejected as exc:
         print("GHL MEDIA PUSH: ABORTED — delivery boundary gate REJECTED the deck "
               "(NOTHING uploaded).", file=sys.stderr)

@@ -20,6 +20,7 @@
 
 import { AF_ID_INVALID, isClientId, ownsPath, randomClientId } from './ids.js';
 import { AF_KEY_MALFORMED, AF_KEY_REVOKED, AF_KEY_UNKNOWN, fingerprintOf, keyRecordKey } from './keys.js';
+import { withRetentionKind } from './retention.js';
 
 export const AF_ISO_CROSS = 'AF-DS-ISO-CROSS';
 export const AF_ISO_SCOPE = 'AF-DS-ISO-SCOPE';
@@ -112,7 +113,8 @@ export async function enrollClient({ store, env, presentedSecret, claimedClientI
   if (existing) return { ok: false, code: AF_ENROLL_REFUSED };
   await store.kvPut(
     `client:${clientId}`,
-    JSON.stringify({ client_id: clientId, created_at: nowMs }),
+    // The client record is the enrollment record: never deleted by a time sweep.
+    JSON.stringify(withRetentionKind({ client_id: clientId, created_at: nowMs }, 'enrollment_record')),
   );
   return { ok: true, client_id: clientId };
 }

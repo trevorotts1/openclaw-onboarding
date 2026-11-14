@@ -30,7 +30,6 @@ figures out who handles it and routes it for you.
 
 Reach for this department when you want any of the following:
 
-- Your mandate is singular and non-negotiable.
 - Distribution and platform-operations engine of the Listings department.
 
 If you are not sure whether a request belongs here, ask anyway. The department
@@ -68,20 +67,18 @@ and it will pick the right one, or you can ask for a specialist by name.
 
 | Specialist | What it is for |
 | --- | --- |
-| **Listing Creator** | Your mandate is singular and non-negotiable. |
+| **Listing Creator** | Owns the Listing Creator work. |
 | **Marketplace Specialist** | Distribution and platform-operations engine of the Listings department. |
 
-### What each specialist is for, with an example request
+### What each specialist is for
 
 **Listing Creator**
 
-- *What it is for:* Your mandate is singular and non-negotiable.
-- *Example request:* "Have the Listing Creator take this on: Your mandate is singular and non-negotiable."
+- *What it is for:* Owns the Listing Creator work.
 
 **Marketplace Specialist**
 
 - *What it is for:* Distribution and platform-operations engine of the Listings department.
-- *Example request:* "Have the Marketplace Specialist take this on: Distribution and platform-operations engine of the Listings department."
 
 
 ---

@@ -63,6 +63,8 @@ log() {
   fi
 }
 
+source "$(dirname "${BASH_SOURCE[0]}")/lib-closeout-state.sh" 2>/dev/null || _ORGCHART_STATE_LIB_MISSING=1
+
 # ---- arg parsing ----
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -211,7 +213,7 @@ EXIT_CODE=1
 if html_check_passed; then
   if [[ "$IMAGE_SKIPPED" -eq 1 || "$IMAGE_OK" -eq 1 ]]; then
     VERDICT="pass"
-    VERDICT_NOTE="connector-tree confirmed via HTML analysis${IMAGE_OK:+ + image scan}"
+    VERDICT_NOTE="connector-tree confirmed via HTML analysis$( [[ "$IMAGE_OK" -eq 1 ]] && printf ' + image scan' )"
     EXIT_CODE=0
   else
     # Image scan ran and disagreed with HTML. Trust HTML but flag discrepancy.
@@ -220,7 +222,7 @@ if html_check_passed; then
     EXIT_CODE=0
     log "WARN" "image scan result contradicts HTML analysis -- image may not match HTML source"
   fi
-elif [[ "$IMAGE_OK" -eq 1 && "$HTML_OK" -eq 0 ]]; then
+elif [[ "$IMAGE_OK" -eq 1 && "$HTML_OK" -eq 0 && ( -z "$HTML_PATH" || ! -f "$HTML_PATH" ) ]]; then
   # Image says connectors but HTML doesn't. Use image result but warn.
   VERDICT="pass-image-only"
   VERDICT_NOTE="image scan found connectors but HTML analysis was inconclusive -- recommend manual visual check"
@@ -242,24 +244,27 @@ log "$(if [[ "$EXIT_CODE" -eq 0 ]]; then echo INFO; else echo ERROR; fi)" \
 # ---- write result to state ----
 if [[ "$WRITE_STATE" -eq 1 && -n "$STATE_FILE" && -f "$STATE_FILE" ]] && command -v jq >/dev/null 2>&1; then
   verified_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-  tmp=$(mktemp)
-  jq \
-    --arg verdict "$VERDICT" \
-    --arg note "$VERDICT_NOTE" \
-    --arg at "$verified_at" \
-    --argjson rc "$EXIT_CODE" \
-    --argjson connectors "$CONNECTOR_FOUND" \
-    --argjson card_grid "$CARD_GRID_DETECTED" \
-    --argjson hierarchy "$HIERARCHY_LEVELS" \
-    '.qcOrgChartConnectorTree = {
-       "verdict": $verdict,
-       "note": $note,
-       "verifiedAt": $at,
-       "rc": $rc,
-       "connectorFound": $connectors,
-       "cardGridDetected": $card_grid,
-       "hierarchyLevels": $hierarchy
-    }' "$STATE_FILE" > "$tmp" && mv "$tmp" "$STATE_FILE" || rm -f "$tmp"
+  if [[ -n "${_ORGCHART_STATE_LIB_MISSING:-}" ]]; then
+    log "WARN" "state library missing -- verdict not written to state"
+  else
+    workforce_state_set "$STATE_FILE" \
+      --arg verdict "$VERDICT" \
+      --arg note "$VERDICT_NOTE" \
+      --arg at "$verified_at" \
+      --argjson rc "$EXIT_CODE" \
+      --argjson connectors "$CONNECTOR_FOUND" \
+      --argjson card_grid "$CARD_GRID_DETECTED" \
+      --argjson hierarchy "$HIERARCHY_LEVELS" \
+      '.qcOrgChartConnectorTree = {
+         "verdict": $verdict,
+         "note": $note,
+         "verifiedAt": $at,
+         "rc": $rc,
+         "connectorFound": $connectors,
+         "cardGridDetected": $card_grid,
+         "hierarchyLevels": $hierarchy
+      }' || log "WARN" "verdict not written to state"
+  fi
 fi
 
 exit "$EXIT_CODE"

@@ -28,7 +28,14 @@ if [ ! -x "$MATERIALIZE" ]; then
   chmod +x "$MATERIALIZE" 2>/dev/null || true
 fi
 
-bash "$MATERIALIZE" && echo "  [wire/32] materialize-dept-agents: OK" || {
-  echo "  [wire/32] materialize-dept-agents reported errors (non-fatal — continuing wiring)"
-  exit 0
-}
+# A failure here is a real failure (CC-005): materialize-dept-agents.sh declares
+# no "no departments yet" exit code (its documented codes are 0 = success and
+# 1 = fatal; a box with no department folders exits 0 with a WARN), so any
+# non-zero exit fails the wiring and the updater retries it, instead of the
+# failure being recorded as success.
+if bash "$MATERIALIZE"; then
+  echo "  [wire/32] materialize-dept-agents: OK"
+else
+  echo "  [wire/32] materialize-dept-agents reported errors — failing this wiring so the updater retries"
+  exit 1
+fi

@@ -4,15 +4,18 @@ context-ingest.py — Skill 23 v12.3.4: Interview Context Ingestion Pre-Pass.
 
 Assembles a CONTEXT DIGEST from all available client sources before the AI
 Workforce Blueprint interview begins. For each interview theme (Phase 1-6 topics
-+ branding question ids), emits a per-theme record classifying what is already
-known so the interviewing agent can:
++ branding question ids), emits a per-theme record so the interviewing agent can
+decide how to open the question.
 
-  - KNOWN    → confirm with client ('Based on X, still right?'), never auto-record
-  - PARTIAL  → deepen (sharper follow-up using context as lead-in)
-  - UNKNOWN  → ask fresh
+EVERY THEME IS UNKNOWN. A keyword hit in a source is a HINT for the interviewer's
+background only: never shown to the owner as a fact, never a reason to skip a
+question. Facts come from structured fields ALONE, through known_facts()
+(company-config.json and answers the gate already accepted), and even those are
+only ever offered to the owner to confirm.
 
 Outputs:
-  - [slug]/interview-context-map.json   (machine: per-theme status/source/snippet)
+  - [slug]/interview-context-map.json   (machine: per-theme status/hint)
+  - [workspace]/company-discovery/interview-known.json   ({knownKey:{value,source}})
   - human digest printed to stdout (--human) or full JSON (--json)
 
 Sources ingested (in priority order):
@@ -26,6 +29,10 @@ Sources ingested (in priority order):
   8. [ZHC]/[slug]/software-stack-capabilities.md  (Phase 3.5)
   9. [MASTER_FILES]/company-discovery/workforce-interview-answers.md  (prior run)
  10. [ZHC]/[slug]/provided-context-manifest.md  (raw links from Phase 0 asset drop)
+
+That list is read for HINTS only. AGENTS.md and TOOLS.md (NEVER_A_FACT_SOURCE) are
+skipped even for hints: they describe the agent fleet and its scripts, not the
+owner's business, and they mention "client", "who" and "$" constantly.
 
 NO-FABRICATION: this script reads and reports; it NEVER writes answers.
 It NEVER opens workforce-interview-answers.md for writing. The answer record
@@ -175,6 +182,27 @@ INTERVIEW_THEMES = [
 ]
 
 
+# Files that describe the box and its tooling, not the owner's business. They may
+# never establish a fact, and they do not even produce a hint: they mention
+# "client", "who" and "$" on every page.
+NEVER_A_FACT_SOURCE = ("AGENTS.md", "TOOLS.md")
+
+HINT_RULE = (
+    "for the interviewer's background only; never shown to the owner as a fact "
+    "and never a reason to skip a question"
+)
+
+# Structured company settings that may become known facts, with the key the
+# question registry looks up in interview-known.json.
+COMPANY_CONFIG_KEYS = (
+    ("companyName", "company_name"),
+    ("industry", "industry"),
+    ("commandCenterName", "command_center_name"),
+)
+KNOWN_SOURCE_COMPANY_SETTINGS = "company-settings"
+KNOWN_SOURCE_INTERVIEW_ANSWER = "interview-answer"
+
+
 # ── Source reader ─────────────────────────────────────────────────────────────
 
 def read_source(path: Path, label: str) -> dict:
@@ -261,60 +289,132 @@ def _find_keyword_snippet(content: str, keywords: list, max_snippet: int = 200) 
 def classify_theme(theme: dict, sources: list) -> dict:
     """
     Classify a single interview theme against all available sources.
-    Returns a record: {theme_id, phase, label, status, source, snippet,
-                       confidence, suggested_action}.
+    Returns a record: {theme_id, phase, label, status, hint, confidence,
+                       suggested_action}.
 
-    status:           known | partial | unknown
-    confidence:       high | med | low
-    suggested_action: confirm | deepen | ask-fresh
+    status is ALWAYS "unknown" and suggested_action is ALWAYS "ask-fresh": a keyword
+    hit is not knowledge. A hit lands in "hint" ({source, snippet}) for the
+    interviewer's background only. It is never shown to the owner as a fact and
+    never a reason to skip a question. NEVER_A_FACT_SOURCE files are skipped.
     """
     keywords = theme["keywords"]
-    hits = []
+    hint = None
 
     for src in sources:
         if not src.get("present") or not src.get("content"):
             continue
+        if src["label"] in NEVER_A_FACT_SOURCE:
+            continue
         snippet = _find_keyword_snippet(src["content"], keywords)
         if snippet:
-            hits.append({"source_label": src["label"], "snippet": snippet})
+            hint = {"source": src["label"], "snippet": snippet}
+            break
 
-    if len(hits) >= 2:
-        status = "known"
-        confidence = "high"
-        suggested_action = "confirm"
-    elif len(hits) == 1:
-        status = "partial"
-        confidence = "med"
-        suggested_action = "deepen"
-    else:
-        status = "unknown"
-        confidence = "low"
-        suggested_action = "ask-fresh"
-
-    # Core workspace files (IDENTITY, MEMORY, USER, SOUL) carry higher confidence
-    # than pre-interview research alone (research is external, core files are ground truth).
-    core_labels = {"IDENTITY.md", "MEMORY.md", "USER.md", "SOUL.md"}
-    core_hits = [h for h in hits if h["source_label"] in core_labels]
-    if core_hits and status == "partial":
-        confidence = "high"  # one core-file hit + confidence elevation
-
-    # Build the result
-    primary_hit = hits[0] if hits else None
     return {
         "theme_id": theme["id"],
         "phase": theme["phase"],
         "label": theme["label"],
-        "status": status,
-        "source": primary_hit["source_label"] if primary_hit else None,
-        "snippet": primary_hit["snippet"] if primary_hit else None,
-        "all_sources": [h["source_label"] for h in hits],
-        "confidence": confidence,
-        "suggested_action": suggested_action,
+        "status": "unknown",
+        "hint": hint,
+        # The pre-v2.1 keys stay, empty, so an existing reader of the map cannot break.
+        "source": None,
+        "snippet": None,
+        "all_sources": [],
+        "confidence": "low",
+        "suggested_action": "ask-fresh",
     }
 
 
 def classify_all_themes(sources: list) -> list:
     return [classify_theme(t, sources) for t in INTERVIEW_THEMES]
+
+
+# ── Known facts (structured fields only) ──────────────────────────────────────
+
+def _read_json_optional(path: Path):
+    """Read a JSON object. Absent or unreadable returns an empty dict — never raises."""
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def _company_config_path(workspace_root: Path, build_state: dict):
+    """company-config.json in the company root (build state), then the workspace root."""
+    candidates = []
+    root = build_state.get("companyRoot") if isinstance(build_state, dict) else None
+    if isinstance(root, str) and root.strip():
+        candidates.append(Path(root).expanduser() / "company-config.json")
+    candidates.append(workspace_root / "company-config.json")
+    for candidate in candidates:
+        if candidate.is_file():
+            return candidate
+    return None
+
+
+def _write_known(path: Path, facts: dict) -> None:
+    """Write interview-known.json atomically, mode 0600, temp file beside it."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_name(f"{path.name}.tmp.{os.getpid()}")
+    try:
+        fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+            fh.write(json.dumps(facts, indent=2, ensure_ascii=False) + "\n")
+            fh.flush()
+            os.fsync(fh.fileno())
+        os.replace(tmp, path)
+    except Exception:
+        try:
+            tmp.unlink(missing_ok=True)
+        except OSError:
+            pass
+        raise
+
+
+def known_facts(
+    workspace_root: Path,
+    build_state: dict | None = None,
+    state_dir: Path | None = None,
+    write: bool = True,
+) -> dict:
+    """
+    Facts from STRUCTURED fields only — never from a keyword hit.
+
+      * company-config.json: companyName / industry / commandCenterName
+      * answers the gate already accepted (interview-gate-state.json)
+
+    Returns {knownKey: {value, source}} in the shape of the interface contract
+    (section 2.1) and, when write is true, merges them into
+    [workspace]/company-discovery/interview-known.json without dropping keys another
+    writer put there. These values are OFFERS: the gate shows them as knownValue and
+    nothing is recorded until the owner submits it.
+    """
+    state_dir = Path(state_dir) if state_dir else workspace_root / "company-discovery"
+    facts = {}
+
+    gate_state = _read_json_optional(state_dir / "interview-gate-state.json")
+    answers = gate_state.get("answers") if isinstance(gate_state.get("answers"), dict) else {}
+    for qid, entry in answers.items():
+        value = entry.get("value") if isinstance(entry, dict) else None
+        if isinstance(value, str) and value.strip():
+            facts[qid] = {"value": value.strip(), "source": KNOWN_SOURCE_INTERVIEW_ANSWER}
+
+    config_path = _company_config_path(workspace_root, build_state or {})
+    if config_path:
+        config = _read_json_optional(config_path)
+        for config_key, known_key in COMPANY_CONFIG_KEYS:
+            value = config.get(config_key)
+            if isinstance(value, str) and value.strip():
+                facts[known_key] = {"value": value.strip(),
+                                    "source": KNOWN_SOURCE_COMPANY_SETTINGS}
+
+    if write and facts:
+        path = state_dir / "interview-known.json"
+        merged = _read_json_optional(path)
+        merged.update(facts)
+        _write_known(path, merged)
+    return facts
 
 
 # ── Output writers ────────────────────────────────────────────────────────────
@@ -339,11 +439,14 @@ def build_map(themes_classified: list, sources: list, company_slug: str | None) 
             "totalThemes": len(themes_classified),
         },
         "noFabricationNote": (
-            "KNOWN-CONTEXT items in this map inform WHICH/HOW questions are asked only. "
-            "They MUST be confirmed with the client before being written to "
-            "workforce-interview-answers.md. log_answer() in build-workforce.py is the "
-            "ONLY writer to that file. An unconfirmed context item is NEVER a recorded answer."
+            "No theme is ever known or partial from a keyword hit. A hint is for the "
+            "interviewer's background only; it is never shown to the owner as a fact and "
+            "never a reason to skip a question. Facts come from structured fields alone "
+            "(interview-known.json), and even those are only offered for the owner to confirm: "
+            "log_answer() in build-workforce.py is the ONLY writer to "
+            "workforce-interview-answers.md."
         ),
+        "hintRule": HINT_RULE,
         "themes": themes_classified,
     }
 
@@ -374,35 +477,23 @@ def print_human_digest(map_obj: dict) -> None:
     print("=" * 60)
     print(f"Sources present : {map_obj['sourcesPresentCount']}  "
           f"({', '.join(map_obj['sourcesPresent'][:5])}{'...' if len(map_obj['sourcesPresent']) > 5 else ''})")
-    print(f"Themes KNOWN    : {s['themesKnown']}  → confirm with client, then log")
-    print(f"Themes PARTIAL  : {s['themesPartial']}  → deepen, sharper follow-up")
-    print(f"Themes UNKNOWN  : {s['themesUnknown']}  → ask fresh")
+    hinted = [t for t in map_obj["themes"] if t.get("hint")]
+    print(f"Themes to ask   : {s['totalThemes']}  (every one, fresh)")
+    print(f"Themes with hint: {len(hinted)}  (background only — ask the question anyway)")
     print()
-    print("NO-FABRICATION RULE: KNOWN-CONTEXT informs questions only.")
-    print("An item is RECORDED only after the client confirms it live.")
+    print("NO-FABRICATION RULE: no theme is known from a keyword hit.")
+    print("A hint is " + map_obj.get("hintRule", HINT_RULE) + ".")
     print()
 
-    known = [t for t in map_obj["themes"] if t["status"] == "known"]
-    partial = [t for t in map_obj["themes"] if t["status"] == "partial"]
-
-    if known:
-        print("--- KNOWN (confirm, don't re-ask cold) ---")
-        for t in known[:10]:
-            snippet_preview = (t["snippet"] or "")[:80].replace("\n", " ")
+    if hinted:
+        print("--- HINTS (background only, ask the question anyway) ---")
+        for t in hinted[:10]:
+            hint = t["hint"]
+            snippet_preview = (hint.get("snippet") or "")[:80].replace("\n", " ")
             print(f"  [{t['phase']}] {t['label']}")
-            print(f"       Source: {t['source']}  | {snippet_preview}...")
-        if len(known) > 10:
-            print(f"  ... and {len(known) - 10} more.")
-        print()
-
-    if partial:
-        print("--- PARTIAL (deepen — use context as lead-in) ---")
-        for t in partial[:8]:
-            snippet_preview = (t["snippet"] or "")[:80].replace("\n", " ")
-            print(f"  [{t['phase']}] {t['label']}")
-            print(f"       Source: {t['source']}  | {snippet_preview}...")
-        if len(partial) > 8:
-            print(f"  ... and {len(partial) - 8} more.")
+            print(f"       Mentions in {hint.get('source')}  | {snippet_preview}...")
+        if len(hinted) > 10:
+            print(f"  ... and {len(hinted) - 10} more.")
         print()
 
     print("=" * 60)
@@ -414,8 +505,9 @@ def main():
     parser = argparse.ArgumentParser(
         description=(
             "Skill 23 context ingestion pre-pass. Reads all client context sources "
-            "and produces interview-context-map.json classifying each interview theme "
-            "as known/partial/unknown. NEVER writes answers."
+            "and produces interview-context-map.json: every theme is unknown, and a "
+            "keyword hit is only a hint for the interviewer. Facts come from structured "
+            "fields alone. NEVER writes answers."
         )
     )
     parser.add_argument(
@@ -450,7 +542,8 @@ def main():
     parser.add_argument(
         "--dry-run",
         action="store_true",
-        help="Classify and print but do NOT write interview-context-map.json.",
+        help=("Classify and print but write nothing: no interview-context-map.json and "
+              "no interview-known.json."),
     )
     args = parser.parse_args()
 
@@ -460,23 +553,26 @@ def main():
     master_files = Path(args.master_files) if args.master_files else _resolve_master_files(workspace_root)
     zhc_root = _resolve_zhc_root(master_files)
 
-    # Attempt to auto-detect slug from build state
+    # Build state: company slug for the pre-interview folder, companyRoot for company-config.json
+    build_state = _read_json_optional(workspace_root / ".workforce-build-state.json")
     company_slug = args.slug
     if not company_slug:
-        state_path = workspace_root / ".workforce-build-state.json"
-        if state_path.exists():
-            try:
-                state = json.loads(state_path.read_text(encoding="utf-8"))
-                company_slug = state.get("companySlug") or state.get("companyName")
-                if company_slug and "/" not in company_slug:
-                    # Slugify: lowercase, hyphens
-                    company_slug = re.sub(r"[^a-z0-9]+", "-", company_slug.lower()).strip("-")
-            except Exception:
-                pass
+        company_slug = build_state.get("companySlug") or build_state.get("companyName")
+        if isinstance(company_slug, str) and company_slug.strip():
+            company_slug = company_slug.strip()
+            if "/" not in company_slug:
+                # Slugify: lowercase, hyphens
+                company_slug = re.sub(r"[^a-z0-9]+", "-", company_slug.lower()).strip("-")
+        else:
+            company_slug = None
 
     print(f"[context-ingest] workspace_root={workspace_root}", file=sys.stderr)
     print(f"[context-ingest] master_files={master_files}", file=sys.stderr)
     print(f"[context-ingest] company_slug={company_slug!r}", file=sys.stderr)
+
+    # Structured facts only: company settings and answers the gate already accepted.
+    facts = known_facts(workspace_root, build_state, write=not args.dry_run)
+    print(f"[context-ingest] Known facts: {len(facts)}", file=sys.stderr)
 
     # Load all sources
     sources = load_all_sources(workspace_root, zhc_root, master_files, company_slug)

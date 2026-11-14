@@ -242,10 +242,15 @@ KIE_PARAMS = {"model": "V6", "custom_mode": True, "instrumental": False,
 #
 #   POST <KIE host>/api/v1/jobs/createTask      (path: KIE_MUSIC_TASK_ENDPOINT)
 #   {"model": "ai-music-api/generate",
-#    "callBackUrl": <TOP-LEVEL camelCase URL>,
+#    "callBackUrl": <TOP-LEVEL camelCase URL, only when one is set>,
 #    "input": {"custom_mode": ..., "instrumental": ..., "model": <value>,
 #              "title": ..., "lyrics": ..., "style": ...,
 #              "negative_tags": ..., "duration": ...}}
+#
+# Skill 68's music reference (references/music.md, section 1) lists the CURRENT
+# createTask song request's required input as custom_mode, instrumental and
+# model only: no callback address is required, so with KIE_CALLBACK_URL unset
+# the envelope carries no callBackUrl and the run polls the task.
 #
 # The legacy flat /api/v1/generate music-generation contract is RETIRED in
 # this skill: nothing here builds it, nothing falls back to it and
@@ -276,10 +281,26 @@ KIE_MUSIC_MODEL_VALUE = "V6"
 KIE_MUSIC_MODEL_VALUE_STATUS = "UNDETERMINED"
 KIE_MUSIC_MODEL_VALUE_CANDIDATES = ("V6", "V6_MINI", "V6_WILD")
 
-#: Placeholder callback for local fixtures only; a real run passes the Skill 46
-#: relay URL. ``check_envelope`` refuses a payload without a TOP-LEVEL
-#: camelCase ``callBackUrl``, so no request can silently lose its callback.
+#: A FIXTURE-only callback address. Nothing defaults to it and no request ever
+#: sends it: Skill 68's music reference (references/music.md, section 1) lists
+#: the CURRENT createTask song request's required input as ``custom_mode``,
+#: ``instrumental`` and ``model`` only, so no callback address is required and
+#: the run polls the task. ``callback_from_env`` is the ONE source of a real
+#: address, and with none set the envelope carries no ``callBackUrl`` at all.
 DEFAULT_CALLBACK_URL = "https://example.invalid/cb"
+
+
+def callback_from_env():
+    """The callback address to send, or None when the run polls the task.
+
+    Skill 68's music reference (``68-kie-audio/references/music.md``,
+    section 1): the CURRENT ``POST /api/v1/jobs/createTask`` song request
+    requires ``custom_mode``, ``instrumental`` and ``model`` inside ``input`` --
+    no callback address. ``KIE_CALLBACK_URL`` is therefore the ONE source of a
+    real relay address; with it unset nothing is sent and the result is polled.
+    No placeholder is ever invented (``DEFAULT_CALLBACK_URL`` is fixtures only).
+    """
+    return (os.environ.get("KIE_CALLBACK_URL") or "").strip() or None
 
 #: The directions the createTask envelope must carry inside ``input``.
 REQUIRED_MUSIC_DIRECTIONS = ("custom_mode", "instrumental", "title", "lyrics",
@@ -297,7 +318,8 @@ ENVELOPE_INPUT_KEYS = frozenset(REQUIRED_MUSIC_DIRECTIONS) | frozenset({
 LEGACY_FLAT_KEYS = ("lyrics", "custom_mode", "instrumental", "style",
                     "negative_tags", "title", "prompt", "duration")
 #: A callback written with any of these names, or nested in ``input``, is a
-#: misplaced callback: the contract carries exactly one TOP-LEVEL callBackUrl.
+#: misplaced callback: when a callback rides at all it is exactly one TOP-LEVEL
+#: ``callBackUrl``, and its absence is lawful (the run polls the task).
 MISPLACED_CALLBACK_KEYS = ("callback_url", "callbackUrl", "callback",
                            "call_back_url", "CallBackUrl")
 
@@ -1382,9 +1404,13 @@ def check_envelope(req):
 
         POST <KIE host>/api/v1/jobs/createTask   (KIE_MUSIC_TASK_ENDPOINT)
         {"model": "ai-music-api/generate",
-         "callBackUrl": <TOP-LEVEL camelCase URL>,
+         "callBackUrl": <TOP-LEVEL camelCase URL, only when one is set>,
          "input": {snake_case directions}}
 
+    A callback address is NOT required (Skill 68's music reference, section 1:
+    required input is ``custom_mode``, ``instrumental`` and ``model``), so its
+    absence is lawful and the run polls the task; a callback that IS present
+    must be exactly one non-empty TOP-LEVEL camelCase address.
     Every deviation is refused with a named reason, and the legacy flat
     ``/api/v1/generate`` music-generation contract is RETIRED: it is never
     accepted here and never used as a fallback. Exactly ONE approved lyrics
@@ -1411,18 +1437,24 @@ def check_envelope(req):
         errs.append("LEGACY_FLAT_CONTRACT: %s belong inside 'input', not at "
                     "the top level of the createTask envelope"
                     % ", ".join(flat))
-    # -- the callback: exactly one, TOP LEVEL, camelCase --------------------
-    cb = req.get("callBackUrl")
-    if not (isinstance(cb, str) and cb.strip()):
-        errs.append("CALLBACK_NOT_TOP_LEVEL: the createTask envelope needs a "
-                    "non-empty TOP-LEVEL camelCase 'callBackUrl'; got %r"
-                    % (cb,))
+    # -- the callback: optional, and only TOP LEVEL camelCase when sent ------
+    # No callback address is required by the CURRENT createTask song request
+    # (Skill 68's music reference, section 1), so an ABSENT callBackUrl is
+    # lawful: the run polls the task. A callback that IS present must be one
+    # non-empty top-level camelCase address; the invented placeholder is gone.
+    if "callBackUrl" in req:
+        cb = req.get("callBackUrl")
+        if not (isinstance(cb, str) and cb.strip()):
+            errs.append("CALLBACK_EMPTY: a present 'callBackUrl' must be a "
+                        "non-empty TOP-LEVEL camelCase address; got %r" % (cb,))
     misplaced = [k for k in MISPLACED_CALLBACK_KEYS if k in req or k in inp]
     if "callBackUrl" in inp:
         misplaced.append("input.callBackUrl")
     if misplaced:
         errs.append("CALLBACK_NOT_TOP_LEVEL: callback key(s) %s are misplaced; "
-                    "the contract carries exactly one TOP-LEVEL 'callBackUrl'"
+                    "a callback is sent only as exactly one TOP-LEVEL "
+                    "'callBackUrl', and omitting it is lawful (the run polls "
+                    "the task)"
                     % ", ".join(sorted(misplaced)))
     # -- the model: outer route id, inner VALUE ----------------------------
     if req.get("model") != KIE_MUSIC_TASK_MODEL:
@@ -1477,7 +1509,7 @@ def _cast_model():
 
 def build_request(style_id, sheet, client_text, title, length_s, vocal_gender="f",
                   spoken_share_pct=None, delivered_s=None, hook_plan=None, pace_plan=None,
-                  callback_url=DEFAULT_CALLBACK_URL, **kw):
+                  callback_url=None, **kw):
     """The KIE createTask envelope for one ad. ``length_s`` is the DELIVERED
     length (chosen - 2). Raises RecipeError on any rule break.
 
@@ -1494,10 +1526,14 @@ def build_request(style_id, sheet, client_text, title, length_s, vocal_gender="f
     before.
 
     WW-30: this returns the CURRENT contract only -- outer model
-    ``ai-music-api/generate``, a TOP-LEVEL camelCase ``callBackUrl`` and a
-    nested snake_case ``input`` carrying every direction plus exactly one
-    lyrics source (``input.lyrics``). The legacy flat payload is not built
-    here and there is no fallback to it.
+    ``ai-music-api/generate``, a TOP-LEVEL camelCase ``callBackUrl`` ONLY when
+    ``callback_url`` (or ``KIE_CALLBACK_URL``) names one, and a nested
+    snake_case ``input`` carrying every direction plus exactly one lyrics
+    source (``input.lyrics``). No callback address is required by the CURRENT
+    createTask song request (Skill 68's music reference, section 1), so with
+    none set the request carries no ``callBackUrl`` at all -- the run polls the
+    task and no made-up address is ever sent. The legacy flat payload is not
+    built here and there is no fallback to it.
 
     WW-07: ``pace_plan`` writes the approved drop and return into the FINAL
     ``input.style`` (after the ending and hook clauses, under the 1000-char
@@ -1522,8 +1558,13 @@ def build_request(style_id, sheet, client_text, title, length_s, vocal_gender="f
                 "negative_tags": out["negative_tags"]})
     req = {"endpoint": KIE_MUSIC_TASK_ENDPOINT,
            "model": KIE_MUSIC_TASK_MODEL,
-           "callBackUrl": callback_url,
            "input": inp}
+    # U-M01: the address is sent only when one really exists (an explicit
+    # argument or KIE_CALLBACK_URL); with none the key is ABSENT and the run
+    # polls the task. The retired placeholder default is never sent.
+    cb = callback_url if callback_url is not None else callback_from_env()
+    if cb:
+        req["callBackUrl"] = str(cb).strip()
     # WW-07: internal judging metadata never reaches the provider.
     for k in list(req):
         if str(k).startswith("_"):

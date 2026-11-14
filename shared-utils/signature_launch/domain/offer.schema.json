@@ -154,6 +154,15 @@
               "null"
             ]
           },
+          "recurring_interval": {
+            "enum": [
+              "week",
+              "month",
+              "quarter",
+              "year"
+            ],
+            "description": "How often a recurring price bills. Present only with billing_type recurring; the interval is material disclosure and is never guessed."
+          },
           "approval_status": {
             "enum": [
               "provided",
@@ -174,13 +183,12 @@
         ],
         "allOf": [
           {
-            "description": "A trial, recurring or installment price must record the charges that follow the first one; an empty schedule is how a trial got printed as a one-time charge.",
+            "description": "A trial or installment price must record the charges that follow the first one; an empty schedule is how a trial got printed as a one-time charge.",
             "if": {
               "properties": {
                 "billing_type": {
                   "enum": [
                     "trial",
-                    "recurring",
                     "installment"
                   ]
                 }
@@ -194,6 +202,55 @@
                 "schedule": {
                   "minItems": 1
                 }
+              }
+            }
+          },
+          {
+            "description": "A recurring price records its charges either as a schedule or as the recurring_interval it bills on; with neither, the cadence is unstated and the price is refused.",
+            "if": {
+              "properties": {
+                "billing_type": {
+                  "const": "recurring"
+                }
+              },
+              "required": [
+                "billing_type"
+              ]
+            },
+            "then": {
+              "anyOf": [
+                {
+                  "required": [
+                    "recurring_interval"
+                  ]
+                },
+                {
+                  "properties": {
+                    "schedule": {
+                      "minItems": 1
+                    }
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "description": "Recurrence terms never ride a price that is not recurring.",
+            "if": {
+              "properties": {
+                "billing_type": {
+                  "const": "recurring"
+                }
+              },
+              "required": [
+                "billing_type"
+              ]
+            },
+            "else": {
+              "not": {
+                "required": [
+                  "recurring_interval"
+                ]
               }
             }
           }

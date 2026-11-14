@@ -107,10 +107,11 @@ Re-calibrate the fleet sizing table (see SOP 9.1) against actual run performance
 
 ## 8. Tools You Use
 
-- `free -h` (RAM check)
-- `nproc` (CPU core count)
-- `uptime` (CPU load)
-- `df -h` (disk space)
+- `python3 <SCRIPTS_DIR>/presentation_job.py --capacity` (provider capacity probe report)
+- `sysctl -n hw.memsize` + `memory_pressure -Q` (macOS RAM); `awk '/MemTotal|MemAvailable/ {print $2}' /proc/meminfo` (Linux RAM)
+- `sysctl -n hw.ncpu` (macOS) / `nproc` (Linux) (CPU core count)
+- `sysctl -n vm.loadavg` (macOS) / `cat /proc/loadavg` (Linux) (CPU load)
+- `df -k /` (disk space, macOS and Linux)
 - One live test turn to Ollama Cloud (model reachability check)
 - Kie.ai credit endpoint `GET /api/v1/chat/credit` (credit balance check)
 - working/checkpoints/capacity_plan.json (write)
@@ -133,18 +134,26 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
 - working/copy/mission_prd.json (slide_count_final -- for budget calculation)
 
 **Steps:**
-1. Run the probe commands on the client's box. Record all outputs:
+1. Run `python3 <SCRIPTS_DIR>/presentation_job.py --capacity` and read its report. The report carries: probe mode, status, detection source, provider, plan, dispatchable availability, reserve, effective available, working concurrent count, fleet shape, one row per provider (plan, ceiling, whether the plan was answered, source), the provider key inventory (presence only, never a value), the 9Router lineup count, and the detection trail. It does NOT carry memory, processor count, load average or disk -- gather those four on the client's box:
    ```bash
-   free -h            # Total RAM, used RAM, free RAM
-   nproc              # CPU core count
-   uptime             # 1/5/15-minute load averages
-   df -h              # Disk space (focus on home partition)
+   # macOS
+   sysctl -n hw.memsize                                  # total RAM, bytes
+   memory_pressure -Q                                    # system-wide free memory percentage
+   sysctl -n hw.ncpu                                     # processor count
+   sysctl -n vm.loadavg                                  # 1/5/15-minute load averages
+   df -k /                                               # disk, 1024-byte blocks (available column)
+   # Linux
+   awk '/MemTotal|MemAvailable/ {print $2}' /proc/meminfo   # total then available RAM, kB
+   nproc                                                 # processor count
+   cat /proc/loadavg                                     # 1/5/15-minute load averages
+   df -k /                                               # disk, 1024-byte blocks (available column)
    ```
+   A value no command carries is recorded as `null`, never guessed.
 2. Parse the outputs. Extract:
-   - `free_ram_gb`: free RAM at probe time (use the "free" column from `free -h`, NOT the advertised total -- on oversubscribed VPS, use free RAM as the actual budget)
-   - `cpu_cores`: from nproc
-   - `cpu_load_15min`: the 15-minute load average from uptime (stable load indicator)
-   - `free_disk_gb`: available disk on the home partition
+   - `free_ram_gb`: free RAM at probe time. Linux: `MemAvailable` from `/proc/meminfo` (kB / 1048576). macOS: `hw.memsize` x the free percentage from `memory_pressure -Q`, / 1073741824. Use FREE memory, NOT the advertised total -- on an oversubscribed VPS, free RAM is the actual budget.
+   - `cpu_cores`: from `sysctl -n hw.ncpu` (macOS) or `nproc` (Linux)
+   - `cpu_load_15min`: the 15-minute load average from `sysctl -n vm.loadavg` (macOS) or `/proc/loadavg` (Linux) -- the stable load indicator
+   - `free_disk_gb`: the available column of `df -k /`, x 1024 / 1073741824
 3. Test Ollama Cloud reachability: send one live test turn to the client's OLLAMA_API_KEY against the client's primary text model (the model resolved from the client's choice, or their configured default). Record: `ollama_cloud_reachable: true/false`. If the model is NOT reachable with the cloud URL (requires `models.providers.ollama.baseUrl = https://ollama.com`): flag to the Director and propose using OpenRouter fallback for text models.
 4. Check Kie.ai credit balance: call `GET https://api.kie.ai/api/v1/chat/credit` with the client's KIE_API_KEY and read the response body (`code` must be 200; the balance is `data`). Record: `kie_credits_remaining`.
 5. Calculate image generation budget: SLIDE_COUNT x 2 x `per_image_usd`, where `per_image_usd` comes from the live `pricingDesc` (Skill 74; the Presentations model catalog `unit_costs` is the dated fallback if the live catalog is unreachable). Record both `per_image_usd` and `budget_ceiling`.
@@ -185,7 +194,7 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
    - GO: free_ram_gb >= 2, free_disk_gb >= 10, budget_ok = true, ollama_cloud_reachable OR openrouter_available.
    - NOGO: any of the above conditions fails.
 10. If NOGO: notify the Director and the operator immediately. Do not proceed.
-11. Verify python-pptx, LibreOffice, and poppler-utils (pdftoppm) are installed on the client's box. These are required by the PPTX Assembly Specialist. If any are missing, flag to the Director: "[TOOL] is not installed. PPTX assembly will fail at Phase 6 unless this is resolved."
+11. Run the door's dependency gate in plan mode and read its result; every entry marked required in `presentation-deps.json` must be present. The gate is GATE 1 of `bash <SCRIPTS_DIR>/presentation-canonical-entry.sh --plan`; it prints `OK: all runtime deps present` or exits 6 with `PRESENTATION_DEPS_MISSING: <list>`. If any required entry is missing, flag to the Director: "[DEPENDENCY] is not installed. PPTX assembly will fail at Phase 6 unless this is resolved."
 
 **Outputs:**
 - working/checkpoints/capacity_plan.json (complete)
@@ -205,17 +214,15 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
 - capacity_plan.json (for client_slug and deck_slug)
 
 **Steps:**
-1. Verify the installer-scheduled watchdog is live: Mac `launchctl list | grep com.blackceo.presentation-watchdog`; VPS `openclaw cron list | grep presentation-watchdog`. If absent, run `update-skills.sh` (it re-asserts the schedule). Never write or install a per-deck watchdog.
+1. Verify the installer-scheduled watchdog is live. Mac: `launchctl print gui/$(id -u)/com.blackceo.presentation-watchdog` exits 0. Server: `openclaw cron list --json` contains an entry whose name is exactly `presentation-watchdog`. If absent, run `update-skills.sh` (it re-asserts the schedule). Never write or install a per-deck watchdog.
 2. Record `watchdog: installer-managed` in `capacity_plan.json`.
 
 **Outputs:**
-- working/scripts/watchdog.sh (installed and running every 10 minutes)
-- working/checkpoints/watchdog.log (updated every 10 minutes)
-- capacity_plan.json (watchdog_installed, watchdog_removed, stall_threshold_minutes, watchdog_max_runtime_minutes)
+- `capacity_plan.json` records `watchdog: installer-managed`.
 
 **Hand to:** Director (receives first-stall alert for self-heal attempts); Operator (receives second-stall alert or failed self-heal notification); ROLE-16 Healer -- Presentations (on second consecutive stall or failed self-heal: hand off with the full incident package -- stall count, checkpoint state, self-heal attempt log -- so the Healer can root-cause and permanently patch the SOP that allowed the stall)
 
-**Failure mode:** Verify the installer-scheduled watchdog is live: Mac `launchctl list | grep com.blackceo.presentation-watchdog`; VPS `openclaw cron list | grep presentation-watchdog`. If absent, run `update-skills.sh` (it re-asserts the schedule). Never write or install a per-deck watchdog.
+**Failure mode:** If Mac `launchctl print gui/$(id -u)/com.blackceo.presentation-watchdog` exits non-zero, or the server's `openclaw cron list --json` has no entry whose name is exactly `presentation-watchdog`: run `update-skills.sh` once (it re-asserts the schedule) and re-check. If still absent, report to the Director -- the run has no stall detection. Never write or install a per-deck watchdog.
 
 ---
 
@@ -358,7 +365,7 @@ Telegram message from watchdog: "[enrollment-on-autopilot] watchdog: no new imag
 
 | # | Mistake | Prevention |
 |---|---------|------------|
-| 1 | Checking total RAM instead of free RAM | Use the "free" column from `free -h`, not the "total" column. |
+| 1 | Checking total RAM instead of free RAM | Use free memory: `MemAvailable` from `/proc/meminfo` (Linux), or `hw.memsize` x the `memory_pressure -Q` free percentage (macOS). Never the advertised total. |
 | 2 | Not testing model reachability (assuming it works) | SOP 9.3 requires a live test turn, not an assumption. |
 | 3 | Installing the watchdog cron but never removing it | Gate 5 is explicit: watchdog_removed = true must be written after Phase 6 or after 90 minutes. |
 | 4 | Writing capacity_plan.json without the env_store_locations section | This section is mandatory -- it is the proof that all 4 stores were checked. |
@@ -387,7 +394,7 @@ Telegram message from watchdog: "[enrollment-on-autopilot] watchdog: no new imag
 Mac Mini clients run Homebrew OpenClaw, not Docker. The env stores and workdir paths differ from VPS clients:
 - Mac: workdir = `~/webinar-decks/...`
 - VPS: workdir = `/data/.openclaw/workspace/webinar-decks/...`
-The capacity probe is the same (`free -h`, `nproc`, etc.), but `free -h` may not exist on macOS -- use `vm_stat` and parse the "Pages free" output instead. Record `os: "mac"` in capacity_plan.json to signal this to all other specialists.
+The capacity probe is the same on both platforms, but the commands differ: use the macOS column of SOP 9.1 step 1 (`sysctl -n hw.memsize`, `memory_pressure -Q`, `sysctl -n hw.ncpu`, `sysctl -n vm.loadavg`, `df -k /`). Record `os: "mac"` in capacity_plan.json to signal this to all other specialists.
 
 ### Edge Case 17.2 -- Client Is Running Another Deck Concurrently
 If another deck run is active on the same box: reduce the recommended agent count by 3 (the other run has agents occupying resources). Record in capacity_plan.json: `concurrent_runs: N, recommended_agents_adjusted_for_concurrency: true`.

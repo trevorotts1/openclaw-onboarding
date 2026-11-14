@@ -20,18 +20,26 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
 - working/copy/mission_prd.json (slide_count_final -- for budget calculation)
 
 **Steps:**
-1. Run the probe commands on the client's box. Record all outputs:
+1. Run `python3 <SCRIPTS_DIR>/presentation_job.py --capacity` and read its report. The report carries: probe mode, status, detection source, provider, plan, dispatchable availability, reserve, effective available, working concurrent count, fleet shape, one row per provider (plan, ceiling, whether the plan was answered, source), the provider key inventory (presence only, never a value), the 9Router lineup count, and the detection trail. It does NOT carry memory, processor count, load average or disk -- gather those four on the client's box:
    ```bash
-   free -h            # Total RAM, used RAM, free RAM
-   nproc              # CPU core count
-   uptime             # 1/5/15-minute load averages
-   df -h              # Disk space (focus on home partition)
+   # macOS
+   sysctl -n hw.memsize                                  # total RAM, bytes
+   memory_pressure -Q                                    # system-wide free memory percentage
+   sysctl -n hw.ncpu                                     # processor count
+   sysctl -n vm.loadavg                                  # 1/5/15-minute load averages
+   df -k /                                               # disk, 1024-byte blocks (available column)
+   # Linux
+   awk '/MemTotal|MemAvailable/ {print $2}' /proc/meminfo   # total then available RAM, kB
+   nproc                                                 # processor count
+   cat /proc/loadavg                                     # 1/5/15-minute load averages
+   df -k /                                               # disk, 1024-byte blocks (available column)
    ```
+   A value no command carries is recorded as `null`, never guessed.
 2. Parse the outputs. Extract:
-   - `free_ram_gb`: free RAM at probe time (use the "free" column from `free -h`, NOT the advertised total -- on oversubscribed VPS, use free RAM as the actual budget)
-   - `cpu_cores`: from nproc
-   - `cpu_load_15min`: the 15-minute load average from uptime (stable load indicator)
-   - `free_disk_gb`: available disk on the home partition
+   - `free_ram_gb`: free RAM at probe time. Linux: `MemAvailable` from `/proc/meminfo` (kB / 1048576). macOS: `hw.memsize` x the free percentage from `memory_pressure -Q`, / 1073741824. Use FREE memory, NOT the advertised total -- on an oversubscribed VPS, free RAM is the actual budget.
+   - `cpu_cores`: from `sysctl -n hw.ncpu` (macOS) or `nproc` (Linux)
+   - `cpu_load_15min`: the 15-minute load average from `sysctl -n vm.loadavg` (macOS) or `/proc/loadavg` (Linux) -- the stable load indicator
+   - `free_disk_gb`: the available column of `df -k /`, x 1024 / 1073741824
 3. Test Ollama Cloud reachability: send one live test turn to the client's OLLAMA_API_KEY against the client's primary text model (the model resolved from the client's choice, or their configured default). Record: `ollama_cloud_reachable: true/false`. If the model is NOT reachable with the cloud URL (requires `models.providers.ollama.baseUrl = https://ollama.com`): flag to the Director and propose using OpenRouter fallback for text models.
 4. Check Kie.ai credit balance: call `GET https://api.kie.ai/api/v1/chat/credit` with the client's KIE_API_KEY and read the response body (`code` must be 200; the balance is `data`). Record: `kie_credits_remaining`.
 5. Calculate image generation budget: SLIDE_COUNT x 2 x `per_image_usd`, where `per_image_usd` comes from the live `pricingDesc` (Skill 74; the Presentations model catalog `unit_costs` is the dated fallback if the live catalog is unreachable). Record both `per_image_usd` and `budget_ceiling`.
@@ -72,7 +80,7 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
    - GO: free_ram_gb >= 2, free_disk_gb >= 10, budget_ok = true, ollama_cloud_reachable OR openrouter_available.
    - NOGO: any of the above conditions fails.
 10. If NOGO: notify the Director and the operator immediately. Do not proceed.
-11. Verify python-pptx, LibreOffice, and poppler-utils (pdftoppm) are installed on the client's box. These are required by the PPTX Assembly Specialist. If any are missing, flag to the Director: "[TOOL] is not installed. PPTX assembly will fail at Phase 6 unless this is resolved."
+11. Run the door's dependency gate in plan mode and read its result; every entry marked required in `presentation-deps.json` must be present. The gate is GATE 1 of `bash <SCRIPTS_DIR>/presentation-canonical-entry.sh --plan`; it prints `OK: all runtime deps present` or exits 6 with `PRESENTATION_DEPS_MISSING: <list>`. If any required entry is missing, flag to the Director: "[DEPENDENCY] is not installed. PPTX assembly will fail at Phase 6 unless this is resolved."
 
 **Outputs:**
 - working/checkpoints/capacity_plan.json (complete)
@@ -92,17 +100,15 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
 - capacity_plan.json (for client_slug and deck_slug)
 
 **Steps:**
-1. Verify the installer-scheduled watchdog is live: Mac `launchctl list | grep com.blackceo.presentation-watchdog`; VPS `openclaw cron list | grep presentation-watchdog`. If absent, run `update-skills.sh` (it re-asserts the schedule). Never write or install a per-deck watchdog.
+1. Verify the installer-scheduled watchdog is live. Mac: `launchctl print gui/$(id -u)/com.blackceo.presentation-watchdog` exits 0. Server: `openclaw cron list --json` contains an entry whose name is exactly `presentation-watchdog`. If absent, run `update-skills.sh` (it re-asserts the schedule). Never write or install a per-deck watchdog.
 2. Record `watchdog: installer-managed` in `capacity_plan.json`.
 
 **Outputs:**
-- working/scripts/watchdog.sh (installed and running every 10 minutes)
-- working/checkpoints/watchdog.log (updated every 10 minutes)
-- capacity_plan.json (watchdog_installed, watchdog_removed, stall_threshold_minutes, watchdog_max_runtime_minutes)
+- `capacity_plan.json` records `watchdog: installer-managed`.
 
 **Hand to:** Director (receives first-stall alert for self-heal attempts); Operator (receives second-stall alert or failed self-heal notification); ROLE-16 Healer -- Presentations (on second consecutive stall or failed self-heal: hand off with the full incident package -- stall count, checkpoint state, self-heal attempt log -- so the Healer can root-cause and permanently patch the SOP that allowed the stall)
 
-**Failure mode:** Verify the installer-scheduled watchdog is live: Mac `launchctl list | grep com.blackceo.presentation-watchdog`; VPS `openclaw cron list | grep presentation-watchdog`. If absent, run `update-skills.sh` (it re-asserts the schedule). Never write or install a per-deck watchdog.
+**Failure mode:** If Mac `launchctl print gui/$(id -u)/com.blackceo.presentation-watchdog` exits non-zero, or the server's `openclaw cron list --json` has no entry whose name is exactly `presentation-watchdog`: run `update-skills.sh` once (it re-asserts the schedule) and re-check. If still absent, report to the Director -- the run has no stall detection. Never write or install a per-deck watchdog.
 
 ---
 
@@ -127,7 +133,7 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
    c. If unsuccessful: attempt one live test turn to the same model via OpenRouter with the client's OPENROUTER_API_KEY.
    d. If OpenRouter successful: `primary_text_model: "<the OpenRouter slug of the same model>"`.
    e. If both fail: `primary_text_model: "UNAVAILABLE"`. NOGO decision. Notify Director.
-5. Verify QC model (the client's chosen vision/QC model via Ollama Cloud or OpenRouter, independent from the producer; no self-grading). Same process as step 4.
+5. Verify QC model (the catalog-resolved QC scoring model via Ollama Cloud or OpenRouter). Same process as step 4.
 6. Write model routing table to capacity_plan.json:
    ```json
    {

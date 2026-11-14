@@ -210,9 +210,16 @@ class TestMotionQuestionDefinitions:
         assert self.deck["storeTarget"][
             "MOTION_GRAPHICS_DECLINED_REASON"] == \
             "pre_presentation_capture.MOTION_GRAPHICS_DECLINED_REASON"
-        assert self.deck["waiver_field_mapping"]["motion_graphics"] == {
-            "toggle": "want_motion_graphics",
-            "reason": "motion_graphics_declined_reason"}
+        mapping = self.deck["waiver_field_mapping"]["motion_graphics"]
+        assert mapping["toggle"] == "want_motion_graphics"
+        assert mapping["reason"] == "motion_graphics_declined_reason"
+        # PD-014: want_motion_graphics defaults to "no", so declining it is
+        # not a waiver and no reason is required.
+        assert mapping["waiver_required"] is False
+        comment = mapping.get("waiver_comment", mapping.get("_comment"))
+        assert comment == (
+            "Declining an opt-in that defaults to no is not a waiver; "
+            "no reason is required.")
 
     def test_deck_bank_subfields_ride_the_existing_turns(self):
         # FIX 30 pattern (the email precedent): no new turn; the pair

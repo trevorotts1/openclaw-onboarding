@@ -158,6 +158,8 @@ def confirm(args):
         item["report_state"]="confirmed"; item["report_confirmed_at"]=now(); atomic(p,item)
     print(canon({"operation_id":args.operation_id,"report_state":"confirmed"}))
 
+# RRX-002: rescue-poll.sh no longer calls final-body. The owner's message is built by
+# rr_owner_message.py. final-body is kept so older callers and its test keep working.
 # RR plan F88: client-facing final update. Three plain sentences, never machine fields.
 #   repaired + verified              -> "Fixed and checked."
 #   still open, owner is a person    -> "A specialist will follow up."

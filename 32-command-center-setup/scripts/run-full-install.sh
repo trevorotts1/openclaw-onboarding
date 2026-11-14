@@ -2929,7 +2929,7 @@ fi
 # behind the gate while the shell (BLOCK A) does not.
 # STANDARD-FIRST NOTE (buildType == "standard-first"): this block's gating is
 # UNCHANGED. The standard-first prebuild is a SEPARATE operator-triggered
-# pipeline (23-ai-workforce-blueprint/scripts/prebuild-standard-workforce.sh,
+# pipeline (scripts/prebuild-standard-workforce.sh (onboarding repository root),
 # explicit operator consent, sourced EXCLUSIVELY from templates/role-library/);
 # it is NOT this installer's BLOCK B seeding and it never runs from here. At
 # interviewComplete the standard-first lane applies the owner's diff (deprovision
@@ -3771,29 +3771,35 @@ LOCAL_OK=0
 REMOTE_OK=0
 
 if [[ "$UPDATE_ONLY" == "true" ]]; then
-  # Quick health check: just verify the local dashboard is responding
-  LOCAL_CODE=$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 "http://127.0.0.1:$DASHBOARD_PORT/" 2>/dev/null || echo "000")
-  if [[ "$LOCAL_CODE" =~ ^2 ]]; then
-    LOCAL_OK=1
-    log "INFO" "phase=7 (update-only): dashboard responding $LOCAL_CODE on :$DASHBOARD_PORT"
-  else
-    log "WARN" "phase=7 (update-only): dashboard returned $LOCAL_CODE — check: pm2 logs blackceo-command-center"
-  fi
+  # Quick health check: the app's own health JSON decides (exit 0 = answering,
+  # 1 = not answering, 2 = the check itself could not run), never a status code
+  # fished out of a response with grep (CC-005).
+  _cc_truth_rc=0
+  python3 "$SKILL_DIR/scripts/cc_truth_check.py" http --port "$DASHBOARD_PORT" >/dev/null 2>&1 || _cc_truth_rc=$?
+  case "$_cc_truth_rc" in
+    0) LOCAL_OK=1
+       log "INFO" "phase=7 (update-only): dashboard answering on :$DASHBOARD_PORT" ;;
+    1) log "WARN" "phase=7 (update-only): dashboard not answering on :$DASHBOARD_PORT — check: pm2 logs blackceo-command-center" ;;
+    *) log "WARN" "phase=7 (update-only): could not check the dashboard on :$DASHBOARD_PORT — run: python3 $SKILL_DIR/scripts/cc_truth_check.py http --port $DASHBOARD_PORT" ;;
+  esac
 else
   # Local check (Next.js dev/start server on :4000)
-  LOCAL_CODE=$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 "http://127.0.0.1:$DASHBOARD_PORT/" 2>/dev/null || echo "000")
-  if [[ "$LOCAL_CODE" =~ ^2 ]]; then
-    LOCAL_OK=1
-    log "INFO" "phase=7: local dashboard responding $LOCAL_CODE on :$DASHBOARD_PORT"
-  else
-    log "WARN" "phase=7: local dashboard returned $LOCAL_CODE on :$DASHBOARD_PORT — check pm2 logs blackceo-command-center"
-  fi
+  _cc_truth_rc=0
+  python3 "$SKILL_DIR/scripts/cc_truth_check.py" http --port "$DASHBOARD_PORT" >/dev/null 2>&1 || _cc_truth_rc=$?
+  case "$_cc_truth_rc" in
+    0) LOCAL_OK=1
+       log "INFO" "phase=7: local dashboard answering on :$DASHBOARD_PORT" ;;
+    1) log "WARN" "phase=7: local dashboard not answering on :$DASHBOARD_PORT — check pm2 logs blackceo-command-center" ;;
+    *) log "WARN" "phase=7: could not check the local dashboard on :$DASHBOARD_PORT — run: python3 $SKILL_DIR/scripts/cc_truth_check.py http --port $DASHBOARD_PORT" ;;
+  esac
 
-  # Remote check (cloudflared tunnel subdomain)
+  # Remote check (cloudflared tunnel subdomain). 2xx, 302 and 403 all count as
+  # "answering": a 403 is a locked dashboard behind Cloudflare Access, which is
+  # up, not down.
   REMOTE_URL=$(state_get '.commandCenterUrl')
   if [[ -n "$REMOTE_URL" && "$REMOTE_URL" != "null" && "$REMOTE_URL" != "http://127.0.0.1:4000/" ]]; then
     REMOTE_CODE=$(curl -s -o /dev/null -w '%{http_code}' --max-time 15 "$REMOTE_URL" 2>/dev/null || echo "000")
-    if [[ "$REMOTE_CODE" =~ ^2 ]]; then
+    if [[ "$REMOTE_CODE" =~ ^2 || "$REMOTE_CODE" == "302" || "$REMOTE_CODE" == "403" ]]; then
       REMOTE_OK=1
       log "INFO" "phase=7: remote dashboard responding $REMOTE_CODE at $REMOTE_URL"
     else

@@ -17,16 +17,23 @@ P-IMAGE-QC) and phase_verifiers._verify_representation_casting
 
 THE PROOF (what this module pins, behaviorally, per the FIX 92 brief):
 
-  PRESENT fixtures pass — a run dir whose image_qc_report.json carries an
-  image_grounding={pass: true, reviewed_by: <independent>} sub-verdict and
-  whose prompt_qc_report.json carries representation_casting={pass: true,
-  reviewed_by: <independent>} is passed by BOTH closeout wrappers ("").
+  PRESENT fixtures pass — a run dir whose
+  working/qc/human-review/image_grounding.json carries {pass: true,
+  reviewed_by: <independent>, ...} and whose
+  working/qc/human-review/representation_casting.json carries the same is
+  passed by BOTH closeout wrappers ("").
 
-  ABSENT fixtures fail — the SAME run dir with the sub-verdicts deleted is
-  failed by BOTH wrappers with AF-IMAGE-GROUNDING-PARK / AF-CASTING-PARK
-  (a parked verdict cannot ship: fail-closed unless the explicit
-  test/CI degraded signals are present, so the fixtures run with the
-  degraded env CLEAR).
+  ABSENT fixtures fail — the SAME run dir with those two verdict files
+  deleted is failed by BOTH wrappers with AF-IMAGE-GROUNDING-PARK /
+  AF-CASTING-PARK (a parked verdict cannot ship: fail-closed unless the
+  explicit test/CI degraded signals are present, so the fixtures run with
+  the degraded env CLEAR).
+
+  PD-206a (decision D-34) moved each human verdict OUT of the graded report
+  into its own file: editing a report changes its hash and breaks its
+  execution stamp (finding PD-306). The fixtures therefore write the two
+  human-review files, never a block embedded in image_qc_report.json /
+  prompt_qc_report.json.
 
 Run:  python3 -m pytest tests/test_fix92_closeout_gates.py -q
 """
@@ -58,22 +65,25 @@ def _clean_degraded_env(monkeypatch):
 
 def _make_closeout_run_dir() -> Path:
     """A minimal closeout-stage run dir: no render prompts, no research map,
-    no intake mix (P0A-INTAKE owns capture absence) — only the two QC reports
-    the closeout verdict gates read. With no prompts to judge, the sub-verdict
-    block is the ONLY live input, which is exactly the artifact FIX 92 gates."""
+    no intake mix (P0A-INTAKE owns capture absence) — only the two human
+    verdict files the closeout gates read. With no prompts to judge, the
+    verdict file is the ONLY live input, which is exactly the artifact FIX 92
+    gates."""
     d = Path(tempfile.mkdtemp(prefix="fix92_closeout_"))
     qc = d / "working" / "qc"
     qc.mkdir(parents=True, exist_ok=True)
     return d
 
 
-def _write_reports(d: Path, image_grounding: dict, representation_casting: dict):
-    qc = d / "working" / "qc"
-    qc.mkdir(parents=True, exist_ok=True)
-    (qc / "image_qc_report.json").write_text(
-        json.dumps({"image_grounding": image_grounding}))
-    (qc / "prompt_qc_report.json").write_text(
-        json.dumps({"representation_casting": representation_casting}))
+def _write_verdicts(d: Path, image_grounding: dict, representation_casting: dict):
+    """Write the two PD-206a human-verdict files. An empty dict means the file
+    is absent (that is the ABSENT fixture), so nothing is written for it."""
+    human = d / "working" / "qc" / "human-review"
+    human.mkdir(parents=True, exist_ok=True)
+    for name, verdict in (("image_grounding", image_grounding),
+                          ("representation_casting", representation_casting)):
+        if verdict:
+            (human / (name + ".json")).write_text(json.dumps(verdict))
 
 
 # ===========================================================================
@@ -82,10 +92,11 @@ def _write_reports(d: Path, image_grounding: dict, representation_casting: dict)
 def test_present_image_grounding_verdict_passes(tmp_path, monkeypatch):
     _clean_degraded_env(monkeypatch)
     d = tmp_path
-    _write_reports(d, {"pass": True, "reviewed_by": REVIEWER}, {})
+    _write_verdicts(d, {"pass": True, "reviewed_by": REVIEWER,
+                        "reviewed_at": "2026-11-12T12:00:00Z", "note": "reviewed"}, {})
     reason = build_deck._chk_image_grounding_verdict(d)
     assert reason == "", (
-        "a run dir whose image_qc_report.json carries image_grounding="
+        "a run dir whose working/qc/human-review/image_grounding.json carries "
         f"{{pass:true, reviewed_by:{REVIEWER!r}}} must PASS the AF-IMAGE-GROUNDING-PARK "
         f"closeout gate (''), got: {reason!r}")
     ok, _ = phase_verifiers._verify_image_grounding(d)
@@ -95,10 +106,11 @@ def test_present_image_grounding_verdict_passes(tmp_path, monkeypatch):
 def test_present_representation_casting_verdict_passes(tmp_path, monkeypatch):
     _clean_degraded_env(monkeypatch)
     d = tmp_path
-    _write_reports(d, {}, {"pass": True, "reviewed_by": REVIEWER})
+    _write_verdicts(d, {}, {"pass": True, "reviewed_by": REVIEWER,
+                            "reviewed_at": "2026-11-12T12:00:00Z", "note": "reviewed"})
     reason = build_deck._chk_representation_casting_verdict(d)
     assert reason == "", (
-        "a run dir whose prompt_qc_report.json carries representation_casting="
+        "a run dir whose working/qc/human-review/representation_casting.json carries "
         f"{{pass:true, reviewed_by:{REVIEWER!r}}} must PASS the AF-CASTING-PARK "
         f"closeout gate (''), got: {reason!r}")
     ok, _ = phase_verifiers._verify_representation_casting(d)
@@ -111,27 +123,31 @@ def test_present_representation_casting_verdict_passes(tmp_path, monkeypatch):
 def test_absent_image_grounding_verdict_parks(tmp_path, monkeypatch):
     _clean_degraded_env(monkeypatch)
     d = tmp_path
-    _write_reports(d, {}, {})  # both reports exist, verdicts absent
+    _write_verdicts(d, {}, {})  # no human-review verdict files at all
     reason = build_deck._chk_image_grounding_verdict(d)
-    assert reason, "an image_qc_report.json with NO image_grounding verdict must FAIL the closeout gate"
+    assert reason, "a missing working/qc/human-review/image_grounding.json must FAIL the closeout gate"
     assert "AF-IMAGE-GROUNDING-PARK" in reason, (
         f"expected AF-IMAGE-GROUNDING-PARK in the park reason, got: {reason!r}")
+    assert "working/qc/human-review/image_grounding.json" in reason, (
+        f"the park reason must name the file a person records the verdict in, got: {reason!r}")
 
 
 def test_absent_representation_casting_verdict_parks(tmp_path, monkeypatch):
     _clean_degraded_env(monkeypatch)
     d = tmp_path
-    _write_reports(d, {}, {})
+    _write_verdicts(d, {}, {})
     reason = build_deck._chk_representation_casting_verdict(d)
-    assert reason, "a prompt_qc_report.json with NO representation_casting verdict must FAIL the closeout gate"
+    assert reason, "a missing working/qc/human-review/representation_casting.json must FAIL the closeout gate"
     assert "AF-CASTING-PARK" in reason, (
         f"expected AF-CASTING-PARK in the park reason, got: {reason!r}")
+    assert "working/qc/human-review/representation_casting.json" in reason, (
+        f"the park reason must name the file a person records the verdict in, got: {reason!r}")
 
 
 def test_failing_image_grounding_verdict_parks(tmp_path, monkeypatch):
     _clean_degraded_env(monkeypatch)
     d = tmp_path
-    _write_reports(d, {"pass": False, "reviewed_by": REVIEWER}, {})
+    _write_verdicts(d, {"pass": False, "reviewed_by": REVIEWER}, {})
     reason = build_deck._chk_image_grounding_verdict(d)
     assert "AF-IMAGE-GROUNDING" in reason, (
         f"a pass!=true image_grounding verdict must park the run, got: {reason!r}")
@@ -140,7 +156,7 @@ def test_failing_image_grounding_verdict_parks(tmp_path, monkeypatch):
 def test_failing_representation_casting_verdict_parks(tmp_path, monkeypatch):
     _clean_degraded_env(monkeypatch)
     d = tmp_path
-    _write_reports(d, {}, {"pass": False, "reviewed_by": REVIEWER})
+    _write_verdicts(d, {}, {"pass": False, "reviewed_by": REVIEWER})
     reason = build_deck._chk_representation_casting_verdict(d)
     assert "AF-CASTING" in reason, (
         f"a pass!=true representation_casting verdict must park the run, got: {reason!r}")
@@ -151,8 +167,8 @@ def test_builder_self_reviewed_by_is_refused(tmp_path, monkeypatch):
     phase attestation enforces; the closeout wrapper must not be weaker."""
     _clean_degraded_env(monkeypatch)
     d = tmp_path
-    _write_reports(d, {"pass": True, "reviewed_by": "builder"},
-                   {"pass": True, "reviewed_by": "self"})
+    _write_verdicts(d, {"pass": True, "reviewed_by": "builder"},
+                    {"pass": True, "reviewed_by": "self"})
     g = build_deck._chk_image_grounding_verdict(d)
     c = build_deck._chk_representation_casting_verdict(d)
     assert g and "AF-IMAGE-GROUNDING" in g, f"builder-graded grounding verdict must park, got: {g!r}"

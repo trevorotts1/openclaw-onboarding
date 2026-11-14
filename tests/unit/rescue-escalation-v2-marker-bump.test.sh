@@ -199,13 +199,12 @@ result5="$(run_escpy "$a5")"
 echo "  ESCPY verdict: $result5"
 if grep -q "RESCUE_ESCALATION_BOXNAME_V3" "$a5" \
    && ! grep -q "RESCUE_ESCALATION_BOXNAME_V2" "$a5" \
-   && grep -q '"incident_id"' "$a5" \
-   && grep -q '"operation_id"' "$a5" \
+   && grep -qF 'rr_escalate.py" resolve' "$a5" \
    && grep -q "test-box-slug" "$a5" \
    && grep -q "## Some Other Section" "$a5"; then
-  ok "V2-stamped box: migrated to V3 (verdict=$result5), correlation fields present, NO orphaned V2 tag, following section untouched"
+  ok "V2-stamped box: migrated to V3 (verdict=$result5), resolve command present, NO orphaned V2 tag, following section untouched"
 else
-  bad "V2-stamped box: expected one-roll V2->V3 migration with correlation fields and no orphaned V2 tag (verdict=$result5)"
+  bad "V2-stamped box: expected one-roll V2->V3 migration with the resolve command and no orphaned V2 tag (verdict=$result5)"
   echo "  --- resulting file head ---"; sed -n '1,12p' "$a5" | sed 's/^/    /'
 fi
 

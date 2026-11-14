@@ -1,27 +1,9 @@
 #!/usr/bin/env bash
 
-# ─── Durable jq resolution (2026-08-17) ──────────────────────────────────────
-# The OpenClaw container image does not ship jq, and a jq installed with the
-# distro package manager VANISHES on container recreate — the documented
-# failure that silently killed owner nudges (fix/jq-hard-dep) and, under
-# `set -euo pipefail`, aborts this script outright with rc 127.
-#
-# ~/.openclaw is a persistent bind mount on container boxes, so a static jq
-# kept at ~/.openclaw/bin/jq survives recreate. Prefer PATH's jq when present;
-# otherwise fall back to the persistent copy. Prepending a PATH entry cannot
-# change any filter's semantics, which is why this is done here rather than by
-# hand-translating ~80 jq expressions.
-if ! command -v jq >/dev/null 2>&1; then
-  for _oc_jq_dir in "${HOME:-/root}/.openclaw/bin" /data/.openclaw/bin; do
-    if [ -x "$_oc_jq_dir/jq" ]; then
-      PATH="$_oc_jq_dir:$PATH"
-      export PATH
-      break
-    fi
-  done
-  unset _oc_jq_dir
-fi
-# ─────────────────────────────────────────────────────────────────────────────
+# No jq anywhere in this file (BU-36). Every JSON read and the one state write
+# go through WORKFORCE_PYTHON, so a box whose jq was never shipped — or vanished
+# on a container recreate — can still run the gate. There is no jq fallback left
+# to fail on and no "exit 5 because the tool is missing" path.
 
 # verify-library-gate.sh — v10.18.1 (SUBSTANCE GATE + TRIO GATE + BOUNDARY GATE + PRESENTATIONS WELCOME + CONTENT FLOOR)
 #
@@ -128,10 +110,6 @@ fi
 
 now_iso() { date -u +%Y-%m-%dT%H:%M:%SZ; }
 
-if ! command -v jq >/dev/null 2>&1; then
-  echo "[verify-library-gate] jq not installed — cannot write gate state; exiting 5" >&2
-  exit 5
-fi
 if ! command -v "$WORKFORCE_PYTHON" >/dev/null 2>&1; then
   echo "[verify-library-gate] "$WORKFORCE_PYTHON" not installed — cannot run qc; exiting 5" >&2
   exit 5
@@ -239,10 +217,10 @@ print(json.dumps({
 PYEOF
 )"
 
-ROLE_DONE="$(printf '%s' "$GATE_JSON" | jq -r '.role_done')"
-SOP_DONE="$(printf '%s' "$GATE_JSON" | jq -r '.sop_done')"
-ROLE_GAPS="$(printf '%s' "$GATE_JSON" | jq -r '.role_gaps | join("; ")')"
-SOP_GAPS="$(printf '%s' "$GATE_JSON" | jq -r '.sop_gaps | join("; ")')"
+ROLE_DONE="$(printf '%s' "$GATE_JSON" | "$WORKFORCE_PYTHON" -c 'import json,sys; v=json.load(sys.stdin).get("role_done"); print("true" if v else "false")')"
+SOP_DONE="$(printf '%s' "$GATE_JSON" | "$WORKFORCE_PYTHON" -c 'import json,sys; v=json.load(sys.stdin).get("sop_done"); print("true" if v else "false")')"
+ROLE_GAPS="$(printf '%s' "$GATE_JSON" | "$WORKFORCE_PYTHON" -c 'import json,sys; print("; ".join(json.load(sys.stdin).get("role_gaps") or []))')"
+SOP_GAPS="$(printf '%s' "$GATE_JSON" | "$WORKFORCE_PYTHON" -c 'import json,sys; print("; ".join(json.load(sys.stdin).get("sop_gaps") or []))')"
 
 ROLE_STATUS="failed"; [ "$ROLE_DONE" = "true" ] && ROLE_STATUS="done"
 SOP_STATUS="failed";  [ "$SOP_DONE"  = "true" ] && SOP_STATUS="done"
@@ -365,8 +343,8 @@ print(json.dumps({
 PYEOF
 )"
 
-TRIO_DONE="$(printf '%s' "$TRIO_JSON" | jq -r '.trio_done')"
-TRIO_GAPS="$(printf '%s' "$TRIO_JSON" | jq -r '.trio_gaps | join("; ")')"
+TRIO_DONE="$(printf '%s' "$TRIO_JSON" | "$WORKFORCE_PYTHON" -c 'import json,sys; v=json.load(sys.stdin).get("trio_done"); print("true" if v else "false")')"
+TRIO_GAPS="$(printf '%s' "$TRIO_JSON" | "$WORKFORCE_PYTHON" -c 'import json,sys; print("; ".join(json.load(sys.stdin).get("trio_gaps") or []))')"
 TRIO_STATUS="failed"; [ "$TRIO_DONE" = "true" ] && TRIO_STATUS="done"
 
 # Merge trio per-dept results into the gate per-dept map
@@ -450,14 +428,21 @@ fi
 
 if [ -z "$SOPNEEDED_PATH" ] || [ ! -f "$SOPNEEDED_PATH" ]; then
   echo "[verify-library-gate] SOP-NEEDED GATE: no SOP-NEEDED.json found — skipping (pre-v25.4.0 build or manifest not yet written)" >&2
-elif ! _SN_OPEN="$(jq -r '.open_count // 0' "$SOPNEEDED_PATH" 2>/dev/null)"; then
+elif ! _SN_OPEN="$("$WORKFORCE_PYTHON" -c 'import json,sys
+v=json.load(open(sys.argv[1])).get("open_count")
+print(0 if v is None or v is False else v)' "$SOPNEEDED_PATH" 2>/dev/null)"; then
   echo "[verify-library-gate] SOP-NEEDED GATE: cannot parse $SOPNEEDED_PATH — treating as failed" >&2
   SOPNEEDED_STATUS="failed"
   SOPNEEDED_GAPS="unparseable SOP-NEEDED.json at $SOPNEEDED_PATH"
 else
   if [ "$_SN_OPEN" -gt 0 ] 2>/dev/null; then
     SOPNEEDED_STATUS="failed"
-    SOPNEEDED_GAPS="$(jq -r '.records[] | select(.status != "authored") | "\(.id) \(.role) (\(.department))"' "$SOPNEEDED_PATH" 2>/dev/null | head -10 | tr '\n' '; ')"
+    SOPNEEDED_GAPS="$("$WORKFORCE_PYTHON" -c 'import json,sys
+n = lambda v: "null" if v is None else v
+d = json.load(open(sys.argv[1]))
+for r in (d.get("records") or []):
+    if isinstance(r, dict) and r.get("status") != "authored":
+        print("{0} {1} ({2})".format(n(r.get("id")), n(r.get("role")), n(r.get("department"))))' "$SOPNEEDED_PATH" 2>/dev/null | head -10 | tr '\n' '; ')"
     echo "[verify-library-gate] SOP-NEEDED GATE FAIL (rc=10): $_SN_OPEN record(s) still open in $SOPNEEDED_PATH." >&2
     echo "[verify-library-gate] Run scripts/author-missing-sops.py --apply, then re-run this gate." >&2
   else
@@ -564,8 +549,12 @@ fi
 # closeout states (done|sent) so a genuinely-finished closeout is never re-blocked.
 FALSE_DONE_BLOCK=0
 if [ -f "$STATE_FILE" ] && [ "$GATE_RC" != "0" ]; then
-  _BC_AT="$(jq -r '.buildCompletedAt // ""' "$STATE_FILE" 2>/dev/null || echo "")"
-  _CO_ST="$(jq -r '.closeoutStatus // ""' "$STATE_FILE" 2>/dev/null || echo "")"
+  _BC_AT="$("$WORKFORCE_PYTHON" -c 'import json,sys
+v=json.load(open(sys.argv[1])).get("buildCompletedAt")
+print("" if v is None or v is False else v)' "$STATE_FILE" 2>/dev/null || echo "")"
+  _CO_ST="$("$WORKFORCE_PYTHON" -c 'import json,sys
+v=json.load(open(sys.argv[1])).get("closeoutStatus")
+print("" if v is None or v is False else v)' "$STATE_FILE" 2>/dev/null || echo "")"
   if [ -n "$_BC_AT" ] && [ "$_CO_ST" != "done" ] && [ "$_CO_ST" != "sent" ]; then
     FALSE_DONE_BLOCK=1
     echo "[verify-library-gate] FALSE-DONE GUARD: buildCompletedAt=$_BC_AT is set but the" \
@@ -576,41 +565,71 @@ fi
 
 # ---- write the gate fields into the state file (atomic), if it exists ----
 if [ -f "$STATE_FILE" ]; then
-  TMP="$(mktemp)"
-  if [ "$FAIL_REASON" = "" ]; then FAIL_JSON="null"; else FAIL_JSON="$(printf '%s' "$FAIL_REASON" | jq -Rs '.')"; fi
-  workforce_state_set "$STATE_FILE" \
-    --arg role "$ROLE_STATUS" \
-    --arg sop "$SOP_STATUS" \
-    --arg trio "$TRIO_STATUS" \
-    --arg boundary "$BOUNDARY_STATUS" \
-    --arg zhe "$ZHE_STATUS" \
-    --arg blockcloseout "$FALSE_DONE_BLOCK" \
-    --arg gaterc "$GATE_RC" \
-    --argjson fail "$FAIL_JSON" \
-    --argjson perdept "$(printf '%s' "$GATE_JSON" | jq '.per_dept')" \
-    '
-      .roleLibraryStatus = $role
-      | .sopLibraryStatus = $sop
-      | .trioStatus = $trio
-      | .sopAuthoringBoundaryStatus = $boundary
-      | .zheStatus = $zhe
-      | .libraryFailureReason = $fail
-      | (if $blockcloseout == "1"
-           then (.closeoutStatus = "blocked-libraries-incomplete"
-                 | .closeoutBlockReason = ("verify-library-gate rc=" + $gaterc
-                     + " (role/SOP library gate not passing while buildCompletedAt is set)"))
-           else . end)
-      | .departments = ((.departments // []) | map(
-          . as $d
-          | (($d.slug // $d.dept_id // $d.id // $d.name // "") | tostring) as $key
-          | ($perdept[$key] // {}) as $pd
-          | $d
-          + (if ($pd | has("roleLibraryFilled")) then {roleLibraryFilled: $pd.roleLibraryFilled} else {} end)
-          + (if ($pd | has("sopLibraryFilled")) then {sopLibraryFilled: $pd.sopLibraryFilled} else {} end)
-          + (if ($pd | has("trioFilled")) then {trioFilled: $pd.trioFilled} else {} end)
-        ))
-    ' 2>/dev/null \
-      || { rm -f "$TMP"; echo "[verify-library-gate] WARN: could not update $STATE_FILE" >&2; }
+  # One locked read-modify-write through workforce_state.update (BU-36). The ten
+  # fields and the per-department boolean mapping are exactly the ones the old
+  # workforce_state_set filter wrote; only the engine changed, so a concurrent
+  # writer (the resume job, a decision, an industry pack) can no longer lose a
+  # field to this gate.
+  if ! LG_GATE_JSON="$GATE_JSON" "$WORKFORCE_PYTHON" - "$STATE_FILE" \
+      "$ROLE_STATUS" "$SOP_STATUS" "$TRIO_STATUS" "$BOUNDARY_STATUS" \
+      "$ZHE_STATUS" "$FALSE_DONE_BLOCK" "$GATE_RC" "$FAIL_REASON" <<'PYWRITE' 2>/dev/null
+import json
+import os
+import sys
+from workforce_state import update
+
+(state_path, role, sop, trio, boundary, zhe, blockcloseout, gaterc,
+ fail_reason) = sys.argv[1:10]
+gate = json.loads(os.environ.get("LG_GATE_JSON") or "{}")
+perdept = gate.get("per_dept")
+if not isinstance(perdept, dict):
+    perdept = {}
+
+def _department_key(dept):
+    for name in ("slug", "dept_id", "id", "name"):
+        value = dept.get(name)
+        if value is not None and value is not False:
+            if isinstance(value, bool):
+                return "true" if value else "false"
+            return str(value)
+    return "null"
+
+def mutate(state):
+    state["roleLibraryStatus"] = role
+    state["sopLibraryStatus"] = sop
+    state["trioStatus"] = trio
+    state["sopAuthoringBoundaryStatus"] = boundary
+    state["zheStatus"] = zhe
+    state["libraryFailureReason"] = fail_reason if fail_reason else None
+    if blockcloseout == "1":
+        state["closeoutStatus"] = "blocked-libraries-incomplete"
+        state["closeoutBlockReason"] = (
+            "verify-library-gate rc=" + gaterc
+            + " (role/SOP library gate not passing while buildCompletedAt is set)"
+        )
+    departments = state.get("departments")
+    if not isinstance(departments, list):
+        departments = []
+    merged = []
+    for dept in departments:
+        if not isinstance(dept, dict):
+            merged.append(dept)
+            continue
+        facts = perdept.get(_department_key(dept))
+        if not isinstance(facts, dict):
+            facts = {}
+        updated = dict(dept)
+        for field in ("roleLibraryFilled", "sopLibraryFilled", "trioFilled"):
+            if field in facts:
+                updated[field] = facts[field]
+        merged.append(updated)
+    state["departments"] = merged
+
+update(state_path, mutate)
+PYWRITE
+  then
+    echo "[verify-library-gate] WARN: could not update $STATE_FILE" >&2
+  fi
 else
   echo "[verify-library-gate] no state file at $STATE_FILE — reporting verdict only (not gating closeout)" >&2
 fi

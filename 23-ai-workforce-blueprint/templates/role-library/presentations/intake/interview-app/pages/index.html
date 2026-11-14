@@ -252,7 +252,7 @@
         help: "This is the first thing we need to know — it decides how we build everything else in your brief, from structure to length.",
         label: "Presentation type",
         required: true, storeOn: "pre_presentation_capture.PRESENTATION_TYPE",
-        allowed_values: ["from_scratch", "content_personal", "content_general", "signature"], value_labels: { "from_scratch": "From scratch — brainstorm and build a brand-new presentation", "content_personal": "From something I already have, for ONE specific person", "content_general": "From something I already have, for a room or wider audience", "signature": "The full Signature Presentation (100+ slides, multi-part keynote)" } },
+        allowed_values: ["from_scratch", "content_personal", "content_general", "signature"], value_labels: { "from_scratch": "From scratch — brainstorm and build a brand-new presentation", "content_personal": "From something I already have, for ONE specific person", "content_general": "From something I already have, for a room or wider audience", "signature": "The full Signature Presentation (100+ slides). You will answer 8 more questions in chat after this form." } },
       { id: "offer_name", order: 1, kind: "text",
         prompt: "What are you selling at the end — the exact name of your product or offer?",
         help: "The offer sold at the end of the presentation — never invented.",
@@ -346,7 +346,7 @@
         conditional_on: { id: "want_vsl_page", equals: "no" } },
       { id: "want_email_sequences", order: 11.2, kind: "enum",
         prompt: "Would you like <span class=\"emph\">email follow-up sequences</span> prepared for this launch?",
-        help: "Default no. A yes elects the Skill 50 (Email Engine) delivery option: the sequences are prepared as drafts at delivery and deployed draft-only through Skill 44 after a human approves them. Nothing is sent automatically.",
+        help: "Default no. If yes, the follow-up emails are written as drafts and nothing is sent until a person approves them.",
         label: "Email sequences",
         required: true, storeOn: "pre_presentation_capture.WANT_EMAIL_SEQUENCES",
         allowed_values: ["yes", "no"], value_labels: { "yes": "Yes, prepare the email sequences as drafts", "no": "No thank you" } },
@@ -376,7 +376,7 @@
         label: "Run mode",
         default: "",
         required: false, storeOn: "pre_presentation_capture.RUN_MODE",
-        allowed_values: ["ultra", "standard", "economy"], value_labels: { "ultra": "Ultra: the strongest models you choose, up to 16x faster", "standard": "Standard — the department default", "economy": "Economy — leaner and cheaper" } },
+        allowed_values: ["ultra", "standard", "economy"], value_labels: { "ultra": "Ultra: fastest, uses the strongest models, costs the most", "standard": "Standard — the department default", "economy": "Economy — leaner and cheaper" } },
       { id: "ollama_plan", order: 11.55, kind: "enum",
         prompt: "Are you on the Ollama Cloud $20/month or $100/month plan?",
         help: "The $20 plan runs 3 at once; the $100 plan runs 8 at once.",
@@ -460,7 +460,7 @@
     /* ---- segmented progress ---- */
     function renderProgress() {
       var head = el("div", { class: "progress-head" });
-      head.appendChild(el("span", { class: "progress-label", text: "Question " + (currentIndex + 1) + " of " + TOTAL }));
+      head.appendChild(el("span", { class: "progress-label", text: "Question " + (currentIndex + 1) }));
       var pct = Math.round((currentIndex / TOTAL) * 100);
       head.appendChild(el("span", { class: "progress-count", text: pct + "%" }));
       /* The progressbar is real markup with literal ARIA attributes (the
@@ -524,25 +524,14 @@
 
     function buildLogo(q, onChange) {
       var wrap = el("div");
-      var state = { mode: "none", url: "", file: null, name: "" }; /* none | link | file | declined */
+      var state = { mode: "none", url: "", name: "" }; /* none | link | declined */
 
-      var zone = el("div", { class: "logo-zone", tabindex: "0", role: "button", "aria-label": "Upload logo or paste a link" });
-      zone.appendChild(el("div", { class: "cloud", text: "↑" }));
-      zone.appendChild(el("div", { class: "lz-main", text: "Upload logo" }));
-      zone.appendChild(el("div", { class: "lz-sub", text: "or paste a link below" }));
-      var fileInput = el("input", { type: "file", accept: "image/*", class: "hidden", "aria-hidden": "true" });
-      zone.appendChild(fileInput);
-      var onFile = function () {
-        var f = fileInput.files && fileInput.files[0];
-        if (!f) return;
-        state.mode = "file"; state.file = f; state.name = f.name;
-        preview(state); onChange(state);
-      };
-      zone.onclick = function () { fileInput.click(); };
-      zone.onkeydown = function (e) { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); fileInput.click(); } };
-      fileInput.onchange = onFile;
+      /* No file-upload control: the page cannot keep an uploaded binary
+         (the record only ever carried a file name), so the client is told
+         plainly to paste a link or to send the file in chat. */
+      var zone = el("div", { class: "logo-zone", style: "cursor: default;" });
+      zone.appendChild(el("div", { class: "lz-main", text: "Paste a link to your logo below. If you only have the file, choose \"No logo on file\" and send the file to your assistant in chat." }));
       wrap.appendChild(zone);
-      wrap.appendChild(fileInput);
 
       var row = el("div", { class: "link-row" });
       var urlInput = el("input", { type: "url", placeholder: "or paste an image link…", "aria-label": "Logo image link" });
@@ -571,12 +560,7 @@
 
       function preview(s) {
         previewEl.innerHTML = "";
-        if (s.mode === "file" && s.file) {
-          var url = URL.createObjectURL(s.file);
-          previewEl.appendChild(el("img", { src: url, alt: "Logo preview" }));
-          previewEl.appendChild(el("span", { class: "lp-name", text: s.name }));
-          previewEl.style.display = "flex";
-        } else if (s.mode === "link" && s.url) {
+        if (s.mode === "link" && s.url) {
           previewEl.appendChild(el("img", { src: s.url, alt: "Logo preview" }));
           previewEl.appendChild(el("span", { class: "lp-name", text: s.url }));
           previewEl.style.display = "flex";
@@ -689,7 +673,7 @@
       stage.appendChild(msg);
 
       function emptyFor(qq) {
-        if (qq.kind === "logo") return { mode: "declined", url: "", file: null, name: "" };
+        if (qq.kind === "logo") return { mode: "declined", url: "", name: "" };
         if (qq.kind === "image_links") return [];
         return qq.default != null ? qq.default : "";
       }
@@ -709,12 +693,9 @@
     function serialize(q, v) {
       /* normalize to the value the bridge + intake_writer.py consume */
       if (q.kind === "logo") {
-        if (!v) v = { mode: "declined", url: "", file: null, name: "" };
+        if (!v) v = { mode: "declined", url: "", name: "" };
         if (v.mode === "declined") {
           return { value: "", logo_mode: "declined", note: "no logo on file — building without one" };
-        }
-        if (v.mode === "file") {
-          return { value: "", logo_mode: "file", logo_file_name: v.name, note: "logo uploaded by client (file name captured; binary lives in the run dir when the bridge stores it)" };
         }
         return { value: v.url || "", logo_mode: "link", note: "logo provided by link" };
       }
@@ -804,7 +785,6 @@
         var val = a.skipped ? "(skipped)" : (a.kind === "image_links" && a.extra && a.extra.image_links && a.extra.image_links.length ? a.extra.image_links.join("  ·  ") : (a.value || "(none)"));
         if (a.kind === "logo" && a.extra) {
           if (a.extra.logo_mode === "declined") val = "Building without a logo";
-          else if (a.extra.logo_mode === "file") val = "Logo file: " + (a.extra.logo_file_name || "uploaded");
           else if (a.extra.value) val = "Logo link: " + a.extra.value;
           else val = "(no logo)";
         }
@@ -1035,6 +1015,10 @@
        /api/intake itself. */
     function apiJson(method, path, body) {
       var opts = { method: method, headers: { "content-type": "application/json" } };
+      /* PD-106: the worker guards the stored-answer reads (and corrections)
+         with the session's confirmation code, sent as a header. Empty until
+         the client types it, so a code-less session sends nothing. */
+      if (SESSION && SESSION.confirmCode) opts.headers["x-confirm-code"] = SESSION.confirmCode;
       if (body !== undefined) opts.body = JSON.stringify(body);
       return fetchWithTimeout(path, opts).then(function (r) {
         return r.json().catch(function () { return {}; }).then(function (res) {
@@ -1164,8 +1148,8 @@
       if (!st) return;
       if (status === "worker_accepted") {
         st.className = "msg ok";
-        st.textContent = "✓ Worker accepted" + (jobRef ? " (" + jobRef + ")" : "");
-        if (note) note.textContent = "The presentation department has your brief and your deck build has started. You can close this tab.";
+        st.textContent = "✓ Received by your presentation team" + (jobRef ? " (" + jobRef + ")" : "");
+        if (note) note.textContent = "Your answers have reached the presentation department. Your assistant will message you in chat when the build starts. You can close this tab.";
       } else if (status === "action_needed") {
         st.className = "msg err";
         st.textContent = "Action needed";

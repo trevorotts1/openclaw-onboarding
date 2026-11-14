@@ -4,15 +4,18 @@
 **Owner:** Structured-Fix Operator (with the Diagnostician's confirmed root cause)
 **Type:** Per-routed-ticket
 **Scope:** Every remedy applied to a box through the rescue path.
-**HARD RULE:** DRY-RUN first, live only on explicit opt-in, always within the tier's
-fix budget, always with a recorded one-line revert. Credentials, DNS, deletion, and
+**HARD RULE:** `remediate.sh` is LIVE by default; a rehearsal is
+`REMEDIATE_DRY_RUN=1` with `REMEDIATE_FORCE_CLASS=<class>`; every run stays within
+the time budget the Director gave this ticket, always with a recorded one-line
+revert. Credentials, DNS, deletion, and
 model sovereignty are **never** auto-applied.
 
 **THREE-TIER ORDER (BINDING, from SOP-RR-01):** (1) instruct the client's agent
 (outcome b) — the PRIMARY route for client-account actions (OAuth dashboard steps,
 billing top-up, owner confirmation); never a page; (2) the rescue AI self-fixes
-infrastructure on a REACHABLE box using our access — the box's `rescue-*` SSH alias
-from the operator's `~/.ssh/config` plus the provider env var NAME from
+infrastructure on a REACHABLE box using our access — the box resolved with the
+operator's fleet access resolver (the SSH configuration covers Mac boxes only and is
+never the roster) plus the provider env var NAME from
 `~/.openclaw/secrets/.env` (names only, never a value; values live in the secrets
 env; confirm SET, never echo); (3) page the Operator ONLY after tiers 1-2 ran and
 can document why neither worked, or on a never-auto class that pages on the class
@@ -26,8 +29,10 @@ alone.
 
 **Steps:** Require a confirmed root cause + named class from the Diagnostician, a
 tier + budget from the Dispatcher, and confirmation the class is NOT in the never-auto
-set. Missing any → back to the Dispatcher. Confirm the box is REACHABLE via its own
-`rescue-*` SSH alias (login shell: `ssh <alias> 'bash -lc "…"'`) and the provider
+set. Missing any → back to the Dispatcher. Confirm the box is REACHABLE by
+resolving it with the operator's fleet access resolver (the SSH configuration
+covers Mac boxes only and is never the roster; a Mac box's login-shell form is
+`ssh <alias> 'bash -lc "…"'`) and the provider
 env var NAME is SET in `~/.openclaw/secrets/.env` (confirm SET, never echo a value)
 before proceeding — a missing credential is a finding to report, not a page. You do
 not improvise a destructive command from memory; only sanctioned `remediate.sh` fix
@@ -35,12 +40,14 @@ cards + the maintenance path.
 
 ---
 
-### SOP 9.2 — DRY-RUN, then the Reversibility Gate
+### SOP 9.2 — Rehearse, then the Reversibility Gate
 
 **Steps:**
-1. Run `remediate.sh <class>` in DRY-RUN (the default — live requires
-   `RESCUE_REMEDIATE_LIVE=1` set for THIS ticket only). Read the printed plan + its
-   one-line revert; verify it matches the diagnosis exactly.
+1. `remediate.sh` takes eight fields — `<client> <persona> <ip> <container>
+   <version> <gateway> <ssh> <notes>` — and is LIVE unless `REMEDIATE_DRY_RUN=1` is
+   set. A rehearsal is `REMEDIATE_DRY_RUN=1` with `REMEDIATE_FORCE_CLASS=<class>`; it
+   prints the planned commands and no revert. Read the printed plan and write the
+   revert before going live; verify the plan matches the diagnosis exactly.
 2. **Reversibility gate:** config-free + reversible → proceed. Config-touching +
    reversible → record the one-line revert (and snapshot where the maintenance path
    provides one) FIRST, then proceed. Irreversible / never-auto class → STOP,
@@ -50,8 +57,9 @@ cards + the maintenance path.
 
 ### SOP 9.3 — Go Live Within Budget
 
-**Steps:** Set `RESCUE_REMEDIATE_LIVE=1` for this ticket, run the fix, hold to the
-**FAST 180s / LONG 1,320s / default 300s** ceiling. Overrunning the budget is itself
+**Steps:** Run the fix live (`remediate.sh` is live unless `REMEDIATE_DRY_RUN=1` is
+set) with the revert already written, and hold to the time budget the Director gave
+this ticket. Overrunning the budget is itself
 a failure signal — stop, report, let the Dispatcher re-tier or page. Never run an
 unbounded fix.
 
@@ -62,9 +70,11 @@ unbounded fix.
 **Steps:** Re-run the SAME falsifiable check the Diagnostician used (port listening,
 `/health` 200, cron parked, offset sane). A fix is done when the SYMPTOM is gone,
 proven by the same test that confirmed it — not because the command exited 0.
-Record the fix class + mode + verify result in the ledger (`rescue_ledger.py answer
-… --fix-class … --fix-mode …`); the answer goes back through the relay `answer`
-action.
+Record the fix class, mode and verify result in `05-work.json` (step 5 of the case,
+SOP-RR-06). The live record is the `RR-04-ledger` tables, read on the Command Center
+Rescue Rangers page and never written by hand; `rescue_ledger.py` is drill and
+migration tooling only. The answer goes into the outbox with the words the owner
+will read; the client's box collects it with its own 2-minute poll.
 
 ---
 

@@ -81,47 +81,39 @@ and it will pick the right one, or you can ask for a specialist by name.
 | **Survey And Polling Specialist** | Survey and Polling Specialist for the company, the person who designs, deploys. |
 | **Industry Analysis Specialist Phase2** | **** for the department of the company, reporting to the . |
 
-### What each specialist is for, with an example request
+### What each specialist is for
 
 **Competitive Intelligence Specialist**
 
 - *What it is for:* Monitors competitors.
-- *Example request:* "Have the Competitive Intelligence Specialist take this on: Monitors competitors."
 
 **Customer Research Specialist**
 
 - *What it is for:* Qualitative + quantitative customer research.
-- *Example request:* "Have the Customer Research Specialist take this on: Qualitative + quantitative customer research."
 
 **Data Analysis Specialist**
 
 - *What it is for:* Quantitative analysis - pulls data from CRM, dashboard, app analytics.
-- *Example request:* "Have the Data Analysis Specialist take this on: Quantitative analysis - pulls data from CRM, dashboard, app analytics."
 
 **Industry Analysis Specialist Mckinsey Style**
 
 - *What it is for:* Deep industry analysis using McKinsey Global Institute, Harvard Business Review, IBISWorld frameworks.
-- *Example request:* "Have the Industry Analysis Specialist Mckinsey Style take this on: Deep industry analysis using McKinsey Global Institute, Harvard Business Review."
 
 **Market Trends Specialist**
 
 - *What it is for:* Tracks emerging trends - technology, consumer behavior, regulatory.
-- *Example request:* "Have the Market Trends Specialist take this on: Tracks emerging trends - technology, consumer behavior, regulatory."
 
 **Persona Research Specialist**
 
 - *What it is for:* Builds the ideal-customer-profile docs that Marketing, Sales, and CRM use.
-- *Example request:* "Have the Persona Research Specialist take this on: Builds the ideal-customer-profile docs that Marketing, Sales, and CRM use."
 
 **Survey And Polling Specialist**
 
 - *What it is for:* Survey and Polling Specialist for the company, the person who designs, deploys.
-- *Example request:* "Have the Survey And Polling Specialist take this on: Survey and Polling Specialist for the company, the person who designs, deploys."
 
 **Industry Analysis Specialist Phase2**
 
 - *What it is for:* **** for the department of the company, reporting to the .
-- *Example request:* "Have the Industry Analysis Specialist Phase2 take this on: **** for the department of the company, reporting to the ."
 
 
 ---

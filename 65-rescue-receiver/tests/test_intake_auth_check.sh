@@ -76,6 +76,63 @@ start_stub() {  # start_stub <mode>
   [ -n "$PORT" ] || { echo "  FAIL: stub responder never bound a port"; exit 1; }
 }
 
+# start_raw_stub <http-code> <content-type> <body>
+# Serves ONE exact body. stub-intake.py answers only its fixed shapes, and the
+# RRX-012 cases below are about bodies it does not carry: an HTML page that
+# happens to spell test_suppressed, and a JSON answer that mentions
+# "unauthorized" inside a field that is NOT a verdict. Both must stay
+# UNDETERMINED. Journals requests exactly as start_stub does.
+start_raw_stub() {
+  [ -n "$STUB_PID" ] && { kill "$STUB_PID" 2>/dev/null; wait "$STUB_PID" 2>/dev/null; STUB_PID=""; }
+  : > "$JOURNAL"
+  cat > "$WORK/raw_stub.py" <<'PY'
+import http.server, json, os, socketserver, sys, threading
+CODE = int(os.environ.get("RR_RAW_CODE", "200"))
+CTYPE = os.environ.get("RR_RAW_CTYPE", "application/json")
+BODY = os.environ.get("RR_RAW_BODY", "")
+JOURNAL = os.environ.get("RR_STUB_JOURNAL", "")
+
+class H(http.server.BaseHTTPRequestHandler):
+    def log_message(self, *a):
+        pass
+    def do_POST(self):
+        n = int(self.headers.get("Content-Length") or 0)
+        raw = self.rfile.read(n).decode("utf-8", "replace") if n else ""
+        if JOURNAL:
+            with open(JOURNAL, "a", encoding="utf-8") as fh:
+                fh.write(json.dumps({"path": self.path,
+                                     "headers": {k.lower(): v for k, v in self.headers.items()},
+                                     "body": raw}) + "\n")
+        blob = BODY.encode("utf-8")
+        self.send_response(CODE)
+        self.send_header("Content-Type", CTYPE)
+        self.send_header("Content-Length", str(len(blob)))
+        self.end_headers()
+        self.wfile.write(blob)
+
+class S(socketserver.TCPServer):
+    allow_reuse_address = True
+
+srv = S(("127.0.0.1", 0), H)
+sys.stdout.write("PORT %d\n" % srv.server_address[1])
+sys.stdout.flush()
+threading.Thread(target=srv.serve_forever, daemon=True).start()
+threading.Event().wait()
+PY
+  RR_RAW_CODE="$1" RR_RAW_CTYPE="$2" RR_RAW_BODY="$3" RR_STUB_JOURNAL="$JOURNAL" \
+    python3 "$WORK/raw_stub.py" > "$WORK/stub.out" 2>"$WORK/stub.err" &
+  STUB_PID=$!
+  PORT=""
+  _i=0
+  while [ "$_i" -lt 100 ]; do
+    PORT="$(sed -n 's/^PORT \([0-9][0-9]*\)$/\1/p' "$WORK/stub.out" 2>/dev/null | head -1)"
+    [ -n "$PORT" ] && break
+    _i=$((_i + 1))
+    sleep 0.05
+  done
+  [ -n "$PORT" ] || { echo "  FAIL: raw responder never bound a port"; exit 1; }
+}
+
 # run_check <url> -> sets OUT / RC
 run_check() {
   OUT="$(RESCUE_RANGERS_WEBHOOK_URL="$1" \
@@ -224,6 +281,30 @@ run_check "http://127.0.0.1:$PORT/webhook/rr-v2-intake"
     && pass "4e: an unrecognised 2xx body is UNDETERMINED, never a silent OK" \
     || fail "4e: an unrecognised 2xx exited $RC, expected 75"
 
+# 4f-4g: RRX-012. Loose text is NOT a verdict. The old substring matcher said
+# "the word test_suppressed appears => the channel works" and "the word
+# unauthorized appears => the credential is stale". Both were wrong: the words
+# can ride an HTML error page or be quoted inside a field this box never reads.
+rm -f "$FLAG"
+start_raw_stub 200 "text/html" '<html>test_suppressed</html>'
+run_check "http://127.0.0.1:$PORT/webhook/rr-v2-intake"
+[ "$RC" -eq 75 ] \
+    && pass "4f: an HTML page that spells 'test_suppressed' is UNDETERMINED (75), not OK" \
+    || fail "4f: an HTML page exited $RC, expected 75"
+[ "$(flag_class)" = "UNDETERMINED" ] \
+    && pass "4f2: the flag says UNDETERMINED for a non-JSON answer" \
+    || fail "4f2: the flag class is '$(flag_class)', expected UNDETERMINED"
+
+rm -f "$FLAG"
+start_raw_stub 200 "application/json" '{"status":"ok","problem":"the user said unauthorized"}'
+run_check "http://127.0.0.1:$PORT/webhook/rr-v2-intake"
+[ "$RC" -eq 75 ] \
+    && pass "4g: a 2xx JSON answer naming 'unauthorized' in a NON-verdict field is UNDETERMINED (75), not stale" \
+    || fail "4g: a 2xx JSON answer exited $RC, expected 75"
+[ "$(flag_class)" = "UNDETERMINED" ] \
+    && pass "4g2: the flag is UNDETERMINED, never RR_SECRET_STALE, for a quoted word" \
+    || fail "4g2: the flag class is '$(flag_class)', expected UNDETERMINED"
+
 # =============================================================================
 # (5) An UNPROVEN result never erases a PROVEN one
 # =============================================================================
@@ -324,6 +405,35 @@ grep -q "no-deliver" "$REPO_ROOT/65-rescue-receiver/wire.sh" \
 grep -q "rr-intake-auth.flag" "$REPO_ROOT/65-rescue-receiver/rr-readiness.sh" \
     && pass "8c: rr-readiness.sh's report reads the flag file (the daily surface)" \
     || fail "8c: nothing surfaces the flag in the daily report"
+
+# 8d (RRX-012): the flag also reaches the MACHINE-READABLE report. The human
+# line already existed; --json carried no intake field at all, so nothing could
+# watch the channel from a script. flags.intake_auth is that surface:
+# null = no problem recorded, an object = the class and the time it was seen.
+HARNESS="$REPO_ROOT/tests/rescue/RR-028/lib-readiness-harness.sh"
+if [ -f "$HARNESS" ]; then
+  RR028_REPO="$REPO_ROOT"
+  # shellcheck disable=SC1090
+  . "$HARNESS"
+  RB="$WORK/rrbox"
+  mkdir -p "$RB"
+  rr028_make_box "$RB"
+  printf '{"class":"RR_SECRET_STALE","http":403,"ts":"2026-01-01T00:00:00Z","remedy":"x"}\n' \
+    > "$RB/.openclaw/state/rr-intake-auth.flag"
+  rr028_readiness "$RB" --json >/dev/null 2>&1 || true
+  _ia_class="$(rr028_field "$RR028_OUT" "flags.intake_auth.class")"
+  [ "$_ia_class" = "RR_SECRET_STALE" ] \
+      && pass "8d: --json carries flags.intake_auth.class=RR_SECRET_STALE (the flag reaches a script)" \
+      || fail "8d: --json intake class is '$_ia_class', expected RR_SECRET_STALE"
+  _ia_shape="$(printf '%s' "$RR028_OUT" | python3 -c 'import json,sys
+try: print("one-object" if isinstance(json.load(sys.stdin), dict) else "not-object")
+except Exception: print("unparseable")' 2>/dev/null)"
+  [ "$_ia_shape" = "one-object" ] \
+      && pass "8d2: --json still prints exactly ONE parseable JSON object" \
+      || fail "8d2: --json printed $_ia_shape"
+else
+  echo "  SKIP: 8d: $HARNESS is not present"
+fi
 
 # =============================================================================
 # (9) DASH — cron payloads run as `sh -lc`, and on Linux sh is dash

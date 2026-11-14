@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import sys
 import tempfile
 import time
@@ -43,6 +44,24 @@ Version 2 = additive/normalizing migration:
 
 # Canonical constant name (U049 fix: unified across all consumers).
 WORKFORCE_BUILD_STATE_SCHEMA_VERSION = SCHEMA_VERSION
+
+# The build-state lock has exactly one owner: workforce_state, in the skill's
+# scripts/ folder (resolved the way lib-workforce-state.sh resolves it). Every
+# write below is wrapped in that same lock, so a save can no longer race another
+# writer's read-modify-write of the same file (BU-36).
+try:
+    _SKILL_SCRIPTS = (
+        Path(__file__).resolve().parent.parent / "23-ai-workforce-blueprint" / "scripts"
+    )
+    if str(_SKILL_SCRIPTS) not in sys.path:
+        sys.path.append(str(_SKILL_SCRIPTS))
+    from workforce_state import lock as _state_write_lock
+except Exception:  # pragma: no cover - a tree without the skill folder
+    from contextlib import contextmanager
+
+    @contextmanager
+    def _state_write_lock(path):
+        yield
 
 
 def _normalize_boolean(value: Any) -> bool:
@@ -86,7 +105,26 @@ def migrate_v1_to_v2(state: Dict[str, Any]) -> Dict[str, Any]:
       - ``interviewStalledAt``   normalized (non-ISO dropped)
     """
     state["schemaVersion"] = 2
-    state["interviewComplete"] = _normalize_boolean(state.get("interviewComplete"))
+
+    # Never invent a completion flag (S-1 in the interface contract). A
+    # non-standard value — for example the word "complete" — used to be rewritten
+    # to false by this migration, which silently un-completed an owner's
+    # interview. Leave the value exactly as found and record why in the file.
+    previous_complete = state.get("interviewComplete")
+    if (
+        isinstance(previous_complete, str)
+        and previous_complete.strip()
+        and not _normalize_boolean(previous_complete)
+    ):
+        sentence = (
+            "interviewComplete was left as " + json.dumps(previous_complete)
+            + " because it is not a standard true/false value; the migration "
+            "did not rewrite it to false"
+        )
+        print("[workforce-build-state] WARNING: " + sentence, file=sys.stderr)
+        state["schemaMigrationWarnings"] = [sentence]
+    else:
+        state["interviewComplete"] = _normalize_boolean(previous_complete)
 
     if not isinstance(state.get("closeoutStatus"), str) or not state["closeoutStatus"].strip():
         state["closeoutStatus"] = "pending"
@@ -111,10 +149,17 @@ def migrate_v1_to_v2(state: Dict[str, Any]) -> Dict[str, Any]:
     return state
 
 def _quarantine_corrupt(path: Path) -> str:
+    """Keep a copy of an unreadable state file; never move the original away.
+
+    A rename lifted the only file an operator could inspect out of its own name,
+    so a corrupt box looked exactly like a box with no state at all. The copy
+    carries the same bytes under a timestamped name and the original stays in
+    place (BU-36).
+    """
     ts = int(time.time())
     quarantine = path.with_suffix(path.suffix + f".corrupt-{ts}")
     try:
-        os.rename(path, quarantine)
+        shutil.copy2(path, quarantine)
     except OSError:
         pass
     return str(quarantine)
@@ -213,25 +258,26 @@ def save_build_state(path: Path, state: Dict[str, Any]) -> None:
 
 def _atomic_save(path: Path, state: Dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    try:
-        fd, tmp_path = tempfile.mkstemp(
-            dir=str(path.parent), prefix=f".{path.name}.", suffix=".tmp"
-        )
-        tmp = Path(tmp_path)
+    with _state_write_lock(str(path)):
         try:
-            with os.fdopen(fd, "w", encoding="utf-8") as fh:
-                json.dump(state, fh, indent=2, ensure_ascii=False)
-                fh.write("\n")
-                fh.flush()
-                os.fsync(fh.fileno())
-            os.replace(tmp, path)
-        except Exception:
-            if tmp.exists():
-                tmp.unlink()
+            fd, tmp_path = tempfile.mkstemp(
+                dir=str(path.parent), prefix=f".{path.name}.", suffix=".tmp"
+            )
+            tmp = Path(tmp_path)
+            try:
+                with os.fdopen(fd, "w", encoding="utf-8") as fh:
+                    json.dump(state, fh, indent=2, ensure_ascii=False)
+                    fh.write("\n")
+                    fh.flush()
+                    os.fsync(fh.fileno())
+                os.replace(tmp, path)
+            except Exception:
+                if tmp.exists():
+                    tmp.unlink()
+                raise
+        except OSError as exc:
+            print(f"ERROR: could not write .workforce-build-state.json: {exc}", file=sys.stderr)
             raise
-    except OSError as exc:
-        print(f"ERROR: could not write .workforce-build-state.json: {exc}", file=sys.stderr)
-        raise
 
 def _cli() -> None:
     import argparse

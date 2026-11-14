@@ -500,12 +500,39 @@ _BILLING_PAYMENT_PLANS = {"one_time": False, "recurring": True, "installment": T
 _BILLING_TEXT = {"all at once": "one_time", "monthly": "recurring", "in parts or trial first": "installment"}
 
 
+def _cadence_vocab():
+    """The shared cadence table (shared-utils/signature_launch_contract/billing.py), or None when this
+    copy of the engine ships without its sibling: then only the bank's own three answers are read."""
+    mod = sys.modules.get("signature_launch_billing")
+    if mod is None:
+        path = Path(__file__).resolve().parents[1] / "signature_launch_contract" / "billing.py"
+        if not path.is_file():
+            return None
+        import importlib.util
+        spec = importlib.util.spec_from_file_location("signature_launch_billing", path)
+        mod = importlib.util.module_from_spec(spec)
+        sys.modules["signature_launch_billing"] = mod
+        spec.loader.exec_module(mod)
+    return mod
+
+
 def _billing_key(value):
-    """one_time / recurring / installment from the stored key or the bank's answer text.
+    """one_time / recurring / installment from the stored key or the bank's answer text, or a cadence the
+    client said in their own words ("weekly", "quarterly", "every year").
     Anything else - including a malformed hand-edited value - maps to None, never a crash."""
     if not isinstance(value, str):
         return None
-    return value if value in _BILLING_PAYMENT_PLANS else _BILLING_TEXT.get(_norm(value))
+    key = value if value in _BILLING_PAYMENT_PLANS else _BILLING_TEXT.get(_norm(value))
+    if key is None and (vocab := _cadence_vocab()) is not None:
+        stated = vocab.stated_billing(value)[0]
+        key = stated if stated in _BILLING_PAYMENT_PLANS else None
+    return key
+
+
+def _billing_cadence(value):
+    """The recurring interval ("week", "month", "quarter", "year") a billing answer names, or None."""
+    vocab = _cadence_vocab()
+    return vocab.stated_billing(value)[1] if vocab is not None and isinstance(value, str) else None
 
 
 def derive_payment_plans(doc):
@@ -2113,7 +2140,7 @@ def billing_terms(doc):
     if isinstance(price, dict):
         terms["amount_minor"], terms["currency"] = price.get("amount_minor"), price.get("currency")
     if key == "recurring":
-        terms["interval"] = detail.get("interval") or "month"
+        terms["interval"] = detail.get("interval") or _billing_cadence(b["value"]) or "month"
         terms["interval_count"] = detail.get("interval_count") or 1
     elif key == "installment":
         terms["installment_count"] = detail.get("installment_count")

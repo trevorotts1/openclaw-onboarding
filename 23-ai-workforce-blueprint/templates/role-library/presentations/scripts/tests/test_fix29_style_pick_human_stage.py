@@ -23,10 +23,13 @@ What FIX 29 declares and this file proves, without any network or model spend:
   4. The run CONTINUES only after style_preview_choice.json carries
      owner_approved:true + a chosen_variant from the offered set + an
      owner_msg_id the Fix 32 approvals oracle resolves to a REAL owner-authored
-     message (stubbed oracle). The phase then attests done through the same
-     substance verifier every phase runs.
+     message AND whose message TEXT names the gate (PD-305: an ids-only oracle
+     never proves an approval; stubbed oracle). The phase then attests done
+     through the same substance verifier every phase runs.
   5. A choice WITHOUT an id is REJECTED: the file is denied loudly, the phase
-     never completes, and the run still parks at the pick.
+     never completes, and the run still parks at the pick. A choice whose id
+     resolves but whose message text is absent/does not name the gate is
+     likewise REJECTED (PD-305 flip).
   6. The only auto-pick is the recorded opt-in: intake.style_pick_auto:true lets
      the timeout auto-pick variant 1 with auto_pick:true provenance — never a
      forged owner_msg_id. A falsy/missing field is never an opt-in.
@@ -82,7 +85,9 @@ def _manifest() -> Manifest:
 
 def _seed_run(tmp_path: Path, style_pick_auto=None) -> Path:
     """A fresh run dir: sealed intake, the samples manifest P-STYLE-PREVIEW
-    produces (3 variant ids), and the minimal schema-complete state dict."""
+    produces (3 variant ids, and the 3 representative renders per variant the
+    pick request must name), the style spec whose directives the samples were
+    rendered from (PD-042), and the minimal schema-complete state dict."""
     rd = tmp_path / "run"
     (rd / "working" / "copy").mkdir(parents=True)
     (rd / "working" / "style-preview").mkdir(parents=True)
@@ -95,8 +100,19 @@ def _seed_run(tmp_path: Path, style_pick_auto=None) -> Path:
         "phase": "P-STYLE-PREVIEW (order 4.85)",
         "variants": ["A", "B", "C"],
         "representative_slides": [1, 2, 3],
+        "samples": [{"variant": vid, "slide": ordn,
+                     "render": f"working/style-preview/variant-{vid}-slide-{ordn:02d}.png"}
+                    for vid in ("A", "B", "C") for ordn in (1, 2, 3)],
         "owner_pick_required": True,
         "owner_pick_artifact": CHOICE_REL,
+    }))
+    # PD-042: the style-pick request carries each variant's own one-sentence
+    # description from this spec, so a pick request is answerable.
+    (rd / "working" / "copy" / "style_preview_spec.json").write_text(json.dumps({
+        "variants": [{"id": "A", "style_directive": "warm editorial, soft gold light"},
+                     {"id": "B", "style_directive": "high-contrast navy and gold"},
+                     {"id": "C", "style_directive": "clean minimal, muted neutrals"}],
+        "representative_slides": [1, 2, 3],
     }))
     return rd
 
@@ -131,10 +147,23 @@ def _stub_transport(monkeypatch):
     return sent
 
 
-def _stub_oracle(monkeypatch, ids):
+def _stub_oracle(monkeypatch, ids, *, text: str | None = None):
+    """Stub the Fix 32 approvals oracle.
+
+    PD-305: an id alone never proves an owner decision — the oracle must also
+    return the owner message TEXT naming the gate. Pass text=None to keep the
+    ids-only shape (the flip rows assert that shape is REFUSED)."""
     monkeypatch.setattr(
         approvals_mod, "_cc_board_oracle",
         lambda run_dir=None: frozenset(ids) if ids is not None else None)
+    if ids is not None and text is not None:
+        monkeypatch.setattr(
+            approvals_mod, "BOARD_TEXT_RESOLVER",
+            lambda mid, _run_dir=None: (
+                {"msg_id": mid, "chat_id": "owner-chat", "text": text,
+                 "received_at": datetime.now(timezone.utc).isoformat()}
+                if mid in ids else None),
+            raising=False)
 
 
 def _write_choice(rd: Path, choice: dict) -> Path:
@@ -158,6 +187,17 @@ def _signed_choice(variant: str, msg_id: str = "owner-msg-42") -> dict:
 
 def _phase_record(eng: Engine) -> dict:
     return next(ps for ps in eng.state["phases"] if ps["id"] == PICK)
+
+
+def _pick_requests(sent: list) -> list:
+    """PD-042: the pick request is now ONE `ack` message PER VARIANT -- the
+    reporter transport carries JSON text and cannot attach the sample images,
+    so each message names its variant's description and that variant's three
+    sample paths. Identify them by the sentence every one of them ends with."""
+    return [s["message"] for s in sent
+            if s["kind"] == "ack"
+            and "Reply A, B or C to pick the look for your whole presentation."
+            in s["message"]]
 
 
 # ---------------------------------------------------------------------------
@@ -218,10 +258,22 @@ class TestManifestWiring:
 class TestChoiceProofGate:
     def test_signed_choice_with_verified_id_passes(self, tmp_path, monkeypatch):
         eng = _engine(_seed_run(tmp_path))
-        _stub_oracle(monkeypatch, ["owner-msg-42"])
+        _stub_oracle(monkeypatch, ["owner-msg-42"],
+                     text="approve P-STYLE-PICK variant B")
         ok, denial = eng._style_choice_authentic(
             _signed_choice("B"), offered_variants=["A", "B", "C"])
         assert ok, denial
+
+    def test_ids_only_oracle_without_gate_text_is_refused(self, tmp_path, monkeypatch):
+        """FLIP (PD-305): a resolvable owner_msg_id with NO message text — the
+        old ids-only acceptance — is now REFUSED. The id proves a message
+        exists; only its text proves the owner picked a style."""
+        eng = _engine(_seed_run(tmp_path))
+        _stub_oracle(monkeypatch, ["owner-msg-42"])  # ids only, no text
+        ok, denial = eng._style_choice_authentic(
+            _signed_choice("B"), ["A", "B", "C"])
+        assert not ok
+        assert "authenticity" in denial or "AF-FORGED-APPROVAL" in denial
 
     def test_choice_without_id_is_rejected(self, tmp_path, monkeypatch):
         eng = _engine(_seed_run(tmp_path))
@@ -303,7 +355,8 @@ class TestLiveProofRun:
     def test_run_stops_at_the_pick_then_continues_on_a_signed_choice(
             self, tmp_path, monkeypatch):
         sent = _stub_transport(monkeypatch)
-        _stub_oracle(monkeypatch, ["owner-msg-42"])
+        _stub_oracle(monkeypatch, ["owner-msg-42"],
+                     text="approve P-STYLE-PICK variant B")
         monkeypatch.setenv("PRESENTATION_STYLE_PICK_TIMEOUT_MINUTES", "0.05")
         rd = _seed_run(tmp_path)  # NO intake.style_pick_auto opt-in
         eng = _engine(rd)
@@ -316,14 +369,17 @@ class TestLiveProofRun:
         assert rec["status"] == "blocked"
         assert eng.state["terminal"] == "BLOCKED"
         assert eng.state["blocked"]["phase"] == PICK
-        # The delivered message: exactly ONE pick request on the stub transport
-        # log, listing the three variants, stamped so a resume never re-spams.
-        picks = [s for s in sent if s["kind"] == "ack"
-                 and "style directions" in s["message"]]
-        assert len(picks) == 1, sent
-        assert "Variant A" in picks[0]["message"]
-        assert "Variant B" in picks[0]["message"]
-        assert "Variant C" in picks[0]["message"]
+        # The delivered message: exactly ONE pick request PER VARIANT on the
+        # stub transport log (PD-042: the reporter transport carries text, not
+        # images, so each variant gets its own message naming that variant's
+        # description and its three sample paths), stamped so a resume never
+        # re-spams.
+        picks = _pick_requests(sent)
+        assert len(picks) == 3, sent
+        joined = "\n".join(picks)
+        assert "Variant A" in joined or "Style A" in joined
+        assert "Variant B" in joined or "Style B" in joined
+        assert "Variant C" in joined or "Style C" in joined
         assert rec.get("pick_request_sent_at")
         assert not (rd / CHOICE_REL).exists(), (
             "a run that stops at the pick must not pick anything by itself")
@@ -351,10 +407,8 @@ class TestLiveProofRun:
         received = [e for e in eng.state["events"]
                     if e["kind"] == "phase.style_pick.choice_received"]
         assert received and "owner_msg_id verified" in received[-1]["message"]
-        # No re-delivery on resume: still exactly one pick request total.
-        picks = [s for s in sent if s["kind"] == "ack"
-                 and "style directions" in s["message"]]
-        assert len(picks) == 1
+        # No re-delivery on resume: still exactly one pick request per variant.
+        assert len(_pick_requests(sent)) == 3
 
     def test_timeout_without_optin_parks_and_never_auto_picks(
             self, tmp_path, monkeypatch):

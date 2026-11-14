@@ -2272,7 +2272,7 @@ CEO_TOOL_DENY = [
     "ghl-community-mcp__*", "ghl-mcp__*",
 ]
 CEO_TOOL_ALLOW = [
-    "read", "web_fetch", "web_search",
+    "read", "read_skill", "web_fetch", "web_search",
     "message", "telegram", "slack", "discord",
     "sessions_send", "sessions_list", "sessions_history",
     # mc-route__route_task = the SHIPPED signed routing tool (scripts/mc-route.sh);

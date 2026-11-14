@@ -137,6 +137,7 @@ def _isolated_env(tmp_path: Path, overrides: dict | None = None,
     under that fake HOME, so the sanctioned operator fallback can be exercised
     deterministically without ever touching the real config or a real id."""
     env = dict(os.environ)
+    env["PRESENTATION_INTAKE_PROVENANCE"] = "warn"  # PD-004c: proves requester shape, not provenance.
     for key in _ALL_REQUESTER_ENV_KEYS:
         env.pop(key, None)
     fake_home = tmp_path / "fakehome"

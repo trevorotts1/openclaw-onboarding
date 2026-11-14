@@ -247,6 +247,111 @@
           "detail": "starts slow and sad, then lifts into an upbeat, hopeful groove.",
           "price": null,
           "recommended": false
+        },
+        {
+          "n": 4,
+          "text": "Acoustic Pop",
+          "detail": "warm acoustic guitar, clear storytelling, and a catchy sung chorus.",
+          "price": null,
+          "recommended": false
+        },
+        {
+          "n": 5,
+          "text": "Folk Storytelling",
+          "detail": "intimate, detail-rich storytelling over simple acoustic instruments.",
+          "price": null,
+          "recommended": false
+        },
+        {
+          "n": 6,
+          "text": "Country Pop",
+          "detail": "plainspoken country storytelling with a polished, memorable pop chorus.",
+          "price": null,
+          "recommended": false
+        },
+        {
+          "n": 7,
+          "text": "Melodic Rap",
+          "detail": "emotional rap that moves between rhythmic lines and a tuneful hook.",
+          "price": null,
+          "recommended": false
+        },
+        {
+          "n": 8,
+          "text": "Trap Rap",
+          "detail": "punchy rap over deep bass and rolling hi-hats.",
+          "price": null,
+          "recommended": false
+        },
+        {
+          "n": 9,
+          "text": "Pop Rap",
+          "detail": "upbeat, easy-to-follow rap with a bright, catchy pop hook.",
+          "price": null,
+          "recommended": false
+        },
+        {
+          "n": 10,
+          "text": "Pop Rock",
+          "detail": "driving guitars and drums with a big, singable chorus.",
+          "price": null,
+          "recommended": false
+        },
+        {
+          "n": 11,
+          "text": "Reggaeton",
+          "detail": "a rolling dembow groove, rhythmic vocals, and a danceable chorus.",
+          "price": null,
+          "recommended": false
+        },
+        {
+          "n": 12,
+          "text": "Cinematic Orchestral Song",
+          "detail": "sweeping strings and a powerful, film-style chorus.",
+          "price": null,
+          "recommended": false
+        },
+        {
+          "n": 13,
+          "text": "Musical Theater",
+          "detail": "character-driven singing and dialogue that build into a dramatic stage-style payoff.",
+          "price": null,
+          "recommended": false
+        },
+        {
+          "n": 14,
+          "text": "Contemporary Gospel",
+          "detail": "faith-centered singing with piano, organ, and a powerful choir.",
+          "price": null,
+          "recommended": false
+        },
+        {
+          "n": 15,
+          "text": "Urban Gospel",
+          "detail": "faith-centered singing with R&B and hip-hop grooves, plus choir.",
+          "price": null,
+          "recommended": false
+        },
+        {
+          "n": 16,
+          "text": "Alternative R&B",
+          "detail": "intimate, spacious R&B with inventive textures, flexible grooves, and an expressive vocal.",
+          "price": null,
+          "recommended": false
+        },
+        {
+          "n": 17,
+          "text": "Afro-Soul",
+          "detail": "soulful vocals over warm, organic instruments and interlocking African-influenced rhythms.",
+          "price": null,
+          "recommended": false
+        },
+        {
+          "n": 18,
+          "text": "Country Rap",
+          "detail": "country storytelling meets rock power and hip-hop rhythm.",
+          "price": null,
+          "recommended": false
         }
       ],
       "shows_when": {
