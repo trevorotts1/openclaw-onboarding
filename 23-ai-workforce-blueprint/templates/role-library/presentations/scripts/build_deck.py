@@ -609,8 +609,8 @@ COPY_SLIDE_TOTAL_CHAR_CEILING = 180  # ~30 words @ ~6 chars/word -- preserves hi
 COPY_HOOK_SLIDE_TOTAL_CHAR_FLOOR = 12  # pure-typography HOOK / section-banner slides: the
                                         # hook line alone is allowed to be short
 
-# PD-089 / D-16: the VALUE-STACK copy band. The August 20, 2026 ruling (AF-C8
-# ARCHETYPE CARVE-OUT, test_af_c8_archetype_carveout.py) allows a value-stack /
+# PD-089 / D-16: the VALUE-STACK copy band. The August 20, 2026 archetype
+# carve-out ruling (test_af_c8_archetype_carveout.py) allows a value-stack /
 # offer-stack slide 6 line items of up to 7 words each, on top of a 9-word
 # headline and 18-word sub-copy -- 62 words in all. The character bands above
 # model an ordinary teaching slide (3 bullets, 30 chars each, 180 total), so a
