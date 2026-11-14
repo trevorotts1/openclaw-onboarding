@@ -204,7 +204,10 @@ class CardSessionCLI(unittest.TestCase):
         payload = json.loads(out.getvalue())
         self.assertFalse(payload["done"])
         self.assertEqual(payload["session"]["question_id"], "offer")
-        self.assertEqual(payload["send"]["text"], card.render_step(1))
+        # a run that keeps the frozen pre-S75-006 card is asked THAT card's first
+        # screen (S75-006 step 5), never the new card's merged OFFER.
+        self.assertEqual(payload["send"]["text"],
+                         card.render_step(1, card.LEGACY_QUESTIONS))
         self.assertTrue(payload["session"]["question_digest"])
 
 

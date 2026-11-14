@@ -87,7 +87,10 @@ def purpose_replies():
     answers, replies = [], []
     for _ in range(60):
         qs = IC._shaped(IC.QUESTIONS, answers)
-        if len(answers) >= len(qs):
+        #: S75-006: the defaulted recap tail (video model, shape, photos) is never
+        #: asked one by one, so the walk ends at the first one -- counting it as a
+        #: reply put three answers on a card that asks none of them.
+        if len(answers) >= len(qs) or qs[len(answers)].get("defaulted"):
             return replies + ["yes"]
         q = qs[len(answers)]
         if q["id"] == "spend":
@@ -107,7 +110,7 @@ def purpose_replies():
 
 def legacy_replies():
     """The pre-method card's replies (one per question of IC.QUESTIONS)."""
-    return IC.example_replies()[:-1] + ["1", "yes"]
+    return IC.example_replies(IC.LEGACY_QUESTIONS)[:-1] + ["1", "yes"]
 
 
 def drive(run, replies, fmt="text", extra=()):
@@ -260,7 +263,7 @@ def main():
         rows = json.loads((run / "card-answers.json").read_text(encoding="utf-8"))
         rows = rows.get("answers") if isinstance(rows, dict) else rows
         check("the resumed run stayed on the legacy list",
-              [r["id"] for r in rows], [q["id"] for q in IC.QUESTIONS])
+              [r["id"] for r in rows], [q["id"] for q in IC.LEGACY_QUESTIONS])
 
         # -- 5: the explicit switches still win ------------------------------
         print("[5] the explicit switches still win")

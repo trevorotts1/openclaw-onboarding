@@ -167,9 +167,17 @@ def _session_authority(run_dir, state, run_id, live_model):
                        status.get("detail") or "The exact intake has no valid explicit client recap confirmation.")
     if state.get("run_id") != run_id:
         return _result(False, "PRODUCTION_RUN_ID_MISMATCH", "Intake and stage store identify different runs.")
-    provider = state["answer_records"]["model"]["provider_identity"]
-    expected_model = provider.get("lock") or provider["kie_model"]
+    #: S75-006: the video model rides the recap as a defaulted screen, so a
+    #: purpose-flow run never answers it one by one and it has no answer record.
+    #: The choice the client confirmed is still the one intake persisted in the
+    #: model lock, and its route identity is checked exactly as before.
     binding = state.get("model_lock") or {}
+    provider = ((state["answer_records"].get("model") or {}).get("provider_identity")
+                or binding.get("provider_identity"))
+    if not isinstance(provider, dict) or not provider:
+        return _result(False, "PRODUCTION_STATE_UNVERIFIED",
+                       "the confirmed video model carries no route identity")
+    expected_model = provider.get("lock") or provider["kie_model"]
     # completion_status preserves its immutable read-only legacy projection.
     # The live WAL snapshot is authoritative for the *current* DB lock; it
     # must still equal the exact provider identity the client confirmed.
@@ -178,15 +186,20 @@ def _session_authority(run_dir, state, run_id, live_model):
         return _result(False, "PRODUCTION_VIDEO_MODEL_LOCK_MISMATCH",
                        "The live video-model lock differs from the exact confirmed intake provider choice.")
     required = state["required_question_ids"]
-    # completion_status also supports small renderer tests. Production must
-    # contain the real card inventory; a caller-supplied one-question card must
-    # never authorize an ad. Revisions keep their own exact saved definitions.
-    expected = {q["id"] for q in card.QUESTIONS}
-    if "episode_length" in required:
-        expected.discard("length")
-        expected.add("episode_length")
+    #: The production identities are the screens the run was really ASKED one by
+    #: one; intake_session._progress keeps the defaulted recap tail (video model,
+    #: shape, photos) out of that set on purpose (S75-006). A purpose-flow run
+    #: must carry every always-asked screen; a run that started on the frozen
+    #: pre-S75-006 card must carry that card's own list. Comparing every run with
+    #: the new card demanded SHAPE and CHECKPOINTS of a legacy run, and the
+    #: defaulted screens of a new one -- screens neither session ever asks, so no
+    #: honest run could pass.
     if state.get("purpose_flow"):
-        expected.add("purpose")
+        expected = {"purpose", "offer", "audience", "character", "music", "look",
+                    "checkpoints", "spend",
+                    "episode_length" if "episode_length" in required else "length"}
+    else:
+        expected = {q["id"] for q in card.LEGACY_QUESTIONS}
     if not expected.issubset(required):
         return _result(False, "PRODUCTION_INTAKE_INCOMPLETE", "The confirmed session omits required production question identities.")
     saved = card_answers.load(str(run_dir))
@@ -308,7 +321,11 @@ def _legacy_authority(run_dir, run_id, states, events):
     from script_approval import card_answers
     saved = card_answers.load(str(run_dir))
     rows = saved.get("by_id") or {}
-    expected = {q["id"] for q in card.QUESTIONS}
+    #: This is the frozen pre-S75-006 handoff, so the identities it must carry are
+    #: that card's own list. The new card's ids were demanded here by mistake:
+    #: a legacy run has STORYBOARD/SONG/SCRIPT and never SHAPE or CHECKPOINTS, so
+    #: no preserved run could ever verify.
+    expected = {q["id"] for q in card.LEGACY_QUESTIONS}
     if "episode_length" in rows:
         expected.discard("length")
         expected.add("episode_length")

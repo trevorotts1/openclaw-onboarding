@@ -19,7 +19,7 @@ import script_approval as SA  # noqa: E402
 import song_dispatch as SD  # noqa: E402
 import suno_recipe as R  # noqa: E402
 
-N = len(IC.QUESTIONS)
+N = len(IC.LEGACY_QUESTIONS)
 TITLE = "The Climb"
 STORY = [("The world", ["She runs a small shop.", "Nobody knows her name."]),
          ("The turn", ["One seed of truth changes it."])]
@@ -48,27 +48,30 @@ def _edit(reply, story, sheet):
 
 
 def test_question_renders_last_with_right_count_and_text():
-    q = IC.QUESTIONS[-1]
+    #: S75-006 moved SCRIPT APPROVAL off the new card (CHECKPOINTS elects it), so
+    #: the screen is exercised on the frozen pre-S75-006 card that still asks it.
+    q = IC.LEGACY_QUESTIONS[-1]
     assert q["label"] == "SCRIPT APPROVAL" and q["id"] == "script"
-    text = IC.render_card().split("\n\n")[N - 1]
+    text = IC.render_card(IC.LEGACY_QUESTIONS).split("\n\n")[N - 1]
     assert text == ("Question %d of %d - SCRIPT APPROVAL\n"
                     "Do you want to read and approve the script - your story and the song lyrics - "
                     "before the song is made?\n"
                     "1. Yes, show me first - Nothing is generated until you say go. (RECOMMENDED)\n"
-                    "2. No, just make it - I start as soon as the card is approved." % (N, N))
-    assert "Question %d of %d - " % (1, N) in IC.render_card()
+                    "2. No, just make it - Work starts as soon as you lock in your order." % (N, N))
+    assert "Question %d of %d - " % (1, N) in IC.render_card(IC.LEGACY_QUESTIONS)
 
 
 def test_recap_and_change_by_number():
-    base = IC.example_replies()     # the story brief is typed, the choices picked, spend a dollar amount
-    recap = IC.conversation(base)["message"]
-    assert "%d. Script Approval: Yes, show me first" % N in recap
-    st = IC.conversation(base + [str(N)])                      # change the last line
+    base = IC.example_replies(IC.LEGACY_QUESTIONS)     # the story brief is typed, the choices picked, spend a dollar amount
+    recap = IC.conversation(base, questions=IC.LEGACY_QUESTIONS)["message"]
+    assert "%d. Script approval: Yes, show me first" % N in recap
+    st = IC.conversation(base + [str(N)], questions=IC.LEGACY_QUESTIONS)   # change the last line
     assert st["message"].startswith("Question %d of %d - SCRIPT APPROVAL" % (N, N))
-    st = IC.conversation(base + [str(N), "2"])
-    assert st["answers"][-1]["n"] == 2 and "Script Approval: No, just make it" in st["message"]
-    assert SA.wants_approval(IC.conversation(base)["answers"], IC.QUESTIONS) is True
-    assert SA.wants_approval(st["answers"], IC.QUESTIONS) is False
+    st = IC.conversation(base + [str(N), "2"], questions=IC.LEGACY_QUESTIONS)
+    assert st["answers"][-1]["n"] == 2 and "Script approval: No, just make it" in st["message"]
+    assert SA.wants_approval(IC.conversation(base, questions=IC.LEGACY_QUESTIONS)["answers"],
+                             IC.LEGACY_QUESTIONS) is True
+    assert SA.wants_approval(st["answers"], IC.LEGACY_QUESTIONS) is False
 
 
 def test_script_message_shape():

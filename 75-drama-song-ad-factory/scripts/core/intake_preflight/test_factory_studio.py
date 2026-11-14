@@ -194,8 +194,15 @@ def test_card_studio_json_prints_the_export():
     env = json.loads(p.stdout)
     assert env["format"] == "studio-json" and env["version"] == 0
     assert env["question_count"] == len(env["questions"]) > 0
-    q = env["questions"][0]
-    assert q["question"] and q["example"] and q["options"]
+    #: S75-074 step 2 / U-E02: a typed screen carries NO option row -- the page
+    #: asks for the words itself -- so the schema is typed => question+example,
+    #: choice => question+options, never all three on every screen.
+    for q in env["questions"]:
+        assert q["question"], q["id"]
+        if q["typed"]:
+            assert q["example"] and q["options"] == [], q["id"]
+        else:
+            assert q["options"], q["id"]
 
 
 def test_card_studio_json_is_a_real_choice():

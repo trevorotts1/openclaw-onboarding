@@ -285,6 +285,11 @@ def _music_q():
             "reason": "it is the style that tests best for emotional stories.",
             "label": "MUSIC STYLE", "ask": "Which sound fits your story?",
             "options": styles[:3] + [("Show me all %d styles" % len(styles), None)],
+            #: U-GEN437: the last option answers nothing -- it opens the
+            #: ``music_full`` screen. The chat card serves that (``_shaped``
+            #: places it); the Studio export cannot, because the page branches
+            #: on no answer, so the export does not offer the opener either.
+            "opens_screen": {"n": len(styles[:3]) + 1, "id": "music_full"},
             "full_options": styles, "recommended": 0}
 
 
@@ -617,18 +622,19 @@ def new_run_flow(run_dir=None, run_state_file=None):
 
 
 def _base_card(run_dir=None, purpose_flow=None):
-    """The base list a caller starts from.
+    """The base list a caller starts from -- ONE decision, shared by the CLI
+    launcher and the API (S75X-W1-U1).
 
-    Only a run that ALREADY recorded the old card (``_run_history`` is False)
-    keeps ``LEGACY_QUESTIONS`` (S75-006 step 5). Everything else starts from
-    the new card -- including a preview with no run folder at all, which shows
-    what a client starting today is asked, and a run past its intro. The old
-    code read "not the purpose flow" as "the old card", which printed the
-    frozen list to a brand-new preview.
+    ``new_run_flow`` has already decided from the run itself, and this reads
+    that decision only. ``True`` is a new order and opens the new card
+    (S75-006). ``False`` on a REAL run folder is a resume: it keeps
+    ``LEGACY_QUESTIONS``, the frozen pre-S75-006 list that run was asked with
+    (S75-006 step 5). With no run folder at all there is no run to resume, so
+    the unbound preview lists the new card's own screens.
     """
     if purpose_flow:
         return QUESTIONS
-    return LEGACY_QUESTIONS if _run_history(run_dir) is False else QUESTIONS
+    return LEGACY_QUESTIONS if run_dir else QUESTIONS
 
 
 def _loud(kind, code, detail):
@@ -2241,8 +2247,16 @@ def _studio_screen(q, answers):
     if typed and not example:
         raise StudioExportError(
             "STUDIO_JSON_FIELD_MISSING id=%r field=example" % qid)
+    offered = list(q.get("options") or [])
+    opens = q.get("opens_screen") or {}
+    if opens:
+        #: U-GEN437: an option that only opens another screen is not a choice on
+        #: this one. The export carries every screen it can show, and it cannot
+        #: show one opened by an answer, so it does not offer the opener either --
+        #: an option nothing serves is the defect, not a feature.
+        offered = [o for n, o in enumerate(offered, 1) if n != opens.get("n")]
     options = [] if typed else [_studio_option(q, n, o, priced=priced)
-                                for n, o in enumerate(q.get("options") or [], 1)]
+                                for n, o in enumerate(offered, 1)]
     if not typed and not options:
         raise StudioExportError(
             "STUDIO_JSON_FIELD_MISSING id=%r field=options" % qid)

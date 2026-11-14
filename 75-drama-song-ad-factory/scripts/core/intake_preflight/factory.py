@@ -4533,6 +4533,23 @@ def _run_is_new(run_dir):
     return not any(state and state != "NOT_STARTED" for state in got.values())
 
 
+def _recorded_session_flow(run_dir):
+    """The flow a durable intake session already recorded, or None.
+
+    A session keeps the card it was asked with (S75-006 step 5). Re-deciding the
+    flow here from the run's other files made a resumed invocation of the SAME
+    session disagree with it -- the next plain `card --step` either switched the
+    list or refused with INTAKE_FLOW_MISMATCH. The session is the record."""
+    path = Path(run_dir) / "control" / "intake-session.json"
+    if not path.exists():
+        return None
+    try:
+        flow = json.loads(path.read_text(encoding="utf-8")).get("purpose_flow")
+    except (OSError, ValueError, AttributeError):
+        return None                        # unreadable: preserve, never reshape
+    return flow if isinstance(flow, bool) else None
+
+
 def _purpose_flow_for(run_dir, forced):
     """The card this launcher asks (SPEC B1 / W3-U2). An explicit flag always
     wins. Otherwise a run that already carries the method record, or a Studio
@@ -4544,6 +4561,9 @@ def _purpose_flow_for(run_dir, forced):
     if not run_dir:
         return False                     # nothing to enter the strategy for
     run = Path(run_dir)
+    recorded = _recorded_session_flow(run)
+    if recorded is not None:
+        return recorded                  # the session keeps the card it was asked
     if (run / "control" / "method.json").exists():
         return True
     if (run / "control" / "studio-order.json").exists():
