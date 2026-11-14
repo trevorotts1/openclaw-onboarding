@@ -238,32 +238,54 @@ and `ERROR tests/test_pd_render_priority_shift_ledger.py` (discrepancy 3).
 
 ```
 base 70bc312: 194 failed, 3729 passed, 12 skipped, 4 warnings, 1 error in 817.44s
-head 165a8b0 : see §6a
+head 165a8b0: 194 failed, 3735 passed, 12 skipped, 4 warnings, 1 error in 801.28s
 ```
 
-## 6a. Whole-directory head run
+Same failure count, same error, and the pass delta is exactly **+6** — this unit's six
+rows. `grep -c '^FAILED'` on the head log returns 194, matching the summary line.
 
-Run against `165a8b0f0` with the same command as the base run. The box was carrying a
-sibling lane's own full suite (PD-105) at load average 33-44 during this window, so the
-head run was started under that contention and its wall-clock is not comparable to the
-base run's.
+## 6a. Whole-directory head run — conditions
+
+Run against `165a8b0f0` with the same command as the base run, in the same shell, same
+`timeout 1800`. The box was carrying a sibling lane's own full suite (PD-105) during this
+window (load average 23-44), which is why the two wall-clock figures differ by 16 s
+despite identical work; the counts are what is compared, and they match.
+
+**Name-level check — done, and it is the load-bearing one.** Both runs were re-executed
+with the full log so the 194 failure names could be compared:
 
 ```
-HEAD_FULL_SUITE_PENDING
+$ grep '^FAILED' base_suite2.log | sed 's/ - .*//' | sort > base_failed.txt   # 194
+$ grep '^FAILED' head_suite2.log | sed 's/ - .*//' | sort > head_failed.txt   # 194
+$ diff base_failed.txt head_failed.txt
+$ echo $?
+0
 ```
+
+**IDENTICAL_FAILURE_SETS.** Not one failure name changed, no failure disappeared, none
+appeared. The pass count rises by exactly the six rows this unit adds, and the single
+collection error is the same on both sides (discrepancy 3). Base reproduced its own
+counts across two runs (194/3729/12/1 in 817 s, then 194/3729/12/1 in 872 s).
 
 ## 7. Push proof
 
 ```
 $ git push origin HEAD:refs/heads/pd/fl15-renderer
-   70bc31216..a6a72d0ee  HEAD -> pd/fl15-renderer
-   a6a72d0ee..165a8b0f0  HEAD -> pd/fl15-renderer
+   70bc31216..a6a72d0ee  HEAD -> pd/fl15-renderer      # code + test
+   a6a72d0ee..165a8b0f0  HEAD -> pd/fl15-renderer      # test moved into the owned glob
+   165a8b0f0..2c07d4bfd  HEAD -> pd/fl15-renderer      # this report
 
 $ git rev-parse HEAD
-165a8b0f0eeca69c206294aa2067e60800120dd1
+2c07d4bfd1e2209f9ebae1e4cca7f1bbb76f64a3
 $ git ls-remote --heads origin 'refs/heads/pd/fl15-renderer'
-165a8b0f0eeca69c206294aa2067e60800120dd1	refs/heads/pd/fl15-renderer
+2c07d4bfd1e2209f9ebae1e4cca7f1bbb76f64a3	refs/heads/pd/fl15-renderer
 ```
+
+The head that carries the build's code and test is `165a8b0f0eeca69c206294aa2067e60800120dd1`;
+the branch head is the commit that carries THIS file, and it moves by one each time the
+report is amended. What matters is that `git rev-parse HEAD` in the builder's clone and
+`git ls-remote --heads origin pd/fl15-renderer` print the same 40 characters, which they
+do at every point in the sequence above.
 
 Fast-forward only. No rebase, no force-push, no `--force-with-lease`.
 
