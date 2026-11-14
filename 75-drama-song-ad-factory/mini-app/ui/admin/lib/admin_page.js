@@ -134,10 +134,34 @@
     });
   });
 
-  el('revoke').addEventListener('click', function () {
-    var refused = A.revokeKeyRequest();
-    say('key-status', 'key-error', refused.code + ' — ' + refused.message, true);
-  });
+  // ---- 2b. cutting a key off (U-Z12) ------------------------------------
+  // The studio names a client and a kind, never a key. Two buttons, one per
+  // kind, so the operator cannot cut a computer's key by picking the wrong
+  // word from a list.
+  function cutOffKey(kind) {
+    var built = A.revokeKeyRequest(el('admin-key').value, el('revoke-client').value, kind);
+    if (!built.ok) {
+      say('revoke-status', 'revoke-error', built.code + ' — ' + built.message, true);
+      return;
+    }
+    say('revoke-status', 'revoke-error', 'Asking the studio…', false);
+    sendPost(built.path, built.body).then(function (reply) {
+      if (!reply.ok) {
+        say('revoke-status', 'revoke-error', reply.code + ' — ' + reply.message, true);
+        return;
+      }
+      var cut = typeof reply.data.revoked === 'number' ? reply.data.revoked : 0;
+      say('revoke-status', 'revoke-error', cut === 0
+        ? 'No ' + kind + ' key of ' + built.body.client_id + ' was active, so nothing was cut off.'
+        : cut + ' ' + kind + ' key' + (cut === 1 ? '' : 's') + ' of ' + built.body.client_id
+          + ' cut off. It cannot check in again.', false);
+    }).catch(function () {
+      say('revoke-status', 'revoke-error', 'The studio could not be reached, so no key was cut off.', true);
+    });
+  }
+
+  el('revoke-machine').addEventListener('click', function () { cutOffKey('machine'); });
+  el('revoke-box').addEventListener('click', function () { cutOffKey('box'); });
 
   // ---- 3. options -------------------------------------------------------
   function optionValue() {
