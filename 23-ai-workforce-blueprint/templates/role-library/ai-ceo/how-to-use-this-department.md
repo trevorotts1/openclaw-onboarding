@@ -69,12 +69,11 @@ and it will pick the right one, or you can ask for a specialist by name.
 | --- | --- |
 | **AI Ceo Playbook** | , the AI CEO of and the master orchestrator of its entire AI workforce. |
 
-### What each specialist is for, with an example request
+### What each specialist is for
 
 **AI Ceo Playbook**
 
 - *What it is for:* , the AI CEO of and the master orchestrator of its entire AI workforce.
-- *Example request:* "Have the AI Ceo Playbook take this on: , the AI CEO of and the master orchestrator of its entire AI workforce."
 
 
 ---

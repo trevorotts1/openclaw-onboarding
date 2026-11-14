@@ -555,8 +555,8 @@
         "slide-submitter",
         "typography-architect"
       ],
-      "content_sha": "sha256:f0f2a6a2536c50003bd52e459d736afed060343d574584933d43e20132da92b9",
-      "content_hashed_at": "2026-11-10T05:00:35.850842+00:00"
+      "content_sha": "sha256:1340d9d9173496c0ad9b358b21b31b84cc25e132a7c4625762c625b58f49ac9c",
+      "content_hashed_at": "2026-11-14T02:33:02.202989+00:00"
     },
     "product-production": {
       "count": 4,
@@ -9127,10 +9127,10 @@
       "path": "templates/role-library/presentations/scripts-specialist.md",
       "capability_class": "WRITING",
       "vision_flag": false,
-      "content_sha": "sha256:cc065a118b23c655360157ca15072941733c30f614e7919240068e5a9dee37dd",
+      "content_sha": "sha256:1f66c9ac3ebf717c786f30ec40cf934303e8b90251661415451cf5d19e2a4556",
       "render_sha": "sha256:UNAVAILABLE",
-      "content_version": "1.0.0",
-      "content_hashed_at": "2026-11-09T23:25:05.532974+00:00"
+      "content_version": "1.0.1",
+      "content_hashed_at": "2026-11-14T02:33:02.202989+00:00"
     },
     {
       "slug": "director-of-product-development",
@@ -10826,7 +10826,7 @@
     "neutral_config_sha": "sha256:e084d023d101ad89a8a1bda5f673fb3e997be2d56e09405afabd93ede944afe9",
     "neutral_date": "2000-01-01",
     "generator": "hash-content-manifest.py",
-    "generated_at": "2026-11-09T23:25:05.532974+00:00",
+    "generated_at": "2026-11-14T02:33:02.202989+00:00",
     "manifest_schema": "1.0"
   },
   "personas": [
