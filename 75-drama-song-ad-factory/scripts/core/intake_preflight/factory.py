@@ -3742,6 +3742,7 @@ def _placeholder_where(name, stage):
                 "holds the video model and cannot answer it)")
     return _PLACEHOLDER_WHERE.get(name, "the runner supplies it")
 
+
 def _stage_command_values(run_dir, sid, stage, extra=None):
     """The placeholder values this run can answer, and nothing it cannot.
 
@@ -4316,7 +4317,11 @@ def _next_stage(a, *, boot_snapshot=None):
     # The published command stays the canonical template ({COST_MINOR} named
     # in needs/argv), per S75-010 step 4 -- substituting the number into
     # the command string drifted the row the runbook and the registry share.
-    nxt = {"stage": present_id, "production_stage": next_stage, "command": row["command"],
+    # S75-041 step 3 below still reads the child tool's name off that same
+    # canonical string, so `published` names the template, not a substituted
+    # copy -- one string, both invariants.
+    published = row["command"]
+    nxt = {"stage": present_id, "production_stage": next_stage, "command": published,
            "produces": row.get("produces", ""), "lane_size": lane,
            "stages_source": stages_source}
     # S75-041 step 3: the child tool's code is read through ITS table, by
