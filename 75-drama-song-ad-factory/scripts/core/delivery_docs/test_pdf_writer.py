@@ -86,6 +86,42 @@ def test_unmappable_character_becomes_a_question_mark():
     assert "level" in ops and "?" in ops, ops
 
 
+def test_a_dot_below_letter_prints_its_base_letter():
+    layout = PW.Layout()
+    layout.para("Ọlawale", size=13.0)
+    ops = "\n".join(layout.pages[0])
+    assert "Olawale" in ops, ops
+    assert "Ọ" not in layout.replaced, layout.replaced
+
+
+def test_a_greek_word_prints_question_marks_and_is_listed():
+    layout = PW.Layout()
+    layout.para("αβγ", size=13.0)
+    ops = "\n".join(layout.pages[0])
+    assert "???" in ops, ops
+    assert layout.replaced == ["α", "β", "γ"], layout.replaced
+    assert PW.unprintable("αβγ") == \
+        ["α", "β", "γ"]
+
+
+def test_ascii_and_curly_quotes_are_unchanged():
+    text = "Hello ‘quoted’ “word”"
+    assert PW.to_page_text(text) == text
+    layout = PW.Layout()
+    layout.para(text, size=13.0)
+    assert layout.replaced == [], layout.replaced
+
+
+def test_a_decomposed_letter_prints_its_base_letter():
+    import unicodedata
+    text = unicodedata.normalize("NFD", "Ọlawale")
+    layout = PW.Layout()
+    layout.para(text, size=13.0)
+    ops = "\n".join(layout.pages[0])
+    assert "Olawale" in ops, ops
+    assert layout.replaced == [], layout.replaced
+
+
 def test_pages_break_at_the_footer_not_mid_block():
     layout = PW.Layout()
     layout.para("line", size=13.0, leading=19.0)
