@@ -8,6 +8,7 @@ import re
 import secrets
 import signal
 import shlex
+import statistics
 import subprocess
 import sys
 import threading
@@ -28,7 +29,7 @@ from .execution_plan import (build_execution_plan, build_edge_records,
                              _load_raw_phases)
 from .state import (
     StateStore, utcnow, sha256_file, EXIT_OK, EXIT_GATE_BLOCKED, EXIT_WAIVER_INVALID,
-    ENTRY_COMMAND,
+    ENTRY_COMMAND, ensure_run_key,
 )
 from .manifest import Manifest, Phase
 from .report import Reporter
@@ -333,6 +334,12 @@ PHASE_STATUS_QUARANTINED = "quarantined"
 PHASE_STATUS_BLOCKED = "blocked"
 PHASE_STATUS_FAILED = "failed"
 PHASE_STATUS_OBSOLETE = "obsolete"
+# PD-048b: an external page install whose receipt says a PERSON still has to
+# execute the delegated Skill 06/44 step. A pause, not a failure: the phase is
+# recorded waiting, its descendants are withheld, its siblings keep running,
+# and a resume re-enters it (readmit) so it finishes the moment the install
+# receipt turns complete. Never terminal-bad, never healed, never quarantined.
+PHASE_STATUS_WAITING = "waiting"
 
 PHASE_STATUSES = (
     PHASE_STATUS_PENDING,
@@ -343,6 +350,7 @@ PHASE_STATUSES = (
     PHASE_STATUS_BLOCKED,
     PHASE_STATUS_FAILED,
     PHASE_STATUS_OBSOLETE,
+    PHASE_STATUS_WAITING,
 )
 assert len(PHASE_STATUSES) == len(set(PHASE_STATUSES)), \
     "duplicate value in the per-unit status enum"
@@ -695,13 +703,280 @@ def _phase_terminal_bad(status: Optional[str]) -> bool:
 # across resumes. Owner-decision parks (PHASE_STATUS_BLOCKED, FIX 10) are
 # never re-admitted: only the client can make that call.
 # ---------------------------------------------------------------------------
-_READMITTABLE_PHASE_STATUSES = (PHASE_STATUS_FAILED, PHASE_STATUS_QUARANTINED)
+# PD-048b: WAITING is re-admitted too. A person-wait is not re-runnable while
+# the install is still pending, but a resume is exactly how the run notices
+# that the person finished it -- without this the phase stayed waiting forever
+# and every resume re-parked identically.
+_READMITTABLE_PHASE_STATUSES = (PHASE_STATUS_FAILED, PHASE_STATUS_QUARANTINED,
+                                PHASE_STATUS_WAITING)
 
 #: The literal prefix the engine's own substance park writes (phases.py `_block`
 #: callers build it as f"substance check failed: {verdict}"). PD-TEST-135 matches
 #: a block against this SO THAT operator prose can never be mistaken for a
 #: checker verdict, however it is worded.
 _VERIFIER_VERDICT_PREFIX = "substance check failed"
+
+#: PD-206b. The prefix PD-206a writes into the FIRST reason of a failed prompt
+#: check when the only thing standing between the deck and a pass is a PERSON's
+#: verdict under working/qc/human-review/. A park carrying it is a routine
+#: operator review, not a client alarm: the operator gets the full reason, the
+#: client gets one plain sentence, and the step stays parked for the human.
+OPERATOR_REVIEW_PREFIX = "OPERATOR-REVIEW:"
+
+#: PD-206b. The ONE sentence a client whose slides are in operator review
+#: receives. Deliberately names no phase, no file, no checker code, and asks for
+#: nothing -- acceptance A1 asserts none of those reach the client transport.
+OPERATOR_REVIEW_CLIENT_SENTENCE = (
+    "Your presentation is moving ahead. One of our team is doing a quick "
+    "review of your slides. You do not need to do anything.")
+
+#: PD-018b. The ONE sentence a client gets when the engine hits an internal
+#: close-time failure. The technical text (integrity reasons, missing
+#: deliverables, audit output) goes to the event log and the operator console
+#: only -- never to the client transport.
+CLIENT_INTERNAL_SENTENCE = (
+    "We are fixing something on our side. You do not need to do anything.")
+
+
+def _client_need_line(state: Dict[str, Any]) -> str:
+    """PD-018b: the client-safe "<plain need>" for a pause message.
+
+    Sourced from the park record the engine already classifies
+    (presentation_job.auto_resume.classify_park), whose `needed` field is
+    plain words written for the client -- never the raw blocked reason, a
+    phase id, or an AF- code. When the park cannot be classified at all, the
+    generic internal-work sentence is used instead of guessing.
+    """
+    try:
+        from .auto_resume import classify_park
+        needed = str(classify_park(state).get("needed") or "").strip()
+        if needed:
+            return needed
+    except Exception:  # noqa: BLE001 -- a pause message must still go out
+        pass
+    return CLIENT_INTERNAL_SENTENCE
+
+
+#: PD-042. The one sentence a client receives when the style-pick wait expires
+#: without a verifiable pick. Plain words, names no phase, asks for nothing but
+#: the pick itself, and says the work is safe.
+STYLE_PICK_TIMEOUT_SENTENCE = (
+    "I still need your style pick (A, B or C). Nothing is lost — reply any "
+    "time and I will pick right back up.")
+
+#: PD-042. The one sentence a client receives when the finished message cannot
+#: be composed because no delivery destination is recorded as verified. The
+#: engine sends NOTHING and logs `report.done_withheld` instead of claiming a
+#: readiness it cannot point at.
+DONE_WITHHELD_EVENT = "report.done_withheld"
+
+#: PD-042 / PD-210. The sentence the finished message carries for a teleprompter
+#: whose publish record is anything other than `published`. A URL that was
+#: recorded but never verified live is not a link the client may be handed.
+TELEPROMPTER_NO_LINK_SENTENCE = (
+    "Your teleprompter file is included. No web link was made for it.")
+
+#: PD-042. The relative paths the finished message is built from: the verified
+#: destination plan and the media library the publish record lives in.
+DELIVERY_PLAN_REL = "working/checkpoints/delivery_plan.json"
+MEDIA_LIBRARY_REL = "working/checkpoints/media_library.json"
+
+#: PD-042. The style-pick records: the samples P-STYLE-PREVIEW rendered (with
+#: one `render` path per variant/slide) and the spec whose `style_directive`
+#: per variant is the one-sentence description the client is shown.
+SAMPLES_MANIFEST_REL = "working/style-preview/style_samples_manifest.json"
+STYLE_SPEC_REL = "working/copy/style_preview_spec.json"
+
+#: PD-031. How many sibling run dirs beside this run are scanned for recorded
+#: stage durations when the run's own telemetry has none. Bounds the read; the
+#: newest ones win, because they are the most representative of this box.
+_ETA_HISTORY_SIBLING_LIMIT = 20
+
+#: PD-042. The literal line the engine reports when it must ask for a pick
+#: without having attached the images -- the reporter's transport carries JSON
+#: text, never an image. Reported so the operator can decide; the messages
+#: themselves still carry each variant's description and its three file paths.
+STYLE_PICK_TRANSPORT_LINE = "BLOCKED: transport cannot carry images"
+
+#: PD-042. The literal line the engine reports when it refuses to ask for a
+#: pick at all: the samples manifest gives the client nothing to look at.
+STYLE_PICK_UNDELIVERED_LINE = "BLOCKED: samples are not delivered to the client"
+
+
+def _read_run_json(run_dir: Path, rel: str) -> Dict[str, Any]:
+    """Read one run-dir JSON object, or {} when it is absent/unreadable.
+
+    PD-042: every message this unit builds reads real records, and a missing
+    record must degrade to "nothing to say" -- never to an exception on the
+    client transport path, and never to an invented destination.
+    """
+    try:
+        obj = json.loads((Path(run_dir) / rel).read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return {}
+    return obj if isinstance(obj, dict) else {}
+
+
+def _verified_destination_lines(run_dir: Path) -> List[str]:
+    """PD-042: one plain line per VERIFIED delivery destination.
+
+    Only a destination whose own `status` is `verified` counts (the spec's
+    "destinations with status verified"); a `planned`, `uploaded` or absent
+    status is not a place the client can reach, so it is never named.
+    """
+    plan = _read_run_json(run_dir, DELIVERY_PLAN_REL)
+    lines: List[str] = []
+    for dest in plan.get("destinations") or []:
+        if not isinstance(dest, dict):
+            continue
+        if str(dest.get("status") or "").strip() != "verified":
+            continue
+        where = str(dest.get("url") or dest.get("path")
+                    or dest.get("verify_anchor") or "").strip()
+        kind = str(dest.get("type") or "file").strip()
+        lines.append(f"{kind}: {where}" if where else kind)
+    return lines
+
+
+def _teleprompter_publish(run_dir: Path) -> Tuple[str, bool]:
+    """PD-042 / PD-210: (verified web link, a publish record exists at all).
+
+    The publish record (build_deck.publish_teleprompter) writes `status` and
+    `public_url`. ONLY a `published` record may put a web link in the client's
+    message: a `warned_no_credentials` record carries a URL that was never
+    verified live, and handing it over is the defect PD-210 names. The link is
+    the record's own verified URL; `media_library.json.teleprompter_public_url`
+    is used only when it names that same verified URL.
+    """
+    rec: Dict[str, Any] = {}
+    media_url = str(_read_run_json(run_dir, MEDIA_LIBRARY_REL)
+                    .get("teleprompter_public_url") or "").strip()
+    try:
+        import fix_bundle_complete as _fbc  # flat module beside the package
+        rec = _read_run_json(_fbc.resolve_bundle_dir(Path(run_dir)),
+                             "teleprompter_publish.json")
+    except Exception:  # noqa: BLE001 -- an unreadable record proves nothing
+        return "", bool(media_url)
+    if not rec:
+        # No publish record at all: a media-library URL was never a verified
+        # publish, so it is not a link and the client is told so when one exists.
+        return "", bool(media_url)
+    if str(rec.get("status") or "").strip() != "published":
+        return "", True
+    live = str(rec.get("public_url") or "").strip()
+    if not live:
+        return "", True
+    if media_url and media_url != live:
+        # The two records disagree: the media library names a URL the publish
+        # record never verified, so the verified publish URL is the only link.
+        return live, True
+    return live, True
+
+
+def _compose_done_message(run_dir: Path) -> str:
+    """PD-042: the client's finished message, built from verified records only.
+
+    Returns the ready sentence with one line per verified destination, or ""
+    when NO destination is recorded as verified. The caller sends nothing on ""
+    and logs `report.done_withheld` -- a deck that cannot say where the work is
+    is not a delivered deck. PD-313 calls this same function.
+    """
+    lines = _verified_destination_lines(run_dir)
+    tele, attempted = _teleprompter_publish(run_dir)
+    if tele:
+        lines.append(f"teleprompter: {tele}")
+    if not lines:
+        return ""
+    body = "\n".join(f"  - {line}" for line in lines)
+    msg = f"Your presentation is ready. Here is where to find it:\n{body}"
+    if not tele and attempted:
+        msg = f"{msg}\n{TELEPROMPTER_NO_LINK_SENTENCE}"
+    return msg
+
+
+def _style_pick_samples_were_sent(run_dir: Path) -> bool:
+    """PD-042: True only when the samples manifest records that the images
+    actually reached the client on the transport."""
+    manifest = _read_run_json(run_dir, SAMPLES_MANIFEST_REL)
+    return bool(str(manifest.get("samples_sent_to_client") or "").strip())
+
+
+def _style_pick_messages(run_dir: Path) -> List[str]:
+    """PD-042: the client's style-pick messages, one per variant.
+
+    THE DELIVERY FINDING (recorded in the build report): nothing sends the
+    sample images -- `build_deck.run_style_preview_samples` writes the nine
+    PNGs and the manifest, and no step attaches them to the client's chat.
+    The reporter's transport (a JSON text payload to
+    `PRESENTATION_NOTIFY_CMD`) cannot carry an image at all, so the engine
+    takes the addendum's fallback branch: ONE message per variant carrying the
+    variant letter, its one-sentence style description from
+    `working/copy/style_preview_spec.json` (`variants[].style_directive`) and
+    the three file paths. It never sends only letters.
+
+    Returns [] when no variant has anything a client could act on -- a pick
+    request with no sample, no description and no path is unanswerable, and
+    the caller must not send one.
+    """
+    manifest = _read_run_json(run_dir, SAMPLES_MANIFEST_REL)
+    spec = _read_run_json(run_dir, STYLE_SPEC_REL)
+    descriptions: Dict[str, str] = {}
+    for v in spec.get("variants") or []:
+        if isinstance(v, dict):
+            vid = str(v.get("id") or "").strip()
+            if vid:
+                descriptions[vid] = str(v.get("style_directive") or "").strip()
+    order: List[str] = []
+    renders: Dict[str, List[str]] = {}
+    for s in manifest.get("samples") or []:
+        if not isinstance(s, dict):
+            continue
+        vid = str(s.get("variant") or "").strip()
+        path = str(s.get("render") or "").strip()
+        if not vid or not path:
+            continue
+        if vid not in renders:
+            renders[vid] = []
+            order.append(vid)
+        renders[vid].append(path)
+    for v in manifest.get("variants") or []:
+        vid = str(v).strip()
+        if vid and vid not in order:
+            order.append(vid)
+    messages: List[str] = []
+    for vid in order:
+        paths = renders.get(vid) or []
+        desc = descriptions.get(vid) or ""
+        if not paths and not desc:
+            continue  # nothing this variant can show the client
+        parts: List[str] = []
+        if desc:
+            parts.append(f"Style {vid} — {desc}")
+        where = ", ".join(paths)
+        parts.append(f"Your 3 style samples are ready: {where}." if where
+                     else "Your 3 style samples are ready.")
+        parts.append("Reply A, B or C to pick the look for your whole "
+                     "presentation. I will wait for you.")
+        messages.append("\n".join(parts))
+    return messages
+
+
+def _first_check_reason(reason: str) -> str:
+    """The FIRST reason a failed step check reported, out of the single string
+    the call path carries.
+
+    RD-05 measured that the engine carries one reason string, not a list:
+    `_fail_unit` and `_block` both take `reason: str`, and the substance park
+    builds its reason as `f"substance check failed: {'; '.join(notes)}"`. The
+    first reason is therefore the head of that string: strip the engine's own
+    verdict prefix, then take the first `; `-joined note. Every other call site
+    passes a single sentence, which is returned unchanged.
+    """
+    text = str(reason or "").strip()
+    marker = _VERIFIER_VERDICT_PREFIX + ": "
+    if text.startswith(marker):
+        text = text[len(marker):]
+    return text.split("; ", 1)[0].strip()
 
 #: PD-TEST-194: the identifiers a substance verdict names, used to identify WHICH
 #: EPISODE a park belongs to by identity rather than by a text prefix (this
@@ -1180,7 +1455,19 @@ class Engine:
         self.store = store
         self.state = state
         self.dry_run = dry_run
-        self.report = Reporter(state, store)
+        self.report = Reporter(state, store, manifest)
+        # PD-018b: (client_label, client_visible) per phase, read from the
+        # manifest's own retokened phase entries (PD-018a). The Phase dataclass
+        # does not parse these two fields, so the raw manifest mapping is the
+        # single source -- never a phase id or role name turned into copy.
+        self._client_meta: Dict[str, Tuple[str, bool]] = {}
+        _raw = getattr(manifest, "raw", None)
+        if isinstance(_raw, dict):
+            for _entry in _raw.get("phases") or []:
+                if isinstance(_entry, dict) and _entry.get("id"):
+                    self._client_meta[str(_entry["id"])] = (
+                        str(_entry.get("client_label") or "").strip(),
+                        bool(_entry.get("client_visible", True)))
         from .board import BoardMirror
         try:
             self.board = BoardMirror(run_dir, state, store, self.report)
@@ -1493,59 +1780,182 @@ class Engine:
             visible.append(ph)
         return visible
 
+    def _client_rendered_phases(self, phases: List[Phase]) -> List[Phase]:
+        """The phases that WILL actually send this deck's client a message:
+        in the deck-filtered visible list (`_client_visible_phases`) AND
+        declared `client_visible: true` with a non-empty plain client_label.
+
+        PD-018b item-4 ruling: N in "Step {k} of {N}" must be the number of
+        RENDERED phases, not the deck-filtered count. A hidden or
+        deck-deferred phase sends nothing, so counting it left the client's
+        step numbers gapped (16 rendered phases read as k of 46).
+
+        Ceiling: a manifest template that formats to an empty string (e.g. a
+        template that is only `{eta}` with no eta) is still counted here; no
+        real manifest phase declares one, and the fallback default always
+        renders a label.
+        """
+        out: List[Phase] = []
+        for ph in self._client_visible_phases(phases):
+            label, client_visible = self._phase_client_meta(ph)
+            if client_visible and label:
+                out.append(ph)
+        return out
+
     def _client_phase_index(self, phase_id: str,
                             phases: List[Phase]) -> Tuple[Optional[int], int]:
-        """CLIENT-FACING (k, N) for phase_id against THIS deck's filtered
-        client-visible phase list. k is None when phase_id is being
-        walked/attested (the 36-phase enforcement never skips it) but is NOT
-        one of the N steps this deck's client was told to expect -- e.g.
-        P-CONVERTER dispatched on a non-content-conversion deck, or an
-        SP-only phase on a non-signature deck. N is always the filtered
-        count (len(_client_visible_phases(...)))."""
-        visible = self._client_visible_phases(phases)
-        for i, ph in enumerate(visible):
+        """CLIENT-FACING (k, N) for phase_id against the phases this deck's
+        client is actually told about (`_client_rendered_phases`). k is None
+        when phase_id is being walked/attested (the phase enforcement never
+        skips it) but is NOT one of the N steps the client was told to expect
+        -- e.g. a hidden phase, P-CONVERTER on a non-content-conversion deck,
+        or an SP-only phase on a non-signature deck. N is always the rendered
+        count."""
+        rendered = self._client_rendered_phases(phases)
+        for i, ph in enumerate(rendered):
             if ph.id == phase_id:
-                return i + 1, len(visible)
-        return None, len(visible)
+                return i + 1, len(rendered)
+        return None, len(rendered)
+
+    def _phase_client_meta(self, phase: Phase) -> Tuple[str, bool]:
+        """(client_label, client_visible) for `phase` from the loaded manifest.
+
+        Fail-safe: an unknown phase (a synthetic Phase a test built, or a
+        manifest entry without the field) is treated as VISIBLE with an empty
+        label, so nothing is silently suppressed for a reason the engine cannot
+        see.
+        """
+        meta = getattr(self, "_client_meta", None)
+        if not isinstance(meta, dict):
+            return ("", True)
+        return meta.get(phase.id, ("", True))
 
     def _render_client_report_msg(self, phase: Phase, kind: str) -> str:
         """Render phase.client_report's start/done template for the client,
-        substituting {k}/{N}/{name}/{eta} for real -- NEVER hands a manifest
-        template to the client with its braces unformatted (see the B2b
-        block above PhaseExecutorContractError). kind in {"start", "done"}.
+        substituting {k}/{N}/{client_label}/{eta} for real -- and NEVER sending
+        a phase's own internal text.
 
-        Fails safe in three independent ways:
-          1. deck shape unknown  -> _client_visible_phases widens N to the
-             full 36-phase superset instead of asserting a smaller number.
-          2. phase_id not one of this deck's visible steps (k is None) ->
-             honest "not part of the N-step plan" wording, never a
-             fabricated step number (same branch run_signature_deck.py's
-             emit_client_report uses for the identical case).
-          3. a malformed manifest template (stray brace) -> caught and
+        PD-018b: returns "" (the caller sends nothing) when the phase is
+        declared `client_visible: false`, when it has no step number for this
+        deck (k is None), or when the manifest gives it no client label. The
+        returned text never carries a manifest phase id or a role name; a
+        template or default that would is replaced by the plain default.
+
+        Fails safe in two independent ways:
+          1. deck shape unknown  -> the deck filter widens to the full phase
+             superset instead of asserting a smaller number (only phases the
+             manifest marks client_visible and labels count toward N).
+          2. a malformed manifest template (stray brace) -> caught and
              replaced with the plain default message, never raised, never
              leaked partially-formatted.
         """
-        tmpl_key = "start_template" if kind == "start" else "done_template"
-        default = (f"Starting {phase.id} ({phase.owning_role})" if kind == "start"
-                   else f"{phase.id} complete")
-        tmpl = phase.client_report.get(tmpl_key) or default
-        if "{" not in tmpl:
-            return tmpl  # nothing to substitute (default string, or a static template)
+        label, client_visible = self._phase_client_meta(phase)
+        if not client_visible or not label:
+            return ""
         k, n = self._client_phase_index(phase.id, self.manifest.phases)
         if k is None:
-            return (f"{phase.id} — not part of the {n}-step plan for this deck type "
-                    f"(internal housekeeping phase, no client-visible step number) — "
-                    f"{'starting' if kind == 'start' else 'complete'}")
+            # Walked/attested internal step, not one of this deck's N client
+            # steps: the client hears nothing rather than a fabricated number.
+            return ""
+        tmpl_key = "start_template" if kind == "start" else "done_template"
+        default = (f"Step {k} of {n} — {label} — starting" if kind == "start"
+                   else f"Step {k} of {n} — {label} — complete")
+        tmpl = phase.client_report.get(tmpl_key) or default
         eta_val = phase.client_report.get("eta_minutes") or phase.client_report.get("eta")
         eta_str = f" (ETA ~{eta_val} min)" if (kind == "start" and eta_val) else ""
-        fields = _SafeFormatDict(k=k, N=n, name=(phase.name or phase.id), eta=eta_str)
+        fields = _SafeFormatDict(k=k, N=n, client_label=label, name=label, eta=eta_str)
+        if "{" not in tmpl:
+            text = tmpl  # nothing to substitute (default string, or a static template)
+        else:
+            try:
+                text = tmpl.format_map(fields)
+            except (ValueError, IndexError):
+                # Malformed template syntax (e.g. a stray unmatched '{' or '}') --
+                # never let a bad template string reach the client verbatim, and
+                # never crash phase reporting over it.
+                text = default
+        if phase.id in text or (phase.owning_role and phase.owning_role in text):
+            text = default
+        if kind == "start" and text:
+            # PD-031: the client's "how long is left" sentence. Computed from
+            # recorded durations only; "" when the box has no history, so the
+            # client sees nothing rather than an invented number.
+            eta_sentence = self._client_eta_sentence()
+            if eta_sentence:
+                text = f"{text} {eta_sentence}"
+        return text
+
+    def _stage_timing_medians(self) -> Dict[str, float]:
+        """PD-031: per-phase MEDIAN recorded duration, from the box's own
+        stage-timing history -- the same source `eta` is filled from today
+        (`_observed_stage_seconds`, `_emit_stage_timing`, FIX 5's
+        working/telemetry/stage-timings.jsonl `phase_exit` rows).
+
+        This run's own file comes first, then the run dirs beside it under the
+        same runs root, so a fresh run still speaks from what the box measured
+        before it. A phase with no recorded row has no median and is absent --
+        never defaulted to a guessed constant.
+
+        Ceiling: the newest `_ETA_HISTORY_SIBLING_LIMIT` sibling run dirs are
+        scanned. Upgrade path: a durable per-phase history file if a box ever
+        needs cross-root history.
+        """
+        files: List[Path] = [self._telemetry_dir() / "stage-timings.jsonl"]
         try:
-            return tmpl.format_map(fields)
-        except (ValueError, IndexError):
-            # Malformed template syntax (e.g. a stray unmatched '{' or '}') --
-            # never let a bad template string reach the client verbatim, and
-            # never crash phase reporting over it.
-            return default
+            siblings = sorted(p for p in self.run_dir.parent.iterdir()
+                              if p.is_dir() and p != self.run_dir)
+        except OSError:
+            siblings = []
+        for sib in siblings[-_ETA_HISTORY_SIBLING_LIMIT:]:
+            files.append(sib / "working" / "telemetry" / "stage-timings.jsonl")
+        samples: Dict[str, List[float]] = {}
+        for path in files:
+            try:
+                with path.open("r", encoding="utf-8") as fh:
+                    for line in fh:
+                        try:
+                            row = json.loads(line)
+                        except json.JSONDecodeError:
+                            continue
+                        if not isinstance(row, dict) or row.get("event") != "phase_exit":
+                            continue
+                        pid = row.get("phase_id")
+                        dur = row.get("duration_s")
+                        if not pid or isinstance(dur, bool) \
+                                or not isinstance(dur, (int, float)):
+                            continue
+                        samples.setdefault(str(pid), []).append(float(dur))
+            except OSError:
+                continue
+        return {pid: statistics.median(vals) for pid, vals in samples.items() if vals}
+
+    def _client_eta_sentence(self) -> str:
+        """PD-031: `About <N> minutes to go.` for the START message, or "".
+
+        N is the sum of the MEDIAN recorded durations of the phases still
+        ahead of the run, rounded to whole minutes. Nothing is stated unless
+        every minute of it came from a recorded duration: no median for any
+        remaining phase -> no sentence.
+        """
+        medians = self._stage_timing_medians()
+        if not medians:
+            return ""
+        remaining: List[str] = []
+        for ph in self.manifest.phases:
+            status = PHASE_STATUS_PENDING
+            for ps in self.state.get("phases") or []:
+                if ps.get("id") == ph.id:
+                    status = ps.get("status") or PHASE_STATUS_PENDING
+                    break
+            if status in (PHASE_STATUS_DONE, PHASE_STATUS_DEFERRED,
+                          PHASE_STATUS_OBSOLETE):
+                continue
+            remaining.append(ph.id)
+        total_s = sum(medians[pid] for pid in remaining if pid in medians)
+        minutes = int(round(total_s / 60.0))
+        if minutes < 1:
+            return ""
+        return f"About {minutes} minutes to go."
 
     def _route_around_converter_phase(self, phase: Phase, creation_mode: str) -> None:
         """Record a converter_path phase as not applicable to this deck, WITHOUT
@@ -1855,20 +2265,29 @@ class Engine:
         return (not missing), missing
 
     def _phase_is_gate_declined(self, phase: Phase) -> bool:
-        """True when the phase's own substance verifier returns a PASS whose
-        reason names a gate decline (defer/waived) — the phase legitimately
-        made no artifact because the client declined the upsell, and must be
-        checkpointed deferred, never regenerated or blocked (F59)."""
+        """True when the phase legitimately made no artifact because the client
+        declined its gate — decided from the manifest's structured gate
+        (`defers_unless`) against the run's recorded intake answers, never from
+        words in the verifier's notes (PD-045).
+
+        The phase must still pass its substance verifier; a failed verifier is
+        a real finding, not a declination.
+        """
+        if not getattr(phase, "defers_unless", None):
+            return False
+        intake = (self.state.get("intake")
+                  if isinstance(self.state, dict) else None) or load_intake(
+                      self.run_dir)
+        if not intake:
+            return False
         try:
             import phase_verifiers
-            ok, notes = phase_verifiers.verify(phase.id, self.run_dir)
+            ok, _notes = phase_verifiers.verify(phase.id, self.run_dir)
         except Exception:  # noqa: BLE001 — verifier unusable: not a decline
             return False
         if not ok:
             return False
-        joined = "; ".join(notes or []).lower()
-        return ("defer" in joined or "waived" in joined) and ("gate" in joined
-                or "declined" in joined)
+        return phase_is_deferred(phase, intake)
 
     def _revalidate_banked(self, phase: Phase, ps: Dict[str, Any]) -> List[str]:
         """Return a list of human-readable reasons, empty when every banked artifact is still good."""
@@ -2211,11 +2630,12 @@ class Engine:
                              attempts=ps.get("attempts", 0) + 1)
 
             start_msg = self._render_client_report_msg(phase, "start")
-            self.report.to_requester("progress", start_msg)
-            # PRES-052: supervised relay emits at stage time, from job start —
-            # stage/waiting/retrying/progress visible before final output.
-            self._relay_emit("stage_start", f"{phase.id} starting — {start_msg}",
-                             stage=phase.id)
+            if start_msg:
+                self.report.to_requester("progress", start_msg, phase_id=phase.id)
+                # PRES-052: supervised relay emits at stage time, from job start —
+                # stage/waiting/retrying/progress visible before final output.
+                self._relay_emit("stage_start", f"{phase.id} starting — {start_msg}",
+                                 stage=phase.id)
 
         # PRES-031: build the canonical scoped persona context (client /
         # company / presentation IDs, audience, topic, offer, owner voice,
@@ -2285,6 +2705,14 @@ class Engine:
             return self._block(phase, "no executor is defined for this phase")
 
         if rc == EXIT_OK:
+            # PD-048b: THE PAUSE. A delegated page install that is waiting on
+            # a person (its receipt says pending_external_execution) is
+            # recorded waiting HERE -- before the artifact/verifier/heal
+            # ladder can read the pending receipt as a substance failure and
+            # tell the client "<phase id> artifact check failed ... Regenerating".
+            pause = heal.waiting_on_person(self.run_dir, phase)
+            if pause is not None:
+                return self._pause_for_person(phase, pause)
             ok, missing = self._artifacts_present(phase)
             if not ok:
                 # F59 (SMOKE-1, 2026-09-01): a gate-decline script phase (the
@@ -2462,13 +2890,17 @@ class Engine:
                 method="engine_done")
             done_msg = self._render_client_report_msg(phase, "done")
             with self._state_lock:
-                self.report.to_requester("progress", done_msg)
-                # PRES-052: stage completion visible in the supervised view.
-                self._relay_emit("stage_done",
-                                 f"{phase.id} complete — {done_msg}",
-                                 stage=phase.id)
+                if done_msg:
+                    self.report.to_requester("progress", done_msg, phase_id=phase.id)
+                    # PRES-052: stage completion visible in the supervised view.
+                    self._relay_emit("stage_done",
+                                     f"{phase.id} complete — {done_msg}",
+                                     stage=phase.id)
                 if self.board:
-                    self.board.phase_progress(phase.id, done_msg)
+                    # The board is the OPERATOR view: when the phase is not one
+                    # the client is told about, the card still names it plainly.
+                    board_msg = done_msg or f"{phase.id} complete"
+                    self.board.phase_progress(phase.id, board_msg)
                     # Option B: the phase's verifier has already passed by this point
                     # (a failing verifier returns via _block() above, never reaching
                     # here) -- so this phase's FIRST progress report both mints its
@@ -2482,7 +2914,7 @@ class Engine:
                     # re-derivation. Without it the CC server 403s the
                     # done-transition ("no completion evidence") and the board is
                     # left disagreeing with the run.
-                    self.board.child_report(phase.id, title, description, "done", done_msg,
+                    self.board.child_report(phase.id, title, description, "done", board_msg,
                                             deliverables=sorted(shas.keys()))
         return rc
 
@@ -2731,6 +3163,12 @@ class Engine:
         is unlinked by _run_script_phase's finally, but a rung2 regenerate
         re-executes the same guarded script and must mint its own rather than
         reuse a consumed (deleted) one.
+
+        PD-906: this nonce is NOT a run identity. It is per-phase and
+        per-invocation and is never linked or kept. Rows that must be keyed by
+        RUN use state.ensure_run_key's key (persisted in state.json, read back
+        with state.run_key_of); the two live side by side and neither replaces
+        the other.
         """
         phase_token = _nonce_phase_token(phase.id)
         nonce = secrets.token_hex(32)
@@ -2907,6 +3345,7 @@ class Engine:
             1, heal.HEAL_CAP_TRANSIENT - _prior_transient)
         _final_attempt = _attempts_this_invocation
         for attempt in range(1, _attempts_this_invocation + 1):
+            failure_kind = None
             try:
                 # FIX-21 (D21): process-group exec with cleanup — on budget expiry the
                 # whole group dies, so a timed-out phase never leaves a stray orphan.
@@ -2952,6 +3391,13 @@ class Engine:
                     self._flush_captured_output(_captured)
                     return EXIT_OK
                 reason = f"exit {r.returncode}"
+                # PD-045: the exit code is a structured fact. 402 masked by the
+                # shell is 146 (402 & 255) -- decisive, so it names the class
+                # without reading words. Any other code is NOT decisive, so the
+                # captured stderr still supplies the evidence (logged as
+                # heal.classified_by_text).
+                if r.returncode == 146:
+                    failure_kind = "exit_code:146"
                 # FIX 10: a bare exit code names no failure CLASS -- the provider
                 # refusal (HTTP 402/429/5xx, quota, connection refused...) is only
                 # visible in the executor's stderr, and 402's masked exit code
@@ -2964,17 +3410,21 @@ class Engine:
                     reason = f"exit {r.returncode}: {tail}"
             except subprocess.TimeoutExpired:
                 reason = f"exceeded its {phase.budget_minutes}-minute budget"
+                failure_kind = "timeout"
             except OSError as exc:
                 reason = f"could not start: {exc}"
+                failure_kind = "exec_os_error"
 
             with self._state_lock:
                 record_heal_event(self.state, phase.id, self.store, ps, rung=1, attempt=attempt, reason=reason)
-                # ANNOUNCE BEFORE RETRYING (invariant 6).
-                self.report.to_requester(
-                    "blocked",
+                # ANNOUNCE BEFORE RETRYING (invariant 6) -- but PD-018b: a retry
+                # is the engine's own internal work, so the client is told
+                # nothing until a step finishes or a pause is real. The retry
+                # line goes to the event log, where the operator reads it.
+                self.report.event(
+                    "report.internal",
                     f"{phase.id} failed ({reason}). Retrying — attempt {attempt} of "
-                    f"{heal.HEAL_CAP_TRANSIENT}. Nothing you need to do yet.",
-                    phase_id=phase.id, reason=reason)
+                    f"{heal.HEAL_CAP_TRANSIENT}. Nothing you need to do yet.")
                 # PRES-052: retrying state visible in the supervised view.
                 self._relay_emit("retrying",
                                  f"{phase.id} retrying — attempt {attempt} of "
@@ -2989,7 +3439,8 @@ class Engine:
         # both providers -- the QC FIX 10 proof row), any other class falls
         # through to the alternate-route rung (cap x1) exactly as before.
         last_reason = reason  # always bound: >= 1 attempt ran (Item 9(d) floor)
-        if heal.classify_failure(last_reason) == heal.FAILURE_PROVIDER_ERROR:
+        if heal.classify_failure(last_reason, failure_kind=failure_kind) \
+                == heal.FAILURE_PROVIDER_ERROR:
             with self._state_lock:
                 rc_pf = heal.rung2_provider_failover(self, phase, last_reason,
                                                      child_env=child_env)
@@ -3370,17 +3821,20 @@ class Engine:
                 return self._fail_unit(
                     phase, f"dispatcher paid retry budget: {marker_text}")
             return self._heal_or_fail_agent_phase(
-                phase, f"dispatcher retry ceiling: {marker_text}")
+                phase, f"dispatcher retry ceiling: {marker_text}",
+                failure_kind="dispatcher_retry_ceiling")
         if last_present:
             return self._heal_or_fail_agent_phase(
                 phase,
                 f"artifact matching {', '.join(phase.produces_artifact)} exists but failed "
                 f"substance verification for {phase.budget_minutes} minutes: "
-                f"{'; '.join(last_verify_notes) or 'no verifier notes captured'}")
+                f"{'; '.join(last_verify_notes) or 'no verifier notes captured'}",
+                failure_kind="check_failed")
         return self._heal_or_fail_agent_phase(
             phase,
             f"agent-authored phase produced nothing within {phase.budget_minutes} minutes. "
-            f"Expected: {', '.join(phase.produces_artifact)}")
+            f"Expected: {', '.join(phase.produces_artifact)}",
+            failure_kind="produced_nothing")
 
     # -- F9 / F10 / F11: the shared agent-phase wait -------------------------
 
@@ -3569,7 +4023,8 @@ class Engine:
         except Exception:  # noqa: BLE001 -- the alarm must never fail the wait
             return
 
-    def _heal_or_fail_agent_phase(self, phase: Phase, reason: str) -> int:
+    def _heal_or_fail_agent_phase(self, phase: Phase, reason: str,
+                                  failure_kind: Optional[str] = None) -> int:
         """F10 (2026-09-06): run the REAL heal ladder for an agent phase before
         quarantining it.
 
@@ -3591,8 +4046,12 @@ class Engine:
         ladder pass per phase per run, recorded on the phase record as
         agent_heal_done, so a --resume cannot spin the ladder forever.
         Owner-decision reasons never heal -- they fall through to _fail_unit,
-        which routes them to _block (park and notify)."""
-        failure_class = heal.classify_failure(reason)
+        which routes them to _block (park and notify).
+
+        PD-045: `failure_kind` is the structured fact the caller holds (the
+        verifier verdict, the wait outcome) — a check message that mentions
+        the word "provider" is a failed check, never a provider outage."""
+        failure_class = heal.classify_failure(reason, failure_kind=failure_kind)
         if failure_class == heal.FAILURE_OWNER_DECISION:
             return self._fail_unit(phase, reason)
         with self._state_lock:
@@ -3767,8 +4226,11 @@ class Engine:
             if not announced_half and remaining < budget_seconds / 2:
                 announced_half = True
                 with self._state_lock:
-                    self.report.to_requester(
-                        "progress",
+                    # PD-018b: waiting on a step is internal work. The client
+                    # hears nothing until a step finishes or a pause is real;
+                    # the full line goes to the event log and the relay.
+                    self.report.event(
+                        "report.internal",
                         f"Still waiting on {phase.id} ({phase.owning_role}). "
                         f"About {int(remaining/60)} minutes before I flag it.")
                     # PRES-052: active progress before final output.
@@ -4020,14 +4482,30 @@ class Engine:
         with self._state_lock:
             already_sent = bool(ps.get("pick_request_sent_at"))
         if not already_sent:
-            variant_lines = "\n".join(
-                f"  {i + 1}. Variant {v}" for i, v in enumerate(variants)
-            ) or "  (variant list unavailable — see style_samples_manifest.json)"
-            msg = (
-                f"Your presentation has 3 style directions ready. "
-                f"Please pick ONE by replying A, B or C:\n{variant_lines}\n"
-                f"(Phase {phase.id} — the deck renders only after your pick.)"
-            )
+            # PD-042: the pick request carries what the client needs to answer
+            # it -- each variant's own one-sentence style description from the
+            # spec, and where that variant's three samples are. The phase id
+            # line the old message carried is gone (PD-018b's rule: no phase id
+            # ever reaches the client).
+            pick_msgs = _style_pick_messages(self.run_dir)
+            if not pick_msgs:
+                reason = (
+                    f"{phase.id}: {STYLE_PICK_UNDELIVERED_LINE} — the samples "
+                    f"manifest at {SAMPLES_MANIFEST_REL} records no sample path "
+                    "and the style spec records no directive, so a pick request "
+                    "would be unanswerable. Parked instead of asking.")
+                self.report.event("phase.style_pick.samples_missing", reason)
+                return self._block(phase, reason)
+            if not _style_pick_samples_were_sent(self.run_dir):
+                # The reporter's transport is a JSON text payload; it cannot
+                # carry an image. The addendum's fallback branch is in force:
+                # one message per variant, each naming the variant's own
+                # description and its three file paths -- never letters alone.
+                self.report.event(
+                    "phase.style_pick.transport_text_only",
+                    f"{phase.id}: {STYLE_PICK_TRANSPORT_LINE} — the reporter "
+                    "transport carries text; each variant message names its "
+                    "description and its three sample paths instead.")
             # Delivered as kind="ack", deliberately: "progress" is the one kind
             # _throttle_decision may suppress (PROGRESS_MIN_INTERVAL_MINUTES), and
             # a pick request that the throttle eats is an owner never asked — the
@@ -4035,17 +4513,19 @@ class Engine:
             # (the "Got it, building your presentation" class) bypasses the
             # throttle unconditionally, so the ask is always on the wire exactly
             # once per run (the pick_request_sent_at stamp guards re-entry).
-            self.report.to_requester("ack", msg)
+            for msg in pick_msgs:
+                self.report.to_requester("ack", msg)
             self._relay_emit("waiting_configuration",
                              f"{phase.id} waiting on configuration — style pick "
-                             f"requested ({len(variants) or 3} variants). "
-                             "Deck renders only after the owner pick.",
+                             f"requested ({len(variants) or len(pick_msgs)} "
+                             "variants). Deck renders only after the owner pick.",
                              stage=phase.id)
             self._checkpoint(phase.id, pick_request_sent_at=utcnow())
             self.report.event(
                 "phase.style_pick.request_delivered",
                 f"{phase.id}: pick request delivered to the requester "
-                f"({len(variants) or 3} variants; waiting on "
+                f"({len(variants) or len(pick_msgs)} variants, "
+                f"{len(pick_msgs)} message(s); waiting on "
                 f"{self._STYLE_PICK_CHOICE_REL} with a verified owner_msg_id).")
 
         # 2. WAIT + PROVE on the standard 15 s cadence.
@@ -4105,7 +4585,87 @@ class Engine:
             "of variant 1)."
         )
         self.report.event("phase.style_pick.timeout", reason)
-        return self._block(phase, reason)
+        return self._block(phase, reason, client_text=STYLE_PICK_TIMEOUT_SENTENCE)
+
+    def _pause_for_person(self, phase: Phase, pause: Dict[str, Any]) -> int:
+        """PD-048b: record ONE phase as WAITING on a person and let the run go
+        on. Returns EXIT_OK so neither run() nor the ready queue counts it as
+        a failed unit.
+
+        What this deliberately does NOT do: run the substance verifier, enter
+        the heal ladder, quarantine, or call _block. All four are the failure
+        loop this unit removes -- the receipt is honest, it simply is not
+        execution evidence YET. The client is told in plain words (no phase
+        id, no AF- code, no "artifact check failed"); the operator console
+        keeps the full detail. Descendants are held by the ready predicate;
+        an independent sibling is unaffected."""
+        with self._state_lock:
+            self._checkpoint(phase.id, status=PHASE_STATUS_WAITING,
+                             waiting_reason=pause["waiting_for"],
+                             waiting_on="person",
+                             waiting_status=pause["status"],
+                             waiting_receipts=list(pause["receipts"]),
+                             waiting_since=utcnow())
+            self._clear_blocked_marker(phase.id)
+            self.report.event(
+                "phase.waiting_on_person",
+                f"{phase.id} is waiting on a person "
+                f"({pause['status']}; receipts: {', '.join(pause['receipts'])}) "
+                "-- recorded waiting, not failed; independent phases keep running")
+            self.report.to_requester("waiting", pause["waiting_for"])
+        print(f"WAITING {phase.id}: a person still has to finish the delegated "
+              f"install ({pause['status']}). Nothing is lost; a resume picks "
+              "it up once the install receipt is complete.", flush=True)
+        return EXIT_OK
+
+    def _pause_run_for_person(self) -> Optional[int]:
+        """PD-048b: the run has drained with at least one phase WAITING on a
+        person. Park it ONCE as a pause and never call close(): close() would
+        mint a process certificate and then fail the delivery gates over the
+        missing page installs -- reporting a wait as a failure.
+
+        The park record carries the full phase detail for the operator and
+        watchdog (which flags it PARKED-FOR-HUMAN, exactly right). The client
+        was already told in plain words per phase by _pause_for_person. A
+        resume re-admits the waiting phase (_READMITTABLE_PHASE_STATUSES) and
+        finishes it the moment the receipt is complete. Returns
+        EXIT_GATE_BLOCKED (the department's resumable-park code) or None when
+        nothing is waiting."""
+        waiting = [ps for ps in (self.state.get("phases") or [])
+                   if ps.get("status") == PHASE_STATUS_WAITING]
+        if not waiting:
+            return None
+        phase_ids = [str(ps.get("id")) for ps in waiting]
+        with self._state_lock:
+            self.state["terminal"] = "BLOCKED"
+            self.state["blocked"] = {
+                "phase": phase_ids[0],
+                "reason": (f"{len(phase_ids)} page install(s) waiting on a "
+                           f"person: {', '.join(phase_ids)} -- the install "
+                           "plan is written and a resume finishes this the "
+                           "moment the install receipt is complete"),
+                "at": utcnow(),
+                "kind": "waiting_on_person",
+                "phases": phase_ids,
+            }
+            self.state["waiting_for_person"] = [
+                {"phase": ps.get("id"), "reason": ps.get("waiting_reason"),
+                 "since": ps.get("waiting_since"),
+                 "receipts": list(ps.get("waiting_receipts") or [])}
+                for ps in waiting]
+            self.store.save(self.state)
+            self.report.event(
+                "run.waiting_on_person",
+                f"run paused: {len(phase_ids)} page install(s) waiting on a "
+                f"person ({', '.join(phase_ids)}) -- not a failure, resumable")
+        print("\n" + "=" * 72, file=sys.stderr)
+        print(f"PAUSED -- waiting on a person at {', '.join(phase_ids)}", file=sys.stderr)
+        print("  This is a pause, not a failure. Nothing is lost.", file=sys.stderr)
+        print("\n  continue with:", file=sys.stderr)
+        print(f"    python3 {ENTRY_COMMAND} --resume --run-dir {self.run_dir}",
+              file=sys.stderr)
+        print("=" * 72 + "\n", file=sys.stderr)
+        return EXIT_GATE_BLOCKED
 
     def _fail_unit(self, phase: Phase, reason: str) -> int:
         """FIX 9a (MASTER Part 8 Fix 9): quarantine ONE unit, park nothing.
@@ -4123,6 +4683,13 @@ class Engine:
         FAILURE_OWNER_DECISION (waiver / owner-skip-approval / gate decline
         vocabulary) and route to _block() instead: park and notify, never
         auto-heal, never quarantine a decision only the client can make."""
+        if _first_check_reason(reason).startswith(OPERATOR_REVIEW_PREFIX):
+            # PD-206b: the checker's first reason says a PERSON must look before
+            # this can pass. That is the operator's message to carry, never the
+            # client's -- and the raw verdict (AF- codes, phase ids) must not
+            # reach the client at all. Park exactly as a substance failure parks,
+            # so the existing resume path re-admits it and the check runs again.
+            return self._park_operator_review(phase, reason)
         if heal.classify_failure(reason) == heal.FAILURE_OWNER_DECISION:
             with self._state_lock:
                 heal._ledger(self, phase=phase.id, rung=None, attempt=0,
@@ -4168,13 +4735,20 @@ class Engine:
         print("=" * 72 + "\n", file=sys.stderr)
         return EXIT_GATE_BLOCKED
 
-    def _block(self, phase: Phase, reason: str) -> int:
+    def _block(self, phase: Phase, reason: str,
+               client_text: str = "") -> int:
         """Park resumable. Never die, never restart from scratch (decision #5).
 
         FIX 9a: this is now the OPERATOR/GATE park only (intake gate, missing
         executor wiring). Unit-level execution failures go through _fail_unit
         (status='quarantined', run continues) instead of parking the whole
-        run mid-flight."""
+        run mid-flight.
+
+        PD-042: `client_text` lets a caller whose park has a SPECIFIC, client-
+        answerable need (the style pick: reply A, B or C) send its own one
+        sentence instead of the generic pause sentence. It is still client
+        copy the caller is responsible for: no phase id, no AF- code. Empty
+        means the generic park sentence stays."""
         # Count banked artifacts BEFORE checkpointing, so the current
         # phase is still "done" when we look for done phases.
         with self._state_lock:
@@ -4198,15 +4772,16 @@ class Engine:
                 # same as the success path) and closes it 'blocked' with the reason.
                 title, description = self._child_card_meta(phase)
                 self.board.child_report(phase.id, title, description, "blocked", reason)
-            safe_msg = f"{len(banked)} file(s) are saved and {len(lost)} will be rebuilt on resume " \
-                       "-- nothing you sent us is lost."
-            if not lost:
-                safe_msg = f"{len(banked)} file(s) already produced are saved -- nothing is lost."
+            # PD-018b: the raw reason (phase id, AF- code, path) never reaches
+            # the client; the plain need comes from the park record. PD-042: a
+            # caller with a specific client-answerable need passes its own
+            # sentence. The banked/lost accounting stays on the operator
+            # console below.
             self.report.to_requester(
                 "blocked",
-                f"Your presentation is paused at {phase.id}. {reason} "
-                f"{safe_msg} "
-                "We have been told and are looking at it.",
+                client_text or
+                f"Your presentation is paused. {_client_need_line(self.state)} "
+                "Everything you sent is saved.",
                 phase_id=phase.id, reason=reason)
         print("\n" + "=" * 72, file=sys.stderr)
         print(f"BLOCKED at {phase.id}", file=sys.stderr)
@@ -4222,6 +4797,64 @@ class Engine:
         print("\n  continue with:", file=sys.stderr)
         print(f"    python3 {ENTRY_COMMAND} --resume --run-dir {self.run_dir}",
               file=sys.stderr)
+        print("=" * 72 + "\n", file=sys.stderr)
+        return EXIT_GATE_BLOCKED
+
+    def _park_operator_review(self, phase: Phase, reason: str) -> int:
+        """PD-206b: an operator review is an OPERATOR message, not a client alarm.
+
+        A failed step check whose FIRST reason begins `OPERATOR-REVIEW:` means
+        the slides are waiting on a person's verdict (PD-206a), not on anything
+        the client did wrong. Before this, such a reason classified as
+        owner_decision and went through `_block`, which sent the client the raw
+        checker verdict -- AF- codes, phase ids and paths included. Here instead:
+
+          * the client gets ONE plain sentence per phase (no phase id, no file
+            path, no checker code), sent once per phase and once per run even
+            across resumes (`operator_review_notified` on the phase record);
+          * the operator gets the full reason on the board event the engine
+            already posts for a blocked phase (`mark_blocked` + the child card
+            closed "blocked"). RD-05 found no other operator transport reachable
+            from this file, so with no board at all the event
+            `report.operator_review_needed` is recorded in the job state and
+            `BLOCKED-FOLLOWUP: no operator channel` is reported;
+          * the phase is parked BLOCKED with the checker's own reason, exactly
+            as `_block` parks a substance failure -- `blocked_reason` keeps the
+            verdict prefix and the newest heal event is the verifier's own, so
+            `readmit_retryable_phases` re-admits it on the next resume and the
+            check RUNS AGAIN once the verdict file exists. Nothing is skipped,
+            softened or bypassed.
+        """
+        with self._state_lock:
+            ps = self._phase_state(phase.id)
+            already_notified = bool(ps.get("operator_review_notified"))
+            self._checkpoint(phase.id, status=PHASE_STATUS_BLOCKED,
+                             blocked_reason=reason,
+                             operator_review_notified=True)
+            self.state["terminal"] = "BLOCKED"
+            self.state["blocked"] = {"phase": phase.id, "reason": reason,
+                                     "at": utcnow()}
+            self.store.save(self.state)
+            self.report.event("report.operator_review_needed", reason)
+            if self.board:
+                self.board.mark_blocked(phase.id, reason)
+                title, description = self._child_card_meta(phase)
+                self.board.child_report(phase.id, title, description, "blocked", reason)
+            else:
+                print("BLOCKED-FOLLOWUP: no operator channel", file=sys.stderr)
+            if not already_notified:
+                # force=True: a once-per-phase sentence must not be swallowed by
+                # the progress throttle -- the phase's own start message may have
+                # stamped that window seconds ago (PD-206b, acceptance A1).
+                self.report.to_requester(
+                    "progress", OPERATOR_REVIEW_CLIENT_SENTENCE,
+                    phase_id=phase.id, force=True)
+        print("\n" + "=" * 72, file=sys.stderr)
+        print(f"OPERATOR REVIEW at {phase.id}", file=sys.stderr)
+        print(f"  reason   : {reason}", file=sys.stderr)
+        print(f"  owner    : {phase.owning_role}", file=sys.stderr)
+        print("  the step stays parked; --resume re-admits it and the check "
+              "runs again once the human verdict file exists", file=sys.stderr)
         print("=" * 72 + "\n", file=sys.stderr)
         return EXIT_GATE_BLOCKED
 
@@ -4294,7 +4927,13 @@ class Engine:
                 continue
             if status in (PHASE_STATUS_RUNNING, PHASE_STATUS_QUARANTINED,
                           PHASE_STATUS_FAILED, PHASE_STATUS_BLOCKED,
-                          PHASE_STATUS_DEFERRED, PHASE_STATUS_OBSOLETE):
+                          PHASE_STATUS_DEFERRED, PHASE_STATUS_OBSOLETE,
+                          # PD-048b: a person-wait is NOT re-admitted inside
+                          # this invocation -- without this it would fall
+                          # through to the pending branch and be re-run on
+                          # every tick (the failure loop, moved). Descendants
+                          # below still see it as not-passed and wait.
+                          PHASE_STATUS_WAITING):
                 if status == PHASE_STATUS_RUNNING:
                     running.append(p.id)
                 continue
@@ -4624,6 +5263,14 @@ class Engine:
             f"run over it. Plan refused; no phase has run.")
 
     def run(self, only: Optional[str] = None, until: Optional[str] = None) -> int:
+        # PD-906: one key per RUN, minted once and persisted in state.json so
+        # every phase, retry and resume of this run can be keyed by it. It is
+        # read back (never re-minted) on resume, and it is never logged or
+        # printed. This sits BESIDE the per-phase front-door nonce below --
+        # the nonce is per-phase/per-invocation and stays exactly as it was.
+        with self._state_lock:
+            ensure_run_key(self.state, self.store)
+
         # U024 — sacred-structure warn check, once at engine start-up.
         # DELIBERATELY NON-BLOCKING: a structure drift is a signal to a human,
         # not grounds to refuse a client's job. A missing pin file is likewise
@@ -4801,6 +5448,11 @@ class Engine:
                         failed_rcs.append((p.id, rc))
                 if failed_rcs:
                     return self._park_failed_units(failed_rcs)
+                # PD-048b: a drained run with a person-wait is PAUSED, never
+                # closed as done and never parked as a failure.
+                paused_rc = self._pause_run_for_person()
+                if paused_rc is not None:
+                    return paused_rc
                 self._emit_run_summary(run_started_t)
                 if only:
                     return EXIT_OK
@@ -5084,6 +5736,12 @@ class Engine:
                         self._flush_telemetry_cc()
                     return rc
 
+        # PD-048b: same pause rule on the wave/rollback path -- a person-wait
+        # is never closed as done and never parked as a failure.
+        paused_rc = self._pause_run_for_person()
+        if paused_rc is not None:
+            return paused_rc
+
         # FIX 5: one-line run summary (total wall-clock, slowest phases).
         self._emit_run_summary(run_started_t)
 
@@ -5208,9 +5866,14 @@ class Engine:
         # FIX 20: an obsolete row is a phase REMOVED from the manifest at
         # repin, not a gap in this run — it must not read as incomplete and
         # brick the close gate for a job whose manifest legitimately changed.
+        # PD-076: a step that is blocked, running, pending, failed or
+        # quarantined is NOT a settled step. Only done, deferred (the client
+        # declined that page) and obsolete (removed from the manifest at
+        # repin) count, otherwise the certificate claims an integrity the run
+        # does not have.
         incomplete = [p.get('id') for p in phases
                       if p.get('status') not in (PHASE_STATUS_DONE,
-                                                 PHASE_STATUS_BLOCKED,
+                                                 PHASE_STATUS_DEFERRED,
                                                  PHASE_STATUS_OBSOLETE)]
 
         # 3. Check substance verification
@@ -5263,6 +5926,39 @@ class Engine:
             k for k, v in gates_state.items()
             if isinstance(v, dict) and v.get('state') not in ('pass', 'waived')
         ]
+        # PD-076: `total` is the CONTRACT (every key in ALL_GATE_KEYS). A key
+        # the state never recorded was never evaluated, and an unevaluated
+        # gate is not a pass -- name each one that is missing.
+        missing_gate_keys = [
+            k for k in ALL_GATE_KEYS if not isinstance(gates_state.get(k), dict)
+        ]
+
+        # PD-201: a gate that passed only in degraded mode or through a test
+        # seam is not a real pass. working/checkpoints/gate_log.jsonl is the
+        # engine's own record of gate results; any row whose result is
+        # degraded_pass or test_seam_used means this run's evidence is weaker
+        # than the certificate would imply.
+        degraded_rows: List[str] = []
+        gate_log_path = self.run_dir / 'working' / 'checkpoints' / 'gate_log.jsonl'
+        try:
+            gate_log_lines = gate_log_path.read_text(
+                encoding='utf-8', errors='replace').splitlines()
+        except OSError:
+            gate_log_lines = []
+        for lineno, line in enumerate(gate_log_lines, 1):
+            if not line.strip():
+                continue
+            try:
+                row = json.loads(line)
+            except (json.JSONDecodeError, TypeError):
+                continue
+            if not isinstance(row, dict):
+                continue
+            result = row.get('result')
+            if result in ('degraded_pass', 'test_seam_used'):
+                label = (row.get('phase_id') or row.get('gate')
+                         or row.get('check') or row.get('step') or '?')
+                degraded_rows.append(f'line {lineno} ({label} result={result})')
 
         # 7. Build the certificate
         cert = {
@@ -5304,13 +6000,20 @@ class Engine:
                 'passed': gate_pass_count,
                 'total': gate_total,
                 'failed_gate_keys': gate_failures,
-                'all_passed': len(gate_failures) == 0,
+                'missing_gate_keys': missing_gate_keys,
+                'degraded_or_test_seam_rows': degraded_rows,
+                'all_passed': (len(gate_failures) == 0
+                               and len(missing_gate_keys) == 0
+                               and len(degraded_rows) == 0),
             },
             'integrity_pass': (
                 len(unentered) == 0 and
+                len(incomplete) == 0 and
                 len(substance_unverified) == 0 and
                 len(monotonic_violations) == 0 and
-                len(gate_failures) == 0
+                len(gate_failures) == 0 and
+                len(missing_gate_keys) == 0 and
+                len(degraded_rows) == 0
             ),
             'integrity_fail_reasons': [],
         }
@@ -5324,10 +6027,27 @@ class Engine:
                 cert['integrity_fail_reasons'].append(
                     f'AF-PROCESS-INTEGRITY: {len(substance_unverified)} phase(s) '
                     'without substance verification: ' + ', '.join(substance_unverified))
+            if incomplete:
+                cert['integrity_fail_reasons'].append(
+                    f'AF-PROCESS-INTEGRITY: {len(incomplete)} step(s) not done, '
+                    'deferred or obsolete: ' + ', '.join(incomplete))
             if monotonic_violations:
                 cert['integrity_fail_reasons'].append(
                     f'AF-PROCESS-INTEGRITY: {len(monotonic_violations)} timestamp '
                     'monotonicity violation(s)')
+            if gate_failures:
+                cert['integrity_fail_reasons'].append(
+                    f'AF-PROCESS-INTEGRITY: {len(gate_failures)} gate(s) did not '
+                    'pass and were not waived: ' + ', '.join(gate_failures))
+            if missing_gate_keys:
+                cert['integrity_fail_reasons'].append(
+                    f'AF-PROCESS-INTEGRITY: {len(missing_gate_keys)} gate key(s) '
+                    'never evaluated: ' + ', '.join(missing_gate_keys))
+            if degraded_rows:
+                cert['integrity_fail_reasons'].append(
+                    f'AF-PROCESS-INTEGRITY: {len(degraded_rows)} gate-log row(s) '
+                    'recorded a degraded or test-seam pass: '
+                    + '; '.join(degraded_rows))
 
         # 8. Write to checkpoints (atomic, same pattern as state.save())
         import tempfile as _tempfile
@@ -5527,6 +6247,33 @@ class Engine:
             return True
         return False
 
+    def _send_done_message(self, waived_count: int = 0) -> None:
+        """PD-042: send the client their finished message, or send nothing.
+
+        The message is `_compose_done_message`'s output: the ready sentence
+        plus one line per verified destination. PD-313 calls the same compose
+        function for its own path. When it returns "" there is no verified
+        destination -- the client is NOT told "ready" and `report.done_withheld`
+        records why, so the run stays visible to the delivery step instead of
+        claiming a handoff nobody can point at.
+
+        PD-313: when gates were waived at the client's own request, the
+        waived-checks sentence is appended to the same message. Nothing is
+        appended when no gate was waived.
+        """
+        msg = _compose_done_message(self.run_dir)
+        if not msg:
+            self.report.event(
+                DONE_WITHHELD_EVENT,
+                "no verified delivery destination is recorded "
+                f"({DELIVERY_PLAN_REL} carries no destination with status "
+                "'verified'), so no 'ready' message was sent to the client; "
+                "the run is left for the delivery step.")
+            return
+        if waived_count > 0:
+            msg = f"{msg} {waived_count} check(s) were waived at your request."
+        self.report.to_requester("done", msg)
+
     def close(self) -> int:
         gates = Gates(self.run_dir, self.state).evaluate_all()
 
@@ -5550,9 +6297,12 @@ class Engine:
                 "gates": [r.split(':', 1)[0] for r in reasons],
             }
             self.store.save(self.state)
-            self.report.to_requester(
-                "blocked",
+            # PD-018b: integrity detail is internal -- event log and the operator
+            # console below only; the client gets one plain sentence.
+            self.report.event(
+                "report.internal",
                 f"Process integrity failed — deck cannot ship: {len(reasons)} integrity violation(s)")
+            self.report.to_requester("blocked", CLIENT_INTERNAL_SENTENCE)
             print("\nCANNOT CLOSE -- process certificate integrity FAILED:", file=sys.stderr)
             print(lines, file=sys.stderr)
             print("\n  Every manifest phase must have run and been substance-verified.", file=sys.stderr)
@@ -5585,6 +6335,10 @@ class Engine:
                 gate_warnings.append({"gate": k, "reason": g.get("reason") or "failed"})
                 continue
             failures.append((k, g.get("reason") or "failed"))
+        # PD-313: how many checks reached DONE only because the client waived
+        # them -- the finished message says so instead of claiming a clean run.
+        waived_n = sum(1 for k in ALL_GATE_KEYS
+                       if (gates.get(k) or {}).get("state") == "waived")
         if gate_warnings:
             self.state["gate_warnings"] = gate_warnings
             print(f"{len(gate_warnings)} gate(s) in warn-mode did not pass -- see state.json gate_warnings", file=sys.stderr)
@@ -5622,9 +6376,12 @@ class Engine:
                         "missing_keys": exc.missing_keys,
                     }
                     self.store.save(self.state)
-                    self.report.to_requester(
-                        "blocked",
+                    # PD-018b: technical text to the event log, plain sentence
+                    # to the client (see CLIENT_INTERNAL_SENTENCE).
+                    self.report.event(
+                        "report.internal",
                         f"Curation failed — {len(exc.missing_keys)} deliverable(s) missing: {exc}")
+                    self.report.to_requester("blocked", CLIENT_INTERNAL_SENTENCE)
                     print(f"\nCANNOT CLOSE — curation failed:\n{exc}", file=sys.stderr)
                     return EXIT_GATE_BLOCKED
                 # WORK-ITEM-16: self-audit runs as the FINAL step before
@@ -5640,9 +6397,12 @@ class Engine:
                         "output": audit_output,
                     }
                     self.store.save(self.state)
-                    self.report.to_requester(
-                        "blocked",
+                    # PD-018b: technical text to the event log, plain sentence
+                    # to the client (see CLIENT_INTERNAL_SENTENCE).
+                    self.report.event(
+                        "report.internal",
                         f"Self-audit failed before handoff — {audit_reason}")
+                    self.report.to_requester("blocked", CLIENT_INTERNAL_SENTENCE)
                     print(f"\nCANNOT CLOSE — self-audit failed:\n{audit_output}", file=sys.stderr)
                     return EXIT_GATE_BLOCKED
                 if not self._board_register_close():
@@ -5651,8 +6411,10 @@ class Engine:
                 self.state["terminal"] = "DONE"
                 self.state["completed_at"] = utcnow()
                 self.store.save(self.state)
-                self.report.to_requester(
-                    "done", "Your presentation is ready. All quality checks passed.")
+                # PD-042: the finished message says WHERE the deck is, from the
+                # verified delivery record. No verified destination -> nothing
+                # is sent and the withholding is logged (PD-313 reuses this).
+                self._send_done_message(waived_count=waived_n)
                 print("DONE — all gates passed after re-evaluation.", flush=True)
                 return EXIT_OK
             self.state["terminal"] = "BLOCKED"
@@ -5697,9 +6459,12 @@ class Engine:
                 "missing_keys": exc.missing_keys,
             }
             self.store.save(self.state)
-            self.report.to_requester(
-                "blocked",
+            # PD-018b: technical text to the event log, plain sentence to the
+            # client (see CLIENT_INTERNAL_SENTENCE).
+            self.report.event(
+                "report.internal",
                 f"Curation failed — {len(exc.missing_keys)} deliverable(s) missing: {exc}")
+            self.report.to_requester("blocked", CLIENT_INTERNAL_SENTENCE)
             print(f"\nCANNOT CLOSE — curation failed:\n{exc}", file=sys.stderr)
             return EXIT_GATE_BLOCKED
         # WORK-ITEM-16: self-audit runs as the FINAL step before handoff --
@@ -5715,9 +6480,12 @@ class Engine:
                 "output": audit_output,
             }
             self.store.save(self.state)
-            self.report.to_requester(
-                "blocked",
+            # PD-018b: technical text to the event log, plain sentence to the
+            # client (see CLIENT_INTERNAL_SENTENCE).
+            self.report.event(
+                "report.internal",
                 f"Self-audit failed before handoff — {audit_reason}")
+            self.report.to_requester("blocked", CLIENT_INTERNAL_SENTENCE)
             print(f"\nCANNOT CLOSE — self-audit failed:\n{audit_output}", file=sys.stderr)
             return EXIT_GATE_BLOCKED
         if not self._board_register_close():
@@ -5726,6 +6494,11 @@ class Engine:
         self.state["terminal"] = "DONE"
         self.state["completed_at"] = utcnow()
         self.store.save(self.state)
+        # PD-313: the normal close (every gate passed first time) tells the
+        # client the deck is ready, exactly like the re-gated close above. The
+        # same PD-042 compose function decides the text; no verified
+        # destination -> nothing is sent and the withholding is logged.
+        self._send_done_message(waived_count=waived_n)
         print("DONE -- all gates passed.", flush=True)
         return EXIT_OK
 
