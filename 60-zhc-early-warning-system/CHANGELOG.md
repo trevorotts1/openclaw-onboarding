@@ -3,6 +3,15 @@
 All notable changes to this skill. Dates are UTC. This skill's version lives in
 `skill-version.txt` and the SKILL.md frontmatter `version:` field, kept in lockstep.
 
+## [1.2.5] - 2026-11-13
+
+The duplicate tick no longer comes back after a network change.
+
+- **Root cause:** `install.sh` built the tick's declaration key from bare `hostname`. On a Mac with no HostName pinned (the factory default), `hostname` follows the current network and flips between values such as `Name-MacBook-2.local` and `NameBook2`. Each flip produced a new key, so the next install or fleet roll registered a second tick while the first kept running. A live client box carried two ticks firing in the same minute and was hand-fixed three times in eight days.
+- **Fix:** new `resolve_box()` takes the identity from `--box`, then the identity already recorded in the ledger (`meta.box`), then `FLEET_STANDING_BOX_SLUG`, then macOS `LocalHostName`, then `hostname -s`, with `.local` stripped. Existing boxes keep their existing key permanently.
+- New `retire_stale_box_ticks()` runs after a successful registration and removes any tick registered under an old box name, whether keyed (`skill60-ews-tick-*` other than the current key) or unkeyed (`ews-tick-*` running this installer's own command). It never touches other jobs.
+- Self-test: added a stable-identity case and a stale-name case. The fake `openclaw` used by the self-test now supports `cron rm`.
+
 ## [1.2.3] - 2026-10-12
 
 D11: no more permanent false alarms from Ollama Cloud or from a box with no tunnel.
