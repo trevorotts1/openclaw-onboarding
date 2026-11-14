@@ -237,13 +237,19 @@ def _save_hold(env):
             "actual_cost": ev.get("actual_cost")}
 
 
-def _held_result(n, variant, env, hold):
+def _held_result(n, variant, env, hold, spent_cents=None):
     """X05: ONE held attempt reported as itself -- never ``ok``, never
     ``FAILED``. The paid task and its charge are retained, delivery is not
-    claimed, and ``recovery`` names the save-only resume: no resubmit."""
+    claimed, and ``recovery`` names the save-only resume: no resubmit.
+
+    S75-018: ``spent_cents`` is the charge the held attempt ACTUALLY incurred,
+    passed through unchanged -- ``run_takes``' own figure where it returned,
+    the ledger-settled ``actual_cost`` of the held envelope otherwise. An
+    unknown charge stays ``None``; it is never reported as zero."""
     return {"n": n, "variant": variant, "status": "HELD", "take": None,
             "heard": None, "concerns": [], "receipt": None,
             "attempt": 1, "attempts": 1, "receipts": [],
+            "spent_cents": spent_cents,
             "delivery": False, "resubmit": False,
             "recovery": {"command": "save", "task_id": hold["task_id"],
                          "save_dir": hold["save_dir"], "info": hold["info"]},
@@ -842,10 +848,12 @@ def one_variant(n, variant, request, plan, generate, measure, save, script_words
             ev["persistence_path"] = path or _envelope_path(str(envelope_run_dir),
                                                             variant["id"])
             env = dict(env, evidence=ev)
-        # X05: a save hold crossed this boundary too. It is still a hold.
+        # X05: a save hold crossed this boundary too. It is still a hold. The
+        # charge is the held envelope's own settled figure (S75-018); None
+        # means UNKNOWN, never free.
         hold = _save_hold(env)
         if hold:
-            return _held_result(n, variant, env, hold)
+            return _held_result(n, variant, env, hold, hold.get("actual_cost"))
         return {"n": n, "variant": variant, "status": status, "take": None,
                 "heard": held, "concerns": [], "receipt": held_rcpt,
                 "attempt": 1, "attempts": 1, "receipts": list(judged),
@@ -859,7 +867,7 @@ def one_variant(n, variant, request, plan, generate, measure, save, script_words
     # id and charge -- never a failure that invites a resubmit.
     hold = _save_hold(env)
     if hold:
-        return _held_result(n, variant, env, hold)
+        return _held_result(n, variant, env, hold, r.get("spent_cents"))
     return {"n": n, "variant": variant,
             "status": got["verdict"] if got else "FAILED",
             "take": got["delivered"] if got else None,
@@ -869,6 +877,9 @@ def one_variant(n, variant, request, plan, generate, measure, save, script_words
             "concerns": [] if got else failure_concerns(r),
             "receipt": got.get("receipt") if got else (r.get("receipt")),
             "attempt": 1, "attempts": 1, "receipts": r["receipts"],
+            # S75-018: the real per-attempt charge, carried out of run_takes
+            # unchanged so the reported block can show money beside the counts.
+            "spent_cents": r.get("spent_cents"),
             "envelope": env, "counts": env["counts"]}
 
 
@@ -2102,12 +2113,23 @@ def cmd_generate(a, generate=None, measure=None, save=None, plan=None):
     # submitted counts. Prefer the measured count; fall back to attempts.
     dispatched = (counts["submitted"] if any(r.get("counts") for r in results)
                 else sum(int(r.get("attempts") or 0) for r in results))
+    # S75-018: money beside the counts. Each result carries the callee's OWN
+    # ``spent_cents`` (run_takes counts the per-attempt charge); the block
+    # reports their sum, never a price recomputed from a constant. One result
+    # with an UNKNOWN charge makes the whole figure UNKNOWN -- ``None``, never
+    # zero, and never a partial total presented as the run's spend.
+    charges = [r["spent_cents"] for r in results if "spent_cents" in r]
+    spent_cents = (None if (len(charges) != len(results)
+                            or any(c is None for c in charges))
+                   else sum(int(c) for c in charges))
     if a.variant or a.unit_id:
         out = {"mode": "orchestrated", "outcome": run_outcome,
-               "dispatched": dispatched, "counts": counts, "results": results}
+               "dispatched": dispatched, "spent_cents": spent_cents,
+               "counts": counts, "results": results}
     else:
         out = {"mode": "umbrella", "outcome": run_outcome,
-               "dispatched": dispatched, "counts": counts, "results": results,
+               "dispatched": dispatched, "spent_cents": spent_cents,
+               "counts": counts, "results": results,
                "media_concurrency": 3, "builder_agent_units": 1,
                "note": "3 provider jobs in 3 THREADS inside ONE agent unit; "
                        "threads are not visible agents"}
