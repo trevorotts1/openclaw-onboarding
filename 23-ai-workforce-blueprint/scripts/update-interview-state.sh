@@ -752,62 +752,17 @@ if [ "$COMPLETE" = true ]; then
   fi
 
   if [ "$qc_kick_eligible" = true ] && [ -z "$kick_blocked_reason" ]; then
-    if command -v openclaw >/dev/null 2>&1; then
-      # Resolve a chat the bot can reply to.
-      #
-      # v21.x CLIENT-LEAK FIX: this used to try .ownerChat FIRST. KICK_MSG below is
-      # INTERNAL — it literally ends with "Do NOT message the owner - this is an
-      # internal build kick" — and `openclaw message send --channel telegram -t
-      # <chat>` DELIVERS to that chat. Owner-first therefore delivered our internal
-      # build-kick instructions straight into the client's own Telegram thread, at
-      # the exact moment they finished their interview.
-      #
-      # Operator escalation chat is now FIRST. .ownerChat remains a last-resort
-      # fallback only, because on a box with no operator chat configured it is the
-      # only route that reaches the agent at all, and dropping the kick there would
-      # trade a visible leak for another silent strand. The fallback logs LOUDLY.
-      # CO-MINGLING GUARD (v12.4.0): NO hardcoded personal chat.
-      KICK_CHAT="$(openclaw config get env.vars.OPERATOR_ESCALATION_CHAT_ID 2>/dev/null | tail -1 | tr -d '[:space:]')"
-      case "$KICK_CHAT" in ""|*"not found"*|*"Error"*) KICK_CHAT="" ;; esac
-      if [ -z "$KICK_CHAT" ]; then
-        KICK_CHAT="$(openclaw config get env.vars.OPERATOR_TELEGRAM_CHAT_ID 2>/dev/null | tail -1 | tr -d '[:space:]')"
-        case "$KICK_CHAT" in ""|*"not found"*|*"Error"*) KICK_CHAT="${OPERATOR_ESCALATION_CHAT_ID:-${OPERATOR_TELEGRAM_CHAT_ID:-}}" ;; esac
-      fi
-      # NO .ownerChat fallback. It delivered internal build-kick text into the
-      # client's own thread at the exact moment they finished their interview, and
-      # it bought nothing: this is a Telegram SEND, and a send does not become an
-      # inbound agent turn, so it could never actually start a build. We fail SAFE
-      # -- skip the kick and let the resume cron drive -- rather than fall through
-      # to the client.
-      KICK_AGENT=$(state_read "$STATE" "agentName" "the master orchestrator")
-      # STANDARD-FIRST BRANCH (PHASE 7): a box with buildType=standard-first was
-      # PREBUILT before the interview (prebuild-standard-workforce.sh), so the
-      # interview EDITED the built set and the build-kick must APPLY THE DIFF -
-      # never rebuild from scratch. Legacy boxes (absent buildType or any other
-      # value) keep the ORIGINAL message byte-identical (rollback property 1).
-      KICK_BUILD_TYPE=$(state_read "$STATE" "buildType" "")
-      if [ "$KICK_BUILD_TYPE" = "standard-first" ]; then
-        KICK_MSG="[WORKFORCE-RESUME] ${KICK_AGENT}: the interview is COMPLETE and the QC gate is build-eligible (interviewQc.status=${qc_for_kick}). This is a STANDARD-FIRST box: the canonical department floor was PREBUILT before the interview began (standardPrebuild), so do NOT build from scratch - APPLY THE DIFF the interview recorded, per the Skill 23 Post-Interview Handoff Protocol. Run the apply-standard-edits build (build-workforce.py --apply-standard-edits): (1) deprovision the CONFIRMED declines (scripts/retire-confirmed-decline.sh - archive to .retired/, NEVER delete, provenanced declines only), (2) materialize the custom departments the owner ADDED, (3) add the declared industry verticals, and (4) personalize the KEPT departments (no-clobber on owner-edited content) - then register the agents.list rows for every confirmed-kept department (the deferred Moment 3.5). Silence = KEEP: a department with no recorded decision stays exactly as prebuilt. If parts of the diff are ALREADY applied from a prior or partial run, do NOT start over - resume them: leave every finished department alone and drive the unfinished ones to done. roleLibraryStatus + sopLibraryStatus are already seeded pending; a SCRIPT will write buildCompletedAt + closeoutStatus when all departments + both libraries are done, and the closeout fires automatically. Do NOT message the owner - this is an internal build kick; the owner only hears from you when Skill 37 Step 6 delivers the celebration."
-      else
-        KICK_MSG="[WORKFORCE-RESUME] ${KICK_AGENT}: the interview is COMPLETE and the QC gate is build-eligible (interviewQc.status=${qc_for_kick}). Start the workforce build NOW per the Skill 23 Post-Interview Handoff Protocol - reconcile the canonical department floor with the owner's custom departments, write every planned department into .workforce-build-state.json as status=pending, then build them (build-workforce.py). If departments are ALREADY present from a prior or partial build, do NOT start over - resume them: leave every finished department alone and drive the unfinished ones to done. roleLibraryStatus + sopLibraryStatus are already seeded pending; a SCRIPT will write buildCompletedAt + closeoutStatus when all departments + both libraries are done, and the closeout fires automatically. Do NOT message the owner - this is an internal build kick; the owner only hears from you when Skill 37 Step 6 delivers the celebration."
-      fi
-      # The kick is internal text. If the configured operator chat is really the
-      # client's own chat, skip the send and let the resume cron drive.
-      KICK_OWNER_CHAT=$(state_read "$STATE" "ownerChat" "")
-      if [ -n "$KICK_CHAT" ] && { [ "$KICK_CHAT" = "$KICK_OWNER_CHAT" ] || [ "$KICK_CHAT" = "${OPENCLAW_OWNER_CHAT_ID:-}" ]; }; then
-        echo "WARN: operator escalation chat is the client's own chat - build-kick send SKIPPED so internal text never reaches the client. Fix env.vars.OPERATOR_ESCALATION_CHAT_ID." >&2
-        KICK_CHAT=""
-      fi
-      if [ -z "$KICK_CHAT" ] || [ "$KICK_CHAT" = "null" ]; then
-        echo "INFO: no operator escalation chat configured - build-kick send SKIPPED rather than routed to the client (resume cron drives the build within 15m). Configure env.vars.OPERATOR_ESCALATION_CHAT_ID via scripts/configure-operator-telegram.sh to receive these." >&2
-      elif openclaw message send --channel telegram -t "$KICK_CHAT" -m "$KICK_MSG" 2>&1; then
-        echo "auto-closeout: dispatched [WORKFORCE-RESUME] build-kick to chat $KICK_CHAT"
-      else
-        echo "WARN: build-kick dispatch failed (non-fatal - resume cron will re-dispatch within 15m)" >&2
-      fi
-    else
-      echo "INFO: openclaw CLI not on PATH - build-kick deferred to resume cron (interviewComplete + gate fields are seeded; cron will dispatch)" >&2
-    fi
+    # A Telegram send does not start an agent turn (see the dispatch-result note
+    # at the end of resume-workforce-build.sh), so the old [WORKFORCE-RESUME]
+    # kick is gone. start-workforce-build.py starts the apply-diff build on a
+    # standard-first box and otherwise records .workforce-build-wanted.json for
+    # the Command Center's build-kick job (a script cannot create a turn). Its
+    # one JSON line is copied to standard output.
+    _SWB_LINE=""
+    set +e
+    _SWB_LINE="$("$WORKFORCE_PYTHON" "$UPD_SCRIPT_DIR/start-workforce-build.py" --state "$STATE" || true)"
+    set -e
+    if [ -n "$_SWB_LINE" ]; then printf '%s\n' "$_SWB_LINE"; fi
   elif [ "$qc_kick_eligible" != true ]; then
     echo "INFO: build NOT kicked - interviewQc.status=$qc_for_kick is not build-eligible (eligible: pass|needs-review). QC-resume/watchdog lanes own this." >&2
   else
