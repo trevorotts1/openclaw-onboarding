@@ -39,6 +39,8 @@ for k, v in (("negative_tags", INP["negative_tags"] + ", spoken word"), ("negati
              ("model", "V5"), ("style", INP["style"] + " Spoken spoken."), ("style_weight", 0.5)):
     assert SD.validate_request(dict(req, input=dict(INP, **{k: v})), "soul-ballad", CLIENT, 58), k
 # WW-30: a mutation at the TOP level is the retired flat contract and is named
+# (U-M01: the callback address is optional, so a PRESENT but empty one --
+# callBackUrl=None -- is the refused defect, named CALLBACK_EMPTY)
 for bad in (dict(req, input=None, lyrics=INP["lyrics"]),
             dict(req, callBackUrl=None),
             dict(req, input=dict(INP, prompt="a competing prompt")),
@@ -48,6 +50,7 @@ for bad in (dict(req, input=None, lyrics=INP["lyrics"]),
     errs = SD.validate_request(bad, "soul-ballad", CLIENT, 58)
     assert errs, bad
     assert any(e.split(":")[0] in ("LEGACY_FLAT_CONTRACT", "CALLBACK_NOT_TOP_LEVEL",
+                                   "CALLBACK_EMPTY",
                                    "COMPETING_LYRICS", "MISSING_DIRECTION",
                                    "UNSUPPORTED_MODEL", "UNSUPPORTED_MODEL_VALUE",
                                    "ENVELOPE_INPUT_MISSING") for e in errs), (bad, errs)

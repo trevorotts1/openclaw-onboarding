@@ -245,7 +245,9 @@ def test_built_request_carries_the_blueprint():
     inp = req["input"]
     check("the request is the current createTask envelope",
           req["endpoint"] == MD.CREATE_TASK_ENDPOINT
-          and req["model"] == MD.MUSIC_TASK_MODEL and "callBackUrl" in req)
+          and req["model"] == MD.MUSIC_TASK_MODEL
+          and "callBackUrl" not in req,     # U-M01: no invented placeholder
+          sorted(req))
     check("the duration is the blueprint-delivered length (88 s)",
           inp["duration"] == 88.0, inp["duration"])
     check("the final style carries BOTH blueprint directions in order",
