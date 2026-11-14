@@ -20,7 +20,7 @@ No file outside PD-018b's named set was touched. `report.py` was **not** modifie
 All behavioural proof below was run in an integration tree that carries this branch plus only PD-018a's three manifest artifacts (manifest, `MANIFEST-SOURCE.txt`, `_content-manifest.json`), never PD-018a's test file:
 
 ```
-INTEGRATION TREE: /Volumes/mac mini m4/swarm-contract/pd-fix/scratchpads/PD-018b/integration
+INTEGRATION TREE: <CONTRACT_ROOT>/swarm-contract/pd-fix/scratchpads/PD-018b/integration
 (created with: git worktree add --detach <path> HEAD
                git checkout b78085f9e -- universal-sops/presentation-slide-craft/PIPELINE-MANIFEST.json \
                  universal-sops/presentation-slide-craft/MANIFEST-SOURCE.txt universal-sops/_content-manifest.json)
@@ -63,7 +63,7 @@ assert msg == "Step 10 of 16 — Creating your slide images — starting"
 ```
 
 ### D. Unquoted notify path made the transport never start (A4 vacuous) — FIXED
-`PRESENTATION_NOTIFY_CMD` is an argument vector (`shlex.split`, `shell=False`). The mandated TMPDIR is `/Volumes/mac mini m4/...`, so an unquoted path splits into three tokens, the transport never starts, and `assert not sent.exists()` passed vacuously. Both harnesses now quote:
+`PRESENTATION_NOTIFY_CMD` is an argument vector (`shlex.split`, `shell=False`). The mandated TMPDIR is `<CONTRACT_ROOT>/...`, so an unquoted path splits into three tokens, the transport never starts, and `assert not sent.exists()` passed vacuously. Both harnesses now quote:
 
 ```
 monkeypatch.setenv("PRESENTATION_NOTIFY_CMD", shlex.quote(str(notify)))

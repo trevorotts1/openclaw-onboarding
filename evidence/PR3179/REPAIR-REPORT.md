@@ -6,7 +6,7 @@ Date: 2026-11-13
 
 ## 1. The ejection, quoted
 
-Source: `/Volumes/mac mini m4/Downloads/git trees and automations/batch-merger/runs/openclaw-onboarding-20261113-160036/evidence/3179-CONFLICT.txt`
+Source: `<CONTRACT_ROOT>/Downloads/git trees and automations/batch-merger/runs/openclaw-onboarding-20261113-160036/evidence/3179-CONFLICT.txt`
 
 ```
 Auto-merging 23-ai-workforce-blueprint/templates/role-library/presentations/scripts/presentation_job/phases.py
