@@ -665,10 +665,20 @@ def main(argv=None) -> int:
                    help="path to write the engine's --new intake JSON")
     p.add_argument("--source", default="resolve-intake",
                    help="tag recorded in intake.source (which caller ran this)")
-    p.add_argument("--writer-phase", default="resolve-intake",
+    # PD-308: --writer-phase is NOT a free-form tag -- runfacts.INTAKE_WRITERS
+    # is a closed set, and append_intake_provenance() raises ValueError for any
+    # name outside it, so a default outside it made every DEFAULT invocation
+    # write intake.json and then fail to append its row (exit 0, loud stderr,
+    # oracle refuses the run). The default must therefore be the sanctioned
+    # writer id itself: 'resolve_intake' (underscore), the same name the module
+    # and the registry carry. The hyphenated spelling this used to hold was
+    # copied across from --source below, which is a free-form tag on a
+    # different axis. test_resolve_intake.py pins the membership.
+    p.add_argument("--writer-phase", default="resolve_intake",
                    help="FIX 109: the writer_phase recorded in the intake "
                         "provenance row appended for this sanctioned write "
-                        "(defaults to 'resolve-intake'; the intake phase's own "
+                        "(defaults to 'resolve_intake', which must be a member "
+                        "of runfacts.INTAKE_WRITERS; the intake phase's own "
                         "caller passes its phase id)")
     p.add_argument("--intake-depth", default=None,
                    type=lambda v: str(v).strip().lower().replace("_", "-").replace(" ", "-"),
