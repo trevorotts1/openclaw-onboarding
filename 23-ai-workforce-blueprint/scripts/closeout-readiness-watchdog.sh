@@ -119,7 +119,19 @@ REPO_ROOT="$(cd "$SKILL_DIR/.." && pwd)"
 # build-state lock (BU-36). The lib resolves WORKFORCE_PYTHON and puts this
 # skill's scripts/ folder on PYTHONPATH exactly the way every other writer does,
 # so the watchdog can never clobber a field another writer just committed.
-source "$SCRIPT_DIR/lib-workforce-state.sh"
+# A lone copy of this file (a partial install, a staged fixture, a single-file
+# rollout) has no lib next to it: guard the source and stand up the same two
+# exports inline so a missing sibling can never abort the escalation pass -
+# an unbound WORKFORCE_PYTHON under `set -u` kills the shell mid-escalation,
+# which is exactly how a recovery-lane finding masked the client stuck class
+# behind it. ponytail: the degraded writer below duplicates workforce_state's
+# lock; re-adding the shared lib as a hard dependency is the upgrade path.
+if [[ -f "$SCRIPT_DIR/lib-workforce-state.sh" ]]; then
+  source "$SCRIPT_DIR/lib-workforce-state.sh" 2>/dev/null || true
+fi
+: "${WORKFORCE_PYTHON:=$(command -v python3)}"
+export WORKFORCE_PYTHON
+export PYTHONPATH="$SCRIPT_DIR${PYTHONPATH:+:$PYTHONPATH}"
 
 STATE_FILE="${ZHC_STATE_FILE:-${OC_ROOT}/workspace/.workforce-build-state.json}"
 LOCK_FILE="${OC_ROOT}/workspace/.closeout-watchdog.lock"
@@ -216,13 +228,30 @@ PY
 
 # Set a single top-level build-state key to JSON null (replaces the old bare
 # read-modify-write). $1 = bare key name (no leading dot). Locked, best-effort.
+# ponytail: the file-lock fallback below duplicates workforce_state.update's
+# locking; re-adding the shared lib as a hard dependency is the upgrade path.
 state_set_null() {
   [ -f "$STATE_FILE" ] || return 1
   "$WORKFORCE_PYTHON" - "$STATE_FILE" "$1" <<'PY' 2>/dev/null || return 1
 import sys
-from workforce_state import update
-
 state_path, key = sys.argv[1:3]
+try:
+    from workforce_state import update
+except ImportError:
+    import fcntl, json, os
+    from pathlib import Path
+    _lk = Path(str(state_path) + '.write.lock')
+    _lk.parent.mkdir(parents=True, exist_ok=True)
+    def update(path, mutate):
+        with _lk.open('a+') as _h:
+            fcntl.flock(_h, fcntl.LOCK_EX)
+            _s = json.loads(Path(path).read_text())
+            mutate(_s)
+            _s['stateRevision'] = int(_s.get('stateRevision', 0)) + 1
+            _tmp = str(path) + '.tmp'
+            Path(_tmp).write_text(json.dumps(_s, indent=2) + '\n')
+            os.replace(_tmp, path)
+            fcntl.flock(_h, fcntl.LOCK_UN)
 
 def mutate(state):
     state[key] = None
@@ -238,9 +267,24 @@ state_append_blocker_and_throttle() {
   [ -f "$STATE_FILE" ] || return 1
   "$WORKFORCE_PYTHON" - "$STATE_FILE" "$1" "$2" "$3" <<'PY' 2>/dev/null || return 1
 import sys
-from workforce_state import update
-
 state_path, cls, reason, ts = sys.argv[1:5]
+try:
+    from workforce_state import update
+except ImportError:
+    import fcntl, json, os
+    from pathlib import Path
+    _lk = Path(str(state_path) + '.write.lock')
+    _lk.parent.mkdir(parents=True, exist_ok=True)
+    def update(path, mutate):
+        with _lk.open('a+') as _h:
+            fcntl.flock(_h, fcntl.LOCK_EX)
+            _s = json.loads(Path(path).read_text())
+            mutate(_s)
+            _s['stateRevision'] = int(_s.get('stateRevision', 0)) + 1
+            _tmp = str(path) + '.tmp'
+            Path(_tmp).write_text(json.dumps(_s, indent=2) + '\n')
+            os.replace(_tmp, path)
+            fcntl.flock(_h, fcntl.LOCK_UN)
 
 def mutate(state):
     # closeoutBlockers: keep only not-yet-cleared entries, append the new one, cap at 20.
