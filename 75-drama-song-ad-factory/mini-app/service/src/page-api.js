@@ -218,9 +218,11 @@ async function draftRoute(ctx) {
   if (!checked.ok) return fail(400, checked.code, checked.message);
 
   const updated_at = nowMs;
+  // U-Z08 — the photos the client added ride the draft too, so a page closed
+  // between an upload and Lock it in still sends the ids with the order.
   await objects.objectPut(
     scopePath(auth.client_id, DRAFT_FILE),
-    JSON.stringify({ replies: checked.replies, updated_at }),
+    JSON.stringify({ replies: checked.replies, upload_ids: checked.uploadIds, updated_at }),
   );
   return ok({ updated_at });
 }
@@ -268,6 +270,10 @@ async function readDraft(objects, clientId) {
   if (!draft || typeof draft !== 'object' || !Array.isArray(draft.replies)) return null;
   return {
     replies: draft.replies,
+    // U-Z08 — a draft written before this change has no ids; it reads as none.
+    upload_ids: Array.isArray(draft.upload_ids)
+      ? draft.upload_ids.filter((id) => typeof id === 'string')
+      : [],
     updated_at: typeof draft.updated_at === 'number' ? draft.updated_at : null,
   };
 }
