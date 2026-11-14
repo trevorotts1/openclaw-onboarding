@@ -403,11 +403,24 @@ test('admin: the cutoff is computed and shown, and a save is refused by name', (
   assert.equal(DSAdmin.setCutoffRequest(9000, 'UTC').code, 'AF-DS-CUTOFF-INVALID');
 });
 
-test('admin: cutting a key off is refused by name until the route exists', () => {
-  const refused = DSAdmin.revokeKeyRequest();
-  assert.equal(refused.ok, false);
-  assert.equal(refused.code, 'AF-DS-CUTOFF-NO-ROUTE');
-  assert.match(refused.message, /\/api\/studio\/admin\/revoke/);
+test('admin: cutting a key off is a real request, and a malformed one names AF-DS-REVOKE-INVALID', () => {
+  // U-Z12 (S75-103) — the studio now HAS /api/studio/admin/revoke. The page
+  // names a client and a kind; it never takes, shows or returns a key value.
+  const built = DSAdmin.revokeKeyRequest('admin-fixture', ' c_1 ', 'box');
+  assert.equal(built.ok, true);
+  assert.equal(built.method, 'POST');
+  assert.equal(built.path, '/api/studio/admin/revoke');
+  assert.deepEqual(built.body, { admin_key: 'admin-fixture', client_id: 'c_1', kind: 'box' });
+  assert.equal(/\?/.test(built.path), false, 'the admin key never travels in a query string');
+
+  for (const kind of DSAdmin.REVOKE_KINDS) {
+    assert.equal(DSAdmin.revokeKeyRequest('admin-fixture', 'c_1', kind).ok, true, kind);
+  }
+  assert.equal(DSAdmin.revokeKeyRequest('', 'c_1', 'box').code, 'AF-DS-REVOKE-INVALID');
+  assert.equal(DSAdmin.revokeKeyRequest('k', '  ', 'box').code, 'AF-DS-REVOKE-INVALID');
+  assert.equal(DSAdmin.revokeKeyRequest('k', 'c_1', 'link').code, 'AF-DS-REVOKE-INVALID',
+    'a personal link is rotated by minting a new one, never cut off here');
+  assert.equal(DSAdmin.revokeKeyRequest('k', 'c_1', '').code, 'AF-DS-REVOKE-INVALID');
 });
 
 // ---------------------------------------------------------------------------

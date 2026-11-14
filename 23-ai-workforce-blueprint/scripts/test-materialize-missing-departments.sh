@@ -244,6 +244,12 @@ assert needle in src, "library_roster_for() signature not found -- cannot inject
 start = src.index(needle)
 end = src.index('\n\n\ndef build_gap_map', start)
 assert end > start, "could not locate end of library_roster_for() for injection"
+# DEPT-LEVEL DOCS are not roles and never appear in _index.json: the deck
+# README and the governing-personas deck. The historical bug globbed the dept
+# folder for role files, so both are excluded here -- otherwise a DECK-LEVEL
+# .md at a subdir-layout dept's root (e.g. engineering/governing-personas.md)
+# would make the naive glob look non-empty and silently mask the very defect
+# this lock exists to reproduce.
 broken_fn = (
     "def library_roster_for(dept_id, index_roles=None):\n"
     "    # BUG INJECTED FOR T5 FAIL-FIRST PROOF: naive flat glob only -- misses\n"
@@ -251,7 +257,8 @@ broken_fn = (
     "    lib_dir = LIBRARY / crw.normalize_dept(dept_id)\n"
     "    if not lib_dir.is_dir():\n"
     "        return []\n"
-    "    return sorted(f.stem for f in lib_dir.glob('*.md') if f.name != 'how-to-use-this-department.md')\n"
+    "    dept_docs = {'how-to-use-this-department.md', 'governing-personas.md'}\n"
+    "    return sorted(f.stem for f in lib_dir.glob('*.md') if f.name not in dept_docs)\n"
 )
 patched = src[:start] + broken_fn + src[end + 3:]
 assert patched != src

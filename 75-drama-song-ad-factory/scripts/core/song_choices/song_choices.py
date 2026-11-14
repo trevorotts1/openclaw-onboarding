@@ -237,80 +237,33 @@ def _save_hold(env):
             "actual_cost": ev.get("actual_cost")}
 
 
-def _held_result(n, variant, env, hold):
+def _held_result(n, variant, env, hold, submitted_digest=None):
     """X05: ONE held attempt reported as itself -- never ``ok``, never
     ``FAILED``. The paid task and its charge are retained, delivery is not
-    claimed, and ``recovery`` names the save-only resume: no resubmit."""
+    claimed, and ``recovery`` names the save-only resume: no resubmit.
+
+    S75-018 (X06): a hold reached AFTER the transport returned carries the
+    admitted-snapshot digest too, so the held submission is still provably the
+    admitted one. A hold raised before the transport returned has no digest to
+    carry and reports ``None`` -- never a fabricated value."""
     return {"n": n, "variant": variant, "status": "HELD", "take": None,
             "heard": None, "concerns": [], "receipt": None,
             "attempt": 1, "attempts": 1, "receipts": [],
+            "submitted_digest": submitted_digest,
             "delivery": False, "resubmit": False,
             "recovery": {"command": "save", "task_id": hold["task_id"],
                          "save_dir": hold["save_dir"], "info": hold["info"]},
             "hold": hold, "envelope": env, "counts": env["counts"]}
 
 
-def save_only_plan(env):
-    """X05: the exact adapter ``save`` command for a held attempt, or [] when
-    the envelope is not a resumable save hold. Generation is never in it."""
-    hold = _save_hold(env)
-    if not hold:
-        return []
-    argv = ["save", "--task-id", hold["task_id"], "--json"]
-    if hold["save_dir"]:
-        argv += ["--save-dir", str(hold["save_dir"])]
-    if hold["info"]:
-        argv += ["--info", str(hold["info"])]
-    return argv
-
-
-def resume_save_only(env, call):
-    """X05: resume ONE held attempt by RE-SAVING its existing task id.
-
-    ``call`` is the dispatcher's adapter call (``_call(runner, adapter, argv)``
-    shape): it takes argv and returns ``(rc, json_or_None, raw)``. Nothing here
-    can submit or generate, so a recovery adds ZERO provider submissions. The
-    re-saved files are verified (present, regular, non-empty) before any is
-    reported; a recovery that yields nothing usable stays a hold."""
-    argv = save_only_plan(env)
-    if not argv:
-        return {"ok": False, "reason_code": "NOT_A_SAVE_HOLD",
-                "detail": "the envelope carries no resumable save recovery",
-                "argv": [], "saved_paths": []}
-    try:
-        rc, v, raw = call(argv)
-    except Exception as exc:                     # noqa: BLE001 - reported, never raised
-        return {"ok": False, "reason_code": "KIE_SAVE_FAILED",
-                "detail": "the save command raised: %s" % exc,
-                "argv": argv, "saved_paths": []}
-    listed = v.get("saved_paths") if isinstance(v, dict) else None
-    if not isinstance(listed, list):
-        return {"ok": False, "reason_code": "KIE_SAVE_PATHS_UNSUPPORTED",
-                "detail": "saved_paths answered %s, not a list"
-                          % type(listed).__name__,
-                "argv": argv, "saved_paths": []}
-    good, missing, empty = [], [], []
-    for p in listed:
-        try:
-            if isinstance(p, str) and os.path.isfile(p):
-                if os.path.getsize(p) > 0:
-                    good.append(p)
-                else:
-                    empty.append(p)
-                continue
-        except OSError:
-            pass
-        missing.append(repr(p)[:80])
-    if listed and not (missing or empty):
-        return {"ok": True, "reason_code": "", "detail": "",
-                "argv": argv, "saved_paths": good, "rc": rc}
-    return {"ok": False,
-            "reason_code": ("KIE_SAVE_OUTPUT_MISSING" if missing else
-                            "KIE_SAVE_OUTPUT_EMPTY" if empty else "KIE_SAVE_EMPTY"),
-            "detail": ("no verified file: %s" % ", ".join(missing[:5])) if missing
-                      else ("zero-byte: %s" % ", ".join(empty[:5])) if empty
-                      else "the save command listed no output file",
-            "argv": argv, "saved_paths": good, "rc": rc}
+# X05 deletion (U-GEN304): ``save_only_plan`` and ``resume_save_only`` are
+# gone. They were a finished save-only resume with ZERO callers -- no production
+# recovery step resumes a held attempt, so the pair promised an act nothing
+# could take. The retained charge and the operator's exact resume inputs stay on
+# the HELD result's ``recovery``/``hold`` blocks, and the on-disk envelope keeps
+# the task id, so an operator can still run Skill 74 ``save --task-id`` by hand.
+# Adding an automated caller needs a new authorized recovery surface, not an
+# uncalled function pair inside this module.
 
 
 def _brief_refusals(variant):
@@ -859,7 +812,7 @@ def one_variant(n, variant, request, plan, generate, measure, save, script_words
     # id and charge -- never a failure that invites a resubmit.
     hold = _save_hold(env)
     if hold:
-        return _held_result(n, variant, env, hold)
+        return _held_result(n, variant, env, hold, r.get("submitted_digest"))
     return {"n": n, "variant": variant,
             "status": got["verdict"] if got else "FAILED",
             "take": got["delivered"] if got else None,
@@ -869,6 +822,12 @@ def one_variant(n, variant, request, plan, generate, measure, save, script_words
             "concerns": [] if got else failure_concerns(r),
             "receipt": got.get("receipt") if got else (r.get("receipt")),
             "attempt": 1, "attempts": 1, "receipts": r["receipts"],
+            # S75-018 (X06): the digest run_takes computed over the EXACT
+            # outbound snapshot it re-admitted inside the governor callback.
+            # It used to stop at this boundary and survive only into a test
+            # assertion; it now rides the result to the reported block, which
+            # is what proves "the admitted snapshot is the submitted one".
+            "submitted_digest": r.get("submitted_digest"),
             "envelope": env, "counts": env["counts"]}
 
 
@@ -2103,8 +2062,16 @@ def cmd_generate(a, generate=None, measure=None, save=None, plan=None):
     dispatched = (counts["submitted"] if any(r.get("counts") for r in results)
                 else sum(int(r.get("attempts") or 0) for r in results))
     if a.variant or a.unit_id:
+        # S75-018 (X06): the run's REPORTED block is where the digest must be
+        # readable. Orchestrated mode runs exactly ONE unit, so exactly one
+        # snapshot was admitted and one digest names it. The umbrella run
+        # admits three and keeps each variant's digest on its own row under
+        # "results" -- never one digest standing in for three.
         out = {"mode": "orchestrated", "outcome": run_outcome,
-               "dispatched": dispatched, "counts": counts, "results": results}
+               "dispatched": dispatched, "counts": counts,
+               "submitted_digest": (results[0].get("submitted_digest")
+                                    if results else None),
+               "results": results}
     else:
         out = {"mode": "umbrella", "outcome": run_outcome,
                "dispatched": dispatched, "counts": counts, "results": results,

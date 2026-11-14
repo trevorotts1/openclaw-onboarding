@@ -19,7 +19,12 @@
 //               Change something   -> the typed text
 //   song        Pick this one      -> "1" .. "3" (which of the players)
 //   storyboard  Approve all        -> "GO"
-//               Change this shot   -> "shot N: <text>"
+//               Send my changes    -> ONE answer, one line per filled box:
+//                                     "shot 2: <text>" newline "shot 5: <text>"
+//
+// S75-072: the storyboard card has no per-shot button any more. Every note the
+// client types goes out in a single answer, so no note can be left behind, and
+// the box side (U-A09) splits that answer back into one change per shot.
 //
 // ST5 — MEDIA IS FETCHED, NOT HOT-LINKED.
 // Every file URL the service hands back sits behind the same `x-ds-key`
@@ -217,6 +222,14 @@ const isRevisionRequired = (err) => !!err && (
 // the first state that says it can actually start playing.
 const PLAYABLE_READY_STATE = 3;
 
+// A card's card-wide answer buttons. A song pick gates itself (one button per
+// version) and lists none here; a storyboard card gates its two buttons
+// ("Approve all" and "Send my changes"), which unlock together once every still
+// is on the page.
+function gateButtons(gate) {
+  return gate && Array.isArray(gate.answerButtons) ? gate.answerButtons : [];
+}
+
 function imageReady(img) {
   if (typeof img.decode === "function") return img.decode();
   if (img.complete && Number(img.naturalWidth) > 0) return Promise.resolve();
@@ -324,7 +337,7 @@ async function hydrateMedia(ctx, job, generation) {
         disable(job.button);
         if (job.gate) {
           job.gate.failed = true;
-          disable(job.gate.approveButton);
+          for (const b of gateButtons(job.gate)) disable(b);
         }
         mediaFailed(ctx, job.item);
       });
@@ -332,7 +345,9 @@ async function hydrateMedia(ctx, job, generation) {
     enable(job.button);
     if (job.gate) {
       job.gate.pending -= 1;
-      if (job.gate.pending === 0 && !job.gate.failed) enable(job.gate.approveButton);
+      if (job.gate.pending === 0 && !job.gate.failed) {
+        for (const b of gateButtons(job.gate)) enable(b);
+      }
     }
   } catch (err) {
     if (generation !== ctx.generation || ctx.disposed) return;
@@ -343,7 +358,7 @@ async function hydrateMedia(ctx, job, generation) {
     if (job.gate) {
       job.gate.pending -= 1;
       job.gate.failed = true;
-      disable(job.gate.approveButton);
+      for (const b of gateButtons(job.gate)) disable(b);
     }
     disable(job.button);
     mediaFailed(ctx, job.item);
@@ -448,7 +463,7 @@ if (typeof globalThis.addEventListener === "function") {
 // ── the three card bodies ────────────────────────────────────────────────────
 function scriptControls(ctx, item) {
   const id = `change-${item.stage}-${item.version}`;
-  const input = el("input", { id, type: "text", autocomplete: "off" });
+  const input = el("textarea", { id, rows: "4", autocomplete: "off" });
   input.value = "";
   return [
     el("label", { class: "hint", for: id, text: "What should change? Type it here." }),
@@ -471,7 +486,7 @@ function songControls(ctx, item) {
   const key = cardKey(item);
   const files = Array.isArray(item.files) ? item.files : [];
   const choices = Array.isArray(item.choices) ? item.choices : [];
-  const gate = ctx.gates.get(key) || { pending: 0, failed: false, approveButton: null };
+  const gate = ctx.gates.get(key) || { pending: 0, failed: false, answerButtons: [] };
   const options = files.length
     ? files.slice(0, 3).map((f, i) => ({ n: i + 1, file: f, label: choices[i] ? choices[i].label : null }))
     : choices.map((c, i) => ({
@@ -515,35 +530,41 @@ function storyboardControls(ctx, item) {
   const shots = files.length
     ? files.map((f, i) => ({ n: i + 1, file: f }))
     : [{ n: 1, file: null }];
-  const gate = ctx.gates.get(key) || { pending: 0, failed: false, approveButton: null };
+  const gate = ctx.gates.get(key) || { pending: 0, failed: false, answerButtons: [] };
 
+  const boxes = [];
   const rows = shots.map((s) => {
     const id = `shot-${item.version}-${s.n}`;
     const input = el("input", { id, type: "text", autocomplete: "off" });
     input.value = "";
+    boxes.push({ n: s.n, input });
     const still = s.file ? el("img", { alt: `Shot ${s.n} of the storyboard` }) : null;
-    const change = actionBtn("Change this shot", () => {
-      const value = String(input.value || "").trim();
-      if (!value) {
-        announce("Write what should change, then tap Change this shot.");
-        return Promise.resolve();
-      }
-      return submit(ctx, item, `shot ${s.n}: ${value}`);
-    }, Boolean(s.file));
     if (s.file) {
       gate.pending += 1;
-      ctx.jobs.push({ item, file: s.file, node: still, button: change, gate, kind: "image" });
+      ctx.jobs.push({ item, file: s.file, node: still, button: null, gate, kind: "image" });
     }
     return el("div", { class: "media-row" }, [
       still,
       el("label", { class: "hint", for: id, text: `What should change in shot ${s.n}?` }),
       input,
-      change,
     ]);
   });
 
   const approve = actionBtn("Approve all", () => submit(ctx, item, "GO"), files.length > 0);
-  gate.approveButton = approve;
+  // S75-072: every filled box leaves in ONE answer ("shot N: text" per line),
+  // so the box side never sees a second note folded into the first shot's text.
+  const sendAll = actionBtn("Send my changes", () => {
+    const lines = boxes
+      .map(({ n, input }) => ({ n, text: String(input.value || "").trim() }))
+      .filter((b) => b.text)
+      .map(({ n, text }) => `shot ${n}: ${text}`);
+    if (!lines.length) {
+      announce("Write what should change under at least one shot first.");
+      return Promise.resolve();
+    }
+    return submit(ctx, item, lines.join("\n"));
+  }, files.length > 0);
+  gate.answerButtons = [approve, sendAll];
   ctx.gates.set(key, gate);
 
   return [
@@ -551,7 +572,7 @@ function storyboardControls(ctx, item) {
       el("legend", { text: "Every shot, in order." }),
       ...rows,
     ]),
-    el("div", { class: "actions" }, [approve]),
+    el("div", { class: "actions" }, [approve, sendAll]),
   ];
 }
 

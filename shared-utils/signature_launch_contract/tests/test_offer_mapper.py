@@ -114,6 +114,7 @@ def test_round_trip_keeps_exclusions_billing_and_native_ids_the_fixtures_do_not_
     p["exclusions"] = ["No refunds after week 2"]
     p["price"]["billing_type"] = "recurring"
     p["price"]["schedule"] = [{"amount_minor": 49700, "due": "monthly"}]  # 78 refuses recurring with no interval
+    p["billing"] = "monthly"  # the cadence word beside the price: 79's request requires the interval too
     d["answers"]["packages"]["value"][0]["native_product_id"] = "prod_1"
     record, _ = om.answers_to_record(d, **IDENT)
     plan = om.record_to_plan(record)
@@ -123,6 +124,7 @@ def test_round_trip_keeps_exclusions_billing_and_native_ids_the_fixtures_do_not_
     assert next(o for o in plan["offers_in_order"] if o["display_name"] == "Starter")["native_product_id"] == "prod_1"
     req = om.record_to_checkout_request(record, "MAIN-2", checkout_mode="combined_single_offer", **CONTEXT)
     assert req["main_price"]["billing_type"] == "recurring"
+    assert req["main_price"]["recurring_interval"] == "month"
     assert req["main_price"]["schedule"] == [{"sequence": 1, "amount_minor": 49700, "due": "monthly"}]
     vco.validate_request(req)
 
@@ -163,6 +165,91 @@ def test_billing_comes_from_the_answers_never_a_constant():
     d["answers"]["billing"] = {"value": "monthly", "status": "provided", "source": "client"}
     record, flagged = om.answers_to_record(d, **IDENT)
     assert flagged == [] and {o["prices"][0]["billing_type"] for o in record["offers"]} == {"recurring"}
+
+
+def test_the_entrys_own_cadence_word_is_the_billing_fact():
+    """the client states how each offer bills beside the offer's own answer."""
+    d = doc("answers.elevation.json")
+    d["answers"]["upsell_1"]["value"]["billing"] = "monthly"
+    d["answers"]["downsell_1"]["value"]["billing"] = "quarterly"
+    record, flagged = om.answers_to_record(d, **IDENT)
+    said = {f["field"] for f in flagged}
+    assert "billing:upsell_1" not in said and "billing:downsell_1" not in said
+    u1 = next(o for o in record["offers"] if o["slot"] == "upsell_1")["prices"][0]
+    d1 = next(o for o in record["offers"] if o["slot"] == "downsell_1")["prices"][0]
+    assert (u1["billing_type"], u1["recurring_interval"]) == ("recurring", "month")
+    assert (d1["billing_type"], d1["recurring_interval"]) == ("recurring", "quarter")
+    assert vlp.validate_launch(record) == []
+
+
+def test_the_recurring_record_reaches_the_79_request_with_its_interval():
+    d = doc("answers.elevation.json")
+    d["answers"]["upsell_1"]["value"]["billing"] = "monthly"
+    record, _ = om.answers_to_record(d, **IDENT)
+    u1 = next(o for o in record["offers"] if o["slot"] == "upsell_1")
+    req = om.record_to_checkout_request(record, u1["offer_id"], checkout_mode="combined_single_offer", **CONTEXT)
+    assert (req["main_price"]["billing_type"], req["main_price"]["recurring_interval"]) == ("recurring", "month")
+
+
+def test_an_intervalless_recurring_price_cannot_reach_a_request():
+    d = doc("answers.elevation.json")
+    p = d["answers"]["packages"]["value"][0]["price"]
+    p["billing_type"] = "recurring"  # stated with no cadence word or interval anywhere
+    record, _ = om.answers_to_record(d, **IDENT)
+    main_id = next(o["offer_id"] for o in record["offers"] if o["prices"][0]["billing_type"] == "recurring")
+    with pytest.raises(om.MapperError) as e:
+        om.record_to_checkout_request(record, main_id, checkout_mode="combined_single_offer",
+                                      **dict(CONTEXT, approved_plan_hash="p" * 64))
+    assert e.value.code == "AF-CHECKOUT-BILLING"
+    assert "recurring_interval" in e.value.detail
+
+
+def test_a_cadence_word_the_release_does_not_carry_is_refused_not_flattened():
+    d = doc("answers.elevation.json")
+    d["answers"]["upsell_1"]["value"]["billing"] = "every other month"
+    with pytest.raises(om.MapperError) as e:
+        om.answers_to_record(d, **IDENT)
+    assert e.value.code == "AF-OFFER-BILLING"
+    assert "not one this release carries" in e.value.detail
+
+
+def test_a_stated_global_cadence_word_the_release_does_not_carry_is_refused_not_flattened():
+    """Devil's Advocate WORST-1: the global billing answer is stated too — the same refusal,
+    so Skill 83's resolve_offer (which drops to_confirm) can never silently charge one payment."""
+    d = doc("answers.elevation.json")
+    d["answers"]["billing"] = {"value": "every other month", "status": "provided", "source": "client"}
+    for caller in (om.answers_to_offers, om.resolve_offer):
+        with pytest.raises(om.MapperError) as e:
+            if caller is om.answers_to_offers:
+                caller(d, test_only=True)
+            else:
+                caller(d, "answers-file:packages[0]", slot="main", display_name="Essential",
+                       amount_minor=4900, currency="USD", test_only=True)
+        assert e.value.code == "AF-OFFER-BILLING"
+
+
+def test_a_trial_price_cannot_reach_a_request():
+    """Devil's Advocate WORST-2: trial is plan-time-refused by the family, so the request
+    builder never dresses it up as trial_then_recurring for a consumer that skipped the plan."""
+    d = doc("answers.elevation.json")
+    p = d["answers"]["packages"]["value"][0]["price"]
+    p["billing_type"] = "trial"
+    p["recurring_interval"] = "month"
+    record, _ = om.answers_to_record(d, **IDENT)
+    main_id = next(o["offer_id"] for o in record["offers"] if o["slot"] == "main")
+    with pytest.raises(om.MapperError) as e:
+        om.record_to_checkout_request(record, main_id, checkout_mode="combined_single_offer", **CONTEXT)
+    assert e.value.code == "AF-CHECKOUT-BILLING"
+    assert "payment plans are not supported in this release" in e.value.detail
+
+
+def test_recurrence_terms_never_ride_a_non_recurring_price():
+    d = doc("answers.elevation.json")
+    d["answers"]["packages"]["value"][0]["price"]["billing_type"] = "one_time"
+    d["answers"]["packages"]["value"][0]["price"]["recurring_interval"] = "month"
+    with pytest.raises(om.MapperError) as e:
+        om.answers_to_record(d, **IDENT)
+    assert e.value.code == "AF-OFFER-BILLING"
 
 
 def test_offer_without_a_resolving_source_ref_is_refused_at_intake():
@@ -256,3 +343,79 @@ def test_resolve_offer_carries_a_recommended_price_as_recommended_unapproved():
     got = om.resolve_offer(d, "answers-file:packages[0]", slot="main", display_name="TEST ONLY Essential",
                            amount_minor=9700, currency="USD")
     assert (got["prices"][0]["approval_status"], got["source_kind"]) == ("recommended_unapproved", "recommendation")
+
+
+# ------------------------------------------------ recurring offers end to end: weekly, monthly, quarterly, yearly
+CADENCES = [("weekly", "week"), ("monthly", "month"), ("quarterly", "quarter"), ("yearly", "year"),
+            ("every year", "year"), ("every three months", "quarter")]
+
+
+def _launch_context():
+    return _load("s71_launch_context_for_recurring", _skill("71-blackceo-signature-page") / "scripts" / "launch_context.py")
+
+
+@pytest.mark.parametrize("word,interval", CADENCES)
+def test_each_cadence_reaches_the_record_the_schema_and_the_79_request(word, interval):
+    d = doc("answers.elevation.json")
+    d["answers"]["upsell_1"]["value"]["billing"] = word
+    record, _ = om.answers_to_record(d, **IDENT)
+    u1 = next(o for o in record["offers"] if o["slot"] == "upsell_1")
+    assert (u1["prices"][0]["billing_type"], u1["prices"][0]["recurring_interval"]) == ("recurring", interval)
+    assert vlp.validate_launch(record) == []
+    lc = _launch_context()
+    schema = json.loads((_skill("71-blackceo-signature-page") / "references" / "launch.schema.json").read_text())
+    assert lc.validate(record, schema, label="launch") == []  # the record schema carries recurring_interval
+    req = om.record_to_checkout_request(record, u1["offer_id"], checkout_mode="combined_single_offer", **CONTEXT)
+    vco.validate_request(req)
+    assert (req["main_price"]["billing_type"], req["main_price"]["recurring_interval"]) == ("recurring", interval)
+
+
+def test_a_one_payment_offer_next_to_a_monthly_one_stays_one_payment():
+    d = doc("answers.elevation.json")
+    d["answers"]["upsell_1"]["value"]["billing"] = "monthly"
+    d["answers"]["downsell_1"]["value"]["billing"] = "all at once"
+    record, _ = om.answers_to_record(d, **IDENT)
+    d1 = next(o for o in record["offers"] if o["slot"] == "downsell_1")["prices"][0]
+    assert d1["billing_type"] == "one_time" and "recurring_interval" not in d1
+
+
+def test_a_stored_interval_outside_the_four_is_refused():
+    d = doc("answers.elevation.json")
+    p = d["answers"]["upsell_1"]["value"]["price"]
+    p.update(billing_type="recurring", recurring_interval="fortnight")
+    with pytest.raises(om.MapperError) as e:
+        om.answers_to_record(d, **IDENT)
+    assert e.value.code == "AF-OFFER-BILLING" and "fortnight" in e.value.detail
+
+
+def test_the_schema_refuses_an_interval_on_a_price_that_is_not_recurring_and_a_cadenceless_recurring_price():
+    offer_schema = json.loads((REPO / "shared-utils" / "signature_launch" / "domain" / "offer.schema.json").read_text())
+    jsonschema = pytest.importorskip("jsonschema")
+    price_schema = offer_schema["properties"]["prices"]["items"]
+    base = {"price_choice_id": "X-USD", "currency": "USD", "amount_minor": 4900, "native_price_id": None,
+            "schedule": [], "approval_status": "provided"}
+    ok = dict(base, billing_type="recurring", recurring_interval="month")
+    jsonschema.validate(ok, price_schema)
+    for bad in (dict(base, billing_type="recurring"),                                # no cadence at all
+                dict(base, billing_type="one_time", recurring_interval="month"),    # recurrence on one payment
+                dict(base, billing_type="recurring", recurring_interval="fortnight")):
+        with pytest.raises(jsonschema.ValidationError):
+            jsonschema.validate(bad, price_schema)
+
+
+def test_the_four_schema_copies_stay_byte_identical():
+    ref = (REPO / "49-signature-funnel" / "schema" / "launch.schema.json").read_bytes()
+    for copy_ in ((REPO / "shared-utils" / "signature_launch" / "domain" / "launch.schema.json"),
+                  (REPO / "71-blackceo-signature-page" / "references" / "launch.schema.json")):
+        assert copy_.read_bytes() == ref
+
+
+def test_a_record_that_turns_a_one_payment_answer_into_a_subscription_fails_provenance():
+    d = doc("answers.elevation.json")
+    record, _ = om.answers_to_record(d, **IDENT)
+    om.verify_provenance(d, record["offers"])
+    forged = copy.deepcopy(record)
+    forged["offers"][0]["prices"][0].update(billing_type="recurring", recurring_interval="month")
+    with pytest.raises(om.MapperError) as e:
+        om.verify_provenance(d, forged["offers"])
+    assert e.value.code == "AF-OFFER-PROVENANCE"

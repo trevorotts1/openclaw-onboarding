@@ -29,9 +29,11 @@ SK="$OC/skills/37-zhc-closeout/scripts"
 CAPTURE="$WORK/bodies"
 mkdir -p "$SK" "$OC/workspace" "$BOX/bin" "$CAPTURE"
 
-cp "$SCRIPT_DIR/create-notion-closeout.sh" "$SCRIPT_DIR/closeout_facts.py" \
-   "$SCRIPT_DIR/lib-closeout-state.sh" "$SK/" \
+cp "$SCRIPT_DIR/create-notion-closeout.sh" "$SCRIPT_DIR/lib-closeout-state.sh" "$SK/" \
    || { echo "fixture: copy of create-notion-closeout.sh failed" >&2; exit 1; }
+# ponytail: closeout_facts.py belongs to BU-64 and is absent on a linear BU-72 cut;
+# nothing in this fixture executes it, so copy it only when the lane that owns it has landed.
+[[ -f "$SCRIPT_DIR/closeout_facts.py" ]] && cp "$SCRIPT_DIR/closeout_facts.py" "$SK/"
 
 PARENT_PAGE_ID="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 STATE="$OC/workspace/.workforce-build-state.json"

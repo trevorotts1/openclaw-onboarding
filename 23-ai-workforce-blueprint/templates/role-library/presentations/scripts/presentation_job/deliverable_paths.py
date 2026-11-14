@@ -69,23 +69,25 @@ __all__ = [
 # ---------------------------------------------------------------------------
 # THE CANONICAL PATH MAP — key -> run-dir relative path. ONE entry per key.
 #
-# Two conventions coexist by design (both real, both enforced):
-#   working/deliverables/  — files WRITTEN at their producing phase, pre-curation
-#                            (the producer's canonical output dir).
-#   working/delivery/      — files STAGED for delivery (audio, the webinar
-#                            video, the -FINAL deck pair staged by P8-ASSEMBLE).
-# The canon records the path the PRODUCING PHASE's own verifier checks — the
-# path a pass is actually proven against — which is phase_verifiers.py's
-# _DELIVERY_PATTERN_BY_KEY, itself aligned with the manifest's
-# produces_artifact for every phase that produces one of these keys.
+# The canon is the path the PRODUCER writes, which is also the path its phase's
+# verifier checks (phase_verifiers.py _DELIVERY_PATTERN_BY_KEY, aligned with the
+# manifest's produces_artifact). Two directories are in use, by producer:
+#   working/deliverables/  — every phase-produced artifact, including the
+#                            -FINAL deck pair written by P8-ASSEMBLE.
+#   working/delivery/      — the audio (P9-DELIVER) and the webinar video
+#                            (P9.6-WEBINAR-VIDEO).
+# Older spellings — the run-dir root, or working/delivery/ for the deck pair —
+# live in ALIAS_PATHS: accepted for reads, never written by a producer. The
+# audit below reports any manifest producer that still writes one.
 #
 # {deck_slug} templates are literal (curly braces) in the map; use
 # deliverable_path(key, deck_slug=...) to expand.
 # ---------------------------------------------------------------------------
 CANONICAL_PATHS = {
-    # P8-ASSEMBLE stages the -FINAL deck pair into working/delivery/.
-    "deck_pptx":         "working/delivery/{deck_slug}-FINAL.pptx",
-    "deck_pdf":          "working/delivery/{deck_slug}-FINAL.pdf",
+    # P8-ASSEMBLE writes the -FINAL deck into working/deliverables/;
+    # P8.1-PDF-EXPORT exports the PDF beside it.
+    "deck_pptx":         "working/deliverables/{deck_slug}-FINAL.pptx",
+    "deck_pdf":          "working/deliverables/{deck_slug}-FINAL.pdf",
     # P8.1-PDF-EXPORT / P8.2-GUIDE / P9-SPEECH / P9.1-SPEECH-PDF /
     # P8.4-FISH-TAG / P7-TELEPROMPTER all write into working/deliverables/.
     "guide_pdf":         "working/deliverables/PRESENTER-GUIDE.pdf",
@@ -133,17 +135,18 @@ ALIAS_PATHS = {
     "audio_mp3": [
         "working/delivery/PRESENTER-AUDIO-WEBINAR.mp3",   # webinarized intro variant (separate artifact)
     ],
-    # The -FINAL deck pair: the canon is the staged delivery copy
-    # (phase_verifiers + runfacts + the P9-DELIVER whitelist all read
-    # working/delivery/); the bare run-dir-root names are the P8-ASSEMBLE /
-    # workingset consumption spellings of the same files — accepted, not canon.
+    # The -FINAL deck pair: the canon is the producer's working/deliverables/
+    # path (P8-ASSEMBLE + P8.1-PDF-EXPORT). The staged working/delivery/ copy
+    # and the bare run-dir-root names are older spellings of the same files —
+    # accepted for reads, never written by a producer (the audit reports any
+    # manifest producer that declares one of them).
     "deck_pptx": [
-        "{deck_slug}-FINAL.pptx",                 # run-dir root (P8-ASSEMBLE output)
-        "working/deliverables/{deck_slug}-FINAL.pptx",  # pre-curation flat form
+        "working/delivery/{deck_slug}-FINAL.pptx",   # staged delivery copy
+        "{deck_slug}-FINAL.pptx",                    # run-dir root (pre-PD-062)
     ],
     "deck_pdf": [
-        "{deck_slug}-FINAL.pdf",                  # run-dir root spelling
-        "working/deliverables/{deck_slug}-FINAL.pdf",   # P8.1-PDF-EXPORT output
+        "working/delivery/{deck_slug}-FINAL.pdf",    # staged delivery copy
+        "{deck_slug}-FINAL.pdf",                     # run-dir root spelling
     ],
 }
 
@@ -221,9 +224,36 @@ def _norm_glob(p: str) -> str:
         return "working/deliverables/" + s
     return s
 
-def _audit_paths():
+def _producer_norm(p: str) -> str:
+    """Normalize a manifest produces_artifact entry for the ten bundle keys.
+
+    Same slug folding as _norm_glob, but WITHOUT _norm_glob's flat-bundle
+    assumption: a bare filename here is a run-dir-root path, which is exactly
+    the deck pair's pre-PD-062 spelling. _norm_glob keeps its meaning for the
+    workbook loop, where a bare name really does mean working/deliverables/."""
+    s = (p or "").strip().rstrip("/")
+    out = []
+    for part in s.split("/"):
+        if part.startswith("*") and "-" in part:
+            out.append("{deck_slug}" + part[1:])
+        else:
+            out.append(part)
+    return "/".join(out)
+
+def _same_artifact_alias(key: str, alias: str) -> bool:
+    """True when `alias` is an older spelling of the SAME file as the canon —
+    its slug-stripped basename matches. A different artifact recorded under the
+    same key (PRESENTER-AUDIO-WEBINAR.mp3 vs PRESENTER-AUDIO.mp3) is not one."""
+    canon = CANONICAL_PATHS.get(key, "")
+    return (Path(alias.replace("{deck_slug}", "")).name
+            == Path(canon.replace("{deck_slug}", "")).name)
+
+def _audit_paths(manifest_path=None):
     """Run the cross-surface audit. Returns (ok, problems) where problems is a
-    list of strings naming every disagreement (suitable for one line each)."""
+    list of strings naming every disagreement (suitable for one line each).
+
+    `manifest_path` overrides the auto-located PIPELINE-MANIFEST.json so a
+    caller can audit an edited manifest (the PD-216 control pair)."""
     # Make the sibling imports resolvable when this file is run as a SCRIPT
     # (python3 presentation_job/deliverable_paths.py --audit): the scripts/
     # dir must be on sys.path for `import presentation_job` / `import build_deck`.
@@ -335,13 +365,13 @@ def _audit_paths():
 
     # Surface 1: PIPELINE-MANIFEST.json — build_bundle_files keyset + the
     # producing phases' produces_artifact for each key.
-    mpath = _manifest_location()
-    if mpath is None:
+    mpath = Path(manifest_path) if manifest_path else _manifest_location()
+    if mpath is None or not Path(mpath).is_file():
         problems.append("PIPELINE-MANIFEST.json not found (searched upward from "
                         "the module) — cannot cross-check")
     else:
         try:
-            man = json.loads(mpath.read_text(encoding="utf-8", errors="replace"))
+            man = json.loads(Path(mpath).read_text(encoding="utf-8", errors="replace"))
         except Exception as exc:  # noqa: BLE001
             problems.append(f"PIPELINE-MANIFEST.json unreadable ({exc!r})")
             man = {}
@@ -349,37 +379,51 @@ def _audit_paths():
         if sorted(build_files) != sorted(CANONICAL_PATHS.keys()):
             problems.append(f"manifest build_bundle_files {sorted(build_files)} != "
                             f"canon keys {sorted(CANONICAL_PATHS.keys())}")
-        # produces_artifact per phase: map phase -> artifact string(s). For each
-        # key, SOME phase must produce the canon path (or a documented alias).
+        # produces_artifact per phase: map normalized declaration -> phase ids.
+        # `produced` keeps run-dir-root bare names as written (the ten keys);
+        # `produced_flat` applies the workbook flat-bundle convention.
         produced = {}
+        produced_flat = {}
         for ph in (man.get("phases") or []):
             pa = ph.get("produces_artifact")
             if not pa:
                 continue
             items = pa if isinstance(pa, list) else [pa]
             for it in items:
-                produced.setdefault(_norm_glob(str(it)), []).append(ph.get("id"))
+                produced.setdefault(_producer_norm(str(it)), []).append(ph.get("id"))
+                produced_flat.setdefault(_norm_glob(str(it)), []).append(ph.get("id"))
         for key, rel in CANONICAL_PATHS.items():
-            cand = {_norm_glob(rel)}
-            cand |= {_norm_glob(a) for a in ALIAS_PATHS.get(key, [])}
-            # The deck pair is produced by P8-ASSEMBLE as '*-FINAL.pptx' into
-            # delivery/; glob equivalence via _norm_glob covers the {deck_slug} form.
-            hit = cand & set(produced.keys())
-            if not hit:
+            canon = _producer_norm(rel)
+            alias_norms = {_producer_norm(a) for a in ALIAS_PATHS.get(key, [])
+                           if _same_artifact_alias(key, a)}
+            hits = {n: ids for n, ids in produced.items()
+                    if n == canon or n in alias_norms}
+            if not hits:
                 problems.append(f"{key}: no manifest phase produces the canonical "
                                 f"path {rel!r} (or a documented alias)")
+            # Every producer of this artifact must declare the CANONICAL path.
+            # A producer that still writes an older spelling is the drift this
+            # unit deletes, so it is reported by name.
+            for n, ids in sorted(hits.items()):
+                if n == canon:
+                    continue
+                names = ", ".join(str(i) for i in ids)
+                problems.append(
+                    f"{key}: manifest producer {names} writes the alias {n!r}, "
+                    f"not the canonical path {rel!r}")
 
-        # Workbook: P8.25-WORKBOOK must produce both workbook paths.
+        # Workbook: P8.25-WORKBOOK must produce both workbook paths (bare
+        # names here are the flat bundle dir, per _norm_glob).
         for wkey, wrel in WORKBOOK_PATHS.items():
-            if _norm_glob(wrel) not in produced:
+            if _norm_glob(wrel) not in produced_flat:
                 problems.append(f"{wkey}: no manifest phase produces {wrel!r}")
 
     ok = not problems
     return ok, problems
 
-def audit_paths():
+def audit_paths(manifest_path=None):
     """Public audit entry: returns (ok, problems)."""
-    return _audit_paths()
+    return _audit_paths(manifest_path=manifest_path)
 
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(
@@ -390,10 +434,13 @@ def main(argv=None) -> int:
                     help="run the cross-surface audit (exit 0 pass / 1 fail)")
     ap.add_argument("--json", action="store_true",
                     help="emit the audit report as JSON")
+    ap.add_argument("--manifest", default=None,
+                    help="audit this PIPELINE-MANIFEST.json instead of the "
+                         "auto-located one (the edited-manifest control)")
     args = ap.parse_args(argv)
 
     if args.audit or args.json:
-        ok, problems = audit_paths()
+        ok, problems = audit_paths(manifest_path=args.manifest)
         print("DELIVERABLE PATH AUDIT (MASTER Part 8 FIX 4)")
         print(f"canonical keys ({len(CANONICAL_PATHS)}):")
         for key in sorted(CANONICAL_PATHS):

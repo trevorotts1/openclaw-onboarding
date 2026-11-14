@@ -20,6 +20,13 @@ which is a named refusal, never a default allow:
   applied-verification.json   s75.x11.applied-tree-verification/v1  (release only)
   operator-decision.json      {installed_apply: bool}               (installed only)
 
+No production writer of those six files exists in this tree. The only code that
+writes all six at once is tests/test_x11_release_gate_wiring.py `records()`, a
+test fixture. A real install therefore arrives with no records and this CLI can
+only refuse (MISSING_TARGET here), and one layer down apply_release_gate.py
+refuses with MISSING_BACKUP_AUTHORIZATION. This is a gate that says it cannot
+allow; the means to supply the records is an owner decision, not this file's.
+
 Exit: 0 allow; 3 PER_FILE_SHA_MISMATCH; 4 BACKUP_MISSING_CHANGED_FILE;
 5 ORIGINAL_WORK_DELETED; 2 any other refusal or unusable input.
 
@@ -68,7 +75,10 @@ def main(argv=None):
     gate = load_gate(args.gate_module)
     target_doc = read_record(args.records, "target.json")
     if not isinstance(target_doc, dict) or not all(k in target_doc for k in TARGET_FIELDS):
-        print("REFUSED MISSING_TARGET: no usable target.json in %s"
+        print("REFUSED MISSING_TARGET: no usable target.json in %s "
+              "(no production writer of the six s75-x11 records exists in this "
+              "tree; only tests/test_x11_release_gate_wiring.py writes them, so "
+              "a real install has no records and this gate cannot allow)"
               % args.records, file=sys.stderr)
         return 2
 
