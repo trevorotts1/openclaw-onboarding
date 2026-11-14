@@ -60,6 +60,7 @@ def _complete_answers(**overrides):
         "want_email_sequences": "no",
         "email_sequences_declined_reason": REASON,
         "want_motion_graphics": "yes",
+        "duration_min": "45 minutes",
     }
     answers.update(overrides)
     return answers
