@@ -199,7 +199,8 @@ def _make_full_run(run, stages=F.CANONICAL_STAGES):
     record["stage"] = "final-qc"
     verdict = qc_gate.evaluate(run.name, "final-qc", [record],
                                {record["check_id"]: "fixture-build-worker"}, ["continuity"])
-    (run / "final-qc" / "record.json").write_text(json.dumps({
+    # S75-011: the declared final-qc artifact is qc/final-qc-verdict.json.
+    (run / "qc" / "final-qc-verdict.json").write_text(json.dumps({
         "gate": verdict["gate"], "producer": F.STAGE_REGISTRY["final-qc"]["qc_producer"],
         "evaluation": verdict}))
     # Controlled successful sink receipt; this fixture sends nothing externally.
