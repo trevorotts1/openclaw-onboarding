@@ -796,10 +796,28 @@ step6() {
     record 6 compaction UNDETERMINED "no structured log for $today at $todays_log (${OCD_LOG_NOTE:-})"
     return 1
   fi
-  hits=0
-  if command -v grep >/dev/null 2>&1; then
-    hits="$(grep -c -E 'contextEngine\.compact\(\) threw|Compaction timed out|could not recover this turn' "$todays_log" 2>/dev/null || echo 0)"
+  if ! command -v python3 >/dev/null 2>&1; then
+    record 6 compaction UNDETERMINED "python3 not on PATH -- the structured log at $todays_log cannot be counted"
+    return 1
   fi
+  # RRX-123: the log is READ and its marker lines are counted. A log that cannot
+  # be read is UNDETERMINED. The old `grep -c ... || echo 0` turned an unreadable
+  # log into zero markers (CLEAN) and produced two zeros when nothing matched.
+  hits="$(python3 -c 'import sys
+n = 0
+try:
+    with open(sys.argv[1], encoding="utf-8", errors="replace") as fh:
+        for line in fh:
+            if "contextEngine.compact() threw" in line or "Compaction timed out" in line or "could not recover this turn" in line:
+                n += 1
+except OSError:
+    raise SystemExit(1)
+print(n)' "$todays_log" 2>/dev/null)" || hits=""
+  case "$hits" in
+    ''|*[!0-9]*)
+      record 6 compaction UNDETERMINED "the structured log at $todays_log could not be read -- unknown, not clean"
+      return 1 ;;
+  esac
   if [ "${hits:-0}" -gt 1 ] 2>/dev/null; then
     PROBLEM_BITS=$((PROBLEM_BITS | STEP_BIT_COMPACTION))
     record 6 compaction PROBLEM "$hits compaction-failure markers today -- 2+ is the wedge signature (one alone is routine)"
