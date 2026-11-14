@@ -14,6 +14,7 @@ import assert from 'node:assert/strict';
 
 import { buildKeyRecord, mintKey } from '../src/keys.js';
 import { authorizeClient } from '../src/isolation.js';
+import { handle } from '../src/index.js';
 import { randomClientId, scopePath } from '../src/ids.js';
 import { AF_DRAFT_KIND, AF_ORDER_INVALID, MAX_REPLIES, MAX_REPLY_CHARS, deleteDraft, pageRoute, validateReplies } from '../src/page-api.js';
 import { memObjects, memStore } from './fakes.mjs';
@@ -168,6 +169,80 @@ test('session: the option line carries the real last check-in', async () => {
   assert.match(body.option_line, /Last check-in: just now\.$/);
 });
 
+// U-Z14 (S75-077, decision D-5) — the sentence for a client whose studio runs
+// on an OpenClaw box: its keys are a box key and no machine key.
+test('session: a box key and no machine key reads the fifth sentence', async () => {
+  const store = memStore();
+  const objects = memObjects();
+  const me = await clientWithKey(store, 'link');
+  await store.kvPut(`client:${me.clientId}`, JSON.stringify({ client_id: me.clientId, option: 1 }));
+
+  const session = async () => {
+    const ctx = await makeCtx(store, objects, me.key);
+    ctx.url = new URL('https://studio.example/api/studio/session');
+    return json(await pageRoute(get('/api/studio/session', me.key), ctx));
+  };
+
+  await clientWithKey(store, 'box', me.clientId);
+  // ANOTHER client's machine key must never decide this client's sentence.
+  await clientWithKey(store, 'machine');
+  assert.match(
+    (await session()).option_line,
+    /^Your studio is on\. Orders start within about 2 minutes\. Last check-in: not yet\.$/,
+  );
+
+  // One machine key of the client's own: no longer a box-only studio, so the
+  // option 1 sentence comes back unchanged.
+  const machine = await clientWithKey(store, 'machine', me.clientId);
+  assert.match(
+    (await session()).option_line,
+    /^Your crew starts when you open Claude Code on your computer\. Last check-in: not yet\.$/,
+  );
+
+  // A revoked key is no longer one of the client's keys (U-Z12), so the
+  // sentence returns to the box one.
+  await store.kvPut(`key:${machine.record.fingerprint}`, JSON.stringify({ ...machine.record, status: 'revoked' }));
+  assert.match((await session()).option_line, /^Your studio is on\./);
+});
+
+// U-Z14 repair — Lock it in may not LIST KV (DSF-611), so the order answer
+// reads the box verdict enrollment kept on the client record.
+test('orders: an OpenClaw-box client is answered with the fifth sentence and no KV LIST', async () => {
+  const store = memStore();
+  const objects = memObjects();
+  const env = { DS_ENROLLMENT_SECRET: 'enrollment-secret-placeholder-for-tests' };
+
+  const enrolled = await handle(
+    new Request('https://studio.example/api/studio/enroll', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ enrollment_secret: env.DS_ENROLLMENT_SECRET }),
+    }),
+    env,
+    store,
+    objects,
+  );
+  assert.equal(enrolled.status, 201);
+  const me = await json(enrolled);
+
+  store.kvList = async () => { throw new Error('kvList must not be consulted while creating an order'); };
+  const created = await handle(
+    new Request('https://studio.example/api/studio/orders', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-ds-key': me.key },
+      body: JSON.stringify({ title: 'Spring Sale' }),
+    }),
+    env,
+    store,
+    objects,
+  );
+  assert.equal(created.status, 201);
+  assert.match(
+    (await json(created)).option_line,
+    /^Your studio is on\. Orders start within about 2 minutes\. Last check-in: not yet\.$/,
+  );
+});
+
 // ---------------------------------------------------------------------------
 // PUT /api/studio/draft
 // ---------------------------------------------------------------------------
@@ -186,7 +261,8 @@ test('draft: round-trips through R2 and shows up on the next session', async () 
   const shown = await makeCtx(store, objects, me.key);
   shown.url = new URL('https://studio.example/api/studio/session');
   const body = await json(await pageRoute(get('/api/studio/session', me.key), shown));
-  assert.deepEqual(body.draft, { replies: ['1', '2'], updated_at: T0 });
+  // U-Z08 — the draft keeps the upload ids, so the session hands them back.
+  assert.deepEqual(body.draft, { replies: ['1', '2'], upload_ids: ['u_9'], updated_at: T0 });
 
   // The stored object sits in this client's own scope and nowhere else.
   assert.ok(objects._mem.has(scopePath(me.clientId, 'draft.json')));
