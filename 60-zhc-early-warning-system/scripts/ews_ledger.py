@@ -379,20 +379,22 @@ class Ledger:
                 return dict(r)
         return None
 
-    def prune_snapshots(self, keep_count, keep_days):
+    def prune_snapshots(self, keep_count, keep_days=None, keep_hours=None):
         """Delete snapshot ROWS beyond the retention rule (keep the LARGER of the two
         windows, per D7). Returns the file paths of pruned rows so the caller (ews_snapshot)
         can unlink the files. The row set kept = union of (newest keep_count) and
-        (all within keep_days)."""
+        (all within the time window). The window is keep_hours when given, else
+        keep_days (kept for older callers)."""
         rows = self.list_snapshots()
         if not rows:
             return []
-        cutoff = datetime.now(timezone.utc) - timedelta(days=keep_days)
+        hours = float(keep_hours) if keep_hours is not None else float(keep_days or 0) * 24
+        cutoff = datetime.now(timezone.utc) - timedelta(hours=hours)
         keep_ids = set()
         # newest keep_count
         for r in rows[:keep_count]:
             keep_ids.add(r["snapshot_id"])
-        # all within keep_days
+        # all within the time window
         for r in rows:
             ts = _parse_iso(r["ts"])
             if ts is not None and ts >= cutoff:
@@ -402,6 +404,52 @@ class Ledger:
             self.conn.execute("DELETE FROM snapshots WHERE snapshot_id=?", (r["snapshot_id"],))
         self.conn.commit()
         return [r["path"] for r in pruned]
+
+    def prune_history(self, keep_hours, digest_keep_hours=None):
+        """Delete event and digest rows older than the retention window.
+
+        Nothing ever acknowledges events, so without this the events table grew by
+        every finding on every tick, forever (one live box: 200,000 rows, 56 MB).
+        A finding that still exists is recorded again on the next tick, so dropping
+        old rows loses nothing the sentinel reads. Digest rows back the alert
+        dedup window and the per-day alert cap, so the digest window is never
+        shorter than digest_keep_hours. Timestamps are compared on their first
+        19 characters (YYYY-MM-DDTHH:MM:SS), which ignores a Z / +00:00 suffix.
+        The newest OPEN P1 per dedup_key is always kept (escalation retry).
+        Returns (events_deleted, digests_deleted)."""
+        now = datetime.now(timezone.utc)
+        ev_cut = (now - timedelta(hours=float(keep_hours))).strftime("%Y-%m-%dT%H:%M:%S")
+        dg_hours = max(float(keep_hours), float(digest_keep_hours or 0))
+        dg_cut = (now - timedelta(hours=dg_hours)).strftime("%Y-%m-%dT%H:%M:%S")
+        # An OPEN P1 is the escalate sweep's retry queue (a failed admission
+        # leaves it open on purpose). Keep the newest open P1 per dedup_key at
+        # any age, so an unresolved P1 is never lost; older duplicates of the
+        # same problem still go, so the table stays bounded.
+        ev = self.conn.execute(
+            "DELETE FROM events WHERE substr(tick_ts,1,19) < ? AND event_id NOT IN ("
+            "  SELECT MAX(event_id) FROM events WHERE severity='P1' AND ack_state='open' "
+            "  GROUP BY dedup_key)", (ev_cut,)).rowcount
+        dg = self.conn.execute(
+            "DELETE FROM digests WHERE substr(sent_ts,1,19) < ?", (dg_cut,)).rowcount
+        self.conn.commit()
+        return int(ev or 0), int(dg or 0)
+
+    def vacuum_if_bloated(self, min_free_ratio=0.25):
+        """Give freed pages back to the disk when at least min_free_ratio of the
+        file is free space. Deleting rows alone never shrinks the file."""
+        pages = self.conn.execute("PRAGMA page_count").fetchone()[0] or 0
+        free = self.conn.execute("PRAGMA freelist_count").fetchone()[0] or 0
+        if pages and free / pages >= min_free_ratio:
+            try:
+                self.conn.execute("VACUUM")
+            except sqlite3.OperationalError:
+                return False  # busy (a concurrent tick); the next prune retries
+            try:
+                self.conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+            except sqlite3.Error:
+                pass
+            return True
+        return False
 
     # ---- baseline stamps (S4) -------------------------------------------
     def record_stamp(self, key_path, new_value_hash, operator=None) -> int:
@@ -771,6 +819,40 @@ def self_test():
         assert len(pruned) == 3, pruned
         assert len(led.list_snapshots()) == 2
         print("  snapshots/prune case: PASS (D7 keeps the LARGER window)")
+
+        # history prune (72h retention): old events/digests go, recent ones stay,
+        # and the digest window never drops below the alert windows it backs.
+        old_ts = (datetime.now(timezone.utc) - timedelta(hours=100)).replace(microsecond=0).isoformat()
+        mid_ts = (datetime.now(timezone.utc) - timedelta(hours=50)).replace(microsecond=0).isoformat()
+        led.conn.execute("DELETE FROM events"); led.conn.execute("DELETE FROM digests")
+        led.record_event("S1", "P2", key_path="a", tick_ts=old_ts)
+        led.record_event("S1", "P2", key_path="b", tick_ts=old_ts.replace("+00:00", "Z"))
+        led.record_event("S1", "P2", key_path="c", tick_ts=mid_ts)
+        led.record_event("S1", "P2", key_path="d")
+        for ts in (old_ts, mid_ts):
+            led.conn.execute("INSERT INTO digests(kind,dedup_key,sent_ts) VALUES('alert','k',?)", (ts,))
+        led.record_digest("alert", "k")
+        led.conn.commit()
+        assert led.prune_history(72, 24) == (2, 1), "72h prune must drop exactly the 2 old events + 1 old digest"
+        left = sorted(e["key_path"] for e in led.events_since("2000-01-01T00:00:00+00:00"))
+        assert left == ["c", "d"], left
+        assert led.prune_history(24, 168) == (1, 0), "digest window must never shrink below digest_keep_hours"
+        # an OPEN P1 older than the window is the escalation retry queue: the
+        # newest one per dedup_key survives, an older duplicate does not, and an
+        # escalated (no longer open) old P1 is pruned normally.
+        led.conn.execute("DELETE FROM events"); led.conn.commit()
+        older = (datetime.now(timezone.utc) - timedelta(hours=200)).replace(microsecond=0).isoformat()
+        led.record_event("S9", "P1", key_path="p1", tick_ts=older, dedup_key="S9|dead")
+        keep_id = led.record_event("S9", "P1", key_path="p1", tick_ts=old_ts, dedup_key="S9|dead")
+        esc_id = led.record_event("S3", "P1", key_path="p1b", tick_ts=old_ts, dedup_key="S3|x")
+        led.ack_event(esc_id, "escalated")
+        assert led.prune_history(72, 24) == (2, 0)
+        ids = [e["event_id"] for e in led.events_since("2000-01-01T00:00:00+00:00")]
+        assert ids == [keep_id], ids
+        assert [e["event_id"] for e in led.unacked_p1_older_than(30)] == [keep_id]
+        print("  open-P1 retention case: PASS (newest open P1 per key survives the window)")
+        assert led.recent_digest("k", 6) is not None
+        print("  history prune case: PASS (72h window, digest floor honored)")
 
         # ts lookup for revert
         led.record_snapshot("%s/snapshots/openclaw.json.20260202T120000.bb" % td, sha256="cafe")
