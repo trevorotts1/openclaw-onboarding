@@ -788,7 +788,12 @@ class TestTeardownReleasesLockLast:
             "_bm_teardown   # first fire (e.g. the INT trap) — releases the lock\n"
             "# a SUCCESSOR acquires the mkdir lock and records its own pid:\n"
             'mkdir -p "$LOCKDIR/ab.lock.d"\n'
-            "sleep 300 &\n"
+            # Detached with EVERY fd redirected: the simulated successor must never
+            # hold the caller's stdout/stderr pipe. An inheriting `sleep 300 &`
+            # kept subprocess.run's capture_output pipe open after the harness had
+            # already exited 0 — an intermittent TimeoutExpired (agent-browser
+            # lifecycle guard) independent of the lock-dir assertions below.
+            "sleep 300 </dev/null >/dev/null 2>&1 &\n"
             '_succ="$!"\n'
             'printf %s "$_succ" > "$LOCKDIR/ab.lock.d/pid"\n'
             'printf %s "$_succ" > "$LOCKDIR/succ.pid"\n'
