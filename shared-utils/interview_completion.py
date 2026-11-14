@@ -1,5 +1,19 @@
 #!/usr/bin/env python3
-"""Read-only interview prompt admission; NEVER authorization to build or pass QC."""
+"""Read-only interview prompt admission; NEVER authorization to build or pass QC.
+
+The completion DECISION is not made here. It is made by the one reader,
+scripts/interview_status.py (interface contract, 01-BUILD-SPEC.md 2.3), whose
+states are mapped onto this module's three output words:
+
+  COMPLETE / BUILDING / BUILT -> COMPLETE
+  DECLARED                    -> DECLARED
+  everything else             -> INCOMPLETE
+
+UNKNOWN stays a fourth, safety-only answer: a store that cannot be read, or an
+identity stamp that is present and disagrees with the service identity, is
+deliberately never INCOMPLETE, because callers must not nag on errors (BU-35).
+"""
+import importlib.util
 import json
 import os
 import sqlite3
@@ -11,7 +25,31 @@ from service_env import decode_value
 
 IDENTITY = {'tenantId': 'MC_TENANT_ID', 'companyId': 'MC_COMPANY_ID', 'installationId': 'MC_INSTALLATION_ID'}
 
+# One stderr line per prompt_status call names the identity case (BU-35).
+IDENTITY_DETAIL = {
+    'matched': 'all three stamps present and equal',
+    'legacy': 'no identity stamps in the state',
+    'mismatched': 'a present stamp differs or only some are present',
+}
+
 SERVICE_KEYS = {*IDENTITY.values(), 'MC_TENANT_REGISTRY_JSON', 'DATABASE_PATH', 'DASHBOARD_DB_PATH'}
+
+COMPLETE_WORDS = ('COMPLETE', 'BUILDING', 'BUILT')
+_status_reader_module = None
+
+
+def _status_reader():
+    """Load scripts/interview_status.py without assuming the caller's cwd or path."""
+    global _status_reader_module
+    if _status_reader_module is None:
+        source = Path(__file__).resolve().parent.parent / 'scripts' / 'interview_status.py'
+        spec = importlib.util.spec_from_file_location('interview_status_reader', source)
+        if spec is None or spec.loader is None:
+            raise ValueError(f'interview status reader unavailable: {source}')
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        _status_reader_module = module
+    return _status_reader_module
 
 
 def service_values(file):
@@ -76,16 +114,47 @@ def installed_service(selected):
     return stored
 
 
+def _state_identity(state, selected):
+    """The Command Center's three-way identity rule (CC state-identity.ts; BU-35).
+
+    matched    — all three stamps present and equal to the service identity.
+    legacy     — NONE of the three is present: a state written before the
+                 stamps existed. Not evidence of a foreign tenant.
+    mismatched — a stamp is present and differs, or only some are present.
+    """
+    present = {key: state[key] for key in IDENTITY if state.get(key) not in (None, '')}
+    if not present:
+        return 'legacy'
+    if len(present) != len(IDENTITY):
+        return 'mismatched'
+    for key, value in present.items():
+        if selected.get(IDENTITY[key]) != value:
+            return 'mismatched'
+    return 'matched'
+
+
 def prompt_status(state, env=None):
     """COMPLETE/DECLARED suppress prompts; only proven INCOMPLETE permits them.
 
-    UNKNOWN covers missing identity, unavailable stores and migration gaps. Local
-    installation config supplies scope; request parameters never select a tenant.
+    UNKNOWN covers mismatched identity, unavailable stores and migration gaps.
+    Local installation config supplies scope; request parameters never select a
+    tenant. A state with NO identity stamps is legacy, not foreign (BU-35).
     No flag, database, answers, or quality evidence is created or changed.
+
+    The completion word comes from scripts/interview_status.py, never from a rule
+    in this file (BU-23). This module only adds the identity scope and the
+    declarations-table read that DECLARED needs.
     """
     if not isinstance(state, dict):
         return 'UNKNOWN'
-    if state.get('interviewComplete') is True or state.get('interview_complete') is True or state.get('buildCompletedAt'):
+    try:
+        verdict = _status_reader().state_of(state)
+    except (OSError, ValueError, ImportError):
+        return 'UNKNOWN'
+    # A finished build is terminal evidence of a finished interview; the reader
+    # only reaches BUILT through completionVerification, but a legacy box can
+    # carry buildCompletedAt without that block. Same word either way.
+    if verdict in COMPLETE_WORDS or state.get('buildCompletedAt'):
         return 'COMPLETE'
     selected = dict(os.environ if env is None else env)
     launch = state.get('launchBootstrap')
@@ -94,12 +163,8 @@ def prompt_status(state, env=None):
         stored = {}
         if pinned is not None:
             stored = service_values(Path(pinned))
-            if any(not stored.get(key) for key in IDENTITY.values()):
-                return 'UNKNOWN'
         elif not selected.get('DATABASE_PATH') and not selected.get('DASHBOARD_DB_PATH'):
             stored = installed_service(selected)
-            if not stored.get('MC_COMPANY_ID') or not stored.get('MC_INSTALLATION_ID'):
-                return 'UNKNOWN'
         for key, value in stored.items():
             if selected.get(key) and selected[key] != value:
                 return 'UNKNOWN'
@@ -129,20 +194,24 @@ def prompt_status(state, env=None):
             if 'MC_TENANT_ID' in selected and selected['MC_TENANT_ID'] != tenant:
                 return 'UNKNOWN'
             selected['MC_TENANT_ID'] = tenant
-        scope = []
-        for key, variable in IDENTITY.items():
-            value = selected.get(variable)
-            if not isinstance(value, str) or not value.strip() or state.get(key) != value:
-                return 'UNKNOWN'
-            scope.append(value)
+        identity = _state_identity(state, selected)
+        print(f'[interview-completion] identity {identity}: {IDENTITY_DETAIL[identity]}',
+              file=sys.stderr)
+        if identity == 'mismatched':
+            return 'UNKNOWN'
+        # matched and legacy both continue to the completion check: only a
+        # present-and-different stamp, or a partial stamp set, is a violation.
+        scope = [selected.get(variable) for variable in IDENTITY.values()]
         # Candidate order and cron cwd cannot prove the running server's DB.
         # Require its explicit environment/service-file pin; never read a decoy.
         pinned_db = selected.get('DASHBOARD_DB_PATH') or selected.get('DATABASE_PATH')
+        # A missing database cannot prove a declaration: skip the lookup and
+        # continue; the flag is simply not true (BU-35).
         if not pinned_db:
-            return 'UNKNOWN'
+            return 'INCOMPLETE'
         db = Path(pinned_db)
         if not is_db_found(db):
-            return 'UNKNOWN'
+            return 'INCOMPLETE'
         # A missing explicit pin must never silently fall through to a decoy DB.
         for variable in ('DATABASE_PATH', 'DASHBOARD_DB_PATH'):
             pin = selected.get(variable)

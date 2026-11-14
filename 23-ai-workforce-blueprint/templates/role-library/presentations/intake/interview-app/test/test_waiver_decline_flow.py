@@ -80,6 +80,7 @@ def _hosted_answers(**overrides) -> dict:
         "want_email_sequences": "no",
         "want_motion_graphics": "yes",
         "client_notes": "",
+        "duration_min": "45 minutes",
     }
     answers.update(overrides)
     return answers
@@ -98,16 +99,21 @@ class TestHostedPayloadAsksTheWaiverQuestions(unittest.TestCase):
         payload = bqp.build_curated_payload("RUNW12", specs, bqp.DEFAULT_CURATED,
                                             store_target)
         by_id = {q["id"]: q for q in payload["questions"]}
-        for rid, toggle, field in (
+        for rid, toggle, field, required in (
                 ("sales_checkout_declined_reason", "want_sales_checkout",
-                 "SALES_CHECKOUT_DECLINED_REASON"),
+                 "SALES_CHECKOUT_DECLINED_REASON", True),
                 ("vsl_page_declined_reason", "want_vsl_page",
-                 "VSL_PAGE_DECLINED_REASON")):
+                 "VSL_PAGE_DECLINED_REASON", False)):
             self.assertIn(rid, by_id)
             q = by_id[rid]
             self.assertEqual(q["conditional_on"], {"id": toggle, "equals": "no"})
             self.assertEqual(q["storeOn"], f"pre_presentation_capture.{field}")
-            self.assertTrue(q["required"])
+            self.assertEqual(q["required"], required)
+            if not required:
+                # PD-014: want_vsl_page defaults to "no", so declining it is
+                # not a waiver; the reason is optional and never a gate.
+                self.assertFalse(q["block_gate"])
+                self.assertTrue(q["ask_only_if_previously_wanted"])
             self.assertTrue(q["prompt"])
 
 

@@ -599,18 +599,26 @@ else
   fail "12b: internal resume traffic did not route to the operator chat"
 fi
 
-# update-interview-state.sh must resolve the operator chat BEFORE .ownerChat.
+# update-interview-state.sh no longer sends a Telegram kick: --complete hands the
+# build to start-workforce-build.py, which starts the apply-diff build or records
+# .workforce-build-wanted.json for the Command Center job. It must pass the real
+# state file, and it must not message any chat.
 UPD="$REPO_ROOT/23-ai-workforce-blueprint/scripts/update-interview-state.sh"
 if [[ -f "$UPD" ]]; then
-  first_kick_src="$(grep -n 'KICK_CHAT=' "$UPD" | grep -v '^[[:space:]]*#' | head -1 || true)"
-  case "$first_kick_src" in
-    *OPERATOR_ESCALATION_CHAT_ID*)
-      pass "12c: update-interview-state.sh resolves the OPERATOR chat first for the internal build kick" ;;
-    *ownerChat*)
-      fail "12c: update-interview-state.sh still resolves .ownerChat FIRST — internal build-kick text is delivered to the client" ;;
+  kick_src="$(grep -n 'start-workforce-build.py' "$UPD" | grep -vE '^[0-9]+:[[:space:]]*#' | head -1 || true)"
+  case "$kick_src" in
+    *'--state "$STATE"'*)
+      pass "12c: update-interview-state.sh hands the build kick to start-workforce-build.py --state \$STATE" ;;
+    *start-workforce-build.py*)
+      fail "12c: start-workforce-build.py is invoked without --state \$STATE — the kick cannot read build-state" ;;
     *)
-      fail "12c: could not determine the build-kick chat resolution order in update-interview-state.sh" ;;
+      fail "12c: update-interview-state.sh does not call start-workforce-build.py — a completed interview starts nothing" ;;
   esac
+  if grep -vE '^\s*#' "$UPD" | grep -qE 'message send|KICK_CHAT='; then
+    fail "12c-ii: update-interview-state.sh still sends a Telegram kick (message send / KICK_CHAT) — --complete must not message a chat"
+  else
+    pass "12c-ii: --complete sends no Telegram kick (start-workforce-build.py owns the handoff)"
+  fi
   # The kick must NOT be suppressed merely because department ENTRIES exist. Assert
   # on live code, not comments (the defect is described in a comment above the fix).
   if grep -vE '^\s*#' "$UPD" | grep -q 'active_depts'; then
@@ -658,6 +666,13 @@ PYEOF
 exec python3 "$FAKE_OC" "\$@"
 SHIM
     chmod +x "$h/bin/openclaw"
+    # Stub start-workforce-build.py (BU-21). The real one is covered by its own
+    # test; here it only proves --complete HANDS OFF to it, with the state file.
+    cat > "$skill/start-workforce-build.py" <<PYEOF
+import sys, pathlib
+pathlib.Path("$h/start-calls.log").open("a").write(" ".join(sys.argv[1:]) + "\n")
+print('{"action":"none"}')
+PYEOF
     printf '%s' "$state_json" > "$h/.openclaw/workspace/.workforce-build-state.json"
     printf '[]' > "$h/jobs.json"
     : > "$h/calls.log"
@@ -683,10 +698,10 @@ SHIM
     FAKE_OC_CALLS_FILE="$BOX13/calls.log" OPERATOR_ESCALATION_CHAT_ID="555000111" \
     bash "$BOX13/.openclaw/skills/23-ai-workforce-blueprint/scripts/update-interview-state.sh" \
       --complete --phase 6 --question-number 30 --asked-by tester >"$BOX13/run.out" 2>&1
-  if grep -q "WORKFORCE-RESUME" "$BOX13/calls.log" 2>/dev/null; then
-    pass "13a: the build kick dispatched even though 3 departments already existed"
+  if grep -q -- '--state .*\.workforce-build-state\.json' "$BOX13/start-calls.log" 2>/dev/null; then
+    pass "13a: --complete handed the build kick to start-workforce-build.py --state even though 3 departments already existed"
   else
-    fail "13a: NO build kick with departments already present — the strand is still open ($(tail -2 "$BOX13/run.out" | tr '\n' ' '))"
+    fail "13a: --complete did NOT call start-workforce-build.py with the state file — the strand is still open ($(tail -2 "$BOX13/run.out" | tr '\n' ' '))"
   fi
   if grep -E "^message send .*-t 111222333" "$BOX13/calls.log" >/dev/null 2>&1; then
     fail "13b: the internal build kick was delivered to the OWNER chat"
@@ -717,8 +732,8 @@ PYEOF
       TMPDIR="${TMPDIR:-/tmp}" FAKE_OC_JOBS_FILE="$BOX13M/jobs.json" \
       FAKE_OC_CALLS_FILE="$BOX13M/calls.log" OPERATOR_ESCALATION_CHAT_ID="555000111" \
       bash "$MUT13" --complete --phase 6 --question-number 30 --asked-by tester >"$BOX13M/run.out" 2>&1
-    if grep -q "WORKFORCE-RESUME" "$BOX13M/calls.log" 2>/dev/null; then
-      fail "13-MUT: the old guard still dispatched — 13a proves nothing"
+    if [[ -s "$BOX13M/start-calls.log" ]]; then
+      fail "13-MUT: the old guard still dispatched the start script — 13a proves nothing"
     else
       pass "13-MUT: the old active_depts guard swallows the kick entirely — 13a is a real, non-vacuous check"
     fi

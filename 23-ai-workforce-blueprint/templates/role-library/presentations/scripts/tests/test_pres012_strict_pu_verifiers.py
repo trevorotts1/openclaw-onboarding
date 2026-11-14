@@ -345,3 +345,74 @@ def test_registry_covers_every_manifest_phase_id():
     registered = set(pv.PHASE_VERIFIERS.keys())
     missing = manifest_ids - registered
     assert not missing, f"phase_verifiers.py is missing verifiers for: {sorted(missing)}"
+
+# ---------------------------------------------------------------------------
+# 5. PD-910: the unbound sentinel is not a placeholder, and a NOTE is not a
+#    failure. A probe that calls resolve_scope(..., env={}) gets the documented
+#    "unbound-test" sentinel: it must survive the placeholder rule, and the
+#    readback NOTE that probe also gets must pass (visible as a note) rather
+#    than fail -- while a real receipt defect still fails.
+# ---------------------------------------------------------------------------
+class TestPd910SentinelAndNoteReasons:
+    _RECEIPT = {
+        "schema_version": "1",
+        "deck_slug": "acme-widget",
+        "execution_id": "exec-pd910",
+        "input_sha256": "a" * 64,
+        "page_id": "pgREAL1",
+        "preview_urls": ["https://app.gohighlevel.com/v2/preview/real123"],
+    }
+
+    def _write(self, rd: Path, **over) -> Path:
+        (rd / "working" / "sales-checkout").mkdir(parents=True, exist_ok=True)
+        p = rd / "working" / "sales-checkout" / "ghl_build_receipt.json"
+        p.write_text(json.dumps({**self._RECEIPT, **over}))
+        return p
+
+    def _fake_no_pit(self, monkeypatch) -> None:
+        import types
+
+        fake = types.ModuleType("ghl_media")
+
+        def no_pit():
+            raise RuntimeError("no LOCATION PIT in this probe")
+
+        fake.resolve_location_pit = no_pit
+        monkeypatch.setitem(sys.modules, "ghl_media", fake)
+
+    def test_unbound_sentinel_from_empty_env_is_not_a_placeholder(self, tmp_path):
+        import checkout_form_builder as cfb
+
+        rd = tmp_path / "run"
+        rd.mkdir()
+        scope, blocker = cfb.resolve_scope(rd, {"deck_slug": "acme-widget"}, env={})
+        assert blocker is None, blocker
+        assert scope["location_id"] == "unbound-test"  # spelling is contractual
+        assert scope["location_bound"] is False
+
+        sentinel = self._write(rd, location_id=scope["location_id"])
+        reasons = pv._pu_check_receipt_identity(rd, sentinel, scope_key="ghl_receipt")
+        assert not any("placeholder" in r.lower() for r in reasons), reasons
+
+        # A real placeholder location still reads as one.
+        fake_loc = self._write(rd, location_id="test-location")
+        reasons2 = pv._pu_check_receipt_identity(rd, fake_loc, scope_key="ghl_receipt")
+        assert any("placeholder" in r.lower() for r in reasons2), reasons2
+
+    def test_note_reason_passes_while_real_failure_still_fails(self, tmp_path, monkeypatch):
+        self._fake_no_pit(monkeypatch)
+        rd = _intake(tmp_path / "run", {"WANT_SALES_CHECKOUT": "yes"})
+        arts = ["working/sales-checkout/ghl_build_receipt.json"]
+        self._write(rd, location_id="unbound-test")
+
+        ok, reasons = pv._make_pu_verifier("P-U-GHL-SALES", arts)(rd)
+        assert ok is True, reasons
+        # The skipped readback stays visible: a pass here did NOT verify remotely.
+        assert any(r.startswith("NOTE: GHL readback skipped") for r in reasons), reasons
+
+        # A real defect is not laundered by the note path.
+        self._write(rd, location_id="unbound-test", page_id="")
+        ok2, reasons2 = pv._make_pu_verifier("P-U-GHL-SALES", arts)(rd)
+        assert ok2 is False, reasons2
+        assert any("remote artifact id" in r for r in reasons2), reasons2
+        assert any(r.startswith("NOTE: GHL readback skipped") for r in reasons2), reasons2

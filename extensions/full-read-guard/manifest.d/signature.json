@@ -1,0 +1,167 @@
+{
+  "version": 1,
+  "skills": [
+    {
+      "skill": "49-signature-funnel",
+      "depends_on": [
+        "74-kie-live-adapter",
+        "66-kie-image",
+        "56-sales-page-assets",
+        "71-blackceo-signature-page",
+        "universal-sops/funnel-craft/SOP-FUNNEL-0[1-5]*.md"
+      ],
+      "lookup": [
+        {
+          "glob": "adapters/**",
+          "why": "adapter code (3 files)"
+        }
+      ]
+    },
+    {
+      "skill": "50-email-engine",
+      "depends_on": [
+        "44-convert-and-flow-operator"
+      ],
+      "lookup": [
+        {
+          "glob": "email-library/**",
+          "why": "email copy library (lookup library) (90 files)"
+        }
+      ]
+    },
+    {
+      "skill": "51-signature-presentation",
+      "depends_on": [
+        "23-ai-workforce-blueprint",
+        "universal-sops/presentation-slide-craft/SOP-SLIDE-06-EXTENSION-AND-SYNC.md"
+      ],
+      "lookup": [
+        {
+          "glob": "adapters/**",
+          "why": "adapter code (3 files)"
+        },
+        {
+          "glob": "hooks/**",
+          "why": "hook code (1 files)"
+        }
+      ]
+    },
+    {
+      "skill": "56-sales-page-assets",
+      "depends_on": [
+        "49-signature-funnel",
+        "44-convert-and-flow-operator",
+        "74-kie-live-adapter",
+        "66-kie-image",
+        "63-agnes-image",
+        "universal-sops/funnel-craft/SOP-FUNNEL-03-PROMPTS-IMAGES.md"
+      ]
+    },
+    {
+      "skill": "62-cinematic-web-funnel-engine",
+      "depends_on": [
+        "74-kie-live-adapter",
+        "49-signature-funnel",
+        "06-ghl-install-pages",
+        "56-sales-page-assets"
+      ]
+    },
+    {
+      "skill": "71-blackceo-signature-page",
+      "depends_on": [
+        "49-signature-funnel",
+        "56-sales-page-assets",
+        "74-kie-live-adapter",
+        "66-kie-image",
+        "63-agnes-image",
+        "67-kie-video"
+      ],
+      "lookup": [
+        {
+          "glob": "adapters/**",
+          "why": "adapter code (4 files)"
+        },
+        {
+          "glob": "references/BlackCEO-Cinematic-Image-Style-Systems-v2.0.md",
+          "why": "style library"
+        },
+        {
+          "glob": "references/BlackCEO-Famous-Photographers-DNA-Style-Library-v1.1.md",
+          "why": "style library"
+        },
+        {
+          "glob": "references/BlackCEO-Visual-Artists-AI-Style-Intelligence-Guide-v1.0.md",
+          "why": "style library"
+        },
+        {
+          "glob": "references/design-styles.md",
+          "why": "style catalog"
+        }
+      ]
+    },
+    {
+      "skill": "78-signature-product-selection",
+      "depends_on": [
+        "71-blackceo-signature-page",
+        "79-signature-order-form",
+        "45-design-intelligence-library",
+        "83-black-friday-launcher"
+      ]
+    },
+    {
+      "skill": "79-signature-order-form",
+      "depends_on": [
+        "71-blackceo-signature-page",
+        "06-ghl-install-pages",
+        "45-design-intelligence-library"
+      ]
+    },
+    {
+      "skill": "80-signature-upsell",
+      "depends_on": [
+        "49-signature-funnel",
+        "71-blackceo-signature-page",
+        "45-design-intelligence-library"
+      ]
+    },
+    {
+      "skill": "81-signature-downsell",
+      "depends_on": [
+        "71-blackceo-signature-page",
+        "45-design-intelligence-library"
+      ],
+      "lookup": [
+        {
+          "glob": "adapters/**",
+          "why": "adapter code (3 files)"
+        }
+      ]
+    },
+    {
+      "skill": "82-signature-thank-you",
+      "depends_on": [
+        "71-blackceo-signature-page",
+        "45-design-intelligence-library",
+        "49-signature-funnel"
+      ]
+    },
+    {
+      "skill": "83-black-friday-launcher",
+      "depends_on": [
+        "44-convert-and-flow-operator",
+        "49-signature-funnel",
+        "23-ai-workforce-blueprint",
+        "71-blackceo-signature-page",
+        "50-email-engine",
+        "06-ghl-install-pages",
+        "79-signature-order-form"
+      ],
+      "lookup": [
+        {
+          "glob": "adapters/**",
+          "why": "adapter code (3 files)"
+        }
+      ]
+    }
+  ]
+}

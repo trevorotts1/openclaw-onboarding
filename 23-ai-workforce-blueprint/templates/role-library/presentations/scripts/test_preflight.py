@@ -555,12 +555,52 @@ def make_workdir(with_artifacts: bool, *, rich_prompts: bool = True,
                       + [{"slide": i + 1, "section": "Teaching",
                           "assigned": [{"item_id": f"C-{i:02d}", "type": "stat",
                                         "anchor": f"stat-{i:02d}",
-                                        "source_url": "https://www.cdc.gov/x",
                                         "confidence": "HIGH", "category": "C"}]}
                          for i in range(1, 11)],
             "distinct_items_used": 10,
             "content_slides_total": _floor_slides,
             "content_slides_with_research": 10}))
+        # PD-218a — a FIX 19 run carries a retrieval ledger. This fixture is a
+        # full modern pipeline run, so the citation gate (_chk_citation_validated)
+        # now requires the ledger once a research brief exists: with no ledger it
+        # correctly FAILS ("no evidence any cited URL was fetched"). The ledger rows
+        # below record the 8 brief sources as already fetched (status 200 + a 200+
+        # char extraction), so validation runs against those immutable baselines
+        # with ZERO network — exactly the PRES-029 no-refetch path — and this
+        # fixture stays a clean real run rather than a carved-out exception.
+        #
+        # The map's assigned items intentionally carry NO source_url: their anchors
+        # (stat-01..stat-10) are copy-weave ids, not claims about a fetched page,
+        # and an anchor citation must survive the semantic reviewer (>= 3 shared
+        # content tokens), which a slug anchor never can. The brief URLs are the
+        # citation set.
+        _brief_urls = [
+            "https://pmc.ncbi.nlm.nih.gov/articles/PMC12674523/",
+            "https://www.researchgate.net/publication/369670311",
+            "https://www.ncbi.nlm.nih.gov/pmc/articles/PMC9135772/",
+            "https://www.jsr.org/hs/index.php/path/article/view/3679",
+            "https://www.ncbi.nlm.nih.gov/books/NBK608531/",
+            "https://www.pewresearch.org/social-trends/2023/01/24/",
+            "https://www.apa.org/topics/parenting/positive-discipline",
+            "https://www.cdc.gov/childrensmentalhealth/data.html",
+        ]
+        _ledger_rows = []
+        for _u in _brief_urls:
+            _canon = _u if _u.endswith(".html") else _u.rstrip("/")
+            _excerpt = ("Independent audited evidence paragraph about the cited "
+                        "claim, recorded when the research phase fetched this "
+                        "page, long enough to clear the two hundred character "
+                        "content floor: " + _canon)
+            _ledger_rows.append({
+                "url": _u,
+                "canonical_url": _canon,
+                "content_sha256": hashlib.sha256(_excerpt.encode()).hexdigest(),
+                "status": 200,
+                "extracted": _excerpt,
+                "retrieved_at": "2026-01-01T00:00:00Z",
+            })
+        (root / "working" / "research" / "retrieval_ledger.jsonl").write_text(
+            json.dumps({"rows": _ledger_rows}))
         # Phase F — typography/design brief (per-slide art direction).
         (root / "working" / "research" / "design-brief-demo.md").write_text(
             "# Design brief\n" + ("Per-slide art direction and typography. " * 20) + "\n")
@@ -1262,12 +1302,19 @@ def _write_publish_ledger(bundle_dir: Path, status="published",
                                      "test-client/test-deck/teleprompter.html") -> None:
     """Write a teleprompter_publish.json into the bundle dir. The TELEPROMPTER-PUBLISH
     sub-check of run_postflight_gate keys on this artifact — a full bundle without it
-    now fails (exit 5), so the PASS-path fixtures must include a published record."""
+    now fails (exit 5), so the PASS-path fixtures must include a published record.
+
+    PD-210: the record must also describe the file that is actually in the bundle
+    now — `local_sha256` is compared against the HTML on disk, so a record that
+    names a different file fails the gate. Hash the fixture's HTML exactly as the
+    gate does."""
     import json as _json
+    _html = bundle_dir / "presenter-teleprompter.html"
     rec = {
         "platform": "mac",
         "host_target": "cloudflare-central",
-        "local_file": str(bundle_dir / "presenter-teleprompter.html"),
+        "local_file": str(_html),
+        "local_sha256": build_deck._sha256_file(_html),
         "public_url": public_url,
         "published_at": "2026-06-17T00:00:00Z",
         "verified_http_status": verified_http_status,
@@ -1514,16 +1561,25 @@ def test_postflight_speech_length_reverify():
         # with independent verdicts so this fixture isolates the speech-length
         # re-check, as its docstring promises.
         (root / "working" / "qc").mkdir(parents=True, exist_ok=True)
+        # PD-206a (decision D-34): the two human verdicts live in their OWN files
+        # (working/qc/human-review/*.json), not as blocks inside the graded reports.
+        (root / "working" / "qc" / "human-review").mkdir(parents=True, exist_ok=True)
+        (root / "working" / "qc" / "human-review" / "image_grounding.json").write_text(json.dumps(
+            {"pass": True, "reviewed_by": "vision-review-steward",
+             "reviewed_at": "2026-06-17T00:00:00Z",
+             "note": "each slide image shows what its prompt asked for"}))
+        (root / "working" / "qc" / "human-review" / "representation_casting.json").write_text(json.dumps(
+            {"pass": True, "reviewed_by": "casting-director",
+             "reviewed_at": "2026-06-17T00:00:00Z",
+             "note": "people described in the slide prompts match the audience"}))
         (root / "working" / "qc" / "image_qc_report.json").write_text(json.dumps(
-            {"image_grounding": {"pass": True, "reviewed_by": "vision-review-steward"},
-             "vision_model": "gpt-image-2",
+            {"vision_model": "gpt-image-2",
              "slides": [{"slide": n, "pass": True, "score": 9.0,
                          "observed_text": "rendered slide carries the section title and body copy",
                          "visual_subject": "photographic hero with grounding-consistent scene"
                          } for n in range(1, 25)]}))
         (root / "working" / "qc" / "prompt_qc_report.json").write_text(json.dumps(
-            {"representation_casting": {"pass": True, "reviewed_by": "casting-director"},
-             "slides": [{"slide": n, "pass": True, "score": 9.0,
+            {"slides": [{"slide": n, "pass": True, "score": 9.0,
                          "notes": "cast parity verified against the intake mix"
                          } for n in range(1, 25)]},
             indent=2))
@@ -3163,10 +3219,20 @@ def test_runner_next_turn_gate():
     #     resolves to a real owner message. Seed the CC owner-ids oracle so "42" is
     #     a GENUINE owner message id (the positive control); a forged id must fail
     #     closed (covered by test_forged_owner_msg_id_* below).
+    #     PD-305 / PD-912: an id proves a message EXISTS, never what the owner
+    #     authorized — the message TEXT must name the gate. Stage the owner message
+    #     the skip points at, with text naming this phase, exactly as the channel
+    #     bridge writes it for approvals.resolve_owner_message.
     _pm_path = rd / "working" / "checkpoints" / "process_manifest.json"
     _pm_obj = json.loads(_pm_path.read_text()) if _pm_path.exists() else {}
     _pm_obj["cc_task_id"] = "task-oracle-seeded"  # merge — keep the attestation from (b)
     _pm_path.write_text(json.dumps(_pm_obj))
+    _msg_log = rd / "working" / "interview" / "inbound_messages.jsonl"
+    _msg_log.parent.mkdir(parents=True, exist_ok=True)
+    _msg_log.write_text(json.dumps({
+        "msg_id": "42", "chat_id": "owner-chat-fixture",
+        "text": f"approve skip {second_id} for this deck",
+        "received_at": "2026-07-10T12:00:00Z"}) + "\n")
     (rd / "working" / "checkpoints" / "phase_skip_approvals.json").write_text(json.dumps(
         {"approvals": [{"phase_id": second_id, "owner_approved": True,
                         "approved_by": "owner", "reason": "not applicable to this deck",

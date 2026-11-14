@@ -325,7 +325,7 @@ cat ~/Downloads/openclaw-master-files/company-discovery/interview-handoff.md 2>/
 
 - **If none of the checks find anything:** Ask the client: "Have you already answered the AI Workforce Blueprint questions before? If yes, I'll search for your answers. If not, we'll start fresh." Then proceed to present options.
 
-This check is MANDATORY. It prevents re-asking 70 questions that the client already answered.
+This check is MANDATORY. It prevents re-asking questions the client already answered. The authoritative check is `python3 scripts/interview_gate.py status`; a text search of MEMORY.md is never proof that the interview is finished.
 
 ---
 
@@ -344,6 +344,8 @@ Before asking ANY question, read these files for information you already have:
 
 If you already know an answer, confirm instead of re-asking:
 "Based on what I already know, your business is in the real estate industry. Is that still correct?"
+
+> **Superseded for the interview itself.** The question list is `interview/questions.v2.json`, asked through `scripts/interview_gate.py` (INSTRUCTIONS.md, section "How the interview is run"). Sections 5c through 5f below are kept for history and are not the question script.
 
 ### 5c. Present Options (MANDATORY - NEVER SKIP)
 

@@ -7,7 +7,7 @@
 **Support roles:** `video-editor`, `storyboard-pre-production-specialist`, `qc-specialist-video`
 **Reports to:** Head of Video Production
 **Skill:** 75-drama-song-ad-factory (both distributions; one canonical methodology, two runtime adapters)
-**Last updated:** 2026-10-08 (W-G-008 minute-lanes; owner BUILD-OUT order; decision log 29-34)
+**Last updated:** 2026-11-11 (one question per message; lip-sync share of runtime; no automatic paid retry)
 
 > **Cost profile:** Every paid call goes through Skill 74 only, on the client's own key, with a recorded ceiling first. Operator keys are never used for client work. Skill 74 in shadow mode stops the pipeline before the choice card's approval.
 
@@ -60,7 +60,7 @@ their soul.
 
 *DMAIC phase: Define. Nothing is generated until one card is approved and one ceiling exists.*
 
-### DS-1 -- Intake (at most three questions)
+### DS-1 -- Intake (one question per message)
 
 **When to run:** Start of every campaign.
 **Frequency:** Per campaign (or per batch, see DS-11).
@@ -69,8 +69,7 @@ their soul.
 
 1. Choose the mode: **Quick** (default, one sentence from the client) or
    **Concept** (the client supplies their own story, script or lyrics).
-2. Ask only genuinely missing essentials, bundled into one message, at most
-   three questions: (a) what are you selling, with a link and an optional
+2. Ask only what is genuinely missing, ONE question per message: send the one message the intake tool prints, wait for the answer, run the tool again for the next. Never type a question free hand and never state a total of your own. The essentials are: (a) what are you selling, with a link and an optional
    product image; (b) who is it for and what should they do after watching;
    (c) approve the price on the choice card. Anything already in the brief is
    never asked again.
@@ -89,8 +88,7 @@ their soul.
 **Outputs:** Normalized brief, summary digest, provenance record, the personal
 studio link sent to the client.
 **Hand to:** DS-2.
-**Failure mode:** Asking a fourth question, restarting intake on resume, or
-blocking a drama order on a missing studio key.
+**Failure mode:** Sending two questions in one message, asking something already answered, restarting intake on resume, or blocking a drama order on a missing studio key.
 
 ### DS-2 -- The choice card and price approval
 
@@ -131,19 +129,20 @@ blocking a drama order on a missing studio key.
    always All Suno** (owner 2026-10-07): with that look Velvet Voiceover is
    not selectable - `choice_card.stl_voice_guard` refuses the pair
    (`stl-voice-velvet-not-offered`) and re-asks with All Suno preselected.
-7. **Clips (decision 32):** automatic 60- or 90-second clips are offered for
-   the **5-minute and 10-minute lengths only**; on shorter lengths the row is
-   hidden and says so.
+7. **Clips (decision 32):** the 3-minute, 5-minute and 10-minute ads each come with one 60-second clip and one 90-second clip, included in the price; 60- and 90-second ads get none.
 8. **Video model:** default **MiniMax H3 at 768P** (decision 5). No choice
    means MiniMax H3, and the card states that. `[see all models and prices]`
    opens `references/price-menu.md` content for the selected length.
-9. **Price:** every figure comes from Skill 74 `price --model <id> --units
-   <n>` - video, both shapes, lip-sync close-ups, voice packs, clips and the
-   batch total. The pipeline never computes a rate itself and never reads a
-   price table.
-10. Approval records the ceiling: chosen price **plus the 20% retake
-    allowance**, in USD with the KIE credit equivalent. No paid call happens
-    before that record exists.
+9. **Price:** the VIDEO MODEL line is priced from
+   `scripts/core/choice_card/video_models/video_model_rates.json` through the
+   shared price function (`card_render.price_envelope`), because Skill 74
+   `price` returns the highest listed tier; every OTHER figure - the chosen
+   shape, lip-sync close-ups, voice packs, clips and the batch total - comes
+   from Skill 74 `price --model <id> --units <n>`. The pipeline never computes
+   a rate.
+10. Approval records the ceiling: chosen price **plus the planning
+    allowance `budget_contingency.label()` returns**, in USD with the KIE
+    credit equivalent. No paid call happens before that record exists.
 
 **Outputs:** Approved card, recorded ceiling, listed lip-sync lines.
 **Hand to:** DS-3.
@@ -223,9 +222,7 @@ model maximum.
 5. Flag the lip-sync lines: clips go first on every sung hook, the spoken
    opener and the spoken closing line (`lipsync_clips.PRIORITY_ROLES`), then
    the pain peak, the product line, the call to action, and the chorus hook
-   once at its strongest. Lip-sync is 6 to 8 short clips of 4 to 6 seconds
-   per 60 s ad (30 to 40 seconds), scaled with the length, listed on the
-   approval card.
+   once at its strongest. Lip-sync covers 25-30% of the chosen length with a 35% HARD MAXIMUM (about 15 to 18 seconds of a 60-second ad, never more than 21), in clips of 4 to 6 seconds, never fewer than 3 clips, with the first 12 seconds clearly articulated. The numbers live in `core/lipsync_clips.py`; the clips are listed on the approval card.
 6. **Story arc rule and product-connection target (FU-U13, owner order
    2026-10-08):** every ad's story runs struggle -> what changed -> the
    product is why -> get the product. Name the product and connect it to
@@ -309,10 +306,7 @@ another character's line.
 6. **Pitch check with an octave-error guard:** every line's measured pitch
    must fall in its character's gender range (roughly 85-155 Hz male,
    165-255 Hz female), and same-gender characters must measure as different
-   voices. A mismatch fails and the line is regenerated in Suno, bounded at
-   `line_voice_fit.MAX_ROUNDS` (3); a line still out of band after the last
-   round rejects the run - the closest take is never kept
-   (`qc_voice_match/line_voice_fit.py`).
+   voices. A mismatch fails the check and is reported to the client with the measured numbers. Nothing is regenerated automatically: a paid redo happens only when the client asks for one, and it is always a whole track (`qc_voice_match/line_voice_fit.py`).
 
 **Outputs:** Song, style prompt, timing map, style-bible block, pitch check
 record.
@@ -330,8 +324,9 @@ without an identity lock.
 
 **Steps:**
 
-1. One keyframe image per shot per shape (Imagen 4 Fast via Skill 66 through
-   Skill 74).
+1. One keyframe image per shot per shape (gpt-image sunburst via Skill 66
+   through Skill 74; the locked image model is in
+   `delivery_checklist.LOCKED_MODELS`).
 2. Restyle a supplied product image into the chosen look for the product
    reveal and the call-to-action ending; product QC checks it stays
    recognisable. A skipped image is designed from the brief and the card says
@@ -374,12 +369,12 @@ without an identity lock.
    path. Never copy the adapter out of Skill 74.
 2. **Lip-sync order (decision 33):** Kling avatar `kling/ai-avatar-standard`
    first - a front-facing close-up image plus that character's own isolated
-   line; InfiniTalk `infinitalk/from-audio` only when Kling fails QC;
+   line; InfiniTalk `infinitalk/from-audio` is a manual backup a person may run by hand; no code path and no worker calls it;
    **Volcengine is dropped** and never appears in a code path, a document or
    the card.
 3. Book shots follow the book orientation contract (no camera move; a PASS
    `book_orientation` record is required before the clip is accepted).
-   Lip-sync clips are the 6 to 8 clips of 4 to 6 seconds per 60 s ad.
+   Lip-sync clips follow DS-4 step 5 (25-30% of the length, 35% hard maximum).
    TODO (U11): the approved Book shots plan (plan hash, exact prompts with
    character counts, page mode, camera, 2-attempt cap) is not built yet;
    refresh this step when FU-U11 lands.
@@ -418,8 +413,7 @@ without an identity lock.
 
 **Steps:**
 
-1. For the **5-minute and 10-minute** lengths, offer automatic 60- or
-   90-second clips. Cutting is free (FFmpeg edit, no new AI media); the AI
+1. For the **3-minute, 5-minute and 10-minute** lengths, cut the 60-second and the 90-second clip. Cutting is free (FFmpeg edit, no new AI media); the AI
    that picks the moments runs on the client's own AI plan.
 2. Default set: Clip 1 = cold-open teaser plus humiliation; Clip 2 = mentor
    and turning point; Clip 3 = transformation and vindication. Each clip
@@ -453,7 +447,7 @@ CTA defect (17.8).
 |---|---|---|---|
 | 1. Script | After lyrics | One independent judge (different agent AND model from the writer) | Missing or reordered beat (`story_arc` checks this already), claim not supported by the brief, wrong call-to-action text, offer name wrong, no `spelling_grammar` record |
 | 2. Song | After the master and timing map | Code only: `timing_guard`, `qc_reverb_tail`, `pitch_ban`, length window | Length outside the window, lyric coverage gap, reverb or echo found, pitch out of band |
-| 3. Shots | After generation | Code first (duration, aspect ratio, black frames via ffprobe). Then one independent visual checker, **only** for lip-sync shots (6 to 8 per 60 s ad) and the product and call-to-action shots | Wrong speaker on a lip-sync line, product or label wrong, accidental mouth movement on a narrator line, a book clip with no PASS `book_orientation` record |
+| 3. Shots | After generation | Code first (duration, aspect ratio, black frames via ffprobe). Then one independent visual checker, **only** for lip-sync shots (the clips planned in DS-4 step 5) and the product and call-to-action shots | Wrong speaker on a lip-sync line, product or label wrong, accidental mouth movement on a narrator line, a book clip with no PASS `book_orientation` record |
 | 4. Final | After assembly, per shape | One independent checker plus code (duration, file opens). Loudness -14 LUFS is the `acceptance-profile.json` baseline, not a code check yet | Any critical defect from the existing critical list |
 
 Repair rules:
@@ -480,7 +474,8 @@ table then.
 
 **Steps:**
 
-1. Register only real files as deliverables: `delivery/final.mp4`,
+1. Register only real files as deliverables:
+   `delivery/05 - Video Captioned.mp4` and `delivery/05 - Video Clean.mp4`,
    `campaign-manifest.json`, `cost-report.json`, `provenance.json`, the
    captioned and clean variants, each clip and its SRT, **and the song mp3**:
    every ad folder carries `<Author> - <Title> - Song.mp3` (320 kbps, the
@@ -558,10 +553,10 @@ title, author, cover, buy link, audience and the pain it solves - still
 inside the three-question cap. One ad per book, built in parallel lanes, each
 with its own campaign folder, receipt, spend-ledger run and Command Center
 deliverable. **Never mix books or authors.** The approval card shows the
-batch total, computed from Skill 74 `price` for every book plus the 20%
-retake allowance. The first real batch run is scheduled by the owner, on the
-client's own box and the client's own KIE key; it is never run from an
-operator key.
+batch total, computed from Skill 74 `price` for every book plus the
+planning allowance `budget_contingency.label()` returns. The first real
+batch run is scheduled by the owner, on the client's own box and the
+client's own KIE key; it is never run from an operator key.
 
 ---
 
@@ -606,9 +601,10 @@ planner side lives in `35-social-media-planner`.
   `social-planner-row-append` webhook (`core/smp/sheet_schema_130/`,
   `core/smp/sheet_migration/`). The SOP never names a column itself.
 - **Ceiling.** The weekly ad reserves against the run's existing ceiling —
-  approved price plus the 20% retake allowance — through the same spend
-  ledger and Skill 74 `preflight`. A weekly run never opens a second ceiling
-  and never widens this one; Rule-Zero announce and the ceiling still apply.
+  approved price plus the planning allowance `budget_contingency.label()`
+  returns — through the same spend ledger and Skill 74 `preflight`. A weekly
+  run never opens a second ceiling and never widens this one; Rule-Zero
+  announce and the ceiling still apply.
 - **QC.** The independent checker (`qc-specialist-video`) judges the weekly
   cut the same way it judges any other ad, and `35-social-media-planner/QC.md`
   carries the planner-side checklist (length, routing, teaser, skip

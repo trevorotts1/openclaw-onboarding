@@ -65,11 +65,14 @@
 --        "paid_started": boolean, -- a cancel is refused once true
 --        "created_at":   number,
 --        "updated_at":   number,
+--        "in_production_at": number|null, -- pickup: stamped on claim/answer
 --        "delivered_at": number|null,
 --        "accepted_at":  number|null,   -- client tapped Looks good
 --        "downloaded_at": number|null,  -- an OBSERVED download, never a guess
 --        "last_actor":   string
 --      }
+--    Every state move also stamps `<state>_at` (lifecycle.transition), so
+--    needs_you_at, ready_at, done_at and cancelled_at appear the same way.
 --    The order id is scoped by client_id in the KEY, so another client's key
 --    cannot even name this record.
 --
@@ -155,11 +158,25 @@
 -- THE BUCKET'S OWN RULE  (U4's file to create; recorded here for the contract)
 -- ============================================================================
 --
---   One scoped project-object delete-after-45-days rule, scoped to the
---   namespace above, and NEVER covering: enrollment records, delivery receipts,
---   GHL media, or the finished video's GHL copy. Section 3.15 + section 3.10A.
---   The service's own retention.js expresses the same rule in code so the two
---   can be compared; a disagreement is a FAIL, not a judgement call.
+--   A delete-after-45-days rule on the `clients/` prefix: every stored object is
+--   removed 45 days after it was uploaded. Enrollment records, delivery receipts
+--   and GHL media are not in this bucket and are untouched.
+--
+-- ============================================================================
+-- THE RETENTION SWEEP'S CLOCK  (the columns retention.js reads; no others)
+-- ============================================================================
+--
+--   rule `from`     column read on the stored record
+--   --------------  --------------------------------------------------------
+--   created         created_at        order, client, key and upload records
+--   pickup          in_production_at  lifecycle.transition on claim / answer
+--   stage_approved  finalized_at      approvals-api.composeReady, ready.json
+--   delivered       delivered_at      lifecycle.transition on deliver
+--
+--   A record carrying none of them yet is KEPT, never swept. retention.js
+--   reads only the columns named here. It once read `created_at_ms` and
+--   `event_at_ms`, which no writer produces, so every record was kept and the
+--   sweep ran and deleted nothing.
 --
 -- ============================================================================
 -- SECRETS  (declared here; the deploy files in U4 set them — this unit never

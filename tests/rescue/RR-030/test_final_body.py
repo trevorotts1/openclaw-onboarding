@@ -80,7 +80,7 @@ rc, o = body(v3("advice_delivered", "verified"))
 check(o != "Fixed and checked.", "B6 advice delivered is NOT 'Fixed and checked.'", o)
 
 src = open(POLL, encoding="utf-8").read()
-check("rescue-notification.py\" final-body" in src, "B7 rescue-poll.sh builds the body with final-body")
+check("rr_owner_message.py" in src, "B7 rescue-poll.sh builds the body with rr_owner_message.py")
 check("Repair status: %s" not in src and "Remaining blocker: %s" not in src, "B7 the old machine-dump format string is gone from rescue-poll.sh")
 
 print("\nRR-030 F88 final body: %d passed, %d failed" % (PASS, FAIL))

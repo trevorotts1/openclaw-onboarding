@@ -187,7 +187,7 @@ class FactoryProductionAdmission(unittest.TestCase):
     def test_public_next_surfaces_an_order_violation_by_name(self):
         confirmed_run(self.run)
         complete_stage(self.run, "research")
-        (self.run / "research" / "receipt.json").unlink()
+        (self.run / "research" / "evidence.json").unlink()
         code, nxt = self.cli("next", "--run-dir", str(self.run))
         self.assertEqual(code, 2, nxt)
         self.assertFalse(nxt["data"]["production_admitted"], nxt)

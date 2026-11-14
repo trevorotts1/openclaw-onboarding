@@ -130,6 +130,8 @@ concurrency:
 
 jobs:
   hard-gate:
+    # Batch pull requests run only the required checks (Trevor order 2026-11-13).
+    if: ${{ !startsWith(github.head_ref, 'batch/') }}
     name: "Embedding hard gates (fake-768 / sandbox / one-DB-path)"
     runs-on: ubuntu-latest
     steps:
@@ -173,6 +175,8 @@ jobs:
           bash tests/unit/orphan-process-prevention.test.sh
 
   persona-embeddings-wiring:
+    # Batch pull requests run only the required checks (Trevor order 2026-11-13).
+    if: ${{ !startsWith(github.head_ref, 'batch/') }}
     name: "A-U8 — book-to-persona embeddings wiring (index write / deferral / index-verify / drift)"
     runs-on: ubuntu-latest
     # The runner is a bare box: no ~/.openclaw (Mac marker) and no
@@ -225,6 +229,8 @@ jobs:
           bash tests/unit/publish-personas-to-fleet.test.sh
 
   universal-sops:
+    # Batch pull requests run only the required checks (Trevor order 2026-11-13).
+    if: ${{ !startsWith(github.head_ref, 'batch/') }}
     name: "universal-sops content manifest"
     runs-on: ubuntu-latest
     steps:
@@ -240,6 +246,8 @@ jobs:
         run: python3 scripts/hash-universal-sops-manifest.py --check
 
   sop-embed-once:
+    # Batch pull requests run only the required checks (Trevor order 2026-11-13).
+    if: ${{ !startsWith(github.head_ref, 'batch/') }}
     name: "P4-03 — CC SOP-embeddings embed-once pipeline (Corpus 5)"
     runs-on: ubuntu-latest
     steps:

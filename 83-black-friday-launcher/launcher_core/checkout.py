@@ -183,7 +183,12 @@ def _price_choice(offer: Dict[str, Any], intake: Dict[str, Any],
                   readback: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """One price choice. Native ids come only from the intake's checkout block or the
     read-back; the exponent is the read-back's when it carries one, else the Skill 78 currency
-    table's (it is never absent); any other fact nobody holds is named, never invented."""
+    table's (it is never absent); any other fact nobody holds is named, never invented.
+
+    The billing fact is the answers-bound canonical price (the client's own price authority):
+    recurring carries its recurring_interval from the same authority. A billing_type stated in
+    the checkout block agrees with it (the intake binding enforces that agreement) and stands
+    in only when an offer carries no canonical at all (hand-built test fixtures)."""
     block = offer.get("checkout") or {}
     price = offer["price"]
     # The read-back keys native ids by the Skill 49 price_choice_id (<offer_id>-<currency>);
@@ -199,8 +204,14 @@ def _price_choice(offer: Dict[str, Any], intake: Dict[str, Any],
         "native_product_id": native.get("native_product_id", block.get("native_product_id")),
         "native_price_id": native.get("native_price_id", block.get("native_price_id")),
     }
-    if block.get("billing_type"):
-        choice["billing_type"] = block["billing_type"]
+    canon0 = ((offer.get("canonical") or {}).get("prices") or [{}])[0]
+    canon0 = canon0 if isinstance(canon0, dict) else {}
+    billing = canon0.get("billing_type") or block.get("billing_type")
+    if billing:
+        choice["billing_type"] = billing
+    interval = canon0.get("recurring_interval") if billing == "recurring" else None
+    if isinstance(interval, str) and interval.strip():
+        choice["recurring_interval"] = interval.strip()
     exponent = native.get("currency_exponent")
     if isinstance(exponent, int) and not isinstance(exponent, bool):
         choice["currency_exponent"] = exponent
@@ -212,7 +223,10 @@ def _price_choice(offer: Dict[str, Any], intake: Dict[str, Any],
         live_status = production_approval_status(offer)
         if live_status is not None:
             choice["approval_status"] = live_status
-    unknown = [n for n in ("billing_type", "approval_status")
+    required = ("billing_type", "approval_status")
+    if choice.get("billing_type") == "recurring":
+        required += ("recurring_interval",)
+    unknown = [n for n in required
                if n not in choice]
     if unknown:  # an annotation, never part of the probe request (contract_request)
         choice["unknown"] = unknown

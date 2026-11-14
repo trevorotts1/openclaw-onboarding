@@ -159,12 +159,13 @@ class Recipe(unittest.TestCase):
         self.assertTrue(R.check_negatives("rap"))                      # dry rule missing
         self.assertNotIn("rap", R.negative_tags("rnb-flow"))           # the rap style keeps its rap
         req = R.build_request("soul-ballad", sheet(), CLIENT, "T", 58, hook_plan=HOOK_PLAN)
-        # WW-30: the build is the createTask ENVELOPE -- the route model and
-        # the top-level camelCase callBackUrl sit outside, every direction
-        # (including the generation value) sits inside the snake_case input.
+        # WW-30: the build is the createTask ENVELOPE -- the route model sits
+        # outside, every direction (including the generation value) sits inside
+        # the snake_case input. U-M01: the top-level camelCase callBackUrl rides
+        # ONLY when an address is set (KIE_CALLBACK_URL); its own case below.
         self.assertEqual(req["endpoint"], R.KIE_MUSIC_TASK_ENDPOINT)
         self.assertEqual(req["model"], R.KIE_MUSIC_TASK_MODEL)
-        self.assertTrue(req["callBackUrl"])
+        self.assertNotEqual(req.get("callBackUrl"), "https://example.invalid/cb")
         self.assertEqual(R.check_envelope(req), [])
         inp = req["input"]
         self.assertEqual((inp["model"], inp["custom_mode"], inp["style_weight"], inp["variety"],
@@ -172,6 +173,33 @@ class Recipe(unittest.TestCase):
                          (R.KIE_MUSIC_MODEL_VALUE, True, 0.75, 0, 0.3, "f", 58))
         self.assertIn("band dropout", inp["negative_tags"])
         self.assertEqual(_no_cue(R.parse_lyrics(inp["lyrics"])), sheet())
+
+    def test_callback_address_comes_from_the_environment(self):
+        """U-M01: no callback address is invented.
+
+        Skill 68's music reference (references/music.md, section 1) lists the
+        CURRENT createTask song request's required input as custom_mode,
+        instrumental and model: no callback is required, so with
+        KIE_CALLBACK_URL unset the envelope carries no callBackUrl at all and
+        the run polls the task; with it set the envelope carries that address.
+        """
+        saved = os.environ.pop("KIE_CALLBACK_URL", None)
+        try:
+            plain = R.build_request("soul-ballad", sheet(), CLIENT, "T", 58,
+                                    hook_plan=HOOK_PLAN)
+            self.assertNotIn("callBackUrl", plain)
+            self.assertEqual(R.check_envelope(plain), [])
+            os.environ["KIE_CALLBACK_URL"] = "https://relay.example/cb"
+            with_cb = R.build_request("soul-ballad", sheet(), CLIENT, "T", 58,
+                                      hook_plan=HOOK_PLAN)
+            self.assertEqual(with_cb["callBackUrl"], "https://relay.example/cb")
+            self.assertEqual(R.check_envelope(with_cb), [])
+            self.assertTrue(any(e.startswith("CALLBACK_EMPTY")
+                                for e in R.check_envelope(dict(with_cb, callBackUrl=""))))
+        finally:
+            os.environ.pop("KIE_CALLBACK_URL", None)
+            if saved is not None:
+                os.environ["KIE_CALLBACK_URL"] = saved
 
     def test_syllables(self):
         self.assertEqual(R.syllables("I am not sma-a-all"), 4)
