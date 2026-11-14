@@ -51,6 +51,7 @@ from create_role_workspaces import (  # type: ignore
     augment_all_existing_role_folders,
     create_role_workspace,
     augment_role_folder,
+    write_sop_needed_manifest,
 )
 
 
@@ -107,6 +108,11 @@ def process_company(company_root: Path, workspace_root: Path, dry_run: bool = Fa
         for r in results:
             if not r.get("dry_run"):
                 counts["role_files_written"] += len(r.get("written", []))
+
+    # BU-108: records accumulated by the augmentation above must reach disk on
+    # every path, not only when create_role_workspaces.py is the entry point.
+    if not dry_run:
+        write_sop_needed_manifest(company_root)
 
     return counts
 
