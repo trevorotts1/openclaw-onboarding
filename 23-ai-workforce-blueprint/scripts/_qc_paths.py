@@ -123,6 +123,10 @@ def resolve_live_departments_dir(state, workspace, config_path=None):
     if len(parents) == 1:
         return parents[0], "agents"
 
+    # (display, resolved) pairs: dedupe by resolved identity (one spelling of
+    # the same dir scores once) but RETURN the first spelling, so the answer
+    # stays string-equal to the build state's own companyRoot instead of a
+    # symlink-resolved alias of it.
     candidates, cseen = [], set()
 
     def add(p):
@@ -132,7 +136,7 @@ def resolve_live_departments_dir(state, workspace, config_path=None):
             return
         if str(resolved) in cseen or not resolved.is_dir():
             return
-        cseen.add(str(resolved)); candidates.append(resolved)
+        cseen.add(str(resolved)); candidates.append((Path(p), resolved))
 
     root = state.get("companyRoot")
     if isinstance(root, str) and os.path.isabs(root):
@@ -144,10 +148,10 @@ def resolve_live_departments_dir(state, workspace, config_path=None):
 
     slugs = _dept_slugs(state)
     best, best_score = None, -1
-    for cand in candidates:
-        score = _score_tree(cand, slugs)
+    for display, resolved in candidates:
+        score = _score_tree(resolved, slugs)
         if score > best_score:
-            best, best_score = cand, score
+            best, best_score = display, score
     if best is None:
         return None, "none"
     return best, "scored"
