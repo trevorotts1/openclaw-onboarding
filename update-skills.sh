@@ -7132,6 +7132,72 @@ print(state + " " + str(len(headers)))
     echo "  ✓ [UPDATE PENDING FLAG] state=${_pfc_state} sections=${_pfc_count} file=$_pfc_file"
     return 0
   }
+
+  # ── COMMAND CENTER INTERVIEW FLAG PROBE ────────────────────────────────
+  # WHY THIS EXISTS. The mirror that copies build-state interviewComplete into
+  # the Command Center's is_self row (shared-utils/ensure_cc_interview_flag.py)
+  # is repaired by the full pass far below, but a box whose skills content is
+  # already current exits before that step — so a finished interview could sit
+  # with clients.interview_complete=0 forever, parking every task in General
+  # Task. This probe asks the helper itself, in --check mode, with the folder
+  # and state file the updater uses: exit 3 is a PROVEN mismatch and the only
+  # trigger. Exit 0 (build-state and database agree, or interview not
+  # complete) and exit 4 (no build-state, no database, no own row) are not.
+  #
+  # CONTRACT: returns 1 ONLY on helper exit 3. Missing python3, missing
+  # helper, missing build-state, no accepted app folder, any other exit -> 0.
+  # READ-ONLY: --check opens the database `?mode=ro`; the probe never writes.
+  _cc_interview_flag_probe() {
+    if ! command -v python3 >/dev/null 2>&1; then
+      echo "  — [CC INTERVIEW FLAG] state=unknown — python3 missing — not forcing a pass."
+      return 0
+    fi
+    local _cif_helper="${SKILLS_DIR:-$HOME/.openclaw/skills}/shared-utils/ensure_cc_interview_flag.py"
+    if [ ! -f "$_cif_helper" ]; then
+      echo "  — [CC INTERVIEW FLAG] state=absent — helper not found at $_cif_helper — not forcing a pass."
+      return 0
+    fi
+    local _cif_state="${OC_WORKSPACE_DEFAULT:-${OC_CONFIG:-$HOME/.openclaw}/workspace}/.workforce-build-state.json"
+    if [ ! -f "$_cif_state" ]; then
+      echo "  — [CC INTERVIEW FLAG] state=absent — no build-state at $_cif_state — not forcing a pass."
+      return 0
+    fi
+    # Resolve the app folder exactly as _cc_currency_probe does (deliberately
+    # self-contained: the updater's cc_is_valid_checkout is defined far below).
+    local _cif_dir="" _cif_cand _cif_remote
+    for _cif_cand in "${CC_APP_DIR:-}" "${BLACKCEO_COMMAND_CENTER_ROOT:-}" \
+                    "$HOME/projects/command-center" "/data/projects/command-center" \
+                    "$HOME/projects/blackceo-command-center" \
+                    "/data/projects/blackceo-command-center" \
+                    "$HOME/projects/mission-control" "$HOME/blackceo-command-center" \
+                    "${OC_ROOT:-$HOME/.openclaw}/command-center" \
+                    "/opt/mission-control" "/app"; do
+      [ -n "$_cif_cand" ] || continue
+      [ -d "$_cif_cand/.git" ] || continue
+      _cif_remote="$(git -C "$_cif_cand" remote get-url origin 2>/dev/null || true)"
+      case "$_cif_remote" in *blackceo-command-center*) _cif_dir="$_cif_cand"; break ;; esac
+    done
+    if [ -z "$_cif_dir" ]; then
+      echo "  — [CC INTERVIEW FLAG] state=absent — no accepted Command Center checkout — not forcing a pass."
+      return 0
+    fi
+    local _cif_rc=0
+    if python3 "$_cif_helper" --check --app "$_cif_dir" --state "$_cif_state" >/dev/null 2>&1; then
+      _cif_rc=0
+    else
+      _cif_rc=$?
+    fi
+    if [ "$_cif_rc" -eq 3 ]; then
+      echo "  ✗ [CC INTERVIEW FLAG] state=mismatch dir=$_cif_dir — build-state interviewComplete=true but clients.interview_complete is 0; the full pass mirrors it."
+      return 1
+    fi
+    if [ "$_cif_rc" -eq 0 ]; then
+      echo "  ✓ [CC INTERVIEW FLAG] state=current dir=$_cif_dir"
+    else
+      echo "  — [CC INTERVIEW FLAG] state=not-applicable rc=$_cif_rc dir=$_cif_dir — not forcing a pass."
+    fi
+    return 0
+  }
   # <<< CONTENT-RECHECK-CONVERGENCE-PROBES-END
 
   # ── CONTENT RECHECK (stamp already current, non-interactive run) ─────────
@@ -7206,6 +7272,7 @@ print(state + " " + str(len(headers)))
       _weekly_cron_currency_probe || _CONVERGENCE_TRIGGERS="${_CONVERGENCE_TRIGGERS}${_CONVERGENCE_TRIGGERS:+; }weekly-onboarding-update cron registration"
       _agents_md_hygiene_probe || _CONVERGENCE_TRIGGERS="${_CONVERGENCE_TRIGGERS}${_CONVERGENCE_TRIGGERS:+; }AGENTS.md dedup/orphan hygiene"
       _pending_flag_currency_probe || _CONVERGENCE_TRIGGERS="${_CONVERGENCE_TRIGGERS}${_CONVERGENCE_TRIGGERS:+; }UPDATE PENDING flag currency"
+      _cc_interview_flag_probe || _CONVERGENCE_TRIGGERS="${_CONVERGENCE_TRIGGERS}${_CONVERGENCE_TRIGGERS:+; }Command Center interview flag"
 
       if [ -z "$_CONVERGENCE_TRIGGERS" ]; then
         echo "  ✓ [CONTENT RECHECK] stamp current AND installed content matches source — nothing to do."
@@ -7375,6 +7442,7 @@ print(state + " " + str(len(headers)))
         _weekly_cron_currency_probe || _CONVERGENCE_TRIGGERS="${_CONVERGENCE_TRIGGERS}${_CONVERGENCE_TRIGGERS:+; }weekly-onboarding-update cron registration"
         _agents_md_hygiene_probe || _CONVERGENCE_TRIGGERS="${_CONVERGENCE_TRIGGERS}${_CONVERGENCE_TRIGGERS:+; }AGENTS.md dedup/orphan hygiene"
         _pending_flag_currency_probe || _CONVERGENCE_TRIGGERS="${_CONVERGENCE_TRIGGERS}${_CONVERGENCE_TRIGGERS:+; }UPDATE PENDING flag currency"
+        _cc_interview_flag_probe || _CONVERGENCE_TRIGGERS="${_CONVERGENCE_TRIGGERS}${_CONVERGENCE_TRIGGERS:+; }Command Center interview flag"
         if [ -z "$_CONVERGENCE_TRIGGERS" ]; then
           echo "  ✓ [CONVERGENCE FAST PATH] all outstanding convergence steps repaired without a content sync — nothing to do."
           # B3: same content-current gate as the plain recheck exit above.
