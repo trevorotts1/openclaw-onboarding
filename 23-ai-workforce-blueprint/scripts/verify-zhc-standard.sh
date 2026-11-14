@@ -84,10 +84,13 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SKILL_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 # ---- resolve build-state file (VPS first, Mac fallback) ----
+# One rule for the state file in every script: an explicit override
+# (WORKFORCE_BUILD_STATE_FILE, then ZHC_STATE_FILE, then
+# WORKFORCE_BUILD_STATE_PATH) wins; otherwise this script's own default.
 if [ -d /data/.openclaw ]; then
-  STATE_FILE="/data/.openclaw/workspace/.workforce-build-state.json"
+  STATE_FILE="${WORKFORCE_BUILD_STATE_FILE:-${ZHC_STATE_FILE:-${WORKFORCE_BUILD_STATE_PATH:-/data/.openclaw/workspace/.workforce-build-state.json}}}"
 else
-  STATE_FILE="$HOME/.openclaw/workspace/.workforce-build-state.json"
+  STATE_FILE="${WORKFORCE_BUILD_STATE_FILE:-${ZHC_STATE_FILE:-${WORKFORCE_BUILD_STATE_PATH:-$HOME/.openclaw/workspace/.workforce-build-state.json}}}"
 fi
 NAMING_MAP="$SKILL_DIR/department-naming-map.json"
 
