@@ -555,12 +555,52 @@ def make_workdir(with_artifacts: bool, *, rich_prompts: bool = True,
                       + [{"slide": i + 1, "section": "Teaching",
                           "assigned": [{"item_id": f"C-{i:02d}", "type": "stat",
                                         "anchor": f"stat-{i:02d}",
-                                        "source_url": "https://www.cdc.gov/x",
                                         "confidence": "HIGH", "category": "C"}]}
                          for i in range(1, 11)],
             "distinct_items_used": 10,
             "content_slides_total": _floor_slides,
             "content_slides_with_research": 10}))
+        # PD-218a — a FIX 19 run carries a retrieval ledger. This fixture is a
+        # full modern pipeline run, so the citation gate (_chk_citation_validated)
+        # now requires the ledger once a research brief exists: with no ledger it
+        # correctly FAILS ("no evidence any cited URL was fetched"). The ledger rows
+        # below record the 8 brief sources as already fetched (status 200 + a 200+
+        # char extraction), so validation runs against those immutable baselines
+        # with ZERO network — exactly the PRES-029 no-refetch path — and this
+        # fixture stays a clean real run rather than a carved-out exception.
+        #
+        # The map's assigned items intentionally carry NO source_url: their anchors
+        # (stat-01..stat-10) are copy-weave ids, not claims about a fetched page,
+        # and an anchor citation must survive the semantic reviewer (>= 3 shared
+        # content tokens), which a slug anchor never can. The brief URLs are the
+        # citation set.
+        _brief_urls = [
+            "https://pmc.ncbi.nlm.nih.gov/articles/PMC12674523/",
+            "https://www.researchgate.net/publication/369670311",
+            "https://www.ncbi.nlm.nih.gov/pmc/articles/PMC9135772/",
+            "https://www.jsr.org/hs/index.php/path/article/view/3679",
+            "https://www.ncbi.nlm.nih.gov/books/NBK608531/",
+            "https://www.pewresearch.org/social-trends/2023/01/24/",
+            "https://www.apa.org/topics/parenting/positive-discipline",
+            "https://www.cdc.gov/childrensmentalhealth/data.html",
+        ]
+        _ledger_rows = []
+        for _u in _brief_urls:
+            _canon = _u if _u.endswith(".html") else _u.rstrip("/")
+            _excerpt = ("Independent audited evidence paragraph about the cited "
+                        "claim, recorded when the research phase fetched this "
+                        "page, long enough to clear the two hundred character "
+                        "content floor: " + _canon)
+            _ledger_rows.append({
+                "url": _u,
+                "canonical_url": _canon,
+                "content_sha256": hashlib.sha256(_excerpt.encode()).hexdigest(),
+                "status": 200,
+                "extracted": _excerpt,
+                "retrieved_at": "2026-01-01T00:00:00Z",
+            })
+        (root / "working" / "research" / "retrieval_ledger.jsonl").write_text(
+            json.dumps({"rows": _ledger_rows}))
         # Phase F — typography/design brief (per-slide art direction).
         (root / "working" / "research" / "design-brief-demo.md").write_text(
             "# Design brief\n" + ("Per-slide art direction and typography. " * 20) + "\n")
@@ -1264,10 +1304,17 @@ def _write_publish_ledger(bundle_dir: Path, status="published",
     sub-check of run_postflight_gate keys on this artifact — a full bundle without it
     now fails (exit 5), so the PASS-path fixtures must include a published record."""
     import json as _json
+    import hashlib as _hashlib
+    # PD-210: the record must name the bytes of the teleprompter that is actually in
+    # the bundle (`local_sha256`), so a publisher's record cannot describe a different
+    # file. A PASS-path fixture therefore has to carry the real hash, exactly as
+    # publish_teleprompter writes it.
+    _html = bundle_dir / "presenter-teleprompter.html"
     rec = {
         "platform": "mac",
         "host_target": "cloudflare-central",
-        "local_file": str(bundle_dir / "presenter-teleprompter.html"),
+        "local_file": str(_html),
+        "local_sha256": _hashlib.sha256(_html.read_bytes()).hexdigest(),
         "public_url": public_url,
         "published_at": "2026-06-17T00:00:00Z",
         "verified_http_status": verified_http_status,
@@ -1527,6 +1574,20 @@ def test_postflight_speech_length_reverify():
                          "notes": "cast parity verified against the intake mix"
                          } for n in range(1, 25)]},
             indent=2))
+        # PD-206a (decision D-34): each human verdict is its OWN file, never a block
+        # embedded in the graded report, so the closeout sub-checks read these two
+        # paths. A complete bundle now carries both; write them here so this fixture
+        # still isolates the speech-length re-check and nothing else.
+        _hr = root / "working" / "qc" / "human-review"
+        _hr.mkdir(parents=True, exist_ok=True)
+        (_hr / "image_grounding.json").write_text(json.dumps(
+            {"pass": True, "reviewed_by": "image-grounding-steward",
+             "reviewed_at": "2026-11-14 09:00 Eastern",
+             "note": "render prompts traced to research anchors"}, indent=2))
+        (_hr / "representation_casting.json").write_text(json.dumps(
+            {"pass": True, "reviewed_by": "representation-casting-director",
+             "reviewed_at": "2026-11-14 09:00 Eastern",
+             "note": "cast parity verified against the intake mix"}, indent=2))
         import hashlib as _hashlib
         (root / "working" / "checkpoints" / "process_manifest.json").write_text(json.dumps({
                 "phase_attestations": [],
