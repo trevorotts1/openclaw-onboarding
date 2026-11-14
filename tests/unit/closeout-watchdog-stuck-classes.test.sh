@@ -97,6 +97,10 @@ _mkbox() {
   # Run a COPY from inside the sandbox so SCRIPT_DIR/REPO_ROOT resolve here, not
   # into the checkout — that keeps the registrar lookup under test control.
   cp "$WATCHDOG" "$skill/closeout-readiness-watchdog.sh"
+  # The watchdog's locked state writer (lib-workforce-state.sh + workforce_state.py)
+  # must travel with the copy, or every closeoutBlockers write fails silently.
+  cp "$REPO_ROOT/23-ai-workforce-blueprint/scripts/lib-workforce-state.sh" "$skill/"
+  cp "$REPO_ROOT/23-ai-workforce-blueprint/scripts/workforce_state.py" "$skill/"
 
   cat > "$h/bin/openclaw" <<SHIM
 #!/usr/bin/env bash
