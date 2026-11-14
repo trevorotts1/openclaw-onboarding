@@ -1,7 +1,7 @@
 """C01F4-evidence: the published evidence fields are one contract with the
 descriptor artifacts. A row naming evidence the descriptors do not emit is
-refused by name; a real run (assembler writes edit/timeline.json + edit/ad.mp4)
-passes the order gate and the completion evidence on the edit/ paths."""
+refused by name; a real run (assembler writes edit/ad.mp4 - S75-011) passes the
+order gate and the completion evidence on the edit/ path."""
 import copy
 import json
 from pathlib import Path
@@ -42,23 +42,32 @@ class EvidenceMatchesDescriptors(unittest.TestCase):
     def test_real_run_edit_paths_admit_and_complete(self):
         with tempfile.TemporaryDirectory(prefix="c01f4-evidence-") as tmp:
             run = Path(tmp)
-            for rel in ("edit/timeline.json", "edit/ad.mp4",
-                        "research/receipt.json", "research/claims.json",
-                        "research/captures.json",
+            # S75-011 (U-A03): these are the files each stage really emits; the
+            # declared inventory was wrong in six places (script/lyrics.json,
+            # video/clips.json, qc/retakes.json, final-qc/record.json,
+            # delivery/receipts.json were written by nothing; edit/timeline.json
+            # is an input to the render, never an output of it).
+            for rel in ("edit/ad.mp4",
+                        # S75-005 (U-A02): research.py render() writes these.
+                        "research/evidence.json", "research/manifest.json",
+                        "research/bundle.json",
                         "creative/story.json", "creative/blueprint.json",
-                        "script/lyrics.json",
+                        "creative/lyrics.json",
                         "music/picked-song.mp3", "song-choices/pick.json",
                         "continuity/qc-records.json",
                         "continuity/makers.json",
                         "storyboard/shot-list.json",
                         "storyboard/contracts.json",
                         "keyframes/manifest.json",
-                        "video/clips.json",
-                        "qc/retakes.json",
-                        "final-qc/record.json"):
+                        "generation/clips-manifest.json",
+                        "qc/retakes-plan.json",
+                        "qc/final-qc-verdict.json",
+                        "delivery/delivery-receipt.json"):
                 p = run / rel
                 p.parent.mkdir(parents=True, exist_ok=True)
                 p.write_text("{}", encoding="utf-8")
+            # The completion-evidence reader still reads the destination
+            # receipt list; U-A13 settles that file with the delivery stage.
             (run / "delivery").mkdir(parents=True, exist_ok=True)
             (run / "delivery" / "receipts.json").write_text(
                 '[{"destination": "origin", "status": "delivered"}]',
