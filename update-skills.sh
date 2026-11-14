@@ -14,7 +14,7 @@
 
 # Platform detection + bootstrap (MUST run before set -euo pipefail -- VPS container
 # re-exec uses conditional commands that may fail intentionally).
-ONBOARDING_VERSION="v27.1.71"
+ONBOARDING_VERSION="v27.1.72"
 _SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" 2>/dev/null && pwd || pwd)"
 _PLATFORM_COMMON="$_SCRIPT_DIR/platform/common.sh"
 _PLATFORM_COMMON_TEMP=""
@@ -2494,7 +2494,7 @@ reap_dead_skill_manifest() {
 # --- END REAP-DEAD-SKILL-MANIFEST ---
 
 # ----------------------------------------------------------
-# v27.1.71 - safe_json_edit
+# v27.1.72 - safe_json_edit
 # Harden any direct write to openclaw.json: back up, apply the
 # python3 transform, validate with `openclaw config validate`,
 # and ROLL BACK from the backup on failure so one bad key can
@@ -5740,6 +5740,28 @@ main() {
       if declare -F frontdoor_update_999 >/dev/null 2>&1; then
         frontdoor_update_999 || _FD_999_NOTE=" (999 refresh reported a failure — see above)"
       fi
+      # FULL-READ GUARD, Claude Code / claude-nine side (Trevor's order 2026-11-12): right after the
+      # 999 checkout is refreshed, run its narrow installer so the PreToolUse hook reaches
+      # ~/.claude-nine on this roll. Mac boxes only. A missing script, checkout or ~/.claude-nine is a
+      # logged no-op; nothing here can fail the roll. One PASS/FAIL line is printed.
+      if [ "$(uname -s 2>/dev/null)" = "Darwin" ]; then
+        _FRG_999_SCRIPT=""
+        for _frg_c in "$HOME/999-setup" "$HOME/Documents/999-setup" "$HOME/999-setup-clean" "$HOME/.claude-nine/../999-setup"; do
+          if [ -f "$_frg_c/.claude/skills/hook-skill/scripts/macos/install.sh" ]; then
+            _FRG_999_SCRIPT="$_frg_c/.claude/skills/hook-skill/scripts/macos/install.sh"; break
+          fi
+        done
+        if [ -z "$_FRG_999_SCRIPT" ]; then
+          echo "full-read-guard (999): no-op, 999 checkout has no hook-skill/scripts/macos/install.sh"
+        elif [ ! -d "$HOME/.claude-nine" ]; then
+          echo "full-read-guard (999): no-op, $HOME/.claude-nine does not exist on this box"
+        elif bash "$_FRG_999_SCRIPT" --only full-read-guard --root "$HOME/.claude-nine" >>"$LOG_FILE" 2>&1; then
+          echo "full-read-guard (999): PASS installed into $HOME/.claude-nine"
+        else
+          echo "full-read-guard (999): FAIL installer returned non-zero (advisory, roll continues; see $LOG_FILE)"
+        fi
+        unset _FRG_999_SCRIPT _frg_c
+      fi
       if frontdoor_run_stage "$_FRONTDOOR_STAGE_PY"; then
         case "$FRONTDOOR_STATUS" in
           ok)          echo "  ✓ [FRONT DOOR] repairs + health gate: clean" ;;
@@ -6106,6 +6128,20 @@ main() {
   rm -rf "$_OC_EXT_STAGE"
   if [ -d "$ONBOARDING_DIR/extensions" ]; then
     mkdir -p "$_OC_EXT_STAGE" && cp -R "$ONBOARDING_DIR/extensions/." "$_OC_EXT_STAGE/" 2>/dev/null || true
+  fi
+
+  # FULL-READ GUARD (Trevor's order 2026-11-12): install + enable the full-read-guard plugin
+  # on THIS roll. Runs HERE -- right after the extensions stage copy and ABOVE the
+  # content-recheck `exit 0` -- so a content-current re-roll still picks it up. Uses the
+  # RESOLVED OpenClaw root ($OC_CONFIG), never a hard-coded $HOME/.openclaw. Idempotent,
+  # advisory-only (it can never fail this update), and a logged no-op when the plugin folder
+  # is not in this release. Its "full-read-guard:" line goes to the roll log.
+  _FRG_INSTALLER="$ONBOARDING_DIR/scripts/install-full-read-guard.sh"
+  [ -f "$_FRG_INSTALLER" ] || _FRG_INSTALLER="$_OC_SCRIPTS_DEST/install-full-read-guard.sh"
+  if [ -f "$_FRG_INSTALLER" ]; then
+    bash "$_FRG_INSTALLER" --install --root "$OC_CONFIG" --source "$_OC_EXT_STAGE" 2>&1 | tee -a "$LOG_FILE" || true
+  else
+    echo "full-read-guard: ADVISORY install-full-read-guard.sh not in bundle -- skipped"
   fi
 
   # BURN GUARD: keep OpenClaw's weekly system-owned skill-collection-review crons OFF
@@ -12359,6 +12395,17 @@ PY
     echo "  ⚠ agent-exchange-telemetry extension not found in repo ($_TE_SRC) — skipping install"
   fi
   rm -rf "${_OC_EXT_STAGE:-}" 2>/dev/null || true
+
+  # FULL-READ GUARD hook point B: apply-fleet-standards.sh (earlier in this pass) can rewrite
+  # plugins.allow after hook point A, so re-assert the config (a no-op when already right),
+  # then verify the INSTALLED copy. The roll log gets one "full-read-guard: PASS|FAIL|SKIP"
+  # line per box. Advisory only.
+  _FRG_VERIFY="$_OC_SCRIPTS_DEST/install-full-read-guard.sh"
+  [ -f "$_FRG_VERIFY" ] || _FRG_VERIFY="$ONBOARDING_DIR/scripts/install-full-read-guard.sh"
+  if [ -f "$_FRG_VERIFY" ]; then
+    bash "$_FRG_VERIFY" --repair-config --root "$OC_CONFIG" 2>&1 | tee -a "$LOG_FILE" || true
+    bash "$_FRG_VERIFY" --verify --root "$OC_CONFIG" 2>&1 | tee -a "$LOG_FILE" || true
+  fi
 
   # ----------------------------------------------------------
   # Dept-agent registration: turn built workspace folders into REAL agents in
