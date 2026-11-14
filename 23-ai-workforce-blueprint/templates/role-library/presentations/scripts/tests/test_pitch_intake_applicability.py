@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -9,11 +10,15 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 DRIVER = HERE.parent / "deck-intake-driver.py"
 
+# PD-004c: these cases prove pitch applicability, not provenance.
+ENV = {**os.environ, "PRESENTATION_INTAKE_PROVENANCE": "warn"}
+
 
 def _answer(run_dir: Path, qid: str, text: str) -> subprocess.CompletedProcess:
     return subprocess.run(
         [sys.executable, str(DRIVER), "--run-dir", str(run_dir),
-         "--answer", qid, text], capture_output=True, text=True, timeout=30)
+         "--answer", qid, text], capture_output=True, text=True, timeout=30,
+        env=ENV)
 
 
 def _ledger(run_dir: Path) -> dict:
@@ -71,7 +76,7 @@ def test_explicit_informational_selection_skips_method_and_timing_without_fake_v
     _walk_to_complete(run_dir)
     complete = subprocess.run(
         [sys.executable, str(DRIVER), "--run-dir", str(run_dir), "--complete"],
-        capture_output=True, text=True, timeout=30)
+        capture_output=True, text=True, timeout=30, env=ENV)
     assert complete.returncode == 0, complete.stderr
     intake = json.loads((run_dir / "working" / "copy" / "intake.json").read_text())
     assert intake["pitch_included"] is False

@@ -99,6 +99,9 @@ pytestmark = pytest.mark.skipif(
 # fixture plumbing
 # ---------------------------------------------------------------------------
 def _run_driver(run_dir: Path, *args: str, env: dict | None = None) -> subprocess.CompletedProcess:
+    if env is None:
+        # PD-004c: the standard-mode cases prove the envelope, not provenance.
+        env = {**os.environ, "PRESENTATION_INTAKE_PROVENANCE": "warn"}
     return subprocess.run(
         [sys.executable, str(DRIVER_PATH), "--run-dir", str(run_dir), *args],
         capture_output=True, text=True, env=env,
@@ -114,6 +117,7 @@ _SP_QUESTION_IDS = ("q1", "q2", "q3", "q4", "q5", "q6", "q7", "q8")
 
 def _sp_env() -> dict:
     env = dict(os.environ)
+    env["PRESENTATION_INTAKE_PROVENANCE"] = "warn"  # PD-004c: proves the envelope, not provenance.
     env["PRESENTATION_SP_TURN_LEDGER_KEYS_FILE"] = ""
     env["PRESENTATION_SP_TURN_LEDGER_CURRENT_KEY"] = "f21-f22-test-key-material"
     env["PRESENTATION_SP_TURN_LEDGER_CURRENT_KEY_ID"] = "f21-f22-test-1"
