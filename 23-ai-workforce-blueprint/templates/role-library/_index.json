@@ -1,7 +1,7 @@
 {
   "generated_at": "2026-06-28T00:00:00Z",
   "version": "27.1.71",
-  "total_roles": 538,
+  "total_roles": 539,
   "total_departments": 68,
   "departments": {
     "account-management": {
@@ -517,7 +517,7 @@
       "content_hashed_at": "2026-11-09T23:25:05.532974+00:00"
     },
     "presentations": {
-      "count": 35,
+      "count": 36,
       "roles": [
         "attention-content-strategist",
         "audio-demonstration-specialist",
@@ -534,6 +534,7 @@
         "healer-presentations",
         "hook-strategist",
         "image-grounding-steward",
+        "infographic-checklist",
         "media-librarian-ghl-updater",
         "offer-price-strategist",
         "pptx-assembly-specialist",
@@ -555,8 +556,8 @@
         "slide-submitter",
         "typography-architect"
       ],
-      "content_sha": "sha256:f0f2a6a2536c50003bd52e459d736afed060343d574584933d43e20132da92b9",
-      "content_hashed_at": "2026-11-10T05:00:35.850842+00:00"
+      "content_sha": "sha256:99f11c71fb81bcd6e75d23a5790944b349665f3014b9e951de67e664598f9964",
+      "content_hashed_at": "2026-11-14T01:38:34.166721+00:00"
     },
     "product-production": {
       "count": 4,
@@ -9627,6 +9628,22 @@
       "render_sha": "sha256:UNAVAILABLE",
       "content_version": "1.0.0",
       "content_hashed_at": "2026-11-09T23:25:05.532974+00:00"
+    },
+    {
+      "slug": "infographic-checklist",
+      "dept": "presentations",
+      "title": "infographic-checklist — Independent Infographic QC Unit (Presentations)",
+      "role_type": "specialist",
+      "word_count": 380,
+      "sop_count": 0,
+      "sop_min": 1,
+      "path": "templates/role-library/presentations/infographic-checklist.md",
+      "capability_class": "WRITING",
+      "vision_flag": false,
+      "content_sha": "sha256:1c355e73a07e1f24b514c63f6080c6eb4d09ed02f005d1300b5eca060272d902",
+      "render_sha": "sha256:UNAVAILABLE",
+      "content_version": "1.0.0",
+      "content_hashed_at": "2026-11-14T01:38:34.166721+00:00"
     }
   ],
   "sops": [
