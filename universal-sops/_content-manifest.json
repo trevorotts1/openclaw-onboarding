@@ -1,27 +1,7 @@
 {
   "algo": "sha256(CRLF->LF normalized bytes)",
   "generator": "scripts/hash-universal-sops-manifest.py",
-<<<<<<< HEAD
-<<<<<<< HEAD
-<<<<<<< HEAD
-<<<<<<< HEAD
-<<<<<<< HEAD
   "generated_at": "2026-11-12T22:01:04Z",
-=======
-  "generated_at": "2026-11-12T21:35:44Z",
->>>>>>> 48d0e74cb (PD-038: defer the sales/checkout and VSL build phases on the client's answer)
-=======
-  "generated_at": "2026-11-12T23:56:52Z",
->>>>>>> a1cdca37a (PD-021: rename the signature intake phase to the one-question-at-a-time wording)
-=======
-  "generated_at": "2026-11-13T00:11:52Z",
->>>>>>> ac1515f3c (PD-307m: declare the presenter audio as an input of the webinar video step)
-=======
-  "generated_at": "2026-11-13T01:24:28Z",
->>>>>>> 2fbddc52f (PD-018a: plain client labels and visibility on every manifest phase)
-=======
-  "generated_at": "2026-11-13T03:23:23Z",
->>>>>>> 5f20c03c2 (PD-047: give the eleven sales-package phases their procedure references)
   "file_count": 116,
   "files": {
     "CLIENT-WEBINAR-DECK-SOP.md": {
@@ -329,8 +309,8 @@
       "bytes": 148222
     },
     "presentation-slide-craft/PIPELINE-MANIFEST.json": {
-      "sha256": "ea12e59b312c26748162451f8efe023059973b957f7f9fbe3dd05afb7bcff8fe",
-      "bytes": 205249
+      "sha256": "4dd4758c7a9bf1117acadd88a1b78926dd80ddfe92c553a6ed3bf49a27d33eba",
+      "bytes": 198771
     },
     "presentation-slide-craft/README.md": {
       "sha256": "90b23b7d9263831fc5267852d7f804f9a549d995c187a16f822b5a660264f982",
