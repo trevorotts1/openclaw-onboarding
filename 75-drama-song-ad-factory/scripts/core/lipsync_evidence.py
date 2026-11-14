@@ -14,6 +14,7 @@ from pathlib import Path
 from storyboard_director import approval_package as AP
 from kie_dispatch.model_lock import is_locked_lipsync
 from lip_sync.narrator_rule import person_on_screen
+from lipsync_clips import OPT_OUT_MISSING, ROUTE_NO_LIPSYNC, no_lipsync_opt_out
 
 
 class LipsyncEvidenceError(ValueError):
@@ -59,10 +60,25 @@ def _ids(value):
             and len(value) == len(set(value)))
 
 
-def _approved(run_dir):
+def _approved(run_dir, route=None):
+    """Approved lip-sync requirements for the run.
+
+    S75-047: ``route=ROUTE_NO_LIPSYNC`` is honoured ONLY when
+    ``control/method.json`` records ``lipsync_opt_out`` with ``who`` and
+    ``at`` (lipsync_clips.no_lipsync_opt_out, the one reader). With the
+    record the run needs no storyboard requirements and returns ``{}``;
+    without it the gate refuses LIPSYNC_OPT_OUT_MISSING. Every other route
+    keeps the ordinary approved-storyboard requirement.
+    """
     _need(isinstance(run_dir, (str, Path)) and str(run_dir),
           "LIPSYNC_EVIDENCE_MISSING", "run_dir required")
     root = Path(run_dir).resolve()
+    if route == ROUTE_NO_LIPSYNC:
+        _need(no_lipsync_opt_out(root) is not None, OPT_OUT_MISSING,
+              "the no-lip-sync route needs control/method.json "
+              "lipsync_opt_out with who and at; an ordinary run keeps its "
+              "approved lip-sync")
+        return root, {}
     sb = root / "storyboard"
     raw = _read(_path(root, str(sb / "shot-list.json")))
     shots = raw.get("shots") if isinstance(raw, dict) else raw
@@ -113,6 +129,35 @@ def _binding(row):
     return {key: row[key] for key in ("shot_id", "lip_sync_line_ids", "speaker", "storyboard_revision")}
 
 
+#: The status approval_package.approval_entries and the runner use for a shot
+#: whose approval no longer stands (a scoped revision). A regenerated lip-sync
+#: picture re-opens exactly its own shot and nothing else.
+REOPENED_STATUS = "invalidated"
+
+
+def reopen_shot_approval(run_dir, shot_id):
+    """Re-open ONE shot's storyboard approval, in place, atomically.
+
+    Used when a lip-sync picture was REGENERATED (a new picture is not the
+    approved still). Only that shot changes; every other shot keeps its
+    standing. Returns the approval record that was written.
+    """
+    root = Path(run_dir).resolve()
+    path = _path(root, str(root / "storyboard" / "approval.json"))
+    record = _read(path)
+    shots = record.get("shots") if isinstance(record, dict) else None
+    _need(isinstance(shots, dict) and isinstance(shots.get(shot_id), dict),
+          "LIPSYNC_APPROVAL_MISSING",
+          "no per-shot storyboard approval to re-open for %s" % (shot_id,))
+    entry = shots[shot_id]
+    if entry.get("status") != REOPENED_STATUS:
+        entry["status"] = REOPENED_STATUS
+        temp = path.with_suffix(".json.tmp")
+        temp.write_text(json.dumps(record, sort_keys=True), encoding="utf-8")
+        temp.replace(path)
+    return record
+
+
 def binding_for_request(run_dir, request):
     """Verify a dispatch request against the current approval; never approve it."""
     try:
@@ -137,6 +182,8 @@ def _stem_metadata(root, stem):
     _need(isinstance(stem, dict), "LIPSYNC_STEM_MISSING", "isolated stem metadata required")
     keys = ("speaker_id", "kind", "isolated", "line_ids", "start_s", "end_s", "lineage_path")
     meta = {key: stem.get(key) for key in keys}
+    if stem.get("delivery") is not None:      # the line's own delivery (sung/spoken)
+        meta["delivery"] = stem.get("delivery")
     _need(_ids(meta["line_ids"]) and _num(meta["start_s"]) and _num(meta["end_s"])
           and 0 <= meta["start_s"] < meta["end_s"],
           "LIPSYNC_STEM_MISSING", "producer must record stem line IDs and timeline window")
@@ -184,7 +231,14 @@ def upload_stem(run_dir, stem, uploader, run_id):
 
 
 def inputs_for_request(run_dir, request):
-    """Bind actual provider URLs to approved still and isolated own-line bytes."""
+    """Bind actual provider URLs to the approved still and isolated own-line bytes.
+
+    The provider picture may be the approved still itself or a CROP of it,
+    recorded by the picture gate as a derivation (source_sha256 = the approved
+    still, operation "crop"). A regenerated picture is a new picture: it is
+    refused LIPSYNC_PICTURE_NEEDS_APPROVAL and that shot's storyboard approval
+    is re-opened (U-U03).
+    """
     from lip_sync.narrator_rule import check_stems
     from lip_sync.lip_gate import picture_gate as PG
     try:
@@ -196,12 +250,26 @@ def inputs_for_request(run_dir, request):
         inp = request.get("input") or {}
         image = _path(root, request.get("lipsync_image_path"))
         image_hash = _sha(image)
-        approved_stills = _read(_path(root, str(root / "storyboard/stills.json")))
-        _need(image_hash == _sha(_path(root, approved_stills[row["shot_id"]])),
-              "LIPSYNC_IMAGE_MISMATCH", "provider picture is not the approved storyboard still")
         rdir = request.get("lipsync_receipt_dir") or PG.default_receipt_dir(str(image))
         rdir = Path(rdir)
         rdir = (rdir if rdir.is_absolute() else root / rdir).resolve()
+        approved_stills = _read(_path(root, str(root / "storyboard/stills.json")))
+        approved_hash = _sha(_path(root, approved_stills[row["shot_id"]]))
+        if image_hash != approved_hash:
+            derivation = PG.read_derivation(image_hash, str(rdir))
+            _need(bool(derivation), "LIPSYNC_IMAGE_MISMATCH",
+                  "provider picture is not the approved storyboard still")
+            crop = (derivation.get("operation") == PG.OPERATION_CROP
+                    and derivation.get("source_sha256") == approved_hash
+                    and derivation.get("derived_sha256") == image_hash)
+            if not crop:
+                if derivation.get("operation") == PG.OPERATION_REGENERATE:
+                    reopen_shot_approval(root, row["shot_id"])
+                raise LipsyncEvidenceError(
+                    "LIPSYNC_PICTURE_NEEDS_APPROVAL",
+                    "provider picture is a %s, not the approved still; the "
+                    "storyboard approval for %s is re-opened for a person"
+                    % (derivation.get("operation") or "change", row["shot_id"]))
         gate_path = _path(root, str(rdir / (image_hash + ".json")))
         upload_path = _path(root, str(rdir / (image_hash + ".upload.json")))
         PG.require_receipt(str(image), str(rdir))
@@ -233,19 +301,27 @@ def inputs_for_request(run_dir, request):
         raise LipsyncEvidenceError(getattr(exc, "code", "LIPSYNC_INPUTS_MISSING"), str(exc)) from exc
 
 
-def check_plan(plan, require_measured=False):
+def check_plan(plan, require_measured=False, route=None):
     """Join approved requirements, successful receipts, files and actual slots.
 
     Frame rounding may differ by one frame. Crossfade opacity time is excluded
     from measured coverage. In production, source_dur must be a measured probe.
     Dry-run callers may omit it, explicitly reporting source duration unverified.
+
+    ``route`` defaults to ``plan["route"]``. ROUTE_NO_LIPSYNC (S75-047) passes
+    with zero requirements only when ``control/method.json`` records the owner
+    opt-out; otherwise it is refused by ``_approved``.
     """
     evidence = {"included": [], "requirements": [], "measured_seconds": 0.0,
                 "source_duration_verified": bool(require_measured)}
     try:
         _need(isinstance(plan, dict), "LIPSYNC_EVIDENCE_MISSING", "plan object required")
-        root, required = _approved(plan.get("run_dir"))
+        route = route or plan.get("route")
+        root, required = _approved(plan.get("run_dir"), route)
         evidence["requirements"] = list(required.values())
+        if route == ROUTE_NO_LIPSYNC:
+            evidence["route"] = route
+            evidence["lipsync_opt_out"] = no_lipsync_opt_out(root)
         if require_measured or plan.get("song_path"):
             song = _path(root, plan.get("song_path"))
             _need(song.stat().st_size > 0, "LIPSYNC_AUDIO_MISSING", "final export needs the soundtrack")
