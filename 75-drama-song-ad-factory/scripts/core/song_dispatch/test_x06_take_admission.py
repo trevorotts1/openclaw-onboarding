@@ -42,7 +42,7 @@ class TakeAdmission(unittest.TestCase):
                  lambda rec, lyr, sha=None: self.checks.append(1))):
             q = mock.patch.object(obj, name, val); q.start(); self.addCleanup(q.stop)
 
-    def run_it(self, gov=None, cap=None, run_dir=None, req=None):
+    def run_it(self, gov=None, cap=None, run_dir=None, req=None, cost=None):
         got = []
         calls = {"gov": 0}
 
@@ -52,7 +52,8 @@ class TakeAdmission(unittest.TestCase):
         plan = {"delivered_s": 60, "pace_change": {"turns": ["a", "b"]}}
         out = SD.run_takes(req or _request(), plan, lambda r: got.append(r) or [],
                            lambda t: {}, lambda t, r: None, "hello", "hook",
-                           cap_cents=cap or SD.GEN_COST_CENTS, cost_cents=SD.GEN_COST_CENTS,
+                           cap_cents=cap or SD.GEN_COST_CENTS,
+                           cost_cents=cost or SD.GEN_COST_CENTS,
                            kie=kie, run_dir=run_dir)
         return out, got, calls
 
@@ -73,7 +74,9 @@ class TakeAdmission(unittest.TestCase):
         self.assertEqual((got[0]["lyrics"], got[0]["input"]["duration"]), ("hello", 60))
 
     def test_every_retry_rechecks_inside_callback(self):
-        _, _, calls = self.run_it(cap=2 * SD.GEN_COST_CENTS)
+        # S75-001: the cap may not exceed MAX_RUN_CAP_CENTS, so two retries are
+        # exercised by injecting half that maximum as the per-generation cost.
+        _, _, calls = self.run_it(cap=SD.MAX_RUN_CAP_CENTS, cost=SD.MAX_RUN_CAP_CENTS // 2)
         self.assertEqual(calls["gov"], 2)
         self.assertEqual(len(self.checks), 3)      # 1 preamble + 2 callback
 

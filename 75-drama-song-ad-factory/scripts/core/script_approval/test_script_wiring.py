@@ -169,7 +169,9 @@ def test_run_takes_finds_the_record_from_run_dir():
     calls = []
     try:
         SD.run_takes(req, LF.plan(60, (15, 20)), lambda rq: calls.append(1) or [], lambda t: {},
-                     lambda t, r: None, "", "", run_dir=run, kie=lambda fn, label, generation=False: fn())
+                     lambda t, r: None, "", "", run_dir=run,
+                     cap_cents=SD.song_dispatch.MAX_RUN_CAP_CENTS,
+                     kie=lambda fn, label, generation=False: fn())
     except SD.DispatchError as e:
         assert SA.REASON in str(e)
     else:
