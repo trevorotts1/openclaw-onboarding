@@ -645,8 +645,16 @@ export function assembleValidatedIntake(payload, answeredRows, session) {
     return { error: "deck type not grounded: presentation_type answer " + JSON.stringify(ptype == null ? null : String(ptype)) + " is missing or unrecognized — nothing was queued. Ask the client to complete the type question and resend." };
   }
 
+  // PD-082a: the client's own talk length goes to the record root as a
+  // NUMBER (the page used to pin 20 for everyone). Omitted when the session
+  // never asked it — never fabricated. recipient_name rides at the root too
+  // (empty for non-personal decks, where the question is never asked).
+  const talkMinutes = Number(answers.duration_min);
   const intake = {
     interview_confirmed: true,
+    ...(String(answers.duration_min == null ? "" : answers.duration_min).trim() !== ""
+      && Number.isFinite(talkMinutes) ? { target_talk_minutes: talkMinutes } : {}),
+    recipient_name: answers.recipient_name == null ? "" : String(answers.recipient_name),
     created_at: new Date().toISOString(),
     source: "presentation-interview-app",
     intake_session_id: session.intake_session_id,

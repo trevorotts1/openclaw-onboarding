@@ -5,7 +5,7 @@
   "question_set": "standard",
   "source": "GENERATED from interview-app/schema/intake_fields.js (PRES-006 canonical field-path contract) — edit the contract, not this file. tools/gen_ui_questions.mjs regenerates pages/index.html and this snapshot in one pass so the form can never disagree with the Workers' schema-driven completeness gate. (deployed-r2/public/index.html is PRES-005-owned and server-driven — not regenerated.)",
   "contract_version": 2,
-  "description": "Curated intake question set for the Presentation Interview app, GENERATED from the one canonical field-path contract. Every question id, prompt, kind, allowed_values, value_labels, storeOn and conditional_on comes from schema/intake_fields.js. The upsell yes/no flags and their verbatim declined-reason waivers store canonically under pre_presentation_capture.* (the storeTarget home every engine consumer reads); the Workers gate completeness against the same contract. Cap 20; this set is 25.",
+  "description": "Curated intake question set for the Presentation Interview app, GENERATED from the one canonical field-path contract. Every question id, prompt, kind, allowed_values, value_labels, storeOn and conditional_on comes from schema/intake_fields.js. The upsell yes/no flags and their verbatim declined-reason waivers store canonically under pre_presentation_capture.* (the storeTarget home every engine consumer reads); the Workers gate completeness against the same contract. Cap 20; this set is 28.",
   "questions": [
     {
       "id": "presentation_type",
@@ -27,6 +27,48 @@
         "content_personal": "From something I already have, for ONE specific person",
         "content_general": "From something I already have, for a room or wider audience",
         "signature": "The full Signature Presentation (100+ slides, multi-part keynote)"
+      }
+    },
+    {
+      "id": "duration_min",
+      "order": 0.25,
+      "kind": "integer",
+      "prompt": "How many minutes should the talk run?",
+      "help": "The slide count is derived from this number; there is no separate slide-count question.",
+      "label": "Talk length (minutes)",
+      "required": true,
+      "storeOn": "deck_brief.DURATION_MIN"
+    },
+    {
+      "id": "recipient_name",
+      "order": 0.3,
+      "kind": "text",
+      "prompt": "What is the name of the person receiving this presentation?",
+      "help": "Asked only for a personal presentation to one named recipient.",
+      "label": "Recipient name",
+      "placeholder": "e.g. Marcus Halloway",
+      "required": true,
+      "storeOn": "pre_presentation_capture.RECIPIENT_NAME",
+      "conditional_on": {
+        "id": "presentation_type",
+        "equals": "content_personal"
+      }
+    },
+    {
+      "id": "extracted_substance",
+      "order": 0.35,
+      "kind": "text",
+      "prompt": "What is the one core idea your existing material must convey?",
+      "help": "Asked only when the deck is built from content you already have — your own words, never a summary.",
+      "label": "Core idea from your material",
+      "required": true,
+      "storeOn": "pre_presentation_capture.EXTRACTED_SUBSTANCE",
+      "conditional_on": {
+        "id": "presentation_type",
+        "in": [
+          "content_personal",
+          "content_general"
+        ]
       }
     },
     {

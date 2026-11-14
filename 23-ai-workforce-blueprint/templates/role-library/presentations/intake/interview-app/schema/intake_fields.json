@@ -45,6 +45,36 @@
       ]
     },
     {
+      "id": "duration_min",
+      "canonical_path": "deck_brief.DURATION_MIN",
+      "section": "deck_brief",
+      "kind": "integer",
+      "required": true,
+      "block_gate": false,
+      "allowed_values": null,
+      "legacy_aliases": []
+    },
+    {
+      "id": "recipient_name",
+      "canonical_path": "pre_presentation_capture.RECIPIENT_NAME",
+      "section": "pre_presentation_capture",
+      "kind": "text",
+      "required": true,
+      "block_gate": true,
+      "allowed_values": null,
+      "legacy_aliases": []
+    },
+    {
+      "id": "extracted_substance",
+      "canonical_path": "pre_presentation_capture.EXTRACTED_SUBSTANCE",
+      "section": "pre_presentation_capture",
+      "kind": "text",
+      "required": true,
+      "block_gate": true,
+      "allowed_values": null,
+      "legacy_aliases": []
+    },
+    {
       "id": "offer_name",
       "canonical_path": "deck_brief.OFFER_NAME",
       "section": "deck_brief",
