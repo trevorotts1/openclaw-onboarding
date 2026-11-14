@@ -81,10 +81,9 @@ AF_QC_REPORT_UNTRUSTED = "AF-QC-REPORT-UNTRUSTED"
 GOVERNED_QC_THRESHOLD = "8.5"
 
 # Canonical, sanctioned scripts. These ARE the governed pipeline; build_deck.py
-# legitimately writes qc_report.json. They are allow-listed by BASENAME so that
-# even if copied into a run dir they are never flagged. Seeded from a hard core
-# plus (best-effort) the canonical render guard's own allow-list and every *.py
-# that ships in this scripts dir.
+# legitimately writes qc_report.json. PD-311: a copy in a run dir passes by CONTENT
+# only — sha256 must equal the shipped file of the same name (shared helper in
+# canonical_render_guard). The basename alone authorizes nothing.
 _CORE_CANONICAL = {
     "build_deck.py", "run_signature_deck.py", "canonical_render_guard.py",
     "qc_generator_guard.py", "build_teleprompter.py", "sync_check.py",
@@ -170,10 +169,29 @@ _SKIP_DIR_PARTS = {".venv", "venv", "site-packages", "node_modules", "__pycache_
 
 
 def _iter_non_canonical_py(run_dir: Path):
-    """Yield every *.py under run_dir that is NOT a canonical sanctioned script and
-    NOT inside the canonical scripts dir this guard ships in."""
-    allow = canonical_script_names()
-    for p in run_dir.rglob("*.py"):
+    """Yield every governed script under run_dir (both guards' suffix set) that is NOT
+    a byte-identical copy of the shipped script of the same name and NOT inside the
+    canonical scripts dir this guard ships in. PD-311: the one shared helper lives in
+    canonical_render_guard; the local loop below is the import-failure fallback."""
+    try:
+        import canonical_render_guard as crg  # noqa: WPS433
+        yield from crg.iter_governed_script_files(run_dir)
+        return
+    except Exception:  # noqa: BLE001 — fall back to the same content rule locally
+        pass
+    import hashlib
+
+    def _sha(path: Path) -> str:
+        h = hashlib.sha256()
+        with open(path, "rb") as fh:
+            for chunk in iter(lambda: fh.read(1 << 20), b""):
+                h.update(chunk)
+        return h.hexdigest()
+
+    for p in run_dir.rglob("*"):
+        if not p.is_file() or p.suffix.lower() not in (
+                ".py", ".sh", ".js", ".mjs", ".ts"):
+            continue
         try:
             rp = p.resolve()
         except Exception:  # noqa: BLE001
@@ -183,10 +201,14 @@ def _iter_non_canonical_py(run_dir: Path):
             continue
         except ValueError:
             pass
-        if p.name in allow:
-            continue
         if set(p.parts) & _SKIP_DIR_PARTS:
             continue
+        shipped = HERE / p.name
+        try:
+            if shipped.is_file() and _sha(p) == _sha(shipped):
+                continue
+        except Exception:  # noqa: BLE001 — unreadable is not a proven copy
+            pass
         yield p
 
 
@@ -353,6 +375,10 @@ def guard_qc_generators(run_dir: Path) -> str:
                  "(owner_approved:true + approved_by + reason + gate=<AF code>) in "
                  "working/checkpoints/process_manifest.json. An agent may NOT waive "
                  "this on its own.")
+    lines.append("A script in the run folder is sanctioned ONLY when it is a "
+                 "byte-identical copy of the shipped script of the same name (sha256 "
+                 "match against the scripts dir). A renamed or edited copy is a "
+                 "hand-rolled script and is blocked.")
     return "\n".join(lines)
 
 

@@ -90,6 +90,11 @@ STUDIO_USER_AGENT = "drama-studio-client/2.7.48 (+https://studio.zerohumanworkfo
 CHANNELS = ("audio", "image", "video")
 MAX_UPLOAD_BYTES = {"image": 25 * 1024 * 1024, "audio": 25 * 1024 * 1024,
                     "video": 200 * 1024 * 1024}
+#: What an object is FOR, which picks its folder. `intake` is everything a
+#: client or the studio sends in; `r2_fallback` is the studio's own 7-day copy of
+#: a finished video (decision 5), which lives under clients/<id>/video/.
+UPLOAD_KINDS = ("intake", "r2_fallback")
+UPLOAD_SEGMENT = {"intake": "intake", "r2_fallback": "video"}
 UPLOAD_TYPES = {
     "jpg": ("image", "image/jpeg"), "jpeg": ("image", "image/jpeg"),
     "png": ("image", "image/png"), "heic": ("image", "image/heic"),
@@ -265,11 +270,14 @@ def photo_request(path):
     return upload_request(path, channel="image")
 
 
-def upload_request(path, channel=None):
+def upload_request(path, channel=None, upload_kind=None):
     """Build the service request, checking file bytes, extension and channel cap."""
     p = pathlib.Path(path)
     if not p.is_file():
         raise LedgerError("NO_FILE", "photo not found: %s" % p.name)
+    if upload_kind is not None and upload_kind not in UPLOAD_KINDS:
+        raise LedgerError("UNSUPPORTED_KIND",
+                          "upload_kind must be intake or r2_fallback")
     size = p.stat().st_size
     if size <= 0:
         raise LedgerError("EMPTY_FILE", "photo is empty: %s" % p.name)
@@ -296,13 +304,16 @@ def upload_request(path, channel=None):
     if len(header) < 4 or not matches:
         raise LedgerError("UNSUPPORTED_TYPE",
                           "%s is not a recognised photo format" % p.name)
-    return {
+    body = {
         "channel": channel,
         "filename": p.name,
         "size_bytes": size,
         "content_type": ctype,
         "header_bytes": list(header[:16]),
     }
+    if upload_kind is not None:
+        body["upload_kind"] = upload_kind
+    return body
 
 
 def _put_file(url, file_handle, content_type, size, *, timeout=120):
@@ -324,12 +335,12 @@ def _put_file(url, file_handle, content_type, size, *, timeout=120):
         return 0
 
 
-def upload_file(path, *, channel=None, env=None, post=None, put=None):
+def upload_file(path, *, channel=None, upload_kind=None, env=None, post=None, put=None):
     """POST metadata then PUT bytes. Returns identifiers only, never a signed URL."""
     key = load_key(env)
     if not key:
         raise LedgerError("NO_KEY", "DS_KEY not set in env")
-    body = upload_request(path, channel)
+    body = upload_request(path, channel, upload_kind)
     status, result = (post or _http)("POST", STUDIO_BASE_URL + "/api/studio/uploads",
                                     key=key, body=body)
     if status == 0:
@@ -342,9 +353,11 @@ def upload_file(path, *, channel=None, env=None, post=None, put=None):
     parts = urllib.parse.urlsplit(upload.get("url", ""))
     # Validate the destination before sending any file bytes; no redirects.
     import re
+    expected_segment = UPLOAD_SEGMENT[upload_kind or "intake"]
     if (parts.scheme != "https" or parts.username or parts.password or parts.port
             or not re.fullmatch(r"[a-f0-9]{32}\.r2\.cloudflarestorage\.com", parts.hostname or "")
-            or not re.fullmatch(r"clients/c-[a-f0-9]{32}/intake/u_[a-f0-9]{24}\.[a-z0-9]+", object_path)
+            or not re.fullmatch(r"clients/c-[a-f0-9]{32}/" + expected_segment
+                                + r"/u_[a-f0-9]{24}\.[a-z0-9]+", object_path)
             or parts.path != "/zhw-drama-studio/" + object_path
             or upload_id != object_path.rsplit("/", 1)[-1].split(".")[0]
             or upload.get("content_type") != body["content_type"]):
@@ -360,6 +373,17 @@ def upload_file(path, *, channel=None, env=None, post=None, put=None):
     if put_status // 100 != 2:
         raise LedgerError("UPLOAD_PUT_REFUSED", "storage upload refused (HTTP %d)" % put_status)
     return {"upload_id": upload_id, "object_path": object_path}
+
+
+def upload_fallback_video(path, **options):
+    """The production writer for the R2 fallback copy of a finished video.
+
+    The copy lands under `clients/<id>/video/` (the studio's own 7-day object,
+    decision 5) instead of `intake/`. It is the same uploader, not a second
+    control service: the module still only answers "which link may be handed
+    over", and this only decides where the studio's own copy is stored.
+    """
+    return upload_file(path, channel="video", upload_kind="r2_fallback", **options)
 
 
 # --- delivery ----------------------------------------------------------------
@@ -515,7 +539,8 @@ def cmd_claim(args):
             st = led.order_state(args.order) or {}
             _emit({"order_id": args.order, "owner": args.owner, "won": True,
                    "fence": st.get("fence"),
-                   "claim_token": st.get("claim_token")})
+                   "claim_token": st.get("claim_token"),
+                   "state": st.get("state")})
             return EXIT["ok"]
     _emit({"order_id": args.order, "won": False,
            "code": "ALREADY_CLAIMED",
@@ -589,7 +614,8 @@ def cmd_photo(args):
 
 def cmd_upload(args):
     try:
-        _emit(upload_file(args.path, channel=args.channel))
+        _emit(upload_file(args.path, channel=args.channel,
+                          upload_kind=args.upload_kind))
         return EXIT["ok"]
     except LedgerError as exc:
         _emit({"code": exc.code, "message": str(exc)})
@@ -1305,6 +1331,34 @@ def _drop_terminal(led, order_id, state, via):
     return EXIT["ok"]
 
 
+def _refresh_stored_line(led, order_id):
+    """Re-point a stored poll line at the claim that is live now.
+
+    The claim commit (studio_claim) and the `poll_line` receipt below are TWO
+    SQLite commits. A process killed between them leaves the line frozen on the
+    old fence and the old claim token. The refusal in `cmd_poll` must not leave
+    it that way: every later poll would present the stale token, be refused,
+    and report success — the line would stay wedged until the lease expired and
+    a takeover rewrote it. Refreshing the line to the live claim keeps the
+    receipt true, so the next poll resumes. Nothing is printed, the exit-code
+    contract is unchanged, and only OUR OWN live claim is written: a line that
+    already matches it is left alone, and another owner's claim is never
+    recorded as ours.
+    """
+    st = led.order_state(order_id) or {}
+    if not st or st.get("owner") != BRIDGE_OWNER:
+        return False
+    stored = next((r["payload"] for r in reversed(led.receipts(order_id))
+                   if r["kind"] == "poll_line"), None)
+    if not stored or stored.get("fence") == st.get("fence"):
+        return False
+    line = dict(stored)
+    line["fence"] = st.get("fence")
+    line["claim_token"] = st.get("claim_token")
+    led.write_receipt(order_id, "poll_line", line)
+    return True
+
+
 def cmd_poll(args):
     """Check in, claim one waiting order, replay it, print one JSON line.
 
@@ -1340,15 +1394,18 @@ def cmd_poll(args):
         # handoff is unfinished, so a crashed claim is found here, not lost.
         pending = led.unfinished_orders(BRIDGE_OWNER)
         resume_token = None
+        resume_fence = None
         from_recovery = bool(pending)
         if pending:
-            # A stored poll line carries the claim token this owner proved
-            # with last time: present it back so the ledger can tell a
+            # A stored poll line carries the claim token AND fence this owner
+            # proved with last time: present both back so the ledger can tell a
             # crash-resume apart from a second live materializer.
             order_id, title = pending[0], ""
             for rec in reversed(led.receipts(order_id)):
                 if rec.get("kind") == "poll_line":
-                    resume_token = (rec.get("payload") or {}).get("claim_token")
+                    line = rec.get("payload") or {}
+                    resume_token = line.get("claim_token")
+                    resume_fence = line.get("fence")
                     break
         else:
             status, out = _http("POST", base + "/api/studio/checkin", key=key,
@@ -1370,19 +1427,34 @@ def cmd_poll(args):
                 return EXIT["refused"]
 
         won = led.claim_order(order_id, BRIDGE_OWNER,
-                              resume_token=resume_token)
+                              resume_token=resume_token,
+                              resume_fence=resume_fence)
         if not won:
+            # Refused: a live holder keeps it. A refused RESUME, though, must
+            # not leave the stored line stale (see `_refresh_stored_line`);
+            # refresh first, then keep the silent success.
+            _refresh_stored_line(led, order_id)
             return EXIT["ok"]                   # a live holder keeps it
         recs = led.receipts(order_id)
         st = led.order_state(order_id) or {}
         fence = st.get("fence")
+        stored_line = next((r["payload"] for r in reversed(recs)
+                            if r["kind"] == "poll_line"), None)
+        if stored_line is not None and stored_line.get("fence") != fence:
+            # A resume advances the fence, so refresh the stored line NOW — in
+            # the same ledger step as the claim — or a crash before
+            # materialization finishes would leave a line the next poll is
+            # refused on.
+            refreshed = dict(stored_line)
+            refreshed["fence"] = fence
+            refreshed["claim_token"] = st.get("claim_token")
+            led.write_receipt(order_id, "poll_line", refreshed)
+            stored_line = refreshed
         if st.get("step") == STEP_EXECUTION_ACCEPTED:
             return EXIT["ok"]   # acknowledged: silent, no duplicate campaign
         kinds = {r["kind"] for r in recs}
         stored_order = next((r["payload"].get("order") for r in reversed(recs)
                              if r["kind"] == "order_fetched"), None)
-        stored_line = next((r["payload"] for r in reversed(recs)
-                            if r["kind"] == "poll_line"), None)
 
         # Carry the studio's CURRENT state into the resume (ITEM 29 step 4).
         # The stored order was fetched before the crash; the client can cancel
@@ -1396,9 +1468,22 @@ def cmd_poll(args):
             status, out = _http("GET", base + "/api/studio/orders/%s" % order_id,
                                 key=key)
             if status // 100 == 2 and out.get("ok"):
-                closed = _terminal_state(out.get("order"))
+                order_now = out.get("order")
+                led.record_order_state(
+                    order_id,
+                    order_now.get("state") if isinstance(order_now, dict) else None,
+                    owner=BRIDGE_OWNER, fence=fence)
+                closed = _terminal_state(order_now)
                 if closed:
                     return _drop_terminal(led, order_id, closed, "resume")
+            else:
+                # The re-read failed: the last state the studio gave us is
+                # still on the claim row, and a TERMINAL one stops the resume
+                # just the same (a terminal order never moves again). The
+                # claim is not wedged by an unreachable service.
+                closed = _terminal_state({"state": st.get("state")})
+                if closed:
+                    return _drop_terminal(led, order_id, closed, "recorded")
 
         # Claim event: sent once. A repeat poll after a crash must never
         # re-post a claim the studio could reject as its own replay (D35).
@@ -1421,6 +1506,12 @@ def cmd_poll(args):
                 # claimed-and-forgotten state.
                 return _refusal(out, status, "order fetch")
             order = out.get("order") or {}
+            # Keep the ledger's order state current on the studio's terms: this
+            # is the one place the bridge sees a freshly fetched order, so the
+            # claim row's `state` records what the studio said (lifecycle.js
+            # STATES vocabulary), not the bridge's own handoff step.
+            led.record_order_state(order_id, order.get("state"),
+                                   owner=BRIDGE_OWNER, fence=fence)
             # The order can be cancelled between the check-in line and this
             # fetch; the fetched payload already carries that state, so it is
             # honoured here too — nothing is materialized for a closed order.
@@ -1692,6 +1783,9 @@ def main(argv=None):
     u = sub.add_parser("upload", help="send a photo, audio or video directly to storage")
     u.add_argument("path")
     u.add_argument("--channel", choices=CHANNELS)
+    u.add_argument("--upload-kind", choices=UPLOAD_KINDS,
+                   help="intake (default), or r2_fallback for the studio's own "
+                        "7-day copy, which is stored under clients/<id>/video/")
     u.set_defaults(func=cmd_upload)
 
     r = sub.add_parser("cleanup-receipt", help="write the owned-run cleanup receipt")

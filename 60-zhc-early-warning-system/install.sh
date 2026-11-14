@@ -209,11 +209,122 @@ PY
     return 0
 }
 
+# ---------------------------------------------------------------------------
+# resolve_box
+#
+# ROOT CAUSE OF "THE DUPLICATE TICK KEEPS COMING BACK" (fixed 2026-11-13):
+# the tick's declaration key is `skill60-ews-tick-<BOX>`, and BOX used to
+# default to bare `hostname`. On a Mac with no HostName pinned (`scutil --get
+# HostName` -> "not set", the factory default), `hostname` is derived from
+# whatever the current network / DHCP / Bonjour hands out, so it flips between
+# values such as `Name-MacBook-2.local` and `NameBook2`. Every flip produced a
+# NEW declaration key, so the next install/fleet roll created a SECOND tick
+# while the first kept running. A live client box was found with two ticks
+# firing at the same minute, "fixed" by hand three times in eight days.
+#
+# FIX: the box identity is resolved from the most STABLE source available and
+# never from the network-derived hostname:
+#   1. --box NAME (explicit)
+#   2. the identity a previous install already recorded in the EWS ledger
+#      (meta.box) - so an existing box keeps its existing key forever
+#   3. FLEET_STANDING_BOX_SLUG (the enrolled canonical fleet slug)
+#   4. macOS LocalHostName (`scutil --get LocalHostName`, user-set, not DHCP)
+#   5. `hostname -s` (short, `.local` stripped)  6. "box"
+# Read-only: never creates the ledger if it does not exist yet.
+# ---------------------------------------------------------------------------
+resolve_box() {
+    local b=""
+    if [ -n "${BOX:-}" ]; then printf '%s' "$BOX"; return 0; fi
+    b="$(python3 - "$SCRIPTS" <<'PY' 2>/dev/null
+import sqlite3, sys
+sys.path.insert(0, sys.argv[1])
+try:
+    from ews_ledger import db_path
+    p = db_path()
+    if p.exists():
+        c = sqlite3.connect(f"file:{p}?mode=ro", uri=True, timeout=10)
+        row = c.execute("SELECT value FROM meta WHERE key='box'").fetchone()
+        if row and row[0]:
+            print(str(row[0]).strip())
+except Exception:
+    pass
+PY
+)"
+    [ -z "$b" ] && b="${FLEET_STANDING_BOX_SLUG:-}"
+    if [ -z "$b" ] && [ "$(uname -s 2>/dev/null)" = "Darwin" ] && command -v scutil >/dev/null 2>&1; then
+        b="$(scutil --get LocalHostName 2>/dev/null || true)"
+    fi
+    [ -z "$b" ] && b="$(hostname -s 2>/dev/null || hostname 2>/dev/null || true)"
+    b="${b%.local}"
+    [ -z "$b" ] && b="box"
+    printf '%s' "$b"
+}
+
+# ---------------------------------------------------------------------------
+# retire_stale_box_ticks CURRENT_DECL CURRENT_NAME COMMAND...
+#
+# The other half of the resolve_box fix: boxes that already carry a tick
+# registered under an OLD box name (a transient hostname) keep it forever,
+# because the declaration-keyed `cron add` only converges its OWN key. This
+# runs AFTER the current tick registered successfully and REMOVES (not
+# disables - a disabled stale-key job is still re-enable bait) every other EWS
+# tick: any job whose declarationKey starts with `skill60-ews-tick-` but is
+# not CURRENT_DECL, and any unkeyed job named `ews-tick-*` other than
+# CURRENT_NAME whose command is one of this installer's own tick commands.
+# Never touches anything else. Fails soft: every error is logged + swallowed.
+# ---------------------------------------------------------------------------
+retire_stale_box_ticks() {
+    local decl="$1" name="$2"; shift 2
+    command -v openclaw >/dev/null 2>&1 || return 0
+    local listfile
+    listfile="$(mktemp 2>/dev/null)" || return 0
+    if ! openclaw cron list --all --json >"$listfile" 2>/dev/null; then
+        echo "$TAG (stale-tick sweep skipped: 'openclaw cron list' failed)"
+        rm -f "$listfile"; return 0
+    fi
+    python3 - "$listfile" "$decl" "$name" "$TAG" "$@" <<'PY'
+import json, subprocess, sys
+listfile, decl, name, tag = sys.argv[1:5]
+commands = set(sys.argv[5:])
+try:
+    data = json.load(open(listfile))
+except Exception as e:
+    print(f"{tag} (stale-tick sweep skipped: could not parse cron list JSON: {e})"); sys.exit(0)
+jobs = data.get("jobs") if isinstance(data, dict) else data
+if not isinstance(jobs, list):
+    sys.exit(0)
+def stale(j):
+    if not isinstance(j, dict):
+        return False
+    k = j.get("declarationKey") or ""
+    if k:
+        return k.startswith("skill60-ews-tick-") and k != decl
+    n = j.get("name") or ""
+    if not n.startswith("ews-tick-") or n == name:
+        return False
+    argv = (j.get("payload") or {}).get("argv") or []
+    return bool(argv) and argv[-1] in commands
+for j in [j for j in jobs if stale(j)]:
+    jid = j.get("id")
+    if not jid:
+        continue
+    r = subprocess.run(["openclaw", "cron", "rm", jid], capture_output=True, text=True)
+    if r.returncode == 0:
+        print(f"{tag} removed stale tick from an old box name: id={jid} "
+              f"name={j.get('name')} key={j.get('declarationKey')}")
+    else:
+        err = ((r.stderr or r.stdout or "").strip().splitlines() or ["unknown error"])[0]
+        print(f"{tag} WARN: could not remove stale tick id={jid}: {err}")
+PY
+    rm -f "$listfile"
+    return 0
+}
+
 do_install() {
     echo "$TAG preflight..."
     bash "$SELF_DIR/preflight.sh" --check || return $?
 
-    [ -z "$BOX" ] && BOX="$(hostname 2>/dev/null || echo box)"
+    BOX="$(resolve_box)"
 
     echo "$TAG initializing ledger..."
     py ews_ledger.py init >/dev/null || return $EX_ERR
@@ -291,6 +402,7 @@ PY
                 --command "$TICK_COMMAND" >/dev/null 2>&1; then
             echo "$TAG tick cron registered (converged — no duplicate)"
             reenable_cron_if_disabled "$TICK_DECL" "$TICK_NAME"
+            retire_stale_box_ticks "$TICK_DECL" "$TICK_NAME" "$TICK_COMMAND" "$TICK_COMMAND_PRE_CRON_TICK"
         else
             echo "$TAG ERROR: 'openclaw cron add' FAILED for ${TICK_NAME}" >&2
             CRON_FAILURES=$((CRON_FAILURES + 1)); CRON_FAILED_NAMES="${CRON_FAILED_NAMES}${TICK_NAME} "
@@ -620,6 +732,14 @@ def main():
     if sub == "list": return cmd_list(rest)
     if sub == "disable": return cmd_set_enabled(rest, False)
     if sub == "enable": return cmd_set_enabled(rest, True)
+    if sub == "rm":
+        if not rest:
+            print("missing job id", file=sys.stderr); return 1
+        store = load(); before = len(store.get("jobs", []))
+        store["jobs"] = [j for j in store.get("jobs", []) if j.get("id") != rest[0]]
+        if len(store["jobs"]) == before:
+            print(f"unknown cron job id: {rest[0]}", file=sys.stderr); return 1
+        save(store); return 0
     print(f"fake-openclaw: unsupported cron subcommand: {sub}", file=sys.stderr); return 1
 
 sys.exit(main())
@@ -804,6 +924,60 @@ print('OK' if ok else f'FAIL jobs={len(j)} enabled={[x.get(\"enabled\") for x in
         rm -rf "$td6"; return 1
     fi
     rm -rf "$td6"
+
+    # stable-identity case (2026-11-13): an install with NO --box must reuse the
+    # identity the ledger already recorded, never the (flipping) hostname
+    local saved_box="$BOX" got_box
+    python3 - "$SCRIPTS" <<'PY' >/dev/null 2>&1
+import sys; sys.path.insert(0, sys.argv[1])
+from ews_ledger import Ledger
+led = Ledger(); led.set_meta("box", "ledger-pinned-box"); led.close()
+PY
+    BOX=""; got_box="$(resolve_box)"; BOX="$saved_box"
+    if [ "$got_box" = "ledger-pinned-box" ]; then
+        echo "  stable-identity case: PASS (no --box -> reused ledger identity, not hostname)"
+    else
+        echo "$TAG self-test FAIL: resolve_box returned '$got_box', expected the ledger identity 'ledger-pinned-box'" >&2
+        return 1
+    fi
+
+    # stale-name case: ticks registered under OLD box names (keyed and unkeyed)
+    # are REMOVED once the current tick registers; unrelated jobs untouched
+    local td7 fakebin7 store7
+    td7="$(mktemp -d)"; fakebin7="$td7/bin"
+    write_fake_cron_bin "$fakebin7"
+    store7="$td7/store.json"
+    python3 - "$store7" "$SELF_DIR" <<'PY'
+import json, sys
+store_path, self_dir = sys.argv[1], sys.argv[2]
+cmd = f"bash {self_dir}/ews-entry.sh cron-tick"
+old = f"bash {self_dir}/ews-entry.sh tick"
+mk = lambda i, n, c, k=None: dict({"id": i, "name": n, "enabled": True, "createdAtMs": 1,
+      "schedule": {"kind": "cron", "expr": "*/15 * * * *"},
+      "payload": {"kind": "command", "argv": ["sh", "-lc", c]}}, **({"declarationKey": k} if k else {}))
+json.dump({"_seq": 10, "jobs": [
+    mk("stale-keyed", "ews-tick-OldName", cmd, "skill60-ews-tick-OldName"),
+    mk("stale-unkeyed", "ews-tick-Old-Name.local", old),
+    mk("unrelated", "disk-usage-alert", "bash /x/disk.sh"),
+]}, open(store_path, "w"))
+PY
+    PATH="$fakebin7:$PATH" FAKE_CRON_STORE="$store7" NO_CRON=0 ROLE="client" BOX="current-box" do_install >/dev/null 2>&1
+    local stale_check
+    stale_check="$(python3 -c "
+import json
+d = json.load(open('$store7')); ids = {j['id'] for j in d['jobs']}
+ticks = [j for j in d['jobs'] if (j.get('name') or '').startswith('ews-tick-')]
+ok = ('stale-keyed' not in ids and 'stale-unkeyed' not in ids and 'unrelated' in ids
+      and len(ticks) == 1 and ticks[0].get('declarationKey') == 'skill60-ews-tick-current-box')
+print('OK' if ok else f'FAIL ids={sorted(ids)}')
+")"
+    if [ "$stale_check" = "OK" ]; then
+        echo "  stale-name case: PASS (old-box-name ticks removed, exactly 1 tick left, unrelated job untouched)"
+    else
+        echo "$TAG self-test FAIL: stale-name ticks not retired: $stale_check" >&2
+        rm -rf "$td7"; return 1
+    fi
+    rm -rf "$td7"
 
     unset -f write_fake_cron_bin
 

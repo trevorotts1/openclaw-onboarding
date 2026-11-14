@@ -23,7 +23,7 @@ from pathlib import Path
 SKILL_NUMBER = "83"
 SKILL_DIR_NAME = SKILL_NUMBER + "-black-friday-launcher"
 SKILL_NAME = "black-friday-launcher"
-SKILL_VERSION = "0.2.38"
+SKILL_VERSION = "0.2.39"
 
 # The Launcher's own tree, derived from this file's location and never from a
 # directory name, so the skill works under either naming convention.
@@ -232,6 +232,19 @@ DECIDED = (
                     "relabelled a single offer",
         "coded_in": "launcher_core/route.py + "
                     "49-signature-funnel/scripts/compile_launch_route.py",
+    },
+    {
+        "id": "recurring_billing_carried_by_intake",
+        "decision": "recurring billing is carried end to end: the client's per-offer "
+                    "cadence word is the price-billing fact (offer_mapper), the intake "
+                    "accepts exactly the types the checkout can carry (one_time, "
+                    "recurring, from the shared billing module), the record price names "
+                    "recurring_interval, and the checkout request writes it beside the "
+                    "recurring type; instalment/trial and interval-less recurring stay "
+                    "refused by the shared sentence, at plan time, never after approval",
+        "coded_in": "shared-utils/signature_launch_contract/offer_mapper.py + "
+                    "launcher_core/intake.py + launcher_core/checkout.py + "
+                    "launcher_core/checkout_instances.py",
     },
 )
 DECIDED_IDS = tuple(d["id"] for d in DECIDED)

@@ -32,6 +32,8 @@ concurrency:
 
 jobs:
   control:
+    # Batch pull requests run only the required checks (Trevor order 2026-11-13).
+    if: ${{ !startsWith(github.head_ref, 'batch/') }}
     name: Prove the guard discriminates before trusting it
     runs-on: ubuntu-latest
     steps:
@@ -53,6 +55,8 @@ jobs:
           echo "control suite PASSED (rc=0)"
 
   guard:
+    # Batch pull requests run only the required checks (Trevor order 2026-11-13).
+    if: ${{ !startsWith(github.head_ref, 'batch/') }}
     name: Judge this PR's added lines
     runs-on: ubuntu-latest
     needs: control

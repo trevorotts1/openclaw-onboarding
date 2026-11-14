@@ -37,9 +37,9 @@ WHAT THIS PROVES (QC.md proof, verbatim decomposition):
      re-arms the run (the refusal oracle passes again).
   7. PRODUCER EXEMPTION. Intake producer phases (P-CONVERTER / P0A-INTAKE /
      P-SP-CLAIM) are exempt in phase_verifiers' funnel.
-  8. PRE-REGIME TOLERANCE. A run with no provenance log at all is never
-     refused (pre-FIX-109 runs keep running); the regime activates with the
-     first row.
+  8. PRE-REGIME TOLERANCE. A run with no provenance log passes only while
+     state.json records no completed intake step; once the intake step is done
+     a missing/empty log is refused (PD-308 — see test_pd308_probe).
 
 Flat file inside tests/, manages its own import path — matching every
 sibling in this directory.
@@ -121,7 +121,7 @@ class _Run:
         self.write_state()
 
     def write_state(self, *, attested: str = "2026-09-01T00:00:00-07:00",
-                    intake_sha: str = "") -> None:
+                    intake_sha: str = "", intake_done: bool = True) -> None:
         phases = [
             {"id": "P-CONSUMER", "status": "done", "attested_at": attested,
              "artifacts": ["working/copy/out.txt"], "sha256": {},
@@ -132,7 +132,9 @@ class _Run:
             {"id": "P-GLOB-CONSUMER", "status": "done", "attested_at": attested,
              "artifacts": ["working/copy/glob.txt"], "sha256": {},
              "attempts": 1, "heal_events": []},
-            {"id": "P-INTAKE-PRODUCER", "status": "done", "attested_at": attested,
+            {"id": "P-INTAKE-PRODUCER",
+             "status": "done" if intake_done else "pending",
+             "attested_at": attested,
              "artifacts": ["working/copy/intake.json"], "sha256": {},
              "attempts": 1, "heal_events": []},
         ]
@@ -153,10 +155,20 @@ class _Run:
 def test_refusal_names_sha():
     with tempfile.TemporaryDirectory() as td:
         r = _Run(Path(td))
+        r.write_state(intake_done=False)
         ok, why = rf.intake_sha_has_provenance(r.run)
-        _check("1a pre-regime (no log) passes", ok and "no provenance log" in why)
+        _check("1a pre-regime (no intake step done, no log) passes",
+               ok and "no provenance log" in why)
 
-        rf.append_intake_provenance(r.run, writer_phase="P-INTAKE-PRODUCER",
+        # PD-308: the same state WITH the intake step done is a deleted log,
+        # not a pre-regime run — refused.
+        r.write_state(intake_done=True)
+        ok, why = rf.intake_sha_has_provenance(r.run)
+        _check("1a2 log missing after the intake step is done refuses (PD-308)",
+               not ok and "AF-INTAKE-PROVENANCE" in why, why[:90])
+        _check("1a3 deleted-log refusal names the sha", _sha(r.intake) in why)
+
+        rf.append_intake_provenance(r.run, writer_phase="P0A-INTAKE",
                                     previous_sha="", note="test seed")
         ok, why = rf.intake_sha_has_provenance(r.run)
         _check("1b sanctioned write re-arms run", ok and "provenanced by" in why)
@@ -177,7 +189,7 @@ def test_refusal_names_sha():
 def test_engine_doors_refuse():
     with tempfile.TemporaryDirectory() as td:
         r = _Run(Path(td))
-        rf.append_intake_provenance(r.run, writer_phase="P-INTAKE-PRODUCER")
+        rf.append_intake_provenance(r.run, writer_phase="P0A-INTAKE")
         r.intake.write_text('{"client": "C", "client_dark_theme": true}')
         bad = _sha(r.intake)
 
@@ -196,7 +208,6 @@ def test_engine_doors_refuse():
         blocked = [e for e in st.get("events", []) if "AF-INTAKE-PROVENANCE" in json.dumps(e)]
         _check("2b block names the sha in state events", bool(blocked) and bad[:12] in json.dumps(blocked))
 
-        # producer exemption lives in the funnel
         import phase_verifiers as pv
 
         # 2c: the FUNNEL refuses — not "the module is still importable". Hide
@@ -243,6 +254,36 @@ def test_engine_doors_refuse():
             if _pkg_attr is not None:
                 _pj.runfacts = _pkg_attr
 
+        # runfacts import failure stays fail-closed (FIX 17 pattern): hide the
+        # module and re-verify through the funnel.
+        import importlib
+        saved = sys.modules.pop("presentation_job.runfacts", None)
+        try:
+            import phase_verifiers as _pv_probe
+        finally:
+            if saved is not None:
+                sys.modules["presentation_job.runfacts"] = saved
+        _check("2c runfacts re-importable after probe", saved is not None)
+
+        # 2c2 (PD-921): an UNBOUND binding is a refusal, not a pass. Force the
+        # module-level binding to its import-failure value and assert the funnel
+        # names the AF code and says the binding could not be loaded — the same
+        # state Engine._check_intake_provenance refuses at the door.
+        import phase_verifiers as pv
+        _bound = pv._rf109
+        try:
+            pv._rf109 = None
+            unbound = pv._intake_provenance_refusal("P-CONSUMER", r.run)
+            _check("2c2 unbound funnel refuses instead of passing",
+                   unbound is not None and "AF-INTAKE-PROVENANCE" in unbound
+                   and "could not be loaded" in unbound, str(unbound)[:80])
+            _check("2c2b unbound funnel refuses producers too (door parity)",
+                   pv._intake_provenance_refusal("P0A-INTAKE", r.run) is not None)
+        finally:
+            pv._rf109 = _bound
+        _check("2c3 binding restored for the bound cases below", pv._rf109 is _bound)
+
+        # producer exemption lives in the funnel
         _check("2d producer exempt in funnel",
                pv._intake_provenance_refusal("P0A-INTAKE", r.run) is None)
         refusal = pv._intake_provenance_refusal("P-CONSUMER", r.run)
@@ -264,7 +305,7 @@ def test_approval_path_and_exact_consumers():
             "requester_chat_id": "111", "requester_channel": "telegram"}))
 
         # regime ON, consumers banked against the pre-edit intake
-        rf.append_intake_provenance(r.run, writer_phase="P-INTAKE-PRODUCER")
+        rf.append_intake_provenance(r.run, writer_phase="P0A-INTAKE")
         row1 = rf.load_intake_provenance(r.run)[-1]
         r.write_state(attested=row1["ts"], intake_sha=row1["sha_after"])
         ok, why, inv = rf.check_intake_provenance(r.run, manifest_path=r.manifest)
@@ -274,7 +315,7 @@ def test_approval_path_and_exact_consumers():
         res = subprocess.run(
             [sys.executable, str(SCRIPTS / "presentation_job" / "resolve_intake.py"),
              "--ledger", str(ledger), "--out", str(r.intake),
-             "--source", "intake-poll", "--writer-phase", "P-INTAKE-PRODUCER"],
+             "--source", "intake-poll", "--writer-phase", "resolve_intake"],
             capture_output=True, text=True)
         _check("3a resolve_intake.py exits 0", res.returncode == 0,
                (res.stderr or res.stdout)[:160])
@@ -354,14 +395,14 @@ def test_sp_intake_never_matches():
 def test_content_freshness_same_second():
     with tempfile.TemporaryDirectory() as td:
         r = _Run(Path(td))
-        rf.append_intake_provenance(r.run, writer_phase="P-INTAKE-PRODUCER")
+        rf.append_intake_provenance(r.run, writer_phase="P0A-INTAKE")
         row1 = rf.load_intake_provenance(r.run)[-1]
         # consumer attested in the SAME second, stamped with the CURRENT sha
         r.write_state(attested=row1["ts"], intake_sha=row1["sha_after"])
 
         # out-of-band edit inside the same wall-clock second
         r.intake.write_text('{"client": "C", "client_dark_theme": true}')
-        rf.append_intake_provenance(r.run, writer_phase="P-INTAKE-PRODUCER",
+        rf.append_intake_provenance(r.run, writer_phase="P0A-INTAKE",
                                     previous_sha=row1["sha_after"])
         ok, why, inv = rf.check_intake_provenance(r.run, manifest_path=r.manifest)
         st = r.read_state()
@@ -373,12 +414,12 @@ def test_content_freshness_same_second():
         # byte-identical rewrite: stamped phases stay fresh
         with tempfile.TemporaryDirectory() as td2:
             r2 = _Run(Path(td2))
-            rf.append_intake_provenance(r2.run, writer_phase="P-INTAKE-PRODUCER")
+            rf.append_intake_provenance(r2.run, writer_phase="P0A-INTAKE")
             row1b = rf.load_intake_provenance(r2.run)[-1]
             r2.write_state(attested=row1b["ts"], intake_sha=row1b["sha_after"])
             # rewrite byte-identical content through a "sanctioned" row
             r2.intake.write_text(r2.intake.read_text())
-            rf.append_intake_provenance(r2.run, writer_phase="P-INTAKE-PRODUCER",
+            rf.append_intake_provenance(r2.run, writer_phase="P0A-INTAKE",
                                         previous_sha=row1b["sha_after"])
             ok, why, inv = rf.check_intake_provenance(r2.run, manifest_path=r2.manifest)
             _check("5c byte-identical rewrite invalidates nothing", ok and inv == [],
@@ -387,7 +428,7 @@ def test_content_freshness_same_second():
         # unstamped legacy record falls back to the attested_at rule
         with tempfile.TemporaryDirectory() as td3:
             r3 = _Run(Path(td3))
-            row1c = rf.append_intake_provenance(r3.run, writer_phase="P-INTAKE-PRODUCER")
+            row1c = rf.append_intake_provenance(r3.run, writer_phase="P0A-INTAKE")
             r3.write_state(attested=row1c["ts"], intake_sha="")  # legacy: no stamp
             # a same-second write to a byte-IDENTICAL intake: legacy rule sees
             # attested_at >= ts and keeps the phases fresh
@@ -397,7 +438,7 @@ def test_content_freshness_same_second():
             # a LATER sanctioned write with changed content: the legacy rule
             # (attested_at < ts) must invalidate the consumers
             r3.intake.write_text('{"client": "C", "client_dark_theme": true}')
-            rf.append_intake_provenance(r3.run, writer_phase="P-INTAKE-PRODUCER",
+            rf.append_intake_provenance(r3.run, writer_phase="P0A-INTAKE",
                                         previous_sha=row1c["sha_after"])
             # force a strictly-later write ts so the 1s clock resolution
             # cannot make the two writes land in one second
@@ -417,7 +458,7 @@ def test_content_freshness_same_second():
 def test_log_durability():
     with tempfile.TemporaryDirectory() as td:
         r = _Run(Path(td))
-        rf.append_intake_provenance(r.run, writer_phase="P-INTAKE-PRODUCER")
+        rf.append_intake_provenance(r.run, writer_phase="P0A-INTAKE")
         log = r.run / rf.INTAKE_PROVENANCE_REL
         _check("8a log exists with one JSON line", log.is_file()
                and len(rf.load_intake_provenance(r.run)) == 1)
@@ -425,7 +466,7 @@ def test_log_durability():
         r.intake.unlink()
         raised = False
         try:
-            rf.append_intake_provenance(r.run, writer_phase="x")
+            rf.append_intake_provenance(r.run, writer_phase="P0A-INTAKE")
         except OSError:
             raised = True
         _check("8b append without intake.json raises OSError (fail-loud)", raised)
@@ -437,6 +478,66 @@ def test_log_durability():
                len(rows) == 1 and rows[0]["sha_after"])
 
 
+def test_pd308_probe():
+    """PD-308 — the provenance check cannot be switched off from the run folder.
+
+    The three acceptance cases plus the keyed-hash stamp: a deleted log after a
+    completed intake step is refused; a row naming an unsanctioned writer is
+    refused (both at the write door and at the oracle); a sanctioned write
+    passes; a keyed row is honoured only while its hash matches."""
+    with tempfile.TemporaryDirectory() as td:
+        r = _Run(Path(td))
+        r.write_state()
+
+        # 1. log deleted after the intake step is done -> refused
+        ok, why = rf.intake_sha_has_provenance(r.run)
+        _check("pd308-1 log deleted after intake step done refused",
+               not ok and "AF-INTAKE-PROVENANCE" in why, why[:90])
+        _check("pd308-1b deleted-log refusal names the sha", _sha(r.intake) in why)
+
+        # 2. row from "anything-typed" -> refused
+        raised = False
+        try:
+            rf.append_intake_provenance(r.run, writer_phase="anything-typed")
+        except ValueError as exc:
+            raised = "AF-INTAKE-PROVENANCE" in str(exc)
+        _check("pd308-2 unsanctioned writer cannot append a row", raised)
+        log = r.run / rf.INTAKE_PROVENANCE_REL
+        log.parent.mkdir(parents=True, exist_ok=True)
+        log.write_text(json.dumps({
+            "writer_phase": "anything-typed", "writer_pid": 1,
+            "ts": rf._iso_now(), "sha_before": "",
+            "sha_after": _sha(r.intake)}, sort_keys=True) + "\n")
+        ok, why = rf.intake_sha_has_provenance(r.run)
+        _check("pd308-2b hand-typed row is not honoured",
+               not ok and "AF-INTAKE-PROVENANCE" in why, why[:90])
+
+        # 3. sanctioned write -> pass
+        rf.append_intake_provenance(r.run, writer_phase="P0A-INTAKE")
+        ok, why = rf.intake_sha_has_provenance(r.run)
+        _check("pd308-3 sanctioned write passes", ok and "provenanced by" in why)
+
+    # keyed hash: stamped with the per-run step-nonce key when the writer holds it
+    with tempfile.TemporaryDirectory() as td:
+        r = _Run(Path(td))
+        r.write_state()
+        os.environ[rf.INTAKE_PROVENANCE_KEY_ENV] = "a" * 64
+        try:
+            row = rf.append_intake_provenance(r.run, writer_phase="P0A-INTAKE")
+            _check("pd308-4 per-run key stamps the row", bool(row.get("row_hash")))
+            ok, why = rf.intake_sha_has_provenance(r.run)
+            _check("pd308-4b keyed row passes", ok)
+            tampered = dict(row)
+            tampered["sha_after"] = "0" * 64
+            (r.run / rf.INTAKE_PROVENANCE_REL).write_text(
+                json.dumps(tampered, sort_keys=True) + "\n")
+            ok, why = rf.intake_sha_has_provenance(r.run)
+            _check("pd308-4c tampered keyed row refused",
+                   not ok and "AF-INTAKE-PROVENANCE" in why, why[:90])
+        finally:
+            os.environ.pop(rf.INTAKE_PROVENANCE_KEY_ENV, None)
+
+
 def main() -> int:
     test_refusal_names_sha()
     test_engine_doors_refuse()
@@ -444,6 +545,7 @@ def main() -> int:
     test_sp_intake_never_matches()
     test_content_freshness_same_second()
     test_log_durability()
+    test_pd308_probe()
     print()
     if _FAILURES:
         print(f"FAILED: {len(_FAILURES)} case(s):")

@@ -38,6 +38,7 @@ class DecisionReconciliationTests(unittest.TestCase):
             "native_converted_and_flow_checkout_mapping",
             "verified_offer_facts_only",
             "folded_levels_journey_mode",
+            "recurring_billing_carried_by_intake",
         })
         self.assertFalse(set(DECIDED_IDS) & set(SEAM_IDS))
 

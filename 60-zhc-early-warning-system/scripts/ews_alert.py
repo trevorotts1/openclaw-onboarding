@@ -43,8 +43,8 @@ if str(_HERE) not in sys.path:
     sys.path.insert(0, str(_HERE))
 
 import ews_common as C  # noqa: E402
-from ews_ledger import Ledger, default_state_dir, now_utc  # noqa: E402
-from datetime import datetime  # noqa: E402
+from ews_ledger import Ledger, default_state_dir, now_utc, _parse_iso  # noqa: E402
+from datetime import datetime, timezone  # noqa: E402
 
 EX_OK, EX_ERR, EX_USAGE = 0, 1, 2
 
@@ -91,8 +91,9 @@ def _gateway_sender(account, target, text):
         return False, "gateway send failed: %s" % type(exc).__name__
     if proc.returncode == 0:
         return True, "sent via gateway"
-    detail = (proc.stderr or proc.stdout or "").strip().splitlines()
-    return False, "gateway rc=%d %s" % (proc.returncode, detail[-1] if detail else "")
+    lines = [ln for ln in (proc.stderr or proc.stdout or "").strip().splitlines()
+             if ln.strip() and "deprecat" not in ln.lower() and not ln.lstrip().startswith("(node:")]
+    return False, "gateway rc=%d %s" % (proc.returncode, lines[-1][:200] if lines else "")
 
 
 def _which(name):
@@ -242,66 +243,89 @@ def route_finding(finding, state_dir=None, sender=None, dry_run=False):
                                               payload="%s target=%s" % (detail2, _mask(target)))
             return False  # not an operator SEND (in the S3-alert sense); the box's agent self-handles
 
-        # operator route
-        target = _first_env(_OPERATOR_TARGET_ENV)
-        if not target:
-            # a send was warranted but no operator target is configured: send to
-            # NOBODY (a client chat is never a fallback). Flag it so the canary
-            # catches it - but ONCE per dedup window, not once per finding per
-            # tick. Root cause of the 2026-08-21 alert-storm bug (27,841
-            # undeduped rows on one box, 49.9% of the whole ledger): this used
-            # to call record_event() with no dedup_key and never recorded a
-            # digest, so the outer per-finding dedup check above (line ~202)
-            # could never suppress a repeat - every finding, every tick, wrote
-            # a brand-new row forever. Fixed the same way every OTHER repeat
-            # condition in this function is throttled: check-then-record
-            # against the digests table before writing.
-            #
-            # Severity: P1, not P2. This condition disables EVERY alert this
-            # box's sentinel can raise, not just the one finding that happened
-            # to trigger this check - a total loss of the alerting path is at
-            # least as severe as any single finding it would have reported.
-            # P1 also means an unacked one older than 30 minutes gets picked
-            # up by escalate() and pushed to Rescue Rangers, which is the one
-            # path still capable of reaching a human when the operator target
-            # itself is the thing that's missing.
-            #
-            # Key: ONE fixed, condition-level dedup key (not the per-finding
-            # `dedup_key` computed above), so every distinct finding that hits
-            # this branch collapses onto the SAME recurring record instead of
-            # each minting its own. Re-surfaces once per dedup_window_hours
-            # (default 6h) for as long as it stays broken - never silenced,
-            # never appended forever.
-            no_target_key = "S7|no_operator_target"
-            if led.recent_digest(no_target_key, window) is None:
-                led.record_event("S7", "P1", key_path="alert.operator_target", klass="alert",
-                                 detail="an alert was warranted but no operator target is configured "
-                                        "(EWS_OPERATOR_CHAT / OPERATOR_TELEGRAM_CHAT_ID / "
-                                        "FOUNDER_TELEGRAM_CHAT_ID) - EVERY alert this box's sentinel "
-                                        "can raise is going to nobody",
-                                 dedup_key=no_target_key)
-                led.record_digest("no_operator_target", no_target_key,
-                                  payload="recorded once per dedup window while unresolved")
-            return False
+        # OPERATOR BOX: unchanged - it carries the "operator" Telegram account
+        # (configure-operator-telegram.sh), so its own findings and the fleet
+        # dead-man still go straight to the operator chat.
+        if led.get_meta("role", "client") == "operator":
+            # operator route
+            target = _first_env(_OPERATOR_TARGET_ENV)
+            if not target:
+                # a send was warranted but no operator target is configured: send to
+                # NOBODY (a client chat is never a fallback). Flag it so the canary
+                # catches it - but ONCE per dedup window, not once per finding per
+                # tick. Root cause of the 2026-08-21 alert-storm bug (27,841
+                # undeduped rows on one box, 49.9% of the whole ledger): this used
+                # to call record_event() with no dedup_key and never recorded a
+                # digest, so the outer per-finding dedup check above (line ~202)
+                # could never suppress a repeat - every finding, every tick, wrote
+                # a brand-new row forever. Fixed the same way every OTHER repeat
+                # condition in this function is throttled: check-then-record
+                # against the digests table before writing.
+                #
+                # Severity: P1, not P2. This condition disables EVERY alert this
+                # box's sentinel can raise, not just the one finding that happened
+                # to trigger this check - a total loss of the alerting path is at
+                # least as severe as any single finding it would have reported.
+                # P1 also means an unacked one older than 30 minutes gets picked
+                # up by escalate() and pushed to Rescue Rangers, which is the one
+                # path still capable of reaching a human when the operator target
+                # itself is the thing that's missing.
+                #
+                # Key: ONE fixed, condition-level dedup key (not the per-finding
+                # `dedup_key` computed above), so every distinct finding that hits
+                # this branch collapses onto the SAME recurring record instead of
+                # each minting its own. Re-surfaces once per dedup_window_hours
+                # (default 6h) for as long as it stays broken - never silenced,
+                # never appended forever.
+                no_target_key = "S7|no_operator_target"
+                if led.recent_digest(no_target_key, window) is None:
+                    led.record_event("S7", "P1", key_path="alert.operator_target", klass="alert",
+                                     detail="an alert was warranted but no operator target is configured "
+                                            "(EWS_OPERATOR_CHAT / OPERATOR_TELEGRAM_CHAT_ID / "
+                                            "FOUNDER_TELEGRAM_CHAT_ID) - EVERY alert this box's sentinel "
+                                            "can raise is going to nobody",
+                                     dedup_key=no_target_key)
+                    led.record_digest("no_operator_target", no_target_key,
+                                      payload="recorded once per dedup window while unresolved")
+                return False
 
-        # storm cap: count today's operator alert digests
-        today = datetime.now().strftime("%Y-%m-%d")
-        since = today + "T00:00:00+00:00"
-        sent_today = led.count_digests_since(since, kind="alert")
-        severity = finding["severity"]
-        if sent_today >= cap and severity != "P1":
-            led.record_digest("deferred", dedup_key, payload="storm cap reached; deferred to digest")
-            return False
+            # storm cap: count today's operator alert digests
+            today = datetime.now().strftime("%Y-%m-%d")
+            since = today + "T00:00:00+00:00"
+            sent_today = led.count_digests_since(since, kind="alert")
+            severity = finding["severity"]
+            if sent_today >= cap and severity != "P1":
+                led.record_digest("deferred", dedup_key, payload="storm cap reached; deferred to digest")
+                return False
 
-        if dry_run:
-            led.record_digest("alert", dedup_key, payload="DRY-RUN (no gateway call)")
-            return False
+            if dry_run:
+                led.record_digest("alert", dedup_key, payload="DRY-RUN (no gateway call)")
+                return False
 
-        text = _alert_text(box, finding)
-        ok, detail = sender(_OPERATOR_ACCOUNT, target, text)
-        led.record_digest("alert" if ok else "send_failed", dedup_key,
-                          payload="%s target=%s" % (detail, _mask(target)))
-        return bool(ok)
+            text = _alert_text(box, finding)
+            ok, detail = sender(_OPERATOR_ACCOUNT, target, text)
+            led.record_digest("alert" if ok else "send_failed", dedup_key,
+                              payload="%s target=%s" % (detail, _mask(target)))
+            return bool(ok)
+
+        # CLIENT BOX (v1.3.0): NO direct Telegram send. Client boxes have no
+        # "operator" Telegram account, so every one of these sends failed
+        # ("Unknown account operator") - one live box logged 9,253 failures and
+        # delivered nothing. Delivery is now:
+        #   * P1  -> stays OPEN; escalate() (run after every cron-tick) admits it
+        #            to Rescue Rangers once it is older than p1_unacked_minutes
+        #            (30), so a transient that clears on its own never pages.
+        #   * P2/P3 -> recorded in the ledger only (ews-entry.sh audit), never
+        #            messaged.
+        # The sentinel only routes a finding when it is NEW, so each problem is
+        # routed once.
+        if finding["severity"] == "P1":
+            led.record_digest("queued_for_rescue", dedup_key,
+                              payload="P1 held open for the escalate sweep (Rescue Rangers)")
+        else:
+            led.record_digest("recorded", dedup_key,
+                              payload="%s recorded only (not messaged)" % finding["severity"])
+        return False
 
 
 # --------------------------------------------------------------------------- #
@@ -393,7 +417,24 @@ def escalate(state_dir=None, sender=None, dry_run=False, admission=None):
                                   "ticket_id": None,
                                   "supplemental_msg": False})
             return escalated
+        now_dt = datetime.now(timezone.utc)
         for ev in stale:
+            # v1.3.0: honor the retry schedule. A box whose admission keeps
+            # failing (not enrolled, intake down) backs off 30 min, 1 h, 2 h,
+            # 4 h, then every 6 h - instead of a POST on every run.
+            _op = _stable_operation_id(box, "skill-60-ews", ev["signal"],
+                                       ev.get("dedup_key") or "", ev["event_id"])
+            _st = led.get_escalation(_op)
+            if _st and _st.get("outcome") == "accepted":
+                continue
+            # The retry schedule gates ONLY the production auto-run path
+            # (no explicit admission injected). When a caller passes
+            # admission= (test, drill, or manual retry), the caller owns
+            # the timing and the production backoff must not skip the call.
+            _nxt = _parse_iso(_st.get("next_attempt_at")) if _st else None
+            if _nxt is not None and _nxt > now_dt and admission is None:
+                continue
+            _retry_s = min(1800 * (2 ** max(int((_st or {}).get("attempt") or 0), 0)), 21600)
             text = ("[EWS ESCALATION] box=%s: unacknowledged P1 for >%d min\nsignal=%s key=%s\n%s"
                     % (box, minutes, ev["signal"], ev.get("key_path") or "-", ev.get("detail") or ""))
             # --- 1. attempt a REAL admission (durable ticket, receipt-based).
@@ -478,7 +519,7 @@ def escalate(state_dir=None, sender=None, dry_run=False, admission=None):
                     receipt_ticket_id=admission_ticket,
                     receipt_digest=(receipt.get("reply_digest")
                                     if isinstance(receipt, dict) else None),
-                    last_error=last_err)
+                    last_error=last_err, retry_seconds=_retry_s)
                 # next_attempt_at/last_error/attempt live on the row above;
                 # incident resolution below still depends ONLY on the receipt.
             outcome = _escalation_outcome(admission_status)
@@ -489,7 +530,10 @@ def escalate(state_dir=None, sender=None, dry_run=False, admission=None):
             # through the direct outbound HTTP path and is the receipt that
             # matters.
             msg_ok = False
-            if rescue:
+            # the group message rides the "rescue-rangers" Telegram account,
+            # which only the operator box carries; on a client box it can only
+            # fail, so it is not attempted there (the admission is the receipt).
+            if rescue and led.get_meta("role", "client") == "operator":
                 try:
                     msg_ok, _ = sender(_RESCUE_ACCOUNT, rescue, text)
                 except Exception:  # noqa: BLE001 - visibility is best-effort
@@ -570,6 +614,10 @@ def self_test():
         os.environ["EWS_BOX_NAME"] = "operator-box-example"
         os.environ.pop("FLEET_STANDING_BOX_SLUG", None)
         from ews_sentinel import F
+        # the direct Telegram send is the OPERATOR box's path (v1.3.0); the
+        # client-box path is covered by the client-route case further down
+        with Ledger() as led_role:
+            led_role.set_meta("role", "operator")
 
         # operator P1 send, with revert line, value-free
         f = F("S4", "P1", "agents.defaults.maxConcurrent", "cap",
@@ -795,6 +843,103 @@ def self_test():
             assert any(e["event_id"] == eid3 for e in led.open_events())  # NOT escalated
             assert led.count_admissions() == before_count  # no journal row
         print("  escalation-dryrun case: PASS (dry run changes no state)")
+
+        # v1.3.0 backoff: the failed admission above scheduled its next attempt
+        # 30 min out. The retry windows gates ONLY the production auto-run path
+        # (admission=None): a caller passing an explicit admission= owns the
+        # timing and their call must not be skipped. Verify that next_attempt_at
+        # WAS set (the production gate would fire), AND that an explicit
+        # admission still reaches through.
+        calls = []
+
+        def counting_admission(state_dir=None, box="", problem_text="", **kw):
+            calls.append(kw.get("event_id"))
+            return failing_admission(state_dir, box=box, problem_text=problem_text, **kw)
+        escalate(sender=fake_sender, admission=counting_admission)   # first pass: POSTs (fails)
+        first = list(calls)
+        assert first, "the first pass must attempt the stale P1s"
+        # next_attempt_at was scheduled (verify by querying escalation_state)
+        with Ledger() as led:
+            esc_rows = led.conn.execute(
+                "SELECT * FROM escalation_state WHERE event_id=?",
+                (eid2,)).fetchall()
+            _st = [dict(r) for r in esc_rows]
+        assert len(_st) >= 1 and _st[0].get("next_attempt_at"), \
+            "backoff must schedule next_attempt_at for the production gate: %r" % _st
+        # An explicit admission= caller owns the retry timing, so the call
+        # always reaches through (no gate, no skipped second call).
+        escalate(sender=fake_sender, admission=counting_admission)
+        assert len(calls) > len(first), \
+            "explicit admission= caller bypasses the production retry window: %r" % calls
+        print("  escalation-backoff case: PASS (retry next_attempt_at scheduled, explicit caller bypasses)")
+
+        # B3: not-enrolled / refused also back off (they used to get no next
+        # attempt and were re-POSTed on every run). With explicit admission=
+        # the caller owns timing, so the second call reaches through; but
+        # next_attempt_at IS still scheduled (the production gate works).
+        from datetime import timedelta as _td, timezone as _tz
+        old_ts = (datetime.now(_tz.utc) - _td(hours=2)).replace(microsecond=0).isoformat()
+        for status in ("no_enrollment", "refused", "client_unavailable"):
+            with Ledger() as led:
+                led.record_event("S4", "P1", key_path="b3", tick_ts=old_ts,
+                                 dedup_key="b3-%s" % status)
+            hits = []
+
+            def _fixed(state_dir=None, box="", problem_text="", _s=status, **kw):
+                if kw.get("dedup_key") == "b3-%s" % _s:
+                    hits.append(1)
+                return {"status": _s, "detail": "fixture"}
+            escalate(sender=fake_sender, admission=_fixed)
+            escalate(sender=fake_sender, admission=_fixed)
+            # With explicit admission= the caller owns timing -- both calls
+            # go through. The B3 backoff guarantees next_attempt_at exists
+            # (production gate), not that the explicit caller is skipped.
+            assert len(hits) == 2, (status, hits)
+            # Verify next_attempt_at was set by querying escalation_state directly
+            with Ledger() as led:
+                esc_rows = led.conn.execute(
+                    "SELECT * FROM escalation_state WHERE dedup_key=?",
+                    ("b3-%s" % status,)).fetchall()
+                _st = [dict(r) for r in esc_rows]
+            assert len(_st) >= 1 and _st[0].get("next_attempt_at"), \
+                "backoff must set next_attempt_at for %s: %r" % (status, _st)
+        print("  escalation-backoff-all-outcomes case: PASS (next_attempt_at set for all outcomes; explicit caller bypasses)")
+
+        # v1.3.0 CLIENT box: no direct Telegram send at all. A P1 is held open
+        # for the escalate sweep (Rescue Rangers); a P2 is recorded only.
+        with Ledger() as led_role:
+            led_role.set_meta("role", "client")
+        before_c = len(sent_log)
+        fc1 = F("S4", "P1", "x", "cap", "client P1", dedup_key="client-route-p1")
+        fc2 = F("S1", "P2", "x", "model", "client P2", dedup_key="client-route-p2")
+        assert route_finding(fc1, sender=fake_sender) is False
+        assert route_finding(fc2, sender=fake_sender) is False
+        assert len(sent_log) == before_c, "a client box must never call the Telegram sender"
+        with Ledger() as led:
+            assert led.recent_digest("operator|S4|client-route-p1", 1)["kind"] == "queued_for_rescue"
+            assert led.recent_digest("operator|S1|client-route-p2", 1)["kind"] == "recorded"
+            assert not any(e["key_path"] == "alert.operator_target"
+                           for e in led.events_since("2000-01-01T00:00:00+00:00")
+                           if e["dedup_key"] == "S7|no_operator_target" and e["event_id"] > 0
+                           and e["detail"] == "client P1")
+        print("  client-route case: PASS (no Telegram; P1 queued for Rescue Rangers, P2 recorded)")
+
+        # a CLIENT box never sends the supplemental rescue-group Telegram
+        # message (it has no rescue-rangers account); the admission still runs
+        from datetime import timedelta as _td2, timezone as _tz2
+        _old = (datetime.now(_tz2.utc) - _td2(hours=2)).replace(microsecond=0).isoformat()
+        with Ledger() as led:
+            led.record_event("S4", "P1", key_path="grp", tick_ts=_old, dedup_key="client-grp")
+        adm = []
+
+        def _ok(state_dir=None, box="", problem_text="", **kw):
+            adm.append(kw.get("dedup_key"))
+            return {"status": "admitted", "ticket_id": "T-1", "detail": "fixture"}
+        before_g = len(sent_log)
+        escalate(sender=fake_sender, admission=_ok)
+        assert "client-grp" in adm
+        assert len(sent_log) == before_g, sent_log[before_g:]
+        print("  client-no-group-message case: PASS (admission sent; no Telegram group message)")
 
         for k in ("EWS_STATE_DIR", "EWS_OPERATOR_CHAT", "EWS_RESCUE_CHAT", "EWS_BOX_NAME"):
             os.environ.pop(k, None)

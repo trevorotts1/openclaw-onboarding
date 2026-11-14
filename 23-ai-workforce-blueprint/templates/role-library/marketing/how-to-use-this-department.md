@@ -79,85 +79,71 @@ and it will pick the right one, or you can ask for a specialist by name.
 | **Customer Journey Architect** | Maps the full customer journey from first awareness to repeat buyer to advocate. |
 | **Email Campaign Strategist** | Owns marketing email strategy - campaign concept, segmentation, calendar, copy. |
 | **Funnel Strategist** | Designs the customer acquisition funnel from awareness to purchase. |
-| **Influencer Marketing Specialist** | Identifies and partners with influencers, micro-influencers, and creators whose audience overlaps with the company's. |
-| **Lead Magnet Specialist** | Designs and produces the gated content that converts cold traffic into leads. |
+| **Influencer Marketing Specialist** | Identifies and partners with influencers, micro-influencers. |
+| **Lead Magnet Specialist** | Designs and produces the gated content that converts cold traffic into leads: lead magnets, free guides, mini-courses. |
 | **Marketing Analytics Specialist** | Owns measurement and attribution for marketing. |
 | **Webinar Event Marketing Specialist** | Plans and promotes webinars, virtual events, and in-person events. |
 | **Conversion Copywriter** | You own the words - every word - on every funnel page, landing page, website page, and checkout flow that deploys. |
-| **Signature Funnel Specialist** | The marketing door onto the Trevor Otts Signature Funnel engine (Skill 49). |
-| **Sales Page Assets Specialist** | The marketing door onto the Trevor Otts Direct-Response Sales Page Assets engine (Skill 56), the DR sibling of Skill 49. |
+| **Signature Funnel Specialist** | The marketing door onto the Trevor Otts Signature Funnel engine (Skill 49): the SACRED 12-section Hero copy system and a configurable 3/5/7-step GHL funnel (Main / Checkout / Upsell-1 / Downsell-1 / Upsell-2 / Downsell-2 / Thank-You). |
+| **Sales Page Assets Specialist** | The marketing door onto the Trevor Otts Direct-Response Sales Page Assets engine (Skill 56). |
 
-### What each specialist is for, with an example request
+### What each specialist is for
 
 **Affiliate Referral Specialist**
 
 - *What it is for:* Builds and manages the affiliate program, referral partnerships, and word-of-mouth amplification.
-- *Example request:* "Have the Affiliate Referral Specialist take this on: Builds and manages the affiliate program, referral partnerships."
 
 **Brand Positioning Specialist**
 
 - *What it is for:* Defines and maintains the company's unique selling proposition (USP), unique value proposition (UVP).
-- *Example request:* "Have the Brand Positioning Specialist take this on: Defines and maintains the company's unique selling proposition (USP)."
 
 **Content Marketing Strategist**
 
 - *What it is for:* Long-form content (blog posts, articles, whitepapers, case studies).
-- *Example request:* "Have the Content Marketing Strategist take this on: Long-form content (blog posts, articles, whitepapers, case studies)."
 
 **Content Strategist**
 
 - *What it is for:* Plans the overall content calendar.
-- *Example request:* "Have the Content Strategist take this on: Plans the overall content calendar."
 
 **Customer Journey Architect**
 
 - *What it is for:* Maps the full customer journey from first awareness to repeat buyer to advocate.
-- *Example request:* "Have the Customer Journey Architect take this on: Maps the full customer journey from first awareness to repeat buyer to advocate."
 
 **Email Campaign Strategist**
 
 - *What it is for:* Owns marketing email strategy - campaign concept, segmentation, calendar, copy.
-- *Example request:* "Have the Email Campaign Strategist take this on: Owns marketing email strategy - campaign concept, segmentation, calendar, copy."
 
 **Funnel Strategist**
 
 - *What it is for:* Designs the customer acquisition funnel from awareness to purchase.
-- *Example request:* "Have the Funnel Strategist take this on: Designs the customer acquisition funnel from awareness to purchase."
 
 **Influencer Marketing Specialist**
 
-- *What it is for:* Identifies and partners with influencers, micro-influencers, and creators whose audience overlaps with the company's.
-- *Example request:* "Have the Influencer Marketing Specialist take this on: Identifies and partners with influencers, micro-influencers."
+- *What it is for:* Identifies and partners with influencers, micro-influencers.
 
 **Lead Magnet Specialist**
 
-- *What it is for:* Designs and produces the gated content that converts cold traffic into leads.
-- *Example request:* "Have the Lead Magnet Specialist take this on: Designs and produces the gated content that converts cold traffic into leads."
+- *What it is for:* Designs and produces the gated content that converts cold traffic into leads: lead magnets, free guides, mini-courses.
 
 **Marketing Analytics Specialist**
 
 - *What it is for:* Owns measurement and attribution for marketing.
-- *Example request:* "Have the Marketing Analytics Specialist take this on: Owns measurement and attribution for marketing."
 
 **Webinar Event Marketing Specialist**
 
 - *What it is for:* Plans and promotes webinars, virtual events, and in-person events.
-- *Example request:* "Have the Webinar Event Marketing Specialist take this on: Plans and promotes webinars, virtual events, and in-person events."
 
 **Conversion Copywriter**
 
 - *What it is for:* You own the words - every word - on every funnel page, landing page, website page, and checkout flow that deploys.
-- *Example request:* "Have the Conversion Copywriter take this on: You own the words - every word - on every funnel page, landing page, website page."
 
 **Signature Funnel Specialist**
 
-- *What it is for:* The marketing door onto the Trevor Otts Signature Funnel engine (Skill 49).
-- *Example request:* "Have the Signature Funnel Specialist take this on: The marketing door onto the Trevor Otts Signature Funnel engine (Skill 49)."
+- *What it is for:* The marketing door onto the Trevor Otts Signature Funnel engine (Skill 49): the SACRED 12-section Hero copy system and a configurable 3/5/7-step GHL funnel (Main / Checkout / Upsell-1 / Downsell-1 / Upsell-2 / Downsell-2 / Thank-You).
 
 **Sales Page Assets Specialist**
 
-- *What it is for:* The marketing door onto the Trevor Otts Direct-Response Sales Page Assets engine (Skill 56), the DR sibling of Skill 49.
-- *Example request:* "Have the Sales Page Assets Specialist take this on: The marketing door onto the Trevor Otts Direct-Response Sales Page Assets engine (Skill."
+- *What it is for:* The marketing door onto the Trevor Otts Direct-Response Sales Page Assets engine (Skill 56).
 
 
 ---

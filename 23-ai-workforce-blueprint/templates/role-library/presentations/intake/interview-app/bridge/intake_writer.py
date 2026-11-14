@@ -49,6 +49,7 @@ import argparse
 import json
 import os
 import pathlib
+import re
 import sys
 from datetime import datetime, timezone
 
@@ -1021,6 +1022,33 @@ def _promote_anti_fabrication_fields(intake: dict) -> dict:
     return intake
 
 
+_MINUTES_RE = re.compile(r"\d+")
+
+
+def _talk_length_minutes(answers: dict) -> int:
+    """PD-082b: the client's own talk length, in whole minutes.
+
+    The page asks "How many minutes should the talk run?" and the hosted worker
+    stores what the client typed ("45 minutes", "45mins", or 45). A record that
+    never captured the answer has NO talk length -- the old constant of 20 sized
+    every deck to a number the client never said -- so this fails closed and
+    names the missing answer instead of inventing one.
+    """
+    raw = answers.get("duration_min")
+    if isinstance(raw, dict):
+        raw = raw.get("value", "")
+    found = _MINUTES_RE.search(str(raw if raw is not None else ""))
+    minutes = int(found.group()) if found else 0
+    if minutes <= 0:
+        raise IntakeIncompleteError(
+            "intake incomplete -- required canonical field missing or empty "
+            f"(contract v{INTAKE_CONTRACT_VERSION}): deck_brief.DURATION_MIN "
+            "-- the duration_min answer is absent, so the record has no talk "
+            "length. Ask the client how many minutes the talk should run and "
+            "resend; nothing was assembled.")
+    return minutes
+
+
 def assemble_intake(app_payload: dict, run_id: str = "") -> dict:
     """Turn the app's answer map into the dept-format intake record.
 
@@ -1032,6 +1060,12 @@ def assemble_intake(app_payload: dict, run_id: str = "") -> dict:
     if isinstance(app_payload.get("intake"), dict):
         base = dict(app_payload["intake"])
         base["answers"] = app_payload.get("answers") or base.get("answers") or {}
+        # PD-082b: the speech harness reads DURATION_MIN at the record root;
+        # the hosted worker stamps target_talk_minutes on this shape, so mirror
+        # the client's number across rather than let the harness fall back to
+        # its own default.
+        if base.get("DURATION_MIN") is None and base.get("target_talk_minutes") is not None:
+            base["DURATION_MIN"] = base["target_talk_minutes"]
         _stamp_derived_provenance(base)
         return base
 
@@ -1059,9 +1093,16 @@ def assemble_intake(app_payload: dict, run_id: str = "") -> dict:
     # hardcoded "webinar" here; see UngroundedDeckTypeError.__doc__.
     deck_type_fields = _grounded_deck_type_fields(answers)
 
+    # PD-082b: the talk length is the CLIENT's number, never a constant. It
+    # rides both keys on purpose -- target_talk_minutes is what build_deck.py's
+    # size floor reads, DURATION_MIN is what speech_build_harness.py reads --
+    # so deck sizing and speech pacing cannot disagree.
+    talk_minutes = _talk_length_minutes(answers)
+
     intake = {
         "interview_confirmed": True,
-        "target_talk_minutes": 20,
+        "target_talk_minutes": talk_minutes,
+        "DURATION_MIN": talk_minutes,
         "created_at": now,
         "source": "presentation-interview-app",
         "run_id": run_id,
@@ -1078,6 +1119,11 @@ def assemble_intake(app_payload: dict, run_id: str = "") -> dict:
         "intake": intake_flat,
         "answers": answers,
     }
+    # PD-049: the box-minted session payload carries the question list the
+    # client was asked from; keep it so the transcript can quote the real
+    # prompts instead of a label table.
+    if isinstance(app_payload.get("questions"), list):
+        intake["questions"] = app_payload["questions"]
     # Item 13: stamp provenance for the synthesized six (a field a real
     # answer landed in `pre` for is the client's own, not derived).
     provenance = {
@@ -1178,6 +1224,15 @@ def write_ledger(run_dir: pathlib.Path, intake: dict) -> pathlib.Path:
 
 _DRIVER_ENVELOPE_FORMAT = "sp-intake-transcript-v1"
 
+# PD-049: the transcript must show the question the client was REALLY asked.
+# The box-minted session payload (../payload/build_questions_payload.py) keeps
+# the question list the client answered from; when the intake record carries
+# that list it is the source of record. Otherwise the page's own generated set
+# (../pages/questions.json) is. Neither is ever replaced by an invented prompt.
+_QUESTIONS_JSON = pathlib.Path(__file__).resolve().parent.parent / "pages" / "questions.json"
+_MARKUP_TAG_RE = re.compile(r"<[^>]+>")
+_QUESTION_NOT_RECORDED = "(question text not recorded for {qid})"
+
 
 class SignedEnvelopePresentError(RuntimeError):
     """Raised by write_transcript() when working/interview/intake_transcript.json
@@ -1211,6 +1266,12 @@ def write_transcript(run_dir: pathlib.Path, intake: dict) -> pathlib.Path:
     FAIL CLOSED (FIX F21-SIBLING): refuses -- raises SignedEnvelopePresentError,
     writes nothing -- when a SIGNED driver envelope already exists at the
     destination path. See SignedEnvelopePresentError.__doc__.
+
+    PD-049: this is a RECONSTRUCTION, and the record says so ("reconstructed":
+    true + the note naming where the question text came from). Each turn quotes
+    the prompt resolved by _question_text() -- the question the client was
+    really asked -- and carries only a "source", never a blanket "validated"
+    flag this writer cannot honestly claim.
     """
     out = run_dir / "working" / "interview" / "intake_transcript.json"
     if out.is_file():
@@ -1225,23 +1286,27 @@ def write_transcript(run_dir: pathlib.Path, intake: dict) -> pathlib.Path:
                 "this bridge's own synthetic transcript. Writing nothing.")
     out.parent.mkdir(parents=True, exist_ok=True)
     answers = intake.get("answers") or {}
-    brief = intake.get("deck_brief") or {}
+    questions, question_source = _question_map(intake)
     turns = []
     for qid, value in answers.items():
         if isinstance(value, dict):
             value = value.get("value", "")
-        q = _question_text(qid, brief)
+        q = _question_text(qid, questions)
         turns.append({
             "question_id": qid,
             "question": q,
             "answer": str(value) if value not in (None, "") else "(skipped)",
-            "validated": True,
             "source": "presentation-interview-app",
         })
     transcript = {
         "intake_session_id": intake.get("intake_session_id", ""),
         "interview_mode": "one_at_a_time",
         "completed": True,
+        "reconstructed": True,
+        "reconstructed_note": (
+            "Built on the client's machine from answers saved by the interview "
+            "web application; question text taken from "
+            f"{question_source}."),
         "source": "presentation-interview-app",
         "turn_count": len(turns),
         "turns": turns,
@@ -1250,41 +1315,65 @@ def write_transcript(run_dir: pathlib.Path, intake: dict) -> pathlib.Path:
     return out
 
 
-def _question_text(qid: str, brief: dict) -> str:
-    """A readable question label for a captured answer id.
+def _strip_markup(text: str) -> str:
+    """The page's prompts carry inline markup (<span class="emph">...) that was
+    never spoken; the transcript records the words, not the tags."""
+    return _MARKUP_TAG_RE.sub("", str(text or "")).strip()
 
-    Maps known intake question ids to the human-facing prompt. Unknown ids fall
-    back to a stable label so the transcript is always non-trivial and
-    unambiguous.
+
+def _session_questions(intake: dict) -> dict:
+    """qid -> prompt from the session's own question payload, when the intake
+    record carries it (the box-minted `questions` list: id + prompt)."""
+    out = {}
+    for entry in intake.get("questions") or []:
+        if not isinstance(entry, dict):
+            continue
+        qid = entry.get("id") or entry.get("question_id")
+        prompt = entry.get("prompt") or entry.get("question") or entry.get("text")
+        if qid and prompt:
+            out[str(qid)] = _strip_markup(prompt)
+    return out
+
+
+def _page_questions() -> dict:
+    """qid -> prompt from the interview page's own generated question set."""
+    try:
+        data = json.loads(_QUESTIONS_JSON.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    rows = data.get("questions") if isinstance(data, dict) else data
+    out = {}
+    for entry in rows or []:
+        if isinstance(entry, dict) and entry.get("id") and entry.get("prompt"):
+            out[str(entry["id"])] = _strip_markup(entry["prompt"])
+    return out
+
+
+def _question_map(intake: dict):
+    """The resolved qid -> prompt map, plus the source the transcript must name.
+
+    The session's own question payload wins over the page's generated set: it
+    is the list this client was actually asked from.
     """
-    labels = {
-        "offer_name": "What is your offer?",
-        "transformation_promise": "What is the transformation promise?",
-        "audience": "Who is the audience?",
-        "cta_action": "What is the call to action?",
-        "brand_primary": "Primary brand color?",
-        "tone": "What tone should the deck take?",
-        "final_price": "What is the final price?",
-        "price_mode": "Price mode?",
-        "goal": "What is the deck's goal?",
-        "target_feeling": "Target feeling?",
-        "hook_seed": "Hook seed?",
-        "client_notes": "Client notes?",
-        "deadline": "Deadline?",
-        "slide_count": "Slide count?",
-        "speech_speed_preference": "Preferred speech pace?",
-        "want_sales_checkout": "Do you need a sales + checkout page?",
-        "want_vsl_page": "Would you like a VSL page?",
-        "q1": "First intake question",
-        "q2": "Second intake question",
-        "q3": "Third intake question",
-        "q4": "Fourth intake question",
-        "q5": "Fifth intake question",
-        "q6": "Sixth intake question",
-        "q7": "Seventh intake question",
-        "q8": "Eighth intake question",
-    }
-    return labels.get(str(qid), "Intake question: " + str(qid))
+    session = _session_questions(intake)
+    page = _page_questions()
+    merged = dict(page)
+    merged.update(session)
+    if session:
+        return merged, "the intake record's own question payload"
+    if page:
+        return merged, "the interview page's question set (pages/questions.json)"
+    return merged, "no source (no question text was recorded)"
+
+
+def _question_text(qid: str, questions: dict) -> str:
+    """The question the client was REALLY asked, for a captured answer id.
+
+    Resolved from the session's own question payload or the page's generated
+    set; an id in neither yields the explicit "not recorded" marker. Never an
+    invented question.
+    """
+    return questions.get(str(qid)) or _QUESTION_NOT_RECORDED.format(qid=str(qid))
 
 
 def cmd(args) -> int:
