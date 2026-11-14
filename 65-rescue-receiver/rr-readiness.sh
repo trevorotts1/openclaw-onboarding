@@ -246,8 +246,15 @@ rr_report() {
   if [ "$MODE" = "json" ]; then
     # one JSON object, flags spliced in before the closing brace (the engine owns the rest)
     _rr_json="$(rrr_report_json)"
-    _rr_flags="$(printf '{"claim_unauthorized":%s,"slug_mismatch":%s}' \
-      "$([ -n "$RRF_UNAUTH" ] && echo true || echo false)" "$([ -n "$RRF_MISMATCH" ] && echo true || echo false)")"
+    _rr_intake="$(python3 -c 'import json,sys
+try:
+    with open(sys.argv[1], encoding="utf-8") as fh: d = json.load(fh)
+    print(json.dumps({"class": str(d.get("class") or "UNREADABLE"), "since": str(d.get("ts") or "")}))
+except FileNotFoundError: print("null")
+except Exception: print(json.dumps({"class": "UNREADABLE", "since": ""}))' "$RR_ROOT/state/rr-intake-auth.flag" 2>/dev/null)"
+    [ -n "$_rr_intake" ] || _rr_intake='{"class":"UNREADABLE","since":""}'
+    _rr_flags="$(printf '{"claim_unauthorized":%s,"slug_mismatch":%s,"intake_auth":%s}' \
+      "$([ -n "$RRF_UNAUTH" ] && echo true || echo false)" "$([ -n "$RRF_MISMATCH" ] && echo true || echo false)" "$_rr_intake")"
     printf '%s,"flags":%s}\n' "${_rr_json%\}}" "$_rr_flags"
   else
     rrr_report_line
