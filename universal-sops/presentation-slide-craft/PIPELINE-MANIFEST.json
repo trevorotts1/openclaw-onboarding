@@ -103,6 +103,8 @@
       "id": "P-CONVERTER",
       "order": -1,
       "name": "Content-to-Presentation Conversion (Zoom/Video/Doc → Intake)",
+      "client_label": "Reading your material",
+      "client_visible": true,
       "owning_role": "content-to-presentation-architect",
       "sop_refs": [
         "content-to-presentation-architect-sops.md"
@@ -123,8 +125,8 @@
       "routing_note": "Content-first path only. Writes intake.json with source_brief_origin: 'content-to-presentation-architect'. Mandates Phase -0.5 Deep Research (SOP 9.8 step 3) before standard pipeline continues.",
       "converter_path": true,
       "client_report": {
-        "start_template": "Step {k} of {N} — {name} — starting{eta}",
-        "done_template": "Step {k} of {N} — {name} — complete"
+        "start_template": "Step {k} of {N} — {client_label} — starting{eta}",
+        "done_template": "Step {k} of {N} — {client_label} — complete"
       },
       "executor": {
         "kind": "agent"
@@ -139,6 +141,8 @@
       "id": "P-0.5-RESEARCH",
       "order": -0.5,
       "name": "Deep Research",
+      "client_label": "Researching your topic",
+      "client_visible": true,
       "owning_role": "deep-research-specialist-presentations",
       "sop_refs": [
         "deep-research-specialist-presentations-sops.md"
@@ -245,8 +249,8 @@
         }
       ],
       "client_report": {
-        "start_template": "Step {k} of {N} — {name} — starting{eta}",
-        "done_template": "Step {k} of {N} — {name} — complete"
+        "start_template": "Step {k} of {N} — {client_label} — starting{eta}",
+        "done_template": "Step {k} of {N} — {client_label} — complete"
       },
       "long_running": true,
       "heartbeat_minutes": 15,
@@ -262,6 +266,8 @@
       "id": "P0A-INTAKE",
       "order": 0.1,
       "name": "Intake / Interview Confirm",
+      "client_label": "Confirming your answers",
+      "client_visible": true,
       "owning_role": "director-of-presentations",
       "sop_refs": [
         "director-of-presentations-sops.md"
@@ -313,8 +319,8 @@
         }
       ],
       "client_report": {
-        "start_template": "Step {k} of {N} — {name} — starting{eta}",
-        "done_template": "Step {k} of {N} — {name} — complete"
+        "start_template": "Step {k} of {N} — {client_label} — starting{eta}",
+        "done_template": "Step {k} of {N} — {client_label} — complete"
       },
       "executor": {
         "kind": "agent"
@@ -329,6 +335,8 @@
       "id": "P-SP-CLAIM",
       "order": 0.14,
       "name": "Signature-Presentation Router / Claim Gate (deck_type must be declared)",
+      "client_label": "Confirming your answers",
+      "client_visible": false,
       "owning_role": "signature-presentation-architect",
       "sop_refs": [
         "signature-presentation-architect-sops.md"
@@ -343,8 +351,8 @@
         "label": "signature-presentation routing/claim gate (AF-SP-TYPE-UNDECLARED): if the run carries signature-presentation signals (an sp_intake.json, a set Signature frame, a frame-selection question, or a 'signature presentation' request) but intake.json does NOT declare deck_type == signature_presentation, fail-closed. Runs for EVERY deck (does NOT defer, unlike the three P-SP gates that follow) via 51-signature-presentation/scripts/prove_sp_routing.evaluate_run_dir — closes the highest-severity skip where a signature presentation is built through the generic path by omitting the magic word (which would make every SP gate no-op). A non-signature deck with no SP signal passes untouched."
       },
       "client_report": {
-        "start_template": "Step {k} of {N} — {name} — starting{eta}",
-        "done_template": "Step {k} of {N} — {name} — complete"
+        "start_template": "Step {k} of {N} — {client_label} — starting{eta}",
+        "done_template": "Step {k} of {N} — {client_label} — complete"
       },
       "executor": {
         "kind": "agent"
@@ -358,7 +366,9 @@
     {
       "id": "P-SP-INTAKE",
       "order": 0.15,
-      "name": "Signature-Presentation Intake Gate (8 Questions in ONE block + frame)",
+      "name": "Signature-Presentation Intake Gate (8 Questions asked one at a time, recorded as one atomic record, plus the frame)",
+      "client_label": "Confirming your answers",
+      "client_visible": false,
       "owning_role": "signature-presentation-architect",
       "sop_refs": [
         "signature-presentation-architect-sops.md"
@@ -374,11 +384,11 @@
       "preflight": {
         "required": true,
         "checker": "_chk_sp_intake",
-        "label": "signature-presentation intake gate (AF-SP-8Q-MISSING / AF-SP-8Q-SPLIT / AF-SP-FRAME-UNSET / AF-SP-TYPE-MISMATCH / AF-SP-OFFER-UNDECLARED): the 8 Questions delivered in ONE block + a set frame (rulebook|vault|quest|original) + the q7 offer(s) declared into the offer-token ledger. DEFERS (returns empty) unless intake.json deck_type == signature_presentation, so non-signature decks behave EXACTLY as before (mirror of the _chk_style_preview defer switch)."
+        "label": "signature-presentation intake gate (AF-SP-8Q-MISSING / AF-SP-8Q-SPLIT / AF-SP-FRAME-UNSET / AF-SP-TYPE-MISMATCH / AF-SP-OFFER-UNDECLARED): the 8 Questions asked one at a time and committed as ONE atomic record + a set frame (rulebook|vault|quest|original) + the q7 offer(s) declared into the offer-token ledger. DEFERS (returns empty) unless intake.json deck_type == signature_presentation, so non-signature decks behave EXACTLY as before (mirror of the _chk_style_preview defer switch)."
       },
       "client_report": {
-        "start_template": "Step {k} of {N} — {name} — starting{eta}",
-        "done_template": "Step {k} of {N} — {name} — complete"
+        "start_template": "Step {k} of {N} — {client_label} — starting{eta}",
+        "done_template": "Step {k} of {N} — {client_label} — complete"
       },
       "executor": {
         "kind": "agent"
@@ -393,6 +403,8 @@
       "id": "P-SP-INTAKE-TRACE",
       "order": 0.16,
       "name": "Signature-Presentation Intake CONVERSATION Gate (choice-first, one question per turn)",
+      "client_label": "Confirming your answers",
+      "client_visible": false,
       "owning_role": "signature-presentation-architect",
       "sop_refs": [
         "signature-presentation-architect-sops.md"
@@ -407,8 +419,8 @@
         "label": "signature-presentation intake-CONVERSATION gate (AF-INTAKE-BATCH): the intake was CONDUCTED choice-first (quick vs in-depth) and one bank question per assistant turn, proven against working/interview/intake_transcript.json via 51-signature-presentation/scripts/intake_trace_check.scan_transcript. P-SP-INTAKE above proves the assembled intake RECORD; this proves the conversation that produced it, so a batched eight-question dump that afterwards yields a structurally valid record can no longer reach a signed certificate. An ABSENT transcript is fail-closed — a conversation gate nobody can omit their way past. DEFERS (returns empty) unless intake.json deck_type == signature_presentation, so non-signature decks behave EXACTLY as before."
       },
       "client_report": {
-        "start_template": "Step {k} of {N} — {name} — starting{eta}",
-        "done_template": "Step {k} of {N} — {name} — complete"
+        "start_template": "Step {k} of {N} — {client_label} — starting{eta}",
+        "done_template": "Step {k} of {N} — {client_label} — complete"
       },
       "executor": {
         "kind": "agent"
@@ -423,6 +435,8 @@
       "id": "P0B-PRIORITY",
       "order": 0.2,
       "name": "Priority-Shift Spec (the attention-content-strategist's spine, BEFORE copy)",
+      "client_label": "Planning the story",
+      "client_visible": true,
       "owning_role": "attention-content-strategist",
       "sop_refs": [
         "SOP-NORTHSTAR-00-ATTENTION-IS-THE-PRODUCT.md",
@@ -476,8 +490,8 @@
         }
       ],
       "client_report": {
-        "start_template": "Step {k} of {N} — {name} — starting{eta}",
-        "done_template": "Step {k} of {N} — {name} — complete"
+        "start_template": "Step {k} of {N} — {client_label} — starting{eta}",
+        "done_template": "Step {k} of {N} — {client_label} — complete"
       },
       "executor": {
         "kind": "agent"
@@ -492,6 +506,8 @@
       "id": "P3-ARC",
       "order": 3,
       "name": "Converting Arc Allocation",
+      "client_label": "Planning the story",
+      "client_visible": false,
       "owning_role": "offer-price-strategist",
       "sop_refs": [
         "offer-price-strategist-sops.md"
@@ -526,8 +542,8 @@
         }
       ],
       "client_report": {
-        "start_template": "Step {k} of {N} — {name} — starting{eta}",
-        "done_template": "Step {k} of {N} — {name} — complete"
+        "start_template": "Step {k} of {N} — {client_label} — starting{eta}",
+        "done_template": "Step {k} of {N} — {client_label} — complete"
       },
       "executor": {
         "kind": "agent"
@@ -543,6 +559,8 @@
       "id": "P-3.5-RESEARCH-MAP",
       "order": 3.5,
       "name": "Research-to-Slide Mapping",
+      "client_label": "Researching your topic",
+      "client_visible": false,
       "owning_role": "deep-research-specialist-presentations",
       "sop_refs": [
         "deep-research-specialist-presentations-sops.md"
@@ -557,8 +575,8 @@
         "label": "research woven across the deck — research_map.json maps facts/quotes/stats to >=60% of non-exempt content slides; >=8 distinct items (AF-RESEARCH-WEAVE; defers until copy exists)"
       },
       "client_report": {
-        "start_template": "Step {k} of {N} — {name} — starting{eta}",
-        "done_template": "Step {k} of {N} — {name} — complete"
+        "start_template": "Step {k} of {N} — {client_label} — starting{eta}",
+        "done_template": "Step {k} of {N} — {client_label} — complete"
       },
       "long_running": true,
       "heartbeat_minutes": 15,
@@ -575,7 +593,12 @@
       "id": "P-U-SALES-COPY",
       "order": 3.6,
       "name": "Upsell Sales Page Copy (8-section main structure)",
+      "client_label": "Building your sales page",
+      "client_visible": true,
       "owning_role": "slide-copywriter",
+      "sop_refs": [
+        "SALES-CHECKOUT-BUILDER-SOP.md"
+      ],
       "produces_artifact": [
         "working/upsell/copy/sales.fragment.md",
         "working/upsell/copy/copy_ledger.json"
@@ -584,8 +607,8 @@
       "gate_codes": [],
       "preflight": null,
       "client_report": {
-        "start_template": "Step {k} of {N} — {name} — starting{eta}",
-        "done_template": "Step {k} of {N} — {name} — complete"
+        "start_template": "Step {k} of {N} — {client_label} — starting{eta}",
+        "done_template": "Step {k} of {N} — {client_label} — complete"
       },
       "executor": {
         "kind": "agent"
@@ -601,14 +624,19 @@
       "id": "P-U-CHECKOUT-COPY",
       "order": 3.7,
       "name": "Upsell Checkout Page Copy (lean order-form structure)",
+      "client_label": "Building your checkout page",
+      "client_visible": true,
       "owning_role": "slide-copywriter",
+      "sop_refs": [
+        "SALES-CHECKOUT-BUILDER-SOP.md"
+      ],
       "produces_artifact": "working/upsell/copy/checkout.fragment.md",
       "defers_unless": "intake.want_sales_checkout == \"yes\"",
       "gate_codes": [],
       "preflight": null,
       "client_report": {
-        "start_template": "Step {k} of {N} — {name} — starting{eta}",
-        "done_template": "Step {k} of {N} — {name} — complete"
+        "start_template": "Step {k} of {N} — {client_label} — starting{eta}",
+        "done_template": "Step {k} of {N} — {client_label} — complete"
       },
       "executor": {
         "kind": "agent"
@@ -624,14 +652,19 @@
       "id": "P-U-VSL-RESEARCH",
       "order": 3.8,
       "name": "Upsell VSL Research (length, hook-to-reveal timing, gating practice)",
+      "client_label": "Building your video sales page",
+      "client_visible": true,
       "owning_role": "deep-research-specialist-presentations",
+      "sop_refs": [
+        "VSL-BUILDER-SOP.md"
+      ],
       "produces_artifact": "working/upsell/vsl-research.md",
       "defers_unless": "intake.want_vsl_page == \"yes\"",
       "gate_codes": [],
       "preflight": null,
       "client_report": {
-        "start_template": "Step {k} of {N} — {name} — starting{eta}",
-        "done_template": "Step {k} of {N} — {name} — complete"
+        "start_template": "Step {k} of {N} — {client_label} — starting{eta}",
+        "done_template": "Step {k} of {N} — {client_label} — complete"
       },
       "executor": {
         "kind": "agent"
@@ -647,14 +680,19 @@
       "id": "P-U-VSL-COPY",
       "order": 3.9,
       "name": "Upsell VSL Page Copy (headline, body, CTA)",
+      "client_label": "Building your video sales page",
+      "client_visible": false,
       "owning_role": "slide-copywriter",
+      "sop_refs": [
+        "VSL-BUILDER-SOP.md"
+      ],
       "produces_artifact": "working/upsell/copy/vsl.fragment.md",
       "defers_unless": "intake.want_vsl_page == \"yes\"",
       "gate_codes": [],
       "preflight": null,
       "client_report": {
-        "start_template": "Step {k} of {N} — {name} — starting{eta}",
-        "done_template": "Step {k} of {N} — {name} — complete"
+        "start_template": "Step {k} of {N} — {client_label} — starting{eta}",
+        "done_template": "Step {k} of {N} — {client_label} — complete"
       },
       "executor": {
         "kind": "agent"
@@ -670,6 +708,8 @@
       "id": "P4-COPY",
       "order": 4,
       "name": "Slide Copy",
+      "client_label": "Writing your slides",
+      "client_visible": true,
       "owning_role": "slide-copywriter",
       "fanout": {
         "by": "section",
@@ -701,8 +741,8 @@
         }
       ],
       "client_report": {
-        "start_template": "Step {k} of {N} — {name} — starting{eta}",
-        "done_template": "Step {k} of {N} — {name} — complete"
+        "start_template": "Step {k} of {N} — {client_label} — starting{eta}",
+        "done_template": "Step {k} of {N} — {client_label} — complete"
       },
       "executor": {
         "kind": "agent"
@@ -721,6 +761,8 @@
       "id": "P-SP-STRUCTURE",
       "order": 4.1,
       "name": "Signature-Presentation SACRED Structure (4-phase arc + phase labels)",
+      "client_label": "Writing your slides",
+      "client_visible": false,
       "owning_role": "signature-presentation-architect",
       "sop_refs": [
         "signature-presentation-architect-sops.md"
@@ -743,8 +785,8 @@
         "label": "signature-presentation structure gate (AF-SP-SLIDE-FLOOR / AF-SP-PHASE-RANGE / AF-SP-PHASE-ORDER / AF-SP-PHASE-LABEL / AF-SP-IMG-SUGGESTION / AF-SP-CASESTUDY-CAP / AF-SP-TEACH-STEPS / AF-SP-HOOK / AF-SP-QUADRANT): 100-slide floor unless a logged client-exact override, the 4 phase floors (avatar 11 / story 13 / teaching 36 / pitch 40) contiguous and in order with each phase's label slide, a non-empty suggested_image on every slide, at most 2 case studies, 3 to 7 teaching steps, one central hook + four distinct section hooks, and the N.E.E.I.T. + 4-Quadrant markers. DEFERS (returns empty) unless intake.json deck_type == signature_presentation."
       },
       "client_report": {
-        "start_template": "Step {k} of {N} — {name} — starting{eta}",
-        "done_template": "Step {k} of {N} — {name} — complete"
+        "start_template": "Step {k} of {N} — {client_label} — starting{eta}",
+        "done_template": "Step {k} of {N} — {client_label} — complete"
       },
       "executor": {
         "kind": "agent"
@@ -760,6 +802,8 @@
       "id": "P-SP-P3-HYGIENE",
       "order": 4.15,
       "name": "Signature-Presentation Phase-3 (Teaching) No-Pitch Hygiene",
+      "client_label": "Writing your slides",
+      "client_visible": false,
       "owning_role": "qc-specialist-signature-presentations",
       "sop_refs": [
         "qc-specialist-signature-presentations-sops.md"
@@ -774,8 +818,8 @@
         "label": "signature-presentation Phase-3 no-pitch hygiene (AF-SP-P3-PITCH): no q7 offer/product name, no price/monetary token, and no enroll/buy/scarcity CTA on any teaching-band slide, and a contiguous Phase-3 to Phase-4 bridge (the final teaching step may promise what comes next but may NOT name a price or product). DEFERS (returns empty) unless intake.json deck_type == signature_presentation."
       },
       "client_report": {
-        "start_template": "Step {k} of {N} — {name} — starting{eta}",
-        "done_template": "Step {k} of {N} — {name} — complete"
+        "start_template": "Step {k} of {N} — {client_label} — starting{eta}",
+        "done_template": "Step {k} of {N} — {client_label} — complete"
       },
       "executor": {
         "kind": "agent"
@@ -791,6 +835,8 @@
       "id": "P1Q-COPY-QC",
       "order": 4.2,
       "name": "Copy QC (Phase 1Q) — sequenced AFTER Slide Copy (O1 re-sequence: a QC follows the artifact it grades; copy-QC at order 1.5 before copy order 4 was the defect this fixes)",
+      "client_label": "Writing your slides",
+      "client_visible": false,
       "owning_role": "qc-specialist-presentations",
       "sop_refs": [
         "qc-specialist-presentations-sops.md"
@@ -829,8 +875,8 @@
         "label": "copy QC report (gate Phase 1Q, average >= 8.5, no AF-* triggered, independent-reviewer provenance)"
       },
       "client_report": {
-        "start_template": "Step {k} of {N} — {name} — starting{eta}",
-        "done_template": "Step {k} of {N} — {name} — complete"
+        "start_template": "Step {k} of {N} — {client_label} — starting{eta}",
+        "done_template": "Step {k} of {N} — {client_label} — complete"
       },
       "executor": {
         "kind": "agent"
@@ -845,7 +891,12 @@
       "id": "P-U-BRIEF-SALES",
       "order": 4.32,
       "name": "Upsell Sales + Checkout Page Brief Emit (Item 20 page-brief seam: writes the versioned page-brief JSON the page builder consumes)",
+      "client_label": "Building your sales page",
+      "client_visible": false,
       "owning_role": "media-librarian-ghl-updater",
+      "sop_refs": [
+        "SALES-CHECKOUT-BUILDER-SOP.md"
+      ],
       "produces_artifact": [
         "working/pages/page-brief-sales.v*.json",
         "working/pages/page-brief-checkout.v*.json"
@@ -854,8 +905,8 @@
       "gate_codes": [],
       "preflight": null,
       "client_report": {
-        "start_template": "Step {k} of {N} — {name} — starting{eta}",
-        "done_template": "Step {k} of {N} — {name} — complete"
+        "start_template": "Step {k} of {N} — {client_label} — starting{eta}",
+        "done_template": "Step {k} of {N} — {client_label} — complete"
       },
       "executor": {
         "kind": "script",
@@ -873,14 +924,19 @@
       "id": "P-U-BRIEF-VSL",
       "order": 4.42,
       "name": "Upsell VSL Page Brief Emit (Item 20 page-brief seam: writes the versioned page-brief JSON the page builder consumes)",
+      "client_label": "Building your video sales page",
+      "client_visible": false,
       "owning_role": "media-librarian-ghl-updater",
+      "sop_refs": [
+        "VSL-BUILDER-SOP.md"
+      ],
       "produces_artifact": "working/pages/page-brief-vsl.v*.json",
       "defers_unless": "intake.want_vsl_page == \"yes\"",
       "gate_codes": [],
       "preflight": null,
       "client_report": {
-        "start_template": "Step {k} of {N} — {name} — starting{eta}",
-        "done_template": "Step {k} of {N} — {name} — complete"
+        "start_template": "Step {k} of {N} — {client_label} — starting{eta}",
+        "done_template": "Step {k} of {N} — {client_label} — complete"
       },
       "executor": {
         "kind": "script",
@@ -898,6 +954,8 @@
       "id": "PF-DESIGN",
       "order": 4.5,
       "name": "Typography / Design Brief",
+      "client_label": "Designing the look",
+      "client_visible": true,
       "owning_role": "typography-architect",
       "sop_refs": [
         "typography-architect-sops.md"
@@ -910,8 +968,8 @@
         "label": "typography/design brief — per-slide creative art direction"
       },
       "client_report": {
-        "start_template": "Step {k} of {N} — {name} — starting{eta}",
-        "done_template": "Step {k} of {N} — {name} — complete"
+        "start_template": "Step {k} of {N} — {client_label} — starting{eta}",
+        "done_template": "Step {k} of {N} — {client_label} — complete"
       },
       "executor": {
         "kind": "agent"
@@ -927,6 +985,8 @@
       "id": "P-TYPO-QC",
       "order": 4.6,
       "name": "Typography QC — sequenced AFTER Design (O1; independent reviewer)",
+      "client_label": "Designing the look",
+      "client_visible": false,
       "owning_role": "qc-specialist-typography-presentations",
       "sop_refs": [
         "qc-specialist-typography-presentations-sops.md"
@@ -942,8 +1002,8 @@
         "label": "typography QC report (gate Phase Typography-QC, average >= 8.5, independent-reviewer provenance)"
       },
       "client_report": {
-        "start_template": "Step {k} of {N} — {name} — starting{eta}",
-        "done_template": "Step {k} of {N} — {name} — complete"
+        "start_template": "Step {k} of {N} — {client_label} — starting{eta}",
+        "done_template": "Step {k} of {N} — {client_label} — complete"
       },
       "executor": {
         "kind": "agent"
@@ -958,6 +1018,8 @@
       "id": "P4-PROMPT",
       "order": 4.7,
       "name": "Prompt Authoring - each slide prompt inside the KIE rule 12 length band (95 to 100 percent of the model max)",
+      "client_label": "Designing the look",
+      "client_visible": false,
       "owning_role": "prompt-author-presentations",
       "fanout": {
         "by": "slide",
@@ -978,8 +1040,8 @@
         "label": "rich per-slide prompt — every slide has a prompt inside the rule 12 length band (80 to 100 percent of the model max) in working/prompts/ (rendered VERBATIM)"
       },
       "client_report": {
-        "start_template": "Step {k} of {N} — {name} — starting{eta}",
-        "done_template": "Step {k} of {N} — {name} — complete"
+        "start_template": "Step {k} of {N} — {client_label} — starting{eta}",
+        "done_template": "Step {k} of {N} — {client_label} — complete"
       },
       "executor": {
         "kind": "agent"
@@ -997,6 +1059,8 @@
       "id": "P-PROMPT-QC",
       "order": 4.8,
       "name": "Prompt QC — sequenced AFTER Prompt-Authoring (O1; independent reviewer)",
+      "client_label": "Designing the look",
+      "client_visible": false,
       "owning_role": "qc-specialist-prompt-presentations",
       "fanout": {
         "by": "slide",
@@ -1015,8 +1079,8 @@
         "label": "prompt QC report (gate Phase Prompt-QC, average >= 8.5, independent-reviewer provenance)"
       },
       "client_report": {
-        "start_template": "Step {k} of {N} — {name} — starting{eta}",
-        "done_template": "Step {k} of {N} — {name} — complete"
+        "start_template": "Step {k} of {N} — {client_label} — starting{eta}",
+        "done_template": "Step {k} of {N} — {client_label} — complete"
       },
       "executor": {
         "kind": "agent"
@@ -1032,6 +1096,8 @@
       "id": "P-STYLE-PREVIEW",
       "order": 4.85,
       "name": "Approved 3-Style Preview (9 samples → owner gateway sign-off, before full render)",
+      "client_label": "Making 3 style samples",
+      "client_visible": true,
       "owning_role": "slide-image-creator",
       "sop_refs": [
         "slide-image-creator-sops.md"
@@ -1047,8 +1113,8 @@
         "label": "approved style preview (after the 9 samples render via build_deck.py --sample, the owner picks 1 of 3 attention-grade variants via their OWN gateway; the winner's 3 representative renders are LOCKED + reused so kie never double-charges; AF-STYLE-UNPICKED / AF-STYLE-DOUBLECHARGE). DEFERS until the samples manifest exists."
       },
       "client_report": {
-        "start_template": "Step {k} of {N} — {name} — starting{eta}",
-        "done_template": "Step {k} of {N} — {name} — complete"
+        "start_template": "Step {k} of {N} — {client_label} — starting{eta}",
+        "done_template": "Step {k} of {N} — {client_label} — complete"
       },
       "executor": {
         "kind": "script",
@@ -1066,6 +1132,8 @@
       "id": "P-STYLE-SPEC",
       "order": 4.84,
       "name": "Style Preview Spec (fanout unit: 3 slide-bound units each author one attention-grade variant + representative slide, aggregated to the spec before the 9 samples render)",
+      "client_label": "Designing the look",
+      "client_visible": false,
       "owning_role": "brand-steward",
       "fanout": {
         "by": "slide",
@@ -1079,8 +1147,8 @@
       "gate_codes": [],
       "preflight": null,
       "client_report": {
-        "start_template": "Step {k} of {N} — {name} — starting{eta}",
-        "done_template": "Step {k} of {N} — {name} — complete"
+        "start_template": "Step {k} of {N} — {client_label} — starting{eta}",
+        "done_template": "Step {k} of {N} — {client_label} — complete"
       },
       "executor": {
         "kind": "agent"
@@ -1098,6 +1166,8 @@
       "id": "P-STYLE-PICK",
       "order": 4.86,
       "name": "Owner Style Pick (human gateway: owner approves ONE of the 3 variants; choice logged with a verified owner_msg_id)",
+      "client_label": "Waiting for your style pick",
+      "client_visible": true,
       "owning_role": "brand-steward",
       "sop_refs": [
         "brand-steward-sops.md"
@@ -1108,8 +1178,8 @@
       ],
       "preflight": null,
       "client_report": {
-        "start_template": "Step {k} of {N} — {name} — starting{eta}",
-        "done_template": "Step {k} of {N} — {name} — complete"
+        "start_template": "Step {k} of {N} — {client_label} — starting{eta}",
+        "done_template": "Step {k} of {N} — {client_label} — complete"
       },
       "executor": {
         "kind": "human"
@@ -1125,6 +1195,8 @@
       "id": "P4-RENDER",
       "order": 4.9,
       "name": "Deterministic Render (build_deck.py — this script)",
+      "client_label": "Creating your slide images",
+      "client_visible": true,
       "owning_role": "slide-image-creator",
       "sop_refs": [
         "slide-image-creator-sops.md"
@@ -1151,8 +1223,8 @@
         ]
       },
       "client_report": {
-        "start_template": "Step {k} of {N} — {name} — starting{eta}",
-        "done_template": "Step {k} of {N} — {name} — complete"
+        "start_template": "Step {k} of {N} — {client_label} — starting{eta}",
+        "done_template": "Step {k} of {N} — {client_label} — complete"
       },
       "long_running": true,
       "heartbeat_minutes": 60,
@@ -1171,6 +1243,8 @@
       "id": "P-IMAGE-QC",
       "order": 4.95,
       "name": "Image QC — sequenced AFTER Render (O1; independent multimodal reviewer)",
+      "client_label": "Creating your slide images",
+      "client_visible": false,
       "owning_role": "qc-specialist-image-presentations",
       "fanout": {
         "by": "slide",
@@ -1197,8 +1271,8 @@
         }
       ],
       "client_report": {
-        "start_template": "Step {k} of {N} — {name} — starting{eta}",
-        "done_template": "Step {k} of {N} — {name} — complete"
+        "start_template": "Step {k} of {N} — {client_label} — starting{eta}",
+        "done_template": "Step {k} of {N} — {client_label} — complete"
       },
       "executor": {
         "kind": "agent"
@@ -1212,9 +1286,14 @@
     },
     {
       "id": "P-U-FORM-GATE",
-      "order": 5.6,
+      "order": 9.04,
       "name": "Upsell VSL Email/Phone Gate Form + Workflow (Skill 44)",
+      "client_label": "Building your video sales page",
+      "client_visible": false,
       "owning_role": "media-librarian-ghl-updater",
+      "sop_refs": [
+        "GHL-EXTERNAL-INSTALLER-SOP.md"
+      ],
       "produces_artifact": [
         "ecosystem/gate-form.json",
         "workflows/gate-workflow.json"
@@ -1225,8 +1304,8 @@
       ],
       "preflight": null,
       "client_report": {
-        "start_template": "Step {k} of {N} — {name} — starting{eta}",
-        "done_template": "Step {k} of {N} — {name} — complete"
+        "start_template": "Step {k} of {N} — {client_label} — starting{eta}",
+        "done_template": "Step {k} of {N} — {client_label} — complete"
       },
       "executor": {
         "kind": "script",
@@ -1242,9 +1321,14 @@
     },
     {
       "id": "P-U-GHL-SALES",
-      "order": 6.2,
+      "order": 8.78,
       "name": "Upsell Sales + Checkout GHL Funnel Build (Skill 6)",
+      "client_label": "Building your sales page",
+      "client_visible": false,
       "owning_role": "media-librarian-ghl-updater",
+      "sop_refs": [
+        "GHL-EXTERNAL-INSTALLER-SOP.md"
+      ],
       "produces_artifact": "working/sales-checkout/ghl_build_receipt.json",
       "defers_unless": "intake.want_sales_checkout == \"yes\"",
       "gate_codes": [
@@ -1252,8 +1336,8 @@
       ],
       "preflight": null,
       "client_report": {
-        "start_template": "Step {k} of {N} — {name} — starting{eta}",
-        "done_template": "Step {k} of {N} — {name} — complete"
+        "start_template": "Step {k} of {N} — {client_label} — starting{eta}",
+        "done_template": "Step {k} of {N} — {client_label} — complete"
       },
       "executor": {
         "kind": "script",
@@ -1265,16 +1349,19 @@
       "heartbeat_minutes": 20,
       "consumes": [
         "working/sales-checkout/html/sales.html",
-        "working/sales-checkout/html/checkout.html",
-        "ecosystem/gate-form.json",
-        "workflows/gate-workflow.json"
+        "working/sales-checkout/html/checkout.html"
       ]
     },
     {
       "id": "P-U-GHL-VSL",
-      "order": 6.4,
+      "order": 9.06,
       "name": "Upsell VSL GHL Funnel Build (Skill 6; gate form SKILL44_WIDGET)",
+      "client_label": "Building your video sales page",
+      "client_visible": false,
       "owning_role": "media-librarian-ghl-updater",
+      "sop_refs": [
+        "GHL-EXTERNAL-INSTALLER-SOP.md"
+      ],
       "produces_artifact": "working/vsl/ghl_build_receipt.json",
       "defers_unless": "intake.want_vsl_page == \"yes\"",
       "gate_codes": [
@@ -1282,8 +1369,8 @@
       ],
       "preflight": null,
       "client_report": {
-        "start_template": "Step {k} of {N} — {name} — starting{eta}",
-        "done_template": "Step {k} of {N} — {name} — complete"
+        "start_template": "Step {k} of {N} — {client_label} — starting{eta}",
+        "done_template": "Step {k} of {N} — {client_label} — complete"
       },
       "executor": {
         "kind": "script",
@@ -1303,6 +1390,8 @@
       "id": "P-SHIFT-QC",
       "order": 7.5,
       "name": "Priority-Shift Ship Gate (the framework's 14-item pre-output checklist)",
+      "client_label": "Quality check",
+      "client_visible": true,
       "owning_role": "qc-specialist-presentations",
       "sop_refs": [
         "qc-specialist-presentations-sops.md",
@@ -1319,8 +1408,8 @@
         "label": "priority-shift ship gate (the ONLY phase where copy+design+rendered images coexist; runs the 14-item pre-output checklist; item 0 = the North Star, attention is the #1 job; writes priority_shift_report.json; AF-PRIORITY-SHIFT). DEFERS pre-render."
       },
       "client_report": {
-        "start_template": "Step {k} of {N} — {name} — starting{eta}",
-        "done_template": "Step {k} of {N} — {name} — complete"
+        "start_template": "Step {k} of {N} — {client_label} — starting{eta}",
+        "done_template": "Step {k} of {N} — {client_label} — complete"
       },
       "executor": {
         "kind": "agent"
@@ -1337,6 +1426,8 @@
       "id": "P8-ASSEMBLE",
       "order": 8,
       "name": "PPTX Assembly",
+      "client_label": "Assembling your presentation",
+      "client_visible": true,
       "owning_role": "pptx-assembly-specialist",
       "sop_refs": [
         "pptx-assembly-specialist-sops.md"
@@ -1354,8 +1445,8 @@
         ]
       },
       "client_report": {
-        "start_template": "Step {k} of {N} — {name} — starting{eta}",
-        "done_template": "Step {k} of {N} — {name} — complete"
+        "start_template": "Step {k} of {N} — {client_label} — starting{eta}",
+        "done_template": "Step {k} of {N} — {client_label} — complete"
       },
       "executor": {
         "kind": "agent"
@@ -1371,6 +1462,8 @@
       "id": "P8.1-PDF-EXPORT",
       "order": 8.1,
       "name": "Deck PDF Export",
+      "client_label": "Assembling your presentation",
+      "client_visible": false,
       "owning_role": "pptx-assembly-specialist",
       "sop_refs": [
         "pptx-assembly-specialist-sops.md"
@@ -1379,8 +1472,8 @@
       "gate_codes": [],
       "preflight": null,
       "client_report": {
-        "start_template": "Step {k} of {N} — {name} — starting{eta}",
-        "done_template": "Step {k} of {N} — {name} — complete"
+        "start_template": "Step {k} of {N} — {client_label} — starting{eta}",
+        "done_template": "Step {k} of {N} — {client_label} — complete"
       },
       "executor": {
         "kind": "script",
@@ -1396,6 +1489,8 @@
       "id": "P8.15-MOTION",
       "order": 8.15,
       "name": "Governed Motion Audit (Skill 72 MG-036)",
+      "client_label": "Assembling your presentation",
+      "client_visible": false,
       "owning_role": "pptx-assembly-specialist",
       "sop_refs": [
         "pptx-assembly-specialist-sops.md"
@@ -1411,8 +1506,8 @@
         "label": "governed motion plan: every declared motion slide is authenticated against its Skill 72 package or degraded to static with a reason code in working/checkpoints/motion.json (Skill 72 MG-036)"
       },
       "client_report": {
-        "start_template": "Step {k} of {N} — {name} — starting{eta}",
-        "done_template": "Step {k} of {N} — {name} — complete"
+        "start_template": "Step {k} of {N} — {client_label} — starting{eta}",
+        "done_template": "Step {k} of {N} — {client_label} — complete"
       },
       "executor": {
         "kind": "script",
@@ -1429,6 +1524,8 @@
       "id": "P8.2-GUIDE",
       "order": 8.2,
       "name": "Presenter Guide PDF",
+      "client_label": "Building your speaker kit",
+      "client_visible": true,
       "owning_role": "presenters-guide-specialist",
       "sop_refs": [
         "presenters-guide-specialist-sops.md"
@@ -1437,8 +1534,8 @@
       "gate_codes": [],
       "preflight": null,
       "client_report": {
-        "start_template": "Step {k} of {N} — {name} — starting{eta}",
-        "done_template": "Step {k} of {N} — {name} — complete"
+        "start_template": "Step {k} of {N} — {client_label} — starting{eta}",
+        "done_template": "Step {k} of {N} — {client_label} — complete"
       },
       "executor": {
         "kind": "script",
@@ -1455,6 +1552,8 @@
       "id": "P8.25-WORKBOOK",
       "order": 8.25,
       "name": "Branded Content-Rich Workbook (regular + fillable PDF; content-in-image prompts + reportlab AcroForm)",
+      "client_label": "Building your speaker kit",
+      "client_visible": false,
       "owning_role": "pptx-assembly-specialist",
       "sop_refs": [
         "WORKBOOK-BUILDER-SOP.md",
@@ -1471,8 +1570,8 @@
       ],
       "preflight": null,
       "client_report": {
-        "start_template": "Step {k} of {N} — {name} — starting{eta}",
-        "done_template": "Step {k} of {N} — {name} — complete"
+        "start_template": "Step {k} of {N} — {client_label} — starting{eta}",
+        "done_template": "Step {k} of {N} — {client_label} — complete"
       },
       "executor": {
         "kind": "script",
@@ -1490,6 +1589,8 @@
       "id": "P8.3-INFOGRAPHIC",
       "order": 8.3,
       "name": "Infographic Render (canonical Kie path, 9:16 1440x2560, 102,400-byte PNG floor)",
+      "client_label": "Building your speaker kit",
+      "client_visible": false,
       "owning_role": "slide-image-creator",
       "sop_refs": [
         "slide-image-creator-sops.md"
@@ -1498,8 +1599,8 @@
       "gate_codes": [],
       "preflight": null,
       "client_report": {
-        "start_template": "Step {k} of {N} — {name} — starting{eta}",
-        "done_template": "Step {k} of {N} — {name} — complete"
+        "start_template": "Step {k} of {N} — {client_label} — starting{eta}",
+        "done_template": "Step {k} of {N} — {client_label} — complete"
       },
       "executor": {
         "kind": "script",
@@ -1514,8 +1615,10 @@
     },
     {
       "id": "P9-SPEECH",
-      "order": 8.5,
+      "order": 7.9,
       "name": "Presenter Speech (length gate)",
+      "client_label": "Writing your speech",
+      "client_visible": true,
       "owning_role": "presenters-speech-writer",
       "fanout": {
         "by": "slide",
@@ -1534,8 +1637,8 @@
         "label": "speech length — presenter speech words >= target_talk_minutes x 120 wpm (fails short; defers when speech absent)"
       },
       "client_report": {
-        "start_template": "Step {k} of {N} — {name} — starting{eta}",
-        "done_template": "Step {k} of {N} — {name} — complete"
+        "start_template": "Step {k} of {N} — {client_label} — starting{eta}",
+        "done_template": "Step {k} of {N} — {client_label} — complete"
       },
       "executor": {
         "kind": "script",
@@ -1557,6 +1660,8 @@
       "id": "P8.4-FISH-TAG",
       "order": 8.52,
       "name": "Speech Fish-Audio Tagging",
+      "client_label": "Writing your speech",
+      "client_visible": false,
       "owning_role": "fish-audio-expression-specialist",
       "sop_refs": [
         "fish-audio-expression-specialist-sops.md"
@@ -1565,8 +1670,8 @@
       "gate_codes": [],
       "preflight": null,
       "client_report": {
-        "start_template": "Step {k} of {N} — {name} — starting{eta}",
-        "done_template": "Step {k} of {N} — {name} — complete"
+        "start_template": "Step {k} of {N} — {client_label} — starting{eta}",
+        "done_template": "Step {k} of {N} — {client_label} — complete"
       },
       "executor": {
         "kind": "script",
@@ -1582,6 +1687,8 @@
       "id": "P9-SPEECH-WEBINAR-INTRO",
       "order": 8.54,
       "name": "Webinarized Speech Audio (welcome + Q&A + crescendo close framing)",
+      "client_label": "Recording audio and video",
+      "client_visible": true,
       "owning_role": "audio-demonstration-specialist",
       "sop_refs": [
         "audio-demonstration-specialist-sops.md",
@@ -1593,8 +1700,8 @@
       ],
       "preflight": null,
       "client_report": {
-        "start_template": "Step {k} of {N} — {name} — starting{eta}",
-        "done_template": "Step {k} of {N} — {name} — complete"
+        "start_template": "Step {k} of {N} — {client_label} — starting{eta}",
+        "done_template": "Step {k} of {N} — {client_label} — complete"
       },
       "executor": {
         "kind": "script",
@@ -1611,6 +1718,8 @@
       "id": "P9.1-SPEECH-PDF",
       "order": 8.55,
       "name": "Presenter's Speech PDF (Teleprompter Print)",
+      "client_label": "Writing your speech",
+      "client_visible": false,
       "owning_role": "presenters-speech-writer",
       "sop_refs": [
         "presenters-speech-writer-sops.md"
@@ -1622,8 +1731,8 @@
       "gate_codes": [],
       "preflight": null,
       "client_report": {
-        "start_template": "Step {k} of {N} — {name} — starting{eta}",
-        "done_template": "Step {k} of {N} — {name} — complete"
+        "start_template": "Step {k} of {N} — {client_label} — starting{eta}",
+        "done_template": "Step {k} of {N} — {client_label} — complete"
       },
       "executor": {
         "kind": "script",
@@ -1644,6 +1753,8 @@
       "id": "P-SPEECH-QC",
       "order": 8.6,
       "name": "Speech QC — sequenced AFTER Speech (O1; independent reviewer; conditional)",
+      "client_label": "Quality check",
+      "client_visible": false,
       "owning_role": "qc-specialist-speech-presentations",
       "sop_refs": [
         "qc-specialist-speech-presentations-sops.md"
@@ -1658,8 +1769,8 @@
         "label": "speech QC report (gate Phase Speech-QC, average >= 8.5, independent-reviewer provenance; defers when speech QC absent)"
       },
       "client_report": {
-        "start_template": "Step {k} of {N} — {name} — starting{eta}",
-        "done_template": "Step {k} of {N} — {name} — complete"
+        "start_template": "Step {k} of {N} — {client_label} — starting{eta}",
+        "done_template": "Step {k} of {N} — {client_label} — complete"
       },
       "executor": {
         "kind": "agent"
@@ -1674,6 +1785,8 @@
       "id": "P-QC-AGGREGATE",
       "order": 8.65,
       "name": "Final QC Aggregation — combines the six domain QC reports (Copy/Typography/Prompt/Image/Priority-Shift/Speech) into working/qc/final_qc_report.json, sequenced AFTER every domain QC phase; verifies independent-reviewer + anti-bypass provenance via qc_generator_guard.py before computing the combined score",
+      "client_label": "Quality check",
+      "client_visible": false,
       "owning_role": "qc-specialist-presentations",
       "sop_refs": [
         "qc-specialist-presentations-sops.md"
@@ -1682,8 +1795,8 @@
       "gate_codes": [],
       "preflight": null,
       "client_report": {
-        "start_template": "Step {k} of {N} — {name} — starting{eta}",
-        "done_template": "Step {k} of {N} — {name} — complete"
+        "start_template": "Step {k} of {N} — {client_label} — starting{eta}",
+        "done_template": "Step {k} of {N} — {client_label} — complete"
       },
       "executor": {
         "kind": "script",
@@ -1704,6 +1817,8 @@
       "id": "P9.5-NOTES-SYNC",
       "order": 8.7,
       "name": "Notes-Pane Sync — reorder notes assembly to AFTER the speech is finalized",
+      "client_label": "Assembling your presentation",
+      "client_visible": false,
       "owning_role": "pptx-assembly-specialist",
       "sop_refs": [
         "pptx-assembly-specialist-sops.md"
@@ -1714,8 +1829,8 @@
       ],
       "preflight": null,
       "client_report": {
-        "start_template": "Step {k} of {N} — {name} — starting{eta}",
-        "done_template": "Step {k} of {N} — {name} — complete"
+        "start_template": "Step {k} of {N} — {client_label} — starting{eta}",
+        "done_template": "Step {k} of {N} — {client_label} — complete"
       },
       "executor": {
         "kind": "agent"
@@ -1731,19 +1846,22 @@
       "id": "P-U-SALES-BUILD",
       "order": 8.75,
       "name": "Upsell Sales Page Build (copy -> kie design -> HTML -> GHL funnel push)",
+      "client_label": "Building your sales page",
+      "client_visible": false,
       "owning_role": "media-librarian-ghl-updater",
       "sop_refs": [
         "media-librarian-ghl-updater-sops.md"
       ],
       "produces_artifact": "working/sales-checkout/html/sales.html",
+      "defers_unless": "intake.want_sales_checkout == \"yes\"",
       "gate_codes": [
         "AF-U-SALES-BUILD"
       ],
       "preflight": null,
       "routing_note": "Conditional executor, upsell branch (intake/upsell-questions.json want_sales_checkout, default YES). sales_checkout_builder.py builds BOTH sales.html and checkout.html plus the GHL push plan in ONE invocation (no --mode flag exists -- corrected 2026-08-19 after C2's script landed; the executor's own gate (resolve_sales_checkout_gate) DEFERS -- exits 0, writes nothing new -- unless intake.json pre_presentation_capture.WANT_SALES_CHECKOUT == 'yes'). A 'no' is a logged CLIENT WAIVER (pre_presentation_capture.SALES_CHECKOUT_DECLINED_REASON, the client's own words, non-empty -- silence is never consent) and gates the whole branch OUT, mirroring the P-CONVERTER / P-SP-* conditional-executor pattern. THIS is the phase that actually runs the build (copy -> kie GPT Image 2.6 Sunburst design -> HTML -> 06-ghl-install-pages/tools/ghl_rest_canvas.py push-plan); P-U-CHECKOUT-BUILD and P-U-FORM-CHECKOUT re-invoke the SAME script with --skip-design (no fresh kie.ai spend, per its own documented contract) purely to re-verify their half of the single receipt. Template: LOOP2C-VSL-SALES-CHECKOUT-WEBSITE.md.",
       "client_report": {
-        "start_template": "Step {k} of {N} — {name} — starting{eta}",
-        "done_template": "Step {k} of {N} — {name} — complete"
+        "start_template": "Step {k} of {N} — {client_label} — starting{eta}",
+        "done_template": "Step {k} of {N} — {client_label} — complete"
       },
       "executor": {
         "kind": "script",
@@ -1760,19 +1878,22 @@
       "id": "P-U-CHECKOUT-BUILD",
       "order": 8.76,
       "name": "Upsell Checkout Page Build (copy -> kie design -> HTML -> GHL funnel push)",
+      "client_label": "Building your checkout page",
+      "client_visible": false,
       "owning_role": "media-librarian-ghl-updater",
       "sop_refs": [
         "media-librarian-ghl-updater-sops.md"
       ],
       "produces_artifact": "working/sales-checkout/html/checkout.html",
+      "defers_unless": "intake.want_sales_checkout == \"yes\"",
       "gate_codes": [
         "AF-U-CHECKOUT-BUILD"
       ],
       "preflight": null,
       "routing_note": "Conditional executor, upsell branch (same flag/waiver as P-U-SALES-BUILD -- intake/upsell-questions.json want_sales_checkout covers BOTH pages with one client answer). sales_checkout_builder.py has NO --mode flag and NO separate checkout-only entry point: P-U-SALES-BUILD's single invocation already writes checkout.html alongside sales.html. This phase re-invokes the SAME script with --skip-design (documented: 'reuse already-downloaded hero renders ... without a fresh kie.ai run -- copy + HTML + plan + receipt-check only', so it never re-spends kie.ai money) purely to give the checkout page its own tracked gate/AF code and step-count entry, per the P-U-CHECKOUT-* id family intake/upsell-questions.json promises. DEFERS identically to P-U-SALES-BUILD when WANT_SALES_CHECKOUT != 'yes'. Runs after P-U-SALES-BUILD (order 8.75).",
       "client_report": {
-        "start_template": "Step {k} of {N} — {name} — starting{eta}",
-        "done_template": "Step {k} of {N} — {name} — complete"
+        "start_template": "Step {k} of {N} — {client_label} — starting{eta}",
+        "done_template": "Step {k} of {N} — {client_label} — complete"
       },
       "executor": {
         "kind": "script",
@@ -1788,19 +1909,22 @@
       "id": "P-U-FORM-CHECKOUT",
       "order": 8.77,
       "name": "Upsell Checkout Page -- Payment/Lead Capture Form Wiring",
+      "client_label": "Building your checkout page",
+      "client_visible": false,
       "owning_role": "media-librarian-ghl-updater",
       "sop_refs": [
         "media-librarian-ghl-updater-sops.md"
       ],
       "produces_artifact": "working/sales-checkout/checkout_form.json",
+      "defers_unless": "intake.want_sales_checkout == \"yes\"",
       "gate_codes": [
         "AF-U-FORM-CHECKOUT"
       ],
       "preflight": null,
       "routing_note": "Conditional executor, upsell branch (same flag/waiver as P-U-CHECKOUT-BUILD -- intake/upsell-questions.json want_sales_checkout). PRES-025 REAL PRODUCER (replaces the 2026-08-19 interim placeholder that re-invoked sales_checkout_builder.py and re-verified the SAME build_receipt.json without wiring any form): scripts/checkout_form_builder.py derives the form schema from the client-approved offer (OFFER_NAME + FINAL_PRICE/CURRENCY), emits the Skill 44 FORM/workflow contract (checkout_form_skill44.json) and the Skill 06 page/widget task (checkout_form_skill06_task.json), and persists form/workflow/product IDs into working/sales-checkout/checkout_form.json. Lead-capture completes on a test-location submit proof (one scoped contact + one workflow enrollment); payment completes on the provider SANDBOX path only (product/amount/currency + success/cancel routes, zero real charge). MISSING_OFFER / MISSING_MERCHANT / MISSING_CREDS / MISSING_SKILL / WRONG_LOCATION / UNSUPPORTED_PAYMENT block THIS phase only (soft NOTE checkpoint; deck + notifications continue). Existing-link reuse: deck_brief APPROVED_CHECKOUT_URL (alias CHECKOUT_URL) reuses a binding validated link with no new creation; sandbox product/price IDs persist to working/sales-checkout/checkout_product.json before any session attempt for retry reuse. DEFERS identically to P-U-CHECKOUT-BUILD when WANT_SALES_CHECKOUT != 'yes'. Runs after P-U-CHECKOUT-BUILD (order 8.76).",
       "client_report": {
-        "start_template": "Step {k} of {N} — {name} — starting{eta}",
-        "done_template": "Step {k} of {N} — {name} — complete"
+        "start_template": "Step {k} of {N} — {client_label} — starting{eta}",
+        "done_template": "Step {k} of {N} — {client_label} — complete"
       },
       "executor": {
         "kind": "script",
@@ -1814,16 +1938,22 @@
     },
     {
       "id": "P-U-COLLATERAL",
-      "order": 8.8,
+      "order": 9.07,
       "name": "Upsell Collateral Backup (delivery/<SLUG>-FINAL/upsell/*)",
+      "client_label": "Final checks and delivery",
+      "client_visible": true,
       "owning_role": "delivery-concierge",
+      "sop_refs": [
+        "SALES-CHECKOUT-BUILDER-SOP.md",
+        "VSL-BUILDER-SOP.md"
+      ],
       "produces_artifact": "delivery/{deck_slug}-FINAL/upsell/*",
       "defers_unless": "intake.want_sales_checkout == \"yes\" or intake.want_vsl_page == \"yes\"",
       "gate_codes": [],
       "preflight": null,
       "client_report": {
-        "start_template": "Step {k} of {N} — {name} — starting{eta}",
-        "done_template": "Step {k} of {N} — {name} — complete"
+        "start_template": "Step {k} of {N} — {client_label} — starting{eta}",
+        "done_template": "Step {k} of {N} — {client_label} — complete"
       },
       "executor": {
         "kind": "agent"
@@ -1839,8 +1969,10 @@
     },
     {
       "id": "P9.2-GHL-UPLOAD",
-      "order": 8.9,
+      "order": 9.02,
       "name": "GHL Media Library Upload",
+      "client_label": "Final checks and delivery",
+      "client_visible": false,
       "owning_role": "media-librarian-ghl-updater",
       "sop_refs": [
         "media-librarian-ghl-updater-sops.md"
@@ -1849,8 +1981,8 @@
       "gate_codes": [],
       "preflight": null,
       "client_report": {
-        "start_template": "Step {k} of {N} — {name} — starting{eta}",
-        "done_template": "Step {k} of {N} — {name} — complete"
+        "start_template": "Step {k} of {N} — {client_label} — starting{eta}",
+        "done_template": "Step {k} of {N} — {client_label} — complete"
       },
       "executor": {
         "kind": "script",
@@ -1870,11 +2002,14 @@
     },
     {
       "id": "P9.6-WEBINAR-VIDEO",
-      "order": 8.92,
+      "order": 9.01,
       "name": "Webinar Video Build (ffmpeg Ken Burns + xfade slideshow; GHL v3 500MB video upload)",
+      "client_label": "Recording audio and video",
+      "client_visible": false,
       "owning_role": "media-librarian-ghl-updater",
       "sop_refs": [
-        "media-librarian-ghl-updater-sops.md"
+        "media-librarian-ghl-updater-sops.md",
+        "WEBINAR-BUILDER-SOP.md"
       ],
       "produces_artifact": "working/delivery/{deck_slug}-WEBINAR.mp4",
       "gate_codes": [
@@ -1882,8 +2017,8 @@
       ],
       "preflight": null,
       "client_report": {
-        "start_template": "Step {k} of {N} — {name} — starting{eta}",
-        "done_template": "Step {k} of {N} — {name} — complete"
+        "start_template": "Step {k} of {N} — {client_label} — starting{eta}",
+        "done_template": "Step {k} of {N} — {client_label} — complete"
       },
       "executor": {
         "kind": "script",
@@ -1894,26 +2029,30 @@
       "consumes": [
         "renders/slide-*.png",
         "working/deliverables/PRESENTERS-SPEECH.md",
+        "working/delivery/PRESENTER-AUDIO.mp3",
         "working/checkpoints/slide_media_manifest.json"
       ]
     },
     {
       "id": "P-U-VSL-BUILD",
-      "order": 8.93,
+      "order": 9.03,
       "name": "Upsell VSL Page Build (video sales letter -> kie design -> HTML; funnel install is P-U-GHL-VSL; depends on P9.6 webinar video)",
+      "client_label": "Building your video sales page",
+      "client_visible": false,
       "owning_role": "media-librarian-ghl-updater",
       "sop_refs": [
         "media-librarian-ghl-updater-sops.md"
       ],
       "produces_artifact": "working/vsl/html/vsl.html",
+      "defers_unless": "intake.want_vsl_page == \"yes\"",
       "gate_codes": [
         "AF-U-VSL-BUILD"
       ],
       "preflight": null,
       "routing_note": "Conditional executor, upsell branch (intake/upsell-questions.json want_vsl_page, default NO -- a VSL page requires the video to exist). DEFERS (resolve_vsl_gate exits 0, writes nothing new) unless intake.json pre_presentation_capture.WANT_VSL_PAGE == 'yes'. A 'no' is a logged CLIENT WAIVER (pre_presentation_capture.VSL_PAGE_DECLINED_REASON, verbatim, non-empty) and gates the phase OUT entirely. VIDEO DEPENDENCY: order 8.93 is deliberately AFTER P9.6-WEBINAR-VIDEO (order 8.92) -- vsl_builder.py's verify_video_dependency() resolves working/delivery/{deck_slug}-WEBINAR.mp4 via build_webinar_video.py's own WEBINAR_FILENAME_TEMPLATE and fails closed (AF-VSL-NO-VIDEO) if it is absent, so this phase must never run before P9.6. Template: LOOP2C-VSL-SALES-CHECKOUT-WEBSITE.md. SINGLE VSL DESIGN (FIX-PLAN Item 23, 2026-10-14): vsl_builder.py builds the whole page itself (copy, Kie hero, HTML+gate) and reads ONLY the inputs declared in this entry's consumes; the Path A agent phases' artifacts (working/upsell/copy/vsl.fragment.md, design/vsl-design.png, pages/vsl.fragment.html) are NOT inputs to this build and were never read by the executor (verified against vsl_builder.py at the resolution); the earlier consumes declaration claiming them was false and is corrected in manifest_version 71. The executor also reads working/checkpoints/webinar_timing.json for the gate timestamp, an undeclared checkpoint produced inside P9.6's executor, not a manifest artifact. The funnel install is P-U-GHL-VSL's, not this phase's; the builder-side push plan and build_receipt.json retired with the Gauntlet design.",
       "client_report": {
-        "start_template": "Step {k} of {N} — {name} — starting{eta}",
-        "done_template": "Step {k} of {N} — {name} — complete"
+        "start_template": "Step {k} of {N} — {client_label} — starting{eta}",
+        "done_template": "Step {k} of {N} — {client_label} — complete"
       },
       "executor": {
         "kind": "script",
@@ -1931,6 +2070,8 @@
       "id": "P7-TELEPROMPTER",
       "order": 8.95,
       "name": "Presenter Teleprompter HTML",
+      "client_label": "Building your speaker kit",
+      "client_visible": false,
       "owning_role": "presenters-speech-writer",
       "sop_refs": [
         "presenters-speech-writer-sops.md"
@@ -1939,8 +2080,8 @@
       "gate_codes": [],
       "preflight": null,
       "client_report": {
-        "start_template": "Step {k} of {N} — {name} — starting{eta}",
-        "done_template": "Step {k} of {N} — {name} — complete"
+        "start_template": "Step {k} of {N} — {client_label} — starting{eta}",
+        "done_template": "Step {k} of {N} — {client_label} — complete"
       },
       "executor": {
         "kind": "script",
@@ -1957,6 +2098,8 @@
       "id": "P9-DELIVER",
       "order": 9,
       "name": "Delivery Interlock + Postflight Completeness Gate",
+      "client_label": "Recording audio and video",
+      "client_visible": false,
       "owning_role": "delivery-concierge",
       "sop_refs": [
         "delivery-concierge-sops.md"
@@ -1971,8 +2114,8 @@
       ],
       "preflight": null,
       "client_report": {
-        "start_template": "Step {k} of {N} — {name} — starting{eta}",
-        "done_template": "Step {k} of {N} — {name} — complete"
+        "start_template": "Step {k} of {N} — {client_label} — starting{eta}",
+        "done_template": "Step {k} of {N} — {client_label} — complete"
       },
       "executor": {
         "kind": "script",
@@ -1989,14 +2132,20 @@
       "id": "P-U-QC",
       "order": 9.05,
       "name": "Upsell QC + Playwright Verify (brand, logo, mirror, band, copy)",
+      "client_label": "Quality check",
+      "client_visible": false,
       "owning_role": "qc-specialist-presentations",
+      "sop_refs": [
+        "SALES-CHECKOUT-BUILDER-SOP.md",
+        "VSL-BUILDER-SOP.md"
+      ],
       "produces_artifact": "qc/upsell-scorecard.json",
       "defers_unless": "intake.want_sales_checkout == \"yes\" or intake.want_vsl_page == \"yes\"",
       "gate_codes": [],
       "preflight": null,
       "client_report": {
-        "start_template": "Step {k} of {N} — {name} — starting{eta}",
-        "done_template": "Step {k} of {N} — {name} — complete"
+        "start_template": "Step {k} of {N} — {client_label} — starting{eta}",
+        "done_template": "Step {k} of {N} — {client_label} — complete"
       },
       "executor": {
         "kind": "agent"
@@ -2013,6 +2162,8 @@
       "id": "P-BUNDLE-GATE",
       "order": 9.95,
       "name": "Bundle-Completeness Gate (terminal; run_postflight_gate body via bundle_gate.py — exit 5 naming any missing/under-threshold deliverable)",
+      "client_label": "Final checks and delivery",
+      "client_visible": false,
       "owning_role": "pptx-assembly-specialist",
       "sop_refs": [
         "pptx-assembly-specialist-sops.md"
@@ -2023,8 +2174,8 @@
       ],
       "preflight": null,
       "client_report": {
-        "start_template": "Step {k} of {N} — {name} — starting{eta}",
-        "done_template": "Step {k} of {N} — {name} — complete"
+        "start_template": "Step {k} of {N} — {client_label} — starting{eta}",
+        "done_template": "Step {k} of {N} — {client_label} — complete"
       },
       "executor": {
         "kind": "script",
