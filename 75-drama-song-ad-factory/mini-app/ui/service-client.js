@@ -22,8 +22,11 @@
 //     -> { ok, updated_at }
 //   getQuestions()                                -> GET  /questions.json
 //     -> the intake_card studio-json export ({ format, version, questions… })
-//   lockIn({ title, replies, upload_ids, order_id }) -> POST /api/studio/orders
+//   lockIn({ title, replies, reply_ids, upload_ids, order_id })
+//                                                 -> POST /api/studio/orders
 //     -> { ok, order, option_line }
+//   cancelOrder(orderId)                          -> POST /api/studio/orders/<id>/state
+//     -> { ok, order }                            (event "cancel")
 //   listApprovals(orderId)                        -> GET  /api/studio/orders/<id>/approvals
 //     -> { ok, items }
 //   answerApproval(orderId, stage, version, value)
@@ -153,17 +156,26 @@ const service = {
     return data;
   },
 
-  lockIn: ({ title, replies, upload_ids, order_id }) => {
+  // U-Z11 — reply_ids travels with the answers. studio.js builds one id per
+  // answer, and the service reads the brief by id instead of by position the
+  // moment this key arrives. Dropping it here silently returns the service to
+  // the positional read (S75-006), so the check pins it on the wire.
+  lockIn: ({ title, replies, upload_ids, order_id, reply_ids }) => {
     if (lockInInFlight && lockInOrderId !== order_id) {
-      return call("POST", "/api/studio/orders", { title, replies, upload_ids, order_id });
+      return call("POST", "/api/studio/orders", { title, replies, reply_ids, upload_ids, order_id });
     }
     if (!lockInInFlight) {
       lockInOrderId = order_id;
-      lockInInFlight = call("POST", "/api/studio/orders", { title, replies, upload_ids, order_id })
+      lockInInFlight = call("POST", "/api/studio/orders", { title, replies, reply_ids, upload_ids, order_id })
         .finally(() => { lockInInFlight = null; lockInOrderId = null; });
     }
     return lockInInFlight;
   },
+
+  // U-Z11 — "Continue" on a needs_you order posts a new order and closes the
+  // old one here. The service's state route takes `cancel` from a link.
+  cancelOrder: (orderId) =>
+    call("POST", `/api/studio/orders/${encodeURIComponent(orderId)}/state`, { event: "cancel" }),
 
   listApprovals: (orderId) =>
     call("GET", `/api/studio/orders/${encodeURIComponent(orderId)}/approvals`),
