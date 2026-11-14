@@ -12,6 +12,8 @@ Covers the acceptance rows:
      final delivery, including crashes and user revisions
   6. valid QC-record lists are read by the real reader without manual rewrites
 """
+import contextlib
+import io
 import json
 import os
 import shutil
@@ -476,6 +478,43 @@ def test_delivered_studio_run_sends_evidence_with_the_epic():
                 "SELECT COUNT(*) FROM outbox WHERE kind='move'").fetchone()[0]
             box.db.close()
             assert moves == 0, moves
+        finally:
+            _restore_env(saved)
+
+        # 4. a board that cannot be opened is reported, never raised: the run
+        #    stays delivered, the failure is visible, and a retry cannot queue a
+        #    duplicate done move (the outbox never came up, so nothing queued)
+        workspace = "ws-s75-u-a12"
+        saved = {key: os.environ.get(key) for key in ("CC_WORKSPACE", "CC_OUTBOX_DIR")}
+        blocker = Path(td) / "blocker"
+        blocker.write_text("not a directory\n")
+        os.environ["CC_WORKSPACE"] = workspace
+        os.environ["CC_OUTBOX_DIR"] = str(blocker / "sub")
+        try:
+            run = _studio_evidence_run(Path(td) / "c4")
+            rid = run.name
+            delivered, report = F.evaluate_completion(run, got)
+            assert delivered is True, report
+            stderr = io.StringIO()
+            with contextlib.redirect_stderr(stderr):
+                env = F.cmd_event(SimpleNamespace(run_dir=str(run), event="qc",
+                                                  run_id=rid))
+                retry = F.cmd_event(SimpleNamespace(run_dir=str(run), event="qc",
+                                                    run_id=rid))
+            assert env["reason_code"] == "run-complete", env
+            board = env["data"]["board"]
+            assert board["ok"] is False, board
+            assert board["reason_code"] == "board-unreachable", board
+            assert "Not a directory" in board["detail"], board
+            assert "board completion failed (board-unreachable)" in stderr.getvalue(), \
+                stderr.getvalue()
+            assert retry["reason_code"] == "run-complete", retry
+            assert retry["data"]["board"]["ok"] is False, retry
+            delivered, report = F.evaluate_completion(run, got)
+            assert delivered is True, report
+            assert blocker.is_file(), blocker
+            assert not Path(os.environ["CC_OUTBOX_DIR"]).exists(), \
+                os.environ["CC_OUTBOX_DIR"]
         finally:
             _restore_env(saved)
         ok("delivered studio run sends its evidence with the epic's last move")
