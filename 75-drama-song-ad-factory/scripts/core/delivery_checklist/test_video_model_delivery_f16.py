@@ -18,12 +18,24 @@ Done-when (manual Part F F16):
   6. a receipt with no clip list is untouched by the gate (the per-asset
      `used` check still governs) -- no legacy receipt regresses.
 
+S75-057 (unit U-T01) adds the run's OWN choices:
+  7. a Seedance 2.5 run -- the model the card sells and the old fixed table
+     refused -- answers MODELS yes;
+  8. a run that recorded "Agnes: yes" passes its Agnes flash clips, and the
+     same clips fail for a run that did not choose Agnes;
+  9. every PAID job in the run's spend ledger must name a model: a job the
+     ledger holds on a model the run did not choose answers no AND NAMES THE
+     JOB, and a job with no model named answers no and names the job.
+
 stdlib only, HOME=$(mktemp -d), no network, no provider call, no spend.
 Run: python3 core/delivery_checklist/test_video_model_delivery_f16.py
 """
 from __future__ import annotations
 
+import shutil
+import sqlite3
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -35,6 +47,7 @@ if str(_CORE) not in sys.path:
 import delivery_checklist.delivery_checklist as dc  # noqa: E402
 import qc_gate                                     # noqa: E402
 import kie_dispatch.model_lock as ML                # noqa: E402
+import spend_ledger as L                            # noqa: E402  (real ledger)
 from delivery_checklist.test_delivery_checklist import (  # noqa: E402
     full_answered_receipt, final_edit_record, MAKERS, FINAL_GATE_REQUIRED,
     RUN, STAGE, REVIEWER,
@@ -116,9 +129,10 @@ class F16DeliveryWiring(unittest.TestCase):
                 return getattr(real, name)
 
             @staticmethod
-            def check_video_model_delivery(receipt, locked):
-                calls.append((receipt, locked))
-                return real.check_video_model_delivery(receipt, locked)
+            def check_video_model_delivery(receipt, locked, agnes_chosen=False):
+                calls.append((receipt, locked, agnes_chosen))
+                return real.check_video_model_delivery(
+                    receipt, locked, agnes_chosen=agnes_chosen)
 
         dc.model_lock = Spy()
         try:
@@ -176,6 +190,133 @@ class F16DeliveryWiring(unittest.TestCase):
                              "used": {"video": "MiniMax H3 768P"}}
         res = dc.evaluate(receipt)
         self.assertTrue(res["pass"], res["detail"])
+
+
+#: A ledger helper: one real spend_ledger DB with the paid jobs a run recorded.
+def ledger_with_jobs(path, run_id="lanet-run", jobs=()):
+    """Create the run's real spend ledger and insert its PAID job rows.
+
+    ``jobs`` is (logical_key, state). The rows are inserted with the ledger's
+    own columns; the model each job used is never a ledger column -- that is
+    exactly why the run's own per-job rows must name it (S75-057).
+    """
+    assert L.init_run(str(path), run_id, 100000)["outcome"] == "ok"
+    con = sqlite3.connect(str(path))
+    try:
+        for logical_key, state in jobs:
+            con.execute(
+                "INSERT INTO jobs(logical_key,attempt_id,run_id,"
+                "request_digest,stage,state,final_outcome,created_at,"
+                "updated_at) VALUES(?,?,?,?,?,?,?,datetime('now'),"
+                "datetime('now'))",
+                (logical_key, "att-" + logical_key, run_id, "d" * 64,
+                 logical_key.split("/")[0], state, "succeeded"))
+        con.commit()
+    finally:
+        con.close()
+    return str(path)
+
+
+class Q6RunOwnChoices(unittest.TestCase):
+    """S75-057: MODELS judges the run's own choices, never a fixed table."""
+
+    def setUp(self):
+        self.tmp = Path(tempfile.mkdtemp(prefix="s75-057-q6-"))
+        self.addCleanup(shutil.rmtree, self.tmp, True)
+
+    def seedance_receipt(self):
+        receipt = full_answered_receipt()
+        receipt["clips"] = clips("bytedance/seedance-2-5")
+        receipt["locked_video_model"] = "bytedance/seedance-2-5"
+        receipt["MODELS"] = dict(receipt["MODELS"])
+        receipt["MODELS"]["used"] = dict(receipt["MODELS"]["used"],
+                                         video="Seedance 2.5")
+        return receipt
+
+    def test_seedance_25_run_answers_yes(self):
+        """The card sells Seedance 2.5; the old fixed table refused it."""
+        res = dc.evaluate(self.seedance_receipt())
+        self.assertTrue(res["pass"], res["detail"])
+        self.assertEqual(res["answers"]["MODELS"]["answer"], "yes")
+        self.assertIn("video=Seedance 2.5",
+                      res["answers"]["MODELS"]["measurement"])
+
+    def test_agnes_flash_clips_pass_only_when_the_run_chose_agnes(self):
+        receipt = self.seedance_receipt()
+        receipt["clips"] = clips(ML.AGNES_FLASH_MODEL)
+        receipt["agnes"] = {"answer": "yes"}
+        res = dc.evaluate(receipt)
+        self.assertTrue(res["pass"], res["detail"])
+        # the same clips for a run that did not choose Agnes fail, named
+        receipt["agnes"] = {"answer": "no"}
+        res = dc.evaluate(receipt)
+        self.assertFalse(res["pass"])
+        self.assertIn("MODELS", res["repair_scope"])
+        self.assertIn("VIDEO_MODEL_MISMATCH", res["detail"])
+
+    def test_ledger_job_on_a_different_model_names_the_job(self):
+        db = ledger_with_jobs(self.tmp / "spend.sqlite3",
+                              jobs=(("video/shot-2", "reconciled"),
+                                    ("song/v1", "succeeded")))
+        receipt = self.seedance_receipt()
+        receipt["spend_ledger"] = db
+        receipt["chosen"] = {"video": "bytedance/seedance-2-5",
+                             "song": "suno v6"}
+        receipt["MODELS"] = dict(receipt["MODELS"])
+        receipt["MODELS"]["jobs"] = [
+            {"logical_key": "video/shot-2",
+             "model": "hailuo/02-image-to-video-standard"},
+            {"logical_key": "song/v1", "model": "Suno V6"},
+        ]
+        res = dc.evaluate(receipt)
+        self.assertFalse(res["pass"])
+        self.assertIn("MODELS", res["repair_scope"])
+        self.assertIn("video/shot-2", res["detail"])
+        self.assertIn(dc.CHECKLIST_WRONG_MODEL, res["reason_code"])
+        self.assertEqual(res["evidence"]["paid_jobs"]["mismatched"],
+                         ["video/shot-2 used hailuo/02-image-to-video-standard "
+                          "but the run chose bytedance/seedance-2-5 for video"])
+
+    def test_paid_family_with_no_named_model_answers_no(self):
+        """A paid job whose family names no model cannot pass (G7 law 2)."""
+        db = ledger_with_jobs(self.tmp / "spend.sqlite3",
+                              jobs=(("song/v1", "succeeded"),))
+        receipt = full_answered_receipt()
+        receipt["spend_ledger"] = db
+        receipt["MODELS"] = {"used": {"video": "MiniMax H3 768P"}}
+        res = dc.evaluate(receipt)
+        self.assertFalse(res["pass"])
+        self.assertIn("MODELS", res["repair_scope"])
+        self.assertIn("song/v1", res["detail"])
+        # the family named again answers yes
+        receipt["MODELS"] = {"used": {"video": "MiniMax H3 768P",
+                                      "song": "Suno V6"}}
+        res = dc.evaluate(receipt)
+        self.assertNotIn("MODELS", res["repair_scope"], res["detail"])
+
+    def test_paid_job_the_run_never_names_answers_no(self):
+        """Once the run names jobs, every PAID job must be named."""
+        db = ledger_with_jobs(self.tmp / "spend.sqlite3",
+                              jobs=(("video/shot-2", "reconciled"),
+                                    ("song/v1", "succeeded")))
+        receipt = self.seedance_receipt()
+        receipt["spend_ledger"] = db
+        receipt["chosen"] = {"video": "bytedance/seedance-2-5",
+                             "song": "suno v6"}
+        receipt["MODELS"] = dict(receipt["MODELS"])
+        receipt["MODELS"]["jobs"] = [
+            {"logical_key": "video/shot-2",
+             "model": "bytedance/seedance-2-5"}]
+        res = dc.evaluate(receipt)
+        self.assertFalse(res["pass"])
+        self.assertIn("MODELS", res["repair_scope"])
+        self.assertIn("song/v1", res["detail"])
+        # naming the missing job with its model answers yes
+        receipt["MODELS"]["jobs"].append({"logical_key": "song/v1",
+                                          "model": "Suno V6"})
+        res = dc.evaluate(receipt)
+        self.assertTrue(res["pass"], res["detail"])
+        self.assertNotIn("MODELS", res["repair_scope"])
 
 
 if __name__ == "__main__":
