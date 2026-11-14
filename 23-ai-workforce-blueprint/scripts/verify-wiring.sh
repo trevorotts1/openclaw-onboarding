@@ -354,6 +354,14 @@ resolve_one_dept() {
   return 0
 }
 
+# real_path <path> — the path with symlinks and "." / ".." resolved, or nothing
+# when it does not resolve. Used for the roster-vs-folder comparison below: two
+# names for one folder must compare equal, and a path that does not exist must
+# never match anything.
+real_path() {
+  (cd "$1" 2>/dev/null && pwd -P)
+}
+
 DEPTS_DIR=""
 _BEST_SCORE=-1
 for _cand in ${DEPT_TREE_CANDIDATES[@]+"${DEPT_TREE_CANDIDATES[@]}"}; do
@@ -693,22 +701,48 @@ for DEPT_SLUG in "${DEPTS_TO_CHECK[@]}"; do
     AGENT_IDS_IN_CFG=$(jq -r '((.agents.entries // {}) | keys[]), (.agents.list[]?.id // empty)' "$OPENCLAW_CFG" 2>/dev/null || true)
     # The dept agent id is typically "dept-<slug>"
     EXPECTED_AGENT_ID="dept-${DEPT_SLUG}"
-    if echo "$AGENT_IDS_IN_CFG" | grep -qx "$EXPECTED_AGENT_ID"; then
+    # BU-75 (WF-093, WF-089): the roster id is not always "dept-<slug>". A box
+    # may register the department under an owner-chosen id ("marketing-lead")
+    # whose workspace IS the department folder. That entry is this department's
+    # registration: measuring it as "agent-not-in-config" failed a department
+    # that was wired correctly, and the runtime-dir check then failed too.
+    # Only when the canonical id is ABSENT do we match on workspace identity;
+    # a canonical "dept-<slug>" entry always wins so the existing behaviour is
+    # unchanged wherever it already worked.
+    EFFECTIVE_AGENT_ID="$EXPECTED_AGENT_ID"
+    if ! echo "$AGENT_IDS_IN_CFG" | grep -qx "$EXPECTED_AGENT_ID"; then
+      _DEPT_DIR_REAL="$(real_path "$DEPT_DIR")"
+      if [[ -n "$_DEPT_DIR_REAL" ]]; then
+        while IFS=$'\t' read -r _roster_id _roster_ws; do
+          [[ -n "$_roster_id" ]] || continue
+          [[ -n "$_roster_ws" && "$_roster_ws" != "null" ]] || continue
+          _roster_ws_real="$(real_path "$_roster_ws")"
+          if [[ -n "$_roster_ws_real" && "$_roster_ws_real" == "$_DEPT_DIR_REAL" ]]; then
+            EFFECTIVE_AGENT_ID="$_roster_id"
+            echo "  [REGISTERED]   OK:   registered as $_roster_id (its workspace is this department folder; $EXPECTED_AGENT_ID is not in the roster)"
+            break
+          fi
+        done < <(jq -r '((.agents.entries // {}) | to_entries[] | [.key, (.value.workspace // "")] | @tsv),
+                        (.agents.list[]? | [(.id // ""), (.workspace // "")] | @tsv)' \
+                 "$OPENCLAW_CFG" 2>/dev/null || true)
+      fi
+    fi
+    if echo "$AGENT_IDS_IN_CFG" | grep -qx "$EFFECTIVE_AGENT_ID"; then
       # Also verify workspace path resolves
-      REG_WORKSPACE=$(jq -r --arg aid "$EXPECTED_AGENT_ID" \
+      REG_WORKSPACE=$(jq -r --arg aid "$EFFECTIVE_AGENT_ID" \
         '(.agents.entries[$aid].workspace? // ([.agents.list[]? | select(.id==$aid) | .workspace][0])) // empty' \
         "$OPENCLAW_CFG" 2>/dev/null || true)
       if [[ -n "$REG_WORKSPACE" && "$REG_WORKSPACE" != "null" ]]; then
         if [[ -d "$REG_WORKSPACE" ]]; then
-          echo "  [REGISTERED]   OK:   agent $EXPECTED_AGENT_ID → workspace $REG_WORKSPACE"
+          echo "  [REGISTERED]   OK:   agent $EFFECTIVE_AGENT_ID → workspace $REG_WORKSPACE"
         else
-          echo "  [REGISTERED]   FAIL: agent $EXPECTED_AGENT_ID registered but workspace path does not exist: $REG_WORKSPACE" >&2
+          echo "  [REGISTERED]   FAIL: agent $EFFECTIVE_AGENT_ID registered but workspace path does not exist: $REG_WORKSPACE" >&2
           REG_PASS=0
           REG_GAPS+=("workspace-path-missing:$REG_WORKSPACE")
           FAIL_REGISTERED+=("$DEPT_SLUG:workspace-path-missing")
         fi
       else
-        echo "  [REGISTERED]   FAIL: agent $EXPECTED_AGENT_ID registered but has no workspace path" >&2
+        echo "  [REGISTERED]   FAIL: agent $EFFECTIVE_AGENT_ID registered but has no workspace path" >&2
         REG_PASS=0
         REG_GAPS+=("no-workspace-path")
         FAIL_REGISTERED+=("$DEPT_SLUG:no-workspace-path")
@@ -745,7 +779,10 @@ for DEPT_SLUG in "${DEPTS_TO_CHECK[@]}"; do
   # of openclaw.json presence because the dispatcher reads the dir, not the
   # config, at routing time. A case-insensitive fallback covers mixed-case
   # slugs (e.g. AI-Workforce-Build-Office) on a case-sensitive filesystem.
-  RUNTIME_AGENT_ID="dept-${DEPT_SLUG}"
+  # BU-75: the dispatcher keys on the id the department is REGISTERED under, so
+  # when the roster serves this folder under another id (matched by workspace
+  # above) the runtime dir is $OC_ROOT/agents/<that id>/, not dept-<slug>.
+  RUNTIME_AGENT_ID="${EFFECTIVE_AGENT_ID:-dept-${DEPT_SLUG}}"
   RUNTIME_DIR="$OC_ROOT/agents/$RUNTIME_AGENT_ID"
   if [[ -d "$RUNTIME_DIR" ]]; then
     echo "  [RUNTIME-DIR]  OK:   $RUNTIME_DIR exists (dispatcher entry point)"
@@ -1110,12 +1147,21 @@ PYEOF
   # --------------------------------------------------------------------------
   if [[ "$DEPT_SLUG" == "presentations" ]]; then
     PRES_SCRIPTS_TEMPLATE="$SKILL_DIR/templates/role-library/presentations/scripts"
-    PRES_SCRIPTS_DEPLOYED="$HOME/departments/Presentations/scripts"
-    # Prefer the deployed location; fall back to the template source (repo context).
-    if [[ -d "$PRES_SCRIPTS_DEPLOYED" ]]; then
-      _PRES_SCRIPTS="$PRES_SCRIPTS_DEPLOYED"
-    elif [[ -d "$PRES_SCRIPTS_TEMPLATE" ]]; then
+    # BU-75: the scripts folder belongs to the department folder THIS RUN
+    # RESOLVED — the same one the materialization check measured. The old fixed
+    # "$HOME/departments/Presentations/scripts" guess missed every box whose
+    # workforce lives in a company-shaped tree, so the front-door assertions
+    # checked (or skipped) a directory the client never uses.
+    PRES_SCRIPTS_DEPLOYED="$DEPT_DIR/scripts"
+    # Prefer the template source (repo context), which ships the full runner
+    # suite; fall back to the resolved department folder. The deployed folder
+    # is a RUNTIME directory the builders create empty beside the roles — an
+    # empty dir must not win over the populated source, or the front-door and
+    # process-integrity assertions check an empty room and fail a wired dept.
+    if [[ -d "$PRES_SCRIPTS_TEMPLATE" ]]; then
       _PRES_SCRIPTS="$PRES_SCRIPTS_TEMPLATE"
+    elif [[ -d "$PRES_SCRIPTS_DEPLOYED" ]]; then
+      _PRES_SCRIPTS="$PRES_SCRIPTS_DEPLOYED"
     else
       _PRES_SCRIPTS=""
     fi
