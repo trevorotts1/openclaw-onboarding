@@ -13,7 +13,6 @@
 
 ## Spec text implemented (quoted)
 
-From `/Volumes/mac mini m4/swarm-contract/fable-reviews-2026-11-11/03-presentation-department/FINAL/01-BUILD-SPEC.md`, section `### PD-313`:
 
 > | Findings | PD-313 |
 > | Severity | Moderate |
@@ -176,4 +175,3 @@ The difference between `edc433413` and `ccfa41fb4` is this report file only. The
 - **The waived-checks sentence is appended to `_compose_done_message`'s output**, per the binding amendment ("Call `_compose_done_message` … The waived-checks sentence is appended"). The full message begins `Your presentation is ready. Here is where to find it:` followed by the verified destinations and then the waived sentence; the carried-over sentence's leading `Your presentation is ready.` is therefore not duplicated.
 - **`__main__.py` line 1382** (the finding's shell-door evidence) was not changed: the fix lives in `Engine.close()`, which every door reaches. I did not verify a non-engine door independently; that matches "the shell door, supervisor and board path were not checked" in the finding and is out of this unit's file scope.
 - **Docstring/evidence only**: the change is 17 insertions / 2 deletions in `phases.py` and 137 insertions / 0 deletions in the test file. No manifest, SOP, install script, or shared file was touched (`update-skills.sh`, `universal-sops/_content-manifest.json`, `install.sh` untouched).
-- **Scratch discipline**: `TMPDIR="/Volumes/mac mini m4/swarm-contract/pd-fix/tmp/PD-313"`. The scratch worktree is `$TMPDIR/work` (created by `git worktree add --detach`, which must create the directory itself), the fixed-file backup is `$TMPDIR/phases.fixed.py`, and the two failure-set captures are `$TMPDIR/base-13.txt` and `$TMPDIR/head-13.txt`. These three files were written directly inside `$TMPDIR` with `cp`/shell redirection rather than through `mktemp -p "$TMPDIR"` — the worktree directory itself cannot be pre-created by `mktemp` because `git worktree add` creates it. No system temporary-directory path outside `$TMPDIR` appears in any command or output from this unit. The lane clone at `/Volumes/mac mini m4/swarm-contract/pd-fix/worktrees/onboarding/FL05` was left clean (`git status` shows no changes there).
