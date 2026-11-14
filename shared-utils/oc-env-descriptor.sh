@@ -96,12 +96,19 @@ ocd_json_path() {
 # is non-empty AND its sqlite_master actually lists tables.
 # ---------------------------------------------------------------------------
 ocd_state_db() {
-  local cands="" c rc n note=""
+  local cands="" c rc n note="" saved_ifs="$IFS"
   if [ -n "${OC_STATE_DB:-}" ]; then cands="$OC_STATE_DB"; fi
   if [ -n "$OCD_ROOT" ]; then
-    cands="$cands $OCD_ROOT/state/openclaw.sqlite $OCD_ROOT/state.sqlite $OCD_ROOT/data/openclaw.sqlite $OCD_ROOT/data/state.sqlite $OCD_ROOT/openclaw.sqlite"
+    cands="$cands
+$OCD_ROOT/state/openclaw.sqlite
+$OCD_ROOT/state.sqlite
+$OCD_ROOT/data/openclaw.sqlite
+$OCD_ROOT/data/state.sqlite
+$OCD_ROOT/openclaw.sqlite"
   fi
-  for c in $cands; do
+  IFS=$'\n'
+  while IFS= read -r c; do
+    [ -n "$c" ] || continue
     if [ ! -e "$c" ]; then note="${note}${note:+, }$(basename "$(dirname "$c")")/$(basename "$c"):missing"; continue; fi
     if [ ! -f "$c" ]; then note="${note}${note:+, }$c:not-a-file"; continue; fi
     if [ ! -s "$c" ]; then note="${note}${note:+, }$c:zero-bytes"; continue; fi
@@ -113,8 +120,12 @@ ocd_state_db() {
     if [ "$n" -eq 0 ]; then note="${note}${note:+, }$c:no-tables"; continue; fi
     OCD_DB="$c"; OCD_DB_SOURCE="$( [ -n "${OC_STATE_DB:-}" ] && [ "$c" = "$OC_STATE_DB" ] && printf 'OC_STATE_DB' || printf 'root-candidate' )"
     OCD_DB_NOTE="accepted=$c (tables=$n)${note:+; rejected: $note}"
+    IFS="$saved_ifs"
     return 0
-  done
+  done <<EOF
+$cands
+EOF
+  IFS="$saved_ifs"
   OCD_DB=""; OCD_DB_SOURCE="none"
   OCD_DB_NOTE="no usable state db${note:+; rejected: $note}"
   return 1
@@ -409,16 +420,23 @@ except Exception:
 # a log file wins, and the rejected list is preserved so a "no log today" result
 # can be told apart from "wrong directory".
 ocd_log_dir() {
-  local c note="" best="" last=""
+  local c note="" best="" last="" saved_ifs="$IFS"
   local cands=""
-  cands="$cands ${OC_LOG_ROOT:-} /tmp/openclaw ${HOME:-}/Library/Logs/openclaw ${OCD_ROOT:-}/logs"
-  for c in $cands; do
+  cands="${OC_LOG_ROOT:-}
+/tmp/openclaw
+${HOME:-}/Library/Logs/openclaw
+${OCD_ROOT:-}/logs"
+  IFS=$'\n'
+  while IFS= read -r c; do
     [ -n "$c" ] || continue
     if [ ! -d "$c" ]; then note="${note}${note:+, }$c:missing"; continue; fi
     last="$(ls -1 "$c"/openclaw-*.log 2>/dev/null | tail -1)"
     if [ -n "$last" ]; then best="$c"; break; fi
     note="${note}${note:+, }$c:no-log-files"
-  done
+  done <<EOF
+$cands
+EOF
+  IFS="$saved_ifs"
   if [ -n "$best" ]; then OCD_LOG_DIR="$best"; OCD_LOG_NOTE="accepted=$best latest=$(basename "$last")${note:+; rejected: $note}"; return 0; fi
   OCD_LOG_DIR="${OC_LOG_ROOT:-/tmp/openclaw}"
   OCD_LOG_NOTE="no log directory holds openclaw-*.log${note:+; rejected: $note}"
