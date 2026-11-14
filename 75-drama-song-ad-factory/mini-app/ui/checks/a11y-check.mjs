@@ -58,7 +58,9 @@ rule("no positive tabindex (focus stays in source order)", positiveTabindex.leng
 
 // ── 3. inputs are labelled ───────────────────────────────────────────────────
 const inputs = [...js.matchAll(/el\("input"/g)].length;
-const labelFors = [...js.matchAll(/\bfor:\s*[A-Za-z_$]/g)].length;
+// The `for` value is either a variable (`for: id`) or a literal id
+// (`for: "add-photo"`); both label a real control, so both count.
+const labelFors = [...js.matchAll(/\bfor:\s*(?:[A-Za-z_$][\w$]*|"[^"]+"|'[^']+')/g)].length;
 rule("every generated input carries an id", [...js.matchAll(/el\("input",\s*\{\s*id/g)].length === inputs,
   `${inputs} input(s) built`);
 rule("every generated input has a matching <label for>", labelFors >= inputs,

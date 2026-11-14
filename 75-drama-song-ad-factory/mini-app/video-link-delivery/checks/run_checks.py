@@ -48,8 +48,8 @@ import uuid
 HERE = pathlib.Path(__file__).resolve().parent
 MODULE_DIR = HERE.parent
 MODULE = MODULE_DIR / "video_link_delivery.py"
-# All scratch lives under the operator box's lane prefix, never the repo tree.
-WORK = pathlib.Path(tempfile.mkdtemp(prefix="op-U10-U1-", dir="/tmp"))
+# All scratch lives under the system temp folder (TMPDIR), never the repo tree.
+WORK = pathlib.Path(tempfile.mkdtemp(prefix="op-U10-U1-", dir=tempfile.gettempdir()))
 PY = sys.executable
 
 GOOD = b"DRAMA-SONG-FINISHED-VIDEO-BYTES-v1" * 64
