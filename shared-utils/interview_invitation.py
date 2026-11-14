@@ -449,14 +449,27 @@ def send_gateway(message, target, ledger, context, force=False, timeout=30, prep
                          or previous.get('recipientHash') != hashlib.sha256(target.encode()).hexdigest()):
             raise Pending('delivery receipt identity mismatch; reconcile before retry')
         if previous.get('status') in ('sending','uncertain'):
-            raise Pending('delivery uncertain; reconcile acknowledged gateway delivery before retry (FORCE cannot bypass)')
+            # An unsettled send must not lock the link sender for good. After the
+            # fence window the owner (or an explicit FORCE) may resume; automatic
+            # retries never do. The old receipt is kept before anything is sent.
+            previous_epoch=previous.get('epoch')
+            age=time.time()-previous_epoch if type(previous_epoch) is int else None
+            recovery=(os.environ.get('INTERVIEW_INVITATION_AUTOMATIC')!='1'
+                      and (force or os.environ.get('FORCE')=='1' or os.environ.get('INTERVIEW_INVITATION_OWNER_REQUEST')=='1')
+                      and age is not None and age>1800)
+            if not recovery:
+                raise Pending('delivery uncertain; retry after 30 minutes with FORCE=1, or let the owner ask to resume')
+            atomic_json(receipt_file.with_name(receipt_file.name+'.superseded-'+str(previous_epoch)+'.json'),previous)
+            uncertain_recovery=True
+        else:
+            uncertain_recovery=False
         if previous.get('status')=='accepted' and os.environ.get('INTERVIEW_INVITATION_AUTOMATIC')=='1':
             return 7, {'status':'guarded','reason':'automatic invitation already accepted; manual renewal required if expired'}
         expiry=previous.get('invitationExpiresAt')
         renewal=previous.get('status')=='accepted' and type(expiry) is int and time.time()>=expiry
         if previous.get('status')=='accepted' and not force and not renewal and time.time()-previous.get('epoch',0)<1800:
             return 7, {'status':'guarded','reason':'invitation recently accepted; use --renew if a fresh sign-in link is needed'}
-        if ledger.exists() and not force and not renewal:
+        if ledger.exists() and not force and not renewal and not uncertain_recovery:
             try:
                 last=ledger.read_text().splitlines()[-1].split('|')[0]
                 if time.time()-int(last)<1800:return 7,{'status':'guarded','reason':'invitation recently accepted'}
