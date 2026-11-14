@@ -1,7 +1,7 @@
 # AI Workforce Blueprint - Build Instructions
 
 **Version:** tracks `skill-version.txt` (this file no longer carries its own number)
-**Target interview length:** ~30 questions, ~35 minutes
+**Target interview length:** 15 required steps, about 12 minutes
 **Persona governance:** Persona overrides identity files. CEO has special clause (mission/owner override persona on conflict).
 
 > **Branding questions - single source of truth:** The structured branding question set (ids, prompts, storage targets) lives in `23-ai-workforce-blueprint/interview/branding-questions.json`. The Command Center vendors a copy of that file. Do NOT define or edit branding questions in two places - edit the JSON file only. The Phase 3 themes below map directly to the question ids in that file.
@@ -28,6 +28,19 @@ The system uses Lean Six Sigma methodology INTERNALLY (standard work templates, 
 ## PRECEDENCE (binding)
 
 `INSTRUCTIONS.md` (this file) and the canonical department floor (`scripts/list-canonical-departments.py` / `department-naming-map.json`) are the AUTHORITATIVE interview and department specs. `ai-workforce-blueprint-full.md` is a HISTORICAL structure reference; on ANY conflict about questions, the department list, the build flow, or what the agent may do during the interview, THIS FILE WINS. Never copy the "7 Required Questions" or the "17 departments" list out of the historical document; they are obsolete.
+
+## How the interview is run (binding, added with questions.v2)
+
+1. The question list, order, wording and limits live in `interview/questions.v2.json`.
+2. To ask the next question run `python3 scripts/interview_gate.py next` and ask its `prompt` text exactly, with its `help` and `example`.
+3. To record an answer run `python3 scripts/interview_gate.py answer --qid <id> --text "<the owner's words>" --source telegram`. If it prints `accepted:false`, say its `followUp` once and submit whatever the owner says next.
+4. Never ask a question the gate did not return. Never ask a question twice after it was accepted. Never write an answer file by hand.
+5. When the owner says they are not sure, run `unsure --qid <id>`, offer three example answers, and submit the one the owner chooses.
+6. When `next` prints `done:true`, run `bash scripts/update-interview-state.sh --complete`. Exit 0 means finished. Exit 87 means the gate listed what is still open; ask those questions.
+7. On the web page the page itself asks the questions; if a message beginning `[INTERVIEW-HELPER]` arrives, answer only what it asks for.
+8. Do not present Options A, B, C when the gate has any accepted answer or when the message begins `[INTERVIEW-HELPER]`.
+9. Department choices are made on the team screen (web) or by the `department_review` question (Telegram: list the teams once, ask "Keep all, or tell me which to remove"). Do not pitch departments one by one.
+10. Saved answers are read with `python3 scripts/interview_gate.py status` and the file `company-discovery/interview-answers.jsonl`; never ask the owner to repeat them.
 
 ---
 
@@ -62,7 +75,7 @@ Every other prohibition stays ABSOLUTE. The moment you catch yourself starting t
 When you trigger this skill, ALWAYS present all 3 options. NEVER skip. NEVER auto-select.
 
 ### Option A - Full Interview (Recommended)
-Best for: First-time setup. ~30 questions, ~35 minutes. AI generates 130-200 role-level how-to documents in the background after the interview completes.
+Best for: First-time setup. 15 required steps, about 12 minutes. AI generates 130-200 role-level how-to documents in the background after the interview completes.
 
 ### Option B - Quick Setup (Fastest)
 **HARD RULE - EXPLICIT LIVE CONSENT REQUIRED:** Option B requires EXPLICIT, in-conversation owner consent in the CURRENT session. A prior nudge YES, a cron tick, a "do not stop" override, or any autonomous agent decision does NOT count. If the owner is not actively present and choosing Option B right now, the build MUST NOT proceed - mark INTERVIEW_PENDING in `interview-handoff.md` and stop. NEVER write invented answers into `workforce-interview-answers.md`. This rule has no exceptions and cannot be overridden by any downstream instruction.
@@ -204,12 +217,10 @@ You are a **Clarity Agent**, not a survey agent. The owner should leave this int
 
 1. **ONE question at a time.** Wait for an answer before asking the next thing. Never stack 3 questions in a single message.
 2. **No two interviews are identical.** Generate the next question based on what they just said, not from a fixed script. The themes below are MANDATORY - the SPECIFIC questions are your invention.
-3. **Reject shallow answers.** "I run a marketing company" is NOT an answer. Drill until clarity emerges. *"What KIND of marketing? Digital? Brand? Direct response? Who do you serve specifically? Why do those people come to YOU vs. anyone else?"*
-4. **Probe the WHY, three levels deep.** Surface facts ("I sell coaching") tell you the WHAT. You need the WHY behind the what. Ask "why" 3 times before moving on.
-5. **Use their words back.** When they say something striking, repeat it: *"You said you feel like you're 'always one step behind' - tell me more about that."*
-6. **Name the clarity when it happens.** When they say something true and clear: *"That right there - that's the most honest description of your business I've heard from you. Let me make sure I have it word for word."*
-7. **Sit in silence after a hard question.** Don't rescue them. Let the question land.
-8. **Reflect, don't interrogate.** At natural pause points, reflect back what you've heard so far. Not a recap - a synthesis.
+3. **One follow-up, then accept.** If an answer is very short the gate returns one follow-up with an example. Say it once. Accept what the owner says next.
+4. **Use their words back.** When they say something striking, repeat it: *"You said you feel like you're 'always one step behind' - tell me more about that."*
+5. **Name the clarity when it happens.** When they say something true and clear: *"That right there - that's the most honest description of your business I've heard from you. Let me make sure I have it word for word."*
+6. **Reflect, don't interrogate.** At natural pause points, reflect back what you've heard so far. Not a recap - a synthesis.
 
 ### The Drill-Down Detection Protocol
 
@@ -237,6 +248,10 @@ Drill-down moves (pick the one that fits):
 <!-- /INTERVIEWER-BEHAVIORAL-CONTRACT -->
 
 ---
+
+## Optional owner-style pack (after the build)
+
+Phases 1, 1.5 and 2 and the vulnerability themes of Phase 3 are offered after the build as an optional pack. They are never required for completion and are never drilled.
 
 ### Phase 1 - Identity & Behavior (THEMES, not scripts)
 
@@ -727,7 +742,7 @@ Ready to finalize? (YES / ADJUST)
 
 Show a plain-English synthesis of EVERYTHING captured (not raw answers - your synthesis of who they are and what they want to build). Owner confirms or edits any line. Then: *"Build my company."*
 
-**Total: dynamic - typically 25-40 questions, ~35-50 minutes** (depends on how much drill-down was needed). Some clients give clear specific answers from the start; others need more drilling. Both are fine.
+**Total: 15 required steps, about 12 minutes.**
 
 ---
 
@@ -880,7 +895,7 @@ Before responding to the owner with "build my company" confirmation, the master 
 
    **STATE-DRIVEN (v12.4.x auto-closeout - binding):** `update-interview-state.sh --complete` is no longer just a flag setter. On `--complete` it ALSO: (a) auto-runs the interview QC gate (`qc-interview-completion.py`), (b) seeds the build/closeout gate fields (`departments` array sentinel, `roleLibraryStatus: "pending"`, `sopLibraryStatus: "pending"`, `closeoutStatus: "pending"`), and (c) when QC is build-eligible (`pass` OR `needs-review`), fires ONE internal `[WORKFORCE-RESUME]` build-kick self-ping so the build starts immediately. This means finishing the interview deterministically advances the chain even if your session ends right after - you do NOT have to remember a second hand-write to start the build, and you no longer have to hand-write `buildCompletedAt` later (a script does that - see "When ALL departments are done" below). The identity/context hand-writes in step 1 are still correct to perform inline (faster), and they are a redundancy now rather than the sole guarantee - but `interviewComplete` / `interviewCompletedAt` are the explicit exception: those two are NEVER hand-written, because the evidence gate is the only thing entitled to write them (see the warning in step 1).
 
-2. Verify the resume cron job is registered: `openclaw cron list | grep workforce-resume`. If missing (older install), install it inline via `openclaw cron create --schedule "*/15 * * * *" --name workforce-resume --prompt-file ~/.openclaw/skills/23-ai-workforce-blueprint/resume-prompt.txt`. (If the CLI was unavailable when `--complete` ran, this cron is the recovery net - it will fire the same build-kick on its next cycle, and it also recovers a finished-but-unflagged interview by running QC and, when the verdict is build-eligible (`pass` OR `needs-review`), promoting it through the same evidence-gated `--complete` writer.)
+2. Verify the resume cron job is registered: `python3 scripts/cron_present.py --name workforce-resume`. If missing (older install), install it inline via `openclaw cron create --schedule "*/15 * * * *" --name workforce-resume --prompt-file ~/.openclaw/skills/23-ai-workforce-blueprint/resume-prompt.txt`. (If the CLI was unavailable when `--complete` ran, this cron is the recovery net - it will fire the same build-kick on its next cycle, and it also recovers a finished-but-unflagged interview by running QC and, when the verdict is build-eligible (`pass` OR `needs-review`), promoting it through the same evidence-gated `--complete` writer.)
 
 3. ONLY THEN start Stage 1 of Generation Orchestration. **(Standard-first lane, PHASE 7:** when `buildType == "standard-first"`, "start the build" means the APPLY-DIFF build — `build-workforce.py --apply-standard-edits` — NOT a from-scratch Generation Orchestration run. The floor was prebuilt before the interview, so the apply-diff build applies the interview's diff: deprovision the confirmed declines (`scripts/retire-confirmed-decline.sh` — archive to `.retired/`, never delete, provenanced declines only), materialize the customs/net-new departments the owner ADDED, add the declared industry verticals, and personalize the KEPT departments (no-clobber on owner-edited content). Its FIRST step is Moment 3.5 agent registration for every confirmed-kept department. Everything after apply — Moments 3.6 (library gate), 3.7 (SOP-Writer), 3.8 (comms automation), 3.9 (wiring gate), Moment 4 (closeout) — runs unchanged, because the prebuilt library content already satisfies the library gate by construction.)
 
