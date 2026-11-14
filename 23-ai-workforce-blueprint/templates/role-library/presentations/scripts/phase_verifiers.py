@@ -848,12 +848,18 @@ def _verify_render(run_dir: Path) -> Tuple[bool, List[str]]:
 #   * representation-casting-director -> owns P-PROMPT-QC
 # At the PHASE_VERIFIERS wiring point below, each phase verifier is AGGREGATED
 # (via _merge) with its role's REQUIRED sub-verifier:
-#   * "image_grounding"         sub-verdict inside working/qc/image_qc_report.json
-#   * "representation_casting"  sub-verdict inside working/qc/prompt_qc_report.json
-# Both sub-verdicts must be present before attestation; a MISSING sub-verdict
-# parks for human vision review instead of passing (there is no automated vision
-# route in this tree — the park IS the operative production behavior). Only an
-# explicit test/CI context (_degraded_allowed) may NOTE-pass the parked state.
+#   * image_grounding      -> working/qc/human-review/image_grounding.json
+#   * representation_casting -> working/qc/human-review/representation_casting.json
+# PD-206a (decision D-34): each verdict is read from its OWN file, never from a
+# block inside the graded report — editing the report changes its hash and
+# breaks its execution stamp. Each file is:
+#   {"pass": true|false, "reviewed_by": "<person or role>",
+#    "reviewed_at": "<time>", "note": "<free text>"}
+# A MISSING file before attestation is an OPERATOR HOLD: the reason starts
+# "OPERATOR-REVIEW:" and names the file (there is no automated vision route in
+# this tree — the park IS the operative production behavior). Nothing tells a
+# model to write either file (decision D-25). Only an explicit test/CI context
+# (_degraded_allowed) may NOTE-pass the held state.
 # Rollback: set PRESENTATION_FIX16_QC_WIRING=0 — the registry then carries the
 # pre-fix objects exactly (P-IMAGE-QC -> _verify_render, P-PROMPT-QC -> the raw
 # _verify_qc_report gate) and no sub-verdict is required. Default is ON.
@@ -995,21 +1001,85 @@ def anchors_iter(anchors):
             yield a.strip()
 
 
+# --- PD-206a: the two human verdicts live in their OWN files -----------------
+# Decision D-34: a person's verdict is recorded in a file of its own, not as a
+# block inside the graded report (a report edit changes the report's hash and
+# breaks its execution stamp — finding PD-306).
+OPERATOR_REVIEW_PREFIX = "OPERATOR-REVIEW:"
+
+FIX16_GROUNDING_REVIEW_REL = "working/qc/human-review/image_grounding.json"
+FIX16_CASTING_REVIEW_REL = "working/qc/human-review/representation_casting.json"
+
+# The two park reasons (verbatim; each starts with OPERATOR_REVIEW_PREFIX and
+# names the file a person records the decision in).
+FIX16_GROUNDING_PARK = (
+    OPERATOR_REVIEW_PREFIX + " A person needs to confirm that each slide image "
+    "shows what its prompt asked for. Record the decision in "
+    + FIX16_GROUNDING_REVIEW_REL + ".")
+FIX16_CASTING_PARK = (
+    OPERATOR_REVIEW_PREFIX + " A person needs to confirm that the people "
+    "described in the slide prompts match the client's audience. Record the "
+    "decision in " + FIX16_CASTING_REVIEW_REL + ".")
+
+
+def _fix16_human_verdict(run_dir: Path, rel: str, park_text: str,
+                         label: str) -> Optional[Tuple[bool, List[str]]]:
+    """PD-206a: read one human verdict from its own file.
+
+    Returns None when the verdict passes (the caller keeps its own reasons), or
+    the (ok, reasons) pair the step must return:
+      * no readable file    -> operator hold (reason starts OPERATOR-REVIEW: and
+                               names the file); NOTE-pass only under
+                               _degraded_allowed (explicit test/CI context)
+      * pass != true        -> fail with the reviewer's note as the reason
+      * reviewed_by absent  -> fail (who decided is unprovenanced)
+      * builder/self byline -> fail (a self-cleared verdict cannot pass)
+    """
+    path = run_dir / rel
+    verdict = _read_json(path) if path.is_file() else None
+    if not isinstance(verdict, dict):
+        if _degraded_allowed(run_dir):
+            return True, [
+                f"NOTE: {rel} is absent — parked for a person's {label} verdict "
+                "(test/CI degraded NOTE pass)"]
+        return False, [park_text]
+    if verdict.get("pass") is not True:
+        note = verdict.get("note")
+        detail = note.strip() if isinstance(note, str) and note.strip() else \
+            f"pass is not true in {rel}"
+        return False, [
+            f"{OPERATOR_REVIEW_PREFIX} the reviewer recorded a failing {label} "
+            f"verdict in {rel}: {detail}"]
+    reviewer = verdict.get("reviewed_by")
+    if not (isinstance(reviewer, str) and reviewer.strip()):
+        return False, [
+            f"{OPERATOR_REVIEW_PREFIX} {rel} names no reviewed_by identity — who "
+            f"recorded the {label} verdict is unprovenanced. Record the decision "
+            f"in {rel}."]
+    forb_ids = _bd_fn("FORBIDDEN_QC_GRADER_IDENTITIES") or frozenset()
+    if reviewer.strip().lower() in forb_ids:
+        return False, [
+            f"{OPERATOR_REVIEW_PREFIX} {rel} names a builder/self identity "
+            f"({reviewer!r}) — a self-cleared {label} verdict cannot pass. Record "
+            f"the decision in {rel} with a person's identity."]
+    return None
+
+
 def _verify_image_grounding(run_dir: Path) -> Tuple[bool, List[str]]:
     """image-grounding-steward sub-verifier at P-IMAGE-QC (FIX 16).
 
-    Two checks plus a REQUIRED sub-verdict:
+    Two checks plus a REQUIRED human verdict:
       1. SCENE GROUNDING — every people/scene-bearing render prompt must carry at
          least one client-specific research anchor token (generic/unanchored
          scene = FAIL; pure abstract/typography = exempt).
       2. OBSERVED-RENDER PARITY — the anchor tokens must also appear in the
          slides.json copy the renderer bakes verbatim (same semantics as
          AF-RESEARCH-REACHES-RENDER), so prompt claims cannot outrun the pixels.
-      3. REQUIRED SUB-VERDICT — working/qc/image_qc_report.json must carry an
-         explicit {"pass": true, "reviewed_by": <independent identity>} block
-         under "image_grounding". A MISSING image_grounding sub-verdict PARKS
-         the run for human vision review: it FAILS with AF-IMAGE-GROUNDING-PARK
-         naming the park path. NOTE-pass only under _degraded_allowed."""
+      3. REQUIRED HUMAN VERDICT — working/qc/human-review/image_grounding.json
+         must carry {"pass": true, "reviewed_by": <independent identity>}. A
+         MISSING file is an OPERATOR HOLD: the step fails with a reason starting
+         OPERATOR-REVIEW: that names the file (decision D-34).
+         NOTE-pass only under _degraded_allowed."""
     reasons: List[str] = []
     # --- 1+2. scene grounding / render parity ---
     prompts = _fix16_load_prompt_texts(run_dir)
@@ -1060,41 +1130,12 @@ def _verify_image_grounding(run_dir: Path) -> Tuple[bool, List[str]]:
                         f"demographic default {tok!r} — image-grounding-steward "
                         "forbids defaulting a scene's people from a generic "
                         "demographic stereotype (AF-DEMO-DEFAULT).")
-    # --- 3. REQUIRED image_grounding sub-verdict in the image-QC report ---
-    report_path = run_dir / "working" / "qc" / "image_qc_report.json"
-    report = _read_json(report_path) if report_path.is_file() else None
-    verdict = report.get("image_grounding") if isinstance(report, dict) else None
-    if not isinstance(verdict, dict):
-        if not _degraded_allowed(run_dir):
-            return False, reasons + [
-                "AF-IMAGE-GROUNDING-PARK: the image-QC report carries NO "
-                "image_grounding sub-verdict — image-grounding-steward (owns "
-                "P-IMAGE-QC, FIX 16) has not rendered its verdict. There is no "
-                "automated vision route in the scripts tree, so the deck PARKS FOR "
-                "HUMAN VISION REVIEW: park at working/qc/human-review/ "
-                "(image-grounding-steward review queue) and record the verdict in "
-                "image_qc_report.json under image_grounding={pass, reviewed_by} "
-                "before attesting P-IMAGE-QC."]
-        return True, ["NOTE: image_grounding sub-verdict absent — parked for human "
-                      "vision review (test/CI degraded NOTE pass)"] + reasons
-    if verdict.get("pass") is not True:
-        return False, reasons + [
-            "AF-IMAGE-GROUNDING: the image_grounding sub-verdict marks pass!=true — "
-            "grounding failed; per image-grounding-steward the run parks for human "
-            "vision review."]
-    reviewer = verdict.get("reviewed_by")
-    if not (isinstance(reviewer, str) and reviewer.strip()):
-        return False, reasons + [
-            "AF-IMAGE-GROUNDING: the image_grounding sub-verdict names no reviewed_by "
-            "identity — who performed the grounding review is unprovenance'd; "
-            "parking for human vision review."]
-    if verdict.get("reviewed_by") and _bd_fn("FORBIDDEN_QC_GRADER_IDENTITIES"):
-        ident = reviewer.strip().lower()
-        if ident in _bd_fn("FORBIDDEN_QC_GRADER_IDENTITIES"):
-            return False, reasons + [
-                "AF-IMAGE-GROUNDING: image_grounding.reviewed_by is a builder/self "
-                f"identity ({reviewer!r}) — a self-cleared grounding verdict cannot "
-                "pass. Park for independent human vision review."]
+    # --- 3. REQUIRED human grounding verdict (its own file, PD-206a) ---
+    held = _fix16_human_verdict(run_dir, FIX16_GROUNDING_REVIEW_REL,
+                                FIX16_GROUNDING_PARK, "image-grounding")
+    if held is not None:
+        ok_held, r_held = held
+        return ok_held, reasons + r_held
     return (not reasons), reasons
 
 
@@ -1107,11 +1148,13 @@ def _verify_representation_casting(run_dir: Path) -> Tuple[bool, List[str]]:
          P0A-INTAKE owns absence; casting never invents a mix.
       2. Every people/scene-bearing prompt's cast targets must not contain an
          invented demographic default (FORBIDDEN_DEMOGRAPHIC_DEFAULTS).
-      3. REQUIRED SUB-VERDICT — working/qc/prompt_qc_report.json must carry
-         {"pass": true, "reviewed_by": <independent identity>} under
-         "representation_casting". A MISSING sub-verdict PARKS for human review
-         (AF-CASTING-PARK); NOTE-pass only under _degraded_allowed. Observed-render
-         parity for the same mix is performed at P-IMAGE-QC by the steward."""
+      3. REQUIRED HUMAN VERDICT —
+         working/qc/human-review/representation_casting.json must carry
+         {"pass": true, "reviewed_by": <independent identity>}. A MISSING file is
+         an OPERATOR HOLD: the step fails with a reason starting OPERATOR-REVIEW:
+         that names the file (decision D-34). NOTE-pass only under
+         _degraded_allowed. Observed-render parity for the same mix is performed
+         at P-IMAGE-QC by the steward."""
     reasons: List[str] = []
     prompts = _fix16_load_prompt_texts(run_dir)
     mix = _fix16_representation_mix(run_dir)
@@ -1168,37 +1211,13 @@ def _verify_representation_casting(run_dir: Path) -> Tuple[bool, List[str]]:
                     "does not reflect the client's mix. Align prompt cast descriptions "
                     "with intake.representation_mix (representation-casting-director, "
                     "FIX 16).")
-    # REQUIRED representation_casting sub-verdict in the prompt-QC report — checked
-    # even when prompts are absent: the verdicts gate ATTESTATION, not convenience.
-    report_path = run_dir / "working" / "qc" / "prompt_qc_report.json"
-    report = _read_json(report_path) if report_path.is_file() else None
-    verdict = report.get("representation_casting") if isinstance(report, dict) else None
-    if not isinstance(verdict, dict):
-        if not _degraded_allowed(run_dir):
-            return False, reasons + [
-                "AF-CASTING-PARK: the prompt-QC report carries NO representation_casting "
-                "sub-verdict — representation-casting-director (owns P-PROMPT-QC, "
-                "FIX 16) has not recorded its cast-parity review. Park the run for "
-                "human review at working/qc/human-review/ (casting review queue) and "
-                "record the verdict in prompt_qc_report.json under "
-                "representation_casting={pass, reviewed_by} before attesting "
-                "P-PROMPT-QC."]
-        return True, ["NOTE: representation_casting sub-verdict absent — parked for "
-                      "human review (test/CI degraded NOTE pass)"] + reasons
-    if verdict.get("pass") is not True:
-        return False, reasons + [
-            "AF-CASTING: the representation_casting sub-verdict marks pass!=true — "
-            "casting parity failed; park for human review."]
-    reviewer = verdict.get("reviewed_by")
-    if not (isinstance(reviewer, str) and reviewer.strip()):
-        return False, reasons + [
-            "AF-CASTING: the representation_casting sub-verdict names no reviewed_by "
-            "identity — park for independent human review."]
-    forb_ids = _bd_fn("FORBIDDEN_QC_GRADER_IDENTITIES")
-    if forb_ids and reviewer.strip().lower() in forb_ids:
-        return False, reasons + [
-            "AF-CASTING: representation_casting.reviewed_by is a builder/self identity "
-            f"({reviewer!r}) — park for independent human review."]
+    # REQUIRED human casting verdict (its own file, PD-206a) — checked even when
+    # prompts are absent: the verdict gates ATTESTATION, not convenience.
+    held = _fix16_human_verdict(run_dir, FIX16_CASTING_REVIEW_REL,
+                                FIX16_CASTING_PARK, "representation-casting")
+    if held is not None:
+        ok_held, r_held = held
+        return ok_held, reasons + r_held
     return (not reasons), reasons
 
 
@@ -3975,8 +3994,9 @@ PHASE_VERIFIERS: dict[str, Callable] = {
     # caused: a report honestly recording average=1.0/pass=false still flipped
     # state.json done=true).
     # FIX 16 (presentation rev2): representation-casting-director owns P-PROMPT-QC -
-    # aggregated with the required representation_casting sub-verifier at the
-    # wiring point (see _fix16_get_verifier; rollback flag doc there).
+    # aggregated with the required human casting verdict at the wiring point
+    # (working/qc/human-review/representation_casting.json, PD-206a; the
+    # rollback flag is documented at _fix16_get_verifier).
     "P-PROMPT-QC":        _fix16_get_verifier("P-PROMPT-QC"),
     # Phase 4.85  Style Preview
     "P-STYLE-PREVIEW":    _verify_json_artifact("working/style-preview/style_samples_manifest.json"),
@@ -4349,7 +4369,13 @@ def _pu_check_receipt_identity(run_dir: Path, p: Path, *, scope_key: str) -> Lis
             except Exception:  # noqa: BLE001
                 placeholder_hosts = ()
             loc_l = location_id.lower()
-            if any(ph in loc_l for ph in ("placeholder", "example", "test", "changeme", "todo")):
+            # "unbound-test" is the installer's DOCUMENTED unbound sentinel
+            # (checkout_form_builder.resolve_scope / ghl_external_installer
+            # write it when no location is bound). It is an honest "not bound"
+            # declaration, not a made-up placeholder, so the "test" token must
+            # not swallow it -- PD-048a keys on this exact spelling.
+            if loc_l != "unbound-test" and any(
+                    ph in loc_l for ph in ("placeholder", "example", "test", "changeme", "todo")):
                 reasons.append(
                     f"{tag}: location_id {location_id!r} reads as a placeholder -- a made-up "
                     "location is a fabrication, not a push record")
@@ -4650,9 +4676,15 @@ def _make_pu_verifier(phase_id: str, artifacts: List[str]):
                 reasons.extend(_pu_check_json_object(run_dir, rel))
             else:
                 reasons.extend(_pu_check_text(run_dir, rel))
-        if reasons:
-            return False, [f"AF-U-{phase_id}: " + r for r in reasons]
-        return True, []
+        # A NOTE reason is a DEGRADED PASS, never a failure (see verify()'s
+        # own contract). A skipped remote readback stays visible as a note so
+        # no caller can mistake it for a verified pass, while every real
+        # finding still fails the phase.
+        notes = [r for r in reasons if r.startswith("NOTE:")]
+        failures = [r for r in reasons if not r.startswith("NOTE:")]
+        if failures:
+            return False, [f"AF-U-{phase_id}: " + r for r in failures] + notes
+        return True, notes
     _verify.__name__ = f"_verify_{phase_id.lower().replace('-', '_')}"
     return _verify
 
@@ -4892,56 +4924,22 @@ def _selftest() -> None:
                 f"got reasons={reasons}"
             )
 
-    # T10 (FIX 16): BOTH mandated QC sub-verifiers are wired at the registry
-    # wiring point, and a run WITHOUT the sub-verdicts parks (fails) in a
-    # production context — with a valid QC report, no env markers, and no
-    # .test-context marker.
+    # T10 (FIX 16 + PD-206a): BOTH mandated human verdicts are wired at the
+    # registry wiring point and are read from THEIR OWN FILES. A run WITHOUT
+    # them is an operator hold (fails) in a production context — with valid QC
+    # reports, no env markers, and no .test-context marker.
     t10rd = None
     try:
         import tempfile as _tf
         _t10tmp = _tf.TemporaryDirectory(prefix="phase_verifiers_selftest_fix16_")
         t10rd = Path(_t10tmp.name)
         # A production-looking run dir: valid-shape image-QC + prompt-QC reports,
-        # a render PNG, and NO sub-verdict blocks, NO degraded markers.
+        # a render PNG, and NO human-review files, NO degraded markers.
         qdir = t10rd / "working" / "qc"
         qdir.mkdir(parents=True, exist_ok=True)
         (t10rd / "renders").mkdir(parents=True, exist_ok=True)
         (t10rd / "renders" / "slide-01.png").write_bytes(b"\x89PNG\r\n\x1a\n" + b"x" * 64)
-        (qdir / "image_qc_report.json").write_text(json.dumps({
-            "gate": "Phase Image-QC", "average": 9.1, "pass": True,
-            "qc_independence": {"graded_by": "qc-specialist-image-presentations",
-                                 "independent": True}}))
-        (qdir / "prompt_qc_report.json").write_text(json.dumps({
-            "gate": "Phase Prompt-QC", "average": 9.1, "pass": True,
-            "qc_independence": {"graded_by": "qc-specialist-prompt-presentations",
-                                 "independent": True}}))
-        # P-IMAGE-QC must PARK (fail closed) with the park code when the
-        # image_grounding sub-verdict is missing and no test/CI marker exists.
-        ok_i, reasons_i = verify("P-IMAGE-QC", t10rd)
-        if ok_i:
-            fails.append("T10: P-IMAGE-QC without an image_grounding sub-verdict "
-                         "must PARK (fail) in production, got ok=True")
-        if not any("AF-IMAGE-GROUNDING-PARK" in r for r in reasons_i):
-            fails.append(f"T10: missing image_grounding must name AF-IMAGE-GROUNDING-PARK, got {reasons_i}")
-        # But P4-RENDER (same _verify_render base) must NOT demand the sub-verdict.
-        env_backup = {k: os.environ.get(k) for k in ("PRESENTATION_ALLOW_DEGRADED_VERIFIERS", "CI", "OPENCLAW_TEST")}
-        for k in ("PRESENTATION_ALLOW_DEGRADED_VERIFIERS", "CI", "OPENCLAW_TEST"):
-            os.environ.pop(k, None)
-        try:
-            ok_r, _ = verify("P4-RENDER", t10rd)
-            if ok_r:
-                fails.append("T10: P4-RENDER in production with no PNG-QC route should fail closed, got ok=True")
-        finally:
-            for k, v in env_backup.items():
-                if v is not None:
-                    os.environ[k] = v
-        # With the .test-context marker the parked state NOTE-passes (degraded path).
-        (t10rd / "working" / "checkpoints").mkdir(parents=True, exist_ok=True)
-        (t10rd / "working" / "checkpoints" / ".test-context").write_text("phase-b selftest")
-        ok_i2, _ = verify("P-IMAGE-QC", t10rd)
-        if not ok_i2:
-            fails.append("T10: parked P-IMAGE-QC under .test-context must NOTE-pass (degraded), got fail")
-        # Sub-verdict present with pass:true + reviewed_by => the FIX 16 layer passes.
+        # A4: the OLD report-embedded blocks, typed in — they must NOT clear the hold.
         (qdir / "image_qc_report.json").write_text(json.dumps({
             "gate": "Phase Image-QC", "average": 9.1, "pass": True,
             "qc_independence": {"graded_by": "qc-specialist-image-presentations",
@@ -4956,12 +4954,75 @@ def _selftest() -> None:
             "representation_casting": {"pass": True,
                                         "reviewed_by": "representation-casting-director"},
             "slides": []}))
+        # P-IMAGE-QC / P-PROMPT-QC must hold for a person when their verdict file
+        # is absent, with a reason that starts OPERATOR-REVIEW: and names the file.
+        ok_i, reasons_i = verify("P-IMAGE-QC", t10rd)
+        if ok_i:
+            fails.append("T10: P-IMAGE-QC without working/qc/human-review/"
+                         "image_grounding.json must hold (fail) in production, got ok=True")
+        if not any(r.startswith("OPERATOR-REVIEW:") and
+                   FIX16_GROUNDING_REVIEW_REL in r for r in reasons_i):
+            fails.append(f"T10: missing image_grounding.json must name it in an "
+                         f"OPERATOR-REVIEW reason, got {reasons_i}")
+        ok_p, reasons_p = verify("P-PROMPT-QC", t10rd)
+        if ok_p:
+            fails.append("T10: P-PROMPT-QC without working/qc/human-review/"
+                         "representation_casting.json must hold (fail) in production, got ok=True")
+        if not any(r.startswith("OPERATOR-REVIEW:") and
+                   FIX16_CASTING_REVIEW_REL in r for r in reasons_p):
+            fails.append(f"T10: missing representation_casting.json must name it in an "
+                         f"OPERATOR-REVIEW reason, got {reasons_p}")
+        # But P4-RENDER (same _verify_render base) must NOT demand the verdict file.
+        env_backup = {k: os.environ.get(k) for k in ("PRESENTATION_ALLOW_DEGRADED_VERIFIERS", "CI", "OPENCLAW_TEST")}
+        for k in ("PRESENTATION_ALLOW_DEGRADED_VERIFIERS", "CI", "OPENCLAW_TEST"):
+            os.environ.pop(k, None)
+        try:
+            ok_r, _ = verify("P4-RENDER", t10rd)
+            if ok_r:
+                fails.append("T10: P4-RENDER in production with no PNG-QC route should fail closed, got ok=True")
+        finally:
+            for k, v in env_backup.items():
+                if v is not None:
+                    os.environ[k] = v
+        # With the .test-context marker the held state NOTE-passes (degraded path).
+        (t10rd / "working" / "checkpoints").mkdir(parents=True, exist_ok=True)
+        (t10rd / "working" / "checkpoints" / ".test-context").write_text("phase-b selftest")
+        ok_i2, _ = verify("P-IMAGE-QC", t10rd)
+        if not ok_i2:
+            fails.append("T10: held P-IMAGE-QC under .test-context must NOTE-pass (degraded), got fail")
+        # Verdict files present with pass:true + a non-builder reviewed_by => pass,
+        # and the graded reports' bytes are unchanged by the verdict.
+        before_i = (qdir / "image_qc_report.json").read_bytes()
+        before_p = (qdir / "prompt_qc_report.json").read_bytes()
+        hdir = t10rd / "working" / "qc" / "human-review"
+        hdir.mkdir(parents=True, exist_ok=True)
+        (hdir / "image_grounding.json").write_text(json.dumps({
+            "pass": True, "reviewed_by": "image-grounding-steward",
+            "reviewed_at": "2026-11-12 16:40 Eastern", "note": ""}))
+        (hdir / "representation_casting.json").write_text(json.dumps({
+            "pass": True, "reviewed_by": "representation-casting-director",
+            "reviewed_at": "2026-11-12 16:40 Eastern", "note": ""}))
         ok_i3, reasons_i3 = verify("P-IMAGE-QC", t10rd)
         if not ok_i3:
-            fails.append(f"T10: P-IMAGE-QC with valid image_grounding sub-verdict must pass (degraded ctx), got {reasons_i3}")
+            fails.append(f"T10: P-IMAGE-QC with a passing human verdict must pass (degraded ctx), got {reasons_i3}")
         ok_p3, reasons_p3 = verify("P-PROMPT-QC", t10rd)
         if not ok_p3:
-            fails.append(f"T10: P-PROMPT-QC with valid representation_casting sub-verdict must pass (degraded ctx), got {reasons_p3}")
+            fails.append(f"T10: P-PROMPT-QC with a passing human verdict must pass (degraded ctx), got {reasons_p3}")
+        if (qdir / "image_qc_report.json").read_bytes() != before_i or \
+           (qdir / "prompt_qc_report.json").read_bytes() != before_p:
+            fails.append("T10: recording a human verdict must never edit the graded report")
+        # pass:false fails with the reviewer's note; a builder byline is refused.
+        (hdir / "representation_casting.json").write_text(json.dumps({
+            "pass": False, "reviewed_by": "jill-bulluck",
+            "note": "slide 4 shows a different audience"}))
+        ok_f, reasons_f = verify("P-PROMPT-QC", t10rd)
+        if ok_f or not any("slide 4 shows a different audience" in r for r in reasons_f):
+            fails.append(f"T10: pass:false must fail naming the reviewer's note, got ok={ok_f} {reasons_f}")
+        (hdir / "image_grounding.json").write_text(json.dumps({
+            "pass": True, "reviewed_by": "builder"}))
+        ok_b, reasons_b = verify("P-IMAGE-QC", t10rd)
+        if ok_b or not any("builder" in r for r in reasons_b):
+            fails.append(f"T10: a builder byline must be refused, got ok={ok_b} {reasons_b}")
         # Registry wiring identity: the two entries are aggregates, P4-RENDER is not.
         if PHASE_VERIFIERS["P4-RENDER"] is _verify_render and \
            PHASE_VERIFIERS["P-IMAGE-QC"] is _verify_render:

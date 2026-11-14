@@ -9,8 +9,8 @@
 #   2. Infographic #1 (Workforce Structure) -- org-chart connector-tree ASSERTED
 #   3. Infographic #2 (How Work Flows)
 #   4. Celebration video (Gemini Omni / Veo fallback)
-#   5. Notion page tree (9 sections)
 #   5.5. GHL media upload (conditional)
+#   5. Notion page tree (9 sections)
 #   6. Telegram delivery (6 paced messages) + delivery confirmation gate
 #   6.5. n8n wire-up (optional, non-blocking)
 #   7. Operator summary
@@ -460,6 +460,18 @@ else
   exit 1
 fi
 
+# ---- already done: a finished box is never re-checked ----
+# This sits ABOVE the wiring, routing and provider-smoke preflights on purpose.
+# A box whose closeout is done/sent is finished; re-running those preflights on
+# every resume fire spent live provider calls (a pong per attempt) to re-prove a
+# decision already made. Verified completion + cleanup, then exit.
+closeout_status=$(state_get '.closeoutStatus')
+if [[ "$closeout_status" == "done" || "$closeout_status" == "sent" ]] && "$WORKFORCE_PYTHON" "$COMPLETION_SCRIPT" "$STATE_FILE" --closeout >>"$LOG_FILE" 2>&1; then
+  "$WORKFORCE_PYTHON" "$SKILL_DIR/scripts/cleanup-closeout.py" "$STATE_FILE" >>"$LOG_FILE" 2>&1 || log "WARN" "Verified cleanup pending; recovery identity retained"
+  log "INFO" "closeoutStatus=$closeout_status -- verified completion; cleanup retried"
+  exit 0
+fi
+
 # B5: HARD verify-wiring.sh precondition — wiring must be done before closeout
 VERIFY_WIRING_SCRIPT=""
 for _vw_cand in \
@@ -523,6 +535,9 @@ fi
 # enabled against a text-only embedding provider (the silent memory-death class).
 # On failure: sets closeoutStatus=blocked-provider-mismatch + alerts operator.
 # Skip via ZHC_SKIP_PROVIDER_SMOKE=1 in unit-test environments.
+# Once per build: providerSmokeBuildId records the build whose provider health
+# check already passed, so a resume fire for the SAME build never spends another
+# live provider call. A new build id runs the check again.
 if [[ "${ZHC_SKIP_PROVIDER_SMOKE:-0}" != "1" ]]; then
   PROVIDER_SMOKE_SCRIPT=""
   for _ps_cand in \
@@ -532,7 +547,11 @@ if [[ "${ZHC_SKIP_PROVIDER_SMOKE:-0}" != "1" ]]; then
     "/data/.openclaw/skills/scripts/smoke-test-provider-capabilities.sh"; do
     [[ -f "$_ps_cand" ]] && PROVIDER_SMOKE_SCRIPT="$_ps_cand" && break
   done
-  if [[ -n "$PROVIDER_SMOKE_SCRIPT" ]]; then
+  _smoke_build_id=$(state_get '.buildId')
+  _smoke_passed_build=$(state_get '.providerSmokeBuildId')
+  if [[ -n "$_smoke_build_id" && "$_smoke_passed_build" == "$_smoke_build_id" ]]; then
+    log "INFO" "provider smoke already passed for buildId=$_smoke_build_id (providerSmokeBuildId) -- not running it again for this build"
+  elif [[ -n "$PROVIDER_SMOKE_SCRIPT" ]]; then
     SMOKE_STATE_FILE="$STATE_FILE" \
     SMOKE_OPERATOR_CHAT_ID="${OPERATOR_CHAT_ID:-}" \
     bash "$PROVIDER_SMOKE_SCRIPT" >> "$LOG_FILE" 2>&1
@@ -543,6 +562,12 @@ if [[ "${ZHC_SKIP_PROVIDER_SMOKE:-0}" != "1" ]]; then
       exit 1
     fi
     log "INFO" "smoke-test-provider-capabilities.sh preflight rc=$PROVIDER_SMOKE_RC (provider capabilities verified)"
+    if [[ -n "$_smoke_build_id" ]]; then
+      state_set ".providerSmokeBuildId = \"$_smoke_build_id\""
+      log "INFO" "providerSmokeBuildId=$_smoke_build_id recorded -- the provider smoke runs once per build"
+    else
+      log "WARN" "buildId is absent from state -- providerSmokeBuildId not recorded; the provider smoke will run again on the next fire"
+    fi
   else
     log "ERROR" "Required verifier unavailable: smoke-test-provider-capabilities.sh"
   state_set '.closeoutStatus = "blocked-verifier-missing"'
@@ -551,11 +576,6 @@ if [[ "${ZHC_SKIP_PROVIDER_SMOKE:-0}" != "1" ]]; then
 fi
 
 closeout_status=$(state_get '.closeoutStatus')
-if [[ "$closeout_status" == "done" || "$closeout_status" == "sent" ]] && "$WORKFORCE_PYTHON" "$COMPLETION_SCRIPT" "$STATE_FILE" --closeout >>"$LOG_FILE" 2>&1; then
-  "$WORKFORCE_PYTHON" "$SKILL_DIR/scripts/cleanup-closeout.py" "$STATE_FILE" >>"$LOG_FILE" 2>&1 || log "WARN" "Verified cleanup pending; recovery identity retained"
-  log "INFO" "closeoutStatus=$closeout_status -- verified completion; cleanup retried"
-  exit 0
-fi
 
 # ---- transition pending → generating (idempotent) ----
 if [[ "$closeout_status" != "generating" ]]; then
@@ -772,7 +792,13 @@ generate_rate_gate() {
   local name="$1"; shift
   local script="$1"; shift
 
-  local attempt=0 score qc
+  local attempt=0 score qc gen_rc=0
+
+  # Attempt count + last generator exit code are exported to the caller so a leg
+  # that genuinely cannot land (video failing every attempt, Notion unable to
+  # publish) can be WAIVED instead of blocking the closeout forever.
+  eval "GATE_${name}_ATTEMPTS=0"
+  eval "GATE_${name}_RC=0"
 
   # G3-CLOSEOUT-LOCK (re-entry guard): if this artifact is ALREADY on the held
   # list, a prior run exhausted its attempts (or it failed an assertion) and it
@@ -793,6 +819,9 @@ generate_rate_gate() {
     if bash "$script" "$@"; then
       eval "STEP_${name}_STATUS=ok"
     else
+      gen_rc=$?
+      eval "GATE_${name}_ATTEMPTS=$attempt"
+      eval "GATE_${name}_RC=$gen_rc"
       eval "STEP_${name}_STATUS=failed"
       log "ERROR" "gate[$key]: generator failed on attempt $attempt (see log)"
       # a generator hard-failure is not a rating failure; let the step matrix
@@ -801,6 +830,8 @@ generate_rate_gate() {
       state_set ".qualityHeld = ((.qualityHeld // []) + [\"$key\"] | unique)" || true
       return 0
     fi
+    eval "GATE_${name}_ATTEMPTS=$attempt"
+    eval "GATE_${name}_RC=$gen_rc"
 
     # BUG B FIX (8.5 self-rating gate held artifacts): the rating used to depend
     # ENTIRELY on a human/agent writing .qualityRatings.<key> — so an UNATTENDED
@@ -1048,6 +1079,38 @@ if [[ "$GATE_VIDEO_RESULT" == "pass" ]]; then
   state_set ".closeoutDeliverables.celebrationVideoUrl = \"$video_url\"" || true
 fi
 
+# WF-080 (decision D-8): a video that failed every allowed attempt is WAIVED, not
+# a permanent block. Record the leg so `--closeout` stops requiring it, and drop
+# the quality hold so the step matrix can reach done. The operator summary
+# reports the waived leg.
+# The gate stops its loop on a generator hard-failure (it will not re-spend on a
+# paid backend), so a vendor that keeps failing arrives here with ATTEMPTS=1 and
+# a non-zero generator rc -- that rc IS the exhausted vendor attempt budget.
+# ponytail: any hard generator failure waives the video for this closeout; the
+# celebration video is regenerated only by a fresh closeout (clear the leg).
+if [[ "${GATE_VIDEO_RESULT:-}" != "pass" && "$STEP_VIDEO_STATUS" != "ok" \
+      && ( "${GATE_VIDEO_RC:-0}" != "0" || "${GATE_VIDEO_ATTEMPTS:-0}" -ge "$ZHC_QUALITY_MAX_ATTEMPTS" ) ]]; then
+  log "WARN" "step=4 celebration-video: failed ${GATE_VIDEO_ATTEMPTS} attempts -- WAIVING the leg (closeout completes without the video; operator summary reports it)"
+  state_set ".closeoutWaivedLegs = (((.closeoutWaivedLegs // []) + [\"celebration-video\"]) | unique) | .qualityHeld = ((.qualityHeld // []) - [\"celebration_video\"])" || true
+fi
+
+# ----------------------------------------------------------------------
+# STEP 5.5 -- GHL media-library upload (conditional) -- v10.x
+#
+# Runs BEFORE the Notion step so the durable, public media URLs
+# (.ghlInfographic1PublicUrl / .ghlInfographic2PublicUrl) are already in state
+# when the permanent Notion document is built -- the document embeds those, never
+# a generator's temporary link. Also runs before the Telegram step so the
+# shareable media-library link (.ghlMediaLibraryUrl) is in state when the
+# celebration messages are composed.
+# Uploads the gate-passed closeout media (real local files only) to the client's
+# Convert and Flow / GHL media library. Skips gracefully when GHL is absent or
+# the LOCATION PIT does not verify. Never blocks closeout.
+# ----------------------------------------------------------------------
+if [[ -x "$SKILL_DIR/scripts/upload-ghl-media.sh" ]]; then
+  bash "$SKILL_DIR/scripts/upload-ghl-media.sh" || log "WARN" "ghl-media upload step returned non-zero (non-fatal)"
+fi
+
 # ----------------------------------------------------------------------
 # STEP 5 -- Notion Page Tree
 # ----------------------------------------------------------------------
@@ -1082,17 +1145,13 @@ if [[ "$GATE_NOTION_RESULT" == "pass" ]]; then
   state_set ".closeoutDeliverables.notionTreeUrl = \"$notion_url\"" || true
 fi
 
-# ----------------------------------------------------------------------
-# STEP 5.5 -- GHL media-library upload (conditional) -- v10.x
-#
-# Moved BEFORE the Telegram step (v10.x) so the shareable media-library link is
-# in state (.ghlMediaLibraryUrl) when the celebration messages are composed.
-# Uploads the gate-passed closeout media (real local files only) to the client's
-# Convert and Flow / GHL media library. Skips gracefully when GHL is absent or
-# the LOCATION PIT does not verify. Never blocks closeout.
-# ----------------------------------------------------------------------
-if [[ -x "$SKILL_DIR/scripts/upload-ghl-media.sh" ]]; then
-  bash "$SKILL_DIR/scripts/upload-ghl-media.sh" || log "WARN" "ghl-media upload step returned non-zero (non-fatal)"
+# WF-090 (decision D-8): exit 2 is the ownership hold -- no client-owned page is
+# shared with the integration, so the tree cannot be published (the booklet stays
+# staged locally). Waive the leg instead of blocking the closeout forever, and
+# drop the quality hold.
+if [[ "${GATE_NOTION_RESULT:-}" != "pass" && "${GATE_NOTION_RC:-0}" -eq 2 ]]; then
+  log "WARN" "step=5 notion: exited 2 (no verified client-owned parent page) -- WAIVING the leg (booklet stays staged; closeout completes without the Notion tree)"
+  state_set ".closeoutWaivedLegs = (((.closeoutWaivedLegs // []) + [\"notion\"]) | unique) | .qualityHeld = ((.qualityHeld // []) - [\"closeout_docs\"])" || true
 fi
 
 # ----------------------------------------------------------------------
@@ -1185,11 +1244,18 @@ fi
 # ----------------------------------------------------------------------
 critical_failed=()
 soft_failed=()
+# WF-080/WF-090 (decision D-8): a leg recorded in closeoutWaivedLegs was
+# deliberately NOT delivered. It is not a soft failure -- otherwise the matrix
+# would write "partial" and exit before `--closeout` and the operator summary,
+# and the closeout would stay partial forever, which is the very block the
+# waiver exists to remove.
+_waived_csv=",$(state_get '.closeoutWaivedLegs // [] | join(",")'),"
+_is_waived_leg() { case "$_waived_csv" in *",$1,"*) return 0 ;; *) return 1 ;; esac; }
 [[ "$STEP_INF1_STATUS"     == "failed" ]] && critical_failed+=("infographic-1")
 [[ "$STEP_INF2_STATUS"     == "failed" ]] && critical_failed+=("infographic-2")
 [[ "$STEP_TELEGRAM_STATUS" == "failed" ]] && critical_failed+=("telegram")
-[[ "$STEP_VIDEO_STATUS"    == "failed" ]] && soft_failed+=("celebration-video")
-[[ "$STEP_NOTION_STATUS"   == "failed" ]] && soft_failed+=("notion")
+[[ "$STEP_VIDEO_STATUS"    == "failed" ]] && ! _is_waived_leg celebration-video && soft_failed+=("celebration-video")
+[[ "$STEP_NOTION_STATUS"   == "failed" ]] && ! _is_waived_leg notion && soft_failed+=("notion")
 [[ "${STEP_N8N_STATUS:-skipped}" == "failed" ]] && soft_failed+=("n8n")
 # Visual intelligence set failure is soft -- the individual infographics serve as fallback
 [[ "$STEP_VISUAL_STATUS"   == "failed" ]] && soft_failed+=("visual-intelligence-set")
@@ -1293,21 +1359,6 @@ else
   # Telegram step) so the shareable .ghlMediaLibraryUrl is in state in time to be
   # included in the client's celebration messages. It is no longer invoked here.
 
-  # ------------------------------------------------------------------
-  # Operator success summary -- v10.x.
-  # Sends the operator a single Telegram message (via the OpenClaw gateway) with
-  # LINKS to every delivered artifact. CO-MINGLING GUARD (v12.4.0): OPT-IN only.
-  # send-operator-summary.sh resolves env.vars.OPERATOR_ESCALATION_CHAT_ID (or
-  # back-compat names) and SKIPS the send entirely if none is configured — a
-  # client box that has not opted in never proactively messages an operator.
-  # ------------------------------------------------------------------
-  # Pass through an operator chat ONLY if one is already set in the environment
-  # (do NOT bake in a personal chat id).
-  [[ -n "${ZHC_OPERATOR_CHAT_ID:-}" ]] && export ZHC_OPERATOR_CHAT_ID
-  if [[ -x "$SKILL_DIR/scripts/send-operator-summary.sh" ]]; then
-    bash "$SKILL_DIR/scripts/send-operator-summary.sh" || log "WARN" "operator-summary step returned non-zero (non-fatal)"
-  fi
-
   # PRD-2.8: write any remaining closeoutDeliverables leg flags before done.
   # telegramSequenceSent and ccUrlDelivered were written in Step 6 above.
   # Ensure all fields are set. n8nWired is already set by wire-n8n-closeout.sh.
@@ -1320,6 +1371,25 @@ else
   if ! "$WORKFORCE_PYTHON" "$COMPLETION_SCRIPT" "$STATE_FILE" --closeout >>"$LOG_FILE" 2>&1; then
     state_set '.closeoutStatus = "partial" | .closeoutPartialReason = "Required current verification remains pending"'
     exit 0
+  fi
+
+  # ------------------------------------------------------------------
+  # Operator success summary -- v10.x.
+  # Sends the operator a single Telegram message (via the OpenClaw gateway) with
+  # LINKS to every delivered artifact. CO-MINGLING GUARD (v12.4.0): OPT-IN only.
+  # send-operator-summary.sh resolves env.vars.OPERATOR_ESCALATION_CHAT_ID (or
+  # back-compat names) and SKIPS the send entirely if none is configured — a
+  # client box that has not opted in never proactively messages an operator.
+  #
+  # WF-080/WF-090 (decision D-8): this now runs AFTER `--closeout` verified the
+  # closeout, so the operator is never told "finished" for a closeout the state
+  # does not agree is done -- and any waived leg is already recorded in state.
+  # ------------------------------------------------------------------
+  # Pass through an operator chat ONLY if one is already set in the environment
+  # (do NOT bake in a personal chat id).
+  [[ -n "${ZHC_OPERATOR_CHAT_ID:-}" ]] && export ZHC_OPERATOR_CHAT_ID
+  if [[ -x "$SKILL_DIR/scripts/send-operator-summary.sh" ]]; then
+    bash "$SKILL_DIR/scripts/send-operator-summary.sh" || log "WARN" "operator-summary step returned non-zero (non-fatal)"
   fi
 
   "$WORKFORCE_PYTHON" "$SKILL_DIR/scripts/cleanup-closeout.py" "$STATE_FILE" >>"$LOG_FILE" 2>&1 || log "WARN" "Verified closeout cleanup pending; recovery identity retained"

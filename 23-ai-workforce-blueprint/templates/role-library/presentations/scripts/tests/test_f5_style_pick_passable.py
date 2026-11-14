@@ -152,12 +152,24 @@ def _engine_accepts_choice(run_dir: Path, choice: dict, variants) -> tuple:
                                           list(variants))
 
 
-def _stub_oracle(monkeypatch, ids):
+def _stub_oracle(monkeypatch, ids, *, text: str | None = None):
     """Same stub tests/test_fix29_style_pick_human_stage.py uses: the Fix 32
-    Command-Center oracle resolves exactly these owner message ids."""
+    Command-Center oracle resolves exactly these owner message ids.
+
+    PD-912/PD-305: an id alone never proves an owner decision -- the oracle must
+    also return the owner message TEXT naming the gate. Pass text=None to keep
+    the ids-only shape the contract refuses."""
     monkeypatch.setattr(
         approvals_mod, "_cc_board_oracle",
         lambda run_dir=None: frozenset(ids) if ids is not None else None)
+    if ids is not None and text is not None:
+        monkeypatch.setattr(
+            approvals_mod, "BOARD_TEXT_RESOLVER",
+            lambda mid, _run_dir=None: (
+                {"msg_id": mid, "chat_id": "owner-chat", "text": text,
+                 "received_at": ""}
+                if mid in ids else None),
+            raising=False)
 
 
 # ---------------------------------------------------------------------------
@@ -346,7 +358,8 @@ class TestStylePickRecorder:
         assert choice["chosen_variant"] == "B"
         assert choice["owner_msg_id"] == "owner-msg-42"
 
-        _stub_oracle(monkeypatch, ["owner-msg-42"])
+        _stub_oracle(monkeypatch, ["owner-msg-42"],
+                     text="approve P-STYLE-PICK variant B")
         ok, denial = _engine_accepts_choice(rd, choice, ["A", "B", "C"])
         assert ok is True, denial
 
@@ -385,10 +398,13 @@ class TestStylePickRecorder:
         r = _run_driver(rd, "--style-pick", "A", "--owner-msg-id", "not-a-real-id")
         assert r.returncode == 0, r.stderr
         choice = json.loads((rd / CHOICE_REL).read_text(encoding="utf-8"))
-        _stub_oracle(monkeypatch, ["owner-msg-42"])
+        _stub_oracle(monkeypatch, ["owner-msg-42"],
+                     text="approve P-STYLE-PICK variant A")
         ok, denial = _engine_accepts_choice(rd, choice, ["A", "B", "C"])
         assert ok is False
+        # Denied for the unresolvable id, NOT for any absence of message text.
         assert "not-a-real-id" in denial
+        assert "does not resolve to a real" in denial
 
     def test_the_usage_line_names_the_new_mode(self, tmp_path):
         rd = tmp_path / "run"
