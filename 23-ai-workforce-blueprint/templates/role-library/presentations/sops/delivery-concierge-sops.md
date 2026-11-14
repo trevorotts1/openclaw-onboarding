@@ -22,31 +22,31 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
 
 **Inputs:**
 - the engine closeout gate verdict for this run (build_deck postflight completeness gate green; `working/qc/final_qc_report.json` present from P-QC-AGGREGATE with its gate-facing average >= 8.5 -- the AF-F5 quality gate; the retired `working/qc/final_deck_qc.json` no longer exists in code)
-- output/[DECK_SLUG].pptx (assembled deck)
-- output/[DECK_SLUG].pdf (portable-document export)
+- working/deliverables/{deck_slug}-FINAL.pptx (assembled deck)
+- working/deliverables/{deck_slug}-FINAL.pdf (portable-document export)
 - working/deliverables/PRESENTER-GUIDE.pdf (rendered from PRESENTER-GUIDE.md by the Presenters Guide Specialist)
-- working/presenter-speech/PRESENTERS-SPEECH.pdf (teleprompter PDF, Presenters Speech Writer)
-- working/presenter-speech/audio/PRESENTER-AUDIO.mp3 (Fish Audio S2 render)
+- working/deliverables/PRESENTERS-SPEECH.pdf (teleprompter PDF, Presenters Speech Writer)
+- working/delivery/PRESENTER-AUDIO.mp3 (Fish Audio S2 render)
 - sops/SOP-PITCH-05-DELIVERABLE-BUNDLE.md (the seven-file whitelist and the blocklist)
 
 **Steps:**
-1. Create a clean, empty `delivery/[DECK_SLUG]-FINAL/` directory. This directory is NOT under `working/`. If it already exists from a prior run, empty it first.
+1. Create a clean, empty `delivery/[DECK_SLUG]-FINAL/` directory. This directory is NOT under `working/`. If it already exists from a prior run, empty it first. Rebuild it from scratch -- never patch a stale package.
 2. Copy ONLY the seven allowed CLIENT files into `delivery/[DECK_SLUG]-FINAL/`:
-   - `output/[DECK_SLUG].pptx` -> `delivery/[DECK_SLUG]-FINAL/<deck-slug>-FINAL.pptx`
-   - `output/[DECK_SLUG].pdf` -> `delivery/[DECK_SLUG]-FINAL/<deck-slug>-FINAL.pdf`
+   - `working/deliverables/{deck_slug}-FINAL.pptx` -> `delivery/[DECK_SLUG]-FINAL/<deck-slug>-FINAL.pptx`
+   - `working/deliverables/{deck_slug}-FINAL.pdf` -> `delivery/[DECK_SLUG]-FINAL/<deck-slug>-FINAL.pdf`
    - `working/deliverables/PRESENTER-GUIDE.pdf` -> `delivery/[DECK_SLUG]-FINAL/PRESENTER-GUIDE.pdf`
-   - `working/presenter-speech/PRESENTERS-SPEECH.pdf` -> `delivery/[DECK_SLUG]-FINAL/PRESENTERS-SPEECH.pdf`
-   - `working/presenter-speech/audio/PRESENTER-AUDIO.mp3` -> `delivery/[DECK_SLUG]-FINAL/PRESENTER-AUDIO.mp3`
+   - `working/deliverables/PRESENTERS-SPEECH.pdf` -> `delivery/[DECK_SLUG]-FINAL/PRESENTERS-SPEECH.pdf`
+   - `working/delivery/PRESENTER-AUDIO.mp3` -> `delivery/[DECK_SLUG]-FINAL/PRESENTER-AUDIO.mp3`
    - `working/deliverables/presenter-teleprompter.html` -> `delivery/[DECK_SLUG]-FINAL/presenter-teleprompter.html`
    - the run's webinar video (produced at P9.6, hosted in GHL) -> `delivery/[DECK_SLUG]-FINAL/<deck-slug>-WEBINAR.mp4`
-   If any of the seven source files does not exist or is empty: halt, notify the Director which artifact is missing, do NOT proceed to delivery.
+   If any of the seven source files does not exist or is empty: halt, notify the Director which artifact is missing, do NOT proceed to delivery. Delete nothing silently; remove drafts and extras from the package and record each removal.
 3. **Run AF-DH1 (deliverable hygiene gate).** Enumerate every file in `delivery/[DECK_SLUG]-FINAL/`. For each file, check:
    a. **Whitelist check (primary):** Every file must match one of these exact name patterns: `*-FINAL.pptx`, `*-FINAL.pdf`, `PRESENTER-GUIDE.pdf`, `PRESENTERS-SPEECH.pdf`, `PRESENTER-AUDIO.mp3`, `presenter-teleprompter.html`, `*-WEBINAR.mp4`. Any file not matching = AF-DH1 FAIL.
    b. **Blocklist check (belt-and-suspenders):** Fail immediately if any file matches: `*.py`, `*.log`, `*.txt` (prompt files), `*_manifest.json`, `*_qc_log.json`, `*_run.log`, `fix_*.py`, `run_*.py`, `write_*.py`, `validate_*.py`, `assemble_*.py`, `post_render*.py`, `*QC-FINAL.md`, `vision_qc_log.json`, `render_manifest.json`. Fail immediately if any of these directories exist inside the package: `working/`, `prompts/`, `images/`, `renders/`, `qc/`, `scripts/`, `checkpoints/`.
    c. **Format check:** Any PRESENTER-GUIDE or PRESENTERS-SPEECH file present as `.md` (not `.pdf`) = AF-DH1 FAIL.
    d. **Audio check:** PRESENTER-AUDIO.mp3 missing = AF-DH1 FAIL (also caught by AF-DELIVER; both gates are required).
 4. **If AF-DH1 triggers:** halt all delivery. Record the failure in `working/checkpoints/delivery_plan.json` as `"af_dh1_triggered": true, "af_dh1_details": "<specific file or dir that failed>"`. Notify the Director: "AF-DH1: DELIVERY BLOCKED. Package hygiene fail: {details}. The client package must contain exactly the seven allowed files. Remove all dev artifacts before re-running SOP 9.0." Do NOT proceed to SOP 9.1 until SOP 9.0 passes cleanly.
-5. **If AF-DH1 passes:** record `"af_dh1_pass": true` in the delivery plan. Proceed to SOP 9.1.
+5. **If AF-DH1 passes:** record `"af_dh1_pass": true` in the delivery plan. The package is the ONLY copy that will move: SOPs 9.1 and 9.2 deliver FROM `delivery/[DECK_SLUG]-FINAL/`; never copy from `working/` or the build root directly to a destination. Proceed to SOP 9.1.
 6. **Mechanical confirmation (R9-F9):** the AF-DH1 whitelist + the GHL-upload record + the SOP 9.4 destination ground-truth are ALSO enforced mechanically by `python3 scripts/delivery_gate.py <run_dir>` (exit 0 = pass, 1 = fail). Run it before the SOP 9.3 notification; a non-zero exit BLOCKS `delivery_complete: true`. This coded enforcer backstops these otherwise doctrine-only autofails (AF-DH1 / AF-DELIVER / AF-DELIVERY-COMPLETE) — never rely on the SOP prose alone.
 7. **DELIVERY BOUNDARY GATE — run BEFORE any file leaves the box (MANDATORY, fail-closed).** Before SOP 9.2 copies/uploads/sends ANY deck — and regardless of how the deck was produced — run the out-of-band boundary gate over the SHIPPED ARTIFACT itself:
    ```
@@ -55,7 +55,7 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
    (exit 0 = clear to deliver, 1 = REJECTED). A non-zero exit HARD-BLOCKS delivery: do NOT copy to `~/Downloads/`, do NOT upload to GHL, do NOT send via Telegram/Drive, do NOT set `delivery_complete: true`. The gate inspects the artifact and REJECTS a deck that was hand-built OUTSIDE the governed kie.ai pipeline:
    - **`AF-OVERLAY-DELIVERED`** — the deck carries SELECTABLE native on-slide text (a `<a:t>` run in a `.pptx`, or embedded fonts + text operators in a `.pdf`) instead of words baked into kie.ai images — i.e. it was assembled with python-pptx / Pillow / Google Slides / Keynote, not rendered.
    - **`AF-NOT-KIE-RENDERED`** — no real kie.ai `taskId` per slide in the process manifest, or the artifact is not a readable OOXML/PDF deck (a renamed-image decoy).
-   - **`AF-NO-RUN-DIR`** — no governed run dir (`working/checkpoints/process_manifest.json`) — the deck never passed through `run_signature_deck.py`.
+   - **`AF-NO-RUN-DIR`** — no governed run dir (`working/checkpoints/process_manifest.json`) — the deck was never built by the presentation engine.
    - **`AF-BUNDLE-COMPLETE`** -- the seven-file client package is incomplete (any of the seven files missing, including the teleprompter or the webinar file).
    `--pre-transport` enforces every artifact-provenance gate above PLUS the AF-DH1 package + teleprompter, while deferring ONLY the SOP-9.4 destination ground-truth (the upload SOP 9.2 is about to perform — re-checked in full at `run_signature_deck.py` P9-DELIVER). This is the coded enforcer for the boundary autofails (`AF-OVERLAY-DELIVERED` / `AF-NOT-KIE-RENDERED` / `AF-NO-RUN-DIR` / `AF-BUNDLE-COMPLETE`) registered in `PIPELINE-MANIFEST.json` with `sop_ref: delivery-concierge-sops.md`. The GHL transport (`ghl_media_push.py`) ALSO runs this same gate automatically and ABORTS the upload on rejection — so even an agent that skips this step cannot push a hand-built deck to the client's GHL media library. The ONLY bypass is a logged `owner_skip_approval` token (`gate=<AF code>`); an agent may NEVER self-approve.
 
@@ -79,19 +79,23 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
 - working/qc/final_qc_report.json (the aggregate QC report of record -- its gate-facing average must confirm >= 8.5 before proceeding)
 
 **Steps:**
-1. Read intake.json. Check the `box_type` field.
-2. **If `box_type` is `mac` (Mac mini or MacBook):**
+0. Confirm SOP 9.0 has completed: `delivery/[DECK_SLUG]-FINAL/` exists and passes the AF-DH1 whitelist check. Destination resolution never runs against an unhygiened build root.
+1. Read `intake.json` → `deck_brief.DELIVERY_DESTINATIONS` (the client's own answer to "Where should I send the finished presentation?"). Deliver to every destination named there.
+2. Read intake.json. Check the `box_type` field.
+3. **If `box_type` is `mac` (Mac mini or MacBook):**
    a. Primary destination: the folder `~/Downloads/<client-slug>-<deck-slug>/` on the client's Mac (the SAME folder-aware location `build_deck.py` writes to). The whole clean seven-file CLIENT package lands here; verify anchor `~/Downloads/<client-slug>-<deck-slug>/<deck-slug>-FINAL.pptx`.
    b. Secondary destination: GHL media library (same `ghl_folder_id`/`"root"` resolved by the Media Librarian).
    c. Tertiary destination: Google Drive mirror folder (if `use_drive: true`).
    d. Record all destinations in a local `delivery_plan.json` before proceeding.
-3. **If `box_type` is NOT mac, or is missing or unclear:**
+4. **Ask the client again ONLY when `deck_brief.DELIVERY_DESTINATIONS` is empty, or when it names a destination this box cannot reach:**
    a. DO NOT assume a delivery location.
-   b. Ask the client explicitly via `openclaw message send`: "Where would you like the PowerPoint delivered: email, Google Drive, GHL, or somewhere else?" Wait for their reply before proceeding.
+   b. Ask the client explicitly via `openclaw message send`, quoting what the client already said, and wait for their reply before proceeding:
+      - field names an unreachable destination: "You told me to send the finished presentation to <the destination the client named>, and this box cannot reach it. Where would you like the PowerPoint delivered: email, Google Drive, GHL, or somewhere else?"
+      - field is empty: "Where would you like the PowerPoint delivered: email, Google Drive, GHL, or somewhere else?"
    c. Record their stated destination in `delivery_plan.json`.
    d. Deliver only to the destination(s) they confirm.
    e. **Fallback file channel:** if the client has neither GHL (`has_ghl: false`) nor Drive (`use_drive: false`) and no other reachable file destination, add a `telegram_documents` destination so the seven client files still reach them as document attachments (SOP 9.2). If even that is unreachable, hard-escalate "no reachable file channel" to the Director (never silently mark done).
-4. Write `delivery_plan.json` to working/checkpoints/:
+5. Write `delivery_plan.json` to working/checkpoints/:
    ```json
    {
      "deck_slug": "...",
@@ -105,14 +109,14 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
      "created_at": "ISO timestamp"
    }
    ```
-5. Confirm the final QC score of record from working/qc/final_qc_report.json (the P-QC-AGGREGATE aggregate; gate-facing `average` field). If the average is < 8.5: halt, return to Director. Record in delivery_plan.json: `"delivery_blocked": true, "reason": "QC score below threshold"`.
+6. Confirm the final QC score of record from working/qc/final_qc_report.json (the P-QC-AGGREGATE aggregate; gate-facing `average` field). If the average is < 8.5: halt, return to Director. Record in delivery_plan.json: `"delivery_blocked": true, "reason": "QC score below threshold"`.
 
 **Outputs:**
 - working/checkpoints/delivery_plan.json (all destinations listed with pending status)
 
 **Hand to:** SOP 9.2 (Multi-Destination Upload)
 
-**Failure mode:** If intake.json is missing or malformed and box_type cannot be determined: ask the client directly before touching any destination. Never guess the delivery path. Record the blocker in delivery_plan.json and notify the Director.
+**Failure mode:** If intake.json is missing or malformed and `deck_brief.DELIVERY_DESTINATIONS` cannot be read: ask the client directly before touching any destination. Never guess the delivery path. Record the blocker in delivery_plan.json and notify the Director.
 
 ---
 
@@ -173,7 +177,7 @@ A non-zero exit HARD-BLOCKS every destination in this SOP -- do NOT `cp` to Down
 
 **Hand to:** SOP 9.3 (Notification) and SOP 9.4 (Ground-Truth Verification) -- run SOP 9.4 first, then SOP 9.3.
 
-**Failure mode:** If the clean package `delivery/[DECK_SLUG]-FINAL/` is missing, incomplete, or any file is zero size: halt all delivery. Notify the Director: "Delivery blocked: the clean client package is missing or incomplete. Re-run SOP 9.0." Never deliver from `output/` or `working/` directly.
+**Failure mode:** If the clean package `delivery/[DECK_SLUG]-FINAL/` is missing, incomplete, or any file is zero size: halt all delivery. Notify the Director: "Delivery blocked: the clean client package is missing or incomplete. Re-run SOP 9.0." Never deliver from `output/` or `working/` directly. Do not attempt delivery of a missing or empty file.
 
 ---
 
@@ -192,7 +196,7 @@ A non-zero exit HARD-BLOCKS every destination in this SOP -- do NOT `cp` to Down
    a. Every verified destination path or URL (human-readable).
    b. The final QC score.
    c. Example notification text (adapt per actual destinations):
-      "Your webinar deck is ready. Final QC score: [SCORE]/10. File locations: (1) the folder ~/Downloads/<client-slug>-<deck-slug>/ on your Mac (deck, PDF, presenter guide, speech, and audio), (2) GHL media library as '[REMOTE_NAME]'. Both locations confirmed."
+      "Your webinar deck is ready. Final QC score: [SCORE]/10. File locations: (1) the folder ~/Downloads/<client-slug>-<deck-slug>/ on your Mac (deck, PDF, presenter guide, speech, and audio), (2) GHL media library as '[REMOTE_NAME]'. Both locations confirmed." (For a deck-plus-GHL-only run the same example reads: "Your webinar deck is ready. Final QC score: [SCORE]/10. File locations: (1) ~/Downloads/[DECK_SLUG]_final.pptx on your Mac, (2) GHL media library folder '[FOLDER_NAME]' as '[REMOTE_NAME]'. Both locations confirmed.")
 3. Send the notification using `openclaw message send` to the client's normal channel.
    - NEVER use the raw Telegram API (curl to api.telegram.org or equivalent).
    - NEVER use a hardcoded channel ID or token outside of OpenClaw's message routing.
