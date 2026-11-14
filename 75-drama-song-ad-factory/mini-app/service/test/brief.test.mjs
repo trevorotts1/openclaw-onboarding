@@ -96,9 +96,16 @@ test('brief: the ids this service reads are the card\'s first five questions', (
   // never a menu, without sniffing the option wording
   const typed = committed.questions.filter((q) => q.typed).map((q) => q.id);
   assert.deepEqual(typed, BRIEF_QUESTION_IDS);
+  // S75-074 (U-Z10) — a typed screen carries no option row at all. Until the
+  // re-export lands (U-E02), an older export still carries the single
+  // "reply with" row; the page draws the box directly for both shapes, so this
+  // pins that a typed screen can never offer alternatives to pick between.
   for (const q of committed.questions.filter((x) => x.typed)) {
-    assert.equal(q.options.length, 1, q.id);
-    assert.match(q.options[0].detail, /^reply with/i, q.id);
+    const rows = q.options || [];
+    const legacyFreeTextRow = rows.length === 1
+      && /^reply with/i.test(String(rows[0].detail || "").trim());
+    assert.ok(rows.length === 0 || legacyFreeTextRow,
+      `${q.id}: a typed screen must carry no option row`);
   }
 });
 

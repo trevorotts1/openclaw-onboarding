@@ -155,11 +155,9 @@
 -- THE BUCKET'S OWN RULE  (U4's file to create; recorded here for the contract)
 -- ============================================================================
 --
---   One scoped project-object delete-after-45-days rule, scoped to the
---   namespace above, and NEVER covering: enrollment records, delivery receipts,
---   GHL media, or the finished video's GHL copy. Section 3.15 + section 3.10A.
---   The service's own retention.js expresses the same rule in code so the two
---   can be compared; a disagreement is a FAIL, not a judgement call.
+--   A delete-after-45-days rule on the `clients/` prefix: every stored object is
+--   removed 45 days after it was uploaded. Enrollment records, delivery receipts
+--   and GHL media are not in this bucket and are untouched.
 --
 -- ============================================================================
 -- SECRETS  (declared here; the deploy files in U4 set them — this unit never

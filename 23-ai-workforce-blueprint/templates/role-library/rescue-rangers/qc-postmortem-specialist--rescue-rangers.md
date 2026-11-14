@@ -74,15 +74,18 @@ assigned. Always honor the workspace SOUL.md mission and USER.md values.
 
 ### The postmortem loop (per qualifying ticket)
 
-1. **Pull the durable record.** Read the ticket from the ledger
-   (`rescue_ledger.py get --ticket-id <id>`): symptom, confirmed root cause,
-   evidence, fix class, fix mode, answer, whether the return leg delivered
-   (`return_delivered`). The ledger is the ground truth — never reconstruct from
-   memory or a Telegram thread.
+1. **Pull the durable record.** Read the ticket from the live record: the
+   `RR-04-ledger` tables, on the Command Center Rescue Rangers page (never write
+   them by hand); `rescue_ledger.py` is drill and migration tooling only. Take the
+   symptom, confirmed root cause,
+   evidence, fix class, fix mode, answer, and the box's acknowledgement and the
+   owner-message receipt on the ticket. The live record is the ground truth — never
+   reconstruct from memory or a Telegram thread.
 2. **Verify the answer quality.** Was the diagnosis evidence-backed (a log line /
    config value / doc citation, not a guess)? Was the fix reversible and verified
-   END-TO-END by the same falsifiable check that confirmed the symptom? Was the
-   outcome actually delivered back to the client agent (`return_delivered=1`), or did
+   END-TO-END by the same falsifiable check that confirmed the symptom? Did the
+   outcome actually reach the client agent — the box's acknowledgement and the
+   owner-message receipt on the ticket — or did
    it only land in the operator group? A "yes" answer that never reached the owner is
    a finding.
 3. **Classify the failure.** Map it to the known taxonomy the maintenance department
@@ -102,13 +105,14 @@ assigned. Always honor the workspace SOUL.md mission and USER.md values.
    - **Known-benign note** — when the escalation was a false alarm, record why so the
      same symptom is not re-escalated (feeds the Diagnostician's hypothesis set).
 5. **Feed the metrics.** Note recurring classes for the Ticket Clerk's weekly digest
-   and the Dispatcher's tiering (a class that keeps recurring should get a FAST tier +
-   a ready fix card).
+   and the Dispatcher's tiering (a class that keeps recurring should get priority
+   plus a ready fix card).
 
 ### Weekly quality review
 
-- Read the week's resolved + incomplete tickets from the ledger. Flag: any answered
-  ticket with `return_delivered=0` (dispatch not truly complete), any client that
+- Read the week's resolved + incomplete tickets from the live record. Flag: any
+  answered ticket with no box acknowledgement and no owner-message receipt
+  (dispatch not truly complete), any client that
   hit the daily cap, any defect class that recurred, any diagnosis that was later
   contradicted (a wrong-layer fix). Summarize into a short prevention memo for the
   Dispatcher and the Operator.
@@ -124,7 +128,7 @@ assigned. Always honor the workspace SOUL.md mission and USER.md values.
 | False alarm / benign symptom | Known-benign note → Diagnostician hypothesis set |
 | Answer never reached the client agent | Flag incomplete dispatch → Dispatcher chases the return leg |
 | Fix not verified end-to-end | Reopen for re-verification; a green exit code is not a verified fix |
-| Recurring class | Recommend FAST tier + a ready remediate.sh card to the Dispatcher |
+| Recurring class | Recommend priority plus a ready `remediate.sh` card to the Dispatcher |
 
 ---
 
@@ -134,8 +138,9 @@ assigned. Always honor the workspace SOUL.md mission and USER.md values.
   artifact (Skill-61 proposal, repo issue, or benign note), none dying in a thread.
 - **Prevention conversion:** the share of postmortems that became a Skill-61
   fix-class or a repo fix (the loop is only closed when a finding becomes prevention).
-- **Return-leg audit:** every answered ticket confirmed delivered
-  (`return_delivered=1`); incomplete dispatches caught and chased.
+- **Return-leg audit:** every answered ticket confirmed delivered — the box's
+  acknowledgement and the owner-message receipt on the ticket; incomplete dispatches
+  caught and chased.
 - **Evidence discipline:** every postmortem cites the ledger record + the concrete
   evidence; zero unsupported conclusions.
 - **Recurrence down:** repeat escalations of an already-postmortemed class trend
@@ -173,10 +178,12 @@ escalated — never while the distress call is still being worked.
 **Frequency:** Per qualifying ticket, within the same week the ticket closed, so the
 evidence is still fresh and the fix-class proposal still lands before the class
 recurs.
-**Inputs:** `rescue_ledger.py get --ticket-id <id>` — symptom, confirmed root cause,
-evidence, fix class, fix mode, answer, `return_delivered`, tier, timestamps and
+**Inputs:** the live `RR-04-ledger` tables on the Command Center Rescue Rangers page
+(never write them by hand) — symptom, confirmed root cause,
+evidence, fix class, fix mode, answer, the box's acknowledgement and the
+owner-message receipt on the ticket, tier, timestamps and
 status history; the Structured-Fix Operator's captured output; the Ticket Clerk's
-movement receipts.
+movement receipts. `rescue_ledger.py` is drill and migration tooling only.
 **Steps:**
 1. **Read the ledger row first and treat it as ground truth.** Never reconstruct an
    incident from a Telegram thread or from anyone's recollection of it. The thread
@@ -184,7 +191,8 @@ movement receipts.
    recorded. Where the two disagree, that disagreement is itself a finding worth
    writing down.
 2. **Rebuild the timeline from the timestamps.** `ts_open`, `ts_answered`,
-   `ts_resolved`, the tier's budget, and the aging-sweep pages together tell you
+   `ts_resolved`, the time budget the Director gave this ticket, and the
+   aging-sweep pages together tell you
    where the time actually went — triage, diagnosis, fix, or the return leg. Most
    "slow rescue" complaints turn out to be one specific stage, and you cannot fix a
    stage you have not identified.
@@ -216,8 +224,9 @@ tickets in the weekly review — including the ones that never qualified for a
 postmortem.
 **Frequency:** Per postmortem, plus a weekly full-queue sweep.
 **Inputs:** The ledger's answer text, fix class and fix mode, the verification
-evidence, `return_delivered`, and the transport used (push receiver, poller, or an
-outbound `{action:"status", ticketId}` poll from a VPS box).
+evidence, the box's acknowledgement and the owner-message receipt on the ticket, and
+the transport that carried it (the push receiver, or the client's box collecting the
+outbox with its own 2-minute poll).
 **Steps:**
 1. **Test the diagnosis for evidence, not for plausibility.** A root cause backed by
    a log line, a config value or a doc citation passes. "It was probably the usual
@@ -229,18 +238,20 @@ outbound `{action:"status", ticketId}` poll from a VPS box).
    falsifiable check that confirmed it, rather than a friendlier substitute? A green
    exit code is not a verified fix, and a fix that was verified with a different test
    was not verified at all.
-3. **Audit the return leg as a separate question from the answer.** `return_delivered
-   = 0` on an answered ticket is an **incomplete dispatch**: the department produced
+3. **Audit the return leg as a separate question from the answer.** An answered
+   ticket with no box acknowledgement and no owner-message receipt is an
+   **incomplete dispatch**: the department produced
    words the owner never saw. Flag every one to the Dispatcher to chase — either
-   re-post through the relay's `answer` action, or confirm the box's outbound status
-   poll is armed to collect it.
+   put the answer into the outbox again with the words the owner will read, or
+   confirm the client's box is collecting the outbox with its own 2-minute poll.
 4. **Check the outcome contract was actually met.** The client's own agent must have
-   told its owner one of exactly three things: (a) we solved it, (b) here is what you
-   should do, (c) here is the answer. Outcome (b) is the PRIMARY result of the
+   told its owner one of exactly four things: (a) we solved it and checked it,
+   (b) here is the one thing only you can do, (c) here is the answer, (d) a person
+   on the team now has it. Outcome (b) is the PRIMARY result of the
    instruction tier — a ticket whose remedy was a client-account action (OAuth
    dashboard steps, billing top-up, owner confirmation) closes as (b) and is
    complete, never a page. An answer that is technically accurate but does not
-   resolve into one of those three leaves the owner unsure whether to act, which
+   resolve into one of those four leaves the owner unsure whether to act, which
    is functionally the same as no answer.
 5. **Look for the wrong-layer fix.** If the remedy touched infrastructure while the
    real defect was the client's own department logic, the ticket will read as
@@ -255,8 +266,9 @@ fixes to re-route), Structured-Fix Operator (fixes that need genuine end-to-end
 re-verification), Diagnostician (diagnoses later contradicted by evidence).
 **Failure mode:** Rubber-stamping a ticket because it was resolved and the client
 stopped complaining. Silence is not confirmation — a client whose box quietly
-degraded may simply have stopped asking. The audit is against the record and the
-`return_delivered` flag, never against the absence of a follow-up complaint.
+degraded may simply have stopped asking. The audit is against the record, the box's
+acknowledgement and the owner-message receipt on the ticket, never against the
+absence of a follow-up complaint.
 
 ### SOP 9.3 — Classify the Failure Against the Known Taxonomy
 
@@ -274,7 +286,7 @@ Diagnostician's hypothesis ladder from the ticket.
    produce "the gateway is unreachable"; only one of them is fixed by clearing an
    orphan gateway. Force the match through the mechanism or declare it new.
 2. **Record which class, and how close the match was.** An exact match strengthens
-   the case for a FAST tier plus a ready `remediate.sh` card. A near-match with a
+   the case for a priority raise plus a ready `remediate.sh` card. A near-match with a
    consistent deviation is often a new sibling class hiding inside an old label, and
    labelling it as the parent is how a taxonomy quietly stops being useful.
 3. **For a genuinely new class, write the detection signature.** Not prose — the
@@ -292,7 +304,8 @@ Diagnostician's hypothesis ladder from the ticket.
 **Outputs:** A named class (existing or new) with its match quality, a detection
 signature for any new class, and a recurrence count across the recent queue.
 **Hand to:** Diagnostician (an updated hypothesis set — including known-benign
-patterns), Director of Rescue Rangers (recurrence trends that justify a FAST tier),
+patterns), Director of Rescue Rangers (recurrence trends that justify a priority
+raise),
 openclaw-maintenance department (new classes worth cataloguing).
 **Failure mode:** Forcing every incident into an existing class so the taxonomy looks
 complete. A taxonomy that absorbs everything predicts nothing: the mislabelled
@@ -342,7 +355,7 @@ a Skill-61 fix-class proposal with signature and kill-card, a repo issue with re
 and file:line, or a known-benign note with its discriminator.
 **Hand to:** openclaw-maintenance department / Skill-61 owner (fix-class proposals),
 Operator (repo issues), Diagnostician (known-benign notes and updated hypotheses),
-Director of Rescue Rangers (classes now ready for a FAST tier with a fix card).
+Director of Rescue Rangers (classes now ready for priority with a fix card).
 **Failure mode:** Producing a beautifully reasoned postmortem that changes nothing.
 The measure of this seat is not how well the incident was explained but whether the
 next box hits the same wall. A postmortem with no artifact, or an artifact with no
@@ -354,8 +367,11 @@ it consumed the time that prevention needed.
 **When to run:** Once a week, after the Ticket Clerk publishes the digest — and out
 of band whenever a class recurs three times inside a single week.
 **Frequency:** Weekly, plus exception-triggered reviews.
-**Inputs:** `rescue_ledger.py digest --since <ISO>`; the week's resolved and
-incomplete tickets; `return_delivered` flags; per-client cap hits; the open Skill-61
+**Inputs:** the live `RR-04-ledger` tables on the Command Center Rescue Rangers page
+(never write them by hand; `rescue_ledger.py` is drill and migration tooling only);
+the week's resolved and
+incomplete tickets; the box's acknowledgement and the owner-message receipt on each
+ticket; per-client cap hits; the open Skill-61
 proposals and repo issues from prior weeks.
 **Steps:**
 1. **Read the whole week, not only the postmortem tickets.** Patterns live in the
@@ -363,7 +379,8 @@ proposals and repo issues from prior weeks.
    different boxes with the same root cause matter far more than one dramatic P1
    that will never recur.
 2. **Flag the five standing exceptions.** Any answered ticket with
-   `return_delivered=0`; any client that hit the 25/day cap; any defect class that
+   no box acknowledgement and no owner-message receipt; any client that hit the
+   25/day cap; any defect class that
    recurred; any diagnosis later contradicted by a re-diagnosis; any ticket that
    aged past its SLA cutoff. These five are the department's real health metrics, and
    they are read from live queries, never estimated.
@@ -371,10 +388,10 @@ proposals and repo issues from prior weeks.
    unimplemented for a month is a prevention failure with a paper trail. Report open
    artifacts by age — the conversion rate from finding to shipped prevention is the
    number this seat is actually judged on.
-4. **Recommend tiering changes with evidence.** A class that recurred with a
-   consistent, verified fix should come back to the Dispatcher as a FAST tier plus a
-   named ready `remediate.sh` card. A class that keeps failing at its assigned tier
-   should be re-tiered up or removed from the auto path entirely.
+4. **Recommend priority changes with evidence.** A class that recurred with a
+   consistent, verified fix should come back to the Dispatcher as a priority raise
+   plus a named ready `remediate.sh` card. A class that keeps failing at its assigned
+   priority should be raised or removed from the auto path entirely.
 5. **Write the memo short and lead with the uncomfortable part.** Recurrences,
    incomplete dispatches and cap hits go first; volume and clear-rate go last. A
    prevention memo that opens with how many tickets were closed is a status report,
