@@ -30,7 +30,7 @@ import json
 import os
 import sys
 import tempfile
-from contextlib import redirect_stdout
+from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
@@ -216,25 +216,33 @@ def main():
               stored["answered_count"], len(replies) - 1)
         check("no turn was silently skipped",
               len(stored.get("events") or []), len(replies))
-        # ...and a reply the card refuses HALTS the replay: a studio marker does
-        # not authorize an answer the card would not take one turn at a time,
-        # the durable halt record names the reason, and no wake line is printed.
+        # ...and a reply the card refuses still fails closed: a studio marker
+        # does not authorize an answer the card would not take one turn at a
+        # time, and no method record is claimed without accepted replies.
         bad = make_run(Path(tmp) / "studio-bad")
         (bad / "control" / "studio-order.json").write_text(
             json.dumps({"order_id": "ord-w3u2-bad", "client_id": "c1",
                         "title": "t"}),
             encoding="utf-8")
         capture = io.StringIO()
-        with redirect_stdout(capture):
+        stderr = io.StringIO()
+        with redirect_stdout(capture), redirect_stderr(stderr):
             code, factory_path = SB._replay(str(SKILL), bad, ["purple banana"])
-        check("a refused Studio reply halts the replay",
+        check("a refused Studio reply fails the replay closed",
               code, SB.EXIT["halted"])
-        halt_file = bad / "control" / "replay-halted.json"
-        check_true("the halt is durable and named", halt_file.is_file())
-        check_true("the halt record carries a reason code",
-                   json.loads(halt_file.read_text(encoding="utf-8"))
-                   .get("reason_code"))
-        check("a halt prints no wake line", capture.getvalue(), "")
+        # The refusal is a durable halt, not a stdout line: the named code
+        # lives in control/replay-halted.json and on stderr.
+        halted_path = bad / "control" / "replay-halted.json"
+        halted = (json.loads(halted_path.read_text(encoding="utf-8"))
+                  if halted_path.is_file() else {})
+        check("bridge exposes a named replay refusal",
+              halted.get("reason_code"), "INVALID_OPTION")
+        check("the halt names the turn the card refused", halted.get("turn"), 1)
+        check_true("the refusal is on stderr, not the stdout wake line",
+                   "replay halted at turn 1 (INVALID_OPTION)"
+                   in stderr.getvalue())
+        check("a halted replay writes no stdout wake line",
+              capture.getvalue(), "")
         check("no method record claimed without accepted replies",
               (bad / "control" / "method.json").exists(), False)
         stored = json.loads((bad / "control" / "intake-session.json").read_text())
