@@ -9,15 +9,19 @@
 //
 // WHAT IT PROVES:
 //   * every stage renders a card, in the script -> song -> storyboard order,
-//     under the exact headings mini-app/approvals/ui.mjs uses;
+//     under the page's own words ("Your script", "Your song — pick 1 of 3",
+//     "Your storyboard", with " (revision N)" past the first version);
 //   * every button sends the value the plan names:
 //       script     "Looks great" -> "approve", "Change something" -> typed text
 //       song       three players, "Pick this one" -> "1" / "2" / "3"
 //       storyboard "Approve all" -> "GO", "Change this shot" -> "shot N: <text>"
 //   * an answer the service refuses (HTTP 409 APPROVAL_ANSWER_TAKEN) shows
-//     "Already answered" in words;
+//     "This was already answered, from your chat or another device. ...";
+//   * an answer that lands says what happens next, in one exact sentence;
+//   * a file that will not load says so and offers "Try again";
 //   * an item that already has an answer shows the answer in words and offers
 //     no buttons;
+//   * no approval row carries the class `option`;
 //   * no `innerHTML` anywhere in the shipped file.
 //
 // Exit codes:  0 = pass, 2 = at least one rule failed.
@@ -28,7 +32,6 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 
-import { APPROVAL_HEADINGS } from "../../approvals/ui.mjs";
 import { renderApprovalsFor } from "../approvals-view.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -126,7 +129,12 @@ async function render(items, answerImpl) {
 rule("no innerHTML anywhere in approvals-view.js", !/\.innerHTML\s*=/.test(viewSource));
 rule("does not import the unserved approvals/ui.mjs", !/from\s+["'][^"']*approvals\/ui\.mjs/.test(viewSource));
 
-// ── 2. every stage renders, under the shared headings ────────────────────────
+// ── 2. every stage renders, under the page's own headings ────────────────────
+const SAMPLE_HEADINGS = {
+  script: "Your script",
+  song: "Your song — pick 1 of 3 (revision 3)",
+  storyboard: "Your storyboard (revision 2)",
+};
 const first = await render(SAMPLE);
 {
   const stages = first.root.children
@@ -138,10 +146,18 @@ const first = await render(SAMPLE);
   for (const stage of ["script", "song", "storyboard"]) {
     const card = findCard(first.root, stage);
     const heading = card && card.children.find((n) => n.tagName === "H2");
-    rule(`heading matches approvals/ui.mjs for ${stage}`,
-      !!heading && heading.textContent === APPROVAL_HEADINGS[stage],
+    rule(`heading says the page's own words for ${stage}`,
+      !!heading && heading.textContent === SAMPLE_HEADINGS[stage],
       heading ? heading.textContent : "no card");
   }
+  rule("a first version names no revision",
+    textOf(findCard(first.root, "script")).includes("Your script")
+      && !textOf(findCard(first.root, "script")).includes("revision"));
+  rule("a later version names its revision",
+    textOf(findCard(first.root, "song")).includes("(revision 3)")
+      && textOf(findCard(first.root, "storyboard")).includes("(revision 2)"));
+  rule("no approval row carries the class option",
+    walk(first.root).every((n) => !(n.getAttribute("class") || "").split(/\s+/).includes("option")));
 }
 
 // ── 3. script: the two buttons and their values ──────────────────────────────
@@ -294,11 +310,30 @@ const first = await render(SAMPLE);
     rule("song “Pick this one” sends 1, 2, 3", sent.join(",") === "1,2,3", sent.join(","));
 
     const broken = await songRound({ fails: true });
-    rule("a song file that cannot play keeps its pick locked and says so",
+    rule("a media failure says it plainly and names what to do instead",
+      broken.post.text.includes("This file would not load.")
+        && broken.post.text.includes("If it still will not load, answer in your chat instead."),
+      broken.post.text.slice(-200));
+    rule("a song file that cannot play keeps its pick locked",
       broken.post.picks.length === listed
-        && broken.post.picks.every((b) => "disabled" in b.attrs)
-        && /stays locked/.test(broken.post.text),
+        && broken.post.picks.every((b) => "disabled" in b.attrs),
       broken.post.text.slice(-140));
+    rule("a media failure offers Try again",
+      !!findButton(findCard(broken.root, "song"), "Try again"));
+
+    // Try again re-runs the load for that card: the file reads this time, so
+    // the pick unlocks once its audio can play.
+    audioFails = false;
+    await click(findButton(findCard(broken.root, "song"), "Try again"));
+    await new Promise((r) => setTimeout(r, 250));
+    const againCard = findCard(broken.root, "song");
+    const againPicks = againCard
+      ? walk(againCard).filter((n) => n.tagName === "BUTTON" && n.textContent === "Pick this one")
+      : [];
+    rule("Try again re-runs the load and unlocks the pick",
+      againPicks.length === listed && againPicks.every((b) => !("disabled" in b.attrs)),
+      `${againPicks.length} pick(s)`);
+    audioFails = true;
   } finally {
     globalThis.document.createElement = origCreateAudio;
     audioFails = false;
@@ -455,8 +490,22 @@ const first = await render(SAMPLE);
   const card = findCard(root, "script");
   await click(findButton(card, "Looks great"));
   const after = findCard(root, "script");
-  rule("an answered card shows the answer in words and no buttons",
-    /approve/.test(textOf(after)) && buttonsIn(after).length === 0, textOf(after).slice(0, 120));
+  rule("an approved card says it is moving on and offers no buttons",
+    textOf(after).includes("Approved. We are moving to the next step.")
+      && buttonsIn(after).length === 0, textOf(after).slice(0, 140));
+}
+
+// ── 7b. a change is answered with the change sentence ────────────────────────
+{
+  const { root } = await render(SAMPLE);
+  const card = findCard(root, "script");
+  const input = walk(card).find((n) => n.tagName === "INPUT");
+  input.value = "make the opening shorter";
+  await click(findButton(card, "Change something"));
+  const after = findCard(root, "script");
+  rule("a change says the new version will appear",
+    textOf(after).includes("Your changes were sent. A new version will appear here."),
+    textOf(after).slice(0, 160));
 }
 
 // ── 8. an item that arrives already answered ─────────────────────────────────
@@ -465,8 +514,8 @@ const first = await render(SAMPLE);
     ? { ...i, answer: { value: "2", by: "telegram", at: 1 } } : i));
   const { root } = await render(items);
   const card = findCard(root, "song");
-  rule("an item answered elsewhere shows that answer in words",
-    textOf(card).includes("“2”"), textOf(card).slice(0, 140));
+  rule("an item answered elsewhere shows the pick in words",
+    textOf(card).includes("You picked version 2."), textOf(card).slice(0, 140));
   rule("an answered item offers no buttons", buttonsIn(card).length === 0,
     `${buttonsIn(card).length} button(s)`);
 }
@@ -483,8 +532,9 @@ const first = await render(SAMPLE);
   const card = findCard(root, "script");
   await click(findButton(card, "Looks great"));
   const after = findCard(root, "script");
-  rule("a refused (409) answer shows “Already answered”",
-    textOf(after).includes("Already answered"), textOf(after).slice(0, 160));
+  rule("a refused (409) answer says it was already answered elsewhere",
+    textOf(after).includes("This was already answered, from your chat or another device. Nothing more to do here."),
+    textOf(after).slice(0, 200));
 }
 
 // ── 10. no service installed → words, no crash ───────────────────────────────
