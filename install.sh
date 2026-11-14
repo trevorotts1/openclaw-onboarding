@@ -6602,7 +6602,7 @@ except Exception:
     text = ""
 pattern = re.compile(
     r'(?m)^##[^\n]*(?:UPDATE PENDING|ONBOARDING PENDING|ONBOARDING COMPLETE)[^\n]*\n'
-    r'(?:(?!^##\s).*\n?)*',
+    r'(?:(?!^##\s)(?!^[ \t]*<!--\s*(?:BEGIN|END)\b).*\n?)*',
 )
 new = re.sub(r'\n{3,}', '\n\n', pattern.sub("", text))
 open(p, "w", encoding="utf-8").write(new)
