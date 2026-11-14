@@ -67,17 +67,26 @@ import json
 import os
 import re
 import sys
-import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
+
+# `workforce_state` (the serialized, locked writer) sits beside this script;
+# resolve it from the script's own folder so the import works under any cwd.
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import workforce_state  # noqa: E402
 
 
 # ─── Path resolvers ──────────────────────────────────────────────────────────
 
 def find_build_state_path() -> Path:
     """Resolve the build-state JSON path (env override first, then VPS, then Mac)."""
-    # Test/override hook: lets the acceptance suite point at a sandbox state file.
+    # Test/override hooks: lets a caller (and the acceptance suite) point at a
+    # specific state file. WORKFORCE_BUILD_STATE_FILE wins over the older
+    # WORKFORCE_BUILD_STATE_PATH name.
+    env_override = os.environ.get("WORKFORCE_BUILD_STATE_FILE")
+    if env_override:
+        return Path(env_override)
     env_override = os.environ.get("WORKFORCE_BUILD_STATE_PATH")
     if env_override:
         return Path(env_override)
@@ -269,12 +278,13 @@ def _departments_tree_candidates(state: dict) -> list:
     departments tree (before scoring). Mirrors verify-wiring.sh
     DEPT_TREE_CANDIDATES so the two gates that read/write the same client
     build-state agree about where to look:
-      1. state.workspaceRoot/departments          (explicit, when present)
-      2. OC_ROOT/workspace/departments             (the standard tree)
-      3. zero-human-company/<companySlug>/departments  for the company slug
+      1. <state.companyRoot>/departments          (explicit, when absolute)
+      2. state.workspaceRoot/departments          (explicit, when present)
+      3. OC_ROOT/workspace/departments             (the standard tree)
+      4. zero-human-company/<companySlug>/departments  for the company slug
          recorded in build-state
-      4. any zero-human-company/*/departments found on disk
-      5. OC_ROOT/workspace/agents/main/departments (legacy; this script's
+      5. any zero-human-company/*/departments found on disk
+      6. OC_ROOT/workspace/agents/main/departments (legacy; this script's
          pre-fix sole candidate)
     """
     seen = set()
@@ -291,6 +301,10 @@ def _departments_tree_candidates(state: dict) -> list:
             return
         seen.add(p)
         out.append(p)
+
+    company_root = state.get("companyRoot")
+    if isinstance(company_root, str) and Path(company_root).is_absolute():
+        add(Path(company_root) / "departments")
 
     ws_root = state.get("workspaceRoot")
     if ws_root:
@@ -531,6 +545,18 @@ def main() -> None:
               f"'{tree_resolution.resolved_via}': {depts_dir} "
               f"({tree_resolution.score}/{tree_resolution.checked} client dept(s) matched)")
 
+    # A "none" resolution beside at least one already-done department means the
+    # tree moved or is not mounted right now. Measuring through that empty tree
+    # would zero rolesDone and flip finished departments back to building, so
+    # neither field is touched for this run: the counts that survive are the
+    # last measured ones. Totals are still recomputed from the entries.
+    tree_unresolved_hold = (
+        depts_dir is None
+        and any(d.get("status") == "done" for d in existing_depts_dict.values())
+    )
+    if tree_unresolved_hold:
+        print("departments tree unresolved; statuses left unchanged")
+
     # Upsert each dept the CLIENT ALREADY HAS in build-state (DEFECT A fix).
     # Never iterate _index.json here -- that adds every canonical department
     # to a client's roster regardless of whether they ever selected it. A
@@ -592,6 +618,18 @@ def main() -> None:
             if new_status == "done":
                 new_status = "building"
 
+        # A prebuilt department's status belongs to the prebuild, not to this
+        # refresh: its counts move, its status never does. (Without this a
+        # measured-to-zero prebuilt entry loses "prebuilt" on the first run.)
+        if entry.get("status") == "prebuilt":
+            new_status = "prebuilt"
+
+        # Unresolved tree with done departments present: leave both the status
+        # and the last measured rolesDone exactly as recorded.
+        if tree_unresolved_hold:
+            new_status = entry.get("status", "building")
+            roles_on_disk = entry.get("rolesDone", 0)
+
         if (entry.get("rolesPlanned") != roles_count or
                 entry.get("rolesDone") != roles_on_disk or
                 entry.get("status") != new_status):
@@ -637,18 +675,28 @@ def main() -> None:
         return
 
     if changed:
-        # Atomic write
-        state_dir = state_path.parent
-        fd, tmp_path = tempfile.mkstemp(prefix=".build-state.", suffix=".json.tmp",
-                                        dir=str(state_dir))
+        # Write under the workforce_state lock, and copy ONLY the six fields
+        # this script derives into the state as it exists on disk right now.
+        # Anything else on disk (interview progress, identity stamps,
+        # completion verification, fields another writer added) is preserved,
+        # and a value a concurrent writer changed while this run was measuring
+        # is kept rather than clobbered by our stale copy.
+        computed = {
+            "departments": (list(existing_depts_dict.values()) if dept_shape == "array"
+                            else existing_depts_dict),
+            "totalRoles": total_roles,
+            "totalDepartments": len(existing_depts_dict),
+            "departmentsTreeResolution": tree_resolution.to_state_dict(),
+            "lastRefreshedAt": now,
+            "refreshSource": "refresh-build-state-from-index.py",
+        }
+
+        def mutate(current):
+            current.update(computed)
+
         try:
-            with os.fdopen(fd, "w") as f:
-                json.dump(state, f, indent=2)
-                f.write("\n")
-            os.replace(tmp_path, str(state_path))
-        except OSError as e:
-            if Path(tmp_path).exists():
-                Path(tmp_path).unlink(missing_ok=True)
+            workforce_state.update(state_path, mutate)
+        except (OSError, workforce_state.StateConflict) as e:
             print(f"FATAL: write failed: {e}", file=sys.stderr)
             sys.exit(1)
         print(f"[refresh-build-state] Updated {state_path} ({len(existing_depts_dict)} depts, "
