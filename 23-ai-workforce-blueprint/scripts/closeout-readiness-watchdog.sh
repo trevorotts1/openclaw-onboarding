@@ -132,6 +132,14 @@ fi
 : "${WORKFORCE_PYTHON:=$(command -v python3)}"
 export WORKFORCE_PYTHON
 export PYTHONPATH="$SCRIPT_DIR${PYTHONPATH:+:$PYTHONPATH}"
+# Fail closed when the lib is missing (BU-115): without the lib, WORKFORCE_PYTHON
+# is unbound and every state writer below dies inside its own subshell, so the
+# watchdog would log an escalation it could never persist and never reach the
+# classification that follows - the exact silent strand this lane exists to end.
+if [[ -z "${WORKFORCE_PYTHON:-}" ]]; then
+  echo "[closeout-readiness-watchdog] FATAL: lib-workforce-state.sh could not be sourced and no python3 is available - refusing a half-run that would escalate without persisting" >&2
+  exit 1
+fi
 
 STATE_FILE="${ZHC_STATE_FILE:-${OC_ROOT}/workspace/.workforce-build-state.json}"
 LOCK_FILE="${OC_ROOT}/workspace/.closeout-watchdog.lock"

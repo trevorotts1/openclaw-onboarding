@@ -99,8 +99,12 @@ _mkbox() {
   cp "$WATCHDOG" "$skill/closeout-readiness-watchdog.sh"
   # The watchdog's locked state writer (lib-workforce-state.sh + workforce_state.py)
   # must travel with the copy, or every closeoutBlockers write fails silently.
+  # ...and stage the rest of the state-writer dependency set beside it, exactly
+  # as the sister fixture (closeout-resume-cron-routing.test.sh) and every other
+  # box-shaped sandbox in the repo does (BU-115).
   cp "$REPO_ROOT/23-ai-workforce-blueprint/scripts/lib-workforce-state.sh" "$skill/"
   cp "$REPO_ROOT/23-ai-workforce-blueprint/scripts/workforce_state.py" "$skill/"
+  cp "$REPO_ROOT/23-ai-workforce-blueprint/scripts/"{workforce_completion.py,interview_eligibility.py} "$skill/"
 
   cat > "$h/bin/openclaw" <<SHIM
 #!/usr/bin/env bash
