@@ -43,6 +43,10 @@
 #   2  — environment error (a copy missing entirely / unresolved repo tree):
 #        fail-closed, never a pass the gate could not actually perform
 #
+# When called by the entry door (GATE 0c) a non-zero exit is logged as a
+# WARNING and the build continues (owner ruling D6). When called by continuous
+# integration a non-zero exit fails the job.
+#
 # PRESENTATION_DRIFT_GATE=0 documents the skip everywhere it is honored: the
 # disabled path PRINTS the skip and exits 0 — it never reports a pass it did
 # not perform. Default (unset or =1) is ON.
@@ -284,7 +288,9 @@ PYGATE
 # (or registers an openclaw cron on Linux), and (b) that installer is
 # CALLED from the main install flow. Without the call site a staged
 # submission sits staged forever with no human action -- the exact QC.md
-# FIX 61 failure. Asserted by grep contracts (cheap, deterministic).
+# FIX 61 failure. Asserted by text contracts for (2)/(3)/(5); clause (4) is a
+# real definition-body parse since PD-009 (the old whole-file regex passed on
+# the definition itself).
 echo "== GATE 8: intake-poll schedule wiring (FIX 61) =="
 GATE8_RC=0
 # fix/r-f02-b3: the FIX 61 block referenced $REPO_ROOT/$SCRIPTS_DIR — variables this script never
@@ -295,8 +301,8 @@ import re, sys
 from pathlib import Path
 repo = Path(sys.argv[1]); scr = sys.argv[2]
 fails = []
-tpl = repo / scr / "presentation-intake-poll.plist.template"
-poll = repo / scr / "presentation-intake-poll.sh"
+tpl = repo / "presentation-intake-poll.plist.template"
+poll = repo / "presentation-intake-poll.sh"
 if not tpl.is_file():
     fails.append("(1) plist template missing: " + str(tpl))
 if not poll.is_file():
@@ -313,9 +319,80 @@ if "install_intake_poll_schedule()" not in inst_text:
     fails.append("(2) install.sh does not define install_intake_poll_schedule() -- the scheduled path has no installer")
 if "presentation-intake-poll.plist.template" not in inst_text:
     fails.append("(3) install.sh never resolves the intake-poll plist template -- the installer would always SKIP")
-call_re = re.compile(r"^\s*install_intake_poll_schedule\b", re.M)
-if not call_re.search(inst_text):
-    fails.append("(4) install.sh never CALLS install_intake_poll_schedule -- the poll is never scheduled (staged submissions sit forever)")
+# PD-009: clause (4) used to be a regex over the WHOLE file, so the function
+# DEFINITION itself matched and a defined-but-never-called installer passed.
+# Parse the definition instead: the body runs from the header line (after
+# optional whitespace) to the first line that is a bare `}` at column 0, and a
+# call must appear OUTSIDE it, on a line that is not a comment, with
+# `install_intake_poll_schedule` as its FIRST token.
+# PD-919: F12 moved the canonical definition OUT of install.sh into
+# lib-presentation-schedules.sh, which install.sh sources near its top. Parsing
+# install.sh alone therefore found only the fail-closed stub
+# (`command -v ... || install_intake_poll_schedule() { return 1; }`, which does
+# not match the anchored header) and reported GATE 8 red on every tree. The
+# definition is now looked for in install.sh first, then — ONLY when install.sh
+# actually SOURCES that lib, so a def in an unsourced file is still a dead
+# letter — in the lib itself. The CALL is still required in install.sh, outside
+# the definition; a defined-but-never-called installer still fails.
+# PD-922: "sources" used to be the SUBSTRING test `_LIB_NAME in inst_text`, so a
+# COMMENT that merely mentioned the lib counted as sourced and a def inside a
+# file install.sh never loads turned GATE 8 green — exactly the dead letter the
+# comment above claims to refuse. Only a real `source <path>` / `. <path>` at a
+# command position, on a line that is not a comment, whose argument basename is
+# the lib name, counts as sourced.
+_inst_lines = inst_text.splitlines()
+_LIB_NAME = "lib-presentation-schedules.sh"
+_SOURCE_RE = re.compile(
+    r"(?:^|[;&|]|\bthen\b|\bdo\b|\belse\b|\{|\()\s*(?:source|\.)\s+"
+    r"(\"[^\"]*\"|'[^']*'|[^\s;]+)"
+)
+
+def _sources_lib(lines, lib_name):
+    for _line in lines:
+        _s = _line.strip()
+        if not _s or _s.startswith("#"):
+            continue
+        for _m in _SOURCE_RE.finditer(_line):
+            _arg = _m.group(1).strip("\"'").rsplit("/", 1)[-1].strip("\"'")
+            if _arg == lib_name:
+                return True
+    return False
+
+def _installer_def(lines):
+    start = None
+    for i, line in enumerate(lines):
+        if re.match(r"^\s*install_intake_poll_schedule\(\)\s*\{\s*$", line):
+            start = i
+            break
+    end = None
+    if start is not None:
+        for j in range(start + 1, len(lines)):
+            if lines[j].startswith("}"):
+                end = j
+                break
+    return start, end
+
+_d_start, _d_end = _installer_def(_inst_lines)
+_def_in_install = True
+if _d_start is None or _d_end is None:
+    _lib = inst.parent / _LIB_NAME
+    _lib_lines = []
+    if _lib.is_file() and _sources_lib(_inst_lines, _LIB_NAME):
+        _lib_lines = _lib.read_text(encoding="utf-8", errors="replace").splitlines()
+    _d_start, _d_end = _installer_def(_lib_lines)
+    _def_in_install = False
+if _d_start is None or _d_end is None:
+    fails.append("(4) neither install.sh nor the " + _LIB_NAME + " it sources defines an install_intake_poll_schedule() body ending at a column-0 `}` -- the door cannot prove the installer is callable, so the poll is never scheduled")
+else:
+    _calls = [
+        _line for _i, _line in enumerate(_inst_lines)
+        if not (_def_in_install and _d_start <= _i <= _d_end)
+        and not _line.lstrip().startswith("#")
+        and _line.split()
+        and _line.split()[0] == "install_intake_poll_schedule"
+    ]
+    if not _calls:
+        fails.append("(4) install.sh never CALLS install_intake_poll_schedule outside its own definition -- the poll is never scheduled (staged submissions sit forever)")
 if "_FIX61_RC=0" not in inst_text or "_FIX61_RC=$?" not in inst_text:
     fails.append("(5) install.sh does not latch the FIX 61 installer rc (_FIX61_RC) -- a failed schedule install would be swallowed")
 if fails:
@@ -324,7 +401,8 @@ if fails:
         print("  - " + f)
     sys.exit(1)
 print("GATE8_PASS: intake-poll scheduled path wired -- template + poll script exist, "
-      "install.sh defines and CALLS install_intake_poll_schedule, rc is latched (FIX 61).")
+      "install.sh (or the " + _LIB_NAME + " it sources) defines and install.sh CALLS "
+      "install_intake_poll_schedule, rc is latched (FIX 61).")
 PYEOF
 if [ "$GATE8_RC" -ne 0 ]; then
   echo "GATE 8 FAILED: FIX 61 intake-poll schedule wiring violated -- see GATE8_FAIL above." >&2
@@ -335,7 +413,22 @@ fi
 if [ ! -f "$DEPT_STAMP" ]; then
     fail "provenance stamp $DEPT_STAMP is MISSING — the installed manifest carries no recorded provenance; run the reinstall to restamp (restamp_manifest_source, FIX 113)"
 else
-    STAMP_SHA="$(grep -o 'content_sha256=[0-9a-fA-F]*' "$DEPT_STAMP" | head -1 | cut -d= -f2)"
+    # PD-009: parse the stamp with python, not a grep pipeline. The old
+    # `grep -o 'content_sha256=[0-9a-fA-F]*' | head | cut` matched a SUBSTRING
+    # anywhere on a line (a comment, a longer key, a quoted example) and silently
+    # took the first hit. This reads key=value lines and takes the value only when
+    # the key is EXACTLY content_sha256; nothing else prints anything.
+    STAMP_SHA="$(python3 - "$DEPT_STAMP" <<'PYSTAMP'
+import sys
+with open(sys.argv[1], encoding="utf-8", errors="replace") as _fh:
+    _lines = _fh.read().splitlines()
+for line in _lines:
+    key, sep, value = line.partition("=")
+    if sep and key.strip() == "content_sha256":
+        print(value.strip())
+        break
+PYSTAMP
+)"
     DEPT_MANIFEST_SHA="$(sha "$DEPT_MANIFEST")"
     if [ -z "$STAMP_SHA" ]; then
         fail "provenance stamp $DEPT_STAMP carries no parseable content_sha256= line — run the reinstall to restamp (FIX 113)"

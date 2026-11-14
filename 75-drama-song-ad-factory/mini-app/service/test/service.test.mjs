@@ -260,16 +260,16 @@ test('uploads: bytes never ride the Worker — a scoped presigned PUT comes back
 
 test('retention: each class is deleted when the plan says, and never-delete is proven', () => {
   const day = DAY_MS;
-  assert.equal(retentionVerdict('intake_answer', { eventAtMs: T0, nowMs: T0 + day }).delete, true, 'intake goes at pickup');
-  assert.equal(retentionVerdict('approval_file', { eventAtMs: T0, nowMs: T0 }).delete, true, 'approval goes at stage approval');
-  assert.equal(retentionVerdict('r2_fallback_video', { eventAtMs: T0, nowMs: T0 + 7 * day - 1 }).keep, true);
-  assert.equal(retentionVerdict('r2_fallback_video', { eventAtMs: T0, nowMs: T0 + 7 * day }).delete, true);
-  assert.equal(retentionVerdict('status_record', { eventAtMs: T0, nowMs: T0 + 30 * day }).delete, true);
-  assert.equal(retentionVerdict('waiting_unclaimed', { createdAtMs: T0, nowMs: T0 + 45 * day }).delete, true);
-  assert.equal(retentionVerdict('project_object', { createdAtMs: T0, nowMs: T0 + 45 * day }).delete, true);
+  assert.equal(retentionVerdict('intake_answer', { in_production_at: T0, nowMs: T0 + day }).delete, true, 'intake goes at pickup');
+  assert.equal(retentionVerdict('approval_file', { finalized_at: T0, nowMs: T0 }).delete, true, 'approval goes at stage approval');
+  assert.equal(retentionVerdict('r2_fallback_video', { delivered_at: T0, nowMs: T0 + 7 * day - 1 }).keep, true);
+  assert.equal(retentionVerdict('r2_fallback_video', { delivered_at: T0, nowMs: T0 + 7 * day }).delete, true);
+  assert.equal(retentionVerdict('status_record', { delivered_at: T0, nowMs: T0 + 30 * day }).delete, true);
+  assert.equal(retentionVerdict('waiting_unclaimed', { created_at: T0, nowMs: T0 + 45 * day }).delete, true);
+  assert.equal(retentionVerdict('project_object', { created_at: T0, nowMs: T0 + 45 * day }).delete, true);
 
   for (const kind of ['enrollment_record', 'delivery_receipt', 'ghl_media']) {
-    const v = retentionVerdict(kind, { createdAtMs: T0, eventAtMs: T0, nowMs: T0 + 3650 * day });
+    const v = retentionVerdict(kind, { created_at: T0, delivered_at: T0, nowMs: T0 + 3650 * day });
     assert.equal(v.delete, false, `${kind} must never be deleted`);
     assert.equal(v.never, true);
     assert.ok(RETENTION_RULES[kind].never);
@@ -280,11 +280,11 @@ test('retention: each class is deleted when the plan says, and never-delete is p
 test('retention: a sweep partitions never-delete items out of the delete list', () => {
   const day = DAY_MS;
   const out = dueForDeletion([
-    { kind: 'enrollment_record', path: 'clients/x/enrollment.json', created_at_ms: T0 },
-    { kind: 'delivery_receipt', path: 'clients/x/receipt.json', created_at_ms: T0 },
-    { kind: 'ghl_media', path: 'clients/x/ghl.json', created_at_ms: T0 },
-    { kind: 'r2_fallback_video', path: 'clients/x/video.mp4', event_at_ms: T0 },
-    { kind: 'status_record', path: 'clients/x/status.json', event_at_ms: T0 },
+    { kind: 'enrollment_record', path: 'clients/x/enrollment.json', created_at: T0 },
+    { kind: 'delivery_receipt', path: 'clients/x/receipt.json', created_at: T0 },
+    { kind: 'ghl_media', path: 'clients/x/ghl.json', created_at: T0 },
+    { kind: 'r2_fallback_video', path: 'clients/x/video.mp4', delivered_at: T0 },
+    { kind: 'status_record', path: 'clients/x/status.json', delivered_at: T0 },
   ], T0 + 400 * day);
   assert.deepEqual(out.delete.sort(), ['clients/x/status.json', 'clients/x/video.mp4']);
   assert.equal(out.never.length, 3);
@@ -349,6 +349,18 @@ test('options: the four approved strings are reproduced verbatim', () => {
   assert.match(stale.page_line, /^Your computer has not checked in since .*Your order is safe and starts when it is back\.$/);
   assert.match(stale.operator_line, /with an order waiting$/);
   assert.equal(staleVerdict({ record: {}, lastCheckMs: T0, hasWaitingOrder: false, nowMs: T0 }).stale, false);
+
+  // S75-077 — no stored time zone means an age, never a clock the client would
+  // read as their own; no check-in at all gets its own sentence.
+  const noZone = staleVerdict({
+    record: { option: 2 }, lastCheckMs: T0 - 31 * 60 * 1000, hasWaitingOrder: true, nowMs: T0,
+  });
+  assert.equal(noZone.page_line,
+    'Your studio computer has not checked in for 31 minutes. Your order is safe and starts when it is back.');
+  const never = staleVerdict({
+    record: { option: 2 }, lastCheckMs: null, hasWaitingOrder: true, nowMs: T0,
+  });
+  assert.equal(never.page_line, 'Your order is safe. It starts as soon as your studio computer is on.');
 });
 
 test('options: Option 3 refuses without a recorded approval, and accepts with one', () => {
@@ -414,6 +426,9 @@ test('service: health, enrollment, check-in, order and the cross-client read ref
   const created = await handle(post('/api/studio/orders', { title: 'Spring Sale' }, box.key), GOOD_ENV, store, objects);
   assert.equal(created.status, 201);
   const order = (await created.json()).order;
+  // S75-071 — no id sent, so the service invents one in the shape the page
+  // mints: `r_` plus eight lower-case hex.
+  assert.match(order.order_id, /^r_[0-9a-f]{8}$/, 'the service invents the order id');
   assert.equal(order.state, 'waiting');
   assert.equal(order.availability, 'not-delivered');
 
@@ -428,6 +443,67 @@ test('service: health, enrollment, check-in, order and the cross-client read ref
   // The owner still sees it.
   const own = await handle(get(`/api/studio/orders/${order.order_id}`, box.key), GOOD_ENV, store, objects);
   assert.equal(own.status, 200);
+});
+
+test('S75-071: the same order id stores ONE order, and the second POST answers 200 with it', async () => {
+  const store = memStore();
+  const objects = memObjects();
+  const { clientId, key } = await clientWithKey(store);
+  const orderId = 'r_0123abcd';
+  const body = { title: 'Spring Sale', replies: ['1', 'yes'], upload_ids: [], order_id: orderId };
+
+  const first = await handle(post('/api/studio/orders', body, key), GOOD_ENV, store, objects);
+  assert.equal(first.status, 201);
+  assert.equal((await first.json()).order.order_id, orderId);
+
+  const second = await handle(post('/api/studio/orders', body, key), GOOD_ENV, store, objects);
+  assert.equal(second.status, 201, 'the repeat answers 201 with the same order, never a second record');
+  assert.equal((await second.json()).order.order_id, orderId);
+
+  assert.deepEqual(
+    [...store._mem.keys()].filter((k) => k === `order:${clientId}:${orderId}`),
+    [`order:${clientId}:${orderId}`],
+    'exactly one order record exists',
+  );
+});
+
+test('S75-071: a repeat POST never changes an order already in production', async () => {
+  const store = memStore();
+  const objects = memObjects();
+  const { clientId, key } = await clientWithKey(store, 'box');
+  const orderId = 'r_0011aabb';
+
+  const created = await handle(post('/api/studio/orders', { title: 'Spring Sale', order_id: orderId }, key), GOOD_ENV, store, objects);
+  assert.equal(created.status, 201);
+  const claimed = await handle(post(`/api/studio/orders/${orderId}/state`, { event: 'claim' }, key), GOOD_ENV, store, objects);
+  assert.equal(claimed.status, 200);
+
+  const again = await handle(post('/api/studio/orders', { title: 'Something else', order_id: orderId }, key), GOOD_ENV, store, objects);
+  assert.equal(again.status, 201);
+  const answer = (await again.json()).order;
+  assert.equal(answer.state, 'in_production', 'the state is untouched');
+  assert.equal(answer.title, 'Spring Sale', 'the stored order is answered, not rewritten');
+
+  const raw = JSON.parse(await store.kvGet(`order:${clientId}:${orderId}`));
+  assert.equal(raw.state, 'in_production');
+  assert.equal(raw.title, 'Spring Sale');
+});
+
+test('S75-071: a PRESENT order id of the wrong shape is refused and nothing is stored', async () => {
+  const store = memStore();
+  const objects = memObjects();
+  const { clientId, key } = await clientWithKey(store, 'box');
+
+  for (const bad of ['order-1', 'r_0123ABCD', 'r_0123abcd0', 'r_0123abc', '', 42]) {
+    const res = await handle(post('/api/studio/orders', { title: 'x', order_id: bad }, key), GOOD_ENV, store, objects);
+    assert.equal(res.status, 400, `${JSON.stringify(bad)} must be refused`);
+    assert.equal((await res.json()).code, 'AF-DS-ORDER-ID');
+  }
+  assert.deepEqual(
+    [...store._mem.keys()].filter((k) => k.startsWith(`order:${clientId}:`)),
+    [],
+    'a refused id writes no order',
+  );
 });
 
 test('service: pairing — admin mints, the code burns once, a machine key comes back', async () => {
@@ -451,6 +527,31 @@ test('service: pairing — admin mints, the code burns once, a machine key comes
 
   const again = await handle(post('/api/studio/pair', { code }), GOOD_ENV, store, objects);
   assert.equal(again.status, 403, 'the code is single use');
+});
+
+test('service: an expired pairing code names the way out, a wrong one does not', async () => {
+  const store = memStore();
+  const objects = memObjects();
+  const { code, fingerprint } = await mintPairingCode();
+  await store.kvPut(`pair:${fingerprint}`, JSON.stringify({
+    client_id: randomClientId(),
+    fingerprint,
+    exp: Date.now() - 1000,
+    tries: 0,
+    status: 'open',
+  }), 900);
+
+  const expired = await handle(post('/api/studio/pair', { code }), GOOD_ENV, store, objects);
+  assert.equal(expired.status, 403);
+  const refused = await expired.json();
+  assert.equal(refused.code, AF_PAIR_EXPIRED);
+  assert.equal(refused.message,
+    'That pairing code has expired. Codes last 15 minutes - ask for a new one.');
+
+  // Every other refusal keeps the one wording, so a guess learns nothing.
+  const wrong = await handle(post('/api/studio/pair', { code: 'AAAA-1111' }), GOOD_ENV, store, objects);
+  assert.equal(wrong.status, 403);
+  assert.equal((await wrong.json()).message, 'That pairing code cannot be used.');
 });
 
 test('service: the option line is served, and Option 3 is refused without approval', async () => {

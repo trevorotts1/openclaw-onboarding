@@ -14,7 +14,7 @@
 
 # Platform detection + bootstrap (MUST run before set -euo pipefail -- VPS container
 # re-exec uses conditional commands that may fail intentionally).
-ONBOARDING_VERSION="v27.1.71"
+ONBOARDING_VERSION="v27.1.72"
 _SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" 2>/dev/null && pwd || pwd)"
 _PLATFORM_COMMON="$_SCRIPT_DIR/platform/common.sh"
 _PLATFORM_COMMON_TEMP=""
@@ -708,6 +708,10 @@ fi
 #  FLEET_PREFLIGHT_ENFORCE_FROM; storage and memory pressure are enforced now.
 #  A missing helper or python3, or any internal error, PROCEEDS (fail open).
 #  FLEET_PREFLIGHT_BYPASS=1 skips it (operator).
+#  SCOPE (BFX-010): --onboarding-only / ONBOARDING_ONLY=1 is a repo-only run, and --only
+#  "<skills>" is judged by the providers those skills use (PROVIDER_SKILLS in the helper): a
+#  provider billing failure that the run cannot touch never pauses it. FLEET_PREFLIGHT_NO_NOTIFY=1
+#  sends no client note.
 # ============================================================
 fleet_preflight_checks() {
     if [ "${FLEET_PREFLIGHT_BYPASS:-0}" = "1" ]; then
@@ -722,8 +726,24 @@ fleet_preflight_checks() {
     if [ -z "$_py" ] || ! command -v python3 >/dev/null 2>&1; then
         echo "  [preflight] helper or python3 not available on this box -- proceeding (fail open)"; return 0
     fi
+    # BFX-010 scope: a repo-only run (--onboarding-only / ONBOARDING_ONLY=1) and an --only run
+    # of provider-unrelated skills skip the provider-billing gates; storage and memory still
+    # apply. This block runs before main() parses its arguments, so read the saved ones here.
+    local _scope="" _only="" _a _next=0
+    [ "${ONBOARDING_ONLY:-0}" = "1" ] && _scope="repo-only"
+    for _a in ${SELF_SYNC_ARGS[@]+"${SELF_SYNC_ARGS[@]}"}; do
+        if [ "$_next" = "1" ]; then _only="$_a"; _next=0; continue; fi
+        case "$_a" in
+            --onboarding-only) _scope="repo-only" ;;
+            --only) _next=1 ;;
+            --only=*) _only="${_a#--only=}" ;;
+        esac
+    done
+    local _scope_args=()
+    [ -n "$_scope" ] && _scope_args+=(--scope "$_scope")
+    [ -n "$_only" ] && _scope_args+=(--only "$_only")
     _rc=0
-    _out="$(python3 "$_py" --phase checks --root "${OC_CONFIG:-}" 2>&1)" || _rc=$?
+    _out="$(python3 "$_py" --phase checks --root "${OC_CONFIG:-}" ${_scope_args[@]+"${_scope_args[@]}"} 2>&1)" || _rc=$?
     printf '%s\n' "$_out" | sed 's/^/  /'
     if [ "$_rc" = "10" ]; then
         echo ""
@@ -1664,7 +1684,15 @@ oc_skill_box_state_paths() {
     # the exact two paths tests/w10-canary/upgrade_canary.py seeds and asserts
     # survive ("interrupted-run state preserved"). A shipped copy would still
     # win: neither path is in oc_skill_box_state_overrides_shipped.
-    75-drama-song-ad-factory) printf '%s\n' ".checkpoint-pending" "scripts/core/state_store.py.part" ;;
+    # assets/face_landmarker.task is the third path (S75-046). It is the
+    # sha256-pinned mediapipe face model both lip-sync gates read, downloaded
+    # once per box INTO the skill folder, and the release ships no copy of it.
+    # Without this entry the wholesale remove+copy deleted the only copy on
+    # disk on every roll, and the gates -- which are fail-closed on purpose --
+    # then refused every lip-sync job until the box downloaded it again. Same
+    # default rule as the two above: a shipped copy would win, and there is
+    # none, so the box copy is put back.
+    75-drama-song-ad-factory) printf '%s\n' ".checkpoint-pending" "scripts/core/state_store.py.part" "assets/face_landmarker.task" ;;
   esac
   return 0
 }
@@ -1977,12 +2005,18 @@ else:
             "Nothing was written. Fix the read error and re-run the updater.")
 
 # Remove any "## ... UPDATE PENDING ..." or "## ... ONBOARDING PENDING ..."
+# The body ALSO stops at any '<!-- BEGIN ... -->' / '<!-- END ... -->' marker
+# comment (fixed 2026-11-13): the notice is appended at EOF, and a block a
+# skill installer re-renders at EOF (Skill 38's SKILL38_RUNTIME_INVARIANTS)
+# lands directly after it. The old body pattern ran to the next '## ' line,
+# which is the block's OWN heading, so it deleted the BEGIN marker on every
+# run (BEGIN=0 / END=1) and the block re-broke after every repair.
 # section: from its "## " header up to (but not including) the next top-level
 # "## " heading, or EOF. Non-greedy, multiline. This sweeps EVERY such section,
 # including stale ones left by earlier waves, not just the newest.
 pattern = re.compile(
     r'(?m)^##[^\n]*(?:UPDATE PENDING|ONBOARDING PENDING)[^\n]*\n'   # the header
-    r'(?:(?!^##\s).*\n?)*',                                         # body until next "## "
+    r'(?:(?!^##\s)(?!^[ \t]*<!--\s*(?:BEGIN|END)\b).*\n?)*',                                         # body until next "## "
 )
 # Measured in BYTES, because it is compared against byte sizes below. Counting
 # CHARACTERS here under-counted every non-ASCII character in a removed section
@@ -2480,7 +2514,7 @@ reap_dead_skill_manifest() {
 # --- END REAP-DEAD-SKILL-MANIFEST ---
 
 # ----------------------------------------------------------
-# v27.1.71 - safe_json_edit
+# v27.1.72 - safe_json_edit
 # Harden any direct write to openclaw.json: back up, apply the
 # python3 transform, validate with `openclaw config validate`,
 # and ROLL BACK from the backup on failure so one bad key can
@@ -5726,6 +5760,28 @@ main() {
       if declare -F frontdoor_update_999 >/dev/null 2>&1; then
         frontdoor_update_999 || _FD_999_NOTE=" (999 refresh reported a failure — see above)"
       fi
+      # FULL-READ GUARD, Claude Code / claude-nine side (Trevor's order 2026-11-12): right after the
+      # 999 checkout is refreshed, run its narrow installer so the PreToolUse hook reaches
+      # ~/.claude-nine on this roll. Mac boxes only. A missing script, checkout or ~/.claude-nine is a
+      # logged no-op; nothing here can fail the roll. One PASS/FAIL line is printed.
+      if [ "$(uname -s 2>/dev/null)" = "Darwin" ]; then
+        _FRG_999_SCRIPT=""
+        for _frg_c in "$HOME/999-setup" "$HOME/Documents/999-setup" "$HOME/999-setup-clean" "$HOME/.claude-nine/../999-setup"; do
+          if [ -f "$_frg_c/.claude/skills/hook-skill/scripts/macos/install.sh" ]; then
+            _FRG_999_SCRIPT="$_frg_c/.claude/skills/hook-skill/scripts/macos/install.sh"; break
+          fi
+        done
+        if [ -z "$_FRG_999_SCRIPT" ]; then
+          echo "full-read-guard (999): no-op, 999 checkout has no hook-skill/scripts/macos/install.sh"
+        elif [ ! -d "$HOME/.claude-nine" ]; then
+          echo "full-read-guard (999): no-op, $HOME/.claude-nine does not exist on this box"
+        elif bash "$_FRG_999_SCRIPT" --only full-read-guard --root "$HOME/.claude-nine" >>"$LOG_FILE" 2>&1; then
+          echo "full-read-guard (999): PASS installed into $HOME/.claude-nine"
+        else
+          echo "full-read-guard (999): FAIL installer returned non-zero (advisory, roll continues; see $LOG_FILE)"
+        fi
+        unset _FRG_999_SCRIPT _frg_c
+      fi
       if frontdoor_run_stage "$_FRONTDOOR_STAGE_PY"; then
         case "$FRONTDOOR_STATUS" in
           ok)          echo "  ✓ [FRONT DOOR] repairs + health gate: clean" ;;
@@ -6092,6 +6148,20 @@ main() {
   rm -rf "$_OC_EXT_STAGE"
   if [ -d "$ONBOARDING_DIR/extensions" ]; then
     mkdir -p "$_OC_EXT_STAGE" && cp -R "$ONBOARDING_DIR/extensions/." "$_OC_EXT_STAGE/" 2>/dev/null || true
+  fi
+
+  # FULL-READ GUARD (Trevor's order 2026-11-12): install + enable the full-read-guard plugin
+  # on THIS roll. Runs HERE -- right after the extensions stage copy and ABOVE the
+  # content-recheck `exit 0` -- so a content-current re-roll still picks it up. Uses the
+  # RESOLVED OpenClaw root ($OC_CONFIG), never a hard-coded $HOME/.openclaw. Idempotent,
+  # advisory-only (it can never fail this update), and a logged no-op when the plugin folder
+  # is not in this release. Its "full-read-guard:" line goes to the roll log.
+  _FRG_INSTALLER="$ONBOARDING_DIR/scripts/install-full-read-guard.sh"
+  [ -f "$_FRG_INSTALLER" ] || _FRG_INSTALLER="$_OC_SCRIPTS_DEST/install-full-read-guard.sh"
+  if [ -f "$_FRG_INSTALLER" ]; then
+    bash "$_FRG_INSTALLER" --install --root "$OC_CONFIG" --source "$_OC_EXT_STAGE" 2>&1 | tee -a "$LOG_FILE" || true
+  else
+    echo "full-read-guard: ADVISORY install-full-read-guard.sh not in bundle -- skipped"
   fi
 
   # BURN GUARD: keep OpenClaw's weekly system-owned skill-collection-review crons OFF
@@ -7694,26 +7764,41 @@ PYEOF
     # keep the files the reviewed manifest targets (stashed here, put back below
     # only where the release does not ship them). No manifest = empty list =
     # the update behaves exactly as before, so existing installs are not broken.
+    # This block only sets _x11_skip; the `continue` that skips this skill's
+    # remaining steps sits on the first line after the end marker below, so the
+    # marked text stays runnable on its own and the test can prove the skip.
     _x11_rc=0
     _x11_keep=""
+    _x11_keep_list=""
+    _x11_skip=0
     if [ "$SKILL_NAME" = "75-drama-song-ad-factory" ]; then
       _x11_out="$(bash "$SKILL_DIR/scripts/core/x11_install_gate.sh" 2>&1)" || _x11_rc=$?
       echo "$_x11_out"
     fi
     if [ "$_x11_rc" = "20" ]; then
       echo "  ✗ [x11-gate] skill $SKILL_NAME NOT updated (refuse mode); existing copy left intact"
-    else
-      if [ "$_x11_rc" != "0" ]; then
+      _x11_skip=1
+    elif [ "$_x11_rc" != "0" ]; then
+      _x11_keep_list="$(bash "$SKILL_DIR/scripts/core/x11_install_gate.sh" preserve-list 2>/dev/null || true)"
+      if [ -n "$_x11_keep_list" ]; then
         _x11_keep="$(mktemp -d "${TMPDIR:-/tmp}/oc-x11-keep.XXXXXX" 2>/dev/null || true)"
-        while IFS= read -r _x11_rel; do
-          [ -n "$_x11_rel" ] && [ -n "$_x11_keep" ] && [ -f "$SKILLS_DIR/$SKILL_NAME/$_x11_rel" ] || continue
-          mkdir -p "$_x11_keep/$(dirname "$_x11_rel")" \
-            && cp -p "$SKILLS_DIR/$SKILL_NAME/$_x11_rel" "$_x11_keep/$_x11_rel" \
-            || echo "  ⚠ [x11-gate] could not set aside $_x11_rel"
-        done <<X11EOF
-$(bash "$SKILL_DIR/scripts/core/x11_install_gate.sh" preserve-list 2>/dev/null)
+        if [ -z "$_x11_keep" ]; then
+          echo "  ✗ [x11-gate] could not make a keep folder - skill 75 left untouched this roll"
+          _x11_skip=1
+        else
+          while IFS= read -r _x11_rel; do
+            [ -n "$_x11_rel" ] || continue
+            [ -f "$SKILLS_DIR/$SKILL_NAME/$_x11_rel" ] || continue
+            mkdir -p "$_x11_keep/$(dirname "$_x11_rel")" \
+              && cp -p "$SKILLS_DIR/$SKILL_NAME/$_x11_rel" "$_x11_keep/$_x11_rel" \
+              || echo "  ⚠ [x11-gate] could not set aside $_x11_rel"
+          done <<X11EOF
+$_x11_keep_list
 X11EOF
+        fi
       fi
+    fi
+    if [ "$_x11_skip" = "0" ]; then
     oc_skill_box_state_save "$SKILL_NAME" "$SKILLS_DIR/$SKILL_NAME" || true
     oc_remove_tree_guarded "$SKILLS_DIR/$SKILL_NAME" "skill"
 
@@ -7738,7 +7823,9 @@ X11EOF
       fi
     fi
     # <<< X11-GATE-END
+    [ "${_x11_skip:-0}" = 1 ] && continue
 
+    # >>> X11-GATE-TAIL-BEGIN (S75-X11 gate tail: pin, verify, Updated; extracted verbatim by tests/test_x11_install_gate.py)
     # ENGINE-PIN RE-STAMP (2026-10-13). Skill 59's `verify.sh stamp-pin`
     # recomputes ENGINE-PIN.sha256 over its enforcement set (the entry script,
     # ENGINE-MANIFEST.json and the four guard scripts), and the entry's own
@@ -7783,6 +7870,7 @@ X11EOF
     echo "    Updated: $SKILL_NAME"
     # FIX 1: state transition -- files are on disk = DOWNLOADED (NOT installed).
     command -v obs_set_status >/dev/null 2>&1 && obs_set_status "$SKILL_NAME" "downloaded"
+    # <<< X11-GATE-TAIL-END
   done
 
   # ----------------------------------------------------------
@@ -12078,6 +12166,33 @@ LEPY
     echo "  ℹ activate-loop-protection.sh not in bundle — loop protection wiring skipped (older bundle)"
   fi
 
+  # Skill 60 baseline refresh (v1.3.0). A fleet update is the operator-sanctioned
+  # change, so the early-warning baseline is re-pinned at the end of it. Without
+  # this a box compared itself against the baseline from its FIRST install
+  # forever (one box: August), and every approved model/skill change since was
+  # a permanent "drift" finding. Only re-pins a box that already has a baseline;
+  # never installs Skill 60. Best-effort.
+  # Never as root over a box-user-owned baseline: the rewrite would leave a
+  # root-owned 0600 file the box user's tick can no longer read.
+  _EWS_ENTRY="$SKILLS_DIR/60-zhc-early-warning-system/ews-entry.sh"
+  _EWS_BASE_OK=1
+  if [ "$(id -u)" = "0" ]; then
+    _EWS_BASE_OK="$(python3 -c 'import os,sys
+sys.path.insert(0, sys.argv[1])
+from ews_ledger import default_state_dir
+p = default_state_dir() / "baseline.json"
+print(1 if (not p.exists() or os.stat(p).st_uid == 0) else 0)' "$SKILLS_DIR/60-zhc-early-warning-system/scripts" 2>/dev/null || echo 0)"
+  fi
+  if [ "$_EWS_BASE_OK" != "1" ]; then
+    echo "  ℹ Skill 60 baseline refresh skipped (running as root; baseline owned by the box user)"
+  elif [ -f "$_EWS_ENTRY" ] && bash "$_EWS_ENTRY" baseline show >/dev/null 2>&1; then
+    if bash "$_EWS_ENTRY" baseline pin >/dev/null 2>&1; then
+      echo "  ✓ Skill 60 early-warning baseline refreshed after the update"
+    else
+      echo "  ⚠ Skill 60 baseline refresh failed (update continues; re-run: ews-entry.sh baseline pin)"
+    fi
+  fi
+
   # ----------------------------------------------------------
   # Routing-defect permanent fix (4-layer: doctrine path, pptx deny, symlink
   # unblock, dept workspace seeding). Mirror of install.sh — idempotent on every
@@ -12327,6 +12442,17 @@ PY
     echo "  ⚠ agent-exchange-telemetry extension not found in repo ($_TE_SRC) — skipping install"
   fi
   rm -rf "${_OC_EXT_STAGE:-}" 2>/dev/null || true
+
+  # FULL-READ GUARD hook point B: apply-fleet-standards.sh (earlier in this pass) can rewrite
+  # plugins.allow after hook point A, so re-assert the config (a no-op when already right),
+  # then verify the INSTALLED copy. The roll log gets one "full-read-guard: PASS|FAIL|SKIP"
+  # line per box. Advisory only.
+  _FRG_VERIFY="$_OC_SCRIPTS_DEST/install-full-read-guard.sh"
+  [ -f "$_FRG_VERIFY" ] || _FRG_VERIFY="$ONBOARDING_DIR/scripts/install-full-read-guard.sh"
+  if [ -f "$_FRG_VERIFY" ]; then
+    bash "$_FRG_VERIFY" --repair-config --root "$OC_CONFIG" 2>&1 | tee -a "$LOG_FILE" || true
+    bash "$_FRG_VERIFY" --verify --root "$OC_CONFIG" 2>&1 | tee -a "$LOG_FILE" || true
+  fi
 
   # ----------------------------------------------------------
   # Dept-agent registration: turn built workspace folders into REAL agents in
@@ -13420,22 +13546,13 @@ PY
     elif command -v python3 >/dev/null 2>&1; then
       _pres_missing="${_pres_missing} venv(missing at $_PRES_VENV)"
     fi
-    command -v ffmpeg  >/dev/null 2>&1 || _pres_missing="${_pres_missing} ffmpeg"
-    command -v ffprobe >/dev/null 2>&1 || _pres_missing="${_pres_missing} ffprobe"
     command -v tesseract >/dev/null 2>&1 || _pres_missing="${_pres_missing} tesseract"
+    # PD-917: ffmpeg/ffprobe are NOT classified by hand here. presentation-deps.json
+    # is the one canon (both required=false) and pres_deps_verify_rows reads that
+    # classification: a missing optional dep lands in _pres_video_missing only, so a
+    # deck-only run is never blocked. Change the canon, not this block, to change
+    # the verdict.
     pres_deps_verify_rows
-    # PRES-033: the canonical classification RE-CLASSIFIES the hardcoded checks
-    # above: ffmpeg/ffprobe are optional video deps per presentation-deps.json,
-    # so a bare missing ffmpeg/ffprobe moves from the required set to the
-    # optional video set. A required dep that ALSO gates video (none today) stays
-    # required. Never double-count: remove the token from _pres_missing if it was
-    # classified optional, then append to the optional set.
-    for _opt in ffmpeg ffprobe; do
-      if command -v "$_opt" >/dev/null 2>&1; then :; else
-        _pres_missing="$(printf '%s' "$_pres_missing" | sed "s/ ${_opt}//")"
-        _pres_video_missing_add "$_opt"
-      fi
-    done
     if [ -n "$_pres_missing" ]; then
       echo "  ⚠⚠ PRESENTATION_DEPS_MISSING after converge:${_pres_missing}. The Skill 23 presentation pipeline will refuse every deck build at GATE 1 until these resolve. Department venv (FIX 71): python3 -m venv ${OC_CONFIG:-$HOME/.openclaw}/.venv-presentations && ${OC_CONFIG:-$HOME/.openclaw}/.venv-presentations/bin/python -m pip install reportlab python-pptx pypdf pytesseract. Mac system deps: brew install poppler; brew install --cask libreoffice; brew install ffmpeg; brew install tesseract. VPS: bash $_PRES_OC_ROOT/scripts/reassert-presentation-deps.sh"
       echo "  [pres-readiness] aggregated updater result PRESERVED: unrelated department updates already performed are NOT rolled back; the final exit code latches this readiness verdict."

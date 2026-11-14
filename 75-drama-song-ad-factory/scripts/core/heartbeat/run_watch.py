@@ -11,8 +11,10 @@ WHAT IT IS
         lease, or a STALE row) -- and, when separately authorized, a FENCED
         recovery step EXECUTED through the supported native control
         (factory.py next), never an instruction left for a human to invent;
-    (d) the supervision cap (default 3 hours, anchored on spend_ledger
-        runs.created_at): a loud escalation that never stops supervision.
+    (d) the supervision cap (the run's own expected duration, from the song
+        length it chose and the Agnes answer, anchored on spend_ledger
+        runs.created_at; 3 hours when the run records no length): a loud
+        escalation that never stops supervision.
         A human wait, a provider wait or elapsed time does NOT end the loop;
         only verified completion or an explicit user cancellation does.
 
@@ -66,10 +68,19 @@ EXIT
   1   the run state could not be read (loud: HEARTBEAT_STATE_UNREADABLE)
 
 ENVELOPE (one JSON object on stdout)
-  {run_id, stage, stage_state, elapsed_minutes, decisions_pending, stalled,
-   loud, expired, message_for_client, ... extras (stall_detail, wait,
-   activity, recovery, supervising, canceled, recovery_command,
-   loop_should_stop, completed_stages, schema_version)}
+  {run_id, stage, stage_state, elapsed_minutes, expected_hours,
+   decisions_pending, stalled,
+   loud, expired, message_for_client, message_key, message_kind, ... extras
+   (stall_detail, wait, activity, recovery, supervising, canceled,
+   recovery_command, loop_should_stop, completed_stages, schema_version)}
+
+  message_key  a 16-hex digest of everything the client message says (stage,
+               stage state, completed steps, the pending decision ids, and the
+               stalled/expired/complete/canceled flags). Two looks at the SAME
+               situation carry the SAME key, so the keepalive can tell "this is
+               the same news again" from "something changed".
+  message_kind one of progress, needs_you, problem, done, stopped: what the
+               message is about, and therefore which sending cadence applies.
 
 LOUD CODES (loud_failure.py, printed to stderr AND carried in the envelope)
   HEARTBEAT_STATE_UNREADABLE  the state database is missing or unreadable
@@ -87,6 +98,7 @@ import atexit
 import hashlib
 import json
 import os
+import shlex
 import shutil
 import sqlite3
 import subprocess
@@ -174,6 +186,34 @@ STAGE_NOUNS = {
 
 def stage_noun(stage):
     return STAGE_NOUNS.get(stage, "the %s step" % str(stage).replace("-", " "))
+
+#: The twelve canonical stages (batch_mode/batch.py STAGES), in run order.
+#: Only these count in a progress message's "of <total>": the presentation
+#: stages the runbook adds in front of delivery are extra work, never extra
+#: steps for the client.
+CANONICAL_STAGES = STAGE_ORDER[:12]
+CANONICAL_STAGE_SET = frozenset(CANONICAL_STAGES)
+
+#: The short noun for the approval a stage asks the client for, so a progress
+#: message can say "I'll need your OK on the script next." These are the same
+#: gates this module already surfaces as approvals: script, song pick,
+#: storyboard.
+APPROVAL_THINGS = {
+    "script-lyrics": "script",
+    "music": "song",
+    "storyboard": "storyboard pictures",
+}
+
+#: Expected run duration (hours) by the song length the client chose. The
+#: Agnes path runs this again at x2. An old run that records no length keeps
+#: DEFAULT_MAX_HOURS.
+EXPECTED_HOURS_BY_LENGTH = (
+    (90, 1.5),       # 60-90 seconds
+    (180, 3.0),      # 2-3 minutes
+    (360, 6.0),      # 5 minutes
+    (660, 10.0),     # 10 minutes (kept even if the card stops offering it)
+)
+
 
 #: A state that still has work coming. COMPLETE is the only finished state.
 ACTIVE_STATES = frozenset({"NOT_STARTED", "READY", "RUNNING", "WAITING_PROVIDER",
@@ -517,37 +557,64 @@ def legitimate_wait(row, decisions):
     return None
 
 
+#: Plain-words reasons for the client, one per stall path. A FIXED table:
+#: never assembled from stored text, never carrying a clock time, a worker
+#: name, a state name or a code. The machine-readable `detail` that
+#: stall_check also returns is for the operator envelope and the receipt only.
+STALL_CLIENT_REASONS = {
+    "stale": "that step needs a restart",
+    "expired-lease": "the helper working on it stopped answering",
+    "quiet": "nothing has moved for a while",
+}
+
+
 def stall_check(state, row, now, decisions=()):
-    """(stalled, detail). A named wait is not a stall; silence is."""
+    """(stalled, detail, client_reason). A named wait is not a stall; silence is.
+
+    `detail` is the operator's own sentence (state name, lease stamp, quiet
+    minutes). `client_reason` is the plain-words line from the fixed table
+    above, and it is the ONLY thing the client message may repeat.
+    """
     if row is None:
-        return False, ""
+        return False, "", ""
     stage, st = row["stage"], row["state"]
     if st == "COMPLETE":
         # A finished stage has nothing left to move.
-        return False, ""
+        return False, "", ""
     if st == "STALE":
         return True, ("the run marked %s stale: %s"
-                      % (stage, row.get("reason") or "no reason recorded"))
+                      % (stage, row.get("reason") or "no reason recorded")), \
+            STALL_CLIENT_REASONS["stale"]
     lease = row.get("lease_expires")
     if isinstance(lease, (int, float)) and lease > 0 and lease < now \
             and st in ("RUNNING", "WAITING_PROVIDER", "QC"):
         return True, ("the worker on %s stopped checking in and its turn ran out "
-                      "at %s" % (stage, _utc_iso(lease)))
+                      "at %s" % (stage, _utc_iso(lease))), \
+            STALL_CLIENT_REASONS["expired-lease"]
     if legitimate_wait(row, decisions) is not None:
-        return False, ""           # a client or live provider owes the next move
+        # a client or live provider owes the next move
+        return False, "", ""
     last, source = watchdog_clock(state, row)
     quiet = now - last if last else None
     if quiet is not None and quiet > STALL_AFTER_S:
         return True, ("nothing has moved on %s for %d minutes"
-                      % (stage, int(quiet // 60)))
-    return False, ""
+                      % (stage, int(quiet // 60))), \
+            STALL_CLIENT_REASONS["quiet"]
+    return False, "", ""
 
 
 def recovery_command(run_dir):
-    """The exact command the supported native control runs. Printed when the
-    actuator is not separately authorized; executed when it is."""
-    return ("python3 scripts/core/intake_preflight/factory.py next --run-dir %s"
-            % run_dir)
+    """The exact command the supported native control runs, as a shell line.
+
+    Printed when the actuator is not separately authorized; the driver runs
+    the watcher itself (argument list, no shell) when it is. Both the absolute
+    factory path and the run folder are quoted with shlex.quote, so a path
+    with a space in it stays ONE argument: `shlex.split(recovery_command(run))`
+    round-trips to the argv the actuator uses.
+    """
+    factory = _factory_control_argv(run_dir)[1]
+    return ("python3 %s next --run-dir %s"
+            % (shlex.quote(factory), shlex.quote(str(run_dir))))
 
 
 # --- the fenced recovery actuator -------------------------------------------
@@ -791,13 +858,153 @@ def _decision_lines(decisions):
     return lines
 
 
-def client_message(run_id, row, decisions, stalled, stall_detail, expired,
+def message_kind(row, decisions, stalled, expired, complete, canceled):
+    """One word for what this message is about: the keepalive's own cadence key.
+
+    stopped  the client asked us to stop;
+    done     every stage is COMPLETE;
+    problem  a stall or the cap: something needs a person;
+    needs_you the run cannot move until the client answers;
+    progress anything else: ordinary forward motion.
+    """
+    if canceled:
+        return "stopped"
+    if complete:
+        return "done"
+    if stalled or expired:
+        return "problem"
+    if decisions:
+        return "needs_you"
+    return "progress"
+
+
+def message_key(stage, stage_state, completed, decisions, stalled, expired,
+                complete, canceled):
+    """A 16-hex digest of everything the client message says.
+
+    The same situation carries the same key on the next look, so an unchanged
+    run never repeats its message. Any change the client would notice -- a new
+    stage, a finished step, a different question, a stall, the end -- changes
+    the key.
+    """
+    ids = sorted(str(d.get("id") or "") for d in decisions)
+    blob = json.dumps([str(stage), str(stage_state), int(completed), ids,
+                       bool(stalled), bool(expired), bool(complete),
+                       bool(canceled)],
+                      sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(blob.encode("utf-8")).hexdigest()[:16]
+
+
+def recovery_acted_ok(recovery):
+    """True only when recovery really acted AND the native control returned 0.
+
+    The client is told the run is being picked back up only on this evidence;
+    anything else is a person being asked to look, said plainly.
+    """
+    if not isinstance(recovery, dict) or recovery.get("acted") is not True:
+        return False
+    outcome = (recovery.get("control") or {}).get("outcome") or {}
+    return outcome.get("returncode") == 0
+
+
+def expected_hours(length_s, agnes=False):
+    """The run's expected duration in hours for the song length it chose.
+
+    The table: 1.5 for 60-90 seconds, 3 for 2-3 minutes, 6 for 5 minutes,
+    10 for 10 minutes; doubled on the Agnes path. A run that records no
+    length (an old run) keeps DEFAULT_MAX_HOURS. The 10-minute row stays in
+    the table even when the card stops offering that length, because old runs
+    still carry it.
+    """
+    hours = DEFAULT_MAX_HOURS
+    try:
+        length = float(length_s)
+    except (TypeError, ValueError):
+        length = 0.0
+    if length > 0:
+        for ceiling, value in EXPECTED_HOURS_BY_LENGTH:
+            if length <= ceiling:
+                hours = value
+                break
+        else:
+            hours = EXPECTED_HOURS_BY_LENGTH[-1][1]
+    return hours * 2.0 if agnes else hours
+
+
+def run_expected_hours(run_dir):
+    """(expected_hours, length_s, agnes) read from the run's own records.
+
+    The length is control/method.json's chosen_length_s; the Agnes path is
+    the receipt's agnes.answer == "yes" (the same record factory.py reads).
+    """
+    method = _json(Path(run_dir) / "control" / "method.json")
+    length = method.get("chosen_length_s") if isinstance(method, dict) else None
+    receipt = _json(Path(run_dir) / "control" / "card-receipt.json")
+    agnes = False
+    if isinstance(receipt, dict):
+        block = receipt.get("agnes")
+        agnes = isinstance(block, dict) and block.get("answer") == "yes"
+    return expected_hours(length, agnes), length, agnes
+
+
+def next_canonical_stage(stage):
+    """The canonical stage after this one, or None on the last / off-run stage."""
+    try:
+        n = CANONICAL_STAGES.index(str(stage))
+    except ValueError:
+        return None
+    return CANONICAL_STAGES[n + 1] if n + 1 < len(CANONICAL_STAGES) else None
+
+
+def progress_message(row, done, total):
+    """The three-line progress message: what now, what next, do you need me.
+
+    Step numbers and the total are the twelve canonical stages only; a
+    presentation stage after delivery clamps to the last step. `Next` is
+    omitted on the last stage. The third line names the approval waiting at
+    the next stage when that stage carries one, otherwise it says plainly
+    that the client can leave it with us.
+    """
+    stage = row["stage"]
+    step = min(done + 1, total) if total else done + 1
+    lines = ["Step %d of %d: %s."
+             % (step, total, STAGE_PHRASES.get(
+                 stage, "your video is moving through the process"))]
+    nxt = next_canonical_stage(stage)
+    if nxt is not None:
+        lines.append("Next: %s." % STAGE_PHRASES.get(nxt, "the next step"))
+        thing = APPROVAL_THINGS.get(nxt)
+        if thing:
+            lines.append("I'll need your OK on the %s next." % thing)
+        else:
+            lines.append("You don't need to do anything right now.")
+    else:
+        lines.append("You don't need to do anything right now.")
+    return "\n".join(lines)
+
+
+def client_message(run_id, row, decisions, stalled, client_reason, expired,
                    complete, elapsed_minutes, done, total, max_hours,
-                   canceled=False):
-    """Plain, warm, direct. No internal codes, no jargon, never a false 'done'."""
+                   canceled=False, recovery=None, reminder_number=None):
+    """Plain, warm, direct. No internal codes, no jargon, never a false 'done'.
+
+    No clock stamp either: no elapsed figure, no time of day, no UTC mark. The
+    stall reason is `client_reason` -- the fixed plain-words line stall_check
+    returns -- and never the operator's own detail text.
+
+    reminder_number is set only by the keepalive's reminder ladder: the
+    second and later sends of a needs_you message are reminders, not the first
+    message again.
+    """
     if row is None:
         return ("I couldn't read where your video is up to just now, and I'm on "
                 "it. I'll come back to you with an update.")
+    if reminder_number:
+        question = ("\n".join(_decision_lines(decisions)) if decisions
+                    else "I'm still waiting on your answer.")
+        return ("Just a reminder - your video is paused until you answer:\n"
+                "%s\nNo rush. Nothing is being charged while it waits."
+                % question)
     phrase = STAGE_PHRASES.get(row["stage"], "your video is moving through the process")
     if complete:
         return ("Your video is finished. All %d steps are done, and the finished "
@@ -809,22 +1016,35 @@ def client_message(run_id, row, decisions, stalled, stall_detail, expired,
                 "Nothing is lost. Tell me when you'd like to pick it back up."
                 % (done, total, stage_noun(row["stage"])))
     if expired:
-        head = ("This round has run longer than we plan for (%g hours), so I've "
-                "asked a person to look in on it too. Here's where your video "
-                "stands: %d of %d steps are finished, and I'm working on %s. "
-                "Nothing is lost and nothing was thrown away."
-                % (max_hours, done, total, stage_noun(row["stage"])))
-        tail = (" I'm staying with it and picking it back up from exactly here; "
-                "someone will come back to you with the next step.")
+        # An acted, successful recovery earns the pickup promise; anything
+        # else names a person looking in (same repair D01/D02/D03 QC made:
+        # the expired branch must not promise a pickup it has no evidence for).
+        if recovery_acted_ok(recovery):
+            tail = "I'm picking it back up now."
+        else:
+            tail = ("I've asked a person to look in on it too. "
+                    "You don't need to do anything.")
+        head = ("Your video is taking longer than usual, so %s %d of %d "
+                "steps are finished and nothing is lost." % (tail, done, total))
         if decisions:
-            tail += "\n\nStill waiting on you:\n" + "\n".join(_decision_lines(decisions))
-        return head + tail
+            head += "\n\nStill waiting on you:\n" + "\n".join(_decision_lines(decisions))
+        return head
+    if not stalled and not decisions:
+        # Ordinary forward motion: the three-line progress shape answers
+        # "how far, what next, do you need me".
+        return progress_message(row, done, total)
     parts = ["Here's where we are in the process: %s." % phrase]
     if stalled:
-        reason = stall_detail or "it stopped responding"
+        reason = client_reason or STALL_CLIENT_REASONS["quiet"]
+        # "picking it back up" is a promise only an ACTED, successful recovery
+        # can keep. Otherwise say a person has been asked to look.
+        if recovery_acted_ok(recovery):
+            tail = "I'm picking it back up now."
+        else:
+            tail = ("I've flagged it for a person to look at, and I'll tell you "
+                    "as soon as it moves.")
         parts.append("I hit a problem with %s and I'm on it - here's what "
-                     "happened: %s. I'm picking it back up now."
-                     % (stage_noun(row["stage"]), reason))
+                     "happened: %s. %s" % (stage_noun(row["stage"]), reason, tail))
     if decisions:
         lead = ("I need one thing from you:" if len(decisions) == 1
                 else "I need a few things from you:")
@@ -844,10 +1064,15 @@ def explicit_cancellation(run_dir):
     return isinstance(doc, dict) and doc.get("canceled") is True
 
 
-def build(run_dir, max_hours=DEFAULT_MAX_HOURS, now=None,
+def build(run_dir, max_hours=None, now=None,
           recovery_act=False, fence_dir=None, runner=None):
     now = time.time() if now is None else float(now)
     run_dir = str(run_dir)
+    expected, _chosen_length, _agnes = run_expected_hours(run_dir)
+    if max_hours is None:
+        # The cap is the run's OWN expected duration, not one fixed 3-hour
+        # number for a 60-second ad and a 10-minute episode alike.
+        max_hours = expected
     loud = []
     state, why = read_state(run_dir)
     if state is None:
@@ -857,10 +1082,14 @@ def build(run_dir, max_hours=DEFAULT_MAX_HOURS, now=None,
             "schema_version": SCHEMA_VERSION,
             "run_id": Path(run_dir).name or "run",
             "stage": "UNKNOWN", "stage_state": "UNKNOWN",
-            "elapsed_minutes": 0, "decisions_pending": [],
+            "elapsed_minutes": 0, "expected_hours": expected,
+            "decisions_pending": [],
             "stalled": False, "loud": loud, "expired": False,
             "loop_should_stop": False, "completed_stages": 0,
             "stages_total": 0, "supervising": True, "canceled": False,
+            "message_kind": "problem",
+            "message_key": message_key("UNKNOWN", "UNKNOWN", 0, [], False,
+                                       False, False, False),
             "wait": None, "activity": {"at": None, "source": "none"},
             "recovery": None,
             "message_for_client": client_message(
@@ -869,8 +1098,13 @@ def build(run_dir, max_hours=DEFAULT_MAX_HOURS, now=None,
         }
         return env
     row = current_stage(state["stages"])
-    total = len(state["stages"])
-    done = sum(1 for r in state["stages"] if r["state"] == "COMPLETE")
+    # Count only the twelve canonical stages: the presentation stages in
+    # front of delivery are extra work, never extra steps for the client.
+    total = sum(1 for r in state["stages"]
+                if r["stage"] in CANONICAL_STAGE_SET)
+    done = sum(1 for r in state["stages"]
+               if r["state"] == "COMPLETE"
+               and r["stage"] in CANONICAL_STAGE_SET)
     # Never a false success: completion is every stage COMPLETE, nothing less.
     complete = bool(row) and total > 0 and row["state"] == "COMPLETE" \
         and done == total
@@ -888,7 +1122,7 @@ def build(run_dir, max_hours=DEFAULT_MAX_HOURS, now=None,
     decisions = (intake_decisions(run_dir)
                  + approval_decisions(run_dir, state["stages"])
                  + fork_decisions(run_dir))
-    stalled, stall_detail = stall_check(state, row, now, decisions)
+    stalled, stall_detail, client_reason = stall_check(state, row, now, decisions)
     wait = None if stalled else legitimate_wait(row, decisions)
     activity_at, activity_source = watchdog_clock(state, row)
     # The cap measures the STUDIO's own delay. A run parked on a client
@@ -926,9 +1160,16 @@ def build(run_dir, max_hours=DEFAULT_MAX_HOURS, now=None,
         "stage": row["stage"] if row else "UNKNOWN",
         "stage_state": row["state"] if row else "UNKNOWN",
         "elapsed_minutes": elapsed_minutes,
+        "expected_hours": expected,
         "decisions_pending": decisions,
         "stalled": bool(stalled),
         "stall_detail": stall_detail,
+        "message_kind": message_kind(row, decisions, stalled, expired,
+                                     complete, canceled),
+        "message_key": message_key(row["stage"] if row else "UNKNOWN",
+                                   row["state"] if row else "UNKNOWN", done,
+                                   decisions, stalled, expired, complete,
+                                   canceled),
         "wait": wait,
         "activity": {"at": activity_at, "source": activity_source},
         "loud": loud,
@@ -943,9 +1184,9 @@ def build(run_dir, max_hours=DEFAULT_MAX_HOURS, now=None,
         "recovery": recovery,
         "recovery_command": recovery_command(run_dir) if stalled else "",
         "message_for_client": client_message(
-            state["run_id"], row, decisions, stalled, stall_detail, expired,
+            state["run_id"], row, decisions, stalled, client_reason, expired,
             complete, elapsed_minutes, done, total, max_hours,
-            canceled=canceled),
+            canceled=canceled, recovery=recovery),
     }
     return env
 
@@ -956,8 +1197,10 @@ def main(argv=None):
     ap.add_argument("--run-dir", required=True, help="the run folder ($RUN)")
     ap.add_argument("--interval-check", action="store_true",
                     help="one tick of the 10-minute driver: exit 10 stops the loop")
-    ap.add_argument("--max-hours", type=float, default=DEFAULT_MAX_HOURS,
-                    help="the hard cap from the run's start (default 3)")
+    ap.add_argument("--max-hours", type=float, default=None,
+                    help="the cap from the run's start (default: the run's own "
+                         "expected hours for its song length; 3 when the run "
+                         "records no length)")
     ap.add_argument("--now", type=float, default=None,
                     help="epoch seconds to judge 'now' by (tests; default: the clock)")
     ap.add_argument("--recovery-act", action="store_true",
@@ -976,6 +1219,10 @@ def main(argv=None):
                           "stalled": False,
                           "loud": ["HEARTBEAT_STATE_UNREADABLE"],
                           "expired": False, "loop_should_stop": False,
+                          "message_kind": "problem",
+                          "message_key": message_key("UNKNOWN", "UNKNOWN", 0,
+                                                     [], False, False, False,
+                                                     False),
                           "message_for_client":
                               "I couldn't find your video's folder just now, and "
                               "I'm on it. I'll come back with an update."},

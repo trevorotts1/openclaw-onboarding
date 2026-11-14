@@ -29,6 +29,7 @@
 #   bash qc-completeness.sh --quiet         # log-only, no Telegram even on FAIL
 #   bash qc-completeness.sh --no-telegram   # alias for --quiet
 #   bash qc-completeness.sh --no-notify     # alias for --quiet
+#   bash qc-completeness.sh --deps-only     # only the presentation-deps block; exit 0 or 6
 #
 # MAINTENANCE / SILENT-ROLL GUARD: exporting OPENCLAW_MAINTENANCE=1 forces quiet
 # mode (as if --quiet were passed) so the owner-chat Telegram alert below is
@@ -72,9 +73,11 @@ set -uo pipefail
 
 QUIET=0
 MAINT=0
+DEPS_ONLY=0
 for arg in "$@"; do
   case "$arg" in
     --quiet|--no-telegram|--no-notify) QUIET=1 ;;
+    --deps-only) DEPS_ONLY=1 ;;
     -h|--help)
       sed -n '1,25p' "$0"
       exit 0 ;;
@@ -135,7 +138,7 @@ log "============================================"
 # moment it lands in the JSON, on every consumer at once. If the canon is absent
 # or unparsable, the gate falls back to the pre-FIX-70 hardcoded checks below and
 # says so — an unreadable canon is never a silent clean pass.
-if [ "${QC_SKIP_PRESENTATION_DEPS:-0}" != "1" ]; then
+if [ "$DEPS_ONLY" = "1" ] || [ "${QC_SKIP_PRESENTATION_DEPS:-0}" != "1" ]; then
   _PRES_DEPS_MISSING=""
   _PRES_DEPS_CANON=""
   _PRES_PY3=""
@@ -150,9 +153,10 @@ if [ "${QC_SKIP_PRESENTATION_DEPS:-0}" != "1" ]; then
     # command -v; kind python_import -> import_spec inside the SAME interpreter
     # the pipeline runs (FIX 71 venv). Unknown kind -> report, never skip.
     # PRES-033: each row carries required=1|0 (default 1 = fail closed). A row
-    # with required=0 (ffmpeg/ffprobe, video-only) missing lands in
+    # with required=0 (any optional row the canon declares) missing lands in
     # _PRES_VIDEO_MISSING — NEVER in the hard required set, and never able to
-    # hide a required gap.
+    # hide a required gap. PD-928: ffmpeg/ffprobe are required:true today, so a
+    # missing one lands in the HARD set like every other runtime dep.
     while IFS='|' read -r _dep_name _dep_kind _dep_spec _dep_req; do
       [ -z "$_dep_name" ] && continue
       case "$_dep_kind" in
@@ -235,13 +239,19 @@ PYEOF
     "$_PRES_PY3" -c "import reportlab, pptx, pypdf" >/dev/null 2>&1 \
       || _PRES_DEPS_MISSING="${_PRES_DEPS_MISSING} python(reportlab+python-pptx+pypdf in the department venv; fix: ${_PRES_PY3} -m pip install reportlab python-pptx pypdf)"
   fi
-  # PRES-033: ffmpeg/ffprobe are OPTIONAL (video-only) canon deps. A missing
-  # optional video dep is reported as a separate VIDEO_DEPS_MISSING advisory and
-  # does NOT trip the required hard gate; deck, presenter guide, workbook and QC
-  # can still run. It can never hide a required gap (required checks above stay
-  # in _PRES_DEPS_MISSING), and a required gap is never mislabeled optional.
-  command -v ffmpeg  >/dev/null 2>&1 || _PRES_VIDEO_MISSING="${_PRES_VIDEO_MISSING} ffmpeg(webinar video render; brew install ffmpeg)"
-  command -v ffprobe >/dev/null 2>&1 || _PRES_VIDEO_MISSING="${_PRES_VIDEO_MISSING} ffprobe(webinar video probe; part of ffmpeg)"
+  # PD-928: ffmpeg/ffprobe are REQUIRED canon rows (required:true). When the canon
+  # was READ, its own loop above already put a missing video dep in
+  # _PRES_DEPS_MISSING and this block must stay silent — otherwise a missing
+  # ffmpeg is reported twice, once as a hard gap and once as an "optional
+  # branch" advisory that says the build can proceed. That contradiction is
+  # exactly what the flip removes.
+  # The probe below therefore survives ONLY for the pre-FIX-70 fallback shape:
+  # canon absent/unreadable, where no loop ran and the advisory is the sole
+  # signal. It is a fallback, never a second opinion on a readable canon.
+  if [ -z "${_PRES_DEPS_CANON:-}" ]; then
+    command -v ffmpeg  >/dev/null 2>&1 || _PRES_VIDEO_MISSING="${_PRES_VIDEO_MISSING} ffmpeg(webinar video render; brew install ffmpeg)"
+    command -v ffprobe >/dev/null 2>&1 || _PRES_VIDEO_MISSING="${_PRES_VIDEO_MISSING} ffprobe(webinar video probe; part of ffmpeg)"
+  fi
   # FIX 70 (W20b-B3): tesseract is in the canon (ocr_verify.py + build_deck.py
   # in-loop OCR readback drive it via pytesseract). Kept as a hardcoded check TOO
   # so the gate still enforces it on a box whose canon file went missing.
@@ -278,6 +288,15 @@ else
   # the deps gate was skipped and why.
   log "DEP_GATE_BYPASSED: QC_SKIP_PRESENTATION_DEPS=1 — presentation-deps hard gate skipped (non-presentation install / explicit bypass). This is recorded, not silent."
   printf '{"status":"DEP_GATE_BYPASSED","ts":"%s","gate":"PRESENTATION_DEPS_MISSING","via":"env:QC_SKIP_PRESENTATION_DEPS"}\n' "$TS" > "$JSON_FILE"
+fi
+
+# BU-57: --deps-only runs ONLY the presentation-dependencies block above (which
+# already exited 6 when a dep is missing) and stops here with 0. Callers use it
+# as a small, non-blocking probe of the presentation runtime itself; it never
+# resolves or walks the workforce.
+if [ "$DEPS_ONLY" = "1" ]; then
+  log "DEPS_ONLY — presentation deps present; workforce analysis skipped"
+  exit 0
 fi
 
 # ----- Resolve active company via vendored detect_platform -----
@@ -893,7 +912,22 @@ for dept_dir in on_disk_depts:
     elif expected and (materialized_pct < 95 or library_pct < 95 or identity_pct < 95):
         dept_status = "PARTIAL"
     elif not expected and role_count > 0:
-        dept_status = "PARTIAL"  # library has no expected count for this dept
+        # BU-57 (WF-077): the index does not know this department (custom /
+        # LLM-authored). It is complete — PASS — when every role folder carries a
+        # real how-to.md (>= LIBRARY_MIN_BYTES) and IDENTITY.md coverage is
+        # >= 95%; anything thinner stays PARTIAL. A custom department must not
+        # block the whole company just because the role library has no count.
+        _howtos_meet_floor = True
+        for _r in role_folders:
+            _howto = _r / "how-to.md"
+            try:
+                if not _howto.is_file() or _howto.stat().st_size < LIBRARY_MIN_BYTES:
+                    _howtos_meet_floor = False
+                    break
+            except OSError:
+                _howtos_meet_floor = False
+                break
+        dept_status = "PASS" if (_howtos_meet_floor and identity_pct >= 95) else "PARTIAL"
     else:
         dept_status = "PASS"
     # FIX 3: governing-personas.md absence downgrades PASS → PARTIAL (never FAIL).

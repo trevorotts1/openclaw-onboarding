@@ -9,8 +9,9 @@ QC.md deterministically and offline:
   * FORGED APPROVAL (QC.md FIX 32)  — a phase-skip record without a resolvable
     owner_msg_id, and a self-minted owner_skip_approval token inside
     process_manifest.json. Both must be REFUSED (AF-FORGED-APPROVAL,
-    fail-closed). The positive control carries a verified owner_msg_id through
-    a stubbed Command Center oracle and is ACCEPTED.
+    fail-closed). The positive control carries a verified owner_msg_id AND the
+    owner message TEXT naming the gate (PD-305: an ids-only oracle is never
+    proof) through a stubbed Command Center oracle and is ACCEPTED.
   * DARK NEGATION (QC.md FIX 35 / FIX 110) — a prompt that REQUESTS a dark
     background fails AF-DARK-SLIDE; a prompt whose DO-NOT block only PROHIBITS
     dark ("no dark background anywhere") exercises the negation split; the
@@ -57,18 +58,42 @@ def _write_json(p: pathlib.Path, obj) -> pathlib.Path:
     return p
 
 
+#: The channel bridge's inbound owner-message log, as approvals.py reads it.
+#: PD-305: an approval proves itself with the message TEXT naming the gate, so
+#: every positive-control fixture stages the message the owner really sent.
+INBOUND_MESSAGES_REL = pathlib.Path("working") / "interview" / "inbound_messages.jsonl"
+
+
+def _write_owner_message(rd: pathlib.Path, msg_id: str, text: str,
+                         chat_id: str = "owner-chat-fixture") -> pathlib.Path:
+    """Stage one inbound owner message row so the ids-only oracle is no longer
+    the whole proof: the text names the gate the owner approved."""
+    p = rd / INBOUND_MESSAGES_REL
+    p.parent.mkdir(parents=True, exist_ok=True)
+    row = {"msg_id": msg_id, "chat_id": chat_id, "text": text,
+           "received_at": VALID_TS}
+    p.write_text(json.dumps(row) + "\n", encoding="utf-8")
+    return p
+
+
 # ---------------------------------------------------------------------------
 # 1. FORGED APPROVAL (QC.md FIX 32)
 # ---------------------------------------------------------------------------
 def fixture_forged_approval(*, with_owner_msg_id: bool = False,
-                            owner_msg_id: str = "e2e-test-002") -> pathlib.Path:
+                            owner_msg_id: str = "e2e-test-002",
+                            owner_msg_text: str | None = (
+                                "approve skip P4-COPY")) -> pathlib.Path:
     """A phase_skip_approvals.json carrying ONE owner-authorized-looking record.
 
     Default shape is the live-E2E forgery: owner_approved:true + approved_by +
     reason + timestamp but NO owner_msg_id — the exact self-forgery vector
     run_signature_deck.load_skip_approvals must raise AF-FORGED-APPROVAL on.
-    with_owner_msg_id=True yields the positive-control shape (the record still
-    only authenticates once the id RESOLVES through the CC oracle)."""
+    with_owner_msg_id=True yields the positive-control shape: the record carries
+    the id AND the run carries the owner message TEXT (PD-305: an id alone never
+    proves an approval — the message must name the gate). owner_msg_text=None
+    keeps the id but stages NO message text, the ids-only oracle shape the
+    contract now REFUSES; the record still only authenticates once the id
+    RESOLVES through the CC oracle."""
     rd = _mkdtemp("negfix_forged_")
     rec = {
         "phase_id": "P4-COPY",
@@ -79,6 +104,8 @@ def fixture_forged_approval(*, with_owner_msg_id: bool = False,
     }
     if with_owner_msg_id:
         rec["owner_msg_id"] = owner_msg_id
+        if owner_msg_text:
+            _write_owner_message(rd, owner_msg_id, owner_msg_text)
     _write_json(rd / "working" / "checkpoints" / "phase_skip_approvals.json",
                 {"approvals": [rec]})
     return rd
@@ -397,6 +424,8 @@ def fixture_stylised_type_run_dir(*, n_slides: int = 12,
                                   checked: bool = True,
                                   waiver: bool = False,
                                   owner_msg_id: str = "msg-ocr-waiver-001",
+                                  owner_msg_text: str | None = (
+                                      "approve AF-OCR-READBACK"),
                                   waiver_reason: str = (
                                       "Ruling 9.11(b): slide 5 stylised-type "
                                       "citation waived through the approvals "
@@ -408,8 +437,10 @@ def fixture_stylised_type_run_dir(*, n_slides: int = 12,
     waiver=True writes a well-formed AF-OCR-READBACK owner_skip_approval token
     into working/checkpoints/process_manifest.json: owner_approved:true,
     approved_by, >=8-char reason, parseable tz-aware timestamp, AND a
-    non-empty owner_msg_id — the Fix-32-authentic shape. The record only
-    OPENS the gate once that owner_msg_id RESOLVES through the cc_board
+    non-empty owner_msg_id — the Fix-32-authentic shape. It also stages the
+    owner message text (PD-305) naming the gate; owner_msg_text=None leaves
+    the id with no text, the ids-only shape the contract REFUSES. The record
+    only OPENS the gate once that owner_msg_id RESOLVES through the cc_board
     owner-message oracle (the consuming test stubs the oracle so the id
     resolves; with no oracle the id is UNDETERMINED and the gate stays
     shut — that fail-closed behavior is the forged-approval row's job to
@@ -441,6 +472,8 @@ def fixture_stylised_type_run_dir(*, n_slides: int = 12,
                         "owner_msg_id": owner_msg_id,
                         "reason": waiver_reason,
                         "timestamp": VALID_TS}]})
+        if owner_msg_text:
+            _write_owner_message(rd, owner_msg_id, owner_msg_text)
     return rd
 
 

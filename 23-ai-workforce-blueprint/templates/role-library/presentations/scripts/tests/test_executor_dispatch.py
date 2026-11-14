@@ -26,9 +26,11 @@ every sibling in this directory (test_gates.py, test_client_package.py, etc.).
 FIX-1 (AF-FORGED-APPROVAL): adhoc authorization is folded into the same
 authenticity oracle as phase-skip approvals. EVERY adhoc record must carry an
 owner_msg_id that RESOLVES to a real owner-authored message in Command Center
-task_activities. These CLI tests therefore seed a genuine owner_msg_id and run
-inside a tiny local CC owner-ids server (COMMAND_CENTER_URL pointed at it) so
-the oracle resolves over real HTTP -- the same hermetic pattern
+task_activities AND (PD-305) that message's TEXT must name the gate — an
+ids-only oracle is never proof. These CLI tests therefore seed a genuine
+owner_msg_id, stage the owner message text in the run's inbound message log,
+and run inside a tiny local CC owner-ids server (COMMAND_CENTER_URL pointed at
+it) so the oracle resolves over real HTTP -- the same hermetic pattern
 test_skip_approval_authenticity.py uses.
 """
 from __future__ import annotations
@@ -248,7 +250,7 @@ def _run_cli(run_dir: Path, phase_id: str, slides_path: Path, out_path: Path):
 
 @pytest.mark.skipif(sys.platform.startswith("win"), reason="POSIX file perms / nonce handshake")
 class TestNullExecutorRegressionCLI:
-    def _setup(self, tmp_path):
+    def _setup(self, tmp_path, phase_id: str, *, with_message_text: bool = True):
         run_dir = tmp_path / "run"
         (run_dir / "working" / "copy").mkdir(parents=True)
         (run_dir / "working" / "checkpoints").mkdir(parents=True)
@@ -266,6 +268,18 @@ class TestNullExecutorRegressionCLI:
                  "owner_msg_id": GENUINE_OWNER_MSG_ID}
         (run_dir / "working" / "checkpoints" / "adhoc_authorization.json").write_text(
             json.dumps(adhoc))
+        # PD-305: an id alone is never proof — the run must also stage the owner
+        # message TEXT naming the gate. The channel bridge writes this log; the
+        # test stages it directly. with_message_text=False keeps the ids-only
+        # shape the contract now REFUSES.
+        if with_message_text:
+            msg_dir = run_dir / "working" / "interview"
+            msg_dir.mkdir(parents=True, exist_ok=True)
+            (msg_dir / "inbound_messages.jsonl").write_text(json.dumps({
+                "msg_id": GENUINE_OWNER_MSG_ID,
+                "chat_id": "owner-chat-regression",
+                "text": f"approve adhoc {phase_id}",
+                "received_at": "2026-08-06T12:00:00Z"}) + "\n")
         slides = tmp_path / "slides.json"
         slides.write_text(json.dumps([{"no": 1}]))
         return run_dir, slides, tmp_path / "out.pptx"
@@ -278,7 +292,7 @@ class TestNullExecutorRegressionCLI:
             f"P0A-INTAKE executor changed to kind={p0a_executor_kind!r} — "
             "this test requires a non-dispatchable (null/agent) executor phase in the "
             "real manifest. If kind is 'script', pick a different phase for this test.")
-        run_dir, slides, out = self._setup(tmp_path)
+        run_dir, slides, out = self._setup(tmp_path, "P0A-INTAKE")
         with _LocalBoard():
             proc = _run_cli(run_dir, "P0A-INTAKE", slides, out)
         assert proc.returncode == 0, f"stdout:\n{proc.stdout}\nstderr:\n{proc.stderr}"
@@ -286,6 +300,19 @@ class TestNullExecutorRegressionCLI:
         assert "DISPATCH" not in proc.stdout, (
             "executor: null phase P0A-INTAKE triggered a DISPATCH line -- the fix must "
             f"never dispatch a phase with no declared executor.\nstdout:\n{proc.stdout}")
+
+    def test_adhoc_ids_only_without_owner_message_text_is_refused(self, tmp_path):
+        """FLIP (PD-305): the adhoc record's owner_msg_id still resolves through
+        the CC owner-ids oracle, but with NO owner message text — the old
+        ids-only acceptance — --adhoc is now REFUSED. An id proves a message
+        exists; only its text proves what the owner authorized."""
+        run_dir, slides, out = self._setup(tmp_path, "P0A-INTAKE",
+                                           with_message_text=False)
+        with _LocalBoard():
+            proc = _run_cli(run_dir, "P0A-INTAKE", slides, out)
+        assert proc.returncode != 0, (
+            f"ids-only adhoc authorization must be refused\nstdout:\n{proc.stdout}")
+        assert "AF-FORGED-APPROVAL" in proc.stderr or "FORGED" in proc.stderr
 
     def test_non_null_executor_phase_dispatches_and_attests(self, tmp_path):
         """P7-TELEPROMPTER: real, zero-caller-until-this-fix executor, dispatched
@@ -296,7 +323,7 @@ class TestNullExecutorRegressionCLI:
         target = next(p for p in manifest["phases"] if p["id"] == "P7-TELEPROMPTER")
         assert target.get("executor", {}).get("kind") == "script"
 
-        run_dir, slides, out = self._setup(tmp_path)
+        run_dir, slides, out = self._setup(tmp_path, "P7-TELEPROMPTER")
         (run_dir / "working" / "deliverables").mkdir(parents=True)
         import build_teleprompter as bt
         (run_dir / "working" / "deliverables" / "PRESENTERS-SPEECH.md").write_text(
@@ -313,7 +340,7 @@ class TestNullExecutorRegressionCLI:
     def test_failing_executor_is_not_attested(self, tmp_path):
         """P9.2-GHL-UPLOAD with no renders present fails for real (no images/
         deliverables to host) -- confirm NO attestation is written."""
-        run_dir, slides, out = self._setup(tmp_path)
+        run_dir, slides, out = self._setup(tmp_path, "P9.2-GHL-UPLOAD")
         with _LocalBoard():
             proc = _run_cli(run_dir, "P9.2-GHL-UPLOAD", slides, out)
         assert proc.returncode == rsd.EXIT_EXECUTOR_FAILED

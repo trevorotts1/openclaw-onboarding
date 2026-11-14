@@ -155,6 +155,13 @@ class Emit(unittest.TestCase):
         self.assertIn("Nothing is charged today.", text)
         self.assertNotIn("$0", text)
 
+    def test_a_recurring_price_is_printed_per_interval_for_every_cadence(self):
+        for interval in ("week", "month", "quarter", "year"):
+            request = copy.deepcopy(BASE)
+            request["main_price"].update(billing_type="recurring", recurring_interval=interval)
+            text = staged(self, request=request).emit()["text"]
+            self.assertIn(f"/{interval} on a recurring basis (billing interval: {interval})", text)
+
     def test_schedule_rows_and_due_today_are_printed_from_the_price(self):
         request = copy.deepcopy(BASE)
         request["main_price"].update(

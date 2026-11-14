@@ -41,6 +41,18 @@ ambiguous:
   rejected; verdict "fail" blocks outright). Neither rule is presented as
   measured automation anywhere.
 
+  WHERE THESE HOLDS RUN — the two human rows (and the six warning holds below)
+  are applied by the OLDER RUNNER ONLY: run_signature_deck.attest_phase calls
+  attestation_blocker() and warning_hold_blocker() before it appends an
+  attestation, for the two step ids in HUMAN_VERDICT_PHASES (P1Q-COPY-QC,
+  P-PROMPT-QC) and for the warning owner phase (P1Q-COPY-QC). The phase-verifier
+  engine path (phase_verifiers.verify) does NOT apply them: a QC phase can
+  attest there with no human verdict and no warning acknowledgement on record.
+  engine_attestation_reasons() below is the hook for that path. It is OFF by
+  default — PRESENTATION_CRAFT_ENGINE_HOLDS must be set to 1/true/on/yes — and
+  nothing honors the holds on the engine path until a phase verifier calls it
+  behind that switch. With the switch unset, behavior is what it was.
+
 Feature flag: PRESENTATION_CRAFT_DISPOSITIONS — DEFAULT-ON. Setting it to "0"
 rolls FIX 18 back to pre-FIX-18 behavior (warnings computed but not held, and
 the attestation/human-verdict gate idle) — the documented rollback path. The
@@ -100,6 +112,11 @@ HUMAN_VERDICT_PHASES = frozenset({
 # the pending-hold snapshot is only what compute_warnings currently reports as
 # unacknowledged, so a later valid disposition clears its hold with no extra
 # bookkeeping and a repair/rerun clears the finding naturally.
+#
+# WHERE IT FIRES — warning_hold_blocker() is called by run_signature_deck.
+# attest_phase (the older runner) only, same as the human rows above; the
+# phase-verifier engine path does not call it. engine_attestation_reasons()
+# exposes it to that path behind PRESENTATION_CRAFT_ENGINE_HOLDS (default off).
 WARNING_HOLDS_REL = Path("working") / "qc" / "craft-warnings.json"
 # The QC phase that owns all six warning codes (ruleset §3 item 1 — Phase 1Q
 # runs RULE 2 + Section 2 on slides_copy.md + arc_allocation.json; Phase 5/6
@@ -145,7 +162,6 @@ ARC_SECTION_ALIASES = {
     "WALL_OF_WINS": {"WALL_OF_WINS", "WALL OF WINS", "WALL-OF-WINS", "WINS",
                      "WALL_OF_WINS_SLIDE", "WOW"},
     "OFFER": {"OFFER", "OFFER1", "FINAL", "PRICE", "ANCHOR", "LADDER"},
-# ══════════════════════════════════════════════════════════════════════════
 }
 WARN_TAG_PATTERNS = {
     "AF-AUD-1": [
@@ -188,7 +204,7 @@ WARN_TAG_PATTERNS = {
 try:
     import slide_craft as _sc
     _SLIDES = _sc._slides
-    _INTAKE = staticmethod(_sc._intake)
+    _INTAKE = _sc._intake
     _WRITE_PROVENANCE = _sc._write_provenance
 except Exception:  # noqa: BLE001 — FIX 17 fail-closed: never partially armed
     _sc = None
@@ -204,6 +220,19 @@ def _flag_active():
     and garbage) is ON."""
     raw = (os.environ.get(FEATURE_FLAG_ENV) or "").strip().lower()
     return raw not in ("0", "false", "off")
+
+
+def _degraded_allowed(run_dir):
+    """True only in an explicit test/CI context, via the engine's own contract
+    (phase_verifiers._degraded_allowed: PRESENTATION_ALLOW_DEGRADED_VERIFIERS=1,
+    a CI / OPENCLAW_TEST marker, or the `.test-context` run-dir marker). A missing
+    instrument in a production run is a FAIL, never a silent pass. If the engine
+    module cannot be read the answer is False — no instrument, no allowance."""
+    try:
+        import phase_verifiers as _pv
+        return bool(_pv._degraded_allowed(run_dir))
+    except Exception:  # noqa: BLE001 — an unreadable allowance is no allowance
+        return False
 
 
 # ══════════════════════════════════════════════════════════════════════════
@@ -367,9 +396,18 @@ def check_hook_footer(run_dir, slides_path=None):
     rule names (the prompt half already exists as AF-HOOK). Defers when the
     hook or the deck is absent."""
     if _SLIDES is None or _INTAKE is None:
+        if _degraded_allowed(run_dir):
+            _provenance(run_dir, {"check_hook_footer": {
+                "deferred": True,
+                "reason": "slide_craft unavailable (degraded pass allowed by "
+                          "the test/CI marker)"}})
+            return ""
+        reason = ("AF-HOOK-2: the slide-craft reader is unavailable, so the "
+                  "hook's footer placement cannot be measured — a missing "
+                  "instrument is a FAIL, not a pass (fail-closed)")
         _provenance(run_dir, {"check_hook_footer": {
-            "deferred": True, "reason": "slide_craft unavailable (fail-closed)"}})
-        return ""
+            "deferred": False, "findings": 1, "reason": reason}})
+        return reason
     intake = _INTAKE(run_dir)
     hook = str((intake or {}).get("hook", "")).strip()
     sl = _SLIDES(run_dir, slides_path)
@@ -411,9 +449,18 @@ def check_hook_signature_quote(run_dir, slides_path=None):
     intake (intake.json signature_quote) plus the slide's role declaration in
     arc_allocation.json OR the quote text on the same slide as the hook."""
     if _SLIDES is None or _INTAKE is None:
+        if _degraded_allowed(run_dir):
+            _provenance(run_dir, {"check_hook_signature_quote": {
+                "deferred": True,
+                "reason": "slide_craft unavailable (degraded pass allowed by "
+                          "the test/CI marker)"}})
+            return ""
+        reason = ("AF-HOOK-7: the slide-craft reader is unavailable, so the "
+                  "hook/quote conflation cannot be measured — a missing "
+                  "instrument is a FAIL, not a pass (fail-closed)")
         _provenance(run_dir, {"check_hook_signature_quote": {
-            "deferred": True, "reason": "slide_craft unavailable (fail-closed)"}})
-        return ""
+            "deferred": False, "findings": 1, "reason": reason}})
+        return reason
     intake = _INTAKE(run_dir)
     hook = str((intake or {}).get("hook", "")).strip()
     quote = str((intake or {}).get("signature_quote")
@@ -469,9 +516,18 @@ def check_comparison_rows(run_dir, slides_path=None):
     a DECLARATION DISAGREEMENT fails. No OCR glyph analysis is claimed here;
     the slide's copy IS its face because the pipeline renders copy verbatim."""
     if _SLIDES is None:
+        if _degraded_allowed(run_dir):
+            _provenance(run_dir, {"check_comparison_rows": {
+                "deferred": True,
+                "reason": "slide_craft unavailable (degraded pass allowed by "
+                          "the test/CI marker)"}})
+            return ""
+        reason = ("AF-OBI-6: the slide-craft reader is unavailable, so the "
+                  "comparison-table row ceiling cannot be measured — a missing "
+                  "instrument is a FAIL, not a pass (fail-closed)")
         _provenance(run_dir, {"check_comparison_rows": {
-            "deferred": True, "reason": "slide_craft unavailable (fail-closed)"}})
-        return ""
+            "deferred": False, "findings": 1, "reason": reason}})
+        return reason
     sl = _SLIDES(run_dir, slides_path)
     if not sl:
         _provenance(run_dir, {"check_comparison_rows": {
@@ -1011,6 +1067,51 @@ def warning_hold_blocker(run_dir, phase_id):
 
 
 # ══════════════════════════════════════════════════════════════════════════
+# ENGINE HOOK — the same two holds, offered to the phase-verifier path
+# ══════════════════════════════════════════════════════════════════════════
+
+# DEFAULT-OFF. Nothing on the engine path calls engine_attestation_reasons yet;
+# a phase verifier that does honors these holds only while this is 1/true/on/yes.
+ENGINE_HOLDS_ENV = "PRESENTATION_CRAFT_ENGINE_HOLDS"
+# PD-206's operator-channel prefix: an operator review, never a client alarm.
+OPERATOR_REVIEW_PREFIX = "OPERATOR-REVIEW:"
+# The two step ids the engine hook is meant for — the same two phases the older
+# runner's attest_phase gates: P1Q-COPY-QC and P-PROMPT-QC (HUMAN_VERDICT_PHASES;
+# the warning owner phase is P1Q-COPY-QC, already inside it).
+ENGINE_HOLD_PHASES = HUMAN_VERDICT_PHASES
+
+
+def _engine_holds_active():
+    """The engine switch — DEFAULT-OFF. Only an explicit 1/true/on/yes turns it
+    on; unset, "0", or anything unrecognized leaves the engine path unchanged."""
+    raw = (os.environ.get(ENGINE_HOLDS_ENV) or "").strip().lower()
+    return raw in ("1", "true", "on", "yes")
+
+
+def engine_attestation_reasons(run_dir, phase_id):
+    """Both craft blockers' reasons for phase_id, joined, each carrying the
+    OPERATOR-REVIEW: prefix (PD-206) — "" when clear or when the switch is off.
+
+    The engine path (phase_verifiers) may call this at attestation time to hold
+    P1Q-COPY-QC and P-PROMPT-QC exactly as run_signature_deck.attest_phase does.
+    A blocker that raises is reported as an OPERATOR-REVIEW reason: an
+    unreadable hold state never becomes a pass. Never raises."""
+    if not _engine_holds_active():
+        return ""
+    parts = []
+    for fn in (attestation_blocker, warning_hold_blocker):
+        try:
+            reason = fn(run_dir, phase_id)
+        except Exception as exc:  # noqa: BLE001 — fail closed, never raise
+            reason = ("craft hold " + getattr(fn, "__name__", "?") +
+                      " failed (" + repr(exc) + ") — refusing to pass " +
+                      str(phase_id) + " on an unverifiable hold state")
+        if reason:
+            parts.append(OPERATOR_REVIEW_PREFIX + " " + reason)
+    return " | ".join(parts)
+
+
+# ══════════════════════════════════════════════════════════════════════════
 # Aggregator — the FIX 15 preflight entry (build_deck._chk_slide_craft already
 # calls slide_craft.run_all_checks; this module joins that pass).
 # ══════════════════════════════════════════════════════════════════════════
@@ -1046,50 +1147,25 @@ def _finding_slides_fallback(record):
 
 
 def _load_craft_waivers(run_dir):
-    """FIX 15's owner-token waiver regime, extended to FIX 18's five codes.
-    slide_craft._load_waivers only accepts its own ten codes, so this re-validates
-    the file directly for ENFORCED_CODES with the SAME rules (one rule / one run /
-    named slides; af_code + approved_by + reason required; malformed ignored,
-    fail-closed)."""
-    p = Path(run_dir) / _sc.WAIVER_REL if _sc is not None else         Path(run_dir) / "working" / "checkpoints" / "slide_craft_waivers.json"
-    if not p.is_file():
-        return {}
-    try:
-        data = json.loads(p.read_text(encoding="utf-8"))
-    except (json.JSONDecodeError, OSError, ValueError):
-        return {}
-    if not isinstance(data, list):
+    """The five ENFORCED_CODES waived by OWNER APPROVALS (PD-309 / D-15).
+
+    Every record goes through slide_craft._verified_waiver_records — the same
+    loader slide_craft._load_waivers uses — so an approval here is a real owner
+    decision proven by an `owner_msg_id` that presentation_job.approvals.verify
+    resolves, never a free-text token. The slide-naming rule is also stated once,
+    in slide_craft._waiver_scope: one rule / one run / named slides, and "ALL" is
+    accepted only for AF-DEN-4 — which is not one of these five codes, so none of
+    them can be waived deck-wide. Fail-closed: no slide_craft (or no verified
+    record) means no waiver."""
+    if _sc is None:
         return {}
     waivers = {}
-    for rec in data:
-        if not isinstance(rec, dict):
+    for rec in _sc._verified_waiver_records(run_dir):
+        scope = _sc._waiver_scope(rec)
+        if scope is None:
             continue
-        code = str(rec.get("af_code", "")).strip().upper()
+        code, ordinals, all_slides = scope
         if code not in ENFORCED_CODES:
-            continue
-        if not str(rec.get("approved_by", "")).strip():
-            continue
-        if not str(rec.get("reason", "")).strip():
-            continue
-        slides = rec.get("slides")
-        if not isinstance(slides, list) or not slides:
-            continue
-        ordinals = set()
-        all_slides = False
-        for s in slides:
-            if s == "ALL":
-                # FIX 18's five rules all attribute slides; the ALL escape is
-                # accepted only where the run has no attributable slide — same
-                # posture slide_craft takes for AF-DEN-4.
-                all_slides = True
-                continue
-            try:
-                n = int(s)
-            except (TypeError, ValueError):
-                continue
-            if n > 0:
-                ordinals.add(n)
-        if not ordinals and not all_slides:
             continue
         entry = waivers.setdefault(code, {"slides": set(), "all_slides": False})
         entry["slides"].update(ordinals)

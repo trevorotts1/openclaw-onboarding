@@ -127,6 +127,7 @@ def _isolated_env(tmp_path: Path, overrides: dict | None = None,
     exercised deterministically without ever touching the real config file
     or a real chat id."""
     env = dict(os.environ)
+    env["PRESENTATION_INTAKE_PROVENANCE"] = "warn"  # PD-004c: proves requester stamping, not provenance.
     for key in _ALL_REQUESTER_ENV_KEYS:
         env.pop(key, None)
     fake_home = tmp_path / "fakehome"

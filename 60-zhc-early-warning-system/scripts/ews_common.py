@@ -465,7 +465,11 @@ def self_test():
     # carries NO contiguous banned literal - the guard-no-anthropic scanner proves it)
     fam_id = ("clau" + "de") + "-3-opus"
     paid_id = "minimax-m3:cloud"
-    assert model_id_flags(fam_id)["family"] is True
+    # 2026-10-29 rule: the shipped deny list is EMPTY, so no id is "family" by
+    # default; the detector itself still works when a prefix is configured.
+    assert model_id_flags(fam_id)["family"] is False
+    _fam_sig = {**load_signatures(), "anthropic_family_deny_prefixes": [("clau" + "de") + "-"]}
+    assert model_id_flags(fam_id, _fam_sig)["family"] is True
     assert model_id_flags("glm-5.2")["family"] is False
     assert model_id_flags(paid_id)["paid"] is True
     assert model_id_flags("openrouter/glm-5.2")["paid"] is True  # metered slug

@@ -3,6 +3,62 @@
 All notable changes to this skill. Dates are UTC. This skill's version lives in
 `skill-version.txt` and the SKILL.md frontmatter `version:` field, kept in lockstep.
 
+## [1.3.0] - 2026-11-13
+
+Quieter and actually delivered. On one live client box the sentinel had raised the same 5 findings every 15 minutes since August. It logged 9,253 failed sends, delivered nothing, and spent 2 minutes of disk work on every tick.
+
+**Noise**
+- **Change-only recording.** A finding is recorded only when it first appears (same `dedup_key` and severity). While it stands, nothing is written again. A standing problem is now one event, not one per tick.
+  - **Auto-resolve applies to STATE checks only.** These are re-evaluated every tick: S1, S3, S4, S9, S10, the S5 cadence/heartbeat model, the S6 config owner, S7 surfaces, and the unreadable config (now a regular S7 finding). Evidence findings are never resolved by absence: S2, S5 idle burn, S6 `config.write`, S8, the fleet dead-man, and no-operator-target.
+  - **Duplicate collapse.** Duplicate active rows left by pre-1.3.0 boxes collapse to the newest one per problem, so the first escalate sweep does not admit each duplicate.
+- **S9 reads versions, not hashes.** S9 compares each skill's `skill-version.txt` with the pinned versions. A version that went down, or a skill that disappeared, is P2. An upgrade raises the pinned level. The old per-tick hash of the whole skills tree (548 MB / ~15k files on that box) hit its 120 s timeout on every tick and returned nothing.
+- **S1 only raises P1 for new spend risk.** On a client box, P1 fires only when the change ADDS a metered or Anthropic-family model that the baseline did not have. A model already present at baseline is no longer reported as "changed to a paid tier". The dedup key carries a hash of the live value, so a further change is a new finding.
+- **S5 heartbeat-model check is metered-only.** A subscription (`:cloud`) heartbeat model is the normal setup and is no longer a standing P2. Idle burn on any tier is still P1.
+- **Config snapshots only on real change.** A config that drifted from baseline is snapshotted only when it differs from the newest snapshot. It used to be copied on every tick.
+- **Baseline refresh.** A v1 baseline is re-pinned once on the first v1.3.0 tick. Every event still active from before 1.3.0 is cleared at the same moment. None of them were ever delivered, so none are escalated now, and anything still true is detected again. What it absorbed is recorded as one resolved S0 INFO event, with paths and direction only. `update-skills.sh` also re-pins the baseline at the end of every fleet update.
+
+**Delivery**
+- **Client boxes no longer send Telegram directly.** They have no `operator` account ("Unknown account operator"). A P1 stays open, and `cron-tick` now runs the escalate sweep, which nothing had scheduled before. A P1 still open after 30 minutes is admitted to Rescue Rangers through the shared admission client. P2/P3 are recorded only.
+- **Escalation honors its retry schedule:** 30 min, 1 h, 2 h, 4 h, then every 6 h, instead of a POST on every run. This now covers `no_enrollment`, `client_unavailable` and `refused`. Before, those outcomes had no next attempt at all.
+- **No supplemental group message from client boxes.** The rescue-group Telegram message is sent only from the operator box. Client boxes have no `rescue-rangers` account, and the admission is the receipt.
+- **The operator box is unchanged.** It keeps its direct operator-account send, re-routes standing findings every tick under its own dedup window and storm cap, and keeps the fleet dead-man and Lane 2.
+- **The "no operator target" P1 is no longer raised on client boxes.** They do not need an operator target.
+
+**Fixes**
+- A failed gateway send now records the real error line, not a node deprecation warning.
+- The documented `ews-entry.sh tick --no-send` form works (flags now reach the sentinel before the subcommand).
+- The ews_common and ews_sentinel self-tests are aligned with the 2026-10-29 rule (empty Anthropic-family list). The full aggregate self-test passes.
+- `prune` also clears `rescue_admissions` journal rows past the 72 h window.
+- **Unreadable baseline.** An unreadable `baseline.json` no longer crashes the tick.
+- **Updater root guard.** The `update-skills.sh` re-pin is skipped when it would run as root over a baseline owned by the box user.
+- **Ratchet race.** The S9 version ratchet re-reads `baseline.json` before writing, so a concurrent re-pin is not overwritten.
+
+**Tests**
+- New sentinel cases: change-only, resolve, baseline-upgrade, S1 pre-existing-model, S5 heartbeat-model, S9 versions.
+- New alert cases: escalation-backoff, client-route.
+- New `tests/unit/skill60-cron-tick-delivery.test.sh` (8 checks).
+- More new cases: evidence-not-resolved, config-unreadable, duplicate-collapse, operator-reroute, escalation-backoff-all-outcomes, client-no-group-message.
+- 17 mutations, each caught.
+
+## [1.2.6] - 2026-11-13
+
+Skill 60 keeps 72 hours of history, and prunes it on every tick.
+
+- **Problem:** nothing ever ran the prune command, and the prune only covered config snapshots, keeping the LARGER of 60 snapshots or 45 days. Finding events and alert digests were never pruned at all. Nothing acknowledges events, so every standing finding was written again on every 15-minute tick, forever. One live client box carried 200,366 event rows going back to August (56 MB) plus thousands of loose snapshot files.
+- **Fix:** `config/thresholds.json` D7 is now `retention_hours: 72` with a floor of the newest 3 snapshots. New `Ledger.prune_history()` deletes events and digests older than the window. Digests are never cut below the 24-hour alert cap / dedup window they back. `ews_snapshot.py prune` now also removes snapshot files the ledger no longer tracks once they pass the window (age-gated, never a file a kept row points to), and runs `VACUUM` when a quarter or more of the database is free space, so the file actually shrinks. `prune --keep-hours` is new; `--keep-days` still works.
+- **Never loses an unresolved P1:** an open P1 is the escalate sweep's retry queue, because a failed rescue admission leaves it open on purpose. The newest open P1 for each problem (`dedup_key`) is kept at any age, and only its older duplicates are pruned. The orphan-file sweep compares resolved paths, so a snapshot that a kept row points to is never swept because its path is spelled differently. A `VACUUM` that is blocked by a concurrent tick is skipped and retried on the next prune.
+- `ews-entry.sh cron-tick` runs the prune after every tick. It is fail-soft: a prune failure is logged and never changes the tick's exit code.
+- Tests: ledger self-test "history prune" case, snapshot self-test "72h prune" case, and `tests/unit/skill60-72h-retention.test.sh` (cron-tick prunes; a failing prune leaves the exit code alone; shipped config is 72 hours). Mutation-checked: removing the cron-tick prune call or disabling the event delete each fails the tests.
+
+## [1.2.5] - 2026-11-13
+
+The duplicate tick no longer comes back after a network change.
+
+- **Root cause:** `install.sh` built the tick's declaration key from bare `hostname`. On a Mac with no HostName pinned (the factory default), `hostname` follows the current network and flips between values such as `Name-MacBook-2.local` and `NameBook2`. Each flip produced a new key, so the next install or fleet roll registered a second tick while the first kept running. A live client box carried two ticks firing in the same minute and was hand-fixed three times in eight days.
+- **Fix:** new `resolve_box()` takes the identity from `--box`, then the identity already recorded in the ledger (`meta.box`), then `FLEET_STANDING_BOX_SLUG`, then macOS `LocalHostName`, then `hostname -s`, with `.local` stripped. Existing boxes keep their existing key permanently.
+- New `retire_stale_box_ticks()` runs after a successful registration and removes any tick registered under an old box name, whether keyed (`skill60-ews-tick-*` other than the current key) or unkeyed (`ews-tick-*` running this installer's own command). It never touches other jobs.
+- Self-test: added a stable-identity case and a stale-name case. The fake `openclaw` used by the self-test now supports `cron rm`.
+
 ## [1.2.3] - 2026-10-12
 
 D11: no more permanent false alarms from Ollama Cloud or from a box with no tunnel.

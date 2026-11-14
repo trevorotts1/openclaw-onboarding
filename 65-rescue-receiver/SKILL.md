@@ -8,7 +8,7 @@ description: >
   tooling — never announces itself to the client, never touches client models
   or credentials.
 metadata:
-  version: "v23.6.1"
+  version: "v23.6.5"
   priority: HIGH
 ---
 
@@ -147,7 +147,11 @@ a separate claim that only `--probe` can raise to `VERIFIED`.
   NORMAL), `RESCUE_RANGERS_HELP_CHAT_ID` (deprecated), the `X-Rescue-Secret`
   (verify by sha256 only, never print).
 - Self-verify connectivity headless BEFORE claiming you cannot do something:
-  `curl -sI <dashboard-url>` for the CF Access 302 chain, and a webhook
-  `__AUTHTEST__` POST expecting `{"status":"test_suppressed"}`.
+  `curl -sI <dashboard-url>` for the CF Access 302 chain, and
+  `bash <ocroot>/skills/65-rescue-receiver/rr-intake-auth-check.sh` for the
+  escalation channel (exit 0 means it works end to end).
+- To ask Rescue Rangers for help run `rr_escalate.py send`. To close a fixed case run
+  `rr_escalate.py resolve`. To read the outcome of a case run `rr_escalate.py status`.
+  Never build the request by hand.
 - NEVER tell a client "I don't have your credentials" without first reading
   env, secrets and config and proving absence.

@@ -50,9 +50,11 @@ say() { echo "  [x11-gate] $*"; }
 fail() {  # $1 = reason
   if [ "$mode" = "refuse" ]; then
     say "REFUSED (refuse mode): $1 -- skill 75 left untouched"
+    say "REFUSED: no production writer of the six s75-x11 records exists in this tree (only tests/test_x11_release_gate_wiring.py writes them), so a real install has no target.json and this gate cannot allow"
     exit 20
   fi
   say "WARN (warn-and-preserve; no backup-authorization record): $1"
+  say "WARN: no production writer of the six s75-x11 records exists in this tree (only tests/test_x11_release_gate_wiring.py writes them), so a real install has no target.json and this gate can never allow - it warns here, and refuses in refuse mode"
   say "WARN: manifest-targeted skill-75 files are kept, never deleted; the roll continues"
   exit 10
 }
