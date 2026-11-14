@@ -94,9 +94,12 @@ def test_individual_answers_do_not_invent_sibling_answers(interview):
     assert "audience_composition_note" not in entries
     call("--answer", "want_motion_graphics", "no")
     assert "want_email_sequences" not in ledger(run)
-    rejected, _ = call("--answer", "motion_graphics_declined_reason", "", ok=False)
-    assert rejected.returncode != 0
-    assert "motion_graphics_declined_reason" not in ledger(run)
+    # PD-014: declining an opt-in that DEFAULTS to "no" is not a waiver, so
+    # this reason is optional and never blocks the gate. An empty reply is
+    # accepted and stores only the bank's own "no note." sentinel -- a blank
+    # never becomes an invented reason written on the client's behalf.
+    call("--answer", "motion_graphics_declined_reason", "")
+    assert ledger(run)["MOTION_GRAPHICS_DECLINED_REASON"]["value"] == "no note."
     reason = "Our own team handles ALL motion."
     call("--answer", "motion_graphics_declined_reason", reason)
     assert ledger(run)["MOTION_GRAPHICS_DECLINED_REASON"]["value"] == reason
@@ -205,6 +208,13 @@ def test_real_cli_walk_completes_and_proves_a_single_question_transcript(intervi
         assert qid not in seen, (qid, seen)
         seen.append(qid)
         assert q["prompt"].count("?") <= 1
+        if qid == "defaults_review":
+            # PD-013: a QUICK interview ends with ONE review turn listing the
+            # defaults. Accept it the same way the branch's own PD-013 walk
+            # does (an acceptance needs the client's message id); the guard
+            # still proves no FIELD question is ever asked twice.
+            _, q = call("--answer", qid, "good", "--owner-msg-id", "walk-1")
+            continue
         if qid in values:
             answer = values[qid]
         elif qid.startswith("want_") or qid == "dark_ok" or qid == "logo_on_slides":
@@ -223,5 +233,15 @@ def test_real_cli_walk_completes_and_proves_a_single_question_transcript(intervi
     bank = SCANNER.load_bank_questions()
     assert SCANNER.scan_transcript(trace["turns"], bank)["pass"]
     entries = ledger(run)
-    for field in ("AUDIENCE", "GOAL", "CTA_ACTION", "DURATION_MIN", "WANT_MOTION_GRAPHICS", "MOTION_GRAPHICS_DECLINED_REASON"):
+    for field in ("AUDIENCE", "GOAL", "CTA_ACTION", "DURATION_MIN"):
         assert entries[field]["validated"] is True
+    # PD-013: a QUICK interview asks only what it truly needs. Everything the
+    # bank already answers is recorded as a DEFAULT -- visible in the review
+    # turn's list and stamped by the client's acceptance -- never silently
+    # dropped and never asked one question at a time.
+    assert entries["WANT_MOTION_GRAPHICS"]["defaulted"] is True
+    assert entries["WANT_MOTION_GRAPHICS"]["default_accepted_msg_id"] == "walk-1"
+    assert entries["defaults_review"]["accepted"] is True
+    # ... and an in-depth field with no bank default is left unrecorded
+    # rather than invented (PD-014: no "why not?" for a default-no opt-in).
+    assert "MOTION_GRAPHICS_DECLINED_REASON" not in entries
