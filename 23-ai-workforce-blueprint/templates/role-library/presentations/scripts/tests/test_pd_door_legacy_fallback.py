@@ -88,9 +88,6 @@ def _run_dir(tmp_path: Path, *, owner_token: bool) -> Path:
     run = tmp_path / "run"
     ckpt = run / "working" / "checkpoints"
     ckpt.mkdir(parents=True)
-    # Pre-PD-201b test seam: the deps gate honors QC_SKIP_PRESENTATION_DEPS=1
-    # only when this marker file is present.
-    (ckpt / ".test-context").write_text("")
     (run / "working" / "interview").mkdir(parents=True)
     (run / "working" / "interview" / "intake_ledger.json").write_text(json.dumps({
         "status": "complete", "complete": True, "turns": 6,
@@ -121,6 +118,8 @@ def _run_dir(tmp_path: Path, *, owner_token: bool) -> Path:
 def _run_entry(run: Path, scripts: Path, marker: Path):
     env = dict(os.environ)
     env["QC_SKIP_PRESENTATION_DEPS"] = "1"
+    # PD-201b: the test seam is an environment name, not a marker file.
+    env["PRESENTATION_ALLOW_DEGRADED_VERIFIERS"] = "1"
     env["OPENCLAW_WORKSPACE"] = str(run.parent / "no-such-workspace")
     env["PD005_LEGACY_MARKER"] = str(marker)
     slides = run / "slides.json"
