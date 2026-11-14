@@ -75,10 +75,14 @@ def test_type_and_pitch_are_separate_questions(interview, entry):
     assert second["question_id"] == "pitch_included"
     assert "pitch_included" not in ledger(run)
     _, third = call("--answer", "pitch_included", "no", entry=entry)
-    assert third["question_id"] == "audience"
+    # PD-013: the pace question is asked third, right after the deck type and
+    # the pitch decision, so the client picks QUICK before anything optional.
+    assert third["question_id"] == "standard_mode"
     assert ledger(run)["pitch_included"]["value"] is False
     _, same = call("--next", entry=entry)
     assert same["question_id"] == third["question_id"]
+    _, fourth = call("--answer", "standard_mode", "IN-DEPTH", entry=entry)
+    assert fourth["question_id"] == "audience"
 
 
 def test_individual_answers_do_not_invent_sibling_answers(interview):
@@ -90,9 +94,12 @@ def test_individual_answers_do_not_invent_sibling_answers(interview):
     assert "audience_composition_note" not in entries
     call("--answer", "want_motion_graphics", "no")
     assert "want_email_sequences" not in ledger(run)
-    rejected, _ = call("--answer", "motion_graphics_declined_reason", "", ok=False)
-    assert rejected.returncode != 0
-    assert "motion_graphics_declined_reason" not in ledger(run)
+    # PD-014: declining an opt-in that DEFAULTS to "no" is not a waiver, so
+    # this reason is optional and never blocks the gate. An empty reply is
+    # accepted and stores only the bank's own "no note." sentinel -- a blank
+    # never becomes an invented reason written on the client's behalf.
+    call("--answer", "motion_graphics_declined_reason", "")
+    assert ledger(run)["MOTION_GRAPHICS_DECLINED_REASON"]["value"] == "no note."
     reason = "Our own team handles ALL motion."
     call("--answer", "motion_graphics_declined_reason", reason)
     assert ledger(run)["MOTION_GRAPHICS_DECLINED_REASON"]["value"] == reason
@@ -102,7 +109,10 @@ def test_existing_merged_session_resumes_with_only_missing_fields(interview):
     run, call = interview
     call("--answer", "deck_type_source", "presentation_type: content_personal; pitch_included: no; extracted_substance: Build trust")
     _, next_q = call("--next")
-    assert next_q["question_id"] == "recipient_name"
+    # PD-013: the pace question sits at 0.6, ahead of every field question.
+    assert next_q["question_id"] == "standard_mode"
+    _, after_pace = call("--answer", "standard_mode", "IN-DEPTH")
+    assert after_pace["question_id"] == "recipient_name"
     call("--answer", "recipient_name", "Jordan")
     assert ledger(run)["extracted_substance"]["value"] == "Build trust"
     assert ledger(run)["RECIPIENT_NAME"]["value"] == "Jordan"
@@ -198,6 +208,13 @@ def test_real_cli_walk_completes_and_proves_a_single_question_transcript(intervi
         assert qid not in seen, (qid, seen)
         seen.append(qid)
         assert q["prompt"].count("?") <= 1
+        if qid == "defaults_review":
+            # PD-013: a QUICK interview ends with ONE review turn listing the
+            # defaults. Accept it the same way the branch's own PD-013 walk
+            # does (an acceptance needs the client's message id); the guard
+            # still proves no FIELD question is ever asked twice.
+            _, q = call("--answer", qid, "good", "--owner-msg-id", "walk-1")
+            continue
         if qid in values:
             answer = values[qid]
         elif qid.startswith("want_") or qid == "dark_ok" or qid == "logo_on_slides":
@@ -216,5 +233,15 @@ def test_real_cli_walk_completes_and_proves_a_single_question_transcript(intervi
     bank = SCANNER.load_bank_questions()
     assert SCANNER.scan_transcript(trace["turns"], bank)["pass"]
     entries = ledger(run)
-    for field in ("AUDIENCE", "GOAL", "CTA_ACTION", "DURATION_MIN", "WANT_MOTION_GRAPHICS", "MOTION_GRAPHICS_DECLINED_REASON"):
+    for field in ("AUDIENCE", "GOAL", "CTA_ACTION", "DURATION_MIN"):
         assert entries[field]["validated"] is True
+    # PD-013: a QUICK interview asks only what it truly needs. Everything the
+    # bank already answers is recorded as a DEFAULT -- visible in the review
+    # turn's list and stamped by the client's acceptance -- never silently
+    # dropped and never asked one question at a time.
+    assert entries["WANT_MOTION_GRAPHICS"]["defaulted"] is True
+    assert entries["WANT_MOTION_GRAPHICS"]["default_accepted_msg_id"] == "walk-1"
+    assert entries["defaults_review"]["accepted"] is True
+    # ... and an in-depth field with no bank default is left unrecorded
+    # rather than invented (PD-014: no "why not?" for a default-no opt-in).
+    assert "MOTION_GRAPHICS_DECLINED_REASON" not in entries
