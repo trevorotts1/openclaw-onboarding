@@ -238,10 +238,11 @@ bash -n "$ENTRY" 2>/dev/null && pass "entry script parses (bash -n)" || fail "en
 assert_entry_has "entry: GATE 1 deps check"        'GATE 1.*DEPS CHECK'
 assert_entry_has "entry: GATE 2 bypass-scan"       'GATE 2.*BYPASS-SCAN'
 assert_entry_has "entry: GATE 3 version/hash pin"  'GATE 3.*VERSION/HASH PIN'
-# The deps it gates on.
-assert_entry_has "entry: deps soffice"   'command -v soffice'
-assert_entry_has "entry: deps pdftoppm"  'command -v pdftoppm'
-assert_entry_has "entry: deps reportlab+pptx" 'import reportlab, pptx'
+# PD-010: the door's GATE 1 holds no hard-coded tool list — it reads
+# presentation-deps.json and checks each row. The old source-text assertions on
+# `command -v soffice`, `command -v pdftoppm` and `import reportlab, pptx` are
+# replaced by behaviour in section (F) at the end of this file (the fixtures it
+# needs are defined after the entry-script section).
 # The bypass-scan patterns + the SHARED auto-fail codes.
 assert_entry_has "entry: scans Image.new 2048x1152 canvas" '2048'
 assert_entry_has "entry: scans add_textbox overlay"        'add_text'
@@ -405,8 +406,8 @@ echo
 echo "(D) P3-01(c)4 — entry script forces the full kie prompt-floor gate on for its process tree"
 
 # kie_generate.py / kie-slide-submitter.js are SHARED scripts (also reused by
-# Skills 06/47/49/59 for non-presentations image work) whose full 9,000-18,000-char
-# rich-prompt floor gate is opt-in via KIE_PROMPT_GATE=presentations. Inside the
+# Skills 06/47/49/59 for non-presentations image work) whose full rule 12 prompt band
+# (16,000 to 20,000 characters for the current pin) is opt-in via KIE_PROMPT_GATE=presentations. Inside the
 # presentations canonical entry point this must never be left unset -- any Mode-B
 # reference-image call made anywhere in the spawned process tree must inherit the
 # full gate. Static guard: the entry script exports the default.
@@ -423,6 +424,24 @@ mkdir -p "$ENV_RUN/working/checkpoints"
 touch "$ENV_RUN/working/checkpoints/.test-context"
 write_complete_ledger "$ENV_RUN"
 echo '[{"slide":1,"scene":"x","copy":["hi"]}]' > "$ENV_RUN/slides.json"
+# PD-005: this fixture has no presentation_job.py, so the door refuses the legacy
+# fallback (exit 9) unless the owner logged the gate. Assert the env propagation
+# through an OWNER-APPROVED legacy run, which then ends at exit 10, not 0.
+# PD-919: PD-009 made GATE 3 (VERSION/HASH PIN) FAIL CLOSED when sync_check.py
+# is absent from the scripts dir, instead of the old silent skip. $FAKE_SCRIPTS
+# is a synthetic directory built from individual real modules — it carries no
+# canonical renderer pair and no sync_check.py, so no lockstep can be proven
+# from it. The row under test is KIE_PROMPT_GATE propagation through the spawned
+# tree, not the pin, so the run waives GATE 3 with the same sanctioned owner
+# token the legacy fallback above uses. The token is the documented skip path
+# (gate_fail -> owner_skip_approved); it is not a weakened assertion. A run with
+# no token and no sync_check.py still exits 7.
+cat > "$ENV_RUN/working/checkpoints/process_manifest.json" <<'PMLEGACY'
+{ "owner_skip_approvals": [
+  {"gate":"LEGACY-RUNNER-FALLBACK","approved":true,"approved_by":"founder","reason":"ci"},
+  {"gate":"AF-CANONICAL-RENDER-BYPASS","approved":true,"approved_by":"founder","reason":"fixture: synthetic scripts dir carries no sync_check.py (PD-009 GATE 3 fails closed)"}
+]}
+PMLEGACY
 
 # $FAKE_SCRIPTS was already built above (before section (C)) as the one shared,
 # self-contained scripts-dir fixture used by every functional entry-script
@@ -475,6 +494,115 @@ QC_SKIP_PRESENTATION_DEPS=1 bash "$ENTRY" --run-dir "$EX_RUN" \
 [ "$OK_RC" -ne 2 ] \
     && pass "entry: a valid --scripts-dir is NOT refused (rc=$OK_RC)" \
     || fail "entry: a valid --scripts-dir was refused with exit 2 — the resolver refuses everything"
+
+echo
+echo "(F) PD-010 — GATE 1 reads presentation-deps.json (behaviour, not source text)"
+
+# The canon is the dependency list. These checks run the door against a fixture
+# canon and assert on the exit code and the name it reports — the thing the door
+# actually does, not the text of the script.
+deps_canon() {  # $1 = dir, $2 = tesseract|pytesseract|all|none
+    mkdir -p "$1"
+    # U006: a --scripts-dir is refused unless it holds both entry scripts.
+    : > "$1/build_deck.py"
+    : > "$1/run_signature_deck.py"
+    case "$2" in
+        tesseract)
+            cat > "$1/presentation-deps.json" <<'JSON'
+{ "deps": [
+  {"name":"tesseract","kind":"binary","binary_name":"pd010fixtureabsent","required":true,"features":["qc","ocr"]},
+  {"name":"python:json","kind":"python_import","import_spec":"json","required":true,"features":["qc"]}
+] }
+JSON
+            ;;
+        pytesseract)
+            cat > "$1/presentation-deps.json" <<'JSON'
+{ "deps": [
+  {"name":"bash","kind":"binary","binary_name":"bash","required":true,"features":["deck"]},
+  {"name":"python:pytesseract","kind":"python_import","import_spec":"pd010fixturemissingmodule","required":true,"features":["qc","ocr"]}
+] }
+JSON
+            ;;
+        all)
+            cat > "$1/presentation-deps.json" <<'JSON'
+{ "deps": [
+  {"name":"bash","kind":"binary","binary_name":"bash","required":true,"features":["deck"]},
+  {"name":"python:json","kind":"python_import","import_spec":"json","required":true,"features":["qc"]}
+] }
+JSON
+            ;;
+        none)
+            rm -f "$1/presentation-deps.json"
+            ;;
+    esac
+}
+
+# run_gate1 DIR — run the door into GATE 1 against DIR as the scripts dir.
+# GATE 0/0b are satisfied by the completed-ledger fixture; GATE 0c (drift) is a
+# warning by design and never pre-empts GATE 1.
+G1_RC=0
+G1_LOG=""
+run_gate1() {
+    local d="$1" run="$TMPDIR_TEST/g1-run"
+    rm -rf "$run"; mkdir -p "$run/working/checkpoints"
+    write_complete_ledger "$run"
+    G1_LOG="$TMPDIR_TEST/gate1.log"
+    G1_RC=0
+    bash "$ENTRY" --run-dir "$run" --scripts-dir "$d" > "$G1_LOG" 2>&1 || G1_RC=$?
+}
+
+deps_canon "$TMPDIR_TEST/canon-a1" tesseract
+run_gate1 "$TMPDIR_TEST/canon-a1"
+[ "$G1_RC" -eq 6 ] \
+    && pass "A1 fixture canon without tesseract -> exit 6" \
+    || { fail "A1 fixture canon without tesseract exited $G1_RC, expected 6"; sed -n '1,20p' "$G1_LOG" | sed 's/^/    > /'; }
+grep -q "PRESENTATION_DEPS_MISSING: tesseract" "$G1_LOG" \
+    && pass "A1 message names tesseract" \
+    || { fail "A1 message did not name tesseract"; sed -n '1,20p' "$G1_LOG" | sed 's/^/    > /'; }
+
+deps_canon "$TMPDIR_TEST/canon-a2" pytesseract
+run_gate1 "$TMPDIR_TEST/canon-a2"
+[ "$G1_RC" -eq 6 ] \
+    && pass "A2 failing python import -> exit 6" \
+    || { fail "A2 failing python import exited $G1_RC, expected 6"; sed -n '1,20p' "$G1_LOG" | sed 's/^/    > /'; }
+grep -q "PRESENTATION_DEPS_MISSING: python:pytesseract" "$G1_LOG" \
+    && pass "A2 message names pytesseract" \
+    || { fail "A2 message did not name pytesseract"; sed -n '1,20p' "$G1_LOG" | sed 's/^/    > /'; }
+
+deps_canon "$TMPDIR_TEST/canon-a3" none
+run_gate1 "$TMPDIR_TEST/canon-a3"
+[ "$G1_RC" -eq 6 ] \
+    && pass "A3 missing canon -> exit 6" \
+    || { fail "A3 missing canon exited $G1_RC, expected 6"; sed -n '1,20p' "$G1_LOG" | sed 's/^/    > /'; }
+grep -q "dependency list presentation-deps.json unreadable" "$G1_LOG" \
+    && pass "A3 message says the canon is unreadable" \
+    || { fail "A3 message did not say the canon is unreadable"; sed -n '1,20p' "$G1_LOG" | sed 's/^/    > /'; }
+
+deps_canon "$TMPDIR_TEST/canon-a4" all
+run_gate1 "$TMPDIR_TEST/canon-a4"
+grep -q "OK: all runtime deps present" "$G1_LOG" \
+    && pass "A4 every canon row present -> GATE 1 passes" \
+    || { fail "A4 GATE 1 did not pass with every canon row present"; sed -n '1,20p' "$G1_LOG" | sed 's/^/    > /'; }
+if grep -q "PRESENTATION_DEPS_MISSING" "$G1_LOG"; then
+    fail "A4 GATE 1 reported missing deps although every canon row was present"
+else
+    pass "A4 GATE 1 reports nothing missing when every canon row is present"
+fi
+
+# A5: deps_check carries no hard-coded tool list; the list comes from the canon.
+DEPS_BODY="$(awk '/^deps_check\(\) \{/{f=1} f{print} f&&/^\}$/{exit}' "$ENTRY")"
+if printf '%s\n' "$DEPS_BODY" | grep -qF "presentation-deps.json"; then
+    pass "A5 deps_check reads presentation-deps.json"
+else
+    fail "A5 deps_check does not read presentation-deps.json"
+fi
+for pat in 'command -v soffice' 'command -v pdftoppm' 'import reportlab, pptx' 'import pypdf'; do
+    if printf '%s\n' "$DEPS_BODY" | grep -qF -- "$pat"; then
+        fail "A5 deps_check still hard-codes: $pat"
+    else
+        pass "A5 deps_check no longer hard-codes: $pat"
+    fi
+done
 
 echo
 echo "============================================"

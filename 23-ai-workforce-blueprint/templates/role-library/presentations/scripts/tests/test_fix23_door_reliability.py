@@ -3,7 +3,7 @@
 Per-task QC standard (Gauntlet doc, FIX-23 row):
   - With seeded A5/A6-only drift GATE 3 proceeds (evented)
   - With render-path drift GATE 3 fails
-  - 4th canonical-entry attempt dies
+  - 4th canonical-entry dispatch dies (exit 12, PD-008; recover with --resume)
   - sync_check.py --json after repair reports 0 drift items
   - GATE 1b imports ghl_media under the render interpreter; ghl_media imports cleanly
     (co-located Skill-48 sibling resolution)
@@ -123,17 +123,41 @@ def test_entry_gate3_has_classification_filter():
     assert "sync_drift_deferred" in src
 
 
-def _make_fake_scripts_dir(tmp_path: Path, sync_drift_json: str) -> Path:
+def _make_fake_scripts_dir(tmp_path: Path, sync_drift_json: str,
+                           runner_rc: int = 0) -> Path:
     """Build a fake SCRIPTS_DIR holding stub build_deck/run_signature_deck/ghl_media
     plus a fake sync_check.py that prints `sync_drift_json` to stdout and exits 4
     (drift) or 0 (sync) based on the payload. GATE 3 runs this fake under the real
     classification filter. The payload is written as a JSON data file and loaded by
-    the fake (so JSON booleans stay valid Python)."""
+    the fake (so JSON booleans stay valid Python). `runner_rc` is the legacy
+    runner's exit code: a FAILING dispatch is what consumes the attempt budget
+    (PD-008 — a successful run resets it)."""
     d = tmp_path / "fake-scripts"
     d.mkdir()
     (d / "build_deck.py").write_text("# stub build_deck\n")
     (d / "run_signature_deck.py").write_text(
-        "import sys\nprint('stub run_signature_deck plan')\nsys.exit(0)\n"
+        "import sys\nprint('stub run_signature_deck plan')\nsys.exit(%d)\n" % runner_rc
+    )
+    # PD-008 QC: the engine stub must be PRESENT. PD-005 made a missing
+    # presentation_job.py a blocking exit 9 (AF-ENGINE-ABSENT) before any
+    # fallback dispatch, so without this stub no dispatch reaches the runner
+    # and the attempt budget is never exercised.
+    (d / "presentation_job.py").write_text(
+        "import sys\n"
+        "if '--new' in sys.argv:\n"
+        "    sys.exit(0)\n"
+        f"sys.exit({runner_rc})\n"
+    )
+    (d / "presentation_job").mkdir(exist_ok=True)
+    (d / "presentation_job" / "resolve_intake.py").write_text(
+        "import argparse, json, sys\n"
+        "p = argparse.ArgumentParser()\n"
+        "p.add_argument('--ledger'); p.add_argument('--out'); p.add_argument('--source')\n"
+        "p.add_argument('--intake-depth', default=None)\n"
+        "a = p.parse_args()\n"
+        "json.dump({'presentation_type': 'signature_presentation'}, open(a.out, 'w'))\n"
+        "print('intake resolved')\n"
+        "sys.exit(0)\n"
     )
     (d / "ghl_media.py").write_text(
         "def upload_media(*a, **k): pass\ndef list_media(*a, **k): return {'data': []}\n"
@@ -218,20 +242,24 @@ def test_gate3_end_to_end_render_path_fails(tmp_path):
 # ---------------------------------------------------------------------------
 def test_entry_has_attempt_cap():
     """The entry script must carry the canonical-entry attempt cap: per run dir,
-    3 attempts allowed, the 4th invocation dies with an explicit message."""
+    3 DISPATCHES are allowed inside a 6-hour window, and the 4th dispatch exits 12
+    (PD-008) with an explicit, recoverable message."""
     src = ENTRY.read_text(encoding="utf-8", errors="replace")
     assert ".canonical-entry-attempts" in src
-    assert "_ATTEMPTS" in src
-    assert '_ATTEMPTS" -gt 3' in src or "_ATTEMPTS -gt 3" in src
-    assert "Do NOT write a custom driver" in src
+    assert "_ATTEMPT_FILE" in src
+    assert ".canonical-entry-attempts.meta.json" in src
+    assert "last_at" in src
+    assert "6 * 3600" in src
+    assert "_attempt_budget_gate" in src
+    assert "--resume" in src
+    assert "Do not write your own build script" in src
 
 
 def test_attempt_cap_behavior(tmp_path):
-    """Run the entry script 4 times against one run dir; the 4th must die with the
-    >3 attempts message. Uses --plan to clear GATE 0/1/3 while still exercising the
-    cap (the cap is gated on PLAN=0, so use a build-style invocation with all gates
-    satisfied instead). To keep this hermetic and dependency-free, we simulate the
-    cap's exact counter logic."""
+    """The cap's arithmetic: the 4th dispatch inside the 6-hour window exceeds the
+    cap; a window older than 6 hours starts the count over. Uses --plan to clear
+    GATE 0/1/3 while still exercising the documented counter contract (the real
+    end-to-end leg is test_attempt_cap_end_to_end_4th_dies)."""
     run_dir = tmp_path / "run"
     (run_dir / "working" / "checkpoints").mkdir(parents=True)
     attempt_file = run_dir / "working" / "checkpoints" / ".canonical-entry-attempts"
@@ -245,6 +273,11 @@ def test_attempt_cap_behavior(tmp_path):
     assert counts == [1, 2, 3, 4]
     # The 4th exceeds the cap.
     assert counts[-1] > 3
+    # PD-008: the count is a bare integer; the 6-hour window lives in its own file.
+    src = ENTRY.read_text(encoding="utf-8", errors="replace")
+    assert 'fh.write(str(count))' in src
+    assert '"last_at"' in src
+    assert "6 * 3600" in src
 
 
 def test_entry_plan_exempts_attempt_cap():
@@ -252,14 +285,16 @@ def test_entry_plan_exempts_attempt_cap():
     a run dir is not a build attempt."""
     src = ENTRY.read_text(encoding="utf-8", errors="replace")
     # The cap block must be inside `if [ "$PLAN" -eq 0 ]`.
-    cap_idx = src.find(".canonical-entry-attempts")
+    # PD-008 QC: anchor on the counter assignment in code. The header comment
+    # names the file before the guard, so a bare find() hits prose, not code.
+    cap_idx = src.find('_ATTEMPT_FILE="$_ATTEMPT_DIR/.canonical-entry-attempts"')
     assert cap_idx != -1
     # Look backwards for the nearest `if [ "$PLAN" -eq 0 ]` gate.
     before = src[:cap_idx]
     assert 'if [ "$PLAN" -eq 0 ]; then' in before
     # And the cap's own condition is on PLAN (the whole block is inside it).
     after = src[cap_idx:cap_idx + 1200]
-    assert "_ATTEMPTS" in after
+    assert "_ATTEMPT_FILE" in after
 
 
 def _run_entry_build(run_dir: Path, scripts_dir: Path, extra_env):
@@ -279,10 +314,13 @@ def _run_entry_build(run_dir: Path, scripts_dir: Path, extra_env):
 
 
 def test_attempt_cap_end_to_end_4th_dies(tmp_path):
-    """END-TO-END QC gate (b): 3 canonical-entry invocations on one run dir succeed
-    through the gate chain; the 4th dies with the explicit >3-attempts message and
-    NO custom driver is permitted. Runs in BUILD mode (no --plan) so the cap (gated
-    on PLAN=0) is actually exercised."""
+    """END-TO-END QC gate (b): 3 canonical-entry DISPATCHES on one run dir that do
+    not finish consume one attempt each; the 4th dispatch dies (exit 12, PD-008)
+    with the --resume recovery, and NO custom driver is permitted.
+
+    Runs in BUILD mode (no --plan) so the cap (gated on PLAN=0) is actually
+    exercised. The stub runner FAILS: a successful dispatch resets the budget
+    (FIX 11), so only real, unfinished dispatches can ever reach the cap."""
     run_dir = tmp_path / "run"
     (run_dir / "working" / "checkpoints").mkdir(parents=True)
     (run_dir / "working" / "checkpoints" / ".test-context").write_text("")
@@ -290,26 +328,33 @@ def test_attempt_cap_end_to_end_4th_dies(tmp_path):
     (run_dir / "working" / "interview").mkdir(parents=True)
     (run_dir / "working" / "interview" / "intake_ledger.json").write_text(
         json.dumps({"status": "complete", "complete": True}))
+    # PD-009: GATE 0b checks the sp-intake-transcript-v1 envelope, not a size.
     (run_dir / "working" / "interview" / "intake_transcript.json").write_text(
-        json.dumps({"driver": "deck-intake-driver", "signature": "signed",
-                    "turns": [{"q": "What topic?", "a": "A long enough answer " * 40}]}))
+        json.dumps({"format": "sp-intake-transcript-v1",
+                    "driver": "deck-intake-driver",
+                    "driver_signature": "fixture-signed",
+                    "qid_sequence": ["q1", "q2"],
+                    "turns": [{"q": "What topic?", "a": "A long enough answer " * 40},
+                              {"q": "Who for?", "a": "A fixture audience"}]}))
     payload = {"in_sync": True, "manifest_version": 39, "drift": [],
                "drift_summary": {"total": 0, "render_path": 0, "library_only": 0}}
-    scripts = _make_fake_scripts_dir(tmp_path, json.dumps(payload))
+    scripts = _make_fake_scripts_dir(tmp_path, json.dumps(payload), runner_rc=1)
     env = {"QC_SKIP_PRESENTATION_DEPS": "1"}
-    # Attempt 1-3: succeed (gates pass, stub runner exits 0).
+    counter = run_dir / "working" / "checkpoints" / ".canonical-entry-attempts"
+    # Dispatches 1-3: reach the runner (which fails) and consume one attempt each.
     for attempt in (1, 2, 3):
         r = _run_entry_build(run_dir, scripts, env)
-        assert r.returncode == 0, (
-            f"attempt {attempt} must pass; got {r.returncode}\n{r.stderr}"
+        assert r.returncode == 1, (
+            f"attempt {attempt} must reach the failing runner; got {r.returncode}\n{r.stderr}"
         )
-    # Attempt 4: MUST die with the explicit >3 message (exit 2).
+        assert counter.read_text().strip() == str(attempt), (
+            f"attempt {attempt} must be counted")
+    # Dispatch 4: MUST die with the cap's recovery message (exit 12).
     r4 = _run_entry_build(run_dir, scripts, env)
-    assert r4.returncode == 2, f"4th attempt must die (exit 2); got {r4.returncode}"
-    assert ">3" in r4.stderr or "attempted 4 times" in r4.stderr, r4.stderr
-    assert "Do NOT write a custom driver" in r4.stderr, r4.stderr
-    # The counter file recorded 4.
-    counter = run_dir / "working" / "checkpoints" / ".canonical-entry-attempts"
+    assert r4.returncode == 12, f"4th dispatch must die (exit 12); got {r4.returncode}"
+    assert "--resume" in r4.stderr, r4.stderr
+    assert "Do not write your own build script" in r4.stderr, r4.stderr
+    # The refused dispatch is still counted (the window keeps guarding).
     assert counter.read_text().strip() == "4"
 
 
@@ -392,11 +437,23 @@ def test_ghl_co_location_sibling_resolution(tmp_path):
 
 
 def test_gate1b_imports_with_render_interpreter():
-    """GATE 1b must run the import with $SCRIPTS_DIR on PYTHONPATH and surface the
-    real import error (the render interpreter — same python3 that runs build_deck)."""
+    """GATE 1b must run the import with $SCRIPTS_DIR on PYTHONPATH, under the
+    RENDER interpreter, and surface the real import error.
+
+    PD-908: the merged door resolves ONE pipeline interpreter before any gate
+    (PRES-035) and every gate import runs through $PRESENTATION_PY — the same
+    interpreter that then runs build_deck. The assertion therefore pins the
+    interpreter VARIABLE, not a literal `python3` that the merged script no
+    longer uses on this path; a bare `python3 -c "import ghl_media"` reappearing
+    would mean GATE 1b stopped using the render interpreter, which is the
+    defect this test exists to catch.
+    """
     src = ENTRY.read_text(encoding="utf-8", errors="replace")
     assert 'PYTHONPATH="$SCRIPTS_DIR' in src
-    assert 'python3 -c "import ghl_media"' in src
+    assert '"$PRESENTATION_PY" -c "import ghl_media"' in src
+    assert 'python3 -c "import ghl_media"' not in src, (
+        "GATE 1b imports under a bare python3 instead of the resolved render "
+        "interpreter ($PRESENTATION_PY)")
     assert "import> " in src  # surfaces the real import error
 
 
