@@ -118,14 +118,24 @@ _OFFER_ID = re.compile(r"[A-Za-z0-9_-]+")
 PRICE_MIN_MINOR = 100
 PRICE_MAX_MINOR = 10_000_000
 
-# One order, one payment, one currency. Anything that implies instalments or recurring billing
-# is refused by name until the checkout contract can carry it. The refusal sentence is the shared
-# one (shared-utils/signature_launch_contract/billing.py), so the client hears the same words from
-# Skill 49's plan, Skill 83's intake and the checkout.
+# One order, one price per period, one currency. The billing vocabulary is the shared one
+# (shared-utils/signature_launch_contract/billing.py): the intake accepts exactly the types the
+# Skill 79 checkout can carry (CHECKOUT_BILLING) and Skill 49's plan accepts (not plan-time
+# refused) — one_time and recurring — and everything else, including instalment-style keys,
+# is refused by name with the shared client-facing sentence.
 _PAYMENT_PLAN_KEYS = ("installment", "installments", "payment_plan", "payment_plans",
                       "recurring", "subscription", "billing_interval", "billing_cycle")
 CHECKOUT_OPTIONAL = ("billing_type", "schedule", "native_product_id", "native_price_id",
                      "headline", "benefit_explanation")
+
+
+def _carriable_billing_types() -> Tuple[str, ...]:
+    """The billing types THIS release carries end to end, computed from the shared billing module
+    so the intake's acceptance can never drift from what the plan and the checkout really accept:
+    mapped by CHECKOUT_BILLING (None = 79 has no such type) and not plan-time-refused."""
+    bill = billing_module()
+    return tuple(t for t in bill.BILLING_TYPES
+                 if bill.CHECKOUT_BILLING.get(t) is not None and t not in bill.PLAN_TIME_REFUSED)
 TERMS_FIELDS = ("guarantee_ref", "guarantee_text", "terms_ref", "terms_text",
                 "consent_ref", "consent_text")
 LEVELED_ROLES = ("upsell_1", "downsell_1", "upsell_2")
@@ -164,17 +174,27 @@ def _fail(code: str, field: str, detail: str) -> None:
 
 
 def _refuse_payment_plans(field: str, block: Any) -> None:
-    """Instalment and recurring answers are refused by name, wherever they appear."""
+    """Instalment-style facts are refused by name, wherever they appear; a stated billing_type is
+    validated against the one vocabulary the checkout can carry (one_time, recurring)."""
     if not isinstance(block, dict):
         return
+    bill = billing_module()
     for key in block:
         if key in _PAYMENT_PLAN_KEYS and block[key] not in (None, False, [], {}, ""):
-            _fail("AF-LAUNCH-INTAKE-PAYMENT-PLAN", f"{field}.{key}", billing_module().PAYMENT_PLANS_UNSUPPORTED)
-    if block.get("billing_type") not in (None, "one_time"):
-        _fail("AF-LAUNCH-INTAKE-PAYMENT-PLAN", f"{field}.billing_type",
-              f"{block['billing_type']!r}: {billing_module().PAYMENT_PLANS_UNSUPPORTED}; only 'one_time' is accepted")
+            _fail("AF-LAUNCH-INTAKE-PAYMENT-PLAN", f"{field}.{key}",
+                  f"{key!r} as a separate key: {bill.PAYMENT_PLANS_UNSUPPORTED}; the billing "
+                  f"vocabulary is checkout.billing_type, one of {_carriable_billing_types()}")
+    stated = block.get("billing_type")
+    if stated is not None:
+        if stated not in bill.BILLING_TYPES:
+            _fail("AF-LAUNCH-INTAKE-PAYMENT-PLAN", f"{field}.billing_type",
+                  f"{stated!r} is not one of {bill.BILLING_TYPES!r}")
+        if bill.CHECKOUT_BILLING.get(stated) is None or bill.plan_time_refusal(stated):
+            _fail("AF-LAUNCH-INTAKE-PAYMENT-PLAN", f"{field}.billing_type",
+                  f"{stated!r}: {bill.PAYMENT_PLANS_UNSUPPORTED}; "
+                  f"this release carries {_carriable_billing_types()}")
     if block.get("schedule") not in (None, []):
-        _fail("AF-LAUNCH-INTAKE-PAYMENT-PLAN", f"{field}.schedule", billing_module().PAYMENT_PLANS_UNSUPPORTED)
+        _fail("AF-LAUNCH-INTAKE-PAYMENT-PLAN", f"{field}.schedule", bill.PAYMENT_PLANS_UNSUPPORTED)
 
 
 def _level_question(offer: Dict[str, Any]) -> str:
@@ -260,7 +280,9 @@ def _validate_checkout(index: int, offer: Dict[str, Any]) -> Dict[str, Any]:
     extra = set(raw) - set(CHECKOUT_OPTIONAL)
     if extra:
         _fail("AF-LAUNCH-INTAKE-CHECKOUT", field, f"undeclared field(s) {sorted(extra)!r}")
-    clean: Dict[str, Any] = {"billing_type": "one_time", "schedule": []}
+    # The stated billing_type rides verbatim (already vocabulary-checked by _refuse_payment_plans);
+    # absence stays the historical default: one payment.
+    clean: Dict[str, Any] = {"billing_type": raw.get("billing_type") or "one_time", "schedule": []}
     for key in ("native_product_id", "native_price_id", "headline", "benefit_explanation"):
         value = raw.get(key)
         if value is not None and not _nonempty_str(value):
@@ -622,6 +644,20 @@ def _bind_provenance(raw_offers: List[Any], offers: List[Dict[str, Any]], answer
             _fail("AF-LAUNCH-INTAKE-PROVENANCE", f"offers[{i}].price.source_ref", exc.detail)
         stated = raw.get("checkout") or {}
         price0 = canon["prices"][0]
+        want_billing = price0.get("billing_type")
+        if want_billing is not None:
+            # Plan-time refusal (the shared decision): a billing type the checkout cannot carry
+            # is refused now, when the plan is built, never at checkout after the client approved.
+            bill = billing_module()
+            if bill.CHECKOUT_BILLING.get(want_billing) is None or bill.plan_time_refusal(want_billing):
+                _fail("AF-LAUNCH-INTAKE-PAYMENT-PLAN", f"offers[{i}].price",
+                      f"{want_billing!r}: {bill.PAYMENT_PLANS_UNSUPPORTED}; "
+                      f"this release carries {_carriable_billing_types()}")
+            if want_billing == "recurring" and not (isinstance(price0.get("recurring_interval"), str)
+                                                    and price0.get("recurring_interval").strip()):
+                _fail("AF-LAUNCH-INTAKE-PAYMENT-PLAN", f"offers[{i}].price",
+                      "recurring billing carries no recurring_interval (billing cadence); the "
+                      "interval is material disclosure and is refused rather than guessed")
         for key, want in (("billing_type", price0.get("billing_type")),
                           ("native_product_id", canon.get("native_product_id")),
                           ("native_price_id", price0.get("native_price_id"))):
