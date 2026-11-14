@@ -1381,10 +1381,17 @@ def _canonical_prompt_dir_problems(run_dir: Path) -> list:
     Every consumed gate (preflight rich-prompt _chk_rich_prompts, Prompt-QC
     teeth check_prompt_qc_teeth) routes through _collect_prompt_problems, the
     single choke point that calls this, so the two sides can never disagree.
-    Returns [] when the directory is clean, else the fatal problem strings."""
+    Returns [] when the directory is clean, else the fatal problem strings. When the
+    shared prompt_gate module cannot be imported, the detector never ran — that is a
+    NAMED problem (PD-073), never "no problems", unless an explicit test/CI marker
+    allows the degraded pass (_degraded_allowed, the phase_verifiers rule)."""
     pg = _import_prompt_gate()
     if pg is None:
-        return []
+        if _degraded_allowed(run_dir):
+            return []
+        return [f"prompt_gate: module unavailable — cannot judge "
+                f"{run_dir / 'working' / 'prompts'} for duplicate or non-canonical "
+                f"prompt names (the directory detector never ran; PD-073)"]
     base_problems = pg.prompt_dir_problems(run_dir / "working" / "prompts")
     if not base_problems:
         return []
@@ -1907,6 +1914,20 @@ def _import_prompt_gate():
     return None
 
 
+def _degraded_allowed(run_dir) -> bool:
+    """PD-073: the ONE test/CI-marker rule that may excuse a check whose instrument
+    (prompt_gate) could not be imported. Delegates to phase_verifiers._degraded_allowed
+    so the renderer and the per-phase verifiers can never disagree about what counts as
+    an explicit test context: PRESENTATION_ALLOW_DEGRADED_VERIFIERS=1, CI / OPENCLAW_TEST,
+    or the run dir's working/checkpoints/.test-context marker. If that rule itself cannot
+    be loaded the answer is False — an unprovable marker gate must not open."""
+    try:
+        import phase_verifiers as _pv
+        return bool(_pv._degraded_allowed(run_dir))
+    except Exception:  # noqa: BLE001 — an unloadable rule cannot excuse a check
+        return False
+
+
 def _ensure_english_pin(prompt: str) -> str:
     """Make the mandatory English/Latin anti-garble pin REAL on the render payload. The
     ENGLISH_PIN constant was historically defined and appended NOWHERE (dead code); this
@@ -1949,10 +1970,18 @@ def _verify_aspect_and_readback(out_path: Path, slide: dict, ordinal: int) -> No
         provenance-recorded when absent). When the engine RAN and the rendered text does not
         match the slide's approved copy, re-render (retry). This converts garbled baked text
         from an LLM-honesty check into code.
-    No-op (PNG magic already verified by verify_png) when the shared gate is unavailable."""
+    No-op (PNG magic already verified by verify_png) when the shared gate is unavailable
+    ONLY inside an explicit test/CI context (_degraded_allowed). In a real run an
+    unimportable prompt_gate means neither check ran — PD-073: that raises, naming the
+    missing module, so the slide is never shipped unverified by not running."""
     pg = _import_prompt_gate()
     if pg is None:
-        return
+        if _degraded_allowed(out_path.parent.parent):  # renders/.. == run dir
+            return
+        raise RuntimeError(
+            f"slide {ordinal}: prompt_gate module unavailable — cannot verify the "
+            f"16:9/2K aspect pin or the OCR text readback for {out_path}. A check that "
+            f"never ran is not a pass (PD-073).")
     label = f"slide-{ordinal:02d}"
     # Aspect/resolution: build_deck always renders the pinned 16:9 / 2K. Raises on mismatch.
     pg.verify_aspect_ratio(out_path, slide_id=label)
@@ -2478,6 +2507,13 @@ def render_slides_batch(slides: list, api_key: str, renders_dir: Path, run_dir: 
     checkpoint all still run per slide — batch does NOT weaken a single gate; it only
     changes WHEN submission happens (all up front) and WHEN polling happens (all at once).
 
+    PD-070 — RETRY INSIDE THE BATCH: a slide that fails at submit, poll, or
+    download/verify is re-submitted with the IDENTICAL request up to
+    SLIDE_MAX_ATTEMPTS (the render_slide ladder) instead of being parked as a
+    failure while its siblings finish. One exhausted ladder contributes exactly
+    ONE failure row. An AuthError (HTTP 401/403) is permanent and is NEVER
+    retried — zero re-submits.
+
     Returns the same contract main() consumed from the thread pool:
       {"rendered": [ {slide,file,taskId} ... ], "failures": [ {slide,error} ... ]}
     """
@@ -2487,10 +2523,9 @@ def render_slides_batch(slides: list, api_key: str, renders_dir: Path, run_dir: 
 
     # ---- Phase A: submit every prompt once, 0.6s apart ----
     submitted = {}  # ordinal -> (slide, task_id)
-    submit_failures = []  # {slide, error}
     # FIX 23a: failures can also surface during the in-flight-cap DRAIN pass
-    # (below) while Phase A is still submitting, so this list starts here —
-    # Phase B extends it with submit_failures instead of replacing it.
+    # (below) while Phase A is still submitting, and PD-070 retries live here
+    # too, so this ONE list is the batch's failure ledger from start to finish.
     poll_failures: list = []
     start = time.time()
 
@@ -2568,6 +2603,83 @@ def render_slides_batch(slides: list, api_key: str, renders_dir: Path, run_dir: 
     # waits for the next drain.
     _rendered_pre: list = []
 
+    # PD-070 — RETRY A FAILED SLIDE INSIDE THE BATCH. A slide that fails mid-batch
+    # (submit, poll, or download/verify) is re-submitted with the IDENTICAL request
+    # up to SLIDE_MAX_ATTEMPTS — the same ladder render_slide uses — instead of being
+    # parked as a failure while its siblings finish their polls. A permanent
+    # AuthError is NEVER retried (FIX-6: an identical 401/403 fails forever, so a
+    # re-submit is a token furnace). `_attempts` counts SUBMISSIONS per slide
+    # ordinal; the first submit is attempt 1.
+    _attempts: dict = {}
+
+    def _submit_slide(slide: dict, ordinal: int, attempt: int) -> str:
+        """One 429-aware createTask for `slide`; records the attempt count.
+        Raises AuthError (the caller never retries it) and any other submit error
+        to the caller."""
+        prompt = load_rich_prompt(slide, run_dir)
+        # F07: bounded — KIE_SUBMIT_MAX_429 consecutive backoffs then this slide
+        # FAILS (batch continues; the failure is surfaced, never a silent hang).
+        _rl_streak = 0
+        while True:
+            try:
+                task_id = submit_task(prompt, api_key, logo_url=logo_url)
+                break
+            except RateLimited:
+                _rl_streak += 1
+                if _rl_streak >= KIE_SUBMIT_MAX_429:
+                    raise RuntimeError(
+                        f"[submit] rate-limited {KIE_SUBMIT_MAX_429} consecutive "
+                        f"times ({KIE_SUBMIT_MAX_429 * RATE_LIMIT_SLEEP_S}s of "
+                        "sustained throttling) — giving up on this slide (F07)")
+                print(f"    [submit] 429 — sleeping {RATE_LIMIT_SLEEP_S}s "
+                      f"({_rl_streak}/{KIE_SUBMIT_MAX_429})", flush=True)
+                time.sleep(RATE_LIMIT_SLEEP_S)
+        _attempts[ordinal] = attempt
+        print(f"  [{slide_name(ordinal)}] submitted (attempt "
+              f"{attempt}/{SLIDE_MAX_ATTEMPTS}) -> taskId={task_id}", flush=True)
+        return task_id
+
+    def _retry_or_fail(ordinal: int, slide: dict, exc: Exception) -> Optional[str]:
+        """Return a FRESH taskId after re-submitting the identical request, or None
+        when the slide is terminal — in which case EXACTLY ONE failure row has been
+        appended to poll_failures. AuthError and an exhausted attempt ladder are
+        terminal; every other error backs off and re-submits."""
+        name = slide_name(ordinal)
+        # The dead task's checkpoint record must never be resumed again.
+        _clear_pending_task(run_dir, ordinal)
+        if isinstance(exc, AuthError):
+            print(f"  [{name}] AUTH ERROR — not retried: {exc}",
+                  file=sys.stderr, flush=True)
+            poll_failures.append({"slide": ordinal, "error": str(exc)})
+            return None
+        while True:
+            attempt = _attempts.get(ordinal, 1)
+            if attempt >= SLIDE_MAX_ATTEMPTS:
+                print(f"  [{name}] FAILED after {attempt} attempts: {exc}",
+                      file=sys.stderr, flush=True)
+                poll_failures.append({"slide": ordinal, "error": str(exc)})
+                return None
+            backoff = min(SLIDE_BACKOFF_CAP_S, SLIDE_BACKOFF_BASE * (2 ** (attempt - 1)))
+            print(f"  [{name}] attempt {attempt}/{SLIDE_MAX_ATTEMPTS} failed: {exc} — "
+                  f"re-submitting the identical request in {backoff:.0f}s (PD-070)",
+                  file=sys.stderr, flush=True)
+            time.sleep(backoff)
+            # Count the attempt BEFORE issuing it so a submit that itself fails
+            # advances the ladder instead of re-trying at the same rung forever.
+            _attempts[ordinal] = attempt + 1
+            try:
+                task_id = _submit_slide(slide, ordinal, attempt + 1)
+            except AuthError as aexc:
+                print(f"  [{name}] AUTH ERROR — not retried: {aexc}",
+                      file=sys.stderr, flush=True)
+                poll_failures.append({"slide": ordinal, "error": str(aexc)})
+                return None
+            except Exception as aexc:  # noqa: BLE001 — next rung of the ladder
+                exc = aexc
+                continue
+            _checkpoint_pending_task(run_dir, ordinal, task_id, attempt + 1)
+            return task_id
+
     def _drain_finished_inflight() -> None:
         """Poll every live in-flight task once; free the slots of the ones that
         reached a terminal state. Runs ONLY inside the in-flight-cap wait, so it
@@ -2579,11 +2691,13 @@ def render_slides_batch(slides: list, api_key: str, renders_dir: Path, run_dir: 
             except RateLimited:
                 print(f"    [drain] {_nm} 429 — retry next drain pass", flush=True)
                 continue
-            except Exception as exc:  # noqa: BLE001 — terminal failure surfaced
+            except Exception as exc:  # noqa: BLE001 — retry inside the batch (PD-070)
                 print(f"  [{_nm}] DRAIN POLL FAILED: {exc}", file=sys.stderr, flush=True)
-                poll_failures.append({"slide": _ord, "error": str(exc)})
-                _clear_pending_task(run_dir, _ord)
-                submitted.pop(_ord, None)
+                _new_tid = _retry_or_fail(_ord, _sl, exc)
+                if _new_tid is None:
+                    submitted.pop(_ord, None)
+                else:
+                    submitted[_ord] = (_sl, _new_tid)
                 continue
             if _st.get("state") != "success":
                 continue  # still in flight — keep the slot, poll again next pass
@@ -2596,11 +2710,15 @@ def render_slides_batch(slides: list, api_key: str, renders_dir: Path, run_dir: 
                 _rendered_pre.append({"slide": _ord, "file": str(_out), "taskId": _tid})
                 print(f"  [{_nm}] drained + verified during in-flight wait "
                       f"({_out})", flush=True)
-            except Exception as exc:  # noqa: BLE001 — a bad image fails this slide only
+            except Exception as exc:  # noqa: BLE001 — retry inside the batch (PD-070)
                 print(f"  [{_nm}] DRAIN DOWNLOAD/VERIFY FAILED: {exc}",
                       file=sys.stderr, flush=True)
-                poll_failures.append({"slide": _ord, "error": str(exc)})
-                _clear_pending_task(run_dir, _ord)
+                _new_tid = _retry_or_fail(_ord, _sl, exc)
+                if _new_tid is None:
+                    submitted.pop(_ord, None)
+                else:
+                    submitted[_ord] = (_sl, _new_tid)
+                continue
             submitted.pop(_ord, None)
 
     for slide in pending_submit:
@@ -2620,33 +2738,20 @@ def render_slides_batch(slides: list, api_key: str, renders_dir: Path, run_dir: 
                 break
             time.sleep(_inflight_cap_wait_s)
         try:
-            prompt = load_rich_prompt(slide, run_dir)
-            # 429-aware submit: a rate limit backs off and re-tries the SAME slide,
-            # everything else (network, shape, 401) fails that slide without blocking
-            # the batch. Never re-submit a slide that already has a taskId.
-            # F07: bounded — KIE_SUBMIT_MAX_429 consecutive backoffs then this slide
-            # FAILS (batch continues; the failure is surfaced, never a silent hang).
-            _rl_streak = 0
-            while True:
-                try:
-                    task_id = submit_task(prompt, api_key, logo_url=logo_url)
-                    break
-                except RateLimited:
-                    _rl_streak += 1
-                    if _rl_streak >= KIE_SUBMIT_MAX_429:
-                        raise RuntimeError(
-                            f"[submit] rate-limited {KIE_SUBMIT_MAX_429} consecutive "
-                            f"times ({KIE_SUBMIT_MAX_429 * RATE_LIMIT_SLEEP_S}s of "
-                            "sustained throttling) — giving up on this slide (F07)")
-                    print(f"    [submit] 429 — sleeping {RATE_LIMIT_SLEEP_S}s "
-                          f"({_rl_streak}/{KIE_SUBMIT_MAX_429})", flush=True)
-                    time.sleep(RATE_LIMIT_SLEEP_S)
-            submitted[ordinal] = (slide, task_id)
-            _checkpoint_pending_task(run_dir, ordinal, task_id, attempt=1)
-            print(f"  [{name}] submitted -> taskId={task_id}", flush=True)
+            task_id = _submit_slide(slide, ordinal, 1)
+        except AuthError as exc:
+            # Permanent auth failure — the identical request fails forever.
+            print(f"  [{name}] SUBMIT AUTH ERROR — not retried: {exc}",
+                  file=sys.stderr, flush=True)
+            poll_failures.append({"slide": ordinal, "error": str(exc)})
+            task_id = None
         except Exception as exc:  # noqa: BLE001 — one bad prompt must not block 19
-            submit_failures.append({"slide": ordinal, "error": str(exc)})
             print(f"  [{name}] SUBMIT FAILED: {exc}", file=sys.stderr, flush=True)
+            task_id = _retry_or_fail(ordinal, slide, exc)
+        if task_id is not None:
+            submitted[ordinal] = (slide, task_id)
+            _checkpoint_pending_task(run_dir, ordinal, task_id,
+                                     attempt=_attempts.get(ordinal, 1))
         # Space submissions inside the 20/10s window.
         if submit_interval > 0:
             time.sleep(submit_interval)
@@ -2661,7 +2766,6 @@ def render_slides_batch(slides: list, api_key: str, renders_dir: Path, run_dir: 
 
     # ---- Phase B: poll every submitted task together, download as each finishes ----
     rendered = list(_rendered_pre)
-    poll_failures.extend(submit_failures)  # drain-pass failures already live here (FIX 23a)
     pending = {ordinal: (slide, task_id) for ordinal, (slide, task_id) in submitted.items()}
     # F08: reused slides never re-billed — seed them straight into `rendered`
     # (with their recorded taskId) so Phase B polls only genuinely new tasks and
@@ -2705,11 +2809,13 @@ def render_slides_batch(slides: list, api_key: str, renders_dir: Path, run_dir: 
                 # Transient 429 on the poll — retry the same task on the next pass.
                 print(f"    [poll {pass_no}] {name} 429 — retry next pass", flush=True)
                 continue
-            except Exception as exc:  # noqa: BLE001 — terminal failure surfaced
+            except Exception as exc:  # noqa: BLE001 — retry inside the batch (PD-070)
                 print(f"  [{name}] POLL FAILED: {exc}", file=sys.stderr, flush=True)
-                poll_failures.append({"slide": ordinal, "error": str(exc)})
-                _clear_pending_task(run_dir, ordinal)
-                done_this_pass.append(ordinal)
+                _new_tid = _retry_or_fail(ordinal, slide, exc)
+                if _new_tid is None:
+                    done_this_pass.append(ordinal)
+                else:
+                    pending[ordinal] = (slide, _new_tid)
                 continue
 
             if status.get("state") != "success":
@@ -2730,10 +2836,14 @@ def render_slides_batch(slides: list, api_key: str, renders_dir: Path, run_dir: 
                       flush=True)
                 _record_completed_task(run_dir, ordinal, task_id, out_path)
                 rendered.append({"slide": ordinal, "file": str(out_path), "taskId": task_id})
-            except Exception as exc:  # noqa: BLE001 — a bad image fails this slide only
+            except Exception as exc:  # noqa: BLE001 — retry inside the batch (PD-070)
                 print(f"  [{name}] DOWNLOAD/VERIFY FAILED: {exc}", file=sys.stderr, flush=True)
-                poll_failures.append({"slide": ordinal, "error": str(exc)})
-                _clear_pending_task(run_dir, ordinal)
+                _new_tid = _retry_or_fail(ordinal, slide, exc)
+                if _new_tid is None:
+                    done_this_pass.append(ordinal)
+                else:
+                    pending[ordinal] = (slide, _new_tid)
+                continue
             done_this_pass.append(ordinal)
 
         for ordinal in done_this_pass:
@@ -2886,7 +2996,8 @@ def discover_speech_chunks(run_dir: Path, bundle_dir: Path) -> Optional[dict]:
                   f"per-slide notes (non-fatal) ===", flush=True)
         return chunks
     print("=== SPEAKER NOTES: no presenter speech found yet (searched "
-          "working/presenter-speech/, working/delivery/, and the bundle dir). This is "
+          "working/deliverables/, working/presenter-speech/, working/delivery/, and "
+          "the bundle dir). This is "
           "a phase-4 render; the speech is a phase-9 artifact. Rendering the deck "
           "WITHOUT per-slide notes (non-fatal — never blocks the render). ===",
           flush=True)
@@ -4381,9 +4492,14 @@ def _qc_independence_reason(obj: dict) -> str:
 # that REWARDS sub-floor prompts, and the post-production-overlay image rubric with its
 # `typography_overlay_readiness` criterion that rewards a blank canvas) — it is a
 # hand-authored / corrupt artifact, not a governed grade, and is REJECTED on sight.
-# Matched case-insensitively against the whole report JSON blob. The bare phrase
-# "out of scope" is NOT here (it false-positives on legit prose); slide-exclusion is
-# caught structurally by _image_qc_report_defects' excluded-keys check instead.
+# Matched case-insensitively against the report's KEY NAMES at any depth and the
+# string value of a top-level `generator` field only — NEVER against free-text
+# values (notes, reasons, findings, fixes). A reviewer's note that says "do not
+# overlay the headline; re-prompt" is prose about the report, not a foreign
+# generator's fingerprint; matching the whole JSON blob rejected that report
+# (PD-111). The bare phrase "out of scope" is NOT here (it false-positives on
+# legit prose); slide-exclusion is caught structurally by
+# _image_qc_report_defects' excluded-keys check instead.
 QC_FOREIGN_SIGNATURES = [
     "score_prompt_length", "_build_qc_report", "word_count_band", "words_in_band",
     "80-180 words", "80–180 words", "word-count rubric", "word count rubric",
@@ -4393,24 +4509,49 @@ QC_FOREIGN_SIGNATURES = [
 ]
 
 
+def _qc_foreign_signature_text(obj) -> str:
+    """The only text a foreign-generator signature may match: every KEY NAME at any
+    depth, plus the string value of a top-level `generator` field. Free-text values
+    (notes, reasons, findings, fixes) are deliberately excluded — a reviewer writing
+    "do not overlay the headline; re-prompt" is describing the report, not signing it.
+    Lowercased; depth-capped so a pathological/cyclic report cannot recurse forever."""
+    parts = []
+
+    def walk(node, depth):
+        if depth > 32:
+            return
+        if isinstance(node, dict):
+            for k, v in node.items():
+                parts.append(str(k))
+                walk(v, depth + 1)
+        elif isinstance(node, (list, tuple)):
+            for v in node:
+                walk(v, depth + 1)
+
+    walk(obj, 0)
+    if isinstance(obj, dict):
+        gen = obj.get("generator")
+        if isinstance(gen, str):
+            parts.append(gen)
+    return "\n".join(parts).lower()
+
+
 def _qc_report_substance_problems(obj: dict) -> list:
     """ANTI-RUBBER-STAMP teeth shared by EVERY report-shape QC gate (copy / prompt /
     image / typography / speech). Returns a list of fatal reasons the report cannot be a
     governed grade. Two classes:
       (1) FOREIGN/CORRUPT generator signature — the eliminated word-count prompt rubric or
           the post-production-overlay image rubric; the governed path ignores reports it
-          did not produce.
+          did not produce. Matched against KEY NAMES at any depth and a top-level
+          `generator` string only, never against free-text values (PD-111).
       (2) SCORE-INCONSISTENCY — a declared headline `average` that grossly exceeds the mean
           of the report's OWN per-criterion scores, or a per-criterion mean below the 8.5
           bar; a typed pass over low criteria is a rubber stamp.
     Empty list = the report carries no rubber-stamp signature."""
     problems = []
-    try:
-        blob = json.dumps(obj, default=str).lower()
-    except Exception:  # noqa: BLE001
-        blob = ""
+    sig_text = _qc_foreign_signature_text(obj)
     for sig in QC_FOREIGN_SIGNATURES:
-        if sig in blob:
+        if sig in sig_text:
             problems.append(
                 f"report bears a corrupt/foreign QC-generator signature ({sig!r}) — the "
                 "word-count prompt rubric and the post-production-overlay image rubric are "
@@ -4497,7 +4638,15 @@ def _qc_slide_floor(run_dir: Path, report_obj=None) -> int:
     its row count is the deck size it attests to. Falls back to the reference floor
     only when neither is readable.
     FIX 103: the min(20, n) arithmetic is THE helper's (_floors.qc_verdict_floor);
-    this site never re-derives it."""
+    this site never re-derives it.
+
+    PD-097: the floor does NOT apply to the priority-shift report
+    (gate == "AF-PRIORITY-SHIFT"). That report is a 15-row deck-level checklist, not
+    a per-slide verdict report; its rows are graded by runfacts.verify_priority_shift
+    and never by a per-slide count. Returning 0 here is the whole waiver — nothing
+    else in this function changes."""
+    if isinstance(report_obj, dict) and report_obj.get("gate") == "AF-PRIORITY-SHIFT":
+        return 0
     try:
         n = 0
         for cand in sorted((run_dir / "working" / "copy").glob("slides*.json")):
@@ -5067,17 +5216,15 @@ def check_speech_qc_teeth(run_dir: Path) -> str:
       * speech present, no readable word count / no intake target -> the AF-SPEECH-SHORT
         half defers (its own contract); the AF-SPEECH-HOOK-COUNT half still fires
         (5-20x char-exact hook sings).
+      * PD-218a: a MISSING or CRASHING pitch_engines_check module is a NAMED problem —
+        the hook sing count is unverified, never silently skipped.
 
     Returns "" on pass / defer, or a fatal AF-SPEECH-QC message naming the exact
     discrepancy."""
     # Locate the speech artifact with the SAME resolution _chk_speech_length uses
     # (canonical plural PRESENTERS-SPEECH.md first, legacy singular/scratch names after).
     speech = None
-    for rel in ("working/presenter-speech/speech.md",
-                "working/delivery/PRESENTERS-SPEECH.md",
-                "working/presenter-speech/PRESENTERS-SPEECH.md",
-                "working/delivery/PRESENTER-SPEECH.md",
-                "working/presenter-speech/PRESENTER-SPEECH.md"):
+    for rel in SPEECH_CANDIDATE_RELS:
         p = run_dir / rel
         if p.exists():
             speech = p
@@ -5089,15 +5236,44 @@ def check_speech_qc_teeth(run_dir: Path) -> str:
         # on disk. That is present-input-but-broken and FAILS (never a defer).
         if report_path.exists():
             return ("AF-SPEECH-QC: the speech-QC report exists but the speech file it "
-                    "grades is MISSING (no working/presenter-speech/speech.md or "
-                    "PRESENTERS-SPEECH.md under working/delivery) — a report grading a "
+                    "grades is MISSING (no PRESENTERS-SPEECH.md under "
+                    "working/deliverables/, working/delivery/, working/presenter-speech/) "
+                    "— a report grading a "
                     "nonexistent speech is a FABRICATED pass. Write the speech, then "
                     "re-run the Speech QC Specialist.")
         return ""  # no speech AND no report — genuine pre-speech state: defer (D10).
 
     problems = []
 
-    # --- A. DURATION FLOOR RE-MEASURE (AF-SPEECH-SHORT) ---
+    # --- A. HOOK-COUNT RE-MEASURE (AF-SPEECH-HOOK-COUNT, the SOP 9.1 step 2a engine) ---
+    # Runs BEFORE the duration section: with no usable talk length the AF-SPEECH-SHORT
+    # half defers, but the hook half still fires (see the docstring's DEFER SEMANTICS).
+    pec = _import_pitch_engines_check()
+    if pec is None:
+        # PD-218a: a missing hook engine is a NAMED problem, never a silent skip.
+        problems.append(
+            "the pitch-engine hook-count check (SOP 9.1 step 2a: char-exact "
+            "intake.hook sung 5-20x in PRESENTERS-SPEECH.md) could not run — the "
+            "pitch_engines_check module is MISSING beside build_deck.py, so the hook "
+            "sing count was NOT verified")
+    else:
+        try:
+            hook_hits = pec.run(run_dir, phase="SPEECH-QC")
+        except Exception as exc:  # noqa: BLE001
+            # PD-218a: a crashing engine is a NAMED problem, never a silent empty pass.
+            problems.append(
+                f"the pitch-engine hook-count check (SOP 9.1 step 2a) CRASHED "
+                f"({type(exc).__name__}: {exc}) — the hook sing count was NOT verified")
+            hook_hits = []
+        hook_codes = [h for h in hook_hits if str(h.get("code") or "").startswith("AF-")]
+        if hook_codes:
+            problems.append(
+                "the pitch-engine hook-count check (SOP 9.1 step 2a: char-exact "
+                "intake.hook sung 5-20x in PRESENTERS-SPEECH.md) TRIGGERED on the real "
+                "speech: " + "; ".join(
+                    f"{h.get('code')}: {h.get('detail')}" for h in hook_codes[:3]))
+
+    # --- B. DURATION FLOOR RE-MEASURE (AF-SPEECH-SHORT) ---
     target = None
     for rel in ("working/copy/intake.json", "intake.json", "working/intake.json"):
         p = run_dir / rel
@@ -5111,46 +5287,34 @@ def check_speech_qc_teeth(run_dir: Path) -> str:
                     target = None
             break
     if not target or target <= 0:
-        return ""  # no usable duration target — the intake gate owns that case.
-
-    words = len(speech.read_text(errors="replace").split())
-    floor = int(round(target * SPEECH_WPM_FLOOR))
-    if words < floor:
-        problems.append(
-            f"the real speech {speech.name} has {words} words; the floor for a "
-            f"{target:g}-minute talk is {floor} words (target_talk_minutes x "
-            f"{SPEECH_WPM_FLOOR} wpm) — the speech-QC report marked pass over a speech "
-            f"that does not fill the requested duration (AF-SPEECH-SHORT)")
-    # Fix 97: pacing band ADVISORY only. Above the hard floor, the deviation from
-    # the target rate (|words/TARGET_WPM - target_minutes| / target_minutes) is
-    # reported on stderr — it NEVER becomes a problem[] item / hard fail. A speech
-    # at 120 wpm effective on a 140 wpm target is outside the band and still PASSES.
-    _dev = _speech_pacing_deviation(words, target)
-    if _dev is not None and _dev > SPEECH_PACING_BAND:
-        _eff_wpm = words / target
-        # AF-SPEECH-PACING: named here per the manifest enforcement row so the code is
-        # citable (sync_check af-coverage); the condition itself stays ADVISORY by
-        # design — AF-SPEECH-SHORT above is the only hard duration reject (Fix 97).
-        print(f"{SPEECH_PACING_ADVISORY_PREFIX} (AF-SPEECH-PACING): {speech.name} measured "
-              f"{_eff_wpm:.0f} wpm effective ({words} words / {target:g} min) — "
-              f"{_dev:.0%} off the {SPEECH_TARGET_WPM} wpm target band. Advisory only; "
-              f"the AF-SPEECH-SHORT floor ({SPEECH_WPM_FLOOR} wpm) is the only hard "
-              f"duration reject.", file=sys.stderr)
-
-    # --- B. HOOK-COUNT RE-MEASURE (AF-SPEECH-HOOK-COUNT, the SOP 9.1 step 2a engine) ---
-    pec = _import_pitch_engines_check()
-    if pec is not None:
-        try:
-            hook_hits = pec.run(run_dir, phase="SPEECH-QC")
-        except Exception:  # noqa: BLE001
-            hook_hits = []
-        hook_codes = [h for h in hook_hits if str(h.get("code") or "").startswith("AF-")]
-        if hook_codes:
+        # no usable duration target — the intake gate owns that case. The hook-count
+        # problems above (if any) still decide the verdict below.
+        if not problems:
+            return ""
+    else:
+        words = len(speech.read_text(errors="replace").split())
+        floor = int(round(target * SPEECH_WPM_FLOOR))
+        if words < floor:
             problems.append(
-                "the pitch-engine hook-count check (SOP 9.1 step 2a: char-exact "
-                "intake.hook sung 5-20x in PRESENTERS-SPEECH.md) TRIGGERED on the real "
-                "speech: " + "; ".join(
-                    f"{h.get('code')}: {h.get('detail')}" for h in hook_codes[:3]))
+                f"the real speech {speech.name} has {words} words; the floor for a "
+                f"{target:g}-minute talk is {floor} words (target_talk_minutes x "
+                f"{SPEECH_WPM_FLOOR} wpm) — the speech-QC report marked pass over a speech "
+                f"that does not fill the requested duration (AF-SPEECH-SHORT)")
+        # Fix 97: pacing band ADVISORY only. Above the hard floor, the deviation from
+        # the target rate (|words/TARGET_WPM - target_minutes| / target_minutes) is
+        # reported on stderr — it NEVER becomes a problem[] item / hard fail. A speech
+        # at 120 wpm effective on a 140 wpm target is outside the band and still PASSES.
+        _dev = _speech_pacing_deviation(words, target)
+        if _dev is not None and _dev > SPEECH_PACING_BAND:
+            _eff_wpm = words / target
+            # AF-SPEECH-PACING: named here per the manifest enforcement row so the code is
+            # citable (sync_check af-coverage); the condition itself stays ADVISORY by
+            # design — AF-SPEECH-SHORT above is the only hard duration reject (Fix 97).
+            print(f"{SPEECH_PACING_ADVISORY_PREFIX} (AF-SPEECH-PACING): {speech.name} measured "
+                  f"{_eff_wpm:.0f} wpm effective ({words} words / {target:g} min) — "
+                  f"{_dev:.0%} off the {SPEECH_TARGET_WPM} wpm target band. Advisory only; "
+                  f"the AF-SPEECH-SHORT floor ({SPEECH_WPM_FLOOR} wpm) is the only hard "
+                  f"duration reject.", file=sys.stderr)
 
     if problems:
         return ("AF-SPEECH-QC: the speech-QC report passed its shape check but the REAL "
@@ -5929,9 +6093,13 @@ def _chk_citation_validated(run_dir: Path) -> str:
          brief URLs) -> return "" (nothing to validate; _chk_research_cited /
          _chk_research_brief own absence).
       2. Map/brief declare URL-bearing citations but the run dir carries NO
-         FIX 19 retrieval ledger -> return "" (pre-FIX-19 run dir: defer;
-         the ledger marks the new pipeline and a legacy fixture must keep
-         passing preflight unchanged).
+         research brief -> return "" (nothing claims FIX 19 research yet).
+         PD-218a: once a brief DOES exist, a missing FIX 19 retrieval ledger is
+         a NAMED FAILURE — a declared citation set with no fetch record is
+         unproven.
+      3. PD-218a: a missing citation_validator module or a failed inventory read
+         is a NAMED FAILURE, never a silent defer. Only the PD-201 test rule
+         (_degraded_allowed: explicit test/CI context) still permits a defer.
 
     Once an actual citation set exists under the FIX 19 ledger, every
     citation is fetched + evaluated and the gate FAILS LOUD on the verdict
@@ -5944,7 +6112,19 @@ def _chk_citation_validated(run_dir: Path) -> str:
     presentation_job.citation_validator.citation_validation_enabled).
     """
     if not _citation_validator:
-        return ""  # module unavailable -> defer (report-only doctrine)
+        # PD-218a: a missing instrument is a NAMED failure, not a silent pass. The
+        # only exemption is the PD-201 test rule (a declared test/CI context), which
+        # cannot reach a real production run.
+        if _degraded_allowed(run_dir):
+            return ""
+        return (
+            "AF-RESEARCH-UNCITED: citation validation could not run — the "
+            "presentation_job.citation_validator module is MISSING, so no cited URL "
+            "can be fetched or validated. A brief whose citations cannot be checked "
+            "must not pass preflight. Restore "
+            "(presentations/scripts/presentation_job/citation_validator.py) and "
+            "re-run Phase -0.5 (Deep Research Specialist)."
+        )
 
     if not _citation_validator.citation_validation_enabled():
         # Documented rollback path: the skip is PRINTED, never a silent pass
@@ -5956,18 +6136,41 @@ def _chk_citation_validated(run_dir: Path) -> str:
 
     try:
         inventory = _citation_validator.load_citation_inventory(run_dir)
-    except Exception:  # noqa: BLE001 -- inventory fault is a defer, never a crash
-        return ""
+    except Exception as exc:  # noqa: BLE001 -- PD-218a: a named failure, never a crash
+        # A failed inventory read means the gate cannot even enumerate what to
+        # validate; passing would be a silent rubber stamp. PD-201 test rule only.
+        if _degraded_allowed(run_dir):
+            return ""
+        return (
+            f"AF-RESEARCH-UNCITED: citation inventory could not be read "
+            f"({type(exc).__name__}: {exc}) — the gate refuses to pass a brief whose "
+            f"citation set it could not enumerate. Repair the research pack "
+            f"(working/research/research_map.json + working/research/brief-*.md) and "
+            f"re-run Phase -0.5 (Deep Research Specialist)."
+        )
     citations = inventory["citations"]
     if not citations:
         return ""  # no URL-bearing citations to validate; nothing declared
 
     ledger = run_dir / "working" / "research" / _citation_validator._rw.LEDGER_NAME
     if not ledger.is_file():
-        # Pre-FIX-19 run dir (no retrieval ledger): defer. The legacy fixture
-        # shape must keep passing preflight unchanged; the FIX 19 ledger marks
-        # the new pipeline this gate validates.
-        return ""
+        # PD-218a: no ledger stays a defer ONLY while no research brief exists. Once
+        # a brief exists the run claims FIX 19 research, and a gate that cannot see a
+        # single fetch record is not evidence of anything — fail, naming the ledger.
+        briefs = sorted(run_dir.glob("working/research/brief-*.md"))
+        if not briefs:
+            # Pre-FIX-19 run dir with no research brief at all: genuine defer (the
+            # research-brief gate owns the absence).
+            return ""
+        return (
+            f"AF-RESEARCH-UNCITED: the research pack "
+            f"({', '.join(b.name for b in briefs)}) declares "
+            f"{len(citations)} URL-bearing citation(s) but the FIX 19 retrieval "
+            f"ledger (working/research/{_citation_validator._rw.LEDGER_NAME}) is "
+            f"MISSING, so not one cited URL can be shown to have been fetched. "
+            f"Re-run Phase -0.5 (Deep Research Specialist) so the retrieval ledger "
+            f"is written, then re-run preflight."
+        )
 
     try:
         # Single validation pass per gate call: check_citations builds its own
@@ -6276,14 +6479,17 @@ def _collect_prompt_problems(run_dir: Path, slides_path: Optional[Path] = None) 
     # shared detector's verdicts go through _canonical_prompt_dir_problems, which
     # overlays the R3 3-digit-canonical rule (signature-deck 100-slide floor) so
     # slide-100.txt is accepted while slide-1.txt / slide-1000.txt still fail.
-    _pg22 = _import_prompt_gate()
-    if _pg22 is not None:
-        dir_problems = _canonical_prompt_dir_problems(run_dir)
-        if dir_problems:
-            # Fatal directory-level defect, reported at the sentinel ordinal -1 so
-            # callers can tell it apart from the "slide count unknown" sentinel (0).
-            # The message already names the offending files; the ordinal is cosmetic.
-            return [(-1, "; ".join(dir_problems))]
+    # PD-073: no `if _import_prompt_gate() is not None` guard here. That guard WAS the
+    # pass-by-not-running branch: with no prompt_gate the directory detector silently
+    # skipped and this gate passed on a check it never ran. _canonical_prompt_dir_problems
+    # now returns a NAMED problem for an unimportable module (degraded pass only under an
+    # explicit test/CI marker), so the caller fails closed on the same evidence.
+    dir_problems = _canonical_prompt_dir_problems(run_dir)
+    if dir_problems:
+        # Fatal directory-level defect, reported at the sentinel ordinal -1 so
+        # callers can tell it apart from the "slide count unknown" sentinel (0).
+        # The message already names the offending files; the ordinal is cosmetic.
+        return [(-1, "; ".join(dir_problems))]
     copy_map = _load_slide_copy_map(run_dir, slides_path)
     problems = []
     for ordinal in range(1, n + 1):
@@ -6498,6 +6704,19 @@ def _chk_kie_baked(run_dir: Path, slides_path: Optional[Path] = None, *,
 # advisory (Fix 97, MASTER Part 8 ruling 9.3-B): the measured
 # |words / SPEECH_TARGET_WPM - target_minutes| deviation within 10% is reported,
 # never fails — the band follows the target, it does not gate.
+# Where the render's speech checks look for the presenter speech. The P9-SPEECH
+# step writes working/deliverables/PRESENTERS-SPEECH.md; the five older names
+# follow in their existing order so a speech written by an older flow is still
+# found (legacy tolerance). One list, so the length gate and the QC teeth can
+# never disagree about which file they measured.
+SPEECH_CANDIDATE_RELS = (
+    "working/deliverables/PRESENTERS-SPEECH.md",
+    "working/presenter-speech/speech.md",
+    "working/delivery/PRESENTERS-SPEECH.md",
+    "working/presenter-speech/PRESENTERS-SPEECH.md",
+    "working/delivery/PRESENTER-SPEECH.md",
+    "working/presenter-speech/PRESENTER-SPEECH.md",
+)
 SPEECH_WPM_FLOOR = 120    # hard SHORT floor (low end of the verified band)
 SPEECH_TARGET_WPM = 140   # MASTER Part 8 ruling 9.3-B; the advisory band centers on it
 SPEECH_PACING_BAND = 0.10  # +/-10% around target (Fix 97, band advisory only)
@@ -6556,11 +6775,7 @@ def _chk_speech_length(run_dir: Path) -> str:
     # and scratch speech.md names are still accepted so the gate keeps finding a speech
     # written by an older flow.
     speech = None
-    for rel in ("working/presenter-speech/speech.md",
-                "working/delivery/PRESENTERS-SPEECH.md",
-                "working/presenter-speech/PRESENTERS-SPEECH.md",
-                "working/delivery/PRESENTER-SPEECH.md",
-                "working/presenter-speech/PRESENTER-SPEECH.md"):
+    for rel in SPEECH_CANDIDATE_RELS:
         p = run_dir / rel
         if p.exists():
             speech = p
@@ -6951,6 +7166,9 @@ def check_image_qc_present(run_dir: Path, slides_path: Optional[Path] = None) ->
     """AF-IMAGE-QC-RAN: the image-QC report must exist, be newer than the rendered
     PNGs, and carry a per-slide PASS/FAIL row for every rendered slide.
 
+    PD-218a: an UNREADABLE file date (report or render) is a FAILURE — with no
+    readable date the gate cannot prove freshness, so it must not pass.
+
     Returns '' on pass / defer, or a fatal AF-IMAGE-QC-RAN message."""
     report_path = run_dir / "working" / "qc" / "image_qc_report.json"
     renders_dir = run_dir / "renders"
@@ -6967,19 +7185,35 @@ def check_image_qc_present(run_dir: Path, slides_path: Optional[Path] = None) ->
         return ""  # absence is AF-IMAGE-QC's job; we only check freshness + coverage.
 
     # Staleness check: report must be NEWER than ALL rendered PNGs.
+    def _date_of(path: Path) -> float:
+        """A file date, or an OSError that NAMES the file it came from (PD-218a)."""
+        try:
+            return path.stat().st_mtime
+        except OSError as exc:
+            raise OSError(exc.errno, f"{path}: {exc.strerror}") from None
+
     try:
-        report_mtime = report_path.stat().st_mtime
-        png_mtimes = [p.stat().st_mtime for p in pngs if p.exists()]
+        report_mtime = _date_of(report_path)
+        png_mtimes = [_date_of(p) for p in pngs if p.exists()]
         if png_mtimes and report_mtime < max(png_mtimes):
-            newest_png = max(pngs, key=lambda p: p.stat().st_mtime)
+            newest_png = max(pngs, key=_date_of)
             return (
                 f"AF-IMAGE-QC-RAN: image-QC report is STALE — it was last written "
                 f"before {newest_png.name} was rendered. The report must be re-run after "
                 f"the current render batch. A stale report cannot prove the rendered slides "
                 f"were actually reviewed (AF-IMAGE-QC-RAN)."
             )
-    except OSError:
-        pass  # if stat fails, skip staleness check
+    except OSError as exc:
+        # PD-218a: an unreadable file date is a FAILURE, not a skipped check — with no
+        # readable date the gate cannot prove the report is newer than the renders. The
+        # error text carries the exact file whose date failed.
+        return (
+            f"AF-IMAGE-QC-RAN: a file date could not be read "
+            f"({type(exc).__name__}: {exc}) — freshness against the rendered slides "
+            f"cannot be established, so the report cannot prove the rendered slides "
+            f"were reviewed after the last render. Re-run the Image QC Specialist "
+            f"once the report and renders are readable (AF-IMAGE-QC-RAN)."
+        )
 
     # Per-slide coverage check: the report must carry per-slide entries.
     obj = _read_json(report_path)
@@ -11028,92 +11262,138 @@ def _chk_style_preview(run_dir: Path, slides_path: Optional[Path] = None) -> str
     return ""
 
 
-def _chk_priority_shift_ledger(run_dir: Path, slides_path: Optional[Path] = None) -> str:
-    """AF-PRIORITY-SHIFT (composite, P-SHIFT-QC order 7.5) — the framework's 14-item
-    pre-output ship gate, the ONLY point where copy + design + rendered images coexist.
-    Runs all 14 sub-assertions (reusing the shift-left gates), writes a per-item
-    pass/fail ledger to working/qc/priority_shift_report.json, and refuses ship until
-    all 14 PASS. Item 0 is the North Star itself: the #1 job is to hold attention.
-    Defers pre-render and without doctrine; waivable only by a logged owner skip.
+def _priority_shift_report_shape_problems(obj, item_ids, id_key) -> list:
+    """PD-097: the ONE shape (01-BUILD-SPEC section 1.3) an EXISTING
+    working/qc/priority_shift_report.json must carry before this writer leaves it
+    alone. Returns [] when the report matches; otherwise the named problems.
+    Extra keys are allowed and ignored (e.g. `gate`, or the older `slides` list)."""
+    problems = []
+    if obj.get("schema") != "priority_shift_report/v1":
+        problems.append("schema=" + repr(obj.get("schema"))
+                        + ", expected 'priority_shift_report/v1'")
+    if not isinstance(obj.get("pass"), bool):
+        problems.append("top-level pass=" + repr(obj.get("pass"))
+                        + " is not a JSON boolean")
+    items = obj.get("items")
+    if not isinstance(items, list):
+        return problems + ["items is " + type(items).__name__ + ", expected a list"]
+    seen = []
+    for i, row in enumerate(items):
+        if not isinstance(row, dict):
+            problems.append(f"items[{i}] is {type(row).__name__}, expected an object")
+            continue
+        if not isinstance(row.get("pass"), bool):
+            problems.append(f"items[{i}].pass={row.get('pass')!r} is not a JSON boolean")
+        seen.append(row.get(id_key))
+    missing = [i for i in item_ids if i not in seen]
+    extra = [i for i in seen if i not in item_ids]
+    dupes = sorted({str(i) for i in seen if seen.count(i) > 1})
+    if missing:
+        problems.append("items missing ids " + ", ".join(map(str, missing)))
+    if extra:
+        problems.append("items carry unknown ids " + ", ".join(map(str, extra)))
+    if dupes:
+        problems.append("items repeat ids " + ", ".join(dupes))
+    return problems
 
-    OUT OF SCOPE for fix/two-remaining-gates -- NOT modified by this change. RISK
-    NOTED, not fixed: this function's ONLY registration in PREFLIGHT_REQUIRED (see
-    below) is dispatched by run_preflight(), whose sole call site in main() is
-    preceded by the comment "Runs BEFORE any API key load, render, or assembly" --
-    so `_gather_rendered_pngs(run_dir)` a few lines below is provably always empty
-    on THAT path, and this function returns "" (defer) before any of the 14
-    sub-assertions evaluate. Through run_preflight() alone, the 14-item ledger
-    (including item 0, the North Star) never actually fires. It is ALSO registered
-    in slice1_gate_verifiers.SLICE1_GATES ("slice1:priority_shift_ledger") as the
-    legacy/shadow-compare fn against v_priority_shift_ledger -- whether THAT path
-    dispatches it post-render (giving it real teeth there) was not investigated as
-    part of this change; do not assume either way. A genuine fix likely requires
-    moving (or adding) a post-render dispatch of this check, which is a structural
-    change to run_preflight()/the P-SHIFT-QC wiring outside this change's scope --
-    left alone pending a dedicated, separately-reviewed line item."""
+
+def _chk_priority_shift_ledger(run_dir: Path, slides_path: Optional[Path] = None) -> str:
+    """AF-PRIORITY-SHIFT (composite, P-SHIFT-QC order 7.5) — the framework's 15-row
+    (items 0-14; the doctrine text says "14-item" and item 0 is the North Star)
+    deck-level pre-output ship gate, the ONLY point where copy + design + rendered
+    images coexist. Runs the sub-assertions (reusing the shift-left gates) and refuses
+    ship until every row PASSes. Defers pre-render and without doctrine; waivable only
+    by a logged owner skip.
+
+    THE ONE REPORT, TWO WRITERS (PD-097): working/qc/priority_shift_report.json is also
+    written by the P-SHIFT-QC agent, under the contract in
+    presentation_job/priority_shift_items.py (PD-304). This function writes the file
+    ONLY when none exists, and it never overwrites a report that already carries
+    `schema: "priority_shift_report/v1"` — it validates that report against the one
+    shape (section 1.3) and returns the named problems when it is invalid. Its rows
+    come from PRIORITY_SHIFT_ITEM_IDS in that same module, in that order; there is no
+    second copy of the ids. The file is a DECK-LEVEL checklist: it carries no per-slide
+    verdict rows (the old `slides` list was invented here and is gone), so the QC
+    report-substance per-slide floor does not apply to it (see _qc_slide_floor).
+
+    WHERE IT IS AND IS NOT CALLED (corrected in PD-097; the prior note here was wrong
+    about the slice1 path): (a) it is registered once in PREFLIGHT_REQUIRED and
+    dispatched by run_preflight(), whose main() call site runs BEFORE any API key load,
+    render or assembly — so on THAT path `_gather_rendered_pngs(run_dir)` is always
+    empty and the function returns "" (defer) without evaluating a row; (b) it IS
+    reachable post-render as the legacy/shadow side of
+    slice1_gate_verifiers.SLICE1_GATES ("slice1:priority_shift_ledger", paired with
+    v_priority_shift_ledger, which writes the same file on that path); (c) the
+    P-SHIFT-QC step check (runfacts.verify_priority_shift) does NOT call it — it reads
+    the report file. That second writer is why the report on disk is authoritative
+    here and is never clobbered by a retry or resume."""
     if not _doctrine_active(run_dir):
         return ""
     pngs = _gather_rendered_pngs(run_dir)
     if not pngs:
-        return ""  # the 14-item gate needs the rendered images — defer pre-render.
+        return ""  # the deck-level gate needs the rendered images — defer pre-render.
+    # PD-097: the ONE id list (PD-304). Imported lazily so the rest of build_deck
+    # still imports on a lane branch that lands before PD-304; a missing module is a
+    # NAMED failure, never a silent fallback to a second literal copy of the ids.
+    try:
+        from presentation_job.priority_shift_items import (
+            PRIORITY_SHIFT_ID_KEY, PRIORITY_SHIFT_ITEM_IDS)
+    except Exception as exc:  # noqa: BLE001
+        return ("AF-PRIORITY-SHIFT: presentation_job/priority_shift_items.py (the ONE id "
+                "list, PD-304) could not be imported (" + repr(exc) + "). Fail-closed — "
+                "the ledger will not fall back to a second copy of the ids.")
+    if len(PRIORITY_SHIFT_ITEM_IDS) != 15:
+        return ("AF-PRIORITY-SHIFT: PRIORITY_SHIFT_ITEM_IDS holds "
+                f"{len(PRIORITY_SHIFT_ITEM_IDS)} ids but this ledger measures 15 rows — "
+                "the one id list and the ledger have drifted (PD-304 / PD-097).")
+    ITEM = PRIORITY_SHIFT_ITEM_IDS
     spec = _read_priority_spec(run_dir) or {}
     text = _slides_copy_text_lc(run_dir) or ""
     rows = []
 
     def add(item, ok, evidence):
-        rows.append({"item": item, "pass": bool(ok), "evidence": str(evidence)[:240]})
+        rows.append({PRIORITY_SHIFT_ID_KEY: item, "pass": bool(ok),
+                     "evidence": str(evidence)[:240]})
 
     pitch = _intake_pitch_included(run_dir) is True
-    add("0_attention_is_the_no1_job",
+    add(ITEM[0],
         bool(str(spec.get("true_goal") or "").strip()),
         "priority_shift_spec.true_goal declares the destination shift")
-    add("1_creation_mode_identified", _chk_mode(run_dir) == "", "AF-MODE-UNSET")
-    add("2_priority_stack_named", _chk_priority_stack(run_dir) == "", "AF-NO-PRIORITY-STACK")
-    add("3_priority_shift_engineered", _chk_priority_shift(run_dir) == "", "AF-NO-SHIFT")
-    add("4_present_cost_exposed",
+    add(ITEM[1], _chk_mode(run_dir) == "", "AF-MODE-UNSET")
+    add(ITEM[2], _chk_priority_stack(run_dir) == "", "AF-NO-PRIORITY-STACK")
+    add(ITEM[3], _chk_priority_shift(run_dir) == "", "AF-NO-SHIFT")
+    add(ITEM[4],
         _first_marker_offset(text, COST_OF_INACTION_MARKERS) is not None,
         "cost-of-inaction beat present (Move 2)")
-    add("5_higher_priority_lever",
+    add(ITEM[5],
         bool(str(spec.get("higher_priority_hook") or "").strip()),
         "priority_shift_spec.higher_priority_hook (Move 3)")
-    add("6_value_anchored_high",
+    add(ITEM[6],
         _first_marker_offset(text, ("anchor", "value-stack", "value_stack", "value add")) is not None,
         "value anchor beat present (Move 4)")
-    add("7_urgency_scarcity",
+    add(ITEM[7],
         (not pitch) or _first_marker_offset(text, URGENCY_SCARCITY_MARKERS) is not None,
         "urgency/scarcity present (Move 5; n/a for pitchless)")
-    add("8_ability_unblocked",
+    add(ITEM[8],
         (not pitch) or _first_marker_offset(text, ABILITY_UNBLOCK_MARKERS) is not None,
         "ability-blocker removed (Move 6; n/a for pitchless)")
-    add("9_rerank_demanded", _chk_rerank(run_dir) == "", "AF-NO-RERANK (Move 7)")
-    add("10_trigger_fired", _chk_trigger(run_dir) == "", "AF-NO-TRIGGER (Move 8)")
-    add("11_proclamation_hedge_free", _chk_proclamation_hedge(run_dir) == "",
+    add(ITEM[9], _chk_rerank(run_dir) == "", "AF-NO-RERANK (Move 7)")
+    add(ITEM[10], _chk_trigger(run_dir) == "", "AF-NO-TRIGGER (Move 8)")
+    add(ITEM[11], _chk_proclamation_hedge(run_dir) == "",
         "AF-PROCLAMATION-HEDGE")
-    add("12_peak_and_ending", _chk_peak_end(run_dir) == "", "AF-PEAK-END")
-    add("13_most_vivid_by_the_end", _chk_salience_apex(run_dir) == "", "AF-NO-SALIENCE-APEX")
-    add("14_one_promise_one_wow_one_demonstration",
+    add(ITEM[12], _chk_peak_end(run_dir) == "", "AF-PEAK-END")
+    add(ITEM[13], _chk_salience_apex(run_dir) == "", "AF-NO-SALIENCE-APEX")
+    add(ITEM[14],
         all(str(spec.get(k) or "").strip()
             for k in ("the_one_promise", "the_one_wow", "the_one_demonstration")),
         "spec carries the single promise + wow + demonstration anchors")
 
     passed = all(r["pass"] for r in rows)
-    # FIX-2 (Error 2): real per-slide verdicts. P-SHIFT-QC runs AFTER render (order
-    # 7.5), so every rendered slide exists and the ship gate grades each one. Each
-    # per-slide verdict records the slide ordinal and an explicit pass (a rendered
-    # slide present + non-degenerate in the run dir). This is the per-slide coverage
-    # the QC report floor (>= 20 real per-slide verdicts) requires — a 14-row
-    # checklist alone can never satisfy the floor.
-    per_slide = []
-    for png in sorted(_gather_rendered_pngs(run_dir)):
-        sid = _png_ordinal(png)
-        if sid is None:
-            continue
-        per_slide.append({
-            "slide": sid,
-            "pass": png.is_file(),
-            "verdict": "pass" if png.is_file() else "fail",
-            "evidence": "rendered slide present in run dir (ship-gate per-slide pass)",
-        })
+    # PD-097: NO per-slide rows. This report is a deck-level checklist; the earlier
+    # FIX-2 loop below invented one "verdict" per rendered PNG (always pass, because
+    # the PNG was the only evidence) purely to satisfy the per-slide verdict floor,
+    # which is what made a 15-row gate look like a fabricated QC report. The floor is
+    # now waived for this gate in _qc_slide_floor instead of being gamed here.
     report = {
         "schema": "priority_shift_report/v1",
         "gate": "AF-PRIORITY-SHIFT",
@@ -11121,14 +11401,25 @@ def _chk_priority_shift_ledger(run_dir: Path, slides_path: Optional[Path] = None
         "generated_at": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
         "pass": passed,
         "items": rows,
-        "slides": per_slide,
+        "per_slide": "not applicable — 14-item deck-level checklist",
     }
-    try:
-        out = run_dir / PRIORITY_SHIFT_REPORT_REL
-        out.parent.mkdir(parents=True, exist_ok=True)
-        out.write_text(json.dumps(report, indent=2))
-    except Exception:  # noqa: BLE001 — never let report-write mask the verdict
-        pass
+    out = run_dir / PRIORITY_SHIFT_REPORT_REL
+    existing = _read_json(out) if out.is_file() else None
+    if isinstance(existing, dict) and existing.get("schema") == "priority_shift_report/v1":
+        # Two writers, one file: the P-SHIFT-QC agent's report (or an earlier run's)
+        # is the artifact. Validate the shape; never overwrite it.
+        problems = _priority_shift_report_shape_problems(
+            existing, ITEM, PRIORITY_SHIFT_ID_KEY)
+        if problems:
+            return ("AF-PRIORITY-SHIFT: the existing working/qc/priority_shift_report.json "
+                    "does not match priority_shift_report/v1 — " + "; ".join(problems)
+                    + ". PD-097: this step never overwrites a report it did not write.")
+    else:
+        try:
+            out.parent.mkdir(parents=True, exist_ok=True)
+            out.write_text(json.dumps(report, indent=2))
+        except Exception:  # noqa: BLE001 — never let report-write mask the verdict
+            pass
     if not passed:
         if _owner_skip_approved(run_dir, "AF-PRIORITY-SHIFT"):
             return ""
