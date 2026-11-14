@@ -219,6 +219,61 @@ hdr "only allow-listed state is preserved"
   && ok "non-allow-listed file removed by the wholesale replace" \
   || bad "non-allow-listed file survived the update"
 
+# --- 11. skill 75's face model survives the update (S75-046) -----------------
+# The release ships NO copy of assets/face_landmarker.task, so the installed
+# folder holds the only one on the box. Before the fix the keep-list named only
+# Skill 75's two resume-state paths: the wholesale remove+copy deleted the face
+# model on every roll and both fail-closed lip-sync gates then refused jobs.
+hdr "skill 75's face model survives the update"
+S75=75-drama-song-ad-factory
+BOX75="$WORK/box75"; mkdir -p "$BOX75/skills"
+cp -R "$REPO/$S75" "$REPO/shared-utils" "$BOX75/skills/"
+mkdir -p "$BOX75/skills/$S75/assets"
+# The vendor file is 3.7 MB and cannot be fabricated here, so the lip-sync check
+# below points its pins at this small fixture. The keep-list entry, the
+# save/restore and the check itself are the real ones; only the expected bytes
+# differ. The byte-identical assertion needs no pin at all.
+printf 'face-landmarker-fixture for %s\n' "$S75" > "$BOX75/skills/$S75/assets/face_landmarker.task"
+cp -p "$BOX75/skills/$S75/assets/face_landmarker.task" "$WORK/face-model-want"
+RELEASE75="$WORK/release75"; mkdir -p "$RELEASE75"; cp -R "$REPO/$S75" "$RELEASE75/"
+[ -d "$RELEASE75/$S75/assets" ] \
+  && bad "control: the release ships an assets/ dir, so this case proves nothing" \
+  || ok "control: the release ships no face model (the box copy is the only one)"
+rm -rf "$TMPDIR"/oc-skill-box-state.*
+simulate_update "$BOX75" "$RELEASE75" "" "$S75" || bad "skill 75 update exited non-zero: $(tail -3 "$WORK/sim.log")"
+if cmp -s "$WORK/face-model-want" "$BOX75/skills/$S75/assets/face_landmarker.task"; then
+  ok "assets/face_landmarker.task still there, byte-identical, after the copy loop"
+else
+  bad "the update destroyed the box's only face model"
+fi
+[ "$(stash_left)" = 0 ] && ok "no stash dir left (skill 75)" || bad "stash dir left (skill 75)"
+lock_released && ok "update lock released (skill 75)" || bad "update lock LEAKED (skill 75)"
+
+# The same preserved file must satisfy the fleet helper's check, offline. The
+# stand-in interpreter reports the three modules as importable and forwards
+# real hashing to python3, so nothing is installed and no network is used.
+FAKE_PY="$WORK/fake-python3"
+cat > "$FAKE_PY" <<'EOS'
+#!/usr/bin/env bash
+case "$*" in
+  *hashlib*) exec python3 "$@" ;;
+esac
+exit 0
+EOS
+chmod +x "$FAKE_PY"
+MODEL_SHA="$(python3 -c 'import hashlib,sys; print(hashlib.sha256(open(sys.argv[1],"rb").read()).hexdigest())' "$WORK/face-model-want")"
+MODEL_NBYTES="$(wc -c < "$WORK/face-model-want" | tr -d ' ')"
+( export LIPSYNC_DEPS_LIB_ONLY=1 LIPSYNC_PY="$FAKE_PY" SKILLS_DIR="$BOX75/skills"
+  . "$REPO/shared-utils/lipsync-deps.sh"
+  LIPSYNC_MODEL_SHA256="$MODEL_SHA" LIPSYNC_MODEL_BYTES="$MODEL_NBYTES"
+  ensure_lipsync_deps --check ) > "$WORK/lipsync-check.log" 2>&1
+rc=$?
+if [ "$rc" -eq 0 ]; then
+  ok "ensure_lipsync_deps --check exits 0 on the preserved model (no network)"
+else
+  bad "ensure_lipsync_deps --check exited $rc after the update: $(tail -3 "$WORK/lipsync-check.log")"
+fi
+
 # --- 4. a shipped path always wins -------------------------------------------
 hdr "a path the release ships is never overwritten"
 BOX2="$WORK/box2"; new_box "$BOX2"
