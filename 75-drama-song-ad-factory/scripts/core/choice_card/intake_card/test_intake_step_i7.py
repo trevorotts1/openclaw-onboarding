@@ -17,12 +17,15 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.dirname(os.path.dirname(HERE)))
 from choice_card.intake_card import intake_card as IC  # noqa: E402
 
-N = len(IC.QUESTIONS)
+#: The card a plain replay asks (S75-006: a run with no folder keeps the list
+#: a resumed run keeps; a NEW run folder asks QUESTIONS instead).
+LEGACY = IC.LEGACY_QUESTIONS
+N = len(LEGACY)
 #: The five story-brief questions (DSR-105) are typed, the nine production
 #: choices are picked, and the spend question still takes a dollar amount.
-OK = IC.example_replies()
+OK = IC.example_replies(LEGACY)
 #: index -> the question at it, so a test can name a line instead of counting.
-Q = IC.QUESTIONS
+Q = LEGACY
 
 
 def _transcript(replies):
@@ -85,12 +88,14 @@ def test_change_one_line_returns_to_recap():
 
 
 def test_a_typed_brief_answer_is_stored_verbatim():
-    st = IC.conversation(["My 6-week Confident Speaker program"] + OK[1:])
+    # the OFFER screen on its own: the first typed question of the new card
+    offer = [IC._offer_q()]
+    st = IC.conversation(["My 6-week Confident Speaker program"], offer)
     assert st["answers"][0] == {"n": 1, "text": "My 6-week Confident Speaker program",
                                 "value": "My 6-week Confident Speaker program", "id": "offer"}
     # a bare "1" or a bare "yes" is never somebody's offer
-    assert IC.conversation(["1"])["answers"] == []
-    assert IC.conversation(["yes"])["answers"] == []
+    assert IC.conversation(["1"], offer)["answers"] == []
+    assert IC.conversation(["yes"], offer)["answers"] == []
 
 
 def test_cli_step_prints_next_message_raw_and_json():

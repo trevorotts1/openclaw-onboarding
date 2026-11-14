@@ -403,11 +403,24 @@ test('admin: the cutoff is computed and shown, and a save is refused by name', (
   assert.equal(DSAdmin.setCutoffRequest(9000, 'UTC').code, 'AF-DS-CUTOFF-INVALID');
 });
 
-test('admin: cutting a key off is refused by name until the route exists', () => {
-  const refused = DSAdmin.revokeKeyRequest();
-  assert.equal(refused.ok, false);
-  assert.equal(refused.code, 'AF-DS-CUTOFF-NO-ROUTE');
-  assert.match(refused.message, /\/api\/studio\/admin\/revoke/);
+test('admin: cutting a key off is a real request, and a malformed one names AF-DS-REVOKE-INVALID', () => {
+  // U-Z12 (S75-103) — the studio now HAS /api/studio/admin/revoke. The page
+  // names a client and a kind; it never takes, shows or returns a key value.
+  const built = DSAdmin.revokeKeyRequest('admin-fixture', ' c_1 ', 'box');
+  assert.equal(built.ok, true);
+  assert.equal(built.method, 'POST');
+  assert.equal(built.path, '/api/studio/admin/revoke');
+  assert.deepEqual(built.body, { admin_key: 'admin-fixture', client_id: 'c_1', kind: 'box' });
+  assert.equal(/\?/.test(built.path), false, 'the admin key never travels in a query string');
+
+  for (const kind of DSAdmin.REVOKE_KINDS) {
+    assert.equal(DSAdmin.revokeKeyRequest('admin-fixture', 'c_1', kind).ok, true, kind);
+  }
+  assert.equal(DSAdmin.revokeKeyRequest('', 'c_1', 'box').code, 'AF-DS-REVOKE-INVALID');
+  assert.equal(DSAdmin.revokeKeyRequest('k', '  ', 'box').code, 'AF-DS-REVOKE-INVALID');
+  assert.equal(DSAdmin.revokeKeyRequest('k', 'c_1', 'link').code, 'AF-DS-REVOKE-INVALID',
+    'a personal link is rotated by minting a new one, never cut off here');
+  assert.equal(DSAdmin.revokeKeyRequest('k', 'c_1', '').code, 'AF-DS-REVOKE-INVALID');
 });
 
 // ---------------------------------------------------------------------------
@@ -437,14 +450,19 @@ test('page: every control is labelled, every id is unique, every id the script u
     assert.ok(labelled || wrapped || /type="hidden"/.test(attrs), `an unlabelled <${control[1]}> would be invisible to a screen reader`);
   }
 
-  // The inline wiring runs after the two libraries and reaches the DOM by id.
-  const script = html.slice(html.indexOf('<script src="lib/qr.js"'));
-  const used = [...script.matchAll(/el\('([^']+)'\)/g)].map((m) => m[1]);
-  assert.ok(used.length > 8, 'the wiring looks empty — did the page stop using the libs?');
-  for (const id of new Set(used)) assert.ok(ids.includes(id), `the script reaches for #${id}, which the page never defines`);
+  // The page carries three absolute scripts and NO inline script: the studio
+  // service serves every page with `script-src 'self'`, so an inline block is
+  // refused by the browser. The wiring lives in lib/admin_page.js.
+  const scripts = [...html.matchAll(/<script\b[^>]*\ssrc="([^"]+)"/g)].map((m) => m[1]);
+  assert.deepEqual(scripts, ['/admin/lib/qr.js', '/admin/lib/admin_client.js', '/admin/lib/admin_page.js']);
+  assert.equal(/<script(?![^>]*\ssrc=)[^>]*>/.test(html), false, 'no <script> tag may go without a src');
 
-  assert.match(script, /<script src="lib\/qr\.js"><\/script>/);
-  assert.match(script, /<script src="lib\/admin_client\.js"><\/script>/);
+  // The wiring still reaches the DOM by id.
+  const wiring = readFileSync(join(LIB, 'admin_page.js'), 'utf8');
+  const used = [...wiring.matchAll(/el\('([^']+)'\)/g)].map((m) => m[1]);
+  assert.ok(used.length > 8, 'the wiring looks empty — did the page stop using the libs?');
+  for (const id of new Set(used)) assert.ok(ids.includes(id), `the wiring reaches for #${id}, which the page never defines`);
+
   assert.equal(/localStorage|sessionStorage|document\.cookie/.test(html), false, 'nothing may be persisted in the page');
 });
 

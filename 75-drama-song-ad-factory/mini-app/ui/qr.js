@@ -4,14 +4,14 @@
 // mini-app/ui/qr.js
 //
 // A dependency-free QR Code generator, byte mode, error-correction level M,
-// versions 1..10 (capacity 271 bytes — a delivery URL or a share URL fits with
+// versions 1..10 (capacity 213 bytes — a delivery URL or a share URL fits with
 // room to spare). Self-contained: no CDN, no npm package, no font, no network.
 // The browser renders it as inline SVG; the runnable check (checks/qr-roundtrip.mjs)
 // renders the SAME matrix to a PNG and decodes it back with zbarimg, so the
 // proof covers the code that actually ships.
 //
 // ponytail: byte mode + EC level M + versions 1..10 only. That is the whole
-// ceiling — if a payload ever needs more than 271 bytes or a different EC
+// ceiling — if a payload ever needs more than 213 bytes or a different EC
 // level, extend ECC_BLOCKS_M and ALIGN_POS, nothing else changes.
 // =============================================================================
 
