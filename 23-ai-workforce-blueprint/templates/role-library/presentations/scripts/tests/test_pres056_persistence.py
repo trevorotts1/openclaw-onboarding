@@ -102,6 +102,7 @@ _SEED_PREFS = {
 
 def _env(cfg: Path) -> dict:
     env = dict(os.environ)
+    env["PRESENTATION_INTAKE_PROVENANCE"] = "warn"  # PD-004c: proves persistence, not provenance.
     env["PRESENTATION_RESOURCE_PROFILE_DIR"] = str(cfg)
     env["PRESENTATION_CAPACITY_CONFIG_DIR"] = str(cfg)
     env["PRESENTATION_PROVIDER_PROBES"] = "0"
