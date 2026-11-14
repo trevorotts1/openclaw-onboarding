@@ -218,16 +218,19 @@ fi
 
 # ---- write idempotency marker ------------------------------------------------
 TS_NOW=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-TMP_STATE=$(mktemp)
-jq --arg ts "$TS_NOW" '
+# Through the shared state protocol: it holds the state lock across
+# read/filter/replace, so a concurrent reminder stamp or department decision is
+# merged instead of overwritten.
+# shellcheck source=/dev/null
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib-workforce-state.sh"
+workforce_state_set "$STATE_FILE" --arg ts "$TS_NOW" '
   .departments = ((.departments // []) | map(
     if .slug == "presentations"
     then . + {presentationDeptWelcomeSent: true, presentationDeptWelcomeSentAt: $ts}
     else .
     end
   ))
-' "$STATE_FILE" > "$TMP_STATE" 2>/dev/null && mv "$TMP_STATE" "$STATE_FILE" \
-  || { rm -f "$TMP_STATE"; echo "[send-presentation-dept-welcome] WARN: could not write idempotency marker to state file (send succeeded)" >&2; }
+' || echo "[send-presentation-dept-welcome] WARN: could not write idempotency marker to state file (send succeeded)" >&2
 
 echo "[send-presentation-dept-welcome] Welcome sent and idempotency marker written (presentationDeptWelcomeSent=true at $TS_NOW)."
 exit 0
