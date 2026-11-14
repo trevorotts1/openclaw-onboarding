@@ -173,6 +173,18 @@ def _drive(run: Path, env: dict, pairs, strict: bool = True) -> list:
     for qid, text in pairs:
         nxt = _next(run, env)
         active = nxt.get("question_id")
+        # PD-013: the pace question is asked third, before every field
+        # question. These fixtures predate it; answer IN-DEPTH so each one
+        # still describes the full progressive sequence it was written for.
+        if active == "standard_mode" and qid != "standard_mode":
+            _answer(run, env, "standard_mode", "IN-DEPTH")
+            nxt = _next(run, env)
+            active = nxt.get("question_id")
+        if qid == "interview_depth" and parent.get(active, active) != "interview_depth":
+            # PD-013 asks the pace question third; this harness answers it
+            # IN-DEPTH on the way past, so the fixture's own pace pair has
+            # nothing left to drive.
+            continue
         # A locked provider plan skips the tier question. Separate optional
         # model choices may still be offered and can each keep their default.
         while (parent.get(active) == "resource_plan" and qid != "resource_plan"
@@ -477,7 +489,8 @@ def test_two_simultaneous_decks_stay_isolated(tmp_path):
     _drive(run_a, env, _NEW_ANSWERS[:3])
     _drive(run_b, env, _NEW_ANSWERS[:1])
     assert _next(run_a, env)["question_id"] == "goal"
-    assert _next(run_b, env)["question_id"] == "audience"
+    # PD-013: the pace question is the third stop.
+    assert _next(run_b, env)["question_id"] == "standard_mode"
     assert (_ledger(run_a)["entries"]["goal"] if "goal" in _ledger(run_a)["entries"]
             else None) is None
     assert "grounded_content" not in _ledger(run_b)["entries"]
