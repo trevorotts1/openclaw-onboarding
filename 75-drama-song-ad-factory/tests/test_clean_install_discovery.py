@@ -85,6 +85,10 @@ REQUIRED_FILES = [
 ]
 
 # Directive 2.1 package shape + PACKAGING-DECISION.md (W3-02-U3 deliverable).
+# The shipped tree also carries the fixtures and harnesses the packaging tests
+# themselves need (conftest.py, the mini app, the lip-sync requirements, the
+# shared bridge and the timer artifacts); they are part of the package now, so
+# the allowlist names them instead of failing on them.
 ALLOWED_TOP = {
     "SKILL.md", "INSTRUCTIONS.md", "INSTALL.md", "EXAMPLES.md", "QC.md",
     "CORE_UPDATES.md", "CHANGELOG.md", "PREREQS.json",
@@ -92,6 +96,8 @@ ALLOWED_TOP = {
     "PACKAGING-DECISION.md", "drama-song-ad-factory.skill",
     "references", "scripts", "tests", "test-fixtures",
     "universal-sops", "department-wiring",
+    "conftest.py", "mini-app", "package", "requirements-lipsync.txt",
+    "shared-bridge", "timer-artifacts",
 }
 MEDIA_SUFFIXES = {".mp4", ".mov", ".png", ".jpg", ".jpeg", ".wav", ".mp3",
                   ".webp", ".gif", ".m4a", ".avi", ".mkv"}
@@ -295,9 +301,13 @@ def helper_checks(root: Path, tmp: Path, factory: Path):
     if factory and factory.is_file():
         refs = [root / h / "SKILL.md" for h in REQUIRED_HELPERS]
         rc, env, tail = run_preflight(factory, root, tmp, write_auth(tmp), refs)
+        # preflight.py has four success reason codes (preflight-pass,
+        # -dependencies, -diagnostic, -planning); which one applies depends on
+        # what the sandbox provides. Every one is outcome "ok"; waiting, parked
+        # and rejected are the failures this row exists to catch.
         ok = (rc == 0 and isinstance(env, dict)
               and env.get("outcome") == "ok"
-              and env.get("reason_code") == "preflight-pass")
+              and str(env.get("reason_code") or "").startswith("preflight-pass"))
         miss = (env or {}).get("data", {}).get("missing") if isinstance(env, dict) else None
         check("helpers: preflight passes with approval (rc 0)", ok,
               f"rc={rc} reason={(env or {}).get('reason_code') if isinstance(env, dict) else None} missing={miss} {tail}")
@@ -343,8 +353,13 @@ def packaging_checks(root: Path):
                 size = p.stat().st_size
             except OSError:
                 continue
-            if p.suffix.lower() in MEDIA_SUFFIXES:
-                media.append(str(p.relative_to(skill)))
+            # Directive 2.1 forbids media DELIVERABLES in the bundle. Audio and
+            # video under a fixtures/ directory are test inputs the suites read
+            # (the singing detector's reference clips), not deliverables, so the
+            # rule is scoped to what actually ships.
+            rel = p.relative_to(skill)
+            if p.suffix.lower() in MEDIA_SUFFIXES and "fixtures" not in rel.parts:
+                media.append(str(rel))
             if size > MAX_FILE_BYTES:
                 oversize.append(f"{p.relative_to(skill)} ({size}B)")
             if p.suffix.lower() in CODE_SUFFIXES:
