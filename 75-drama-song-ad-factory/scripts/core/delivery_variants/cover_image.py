@@ -19,6 +19,18 @@ made, so it costs nothing and invents nothing:
     uses -- scale/crop to the cover size, one title-safe band, the title
     on it.
 
+The cover takes the SHAPE of the ad it belongs to: a vertical run gets
+1080x1920, a wide run gets 1280x720. The shape is READ from the run (the
+run's own delivery context, else the saved card answers and the brief),
+never guessed, and a run with no recorded shape keeps the wide default.
+The still is scaled to cover the target and cropped from the TOP (a
+character's face lives at the top of a vertical still; a centre crop cuts
+it off).
+
+The title wraps to at most two lines with greedy word wrapping at the same
+font-size rule the rest of the delivery uses; the font never drops below
+28 px, and the title band grows to hold the second line.
+
 Exactly ONE image lands in the delivery folder (``08 - Cover Thumbnail.png``,
 named with the reuse of ``song_files.safe_name``). ``write_cover_docs`` merges
 it into ``delivery-receipt.json`` and ``README.md`` the way the song files do
@@ -26,7 +38,8 @@ it into ``delivery-receipt.json`` and ``README.md`` the way the song files do
 delivery QC gate (PASS / FAIL / UNAVAILABLE, fail closed: a receipt, a hash
 and MEASURED pixel dimensions, never a claim).
 
-Default size 1280x720 -- the 16:9 thumbnail every platform accepts.
+Default size 1280x720 -- the 16:9 thumbnail every platform accepts; a
+vertical run asks for 1080x1920 through :func:`shape_dimensions`.
 
 The title travels as ``drawtext=textfile=...:expansion=none``, so a title is
 data: no filter-graph escaping and no ``%{...}`` expansion can ever touch it.
@@ -72,6 +85,15 @@ TEXT_COLOUR = "#ffffff"
 BAND_FRACTION = 0.16           # band height as a fraction of the cover
 FONT_FRACTION = 0.07           # base font size as a fraction of the height
 TITLE_SHRINK = 1.8             # fontsize <= TITLE_SHRINK * width / len(title)
+MIN_TITLE_FONT = 28            # the title never gets smaller than this
+MAX_TITLE_LINES = 2            # two lines at most, then shrink the font
+BAND_PAD = 8                   # pixels above and below the title lines
+WRAP_FONT = "F1"               # pdf_writer's regular face, for width only
+
+#: The run's shape -> the cover size. A vertical ad gets a vertical cover.
+SHAPE_SIZES = {"vertical": (1080, 1920),
+               "wide": (DEFAULT_WIDTH, DEFAULT_HEIGHT)}
+SHAPE_KEYS = ("shape", "orientation", "aspect")
 
 _BEGIN, _END = "<!-- cover-image:begin -->", "<!-- cover-image:end -->"
 
@@ -82,6 +104,7 @@ NO_FRAME = "COVER_NO_FRAME"                       # no still on disk
 NO_TITLE = "COVER_NO_TITLE"                       # no title anywhere
 NOT_APPROVED = "COVER_STORYBOARD_NOT_APPROVED"    # gate not open
 BAD_INPUT = "COVER_BAD_INPUT"
+TITLE_TOO_LONG = "COVER_TITLE_TOO_LONG"           # does not fit two lines at 28 px
 FONT_UNAVAILABLE = "COVER_FONT_UNAVAILABLE"
 FONT_MISSING = "COVER_FONT_MISSING"
 RENDER_FAILED = "COVER_RENDER_FAILED"
@@ -147,8 +170,8 @@ def _read_json(path, default=None):
         return default
 
 
-def title_of(run_dir):
-    """The ad's title: the approved script's, else the brief's.
+def _title_and_source(run_dir):
+    """(title, the run file it came from) -- script first, then the brief.
 
     The script path constant is imported from ``script_approval.stage`` --
     the same file that sends the script to the client, so a cover can never
@@ -160,16 +183,70 @@ def title_of(run_dir):
         sys.path.insert(0, core)
     from script_approval.stage import SCRIPT   # noqa: PLC0415
 
-    for path, key in ((os.path.join(run_dir, SCRIPT), "title"),
-                      (os.path.join(run_dir, BRIEF), "title")):
-        doc = _read_json(path)
+    for rel, key in ((SCRIPT, "title"), (BRIEF, "title")):
+        doc = _read_json(os.path.join(run_dir, rel))
         if isinstance(doc, dict):
             value = doc.get(key)
             if isinstance(value, str) and value.strip():
-                return value.strip()
+                return value.strip(), rel
     raise CoverImageError(NO_TITLE,
                           "neither %s nor %s carries a non-empty title"
                           % (SCRIPT, BRIEF))
+
+
+def title_of(run_dir):
+    """The ad's title: the approved script's, else the brief's."""
+    return _title_and_source(run_dir)[0]
+
+
+def _shape_word(value):
+    """One word for a recorded shape: 'vertical', 'wide', or '' (unknown)."""
+    text = str(value or "").strip().lower()
+    if ("9:16" in text or "9x16" in text or "vertical" in text
+            or "portrait" in text):
+        return "vertical"
+    if ("16:9" in text or "16x9" in text or "wide" in text
+            or "landscape" in text or "horizontal" in text):
+        return "wide"
+    return ""
+
+
+def run_shape(run_dir):
+    """The run's own shape: 'vertical' or 'wide' (the safe default).
+
+    Read, never guessed: the run's delivery context first (the obligations
+    the run itself recorded; its shape field is reported to the lane's own
+    item list because the context does not carry one yet), then the saved
+    card answers and the brief through the SAME reader the ready-to-post
+    kit uses (``ready_post_kit.shape_of``). A run that records no shape
+    keeps the wide default this module always shipped.
+    """
+    try:
+        from delivery_package import run_inputs as RI   # noqa: PLC0415
+        context = RI.delivery_context(run_dir)
+    except Exception:            # noqa: BLE001 - no readable context: fall back
+        context = None
+    if isinstance(context, dict):
+        for key in SHAPE_KEYS:
+            got = _shape_word(context.get(key))
+            if got:
+                return got
+    try:
+        from ready_post_kit.ready_post_kit import (      # noqa: PLC0415
+            answer_map, shape_of)
+    except Exception:            # noqa: BLE001 - optional reader: wide default
+        return "wide"
+    answers = _read_json(os.path.join(run_dir, "card-answers.json"), [])
+    if isinstance(answers, dict):
+        answers = answers.get("answers")
+    brief = _read_json(os.path.join(run_dir, BRIEF), {})
+    return _shape_word(shape_of(answer_map(answers if isinstance(answers, list)
+                                           else []), brief)) or "wide"
+
+
+def shape_dimensions(run_dir):
+    """(width, height) for this run's shape: vertical 1080x1920, else 1280x720."""
+    return SHAPE_SIZES[run_shape(run_dir)]
 
 
 def load_frames(run_dir):
@@ -317,27 +394,53 @@ def _clean_title(title):
     return text
 
 
+def _wrap_title(text, fontsize, max_width):
+    """Greedy word wrap at this font size, the rest of the delivery's rule."""
+    from delivery_docs.pdf_writer import wrap   # noqa: PLC0415 - stdlib only
+    return wrap(text, WRAP_FONT, fontsize, max_width)
+
+
 def cover_geometry(width=DEFAULT_WIDTH, height=DEFAULT_HEIGHT, title=""):
-    """Band + font geometry as data (reuses delivery_variants.variants).
+    """Band + font + line geometry as data (reuses delivery_variants.variants).
 
     The title sits inside the SAME title-safe inset the aspect-variant
-    engine uses, so a cover and its video variant agree on safe copy.
+    engine uses, so a cover and its video variant agree on safe copy. The
+    title wraps to at most two lines; the font shrinks (never below
+    ``MIN_TITLE_FONT``) until it does, and a title that still needs three
+    lines at that size is refused rather than cut. The band grows to hold
+    the second line.
     """
     from delivery_variants import variants   # noqa: PLC0415
 
     w, h = _edge(width, "width"), _edge(height, "height")
     safe = variants.safe_area(w, h, variants.SAFE_TITLE_INSET)
     band_h = max(int(h * BAND_FRACTION), 32)
+    fontsize = max(MIN_TITLE_FONT, int(h * FONT_FRACTION))
+    text = _clean_title(title) if title else ""
+    lines = []
+    if text:
+        chars = len(text)
+        fontsize = min(fontsize, max(MIN_TITLE_FONT,
+                                     int(TITLE_SHRINK * w / chars)))
+        lines = _wrap_title(text, fontsize, safe["width"])
+        while len(lines) > MAX_TITLE_LINES and fontsize > MIN_TITLE_FONT:
+            fontsize -= 1
+            lines = _wrap_title(text, fontsize, safe["width"])
+        if len(lines) > MAX_TITLE_LINES:
+            raise CoverImageError(
+                TITLE_TOO_LONG,
+                "the title needs %d lines at %d px; the cover holds %d"
+                % (len(lines), MIN_TITLE_FONT, MAX_TITLE_LINES))
+    line_height = max(1, int(fontsize * 1.25))
+    if lines:
+        band_h = max(band_h, len(lines) * line_height + 2 * BAND_PAD)
     band_y = h - band_h
-    fontsize = max(14, int(h * FONT_FRACTION))
-    chars = len(_clean_title(title))
-    if chars:
-        fontsize = max(14, min(fontsize, int(TITLE_SHRINK * w / chars)))
     text_x = safe["x"]
-    text_y = band_y + max(0, (band_h - int(fontsize * 1.25)) // 2)
+    text_y = band_y + max(0, (band_h - len(lines) * line_height) // 2)
     return {"width": w, "height": h,
             "band": {"x": 0, "y": band_y, "w": w, "h": band_h},
             "text_x": text_x, "text_y": text_y, "fontsize": fontsize,
+            "lines": lines, "line_height": line_height,
             "title_safe": safe}
 
 
@@ -355,20 +458,28 @@ def build_cover_argv(frame, out, title_file, width=DEFAULT_WIDTH,
         raise CoverImageError(BAD_INPUT, "output path required")
     if not isinstance(title_file, str) or not title_file:
         raise CoverImageError(BAD_INPUT, "title file required")
-    geom = cover_geometry(width, height, _read_title_file(title_file))
+    geom = cover_geometry(width, height, _one_paragraph(_read_title_file(title_file)))
     font = resolve_font(fontfile)
     w, h, band, fs = geom["width"], geom["height"], geom["band"], geom["fontsize"]
     chain = [
         "scale=%d:%d:force_original_aspect_ratio=increase" % (w, h),
-        "crop=%d:%d" % (w, h),
+        # Keep the TOP of the still: a face sits high in a vertical frame, and
+        # ffmpeg's default crop is centred (S75-079).
+        "crop=%d:%d:0:0" % (w, h),
         "drawbox=x=%d:y=%d:w=%d:h=%d:color=%s:t=fill"
         % (band["x"], band["y"], band["w"], band["h"], BAND_COLOUR),
         ("drawtext=fontfile=%s:textfile=%s:expansion=none:fontcolor=%s"
-         ":fontsize=%d:x=%d:y=%d" % (font, title_file, TEXT_COLOUR, fs,
-                                     geom["text_x"], geom["text_y"])),
+         ":fontsize=%d:x=%d:y=%d"
+         % (font, title_file, TEXT_COLOUR, fs,
+            geom["text_x"], geom["text_y"])),
     ]
     return [ffmpeg, "-y", "-v", "error", "-i", frame, "-vf", ",".join(chain),
             "-frames:v", "1", out]
+
+
+def _one_paragraph(text):
+    """One measuring line from a title file that may hold wrapped lines."""
+    return " ".join(str(text or "").split())
 
 
 def _read_title_file(path):
@@ -413,7 +524,9 @@ def build_cover(run_dir, delivery_dir, ad_name, *, width=DEFAULT_WIDTH,
                               "ffmpeg with freetype support")
     shots, contracts, stills = load_frames(run_dir)
     picked = select_frame(stills, shots, contracts)
-    title = _clean_title(title_of(run_dir))
+    title, title_source = _title_and_source(run_dir)
+    title = _clean_title(title)
+    geom = cover_geometry(width, height, title)
 
     out_dir = Path(delivery_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -421,7 +534,8 @@ def build_cover(run_dir, delivery_dir, ad_name, *, width=DEFAULT_WIDTH,
 
     with tempfile.NamedTemporaryFile("w", suffix=".txt", delete=False,
                                      encoding="utf-8") as fh:
-        fh.write(title)
+        # The drawn lines are the wrapped lines the geometry measured.
+        fh.write("\n".join(geom["lines"]) if geom["lines"] else title)
         title_file = fh.name
     try:
         argv = build_cover_argv(picked["path"], str(out), title_file,
@@ -444,18 +558,18 @@ def build_cover(run_dir, delivery_dir, ad_name, *, width=DEFAULT_WIDTH,
     if not out.is_file() or out.stat().st_size <= 0:
         raise CoverImageError(RENDER_FAILED, "%s was not written" % out.name)
     w, h = png_size(out)
-    geom = cover_geometry(width, height, title)
     if (w, h) != (geom["width"], geom["height"]):
         raise CoverImageError(RENDER_FAILED,
                               "%s came out %dx%d, asked for %dx%d"
                               % (out.name, w, h, geom["width"], geom["height"]))
     return {"check": CHECK_NAME, "file": out.name, "title": title,
             "width": w, "height": h, "fontsize": geom["fontsize"],
+            "title_lines": len(geom["lines"]),
             "shot_id": picked["shot_id"],
             "source_frame": os.path.basename(picked["path"]),
             "frame_selection": picked["why"],
             "sha256": sha256_file(out),
-            "source_stills": STILLS, "source_title": "creative/script.json"}
+            "source_stills": STILLS, "source_title": title_source}
 
 
 def write_cover_docs(delivery_dir, row):
@@ -555,14 +669,23 @@ def _cli(argv=None):
             return 1
         print(json.dumps({"outcome": "ok", **row}))
         return 0
-    if a[:1] == ["check"] and len(a) == 3:
-        verdict, detail = check_cover_image(a[1], a[2])
+    if a[:1] == ["check"] and len(a) >= 3:
+        p = argparse.ArgumentParser(prog="cover_image check",
+                                    description="QC the one cover image")
+        p.add_argument("delivery_dir")
+        p.add_argument("ad_name")
+        p.add_argument("--width", type=int, default=DEFAULT_WIDTH)
+        p.add_argument("--height", type=int, default=DEFAULT_HEIGHT)
+        ns = p.parse_args(a[1:])
+        verdict, detail = check_cover_image(ns.delivery_dir, ns.ad_name,
+                                           ns.width, ns.height)
         print(json.dumps({"check": CHECK_NAME, "verdict": verdict, "detail": detail}))
         return 0 if verdict == PASS else 5
     print("usage: cover_image.py build --run <run> --delivery <dir> "
           "--ad-name <name> [--width N] [--height N] [--font FILE] "
           "[--ffmpeg BIN]\n"
-          "       cover_image.py check <delivery_dir> <ad_name>")
+          "       cover_image.py check <delivery_dir> <ad_name> "
+          "[--width N] [--height N]")
     return 1
 
 
@@ -576,6 +699,8 @@ def produce_delivery(run_dir, item):
     selection, the title burned on through ``drawtext`` (the ffmpeg is
     MEASURED to carry the filter: env override, PATH, then the bundled
     build; a box with none refuses instead of shipping a titleless cover).
+    The cover takes the run's own shape (vertical 1080x1920, else wide
+    1280x720), read through :func:`shape_dimensions`.
     Fixture bytes are never written: ``contract.produce_item`` is test-only
     and no deliver path imports it. Signature: produce_delivery(run_dir,
     item) -> list[Path].
@@ -584,7 +709,9 @@ def produce_delivery(run_dir, item):
     out = RI.delivery_dir(run_dir)
     title = RI.ad_title(run_dir)
     ffmpeg = RI.ffmpeg_with("drawtext", "COVER_IMAGE_FFMPEG")
-    row = build_cover(str(run_dir), str(out), title, ffmpeg=ffmpeg)
+    width, height = shape_dimensions(run_dir)
+    row = build_cover(str(run_dir), str(out), title, width=width,
+                      height=height, ffmpeg=ffmpeg)
     write_cover_docs(str(out), row)
     return RI.stage(item, out)
 

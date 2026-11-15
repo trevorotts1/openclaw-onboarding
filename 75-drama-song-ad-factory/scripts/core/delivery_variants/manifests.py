@@ -134,7 +134,8 @@ def write_provenance(path, *, run_id, campaign_manifest_sha256,
 
 def verify_binding(manifest_path, provenance_path, cost_report_path=None,
                    artifact_root=None):
-    """Recompute every pinned hash. Returns (ok, details)."""
+    """Recompute the manifest, cost-report and manifest-artifact hashes.
+    Returns (ok, details)."""
     details = {"manifest_match": False, "cost_report_match": None,
                "artifacts": {}}
     try:
@@ -143,6 +144,9 @@ def verify_binding(manifest_path, provenance_path, cost_report_path=None,
         provenance = json.loads(Path(provenance_path).read_text(encoding="utf-8"))
     except (OSError, ValueError) as exc:
         details["error"] = str(exc)
+        return (False, details)
+    if not manifest.get("artifacts"):
+        details["error"] = "manifest binds no artifact"
         return (False, details)
     manifest_digest = hashlib.sha256(manifest_bytes).hexdigest()
     details["manifest_match"] = (
