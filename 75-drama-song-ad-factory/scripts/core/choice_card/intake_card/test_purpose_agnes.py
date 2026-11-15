@@ -256,7 +256,11 @@ def test_the_agnes_question_stops_past_five_minutes(monkeypatch):
     short, _ = _plan(purpose=1, client_dir="/client",
                      overrides={"episode_length": "5"})
     assert "agnes" in _ids(short)                    # 5 minutes is still Agnes
-    assert _labels(short, "episode_length")[-1] == "5 minutes"
+    offered = _labels(short, "episode_length")
+    assert offered[-1] == "5 minutes"
+    assert "10 minutes" not in offered               # S75-105: never offered
+    assert all(s <= IC._song_length_ceiling_s()
+               for s in IC._offered_duration_s())    # never over the song cap
 
 
 def test_agnes_yes_turns_the_video_model_into_the_backup(monkeypatch):
