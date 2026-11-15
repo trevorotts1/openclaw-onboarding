@@ -84,16 +84,16 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md; voice authority: 30
 
 ---
 
-### SOP 9.1 -- Write the Word-for-Word Webinar Speech at 130 wpm
+### SOP 9.1 -- Write the Word-for-Word Webinar Speech at 140 wpm
 
-**Purpose:** Produce the exact, prolific, passionate words the owner says as a live WEBINAR HOST, following the proven webinar arc (Section 9A), paced so a human delivering it at 130 wpm with the doctrine's pauses lands the deck inside DURATION_MIN.
+**Purpose:** Produce the exact, prolific, passionate words the owner says as a live WEBINAR HOST, following the proven webinar arc (Section 9A), paced so a human delivering it at 140 wpm with the doctrine's pauses lands the deck inside DURATION_MIN.
 
-**The hard rule:** Every slide has a spoken block written verbatim in the owner's TONE, prolific and passionate, **as spoken live to a room**. The opening is a genuine live welcome (Section 9A); the close circles back to the hook. The total word count is budgeted at 130 words per minute against DURATION_MIN, MINUS the pause budget (count the mandatory pauses: 3 seconds on each DROP and FINAL, 2 to 3 seconds after the anchor and after big emotional lines). The script is spoken language, not written prose. No em dashes.
+**The hard rule:** Every slide has a spoken block written verbatim in the owner's TONE, prolific and passionate, **as spoken live to a room**. The opening is a genuine live welcome (Section 9A); the close circles back to the hook. The total word count is budgeted at 140 words per minute against DURATION_MIN, MINUS the pause budget (count the mandatory pauses: 3 seconds on each DROP and FINAL, 2 to 3 seconds after the anchor and after big emotional lines). The script is spoken language, not written prose. No em dashes.
 
 **Inputs:** slides_copy.md (PRESENTER NOTE, PURPOSE, SECTION, LADDER, HOOK_REFRAIN), arc_allocation.json, intake.json, the Deep Research Specialist's cited sources for this deck, talk_track.md if present.
 
 **Steps:**
-1. Compute the word budget AND the per-stage allocation. Pause budget = sum of mandatory pauses in seconds, converted to word-equivalents at 130 wpm (130 wpm = about 2.17 words/second). Net spoken seconds = (DURATION_MIN x 60) minus pause seconds. Target words = net spoken seconds x 2.17. Split the target across the 11 stages using the Section 9A allocation (tuned to arc_allocation.json). Record the math AND the per-stage word targets in the header.
+1. Compute the word budget AND the per-stage allocation. Pause budget = sum of mandatory pauses in seconds, converted to word-equivalents at 140 wpm (140 wpm = about 2.33 words/second). Net spoken seconds = (DURATION_MIN x 60) minus pause seconds. Target words = net spoken seconds x 2.33. Split the target across the 11 stages using the Section 9A allocation (tuned to arc_allocation.json). Record the math AND the per-stage word targets in the header.
 2. Map every slide to its webinar stage (Section 9A) from its SECTION / LADDER marker. Note the stage on each slide block so the PDF can color and label it.
 3. Write slide 1 as a live welcome following the Section 9A opening pattern: genuine welcome, congratulate them for being here, housekeeping, an engagement question into the chat. Never open as a monologue.
 4. For every slide, write a SPOKEN block: the exact words, in the owner's voice, prolific and passionate, vivid and emotionally engaged, expanding the PRESENTER NOTE into full live delivery. The slide carries the one idea; the speech carries the narration; they must NOT duplicate each other (master SOP rule 15).
@@ -103,13 +103,13 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md; voice authority: 30
 8. On CTA slides, write the complete spoken CTA: the action, the URL stated aloud, the urgency close.
 9. Carry [CLIENT TO SUPPLY] forward as a spoken-prompt flag: "(OWNER: say your real client win here)". Never fabricate a win, a number, a testimonial, or a price.
 10. Record per-slide word coverage and spoken-seconds on every block. Pace-check at the STAGE level too: each stage within +/-15% of its Section 9A allocation; total within +/-10% of target. If over, tighten teach narration first; never cut the CTA, the drops, or the welcome. Re-balance and re-check.
-11. Write the clean script to working/deliverables/PRESENTERS-SPEECH.md with a header: DECK_TITLE, DURATION_MIN, SLIDE_COUNT, TONE, HOOK, SPOKEN_RATE_WPM = 130, pause budget, per-stage word targets, target words, actual words, and a "Sources cited on stage" list. Each slide block follows the parseable contract `## Slide N -- Headline  (STAGE)` then `> STAGE: ... KIND: ... BUDGET: Nw ACTUAL: Nw SECONDS: Ns` then the spoken text then `---` (the exact format the teleprompter generator parses in SOP 9.2).
+11. Write the clean script to working/deliverables/PRESENTERS-SPEECH.md with a header: DECK_TITLE, DURATION_MIN, SLIDE_COUNT, TONE, HOOK, SPOKEN_RATE_WPM = 140, pause budget, per-stage word targets, target words, actual words, and a "Sources cited on stage" list. Each slide block follows the parseable contract `## Slide N -- Headline  (STAGE)` then `> STAGE: ... KIND: ... BUDGET: Nw ACTUAL: Nw SECONDS: Ns` then the spoken text then `---` (the exact format the teleprompter generator parses in SOP 9.2).
 
 **Enforcement check (what auto-fails):**
 - Any slide without a spoken block = FAIL.
 - Slide 1 is not a live webinar welcome (opens as a monologue, no greeting, no room, no engagement) = FAIL.
 - The closing slide does not circle back to the hook = FAIL.
-- Total words more than 10% off the pause-adjusted 130 wpm budget, OR any stage more than 15% off its Section 9A allocation = FAIL.
+- Total words more than 10% off the pause-adjusted 140 wpm budget, OR any stage more than 15% off its Section 9A allocation = FAIL.
 - Stiff, written-for-the-eye, corporate prose instead of prolific spoken language = FAIL.
 - A statistic, study, or quote spoken on stage with no real source = FAIL (fabricated research).
 - The hook reworded, extended, or misspelled in any spoken block = FAIL (it is a fixed verbatim refrain).
