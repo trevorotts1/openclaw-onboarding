@@ -20,9 +20,9 @@ Rows (01-BUILD-SPEC.md, section PD-310b):
   A3  variable set and every verdict present: pass.
 
 Dependency: PD-310 supplies ``craft_judgement.engine_attestation_reasons``.
-On a tree without it A2/A3 SKIP with an explicit reason — a skip is NOT a pass
-— and they are proven in an integration tree that carries PD-310; this unit's
-build report names the command.
+This unit is proven on an integration tree that carries it (main does), so all
+three rows run — an unconditional skip would be a silent pass, and adding one
+is refused by law L1.
 
 No network, no model call, no live service.
 """
@@ -45,23 +45,6 @@ STEPS = ("P1Q-COPY-QC", "P-PROMPT-QC")
 # A third phase that is NOT one of the two — it must never be touched.
 UNRELATED = "P4-COPY"
 SENTINEL = (True, ["SENTINEL-NOTE"])
-
-
-def _hook_available() -> bool:
-    """True only when PD-310's module and its engine hook are on this tree."""
-    try:
-        import craft_judgement
-    except Exception:  # noqa: BLE001 — absent or unimportable = not available
-        return False
-    return callable(getattr(craft_judgement, "engine_attestation_reasons", None))
-
-
-needs_pd310 = pytest.mark.skipif(
-    not _hook_available(),
-    reason="PD-310's craft_judgement.engine_attestation_reasons is not on this "
-           "branch yet (depends_on PD-310, still IN_BATCH) — A2/A3 are proven in "
-           "an integration tree that carries it; this skip is NOT a pass",
-)
 
 
 @pytest.fixture()
@@ -128,7 +111,6 @@ def test_a1_unrelated_phase_never_touched(monkeypatch, run_dir, sentinel):
 
 # ---------------------------------------------------------------- A2 ----
 
-@needs_pd310
 def test_a2_switch_on_missing_verdict_is_operator_review(monkeypatch, run_dir, sentinel):
     """A2: switched on with no human verdict file -> OPERATOR-REVIEW reason."""
     monkeypatch.setenv(SWITCH, "1")
@@ -144,7 +126,6 @@ def test_a2_switch_on_missing_verdict_is_operator_review(monkeypatch, run_dir, s
 
 # ---------------------------------------------------------------- A3 ----
 
-@needs_pd310
 def test_a3_switch_on_every_verdict_present_passes(monkeypatch, run_dir, sentinel):
     """A3: switched on with both verdicts recorded -> the step passes."""
     monkeypatch.setenv(SWITCH, "1")
@@ -153,7 +134,6 @@ def test_a3_switch_on_every_verdict_present_passes(monkeypatch, run_dir, sentine
         assert pv.verify(sid, run_dir) == SENTINEL, sid
 
 
-@needs_pd310
 def test_parity_the_two_step_ids_are_pd310s_human_verdict_phases():
     """The local gate tuple and PD-310's own set must stay equal — a copy that
     drifts would hold the wrong step (or miss one)."""
