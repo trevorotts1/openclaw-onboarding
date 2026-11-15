@@ -3248,8 +3248,25 @@ jobs:
         run: |
           set -uo pipefail
           python3 -m pip install --quiet pytest
+          # U-GEN439: this --collect-only must be judged, not decorative.
+          # With no `-e` the next command used to swallow its exit code, so a
+          # genuinely broken collection (missing file, syntax error, import
+          # error -> pytest exit 2, or 3/4) left the step green. Exit 5 means
+          # "no items collected in the whole tree"; that is not a collection
+          # failure and empty files are judged by the per-file loop below
+          # (U-GEN435), so it is reported, not failed, here.
+          collect_log="$(mktemp)"
+          collect_rc=0
           HOME="$(mktemp -d)" python3 -m pytest -q \
-            75-drama-song-ad-factory/scripts --collect-only
+            75-drama-song-ad-factory/scripts --collect-only >"$collect_log" 2>&1 || collect_rc=$?
+          cat "$collect_log"
+          if [ "$collect_rc" = 5 ]; then
+            echo "· pytest --collect-only collected 0 items for 75-drama-song-ad-factory/scripts (exit 5)"
+          elif [ "$collect_rc" != 0 ]; then
+            sed -n 's/^ERROR /  broken file: /p' "$collect_log"
+            echo "✗ pytest --collect-only FAILED: 75-drama-song-ad-factory/scripts (exit $collect_rc)"
+            exit 1
+          fi
           # Both of pytest's default file patterns (test_*.py and *_test.py),
           # the same set the whole-tree run collects.
           mapfile -t tests < <(find 75-drama-song-ad-factory/scripts -type f \( -name 'test_*.py' -o -name '*_test.py' \) -not -path '*/__pycache__/*' | sort)
@@ -3261,15 +3278,36 @@ jobs:
             rc=0
             HOME="$(mktemp -d)" python3 -m pytest -q -o pythonpath="$(dirname "$t")" "$t" </dev/null >"$logs/$key.out" 2>&1 || rc=$?
             echo "$rc" >"$logs/$key.rc"' _ || true   # a file with no recorded exit code is counted as failed below
+          # 5 = "no tests collected". Tolerated ONLY for a path in the
+          # documented allowlist, because anywhere else it is exactly the
+          # defect this step exists to catch: a file named test_*.py that
+          # contributes nothing to pytest's count while the gate reports
+          # green. (Before U-GEN435, 5 was accepted for every file. It was
+          # added in 83121e15c when this run was split per-file, to keep
+          # parity with the one-process run that passed because OTHER files
+          # had items -- see the allowlist header and reports/U-GEN435.md.)
+          empty_allow=.github/skill75-pytest-empty-allowlist.txt
+          [ -f "$empty_allow" ] || { echo "✗ missing $empty_allow"; exit 1; }
+          collects_nothing_by_design() {
+            while IFS= read -r p; do
+              case "$p" in ''|'#'*) continue ;; esac
+              [ "$p" = "$1" ] && return 0
+            done < "$empty_allow"
+            return 1
+          }
           failed=()
           for t in "${tests[@]}"; do
             key="$(printf %s "$t" | tr / _)"
             echo "── $t"
             cat "$logs/$key.out" 2>/dev/null || true
             rc="$(cat "$logs/$key.rc" 2>/dev/null || echo missing)"
-            # 5 = the file holds no test items (it still had to import
-            # cleanly), which the whole-tree run also passed.
-            if [ "$rc" != 0 ] && [ "$rc" != 5 ]; then
+            if [ "$rc" = 5 ]; then
+              if collects_nothing_by_design "$t"; then
+                echo "· pytest collected 0 items (allowlisted in $empty_allow): $t"
+              else
+                echo "✗ pytest collected NOTHING: $t (exit 5, not in $empty_allow)"; failed+=("$t")
+              fi
+            elif [ "$rc" != 0 ]; then
               echo "✗ pytest FAIL: $t (exit $rc)"; failed+=("$t")
             fi
           done

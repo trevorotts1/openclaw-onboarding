@@ -45,5 +45,10 @@ def main():
     print("OK: save_only_plan/resume_save_only are gone; HELD keeps hold + recovery")
 
 
+def test_song_choices_x05_recovery_deleted():
+    """Pytest entry: run the script's assertions as a real test."""
+    main()
+
+
 if __name__ == "__main__":
     main()
