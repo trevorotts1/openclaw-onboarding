@@ -23,6 +23,7 @@ media dependency (this file must never skip).
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -92,15 +93,44 @@ def test_sequencer_projects_the_alias_map_and_normalizes():
 
 
 def _drive(run_dir: Path, word: str) -> dict:
+    # A simulated interview has no real owner messages, so it runs in the
+    # documented provenance-warn mode (PD-004c A2). The pace assertion is
+    # unchanged and still pins the driver's derivation.
+    env = dict(os.environ, PRESENTATION_INTAKE_PROVENANCE="warn")
+
     def run(*args: str) -> subprocess.CompletedProcess:
         return subprocess.run(
             [sys.executable, str(DRIVER), "--run-dir", str(run_dir), *args],
-            capture_output=True, text=True, timeout=180, cwd=str(PRESENTATIONS))
+            capture_output=True, text=True, timeout=180, cwd=str(PRESENTATIONS),
+            env=env)
 
     r = run("--answer", "presentation_type", "from_scratch")
     assert r.returncode == 0, f"presentation_type: {r.stdout}\n{r.stderr}"
     r = run("--answer", "audio_settings", f"speech_speed_preference: {word}")
     assert r.returncode == 0, f"{word}: {r.stdout}\n{r.stderr}"
+    # Accept every remaining required default (pitch_included, standard_mode,
+    # the scored questions) as a client accepting defaults would. Stop before
+    # defaults_review, which is the client's explicit acceptance gate.
+    for _ in range(60):
+        n = run("--next")
+        if n.returncode != 0 or not n.stdout.strip():
+            break
+        try:
+            q = json.loads(n.stdout)
+        except (ValueError, TypeError):
+            break
+        qid = q.get("question_id")
+        if not qid or qid == "defaults_review":
+            break
+        if qid == "audio_settings":
+            answer = f"speech_speed_preference: {word}"
+        else:
+            answer = q.get("default")
+            if answer is None:
+                allowed = q.get("allowed_values") or []
+                answer = allowed[0] if allowed else "yes"
+        rr = run("--answer", str(qid), str(answer))
+        assert rr.returncode == 0, f"{qid}={answer}: {rr.stdout}\n{rr.stderr}"
     r = run("--complete")
     assert r.returncode == 0, f"--complete: {r.stdout}\n{r.stderr}"
     return json.loads(
