@@ -124,8 +124,8 @@ SUMMARY {"old_refuses": true, "new_proceeds": true, "keyless_refuses": true, "no
 ## 5. Test file — pass/fail by test id, base vs head
 
 Every id run individually (`timeout 40` per id) because one live-shape test must be bounded;
-`TMPDIR` was overridden to `/Volumes/mac mini m4/swarm-contract/pd-fix/tmp/UNIT` so pytest's
-`tmp_path` default never lands in `/tmp` — stated here per the storage rule.
+`TMPDIR` was overridden to the lane's `pd-fix/tmp/UNIT` scratch under the swarm-contract room so
+pytest's `tmp_path` default never lands in `/tmp` — stated here per the storage rule.
 
 **17 ids · 14 PASS · 3 FAIL on BOTH trees.** Verdicts identical base→head:
 

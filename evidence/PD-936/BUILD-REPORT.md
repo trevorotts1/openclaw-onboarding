@@ -13,8 +13,8 @@
 ## 0. Where the work order actually is
 
 The dispatch names a section `### PD-936` in
-`/Volumes/mac mini m4/swarm-contract/fable-reviews-2026-11-11/03-presentation-department/FINAL/01-BUILD-SPEC.md`.
-That section does not exist. Measured:
+`fable-reviews-2026-11-11/03-presentation-department/FINAL/01-BUILD-SPEC.md`
+(under the swarm-contract room). That section does not exist. Measured:
 
 ```
 $ grep -c "PD-936" .../FINAL/01-BUILD-SPEC.md
