@@ -1059,6 +1059,11 @@ _DEPT_TOP_BLOCK = {
         'Say: "I need a presentation." I will ask a few questions, one at a '
         "time. You will pick a look from 3 samples. Then I build it and send "
         "it to you.\n"
+        "\n"
+        "## One command runs every build\n\n"
+        "Every presentation build goes through the one sanctioned command, "
+        "`presentation-canonical-entry.sh`. Build scripts are never run by "
+        "hand: `python3 working/*.py` is forbidden.\n"
     ),
 }
 
