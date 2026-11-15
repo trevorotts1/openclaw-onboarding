@@ -555,7 +555,7 @@
         "slide-submitter",
         "typography-architect"
       ],
-      "content_sha": "sha256:9c0fd30c619f12e9ccc7f28acd067ad54515231d67d99f4c4f6f76540c89da07",
+      "content_sha": "sha256:eb08ee8845c0de8925248130a05d42506dbeeb86eef12ac4663b6fcd4b69254f",
       "content_hashed_at": "2026-11-14T22:15:54.364324+00:00"
     },
     "product-production": {
@@ -5751,9 +5751,9 @@
       "path": "templates/role-library/presentations/presenters-speech-writer.md",
       "capability_class": "WRITING",
       "vision_flag": false,
-      "content_sha": "sha256:9cebb98cb5f468d36f45eff5bdc8dd3b5098f44cf60b79b752cf0f2d8dfe2d6a",
-      "render_sha": "sha256:9cebb98cb5f468d36f45eff5bdc8dd3b5098f44cf60b79b752cf0f2d8dfe2d6a",
-      "content_version": "1.0.13",
+      "content_sha": "sha256:8f2eebae82d6a283534e8ce439d7c8579ec8f092d8e1e29082c7a262818e852b",
+      "render_sha": "sha256:8f2eebae82d6a283534e8ce439d7c8579ec8f092d8e1e29082c7a262818e852b",
+      "content_version": "1.0.14",
       "content_hashed_at": "2026-11-14T22:15:54.364324+00:00"
     },
     {
@@ -10570,8 +10570,8 @@
       "slug": "presenters-speech-writer-sops",
       "dept": "presentations",
       "path": "templates/role-library/presentations/sops/presenters-speech-writer-sops.md",
-      "content_sha": "sha256:969d0be76e39afcd66db44bb15aa63211a73f944a9b394cdfcb4fa669de0eb5a",
-      "content_version": "1.0.6",
+      "content_sha": "sha256:960b0ce88ecfa8445594382fe159a8b2da3e64ee13f26587f1f0a693a5cc02c9",
+      "content_version": "1.0.7",
       "content_hashed_at": "2026-11-14T22:15:54.364324+00:00"
     },
     {
