@@ -44,6 +44,10 @@ for _sub in ("", "song_choices", "song_dispatch", "suno_recipe"):
     _p = os.path.join(CORE, _sub)
     if _p not in sys.path:
         sys.path.insert(0, _p)
+# CORE first: ``song_dispatch``/``song_choices`` must bind their PACKAGES, not
+# the same-named module file inside their own folder (the pytest import mode
+# puts those folders on the path).
+sys.path.insert(0, CORE)
 
 import length_formula as LF                                # noqa: E402
 from song_dispatch import song_dispatch as SD              # noqa: E402
@@ -378,6 +382,11 @@ def main():
         return 1
     print("test_acceptance_real_takes_s75_052: PASS")
     return 0
+
+
+def test_suite_passes():
+    """pytest entry: runs the same cases, and the same checks, as `python3 <this file>`."""
+    assert main() == 0
 
 
 if __name__ == "__main__":
