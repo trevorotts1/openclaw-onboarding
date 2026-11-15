@@ -1,7 +1,7 @@
 {
   "generated_at": "2026-06-28T00:00:00Z",
   "version": "27.1.72",
-  "total_roles": 538,
+  "total_roles": 539,
   "total_departments": 68,
   "departments": {
     "account-management": {
@@ -517,7 +517,7 @@
       "content_hashed_at": "2026-11-14T22:15:54.364324+00:00"
     },
     "presentations": {
-      "count": 35,
+      "count": 36,
       "roles": [
         "attention-content-strategist",
         "audio-demonstration-specialist",
@@ -534,6 +534,7 @@
         "healer-presentations",
         "hook-strategist",
         "image-grounding-steward",
+        "infographic-checklist",
         "media-librarian-ghl-updater",
         "offer-price-strategist",
         "pptx-assembly-specialist",
@@ -555,8 +556,8 @@
         "slide-submitter",
         "typography-architect"
       ],
-      "content_sha": "sha256:9c0fd30c619f12e9ccc7f28acd067ad54515231d67d99f4c4f6f76540c89da07",
-      "content_hashed_at": "2026-11-14T22:15:54.364324+00:00"
+      "content_sha": "sha256:e338fc7fdd367ad7d50c3a4fb22b69811977ed57e35e87bcbff571bdbd2c8340",
+      "content_hashed_at": "2026-11-15T00:10:05.497963+00:00"
     },
     "product-production": {
       "count": 4,
@@ -9627,6 +9628,22 @@
       "render_sha": "sha256:c9f42bf33075d80cbb89a81a344545daaa16aec133ebd737b1bc792803559617",
       "content_version": "1.0.0",
       "content_hashed_at": "2026-11-14T22:15:54.364324+00:00"
+    },
+    {
+      "slug": "infographic-checklist",
+      "dept": "presentations",
+      "title": "infographic-checklist — Independent Infographic QC Unit (Presentations)",
+      "role_type": "specialist",
+      "word_count": 380,
+      "sop_count": 0,
+      "sop_min": 1,
+      "path": "templates/role-library/presentations/infographic-checklist.md",
+      "capability_class": "WRITING",
+      "vision_flag": false,
+      "content_sha": "sha256:1c355e73a07e1f24b514c63f6080c6eb4d09ed02f005d1300b5eca060272d902",
+      "render_sha": "sha256:1c355e73a07e1f24b514c63f6080c6eb4d09ed02f005d1300b5eca060272d902",
+      "content_version": "1.0.0",
+      "content_hashed_at": "2026-11-15T00:10:05.497963+00:00"
     }
   ],
   "sops": [
