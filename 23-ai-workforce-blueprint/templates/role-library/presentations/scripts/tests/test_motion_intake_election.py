@@ -121,6 +121,10 @@ def _hosted_answers(**overrides):
         "want_email_sequences": "no",
         "email_sequences_declined_reason": "We run our own email list.",
         "want_motion_graphics": "yes",
+        # PD-082b's contract-v2 talk length is fail-closed: the writer refuses a
+        # record with no client-supplied duration. The complete hosted set
+        # carries it, exactly as the page asks it.
+        "duration_min": "30",
     }
     answers.update(overrides)
     return answers
