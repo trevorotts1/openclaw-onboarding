@@ -1464,8 +1464,23 @@ def music_stage(run_dir, owner, action, run_id=None, reason=None,
             row = st.transition(rid, MUSIC, "QC", owner, expected_version=row["version"])
         if res["gate"] != "PASS":
             return block("QC_" + res["gate"], res["reason_code"])
-        row = st.transition(rid, MUSIC, "COMPLETE", owner, expected_version=row["version"],
-                            reason="qc %s; audio %s" % (res["reason_code"], ",".join(audio)))
+        # S75-002: seal this stage before its row can claim COMPLETE. A refused
+        # seal leaves the row where it is (QC) so a fixed artifact can retry;
+        # nothing is written to the row on a refusal.
+        sealed, gate_code, gate_detail = _seal_music_before_complete(run_dir, qc)
+        if gate_code:
+            return _mres("rejected", gate_code, gate_detail, row)
+        if sealed:
+            with _complete_guard_for(run_dir):
+                row = st.transition(rid, MUSIC, "COMPLETE", owner,
+                                    expected_version=row["version"],
+                                    reason="qc %s; audio %s"
+                                           % (res["reason_code"], ",".join(audio)))
+        else:
+            row = st.transition(rid, MUSIC, "COMPLETE", owner,
+                                expected_version=row["version"],
+                                reason="qc %s; audio %s"
+                                       % (res["reason_code"], ",".join(audio)))
         return _mres("ok", "music-complete", "music COMPLETE: %s" % ",".join(audio), row)
     except ss.StoreError as e:
         return _mres("rejected", e.code, str(e), row)
@@ -1820,6 +1835,53 @@ def _gate_open(run_dir, stage):
     except sg.Refused as exc:
         return False, exc
     return True, None
+
+
+def _music_seal_pair(qc):
+    """(maker, checker) named by the independent QC PASS the music stage read."""
+    qc = qc or {}
+    makers = qc.get("makers") or {}
+    for rec in qc.get("records") or []:
+        maker = makers.get(rec.get("check_id"))
+        checker = (rec.get("reviewer") or {}).get("identity")
+        if maker and checker:
+            return str(maker), str(checker)
+    return None, None
+
+
+def _seal_music_before_complete(run_dir, qc):
+    """(sealed, code, detail) for the music row's own COMPLETE transition.
+
+    S75-002: the music stage has its own song gate and QC and completes through
+    `music --action complete`, not `factory.py seal`. A run that carries the
+    signed gate must seal this stage too, BEFORE the row claims COMPLETE (the
+    order `seal` uses) — without it `next` refused every later stage with
+    PREVIOUS_STAGE_NOT_PROVEN while `seal` refused the already-COMPLETE row, so
+    a real run could never reach continuity-bible.
+
+    A run with no gate key keeps its old behaviour (amendment 1). So does a run
+    with no pick receipt: `song-choices/pick.json` is the contract's evidence
+    that the master was chosen, and the single-song path writes no pick.
+    """
+    if not _gate_keyed(run_dir):
+        return False, None, None
+    if not (Path(run_dir) / "song-choices" / "pick.json").is_file():
+        return False, None, None
+    maker, checker = _music_seal_pair(qc)
+    if not maker or not checker:
+        return False, "STEP_GATE_IDENTITY_MISSING", (
+            "the QC PASS names no maker/checker pair to seal with")
+    sg, contract = _step_gate()
+    if sg is None:
+        return False, None, None
+    try:
+        sg.cmd_open(str(run_dir), MUSIC, contract)
+        sg.cmd_seal(str(run_dir), MUSIC, maker, checker, contract)
+    except sg.Refused as exc:
+        return False, exc.code, exc.detail
+    except Exception as exc:                          # noqa: BLE001
+        return False, "GATE_TOOL_ERROR", str(exc)
+    return True, None, None
 
 
 class ShapeError(ValueError):
