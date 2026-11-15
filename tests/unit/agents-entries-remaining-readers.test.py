@@ -127,7 +127,7 @@ class RemainingReaders(unittest.TestCase):
         self.write({"agents": {"entries": {"dept-sales": {"workspace": "/w/sales"}}}})
         text = (REPO / "23-ai-workforce-blueprint/scripts/verify-wiring.sh").read_text()
         ids_f = re.search(r"AGENT_IDS_IN_CFG=\$\(jq -r '(.*?)' ", text).group(1)
-        ws_f = re.search(r"REG_WORKSPACE=\$\(jq -r --arg aid \"\$EXPECTED_AGENT_ID\" \\\n\s*'(.*?)' \\", text).group(1)
+        ws_f = re.search(r"REG_WORKSPACE=\$\(jq -r --arg aid \"\$EFFECTIVE_AGENT_ID\" \\\n\s*'(.*?)' \\", text).group(1)
         ids = subprocess.run(["jq", "-r", ids_f, str(self.cfg)], capture_output=True, text=True).stdout.split()
         ws = subprocess.run(["jq", "-r", "--arg", "aid", "dept-sales", ws_f, str(self.cfg)],
                             capture_output=True, text=True).stdout.strip()
