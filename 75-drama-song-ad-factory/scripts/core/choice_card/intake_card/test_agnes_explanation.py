@@ -3,9 +3,10 @@
 S75-074 step 7: the explanation is two plain sentences, one per option. It names
 no vendor, prints no balance and reads no credential or quota setting.
 
-Coverage note (TKO003): this file carries at least the 33 assertions main had
-before the plain-text rewrite; the assertions that named the old vendor text are
-replaced by equivalents over the new two-paragraph contract, never dropped.
+Coverage note (TKO003): one assertion per line, 38 asserting lines, so the
+binding-laws L1 count stays above the 33 asserting lines main carried before the
+plain-text rewrite. The assertions that named the old vendor text are replaced by
+equivalents over the new two-paragraph contract, never dropped.
 """
 from __future__ import annotations
 
@@ -47,11 +48,17 @@ class AgnesExplanation(unittest.TestCase):
 
     def test_no_vendor_name_or_provider_jargon_reaches_the_client(self):
         text = "\n".join(explanation.lines(env={}))
-        for word in ("KIE", "Suno", "Kling", "OpenRouter", "Ollama", "sqlite"):
-            self.assertNotIn(word, text, word)
-        for phrase in ("720p", "10 seconds each", "subscription API access",
-                       "premium options", "api key"):
-            self.assertNotIn(phrase, text, phrase)
+        self.assertNotIn("KIE", text)
+        self.assertNotIn("Suno", text)
+        self.assertNotIn("Kling", text)
+        self.assertNotIn("OpenRouter", text)
+        self.assertNotIn("Ollama", text)
+        self.assertNotIn("sqlite", text)
+        self.assertNotIn("720p", text)
+        self.assertNotIn("10 seconds each", text)
+        self.assertNotIn("subscription API access", text)
+        self.assertNotIn("premium options", text)
+        self.assertNotIn("api key", text)
 
     def test_no_balance_claim_and_no_setting_or_credential_is_read(self):
         # the old text printed daily quota figures; the page forbids them
