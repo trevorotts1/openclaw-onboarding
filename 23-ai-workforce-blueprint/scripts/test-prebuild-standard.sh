@@ -13,7 +13,8 @@
 # Assertions:
 #   T1  refuses without an operator consent record          (exit 2)
 #   T2  refuses a malformed consent record                  (exit 2)
-#   T3  refuses when interviewComplete is already true      (exit 4)
+#   T3  proceeds when interviewComplete is true and the foundation is not done
+#       (pending/failed/absent); refuses only when it is already done (exit 4)
 #   T4  refuses a box frozen buildType=legacy               (exit 5)
 #   T5  dry-run computes the live floor, mutates NOTHING    (exit 0)
 #   T6  --apply: floor met, state shape correct, departments status=prebuilt,
@@ -67,13 +68,24 @@ run_driver --operator-consent-file "$TMP/consent-bad.json" \
 RC=$?
 if [ "$RC" -eq 2 ]; then good "T2: refuses malformed consent record (rc=2)"; else bad "T2: expected rc=2, got $RC"; fi
 
-# ── T3: interviewComplete already true ───────────────────────────────────────
+# ── T3: interviewComplete true, foundation not done ─────────────────────────
+# BU-55: a finished interview no longer blocks the prebuild. Refuse (exit 4)
+# ONLY when interviewComplete is true AND standardPrebuild.status is "done";
+# a pending, failed or absent foundation is completed by this run.
 echo '{"interviewComplete":true}' > "$STATE"
 run_driver --operator-consent-file "$CONSENT" \
   --departments-dir "$COMPANY/departments" --build-state-file "$STATE" --json \
   > "$TMP/t3.json" 2>"$TMP/t3.err"
 RC=$?
-if [ "$RC" -eq 4 ]; then good "T3: refuses when interviewComplete=true (rc=4)"; else bad "T3: expected rc=4, got $RC"; fi
+if [ "$RC" -eq 0 ]; then good "T3: proceeds when interviewComplete=true and foundation absent (rc=0)"; else bad "T3: expected rc=0, got $RC"; fi
+
+# ── T3b: interviewComplete true AND foundation already done ─────────────────
+echo '{"interviewComplete":true,"standardPrebuild":{"status":"done"}}' > "$STATE"
+run_driver --operator-consent-file "$CONSENT" \
+  --departments-dir "$COMPANY/departments" --build-state-file "$STATE" --json \
+  > "$TMP/t3b.json" 2>"$TMP/t3b.err"
+RC=$?
+if [ "$RC" -eq 4 ]; then good "T3b: refuses when interviewComplete=true and standardPrebuild.status=done (rc=4)"; else bad "T3b: expected rc=4, got $RC"; fi
 
 # ── T4: box frozen buildType=legacy ──────────────────────────────────────────
 echo '{"buildType":"legacy"}' > "$STATE"
