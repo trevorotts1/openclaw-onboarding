@@ -941,6 +941,16 @@ Router-chain attempts remain `CHAIN_RESOLUTION_UNVERIFIED` until supported
 provider identity evidence proves the actual call. Code:
 `scripts/core/choice_card/intake_card/ai_models.py`.
 
+## Main window: orchestrate only, all work visible, no silent failure
+
+- The main window only operates and orchestrates. It does not do the build
+  work itself; every piece of work runs in a visible workflow or visible
+  agent that the user can watch.
+- A workflow, agent or model that is wrong, broken or not working is never
+  allowed to fail silently. Report it right away, in plain words, with what
+  broke and what was trying to run. Do not retry quietly, skip the step,
+  swap to another model, or carry on as if it worked.
+
 ## Local load safety (enforced in code, not advice)
 
 Heavy local jobs (any ffmpeg render, encode, concat or decode, audio cutting and stem
