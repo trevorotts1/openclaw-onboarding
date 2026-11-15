@@ -119,8 +119,12 @@ def shipped_selection_entry(launch_path):
     root = str(HERE.parents[1])
     command = [part.replace("/path/to", root).replace(LAUNCH_SLOT, str(launch_path))
                for part in spec["command"]]
-    # this case proves the plan and result chain; the required image step has its own tests in Skill 78
-    command[-1] = " && ".join(s for s in command[-1].split(" && ") if "run_image_stages.py" not in s)
+    # this case proves the plan and result chain; the required image step has its own tests in Skill 78.
+    # attach-design-artifacts goes with it: it exists only to list what run_image_stages wrote and
+    # refuses a run dir that holds no design files, so without its producer it can only fail.
+    command[-1] = " && ".join(
+        s for s in command[-1].split(" && ")
+        if "run_image_stages.py" not in s and "attach-design-artifacts" not in s)
     return {"command": command, "timeout_s": spec.get("timeout_s", 600)}
 
 
@@ -148,9 +152,15 @@ def case_a(tmp):
     if proc.returncode != 0:
         return
     res = json.loads(res_p.read_text())
-    say("A result has exactly the 17 page-result fields",
-        sorted(res.keys()) == sorted(sw.PAGE_RESULT_FIELDS),
+    packet_schema = json.loads((PACKET_SCHEMAS / "page-result.schema.json").read_text())
+    # The packet schema is the authority for the field set; the wrapper's own
+    # tuple must agree with it, so a field added on one side cannot go missing.
+    say("A result carries exactly the packet page-result 1.0 fields",
+        sorted(res.keys()) == sorted(packet_schema["required"]),
         f"{len(res)} fields")
+    say("A wrapper field tuple matches the packet schema",
+        sorted(sw.PAGE_RESULT_FIELDS) == sorted(packet_schema["required"]),
+        f"{len(sw.PAGE_RESULT_FIELDS)} fields")
     say("A outcome field is not emitted", "outcome" not in res)
     say("A page_id echoed from the request", res["page_id"] == req["page_id"],
         f"native emitter echoes the request, result carries {res['page_id']!r}")
@@ -170,9 +180,13 @@ def case_a(tmp):
     # is gone with the wrapper's seam role: the native chain produces
     # no such artifact. checkout_targets enrichment correctness stays
     # covered by cases B and C against the shipped enrichment library.
+    # The emitter's default status is `authored`; `locally_verified` needs
+    # --reviewer-session plus a review record, and this case runs without one, so
+    # authored is the honest claim here. L1 with independent_review false is the
+    # part that must never drift.
     say("A proof is honest L1, no independent review claimed",
         res["proof_class"] == "L1" and res["independent_review"] is False
-        and res["reviewer_session"] is None and res["status"] == "locally_verified")
+        and res["reviewer_session"] is None and res["status"] == "authored")
     # Case A2: the real dispatch adapter seam accepts the shipped entry.
     cfg = {"adapters": {"product_selection": shipped_selection_entry(GOLDEN)}}
     executor = dl.executor_from_config(cfg, work)
