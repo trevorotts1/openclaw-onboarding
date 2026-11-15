@@ -234,8 +234,15 @@ def _session_authority(run_dir, state, run_id, live_model):
         try:
             bound = answer_binding.bind_run(run_dir)
         except answer_binding.BindingError as exc:
-            return _result(False, exc.code, str(exc))
-        music_style = {key: bound[key] for key in (
+            # A card answer saved before the binding contract carries no client
+            # source ref and so cannot be bound: that run keeps resolving its
+            # style exactly as it did before this unit. Every record that does
+            # carry the contract still binds, and every other refusal -- a
+            # frozen-question or digest mismatch included -- is returned.
+            if exc.code != "BINDING_SOURCE_REF_REQUIRED":
+                return _result(False, exc.code, str(exc))
+            bound = None
+        music_style = None if bound is None else {key: bound[key] for key in (
             "style_id", "style_label", "catalog_revision", "recipe_revision",
             "number_shown", "production_fact", "test_only",
             "question_digest", "definition_digest", "session_path")}
