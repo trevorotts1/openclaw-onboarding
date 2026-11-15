@@ -74,6 +74,7 @@ _FULL = {
     'dark_ok': 'no',
     'logo_on_slides': 'no',
     'standard_mode': 'QUICK',
+    'speech_speed_preference': 'default',
     'style_source': 'create-new',
     'style_prefs': 'navy and gold, clean technical diagrams',
     'brand_primary': 'navy #0b1f3a',
@@ -110,7 +111,8 @@ def test_replay_whose_contract_carries_every_turn_completes(tmp_path, monkeypatc
     monkeypatch.setenv('PRESENTATION_REQUESTER_CHANNEL', 'operator-delegated')
     rd = tmp_path / 'pd927-full'
     result = bridge.drive_operator_contract(_contract(_FULL), rd, driver_path=DRIVER,
-                                            launch=False)
+                                            launch=False,
+                                            receipt_hmac='pd927-test-receipt')
     assert result['driver_complete'] is True
     ledger = json.loads((rd / 'working/interview/intake_ledger.json').read_text())
     assert ledger['status'] == 'complete'
@@ -128,12 +130,16 @@ def test_replay_with_an_unanswered_required_turn_is_still_refused(tmp_path, monk
     """
     monkeypatch.setenv('PRESENTATION_REQUESTER_CHAT_ID', 'operator-test-route')
     monkeypatch.setenv('PRESENTATION_REQUESTER_CHANNEL', 'operator-delegated')
+    # `visual_mix` carries a documented default, so its absence is a defaulted
+    # turn, not an unanswered one. `goal` has no default and is what the turn
+    # gate must name when a genuinely required turn is missing.
     partial = {k: v for k, v in _FULL.items()
-               if k not in ('audience_composition_note', 'visual_mix')}
+               if k not in ('audience_composition_note', 'visual_mix', 'goal')}
     rd = tmp_path / 'pd927-partial'
     with pytest.raises(RuntimeError) as exc:
         bridge.drive_operator_contract(_contract(partial), rd, driver_path=DRIVER,
-                                       launch=False)
+                                       launch=False,
+                                       receipt_hmac='pd927-test-receipt')
     message = str(exc.value)
     assert 'driver completion refused' in message
     assert 'the interview is not finished' in message, message
