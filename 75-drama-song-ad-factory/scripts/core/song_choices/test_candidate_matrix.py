@@ -467,3 +467,7 @@ def main():
 
 if __name__ == "__main__":
     sys.exit(main())
+
+
+def test_candidate_matrix():
+    assert main() == 0
