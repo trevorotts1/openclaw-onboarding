@@ -1,3 +1,10 @@
+## [v27.1.73]  -  2026-11-15  -  Batch #3729: Skill 75 FIN005 units and delivery-PDF text composition
+
+- Skill 75 v2.9.190 -> v2.9.191 carries U-GEN314, U-GEN405, U-GEN407, U-GEN413 and U-GEN419, each recut from its own lane onto main (batch #3729).
+- Skill 75 U-T03: `delivery_docs/pdf_writer.py` composes text before mapping, so split combining marks print, and names print correctly in the delivery PDFs.
+- Skill 23 templates: PD-004c and PD-909 from lane PDF001, plus the presentation motion toggle tolerating PD-013's bank depth annotation.
+- This header was added by lane FIN006 after the release tag v27.1.73 was cut without it, which left G2 and G2-EXT red on main at 38a79e2b0.
+
 ## [v27.1.72]  -  2026-11-12  -  Full-read guard: fleet-roll install wiring (installer, read_skill allow-lists, AGENTS.md rule stamper)
 ## [Unreleased]  -  2026-11-13  -  Recurring prices (weekly, monthly, quarterly, yearly) for the signature launch family (Skills 83, 49, 71, 79)
 
