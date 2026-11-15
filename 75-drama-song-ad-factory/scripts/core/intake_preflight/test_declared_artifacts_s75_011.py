@@ -95,10 +95,6 @@ PENDING_WRITERS = {
         "script": "scripts/core/retake_manager/retake_manager.py",
         "writes": "one row per planned retake: unit, attempt, reason, source_sha256",
     },
-    "qc/final-qc-verdict.json": {
-        "script": "scripts/core/qc_gate.py",
-        "writes": "the gate verdict: gate, producer, reason_code, evaluation",
-    },
 }
 
 #: Where a writer may live. ``tests/`` is excluded by name below.

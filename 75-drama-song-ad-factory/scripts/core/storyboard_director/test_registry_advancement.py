@@ -102,6 +102,24 @@ def _write_story(run):
         json.dump(doc, fh, indent=2)
 
 
+def _write_blueprint(run):
+    """``creative/blueprint.json`` as the shipped ``method_plan`` fixture
+    carries it: ``story_beats[]`` with song windows and ``music_cues[]``.
+
+    The creative-strategy contract names this record beside ``story.json``, and
+    the step gate measures it. The repository's own blueprint fixture is used
+    rather than an invented stub, so the storyboard review and the shot planner
+    read the same shape their own tests already prove.
+    """
+    src = os.path.join(CORE, "method_plan", "fixtures", "blueprint-90s.json")
+    with open(src, encoding="utf-8") as fh:
+        doc = json.load(fh)
+    os.makedirs(os.path.join(run, "creative"), exist_ok=True)
+    with open(os.path.join(run, "creative", "blueprint.json"), "w",
+              encoding="utf-8") as fh:
+        json.dump(doc, fh, indent=2)
+
+
 #: The sung sheet the script-lyrics stage carries: first-person, one idea per
 #: line, no product or claim wording, so ``lyric_writer.validate_lyrics``
 #: accepts it with no brief at all.
@@ -272,6 +290,7 @@ def make_run(up_to=None, storyboard_files=True):
     # stage cannot open until its predecessor is sealed.
     _write_research(run)
     _write_story(run)
+    _write_blueprint(run)
     _write_lyrics(run)
     _write_method(run)
     _write_picked_song(run)
