@@ -355,12 +355,12 @@ def _ledger(argv, state_dir, timeout=120):
                 + argv, state_dir=state_dir, timeout=timeout)
 
 
-def _gate(argv, state_dir, timeout=120):
+def _gate(argv, state_dir, timeout=120, env_extra=None):
     """Run gate_engine.py <subcmd> --json --state-dir ... (the parser requires
     the subcommand FIRST, exactly as the Command Center bridge shells it)."""
     return _run(_state(GATE_ENGINE) + [argv[0], "--json", "--state-dir",
                                        str(state_dir)] + argv[1:],
-                state_dir=state_dir, timeout=timeout)
+                state_dir=state_dir, timeout=timeout, env_extra=env_extra)
 
 
 # ---------------------------------------------------------------------------
@@ -2334,12 +2334,19 @@ def self_test():
                       "--door", "dashboard"])
         check("s9 double-fire no-op", rc == 0, "rc=%s" % rc)
         # attack 7: token refusals (foreign / expired / forged) via gate_engine.
+        # A bare runner has no ANTHOLOGY_GATE_TOKEN_SECRET, and without a key the
+        # gate is HELD (exit 3, secret_not_set) before the forged material is even
+        # examined. Supply a known test key so the refusal under test is the
+        # signature refusal (AF-AE-TOKEN-REFUSED, exit 2), not the missing-secret
+        # hold; the key is scrubbed from the parent env and never leaves this run.
+        gate_secret = {"ANTHOLOGY_GATE_TOKEN_SECRET": "selftest-only-gate-secret"}
         rc, _, _ = _gate(["verify", "--subject-key", key,
                           "--token", "v1.not.a.real.token"],
-                         state)
+                         state, env_extra=gate_secret)
         check("forged token refused (AF-AE-TOKEN-REFUSED)", rc == 2, "rc=%s" % rc)
         rc, _, _ = _gate(["decide", "--subject-key", key, "--door", "token",
-                          "--action", "approve_as_is"], state)
+                          "--action", "approve_as_is"], state,
+                         env_extra=gate_secret)
         check("token-door decide without credential refused", rc == 2, "rc=%s" % rc)
         # attack 8: board door never reaches 'done' (engine-side invariant).
         rc, parsed, err = _run(
