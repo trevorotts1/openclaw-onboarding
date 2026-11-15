@@ -59,10 +59,14 @@ class StepGateWiring(unittest.TestCase):
         run = self.work / "run-a"
         confirmed_run(run)
         complete_stage(run, "research")
-        sealed = run / "research" / "evidence.json"
+        # The newer production-order guard owns a MISSING predecessor artifact
+        # and answers waiting/PRODUCTION_ORDER_VIOLATION first (a valid refusal,
+        # but not the gate's). A sealed file that is still present but CHANGED
+        # passes that guard and is exactly what the signed chain must catch.
+        sealed = run / "research" / "manifest.json"
         self.assertTrue(sealed.is_file(),
-                        "the sealed research artifact must exist before deletion")
-        sealed.unlink()
+                        "the sealed research artifact must exist before the change")
+        sealed.write_text(json.dumps({"files": [], "digest": "tampered"}))
         code, env = cli("next", "--run-dir", str(run))
         self.assertEqual(env.get("outcome"), "rejected", env)
         self.assertEqual(env.get("reason_code"), "PREVIOUS_STAGE_NOT_PROVEN", env)
