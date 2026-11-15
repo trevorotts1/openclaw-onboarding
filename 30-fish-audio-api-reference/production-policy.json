@@ -1,0 +1,8 @@
+{
+  "schema_version": 1,
+  "default_model": "drama-3",
+  "allowed_models": ["drama-3", "s2.1-pro"],
+  "invalid_company_ids": ["default", "command-center"],
+  "model_header": "model",
+  "voice_binding_file": "config/fish-audio-voice.json"
+}

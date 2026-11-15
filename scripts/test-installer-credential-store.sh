@@ -82,7 +82,7 @@ qc_reports_set() {
   local home="$1" skill="$2" qc="$3" label="$4" out
   out="$(env -i HOME="$home" OPENCLAW_ROOT="$home/.openclaw" PATH="$home/fixture-bin:$PATH" \
       "$BASH" "$home/.openclaw/skills/$skill/$qc" 2>&1)"
-  printf '%s' "$out" | grep -qF "✓ PASS — ${label}"
+  printf '%s' "$out" | grep -F "$label" | grep -qE "(^| )PASS( |$)"
 }
 
 check() {  # check <label> <expected: SET|ABSENT> <actual-rc>

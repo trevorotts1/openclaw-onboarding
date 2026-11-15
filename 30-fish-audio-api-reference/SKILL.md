@@ -53,9 +53,9 @@ python3 ~/.openclaw/scripts/gemini-search.py "fish audio voice cloning"
 | TTS Endpoint | `POST /v1/tts` (same endpoint for paid and free tiers) |
 | Auth Header | `Authorization: Bearer $FISH_AUDIO_API_KEY` |
 | Model Header | `model: drama-3` — a HEADER value, never a request-body field. Same mechanic as prior gens (`headers: { model: "drama-3" }`). |
-| Default Model (client/production) | `drama-3` — PAID. ALWAYS the default for client-facing work. Never `s1`, `s2-pro`, `s2.1-pro` (prior gen), or the free `s2.1-pro-free` tier for client production. |
+| Default Model (client/production) | `drama-3` (PAID). Explicit `FISH_AUDIO_MODEL=s2.1-pro` is permitted; never silently downgrade. Reject `s1`, `s2-pro`, free tiers and unknown models. |
 | Free Dev Model (operator-internal ONLY) | `s2.1-pro-free` — see "Model Selection: Paid vs Free" below before touching this. Never client production. |
-| Voice ID | `$FISH_AUDIO_VOICE_ID` |
+| Voice ID | `$FISH_AUDIO_VOICE_ID`, matched to a separately approved, company-bound fingerprint before use |
 
 ---
 
@@ -69,7 +69,7 @@ Drama-3 (Oct 13, 2026 announcement) is the current release: plain-language direc
 
 ### `s2.1-pro` — PAID prior generation
 
-This stays the default for ALL client-facing work, always. Rationale:
+Use this prior generation only when the client or operator explicitly selects `FISH_AUDIO_MODEL=s2.1-pro`. It is never an automatic fallback. The BlackCEO default remains `drama-3`, as adopted in onboarding PR #2754. Paid-tier considerations:
 - SLA + latency guarantee — the tier Fish Audio contrasts against when it says the free tier has "no SLA" and "no latency guarantee"
 - Commercial-safe for production / revenue-generating use
 - Not subject to the free tier's "requests may be used to improve model quality" data-retention notice
@@ -107,45 +107,26 @@ Sources: https://fish.audio/blog/s2-1-pro-free-api/ (S2.1 Pro Free announcement)
 
 - **Normal latency always** - best quality output
 - **Balanced latency** (~300ms) only for real-time live AI calling
-- Pricing: $15.00 per 1M UTF-8 bytes (~$0.40 per 30-minute podcast)
+- Pricing: confirm the selected model's current rate before a paid call; S2.1 pricing must not be used to estimate Drama-3
 
 ---
 
-## Standard curl Template (Phone Calls)
+## Production Generation (Phone Calls and Content)
+
+Use `scripts/fish_audio_config.py` so every request passes the same voice and model preflight as install QC. Resolve `OC_ROOT` with the installed `lib-shared.sh` first. See [client voice approval](references/client-voice-approval.md) for the independent owner approval record.
 
 ```bash
-curl -s -X POST "https://api.fish.audio/v1/tts" \
-  -H "Authorization: Bearer $FISH_AUDIO_API_KEY" \
-  -H "Content-Type: application/json" \
-  -H "model: drama-3" \
-  -d "{
-    \"text\": \"YOUR TEXT HERE\",
-    \"reference_id\": \"$FISH_AUDIO_VOICE_ID\",
-    \"format\": \"mp3\",
-    \"mp3_bitrate\": 64,
-    \"normalize\": true,
-    \"latency\": \"normal\"
-  }" \
-  --output output.mp3
+# Read-only preflight. No network calls and no secret values in output.
+bash "$SKILL_DIR/qc-fish-audio-api-reference.sh"
+
+# Paid call: announce provider, selected model and estimated USD, and honor the
+# client's budget/approval before executing. Text comes from a UTF-8 file.
+python3 "$SKILL_DIR/scripts/fish_audio_config.py" tts --root "$OC_ROOT" \
+  --text-file approved-script.txt --output output.mp3 --use-case phone
+# For podcasts/content, use --use-case content (192 kbps instead of 64).
 ```
 
-## Standard curl Template (Podcasts / Content)
-
-```bash
-curl -s -X POST "https://api.fish.audio/v1/tts" \
-  -H "Authorization: Bearer $FISH_AUDIO_API_KEY" \
-  -H "Content-Type: application/json" \
-  -H "model: drama-3" \
-  -d "{
-    \"text\": \"YOUR TEXT HERE\",
-    \"reference_id\": \"$FISH_AUDIO_VOICE_ID\",
-    \"format\": \"mp3\",
-    \"mp3_bitrate\": 192,
-    \"normalize\": true,
-    \"latency\": \"normal\"
-  }" \
-  --output output.mp3
-```
+`production-policy.json` is the source of truth for the default and permitted explicit models. The helper always sends the `model` HTTP header, never a body field. A missing or wrong client voice, invalid approval, disallowed model, provider error or non-audio response fails without substituting another voice or model. API reference curl snippets explain the wire format; they do not replace this production preflight.
 
 ---
 
@@ -185,7 +166,7 @@ Paralanguage effects (insert inline):
 
 ## Pending Setup Behavior
 
-If `FISH_AUDIO_API_KEY` or `FISH_AUDIO_VOICE_ID` are missing, the installer writes a pending entry to `~/.openclaw/skills/.pending-setup.md`.
+If credentials, `MC_COMPANY_ID`, or the independently approved client voice record are missing, the installer writes a pending entry to `~/.openclaw/skills/.pending-setup.md`.
 
 **The agent should:**
 1. Remind the client once per session if status is PENDING
@@ -200,7 +181,8 @@ If `FISH_AUDIO_API_KEY` or `FISH_AUDIO_VOICE_ID` are missing, the installer writ
      written there is reported absent on a correctly configured box.
    - Confirm presence only (`SET` / `NOT-SET`) — never print a credential value.
    - Run `python3 ~/.openclaw/scripts/gemini-indexer.py` to re-index
-   - Mark entry as Status: COMPLETE in `.pending-setup.md`
+   - Follow `references/client-voice-approval.md` using the client's independently confirmed voice selection. Never generate the expected fingerprint from the active `FISH_AUDIO_VOICE_ID`.
+   - Run the bundled configuration QC. Mark COMPLETE only after it passes and the separate approved live test/listening review confirms the intended voice.
 
 ---
 
@@ -224,6 +206,9 @@ When generating any Fish Audio S2 voice output (phone calls OR podcast/content),
 
 | File | Purpose |
 |------|---------|
+| `production-policy.json` | Canonical production model and voice-record contract, vendored with a SHA-256 pin into Command Center |
+| `scripts/fish_audio_config.py` | Read-only configuration check and guarded production TTS |
+| `references/client-voice-approval.md` | Independent client approval and migration procedure |
 | `SKILL.md` | This file - TYP, quick reference, standard templates |
 | `INSTALL.md` | Step-by-step installation checklist |
 | `README.md` | One-page summary |
