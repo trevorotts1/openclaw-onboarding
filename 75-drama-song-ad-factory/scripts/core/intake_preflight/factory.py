@@ -35,6 +35,7 @@ the caller must supply them from the reply's presentation, never from a default.
 Approval -> `next` hands out music; an edit is re-checked and re-sent.
 """
 import argparse
+import contextlib
 import fcntl
 import hashlib
 import json
@@ -1786,6 +1787,23 @@ def _install_complete_guard(run_dir):
 
     state_store.COMPLETE_GUARD = guard
     return guard
+
+@contextlib.contextmanager
+def _complete_guard_for(run_dir):
+    """Install this run's guard for ONE block, then restore the previous one.
+
+    ``state_store.COMPLETE_GUARD`` is process-global, and one process can drive
+    more than one run (whole-tree pytest does, and so can a long-lived control
+    process). Leaving a run's guard installed after the block let it answer for
+    a different run's COMPLETE transition — refusing that run with this run's
+    chain. The guard bites inside the control tool's own transitions only.
+    """
+    import state_store
+    previous = state_store.COMPLETE_GUARD
+    try:
+        yield _install_complete_guard(run_dir)
+    finally:
+        state_store.COMPLETE_GUARD = previous
 
 
 def _gate_open(run_dir, stage):
@@ -3895,9 +3913,8 @@ def cmd_seal(a):
                         "The stage is sealed, but the run's state store cannot be "
                         "resolved (%s), so no row was moved." % (problem or db),
                         data={"stage": a.stage, "sealed": sealed})
-    _install_complete_guard(run_dir)
     try:
-        with state_store.Store(db) as store:
+        with _complete_guard_for(run_dir), state_store.Store(db) as store:
             row = store.get(rid, a.stage)
             if row["state"] not in ("NOT_STARTED", "READY", "STALE",
                                     "FAILED_RETRYABLE", "RUNNING"):
@@ -4234,15 +4251,15 @@ def _next_stage(a, *, boot_snapshot=None):
         return envelope("next", str(sid), "error", "state-unreadable",
                         "state file unreadable (%s): %s" % (db, str(e)[:120]))
     # S75-002: a NEW run gets its gate key here (never a run that already holds
-    # a COMPLETE row), and every COMPLETE transition this process makes — the
+    # a COMPLETE row), and every COMPLETE transition this command makes — the
     # reconcile moves below included — is guarded by the sealed chain.
     gate_state = _gate_init(run_dir, got)
-    _install_complete_guard(run_dir)
     # L4.1: reconcile the rows from proven artifacts on disk BEFORE the
     # answer — through state_store's guarded transitions only; rows the
     # artifacts do not prove are never touched, and every move it made is
     # carried on the envelope under data.reconciled.
-    reconciled, got = _reconcile_stages(run_dir, got)
+    with _complete_guard_for(run_dir):
+        reconciled, got = _reconcile_stages(run_dir, got)
     # S75-W02-U1 / D03: distinguish "no runnable action" from true completion.
     # The old selector skipped COMPLETE/FAILED_BLOCKED/PARKED and reported
     # "Every stage is COMPLETE; delivered" whenever the search was exhausted --
