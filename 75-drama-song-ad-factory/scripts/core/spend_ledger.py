@@ -121,6 +121,8 @@ CREATE TABLE IF NOT EXISTS receipts(
   logical_key TEXT NOT NULL, attempt_id TEXT NOT NULL, amount INTEGER NOT NULL,
   currency TEXT NOT NULL DEFAULT 'USD', provider_ref TEXT, evidence_ref TEXT,
   created_at TEXT NOT NULL);
+CREATE INDEX IF NOT EXISTS idx_receipts_attempt
+  ON receipts(run_id, logical_key, attempt_id);
 CREATE TABLE IF NOT EXISTS events(
   event_id INTEGER PRIMARY KEY AUTOINCREMENT, run_id TEXT NOT NULL,
   logical_key TEXT NOT NULL, attempt_id TEXT NOT NULL, kind TEXT NOT NULL,
@@ -243,14 +245,16 @@ def _lookup_evidence(conn, run_id, logical_key, attempt_id):
     row = conn.execute(
         "SELECT provider_lookup_ref FROM jobs WHERE logical_key=? AND "
         "attempt_id=?", (logical_key, attempt_id)).fetchone()
-    if row and row[0]:
+    if row and (row[0] or "").strip():
         return True
-    rec = conn.execute(
-        "SELECT 1 FROM receipts WHERE run_id=? AND logical_key=? AND "
-        "attempt_id=? AND (COALESCE(provider_ref,'')<>'' OR "
-        "COALESCE(evidence_ref,'')<>'') LIMIT 1",
-        (run_id, logical_key, attempt_id)).fetchone()
-    return rec is not None
+    # str.strip() in Python, not SQL TRIM: SQLite's TRIM drops only spaces, so
+    # a tab-only reference would pass for evidence. Served by idx_receipts_attempt.
+    for provider_ref, evidence_ref in conn.execute(
+            "SELECT provider_ref,evidence_ref FROM receipts WHERE run_id=? AND "
+            "logical_key=? AND attempt_id=?", (run_id, logical_key, attempt_id)):
+        if (provider_ref or "").strip() or (evidence_ref or "").strip():
+            return True
+    return False
 
 
 def envelope(command, outcome, reason_code, next_action="", run_id="",
@@ -267,6 +271,7 @@ def envelope(command, outcome, reason_code, next_action="", run_id="",
 def _migrate_100(conn):
     """1.0.0 -> 1.1.0: additive only. Existing rows are never rewritten."""
     have = {r[1] for r in conn.execute("PRAGMA table_info(jobs)")}
+    backfill_uncertain = "uncertain" not in have
     for col, decl in (
             ("retry_category", "TEXT NOT NULL DEFAULT ''"),
             ("auth_ref", "TEXT NOT NULL DEFAULT ''"),
@@ -283,6 +288,11 @@ def _migrate_100(conn):
         if col not in have:
             conn.execute("ALTER TABLE runs ADD COLUMN %s %s" % (col, decl))
     conn.executescript(DDL)  # every object is CREATE IF NOT EXISTS
+    if backfill_uncertain:
+        # The one case a pre-column ledger can still prove: a job hanging in
+        # `unknown` at upgrade time. Without this it could be reconciled
+        # without evidence and retried.
+        conn.execute("UPDATE jobs SET uncertain=1 WHERE state='unknown'")
     conn.execute("UPDATE schema_info SET value=? WHERE key='schema_version'",
                  (SCHEMA_VERSION,))
 
@@ -311,6 +321,10 @@ def _open(db_path, create=False):
         if row and row[0] == "1.0.0":
             _migrate_100(conn)
             row = (SCHEMA_VERSION,)
+        if row and row[0] in COMPATIBLE:
+            # Ledgers created before the index existed get it on open.
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_receipts_attempt "
+                         "ON receipts(run_id, logical_key, attempt_id)")
     except sqlite3.DatabaseError as e:
         conn.close()
         raise CorruptStateError("CORRUPT_STATE: %s" % e)
@@ -651,7 +665,7 @@ def _allocate(db_path, cmd, run_id, logical_key, attempt_id, request_digest,
                           "identities, never reuses one", attempt_id, run[6])
         prior = conn.execute(
             "SELECT attempt_id,state,final_outcome,uncertain,request_digest,"
-            "provider_lookup_ref,auth_ref,attempt_no FROM jobs "
+            "provider_lookup_ref,auth_ref,attempt_no,remote_task_id FROM jobs "
             "WHERE run_id=? AND logical_key=? ORDER BY attempt_no",
             (run_id, logical_key)).fetchall()
         repair_cap = run[4]
@@ -709,8 +723,10 @@ def _allocate(db_path, cmd, run_id, logical_key, attempt_id, request_digest,
                 return refuse("DUPLICATE_AUTHORIZATION",
                               "authorization %s already funds a committed "
                               "attempt" % auth_ref, attempt_id, run[6])
+        # An attempt that never reached a provider (no remote_task_id) has
+        # nothing to look up and is never gated.
         for row in prior:
-            if row[3] and not _lookup_evidence(conn, run_id, logical_key,
+            if row[3] and (row[8] or "").strip() and not _lookup_evidence(conn, run_id, logical_key,
                                                row[0]):
                 conn.execute("ROLLBACK")
                 return refuse("PROVIDER_LOOKUP_REQUIRED",

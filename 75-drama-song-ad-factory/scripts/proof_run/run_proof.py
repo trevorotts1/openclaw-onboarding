@@ -14,8 +14,9 @@ CHECKS — the accepted criteria, each named (all must reach PASS):
                          once the run state carries the recorded choice-card
                          receipt — F15, a complete brief never skips the card.
  2. intake-never-invent  F6 never-invent: an off-menu style/number/gate in the
-                         brief is refused (reject_any_invented), injected
-                         instruction text is refused (detect_injection).
+                         brief is refused (reject_any_invented); an extracted
+                         source with instruction text is dropped and named in
+                         warnings (detect_injection), never the brief.
  3. style-menu           styles resolve from the menu only; every style prompt
                          is non-empty; F13: no default style prompt carries a
                          banned word (strings/gospel/choir/cinematic...).

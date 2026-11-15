@@ -49,13 +49,20 @@ def _reply(q, purpose=1, where=None):
         return "$25"
     if q.get("free_text"):
         return TYPED
+    if q.get("recommended") is None:
+        # S75-020: AGNES marks a pick only for a client who said yes before, so
+        # "recommended" is refused there; answer the first option by number.
+        return "1"
     return "recommended"
 
 
 def _plan(purpose=1, where=None):
-    """A whole purpose-flow card: the final question list and one reply each."""
+    """A whole purpose-flow card: the final question list and one reply each.
+
+    S75-006: the defaulted screens ride at the end and are never asked, so the
+    walk stops when the next screen is one of them."""
     answers, qs, replies = [], IC._shaped(IC.QUESTIONS, []), []
-    while len(answers) < len(qs):
+    while len(answers) < len(qs) and not qs[len(answers)].get("defaulted"):
         q = qs[len(answers)]
         r = _reply(q, purpose, where)
         a = IC._parse(r, q)
@@ -74,21 +81,40 @@ def _first_line(msg):
     return msg.splitlines()[0]
 
 
+def _legacy_header():
+    """The header a resumed run's FIRST question carries.
+
+    A resumed run keeps the frozen fourteen-question card it was asked with
+    (S75-006 step 5), and that card opens on its own OFFER screen -- the same
+    first screen ``origin/main`` asks today."""
+    return "Question 1 of %d - %s" % (len(IC.LEGACY_QUESTIONS),
+                                      IC.LEGACY_QUESTIONS[0]["label"])
+
+
 # ---------------------------------------------------------------- new run -----
 def test_a_new_run_opens_on_the_opening_flow_through_the_launcher(tmp_path, capsys):
     run = tmp_path / "run"
     run.mkdir()
     assert IC.main(["--step", "--run-dir", str(run)]) == 0
     first = capsys.readouterr().out
+    # S75-006 / U-GEN425: the live counter is the screens the run ASKS one by
+    # one (the defaulted tail rides the recap and is never a live question).
     assert _first_line(first) == "Question 1 of %d - PURPOSE" % len(
-        IC._shaped(IC.QUESTIONS, []))
+        IC.askable(IC._shaped(IC.QUESTIONS, [])))
     assert "What is this video for?" in first
 
 
 def test_a_new_run_folder_is_where_the_flow_turns_on():
-    # the API decides from the run folder: no folder = preview, old list.
+    # the API decides from the run folder: no folder = a question preview, not a
+    # run, so it lists the new card's own screens (priced in place, no PURPOSE
+    # screen) instead of a purpose flow there is no run to record.
     assert IC._run_history(None) is None
-    assert "OFFER" in IC.conversation([])["message"]
+    assert IC.new_run_flow(None, None) is False
+    preview = IC.conversation([])["message"]
+    assert _first_line(preview) == "Question 1 of %d - OFFER" % len(
+        IC.askable(IC._priced(IC.QUESTIONS, [])))
+    assert "What are we promoting, and where should the video send people?" in preview
+    assert "PURPOSE" not in preview
 
 
 def test_confirming_a_new_run_writes_the_method_record(tmp_path):
@@ -114,7 +140,9 @@ def test_confirming_a_new_run_writes_the_method_record(tmp_path):
                       "--question-digest", state["question_digest"], "--reply", reply])
         assert not method_path.exists()             # intake preferences are not approval
     assert state["question_id"] == "recap" and state["done"] is False
-    assert state["answered_count"] == state["total_count"] == len(qs)
+    # S75-006: the defaulted screens ride the recap, so they are not counted
+    asked = [q for q in qs if not q.get("defaulted")]
+    assert state["answered_count"] == state["total_count"] == len(asked)
     state = turn(["--question-id", state["question_id"],
                   "--question-digest", state["question_digest"], "--reply", "yes"])
     assert state["done"] is True
@@ -131,7 +159,8 @@ def test_the_flow_asks_one_question_per_message():
         msg = IC.conversation(replies[:i], purpose_flow=True)["message"]
         assert msg.count("Question ") == 1, (i, msg)
         answers.append(r)
-    assert len(answers) == len(qs)
+    # one reply per ASKED screen; the defaulted tail is never asked
+    assert len(answers) == len(IC.askable(qs))
 
 
 # ------------------------------------------------------------- resumed run ----
@@ -154,14 +183,15 @@ def test_a_resumed_run_is_asked_the_card_it_started_with(tmp_path):
     run = _old_run(tmp_path)
     assert IC._run_history(str(run)) is False
     first = IC.conversation([], run_dir=str(run))["message"]
-    assert _first_line(first).endswith("- OFFER")
+    assert _first_line(first) == _legacy_header()
     assert "PURPOSE" not in first
 
 
 def test_a_resumed_run_is_not_migrated_or_rewritten(tmp_path):
     run = _old_run(tmp_path)
     state_bytes = (run / "control" / "state.sqlite3").read_bytes()
-    st = IC.conversation(IC.example_replies() + ["yes"], run_dir=str(run))
+    st = IC.conversation(IC.example_replies(IC.LEGACY_QUESTIONS) + ["yes"],
+                         run_dir=str(run))
     assert st["done"] is True
     # no purpose record was invented for the old run
     assert not (run / "control" / "method.json").exists()
@@ -169,7 +199,7 @@ def test_a_resumed_run_is_not_migrated_or_rewritten(tmp_path):
     saved = json.loads((run / "card-answers.json").read_text(encoding="utf-8"))
     ids = [row["id"] for row in saved["answers"]]
     assert "purpose" not in ids
-    assert ids == [q["id"] for q in IC.QUESTIONS]
+    assert ids == [q["id"] for q in IC.LEGACY_QUESTIONS]
     # the run's own state file and target were left alone
     assert (run / "control" / "state.sqlite3").read_bytes() == state_bytes
     receipt = json.loads((run / "control" / "card-receipt.json").read_text(encoding="utf-8"))
@@ -187,7 +217,7 @@ def test_a_chat_resume_past_the_intro_keeps_the_old_card_through_the_api(tmp_pat
     before = state.read_bytes()
     assert IC.new_run_flow(str(run), str(state)) is False
     first = IC.conversation([], run_dir=str(run), run_state_file=str(state))["message"]
-    assert _first_line(first).endswith("- OFFER")
+    assert _first_line(first) == _legacy_header()
     assert "PURPOSE" not in first
     assert state.read_bytes() == before
 
@@ -203,7 +233,7 @@ def test_the_api_and_the_launcher_agree_on_the_default(tmp_path, capsys):
     resumed = capsys.readouterr().out.strip()
     assert resumed == IC.conversation(
         [], run_dir=str(run), run_state_file=str(state))["message"]
-    assert _first_line(resumed).endswith("- OFFER")
+    assert _first_line(resumed) == _legacy_header()
 
     fresh = tmp_path / "fresh"
     fresh.mkdir()
@@ -231,9 +261,13 @@ def test_a_studio_order_is_a_purpose_flow_run(tmp_path):
 def test_the_caller_can_still_force_either_list(tmp_path):
     run = tmp_path / "run"
     run.mkdir()
-    assert "OFFER" in IC.conversation([], run_dir=str(run), purpose_flow=False)["message"]
+    assert _first_line(IC.conversation([], run_dir=str(run),
+                                       purpose_flow=False)["message"]) == _legacy_header()
     assert "PURPOSE" in IC.conversation([], run_dir=str(run), purpose_flow=True)["message"]
-    assert "OFFER" in IC.conversation([], purpose_flow=False)["message"]
+    # With NO run folder there is no card to resume, so the forced-old branch has
+    # nothing to rebuild: the preview is the new card's screens, priced in place.
+    assert _first_line(IC.conversation([], purpose_flow=False)["message"]) == (
+        "Question 1 of %d - OFFER" % len(IC.askable(IC._priced(IC.QUESTIONS, []))))
     assert "PURPOSE" in IC.conversation([], purpose_flow=True)["message"]
 
 

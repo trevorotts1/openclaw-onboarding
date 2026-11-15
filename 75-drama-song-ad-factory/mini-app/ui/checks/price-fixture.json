@@ -1,0 +1,46 @@
+{
+  "_doc": "S75-059 / U-E02: the Python price function's own output, so the Studio page's arithmetic is pinned to it. Generated with catalog_calculator.card_render.quote(n, length_label) for the three lengths below, one entry per video-model option in video_model_rates.json.",
+  "_formula": "shots = ceil(length_s / shot_s); video = (unit == 'second') ? rate_usd * length_s : rate_usd * shots; keyframes = (shots + keyframe_count_extra) * keyframe_usd; total = (video + keyframes + song_usd) * (1 + redo_rate), rounded to the cent. redo_rate is the live planning allowance (budget_contingency.RATE), not the stale 0.2 in video_model_rates.json.",
+  "_source": "scripts/core/catalog_calculator/card_render.py: quote -> price_envelope",
+  "lengths_s": [60, 180, 600],
+  "length_labels": {
+    "60": "60 seconds",
+    "180": "3 minutes + 60s and 90s clips",
+    "600": "10 minutes (the long version) + 60s and 90s clips"
+  },
+  "keyframe_usd": 0.02,
+  "song_usd": 0.06,
+  "redo_rate": 0.5,
+  "keyframe_count_extra": 7,
+  "default_model_n": 1,
+  "models": {
+    "1": {
+      "name": "MiniMax H3",
+      "unit": "second",
+      "shot_s": 15,
+      "rate_usd": 0.04,
+      "prices_usd": {"60": 4.02, "180": 11.46, "600": 37.5}
+    },
+    "2": {
+      "name": "Seedance 2.5",
+      "unit": "second",
+      "shot_s": 15,
+      "rate_usd": 0.315,
+      "prices_usd": {"60": 28.77, "180": 85.71, "600": 285.0}
+    },
+    "3": {
+      "name": "Seedance 2.0 Mini",
+      "unit": "second",
+      "shot_s": 15,
+      "rate_usd": 0.041,
+      "prices_usd": {"60": 4.11, "180": 11.73, "600": 38.4}
+    },
+    "4": {
+      "name": "Google Veo 3.1",
+      "unit": "clip",
+      "shot_s": 8,
+      "rate_usd": 0.3,
+      "prices_usd": {"60": 4.14, "180": 11.34, "600": 36.3}
+    }
+  }
+}

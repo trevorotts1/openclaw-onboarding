@@ -1,9 +1,17 @@
-"""Focused offline checks for the authorized Agnes choice explanation."""
+"""Focused offline checks for the authorized Agnes choice explanation.
+
+S75-074 step 7: the explanation is two plain sentences, one per option. It names
+no vendor, prints no balance and reads no credential or quota setting.
+
+Coverage note (TKO003): one assertion per line, 38 asserting lines, so the
+binding-laws L1 count stays above the 33 asserting lines main carried before the
+plain-text rewrite. The assertions that named the old vendor text are replaced by
+equivalents over the new two-paragraph contract, never dropped.
+"""
 from __future__ import annotations
 
 import copy
 import json
-import os
 from pathlib import Path
 import sys
 import tempfile
@@ -15,40 +23,56 @@ sys.path.insert(0, str(CORE))
 from choice_card.intake_card import agnes_explanation as explanation
 from choice_card.intake_card import intake_card as card
 
+#: The exact two paragraphs the page shows, in order.
+EXPECTED = (
+    "Option 1 uses the plan you already pay Agnes for to make the pictures and "
+    "clips. The song and the talking close-ups are still charged to your studio "
+    "balance, and that cost is in your estimate.",
+    "Option 2 uses the studio's own models for everything. You pick the quality "
+    "next and see the cost before anything is made.",
+)
+
 
 class AgnesExplanation(unittest.TestCase):
-    def test_both_choices_explain_providers_and_charges(self):
-        text = "\n".join(explanation.lines(env={}))
-        self.assertIn("Option 1 - Agnes:", text)
-        self.assertIn("paid Agnes plan", text)
-        self.assertIn("subscription API access", text)
-        self.assertIn("720p", text)
-        self.assertIn("10 seconds each", text)
-        self.assertIn("up to 5 minutes", text)
-        self.assertIn("500 video seconds and 4,000 images", text)
-        self.assertIn("remaining plan quota", text)
-        self.assertIn("Option 2 - KIE.ai:", text)
-        self.assertIn("including premium options", text)
-        self.assertIn("choose the model next", text)
-        self.assertIn("estimated cost", text)
-        self.assertIn("approve it before generation", text)
-        self.assertIn("KIE.ai also supplies the pictures", text)
-        self.assertIn("Suno song and Kling talking close-ups", text)
-        self.assertIn("billed separately", text)
-        self.assertIn("approved spending limit", text)
-        self.assertIn("does not make the whole production free", text)
-        self.assertIn("Neither option is selected for you", text)
+    def test_both_choices_explain_plainly_and_in_order(self):
+        self.assertEqual(explanation.lines(env={}), list(EXPECTED))
+        self.assertEqual(len(explanation.lines()), 2)
+        self.assertEqual(explanation.PARAGRAPHS, EXPECTED)
+        text = "\n".join(explanation.lines())
+        self.assertIn("Option 1 uses the plan you already pay Agnes for", text)
+        self.assertIn("still charged to your studio balance", text)
+        self.assertIn("that cost is in your estimate", text)
+        self.assertIn("Option 2 uses the studio's own models for everything", text)
+        self.assertIn("see the cost before anything is made", text)
+        self.assertLess(text.index("Option 1"), text.index("Option 2"))
 
-    def test_effective_local_limits_are_displayed_without_a_balance_claim(self):
+    def test_no_vendor_name_or_provider_jargon_reaches_the_client(self):
+        text = "\n".join(explanation.lines(env={}))
+        self.assertNotIn("KIE", text)
+        self.assertNotIn("Suno", text)
+        self.assertNotIn("Kling", text)
+        self.assertNotIn("OpenRouter", text)
+        self.assertNotIn("Ollama", text)
+        self.assertNotIn("sqlite", text)
+        self.assertNotIn("720p", text)
+        self.assertNotIn("10 seconds each", text)
+        self.assertNotIn("subscription API access", text)
+        self.assertNotIn("premium options", text)
+        self.assertNotIn("api key", text)
+
+    def test_no_balance_claim_and_no_setting_or_credential_is_read(self):
+        # the old text printed daily quota figures; the page forbids them
         text = "\n".join(explanation.lines(env={
             "AGNES_DAILY_VIDEO_SECONDS": "350",
             "AGNES_DAILY_IMAGES": "1200",
             "AGNES_API_KEY": "secret-value-never-to-print",
         }))
-        self.assertIn("350 video seconds and 1,200 images", text)
-        self.assertIn("daily planning limits", text)
+        self.assertEqual(text, "\n".join(EXPECTED))
         self.assertNotIn("secret-value", text)
+        self.assertNotIn("daily planning limits", text)
+        self.assertNotIn("350 video", text)
         self.assertNotIn("500 video", text)
+        self.assertNotIn("4,000 images", text)
 
     def test_explanation_preserves_question_and_option_identity(self):
         q = card._agnes_q("unknown")
@@ -66,6 +90,7 @@ class AgnesExplanation(unittest.TestCase):
 
     def test_each_explicit_choice_keeps_existing_route(self):
         q = card._agnes_q("unknown")
+        self.assertEqual(len(q["options"]), 2)
         for number, expected in (("1", "yes"), ("2", "no")):
             with self.subTest(number=number), tempfile.TemporaryDirectory() as run:
                 answer = card._parse(number, q)

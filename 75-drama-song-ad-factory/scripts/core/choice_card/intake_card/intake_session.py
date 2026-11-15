@@ -18,11 +18,54 @@ import json
 import os
 import sqlite3
 from pathlib import Path
+import sys
 import tempfile
 
 from . import intake_card as card
 
 SCHEMA = "blackceo.intake-session/v1"
+
+#: S75-035: a "yes" that cannot start the run still answers the client. Each
+#: reason code a blocked confirmation can carry gets one plain sentence; the
+#: code itself is an operator detail and never appears in the client message.
+_AI_PAIR_REFUSED = ("I can't start yet - the setup on this machine isn't ready for the "
+                    "option you picked. I've told the team. You don't need to do anything.")
+_VIDEO_MODEL_REFUSED = ("I can't start yet - I couldn't load the list of video options. "
+                        "I've told the team. Your answers are saved.")
+REFUSAL_OTHER_TEXT = "I can't start yet. Your answers are saved and I've told the team."
+REFUSAL_TEXT = {
+    "testimonial-permission-pending":
+        "Paused, and your answers are saved. I need the signed OK from the person "
+        "in the testimonial before I can start. Send it here and I will pick up "
+        "where we stopped.",
+    "AI_MODEL_ANSWER_REQUIRED": _AI_PAIR_REFUSED,
+    "AI_MODEL_BINDING_REFUSED": _AI_PAIR_REFUSED,
+    "AI_MODEL_BINDINGS_UNREADABLE": _AI_PAIR_REFUSED,
+    "AI_MODEL_BINDING_CONFLICT": _AI_PAIR_REFUSED,
+    "MODEL_UNKNOWN": _AI_PAIR_REFUSED,
+    "MODEL_UNAVAILABLE": _AI_PAIR_REFUSED,
+    "SAME_MODEL_ROLES": _AI_PAIR_REFUSED,
+    "ROLE_BINDING_CONFLICT": _AI_PAIR_REFUSED,
+    "VIDEO_MODEL_STATE_UNAVAILABLE": _VIDEO_MODEL_REFUSED,
+    "VIDEO_MODEL_IDENTITY_CHANGED": _VIDEO_MODEL_REFUSED,
+    "VIDEO_MODEL_RUN_ID_AMBIGUOUS": _VIDEO_MODEL_REFUSED,
+    "VIDEO_MODEL_RUN_ID_CONFLICT": _VIDEO_MODEL_REFUSED,
+    "VIDEO_MODEL_LOCK_CONFLICT": _VIDEO_MODEL_REFUSED,
+    "VIDEO_MODEL_LOCK_NOT_PERSISTED": _VIDEO_MODEL_REFUSED,
+}
+INVALID_REPLY_PREFIX = ("Sorry, I didn't catch that. Reply with the number or the "
+                        "name of one of these:")
+
+
+def _refusal_text(code):
+    """The client's sentence for a blocked confirmation.
+
+    An unmapped code still answers the client in plain words; the code goes to
+    the operator on stderr so the refusal can be traced."""
+    if code in REFUSAL_TEXT:
+        return REFUSAL_TEXT[code]
+    print("intake refusal reason code: %s" % code, file=sys.stderr)
+    return REFUSAL_OTHER_TEXT
 
 
 @contextmanager
@@ -99,15 +142,17 @@ def _active(state, base, client_dir):
 
     A changed conditional branch retains all records, including business facts
     occurring after the new branch's unanswered follow-up. Nothing is shifted
-    into a newly inserted slot.
+    into a newly inserted slot. Screens the card never asks one by one (the
+    defaulted tail, S75-006) stop the walk; their answers live on the recap.
     """
     answers = []
     records = state["answer_records"]
     for _ in range(len(base) + 20):
         qs = _shape(base, answers, state["purpose_flow"], client_dir)
-        if len(answers) >= len(qs):
+        at = len(answers)
+        if at >= len(qs) or qs[at].get("defaulted"):
             return answers, qs, None
-        q = qs[len(answers)]
+        q = qs[at]
         rec = records.get(q["id"])
         if rec is None:
             return answers, qs, None
@@ -115,6 +160,17 @@ def _active(state, base, client_dir):
             return answers, qs, q["id"]
         answers.append(_checked_parsed(rec, q))
     raise ValueError("question flow did not converge")
+
+
+def _default_rows(state, qs, answers, client_dir):
+    """The recap's defaulted lines: the default, or the client's own change."""
+    given = {}
+    for q in qs:
+        if q.get("defaulted"):
+            rec = state["answer_records"].get(q["id"])
+            if rec:
+                given[q["id"]] = _checked_parsed(rec, q)
+    return card._defaults(qs, answers, client_dir, given)
 
 
 def _checked_parsed(rec, q):
@@ -165,9 +221,9 @@ def _persist_model_lock_impl(state, answers, run_dir, *, prepare_only=False):
     from choice_card.video_models import video_models as models
     from kie_dispatch import model_lock
     import state_store
-    rec = state["answer_records"]["model"]
+    rec = state["answer_records"].get("model")
     provider = _provider_identity(selected)
-    if rec.get("provider_identity") != provider:
+    if rec is not None and rec.get("provider_identity") != provider:
         return "VIDEO_MODEL_IDENTITY_CHANGED"
     db = Path(run_dir) / "control" / "state.sqlite3"
     ids, bindings = set(), []
@@ -222,12 +278,21 @@ def _persist_model_lock_impl(state, answers, run_dir, *, prepare_only=False):
         return "VIDEO_MODEL_LOCK_NOT_PERSISTED"
     state["run_id"] = rid
     state["model_lock"] = dict(receipt, provider_identity=provider,
-        identity_source=identity_source, question_digest=rec["question_digest"],
-        source=rec["source"], source_ref=rec.get("source_ref"))
+        identity_source=identity_source, question_digest=(rec or {}).get("question_digest"),
+        source=(rec or {}).get("source") or "card-default", source_ref=(rec or {}).get("source_ref"))
     return None
 
 
-def _pending(answers, qs, editing=None):
+def _asking(answers, qs):
+    """True while a question is still waiting for an answer.
+
+    A defaulted screen (S75-006) is never asked one by one: the recap shows it,
+    so the flow moves on when only the defaulted tail is left."""
+    at = len(answers)
+    return at < len(qs) and not qs[at].get("defaulted")
+
+
+def _pending(answers, qs, editing=None, defaults=None, client_dir=None):
     if editing:
         matches = [i for i, q in enumerate(qs) if q["id"] == editing]
         if not matches:
@@ -235,16 +300,21 @@ def _pending(answers, qs, editing=None):
         at = matches[0]
     else:
         at = len(answers)
+        if at < len(qs) and qs[at].get("defaulted"):
+            at = len(qs)                 # the defaulted tail rides on the recap
     if at < len(qs):
         q = qs[at]
-        message = card.render_step(at + 1, qs)
+        #: S75-006: the live counter reads only the screens a run asks; a
+        #: defaulted screen changed from the recap is shown without a counter.
+        message = (card.render_change(qs, at) if editing
+                   else card.render_step(at + 1, card.askable(qs)))
         if at == 0 and q.get("preface"):
             message = q["preface"] + "\n\n" + message
         return {"id": q["id"], "definition": copy.deepcopy(q),
                 "definition_digest": _digest(q), "position": at + 1,
                 "message": message, "digest": _digest({"id": q["id"],
                     "definition": q, "message": message})}
-    message = card.render_recap(answers, qs)
+    message = card.render_recap(answers, qs, defaults, client_dir)
     return {"id": "recap", "definition_digest": _digest(answers),
             "message": message, "digest": _digest({"id": "recap", "message": message})}
 
@@ -394,11 +464,11 @@ def _persist_ai_roles(state, answers, run_dir, *, prepare_only=False):
         return result.get("error_code") or "AI_MODEL_BINDING_REFUSED"
     if prepare_only:
         return None
-    rec = state["answer_records"]["models"]
+    rec = state["answer_records"].get("models") or {}
     state["ai_model_binding"] = {"binding_id": result.get("binding_id"),
         "bindings": copy.deepcopy(result["bindings"]), "runtime": result.get("runtime"),
-        "reused": bool(result.get("reused")), "question_digest": rec["question_digest"],
-        "source": rec["source"], "source_ref": rec.get("source_ref")}
+        "reused": bool(result.get("reused")), "question_digest": rec.get("question_digest"),
+        "source": rec.get("source") or "card-default", "source_ref": rec.get("source_ref")}
     return None
 
 
@@ -407,10 +477,14 @@ def _finish(state, answers, qs, run_dir, target, client_dir):
         blocked = card._wait_reason(answers, qs)
         if blocked:
             return blocked
-    binding_problem = _persist_ai_roles(state, answers, run_dir)
+    #: S75-006: the shapes the run has always recorded -- every asked answer,
+    #: the three approvals CHECKPOINTS stands for, and every defaulted screen.
+    given = _default_rows(state, qs, answers, client_dir)
+    rec_qs, rec_ans = card._record_lists(answers, qs, client_dir, given)
+    binding_problem = _persist_ai_roles(state, rec_ans, run_dir)
     if binding_problem:
         return binding_problem
-    model_problem = _persist_model_lock(state, answers, run_dir)
+    model_problem = _persist_model_lock(state, rec_ans, run_dir)
     if model_problem:
         return model_problem
     # These record PREFERENCES from intake. They do not approve a script,
@@ -419,9 +493,9 @@ def _finish(state, answers, qs, run_dir, target, client_dir):
         from storyboard_director import approval_runner
         from song_choices import song_choices
         from script_approval import card_answers
-        approval_runner.record_card_answer(run_dir, answers, qs, target)
-        song_choices.record_card_answer(run_dir, answers, target)
-        card_answers.write(run_dir, answers, qs)
+        approval_runner.record_card_answer(run_dir, rec_ans, rec_qs, target)
+        song_choices.record_card_answer(run_dir, rec_ans, target)
+        card_answers.write(run_dir, rec_ans, rec_qs)
         if state["purpose_flow"]:
             method = card._method_record(answers, qs)
             if method:
@@ -429,6 +503,7 @@ def _finish(state, answers, qs, run_dir, target, client_dir):
             card._record_agnes_receipt(run_dir, answers, qs)
     if state["purpose_flow"] and client_dir:
         card._remember_agnes(client_dir, answers, qs)
+        card._remember_ai_setup(client_dir, answers, qs)
     return None
 
 
@@ -442,7 +517,8 @@ def _result(state, path, answers, qs, code="INTAKE_WAITING", outcome="ok", detai
               "outcome": outcome, "reason_code": code,
               "question_id": None if state.get("done") else pending.get("id"),
               "question_digest": None if state.get("done") else pending.get("digest"),
-              "answered_count": len(answers), "total_count": len(qs),
+              "answered_count": len(answers),
+              "total_count": len([q for q in qs if not q.get("defaulted")]),
               "saved_answer_count": len(state.get("answer_records", {})),
               "session_path": str(path), "pending": copy.deepcopy(pending),
               "run_id": state.get("run_id"), "model_lock": copy.deepcopy(state.get("model_lock")),
@@ -489,10 +565,10 @@ def process(replies, questions=None, *, run_dir=None, run_state_file=None,
 
 def _process_locked(path, replies, questions, run_dir, run_state_file, target,
                     client_dir, purpose_flow, question_id, question_digest, source, source_ref, runtime):
-    base = questions or card.QUESTIONS
     if not isinstance(replies, (list, tuple)) or any(not isinstance(r, str) for r in replies):
         raise ValueError("replies must be strings")
     existed = path.exists()
+    base = questions
     if existed:
         state = json.loads(path.read_text(encoding="utf-8"))
         if state.get("schema") != SCHEMA or not isinstance(state.get("answer_records"), dict):
@@ -500,11 +576,17 @@ def _process_locked(path, replies, questions, run_dir, run_state_file, target,
         # Preserve the flow originally shown, even if an intro or receipt made
         # the legacy new-run heuristic change since the last CLI invocation.
         if purpose_flow is not None and bool(purpose_flow) != state["purpose_flow"]:
-            answers, qs, _ = _active(state, base, client_dir)
+            answers, qs, _ = _active(state, base or card.QUESTIONS, client_dir)
             return _result(state, path, answers, qs, "INTAKE_FLOW_MISMATCH", "waiting")
+        #: S75-006: a run keeps the card it was asked with. A session that
+        #: records the old flow re-attaches against the FROZEN old list.
+        if base is None:
+            base = card.QUESTIONS if state["purpose_flow"] else card.LEGACY_QUESTIONS
     else:
         flow = (card.new_run_flow(run_dir, run_state_file) if purpose_flow is None
                 else bool(purpose_flow))
+        if base is None:
+            base = card.QUESTIONS if flow else card.LEGACY_QUESTIONS
         state = {"schema": SCHEMA, "created_at": _now(), "purpose_flow": flow,
                  "answer_records": {}, "events": [], "done": False,
                  "editing_question_id": None, "confirmation": None, "requested_runtime": runtime,
@@ -541,7 +623,8 @@ def _process_locked(path, replies, questions, run_dir, run_state_file, target,
         if (bound_runtime and runtime != bound_runtime) or (requested and runtime != requested):
             return _result(state, path, answers, qs, "AI_MODEL_BINDING_CONFLICT", "waiting")
         state["requested_runtime"] = runtime
-    current = _pending(answers, qs, state.get("editing_question_id"))
+    current = _pending(answers, qs, state.get("editing_question_id"),
+                       _default_rows(state, qs, answers, client_dir), client_dir)
     _progress(state, answers, qs)
     old_pending = state.get("pending")
     changed = bool(old_pending and old_pending.get("digest") != current["digest"])
@@ -608,9 +691,13 @@ def _process_locked(path, replies, questions, run_dir, run_state_file, target,
              "accepted": False}
     state["events"].append(event)
     code, outcome = "INTAKE_ANSWER_SAVED", "ok"
+    refusal = None          # plain sentence when a "yes" could not start the run
+    missed = False          # the reply matched no offered option
     if current["id"] == "recap":
         low = raw.strip().lower()
-        if low in card._YES and len(answers) == len(qs):
+        #: S75-006: the recap is reached once no question is left to ASK; the
+        #: defaulted tail never blocks the confirmation.
+        if low in card._YES and not _asking(answers, qs):
             event["accepted"] = True
             state["confirmation"] = copy.deepcopy(event)
             # Durably record the explicit recap confirmation before the
@@ -619,6 +706,7 @@ def _process_locked(path, replies, questions, run_dir, run_state_file, target,
             blocked = _finish(state, answers, qs, run_dir, target, client_dir)
             if blocked:
                 code, outcome = blocked, "waiting"
+                refusal = _refusal_text(blocked)
             else:
                 state["done"] = True
                 code = "INTAKE_CONFIRMED"
@@ -632,6 +720,7 @@ def _process_locked(path, replies, questions, run_dir, run_state_file, target,
         parsed = _parse(raw, q)
         if not parsed or parsed.get("error"):
             code, outcome = "INVALID_OPTION", "waiting"
+            missed = True
         else:
             parsed["id"] = q["id"]
             option = _option(q, parsed)
@@ -647,19 +736,28 @@ def _process_locked(path, replies, questions, run_dir, run_state_file, target,
     _write(path, state)
     answers, qs, drift = _active(state, base, client_dir)
     _progress(state, answers, qs)
-    next_pending = _pending(answers, qs, state.get("editing_question_id"))
+    next_pending = _pending(answers, qs, state.get("editing_question_id"),
+                            _default_rows(state, qs, answers, client_dir), client_dir)
     if state["pending"].get("requires_identity") and next_pending["digest"] == state["pending"]["digest"]:
         next_pending["requires_identity"] = True
     state["pending"] = next_pending
     _write(path, state)
-    return _result(state, path, answers, qs, code, outcome)
+    message = None
+    if refusal is not None:
+        # The reason comes first, then the recap the client can still change.
+        message = refusal + "\n\n" + next_pending["message"]
+    elif missed:
+        message = INVALID_REPLY_PREFIX + "\n\n" + next_pending["message"]
+    return _result(state, path, answers, qs, code, outcome, message=message)
 
 
 def _progress(state, answers, qs):
-    state["required_question_ids"] = [q["id"] for q in qs]
+    #: S75-006: a defaulted screen is never asked one by one, so it is not part
+    #: of the required set the completion check counts.
+    state["required_question_ids"] = [q["id"] for q in qs if not q.get("defaulted")]
     state["active_question_ids"] = [a["id"] for a in answers]
     state["answered_count"] = len(answers)
-    state["total_count"] = len(qs)
+    state["total_count"] = len(state["required_question_ids"])
 
 
 def _inspect_model_lock(db, run_id):
@@ -741,26 +839,36 @@ def completion_status(run_dir, *, require_handoff=True):
                     conf.get("rendered_question") != pending["message"] or not conf.get("at_utc") or
                     not any(e == conf for e in state["events"])):
                 raise ValueError("completion has no matching explicit client recap confirmation")
-            if require_handoff and "models" in required:
+            #: S75-006: a saved AI setup is recorded without a models record,
+            #: so the persisted pair is checked from the binding itself.
+            if require_handoff and ("models" in required or state.get("ai_model_binding")):
                 from choice_card.intake_card import ai_models
-                selected_pair = state["answer_records"]["models"]["parsed"]["value"]
+                rec = state["answer_records"].get("models") or {}
+                selected_pair = (rec.get("parsed") or {}).get("value") or {}
                 binding = state.get("ai_model_binding") or {}
                 held = ai_models.load_bindings(run_dir)
+                want = selected_pair or {r: (binding.get("bindings") or {}).get(r, {}).get("model_id")
+                                         for r in ("build", "check")}
                 if (not held or binding.get("binding_id") != held.get("binding_id") or
                         binding.get("runtime") != held.get("runtime") or
-                        binding.get("question_digest") != state["answer_records"]["models"]["question_digest"] or
-                        any(held.get("bindings", {}).get(role, {}).get("model_id") != selected_pair[role]
+                        (rec and binding.get("question_digest") != rec.get("question_digest")) or
+                        any(held.get("bindings", {}).get(role, {}).get("model_id") != want.get(role)
                             for role in ("build", "check"))):
                     raise ValueError("completion has no matching persisted AI model pair")
-            if "model" in required:
-                selected = state["answer_records"]["model"]
+            #: The video model is a recap line since S75-006, so its lock is
+            #: checked from the lock receipt when no screen was answered.
+            if "model" in required or state.get("model_lock"):
+                selected = state["answer_records"].get("model") or {}
                 binding = state.get("model_lock") or {}
-                provider = selected.get("provider_identity")
+                provider = selected.get("provider_identity") or binding.get("provider_identity")
+                if not provider:
+                    raise ValueError("completion has no matching persisted video-model choice")
                 expected_model = provider.get("lock") or provider["kie_model"]
                 if (not state.get("run_id") or binding.get("run_id") != state["run_id"] or
                         binding.get("provider_identity") != provider or
-                        binding.get("question_digest") != selected["question_digest"] or
-                        binding.get("source") != "client" or binding.get("model") != expected_model or
+                        (selected and binding.get("question_digest") != selected.get("question_digest")) or
+                        binding.get("source") not in ("client", "card-default") or
+                        binding.get("model") != expected_model or
                         _inspect_model_lock(Path(run_dir) / "control" / "state.sqlite3",
                                             state["run_id"]) != expected_model):
                     raise ValueError("completion has no matching persisted video-model choice")
@@ -797,7 +905,10 @@ def seed_answers(records, questions=None, *, run_dir=None, run_state_file=None,
     with session_lock(str(path) + ".lock"):
         try:
             state = json.loads(path.read_text(encoding="utf-8"))
-            base = questions or card.QUESTIONS
+            #: S75-006: the session's own recorded flow decides which card the
+            #: run was asked with; a resumed run never sees the other list.
+            base = questions or (card.QUESTIONS if state["purpose_flow"]
+                                 else card.LEGACY_QUESTIONS)
             answers, qs, _ = _active(state, base, client_dir)
             if not isinstance(records, list) or not records:
                 return _result(state, path, answers, qs, "SEED_ANSWERS_REQUIRED", "waiting")
@@ -930,6 +1041,19 @@ def ensure_handoff(run_dir, *, runtime=None):
                 state["requested_runtime"] = runtime
             answers = [copy.deepcopy(state["answer_records"][qid]["parsed"])
                        for qid in state["active_question_ids"]]
+            #: S75-006: the video model rides on the recap, so it has no asked
+            #: answer record. The handoff still needs the model the run will
+            #: dispatch with: the client's recorded change, else the
+            #: recommended row priced for the length the run chose.
+            model_rec = state["answer_records"].get("model")
+            if not any(a.get("id") == "model" for a in answers):
+                if model_rec is not None:
+                    answers.append(copy.deepcopy(model_rec["parsed"]))
+                else:
+                    length = next((a.get("text") for a in answers
+                                   if a.get("id") in ("length", "episode_length")), None)
+                    model_q = card._model_question(length or "60 seconds", defaulted=True)
+                    answers.append(card._default_row(model_q))
             # Both halves must pass read-only admission before either mutates.
             for check in (_persist_ai_roles, _persist_model_lock):
                 blocked = check(state, answers, run_dir, prepare_only=True)

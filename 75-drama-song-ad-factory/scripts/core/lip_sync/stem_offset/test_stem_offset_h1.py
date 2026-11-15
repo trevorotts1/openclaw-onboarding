@@ -9,7 +9,7 @@ import sys
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.dirname(os.path.dirname(HERE)))   # core/
 
-from lip_sync.stem_offset import cut_plan, measure_offset   # noqa: E402
+from lip_sync.stem_offset import LEAD_S, cut_plan, measure_offset   # noqa: E402
 
 RATE, FPS, DELAY = 8000, 30, 0.066
 BURSTS = [(2.0, 2.6), (3.5, 4.4), (5.2, 5.5), (6.0, 7.1), (8.0, 8.4)]
@@ -29,6 +29,10 @@ def _first_sound(x, thr=0.2):
 
 
 def test():
+    # U-U03: ONE lead-in everywhere -- 0.30 s, the value lip_gate.IMPROVED_INPUT
+    # and lipsync_clips.PRE_S already use.
+    assert LEAD_S == 0.30, LEAD_S
+    assert cut_plan(3.5, 4.4, 0.0)["lead_s"] == 0.30
     mix, stem = _sig(0.0), _sig(DELAY)
     m = measure_offset(stem, mix, RATE)
     assert abs(m["offset_s"] - DELAY) <= 0.01, m

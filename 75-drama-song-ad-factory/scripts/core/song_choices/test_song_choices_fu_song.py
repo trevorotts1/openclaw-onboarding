@@ -23,15 +23,19 @@ import kie_dispatch.kie_dispatch as KD                          # noqa: E402
 import factory as F                                             # noqa: E402
 from test_production_process import confirmed_run, complete_stage, approve_script
 
-N = len(IC.QUESTIONS)
-IDS = [q["id"] for q in IC.QUESTIONS]
+#: S75-006 moved SONG APPROVAL off the new card: a new run elects the three
+#: approvals through CHECKPOINTS. This suite exercises the approval screen itself
+#: -- its wording, its recap line and the gate it drives -- so it drives the
+#: frozen pre-S75-006 card, the one that still ASKS it by name.
+N = len(IC.LEGACY_QUESTIONS)
+IDS = [q["id"] for q in IC.LEGACY_QUESTIONS]
 SONG_N = IDS.index("song") + 1
 
 
 def ANS(song="1", upto=None):
     """Replies for every card question in order (AI models, length ... script): the
     spend question takes a dollar amount, SONG APPROVAL takes ``song``, the rest take 1."""
-    r = IC.example_replies()                     # the story brief is typed, the choices picked
+    r = IC.example_replies(IC.LEGACY_QUESTIONS)   # the story brief is typed, the choices picked
     r[SONG_N - 1] = song
     return r if upto is None else r[:upto]
 CLIENT = "I am not small. I never was. One seed of truth made me strong. She Found Power in the Climb."
@@ -162,28 +166,31 @@ def _pipeline(tmp, bad_first=(), bad_always=()):
 
 
 def test_card_has_song_approval_after_storyboard():
-    labels = [q["label"] for q in IC.QUESTIONS]
+    labels = [q["label"] for q in IC.LEGACY_QUESTIONS]
     # five story-brief questions then the nine production choices (DSR-105)
     assert N == 14 and labels[:5] == ["OFFER", "OFFER LINK", "AUDIENCE", "CHARACTER", "PHOTOS"], labels
     assert labels[-3:] == ["STORYBOARD APPROVAL", "SONG APPROVAL", "SCRIPT APPROVAL"], labels
-    block = IC.render_card().split("\n\n")[SONG_N - 1].split("\n")
+    block = IC.render_card(IC.LEGACY_QUESTIONS).split("\n\n")[SONG_N - 1].split("\n")
     assert block[0] == "Question %d of %d - SONG APPROVAL" % (SONG_N, N)
     assert block[1] == "Do you want to hear and pick the song before any video is made?"
     assert block[2].startswith("1. Yes, send me 3 versions to choose from - ") and IC.REC in block[2]
     assert block[3].startswith("2. No, just make it - ") and IC.REC not in block[3]
-    step = IC.conversation(ANS(upto=SONG_N - 1))["message"]
+    step = IC.conversation(ANS(upto=SONG_N - 1),
+                           questions=IC.LEGACY_QUESTIONS)["message"]
     assert step.startswith("Question %d of %d - SONG APPROVAL" % (SONG_N, N)) and 'say "recommended".' in step
-    assert IC.conversation(ANS(upto=SONG_N - 1) + ["recommended"])["answers"][SONG_N - 1]["n"] == 1
+    assert IC.conversation(ANS(upto=SONG_N - 1) + ["recommended"],
+                           questions=IC.LEGACY_QUESTIONS)["answers"][SONG_N - 1]["n"] == 1
 
 
 def test_recap_lists_it_and_line_change_works():
-    st = IC.conversation(ANS())
-    assert "%d. Song Approval: Yes, send me 3 versions to choose from" % SONG_N in st["message"]
+    st = IC.conversation(ANS(), questions=IC.LEGACY_QUESTIONS)
+    # S75-030: the recap prints the screen's own words, never the shouting LABEL.
+    assert "%d. Song approval: Yes, send me 3 versions to choose from" % SONG_N in st["message"]
     assert IC.song_required(st["answers"]) is True
-    fix = IC.conversation(ANS() + [str(SONG_N)])
+    fix = IC.conversation(ANS() + [str(SONG_N)], questions=IC.LEGACY_QUESTIONS)
     assert fix["message"].startswith("Question %d of %d - SONG APPROVAL" % (SONG_N, N))
-    no = IC.conversation(ANS() + [str(SONG_N), "2"])
-    assert IC.song_required(no["answers"]) is False and "%d. Song Approval: No, just make it" % SONG_N in no["message"]
+    no = IC.conversation(ANS() + [str(SONG_N), "2"], questions=IC.LEGACY_QUESTIONS)
+    assert IC.song_required(no["answers"]) is False and "%d. Song approval: No, just make it" % SONG_N in no["message"]
 
 
 def test_three_distinct_variants_per_style_all_pass_the_request_check():
