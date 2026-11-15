@@ -48,7 +48,6 @@
 75-drama-song-ad-factory/scripts/core/intake_preflight/test_reconcile_v2973.py
 75-drama-song-ad-factory/scripts/core/intake_preflight/test_stale_session_v2973.py
 75-drama-song-ad-factory/scripts/core/intake_preflight/test_waiter_pattern_v2973.py
-75-drama-song-ad-factory/scripts/core/intake_preflight/test_wal_ro_b5.py
 75-drama-song-ad-factory/scripts/core/kie_dispatch/test_kie_cli_state_store_b5.py
 75-drama-song-ad-factory/scripts/core/kie_dispatch/test_model_identity_h3.py
 75-drama-song-ad-factory/scripts/core/kie_dispatch/test_qc_docs_host.py
