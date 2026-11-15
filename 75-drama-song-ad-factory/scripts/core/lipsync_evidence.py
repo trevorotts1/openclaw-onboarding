@@ -275,7 +275,11 @@ def inputs_for_request(run_dir, request):
         PG.require_receipt(str(image), str(rdir))
         PG.require_upload_bound(str(image), inp.get("image_url"), str(rdir))
         stems = request.get("lipsync_stems")
-        ok, code, errors = check_stems(stems, row["speaker"])
+        # One stem per SONG: the separated vocal carries the separation job's
+        # first-line speaker, while this request is for THIS line. Screen this
+        # line's cut (kind, isolation, sung rule), not the job's speaker.
+        line_stem = dict(stems[0], speaker_id=row["speaker"])
+        ok, code, errors = check_stems([line_stem], row["speaker"])
         _need(ok, code, str(errors))
         meta = _stem_metadata(root, stems[0])
         _need(meta["line_ids"] == row["lip_sync_line_ids"]

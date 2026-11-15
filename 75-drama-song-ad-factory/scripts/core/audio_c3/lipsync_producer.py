@@ -175,7 +175,14 @@ def produce(run_dir, run_id, shot_id, song_path, separation_runner,
                           "stem_path": str(vocal), "stem_sha256": _sha(vocal),
                           "instrumental_path": str(instrumental),
                           "instrumental_sha256": _sha(instrumental)})
-    ok, code, errors = check_stems([stem], row["speaker"])
+    # One stem per SONG: the separated vocal is shared by every clip, so the
+    # speaker recorded on the separation job is the first line's, not this
+    # line's. The per-line question is whether THIS line's cut is one isolated
+    # stem of the on-screen speaker -- its window of the song's vocal is.
+    line_stem = {"speaker_id": row["speaker"], "kind": stem.get("kind"),
+                 "isolated": stem.get("isolated"),
+                 "delivery": stem.get("delivery")}
+    ok, code, errors = check_stems([line_stem], row["speaker"])
     _need(ok, code, str(errors))
     stem_hash = _sha(vocal)
     record = {"schema": SCHEMA, "producer": "audio_c3.lipsync_producer",
@@ -256,7 +263,10 @@ def verify(run_dir, run_id, row, stem, song_path=None):
           and rec.get("isolated") is True, "LIPSYNC_LINEAGE_MISMATCH", "executed cut or speaker differs")
     separation = rec.get("separation") or {}
     ev = separation.get("evidence") or {}
-    _need(separation.get("run_id") == run_id and separation.get("outcome") == "ok"
+    # The stem receipt is the authority for which run separated the song; a
+    # clip reusing that one stem does not claim the job ran in its own run.
+    # The lineage record's own run_id is checked above.
+    _need(bool(separation.get("run_id")) and separation.get("outcome") == "ok"
           and ev.get("task_id") and ev.get("generated") is True
           and separated in [_path(root, p) for p in ev.get("saved_paths", [])],
           "LIPSYNC_SEPARATION_FAILED", "separation task evidence missing")

@@ -249,8 +249,11 @@ def test_face_model_install_pins_sha256():
     assert IM.MODEL_SHA256 in ids["face-landmarker-model"]["check"]["note"]
     assert "install_face_model.py" in ids["face-landmarker-model"]["satisfy"]
     assert "mediapipe" in ids["python-mediapipe"]["satisfy"]
+    # S75-046 / U-U05: the address is pinned to the versioned segment, never
+    # the floating /latest/ alias.
     assert IM.MODEL_URL.startswith("https://storage.googleapis.com/mediapipe-models/"
-                                   "face_landmarker/face_landmarker/float16/latest/")
+                                   "face_landmarker/face_landmarker/float16/1/")
+    assert "/latest/" not in IM.MODEL_URL
     data = b"pretend model"
     import hashlib, io
     sha = hashlib.sha256(data).hexdigest()
