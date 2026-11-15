@@ -129,7 +129,7 @@
       "argv": ["{python}", "scripts/core/intake_preflight/factory.py", "card",
                "--client-dir", "{work}/client"],
       "cwd": "{skill_root}",
-      "advertised_in": ["SKILL.md:1040 'factory.py card --client-dir <dir>'"],
+      "advertised_in": ["SKILL.md:1050 'factory.py card --client-dir <dir>'"],
       "expect": {"exit_code": 0, "stderr_empty": true},
       "observed": {"exit_code": 0, "stderr_bytes": 0}
     },
@@ -139,7 +139,7 @@
       "argv": ["{python}", "scripts/core/intake_preflight/factory.py",
                "character", "--client-dir", "{work}/client", "list"],
       "cwd": "{skill_root}",
-      "advertised_in": ["SKILL.md:1035 'factory.py character --client-dir'"],
+      "advertised_in": ["SKILL.md:1045 'factory.py character --client-dir'"],
       "expect": {"exit_code": 0, "stderr_empty": true},
       "observed": {"exit_code": 0, "stderr_bytes": 0}
     },
