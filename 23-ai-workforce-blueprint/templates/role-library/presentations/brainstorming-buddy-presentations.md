@@ -171,6 +171,8 @@ it governs only when no persona is assigned. In all cases honor the company miss
 
 ### SOP 9.0 -- PRE-PRESENTATION HARD-REQUIRED CAPTURE (runs FIRST, before mode offer)
 
+HOW TO ASK. Every question in this procedure is asked through the intake driver, one at a time: run deck-intake-driver.py --run-dir <RUN_DIR> --next, say the question it returns to the owner in your own warm voice (you may add the example given in this procedure for that field), wait for the owner's reply, then record it with --answer <id> "<the owner's exact words>" --owner-msg-id <the id of the owner's message>. Never keep answers only in brief.json. Never answer a question for the owner. When the driver reports "complete", run --complete. The driver is the record the build door checks.
+
 **When to run:** The instant a new deck request arrives, before the mode offer and before
 any other question is asked. This SOP is MANDATORY and NON-SKIPPABLE. It cannot be
 deferred to the main interview. No brief may be locked without the six hard-required fields
@@ -194,6 +196,7 @@ DARK_OK, HOOK SEED) plus the three scope fields and the style branch captured or
    break down? Give me percentages. For example: 70% African-American women, 20% mixed
    race, 10% men. Or: 100% women, diverse. Or: no people at all."
    Capture as: `REPRESENTATION_MIX` (list of {group, percent}).
+   Driver question id: `representation_mix`.
    If the owner cannot or will not answer: set `representation_uncaptured: true`, flag the
    operator ("REPRESENTATION_MIX not captured -- deck will generate with NO PEOPLE; confirm
    before build starts"), and proceed. A racial or gender default is NEVER invented.
@@ -202,6 +205,7 @@ DARK_OK, HOOK SEED) plus the three scope fields and the style branch captured or
    Ask: "In plain words, who is this audience -- for example: all women, or multicultural
    Black + white + Hispanic professionals, or mixed gender diverse?"
    Capture as: `AUDIENCE_COMPOSITION_NOTE` (a single plain-language sentence).
+   Driver question id: `audience_composition_note`.
    Derive from REPRESENTATION_MIX if the owner just answered it; no need to re-ask if the
    answer is already clear from Field 1.
 
@@ -210,6 +214,7 @@ DARK_OK, HOOK SEED) plus the three scope fields and the style branch captured or
    I need the name and a one-line description so every image is grounded in YOUR content,
    not generic inspiration."
    Capture as: `GROUNDED_CONTENT` (free text: name + one-line description).
+   Driver question id: `grounded_content`.
    If the owner does not have a name yet: capture whatever they describe and mark
    `grounded_content_provisional: true`. The build cannot start with a blank GROUNDED_CONTENT;
    if still empty at lock, block handoff and ask once more.
@@ -217,18 +222,21 @@ DARK_OK, HOOK SEED) plus the three scope fields and the style branch captured or
    **Field 4 -- VISUAL_MIX (people balance)**
    Ask: "Should the slides be people-heavy, some people, typography-led, or a mix?"
    Capture as: `VISUAL_MIX` (people-heavy / some-people / typography-led / mix).
+   Driver question id: `visual_mix`.
    Default if owner says "no preference": `mix`. Mark `visual_mix_defaulted: true`.
 
    **Field 5 -- DARK_OK (dark background permission; default: false)**
    Ask: "Default is a clean white base -- the standard that makes premium decks pop. Do
    you specifically want any dark-styled slides?"
    Capture as: `DARK_OK` (true / false). Default if owner does not answer: `false`.
+   Driver question id: `dark_ok`.
    Note: the proven gold standard eliminated all black backgrounds -- recommend false.
 
    **Field 6 -- HOOK SEED (the strongest-promise line)**
    Ask: "Is there one line you already say all the time -- the phrase you want them
    humming when they leave? The hook the whole deck will be built around?"
    Capture as: `HOOK_SEED` (free text).
+   Driver question id: `hook_seed`.
    If none: mark `hook_seed_missing: true`. The Hook Strategist will derive one from the
    offer; note this in brief.json so the Director knows to trigger the Hook Lab.
 
@@ -238,6 +246,7 @@ DARK_OK, HOOK SEED) plus the three scope fields and the style branch captured or
    SPEECH script, and even an AUDIO demo of the talk in a chosen voice. Pick one:
    deck only / +guide / +guide+speech / +audio."
    Capture as: `DELIVERABLE_SET` (one of: deck-only / +guide / +guide+speech / +audio).
+   Driver question ids: `want_teleprompter`, `want_speech_script`, `want_audio_deliverable`.
    Default if owner says "just the deck" or "no preference": `deck-only`. The Director uses
    this to decide whether to dispatch the speech chain -- Presenters Guide Specialist
    (P8.2-GUIDE, order 8.2), Presenters Speech Writer (P9-SPEECH, order 8.5), Fish Audio
@@ -250,6 +259,7 @@ DARK_OK, HOOK SEED) plus the three scope fields and the style branch captured or
    what voice or persona should it use -- your own cloned voice, a warm female narrator, a
    high-energy male host, or something else?"
    Capture as: `WANT_AUDIO_DEMO` (true / false) and `AUDIO_VOICE_PERSONA` (free text).
+   Driver question id: `want_audio_demo`.
    If "+audio" with no voice named: set `WANT_AUDIO_DEMO: true`, `audio_voice_unset: true`
    (the Audio Demonstration Specialist asks the owner via the Director before synthesizing;
    a voice is never defaulted silently). Default when not "+audio": `WANT_AUDIO_DEMO: false`.
@@ -263,12 +273,14 @@ DARK_OK, HOOK SEED) plus the three scope fields and the style branch captured or
    defaulted. The captured value is the downstream pacing authority: the speech-QC pacing
    band (target +/-10 percent, Fix 97) and the audio duration gate follow whatever was
    captured -- they never re-derive the pace from a fixed constant.
+   Driver question id: `speech_speed_preference`.
 
    **STYLE BRANCH -- "do you have a style or want me to create one?"**
    Ask: "Do you have an existing deck or visual style you want matched, a reference deck I
    should analyze, or should we CREATE a fresh signature style for you?"
    Capture as: `STYLE_SOURCE` (one of: match-existing / analyze-reference / create-new) plus
    `STYLE_REFERENCE` (a deck/file/URL when match-existing or analyze-reference).
+   Driver question id: `style_source`.
    - On match-existing or analyze-reference: note that the Brand Steward (the only permitted
      crossing) submits the reference to the Graphics DIU Style Analyst for a PPT-tier style
      card whose ID flows to the Slide Image Creator.
@@ -336,16 +348,21 @@ small/low-stakes, OR when most context is already on file.
    questions and really flesh it out. Which do you want?" Record `interview_mode: "simple"`.
 2. Pull the SIMPLE question set for this department (the question bank below, simple set).
    Ask each one at a time. Skip any whose answer is already on file or already answered
-   in the opening.
-3. **(density-floor overhaul) Ask the STYLE BRANCH verbatim** (SOP-IMG-03 section 2), once, early, before the STYLE BLOCK is built: "For the look of your slides, do you have a particular image style in mind? You can: (1) point me at an existing deck, past designs, or reference images you want me to match; (2) tell me a saved style name from your library if you already have one (like 'Style 1'); or (3) let me creatively develop a signature style for you. Which one?" Set `STYLE_SOURCE` to `match_reference` (+ `STYLE_REFERENCES`, `ANALYZE_REQUEST=true`), `saved_style` (+ `STYLE_ID`), or `creative_develop`. A deck that reaches Phase 2 with `STYLE_SOURCE` unset is a defect (it would invent a look with no client direction, the path that produced the reference failure case cookie-cutter typography). If `creative_develop`, sequence the existing mood/imagery/avoid stems into the short creative-develop micro-interview (<=5 questions; do not re-bank them) per SOP-IMG-03 section 3.
-3. Reflect each answer back in one line. Capture into brief.json under its field key.
-4. If a critical field is still unknown after the simple set, ask ONE clarifying
    in the opening OR already captured in SOP 9.0 (REPRESENTATION_MIX, AUDIENCE-COMPOSITION
    NOTE, GROUNDED-CONTENT, VISUAL_MIX, DARK_OK, HOOK SEED are all pre-captured -- do not
    re-ask them unless an answer needs clarification).
+3. **(density-floor overhaul) Ask the STYLE BRANCH verbatim** (SOP-IMG-03 section 2), once, early, before the STYLE BLOCK is built: "For the look of your slides, do you have a particular image style in mind? You can: (1) point me at an existing deck, past designs, or reference images you want me to match; (2) tell me a saved style name from your library if you already have one (like 'Style 1'); or (3) let me creatively develop a signature style for you. Which one?" Set `STYLE_SOURCE` to `match_reference` (+ `STYLE_REFERENCES`, `ANALYZE_REQUEST=true`), `saved_style` (+ `STYLE_ID`), or `creative_develop`. A deck that reaches Phase 2 with `STYLE_SOURCE` unset is a defect (it would invent a look with no client direction, the path that produced the reference failure case cookie-cutter typography). If `creative_develop`, sequence the existing mood/imagery/avoid stems into the short creative-develop micro-interview (<=5 questions; do not re-bank them) per SOP-IMG-03 section 3.
+3a. **(Decision 1C) Ask the ASSET BRANCH verbatim, once, early — every signature run:** *"Is there anything you already have that could help me build this — photos, a logo, brand colors, a rough/old deck, slides, or concepts? Drop them here."* Record `asset_intake_question_asked: true` in brief.json the moment it is asked (the gate **AF-ASSET-QUESTION-MISSING** fails any deck whose intake does not carry this flag). If the client provides anything, set `assets_provided: true` and capture each item (kind + where it is) so the Media-Librarian step can ingest it into `assets_manifest.json`; if they upload a rough/old deck, note it as a `scratch_deck` so the scratch-deck parser seeds the PRD. If they have nothing, set `assets_provided: false` — the question was still asked, which is what the gate requires.
+3b. **(Decision 2A) Ask the PITCH BRANCH verbatim, once, early:** *"Does this presentation end with an offer or pitch — a price, package, or call to buy — or is it a teaching and content-only presentation?"* Record an explicit boolean `pitch_included` (true = ends with an offer/pitch; false = teaching/content-only). NEVER default it and NEVER force a pitch: a pitchless deck is first-class. The gate **AF-PITCH-FLAG-UNSET** fails any deck whose intake has no boolean `pitch_included`; downstream, `pitch_included:false` SUPPRESSES the Offer Price Strategist + price ladder and arms **AF-PITCH-LEAK** (no pitch/price content may appear), while `pitch_included:true` requires the offer arc (**AF-PITCH-MISSING**).
+3c. **PRICE-SEPARATION BRANCH (TWO PRICES — never conflate).** Capture the EVENT/ACCESS price (`EVENT_PRICE` / `ACCESS_FREE` — free or paid to ATTEND, question-bank O3) and the OFFER price (`FINAL_PRICE` — the product SOLD at the end, question-bank #4) as TWO INDEPENDENT fields. A FREE event is the front of a funnel that almost always sells a PAID offer at the end; "free to attend" NEVER implies "free offer." When the event is free, DEFAULT to EXPECTING a paid offer and ASK what it is — do NOT conclude "no pitch / no price needed" and do NOT default the offer to free. `FINAL_PRICE` is NEVER inferred from `EVENT_PRICE`/`ACCESS_FREE`. A free-only close (`pitch_included: false`, `FINAL_PRICE: 0`) is permitted ONLY on the owner's EXPLICIT confirmation and is flagged `free_only_close: true` for sign-off (downstream Devil's Advocate doctrine point 14, ALWAYS PITCH SOMETHING).
+4. Reflect each answer back in one line. Capture into brief.json under its field key.
+5. If a critical field is still unknown after the simple set, ask ONE clarifying
    follow-up (you may exceed 7 only to close a CRITICAL gap; flag it in the brief as
    `clarifying_followup: true`). Otherwise use the best default and mark `assumed: true`.
-5. Hand to SOP 9.3.
+   Any price you infer or default (`EVENT_PRICE`, `FINAL_PRICE`, `pitch_included`) MUST be marked
+   `assumed: true`, read back at lock, and NEVER denied — if the owner challenges an assumption
+   you made, own it and correct it; do not claim you did not make it.
+6. Hand to SOP 9.3.
 
 **Output:** `working/brainstorm/presentations/<project-slug>/brief.json` (draft, `interview_confirmed: false`).
 
@@ -365,6 +382,8 @@ flagship presentation, OR when the idea is genuinely unformed.
 2. Pull the EXTENSIVE question set for this department (the question bank below, extensive
    set, 10 to 20 items). This is a CONVERSATION, not a form. Ask one at a time, in a
    logical order, and let answers reshape the order.
+2a. **(Decision 1C) ASSET BRANCH (verbatim, once, early):** *"Is there anything you already have that could help me build this — photos, a logo, brand colors, a rough/old deck, slides, or concepts? Drop them here."* Set `asset_intake_question_asked: true` immediately (gate **AF-ASSET-QUESTION-MISSING**). Capture any provided items (set `assets_provided: true`, record kind + location; note an uploaded old deck as a `scratch_deck`); else `assets_provided: false`.
+2b. **(Decision 2A) PITCH BRANCH (verbatim, once, early):** *"Does this presentation end with an offer or pitch — a price, package, or call to buy — or is it a teaching and content-only presentation?"* Record the explicit boolean `pitch_included` (never default; never force a pitch — a pitchless deck is first-class). Gate **AF-PITCH-FLAG-UNSET**.
 3. After every answer, do two things: (a) reflect it back in one line, and (b) decide
    whether it opens a follow-up worth asking now. Ask high-value follow-ups inline.
    Stay within the 20-question ceiling (count follow-ups toward it).
