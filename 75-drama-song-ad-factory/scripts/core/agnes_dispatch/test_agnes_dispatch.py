@@ -390,24 +390,39 @@ def test_429_then_200_is_one_row():
               len(rows) == 1 and rows[0][4] == "vid-1", repr(rows))
 
 
-def test_thirty_minutes_of_503_reports_queue_full_and_keeps_waiting():
+def test_six_503_tries_then_the_seventh_fails_by_name():
+    """S75-049 step 5 replaced the old wait-forever rule: 503 is retried at most
+    six times (60 s, then 120 s each) and the seventh answer fails by name."""
     with workdir() as d:
         run = Run(d)
         clock = FakeClock()
-        loud = []
         fake = FakeAgnes(now=clock,
-                         create_answers=[(503, QUEUE_FULL)] * 20)
-        real_loud = A._loud
-        A._loud = lambda kind, code, detail: loud.append((kind, code, detail))
-        try:
-            env = video(run, transport=fake, sleep=clock.sleep, clock=clock)
-        finally:
-            A._loud = real_loud
-        check("30 minutes of continuous 503 does not give up",
-              env["outcome"] == "ok", json.dumps(env))
-        check("AGNES_QUEUE_FULL is reported loudly, once",
-              len(loud) == 1 and loud[0][1] == "AGNES_QUEUE_FULL"
-              and loud[0][0] in ("warn", "fail"), repr(loud))
+                         create_answers=[(503, QUEUE_FULL)] * 7)
+        env = video(run, transport=fake, sleep=clock.sleep, clock=clock)
+        rows = jobs(run.ledger, "seg-1")
+        check("the seventh 503 fails by name, it never waits forever",
+              env["outcome"] == "error"
+              and env["reason_code"] == "AGNES_QUEUE_FULL", json.dumps(env))
+        check("503 was tried exactly seven times",
+              len(fake.posts) == 7, repr(len(fake.posts)))
+        check("six back-offs ran before the seventh try (60 + 5 x 120)",
+              clock.t == 660.0, repr(clock.t))
+        check("the failed 503 row is closed and never submitted",
+              len(rows) == 1 and rows[0][2] == "reconciled"
+              and rows[0][4] is None, repr(rows))
+
+
+def test_six_429_tries_then_the_seventh_fails_by_name():
+    with workdir() as d:
+        run = Run(d)
+        clock = FakeClock()
+        fake = FakeAgnes(now=clock,
+                         create_answers=[(429, RATE_LIMIT)] * 7)
+        env = video(run, transport=fake, sleep=clock.sleep, clock=clock)
+        check("the seventh 429 fails by name too",
+              env["outcome"] == "error"
+              and env["reason_code"] == "AGNES_RATE_LIMITED"
+              and len(fake.posts) == 7, json.dumps(env))
 
 
 # ---------------------------------------------------------------------------
