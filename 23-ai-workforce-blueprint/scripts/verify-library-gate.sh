@@ -369,6 +369,19 @@ if [ "$TRIO_STATUS" != "done" ]; then
   FAIL_REASON="${FAIL_REASON}trio: ${TRIO_GAPS:-incomplete}"
 fi
 
+# ---- LIVING-TREE RESOLUTION (BU-58) -----------------------------------------
+# The company folder is the PARENT of the live departments tree, and the live
+# tree is the one _qc_paths.resolve_live_departments_dir() names (BU-103) — the
+# same tree the repair pipeline and the other gates measure. The CLI prints that
+# folder only when it resolves to an existing directory and prints nothing
+# otherwise, so both the boundary and the SOP-NEEDED lookups below fall back to
+# their existing workspace/*/ searches when it cannot answer.
+LIVE_COMPANY_DIR=""
+_LIVE_DEPTS_DIR="$("$WORKFORCE_PYTHON" -B "$SCRIPT_DIR/_qc_paths.py" --print-live-departments-dir 2>/dev/null || true)"
+if [ -n "$_LIVE_DEPTS_DIR" ] && [ -d "$_LIVE_DEPTS_DIR" ]; then
+  LIVE_COMPANY_DIR="$(dirname "$_LIVE_DEPTS_DIR")"
+fi
+
 # ---- BOUNDARY GATE (PRD 2.12): assert canonical depts never in authoring path ----
 # Checks sop-research-manifest.json via sop-boundary-gate.py --check-manifest.
 # A canonical dept in the manifest means build-workforce.py failed to copy from
@@ -377,8 +390,11 @@ BOUNDARY_STATUS="done"
 BOUNDARY_GAPS=""
 MANIFEST_PATH=""
 
-# Locate the most recent sop-research-manifest.json
-if [ -d /data/.openclaw/workspace ]; then
+# Locate the most recent sop-research-manifest.json: the live company folder first
+# (BU-58), then the workspace child folders as before.
+if [ -n "$LIVE_COMPANY_DIR" ] && [ -f "$LIVE_COMPANY_DIR/sop-research-manifest.json" ]; then
+  MANIFEST_PATH="$LIVE_COMPANY_DIR/sop-research-manifest.json"
+elif [ -d /data/.openclaw/workspace ]; then
   MANIFEST_PATH="$(ls /data/.openclaw/workspace/*/sop-research-manifest.json 2>/dev/null | head -1)"
 elif [ -d "$HOME/.openclaw/workspace" ]; then
   MANIFEST_PATH="$(ls "$HOME/.openclaw/workspace"/*/sop-research-manifest.json 2>/dev/null | head -1)"
@@ -420,7 +436,10 @@ fi
 SOPNEEDED_STATUS="done"
 SOPNEEDED_GAPS=""
 SOPNEEDED_PATH=""
-if [ -d /data/.openclaw/workspace ]; then
+# The live company folder first (BU-58), then the workspace child folders as before.
+if [ -n "$LIVE_COMPANY_DIR" ] && [ -f "$LIVE_COMPANY_DIR/SOP-NEEDED.json" ]; then
+  SOPNEEDED_PATH="$LIVE_COMPANY_DIR/SOP-NEEDED.json"
+elif [ -d /data/.openclaw/workspace ]; then
   SOPNEEDED_PATH="$(ls /data/.openclaw/workspace/*/SOP-NEEDED.json 2>/dev/null | head -1)"
 elif [ -d "$HOME/.openclaw/workspace" ]; then
   SOPNEEDED_PATH="$(ls "$HOME/.openclaw/workspace"/*/SOP-NEEDED.json 2>/dev/null | head -1)"
