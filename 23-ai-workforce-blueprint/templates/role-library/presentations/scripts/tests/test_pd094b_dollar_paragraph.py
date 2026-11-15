@@ -146,7 +146,15 @@ def test_A3_rule_agrees_with_pd090_price_face():
     )
     if p.returncode != 0:
         pytest.skip("PD-090 branch not reachable; cross-branch leg not run")
-    row = next((ln for ln in p.stdout.splitlines() if "| AF-PRICE-FACE |" in ln), "")
+    # PD-090 labels the row `| AF-PRICE-FACE (role-level; not in the registry) |`
+    # -- the parenthetical is PD-090's own qualifier, not a lost row. Match the
+    # row by its first cell instead of the bare label so the leg checks the
+    # content this sentence defers to, not the decoration PD-090 puts on it.
+    row = next(
+        (ln for ln in p.stdout.splitlines()
+         if re.match(r"^\|\s*AF-PRICE-FACE\b", ln)),
+        "",
+    )
     assert row, "AF-PRICE-FACE row not found on the PD-090 branch"
     for cls in PD090_CLASSES:
         assert cls in row, f"PD-090 row lost class {cls!r}: {row}"
