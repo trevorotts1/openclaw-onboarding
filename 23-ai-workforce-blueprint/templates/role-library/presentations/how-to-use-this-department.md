@@ -270,3 +270,17 @@ document:
 *This guide is generated for {{COMPANY_NAME}} by the AI Workforce Blueprint
 (Skill 23). It is regenerated whenever the department's roster changes so it
 always matches the specialists you actually have.*
+
+---
+
+## The one command that builds a deck
+
+Every presentation build goes through the sanctioned entry point:
+
+```bash
+bash 23-ai-workforce-blueprint/scripts/presentation-canonical-entry.sh <job-dir>
+```
+
+It runs the gates in order and refuses a job that has not passed the one before
+it. Do NOT run a renderer step by hand: `python3 working/*.py` and any hand-run
+`build_deck.py` skip the gates, so they are not a supported way to build a deck.
