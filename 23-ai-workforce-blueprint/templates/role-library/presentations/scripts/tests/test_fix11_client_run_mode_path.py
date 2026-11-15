@@ -378,7 +378,8 @@ def test_new_branch_records_the_declared_mode_with_its_provenance(tmp_path):
     # The PROVENANCE: which seam supplied it. Not "--mode" (this branch has no
     # launcher and the engine entry has no such flag) -- the client's intake.
     assert rec["mode_source"] == "intake-slot", rec["mode_source"]
-    assert rec["ceiling"]["operator_ceiling"] == 100
+    # FIX 61 (7e5c4d6f3): ultra's ratified operator ceiling is 400.
+    assert rec["ceiling"]["operator_ceiling"] == model_router.ULTRA_OPERATOR_CEILING
 
 
 def test_new_branch_records_standard_when_nothing_was_declared(tmp_path):
