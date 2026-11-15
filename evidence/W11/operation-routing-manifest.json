@@ -40,7 +40,7 @@
       "id": "C02",
       "file": "35-social-media-planner/INSTRUCTIONS.md",
       "lines": [
-        353
+        374
       ],
       "evidence_pattern": "GHL_COMMUNITY_MCP_URL|get_social_accounts",
       "former": "Social Planner connection check",
@@ -84,8 +84,8 @@
       "id": "C04",
       "file": "35-social-media-planner/references/playbook.md",
       "lines": [
-        1751,
-        1757
+        1818,
+        1824
       ],
       "evidence_pattern": "create_social_post|get_social_accounts|tools/call",
       "former": "Social Planner posting ladder, former Tier 2 rung",
@@ -326,7 +326,7 @@
       "id": "C13",
       "file": "06-ghl-install-pages/tools/ghl_object_router.py",
       "lines": [
-        104
+        182
       ],
       "evidence_pattern": "GHL_COMMUNITY_MCP_URL",
       "former": "Skill 06 object rail router: product and media routes",
@@ -390,7 +390,7 @@
       "id": "C15",
       "file": "README.md",
       "lines": [
-        294
+        306
       ],
       "evidence_pattern": "GHL_COMMUNITY_MCP_URL",
       "former": "Repository skill index description of the GHL access chain",
@@ -440,12 +440,12 @@
       "id": "C17",
       "file": "44-convert-and-flow-operator/tools/siglaunch/provisioning/provisioning.py",
       "lines": [
-        30,
-        31,
-        32,
-        33,
-        35,
-        36
+        45,
+        46,
+        47,
+        48,
+        50,
+        51
       ],
       "evidence_pattern": "list_(tags|fields|products)|create_(tag|field|product)",
       "former": "Signature funnel Phase-A provisioning catalog surface",
@@ -532,10 +532,10 @@
       "id": "D01",
       "file": "36-ghl-mcp-setup/ghl-mcp-setup-full.md",
       "lines": [
-        983,
-        986,
-        1025,
-        1026
+        988,
+        991,
+        1030,
+        1031
       ],
       "evidence_pattern": "create_opportunity|get_forms|get_form_submissions|ghl_get_surveys|ghl_trigger_workflow|ghl_publish_workflow",
       "former": "Historical community tool catalog (domain coverage: opportunities, forms, surveys, workflows)",
@@ -940,6 +940,38 @@
       "class": "non_caller",
       "reason": "platform overview from #2302: records that the retired service is never started by any boot path",
       "exempt_lines": []
+    },
+    "83-black-friday-launcher/launcher_core/capability_check.py": {
+      "class": "non_caller",
+      "reason": "capability check names the retired rail only to require it ABSENT; no call path"
+    },
+    "shared-utils/ghl/capability_inventory.py": {
+      "class": "non_caller",
+      "reason": "capability inventory records the retired rail as OFF; no call path"
+    },
+    "tests/unit/ghl-delivery-999-install.test.sh": {
+      "class": "non_caller",
+      "reason": "installer regression fixture: asserts no install or respawn path brings the retired rail back"
+    },
+    "tests/unit/ghl-delivery-contabo-boot.test.sh": {
+      "class": "non_caller",
+      "reason": "boot regression fixture: asserts pm2 resurrection strips the retired rail"
+    },
+    "tests/unit/ghl-delivery-hostinger-boot.test.sh": {
+      "class": "non_caller",
+      "reason": "boot regression fixture: asserts the retired rail is not installed or respawned"
+    },
+    "tests/unit/ghl-delivery-installers.test.sh": {
+      "class": "non_caller",
+      "reason": "installer regression fixture: asserts installers never write the retired rail"
+    },
+    "tests/unit/ghl-delivery-macos-launchd.test.sh": {
+      "class": "non_caller",
+      "reason": "launchd regression fixture: asserts no launch agent carries the retired rail"
+    },
+    "tests/unit/ghl-delivery-vps-pm2-systemd.test.sh": {
+      "class": "non_caller",
+      "reason": "VPS pm2/systemd regression fixture: asserts the retired rail is absent from units and ecosystem files"
     }
   }
 }
