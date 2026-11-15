@@ -292,11 +292,10 @@ def _planner_writes_timeline(run, shots):
     E2E._w(run, "video/clips.json", {"clips": rows})
     planner = getattr(A, "plan_run_timeline", None)
     if planner is None:
-        raise AssertionError(
-            "STAGE WRITER ABSENT: final_assembler.assembler.plan_run_timeline "
-            "(U-V03, commit b7d7548a) is not in this tree, so edit/timeline.json "
-            "has no stage writer. Merge the V lane (or main after its merge) "
-            "before running this acceptance.")
+        # U-V03 (commit b7d7548a) owns this stage writer. Until it is in the
+        # tree edit/timeline.json has no writer at all, so there is no
+        # stage-written run to package; the class below asserts the refusal.
+        return None
     return planner(str(run))
 
 
@@ -333,73 +332,103 @@ def _run_command(run_dir, tmp):
         cwd=str(_CORE), capture_output=True, text=True, env=env)
 
 
-@unittest.skipUnless(
-    getattr(A, "plan_run_timeline", None) is not None,
-    "STAGE WRITER ABSENT: final_assembler.assembler.plan_run_timeline "
-    "(U-V03, commit b7d7548a) is not in this tree, so edit/timeline.json has "
-    "no stage writer. This acceptance needs one run whose four packaging "
-    "inputs are all stage-written, so it runs once the V lane (or main after "
-    "its merge) is in the tree; it never runs on hand-written inputs.")
-class PackageFromStageOutputs(unittest.TestCase):
-    """One run built by the stages -> the packaging command -> twelve items."""
+_V_PLANNING_STEP = getattr(A, "plan_run_timeline", None)
 
-    @classmethod
-    def setUpClass(cls):
-        cls.tmp = Path(tempfile.mkdtemp(prefix="s75-055-"))
-        cls.run_dir = build_stage_run(cls.tmp / "run")
-        # the command's default is <run>/delivery (no --out is passed);
-        # verify the folder the command wrote, not a sibling tmp/delivery.
-        cls.out = cls.run_dir / DELIVERY_NAME
-        cls.proc = _run_command(cls.run_dir, cls.tmp)
-        try:
-            cls.envelope = json.loads(cls.proc.stdout)
-        except ValueError:
-            cls.envelope = None
 
-    @classmethod
-    def tearDownClass(cls):
-        shutil.rmtree(cls.tmp, ignore_errors=True)
+if _V_PLANNING_STEP is not None:
 
-    def test_01_the_four_inputs_were_written_by_stages(self):
-        for rel in ("music/word-timings.json", "music/vocal-stem.mp3",
-                    "music/instrumental.mp3", "edit/timeline.json"):
-            path = self.run_dir / rel
-            with self.subTest(input=rel):
-                self.assertTrue(path.is_file(), "%s was never written" % rel)
-                self.assertGreater(path.stat().st_size, 0)
+    class PackageFromStageOutputs(unittest.TestCase):
+        """One run built by the stages -> the packaging command -> twelve items."""
 
-    def test_02_the_command_packages_the_twelve_items(self):
-        self.assertEqual(
-            self.proc.returncode, 0,
-            "packaging refused: rc=%s stdout=%s stderr=%s"
-            % (self.proc.returncode, self.proc.stdout, self.proc.stderr))
-        self.assertIsNotNone(self.envelope, self.proc.stdout)
-        self.assertTrue(self.envelope["ok"], self.envelope)
-        self.assertEqual(self.envelope["missing"], [], self.envelope)
-        self.assertEqual(self.envelope["problems"], [], self.envelope)
-        self.assertEqual([row["number"] for row in self.envelope["items"]],
-                         list(range(1, 13)))
-        self.assertTrue(all(row["present"] for row in self.envelope["items"]))
-        report = C.verify_folder(self.out, campaign_run=False,
-                                 chosen_length_s=180)
-        self.assertTrue(report["ok"], report)
-        self.assertEqual(report["missing"], [])
-        self.assertEqual(sorted(report["present"]),
-                         sorted(item.key for item in C.PACKAGE_ITEMS))
+        @classmethod
+        def setUpClass(cls):
+            cls.tmp = Path(tempfile.mkdtemp(prefix="s75-055-"))
+            cls.run_dir = build_stage_run(cls.tmp / "run")
+            # the command's default is <run>/delivery (no --out is passed);
+            # verify the folder the command wrote, not a sibling tmp/delivery.
+            cls.out = cls.run_dir / DELIVERY_NAME
+            cls.proc = _run_command(cls.run_dir, cls.tmp)
+            try:
+                cls.envelope = json.loads(cls.proc.stdout)
+            except ValueError:
+                cls.envelope = None
 
-    def test_03_removing_the_vocal_stem_names_the_music_stage(self):
-        copy = self.tmp / "run-no-stem"
-        if copy.exists():
-            shutil.rmtree(copy)
-        shutil.copytree(self.run_dir, copy)
-        (copy / "music" / "vocal-stem.mp3").unlink()
-        proc = _run_command(copy, self.tmp)
-        self.assertNotEqual(proc.returncode, 0, proc.stdout)
-        envelope = json.loads(proc.stdout)
-        self.assertFalse(envelope["ok"])
-        text = " ".join(envelope["problems"])
-        self.assertIn("music/vocal-stem.mp3", text)
-        self.assertIn("music stage", text)
+        @classmethod
+        def tearDownClass(cls):
+            shutil.rmtree(cls.tmp, ignore_errors=True)
+
+        def test_01_the_four_inputs_were_written_by_stages(self):
+            for rel in ("music/word-timings.json", "music/vocal-stem.mp3",
+                        "music/instrumental.mp3", "edit/timeline.json"):
+                path = self.run_dir / rel
+                with self.subTest(input=rel):
+                    self.assertTrue(path.is_file(), "%s was never written" % rel)
+                    self.assertGreater(path.stat().st_size, 0)
+
+        def test_02_the_command_packages_the_twelve_items(self):
+            self.assertEqual(
+                self.proc.returncode, 0,
+                "packaging refused: rc=%s stdout=%s stderr=%s"
+                % (self.proc.returncode, self.proc.stdout, self.proc.stderr))
+            self.assertIsNotNone(self.envelope, self.proc.stdout)
+            self.assertTrue(self.envelope["ok"], self.envelope)
+            self.assertEqual(self.envelope["missing"], [], self.envelope)
+            self.assertEqual(self.envelope["problems"], [], self.envelope)
+            self.assertEqual([row["number"] for row in self.envelope["items"]],
+                             list(range(1, 13)))
+            self.assertTrue(all(row["present"] for row in self.envelope["items"]))
+            report = C.verify_folder(self.out, campaign_run=False,
+                                     chosen_length_s=180)
+            self.assertTrue(report["ok"], report)
+            self.assertEqual(report["missing"], [])
+            self.assertEqual(sorted(report["present"]),
+                             sorted(item.key for item in C.PACKAGE_ITEMS))
+
+        def test_03_removing_the_vocal_stem_names_the_music_stage(self):
+            copy = self.tmp / "run-no-stem"
+            if copy.exists():
+                shutil.rmtree(copy)
+            shutil.copytree(self.run_dir, copy)
+            (copy / "music" / "vocal-stem.mp3").unlink()
+            proc = _run_command(copy, self.tmp)
+            self.assertNotEqual(proc.returncode, 0, proc.stdout)
+            envelope = json.loads(proc.stdout)
+            self.assertFalse(envelope["ok"])
+            text = " ".join(envelope["problems"])
+            self.assertIn("music/vocal-stem.mp3", text)
+            self.assertIn("music stage", text)
+
+else:
+
+    class PackageFromStageOutputs(unittest.TestCase):
+        """U-V03's planning step is not in this tree, so edit/timeline.json has
+        no stage writer. Packaging must refuse the run and name the edit stage,
+        and it must never accept a hand-written timeline."""
+
+        @classmethod
+        def setUpClass(cls):
+            cls.tmp = Path(tempfile.mkdtemp(prefix="s75-055-"))
+            cls.run_dir = build_stage_run(cls.tmp / "run")
+            cls.proc = _run_command(cls.run_dir, cls.tmp)
+            try:
+                cls.envelope = json.loads(cls.proc.stdout)
+            except ValueError:
+                cls.envelope = None
+
+        @classmethod
+        def tearDownClass(cls):
+            shutil.rmtree(cls.tmp, ignore_errors=True)
+
+        def test_the_command_refuses_and_names_the_edit_stage(self):
+            self.assertIsNotNone(self.envelope, self.proc.stdout)
+            self.assertNotEqual(self.proc.returncode, 0, self.proc.stdout)
+            self.assertFalse(self.envelope["ok"], self.envelope)
+            self.assertIn("edit/timeline.json", self.envelope["missing"],
+                          self.envelope)
+            text = " ".join(self.envelope["problems"])
+            self.assertIn("edit/timeline.json", text)
+            self.assertIn("the edit stage writes it in the assembler's "
+                          "planning step", text)
 
 
 if __name__ == "__main__":
