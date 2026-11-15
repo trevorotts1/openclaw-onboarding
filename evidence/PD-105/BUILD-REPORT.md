@@ -5,11 +5,7 @@ Remote branch head before this unit: `1b24dacaf9138314e4e1350e360907788474e8d4`
 Code + tests commit: `bdcd2667ec6721cd99638300846bc0b27722b78e`
 This report commit: the one that adds this file.
 
-All scratch work was done in an independent clone at
-`/Volumes/mac mini m4/swarm-contract/loop-control/pd-fix/tmp/PD-105/work.y94gGY/repo`
-(`work.y94gGY/base` = untouched `1b24dac`). The lane clone
-`/Volumes/mac mini m4/swarm-contract/pd-fix/clones/onboarding` was only read and is clean; the
-lane worktree `.../pd-fix/worktrees/onboarding/FL17` was not touched and is clean.
+All scratch work was done in an independent clone under the loop scratch root (untouched base kept alongside). The lane clone was only read and is clean; the lane worktree was not touched and is clean.
 
 ## 1. Spec, quoted
 
