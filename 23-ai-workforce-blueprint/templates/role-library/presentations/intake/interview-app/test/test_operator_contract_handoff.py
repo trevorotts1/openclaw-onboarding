@@ -40,11 +40,24 @@ def contract():
         'want_ghl_upload': 'yes', 'want_sales_checkout': 'yes', 'want_vsl_page': 'yes',
         'deliverable_set': 'PPTX, PDF, presenter guide, workbook, fillable workbook, infographic',
         'delivery_destinations': ['PPTX', 'PDF', 'presenter guide', 'workbook', 'fillable workbook', 'infographic'],
+        # PD-013 pace plus the complete canonical QUICK answer set, so the
+        # operator declares its own answers and no default acceptance is
+        # needed. This is the authoritative complete operator contract.
+        'interview_depth': 'quick',
         'answers': {
             'audience': 'General informational audience learning how to use the Presentation Department',
             'transformation_promise': 'No commercial transformation promise — informational department demonstration',
             'cta_action': 'Request or use the Presentation Department',
             'tone': 'teacher',
+            'representation_mix': 'no people',
+            'grounded_content': 'no named method',
+            'goal': 'Explain the Presentation Department',
+            'deadline': 'no deadline',
+            'style_source': 'create-new',
+            'style_prefs': 'fresh clean-white',
+            'dark_ok': 'yes',
+            'visual_mix': 'mix',
+            'logo_on_slides': 'yes',
         },
     }
 
@@ -56,7 +69,10 @@ def live_contract():
     contract so the bridge cannot pass because of a hand-written reduced shape.
     """
     value = contract()
+    # Keep the accepted contract's own answer shape, plus the complete set the
+    # merged PD-013/PD-913 gates require. The live-shaped keys still govern.
     value["answers"] = {
+        **value["answers"],
         "audience": "general informational audience learning how to request and use the Presentation Department",
         "brief": "How the Presentation Department Works",
         "deck_type_source": "presentation_type: from_scratch; pitch_included: false",
@@ -95,7 +111,7 @@ def test_contract_runs_real_driver_then_resolver_without_provider(tmp_path, monk
     monkeypatch.setenv('PRESENTATION_REQUESTER_CHAT_ID', 'operator-test-route')
     monkeypatch.setenv('PRESENTATION_REQUESTER_CHANNEL', 'operator-delegated')
     rd = tmp_path / 'operator-contract-run'
-    result = bridge.drive_operator_contract(contract(), rd, driver_path=DRIVER, launch=False)
+    result = bridge.drive_operator_contract(contract(), rd, driver_path=DRIVER, launch=False, receipt_hmac='test-receipt')
     assert result['driver_complete'] is True
     receipt = json.loads((rd / 'working/interview/operator_contract.json').read_text())
     assert receipt['source'] == 'operator-delegated'
@@ -143,7 +159,7 @@ def test_live_contract_shape_projects_ultra_and_direct_flash_to_real_consumers(t
     resource_profile.save_profile(profile, profile_dir)
     rd = tmp_path / 'live-contract-shape'
     monkeypatch.setattr(model_router, 'provider_key_resolves', lambda provider: provider == 'deepseek-direct')
-    result = bridge.drive_operator_contract(live_contract(), rd, driver_path=DRIVER, launch=False)
+    result = bridge.drive_operator_contract(live_contract(), rd, driver_path=DRIVER, launch=False, receipt_hmac='test-receipt')
     assert result['driver_complete'] is True
     assert result['model_selection'] == {'provider': 'deepseek-direct', 'model': 'deepseek-flash', 'run_mode': 'ultra'}
     ledger = rd / 'working/interview/intake_ledger.json'
@@ -206,7 +222,7 @@ def test_launcher_writes_ultra_mode_and_client_route_sidecars(tmp_path, monkeypa
 def test_rejects_client_shaped_or_incomplete_contract(tmp_path):
     bad = contract(); bad['source'] = 'telegram'
     try:
-        bridge.drive_operator_contract(bad, tmp_path / 'bad', driver_path=DRIVER, launch=False)
+        bridge.drive_operator_contract(bad, tmp_path / 'bad', driver_path=DRIVER, launch=False, receipt_hmac='test-receipt')
     except ValueError as exc:
         assert 'operator-delegated' in str(exc)
     else:
@@ -224,7 +240,7 @@ def test_contract_delegates_to_bridge_launcher_with_transport_stub(tmp_path, mon
                     policy=policy, verbose=verbose)
         return {'status': 'transport-stubbed'}
     monkeypatch.setattr(bridge, '_drive_submission', fake_drive)
-    result = bridge.drive_operator_contract(contract(), tmp_path / 'launch', driver_path=DRIVER, launch=True)
+    result = bridge.drive_operator_contract(contract(), tmp_path / 'launch', driver_path=DRIVER, launch=True, receipt_hmac='test-receipt')
     assert result['bridge'] == {'status': 'transport-stubbed'}
     assert seen['session_id'] == 'operator-' + contract()['task_id']
     assert seen['intake']['pitch_included'] is False
@@ -244,7 +260,7 @@ def test_signed_receipt_binds_existing_cc_task_and_replays_once(tmp_path, monkey
     with pytest.raises(ValueError):
         bridge.verify_operator_contract_receipt({**envelope, 'receipt_hmac': '0' * 64}, secret=secret)
     rd = tmp_path / 'core-run'
-    bridge.drive_operator_contract(payload, rd, driver_path=DRIVER, launch=False)
+    bridge.drive_operator_contract(payload, rd, driver_path=DRIVER, launch=False, receipt_hmac='test-receipt')
     intake = json.loads((rd / 'working/copy/intake.json').read_text())
     intake.update(cc_task_id=payload['task_id'], cc_execution_id=payload['execution_id'])
     import presentation_job.lease as real_lease
@@ -355,7 +371,10 @@ def live_authorized_contract_shape():
     option and answer key/type from the accepted request is represented.
     """
     payload = contract()
+    # The accepted live answers plus the complete canonical set the merged
+    # PD-013/PD-913 gates require; the live-shaped keys still govern.
     payload['answers'] = {
+        **payload['answers'],
         'deck_type_source': 'presentation_type: from_scratch; pitch_included: false',
         'audience': 'General informational audience learning how to request and use the Presentation Department',
         'mode': 'general',
@@ -372,7 +391,7 @@ def test_live_contract_shape_maps_brief_to_canonical_client_notes_and_seals_all_
     assert 'brief' not in mapped
     assert 'mode' not in mapped
     assert mapped['client_notes'] == payload['answers']['brief']
-    result = bridge.drive_operator_contract(payload, tmp_path / 'live-shape', driver_path=DRIVER, launch=False)
+    result = bridge.drive_operator_contract(payload, tmp_path / 'live-shape', driver_path=DRIVER, launch=False, receipt_hmac='test-receipt')
     assert result['driver_complete'] is True
     rd = tmp_path / 'live-shape'
     ledger = json.loads((rd / 'working/interview/intake_ledger.json').read_text())
@@ -402,7 +421,7 @@ def test_unknown_answer_is_rejected_before_receipt_or_partial_intake(tmp_path):
     payload['answers']['unsupported_user_field'] = 'must never reach driver'
     rd = tmp_path / 'unsupported'
     with pytest.raises(ValueError, match='unsupported answer keys'):
-        bridge.drive_operator_contract(payload, rd, driver_path=DRIVER, launch=False)
+        bridge.drive_operator_contract(payload, rd, driver_path=DRIVER, launch=False, receipt_hmac='test-receipt')
     assert not (rd / 'working/interview/operator_contract.json').exists()
     assert not (rd / 'working/interview/intake_ledger.json').exists()
 
@@ -424,13 +443,13 @@ def test_live_contract_shape_resumes_after_mid_intake_failure_without_duplicate_
 
     monkeypatch.setattr(bridge.subprocess, 'run', fail_client_notes)
     with pytest.raises(RuntimeError, match='driver refused client_notes'):
-        bridge.drive_operator_contract(payload, rd, driver_path=DRIVER, launch=False)
+        bridge.drive_operator_contract(payload, rd, driver_path=DRIVER, launch=False, receipt_hmac='test-receipt')
     ledger = json.loads((rd / 'working/interview/intake_ledger.json').read_text())
     assert ledger['status'] == 'in_progress'
     assert 'client_notes' not in ledger['entries']
 
     monkeypatch.setattr(bridge.subprocess, 'run', real_run)
-    result = bridge.drive_operator_contract(payload, rd, driver_path=DRIVER, launch=False)
+    result = bridge.drive_operator_contract(payload, rd, driver_path=DRIVER, launch=False, receipt_hmac='test-receipt')
     assert result['driver_complete'] is True
     transcript = json.loads((rd / 'working/interview/intake_transcript_raw.json').read_text())
     owner_qids = [turn['qid'] for turn in transcript if turn['role'] == 'owner']
@@ -452,7 +471,7 @@ def test_same_contract_reopens_only_obsolete_webinar_block(tmp_path, monkeypatch
     profile = resource_profile.new_profile(); profile['providers']['deepseek-direct'] = {'provider':'deepseek-direct','presence':True,'detected':True,'wired_models':['deepseek-flash'],'consented':True}; resource_profile.save_profile(profile, profile_dir)
     monkeypatch.setattr(model_router, 'provider_key_resolves', lambda p: p == 'deepseek-direct')
     rd = tmp_path / 'resume'; payload = live_contract()
-    bridge.drive_operator_contract(payload, rd, driver_path=DRIVER, launch=False)
+    bridge.drive_operator_contract(payload, rd, driver_path=DRIVER, launch=False, receipt_hmac='test-receipt')
     sid = 'operator-' + payload['task_id']; import launch_ledger as ll
     (rd / 'working/checkpoints').mkdir(parents=True, exist_ok=True)
     doc = {'version': 1, 'session_id': sid, 'state': ll.STAGED,
@@ -470,7 +489,7 @@ def test_same_contract_reopens_only_obsolete_webinar_block(tmp_path, monkeypatch
             return os.getpid()
     monkeypatch.setattr(bridge, '_load_presentation_job', lambda: types.SimpleNamespace(lease=real_lease, launcher=Launcher()))
     monkeypatch.setattr(bridge, '_load_cc_board', lambda: (_ for _ in ()).throw(AssertionError('must reuse authenticated CC task')))
-    out = bridge.drive_operator_contract(payload, rd, driver_path=DRIVER, launch=True)
+    out = bridge.drive_operator_contract(payload, rd, driver_path=DRIVER, launch=True, receipt_hmac='test-receipt')
     state = ll.load(rd, sid)
     assert out['bridge']['_rc'] == 0
     assert len(calls) == 1
@@ -478,21 +497,21 @@ def test_same_contract_reopens_only_obsolete_webinar_block(tmp_path, monkeypatch
     assert state['recovery_history'][0]['prior_block']['reason'].endswith("deck_type 'webinar')")
     # A distinct permanent failure remains final: no generic unblock or second launch.
     other = tmp_path / 'distinct-block'
-    bridge.drive_operator_contract(payload, other, driver_path=DRIVER, launch=False)
+    bridge.drive_operator_contract(payload, other, driver_path=DRIVER, launch=False, receipt_hmac='test-receipt')
     other_sid = sid
     (other / 'working/checkpoints').mkdir(parents=True, exist_ok=True)
     other_doc = {'version': 1, 'session_id': other_sid, 'state': ll.STAGED,
                  'run_dir': str(other), 'history': [], 'board_task_id': payload['task_id']}
     ll.mark_blocked(other, other_sid, other_doc,
                     reason='AF-MODEL-PLAN-UNSATISFIED', remediation='real gate')
-    again = bridge.drive_operator_contract(payload, other, driver_path=DRIVER, launch=True)
+    again = bridge.drive_operator_contract(payload, other, driver_path=DRIVER, launch=True, receipt_hmac='test-receipt')
     assert again['bridge']['_rc'] == 8
     assert ll.load(other, other_sid)['state'] == ll.BLOCKED_ACTIONABLE
     assert len(calls) == 1
     # A composite operator note quoting the old code is not the exact legacy
     # refusal and must remain final as well.
     composite = tmp_path / 'composite-block'
-    bridge.drive_operator_contract(payload, composite, driver_path=DRIVER, launch=False)
+    bridge.drive_operator_contract(payload, composite, driver_path=DRIVER, launch=False, receipt_hmac='test-receipt')
     (composite / 'working/checkpoints').mkdir(parents=True, exist_ok=True)
     composite_doc = {'version': 1, 'session_id': other_sid, 'state': ll.STAGED,
                      'run_dir': str(composite), 'history': [],
@@ -500,7 +519,7 @@ def test_same_contract_reopens_only_obsolete_webinar_block(tmp_path, monkeypatch
     ll.mark_blocked(composite, other_sid, composite_doc,
                     reason="AF-MODEL-PLAN-UNSATISFIED; prior note AF-DECK-TYPE-UNKNOWN (rc=-5) (deck_type 'webinar')",
                     remediation='real model gate')
-    composite_out = bridge.drive_operator_contract(payload, composite, driver_path=DRIVER, launch=True)
+    composite_out = bridge.drive_operator_contract(payload, composite, driver_path=DRIVER, launch=True, receipt_hmac='test-receipt')
     assert composite_out['bridge']['_rc'] == 8
     assert ll.load(composite, other_sid)['state'] == ll.BLOCKED_ACTIONABLE
     assert len(calls) == 1
