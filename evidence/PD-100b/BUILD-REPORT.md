@@ -252,7 +252,20 @@ Mirror file: 6 hunks, all produced by regenerating sections 9A+9 — attributed 
 
 ## 11. Remote-head proof
 
-To be appended by the report commit that measures it after the push (§12).
+Recut branch, measured immediately after the plain push:
+
+```
+$ git ls-remote --heads origin pd/PD-100b-closeout-20261114
+c823a4d760c4611b3eef164012fd37fe18c38958	refs/heads/pd/PD-100b-closeout-20261114
+
+$ git rev-parse HEAD
+c823a4d760c4611b3eef164012fd37fe18c38958
+
+$ git rev-parse origin/main
+9fccca02e44af171421d77c68799af3c1a0bf7ea
+```
+
+Local equals remote, 40 characters, branch created fast-forward; no rebase, no force-push, nothing pushed to `main`. This line records the push it measured; the commit carrying this edit is its descendant.
 
 ## 12. Honest unproved / judgement calls
 
@@ -261,3 +274,31 @@ To be appended by the report commit that measures it after the push (§12).
 3. **D-3 is unconfirmed.** The build stages 140 as the default, as ordered; nothing merges until Trevor answers.
 4. **No engine test reads the role file**, so the acceptance proof is the checker above; the wider suite is neighbourhood evidence only, and its two reds are pre-existing at base (proven).
 5. **Lane clone** was not used for building and is clean; the stale unpushed local `--hold-d3` placeholder in it was not touched.
+
+## 13. Recut onto current `origin/main` (2026-11-14) — the four red checks
+
+The first branch (`pd/fl24-role-procedures-c--hold-d3`, head `12f55ab9d906ca1eeb228afa75f355790115b339`, PR #3454) was cut from the PD-100 head `276762b42`, which predates `origin/main`. Four checks were red at that head:
+
+- `fast-guards (all folded guards)` — folded guard `presentations-lockstep`
+- `QC static invariants` — fixture case T1 "clean repo passes"
+- `drift-gates + Skill-51 verify.sh (mac)` and `(vps)` — `register-library-additions.py --check`
+
+Both families had the same two causes, neither of them in the unit's product hunks:
+
+1. **Stale base.** The shared lane branch carried `_index.json` with `sop_count: 9` for `presenters-speech-writer` while the file on disk has 6 embedded `### SOP` headings (a sibling unit's index edit). Every gate above reads that index, so it failed regardless of this unit's content.
+2. **Stale content hashes.** `content_sha` in `_index.json` for the two files this unit edits was not restamped after the edit, so the `CONTENT-HASH` artifact dimension failed with rc 6.
+
+Fix: the two product commits were replayed linearly onto current `origin/main` (`9fccca02e`), and the hashes were restamped with the repo's own `23-ai-workforce-blueprint/scripts/hash-content-manifest.py`. The restamp touches only the three values the change moves — `content_sha`/`render_sha`/`content_version` on `presenters-speech-writer`, `content_sha`/`content_version` on `presenters-speech-writer-sops`, and the `presentations` department-level aggregate `content_sha` — with every `content_hashed_at`/`generated_at` timestamp left at the values already on `origin/main`.
+
+Verification at head `c823a4d760c4611b3eef164012fd37fe18c38958`:
+
+```
+$ python3 23-ai-workforce-blueprint/scripts/qc-assert-repo-consistency.py        # rc=0
+$ bash 23-ai-workforce-blueprint/scripts/test-repo-consistency.sh                # 8 passed, 0 failed
+$ python3 23-ai-workforce-blueprint/scripts/register-library-additions.py --check # rc=0
+$ python3 .../presentations/scripts/sync_check.py                                 # rc=0 (IN SYNC)
+$ OPENCLAW_PLATFORM=mac bash scripts/ci/presentations-drift-gates.sh             # ALL GATES PASSED
+$ OPENCLAW_PLATFORM=vps bash scripts/ci/presentations-drift-gates.sh             # ALL GATES PASSED
+```
+
+Collision files (`update-skills.sh`, `universal-sops/_content-manifest.json`, `install.sh`) are untouched — nothing in this recut reads or writes them. The old branch and PR #3454 are superseded by this branch.
