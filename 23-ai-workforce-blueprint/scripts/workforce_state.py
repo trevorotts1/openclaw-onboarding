@@ -113,8 +113,12 @@ def commit(path, state):
 
 def update(path, mutate):
     with lock(path):
+        existed = Path(path).exists()
         state = read(path)
+        before = copy.deepcopy(dict(state))
         result = mutate(state)
+        if existed and dict(state) == before:
+            return result
         state['stateRevision'] = int(state.get('stateRevision', 0)) + 1
         atomic_write(path, state)
         return result
