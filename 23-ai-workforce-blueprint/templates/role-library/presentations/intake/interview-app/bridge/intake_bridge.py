@@ -1346,22 +1346,36 @@ def drive_operator_contract(contract: dict, run_dir: pathlib.Path, *,
         if proc.returncode:
             # PD-927: the driver prints a refusal as JSON on STDOUT (stderr is
             # empty), so reporting only stderr reported an empty reason. Name
-            # the refusal the driver actually gave; END008 names the structured
-            # missing/unproven fields when the driver supplies them.
+            # the refusal the driver actually gave; END008 adds the structured
+            # missing/unproven fields without discarding the driver's own
+            # error text.
             detail = (proc.stderr or "")[-500:]
             try:
                 payload = json.loads(proc.stdout)
             except (ValueError, TypeError):
                 payload = None
             if isinstance(payload, dict):
+                error = str(payload.get("error") or "").strip()
                 findings = " | ".join(map(str, payload.get("findings") or []))
-                if payload.get("missing"):
-                    detail = ("operator contract is incomplete; missing turns: "
-                              + ", ".join(map(str, payload["missing"])))
-                elif payload.get("unproven_questions"):
-                    detail = ("operator contract provenance refused; unproven: "
-                              + ", ".join(map(str, payload["unproven_questions"]))
-                              + (("; findings: " + findings) if findings else ""))
+                missing = payload.get("missing")
+                unproven = payload.get("unproven_questions")
+                pieces = []
+                if missing:
+                    pieces.append("operator contract is incomplete")
+                elif unproven:
+                    pieces.append("operator contract provenance refused")
+                if error:
+                    pieces.append(error)
+                if missing:
+                    pieces.append("missing turns: " + ", ".join(map(str, missing)))
+                elif unproven:
+                    pieces.append("unproven: " + ", ".join(map(str, unproven)))
+                    if findings:
+                        pieces.append("findings: " + findings)
+                elif findings and not error:
+                    pieces.append(findings)
+                if pieces:
+                    detail = "; ".join(pieces)
             if not detail:
                 detail = _driver_stderr(proc)
             raise RuntimeError("driver completion refused: " + detail)
