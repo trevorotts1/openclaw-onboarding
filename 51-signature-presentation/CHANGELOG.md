@@ -1,4 +1,12 @@
 # Changelog - 51 Signature Presentation (51-signature-presentation)
+## [2.1.11] - 2026-11-14 - PD-025: skill.json re-synced to the skill's own version line
+
+- `skill.json` had drifted to 2.1.9 while `skill-version.txt` and the `SKILL.md` frontmatter said 2.1.10, so anything reading `skill.json` shipped a version nobody meant. All three records now read 2.1.11. No behaviour change.
+
+## [2.1.10] - 2026-11-14 - Batch version roll (skill.json not synced)
+
+- `skill-version.txt` and `SKILL.md` rolled to 2.1.10 by the batch bump (fb980b2ce); `skill.json` was left at 2.1.9. Repaired in 2.1.11.
+
 ## [2.1.9] - 2026-11-09 - G3 lockstep roll for the batch fold (no behaviour change)
 
 - Version bumped so the folded content carries the version G3 requires above main. No functional change.
