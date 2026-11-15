@@ -107,12 +107,19 @@ def run(a, questions=None, purpose_flow=None, stdout=None):
         return _emit(a, _error("INTAKE_SESSION_UNAVAILABLE", str(exc)), stdout)
     try:
         from choice_card.intake_card import intake_card as card
+        intro, purpose_flow = _intro(a, purpose_flow, session)
         if questions is None:
+            #: S75-006 / S75X-W1-U1: a run that keeps the frozen pre-S75-006 card
+            #: must be presented with THAT list -- defaulting to the new card here
+            #: printed a ten-screen preview under a run about to be asked
+            #: fourteen. An unresolved flow (None) keeps the session's own
+            #: decision, so the caller never overrides it.
+            base = (card._base_card(getattr(a, "run_dir", "") or None, purpose_flow)
+                    if purpose_flow is not None else None)
             questions = [card.spend_question(
                 getattr(a, "price", None), getattr(a, "limit", None),
                 getattr(a, "limit_from_brief", False)) if q["id"] == "spend" else q
-                for q in card._with_saved_character(getattr(a, "client_dir", ""))]
-        intro, purpose_flow = _intro(a, purpose_flow, session)
+                for q in card._with_saved_character(getattr(a, "client_dir", ""), base)]
         if intro is not None:
             state = {"done": False, "answers": [], "outcome": "ok",
                      "reason_code": "INTAKE_INTRO", "message": intro,
