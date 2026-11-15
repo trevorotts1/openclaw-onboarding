@@ -214,7 +214,7 @@ def _stub_answers(n: int = 2):
             # payload (_graded_author_model). The reducer copies it into the merged
             # report, and phase_verifiers' FIX 33 contract refuses a report whose
             # grader cannot be compared with the author.
-            "author_model": "deepseek-v4-pro",
+            "author_model": "deepseek-v4.1-flash",
         }
         answer = json.dumps({
             "slide": ordinal, "slide_id": f"slide-{ordinal:02d}",
