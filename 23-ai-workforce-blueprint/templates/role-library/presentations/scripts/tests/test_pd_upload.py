@@ -24,6 +24,7 @@ import delivery_gate  # noqa: E402
 import ghl_media  # noqa: E402
 import ghl_media_push as gmp  # noqa: E402
 import ghl_media_upload  # noqa: E402
+from presentation_job import approvals as approvals_mod  # noqa: E402
 from presentation_job.gates import Gates  # noqa: E402
 
 SLUG = "demo-deck"
@@ -174,3 +175,130 @@ def test_missing_deck_is_exit_one(tmp_path, monkeypatch, capsys):
     assert rc == 1
     assert f"the assembled deck is not at {base / 'working' / 'delivery' / (SLUG + '-FINAL.pptx')}" in err
     assert calls == []
+
+
+# ---------------------------------------------------------------------------
+# PD-316 A1 — the completion list-back reads every page: 450 entries with the
+# deck on page 3 is found (the old single-page read reported it missing)
+# ---------------------------------------------------------------------------
+
+def _list_back_fixture(tmp_path, monkeypatch):
+    """Upload once to get a real ledger, then return (base, hosted_id, remote_name)."""
+    base = tmp_path / "listback"
+    _governed_run(base)
+    _env(monkeypatch)
+    _stub_transport(monkeypatch)
+    assert _run_main(monkeypatch, base) == 0
+    ledger = json.loads(
+        (base / "working" / "checkpoints" / "media_library.json").read_text())
+    monkeypatch.setattr(ghl_media, "resolve_location_pit", lambda: "pit-test")
+    monkeypatch.setattr(ghl_media, "resolve_location_id", lambda: "loc-test")
+    return base, ledger["pptx_ghl_media_id"], str(ledger.get("pptx_ghl_remote_name") or "")
+
+
+def test_list_back_pages_until_deck_found(tmp_path, monkeypatch, capsys):
+    base, hosted_id, remote_name = _list_back_fixture(tmp_path, monkeypatch)
+    others = [{"fileId": f"file_other_{i}", "name": f"other-{i}.png"} for i in range(449)]
+    entries = others[:400] + [{"fileId": hosted_id, "name": remote_name}] + others[400:]
+    assert len(entries) == 450 and entries[400]["fileId"] == hosted_id
+    seen_offsets: list[int] = []
+
+    def _list(location_id, pit, *, media_type="file", parent_id=None, query=None,
+              limit=50, offset=0, timeout=60, opener=None):
+        seen_offsets.append(offset)
+        page = entries[offset:offset + limit]
+        return {"http": 200, "data": page, "count": len(page)}
+
+    monkeypatch.setattr(ghl_media, "list_media", _list)
+
+    ok, reasons = gmp.gate_ghl_media_complete(base)
+
+    assert ok is True, reasons
+    assert not any("NOT present" in r for r in reasons), reasons
+    # It really paged: page 1, page 2, page 3 (the deck is the first entry of page 3).
+    assert seen_offsets[:3] == [0, 200, 400], seen_offsets
+
+
+# ---------------------------------------------------------------------------
+# PD-316 A1 — a listing error produces the NOTE (never a silent pass or a
+# false "deck missing" verdict)
+# ---------------------------------------------------------------------------
+
+def test_list_back_error_produces_note(tmp_path, monkeypatch, capsys):
+    base, _hosted_id, _remote_name = _list_back_fixture(tmp_path, monkeypatch)
+
+    def _boom(*a, **k):
+        raise RuntimeError("media list HTTP 502")
+
+    monkeypatch.setattr(ghl_media, "list_media", _boom)
+
+    ok, reasons = gmp.gate_ghl_media_complete(base)
+
+    assert ok is True, reasons
+    assert "NOTE: remote list-back not performed" in reasons, reasons
+
+
+# ---------------------------------------------------------------------------
+# PD-316b — the upload closeout skip is an OWNER APPROVAL, not four typed fields
+# ---------------------------------------------------------------------------
+
+def _owner_skip_run(base: pathlib.Path, **record):
+    """A run dir with has_ghl:false and ONE owner_skip_approval record."""
+    intake = base / "working" / "copy"
+    intake.mkdir(parents=True, exist_ok=True)
+    (intake / "intake.json").write_text(json.dumps({"has_ghl": False}))
+    ck = base / "working" / "checkpoints"
+    ck.mkdir(parents=True, exist_ok=True)
+    rec = {"gate": "ghl_media_upload", "owner_approved": True,
+           "approved_by": "operator", "reason": "client has no GHL account",
+           "granted_at": "2026-11-13T10:00:00-05:00"}
+    rec.update(record)
+    (ck / "process_manifest.json").write_text(
+        json.dumps({"owner_skip_approval": rec}))
+
+
+def _stub_oracle(monkeypatch, ids):
+    monkeypatch.setattr(approvals_mod, "_cc_board_oracle",
+                        lambda run_dir=None: None if ids is None else frozenset(ids))
+    monkeypatch.setattr(approvals_mod, "_gateway_owner_oracle", lambda mid: None)
+    monkeypatch.delenv("OPENCLAW_GATEWAY_URL", raising=False)
+    monkeypatch.delenv("GATEWAY_URL", raising=False)
+
+
+def test_typed_four_field_token_without_owner_msg_id_fails(tmp_path, monkeypatch):
+    """A1 — the old typed token (owner_approved/approved_by/reason/gate) fails, and
+    the reason names the missing approval."""
+    base = tmp_path / "typedonly"
+    _owner_skip_run(base)
+    _stub_oracle(monkeypatch, {"cc-msg-1"})  # the oracle WOULD verify a real id
+
+    ok, reasons = gmp.gate_ghl_media_complete(base)
+
+    assert ok is False, reasons
+    assert any("AF-FORGED-APPROVAL" in r and "owner_msg_id" in r
+               for r in reasons), reasons
+
+
+def test_verified_owner_approval_opens_the_closeout_gate(tmp_path, monkeypatch):
+    """A2 — a record the stub oracle verifies opens the gate."""
+    base = tmp_path / "verified"
+    _owner_skip_run(base, owner_msg_id="cc-msg-1")
+    _stub_oracle(monkeypatch, {"cc-msg-1"})
+
+    ok, reasons = gmp.gate_ghl_media_complete(base)
+
+    assert ok is True, reasons
+    assert reasons == []
+
+
+def test_owner_oracle_unavailable_fails_the_gate(tmp_path, monkeypatch):
+    """A3 — an oracle that cannot run never opens the gate."""
+    base = tmp_path / "nooracle"
+    _owner_skip_run(base, owner_msg_id="cc-msg-1")
+    _stub_oracle(monkeypatch, None)
+
+    ok, reasons = gmp.gate_ghl_media_complete(base)
+
+    assert ok is False, reasons
+    assert any("owner approvals cannot be checked on this machine" in r
+               for r in reasons), reasons
