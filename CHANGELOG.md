@@ -1,3 +1,4 @@
+## [v27.1.73]  -  2026-11-15  -  Batch #3729: Skill 75 FIN005 r2 units (U-GEN314, U-GEN405, U-GEN407, U-GEN413, U-GEN419), lane T U-T03, presentations lane PDF001 r2
 ## [v27.1.72]  -  2026-11-12  -  Full-read guard: fleet-roll install wiring (installer, read_skill allow-lists, AGENTS.md rule stamper)
 ## [Unreleased]  -  2026-11-13  -  Recurring prices (weekly, monthly, quarterly, yearly) for the signature launch family (Skills 83, 49, 71, 79)
 
