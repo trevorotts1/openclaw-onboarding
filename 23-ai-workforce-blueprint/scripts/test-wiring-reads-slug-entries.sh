@@ -111,7 +111,7 @@ write_fixture_secrets() {
 reset_fixture() {
   local departments="$1"
   rm -rf "$FIX_HOME"
-  mkdir -p "$OC/agents" "$OC/agents/dept-marketing"
+  mkdir -p "$OC/agents" "$OC/agents/dept-marketing" "$WS"
   printf '%s\n' '{"agents":{"list":[{"id":"dept-marketing","workspace":"'"$DEPTS"'/marketing"}]}}' \
     > "$OC_CFG"
   printf '%s\n' "{\"workspaceRoot\":\"$WS\",\"departments\":$departments}" > "$STATE_FILE"
@@ -125,7 +125,7 @@ reset_fixture() {
 reset_roster_fixture() {
   local roster="$1" agent_dir_name="$2"
   rm -rf "$FIX_HOME"
-  mkdir -p "$OC/agents" "$OC/agents/$agent_dir_name"
+  mkdir -p "$OC/agents" "$OC/agents/$agent_dir_name" "$WS"
   write_fixture_secrets
   printf '%s\n' "$roster" > "$OC_CFG"
   printf '%s\n' "{\"workspaceRoot\":\"$WS\",\"departments\":[{\"id\":\"marketing\",\"status\":\"done\"}]}" > "$STATE_FILE"
@@ -232,7 +232,7 @@ expect_wiring_status "done" "the department registered under another id is marke
 echo ""
 echo "[BU-75 C] agents.entries: marketing-lead -> a DIFFERENT department folder"
 rm -rf "$FIX_HOME"
-mkdir -p "$OC/agents" "$OC/agents/marketing-lead" "$DEPTS/other"
+mkdir -p "$OC/agents" "$OC/agents/marketing-lead" "$DEPTS/other" "$WS"
 write_fixture_secrets
 printf '%s\n' '{"agents":{"entries":{"marketing-lead":{"workspace":"'"$DEPTS"'/other"}}}}' > "$OC_CFG"
 printf '%s\n' "{\"workspaceRoot\":\"$WS\",\"departments\":[{\"id\":\"marketing\",\"status\":\"done\"}]}" > "$STATE_FILE"
