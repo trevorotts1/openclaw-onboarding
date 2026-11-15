@@ -121,6 +121,10 @@ def _hosted_answers(**overrides):
         "want_email_sequences": "no",
         "email_sequences_declined_reason": "We run our own email list.",
         "want_motion_graphics": "yes",
+        # PD-082b's contract-v2 talk length is fail-closed: the writer refuses a
+        # record with no client-supplied duration. The complete hosted set
+        # carries it, exactly as the page asks it.
+        "duration_min": "30",
     }
     answers.update(overrides)
     return answers
@@ -225,9 +229,16 @@ class TestMotionQuestionDefinitions:
         # FIX 30 pattern (the email precedent): no new turn; the pair
         # rides growth_assets (order 20) and decline_context (order 22).
         growth = self.dq["growth_assets"]
-        assert {k: v for k, v in growth["subfields"]["want_motion_graphics"].items() if k != "question"} == {
-            "storeOn": "WANT_MOTION_GRAPHICS", "boolish": True,
-            "default": "no"}
+        # PD-013 added the bank-wide `depth` annotation (a QUICK interview
+        # never asks an in-depth field); every other annotation is pinned
+        # exactly and any further key on this subfield is drift.
+        sub = growth["subfields"]["want_motion_graphics"]
+        expected = {"storeOn": "WANT_MOTION_GRAPHICS", "boolish": True,
+                    "default": "no"}
+        assert {k: sub[k] for k in expected} == expected
+        assert {k: v for k, v in sub.items()
+                if k != "question" and k not in expected} in (
+            {}, {"depth": "in-depth"})
         decline = self.dq["decline_context"]
         sub = decline["subfields"]["motion_graphics_declined_reason"]
         assert sub["storeOn"] == "MOTION_GRAPHICS_DECLINED_REASON"

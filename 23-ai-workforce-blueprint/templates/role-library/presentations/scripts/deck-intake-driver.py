@@ -1830,7 +1830,8 @@ def _variant_match_from_client_inventory(variant: str):
 
 
 def _record_client_model_plan(derived: Dict[str, Any],
-                              entries: Dict[str, Any]) -> int:
+                              entries: Dict[str, Any],
+                              prov_stamp: Optional[Dict[str, Any]] = None) -> int:
     """Persist the resource_plan turn's model subfields as a client model plan.
 
     Returns 0 when there is nothing to record or the plan was recorded, and 1
@@ -1874,26 +1875,30 @@ def _record_client_model_plan(derived: Dict[str, Any],
     # Mirror the answers onto their storeOn ledger keys (see the note above:
     # deliberately not routed through storeTarget/intake.json).
     now_iso = datetime.now(timezone.utc).isoformat()
+    stamp = dict(prov_stamp or {})
     for sub, slot, key in _MODEL_PLAN_SUBFIELDS:
         if sub not in derived and not picks[slot]:
             continue
         value = picks[slot]
         entries[key] = {"value": value, "validated": True,
                         "source": "deck-intake-driver", "answered_at": now_iso,
-                        "normalized": value, "answer": value}
+                        "normalized": value, "answer": value, **stamp}
     # FIX 61.2: mirror the new fields to their storeOn ledger keys.
     if deepseek_variant:
         entries["DEEPSEEK_VARIANT"] = {"value": deepseek_variant, "validated": True,
                         "source": "deck-intake-driver", "answered_at": now_iso,
-                        "normalized": deepseek_variant, "answer": deepseek_variant}
+                        "normalized": deepseek_variant, "answer": deepseek_variant,
+                        **stamp}
     if openrouter_model:
         entries["OPENROUTER_MODEL"] = {"value": openrouter_model, "validated": True,
                         "source": "deck-intake-driver", "answered_at": now_iso,
-                        "normalized": openrouter_model, "answer": openrouter_model}
+                        "normalized": openrouter_model, "answer": openrouter_model,
+                        **stamp}
     if thinking or _THINKING_SUBFIELD[0] in derived:
         entries[_THINKING_SUBFIELD[1]] = {
             "value": thinking, "validated": True, "source": "deck-intake-driver",
-            "answered_at": now_iso, "normalized": thinking, "answer": thinking}
+            "answered_at": now_iso, "normalized": thinking, "answer": thinking,
+            **stamp}
 
     rp = _import_resource_profile()
     if rp is None:
@@ -2066,7 +2071,8 @@ _RUN_MODE_SUBFIELD = ("run_mode", "RUN_MODE")
 
 
 def _record_run_mode(qdef: Dict[str, Any], derived: Dict[str, Any],
-                     entries: Dict[str, Any]) -> None:
+                     entries: Dict[str, Any],
+                     prov_stamp: Optional[Dict[str, Any]] = None) -> None:
     """Mirror the resource_plan turn's run-mode subfield onto its RUN_MODE
     ledger key, normalised to the bank's own vocabulary.
 
@@ -2099,7 +2105,8 @@ def _record_run_mode(qdef: Dict[str, Any], derived: Dict[str, Any],
         return
     now_iso = datetime.now(timezone.utc).isoformat()
     rec = {"value": want, "validated": True, "source": "deck-intake-driver",
-           "answered_at": now_iso, "normalized": want, "answer": want}
+           "answered_at": now_iso, "normalized": want, "answer": want,
+           **(prov_stamp or {})}
     entries[ledger_key] = rec
     entries[sub_id] = rec
 
@@ -2115,7 +2122,8 @@ _STYLE_PICK_AUTO_SUBFIELD = ("style_pick_auto", "STYLE_PICK_AUTO")
 
 
 def _record_style_pick_auto(qdef: Dict[str, Any], derived: Dict[str, Any],
-                            entries: Dict[str, Any]) -> None:
+                            entries: Dict[str, Any],
+                            prov_stamp: Optional[Dict[str, Any]] = None) -> None:
     """Mirror the style turn's style-pick-auto subfield onto its
     STYLE_PICK_AUTO ledger key as a REAL BOOLEAN.
 
@@ -2184,7 +2192,8 @@ def _record_style_pick_auto(qdef: Dict[str, Any], derived: Dict[str, Any],
     value = want == "yes"
     now_iso = datetime.now(timezone.utc).isoformat()
     rec = {"value": value, "validated": True, "source": "deck-intake-driver",
-           "answered_at": now_iso, "normalized": value, "answer": want}
+           "answered_at": now_iso, "normalized": value, "answer": want,
+           **(prov_stamp or {})}
     entries[ledger_key] = rec
     entries[sub_id] = rec
 
@@ -2443,8 +2452,8 @@ def cmd_answer(args) -> int:
             # refused. Previously _record_run_mode ran after
             # _record_client_model_plan, and a refused model plan dropped
             # the declared ultra on a box with no provider profile.
-            _record_run_mode(qdef, derived, entries)
-            rc = _record_client_model_plan(derived, entries)
+            _record_run_mode(qdef, derived, entries, prov_stamp)
+            rc = _record_client_model_plan(derived, entries, prov_stamp)
             if rc != 0:
                 return rc
             # FIX 18: the answer just recorded IS the client's decision
@@ -2478,7 +2487,7 @@ def cmd_answer(args) -> int:
         # tests `auto is True` and the generic loop above records the answered
         # string. See _record_style_pick_auto for the full contract.
         if qid in ("style_and_brand", "style_pick_auto"):
-            _record_style_pick_auto(qdef, derived, entries)
+            _record_style_pick_auto(qdef, derived, entries, prov_stamp)
 
     if qdef.get("answer_field") in ("want_teleprompter", "want_speech_script", "want_audio_deliverable"):
         current = _answer_view(entries)
