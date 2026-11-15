@@ -1,0 +1,63 @@
+{
+  "_comment": "U-X01: a brief from an industry the other fixtures never mention. The structural check must pass it exactly as it passes the sleep-coaching brief: nothing in the check is keyed to a trade's vocabulary.",
+  "bakery": {
+    "offer": "A six-week sourdough baking course for home bakers",
+    "audience": "home bakers who bake dense loaves and want an open crumb",
+    "action": "join the next class",
+    "sub_avatar": {
+      "avatar": "home baker with a dense loaf",
+      "emotional_wound": "every loaf comes out flat and heavy",
+      "desired_transformation": "an open crumb from their own oven"
+    },
+    "sources": [
+      {
+        "id": "src-1",
+        "url": "https://example.invalid/bread-lab",
+        "retrieved": "2026-10-20",
+        "excerpts": [
+          "Longer fermentation produces a more open crumb in sourdough loaves.",
+          "Home bakers report dense loaves when their starter is barely active."
+        ]
+      }
+    ],
+    "claims": [
+      {
+        "id": "b1",
+        "text": "Longer fermentation produces a more open crumb in sourdough loaves.",
+        "provenance": "public-fact",
+        "source": "src-1",
+        "sections": [
+          "market"
+        ],
+        "support": {
+          "source": "src-1",
+          "locator": "results, para 2",
+          "quote": "Longer fermentation produces a more open crumb in sourdough loaves."
+        }
+      },
+      {
+        "id": "b2",
+        "text": "Home bakers report dense loaves when their starter is barely active.",
+        "provenance": "public-fact",
+        "source": "src-1",
+        "sections": [
+          "audience"
+        ],
+        "support": {
+          "source": "src-1",
+          "locator": "survey",
+          "quote": "Home bakers report dense loaves when their starter is barely active."
+        }
+      },
+      {
+        "id": "b3",
+        "text": "Our students bake a free-form loaf in the first week.",
+        "provenance": "owner-fact",
+        "owner_ref": "answer:q7",
+        "sections": [
+          "competitors"
+        ]
+      }
+    ]
+  }
+}
