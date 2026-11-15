@@ -2094,8 +2094,12 @@ def record_pick(run_dir, reply):
     # -- the record is the authority for that take, read below.
     n = str(reply).strip()
     o = (st.get("offered") or {}).get(n)
-    kept = client_kept(run_dir, n)
-    vid = _variant_id(st, n)
+    # D-4: the variant id is the one the run RECORDED for this pick number;
+    # an older state without the map falls back to the offered entry's own id.
+    vid = (str((st.get("variants") or {}).get(n) or "")
+           or str((o or {}).get("variant_id") or "") or n)
+    kept = client_kept(run_dir, n) if (st.get("variants") or {}) else (
+        _SD.read_client_kept(run_dir, vid))
     kept_ok = kept is not None and not _SD.client_kept_reasons(kept, vid)
     if not kept_ok:
         ahold = _acceptance_refusal(run_dir, "the pick")
