@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""test_pd_phase_checks_no_duplicate_defs.py — PD-079b (lane FL17).
+"""test_pd_phase_checks_no_duplicate_defs.py — PD-079b and PD-209.
 
 ``phase_verifiers.py`` defined four names twice: the later copy silently
 replaced the earlier one, so a fix applied to one copy could be dead code.
@@ -11,6 +11,7 @@ Rows (01-BUILD-SPEC.md, section PD-079b):
       is defined once.
   A2  the module's self-test prints the same pass count as before the change.
 
+PD-209 also forbids duplicate top-level definitions across the whole module.
 No network, no model call, no live service.
 """
 from __future__ import annotations
@@ -39,6 +40,12 @@ def _def_counts(source: str) -> dict:
     return counts
 
 
+def test_no_duplicate_toplevel_defs():
+    counts = _def_counts(MODULE.read_text(encoding="utf-8"))
+    dups = {name: n for name, n in counts.items() if n > 1}
+    assert dups == {}, f"duplicate top-level defs in phase_verifiers.py: {dups}"
+
+
 def test_a1_each_of_the_four_is_defined_once():
     counts = _def_counts(MODULE.read_text(encoding="utf-8"))
     got = {name: counts.get(name, 0) for name in FOUR}
@@ -61,6 +68,7 @@ def test_a2_selftest_still_passes():
 
 
 if __name__ == "__main__":
+    test_no_duplicate_toplevel_defs()
     test_a1_each_of_the_four_is_defined_once()
     test_a1_negative_control_duplicate_is_caught()
     test_a2_selftest_still_passes()
