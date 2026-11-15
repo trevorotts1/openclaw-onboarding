@@ -30,7 +30,7 @@ import json
 import os
 import sys
 import tempfile
-from contextlib import redirect_stdout
+from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
@@ -225,12 +225,24 @@ def main():
                         "title": "t"}),
             encoding="utf-8")
         capture = io.StringIO()
-        with redirect_stdout(capture):
+        stderr = io.StringIO()
+        with redirect_stdout(capture), redirect_stderr(stderr):
             code, factory_path = SB._replay(str(SKILL), bad, ["purple banana"])
         check("a refused Studio reply fails the replay closed",
-              code, SB.EXIT["error"])
+              code, SB.EXIT["halted"])
+        # The refusal is a durable halt, not a stdout line: the named code
+        # lives in control/replay-halted.json and on stderr.
+        halted_path = bad / "control" / "replay-halted.json"
+        halted = (json.loads(halted_path.read_text(encoding="utf-8"))
+                  if halted_path.is_file() else {})
         check("bridge exposes a named replay refusal",
-              json.loads(capture.getvalue()).get("code"), "REPLAY_FAILED")
+              halted.get("reason_code"), "INVALID_OPTION")
+        check("the halt names the turn the card refused", halted.get("turn"), 1)
+        check_true("the refusal is on stderr, not the stdout wake line",
+                   "replay halted at turn 1 (INVALID_OPTION)"
+                   in stderr.getvalue())
+        check("a halted replay writes no stdout wake line",
+              capture.getvalue(), "")
         check("no method record claimed without accepted replies",
               (bad / "control" / "method.json").exists(), False)
         stored = json.loads((bad / "control" / "intake-session.json").read_text())
