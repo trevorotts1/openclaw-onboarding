@@ -8,7 +8,7 @@ Pins all four confirmed defects in scripts/emit_page_result.py:
      from the request.
   4. The result always carried outcome, which page-result 1.0 rejects
      (additionalProperties: false) -> the page-result document has no
-     outcome key, has exactly the 17 page-result fields, and validates
+     outcome key, has exactly the 18 page-result fields, and validates
      against schema/page-result.schema.json. The outcome remains in
      Skill 78's own selection-result profile
      (emit_selection_result / schema/selection-result.schema.json).
@@ -31,6 +31,7 @@ from emit_page_result import PAGE_RESULT_FIELDS, check_review, emit, emit_select
 REQUEST = {
     "request_id": "TEST-REQ-78-PATHA",
     "page_id": "TEST-LAUNCH-SELECTION-PAGE",
+    "page_role": "product_selection",
     "input_hash": "e" * 64,
     "test_only": True,
 }
@@ -70,11 +71,11 @@ class EmitFunctionTests(unittest.TestCase):
         self.assertEqual(res["input_hash"], "e" * 64)
         self.assertNotEqual(res["input_hash"], plan_hash_old_way(self.plan))
 
-    def test_no_outcome_and_exactly_the_17_page_result_fields(self):
+    def test_no_outcome_and_exactly_the_18_page_result_fields(self):
         res = emit(self.plan, author_session="test", request=dict(REQUEST))
         self.assertNotIn("outcome", res)
         self.assertEqual(tuple(res.keys()), PAGE_RESULT_FIELDS)
-        self.assertEqual(len(res), 17)
+        self.assertEqual(len(res), 18)
 
     def test_page_result_validates_against_page_result_schema(self):
         res = emit(self.plan, author_session="test", request=dict(REQUEST))
@@ -262,7 +263,7 @@ class EmitCliTests(unittest.TestCase):
             self.assertEqual(doc["input_hash"], REQUEST["input_hash"])
             self.assertEqual(doc["request_id"], REQUEST["request_id"])
             self.assertNotIn("outcome", doc)
-            self.assertEqual(len(doc), 17)
+            self.assertEqual(len(doc), 18)
             validate(doc, ROOT / "schema" / "page-result.schema.json")
             self.assertEqual(run.stdout, "")
 
