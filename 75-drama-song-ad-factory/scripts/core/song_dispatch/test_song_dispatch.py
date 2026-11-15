@@ -150,13 +150,22 @@ calls, saved = [], []
 seq = [dict(GOOD, detector="singcheck v1")] * 2 + [GOOD, GOOD]
 def gen(rq):
     calls.append(rq["input"]["duration"]); return [seq[2 * (len(calls) - 1)], seq[2 * (len(calls) - 1) + 1]]
-out = SD.run_takes(req, plan, gen, lambda t: {}, lambda t, r: saved.append(r["verdict"]), script, hook, (15, 20))
+#: S75-001: run_takes refuses any cap above MAX_RUN_CAP_CENTS, so this
+#: two-generation scenario passes the cap it spends and a per-generation cost
+#: half of it -- the loop's price is injected here exactly like its generator.
+#: The package __init__ re-exports a fixed list, so the ceiling is read off the
+#: module that declares it.
+MAX_CAP = SD.song_dispatch.MAX_RUN_CAP_CENTS
+CAP, COST = MAX_CAP, MAX_CAP // 2
+out = SD.run_takes(req, plan, gen, lambda t: {}, lambda t, r: saved.append(r["verdict"]), script, hook,
+                   (15, 20), cap_cents=CAP, cost_cents=COST)
 assert out["verdict"] in ("PASS", "FLAG") and len(calls) == 2 and len(saved) == 3, (out["verdict"], calls, saved)
 out = SD.run_takes(req, plan, lambda rq: [dict(GOOD, detector="x")] * 2, lambda t: {}, lambda t, r: saved.append(1),
-                   script, hook, cap_cents=18)
-assert out["verdict"] == "FAIL" and out["spent_cents"] == 18 and out["delivered"] is None
+                   script, hook, cap_cents=CAP, cost_cents=COST)
+assert out["verdict"] == "FAIL" and out["spent_cents"] == CAP and out["delivered"] is None
 try:
-    SD.run_takes(dict(req, duration=30), plan, gen, lambda t: {}, lambda t, r: None, script, hook)
+    SD.run_takes(dict(req, duration=30), plan, gen, lambda t: {}, lambda t, r: None, script, hook,
+                 cap_cents=MAX_CAP)
 except SD.DispatchError:
     pass
 else:
@@ -185,7 +194,8 @@ tries = []
 def flaky(rq):
     tries.append(1)
     return [] if len(tries) == 1 else [dict(GOOD), dict(GOOD)]
-SD.run_takes(req, plan, flaky, lambda t: {}, lambda t, r: None, script, hook, (15, 20), kie=_kie)
+SD.run_takes(req, plan, flaky, lambda t: {}, lambda t, r: None, script, hook, (15, 20),
+             cap_cents=MAX_CAP, kie=_kie)
 assert calls and all(g is True for _, g in calls), calls
 import load_governor as LG  # noqa: E402
 seen = []
@@ -196,6 +206,7 @@ def g429(rq):
         raise RuntimeError("HTTP 429 rate limit")
     return [dict(GOOD), dict(GOOD)]
 SD.run_takes(req, plan, g429, lambda t: {}, lambda t, r: None, script, hook, (15, 20),
+             cap_cents=MAX_CAP,
              kie=lambda fn, label, generation=False: LG.kie_request(fn, label, generation=generation,
                                                                       sleep=lambda s: None, acquire=lambda: seen.append(1)))
 assert len(n429) == 2 and len(seen) == 2, (n429, seen)
