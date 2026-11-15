@@ -8,8 +8,14 @@ Fails when:
 The one deliberate exception is EXEMPT_WORKFLOWS (the aggregator that hosts this guard).
 Self-test: python3 scripts/ci/batch-required-only-check.py --self-test
 """
-import glob, os, sys
-import yaml
+import glob, os, subprocess, sys
+
+try:
+    import yaml
+except ModuleNotFoundError:  # folded-guards runner installs no third-party deps
+    subprocess.run([sys.executable, '-m', 'pip', 'install', '--quiet',
+                    '--disable-pip-version-check', 'pyyaml'], check=True)
+    import yaml
 
 REQUIRED_WORKFLOWS = {'ghl-mcp-supervised-guard.yml', 'qc-static.yml', 'version-consistency.yml'}
 EXEMPT_WORKFLOWS = set()
