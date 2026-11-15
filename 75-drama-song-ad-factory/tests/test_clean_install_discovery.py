@@ -337,7 +337,9 @@ def packaging_checks(root: Path):
     except Exception as e:
         check("packaging: SKILL.md version == skill-version.txt", False, str(e))
 
-    top = {e.name for e in skill.iterdir()}
+    # Bytecode and cache directories are never shipped and a local run creates
+    # one, so they are not part of the package shape this allowlist describes.
+    top = {e.name for e in skill.iterdir() if e.name not in SKIP_PARTS}
     unexpected = sorted(top - ALLOWED_TOP)
     check("packaging: top-level allowlist (directive 2.1)", not unexpected,
           "unexpected: " + ",".join(unexpected))
