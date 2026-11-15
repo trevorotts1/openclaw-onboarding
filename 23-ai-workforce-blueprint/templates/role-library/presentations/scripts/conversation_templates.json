@@ -38,6 +38,9 @@
         "handoff": "Perfect, that is everything I need. Your intake is ready here: {intake_link}. The intake walks you through the presentation questions one at a time, and everything you enter there goes straight into your build. I will be back here if anything pauses along the way.",
         "not_qualified": "No problem at all. If a presentation is not what you were after today, nothing has been started and there is nothing to cancel. If you change your mind, just come back and say hello.",
         "qualification": [
+            "You are here to have a presentation built, and it is OK for me to message you here about it — is that right?"
+        ],
+        "qualification_legacy": [
             "Just to make sure I point you the right way: you are here because you would like a presentation created for you, is that right?",
             "And you are the person this presentation is for (or you are arranging it for them)?",
             "Last thing from me: is it all right for us to keep this conversation going here about your presentation, including follow-ups by message? Once you confirm, I will hand you straight to the intake, which is where the presentation questions themselves live."
