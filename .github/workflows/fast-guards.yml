@@ -38,4 +38,10 @@ jobs:
         with:
           python-version: "3.11"
       - name: Run the folded guards
-        run: python3 scripts/ci/fast_guards.py
+        # batch-required-only-guard runs on this setup-python interpreter and
+        # its checker parses every workflow file with PyYAML, which the
+        # interpreter does not ship. Install it so the guard tests what it
+        # says it tests instead of dying on its own import.
+        run: |
+          python3 -m pip install --quiet pyyaml
+          python3 scripts/ci/fast_guards.py
