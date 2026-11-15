@@ -1,21 +1,21 @@
 # Fish Audio API Reference
 
-> Complete developer reference for the Fish Audio text-to-speech API. Last updated: 2026-10-30 (Drama-3 production default; S2.1 Pro retained as prior generation).
+> Complete developer reference for the Fish Audio text-to-speech API. Last updated: 2026-11-15 (Drama-3 production default; S2.1 Pro retained as prior generation).
 
 ---
 
-## Current Model: Drama-3 (authoritative)
+## BlackCEO Production Policy: Drama-3
 
-These facts pin the current production release. They supersede any older `s2-pro` or plain `S2` wording elsewhere in this document; every example below now uses the current id.
+BlackCEO adopted `drama-3` in onboarding PR #2754 (2026-10-30). `../production-policy.json` is the executable policy: Drama-3 by default, `s2.1-pro` only by explicit selection, no automatic fallback. Fish Audio's own server default remains `s2.1-pro`; always send the model header. Run the production preflight in `../scripts/fish_audio_config.py` before using the wire examples below. See `client-voice-approval.md` for client-specific voice verification.
 
 - **Model id:** `drama-3`. This is the current release (Drama-3, Oct 13 2026 announcement), superseding S2.1 Pro. Same `POST /v1/tts` endpoint, model chosen by the HTTP `model` header. `s2.1-pro` is the prior generation; `s2-pro` the interim label; `s1` legacy (parenthesis tags, retires 2026-12-31).
-- **Header-based selection:** the model is chosen by the HTTP `model` header on `POST /v1/tts` (for example `model: s2.1-pro`), never a request-body field. The public endpoint enum can lag the release blog, so verify the exact `s2.1-pro` header value with one live call before you depend on it. Fish Audio's own free-tier JS example confirms the identical mechanic for the other tier: `headers: { model: "s2.1-pro-free" }` (https://fish.audio/blog/s2-1-pro-free-api/).
+- **Header-based selection:** the model is chosen by the HTTP `model` header on `POST /v1/tts` (for example `model: drama-3`), never a request-body field. The published endpoint enum includes `drama-3`; never rely on an omitted or misspelled header, which Fish Audio can serve as `s2.1-pro`. Fish Audio's own free-tier JS example confirms the identical mechanic for the other tier: `headers: { model: "s2.1-pro-free" }` (https://fish.audio/blog/s2-1-pro-free-api/).
 - **Voice selection:** by `reference_id`, one private voice model per speaker. For client work this is always the client's own private voice model, managed through the voices and instant-voice-clone APIs.
 - **Tag inventory:** S2.1 Pro reads free-form square-bracket tags. The emotional palette is 24 basic emotions plus 25 advanced emotions plus the tone markers, the audio-effect markers, and the short and long pause markers (all tabulated in the Emotions and Paralanguage section). S1 legacy uses the same names in parentheses.
-- **Pricing:** 15.00 US dollars per 1 million UTF-8 bytes, which works out to roughly 60 cents for a 30-minute episode.
+- **Pricing:** model-specific. Confirm the current Drama-3 rate before estimating a paid call; the S2.1 rate is not the Drama-3 rate.
 - **Concurrency (gated by cumulative prepaid spend):** under 100 US dollars gives 5 concurrent requests, 100 US dollars and up gives 15, and 1,000 US dollars and up gives 50.
 - **Output for podcasts:** mp3 at 192 kbps. Set `condition_on_previous_chunks` to true for long episodes so chunked synthesis stays consistent voice to voice.
-- **Free-tier prohibition:** the `s2.1-pro-free` model exists but carries no service level agreement and may train on submitted inputs. It is forbidden for production client content. Always use the paid `s2.1-pro` model with the client's own API key and the client's own `reference_id`.
+- **Free-tier prohibition:** the `s2.1-pro-free` model exists but carries no service level agreement and may train on submitted inputs. It is forbidden for production client content. Use the policy-selected paid model with the client's own key and independently approved `reference_id`.
 
 ### `s2.1-pro-free` — operator-internal dev tier only (never client production)
 
@@ -235,11 +235,11 @@ Returns binary audio data in the specified format.
 | Model | Description | Quality | Speed | Use Case |
 |-------|-------------|---------|-------|----------|
 | `drama-3` | Current release (Drama-3), plain-language direction + paired tags, PAID — client/production default | Excellent | Fastest | Production, content creation |
-| `s2.1-pro` | Prior generation, best quality at its time, PAID | Excellent | Fastest | Fallback when Drama-3 unavailable |
+| `s2.1-pro` | Prior generation, best quality at its time, PAID | Excellent | Fastest | Explicit client/operator selection only; no automatic fallback |
 | `s2.1-pro-free` | Same S2.1 Pro model at $0, operator-internal dev tier only | Excellent | Fastest | Internal dev/prototyping ONLY. Never client production. |
 | `s1` | Stable legacy model | Excellent | Fast | Prototyping, general use |
 
-> `s2.1-pro-free` carries no service level agreement, may train on submitted inputs, is restricted for products over $1M ARR without contacting Fish Audio first, and its free access expires end of July 2026. It is FORBIDDEN for production client content. Use the paid `s2.1-pro` with the client's own key and `reference_id`. Full detail: see "S2.1 Pro Free — operator-internal dev tier only" above. Sources: https://fish.audio/blog/s2-1-pro-free-api/, https://docs.fish.audio/features/text-to-speech.
+> `s2.1-pro-free` carries no service level agreement, may train on submitted inputs, is restricted for products over $1M ARR without contacting Fish Audio first, and its free access expires end of July 2026. It is FORBIDDEN for production client content. Use the selected paid production model with the client's own key and independently approved `reference_id`. Full detail: see "S2.1 Pro Free — operator-internal dev tier only" above. Sources: https://fish.audio/blog/s2-1-pro-free-api/, https://docs.fish.audio/features/text-to-speech.
 
 ### Recommended Settings by Use Case
 

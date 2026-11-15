@@ -23,6 +23,11 @@ jobs:
       # If that direction ever stops failing, the test has stopped testing.
       - name: Both directions per skill, plus the static no-legacy-write check
         run: bash scripts/test-installer-credential-store.sh
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Fish Audio production model and independent client voice
+        run: python3 -m unittest discover -s 30-fish-audio-api-reference/tests -v
 
   installer-config-blocks:
     # Batch pull requests run only the required checks (Trevor order 2026-11-13).
