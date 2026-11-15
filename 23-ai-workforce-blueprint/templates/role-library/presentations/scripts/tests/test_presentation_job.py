@@ -704,7 +704,7 @@ class TestOCRReadbackGateBlocks:
             {"ghl_folder_id": "root",
              "slides": [{"slide_number": 1, "ghl_media_id": "m1", "ghl_upload_status": "complete"}],
              "pptx_ghl_media_id": "p9"}))
-        (run_dir / "working" / "qc" / "final_qc_report.json").write_text(json.dumps({"average": 9.2}))
+        (run_dir / "working" / "qc" / "final_qc_report.json").write_text(json.dumps({"schema": "final_qc_report/v1", "pass": True, "average": 9.2}))
 
     def _make_engine(self, run_dir):
         from presentation_job.manifest import Manifest
@@ -845,7 +845,7 @@ class TestQCGateBlocks:
         run_dir = tmp_path / "run"; run_dir.mkdir()
         self._seed_other_gates_passing(run_dir)
         (run_dir / "working" / "qc" / "final_qc_report.json").write_text(
-            json.dumps({"average": 9.2}))
+            json.dumps({"schema": "final_qc_report/v1", "pass": True, "average": 9.2}))
         engine = self._make_engine(run_dir)
         rc = engine.close()
         captured = capsys.readouterr()
@@ -1109,7 +1109,7 @@ class TestDoneMessageOnNormalClose:
             {"ghl_folder_id": "root",
              "slides": [{"slide_number": 1, "ghl_media_id": "m1", "ghl_upload_status": "complete"}],
              "pptx_ghl_media_id": "p9"}))
-        (run_dir / "working" / "qc" / "final_qc_report.json").write_text(json.dumps({"average": 9.2}))
+        (run_dir / "working" / "qc" / "final_qc_report.json").write_text(json.dumps({"schema": "final_qc_report/v1", "pass": True, "average": 9.2}))
         (run_dir / "renders" / "slide-01.ocr.json").write_text(
             json.dumps({"checked": True, "matched": True}))
         (run_dir / "renders" / "slide-02.ocr.json").write_text(
