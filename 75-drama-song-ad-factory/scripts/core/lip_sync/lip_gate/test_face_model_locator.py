@@ -267,3 +267,7 @@ def main():
 
 if __name__ == "__main__":
     sys.exit(main())
+
+
+def test_face_model_locator():
+    assert main() == 0
