@@ -1536,6 +1536,55 @@ def picked_song(run_dir):
     return os.path.join(run_dir, "music", "picked-song.mp3")
 
 
+#: S75-055: the run's F17 measured word clock, relative to the run folder.
+WORD_TIMINGS = os.path.join("music", "word-timings.json")
+
+#: the take-level names for words the dispatch handed us: the Suno alignedWords
+#: itself, and the transports' own label for "the take carried the words".
+_SUNO_TAKE_SOURCES = ("suno-timestamped-lyrics", "aligned_words")
+
+
+def _publish_word_timings(run_dir, take):
+    """Publish the picked take's measured word clock as the run's F17 receipt.
+
+    S75-055: ``music/word-timings.json`` had NO writer -- the picture planner,
+    the caption sheet and packaging all read a file no stage ever wrote, so a
+    real run could not be planned or packaged. The pick is the moment the song
+    is final, so the music stage publishes the picked take's own aligned words
+    here, through the ONE timing step (``lyric_timing``'s tier-1 hint path:
+    no dispatch, no model load, no spend), in the envelope every consumer
+    already reads.
+
+    A take that carries no measured words, or words this stage cannot name a
+    REAL timing source for, publishes nothing: the run then has no clock and
+    packaging refuses naming the music stage -- never a guessed timing.
+    """
+    take = take or {}
+    words = [w for w in take.get("aligned_words") or [] if isinstance(w, dict)]
+    owners = (take.get("measurement_owners") or {}).get(
+        "transcription_and_timing") or {}
+    if not words or owners.get("source") not in _SUNO_TAKE_SOURCES:
+        return None
+    for w in words:
+        if not all(isinstance(w.get(k), (int, float)) for k in ("start", "end")):
+            return None
+    core = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    if core not in sys.path:
+        sys.path.insert(0, core)
+    from audio_c3 import lyric_timing as _LT      # noqa: PLC0415 - same form as song_dispatch
+    track = {k: take[k] for k in ("task_id", "audio_id", "audio_path")
+             if take.get(k)}
+    env = _LT.provide_word_timings(track,
+                                   timing_map_hint={"alignedWords": words})
+    if not env.get("ok"):
+        return None
+    path = os.path.join(run_dir, WORD_TIMINGS)
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w", encoding="utf-8") as fh:
+        json.dump(env, fh, indent=2, sort_keys=True)
+    return path
+
+
 def record_pick(run_dir, reply):
     """The client's 1, 2 or 3. Anything not offered is refused; returns the label.
 
@@ -1563,6 +1612,8 @@ def record_pick(run_dir, reply):
     shutil.copyfile(o["file"], picked_song(run_dir))
     _write(run_dir, "pick.json", {"pick": int(n), "label": o["label"], "sha256": _sha(picked_song(run_dir)),
                                   "take": o.get("take")})
+    # S75-055: the pick is what publishes the clock the rest of the run reads.
+    _publish_word_timings(run_dir, o.get("take"))
     return o["label"]
 
 
