@@ -122,5 +122,15 @@ def main():
     return 0
 
 
+def test_the_spend_cap_contract():
+    """pytest entry point: the same checks, so CI collects the file too.
+
+    The script form below stays the way a person runs it by hand; this wrapper
+    means the whole-tree pytest gate collects a real test instead of an empty
+    module.
+    """
+    assert main() == 0
+
+
 if __name__ == "__main__":
     sys.exit(main())
