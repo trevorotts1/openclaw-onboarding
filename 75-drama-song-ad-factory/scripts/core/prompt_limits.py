@@ -86,7 +86,7 @@ OVERRIDES = {
     "bytedance/seedance-2-mini": {
         "cap": 20000, "status": "VERIFIED", "negative_prompt": None,
         "source_url": "https://docs.kie.ai/market/bytedance/seedance-2-mini",
-        "source": "skill-75 override (docs.kie.ai/market/bytedance/seedance-2-mini "
+        "source": "skill-75 override: docs.kie.ai/market/bytedance/seedance-2-mini "
                   "read 2026-11-12: the input schema states 'Min length: 3, Max "
                   "length: 20000 characters', maxLength 20000; the 67 catalog "
                   "carries the row with no cap, NOT_PUBLISHED)",
@@ -95,7 +95,7 @@ OVERRIDES = {
     "veo3_fast": {
         "cap": 5000, "status": "UNVERIFIED", "negative_prompt": None,
         "source_url": "https://docs.kie.ai/veo3-api/generate-veo-3-video",
-        "source": "skill-75 override (docs.kie.ai/veo3-api/generate-veo-3-video "
+        "source": "skill-75 override: docs.kie.ai/veo3-api/generate-veo-3-video "
                   "read 2026-11-12: the request schema states no prompt maxLength, "
                   "so the conservative Veo sibling cap 5,000 is used; the 67 "
                   "catalog carries veo3_fast with no cap, NOT_PUBLISHED)",
