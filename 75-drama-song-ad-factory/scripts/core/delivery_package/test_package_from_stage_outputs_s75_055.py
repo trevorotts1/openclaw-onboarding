@@ -333,6 +333,13 @@ def _run_command(run_dir, tmp):
         cwd=str(_CORE), capture_output=True, text=True, env=env)
 
 
+@unittest.skipUnless(
+    getattr(A, "plan_run_timeline", None) is not None,
+    "STAGE WRITER ABSENT: final_assembler.assembler.plan_run_timeline "
+    "(U-V03, commit b7d7548a) is not in this tree, so edit/timeline.json has "
+    "no stage writer. This acceptance needs one run whose four packaging "
+    "inputs are all stage-written, so it runs once the V lane (or main after "
+    "its merge) is in the tree; it never runs on hand-written inputs.")
 class PackageFromStageOutputs(unittest.TestCase):
     """One run built by the stages -> the packaging command -> twelve items."""
 
