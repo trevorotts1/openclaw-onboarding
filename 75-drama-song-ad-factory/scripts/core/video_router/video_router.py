@@ -4,8 +4,8 @@
 Directive sections 16.1-16.3 + 24.5 (model capability/pin validated before
 submission). Stdlib only. No network, no secrets, no hardcoded model catalog:
 the Skill 67 registry is READ at runtime from models.json (or --catalog /
-$KIE_MODELS_JSON). The default catalog is resolved the way kie_dispatch
-does: walk up from this file looking for 67-kie-video/models.json. Policy
+$KIE_MODELS_JSON). The default catalog comes from the ONE locator,
+``prompt_limits.find_catalogs()`` (S75-060), never a walk of its own. Policy
 tokens (capability names, task tags used for ranking) are routing vocabulary,
 never catalog rows.
 
@@ -46,34 +46,34 @@ TOOL_NAME = "video_router"
 TOOL_VERSION = "1.0.0"
 EXIT = {"ok": 0, "error": 1, "waiting": 3, "parked": 4, "rejected": 5}
 
-#: Relative catalog candidates walked up from this file (kie_dispatch pattern).
-CATALOG_RELS = (
-    ("67-kie-video", "models.json"),
-    ("scripts", "core", "67-kie-video", "models.json"),
-    ("installer-registration", "helpers", "67-kie-video", "models.json"),
-)
+#: The ONE catalog locator is ``prompt_limits.find_catalogs()`` (S75-060); no
+#: walk lives here. Only the explicit-path and environment overrides are local.
 CATALOG_ENV_VAR = "KIE_MODELS_JSON"
 
 
-def resolve_catalog(explicit=None):
-    """Resolve Skill 67 models.json the way kie_dispatch.resolve_adapter does.
+def _prompt_limits():
+    """The shared catalog locator (core/prompt_limits.py), imported lazily."""
+    core = Path(__file__).resolve().parents[1]
+    if str(core) not in sys.path:
+        sys.path.insert(0, str(core))
+    import prompt_limits
+    return prompt_limits
 
-    explicit (already non-empty) -> env $KIE_MODELS_JSON -> walk up from this
-    file for CATALOG_RELS. Returns a path string or None. Never a hard-coded
-    user-home default.
+
+def resolve_catalog(explicit=None):
+    """Resolve Skill 67 models.json: explicit -> env $KIE_MODELS_JSON -> the ONE locator.
+
+    explicit (already non-empty) -> env $KIE_MODELS_JSON ->
+    ``prompt_limits.find_catalogs()``. Returns a path string or None. Never a
+    hard-coded user-home default.
     """
     if explicit:
         return explicit if os.path.isfile(explicit) else None
     env = os.environ.get(CATALOG_ENV_VAR)
     if env and os.path.isfile(env):
         return env
-    start = Path(__file__).resolve()
-    for parent in (start,) + tuple(start.parents):
-        for rel in CATALOG_RELS:
-            cand = parent.joinpath(*rel)
-            if cand.is_file():
-                return str(cand)
-    return None
+    video = _prompt_limits().find_catalogs()[1]
+    return str(video) if video is not None else None
 
 # Capability vocabulary from directive 16.1 (normalized spellings only).
 CAP_ALIASES = {
@@ -518,8 +518,8 @@ def route(req, catalog_path=None):
     if path is None:
         return {"outcome": "error", "code": "CATALOG_UNAVAILABLE",
                 "reason": ("no Skill 67 models.json found via --catalog, "
-                           "request catalog, $KIE_MODELS_JSON, or walk-up "
-                           "from %s" % __file__),
+                           "request catalog, $KIE_MODELS_JSON, or "
+                           "prompt_limits.find_catalogs() for %s" % __file__),
                 "tool": TOOL_NAME, "tool_version": TOOL_VERSION,
                 "recovery": "install Skill 67 (models.json) or pass --catalog"}
     try:
