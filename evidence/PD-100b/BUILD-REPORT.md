@@ -2,9 +2,9 @@
 
 **Unit:** PD-100b · "The Speech Writer procedure uses the one pace default" · Moderate · mechanical
 **Lane:** FL24 · **Repository:** `trevorotts1/openclaw-onboarding`
-**Branch:** `pd/fl24-role-procedures-c--hold-d3`
-**Worktree:** `/Volumes/mac mini m4/swarm-contract/loop-control/pd-fix/tmp/PD-100b/work.bYALBu/tree` (own scratch worktree; the lane clone was left clean)
-**Base:** `276762b420499f2fda50c0651667c3011d2bf588` — PD-100's ACCEPTED head, proved as the remote head of `pd/fl24-role-procedures-c` before any edit (§2)
+**Branch:** `pd/PD-100b-closeout-20261114` (recut; supersedes `pd/fl24-role-procedures-c--hold-d3`)
+**Worktree:** own scratch worktree under the room's scratch lane (the lane clone was left clean)
+**Base:** `9fccca02e44af171421d77c68799af3c1a0bf7ea` — current `origin/main` at recut time (§2 records the original build base, §13 the recut)
 **Held by:** decision D-3 (built and staged at the default; not merged until Trevor says yes)
 **Acceptance rows:** A1, A2, A3
 
@@ -12,7 +12,7 @@
 
 ## 1. The spec text this unit implements
 
-`/Volumes/mac mini m4/swarm-contract/fable-reviews-2026-11-11/03-presentation-department/FINAL/01-BUILD-SPEC.md`, section **PD-100b** (line 3993 onward), quoted in full:
+`fable-reviews-2026-11-11/03-presentation-department/FINAL/01-BUILD-SPEC.md` (spec root), section **PD-100b** (line 3993 onward), quoted in full:
 
 > ### PD-100b — The Speech Writer procedure uses the one pace default
 >
