@@ -66,7 +66,12 @@ SHARED = ("kie_prompt_enforcer.py", "prompt_policy.py", "kie_prompt_gates.json")
 DEPT_ROOT_DOCS = ("BUILDER-PROMPT.md", "TOOLS.md", "00-START-HERE.md",
                   "connection-manifest.json")
 ROSTER_SOURCE = "00-START-HERE.md"
-ROSTER_COUNT = 34
+# The role count is NOT restated here: it is read from the roster page's own
+# heading ("## Role Roster (N roles, ...)"), the same page the rows come from.
+# A hardcoded number is what broke this sync (34 vs the 35 rows a later role
+# added, PD-035); deriving it from the page keeps the guard - a row silently
+# lost or duplicated still refuses - without a second place to forget.
+ROSTER_COUNT_RE = re.compile(r"^##\s+Role Roster\s*\((\d+)\s+roles?\b", re.MULTILINE)
 # dest relative path -> the source whose bytes win. See the module docstring.
 # The department copy is the stale fork; S51's is the strict superset that keeps
 # verify.sh's --prove-pin check working.
@@ -88,15 +93,25 @@ class Refused(Exception):
     pass
 
 
+def declared_roster_count(page: Path) -> int:
+    """The count the roster page declares in its own 'Role Roster (N roles)' heading."""
+    m = ROSTER_COUNT_RE.search(page.read_text(encoding="utf-8"))
+    if not m:
+        raise Refused(f"{page} has no 'Role Roster (N roles' heading; cannot verify the roster")
+    return int(m.group(1))
+
+
 def roster(dept: Path) -> list:
-    """The 34 role files, read from the department's own roster table."""
+    """The roster role files, read from the department's own roster table."""
     page = dept / ROSTER_SOURCE
     if not page.is_file():
         raise Refused(f"roster source missing: {page}")
     names = [m.group(1) for m in map(ROSTER_ROW_RE.match, page.read_text(encoding="utf-8").splitlines()) if m]
-    if len(names) != ROSTER_COUNT or len(set(names)) != ROSTER_COUNT:
+    expected = declared_roster_count(page)
+    if len(names) != expected or len(set(names)) != expected:
         raise Refused(f"roster in {page} lists {len(names)} file(s) "
-                      f"({len(set(names))} unique), expected {ROSTER_COUNT} unique")
+                      f"({len(set(names))} unique), expected {expected} unique "
+                      f"- the count its own 'Role Roster' heading declares")
     for n in names:
         if not (dept / n).is_file():
             raise Refused(f"roster names a role file that does not exist: {dept / n}")
@@ -210,7 +225,7 @@ def vendored_text(onb: Path, rows, sha: str, ref: str) -> str:
         f"  - `{DEPT_REL.as_posix()}/scripts/` (excluding `tests/`)",
         f"  - `{DEPT_REL.as_posix()}/intake/` (excluding `interview-app/`)",
         f"  - `{DEPT_REL.as_posix()}/sops/`",
-        f"  - `{DEPT_REL.as_posix()}/` — the {ROSTER_COUNT} roster role files (read from its own",
+        f"  - `{DEPT_REL.as_posix()}/` — the {len(roster(onb / DEPT_REL))} roster role files (read from its own",
         f"    `{ROSTER_SOURCE}` roster table), `BUILDER-PROMPT.md`, `TOOLS.md`,",
         "    `00-START-HERE.md`, `connection-manifest.json`",
         "  - `universal-sops/presentation-design-system/`, `presentation-image-library/`,",
