@@ -37,7 +37,7 @@ EIGHT = {
     "recipient_name": "Jordan",
 }
 BASE = {"presentation_type": "from_scratch"}
-ALL = {**BASE, **EIGHT}
+ALL = {**BASE, **EIGHT, "resource_plan": "use conservative default"}
 
 # A box that does not carry the proof module: the import must fail.
 _NO_MODULE = textwrap.dedent('''
@@ -79,6 +79,23 @@ def _env(tmp_path: Path, mode: str | None) -> dict:
 
 @pytest.fixture
 def run(tmp_path):
+    # A locked BYOK provider, so the model-plan turns can be answered without
+    # inventing a provider the client never configured. Test data only.
+    profile_dir = tmp_path / "profile"
+    profile_dir.mkdir(parents=True, exist_ok=True)
+    (profile_dir / "resource_profile.json").write_text(json.dumps({
+        ".schema_version": 1,
+        "profile_version": "20160101T000000Z-pd004c",
+        "updated_at": "2016-01-01T00:00:00+00:00",
+        "created_at": "2016-01-01T00:00:00+00:00",
+        "providers": {"deepseek-direct": {
+            "provider": "deepseek-direct", "plan_tier": None,
+            "concurrency_ceiling": "UNBOUNDED", "ceiling_source": "declared",
+            "consented": True, "wired_models": ["deepseek-flash", "deepseek-pro"],
+            "detected": True, "plan_known": True, "locked": True}},
+        "creative_prefs": {}, "consent": {"add_models": True},
+    }), encoding="utf-8")
+
     def build(mode=None, without_module=False):
         run_dir = tmp_path / f"run-{mode}-{without_module}"
         run_dir.mkdir()
@@ -99,10 +116,73 @@ def run(tmp_path):
     return build
 
 
-def _answer_all(call) -> None:
-    for qid, text in ALL.items():
-        out = call("--answer", qid, text)
+#: PD-913 makes `--complete` refuse while any turn the interview still owes is
+#: unanswered, so a fixture that stops after nine answers never reaches the
+#: provenance gate this file is about. These are the remaining required turns,
+#: with a value the bank accepts for each. They are fixture data, not claims
+#: under test: the rows here judge the provenance gate, never the answers.
+_WALK_VALUES = {
+    "pitch_included": "no",
+    "audience_composition_note": "A room of new business owners",
+    "representation_mix": "no people",
+    "grounded_content": "The owner's own words in this interview",
+    "target_feeling": "Ready to book",
+    "primary_objection": "No time",
+    "hook_seed": "Invisible to booked in one call",
+    "duration_min": "30",
+    "deadline": "December 15",
+    "standard_mode": "QUICK",
+    "workhorse_model": "deepseek-flash@deepseek-direct",
+    "reasoning_model": "deepseek-pro@deepseek-direct",
+    "qc_model": "deepseek-pro@deepseek-direct",
+    "thinking_mode": "high",
+    "run_mode": "ultra",
+    "deepseek_variant": "flash",
+    "openrouter_model": "openrouter/auto",
+    "ollama_plan": "$20/month",
+    "style_source": "auto",
+    "style_prefs": "clean and direct",
+    "dark_ok": "no",
+    "style_pick_auto": "yes",
+    "visual_mix": "mix",
+    "logo_on_slides": "no",
+    "want_teleprompter": "yes",
+    "want_speech_script": "yes",
+    "want_audio_deliverable": "yes",
+    "delivery_destinations": "PPTX, PDF, presenter guide",
+    "want_ghl_upload": "yes",
+    "want_sales_checkout": "yes",
+    "want_vsl_page": "yes",
+    "want_email_sequences": "yes",
+    "want_motion_graphics": "yes",
+    "want_audio_demo": "yes",
+    "speech_speed_preference": "default",
+}
+
+def _walk(call, *, operator_contract: bool = False) -> None:
+    """Answer whatever the turn gate asks next until the interview is done."""
+    extra = ["--operator-contract"] if operator_contract else []
+    # Walk the rest of the interview the way a client does, one ask at a time,
+    # until the turn gate reports the interview finished.
+    for _ in range(80):
+        step = call("--next")
+        assert step.returncode == 0, step.stdout + step.stderr
+        asked = _payload(step)
+        if asked.get("status") == "complete":
+            return
+        qid = asked.get("question_id")
+        assert qid, asked
+        text = _WALK_VALUES.get(qid, "A plain answer to this question")
+        out = call("--answer", qid, text, *extra)
         assert out.returncode == 0, (qid, out.stdout + out.stderr)
+    raise AssertionError("the interview turn gate never reported complete")
+
+def _answer_all(call, *, operator_contract: bool = False) -> None:
+    extra = ["--operator-contract"] if operator_contract else []
+    for qid, text in ALL.items():
+        out = call("--answer", qid, text, *extra)
+        assert out.returncode == 0, (qid, out.stdout + out.stderr)
+    _walk(call, operator_contract=operator_contract)
 
 
 def _payload(result) -> dict:
@@ -164,6 +244,7 @@ def test_operator_contract_answers_still_complete_under_the_default(run):
     for qid, text in ALL.items():
         out = call("--answer", qid, text, "--operator-contract")
         assert out.returncode == 0, (qid, out.stdout + out.stderr)
+    _walk(call, operator_contract=True)
 
     out = call("--complete")
     assert out.returncode == 0, out.stdout + out.stderr
