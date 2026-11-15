@@ -25,10 +25,12 @@ Run: python3 scripts/core/song_dispatch/test_operator_decision_v2973.py
 import json
 import io
 from contextlib import redirect_stdout, redirect_stderr
+import hashlib
 import os
 import subprocess
 import sys
 import tempfile
+import wave
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 CORE = os.path.dirname(HERE)
@@ -59,19 +61,38 @@ def _binding(name):
             "profile_revision": "1.0.0"}
 
 
+def _write_master(path, seconds=58):
+    """A real, measurable master: the S75-002 music contract asks ffprobe to
+    open the picked song, so a stand-in string no longer satisfies the seal."""
+    with wave.open(path, "wb") as w:
+        w.setnchannels(1)
+        w.setsampwidth(1)
+        w.setframerate(8000)
+        w.writeframes(b"\x80" * (seconds * 8000))
+
+
+def _sha(path):
+    with open(path, "rb") as fh:
+        return hashlib.sha256(fh.read()).hexdigest()
+
+
 def new_run(tmp, variant="v1", d5="UNMEASURED"):
     """A run with a produced take and a NON-all-PASS acceptance record:
     four gates PASS, D5 (more than one character voice) measured not proven."""
     run = os.path.join(tempfile.mkdtemp(dir=tmp, prefix="dec-"), RID)
     os.makedirs(os.path.join(run, "control"))
+    # The S75-002 music contract judges the picked master against the run's
+    # recorded length; a confirmed two-minute run carries that method record.
+    with open(os.path.join(run, "control", "method.json"), "w") as f:
+        json.dump({"chosen_length_s": 120}, f)
     os.makedirs(os.path.join(run, "music", "takes", variant))
-    with open(os.path.join(run, "music", "picked-song.mp3"), "wb") as f:
-        f.write(b"the picked master, as _real_generate leaves it")
+    master = os.path.join(run, "music", "picked-song.mp3")
+    _write_master(master)
     with open(os.path.join(run, "music", "takes", variant, "take-1.mp3"), "wb") as f:
         f.write(b"a produced take, as the generator leaves it")
     os.makedirs(os.path.join(run, "song-choices"), exist_ok=True)
     with open(os.path.join(run, "song-choices", "pick.json"), "w") as f:
-        f.write('{"pick": 1}')
+        f.write(json.dumps({"pick": 1, "label": "V1", "sha256": _sha(master)}))
     b = _binding("export")
     results = {g: {"verdict": "PASS", "binding": dict(b)} for g in REQUIRED}
     results["D5"] = {"verdict": d5, "binding": dict(b)}

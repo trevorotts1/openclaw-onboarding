@@ -21,7 +21,8 @@ from song_choices import song_choices as SC                     # noqa: E402
 import length_formula as LF                                     # noqa: E402
 import kie_dispatch.kie_dispatch as KD                          # noqa: E402
 import factory as F                                             # noqa: E402
-from test_production_process import confirmed_run, complete_stage, approve_script
+from test_production_process import (confirmed_run, complete_stage, approve_script,
+                                     seal_stage)
 
 #: S75-006 moved SONG APPROVAL off the new card: a new run elects the three
 #: approvals through CHECKPOINTS. This suite exercises the approval screen itself
@@ -327,6 +328,12 @@ def test_gate_blocks_picture_and_paid_jobs_until_pick():
         src = os.path.join(tmp, "D", "SONG-CHOICES", [f for f in os.listdir(os.path.join(tmp, "D", "SONG-CHOICES")) if f.startswith("2 - ")][0])
         assert open(picked, "rb").read() == open(src, "rb").read()
         assert KD._song_pick_refusal("kling/video", run) is None
+        # S75-002: the pick rewrites music/picked-song.mp3 and song-choices/
+        # pick.json AFTER the music stage was sealed, so the seal named the
+        # stand-ins, not what ships. Re-seal the stage over the picked master
+        # (nothing downstream is sealed yet); the gate then opens the next
+        # stage on the files that actually ship.
+        seal_stage(run, "music")
         env = F.cmd_next(_A(run))
         assert env["outcome"] == "ok" and env["data"]["stage"] == "continuity-bible", env
         with open(picked, "ab") as f:                      # a changed song closes the gate again
