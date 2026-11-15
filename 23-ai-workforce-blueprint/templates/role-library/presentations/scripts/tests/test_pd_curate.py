@@ -173,7 +173,7 @@ def test_fuzzy_locate_only_runs_when_caller_asks(tmp_path):
 def test_deck_slug_resolved_from_run_intake_when_none(tmp_path):
     run_dir = tmp_path / "run-slug"
     _seed_canonical_bundle(run_dir)
-    assert CANONICAL_PATHS["deck_pdf"].startswith("working/delivery/{deck_slug}")
+    assert CANONICAL_PATHS["deck_pdf"].startswith("working/deliverables/{deck_slug}")
 
     curate.curate(run_dir)  # deck_slug omitted
 
@@ -181,7 +181,7 @@ def test_deck_slug_resolved_from_run_intake_when_none(tmp_path):
         _declared_path(run_dir, "deck_pdf").resolve()
     )
     # And the templated name really is the intake slug, not the directory name.
-    assert (run_dir / "working" / "delivery" / f"{SLUG}-FINAL.pdf").is_file()
+    assert (run_dir / "working" / "deliverables" / f"{SLUG}-FINAL.pdf").is_file()
 
 
 # ---------------------------------------------------------------------------
