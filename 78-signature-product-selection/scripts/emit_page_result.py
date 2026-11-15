@@ -64,7 +64,7 @@ from validate_selection_content import validate_manuscript  # noqa: E402
 LOCAL_STATUSES = {"authored", "locally_verified", "blocked"}
 PAGE_RESULT_FIELDS = (
     "schema_version", "tenant_id", "location_id", "launch_id", "revision",
-    "request_id", "input_hash", "page_id", "status", "artifacts",
+    "request_id", "input_hash", "page_id", "page_role", "status", "artifacts",
     "author_session", "reviewer_session", "independent_review",
     "proof_class", "blockers", "native_bindings_ref", "test_only",
 )
@@ -95,6 +95,7 @@ def run_dir_artifacts(plan, run_dir):
 
 
 def emit(plan, *, author_session, request_id=None, page_id=None, input_hash=None,
+         page_role=None,
          request=None, artifact_paths=(), status="authored",
          test_only=False, reviewer_session=None, native_bindings_ref=None, blockers=(),
          image_run_dir=None):
@@ -106,6 +107,10 @@ def emit(plan, *, author_session, request_id=None, page_id=None, input_hash=None
     request_id = _echoed(request, request_id, "request_id")
     page_id = _echoed(request, page_id, "page_id")
     input_hash = _echoed(request, input_hash, "input_hash")
+    # The canonical page-result 1.0 schema requires page_role; every Skill 49
+    # builder echoes it from the request (test_result_page_role.py). Echoed here,
+    # never invented: a request that carries no role produces no role.
+    page_role = _echoed(request, page_role, "page_role")
     if not request_id:
         raise ValueError("request_id is required (pass --request-id or a request document).")
     if not page_id:
@@ -136,6 +141,7 @@ def emit(plan, *, author_session, request_id=None, page_id=None, input_hash=None
         "request_id": request_id,
         "input_hash": input_hash,
         "page_id": page_id,
+        "page_role": page_role,
         "status": status,
         "artifacts": artifacts,
         "author_session": author_session,
@@ -188,12 +194,14 @@ def self_test():
     request = {
         "request_id": "self-test-request",
         "page_id": "SELF-TEST-SELECTION-PAGE",
+        "page_role": "product_selection",
         "input_hash": "a" * 64,
         "test_only": True,
     }
     plan = build_plan(SELF_TEST_LAUNCH)
     result = emit(plan, author_session="self-test", request=request)
     assert result["page_id"] == "SELF-TEST-SELECTION-PAGE", result["page_id"]
+    assert result["page_role"] == "product_selection", result["page_role"]
     assert result["input_hash"] == "a" * 64
     assert result["request_id"] == "self-test-request"
     assert "outcome" not in result, "page-result 1.0 document must not carry outcome"
@@ -259,6 +267,7 @@ def main(argv):
             author_session=opt("--author-session"),
             request_id=opt("--request-id"),
             page_id=opt("--page-id"),
+            page_role=opt("--page-role"),
             input_hash=opt("--input-hash"),
             request=request,
             artifact_paths=[argv[i + 1] for i, a in enumerate(argv) if a == "--artifact"],
