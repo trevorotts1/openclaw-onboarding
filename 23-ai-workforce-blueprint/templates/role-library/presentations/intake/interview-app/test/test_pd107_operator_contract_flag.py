@@ -53,11 +53,24 @@ def contract():
         "deliverable_set": "PPTX, PDF, presenter guide, workbook, fillable workbook, infographic",
         "delivery_destinations": ["PPTX", "PDF", "presenter guide", "workbook",
                                   "fillable workbook", "infographic"],
+        # PD-013 pace plus the complete canonical QUICK answer set. The
+        # operator declares its own interview answers; nothing is defaulted,
+        # so the run needs no fabricated default acceptance.
+        "interview_depth": "quick",
         "answers": {
             "audience": "General informational audience learning how to use the Presentation Department",
             "transformation_promise": "No commercial transformation promise — informational department demonstration",
             "cta_action": "Request or use the Presentation Department",
             "tone": "teacher",
+            "representation_mix": "no people",
+            "grounded_content": "no named method",
+            "goal": "Explain the Presentation Department",
+            "deadline": "no deadline",
+            "style_source": "create-new",
+            "style_prefs": "fresh clean-white",
+            "dark_ok": "yes",
+            "visual_mix": "mix",
+            "logo_on_slides": "yes",
         },
     }
 
