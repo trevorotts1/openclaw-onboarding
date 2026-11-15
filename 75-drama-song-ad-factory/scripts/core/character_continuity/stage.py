@@ -22,12 +22,18 @@ execution entrypoint and its advancement contract (findings D08, D33):
   the declared set.
 * ``proven`` — the registry reconciler predicate, same contract as
   factory's ``_RECONCILIERS`` entries; ``register(registry)`` wires it in.
-* ``advance`` — the executable advancement: gate PASS moves the
-  continuity-bible row through state_store's guarded transitions to
-  COMPLETE in one call (no separate manual registration), and reports the
+* ``seal`` — the signed step gate over the FINISHED bible (finding S75-016):
+  the records ``character_approval`` writes (``character/bible.json`` and the
+  approved ``character/approval.json``) plus this stage's own QC records. Two
+  small hand-written files in ``continuity/`` no longer seal anything.
+* ``advance`` — the executable advancement: gate PASS **and** the step gate's
+  seal move the continuity-bible row through state_store's guarded transitions
+  to COMPLETE in one call (no separate manual registration), and report the
   seven downstream stages' rows (storyboard, image-keyframes,
   video-generation, qc-retakes, assembly, final-qc, delivery) so their
-  advancement is real, not just storyboard eligibility.
+  advancement is real, not just storyboard eligibility. A refused seal is
+  ``{"outcome": "not-proven"}`` with the gate's own reason — never a
+  transition and never an invented pass.
 * ``main`` — the CLI the stage-runbook registry row points at:
   ``python3 scripts/core/character_continuity/stage.py advance --run-dir
   "$RUN" --run-id "$RUN_ID"``.
@@ -64,6 +70,15 @@ REQUIRED_CHECKS = ("continuity",)
 #: storyboard eligibility cannot close the acceptance row").
 DOWNSTREAM_STAGES = ("storyboard", "image-keyframes", "video-generation",
                      "qc-retakes", "assembly", "final-qc", "delivery")
+
+#: The files a FINISHED continuity bible consists of, as its own writers write
+#: them: ``character_approval.save_bible`` -> ``character/bible.json``,
+#: ``character_approval.approve`` -> ``character/approval.json`` (the versioned
+#: approval event, status "approved"), and this stage's QC records under
+#: ``continuity/``. ``step_gate/stage_contracts.json`` declares exactly this
+#: set; the test holds the two lists together so they cannot drift.
+CONTRACT_ARTIFACTS = ("character/bible.json", "character/approval.json",
+                      "continuity/qc-records.json", "continuity/makers.json")
 
 
 class StageError(Exception):
@@ -153,7 +168,7 @@ def proven(run_dir, run_id=""):
     stage's OWN gate evaluates PASS on the declared required evidence; a
     missing check fails rather than disappearing from the requirement."""
     res = evaluate(run_dir, run_id)
-    ev = {"artifacts": ["continuity/qc-records.json", "continuity/makers.json"],
+    ev = {"artifacts": list(CONTRACT_ARTIFACTS),
           "gate": res.get("gate"), "reason_code": res.get("reason_code"),
           "required": list(REQUIRED_CHECKS), "readers": res.get("readers")}
     return res.get("gate") == "PASS", ev
@@ -165,6 +180,72 @@ def register(registry):
     it lands. Returns the registry (one call, idempotent)."""
     registry["continuity-bible"] = proven
     return registry
+
+
+_STEP_GATE = None
+
+
+def step_gate_module():
+    """The step gate MODULE (``scripts/core/step_gate/step_gate.py``).
+
+    Loaded from its own file: ``scripts/core/step_gate/`` is a directory whose
+    ``__init__.py`` is empty, so a plain ``import step_gate`` binds the package
+    and finds none of the gate's functions. The contract file sits beside the
+    module, so the gate's own default contract path resolves correctly.
+    """
+    global _STEP_GATE
+    if _STEP_GATE is None:
+        import importlib.util                          # noqa: PLC0415
+        path = os.path.join(_CORE, "step_gate", "step_gate.py")
+        spec = importlib.util.spec_from_file_location("step_gate_module", path)
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        _STEP_GATE = mod
+    return _STEP_GATE
+
+
+def _seal_pair(records, makers):
+    """(maker, checker) for the declared check, or (None, None).
+
+    The maker is the identity the records' sidecar names; the checker is the
+    reviewer the record itself names. The step gate refuses a pair that is the
+    same identity, so a second-hand note can never be its own check.
+    """
+    for rec in records or []:
+        if not isinstance(rec, dict) or rec.get("check") not in REQUIRED_CHECKS:
+            continue
+        reviewer = rec.get("reviewer")
+        maker = (makers or {}).get(rec.get("check_id"))
+        checker = reviewer.get("identity") if isinstance(reviewer, dict) else None
+        if maker and checker:
+            return str(maker), str(checker)
+    return None, None
+
+
+def seal(run_dir, records, makers, contract=None):
+    """(seal_doc, refusal): the signed step gate over the FINISHED bible.
+
+    The gate's own ``init`` and ``open`` run first when they are absent —
+    ``open`` still refuses without the previous stage's seal, so this call can
+    never shorten the chain. The seal re-reads every artifact the contract
+    declares for this stage (``CONTRACT_ARTIFACTS``) and refuses when one is
+    missing, empty, a placeholder or unapproved. A refusal comes back as
+    ``{"reason_code", "detail"}`` in the gate's own words.
+    """
+    SG = step_gate_module()
+    try:
+        doc = SG.load_contract(contract)
+        maker, checker = _seal_pair(records, makers)
+        if not maker or not checker:
+            raise SG.Refused(
+                "MAKER_UNKNOWN",
+                "the %s records name no maker/reviewer pair to seal with" % STAGE)
+        if not os.path.exists(SG.key_path(run_dir)):
+            SG.cmd_init(run_dir)
+        SG.cmd_open(run_dir, STAGE, doc)
+        return SG.cmd_seal(run_dir, STAGE, maker, checker, doc), None
+    except SG.Refused as exc:
+        return None, {"reason_code": exc.code, "detail": exc.detail}
 
 
 def _store(run_dir):
@@ -230,12 +311,14 @@ def downstream_status(run_dir, run_id=None):
     return rows
 
 
-def advance(run_dir, run_id=None, owner=OWNER):
+def advance(run_dir, run_id=None, owner=OWNER, contract=None):
     """The executable advancement (the registry's entrypoint action): run the
-    gate and, on PASS, move the continuity-bible row to COMPLETE through
-    state_store's guarded transitions in ONE call — continuity never depends
-    on separate manual actions. Returns the outcome, the gate evidence and
-    the seven downstream stages' rows."""
+    gate, SEAL the finished bible through the step gate, and only then move the
+    continuity-bible row to COMPLETE through state_store's guarded transitions
+    in ONE call. A run holding only its QC records is refused as
+    ``{"outcome": "not-proven"}`` carrying the gate's own reason, so the two
+    small files the finding named can never complete the stage. Returns the
+    outcome, the gate evidence and the seven downstream stages' rows."""
     st, srid = _store(run_dir)
     rid = srid or _run_id(run_dir, run_id)
     ok, ev = proven(run_dir, rid)
@@ -244,6 +327,16 @@ def advance(run_dir, run_id=None, owner=OWNER):
             st.close()
         return {"outcome": "not-proven", "stage": STAGE, "run_id": rid,
                 "evidence": ev, "downstream": downstream_status(run_dir, rid)}
+    records, _rec_note = load_records(run_dir)
+    makers, _mk_note = load_makers(run_dir)
+    seal_doc, refusal = seal(run_dir, records, makers, contract)
+    if seal_doc is None:
+        if st is not None:
+            st.close()
+        return {"outcome": "not-proven", "stage": STAGE, "run_id": rid,
+                "reason_code": refusal["reason_code"], "detail": refusal["detail"],
+                "evidence": ev, "downstream": downstream_status(run_dir, rid)}
+    ev = dict(ev, sealed=[row["path"] for row in seal_doc.get("artifacts") or []])
     if st is None:
         return {"outcome": "no-store", "stage": STAGE, "run_id": rid,
                 "evidence": ev, "downstream": downstream_status(run_dir, rid)}
@@ -272,8 +365,8 @@ def advance(run_dir, run_id=None, owner=OWNER):
                            expected_version=row["version"])
             row = st.transition(rid, STAGE, "COMPLETE", owner,
                                 expected_version=row["version"],
-                                reason="continuity-bible gate PASS "
-                                       "(declared required evidence)")
+                                reason="continuity-bible gate PASS and step-gate "
+                                       "seal over the declared artifacts")
         return {"outcome": "advanced", "stage": STAGE, "run_id": rid,
                 "row": row, "evidence": ev,
                 "downstream": _downstream_rows(st, rid)}
