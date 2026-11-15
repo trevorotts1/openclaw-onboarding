@@ -5768,9 +5768,9 @@
       "path": "templates/role-library/presentations/qc-specialist-presentations.md",
       "capability_class": "JUDGMENT",
       "vision_flag": false,
-      "content_sha": "sha256:ed35251b36446918572de26d315a433229cff0f792409127d94d0c28c5c93e8a",
+      "content_sha": "sha256:20552bb98f34d876a61872c242291fac6db319391720edee4ec94de9565b43e0",
       "render_sha": "sha256:2b06914c472798e89359667981bc393be4f58ddd6d08ec6495e503f81841eb0c",
-      "content_version": "1.0.30",
+      "content_version": "1.0.31",
       "content_hashed_at": "2026-11-15T05:46:08.984035+00:00"
     },
     {
@@ -10611,8 +10611,8 @@
       "slug": "qc-specialist-presentations-sops",
       "dept": "presentations",
       "path": "templates/role-library/presentations/sops/qc-specialist-presentations-sops.md",
-      "content_sha": "sha256:b27aa8538e8fef2f3cea5012af320d378474d78d9f531574d360d76e9457e3d8",
-      "content_version": "1.0.21",
+      "content_sha": "sha256:ba5fc01748d3bc54aaf452d381c66e3c03448fd2c0aec2ef549232d102f35e18",
+      "content_version": "1.0.22",
       "content_hashed_at": "2026-11-15T05:46:08.984035+00:00"
     },
     {
