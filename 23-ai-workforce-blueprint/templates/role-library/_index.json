@@ -5592,10 +5592,10 @@
       "path": "templates/role-library/presentations/director-of-presentations.md",
       "capability_class": "HEAVY-REASONING",
       "vision_flag": false,
-      "content_sha": "sha256:25765da316789fe7395864973fdc3a10637e68f5e77762d7c9f7ba31bb740eb5",
+      "content_sha": "sha256:b3785438ed87e9da28b93e513fabbf52803f939ff81946ed349da8b153920bce",
       "render_sha": "sha256:e2890e55a6ce668c9cb72f508df76bad8061e1608af7e8fac6ea2f4fb9fb791e",
-      "content_version": "1.0.43",
-      "content_hashed_at": "2026-11-15T05:46:08.984035+00:00"
+      "content_version": "1.0.44",
+      "content_hashed_at": "2026-11-15T11:29:35.570139+00:00"
     },
     {
       "slug": "first-time-onboarding-presentations",
