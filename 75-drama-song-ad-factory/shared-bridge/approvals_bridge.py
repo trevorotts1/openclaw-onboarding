@@ -4,8 +4,9 @@
 Two functions, one per direction of the approval gate (SPEC.md §4):
 
     publish(base_url, key, order_id, stage, version, text, choices, files)
-        POST the item to /api/studio/orders/<id>/approvals, then PUT every
-        file to its presigned URL (streamed from disk) and return the item.
+        POST the item to /api/studio/orders/<id>/approvals, PUT every file to
+        its presigned URL (streamed from disk), then POST the finalize route
+        and return the ready item. Nothing is answerable until finalize.
 
     answer(base_url, key, order_id, stage, version)
         GET the same list and return the recorded answer value, or None
@@ -41,15 +42,20 @@ from studio_claim import LedgerError  # noqa: E402
 
 STAGES = ("script", "song", "storyboard")
 
-# The only content types this bridge will ever PUT to a client page: a .json,
-# .log or .py handed to the publisher is refused HERE, locally, before any
-# request and before the key is used (SPEC §4: approvals carry media only).
-PUBLISHABLE_PREFIXES = ("image/", "audio/", "video/")
-PUBLISHABLE_TYPES = ("application/pdf",)
+# The only content types the service accepts for an approval file, and so the
+# only ones this bridge will ever PUT to a client page: a .json, .log, .py, a
+# video or a pdf handed to the publisher is refused HERE, locally, before any
+# request and before the key is used (SPEC §4: approvals carry stills and
+# audio only; `approvals-api.js` rejects anything else).
+PUBLISHABLE_PREFIXES = ("image/", "audio/")
+
+# The service reads a file's SHA-256 declaration and verifies the stored copy
+# against it; _file_spec computes it here so the caller never has to.
+SHA256_BLOCK = 1024 * 1024
 
 
 def _publishable(ctype):
-    return ctype.startswith(PUBLISHABLE_PREFIXES) or ctype in PUBLISHABLE_TYPES
+    return ctype.startswith(PUBLISHABLE_PREFIXES)
 
 
 def _url(base_url, order_id):
@@ -93,11 +99,22 @@ def _choices(choices):
     return out
 
 
+def _sha256_file(p):
+    """The file's SHA-256, read once in 1 MB blocks (never loaded whole)."""
+    h = hashlib.sha256()
+    with p.open("rb") as fh:
+        for chunk in iter(lambda: fh.read(SHA256_BLOCK), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
 def _file_spec(entry):
     """One file to publish: a path on disk, or {path, name, content_type}.
 
-    Only image/*, audio/*, video/* and application/pdf are publishable;
-    anything else raises locally, with no request and no key involved.
+    Only image/* and audio/* are publishable; anything else raises locally,
+    with no request and no key involved. The service requires a SHA-256 for
+    every file, so it is computed here in the same pass that measures the
+    file's length.
     """
     if isinstance(entry, dict):
         path = entry.get("path") or ""
@@ -114,24 +131,41 @@ def _file_spec(entry):
     if not _publishable(ctype):
         raise LedgerError("BAD_FILE_TYPE",
                           "refusing to publish %s: content type %s is not "
-                          "image, audio, video or pdf" % (name, ctype))
+                          "image or audio" % (name, ctype))
     return {"path": p, "name": name, "content_type": ctype,
-            "bytes": p.stat().st_size}
+            "bytes": p.stat().st_size, "sha256": _sha256_file(p)}
+
+
+def _finalize_url(base_url, order_id, stage, version):
+    return _url(base_url, order_id) + "/%s/%d/finalize" % (stage, version)
 
 
 def publish(base_url, key, order_id, stage, version, text, choices, files):
-    """Post one approval item, then PUT each of its files to storage."""
+    """Post one approval item, PUT each file, then finalize the version.
+
+    The service accepts only a FINALIZED version for the client to answer: a
+    publish that carries files replies ``ready`` false with one presigned PUT
+    per file, and the finalize route then verifies every staged copy against
+    its declared length and SHA-256 before the item is listed. A publish that
+    is already ready (no files, or the same content re-published) returns its
+    item at once, with nothing to upload.
+
+    Both halves are idempotent per stage and version on the service, so a
+    transport outcome that is unknown is reported as unknown and is safe to
+    repeat.
+    """
     _require_key(key)
     if stage not in STAGES:
         raise LedgerError("BAD_STAGE", "stage must be script, song or storyboard")
+    v = _version(version)
     specs = [_file_spec(f) for f in (files or ())]
     body = {
         "stage": stage,
-        "version": _version(version),
+        "version": v,
         "text": text,
         "choices": _choices(choices),
         "files": [{"name": s["name"], "content_type": s["content_type"],
-                   "bytes": s["bytes"]} for s in specs],
+                   "bytes": s["bytes"], "sha256": s["sha256"]} for s in specs],
     }
     status, resp = _http("POST", _url(base_url, order_id), key=key, body=body)
     if status == 0:
@@ -140,6 +174,9 @@ def publish(base_url, key, order_id, stage, version, text, choices, files):
     if status // 100 != 2 or not resp.get("ok"):
         raise LedgerError("APPROVAL_PUBLISH_REFUSED",
                           resp.get("message") or "approval publish refused (HTTP %d)" % status)
+    item = resp.get("item") or {}
+    if resp.get("ready"):
+        return item
     uploads = {u.get("name"): u for u in (resp.get("uploads") or ())}
     for s in specs:
         url = (uploads.get(s["name"]) or {}).get("url")
@@ -154,7 +191,20 @@ def publish(base_url, key, order_id, stage, version, text, choices, files):
         if put_status // 100 != 2:
             raise LedgerError("APPROVAL_PUT_REFUSED",
                               "storage refused %s (HTTP %d)" % (s["name"], put_status))
-    return resp.get("item") or {}
+    # The digest binds the finalize to the exact presentation that was just
+    # published: the service refuses a finalize naming different content.
+    finalize_body = {}
+    if item.get("presentation_digest"):
+        finalize_body["presentation_digest"] = item["presentation_digest"]
+    status, done = _http("POST", _finalize_url(base_url, order_id, stage, v),
+                         key=key, body=finalize_body)
+    if status == 0:
+        raise LedgerError("TRANSPORT_UNKNOWN",
+                          done.get("message") or "approval finalize outcome is unknown")
+    if status // 100 != 2 or not done.get("ok"):
+        raise LedgerError("APPROVAL_FINALIZE_REFUSED",
+                          done.get("message") or "approval finalize refused (HTTP %d)" % status)
+    return done.get("item") or {}
 
 
 def _item_digest(item):
