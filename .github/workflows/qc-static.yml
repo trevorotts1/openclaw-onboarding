@@ -3856,6 +3856,420 @@ jobs:
           expect_red "a renamed subcommand (pb_send reply)" "pb_send.py: reply"
           echo "✓ Skill 84 wiring test ran and passed, and goes red on a renamed function and a renamed subcommand"
 
+      # --------------------------------------------------------------------
+      # The never-run suites. U-GEN440 section 4 measured 35 test files that no
+      # workflow executed: each one collects zero items under pytest, so a
+      # discovery-based gate would import it, collect nothing and stay green
+      # while proving nothing. They are wired here BY EXPLICIT NAME, one named
+      # step per file, the same shape as the Skill 35 comment-reader suite
+      # above. A missing file is a red, not a skip: the step resolves the path
+      # and fails before running. U-GEN443 (Trevor-ordered, DECISIONS.md:3405).
+
+      - name: "Never-run suite: 23-ai-workforce-blueprint/templates/role-library/presentations/scripts/test_preflight_shadow.py"
+        shell: bash
+        run: |
+          set -uo pipefail
+          t="23-ai-workforce-blueprint/templates/role-library/presentations/scripts/test_preflight_shadow.py"
+          if [ ! -f "$t" ]; then
+            echo "✗ suite is absent from this checkout: $t"; exit 1
+          fi
+          python3 -I "$t" || { echo "✗ failed: $t"; exit 1; }
+          echo "✓ 23-ai-workforce-blueprint/templates/role-library/presentations/scripts/test_preflight_shadow.py"
+
+      - name: "Never-run suite: 23-ai-workforce-blueprint/templates/role-library/presentations/scripts/test_preflight_shadow_scoped.py"
+        shell: bash
+        run: |
+          set -uo pipefail
+          t="23-ai-workforce-blueprint/templates/role-library/presentations/scripts/test_preflight_shadow_scoped.py"
+          if [ ! -f "$t" ]; then
+            echo "✗ suite is absent from this checkout: $t"; exit 1
+          fi
+          python3 -I "$t" || { echo "✗ failed: $t"; exit 1; }
+          echo "✓ 23-ai-workforce-blueprint/templates/role-library/presentations/scripts/test_preflight_shadow_scoped.py"
+
+      - name: "Never-run suite: 35-social-media-planner/scripts/test_qc_lattice_check.py"
+        shell: bash
+        run: |
+          set -uo pipefail
+          t="35-social-media-planner/scripts/test_qc_lattice_check.py"
+          if [ ! -f "$t" ]; then
+            echo "✗ suite is absent from this checkout: $t"; exit 1
+          fi
+          python3 -I "$t" || { echo "✗ failed: $t"; exit 1; }
+          echo "✓ 35-social-media-planner/scripts/test_qc_lattice_check.py"
+
+      - name: "Never-run suite: 44-convert-and-flow-operator/automation-templates/launch-text/test_launch_text_catalog.py"
+        shell: bash
+        run: |
+          set -uo pipefail
+          t="44-convert-and-flow-operator/automation-templates/launch-text/test_launch_text_catalog.py"
+          if [ ! -f "$t" ]; then
+            echo "✗ suite is absent from this checkout: $t"; exit 1
+          fi
+          python3 -I "$t" || { echo "✗ failed: $t"; exit 1; }
+          echo "✓ 44-convert-and-flow-operator/automation-templates/launch-text/test_launch_text_catalog.py"
+
+      - name: "Never-run suite: 45-design-intelligence-library/scripts/test_consent_check_cli.py"
+        shell: bash
+        run: |
+          set -uo pipefail
+          t="45-design-intelligence-library/scripts/test_consent_check_cli.py"
+          if [ ! -f "$t" ]; then
+            echo "✗ suite is absent from this checkout: $t"; exit 1
+          fi
+          python3 -I "$t" || { echo "✗ failed: $t"; exit 1; }
+          echo "✓ 45-design-intelligence-library/scripts/test_consent_check_cli.py"
+
+      - name: "Never-run suite: 45-design-intelligence-library/scripts/test_gip_prompt_author_qc_pair.py"
+        shell: bash
+        run: |
+          set -uo pipefail
+          t="45-design-intelligence-library/scripts/test_gip_prompt_author_qc_pair.py"
+          if [ ! -f "$t" ]; then
+            echo "✗ suite is absent from this checkout: $t"; exit 1
+          fi
+          python3 -I "$t" || { echo "✗ failed: $t"; exit 1; }
+          echo "✓ 45-design-intelligence-library/scripts/test_gip_prompt_author_qc_pair.py"
+
+      - name: "Never-run suite: 47-movie-producer/scripts/test_motion_status.py"
+        shell: bash
+        run: |
+          set -uo pipefail
+          t="47-movie-producer/scripts/test_motion_status.py"
+          if [ ! -f "$t" ]; then
+            echo "✗ suite is absent from this checkout: $t"; exit 1
+          fi
+          python3 -I "$t" || { echo "✗ failed: $t"; exit 1; }
+          echo "✓ 47-movie-producer/scripts/test_motion_status.py"
+
+      - name: "Never-run suite: 49-signature-funnel/scripts/test_selection_wrapper.py"
+        shell: bash
+        run: |
+          set -uo pipefail
+          t="49-signature-funnel/scripts/test_selection_wrapper.py"
+          if [ ! -f "$t" ]; then
+            echo "✗ suite is absent from this checkout: $t"; exit 1
+          fi
+          # The suite validates the emitted page result against the packet JSON
+          # schema with jsonschema, so the validator is installed first.
+          python3 -m pip install --quiet jsonschema
+          python3 -I "$t" || { echo "✗ failed: $t"; exit 1; }
+          echo "✓ 49-signature-funnel/scripts/test_selection_wrapper.py"
+
+      - name: "Never-run suite: 49-signature-funnel/scripts/test_sf_gate_coverage.py"
+        shell: bash
+        run: |
+          set -uo pipefail
+          t="49-signature-funnel/scripts/test_sf_gate_coverage.py"
+          if [ ! -f "$t" ]; then
+            echo "✗ suite is absent from this checkout: $t"; exit 1
+          fi
+          python3 -I "$t" || { echo "✗ failed: $t"; exit 1; }
+          echo "✓ 49-signature-funnel/scripts/test_sf_gate_coverage.py"
+
+      - name: "Never-run suite: 52-avatar-alchemist/scripts/test_aa_preflight.py"
+        shell: bash
+        run: |
+          set -uo pipefail
+          t="52-avatar-alchemist/scripts/test_aa_preflight.py"
+          if [ ! -f "$t" ]; then
+            echo "✗ suite is absent from this checkout: $t"; exit 1
+          fi
+          python3 -I "$t" || { echo "✗ failed: $t"; exit 1; }
+          echo "✓ 52-avatar-alchemist/scripts/test_aa_preflight.py"
+
+      - name: "Never-run suite: 56-sales-page-assets/scripts/test_sp_gate_coverage.py"
+        shell: bash
+        run: |
+          set -uo pipefail
+          t="56-sales-page-assets/scripts/test_sp_gate_coverage.py"
+          if [ ! -f "$t" ]; then
+            echo "✗ suite is absent from this checkout: $t"; exit 1
+          fi
+          python3 -I "$t" || { echo "✗ failed: $t"; exit 1; }
+          echo "✓ 56-sales-page-assets/scripts/test_sp_gate_coverage.py"
+
+      - name: "Never-run suite: 57-social-media-in-a-box/scripts/test_kie_credit_rule.py"
+        shell: bash
+        run: |
+          set -uo pipefail
+          t="57-social-media-in-a-box/scripts/test_kie_credit_rule.py"
+          if [ ! -f "$t" ]; then
+            echo "✗ suite is absent from this checkout: $t"; exit 1
+          fi
+          python3 -I "$t" || { echo "✗ failed: $t"; exit 1; }
+          echo "✓ 57-social-media-in-a-box/scripts/test_kie_credit_rule.py"
+
+      - name: "Never-run suite: 58-podcast-production-engine/scripts/tests/test_interview_protocol_harness.py"
+        shell: bash
+        run: |
+          set -uo pipefail
+          t="58-podcast-production-engine/scripts/tests/test_interview_protocol_harness.py"
+          if [ ! -f "$t" ]; then
+            echo "✗ suite is absent from this checkout: $t"; exit 1
+          fi
+          python3 -I "$t" || { echo "✗ failed: $t"; exit 1; }
+          echo "✓ 58-podcast-production-engine/scripts/tests/test_interview_protocol_harness.py"
+
+      - name: "Never-run suite: 58-podcast-production-engine/scripts/tests/test_smoke_body_code.py"
+        shell: bash
+        run: |
+          set -uo pipefail
+          t="58-podcast-production-engine/scripts/tests/test_smoke_body_code.py"
+          if [ ! -f "$t" ]; then
+            echo "✗ suite is absent from this checkout: $t"; exit 1
+          fi
+          python3 -I "$t" || { echo "✗ failed: $t"; exit 1; }
+          echo "✓ 58-podcast-production-engine/scripts/tests/test_smoke_body_code.py"
+
+      - name: "Never-run suite: 58-podcast-production-engine/scripts/tests/test_step_driver_receipts.py"
+        shell: bash
+        run: |
+          set -uo pipefail
+          t="58-podcast-production-engine/scripts/tests/test_step_driver_receipts.py"
+          if [ ! -f "$t" ]; then
+            echo "✗ suite is absent from this checkout: $t"; exit 1
+          fi
+          python3 -I "$t" || { echo "✗ failed: $t"; exit 1; }
+          echo "✓ 58-podcast-production-engine/scripts/tests/test_step_driver_receipts.py"
+
+      - name: "Never-run suite: 58-podcast-production-engine/scripts/webhook/tests/test_sandbox_canary_adapter.py"
+        shell: bash
+        run: |
+          set -uo pipefail
+          t="58-podcast-production-engine/scripts/webhook/tests/test_sandbox_canary_adapter.py"
+          if [ ! -f "$t" ]; then
+            echo "✗ suite is absent from this checkout: $t"; exit 1
+          fi
+          python3 -I "$t" || { echo "✗ failed: $t"; exit 1; }
+          echo "✓ 58-podcast-production-engine/scripts/webhook/tests/test_sandbox_canary_adapter.py"
+
+      - name: "Never-run suite: 59-anthology-engine/scripts/canary_e2e_test.py"
+        shell: bash
+        run: |
+          set -uo pipefail
+          t="59-anthology-engine/scripts/canary_e2e_test.py"
+          if [ ! -f "$t" ]; then
+            echo "✗ suite is absent from this checkout: $t"; exit 1
+          fi
+          # The full S0..S9 drill drives ONE complete anthology on an operator
+          # box: it renders PDFs with WeasyPrint and reads the box's gateway
+          # standing/ledger state, so on a bare runner every stage fails for the
+          # environment, not for the engine. --self-test is the offline mode this
+          # file ships (45 checks over the report contract, the stage battery and
+          # the report verifier); the live drill stays available by hand.
+          python3 -I "$t" --self-test || { echo "✗ failed: $t --self-test"; exit 1; }
+          echo "✓ 59-anthology-engine/scripts/canary_e2e_test.py (offline self-test)"
+
+      - name: "Never-run suite: 61-loop-protection-system/tests/test_fix_classes_plan.py"
+        shell: bash
+        run: |
+          set -uo pipefail
+          t="61-loop-protection-system/tests/test_fix_classes_plan.py"
+          if [ ! -f "$t" ]; then
+            echo "✗ suite is absent from this checkout: $t"; exit 1
+          fi
+          python3 -I "$t" || { echo "✗ failed: $t"; exit 1; }
+          echo "✓ 61-loop-protection-system/tests/test_fix_classes_plan.py"
+
+      - name: "Never-run suite: 61-loop-protection-system/tests/test_october_feeds.py"
+        shell: bash
+        run: |
+          set -uo pipefail
+          t="61-loop-protection-system/tests/test_october_feeds.py"
+          if [ ! -f "$t" ]; then
+            echo "✗ suite is absent from this checkout: $t"; exit 1
+          fi
+          python3 -I "$t" || { echo "✗ failed: $t"; exit 1; }
+          echo "✓ 61-loop-protection-system/tests/test_october_feeds.py"
+
+      - name: "Never-run suite: 61-loop-protection-system/tests/test_paid_tiers.py"
+        shell: bash
+        run: |
+          set -uo pipefail
+          t="61-loop-protection-system/tests/test_paid_tiers.py"
+          if [ ! -f "$t" ]; then
+            echo "✗ suite is absent from this checkout: $t"; exit 1
+          fi
+          python3 -I "$t" || { echo "✗ failed: $t"; exit 1; }
+          echo "✓ 61-loop-protection-system/tests/test_paid_tiers.py"
+
+      - name: "Never-run suite: 75-drama-song-ad-factory/shared-bridge/checks/test_agnes_progress.py"
+        shell: bash
+        run: |
+          set -uo pipefail
+          t="75-drama-song-ad-factory/shared-bridge/checks/test_agnes_progress.py"
+          if [ ! -f "$t" ]; then
+            echo "✗ suite is absent from this checkout: $t"; exit 1
+          fi
+          python3 -I "$t" || { echo "✗ failed: $t"; exit 1; }
+          echo "✓ 75-drama-song-ad-factory/shared-bridge/checks/test_agnes_progress.py"
+
+      - name: "Never-run suite: 75-drama-song-ad-factory/shared-bridge/checks/test_st10a_claim_fence.py"
+        shell: bash
+        run: |
+          set -uo pipefail
+          t="75-drama-song-ad-factory/shared-bridge/checks/test_st10a_claim_fence.py"
+          if [ ! -f "$t" ]; then
+            echo "✗ suite is absent from this checkout: $t"; exit 1
+          fi
+          python3 -I "$t" || { echo "✗ failed: $t"; exit 1; }
+          echo "✓ 75-drama-song-ad-factory/shared-bridge/checks/test_st10a_claim_fence.py"
+
+      - name: "Never-run suite: 75-drama-song-ad-factory/tests/test_clean_install_discovery.py"
+        shell: bash
+        run: |
+          set -uo pipefail
+          t="75-drama-song-ad-factory/tests/test_clean_install_discovery.py"
+          if [ ! -f "$t" ]; then
+            echo "✗ suite is absent from this checkout: $t"; exit 1
+          fi
+          python3 -I "$t" || { echo "✗ failed: $t"; exit 1; }
+          echo "✓ 75-drama-song-ad-factory/tests/test_clean_install_discovery.py"
+
+      - name: "Never-run suite: Skill 75 supported-install fixtures (with a 999-setup checkout)"
+        shell: bash
+        run: |
+          set -uo pipefail
+          t="75-drama-song-ad-factory/tests/test_install_fixtures.py"
+          if [ ! -f "$t" ]; then
+            echo "✗ suite is absent from this checkout: $t"; exit 1
+          fi
+          # The supported-install fixtures compare this repo with the public
+          # 999-setup repo, so the second candidate is a real checkout of it.
+          n999="${RUNNER_TEMP:-$(mktemp -d)}/999-setup"
+          rm -rf "$n999"
+          git clone --quiet --depth 1 https://github.com/trevorotts1/999-setup "$n999" \
+            || { echo "✗ could not clone trevorotts1/999-setup"; exit 1; }
+          DSAF_N999_CANDIDATE="$n999" python3 -I "$t"
+          echo "✓ 75-drama-song-ad-factory/tests/test_install_fixtures.py"
+
+      - name: "Never-run suite: 75-drama-song-ad-factory/timer-artifacts/checks/test_keepalive_cron.py"
+        shell: bash
+        run: |
+          set -uo pipefail
+          t="75-drama-song-ad-factory/timer-artifacts/checks/test_keepalive_cron.py"
+          if [ ! -f "$t" ]; then
+            echo "✗ suite is absent from this checkout: $t"; exit 1
+          fi
+          python3 -I "$t" || { echo "✗ failed: $t"; exit 1; }
+          echo "✓ 75-drama-song-ad-factory/timer-artifacts/checks/test_keepalive_cron.py"
+
+      - name: "Never-run suite: 75-drama-song-ad-factory/timer-artifacts/checks/test_seam_retention_quiet.py"
+        shell: bash
+        run: |
+          set -uo pipefail
+          t="75-drama-song-ad-factory/timer-artifacts/checks/test_seam_retention_quiet.py"
+          if [ ! -f "$t" ]; then
+            echo "✗ suite is absent from this checkout: $t"; exit 1
+          fi
+          python3 -I "$t" || { echo "✗ failed: $t"; exit 1; }
+          echo "✓ 75-drama-song-ad-factory/timer-artifacts/checks/test_seam_retention_quiet.py"
+
+      - name: "Never-run suite: 83-black-friday-launcher/fixtures/test_only_readback.py"
+        shell: bash
+        run: |
+          set -uo pipefail
+          t="83-black-friday-launcher/fixtures/test_only_readback.py"
+          if [ ! -f "$t" ]; then
+            echo "✗ suite is absent from this checkout: $t"; exit 1
+          fi
+          python3 -I "$t" || { echo "✗ failed: $t"; exit 1; }
+          echo "✓ 83-black-friday-launcher/fixtures/test_only_readback.py"
+
+      - name: "Never-run suite: QUALITY-CONTROL/pb-t24-landed/test_check_t24_landed.py"
+        shell: bash
+        run: |
+          set -uo pipefail
+          t="QUALITY-CONTROL/pb-t24-landed/test_check_t24_landed.py"
+          if [ ! -f "$t" ]; then
+            echo "✗ suite is absent from this checkout: $t"; exit 1
+          fi
+          python3 -I "$t" || { echo "✗ failed: $t"; exit 1; }
+          echo "✓ QUALITY-CONTROL/pb-t24-landed/test_check_t24_landed.py"
+
+      - name: "Never-run suite: evidence/W11/test_operation_routing_matrix.py"
+        shell: bash
+        run: |
+          set -uo pipefail
+          t="evidence/W11/test_operation_routing_matrix.py"
+          if [ ! -f "$t" ]; then
+            echo "✗ suite is absent from this checkout: $t"; exit 1
+          fi
+          python3 -I "$t" || { echo "✗ failed: $t"; exit 1; }
+          echo "✓ evidence/W11/test_operation_routing_matrix.py"
+
+      - name: "Never-run suite: U64-GK-02 broker live proof (offline self-check)"
+        shell: bash
+        run: |
+          set -uo pipefail
+          t="ledgers/evidence/U64-GK-02/broker_live_test.py"
+          if [ ! -f "$t" ]; then
+            echo "✗ suite is absent from this checkout: $t"; exit 1
+          fi
+          # The live half needs a production webhook token and writes to the live
+          # Drive broker, so it never runs from CI. --self-check proves the offline
+          # contract the live half depends on.
+          python3 -I "$t" --self-check
+          echo "✓ ledgers/evidence/U64-GK-02/broker_live_test.py (offline self-check)"
+
+      - name: "Never-run suite: scripts/ci/test_fast_guards_mapping.py"
+        shell: bash
+        run: |
+          set -uo pipefail
+          t="scripts/ci/test_fast_guards_mapping.py"
+          if [ ! -f "$t" ]; then
+            echo "✗ suite is absent from this checkout: $t"; exit 1
+          fi
+          # It parses every workflow file with PyYAML, which the bare runner lacks.
+          python3 -m pip install --quiet pyyaml
+          python3 -I "$t" || { echo "✗ failed: $t"; exit 1; }
+          echo "✓ scripts/ci/test_fast_guards_mapping.py"
+
+      - name: "Never-run suite: tests/rescue/RR-022/test_aging_structured.py"
+        shell: bash
+        run: |
+          set -uo pipefail
+          t="tests/rescue/RR-022/test_aging_structured.py"
+          if [ ! -f "$t" ]; then
+            echo "✗ suite is absent from this checkout: $t"; exit 1
+          fi
+          python3 -I "$t" || { echo "✗ failed: $t"; exit 1; }
+          echo "✓ tests/rescue/RR-022/test_aging_structured.py"
+
+      - name: "Never-run suite: tests/rescue/RR-030/test_final_body.py"
+        shell: bash
+        run: |
+          set -uo pipefail
+          t="tests/rescue/RR-030/test_final_body.py"
+          if [ ! -f "$t" ]; then
+            echo "✗ suite is absent from this checkout: $t"; exit 1
+          fi
+          python3 -I "$t" || { echo "✗ failed: $t"; exit 1; }
+          echo "✓ tests/rescue/RR-030/test_final_body.py"
+
+      - name: "Never-run suite: tests/unit/test_aiwf_phase1_standard_first_state.py"
+        shell: bash
+        run: |
+          set -uo pipefail
+          t="tests/unit/test_aiwf_phase1_standard_first_state.py"
+          if [ ! -f "$t" ]; then
+            echo "✗ suite is absent from this checkout: $t"; exit 1
+          fi
+          python3 -I "$t" || { echo "✗ failed: $t"; exit 1; }
+          echo "✓ tests/unit/test_aiwf_phase1_standard_first_state.py"
+
+      - name: "Never-run suite: tests/unit/test_placeholder_property.py"
+        shell: bash
+        run: |
+          set -uo pipefail
+          t="tests/unit/test_placeholder_property.py"
+          if [ ! -f "$t" ]; then
+            echo "✗ suite is absent from this checkout: $t"; exit 1
+          fi
+          python3 -I "$t" || { echo "✗ failed: $t"; exit 1; }
+          echo "✓ tests/unit/test_placeholder_property.py"
+
   # The one-process whole-tree Skill 75 pytest run (the exact command the
   # "Skill 75 pytest collection + run" step ran on one core before it went
   # per-file), on its own runner so it overlaps the long qc-static job instead
