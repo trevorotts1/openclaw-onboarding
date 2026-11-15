@@ -292,3 +292,7 @@ def _next_env(run):
 
 if __name__ == "__main__":
     sys.exit(main())
+
+
+def test_reconcile_v2973():
+    assert main() == 0

@@ -167,3 +167,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+
+def test_music_stage_lifecycle():
+    main()  # asserts inside main() are the test

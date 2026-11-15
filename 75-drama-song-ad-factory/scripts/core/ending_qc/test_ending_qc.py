@@ -31,7 +31,7 @@ def make_wav(path, secs, fade_from=None):
         w.writeframes(b"".join(frames))
 
 
-def main():
+def test_ending_qc():
     d = tempfile.mkdtemp()
     cliff, fade = os.path.join(d, "cliff.wav"), os.path.join(d, "fade.wav")
     make_wav(cliff, 53.0)                    # loud right up to the cut
@@ -59,4 +59,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    test_ending_qc()
