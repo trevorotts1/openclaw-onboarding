@@ -10,7 +10,10 @@ Acceptance rows proven here, verbatim from the unit's spec row
       still runs.
   A2  control: with the heal path un-patched (test the old function directly)
       the same fixture produces the "Regenerating" message -- proving the test
-      can fail.
+      can fail. PD-018b (later unit, judged authoritative) moved that line from
+      the client transport to the internal event log (``report.internal``), so
+      the control reads the event log AND asserts the client transport stayed
+      silent; the transport is proven reachable in the same test.
   A3  after a complete receipt is written by the installer's in-memory adapter
       and the engine is resumed, the phase finishes.
 
@@ -264,8 +267,14 @@ class TestA1WaitingIsAPause:
 class TestA2ControlOldHealPath:
     def test_old_heal_path_still_says_regenerating(self, tmp_path, monkeypatch):
         """With the heal path un-patched -- the OLD function called directly --
-        the same fixture produces the "Regenerating" message. If this control
-        ever stops producing it, A1's assertion proves nothing."""
+        the same fixture still produces the "Regenerating" message. If this
+        control ever stops producing it, A1's assertion proves nothing.
+
+        PD-018b (a LATER unit, judged authoritative) routed this line to
+        ``report.internal`` in the event log instead of the client transport,
+        so the control reads the event log here and asserts the client
+        transport stayed silent -- the two halves are the same claim A1 rests
+        on: the string EXISTS, and it does not reach the client."""
         sent = _capture_transport(monkeypatch)
         eng = _engine(tmp_path)
         phase = _phase(eng, INSTALL)
@@ -275,12 +284,23 @@ class TestA2ControlOldHealPath:
             "substance check failed: AF-U-P-U-GHL-SALES: carries no location_id.")
         assert rc == EXIT_OK  # the re-run script exits 0, receipt still pending
 
+        # 1. The message is produced -- at the internal boundary PD-018b owns.
+        internal = "\n".join(e["message"] for e in eng.state["events"]
+                             if e["kind"] == "report.internal")
+        assert "Regenerating" in internal
+        assert "P-U-GHL-SALES artifact check failed" in internal
+        assert "AF-U-" in internal
+        assert "artifact check failed" in internal
+
+        # 2. ... and none of it reached the client (PD-018b's contract).
         body = "\n".join(_messages(sent))
-        assert "Regenerating" in body
-        assert "P-U-GHL-SALES artifact check failed" in body
-        assert "AF-U-" in body
-        # The same strings A1 forbids are exactly the ones this old path emits.
-        assert "artifact check failed" in body
+        assert body == "", f"internal heal line leaked to the client: {body}"
+
+        # 3. The silence above is a REAL absence: a control message must land
+        #    in the very same transport capture (never a dead pipe).
+        eng.report.to_requester("blocked", "transport control")
+        assert _messages(sent), (
+            "transport never started -- the empty send above was vacuous")
 
 # ---------------------------------------------------------------------------
 # A3 -- a complete receipt + a resume finishes the phase
