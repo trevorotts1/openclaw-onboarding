@@ -25,12 +25,14 @@ import pathlib
 import re
 import subprocess
 
-import pytest
-
 PRES = pathlib.Path(__file__).resolve().parent.parent.parent
 ROLE = PRES / "slide-image-creator.md"
 MIRROR = PRES / "sops" / "slide-image-creator-sops.md"
 QC = PRES / "qc-specialist-presentations.md"
+QC_REL = (
+    "23-ai-workforce-blueprint/templates/role-library/presentations/"
+    "qc-specialist-presentations.md"
+)
 
 NEW_SENTENCE = (
     "On slides that are not offer-arc slides listed in AF-PRICE-FACE, the face "
@@ -75,6 +77,27 @@ def _show(rev, path):
         capture_output=True, text=True,
     )
     return p.stdout if p.returncode == 0 else None
+
+
+def _price_face_row():
+    """PD-090's AF-PRICE-FACE row: its branch first, then this tree.
+
+    PD-090 lands with this unit (shared --hold-d17), so before the merge the
+    rewritten row lives only on the sibling branch; afterwards the working tree
+    carries it and a deleted branch is not a failure. PD-090 labels the row
+    `| AF-PRICE-FACE (role-level; not in the registry) |`, so match the row by
+    its first cell -- the parenthetical is PD-090's qualifier, not a lost row.
+    """
+    sources = (
+        _show("origin/pd/fl23-role-procedures-b--hold-d17", QC_REL),
+        _show("pd/fl23-role-procedures-b--hold-d17", QC_REL),
+        _text(QC),
+    )
+    for text in sources:
+        for line in (text or "").splitlines():
+            if re.match(r"^\|\s*AF-PRICE-FACE\b", line):
+                return line
+    return ""
 
 
 # ---------------------------------------------------------------------------
@@ -135,27 +158,11 @@ def test_A3_rule_agrees_with_pd090_price_face():
     assert 'FAIL: "Day 1 Strategy Session | Value: $997"' in body
     assert '- PASS: "Day 1: The one conversation' in body
 
-    # PD-090's rewritten row, when its branch is reachable, must authorize the
-    # same offer-arc classes this sentence defers to.
-    p = subprocess.run(
-        ["git", "show",
-         "origin/pd/fl23-role-procedures-b--hold-d17:"
-         "23-ai-workforce-blueprint/templates/role-library/presentations/"
-         "qc-specialist-presentations.md"],
-        cwd=PRES, capture_output=True, text=True,
+    row = _price_face_row()
+    assert row, (
+        "no AF-PRICE-FACE row on PD-090's branch or in "
+        "qc-specialist-presentations.md; A3 quotes PD-090's rewritten row"
     )
-    if p.returncode != 0:
-        pytest.skip("PD-090 branch not reachable; cross-branch leg not run")
-    # PD-090 labels the row `| AF-PRICE-FACE (role-level; not in the registry) |`
-    # -- the parenthetical is PD-090's own qualifier, not a lost row. Match the
-    # row by its first cell instead of the bare label so the leg checks the
-    # content this sentence defers to, not the decoration PD-090 puts on it.
-    row = next(
-        (ln for ln in p.stdout.splitlines()
-         if re.match(r"^\|\s*AF-PRICE-FACE\b", ln)),
-        "",
-    )
-    assert row, "AF-PRICE-FACE row not found on the PD-090 branch"
     for cls in PD090_CLASSES:
         assert cls in row, f"PD-090 row lost class {cls!r}: {row}"
     assert "Unauthorized dollar figures on a slide face outside" in row

@@ -10675,9 +10675,9 @@
       "slug": "slide-image-creator-sops",
       "dept": "presentations",
       "path": "templates/role-library/presentations/sops/slide-image-creator-sops.md",
-      "content_sha": "sha256:1a8a5c0e2147eae183a45145caf95f0093c3d77ffa0b44e722cc5ddf98dab1e3",
-      "content_version": "1.0.23",
-      "content_hashed_at": "2026-11-15T02:13:19.433949+00:00"
+      "content_sha": "sha256:544640b856f2951b5bfebf945aa76766cf7f588122c4fe21aabf8407bccde085",
+      "content_version": "1.0.24",
+      "content_hashed_at": "2026-11-15T04:28:31.331823+00:00"
     },
     {
       "slug": "slide-submitter-sops",

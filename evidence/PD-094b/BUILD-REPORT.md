@@ -14,7 +14,7 @@
 ### Gate output (verbatim)
 
 ```
-$ python3 -I .../FINAL/scripts/step_gate.py ready --control /Volumes/mac mini m4/swarm-contract/loop-control/pd-fix
+$ python3 -I .../FINAL/scripts/step_gate.py ready --control <pd-fix control dir>
 {
  "ready": [],
  "waiting": { ... },
