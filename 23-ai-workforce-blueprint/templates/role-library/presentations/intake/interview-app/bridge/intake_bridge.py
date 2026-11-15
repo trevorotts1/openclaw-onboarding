@@ -1245,6 +1245,11 @@ def drive_operator_contract(contract: dict, run_dir: pathlib.Path, *,
         # written inbound evidence; the guard above refused anything already
         # initialized, so creating the directory itself is safe to repeat.
         rd.mkdir(parents=True, exist_ok=True)
+    # The signed acceptance message must already be the client's real inbound
+    # message. The bridge reads that evidence and never writes it. Check before
+    # the receipt file so a refused acceptance leaves no artifact behind.
+    if acceptance:
+        _verify_operator_acceptance_message(rd, acceptance)
     receipt = {
         "version": _OPERATOR_CONTRACT_VERSION,
         "source": "operator-delegated",
@@ -1261,10 +1266,6 @@ def drive_operator_contract(contract: dict, run_dir: pathlib.Path, *,
     if not existing:
         receipt_path.parent.mkdir(parents=True, exist_ok=True)
         receipt_path.write_text(json.dumps(receipt, indent=2), encoding="utf-8")
-    # The signed acceptance message must already be the client's real inbound
-    # message. The bridge reads that evidence and never writes it.
-    if acceptance:
-        _verify_operator_acceptance_message(rd, acceptance)
     # The validated mapper already removes user-facing `mode` and converts
     # semantic `brief` to canonical `client_notes`. A contract that supplies a
     # complete canonical answer keeps it; the synthesized values only fill turns
