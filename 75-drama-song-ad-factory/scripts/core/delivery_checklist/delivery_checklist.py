@@ -21,6 +21,11 @@ image directory). The receipt names the folder; this checker reads it and
 names every missing item in repair_scope. Q12 is a folder contract, not one
 of the 11 human checklist questions, so the reference document keeps 11.
 
+S75-057: Q8 compares what the clean cut really is -- the master's decoded
+VIDEO stream plus its audio's duration (0.1 s) and loudness (0.5 LU) --
+never the whole-file SHA-256, which can never match because
+video_delivery.clean_argv re-encodes the audio.
+
 H11 (Part H, order 1225) adds Q8 LIP_SYNC (H2 numbers), Q9 FIRST_SUNG
 (H6 first-sung % of runtime), Q10 PICTURES_MATCH (H5 shot/time/line/match)
 and Q11 GOALS_BAND (every numeric goal judged by Trevor's band: within 5
@@ -51,10 +56,15 @@ What evaluate() does per question, measured from the receipt only:
   5 VOICE+MUSIC -- receipt music_unbroken true WITH the measurement
                  (music_gaps_s == 0.0), no reverb tail (tail verdict), and
                  every line's delivery matches its mode (sung lines sung).
-  6 MODELS    -- every asset's model is in the locked set (exact strings
-                 from the checklist, compared case-insensitively), AND
+  6 MODELS    -- the run's OWN choices, never a fixed table (S75-057):
                  every delivered clip used the video model the card locked
-                 (F16: model_lock.check_video_model_delivery, fail-closed).
+                 (F16: model_lock.check_video_model_delivery, fail-closed,
+                 accepting the Agnes flash model when the run recorded
+                 "Agnes: yes"), every asset family names the model it used,
+                 and every PAID job in the run's spend ledger is covered by a
+                 named model for its family (and, when the run records a
+                 model per job, each job names the model the run chose for
+                 its family; a job on another model fails and is named).
   7 HONEST    -- every receipt number names its source (non-empty
                  "source"/"source_ref" next to each measured value);
                  anything unmeasured must be written "UNMEASURED" and an
@@ -85,6 +95,7 @@ import json
 import math
 import re
 import shutil
+import sqlite3
 import struct
 import subprocess
 import sys
@@ -98,6 +109,11 @@ _CORE = Path(__file__).resolve().parents[1]
 if str(_CORE) not in sys.path:
     sys.path.insert(0, str(_CORE))
 import kie_dispatch.model_lock as model_lock  # noqa: E402  (F16)
+
+# S75-057: Q8 decodes the clean cut and the final export to compare their
+# PICTURE, and that decode is a heavy local job like every other ffmpeg site
+# in the skill: it goes through the load governor (bounded argv, heavy slot).
+import load_governor as _LG  # noqa: E402  (S75-057)
 
 # DEL-12: the canonical numbered file-name list of all 12 package items lives
 # in the sibling delivery_package package (byte-identical in both
@@ -242,20 +258,31 @@ LIPSYNC_FLAG_TAGS = ("KEPT_BEST", "FLAGGED")
 #: Question 1: a sung ad must show a measured sung share above zero.
 SUNG_MIN_PCT = 1.0
 
-#: Question 6: the locked models, verbatim from the checklist (compared
-#: case-insensitively; aliases live in MODEL_ALIASES).
-LOCKED_MODELS = {
-    "video": "minimax h3 768p",
-    "images": "gpt-image sunburst",
-    "song": "suno v6",
-    "lip_sync": "kling avatar",
-}
-MODEL_ALIASES = {
-    "video": ("minimax", "minimax-h3", "h3 768p", "minimax h3"),
-    "images": ("gpt-image", "sunburst", "gpt image"),
-    "song": ("suno", "suno v6", "suno-v6"),
-    "lip_sync": ("kling", "kling avatar", "kling-avatar"),
-}
+#: Question 6 reads the run's OWN choices, never a fixed table (S75-057):
+#: the fixed model list refused a legitimate Seedance 2.5 run, a Seedance 2.0
+#: Mini run, a Veo 3.1 run and every Agnes run. What the checklist can judge
+#: is (a) the card's video-model lock, (b) the run's recorded Agnes answer,
+#: (c) each asset family naming the model it used, and (d) every PAID job in
+#: the run's spend ledger naming the model the run chose for its family.
+#: ``model_lock`` still owns the lock patterns (F14/F16) and the Agnes rule.
+CHOSEN_KEYS = ("chosen", "chosen_models")
+#: the spend ledger the run records (a path), and how it names paid jobs
+LEDGER_KEYS = ("spend_ledger", "ledger_db", "ledger")
+PAID_STATES = ("submitted", "unknown", "succeeded", "reconciled")
+#: the family a ledger job belongs to, from the head of its logical key
+FAMILY_PREFIXES = (("song", "song"), ("image", "images"),
+                   ("keyframe", "images"), ("face", "lip_sync"),
+                   ("lipsync", "lip_sync"), ("lip", "lip_sync"),
+                   ("video", "video"))
+#: the run's per-paid-job model rows (logical key -> model)
+JOB_ROW_KEYS = ("jobs", "paid_jobs")
+
+#: Question 8 (S75-057): the clean cut is the master with the SAME picture
+#: and its audio re-encoded to AAC -- so compare the decoded VIDEO streams and
+#: the audio's duration and loudness, never the whole-file SHA-256.
+CLEAN_AUDIO_DURATION_TOL_S = 0.1
+CLEAN_AUDIO_LOUDNESS_TOL_LU = 0.5
+CLEAN_COMPARE_TIMEOUT_S = 600
 
 EXIT = {"ok": 0, "error": 1, "rejected": 5}
 
@@ -768,6 +795,9 @@ def _q5_voice_music(receipt, ans, codes, details):
         mismatched = []
         for i, ln in enumerate(lines):
             if not isinstance(ln, dict):
+                codes.append("%s:VOICE_MUSIC line %d not a record"
+                             % (CHECKLIST_NO_MEASUREMENT, i + 1))
+                ok = False
                 continue
             line_delivery = ln.get("delivery", "")
             line_mode = ln.get("mode", "")
@@ -827,7 +857,194 @@ def _locked_video_model(receipt, ans):
     return None
 
 
-def _q6_video_gate(receipt, ans, codes, details):
+def _agnes_value(value):
+    """True (chosen), False (not chosen) or None (unrecorded) from one value."""
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, dict):
+        return _agnes_value(value.get("answer"))
+    if isinstance(value, str):
+        answer = value.strip().lower()
+        if answer in ("yes", "true", "used", "chosen"):
+            return True
+        if answer in ("no", "false", "not used", "unused"):
+            return False
+    return None
+
+
+def _agnes_answer(receipt, ans, selection=None):
+    """The run's recorded Agnes answer: True / False / None (unrecorded).
+
+    Read from the receipt or the MODELS answer when it carries one, else from
+    the run's own ``control/card-receipt.json`` -- the record the Agnes
+    question writes (the run's method record). Never guessed.
+    """
+    for source in (ans, receipt):
+        if not isinstance(source, dict):
+            continue
+        for key in ("agnes", "agnes_chosen", "agnes_answer"):
+            if key in source:
+                answer = _agnes_value(source.get(key))
+                if answer is not None:
+                    return answer
+    if selection is None:
+        selection = _selected_run_root(receipt, ans)
+    run_root, run_root_error = selection
+    if run_root is None or run_root_error is not None:
+        return None
+    try:
+        card = json.loads((Path(run_root) / "control" / "card-receipt.json")
+                          .read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    if not isinstance(card, dict):
+        return None
+    return _agnes_value(card.get("agnes"))
+
+
+def _family_of(key):
+    """The asset family a ledger logical key belongs to (head of the key)."""
+    text = str(key or "").strip().lower()
+    head = re.split(r"[^a-z]+", text)[0] if text else ""
+    for prefix, family in FAMILY_PREFIXES:
+        if head.startswith(prefix):
+            return family
+    return head or "unknown"
+
+
+def _name_key(value):
+    """A model name or id reduced to letters and digits, for comparison."""
+    return re.sub(r"[^a-z0-9]+", "", str(value or "").lower())
+
+
+def _model_matches(model, chosen, family, agnes=False):
+    """True when a named model is the run's chosen model for its family.
+
+    Video goes through model_lock's one lock-pattern matcher (F14), plus the
+    Agnes flash model for a run that chose Agnes (SPEC A10). A receipt may
+    name a model by the card's label ("Seedance 2.5") or by its provider id
+    ("bytedance/seedance-2-5"), so the same family is also compared on the
+    letters and digits alone. No fixed list of models exists here.
+    """
+    model, chosen = str(model or "").strip(), str(chosen or "").strip()
+    if not model or not chosen:
+        return False
+    if family == "video" and (
+            model_lock.matches_family(model, chosen) or
+            (agnes and model == model_lock.AGNES_FLASH_MODEL)):
+        return True
+    named, wanted = _name_key(model), _name_key(chosen)
+    if not named or not wanted:
+        return False
+    return named == wanted or named in wanted or wanted in named
+
+
+def _chosen_models(receipt, ans):
+    """The run's own recorded model choice per family, else {} (no table)."""
+    chosen = {}
+    for source in (ans, receipt):
+        if not isinstance(source, dict):
+            continue
+        for key in CHOSEN_KEYS:
+            block = source.get(key)
+            if not isinstance(block, dict):
+                continue
+            for family, value in block.items():
+                if isinstance(value, str) and value.strip():
+                    chosen[str(family).strip().lower()] = value.strip()
+    return chosen
+
+
+def _named_jobs(receipt, ans):
+    """The run's per-paid-job rows: [{job, family, model}], else []."""
+    for source in (ans, receipt):
+        if not isinstance(source, dict):
+            continue
+        for key in JOB_ROW_KEYS:
+            rows = source.get(key)
+            if not isinstance(rows, list):
+                continue
+            named = []
+            for row in rows:
+                if not isinstance(row, dict):
+                    continue
+                job = row.get("logical_key") or row.get("job") \
+                    or row.get("key") or row.get("shot")
+                if not isinstance(job, str) or not job.strip():
+                    continue
+                model = row.get("model") or row.get("video_model") \
+                    or row.get("used")
+                family = row.get("family") or _family_of(job)
+                named.append({"job": job.strip(),
+                              "family": str(family).strip().lower(),
+                              "model": model.strip()
+                              if isinstance(model, str) else ""})
+            return named
+    return []
+
+
+def _ledger_jobs(receipt, ans, selection=None):
+    """(rows, path, error) for the run's PAID jobs in its spend ledger.
+
+    rows is None when the run records no ledger at all (nothing to read);
+    [] when it records one with no paid job. A ledger that IS named and
+    cannot be read is an error, never an empty pass -- a claim with no
+    measurement is a "no" (G7 law 2).
+    """
+    path = ""
+    for source in (ans, receipt):
+        if not isinstance(source, dict):
+            continue
+        for key in LEDGER_KEYS:
+            value = source.get(key)
+            if isinstance(value, str) and value.strip():
+                path = value.strip()
+                break
+        if path:
+            break
+    if not path:
+        run_root, run_root_error = (selection if selection is not None
+                                    else _selected_run_root(receipt, ans))
+        if run_root is None or run_root_error is not None:
+            return None, "", None
+        candidate = Path(run_root) / "spend.sqlite3"
+        if not candidate.is_file():
+            return None, "", None
+        path = str(candidate)
+    ledger = Path(path)
+    if not ledger.is_file():
+        return None, path, "the run's spend ledger is missing (%s)" % path
+    try:
+        con = sqlite3.connect("file:%s?mode=ro" % ledger, uri=True, timeout=10)
+    except sqlite3.Error as exc:
+        return None, path, "the run's spend ledger cannot be opened: %s" % exc
+    try:
+        run_ids = [r[0] for r in con.execute(
+            "SELECT DISTINCT run_id FROM jobs ORDER BY run_id")]
+        run_id = run_ids[0] if len(run_ids) == 1 else None
+        if run_id is None and run_ids:
+            name = Path(str(receipt.get("run_root") or "")).name
+            run_id = name if name in run_ids else None
+            if run_id is None:
+                return (None, path, "the run's spend ledger holds %d runs and "
+                        "none is this run" % len(run_ids))
+        marks = ",".join("?" * len(PAID_STATES))
+        sql = ("SELECT logical_key, state FROM jobs WHERE state IN (%s)"
+               % marks)
+        params = list(PAID_STATES)
+        if run_id is not None:
+            sql += " AND run_id=?"
+            params.append(run_id)
+        rows = list(con.execute(sql + " ORDER BY logical_key", params))
+    except sqlite3.Error as exc:
+        return None, path, "the run's spend ledger cannot be read: %s" % exc
+    finally:
+        con.close()
+    return ([{"job": row[0], "state": row[1], "family": _family_of(row[0])}
+             for row in rows], path, None)
+
+
+def _q6_video_gate(receipt, ans, codes, details, agnes=False):
     """F16: every delivered clip used the video model the card locked.
 
     This is the wiring of model_lock.check_video_model_delivery into the
@@ -835,12 +1052,15 @@ def _q6_video_gate(receipt, ans, codes, details):
     receipt that lists clips but records no lock fails too (G7: a claim
     with no measurement is a "no") -- it is never silently judged against
     a default the run never proved. No clip list -> nothing to check here.
+    A run that recorded "Agnes: yes" also accepts the Agnes flash model
+    (SPEC A10) -- the stage's model_lock owns that rule.
     """
     clips = _clip_list(receipt, ans)
     if clips is None:
         return True
     locked = _locked_video_model(receipt, ans)
-    bad = model_lock.check_video_model_delivery({"clips": clips}, locked)
+    bad = model_lock.check_video_model_delivery({"clips": clips}, locked,
+                                                agnes_chosen=bool(agnes))
     ok = True
     if locked is None:
         codes.append("%s:MODELS the receipt lists clips but records no "
@@ -857,36 +1077,110 @@ def _q6_video_gate(receipt, ans, codes, details):
     return ok
 
 
-def _q6_models(receipt, ans, codes, details):
-    """Only the locked models were used -- clip by clip (F16), asset by asset."""
-    ok = _q6_video_gate(receipt, ans, codes, details)
+def _q6_paid_jobs(receipt, ans, named_families, codes, details,
+                  selection=None):
+    """Every PAID job in the run's spend ledger is judged by a named model.
+
+    The ledger says WHICH jobs were paid, and never which model each one
+    used (the ledger keeps no model column). So: every paid job's FAMILY
+    must be covered by a named model (the MODELS answer, or the clip list
+    for video). When the run also records a model per job, every paid job
+    must be named with one, and a job whose model is not the run's choice
+    for its family is a "no" that NAMES THE JOB. A named job the ledger
+    never paid is ignored -- the ledger is the authority on what was paid.
+    No ledger recorded -> nothing to read.
+    """
+    rows, path, error = _ledger_jobs(receipt, ans, selection=selection)
+    details["paid_jobs"] = {"ledger": path or "not recorded", "jobs": 0,
+                            "uncovered": [], "mismatched": []}
+    if error is not None:
+        codes.append("%s:MODELS the run's paid jobs cannot be measured: %s"
+                     % (CHECKLIST_NO_MEASUREMENT, error))
+        details["paid_jobs"]["error"] = error
+        return False
+    if rows is None:
+        return True                       # no ledger recorded: nothing to read
+    job_rows = _named_jobs(receipt, ans)
+    named = {row["job"]: row for row in job_rows}
+    chosen = _chosen_models(receipt, ans)
+    agnes = _agnes_answer(receipt, ans, selection=selection)
+    has_clips = _clip_list(receipt, ans) is not None
+    uncovered, mismatched = [], []
+    for row in rows:
+        job, family = row["job"], row["family"]
+        if not (family in named_families or
+                (family == "video" and has_clips)):
+            uncovered.append(job)
+            continue
+        if not job_rows:
+            continue                      # family-level evidence only
+        named_row = named.get(job)
+        if named_row is None or not named_row["model"]:
+            uncovered.append("%s (names no model)" % job)
+            continue
+        wanted = chosen.get(family)
+        if wanted and not _model_matches(named_row["model"], wanted, family,
+                                         agnes=bool(agnes)):
+            mismatched.append("%s used %s but the run chose %s for %s"
+                              % (job, named_row["model"], wanted, family))
+    details["paid_jobs"].update(jobs=len(rows), uncovered=uncovered,
+                                mismatched=mismatched)
+    ok = True
+    if uncovered:
+        codes.append("%s:MODELS paid job(s) with no model named: %s"
+                     % (CHECKLIST_NO_MEASUREMENT,
+                        "; ".join(uncovered[:10])))
+        ok = False
+    if mismatched:
+        codes.append("%s:MODELS %s"
+                     % (CHECKLIST_WRONG_MODEL, "; ".join(mismatched[:10])))
+        ok = False
+    return ok
+
+
+def _q6_models(receipt, ans, codes, details, selection=None):
+    """Every family names the model it used; each paid job names the run's
+    own choice for its family. No fixed model table exists (S75-057).
+
+    The video family is judged by the card's own lock (F16 clip gate, with
+    the run's Agnes answer), so a Seedance 2.5, Veo 3.1, Seedance 2.0 Mini
+    or Agnes run passes; the other families are judged only against a model
+    the run itself recorded as its choice, never against a list this module
+    invented.
+    """
+    agnes = _agnes_answer(receipt, ans, selection=selection)
+    ok = _q6_video_gate(receipt, ans, codes, details, agnes=bool(agnes))
     used = ans.get("used") if isinstance(ans.get("used"), dict) else \
         {k: v for k, v in ans.items() if k not in _CLIP_KEYS + _LOCK_KEYS
-         and k != "used"}
+         and k != "used" and k not in JOB_ROW_KEYS + CHOSEN_KEYS}
     if not isinstance(used, dict) or not used:
         codes.append("%s:MODELS no per-asset model list in the receipt"
                      % CHECKLIST_NO_MEASUREMENT)
         return False
-    wrong = []
+    named = {}
     for kind, value in sorted(used.items()):
         if not isinstance(value, str) or not value.strip():
             codes.append("%s:MODELS %s has no named model"
                          % (CHECKLIST_NO_MEASUREMENT, kind))
             ok = False
             continue
-        v = value.strip().lower()
-        locked = LOCKED_MODELS.get(kind)
-        aliases = MODEL_ALIASES.get(kind, ())
-        if locked is None:
-            continue                       # unknown kind: not a locked slot
-        if locked not in v and not any(a in v for a in aliases):
-            wrong.append("%s: %s (locked: %s)" % (kind, value.strip(), locked))
-            ok = False
+        named[str(kind)] = value.strip()
+    chosen = _chosen_models(receipt, ans)
+    wrong = []
+    for kind, model in sorted(chosen.items()):
+        if kind in named and not _model_matches(named[kind], model, kind,
+                                                agnes=bool(agnes)):
+            wrong.append("%s: %s (run chose: %s)"
+                         % (kind, named[kind], model))
     if wrong:
         codes.append("%s:MODELS %s"
                      % (CHECKLIST_WRONG_MODEL, "; ".join(wrong[:10])))
-    details["models"] = {k: (v.strip() if isinstance(v, str) else "")
-                         for k, v in sorted(used.items())}
+        ok = False
+    ok = _q6_paid_jobs(receipt, ans, named, codes, details,
+                       selection=selection) and ok
+    details["models"] = named
+    details["chosen"] = chosen
+    details["agnes"] = agnes
     return ok
 
 
@@ -994,6 +1288,100 @@ def _package_root(receipt, ans, selection=None):
     return root
 
 
+def video_stream_sha256(path, ffmpeg="ffmpeg"):
+    """sha256 of the first VIDEO stream, decoded to raw frames.
+
+    S75-057: the clean cut is the master with its audio re-encoded to AAC, so
+    the whole FILE can never match the master. What must match is the
+    PICTURE. ffmpeg's hash muxer decodes the video stream and digests the raw
+    frames; the run goes through the load governor like every heavy decode.
+    """
+    argv = _LG.ffmpeg_argv(["-v", "error", "-i", str(path),
+                            "-map", "0:v:0", "-f", "hash", "-hash", "sha256",
+                            "-"], ffmpeg=ffmpeg)
+    proc = _LG.run_ffmpeg(argv, "delivery-clean-picture", capture_output=True,
+                          text=True, timeout=CLEAN_COMPARE_TIMEOUT_S)
+    if proc.returncode != 0:
+        raise ValueError("ffmpeg cannot decode the picture of %s: %s"
+                         % (path, (proc.stderr or "")[-200:]))
+    match = re.search(r"SHA256=([0-9a-f]{64})", proc.stdout or "")
+    if not match:
+        raise ValueError("no video stream hash from %s" % path)
+    return match.group(1)
+
+
+def audio_duration_and_loudness(path, ffprobe="ffprobe", ffmpeg="ffmpeg"):
+    """(duration_s, integrated loudness LUFS) of the first audio stream."""
+    probe = subprocess.run(
+        [ffprobe, "-v", "error", "-select_streams", "a:0", "-show_entries",
+         "stream=codec_name", "-show_entries", "format=duration", "-of",
+         "json", str(path)],
+        capture_output=True, text=True, timeout=60)
+    if probe.returncode != 0:
+        raise ValueError("ffprobe cannot read the audio of %s: %s"
+                         % (path, (probe.stderr or "")[-200:]))
+    doc = json.loads(probe.stdout or "{}")
+    if not (doc.get("streams") or []):
+        raise ValueError("%s has no audio stream" % path)
+    try:
+        duration = float((doc.get("format") or {}).get("duration"))
+    except (TypeError, ValueError):
+        duration = None
+    if duration is None or not math.isfinite(duration) or duration <= 0:
+        raise ValueError("no measured audio duration for %s" % path)
+    argv = _LG.ffmpeg_argv(["-hide_banner", "-nostats", "-i", str(path),
+                            "-vn", "-af", "ebur128", "-f", "null", "-"],
+                           ffmpeg=ffmpeg)
+    proc = _LG.run_ffmpeg(argv, "delivery-clean-loudness", capture_output=True,
+                          text=True, timeout=CLEAN_COMPARE_TIMEOUT_S)
+    match = re.search(r"I:\s*(-?[\d.]+|-inf)\s*LUFS", proc.stderr or "")
+    if proc.returncode != 0 or not match:
+        raise ValueError("no measured loudness for %s: %s"
+                         % (path, (proc.stderr or "")[-200:]))
+    loudness = float("-inf") if match.group(1) == "-inf" else float(match.group(1))
+    return duration, loudness
+
+
+def compare_clean_video(master, clean_video, ffprobe="ffprobe",
+                        ffmpeg="ffmpeg"):
+    """The clean cut must carry the master's PICTURE and its audio's
+    duration (0.1 s) and loudness (0.5 LU). Raises ValueError on any miss.
+    """
+    clean_video = Path(clean_video)
+    if not clean_video.is_file() or clean_video.stat().st_size == 0:
+        raise ValueError("package clean video is missing")
+    master_picture = video_stream_sha256(master, ffmpeg=ffmpeg)
+    clean_picture = video_stream_sha256(clean_video, ffmpeg=ffmpeg)
+    if master_picture != clean_picture:
+        raise ValueError("package clean video's picture differs from the "
+                         "verified final export (%s vs %s)"
+                         % (clean_picture[:12], master_picture[:12]))
+    master_dur, master_lu = audio_duration_and_loudness(master, ffprobe=ffprobe,
+                                                        ffmpeg=ffmpeg)
+    clean_dur, clean_lu = audio_duration_and_loudness(clean_video,
+                                                      ffprobe=ffprobe,
+                                                      ffmpeg=ffmpeg)
+    duration_delta = abs(clean_dur - master_dur)
+    if duration_delta > CLEAN_AUDIO_DURATION_TOL_S:
+        raise ValueError("package clean video's audio runs %.3f s vs the "
+                         "master's %.3f s (over %.1f s)"
+                         % (clean_dur, master_dur,
+                            CLEAN_AUDIO_DURATION_TOL_S))
+    if not (math.isfinite(clean_lu) and math.isfinite(master_lu)):
+        raise ValueError("package clean video's audio loudness is unmeasured")
+    loudness_delta = abs(clean_lu - master_lu)
+    if loudness_delta > CLEAN_AUDIO_LOUDNESS_TOL_LU:
+        raise ValueError("package clean video's audio is %.2f LUFS vs the "
+                         "master's %.2f LUFS (over %.1f LU)"
+                         % (clean_lu, master_lu,
+                            CLEAN_AUDIO_LOUDNESS_TOL_LU))
+    return {"picture_equal": True, "picture_sha256": master_picture,
+            "master_duration_s": master_dur, "clean_duration_s": clean_dur,
+            "duration_delta_s": duration_delta,
+            "master_loudness_lu": master_lu, "clean_loudness_lu": clean_lu,
+            "loudness_delta_lu": loudness_delta}
+
+
 def _q8_export(receipt, ans, codes, details, selection=None):
     """Only lip-sync evidence for the hash-bound final export can answer Q8."""
     from final_assembler.master_provenance import sha256_file
@@ -1009,8 +1397,7 @@ def _q8_export(receipt, ans, codes, details, selection=None):
             receipt, _answer(receipt, "PACKAGE_COMPLETE"),
             selection=selection)
         clean_video = package_root / package_contract.ITEMS_BY_KEY["video"].files[1]
-        if sha256_file(clean_video) != rc["master_sha256"]:
-            raise ValueError("package clean video differs from the verified final export")
+        details["clean_video"] = compare_clean_video(master, clean_video)
         evidence = rc["evidence"]
         plan = evidence["lipsync_plan"]
         output_dur = float(evidence["output_dur"])
@@ -1032,7 +1419,9 @@ def _q8_export(receipt, ans, codes, details, selection=None):
             raise ValueError("per-clip QC evidence differs from the clips included in the export")
         details["lipsync_export"] = checked["evidence"]
         return True
-    except (OSError, ValueError, KeyError, TypeError, AttributeError, ZeroDivisionError) as exc:
+    except (OSError, ValueError, KeyError, TypeError, AttributeError,
+            ZeroDivisionError, subprocess.SubprocessError,
+            _LG.LoadGovernorError) as exc:
         codes.append("%s:LIP_SYNC export evidence: %s" %
                      (CHECKLIST_NO_MEASUREMENT, exc))
         return False
@@ -1732,7 +2121,8 @@ def evaluate(receipt):
         elif q == "VOICE_MUSIC":
             qok = _q5_voice_music(receipt, ans, qcodes, qdetails)
         elif q == "MODELS":
-            qok = _q6_models(receipt, ans, qcodes, qdetails)
+            qok = _q6_models(receipt, ans, qcodes, qdetails,
+                             selection=package_selection)
         elif q == "HONEST_RECEIPT":
             qok = _q7_honest(receipt, ans, qcodes, qdetails)
         elif q == "LIP_SYNC":
@@ -1812,7 +2202,7 @@ def _measurement_line(q, ans, qdetails):
     if q == "VOICE_MUSIC":
         return "music gaps %.2f s, %d line(s) delivery-checked%s" % (
             d.get("music_gaps_s", 0.0), d.get("lines_checked", 0),
-            ("reverb tail %.3f s" % d["reverb_tail_s"])
+            ("; reverb tail %.3f s" % d["reverb_tail_s"])
             if "reverb_tail_s" in d and d["reverb_tail_s"] is not None else "")
     if q == "MODELS":
         parts = ["%s=%s" % (k, v)
@@ -1872,7 +2262,7 @@ def to_qc_record(result, run_id, stage, reviewer, check_id=None,
                                  "reviewer.%s is required" % key)
         rev[key] = v.strip()
     answers = result.get("answers", {})
-    # qc-schema evidence carries summary + refs only; the 7 answers ride in
+    # qc-schema evidence carries summary + refs only; the 12 answers ride in
     # the summary, each as yes/no plus the measurement that proves it
     lines = ["%s=%s(%s)" % (q, a["answer"], a["measurement"][:80])
              for q, a in sorted(answers.items())]
@@ -2098,22 +2488,30 @@ def _wav_measure(path):
     with wave.open(str(path), "rb") as w:
         rate = w.getframerate()
         width = w.getsampwidth()
+        chans = w.getnchannels()       # read inside the open block (S75-080)
         frames = w.readframes(w.getnframes())
-    if rate <= 0 or w.getnchannels() < 1:
+    if rate <= 0 or chans < 1 or width not in (1, 2, 3, 4):
         return None
-    # mono downmix; 8/16/24/32-bit little-endian PCM (the wave module's own)
-    chans = 2 if width in (2, 3, 4) else 1
-    step = width * chans
-    window = max(1, int(rate * SONG_MP3_WINDOW_S))
-    env, acc, n = [], 0.0, 0
-    total = len(frames) // step
-    for i in range(total):
-        chunk = frames[i * step:i * step + width]
+    # decode each sample at its real width: 8-bit is unsigned, 16/24/32-bit
+    # are signed little-endian PCM; channels are averaged into one frame value
+    def sample(off):
         if width == 1:
-            v = (chunk[0] - 128) / 128.0
-        else:
-            v = struct.unpack("<h", chunk[:2])[0] / 32768.0
-        acc += v * v
+            return (frames[off] - 128) / 128.0
+        if width == 2:
+            return struct.unpack("<h", frames[off:off + 2])[0] / 32768.0
+        if width == 3:
+            v = int.from_bytes(frames[off:off + 3], "little", signed=True)
+            return v / 8388608.0
+        return struct.unpack("<i", frames[off:off + 4])[0] / 2147483648.0
+
+    step = width * chans
+    total = len(frames) // step
+    window = max(1, int(rate * SONG_MP3_WINDOW_S))   # frames, from real time
+    env, acc, n = [], 0.0, 0
+    for i in range(total):
+        base = i * step
+        acc += sum(sample(base + c * width) ** 2
+                   for c in range(chans)) / float(chans)
         n += 1
         if n == window:
             env.append(math.sqrt(acc / n))
@@ -2293,7 +2691,7 @@ def main(argv=None):
     import json
     p = argparse.ArgumentParser(
         prog="delivery_checklist",
-        description="G7 delivery QC: the 7 checklist questions, answered "
+        description="G7 delivery QC: the 12 checklist questions, answered "
                     "with measured evidence from the receipt (fail-closed)")
     sub = p.add_subparsers(dest="cmd", required=True)
     a = sub.add_parser("check", help="evaluate a receipt")
