@@ -61,6 +61,20 @@ new_case() {
     mkdir -p "$CASE_DIR/shared-utils"
     cp "$SCRIPT_DIR/../../shared-utils/resolve_db.py" "$CASE_DIR/shared-utils/"
   fi
+  # BU-75: the copied script also resolves the shared state lock from its
+  # sibling 23-ai-workforce-blueprint/scripts/workforce_state.py and hard-fails
+  # when that is unreachable. The case's HOME override removes the installed
+  # skills tree, so mirror the same sibling layout the script expects. The
+  # copy lives at $CASE_DIR/scripts, so the script's own ../../ resolves to
+  # dirname($CASE_DIR) — mirror there, not at $CASE_DIR, or the lock never
+  # resolves and Phase 3 never reaches the roster code under test.
+  if [[ -f "$SCRIPT_DIR/../../23-ai-workforce-blueprint/scripts/workforce_state.py" ]]; then
+    _ws_mirror_root="$(dirname "$CASE_DIR")"
+    mkdir -p "$_ws_mirror_root/23-ai-workforce-blueprint/scripts"
+    cp "$SCRIPT_DIR/../../23-ai-workforce-blueprint/scripts/workforce_state.py" \
+       "$_ws_mirror_root/23-ai-workforce-blueprint/scripts/"
+    unset _ws_mirror_root
+  fi
 
   # Recording stub for scaffold-agent-files.sh: one line of arguments per call.
   cat > "$SCRIPTS/scaffold-agent-files.sh" <<'STUB'
