@@ -228,6 +228,11 @@ def _walk_to_complete(call, values):
         assert qid not in seen, (qid, seen)
         seen.append(qid)
         assert q["prompt"].count("?") <= 1
+        if qid == "defaults_review":
+            # PD-013: the QUICK review turn only clears on a plain acceptance,
+            # and PD-004b refuses an acceptance that names no client message.
+            _, q = call("--answer", qid, "good", "--owner-msg-id", "walk-1")
+            continue
         if qid in values:
             answer = values[qid]
         elif qid.startswith("want_") or qid == "dark_ok" or qid == "logo_on_slides":
@@ -255,8 +260,15 @@ def test_real_cli_walk_completes_and_proves_a_single_question_transcript(intervi
     bank = SCANNER.load_bank_questions()
     assert SCANNER.scan_transcript(trace["turns"], bank)["pass"]
     entries = ledger(run)
-    for field in ("AUDIENCE", "GOAL", "CTA_ACTION", "DURATION_MIN", "WANT_MOTION_GRAPHICS"):
+    for field in ("AUDIENCE", "GOAL", "CTA_ACTION", "DURATION_MIN"):
         assert entries[field]["validated"] is True
+    # PD-013: a want_ toggle that carries a bank default is RECORDED rather
+    # than asked under QUICK, so it is never "validated" by an answer -- it
+    # carries the accepted default and the owner message id the acceptance
+    # was stamped with.
+    assert entries["WANT_MOTION_GRAPHICS"]["defaulted"] is True
+    assert entries["WANT_MOTION_GRAPHICS"]["value"] == "no"
+    assert entries["WANT_MOTION_GRAPHICS"]["default_accepted_msg_id"] == "walk-1"
     # PD-014: MOTION_GRAPHICS_DECLINED_REASON is optional (required=false,
     # block_gate=false) and the walk answers every want_ toggle "no", so
     # the reason is asked but the walk may answer it with the "no note"

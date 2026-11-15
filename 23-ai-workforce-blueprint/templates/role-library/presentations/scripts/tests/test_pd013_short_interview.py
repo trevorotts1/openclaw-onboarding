@@ -59,7 +59,11 @@ class Walk:
             PRESENTATION_RESOURCE_PROFILE_DIR=str(tmp_path / "profile"),
             PRESENTATION_CAPACITY_CONFIG_DIR=str(tmp_path / "profile"),
             PRESENTATION_PROVIDER_PROBES="0",
-            PRESENTATION_MODEL_FRESHNESS="0")
+            PRESENTATION_MODEL_FRESHNESS="0",
+            # PD-004c made enforce the default; this walk answers the count
+            # question and records no client message ids, so it opts into warn
+            # explicitly (same convention as test_one_question_intake.py).
+            PRESENTATION_INTAKE_PROVENANCE="warn")
         self.ids = []
 
     def call(self, *args):

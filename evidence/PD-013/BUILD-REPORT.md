@@ -95,7 +95,7 @@ As a subfield it is the *first* thing asked on turn 9, and the eight model quest
 ## 3. Acceptance rows
 
 Driven with the real `deck-intake-driver.py` (`--next` / `--answer`), never a reimplementation;
-`TMPDIR=/Volumes/mac mini m4/swarm-contract/pd-fix/tmp/PD-013`.
+`TMPDIR=$LANE_SCRATCH/PD-013` (lane scratch, not committed).
 
 ### A1 — "simulated QUICK from-scratch pitch deck that accepts defaults: count the questions asked and assert the count is 14 or fewer including `defaults_review`"
 
@@ -329,3 +329,24 @@ inside itself).
 6. **The transcript scanner** (`51-signature-presentation/scripts/intake_trace_check.py`) treats two
    bank entries with identical prompt text as a batched turn. The new pace wording therefore lives on
    the atomic subfield only — the row keeps its old compatibility prompt, which is never asked.
+
+---
+
+## 9. Re-verified on current `main` (2026-11-14)
+
+Re-cut onto `origin/main` at `fe6e5edee44abc2ca659436611da558186b5ac28` (the original branch was cut
+1020 commits earlier). Three collisions with work that landed in between, all repaired here:
+
+1. **PD-004c made provenance `enforce` the default.** `test_pd013_short_interview.py`'s `Walk` records
+   no client message ids, so it now opts into `PRESENTATION_INTAKE_PROVENANCE=warn` explicitly — the
+   same convention `test_one_question_intake.py` already uses. Without it, `--complete` correctly
+   refused with exit 6.
+2. **The QUICK review turn had no handler in `test_one_question_intake.py`'s generic walk**, so a
+   non-accepting fallback answer re-emitted `defaults_review` forever. The helper now answers it
+   `good --owner-msg-id walk-1`, which is what PD-004b requires of an acceptance.
+3. **`WANT_MOTION_GRAPHICS` is now defaulted, not asked**, under QUICK (it carries a bank default).
+   The main-era assertion that it is `validated` was replaced by the stronger PD-013 contract: it is
+   `defaulted`, its value is the bank default, and it carries the acceptance's owner message id.
+
+Rows at that head: `test_pd013_short_interview.py` 15 passed, `test_one_question_intake.py` 13 passed,
+`test_pres056_progressive_intake.py` 17 passed (45 passed, 0 failed).
