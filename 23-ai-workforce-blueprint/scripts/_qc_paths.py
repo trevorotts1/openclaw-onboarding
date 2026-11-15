@@ -126,13 +126,18 @@ def resolve_live_departments_dir(state, workspace, config_path=None):
     candidates, cseen = [], set()
 
     def add(p):
+        p = Path(p)
         try:
-            resolved = Path(p).resolve()
+            resolved = p.resolve()
         except OSError:
             return
         if str(resolved) in cseen or not resolved.is_dir():
             return
-        cseen.add(str(resolved)); candidates.append(resolved)
+        # Keep the caller-visible spelling (what the build state named) while
+        # the resolved path only de-duplicates. Returning the resolved path
+        # changed the contract for symlinked VPS layouts (/data -> /home/node)
+        # and broke the tree guard's exact-path assertion.
+        cseen.add(str(resolved)); candidates.append(p)
 
     root = state.get("companyRoot")
     if isinstance(root, str) and os.path.isabs(root):
