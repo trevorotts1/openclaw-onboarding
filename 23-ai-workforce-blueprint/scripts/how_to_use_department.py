@@ -1104,7 +1104,25 @@ _DEPT_TOP_BLOCK = {
 # Department-specific appendix blocks. Each value is appended verbatim after
 # the generated guide body (after the _sanitize_block pass, so they must
 # already be em-dash-free). Keep entries sorted by dept_folder key.
+_PRESENTATION_ENTRYPOINT_APPENDIX = """\
+---
+
+## The one command that builds a deck
+
+Every presentation build goes through the sanctioned entry point:
+
+```bash
+bash 23-ai-workforce-blueprint/scripts/presentation-canonical-entry.sh <job-dir>
+```
+
+It runs the gates in order and refuses a job that has not passed the one before
+it. Do NOT run a renderer step by hand: `python3 working/*.py` and any hand-run
+`build_deck.py` skip the gates, so they are not a supported way to build a deck.
+
+"""
+
 _DEPT_APPENDIX = {
+    "presentations": _PRESENTATION_ENTRYPOINT_APPENDIX,
     "communications": _TELEGRAM_TARGET_APPENDIX,
     "crm": _REUSABLE_LIBRARIES_APPENDIX,
     "marketing": _REUSABLE_LIBRARIES_APPENDIX,
