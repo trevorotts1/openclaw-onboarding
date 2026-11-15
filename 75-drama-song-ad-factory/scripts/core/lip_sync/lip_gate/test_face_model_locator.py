@@ -66,6 +66,13 @@ def main():
     tmp = tempfile.mkdtemp(prefix="s75-w07-u2-locator-")
     saved = {}
     legacy = os.path.join(HERE, "face_landmarker.task")
+    # The default path lives inside the shipped skill tree. Two sections plant a
+    # model there to prove the readers resolve to it; the file is removed in the
+    # cleanup, but the DIRECTORY must not be left behind either -- an empty
+    # assets/ is repo pollution and skill 75's packaging allowlist fails on it.
+    # Only remove a directory this test created; a shipped assets/ stays.
+    assets_dir = os.path.abspath(os.path.join(LOC.SKILL_ROOT, "assets"))
+    assets_dir_created = not os.path.isdir(assets_dir)
     try:
         # ---- pins are single-sourced in the locator -------------------------
         check("pins-sourced-from-locator",
@@ -259,6 +266,11 @@ def main():
         os.environ.pop(LOC.MODEL_ENV, None)
         if os.path.exists(legacy):
             os.remove(legacy)
+        if assets_dir_created and os.path.isdir(assets_dir):
+            try:
+                os.rmdir(assets_dir)   # empty only; never removes shipped content
+            except OSError:
+                pass
         shutil.rmtree(tmp, ignore_errors=True)
 
     print("\n%s passed, %s failed" % (len(PASS), len(FAIL)))
