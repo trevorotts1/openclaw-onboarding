@@ -24,6 +24,7 @@ import delivery_gate  # noqa: E402
 import ghl_media  # noqa: E402
 import ghl_media_push as gmp  # noqa: E402
 import ghl_media_upload  # noqa: E402
+from presentation_job.deliverable_paths import deliverable_path  # noqa: E402
 from presentation_job.gates import Gates  # noqa: E402
 
 SLUG = "demo-deck"
@@ -53,10 +54,15 @@ def _stub_transport(monkeypatch):
 def _governed_run(base: pathlib.Path) -> pathlib.Path:
     """A complete governed run dir with the deck pair at the DECLARED canon."""
     deck = delivery_gate._mk_full_run(base, with_text=False, task_ids=("kie-aaa",))
-    declared = base / "working" / "delivery"
-    declared.mkdir(parents=True, exist_ok=True)
-    (declared / f"{SLUG}-FINAL.pptx").write_bytes(deck.read_bytes())
-    (declared / f"{SLUG}-FINAL.pdf").write_bytes(_REAL_PDF)
+    # The canon moves with deliverable_paths.py (PD-062 put the -FINAL deck pair
+    # in working/deliverables/); writing a hand-typed directory here is exactly
+    # the drift this import deletes.
+    pptx = base / deliverable_path("deck_pptx", deck_slug=SLUG)
+    pdf = base / deliverable_path("deck_pdf", deck_slug=SLUG)
+    pptx.parent.mkdir(parents=True, exist_ok=True)
+    pptx.write_bytes(deck.read_bytes())
+    pdf.write_bytes(_REAL_PDF)
+    declared = pptx.parent
     renders = base / "renders"
     renders.mkdir(parents=True, exist_ok=True)
     (renders / "slide-01.png").write_bytes(b"\x89PNG\r\n\x1a\n" + b"\x00" * 64)
@@ -172,7 +178,7 @@ def test_missing_deck_is_exit_one(tmp_path, monkeypatch, capsys):
 
     err = capsys.readouterr().err
     assert rc == 1
-    assert f"the assembled deck is not at {base / 'working' / 'delivery' / (SLUG + '-FINAL.pptx')}" in err
+    assert f"the assembled deck is not at {base / deliverable_path('deck_pptx', deck_slug=SLUG)}" in err
     assert calls == []
 
 
