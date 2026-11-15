@@ -29,7 +29,8 @@ sys.path.insert(0, str(HERE))
 
 import factory as F  # noqa: E402
 import state_store as ss  # noqa: E402
-from test_production_process import confirmed_run, complete_stage, approve_script
+from test_production_process import (confirmed_run, complete_stage, seal_chain,
+                                     approve_script)
 
 PASS = []
 
@@ -208,6 +209,10 @@ def _make_full_run(run, stages=F.CANONICAL_STAGES):
     # Controlled successful sink receipt; this fixture sends nothing externally.
     (run / "delivery" / "receipts.json").write_text(json.dumps([
         {"destination": "chat", "status": "delivered"}]))
+    # S75-002: a keyed run proves final QC from the SEALED CHAIN through
+    # delivery, not from the record file, so the fixture seals all twelve
+    # stages in order (the shared helper, shipped contract paths).
+    seal_chain(run)
     return run
 
 
@@ -369,6 +374,10 @@ def _studio_evidence_run(root, with_order=True):
     if with_order:
         (run / "control" / "studio-order.json").write_text(json.dumps(
             {"order_id": "ORD-E1", "client_id": "client-9", "title": "Drama ad"}))
+    # S75-002: those evidence files are SEALED artifacts, so overwriting them
+    # after _make_full_run's chain seal is exactly the change the gate refuses.
+    # Re-seal the chain over the finished fixture so delivery still proves.
+    seal_chain(run)
     return run
 
 

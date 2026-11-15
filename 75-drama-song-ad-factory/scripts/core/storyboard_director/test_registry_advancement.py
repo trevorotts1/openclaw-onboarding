@@ -41,7 +41,7 @@ from batch_mode import batch as BATCH                     # noqa: E402
 sys.path.insert(0, os.path.join(CORE, "intake_preflight"))
 import factory as FACTORY                                 # noqa: E402
 from test_factory_method_agnes import confirmed_fixture, complete_fixture_stage, storyboard_fixture
-from test_production_process import approve_script
+from test_production_process import approve_script, seal_stage
 
 STAGES = [s for s, _ in BATCH.STAGES]
 VIDEO_MODEL_ROW = "video-generation"
@@ -332,6 +332,16 @@ def make_run(up_to=None, storyboard_files=True):
                 approve_script(run)
     _seed_gate4(run)
     _seal_through_music(run)
+    # S75-002: a stage that already completed carries its seal too. The
+    # reconciler only moves a lagging row to COMPLETE when the gate proves the
+    # stage, and `next` only opens the following stage on the sealed chain.
+    # Sealing here is the crash window the reconciler serves: the seal landed,
+    # the row write did not.
+    seal_after = ["continuity-bible"]
+    if up_to and STAGES.index(up_to) > STAGES.index("continuity-bible"):
+        seal_after += STAGES[STAGES.index("continuity-bible") + 1:STAGES.index(up_to)]
+    for stage in seal_after:
+        seal_stage(run, stage)
     return run
 
 
@@ -425,6 +435,10 @@ def complete_row(run, stage):
     elif stage == "delivery":
         _delivery_fixture(run)
     complete_fixture_stage(run, stage)
+    # S75-002: the row and its seal travel together; without the seal the next
+    # stage cannot open. Nothing downstream is sealed yet, so the seal records
+    # exactly the files this stage just wrote.
+    seal_stage(run, stage)
 
 
 def test_registry_row_is_a_real_executable():
@@ -489,6 +503,10 @@ def test_seven_downstream_stages_really_advance():
         r = AR.run(run, lambda m, imgs: w_events.append(("m", m, imgs)), reply="GO")
         check("storyboard approved through the in-chat gate",
               r["action"] == "approved" and AR.gate_open(run), r)
+        # S75-002: the approval writes the artifacts the storyboard contract
+        # names; seal them so the reconciler can prove the row and the next
+        # stage can open.
+        seal_stage(run, "storyboard")
         env = nxt(run)
         rec = [x for x in (env["data"].get("reconciled") or [])
                if x.get("stage") == "storyboard"]
