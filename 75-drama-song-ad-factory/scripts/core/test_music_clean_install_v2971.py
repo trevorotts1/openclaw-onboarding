@@ -2,8 +2,7 @@
 """v2.9.71: the music stage runs on a clean install.
 
 Five defects stopped every clean-install music run at the same wall. Each is
-proved here against the real client data that exposed it (Laya Kelley's
-Voyage To Virtue probe files) or against a synthesized take:
+proved here against a client run's real data or against a synthesized take:
 
   1. CARD RECEIPT  -- song_choices never attached the run's recorded receipt,
      so kie_dispatch refused every paid job CARD_UNANSWERED.
@@ -49,8 +48,8 @@ def _live_kie_dispatch():
     """
     return importlib.import_module("kie_dispatch.kie_dispatch")
 
-PROBE = os.environ.get("DSF_LAYA_PROBE",
-                       os.path.expanduser("~/scratch/dsf-stall-fix/laya/dsf003/probe"))
+PROBE = os.environ.get("DSF_MUSIC_PROBE",
+                       os.path.expanduser("~/scratch/dsf-music-probe"))
 
 FAILS = []
 
@@ -89,7 +88,7 @@ def test_card_receipt_read_shapes():
         check("1: stamped block read", SC._card_receipt(tmp) == block)
 
         os.unlink(os.path.join(tmp, "control", "card-receipt-block.json"))
-        # Jennifer's shape: answers live under the per-question record.
+        # A client run's shape: answers live under the per-question record.
         rec = {"answers": {"video_style": "Lifelike 3D",
                            "audio_style": "Soul Ballad", "length": 60,
                            "video_model": "Hailuo 02 Standard"},
@@ -114,13 +113,13 @@ def test_card_receipt_read_shapes():
 
 
 def test_real_probe_receipt_clears_the_gate():
-    """Real data: Laya's request is refused, and is NOT refused once attached."""
+    """Real data: a client run's request is refused, and is NOT refused once attached."""
     req = _probe("req.json")
     receipt = _probe("card-receipt-block.json")
     if req is None or receipt is None:
         # The client probe is not in the tree (it never is: it is client data).
         # The shape checks above prove the reader; this one proves the gate on
-        # the real payload where it is available. Set DSF_LAYA_PROBE to run it.
+        # the real payload where it is available. Set DSF_MUSIC_PROBE to run it.
         print("skip: 1: real probe not present at %s (shape checks above cover the reader)" % PROBE)
         return
     before = KD.card_gate_refusal(req)
@@ -182,7 +181,7 @@ def test_script_words_are_the_sheet_lyrics():
     spec = SC._load_request(os.path.join(PROBE, "req.json")) \
         if os.path.isfile(os.path.join(PROBE, "req.json")) else None
     if spec is None:
-        print("skip: 2: real probe not present at %s (set DSF_LAYA_PROBE to run it)" % PROBE)
+        print("skip: 2: real probe not present at %s (set DSF_MUSIC_PROBE to run it)" % PROBE)
         return
     words = SC._sheet_lyric_words(spec)
     wanted = SD._script_lyric_words(words)
