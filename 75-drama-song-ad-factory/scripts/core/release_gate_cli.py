@@ -18,7 +18,12 @@ which is a named refusal, never a default allow:
   preservation.json           s75.x11.targeted-preservation/v1
   reviewed-manifest.json      s75.x11.reviewed-manifest/v1
   applied-verification.json   s75.x11.applied-tree-verification/v1  (release only)
-  operator-decision.json      {installed_apply: bool}               (installed only)
+  x11-operator-decision.json  {installed_apply: bool}               (installed only)
+
+The installed-only record is deliberately NOT named operator-decision.json: the
+song run artifact <run>/music/acceptance/operator-decision.json is a different
+document with a different shape, and one filename for two shapes is exactly how
+a wrong document gets read silently.
 
 No production writer of those six files exists in this tree. The only code that
 writes all six at once is tests/test_x11_release_gate_wiring.py `records()`, a
@@ -45,6 +50,10 @@ EXITS = {
     "ORIGINAL_WORK_DELETED": 5,
 }
 TARGET_FIELDS = ("repository", "skill_root", "target_id", "kind", "tree_digest")
+#: The installed-only decision record this CLI reads. Distinct from the song run
+#: artifact song_dispatch.operator_decision_path (<run>/music/acceptance/
+#: operator-decision.json), which has a different shape and a different owner.
+OPERATOR_DECISION_FILE = "x11-operator-decision.json"
 HERE = os.path.dirname(os.path.abspath(__file__))
 
 
@@ -85,7 +94,7 @@ def main(argv=None):
     try:
         target = gate.Target(*(target_doc[k] for k in TARGET_FIELDS))
         common = {
-            "operator_decision": read_record(args.records, "operator-decision.json"),
+            "operator_decision": read_record(args.records, OPERATOR_DECISION_FILE),
             "preservation": read_record(args.records, "preservation.json"),
             "reviewed_manifest": read_record(args.records, "reviewed-manifest.json"),
         }
