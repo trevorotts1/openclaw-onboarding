@@ -39,6 +39,8 @@ RECEIPT_HMAC = "pd107-test-receipt-hmac"
 def contract():
     # Values are explicit non-commercial facts from the authenticated
     # informational-demo contract, never invented commercial claims.
+    # PD-013/PD-913 (merged after PD-107) require the pace turn and every
+    # remaining QUICK turn, so the fixture answers them explicitly.
     return {
         "version": 1, "source": "operator-delegated",
         "task_id": "d4e05a2f-f83b-4e87-aabe-d5e31c43867b",
@@ -53,11 +55,35 @@ def contract():
         "deliverable_set": "PPTX, PDF, presenter guide, workbook, fillable workbook, infographic",
         "delivery_destinations": ["PPTX", "PDF", "presenter guide", "workbook",
                                   "fillable workbook", "infographic"],
+        "interview_depth": "quick",
         "answers": {
-            "audience": "General informational audience learning how to use the Presentation Department",
-            "transformation_promise": "No commercial transformation promise — informational department demonstration",
-            "cta_action": "Request or use the Presentation Department",
-            "tone": "teacher",
+            "audience_recipient_cast": (
+                "recipient_name: General informational audience; "
+                "audience: General informational audience learning how to use the Presentation Department; "
+                "audience_composition_note: Department operators; "
+                "representation_mix: mix"),
+            "deadline_and_notes": (
+                "deadline: no fixed deadline; "
+                "client_notes: informational department demonstration"),
+            "goal_cta_feeling": (
+                "goal: Show how the department works; "
+                "cta_action: Request or use the Presentation Department; "
+                "target_feeling: confident"),
+            "grounding_and_method": (
+                "grounded_content: Department workflow and roles; "
+                "named_methodology: none"),
+            "interview_depth": "standard_mode: QUICK",
+            "pitch_included": "no",
+            "promise_objection_timing": (
+                "transformation_promise: No commercial transformation promise — informational department demonstration; "
+                "primary_objection: Is this real?; "
+                "time_to_result: immediate"),
+            "standard_mode": "QUICK",
+            "style_and_brand": (
+                "style_source: create-new; style_prefs: fresh clean-white; "
+                "brand_primary: black; dark_ok: False; style_pick_auto: yes"),
+            "visual_mix": "visual_mix: mix",
+            "logo_placement": "logo_on_slides: False",
         },
     }
 
