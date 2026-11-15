@@ -374,6 +374,10 @@ def _studio_evidence_run(root, with_order=True):
     if with_order:
         (run / "control" / "studio-order.json").write_text(json.dumps(
             {"order_id": "ORD-E1", "client_id": "client-9", "title": "Drama ad"}))
+    # S75-002: those evidence files are SEALED artifacts, so overwriting them
+    # after _make_full_run's chain seal is exactly the change the gate refuses.
+    # Re-seal the chain over the finished fixture so delivery still proves.
+    seal_chain(run)
     return run
 
 
