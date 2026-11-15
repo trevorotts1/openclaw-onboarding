@@ -43,7 +43,7 @@ class RunBoundCardContract(unittest.TestCase):
         method = self.method_run()
         before = method.read_bytes()
         rc, text = invoke("--run-dir", str(self.run))
-        expected = IC.render_step(1, IC._shaped(IC.QUESTIONS, []))
+        expected = IC.render_step(1, IC.askable(IC._shaped(IC.QUESTIONS, [])))
         self.assertEqual(rc, 0)
         self.assertEqual(text, expected)
         self.assertTrue(text.splitlines()[0].endswith("- PURPOSE"))
