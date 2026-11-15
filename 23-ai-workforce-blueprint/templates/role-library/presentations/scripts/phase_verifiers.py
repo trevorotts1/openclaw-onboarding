@@ -33,10 +33,12 @@ DESIGN RULES
   * F03 — FAIL CLOSED on missing evidence: a checker that RAISES, or an engine
     that is entirely unavailable, is a FAILED verifier in production, not a NOTE
     pass. Degraded (NOTE) passes survive ONLY in an explicit test/CI context:
-    PRESENTATION_ALLOW_DEGRADED_VERIFIERS=1, CI / OPENCLAW_TEST env markers, or
-    the `.test-context` run-dir marker (see _degraded_allowed — the same contract
-    as run_signature_deck._degraded_verifiers_allowed). A crashed measurer equals
-    no measurement; no measurement cannot equal pass.
+    PRESENTATION_ALLOW_DEGRADED_VERIFIERS=1, or CI / OPENCLAW_TEST env markers
+    (see _degraded_allowed — the same contract as
+    run_signature_deck._degraded_verifiers_allowed). PD-201: the `.test-context`
+    run-dir marker file no longer opens the gate, and every degraded pass appends
+    one `degraded_pass` line to working/checkpoints/gate_log.jsonl. A crashed
+    measurer equals no measurement; no measurement cannot equal pass.
   * NO network calls, NO side effects. Pure filesystem reads + engine checks.
   * FAIL-with-reason is mechanically enforced. After each verifier returns,
     verify() validates that every (False, reasons) tuple has non-empty reasons.
@@ -229,6 +231,9 @@ _VERIFIER_SYMBOL_CONTRACT: "Dict[str, Tuple[str, ...]]" = {
         "_chk_research_brief",
         "_chk_research_cited",
         "_chk_claims_without_citation",
+        # PD-209: P0A-INTAKE runs the same intake checker every consumer's
+        # preflight runs — bound here so a rename fails the import, loudly.
+        "_chk_intake",
         "check_prompt_qc_deterministic",
         "check_deck_harmony",
         "_chk_notes_pane",
@@ -407,20 +412,35 @@ def _degraded_allowed(run_dir) -> bool:
     """F03: mirror of run_signature_deck._degraded_verifiers_allowed — a degraded
     (skipped / filesystem-fallback) substance check is permitted ONLY in an explicit
     test/CI context. Signals: PRESENTATION_ALLOW_DEGRADED_VERIFIERS=1, CI /
-    OPENCLAW_TEST env markers, or the `.test-context` run-dir marker file. A real
-    production run has NONE of these signals, so an engine crash or whole-engine
-    unavailability inside a governed verifier FAILS CLOSED instead of silently
-    passing on weaker evidence."""
+    OPENCLAW_TEST env markers. A real production run has NONE of these signals, so
+    an engine crash or whole-engine unavailability inside a governed verifier FAILS
+    CLOSED instead of silently passing on weaker evidence.
+
+    PD-201: the `.test-context` file under the run folder NO LONGER opens this gate —
+    a file a production run could create must not switch off checks in production."""
     if os.environ.get("PRESENTATION_ALLOW_DEGRADED_VERIFIERS") == "1":
         return True
     if os.environ.get("CI") or os.environ.get("OPENCLAW_TEST"):
         return True
-    try:
-        if (Path(run_dir) / "working" / "checkpoints" / ".test-context").exists():
-            return True
-    except Exception:  # noqa: BLE001 — a marker-read hiccup must not open the gate
-        pass
     return False
+
+
+def _log_degraded_pass(run_dir, gate: str, reasons) -> None:
+    """PD-201: a degraded (NOTE) pass is never silent. Append one audit line to
+    working/checkpoints/gate_log.jsonl so a certificate can refuse to call the run
+    an integrity pass while any degraded-pass line exists. Logging must never turn
+    a pass into a crash, hence the swallow."""
+    try:
+        path = Path(run_dir) / "working" / "checkpoints" / "gate_log.jsonl"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with path.open("a", encoding="utf-8") as fh:
+            fh.write(json.dumps({
+                "gate": gate,
+                "result": "degraded_pass",
+                "reason": " | ".join(str(r) for r in reasons),
+            }) + "\n")
+    except Exception:  # noqa: BLE001
+        pass
 
 
 def _checker_pass(result) -> bool:
@@ -531,7 +551,7 @@ def _verify_research(run_dir: Path) -> Tuple[bool, List[str]]:
                 "could not run. A filesystem-existence check alone cannot attest "
                 "P-0.5-RESEARCH in production (degraded pass allowed ONLY with an "
                 "explicit test/CI marker: PRESENTATION_ALLOW_DEGRADED_VERIFIERS=1 / "
-                "CI / OPENCLAW_TEST / .test-context run-dir marker)."]
+                "CI / OPENCLAW_TEST)."]
         return True, ["NOTE: build_deck not importable — research engine checks degraded (pass)"]
 
     # FIX-E2E: _chk_research_brief / _chk_research_cited take a FILE path (they
@@ -588,7 +608,7 @@ def _verify_copy(run_dir: Path) -> Tuple[bool, List[str]]:
                 "its substance checks. A filesystem-existence check alone cannot attest "
                 "P4-COPY in production (degraded pass allowed ONLY with an explicit "
                 "test/CI marker: PRESENTATION_ALLOW_DEGRADED_VERIFIERS=1 / CI / "
-                "OPENCLAW_TEST / .test-context run-dir marker)."]
+                "OPENCLAW_TEST)."]
         return True, ["NOTE: engine checkers not importable — copy verifier degraded (pass)"]
 
     # ROOT CAUSE (live run pj_34a56a26caca04532ec6e9cba6, 2026-08-18): both
@@ -674,8 +694,7 @@ def _verify_prompt(run_dir: Path) -> Tuple[bool, List[str]]:
                 "the deterministic prompt measurer did not run. A filesystem-existence "
                 "check alone cannot attest P4-PROMPT/P-PROMPT-QC in production "
                 "(degraded pass allowed ONLY with an explicit test/CI marker: "
-                "PRESENTATION_ALLOW_DEGRADED_VERIFIERS=1 / CI / OPENCLAW_TEST / "
-                ".test-context run-dir marker)."]
+                "PRESENTATION_ALLOW_DEGRADED_VERIFIERS=1 / CI / OPENCLAW_TEST)."]
         return True, ["NOTE: build_deck.check_prompt_qc_deterministic unavailable — prompt verifier degraded (pass)"]
 
     try:
@@ -775,7 +794,7 @@ def _verify_qc_report(report_rel: str, bd_fn_name: str, af_code: str,
                     f"gate could not run. A bare-existence check cannot attest this "
                     "phase in production (degraded pass allowed ONLY with an explicit "
                     "test/CI marker: PRESENTATION_ALLOW_DEGRADED_VERIFIERS=1 / CI / "
-                    "OPENCLAW_TEST / .test-context run-dir marker)."]
+                    "OPENCLAW_TEST)."]
             reasons = [f"NOTE: build_deck.{bd_fn_name} unavailable — degraded to a bare "
                        f"existence check (pass)"]
             return True, reasons
@@ -875,7 +894,7 @@ def _verify_render(run_dir: Path) -> Tuple[bool, List[str]]:
             "render image-QC never ran. A PNG-existence check alone cannot attest "
             "P4-RENDER/P-IMAGE-QC in production (degraded pass allowed ONLY with an "
             "explicit test/CI marker: PRESENTATION_ALLOW_DEGRADED_VERIFIERS=1 / CI / "
-            "OPENCLAW_TEST / .test-context run-dir marker)."]
+            "OPENCLAW_TEST)."]
     return True, ["NOTE: canonical_render_guard image-QC unavailable — filesystem-only check (pass)"]
 
 
@@ -1637,7 +1656,7 @@ def _verify_assemble(run_dir: Path) -> Tuple[bool, List[str]]:
             "was never measured. A container-sanity check alone cannot attest "
             "P8-ASSEMBLE in production (degraded pass allowed ONLY with an explicit "
             "test/CI marker: PRESENTATION_ALLOW_DEGRADED_VERIFIERS=1 / CI / "
-            "OPENCLAW_TEST / .test-context run-dir marker)."]
+            "OPENCLAW_TEST)."]
     return True, ["NOTE: build_deck.check_deck_harmony unavailable — filesystem-only check (pass)"]
 
 
@@ -2329,11 +2348,17 @@ def _verify_arc_allocation(run_dir: Path) -> Tuple[bool, List[str]]:
         # NEVER silently: the degradation is recorded as a NOTE reason (the
         # "NOTE" prefix is excluded from the hard-failure list), so a record
         # graded under a validity-only gate is visibly distinguishable from one
-        # graded against the real consumer contract.
-        return True, reasons + [
-            "NOTE: presentation_job.arc_slides is unavailable, so the arc "
-            "slide-allocation SHAPE was NOT validated (validity-only, "
-            "pre-PD-TEST-067 behavior)"]
+        # graded against the real consumer contract. PD-209 (PD-218 half): the
+        # degrade is only allowed in the documented test context; in production
+        # a missing instrument FAILS with a named reason.
+        if _degraded_allowed(run_dir):
+            return True, reasons + [
+                "NOTE: presentation_job.arc_slides is unavailable, so the arc "
+                "slide-allocation SHAPE was NOT validated (test context)"]
+        return False, reasons + [
+            "AF-ARC-INSTRUMENT: presentation_job.arc_slides is unavailable, so "
+            "the arc's slide allocation cannot be validated against the "
+            "consumer contract"]
     path = _resolve_glob(run_dir, "working/copy/arc_allocation.json")
     arc_obj = _read_json(path) if path is not None else None
     slots = _shared.slots_from_obj(arc_obj)
@@ -2497,6 +2522,166 @@ def _verify_binary_artifact(pattern: str, min_bytes: int = 50,
     _v.artifact_pattern = pattern  # PD-061: the path this check reads
     return _v
 
+
+# ---------------------------------------------------------------------------
+# PD-209 — content-proving step checks (lane FL17)
+#
+# Step checks that proved only "a file exists and is not empty" now prove the
+# content rules their own consumers already required, at the step, before
+# money is spent. PF-DESIGN is not listed: PD-088 already replaced its
+# 50-character text check with the declared type system + design system.
+# Each verifier keeps an ``artifact_pattern`` so the PD-061 parity walk still
+# covers every registry entry whose checked path is fixed.
+# ---------------------------------------------------------------------------
+def _verify_intake_phase(run_dir: Path) -> Tuple[bool, List[str]]:
+    """P0A-INTAKE — the intake file carries a provenanced interview.
+
+    PD-209: this entry used to be ``_verify_json_artifact(
+    "working/copy/intake.json")``, so ANY non-empty JSON named intake.json
+    attested the intake — this module's own self-test used
+    ``{"slides": [{"idx": 1}]}``. The file is now run through
+    build_deck._chk_intake, the same checker every consumer's preflight calls:
+    interview_confirmed must be true, the presentation/audience modes valid,
+    target_talk_minutes positive, and the six mandatory capture fields
+    provenanced by the turn-gated intake_ledger.json.
+
+    A missing checker is a NAMED failure unless the documented test context
+    allows the degraded pass (``_degraded_allowed``) — a missing instrument is
+    not a pass.
+    """
+    pattern = "working/copy/intake.json"
+    ok, reasons = _check_json_nonempty(run_dir, pattern)
+    if not ok:
+        return ok, reasons
+    path = _resolve_glob(run_dir, pattern)
+    fn = _bd_fn("_chk_intake")
+    if fn is None:
+        if _degraded_allowed(run_dir):
+            return True, ["NOTE: build_deck._chk_intake unavailable — intake "
+                          "content check degraded (test context)"]
+        return False, reasons + [
+            "AF-INTAKE-INSTRUMENT: build_deck._chk_intake is unavailable, so "
+            "the intake file's required fields and interview provenance cannot "
+            "be proven"]
+    reason = fn(path)
+    if _checker_pass(reason):
+        return True, reasons
+    return False, reasons + [f"{pattern}: {reason}"]
+_verify_intake_phase.artifact_pattern = "working/copy/intake.json"
+
+
+def _verify_priority_spec(run_dir: Path) -> Tuple[bool, List[str]]:
+    """P0B-PRIORITY — the spec carries the two fields its consumer reads.
+
+    PD-209: build_deck._chk_priority_shift refuses a spec with no ``true_goal``
+    or an empty ``priority_stack`` (the destination shift and the audience's
+    current ranking). Those two requirements now run at the step instead of
+    surfacing phases later.
+    """
+    pattern = "working/copy/priority_shift_spec.json"
+    ok, reasons = _check_json_nonempty(run_dir, pattern)
+    if not ok:
+        return ok, reasons
+    obj = _read_json(_resolve_glob(run_dir, pattern))
+    if not isinstance(obj, dict):
+        return False, reasons + [f"{pattern}: not a JSON object"]
+    if not str(obj.get("true_goal") or "").strip():
+        reasons.append(f"{pattern}: true_goal is empty — the destination shift "
+                       f"must be stated (build_deck._chk_priority_shift refuses "
+                       f"a spec without it)")
+    stack = obj.get("priority_stack")
+    if not (isinstance(stack, list) and len(stack) >= 1):
+        reasons.append(f"{pattern}: priority_stack is missing or empty — the "
+                       f"audience's current ranking must be surfaced")
+    if reasons:
+        return False, reasons
+    return True, []
+_verify_priority_spec.artifact_pattern = "working/copy/priority_shift_spec.json"
+
+
+def _verify_research_map(run_dir: Path) -> Tuple[bool, List[str]]:
+    """P-3.5-RESEARCH-MAP — the map carries the slide list it exists to hand on.
+
+    PD-209: any non-empty JSON passed. The artifact's whole purpose is the
+    research-to-slide mapping, so a non-empty ``slides`` list is required.
+    """
+    pattern = "working/research/research_map.json"
+    ok, reasons = _check_json_nonempty(run_dir, pattern)
+    if not ok:
+        return ok, reasons
+    obj = _read_json(_resolve_glob(run_dir, pattern))
+    if not isinstance(obj, dict):
+        return False, reasons + [f"{pattern}: not a JSON object"]
+    slides = obj.get("slides")
+    if not (isinstance(slides, list) and slides):
+        reasons.append(f"{pattern}: slides is missing or empty — the research "
+                       f"map must map the material to the deck's slides")
+    if reasons:
+        return False, reasons
+    return True, []
+_verify_research_map.artifact_pattern = "working/research/research_map.json"
+
+
+# The style preview renders nine sample images (three variants x three slides);
+# the manifest alone attests nothing — the spec asks for the rendered files.
+_STYLE_PREVIEW_SAMPLES = 9
+_STYLE_PREVIEW_GLOB = "working/style-preview/variant-*-slide-*.png"
+_PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
+
+
+def _verify_style_preview(run_dir: Path) -> Tuple[bool, List[str]]:
+    """P-STYLE-PREVIEW — the manifest AND its nine rendered sample images.
+
+    PD-209: a non-empty ``style_samples_manifest.json`` passed with no sample
+    image on disk (the manifest's own record of nine images was never checked).
+    Nine files matching ``variant-*-slide-*.png`` are required, each starting
+    with the PNG signature — a renamed text file is not a sample.
+    """
+    pattern = "working/style-preview/style_samples_manifest.json"
+    ok, reasons = _check_json_nonempty(run_dir, pattern)
+    if not ok:
+        return ok, reasons
+    found = sorted(run_dir.glob(_STYLE_PREVIEW_GLOB))
+    if len(found) < _STYLE_PREVIEW_SAMPLES:
+        reasons.append(
+            f"{_STYLE_PREVIEW_GLOB}: {len(found)} sample image(s) found, need "
+            f"{_STYLE_PREVIEW_SAMPLES} — the style preview was not rendered")
+    for png in found:
+        try:
+            with open(png, "rb") as fh:
+                head = fh.read(len(_PNG_SIGNATURE))
+        except OSError as exc:  # noqa: BLE001
+            reasons.append(f"{png.relative_to(run_dir)}: unreadable ({exc!r})")
+            continue
+        if head != _PNG_SIGNATURE:
+            reasons.append(
+                f"{png.relative_to(run_dir)}: not a PNG — expected the 8-byte "
+                f"PNG signature, got {head!r}")
+    if reasons:
+        return False, reasons
+    return True, []
+_verify_style_preview.artifact_pattern = "working/style-preview/style_samples_manifest.json"
+
+
+def _verify_teleprompter(run_dir: Path) -> Tuple[bool, List[str]]:
+    """P7-TELEPROMPTER — the size floor AND the teleprompter content check.
+
+    PD-209: character count alone passed a renamed text file. The bundle check
+    already had the content rule (``_deliverable_content_check`` — real HTML
+    with presentation structure); it now runs at the step too, via the SAME
+    one definition.
+    """
+    pattern = "working/deliverables/presenter-teleprompter.html"
+    ok, reasons = _check_text_nonempty(run_dir, pattern,
+                                       _MIN_BYTES["teleprompter_html"])
+    if not ok:
+        return ok, reasons
+    path = _resolve_glob(run_dir, pattern)
+    _deliverable_content_check("teleprompter_html", path, reasons)
+    if any(not r.startswith("NOTE") for r in reasons):
+        return False, reasons
+    return True, reasons
+_verify_teleprompter.artifact_pattern = "working/deliverables/presenter-teleprompter.html"
 
 # ---------------------------------------------------------------------------
 # Signature Presentation (Skill 51) substance verifiers. Each DELEGATES to the
@@ -2692,8 +2877,15 @@ def _verify_workbook(run_dir: Path) -> Tuple[bool, List[str]]:
             return (False, reasons)
         return (True, [])
     except ImportError:
-        return (True, ["NOTE: pypdf not importable — workbook verifier degraded to "
-                       "existence+size check (pass)"])
+        # PD-209 (PD-218 half): a missing instrument is a NAMED failure, not a
+        # silent pass on existence+size. Only the documented test context may
+        # degrade.
+        if _degraded_allowed(run_dir):
+            return (True, ["NOTE: pypdf not importable — workbook verifier "
+                           "degraded to existence+size check (pass, test context)"])
+        return (False, ["AF-WORKBOOK-INSTRUMENT: pypdf is not importable, so the "
+                        "workbook's page count and AcroForm fields cannot be read "
+                        "— the dual-deliverable contract is unproven"])
     except Exception as exc:  # noqa: BLE001
         return (False, [f"workbook verifier raised {exc!r}"])
 
@@ -2736,91 +2928,30 @@ def _verify_sp_claim(run_dir: Path) -> Tuple[bool, List[str]]:
         return ok, notes
     fn = _bd_fn("_chk_sp_claim")
     if fn is None:
-        return True, []
+        # PD-209 (PD-218 half): a missing instrument is a named failure, never
+        # a silent pass. Only the documented test context may degrade.
+        if _degraded_allowed(run_dir):
+            return True, ["NOTE: build_deck._chk_sp_claim unavailable — claim "
+                          "check degraded (test context)"]
+        return False, ["AF-SP-CLAIM-INSTRUMENT: build_deck._chk_sp_claim is "
+                       "unavailable, so P-SP-CLAIM's own render contract cannot "
+                       "be proven"]
     result = fn(run_dir)
     return (True, []) if _checker_pass(result) else (False, [str(result)])
 
 
 def _verify_sp_intake_trace(run_dir: Path) -> Tuple[bool, List[str]]:
     fn = _bd_fn("_chk_sp_intake_trace")
-    if fn is None: return _check_json_nonempty(run_dir, "working/interview/intake_transcript.json")
-    result = fn(run_dir)
-    return (True, []) if _checker_pass(result) else (False, [str(result)])
-
-
-
-def _verify_fish_tag(run_dir: Path) -> Tuple[bool, List[str]]:
-    reasons: List[str] = []
-    tagged_p = run_dir / "working" / "deliverables" / "PRESENTERS-SPEECH-FISH-TAGGED.md"
-    source_p = run_dir / "working" / "deliverables" / "PRESENTERS-SPEECH.md"
-    if not tagged_p.exists():
-        reasons.append("AF-BUNDLE-INCOMPLETE: PRESENTERS-SPEECH-FISH-TAGGED.md not found")
-        return False, reasons
-    if not source_p.exists():
-        reasons.append("AF-BUNDLE-INCOMPLETE: PRESENTERS-SPEECH.md (source) not found")
-        return False, reasons
-    size = tagged_p.stat().st_size
-    if size < 2048: reasons.append(f"PRESENTERS-SPEECH-FISH-TAGGED.md: {size} bytes < 2048")
-    try: tagged_text = tagged_p.read_text(encoding="utf-8",errors="replace"); source_text = source_p.read_text(encoding="utf-8",errors="replace")
-    except:
-        reasons.append("AF-FISH-TAG: cannot read tagged or source speech file")
-        return False, reasons
-    import re
-    def strip_tags(t):
-        t = re.sub(r'\[.*?\]', ' ', t); t = re.sub(r'\(.*?\)', ' ', t)
-        return re.sub(r'\s+', ' ', t).strip()
-    if strip_tags(tagged_text) != strip_tags(source_text):
-        reasons.append("AF-FISH-TAG: strip-equals prover failed")
-    return (len(reasons) == 0), reasons
-
-
-def _sp_claim_matches_intake(run_dir: Path) -> Tuple[bool, List[str]]:
-    """Prove P-SP-CLAIM recorded the selected type, rather than selecting one.
-
-    The claim phase is a router.  It may document a signature request, but it
-    cannot promote a from-scratch deck into one.  The sealed intake remains the
-    authority and an incomplete/malformed claim fails closed.
-    """
-    try:
-        intake = json.loads((run_dir / "working" / "copy" / "intake.json").read_text())
-        claim = json.loads((run_dir / "working" / "copy" / "sp_claims.json").read_text())
-    except (OSError, json.JSONDecodeError) as exc:
-        return False, [f"AF-SP-CLAIM-INTAKE-MISMATCH: unreadable intake or claim: {exc}"]
-    if not isinstance(intake, dict) or not isinstance(claim, dict):
-        return False, ["AF-SP-CLAIM-INTAKE-MISMATCH: intake and claim must be JSON objects"]
-    selected = str(intake.get("deck_type") or "").strip()
-    recorded = str(claim.get("deck_type") or "").strip()
-    if not selected or recorded != selected:
-        return False, ["AF-SP-CLAIM-INTAKE-MISMATCH: claim deck_type must exactly match "
-                       "the selected intake deck_type"]
-    claimed = claim.get("claimed")
-    if selected == "signature_presentation":
-        if claimed is not True:
-            return False, ["AF-SP-CLAIM-INTAKE-MISMATCH: selected signature deck requires "
-                           "claimed:true"]
-    elif claimed is not False:
-        return False, ["AF-SP-CLAIM-INTAKE-MISMATCH: non-signature deck requires "
-                       "claimed:false; P-SP-CLAIM cannot promote the intake"]
-    return True, []
-
-
-def _verify_sp_claim(run_dir: Path) -> Tuple[bool, List[str]]:
-    ok, notes = _sp_claim_matches_intake(run_dir)
-    if not ok:
-        return ok, notes
-    fn = _bd_fn("_chk_sp_claim")
     if fn is None:
-        return True, []
+        # PD-209 (PD-218 half): a missing instrument is a named failure. The
+        # old shape silently fell back to a weaker existence check.
+        if _degraded_allowed(run_dir):
+            return _check_json_nonempty(run_dir, "working/interview/intake_transcript.json")
+        return False, ["AF-SP-INTAKE-TRACE-INSTRUMENT: "
+                       "build_deck._chk_sp_intake_trace is unavailable, so the "
+                       "intake trace cannot be proven"]
     result = fn(run_dir)
     return (True, []) if _checker_pass(result) else (False, [str(result)])
-
-
-def _verify_sp_intake_trace(run_dir: Path) -> Tuple[bool, List[str]]:
-    fn = _bd_fn("_chk_sp_intake_trace")
-    if fn is None: return _check_json_nonempty(run_dir, "working/interview/intake_transcript.json")
-    result = fn(run_dir)
-    return (True, []) if _checker_pass(result) else (False, [str(result)])
-
 
 def _verify_webinar_video(run_dir: Path) -> Tuple[bool, List[str]]:
     """Feature L2-G verifier (P9.6-WEBINAR-VIDEO): the webinar mp4 exists, is non-empty,
@@ -2883,25 +3014,24 @@ def _verify_webinar_video(run_dir: Path) -> Tuple[bool, List[str]]:
 
 def _verify_webinarized_speech(run_dir: Path) -> Tuple[bool, List[str]]:
     """Feature L2-H verifier (P9-SPEECH-WEBINAR-INTRO): the webinarized speech audio
-    exists, is a valid MP3, AND the host framing (welcome / chat Q&A / crescendo close)
-    is structurally proven.
+    exists and is a valid MP3.
 
     The audio lives at working/delivery/PRESENTER-AUDIO-WEBINAR.mp3, produced by
     synthesize_full_speech.py --webinar-intro-outro (the P9-SPEECH-WEBINAR-INTRO
-    executor). The executor injects the framing in-memory (the on-disk UNTAGGED
-    PRESENTERS-SPEECH.md is never modified), so the MP3 duration gate already counts
-    the framing words; this verifier adds the runner-side substance proof:
+    executor). This step check proves THE AUDIO FILE only:
 
       1. the webinarized audio exists, is non-empty, and passes the shared MP3
          validity probe (synthesize_full_speech.verify_mp3) — a plain deck-only
-         audio renamed as the webinar audio is a defect;
-      2. the framing layer is the wired one: webinar_intro_outro.build_framing_markdown()
-         must carry the three `## Section ... (WEBINAR FRAMING)` headers (WELCOME /
-         QNA / CLOSE) and every section must hit its word budget within tolerance.
+         audio renamed as the webinar audio is a defect.
 
-    Defensive: a missing sibling module (synthesize_full_speech / webinar_intro_outro)
-    degrades to a NOTE, never a crash and never a silent pass on a real substance
-    failure."""
+    PD-209: this check used to "prove the framing" by rendering
+    webinar_intro_outro.build_framing_markdown() and reading its own template back
+    — a fact about the code, not about the audio that was produced. That template
+    test now lives in the unit suite (test_pd_phase_checks_pd209.py); a step
+    check attests the artifact, never its generator.
+
+    Defensive: a missing sibling module (synthesize_full_speech) degrades to a
+    NOTE, never a crash and never a silent pass on a real substance failure."""
     reasons: List[str] = []
 
     candidates = sorted((run_dir / "working" / "delivery").glob("PRESENTER-AUDIO-WEBINAR.mp3")) \
@@ -2931,31 +3061,8 @@ def _verify_webinarized_speech(run_dir: Path) -> Tuple[bool, List[str]]:
         reasons.append(f"NOTE: synthesize_full_speech.verify_mp3 unavailable ({exc!r}) — "
                        "webinarized-audio probe degraded (size check only)")
 
-    # Framing structure proof: the framing layer must be the wired one (welcome before
-    # the deck, chat Q&A + crescendo close after), with in-band word budgets. This is
-    # the substance half that makes a plain audio un-skippable as the webinar audio.
-    try:
-        import webinar_intro_outro as _w
-        framing = _w.build_framing_markdown()
-        for label in ("WELCOME", "QNA", "CLOSE"):
-            if f"## Section {label}" not in framing:
-                reasons.append(f"AF-WEBINAR-INTRO: framing layer is missing the {label} "
-                               "section — the webinar host framing is not the wired "
-                               "generator")
-        report = _w.verify_sections()
-        for name, r in report.items():
-            if not r["within_band"]:
-                reasons.append(f"AF-WEBINAR-INTRO: {name} framing section is {r['words']} "
-                               f"words, outside the +/-{_w.TOLERANCE:.0%} band of target "
-                               f"{r['target']}")
-            if r["n_distinct_tags"] < 2:
-                reasons.append(f"AF-WEBINAR-INTRO: {name} framing section has flat reader "
-                               "tags (fewer than 2 distinct) — the host delivery would "
-                               "read monotonically")
-    except Exception as exc:  # noqa: BLE001
-        reasons.append(f"NOTE: webinar_intro_outro unavailable ({exc!r}) — framing "
-                       "structure check degraded (audio existence + MP3 probe only)")
-
+    # PD-209: the framing-template half moved to the unit suite. Reading the
+    # generator's own template back proved nothing about the audio file.
     hard = [r for r in reasons if not r.startswith("NOTE")]
     return (len(hard) == 0), reasons
 
@@ -4153,9 +4260,13 @@ PHASE_VERIFIERS: dict[str, Callable] = {
     # Phase -0.5  Deep Research
     "P-0.5-RESEARCH":     _verify_research,
     # Phase 0.1   Intake / Interview Confirm
-    "P0A-INTAKE":         _verify_json_artifact("working/copy/intake.json"),
+    # PD-209: the step runs build_deck._chk_intake over the file — any non-empty
+    # JSON named intake.json is no longer an attested intake.
+    "P0A-INTAKE":         _verify_intake_phase,
     # Phase 0.2   Priority-Shift Spec
-    "P0B-PRIORITY":       _verify_json_artifact("working/copy/priority_shift_spec.json"),
+    # PD-209: true_goal and a non-empty priority_stack are required here, the
+    # same two fields build_deck._chk_priority_shift reads.
+    "P0B-PRIORITY":       _verify_priority_spec,
     # Phase 3     Converting Arc Allocation
     # PD-TEST-067: a validity-only gate here let an artifact no consumer could
     # read report `done` and quarantine four downstream phases. The gate now
@@ -4166,7 +4277,8 @@ PHASE_VERIFIERS: dict[str, Callable] = {
     # starving AF-PEAK-END one phase later. See _verify_arc_allocation.
     "P3-ARC":             _verify_arc_allocation,
     # Phase 3.5   Research-to-Slide Mapping
-    "P-3.5-RESEARCH-MAP": _verify_json_artifact("working/research/research_map.json"),
+    # PD-209: a non-empty slides list is required — the mapping is the artifact.
+    "P-3.5-RESEARCH-MAP": _verify_research_map,
     # Phase 4     Slide Copy
     "P4-COPY":            _verify_copy,
     # Phase 4.2   Copy QC — INDEPENDENT report gate (root-cause fix, iteration 3:
@@ -4203,7 +4315,8 @@ PHASE_VERIFIERS: dict[str, Callable] = {
     # rollback flag is documented at _fix16_get_verifier).
     "P-PROMPT-QC":        _fix16_get_verifier("P-PROMPT-QC"),
     # Phase 4.85  Style Preview
-    "P-STYLE-PREVIEW":    _verify_json_artifact("working/style-preview/style_samples_manifest.json"),
+    # PD-209: the manifest AND its nine rendered sample PNGs (signature checked).
+    "P-STYLE-PREVIEW":    _verify_style_preview,
     # Phase 4.9   Deterministic Render
     "P4-RENDER":          _verify_render,
     # Phase 4.95  Image QC
@@ -4271,8 +4384,9 @@ PHASE_VERIFIERS: dict[str, Callable] = {
     # alongside deliverables.py, build_deck.py, PIPELINE-MANIFEST.json, and
     # presentation_job/gates.py during that pass. Now derived from the canonical
     # spec (already imported above for the P9-DELIVER whitelist).
-    "P7-TELEPROMPTER":    _verify_text_artifact("working/deliverables/presenter-teleprompter.html",
-                                                  _MIN_BYTES["teleprompter_html"]),
+    # PD-209: the size floor AND the existing teleprompter content check — a
+    # renamed text file of the right length no longer attests this step.
+    "P7-TELEPROMPTER":    _verify_teleprompter,
     # FIX 103: both PDF floors scale by THIS deck's slide count from THE one
     # helper (deliverable_floors) — deck_pdf via pdf_floor(n)=max(1506n, 8192),
     # guide_pdf via guide_floor(n)=max(1600n, 12000). No 51,200 / 34-slide
@@ -4995,6 +5109,7 @@ def verify(phase_id: str, run_dir: Path) -> Tuple[bool, List[str]]:
     # NOTE-degraded pass directly — a SIMULATED phase does not get substance-
     # checked because the whole point is the credential is absent.
     if sim_reasons:
+        _log_degraded_pass(run_dir, phase_id, sim_reasons)
         return True, sim_reasons
     # ---- end SIMULATED rejection ----
 
@@ -5019,6 +5134,10 @@ def verify(phase_id: str, run_dir: Path) -> Tuple[bool, List[str]]:
                 f"missing file, empty field, or violated gate code."
             ]
         # ---- end FAIL-with-reason validation ----
+
+        # PD-201: every degraded (NOTE) pass leaves one audit line behind.
+        if ok and any(str(r).startswith("NOTE") for r in reasons):
+            _log_degraded_pass(run_dir, phase_id, reasons)
 
         return bool(ok), list(reasons)
     except Exception as exc:  # noqa: BLE001
@@ -5058,6 +5177,44 @@ def verify_all_phases(run_dir: Path, phases: list) -> list:
 # Self-test
 # ---------------------------------------------------------------------------
 
+def _intake_fixture(rd: Path) -> Path:
+    """Write a REAL, fully-provenanced intake.json + intake_ledger.json.
+
+    PD-209. The self-test used ``{"slides": [{"idx": 1}]}`` as its "valid
+    intake" — a file no interview ever produced — because P0A-INTAKE only
+    proved the file was non-empty JSON. The step now runs
+    build_deck._chk_intake, so its passing fixture has to be an intake that
+    checker accepts: the confirmed interview, both modes, the talk target, the
+    six mandatory capture fields, and the completed turn-gated ledger that
+    proves them.
+    """
+    p = rd / "working" / "copy" / "intake.json"
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_text(json.dumps({
+        "interview_confirmed": True,
+        "presentation_mode": "general",
+        "audience_mode": "GENERAL",
+        "target_talk_minutes": 20,
+        "pre_presentation_capture": {
+            "REPRESENTATION_MIX": "two presenters, mixed",
+            "AUDIENCE_COMPOSITION": "founders and operators",
+            "GROUNDED_CONTENT": "client notes plus three cited sources",
+            "VISUAL_MIX": "photographic and diagram",
+            "DARK_OK": True,
+            "HOOK_SEED": "the number nobody expected",
+        },
+    }), encoding="utf-8")
+    led = rd / "working" / "interview" / "intake_ledger.json"
+    led.parent.mkdir(parents=True, exist_ok=True)
+    led.write_text(json.dumps({
+        "status": "complete",
+        "entries": {qid: {"validated": True} for qid in (
+            "representation_mix", "audience_composition_note",
+            "grounded_content", "visual_mix", "dark_ok", "hook_seed")},
+    }), encoding="utf-8")
+    return p
+
+
 def _selftest() -> None:
     """Deterministic self-tests. Exits 0 on pass, 1 on failure."""
     import tempfile
@@ -5082,11 +5239,13 @@ def _selftest() -> None:
         if ok:
             fails.append("T2: zero-byte intake.json should fail")
 
-        # T3: valid JSON artifact => pass
-        zb.write_text(json.dumps({"slides": [{"idx": 1}]}))
+        # T3: a REAL provenanced intake => pass. PD-209: the old fixture was
+        # {"slides": [{"idx": 1}]} — any non-empty JSON — which no longer
+        # attests the step (see T11).
+        _intake_fixture(rd)
         ok, reasons = verify("P0A-INTAKE", rd)
         if not ok:
-            fails.append(f"T3: valid intake.json should pass, got reasons={reasons}")
+            fails.append(f"T3: a real intake.json should pass, got reasons={reasons}")
 
         # T4: unknown phase id => fail-closed (U013 step 9)
         ok, reasons = verify("UNKNOWN-PHASE-XYZ", rd)
@@ -5131,10 +5290,8 @@ def _selftest() -> None:
     # T9: SIMULATED attestation must be mechanically rejected (WI-14c ANTI-DRIFT CORE)
     with tempfile.TemporaryDirectory(prefix="phase_verifiers_selftest_sim_") as t9tmp:
         t9rd = Path(t9tmp)
-        # Create a valid artifact so the verifier itself would pass.
-        intake_path = t9rd / "working" / "copy" / "intake.json"
-        intake_path.parent.mkdir(parents=True, exist_ok=True)
-        intake_path.write_text(json.dumps({"slides": [{"idx": 1}]}))
+        # Create a real artifact so the verifier itself would pass.
+        _intake_fixture(t9rd)
 
         # Place a SIMULATED attestation for this phase.
         ckpt = t9rd / "working" / "checkpoints"
@@ -5157,6 +5314,21 @@ def _selftest() -> None:
                 f"T9: SIMULATED rejection reason must contain 'SIMULATED', "
                 f"got reasons={reasons}"
             )
+
+    # T11 (PD-209): the OLD fixture — a bare {"slides": [{"idx": 1}]} named
+    # intake.json — must no longer attest P0A-INTAKE.
+    with tempfile.TemporaryDirectory(prefix="phase_verifiers_selftest_pd209_") as t11tmp:
+        t11rd = Path(t11tmp)
+        p11 = t11rd / "working" / "copy" / "intake.json"
+        p11.parent.mkdir(parents=True, exist_ok=True)
+        p11.write_text(json.dumps({"slides": [{"idx": 1}]}))
+        ok, reasons = verify("P0A-INTAKE", t11rd)
+        if ok:
+            fails.append("T11: a bare {\"slides\": [{\"idx\": 1}]} intake.json "
+                         "must FAIL P0A-INTAKE (PD-209)")
+        if not any("interview_confirmed" in r for r in reasons):
+            fails.append(f"T11: the failure must name interview_confirmed, "
+                         f"got reasons={reasons}")
 
     # T10 (FIX 16 + PD-206a): BOTH mandated human verdicts are wired at the
     # registry wiring point and are read from THEIR OWN FILES. A run WITHOUT
@@ -5218,12 +5390,15 @@ def _selftest() -> None:
             for k, v in env_backup.items():
                 if v is not None:
                     os.environ[k] = v
-        # With the .test-context marker the held state NOTE-passes (degraded path).
+        # PD-201: the degraded path now opens ONLY via the env marker — the run-folder
+        # `.test-context` file no longer switches checks off in production. Write the
+        # marker anyway to prove it is inert, then set the env marker.
         (t10rd / "working" / "checkpoints").mkdir(parents=True, exist_ok=True)
         (t10rd / "working" / "checkpoints" / ".test-context").write_text("phase-b selftest")
+        os.environ["PRESENTATION_ALLOW_DEGRADED_VERIFIERS"] = "1"
         ok_i2, _ = verify("P-IMAGE-QC", t10rd)
         if not ok_i2:
-            fails.append("T10: held P-IMAGE-QC under .test-context must NOTE-pass (degraded), got fail")
+            fails.append("T10: held P-IMAGE-QC under PRESENTATION_ALLOW_DEGRADED_VERIFIERS=1 must NOTE-pass, got fail")
         # Verdict files present with pass:true + a non-builder reviewed_by => pass,
         # and the graded reports' bytes are unchanged by the verdict.
         before_i = (qdir / "image_qc_report.json").read_bytes()
@@ -5262,6 +5437,7 @@ def _selftest() -> None:
            PHASE_VERIFIERS["P-IMAGE-QC"] is _verify_render:
             fails.append("T10: P-IMAGE-QC must be an aggregate distinct from raw _verify_render (FIX 16)")
     finally:
+        os.environ.pop("PRESENTATION_ALLOW_DEGRADED_VERIFIERS", None)
         if t10rd is not None:
             import shutil as _sh
             _sh.rmtree(t10rd, ignore_errors=True)
