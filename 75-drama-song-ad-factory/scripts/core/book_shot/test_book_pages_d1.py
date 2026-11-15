@@ -371,9 +371,11 @@ def _cases(TMP):
     import re as _re
     q_with = len(_re.findall(r"Question \d+ of \d+", with_b))
     q_without = len(_re.findall(r"Question \d+ of \d+", without_b))
+    #: U-GEN425: the rendered card numbers the screens the run ASKS one by one;
+    #: the defaulted recap tail never carries a question header (S75-006).
     check("card: the block never adds a question",
-          q_with == q_without and q_with == len(IC.QUESTIONS),
-          (q_with, q_without, len(IC.QUESTIONS)))
+          q_with == q_without and q_with == len(IC.askable(IC.QUESTIONS)),
+          (q_with, q_without, len(IC.askable(IC.QUESTIONS))))
     check("card: the closing answer line is unchanged",
           IC._closing(IC.QUESTIONS) in with_b and IC._closing(IC.QUESTIONS) in without_b,
           "")

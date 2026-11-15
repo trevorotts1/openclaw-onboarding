@@ -703,7 +703,11 @@ def test_the_bank_still_carries_exactly_twenty_three_turns():
     assert len(turns) == 23, [q["id"] for q in turns]
     rp = [q for q in bank["questions"] if q["id"] == "resource_plan"][0]
     # FIX 61.2: deepseek_variant and openrouter_model join as subfields 7-8.
-    assert set(rp["subfields"]) == {"resource_plan", "workhorse_model",
+    # PD-013: build_settings_choice leads the turn so the client answers ONE
+    # question about build settings instead of eight about models. It is a
+    # subfield of turn 9, never a 24th turn -- the ruling above still holds.
+    assert set(rp["subfields"]) == {"build_settings_choice", "resource_plan",
+                                    "workhorse_model",
                                     "reasoning_model", "qc_model",
                                     "thinking_mode", "run_mode",
                                     "deepseek_variant", "openrouter_model", "ollama_plan"}

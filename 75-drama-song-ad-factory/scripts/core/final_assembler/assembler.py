@@ -55,6 +55,14 @@ Rules:
   end card key is present, check_last_line_before_endcard(plan) runs
   at assembly and a line ending after the card fails with
   LAST_LINE_OVER_ENDCARD.
+- U-V03 (S75-055): this module's planning step also WRITES the timeline.
+  plan_run_timeline(run_dir) composes edit/timeline.json from the run's
+  own records (approved storyboard, shot plan, the picked song's
+  measured word timings, the materialized clip rows with their lip-sync
+  evidence) and writes it atomically -- it is the writing step no
+  production module had. Every value comes from a record on disk; a
+  value no record holds is the named refusal
+  TIMELINE_INPUT_MISSING:<what>, never a default.
 """
 import argparse
 import json
@@ -63,6 +71,7 @@ import os
 import shutil
 import subprocess
 import sys
+import tempfile
 
 # Skill 75 load governor: every heavy local job goes through it (see load_governor/).
 import os as _gos, sys as _gsys
@@ -233,7 +242,34 @@ def _part_d_threads(cores_eff=None):
     return max(1, int(math.floor((cores - 1) / float(jobs)))), jobs
 
 
-def _lane_size_threads():
+def _run_bound_builder(run_dir):
+    """(runtime, provider) the run itself bound for its builder (S75-024).
+
+    Read from the run's own ``model-bindings.json`` (the store
+    ai_models.bind_roles wrote), so lane sizing judges the route this run
+    really dispatches on instead of the literals this used to pass. Returns
+    (None, None) when the run bound nothing or the store cannot be read:
+    lane_size then sizes from the machine alone, never from a made-up route.
+    """
+    if not run_dir:
+        return None, None
+    try:
+        from choice_card.intake_card import ai_models as _AM
+    except ImportError:                     # package not shipped on this box
+        return None, None
+    try:
+        doc = _AM.load_bindings(run_dir)
+    except (OSError, ValueError):           # unreadable store: no binding
+        return None, None
+    row = ((doc or {}).get("bindings") or {}).get(_AM.ROLE_BUILD) or {}
+    runtime = (row.get("dispatch") or {}).get("runtime")
+    provider = row.get("route")
+    if not runtime or not provider:
+        return None, None
+    return runtime, provider
+
+
+def _lane_size_threads(run_dir=None):
     """Prefer W2-A's scripts/core/lane_size.py; None when it is not shipped yet."""
     core_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     if core_dir not in sys.path:
@@ -268,10 +304,10 @@ def _lane_size_threads():
         if not callable(fn):
             continue
         try:
-            # size() (W2-A) now takes (runtime, provider, ...) positionally:
-            # same documented call intake_preflight/factory.py makes. Other
-            # names stay zero-arg probes.
-            out = fn("claude-code", "openrouter", units=999) \
+            # size() (W2-A) takes (runtime, provider, ...) positionally:
+            # same documented call intake_preflight/factory.py makes, but with
+            # the run's OWN bound builder (S75-024), not a literal pair.
+            out = fn(*_run_bound_builder(run_dir), units=999) \
                 if name == "size" else fn()
         except Exception as exc:            # noqa: BLE001
             _loud("warn", "LANE_SIZE_BROKEN", "%s(): %r" % (name, exc))
@@ -285,15 +321,17 @@ def _lane_size_threads():
     return None
 
 
-def size_ffmpeg(output_seconds, width=DEFAULT_WIDTH, height=DEFAULT_HEIGHT):
+def size_ffmpeg(output_seconds, width=DEFAULT_WIDTH, height=DEFAULT_HEIGHT,
+                run_dir=None):
     """(threads, nice, timeout_s) for one render.
 
-    threads  from lane_size.py when shipped, else Part D fallback
+    threads  from lane_size.py when shipped, else Part D fallback; lane_size
+             is told the run's own bound runtime and provider (S75-024)
     nice     NICE_LEVEL (fixed: manual M7 says -n 10 on Linux and macOS)
     timeout  lane_size's ffmpeg_timeout_s when shipped, else
              max(600, 2 x output seconds x 1080p height factor)
     """
-    threads = _lane_size_threads() or _part_d_threads()[0]
+    threads = _lane_size_threads(run_dir) or _part_d_threads()[0]
     # 1080p factor scales by pixel area: 1080p = 1, 4K = 4.
     factor = max(1.0, (float(width or DEFAULT_WIDTH) *
                        float(height or DEFAULT_HEIGHT)) /
@@ -428,6 +466,20 @@ def lipsync_gate(plan):
             lid not in known_lines for lid in s.get("lip_sync_line_ids", []))
         for s in marked)
     if incomplete:
+        # S75-047: a no-lip-sync plan advances ONLY with the owner's recorded
+        # opt-out (who + at in control/method.json). One reader, one record.
+        # Fail closed when the reader is unavailable (lane merged without
+        # lane U): an unresolvable opt-out is missing evidence, not a pass.
+        try:
+            from lipsync_evidence import no_lipsync_opt_out
+        except ImportError:
+            no_lipsync_opt_out = None
+        if (no_lipsync_opt_out is not None
+                and plan.get("route") == "no_lipsync"
+                and no_lipsync_opt_out(plan.get("run_dir"))):
+            return {"outcome": "ok", "reason_code": LIPSYNC_NOT_APPLICABLE,
+                    "next_action": "the owner recorded the no-lip-sync opt-out",
+                    "evidence": dict(evidence, route="no_lipsync")}
         return _fail("LIPSYNC_EVIDENCE_MISSING",
                      next_action="restore the approved lip-sync plan, line and "
                                  "speaker metadata; missing evidence is not "
@@ -488,10 +540,60 @@ def face_speaks_gate(plan):
 # on the stub path, so dry runs and tests run it too -- the done-when is
 # "a frame check runs on every lip-sync clip and the receipt shows it".
 try:                                    # F9 sibling module (this package)
+    from . import frame_text as _frame_text
     from .frame_text import GARBLED_TEXT_FRAME, clip_rows as _frame_rows
 except ImportError:                     # direct script run from this dir
+    import frame_text as _frame_text  # type: ignore
     from frame_text import (            # type: ignore
         GARBLED_TEXT_FRAME, clip_rows as _frame_rows)
+
+# S75-045: the on-screen text check's code words (frame_text owns them).
+OCR_UNAVAILABLE = _frame_text.OCR_UNAVAILABLE
+
+
+def _onscreen_extractor(ffmpeg):
+    """The OCR reader's registered name, or None (S75-045).
+
+    onscreen_text owns the ONE reader: it registers ``tesseract`` with
+    frame_text at import (its line 187), so this never adds a second reader --
+    it only asks whether one can run here. No real render and no tesseract
+    binary means no reader, and the check reports UNAVAILABLE, never PASS.
+    Amendment to S75-045: use onscreen_text's registered name, not a new one.
+    """
+    if not ffmpeg:
+        return None
+    try:
+        from onscreen_text import onscreen_text as _OT
+    except ImportError:                  # package not shipped on this box
+        return None
+    try:
+        if not _OT.tesseract_bin():
+            return None
+        if _frame_text.EXTRACTORS.get(_OT.ENGINE) is None:
+            _frame_text.register_extractor(_OT.ENGINE, _OT.tesseract_extractor)
+        return _OT.ENGINE
+    except Exception:                    # noqa: BLE001  advisory setup only
+        return None
+
+
+def frame_text_warnings(rows):
+    """Receipt warnings for text-check rows that never really ran (S75-045).
+
+    An UNAVAILABLE row means the on-screen text check did not happen (no
+    reader, no frames, a failed read). The receipt says so by name; a check
+    that never ran is never read as a clean one.
+    """
+    out = []
+    for r in rows or []:
+        if r.get("status") != _frame_text.UNAVAILABLE:
+            continue
+        out.append({"kind": "WARNING",
+                    "code": r.get("reason_code") or OCR_UNAVAILABLE,
+                    "detail": "on-screen text check did not run on %s: "
+                              "no reader read the sampled frames"
+                              % (r.get("clip"),)})
+    return out
+
 
 def frame_text_gate(plan, ffmpeg=None, dry_run=False, frame_count=3,
                     extractor=None):
@@ -501,20 +603,45 @@ def frame_text_gate(plan, ffmpeg=None, dry_run=False, frame_count=3,
     names the extractor, so a dry-run receipt still shows the check ran);
     fail is the _fail receipt when a sampled readable-text frame flags
     GARBLED_TEXT_FRAME (no render spend), else None.
+
+    S75-045: rows also carry one named verdict per segment that plans to show
+    words (``check`` = "onscreen_text"). A row whose words are not the planned
+    words fails the gate; a row nobody could read is UNAVAILABLE, and the
+    caller puts ``frame_text_warnings(rows)`` on the receipt.
     """
+    real_ffmpeg = "ffmpeg" if (ffmpeg and not dry_run) else None
     marked = [s for s in plan["segments"]
               if s.get("lip_sync") or s.get("lip_sync_line_ids")]
     rows = _frame_rows(
-        marked, ffmpeg=("ffmpeg" if (ffmpeg and not dry_run) else None),
-        frame_count=frame_count, extractor=extractor)
+        marked, ffmpeg=real_ffmpeg, frame_count=frame_count,
+        extractor=extractor)
+    text_extractor = extractor if extractor is not None \
+        else _onscreen_extractor(real_ffmpeg)
+    for r in _frame_text.text_check_rows(
+            plan["segments"], ffmpeg=real_ffmpeg, extractor=text_extractor,
+            frame_count=frame_count):
+        r["check"] = "onscreen_text"
+        rows.append(r)
     for r in rows:
-        if r["text_frames"]:
-            return rows, _fail(GARBLED_TEXT_FRAME, next_action=(
+        if r.get("status") == _frame_text.FAIL:
+            fail = _fail(r.get("reason_code") or _frame_text.TEXT_CHANGED,
+                         next_action=(
+                             "the on-screen words in %s are not the planned "
+                             "words (%r); regenerate that shot with exactly "
+                             "the planned words or overlay them at assembly"
+                             % (r["clip"], r.get("expected"))),
+                         evidence={"frame_text": rows})
+        elif r.get("check") != "onscreen_text" and r["text_frames"]:
+            fail = _fail(GARBLED_TEXT_FRAME, next_action=(
                 "lip-sync clip %s shows readable invented text in sampled "
                 "frame(s) %s; regenerate that clip (no OCR text is allowed "
                 "in lip-sync close-ups)"
                 % (r["clip"], r["text_frames"])),
                 evidence={"frame_text": rows})
+        else:
+            continue
+        fail["warnings"] = frame_text_warnings(rows)
+        return rows, fail
     return rows, None
 
 
@@ -671,6 +798,92 @@ def probe_duration(path, ffprobe="ffprobe", timeout=30):
     return dur
 
 
+def probe_stream_duration(path, stream, ffprobe="ffprobe", timeout=30):
+    """One stream's own duration in seconds (S75-044).
+
+    ffprobe asks the selected stream (``v:0``, ``a:0``) for its duration.
+    A stream that reports none - common for some audio encoders and for
+    streamed transport - is measured from its packet timestamps instead, so
+    the audio and video are never both read from the container's single
+    format duration. Raises RuntimeError when neither answers.
+    """
+    cmd = [ffprobe, "-v", "error", "-select_streams", stream,
+           "-show_entries", "stream=duration", "-of", "json", str(path)]
+    try:
+        proc = subprocess.run(cmd, capture_output=True, text=True,
+                              timeout=timeout, check=False)
+    except (FileNotFoundError, subprocess.TimeoutExpired) as exc:
+        raise RuntimeError(f"PROBE_UNAVAILABLE: {exc}") from exc
+    if proc.returncode != 0:
+        raise RuntimeError(
+            f"PROBE_FAILED: {(proc.stderr or '').strip()[:200]}")
+    try:
+        streams = json.loads(proc.stdout).get("streams") or []
+    except (ValueError, TypeError):
+        streams = []
+    for s in streams:
+        try:
+            dur = float(s.get("duration"))
+        except (TypeError, ValueError):
+            continue
+        if dur > 0:
+            return dur
+    dur = _packet_duration(path, stream, ffprobe, timeout)
+    if dur is None or dur <= 0:
+        raise RuntimeError(
+            f"PROBE_NO_DURATION: stream {stream} reports no duration")
+    return dur
+
+
+def _packet_duration(path, stream, ffprobe="ffprobe", timeout=30):
+    """Last packet end from a stream's packet timestamps (S75-044 fallback).
+
+    Used only when the stream itself reports no duration. Returns None when
+    no packet carries a usable timestamp.
+    """
+    cmd = [ffprobe, "-v", "error", "-select_streams", stream,
+           "-show_entries", "packet=pts_time,duration_time", "-of", "json",
+           str(path)]
+    try:
+        proc = subprocess.run(cmd, capture_output=True, text=True,
+                              timeout=timeout, check=False)
+    except (FileNotFoundError, subprocess.TimeoutExpired) as exc:
+        raise RuntimeError(f"PROBE_UNAVAILABLE: {exc}") from exc
+    if proc.returncode != 0:
+        raise RuntimeError(
+            f"PROBE_FAILED: {(proc.stderr or '').strip()[:200]}")
+    try:
+        packets = json.loads(proc.stdout).get("packets") or []
+    except (ValueError, TypeError):
+        packets = []
+    end = None
+    for p in packets:
+        try:
+            pts = float(p.get("pts_time"))
+        except (TypeError, ValueError):
+            continue
+        try:
+            dur = float(p.get("duration_time"))
+        except (TypeError, ValueError):
+            dur = 0.0
+        stop = pts + (dur if dur > 0 else 0.0)
+        if end is None or stop > end:
+            end = stop
+    return end
+
+
+def check_av_drift(output, vdur, frame, ffprobe="ffprobe", timeout=30):
+    """S75-044: the audio stream measured on its own, compared to the video.
+
+    Returns (audio_duration, None) when the two streams agree to within one
+    frame, or (audio_duration, "AV_DRIFT") when they do not. Raises
+    RuntimeError when the audio stream cannot be measured - an unmeasured
+    stream is never read as aligned.
+    """
+    adur = probe_stream_duration(output, "a:0", ffprobe, timeout)
+    return adur, ("AV_DRIFT" if abs(adur - vdur) > frame + 1e-3 else None)
+
+
 def _beat_cut(seg):
     """E2: shot planner's on-beat marker (beat_cut: true). Truthy only."""
     return seg.get("beat_cut") is True
@@ -810,7 +1023,10 @@ def plan_timeline(tl, base_dir=".", probe=None):
         if s.get("shows_line_ids"):
             item["shows_line_ids"] = list(s["shows_line_ids"])
         # Part H H4: who is on screen / visibly speaking, for the face gate.
-        for k in ("shot_id", "faces_on_screen", "speaking_faces", "speaker", "artifact"):
+        # S75-045: the planned on-screen words ride the plan so the text
+        # check reads one record for the shots it judges.
+        for k in ("shot_id", "faces_on_screen", "speaking_faces", "speaker",
+                  "artifact", "on_screen_text"):
             if s.get(k) is not None:
                 item[k] = s[k]
         items.append(item)
@@ -832,6 +1048,7 @@ def plan_timeline(tl, base_dir=".", probe=None):
     return {"fps": fps, "width": width, "height": height,
             "song_path": tl.get("song_path"),
             "run_dir": tl.get("run_dir"), "run_id": tl.get("run_id"),
+            "route": tl.get("route"),
             "chosen_length_s": tl.get("chosen_length_s"),
             "segments": items, "total_frames": total_frames,
             "total_dur": total_frames / fps,
@@ -1101,7 +1318,7 @@ def build_argv(plan, output, ffmpeg="ffmpeg"):
     """
     fps, w, h = plan["fps"], plan["width"], plan["height"]
     threads, nice, _timeout = size_ffmpeg(
-        plan.get("total_dur", 0), w, h)
+        plan.get("total_dur", 0), w, h, run_dir=plan.get("run_dir"))
     segs = plan["segments"]
     fr = 1.0 / fps
     # Load governor: nice -n 10 + -threads min(4, size_ffmpeg) on every ffmpeg argv.
@@ -1300,6 +1517,8 @@ def _assemble(timeline_path, output, ffmpeg="ffmpeg", ffprobe="ffprobe",
     writes it to <output>.receipt.json on every outcome except dry_run.
     Post-render ffprobe check: |A-V| and |out - planned|
     each within 1 frame; else outcome error with AV_DRIFT/PLAN_DRIFT.
+    S75-044: the video and audio durations are each read from their own
+    stream, never both from the container's single duration.
 
     G5 honest receipts (Trevor order 1135, Part G, AMENDED by order 1150
     part G / review G8): when a delivery % rides the receipt it MUST be
@@ -1467,7 +1686,7 @@ def _assemble(timeline_path, output, ffmpeg="ffmpeg", ffprobe="ffprobe",
     if timeout is None:
         _threads, _nice, timeout = size_ffmpeg(
             plan.get("total_dur", 0), plan.get("width", DEFAULT_WIDTH),
-            plan.get("height", DEFAULT_HEIGHT))
+            plan.get("height", DEFAULT_HEIGHT), run_dir=plan.get("run_dir"))
     argv = build_argv(plan, output, ffmpeg)
     # DEL-14: refuse an attempted blur fill BEFORE any render spend. The
     # timeline (a renderer asking for a fill), the plan it built and the
@@ -1514,6 +1733,9 @@ def _assemble(timeline_path, output, ffmpeg="ffmpeg", ffprobe="ffprobe",
                             "excerpt_overlay": _excerpt,
                             "motion": motion, "h5": _h5_ev,
                             "qc_no_blur": nb},
+               # S75-045: a text check nobody could run is named on the
+               # receipt, never passed over in silence.
+               "warnings": frame_text_warnings(frows),
                "state_version": 0}
         blocked = next((b for b in (cov, face, ffail, export_fail) if b is not None
                         and b.get("outcome") == "error"), None)
@@ -1544,8 +1766,10 @@ def _assemble(timeline_path, output, ffmpeg="ffmpeg", ffprobe="ffprobe",
                      next_action=(proc.stderr or "")[-500:],
                      evidence={"argv": argv, "returncode": proc.returncode})
     # Verify: output A/V durations within 1 frame of plan and each other.
+    # S75-044: the video duration is the video stream's own, so the audio
+    # stream is measured and compared against it separately below.
     try:
-        vdur = probe_duration(output, ffprobe)
+        vdur = probe_stream_duration(output, "v:0", ffprobe)
     except RuntimeError as exc:
         return _fail("VERIFY_UNAVAILABLE", next_action=str(exc),
                      evidence={"output": str(output)})
@@ -1615,12 +1839,16 @@ def _assemble(timeline_path, output, ffmpeg="ffmpeg", ffprobe="ffprobe",
                      next_action="output duration off plan by >1 frame",
                      evidence=evid)
     if plan["song_path"]:
+        # S75-044: the audio stream's own duration, never the container's
+        # format duration (which is the video's, and made this check pass
+        # by construction). An unmeasurable stream fails closed.
         try:
-            adur = probe_duration(output, ffprobe)
-        except RuntimeError:
-            adur = vdur
+            adur, av_code = check_av_drift(output, vdur, frame, ffprobe)
+        except RuntimeError as exc:
+            return _fail("VERIFY_UNAVAILABLE", next_action=str(exc),
+                         evidence=evid)
         evid["audio_dur"] = adur
-        if abs(adur - vdur) > frame + 1e-3:
+        if av_code:
             return _fail("AV_DRIFT",
                          next_action="audio/video differ by >1 frame",
                          evidence=evid)
@@ -1672,6 +1900,9 @@ def _assemble(timeline_path, output, ffmpeg="ffmpeg", ffprobe="ffprobe",
                          evidence={"detector_result": detector_result})
     # No silent failure: every recorded FAILURE/WARNING rides the receipt.
     _loud_attach(receipt)
+    # S75-045: the text check's own UNAVAILABLE warnings ride beside them.
+    receipt["warnings"] = list(receipt.get("warnings") or []) \
+        + frame_text_warnings(evid.get("frame_text") or [])
     return receipt
 
 
@@ -1688,6 +1919,378 @@ def _write_receipt(output, receipt):
               "%s.receipt.json: %s" % (output, exc))
         _loud_attach(receipt)
         return False
+
+
+# --- U-V03 (S75-055): the planning step writes edit/timeline.json ------------
+#
+# edit/timeline.json is the one file this assembler, the clip cutter
+# (delivery_clips) and the trailer cutter read, and factory.py's `assembly`
+# stage command names it -- but no production module wrote it. Only the proof
+# run and tests built one by hand (S75-055). plan_run_timeline() is that
+# writer: the run-level planning step, beside plan_timeline() which stays the
+# pure frame plan over a timeline that already exists.
+#
+# Every value comes from a record on disk; a value that no record holds is the
+# named refusal TIMELINE_INPUT_MISSING:<what>, never a default.
+
+TIMELINE_INPUT_MISSING = "TIMELINE_INPUT_MISSING"
+
+#: the run's own records, exactly where its stage commands keep them.
+RECORD_SHOT_LIST = "storyboard/shot-list.json"
+RECORD_APPROVAL = "storyboard/approval.json"
+RECORD_CLIPS = "video/clips.json"
+RECORD_TIMINGS = "music/word-timings.json"
+RECORD_SESSION = "control/intake-session.json"
+RECORD_METHOD = "control/method.json"
+RECORD_SONGS = ("music/picked-song.mp3", "music/mix.mp3")
+
+
+class TimelineInputMissing(ValueError):
+    """A timeline value no record on disk holds (named, never defaulted)."""
+
+    def __init__(self, what, detail=""):
+        self.what = what
+        self.code = TIMELINE_INPUT_MISSING
+        super().__init__("%s:%s%s" % (TIMELINE_INPUT_MISSING, what,
+                                      (" (%s)" % detail) if detail else ""))
+
+
+def _run_json(root, rel):
+    """One record from the run folder, or the named refusal when it is absent."""
+    try:
+        with open(os.path.join(root, rel), encoding="utf-8") as fh:
+            return json.load(fh)
+    except (OSError, ValueError) as exc:
+        raise TimelineInputMissing(rel, str(exc)) from exc
+
+
+def _run_rel(root, path):
+    """A record's file path as the timeline writes it: run-relative."""
+    if not isinstance(path, str) or not path.strip():
+        raise TimelineInputMissing("clip path", RECORD_CLIPS)
+    full = os.path.abspath(path if os.path.isabs(path)
+                           else os.path.join(root, path))
+    try:
+        rel = os.path.relpath(full, root)
+    except ValueError:                       # another drive (Windows)
+        return path
+    return path if rel.startswith("..") else rel
+
+
+def _measured_words(root):
+    """The picked song's measured word timings (music/word-timings.json).
+
+    Accepts the DEL-13 receipt shape (``{"words": [...], "source": ...}``)
+    and the ``provide_word_timings`` envelope (``{"ok": true, "timings":
+    {...}}``). The ``source`` must be one timestamp_plan calls a REAL timing
+    of the finished song: planned or packet timings are refused, never used
+    as if they were measured.
+    """
+    doc = _run_json(root, RECORD_TIMINGS)
+    timings = doc.get("timings") if isinstance(doc, dict) \
+        and isinstance(doc.get("timings"), dict) else doc
+    if not isinstance(timings, dict):
+        raise TimelineInputMissing(RECORD_TIMINGS, "not a timing record")
+    core_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    if core_dir not in sys.path:
+        sys.path.insert(0, core_dir)
+    from shot_planner import timestamp_plan as _tp
+    source = timings.get("source")
+    if source not in _tp.REAL_TIMING_SOURCES:
+        raise TimelineInputMissing(
+            "measured word timings",
+            "%s carries source %r, which is not a measured timing of the "
+            "finished song" % (RECORD_TIMINGS, source))
+    words = []
+    for w in timings.get("words") or []:
+        if not isinstance(w, dict):
+            raise TimelineInputMissing("word timing", RECORD_TIMINGS)
+        st = w.get("start", w.get("startS"))
+        en = w.get("end", w.get("endS"))
+        if isinstance(st, bool) or isinstance(en, bool) \
+                or not isinstance(st, (int, float)) \
+                or not isinstance(en, (int, float)) or en <= st:
+            raise TimelineInputMissing("word timing", repr(w))
+        words.append({"word": str(w.get("word") or ""),
+                      "start": float(st), "end": float(en)})
+    if not words:
+        raise TimelineInputMissing("measured word timings",
+                                   "%s carries no words" % RECORD_TIMINGS)
+    return sorted(words, key=lambda w: w["start"])
+
+
+def _clip_rows(root):
+    """The materialized clip rows (video/clips.json), keyed by shot id.
+
+    Each row is the run's own record of one materialized clip: its path, its
+    recorded sha256, the dispatch receipt it came from and the task id -- the
+    lip-sync evidence lipsync_evidence.check_plan joins at assembly. A row
+    may also carry the measured ``motion_score`` (F12).
+    """
+    doc = _run_json(root, RECORD_CLIPS)
+    rows = doc.get("clips") if isinstance(doc, dict) else doc
+    if not isinstance(rows, list) or not rows:
+        raise TimelineInputMissing(RECORD_CLIPS, "no clip rows")
+    out = {}
+    for row in rows:
+        if not isinstance(row, dict) or not str(row.get("shot_id") or "").strip():
+            raise TimelineInputMissing(RECORD_CLIPS, "a clip row carries no shot_id")
+        out[str(row["shot_id"])] = row
+    return out
+
+
+def _run_id_of(root):
+    """The run's own id (control/intake-session.json) -- never the folder name."""
+    session = _run_json(root, RECORD_SESSION)
+    run_id = session.get("run_id") if isinstance(session, dict) else None
+    if not isinstance(run_id, str) or not run_id.strip():
+        raise TimelineInputMissing("run_id", RECORD_SESSION)
+    return run_id
+
+
+def _song_record(root):
+    """The run's soundtrack file, first one its records name that exists."""
+    for rel in RECORD_SONGS:
+        if os.path.isfile(os.path.join(root, rel)):
+            return rel
+    raise TimelineInputMissing(RECORD_SONGS[0], "no picked song or mix on disk")
+
+
+def _motion_of(sid, row, src_abs, scorer):
+    """A clip's F12 motion score: the record's, else MEASURED from the clip.
+
+    Read from the clip row when the row carries it; otherwise measured from
+    the materialized clip file (a record on disk) by the scoring owner
+    (shot_planner.motion_score). Never defaulted: a score nobody could read
+    is TIMELINE_INPUT_MISSING:motion_score:<shot>.
+    """
+    ms = row.get("motion_score")
+    if isinstance(ms, dict) and isinstance(ms.get("score"), (int, float)) \
+            and not isinstance(ms.get("score"), bool):
+        return ms
+    try:
+        got = scorer(clip_path=src_abs)
+    except Exception as exc:                    # noqa: BLE001 - named refusal
+        raise TimelineInputMissing("motion_score:" + sid, str(exc)) from exc
+    if not isinstance(got, dict) or not isinstance(got.get("score"), (int, float)) \
+            or isinstance(got.get("score"), bool):
+        raise TimelineInputMissing("motion_score:" + sid,
+                                   "the scorer returned no score")
+    return got
+
+
+def _default_motion_scorer(clip_path):
+    core_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    if core_dir not in sys.path:
+        sys.path.insert(0, core_dir)
+    import shot_planner.motion_score as _ms
+    return _ms.motion_score(clip_path=clip_path)
+
+
+def plan_run_timeline(run_dir, out_path=None, width=None, height=None,
+                      motion_scorer=None):
+    """The run-level planning step: write <run>/edit/timeline.json atomically.
+
+    Composes the timeline from the run's OWN records, one value at a time:
+
+    * the approved storyboard -- storyboard/shot-list.json (the approved shot
+      plan) plus storyboard/approval.json (state "approved", one approved
+      entry per shot, and the same shot identities);
+    * the picked song's measured word timings -- music/word-timings.json:
+      each line's window is the measured word run inside its approved shot
+      window, so a line time is never invented;
+    * the lip-sync evidence -- video/clips.json: each shot's materialized
+      clip path, recorded sha256, dispatch receipt and task id;
+    * the soundtrack (music/picked-song.mp3, else music/mix.mp3), the run id
+      (control/intake-session.json) and, when recorded, the chosen length
+      (control/method.json).
+
+    The candidate file is written to a temporary name in the same folder and
+    validated with load_timeline() BEFORE it replaces the old one, so a bad
+    plan never lands as edit/timeline.json. Returns the written path. Raises
+    TimelineInputMissing naming the record that is absent; nothing is
+    defaulted.
+    """
+    root = os.path.abspath(str(run_dir))
+    if not os.path.isdir(root):
+        raise TimelineInputMissing("run_dir", root)
+    path = out_path or os.path.join(root, "edit", "timeline.json")
+    fps = fps_conform.MASTER_FPS
+    width = int(width if width is not None else DEFAULT_WIDTH)
+    height = int(height if height is not None else DEFAULT_HEIGHT)
+    scorer = motion_scorer or _default_motion_scorer
+
+    shot_doc = _run_json(root, RECORD_SHOT_LIST)
+    shots = shot_doc.get("shots") if isinstance(shot_doc, dict) else shot_doc
+    if not isinstance(shots, list) or not shots:
+        raise TimelineInputMissing(RECORD_SHOT_LIST, "no shots")
+    approval = _run_json(root, RECORD_APPROVAL)
+    if not isinstance(approval, dict) or approval.get("state") != "approved":
+        raise TimelineInputMissing("approved storyboard",
+                                   "%s does not record state 'approved'"
+                                   % RECORD_APPROVAL)
+    approved = approval.get("shots")
+    if not isinstance(approved, dict) or not approved:
+        raise TimelineInputMissing("approved storyboard",
+                                   "%s carries no per-shot approvals"
+                                   % RECORD_APPROVAL)
+    words = _measured_words(root)
+    clips = _clip_rows(root)
+    run_id = _run_id_of(root)
+    song_path = _song_record(root)
+    chosen = None
+    if os.path.isfile(os.path.join(root, RECORD_METHOD)):
+        method = _run_json(root, RECORD_METHOD)
+        value = method.get("chosen_length_s") if isinstance(method, dict) else None
+        if type(value) is int and value > 0:
+            chosen = value
+
+    lines, sections, segments = [], [], []
+    seen_lines, seen_shots = set(), set()
+    for index, shot in enumerate(shots):
+        if not isinstance(shot, dict):
+            raise TimelineInputMissing("shot record", "%s[%d]" % (RECORD_SHOT_LIST, index))
+        sid = shot.get("shot_id")
+        if not isinstance(sid, str) or not sid.strip():
+            raise TimelineInputMissing("shot_id", "%s[%d]" % (RECORD_SHOT_LIST, index))
+        if sid in seen_shots:
+            raise TimelineInputMissing("duplicate shot_id", sid)
+        seen_shots.add(sid)
+        entry = approved.get(sid)
+        if not isinstance(entry, dict) or entry.get("status") != "approved":
+            raise TimelineInputMissing("storyboard approval for " + sid,
+                                       "%s records no approved entry" % RECORD_APPROVAL)
+        start, end = shot.get("song_start"), shot.get("song_end")
+        if isinstance(start, bool) or isinstance(end, bool) \
+                or not isinstance(start, (int, float)) \
+                or not isinstance(end, (int, float)) or not start < end:
+            raise TimelineInputMissing("shot window", sid)
+        lids = shot.get("lyric_line_ids")
+        if not isinstance(lids, list) or len(lids) != 1 \
+                or not isinstance(lids[0], str) or not lids[0].strip():
+            # One approved shot carries one line: a multi-line shot has no
+            # recorded per-line window, and splitting it would be invented.
+            raise TimelineInputMissing(
+                "one line per shot",
+                "%s lyric_line_ids=%r; a multi-line shot's per-line windows "
+                "are in no record" % (sid, lids))
+        lid = lids[0]
+        if lid in seen_lines:
+            raise TimelineInputMissing("duplicate line_id", lid)
+        seen_lines.add(lid)
+        inside = [w for w in words
+                  if w["start"] >= start - 1e-6 and w["end"] <= end + 1e-6]
+        if not inside:
+            raise TimelineInputMissing(
+                "measured words for " + lid,
+                "shot %s window %.3f-%.3f holds no measured word of the "
+                "picked song" % (sid, start, end))
+        line_start = inside[0]["start"]
+        line_end = inside[-1]["end"]
+        text = " ".join(w["word"] for w in inside).strip()
+        speaker = shot.get("speaker")
+        lips = bool(shot.get("lip_sync") or shot.get("lip_sync_line_ids"))
+        if lips:
+            recorded = shot.get("lip_sync_line_ids")
+            if not isinstance(recorded, list) or lid not in recorded:
+                raise TimelineInputMissing("lip_sync_line_ids", sid)
+            if not isinstance(speaker, str) or not speaker.strip():
+                raise TimelineInputMissing("speaker", sid)
+        faces = shot.get("character_ids")
+        if not isinstance(faces, list) or not all(isinstance(f, str) and f.strip()
+                                                  for f in faces):
+            raise TimelineInputMissing("character_ids", sid)
+
+        row = clips.get(sid)
+        if row is None:
+            raise TimelineInputMissing("clip row for " + sid, RECORD_CLIPS)
+        src = _run_rel(root, row.get("path"))
+        sha = row.get("sha256")
+        if not isinstance(sha, str) or not sha.strip():
+            raise TimelineInputMissing("clip sha256 for " + sid, RECORD_CLIPS)
+        artifact = {"schema_version": "1.0.0", "kind": "video",
+                    "run_id": run_id,
+                    "artifact_id": str(row.get("artifact_id") or sid),
+                    "stage": "generation",
+                    "stale": bool(row.get("stale", False)),
+                    "path": src, "sha256": sha}
+        if lips:
+            receipt = row.get("receipt_path")
+            task = row.get("task_id")
+            if not isinstance(receipt, str) or not receipt.strip():
+                raise TimelineInputMissing("receipt_path for " + sid,
+                                           RECORD_CLIPS)
+            if not isinstance(task, str) or not task.strip():
+                raise TimelineInputMissing("task_id for " + sid, RECORD_CLIPS)
+            artifact["provenance"] = {"task_id": task,
+                                      "receipt_path": _run_rel(root, receipt)}
+        src_abs = os.path.join(root, src)
+        segment = {"src": src, "dur": round(float(end) - float(start), 6),
+                   "shot_id": sid, "lip_sync": lips,
+                   "faces_on_screen": list(faces),
+                   "motion_score": _motion_of(sid, row, src_abs, scorer),
+                   "artifact": artifact, "scene_index": index}
+        if lips:
+            segment["lip_sync_line_ids"] = list(shot["lip_sync_line_ids"])
+            segment["speaking_faces"] = [speaker]
+        if isinstance(speaker, str) and speaker.strip():
+            segment["speaker"] = speaker
+        for key in ("transition", "beat_cut", "shows_line_ids", "on_screen_text"):
+            if shot.get(key) is not None:
+                segment[key] = shot[key]
+        segments.append(segment)
+        line = {"line_id": lid, "start_s": line_start, "end_s": line_end,
+                "text": text}
+        # S75-055: the clip cutter reads the hook flag off timeline lines
+        # (clip_cutdown._best_window); the approved shot record is the only
+        # place the storyboard stage records it, so carry it, never invent it.
+        if shot.get("hook") is not None:
+            line["hook"] = bool(shot.get("hook"))
+        if shot.get("beat") is not None:
+            line["beat"] = shot.get("beat")
+        line["speaker"] = speaker if isinstance(speaker, str) else None
+        if not (isinstance(line["speaker"], str) and line["speaker"].strip()):
+            line.pop("speaker")
+        lines.append(line)
+        sections.append({"section_id": sid, "lyrics": [
+            {"line_id": lid, "start": line_start, "end": line_end,
+             "text": text}]})
+
+    if seen_shots != set(approved):
+        raise TimelineInputMissing(
+            "storyboard approval scope",
+            "the approved shot ids differ from the current shot list")
+
+    timeline = {"schema_version": TIMELINE_SCHEMA, "fps": fps,
+                "width": width, "height": height,
+                "song_path": song_path, "run_dir": "..", "run_id": run_id,
+                "segments": segments, "lines": lines,
+                "timing": {"sections": sections}}
+    if chosen is not None:
+        timeline["chosen_length_s"] = chosen
+    return _write_timeline_atomic(path, timeline)
+
+
+def _write_timeline_atomic(path, timeline):
+    """Write the candidate, validate it with load_timeline(), then replace."""
+    folder = os.path.dirname(os.path.abspath(path)) or "."
+    os.makedirs(folder, exist_ok=True)
+    fd, tmp = tempfile.mkstemp(prefix=".timeline-", suffix=".json", dir=folder)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+            json.dump(timeline, fh, indent=2)
+            fh.write("\n")
+            fh.flush()
+            os.fsync(fh.fileno())
+        load_timeline(tmp)          # the plan is validated before it lands
+        os.replace(tmp, path)
+        return path
+    except BaseException:
+        try:
+            os.remove(tmp)
+        except OSError:
+            pass
+        raise
 
 
 def main(argv=None):
@@ -1716,7 +2319,22 @@ def main(argv=None):
     ap.add_argument("--verdict", default=None,
                     help="path to a target_engine verdict JSON; supplies "
                          "target, rounds used and the selected take")
+    ap.add_argument("--run-dir", default=None,
+                    help="U-V03: the run folder. When TIMELINE does not exist "
+                         "yet, the planning step writes it from the run's own "
+                         "records (plan_run_timeline) before assembling")
     args = ap.parse_args(argv)
+    if args.run_dir and not os.path.isfile(args.timeline):
+        # U-V03 (S75-055): the planning step writes edit/timeline.json; an
+        # existing timeline is never rewritten behind a run.
+        try:
+            path = plan_run_timeline(args.run_dir, args.timeline)
+        except (TimelineInputMissing, ValueError) as exc:
+            msg = str(exc)
+            print(json.dumps(_fail(msg.split(":")[0], next_action=msg)))
+            return EXIT["error"]
+        print(json.dumps({"timeline": path, "outcome": "ok",
+                          "reason_code": "TIMELINE_WRITTEN"}))
     if not shutil.which(args.ffmpeg) or not shutil.which(args.ffprobe):
         print(json.dumps(_fail("PREREQ_MISSING",
                                next_action="install ffmpeg+ffprobe")))

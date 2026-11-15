@@ -575,6 +575,13 @@ def cmd_next(args) -> int:
         write_intake_ledger(run_dir, ledger)
         answers = _answer_view(entries)
 
+    # PD-013: a QUICK interview records the bank's own defaults instead of
+    # asking them. The client sees the whole list once, in the review turn.
+    if apply_quick_defaults(entries, schema, answers):
+        ledger["entries"] = entries
+        write_intake_ledger(run_dir, ledger)
+        answers = _answer_view(entries)
+
     # PRES-056: locked plan-tier reuse. The resource_plan turn is asked ONLY
     # while the probe leaves a pending plan question; when every provider is
     # locked the turn resolves from the lock and is never asked -- a locked
@@ -650,6 +657,11 @@ def cmd_next(args) -> int:
     if next_q is None:
         next_q = _first_unanswered_residual(questions, answers)
     if next_q is None:
+        # PD-013: a QUICK interview ends with ONE review turn listing every
+        # assumed default, so the client can accept the lot or change one.
+        review = _core_defaults_review(entries, schema, answers)
+        if review is not None:
+            return _emit_question(review, answers)
         print(json.dumps({"status": "complete",
                           "message": "All questions answered. Run --complete to "
                                      "finalize."}))
@@ -1103,6 +1115,170 @@ _MODEL_PLAN_SUBFIELDS = (
     ("qc_model", "judge", "QC_MODEL"),
 )
 _THINKING_SUBFIELD = ("thinking_mode", "THINKING_MODE")
+
+# ---------------------------------------------------------------------------
+# PD-013 -- QUICK interview: record the bank's own defaults instead of asking
+# ---------------------------------------------------------------------------
+_QUESTION_SEQUENCE = None
+
+def _question_sequence():
+    """The bank-wide projection + depth rules, imported once."""
+    global _QUESTION_SEQUENCE
+    if _QUESTION_SEQUENCE is None:
+        if str(INTAKE_DIR) not in sys.path:
+            sys.path.insert(0, str(INTAKE_DIR))
+        import question_sequence as _qs  # noqa: PLC0415 -- lazy by design
+        _QUESTION_SEQUENCE = _qs
+    return _QUESTION_SEQUENCE
+
+def _quick_skip(question: Dict[str, Any],
+                answers: Dict[str, Any]) -> Tuple[bool, Optional[str]]:
+    """Depth gate: (skip?, reason) for one question. IN-DEPTH never skips."""
+    return _question_sequence().quick_skip(question, answers)
+
+def apply_quick_defaults(entries: Dict[str, Any],
+                         schema: Dict[str, Any],
+                         answers: Dict[str, Any]) -> bool:
+    """Record every QUICK field the bank already answers as a default.
+
+    Each record carries ``source: "default"`` and ``defaulted: True`` so the
+    review turn can list it and PD-004b's proof can find it. Nothing is
+    recorded for a field whose conditional branch is not met. Returns True
+    when entries changed.
+    """
+    qs = _question_sequence()
+    if not qs.is_quick(answers):
+        return False
+    now = datetime.now(timezone.utc).isoformat()
+    store_target = schema.get("storeTarget") or {}
+    changed = False
+    for q in get_questions(schema):
+        qid = q["id"]
+        store_on = q.get("storeOn", qid)
+        if store_on in entries or qid in entries:
+            continue
+        if not qs.defaulted_in_quick(q, answers):
+            continue
+        ask, _reason = should_ask(q, answers)
+        if not ask:
+            continue
+        value = q.get("default")
+        rec = {"value": value, "validated": False, "defaulted": True,
+               "source": "default", "answered_at": now,
+               "normalized": value, "answer": str(value)}
+        entries[qid] = rec
+        if store_on != qid:
+            entries[store_on] = rec
+        if store_target.get(qid) and store_target[qid] != store_on:
+            entries[store_target[qid]] = rec
+        changed = True
+    return changed
+
+def quick_defaults_review(entries: Dict[str, Any],
+                          schema: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    """The one review turn that ends a QUICK interview: every default listed.
+
+    Returns the question definition (never None when at least one field was
+    defaulted) or None when there is nothing to review.
+    """
+    labels: Dict[str, str] = {}
+    orders: Dict[str, Any] = {}
+    for q in get_questions(schema):
+        rec = entries.get(q["id"])
+        if not isinstance(rec, dict) or not rec.get("defaulted"):
+            continue
+        label = (q.get("prompt") or q["id"]).strip().rstrip("?").strip()
+        labels[q["id"]] = f"{label}: {rec.get('value')}"
+        orders[q["id"]] = q.get("order", 999)
+    if not labels:
+        return None
+    body = "; ".join(labels[k] for k in sorted(labels, key=orders.__getitem__))
+    return {
+        "id": _question_sequence().DEFAULTS_REVIEW_ID,
+        "order": 99,
+        "kind": "text",
+        "required": False,
+        "block_gate": False,
+        "prompt": ("Here is what I assumed so you did not have to answer: "
+                   f"{body}. Reply \"good\" to accept, or tell me what to change."),
+        "reviewed_fields": list(labels),
+    }
+
+#: Replies that accept the whole defaults list unchanged.
+_DEFAULT_ACCEPT_WORDS = frozenset({
+    "good", "ok", "okay", "yes", "y", "accept", "accepted", "looks good",
+    "all good", "fine", "correct", "sounds good", "perfect",
+})
+
+def _default_accepts(text: str) -> bool:
+    return (text or "").strip().strip(".!").strip().lower() in _DEFAULT_ACCEPT_WORDS
+
+def _core_defaults_review(entries: Dict[str, Any],
+                          schema: Dict[str, Any],
+                          answers: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    """The QUICK review turn, or None when it is not this interview's turn."""
+    qs = _question_sequence()
+    if not qs.is_quick(answers) or qs.DEFAULTS_REVIEW_ID in answers:
+        return None
+    return quick_defaults_review(entries, schema)
+
+def _answer_defaults_review(args, run_dir: Path) -> int:
+    """Record the client's verdict on the QUICK defaults list.
+
+    "good" (and the other plain acceptances) stamps ``default_accepted_msg_id``
+    -- the owner message id PD-004b's proof reads -- on EVERY defaulted entry.
+    Anything else is recorded as a change request and the review turn comes
+    back, so the agent applies the change with a normal --answer and re-asks.
+    A crafted acceptance is a forged approval, so an acceptance without
+    --owner-msg-id is refused.
+    """
+    schema = load_question_schema()
+    ledger = read_intake_ledger(run_dir)
+    entries = ledger.get("entries", {})
+    answers = _answer_view(entries)
+    qid = _question_sequence().DEFAULTS_REVIEW_ID
+    text = (args.text or "").strip()
+    now_iso = datetime.now(timezone.utc).isoformat()
+
+    if not _default_accepts(text):
+        entries[qid] = {"value": text, "validated": False, "source":
+                        "deck-intake-driver", "answered_at": now_iso,
+                        "accepted": False,
+                        "note": "client asked for a change; apply it with --answer"}
+        ledger["entries"] = entries
+        write_intake_ledger(run_dir, ledger)
+        review = quick_defaults_review(entries, schema)
+        if review is None:
+            print(json.dumps({"error": "no defaulted fields to review"}))
+            return 1
+        return _emit_question(review, answers)
+
+    msg_id = getattr(args, "owner_msg_id", None)
+    if not msg_id:
+        print(json.dumps({
+            "error": "accepting the defaults requires --owner-msg-id (the "
+                     "client's message id); an acceptance with no owner "
+                     "message id is a forged approval"}))
+        return 1
+
+    stamped = 0
+    seen_ids = set()
+    for rec in entries.values():
+        if isinstance(rec, dict) and rec.get("defaulted") and id(rec) not in seen_ids:
+            seen_ids.add(id(rec))
+            rec["default_accepted_msg_id"] = msg_id
+            stamped += 1
+    entries[qid] = {"value": text, "validated": True, "source":
+                    "deck-intake-driver", "answered_at": now_iso,
+                    "accepted": True, "owner_msg_id": msg_id,
+                    "normalized": text, "answer": text}
+    ledger["entries"] = entries
+    write_intake_ledger(run_dir, ledger)
+    print(json.dumps({"status": "complete",
+                      "message": "Defaults accepted. Run --complete to finalize.",
+                      "defaults_accepted": stamped,
+                      "default_accepted_msg_id": msg_id}))
+    return 0
 
 
 def _import_resource_profile():
@@ -1654,7 +1830,8 @@ def _variant_match_from_client_inventory(variant: str):
 
 
 def _record_client_model_plan(derived: Dict[str, Any],
-                              entries: Dict[str, Any]) -> int:
+                              entries: Dict[str, Any],
+                              prov_stamp: Optional[Dict[str, Any]] = None) -> int:
     """Persist the resource_plan turn's model subfields as a client model plan.
 
     Returns 0 when there is nothing to record or the plan was recorded, and 1
@@ -1698,26 +1875,30 @@ def _record_client_model_plan(derived: Dict[str, Any],
     # Mirror the answers onto their storeOn ledger keys (see the note above:
     # deliberately not routed through storeTarget/intake.json).
     now_iso = datetime.now(timezone.utc).isoformat()
+    stamp = dict(prov_stamp or {})
     for sub, slot, key in _MODEL_PLAN_SUBFIELDS:
         if sub not in derived and not picks[slot]:
             continue
         value = picks[slot]
         entries[key] = {"value": value, "validated": True,
                         "source": "deck-intake-driver", "answered_at": now_iso,
-                        "normalized": value, "answer": value}
+                        "normalized": value, "answer": value, **stamp}
     # FIX 61.2: mirror the new fields to their storeOn ledger keys.
     if deepseek_variant:
         entries["DEEPSEEK_VARIANT"] = {"value": deepseek_variant, "validated": True,
                         "source": "deck-intake-driver", "answered_at": now_iso,
-                        "normalized": deepseek_variant, "answer": deepseek_variant}
+                        "normalized": deepseek_variant, "answer": deepseek_variant,
+                        **stamp}
     if openrouter_model:
         entries["OPENROUTER_MODEL"] = {"value": openrouter_model, "validated": True,
                         "source": "deck-intake-driver", "answered_at": now_iso,
-                        "normalized": openrouter_model, "answer": openrouter_model}
+                        "normalized": openrouter_model, "answer": openrouter_model,
+                        **stamp}
     if thinking or _THINKING_SUBFIELD[0] in derived:
         entries[_THINKING_SUBFIELD[1]] = {
             "value": thinking, "validated": True, "source": "deck-intake-driver",
-            "answered_at": now_iso, "normalized": thinking, "answer": thinking}
+            "answered_at": now_iso, "normalized": thinking, "answer": thinking,
+            **stamp}
 
     rp = _import_resource_profile()
     if rp is None:
@@ -1890,7 +2071,8 @@ _RUN_MODE_SUBFIELD = ("run_mode", "RUN_MODE")
 
 
 def _record_run_mode(qdef: Dict[str, Any], derived: Dict[str, Any],
-                     entries: Dict[str, Any]) -> None:
+                     entries: Dict[str, Any],
+                     prov_stamp: Optional[Dict[str, Any]] = None) -> None:
     """Mirror the resource_plan turn's run-mode subfield onto its RUN_MODE
     ledger key, normalised to the bank's own vocabulary.
 
@@ -1923,7 +2105,8 @@ def _record_run_mode(qdef: Dict[str, Any], derived: Dict[str, Any],
         return
     now_iso = datetime.now(timezone.utc).isoformat()
     rec = {"value": want, "validated": True, "source": "deck-intake-driver",
-           "answered_at": now_iso, "normalized": want, "answer": want}
+           "answered_at": now_iso, "normalized": want, "answer": want,
+           **(prov_stamp or {})}
     entries[ledger_key] = rec
     entries[sub_id] = rec
 
@@ -1939,7 +2122,8 @@ _STYLE_PICK_AUTO_SUBFIELD = ("style_pick_auto", "STYLE_PICK_AUTO")
 
 
 def _record_style_pick_auto(qdef: Dict[str, Any], derived: Dict[str, Any],
-                            entries: Dict[str, Any]) -> None:
+                            entries: Dict[str, Any],
+                            prov_stamp: Optional[Dict[str, Any]] = None) -> None:
     """Mirror the style turn's style-pick-auto subfield onto its
     STYLE_PICK_AUTO ledger key as a REAL BOOLEAN.
 
@@ -2008,7 +2192,8 @@ def _record_style_pick_auto(qdef: Dict[str, Any], derived: Dict[str, Any],
     value = want == "yes"
     now_iso = datetime.now(timezone.utc).isoformat()
     rec = {"value": value, "validated": True, "source": "deck-intake-driver",
-           "answered_at": now_iso, "normalized": value, "answer": want}
+           "answered_at": now_iso, "normalized": value, "answer": want,
+           **(prov_stamp or {})}
     entries[ledger_key] = rec
     entries[sub_id] = rec
 
@@ -2018,6 +2203,9 @@ def cmd_answer(args) -> int:
     run_dir = args.run_dir.expanduser().resolve()
     qid = args.question_id
     text = args.text
+    # PD-013: the QUICK review turn is not a bank row; it has its own handler.
+    if qid == _question_sequence().DEFAULTS_REVIEW_ID:
+        return _answer_defaults_review(args, run_dir)
     schema = load_question_schema()
     questions = get_questions(schema)
 
@@ -2264,8 +2452,8 @@ def cmd_answer(args) -> int:
             # refused. Previously _record_run_mode ran after
             # _record_client_model_plan, and a refused model plan dropped
             # the declared ultra on a box with no provider profile.
-            _record_run_mode(qdef, derived, entries)
-            rc = _record_client_model_plan(derived, entries)
+            _record_run_mode(qdef, derived, entries, prov_stamp)
+            rc = _record_client_model_plan(derived, entries, prov_stamp)
             if rc != 0:
                 return rc
             # FIX 18: the answer just recorded IS the client's decision
@@ -2299,7 +2487,7 @@ def cmd_answer(args) -> int:
         # tests `auto is True` and the generic loop above records the answered
         # string. See _record_style_pick_auto for the full contract.
         if qid in ("style_and_brand", "style_pick_auto"):
-            _record_style_pick_auto(qdef, derived, entries)
+            _record_style_pick_auto(qdef, derived, entries, prov_stamp)
 
     if qdef.get("answer_field") in ("want_teleprompter", "want_speech_script", "want_audio_deliverable"):
         current = _answer_view(entries)
@@ -2401,6 +2589,13 @@ def cmd_answer(args) -> int:
         ledger["entries"] = entries
         write_intake_ledger(run_dir, ledger)
         answers = _answer_view(entries)
+    # PD-013: record the QUICK defaults for every field this answer left
+    # unasked (the driver answers question-after-question, so --next may never
+    # run between two answers).
+    if apply_quick_defaults(entries, schema, answers):
+        ledger["entries"] = entries
+        write_intake_ledger(run_dir, ledger)
+        answers = _answer_view(entries)
     # PRES-056: persist newly confirmed preference-bearing values to the
     # profile (autosave direction ledger -> profile) and refresh the
     # progressive snapshot, so pause/renew/resume and simultaneous decks
@@ -2425,6 +2620,9 @@ def cmd_answer(args) -> int:
     if next_q is None:
         next_q = _first_unanswered_residual(questions, answers)
     if next_q is None:
+        review = _core_defaults_review(entries, schema, answers)
+        if review is not None:
+            return _emit_question(review, answers, extra=extra)
         payload = {"status": "complete",
                   "message": "All questions answered. Run --complete "
                              "to finalize."}
@@ -4143,6 +4341,11 @@ def should_ask_progressive(qdef, answers, selected, preferences):
     should, _reason = should_ask(qdef, answers)
     if not should:
         return False, "canonical-skip"
+    # PD-013: a QUICK interview never asks an in-depth field, a field the bank
+    # already answers, or a model question the client did not ask to choose.
+    skip, skip_reason = _quick_skip(qdef, answers)
+    if skip:
+        return False, skip_reason
     if _stage_of(qdef) == 2 and not _refine_condition_met(
             qdef, answers, selected):
         return False, "refine-condition-unmet"
@@ -4182,6 +4385,8 @@ def _first_unanswered_residual(questions, answers):
         if not should:
             continue
         if _residual_skippable(q, answers):
+            continue
+        if _quick_skip(q, answers)[0]:
             continue
         return q
     return None

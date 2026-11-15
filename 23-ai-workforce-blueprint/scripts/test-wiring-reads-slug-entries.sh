@@ -1,17 +1,34 @@
 #!/usr/bin/env bash
-# test-wiring-reads-slug-entries.sh — regression suite for BU-51 (WF-072)
+# test-wiring-reads-slug-entries.sh — wiring-gate department-reading suite
 #
-# A .workforce-build-state.json department entry may be keyed by `slug` instead
-# of `id`. The wiring gate used to read ONLY `.id`, so a slug-keyed state file
-# produced an empty department list and hit the "schema mismatch" abort (exit 9)
-# even though every department was fully materialised on disk. Worse, the state
-# write-back keyed the per-dept results on `$d.id`, so a slug-keyed entry never
-# received its `wiringStatus`.
+# BU-51 (WF-072): a .workforce-build-state.json department entry may be keyed by
+# `slug` instead of `id`. The wiring gate used to read ONLY `.id`, so a
+# slug-keyed state file produced an empty department list and hit the "schema
+# mismatch" abort (exit 9) even though every department was fully materialised
+# on disk. Worse, the state write-back keyed the per-dept results on `$d.id`, so
+# a slug-keyed entry never received its `wiringStatus`.
 #
 # The gate now reads `.id // .slug` in both places. Proven here in BOTH shapes:
 #   A. departments: [{"slug":"marketing"}] -> exit 0, wiringStatus == "done"
 #   B. departments: [{"id":"marketing"}]   -> exit 0, wiringStatus == "done"
 #   C. departments: [{"name":"x"}]         -> still exit 9 (neither key: refuse)
+#
+# BU-75 (WF-093, WF-089): a department is not always registered under the agent
+# id "dept-<slug>". A box may carry the department under an owner-chosen id
+# ("marketing-lead") whose workspace IS the department folder. The gate used to
+# look for "dept-<slug>" only, so that department failed REGISTERED (exit 3) and
+# its runtime-dir check looked at the wrong agent id — a fully wired department
+# reported as broken. The workspace the roster entry points at is the identity
+# that matters.
+#
+# Cases here:
+#   A. canonical id: agents.entries has "dept-marketing" -> exit 0 (baseline,
+#      the behaviour that already worked must not change)
+#   B. another id:   agents.entries has "marketing-lead" whose workspace is the
+#      marketing folder, and agents/marketing-lead/ exists -> exit 0, and the
+#      gate prints "registered as marketing-lead"
+#   C. negative control: "marketing-lead" whose workspace is a DIFFERENT folder
+#      -> still exit 3 (the match is workspace identity, not "any entry")
 #
 # HERMETIC: HOME is redirected into the fixture, so every path the gate resolves
 # stays inside $FIXTURE_ROOT. The suite refuses to run if /data/.openclaw exists
@@ -25,8 +42,8 @@ set -uo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # WIRING_GATE_UNDER_TEST lets a reviewer point this suite at a DIFFERENT copy of
-# the gate — specifically the pre-fix copy from origin/main — to confirm the
-# slug-keyed cases genuinely fail before the change and pass after it.
+# the gate — specifically the pre-fix copy — to confirm the cases genuinely fail
+# before the change and pass after it.
 GATE="${WIRING_GATE_UNDER_TEST:-$SCRIPT_DIR/verify-wiring.sh}"
 
 PASS=0
@@ -59,18 +76,13 @@ DEPTS="$WS/departments"
 STATE_FILE="$WS/.workforce-build-state.json"
 OC_CFG="$OC/openclaw.json"
 
-# ---- fixture builder ---------------------------------------------------------
-# reset_fixture <departments-json> — a self-contained OpenClaw root whose state
-# file names `marketing` in exactly the shape the caller passes.
-reset_fixture() {
-  local departments="$1"
-  rm -rf "$FIX_HOME"
-  mkdir -p "$OC/agents" "$DEPTS/marketing" "$OC/agents/dept-marketing"
-  printf '%s\n' '{"agents":{"list":[{"id":"dept-marketing","workspace":"'"$DEPTS"'/marketing"}]}}' \
-    > "$OC_CFG"
-  printf '%s\n' "{\"workspaceRoot\":\"$WS\",\"departments\":$departments}" > "$STATE_FILE"
-  # A fully materialised department: one director-class role with a substantive
-  # how-to.md (>= HOW_TO_MIN_BYTES 3072, no unfilled-stub marker).
+GATE_OUT=""
+GATE_RC=""
+
+# materialize_marketing — one director-class role with a substantive how-to.md
+# (>= HOW_TO_MIN_BYTES 3072, no unfilled-stub marker), so a passing run can only
+# come from the registration checks passing.
+materialize_marketing() {
   mkdir -p "$DEPTS/marketing/00-director-of-marketing"
   { printf '# Director of Marketing how-to\n\n## Section 9 SOPs\n'
     for _i in $(seq 1 60); do
@@ -80,8 +92,46 @@ reset_fixture() {
   } > "$DEPTS/marketing/00-director-of-marketing/how-to.md"
 }
 
-GATE_OUT=""
-GATE_RC=""
+# write_fixture_secrets — the marketing connection-manifest requires two keys.
+# Supplying obvious test values inside the fixture keeps the CONNECTION check
+# passing, so the roster cases measure REGISTRATION only (no ambient env is
+# relied on: the gate's own dotenv lookup expands "~" against the fixture HOME).
+write_fixture_secrets() {
+  mkdir -p "$OC/secrets"
+  {
+    printf 'GOHIGHLEVEL_API_KEY=test-value-not-a-real-credential-0001\n'
+    printf 'GOHIGHLEVEL_LOCATION_ID=test-location-not-a-real-credential-0002\n'
+  } > "$OC/secrets/.env"
+  chmod 600 "$OC/secrets/.env"
+}
+
+# ---- fixture builder: slug-keyed state entries (BU-51) -----------------------
+# reset_fixture <departments-json> — a self-contained OpenClaw root whose state
+# file names `marketing` in exactly the shape the caller passes.
+reset_fixture() {
+  local departments="$1"
+  rm -rf "$FIX_HOME"
+  mkdir -p "$OC/agents" "$OC/agents/dept-marketing" "$WS"
+  printf '%s\n' '{"agents":{"list":[{"id":"dept-marketing","workspace":"'"$DEPTS"'/marketing"}]}}' \
+    > "$OC_CFG"
+  printf '%s\n' "{\"workspaceRoot\":\"$WS\",\"departments\":$departments}" > "$STATE_FILE"
+  materialize_marketing
+}
+
+# ---- fixture builder: roster identity (BU-75) --------------------------------
+# reset_roster_fixture <roster-json> <agent-dir-name>
+# A self-contained OpenClaw root: the state file names `marketing`, the roster
+# is exactly the JSON the caller passes, and the named runtime agent dir exists.
+reset_roster_fixture() {
+  local roster="$1" agent_dir_name="$2"
+  rm -rf "$FIX_HOME"
+  mkdir -p "$OC/agents" "$OC/agents/$agent_dir_name" "$WS"
+  write_fixture_secrets
+  printf '%s\n' "$roster" > "$OC_CFG"
+  printf '%s\n' "{\"workspaceRoot\":\"$WS\",\"departments\":[{\"id\":\"marketing\",\"status\":\"done\"}]}" > "$STATE_FILE"
+  materialize_marketing
+}
+
 run_gate() {
   # HERMETIC GUARD 2: assert the resolved root is inside the fixture.
   case "$OC" in
@@ -103,6 +153,16 @@ expect_rc() {
   fi
 }
 
+expect_output_contains() {
+  local needle="$1" label="$2"
+  if printf '%s' "$GATE_OUT" | grep -qF -- "$needle"; then
+    ok "$label"
+  else
+    bad "$label — output did not contain: $needle"
+    printf '%s\n' "$GATE_OUT" | sed 's/^/        | /' >&2
+  fi
+}
+
 # expect_wiring_status <want> <label> — the state file's single department entry.
 expect_wiring_status() {
   local want="$1" label="$2" got
@@ -116,13 +176,14 @@ expect_wiring_status() {
 }
 
 echo "=============================================================="
-echo "verify-wiring.sh slug-keyed department entries (BU-51 / WF-072)"
+echo "verify-wiring.sh department reading (BU-51 / WF-072; BU-75 / WF-093, WF-089)"
 echo "fixture: $FIXTURE_ROOT"
 echo "=============================================================="
 
+# ============================ BU-51: slug-keyed entries ======================
 # --- A: a department entry keyed by slug --------------------------------------
 echo ""
-echo "[A] departments: [{\"slug\":\"marketing\",\"status\":\"done\"}]"
+echo "[BU-51 A] departments: [{\"slug\":\"marketing\",\"status\":\"done\"}]"
 reset_fixture '[{"slug":"marketing","status":"done"}]'
 run_gate
 expect_rc "a slug-keyed department is read, not rejected as a schema mismatch" 0
@@ -130,7 +191,7 @@ expect_wiring_status "done" "the slug-keyed entry receives its wiring status"
 
 # --- B: the unchanged shape, keyed by id --------------------------------------
 echo ""
-echo "[B] departments: [{\"id\":\"marketing\"}]"
+echo "[BU-51 B] departments: [{\"id\":\"marketing\"}]"
 reset_fixture '[{"id":"marketing"}]'
 run_gate
 expect_rc "an id-keyed department still passes (no regression)" 0
@@ -140,17 +201,46 @@ expect_wiring_status "done" "the id-keyed entry still receives its wiring status
 # Anti-regression: accepting .slug must not become accepting anything. An entry
 # carrying neither .id nor .slug is a schema mismatch and must still abort loudly.
 echo ""
-echo "[C] departments: [{\"name\":\"x\"}]"
+echo "[BU-51 C] departments: [{\"name\":\"x\"}]"
 reset_fixture '[{"name":"x"}]'
 run_gate
 expect_rc "an entry with neither .id nor .slug still aborts as a schema mismatch" 9
-if printf '%s' "$GATE_OUT" | grep -qF "neither .id nor .slug"; then
-  ok "the abort names both fields"
-else
-  bad "the abort did not say 'neither .id nor .slug'"
-  printf '%s\n' "$GATE_OUT" | sed 's/^/        | /' >&2
-fi
+expect_output_contains "neither .id nor .slug" "the abort names both fields"
 expect_wiring_status "absent" "nothing is written for an entry that carries no key"
+
+# ============================ BU-75: roster identity =========================
+# --- A: the canonical dept-<slug> id still registers -------------------------
+echo ""
+echo "[BU-75 A] agents.entries: dept-marketing -> the marketing folder"
+reset_roster_fixture '{"agents":{"entries":{"dept-marketing":{"workspace":"'"$DEPTS"'/marketing"}}}}' "dept-marketing"
+run_gate
+expect_rc "a canonical dept-<slug> entry still passes" 0
+expect_wiring_status "done" "the department receives its wiring status"
+
+# --- B: registered under another id, matched by its workspace -----------------
+# The spec's case: roster entry `marketing-lead` whose workspace is the marketing
+# folder, with agents/marketing-lead/ present -> exit 0.
+echo ""
+echo "[BU-75 B] agents.entries: marketing-lead (workspace = the marketing folder)"
+reset_roster_fixture '{"agents":{"entries":{"marketing-lead":{"workspace":"'"$DEPTS"'/marketing"}}}}' "marketing-lead"
+run_gate
+expect_rc "a department registered under another agent id passes" 0
+expect_output_contains "registered as marketing-lead" "the gate names the id it accepted"
+expect_wiring_status "done" "the department registered under another id is marked wired"
+
+# --- C: negative control — a different workspace is not a match ---------------
+echo ""
+echo "[BU-75 C] agents.entries: marketing-lead -> a DIFFERENT department folder"
+rm -rf "$FIX_HOME"
+mkdir -p "$OC/agents" "$OC/agents/marketing-lead" "$DEPTS/other" "$WS"
+write_fixture_secrets
+printf '%s\n' '{"agents":{"entries":{"marketing-lead":{"workspace":"'"$DEPTS"'/other"}}}}' > "$OC_CFG"
+printf '%s\n' "{\"workspaceRoot\":\"$WS\",\"departments\":[{\"id\":\"marketing\",\"status\":\"done\"}]}" > "$STATE_FILE"
+materialize_marketing
+run_gate
+expect_rc "an entry serving a different folder is still not this department's registration" 3
+expect_output_contains "not found in openclaw.json" "the gate still fails the registration loudly"
+expect_wiring_status "failed" "the unwired department is marked failed, not wired"
 
 echo ""
 echo "=============================================================="

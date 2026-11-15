@@ -14,8 +14,10 @@ Rules implemented here:
 
 1. **Extend path tops up to the exact target.** A take short of the target
    is sent through the Suno extend route (catalog id ``suno-extend``, route
-   and endpoint read from the work copy at ``onboarding/68-kie-audio/
-   models.json``) until the produced audio reaches the target, then fitted
+   and endpoint read from the 68 work copy, located beside this module
+   first and by ``prompt_limits.find_catalogs()`` only when this module's
+   own tree holds no copy) until the produced
+   audio reaches the target, then fitted
    so the delivered length *is* the target to the second. A take already at
    or above the target never calls extend.
 2. **Extend has no duration field** (work copy, ``known_inconsistencies``:
@@ -55,6 +57,7 @@ from __future__ import annotations
 
 import json
 import math
+import sys
 from pathlib import Path
 
 SCHEMA_VERSION = "blackceo.audio-c3/suno-extend/v1"
@@ -108,16 +111,70 @@ def _text(v, name):
 _CATS = {}
 
 
+def _prompt_limits():
+    """The ONE catalog locator (core/prompt_limits.py), imported lazily."""
+    core = Path(__file__).resolve().parents[2]          # extend -> audio_c3 -> core
+    if str(core) not in sys.path:
+        sys.path.insert(0, str(core))
+    import prompt_limits
+    return prompt_limits
+
+
 def _catalog_path(catalog_path=None):
+    """The 68 work copy path, in ONE documented order.
+
+    1. an explicit ``catalog_path`` (tests, callers with their own tree);
+    2. this module's own ancestor walk over every parent, trying
+       ``68-kie-audio`` and ``onboarding/68-kie-audio`` at each, nearest
+       parent first - the pre-sibling resolution, so the catalogue is the
+       one that sits beside *this module* and cannot be displaced by an
+       import resolving ``prompt_limits`` from some other tree;
+    3. ``prompt_limits.find_catalogs()[0]`` - the ONE locator, consulted
+       only when the walk found nothing: the repo-root distribution layout
+       (also caught by 2), the legacy ``onboarding/`` layout (also 2) and
+       the 999-setup installer layout
+       (``installer-registration/helpers/68-kie-audio``, outside this
+       module's tree, so only the locator sees it);
+    4. the historic ``parents[3]/onboarding/68-kie-audio/models.json`` as the
+       last resort, so a missing catalog reports the path this module has
+       always named.
+
+    The walk is not imported from ``music_director`` - this module is stdlib
+    only and a leaf.
+    """
     if catalog_path is not None:
         return Path(catalog_path)
-    # core/audio_c3/extend/suno_extend.py -> repo root
-    return Path(__file__).resolve().parents[3] / "onboarding" / "68-kie-audio" / "models.json"
+    here = Path(__file__).resolve()
+    for anc in here.parents:
+        for cand in (anc / "68-kie-audio", anc / "onboarding" / "68-kie-audio"):
+            if (cand / "models.json").is_file():
+                return cand / "models.json"
+    try:
+        audio = _prompt_limits().find_catalogs()[0]
+    except Exception:              # locator missing/unreadable -> historic path
+        audio = None
+    if audio is not None:
+        return Path(audio)
+    return here.parents[3] / "onboarding" / "68-kie-audio" / "models.json"
+
+
+def _catalog_file():
+    """The 68 work copy, resolved by ``_catalog_path`` (the same one order)."""
+    p = _catalog_path()
+    if not p.is_file():
+        raise ExtendError("catalog-missing: 68-kie-audio/models.json not found")
+    return p
 
 
 def catalog(catalog_path=None):
-    """canonical_model_id -> entry, read from the work copy. Never hardcoded."""
-    p = _catalog_path(catalog_path)
+    """canonical_model_id -> entry, read from the work copy. Never hardcoded.
+
+    With no argument the path comes from ``_catalog_path()`` (this module's
+    own ancestor walk first, then the locator
+    ``prompt_limits.find_catalogs``); ``catalog_path`` overrides it for a
+    test tree.
+    """
+    p = Path(catalog_path) if catalog_path is not None else _catalog_file()
     key = str(p)
     if key not in _CATS:
         try:

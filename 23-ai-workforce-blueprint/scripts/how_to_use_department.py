@@ -1038,6 +1038,40 @@ silently dropped.
 `23-ai-workforce-blueprint/master-orchestrator-dept/SOP-01-Blocked-vs-Return.md`
 """
 
+# Presentations: the ONE sanctioned way a deck is built, plus the FORBIDDEN
+# per-deck path. This is the owner-facing half of the same doctrine
+# BUILDER-PROMPT.md and 00-START-HERE.md carry; it was hand-added to the guide
+# once and lost in a rewrite (PD-919), so it lives here where the guide is
+# generated. ASCII dashes only (appended AFTER the _sanitize_block pass).
+_PRESENTATIONS_ENTRY_APPENDIX = """\
+---
+
+## How A Deck Is Actually Built (the one sanctioned command)
+
+Every deck is built through one entry point, and only that one:
+
+```
+bash 23-ai-workforce-blueprint/scripts/presentation-canonical-entry.sh \\
+    --run-dir <RUN_DIR> --slides slides.json --out <OUT>.pptx
+```
+
+The entry script runs seven fail-closed gates (intake ledger, intake trace, drift \
+report, runtime deps, the Skill-48 GHL module, the bypass-scan and the \
+version/hash pin) and only then starts the presentation engine. You never have to \
+run it yourself; it matters because it is the only way a deck is allowed to be \
+built, and every guardrail lives inside it.
+
+`python3 working/*.py` (writing and running your own per-deck driver, submit or \
+assemble scripts) is the ungoverned path and is FORBIDDEN \
+(AF-CANONICAL-RENDER-BYPASS). A hand-rolled renderer or assembler sitting in the \
+run directory fails the build at the bypass-scan.
+
+The only way to skip a gate is an explicit, logged owner approval token in \
+`working/checkpoints/process_manifest.json` (`owner_skip_approval`: \
+`approved:true` + `approved_by` + `reason`, naming the exact gate code). No agent \
+may skip a gate silently or on its own choice.
+"""
+
 # Plain-language department purpose for the owner guide, for departments whose
 # suggested-roles "Department Purpose" paragraph is a developer brief rather
 # than something a client can read.
@@ -1059,6 +1093,11 @@ _DEPT_TOP_BLOCK = {
         'Say: "I need a presentation." I will ask a few questions, one at a '
         "time. You will pick a look from 3 samples. Then I build it and send "
         "it to you.\n"
+        "\n"
+        "## One command runs every build\n\n"
+        "Every presentation build goes through the one sanctioned command, "
+        "`presentation-canonical-entry.sh`. Build scripts are never run by "
+        "hand: `python3 working/*.py` is forbidden.\n"
     ),
 }
 
@@ -1069,6 +1108,7 @@ _DEPT_APPENDIX = {
     "communications": _TELEGRAM_TARGET_APPENDIX,
     "crm": _REUSABLE_LIBRARIES_APPENDIX,
     "marketing": _REUSABLE_LIBRARIES_APPENDIX,
+    "presentations": _PRESENTATIONS_ENTRY_APPENDIX,
     "sales": _REUSABLE_LIBRARIES_APPENDIX,
     "social-media": _REUSABLE_LIBRARIES_APPENDIX,
     "web-development": _REUSABLE_LIBRARIES_APPENDIX,

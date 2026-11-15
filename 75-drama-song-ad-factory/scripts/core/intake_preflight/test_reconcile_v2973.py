@@ -56,10 +56,13 @@ import factory as F            # noqa: E402
 import state_store as SS       # noqa: E402
 from batch_mode.batch import STAGES  # noqa: E402
 from test_factory_method_agnes import confirmed_fixture, storyboard_fixture
-from test_production_process import approve_script
+from test_production_process import approve_script, seal_chain
 
 RID = "vtv-reconcile-run"
 FACTORY = HERE + "/factory.py"
+#: The gate's stage order through the two reconciled stages this suite drives.
+ORDER = ["research", "creative-strategy", "script-lyrics", "music",
+         "continuity-bible", "storyboard"]
 
 FAILS = []
 
@@ -118,6 +121,12 @@ def main():
         stills["s%d" % i] = "stills/shot-%d.png" % i
     (sb / "stills.json").write_text(json.dumps(stills))
     storyboard_fixture(run, count=13, duration=26, stills=stills, approve=True)
+    # S75-002: the reconciler moves a row to COMPLETE only on proof. A real
+    # gate-aware run writes the stage seal FIRST and the row second; this is
+    # the crash window the reconciler exists for — the seal landed, the row
+    # write did not. The seal is written over the same artifacts the approved
+    # storyboard gate names.
+    seal_chain(run, ORDER)
     check("precondition: storyboard row NOT_STARTED",
           stage_state(run, "storyboard") == "NOT_STARTED")
     p = run_next(run)
@@ -233,6 +242,9 @@ def main():
         json.dumps(qc_pass_records()))
     (run5 / "music" / "makers.json").write_text(
         json.dumps({"song": "music-worker"}))
+    # S75-002: same crash-window shape as the storyboard case — the music seal
+    # is written over the picked master and its pick receipt, the row lags.
+    seal_chain(run5, ORDER[:4])
     env5 = _next_env(run5)
     rec5 = [r for r in (env5.get("data") or {}).get("reconciled") or []
             if r.get("stage") == "music"]
@@ -292,3 +304,7 @@ def _next_env(run):
 
 if __name__ == "__main__":
     sys.exit(main())
+
+
+def test_reconcile_v2973():
+    assert main() == 0

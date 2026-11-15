@@ -245,5 +245,11 @@ def main():
     return 0 if not FAILS else 1
 
 
+def test_exit_codes_s75_041():
+    """Pytest entry: run every check in ``main()`` and fail on any failure."""
+    rc = main()
+    assert rc == 0, "exit-code checks failed: %s" % "; ".join(FAILS)
+
+
 if __name__ == "__main__":
     sys.exit(main())

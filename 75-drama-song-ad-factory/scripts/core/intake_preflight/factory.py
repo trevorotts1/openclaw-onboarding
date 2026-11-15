@@ -35,6 +35,7 @@ the caller must supply them from the reply's presentation, never from a default.
 Approval -> `next` hands out music; an edit is re-checked and re-sent.
 """
 import argparse
+import contextlib
 import fcntl
 import hashlib
 import json
@@ -1463,8 +1464,23 @@ def music_stage(run_dir, owner, action, run_id=None, reason=None,
             row = st.transition(rid, MUSIC, "QC", owner, expected_version=row["version"])
         if res["gate"] != "PASS":
             return block("QC_" + res["gate"], res["reason_code"])
-        row = st.transition(rid, MUSIC, "COMPLETE", owner, expected_version=row["version"],
-                            reason="qc %s; audio %s" % (res["reason_code"], ",".join(audio)))
+        # S75-002: seal this stage before its row can claim COMPLETE. A refused
+        # seal leaves the row where it is (QC) so a fixed artifact can retry;
+        # nothing is written to the row on a refusal.
+        sealed, gate_code, gate_detail = _seal_music_before_complete(run_dir, qc)
+        if gate_code:
+            return _mres("rejected", gate_code, gate_detail, row)
+        if sealed:
+            with _complete_guard_for(run_dir):
+                row = st.transition(rid, MUSIC, "COMPLETE", owner,
+                                    expected_version=row["version"],
+                                    reason="qc %s; audio %s"
+                                           % (res["reason_code"], ",".join(audio)))
+        else:
+            row = st.transition(rid, MUSIC, "COMPLETE", owner,
+                                expected_version=row["version"],
+                                reason="qc %s; audio %s"
+                                       % (res["reason_code"], ",".join(audio)))
         return _mres("ok", "music-complete", "music COMPLETE: %s" % ",".join(audio), row)
     except ss.StoreError as e:
         return _mres("rejected", e.code, str(e), row)
@@ -1697,6 +1713,175 @@ def _read_json(path, default=None):
     except (OSError, ValueError):
         return default
     return doc if isinstance(doc, dict) else default
+
+
+# ── S75-002: the signed step gate, wired into this tool ────────────────────
+#
+# step_gate (scripts/core/step_gate) seals each stage's REAL artifacts with an
+# HMAC chain, so a later stage cannot start on work nobody proved. This tool was
+# the path that could still write a COMPLETE row without it, so four points are
+# wired here: the run key at run start, `open` before a stage is handed out, a
+# `seal` subcommand, and the completion guard the state store already calls
+# (state_store.COMPLETE_GUARD). A run created BEFORE this change has no key; it
+# keeps its old behaviour and is named as legacy wherever the gate is asked.
+
+
+def _step_gate():
+    """(module, contract); (None, None) when the box has no step gate."""
+    sg = _core_mod("step_gate")
+    if sg is None:
+        return None, None
+    try:
+        return sg, sg.load_contract()
+    except Exception:                                # noqa: BLE001
+        return None, None
+
+
+def _gate_keyed(run_dir):
+    """True when this run has a gate key (created on or after the gate)."""
+    sg, _contract = _step_gate()
+    return sg is not None and os.path.exists(sg.key_path(str(run_dir)))
+
+
+def _gate_init(run_dir, got=None):
+    """Create the per-run gate key for a NEW run; never for a legacy one.
+
+    A run that already holds a COMPLETE row was produced before the gate:
+    creating a key for it would seal work nobody verified, so it stays legacy.
+    """
+    sg, _contract = _step_gate()
+    if sg is None:
+        return "step-gate-missing"
+    run_dir = str(run_dir)
+    if os.path.exists(sg.key_path(run_dir)):
+        return "step-gate-active"
+    if any(state == "COMPLETE" for state in (got or {}).values()):
+        return "legacy-run-no-gate"
+    try:
+        sg.cmd_init(run_dir)
+    except sg.Refused:
+        return "step-gate-active" if os.path.exists(sg.key_path(run_dir)) \
+            else "legacy-run-no-gate"
+    return "step-gate-active"
+
+
+def _gate_verify(run_dir, through, contract=None):
+    """None when the sealed chain through ``through`` verifies, else the text."""
+    sg, own = _step_gate()
+    if sg is None:
+        return "step-gate-missing: scripts/core/step_gate is not installed"
+    try:
+        sg.cmd_verify(str(run_dir), contract or own, through=through)
+    except sg.Refused as exc:
+        return "%s: %s" % (exc.code, exc.detail)
+    except Exception as exc:                         # noqa: BLE001
+        return "GATE_TOOL_ERROR: %s" % (exc,)
+    return None
+
+
+def _install_complete_guard(run_dir):
+    """Point state_store.COMPLETE_GUARD at this run's sealed chain.
+
+    Amendment 1: a run with NO gate key was created before this change; its
+    transitions are not guarded, and no key is ever added to it later. Returns
+    the installed callable, or None when the gate is not installed here.
+    """
+    import state_store
+    sg, contract = _step_gate()
+    if sg is None:
+        # No gate on this box: no guard at all, so a guard installed for an
+        # earlier run in this process can never answer for a different run.
+        state_store.COMPLETE_GUARD = None
+        return None
+    run_dir = str(run_dir)
+
+    def guard(run_id, stage, proof):
+        if not os.path.exists(sg.key_path(run_dir)):
+            return None                              # a run from before the gate
+        return _gate_verify(run_dir, stage, contract)
+
+    state_store.COMPLETE_GUARD = guard
+    return guard
+
+@contextlib.contextmanager
+def _complete_guard_for(run_dir):
+    """Install this run's guard for ONE block, then restore the previous one.
+
+    ``state_store.COMPLETE_GUARD`` is process-global, and one process can drive
+    more than one run (whole-tree pytest does, and so can a long-lived control
+    process). Leaving a run's guard installed after the block let it answer for
+    a different run's COMPLETE transition — refusing that run with this run's
+    chain. The guard bites inside the control tool's own transitions only.
+    """
+    import state_store
+    previous = state_store.COMPLETE_GUARD
+    try:
+        yield _install_complete_guard(run_dir)
+    finally:
+        state_store.COMPLETE_GUARD = previous
+
+
+def _gate_open(run_dir, stage):
+    """(True, None) when ``stage`` may start; (False, Refused) when it may not.
+
+    `open` re-reads the stage before this one — its seal AND the files that seal
+    names — so a deleted or edited predecessor artifact stops the next stage.
+    """
+    sg, contract = _step_gate()
+    if sg is None:
+        return False, "step-gate-missing"
+    try:
+        sg.cmd_open(str(run_dir), stage, contract)
+    except sg.Refused as exc:
+        return False, exc
+    return True, None
+
+
+def _music_seal_pair(qc):
+    """(maker, checker) named by the independent QC PASS the music stage read."""
+    qc = qc or {}
+    makers = qc.get("makers") or {}
+    for rec in qc.get("records") or []:
+        maker = makers.get(rec.get("check_id"))
+        checker = (rec.get("reviewer") or {}).get("identity")
+        if maker and checker:
+            return str(maker), str(checker)
+    return None, None
+
+
+def _seal_music_before_complete(run_dir, qc):
+    """(sealed, code, detail) for the music row's own COMPLETE transition.
+
+    S75-002: the music stage has its own song gate and QC and completes through
+    `music --action complete`, not `factory.py seal`. A run that carries the
+    signed gate must seal this stage too, BEFORE the row claims COMPLETE (the
+    order `seal` uses) — without it `next` refused every later stage with
+    PREVIOUS_STAGE_NOT_PROVEN while `seal` refused the already-COMPLETE row, so
+    a real run could never reach continuity-bible.
+
+    A run with no gate key keeps its old behaviour (amendment 1). So does a run
+    with no pick receipt: `song-choices/pick.json` is the contract's evidence
+    that the master was chosen, and the single-song path writes no pick.
+    """
+    if not _gate_keyed(run_dir):
+        return False, None, None
+    if not (Path(run_dir) / "song-choices" / "pick.json").is_file():
+        return False, None, None
+    maker, checker = _music_seal_pair(qc)
+    if not maker or not checker:
+        return False, "STEP_GATE_IDENTITY_MISSING", (
+            "the QC PASS names no maker/checker pair to seal with")
+    sg, contract = _step_gate()
+    if sg is None:
+        return False, None, None
+    try:
+        sg.cmd_open(str(run_dir), MUSIC, contract)
+        sg.cmd_seal(str(run_dir), MUSIC, maker, checker, contract)
+    except sg.Refused as exc:
+        return False, exc.code, exc.detail
+    except Exception as exc:                          # noqa: BLE001
+        return False, "GATE_TOOL_ERROR", str(exc)
+    return True, None, None
 
 
 class ShapeError(ValueError):
@@ -3345,14 +3530,23 @@ def _collect_completion_evidence(run_dir, got, stages=None, registry=None):
                                "detail": str(exc)}
         approvals_current = False
 
-    # independent final QC: a record whose producer is a dedicated final-QC
-    # reviewer, gate PASS. A stage's own output never counts as final QC.
-    # S75-011: the declared final-qc artifact is qc/final-qc-verdict.json (the
-    # file qc_gate.py writes); final-qc/record.json was written by nothing.
-    fq = _read_json(rd / "qc" / "final-qc-verdict.json", {}) or {}
-    fq_producer = str(fq.get("producer") or "")
-    final_qc_ok = (fq.get("gate") == "PASS"
-                   and fq_producer == reg.get("final-qc", {}).get("qc_producer", "final-qc-reviewer"))
+    # independent final QC: with a gate key the proof is the SEALED CHAIN
+    # through delivery (S75-002) — a hand-written verdict file cannot make it
+    # pass. A run created before the gate keeps the record test, unchanged.
+    final_qc_ok = None
+    if _gate_keyed(rd):
+        final_qc_ok = _gate_verify(rd, "delivery") is None
+    if final_qc_ok is None:
+        # a record whose producer is a dedicated final-QC reviewer, gate PASS.
+        # A stage's own output never counts as final QC.
+        # S75-011: the declared final-qc artifact is qc/final-qc-verdict.json
+        # (the file qc_gate.py writes); final-qc/record.json was written by
+        # nothing.
+        fq = _read_json(rd / "qc" / "final-qc-verdict.json", {}) or {}
+        fq_producer = str(fq.get("producer") or "")
+        final_qc_ok = (fq.get("gate") == "PASS"
+                       and fq_producer == reg.get("final-qc", {}).get("qc_producer",
+                                                                     "final-qc-reviewer"))
 
     # required artifacts present and reachable (non-empty files).
     missing = []
@@ -3742,6 +3936,71 @@ def _intake_session_gate(run_dir, sid):
                           "resume_command": resume}, evidence=[str(path)])
 
 
+def cmd_seal(a):
+    """seal --run-dir D --stage S --maker M --checker C (S75-002).
+
+    The seal comes FIRST and only on success does the row move to COMPLETE, so
+    the two can never disagree. The row move goes through state_store with the
+    completion guard installed, which is this same sealed chain.
+    """
+    run_dir = Path(a.run_dir or ".").expanduser().resolve()
+    sid = run_dir.name or "run"
+    sg, contract = _step_gate()
+    if sg is None:
+        return envelope("seal", str(sid), "error", "STEP_GATE_MISSING",
+                        "scripts/core/step_gate is not installed on this box, so "
+                        "no stage can be sealed.", data={"stage": a.stage})
+    # S75-002: `seal` may be the FIRST gate command a caller reaches on a new
+    # run, and both open and seal need the key, so create it here with `next`'s
+    # own semantics: never for a run that already holds a COMPLETE row.
+    _gate_init(run_dir, _stage_states(run_dir))
+    try:
+        # An open record is the gate's own precondition. Opening here keeps
+        # `seal` usable on a resumed run (and still refuses a stage whose
+        # predecessor does not verify), never as a second, weaker path.
+        sg.cmd_open(str(run_dir), a.stage, contract)
+        sealed = sg.cmd_seal(str(run_dir), a.stage, a.maker, a.checker, contract)
+    except sg.Refused as exc:
+        return envelope("seal", str(sid), "rejected", exc.code, exc.detail,
+                        data={"stage": a.stage})
+    except Exception as exc:                         # noqa: BLE001
+        return envelope("seal", str(sid), "error", "GATE_TOOL_ERROR", str(exc),
+                        data={"stage": a.stage})
+    import state_store
+    db = run_dir / "control" / "state.sqlite3"
+    rid, problem = resolved_run_id(run_dir, getattr(a, "run_id", None))
+    if problem or not db.exists():
+        return envelope("seal", str(sid), "rejected",
+                        str(problem or "state-file-missing").upper().replace("-", "_"),
+                        "The stage is sealed, but the run's state store cannot be "
+                        "resolved (%s), so no row was moved." % (problem or db),
+                        data={"stage": a.stage, "sealed": sealed})
+    try:
+        with _complete_guard_for(run_dir), state_store.Store(db) as store:
+            row = store.get(rid, a.stage)
+            if row["state"] not in ("NOT_STARTED", "READY", "STALE",
+                                    "FAILED_RETRYABLE", "RUNNING"):
+                return envelope("seal", str(sid), "rejected", "STAGE_NOT_CLAIMABLE",
+                                "Stage %r is %s; only an unfinished stage is "
+                                "sealed." % (a.stage, row["state"]),
+                                data={"stage": a.stage, "sealed": sealed})
+            if row["state"] != "RUNNING":
+                if row["state"] != "READY":
+                    store.transition(rid, a.stage, "READY", a.maker)
+                store.claim(rid, a.stage, a.maker)
+            fresh = store.transition(rid, a.stage, "COMPLETE", a.maker,
+                                     proof={"stage": a.stage,
+                                            "artifacts": sealed.get("artifacts", [])})
+    except state_store.StoreError as exc:
+        return envelope("seal", str(sid), "rejected", exc.code, str(exc),
+                        data={"stage": a.stage, "sealed": sealed})
+    return envelope("seal", str(sid), "ok", "stage-sealed",
+                    "Stage %r is sealed and COMPLETE." % a.stage,
+                    data={"stage": a.stage,
+                          "state": (fresh or {}).get("state", "COMPLETE"),
+                          "sealed": sealed}, evidence=["%s" % db])
+
+
 def _next_ai_roles(run_dir):
     """Admit the run's persisted AI bindings without calling any model.
 
@@ -4053,11 +4312,16 @@ def _next_stage(a, *, boot_snapshot=None):
     except sqlite3.DatabaseError as e:
         return envelope("next", str(sid), "error", "state-unreadable",
                         "state file unreadable (%s): %s" % (db, str(e)[:120]))
+    # S75-002: a NEW run gets its gate key here (never a run that already holds
+    # a COMPLETE row), and every COMPLETE transition this command makes — the
+    # reconcile moves below included — is guarded by the sealed chain.
+    gate_state = _gate_init(run_dir, got)
     # L4.1: reconcile the rows from proven artifacts on disk BEFORE the
     # answer — through state_store's guarded transitions only; rows the
     # artifacts do not prove are never touched, and every move it made is
     # carried on the envelope under data.reconciled.
-    reconciled, got = _reconcile_stages(run_dir, got)
+    with _complete_guard_for(run_dir):
+        reconciled, got = _reconcile_stages(run_dir, got)
     # S75-W02-U1 / D03: distinguish "no runnable action" from true completion.
     # The old selector skipped COMPLETE/FAILED_BLOCKED/PARKED and reported
     # "Every stage is COMPLETE; delivered" whenever the search was exhausted --
@@ -4506,6 +4770,17 @@ def _next_stage(a, *, boot_snapshot=None):
             pass
     if reconciled:
         nxt["reconciled"] = reconciled
+    # S75-002: the sealed chain is what lets this stage start. A refusal is
+    # named here, before the command is handed out; a run created before the
+    # gate keeps its old behaviour and says so on the envelope.
+    if gate_state == "step-gate-active":
+        opened, refusal = _gate_open(run_dir, next_stage)
+        if not opened:
+            return envelope("next", str(sid), "rejected",
+                            getattr(refusal, "code", "STEP_GATE_REFUSED"),
+                            getattr(refusal, "detail", str(refusal)),
+                            data={"stage": next_stage, "step_gate": gate_state})
+    nxt["step_gate"] = gate_state
     return envelope("next", str(sid), "ok", "next-stage",
                     "Run this command for stage %r; after it passes its QC "
                     "gate, run `next` again." % present_id,
@@ -4557,6 +4832,23 @@ def _run_is_new(run_dir):
     return not any(state and state != "NOT_STARTED" for state in got.values())
 
 
+def _recorded_session_flow(run_dir):
+    """The flow a durable intake session already recorded, or None.
+
+    A session keeps the card it was asked with (S75-006 step 5). Re-deciding the
+    flow here from the run's other files made a resumed invocation of the SAME
+    session disagree with it -- the next plain `card --step` either switched the
+    list or refused with INTAKE_FLOW_MISMATCH. The session is the record."""
+    path = Path(run_dir) / "control" / "intake-session.json"
+    if not path.exists():
+        return None
+    try:
+        flow = json.loads(path.read_text(encoding="utf-8")).get("purpose_flow")
+    except (OSError, ValueError, AttributeError):
+        return None                        # unreadable: preserve, never reshape
+    return flow if isinstance(flow, bool) else None
+
+
 def _purpose_flow_for(run_dir, forced):
     """The card this launcher asks (SPEC B1 / W3-U2). An explicit flag always
     wins. Otherwise a run that already carries the method record, or a Studio
@@ -4568,6 +4860,9 @@ def _purpose_flow_for(run_dir, forced):
     if not run_dir:
         return False                     # nothing to enter the strategy for
     run = Path(run_dir)
+    recorded = _recorded_session_flow(run)
+    if recorded is not None:
+        return recorded                  # the session keeps the card it was asked
     if (run / "control" / "method.json").exists():
         return True
     if (run / "control" / "studio-order.json").exists():
@@ -4643,6 +4938,17 @@ def main(argv=None):
                    help="With SONG APPROVAL = Yes, select the ORCHESTRATED mode "
                         "(three units, one variant each) instead of the umbrella "
                         "three-up runner. Exactly one mode is ever emitted.")
+    sl = sub.add_parser("seal", help="S75-002: seal one stage's real artifacts "
+                        "with the signed step gate, then move its row to COMPLETE.")
+    sl.add_argument("--run-dir", required=True,
+                    help="Run dir that holds control/state.sqlite3.")
+    sl.add_argument("--stage", required=True, choices=tuple(CANONICAL_STAGES))
+    sl.add_argument("--maker", required=True,
+                    help="Who made the stage's work; never the checker.")
+    sl.add_argument("--checker", required=True,
+                    help="Who checked it; a stage never checks itself.")
+    sl.add_argument("--run-id", default=None,
+                    help="Store run id; default: the only one.")
     ev = sub.add_parser("event", help="Continuation controller: record an "
                         "approval/provider/QC/recovery/restart event and "
                         "enqueue this run's next eligible action.")
@@ -4838,6 +5144,8 @@ def main(argv=None):
         env = cmd_owner(a)
     elif a.cmd == "event":
         env = cmd_event(a)
+    elif a.cmd == "seal":
+        env = cmd_seal(a)
     else:
         env = cmd_next(a)
     json.dump(env, sys.stdout, indent=2, sort_keys=True, default=str)

@@ -16,6 +16,10 @@
 
 Say: "I need a presentation." I will ask a few questions, one at a time. You will pick a look from 3 samples. Then I build it and send it to you.
 
+## One command runs every build
+
+Every presentation build goes through the one sanctioned command, `presentation-canonical-entry.sh`. Build scripts are never run by hand: `python3 working/*.py` is forbidden.
+
 ---
 
 ## 1. What This Department Does (in plain language)
@@ -270,3 +274,20 @@ document:
 *This guide is generated for {{COMPANY_NAME}} by the AI Workforce Blueprint
 (Skill 23). It is regenerated whenever the department's roster changes so it
 always matches the specialists you actually have.*
+
+---
+
+## How A Deck Is Actually Built (the one sanctioned command)
+
+Every deck is built through one entry point, and only that one:
+
+```
+bash 23-ai-workforce-blueprint/scripts/presentation-canonical-entry.sh \
+    --run-dir <RUN_DIR> --slides slides.json --out <OUT>.pptx
+```
+
+The entry script runs seven fail-closed gates (intake ledger, intake trace, drift report, runtime deps, the Skill-48 GHL module, the bypass-scan and the version/hash pin) and only then starts the presentation engine. You never have to run it yourself; it matters because it is the only way a deck is allowed to be built, and every guardrail lives inside it.
+
+`python3 working/*.py` (writing and running your own per-deck driver, submit or assemble scripts) is the ungoverned path and is FORBIDDEN (AF-CANONICAL-RENDER-BYPASS). A hand-rolled renderer or assembler sitting in the run directory fails the build at the bypass-scan.
+
+The only way to skip a gate is an explicit, logged owner approval token in `working/checkpoints/process_manifest.json` (`owner_skip_approval`: `approved:true` + `approved_by` + `reason`, naming the exact gate code). No agent may skip a gate silently or on its own choice.

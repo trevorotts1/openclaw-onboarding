@@ -3227,11 +3227,12 @@ jobs:
       # Unit TESTHYG-75: the per-file loop above cannot see a suite that dies
       # at import (sys.exit at module level made the whole-tree pytest run
       # INTERNALERROR, hiding every later failure). This step makes pytest
-      # collection itself a red build: every test_*.py under scripts/ must be
-      # pytest-collectable (the whole tree, in ONE process), and every
-      # collected test must run green.
+      # collection itself a red build: every test_*.py under scripts/ and
+      # package/ must be pytest-collectable (the whole tree, in ONE process),
+      # and every collected test must run green.
       # The run is spread over the runner's cores (it was 8+ minutes on one
-      # core): every test_*.py under scripts/ gets its own pytest process and
+      # core): every test_*.py under scripts/ and package/ gets its own
+      # pytest process and
       # its own fresh empty HOME, nproc files at a time, output buffered per
       # file and printed in file order -- the same shape as the loop above.
       # pythonpath = the file's own folder, as its documented
@@ -3248,11 +3249,31 @@ jobs:
         run: |
           set -uo pipefail
           python3 -m pip install --quiet pytest
+          # U-GEN439: this --collect-only must be judged, not decorative.
+          # With no `-e` the next command used to swallow its exit code, so a
+          # genuinely broken collection (missing file, syntax error, import
+          # error -> pytest exit 2, or 3/4) left the step green. Exit 5 means
+          # "no items collected in the whole tree"; that is not a collection
+          # failure and empty files are judged by the per-file loop below
+          # (U-GEN435), so it is reported, not failed, here.
+          collect_log="$(mktemp)"
+          collect_rc=0
           HOME="$(mktemp -d)" python3 -m pytest -q \
-            75-drama-song-ad-factory/scripts --collect-only
+            75-drama-song-ad-factory/scripts \
+            75-drama-song-ad-factory/package --collect-only >"$collect_log" 2>&1 || collect_rc=$?
+          cat "$collect_log"
+          if [ "$collect_rc" = 5 ]; then
+            echo "· pytest --collect-only collected 0 items for 75-drama-song-ad-factory/scripts + package (exit 5)"
+          elif [ "$collect_rc" != 0 ]; then
+            sed -n 's/^ERROR /  broken file: /p' "$collect_log"
+            echo "✗ pytest --collect-only FAILED: 75-drama-song-ad-factory/scripts + package (exit $collect_rc)"
+            exit 1
+          fi
           # Both of pytest's default file patterns (test_*.py and *_test.py),
-          # the same set the whole-tree run collects.
-          mapfile -t tests < <(find 75-drama-song-ad-factory/scripts -type f \( -name 'test_*.py' -o -name '*_test.py' \) -not -path '*/__pycache__/*' | sort)
+          # the same set the whole-tree run collects. The package/ directory
+          # is a second root: its test_999_adapter.py suite lives there, not
+          # under scripts/, and no scripts/ loop can ever reach it.
+          mapfile -t tests < <(find 75-drama-song-ad-factory/scripts 75-drama-song-ad-factory/package -type f \( -name 'test_*.py' -o -name '*_test.py' \) -not -path '*/__pycache__/*' | sort)
           [ "${#tests[@]}" -gt 0 ] || { echo "✗ no skill 75 test files found"; exit 1; }
           logs="$(mktemp -d)"
           export logs
@@ -3261,15 +3282,36 @@ jobs:
             rc=0
             HOME="$(mktemp -d)" python3 -m pytest -q -o pythonpath="$(dirname "$t")" "$t" </dev/null >"$logs/$key.out" 2>&1 || rc=$?
             echo "$rc" >"$logs/$key.rc"' _ || true   # a file with no recorded exit code is counted as failed below
+          # 5 = "no tests collected". Tolerated ONLY for a path in the
+          # documented allowlist, because anywhere else it is exactly the
+          # defect this step exists to catch: a file named test_*.py that
+          # contributes nothing to pytest's count while the gate reports
+          # green. (Before U-GEN435, 5 was accepted for every file. It was
+          # added in 83121e15c when this run was split per-file, to keep
+          # parity with the one-process run that passed because OTHER files
+          # had items -- see the allowlist header and reports/U-GEN435.md.)
+          empty_allow=.github/skill75-pytest-empty-allowlist.txt
+          [ -f "$empty_allow" ] || { echo "✗ missing $empty_allow"; exit 1; }
+          collects_nothing_by_design() {
+            while IFS= read -r p; do
+              case "$p" in ''|'#'*) continue ;; esac
+              [ "$p" = "$1" ] && return 0
+            done < "$empty_allow"
+            return 1
+          }
           failed=()
           for t in "${tests[@]}"; do
             key="$(printf %s "$t" | tr / _)"
             echo "── $t"
             cat "$logs/$key.out" 2>/dev/null || true
             rc="$(cat "$logs/$key.rc" 2>/dev/null || echo missing)"
-            # 5 = the file holds no test items (it still had to import
-            # cleanly), which the whole-tree run also passed.
-            if [ "$rc" != 0 ] && [ "$rc" != 5 ]; then
+            if [ "$rc" = 5 ]; then
+              if collects_nothing_by_design "$t"; then
+                echo "· pytest collected 0 items (allowlisted in $empty_allow): $t"
+              else
+                echo "✗ pytest collected NOTHING: $t (exit 5, not in $empty_allow)"; failed+=("$t")
+              fi
+            elif [ "$rc" != 0 ]; then
               echo "✗ pytest FAIL: $t (exit $rc)"; failed+=("$t")
             fi
           done
@@ -3278,7 +3320,7 @@ jobs:
             printf '✗ pytest FAIL: %s\n' "${failed[@]}"
             exit 1
           fi
-          echo "✓ Skill 75 scripts/ per-file pytest green"
+          echo "✓ Skill 75 scripts/ + package/ per-file pytest green"
           # The whole tree must ALSO pass in ONE process (catches a suite that
           # leaks state -- sys.path, env, cwd -- into a later suite, which the
           # per-file run above cannot see). That run is the job below, on its
@@ -3849,4 +3891,5 @@ jobs:
           command -v tesseract >/dev/null || pkgs="$pkgs tesseract-ocr"
           [ -z "$pkgs" ] || { sudo apt-get update -qq && sudo apt-get install -y -qq $pkgs; }
           HOME="$(mktemp -d)" python3 -m pytest -q \
-            75-drama-song-ad-factory/scripts
+            75-drama-song-ad-factory/scripts \
+            75-drama-song-ad-factory/package

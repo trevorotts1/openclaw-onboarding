@@ -294,6 +294,26 @@ def test_refusal_writes_nothing_into_the_folder():
         assert os.listdir(delivery) == [], os.listdir(delivery)
 
 
+def test_verify_binding_refuses_a_manifest_with_no_artifacts():
+    import delivery_variants.manifests as M
+    with tempfile.TemporaryDirectory() as tmp:
+        manifest_path = os.path.join(tmp, "campaign-manifest.json")
+        with open(manifest_path, "w", encoding="utf-8") as handle:
+            json.dump({"schema_version": M.SCHEMA_VERSION, "artifacts": []}, handle)
+        cost = M.write_cost_report(os.path.join(tmp, "cost-report.json"),
+                                   run_id="run-1", estimated_cost=0,
+                                   committed_cost=0, actual_cost=0,
+                                   remaining_budget=0)
+        M.write_provenance(os.path.join(tmp, "provenance.json"), run_id="run-1",
+                           campaign_manifest_sha256=sha256_file(manifest_path),
+                           cost_report_sha256=cost["sha256"])
+        ok, details = M.verify_binding(
+            manifest_path, os.path.join(tmp, "provenance.json"),
+            os.path.join(tmp, "cost-report.json"))
+        assert ok is False, details
+        assert details["error"] == "manifest binds no artifact", details
+
+
 if __name__ == "__main__":
     fails = 0
     for name, fn in sorted(globals().items()):
