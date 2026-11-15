@@ -29,6 +29,10 @@ import tempfile
 sys.dont_write_bytecode = True
 
 HERE = os.path.dirname(os.path.abspath(__file__))
+CORE = os.path.dirname(HERE)
+# CORE first: ``song_choices``/``song_dispatch`` must bind their PACKAGES, not
+# the same-named module file inside their own folder.
+sys.path.insert(0, CORE)
 if HERE not in sys.path:
     sys.path.insert(0, HERE)
 
@@ -141,6 +145,11 @@ def main():
         return 1
     print("test_overlap_warning_s75_053: PASS")
     return 0
+
+
+def test_suite_passes():
+    """pytest entry: runs the same cases, and the same checks, as `python3 <this file>`."""
+    assert main() == 0
 
 
 if __name__ == "__main__":
