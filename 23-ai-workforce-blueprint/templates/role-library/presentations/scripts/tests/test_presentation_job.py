@@ -918,8 +918,9 @@ class TestQCAggregatePhaseEndToEnd:
         AF-IMAGE-QC-UNIT contract blocks the image domain (fail-closed)."""
         obj = self._genuine_domain_report("Phase Image-QC", average)
         obj.update({
-            "graded_by_provider": "glm",
-            "graded_by_model": "glm-4.6v",  # != qc_independence.graded_by
+            "author_model": "deepseek-v4.1-flash",  # PD-300b: the authored deck
+            "graded_by_provider": "ollama-cloud",
+            "graded_by_model": "glm-ocr",  # vision model, != author_model
             "request_id": "req-vision-unit-001",
             "slides": [{"slide": 1, "observed_text": "slide 01 render read"}],
         })
