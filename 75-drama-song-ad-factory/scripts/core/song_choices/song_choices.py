@@ -1557,7 +1557,9 @@ def _publish_word_timings(run_dir, take):
 
     A take that carries no measured words, or words this stage cannot name a
     REAL timing source for, publishes nothing: the run then has no clock and
-    packaging refuses naming the music stage -- never a guessed timing.
+    packaging refuses naming the music stage -- never a guessed timing. A
+    publish that raises is the same nothing: the pick is already recorded, and
+    the client's answer must never be lost to a timing write.
     """
     take = take or {}
     words = [w for w in take.get("aligned_words") or [] if isinstance(w, dict)]
@@ -1566,23 +1568,28 @@ def _publish_word_timings(run_dir, take):
     if not words or owners.get("source") not in _SUNO_TAKE_SOURCES:
         return None
     for w in words:
-        if not all(isinstance(w.get(k), (int, float)) for k in ("start", "end")):
+        # the normalized shape and Suno's own startS/endS both count as a clock
+        if not all(isinstance(w.get(k, w.get(k + "S")), (int, float))
+                   for k in ("start", "end")):
             return None
-    core = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    if core not in sys.path:
-        sys.path.insert(0, core)
-    from audio_c3 import lyric_timing as _LT      # noqa: PLC0415 - same form as song_dispatch
-    track = {k: take[k] for k in ("task_id", "audio_id", "audio_path")
-             if take.get(k)}
-    env = _LT.provide_word_timings(track,
-                                   timing_map_hint={"alignedWords": words})
-    if not env.get("ok"):
+    try:
+        core = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        if core not in sys.path:
+            sys.path.insert(0, core)
+        from audio_c3 import lyric_timing as _LT  # noqa: PLC0415 - same form as song_dispatch
+        track = {k: take[k] for k in ("task_id", "audio_id", "audio_path")
+                 if take.get(k)}
+        env = _LT.provide_word_timings(track,
+                                       timing_map_hint={"alignedWords": words})
+        if not env.get("ok"):
+            return None
+        path = os.path.join(run_dir, WORD_TIMINGS)
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "w", encoding="utf-8") as fh:
+            json.dump(env, fh, indent=2, sort_keys=True)
+        return path
+    except Exception:                             # noqa: BLE001 - never lose the pick
         return None
-    path = os.path.join(run_dir, WORD_TIMINGS)
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-    with open(path, "w", encoding="utf-8") as fh:
-        json.dump(env, fh, indent=2, sort_keys=True)
-    return path
 
 
 def record_pick(run_dir, reply):
