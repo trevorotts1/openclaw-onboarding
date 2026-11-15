@@ -5,12 +5,30 @@ commit before vs after.
 
   python3 scripts/ci/test_fast_guards_mapping.py [--base <git ref of the pre-fold tree>] [--commits N]
 
-Default base is the merge-base of HEAD and origin/main (the pre-fold tree while
-this change is in review). Exit 1 on any mismatch or parse error.
+Default base is PRE_FOLD_REF, the commit the fold (95593fd51) replaced, so the
+proof keeps its original meaning on every later tree. Two things have moved on
+since the fold and are handled explicitly instead of failing the whole run:
+
+  * a guard added AFTER the fold has no pre-fold workflow to compare with; its
+    script and `bash -n` are still checked, which is all a new guard can claim;
+  * a workflow that exists in the tree but not in the base tree was added after
+    the fold; there is no before-state to compare, so it is not compared.
+
+A guard whose pre-fold workflow still exists is reported as a duplicate finding
+(one check running twice per commit) and does not fail the proof: that state is
+deliberate on main (commit 14d888f0a, "duplicates are findings only"), where the
+workflow keeps the pull_request trigger the fold does not carry.
+
+Exit 1 on any mismatch or parse error.
 """
 import argparse, glob, os, subprocess, sys, yaml
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import fast_guards as fg
+
+# The commit the CIO002 fold (95593fd51) replaced. Pinned, never a merge-base:
+# after the fold lands, HEAD is the folded tree and a merge-base comparison has
+# nothing left to compare.
+PRE_FOLD_REF = "95593fd51^"
 
 ROOT = subprocess.check_output(['git', 'rev-parse', '--show-toplevel'], text=True).strip()
 os.chdir(ROOT)
@@ -57,9 +75,11 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--base', default=None)
     ap.add_argument('--commits', type=int, default=40)
+    ap.add_argument('--proof', action='store_true',
+                    help='run the full before/after identity proof against --base '
+                         '(a point-in-time proof; the default run is the standing gate)')
     a = ap.parse_args()
-    base = a.base or sh('git', 'merge-base', 'HEAD', 'origin/main').strip()
-    before = load_tree(base)
+    base = a.base or PRE_FOLD_REF
     after = {os.path.basename(f)[:-4]: yaml.safe_load(open(f)) for f in glob.glob('.github/workflows/*.yml')}  # parse check
     guards = fg.load()
     folded = {g['name'] for g in guards}
@@ -70,22 +90,42 @@ def main():
                        ('**/x.py', 'x.py', 1), ('**/x.py', 'a/b/x.py', 1), ('a/b?.md', 'a/bc.md', 1), ('a/b?.md', 'a/b/.md', 0)]:
         assert bool(fg.glob_re(p).match(f)) == bool(want), (p, f)
 
-    # structural: every folded guard has its script, bash-parses, and was a real pre-fold workflow
+    # standing gate: every folded guard names a script that exists and bash-parses,
+    # and every workflow file parses (the dict above raises otherwise). A guard whose
+    # own workflow still exists runs its check twice per commit: a finding, not a
+    # failure, because that is deliberate on main (commit 14d888f0a).
     for g in guards:
-        if g['name'] not in before: print('FAIL not in base tree:', g['name']); bad += 1
-        if g['name'] in after: print('FAIL still present as workflow:', g['name']); bad += 1
-        if subprocess.run(['bash', '-n', g['script']]).returncode: print('FAIL bash -n', g['script']); bad += 1
-    # triggers of folded guards equal the base workflows' (branches/paths), push forced to main-only
+        if not os.path.isfile(g['script']):
+            print('FAIL guard script missing:', g['script']); bad += 1
+            continue
+        if subprocess.run(['bash', '-n', g['script']]).returncode:
+            print('FAIL bash -n', g['script']); bad += 1
+        if g['name'] in after:
+            print('note duplicate finding (the guard also exists as a workflow):', g['name'])
+    if not a.proof:
+        print(f'workflows={len(after)} folded guards={len(guards)}')
+        print('RESULT:', 'FAIL (%d)' % bad if bad else 'PASS - every guard script exists and parses')
+        return 1 if bad else 0
+
+    before = load_tree(base)
+    # structural, against the pre-fold tree: a folded guard with no pre-fold workflow
+    # was added after the fold and has no before-state to compare with.
     for g in guards:
+        if g['name'] not in before:
+            print('note new guard added after the fold (no pre-fold workflow):', g['name'])
+            continue
+        # triggers of folded guards equal the base workflows' (branches/paths), push forced to main-only
         t = triggers(before[g['name']])
         for e in ('push', 'pull_request'):
             if (e in t) != (e in g['events']): print('FAIL event set differs', g['name'], e); bad += 1; continue
             if e in t:
                 if t[e].get('paths') != g['events'][e]['paths']: print('FAIL paths differ', g['name'], e); bad += 1
                 if t[e].get('branches') != g['events'][e]['branches']: print('FAIL branches differ', g['name'], e); bad += 1
-    # every unfolded workflow: same pull_request trigger as before; push is main-only or unchanged
+    # every unfolded workflow that existed before the fold: same pull_request trigger as before;
+    # push is main-only or unchanged. One added after the fold has no before-state to compare.
     for n, d in after.items():
-        if n == 'fast-guards': continue
+        if n == 'fast-guards' or n not in before:
+            continue
         tb, ta = triggers(before[n]), triggers(d)
         if tb.get('pull_request') != ta.get('pull_request'): print('FAIL pull_request trigger changed', n); bad += 1
         pb, pa = tb.get('push'), ta.get('push')
@@ -105,11 +145,16 @@ def main():
                 ('syn:nothing-matches', ['zzz/unmatched.txt']),
                 ('syn:persona', ['22-book-to-persona-coaching-leadership-system/SKILL.md', 'scripts/foo.sh'])]
     tot_b = tot_a = 0
+    # The identity claim covers the checks that existed when the fold landed and
+    # still exist now: a guard added afterwards was never a separate workflow, and
+    # a workflow archived since (e.g. *.yml.ARCHIVED-*) has no after-state to be
+    # identical to. Both are outside what this proof claims.
+    surviving = (set(before) & (set(after) | folded)) | {g['name'] for g in guards if g['name'] in before}
     for label, files in samples:
         for ev in ('pull_request', 'push'):
-            b = {n for n, d in before.items() if fires(d, ev, 'main', files)}
-            af = {n for n, d in after.items() if n != 'fast-guards' and fires(d, ev, 'main', files)}
-            af |= {g['name'] for g in guards if fg.selected(g, ev, 'main', files)}
+            b = {n for n, d in before.items() if n in surviving and fires(d, ev, 'main', files)}
+            af = {n for n, d in after.items() if n != 'fast-guards' and n in surviving and fires(d, ev, 'main', files)}
+            af |= {g['name'] for g in guards if g['name'] in surviving and fg.selected(g, ev, 'main', files)}
             # push on a non-main (PR) branch: before = all unfiltered push workflows, after = none
             if ev == 'push':
                 bb = {n for n, d in before.items() if fires(d, 'push', 'feature-branch', files)}
