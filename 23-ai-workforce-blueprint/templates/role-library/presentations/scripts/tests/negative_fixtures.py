@@ -361,8 +361,13 @@ def fixture_qc_reports(*, same_model_judge: bool = True,
                 # unstamped siblings read as unproven consumed inputs.
                 "P-IMAGE-QC": [f"renders/slide-{n:02d}.png" for n in range(1, 5)],
                 "P-SPEECH-QC": ["working/deliverables/PRESENTERS-SPEECH-FISH-TAGGED.md"],
+                # PD-907: the real manifest consumes renders/slide-*.png at
+                # P-SHIFT-QC too (qc_aggregate._resolve_consumes) -- stamp the
+                # same four renders staged above, or PRES-042 row 2 reports
+                # AF-EXEC-STAMP on every one of them.
                 "P-SHIFT-QC": ["working/copy/priority_shift_spec.json",
-                               "working/copy/slides_copy.md"],
+                               "working/copy/slides_copy.md",
+                               *[f"renders/slide-{n:02d}.png" for n in range(1, 5)]],
             }
             for p in report_paths:
                 rel = str(p.relative_to(rd))
