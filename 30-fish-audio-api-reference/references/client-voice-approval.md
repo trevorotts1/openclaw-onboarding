@@ -72,7 +72,7 @@ independently authenticate who approved it.
 ## Command Center and Existing Installations
 
 Command Center vendors `production-policy.json` as
-`config/fish-audio-policy.vendored.json` with a SHA-256 pin and source provenance.
+`src/lib/voice/fish-audio-policy.vendored.json` with a SHA-256 pin and source provenance.
 Its TTS route reads the same local approval record and compares the runtime voice
 and any request override to it before sending audio. Explicit/default Fish Audio
 selection fails closed when unready, including browser fallback. The model
@@ -83,5 +83,5 @@ from `FISH_AUDIO_VOICE_ID`. Until independent approval is present, configuration
 QC fails and Fish Audio is unavailable. Do not mark pending setup COMPLETE, roll
 out, restart a service, or claim a fleet repair merely because a branch or test
 passes. Skill 32/fleet rolls deploy the pinned Command Center release in
-`cc-compat.json`; a separate Command Center PR is required. These changes do not
-advance that deployment pin.
+`cc-compat.json`; a separate Command Center PR is required. The release process must advance that deployment pin to a tag containing the
+paired Command Center fix. Publishing a branch does not deploy a client box.

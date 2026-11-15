@@ -12,7 +12,7 @@
 - Command Center vendors the policy with a fingerprint and reads the same local
   approval record. Its separate PR sends the model header and blocks voice fallback.
 - Migration: existing installations need independent approval before readiness.
-  No client configuration, deployment pin or fleet installation changed here.
+  No client configuration or voice approval is bundled. The release pair and live rollout are verified separately.
 - Headless regression tests cover voices, tenant binding, models, secret redaction,
   canonical stores and mocked production requests. No paid/live provider calls.
 
