@@ -28,7 +28,7 @@ sys.dont_write_bytecode = True
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 CORE = os.path.dirname(HERE)
-for _p in (CORE, HERE):
+for _p in (HERE, CORE):
     if _p not in sys.path:
         sys.path.insert(0, _p)
 
@@ -238,6 +238,11 @@ def main():
         return 1
     print("test_song_stage_s75_055_105: PASS")
     return 0
+
+
+def test_suite_passes():
+    """pytest entry: runs the same cases, and the same checks, as `python3 <this file>`."""
+    assert main() == 0
 
 
 if __name__ == "__main__":
