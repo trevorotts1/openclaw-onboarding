@@ -20,18 +20,24 @@ def git(repo, *args, stdin=None):
                           capture_output=True, text=True, errors="replace")
 
 
+# A bare CI runner has no user.name/user.email, and `git commit-tree` refuses to
+# run without one -- which emptied both controls and reported rc=2 instead of a
+# verdict. Identity is supplied per call so the checks behave the same anywhere.
+IDENTITY = ["-c", "user.name=pb-t24-selfcheck",
+            "-c", "user.email=pb-t24-selfcheck@localhost"]
+
 def dangling_commit(repo, marker):
     """A real commit object whose content is NOT on any branch."""
     blob = git(repo, "hash-object", "-w", "--stdin", stdin=marker + "\n").stdout.strip()
     tree = git(repo, "mktree", stdin="100644 blob %s\tnot-on-main.txt\n" % blob).stdout.strip()
-    return git(repo, "commit-tree", tree, "-m", "negative control " + marker).stdout.strip()
+    return git(repo, *IDENTITY, "commit-tree", tree, "-m", "negative control " + marker).stdout.strip()
 
 
 def reshaped_copy(repo, rev):
     """Same tree and parent as rev, different sha: a squash of the same change."""
     tree = git(repo, "rev-parse", rev + "^{tree}").stdout.strip()
     parent = git(repo, "rev-parse", rev + "^").stdout.strip()
-    return git(repo, "commit-tree", tree, "-p", parent,
+    return git(repo, *IDENTITY, "commit-tree", tree, "-p", parent,
                "-m", "reshaped copy of " + rev[:8]).stdout.strip()
 
 
