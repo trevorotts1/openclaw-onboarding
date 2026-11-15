@@ -4219,6 +4219,8 @@ jobs:
           if [ ! -f "$t" ]; then
             echo "✗ suite is absent from this checkout: $t"; exit 1
           fi
+          # It parses every workflow file with PyYAML, which the bare runner lacks.
+          python3 -m pip install --quiet pyyaml
           python3 -I "$t" || { echo "✗ failed: $t"; exit 1; }
           echo "✓ scripts/ci/test_fast_guards_mapping.py"
 
