@@ -22,6 +22,7 @@ on:
       - 'scripts/tests/type-f-census-guard.negative-fixture.sh'
       - '.github/workflows/type-f-census-guard.yml'
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
     branches: [main]
     paths:
       - '**/*.sh'
@@ -32,13 +33,13 @@ on:
       - '.github/workflows/type-f-census-guard.yml'
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
   guard:
     # Batch pull requests run only the required checks (Trevor order 2026-11-13).
-    if: ${{ !startsWith(github.head_ref, 'batch/') }}
+    if: ${{ !startsWith(github.head_ref, 'batch/') && (github.event_name != 'pull_request' || github.event.pull_request.draft == false) }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

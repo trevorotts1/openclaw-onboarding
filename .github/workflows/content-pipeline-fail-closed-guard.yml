@@ -41,6 +41,7 @@ on:
       - "lib-shared.sh"
       - ".github/workflows/content-pipeline-fail-closed-guard.yml"
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
     branches: [main]
     paths:
       - "19-humanizer/**"
@@ -52,13 +53,13 @@ on:
       - ".github/workflows/content-pipeline-fail-closed-guard.yml"
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
   captions-and-storyboards:
     # Batch pull requests run only the required checks (Trevor order 2026-11-13).
-    if: ${{ !startsWith(github.head_ref, 'batch/') }}
+    if: ${{ !startsWith(github.head_ref, 'batch/') && (github.event_name != 'pull_request' || github.event.pull_request.draft == false) }}
     name: "T0-59/T0-60: captions gated on content, storyboard failures exit non-zero"
     runs-on: ubuntu-latest
     steps:
@@ -96,7 +97,7 @@ jobs:
 
   humanizer-predicate:
     # Batch pull requests run only the required checks (Trevor order 2026-11-13).
-    if: ${{ !startsWith(github.head_ref, 'batch/') }}
+    if: ${{ !startsWith(github.head_ref, 'batch/') && (github.event_name != 'pull_request' || github.event.pull_request.draft == false) }}
     name: "T0-61: the em-dash check is not satisfied by an em dash"
     runs-on: ubuntu-latest
     steps:
@@ -155,7 +156,7 @@ jobs:
 
   video-editor-merge:
     # Batch pull requests run only the required checks (Trevor order 2026-11-13).
-    if: ${{ !startsWith(github.head_ref, 'batch/') }}
+    if: ${{ !startsWith(github.head_ref, 'batch/') && (github.event_name != 'pull_request' || github.event.pull_request.draft == false) }}
     name: "T0-62/T2-36: merge inputs are probed and --dry-run exists"
     runs-on: ubuntu-latest
     steps:
@@ -210,7 +211,7 @@ jobs:
 
   email-engine-proofs:
     # Batch pull requests run only the required checks (Trevor order 2026-11-13).
-    if: ${{ !startsWith(github.head_ref, 'batch/') }}
+    if: ${{ !startsWith(github.head_ref, 'batch/') && (github.event_name != 'pull_request' || github.event.pull_request.draft == false) }}
     name: "T0-63/T0-64/T2-38: the email-engine proofs hold"
     runs-on: ubuntu-latest
     steps:
@@ -284,7 +285,7 @@ jobs:
 
   kie-resume-reconciliation:
     # Batch pull requests run only the required checks (Trevor order 2026-11-13).
-    if: ${{ !startsWith(github.head_ref, 'batch/') }}
+    if: ${{ !startsWith(github.head_ref, 'batch/') && (github.event_name != 'pull_request' || github.event.pull_request.draft == false) }}
     name: "T0-58: a resumed slide is reconciled against disk"
     runs-on: ubuntu-latest
     steps:
