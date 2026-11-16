@@ -785,7 +785,18 @@ def _yes_or_no(text: str) -> Optional[str]:
         return "no"
     return None
 
-_PACE_WPM = {"default": 130, "medium": 140, "fast": 155}
+_PACE_WPM = {"standard": 140, "teaching": 130, "high-energy": 155,
+             "default": 140, "medium": 150, "fast": 160}
+
+
+def _pace_wpm(value: Any) -> int:
+    """Words a minute for one speaking-pace answer (PD-023).
+
+    The bank asks standard / teaching / high-energy; the pre-PD-023 words
+    stay accepted. Blank or unknown reads as the one default, 140.
+    """
+    pace = str(value or "").strip().lower().replace("_", "-").replace(" ", "-")
+    return _PACE_WPM.get(pace, _PACE_WPM["standard"])
 
 def _truthy_value(cval: Any) -> bool:
     if isinstance(cval, bool):
@@ -932,6 +943,8 @@ def derive_structured_answer(qdef: Dict[str, Any], text: str,
             continue
         if ann.get("enum"):
             e = _enum_match(val, ann["enum"])
+            if e is None:
+                e = (ann.get("aliases") or {}).get(str(val).strip().lower())
             out[k] = e if e is not None else val.strip()
             merged[k] = out[k]
             continue
@@ -958,7 +971,7 @@ def derive_structured_answer(qdef: Dict[str, Any], text: str,
                     out[k] = cand[0]
                 else:
                     pace = str(merged.get("speech_speed_preference") or "default").lower()
-                    out[k] = _PACE_WPM.get(pace, _PACE_WPM["default"])
+                    out[k] = _pace_wpm(pace)
                 merged[k] = out[k]
                 continue
             if k == "duration_min":
@@ -999,7 +1012,7 @@ def derive_structured_answer(qdef: Dict[str, Any], text: str,
         merged["access_free"] = out["access_free"]
     if "target_wpm" in sub and "target_wpm" not in captured:
         pace = str(out.get("speech_speed_preference") or merged.get("speech_speed_preference") or "default").lower()
-        out["target_wpm"] = _PACE_WPM.get(pace, _PACE_WPM["default"])
+        out["target_wpm"] = _pace_wpm(pace)
         merged["target_wpm"] = out["target_wpm"]
     if "deliverable_set" in sub and "deliverable_set" not in captured:
         parts = ["deck"]
@@ -1054,7 +1067,12 @@ def validate_labeled_enums(qdef: Dict[str, Any], text: str) -> Optional[str]:
         if not allowed:
             continue
         if _enum_match(val, allowed) is None:
-            return (f"Invalid value {val!r} for {k}. Allowed: {allowed}")
+            # PD-023: a subfield may declare `aliases` (old client word ->
+            # the bank's word). The vocabulary stays in the question bank;
+            # this parser never hardcodes it.
+            alias = (ann.get("aliases") or {}).get(str(val).strip().lower())
+            if alias is None or _enum_match(alias, allowed) is None:
+                return (f"Invalid value {val!r} for {k}. Allowed: {allowed}")
     return None
 
 def _skip_default_value(ann: Dict[str, Any]) -> Any:
@@ -1231,6 +1249,13 @@ def _answer_defaults_review(args, run_dir: Path) -> int:
     back, so the agent applies the change with a normal --answer and re-asks.
     A crafted acceptance is a forged approval, so an acceptance without
     --owner-msg-id is refused.
+
+    PD-004c compat: an acceptance carried on the signed operator-contract
+    path (``--operator-contract``) stamps the receipt digest instead. The
+    receipt must still hash to the stored ``contract_sha256`` at ``--complete``
+    (PD-004b / PD-107), so tampering with the receipt still refuses. A bare
+    acceptance with neither ``--owner-msg-id`` nor ``--operator-contract`` is
+    still refused -- no approval is manufactured.
     """
     schema = load_question_schema()
     ledger = read_intake_ledger(run_dir)
@@ -1253,12 +1278,32 @@ def _answer_defaults_review(args, run_dir: Path) -> int:
             return 1
         return _emit_question(review, answers)
 
-    msg_id = getattr(args, "owner_msg_id", None)
-    if not msg_id:
+    msg_id = str(getattr(args, "owner_msg_id", None) or "").strip()
+    operator_contract = bool(getattr(args, "operator_contract", False))
+    if operator_contract and msg_id:
+        print(json.dumps({"error": "--operator-contract replaces "
+                                   "--owner-msg-id; give one, not both"}))
+        return 1
+    contract_stamp: Optional[Dict[str, Any]] = None
+    if operator_contract:
+        prov = _intake_provenance()
+        if prov is not None:
+            receipt_ok, digest = prov.contract_receipt_ok(run_dir), prov.receipt_sha256(run_dir)
+        else:
+            receipt = run_dir / "working" / "interview" / "operator_contract.json"
+            receipt_ok, digest = receipt.is_file(), None
+        if not receipt_ok or not digest:
+            print(json.dumps({"error": "--operator-contract needs "
+                                       "working/interview/operator_contract.json "
+                                       "carrying receipt_hmac"}))
+            return 1
+        contract_stamp = {"source": "operator-contract", "contract_sha256": digest}
+    if not msg_id and not operator_contract:
         print(json.dumps({
             "error": "accepting the defaults requires --owner-msg-id (the "
-                     "client's message id); an acceptance with no owner "
-                     "message id is a forged approval"}))
+                     "client's message id) or --operator-contract on the "
+                     "signed operator-contract path; an acceptance with no "
+                     "owner message id is a forged approval"}))
         return 1
 
     stamped = 0
@@ -1266,11 +1311,16 @@ def _answer_defaults_review(args, run_dir: Path) -> int:
     for rec in entries.values():
         if isinstance(rec, dict) and rec.get("defaulted") and id(rec) not in seen_ids:
             seen_ids.add(id(rec))
-            rec["default_accepted_msg_id"] = msg_id
+            if contract_stamp is not None:
+                rec.update({"defaulted": True, **contract_stamp})
+            else:
+                rec["default_accepted_msg_id"] = msg_id
             stamped += 1
+    view_stamp: Dict[str, Any] = (dict(contract_stamp) if contract_stamp is not None
+                                  else {"owner_msg_id": msg_id})
     entries[qid] = {"value": text, "validated": True, "source":
                     "deck-intake-driver", "answered_at": now_iso,
-                    "accepted": True, "owner_msg_id": msg_id,
+                    "accepted": True, **view_stamp,
                     "normalized": text, "answer": text}
     ledger["entries"] = entries
     write_intake_ledger(run_dir, ledger)
@@ -2299,9 +2349,15 @@ def cmd_answer(args) -> int:
     # Validate enum values (plain rows keep the legacy exact-match gate)
     allowed = qdef.get("allowed_values")
     if qid != "pitch_included" and allowed and text.strip() not in allowed and (text.strip() or qdef.get("required")):
-        print(json.dumps({"error": f"Invalid value {text!r} for {qid}. "
-                                   f"Allowed: {allowed}"}))
-        return 1
+        # PD-023: an old client word stays accepted through the question's
+        # own aliases map. The canonical bank word is what gets recorded.
+        alias = (qdef.get("aliases") or {}).get(text.strip().lower())
+        if alias in allowed:
+            text = alias
+        else:
+            print(json.dumps({"error": f"Invalid value {text!r} for {qid}. "
+                                       f"Allowed: {allowed}"}))
+            return 1
 
     # Record the answer
     ledger = read_intake_ledger(run_dir)

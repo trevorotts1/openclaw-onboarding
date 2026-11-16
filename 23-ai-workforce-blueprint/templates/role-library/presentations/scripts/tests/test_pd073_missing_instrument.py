@@ -1,8 +1,9 @@
 """PD-073 — the renderer must not pass by not running.
 
 Acceptance (spec, PD-073): with the prompt_gate import forced to fail and no test
-marker -> a failure naming the missing module; with the marker -> the current
-(no-op / empty) behaviour.
+marker -> a failure naming the missing module; with the PD-201 test rule
+(PRESENTATION_ALLOW_DEGRADED_VERIFIERS=1) -> the current (no-op / empty) behaviour.
+PD-201 removed the `.test-context` file signal; these tests now use the env marker.
 
 The trigger used here is build_deck._import_prompt_gate() returning None — the
 function's own documented seam for "the shared module is not importable" — so the
@@ -32,10 +33,10 @@ def _no_markers(monkeypatch):
         monkeypatch.delenv(var, raising=False)
 
 
-def _marker(rd):
-    p = rd / "working" / "checkpoints" / ".test-context"
-    p.parent.mkdir(parents=True, exist_ok=True)
-    p.write_text("test context", encoding="utf-8")
+def _marker(monkeypatch):
+    """PD-201: the test rule is the environment variable, not a file in the run
+    folder. Kept under the old helper name so every caller still reads clearly."""
+    monkeypatch.setenv("PRESENTATION_ALLOW_DEGRADED_VERIFIERS", "1")
 
 
 def _force_prompt_gate_away(monkeypatch):
@@ -58,10 +59,10 @@ def test_canonical_prompt_dir_problems_names_missing_prompt_gate(tmp_path, monke
 
 
 def test_canonical_prompt_dir_problems_marker_keeps_current_behaviour(tmp_path, monkeypatch):
-    """Same failure, but the .test-context marker is present -> [] as today."""
+    """Same failure, but the PD-201 test rule is set -> [] as today."""
     rd = _rd(tmp_path)
     _no_markers(monkeypatch)
-    _marker(rd)
+    _marker(monkeypatch)
     _force_prompt_gate_away(monkeypatch)
 
     assert bd._canonical_prompt_dir_problems(rd) == []
@@ -94,10 +95,10 @@ def test_verify_aspect_and_readback_raises_when_prompt_gate_missing(tmp_path, mo
 
 
 def test_verify_aspect_and_readback_marker_keeps_current_noop(tmp_path, monkeypatch):
-    """Same failure, marker present -> returns None (the pre-change no-op)."""
+    """Same failure, PD-201 test rule set -> returns None (the pre-change no-op)."""
     rd = _rd(tmp_path)
     _no_markers(monkeypatch)
-    _marker(rd)
+    _marker(monkeypatch)
     _force_prompt_gate_away(monkeypatch)
     out_path = rd / "renders" / "slide-01.png"  # canonical: run_dir/renders/
 

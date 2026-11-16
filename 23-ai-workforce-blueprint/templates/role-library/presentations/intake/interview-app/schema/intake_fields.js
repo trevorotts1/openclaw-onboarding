@@ -90,6 +90,74 @@ export const INTAKE_CONTRACT = {
       }
     },
     {
+      // PD-082a: the client's own talk length. Bank wording, bank field
+      // (duration_and_slide_count.duration_min); the slide count is DERIVED
+      // from it and is never asked separately.
+      id: "duration_min",
+      canonical_path: "deck_brief.DURATION_MIN",
+      section: "deck_brief",
+      kind: "integer",
+      required: true,
+      // The form/session gate is the QUESTION's block_gate (true below).
+      // The final-record completeness gate (required_fields) stays unchanged
+      // here: the box-side writer learns the talk length in its own unit
+      // (PD-082b), so this mirror row is not added to required_fields yet.
+      block_gate: false,
+      question: {
+        id: "duration_min",
+        order: 0.25,
+        kind: "integer",
+        prompt: "How many minutes should the talk run?",
+        help: "The slide count is derived from this number; there is no separate slide-count question.",
+        label: "Talk length (minutes)",
+        required: true,
+        storeOn: "deck_brief.DURATION_MIN"
+      }
+    },
+    {
+      // PD-082a: asked ONLY for a one-recipient (content_personal) deck.
+      id: "recipient_name",
+      canonical_path: "pre_presentation_capture.RECIPIENT_NAME",
+      section: "pre_presentation_capture",
+      kind: "text",
+      required: true,
+      block_gate: true,
+      conditional_on: { id: "presentation_type", equals: "content_personal" },
+      question: {
+        id: "recipient_name",
+        order: 0.3,
+        kind: "text",
+        prompt: "What is the name of the person receiving this presentation?",
+        help: "Asked only for a personal presentation to one named recipient.",
+        label: "Recipient name",
+        placeholder: "e.g. Marcus Halloway",
+        required: true,
+        storeOn: "pre_presentation_capture.RECIPIENT_NAME",
+        conditional_on: { id: "presentation_type", equals: "content_personal" }
+      }
+    },
+    {
+      // PD-082a: asked ONLY when the deck is built FROM existing content.
+      id: "extracted_substance",
+      canonical_path: "pre_presentation_capture.EXTRACTED_SUBSTANCE",
+      section: "pre_presentation_capture",
+      kind: "text",
+      required: true,
+      block_gate: true,
+      conditional_on: { id: "presentation_type", in: ["content_personal", "content_general"] },
+      question: {
+        id: "extracted_substance",
+        order: 0.35,
+        kind: "text",
+        prompt: "What is the one core idea your existing material must convey?",
+        help: "Asked only when the deck is built from content you already have — your own words, never a summary.",
+        label: "Core idea from your material",
+        required: true,
+        storeOn: "pre_presentation_capture.EXTRACTED_SUBSTANCE",
+        conditional_on: { id: "presentation_type", in: ["content_personal", "content_general"] }
+      }
+    },
+    {
       id: "offer_name",
       canonical_path: "deck_brief.OFFER_NAME",
       section: "deck_brief",
