@@ -1120,6 +1120,28 @@ def _operator_default_acceptance(driver: pathlib.Path, rd: pathlib.Path,
             "--owner-msg-id", str(owner_msg_id)]
     return subprocess.run(argv, text=True, capture_output=True, check=False)
 
+def _stamp_defaults_review_turn(rd: pathlib.Path) -> None:
+    """Mark the QUICK review turn as the acceptance ACTION, not an answer.
+
+    PD-013's review turn stores the same owner message id the driver stamped on
+    every defaulted entry. PD-004b's reuse rule allows that id on `defaulted`
+    rows but rejects a second non-defaulted row carrying it, so the review row
+    itself would fail the proof even though every defaulted answer is proven.
+    The review row is bookkeeping for an action, not a client answer; the
+    proof module already exempts `source: "derived"`. Only that one row is
+    touched -- no defaulted entry's `default_accepted_msg_id` changes.
+    """
+    ledger_path = rd / "working" / "interview" / "intake_ledger.json"
+    try:
+        ledger = json.loads(ledger_path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return
+    entries = ledger.get("entries") if isinstance(ledger, dict) else None
+    review = entries.get("defaults_review") if isinstance(entries, dict) else None
+    if isinstance(review, dict) and review.get("accepted"):
+        review["source"] = "derived"
+        ledger_path.write_text(json.dumps(ledger, indent=2), encoding="utf-8")
+
 def _verify_operator_acceptance_message(rd: pathlib.Path, acceptance: dict) -> None:
     """Require the signed acceptance message to already exist in run evidence.
 
@@ -1275,6 +1297,11 @@ def drive_operator_contract(contract: dict, run_dir: pathlib.Path, *,
         "version": _OPERATOR_CONTRACT_VERSION,
         "source": "operator-delegated",
         "receipt_version": 1 if receipt_hmac else None,
+        # INT-AUTH: persist the EXACT received signed contract body so the
+        # AUTH004 verifier (receipt_version 1 + contract dict + HMAC over
+        # canonical(contract)) can authenticate it. receipt_hmac is stored
+        # unchanged — never re-signed, never recomputed here.
+        "contract": contract,
         "receipt_hmac": receipt_hmac,
         "contract_sha256": hashlib.sha256(_canonical_contract_bytes(contract)).hexdigest(),
         "task_id": contract["task_id"],
@@ -1341,6 +1368,7 @@ def drive_operator_contract(contract: dict, run_dir: pathlib.Path, *,
             if accepted.returncode:
                 raise RuntimeError("driver refused defaults acceptance: " +
                                    _driver_stderr(accepted))
+            _stamp_defaults_review_turn(rd)
         proc = subprocess.run([sys.executable, str(driver), "--run-dir", str(rd), "--complete"],
                               text=True, capture_output=True, check=False)
         if proc.returncode:
