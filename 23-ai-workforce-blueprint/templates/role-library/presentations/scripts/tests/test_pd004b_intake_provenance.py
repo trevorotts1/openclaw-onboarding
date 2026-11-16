@@ -18,6 +18,8 @@ sets it to `warn` explicitly.
 """
 from __future__ import annotations
 
+import hashlib
+import hmac
 import json
 import os
 import subprocess
@@ -50,6 +52,32 @@ EIGHT = {
 }
 BASE = {"presentation_type": "from_scratch"}
 ALL = {**BASE, **EIGHT}
+
+# INT-AUTH: synthetic-only secret; the driver verifies real HMAC over
+# canonical(contract) with WEBHOOK_SECRET. Fixtures sign the explicit
+# synthetic contract below and supply this value via env. Never live.
+_SYNTHETIC_SECRET = "auth004-synthetic-test-secret-only"
+_SYNTHETIC_CONTRACT = {"task_id": "pd004b-task", "execution_id": "pd004b-exec",
+                       "title": "PD004b fixture"}
+_DEFAULTS_ACCEPTANCE = {"msg_id": "defaults-ok", "chat_id": REQUESTER_CHAT,
+                        "text": "good"}
+
+def _canonical_bytes(contract: dict) -> bytes:
+    return json.dumps(contract, sort_keys=True, separators=(",", ":"),
+                      ensure_ascii=False).encode("utf-8")
+
+def _sign(contract: dict) -> str:
+    return hmac.new(_SYNTHETIC_SECRET.encode("utf-8"),
+                    _canonical_bytes(contract), hashlib.sha256).hexdigest()
+
+def _write_signed_receipt(run_dir: Path, contract: dict | None = None) -> dict:
+    contract = contract if contract is not None else dict(_SYNTHETIC_CONTRACT)
+    envelope = {"receipt_version": 1, "contract": contract,
+                "receipt_hmac": _sign(contract)}
+    receipt = run_dir / RECEIPT
+    receipt.parent.mkdir(parents=True, exist_ok=True)
+    receipt.write_text(json.dumps(envelope), encoding="utf-8")
+    return envelope
 
 _WRAPPER = textwrap.dedent('''
     import json, runpy, sys, types
@@ -104,6 +132,7 @@ def _env(tmp_path: Path, mode: str = "enforce") -> dict:
         "PRESENTATION_SP_TURN_LEDGER_ROTATION_STARTED_AT": "2026-01-01T00:00:00+00:00",
         "PRESENTATION_REQUESTER_CHAT_ID": REQUESTER_CHAT,
         "PRESENTATION_REQUESTER_CHANNEL": "telegram",
+        "WEBHOOK_SECRET": _SYNTHETIC_SECRET,
     })
     if mode is None:
         env.pop("PRESENTATION_INTAKE_PROVENANCE", None)
@@ -168,11 +197,22 @@ def _walk_to_complete(call, run_dir: Path) -> None:
     """
     receipt = run_dir / RECEIPT
     if not receipt.exists():
-        receipt.parent.mkdir(parents=True, exist_ok=True)
-        receipt.write_text(json.dumps({
-            "receipt_hmac": "walk-setup-receipt",
-            "contract": "fixture receipt for the setup turns only",
-        }), encoding="utf-8")
+        # INT-AUTH: the setup walk answers with --operator-contract, which now
+        # requires a real HMAC. Sign the explicit synthetic contract carrying
+        # an explicit default_acceptance, and write the real inbound evidence
+        # it names first -- QUICK records defaults that only that acceptance
+        # can prove (PD-013/ AUTH004). The EIGHT answered by _answer_all
+        # still carry no provenance of their own, so every assertion below
+        # still sees them unproven where the test expects that.
+        # Append, never replace: A2/A3/A4 already wrote their own rows.
+        _path = run_dir / INBOUND
+        _path.parent.mkdir(parents=True, exist_ok=True)
+        with _path.open("a", encoding="utf-8") as _fh:
+            _fh.write(json.dumps(_row(_DEFAULTS_ACCEPTANCE["msg_id"],
+                                      _DEFAULTS_ACCEPTANCE["text"],
+                                      chat_id=_DEFAULTS_ACCEPTANCE["chat_id"])) + "\n")
+        _write_signed_receipt(run_dir, {**_SYNTHETIC_CONTRACT,
+                                          "default_acceptance": _DEFAULTS_ACCEPTANCE})
     for _ in range(120):
         q = json.loads(call("--next").stdout or "{}")
         if q.get("status") == "complete":
@@ -181,6 +221,13 @@ def _walk_to_complete(call, run_dir: Path) -> None:
         if not qid:
             break
         vals = q.get("allowed_values") or []
+        if qid == "defaults_review":
+            # The acceptance turn clears only on plain "good" on the signed
+            # operator-contract path; assert instead of silently ignoring.
+            out = call("--answer", "defaults_review", "good",
+                       "--operator-contract")
+            assert out.returncode == 0, out.stdout + out.stderr
+            continue
         if qid == "pitch_included" and "no" in vals:
             # SETUP: an informational deck. The commercial turns are then not
             # asked at all, so a fixture about some OTHER behaviour does not
@@ -370,12 +417,18 @@ def test_a7_one_word_mismatch_exits_6(run):
 # ---------------------------------------------------------------------------
 def test_a8_operator_contract_passes_until_the_receipt_changes(run):
     run_dir, call = run()
+    # INT-AUTH: sign the explicit synthetic contract; a stub string is no
+    # longer accepted as authentication. The signed body carries the explicit
+    # default_acceptance the QUICK defaults need, with its real inbound
+    # evidence written first. The tamper below changes the stored
+    # contract/title bytes after --complete passed, so the second --complete
+    # must refuse the stale receipt.
+    _inbound(run_dir, [_row(_DEFAULTS_ACCEPTANCE["msg_id"],
+                            _DEFAULTS_ACCEPTANCE["text"],
+                            chat_id=_DEFAULTS_ACCEPTANCE["chat_id"])])
+    _write_signed_receipt(run_dir, {**_SYNTHETIC_CONTRACT,
+                                    "default_acceptance": _DEFAULTS_ACCEPTANCE})
     receipt = run_dir / RECEIPT
-    receipt.parent.mkdir(parents=True, exist_ok=True)
-    receipt.write_text(json.dumps({
-        "receipt_hmac": "hmac-of-the-signed-contract",
-        "contract": "the operator contract as received",
-    }), encoding="utf-8")
 
     for qid, text in {**BASE, **EIGHT}.items():
         out = call("--answer", qid, text, "--operator-contract")
@@ -387,7 +440,7 @@ def test_a8_operator_contract_passes_until_the_receipt_changes(run):
     assert out.returncode == 0, out.stdout + out.stderr
 
     receipt.write_text(receipt.read_text(encoding="utf-8").replace(
-        "operator contract", "operator contracT"), encoding="utf-8")
+        "PD004b", "PD004X"), encoding="utf-8")
     out = call("--complete")
     assert out.returncode == 6, out.stdout + out.stderr
     payload = _payload(out)
