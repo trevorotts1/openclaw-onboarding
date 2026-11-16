@@ -243,9 +243,20 @@ jobs:
               fi
               sleep 5
             done
-            git fetch --quiet origin "+refs/tags/${CURRENT_VER}:refs/tags/${CURRENT_VER}" 2>/dev/null || true
             echo "Tag ${CURRENT_VER} published on origin after $((SECONDS - _G1_T0))s."
           fi
+
+          # ALWAYS re-fetch the tag ref into the local object database before
+          # reading refs below. `ls-remote` above proves the tag is on origin; it
+          # does NOT prove this job's checkout has it. actions/checkout@v4
+          # snapshots tags at CHECKOUT time, so a tag pushed afterwards (the
+          # auto-tag run on this same push event) is visible to ls-remote yet
+          # absent from local refs — the poll is then skipped and for-each-ref
+          # reads a stale ref list. v27.1.75 G1 false-failed exactly this way;
+          # sibling G1b passes because it re-fetches inside its loop.
+          # Best-effort: a tag genuinely missing from origin leaves local refs
+          # untouched here and still fails closed in the error branch below.
+          git fetch --quiet origin "+refs/tags/${CURRENT_VER}:refs/tags/${CURRENT_VER}" 2>/dev/null || true
 
           # git tag -l with --sort and deref only matches annotated tags when
           # we check the tag object type.  Use git for-each-ref to be exact.
