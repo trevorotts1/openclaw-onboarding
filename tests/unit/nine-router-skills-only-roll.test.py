@@ -28,6 +28,7 @@ REPO = Path(__file__).resolve().parents[2]
 # These tests run the real _run_box_body on a fake box: the weekly pre-flight (memory pressure on the
 # machine running the test) must not decide their outcome. tests/unit/fleet-preflight.test.py covers it.
 os.environ["FLEET_PREFLIGHT_BYPASS"] = "1"
+os.environ["FRONTDOOR_999_ALL_PLATFORMS"] = "1"  # 999 step is Mac-only in production; keep exercising it on Linux CI
 os.environ["FLEET_GOOGLE_SA"] = "/nonexistent/service-account.json"
 for _k in ("FLEET_STANDING_GATE_URL", "FLEET_STANDING_GATE_SECRET", "FLEET_OPERATOR_ALERT_URL"):
     os.environ.pop(_k, None)

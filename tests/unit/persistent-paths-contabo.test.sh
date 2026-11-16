@@ -62,7 +62,7 @@ mkdir -p "$O/.claude/skills/nine-router-setup"; echo "# s" > "$O/.claude/skills/
 echo ': stub' > "$SD/common/settings-lock.sh"
 printf '#!/bin/bash\nset -euo pipefail\nbundled_skills(){ grep -v "^#" "$REPO_ROOT/CONTROL/bundled-skills.txt"; }\nresolve_skill_source(){ (cd "$REPO_SKILL_DIR/../$1" 2>/dev/null && pwd -P) || true; }\nlink_one_skill(){ ln -sfn "$1" "$2" && echo "skill linked: $3"; }\nmain(){ touch "$HOME/INSTALLER_RAN"; }\nmain "$@"\n' > "$SD/setup-macos.sh"
 git -C "$O" init -q && git -C "$O" add -A && git -C "$O" -c user.email=a@b -c user.name=t commit -qm i
-fd(){ runbox "$1" "$2" "$3" env NINEROUTER_PORT=1 GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0="url.$O.insteadOf" \
+fd(){ runbox "$1" "$2" "$3" env FRONTDOOR_999_ALL_PLATFORMS=1 NINEROUTER_PORT=1 GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0="url.$O.insteadOf" \
       GIT_CONFIG_VALUE_0="https://github.com/trevorotts1/999-setup.git" \
       bash -c 'source "$0/shared-utils/lib-frontdoor.sh"; frontdoor_update_999' "$REPO" 2>&1; }
 

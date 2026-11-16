@@ -136,7 +136,7 @@ def _space_free_run_dir(td):
 
     trust_boundary_observability._DIVERGENCE_RE matches `run_dir=(\\S+)` — one
     whitespace-free token — so a checkout living under a path WITH a space
-    ('/Volumes/mac mini m4/...') makes every real divergence line degrade to
+    ('<external-volume-with-a-space>/...') makes every real divergence line degrade to
     UNRECOGNISED-SHAPE. That is a property of the parser's contract, not of
     these tests, and it is invisible on CI (space-free checkout). Returning a
     RELATIVE path (resolved from inside the temp dir) keeps the emitted
@@ -239,6 +239,9 @@ class TestEndToEndCapture:
         assert obs.DIVERGENCE_PREFIX in by_kind
         live = by_kind[obs.DIVERGENCE_PREFIX]
         assert live.would_have_blocked is True
+        # Exactly one emitter fires inside this window: the divergence. (The
+        # seal-side finding belongs to admission, tested by its own case.)
+        assert set(by_kind) == {obs.DIVERGENCE_PREFIX}
 
         # RECORDED: the SAME observations are now on disk, independent of the
         # in-process list -- proves persistence, not just in-memory capture.
@@ -246,6 +249,8 @@ class TestEndToEndCapture:
         assert log_path.is_file()
         assert oct(log_path.stat().st_mode)[-3:] == "600"
         persisted = obs.load_observations(self.run_dir)
+        # Every persisted record is attributed to THIS run_dir, not a sibling.
+        assert all(o.run_dir == str(self.run_dir) for o in persisted)
         divergences = [o for o in persisted if o.kind == obs.DIVERGENCE_PREFIX]
         assert len(divergences) == 1
         p = divergences[0]
@@ -273,6 +278,8 @@ class TestEndToEndCapture:
         json_rendered = json.loads(report.render_json(persisted, str(self.run_dir)))
         assert json_rendered["would_have_blocked_count"] == 1
         assert json_rendered["total"] == 1
+        # The reader's total agrees with the on-disk record count.
+        assert json_rendered["total"] == len(persisted)
 
     def test_capture_is_a_true_pass_through_real_stderr_still_receives_the_line(self, capsys):
         """RETARGETED BY PD-924: same stale-seal divergence as the test above

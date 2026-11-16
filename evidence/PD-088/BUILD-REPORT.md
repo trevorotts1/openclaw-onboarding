@@ -4,7 +4,7 @@
 - Lane: FL17
 - Severity: Severe
 - Branch: `pd/fl17-phase-checks` (confirmed with `git branch --show-current` before any work)
-- Worktree: `/Volumes/mac mini m4/swarm-contract/pd-fix/worktrees/onboarding/FL17`
+- Worktree: `<LOOP_ROOT>/worktrees/onboarding/FL17`
 - Fix commit: `1e697fdda9b756798353c693f9ca38b77c6833e4`
 - Pre-fix branch head: `13d00426b`
 - Remote proof: `git ls-remote origin refs/heads/pd/fl17-phase-checks` →
@@ -69,7 +69,7 @@ is the new function; A1 rows — brief alone fails naming `type_layout_system.md
 ## Commands run and results
 
 All from `.../role-library/presentations/scripts`, `TMPDIR` set to
-`/Volumes/mac mini m4/swarm-contract/pd-fix/tmp`.
+`<LOOP_ROOT>/tmp`.
 
 1. BEFORE the fix — `python3 -m pytest tests/test_pd088_design_phase.py -q`
    → **3 failed, 1 passed**. The substantive failure:
