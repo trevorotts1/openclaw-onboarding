@@ -35,7 +35,7 @@ No existing test was weakened, deleted or edited.
 
 ## 2. Acceptance row A1 — the PD-204 probe
 
-Run: `python3 -I /Volumes/mac mini m4/swarm-contract/pd-fix/scratchpads/PD-204/probe_pd204.py`
+Run: `python3 -I "$LOOP_ROOT/scratchpads/PD-204/probe_pd204.py"`
 (profile passed as a dict; no network, no spend; `provider_key_resolves` stubbed True).
 
 **A. DeepSeek-only client → `P1Q-COPY-QC` has no route and the plain reason.**
