@@ -167,6 +167,15 @@ way):**
 right tool for a deliberate, no-PR release cut directly on `main` — it is unaffected by
 this rule, which only concerns fix PRs.
 
+**Batch merges carry their own CHANGELOG header (v27.1.75 incident, 2026-11-16).** A
+batch that bumps `/version` must contain the matching `## [vX.Y.Z]` CHANGELOG header
+in the same batch. Batch #3842 bumped `/version` to v27.1.75 without one, so
+auto-tag-on-merge cut the annotated tag against a CHANGELOG with no entry for it and
+G2, G2-EXT and the `version-consistency--check-tag-changelog-full-history` fold of
+`fast-guards` went red on main until the header landed in a follow-up. Before a batch
+is requested, confirm the header exists (`scripts/check-changelog-full-history.py`
+is the checker G2-EXT runs); the header ships with the bump, never after the tag.
+
 ---
 
 ## Batch Prep — stop the mechanical red reruns
