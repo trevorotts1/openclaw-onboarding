@@ -4815,7 +4815,7 @@
   "name": "installer-contracts-guard--credential-store",
   "was": "installer-contracts-guard.yml",
   "script": "scripts/ci/fast-guards.d/installer-contracts-guard--credential-store.sh",
-  "python311": false,
+  "python311": true,
   "events": {
    "push": {
     "branches": [
