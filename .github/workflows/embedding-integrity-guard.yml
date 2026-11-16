@@ -79,6 +79,7 @@ on:
       - tests/unit/sop-library-update-path-ingest.test.sh
       - .github/workflows/embedding-integrity-guard.yml
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
     paths:
       - shared-utils/embedding_engine.py
       - shared-utils/detect_platform.py
@@ -125,13 +126,13 @@ on:
   workflow_dispatch:
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
   hard-gate:
     # Batch pull requests run only the required checks (Trevor order 2026-11-13).
-    if: ${{ !startsWith(github.head_ref, 'batch/') }}
+    if: ${{ !startsWith(github.head_ref, 'batch/') && (github.event_name != 'pull_request' || github.event.pull_request.draft == false) }}
     name: "Embedding hard gates (fake-768 / sandbox / one-DB-path)"
     runs-on: ubuntu-latest
     steps:
@@ -176,7 +177,7 @@ jobs:
 
   persona-embeddings-wiring:
     # Batch pull requests run only the required checks (Trevor order 2026-11-13).
-    if: ${{ !startsWith(github.head_ref, 'batch/') }}
+    if: ${{ !startsWith(github.head_ref, 'batch/') && (github.event_name != 'pull_request' || github.event.pull_request.draft == false) }}
     name: "A-U8 — book-to-persona embeddings wiring (index write / deferral / index-verify / drift)"
     runs-on: ubuntu-latest
     # The runner is a bare box: no ~/.openclaw (Mac marker) and no
@@ -230,7 +231,7 @@ jobs:
 
   universal-sops:
     # Batch pull requests run only the required checks (Trevor order 2026-11-13).
-    if: ${{ !startsWith(github.head_ref, 'batch/') }}
+    if: ${{ !startsWith(github.head_ref, 'batch/') && (github.event_name != 'pull_request' || github.event.pull_request.draft == false) }}
     name: "universal-sops content manifest"
     runs-on: ubuntu-latest
     steps:
@@ -247,7 +248,7 @@ jobs:
 
   sop-embed-once:
     # Batch pull requests run only the required checks (Trevor order 2026-11-13).
-    if: ${{ !startsWith(github.head_ref, 'batch/') }}
+    if: ${{ !startsWith(github.head_ref, 'batch/') && (github.event_name != 'pull_request' || github.event.pull_request.draft == false) }}
     name: "P4-03 — CC SOP-embeddings embed-once pipeline (Corpus 5)"
     runs-on: ubuntu-latest
     steps:

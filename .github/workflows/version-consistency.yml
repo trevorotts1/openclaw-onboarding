@@ -55,11 +55,12 @@ on:
   push:
     branches: [main]
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
     branches: [main]
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
   check-version-drift:
@@ -194,7 +195,7 @@ jobs:
     runs-on: ubuntu-latest
     # Only the push-to-main path runs the strict tag check; PRs use the
     # changelog-entry check in G2 below instead.
-    if: github.event_name == 'push'
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     steps:
       - name: Checkout full history + tags
         uses: actions/checkout@v4
@@ -314,16 +315,19 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout full history + tags
+        if: github.event_name != 'push' || github.ref == 'refs/heads/main'
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
       - name: Set up Python
+        if: github.event_name != 'push' || github.ref == 'refs/heads/main'
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
 
       - name: Ensure origin/main is present
+        if: github.event_name != 'push' || github.ref == 'refs/heads/main'
         shell: bash
         run: |
           set -euo pipefail
@@ -334,6 +338,7 @@ jobs:
           git rev-parse --short refs/remotes/origin/main
 
       - name: Verify every release at or above the floor has a truthful tag
+        if: github.event_name != 'push' || github.ref == 'refs/heads/main'
         shell: bash
         run: |
           set -euo pipefail
@@ -386,11 +391,13 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout full history + tags
+        if: github.event_name != 'push' || github.ref == 'refs/heads/main'
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
       - name: Verify each v11+ annotated tag has a CHANGELOG entry
+        if: github.event_name != 'push' || github.ref == 'refs/heads/main'
         shell: bash
         run: |
           set -euo pipefail
@@ -474,6 +481,7 @@ jobs:
   # ALSO fails the build, so the ledger can only shrink. See
   # scripts/check-changelog-full-history.py for the full rationale.
   check-tag-changelog-full-history:
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     name: G2-EXT — every annotated tag (all history) must have a CHANGELOG entry or a documented gap
     runs-on: ubuntu-latest
     steps:
@@ -505,11 +513,13 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout full history
+        if: github.event_name != 'push' || github.ref == 'refs/heads/main'
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
       - name: Verify skill-version.txt bumped alongside skill content
+        if: github.event_name != 'push' || github.ref == 'refs/heads/main'
         shell: bash
         run: |
           set -euo pipefail
