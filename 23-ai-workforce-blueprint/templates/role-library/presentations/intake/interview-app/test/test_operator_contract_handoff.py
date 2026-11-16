@@ -266,11 +266,31 @@ def test_launcher_writes_ultra_mode_and_client_route_sidecars(tmp_path, monkeypa
     # The judge class must be an INDEPENDENT model: the router refuses a judge
     # in the same family as the author. deepseek-direct writes and cannot
     # grade its own work, so the fixture owns a second text family.
+    # research_synthesis/reasoning_long (P-0.5-RESEARCH etc.) require a
+    # LONG-context model: model_catalog's text.strong is client-resolved
+    # (PRESENTATION_MODEL_TEXT_STRONG or agents.defaults.model), so a fake
+    # HOME without openclaw.json leaves the department candidates unresolvable
+    # (alias unknown) and ultra refuses BEFORE any spend. The test-local
+    # profile therefore declares its reasoning slot explicitly with the
+    # registry's canonical long id (MODEL_CAPABILITY_META deepseek-v4.1-flash
+    # is text/long, wired above), and its judge slot with the catalog's
+    # served judge id (text.judge openrouter z-ai/glm-5.3-flash, a different
+    # family from the deepseek author). vision_ocr rides the department
+    # glm-5.3 candidate, so the profile must also wire its canonical served
+    # id z-ai/glm-5.3 on openrouter. Synthetic fixture data only: no
+    # provider key, metered call, or production routing change.
     profile['providers']['openrouter'] = {
         'provider': 'openrouter', 'presence': True, 'detected': True,
-        'wired_models': ['z-ai/glm-5.3-flash'], 'consented': True,
+        'wired_models': ['z-ai/glm-5.3-flash', 'z-ai/glm-5.3'], 'consented': True,
     }
-    profile['model_plan'] = _profile_with_direct_flash()['model_plan']
+    model_plan_fixture = _profile_with_direct_flash()['model_plan']
+    model_plan_fixture['reasoning'] = {
+        'provider': 'deepseek-direct', 'model': 'deepseek-v4.1-flash',
+    }
+    model_plan_fixture['judge'] = {
+        'provider': 'openrouter', 'model': 'z-ai/glm-5.3-flash',
+    }
+    profile['model_plan'] = model_plan_fixture
     resource_profile.save_profile(profile, profile_dir)
     monkeypatch.setattr(model_router, 'provider_key_resolves', lambda provider: provider in ('deepseek-direct', 'kie', 'openrouter'))
     monkeypatch.setattr(launcher, 'notify_gate', lambda run: True)
