@@ -1,3 +1,13 @@
+## [v27.1.75]  -  2026-11-16  -  Batch #3842: guard-workflow fold into fast-guards, PD-202 closing gates and closeout-watchdog PYTHONPATH dedupe
+
+- Batch #3842 landed on main at 6d974e91a with members #3829, #3827 and #3830. Root version v27.1.74 -> v27.1.75 and `cc-compat.json.onboardingVersion` advanced with it.
+- #3830 folds 45 guard workflows into `fast-guards`: 63 folded guard scripts added under `scripts/ci/fast-guards.d/` with their entries in `scripts/ci/fast-guards.json`, and 72 existing workflows updated to the fold's event, concurrency and draft gating. `scripts/ci/fast_guards.py` gains `--shard i/n`, `FG_BASE_SHA` / `FG_HEAD_SHA` / `FG_PR_LABELS`, and `::error file=<path>` naming. A draft pull request now skips the control job instead of running it.
+- #3827 PD-202 waiver gate (`presentation_job/waivers.py`): an intake-field waiver must cite the question-bank decline field for that gate, carry a quote of at least 20 characters and 4 words, and a `captured_at` that parses as a date and time. `qc` and `prompt_floor` cannot be waived from an intake field.
+- #3829 dedupes the PYTHONPATH prepend in the closeout readiness watchdog (CLOSEOUT-1C linear4).
+- Skill 37 v13.2.19 -> v13.2.20, Skill 49 v2.1.61 -> v2.1.62, Skill 75 v2.9.199 -> v2.9.200, Skill 23 v27.1.74 -> v27.1.75 (carries the repository version).
+- This header was added by lane FAST008 after the release tag v27.1.75 was cut without it, which left G2 and G2-EXT red on main at 6d974e91a.
+- Migration: none beyond the normal update; the stricter presentation waiver rules apply to new intake. Risk: LOW.
+
 ## [v27.1.74]  -  2026-11-15  -  Fish Audio Skill 30: verify the independently approved client voice and send one production model policy
 
 - Skill 30 v7.1.0 -> v7.1.1: resolve the partial Drama-3 migration left by PR #2754. One executable policy selects Drama-3 by default and permits S2.1 Pro only by explicit client/operator selection. Free, legacy, empty and unknown models fail; requests always send the model header.
