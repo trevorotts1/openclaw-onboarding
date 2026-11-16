@@ -211,7 +211,7 @@ class TestRenderSlideFailsFast:
 
         submit_calls = {"n": 0}
 
-        def fake_submit_task(prompt, api_key, logo_url=None):
+        def fake_submit_task(prompt, api_key, logo_url=None, reference_urls=None):
             submit_calls["n"] += 1
             raise bd.AuthError("HTTP 401 createTask — permanent auth failure")
 
