@@ -1,3 +1,11 @@
+## [v27.1.75]  -  2026-11-16  -  Batch #3842: fast-guards sharding (non-workflow half), closeout-watchdog PYTHONPATH dedupe, PD-202 closing-gate waivers
+
+- Batch #3842 merged four lanes onto main: the non-workflow half of the fast-guards fold (#3830 — the `scripts/ci/fast-guards.d/` scripts with their `scripts/ci/fast-guards.json` entries, `--shard i/n` in `scripts/ci/fast_guards.py`), the Fish Audio step carried into the folded credential-store guard, the closeout-watchdog `PYTHONPATH` prepend dedupe (#3829), and PD-202's linear recut of #3220 closing gates (#3827: a closing waiver must be a real request about that gate).
+- `23-ai-workforce-blueprint/templates/role-library/_index.json` is regenerated once for the combined tree (783 lines changed, content only).
+- Skill 49 v2.1.61 -> v2.1.62 (test only; tests are not part of the prover pin, so no pin mint). Skill 23's paired `skill-version.txt` marker and `version` are synced to v27.1.75.
+- No `.github/workflows/` file changed in this release: the workflow half of #3830 still needs its own workflow-only pull request.
+- This header was added after the release tag v27.1.75 was cut without it, which left G2 and G2-EXT red on main.
+
 ## [v27.1.74]  -  2026-11-15  -  Fish Audio Skill 30: verify the independently approved client voice and send one production model policy
 
 - Skill 30 v7.1.0 -> v7.1.1: resolve the partial Drama-3 migration left by PR #2754. One executable policy selects Drama-3 by default and permits S2.1 Pro only by explicit client/operator selection. Free, legacy, empty and unknown models fail; requests always send the model header.
