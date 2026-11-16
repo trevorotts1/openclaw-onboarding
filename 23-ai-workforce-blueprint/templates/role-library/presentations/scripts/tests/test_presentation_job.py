@@ -873,6 +873,7 @@ class TestQCGateBlocks:
         captured = capsys.readouterr()
         assert rc == EXIT_WAIVER_INVALID, f"expected exit 9, got {rc}; stderr={captured.err}"
         assert "cannot be waived from an intake field" in captured.err, captured.err
+        assert engine.state.get("terminal") != "DONE", "a refused qc waiver must not close the job"
 
 
 # ---------------------------------------------------------------------------
