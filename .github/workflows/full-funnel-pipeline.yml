@@ -34,6 +34,7 @@ on:
   push:
     branches: [main]
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
     branches: [main]
   workflow_dispatch:
 
@@ -41,13 +42,13 @@ env:
   PYTHONUNBUFFERED: "1"
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
   persona-selector:
     # Batch pull requests run only the required checks (Trevor order 2026-11-13).
-    if: ${{ !startsWith(github.head_ref, 'batch/') }}
+    if: ${{ !startsWith(github.head_ref, 'batch/') && (github.event_name != 'pull_request' || github.event.pull_request.draft == false) }}
     name: "persona-selector (web-dev funnel surface + A7)"
     runs-on: ubuntu-latest
     steps:
@@ -109,7 +110,7 @@ jobs:
 
   funnel-pipeline-pytest:
     # Batch pull requests run only the required checks (Trevor order 2026-11-13).
-    if: ${{ !startsWith(github.head_ref, 'batch/') }}
+    if: ${{ !startsWith(github.head_ref, 'batch/') && (github.event_name != 'pull_request' || github.event.pull_request.draft == false) }}
     name: "funnel pipeline pytest (T-1..T-9 + T-N1..T-N6 + T-PRE-1/4 + T-N5 + graduation)"
     runs-on: ubuntu-latest
     steps:
@@ -140,7 +141,7 @@ jobs:
 
   seed-normalize:
     # Batch pull requests run only the required checks (Trevor order 2026-11-13).
-    if: ${{ !startsWith(github.head_ref, 'batch/') }}
+    if: ${{ !startsWith(github.head_ref, 'batch/') && (github.event_name != 'pull_request' || github.event.pull_request.draft == false) }}
     name: "seed-workspaces departments normalizer (converge Step-4 crash fix)"
     runs-on: ubuntu-latest
     steps:
@@ -161,7 +162,7 @@ jobs:
 
   rubric-scorecard-gate:
     # Batch pull requests run only the required checks (Trevor order 2026-11-13).
-    if: ${{ !startsWith(github.head_ref, 'batch/') }}
+    if: ${{ !startsWith(github.head_ref, 'batch/') && (github.event_name != 'pull_request' || github.event.pull_request.draft == false) }}
     name: "rubric scorecard gate (11 GRADUATED rubrics >= 8.5 from RAW evidence)"
     runs-on: ubuntu-latest
     steps:
@@ -225,7 +226,7 @@ jobs:
 
   funnel-rollback-prose-guard:
     # Batch pull requests run only the required checks (Trevor order 2026-11-13).
-    if: ${{ !startsWith(github.head_ref, 'batch/') }}
+    if: ${{ !startsWith(github.head_ref, 'batch/') && (github.event_name != 'pull_request' || github.event.pull_request.draft == false) }}
     name: "funnel_rollback executable (not prose-only)"
     runs-on: ubuntu-latest
     steps:

@@ -141,7 +141,7 @@ KNOWN_PR_SKIPS = {
     "G1 — version file change requires a matching annotated tag (push to main)": {
         "workflow": "version-consistency.yml",
         "job": "check-version-tag-guard",
-        "condition": "github.event_name == 'push'",
+        "condition": "github.event_name == 'push' && github.ref == 'refs/heads/main'",
         "gap": (
             "Push-only by design: auto-tag-on-merge publishes the release tag "
             "after the merge, so a PR has no tag to check. On every PR this "
