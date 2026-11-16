@@ -145,8 +145,9 @@ way):**
    instant it sees `/version` differ from the previous commit, cuts and pushes the
    annotated tag itself via `scripts/push-version-tag.sh`. No agent has to run it by
    hand, so "someone forgot to tag it" can no longer happen.
-3. **CI enforces #1.** `.github/workflows/release-ceremony-batching-guard.yml`
-   (`scripts/check-no-standalone-release-pr.py`) fails any PR whose entire diff sits
+3. **CI enforces #1.** The `release-ceremony-batching-guard` guard in `fast-guards`
+   (`scripts/ci/fast-guards.d/release-ceremony-batching-guard.sh`, which runs
+   `scripts/check-no-standalone-release-pr.py`) fails any PR whose entire diff sits
    inside {CHANGELOG.md} ∪ {the files in `scripts/version-markers.json`} — i.e. a PR
    that carries zero code. If you hit this red, you opened exactly the kind of PR this
    rule exists to stop; fold your CHANGELOG entry into the PR that carries the fix
@@ -210,7 +211,7 @@ It does not edit CHANGELOG entries (no guard requires a per-skill one). Self-tes
 11. **Never open a standalone CHANGELOG-only or version-bump-only PR.** See "Release
     Ceremony Batching" above — bundle the bump into your fix PR with
     `scripts/bundle-release-in-branch.sh`; the annotated tag is cut for you
-    automatically on merge. CI (`release-ceremony-batching-guard.yml`) will reject a
+    automatically on merge. CI (the `release-ceremony-batching-guard` guard in `fast-guards`) will reject a
     PR that violates this. (Rule added 2026-08-20 — Recommendation R3, delay audit.)
 
 ---
