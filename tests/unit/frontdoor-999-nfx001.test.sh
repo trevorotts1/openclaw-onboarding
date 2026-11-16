@@ -4,6 +4,7 @@
 # B4 link step from an unrelated cwd, B5 per-skill hand-managed skip).
 # Hermetic: fake origin via git insteadOf, HOME=mktemp, no network.
 set -u
+export FRONTDOOR_999_ALL_PLATFORMS=1  # 999 step is Mac-only in production; keep exercising it on Linux CI
 REPO="$(cd "$(dirname "$0")/../.." && pwd)"
 T="$(mktemp -d)"; trap 'rm -rf "$T"' EXIT
 fail=0; ok(){ echo "PASS $1"; }; bad(){ echo "FAIL $1"; fail=1; }
