@@ -16,6 +16,8 @@ old permissive `--complete` produced an intake that build_deck's own
 `_intake_provenance_gate` then REJECTED for missing its six mandatory fields.
 """
 
+import hashlib
+import hmac
 import importlib.util
 import json
 import pathlib
@@ -32,6 +34,16 @@ spec = importlib.util.spec_from_file_location('pd927_bridge', BRIDGE)
 bridge = importlib.util.module_from_spec(spec)
 assert spec.loader
 spec.loader.exec_module(bridge)
+
+# INT-AUTH sibling fixture: synthetic-only secret; sign the explicit
+# synthetic contract so the driver verifies real HMAC.
+_SYNTHETIC_SECRET = 'auth004-synthetic-test-secret-only'
+
+def _sign(contract):
+    canonical = json.dumps(contract, sort_keys=True, separators=(',', ':'),
+                             ensure_ascii=False).encode('utf-8')
+    return hmac.new(_SYNTHETIC_SECRET.encode('utf-8'), canonical,
+                    hashlib.sha256).hexdigest()
 
 
 def _contract(answers):
@@ -109,10 +121,12 @@ def test_replay_whose_contract_carries_every_turn_completes(tmp_path, monkeypatc
     """PROOF A: the replay path works when the turns were answered upstream."""
     monkeypatch.setenv('PRESENTATION_REQUESTER_CHAT_ID', 'operator-test-route')
     monkeypatch.setenv('PRESENTATION_REQUESTER_CHANNEL', 'operator-delegated')
+    monkeypatch.setenv('WEBHOOK_SECRET', _SYNTHETIC_SECRET)
     rd = tmp_path / 'pd927-full'
-    result = bridge.drive_operator_contract(_contract(_FULL), rd, driver_path=DRIVER,
+    _c = _contract(_FULL)
+    result = bridge.drive_operator_contract(_c, rd, driver_path=DRIVER,
                                             launch=False,
-                                            receipt_hmac='pd927-test-receipt')
+                                            receipt_hmac=_sign(_c))
     assert result['driver_complete'] is True
     ledger = json.loads((rd / 'working/interview/intake_ledger.json').read_text())
     assert ledger['status'] == 'complete'
@@ -130,16 +144,18 @@ def test_replay_with_an_unanswered_required_turn_is_still_refused(tmp_path, monk
     """
     monkeypatch.setenv('PRESENTATION_REQUESTER_CHAT_ID', 'operator-test-route')
     monkeypatch.setenv('PRESENTATION_REQUESTER_CHANNEL', 'operator-delegated')
+    monkeypatch.setenv('WEBHOOK_SECRET', _SYNTHETIC_SECRET)
     # `visual_mix` carries a documented default, so its absence is a defaulted
     # turn, not an unanswered one. `goal` has no default and is what the turn
     # gate must name when a genuinely required turn is missing.
     partial = {k: v for k, v in _FULL.items()
                if k not in ('audience_composition_note', 'visual_mix', 'goal')}
     rd = tmp_path / 'pd927-partial'
+    _c = _contract(partial)
     with pytest.raises(RuntimeError) as exc:
-        bridge.drive_operator_contract(_contract(partial), rd, driver_path=DRIVER,
+        bridge.drive_operator_contract(_c, rd, driver_path=DRIVER,
                                        launch=False,
-                                       receipt_hmac='pd927-test-receipt')
+                                       receipt_hmac=_sign(_c))
     message = str(exc.value)
     assert 'driver completion refused' in message
     assert 'the interview is not finished' in message, message
