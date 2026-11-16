@@ -501,10 +501,14 @@ class TestU069ShellInjectionFix:
         PRIMARY gate — a missing working/copy/intake.json BLOCKS the phase
         (exit 3) instead of warning. These tests are about executor.cmd
         handling, not the intake gate, so they must satisfy the substance
-        verifier for the phase to reach done."""
-        (run_dir / "working" / "copy").mkdir(parents=True, exist_ok=True)
-        (run_dir / "working" / "copy" / "intake.json").write_text(json.dumps(
-            {"topic": "U069 executor handling", "deck_slug": "deck"}))
+        verifier for the phase to reach done.
+
+        PD-209: P0A-INTAKE now runs build_deck._chk_intake, so a thin
+        {topic, deck_slug} file no longer attests the step. Seed the same
+        fully-provenanced intake + intake_ledger.json the verifier's own
+        self-test uses (one fixture, no drift)."""
+        from phase_verifiers import _intake_fixture
+        _intake_fixture(run_dir)
 
     def test_u069_space_in_run_dir_preserves_path(self, tmp_path):
         """U069-a: space in run dir path must arrive as ONE argument."""

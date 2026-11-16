@@ -254,8 +254,14 @@ class TestNullExecutorRegressionCLI:
         run_dir = tmp_path / "run"
         (run_dir / "working" / "copy").mkdir(parents=True)
         (run_dir / "working" / "checkpoints").mkdir(parents=True)
-        intake = {"slides": [{"no": 1}], "DECK_SLUG": "test", "pitch_included": False}
-        (run_dir / "working" / "copy" / "intake.json").write_text(json.dumps(intake))
+        # PD-209: P0A-INTAKE runs build_deck._chk_intake, so the intake must be a
+        # real, fully-provenanced interview (the verifier's own fixture writes
+        # intake.json + intake_ledger.json); the deck keys ride on top of it.
+        from phase_verifiers import _intake_fixture
+        intake_path = _intake_fixture(run_dir)
+        intake = json.loads(intake_path.read_text())
+        intake.update({"slides": [{"no": 1}], "DECK_SLUG": "test", "pitch_included": False})
+        intake_path.write_text(json.dumps(intake))
         # FIX-1 (AF-FORGED-APPROVAL): the adhoc record MUST carry an owner_msg_id
         # that resolves to a real owner-authored message via the CC owner-ids oracle.
         # The run's manifest names the CC task; the enclosing _LocalBoard serves
