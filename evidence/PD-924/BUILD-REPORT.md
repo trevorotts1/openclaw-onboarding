@@ -25,14 +25,14 @@ the legacy half too, so it can no longer be the thing RunFacts diverges from.
 
 `trust_boundary_observability._DIVERGENCE_RE` matches `run_dir=(\S+)` — one
 whitespace-free token. This build room lives under
-`/Volumes/mac mini m4/swarm-contract/...`, so every real divergence line emitted
+`<SWARM_ROOT>/...`, so every real divergence line emitted
 from a run_dir on this disk degrades to `UNRECOGNISED-SHAPE`.
 
 Control (same line, two path spellings, instrument only):
 
 ```
 '/tmp/nospace/run'            -> TRUST-BOUNDARY-DIVERGENCE
-'/Volumes/mac mini m4/x/run'  -> UNRECOGNISED-SHAPE
+'<SWARM_ROOT>/x/run'  -> UNRECOGNISED-SHAPE
 ```
 
 That is an instrument property, invisible on a space-free CI checkout. The
@@ -194,5 +194,5 @@ Touched: the two test files above, plus this report. No product code, no
 `build_deck.py`, no `phase_verifiers.py`, no `runfacts.py`, no
 `trust_boundary_observability.py`. No merge, no push to main, no client box, no
 live system, no paid model call. Temp files under
-`/Volumes/mac mini m4/swarm-contract/pd-fix/tmp`; scratch under
-`/Volumes/mac mini m4/swarm-contract/pd-fix/scratchpads/PD-924`.
+`<LOOP_ROOT>/tmp`; scratch under
+`<LOOP_ROOT>/scratchpads/PD-924`.

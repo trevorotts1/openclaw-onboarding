@@ -14,6 +14,7 @@
 #   4. the updater carries the ordered retirement transaction terminal states;
 #   5. negative control: the scanner fails when a retired start is reintroduced.
 set -u
+export FRONTDOOR_999_ALL_PLATFORMS=1  # 999 step is Mac-only in production; keep exercising it on Linux CI
 
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 UPDATE="$REPO/update-skills.sh"

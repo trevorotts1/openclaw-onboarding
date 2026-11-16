@@ -25,6 +25,7 @@
 # Exit: 0 all green; 1 a route or the contract regressed.
 # ============================================================================
 set -uo pipefail
+export FRONTDOOR_999_ALL_PLATFORMS=1  # 999 step is Mac-only in production; keep exercising it on Linux CI
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 cd "$REPO_ROOT" || exit 2
