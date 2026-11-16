@@ -174,11 +174,19 @@ class TestMotionQuestionDefinitions:
         q = self.uq["motion_graphics_declined_reason"]
         assert q["order"] == 7.81
         assert q["storeOn"] == "MOTION_GRAPHICS_DECLINED_REASON"
-        assert q["required"] is True
-        assert q["block_gate"] is True
+        # PD-014 (QC defect 4): want_motion_graphics defaults to "no", so
+        # its reason is optional and never blocking -- the same shape the
+        # deck bank pins. Both banks must agree.
+        assert q["required"] is False
+        assert q["block_gate"] is False
+        assert q["ask_only_if_previously_wanted"] is True
+        dq = self.dq["motion_graphics_declined_reason"]
+        for key in ("required", "block_gate",
+                    "ask_only_if_previously_wanted", "conditional_on"):
+            assert q[key] == dq[key], key
         assert q["conditional_on"] == {"id": "want_motion_graphics",
                                        "equals": "no"}
-        assert "default" not in q  # no default, no fallback: empty re-asked
+        assert "default" not in q  # no default, no fallback
 
     def test_upsell_store_target_and_waiver_mapping(self):
         assert self.upsell["storeTarget"]["WANT_MOTION_GRAPHICS"] == \
