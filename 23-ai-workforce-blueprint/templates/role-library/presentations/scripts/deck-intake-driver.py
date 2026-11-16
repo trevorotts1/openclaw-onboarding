@@ -1285,19 +1285,70 @@ def _answer_defaults_review(args, run_dir: Path) -> int:
                                    "--owner-msg-id; give one, not both"}))
         return 1
     contract_stamp: Optional[Dict[str, Any]] = None
+    verified_contract: Optional[Dict[str, Any]] = None
     if operator_contract:
-        prov = _intake_provenance()
-        if prov is not None:
-            receipt_ok, digest = prov.contract_receipt_ok(run_dir), prov.receipt_sha256(run_dir)
-        else:
-            receipt = run_dir / "working" / "interview" / "operator_contract.json"
-            receipt_ok, digest = receipt.is_file(), None
-        if not receipt_ok or not digest:
-            print(json.dumps({"error": "--operator-contract needs "
-                                       "working/interview/operator_contract.json "
-                                       "carrying receipt_hmac"}))
+        # AUTH004: a nonempty receipt_hmac alone is a bypass. Require the real
+        # HMAC over canonical(contract) before any default is stamped.
+        verified, verified_contract, digest_or_reason = _verify_operator_contract(run_dir)
+        if not verified:
+            print(json.dumps({"error": "--operator-contract needs a signed "
+                                       "working/interview/operator_contract.json: "
+                                       + str(digest_or_reason)}))
             return 1
+        digest = digest_or_reason
         contract_stamp = {"source": "operator-contract", "contract_sha256": digest}
+        # A contract signature alone does not prove the client accepted the
+        # defaults. The defaults class requires the contract to carry an
+        # explicit default_acceptance naming a real inbound message; a valid
+        # signatue without it must not manufacture an approval (AUTH004).
+        # A complete contract that records no defaults never reaches this
+        # review turn (PD-107 complete fixture), so this gate only fires
+        # where defaults actually exist.
+        has_defaults = any(isinstance(r, dict) and r.get("defaulted")
+                           for r in entries.values())
+        if has_defaults:
+            acceptance = verified_contract.get("default_acceptance") \
+                if isinstance(verified_contract, dict) else None
+            if not isinstance(acceptance, dict):
+                print(json.dumps({"error": "--operator-contract on the defaults "
+                                           "review requires the signed contract to "
+                                           "carry default_acceptance (msg_id/chat_id/"
+                                           "text); a contract signature alone does "
+                                           "not prove the client accepted the "
+                                           "defaults"}))
+                return 1
+            # The named acceptance must already be the client's inbound
+            # evidence in this run. The driver reads it; it never writes it.
+            acc_id = str(acceptance.get("msg_id") or "").strip()
+            acc_chat = str(acceptance.get("chat_id") or "").strip()
+            acc_text = " ".join(str(acceptance.get("text") or "").split()).casefold()
+            inbound = run_dir / "working" / "interview" / "inbound_messages.jsonl"
+            matched = False
+            try:
+                lines = inbound.read_text(encoding="utf-8").splitlines()
+            except OSError:
+                lines = []
+            for line in lines:
+                try:
+                    row = json.loads(line)
+                except (ValueError, TypeError):
+                    continue
+                if not isinstance(row, dict):
+                    continue
+                if str(row.get("msg_id") or "").strip() != acc_id:
+                    continue
+                if str(row.get("chat_id") or "").strip() != acc_chat:
+                    break
+                if " ".join(str(row.get("text") or "").split()).casefold() != acc_text:
+                    break
+                matched = True
+                break
+            if not matched:
+                print(json.dumps({"error": "--operator-contract default_acceptance "
+                                           "is not present in this run's inbound "
+                                           "evidence; refusing to synthesize a "
+                                           "client approval"}))
+                return 1
     if not msg_id and not operator_contract:
         print(json.dumps({
             "error": "accepting the defaults requires --owner-msg-id (the "
@@ -2293,17 +2344,15 @@ def cmd_answer(args) -> int:
                                    "--owner-msg-id; give one, not both"}))
         return 1
     if operator_contract:
-        prov = _intake_provenance()
-        if prov is not None:
-            receipt_ok, digest = prov.contract_receipt_ok(run_dir), prov.receipt_sha256(run_dir)
-        else:
-            receipt = run_dir / "working" / "interview" / "operator_contract.json"
-            receipt_ok, digest = receipt.is_file(), None
-        if not receipt_ok or not digest:
-            print(json.dumps({"error": "--operator-contract needs "
-                                       "working/interview/operator_contract.json "
-                                       "carrying receipt_hmac"}))
+        # AUTH004: same real-HMAC gate as the defaults path. A nonempty
+        # receipt_hmac string is not authentication.
+        verified, _verified_contract, digest_or_reason = _verify_operator_contract(run_dir)
+        if not verified:
+            print(json.dumps({"error": "--operator-contract needs a signed "
+                                       "working/interview/operator_contract.json: "
+                                       + str(digest_or_reason)}))
             return 1
+        digest = digest_or_reason
         prov_stamp = {"source": "operator-contract", "contract_sha256": digest}
     elif owner_msg_id:
         prov_stamp["owner_msg_id"] = owner_msg_id
@@ -2790,6 +2839,47 @@ def _intake_provenance():
         return intake_provenance
     except Exception:  # noqa: BLE001 -- absent module: the caller decides
         return None
+
+
+def _verify_operator_contract(run_dir: Path) -> tuple[bool, Optional[Dict[str, Any]], str]:
+    """Verify working/interview/operator_contract.json is a signed envelope.
+
+    Real HMAC-SHA256 over canonical(contract) with WEBHOOK_SECRET, byte-for-
+    byte the verifier intake_bridge.verify_operator_contract_receipt uses:
+    receipt_version==1, contract dict, constant-time compare. A nonempty
+    string alone is NOT accepted (AUTH004 bypass). Imports the bridge
+    read-only when it is co-located, otherwise falls back to the provenance
+    helper that implements the identical check; either way, missing key,
+    missing module, or bad HMAC fails CLOSED (no fallback allow).
+    Returns (ok, verified_contract, receipt_sha256). The caller must refuse
+    when ok is False without stamping anything.
+    """
+    prov = _intake_provenance()
+    if prov is not None and hasattr(prov, "contract_receipt_verified"):
+        ok, contract, reason = prov.contract_receipt_verified(run_dir)
+        digest = prov.receipt_sha256(run_dir)
+        if not ok or not digest:
+            return False, None, (reason or "operator contract receipt HMAC does not verify")
+        return True, contract, digest
+    # provenance helper absent (older provenance): verify via the bridge file.
+    bridge_path = (DEPT_ROOT / "intake" / "interview-app" / "bridge"
+                   / "intake_bridge.py")
+    if not bridge_path.is_file():
+        return False, None, ("operator contract verification unavailable; refusing")
+    try:
+        import importlib.util as _ilu  # noqa: PLC0415
+        spec = _ilu.spec_from_file_location("intake_bridge_auth004", str(bridge_path))
+        if spec is None or spec.loader is None:
+            return False, None, "operator contract verifier is unavailable"
+        mod = _ilu.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        receipt_path = run_dir / "working" / "interview" / "operator_contract.json"
+        envelope = json.loads(receipt_path.read_text(encoding="utf-8"))
+        contract = mod.verify_operator_contract_receipt(envelope)
+        import hashlib as _h  # noqa: PLC0415
+        return True, contract, _h.sha256(receipt_path.read_bytes()).hexdigest()
+    except Exception as exc:  # noqa: BLE001 -- fail closed, name the reason
+        return False, None, str(exc) or "operator contract receipt HMAC does not verify"
 
 
 def _provenance_mode() -> str:

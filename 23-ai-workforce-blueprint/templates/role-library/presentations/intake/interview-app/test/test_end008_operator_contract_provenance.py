@@ -18,6 +18,8 @@ Negative controls (the important half):
     refused, and the bridge never writes that evidence itself;
   * a tampered receipt still exits 6.
 """
+import hashlib
+import hmac
 import importlib.util
 import json
 import os
@@ -38,7 +40,18 @@ bridge = importlib.util.module_from_spec(spec)
 assert spec.loader
 spec.loader.exec_module(bridge)
 
-RECEIPT_HMAC = "end008-test-receipt-hmac"
+# INT-AUTH: synthetic-only test secret; fixture signs the explicit synthetic
+# contract with canonical HMAC, driver verifies with WEBHOOK_SECRET.
+_SYNTHETIC_SECRET = "auth004-synthetic-test-secret-only"
+
+def _canonical_bytes(contract: dict) -> bytes:
+    return json.dumps(contract, sort_keys=True, separators=(",", ":"),
+                      ensure_ascii=False).encode("utf-8")
+
+def _sign(contract: dict) -> str:
+    return hmac.new(_SYNTHETIC_SECRET.encode("utf-8"),
+                    _canonical_bytes(contract), hashlib.sha256).hexdigest()
+
 TASK_ID = "d4e05a2f-f83b-4e87-aabe-d5e31c43867b"
 EXECUTION_ID = "b4cc51f0-0abf-420a-bed2-9cfbb8650e83"
 CHAT_ID = "end008-requester"
@@ -108,6 +121,7 @@ def _run_env(monkeypatch):
     monkeypatch.setenv("PRESENTATION_REQUESTER_CHAT_ID", CHAT_ID)
     monkeypatch.setenv("PRESENTATION_REQUESTER_CHANNEL", "operator-delegated")
     monkeypatch.setenv("PRESENTATION_INTAKE_PROVENANCE", "enforce")
+    monkeypatch.setenv("WEBHOOK_SECRET", _SYNTHETIC_SECRET)
 
 
 def _run_dir(tmp_path, name="run"):
@@ -138,8 +152,9 @@ def test_positive_complete_contract_completes_and_every_answer_is_operator_contr
         tmp_path, monkeypatch):
     _run_env(monkeypatch)
     rd = _run_dir(tmp_path)
-    report = bridge.drive_operator_contract(contract(), rd, driver_path=DRIVER,
-                                            launch=False, receipt_hmac=RECEIPT_HMAC)
+    _c = contract()
+    report = bridge.drive_operator_contract(_c, rd, driver_path=DRIVER,
+                                            launch=False, receipt_hmac=_sign(_c))
     assert report["driver_complete"] is True
     receipt = rd / "working" / "interview" / "operator_contract.json"
     receipt_sha = bridge.hashlib.sha256(receipt.read_bytes()).hexdigest()
@@ -166,10 +181,11 @@ def test_negative_missing_required_turn_is_refused_and_writes_no_intake(
     answers = dict(COMPLETE_ANSWERS)
     answers.pop("goal_cta_feeling")
     rd = _run_dir(tmp_path)
+    _c = contract(answers=answers)
     with pytest.raises(RuntimeError) as refused:
-        bridge.drive_operator_contract(contract(answers=answers), rd,
+        bridge.drive_operator_contract(_c, rd,
                                        driver_path=DRIVER, launch=False,
-                                       receipt_hmac=RECEIPT_HMAC)
+                                       receipt_hmac=_sign(_c))
     message = str(refused.value)
     assert "incomplete" in message, message
     assert "missing turns" in message, message
@@ -184,10 +200,11 @@ def test_negative_omitted_defaults_without_acceptance_are_refused(
     for turn in DEFAULTABLE_TURNS:
         answers.pop(turn)
     rd = _run_dir(tmp_path)
+    _c = contract(answers=answers)
     with pytest.raises(RuntimeError) as refused:
-        bridge.drive_operator_contract(contract(answers=answers), rd,
+        bridge.drive_operator_contract(_c, rd,
                                        driver_path=DRIVER, launch=False,
-                                       receipt_hmac=RECEIPT_HMAC)
+                                       receipt_hmac=_sign(_c))
     message = str(refused.value)
     assert "default_acceptance" in message, message
     assert "fabricate" in message, message
@@ -203,10 +220,11 @@ def test_negative_named_acceptance_without_inbound_evidence_is_refused(
         answers.pop(turn)
     acceptance = {"msg_id": "msg-1", "chat_id": CHAT_ID, "text": "good"}
     rd = _run_dir(tmp_path)
+    _c = contract(answers=answers, acceptance=acceptance)
     with pytest.raises(ValueError) as refused:
-        bridge.drive_operator_contract(contract(answers=answers, acceptance=acceptance),
+        bridge.drive_operator_contract(_c,
                                        rd, driver_path=DRIVER, launch=False,
-                                       receipt_hmac=RECEIPT_HMAC)
+                                       receipt_hmac=_sign(_c))
     assert "not present in this run's inbound evidence" in str(refused.value)
     assert not (rd / "working" / "interview" / "inbound_messages.jsonl").exists()
 
@@ -220,10 +238,11 @@ def test_negative_acceptance_text_mismatch_is_refused(tmp_path, monkeypatch):
     path = _write_inbound(rd, text="change the price instead")
     before = path.read_bytes()
     acceptance = {"msg_id": "msg-1", "chat_id": CHAT_ID, "text": "good"}
+    _c = contract(answers=answers, acceptance=acceptance)
     with pytest.raises(ValueError) as refused:
-        bridge.drive_operator_contract(contract(answers=answers, acceptance=acceptance),
+        bridge.drive_operator_contract(_c,
                                        rd, driver_path=DRIVER, launch=False,
-                                       receipt_hmac=RECEIPT_HMAC)
+                                       receipt_hmac=_sign(_c))
     assert "text does not match" in str(refused.value)
     assert path.read_bytes() == before, "the bridge must never rewrite inbound evidence"
 
@@ -246,10 +265,11 @@ def test_negative_acceptance_with_matching_evidence_is_never_fabricated(
     path = _write_inbound(rd, text="good")
     before = path.read_bytes()
     acceptance = {"msg_id": "msg-1", "chat_id": CHAT_ID, "text": "good"}
+    _c = contract(answers=answers, acceptance=acceptance)
     try:
-        bridge.drive_operator_contract(contract(answers=answers, acceptance=acceptance),
+        bridge.drive_operator_contract(_c,
                                        rd, driver_path=DRIVER, launch=False,
-                                       receipt_hmac=RECEIPT_HMAC)
+                                       receipt_hmac=_sign(_c))
         completed = True
     except RuntimeError as exc:
         completed = False
@@ -275,9 +295,10 @@ def test_negative_tampered_receipt_still_exits_six(tmp_path, monkeypatch):
         return real_run(argv, *args, **kwargs)
 
     monkeypatch.setattr(bridge.subprocess, "run", tampering)
+    _c = contract()
     with pytest.raises(RuntimeError) as refused:
-        bridge.drive_operator_contract(contract(), rd, driver_path=DRIVER,
-                                       launch=False, receipt_hmac=RECEIPT_HMAC)
+        bridge.drive_operator_contract(_c, rd, driver_path=DRIVER,
+                                       launch=False, receipt_hmac=_sign(_c))
     assert "driver completion refused" in str(refused.value)
     proc = real_run([sys.executable, str(DRIVER), "--run-dir", str(rd), "--complete"],
                     capture_output=True, text=True, check=False)

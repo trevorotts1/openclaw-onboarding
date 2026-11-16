@@ -10,6 +10,8 @@ PD-004b lives on its own lane, so this branch's `scripts/` driver may not carry
 `--operator-contract` yet. A2 and A3 use the driver exactly as PD-004b wrote it,
 exported from its commit; once it is in main the on-disk driver is used as-is.
 """
+import hashlib
+import hmac
 import importlib.util
 import json
 import os
@@ -34,7 +36,19 @@ bridge = importlib.util.module_from_spec(spec)
 assert spec.loader
 spec.loader.exec_module(bridge)
 
-RECEIPT_HMAC = "pd107-test-receipt-hmac"
+# INT-AUTH: synthetic-only test secret. The driver verifies HMAC over
+# canonical(contract) with WEBHOOK_SECRET exactly as the bridge does; the
+# fixture signs the explicit synthetic contract with this value. Never a
+# live operator secret.
+_SYNTHETIC_SECRET = "auth004-synthetic-test-secret-only"
+
+def _canonical_bytes(contract: dict) -> bytes:
+    return json.dumps(contract, sort_keys=True, separators=(",", ":"),
+                      ensure_ascii=False).encode("utf-8")
+
+def _sign(contract: dict) -> str:
+    return hmac.new(_SYNTHETIC_SECRET.encode("utf-8"),
+                    _canonical_bytes(contract), hashlib.sha256).hexdigest()
 
 def contract():
     # Values are explicit non-commercial facts from the authenticated
@@ -123,6 +137,7 @@ def pd004b_driver(tmp_path: pathlib.Path) -> pathlib.Path:
 def _run_env(monkeypatch, **extra):
     monkeypatch.setenv("PRESENTATION_REQUESTER_CHAT_ID", "operator-test-route")
     monkeypatch.setenv("PRESENTATION_REQUESTER_CHANNEL", "operator-delegated")
+    monkeypatch.setenv("WEBHOOK_SECRET", _SYNTHETIC_SECRET)
     for key, value in extra.items():
         monkeypatch.setenv(key, value)
 
@@ -141,10 +156,11 @@ def test_pd107_a1_a_recorder_sees_the_flag_on_every_answer(tmp_path, monkeypatch
     rd = tmp_path / "recorder-run"
     # The recorder writes no intake, so the run stops after the driver calls.
     # The row is about what the recorder saw, not about what came after it.
+    _c = contract()
     with pytest.raises(Exception):
-        bridge.drive_operator_contract(contract(), rd,
+        bridge.drive_operator_contract(_c, rd,
                                        driver_path=root / "scripts" / "deck-intake-driver.py",
-                                       launch=False, receipt_hmac=RECEIPT_HMAC)
+                                       launch=False, receipt_hmac=_sign(_c))
     calls = [json.loads(line) for line in log.read_text(encoding="utf-8").splitlines()]
     answers = [call for call in calls if "--answer" in call]
     assert answers, f"the recorder saw no answer call: {calls}"
@@ -167,8 +183,9 @@ def test_pd107_a2_an_operator_contract_run_completes_under_enforce(tmp_path, mon
     _run_env(monkeypatch, PRESENTATION_INTAKE_PROVENANCE="enforce")
     driver = pd004b_driver(tmp_path)
     rd = tmp_path / "enforce-run"
-    report = bridge.drive_operator_contract(contract(), rd, driver_path=driver,
-                                            launch=False, receipt_hmac=RECEIPT_HMAC)
+    _c = contract()
+    report = bridge.drive_operator_contract(_c, rd, driver_path=driver,
+                                            launch=False, receipt_hmac=_sign(_c))
     assert report["driver_complete"] is True
     receipt = rd / "working" / "interview" / "operator_contract.json"
     receipt_sha = bridge.hashlib.sha256(receipt.read_bytes()).hexdigest()
@@ -200,9 +217,10 @@ def test_pd107_a3_one_changed_receipt_byte_exits_six(tmp_path, monkeypatch):
         return real_run(argv, *args, **kwargs)
 
     monkeypatch.setattr(bridge.subprocess, "run", tampering)
+    _c = contract()
     with pytest.raises(RuntimeError) as refused:
-        bridge.drive_operator_contract(contract(), rd, driver_path=driver,
-                                       launch=False, receipt_hmac=RECEIPT_HMAC)
+        bridge.drive_operator_contract(_c, rd, driver_path=driver,
+                                       launch=False, receipt_hmac=_sign(_c))
     assert "driver completion refused" in str(refused.value)
     proc = real_run([sys.executable, str(driver), "--run-dir", str(rd), "--complete"],
                     capture_output=True, text=True, check=False)

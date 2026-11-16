@@ -1275,6 +1275,11 @@ def drive_operator_contract(contract: dict, run_dir: pathlib.Path, *,
         "version": _OPERATOR_CONTRACT_VERSION,
         "source": "operator-delegated",
         "receipt_version": 1 if receipt_hmac else None,
+        # INT-AUTH: persist the EXACT received signed contract body so the
+        # AUTH004 verifier (receipt_version 1 + contract dict + HMAC over
+        # canonical(contract)) can authenticate it. receipt_hmac is stored
+        # unchanged — never re-signed, never recomputed here.
+        "contract": contract,
         "receipt_hmac": receipt_hmac,
         "contract_sha256": hashlib.sha256(_canonical_contract_bytes(contract)).hexdigest(),
         "task_id": contract["task_id"],
