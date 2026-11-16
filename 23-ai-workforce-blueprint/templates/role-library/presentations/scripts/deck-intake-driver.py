@@ -1249,6 +1249,13 @@ def _answer_defaults_review(args, run_dir: Path) -> int:
     back, so the agent applies the change with a normal --answer and re-asks.
     A crafted acceptance is a forged approval, so an acceptance without
     --owner-msg-id is refused.
+
+    PD-004c compat: an acceptance carried on the signed operator-contract
+    path (``--operator-contract``) stamps the receipt digest instead. The
+    receipt must still hash to the stored ``contract_sha256`` at ``--complete``
+    (PD-004b / PD-107), so tampering with the receipt still refuses. A bare
+    acceptance with neither ``--owner-msg-id`` nor ``--operator-contract`` is
+    still refused -- no approval is manufactured.
     """
     schema = load_question_schema()
     ledger = read_intake_ledger(run_dir)
@@ -1271,12 +1278,32 @@ def _answer_defaults_review(args, run_dir: Path) -> int:
             return 1
         return _emit_question(review, answers)
 
-    msg_id = getattr(args, "owner_msg_id", None)
-    if not msg_id:
+    msg_id = str(getattr(args, "owner_msg_id", None) or "").strip()
+    operator_contract = bool(getattr(args, "operator_contract", False))
+    if operator_contract and msg_id:
+        print(json.dumps({"error": "--operator-contract replaces "
+                                   "--owner-msg-id; give one, not both"}))
+        return 1
+    contract_stamp: Optional[Dict[str, Any]] = None
+    if operator_contract:
+        prov = _intake_provenance()
+        if prov is not None:
+            receipt_ok, digest = prov.contract_receipt_ok(run_dir), prov.receipt_sha256(run_dir)
+        else:
+            receipt = run_dir / "working" / "interview" / "operator_contract.json"
+            receipt_ok, digest = receipt.is_file(), None
+        if not receipt_ok or not digest:
+            print(json.dumps({"error": "--operator-contract needs "
+                                       "working/interview/operator_contract.json "
+                                       "carrying receipt_hmac"}))
+            return 1
+        contract_stamp = {"source": "operator-contract", "contract_sha256": digest}
+    if not msg_id and not operator_contract:
         print(json.dumps({
             "error": "accepting the defaults requires --owner-msg-id (the "
-                     "client's message id); an acceptance with no owner "
-                     "message id is a forged approval"}))
+                     "client's message id) or --operator-contract on the "
+                     "signed operator-contract path; an acceptance with no "
+                     "owner message id is a forged approval"}))
         return 1
 
     stamped = 0
@@ -1284,11 +1311,16 @@ def _answer_defaults_review(args, run_dir: Path) -> int:
     for rec in entries.values():
         if isinstance(rec, dict) and rec.get("defaulted") and id(rec) not in seen_ids:
             seen_ids.add(id(rec))
-            rec["default_accepted_msg_id"] = msg_id
+            if contract_stamp is not None:
+                rec.update({"defaulted": True, **contract_stamp})
+            else:
+                rec["default_accepted_msg_id"] = msg_id
             stamped += 1
+    view_stamp: Dict[str, Any] = (dict(contract_stamp) if contract_stamp is not None
+                                  else {"owner_msg_id": msg_id})
     entries[qid] = {"value": text, "validated": True, "source":
                     "deck-intake-driver", "answered_at": now_iso,
-                    "accepted": True, "owner_msg_id": msg_id,
+                    "accepted": True, **view_stamp,
                     "normalized": text, "answer": text}
     ledger["entries"] = entries
     write_intake_ledger(run_dir, ledger)

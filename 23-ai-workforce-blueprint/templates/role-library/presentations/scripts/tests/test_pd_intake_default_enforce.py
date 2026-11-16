@@ -157,13 +157,22 @@ _WALK_VALUES = {
     "want_motion_graphics": "yes",
     "want_audio_demo": "yes",
     "speech_speed_preference": "default",
+    #: PD-013's QUICK review turn: the client accepts the whole defaults list.
+    #: Fixture data, not a claim under test -- the rows judge the provenance
+    #: gate, never the answer text.
+    "defaults_review": "good",
 }
 
 def _walk(call, *, operator_contract: bool = False) -> None:
-    """Answer whatever the turn gate asks next until the interview is done."""
+    """Answer whatever the turn gate asks next until the interview is done.
+
+    PD-013: the QUICK ``defaults_review`` turn only clears on a plain
+    acceptance, and PD-004b refuses an acceptance that names no client
+    message. Non-operator-contract walks therefore accept with a real
+    ``--owner-msg-id`` (the message id is test data, never a claim under
+    test); operator-contract walks accept on the signed receipt path.
+    """
     extra = ["--operator-contract"] if operator_contract else []
-    # Walk the rest of the interview the way a client does, one ask at a time,
-    # until the turn gate reports the interview finished.
     for _ in range(80):
         step = call("--next")
         assert step.returncode == 0, step.stdout + step.stderr
@@ -173,7 +182,11 @@ def _walk(call, *, operator_contract: bool = False) -> None:
         qid = asked.get("question_id")
         assert qid, asked
         text = _WALK_VALUES.get(qid, "A plain answer to this question")
-        out = call("--answer", qid, text, *extra)
+        # PD-013 defaults_review needs an owner id or the contract path --
+        # extra already carries --operator-contract when requested.
+        review_extra = extra + (["--owner-msg-id", "defaults-review-1"]
+                                if not operator_contract and qid == "defaults_review" else [])
+        out = call("--answer", qid, text, *review_extra)
         assert out.returncode == 0, (qid, out.stdout + out.stderr)
     raise AssertionError("the interview turn gate never reported complete")
 
