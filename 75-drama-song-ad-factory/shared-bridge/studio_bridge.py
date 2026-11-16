@@ -344,7 +344,8 @@ def upload_file(path, *, channel=None, upload_kind=None, env=None, post=None, pu
     if not key:
         raise LedgerError("NO_KEY", "DS_KEY not set in env")
     body = upload_request(path, channel, upload_kind)
-    status, result = (post or _http)("POST", STUDIO_BASE_URL + "/api/studio/uploads",
+    base = (resolve_base_url(None, env) or STUDIO_BASE_URL).rstrip("/")
+    status, result = (post or _http)("POST", base + "/api/studio/uploads",
                                     key=key, body=body)
     if status == 0:
         raise LedgerError("TRANSPORT_UNKNOWN", "upload request outcome is unknown")
@@ -355,13 +356,15 @@ def upload_file(path, *, channel=None, upload_kind=None, env=None, post=None, pu
     upload_id = result.get("upload_id", "")
     parts = urllib.parse.urlsplit(upload.get("url", ""))
     # Validate the destination before sending any file bytes; no redirects.
-    import re
     expected_segment = UPLOAD_SEGMENT[upload_kind or "intake"]
+    segments = parts.path.split("/")
+    bucket = segments[1] if len(segments) > 1 else ""
     if (parts.scheme != "https" or parts.username or parts.password or parts.port
             or not re.fullmatch(r"[a-f0-9]{32}\.r2\.cloudflarestorage\.com", parts.hostname or "")
             or not re.fullmatch(r"clients/c-[a-f0-9]{32}/" + expected_segment
                                 + r"/u_[a-f0-9]{24}\.[a-z0-9]+", object_path)
-            or parts.path != "/zhw-drama-studio/" + object_path
+            or not bucket
+            or parts.path != "/" + bucket + "/" + object_path
             or upload_id != object_path.rsplit("/", 1)[-1].split(".")[0]
             or upload.get("content_type") != body["content_type"]):
         raise LedgerError("UPLOAD_RESPONSE_INVALID", "storage upload response is invalid")
@@ -1003,7 +1006,7 @@ def _board_epic(skill_root, order_id, title):
     try:
         from cc_sync import Outbox  # noqa: PLC0415
         from batch_mode.batch import STAGES  # noqa: PLC0415
-        out = Outbox()
+        out = Outbox(run_id=order_id)
         out.enqueue_create(job_id=order_id, show_name=title,
                            stages=[{"slug": s[0]} for s in STAGES],
                            workspace=out.workspace,
@@ -1641,6 +1644,8 @@ def _refresh_stored_line(led, order_id):
     line["claim_token"] = st.get("claim_token")
     led.write_receipt(order_id, "poll_line", line)
     return True
+
+
 # --- the order's uploaded files (S75-075) -----------------------------------
 
 #: The uploads read route (U-Z08): raw bytes for a box-held key, and
