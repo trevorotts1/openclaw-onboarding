@@ -1,3 +1,7 @@
+## [v2.1.62] - 2026-11-16 - test-only: the CI-wiring test also accepts the folded fast-guards guard (no behavior change)
+
+- `scripts/test_downsell_wrapper.py` `ThankYouTranslatorRunsInCiTests` now reads the folded script `scripts/ci/fast-guards.d/downsell-wrapper-pins.sh` and the `downsell-wrapper-pins` entry in `scripts/ci/fast-guards.json` for the same two assertions (the translator suite is a step of the job; the 82 and shared-contract paths trigger it). Tests are not part of the prover pin, so the pin is unchanged.
+
 ## [v2.1.60] - 2026-11-13 - recurring prices (weekly, monthly, quarterly, yearly) end to end
 
 - A client can now make any offer a repeating price. `scripts/launch_intake.py` reads the cadence word per offer or package (`billing`) and for the main offer from the interview's billing answer, records `recurring_interval` beside `billing_type: recurring`, and the plan summary shows it ("$49.00/month, billed monthly"); a cadence it cannot carry is a named missing fact, never one payment. Extra offers and packages no longer hard-code `one_time`.
