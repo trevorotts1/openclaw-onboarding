@@ -47,7 +47,12 @@ function renderQuestionLiteral(q) {
   const tail = [];
   if (q.key !== undefined) tail.push(`key: ${jsStr(q.key)}`);
   if (q.logo_on_slides) tail.push(`logo_on_slides: ${jsStr(q.logo_on_slides)}`);
-  if (q.conditional_on) tail.push(`conditional_on: { id: ${jsStr(q.conditional_on.id)}, equals: ${jsStr(q.conditional_on.equals)} }`);
+  if (q.conditional_on) {
+    const c = q.conditional_on;
+    tail.push(c.in
+      ? `conditional_on: { id: ${jsStr(c.id)}, in: [${c.in.map(jsStr).join(", ")}] }`
+      : `conditional_on: { id: ${jsStr(c.id)}, equals: ${jsStr(c.equals)} }`);
+  }
   if (q.allowed_values) tail.push(`allowed_values: [${q.allowed_values.map(jsStr).join(", ")}]`);
   if (q.allowed_values && q.value_labels) {
     tail.push(`value_labels: { ${q.allowed_values.map((v) => `${jsStr(v)}: ${jsStr(q.value_labels[v])}`).join(", ")} }`);
