@@ -228,15 +228,88 @@ def test_negative_acceptance_text_mismatch_is_refused(tmp_path, monkeypatch):
     assert path.read_bytes() == before, "the bridge must never rewrite inbound evidence"
 
 
+def test_negative_acceptance_chat_mismatch_is_refused(tmp_path, monkeypatch):
+    _run_env(monkeypatch)
+    answers = dict(COMPLETE_ANSWERS)
+    for turn in DEFAULTABLE_TURNS:
+        answers.pop(turn)
+    rd = _run_dir(tmp_path)
+    path = _write_inbound(rd, chat_id="intruder")
+    before = path.read_bytes()
+    acceptance = {"msg_id": "msg-1", "chat_id": CHAT_ID, "text": "good"}
+    with pytest.raises(ValueError) as refused:
+        bridge.drive_operator_contract(contract(answers=answers, acceptance=acceptance),
+                                       rd, driver_path=DRIVER, launch=False,
+                                       receipt_hmac=RECEIPT_HMAC)
+    assert "chat does not match" in str(refused.value)
+    assert path.read_bytes() == before, "the bridge must never rewrite inbound evidence"
+
+
+def test_positive_quick_defaults_complete_through_the_real_acceptance_message(
+        tmp_path, monkeypatch):
+    """#3774: one real acceptance proves every default AND completes the run.
+
+    The review row reuses the acceptance id PD-004b already credits to the
+    defaulted rows; the bridge marks only that action row `derived` so the
+    reuse rule does not refuse it. Every defaulted answer keeps the real id.
+    """
+    _run_env(monkeypatch)
+    answers = dict(COMPLETE_ANSWERS)
+    for turn in DEFAULTABLE_TURNS:
+        answers.pop(turn)
+    rd = _run_dir(tmp_path)
+    path = _write_inbound(rd, text="good")
+    before = path.read_bytes()
+    acceptance = {"msg_id": "msg-1", "chat_id": CHAT_ID, "text": "good"}
+    report = bridge.drive_operator_contract(contract(answers=answers, acceptance=acceptance),
+                                            rd, driver_path=DRIVER, launch=False,
+                                            receipt_hmac=RECEIPT_HMAC)
+    assert report["driver_complete"] is True
+    assert path.read_bytes() == before, "the bridge must never rewrite inbound evidence"
+    entries = _entries(rd)
+    defaulted = {k: v for k, v in entries.items()
+                 if isinstance(v, dict) and v.get("defaulted")}
+    assert defaulted, "the QUICK contract must have recorded defaults"
+    for key, entry in defaulted.items():
+        assert entry.get("default_accepted_msg_id") == "msg-1", (key, entry)
+        assert entry.get("source") != "derived", (key, entry)
+    review = entries["defaults_review"]
+    assert review["accepted"] is True and review["owner_msg_id"] == "msg-1"
+    assert review["source"] == "derived"
+
+
+def test_negative_invalid_interview_depth_is_refused_before_any_write(
+        tmp_path, monkeypatch):
+    _run_env(monkeypatch)
+    value = contract()
+    value["interview_depth"] = "sideways"
+    rd = _run_dir(tmp_path)
+    with pytest.raises(ValueError, match="interview_depth must be quick or in_depth"):
+        bridge.drive_operator_contract(value, rd, driver_path=DRIVER, launch=False,
+                                       receipt_hmac=RECEIPT_HMAC)
+    assert not rd.exists()
+
+
+def test_positive_contract_answer_wins_over_a_synthesized_value(tmp_path, monkeypatch):
+    """A supplied canonical answer is never overwritten by a synthesized one."""
+    _run_env(monkeypatch)
+    answers = dict(COMPLETE_ANSWERS)
+    answers["core_deliverables"] = "deliverable_set: operator chose workbook only"
+    rd = _run_dir(tmp_path)
+    bridge.drive_operator_contract(contract(answers=answers), rd, driver_path=DRIVER,
+                                   launch=False, receipt_hmac=RECEIPT_HMAC)
+    assert "operator chose workbook only" in str(_entries(rd)["core_deliverables"]["value"])
+
+
 def test_negative_acceptance_with_matching_evidence_is_never_fabricated(
         tmp_path, monkeypatch):
     """The bridge hands the real id to the driver; it never writes the evidence.
 
     With the merged PD-013/PD-004b driver, the single acceptance message proves
     both the defaults and the review record, and the driver's reuse rule refuses
-    the review record that reuses it. That repair belongs to the intake-driver
-    body (END002); this test pins the bridge's honest half: no evidence written,
-    the real id passed, and any refusal is the driver's own.
+    the review record that reuses it unless the bridge marks that action row
+    `derived` (#3774). This test pins the bridge's honest half: no evidence
+    written, the real id passed, and any refusal is the driver's own.
     """
     _run_env(monkeypatch)
     answers = dict(COMPLETE_ANSWERS)
