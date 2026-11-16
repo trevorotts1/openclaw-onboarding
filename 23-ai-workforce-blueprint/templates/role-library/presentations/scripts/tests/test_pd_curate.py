@@ -279,15 +279,19 @@ def _seed_auditable_bundle(run_dir: pathlib.Path, *, skip=()) -> None:
 
 def _write_waiver(run_dir: pathlib.Path, *, rule: str, deliverable: str | None,
                   quote: str, intra_run_path: str = "waivers.json") -> None:
-    """Write a client-sourced waiver; the quote is recorded in the client's intake."""
+    """Write a client-sourced waiver; the quote is recorded in the client's intake.
+
+    PD-202: an intake-field waiver must cite the question-bank field the client
+    answered to decline THAT gate (teleprompter -> teleprompter_declined_reason),
+    with a quote of at least 4 words / 20 characters."""
     intake = run_dir / "working" / "copy" / "intake.json"
     obj = json.loads(intake.read_text(encoding="utf-8"))
-    obj["special_instructions"] = f"Please {quote} for this deck."
+    obj["teleprompter_declined_reason"] = f"Please {quote} for this deck."
     intake.write_text(json.dumps(obj), encoding="utf-8")
     record = {
         "rule": rule,
         "source": "intake_field",
-        "intake_field": "special_instructions",
+        "intake_field": "teleprompter_declined_reason",
         "client_request_quote": quote,
         "captured_at": "2026-11-13T00:00:00Z",
         "captured_from": "operator",
@@ -304,7 +308,7 @@ def test_validated_waiver_skips_one_key_in_curation_and_self_audit(tmp_path):
     run_dir = tmp_path / "run-waiver"
     _seed_auditable_bundle(run_dir, skip=("teleprompter_html",))
     _write_waiver(run_dir, rule="teleprompter", deliverable="teleprompter_html",
-                  quote="skip the teleprompter")
+                  quote="skip the teleprompter app")
 
     result = curate.curate(run_dir)  # would raise AFBundleIncomplete without the skip
 
@@ -344,7 +348,7 @@ def test_unvalidated_waiver_record_is_not_a_skip(tmp_path):
     run_dir = tmp_path / "run-forged"
     _seed_auditable_bundle(run_dir, skip=("teleprompter_html",))
     _write_waiver(run_dir, rule="teleprompter", deliverable="teleprompter_html",
-                  quote="skip the teleprompter")
+                  quote="skip the teleprompter app")
     # Forge the quote AFTER the intake was written: the words are nobody's.
     forged = json.loads((run_dir / "waivers.json").read_text(encoding="utf-8"))
     forged[0]["client_request_quote"] = "the client said we may drop the teleprompter"
@@ -362,7 +366,7 @@ def test_waiver_in_working_folder_is_not_read(tmp_path):
     run_dir = tmp_path / "run-wrongfile"
     _seed_auditable_bundle(run_dir, skip=("teleprompter_html",))
     _write_waiver(run_dir, rule="teleprompter", deliverable="teleprompter_html",
-                  quote="skip the teleprompter", intra_run_path="working/waivers.json")
+                  quote="skip the teleprompter app", intra_run_path="working/waivers.json")
 
     with pytest.raises(curate.AFBundleIncomplete) as exc_info:
         curate.curate(run_dir)

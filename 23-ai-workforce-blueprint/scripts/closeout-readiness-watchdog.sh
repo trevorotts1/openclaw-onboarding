@@ -131,7 +131,12 @@ if [[ -f "$SCRIPT_DIR/lib-workforce-state.sh" ]]; then
 fi
 : "${WORKFORCE_PYTHON:=$(command -v python3)}"
 export WORKFORCE_PYTHON
-export PYTHONPATH="$SCRIPT_DIR${PYTHONPATH:+:$PYTHONPATH}"
+# Prepend SCRIPT_DIR unless already present (CLOSEOUT-1C): repeated sourcing
+# / nested invocations must not grow PYTHONPATH unboundedly.
+case ":${PYTHONPATH:-}:" in
+  *":$SCRIPT_DIR:"*) : ;;
+  *) export PYTHONPATH="$SCRIPT_DIR${PYTHONPATH:+:$PYTHONPATH}" ;;
+esac
 # Fail closed when the lib is missing (BU-115): without the lib, WORKFORCE_PYTHON
 # is unbound and every state writer below dies inside its own subshell, so the
 # watchdog would log an escalation it could never persist and never reach the
