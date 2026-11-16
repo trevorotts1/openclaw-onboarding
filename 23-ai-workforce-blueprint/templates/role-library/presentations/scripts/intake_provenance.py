@@ -45,6 +45,7 @@ Stdlib only. No network. Read-only apart from the findings file.
 from __future__ import annotations
 
 import hashlib
+import hmac
 import json
 import os
 import sys
@@ -98,14 +99,69 @@ def receipt_sha256(run_dir: Path) -> Optional[str]:
         return None
 
 
-def contract_receipt_ok(run_dir: Path) -> bool:
-    """The receipt exists AND carries the bridge's `receipt_hmac`."""
+def _canonical_contract_bytes(contract: dict) -> bytes:
+    return json.dumps(contract, sort_keys=True, separators=(",", ":"),
+                      ensure_ascii=False).encode("utf-8")
+
+
+def verify_operator_receipt_envelope(envelope: dict, *, secret: str | None = None) -> dict:
+    """Verify the bridge envelope exactly as intake_bridge does.
+
+    receipt_version must be 1, contract must be a dict, and receipt_hmac must
+    equal HMAC-SHA256(WEBHOOK_SECRET, canonical(contract)). Missing key,
+    non-dict contract, or wrong HMAC raise ValueError. Never affects I/O.
+    """
+    if not isinstance(envelope, dict) or envelope.get("receipt_version") != 1:
+        raise ValueError("operator contract receipt version is invalid")
+    contract = envelope.get("contract")
+    supplied = envelope.get("receipt_hmac")
+    key = (secret if secret is not None else os.environ.get("WEBHOOK_SECRET", "")).encode("utf-8")
+    if not key or not isinstance(contract, dict) or not isinstance(supplied, str):
+        raise ValueError("operator contract receipt is unsigned")
+    expected = hmac.new(key, _canonical_contract_bytes(contract), hashlib.sha256).hexdigest()
+    if not hmac.compare_digest(expected, supplied):
+        raise ValueError("operator contract receipt signature is invalid")
+    return contract
+
+
+def read_receipt(run_dir: Path) -> Optional[dict]:
     path = Path(run_dir) / RECEIPT_REL
     try:
         obj = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, ValueError):
+        return None
+    return obj if isinstance(obj, dict) else None
+
+
+def contract_receipt_ok(run_dir: Path) -> bool:
+    """The receipt is an authenticated envelope: version 1 + valid HMAC.
+
+    A nonempty receipt_hmac string alone is NOT proof (AUTH004). The HMAC is
+    recomputed over canonical(contract) with WEBHOOK_SECRET and compared in
+    constant time. Returns False on any unreadable/malformed receipt.
+    """
+    obj = read_receipt(run_dir)
+    if obj is None:
         return False
-    return isinstance(obj, dict) and bool(str(obj.get("receipt_hmac") or "").strip())
+    try:
+        verify_operator_receipt_envelope(obj)
+    except (ValueError, TypeError, AttributeError):
+        return False
+    return True
+
+
+def contract_receipt_verified(run_dir: Path) -> tuple[bool, Optional[dict], Optional[str]]:
+    """(ok, verified_contract_or_None, reason). Fail-closed when key missing."""
+    obj = read_receipt(run_dir)
+    if obj is None:
+        return False, None, "operator contract receipt is missing or unreadable"
+    try:
+        contract = verify_operator_receipt_envelope(obj)
+    except ValueError as exc:
+        return False, None, str(exc)
+    except (TypeError, AttributeError):
+        return False, None, "operator contract receipt is malformed"
+    return True, contract, None
 
 
 def _resolve(run_dir: Path, msg_id: str) -> Optional[Dict[str, Any]]:
@@ -209,6 +265,9 @@ def evaluate(run_dir: Path, ledger: Optional[Dict[str, Any]], *,
             if not stored_contract or not receipt or stored_contract != receipt:
                 fail(group, name,
                      "the operator contract receipt no longer matches this answer")
+            elif not contract_receipt_ok(run_dir):
+                fail(group, name,
+                     "the operator contract receipt HMAC does not verify")
             else:
                 proven += 1
             return
