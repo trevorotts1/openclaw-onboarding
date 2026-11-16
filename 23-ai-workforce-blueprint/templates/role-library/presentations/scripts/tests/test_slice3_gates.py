@@ -189,8 +189,8 @@ def _genuine_bundle(rd: pathlib.Path) -> None:
     dls = rd / "working" / "deliverables"
     dl.mkdir(parents=True, exist_ok=True)
     dls.mkdir(parents=True, exist_ok=True)
-    _write_pptx(dl / "demo-FINAL.pptx", 1_048_576)  # doctrine floor (split-brain fix, was 50_000)
-    _write_pdf(dl / "demo-FINAL.pdf", 51_200)
+    _write_pptx(dls / "demo-FINAL.pptx", 1_048_576)  # PD-315: canon is working/deliverables/ (was delivery/)
+    _write_pdf(dls / "demo-FINAL.pdf", 51_200)
     _write_pdf(dls / "PRESENTER-GUIDE.pdf", 51_200)  # doctrine floor (split-brain fix, was 20_000)
     speech = "This is the presenter speech. " * 300  # > 2048 bytes
     (dls / "PRESENTERS-SPEECH.md").write_text(speech)
@@ -198,7 +198,7 @@ def _genuine_bundle(rd: pathlib.Path) -> None:
     (dls / "PRESENTERS-SPEECH-FISH-TAGGED.md").write_text(
         "This [fish calm] is the presenter [fish slow] speech. [fish warm] " * 300)
     _write_mp3(dl / "PRESENTER-AUDIO.mp3", 512_000)  # doctrine floor (split-brain fix, was 100_000)
-    _write_png(dl / "infographic.png", 102_400)  # doctrine floor, Part 6 #8 (was 10_000)
+    _write_png(dls / "infographic.png", 102_400)  # PD-315: canon is working/deliverables/ (build_infographic.py writes it there; the delivery/ spelling was a phantom)
     _write_html(dls / "presenter-teleprompter.html", 20_000)  # doctrine floor (split-brain fix, was 5_000)
     _write_mp4(dl / "demo-WEBINAR.mp4", 1_048_576)  # doctrine floor (split-brain fix, was 500_000)
 
@@ -214,7 +214,7 @@ def test_deliverables_fabricated_rejected_genuine_passes(tmp_path):
     def fabricate(rd):
         _genuine_bundle(rd)
         # Decoy: swap the PDF for a plain text file (fails magic).
-        (rd / "working" / "delivery" / "demo-FINAL.pdf").write_bytes(
+        (rd / "working" / "deliverables" / "demo-FINAL.pdf").write_bytes(
             b"not a pdf at all" * 5000)
         # Missing: no audio at all (fails existence).
         (rd / "working" / "delivery" / "PRESENTER-AUDIO.mp3").unlink()
@@ -472,14 +472,10 @@ def test_phase_level_report_only_keeps_legacy_result(tmp_path):
 
     rd = _fresh(tmp_path)
     _genuine_bundle(rd)
-    # PD-064 also moved the paths the gate reads for the deck and infographic
-    # to working/deliverables/. Relocate them so the ONLY failing deliverable
-    # is the fabricated deck PDF below — the assertion stays on the magic
-    # check, never on a mere absence.
-    dl = rd / "working" / "delivery"
+    # PD-315: the bundle now writes the deck pair and infographic straight to
+    # the canon (working/deliverables/), so no relocation is needed here. The
+    # ONLY failing deliverable is the fabricated deck PDF below.
     dls = rd / "working" / "deliverables"
-    for name in ("demo-FINAL.pptx", "demo-FINAL.pdf", "infographic.png"):
-        (dl / name).rename(dls / name)
     # Fabricate: deck PDF is a decoy — P-BUNDLE-GATE's bundle check reads the
     # magic bytes itself, so it FAILs; report-only returns that verdict.
     (dls / "demo-FINAL.pdf").write_bytes(b"0" * 60_000)
