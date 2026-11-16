@@ -206,7 +206,17 @@ def should_ask(question: Dict[str, Any],
             return False, f"conditional_on {cond_id} is not truthy"
 
     # ask_if: {question_id, equals}, {question_id, contains}, etc.
+    #
+    # PD-014: a question marked ask_only_if_previously_wanted carries TWO
+    # gates in two DIFFERENT stores -- conditional_on ("this run's answer is
+    # no") and ask_if ("the client's preference record holds an earlier
+    # yes"). should_ask only ever reads this run's answers, so evaluating the
+    # ask_if half here demands the same toggle be both "yes" and "no" at once
+    # and leaves the question unaskable in every state. The prior-YES half is
+    # enforced where the preference record is readable, never here.
     ask_if = question.get("ask_if")
+    if ask_if and question.get("ask_only_if_previously_wanted"):
+        ask_if = None
     if ask_if:
         qid = ask_if.get("question_id", "")
         qval = answers.get(qid)
