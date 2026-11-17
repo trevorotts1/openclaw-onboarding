@@ -1,9 +1,8 @@
-## [v27.1.76]  -  2026-11-16  -  Presentations: craft-hold switch accepts the same values as craft_judgement; image-check author_model skipped with stamps off (PD-310b, PD-205b)
+## [v27.1.76]  -  2026-11-16  -  Presentations: craft-hold switch accepts the same values as craft_judgement (PD-310b)
 
 - Skill 23 v27.1.75 -> v27.1.76 (root version markers move together).
-- PD-310b: `PRESENTATION_CRAFT_ENGINE_HOLDS` turns the engine craft holds on for 1, true, on or yes in `phase_verifiers._craft_hold_reasons`, the same values `craft_judgement._engine_holds_active` accepts, so the two layers never disagree. The hold stays off unless the switch is set.
-- PD-205b: the P-IMAGE-QC check no longer demands `author_model` when `PRESENTATION_EXECUTION_STAMPS=0` (the documented rollback, where the dispatcher writes it as null), via `execution_stamp.stamps_enabled()`, matching `qc_aggregate` and `verifier_registry`.
-- Supersedes #3850 for these two pieces. Migration: none. Risk: LOW.
+- PD-310b: `PRESENTATION_CRAFT_ENGINE_HOLDS` turns the engine craft holds on for 1, true, on or yes in `phase_verifiers._craft_hold_reasons`, the same values `craft_judgement._engine_holds_active` accepts, so the two layers never disagree. Main had taken PD-310b with a literal "1"-only switch. The hold stays off unless the switch is set.
+- Supersedes #3850 for PD-310b. Migration: none. Risk: LOW.
 
 ## [v27.1.75]  -  2026-11-16  -  Batch #3842: guard-workflow fold into fast-guards, PD-202 closing gates and closeout-watchdog PYTHONPATH dedupe
 

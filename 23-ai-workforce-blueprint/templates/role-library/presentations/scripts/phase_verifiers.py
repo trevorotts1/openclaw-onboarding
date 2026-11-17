@@ -1502,17 +1502,7 @@ def _fix33_check_report(run_dir: Path, degraded: bool) -> Tuple[bool, List[str]]
 
     # --- PD-300's author_model must be present and differ from the grader ---
     author_model = _fix33_first_str(report, _FIX33_AUTHOR_KEYS)
-    try:
-        from presentation_job import execution_stamp as _es
-        _stamps_on = bool(_es.stamps_enabled())
-    except Exception:  # noqa: BLE001 — unknown rollback state: stay strict
-        _stamps_on = True
-    if not _stamps_on:
-        # PRESENTATION_EXECUTION_STAMPS=0 (documented rollback): the dispatcher
-        # writes author_model as null, exactly as qc_aggregate and
-        # verifier_registry already tolerate; do not demand it here.
-        pass
-    elif not author_model:
+    if not author_model:
         reasons.append(
             "AF-IMAGE-QC-UNIT: image_qc_report.json carries no author_model — "
             "the grader cannot be compared with the author without the author's "
