@@ -12648,9 +12648,9 @@ PREFLIGHT_REQUIRED = [
      "deck; non-signature decks with no signal pass untouched.",
      "Phase 0.14 — Signature Presentation Router (P-SP-CLAIM, prove_sp_routing)",
      _chk_sp_claim),
-    # Signature-Presentation (P-SP-INTAKE 0.15) — 8-Questions-in-ONE-block intake gate.
+    # Signature-Presentation (P-SP-INTAKE 0.15) — 8-Questions intake (asked one at a time, recorded as ONE atomic block) gate.
     (None,
-     "signature-presentation intake gate — the 8 Questions delivered in ONE block + a set "
+     "signature-presentation intake gate — the 8 Questions asked one at a time and committed as ONE atomic record + a set "
      "frame + q7 offer declared (AF-SP-8Q-MISSING / AF-SP-8Q-SPLIT / AF-SP-FRAME-UNSET / "
      "AF-SP-TYPE-MISMATCH / AF-SP-OFFER-UNDECLARED). DEFERS (no-op) unless intake.json "
      "deck_type == signature_presentation — non-signature decks behave exactly as before.",
