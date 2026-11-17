@@ -117,7 +117,7 @@ def test_a1_request_holds_one_image_part_of_the_fixture_bytes(tmp_path, monkeypa
 
     # the request the transport actually sends
     body = dispatcher.openai_compat_body(
-        "system", "grade slide 1", model="qwen2.5-vl-72b", max_tokens=64,
+        "system", "grade slide 1", model="glm-ocr", max_tokens=64,
         image=image)
     parts = body["messages"][1]["content"]
     assert [p["type"] for p in parts] == ["text", "image_url"]
@@ -128,7 +128,7 @@ def test_a1_request_holds_one_image_part_of_the_fixture_bytes(tmp_path, monkeypa
     # ... and the same bytes cross the dispatch seam into the transport
     calls: list = []
     monkeypatch.setattr(dispatcher, "_model_router",
-                        FakeRouter("openrouter", "qwen2.5-vl-72b"))
+                        FakeRouter("openrouter", "glm-ocr"))
     monkeypatch.setattr(dispatcher, "_openai_compat_complete", _recorder(calls))
     dispatcher.dispatch_complete("system", "grade slide 1", phase_id="P-IMAGE-QC",
                                  run_dir=run_dir, image=image)
@@ -208,7 +208,7 @@ def _stub_answers(n: int = 2):
             "needs_observed_text": True,
             "reviewer_role": "image-grounding-steward",
             "route_provider": "openrouter",
-            "route_model": "qwen2.5-vl-72b",
+            "route_model": "glm-ocr",
             "route_request_id": "req_img_1",
         }
         answer = json.dumps({
@@ -233,10 +233,13 @@ def test_a3_merged_report_carries_the_vision_provenance_and_the_step_passes(tmp_
         "slide 2: the words baked into the render",
     ]
     # ... and the report names the route that graded it, from the record
-    assert report["graded_by_model"] == "qwen2.5-vl-72b"
+    assert report["graded_by_model"] == "glm-ocr"
     assert report["graded_by_provider"] == "openrouter"
     assert report["request_id"] == "req_img_1"
 
+    # PD-205b/PD-300: the grader is compared with the author, so the author
+    # stamp (a different model) must be on the report.
+    report["author_model"] = "author-model-not-the-grader"
     # the human grounding sub-verdict (PD-206a's file) is run data, not code
     report["image_grounding"] = {"pass": True,
                                  "reviewed_by": "image-grounding-steward"}
