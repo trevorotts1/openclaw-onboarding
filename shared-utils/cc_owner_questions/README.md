@@ -12,8 +12,11 @@ Installed path: `~/.openclaw/skills/shared-utils/cc_owner_questions/cc_owner_que
 python3 cc_owner_questions.py open [--json]
 python3 cc_owner_questions.py match --text "<client message>" [--json]
 python3 cc_owner_questions.py answer --ref Q-ABC123 --text "<client reply, verbatim>" \
-  --source-message-ref "<inbound message id>" [--channel telegram|webchat]
+  --chat-id "<the client's chat id>" --source-message-ref "<inbound message id>" [--channel telegram|webchat]
 ```
+
+`--chat-id` and a bare message id are joined into `<channel>:<chat id>:<message id>`, the form the Command Center
+requires. A reference already in that form (`telegram:<chat id>:<message id>`) is passed through.
 
 `match` prints the `Q-XXXXXX` code when the message contains one; otherwise, when exactly one question is
 open, prints `single-open <ref> <question>` so the agent can confirm; otherwise `none` or `ambiguous N open`

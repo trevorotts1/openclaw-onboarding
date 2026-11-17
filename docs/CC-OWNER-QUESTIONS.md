@@ -19,7 +19,7 @@ back with `shared-utils/cc_owner_questions/cc_owner_questions.py` (see its READM
 1. The client replies: a quote-reply to the question, a message containing `Q-ABC123`, or a short yes or no
    right after the question.
 2. The agent does not route it as new work. It runs `answer --ref Q-ABC123 --text "<exact words>"
-   --source-message-ref "<real inbound message id>"`. With no code in hand it runs `match` first. One open
+   --chat-id <the client's chat id> --source-message-ref <the inbound message id>`. With no code in hand it runs `match` first. One open
    question and a reply that clearly answers it: confirm it, then answer. Two or more open and the reply is
    ambiguous: ask the client once which one.
 3. The Command Center interprets the words (YES, ok, go ahead accept the recommendation), applies them and
@@ -35,6 +35,12 @@ back with `shared-utils/cc_owner_questions/cc_owner_questions.py` (see its READM
 | 404 with no JSON (older build) | 4 | passes to the operator that the Command Center needs updating |
 | 422 message not verified | 7 | passes to the operator |
 | unreachable or no token | 3 | passes to the operator |
+
+The Command Center needs the message reference as `<channel>:<chat id>:<message id>`, for example
+`telegram:<chat id>:<message id>`. The helper builds it from `--chat-id` and `--source-message-ref`. A
+reference already in that three-part form is passed through unchanged. A bare message id with no `--chat-id`
+is refused (exit 2) before anything is sent. When the Command Center rejects a call, the helper prints its
+error code and any hint it gives.
 
 ## Rules
 

@@ -10,7 +10,7 @@ words back. It NEVER sends a Telegram or chat message itself.
 Subcommands
   open   [--json]
   match  --text TEXT [--json]
-  answer --ref Q-XXXXXX|ID --text TEXT --source-message-ref ID [--channel telegram|webchat] [--json]
+  answer --ref Q-XXXXXX|ID --text TEXT --chat-id CHAT_ID --source-message-ref MSG_ID [--channel telegram|webchat] [--json]
 
 Exit codes
   0  success (answer applied, listing printed, or a question matched)
@@ -107,6 +107,8 @@ class _NoRedirect(urllib.request.HTTPRedirectHandler):
 
 
 _OPENER = urllib.request.build_opener(_NoRedirect)
+SMR_FULL = re.compile(r"^(telegram|webchat):[^:\s]+:[^:\s]+$")
+SMR_PART = re.compile(r"^[^:\s]+$")
 REF_OK = re.compile(r"^(Q-[A-Z0-9]{4,12}|[A-Za-z0-9-]{8,64})$")
 
 
@@ -148,11 +150,14 @@ def _request(method, path, body=None):
 
 
 def _msg(parsed, fallback):
+    """The Command Center's error code plus any hint, message or detail text."""
+    parts = []
     if isinstance(parsed, dict):
-        for k in ("message", "error", "detail"):
-            if isinstance(parsed.get(k), str) and parsed[k]:
-                return parsed[k]
-    return fallback
+        for k in ("error", "hint", "message", "detail"):
+            v = parsed.get(k)
+            if isinstance(v, str) and v.strip() and v.strip() not in parts:
+                parts.append(v.strip())
+    return ": ".join(parts) if parts else fallback
 
 
 def _is_route_missing(status, parsed):
@@ -214,9 +219,24 @@ def cmd_answer(args):
     if not args.text.strip():
         print("The answer text is empty.", file=sys.stderr)
         return 2
-    if not args.source_message_ref.strip():
+    smr = args.source_message_ref.strip()
+    if not smr:
         print("--source-message-ref is required (the real inbound message id).", file=sys.stderr)
         return 2
+    if SMR_FULL.match(smr):
+        if smr.split(":", 1)[0] != args.channel:
+            print("--source-message-ref starts with a different channel than --channel.", file=sys.stderr)
+            return 2
+    else:
+        chat = (args.chat_id or "").strip()
+        if not chat:
+            print("--chat-id is required when --source-message-ref is only the message id "
+                  "(use the client's chat id for this message).", file=sys.stderr)
+            return 2
+        if not SMR_PART.match(chat) or not SMR_PART.match(smr):
+            print("--chat-id and --source-message-ref must have no spaces or colons.", file=sys.stderr)
+            return 2
+        smr = "%s:%s:%s" % (args.channel, chat, smr)
     ref = args.ref.strip()
     if ref[:2].upper() == "Q-":
         ref = ref.upper()
@@ -225,7 +245,7 @@ def cmd_answer(args):
         return 2
     path = "/api/owner-questions/%s/chat-answer" % urllib.parse.quote(ref, safe="")
     body = {"answer": args.text, "channel": args.channel,
-            "source_message_ref": args.source_message_ref}
+            "source_message_ref": smr}
     status, parsed, _ = _request("POST", path, body)
     if status == 200:
         if not (isinstance(parsed, dict) and parsed.get("success") is True):
@@ -238,9 +258,9 @@ def cmd_answer(args):
     if _is_route_missing(status, parsed):
         raise CCError(4, NEEDS_UPDATE)
     if status == 404:
-        raise CCError(5, "No open question matches %s." % ref)
+        raise CCError(5, "No open question matches %s (%s)." % (ref, _msg(parsed, "not found")))
     if status == 409:
-        raise CCError(6, "That question was already answered.")
+        raise CCError(6, "That question was already answered (%s)." % _msg(parsed, "conflict"))
     if status == 422:
         raise CCError(7, "The Command Center could not verify that chat message: %s" %
                       _msg(parsed, "message not verified"))
@@ -259,6 +279,7 @@ def build_parser():
     a.add_argument("--ref", required=True)
     a.add_argument("--text", required=True)
     a.add_argument("--source-message-ref", required=True)
+    a.add_argument("--chat-id", default="", help="the client's chat id for the inbound message")
     a.add_argument("--channel", default="telegram", choices=["telegram", "webchat"])
     a.add_argument("--json", action="store_true")
     return p

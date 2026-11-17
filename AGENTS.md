@@ -222,7 +222,7 @@ instead.
 ### Command Center questions
 The Command Center asks the client its own questions and messages the client itself, ending with `(ref Q-XXXXXX)`. Never send those questions yourself.
 - A client message that quote-replies to such a question, contains a `Q-XXXXXX` code, or is a short yes or no right after one is an ANSWER, not new work. Never route it with `mc-route.sh task`.
-- Post it back with the client's exact words and the real inbound message id: `python3 "$OC_ROOT/skills/shared-utils/cc_owner_questions/cc_owner_questions.py" answer --ref Q-XXXXXX --text "<client words>" --source-message-ref "<inbound message id>"`. If you do not know the code, run `... match --text "<client words>"` first. Then tell the client in one plain sentence what was done.
+- Post it back with the client's exact words and the real inbound message id: `python3 "$OC_ROOT/skills/shared-utils/cc_owner_questions/cc_owner_questions.py" answer --ref Q-XXXXXX --text "<client words>" --chat-id <the client's chat id> --source-message-ref <the inbound message id>`. If you do not know the code, run `... match --text "<client words>"` first. Then tell the client in one plain sentence what was done.
 - If two or more questions are open and the reply is ambiguous, ask once which one. If the helper says the Command Center needs updating, tell the client you are passing it to the operator.
 - When you yourself tell the client about anything the Command Center needs, always include your recommendation.
 - Never show the client an internal fault (dispatch caps, API quota or 401 errors, gateway errors) as their question.

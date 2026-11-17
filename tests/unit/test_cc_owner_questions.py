@@ -49,6 +49,9 @@ class Handler(BaseHTTPRequestHandler):
         if not Handler.mode["route"]:
             return self._send(404, raw=b"<html>not found</html>")
         st = Handler.mode["answer_status"]
+        if st == "hint":
+            return self._send(400, {"error": "invalid_source_message_ref",
+                                    "hint": "use channel:chat:message"})
         if st == "text":
             return self._send(200, raw=b"ok")
         if st == "nosuccess":
@@ -96,17 +99,17 @@ class CCQ(unittest.TestCase):
 
     def test_answer_posts_path_body_bearer(self):
         rc, out, err = self.run_h("answer", "--ref", "q-abc123", "--text", "YES please",
-                                  "--source-message-ref", "msg-77")
+                                  "--source-message-ref", "msg-77", "--chat-id", "CHAT1")
         self.assertEqual(rc, 0, err)
         method, path, auth, body = Handler.seen[0]
         self.assertEqual((method, path), ("POST", "/api/owner-questions/Q-ABC123/chat-answer"))
         self.assertEqual(auth, "Bearer " + TOKEN)
         self.assertEqual(body, {"answer": "YES please", "channel": "telegram",
-                                "source_message_ref": "msg-77"})
+                                "source_message_ref": "telegram:CHAT1:msg-77"})
 
     def test_answer_by_id_and_webchat(self):
         rc, _, err = self.run_h("answer", "--ref", "uuid-0001-aaaa", "--text", "no, do X",
-                                "--source-message-ref", "m1", "--channel", "webchat")
+                                "--source-message-ref", "m1", "--channel", "webchat", "--chat-id", "S1")
         self.assertEqual(rc, 0, err)
         self.assertEqual(Handler.seen[0][1], "/api/owner-questions/uuid-0001-aaaa/chat-answer")
         self.assertEqual(Handler.seen[0][3]["channel"], "webchat")
@@ -134,7 +137,7 @@ class CCQ(unittest.TestCase):
     def test_old_cc_404_says_needs_update(self):
         Handler.mode["route"] = False
         for args in (("open",), ("answer", "--ref", "Q-ABC123", "--text", "yes",
-                                 "--source-message-ref", "m")):
+                                 "--source-message-ref", "telegram:C1:m")):
             rc, out, err = self.run_h(*args)
             self.assertEqual(rc, 4)
             self.assertIn("needs updating", err)
@@ -144,21 +147,49 @@ class CCQ(unittest.TestCase):
         for status, code in ((404, 5), (409, 6), (422, 7), (500, 8)):
             Handler.mode["answer_status"] = status
             rc, _, err = self.run_h("answer", "--ref", "Q-ABC123", "--text", "yes",
-                                    "--source-message-ref", "m")
+                                    "--source-message-ref", "telegram:C1:m")
             self.assertEqual(rc, code, (status, err))
 
     def test_200_must_confirm_success(self):
         for mode in ("text", "nosuccess"):
             Handler.mode["answer_status"] = mode
             rc, out, err = self.run_h("answer", "--ref", "Q-ABC123", "--text", "yes",
-                                      "--source-message-ref", "m")
+                                      "--source-message-ref", "telegram:C1:m")
             self.assertEqual(rc, 8, mode)
             self.assertIn("did not confirm", err)
+
+    def test_three_part_passthrough(self):
+        rc, _, err = self.run_h("answer", "--ref", "Q-ABC123", "--text", "yes",
+                                "--source-message-ref", "telegram:C9:4521")
+        self.assertEqual(rc, 0, err)
+        self.assertEqual(Handler.seen[0][3]["source_message_ref"], "telegram:C9:4521")
+
+    def test_bare_id_without_chat_id_exits_2_no_request(self):
+        rc, _, err = self.run_h("answer", "--ref", "Q-ABC123", "--text", "yes",
+                                "--source-message-ref", "4521")
+        self.assertEqual(rc, 2)
+        self.assertIn("--chat-id", err)
+        self.assertEqual(Handler.seen, [])
+
+    def test_bad_parts_rejected(self):
+        for chat, msg in (("a:b", "1"), ("c", "1:2"), ("c d", "1")):
+            rc, _, _ = self.run_h("answer", "--ref", "Q-ABC123", "--text", "yes",
+                                  "--source-message-ref", msg, "--chat-id", chat)
+            self.assertEqual(rc, 2, (chat, msg))
+        self.assertEqual(Handler.seen, [])
+
+    def test_400_hint_printed(self):
+        Handler.mode["answer_status"] = "hint"
+        rc, _, err = self.run_h("answer", "--ref", "Q-ABC123", "--text", "yes",
+                                "--source-message-ref", "telegram:C1:m")
+        self.assertEqual(rc, 8)
+        self.assertIn("invalid_source_message_ref", err)
+        self.assertIn("use channel:chat:message", err)
 
     def test_bad_ref_rejected(self):
         for ref in ("../x", "a/b", "Q-AB", "x", "Q-ABC123/../.."):
             rc, _, _ = self.run_h("answer", "--ref", ref, "--text", "yes",
-                                  "--source-message-ref", "m")
+                                  "--source-message-ref", "telegram:C1:m")
             self.assertEqual(rc, 2, ref)
         self.assertEqual(Handler.seen, [])
 
@@ -167,7 +198,7 @@ class CCQ(unittest.TestCase):
         for st in (200, 409, 500):
             Handler.mode["answer_status"] = st
             outs.append(self.run_h("answer", "--ref", "Q-ABC123", "--text", "yes",
-                                   "--source-message-ref", "m", "--json"))
+                                   "--source-message-ref", "telegram:C1:m", "--json"))
         outs.append(self.run_h("open", "--json"))
         for rc, out, err in outs:
             self.assertNotIn(TOKEN, out + err)
@@ -180,7 +211,7 @@ class CCQ(unittest.TestCase):
     def test_usage_errors_exit_2(self):
         self.assertEqual(self.run_h("answer", "--ref", "Q-ABC123")[0], 2)
         self.assertEqual(self.run_h("answer", "--ref", "Q-ABC123", "--text", "  ",
-                                    "--source-message-ref", "m")[0], 2)
+                                    "--source-message-ref", "telegram:C1:m")[0], 2)
 
 
 class Redirect(unittest.TestCase):
@@ -222,7 +253,7 @@ class Redirect(unittest.TestCase):
                "CC_OWNER_QUESTIONS_URL": "http://127.0.0.1:%d" % redir.server_address[1]}
         try:
             for args in (["open"], ["answer", "--ref", "Q-ABC123", "--text", "yes",
-                                    "--source-message-ref", "m"]):
+                                    "--source-message-ref", "telegram:C1:m"]):
                 p = subprocess.run([sys.executable, "-I", str(HELPER), *args], env=env,
                                    capture_output=True, text=True)
                 self.assertNotEqual(p.returncode, 0)
