@@ -195,16 +195,20 @@ PY
 # the same answer and an image that changes its Python is reported, not silent.
 #
 # Installs:
-#   oc_pip_install <pip args...>  "<canonical> -m pip install --user ..."; on
-#     Linux, when the interpreter carries the PEP 668 EXTERNALLY-MANAGED marker,
-#     --break-system-packages is added and ONLY together with --user (writes go
-#     to the user site under the persistent home, never /usr). On Linux without
-#     an NVIDIA GPU, torch / torchvision / torchaudio (and openai-whisper's torch)
-#     come from the CPU-only index: no nvidia-* / CUDA wheels.
+#   oc_pip_install <pip args...>  "<canonical> -m pip install --user ..."; when
+#     the interpreter carries the PEP 668 EXTERNALLY-MANAGED marker (Debian's
+#     python, a Homebrew python on a Mac) --break-system-packages is added, ONLY
+#     together with --user (writes go to the user site, never /usr or Homebrew's
+#     own site-packages). A venv interpreter installs into its own venv. On Linux
+#     without an NVIDIA GPU, torch / torchvision / torchaudio (and openai-whisper's
+#     torch), also when named in a -r requirements file, come from the CPU-only
+#     index: no nvidia-* / CUDA wheels.
 #   oc_venv <dir>  creates (or repairs a hollow) venv on the canonical python:
 #     `uv venv --python <canonical> --seed` (Debian's 3.13 has no ensurepip, so
 #     `-m venv` makes hollow venvs there), `-m venv` only when ensurepip exists,
-#     and a loud failure otherwise. A healthy existing venv is left untouched.
+#     and a loud failure otherwise. A healthy existing venv is left untouched; a
+#     venv that has packages but no pip (a uv-managed venv) only gets pip seeded
+#     into it with its OWN interpreter, never rebuilt.
 #   oc_uv_tool_install <args...>  `uv tool install --python <canonical> ...`.
 # OC_UV pins the uv binary (empty = search PATH and the usual install paths).
 # Test seams (never set on a box): _OC_PY_SYSTEM (default /usr/bin/python3),
@@ -303,6 +307,10 @@ oc_python_record_stamp() {   # write <root>/.oc-python; reports a changed interp
   return 1
 }
 
+oc_python_is_venv() {   # 0 when <py> runs inside a virtual environment
+  "$1" -c 'import sys; sys.exit(0 if sys.prefix != sys.base_prefix else 1)' >/dev/null 2>&1
+}
+
 oc_python_externally_managed() {   # 0 when <py> carries the PEP 668 marker
   "$1" -c 'import os, sys, sysconfig
 sys.exit(0 if os.path.isfile(os.path.join(sysconfig.get_path("stdlib"), "EXTERNALLY-MANAGED")) else 1)' >/dev/null 2>&1
@@ -337,15 +345,37 @@ oc_pip_install() {
   local py plat a name skip_next=0 want_torch=0 have_torch="" cpu_specs=() base=() cons="" rc=0 v
   py="$(oc_python)" || return 1
   plat="$(oc_detect_platform 2>/dev/null)" || plat=""
+  # A venv interpreter installs into its own venv (--user is invalid there).
+  # Otherwise --user, plus the PEP 668 override ONLY when the interpreter carries
+  # the EXTERNALLY-MANAGED marker, on any platform (a Homebrew python on a Mac
+  # needs it exactly like Debian's does; the Mac installers passed it before).
   base=(--user --disable-pip-version-check)
-  if [ "$plat" = vps ] && oc_python_externally_managed "$py"; then
+  if oc_python_is_venv "$py"; then
+    base=(--disable-pip-version-check)
+  elif oc_python_externally_managed "$py"; then
     base=(--user --break-system-packages --disable-pip-version-check)
   fi
   if [ "$plat" = vps ] && ! oc_has_nvidia_gpu; then
     for a in "$@"; do
+      if [ "$skip_next" = req ]; then
+        # torch named inside a requirements file counts the same as on the command line
+        skip_next=0
+        if [ -f "$a" ]; then
+          while IFS= read -r v; do
+            v="${v%%#*}"; v="$(printf '%s' "$v" | tr -d '[:space:]')"
+            name="$(printf '%s' "${v%%[<>=!~;[]*}" | tr '[:upper:]' '[:lower:]')"; name="${name//_/-}"
+            case "$name" in
+              torch|torchvision|torchaudio) cpu_specs+=("$v"); want_torch=1 ;;
+              openai-whisper) want_torch=1 ;;
+            esac
+          done < "$a"
+        fi
+        continue
+      fi
       if [ "$skip_next" = 1 ]; then skip_next=0; continue; fi
       case "$a" in
-        -r|-c|-e|-i|-f|-t|--requirement|--constraint|--editable|--index-url|--extra-index-url|--find-links|--target|--prefix|--root|--platform|--python-version)
+        -r|--requirement) skip_next=req; continue ;;
+        -c|-e|-i|-f|-t|--constraint|--editable|--index-url|--extra-index-url|--find-links|--target|--prefix|--root|--platform|--python-version)
           skip_next=1; continue ;;
         -*) continue ;;
       esac
@@ -381,6 +411,21 @@ oc_venv() {   # oc_venv <dir>: a venv on the canonical python with pip in it
   local dir="${1:-}" py uv
   [ -n "$dir" ] || { echo "one-python: oc_venv needs a directory" >&2; return 1; }
   if [ -x "$dir/bin/python" ] && "$dir/bin/python" -m pip --version >/dev/null 2>&1; then
+    return 0
+  fi
+  if [ -x "$dir/bin/python" ] && "$dir/bin/python" -c 'import os, sys, sysconfig
+d = sysconfig.get_paths()["purelib"]
+seed = ("pip", "setuptools", "wheel", "_distutils_hack", "pkg_resources", "__pycache__", "distutils-precedence.pth", "_virtualenv")
+names = [n for n in os.listdir(d) if not n.split("-")[0].lower().startswith(seed)] if os.path.isdir(d) else []
+sys.exit(0 if names else 1)' >/dev/null 2>&1; then
+    # Not hollow: it holds packages, it just has no pip (a uv-managed venv).
+    # Seed pip with the venv's OWN interpreter; never re-point or rebuild it.
+    if uv="$(oc_uv)"; then
+      UV_PYTHON_DOWNLOADS=never "$uv" pip install --python "$dir/bin/python" pip >&2 || return $?
+    else
+      "$dir/bin/python" -m ensurepip >&2 || { echo "one-python: $dir has packages but no pip, and neither uv nor ensurepip can add it" >&2; return 1; }
+    fi
+    "$dir/bin/python" -m pip --version >/dev/null 2>&1 || { echo "one-python: could not seed pip into $dir" >&2; return 1; }
     return 0
   fi
   py="$(oc_python)" || return 1

@@ -125,6 +125,37 @@ def venv_create_argvs(base: str, env_dir: str) -> list[list[str]]:
     return out
 
 
+def is_venv(py: str) -> bool:
+    try:
+        return subprocess.run([py, "-c", "import sys; sys.exit(0 if sys.prefix != sys.base_prefix else 1)"],
+                              capture_output=True, timeout=60).returncode == 0
+    except (OSError, subprocess.SubprocessError):
+        return False
+
+
+def externally_managed(py: str) -> bool:
+    code = ("import os, sys, sysconfig; sys.exit(0 if os.path.isfile(os.path.join("
+            "sysconfig.get_path('stdlib'), 'EXTERNALLY-MANAGED')) else 1)")
+    try:
+        return subprocess.run([py, "-c", code], capture_output=True, timeout=60).returncode == 0
+    except (OSError, subprocess.SubprocessError):
+        return False
+
+
+def pip_install_argv(py: str, args: list[str]) -> list[str]:
+    """Same flags as oc_pip_install (torch CPU-index handling stays in the shell
+    resolver): a venv installs into itself; otherwise --user, plus
+    --break-system-packages ONLY with --user and only when <py> is externally
+    managed (Debian python, Homebrew python on a Mac)."""
+    if is_venv(py):
+        flags = ["--disable-pip-version-check"]
+    elif externally_managed(py):
+        flags = ["--user", "--break-system-packages", "--disable-pip-version-check"]
+    else:
+        flags = ["--user", "--disable-pip-version-check"]
+    return [py, "-m", "pip", "install"] + flags + list(args)
+
+
 if __name__ == "__main__":
     py = canonical_python()
     if not py:

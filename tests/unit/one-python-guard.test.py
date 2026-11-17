@@ -82,7 +82,8 @@ def run_scope_and_allowlist():
     for path, want in [("install.sh", True), ("25-video-creator/wire.sh", True),
                        ("shared-utils/lipsync-deps.sh", True), ("tests/unit/x.test.sh", False),
                        ("scripts/ci/fast-guards.d/x.sh", False), ("44-x/tests/test_qc_gate.sh", False),
-                       ("scripts/test-prereqs-schema-enforcement.sh", False), ("README.md", False)]:
+                       ("scripts/test-prereqs-schema-enforcement.sh", True),
+                       ("23-x/scripts/test-wiring-gate.sh", True), ("README.md", False)]:
         check("scope %s -> %s" % (path, want), G.in_scope(path) is want)
 
 

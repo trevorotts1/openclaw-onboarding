@@ -167,7 +167,7 @@ printf 'Metadata-Version: 2.1\nName: bf_pm_stub\nVersion: 1.2.0\n' > "$PKG/bf_pm
 printf 'import bf_pm_no_such_dependency\n' > "$PKG/bf_pm_broken/__init__.py"
 run_pm() { # run_pm <check-json> <pythonpath> ; sets RC and OUT
   local dir
-  dir="$(make_case "g$RANDOM" "{\"skill\":\"99-under-test\",\"prerequisites\":[{\"id\":\"pm-dep\",\"type\":\"python_module\",\"label\":\"pm\",\"check\":$1,\"severity\":\"required\",\"satisfy\":\"pip install it\"}]}")"
+  dir="$(make_case "g$RANDOM" "{\"skill\":\"99-under-test\",\"prerequisites\":[{\"id\":\"pm-dep\",\"type\":\"python_module\",\"label\":\"pm\",\"check\":$1,\"severity\":\"required\",\"satisfy\":\"install it\"}]}")"
   OUT="$(PYTHONPATH="$2" bash "$CHECKER" "$dir/skills/99-under-test" 2>&1)"
   RC=$?
 }
@@ -189,13 +189,13 @@ run_pm '{"module":"bf_pm_stub","minVersion":"9.9"}' "$PKG"
 run_pm '{"module":"bf_pm_broken"}' "$PKG"
 [[ $RC -eq 2 ]] && ok "half-installed package (its own dependency missing) -> unmet (rc 2)" \
                 || bad "half-installed package -> expected rc 2, got $RC :: $OUT"
-lint_fixture pmnokey '{"skill":"99-fixture","prerequisites":[{"id":"dep","type":"python_module","label":"dep","check":{"minVersion":"1.0"},"severity":"required","satisfy":"pip install it"}]}'
+lint_fixture pmnokey '{"skill":"99-fixture","prerequisites":[{"id":"dep","type":"python_module","label":"dep","check":{"minVersion":"1.0"},"severity":"required","satisfy":"install it"}]}'
 if [[ $LRC -eq 1 && "$LOUT" == *"enforce nothing"* ]]; then
   ok "lint rejects type=python_module whose check has no 'module'"
 else
   bad "lint should reject python_module without 'module', got rc $LRC :: $LOUT"
 fi
-lint_fixture pmok '{"skill":"99-fixture","prerequisites":[{"id":"dep","type":"python_module","label":"dep","check":{"module":"json"},"severity":"required","satisfy":"pip install it"}]}'
+lint_fixture pmok '{"skill":"99-fixture","prerequisites":[{"id":"dep","type":"python_module","label":"dep","check":{"module":"json"},"severity":"required","satisfy":"install it"}]}'
 [[ $LRC -eq 0 ]] && ok "lint accepts type=python_module with severity=required" \
                  || bad "lint should accept a required python_module, got rc $LRC :: $LOUT"
 

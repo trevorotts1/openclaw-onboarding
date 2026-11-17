@@ -9,7 +9,8 @@ interpreter, which is how Hostinger boxes grew a Debian 3.13 tree, a Homebrew
 3.14 user tree and Homebrew's own site-packages side by side.
 
 Scanned: every git-tracked *.sh / *.bash file outside tests, CI and archive
-folders. Comment lines (first non-blank character `#`) are ignored; echo /
+folders. A file is skipped for its folder, never for its name: an install script
+called test-*.sh outside a tests folder is still scanned. Comment lines (first non-blank character `#`) are ignored; echo /
 warn strings are NOT ignored, because a remediation line an agent copies is an
 install site too.
 
@@ -49,7 +50,6 @@ ALLOW_END = "# <<< OC-ONE-PYTHON END"
 EXCLUDE_DIR_PARTS = {"tests", "test", "fixtures", ".github", "QUALITY-CONTROL", "evidence",
                      "ledgers", "working", "live-run", "node_modules"}
 EXCLUDE_PREFIXES = ("scripts/ci/",)
-TEST_NAME = re.compile(r"(^test[-_].*|.*[._-]test\.(sh|bash)$|.*_test\.(sh|bash)$)")
 SHELL_EXT = (".sh", ".bash")
 
 _BARE_PIP = re.compile(r"\bpip(?:3(?:\.\d+)?)?\s+(?:install|uninstall)\b")
@@ -120,9 +120,7 @@ def in_scope(rel: str) -> bool:
     if rel.startswith(EXCLUDE_PREFIXES) or "ARCHIVED" in rel:
         return False
     parts = rel.split("/")
-    if any(p in EXCLUDE_DIR_PARTS for p in parts[:-1]):
-        return False
-    return not TEST_NAME.match(parts[-1])
+    return not any(p in EXCLUDE_DIR_PARTS for p in parts[:-1])
 
 
 def repo_files(root: str) -> list[str]:

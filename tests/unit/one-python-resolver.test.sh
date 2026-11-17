@@ -15,11 +15,13 @@
 #   R6  stamp written to <root>/.oc-python, read back, used when /usr/bin/python3 is gone,
 #       a changed interpreter is reported
 #   R7  oc_pip_install: <canonical> -m pip install --user; --break-system-packages
-#       only on Linux, only with the PEP 668 marker, always next to --user
-#   R8  torch / openai-whisper on Linux without a GPU: CPU-only index first, then a
-#       constraint pin; with a GPU: no CPU index
+#       only with the PEP 668 marker (Linux AND a Homebrew-python Mac, the argv the
+#       old Mac sites used), always next to --user; a venv interpreter gets neither
+#   R8  torch / openai-whisper on Linux without a GPU (also inside a -r file):
+#       CPU-only index first, then a constraint pin; with a GPU: no CPU index
 #   R9  oc_venv: uv venv --python <canonical> --seed; hollow venv repaired with
-#       --allow-existing; healthy venv untouched; no uv + no ensurepip = loud failure
+#       --allow-existing; healthy venv untouched; a pip-less venv WITH packages only
+#       gets pip seeded by its own interpreter; no uv + no ensurepip = loud failure
 #   R10 oc_uv_tool_install passes --python <canonical>
 #   M1  MUTATION: a resolver that falls back to PATH python3 on Linux FAILS R1
 # -----------------------------------------------------------------------------
@@ -46,6 +48,8 @@ cat > "$T/fakepy" <<'EOS'
 #!/usr/bin/env bash
 echo "$0 $*" >> "$CALLS"
 case "$*" in
+  *"sys.prefix != sys.base_prefix"*) [ -f "$(dirname "$0")/.isvenv" ]; exit $? ;;
+  *purelib*) [ -f "$(dirname "$0")/.haspkgs" ]; exit $? ;;
   *EXTERNALLY-MANAGED*) [ "${FAKE_EM:-0}" = 1 ]; exit $? ;;
   *"import ensurepip"*) [ "${FAKE_ENSUREPIP:-1}" = 1 ]; exit $? ;;
   *importlib.metadata*) n="torch"; case "$*" in *torchvision*) n=torchvision ;; *torchaudio*) n=torchaudio ;; esac
@@ -147,10 +151,20 @@ case "$line" in "$SYS_REAL -m pip install --user --break-system-packages "*reque
 line="$(grep -- '-m pip install' "$CALLS" | tail -1)"
 case "$line" in *--break-system-packages*) bad "R7 no marker but flag present: $line" ;;
   "$SYS_REAL -m pip install --user "*requests) ok "R7 Linux without the marker: --user only" ;; *) bad "R7 argv: $line" ;; esac
-: > "$CALLS"; run FAKE_UNAME=Darwin FAKE_EM=1 -- 'oc_pip_install requests' >/dev/null
+: > "$CALLS"; run FAKE_UNAME=Darwin FAKE_EM=1 -- 'oc_pip_install --quiet PyMuPDF' >/dev/null
 line="$(grep -- '-m pip install' "$CALLS" | tail -1)"
-case "$line" in *--break-system-packages*) bad "R7 Mac got the PEP 668 override: $line" ;;
-  "$BREW_PY -m pip install --user "*requests) ok "R7 Mac: --user, never the override (behaviour unchanged)" ;; *) bad "R7 Mac argv: $line" ;; esac
+case "$line" in "$BREW_PY -m pip install --user --break-system-packages --disable-pip-version-check --quiet PyMuPDF")
+  ok "R7 Mac Homebrew python with the marker: --user --break-system-packages (the argv Skill 59 / lipsync used before)" ;;
+  *) bad "R7 Mac+EM argv: $line" ;; esac
+: > "$CALLS"; run FAKE_UNAME=Darwin FAKE_EM=0 -- 'oc_pip_install requests' >/dev/null
+line="$(grep -- '-m pip install' "$CALLS" | tail -1)"
+case "$line" in *--break-system-packages*) bad "R7 Mac without the marker got the override: $line" ;;
+  "$BREW_PY -m pip install --user "*requests) ok "R7 Mac without the marker: --user only" ;; *) bad "R7 Mac argv: $line" ;; esac
+mkdir -p "$T/venvpy/bin"; cp "$T/fakepy" "$T/venvpy/bin/python"; touch "$T/venvpy/bin/.isvenv"
+: > "$CALLS"; run FAKE_EM=1 OC_PYTHON="$T/venvpy/bin/python" -- 'oc_pip_install requests' >/dev/null
+line="$(grep -- '-m pip install' "$CALLS" | tail -1)"
+case "$line" in *--user*|*--break-system-packages*) bad "R7 venv interpreter got --user/override: $line" ;;
+  "$T/venvpy/bin/python -m pip install "*requests) ok "R7 venv interpreter: installs into the venv, no --user, no override" ;; *) bad "R7 venv argv: $line" ;; esac
 if grep -vE '^[[:space:]]*#' "$COMMON" | grep -- '--break-system-packages' | grep -qv -- '--user'; then
   bad "R7 a --break-system-packages without --user exists in the resolver"
 else ok "R7 every --break-system-packages in the resolver sits next to --user"; fi
@@ -166,6 +180,12 @@ case "$last" in *" -c "*openai-whisper) ok "R8 then openai-whisper under a torch
 run -- 'oc_pip_install openai-whisper' >/dev/null
 grep -q -- '--index-url' "$CALLS" && bad "R8 GPU box still forced the CPU index" || ok "R8 GPU box: no CPU-only index"
 rm -f "$T/dev/nvidia0"
+: > "$CALLS"; rm -f "$CALLS".torch*; printf 'numpy\n# comment\ntorch==2.12.0  # pinned\n' > "$T/req.txt"
+run -- "oc_pip_install -r '$T/req.txt'" >/dev/null
+first="$(grep -- '-m pip install' "$CALLS" | head -1)"; last="$(grep -- '-m pip install' "$CALLS" | tail -1)"
+case "$first" in *"--index-url https://download.pytorch.org/whl/cpu torch==2.12.0") ok "R8 torch inside a -r file: CPU-only index first" ;;
+  *) bad "R8 -r first install: $first" ;; esac
+case "$last" in *" -c "*"-r $T/req.txt") ok "R8 then the requirements file under the torch pin" ;; *) bad "R8 -r second install: $last" ;; esac
 : > "$CALLS"; run FAKE_UNAME=Darwin -- 'oc_pip_install openai-whisper' >/dev/null
 grep -q -- '--index-url' "$CALLS" && bad "R8 Mac forced the CPU index" || ok "R8 Mac: PyPI torch unchanged (no CUDA wheels exist for macOS)"
 
@@ -181,6 +201,11 @@ uvline="$(grep '^uv venv' "$CALLS" | tail -1)"
   && ok "R9 hollow venv (no pip) repaired in place: $uvline" || bad "R9 hollow rc=$rc uv='$uvline'"
 : > "$CALLS"; run -- "oc_venv '$T/v1'" >/dev/null 2>&1
 grep -q '^uv' "$CALLS" && bad "R9 healthy venv was rebuilt" || ok "R9 healthy venv untouched"
+mkdir -p "$T/v5/bin"; cp "$T/fakepy" "$T/v5/bin/python"; touch "$T/v5/bin/.hollow" "$T/v5/bin/.haspkgs"
+: > "$CALLS"; run -- "oc_venv '$T/v5'" >/dev/null 2>&1
+if grep -q '^uv venv' "$CALLS"; then bad "R9 a pip-less venv WITH packages was rebuilt: $(cat "$CALLS")"
+elif grep -qx "uv pip install --python $T/v5/bin/python pip" "$CALLS"; then ok "R9 pip-less venv with packages: pip seeded by its own interpreter, not rebuilt"
+else bad "R9 pip-less venv: $(grep '^uv' "$CALLS")"; fi
 : > "$CALLS"; rc=0; err="$(run OC_UV="$T/no-uv" FAKE_ENSUREPIP=0 -- "oc_venv '$T/v3'" 2>&1)" || rc=$?
 [ "$rc" -ne 0 ] && [ ! -e "$T/v3" ] && case "$err" in *"would be a hollow venv"*) true ;; *) false ;; esac \
   && ok "R9 no uv + no ensurepip: loud failure, no hollow venv left" || bad "R9 no-uv rc=$rc err=$err"

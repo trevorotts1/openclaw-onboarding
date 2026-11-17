@@ -164,10 +164,11 @@ _lipsync_clear_pending() {
 _lipsync_pip_install() {
     # Runs pip in the caller's process (no subshell) so the exit code is pip's.
     # ONE-PYTHON: a venv interpreter installs into its own venv; anything else
-    # goes through oc_pip_install (<python> -m pip install --user, with the PEP
-    # 668 override only on Linux and only together with --user). The old bare
-    # system-site --break-system-packages tier is gone: it wrote into Homebrew's
-    # own site-packages on Hostinger boxes.
+    # goes through oc_pip_install (<python> -m pip install --user, plus the PEP
+    # 668 override when the interpreter is externally managed, on Linux AND on a
+    # Homebrew-python Mac, always together with --user). The old bare
+    # system-site --break-system-packages tier (no --user) is gone: it wrote
+    # into Homebrew's own site-packages on Hostinger boxes.
     local _py="$1" _out="" _rc=0
     if "$_py" -c 'import sys; sys.exit(0 if sys.prefix != sys.base_prefix else 1)' >/dev/null 2>&1; then
         _out="$("$_py" -m pip install --quiet --disable-pip-version-check --no-input "${LIPSYNC_PKG_SPECS[@]}" 2>&1)" || _rc=$?
@@ -184,7 +185,7 @@ _lipsync_pip_install() {
         *"No matching distribution"*|*"Could not find a version"*)
             _lipsync_fail "no mediapipe/opencv wheel for $("$_py" -c 'import sys; print("%d.%d" % sys.version_info[:2])' 2>/dev/null || echo this-python) on this platform (mediapipe ships py3-none wheels; check the network and the pip log above), then re-run this check." ;;
         *"externally-managed-environment"*)
-            _lipsync_fail "$_py refused the --user install as externally managed; on a Mac use a venv interpreter (LIPSYNC_PY=<venv>/bin/python), then re-run." ;;
+            _lipsync_fail "$_py refused the --user install as externally managed even with the PEP 668 override; use a venv interpreter (LIPSYNC_PY=<venv>/bin/python), then re-run." ;;
     esac
     return 2
 }
