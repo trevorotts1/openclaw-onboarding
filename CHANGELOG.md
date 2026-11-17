@@ -1,3 +1,9 @@
+## [v27.1.78]  -  2026-11-17  -  Client chat answers to Command Center owner questions are posted back (cc_owner_questions helper + CC_OWNER_QUESTIONS_V1 agent block)
+
+- New helper `shared-utils/cc_owner_questions/cc_owner_questions.py` (`open`, `match`, `answer`; Python 3 standard library only). The Command Center owns every owner question and pushes it to the client's chat with a recommendation and a `(ref Q-XXXXXX)` code; the helper lets the client's agent recognise the reply and post it back to `/api/owner-questions/{ref}/chat-answer`. It never sends a chat message, so there is no second relay and no double message. Older Command Center builds get a plain "needs updating" message, not a crash.
+- New `CC_OWNER_QUESTIONS_V1` agent block (repo `AGENTS.md`, `shared-utils/agents-doctrine-blocks.sh`, stamped by `scripts/apply-fleet-standards.sh`): a reply to such a question is an answer, never new work; always include a recommendation; never present internal faults to the client as their question.
+- Docs `docs/CC-OWNER-QUESTIONS.md`; tests `tests/unit/test_cc_owner_questions.py`. The helper ships with the rest of `shared-utils/` (install.sh copies the folder whole). Migration: none. Risk: LOW.
+
 ## [v27.1.77]  -  2026-11-16  -  PD-021 follow-up: retire the old "8 Questions in ONE block" wording
 
 - PD-021 already renamed the signature intake phase in `PIPELINE-MANIFEST.json`. This follow-up retires the same old wording everywhere else it still stood: the Signature Presentation Architect role file (header line and the intake pass-rate metric), the department how-to, the suggested-roles entry, the SOP-SIGPRES-00 law, the `build_deck.py` gate description and comment, the `phase_verifiers.py` and `deck-intake-driver.py` text, the Skill 51 description and the README row.

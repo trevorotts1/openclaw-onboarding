@@ -3678,6 +3678,19 @@ for _frg_candidate in "${ONBOARDING_DIR:-}/shared-utils/agents-doctrine-blocks.s
 done
 unset _frg_candidate
 
+# CC_OWNER_QUESTIONS_V1: the client's reply to a Command Center question is an answer, posted back
+# through shared-utils/cc_owner_questions. Same additive, idempotent, never-fails-the-run pattern.
+for _ccq_candidate in "${ONBOARDING_DIR:-}/shared-utils/agents-doctrine-blocks.sh" \
+                      "${_FS_SCRIPT_DIR:-}/../shared-utils/agents-doctrine-blocks.sh" \
+                      "$OC_ROOT/skills/shared-utils/agents-doctrine-blocks.sh"; do
+  if [ -f "$_ccq_candidate" ]; then
+    # shellcheck source=/dev/null
+    ( . "$_ccq_candidate"; declare -F stamp_cc_owner_questions >/dev/null 2>&1 && stamp_cc_owner_questions "$AGENTS_FILE" ) || echo "[apply-fleet-standards] CC_OWNER_QUESTIONS_V1 stamp skipped or failed (advisory)" >&2
+    break
+  fi
+done
+unset _ccq_candidate
+
 if [ "$OC_ROOT" = "/data/.openclaw" ]; then
   chown "$OC_USER:$OC_USER" "$AGENTS_FILE" 2>/dev/null || true
 fi
