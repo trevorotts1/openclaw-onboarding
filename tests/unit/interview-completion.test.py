@@ -255,5 +255,55 @@ class Completion(unittest.TestCase):
         self.assertFalse(json.loads(self.statefile.read_text())['interviewComplete'])
 
 
+class InstalledLayout(unittest.TestCase):
+    """Installed boxes: shared-utils under <root>/skills/, the reader under <root>/scripts/.
+
+    install.sh and update-skills.sh never create <root>/skills/scripts/, so the
+    reader must be found one level up (Cheryl, Donna, Trina and the operator box
+    answered UNKNOWN before this fix).
+    """
+    MODULES = ('interview_completion.py', 'resolve_db.py', 'service_env.py')
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.home = Path(self.tmp.name).resolve() / 'home'
+        self.oc = self.home / '.openclaw'
+        utils = self.oc / 'skills' / 'shared-utils'
+        utils.mkdir(parents=True)
+        for name in self.MODULES:
+            (utils / name).write_bytes((ROOT / 'shared-utils' / name).read_bytes())
+        self.module = utils / 'interview_completion.py'
+        self.statefile = Path(self.tmp.name) / 'state.json'
+        # Verified completion: BUILT/COMPLETE before any store is consulted, so
+        # the answer depends only on whether the reader was found.
+        self.statefile.write_text(json.dumps({'completionVerification': {'status': 'verified'}}))
+        self.env = {k: v for k, v in os.environ.items() if k not in ('OPENCLAW_ROOT', 'OC_CONFIG')}
+        self.env['HOME'] = str(self.home)
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def run_installed(self):
+        return subprocess.run([sys.executable, str(self.module), str(self.statefile)], env=self.env,
+                              cwd=self.tmp.name, capture_output=True, text=True, timeout=30)
+
+    def test_reader_only_at_openclaw_root_scripts_resolves(self):
+        scripts = self.oc / 'scripts'
+        scripts.mkdir()
+        (scripts / 'interview_status.py').write_bytes((ROOT / 'scripts' / 'interview_status.py').read_bytes())
+        self.assertFalse((self.oc / 'skills' / 'scripts').exists())
+        result = self.run_installed()
+        self.assertEqual(result.stdout.strip(), 'COMPLETE', result.stderr)
+        self.assertNotIn('reader not found', result.stderr)
+
+    def test_reader_absent_everywhere_is_unknown_and_names_every_path_searched(self):
+        result = self.run_installed()
+        self.assertEqual(result.stdout.strip(), 'UNKNOWN')
+        self.assertIn('[interview-completion] ERROR interview status reader not found', result.stderr)
+        self.assertIn(str(self.oc / 'scripts' / 'interview_status.py'), result.stderr)
+        self.assertIn(str(self.oc / 'skills' / 'scripts' / 'interview_status.py'), result.stderr)
+        self.assertIn('/data/.openclaw/scripts/interview_status.py', result.stderr)
+
+
 if __name__ == '__main__':
     unittest.main()
