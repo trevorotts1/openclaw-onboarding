@@ -1,3 +1,12 @@
+## [v27.1.76]  -  2026-11-16  -  Presentations: image check judged by capability, craft holds switch, one price-face rule (PD-205b, PD-205c, PD-310b, PD-090)
+
+- Skill 23 v27.1.75 -> v27.1.76 (root version markers move together). Four presentation units carried from conflicting pull requests (#3513, #3514, #3447, #3448); each unit's tests fail on the previous main and pass here.
+- PD-205b: the P-IMAGE-QC step check accepts a grader only if the model registry says it can read images, and (with execution stamps on) only if it differs from the author model. With PRESENTATION_EXECUTION_STAMPS=0 the author-model requirement is skipped, as in the other verifiers.
+- PD-205c: the image check is sent its slide and a contract of its own; a route that cannot read images makes zero calls and gives a plain reason.
+- PD-310b: the craft holds are called from the engine's step checks, off by default. PRESENTATION_CRAFT_ENGINE_HOLDS turns them on for 1, true, on or yes, the same values craft_judgement accepts.
+- PD-090: the QC procedure's AF-PRICE-FACE row states one price-face rule and keeps only the undeclared-figure clause as always-fail, with its test.
+- Migration: none; the PD-310b hold stays off unless the switch is set. Risk: LOW.
+
 ## [v27.1.74]  -  2026-11-15  -  Fish Audio Skill 30: verify the independently approved client voice and send one production model policy
 
 - Skill 30 v7.1.0 -> v7.1.1: resolve the partial Drama-3 migration left by PR #2754. One executable policy selects Drama-3 by default and permits S2.1 Pro only by explicit client/operator selection. Free, legacy, empty and unknown models fail; requests always send the model header.

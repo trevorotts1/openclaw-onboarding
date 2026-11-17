@@ -111,9 +111,9 @@ def test_a1_switch_unset_both_step_checks_unchanged(monkeypatch, run_dir, sentin
         assert pv.verify(sid, run_dir) == SENTINEL, sid
 
 
-def test_a1_switch_only_literal_one_turns_it_on(monkeypatch, run_dir, sentinel):
-    """A1: any value but the literal "1" is off — same outputs as unset."""
-    for value in ("", "0", "2", "true", "yes"):
+def test_a1_unrecognized_values_leave_the_switch_off(monkeypatch, run_dir, sentinel):
+    """A1: any value outside 1/true/on/yes is off — same outputs as unset."""
+    for value in ("", "0", "2", "off", "no", "false"):
         monkeypatch.setenv(SWITCH, value)
         for sid in STEPS:
             assert pv.verify(sid, run_dir) == SENTINEL, (value, sid)
@@ -164,3 +164,15 @@ def test_parity_the_two_step_ids_are_pd310s_human_verdict_phases():
 
 if __name__ == "__main__":
     sys.exit(pytest.main([__file__, "-q"]))
+
+
+@needs_pd310
+def test_a1_true_on_yes_turn_the_switch_on_like_craft_judgement(monkeypatch, run_dir, sentinel):
+    """The verifier layer accepts the same 1/true/on/yes values as
+    craft_judgement._engine_holds_active, so the two layers never disagree."""
+    for value in ("1", "true", "TRUE", "on", " yes "):
+        monkeypatch.setenv(SWITCH, value)
+        for sid in STEPS:
+            ok, reasons = pv.verify(sid, run_dir)
+            assert ok is False, (value, sid)
+            assert any(r.startswith("OPERATOR-REVIEW:") for r in reasons), (value, sid)

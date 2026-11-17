@@ -103,6 +103,19 @@ def test_A1e_missing_author_model_fails(tmp_path):
     assert any("no author_model" in r for r in reasons), reasons
 
 
+def test_A1g_stamps_off_does_not_demand_author_model(tmp_path, monkeypatch):
+    """PRESENTATION_EXECUTION_STAMPS=0 (documented rollback): the dispatcher
+    writes author_model null, so the row must not fail it; the same fixture
+    with stamps on still fails."""
+    rd = _run_dir(tmp_path, graded_by_model=VISION)  # no author_model
+    monkeypatch.setenv("PRESENTATION_EXECUTION_STAMPS", "0")
+    ok, reasons = pv._fix33_check_report(rd, degraded=False)
+    assert (ok, reasons) == (True, []), reasons
+    monkeypatch.delenv("PRESENTATION_EXECUTION_STAMPS")
+    ok, reasons = pv._fix33_check_report(rd, degraded=False)
+    assert ok is False and any("no author_model" in r for r in reasons), reasons
+
+
 def test_A1f_control_same_fixture_vision_grader_passes(tmp_path):
     """A1a's red is the grader's capability: swap only that one field and the
     identical fixture is green."""
