@@ -74,6 +74,43 @@ class Guard(unittest.TestCase):
         r = self.guard()
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
 
+    def _commit(self, msg="change"):
+        run(self.d, "git", "add", "-A"); run(self.d, "git", "commit", "-qm", msg)
+
+    def test_cc_pin_plus_bump_is_accepted(self):
+        """A Command Center re-pin (pin-cc-tag.py) moves cc-compat pinnedTag and
+        release-cohort cc_version alongside the bump: real change, accepted."""
+        for f, key in (("cc-compat.json", "pinnedTag"), ("release-cohort.json", "cc_version")):
+            p = self.d / f
+            d = json.loads(p.read_text())
+            d[key] = "v7.6.129"
+            p.write_text(json.dumps(d, indent=2) + "\n")
+        p = self.d / "docs/interview-launch-recovery.md"
+        p.write_text(p.read_text().replace("CC v7.6.128", "CC v7.6.129"))
+        self._commit("cc pin")
+        r = self.guard()
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+
+    def test_each_non_onboarding_semver_change_is_real(self):
+        cases = [
+            ("cc-compat.json", lambda d: d.update(minVersion="1.2.3")),
+            ("release-cohort.json", lambda d: d.update(n999_version="1.38.2")),
+        ]
+        for f, mut in cases:
+            with self.subTest(f=f):
+                run(self.d, "git", "reset", "-q", "--hard", "HEAD")
+                p = self.d / f
+                d = json.loads(p.read_text()); mut(d)
+                p.write_text(json.dumps(d, indent=2) + "\n")
+                self._commit()
+                self.assertEqual(self.guard().returncode, 0)
+                run(self.d, "git", "reset", "-q", "--hard", "HEAD~1")
+        with self.subTest(f="agent-browser script"):
+            p = self.d / "scripts/agent-browser-reaper.sh"
+            p.write_text(p.read_text() + "MIN_NODE=20.11.0\n")
+            self._commit()
+            self.assertEqual(self.guard().returncode, 0)
+
     def test_real_edit_inside_release_file_is_accepted(self):
         p = self.d / "update-skills.sh"
         p.write_text(p.read_text() + "echo a real behaviour change\n")

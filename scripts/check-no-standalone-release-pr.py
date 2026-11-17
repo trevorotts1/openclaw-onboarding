@@ -58,8 +58,6 @@ EXTRA_CEREMONY_FILES = {
     "docs/interview-launch-recovery.md",
 }
 
-SEMVER_RX = re.compile(r"v?\d+\.\d+\.\d+")
-
 
 def git(*args: str) -> subprocess.CompletedProcess:
     return subprocess.run(["git", *args], capture_output=True, text=True)
@@ -125,34 +123,51 @@ def marker_patterns(manifest_path: Path) -> dict[str, str]:
     return out
 
 
-def _normalize_json(node):
+def _version_rx(versions: list[str]):
+    """Regex matching exactly the given onboarding versions (with or without a
+    leading v), not as part of a longer dotted number."""
+    alts = "|".join(re.escape(v.lstrip("v")) for v in versions if v)
+    return re.compile(r"(?<!\d)(?<!\d\.)v?(?:" + alts + r")(?!\d)(?!\.\d)") if alts else None
+
+
+def _normalize_json(node, rx):
     if isinstance(node, str):
-        return SEMVER_RX.sub("X.Y.Z", node)
+        return rx.sub("X.Y.Z", node) if rx else node
     if isinstance(node, list):
-        return [_normalize_json(n) for n in node]
+        return [_normalize_json(n, rx) for n in node]
     if isinstance(node, dict):
-        return {k: _normalize_json(v) for k, v in node.items()}
+        return {k: _normalize_json(v, rx) for k, v in node.items()}
     return node
 
 
 def only_version_numbers_changed(file: str, base: str, head: str) -> bool:
-    """True when `file` differs between base and head ONLY in semver tokens
-    (vX.Y.Z / X.Y.Z). Covers every line bump-version.sh writes, including the
-    README / update-skills.sh relabel lines, and the JSON re-serialisation the
-    bumper does (so re-escaped characters do not count as a code change).
-    A file added or deleted by the PR is never ceremony."""
+    """True when `file` differs between base and head ONLY by the ONBOARDING
+    version moving from the base /version value to the head /version value
+    (with or without a leading v). Covers every line bump-version.sh writes,
+    including the README / update-skills.sh relabel lines and the bumper's JSON
+    re-serialisation. Any other semver change (a Command Center re-pin, a
+    minVersion, the n999 version, ...) is real code, not ceremony. A file added
+    or deleted by the PR is never ceremony, nor is a PR that does not move /version."""
     merge_base = git("merge-base", base, head)
     base_point = merge_base.stdout.strip() if merge_base.returncode == 0 and merge_base.stdout.strip() else base
+    old_v = git("show", f"{base_point}:version")
+    new_v = git("show", f"{head}:version")
+    if old_v.returncode != 0 or new_v.returncode != 0:
+        return False
+    old_ver, new_ver = old_v.stdout.strip(), new_v.stdout.strip()
+    if not old_ver or old_ver == new_ver:
+        return False
+    rx = _version_rx([old_ver, new_ver])
     old = git("show", f"{base_point}:{file}")
     new = git("show", f"{head}:{file}")
     if old.returncode != 0 or new.returncode != 0:
         return False
     if file.endswith(".json"):
         try:
-            return _normalize_json(json.loads(old.stdout)) == _normalize_json(json.loads(new.stdout))
+            return _normalize_json(json.loads(old.stdout), rx) == _normalize_json(json.loads(new.stdout), rx)
         except json.JSONDecodeError:
             pass
-    return SEMVER_RX.sub("X.Y.Z", old.stdout) == SEMVER_RX.sub("X.Y.Z", new.stdout)
+    return rx.sub("X.Y.Z", old.stdout) == rx.sub("X.Y.Z", new.stdout)
 
 
 def is_ceremony_only(file: str, pattern: str, base: str, head: str) -> bool:
