@@ -225,14 +225,27 @@ else
   for cand in "$OPENMONTAGE_DIR/.venv/bin/python" "${VIRTUAL_ENV:-}/bin/python"; do
     if [ -n "$cand" ] && [ -x "$cand" ]; then PY="$cand"; break; fi
   done
-  [ -z "$PY" ] && PY="$(command -v python3 || command -v python || true)"
+  # ONE-PYTHON (v27.1.80): no venv -> the box's ONE canonical interpreter
+  # (oc_python, platform/common.sh) with a --user install, never the python3 a
+  # `docker exec` PATH lists first.
+  PY_IS_VENV=1
+  if [ -z "$PY" ]; then
+    PY_IS_VENV=0
+    for _c in "$SCRIPT_DIR/../platform/common.sh" "$SCRIPT_DIR/../../platform/common.sh" \
+              "${OPENCLAW_ROOT:-/nonexistent}/platform/common.sh"; do
+      # shellcheck source=/dev/null
+      if [ -f "$_c" ]; then . "$_c"; PY="$(oc_python 2>/dev/null || true)"; break; fi
+    done
+  fi
   if [ -z "$PY" ]; then
     warn "No python interpreter found -- skipping optional Piper install. Cloud TTS remains primary. Not fatal."
   else
     info "using interpreter: $PY"
     PIPER_OK=0
     for attempt in 1 2; do
-      if "$PY" -m pip install --disable-pip-version-check "piper-tts==$PIPER_VERSION" >/dev/null 2>&1; then
+      if [ "$PY_IS_VENV" = 1 ]; then
+        "$PY" -m pip install --disable-pip-version-check "piper-tts==$PIPER_VERSION" >/dev/null 2>&1 && { PIPER_OK=1; break; }
+      elif oc_pip_install "piper-tts==$PIPER_VERSION" >/dev/null 2>&1; then
         PIPER_OK=1; break
       fi
       warn "piper-tts install attempt $attempt failed -- retrying ..."

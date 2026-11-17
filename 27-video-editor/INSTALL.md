@@ -94,8 +94,13 @@ python3 --version || python --version
 2. Install the required packages:
 
 ```bash
-python3 -m pip install -U yt-dlp scenedetect openai-whisper moviepy
+bash ~/.openclaw/skills/shared-utils/oc-python.sh pip-install -U yt-dlp scenedetect openai-whisper moviepy
 ```
+
+This installs into the box's ONE canonical Python (on a VPS the image's
+`/usr/bin/python3`, never the Homebrew python). On a box without an NVIDIA GPU
+torch (pulled in by `openai-whisper`) comes from the CPU-only build: no
+`nvidia-*` / CUDA wheels.
 
 Notes:
 - `openai-whisper` installs the `whisper` command used by `scripts/caption.sh`.
@@ -175,13 +180,13 @@ which ffmpeg
 1. Run:
 
 ```bash
-python3 -m pip show scenedetect
+"$(bash ~/.openclaw/skills/shared-utils/oc-python.sh path)" -m pip show scenedetect
 ```
 
 2. If it is not installed, run:
 
 ```bash
-python3 -m pip install -U scenedetect
+bash ~/.openclaw/skills/shared-utils/oc-python.sh pip-install -U scenedetect
 ```
 
 ### "whisper: command not found"
@@ -189,7 +194,7 @@ python3 -m pip install -U scenedetect
 1. Install Whisper:
 
 ```bash
-python3 -m pip install -U openai-whisper
+bash ~/.openclaw/skills/shared-utils/oc-python.sh pip-install -U openai-whisper
 ```
 
 2. Then verify:

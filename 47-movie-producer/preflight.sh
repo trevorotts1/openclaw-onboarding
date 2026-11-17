@@ -97,7 +97,7 @@ info "  Checking piper-tts (soft-fail: TTS falls back to cloud if missing)..."
 if python3 -c "import piper" >/dev/null 2>&1; then
   green "  [PASS] piper-tts importable"
 else
-  printf "\033[33m  [WARN] piper-tts not importable -- TTS will use cloud providers instead (install via: pip install piper-tts)\033[0m\n"
+  printf "\033[33m  [WARN] piper-tts not importable -- TTS will use cloud providers instead (install via: bash ~/.openclaw/skills/shared-utils/oc-python.sh pip-install piper-tts)\033[0m\n"
 fi
 
 # ---- Summary ----

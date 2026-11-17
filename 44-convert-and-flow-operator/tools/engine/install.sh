@@ -11,7 +11,24 @@ set -e
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 VENV_DIR="${VENV_DIR:-$HOME/.openclaw/tools/convert-and-flow-cli/.venv}"
-PY=${PYTHON:-python3}
+
+# ONE-PYTHON (v27.1.80): the venv is built by oc_venv (platform/common.sh) on the
+# box's ONE canonical interpreter. Repo layout: <skill>/tools/engine; installed
+# skill: <root>/skills/<skill>/tools/engine; CAF mirror: <root>/tools/<cli>/engine.
+OC_COMMON=""
+for _c in "$SCRIPT_DIR/../../../platform/common.sh" "$SCRIPT_DIR/../../../../platform/common.sh" \
+          "${OPENCLAW_ROOT:-/nonexistent}/platform/common.sh" "$HOME/.openclaw/platform/common.sh" \
+          /data/.openclaw/platform/common.sh; do
+  [ -f "$_c" ] && { OC_COMMON="$_c"; break; }
+done
+if [ -z "$OC_COMMON" ]; then
+  echo "ERROR: platform/common.sh (the one-python resolver) not found; refresh the onboarding bundle" >&2
+  exit 1
+fi
+# shellcheck source=/dev/null
+. "$OC_COMMON"
+if [ -n "${PYTHON:-}" ]; then OC_PYTHON="$(command -v "$PYTHON" 2>/dev/null || printf '%s' "$PYTHON")"; export OC_PYTHON; fi
+PY="$(oc_python)"
 
 echo "Convert and Flow CLI installer"
 echo "  venv -> $VENV_DIR"
@@ -24,16 +41,12 @@ echo "-> checking python..."
 # that hadn't separately provisioned a newer interpreter.
 "$PY" -c "import sys; assert sys.version_info >= (3, 9), 'need python 3.9+'"
 
-if [ ! -d "$VENV_DIR" ]; then
-  echo "-> creating venv..."
-  "$PY" -m venv "$VENV_DIR"
-fi
+echo "-> creating / checking venv on $PY ..."
+oc_venv "$VENV_DIR"
 
 echo "-> installing package..."
-# shellcheck disable=SC1091
-source "$VENV_DIR/bin/activate"
-pip install --upgrade pip -q
-pip install -e "$SCRIPT_DIR" -q
+"$VENV_DIR/bin/python" -m pip install --upgrade pip -q
+"$VENV_DIR/bin/python" -m pip install -e "$SCRIPT_DIR" -q
 
 # --- drift stamp: record the source version this binary was built from -------
 # Lets scripts/tool-drift-check.sh PROVE the installed caf matches skill source

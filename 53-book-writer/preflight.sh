@@ -158,7 +158,7 @@ RC=$?
 if command -v pandoc >/dev/null 2>&1 && python3 -c 'import weasyprint' >/dev/null 2>&1; then
     note "PDF toolchain present (pandoc + weasyprint)"
 else
-    note "PDF toolchain optional/absent — install with: brew install pandoc && pip3 install weasyprint (manuscript .md still delivers)"
+    note "PDF toolchain optional/absent, install with: brew install pandoc && bash ~/.openclaw/skills/shared-utils/oc-python.sh pip-install weasyprint (manuscript .md still delivers)"
 fi
 
 if [ "$RC" -ne 0 ]; then

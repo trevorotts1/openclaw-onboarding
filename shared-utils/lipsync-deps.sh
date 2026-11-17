@@ -25,11 +25,12 @@
 # Repair an already-broken box, one line:
 #   bash <(curl -fsSL https://raw.githubusercontent.com/trevorotts1/openclaw-onboarding/main/shared-utils/lipsync-deps.sh)
 #
-# Interpreter: skill 75 runs its lip_gate scripts with `python3` from PATH
-# (no venv in the skill), so that is the interpreter these packages must land
-# in. LIPSYNC_PY overrides the probe/install interpreter, but note the gate
-# itself still uses python3, so an override only helps when python3 points at
-# the same interpreter.
+# Interpreter: the ONE canonical python (oc_python in platform/common.sh,
+# v27.1.80): on a Linux box the image's /usr/bin/python3, which is what the
+# gateway runs skill 75's lip_gate scripts with; on a Mac python3 from PATH.
+# Never the Homebrew python3 a `docker exec` PATH lists first. LIPSYNC_PY
+# overrides the probe/install interpreter (a Homebrew python is still refused
+# on Linux by the install step).
 
 LIPSYNC_PKG_SPECS=("mediapipe>=0.10.14" "opencv-python-headless" "numpy")
 LIPSYNC_MODEL_NAME="face_landmarker.task"
@@ -67,12 +68,24 @@ _lipsync_model_path() { printf '%s' "$(_lipsync_skill_dir)/assets/$LIPSYNC_MODEL
 _lipsync_legacy_model_path() { printf '%s' "$(_lipsync_skill_dir)/scripts/core/lip_sync/lip_gate/$LIPSYNC_MODEL_NAME"; }
 _lipsync_marker() { printf '%s' "$(_lipsync_oc_root)/.lipsync-deps.pending"; }
 
+# Load the ONE-PYTHON resolver (platform/common.sh) from the repo layout, the
+# installed layout (<root>/skills/shared-utils -> <root>/platform) or the root.
+_lipsync_load_resolver() {
+    declare -F oc_python >/dev/null 2>&1 && return 0
+    local _here="" _c
+    _here="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" 2>/dev/null && pwd)"
+    for _c in "$_here/../platform/common.sh" "$_here/../../platform/common.sh" \
+              "$(_lipsync_oc_root)/platform/common.sh"; do
+        # shellcheck source=/dev/null
+        [ -f "$_c" ] && { . "$_c"; return 0; }
+    done
+    return 1
+}
+
 _lipsync_py() {
     if [ -n "${LIPSYNC_PY:-}" ] && [ -x "${LIPSYNC_PY}" ]; then printf '%s' "$LIPSYNC_PY"; return 0; fi
-    local _p=""
-    _p="$(command -v python3 2>/dev/null || true)"
-    if [ -n "$_p" ]; then printf '%s' "$_p"; return 0; fi
-    return 1
+    _lipsync_load_resolver || { _lipsync_fail "platform/common.sh (the one-python resolver) not found under $(_lipsync_oc_root); refresh the onboarding bundle"; return 1; }
+    oc_python
 }
 
 # Space-separated list of the three modules that do not import (empty = all ok).
@@ -150,34 +163,29 @@ _lipsync_clear_pending() {
 
 _lipsync_pip_install() {
     # Runs pip in the caller's process (no subshell) so the exit code is pip's.
+    # ONE-PYTHON: a venv interpreter installs into its own venv; anything else
+    # goes through oc_pip_install (<python> -m pip install --user, plus the PEP
+    # 668 override when the interpreter is externally managed, on Linux AND on a
+    # Homebrew-python Mac, always together with --user). The old bare
+    # system-site --break-system-packages tier (no --user) is gone: it wrote
+    # into Homebrew's own site-packages on Hostinger boxes.
     local _py="$1" _out="" _rc=0
-    _out="$("$_py" -m pip install --quiet --disable-pip-version-check --no-input "${LIPSYNC_PKG_SPECS[@]}" 2>&1)" || _rc=$?
+    if "$_py" -c 'import sys; sys.exit(0 if sys.prefix != sys.base_prefix else 1)' >/dev/null 2>&1; then
+        _out="$("$_py" -m pip install --quiet --disable-pip-version-check --no-input "${LIPSYNC_PKG_SPECS[@]}" 2>&1)" || _rc=$?
+    elif _lipsync_load_resolver; then
+        _out="$(OC_PYTHON="$_py" oc_pip_install --quiet --no-input "${LIPSYNC_PKG_SPECS[@]}" 2>&1)" || _rc=$?
+    else
+        _out="platform/common.sh (the one-python resolver) not found; refusing an install outside it"; _rc=1
+    fi
     if [ "$_rc" -eq 0 ]; then _lipsync_log "installed ${LIPSYNC_PKG_SPECS[*]} into $_py"; return 0; fi
 
-    # PEP 668 box: system python refuses a bare install. --user is the smallest
-    # step that does not touch system site-packages. _rc is reset per attempt so
-    # a fallback that succeeds is reported as the success it is.
-    _rc=0
-    _out="$("$_py" -m pip install --quiet --user --disable-pip-version-check --no-input "${LIPSYNC_PKG_SPECS[@]}" 2>&1)" || _rc=$?
-    if [ "$_rc" -eq 0 ]; then _lipsync_log "installed ${LIPSYNC_PKG_SPECS[*]} with --user into $_py"; return 0; fi
-
-    # Last resort on a Debian/Ubuntu container whose python is marked
-    # externally managed and where --user is also refused. Loudly announced:
-    # this is the only path that makes the gate runnable on such a box.
-    _rc=0
-    _out="$("$_py" -m pip install --quiet --break-system-packages --disable-pip-version-check --no-input "${LIPSYNC_PKG_SPECS[@]}" 2>&1)" || _rc=$?
-    if [ "$_rc" -eq 0 ]; then
-        _lipsync_log "installed ${LIPSYNC_PKG_SPECS[*]} with --break-system-packages (externally-managed python) into $_py"
-        return 0
-    fi
-
-    _lipsync_fail "pip install ${LIPSYNC_PKG_SPECS[*]} failed (pip exit $_rc) for $_py"
+    _lipsync_fail "package install of ${LIPSYNC_PKG_SPECS[*]} failed (pip exit $_rc) for $_py"
     printf '%s\n' "$_out" | sed 's/^/    /' >&2
     case "$_out" in
         *"No matching distribution"*|*"Could not find a version"*)
-            _lipsync_fail "mediapipe has no wheel for $("$_py" -c 'import sys; print("%d.%d" % sys.version_info[:2])' 2>/dev/null || echo this-python). The lip-sync gate runs as \`python3\`, so python3 on PATH must be a supported interpreter (3.10-3.12): install one and make python3 resolve to it, then re-run this check." ;;
+            _lipsync_fail "no mediapipe/opencv wheel for $("$_py" -c 'import sys; print("%d.%d" % sys.version_info[:2])' 2>/dev/null || echo this-python) on this platform (mediapipe ships py3-none wheels; check the network and the pip log above), then re-run this check." ;;
         *"externally-managed-environment"*)
-            _lipsync_fail "this python is externally managed and all three install modes were refused; install the packages with the box's package manager or point python3 at an interpreter without that marker." ;;
+            _lipsync_fail "$_py refused the --user install as externally managed even with the PEP 668 override; use a venv interpreter (LIPSYNC_PY=<venv>/bin/python), then re-run." ;;
     esac
     return 2
 }
@@ -197,7 +205,7 @@ ensure_lipsync_deps() {
 
     local _py=""
     if ! _py="$(_lipsync_py)"; then
-        _lipsync_fail "no python3 on PATH; cannot check or install mediapipe/opencv/numpy"
+        _lipsync_fail "no canonical python3 (one-python resolver); cannot check or install mediapipe/opencv/numpy"
         _lipsync_mark_pending "no-python3"
         return 1
     fi

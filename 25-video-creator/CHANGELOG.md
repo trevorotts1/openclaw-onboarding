@@ -1,4 +1,8 @@
 # Changelog — video-creator (Skill 25)
+## [7.1.6] - 2026-11-17 - ONE Python: the venv is built on the canonical interpreter (fixes the hollow venv)
+
+- `wire.sh` builds `<root>/venvs/video-creator` with `oc_venv` from `platform/common.sh` (`uv venv --python <canonical> --seed`) instead of `python3 -m venv`. Debian's python 3.13 has no ensurepip, so the old line left a hollow venv (no pip, no moviepy) on Hostinger boxes; a hollow venv already on a box is repaired in place on the next roll. Relocated-venv script repair uses `oc_venv_repair_scripts`. Part of repo v27.1.80.
+
 ## [7.1.5] - 2026-11-09 - G3 lockstep roll for the batch fold (no behaviour change)
 
 - Version bumped so the folded content carries the version G3 requires above main. No functional change.

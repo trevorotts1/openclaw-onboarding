@@ -89,6 +89,9 @@ if ! python3 -m venv "$T/venv" >"$T/venv.out" 2>&1; then
   bad "T3 could not create a clean venv: $(tail -n 2 "$T/venv.out")"
 else
   export PATH="$T/venv/bin:$PATH"
+  # v27.1.80 ONE-PYTHON: oc_ensure_jsonschema resolves the canonical interpreter
+  # (oc_python), not PATH order on Linux. Pin it to the clean venv explicitly.
+  export OC_PYTHON="$T/venv/bin/python3"
   export PIP_NO_INDEX=1 PIP_DISABLE_PIP_VERSION_CHECK=1 PIP_NO_INPUT=1
   export OPENCLAW_ROOT="$T/oc"; mkdir -p "$T/oc/skills"
   unset OPENCLAW_PREREQS_CHECK OC_CONFIG OC_SKILLS_DIR
@@ -206,7 +209,7 @@ PYEOF
     # an interpreter with no pip module: NOT_READY with one plain operator line, nothing bootstrapped
     if python3 -m venv --without-pip "$T/nopip" >/dev/null 2>&1; then
       rm -rf "$T/oc/pydeps" "$T/oc/logs"
-      rc=0; out="$(PATH="$T/nopip/bin:$PATH" oc_ensure_jsonschema --apply 2>&1)" || rc=$?
+      rc=0; out="$(PATH="$T/nopip/bin:$PATH" OC_PYTHON="$T/nopip/bin/python3" oc_ensure_jsonschema --apply 2>&1)" || rc=$?
       if [ "$rc" -eq 2 ] && has "$out" 'pip is not installed' && [ ! -d "$T/oc/pydeps" ] \
          && has "$(<"$T/oc/logs/launch-skills-readiness.json")" 'NOT_READY'; then
         ok "T3 no pip module: rc=2, one plain operator line, NOT_READY receipt, nothing bootstrapped"
