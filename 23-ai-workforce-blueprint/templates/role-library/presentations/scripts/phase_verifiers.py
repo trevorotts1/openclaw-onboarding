@@ -1502,7 +1502,17 @@ def _fix33_check_report(run_dir: Path, degraded: bool) -> Tuple[bool, List[str]]
 
     # --- PD-300's author_model must be present and differ from the grader ---
     author_model = _fix33_first_str(report, _FIX33_AUTHOR_KEYS)
-    if not author_model:
+    try:
+        from presentation_job import execution_stamp as _es
+        _stamps_on = bool(_es.stamps_enabled())
+    except Exception:  # noqa: BLE001 — unknown rollback state: stay strict
+        _stamps_on = True
+    if not _stamps_on:
+        # PRESENTATION_EXECUTION_STAMPS=0 (documented rollback): the dispatcher
+        # writes author_model as null, exactly as qc_aggregate and
+        # verifier_registry already tolerate; do not demand it here.
+        pass
+    elif not author_model:
         reasons.append(
             "AF-IMAGE-QC-UNIT: image_qc_report.json carries no author_model — "
             "the grader cannot be compared with the author without the author's "
@@ -5115,7 +5125,8 @@ _CRAFT_HOLD_SWITCH_ENV = "PRESENTATION_CRAFT_ENGINE_HOLDS"
 
 def _craft_hold_reasons(phase_id: str, run_dir) -> List[str]:
     """PD-310b: craft_judgement.engine_attestation_reasons for the two QC step
-    ids, only when PRESENTATION_CRAFT_ENGINE_HOLDS is exactly "1".
+    ids, only when PRESENTATION_CRAFT_ENGINE_HOLDS is 1/true/on/yes
+    (the same values craft_judgement._engine_holds_active accepts).
 
     With the switch off this imports nothing and returns [] — both step checks
     return exactly what they returned before. With it on, a missing independent
@@ -5125,7 +5136,9 @@ def _craft_hold_reasons(phase_id: str, run_dir) -> List[str]:
     Fails closed in every direction: with the switch on, a craft module that
     cannot be imported, a missing engine_attestation_reasons, or a hook that
     raises is an OPERATOR-REVIEW reason, never a pass."""
-    if os.environ.get(_CRAFT_HOLD_SWITCH_ENV) != "1":
+    # Same accepted values as craft_judgement._engine_holds_active: 1/true/on/yes.
+    if (os.environ.get(_CRAFT_HOLD_SWITCH_ENV) or "").strip().lower() not in (
+            "1", "true", "on", "yes"):
         return []
     if phase_id not in _CRAFT_HOLD_PHASES:
         return []
