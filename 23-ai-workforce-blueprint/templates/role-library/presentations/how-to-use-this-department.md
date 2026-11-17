@@ -101,7 +101,7 @@ and it will pick the right one, or you can ask for a specialist by name.
 | **Typography Architect** | Runs as a PF-DESIGN gate AFTER the Brand Steward emits the STYLE BLOCK and the Director emits arc_allocation.json. |
 | **Prompt Author** | You write each slide's rich image prompt to the prompt budget of the pinned image model (rule 12 of `07-kie-setup/references/kie-common-rules.md`)  -  the full per-slide specification that the renderer sends to the image model VERBATIM. |
 | **Attention Content Strategist** | Owns the strategic CONTENT SPINE of every deck at Phase P0B-PRIORITY (order 0.2), between intake and the arc. |
-| **Signature Presentation Architect** | Owns the Signature Presentation deck type end to end (Skill 51): the 4-phase methodology (Avatar 1-11 -> Signature Story 12-24 -> Transformational Teaching 25-60 -> Purpose Pitch 61-100, expanding to >=100 slides), the 8-Questions-in-ONE-block intake, frame selection (rulebook / vault / quest / original), and the structure ledger. |
+| **Signature Presentation Architect** | Owns the Signature Presentation deck type end to end (Skill 51): the 4-phase methodology (Avatar 1-11 -> Signature Story 12-24 -> Transformational Teaching 25-60 -> Purpose Pitch 61-100, expanding to >=100 slides), the 8-Questions intake (asked one at a time, recorded as ONE atomic block), frame selection (rulebook / vault / quest / original), and the structure ledger. |
 | **Image-Grounding Steward ("The Witness")** | You own one question no other role owns: does this slide's imagery depict a concrete moment from THIS client's specific method, message, book, or offer. |
 | **Per-Client Representation and Casting Director ("The Mirror")** | You own one question end to end: does the finished deck's cast match THIS client's actual audience? |
 | **Scripts Specialist** | Owns the text layer of every deck: the word-for-word narration track, the headline and body copy on each slide. |
@@ -194,7 +194,7 @@ and it will pick the right one, or you can ask for a specialist by name.
 
 **Signature Presentation Architect**
 
-- *What it is for:* Owns the Signature Presentation deck type end to end (Skill 51): the 4-phase methodology (Avatar 1-11 -> Signature Story 12-24 -> Transformational Teaching 25-60 -> Purpose Pitch 61-100, expanding to >=100 slides), the 8-Questions-in-ONE-block intake, frame selection (rulebook / vault / quest / original), and the structure ledger.
+- *What it is for:* Owns the Signature Presentation deck type end to end (Skill 51): the 4-phase methodology (Avatar 1-11 -> Signature Story 12-24 -> Transformational Teaching 25-60 -> Purpose Pitch 61-100, expanding to >=100 slides), the 8-Questions intake (asked one at a time, recorded as ONE atomic block), frame selection (rulebook / vault / quest / original), and the structure ledger.
 
 **Image-Grounding Steward ("The Witness")**
 

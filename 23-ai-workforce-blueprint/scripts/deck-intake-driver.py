@@ -2186,7 +2186,7 @@ def _run_sp_prover(intake_path: pathlib.Path) -> Tuple[int, str]:
     prover = find_sp_prover()
     if prover is None:
         return 3, ("AF-SP-PROVER-MISSING: prove_sp_intake.py not found beside skill 51 — "
-                   "cannot verify the 8-Questions-in-ONE-block gate; fail-closed.")
+                   "cannot verify the 8-Questions one-at-a-time, one-atomic-record gate; fail-closed.")
     import subprocess
     proc = subprocess.run(
         [sys.executable, str(prover), str(intake_path)],
