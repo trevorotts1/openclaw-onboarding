@@ -2724,7 +2724,7 @@ _verify_teleprompter.artifact_pattern = "working/deliverables/presenter-teleprom
 # exactly as before. Falls back to a filesystem check when build_deck is unavailable.
 # ---------------------------------------------------------------------------
 def _verify_sp_intake(run_dir: Path) -> Tuple[bool, List[str]]:
-    """P-SP-INTAKE: the 8-Questions-in-ONE-block intake gate (via _chk_sp_intake)."""
+    """P-SP-INTAKE: the 8-Questions intake (asked one at a time, recorded as ONE atomic block) gate (via _chk_sp_intake)."""
     fn = _bd_fn("_chk_sp_intake")
     if fn is None:
         return _check_json_nonempty(run_dir, "working/copy/sp_intake.json")

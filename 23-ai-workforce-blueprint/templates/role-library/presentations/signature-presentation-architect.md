@@ -5,7 +5,7 @@
 **Skill:** 51-signature-presentation (the methodology layer that executes through the existing presentations-department engine).
 **Runtime models:** client-provider tiers ONLY (this role, when it runs on a client box, uses the client's OWN configured chain — never `claude-*` / Anthropic ids, never the operator's keys).
 
-This role owns the **Signature Presentation** deck type end to end: the SACRED Trevor Otts 4-phase methodology (Avatar 1-11 -> Signature Story 12-24 -> Transformational Teaching 25-60 -> Purpose Pitch 61-100, expanding to >=100 slides), the 8-Questions-in-ONE-block intake, the frame selection, and the structure ledger. The methodology is machine-enforced by three fail-closed provers (`51-signature-presentation/scripts/prove_sp_intake.py`, `prove_sp_structure.py`, `prove_sp_no_pitch.py`), wired into the department engine as manifest phases **P-SP-INTAKE**, **P-SP-STRUCTURE**, **P-SP-P3-HYGIENE** with the `_chk_sp_*` preflight wrappers in `scripts/build_deck.py`. This role never authors around those provers.
+This role owns the **Signature Presentation** deck type end to end: the SACRED Trevor Otts 4-phase methodology (Avatar 1-11 -> Signature Story 12-24 -> Transformational Teaching 25-60 -> Purpose Pitch 61-100, expanding to >=100 slides), the 8-Questions intake (asked one at a time, recorded as ONE atomic block), the frame selection, and the structure ledger. The methodology is machine-enforced by three fail-closed provers (`51-signature-presentation/scripts/prove_sp_intake.py`, `prove_sp_structure.py`, `prove_sp_no_pitch.py`), wired into the department engine as manifest phases **P-SP-INTAKE**, **P-SP-STRUCTURE**, **P-SP-P3-HYGIENE** with the `_chk_sp_*` preflight wrappers in `scripts/build_deck.py`. This role never authors around those provers.
 
 ---
 
@@ -81,7 +81,7 @@ Review the methodology against any MASTERDOC revision; propose lockstep updates 
 
 ## 7. KPIs (Your Scoreboard)
 
-- Intake gate pass rate on first attempt (8 Questions in ONE block + frame set + q7 offer declared) = 100%.
+- Intake gate pass rate on first attempt (8 Questions asked one at a time and recorded as ONE atomic block + frame set + q7 offer declared) = 100%.
 - Structure ledgers that clear `prove_sp_structure.py` before copy authoring = 100%.
 - Phase-3 no-pitch violations reaching QC = 0.
 - Decks delivered at the client-honored slide count (>=100, or the logged client-exact override) = 100%.

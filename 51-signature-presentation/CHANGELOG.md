@@ -1,4 +1,8 @@
 # Changelog - 51 Signature Presentation (51-signature-presentation)
+## [2.1.12] - 2026-11-16 - PD-021 follow-up: retire the old "8-Questions-in-one-block" wording
+
+- `SKILL.md` description now says the 8 Questions are asked one at a time and recorded as one atomic block, matching the manifest wording PD-021 already shipped. Wording only; no prover or behaviour change.
+
 ## [2.1.11] - 2026-11-14 - PD-025: skill.json re-synced to the skill's own version line
 
 - `skill.json` had drifted to 2.1.9 while `skill-version.txt` and the `SKILL.md` frontmatter said 2.1.10, so anything reading `skill.json` shipped a version nobody meant. All three records now read 2.1.11. No behaviour change.

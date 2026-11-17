@@ -73,7 +73,7 @@ On a client box the method uses the **client's own configured providers and keys
 ---
 
 ## 7. CROSS-REFERENCES
-- **SOP-SIGPRES-01** — the 8-Questions-in-ONE-block intake + frame selection (the gate that unlocks writing).
+- **SOP-SIGPRES-01** — the 8-Questions intake (asked one at a time, recorded as ONE atomic block) + frame selection (the gate that unlocks writing).
 - **SOP-SIGPRES-02 / -03 / -04 / -05** — Phases 1–4, one doc each.
 - **SOP-SIGPRES-06** — the four frames, the hook doctrine, and the structure gate.
 - **SOP-MODE-00** — the three creation modes (the signature deck type is additive to the mode decision).
