@@ -84,11 +84,20 @@ The written block (shape):
 `install.sh` (Step 6.6) installs `faster-whisper` with a container-correct order. **`apt` /
 `apt-get` is a brew shim on Hostinger and brew is OFF PATH — it is NOT used here.**
 
-1. `uv tool install faster-whisper` — preferred (clean, isolated).
-2. `pip3 install --user faster-whisper --break-system-packages` — fallback.
-3. `/data/linuxbrew/.linuxbrew/bin/python3 -m pip install faster-whisper` — last resort (explicit path).
+**ONE Python (v27.1.80).** Every Python install on this box uses the ONE canonical
+interpreter, the image's Debian `/usr/bin/python3` (recorded in `/data/.openclaw/.oc-python`).
+**Never use the Homebrew python** (`/data/linuxbrew/.linuxbrew/bin/python3`, python@3.14):
+it is a different interpreter with its own package tree, and installs made with it are
+invisible to the agent.
 
-If all three fail, transcription falls back to Groq/OpenAI (cloud) if those keys are present,
+1. `bash /data/.openclaw/skills/shared-utils/oc-python.sh tool-install whisper-ctranslate2`
+   Preferred, it runs `uv tool install --python /usr/bin/python3.13 whisper-ctranslate2`
+   (isolated, no torch, so no CUDA wheels).
+2. `bash /data/.openclaw/skills/shared-utils/oc-python.sh pip-install faster-whisper`
+   Fallback, it runs `/usr/bin/python3.13 -m pip install --user ...` (the PEP 668 override is
+   added by the resolver, only together with `--user`).
+
+If both fail, transcription falls back to Groq/OpenAI (cloud) if those keys are present,
 and the installer warns with the manual install command.
 
 ---
@@ -96,8 +105,8 @@ and the installer warns with the manual install command.
 ## Verifying
 
 ```bash
-# Is faster-whisper importable inside the container?
-python3 -c "import faster_whisper; print('faster-whisper OK')"
+# Is faster-whisper importable by the ONE canonical interpreter?
+"$(cat /data/.openclaw/.oc-python)" -c "import faster_whisper; print('faster-whisper OK')"
 
 # Is the config block present?
 python3 - <<'PY'

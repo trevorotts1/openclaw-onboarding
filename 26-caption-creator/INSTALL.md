@@ -71,8 +71,13 @@ ffmpeg -version
 2. Run:
 
 ```bash
-pip install --upgrade openai-whisper
+bash ~/.openclaw/skills/shared-utils/oc-python.sh pip-install --upgrade openai-whisper
 ```
+
+This installs into the box's ONE canonical Python (on a VPS the image's
+`/usr/bin/python3`, never the Homebrew python). On a box without an NVIDIA GPU
+it installs the CPU-only torch build first, so no multi-GB `nvidia-*` / CUDA
+wheels are downloaded.
 
 3. Verify:
 

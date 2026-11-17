@@ -112,12 +112,14 @@ Never install into a venv the skill is not launched from. If the box has more
 than one Python, launch the skill and this preflight with one and the same
 interpreter every time; `sys.executable` in the repair line is that one.
 
-If `pip install` stops with `No matching distribution found` (mediapipe publishes
-no CPython 3.14 wheel at the time of writing), build a 3.13 venv and run the
-skill from it, or the gate stays MISSING on the bare interpreter:
+If `pip install` stops with `No matching distribution found`, build a venv on the
+box's ONE canonical interpreter and run the skill from it, or the gate stays
+MISSING on the bare interpreter. Never `python3.13 -m venv` / `python3 -m venv`:
+Debian's python has no ensurepip, so that makes a hollow venv with no pip. The
+resolver builds it with `uv venv --python <canonical> --seed`:
 
 ```bash
-python3.13 -m venv ~/.openclaw/venvs/lipsync      # VPS: /data/.openclaw/venvs/lipsync
+bash ~/.openclaw/skills/shared-utils/oc-python.sh venv ~/.openclaw/venvs/lipsync      # VPS: /data/.openclaw/...
 ~/.openclaw/venvs/lipsync/bin/python "$SKILLS_DIR/75-drama-song-ad-factory/scripts/lipsync_preflight.py" --repair
 ```
 

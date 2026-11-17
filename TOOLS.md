@@ -161,4 +161,10 @@ Both live at the repo root next to `lib-shared.sh`/`update-skills.sh`; python lo
 
 ---
 
+## MANDATORY: ONE Python (installing Python packages)
+
+Install Python packages ONLY through the box's ONE canonical interpreter: `bash ~/.openclaw/skills/shared-utils/oc-python.sh pip-install <package>` (or `venv <dir>` for a venv). Never bare `pip`/`pip3`, never `python3 -m pip` / `python3 -m venv`, never the Homebrew python (`/data/linuxbrew/...`, `python@3.14`). The interpreter is recorded in `~/.openclaw/.oc-python`.
+
+---
+
 Add whatever helps you do your job. This is your cheat sheet.

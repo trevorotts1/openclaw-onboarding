@@ -207,9 +207,11 @@ Self-hosted Playwright is the escape-hatch engine for known-hard flows only (for
 ⚠️ **INTERPRETER TRAP (live 2026-07-08):** a bare `pip` or `playwright` on PATH
 can belong to a DIFFERENT python than the `python3` that will run this skill's
 tools (e.g. a Homebrew python3.14 without Playwright shadowing the interpreter
-Playwright is installed under). Always install and verify **through the same
-`python3` that will invoke the tools** (`python3 -m pip`, `python3 -m
-playwright`) — never bare `pip`/`playwright`. The live build preflight
+Playwright is installed under). Always install and verify **through the box's
+ONE canonical interpreter** (v27.1.80: `cat ~/.openclaw/.oc-python`; on a VPS
+`/usr/bin/python3`, never the Homebrew python), `bash
+~/.openclaw/skills/shared-utils/oc-python.sh pip-install playwright`, then
+`"$(cat ~/.openclaw/.oc-python)" -m playwright`, never bare `pip`/`playwright`. The live build preflight
 (F-P9 in `tools/ghl_form_builder.py`) hard-stops with the interpreter named if
 Playwright is not importable under the running python, so an environment
 mistake can never burn a live attempt.
@@ -217,11 +219,11 @@ mistake can never burn a live attempt.
 On the fallback lane, execute the following commands to install Playwright:
 
 ```bash
-python3 -m pip install playwright
-python3 -m playwright install chromium
+bash ~/.openclaw/skills/shared-utils/oc-python.sh pip-install playwright
+"$(bash ~/.openclaw/skills/shared-utils/oc-python.sh path)" -m playwright install chromium
 ```
 
-The first command installs the Playwright library for THIS `python3`. The second command downloads the Chromium browser that Playwright will control.
+The first command installs the Playwright library for the box's ONE canonical `python3` (the one the agent runs). The second command downloads the Chromium browser that Playwright will control.
 
 Verify installation — run with the SAME `python3` that will run the tools:
 ```bash

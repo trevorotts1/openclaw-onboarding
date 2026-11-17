@@ -51,7 +51,15 @@ if [ -z "${CAF_DIR:-}" ]; then
 fi
 VENV_DIR="${VENV_DIR:-$CAF_DIR/.venv}"
 STAMP="$CAF_DIR/.installed-from"
-PY="${PYTHON:-python3}"
+
+# ONE-PYTHON (v27.1.80): the venv is built by oc_venv (platform/common.sh) on the
+# box's ONE canonical interpreter, never the python3 PATH lists first (Homebrew
+# under a `docker exec`). PYTHON=<interpreter> still pins the base interpreter.
+_oc_common=""
+for _c in "$SCRIPT_DIR/../platform/common.sh" "$SCRIPT_DIR/../../platform/common.sh" \
+          "${OPENCLAW_ROOT:-/nonexistent}/platform/common.sh"; do
+  [ -f "$_c" ] && { _oc_common="$_c"; break; }
+done
 
 # ---- source version: the truth the binary must match -----------------------
 SRC_VER="unknown"
@@ -63,10 +71,6 @@ fi
 # ---- preflight: missing engine or python -> log + bow out (update continues)-
 if [ ! -d "$ENGINE_SRC" ]; then
   log "ERROR: engine source not found at $ENGINE_SRC — cannot build caf. Skipping (update continues)."
-  exit 0
-fi
-if ! command -v "$PY" >/dev/null 2>&1; then
-  log "ERROR: '$PY' not found — cannot build caf. Skipping (update continues)."
   exit 0
 fi
 
@@ -134,25 +138,31 @@ rebuild() {
   esac
   mkdir -p "$CAF_DIR/engine" || { log "ERROR: mkdir $CAF_DIR/engine failed"; return 1; }
 
-  if [ ! -x "$VENV_DIR/bin/python" ]; then
-    log "creating venv -> $VENV_DIR"
-    "$PY" -m venv "$VENV_DIR" || { log "ERROR: venv creation failed"; return 1; }
+  if [ ! -x "$VENV_DIR/bin/python" ] || ! "$VENV_DIR/bin/python" -m pip --version >/dev/null 2>&1; then
+    if [ -z "$_oc_common" ]; then
+      log "ERROR: platform/common.sh (one-python resolver) not found near $SCRIPT_DIR, cannot build the venv"
+      return 1
+    fi
+    log "creating venv -> $VENV_DIR (one-python: oc_venv)"
+    local _pin="${OC_PYTHON:-}"
+    [ -n "${PYTHON:-}" ] && _pin="$(command -v "$PYTHON" 2>/dev/null || printf '%s' "$PYTHON")"
+    # shellcheck source=/dev/null
+    ( . "$_oc_common" && OC_PYTHON="$_pin" oc_venv "$VENV_DIR" ) \
+      || { log "ERROR: venv creation failed"; return 1; }
   fi
 
   # sync engine source into the install dir (copy of contents, mirrors INSTALL.md)
   cp -r "$ENGINE_SRC/." "$CAF_DIR/engine/" || { log "ERROR: engine copy failed"; return 1; }
   chmod +x "$CAF_DIR/engine/wire-ghl-env.sh" "$CAF_DIR/engine/verify-ghl-live.sh" 2>/dev/null || true
 
-  # editable install of the COPY so the binary resolves from the install dir
-  # shellcheck disable=SC1091
-  . "$VENV_DIR/bin/activate" 2>/dev/null || { log "ERROR: venv activate failed"; return 1; }
-  pip install --upgrade pip -q 2>/dev/null || log "WARN: pip self-upgrade warned (continuing)"
-  if ! pip install -e "$CAF_DIR/engine" -q; then
-    log "ERROR: 'pip install -e $CAF_DIR/engine' failed"
-    deactivate 2>/dev/null || true
+  # editable install of the COPY so the binary resolves from the install dir.
+  # The venv's own interpreter runs pip (never bare `pip` after `activate`,
+  # which resolves whatever pip PATH lists first if activate is stale).
+  "$VENV_DIR/bin/python" -m pip install --upgrade pip -q 2>/dev/null || log "WARN: pip self-upgrade warned (continuing)"
+  if ! "$VENV_DIR/bin/python" -m pip install -e "$CAF_DIR/engine" -q; then
+    log "ERROR: editable install of $CAF_DIR/engine into $VENV_DIR failed"
     return 1
   fi
-  deactivate 2>/dev/null || true
 
   # install the committed wrappers (single source of truth = engine dir)
   local w
