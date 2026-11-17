@@ -49,6 +49,10 @@ class Handler(BaseHTTPRequestHandler):
         if not Handler.mode["route"]:
             return self._send(404, raw=b"<html>not found</html>")
         st = Handler.mode["answer_status"]
+        if st == "text":
+            return self._send(200, raw=b"ok")
+        if st == "nosuccess":
+            return self._send(200, {"applied": True})
         if st == 200:
             return self._send(200, {"success": True, "applied": True, "question": QUESTIONS[0]})
         self._send(st, {"error": "nope"})
@@ -143,6 +147,21 @@ class CCQ(unittest.TestCase):
                                     "--source-message-ref", "m")
             self.assertEqual(rc, code, (status, err))
 
+    def test_200_must_confirm_success(self):
+        for mode in ("text", "nosuccess"):
+            Handler.mode["answer_status"] = mode
+            rc, out, err = self.run_h("answer", "--ref", "Q-ABC123", "--text", "yes",
+                                      "--source-message-ref", "m")
+            self.assertEqual(rc, 8, mode)
+            self.assertIn("did not confirm", err)
+
+    def test_bad_ref_rejected(self):
+        for ref in ("../x", "a/b", "Q-AB", "x", "Q-ABC123/../.."):
+            rc, _, _ = self.run_h("answer", "--ref", ref, "--text", "yes",
+                                  "--source-message-ref", "m")
+            self.assertEqual(rc, 2, ref)
+        self.assertEqual(Handler.seen, [])
+
     def test_token_never_printed(self):
         outs = []
         for st in (200, 409, 500):
@@ -162,6 +181,57 @@ class CCQ(unittest.TestCase):
         self.assertEqual(self.run_h("answer", "--ref", "Q-ABC123")[0], 2)
         self.assertEqual(self.run_h("answer", "--ref", "Q-ABC123", "--text", "  ",
                                     "--source-message-ref", "m")[0], 2)
+
+
+class Redirect(unittest.TestCase):
+    def test_redirect_refused_and_token_not_forwarded(self):
+        got = []
+
+        class Sink(BaseHTTPRequestHandler):
+            def log_message(self, *a):
+                pass
+
+            def _h(self):
+                got.append(self.headers.get("Authorization"))
+                self.send_response(200)
+                self.send_header("Content-Length", "2")
+                self.end_headers()
+                self.wfile.write(b"{}")
+            do_GET = do_POST = _h
+
+        sink = HTTPServer(("127.0.0.1", 0), Sink)
+        threading.Thread(target=sink.serve_forever, daemon=True).start()
+        target = "http://127.0.0.1:%d/stolen" % sink.server_address[1]
+
+        class Redir(BaseHTTPRequestHandler):
+            def log_message(self, *a):
+                pass
+
+            def _h(self):
+                n = int(self.headers.get("Content-Length", 0))
+                self.rfile.read(n)
+                self.send_response(302)
+                self.send_header("Location", target)
+                self.send_header("Content-Length", "0")
+                self.end_headers()
+            do_GET = do_POST = _h
+
+        redir = HTTPServer(("127.0.0.1", 0), Redir)
+        threading.Thread(target=redir.serve_forever, daemon=True).start()
+        env = {"PATH": os.environ["PATH"], "HOME": tempfile.gettempdir(), "MC_API_TOKEN": TOKEN,
+               "CC_OWNER_QUESTIONS_URL": "http://127.0.0.1:%d" % redir.server_address[1]}
+        try:
+            for args in (["open"], ["answer", "--ref", "Q-ABC123", "--text", "yes",
+                                    "--source-message-ref", "m"]):
+                p = subprocess.run([sys.executable, "-I", str(HELPER), *args], env=env,
+                                   capture_output=True, text=True)
+                self.assertNotEqual(p.returncode, 0)
+                self.assertIn("redirect", p.stderr)
+                self.assertNotIn(TOKEN, p.stdout + p.stderr)
+            self.assertEqual(got, [])
+        finally:
+            sink.shutdown()
+            redir.shutdown()
 
 
 class Doctrine(unittest.TestCase):

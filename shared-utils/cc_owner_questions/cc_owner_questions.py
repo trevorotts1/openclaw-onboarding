@@ -99,6 +99,17 @@ def resolve_base():
     return DEFAULT_BASE
 
 
+class _NoRedirect(urllib.request.HTTPRedirectHandler):
+    """Refuse every redirect so the bearer token never follows one to another host."""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        return None
+
+
+_OPENER = urllib.request.build_opener(_NoRedirect)
+REF_OK = re.compile(r"^(Q-[A-Z0-9]{4,12}|[A-Za-z0-9-]{8,64})$")
+
+
 class CCError(Exception):
     def __init__(self, code, message):
         super().__init__(message)
@@ -118,7 +129,7 @@ def _request(method, path, body=None):
         headers["Content-Type"] = "application/json"
     req = urllib.request.Request(url, data=data, headers=headers, method=method)
     try:
-        with urllib.request.urlopen(req, timeout=TIMEOUT) as resp:
+        with _OPENER.open(req, timeout=TIMEOUT) as resp:
             raw = resp.read().decode("utf-8", "replace")
             status = resp.status
     except urllib.error.HTTPError as e:
@@ -126,6 +137,9 @@ def _request(method, path, body=None):
         status = e.code
     except (urllib.error.URLError, OSError) as e:
         raise CCError(3, "Command Center unreachable at %s (%s)." % (resolve_base(), getattr(e, "reason", e)))
+    if 300 <= status < 400:
+        raise CCError(8, "Command Center answered with a redirect (HTTP %s); redirects are refused "
+                         "so the token is never forwarded. Check the Command Center address." % status)
     try:
         parsed = json.loads(raw) if raw.strip() else {}
     except ValueError:
@@ -203,13 +217,20 @@ def cmd_answer(args):
     if not args.source_message_ref.strip():
         print("--source-message-ref is required (the real inbound message id).", file=sys.stderr)
         return 2
-    ref = find_ref(args.ref) or args.ref.strip()
+    ref = args.ref.strip()
+    if ref[:2].upper() == "Q-":
+        ref = ref.upper()
+    if ".." in ref or not REF_OK.match(ref):
+        print("--ref must look like Q-ABC123 or a question id.", file=sys.stderr)
+        return 2
     path = "/api/owner-questions/%s/chat-answer" % urllib.parse.quote(ref, safe="")
     body = {"answer": args.text, "channel": args.channel,
             "source_message_ref": args.source_message_ref}
     status, parsed, _ = _request("POST", path, body)
     if status == 200:
-        out = parsed if isinstance(parsed, dict) else {"success": True}
+        if not (isinstance(parsed, dict) and parsed.get("success") is True):
+            raise CCError(8, "The Command Center did not confirm the answer was saved.")
+        out = parsed
         print(json.dumps(out) if args.json else
               "Answer recorded for %s%s." % (ref, "" if out.get("applied") is not False else
                                               " (recorded, not yet applied)"))

@@ -7,7 +7,9 @@
 > or unused evidence fails closed. This release does not change numeric quotas
 > or the duration formula, and does not update active client runs.
 
-> **v27.1.78 - Presentation intake asks one actual question at a time.** The mini app and agent collect one independent answer before continuing, preserve saved answers and conditional flows, and reject compound intake prompts.
+> **v27.1.78 - Client chat answers reach the Command Center.** When the Command Center asks the client a question in chat (with a recommendation and a `Q-XXXXXX` code), the agent now recognises the client's reply as an answer, not new work, and posts it back through the new `shared-utils/cc_owner_questions` helper. The Command Center sends the question; the agent never does, so there is no double message. See [docs/CC-OWNER-QUESTIONS.md](docs/CC-OWNER-QUESTIONS.md).
+>
+> **v27.1.77 - Presentation intake asks one actual question at a time.** The mini app and agent collect one independent answer before continuing, preserve saved answers and conditional flows, and reject compound intake prompts.
 >
 > **v27.1.70 - Council (Skill 77) v1.0.30: the verdict says why.** Under the verdict the Council screen now lists what has to happen first, how strong the evidence is and where the elders disagree, and Key Points show what each named elder argued instead of only phase headings.
 >
