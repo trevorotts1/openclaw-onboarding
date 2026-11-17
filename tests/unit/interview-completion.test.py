@@ -296,8 +296,6 @@ class InstalledLayout(unittest.TestCase):
         self.assertEqual(result.stdout.strip(), 'COMPLETE', result.stderr)
         self.assertNotIn('reader not found', result.stderr)
 
-    @unittest.skipIf(Path('/data/.openclaw/scripts/interview_status.py').is_file(),
-                     'host carries a real /data/.openclaw reader')
     def test_reader_absent_everywhere_is_unknown_and_names_every_path_searched(self):
         result = self.run_installed()
         self.assertEqual(result.stdout.strip(), 'UNKNOWN')
