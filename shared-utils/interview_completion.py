@@ -38,11 +38,47 @@ COMPLETE_WORDS = ('COMPLETE', 'BUILDING', 'BUILT')
 _status_reader_module = None
 
 
+def _status_reader_candidates():
+    """Every place scripts/interview_status.py can live, most specific first.
+
+    In the repo checkout this module sits at <repo>/shared-utils/ and the reader
+    at <repo>/scripts/. On an installed box install.sh / update-skills.sh copy
+    shared-utils/ to <openclaw>/skills/shared-utils/ but scripts/ to
+    <openclaw>/scripts/ (one level higher), so the repo-relative path alone
+    resolved to the never-created <openclaw>/skills/scripts/ and every
+    completion check came back UNKNOWN on every installed box.
+    """
+    here = Path(__file__).resolve().parent
+    candidates = [
+        here.parent / 'scripts',            # repo checkout: <repo>/scripts
+        here.parent.parent / 'scripts',     # installed: <openclaw>/skills/shared-utils -> <openclaw>/scripts
+    ]
+    for variable in ('OPENCLAW_ROOT', 'OC_CONFIG'):
+        root = os.environ.get(variable)
+        if root:
+            candidates.append(Path(root).expanduser() / 'scripts')
+    candidates += [Path.home() / '.openclaw' / 'scripts', Path('/data/.openclaw/scripts')]
+    unique = []
+    for directory in candidates:
+        source = directory / 'interview_status.py'
+        if source not in unique:
+            unique.append(source)
+    return unique
+
+
 def _status_reader():
     """Load scripts/interview_status.py without assuming the caller's cwd or path."""
     global _status_reader_module
     if _status_reader_module is None:
-        source = Path(__file__).resolve().parent.parent / 'scripts' / 'interview_status.py'
+        candidates = _status_reader_candidates()
+        source = next((path for path in candidates if path.is_file()), None)
+        if source is None:
+            # Loud, not silent: the caller still answers UNKNOWN (never nag on
+            # errors), but the log names every path that was searched.
+            searched = ', '.join(str(path) for path in candidates)
+            print(f'[interview-completion] ERROR interview status reader not found; searched: {searched}',
+                  file=sys.stderr)
+            raise ImportError(f'interview status reader not found; searched: {searched}')
         spec = importlib.util.spec_from_file_location('interview_status_reader', source)
         if spec is None or spec.loader is None:
             raise ValueError(f'interview status reader unavailable: {source}')
