@@ -44,7 +44,7 @@ fi
 
 # Check if scenedetect is installed
 if ! command -v scenedetect &> /dev/null; then
-  echo "ERROR: scenedetect not found. Install it with: pip install scenedetect"
+  echo "ERROR: scenedetect not found. Install it with: bash ~/.openclaw/skills/shared-utils/oc-python.sh pip-install scenedetect"
   exit 1
 fi
 

@@ -1075,11 +1075,12 @@ oc_pydeps_lookup() {   # oc_pydeps_lookup <python>  -> every EXISTING pydeps fol
 #   The probe puts the existing pydeps folder(s) first on sys.path before it
 #   imports, which is exactly what every importer does at run time, so OK here
 #   means the skills will see it.
-#   Interpreter: python3 from PATH, because that is what the skills run. On a
-#   Docker VPS platform/vps/bootstrap.sh re-execs the installer and the updater
-#   INSIDE the client container, so that is the container's python3, the one the
-#   agent runtime uses. The Black Friday Launcher re-checks (and repairs) the
-#   import itself under sys.executable before it builds anything
+#   Interpreter: the ONE canonical python (oc_python, platform/common.sh;
+#   v27.1.80). On a Linux box that is the image's /usr/bin/python3 -- the one the
+#   gateway (the agent runtime) runs -- never the Homebrew python3 a `docker exec`
+#   PATH lists first. On a Mac it is python3 from PATH, unchanged. The Black
+#   Friday Launcher re-checks (and repairs) the import itself under
+#   sys.executable before it builds anything
 #   (83-black-friday-launcher launcher_core/dependencies.py).
 # ------------------------------------------------------------
 oc_ensure_jsonschema() {
@@ -1090,9 +1091,17 @@ oc_ensure_jsonschema() {
     *) echo "  jsonschema-prereq: unknown argument '$1' (use --check or --apply)" >&2; return 1 ;;
   esac
   [ "${OPENCLAW_PREREQS_CHECK:-0}" = "1" ] && _mode=check
-  _py="$(command -v python3 2>/dev/null || true)"
+  if ! declare -F oc_python >/dev/null 2>&1; then
+    for _f in "$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd)/platform/common.sh" \
+              "$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd)/../../platform/common.sh"; do
+      # shellcheck source=/dev/null
+      [ -f "$_f" ] && { source "$_f"; break; }
+    done
+  fi
+  _py=""
+  declare -F oc_python >/dev/null 2>&1 && _py="$(oc_python 2>/dev/null || true)"
   if [ -z "$_py" ]; then
-    echo "  jsonschema-prereq: FAILED: no python3 on PATH; cannot check or install jsonschema" >&2
+    echo "  jsonschema-prereq: FAILED: no canonical python3 (one-python resolver: platform/common.sh oc_python); cannot check or install jsonschema" >&2
     return 1
   fi
   _dir="$(oc_pydeps_dir "$_py")" || { echo "  jsonschema-prereq: FAILED: $_py cannot report its version" >&2; return 1; }

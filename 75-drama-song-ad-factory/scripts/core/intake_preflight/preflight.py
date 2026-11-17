@@ -915,15 +915,43 @@ def isolated_env_python(env_dir):
         else os.path.join(env_dir, "bin", "python")
 
 
+def _one_python():
+    """shared-utils/oc_python.py (the ONE-PYTHON resolver's Python mirror), or
+    None when this skill is running outside an onboarding tree."""
+    for d in (os.path.join(skill_root(), "..", "shared-utils"),
+              os.path.join(skill_root(), "..", "..", "shared-utils")):
+        path = os.path.join(d, "oc_python.py")
+        if os.path.isfile(path):
+            spec = importlib.util.spec_from_file_location("oc_python", path)
+            mod = importlib.util.module_from_spec(spec)
+            try:
+                spec.loader.exec_module(mod)
+            except Exception:                                   # noqa: BLE001
+                return None
+            return mod
+    return None
+
+
 def ensure_isolated_env(env_dir, run=None):
     """Create/refresh the isolated environment ordinary installs belong in
     (``python -m venv`` is idempotent over an existing venv). Returns its
     interpreter path or None. ponytail: one shared env per skill; per-capability
-    envs when two stacks ever need conflicting pins."""
+    envs when two stacks ever need conflicting pins.
+    ONE-PYTHON: the venv is built on the launching interpreter unless that is a
+    Homebrew python on Linux (then the canonical /usr/bin/python3), and when the
+    base has no ensurepip (Debian's 3.13) it is built with ``uv venv --seed``
+    instead of leaving a hollow venv behind."""
     run = run or _default_runner
-    res = run([sys.executable, "-m", "venv", env_dir])
+    helper = _one_python()
+    base = helper.venv_base_python(sys.executable) if helper else sys.executable
+    attempts = (helper.venv_create_argvs(base, env_dir) if helper else []) or [
+        [base, "-m", "venv", env_dir]]
     py = isolated_env_python(env_dir)
-    return py if (res or {}).get("rc") == 0 and os.path.isfile(py) else None
+    for argv in attempts:
+        res = run(argv)
+        if (res or {}).get("rc") == 0 and os.path.isfile(py):
+            return py
+    return None
 
 
 def repair(payload, runner=None, allow_system_install=False, isolated_env_dir=None,

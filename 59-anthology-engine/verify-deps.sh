@@ -15,27 +15,39 @@
 # named prerequisite, never a crash. Exit 0 = ok, nonzero = a hard dep missing.
 set -uo pipefail  # Intentional: no -e; exit codes handled explicitly per house contract (ENGINE-MANIFEST.json rows 30-32)
 missing=0
-if command -v python3 >/dev/null 2>&1; then
-    echo "  OK: python3 ($(python3 --version 2>&1))"
+# ONE-PYTHON (v27.1.80): check the box's ONE canonical interpreter (oc_python,
+# platform/common.sh) -- the one install.sh installs into and the gateway runs
+# on a Linux box -- not whatever python3 a `docker exec` PATH lists first. When
+# the resolver is not delivered next to this skill, python3 from PATH is checked.
+SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
+PY=""
+for _c in "$SELF_DIR/../platform/common.sh" "$SELF_DIR/../../platform/common.sh" \
+          "${OPENCLAW_ROOT:-/nonexistent}/platform/common.sh"; do
+    # shellcheck source=/dev/null
+    if [ -f "$_c" ]; then . "$_c"; PY="$(oc_python 2>/dev/null || true)"; break; fi
+done
+[ -n "$PY" ] || PY="$(command -v python3 2>/dev/null || true)"
+if [ -n "$PY" ]; then
+    echo "  OK: python3 $PY ($("$PY" --version 2>&1))"
 else
-    echo "  MISSING: python3 (required)"; missing=1
+    echo "  MISSING: python3 (required)"; missing=1; PY=python3
 fi
 if command -v sha256sum >/dev/null 2>&1 || command -v shasum >/dev/null 2>&1; then
     echo "  OK: a sha256 tool is present (the entry hash-pin gate is active)"
 else
     echo "  NOTE: no sha256 tool -- the entry hash-pin gate is skipped (non-fatal)"
 fi
-if python3 -c "import pytest" >/dev/null 2>&1; then
-    echo "  OK: pytest is importable ($(python3 -c 'import pytest,sys; sys.stdout.write(pytest.__version__)' 2>/dev/null)) -- the shipped CLIs' pytest self-test batteries can run"
+if "$PY" -c "import pytest" >/dev/null 2>&1; then
+    echo "  OK: pytest is importable ($("$PY" -c 'import pytest,sys; sys.stdout.write(pytest.__version__)' 2>/dev/null)) -- the shipped CLIs' pytest self-test batteries can run"
 else
-    echo "  MISSING: pytest (required) -- the ten tooling CLIs' --self-test batteries import pytest, so every one of them would FAIL and verify.sh would report DRIFT on a healthy tree. Fix: python3 -m pip install --user --break-system-packages pytest"; missing=1
+    echo "  MISSING: pytest (required) -- the ten tooling CLIs' --self-test batteries import pytest, so every one of them would FAIL and verify.sh would report DRIFT on a healthy tree. Fix: bash <root>/skills/shared-utils/oc-python.sh pip-install pytest"; missing=1
 fi
-if python3 -c "import fitz" >/dev/null 2>&1; then
-    echo "  OK: PyMuPDF (fitz) is importable ($(python3 -c 'import fitz,sys; sys.stdout.write(getattr(fitz,"__doc__","") or "")' 2>/dev/null | head -1)) -- the output-side font-floor gate is active"
+if "$PY" -c "import fitz" >/dev/null 2>&1; then
+    echo "  OK: PyMuPDF (fitz) is importable ($("$PY" -c 'import fitz,sys; sys.stdout.write(getattr(fitz,"__doc__","") or "")' 2>/dev/null | head -1)) -- the output-side font-floor gate is active"
 else
-    echo "  MISSING: PyMuPDF/fitz (required) -- scripts/guard-font-floor.py cannot inspect the rendered PDF, so the 14pt font-floor gate would be SILENTLY DEAD. Fix: python3 -m pip install --user --break-system-packages PyMuPDF"; missing=1
+    echo "  MISSING: PyMuPDF/fitz (required) -- scripts/guard-font-floor.py cannot inspect the rendered PDF, so the 14pt font-floor gate would be SILENTLY DEAD. Fix: bash <root>/skills/shared-utils/oc-python.sh pip-install PyMuPDF"; missing=1
 fi
-if python3 -c "import weasyprint" >/dev/null 2>&1; then
+if "$PY" -c "import weasyprint" >/dev/null 2>&1; then
     echo "  OK: a WeasyPrint-class HTML-to-PDF renderer is importable (runtime delivery ready)"
 else
     echo "  NOTE: no WeasyPrint-class renderer importable -- pdf_render.py names it as a prerequisite at install (non-fatal here)"
