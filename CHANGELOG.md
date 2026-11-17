@@ -1,3 +1,13 @@
+## [v28.0.0]  -  2026-11-17  -  Milestone
+
+- Major milestone release. Five build rooms closed on November 16, 2026, and this version marks them as one delivered set. No behaviour changes ship in this entry; it moves the repository version markers (root `version`, install and update scripts, README, release cohort, Command Center compatibility file, Skill 23) from v27.1.77 to v28.0.0.
+- Skill 75, the drama song ad factory: 166 units delivered.
+- AI Workforce: 92 units delivered.
+- Presentation department: 202 units delivered.
+- Command Center: 24 units delivered.
+- Rescue Rangers: 62 units delivered.
+- Skill 23 v27.1.77 -> v28.0.0 (carries the repository version). Migration: none beyond the normal update. Risk: LOW.
+
 ## [v27.1.77]  -  2026-11-16  -  PD-021 follow-up: retire the old "8 Questions in ONE block" wording
 
 - PD-021 already renamed the signature intake phase in `PIPELINE-MANIFEST.json`. This follow-up retires the same old wording everywhere else it still stood: the Signature Presentation Architect role file (header line and the intake pass-rate metric), the department how-to, the suggested-roles entry, the SOP-SIGPRES-00 law, the `build_deck.py` gate description and comment, the `phase_verifiers.py` and `deck-intake-driver.py` text, the Skill 51 description and the README row.
