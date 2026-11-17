@@ -1,3 +1,9 @@
+## [v27.1.76]  -  2026-11-16  -  PD-021 follow-up: retire the old "8 Questions in ONE block" wording
+
+- PD-021 already renamed the signature intake phase in `PIPELINE-MANIFEST.json`. This follow-up retires the same old wording everywhere else it still stood: the Signature Presentation Architect role file (header line and the intake pass-rate metric), the department START-HERE phase list, the department how-to, the suggested-roles entry, the SOP-SIGPRES-00 law, the `build_deck.py` gate description and comment, the `phase_verifiers.py` and `deck-intake-driver.py` text, the Skill 51 description and the README row.
+- The 8 Questions are asked one at a time and committed as ONE atomic record. Wording only: no gate, prover, field name or behaviour changes. Email, form, funnel and website intake wording (which really is one block) is untouched.
+- Skill 51 v2.1.11 -> v2.1.12, Skill 23 v27.1.75 -> v27.1.76 (carries the repository version). Migration: none. Risk: LOW.
+
 ## [v27.1.75]  -  2026-11-16  -  Batch #3842: guard-workflow fold into fast-guards, PD-202 closing gates and closeout-watchdog PYTHONPATH dedupe
 
 - Batch #3842 landed on main at 6d974e91a with members #3829, #3827 and #3830. Root version v27.1.74 -> v27.1.75 and `cc-compat.json.onboardingVersion` advanced with it.
