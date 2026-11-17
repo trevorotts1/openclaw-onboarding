@@ -1,3 +1,9 @@
+## [v27.1.76]  -  2026-11-16  -  Presentations: craft-hold switch accepts the same values as craft_judgement (PD-310b)
+
+- Skill 23 v27.1.75 -> v27.1.76 (root version markers move together).
+- PD-310b: `PRESENTATION_CRAFT_ENGINE_HOLDS` turns the engine craft holds on for 1, true, on or yes in `phase_verifiers._craft_hold_reasons`, the same values `craft_judgement._engine_holds_active` accepts, so the two layers never disagree. Main had taken PD-310b with a literal "1"-only switch. The hold stays off unless the switch is set.
+- Supersedes #3850 and #3853 for PD-310b. Migration: none. Risk: LOW.
+
 ## [v27.1.75]  -  2026-11-16  -  Batch #3842: guard-workflow fold into fast-guards, PD-202 closing gates and closeout-watchdog PYTHONPATH dedupe
 
 - Batch #3842 landed on main at 6d974e91a with members #3829, #3827 and #3830. Root version v27.1.74 -> v27.1.75 and `cc-compat.json.onboardingVersion` advanced with it.
