@@ -11,7 +11,8 @@
 #   stamp_full_context_handoff  <AGENTS_FILE>      # FULL_CONTEXT_HANDOFF_V1
 #   stamp_reporting_contract    <AGENTS_FILE>      # REPORTING_CONTRACT_V1
 #   stamp_full_read_guard       <AGENTS_FILE>      # FULL_READ_GUARD_V1
-#   stamp_agents_doctrine_blocks <AGENTS_FILE>     # all three, in order
+#   stamp_cc_owner_questions    <AGENTS_FILE>      # CC_OWNER_QUESTIONS_V1
+#   stamp_agents_doctrine_blocks <AGENTS_FILE>     # all four, in order
 #
 # Each stamper is idempotent (no-op when its marker is already present) and
 # ADDITIVE — it only appends its block; it never edits or deletes existing
@@ -32,7 +33,8 @@
 FULL_CONTEXT_HANDOFF_MARKER="<!-- FULL_CONTEXT_HANDOFF_V1 -->"
 REPORTING_CONTRACT_MARKER="<!-- REPORTING_CONTRACT_V1 -->"
 FULL_READ_GUARD_MARKER="<!-- FULL_READ_GUARD_V1 -->"
-export FULL_CONTEXT_HANDOFF_MARKER REPORTING_CONTRACT_MARKER FULL_READ_GUARD_MARKER
+CC_OWNER_QUESTIONS_MARKER="<!-- CC_OWNER_QUESTIONS_V1 -->"
+export FULL_CONTEXT_HANDOFF_MARKER REPORTING_CONTRACT_MARKER FULL_READ_GUARD_MARKER CC_OWNER_QUESTIONS_MARKER
 
 # ---------------------------------------------------------------------------
 # emit_full_context_handoff_block
@@ -215,6 +217,32 @@ stamp_full_read_guard() {
 }
 
 # ---------------------------------------------------------------------------
+# emit_cc_owner_questions_block / stamp_cc_owner_questions <AGENTS_FILE>
+#
+# Command Center owner questions: the client's reply is an ANSWER, posted back
+# through shared-utils/cc_owner_questions. Marker CC_OWNER_QUESTIONS_V1.
+# ---------------------------------------------------------------------------
+emit_cc_owner_questions_block() {
+    cat <<'CCQEOF'
+<!-- CC_OWNER_QUESTIONS_V1 -->
+### Command Center questions
+The Command Center asks the client its own questions and messages the client itself, ending with `(ref Q-XXXXXX)`. Never send those questions yourself.
+- A client message that quote-replies to such a question, contains a `Q-XXXXXX` code, or is a short yes or no right after one is an ANSWER, not new work. Never route it with `mc-route.sh task`.
+- Post it back with the client's exact words and the real inbound message id: `python3 "$OC_ROOT/skills/shared-utils/cc_owner_questions/cc_owner_questions.py" answer --ref Q-XXXXXX --text "<client words>" --chat-id <the client's chat id> --source-message-ref <the inbound message id>`. If you do not know the code, run `... match --text "<client words>"` first. Then tell the client in one plain sentence what was done.
+- If two or more questions are open and the reply is ambiguous, ask once which one. If the helper says the Command Center needs updating, tell the client you are passing it to the operator.
+- When you yourself tell the client about anything the Command Center needs, always include your recommendation.
+- Never show the client an internal fault (dispatch caps, API quota or 401 errors, gateway errors) as their question.
+<!-- END CC_OWNER_QUESTIONS_V1 -->
+
+CCQEOF
+}
+
+stamp_cc_owner_questions() {
+    _adb_stamp_block "$1" "$CC_OWNER_QUESTIONS_MARKER" \
+        emit_cc_owner_questions_block "CC OWNER QUESTIONS"
+}
+
+# ---------------------------------------------------------------------------
 # stamp_agents_doctrine_blocks <AGENTS_FILE>
 #
 # Convenience: stamp both blocks in canonical order. Returns non-zero if EITHER
@@ -225,5 +253,6 @@ stamp_agents_doctrine_blocks() {
     stamp_full_context_handoff "$_file" || _rc=1
     stamp_reporting_contract   "$_file" || _rc=1
     stamp_full_read_guard      "$_file" || _rc=1
+    stamp_cc_owner_questions   "$_file" || _rc=1
     return "$_rc"
 }
