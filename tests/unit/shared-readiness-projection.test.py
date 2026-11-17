@@ -125,12 +125,17 @@ class WiringLocks(unittest.TestCase):
 
     def test_row10_ci_workflow_runs_this_suite_by_path(self):
         suite_path = 'tests/unit/shared-readiness-projection.test.py'
+        # The guard was folded into fast-guards: its workflow file is gone, and the folded script
+        # (scripts/ci/fast-guards.d/<guard>.sh, run by fast-guards.yml) names the suite by path.
         hits = []
         for wf in (REPO / '.github/workflows').glob('*.yml'):
             if suite_path in wf.read_text():
                 hits.append(wf.name)
-        self.assertTrue(hits, 'no workflow names this suite by explicit path')
-        self.assertIn('shared-readiness-projection-guard.yml', hits)
+        for sh in (REPO / 'scripts/ci/fast-guards.d').glob('*.sh'):
+            if suite_path in sh.read_text():
+                hits.append(sh.name)
+        self.assertTrue(hits, 'no workflow or folded guard names this suite by explicit path')
+        self.assertIn('shared-readiness-projection-guard.sh', hits)
 
 
 if __name__ == '__main__':

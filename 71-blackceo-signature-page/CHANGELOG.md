@@ -1,3 +1,7 @@
+## [1.3.38] - 2026-11-13 - the launch record schema carries a price's billing interval
+
+- `references/launch.schema.json` (byte copy of Skill 49's) gains `recurring_interval` (week, month, quarter, year) on a price, so a launch record with a monthly, quarterly or yearly offer passes `scripts/launch_context.py` instead of being refused as an unknown key. No other change to this skill.
+
 ## [1.3.37] - 2026-11-12 - the Design Board is approved in chat, by button, or in Command Center
 
 - `scripts/design_board.py approve --approval-id <id>` records a Command Center `design_board` approval (minted whether the client answered in chat, by button or on the link), re-verified live and bound to the board sha256; `--by/--evidence` still works. The record carries the fields Skill 83's package check needs. `SKILL.md`, `references/design-board.md` and the production SOP say the board goes into the client chat and is approved there. Tests added in `tests/test_design_board.py`.

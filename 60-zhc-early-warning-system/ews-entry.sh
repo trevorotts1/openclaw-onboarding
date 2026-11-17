@@ -7,8 +7,9 @@
 #   tick [--no-send]         one sentinel tick, BY HAND (true exit contract:
 #                            0 clean, 1 error, 2 usage, 10 findings present)
 #   cron-tick [--no-send]    the SCHEDULER's tick (the 15-minute cron target).
-#                            Runs the exact same sentinel tick as `tick`, then
-#                            maps exit 10 (FINDINGS PRESENT) to 0. Findings are
+#                            Runs the exact same sentinel tick as `tick`, prunes
+#                            history older than 72h, escalates open P1s older
+#                            than 30 min to Rescue Rangers, then maps exit 10 (FINDINGS PRESENT) to 0. Findings are
 #                            a SUCCESSFUL detection, but the openclaw scheduler
 #                            reads any non-zero exit as a job failure and
 #                            auto-disables a job after 10 consecutive ones, so a
@@ -28,7 +29,8 @@
 #   escalate                 route unacked P1s through rescue ADMISSION (durable
 #                            ticket receipt; the group message is supplemental)
 #   notices [--peek]         read (and consume) the box's own pending D5 self-notices
-#   prune                    enforce snapshot retention (D7)
+#   prune                    enforce 72h retention (D7): snapshots, events,
+#                            digests; also runs after every cron-tick
 #   --self-test              run EVERY script's --self-test (the aggregate gate)
 #
 # EXIT: passes through the dispatched tool's exit code; 6 = python3 missing; 2 usage.
@@ -73,7 +75,20 @@ py() { python3 "$SCRIPTS/$1" "${@:2}"; }
 # ---------------------------------------------------------------------------
 cron_tick() {
     local rc=0
-    py ews_sentinel.py tick "$@" || rc=$?
+    py ews_sentinel.py "$@" tick || rc=$?
+    # 72-hour retention (D7, v1.2.6): prune on every scheduled tick so history
+    # never builds up. Fail-soft: a prune problem is logged and never changes
+    # the tick's own exit code.
+    py ews_snapshot.py prune >/dev/null 2>&1 \
+        || echo "$TAG cron-tick: retention prune failed (tick result unaffected)" >&2
+    # v1.3.0 delivery: an OPEN P1 older than 30 minutes goes to Rescue Rangers
+    # (durable admission ticket). Nothing scheduled this before, so no P1 ever
+    # left a box. Skipped with --no-send. Fail-soft like the prune.
+    case " $* " in
+        *" --no-send "*) : ;;
+        *) py ews_alert.py escalate >/dev/null 2>&1 \
+               || echo "$TAG cron-tick: escalate sweep reported a problem (tick result unaffected)" >&2 ;;
+    esac
     if [ "$rc" -eq 10 ]; then
         echo "$TAG cron-tick: sentinel reported FINDINGS (exit 10). That is a successful" >&2
         echo "$TAG detection, not a job failure - exiting 0 so the scheduler does not" >&2
@@ -104,7 +119,7 @@ aggregate_self_test() {
 
 CMD="${1:-}"; shift || true
 case "$CMD" in
-    tick)             py ews_sentinel.py tick "$@" ;;
+    tick)             py ews_sentinel.py "$@" tick ;;
     cron-tick)        cron_tick "$@" ;;
     audit)            bash "$SCRIPTS/ews_companion.sh" audit "$@" ;;
     install)          bash "$SELF_DIR/install.sh" "$@" ;;

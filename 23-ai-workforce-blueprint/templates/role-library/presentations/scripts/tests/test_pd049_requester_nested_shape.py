@@ -137,6 +137,7 @@ def _isolated_env(tmp_path: Path, overrides: dict | None = None,
     under that fake HOME, so the sanctioned operator fallback can be exercised
     deterministically without ever touching the real config or a real id."""
     env = dict(os.environ)
+    env["PRESENTATION_INTAKE_PROVENANCE"] = "warn"  # PD-004c: proves requester shape, not provenance.
     for key in _ALL_REQUESTER_ENV_KEYS:
         env.pop(key, None)
     fake_home = tmp_path / "fakehome"
@@ -159,9 +160,41 @@ def _run_driver(run_dir: Path, env: dict, *args: str) -> subprocess.CompletedPro
     )
 
 
+def _walk_to_complete(run_dir: Path, env: dict) -> None:
+    """PD-913: --complete refuses an interview the turn gate has not finished,
+    so a fixture that wants a finished intake answers the gate's own pending
+    turns first. SETUP ONLY -- it reuses the live gate (--next) and makes no
+    claim about the product; the test's own assertions decide pass/fail."""
+    for _ in range(120):
+        q = json.loads(_run_driver(run_dir, env, "--next").stdout or "{}")
+        if q.get("status") == "complete":
+            return
+        qid = q.get("question_id")
+        if not qid:
+            return
+        vals = q.get("allowed_values") or []
+        if qid == "pitch_included" and "no" in vals:
+            # SETUP: an informational deck. The commercial turns are then not
+            # asked at all, so a fixture about some OTHER behaviour does not
+            # have to supply commercial values it never asserts on.
+            answer = "no"
+        elif qid in ("workhorse_model", "reasoning_model", "qc_model",
+                     "deepseek_variant", "openrouter_model", "provider_plan",
+                     "thinking_mode", "ollama_plan"):
+            answer = ""       # the client's wired provider is not probed here
+        elif vals:
+            answer = vals[0]
+        elif q.get("kind") == "integer":
+            answer = "20"
+        else:
+            answer = "Client supplied " + qid
+        _run_driver(run_dir, env, "--answer", qid, answer)
+
+
 def _drive_standard_intake(run_dir: Path, env: dict) -> subprocess.CompletedProcess:
     r = _run_driver(run_dir, env, "--answer", "presentation_type", "from_scratch")
     assert r.returncode == 0, f"--answer failed: {r.stdout}\n{r.stderr}"
+    _walk_to_complete(run_dir, env)
     return _run_driver(run_dir, env, "--complete")
 
 

@@ -81,6 +81,7 @@ const BUNDLE = {
   '/questions.json': '[]',
   '/admin/index.html': '<html>admin</html>',
   '/admin/lib/admin_client.js': 'export const admin = 1;',
+  '/admin/lib/admin_page.js': 'export const page = 1;',
   '/admin/lib/qr.js': 'export const qr = 1;',
   '/upload/index.html': '<html>upload</html>',
   '/upload/upload.js': 'export const upload = 1;',
@@ -124,6 +125,7 @@ test('allow-list: every page file the studio needs is served 200', async () => {
     ['/admin/', '/admin/index.html'],
     ['/admin/index.html', '/admin/index.html'],
     ['/admin/lib/admin_client.js', '/admin/lib/admin_client.js'],
+    ['/admin/lib/admin_page.js', '/admin/lib/admin_page.js'],
     ['/admin/lib/qr.js', '/admin/lib/qr.js'],
     ['/uploads', '/upload/index.html'],
     ['/upload.js', '/upload/upload.js'],
@@ -151,6 +153,60 @@ test('allow-list: /uploads keeps serving the upload page (the phone needs it)', 
   const { response } = await ask('/uploads');
   assert.equal(response.status, 200);
   assert.equal(await response.text(), '<html>upload</html>');
+});
+
+// ---------------------------------------------------------------------------
+// (a2) The REAL page files, not a fixture. The bundle above is hand-written;
+// these assertions serve mini-app/ui from disk through the same service, so
+// the page and the service cannot drift apart. The service's own CSP is
+// `script-src 'self'`, which refuses an inline <script> block outright, so a
+// page that carries one is a page that does not run.
+// ---------------------------------------------------------------------------
+
+const UI_ROOT = new URL('../../ui/', import.meta.url);
+
+/** An assets binding that reads the real mini-app/ui folder from disk. */
+function diskAssets() {
+  const asked = [];
+  return {
+    asked,
+    fetch: async (req) => {
+      const path = new URL(req.url).pathname;
+      asked.push(path);
+      const fs = await import('node:fs/promises');
+      try {
+        const body = await fs.readFile(new URL(path.replace(/^\//, ''), UI_ROOT));
+        return new Response(body, { status: 200 });
+      } catch {
+        return new Response('not found', { status: 404 });
+      }
+    },
+  };
+}
+
+test('allow-list: the real pages carry no inline script and every src answers 200', async () => {
+  for (const path of ['/admin', '/', '/uploads']) {
+    const assets = diskAssets();
+    const { env } = envWith(assets);
+    const response = await worker.fetch(new Request(`${ORIGIN}${path}`), { ...env });
+    assert.equal(response.status, 200, `${path} is served`);
+    const body = await response.text();
+
+    for (const tag of body.matchAll(/<script\b[^>]*>/g)) {
+      assert.match(tag[0], /\ssrc="[^"]+"/, `${path}: every <script> needs a src`);
+    }
+
+    const srcs = [...body.matchAll(/<script\b[^>]*\ssrc="([^"]+)"/g)].map((m) => m[1]);
+    assert.ok(srcs.length > 0, `${path} carries its wiring`);
+
+    for (const src of srcs) {
+      assert.ok(src.startsWith('/'), `${path}: ${src} is an absolute path`);
+      const fresh = envWith(diskAssets());
+      const got = await worker.fetch(new Request(`${ORIGIN}${src}`), { ...fresh.env });
+      assert.equal(got.status, 200, `${path}: ${src} answers 200`);
+      assert.ok((await got.text()).length > 0, `${path}: ${src} is not empty`);
+    }
+  }
 });
 
 // ---------------------------------------------------------------------------

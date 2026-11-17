@@ -74,27 +74,23 @@ and it will pick the right one, or you can ask for a specialist by name.
 | **Bugs Department Sops** | Owns the Bugs Department Sops work. |
 | **Triage Dedup Analyst** | Triage and Dedup Analyst for the ZHC Bugs Department. |
 
-### What each specialist is for, with an example request
+### What each specialist is for
 
 **Bug Intake Clerk**
 
 - *What it is for:* Bug Intake Clerk (Registrar) for the ZHC Bugs Department.
-- *Example request:* "Have the Bug Intake Clerk take this on: Bug Intake Clerk (Registrar) for the ZHC Bugs Department."
 
 **Bug Librarian**
 
 - *What it is for:* Bug Librarian (Pattern Keeper) for the ZHC Bugs Department.
-- *Example request:* "Have the Bug Librarian take this on: Bug Librarian (Pattern Keeper) for the ZHC Bugs Department."
 
 **Bugs Department Sops**
 
 - *What it is for:* Owns the Bugs Department Sops work.
-- *Example request:* "Have the Bugs Department Sops take on a task in its area."
 
 **Triage Dedup Analyst**
 
 - *What it is for:* Triage and Dedup Analyst for the ZHC Bugs Department.
-- *Example request:* "Have the Triage Dedup Analyst take this on: Triage and Dedup Analyst for the ZHC Bugs Department."
 
 
 ---

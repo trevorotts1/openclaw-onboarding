@@ -302,7 +302,7 @@ The plausible neighbours were run on both revisions, empty home, real exit codes
 | `tests/test_fix36_doc_code_reconcile.py` | rc=0, `27 passed in 0.88s` | rc=0, `27 passed in 0.75s` |
 | `tests/test_fix77_roster_uniqueness.py` | rc=0, 0 bytes output | rc=0, 0 bytes output |
 
-Invocation: `env -i HOME=<empty> PATH="$PATH" TMPDIR=<scratch> python3 <file>`. Identical on both
+Invocation: `env -i HOME=<empty> PATH="$PATH" <temp-dir>=<scratch> python3 <file>`. Identical on both
 revisions; nothing to update. **I did not run the full 263-file suite** (rule 12 puts a suite through the
 test queue; it is the QC model's job) — that is the honest limit of this row.
 

@@ -111,7 +111,7 @@ def _plan_approval_verifier(intake_doc: Dict[str, Any], launch: Dict[str, Any]):
 
 
 def _price_choice(offer: Dict[str, Any], price: Dict[str, Any], test_only: bool) -> Dict[str, Any]:
-    return {
+    choice = {
         "price_choice_id": price["price_choice_id"],
         "currency": price["currency"],
         "currency_exponent": checkout_module.currency_exponent(price["currency"]),
@@ -124,6 +124,20 @@ def _price_choice(offer: Dict[str, Any], price: Dict[str, Any], test_only: bool)
         "approval_status": "test_only" if test_only else (
             "recommended_unapproved" if price["approval_status"] == "recommended_unapproved" else "approved"),
     }
+    interval = price.get("recurring_interval")
+    has_interval = isinstance(interval, str) and bool(interval.strip())
+    if choice["billing_type"] in ("recurring", "trial_then_recurring"):
+        if not has_interval:
+            raise CheckoutInstanceError("AF-CHECKOUT-BILLING",
+                                        f"price {price['price_choice_id']!r} is {choice['billing_type']!r} with no "
+                                        "recurring_interval; the billing interval is material disclosure and is "
+                                        "refused rather than guessed or shown as one payment")
+        choice["recurring_interval"] = interval.strip()
+    elif has_interval:
+        raise CheckoutInstanceError("AF-CHECKOUT-BILLING",
+                                    f"price {price['price_choice_id']!r} carries recurrence terms "
+                                    f"(recurring_interval {interval!r}) with billing_type {price['billing_type']!r}")
+    return choice
 
 
 def bump_applies_to(intake: Dict[str, Any]) -> Dict[str, bool]:

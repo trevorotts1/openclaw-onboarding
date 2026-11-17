@@ -23,6 +23,7 @@ harness_make_box() {  # <root> [slug]
              "$root/.openclaw/state/rr-receiver" \
              "$root/bin"
     cp "$POLL" "$root/.openclaw/skills/65-rescue-receiver/rescue-poll.sh"
+    for _eh_extra in rr_journal_check.py rr_owner_message.py; do [ -f "$(dirname "$POLL")/$_eh_extra" ] && cp "$(dirname "$POLL")/$_eh_extra" "$root/.openclaw/skills/65-rescue-receiver/"; done
     cp "$HELPER" "$root/.openclaw/skills/shared-utils/rescue-env.sh"
     cp "$SUPERVISE" "$root/.openclaw/skills/shared-utils/rescue-supervise.py"
     # Stub openclaw. RECORDS EVERY CALL: one line per invocation, plus the env

@@ -3,14 +3,24 @@
 # (ONE cron job) against its FULL desired state. Findings D22/D23/D31 repair.
 #
 # WHAT THIS DOES
-#   Registers exactly one `openclaw` cron job named `skill75-keepalive` whose
-#   prompt is timer-artifacts/keepalive-cron-prompt.txt with __SKILL_ROOT__ /
-#   __RUNS_DIR__ substituted - and, when the job already exists, RECONCILES the
-#   registered job field by field against the desired state below. Name-only
-#   presence NEVER passes: a job with the right name and the wrong model,
-#   schedule, prompt/root, enabled state, agent, session, delivery or revision
-#   is detected and repaired through the supported owner interface
-#   (`openclaw cron edit <id>`), then read back and re-compared.
+#   Registers exactly one `openclaw` cron job named `skill75-keepalive`.
+#
+#   THE JOB IS A COMMAND PAYLOAD BY DEFAULT: the job runs the shipped program
+#   `python3 -B <skill>/scripts/core/heartbeat/keepalive_core.py --runs-dir
+#   <dir>` itself - no model in the loop, no agent turn, no tokens per tick.
+#   The model-wrapped form (the prompt file
+#   timer-artifacts/keepalive-cron-prompt.txt with __SKILL_ROOT__ /
+#   __RUNS_DIR__ substituted) is kept ONLY behind --agent-wrapper, for a box
+#   whose CLI cannot run a command payload. The form is never guessed and never
+#   silently swapped: a CLI with no `cron add --command` refuses to register
+#   and names --agent-wrapper as the fallback.
+#
+#   When the job already exists it is RECONCILED field by field against the
+#   desired state below. Name-only presence NEVER passes: a job with the right
+#   name and the wrong payload, schedule, prompt/root, enabled state, agent,
+#   session, delivery or revision is detected and repaired through the
+#   supported owner interface (`openclaw cron edit <id>`), then read back and
+#   re-compared.
 #
 #   Desired state (schema blackceo.keepalive-desired-state/v1):
 #     * installation/owner identity - declaration key skill75-keepalive:<id>
@@ -31,14 +41,19 @@
 #                                the exit is non-zero (D22). Effort (--thinking)
 #                                is recorded honestly: unsupported is reported
 #                                as unsupported, never as an honored setting.
-#     * prompt/schema revision - sha256 of the rendered prompt plus schema id,
+#     * payload                - the command payload in the default form (its
+#                                exact text is compared, not just its name), or
+#                                the rendered prompt in --agent-wrapper form.
+#     * prompt/schema revision - sha256 of the rendered prompt (agent form) or
+#                                of the command (command form), plus schema id,
 #                                carried in the job description and compared.
-#     * run registry/root      - the runs dir baked into the prompt and echoed
+#     * run registry/root      - the runs dir baked into the payload and echoed
 #                                in the description; root drift shows up as
-#                                prompt-revision drift and is repaired together.
-#     * reporting route        - delivery stays silent (--no-deliver); per-run
-#                                client delivery is the prompt's own origin
-#                                registry, never a guessed target.
+#                                payload-revision drift and is repaired together.
+#     * reporting route        - a command payload delivers nothing at all; the
+#                                agent form also stays silent (--no-deliver).
+#                                Per-run client delivery is the program's own
+#                                origin registry, never a guessed target.
 #     * last successful exec.  - attested from the scheduler's own run state
 #                                (lastRunAtMs / lastRunStatus / consecutiveErrors),
 #                                distinguishing healthy from job loss.
@@ -75,9 +90,15 @@
 #   --apply    register or reconcile, read back, prove a tick, write attestation.
 #   --verify-tick  force one observation-tick proof even when nothing changed.
 #
+# FORMS
+#   (default)  a command payload: the keepalive program, no model.
+#   --agent-wrapper  the model-wrapped agent prompt (--agent / --model /
+#              --thinking apply here ONLY), for a box that cannot run a
+#              command payload.
+#
 # CLI
 #   bash install-keepalive-cron.sh [--dry-run|--apply|--verify-tick]
-#        [--agent NAME] [--model ID] [--runs-dir DIR]
+#        [--agent-wrapper] [--agent NAME] [--model ID] [--runs-dir DIR]
 #
 # EXIT
 #   0  reconciled and attested (or dry-run plan printed)
@@ -95,6 +116,9 @@ NAME="skill75-keepalive"
 CRON="${SKILL75_KEEPALIVE_CRON:-*/10 * * * *}"
 MODE="dry-run"
 FORCE_TICK=0
+AGENT_WRAPPER=0
+AGENT_SET=0
+MODEL_SET=0
 AGENT="${SKILL75_KEEPALIVE_AGENT:-${DS_AGENT_ID:-}}"
 MODEL="${SKILL75_KEEPALIVE_MODEL:-ollama/deepseek-v4.1-flash:cloud}"
 EFFORT="${SKILL75_KEEPALIVE_EFFORT:-}"
@@ -115,16 +139,32 @@ fi
 
 while [ $# -gt 0 ]; do
   case "$1" in
-    --dry-run)     MODE="dry-run"; shift ;;
-    --apply)       MODE="apply"; shift ;;
-    --verify-tick) MODE="apply"; FORCE_TICK=1; shift ;;
-    --agent)    AGENT="${2:-}"; shift 2 ;;
-    --model)    MODEL="${2:-}"; shift 2 ;;
+    --dry-run)       MODE="dry-run"; shift ;;
+    --apply)         MODE="apply"; shift ;;
+    --verify-tick)   MODE="apply"; FORCE_TICK=1; shift ;;
+    --agent-wrapper) AGENT_WRAPPER=1; shift ;;
+    --agent)    AGENT="${2:-}"; AGENT_SET=1; shift 2 ;;
+    --model)    MODEL="${2:-}"; MODEL_SET=1; shift 2 ;;
     --runs-dir) RUNS_DIR="${2:-}"; shift 2 ;;
-    -h|--help)  sed -n '2,72p' "$0"; exit 0 ;;
+    -h|--help)  sed -n '2,/^set -u$/p' "$0" | sed '$d'; exit 0 ;;
     *) echo "unknown option: $1" >&2; exit 2 ;;
   esac
 done
+
+# --- the job form: a command payload by default, never a model in the loop --
+FORM="command"
+[ "$AGENT_WRAPPER" = "1" ] && FORM="agent"
+if [ "$FORM" = "command" ]; then
+  # --agent / --model / --thinking describe an AGENT TURN this form does not
+  # run. Refuse instead of silently discarding them: a pin the job never uses
+  # is the same lie as an unpinned job that says it is pinned.
+  if [ "$MODEL_SET" = "1" ] || [ "$AGENT_SET" = "1" ]; then
+    _msg="FAIL --agent/--model/--thinking belong to --agent-wrapper; the default command payload runs no model and no agent turn."
+    echo "[install-keepalive-cron] $_msg Re-run with --agent-wrapper, or drop those flags." >&2
+    exit 2
+  fi
+  MODEL=""; AGENT=""; EFFORT=""
+fi
 
 _log() { echo "[install-keepalive-cron] $*"; }
 _err() { echo "[install-keepalive-cron] $*" >&2; }
@@ -166,6 +206,20 @@ _has_add() { printf '%s' "$_help_cron_add" | grep -q -- "$1"; }
 _has_edit() { printf '%s' "$_help_cron_edit" | grep -q -- "$1"; }
 _has_list() { printf '%s' "$_help_cron_list" | grep -q -- "$1"; }
 
+# --- the command payload (the default form): the program itself, no model ----
+# One command, the shipped program; --runs-dir is baked in with the resolved
+# runs dir. The program owns its own per-run subprocess timeouts, so no
+# scheduler-level timeout is invented here.
+COMMAND="python3 -B \"$SKILL_ROOT/scripts/core/heartbeat/keepalive_core.py\" --runs-dir \"$RUNS_DIR\""
+
+# A command payload needs `cron add --command`. A CLI WITHOUT it refuses here,
+# loudly, instead of registering the model-wrapped form behind the operator's
+# back (that form is an explicit --agent-wrapper decision).
+if [ "$FORM" = "command" ] && ! _has_add --command; then
+  _err "FAIL this openclaw CLI advertises no 'cron add --command': the command payload CANNOT be registered. NOTHING REGISTERED, nothing written. Re-run with --agent-wrapper to register the model-wrapped agent prompt instead."
+  exit 3
+fi
+
 # --- jobs JSON access (list with disabled visible; get/show for one job) -----
 _list_jobs_json() {
   if _has_list --all; then
@@ -190,7 +244,14 @@ SKILL_VER="$(cat "$SKILL_ROOT/skill-version.txt" 2>/dev/null || echo unknown)"
 INSTALL_ID="${SKILL75_KEEPALIVE_INSTALL_ID:-unknown}"
 RUNS_ROOT_CANON="$(python3 -c 'import os,sys;print(os.path.realpath(sys.argv[1]))' "$RUNS_DIR")"
 
-DESC="managed-by=install-keepalive-cron.sh schema=$SCHEMA prompt_schema=$PROMPT_SCHEMA prompt_rev=$PROMPT_REV runs_dir=$RUNS_ROOT_CANON skill_root=$SKILL_ROOT skill_version=$SKILL_VER install_id=$INSTALL_ID"
+CMD_REV="$(printf '%s' "$COMMAND" | python3 -c 'import hashlib,sys;print(hashlib.sha256(sys.stdin.buffer.read()).hexdigest())')"
+if [ "$FORM" = "command" ]; then
+  PAYLOAD_REV="form=command command_rev=$CMD_REV"
+else
+  PAYLOAD_REV="form=agent prompt_schema=$PROMPT_SCHEMA prompt_rev=$PROMPT_REV"
+fi
+
+DESC="managed-by=install-keepalive-cron.sh schema=$SCHEMA $PAYLOAD_REV runs_dir=$RUNS_ROOT_CANON skill_root=$SKILL_ROOT skill_version=$SKILL_VER install_id=$INSTALL_ID"
 
 MISMATCHES=""
 _add_mismatch() { MISMATCHES="${MISMATCHES}${MISMATCHES:+,}$1"; }
@@ -210,6 +271,7 @@ def norm(job):
     dev = job.get("delivery") if isinstance(job.get("delivery"), dict) else {}
     expr = sch.get("expr") or (job.get("schedule") if isinstance(job.get("schedule"), str) else "") or job.get("cron") or ""
     message = p.get("message") or p.get("text") or job.get("message") or ""
+    command = p.get("command") or job.get("command") or ""
     model = p.get("model") or job.get("model") or job.get("modelOverride") or ""
     thinking = p.get("thinking") or job.get("thinking") or ""
     return {
@@ -220,6 +282,7 @@ def norm(job):
         "agent": str(job.get("agentId") or job.get("agent") or job.get("effectiveAgentId") or ""),
         "session": str(job.get("sessionTarget") or job.get("session") or ""),
         "message": str(message),
+        "command": str(command),
         "description": str(job.get("description") or ""),
         "declkey": str(job.get("declarationKey") or ""),
         "delivery_silent": dev.get("mode") == "none" or bool(job.get("noDeliver")) or (dev.get("mode") is None and job.get("announce") is False),
@@ -284,17 +347,23 @@ PYEOF
 # Desired-state JSON: a key is None (skipped) when this CLI cannot express it;
 # unsupported surfaces then read back as visible mismatch, never as pass.
 _desired_json() {
-  DS_MODEL="" DS_THINK="" DS_SESSION="" DS_NODELIVER="" DS_DECLKEY=""
-  if [ -n "$MODEL" ]; then
-    if _has_add --model; then DS_MODEL="$MODEL"; fi
+  DS_MODEL="" DS_THINK="" DS_SESSION="" DS_NODELIVER="" DS_DECLKEY="" DS_COMMAND=""
+  if [ "$FORM" = "command" ]; then
+    # A command payload: the program's own text is the contract. No model, no
+    # agent turn, no session and no delivery surface exist on this job.
+    DS_COMMAND="$COMMAND"
+  else
+    if [ -n "$MODEL" ]; then
+      if _has_add --model; then DS_MODEL="$MODEL"; fi
+    fi
+    if [ -n "$EFFORT" ] && _has_add --thinking; then DS_THINK="$EFFORT"; fi
+    if _has_add --session || _has_edit --session; then DS_SESSION="isolated"; fi
+    if _has_add --no-deliver || _has_edit --no-deliver; then DS_NODELIVER=1; fi
   fi
-  if [ -n "$EFFORT" ] && _has_add --thinking; then DS_THINK="$EFFORT"; fi
-  if _has_add --session || _has_edit --session; then DS_SESSION="isolated"; fi
-  if _has_add --no-deliver || _has_edit --no-deliver; then DS_NODELIVER=1; fi
   if [ "$INSTALL_ID" != "unknown" ]; then DS_DECLKEY="skill75-keepalive:$INSTALL_ID"; fi
-  python3 - "$CRON" "$DS_MODEL" "$DS_THINK" "$AGENT" "$DS_SESSION" "$DS_NODELIVER" "$DESC" "$DS_DECLKEY" <<'PYEOF'
+  python3 - "$CRON" "$DS_MODEL" "$DS_THINK" "$AGENT" "$DS_SESSION" "$DS_NODELIVER" "$DESC" "$DS_DECLKEY" "$DS_COMMAND" <<'PYEOF'
 import json, os, sys
-cron, model, think, agent, session, nodeliver, desc, declkey = sys.argv[1:9]
+cron, model, think, agent, session, nodeliver, desc, declkey, command = sys.argv[1:10]
 print(json.dumps({
     "enabled": True,
     "schedule": " ".join(cron.split()),
@@ -302,7 +371,8 @@ print(json.dumps({
     "thinking": think or None,
     "agent": agent or None,
     "session": session or None,
-    "message": os.environ.get("DS_MSG", ""),
+    "message": os.environ.get("DS_MSG") or None,
+    "command": command or None,
     "description": desc,
     "declkey": declkey or None,
     "delivery_silent": bool(nodeliver),
@@ -311,8 +381,31 @@ PYEOF
 }
 
 _desired_json_with_message() {
-  # message is large: pass via env to keep argv small
-  DS_MSG="$PROMPT" _desired_json
+  # the rendered prompt is large: pass it via env to keep argv small. In the
+  # command form there IS no message, and asking for one would invent drift.
+  if [ "$FORM" = "command" ]; then
+    DS_MSG="" _desired_json
+  else
+    DS_MSG="$PROMPT" _desired_json
+  fi
+}
+
+# --- the registration argv for the chosen form -------------------------------
+ADD_ARGS=()
+_build_add_args() {
+  ADD_ARGS=(--name "$NAME" --cron "$CRON" --description "$DESC")
+  if [ "$FORM" = "command" ]; then
+    ADD_ARGS+=(--command "$COMMAND")
+  else
+    ADD_ARGS+=(--message "$PROMPT")
+    [ -n "$AGENT" ] && ADD_ARGS+=(--agent "$AGENT")
+    _has_add --no-deliver && ADD_ARGS+=(--no-deliver)
+    _has_add --session && ADD_ARGS+=(--session isolated)
+    [ -n "$MODEL" ] && _has_add --model && ADD_ARGS+=(--model "$MODEL")
+    [ -n "$EFFORT" ] && _has_add --thinking && ADD_ARGS+=(--thinking "$EFFORT")
+  fi
+  _has_add --declaration-key && ADD_ARGS+=(--declaration-key "skill75-keepalive:$INSTALL_ID")
+  return 0
 }
 
 # --- attestation sink -------------------------------------------------------
@@ -384,23 +477,24 @@ PYEOF
 # ============================ DRY-RUN =======================================
 if [ "$MODE" = "dry-run" ]; then
   _log "DRY-RUN plan (nothing registered, nothing written)."
-  _log "  desired: name=$NAME schedule='$CRON' session=isolated delivery=silent(no-deliver)"
-  _log "  desired: model=${MODEL:-<unrequested>} effort=${EFFORT:-<unrequested>} agent=${AGENT:-<none: box-bound default>}"
-  _log "  desired: prompt_rev=$PROMPT_REV runs_dir=$RUNS_ROOT_CANON"
-  _log "  reconcile keys: enabled,schedule,model,thinking,agent,session,message,description,declkey,delivery_silent"
+  if [ "$FORM" = "command" ]; then
+    _log "  desired: form=command payload='$COMMAND'"
+    _log "  desired: name=$NAME schedule='$CRON' no model, no agent turn, no session"
+    _log "  desired: runs_dir=$RUNS_ROOT_CANON"
+    _log "  reconcile keys: enabled,schedule,command,description,declkey"
+  else
+    _log "  desired: form=agent name=$NAME schedule='$CRON' session=isolated delivery=silent(no-deliver)"
+    _log "  desired: model=${MODEL:-<unrequested>} effort=${EFFORT:-<unrequested>} agent=${AGENT:-<none: box-bound default>}"
+    _log "  desired: prompt_rev=$PROMPT_REV runs_dir=$RUNS_ROOT_CANON"
+    _log "  reconcile keys: enabled,schedule,model,thinking,agent,session,message,description,declkey,delivery_silent"
+  fi
   # the exact command --apply would run: the plan IS the command (never a
   # paraphrase), printed only - a dry-run registers nothing and writes nothing.
-  PLAN_ARGS=(--name "$NAME" --cron "$CRON" --message "$PROMPT" --description "$DESC")
-  [ -n "$AGENT" ] && PLAN_ARGS+=(--agent "$AGENT")
-  _has_add --no-deliver && PLAN_ARGS+=(--no-deliver)
-  _has_add --session && PLAN_ARGS+=(--session isolated)
-  _has_add --declaration-key && PLAN_ARGS+=(--declaration-key "skill75-keepalive:$INSTALL_ID")
-  [ -n "$MODEL" ] && _has_add --model && PLAN_ARGS+=(--model "$MODEL")
-  [ -n "$EFFORT" ] && _has_add --thinking && PLAN_ARGS+=(--thinking "$EFFORT")
+  _build_add_args
   printf '%s cron add' "$OPENCLAW_BIN"
-  for _a in "${PLAN_ARGS[@]}"; do printf ' %q' "$_a"; done
+  for _a in "${ADD_ARGS[@]}"; do printf ' %q' "$_a"; done
   printf '\n'
-  if [ -n "$MODEL" ] && ! _has_add --model; then
+  if [ "$FORM" = "agent" ] && [ -n "$MODEL" ] && ! _has_add --model; then
     _log "  WARN this CLI advertises no --model: a model pin CANNOT be registered - a mismatch will be left visible (no silent unpin)."
   fi
   exit 0
@@ -480,14 +574,12 @@ if [ "$MATCH_COUNT" -eq 0 ]; then
     _write_attest "register-refused-pin-unsupported" "not-needed"
     exit 3
   fi
-  ADD_ARGS=(--name "$NAME" --cron "$CRON" --message "$PROMPT" --description "$DESC")
-  [ -n "$AGENT" ] && ADD_ARGS+=(--agent "$AGENT")
-  _has_add --no-deliver && ADD_ARGS+=(--no-deliver)
-  _has_add --session && ADD_ARGS+=(--session isolated)
-  _has_add --declaration-key && ADD_ARGS+=(--declaration-key "skill75-keepalive:$INSTALL_ID")
-  [ -n "$MODEL" ] && ADD_ARGS+=(--model "$MODEL")
-  [ -n "$EFFORT" ] && _has_add --thinking && ADD_ARGS+=(--thinking "$EFFORT")
-  _log "REGISTER $NAME ($CRON, silent, agent=${AGENT:-box-bound default}, model=${MODEL:-unrequested})"
+  _build_add_args
+  if [ "$FORM" = "command" ]; then
+    _log "REGISTER $NAME ($CRON, command payload - no model, no agent turn)"
+  else
+    _log "REGISTER $NAME ($CRON, silent, agent=${AGENT:-box-bound default}, model=${MODEL:-unrequested})"
+  fi
   ADD_OUT="$("$OPENCLAW_BIN" cron add "${ADD_ARGS[@]}" 2>&1)"
   ADD_RC=$?
   if [ "$ADD_RC" -ne 0 ]; then
@@ -568,6 +660,12 @@ if [ -n "$DRIFT" ]; then
         if _has_edit --session; then EDIT_ARGS+=(--session isolated); else _add_mismatch "session-edit-unsupported"; fi ;;
       delivery_silent)
         if _has_edit --no-deliver; then EDIT_ARGS+=(--no-deliver); else _add_mismatch "no-deliver-unsupported"; fi ;;
+      command)
+        _log "REPAIR command payload"
+        if ! "$OPENCLAW_BIN" cron edit "$PRIMARY_ID" --command "$COMMAND" >/dev/null 2>&1; then
+          _add_mismatch "command-edit-refused"
+          _err "MISMATCH 'cron edit --command' refused (payload drift stays visible). KEEPALIVE_EDIT_REFUSED command"
+        fi ;;
       message)
         _log "REPAIR message/root prompt_rev=$PROMPT_REV"
         if ! "$OPENCLAW_BIN" cron edit "$PRIMARY_ID" --message "$PROMPT" >/dev/null 2>&1; then

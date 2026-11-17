@@ -101,7 +101,19 @@
 #   * F88  the client-facing final notification body is three plain sentences
 #          built by rescue-notification.py final-body; machine fields stay in
 #          the ack only.
-RECEIVER_VERSION="1.8.0"
+RECEIVER_VERSION="1.9.0"
+
+# RRX-003: the receiver was measured answering in 70 to 110 seconds (see
+# rr-readiness.sh, "DEFAULT PROBE BUDGET"), while every call here gave up after
+# 25 seconds and exited without a trace. The limit is now 150 seconds, bounded,
+# and a call that does not complete is logged once an hour.
+RR_POST_MAX_S="${RR_POST_MAX_S:-150}"
+case "$RR_POST_MAX_S" in ''|*[!0-9]*) RR_POST_MAX_S=150 ;; esac
+if [ "$RR_POST_MAX_S" -lt 25 ] || [ "$RR_POST_MAX_S" -gt 300 ]; then RR_POST_MAX_S=150; fi
+# Set to 1 by the claim caller only: a claim must never be re-sent by curl,
+# because a claim that reached the server and timed out here has already
+# leased an instruction, and a second claim would lease it again or skip it.
+_POST_NO_RETRY=0
 
 # Attempt identity echoed from the claim (empty when the server is pre-RR-004).
 # Initialized empty so `set -u` never trips on the cached-re-ack path.
@@ -301,6 +313,7 @@ _rr_sup() {
 # who holds this target.
 RR_TARGET_KEY="box|$(printf '%s' "$RR_BOX_SLUG" | tr 'A-Z' 'a-z')"
 
+_LOCK_BLOCK_REASON=""
 _LOCK_OWNER_TOKEN=""
 _LOCK_HELD=0
 _LOCK_TAKEOVER_NOTE=""
@@ -368,10 +381,21 @@ _try_lock() {
     # naming the evidence — the fence contract's takeover protocol.
     case "$_tl_out" in
         *'"reason": "lapsed_without_reconciliation"'*|*'"prior_state": "dead"'*|*'"prior_state": "reused"'*)
-            _tl_gen=$(printf '%s' "$_tl_out" | sed -n 's/.*"observed_generation": *\([^,}]*\).*/\1/p')
-            [ -n "$_tl_gen" ] || _tl_gen=$(_rr_sup lock inspect --dir "$_LOCK_DIR" 2>/dev/null \
-                | sed -n 's/.*"generation": *\([^,}]*\).*/\1/p')
-            [ -n "$_tl_gen" ] || _tl_gen="null"
+            # RRX-039: the generation is read as JSON. The old sed kept the JSON
+            # quotation marks, so the supervisor compared "123" with 123, refused
+            # every takeover, and a lock left by a dead poll was never freed.
+            # The value is printed behind a fixed prefix so that an empty
+            # generation and "could not read the record" stay different answers.
+            _tl_gen_raw=$(_rr_sup lock inspect --dir "$_LOCK_DIR" 2>/dev/null | python3 -c 'import json,sys
+try:
+    rec = json.load(sys.stdin).get("record")
+    if isinstance(rec, dict): print("G:" + str(rec.get("generation")))
+except Exception:
+    pass' 2>/dev/null)
+            case "$_tl_gen_raw" in
+                G:*) _tl_gen="${_tl_gen_raw#G:}" ;;
+                *)   _LOCK_BLOCK_REASON="lock_record_unreadable"; return 1 ;;
+            esac
             _tl_out2=$(_rr_sup lock acquire \
                 --dir "$_LOCK_DIR" \
                 --owner-token "$_tl_token" \
@@ -391,6 +415,7 @@ _try_lock() {
                 _LOCK_TAKEOVER_NOTE="prior_generation=$_tl_gen"
                 return 0
             fi
+            _LOCK_BLOCK_REASON="takeover_refused"
             ;;
     esac
     return 1
@@ -414,15 +439,6 @@ _rr_lock_renew() {
     _rr_sup lock renew --dir "$_LOCK_DIR" --owner-token "$_LOCK_OWNER_TOKEN" \
         --lease-seconds "${1:-900}" >/dev/null 2>&1
 }
-
-_try_lock
-_tl_rc=$?
-if [ "$_tl_rc" -eq 2 ]; then
-    exit 0      # degraded: supervisor absent; already recorded and logged
-elif [ "$_tl_rc" -ne 0 ]; then
-    exit 0      # another poll holds the lock; nothing to do this fire
-fi
-trap _release_lock EXIT HUP INT TERM
 
 # ---------------------------------------------------------------------------
 # Minimal log helper. Logs are best-effort and must NEVER contain the token or
@@ -466,18 +482,26 @@ _json_str() {
 }
 
 # ---------------------------------------------------------------------------
-# v1.3.0 honesty helpers.
-#
-# _is_escalation <text> — returns 0 when the reply TEXT says the job was not
-# done (escalation / deferral language). Case-insensitive; the apostrophe in
-# "don't" is matched as a single-character wildcard so the pattern survives
-# shell quoting. A well-formed turn whose text defers to a human is not a
-# delivery (see the VERDICT RULE below).
-# ---------------------------------------------------------------------------
-_is_escalation() {
-    printf '%s' "$1" | grep -iE 'could not|unable to|human intervention|i don.t have|needs human|failed to' >/dev/null 2>&1
-}
+# RRX-039: the lock is taken here, after _log and _json_str have been defined.
+_try_lock
+_tl_rc=$?
+if [ "$_tl_rc" -eq 2 ]; then
+    exit 0      # degraded: supervisor absent; already recorded and logged
+elif [ "$_tl_rc" -ne 0 ]; then
+    # RRX-039: a lock whose owner is GONE and that still could not be taken is
+    # not "another poll is running". Say so, once an hour, with the next owner.
+    if [ -n "$_LOCK_BLOCK_REASON" ]; then
+        _lb_mark="$_STATE/lock-blocked.logged"
+        if [ ! -f "$_lb_mark" ] || [ -z "$(find "$_lb_mark" -mmin -60 2>/dev/null)" ]; then
+            _log "lock-blocked reason=$_LOCK_BLOCK_REASON acked=false next_owner=operator (the earlier poll is gone and its lock could not be taken over; no instruction is being collected)"
+            : > "$_lb_mark" 2>/dev/null || true
+        fi
+    fi
+    exit 0      # a live poll holds the lock, or the takeover was refused (logged above)
+fi
+trap _release_lock EXIT HUP INT TERM
 
+# ---------------------------------------------------------------------------
 # _bounded_excerpt <text> — the first 500 bytes with line breaks flattened to
 # spaces, so the excerpt is a single-line JSON-safe string (the caller still
 # runs it through _json_str before interpolating it into the body).
@@ -734,7 +758,11 @@ _post() {
             fi
         fi
     fi
-    _code=$(curl -sS --max-time 25 --connect-timeout 10 \
+    # RRX-003: at this limit a retry inside one call cannot fit the 2-minute
+    # schedule or the lease (curl applies --max-time to EACH attempt). The saved
+    # ack-pending record and the next fire are the retry.
+    if [ "${_POST_NO_RETRY:-0}" = "1" ] || [ "${RR_POST_MAX_S:-150}" -gt 60 ] 2>/dev/null; then _RETRY=""; fi
+    _code=$(curl -sS --max-time "${RR_POST_MAX_S:-150}" --connect-timeout 10 \
         $_RETRY \
         -H @"$_hdr" \
         -H 'Content-Type: application/json' \
@@ -1201,6 +1229,40 @@ try:
  d=json.load(sys.stdin); o=d.get("notification_origin")
  if isinstance(o,dict) and o.get("authorized") is True and o.get("channel")=="telegram" and isinstance(o.get("account"),str) and isinstance(o.get("target"),str): print(json.dumps(o,sort_keys=True,separators=(",",":")))
 except Exception: pass' 2>/dev/null)
+
+    # RRX-002: the words the owner will read are written by Rescue Rangers and
+    # arrive with the instruction. Accepted only as an object with a known kind
+    # and a text string; anything else is treated as absent.
+    RR_OWNER_MESSAGE_JSON=$(printf '%s' "$_pc_resp" | python3 -c 'import json,sys
+try:
+ d=json.load(sys.stdin); o=d.get("owner_message")
+ if isinstance(o,dict) and o.get("kind") in ("solved","owner_action","answer") and isinstance(o.get("text"),str) and o["text"].strip(): print(json.dumps({"kind":o["kind"],"text":o["text"]},sort_keys=True,separators=(",",":")))
+except Exception: pass' 2>/dev/null)
+
+    # RRX-001: when the server sends no origin, use the conversation this box
+    # recorded when it sent the case (written by rr_escalate.py). The chat id
+    # never left the box. Only a well-formed telegram origin is accepted.
+    # The per-box switch stays in charge: the box record is used ONLY when the
+    # claim says this box may message its owner (notify_authorized true, set by
+    # the operator in rr_box_auth). Default is off for every box.
+    RR_NOTIFY_AUTHORIZED=$(_json_field "$_pc_resp" "notify_authorized")
+    if [ -z "$RR_NOTIFICATION_ORIGIN" ] && [ -n "$TICKET_ID" ] && [ "$RR_NOTIFY_AUTHORIZED" = "true" ]; then
+        case "$TICKET_ID" in
+            *[!A-Za-z0-9._-]*|.*) : ;;
+            *)
+                _pc_of="$_OCROOT/state/rr-escalate/origins/$TICKET_ID.json"
+                if [ -f "$_pc_of" ]; then
+                    RR_NOTIFICATION_ORIGIN=$(python3 -c 'import json,sys
+try:
+ with open(sys.argv[1], encoding="utf-8") as fh: o=(json.load(fh) or {}).get("origin")
+ if isinstance(o,dict) and o.get("channel")=="telegram" and isinstance(o.get("account"),str) and o["account"] and isinstance(o.get("target"),str) and o["target"]:
+  print(json.dumps({"authorized":True,"channel":"telegram","account":o["account"],"target":o["target"]},sort_keys=True,separators=(",",":")))
+except Exception: pass' "$_pc_of" 2>/dev/null)
+                    [ -n "$RR_NOTIFICATION_ORIGIN" ] && RR_ORIGIN_SOURCE="box_record"
+                fi
+                ;;
+        esac
+    fi
 
     # --- member TYPES (mistype QC) -----------------------------------------
     # ONE probe, then every member the envelope relies on is checked for its
@@ -1845,9 +1907,13 @@ _resend_pending() {
     case "$_rp_max" in ''|*[!0-9]*) _rp_max=5 ;; esac
     [ "$_rp_max" -gt 0 ] 2>/dev/null || return 0
     _rp_n=0
-    for _rp_f in $(ls -1 "$_PENDING" 2>/dev/null | grep -v '^\.tmp-' | head -20); do
+    _rp_t0=$(date +%s 2>/dev/null || echo 0)
+    _rp_seen=0
+    for _rp_path in "$_PENDING"/op_*; do
         [ "$_rp_n" -lt "$_rp_max" ] 2>/dev/null || break
-        _rp_path="$_PENDING/$_rp_f"
+        _rp_seen=$(( _rp_seen + 1 ))
+        [ "$_rp_seen" -le 20 ] || break
+        _rp_f=$(basename "$_rp_path")
         [ -f "$_rp_path" ] || continue
         _rp_body=$(cat "$_rp_path" 2>/dev/null) || continue
         [ -n "$_rp_body" ] || continue
@@ -1855,6 +1921,10 @@ _resend_pending() {
         _rp_attempt=$(_json_field "$_rp_body" "attempt_id")
         _rp_verdict=$(_ack_send "$_rp_body" "$_rp_op" "$_rp_attempt" "resend")
         _rp_n=$(( _rp_n + 1 ))
+        # RRX-003: resends are bounded by time as well as by count. One fire must
+        # not spend longer than one call limit here before it asks for new work.
+        _rp_now=$(date +%s 2>/dev/null || echo 0)
+        [ $(( _rp_now - _rp_t0 )) -lt "${RR_POST_MAX_S:-150}" ] 2>/dev/null || _rp_max=0
         case "$_rp_verdict" in
             confirmed:*)
                 _journal_put "$_rp_op" "ack_confirmed" "{\"resend\":true,\"state_revision\":\"$(_json_str "${_rp_verdict#confirmed:}")\"}" 2>/dev/null || true
@@ -1955,7 +2025,7 @@ _ack() {
 
     # fail-closed reason validation.
     case "$_ack_reason" in
-        failed_nonzero_exit|failed_empty_reply|failed_timeout|failed_no_parser|dry_run|escalation_language|interrupted_prior_attempt)
+        failed_nonzero_exit|failed_empty_reply|failed_timeout|failed_no_parser|dry_run|interrupted_prior_attempt)
             _fr_json="\"$(_json_str "$_ack_reason")\""
             ;;
         "")
@@ -2302,7 +2372,9 @@ _gc_tmp() {
 # the group, waits a grace window, KILLs the group, reaps, and VERIFIES the group
 # is gone. A timeout or cancellation is persisted with the next owner.
 # ---------------------------------------------------------------------------
-RR_ACK_MARGIN_S=30          # reserved so the ack still lands inside the lease
+# RRX-003: the margin must cover ONE full call to the receiver at the new limit,
+# or an acknowledgement that takes 70 to 110 seconds lands after the lease ran out.
+RR_ACK_MARGIN_S=$(( ${RR_POST_MAX_S:-150} + 10 ))   # reserved so the ack still lands inside the lease
 RR_ATTEMPT_RESERVE_S=20     # reserved for the fallback turn
 RR_AGENT_MAX_S=600          # CAP, not a deadline — the lease sets the deadline
 RR_OUTCOME="none"
@@ -2496,23 +2568,23 @@ _rr_claim_recovered() {
 # Exact instruction_id match only: a different instruction never matches.
 # ---------------------------------------------------------------------------
 _rr_prior_interrupted() {
-    [ -d "$_JOURNAL" ] && [ -n "${INSTRUCTION_ID:-}" ] || return 1
-    _pi_needle="\"instruction_id\":\"$(_json_str "$INSTRUCTION_ID")\""
-    for _pi_f in $(grep -lF -- "$_pi_needle" "$_JOURNAL"/op_* 2>/dev/null); do
-        [ -f "$_pi_f" ] || continue
-        case "$(_json_field "$(cat "$_pi_f" 2>/dev/null)" "phase")" in
-            effect_started|effect_executed) ;;
-            *) continue ;;
-        esac
-        _pi_op=$(basename "$_pi_f")
-        # a done record carrying this operation id means the outcome was recorded
-        if grep -lF -- "\"operation_id\":\"$_pi_op\"" "$_DONE"/* >/dev/null 2>&1; then
-            continue
-        fi
-        printf '%s' "$_pi_op"
+    # RRX-010: the journal and the done records are READ AS JSON by
+    # rr_journal_check.py. A file that cannot be read makes the answer
+    # "undetermined", and the caller then does NOT run the turn. The old
+    # grep read an unreadable journal as "no earlier attempt".
+    [ -n "${INSTRUCTION_ID:-}" ] || return 1
+    _pi_tool="$(dirname "$0")/rr_journal_check.py"
+    if [ ! -f "$_pi_tool" ] || ! command -v python3 >/dev/null 2>&1; then
+        printf 'undetermined:journal_check_unavailable'
         return 0
-    done
-    return 1
+    fi
+    _pi_out=$(python3 "$_pi_tool" --journal "$_JOURNAL" --done "$_DONE" --instruction-id "$INSTRUCTION_ID" 2>/dev/null)
+    _pi_rc=$?
+    case "$_pi_rc" in
+        0)  return 1 ;;
+        10) printf 'interrupted:%s' "$(_json_field "$_pi_out" "operation_id")"; return 0 ;;
+        *)  printf 'undetermined:journal_unreadable'; return 0 ;;
+    esac
 }
 
 # ---------------------------------------------------------------------------
@@ -2584,15 +2656,30 @@ _claim_body="{\"action\":\"claim\",\"box_slug\":\"$(_json_str "$RR_BOX_SLUG")\",
 # shell (body captured through a file, as _ack_send does), not in a $( ) subshell.
 _POST_CODE=""; _POST_CT=""; _POST_BODY=""
 _claim_out="$_TMP/rr-poll-claim.out"
+_claim_t0=$(date +%s 2>/dev/null || echo 0)
+_POST_NO_RETRY=1
 _post "$_claim_body" > "$_claim_out" 2>/dev/null
 _claim_rc=$?
+_POST_NO_RETRY=0
+_claim_t1=$(date +%s 2>/dev/null || echo 0)
+RR_CLAIM_ELAPSED_S=$(( _claim_t1 - _claim_t0 ))
+[ "$RR_CLAIM_ELAPSED_S" -ge 0 ] 2>/dev/null || RR_CLAIM_ELAPSED_S=0
 CLAIM_RESP=""
 if [ -f "$_claim_out" ]; then
     CLAIM_RESP=$(cat "$_claim_out" 2>/dev/null)
     rm -f "$_claim_out" 2>/dev/null
 fi
 if [ "$_claim_rc" -ne 0 ]; then
-    [ "$(_post_class 2>/dev/null)" = "unauthorized" ] && _rr_claim_unauthorized "${_POST_CODE:-}"
+    _claim_class=$(_post_class 2>/dev/null)
+    [ "$_claim_class" = "unauthorized" ] && _rr_claim_unauthorized "${_POST_CODE:-}"
+    if [ "$_claim_class" != "unauthorized" ]; then
+        # RRX-003: a claim that did not complete is no longer silent. One line an hour.
+        _cf_mark="$_STATE/claim-failed.logged"
+        if [ ! -f "$_cf_mark" ] || [ -z "$(find "$_cf_mark" -mmin -60 2>/dev/null)" ]; then
+            _log "claim-failed class=${_claim_class:-unknown} http=${_POST_CODE:-none} elapsed=${RR_CLAIM_ELAPSED_S}s limit=${RR_POST_MAX_S}s (no instruction could be collected; the next fire retries)"
+            : > "$_cf_mark" 2>/dev/null || true
+        fi
+    fi
     exit 0
 fi
 [ -n "$CLAIM_RESP" ] || exit 0
@@ -2648,7 +2735,12 @@ RR_CACHE_KEY="${IDEMPOTENCY_KEY}:${RR_CLAIM_IDENTITY}"
 
 # RR-026: ONE budget, opened the moment the claim is accepted. Discovery, the
 # model turn, the unknown-agent fallback and the ACK margin all come out of it.
-_rr_budget_open "$LEASE_SECONDS"
+# RRX-003: subtract the time the claim itself took, so the turn can never run
+# past the lease the server granted at the START of that call.
+_rr_lease_left=$(( LEASE_SECONDS - RR_CLAIM_ELAPSED_S ))
+[ "$_rr_lease_left" -ge 60 ] 2>/dev/null || _rr_stop_without_turn "lease_consumed_by_slow_claim elapsed=${RR_CLAIM_ELAPSED_S}s"
+_rr_budget_open "$_rr_lease_left"
+[ "$RR_CLAIM_ELAPSED_S" -gt 10 ] 2>/dev/null && _log "claim-slow elapsed=${RR_CLAIM_ELAPSED_S}s instruction=${INSTRUCTION_ID:-none}"
 
 # If mode is dry_run: ack failed/dry_run (transport proof must never look like
 # delivery), write the done-file, and exit. No agent turn ever runs.
@@ -2670,6 +2762,46 @@ fi
 
 # RR plan F62: a poll killed after its effect began must not run the same work again blind.
 if _rr_prior=$(_rr_prior_interrupted); then
+    case "$_rr_prior" in
+        undetermined:*)
+            # Not proven either way. Run nothing, claim nothing. The ticket stays
+            # open on the server, which re-hands it and then pages a person.
+            _rr_persist_outcome "journal_undetermined" "operator" "the attempt journal could not be read (${_rr_prior#undetermined:}); the turn was not started"
+            _log "journal-undetermined instruction=$INSTRUCTION_ID reason=${_rr_prior#undetermined:} agent turn NOT started acked=false next_owner=operator"
+            # RRX-010: one corrupt journal file must not keep the box dark for
+            # ever. Move every unreadable JOURNAL file aside (never a done file),
+            # so the next run reads a readable journal and can decide again.
+            _qi_tool="$(dirname "$0")/rr_journal_check.py"
+            if [ -f "$_qi_tool" ] && command -v python3 >/dev/null 2>&1; then
+                _qi_list=$(python3 "$_qi_tool" --journal "$_JOURNAL" --done "$_DONE" --instruction-id "$INSTRUCTION_ID" 2>/dev/null | python3 -c 'import json, os, sys
+j = os.path.abspath(sys.argv[1])
+try:
+    d = json.load(sys.stdin)
+except Exception:
+    d = {}
+for p in (d.get("unreadable") or []):
+    if os.path.dirname(os.path.abspath(p)) == j and os.path.isfile(p):
+        print(p)' "$_JOURNAL" 2>/dev/null || true)
+                if [ -n "$_qi_list" ]; then
+                    mkdir -p "$_RECONCILE" 2>/dev/null || true
+                    chmod 700 "$_RECONCILE" 2>/dev/null || true
+                    printf '%s\n' "$_qi_list" | while IFS= read -r _qi_f; do
+                        [ -n "$_qi_f" ] || continue
+                        case "$_qi_f" in
+                            "$_JOURNAL"/op_*) ;;
+                            *) continue ;;
+                        esac
+                        [ -f "$_qi_f" ] || continue
+                        if mv "$_qi_f" "$_RECONCILE/journal-$(basename "$_qi_f")" 2>/dev/null; then
+                            _log "journal-quarantined file=$(basename "$_qi_f") acked=false next_owner=operator"
+                        fi
+                    done
+                fi
+            fi
+            exit 0
+            ;;
+    esac
+    _rr_prior="${_rr_prior#interrupted:}"
     _log "interrupted-prior-attempt instruction=$INSTRUCTION_ID prior_op=$_rr_prior agent turn NOT started (an earlier run began this instruction's effect and never recorded a result; running it again could repeat client-visible actions)"
     _rr_persist_outcome "interrupted_prior_attempt" "operator" "an earlier run of this instruction began its effect and never recorded a result ($_rr_prior)"
     _write_done "failed" 1 0 "interrupted_prior_attempt" "" ""
@@ -2677,7 +2809,10 @@ if _rr_prior=$(_rr_prior_interrupted); then
     exit 0
 fi
 
-_rr_notification_enqueue initial "Rescue Rangers received your request and is applying the authorized recovery."
+# RRX-021: no "initial" owner message is sent from here. It was sent when the
+# finished instruction was collected (not when the case was received), and it
+# claimed something was being applied even for advice-only cases. The agent
+# already tells the owner the case was sent, at the moment it is sent.
 
 # Decode the payload and run the local delivery command. The message is
 # base64-transported (never shell-quoted, never executed as shell).
@@ -2877,13 +3012,50 @@ fi
 # RR plan F88: the client-facing final body is three plain sentences ("Fixed and checked.",
 # "We are still working on this: <reason>.", "A specialist will follow up."). The machine
 # fields (repair_status, verification_status, owner, next_action) stay in the ack only.
-RR_NOTIFICATION_FINAL_BODY=$(python3 "$(dirname "$0")/rescue-notification.py" final-body --result-json "${RR_RESULT_JSON:-}" 2>/dev/null)
-[ -n "$RR_NOTIFICATION_FINAL_BODY" ] || RR_NOTIFICATION_FINAL_BODY="We are still working on this."
+# RRX-002: four outcomes in plain words, chosen from verified facts by
+# rr_owner_message.py. "Solved" is said only when the receiver's own check
+# verified the repair. The instruction's owner_message supplies the wording for
+# "one thing only you can do" and "here is the answer".
+RR_OWNER_OUT=$(python3 -c 'import json,sys
+ticket, result_path, om, verdict = sys.argv[1:5]
+try:
+    with open(result_path, encoding="utf-8") as fh: result = json.load(fh)
+except Exception: result = {}
+try: owner = json.loads(om) if om else {}
+except Exception: owner = {}
+print(json.dumps({"ticket_id": ticket, "result": result, "owner_message": owner, "transport_verdict": verdict}))
+' "${TICKET_ID:-}" "${RR_RESULT_JSON:-}" "${RR_OWNER_MESSAGE_JSON:-}" "$VERDICT" 2>/dev/null \
+    | python3 "$(dirname "$0")/rr_owner_message.py" 2>/dev/null)
+RR_NOTIFICATION_FINAL_BODY=$(_json_field "$RR_OWNER_OUT" "body")
+RR_OWNER_OUTCOME=$(_json_field "$RR_OWNER_OUT" "outcome")
+if [ -z "$RR_NOTIFICATION_FINAL_BODY" ]; then
+    RR_OWNER_OUTCOME="specialist_follow_up"
+    RR_NOTIFICATION_FINAL_BODY="Our support team is still working on the problem you reported. A person on the team now has it and will contact you. You do not need to do anything right now."
+fi
 if ! _write_done "$VERDICT" "$AGENT_RC" "$REPLY_CHARS" "$FAIL_REASON" "$_elapsed" "$REPLY_EXCERPT"; then
     _log "DONE-WRITE FAILED op=$_op_id instruction=$INSTRUCTION_ID — ack HELD (no dedup proof; journal retained)"
     exit 0
 fi
 _rr_notification_enqueue final "$RR_NOTIFICATION_FINAL_BODY"
+# RRX-001: the session that talks to the owner never saw this turn. Leave the
+# outcome in a small local file, by ticket, so that agent can look it up
+# (rr_escalate.py status --ticket <id>).
+case "${TICKET_ID:-}" in
+    ''|*[!A-Za-z0-9._-]*|.*) : ;;
+    *)
+        mkdir -p "$_STATE/case-outcomes" 2>/dev/null && chmod 700 "$_STATE/case-outcomes" 2>/dev/null
+        python3 -c 'import json,os,sys,tempfile,time
+path, ticket, outcome, body, origin = sys.argv[1:6]
+doc = {"ticket_id": ticket, "outcome": outcome, "owner_message": body, "owner_notified": bool(origin), "recorded_at": int(time.time())}
+fd, tmp = tempfile.mkstemp(prefix=".new-", dir=os.path.dirname(path))
+with os.fdopen(fd, "w", encoding="utf-8") as fh:
+    json.dump(doc, fh, sort_keys=True); fh.write("\n"); fh.flush(); os.fsync(fh.fileno())
+os.chmod(tmp, 0o600); os.replace(tmp, path)
+' "$_STATE/case-outcomes/$TICKET_ID.json" "$TICKET_ID" "${RR_OWNER_OUTCOME:-specialist_follow_up}" "$RR_NOTIFICATION_FINAL_BODY" "${RR_NOTIFICATION_ORIGIN:-}" 2>/dev/null \
+            || _log "case-outcome write failed ticket=$TICKET_ID"
+        ;;
+esac
+
 _ack "$VERDICT" "$AGENT_RC" "$REPLY_CHARS" "$FAIL_REASON" "$_elapsed" "$REPLY_EXCERPT"
 
 # The durable done/pending ledgers now carry the result. Do not leave this

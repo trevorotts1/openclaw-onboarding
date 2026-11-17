@@ -205,6 +205,52 @@ def _selection_core():
     raise IntakeError("78-signature-product-selection not found; install or update the onboarding skills")
 
 
+def _billing_vocab():
+    """The one billing vocabulary (shared-utils/signature_launch_contract/billing.py), shared with Skills
+    78, 79, 83 and the launch plan: the cadence words, the recurring intervals and the one phrasing of a
+    recurring price. Missing = the plan cannot be judged, so it fails closed."""
+    import importlib.util
+    mod = sys.modules.get("signature_launch_billing")
+    if mod is not None:
+        return mod
+    for root in _skill_roots():
+        f = root / "shared-utils" / "signature_launch_contract" / "billing.py"
+        if f.is_file():
+            spec = importlib.util.spec_from_file_location("signature_launch_billing", f)
+            mod = importlib.util.module_from_spec(spec)
+            sys.modules["signature_launch_billing"] = mod
+            spec.loader.exec_module(mod)
+            return mod
+    raise IntakeError("shared-utils/signature_launch_contract/billing.py not found; install or update the "
+                      "onboarding skills")
+
+
+def _carried_billing(payload: Any, price: Any, label: str, missing: List[str]):
+    """(billing_type, recurring_interval) for one offer or package, from what the client said for IT:
+    a stored billing_type with its recurring_interval, or a cadence word ("monthly", "quarterly", ...)
+    in a ``billing`` field. Absence stays the historical one payment. A word this release cannot carry is
+    a missing fact named for the client, never silently flattened to one payment."""
+    bill = _billing_vocab()
+    payload = payload if isinstance(payload, dict) else {}
+    price = price if isinstance(price, dict) else {}
+    kind = price.get("billing_type") or payload.get("billing_type")
+    interval = price.get("recurring_interval") or payload.get("recurring_interval")
+    if kind is None:
+        word = price.get("billing") or payload.get("billing")
+        if word in (None, ""):
+            return "one_time", None
+        kind, interval = bill.stated_billing(word)
+        if kind is None:
+            missing.append(f"how {label} bills: say all at once, weekly, monthly, quarterly or yearly "
+                           f"(got {word!r}; payment plans are not supported in this release)")
+            return "one_time", None
+    if kind == "recurring" and interval is not None and interval not in bill.RECURRING_INTERVALS:
+        missing.append(f"a billing interval for {label} that is one of {', '.join(bill.RECURRING_INTERVALS)} "
+                       f"(got {interval!r})")
+        return kind, None
+    return kind, (interval if kind == "recurring" else None)
+
+
 def _client_intake():
     """shared-utils/client_intake/engine.py: the repo checkout first, then any installed
     skills tree (OpenClaw, Claude Code, claude-nine, container), nested or flat."""
@@ -682,10 +728,19 @@ def _h_price(s, q, raw, value, ref):
 
 def _h_billing(s, q, raw, value, ref):
     choice = _match_choice(raw, q["choices"]) or raw
-    mapping = {"all at once": "one_time", "monthly": "recurring",
-               "in parts / trial first": "installment"}
-    bt = value.get("billing_type") or mapping.get(_norm(choice), "one_time")
+    bill = _billing_vocab()
+    # The client's own words decide the cadence: the three choices, or any cadence word they say
+    # ("weekly", "quarterly", "every year"). A word outside the table is never flattened to one payment.
+    bt, interval = bill.stated_billing(choice)
+    if bt is None and not value.get("billing_type"):
+        bt, interval = bill.stated_billing(raw)
+    bt = value.get("billing_type") or bt or "one_time"
+    interval = value.get("recurring_interval") or interval
+    if bt == "recurring" and not interval:
+        interval = "month"  # the bank's "Monthly" choice, the historical meaning of a bare "recurring"
     _set(s, "offers.main.billing_type", bt, "provided", q["id"], ref)
+    _set(s, "offers.main.recurring_interval", interval if bt == "recurring" else None, "provided",
+         q["id"], ref)
     _set(s, "offers.main.schedule", value.get("schedule", []), "provided",
          q["id"], ref)
 
@@ -838,7 +893,8 @@ def _money_display(amount_minor: Optional[int], currency: str) -> str:
 
 
 def _offer_from_answers(session: Dict[str, Any], slot: str, field: str,
-                        offer_id: str) -> Optional[Dict[str, Any]]:
+                        offer_id: str,
+                        missing: Optional[List[str]] = None) -> Optional[Dict[str, Any]]:
     e = _get(session, field)
     if e is None or e["state"] == "not_applicable" or e["value"] is None:
         return None
@@ -848,6 +904,7 @@ def _offer_from_answers(session: Dict[str, Any], slot: str, field: str,
         price = price_e["value"] if price_e else None
         billing = (_get(session, "offers.main.billing_type") or {}).get("value",
                                                                        "one_time")
+        main_interval = (_get(session, "offers.main.recurring_interval") or {}).get("value")
         schedule = (_get(session, "offers.main.schedule") or {}).get("value", [])
         display = value_name = None
         if isinstance(v, dict):
@@ -872,6 +929,8 @@ def _offer_from_answers(session: Dict[str, Any], slot: str, field: str,
                 "prices": [{"price_choice_id": f"{offer_id}-USD",
                             "currency": (price or {}).get("currency", "USD"),
                             "amount_minor": amount, "billing_type": billing,
+                            **({"recurring_interval": main_interval}
+                               if billing == "recurring" and main_interval else {}),
                             "native_price_id": None, "schedule": list(schedule),
                             "terms_source": None, "approval_status": status}],
                 "source_kind": "test_fixture" if session.get("test_only") else
@@ -882,6 +941,8 @@ def _offer_from_answers(session: Dict[str, Any], slot: str, field: str,
         return {"offer_id": offer_id, "slot": slot, "_incomplete": True}
     price = v.get("price") or {}
     amount = price.get("amount_minor") if isinstance(price, dict) else None
+    billing_type, billing_interval = _carried_billing(
+        v, price, v["display_name"], missing if missing is not None else [])
     return {"offer_id": offer_id, "slot": slot,
             "display_name": v["display_name"],
             "deliverables": list(v.get("deliverables", [])), "exclusions": [],
@@ -890,7 +951,8 @@ def _offer_from_answers(session: Dict[str, Any], slot: str, field: str,
             "prices": [{"price_choice_id": f"{offer_id}-USD",
                         "currency": price.get("currency", "USD")
                         if isinstance(price, dict) else "USD",
-                        "amount_minor": amount, "billing_type": "one_time",
+                        "amount_minor": amount, "billing_type": billing_type,
+                        **({"recurring_interval": billing_interval} if billing_interval else {}),
                         "native_price_id": None, "schedule": [],
                         "terms_source": None,
                         "approval_status": "recommended_unapproved"
@@ -928,6 +990,7 @@ def _package_offers(session: Dict[str, Any],
         amount = price.get("amount_minor", pkg.get("amount_minor"))
         if amount is None:
             missing.append(f"price for package {name} (unknown is not a price)")
+        pkg_billing, pkg_interval = _carried_billing(pkg, price, str(name), missing)
         status = pkg.get("price_status") or (
             "recommended_unapproved" if e["state"] == "recommended_unapproved"
             else "unknown" if amount is None else "provided")
@@ -938,7 +1001,8 @@ def _package_offers(session: Dict[str, Any],
             "native_product_id": None,
             "prices": [{"price_choice_id": f"{oid}-USD",
                         "currency": price.get("currency", "USD"),
-                        "amount_minor": amount, "billing_type": "one_time",
+                        "amount_minor": amount, "billing_type": pkg_billing,
+                        **({"recurring_interval": pkg_interval} if pkg_interval else {}),
                         "native_price_id": None, "schedule": [],
                         "terms_source": None, "approval_status": status}],
             "source_kind": "test_fixture" if session.get("test_only") else
@@ -974,7 +1038,7 @@ def assemble_plan(session: Dict[str, Any]) -> Dict[str, Any]:
         offers.extend(_package_offers(session, missing))
     else:
         main = _offer_from_answers(session, "main", "offers.main.description",
-                                   "MAIN")
+                                   "MAIN", missing)
         if main is None:
             missing.append("main offer (what is being sold)")
         else:
@@ -990,7 +1054,7 @@ def assemble_plan(session: Dict[str, Any]) -> Dict[str, Any]:
         e = _get(session, f"offers.{slot}")
         if not enabled:
             continue
-        o = _offer_from_answers(session, slot, f"offers.{slot}", oid)
+        o = _offer_from_answers(session, slot, f"offers.{slot}", oid, missing)
         if o is None or o.pop("_incomplete", False):
             missing.append(f"{slot} is enabled but its product is not defined")
             continue
@@ -1154,6 +1218,21 @@ _BILLING_WORDS = {"one_time": "one payment", "recurring": "billed monthly",
                   "installment": "paid in parts"}
 
 
+def _billing_words(price: Dict[str, Any]) -> str:
+    """How a price bills, in the buyer's words: "one payment", "billed monthly", "billed quarterly"."""
+    kind = price.get("billing_type")
+    if kind == "recurring" and price.get("recurring_interval"):
+        return "billed " + _billing_vocab().interval_word(price["recurring_interval"])
+    return _BILLING_WORDS.get(kind, "one payment")
+
+
+def _shown_price(price: Dict[str, Any], shown: str) -> str:
+    """The price as the client reads it: "$49" for one payment, "$49/month" for a recurring price."""
+    if price.get("billing_type") == "recurring" and price.get("recurring_interval"):
+        return _billing_vocab().price_per_interval(shown, price["recurring_interval"])
+    return shown
+
+
 def render_summary(session: Dict[str, Any]) -> str:
     """The plain-language plan (doc 03 §8) with REAL names and prices — no
     bracketed placeholders. Only callable once a plan exists."""
@@ -1168,8 +1247,8 @@ def render_summary(session: Dict[str, Any]) -> str:
         code = str(p.get("currency") or "").upper()
         sym = _selection_core().CURRENCY_SYMBOLS.get(code)
         if code != "USD" and sym and shown.startswith(sym):
-            return f"{shown} = {code} {shown[len(sym):]}"  # a bare symbol is ambiguous (JPY/CNY)
-        return shown
+            return _shown_price(p, f"{shown} = {code} {shown[len(sym):]}")  # a bare symbol is ambiguous (JPY/CNY)
+        return _shown_price(p, shown)
 
     lines = ["Here is the launch I recommend."]
     lines.append("1. Your first page introduces the result. It does not show a price.")
@@ -1179,7 +1258,7 @@ def render_summary(session: Dict[str, Any]) -> str:
 
     def main_detail(o):  # name, price, billing and deliverable count: all that is being approved
         n = len(o.get("deliverables") or [])
-        billing = _BILLING_WORDS.get(o["prices"][0].get("billing_type"), "one payment")
+        billing = _billing_words(o["prices"][0])
         return (f"{o['display_name']} ({price_of(o)}, {billing}, "
                 f"{n} deliverable{'s' if n != 1 else ''})")
     if plan["journey_mode"] == "multiple_options":

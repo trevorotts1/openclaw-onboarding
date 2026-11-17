@@ -11,9 +11,6 @@
 # The client was told she was finished when she was not.
 #
 # What this battery pins:
-#   R1  the EXACT incident fixture (19 Q, 5 missing fields, counter frozen at
-#       11) currently marks complete on unpatched code -> proves the bug
-#       (skipped automatically when run against ALREADY-patched code; see R2)
 #   R2  --complete on the incident fixture REFUSES: exit 87, interviewComplete
 #       stays false/absent, interviewQc.status is NOT "pass"
 #   R3  a genuinely complete interview still marks complete: exit 0,
@@ -24,10 +21,11 @@
 #       canonical structured questions (identity + branding + operations) with
 #       substance, plus conversational depth blocks; every mandatory field is
 #       present and the counter is in sync.
-#   R4  the disagreement-only fixture (same full content as R3, BUT
-#       lastQuestionNumber frozen far below the transcript count) also REFUSES
-#       -- "a completion claim that disagrees with the transcript by 8
-#       questions should refuse, not warn"
+#   R4  a counter frozen BELOW the transcript (the same full content as R3) is
+#       ACCEPTED — a lagging counter is the progress-writer bug class, never
+#       evidence of a missing answer (BU-02 / WF-002)
+#   R4b a counter that claims MORE than the transcript holds, by more than 3,
+#       is REFUSED — fabricated progress still hard-fails
 #   R5  a missing qc-interview-completion.py ALSO refuses (fail-closed), never
 #       silently permits completion when the evidence check cannot run
 #   R6  STANDARD-FIRST EDIT-MODE (PHASE 7): a genuine 8-question edit-mode
@@ -36,8 +34,6 @@
 #       anti-fabrication substance floor + all other checks still apply) —
 #       completion must not trade a false-complete for a false-incomplete on
 #       the standard-first lane
-#   R7  mutation proof: reverting update-interview-state.sh's evidence gate
-#       makes R2 go RED (the incident fixture marks complete again)
 #   R8  a completed interview is mirrored into the Command Center database
 #       (clients.interview_complete on the is_self=1 row, which task ingest
 #       reads) -- and a REFUSED completion leaves that flag at 0
@@ -339,17 +335,21 @@ PYSTAMP
   done
 )
 
-# ── R4: disagreement-only fixture (full content, but frozen counter) REFUSES ─
+# ── R4: a counter frozen BELOW the transcript is ACCEPTED (BU-02 / WF-002) ───
+# The state counter may only refuse a completion when it claims MORE questions
+# than the transcript holds. This fixture is the incident's shape — a full,
+# genuinely-complete interview whose lastQuestionNumber sits far below the
+# transcript — and it must now COMPLETE: the counter being behind is the
+# progress-writer bug, not an unanswered question. R4b keeps the guard's teeth
+# for the other direction (a counter that claims MORE than the transcript).
 (
   SANDBOX="$(mktemp -d -t evidence-gate-r4.XXXXXX)"
   trap 'rm -rf "$SANDBOX"' EXIT
   make_sandbox "$SANDBOX" >/dev/null
   make_full_transcript "$SANDBOX/.openclaw/workspace/company-discovery/workforce-interview-answers.md"
   make_full_state "$SANDBOX/.openclaw/workspace/.workforce-build-state.json"
-  # Freeze the counter far below the transcript's real raw count (11 —
-  # the 11 colon-less depth blocks; see make_full_transcript) — the SAME shape
-  # as the incident (a gap of 8), applied to an otherwise-complete interview,
-  # to isolate the disagreement check from the coverage/fields checks.
+  # Freeze the counter far below the transcript's real count (the SAME shape
+  # as the incident — a gap of 8 — applied to an otherwise-complete interview).
   jq '.interviewProgress.lastQuestionNumber = 3' \
     "$SANDBOX/.openclaw/workspace/.workforce-build-state.json" > "$SANDBOX/.tmp.json" \
     && mv "$SANDBOX/.tmp.json" "$SANDBOX/.openclaw/workspace/.workforce-build-state.json"
@@ -357,11 +357,38 @@ PYSTAMP
   OUT=$(run_complete "$SANDBOX")
   RC=$?
   COMPLETE_AFTER=$(jq -r '.interviewComplete' "$SANDBOX/.openclaw/workspace/.workforce-build-state.json" 2>/dev/null || echo "unreadable")
+  QC_STATUS_AFTER=$(jq -r '.interviewQc.status // "absent"' "$SANDBOX/.openclaw/workspace/.workforce-build-state.json" 2>/dev/null || echo "unreadable")
 
-  if [ "$RC" -eq 87 ] && [ "$COMPLETE_AFTER" = "false" ]; then
-    pass "R4: full content but frozen counter (11 raw-count transcript vs 3 state, disagree by 8) → REFUSES (exit 87), interviewComplete stays false"
+  if [ "$RC" -eq 0 ] && [ "$COMPLETE_AFTER" = "true" ] && [ "$QC_STATUS_AFTER" = "pass" ]; then
+    pass "R4: full content with a counter frozen BELOW the transcript (3 state vs the transcript's real count) → ACCEPTED (exit 0), interviewComplete=true, interviewQc.status=pass (a lagging counter warns, it never refuses)"
   else
-    fail "R4: expected exit=87 + interviewComplete=false (disagreement alone must refuse, not warn)" \
+    fail "R4: expected exit=0 + interviewComplete=true + qcStatus=pass (a counter below the transcript must not refuse)" \
+      "got rc=$RC interviewComplete=$COMPLETE_AFTER qcStatus=$QC_STATUS_AFTER; output tail: $(echo "$OUT" | tail -8)"
+  fi
+)
+
+# ── R4b: a counter that claims MORE than the transcript REFUSES ──────────────
+(
+  SANDBOX="$(mktemp -d -t evidence-gate-r4b.XXXXXX)"
+  trap 'rm -rf "$SANDBOX"' EXIT
+  make_sandbox "$SANDBOX" >/dev/null
+  make_full_transcript "$SANDBOX/.openclaw/workspace/company-discovery/workforce-interview-answers.md"
+  make_full_state "$SANDBOX/.openclaw/workspace/.workforce-build-state.json"
+  # Jump the counter far ABOVE what the transcript holds by more than 3 — the
+  # fabricated-progress shape the guard exists for.
+  jq '.interviewProgress.lastQuestionNumber = 30' \
+    "$SANDBOX/.openclaw/workspace/.workforce-build-state.json" > "$SANDBOX/.tmp.json" \
+    && mv "$SANDBOX/.tmp.json" "$SANDBOX/.openclaw/workspace/.workforce-build-state.json"
+
+  OUT=$(run_complete "$SANDBOX")
+  RC=$?
+  COMPLETE_AFTER=$(jq -r '.interviewComplete' "$SANDBOX/.openclaw/workspace/.workforce-build-state.json" 2>/dev/null || echo "unreadable")
+
+  if [ "$RC" -eq 87 ] && [ "$COMPLETE_AFTER" = "false" ] \
+     && case "$OUT" in *"more questions than the transcript holds"*) true ;; *) false ;; esac; then
+    pass "R4b: a counter HIGHER than the transcript by more than 3 (30 state vs the transcript's real count) → REFUSES (exit 87), interviewComplete stays false, refusal names the counter rule"
+  else
+    fail "R4b: expected exit=87 + interviewComplete=false + the counter rule named (a counter claiming MORE than the transcript must refuse)" \
       "got rc=$RC interviewComplete=$COMPLETE_AFTER; output tail: $(echo "$OUT" | tail -8)"
   fi
 )
@@ -533,5 +560,8 @@ echo "=========================================="
 echo "  PASSED: $NPASSED / $TOTAL"
 echo "  FAILED: $NFAILED / $TOTAL"
 echo "=========================================="
-[ "$NFAILED" -eq 0 ]
+# A battery that records nothing must never report success. The known-good run
+# records at least 12 results (the ten top-level cases plus the two timestamp
+# retry loops); fewer means cases silently stopped running.
+[ "$TOTAL" -ge 12 ] && [ "$NFAILED" -eq 0 ]
 exit $?

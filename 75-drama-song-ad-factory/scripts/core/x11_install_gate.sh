@@ -14,7 +14,11 @@
 #       explicit refuse flag. Logged only; the caller must NOT fail, and must
 #       keep every file in `preserve-list` (the manifest's targeted files) even
 #       if the new release does not ship it. With no manifest the list is empty
-#       and the update behaves exactly as it always did.
+#       and the update behaves exactly as it always did. Both callers do this:
+#       update-skills.sh sets the listed files aside before it replaces the
+#       tree, and install.sh sets them aside before its overlay copy; each puts
+#       back only what the release does not ship. Never change one caller and
+#       leave the other -- the WARN sentence below is a promise to the files.
 #   20  REFUSED: refuse mode is on and the gate said no (or could not run).
 #
 # Refuse mode is on only when <records>/backup-authorization.json exists or
@@ -50,9 +54,11 @@ say() { echo "  [x11-gate] $*"; }
 fail() {  # $1 = reason
   if [ "$mode" = "refuse" ]; then
     say "REFUSED (refuse mode): $1 -- skill 75 left untouched"
+    say "REFUSED: no production writer of the six s75-x11 records exists in this tree (only tests/test_x11_release_gate_wiring.py writes them), so a real install has no target.json and this gate cannot allow"
     exit 20
   fi
   say "WARN (warn-and-preserve; no backup-authorization record): $1"
+  say "WARN: no production writer of the six s75-x11 records exists in this tree (only tests/test_x11_release_gate_wiring.py writes them), so a real install has no target.json and this gate can never allow - it warns here, and refuses in refuse mode"
   say "WARN: manifest-targeted skill-75 files are kept, never deleted; the roll continues"
   exit 10
 }

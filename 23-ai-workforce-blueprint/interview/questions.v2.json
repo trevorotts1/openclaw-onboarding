@@ -1,0 +1,549 @@
+{
+  "version": "2.0.0",
+  "targetMinutes": 12,
+  "validationPolicy": {
+    "onTooShort": "ask ONE follow-up that shows the example; accept whatever the owner sends next (never refuse twice)",
+    "maxAttemptsBeforeAccept": 2,
+    "neverBlockOn": [
+      "length",
+      "wording quality"
+    ],
+    "alwaysBlockOn": [
+      "empty answer on a required question",
+      "a choice that is not in the list and is not 'Other: ...'",
+      "a color that cannot be resolved",
+      "a logo link that is not http or https"
+    ]
+  },
+  "sections": [
+    {
+      "id": "company",
+      "label": "Your company",
+      "order": 1
+    },
+    {
+      "id": "customers",
+      "label": "Your customers and brand",
+      "order": 2
+    },
+    {
+      "id": "goals",
+      "label": "Your goals",
+      "order": 3
+    },
+    {
+      "id": "tools",
+      "label": "The tools you use",
+      "order": 4
+    },
+    {
+      "id": "team",
+      "label": "Your team",
+      "order": 5
+    },
+    {
+      "id": "wrapup",
+      "label": "Finishing touches",
+      "order": 6
+    }
+  ],
+  "questions": [
+    {
+      "id": "company_name",
+      "section": "company",
+      "order": 1,
+      "kind": "text",
+      "required": true,
+      "prompt": "What name should we put on everything we build for you?",
+      "help": "Use the name your customers know you by. You can change it later.",
+      "example": "Bright Path Coaching",
+      "minChars": 2,
+      "minWords": 1,
+      "allowUnsure": false,
+      "knownKey": "company_name",
+      "storeOn": "client.name",
+      "legacyPrompts": [
+        "What is your company name?"
+      ]
+    },
+    {
+      "id": "industry",
+      "section": "company",
+      "order": 2,
+      "kind": "text",
+      "required": true,
+      "prompt": "What kind of business is it?",
+      "help": "A few words is perfect. This decides which teams we recommend.",
+      "example": "Life coaching for new managers",
+      "suggestions": [
+        "Coaching or consulting",
+        "Real estate",
+        "Home or local services",
+        "Online store",
+        "Software",
+        "Marketing agency",
+        "Content creator",
+        "Health and wellness"
+      ],
+      "minChars": 3,
+      "minWords": 1,
+      "allowUnsure": false,
+      "knownKey": "industry",
+      "storeOn": "company.industry",
+      "legacyPrompts": [
+        "What industry are you in?"
+      ]
+    },
+    {
+      "id": "what_you_sell",
+      "section": "company",
+      "order": 3,
+      "kind": "text",
+      "required": true,
+      "prompt": "In a sentence or two, what do you sell?",
+      "help": "Say it the way you would to a friend. If you have not started selling yet, tell us what you plan to sell.",
+      "example": "A 12-week coaching program and a monthly group call.",
+      "minChars": 10,
+      "minWords": 3,
+      "allowUnsure": true,
+      "storeOn": "company.offer"
+    },
+    {
+      "id": "business_stage",
+      "section": "company",
+      "order": 4,
+      "kind": "choice",
+      "required": true,
+      "prompt": "Where is the business today?",
+      "help": "Pick the closest one.",
+      "choices": [
+        "Just an idea",
+        "First few customers",
+        "Steady customers",
+        "Growing fast"
+      ],
+      "allowUnsure": false,
+      "storeOn": "company.stage"
+    },
+    {
+      "id": "ideal_customer",
+      "section": "customers",
+      "order": 5,
+      "kind": "text",
+      "required": true,
+      "prompt": "Who is your best kind of customer?",
+      "help": "Describe one real person or company you love working with.",
+      "example": "Women who just became managers at mid-size companies and feel in over their heads.",
+      "minChars": 15,
+      "minWords": 4,
+      "allowUnsure": true,
+      "storeOn": "company.ideal_customer",
+      "legacyPrompts": [
+        "Who is your ideal customer — and why do they come to YOU specifically?"
+      ]
+    },
+    {
+      "id": "unique_differentiator",
+      "section": "customers",
+      "order": 6,
+      "kind": "text",
+      "required": true,
+      "prompt": "Why do customers pick you instead of someone else?",
+      "help": "The honest reason, not the slogan.",
+      "example": "I answer my own phone and I have done their exact job for ten years.",
+      "minChars": 15,
+      "minWords": 4,
+      "allowUnsure": true,
+      "storeOn": "company.unique_differentiator",
+      "legacyPrompts": [
+        "Why do people come to YOU versus anyone else who does what you do?"
+      ]
+    },
+    {
+      "id": "customer_feeling",
+      "section": "customers",
+      "order": 7,
+      "kind": "text",
+      "required": true,
+      "prompt": "After working with you, how should a customer feel?",
+      "help": "Tap one or write your own.",
+      "suggestions": [
+        "Relieved",
+        "Confident",
+        "Taken care of",
+        "Excited",
+        "Proud",
+        "In control"
+      ],
+      "example": "Relieved, like a weight is off their shoulders.",
+      "minChars": 3,
+      "minWords": 1,
+      "allowUnsure": true,
+      "storeOn": "company.customer_feeling",
+      "legacyPrompts": [
+        "What feeling do you want your customers to leave with after working with you?"
+      ]
+    },
+    {
+      "id": "brand_descriptors",
+      "section": "customers",
+      "order": 8,
+      "kind": "text",
+      "required": true,
+      "prompt": "Give me three words a happy customer would use to describe you.",
+      "help": "Three words is enough.",
+      "example": "Honest, fast, friendly",
+      "minChars": 5,
+      "minWords": 2,
+      "allowUnsure": true,
+      "storeOn": "company.brand_descriptors",
+      "legacyPrompts": [
+        "What words would your best customer use to describe you?"
+      ]
+    },
+    {
+      "id": "brand_evokes",
+      "section": "customers",
+      "order": 9,
+      "kind": "text",
+      "required": false,
+      "prompt": "When someone sees your brand for the first time, what should they feel in the first five seconds?",
+      "help": "Optional. Skip it and we will use your answer about how customers feel.",
+      "suggestions": [
+        "Trust",
+        "Energy",
+        "Calm",
+        "Luxury",
+        "Fun",
+        "Boldness"
+      ],
+      "minChars": 3,
+      "minWords": 1,
+      "allowUnsure": true,
+      "storeOn": "company.brand_evokes",
+      "legacyPrompts": [
+        "What feeling do you want your brand to evoke?"
+      ]
+    },
+    {
+      "id": "brand_voice",
+      "section": "customers",
+      "order": 10,
+      "kind": "choice",
+      "required": false,
+      "prompt": "How should your company sound when it writes or talks?",
+      "help": "Optional. Pick the closest one.",
+      "choices": [
+        "Warm and friendly",
+        "Straight to the point",
+        "Polished and professional",
+        "Bold and energetic",
+        "Calm and reassuring"
+      ],
+      "allowOther": true,
+      "allowUnsure": true,
+      "storeOn": "company.brand_voice",
+      "legacyPrompts": [
+        "How would you describe your brand voice?"
+      ]
+    },
+    {
+      "id": "brand_primary_color",
+      "section": "customers",
+      "order": 11,
+      "kind": "color",
+      "required": false,
+      "prompt": "What is your main brand color?",
+      "help": "Optional. Type a color name like navy or a code like #1E3A8A.",
+      "knownKey": "brand_primary_color",
+      "storeOn": "client.brand_color",
+      "legacyPrompts": [
+        "What is your primary brand color?"
+      ]
+    },
+    {
+      "id": "brand_logo",
+      "section": "customers",
+      "order": 12,
+      "kind": "url",
+      "required": false,
+      "prompt": "Do you have a logo? Add it here.",
+      "help": "Optional. Upload a picture or paste a link.",
+      "knownKey": "brand_logo",
+      "storeOn": "client.logo_url",
+      "legacyPrompts": [
+        "Do you have a logo? Paste a public link to it (or upload one)."
+      ]
+    },
+    {
+      "id": "revenue_goal_12mo",
+      "section": "goals",
+      "order": 13,
+      "kind": "choice",
+      "required": true,
+      "prompt": "What would make the next 12 months a win, in sales?",
+      "help": "A rough range is fine. We use it to set targets for your team.",
+      "choices": [
+        "My first paying customers",
+        "Up to $100,000",
+        "$100,000 to $500,000",
+        "$500,000 to $1 million",
+        "More than $1 million"
+      ],
+      "allowOther": true,
+      "allowUnsure": true,
+      "storeOn": "company.revenue_goal"
+    },
+    {
+      "id": "top_priority_90d",
+      "section": "goals",
+      "order": 14,
+      "kind": "choice",
+      "required": true,
+      "prompt": "What matters most in the next 90 days?",
+      "help": "Pick one. We build that team strongest first.",
+      "choices": [
+        "Get more leads",
+        "Turn more leads into sales",
+        "Serve customers faster",
+        "Get organized behind the scenes",
+        "Launch something new"
+      ],
+      "allowOther": true,
+      "allowUnsure": false,
+      "storeOn": "company.priority_90d"
+    },
+    {
+      "id": "time_drain",
+      "section": "goals",
+      "order": 15,
+      "kind": "text",
+      "required": true,
+      "prompt": "What part of the business eats your time or do you dread doing?",
+      "help": "This is the first thing we take off your plate.",
+      "example": "Chasing unpaid invoices and answering the same five emails.",
+      "minChars": 8,
+      "minWords": 2,
+      "allowUnsure": true,
+      "storeOn": "owner.time_drain"
+    },
+    {
+      "id": "tools_used",
+      "section": "tools",
+      "order": 16,
+      "kind": "multi",
+      "required": true,
+      "prompt": "Which tools do you use to run the business?",
+      "help": "Tap everything you use, then add anything missing. None yet is a fine answer.",
+      "choices": [
+        "Gmail or Google Workspace",
+        "Outlook or Microsoft 365",
+        "GoHighLevel",
+        "HubSpot",
+        "Stripe",
+        "PayPal",
+        "QuickBooks",
+        "Calendly",
+        "Zoom",
+        "Shopify",
+        "Canva",
+        "Mailchimp",
+        "A website",
+        "A mobile app",
+        "None yet"
+      ],
+      "allowOther": true,
+      "allowUnsure": false,
+      "storeOn": "company.tools"
+    },
+    {
+      "id": "customer_channels",
+      "section": "tools",
+      "order": 17,
+      "kind": "multi",
+      "required": true,
+      "prompt": "Where do customers find you today?",
+      "help": "Tap all that apply.",
+      "choices": [
+        "Word of mouth",
+        "Instagram",
+        "Facebook",
+        "TikTok",
+        "LinkedIn",
+        "YouTube",
+        "Google search",
+        "Paid ads",
+        "Email list",
+        "Events or speaking",
+        "Not finding me yet"
+      ],
+      "allowOther": true,
+      "allowUnsure": false,
+      "storeOn": "company.channels"
+    },
+    {
+      "id": "department_review",
+      "section": "team",
+      "order": 18,
+      "kind": "board",
+      "required": true,
+      "prompt": "Here is your team. Keep it all, or remove what you do not need.",
+      "help": "Everything is kept unless you remove it. You can add a team that is missing.",
+      "completeWhen": "the owner pressed Keep all, or changed at least one card, and no removal is waiting for its warning to be confirmed",
+      "storeOn": "canonicalReconciliation.decisions",
+      "choices": [
+        "keep-all",
+        "edited"
+      ]
+    },
+    {
+      "id": "focus_dept_1",
+      "section": "team",
+      "order": 19,
+      "kind": "text",
+      "required": true,
+      "askIf": {
+        "answered": "top_priority_90d"
+      },
+      "prompt": "What is the first thing your {team} team should work on?",
+      "teamFrom": {
+        "question": "top_priority_90d",
+        "map": {
+          "Get more leads": "marketing",
+          "Turn more leads into sales": "sales",
+          "Serve customers faster": "customer-support",
+          "Get organized behind the scenes": "personal-assistant",
+          "Launch something new": "marketing"
+        },
+        "default": "marketing"
+      },
+      "help": "One sentence. If you are not sure, tap I am not sure and we will suggest three options.",
+      "example": "Get me 20 new leads a month from Instagram.",
+      "minChars": 8,
+      "minWords": 2,
+      "allowUnsure": true,
+      "storeOn": "departments.focus"
+    },
+    {
+      "id": "special_procedure",
+      "section": "team",
+      "order": 20,
+      "kind": "text",
+      "required": false,
+      "prompt": "Is there one thing you do a special way that your team must follow?",
+      "help": "Optional. For example how you handle refunds or how you welcome a new customer.",
+      "minChars": 8,
+      "minWords": 2,
+      "allowUnsure": true,
+      "storeOn": "canonicalReconciliation.customSops"
+    },
+    {
+      "id": "anything_else",
+      "section": "wrapup",
+      "order": 21,
+      "kind": "text",
+      "required": false,
+      "prompt": "Anything else we should know before we build?",
+      "help": "Optional.",
+      "minChars": 1,
+      "minWords": 1,
+      "allowUnsure": true,
+      "storeOn": "owner.notes"
+    },
+    {
+      "id": "command_center_name",
+      "section": "wrapup",
+      "order": 22,
+      "kind": "text",
+      "required": false,
+      "prompt": "What do you want to call your dashboard?",
+      "help": "Optional. Many owners pick something like Mission Control. Skip it and we will call it Command Center.",
+      "minChars": 2,
+      "minWords": 1,
+      "allowUnsure": false,
+      "knownKey": "command_center_name",
+      "storeOn": "company.commandCenterName",
+      "legacyPrompts": [
+        "What would you like to name your company's home base?"
+      ]
+    }
+  ],
+  "optionalDeepDivePack": {
+    "offeredAs": "Help your team sound like you (5 more minutes)",
+    "rules": "Never part of completion. Every question can be skipped. Answers are written to company-discovery/owner-style-pack.jsonl and never to build-state (a write to interviewProgress after completion un-verifies a finished build).",
+    "questions": [
+      {
+        "id": "barbecue_sentence",
+        "kind": "text",
+        "prompt": "How would you describe your business to a friend at a cookout?"
+      },
+      {
+        "id": "what_you_love",
+        "kind": "text",
+        "prompt": "What part of the work do you love and want to keep doing yourself?"
+      },
+      {
+        "id": "what_you_lost",
+        "kind": "text",
+        "prompt": "Is there something you used to enjoy that you no longer have time for?"
+      },
+      {
+        "id": "five_year_vision",
+        "kind": "text",
+        "prompt": "Five years from now, what do you want this business to give you?"
+      },
+      {
+        "id": "hard_conversations",
+        "kind": "choice",
+        "prompt": "When a customer is upset, how do you like it handled?",
+        "choices": [
+          "Fix it fast",
+          "Listen first",
+          "Offer a refund",
+          "Bring it to me"
+        ],
+        "allowOther": true
+      },
+      {
+        "id": "money_decisions",
+        "kind": "text",
+        "prompt": "If you had an extra $10,000 to grow this month, where would it go first?"
+      },
+      {
+        "id": "mentors",
+        "kind": "text",
+        "prompt": "Whose advice or style do you admire in business?"
+      },
+      {
+        "id": "biggest_frustration",
+        "kind": "text",
+        "prompt": "What is the most frustrating thing about running the business right now?"
+      },
+      {
+        "id": "failure_response",
+        "kind": "text",
+        "prompt": "Is there a mistake you never want your team to repeat?"
+      },
+      {
+        "id": "customer_questions",
+        "kind": "text",
+        "prompt": "What do customers ask you about most?"
+      },
+      {
+        "id": "rules_and_licenses",
+        "kind": "text",
+        "prompt": "Does your business have to follow any special rules or licenses?"
+      },
+      {
+        "id": "technical_comfort",
+        "kind": "choice",
+        "prompt": "How hands-on do you want to be with the technical side?",
+        "choices": [
+          "Not at all",
+          "A little",
+          "Very"
+        ]
+      }
+    ]
+  }
+}

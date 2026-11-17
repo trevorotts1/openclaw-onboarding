@@ -380,7 +380,6 @@ TRACE
 #     modules, and NO department venv. GATE 1 must name the interpreter and
 #     refuse (exit 6), not import from a silently-substituted interpreter.
 E1_RUN="$(mktemp -p "$TMPDIR_TEST" -d)"; mkdir -p "$E1_RUN/working/checkpoints"
-touch "$E1_RUN/working/checkpoints/.test-context"
 write_complete_ledger "$E1_RUN"
 echo '[{"slide":1,"scene":"x","copy":["hi"]}]' > "$E1_RUN/slides.json"
 E1_SCRIPTS="$(mktemp -p "$TMPDIR_TEST" -d)"
@@ -405,6 +404,7 @@ E1_HOME="$E1_RUN/home"; mkdir -p "$E1_HOME"
 E1_RC=0
 HOME="$E1_HOME" PATH="$E1_PYSHIM:/usr/bin:/bin" \
     PRESENTATION_PIPELINE_INTERPRETER="$E1_HOME/.venv-presentations/bin/python" \
+    PRESENTATION_ALLOW_DEGRADED_VERIFIERS=1 \
     SCRIPTS_DIR="$E1_SCRIPTS" bash "$ENTRY" \
     --run-dir "$E1_RUN" --slides "$E1_RUN/slides.json" --out "$E1_RUN/out.pptx" \
     > "$TMPDIR_TEST/e1.log" 2>&1 || E1_RC=$?
@@ -426,7 +426,6 @@ rm -rf "$E1_RUN" "$E1_SCRIPTS"
 #     first direction of the PD-928 proof: a build whose bundle carries audio_mp3
 #     + webinar_mp4 cannot complete without them, so refusal is correct.
 E2_RUN="$(mktemp -p "$TMPDIR_TEST" -d)"; mkdir -p "$E2_RUN/working/checkpoints"
-touch "$E2_RUN/working/checkpoints/.test-context"
 write_complete_ledger "$E2_RUN"
 echo '[{"slide":1,"scene":"x","copy":["hi"]}]' > "$E2_RUN/slides.json"
 E2_SCRIPTS="$(mktemp -p "$TMPDIR_TEST" -d)"
@@ -458,7 +457,8 @@ E2_RC=0
 if [ -n "$E2_PY" ]; then
     HOME="$E2_HOME" PATH="$E2_BIN" \
         PRESENTATION_PIPELINE_INTERPRETER="$E2_PY" \
-        SCRIPTS_DIR="$E2_SCRIPTS" bash "$ENTRY" \
+        PRESENTATION_ALLOW_DEGRADED_VERIFIERS=1 \
+    SCRIPTS_DIR="$E2_SCRIPTS" bash "$ENTRY" \
         --run-dir "$E2_RUN" --slides "$E2_RUN/slides.json" --out "$E2_RUN/out.pptx" \
         > "$TMPDIR_TEST/e2.log" 2>&1 || E2_RC=$?
 else
@@ -506,7 +506,6 @@ rm -rf "$E2_RUN" "$E2_SCRIPTS"
 #     This is what "deck-only builds still work" must mean mechanically, and it
 #     is proven, not asserted.
 E3_RUN="$(mktemp -p "$TMPDIR_TEST" -d)"; mkdir -p "$E3_RUN/working/checkpoints"
-touch "$E3_RUN/working/checkpoints/.test-context"
 write_complete_ledger "$E3_RUN"
 echo '[{"slide":1,"scene":"x","copy":["hi"]}]' > "$E3_RUN/slides.json"
 E3_SCRIPTS="$(mktemp -p "$TMPDIR_TEST" -d)"
@@ -543,6 +542,7 @@ if [ -z "$E3_PY" ]; then
     echo "  UNPROVEN: E3 deck-only proof needs an interpreter importing reportlab+pptx+pypdf+pytesseract; none found on this box (checked \$HOME/.openclaw/.venv-presentations and python3)"
 elif HOME="$E3_HOME" PATH="$E3_BIN" \
     PRESENTATION_PIPELINE_INTERPRETER="$E3_PY" \
+    PRESENTATION_ALLOW_DEGRADED_VERIFIERS=1 \
     SCRIPTS_DIR="$E3_SCRIPTS" bash "$ENTRY" \
     --run-dir "$E3_RUN" --slides "$E3_RUN/slides.json" --out "$E3_RUN/out.pptx" \
     > "$TMPDIR_TEST/e3.log" 2>&1; then

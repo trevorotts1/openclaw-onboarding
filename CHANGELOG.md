@@ -1,4 +1,51 @@
+## [v27.1.74]  -  2026-11-15  -  Fish Audio Skill 30: verify the independently approved client voice and send one production model policy
+
+- Skill 30 v7.1.0 -> v7.1.1: resolve the partial Drama-3 migration left by PR #2754. One executable policy selects Drama-3 by default and permits S2.1 Pro only by explicit client/operator selection. Free, legacy, empty and unknown models fail; requests always send the model header.
+- Configuration QC and the production TTS helper require a separately owner-approved voice fingerprint bound to the installed company. They reject missing/wrong/foreign voices and unapproved request overrides. Never backfill approval from the active voice setting. Read only the selected installation's canonical stores, without executing dotenv or printing credentials/voice IDs.
+- Repair the stale QC secret path and replace production curl shortcuts with the guarded helper. Offline checks, paid live synthesis and acoustic listening review are separate evidence. Headless tests use synthetic client records and mocked provider I/O.
+- Command Center's companion PR vendors the policy with a source fingerprint, reads the same local approval, sends the model header and blocks model/voice/provider substitution. `cc-compat.json.pinnedTag` advances to the released Command Center v7.6.128 in the same reviewed fix, using the pin/cohort helper. A deployment is not a client voice approval.
+- Migration: each installation needs an independently confirmed voice approval before readiness. A code update alone does not approve its configured voice. Risk: MEDIUM, intentionally fails closed until approval is recorded. Live rollout state belongs in deployment receipts, not a code-version claim.
+
+
+## [v27.1.73]  -  2026-11-15  -  Batch #3729: Skill 75 FIN005 units and delivery-PDF text composition
+
+- Skill 75 v2.9.190 -> v2.9.191 carries U-GEN314, U-GEN405, U-GEN407, U-GEN413 and U-GEN419, each recut from its own lane onto main (batch #3729).
+- Skill 75 U-T03: `delivery_docs/pdf_writer.py` composes text before mapping, so split combining marks print, and names print correctly in the delivery PDFs.
+- Skill 23 templates: PD-004c and PD-909 from lane PDF001, plus the presentation motion toggle tolerating PD-013's bank depth annotation.
+- This header was added by lane FIN006 after the release tag v27.1.73 was cut without it, which left G2 and G2-EXT red on main at 38a79e2b0.
+
 ## [v27.1.72]  -  2026-11-12  -  Full-read guard: fleet-roll install wiring (installer, read_skill allow-lists, AGENTS.md rule stamper)
+## [Unreleased]  -  2026-11-16  -  CI: folded guard scripts and fast-guards sharding (non-workflow half of #3390, carried onto current main)
+
+- Supersedes #3390 for its non-workflow files only. #3390 changed workflow files and Skill 49 prover-pin inputs in one pull request, which the merge engine refuses (pin inputs and workflow files must travel separately), so the `.github/workflows/` half (deleting the 52 folded workflows, adding `council.yml`, `skill44.yml`, `macos-acceptance.yml`, the 2-shard matrix and `GH_TOKEN` in `fast-guards.yml`) is left for its own workflow-only pull request.
+- 63 new folded guard scripts in `scripts/ci/fast-guards.d/` with their entries in `scripts/ci/fast-guards.json` (166 guards). Until the workflow half lands, each of these also still runs as its own workflow: a duplicate finding, not a failure, exactly as `test_fast_guards_mapping.py` on main already reports. `ledger-truth-gate` is not folded here: it needs `GH_TOKEN`, which only the workflow half passes to `fast-guards.yml`.
+- `installer-contracts-guard--credential-store.sh` carries both run steps of the `credential-store` job in `installer-contracts-guard.yml`: the credential-store test, then the Fish Audio production model and independent client voice suite (`python3 -m unittest discover -s 30-fish-audio-api-reference/tests -v`, added to that job after the fold was first cut). Its guard entry now sets `python311: true`, as for every folded job that sets up Python 3.11, so the suite still runs once the workflow half deletes `installer-contracts-guard.yml`.
+- `scripts/ci/fast_guards.py`: `--shard i/n`, `FG_BASE_SHA` / `FG_HEAD_SHA` / `FG_PR_LABELS` for guards that judge the pull request range, and `::error file=<path>` naming the failing repo file. Without `--shard` it runs every selected guard, as before.
+- New `scripts/ci/macos-acceptance-paths.json` and `scripts/ci/macos_acceptance_select.py` (used by the workflow half's macOS job).
+- Four folded scripts no longer trip their own repo-wide scans (the reds on #3390): the D9 step of `both-paths-delivery-guard.sh` writes the banned label as a regex, `role-workspace-root-collapse-guard.sh` builds its seeded defect at run time, and `embedded-python-syntax-guard.sh` builds its deliberately broken fixture at run time. What each guard checks is unchanged.
+- Tests that read a folded workflow now also read the folded script and guard entry (`test_downsell_wrapper.py` in Skill 49, three presentations tests in Skill 23, `tests/unit/shared-readiness-projection.test.py`); `scripts/test-single-update-skills-entrypoint.sh` allowlists `fast-guards.json` and the folded script beside the three workflows that still exist; `guard-hook-enforcement-parity.sh` maps gates 6 and 7 to `fast-guards.yml`; `CONTRIBUTING.md` points at the folded release-ceremony guard.
+- Skill 49 v2.1.61 -> v2.1.62 (test only; tests are not part of the prover pin, so no pin mint). No root version bump. Migration: CI only; not rolled onto any client box. Risk: LOW (adds guard runs inside `fast-guards`; removes nothing).
+
+## [Unreleased]  -  2026-11-13  -  Recurring prices (weekly, monthly, quarterly, yearly) for the signature launch family (Skills 83, 49, 71, 79)
+
+- A client can make any offer in a Black Friday launch (Skill 83) or signature funnel (Skill 49) a repeating price, not only one payment: main offer, package, bump, upsell or downsell. The cadence the client says per offer ("monthly", "every three months", "yearly") is read by one table, `shared-utils/signature_launch_contract/billing.py` (cadence words, the four intervals, "$49/month" phrasing, the unit and count a billing platform takes), and travels as `billing_type: recurring` plus `recurring_interval` through the offer mapper, the launch record and its schema, the plan the client approves, the delivery sheet, the checkout instances and the upsell disclosure. Installments and a trial first are still refused at plan time with the same shared sentence.
+- Skill 83 0.2.38 -> 0.2.39 (no per-skill CHANGELOG file): intake accepts exactly the types computed from the shared billing module, the plan and delivery sheet say how often a price is charged, `SKILL.md` no longer implies one payment only, new DECIDED entry `recurring_billing_carried_by_intake`. Skill 49 v2.1.59 -> v2.1.60 and Skill 71 1.3.37 -> 1.3.38 (schema byte copy); see their CHANGELOG files. Skill 79 0.1.10 -> 0.1.11 (no per-skill CHANGELOG file): the order-form manuscript prints a repeating price as "$49.00/month on a recurring basis (billing interval: month)".
+- `shared-utils/client_intake/engine.py` reads a cadence word in the billing answer (`weekly`, `quarterly`, `every year`) as a recurring price with its interval. A quarter is every 3 months where a billing platform has no quarter unit (`terms_for_interval`).
+- Known limit: Skill 06's native price binding still knows day, week, month and year only, so a quarterly offer is named as unresolved there (existing behavior for an unsupported interval) until Skill 06 learns an interval count.
+- Pinned files changed; the Skill 49 prover pin needs a CI mint. Not merged, deployed or rolled onto any client box.
+## [Unreleased]  -  2026-11-13  -  Batch pull requests run only the required checks
+
+- Every pull_request workflow that does not produce one of the 8 required checks (69 workflows, 105 jobs) now skips its jobs when the head branch starts with `batch/`. The three workflows that produce the required checks (`ghl-mcp-supervised-guard.yml`, `qc-static.yml`, `version-consistency.yml`) are untouched, and push-to-main triggers are unchanged, so main still runs everything after a merge.
+- New guard `scripts/ci/batch-required-only-check.py` (folded into fast-guards as `batch-required-only-guard`, with a self-test) fails if a required-check workflow gets the skip or a new pull_request workflow lacks it.
+- No guard or workflow is removed; duplicate findings are listed in the PR description for the separate audit.
+- No skill content changed, so no version bump. Migration: CI only; not rolled onto any client box.
+- Risk: LOW. Members run their own checks before QC; a skipped job reports "skipped", not failed.
+## [Unreleased]  -  2026-11-13  -  SF prover pin authority: a manual mint on a batch branch commits onto that branch
+
+- `.github/workflows/sf-prover-pin-authority.yml` (mint job only): a manual dispatch on a branch other than main now pushes the one pin-only github-actions[bot] commit onto the dispatched branch itself (fast-forward), instead of creating a `pin/mint-*` ref and a pull request to main. The built-in token cannot create a new ref when the batch also changes workflow files ("workflows scope may be required"); a fast-forward by a pin-only commit carries no workflow change. Push-to-main and dispatch-on-main are unchanged. Source: batch-merge diagnosis 2026-11-13, section 5.2.
+- No skill version bump: the pinned Skill 49 inputs are untouched, so the pin does not change.
+- Migration: repository change only; not merged, deployed or rolled onto any client box.
+- Risk: LOW. A dispatch on a non-branch ref is refused; a non-fast-forward push fails loudly.
 
 ## [Unreleased]  -  2026-11-12  -  Owner approval flow: the owner always gets a link (Skills 35, 44, 83 + shared helper)
 

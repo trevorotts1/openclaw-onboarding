@@ -3,7 +3,7 @@
 **Cluster:** North-Star Doctrine (the integration + ship layer)
 **Doctrine parent:** SOP-NORTHSTAR-00 (Attention Is the Product). This SOP is how the North Star becomes a *pre-output gate*, not a wish.
 **Owning roles at write time:** Director of Presentations (synthesis + wiring); QC-Specialist-Presentations (owns the composite gate at the new P-SHIFT-QC phase, 7.5)
-**Enforced at the gate by:** composite **`AF-PRIORITY-SHIFT`** (DOCTRINE-ONLY — specified at Phase 7.5 P-SHIFT-QC, not yet mechanically wired in build_deck.py or PIPELINE-MANIFEST.autofails). Runs all 14 sub-assertions, writes `working/qc/priority_shift_report.json` (one row per item + evidence), and refuses ship until all 14 PASS. Blocks like `AF-PHASE-SKIPPED`. See SOP-MECHANICAL-ENFORCEMENT-REGISTRY.md for registration status.
+**Enforced at the gate by:** composite **`AF-PRIORITY-SHIFT`** (registered in the manifest; checker build_deck._chk_priority_shift_ledger; see PD-097 for what it does and does not check today). Runs all 14 sub-assertions, writes `working/qc/priority_shift_report.json` (one row per item + evidence), and refuses ship until all 14 PASS. Blocks like `AF-PHASE-SKIPPED`. See SOP-MECHANICAL-ENFORCEMENT-REGISTRY.md for registration status.
 **Status:** Doctrine SOP. Encodes Powerful-Presentation-Framework Part 11 (integration for AI) + Part 10.4/10.5 (construction + priority-shift checklists) + Appendix C (quote index), and edge cases 167e/k. This SOP carries the **canonical loadable block** verbatim (§3) and the **14-item gate** (§4). Faithful source: `Powerful_Presentation_Framework.md` §10.4–10.5, §11, §13, Appendix C.
 
 ---
@@ -34,7 +34,7 @@ Plus the **quote→application index** (§8) so any role can trace a doctrine li
 
 ## 3. THE LOADABLE INSTRUCTION BLOCK (Part 11.2 — canonical, carried verbatim)
 
-This is the single source of the framework's "BEGIN/END POWERFUL PRESENTATION INSTRUCTIONS" block. It is also embedded in SOP-NORTHSTAR-00. Load it into the department's system instructions or call it as a dedicated SOP.
+This block is a copy; the canonical text is SOP-NORTHSTAR-00 section 5. It is also embedded in SOP-NORTHSTAR-00. Load it into the department's system instructions or call it as a dedicated SOP.
 
 ----- BEGIN POWERFUL PRESENTATION INSTRUCTIONS -----
 
@@ -138,7 +138,7 @@ This is the framework's own ship gate, run as **one deck-wide pass at Phase 7.5 
 
 **Item 0 (the North-Star overlay):** before all 14, the deck must have held attention for its whole duration — the #1 job. Items 13 and 14 are the framework's two acceptance tests for it (deliberate peak + ending; most-vivid-by-the-end). The 14 items are the **decomposition** of that one job into checkable evidence.
 
-The output report (Part 11.3) is **shipped alongside the deck** so the presenter sees exactly which moves are present and, for a repair, which were added and why.
+The output report (Part 11.3) is **kept in the run folder at working/qc/priority_shift_report.json and summarized to the presenter by the Delivery Concierge** so the presenter sees exactly which moves are present and, for a repair, which were added and why.
 
 ---
 
@@ -161,18 +161,18 @@ The rules in §3's block are not new where the department already enforces them;
 
 ## 6. ENFORCEMENT NOTE (for Agent W3)
 
-- **`AF-PRIORITY-SHIFT`** (NEW, composite) — surface: runner, **Phase 7.5 P-SHIFT-QC**. Checker `run_signature_deck.check_priority_shift_ledger`: runs the 14 sub-assertions in §4, writes `working/qc/priority_shift_report.json` (14 rows, pass/fail + evidence), blocks ship like `AF-PHASE-SKIPPED`. Pieces P161/P155. DECK-level.
+- **`AF-PRIORITY-SHIFT`** (NEW, composite) — surface: runner, **Phase 7.5 P-SHIFT-QC**. Checker `build_deck._chk_priority_shift_ledger`: runs the 14 sub-assertions in §4, writes `working/qc/priority_shift_report.json` (14 rows, pass/fail + evidence), blocks ship like `AF-PHASE-SKIPPED`. Pieces P161/P155. DECK-level.
 - Most of the 14 sub-assertions **reuse existing/sibling gates** (columns above): items 2,3,8,10,11,13,14 map to `AF-NO-PRIORITY-STACK`, `AF-NO-COST-OF-INACTION`, `AF-C3`, `AF-NO-RERANK`, `AF-NO-TRIGGER`, `AF-PEAK-END`, `AF-NO-SALIENCE-APEX`. The composite is the **single deck-wide ledger pass**, not 14 new codes.
 - **`AF-CONVERTER-NO-INVENT`** (NEW, edge 167d) — surface: build_deck, Phase -1 (converter). No claim/stat in `source_brief` absent from source. Co-noted here because INTEGRATION owns the rules block that forbids invention.
 - **`AF-SYNC` extension** (HOLE B) — `sync_check.py` must scan every `check_script` so composite/qc-class codes are registered. Relevant because the composite's sub-checks live in checker scripts.
-- Full 4-part lockstep per CRAFT/SOP-SLIDE-06 (manifest phase + autofail entry / runner checker / Section-5 ruleset row mirrored to SOP-SLIDE-00 / `test_preflight.py` fixture). manifest_version 17 → 18.
+- Full 4-part lockstep per CRAFT/SOP-SLIDE-06 (manifest phase + autofail entry / runner checker / Section-5 ruleset row mirrored to SOP-SLIDE-00 / `test_preflight.py` fixture).
 
 ---
 
 ## 7. WIRING IT INTO THE WORKFLOW (Part 11.3)
 - Mode identification is the **first step** of every job (SOP-MODE-00).
 - The 14-item gate is a **required pre-output quality pass** (Phase 7.5).
-- Output the checklist results **alongside** the presentation (the report rides with the deck at delivery, Phase 9).
+- Output the checklist results **kept in the run folder at working/qc/priority_shift_report.json and summarized to the presenter by the Delivery Concierge**.
 - **Living document:** every newly-surfaced effective move is captured as a new instruction layer and wired in lockstep (SOP-PHILOSOPHY-00 §7).
 
 ---

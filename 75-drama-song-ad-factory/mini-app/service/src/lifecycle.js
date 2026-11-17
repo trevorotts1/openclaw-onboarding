@@ -25,6 +25,8 @@
 
 'use strict';
 
+import { withRetentionKind } from './retention.js';
+
 export const DAY_MS = 24 * 60 * 60 * 1000;
 
 export const STATES = [
@@ -172,7 +174,9 @@ export async function writeOperatorRecord(store, { clientId, line, nowMs }) {
     writes,
     updated_at: nowMs,
   };
-  await store.kvPut(key, JSON.stringify(record), OPERATOR_RECORD_TTL_SECONDS);
+  // The operator line is a status record: the same 30-day class its TTL above
+  // already prunes with.
+  await store.kvPut(key, JSON.stringify(withRetentionKind(record, 'status_record')), OPERATOR_RECORD_TTL_SECONDS);
   return { created: !existing, replaced: Boolean(existing), key, record };
 }
 

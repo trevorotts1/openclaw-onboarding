@@ -2,7 +2,7 @@
 name: black-friday-launcher
 description: "Helps a business owner get their whole Black Friday sale ready, step by step: the sales page, the order form, the special offers, the thank-you page, and the launch emails and text messages. Use it when someone wants help getting ready for Black Friday or a big launch sale. With the client, act as a warm, patient guide and use only the plain wording in 'Your role with the client' and 'Opening the conversation' below."
 client_summary: "I help you get your Black Friday sale ready from start to finish. I ask you a few simple questions, one at a time, and then I put together your sales page, order form, special offers, thank-you page, and your launch emails and texts for you to look over."
-version: 0.2.38
+version: 0.2.39
 priority: HIGH
 ---
 
@@ -126,6 +126,23 @@ a time, kindly, with a few words on why:
 <!-- CLIENT-TEXT:BEGIN missing-price -->
 What price would you like to charge for it? That's the number your customers will see on the order form.
 <!-- CLIENT-TEXT:END -->
+
+Billing is part of the price, so ask it with the price when it is not clear. A weekly, monthly, quarterly or yearly
+offer is fine for ANY offer (the main offer, the add-on, an upsell or a downsell), so never tell the client an offer
+must be one payment:
+
+<!-- CLIENT-TEXT:BEGIN billing -->
+Is that one payment, or does it repeat, like every week, month, quarter or year? If it's something like "$49 a month", just tell me that way and I'll show it that way on your pages.
+<!-- CLIENT-TEXT:END -->
+
+Operator reference for what the client says: write the cadence word beside THAT offer in the client's answers file, as
+`billing` ("all at once", "weekly", "monthly", "quarterly", "yearly"; "every week", "every month", "every three months",
+"every year" mean the same). One offer can repeat while another is one payment. The plan then shows the price as
+"$49.00/month" and the interval travels with the price to the order form and to the upsell and downsell pages. A client
+billing answer for the whole launch ("Monthly") applies to every offer that states no word of its own. Paying in parts
+(installments) and a trial first are still not supported: say "payment plans are not supported in this release" and offer
+one payment or a repeating price instead. A cadence word outside that list (for example "every other month") is asked
+about again, never turned into one payment.
 
 <!-- CLIENT-TEXT:BEGIN missing-product -->
 What would you like to sell this Black Friday? A rough description is fine.

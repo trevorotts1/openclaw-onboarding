@@ -11,12 +11,12 @@
 # operator Mac at 09:00.
 #
 # Banned .py surfaces ('import whisper', 'import openai_whisper',
-# 'from whisper import', 'from openai_whisper import', 'whisper.load(',
-# 'openai-whisper') in run folders + scripts/core non-test files. The ONLY
-# permitted local-ASR import is faster_whisper, and it lives ONLY in
-# lyric_timing.py — a second faster_whisper importer in core is an offender
-# too (the one transcription step owns the load and the Part D load guard).
-# Prose is never an offender: only .py files that run are scanned.
+# 'from whisper import', 'from openai_whisper import', dynamic
+# import_module('whisper')) in run folders + scripts/core non-test files.
+# The ONLY permitted local-ASR import is faster_whisper, and it lives ONLY
+# in lyric_timing.py — a second faster_whisper importer in core is an
+# offender too (the one transcription step owns the load and the Part D load
+# guard). Prose is never an offender: only .py files are parsed.
 #
 # Scope: this skill tree (onboarding). The 999 copy is W3-A's — scanning it
 # is their unit's job, not ours.
@@ -27,6 +27,10 @@
 # spaces ("/mnt/Work Disk/runs/..."); a named folder that does not exist is
 # a usage error, never a silent skip (a skipped folder is an unscanned one).
 # Exit 0 = clean; 2 = offender found (paths printed); 1 = usage error.
+#
+# The decision itself is made by qc_static_checks.py, which reads and parses
+# every file instead of reading grep output (S75-013): a file it cannot read
+# or parse is a failure (exit 1), never a silent "clean".
 set -u
 
 here="$(cd "$(dirname "$0")" 2>/dev/null && pwd)"
@@ -37,79 +41,26 @@ if [ ! -d "$core" ]; then
   exit 1
 fi
 
-hits="$(mktemp "${TMPDIR:-/tmp}/qcnla-hits.XXXXXX")" || {
-  echo "qc-no-local-asr: cannot create a hits file under ${TMPDIR:-/tmp}" >&2
-  exit 1
-}
-trap 'rm -f "$hits"' EXIT
-
-# Run folders: banned surfaces in any .py file (tests exempt). The one
-# transcription step lives in scripts/core, never inside a run folder.
-scan_run_dir() {
-  local d="$1"
-  if [ ! -d "$d" ]; then
-    echo "qc-no-local-asr: run folder not found: $d" >&2
-    exit 1
-  fi
-  grep -rIlnE \
-    --include='*.py' \
-    --exclude-dir=__pycache__ --exclude-dir=.git --exclude-dir=node_modules \
-    --exclude='test_*.py' --exclude='*_test.py' --exclude='conftest.py' \
-    -e '(^|[^a-z_])import +whisper *($|#|$)' \
-    -e '(^|[^a-z_])import +openai_whisper' \
-    -e '(^|[^a-z_])from +whisper +import' \
-    -e '(^|[^a-z_])from +openai_whisper +import' \
-    -e 'whisper\.load' \
-    -e 'openai-whisper' \
-    "$d" 2>/dev/null >> "$hits" || true
-}
+set -- no-local-asr --core "$core"
 # Split on ':' and newlines only -- an unquoted `for d in $run_dirs` split a
 # spaced path into fragments that were not folders and skipped them, so a
 # planted script under any spaced TMPDIR scanned clean. Legacy
 # space-separated lists still work: an entry that is not a folder is re-split
-# on whitespace (globbing off) and every piece must be a folder.
+# on whitespace (globbing off). A piece that is not a folder is handed to the
+# checker, which fails closed (exit 1) rather than skipping it.
 if [ -n "$run_dirs" ]; then
   while IFS= read -r entry; do
     [ -n "$entry" ] || continue
     if [ -d "$entry" ]; then
-      scan_run_dir "$entry"
+      set -- "$@" --run-dir "$entry"
       continue
     fi
     set -f
     for d in $entry; do
-      scan_run_dir "$d"
+      set -- "$@" --run-dir "$d"
     done
     set +f
   done < <(printf '%s\n' "$run_dirs" | tr ':' '\n')
 fi
 
-# scripts/core non-test .py files: banned surfaces anywhere, plus a second
-# faster_whisper importer (lyric_timing.py is the ONLY importer).
-grep -rIlnE \
-  --include='*.py' \
-  --exclude-dir=__pycache__ --exclude-dir=.git \
-  --exclude='test_*.py' --exclude='*_test.py' --exclude='conftest.py' \
-  -e '(^|[^a-z_])import +whisper *($|#|$)' \
-  -e '(^|[^a-z_])import +openai_whisper' \
-  -e '(^|[^a-z_])from +whisper +import' \
-  -e '(^|[^a-z_])from +openai_whisper +import' \
-  -e 'whisper\.load' \
-  -e 'openai-whisper' \
-  "$core" 2>/dev/null >> "$hits" || true
-grep -rIlnE \
-  --include='*.py' \
-  --exclude-dir=__pycache__ --exclude-dir=.git \
-  --exclude='test_*.py' --exclude='*_test.py' --exclude='conftest.py' \
-  -e 'faster_whisper' \
-  "$core" 2>/dev/null \
-| grep -vE '/audio_c3/lyric_timing\.py$' >> "$hits" || true
-
-if [ -s "$hits" ]; then
-  echo "qc-no-local-asr: HAND-WRITTEN WHISPER/ASR SURFACE — FAIL" >&2
-  while IFS= read -r f; do
-    echo "  offender: $f" >&2
-  done < "$hits"
-  exit 2
-fi
-echo "qc-no-local-asr: clean — the one transcription step is lyric_timing.py ($core)"
-exit 0
+exec python3 -I "$here/qc_static_checks.py" "$@"

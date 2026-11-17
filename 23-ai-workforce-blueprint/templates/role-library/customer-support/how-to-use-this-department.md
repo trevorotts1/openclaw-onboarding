@@ -35,7 +35,7 @@ Reach for this department when you want any of the following:
 - Owns the help center / KB.
 - Handles real-time chat support (Intercom, Drift, GoHighLevel chat).
 - Owns the first 30 days of every new customer's experience.
-- You own the financial resolution function within the customer support ecosystem - the intersection where.
+- You own the financial resolution function within the customer support ecosystem - the intersection where customer experience meets financial operations.
 
 If you are not sure whether a request belongs here, ask anyway. The department
 head will either take it or hand it to the right department. You never have to
@@ -77,69 +77,58 @@ and it will pick the right one, or you can ask for a specialist by name.
 | **Knowledge Base Specialist** | Owns the help center / KB. |
 | **Live Chat Specialist** | Handles real-time chat support (Intercom, Drift, GoHighLevel chat). |
 | **Onboarding Specialist** | Owns the first 30 days of every new customer's experience. |
-| **Refunds And Disputes Specialist** | You own the financial resolution function within the customer support ecosystem - the intersection where customer. |
+| **Refunds And Disputes Specialist** | You own the financial resolution function within the customer support ecosystem - the intersection where customer experience meets financial operations. |
 | **Retention Specialist** | Identifies at-risk accounts. |
 | **Tier 1 Support Specialist** | First line of customer inquiries. |
 | **Tier 2 Support Specialist** | Handles complex/escalated issues. |
 | **Voice Phone Support Specialist** | Handles phone inbound + outbound support. |
-| **Account Health Monitor Phase2** | For the department of - the company whose mission is one line. |
+| **Account Health Monitor Phase2** | For the department of - the company whose mission is one line: . |
 
-### What each specialist is for, with an example request
+### What each specialist is for
 
 **Account Health Monitor Proactive**
 
 - *What it is for:* Watches customer usage / engagement signals for trouble BEFORE the customer files a ticket.
-- *Example request:* "Have the Account Health Monitor Proactive take this on: Watches customer usage / engagement signals for trouble BEFORE the customer files a ticket."
 
 **Churn Prevention Specialist**
 
 - *What it is for:* When at-risk signals fire, this specialist owns the save campaign.
-- *Example request:* "Have the Churn Prevention Specialist take this on: When at-risk signals fire, this specialist owns the save campaign."
 
 **Knowledge Base Specialist**
 
 - *What it is for:* Owns the help center / KB.
-- *Example request:* "Have the Knowledge Base Specialist take this on: Owns the help center / KB."
 
 **Live Chat Specialist**
 
 - *What it is for:* Handles real-time chat support (Intercom, Drift, GoHighLevel chat).
-- *Example request:* "Have the Live Chat Specialist take this on: Handles real-time chat support (Intercom, Drift, GoHighLevel chat)."
 
 **Onboarding Specialist**
 
 - *What it is for:* Owns the first 30 days of every new customer's experience.
-- *Example request:* "Have the Onboarding Specialist take this on: Owns the first 30 days of every new customer's experience."
 
 **Refunds And Disputes Specialist**
 
-- *What it is for:* You own the financial resolution function within the customer support ecosystem - the intersection where customer.
-- *Example request:* "Have the Refunds And Disputes Specialist take this on: You own the financial resolution function within the customer support ecosystem."
+- *What it is for:* You own the financial resolution function within the customer support ecosystem - the intersection where customer experience meets financial operations.
 
 **Retention Specialist**
 
 - *What it is for:* Identifies at-risk accounts.
-- *Example request:* "Have the Retention Specialist take this on: Identifies at-risk accounts."
 
 **Tier 1 Support Specialist**
 
 - *What it is for:* First line of customer inquiries.
-- *Example request:* "Have the Tier 1 Support Specialist take this on: First line of customer inquiries."
 
 **Tier 2 Support Specialist**
 
 - *What it is for:* Handles complex/escalated issues.
-- *Example request:* "Have the Tier 2 Support Specialist take this on: Handles complex/escalated issues."
 
 **Voice Phone Support Specialist**
 
 - *What it is for:* Handles phone inbound + outbound support.
-- *Example request:* "Have the Voice Phone Support Specialist take this on: Handles phone inbound + outbound support."
 
 **Account Health Monitor Phase2**
 
-- *What it is for:* For the department of - the company whose mission is one line.
-- *Example request:* "Have the Account Health Monitor Phase2 take this on: For the department of - the company whose mission is one line."
+- *What it is for:* For the department of - the company whose mission is one line: .
 
 
 ---

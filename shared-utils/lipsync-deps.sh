@@ -35,7 +35,7 @@ LIPSYNC_PKG_SPECS=("mediapipe>=0.10.14" "opencv-python-headless" "numpy")
 LIPSYNC_MODEL_NAME="face_landmarker.task"
 LIPSYNC_MODEL_SHA256="64184e229b263107bc2b804c6625db1341ff2bb731874b0bcc2fe6544e0bc9ff"
 LIPSYNC_MODEL_BYTES="3758596"
-LIPSYNC_MODEL_URL="https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/latest/face_landmarker.task"
+LIPSYNC_MODEL_URL="https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task"
 
 _lipsync_log()  { printf '  lipsync-deps: %s\n' "$*"; }
 _lipsync_fail() { printf '  lipsync-deps: FAILED: %s\n' "$*" >&2; }

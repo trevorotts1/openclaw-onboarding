@@ -579,18 +579,37 @@ print(json.dumps({'channel':'telegram','payload':{'ok':True,'messageId':'fixture
         self.assertEqual(resumed.returncode,0,resumed.stderr)
         self.assertEqual(len(mints.read_text().splitlines()),2)
 
-    def test_explicit_renew_cannot_bypass_unknown_delivery_or_foreign_receipt(self):
+    def test_explicit_renew_cannot_bypass_foreign_receipt(self):
         state,_,mints,env=self.prepare_shell_resume_fixture()
         receipt_path=state.parent/'company-discovery/.interview-link-sends.log.receipt.json'
         receipt_path.parent.mkdir(parents=True)
         import hashlib
         base=dict(self.context,recipientHash=hashlib.sha256(b'123456789').hexdigest(),epoch=1,invitationExpiresAt=1)
-        for previous in (dict(base,status='uncertain'),dict(base,status='sending'),dict(base,status='accepted',companyId='foreign')):
-            receipt_path.write_text(json.dumps(previous))
-            rejected=self.invoke_sender(env,'--renew')
-            self.assertEqual(rejected.returncode,8,rejected.stderr)
-            self.assertFalse(mints.exists());self.assertFalse(self.capture.exists())
-            self.assertEqual(json.loads(receipt_path.read_text()),previous)
+        # A foreign identity is still a hard stop; only an old unsettled send of
+        # this same client is recoverable (BU-62).
+        previous=dict(base,status='accepted',companyId='foreign')
+        receipt_path.write_text(json.dumps(previous))
+        rejected=self.invoke_sender(env,'--renew')
+        self.assertEqual(rejected.returncode,8,rejected.stderr)
+        self.assertFalse(mints.exists());self.assertFalse(self.capture.exists())
+        self.assertEqual(json.loads(receipt_path.read_text()),previous)
+
+    def test_explicit_renew_recovers_an_old_uncertain_receipt(self):
+        state,_,mints,env=self.prepare_shell_resume_fixture()
+        receipt_path=state.parent/'company-discovery/.interview-link-sends.log.receipt.json'
+        receipt_path.parent.mkdir(parents=True)
+        import hashlib
+        base=dict(self.context,recipientHash=hashlib.sha256(b'123456789').hexdigest(),epoch=1,invitationExpiresAt=1)
+        for previous in (dict(base,status='uncertain'),dict(base,status='sending')):
+            with self.subTest(status=previous['status']):
+                receipt_path.write_text(json.dumps(previous))
+                recovered=self.invoke_sender(env,'--renew')
+                self.assertEqual(recovered.returncode,0,recovered.stderr)
+                self.assertTrue(self.capture.exists())
+                superseded=receipt_path.with_name(receipt_path.name+'.superseded-1.json')
+                self.assertEqual(json.loads(superseded.read_text()),previous)
+                self.assertEqual(json.loads(receipt_path.read_text())['status'],'accepted')
+                self.capture.unlink();receipt_path.unlink();superseded.unlink()
 
     def test_conflicting_selected_workspace_pins_refuse_before_issue_or_delivery(self):
         state,foreign,mints,env=self.prepare_shell_resume_fixture()

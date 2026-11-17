@@ -460,17 +460,31 @@ def test_ww16_a_short_declared_lead_in_cue_passes():
 
 # ---- WW-09: the recorded answer keeps its provenance ----------------------
 
-def test_ww09_explicit_answers_are_honoured_and_none_are_read_as_no():
+def test_ww09_explicit_answers_are_honoured_and_none_buy_anything():
+    # D-3 (2026-11-13): an explicit answer is honoured; anything else WAITS.
     assert SC.classify_song_answer([{"id": "song", "n": 1}])[0] is True
     assert SC.classify_song_answer([{"id": "song", "n": 2}])[0] is False     # explicit No stays No
-    # a MISSING answer is never read as No
+    # a MISSING answer is never read as Yes (three paid songs) or as No
     missing, prov, why = SC.classify_song_answer([{"id": "music", "n": 1}])
-    assert missing is True and why and prov["unknown"] is True
-    # a CORRUPT answer is never read as No
-    assert SC.classify_song_answer([{"id": "song", "n": 9}])[0] is True
-    # an AUTHOR-LESS delegated answer (another channel, no author) is unspecified
+    assert missing == "unanswered" and why and prov["unknown"] is True
+    # a CORRUPT answer is unanswered too
+    assert SC.classify_song_answer([{"id": "song", "n": 9}])[0] == "unanswered"
+    # an AUTHOR-LESS delegated answer (another channel, no author) is unanswered
     delegated, _p, _w = SC.classify_song_answer([{"id": "song", "n": 2, "channel": "assistant"}])
-    assert delegated is True
+    assert delegated == "unanswered"
+    # recorded: the run WAITS with the SONG APPROVAL question and buys nothing
+    with tempfile.TemporaryDirectory() as tmp:
+        assert SC.record_card_answer(tmp, [{"id": "music", "n": 1}], target="chat-1") == "unanswered"
+        st = json.load(open(os.path.join(tmp, "song-choices", "state.json")))
+        assert st["required"] is False and st["unanswered"] is True
+        assert st["provenance"]["refused_to_guess"]
+        # the music stage itself is refused: silence never pays for three songs
+        assert SC.dispatch_refusal(True, tmp)["reason_code"] == "SONG_APPROVAL_UNANSWERED"
+        assert SC.refusal(tmp)["reason_code"] == "SONG_APPROVAL_UNANSWERED"
+        # answering for real replaces the waiting state
+        assert SC.record_card_answer(tmp, [{"id": "song", "n": 1, "who": "client"}]) is True
+        assert json.load(open(os.path.join(tmp, "song-choices", "state.json")))["required"] is True
+        assert "unanswered" not in json.load(open(os.path.join(tmp, "song-choices", "state.json")))
 
 
 def test_ww09_provenance_is_recorded_in_the_run_state():

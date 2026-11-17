@@ -28,6 +28,9 @@ w4_make_box() {  # <root> [slug]
            "$root/.openclaw/secrets" "$root/.openclaw/state/rr-receiver" "$root/bin"
   cp "$W4_POLL" "$root/.openclaw/skills/65-rescue-receiver/rescue-poll.sh"
   cp "$REPO/65-rescue-receiver/rescue-notification.py" "$root/.openclaw/skills/65-rescue-receiver/"
+  for _w4_extra in rr_journal_check.py rr_owner_message.py; do
+    [ -f "$REPO/65-rescue-receiver/$_w4_extra" ] && cp "$REPO/65-rescue-receiver/$_w4_extra" "$root/.openclaw/skills/65-rescue-receiver/"
+  done
   cp "$W4_HELPER" "$root/.openclaw/skills/shared-utils/rescue-env.sh"
   cp "$W4_SUPERVISE" "$root/.openclaw/skills/shared-utils/rescue-supervise.py"
   cat > "$root/bin/openclaw" <<'STUB'

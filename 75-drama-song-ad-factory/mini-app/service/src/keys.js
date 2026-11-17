@@ -73,6 +73,10 @@ export async function pairRecordKey(presentedCode) {
  * for its owner — that record, and nothing in the request, is what decides
  * which client's data a key can reach (isolation.js).
  * `secret` is deliberately NOT a field here.
+ *
+ * No `retention_kind`: a key record is a credential, not a retention object. It
+ * is revoked (status 'revoked'), never removed by a time sweep, and the table in
+ * retention.js names no credential class. Tagging it would invent one.
  */
 export async function buildKeyRecord({ clientId, kind, label, secret, nowMs }) {
   if (!KEY_KINDS.includes(kind)) throw new Error(AF_KEY_MALFORMED);

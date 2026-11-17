@@ -222,20 +222,21 @@ def test_succeeds_with_a_valid_stated_scripts_dir(tmp_path):
     """The negative control: a CORRECT --scripts-dir must NOT be refused.
     Without this, test_refuses_* above would still pass on a resolver that
     refuses everything unconditionally — a guard that always fails is not a
-    guard. QC_SKIP_PRESENTATION_DEPS + the .test-context marker clear GATE 1
-    (deps); --plan clears GATE 0 (intake ledger); the stub scripts carry a
+    guard. QC_SKIP_PRESENTATION_DEPS + PRESENTATION_ALLOW_DEGRADED_VERIFIERS=1
+    clear GATE 1 (deps); --plan clears GATE 0 (intake ledger); the stub scripts carry a
     lockstep sync_check.py and no pin file, so GATE 3 runs, records the pin's
     absence and proceeds (PD-009: a MISSING sync_check.py is exit 7, a missing
     pin file is a warning); a stub run_signature_deck.py exits 0 so the whole
     chain completes successfully end to end."""
     run_dir = tmp_path / "run"
     (run_dir / "working" / "checkpoints").mkdir(parents=True)
-    (run_dir / "working" / "checkpoints" / ".test-context").write_text("")
     fake_scripts = _make_fake_scripts_dir(tmp_path)
 
     env = {
         "OPENCLAW_WORKSPACE": str(tmp_path / "no-such-workspace"),
         "QC_SKIP_PRESENTATION_DEPS": "1",
+        # PD-201b: the test seam is an environment name, not a marker file.
+        "PRESENTATION_ALLOW_DEGRADED_VERIFIERS": "1",
     }
     result = _run_entry(run_dir, ["--scripts-dir", str(fake_scripts)], env)
 

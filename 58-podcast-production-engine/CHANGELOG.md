@@ -1,4 +1,8 @@
 # Changelog - 58 Podcast Production Engine (58-podcast-production-engine)
+## v1.1.3 - 2026-11-13 - fix(smoke-test): self-test deny-path check no longer depends on a non-empty shipped deny list
+
+- `scripts/podcast-smoke-test.py --self-test`: the check "model_router refuses a denied id (exit 2)" ran `model_router.py deny-check vendor-opus-preview` against the shipped config and expected a refusal. The shipped deny list was emptied when the rule against Anthropic / Claude models was removed (865a16465), so the check failed and `podcast-engine-fail-closed-guard` (T0-23 hermetic self-test) has been red on main since 2026-10-30. The expectation was stale, not the router. The check now writes a fixture models.json that arms `deny_patterns` and proves the router refuses with exit 2 (the refusal path is still tested), and a second check proves the shipped list stays empty (exit 0). No router behaviour change.
+
 ## v1.1.2 - 2026-11-09 - G3 lockstep roll for the batch fold (no behaviour change)
 
 - Version bumped so the folded content carries the version G3 requires above main. No functional change.

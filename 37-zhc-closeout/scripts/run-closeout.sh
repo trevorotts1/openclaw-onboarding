@@ -76,7 +76,9 @@ else
   exit 1
 fi
 
-STATE_FILE="${ZHC_STATE_FILE:-${OC_ROOT}/workspace/.workforce-build-state.json}"
+# One rule for the state file: WORKFORCE_BUILD_STATE_FILE, then ZHC_STATE_FILE,
+# then WORKFORCE_BUILD_STATE_PATH, then this script's own default.
+STATE_FILE="${WORKFORCE_BUILD_STATE_FILE:-${ZHC_STATE_FILE:-${WORKFORCE_BUILD_STATE_PATH:-${OC_ROOT}/workspace/.workforce-build-state.json}}}"
 LOG_FILE="$OC_ROOT/workspace/.zhc-closeout.log"
 SKILL_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
@@ -502,7 +504,9 @@ if [[ "${ZHC_SKIP_ROUTING_PREFLIGHT:-0}" != "1" ]]; then
     "${SKILL_DIR%/*}/scripts/verify-routing.sh" \
     "$OC_ROOT/skills/scripts/verify-routing.sh" \
     "$HOME/.openclaw/skills/scripts/verify-routing.sh" \
-    "/data/.openclaw/skills/scripts/verify-routing.sh"; do
+    "/data/.openclaw/skills/scripts/verify-routing.sh" \
+    "$OC_ROOT/scripts/verify-routing.sh" \
+    "$OC_ROOT/onboarding/scripts/verify-routing.sh"; do
     [[ -f "$_vr_cand" ]] && VERIFY_ROUTING_SCRIPT="$_vr_cand" && break
   done
   # Fallback: search from onboarding dir peer-location
@@ -540,7 +544,9 @@ if [[ "${ZHC_SKIP_PROVIDER_SMOKE:-0}" != "1" ]]; then
     "${SKILL_DIR%/*}/scripts/smoke-test-provider-capabilities.sh" \
     "$OC_ROOT/skills/scripts/smoke-test-provider-capabilities.sh" \
     "$HOME/.openclaw/skills/scripts/smoke-test-provider-capabilities.sh" \
-    "/data/.openclaw/skills/scripts/smoke-test-provider-capabilities.sh"; do
+    "/data/.openclaw/skills/scripts/smoke-test-provider-capabilities.sh" \
+    "$OC_ROOT/scripts/smoke-test-provider-capabilities.sh" \
+    "$OC_ROOT/onboarding/scripts/smoke-test-provider-capabilities.sh"; do
     [[ -f "$_ps_cand" ]] && PROVIDER_SMOKE_SCRIPT="$_ps_cand" && break
   done
   _smoke_build_id=$(state_get '.buildId')

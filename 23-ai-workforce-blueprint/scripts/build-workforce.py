@@ -202,22 +202,13 @@ except Exception as _e:  # pragma: no cover - defensive
 
 # PRD-2.15: helper to resolve the build state file path (no tildes; mirrors detect_platform.py).
 def _resolve_build_state_path():
-    """Return Path to .workforce-build-state.json or None if workspace not found.
+    """Return Path to the build-state file.
 
-    SCRATCH ISOLATION (standard-first redesign): $WORKFORCE_BUILD_STATE_FILE
-    overrides resolution (mirrors _build_state_path) so scratch/prebuild runs
-    never read the live box state.
+    ONE RESOLVER (WF-097): defers to _build_state_path(), the single rule every
+    script follows ($WORKFORCE_BUILD_STATE_FILE first, then the box's live file),
+    so a scratch/prebuild run and the apply build never read two state files.
     """
-    _env_state = os.environ.get("WORKFORCE_BUILD_STATE_FILE", "").strip()
-    if _env_state:
-        return Path(_env_state)
-    vps = Path("/data/.openclaw/workspace")
-    if vps.is_dir():
-        return vps / ".workforce-build-state.json"
-    mac = Path(os.environ.get("HOME", "")).expanduser() / ".openclaw" / "workspace"
-    if mac.is_dir():
-        return mac / ".workforce-build-state.json"
-    return None
+    return Path(_build_state_path())
 
 # WS-2: build-wide tally of how roles were staffed, for the visible ratio log.
 _LIBRARY_FILL_STATS = {"instantiated_from_library": 0, "llm_generated": 0,
@@ -4216,6 +4207,7 @@ def apply_standard_edits(config):
     generate_persona_matrix(selected_departments, persona_categories, company_name)
 
     _qc_rc = None
+    _presentation_deps_rc = None
     _qc_script = os.path.join(os.path.dirname(os.path.abspath(__file__)),
                               "qc-completeness.sh")
     if os.path.isfile(_qc_script):
@@ -4223,10 +4215,22 @@ def apply_standard_edits(config):
             _qc_args = ["bash", _qc_script]
             if _post_build_rc == 0:
                 _qc_args.append("--quiet")
-            _qc_rc = _ase_subprocess.run(_qc_args, timeout=180).returncode
+            # BU-57: presentation tools are never a reason to hold the whole
+            # company back. Skip that block in the required QC run and probe it
+            # separately below; the result is recorded, not enforced.
+            _qc_rc = _ase_subprocess.run(
+                _qc_args, timeout=180,
+                env=dict(os.environ, QC_SKIP_PRESENTATION_DEPS="1")).returncode
         except Exception as _qc_e:  # noqa: BLE001
             print(f"[STANDARD-FIRST WARN] qc-completeness.sh invocation failed: {_qc_e}",
                   file=sys.stderr)
+        try:
+            _presentation_deps_rc = _ase_subprocess.run(
+                ["bash", _qc_script, "--deps-only"], timeout=120).returncode
+        except Exception as _deps_e:  # noqa: BLE001
+            print(f"[STANDARD-FIRST WARN] presentation deps probe failed: {_deps_e}",
+                  file=sys.stderr)
+            _presentation_deps_rc = 124
 
     _library_gate_rc = None
     _gate_script = os.path.join(os.path.dirname(os.path.abspath(__file__)),
@@ -4246,7 +4250,7 @@ def apply_standard_edits(config):
     _verified = _finalize_completion(_build_state_path(), {
         "registration": 1 if registration_failures else 0,
         "postBuild": _post_build_rc, "qc": _qc_rc, "libraries": _library_gate_rc,
-    }, DEPARTMENTS_DIR)
+    }, DEPARTMENTS_DIR, presentation_deps=_presentation_deps_rc)
     create_handoff(option=config.get("option", "A"),
                    departments_done=list(selected_departments.keys()),
                    departments_remaining=[], progress_pct=100 if _verified else 90)
@@ -5044,15 +5048,27 @@ def build_from_config(config):
     # we still invoke qc-completeness.sh but in --quiet mode (PASS = no
     # Telegram, log-only). Idempotent and read-only.
     _qc_rc = None
+    _presentation_deps_rc = None
     _qc_script = os.path.join(os.path.dirname(os.path.abspath(__file__)), "qc-completeness.sh")
     if os.path.isfile(_qc_script):
         try:
             _qc_args = ["bash", _qc_script]
             if _post_build_rc == 0 and (_sop_rc in (0, -1)):
                 _qc_args.append("--quiet")
-            _qc_rc = _subprocess.run(_qc_args, timeout=180).returncode
+            # BU-57: presentation tools are never a reason to hold the whole
+            # company back. Skip that block in the required QC run and probe it
+            # separately below; the result is recorded, not enforced.
+            _qc_rc = _subprocess.run(
+                _qc_args, timeout=180,
+                env=dict(os.environ, QC_SKIP_PRESENTATION_DEPS="1")).returncode
         except Exception as _e:
             print(f"[v2.1 WARN] qc-completeness.sh invocation failed: {_e}", file=sys.stderr)
+        try:
+            _presentation_deps_rc = _subprocess.run(
+                ["bash", _qc_script, "--deps-only"], timeout=120).returncode
+        except Exception as _deps_e:
+            print(f"[v2.1 WARN] presentation deps probe failed: {_deps_e}", file=sys.stderr)
+            _presentation_deps_rc = 124
     else:
         print(f"[v2.1 WARN] qc-completeness.sh not present at {_qc_script}", file=sys.stderr)
 
@@ -5065,10 +5081,11 @@ def build_from_config(config):
     _library_gate_rc = None
     _gate_script = os.path.join(os.path.dirname(os.path.abspath(__file__)), "verify-library-gate.sh")
     # C4: capture the gate rc so the terminal build-progress emit below can
-    # HARD-REQUIRE it. None = the gate could not run (missing / errored) — treated
-    # as "unknown, do not newly block" so a box without the gate is not stranded;
-    # a concrete non-zero rc (role/SOP/trio/boundary/zhe not done) BLOCKS the
-    # "complete" signal so no false "ready" is emitted over an unverified library.
+    # HARD-REQUIRE it. A check that could not run counts as failed: a missing or
+    # errored gate leaves the rc unset (None), which finalize records as "failed",
+    # so it BLOCKS the "complete" signal exactly like a concrete non-zero rc
+    # (role/SOP/trio/boundary/zhe not done) — no false "ready" is ever emitted
+    # over an unverified library.
     _library_gate_rc = None
     if os.path.isfile(_gate_script):
         try:
@@ -5096,7 +5113,7 @@ def build_from_config(config):
         _verified = _finalize_completion(_build_state_path(), {
             "registration": 1 if registration_failures else 0,
             "postBuild": _post_build_rc, "qc": _qc_rc, "libraries": _library_gate_rc,
-        }, DEPARTMENTS_DIR)
+        }, DEPARTMENTS_DIR, presentation_deps=_presentation_deps_rc)
         create_handoff(option=config.get("option", "A"),
                        departments_done=list(selected_departments.keys()),
                        departments_remaining=[], progress_pct=100 if _verified else 90)
@@ -5628,8 +5645,8 @@ def _ensure_company_discovery_dir():
     """
     global MASTER_FILES, COMPANY_DISCOVERY_DIR
     if not COMPANY_DISCOVERY_DIR:
-        # Use the folder the platform resolver chose at import. Scan ~/Downloads
-        # only when that resolver produced nothing.
+        # Use the folder the platform resolver chose at import (honours
+        # MASTER_FILES_DIR); scan ~/Downloads only when it produced nothing.
         if not MASTER_FILES:
             MASTER_FILES = find_master_files_folder()
         COMPANY_DISCOVERY_DIR = os.path.join(MASTER_FILES, "company-discovery")

@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Offline gate for build_questions_payload.py — proves the curated set is
-derived from the canonical JSONs and respects the 7-9 core contract (21 core
-questions plus the four conditional U026 waiver follow-ups, 25 total), and
+derived from the canonical JSONs and respects the 7-9 core contract (22 core
+questions plus six conditional follow-ups — the four U026 waivers and
+PD-082a's recipient_name / extracted_substance — 28 total), and
 that the signature set (FIX-PLAN Item 13, step S8) is built whole from
 Skill 51's sp-8-questions.json.
 Run: python3 test/test_payload.py
@@ -39,21 +40,24 @@ class TestPayload(unittest.TestCase):
         specs["questions"] += list(bqp.APP_ONLY_QUESTIONS.values())
         payload = bqp.build_curated_payload("RUN1", specs, bqp.DEFAULT_CURATED, store_target)
         ids = [q["id"] for q in payload["questions"]]
-        # Hard cap 21 binds the set WITHOUT the declined-reason waiver
-        # follow-ups (each rides on its toggle's "no"; pinned in the
-        # dedicated tests below). Other conditional questions stay counted.
-        # The counted set stood at exactly 20 before Item 34; the motion
-        # toggle is a required election and counts, so the cap is 21.
+        # Hard cap 22 binds the set WITHOUT the conditional follow-ups (the
+        # declined-reason waivers and PD-082a's recipient_name /
+        # extracted_substance; each rides its own condition; pinned in the
+        # dedicated tests below). The counted set stood at exactly 20 before
+        # Item 34, 21 with the always-asked motion election, and 22 with
+        # PD-082a's always-asked duration_min.
         waiver_followups = [q for q in payload["questions"]
                             if q["id"].endswith("_declined_reason")]
-        self.assertLessEqual(len(ids) - len(waiver_followups), 21)
+        conditional = [q for q in payload["questions"] if q.get("conditional_on")]
+        self.assertLessEqual(len(ids) - len(conditional), 22)
         self.assertGreaterEqual(len(ids), 7) # 7-9 core minimum
         # The mandatory new + derived questions are present.
         for must in ("speech_speed_preference", "want_sales_checkout",
                      "want_vsl_page", "want_motion_graphics",
                      "want_email_sequences", "run_mode",
                      "sales_checkout_declined_reason",
-                     "vsl_page_declined_reason"):
+                     "vsl_page_declined_reason",
+                     "duration_min", "recipient_name", "extracted_substance"):
             self.assertIn(must, ids)
         # Store-on / label wiring survives.
         offer = next(q for q in payload["questions"] if q["id"] == "offer_name")

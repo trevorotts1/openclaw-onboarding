@@ -33,10 +33,14 @@
     "doctrine": "38-conversational-ai-system/protocols/presentations-conversational-layer-protocol.md",
     "format": "conversation-templates",
     "frontdoor": {
+        "after_intake": "That is everything I need. Here is what happens now: I research your topic, write the slides, and then send you 3 style samples to pick from (A, B or C). You do not need to do anything until you see those samples. I will message you at each big step and the moment anything needs you.",
         "greeting": "Hello, and welcome. I help get presentations started here. If you would like a presentation built for you, I can get you to the right place in about a minute.",
         "handoff": "Perfect, that is everything I need. Your intake is ready here: {intake_link}. The intake walks you through the presentation questions one at a time, and everything you enter there goes straight into your build. I will be back here if anything pauses along the way.",
         "not_qualified": "No problem at all. If a presentation is not what you were after today, nothing has been started and there is nothing to cancel. If you change your mind, just come back and say hello.",
         "qualification": [
+            "You are here to have a presentation built, and it is OK for me to message you here about it — is that right?"
+        ],
+        "qualification_legacy": [
             "Just to make sure I point you the right way: you are here because you would like a presentation created for you, is that right?",
             "And you are the person this presentation is for (or you are arranging it for them)?",
             "Last thing from me: is it all right for us to keep this conversation going here about your presentation, including follow-ups by message? Once you confirm, I will hand you straight to the intake, which is where the presentation questions themselves live."

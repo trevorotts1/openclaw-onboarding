@@ -41,11 +41,15 @@ from batch_mode import batch as BATCH                     # noqa: E402
 sys.path.insert(0, os.path.join(CORE, "intake_preflight"))
 import factory as FACTORY                                 # noqa: E402
 from test_factory_method_agnes import confirmed_fixture, complete_fixture_stage, storyboard_fixture
-from test_production_process import approve_script
+from test_production_process import approve_script, seal_stage
 
 STAGES = [s for s, _ in BATCH.STAGES]
 VIDEO_MODEL_ROW = "video-generation"
 VIDEO_MODEL = "kling-3.0/video"
+#: The card's first length option, and the master length it plans to
+#: (master_length.END_EARLY_S: a 60 s ad ends at 58 s).
+CHOSEN_LENGTH_S = 60
+MASTER_S = 58
 FAILS = []
 
 
@@ -64,6 +68,192 @@ def qc_record(run_id="run1"):
             "checker_version": "1.0.0",
             "reviewer": {"identity": "qc-reviewer-1", "session": "s1",
                          "authority": "qc"}}
+
+
+def _write_research(run):
+    """The research stage's own runner writes the artifacts its contract names.
+
+    ``research.render`` writes ``research/evidence.json`` and
+    ``research/manifest.json`` (the manifest carries the contract's ``files``
+    and ``digest`` keys). The brief is the repository's own research fixture and
+    ``gather=False`` keeps the run offline, like every other fixture here.
+    """
+    import research_engine.research as R
+    with open(os.path.join(CORE, "research_engine", "fixtures",
+                           "research_claims.json"), encoding="utf-8") as fh:
+        brief = json.load(fh)["accept"]
+    with open(os.path.join(run, "brief.json"), "w", encoding="utf-8") as fh:
+        json.dump(brief, fh)
+    env, code = R.run_stage(brief, run, run_id="run1", gather=False)
+    assert code == R.EXIT["ok"], env
+
+
+def _write_story(run):
+    """``creative/story.json`` in the twelve-beat shape ``story_arc`` validates,
+    checked by that validator before it is written."""
+    import story_arc.story_arc as SARC
+    doc = {"story_id": "registry-fixture", "beats": list(SARC.BEATS),
+           "product_reveal": 8}
+    result = SARC.validate_story(doc)
+    assert result["outcome"] == "ok", result
+    os.makedirs(os.path.join(run, "creative"), exist_ok=True)
+    with open(os.path.join(run, "creative", "story.json"), "w",
+              encoding="utf-8") as fh:
+        json.dump(doc, fh, indent=2)
+
+
+def _write_blueprint(run):
+    """``creative/blueprint.json`` as the shipped ``method_plan`` fixture
+    carries it: ``story_beats[]`` with song windows and ``music_cues[]``.
+
+    The creative-strategy contract names this record beside ``story.json``, and
+    the step gate measures it. The repository's own blueprint fixture is used
+    rather than an invented stub, so the storyboard review and the shot planner
+    read the same shape their own tests already prove.
+    """
+    src = os.path.join(CORE, "method_plan", "fixtures", "blueprint-90s.json")
+    with open(src, encoding="utf-8") as fh:
+        doc = json.load(fh)
+    os.makedirs(os.path.join(run, "creative"), exist_ok=True)
+    with open(os.path.join(run, "creative", "blueprint.json"), "w",
+              encoding="utf-8") as fh:
+        json.dump(doc, fh, indent=2)
+
+
+#: The sung sheet the script-lyrics stage carries: first-person, one idea per
+#: line, no product or claim wording, so ``lyric_writer.validate_lyrics``
+#: accepts it with no brief at all.
+LYRIC_LINES = (
+    {"line_id": "l1", "text": "I woke before the sun again"},
+    {"line_id": "l2", "text": "I carried every hour alone"},
+    {"line_id": "l3", "text": "I found a way to start again"},
+    {"line_id": "l4", "text": "I am ready for my new chapter"},
+    {"line_id": "l5", "text": "I will not wait another year"},
+)
+
+
+def _write_lyrics(run):
+    """``creative/lyrics.json`` as ``lyric_writer`` reads it, validated by its
+    own ``validate_lyrics`` (the same call the step gate's validator makes)."""
+    import lyric_writer.lyric_writer as LW
+    doc = {"lines": [dict(line) for line in LYRIC_LINES]}
+    result = LW.validate_lyrics(doc["lines"], None)
+    assert result["outcome"] == "ok", result
+    os.makedirs(os.path.join(run, "creative"), exist_ok=True)
+    with open(os.path.join(run, "creative", "lyrics.json"), "w",
+              encoding="utf-8") as fh:
+        json.dump(doc, fh, indent=2)
+
+
+def _write_method(run):
+    """``control/method.json`` by the card's OWN writer, the function
+    ``intake_session`` calls at recap confirmation.
+
+    The music stage's seal validator judges the picked song against the chosen
+    length it reads from this record, so the record must exist before the song
+    is sealed. The purpose is a lesson: the card's own supported purpose, and
+    the one that adds no campaign trailer stage to ``next``.
+    """
+    from choice_card.intake_card import intake_card as CARD
+    qs = [CARD._purpose_q(),
+          next(q for q in CARD.QUESTIONS if q["id"] == "length")]
+    record = CARD._method_record([{"id": "purpose", "n": 3},
+                                  {"id": "length", "n": 1}], qs)
+    assert record and record.get("chosen_length_s") == CHOSEN_LENGTH_S, record
+    with open(os.path.join(run, "control", "method.json"), "w",
+              encoding="utf-8") as fh:
+        json.dump(record, fh)
+
+
+def _write_picked_song(run):
+    """A real, measurable master at the path ``song_choices.picked_song`` names,
+    at the length ``master_length`` plans for the chosen ad length.
+
+    The music contract asks for a media file over 100 kB that ffprobe can
+    measure; stdlib ``wave`` makes exactly that offline, and its measured
+    duration is the 58 seconds a 60-second ad is planned to (END_EARLY_S).
+    """
+    import wave
+    path = os.path.join(run, "music", "picked-song.mp3")
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with wave.open(path, "wb") as w:
+        w.setnchannels(1)
+        w.setsampwidth(1)
+        w.setframerate(8000)
+        w.writeframes(b"\x80" * (MASTER_S * 8000))
+    return path
+
+
+def _write_finished_bible(run):
+    """The finished continuity bible, written the way ``character_approval``
+    writes it: ``save_bible`` then the versioned ``approve`` event.
+
+    The stage contract names ``character/bible.json`` (schema, revision,
+    characters) and ``character/approval.json`` with status ``approved``.
+    ``approve`` refuses an unseen artifact, so the cards are presented first,
+    exactly as the stage does.
+    """
+    import character_bible.character_approval as CA
+    refs = os.path.join(run, "character", "refs")
+    os.makedirs(refs, exist_ok=True)
+    image = os.path.join(refs, "mia-close-up.png")
+    with open(image, "wb") as fh:
+        fh.write(b"\x89PNG\r\n\x1a\n" + b"\x00" * 64)
+    CA.save_bible(run, CA.bible_from_entries([{
+        "name": "Mia", "role": "protagonist",
+        "background": "raised in the same town she now works in",
+        "appearance": "brown eyes and short dark hair",
+        "voice_notes": "warm, low and unhurried",
+        "images": {"close-up": image},
+    }]))
+    CA.present(run)
+    result = CA.approve(run, "approve the character bible",
+                        approved_by="fixture-client", run_id="run1")
+    assert result["status"] == CA.APPROVED, result
+
+
+def _step_gate():
+    """The shipped step gate module, or None when this tree carries none.
+
+    Read the same way ``character_continuity.stage`` reads it, so the fixture
+    seals through the production gate itself and never re-implements one.
+    """
+    getter = getattr(ST, "step_gate_module", None)
+    if getter is not None:
+        try:
+            return getter()
+        except Exception:                           # noqa: BLE001
+            return None
+    path = os.path.join(CORE, "step_gate", "step_gate.py")
+    if not os.path.exists(path):
+        return None
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("step_gate_fixture", path)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def _seal_through_music(run):
+    """Seal every stage the shipped chain requires before continuity-bible.
+
+    The gate refuses a stage whose predecessor has no seal, so a real run
+    carries one seal per earlier stage. Each is made by the gate's own writer —
+    ``cmd_init`` once, then ``cmd_open`` and ``cmd_seal`` over the artifacts the
+    shipped contract declares for that stage — never by writing a file the gate
+    happens to accept. Two distinct fixture identities are the maker/checker
+    pair, because the gate refuses self-review.
+    """
+    SG = _step_gate()
+    if SG is None:
+        return                  # no step gate on this tree: the stage gate alone
+    doc = SG.load_contract()
+    order = doc["order"]
+    if not os.path.exists(SG.key_path(run)):
+        SG.cmd_init(run)
+    for stage in order[:order.index(ST.STAGE)]:
+        SG.cmd_open(run, stage, doc)
+        SG.cmd_seal(run, stage, "fixture-builder", "fixture-checker", doc)
 
 
 def make_run(up_to=None, storyboard_files=True):
@@ -95,6 +285,16 @@ def make_run(up_to=None, storyboard_files=True):
                                                "qc-records.json"), "w"))
     json.dump({"continuity-dna-1": "agent-writer-1"},
               open(os.path.join(run, "continuity", "makers.json"), "w"))
+    # The stages before continuity-bible, written by their own writers: the
+    # shipped step gate seals each one from these files, and the continuity
+    # stage cannot open until its predecessor is sealed.
+    _write_research(run)
+    _write_story(run)
+    _write_blueprint(run)
+    _write_lyrics(run)
+    _write_method(run)
+    _write_picked_song(run)
+    _write_finished_bible(run)
     if storyboard_files:
         sb = os.path.join(run, "storyboard")
         os.makedirs(sb)
@@ -131,6 +331,17 @@ def make_run(up_to=None, storyboard_files=True):
             if stage == "script-lyrics":
                 approve_script(run)
     _seed_gate4(run)
+    _seal_through_music(run)
+    # S75-002: a stage that already completed carries its seal too. The
+    # reconciler only moves a lagging row to COMPLETE when the gate proves the
+    # stage, and `next` only opens the following stage on the sealed chain.
+    # Sealing here is the crash window the reconciler serves: the seal landed,
+    # the row write did not.
+    seal_after = ["continuity-bible"]
+    if up_to and STAGES.index(up_to) > STAGES.index("continuity-bible"):
+        seal_after += STAGES[STAGES.index("continuity-bible") + 1:STAGES.index(up_to)]
+    for stage in seal_after:
+        seal_stage(run, stage)
     return run
 
 
@@ -139,14 +350,15 @@ def _seed_gate4(run):
     Go bound to its digest. `factory.py next` reads exactly these before it may
     hand out the paid video stage: picked song + its digest, the locked video
     model and the spend ledger. Without them the stage correctly refuses with
-    FINAL_RECAP_MISSING."""
+    FINAL_RECAP_MISSING.
+
+    The master is the measurable file the music contract seals (see
+    ``_write_picked_song``), never a marker string: the step gate re-measures it.
+    """
     import hashlib
     import final_recap as FR
     import spend_ledger as L
-    os.makedirs(os.path.join(run, "music"), exist_ok=True)
-    master = os.path.join(run, "music", "picked-song.mp3")
-    with open(master, "wb") as fh:
-        fh.write(b"the picked master")
+    master = _write_picked_song(run)
     os.makedirs(os.path.join(run, "song-choices"), exist_ok=True)
     with open(master, "rb") as fh:
         digest = hashlib.sha256(fh.read()).hexdigest()
@@ -183,7 +395,10 @@ def _final_qc_fixture(run):
     assert result["gate"] == "PASS", result
     result.update(producer=FACTORY.STAGE_REGISTRY["final-qc"]["qc_producer"],
                   records=[record], fixture=True)
-    outbox._write_json(os.path.join(run, "final-qc", "record.json"), result)
+    # S75-011: the declared final-qc artifact is qc/final-qc-verdict.json (the
+    # file qc_gate.py writes). final-qc/record.json was written by nothing and
+    # is read by nothing, so the verdict goes where the collector reads it.
+    outbox._write_json(os.path.join(run, "qc", "final-qc-verdict.json"), result)
 
 
 def _delivery_fixture(run):
@@ -196,13 +411,18 @@ def _delivery_fixture(run):
                                         origin, text="Synthetic local registry fixture delivery.",
                                         approval_state="not-required", allowed_actions=())
     box = delivery.Outbox(run)
-    box.enqueue(envelope)
+    queued = box.enqueue(envelope)
     def local_fake_transport(piece):
         return {"destination": "terminal/offline-registry-fixture", "status": "delivered",
                 "message_id": "fixture-ack/" + piece["piece_id"], "transport": "local-fixture"}
     result = box.resume(local_fake_transport)
     assert result["sent"] and not result["failed"] and not result["uncertain"], result
-    pieces = box.pieces()
+    # Only THIS delivery package's pieces are journalled. Earlier stages leave
+    # their own pieces in the shared outbox; folding those receipts in here
+    # claimed one destination for work this stage never sent, which the
+    # collector rightly reads as a duplicate send.
+    ours = set(piece["piece_id"] for piece in queued)
+    pieces = [piece for piece in box.pieces() if piece["piece_id"] in ours]
     assert all(piece["state"] == delivery.SENT and piece.get("receipt") for piece in pieces)
     delivery._write_json(os.path.join(run, "delivery", "receipts.json"),
                          [piece["receipt"] for piece in pieces])
@@ -215,6 +435,10 @@ def complete_row(run, stage):
     elif stage == "delivery":
         _delivery_fixture(run)
     complete_fixture_stage(run, stage)
+    # S75-002: the row and its seal travel together; without the seal the next
+    # stage cannot open. Nothing downstream is sealed yet, so the seal records
+    # exactly the files this stage just wrote.
+    seal_stage(run, stage)
 
 
 def test_registry_row_is_a_real_executable():
@@ -227,8 +451,16 @@ def test_registry_row_is_a_real_executable():
     # and the command actually runs: the registry's executable path end to end
     import shlex
     run = make_run()
-    argv = [tok.replace("$RUN_ID", "run1").replace("$RUN", run)
-            for tok in shlex.split(row["command"])]
+    # The registry publishes placeholders for the caller to substitute:
+    # stage_commands.json declares `{RUN}` / `{RUN_ID}`, the Markdown runbook
+    # spells the same two `$RUN` / `$RUN_ID`. Both are filled, so the row is
+    # really walked against this run's folder.
+    fills = {"$RUN_ID": "run1", "$RUN": run, "{RUN_ID}": "run1", "{RUN}": run}
+    argv = []
+    for tok in shlex.split(row["command"]):
+        for placeholder, value in fills.items():
+            tok = tok.replace(placeholder, value)
+        argv.append(tok)
     res = subprocess.run([sys.executable] + argv[1:], capture_output=True,
                          text=True, cwd=os.path.dirname(os.path.dirname(CORE)))
     out = json.loads(res.stdout)
@@ -271,6 +503,10 @@ def test_seven_downstream_stages_really_advance():
         r = AR.run(run, lambda m, imgs: w_events.append(("m", m, imgs)), reply="GO")
         check("storyboard approved through the in-chat gate",
               r["action"] == "approved" and AR.gate_open(run), r)
+        # S75-002: the approval writes the artifacts the storyboard contract
+        # names; seal them so the reconciler can prove the row and the next
+        # stage can open.
+        seal_stage(run, "storyboard")
         env = nxt(run)
         rec = [x for x in (env["data"].get("reconciled") or [])
                if x.get("stage") == "storyboard"]

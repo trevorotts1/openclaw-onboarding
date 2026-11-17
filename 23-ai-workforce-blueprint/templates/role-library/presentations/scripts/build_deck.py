@@ -622,6 +622,20 @@ COPY_SLIDE_TOTAL_CHAR_CEILING = 180  # ~30 words @ ~6 chars/word -- preserves hi
 COPY_HOOK_SLIDE_TOTAL_CHAR_FLOOR = 12  # pure-typography HOOK / section-banner slides: the
                                         # hook line alone is allowed to be short
 
+# PD-089 / D-16: the VALUE-STACK copy band. The August 20, 2026 archetype
+# carve-out ruling (test_af_c8_archetype_carveout.py) allows a value-stack /
+# offer-stack slide 6 line items of up to 7 words each, on top of a 9-word
+# headline and 18-word sub-copy -- 62 words in all. The character bands above
+# model an ordinary teaching slide (3 bullets, 30 chars each, 180 total), so a
+# fully SOP-compliant offer stack was mechanically guaranteed to FAIL AF-COPY-BAND.
+# These numbers are the same ruling expressed in the ONLY unit this gate measures
+# (characters): 6 bullets x <= 60 chars, slide total <= 420 (~62 words @ ~6.7
+# chars/word). Everything else -- headline, subhead, kicker -- is unchanged.
+COPY_VALUE_STACK_BULLET_MAX_COUNT = 6
+COPY_VALUE_STACK_BULLET_CHAR_FLOOR = 8
+COPY_VALUE_STACK_BULLET_CHAR_CEILING = 60
+COPY_VALUE_STACK_SLIDE_TOTAL_CHAR_CEILING = 420
+
 # U067 stage 1 (Rule 3.5). The hook/section-banner exemption was unreachable on the
 # boolean arc_allocation schema, so every such slide has been judged against the
 # 40-char floor. Turning the exemption on flips slides from FAIL to PASS, which is
@@ -5153,27 +5167,29 @@ def check_copy_qc_teeth(run_dir: Path) -> str:
                     f"{COPY_KICKER_CHAR_CEILING}-char ceiling the copy-QC report marked pass")
 
         real_bullets = [b for b in bullets if b]
-        if len(real_bullets) > COPY_BULLET_MAX_COUNT:
+        tag_blob = arc_tags.get(ordinal, "")
+        bands = _copy_bands_for(tag_blob)  # PD-089: same band the preflight gate applies
+        band_label = " (value-stack band, PD-089)" if bands["value_stack"] else ""
+        if len(real_bullets) > bands["bullet_max"]:
             problems.append(
                 f"slide {ordinal:02d} carries {len(real_bullets)} bullets, over the "
-                f"{COPY_BULLET_MAX_COUNT}-bullet max the copy-QC report marked pass")
+                f"{bands['bullet_max']}-bullet max the copy-QC report marked pass{band_label}")
         for bi, b in enumerate(real_bullets, start=1):
             blen = len(b)
-            if not (COPY_BULLET_CHAR_FLOOR <= blen <= COPY_BULLET_CHAR_CEILING):
+            if not (bands["bullet_floor"] <= blen <= bands["bullet_ceiling"]):
                 problems.append(
                     f"slide {ordinal:02d} BULLET {bi} is {blen} chars, outside the "
-                    f"{COPY_BULLET_CHAR_FLOOR}-{COPY_BULLET_CHAR_CEILING} band the copy-QC "
-                    f"report marked pass")
+                    f"{bands['bullet_floor']}-{bands['bullet_ceiling']} band the copy-QC "
+                    f"report marked pass{band_label}")
 
         total = sum(len(f) for f in fields)
-        tag_blob = arc_tags.get(ordinal, "")
         exempt_eligible = _is_hook_or_banner_slide(tag_blob)
         exempt = exempt_eligible and COPY_HOOK_EXEMPTION_ENFORCED
         floor = COPY_HOOK_SLIDE_TOTAL_CHAR_FLOOR if exempt else COPY_SLIDE_TOTAL_CHAR_FLOOR
-        if not (floor <= total <= COPY_SLIDE_TOTAL_CHAR_CEILING):
+        if not (floor <= total <= bands["total_ceiling"]):
             problems.append(
                 f"slide {ordinal:02d} SLIDE TOTAL is {total} chars, outside the "
-                f"{floor}-{COPY_SLIDE_TOTAL_CHAR_CEILING} band the copy-QC report marked pass")
+                f"{floor}-{bands['total_ceiling']} band the copy-QC report marked pass{band_label}")
 
     if problems:
         return ("AF-COPY-QC: the copy-QC report passed its shape check but the ACTUAL "
@@ -6474,6 +6490,35 @@ def _is_hook_or_banner_slide(tag_blob: str) -> bool:
     markers = ("hook", "section-banner", "section_banner", "sectionbanner", "banner")
     return any(m in tag_blob for m in markers)
 
+def _is_value_stack_slide(tag_blob: str) -> bool:
+    """True when the arc tag text marks a value-stack / offer-stack slide (PD-089).
+    Accepts the five spellings the ruling names -- value-stack, value_stack,
+    offer-stack, offer_stack, tally -- matched on WORD boundaries after treating
+    `-`/`_` as separators, so `offer-stack` in a tag blob matches while a tag such
+    as `totally` cannot: `tally` is only a marker as its own word. Empty blob ->
+    False (the safe default: the standard band applies)."""
+    if not tag_blob:
+        return False
+    norm = " " + tag_blob.replace("-", " ").replace("_", " ") + " "
+    return (" value stack " in norm or " offer stack " in norm or " tally " in norm)
+
+def _copy_bands_for(tag_blob: str) -> dict:
+    """The ONE source of copy-band arithmetic shared by _chk_copy_density and the
+    _chk_copy_qc re-measure, so the preflight gate and the QC teeth can never drift
+    apart (the same failure PD-089 fixes for the doctrine). Ordinary slides get the
+    historical band unchanged; value-stack / offer-stack slides get PD-089's."""
+    if _is_value_stack_slide(tag_blob):
+        return {"value_stack": True,
+                "bullet_max": COPY_VALUE_STACK_BULLET_MAX_COUNT,
+                "bullet_floor": COPY_VALUE_STACK_BULLET_CHAR_FLOOR,
+                "bullet_ceiling": COPY_VALUE_STACK_BULLET_CHAR_CEILING,
+                "total_ceiling": COPY_VALUE_STACK_SLIDE_TOTAL_CHAR_CEILING}
+    return {"value_stack": False,
+            "bullet_max": COPY_BULLET_MAX_COUNT,
+            "bullet_floor": COPY_BULLET_CHAR_FLOOR,
+            "bullet_ceiling": COPY_BULLET_CHAR_CEILING,
+            "total_ceiling": COPY_SLIDE_TOTAL_CHAR_CEILING}
+
 
 def _chk_copy_density(run_dir: Path, slides_path: Optional[Path] = None) -> str:
     """AF-COPY-BAND (preflight, fail-loud) -- per-slide COPY character-count FLOOR
@@ -6536,27 +6581,31 @@ def _chk_copy_density(run_dir: Path, slides_path: Optional[Path] = None) -> str:
                     f"{COPY_KICKER_CHAR_CEILING}-char ceiling")
 
         real_bullets = [b for b in bullets if b]
-        if len(real_bullets) > COPY_BULLET_MAX_COUNT:
+        tag_blob = arc_tags.get(ordinal, "")
+        bands = _copy_bands_for(tag_blob)  # PD-089: value-stack slides get their own band
+        band_label = " (value-stack band, PD-089)" if bands["value_stack"] else ""
+        if len(real_bullets) > bands["bullet_max"]:
             offenders.append(
                 f"slide {ordinal:02d} BULLETS: {len(real_bullets)} bullets, over the "
-                f"{COPY_BULLET_MAX_COUNT}-bullet max (AF-COPY-BAND reconciles the historical "
-                f"3-vs-5-bullet / 7-vs-5-word conflict DOWN to this one enforced rule)")
+                f"{bands['bullet_max']}-bullet max"
+                + (band_label if bands["value_stack"] else
+                   f" (AF-COPY-BAND reconciles the historical "
+                   f"3-vs-5-bullet / 7-vs-5-word conflict DOWN to this one enforced rule)"))
         for bi, b in enumerate(real_bullets, start=1):
             blen = len(b)
-            if not (COPY_BULLET_CHAR_FLOOR <= blen <= COPY_BULLET_CHAR_CEILING):
+            if not (bands["bullet_floor"] <= blen <= bands["bullet_ceiling"]):
                 offenders.append(
                     f"slide {ordinal:02d} BULLET {bi}: {blen} chars, outside "
-                    f"{COPY_BULLET_CHAR_FLOOR}-{COPY_BULLET_CHAR_CEILING} band")
+                    f"{bands['bullet_floor']}-{bands['bullet_ceiling']} band{band_label}")
 
         total = sum(len(f) for f in fields)
-        tag_blob = arc_tags.get(ordinal, "")
         exempt_eligible = _is_hook_or_banner_slide(tag_blob)
         exempt = exempt_eligible and COPY_HOOK_EXEMPTION_ENFORCED
         floor = COPY_HOOK_SLIDE_TOTAL_CHAR_FLOOR if exempt else COPY_SLIDE_TOTAL_CHAR_FLOOR
-        if not (floor <= total <= COPY_SLIDE_TOTAL_CHAR_CEILING):
+        if not (floor <= total <= bands["total_ceiling"]):
             offenders.append(
                 f"slide {ordinal:02d} SLIDE TOTAL: {total} chars, outside "
-                f"{floor}-{COPY_SLIDE_TOTAL_CHAR_CEILING} band"
+                f"{floor}-{bands['total_ceiling']} band{band_label}"
                 + (" (hook/section-banner exemption applied)" if exempt else ""))
             if exempt_eligible and not COPY_HOOK_EXEMPTION_ENFORCED:
                 offenders[-1] += (" [U067 ADVISORY: this slide is hook/section-banner and "
@@ -6571,7 +6620,10 @@ def _chk_copy_density(run_dir: Path, slides_path: Optional[Path] = None) -> str:
                 f"<= {COPY_KICKER_CHAR_CEILING} (if present), BULLETS <= {COPY_BULLET_MAX_COUNT} "
                 f"each {COPY_BULLET_CHAR_FLOOR}-{COPY_BULLET_CHAR_CEILING}, SLIDE TOTAL "
                 f"{COPY_SLIDE_TOTAL_CHAR_FLOOR}-{COPY_SLIDE_TOTAL_CHAR_CEILING} "
-                f"({COPY_HOOK_SLIDE_TOTAL_CHAR_FLOOR} floor for hook/section-banner slides). "
+                f"({COPY_HOOK_SLIDE_TOTAL_CHAR_FLOOR} floor for hook/section-banner slides; "
+                f"value-stack/offer-stack slides: BULLETS <= {COPY_VALUE_STACK_BULLET_MAX_COUNT} "
+                f"each {COPY_VALUE_STACK_BULLET_CHAR_FLOOR}-{COPY_VALUE_STACK_BULLET_CHAR_CEILING}, "
+                f"SLIDE TOTAL <= {COPY_VALUE_STACK_SLIDE_TOTAL_CHAR_CEILING}). "
                 "Offenders: " + "; ".join(offenders))
     return ""
 
@@ -8605,6 +8657,16 @@ def _chk_no_overlay(run_dir: Path, slides_path: Optional[Path] = None) -> str:
 #      see the postflight success block further down this file. A skip can no
 #      longer be silent: this is the actual, load-bearing fix.
 #
+# PD-066 (D-15, D-33): a verified OWNER MESSAGE is now required, not just a
+# plausible record. Every record must carry a non-empty owner_msg_id AND that
+# id must resolve through presentation_job.approvals.verify (the cc_board
+# owner-message oracle) before it can waive anything. A record with no id is
+# refused naming the missing id; an id the oracle refuses is refused; an
+# oracle that cannot run at all (no presentation_job on the box, Command
+# Center unreachable) also refuses — after this unit NO waiver is possible on
+# a machine where owner approvals cannot be checked. The structural checks
+# below stay in force on top of it; none of them is a substitute for the id.
+#
 # An absent record, or a record that never names this af_code, is UNCHANGED
 # from before and stays QUIET (the common, innocent, majority case — see
 # runfacts.py's own findings() docstring for why treating plain absence as a
@@ -8640,15 +8702,22 @@ def _owner_skip_all_records(obj: dict) -> list:
 
 
 def _owner_skip_structurally_valid(r: dict) -> Tuple[bool, str]:
-    """The base authenticity rule this mechanism has always had (owner_approved
-    literal true + non-empty approved_by/reason/timestamp) PLUS the two
-    friction checks from the module comment above. Returns (True, "") or
-    (False, human-readable reason) — never raises."""
+    """The base authenticity rule (owner_approved literal true + non-empty
+    approved_by/reason/timestamp), the two friction checks from the module
+    comment above, AND (PD-066) a non-empty owner_msg_id — a record with no
+    owner message id is the self-forged shape and is refused here, naming the
+    missing id. This rule does not verify the id; _owner_skip_evaluate does
+    that through approvals.verify. Returns (True, "") or (False,
+    human-readable reason) — never raises."""
     if r.get("owner_approved") is not True:
         return False, f"owner_approved is {r.get('owner_approved')!r}, not literal true"
     approved_by = str(r.get("approved_by") or "").strip()
     if not approved_by:
         return False, "approved_by is empty"
+    if not str(r.get("owner_msg_id") or "").strip():
+        return False, ("owner_msg_id is empty — a waiver must name the id of a real "
+                       "owner-authored message; a record with no owner_msg_id is "
+                       "self-forged (AF-FORGED-APPROVAL)")
     reason = str(r.get("reason") or "").strip()
     if not reason:
         return False, "reason is empty"
@@ -8712,37 +8781,43 @@ def _owner_skip_evaluate(run_dir: Path, af_code: str) -> Tuple[Optional[dict], l
     if not matches:
         return None, []
 
-    # MASTER Part 8 Fix 24: the in-loop OCR readback consults approvals.verify()
-    # (W11's owner-skip authenticity oracle) so a waiver honored here is proven
-    # against the cc_board owner-message oracle, not taken on the record's own
-    # fields. A record that claims owner authority but cannot be verified raises
-    # ApprovalError (AF-FORGED-APPROVAL); that is converted into a REJECTED event
-    # (never a granted one) so a forged token can never open this gate. An oracle
-    # that cannot run at all (import failure on a box without presentation_job)
-    # degrades to the legacy structural-only rule below — the structural rule and
-    # the disclosure layer stay in force either way.
-    from presentation_job import approvals as _approvals  # noqa: PLC0415 — lazy, matches runfacts pattern
+    # PD-066: approvals.verify() is MANDATORY for every record — not an optional
+    # hardening layer. There is no structural-only fallback left: a waiver is
+    # granted ONLY when the record's owner_msg_id resolves through the cc_board
+    # owner-message oracle. An ApprovalError (refused id, forged shape) and an
+    # oracle that cannot run at all are both REJECTED events (never granted).
     try:
-        _verified = {_approvals.verify(r, run_dir).get("owner_msg_id"): True
-                     for r in matches
-                     if str((r or {}).get("owner_msg_id") or "").strip()}
-    except Exception:  # noqa: BLE001 — AF-FORGED-APPROVAL or oracle failure: nothing proven
-        _verified = {}
+        from presentation_job import approvals as _approvals  # noqa: PLC0415 — lazy, matches runfacts pattern
+    except Exception:  # noqa: BLE001 — no approvals module on this box: nothing can verify
+        _approvals = None
 
     granted = None
     events = []
     for r in matches:
         norm_reason = re.sub(r"\s+", " ", str(r.get("reason") or "").strip().lower())
         ok, why = _owner_skip_structurally_valid(r)
-        # MASTER Part 8 Fix 24: a record that claims a resolvable owner_msg_id but
-        # FAILED the approvals.verify() oracle above is FORGED — refuse it even
-        # when its structural fields pass. Fail-closed: no oracle proof, no waiver.
-        if ok and str(r.get("owner_msg_id") or "").strip() and not _verified.get(
-                str(r.get("owner_msg_id") or "").strip()):
-            ok = False
-            why = ("owner_msg_id did not verify through approvals.verify() "
-                   "(AF-FORGED-APPROVAL): the cc_board owner-message oracle refused "
-                   "it — presence of the string is never proof of an owner decision")
+        if ok:
+            if _approvals is None:
+                ok = False
+                why = ("AF-FORGED-APPROVAL: owner approvals cannot be checked on "
+                       "this machine — presentation_job.approvals is unavailable, "
+                       "so no waiver can be verified. No skip is possible here.")
+            else:
+                try:
+                    _approvals.verify(r, run_dir)
+                except _approvals.ApprovalError as exc:
+                    ok = False
+                    why = str(exc)
+                    if "undetermined" in why.lower():
+                        why += (" — owner approvals cannot be checked on this "
+                                "machine: the engine cannot reach Command Center "
+                                "to prove the owner message.")
+                except Exception as exc:  # noqa: BLE001 — oracle transport failure: fail-closed
+                    ok = False
+                    why = (f"AF-FORGED-APPROVAL: owner approvals cannot be checked "
+                           f"on this machine — the owner-message oracle failed "
+                           f"({exc!r}); undetermined never opens a gate. "
+                           f"owner_msg_id={str(r.get('owner_msg_id') or '').strip()!r}")
         if ok and norm_reason in blanket_reasons:
             ok = False
             others = sorted(reason_af_codes[norm_reason] - {want})
@@ -8842,10 +8917,13 @@ def _owner_skip_approved_legacy(run_dir: Path, af_code: str):
     working/checkpoints/process_manifest.json under "owner_skip_approval" (a single
     object or a list of them). A valid token carries owner_approved:true, the af_code
     (or gate) it waives, a non-empty (>= _OWNER_SKIP_REASON_MIN_CHARS) approved_by/
-    reason, a real parseable timestamp, and a reason that is not a copy-pasted
+    reason, a real parseable timestamp, a reason that is not a copy-pasted
     blanket-skip signature shared by more than _OWNER_SKIP_BLANKET_REASON_LIMIT other
     af_codes (see _owner_skip_evaluate / _owner_skip_structurally_valid — Trust
-    Boundary Increment 2).
+    Boundary Increment 2), AND (PD-066) a non-empty owner_msg_id that resolves
+    through presentation_job.approvals.verify against the cc_board owner-message
+    oracle. No id, a refused id, or an oracle that cannot run on this machine means
+    NO waiver.
 
     HONEST CLAIM (corrected 2026-08-18, Part 6 #9 of the 2026-08-17 fix review; see
     the "THE HONEST LIMIT" block above _OWNER_SKIP_REASON_MIN_CHARS for the full
@@ -8855,8 +8933,12 @@ def _owner_skip_approved_legacy(run_dir: Path, af_code: str):
     (see _owner_skip_disclose). It does NOT stop a deliberate forger — the token
     lives in process_manifest.json, which is written by the same UID that would
     forge it, and nothing in this architecture can exclude a run-dir-privileged
-    writer. Treat a returned record as a tamper-evidence / health-signal finding,
-    never as proof of an authorization decision an adversary could not have faked.
+    writer. Since PD-066 the record also has to carry an owner_msg_id that the
+    cc_board owner-message oracle RESOLVES, so local fields alone no longer buy a
+    waiver — but that proof is only as strong as this machine's reach to Command
+    Center (no reach, no waiver). Treat a returned record as a tamper-evidence /
+    health-signal finding, never as proof of an authorization decision an
+    adversary could not have faked.
     The previous wording here ("No agent may self-skip and the absence of a token
     means the gate is ENFORCED") overstated that guarantee; it is corrected above.
     Returns the matching record (so callers can log who approved what) or None.

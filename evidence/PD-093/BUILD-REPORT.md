@@ -97,8 +97,8 @@ deleting it, so it is preserved and reported, not removed.
 
 ## 5. Exact commands run and results
 
-All temp files under `<project-root>/pd-fix/tmp`; all fixtures made with
-`mktemp -d -p "$TMPDIR"`. Scratch: `…/pd-fix/scratchpads/fl24-role-procedures-c/`.
+All temp files under `<project-root>/pd-fix/tmp`; all fixtures made with a private
+temp-directory helper. Scratch: `<project-root>/pd-fix/scratchpads/fl24-role-procedures-c/`.
 
 ```
 # base

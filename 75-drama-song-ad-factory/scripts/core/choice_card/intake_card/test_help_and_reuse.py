@@ -157,7 +157,7 @@ class SessionGuidanceTest(unittest.TestCase):
         shown = self.call(["reuse my answers"])
         self.assertEqual(shown["reason_code"], "REUSE_OFFER_SHOWN")
         self.assertIn("Offer: The Quiet Kitchen", shown["message"])
-        self.assertIn("none is asked again", shown["message"])
+        self.assertIn("do not ask them again", shown["message"])
         self.assertIn("not an approval", shown["message"])
         self.assertEqual(shown["answered_count"], 2)
         self.assertEqual(sorted(self.state()["answer_records"]),

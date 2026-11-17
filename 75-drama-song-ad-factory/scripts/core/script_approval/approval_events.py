@@ -661,22 +661,30 @@ def is_preference_reply(text):
     ))
 
 
+#: The origins a recorded approval may name. `client` is a chat reply;
+#: `studio` is the client's own tap on the Studio approval page (S75-036).
+#: Both take every check below unchanged -- a studio tap is never weaker.
+REPLY_SOURCES = ("client", "studio")
+
+
 def reply_context_status(rec, ctx=None):
     """Validate the existing presentation/reply protocol, without mutation.
 
-    Modern records require a new client source reference and exact ask binding.
-    Legacy records keep their existing context path; no identity is invented.
+    Modern records require a new client (or Studio page) source reference and
+    exact ask binding. Legacy records keep their existing context path; no
+    identity is invented.
     """
     ctx, rec = ctx or {}, rec or {}
     contract = rec.get("reply_contract") or {}
     required = bool(contract)
     def result(ok, code, detail):
         return {"ok": ok, "required": required, "reason_code": code, "detail": detail}
-    if ctx.get("source") is not None and str(ctx["source"]).strip().lower() != "client":
+    source = ctx.get("source")
+    if source is not None and str(source).strip().lower() not in REPLY_SOURCES:
         return result(False, "ARTIFACT_REPLY_SOURCE_INVALID", "An assistant or saved preference cannot approve the client's artifact.")
     if not required:
         return result(True, "ARTIFACT_REPLY_LEGACY_CONTEXT", "Existing legacy artifact reply context is preserved.")
-    if (ctx.get("source") != "client" or not isinstance(ctx.get("source_ref"), str) or
+    if (ctx.get("source") not in REPLY_SOURCES or not isinstance(ctx.get("source_ref"), str) or
             not ctx["source_ref"].strip() or not ctx.get("presentation_ask_id") or not ctx.get("run_id")):
         return result(False, "ARTIFACT_REPLY_CONTEXT_REQUIRED", "Carry the actual new client reply source, source reference, run and presented ask identity.")
     if ctx["source_ref"] in contract.get("intake_source_refs", []):
@@ -687,7 +695,7 @@ def reply_context_status(rec, ctx=None):
     # revision; it never approves the new revision or creates another event.
     prior = next((e for e in rec.get("approvals", []) if e.get("source_ref") == ctx["source_ref"]), None)
     if prior:
-        if (prior.get("source") != "client" or prior.get("presentation_ask_id") != ctx["presentation_ask_id"] or
+        if (prior.get("source") not in REPLY_SOURCES or prior.get("presentation_ask_id") != ctx["presentation_ask_id"] or
                 str(prior.get("run_id")) != str(ctx["run_id"]) or
                 prior.get("reply_text_sha") != ctx.get("reply_text_sha")):
             return result(False, "ARTIFACT_REPLY_SOURCE_REUSED", "The same reply source reference cannot identify different words, runs or presentations.")

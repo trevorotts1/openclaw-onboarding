@@ -12,6 +12,8 @@ library was consulted.
 """
 from __future__ import annotations
 
+import copy
+
 HELP_WORDS = ("help", "help me choose", "explain", "explain the styles")
 REUSE_WORDS = ("reuse", "reuse my answers", "show my answers",
                "what have i answered")
@@ -65,10 +67,12 @@ def reusable_rows(state, questions):
 def apply_reuse(state, question_ids, questions):
     """Decide which saved answers may be reused. Pure: no state is mutated.
 
-    Refused when the question changed or is no longer asked. A new client
-    answer is never replaced by a reused one, because nothing here writes.
+    Refused when the question changed or is no longer asked. ``records`` is
+    the saved answer behind each applied id, so the caller can write it through
+    the session's own answer writer; nothing here writes.
     """
     reusable = {r["question_id"]: r for r in reusable_rows(state, questions)}
+    saved = (state or {}).get("answer_records") or {}
     applied, refused = [], []
     for qid in question_ids or []:
         row = reusable.get(qid)
@@ -78,7 +82,9 @@ def apply_reuse(state, question_ids, questions):
             refused.append({"question_id": qid, "reason": row["reason"]})
         else:
             applied.append(qid)
-    return {"applied": applied, "refused": refused, "wrote": False}
+    return {"applied": applied, "refused": refused,
+            "records": {qid: copy.deepcopy(saved[qid]) for qid in applied},
+            "wrote": False}
 
 
 def _is_option_label(raw, question):
@@ -102,7 +108,7 @@ def progress_message(state, questions):
 
 
 def reuse_message(state, questions=None):
-    """The single reuse screen: what is kept, and that nothing is re-asked."""
+    """The single reuse screen: what is kept, and what is reused or re-asked."""
     rows = kept_rows(state)
     if not rows:
         body = ["You have not answered anything yet.",
@@ -113,8 +119,25 @@ def reuse_message(state, questions=None):
             detail = row["text"] if row["text"] not in (None, "") \
                 else (row["raw_answer"] or "")
             body.append("%d. %s: %s" % (n, row["label"].title(), detail))
-        body += ["", "I keep all of these; none is asked again.",
-                 "Reusing answers is not an approval of anything new."]
+        body.append("")
+        if questions is None:
+            body.append("I keep all of these; none is asked again without a "
+                        "changed question.")
+        else:
+            matches = {r["question_id"]: r["matches"]
+                       for r in reusable_rows(state, questions)}
+            kept = [r["label"].title() for r in rows
+                    if matches.get(r["question_id"])]
+            stale = [r["label"].title() for r in rows
+                     if not matches.get(r["question_id"])]
+            if kept:
+                body.append("I reuse these and do not ask them again: %s."
+                            % ", ".join(kept))
+            if stale:
+                body.append("These changed, so they stay as history and the "
+                            "current question is asked again: %s."
+                            % ", ".join(stale))
+        body.append("Reusing answers is not an approval of anything new.")
     line = progress_message(state, questions)
     if line:
         body += ["", line]

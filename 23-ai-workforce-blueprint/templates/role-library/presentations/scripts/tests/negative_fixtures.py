@@ -39,7 +39,11 @@ PNG_MAGIC = b"\x89PNG\r\n\x1a\n"
 PNG_PAYLOAD = b"0" * 512  # payload bytes only; these fixtures exercise gates, not pixel floors
 
 WPM_STAMP = "deepseek-v4.1-flash"       # the deck-authoring model stamp
-JUDGE_STAMP = "glm-5.3-flash"       # the vision route's model (differs from authoring)
+#: The vision route's model (differs from authoring). Must be a model the
+#: router registry declares `modality: "vision"`: PD-205b/PD-300b refuse an
+#: image grade from a route whose modality is unknown or text-only, so a
+#: fixture stamping an undeclared id would test the refusal, not the control.
+JUDGE_STAMP = "glm-ocr"             # GLM-OCR via Ollama Cloud (registry: vision)
 QC_SPECIALIST_STAMP = "kimi-v4-a"   # the independent QC specialist identity
 VALID_TS = "2026-09-02T09:31:00+01:00"  # tz-aware, not a midnight placeholder
 
@@ -224,7 +228,11 @@ def _image_domain_report(reviewer: str, built_by: str,
         the authoring stamp (which _fix33_authoring_stamp resolves from the
         qc_independence block first), so the honest control passes the unit
         contract while a self-graded variant (graded_by_model == reviewer
-        == builder) is blocked twice over."""
+        == builder) is blocked twice over;
+      * author_model = PD-300's top-level field: the model that WROTE the
+        graded files, stamped from the trusted execution stamps. PD-300b
+        fails closed on a report that cannot say who authored it, so the
+        honest control must carry it — built_by IS the deck author here."""
     return {
         "gate": "AF-IMAGE-QC",
         "average": average,
@@ -235,6 +243,7 @@ def _image_domain_report(reviewer: str, built_by: str,
             "independent": True,
             "built_by": built_by,
         },
+        "author_model": built_by,
         "graded_by_provider": "glm",
         "graded_by_model": graded_by_model,
         "request_id": request_id,
@@ -352,8 +361,13 @@ def fixture_qc_reports(*, same_model_judge: bool = True,
                 # unstamped siblings read as unproven consumed inputs.
                 "P-IMAGE-QC": [f"renders/slide-{n:02d}.png" for n in range(1, 5)],
                 "P-SPEECH-QC": ["working/deliverables/PRESENTERS-SPEECH-FISH-TAGGED.md"],
+                # PD-907: the real manifest consumes renders/slide-*.png at
+                # P-SHIFT-QC too (qc_aggregate._resolve_consumes) -- stamp the
+                # same four renders staged above, or PRES-042 row 2 reports
+                # AF-EXEC-STAMP on every one of them.
                 "P-SHIFT-QC": ["working/copy/priority_shift_spec.json",
-                               "working/copy/slides_copy.md"],
+                               "working/copy/slides_copy.md",
+                               *[f"renders/slide-{n:02d}.png" for n in range(1, 5)]],
             }
             for p in report_paths:
                 rel = str(p.relative_to(rd))

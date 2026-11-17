@@ -59,13 +59,21 @@ class Spelling(unittest.TestCase):
         self.assertIn("end_card", bad[0])
 
 
+class CtaHold(unittest.TestCase):
+    def test_nan_hold_is_not_a_number(self):
+        status, detail = C.check_cta_hold(float("nan"))
+        self.assertEqual(status, C.FAIL)
+        self.assertEqual(detail, "CTA hold is not a number")
+
+
 class IntakeAsksWebsite(unittest.TestCase):
     def test_asks_when_ad_sends_people_to_a_website(self):
         brief = {"offer": "Coaching", "audience": "moms", "action": "Visit her website",
                  "budget_minor": 2500, "budget_currency": "USD", "placement": "9:16 vertical"}
         r = I.evaluate(brief)
         self.assertEqual([q["id"] for q in r["questions"]], ["website"])
-        self.assertIn("exact website address", r["question_message"])
+        self.assertIn("What link should the ad send people to?",
+                      r["question_message"])
 
     def test_no_question_once_answered_and_stored(self):
         brief = {"offer": "Coaching", "audience": "moms", "action": "Visit her website",

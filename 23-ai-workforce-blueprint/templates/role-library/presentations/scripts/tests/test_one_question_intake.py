@@ -38,8 +38,14 @@ def interview(tmp_path):
     run.mkdir()
 
     def call(*args, entry=SCRIPTS / "deck-intake-driver.py", ok=True):
+        # PD-004b: a test may flip the intake-provenance switch on the real
+        # process by setting it in os.environ (the driver reads it per run).
+        call_env = dict(env)
+        if "PRESENTATION_INTAKE_PROVENANCE" in os.environ:
+            call_env["PRESENTATION_INTAKE_PROVENANCE"] = \
+                os.environ["PRESENTATION_INTAKE_PROVENANCE"]
         result = subprocess.run([sys.executable, str(entry), "--run-dir", str(run), *args],
-                                env=env, capture_output=True, text=True, timeout=20)
+                                env=call_env, capture_output=True, text=True, timeout=20)
         if ok:
             assert result.returncode == 0, result.stdout + result.stderr
         return result, json.loads(result.stdout)
@@ -75,10 +81,14 @@ def test_type_and_pitch_are_separate_questions(interview, entry):
     assert second["question_id"] == "pitch_included"
     assert "pitch_included" not in ledger(run)
     _, third = call("--answer", "pitch_included", "no", entry=entry)
-    assert third["question_id"] == "audience"
+    # PD-013: the pace question is asked third, right after the deck type and
+    # the pitch decision, so the client picks QUICK before anything optional.
+    assert third["question_id"] == "standard_mode"
     assert ledger(run)["pitch_included"]["value"] is False
     _, same = call("--next", entry=entry)
     assert same["question_id"] == third["question_id"]
+    _, fourth = call("--answer", "standard_mode", "IN-DEPTH", entry=entry)
+    assert fourth["question_id"] == "audience"
 
 
 def test_individual_answers_do_not_invent_sibling_answers(interview):
@@ -106,7 +116,10 @@ def test_existing_merged_session_resumes_with_only_missing_fields(interview):
     run, call = interview
     call("--answer", "deck_type_source", "presentation_type: content_personal; pitch_included: no; extracted_substance: Build trust")
     _, next_q = call("--next")
-    assert next_q["question_id"] == "recipient_name"
+    # PD-013: the pace question sits at 0.6, ahead of every field question.
+    assert next_q["question_id"] == "standard_mode"
+    _, after_pace = call("--answer", "standard_mode", "IN-DEPTH")
+    assert after_pace["question_id"] == "recipient_name"
     call("--answer", "recipient_name", "Jordan")
     assert ledger(run)["extracted_substance"]["value"] == "Build trust"
     assert ledger(run)["RECIPIENT_NAME"]["value"] == "Jordan"
@@ -142,6 +155,16 @@ def test_conditionals_are_individual_and_still_apply():
     assert DRIVER.should_ask(by_id["vip_price"], {"vip_tier": True})[0]
     assert not DRIVER.should_ask(by_id["motion_graphics_declined_reason"], {"want_motion_graphics": "yes"})[0]
     assert DRIVER.should_ask(by_id["motion_graphics_declined_reason"], {"want_motion_graphics": "no"})[0]
+    # PD-014: the shape behind that ask. conditional_on is the ONLY gate
+    # (no ask_if, which could never be true at the same time); the ask
+    # itself is optional (required=false, block_gate=false), and the
+    # ask_only_if_previously_wanted marker carries the bank's prior-YES
+    # policy as data, not as a second gate.
+    mg = by_id["motion_graphics_declined_reason"]
+    assert mg["required"] is False
+    assert mg["block_gate"] is False
+    assert mg.get("ask_only_if_previously_wanted") is True
+    assert "ask_if" not in mg
 
 
 def test_hosted_embedded_and_signature_prompts_are_single_questions():
@@ -186,13 +209,16 @@ def test_scanner_rejects_compound_bank_prompts_and_accepts_atomic_questions():
         {"role": "assistant", "text": "What is the purpose of this presentation?"}], bank)["pass"]
 
 
-def test_real_cli_walk_completes_and_proves_a_single_question_transcript(interview):
-    run, call = interview
-    values = {"presentation_type": "from_scratch", "pitch_included": "yes",
-              "duration_min": "45", "provider_plan": "use conservative default",
-              "standard_mode": "QUICK", "run_mode": "standard",
-              "event_price": "free", "price_mode": "straight", "final_price": "$97",
-              "vip_tier": "no", "style_pick_auto": "no"}
+WALK_VALUES = {"presentation_type": "from_scratch", "pitch_included": "yes",
+               "duration_min": "45", "provider_plan": "use conservative default",
+               "standard_mode": "QUICK", "run_mode": "standard",
+               "event_price": "free", "price_mode": "straight", "final_price": "$97",
+               "vip_tier": "no", "style_pick_auto": "no"}
+
+
+def _walk_to_complete(call, values):
+    """Answer the live turn gate until every question is answered; return the
+    last (complete) question payload."""
     seen = []
     _, q = call("--next")
     for _ in range(80):
@@ -202,6 +228,11 @@ def test_real_cli_walk_completes_and_proves_a_single_question_transcript(intervi
         assert qid not in seen, (qid, seen)
         seen.append(qid)
         assert q["prompt"].count("?") <= 1
+        if qid == "defaults_review":
+            # PD-013: the QUICK review turn only clears on a plain acceptance,
+            # and PD-004b refuses an acceptance that names no client message.
+            _, q = call("--answer", qid, "good", "--owner-msg-id", "walk-1")
+            continue
         if qid in values:
             answer = values[qid]
         elif qid.startswith("want_") or qid == "dark_ok" or qid == "logo_on_slides":
@@ -214,11 +245,51 @@ def test_real_cli_walk_completes_and_proves_a_single_question_transcript(intervi
             answer = "Client supplied " + qid
         _, q = call("--answer", qid, answer)
     assert q["status"] == "complete", q
+    return q
+
+
+def test_real_cli_walk_completes_and_proves_a_single_question_transcript(interview, monkeypatch):
+    # PD-004c: enforce is now the default, and this walk records no client
+    # message ids -- it exercises the walk, so it asks for warn explicitly.
+    monkeypatch.setenv("PRESENTATION_INTAKE_PROVENANCE", "warn")
+    run, call = interview
+    _walk_to_complete(call, WALK_VALUES)
     _, complete = call("--complete")
     assert complete["status"] == "complete"
     trace = json.loads((run / "working/interview/intake_transcript.json").read_text())
     bank = SCANNER.load_bank_questions()
     assert SCANNER.scan_transcript(trace["turns"], bank)["pass"]
     entries = ledger(run)
-    for field in ("AUDIENCE", "GOAL", "CTA_ACTION", "DURATION_MIN", "WANT_MOTION_GRAPHICS", "MOTION_GRAPHICS_DECLINED_REASON"):
+    for field in ("AUDIENCE", "GOAL", "CTA_ACTION", "DURATION_MIN"):
         assert entries[field]["validated"] is True
+    # PD-013: a want_ toggle that carries a bank default is RECORDED rather
+    # than asked under QUICK, so it is never "validated" by an answer -- it
+    # carries the accepted default and the owner message id the acceptance
+    # was stamped with.
+    assert entries["WANT_MOTION_GRAPHICS"]["defaulted"] is True
+    assert entries["WANT_MOTION_GRAPHICS"]["value"] == "no"
+    assert entries["WANT_MOTION_GRAPHICS"]["default_accepted_msg_id"] == "walk-1"
+    # PD-014: MOTION_GRAPHICS_DECLINED_REASON is optional (required=false,
+    # block_gate=false) and the walk answers every want_ toggle "no", so
+    # the reason is asked but the walk may answer it with the "no note"
+    # sentinel or leave it blank. It must never be required to appear;
+    # if it does appear, it must be the sentinel or a real reason.
+    # The walk answers the reason with "Client supplied
+    # motion_graphics_declined_reason" (the generic fallback), which is a
+    # real non-empty reason. So if the entry exists, its value is either
+    # that fallback, the "" blank, or the "no note." sentinel.
+    mg_entry = entries.get("MOTION_GRAPHICS_DECLINED_REASON")
+    assert mg_entry is None or mg_entry.get("value", "") in ("", "no note.", "Client supplied motion_graphics_declined_reason")
+
+def test_complete_under_enforce_refuses_an_interview_with_no_message_ids(interview, monkeypatch):
+    """PD-004b: the same real walk, under ENFORCE, cannot complete -- none of
+    its answers names the client message it came from."""
+    monkeypatch.setenv("PRESENTATION_INTAKE_PROVENANCE", "enforce")
+    run, call = interview
+    _walk_to_complete(call, WALK_VALUES)
+    result, payload = call("--complete", ok=False)
+    assert result.returncode == 6, result.stdout + result.stderr
+    assert payload["status"] == "unproven", result.stdout
+    assert payload["mode"] == "enforce", result.stdout
+    assert payload["unproven_questions"], result.stdout
+    assert json.loads((run / "working/interview/intake_ledger.json").read_text()).get("complete") is not True

@@ -100,6 +100,26 @@ def _patch_owner_ids_oracle(real_ids):
 
     return _Both()
 
+def _patch_verified_owner_ids(ids):
+    """PD-066: pin presentation_job.approvals' oracle so `ids` resolve as real
+    owner-authored messages. A waiver is granted ONLY through this oracle now,
+    so any fixture that expects a waiver to hold must patch it (a real box
+    talks to Command Center; a test must not)."""
+    import presentation_job.approvals as _ap
+
+    p = _mock.patch.object(_ap, "_cc_board_oracle",
+                           lambda run_dir=None: frozenset(ids))
+
+    class _One:
+        def start(self):
+            p.start()
+            return self
+
+        def stop(self):
+            p.stop()
+
+    return _One().start()
+
 SLIDES = [
     {"slide": 1, "scene": "A sunlit modern office, editorial photography.",
      "copy": ["Northwind Co", "Three moves that doubled our pipeline"]},
@@ -1302,12 +1322,19 @@ def _write_publish_ledger(bundle_dir: Path, status="published",
                                      "test-client/test-deck/teleprompter.html") -> None:
     """Write a teleprompter_publish.json into the bundle dir. The TELEPROMPTER-PUBLISH
     sub-check of run_postflight_gate keys on this artifact — a full bundle without it
-    now fails (exit 5), so the PASS-path fixtures must include a published record."""
+    now fails (exit 5), so the PASS-path fixtures must include a published record.
+
+    PD-210: the record must also describe the file that is actually in the bundle
+    now — `local_sha256` is compared against the HTML on disk, so a record that
+    names a different file fails the gate. Hash the fixture's HTML exactly as the
+    gate does."""
     import json as _json
+    _html = bundle_dir / "presenter-teleprompter.html"
     rec = {
         "platform": "mac",
         "host_target": "cloudflare-central",
-        "local_file": str(bundle_dir / "presenter-teleprompter.html"),
+        "local_file": str(_html),
+        "local_sha256": build_deck._sha256_file(_html),
         "public_url": public_url,
         "published_at": "2026-06-17T00:00:00Z",
         "verified_http_status": verified_http_status,
@@ -1554,16 +1581,25 @@ def test_postflight_speech_length_reverify():
         # with independent verdicts so this fixture isolates the speech-length
         # re-check, as its docstring promises.
         (root / "working" / "qc").mkdir(parents=True, exist_ok=True)
+        # PD-206a (decision D-34): the two human verdicts live in their OWN files
+        # (working/qc/human-review/*.json), not as blocks inside the graded reports.
+        (root / "working" / "qc" / "human-review").mkdir(parents=True, exist_ok=True)
+        (root / "working" / "qc" / "human-review" / "image_grounding.json").write_text(json.dumps(
+            {"pass": True, "reviewed_by": "vision-review-steward",
+             "reviewed_at": "2026-06-17T00:00:00Z",
+             "note": "each slide image shows what its prompt asked for"}))
+        (root / "working" / "qc" / "human-review" / "representation_casting.json").write_text(json.dumps(
+            {"pass": True, "reviewed_by": "casting-director",
+             "reviewed_at": "2026-06-17T00:00:00Z",
+             "note": "people described in the slide prompts match the audience"}))
         (root / "working" / "qc" / "image_qc_report.json").write_text(json.dumps(
-            {"image_grounding": {"pass": True, "reviewed_by": "vision-review-steward"},
-             "vision_model": "gpt-image-2",
+            {"vision_model": "gpt-image-2",
              "slides": [{"slide": n, "pass": True, "score": 9.0,
                          "observed_text": "rendered slide carries the section title and body copy",
                          "visual_subject": "photographic hero with grounding-consistent scene"
                          } for n in range(1, 25)]}))
         (root / "working" / "qc" / "prompt_qc_report.json").write_text(json.dumps(
-            {"representation_casting": {"pass": True, "reviewed_by": "casting-director"},
-             "slides": [{"slide": n, "pass": True, "score": 9.0,
+            {"slides": [{"slide": n, "pass": True, "score": 9.0,
                          "notes": "cast parity verified against the intake mix"
                          } for n in range(1, 25)]},
             indent=2))
@@ -3203,10 +3239,20 @@ def test_runner_next_turn_gate():
     #     resolves to a real owner message. Seed the CC owner-ids oracle so "42" is
     #     a GENUINE owner message id (the positive control); a forged id must fail
     #     closed (covered by test_forged_owner_msg_id_* below).
+    #     PD-305 / PD-912: an id proves a message EXISTS, never what the owner
+    #     authorized — the message TEXT must name the gate. Stage the owner message
+    #     the skip points at, with text naming this phase, exactly as the channel
+    #     bridge writes it for approvals.resolve_owner_message.
     _pm_path = rd / "working" / "checkpoints" / "process_manifest.json"
     _pm_obj = json.loads(_pm_path.read_text()) if _pm_path.exists() else {}
     _pm_obj["cc_task_id"] = "task-oracle-seeded"  # merge — keep the attestation from (b)
     _pm_path.write_text(json.dumps(_pm_obj))
+    _msg_log = rd / "working" / "interview" / "inbound_messages.jsonl"
+    _msg_log.parent.mkdir(parents=True, exist_ok=True)
+    _msg_log.write_text(json.dumps({
+        "msg_id": "42", "chat_id": "owner-chat-fixture",
+        "text": f"approve skip {second_id} for this deck",
+        "received_at": "2026-07-10T12:00:00Z"}) + "\n")
     (rd / "working" / "checkpoints" / "phase_skip_approvals.json").write_text(json.dumps(
         {"approvals": [{"phase_id": second_id, "owner_approved": True,
                         "approved_by": "owner", "reason": "not applicable to this deck",
@@ -6800,12 +6846,27 @@ def test_mode_substance_u022() -> list:
     result7 = build_deck._chk_mode(r7)
     if result7: fails.append(f"U022-7: from_scratch expected '', got {result7!r}")
 
-    good_token = {"owner_approved": True, "af_code": "AF-MODE-UNSET", "approved_by": "the operator", "reason": "legacy run dir, migration deferred", "timestamp": "2026-07-26T00:00:00Z"}
+    # PD-066: a token waives ONLY with an owner_msg_id the approvals oracle
+    # resolves; "the operator" would also trip the self-grant marker, and the
+    # T00:00:00 placeholder is refused, so the token is a real verified shape.
+    good_token = {"owner_approved": True, "af_code": "AF-MODE-UNSET", "approved_by": "Trevor (operator)", "reason": "legacy run dir, migration deferred", "timestamp": "2026-11-13T15:35:00Z", "owner_msg_id": "msg-mode-unset"}
     r8 = _mk({}, False, token=good_token)
+    _oracle8 = _patch_verified_owner_ids({"msg-mode-unset"})
     try:
         build_deck.date = _Later
         result8 = build_deck._chk_mode(r8)
         if result8: fails.append(f"U022-8: valid owner token past window expected '', got {result8!r}")
+    finally:
+        build_deck.date = orig_date
+        _oracle8.stop()
+
+    # PD-066: the SAME otherwise-valid token with NO owner_msg_id is refused.
+    no_id_token = {k: v for k, v in good_token.items() if k != "owner_msg_id"}
+    r8b = _mk({}, False, token=no_id_token)
+    try:
+        build_deck.date = _Later
+        result8b = build_deck._chk_mode(r8b)
+        if not result8b: fails.append("U022-8b: token with no owner_msg_id expected BLOCK, got PASS")
     finally:
         build_deck.date = orig_date
 
@@ -7124,9 +7185,10 @@ def _make_ocr_run_dir(sidecar_gen, *, n=2, token=None):
 OCR_OWNER_TOKEN = {
     "owner_approved": True,
     "af_code": "AF-OCR-READBACK",
-    "approved_by": "owner",
-    "reason": "stylised headline",
-    "timestamp": "2026-07-25T00:00:00Z",
+    "approved_by": "Trevor (operator)",
+    "reason": "stylised headline — owner accepted the render",
+    "timestamp": "2026-11-13T15:35:00Z",
+    "owner_msg_id": "msg-ocr-waiver",
 }
 
 
@@ -7178,14 +7240,19 @@ def test_ocr_matched_false_fails():
 
 
 def test_ocr_matched_false_waivable():
-    """U027 fixture 6: checked:true, matched:false + owner token -> '' (PASS)."""
+    """U027 fixture 6: checked:true, matched:false + a VERIFIED owner token
+    (PD-066: the id must resolve through the approvals oracle) -> '' (PASS)."""
     rd = _make_ocr_run_dir(
         lambda i: {"checked": True, "matched": False, "misses": ["X"]},
         token=OCR_OWNER_TOKEN)
-    result = build_deck.check_ocr_readback(rd)
+    _oracle = _patch_verified_owner_ids({"msg-ocr-waiver"})
+    try:
+        result = build_deck.check_ocr_readback(rd)
+    finally:
+        _oracle.stop()
     assert result == "", (
-        f"matched:false WITH owner token should waive (stylised headline), "
-        f"got: {result!r}")
+        f"matched:false WITH a verified owner token should waive (stylised "
+        f"headline), got: {result!r}")
 
 
 def test_ocr_all_good_passes():

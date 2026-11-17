@@ -490,6 +490,86 @@ class TestIntakeDepthDictUnwrap:
 
 
 # ---------------------------------------------------------------------------
+# PD-308 -- --writer-phase is a closed vocabulary, not a free-form tag
+# ---------------------------------------------------------------------------
+class TestProvenanceWriterContract:
+    """resolve_intake.py's DEFAULT --writer-phase must be a member of
+    runfacts.INTAKE_WRITERS.
+
+    The default used to be 'resolve-intake' (hyphen), the sanctioned writer id
+    is 'resolve_intake' (underscore), so every default invocation wrote
+    intake.json and then failed to append its provenance row: ValueError ->
+    loud AF-INTAKE-PROVENANCE on stderr, exit 0, NO row on disk, and the
+    PD-308 oracle refused the run at the next phase. The hyphenated spelling
+    came from --source (a free-form tag on a different axis), not from this
+    closed set. These tests pin the contract, the default path, and the two
+    edges that must NOT widen: an explicit sanctioned id still works, and a
+    nonsense id still refuses.
+    """
+
+    def _run(self, rd: pathlib.Path) -> tuple:
+        _write_ledger(rd, _base_entries("from_scratch"))
+        _write_intake_copy(rd, {"requester_chat_id": "42", "client_name": "Probe Co"})
+        # a COMPLETED intake step is what makes the oracle strict, so "oracle
+        # accepts" below is proof a row landed -- not the pre-regime tolerance.
+        (rd / "state.json").write_text(json.dumps({
+            "phases": [{"id": "P0A-INTAKE", "status": "done",
+                        "artifacts": ["working/copy/intake.json"]}],
+        }), encoding="utf-8")
+        return (rd / "working" / "interview" / "intake_ledger.json",
+                rd / "working" / "copy" / "intake.json")
+
+    def test_default_invocation_appends_exactly_one_row_and_oracle_accepts(self, capsys):
+        from presentation_job import runfacts as rf
+        rd = pathlib.Path(tempfile.mkdtemp())
+        ledger_path, out_path = self._run(rd)
+
+        rc = ri.main(["--ledger", str(ledger_path), "--out", str(out_path)])
+
+        assert rc == 0
+        err = capsys.readouterr().err
+        assert "AF-INTAKE-PROVENANCE" not in err, err
+        rows = rf.load_intake_provenance(rd)
+        assert len(rows) == 1, rows
+        assert rows[0]["writer_phase"] == "resolve_intake"
+        ok, why = rf.intake_sha_has_provenance(rd)
+        assert ok, why
+
+    def test_explicit_sanctioned_writer_phase_still_works(self, capsys):
+        from presentation_job import runfacts as rf
+        rd = pathlib.Path(tempfile.mkdtemp())
+        ledger_path, out_path = self._run(rd)
+
+        rc = ri.main(["--ledger", str(ledger_path), "--out", str(out_path),
+                      "--writer-phase", "resolve_intake"])
+
+        assert rc == 0
+        assert "AF-INTAKE-PROVENANCE" not in capsys.readouterr().err
+        rows = rf.load_intake_provenance(rd)
+        assert [r["writer_phase"] for r in rows] == ["resolve_intake"]
+        assert rf.intake_sha_has_provenance(rd)[0]
+
+    def test_nonsense_writer_phase_still_refuses_and_appends_no_row(self, capsys):
+        """The registry must not become a catch-all: an unknown writer id is
+        still refused and still leaves NO row (so the oracle still refuses)."""
+        from presentation_job import runfacts as rf
+        rd = pathlib.Path(tempfile.mkdtemp())
+        ledger_path, out_path = self._run(rd)
+
+        rc = ri.main(["--ledger", str(ledger_path), "--out", str(out_path),
+                      "--writer-phase", "totally-made-up"])
+
+        assert rc == 0  # the write landed; the append failure is loud on stderr
+        err = capsys.readouterr().err
+        assert "AF-INTAKE-PROVENANCE" in err
+        assert "'totally-made-up'" in err
+        assert rf.load_intake_provenance(rd) == []
+        ok, why = rf.intake_sha_has_provenance(rd)
+        assert not ok
+        assert "AF-INTAKE-PROVENANCE" in why
+
+
+# ---------------------------------------------------------------------------
 # End-to-end: main() writes a well-formed file when everything resolves
 # ---------------------------------------------------------------------------
 class TestMainEndToEnd:

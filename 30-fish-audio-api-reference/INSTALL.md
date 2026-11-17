@@ -122,28 +122,24 @@ step will fail.
 
 ---
 
-## Step 5 - Test the API
+## Step 5 - Verify the Approved Client Voice, Then Test
 
-Run this test to confirm your credentials work:
+1. Follow [client voice approval](references/client-voice-approval.md). Bind the approval to the installed `MC_COMPANY_ID` and the voice the owner confirmed independently. Do not copy the active voice setting into an expected-value field.
+2. Run the bundled read-only check. Missing approval is PENDING, never COMPLETE:
 
 ```bash
-curl -s -X POST "https://api.fish.audio/v1/tts" \
-  -H "Authorization: Bearer $FISH_AUDIO_API_KEY" \
-  -H "Content-Type: application/json" \
-  -H "model: drama-3" \
-  -d "{
-    \"text\": \"Fish Audio is connected and working.\",
-    \"reference_id\": \"$FISH_AUDIO_VOICE_ID\",
-    \"format\": \"mp3\",
-    \"mp3_bitrate\": 64,
-    \"normalize\": true,
-    \"latency\": \"normal\"
-  }" \
-  --output /tmp/fish_audio_test.mp3 \
-  -w "%{http_code}"
+bash "$SKILLS_DIR/30-fish-audio-api-reference/qc-fish-audio-api-reference.sh"
 ```
 
-You should get `200` and a file at `/tmp/fish_audio_test.mp3`. Play it to confirm your voice.
+3. Before a paid smoke test, announce the selected provider/model and estimated USD and follow the client's budget/approval. Use the guarded helper, not a raw curl call:
+
+```bash
+python3 "$SKILLS_DIR/30-fish-audio-api-reference/scripts/fish_audio_config.py" tts \
+  --root "$OC_ROOT" --text-file approved-test-script.txt \
+  --output /tmp/fish_audio_test.mp3 --use-case phone
+```
+
+4. Verify the MP3 with `ffprobe` and arrange a listening review against the owner's approved voice sample. A matching fingerprint proves the intended configured identifier; it does not prove acoustic likeness. Do not play audio on the operator's screen automatically.
 
 ---
 
@@ -156,4 +152,5 @@ Skill 30 is complete when:
       CANONICAL store (`$SECRETS_ENV` — `~/.openclaw/secrets/.env` on Mac,
       `/data/.openclaw/secrets/.env` on VPS), which is the file
       `qc-fish-audio-api-reference.sh` reads
-- [ ] Test curl returned 200 with audio output
+- [ ] Independent voice approval matches this company and configured voice; bundled QC exits 0
+- [ ] Approved live test returns nonempty audio and listening review confirms the intended voice

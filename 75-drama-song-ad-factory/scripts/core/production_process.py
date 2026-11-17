@@ -167,9 +167,17 @@ def _session_authority(run_dir, state, run_id, live_model):
                        status.get("detail") or "The exact intake has no valid explicit client recap confirmation.")
     if state.get("run_id") != run_id:
         return _result(False, "PRODUCTION_RUN_ID_MISMATCH", "Intake and stage store identify different runs.")
-    provider = state["answer_records"]["model"]["provider_identity"]
-    expected_model = provider.get("lock") or provider["kie_model"]
+    #: S75-006: the video model rides the recap as a defaulted screen, so a
+    #: purpose-flow run never answers it one by one and it has no answer record.
+    #: The choice the client confirmed is still the one intake persisted in the
+    #: model lock, and its route identity is checked exactly as before.
     binding = state.get("model_lock") or {}
+    provider = ((state["answer_records"].get("model") or {}).get("provider_identity")
+                or binding.get("provider_identity"))
+    if not isinstance(provider, dict) or not provider:
+        return _result(False, "PRODUCTION_STATE_UNVERIFIED",
+                       "the confirmed video model carries no route identity")
+    expected_model = provider.get("lock") or provider["kie_model"]
     # completion_status preserves its immutable read-only legacy projection.
     # The live WAL snapshot is authoritative for the *current* DB lock; it
     # must still equal the exact provider identity the client confirmed.
@@ -178,15 +186,20 @@ def _session_authority(run_dir, state, run_id, live_model):
         return _result(False, "PRODUCTION_VIDEO_MODEL_LOCK_MISMATCH",
                        "The live video-model lock differs from the exact confirmed intake provider choice.")
     required = state["required_question_ids"]
-    # completion_status also supports small renderer tests. Production must
-    # contain the real card inventory; a caller-supplied one-question card must
-    # never authorize an ad. Revisions keep their own exact saved definitions.
-    expected = {q["id"] for q in card.QUESTIONS}
-    if "episode_length" in required:
-        expected.discard("length")
-        expected.add("episode_length")
+    #: The production identities are the screens the run was really ASKED one by
+    #: one; intake_session._progress keeps the defaulted recap tail (video model,
+    #: shape, photos) out of that set on purpose (S75-006). A purpose-flow run
+    #: must carry every always-asked screen; a run that started on the frozen
+    #: pre-S75-006 card must carry that card's own list. Comparing every run with
+    #: the new card demanded SHAPE and CHECKPOINTS of a legacy run, and the
+    #: defaulted screens of a new one -- screens neither session ever asks, so no
+    #: honest run could pass.
     if state.get("purpose_flow"):
-        expected.add("purpose")
+        expected = {"purpose", "offer", "audience", "character", "music", "look",
+                    "checkpoints", "spend",
+                    "episode_length" if "episode_length" in required else "length"}
+    else:
+        expected = {q["id"] for q in card.LEGACY_QUESTIONS}
     if not expected.issubset(required):
         return _result(False, "PRODUCTION_INTAKE_INCOMPLETE", "The confirmed session omits required production question identities.")
     saved = card_answers.load(str(run_dir))
@@ -199,8 +212,43 @@ def _session_authority(run_dir, state, run_id, live_model):
         if not isinstance(actual, dict) or any(actual.get(k) != v for k, v in parsed.items()):
             return _result(False, "PRODUCTION_ANSWER_HANDOFF_MISMATCH",
                            "The saved %s answer differs from its authoritative raw client reply." % qid)
+    # C05 (S75-018 / U-GEN314): the run's MUSIC answer IS its style, and a
+    # resumed run resolves that style HERE, at the one production place that
+    # admits a confirmed session -- through the snapshot-checked reader, never
+    # through a caller string. `bind_run` re-checks the frozen question, its
+    # definition digest, the rendered question and its digest, and only then
+    # maps the label shown at answer time to one catalog id. A saved label is
+    # therefore never re-resolved against the current eighteen-style menu
+    # (the rule `music_styles.catalog._style_key:896-901` states). No second
+    # style source is added: a caller-supplied style id is not accepted here
+    # or anywhere else. `bind_saved_answer`'s checks are untouched, so a
+    # frozen-question mismatch still refuses.
+    # ponytail: the MUSIC answer only. Loop over more answer ids if another
+    # one ever needs the same frozen-snapshot binding.
+    music_style = None
+    records = state.get("answer_records")
+    if isinstance(records, dict) and records.get("music") is not None:
+        # Imported lazily: answer_binding reaches intake_session and
+        # music_styles through its own functions, so this cannot cycle.
+        from choice_card.intake_card import answer_binding  # noqa: PLC0415
+        try:
+            bound = answer_binding.bind_run(run_dir)
+        except answer_binding.BindingError as exc:
+            # A card answer saved before the binding contract carries no client
+            # source ref and so cannot be bound: that run keeps resolving its
+            # style exactly as it did before this unit. Every record that does
+            # carry the contract still binds, and every other refusal -- a
+            # frozen-question or digest mismatch included -- is returned.
+            if exc.code != "BINDING_SOURCE_REF_REQUIRED":
+                return _result(False, exc.code, str(exc))
+            bound = None
+        music_style = None if bound is None else {key: bound[key] for key in (
+            "style_id", "style_label", "catalog_revision", "recipe_revision",
+            "number_shown", "production_fact", "test_only",
+            "question_digest", "definition_digest", "session_path")}
     return _result(True, "PRODUCTION_INTAKE_CONFIRMED", "Exact client answers and recap confirmation are preserved.",
                    authority="intake-session", preferences=_preferences(rows),
+                   music_style=music_style,
                    confirmation_digest=state["confirmation"]["question_digest"])
 
 
@@ -308,7 +356,11 @@ def _legacy_authority(run_dir, run_id, states, events):
     from script_approval import card_answers
     saved = card_answers.load(str(run_dir))
     rows = saved.get("by_id") or {}
-    expected = {q["id"] for q in card.QUESTIONS}
+    #: This is the frozen pre-S75-006 handoff, so the identities it must carry are
+    #: that card's own list. The new card's ids were demanded here by mistake:
+    #: a legacy run has STORYBOARD/SONG/SCRIPT and never SHAPE or CHECKPOINTS, so
+    #: no preserved run could ever verify.
+    expected = {q["id"] for q in card.LEGACY_QUESTIONS}
     if "episode_length" in rows:
         expected.discard("length")
         expected.add("episode_length")

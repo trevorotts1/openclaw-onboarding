@@ -188,7 +188,6 @@ def test_gate3_end_to_end_library_only_proceeds(tmp_path):
     NOT bricked by library maintenance debt."""
     run_dir = tmp_path / "run"
     (run_dir / "working" / "checkpoints").mkdir(parents=True)
-    (run_dir / "working" / "checkpoints" / ".test-context").write_text("")
     payload = {
         "in_sync": False,
         "manifest_version": 39,
@@ -199,7 +198,9 @@ def test_gate3_end_to_end_library_only_proceeds(tmp_path):
         "drift_summary": {"total": 2, "render_path": 0, "library_only": 2},
     }
     scripts = _make_fake_scripts_dir(tmp_path, json.dumps(payload))
-    env = {"QC_SKIP_PRESENTATION_DEPS": "1"}
+    env = {"QC_SKIP_PRESENTATION_DEPS": "1",
+           # PD-201b: the test seam is an environment name, not a marker file.
+           "PRESENTATION_ALLOW_DEGRADED_VERIFIERS": "1"}
     result = _run_entry(run_dir, scripts, env)
     assert result.returncode == 0, (
         f"library-only drift must PROCEED; got exit {result.returncode}\n"
@@ -218,7 +219,6 @@ def test_gate3_end_to_end_render_path_fails(tmp_path):
     (B2) -> GATE 3 FAILS CLOSED (exit 7, AF-CANONICAL-RENDER-BYPASS)."""
     run_dir = tmp_path / "run2"
     (run_dir / "working" / "checkpoints").mkdir(parents=True)
-    (run_dir / "working" / "checkpoints" / ".test-context").write_text("")
     payload = {
         "in_sync": False,
         "manifest_version": 39,
@@ -228,7 +228,9 @@ def test_gate3_end_to_end_render_path_fails(tmp_path):
         "drift_summary": {"total": 1, "render_path": 1, "library_only": 0},
     }
     scripts = _make_fake_scripts_dir(tmp_path, json.dumps(payload))
-    env = {"QC_SKIP_PRESENTATION_DEPS": "1"}
+    env = {"QC_SKIP_PRESENTATION_DEPS": "1",
+           # PD-201b: the test seam is an environment name, not a marker file.
+           "PRESENTATION_ALLOW_DEGRADED_VERIFIERS": "1"}
     result = _run_entry(run_dir, scripts, env)
     assert result.returncode == 7, (
         f"render-path drift must FAIL CLOSED (exit 7); got exit {result.returncode}\n"
@@ -323,7 +325,6 @@ def test_attempt_cap_end_to_end_4th_dies(tmp_path):
     (FIX 11), so only real, unfinished dispatches can ever reach the cap."""
     run_dir = tmp_path / "run"
     (run_dir / "working" / "checkpoints").mkdir(parents=True)
-    (run_dir / "working" / "checkpoints" / ".test-context").write_text("")
     # BUILD mode trips GATE 0 (intake ledger) + GATE 0b (intake trace): seed both.
     (run_dir / "working" / "interview").mkdir(parents=True)
     (run_dir / "working" / "interview" / "intake_ledger.json").write_text(
@@ -339,7 +340,9 @@ def test_attempt_cap_end_to_end_4th_dies(tmp_path):
     payload = {"in_sync": True, "manifest_version": 39, "drift": [],
                "drift_summary": {"total": 0, "render_path": 0, "library_only": 0}}
     scripts = _make_fake_scripts_dir(tmp_path, json.dumps(payload), runner_rc=1)
-    env = {"QC_SKIP_PRESENTATION_DEPS": "1"}
+    env = {"QC_SKIP_PRESENTATION_DEPS": "1",
+           # PD-201b: the test seam is an environment name, not a marker file.
+           "PRESENTATION_ALLOW_DEGRADED_VERIFIERS": "1"}
     counter = run_dir / "working" / "checkpoints" / ".canonical-entry-attempts"
     # Dispatches 1-3: reach the runner (which fails) and consume one attempt each.
     for attempt in (1, 2, 3):

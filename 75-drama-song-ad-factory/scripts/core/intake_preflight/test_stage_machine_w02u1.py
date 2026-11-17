@@ -12,6 +12,8 @@ Covers the acceptance rows:
      final delivery, including crashes and user revisions
   6. valid QC-record lists are read by the real reader without manual rewrites
 """
+import contextlib
+import io
 import json
 import os
 import shutil
@@ -27,7 +29,8 @@ sys.path.insert(0, str(HERE))
 
 import factory as F  # noqa: E402
 import state_store as ss  # noqa: E402
-from test_production_process import confirmed_run, complete_stage, approve_script
+from test_production_process import (confirmed_run, complete_stage, seal_chain,
+                                     approve_script)
 
 PASS = []
 
@@ -199,12 +202,17 @@ def _make_full_run(run, stages=F.CANONICAL_STAGES):
     record["stage"] = "final-qc"
     verdict = qc_gate.evaluate(run.name, "final-qc", [record],
                                {record["check_id"]: "fixture-build-worker"}, ["continuity"])
-    (run / "final-qc" / "record.json").write_text(json.dumps({
+    # S75-011: the declared final-qc artifact is qc/final-qc-verdict.json.
+    (run / "qc" / "final-qc-verdict.json").write_text(json.dumps({
         "gate": verdict["gate"], "producer": F.STAGE_REGISTRY["final-qc"]["qc_producer"],
         "evaluation": verdict}))
     # Controlled successful sink receipt; this fixture sends nothing externally.
     (run / "delivery" / "receipts.json").write_text(json.dumps([
         {"destination": "chat", "status": "delivered"}]))
+    # S75-002: a keyed run proves final QC from the SEALED CHAIN through
+    # delivery, not from the record file, so the fixture seals all twelve
+    # stages in order (the shared helper, shipped contract paths).
+    seal_chain(run)
     return run
 
 
@@ -337,6 +345,189 @@ def test_wal_db_without_sidecars_reads():
         ok("WAL db in a read-only dir still reads the real stages")
 
 
+# ── 8. a delivered studio run sends its evidence with the epic's last move ───
+def _studio_evidence_run(root, with_order=True):
+    """A delivered run that came from the studio page, carrying the six
+    approval sources and the independent review record cc_completion reads.
+
+    The run's own records decide delivery; only the records this fixture cannot
+    produce itself (character approval, delivery receipt, the final QC record
+    and its maker) come from the unit that owns their shapes.
+    """
+    from test_cc_sync_completion_s75_033 import fixture_run
+
+    run = _make_full_run(Path(root) / "run-E")
+    evidence = fixture_run(Path(root) / "evidence")
+    for rel in ("character/approval.json", "delivery/delivery-receipt.json",
+                "qc/records.json", "qc/makers.json"):
+        dst = run / rel
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        dst.write_bytes((evidence / rel).read_bytes())
+    state_path = run / "song-choices" / "state.json"
+    state = json.loads(state_path.read_text())
+    state.setdefault("provenance", {}).update(
+        {"who": "client-9", "channel": "telegram", "at": "2026-11-11T18:30:00Z"})
+    state_path.write_text(json.dumps(state))
+    (run / "control" / "origin.json").write_text(json.dumps(
+        {"schema": "blackceo.origin/v1", "channel": "telegram",
+         "conversation_id": "9", "thread_id": "th-1"}))
+    if with_order:
+        (run / "control" / "studio-order.json").write_text(json.dumps(
+            {"order_id": "ORD-E1", "client_id": "client-9", "title": "Drama ad"}))
+    # S75-002: those evidence files are SEALED artifacts, so overwriting them
+    # after _make_full_run's chain seal is exactly the change the gate refuses.
+    # Re-seal the chain over the finished fixture so delivery still proves.
+    seal_chain(run)
+    return run
+
+
+def _run_with_outbox(root, name):
+    """Run _board_completion's two call sites reach one isolated outbox.
+
+    Sets CC_WORKSPACE and CC_OUTBOX_DIR for the duration of one case, so the
+    cases never share a durable outbox file.
+    """
+    workspace = "ws-s75-u-a12"
+    outbox_dir = Path(root) / name
+    saved = {key: os.environ.get(key) for key in ("CC_WORKSPACE", "CC_OUTBOX_DIR")}
+    os.environ["CC_WORKSPACE"] = workspace
+    os.environ["CC_OUTBOX_DIR"] = str(outbox_dir)
+    return workspace, outbox_dir, saved
+
+
+def _restore_env(saved):
+    for key, value in saved.items():
+        if value is None:
+            os.environ.pop(key, None)
+        else:
+            os.environ[key] = value
+
+
+def test_delivered_studio_run_sends_evidence_with_the_epic():
+    from types import SimpleNamespace
+    import cc_completion
+    import cc_sync
+
+    got = {s: "COMPLETE" for s in F.CANONICAL_STAGES}
+    with tempfile.TemporaryDirectory() as td:
+        # 1. a delivered studio run enqueues exactly one epic 'done' move that
+        #    carries the final approval and the independent review
+        workspace, _, saved = _run_with_outbox(td, "outbox-c1")
+        try:
+            run = _studio_evidence_run(Path(td) / "c1")
+            rid = run.name
+            delivered, report = F.evaluate_completion(run, got)
+            assert delivered is True, report
+            db_path = cc_sync.default_outbox_path(workspace, rid)
+            seed = cc_sync.Outbox(db_path=db_path, workspace=workspace, run_id=rid)
+            # the epic card already carries a registered deliverable; the board
+            # refuses a 'done' move on a card that has none
+            seed.enqueue_stage_deliverable("ORD-E1", "epic",
+                                           "https://example.test/ad.mp4",
+                                           "Delivered ad", workspace)
+            seed.db.close()
+
+            env = F.cmd_event(SimpleNamespace(run_dir=str(run), event="qc",
+                                              run_id=rid))
+            assert env["reason_code"] == "run-complete", env
+
+            box = cc_sync.Outbox(db_path=db_path, workspace=workspace, run_id=rid)
+            rows = box.db.execute(
+                "SELECT kind,stage_slug,payload FROM outbox").fetchall()
+            box.db.close()
+            moves = [row for row in rows if row[0] == "move"]
+            assert len(moves) == 1, rows
+            assert moves[0][1] == "epic", moves
+            payload = json.loads(moves[0][2])
+            assert payload["stage_slug"] == "epic", payload
+            assert payload["status"] == "done", payload
+            assert payload["approval"]["kind"] == "approval", payload
+            assert payload["approval"]["artifact_kind"] == "final", payload
+            assert payload["review"]["kind"] == "review", payload
+            assert payload["review"]["verdict"] == "pass", payload
+            assert payload["reviewer"] == payload["review"]["reviewer"], payload
+            assert payload["actor"] != payload["reviewer"], payload
+            assert payload["evidence"].strip(), payload
+        finally:
+            _restore_env(saved)
+
+        # 2. the same run with no studio order enqueues nothing at all
+        workspace, _, saved = _run_with_outbox(td, "outbox-c2")
+        try:
+            run = _studio_evidence_run(Path(td) / "c2", with_order=False)
+            rid = run.name
+            db_path = cc_sync.default_outbox_path(workspace, rid)
+            env = F.cmd_event(SimpleNamespace(run_dir=str(run), event="qc",
+                                              run_id=rid))
+            assert env["reason_code"] == "run-complete", env
+            assert not Path(db_path).exists(), db_path
+        finally:
+            _restore_env(saved)
+
+        # 3. a run whose completion evidence is missing raises and queues nothing
+        workspace, _, saved = _run_with_outbox(td, "outbox-c3")
+        try:
+            run = _studio_evidence_run(Path(td) / "c3")
+            rid = run.name
+            (run / "qc" / "records.json").unlink()
+            db_path = cc_sync.default_outbox_path(workspace, rid)
+            seed = cc_sync.Outbox(db_path=db_path, workspace=workspace, run_id=rid)
+            seed.enqueue_stage_deliverable("ORD-E1", "epic",
+                                           "https://example.test/ad.mp4",
+                                           "Delivered ad", workspace)
+            seed.db.close()
+            try:
+                F.cmd_event(SimpleNamespace(run_dir=str(run), event="qc",
+                                            run_id=rid))
+                raise AssertionError("missing evidence must raise")
+            except cc_completion.CompletionEvidenceMissing as caught:
+                assert "qc/records.json" in str(caught), caught
+            box = cc_sync.Outbox(db_path=db_path, workspace=workspace, run_id=rid)
+            moves = box.db.execute(
+                "SELECT COUNT(*) FROM outbox WHERE kind='move'").fetchone()[0]
+            box.db.close()
+            assert moves == 0, moves
+        finally:
+            _restore_env(saved)
+        # 4. a board that cannot be opened is reported, never raised: the run
+        #    stays delivered, the failure is visible, and a retry cannot queue a
+        #    duplicate done move (the outbox never came up, so nothing queued)
+        workspace = "ws-s75-u-a12"
+        saved = {key: os.environ.get(key) for key in ("CC_WORKSPACE", "CC_OUTBOX_DIR")}
+        blocker = Path(td) / "blocker"
+        blocker.write_text("not a directory\n")
+        os.environ["CC_WORKSPACE"] = workspace
+        os.environ["CC_OUTBOX_DIR"] = str(blocker / "sub")
+        try:
+            run = _studio_evidence_run(Path(td) / "c4")
+            rid = run.name
+            delivered, report = F.evaluate_completion(run, got)
+            assert delivered is True, report
+            stderr = io.StringIO()
+            with contextlib.redirect_stderr(stderr):
+                env = F.cmd_event(SimpleNamespace(run_dir=str(run), event="qc",
+                                                  run_id=rid))
+                retry = F.cmd_event(SimpleNamespace(run_dir=str(run), event="qc",
+                                                    run_id=rid))
+            assert env["reason_code"] == "run-complete", env
+            board = env["data"]["board"]
+            assert board["ok"] is False, board
+            assert board["reason_code"] == "board-unreachable", board
+            assert "Not a directory" in board["detail"], board
+            assert "board completion failed (board-unreachable)" in stderr.getvalue(), \
+                stderr.getvalue()
+            assert retry["reason_code"] == "run-complete", retry
+            assert retry["data"]["board"]["ok"] is False, retry
+            delivered, report = F.evaluate_completion(run, got)
+            assert delivered is True, report
+            assert blocker.is_file(), blocker
+            assert not Path(os.environ["CC_OUTBOX_DIR"]).exists(), \
+                os.environ["CC_OUTBOX_DIR"]
+        finally:
+            _restore_env(saved)
+        ok("delivered studio run sends its evidence with the epic's last move")
+
+
 def main():
     test_false_completion_never_delivered()
     test_mixed_terminal_keeps_reasons()
@@ -346,6 +537,7 @@ def main():
     test_registry_traversal_and_completion()
     test_qc_records_list_reader()
     test_wal_db_without_sidecars_reads()
+    test_delivered_studio_run_sends_evidence_with_the_epic()
     print("\nALL %d CHECKS PASSED" % len(PASS))
     return 0
 

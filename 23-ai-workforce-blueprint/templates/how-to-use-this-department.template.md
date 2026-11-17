@@ -67,7 +67,7 @@ and it will pick the right one, or you can ask for a specialist by name.
 
 {{SPECIALIST_TABLE}}
 
-### What each specialist is for, with an example request
+### What each specialist is for
 
 {{SPECIALIST_DETAIL_BLOCKS}}
 

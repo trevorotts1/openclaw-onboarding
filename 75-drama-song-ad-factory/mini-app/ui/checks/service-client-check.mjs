@@ -13,6 +13,11 @@
 //     right JSON body;
 //   * linkKey() and personalLink() read the fragment;
 //   * a 409 answer rejects with the service's own code;
+//   * two taps of Lock it in before the first resolves send ONE order request
+//     (S75-071), and both taps see the same answer;
+//   * lockIn forwards reply_ids, so the service reads the brief by the id each
+//     answer travels with and never by position (U-Z11, S75-006);
+//   * cancelOrder posts one cancel event to that order's own state route;
 //   * listInbox/postInbox keep their "not built yet" answer.
 //
 // It does NOT drive a real browser or talk to the real service, so it cannot
@@ -78,19 +83,54 @@ async function loadPage({ hash, answer }) {
   };
 
   await expect("getSession", "GET", "/api/studio/session", () => svc.getSession());
+  // U-Z08 — the draft keeps the upload ids with the answers.
   await expect("saveDraft", "PUT", "/api/studio/draft",
-    () => svc.saveDraft({ replies: ["1", "yes"] }), { replies: ["1", "yes"] });
+    () => svc.saveDraft({ replies: ["1", "yes"], upload_ids: ["u_1"] }),
+    { replies: ["1", "yes"], upload_ids: ["u_1"] });
   await expect("getQuestions", "GET", "/questions.json", () => svc.getQuestions());
+  // U-Z11 — the ids travel WITH the answers. This rule names them, so a
+  // transport that stops forwarding reply_ids goes red here (JSON.stringify
+  // would otherwise drop an undefined and the rule would pass, which is how
+  // the ids were lost once already).
   await expect("lockIn", "POST", "/api/studio/orders",
-    () => svc.lockIn({ title: "Drama video", replies: ["1", "yes"], upload_ids: ["u_1"] }),
-    { title: "Drama video", replies: ["1", "yes"], upload_ids: ["u_1"] });
+    () => svc.lockIn({ title: "Drama video", replies: ["1", "yes"], reply_ids: ["offer", ""], upload_ids: ["u_1"], order_id: "r_0123abcd" }),
+    { title: "Drama video", replies: ["1", "yes"], reply_ids: ["offer", ""], upload_ids: ["u_1"], order_id: "r_0123abcd" });
+
+  // U-Z11 — "Continue" closes the old order: one cancel event on the order's
+  // own state route, and the id is encoded into the path.
+  await expect("cancelOrder", "POST", "/api/studio/orders/r_abc123/state",
+    () => svc.cancelOrder("r_abc123"), { event: "cancel" });
+  calls.length = 0;
+  await svc.cancelOrder("r/../x");
+  rule("cancelOrder encodes the order id into the path",
+    calls[0] && calls[0].path === "/api/studio/orders/r%2F..%2Fx/state",
+    calls[0] ? calls[0].path : "no fetch");
+
+  // S75-071 — one tap, one order. Two lockIn calls made before the first one
+  // resolves join ONE request only when they name the same order id, and both
+  // taps see the same answer. A concurrent tap naming a DIFFERENT order id
+  // sends its own request — the first tap's order must never answer for it.
+  calls.length = 0;
+  const tapOne = svc.lockIn({ title: "Drama video", replies: ["1", "yes"], upload_ids: [], order_id: "r_0123abcd" });
+  const tapTwo = svc.lockIn({ title: "Drama video", replies: ["1", "yes"], upload_ids: [], order_id: "r_0123abcd" });
+  const [firstAnswer, secondAnswer] = await Promise.all([tapOne, tapTwo]);
+  rule("two taps before the first resolves send one request", calls.length === 1, `${calls.length} call(s)`);
+  rule("both taps resolve with the same answer",
+    JSON.stringify(firstAnswer) === JSON.stringify(secondAnswer));
+  calls.length = 0;
+  const tapA = svc.lockIn({ title: "Drama video", replies: ["1", "yes"], upload_ids: [], order_id: "r_0123abcd" });
+  const tapB = svc.lockIn({ title: "Drama video", replies: ["1", "yes"], upload_ids: [], order_id: "r_4567ef01" });
+  await Promise.all([tapA, tapB]);
+  rule("taps naming different order ids send two requests", calls.length === 2, `${calls.length} call(s)`);
   await expect("listApprovals", "GET", "/api/studio/orders/r_abc123/approvals",
     () => svc.listApprovals("r_abc123"));
   await expect("answerApproval", "POST", "/api/studio/orders/r_abc123/approvals/script/answer",
     () => svc.answerApproval("r_abc123", "script", 2, "approve"), { version: 2, value: "approve" });
+  // U-Z08 — the real service refuses a channel it does not know and a body
+  // with no header bytes, so the check names what a real upload sends.
   await expect("requestUpload", "POST", "/api/studio/uploads",
-    () => svc.requestUpload({ channel: "photo", filename: "a.jpg", content_type: "image/jpeg", size_bytes: 12 }),
-    { channel: "photo", filename: "a.jpg", content_type: "image/jpeg", size_bytes: 12 });
+    () => svc.requestUpload({ channel: "image", filename: "a.jpg", content_type: "image/jpeg", size_bytes: 12, header_bytes: [255, 216, 255, 224] }),
+    { channel: "image", filename: "a.jpg", content_type: "image/jpeg", size_bytes: 12, header_bytes: [255, 216, 255, 224] });
   await expect("getDelivery", "GET", "/api/studio/orders/r_abc123",
     () => svc.getDelivery("r_abc123"));
 

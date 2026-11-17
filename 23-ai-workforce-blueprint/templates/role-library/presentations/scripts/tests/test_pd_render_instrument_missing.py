@@ -79,11 +79,14 @@ def test_citation_validator_missing_fails_naming_it(tmp_path, monkeypatch):
 
 def test_citation_validator_missing_defers_only_under_pd201_test_rule(
         tmp_path, monkeypatch):
-    """Control: the PD-201 test rule is the SINGLE remaining defer path."""
+    """Control: the PD-201 test rule is the SINGLE remaining defer path.
+
+    PD-201 made that rule the environment variable only; the former
+    `working/checkpoints/.test-context` file no longer opens it."""
     _production_context(monkeypatch)
     rd = _run(tmp_path)
     (rd / "working" / "checkpoints").mkdir(parents=True)
-    (rd / "working" / "checkpoints" / ".test-context").write_text("{}")
+    monkeypatch.setenv("PRESENTATION_ALLOW_DEGRADED_VERIFIERS", "1")
     monkeypatch.setattr(bd, "_citation_validator", None)
     assert bd._chk_citation_validated(rd) == ""
 

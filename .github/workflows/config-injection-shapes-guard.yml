@@ -43,6 +43,7 @@ on:
       - "update-skills.sh"
       - ".github/workflows/config-injection-shapes-guard.yml"
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
     branches: [main]
     paths:
       - "scripts/heal-config-shapes.py"
@@ -64,11 +65,13 @@ on:
       - ".github/workflows/config-injection-shapes-guard.yml"
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
   config-injection-shapes-guard:
+    # Batch pull requests run only the required checks (Trevor order 2026-11-13).
+    if: ${{ !startsWith(github.head_ref, 'batch/') && (github.event_name != 'pull_request' || github.event.pull_request.draft == false) }}
     name: flat active-memory / helpChatId / channels.bindings cannot ship
     runs-on: ubuntu-latest
     steps:

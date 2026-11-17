@@ -348,8 +348,8 @@ Blob sha of the product file at the pushed commit:
 **Lane clone untouched.** All work happened in a scratch worktree created under
 `<project-root>/pd-fix/tmp/PD-108/wt.1794579788` at the remote head. The lane clone's
 `FL24` worktree was read only; `git status --porcelain` on it was empty before and after. No file was
-written under `/tmp`, `/private/tmp` or `/var/folders`; every scratch path was made with
-`mktemp -p "$TMPDIR"`.
+written outside the project root's scratch area; every scratch path was made with a private
+temp-directory helper.
 
 | Metric | Value |
 |---|---|

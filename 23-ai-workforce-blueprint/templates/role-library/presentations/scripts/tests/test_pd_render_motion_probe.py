@@ -38,10 +38,14 @@ import test_mg036_motion_integration as base  # noqa: E402
 import build_deck  # noqa: E402
 from presentation_job import motion as pm  # noqa: E402
 
-needs_media = pytest.mark.skipif(
-    not (base.FFMPEG and base.FFPROBE),
-    reason="PD-212 builds a real clip with ffmpeg and measures it with "
-           "ffprobe; skipped because ffmpeg/ffprobe are not on PATH")
+def _media_available() -> bool:
+    """PD-212 runs only when this worker has real media tools.
+
+    CI runners carry ffmpeg/ffprobe, so all four rows ASSERT there. A lane
+    without them cannot run the rows at all — fail closed with a naming
+    message instead of a silent pass (binding law L1 forbids softening
+    a check)."""
+    return bool(base.FFMPEG and base.FFPROBE)
 
 
 @pytest.fixture(scope="module")
@@ -79,8 +83,9 @@ def _receipt_path(run_dir: Path, ordinal: int = 1) -> Path:
 # otherwise pass.
 # ---------------------------------------------------------------------------
 
-@needs_media
 def test_pd212_correct_package_is_validated(media, tmp_path):
+    assert _media_available(), ("PD-212 needs ffmpeg+ffprobe on PATH to measure a real clip; "
+           "this worker has no media tools so the row cannot run")
     run_dir = base.build_run(tmp_path, media)
     outcome = _validate(run_dir)
     assert outcome["status"] == "validated", outcome
@@ -94,9 +99,10 @@ def test_pd212_correct_package_is_validated(media, tmp_path):
 # nothing but measuring the file can catch this.
 # ---------------------------------------------------------------------------
 
-@needs_media
 def test_pd212_record_duration_lie_over_a_two_second_clip_degrades(
         tmp_path):
+    assert _media_available(), ("PD-212 needs ffmpeg+ffprobe on PATH to measure a real clip; "
+           "this worker has no media tools so the row cannot run")
     d = tmp_path / "media-2s"
     d.mkdir()
     clip = d / "component.mp4"
@@ -128,8 +134,9 @@ def test_pd212_record_duration_lie_over_a_two_second_clip_degrades(
 # A1 row 2 — a receipt with no status string is refused as unreadable.
 # ---------------------------------------------------------------------------
 
-@needs_media
 def test_pd212_receipt_without_status_degrades(media, tmp_path):
+    assert _media_available(), ("PD-212 needs ffmpeg+ffprobe on PATH to measure a real clip; "
+           "this worker has no media tools so the row cannot run")
     run_dir = base.build_run(tmp_path, media)
     receipt_path = _receipt_path(run_dir)
     receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
@@ -147,9 +154,10 @@ def test_pd212_receipt_without_status_degrades(media, tmp_path):
 # pass on the record's word.
 # ---------------------------------------------------------------------------
 
-@needs_media
 def test_pd212_ffprobe_absent_degrades_probe_unavailable(
         media, tmp_path, monkeypatch):
+    assert _media_available(), ("PD-212 needs ffmpeg+ffprobe on PATH to measure a real clip; "
+           "this worker has no media tools so the row cannot run")
     run_dir = base.build_run(tmp_path, media)
     real_which = build_deck.shutil.which
 

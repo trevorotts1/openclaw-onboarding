@@ -28,6 +28,12 @@ def with_billing(launch, billing_type):
         if offer["slot"] == "main":
             for price in offer["prices"]:
                 price["billing_type"] = billing_type
+                # the interval is material disclosure beside every recurrence term (Skill 78
+                # V_RECURRING_INTERVAL, Skill 79's production law): a fixture that states
+                # recurring or trial states its interval, and the checkout instances refuse
+                # the interval-less form rather than translating it
+                if billing_type in ("recurring", "trial"):
+                    price["recurring_interval"] = "month"
     return out
 
 

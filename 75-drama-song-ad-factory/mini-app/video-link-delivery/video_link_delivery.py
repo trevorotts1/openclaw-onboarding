@@ -9,8 +9,12 @@ GHL-first verified video link and R2 fallback". Decision 5 (answered by Trevor,
 2026-10-10) fixes the order: the finished video's PUBLIC CDN link is handed over
 from the CLIENT'S OWN GoHighLevel (white label: Convert and Flow) FIRST; Cloudflare
 R2 (bucket `drama-studio`) is the FALLBACK, used only when the client's box has no
-working GHL path or the GHL upload fails. The R2 copy of a finished video is
-deleted 7 days after delivery; GHL copies are never deleted by the studio.
+working GHL path or the GHL upload fails. Decision 5 sets a 7-day deletion
+deadline on the R2 copy of a finished video; GHL copies are never deleted by the
+studio. THIS MODULE RECORDS THAT DEADLINE AND DELETES NOTHING: the delivered
+record carries `r2_delete_after`, and the delivery step prints it in the operator
+evidence, worded as a deadline that is RECORDED, never as a deletion that has
+happened.
 
 This module owns EXACTLY that decision. It does not upload the video, does not
 message anyone, does not schedule anything, and adds no second control service. It
@@ -101,7 +105,7 @@ _SIGNED_PARAM_NAMES = frozenset({
 })
 _SIGNED_PARAM_PREFIXES = ("x-amz-", "x-goog-", "x-ms-")
 
-# The R2 fallback copy is deleted 7 days after delivery (decision 5).
+# Decision 5 sets a 7-day deletion deadline on the R2 fallback copy; recording it is all this module does.
 R2_RETENTION_DAYS = 7
 
 # Streaming verify: never buffer a whole video in memory.
@@ -210,6 +214,29 @@ def _host_set(request: dict, key: str, default: tuple[str, ...]) -> tuple[str, .
     if isinstance(val, list) and val:
         return tuple(str(v).strip().lower() for v in val if str(v).strip())
     return default
+
+
+def _is_https(url: str) -> bool:
+    """True iff `url` is an https link — the only scheme the page can show."""
+    try:
+        return urllib.parse.urlsplit(str(url)).scheme.lower() == "https"
+    except ValueError:
+        return False
+
+
+def _names_test_hosts(request: dict) -> bool:
+    """True iff the caller named explicit hosts (`ghl_allowed_hosts` /
+    `r2_allowed_hosts`).
+
+    Naming the hosts is how a test points the rule at a local `http://127.0.0.1`
+    mock server. It is the ONLY way a non-https link may pass: a production
+    request never names hosts, so it never gets this exemption.
+    """
+    for key in ("ghl_allowed_hosts", "r2_allowed_hosts"):
+        val = request.get(key)
+        if isinstance(val, list) and any(str(v).strip() for v in val):
+            return True
+    return False
 
 
 def _is_ghl_media_url(url: str, request: dict) -> bool:
@@ -430,10 +457,12 @@ def _delivered(link: dict, verified: dict, source: str, fallback_reason: str | N
     }
     if source == "r2":
         record["fallback_reason"] = fallback_reason or "ghl-unavailable"
-        # Decision 5: the R2 copy of a finished video is deleted 7 days after
-        # delivery. The studio-owned GHL copy is never deleted.
-        # ponytail: this records the deadline only; the deletion itself is the
-        # U5 owned-run cleanup receipt, not built here.
+        # Decision 5: a 7-day deletion deadline applies to the R2 copy of a
+        # finished video; the studio-owned GHL copy is never deleted.
+        # ponytail: this RECORDS the deadline only — no code here deletes
+        # anything. The deletion is a separate owned run, not built here, so the
+        # delivery step prints this deadline in its operator evidence marked as
+        # recorded-not-enforced, and it never reads as a deletion guarantee.
         delete_at = _dt.datetime.now(_dt.timezone.utc) + _dt.timedelta(days=R2_RETENTION_DAYS)
         record["r2_delete_after"] = delete_at.replace(microsecond=0).isoformat().replace("+00:00", "Z")
     return record
@@ -446,11 +475,12 @@ def choose_deliverable(request: dict, *, fetcher=None, timeout: int = 30) -> dic
 
       1. cross-client guard  — the record and the delivery must be the same client
       2. credential guard    — no candidate URL may carry or embed a secret
-      3. operator guard      — an operator-marked candidate is refused outright
-      4. GHL-first           — the client-owned GHL candidate, VERIFIED, wins
-      5. R2 fallback         — only when the client-owned GHL path was unavailable,
+      3. https guard         — no candidate may be a link the page cannot show
+      4. operator guard      — an operator-marked candidate is refused outright
+      5. GHL-first           — the client-owned GHL candidate, VERIFIED, wins
+      6. R2 fallback         — only when the client-owned GHL path was unavailable,
                                and only when the R2 copy VERIFIES
-      6. otherwise refuse    — nothing unverified is ever handed over
+      7. otherwise refuse    — nothing unverified is ever handed over
 
     Args:
         request: the delivery request (see the module docstring / README).
@@ -497,7 +527,23 @@ def choose_deliverable(request: dict, *, fetcher=None, timeout: int = 30) -> dic
                 ),
             )
 
-    # 3) Never deliver an operator-owned link or an operator-hosted upload as if it
+    # 3) S75-102 — the page cannot show a link that is not https, so refuse one
+    #    here rather than hand over a delivery nobody can open. A request that
+    #    names its hosts is a test against a local http mock server; it is the
+    #    only exemption, and production requests never name hosts.
+    if not _names_test_hosts(request):
+        for name, cand in _all_candidates(request):
+            if not _is_https(str(cand.get("url", ""))):
+                raise DeliveryRefused(
+                    "link-not-https",
+                    _redact(
+                        f"refusing to deliver {name}: its URL is not an https link, and "
+                        "the page cannot show a link that is not https",
+                        secrets,
+                    ),
+                )
+
+    # 4) Never deliver an operator-owned link or an operator-hosted upload as if it
     #    were the client's. Refused outright — never skipped over into the fallback,
     #    because a fallback around an operator link would hide the mix-up.
     for name, cand in _all_candidates(request):
@@ -512,7 +558,7 @@ def choose_deliverable(request: dict, *, fetcher=None, timeout: int = 30) -> dic
                 ),
             )
 
-    # 4) GHL-first: the client-owned link, verified, is the deliverable.
+    # 5) GHL-first: the client-owned link, verified, is the deliverable.
     ghl = _select_ghl_candidate(request)
     ghl_unavailable = "ghl-missing"
     if ghl is not None:
@@ -541,7 +587,7 @@ def choose_deliverable(request: dict, *, fetcher=None, timeout: int = 30) -> dic
         else:
             return _delivered(ghl, verified, "ghl", None, request)
 
-    # 5) R2 is a FALLBACK, used only because the client-owned GHL path was not usable.
+    # 6) R2 is a FALLBACK, used only because the client-owned GHL path was not usable.
     r2 = request.get("r2_candidate")
     if isinstance(r2, dict) and str(r2.get("url", "")).strip():
         if not _is_r2_url(r2.get("url", ""), request):
@@ -566,7 +612,7 @@ def choose_deliverable(request: dict, *, fetcher=None, timeout: int = 30) -> dic
             ) from exc
         return _delivered(r2, verified, "r2", ghl_unavailable, request)
 
-    # 6) Nothing verified: refuse rather than hand over anything unverified.
+    # 7) Nothing verified: refuse rather than hand over anything unverified.
     raise DeliveryRefused(
         "no-verified-deliverable-link",
         _redact(
@@ -644,9 +690,23 @@ def _cmd_deliver(args) -> int:
     ]
     if record.get("fallback"):
         evidence.append(f"fallback_reason={record['fallback_reason']}")
+    # S75-083: the R2 deletion deadline is an OPERATOR FACT, not a deletion. It
+    # is printed here marked RECORDED, so it can never read as something this
+    # module or this run guarantees happens.
+    next_action = "hand the verified client-owned link to the delivery record"
+    if record.get("r2_delete_after"):
+        evidence.append(
+            f"r2_delete_after={record['r2_delete_after']} (RECORDED deletion deadline; "
+            "no deletion is performed by this module)"
+        )
+        next_action = (
+            "hand the verified client-owned link to the delivery record; the R2 copy's "
+            f"deletion deadline {record['r2_delete_after']} is recorded, not enforced - "
+            "nothing in this module deletes it"
+        )
     return _emit(_envelope(
         "deliver", "ok", "delivered",
-        "hand the verified client-owned link to the delivery record",
+        next_action,
         data={"delivery": record},
         evidence=evidence,
     ))

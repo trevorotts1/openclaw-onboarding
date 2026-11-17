@@ -8,7 +8,10 @@ flag) is warn-and-preserve: logged, never a hard fail, files named in the review
 manifest are kept (no manifest = update behaves exactly as before). Refuse
 mode (record present, or S75_X11_GATE_MODE=refuse) leaves skill 75 untouched when
 the gate says no. The real shell blocks are extracted between X11-GATE markers
-and executed, so this tests the shipped call sites, not a copy. All synthetic.
+and executed, so this tests the shipped call sites, not a copy. The
+update-skills.sh region runs to the X11-GATE-TAIL-END marker inside a one-pass
+loop, so the gate's own `continue` - which skips the pin, verify and 'Updated'
+steps - is proven, not simulated. All synthetic.
 """
 import json
 import os
@@ -46,10 +49,15 @@ def valid_records():
     return rec
 
 
-def block(path):
+def block(path, end_marker="# <<< X11-GATE-END"):
+    """Text between the X11-GATE-BEGIN marker and end_marker (exclusive).
+
+    install.sh stops at X11-GATE-END. update-skills.sh runs on to
+    X11-GATE-TAIL-END so the `continue` that follows its end marker is part of
+    the extracted text and can be exercised inside a one-pass loop."""
     text = open(os.path.join(REPO, path), encoding="utf-8").read()
     a = text.index("# >>> X11-GATE-BEGIN")
-    b = text.index("# <<< X11-GATE-END")
+    b = text.index(end_marker)
     return text[text.index("\n", a) + 1:b]
 
 
@@ -97,7 +105,10 @@ oc_skill_box_state_save() { :; }
 oc_skill_box_state_restore() { :; }
 oc_remove_tree_guarded() { rm -rf "$1"; echo REMOVED_TREE; }
 SKILL_DIR="$SRC/"; SKILL_NAME="%s"
+for _once in 1; do
 %s
+echo REACHED_TAIL
+done
 '''
 
 
@@ -116,11 +127,23 @@ def run_update(env_extra, records, live_files=None):
     open(os.path.join(live, "stale-local.txt"), "w").write("keep me")
     for name, body in (live_files or {}).items():
         open(os.path.join(live, name), "w").write(body)
-    script = UPDATE_HARNESS % (NAME, block("update-skills.sh"))
+    script = UPDATE_HARNESS % (NAME, block("update-skills.sh", "# <<< X11-GATE-TAIL-END"))
     proc = subprocess.run(["bash", "-c", script], capture_output=True, text=True,
                           env=clean_env(SRC=src, SKILLS_DIR=skills,
                                         S75_X11_RECORDS_DIR=records, **env_extra))
     return proc, live
+
+
+def tree_bytes(root):
+    """Every file under root as {relative path: raw bytes}. Used to prove a
+    folder was left byte-identical rather than merely non-empty."""
+    out = {}
+    for base, _dirs, files in os.walk(root):
+        for name in files:
+            full = os.path.join(base, name)
+            with open(full, "rb") as handle:
+                out[os.path.relpath(full, root)] = handle.read()
+    return out
 
 
 def test_update_default_no_manifest_is_unchanged_behaviour_and_never_fails():
@@ -164,6 +187,33 @@ def test_update_refuse_mode_leaves_skill_untouched_without_failing_roll():
     assert not os.path.exists(os.path.join(live, "new.txt"))
 
 
+def test_update_refuse_mode_prints_no_updated_line_for_skill_75():
+    """The skip is a real `continue` in the shipped loop: after the NOT updated
+    line the pin, verify and Updated steps never run for skill 75."""
+    proc, _live = run_update({"S75_X11_GATE_MODE": "refuse"}, tempfile.mkdtemp())
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    assert "NOT updated" in proc.stdout, proc.stdout
+    assert "Updated:" not in proc.stdout, proc.stdout
+    assert "REACHED_TAIL" not in proc.stdout, proc.stdout
+
+
+def test_update_unwritable_temp_location_with_manifest_leaves_folder_byte_identical():
+    """A keep-list that is not empty plus a temp location that cannot hold the
+    keep folder: skill 75 is left exactly as it was, the roll does not fail."""
+    rec = tempfile.mkdtemp(prefix="x11-gate-rec-")
+    json.dump({"files": [{"path": "stale-local.txt", "sha256": "0" * 64,
+                          "action": "delete"}]},
+              open(os.path.join(rec, "reviewed-manifest.json"), "w"))
+    holder = tempfile.mkdtemp(prefix="x11-no-tmp-")
+    unwritable = os.path.join(holder, "not-a-directory")
+    open(unwritable, "w").write("x")
+    proc, live = run_update({"TMPDIR": unwritable}, rec)
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    assert "could not make a keep folder" in proc.stdout, proc.stdout
+    assert "REMOVED_TREE" not in proc.stdout, proc.stdout
+    assert tree_bytes(live) == {"stale-local.txt": b"keep me"}, tree_bytes(live)
+
+
 def test_update_allowed_gate_uses_normal_replace():
     proc, live = run_update({}, valid_records())
     assert proc.returncode == 0, proc.stdout + proc.stderr
@@ -179,7 +229,7 @@ def test_update_other_skills_unaffected():
     open(os.path.join(src, "n.txt"), "w").write("n")
     skills = os.path.join(work, "skills")
     os.makedirs(os.path.join(skills, "01-other"))
-    script = (UPDATE_HARNESS % ("01-other", block("update-skills.sh")))
+    script = (UPDATE_HARNESS % ("01-other", block("update-skills.sh", "# <<< X11-GATE-TAIL-END")))
     proc = subprocess.run(["bash", "-c", script], capture_output=True, text=True,
                           env=clean_env(SRC=src, SKILLS_DIR=skills))
     assert proc.returncode == 0 and "REMOVED_TREE" in proc.stdout, proc.stdout + proc.stderr

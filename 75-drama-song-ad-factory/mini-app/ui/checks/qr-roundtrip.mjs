@@ -78,6 +78,24 @@ function decodeWithZbar(pngPath) {
   return execFileSync("zbarimg", ["--quiet", "--raw", pngPath], { encoding: "utf8" }).trim();
 }
 
+// Without the decoder there is nothing to prove — and a missing program on this
+// machine is not a broken QR code. Say so and exit 3 (reported separately by
+// checks/run-all.sh), never 2.
+function hasZbar() {
+  try {
+    execFileSync("zbarimg", ["--version"], { stdio: "ignore" });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+if (!hasZbar()) {
+  console.log("SKIP  qr-roundtrip: no independent QR decoder (zbarimg) on this machine.");
+  console.log("      Nothing was proven or disproven about the QR codes — reported separately.");
+  process.exit(3);
+}
+
 // ── Cases ────────────────────────────────────────────────────────────────────
 const CASES = [
   { name: "short share link", text: "https://go.blackceo.com/d/7f3a" },
@@ -85,7 +103,9 @@ const CASES = [
   { name: "long sponsor url", text: "https://acme-realty.example.com/listings/4812-maple-ave?utm_source=drama_song_ad&utm_medium=qr&utm_campaign=premiere_oct" },
 ];
 
-const dir = mkdtempSync("/tmp/operator-U3-U1-qr-");
+// The scratch folder follows TMPDIR (os.tmpdir()), never a hard-coded /tmp —
+// the whole room, this check included, lives on the portable drive.
+const dir = mkdtempSync(join(tmpdir(), "operator-U3-U1-qr-"));
 let failures = 0;
 try {
   for (const c of CASES) {

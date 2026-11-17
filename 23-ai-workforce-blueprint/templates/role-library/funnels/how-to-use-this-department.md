@@ -30,8 +30,8 @@ figures out who handles it and routes it for you.
 
 Reach for this department when you want any of the following:
 
-- Post-build QA of every funnel the GHL Funnel Build Specialist ships.
-- Drives the actual technical execution of every `department_slug='funnels'` card against the client's own GHL.
+- Post-build QA of every funnel the GHL Funnel Build Specialist ships: page-by-page verification against the intake brief, tests the full checkout / order-bump / upsell / downsell path, and confirms conversion-tracking (pixels, UTM, GHL workflow triggers) actually fires before the build is marked done.
+- Drives the actual technical execution of every `department_slug='funnels'` card against the client's own GHL account through Skill 6's sanctioned chain: cut the template, import, run `verify-imported`, then `provision-custom-values`.
 
 If you are not sure whether a request belongs here, ask anyway. The department
 head will either take it or hand it to the right department. You never have to
@@ -68,20 +68,18 @@ and it will pick the right one, or you can ask for a specialist by name.
 
 | Specialist | What it is for |
 | --- | --- |
-| **Funnel QA & Conversion Verification Specialist** | Post-build QA of every funnel the GHL Funnel Build Specialist ships. |
-| **GHL Funnel Build Specialist** | Drives the actual technical execution of every `department_slug='funnels'` card against the client's own GHL account. |
+| **Funnel QA & Conversion Verification Specialist** | Post-build QA of every funnel the GHL Funnel Build Specialist ships: page-by-page verification against the intake brief. |
+| **GHL Funnel Build Specialist** | Drives the actual technical execution of every `department_slug='funnels'` card against the client's own GHL account through Skill 6's sanctioned chain: cut the template, import, run `verify-imported`, then `provision-custom-values`. |
 
-### What each specialist is for, with an example request
+### What each specialist is for
 
 **Funnel QA & Conversion Verification Specialist**
 
-- *What it is for:* Post-build QA of every funnel the GHL Funnel Build Specialist ships.
-- *Example request:* "Have the Funnel QA & Conversion Verification Specialist take this on: Post-build QA of every funnel the GHL Funnel Build Specialist ships."
+- *What it is for:* Post-build QA of every funnel the GHL Funnel Build Specialist ships: page-by-page verification against the intake brief.
 
 **GHL Funnel Build Specialist**
 
-- *What it is for:* Drives the actual technical execution of every `department_slug='funnels'` card against the client's own GHL account.
-- *Example request:* "Have the GHL Funnel Build Specialist take this on: Drives the actual technical execution of every `department_slug='funnels'` card against."
+- *What it is for:* Drives the actual technical execution of every `department_slug='funnels'` card against the client's own GHL account through Skill 6's sanctioned chain: cut the template, import, run `verify-imported`, then `provision-custom-values`.
 
 
 ---

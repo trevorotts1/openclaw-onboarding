@@ -111,20 +111,76 @@ def _answer_items(doc: Mapping[str, Any]) -> List[Tuple[str, str, Optional[int],
     return out
 
 
-def _billing(doc: Mapping[str, Any], price: Mapping[str, Any], where: str, to_confirm: List[Dict[str, str]]) -> str:
+# The cadence words a client may say for one offer, and the interval each maps to, live in billing.py
+# (stated_billing / RECURRING_INTERVALS): the same table the intake interview and the plan text read.
+interval_word = _billing_vocab.interval_word
+
+
+def _stated_billing(word: object) -> Tuple[Optional[str], Optional[str]]:
+    return _billing_vocab.stated_billing(word)
+
+
+def _billing(doc: Mapping[str, Any], price: Mapping[str, Any], where: str, item: Mapping[str, Any],
+             to_confirm: List[Dict[str, str]]) -> Tuple[str, Optional[str]]:
+    """The one billing fact for an answers entry, plus the closed-shape rule: recurrence terms
+    never ride a non-recurring price (a stated fact is refused, never dropped)."""
+    got = _billing_fact(doc, price, where, item, to_confirm)
+    stated_interval = price.get("recurring_interval")
+    if (got[0] not in ("recurring", "trial") and isinstance(stated_interval, str)
+            and stated_interval.strip()):
+        raise MapperError("AF-OFFER-BILLING",
+                          f"{where} carries recurrence terms (recurring_interval {stated_interval!r}) "
+                          f"with billing_type {got[0]!r}")
+    return got
+
+
+def _billing_fact(doc: Mapping[str, Any], price: Mapping[str, Any], where: str, item: Mapping[str, Any],
+                  to_confirm: List[Dict[str, str]]) -> Tuple[str, Optional[str]]:
+    """(billing_type, recurring_interval) for one answers entry. The fact comes from the entry, never a
+    constant: first a stored billing_type (with its stored interval), else the entry's own cadence word
+    ("monthly", "quarterly", ...), else the global billing answer, else the unchanged one-payment
+    default with a billing_not_stated confirmation request."""
     own = price.get("billing_type")
     if own is not None:
         if own not in BILLING_TYPES:
             raise MapperError("AF-OFFER-BILLING", f"{where} billing_type {own!r} is not one of {BILLING_TYPES}")
-        return own
+        interval = price.get("recurring_interval") if isinstance(price.get("recurring_interval"), str) else None
+        if interval and interval.strip() not in _billing_vocab.RECURRING_INTERVALS:
+            raise MapperError("AF-OFFER-BILLING", f"{where} recurring_interval {interval!r} is not one of "
+                              f"{_billing_vocab.RECURRING_INTERVALS}")
+        if own == "recurring" and not (interval and interval.strip()):
+            # the entry may state the interval as a cadence word beside the price (value.billing)
+            stated, stated_interval = _stated_billing(item.get("billing") if isinstance(item, Mapping) else None)
+            if stated == "recurring":
+                interval = stated_interval
+        return own, (interval if interval and interval.strip() else None)
+    stated, stated_interval = _stated_billing(item.get("billing") if isinstance(item, Mapping) else None)
+    if stated == "recurring":
+        return stated, stated_interval
+    if stated is not None:  # one_time or installment stated by the entry's own word
+        return stated, None
+    if item.get("billing") not in (None, ""):
+        raise MapperError("AF-OFFER-BILLING", f"{where} billing {item['billing']!r} is not one this release carries: "
+                          "state weekly, monthly, quarterly or yearly, or one payment "
+                          "(instalments are not supported in this release)")
     b = doc["answers"].get("billing")
-    key = _engine()._billing_key(b["value"]) if b and b.get("status") != "unknown" else None
-    if key:
-        return key
+    if b and b.get("status") != "unknown" and isinstance(b.get("value"), str):
+        stated, stated_interval = _stated_billing(b["value"])
+        if stated is not None:
+            return stated, stated_interval
+        key = _engine()._billing_key(b["value"])
+        if key:
+            return key, None
+        if b["value"].strip():
+            # the client STATED a billing word this release cannot carry: refused, never
+            # flattened to one payment (the entry-level word gets the same refusal)
+            raise MapperError("AF-OFFER-BILLING", f"{where} billing answer {b['value']!r} is not one this release "
+                              "carries: state weekly, monthly, quarterly or yearly, or one payment "
+                              "(instalments are not supported in this release)")
     to_confirm.append({"field": f"billing:{where}", "reason": "billing_not_stated: no billing type was given for this "
                        "price, so it is treated as one payment.", "how_to_change": "Tell me how this offer is billed "
-                       "(all at once, monthly, or in parts) and I will update it."})
-    return "one_time"
+                       "(all at once, weekly, monthly, quarterly or yearly) and I will update it."})
+    return "one_time", None
 
 
 def answers_to_offers(doc: Mapping[str, Any], *, test_only: bool = True) -> Tuple[List[Dict[str, Any]], List[Dict[str, str]]]:
@@ -155,6 +211,7 @@ def answers_to_offers(doc: Mapping[str, Any], *, test_only: bool = True) -> Tupl
         excludes = ([by_slot["downsell_1"]] if slot == "upsell_1" and by_slot["downsell_1"] else
                     [by_slot["upsell_1"]] if slot == "downsell_1" and by_slot["upsell_1"] else [])
         s = state[status]
+        billing, interval = _billing(doc, price, where, item, to_confirm)
         out.append({
             "offer_id": oid, "slot": slot, "display_name": name,
             "deliverables": list(item.get("deliverables") or []),
@@ -164,7 +221,8 @@ def answers_to_offers(doc: Mapping[str, Any], *, test_only: bool = True) -> Tupl
             "native_product_id": item.get("native_product_id"),
             "prices": [{
                 "price_choice_id": f"{oid}-{price['currency']}", "currency": price["currency"],
-                "amount_minor": amount, "billing_type": _billing(doc, price, where, to_confirm),
+                "amount_minor": amount, "billing_type": billing,
+                **({"recurring_interval": interval} if interval else {}),
                 "native_price_id": price.get("native_price_id"), "schedule": list(price.get("schedule") or []),
                 "approval_status": s,
             }],
@@ -238,7 +296,11 @@ def verify_provenance(doc: Mapping[str, Any], offers: Sequence[Mapping[str, Any]
                 ("display_name", o.get("display_name"), want["display_name"]), ("slot", o.get("slot"), want["slot"]),
                 ("source_kind", o.get("source_kind"), want["source_kind"]),
                 ("prices", [(p.get("amount_minor"), p.get("currency"), p.get("approval_status")) for p in o.get("prices") or []],
-                 [(p["amount_minor"], p["currency"], p["approval_status"]) for p in want["prices"]])):
+                 [(p["amount_minor"], p["currency"], p["approval_status"]) for p in want["prices"]]),
+                # how often it bills is a commercial fact too: a record cannot turn a one-payment answer into
+                # a subscription (or the reverse) and keep the client's approval
+                ("billing", [(p.get("billing_type"), p.get("recurring_interval")) for p in o.get("prices") or []],
+                 [(p["billing_type"], p.get("recurring_interval")) for p in want["prices"]])):
             if mine != theirs:
                 raise MapperError("AF-OFFER-PROVENANCE", f"offer {o.get('offer_id')!r}: {field} {mine!r} is not what "
                                   f"{ref} says ({theirs!r})")
@@ -275,6 +337,22 @@ def record_to_checkout_request(record: Mapping[str, Any], offer_id: str, *, chec
     if billing is None:
         raise MapperError("AF-CHECKOUT-BILLING", f"Skill 79 has no checkout billing type for {price['billing_type']!r}; "
                           "refused rather than shown as something else")
+    if price["billing_type"] in _billing_vocab.PLAN_TIME_REFUSED:
+        # the family decision: these are refused when the plan is built, and no request is
+        # built for them either — the request never dresses a refused type up as something else
+        raise MapperError("AF-CHECKOUT-BILLING", f"offer {offer_id!r} carries a {price['billing_type']!r} price: "
+                          f"{_billing_vocab.PAYMENT_PLANS_UNSUPPORTED} (the plan was already refused when "
+                          "it was built)")
+    interval = price.get("recurring_interval")
+    has_interval = isinstance(interval, str) and bool(interval.strip())
+    if billing in ("recurring", "trial_then_recurring"):
+        if not has_interval:
+            raise MapperError("AF-CHECKOUT-BILLING", f"offer {offer_id!r} carries a {billing!r} price with no "
+                              "recurring_interval; the billing interval is material disclosure, so it is refused "
+                              "rather than shown as one payment or guessed")
+    elif has_interval:
+        raise MapperError("AF-CHECKOUT-BILLING", f"offer {offer_id!r} carries recurrence terms "
+                          f"(recurring_interval {interval!r}) with billing_type {price['billing_type']!r}")
     status = price["approval_status"]
     if status not in ("provided", "approved", "recommended_unapproved"):
         raise MapperError("AF-CHECKOUT-PRICE", f"price status {status!r} cannot go to checkout")
@@ -287,6 +365,8 @@ def record_to_checkout_request(record: Mapping[str, Any], offer_id: str, *, chec
     }
     if price["schedule"]:
         main_price["schedule"] = [{"sequence": n, **row} for n, row in enumerate(price["schedule"], 1)]
+    if has_interval:
+        main_price["recurring_interval"] = interval.strip()
     return {
         "tenant_id": record["tenant_id"], "location_id": record["location_id"], "launch_id": record["launch_id"],
         "launch_revision": record["revision"], "launch_plan_approval_ref": record["plan_approval_ref"],

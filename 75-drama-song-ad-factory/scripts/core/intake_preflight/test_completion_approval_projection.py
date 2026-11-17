@@ -125,7 +125,8 @@ class CompletionApprovalProjection(unittest.TestCase):
         verdict = qc_gate.evaluate(self.run.name, "final-qc", [record],
                                    {record["check_id"]: "different-build-worker"}, ["continuity"])
         self.assertEqual(verdict["gate"], "PASS", verdict)
-        write_json(self.run / "final-qc" / "record.json",
+        # S75-011: the declared final-qc artifact is qc/final-qc-verdict.json.
+        write_json(self.run / "qc" / "final-qc-verdict.json",
                    {"gate": verdict["gate"], "producer": factory.STAGE_REGISTRY["final-qc"]["qc_producer"],
                     "evaluation": verdict})
         states = {s: "COMPLETE" for s in factory.CANONICAL_STAGES}
@@ -142,14 +143,16 @@ class CompletionApprovalProjection(unittest.TestCase):
             self.assertTrue(evidence["approvals_current"])
             self.assertFalse(evidence["delivery_receipts_ok"])
             self.assertFalse(factory._decide_completion(evidence)[0])
-        write_json(self.run / "final-qc" / "record.json", {"gate": "FAIL", "producer": "same-build-worker"})
+        write_json(self.run / "qc" / "final-qc-verdict.json", {"gate": "FAIL", "producer": "same-build-worker"})
         evidence = factory._collect_completion_evidence(self.run, states)
         self.assertFalse(evidence["final_qc_independent_pass"])
-        artifact = self.run / "edit" / "timeline.json"
-        artifact.rename(artifact.with_name("retained-timeline.json"))
+        # S75-011: edit/ad.mp4 is the assembly stage's declared output (the
+        # timeline is an input to the render, not an output of it).
+        artifact = self.run / "edit" / "ad.mp4"
+        artifact.rename(artifact.with_name("retained-master.mp4"))
         evidence = factory._collect_completion_evidence(self.run, states)
         self.assertFalse(evidence["artifacts_present"])
-        self.assertIn("edit/timeline.json", evidence["missing_artifacts"])
+        self.assertIn("edit/ad.mp4", evidence["missing_artifacts"])
         self.assertFalse(factory._decide_completion(evidence)[0])
 
 

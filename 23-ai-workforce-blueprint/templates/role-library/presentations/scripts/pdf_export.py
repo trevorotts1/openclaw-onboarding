@@ -27,7 +27,14 @@ def _slide_count(run_dir):
         return _floors.slide_count(run_dir)
     return 0
 def _find_pptx(run_dir):
-    c=sorted(Path(run_dir).glob("*-FINAL.pptx")); c=[p for p in c if not p.name.startswith("~$")]; return c[0] if c else None
+    # P8-ASSEMBLE writes the deck into working/deliverables/; the run top is
+    # the older spelling. Look in the producer's dir first, then the run top.
+    rd=Path(run_dir)
+    for d in (rd/"working"/"deliverables", rd):
+        if not d.is_dir(): continue
+        c=sorted(d.glob("*-FINAL.pptx")); c=[p for p in c if not p.name.startswith("~$")]
+        if c: return c[0]
+    return None
 def _find_lo():
     for cmd in ("libreoffice","soffice"):
         if shutil.which(cmd): return cmd

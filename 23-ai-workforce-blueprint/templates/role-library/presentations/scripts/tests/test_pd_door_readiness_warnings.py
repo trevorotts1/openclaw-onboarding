@@ -68,7 +68,6 @@ def make_run_dir(base: Path) -> Path:
     run_dir = base / "run"
     (run_dir / "working" / "checkpoints").mkdir(parents=True)
     (run_dir / "working" / "interview").mkdir(parents=True)
-    (run_dir / "working" / "checkpoints" / ".test-context").write_text("")
     (run_dir / "working" / "interview" / "intake_ledger.json").write_text(
         json.dumps({"status": "complete", "complete": True}))
     (run_dir / "working" / "interview" / "intake_transcript.json").write_text(
@@ -102,6 +101,8 @@ def _env(set_names) -> dict:
     for name in ALL_NAMES:
         env.pop(name, None)
     env["QC_SKIP_PRESENTATION_DEPS"] = "1"
+    # PD-201b: the test seam is an environment name, not a marker file.
+    env["PRESENTATION_ALLOW_DEGRADED_VERIFIERS"] = "1"
     for name in set_names:
         env[name] = DUMMY[name]
     return env

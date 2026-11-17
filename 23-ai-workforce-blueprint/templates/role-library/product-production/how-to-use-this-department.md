@@ -31,7 +31,7 @@ figures out who handles it and routes it for you.
 Reach for this department when you want any of the following:
 
 - You live at the intersection of the owner's business vision, the customer's needs.
-- Operational engine of the production department - the person who makes sure that every production job runs.
+- Operational engine of the production department - the person who makes sure that every production job runs on schedule, every specialist has what they need to do their work.
 
 If you are not sure whether a request belongs here, ask anyway. The department
 head will either take it or hand it to the right department. You never have to
@@ -71,17 +71,15 @@ and it will pick the right one, or you can ask for a specialist by name.
 | **Product Manager** | You live at the intersection of the owner's business vision, the customer's needs. |
 | **Production Coordinator** | Operational engine of the production department - the person who makes sure that every production job runs on schedule. |
 
-### What each specialist is for, with an example request
+### What each specialist is for
 
 **Product Manager**
 
 - *What it is for:* You live at the intersection of the owner's business vision, the customer's needs.
-- *Example request:* "Have the Product Manager take this on: You live at the intersection of the owner's business vision, the customer's needs."
 
 **Production Coordinator**
 
 - *What it is for:* Operational engine of the production department - the person who makes sure that every production job runs on schedule.
-- *Example request:* "Have the Production Coordinator take this on: Operational engine of the production department - the person who makes sure."
 
 
 ---

@@ -89,3 +89,47 @@ def test_there_is_one_checkout_billing_table_and_one_refusal_sentence_in_the_lau
 def test_each_importer_reads_the_shared_module(path):
     text = (REPO / path).read_text(encoding="utf-8")
     assert "billing" in text and ("billing.py" in text or "billing_module" in text), path
+
+
+# ---------------------------------------------------------------- recurring cadence (week/month/quarter/year)
+@pytest.mark.parametrize("word,expected", [
+    ("weekly", ("recurring", "week")), ("Every Week", ("recurring", "week")),
+    ("monthly", ("recurring", "month")), ("  every   month ", ("recurring", "month")),
+    ("quarterly", ("recurring", "quarter")), ("every three months", ("recurring", "quarter")),
+    ("yearly", ("recurring", "year")), ("annually", ("recurring", "year")), ("annual", ("recurring", "year")),
+    ("every year", ("recurring", "year")),
+    ("all at once", ("one_time", None)), ("One-Time", ("one_time", None)), ("once", ("one_time", None)),
+    ("single payment", ("one_time", None)),
+    ("installments", ("installment", None)), ("in parts or trial first", ("installment", None)),
+])
+def test_a_clients_cadence_word_names_one_billing_type_and_interval(word, expected):
+    assert billing.stated_billing(word) == expected
+
+
+@pytest.mark.parametrize("word", ["every other month", "biweekly", "daily", "", "   ", None, 5, ["monthly"]])
+def test_a_cadence_word_outside_the_table_is_not_guessed(word):
+    assert billing.stated_billing(word) == (None, None)
+
+
+def test_every_recurring_interval_has_a_word_a_phrasing_and_native_terms():
+    assert billing.RECURRING_INTERVALS == ("week", "month", "quarter", "year")
+    assert [billing.interval_word(i) for i in billing.RECURRING_INTERVALS] == ["weekly", "monthly", "quarterly", "yearly"]
+    assert [billing.price_per_interval("$49", i) for i in billing.RECURRING_INTERVALS] == [
+        "$49/week", "$49/month", "$49/quarter", "$49/year"]
+    # a quarter is three months in the unit + count a billing platform takes
+    assert [billing.terms_for_interval(i) for i in billing.RECURRING_INTERVALS] == [
+        ("week", 1), ("month", 1), ("month", 3), ("year", 1)]
+
+
+@pytest.mark.parametrize("bad", ["day", "fortnight", "", None, "Months!"])
+def test_an_interval_this_release_does_not_carry_is_refused_by_name(bad):
+    for fn in (lambda: billing.price_per_interval("$49", bad), lambda: billing.terms_for_interval(bad)):
+        with pytest.raises(billing.BillingError) as ctx:
+            fn()
+        assert ctx.value.code == "AF-RECURRING-INTERVAL"
+
+
+def test_installment_and_trial_stay_refused_at_plan_time_with_recurring_now_carried():
+    assert billing.plan_time_refusal("recurring") is None
+    assert billing.checkout_billing("recurring") == "recurring"
+    assert billing.plan_time_refusal("installment") == "'installment': payment plans are not supported in this release"

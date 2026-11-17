@@ -83,93 +83,77 @@ and it will pick the right one, or you can ask for a specialist by name.
 | **Web Designer** | Visual design of web pages - layout, typography, color application, design system. |
 | **Web Security Specialist** | SSL/TLS, security headers, rate-limiting, DDoS mitigation, CMS hardening, WAF rules. |
 | **WordPress Specialist** | WordPress-specific work - theme customization, plugin selection, plugin conflicts, WooCommerce, security hardening. |
-| **Signature Funnel Specialist** | The web-development door onto the Trevor Otts Signature Funnel engine (Skill 49). |
+| **Signature Funnel Specialist** | The web-development door onto the Trevor Otts Signature Funnel engine (Skill 49): the SACRED 12-section Hero copy system, per-section 16,000-20,000-char gpt-image-2-6 prompts (KIE prompt rule 12), and a configurable 3/5/7-step GHL funnel (Main / Checkout / Upsell-1 / Downsell-1 / Upsell-2 / Downsell-2 / Thank-You with accept/decline branching). |
 | **Sales Page Assets Specialist** | The web-development door onto the Trevor Otts Direct-Response Sales Page Assets engine (Skill 56). |
 | **Conversion Rate Optimization Specialist Phase2** | **** for the department of the company, reporting to the . |
 | **SEO Specialist Phase2** | **** for the department of the company, reporting to the . |
 | **Web Accessibility A11Y Specialist Phase2** | Accessibility gate for every web surface ships to a client of the vertical. |
 
-### What each specialist is for, with an example request
+### What each specialist is for
 
 **Conversion Rate Optimization CRO Specialist**
 
 - *What it is for:* Runs A/B tests, heatmap analysis, user session reviews.
-- *Example request:* "Have the Conversion Rate Optimization CRO Specialist take this on: Runs A/B tests, heatmap analysis, user session reviews."
 
 **Frontend Javascript React Specialist**
 
 - *What it is for:* Codes the user-facing parts of the website.
-- *Example request:* "Have the Frontend Javascript React Specialist take this on: Codes the user-facing parts of the website."
 
 **Funnel Builder Specialist**
 
 - *What it is for:* Builds sales funnels in ClickFunnels / GoHighLevel funnels / Leadpages / custom.
-- *Example request:* "Have the Funnel Builder Specialist take this on: Builds sales funnels in ClickFunnels / GoHighLevel funnels / Leadpages / custom."
 
 **Landing Page Specialist**
 
 - *What it is for:* Builds high-converting standalone landing pages.
-- *Example request:* "Have the Landing Page Specialist take this on: Builds high-converting standalone landing pages."
 
 **Member Area Membership Site Specialist**
 
 - *What it is for:* Builds and maintains gated member areas - course portals, member dashboards, login flows, drip content.
-- *Example request:* "Have the Member Area Membership Site Specialist take this on: Builds and maintains gated member areas - course portals, member dashboards, login flows."
 
 **SEO Specialist Organic Search**
 
 - *What it is for:* Owns organic search visibility.
-- *Example request:* "Have the SEO Specialist Organic Search take this on: Owns organic search visibility."
 
 **Technical SEO Specialist**
 
 - *What it is for:* Core Web Vitals, site speed, schema markup, sitemap, robots.txt, crawl errors, internal linking.
-- *Example request:* "Have the Technical SEO Specialist take this on: Core Web Vitals, site speed, schema markup, sitemap, robots.txt, crawl errors."
 
 **Web Accessibility A11Y Specialist**
 
 - *What it is for:* Ensures the website meets WCAG 2.1 AA / 2.2 standards.
-- *Example request:* "Have the Web Accessibility A11Y Specialist take this on: Ensures the website meets WCAG 2.1 AA / 2.2 standards."
 
 **Web Designer**
 
 - *What it is for:* Visual design of web pages - layout, typography, color application, design system.
-- *Example request:* "Have the Web Designer take this on: Visual design of web pages - layout, typography, color application, design system."
 
 **Web Security Specialist**
 
 - *What it is for:* SSL/TLS, security headers, rate-limiting, DDoS mitigation, CMS hardening, WAF rules.
-- *Example request:* "Have the Web Security Specialist take this on: SSL/TLS, security headers, rate-limiting, DDoS mitigation, CMS hardening, WAF rules."
 
 **WordPress Specialist**
 
 - *What it is for:* WordPress-specific work - theme customization, plugin selection, plugin conflicts, WooCommerce, security hardening.
-- *Example request:* "Have the WordPress Specialist take this on: WordPress-specific work - theme customization, plugin selection, plugin conflicts."
 
 **Signature Funnel Specialist**
 
-- *What it is for:* The web-development door onto the Trevor Otts Signature Funnel engine (Skill 49).
-- *Example request:* "Have the Signature Funnel Specialist take this on: The web-development door onto the Trevor Otts Signature Funnel engine (Skill 49)."
+- *What it is for:* The web-development door onto the Trevor Otts Signature Funnel engine (Skill 49): the SACRED 12-section Hero copy system, per-section 16,000-20,000-char gpt-image-2-6 prompts (KIE prompt rule 12), and a configurable 3/5/7-step GHL funnel (Main / Checkout / Upsell-1 / Downsell-1 / Upsell-2 / Downsell-2 / Thank-You with accept/decline branching).
 
 **Sales Page Assets Specialist**
 
 - *What it is for:* The web-development door onto the Trevor Otts Direct-Response Sales Page Assets engine (Skill 56).
-- *Example request:* "Have the Sales Page Assets Specialist take this on: The web-development door onto the Trevor Otts Direct-Response Sales Page Assets engine."
 
 **Conversion Rate Optimization Specialist Phase2**
 
 - *What it is for:* **** for the department of the company, reporting to the .
-- *Example request:* "Have the Conversion Rate Optimization Specialist Phase2 take this on: **** for the department of the company, reporting to the ."
 
 **SEO Specialist Phase2**
 
 - *What it is for:* **** for the department of the company, reporting to the .
-- *Example request:* "Have the SEO Specialist Phase2 take this on: **** for the department of the company, reporting to the ."
 
 **Web Accessibility A11Y Specialist Phase2**
 
 - *What it is for:* Accessibility gate for every web surface ships to a client of the vertical.
-- *Example request:* "Have the Web Accessibility A11Y Specialist Phase2 take this on: Accessibility gate for every web surface ships to a client of the vertical."
 
 
 ---

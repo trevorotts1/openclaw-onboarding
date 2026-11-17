@@ -92,6 +92,7 @@ BASE_ANSWERS = {
     "want_email_sequences": "no",
     "want_motion_graphics": "no",
     "client_notes": "",
+    "duration_min": "45 minutes",
 }
 
 

@@ -30,11 +30,11 @@ figures out who handles it and routes it for you.
 
 Reach for this department when you want any of the following:
 
-- You own the answer to the most important question in paid advertising.
+- You own the answer to the most important question in paid advertising: "Who exactly are we trying to reach.
 - You own the end-to-end execution of Microsoft Advertising campaigns across Search, Shopping.
-- You own the technical infrastructure that answers the most fundamental question in paid advertising.
+- You own the technical infrastructure that answers the most fundamental question in paid advertising: "Did the ad we paid for actually produce a result?" Your domain spans pixel implementation, conversion API (CAPI) setup, server-side tracking, event taxonomy, UTM parameter governance, cross-domain tracking, offline conversion import, and attribution data quality assurance.
 - You own the systematic process of discovering what advertising creative works, why it works.
-- You own the answer to the question that determines every budget allocation decision.
+- You own the answer to the question that determines every budget allocation decision: "Which ad platforms and campaigns are actually driving revenue.
 - You own the end-to-end execution of Meta advertising campaigns across Facebook Feed, Facebook Stories.
 
 If you are not sure whether a request belongs here, ask anyway. The department
@@ -72,122 +72,103 @@ and it will pick the right one, or you can ask for a specialist by name.
 
 | Specialist | What it is for |
 | --- | --- |
-| **Audience Research Specialist** | You own the answer to the most important question in paid advertising. |
+| **Audience Research Specialist** | You own the answer to the most important question in paid advertising: "Who exactly are we trying to reach. |
 | **Bing Microsoft Ads Specialist** | You own the end-to-end execution of Microsoft Advertising campaigns across Search, Shopping. |
-| **Conversion Tracking Specialist** | You own the technical infrastructure that answers the most fundamental question in paid advertising. |
+| **Conversion Tracking Specialist** | You own the technical infrastructure that answers the most fundamental question in paid advertising: "Did the ad we paid for actually produce a result?" Your domain spans pixel implementation, conversion API (CAPI) setup, server-side tracking, event taxonomy, UTM parameter governance, cross-domain tracking, offline conversion import, and attribution data quality assurance. |
 | **Creative Testing A B Specialist** | You own the systematic process of discovering what advertising creative works, why it works. |
-| **Cross Platform Attribution Specialist** | You own the answer to the question that determines every budget allocation decision. |
+| **Cross Platform Attribution Specialist** | You own the answer to the question that determines every budget allocation decision: "Which ad platforms and campaigns are actually driving revenue. |
 | **Facebook Ads Specialist** | You own the end-to-end execution of Meta advertising campaigns across Facebook Feed, Facebook Stories. |
 | **Google Ads Specialist** | You own the end-to-end execution of Google Ads campaigns across Search, Shopping, Performance Max, Display, Demand Gen. |
 | **Instagram Ads Specialist** | You own the end-to-end execution of advertising campaigns on Instagram placements  -  Feed, Stories, Reels, Explore. |
-| **LinkedIn Ads Specialist** | You own the end-to-end execution of LinkedIn advertising campaigns across Sponsored Content (single image, video. |
+| **LinkedIn Ads Specialist** | You own the end-to-end execution of LinkedIn advertising campaigns across Sponsored Content (single image, video, carousel, document ads), Sponsored Messaging (Message Ads, Conversation Ads), Lead Gen Forms, Dynamic Ads (Follower Ads, Spotlight Ads, Content Ads), and Thought Leader Ads. |
 | **Native Ads Specialist** | You own the entire native advertising channel  -  the paid content placements that appear in-feed, in-article. |
 | **Pinterest Ads Specialist** | You own the end-to-end execution of Pinterest advertising campaigns across Standard Pins, Video Pins, Shopping Pins. |
 | **Retargeting Strategist** | You own the second, third, and fourth touchpoints with every prospect who has shown interest but has not yet converted. |
-| **Snapchat Ads Specialist** | You own the end-to-end execution of Snapchat advertising campaigns across Snap Ads (single image/video, collection ads. |
-| **Spotify Audio Ads Specialist** | Spotify Audio Ads Specialist for the company, responsible for every audio ad that reaches a listener's ears. |
+| **Snapchat Ads Specialist** | You own the end-to-end execution of Snapchat advertising campaigns across Snap Ads (single image/video, collection ads, story ads, commercial ads). |
+| **Spotify Audio Ads Specialist** | Spotify Audio Ads Specialist for the company. |
 | **TikTok Ads Specialist** | You own the end-to-end execution of TikTok advertising campaigns across In-Feed Ads. |
-| **Twitter X Ads Specialist** | You own the end-to-end execution of advertising campaigns on X (formerly Twitter) across Promoted Ads (text, image. |
-| **YouTube Ads Specialist** | You own the entire YouTube and Google video advertising channel - from campaign architecture and audience targeting. |
+| **Twitter X Ads Specialist** | You own the end-to-end execution of advertising campaigns on X (formerly Twitter) across Promoted Ads (text, image, video, carousel), Amplify (pre-roll video). |
+| **YouTube Ads Specialist** | You own the entire YouTube and Google video advertising channel - from campaign architecture and audience targeting through creative coordination, bidding optimization. |
 | **Direct-Response Ad Copywriter** | **the words** for a Facebook/Instagram ad run. |
-| **Facebook & Instagram Ad-Run Producer** | **conductor** of a Facebook/Instagram ad run - the seat that takes two client documents (a show/product bio. |
+| **Facebook & Instagram Ad-Run Producer** | **conductor** of a Facebook/Instagram ad run - the seat that takes two client documents (a show/product bio and an audience profile) and drives the whole batch of 10 finished ads to the two human pauses and out the door. |
 
-### What each specialist is for, with an example request
+### What each specialist is for
 
 **Audience Research Specialist**
 
-- *What it is for:* You own the answer to the most important question in paid advertising.
-- *Example request:* "Have the Audience Research Specialist take this on: You own the answer to the most important question in paid advertising."
+- *What it is for:* You own the answer to the most important question in paid advertising: "Who exactly are we trying to reach.
 
 **Bing Microsoft Ads Specialist**
 
 - *What it is for:* You own the end-to-end execution of Microsoft Advertising campaigns across Search, Shopping.
-- *Example request:* "Have the Bing Microsoft Ads Specialist take this on: You own the end-to-end execution of Microsoft Advertising campaigns across Search."
 
 **Conversion Tracking Specialist**
 
-- *What it is for:* You own the technical infrastructure that answers the most fundamental question in paid advertising.
-- *Example request:* "Have the Conversion Tracking Specialist take this on: You own the technical infrastructure that answers the most fundamental question in paid."
+- *What it is for:* You own the technical infrastructure that answers the most fundamental question in paid advertising: "Did the ad we paid for actually produce a result?" Your domain spans pixel implementation, conversion API (CAPI) setup, server-side tracking, event taxonomy, UTM parameter governance, cross-domain tracking, offline conversion import, and attribution data quality assurance.
 
 **Creative Testing A B Specialist**
 
 - *What it is for:* You own the systematic process of discovering what advertising creative works, why it works.
-- *Example request:* "Have the Creative Testing A B Specialist take this on: You own the systematic process of discovering what advertising creative works."
 
 **Cross Platform Attribution Specialist**
 
-- *What it is for:* You own the answer to the question that determines every budget allocation decision.
-- *Example request:* "Have the Cross Platform Attribution Specialist take this on: You own the answer to the question that determines every budget allocation decision."
+- *What it is for:* You own the answer to the question that determines every budget allocation decision: "Which ad platforms and campaigns are actually driving revenue.
 
 **Facebook Ads Specialist**
 
 - *What it is for:* You own the end-to-end execution of Meta advertising campaigns across Facebook Feed, Facebook Stories.
-- *Example request:* "Have the Facebook Ads Specialist take this on: You own the end-to-end execution of Meta advertising campaigns across Facebook Feed."
 
 **Google Ads Specialist**
 
 - *What it is for:* You own the end-to-end execution of Google Ads campaigns across Search, Shopping, Performance Max, Display, Demand Gen.
-- *Example request:* "Have the Google Ads Specialist take this on: You own the end-to-end execution of Google Ads campaigns across Search, Shopping."
 
 **Instagram Ads Specialist**
 
 - *What it is for:* You own the end-to-end execution of advertising campaigns on Instagram placements  -  Feed, Stories, Reels, Explore.
-- *Example request:* "Have the Instagram Ads Specialist take this on: You own the end-to-end execution of advertising campaigns on Instagram placements  -  Feed."
 
 **LinkedIn Ads Specialist**
 
-- *What it is for:* You own the end-to-end execution of LinkedIn advertising campaigns across Sponsored Content (single image, video.
-- *Example request:* "Have the LinkedIn Ads Specialist take this on: You own the end-to-end execution of LinkedIn advertising campaigns across Sponsored."
+- *What it is for:* You own the end-to-end execution of LinkedIn advertising campaigns across Sponsored Content (single image, video, carousel, document ads), Sponsored Messaging (Message Ads, Conversation Ads), Lead Gen Forms, Dynamic Ads (Follower Ads, Spotlight Ads, Content Ads), and Thought Leader Ads.
 
 **Native Ads Specialist**
 
 - *What it is for:* You own the entire native advertising channel  -  the paid content placements that appear in-feed, in-article.
-- *Example request:* "Have the Native Ads Specialist take this on: You own the entire native advertising channel  -  the paid content placements that appear."
 
 **Pinterest Ads Specialist**
 
 - *What it is for:* You own the end-to-end execution of Pinterest advertising campaigns across Standard Pins, Video Pins, Shopping Pins.
-- *Example request:* "Have the Pinterest Ads Specialist take this on: You own the end-to-end execution of Pinterest advertising campaigns across Standard Pins."
 
 **Retargeting Strategist**
 
 - *What it is for:* You own the second, third, and fourth touchpoints with every prospect who has shown interest but has not yet converted.
-- *Example request:* "Have the Retargeting Strategist take this on: You own the second, third, and fourth touchpoints with every prospect who has shown."
 
 **Snapchat Ads Specialist**
 
-- *What it is for:* You own the end-to-end execution of Snapchat advertising campaigns across Snap Ads (single image/video, collection ads.
-- *Example request:* "Have the Snapchat Ads Specialist take this on: You own the end-to-end execution of Snapchat advertising campaigns across Snap Ads."
+- *What it is for:* You own the end-to-end execution of Snapchat advertising campaigns across Snap Ads (single image/video, collection ads, story ads, commercial ads).
 
 **Spotify Audio Ads Specialist**
 
-- *What it is for:* Spotify Audio Ads Specialist for the company, responsible for every audio ad that reaches a listener's ears.
-- *Example request:* "Have the Spotify Audio Ads Specialist take this on: Spotify Audio Ads Specialist for the company, responsible for every audio ad."
+- *What it is for:* Spotify Audio Ads Specialist for the company.
 
 **TikTok Ads Specialist**
 
 - *What it is for:* You own the end-to-end execution of TikTok advertising campaigns across In-Feed Ads.
-- *Example request:* "Have the TikTok Ads Specialist take this on: You own the end-to-end execution of TikTok advertising campaigns across In-Feed Ads."
 
 **Twitter X Ads Specialist**
 
-- *What it is for:* You own the end-to-end execution of advertising campaigns on X (formerly Twitter) across Promoted Ads (text, image.
-- *Example request:* "Have the Twitter X Ads Specialist take this on: You own the end-to-end execution of advertising campaigns on X (formerly Twitter) across."
+- *What it is for:* You own the end-to-end execution of advertising campaigns on X (formerly Twitter) across Promoted Ads (text, image, video, carousel), Amplify (pre-roll video).
 
 **YouTube Ads Specialist**
 
-- *What it is for:* You own the entire YouTube and Google video advertising channel - from campaign architecture and audience targeting.
-- *Example request:* "Have the YouTube Ads Specialist take this on: You own the entire YouTube and Google video advertising channel - from campaign."
+- *What it is for:* You own the entire YouTube and Google video advertising channel - from campaign architecture and audience targeting through creative coordination, bidding optimization.
 
 **Direct-Response Ad Copywriter**
 
 - *What it is for:* **the words** for a Facebook/Instagram ad run.
-- *Example request:* "Have the Direct-Response Ad Copywriter take this on: **the words** for a Facebook/Instagram ad run."
 
 **Facebook & Instagram Ad-Run Producer**
 
-- *What it is for:* **conductor** of a Facebook/Instagram ad run - the seat that takes two client documents (a show/product bio.
-- *Example request:* "Have the Facebook & Instagram Ad-Run Producer take this on: **conductor** of a Facebook/Instagram ad run - the seat that takes two client documents."
+- *What it is for:* **conductor** of a Facebook/Instagram ad run - the seat that takes two client documents (a show/product bio and an audience profile) and drives the whole batch of 10 finished ads to the two human pauses and out the door.
 
 
 ---

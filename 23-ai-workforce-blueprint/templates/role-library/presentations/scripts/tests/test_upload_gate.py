@@ -147,9 +147,11 @@ def test_agent_cannot_opt_out(tmp_path):
     assert any("has_ghl:false" in r for r in reasons)
 
 
-def test_valid_owner_skip_authorizes(tmp_path):
-    """Valid owner_skip_approval -> (True, [])."""
+def test_valid_owner_skip_authorizes(tmp_path, monkeypatch):
+    """A VERIFIED owner_skip_approval -> (True, []). PD-316b: the four typed fields
+    alone authorize nothing — the record needs an owner_msg_id the oracle verifies."""
     import ghl_media_push as gmp
+    from presentation_job import approvals as approvals_mod
     base = tmp_path / "ownerok"
     _mk_intake_json(base, has_ghl=False)
     _mk_process_manifest(base, {
@@ -157,7 +159,12 @@ def test_valid_owner_skip_authorizes(tmp_path):
         "approved_by": "operator",
         "reason": "client has no GHL account",
         "gate": "ghl_upload",
+        "owner_msg_id": "cc-msg-1",
+        "granted_at": "2026-11-13T10:00:00-05:00",
     })
+    monkeypatch.setattr(approvals_mod, "_cc_board_oracle",
+                        lambda run_dir=None: frozenset({"cc-msg-1"}))
+    monkeypatch.setattr(approvals_mod, "_gateway_owner_oracle", lambda mid: None)
     ok, reasons = gmp.gate_ghl_media_complete(base)
     assert ok is True
     assert reasons == []
@@ -340,16 +347,19 @@ def test_waiver_ghl_upload_valid_quote_passes(tmp_path):
     from presentation_job.waivers import validate_waiver
     base = tmp_path / "waiver_ok"
     client_words = "I do not want the GoHighLevel upload, skip it entirely"
-    # Use intake_field path since TRANSCRIPT_WAIVERS_ACCEPTED=False per U013 step 6
+    # Use intake_field path since TRANSCRIPT_WAIVERS_ACCEPTED=False per U013 step 6.
+    # PD-202: the cited field must be the question the interview asks the client
+    # to decline THIS deliverable (ghl_upload_declined_reason), not any field.
     cp = base / "working" / "copy"
     cp.mkdir(parents=True, exist_ok=True)
-    (cp / "intake.json").write_text(json.dumps({"has_ghl": True, "skip_ghl": client_words}))
+    (cp / "intake.json").write_text(json.dumps(
+        {"has_ghl": True, "ghl_upload_declined_reason": client_words}))
     waiver = {
         "rule": "ghl_upload",
         "source": "intake_field",
         "client_request_quote": client_words,
         "captured_at": "2026-07-27T12:00:00Z",
-        "intake_field": "skip_ghl",
+        "intake_field": "ghl_upload_declined_reason",
     }
     validate_waiver(waiver, base)
 

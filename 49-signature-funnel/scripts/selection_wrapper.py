@@ -123,7 +123,7 @@ SELECTION_COPY_PROFILE = "signature-product-selection"
 
 PAGE_RESULT_FIELDS = (
     "schema_version", "tenant_id", "location_id", "launch_id", "revision",
-    "request_id", "input_hash", "page_id", "status", "artifacts",
+    "request_id", "input_hash", "page_id", "page_role", "status", "artifacts",
     "author_session", "reviewer_session", "independent_review",
     "proof_class", "blockers", "native_bindings_ref", "test_only")
 STATUSES = ("authored", "locally_verified", "installed_test_verified",
@@ -407,6 +407,14 @@ def run_wrapper(args: argparse.Namespace) -> int:
                      "--request", str(Path(args.request)),
                      "--status", args.status,
                      "--artifact", str(plan_path)]
+        # The emitter refuses locally_verified/reviewer_session without a review
+        # record, so pass the caller's review through untouched and let the
+        # emitter's own gate decide.
+        for flag, value in (("--reviewer-session", args.reviewer_session),
+                            ("--review", args.review),
+                            ("--review-ledger", args.review_ledger)):
+            if value:
+                emit_argv += [flag, str(value)]
         _run(emit_argv, "Skill 78 emitter")
         if not emitted_path.is_file():
             raise WrapperError("Skill 78 emitter exited 0 but wrote no "
@@ -450,11 +458,19 @@ def main(argv: List[str]) -> int:
     ap.add_argument("--recommendation",
                     help="optional approved recommendation JSON for the "
                          "plan builder")
-    ap.add_argument("--status", default="locally_verified",
+    ap.add_argument("--status", default="authored",
                     choices=list(LOCAL_STATUSES),
                     help="status the local emitter may claim (default "
-                         "locally_verified; installed/live statuses are "
-                         "never emittable here)")
+                         "authored, the emitter's own default; locally_verified "
+                         "needs --reviewer-session plus --review; installed/live "
+                         "statuses are never emittable here)")
+    ap.add_argument("--reviewer-session",
+                    help="independent reviewer session id, passed to the Skill 78 "
+                         "emitter; refused without --review")
+    ap.add_argument("--review",
+                    help="review record JSON, passed to the Skill 78 emitter")
+    ap.add_argument("--review-ledger",
+                    help="review ledger JSON, passed to the Skill 78 emitter")
     ap.add_argument("--plan-builder",
                     help="override plan builder path (tests only)")
     ap.add_argument("--emitter",

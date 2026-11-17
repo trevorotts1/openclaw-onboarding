@@ -61,9 +61,9 @@ as the LAST resort:
    (b) to its owner.
 2. **The rescue AI fixes it using our access.** If the client's agent cannot or did
    not fix it, the rescue AI steps in and fixes it itself - it does NOT page the
-   Operator for infrastructure it can reach. Access inventory: the operator's
-   `~/.ssh/config` provides a `rescue-*` alias for EVERY fleet box (Mac-via-
-   Cloudflare-tunnel, Hostinger VPS, Contabo); provider credentials for Hostinger,
+   Operator for infrastructure it can reach. Access inventory: the operator's fleet
+   access resolver reaches every fleet box (its `~/.ssh/config` covers MAC boxes only
+   and is not the roster); provider credentials for Hostinger,
    Contabo, Cloudflare, GoHighLevel and OpenRouter live in the operator secrets env
    (`~/.openclaw/secrets/.env`) - referenced by ENV VAR NAME ONLY, sourced to use,
    NEVER a value printed into any doc, ticket, or transcript. Check the credential
@@ -160,10 +160,10 @@ and the onboarding AGENTS.md stamper (`stamp-rescue-escalation-section.sh`).
 
 ## 7. Quick Questions (operator)
 
-- "What is the state of the rescue queue?" → Ticket Clerk: `rescue_ledger.py digest`.
-- "Is client X at the daily cap?" → `rescue_ledger.py count-today --client X`.
-- "What is aging past SLA?" → `rescue_ledger.py aging --older-than-minutes N`.
-- "Did this ticket's answer reach the client?" → check `return_delivered` on the row.
+- "What is the state of the rescue queue?" → the Command Center Rescue Rangers page, and the Kanban board (department `rescue-rangers`).
+- "Is client X at the daily cap?" → the live `rr_cap_counters` table in n8n. Never the drill ledger.
+- "What is aging past SLA?" → the Command Center Rescue Rangers page: open tickets, with SLA breaches listed first.
+- "Did this ticket's answer reach the client?" → the ticket shows the box's acknowledgement and the owner-message receipt.
 
 ---
 

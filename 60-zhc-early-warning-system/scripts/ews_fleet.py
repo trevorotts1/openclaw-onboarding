@@ -503,6 +503,10 @@ def self_test():
         os.environ["EWS_STATE_DIR"] = str(Path(td) / "ews")
         os.environ["EWS_RESCUE_CHAT"] = "8888rescue"
         os.environ["EWS_OPERATOR_CHAT"] = "9999op"
+        # the aggregator runs on the OPERATOR box (install --role operator sets
+        # this meta); the direct operator send is that box's path (v1.3.0)
+        with Ledger() as led_role:
+            led_role.set_meta("role", "operator")
 
         # two boxes report clean (fresh advancing ticks stay HEALTHY)
         cmd_ingest("box-alpha-example", {"last_tick_ts": now_utc(), "red_flags": 0,

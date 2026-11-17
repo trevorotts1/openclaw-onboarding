@@ -30,9 +30,9 @@ figures out who handles it and routes it for you.
 
 Reach for this department when you want any of the following:
 
-- Operational engine of the Logistics & Fulfillment department - the role that keeps every individual order.
+- Operational engine of the Logistics & Fulfillment department - the role that keeps every individual order moving from placement to delivery without falling through the cracks.
 - Inventory Manager for the company's Logistics & Fulfillment department.
-- You own every product that moves backward through the supply chain - from the moment a customer initiates.
+- You own every product that moves backward through the supply chain - from the moment a customer initiates a return to the moment the unit is restocked, refurbished, liquidated.
 
 If you are not sure whether a request belongs here, ask anyway. The department
 head will either take it or hand it to the right department. You never have to
@@ -69,26 +69,23 @@ and it will pick the right one, or you can ask for a specialist by name.
 
 | Specialist | What it is for |
 | --- | --- |
-| **Fulfillment Coordinator** | Operational engine of the Logistics & Fulfillment department - the role that keeps every individual order moving. |
+| **Fulfillment Coordinator** | Operational engine of the Logistics & Fulfillment department - the role that keeps every individual order moving from placement to delivery without falling through the cracks. |
 | **Inventory Manager** | Inventory Manager for the company's Logistics & Fulfillment department. |
-| **Returns Reverse Logistics Specialist** | You own every product that moves backward through the supply chain - from the moment a customer initiates a return. |
+| **Returns Reverse Logistics Specialist** | You own every product that moves backward through the supply chain - from the moment a customer initiates a return to the moment the unit is restocked, refurbished, liquidated. |
 
-### What each specialist is for, with an example request
+### What each specialist is for
 
 **Fulfillment Coordinator**
 
-- *What it is for:* Operational engine of the Logistics & Fulfillment department - the role that keeps every individual order moving.
-- *Example request:* "Have the Fulfillment Coordinator take this on: Operational engine of the Logistics & Fulfillment department - the role that keeps."
+- *What it is for:* Operational engine of the Logistics & Fulfillment department - the role that keeps every individual order moving from placement to delivery without falling through the cracks.
 
 **Inventory Manager**
 
 - *What it is for:* Inventory Manager for the company's Logistics & Fulfillment department.
-- *Example request:* "Have the Inventory Manager take this on: Inventory Manager for the company's Logistics & Fulfillment department."
 
 **Returns Reverse Logistics Specialist**
 
-- *What it is for:* You own every product that moves backward through the supply chain - from the moment a customer initiates a return.
-- *Example request:* "Have the Returns Reverse Logistics Specialist take this on: You own every product that moves backward through the supply chain - from the moment."
+- *What it is for:* You own every product that moves backward through the supply chain - from the moment a customer initiates a return to the moment the unit is restocked, refurbished, liquidated.
 
 
 ---

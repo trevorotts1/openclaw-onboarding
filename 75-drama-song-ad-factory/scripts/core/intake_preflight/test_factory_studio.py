@@ -11,7 +11,7 @@ Proves, behaviourally:
     stage "storyboard";
   * the real studio adapter proposes the EXISTING apply command for its
     (stubbed) answer: storyboard -> `storyboard --reply`, song pick ->
-    `song_choices.py pick`, script -> `script-reply`; public `next` still
+    `music --reply`, script -> `script-reply`; public `next` still
     requires the actual artifact/pick handler to record the decision, and a
     contextless script reply cannot fabricate client provenance;
   * a chat run (no studio order) answers nothing: the storyboard gate still
@@ -194,8 +194,15 @@ def test_card_studio_json_prints_the_export():
     env = json.loads(p.stdout)
     assert env["format"] == "studio-json" and env["version"] == 0
     assert env["question_count"] == len(env["questions"]) > 0
-    q = env["questions"][0]
-    assert q["question"] and q["example"] and q["options"]
+    #: S75-074 step 2 / U-E02: a typed screen carries NO option row -- the page
+    #: asks for the words itself -- so the schema is typed => question+example,
+    #: choice => question+options, never all three on every screen.
+    for q in env["questions"]:
+        assert q["question"], q["id"]
+        if q["typed"]:
+            assert q["example"] and q["options"] == [], q["id"]
+        else:
+            assert q["options"], q["id"]
 
 
 def test_card_studio_json_is_a_real_choice():
@@ -311,7 +318,10 @@ def test_next_song_pick_answer_becomes_song_pick():
         assert public["data"]["command"] is None and run_hashes(run) == before
         env = routed[-1]
         assert env["outcome"] == "ok" and env["data"]["approval"] == "song", env
-        assert "song_choices.py pick" in env["data"]["command"]
+        # S75-037: the answer becomes the music command's own reply path (the
+        # song_choices pick loop stays reachable through it, not as a second
+        # command the caller has to know).
+        assert "factory.py music" in env["data"]["command"]
         assert "--reply 2" in env["data"]["command"]
 
 

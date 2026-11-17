@@ -33,6 +33,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import os
 import subprocess
 import sys
@@ -52,6 +53,10 @@ EX_OK, EX_ERR, EX_USAGE, EX_NOTFOUND = 0, 1, 2, 3
 _POLICY_RANK = {"closed": 0, "none": 0, "off": 0, "disabled": 0,
                 "allowlist": 1, "contacts": 1, "paired": 1, "known": 1,
                 "open": 2, "all": 2, "any": 2, "public": 2, "everyone": 2}
+
+
+# v2 (Skill 60 v1.3.0): skills_versions replaces the hashed skills_manifest.
+BASELINE_SCHEMA = 2
 
 
 def baseline_path(state_dir: Path | None = None) -> Path:
@@ -107,6 +112,38 @@ def _skills_manifest():
 
 
 # --------------------------------------------------------------------------- #
+# skills versions (S9, v1.3.0) - cheap: one small file per skill, no hashing
+# --------------------------------------------------------------------------- #
+def _skills_versions(skills_root=None):
+    """Return {skill_dir_name: version_string} from each installed skill's
+    skill-version.txt. Replaces the per-tick content hash of the whole skills
+    tree, which on a real box (548 MB, ~15k files) ran past its 120 s timeout on
+    EVERY tick and returned nothing - 2 minutes of disk work every 15 minutes
+    for a check that never ran. Reading ~100 tiny files takes milliseconds."""
+    root = Path(skills_root) if skills_root else C.openclaw_root() / "skills"
+    if not root.is_dir():
+        return None
+    out = {}
+    try:
+        for d in sorted(root.iterdir()):
+            vf = d / "skill-version.txt"
+            if d.is_dir() and not d.name.startswith(".") and vf.is_file():
+                try:
+                    out[d.name] = vf.read_text(encoding="utf-8", errors="replace").strip()[:64]
+                except OSError:
+                    continue
+    except OSError:
+        return None
+    return out or None
+
+
+def version_tuple(v):
+    """'v1.2.10' -> (1, 2, 10). None when the string carries no number."""
+    nums = re.findall(r"\d+", str(v or ""))
+    return tuple(int(n) for n in nums) if nums else None
+
+
+# --------------------------------------------------------------------------- #
 # pin
 # --------------------------------------------------------------------------- #
 def build_baseline(config: dict) -> dict:
@@ -129,7 +166,7 @@ def build_baseline(config: dict) -> dict:
     except OSError:
         pass
     return {
-        "version": 1,
+        "version": BASELINE_SCHEMA,
         "pinned_at": now_utc(),
         "platform": detect_platform(),
         "user": os.environ.get("USER") or os.environ.get("LOGNAME") or "unknown",
@@ -139,14 +176,13 @@ def build_baseline(config: dict) -> dict:
         "monitored": monitored,
         "model_allowlist": C.extract_model_ids(config),
         "cron_inventory": C.cron_inventory(config),
-        "skills_manifest": _skills_manifest(),
+        "skills_versions": _skills_versions(),
     }
 
 
-def cmd_pin(args) -> int:
-    config = C.read_config(args.config)
-    baseline = build_baseline(config)
-    bp = baseline_path(Path(args.state_dir) if args.state_dir else None)
+def write_baseline(baseline: dict, state_dir=None) -> Path:
+    """Atomically write baseline.json (0600). The one writer for the file."""
+    bp = baseline_path(Path(state_dir) if state_dir else None)
     bp.parent.mkdir(parents=True, exist_ok=True)
     fd, tmp = tempfile.mkstemp(prefix=".baseline.", suffix=".tmp", dir=str(bp.parent))
     try:
@@ -158,11 +194,42 @@ def cmd_pin(args) -> int:
     finally:
         if os.path.exists(tmp):
             os.unlink(tmp)
+    return bp
+
+
+def repin(config: dict, state_dir=None, old_baseline=None) -> dict:
+    """Pin a fresh baseline and report what it absorbed: the monitored keys that
+    differed from the old baseline (paths + direction only, never values)."""
+    absorbed = []
+    if old_baseline:
+        try:
+            absorbed = [{"path": d["path"], "direction": d["direction"]}
+                        for d in compute_diff(old_baseline, config) if d["changed"]]
+        except Exception:  # noqa: BLE001 - a malformed old baseline absorbs nothing
+            absorbed = []
+    baseline = build_baseline(config)
+    write_baseline(baseline, state_dir)
+    return {"baseline": baseline, "absorbed": absorbed}
+
+
+def cmd_pin(args) -> int:
+    config = C.read_config(args.config)
+    bp_old = baseline_path(Path(args.state_dir) if args.state_dir else None)
+    old = None
+    if bp_old.is_file():
+        try:
+            old = json.loads(bp_old.read_text(encoding="utf-8"))
+        except ValueError:
+            old = None
+    res = repin(config, args.state_dir, old)
+    baseline = res["baseline"]
+    bp = bp_old
     _emit({"ok": True, "action": "pin", "baseline": str(bp),
            "monitored_keys": len(baseline["monitored"]),
            "model_allowlist": len(baseline["model_allowlist"]),
            "cron_entries": len(baseline["cron_inventory"]),
-           "config_owner": baseline["config_owner"], "config_mode": baseline["config_mode"]})
+           "config_owner": baseline["config_owner"], "config_mode": baseline["config_mode"],
+           "absorbed_changes": res["absorbed"]})
     return EX_OK
 
 

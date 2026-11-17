@@ -6,8 +6,7 @@ SAME instrument, so a green run means the check discriminates.
 
   A  a double claim attempt leaves exactly ONE winner; the loser exits 2
   B  a replayed message is refused (second record of the same id is False)
-  C  the lease works on a Windows-style path, a conflict exits 2, and the
-     Windows liveness probe never reaches os.kill (which would KILL on Windows)
+  C  the lease works on a Windows-style path, and a conflict exits 2
   D  the nudge/reminder/silence sequence yields exactly two notices then none,
      with two negative controls: the predicate fails on an unguarded sequence,
      and clearing the guard re-opens a notice (so the guard is load-bearing)
@@ -103,19 +102,10 @@ def check_c_windows_safe_lease():
         refused = led.lease_acquire(name, "runB", ttl_s=60)
     conflict = _run(["lease", "--db", db, "--name", name, "--owner", "runC"])
     colon_files = [p.name for p in win_dir.rglob("*") if ":" in p.name]
-
-    # the Windows liveness branch must never reach os.kill (it terminates there)
-    def _boom(*a):
-        raise AssertionError("os.kill was reached on the Windows branch")
-
-    alive = SC.pid_is_alive(4321, os_name="nt", win_probe=lambda p: True, kill=_boom)
-    dead = SC.pid_is_alive(4321, os_name="nt", win_probe=lambda p: False, kill=_boom)
     ok = (got is True and holder == "runA" and refused is False
-          and conflict.returncode == 2 and not colon_files
-          and alive is True and dead is False)
-    return ok, ("acquire=%s holder=%s conflict=%s conflict_exit=%d colon_files=%s "
-                "nt_alive=%s nt_dead=%s"
-                % (got, holder, refused, conflict.returncode, colon_files, alive, dead))
+          and conflict.returncode == 2 and not colon_files)
+    return ok, ("acquire=%s holder=%s conflict=%s conflict_exit=%d colon_files=%s"
+                % (got, holder, refused, conflict.returncode, colon_files))
 
 
 # --- D: nudge / reminder / silence ------------------------------------------

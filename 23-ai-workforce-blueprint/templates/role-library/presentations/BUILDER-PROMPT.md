@@ -23,8 +23,8 @@ A deck is built by **ONE pipeline with TWO layers**, always in this order:
   RICH per-slide image prompt** (sized to the prompt budget of the pinned model (rule 12 of `07-kie-setup/references/kie-common-rules.md`: target 95 to 100 percent of the model maximum, hard floor 80 percent), read with `kie_live_adapter.py prompt-budget --check`; the renderer gate enforces rule 12 through the shared enforcer shared-utils/kie_prompt_enforcer.py, so write to the enforcer's floor and target for the pin) for every slide
   (`working/prompts/slide-NN.txt`). You (or the role you are standing in for) AUTHOR
   these artifacts. Nothing renders until they exist.
-- **LAYER B — THE DETERMINISTIC RENDER + DELIVERY.** `build_deck.py` (dispatched by
-  `run_signature_deck.py`, fronted by `presentation-canonical-entry.sh`). It reads the
+- **LAYER B — THE DETERMINISTIC RENDER + DELIVERY.** `build_deck.py` (dispatched by the
+  presentation engine `presentation_job.py`, fronted by `presentation-canonical-entry.sh`). It reads the
   Layer-A rich prompts **VERBATIM** — it does **not** compose them, does **not** have an
   image tool of its own, and does **not** turn a bare `scene`/`copy` pair into a prompt.
   It submits each rich prompt to `gpt-image-2-6/sunburst-text-to-image` / `-image-to-image` (16:9,
@@ -45,48 +45,43 @@ stop — you are one phase behind. The render step (`build_deck.py`) preflights 
 Layer-A artifact set and refuses (loudly, non-zero exit) to run without it.
 
 **The correct mental model:** *you are always running Layer A up to the render, and
-Layer B is the render+delivery the runner dispatches for you once Layer A is done.* You
+Layer B is the render+delivery the engine dispatches for you once Layer A is done.* You
 never choose between them, and you never skip ahead.
 
 ---
 
-## THE RUNNER IS YOUR INTERFACE — SERVE THE PROCESS ONE STEP AT A TIME
+## THE ENGINE IS YOUR INTERFACE — SERVE THE PROCESS ONE STEP AT A TIME
 
-Doctrine is not something you hold in your head across 30 documents. **`run_signature_deck.py --next` is your interface to what is next.** The loop is:
+Doctrine is not something you hold in your head across 30 documents. **The presentation
+engine (`presentation_job.py`) is your interface to what is next.** It walks every phase of
+`PIPELINE-MANIFEST.json` in order and refuses to skip. For a phase a person or an AI role
+must author, the engine writes a work order to `working/work-orders/<phase>.json` — carrying
+`phase`, `owning_role`, `produces_artifact`, `verifier`, `budget_minutes` and `issued_at` —
+and waits for the product.
 
-```
-python3 <SCRIPTS_DIR>/run_signature_deck.py --run-dir <RUN_DIR> --slides slides.json --next
-   → do EXACTLY that one phase: produce its produces_artifact per the cited sop_refs
-   → python3 <SCRIPTS_DIR>/run_signature_deck.py --run-dir <RUN_DIR> --slides slides.json --out <ARTIFACT_DIR>/presentation.pptx --phase <ID>
-   → run --next again for the following step
-```
-
-`--next` reads `PIPELINE-MANIFEST.json` + the on-disk attestation ledger and returns
-**ONE** JSON payload: the single next required phase, its owning role, the artifact
-contract (`produces_artifact` path + `required_brief_categories` + whether a substance
-verifier runs at attest time), the `sop_refs`, the gate codes, and the exact
-`attest_command` to run next. It deliberately reveals no phase further ahead — attestation
-is order-enforced (`AF-PHASE-SKIPPED` on an out-of-order attempt), so you physically
-cannot run the process out of the order the runner serves it. `--plan` is a read-only
-view of the whole phase list if you need orientation (never a substitute for `--next`).
+Your loop is: read the work order, produce exactly the artifact(s) it names per the phase's
+`sop_refs`, and stop. Do not produce anything the work order did not ask for, and do not
+move to another phase yourself; the engine verifies the artifact and serves the next one.
+The engine emits no `--next` payload on this path: `run_signature_deck.py --next` belongs
+to the legacy runner, which runs only on a box where the engine is not installed.
 
 **SLICED READS — FIX-19 (D18).** The SOP/role files `sop_refs` point at are 25–125KB.
 Reading one WHOLE is what fired `[tool-result-truncation]` 33× in the 2026-08-06 E2E —
-you reasoned from incomplete context. Each `sop_ref` in the `--next` payload carries a
-`read_slice_hint`; a ref marked `sliced_read_required: true` MUST be fetched with
-`read_slice.py --index` then `--lines A-B`, never read whole. The truncation counter
+you reasoned from incomplete context. A phase's `sop_refs` name its SOPs in the manifest
+row; for any file over ~32KB fetch it with `read_slice.py --index` then `--lines A-B`,
+never whole. The truncation counter
 (`working/checkpoints/read_slice_truncations.json`) must stay 0 across the build.
 
 **Do not hand-author `slides.json` in isolation and skip straight to a render command.**
-Walk the loop above from wherever the ledger says you are; the runner will emit intake,
+Serve whatever phase the engine's work order names; the engine will serve intake,
 structure, copy, copy-QC, prompt-authoring, and prompt-QC phases (per
-`PIPELINE-MANIFEST.json`) before it ever emits `P4-RENDER`.
+`PIPELINE-MANIFEST.json`) before it ever serves `P4-RENDER`.
 
 ---
 
 ## THE RENDER PHASE (P4-RENDER) — THE ONE SANCTIONED BUILD COMMAND
 
-Once `--next` serves `P4-RENDER` (i.e. every upstream Layer-A artifact — including the
+Once the engine serves `P4-RENDER` (i.e. every upstream Layer-A artifact — including the
 per-slide rich prompt files — is attested), dispatch the render through the **one
 governed entry command**, never the Python scripts directly:
 
@@ -95,11 +90,14 @@ bash <ENTRY>/presentation-canonical-entry.sh \
     --run-dir <RUN_DIR> --slides slides.json --out <ARTIFACT_DIR>/presentation.pptx
 ```
 
-`presentation-canonical-entry.sh` runs three fail-closed gates — a runtime **deps
-check**, a **bypass-scan** that refuses to start if any hand-rolled renderer/assembler
-exists in your run directory, and a **version/hash pin** that confirms the deployed
-renderer is the pinned governed one — and only then hands off to the canonical
-orchestrator (`run_signature_deck.py` → `build_deck.py`). The scripts directory defaults
+`presentation-canonical-entry.sh` runs seven fail-closed gates — the **intake-ledger
+check**, the **intake-trace check**, the **drift gates** (warning-only), a runtime **deps
+check**, the **Skill-48 GHL module co-location** check, a **bypass-scan** that refuses to
+start if any hand-rolled renderer/assembler exists in your run directory, and a
+**version/hash pin** that confirms the deployed renderer is the pinned governed one — and
+only then starts the presentation engine (`presentation_job.py`), which walks every
+manifest phase in order. `run_signature_deck.py` → `build_deck.py` runs only on a box
+where the engine is not installed, and that is not a full build. The scripts directory defaults
 to the materialized department's `scripts/` folder; `--scripts-dir` overrides it. The
 script refuses rather than searching. That canonical path, for every
 slide, reads the pre-authored rich prompt **verbatim**, calls KIE.ai, polls, downloads
@@ -117,8 +115,8 @@ chain. It prints a JSON summary:
 - If the exit code is **non-zero**, the build FAILED. **Do not** invent or substitute
   images, and **do not** work around the gate by running scripts yourself. Read the
   printed error, fix the Layer-A artifact it names (a preflight failure almost always
-  means an upstream artifact is missing, thin, or ungated — re-run `--next` to see what
-  is still owed), and re-run the **same** command. If KIE is unreachable, report the
+  means an upstream artifact is missing, thin, or ungated — re-read the engine's work
+  order to see what is still owed), and re-run the **same** command. If KIE is unreachable, report the
   failure — do not fake a deliverable.
 
 **THE ONLY PATH / THE FORBIDDEN PATH.** `python3 working/*.py` — writing and running your
@@ -192,14 +190,11 @@ the client's real audience, written per-slide — never a baked-in ratio.
 
 ## REPORT COMPLETION
 
-The build script registers the deliverable and advances the Command Center card
-automatically (`build_deck.py` postflight via `cc_board.py`). Just report
-`TASK_COMPLETE` when `presentation-canonical-entry.sh` exits 0 and produced the `.pptx`:
+Completion is decided by the step gate, never by your own reading of the run:
 
 ```
-TASK_COMPLETE: <one-line description> — <outputPath>
+python3 <SCRIPTS_DIR>/pd_step_gate.py complete --run-dir <RUN_DIR> --manifest <MANIFEST>
 ```
 
-Only report `TASK_COMPLETE` when `presentation-canonical-entry.sh` exited 0 AND every
-upstream Layer-A phase `--next` would have served is attested — a bare `.pptx` with no
-speech, guide, or teleprompter bundle is not a delivered deck (`AF-BUNDLE-COMPLETE`).
+Report `TASK_COMPLETE` only when that command exits 0, and paste its output. Any other
+exit code: report `TASK_BLOCKED` with its output.

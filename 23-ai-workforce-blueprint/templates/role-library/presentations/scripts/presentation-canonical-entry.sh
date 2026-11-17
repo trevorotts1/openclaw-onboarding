@@ -617,6 +617,20 @@ except Exception as exc:  # noqa: BLE001 — an audit-write failure never blocks
 PY
 }
 
+# ---------------------------------------------------------------------------
+# _test_seam_used — PD-201b. The door's test seam is an ENVIRONMENT test, never
+# a file an agent can create. Every time the seam is honored, one audit row is
+# appended to working/checkpoints/gate_log.jsonl so the seam is never silent
+# (PD-206 reads those rows and refuses to call such a run integrity-passed).
+# Never fatal: a log it cannot write is swallowed, not raised.
+# ---------------------------------------------------------------------------
+_test_seam_used() {
+    local gate="$1"
+    local log="$RUN_DIR/working/checkpoints/gate_log.jsonl"
+    mkdir -p "${log%/*}" 2>/dev/null || true
+    printf '{"gate": "%s", "result": "test_seam_used"}\n' "$gate" >>"$log" 2>/dev/null || true
+}
+
 # A gate that tripped: honor a logged owner skip, else fail-closed with the code.
 gate_fail() {
     local code="$1" exitcode="$2"; shift 2
@@ -880,10 +894,12 @@ note "GATE 4 of 7 (GATE 1) — DEPS CHECK (soffice, pdftoppm, reportlab, python-
 # vector — any agent could export it, sail past GATE 1, burn the full Kie render
 # budget, then die at PPTX/PDF. It is REMOVED. A LIVE run may skip this gate ONLY
 # via a logged owner_skip_approval token (handled at the call site below). The env
-# var is honored ONLY in a TEST context — a `.test-context` marker file the harness
-# drops in the run dir — and every honored bypass is recorded as a
-# dep_gate_bypassed entry in process_manifest.json so no skip is ever silent.
-_TEST_CONTEXT_MARKER="$RUN_DIR/working/checkpoints/.test-context"
+# var is honored ONLY in a TEST context — the three environment names
+# phase_verifiers._degraded_allowed keeps under PD-201: PD-201b replaced the old
+# `.test-context` marker FILE (which any agent could create) with this env test —
+# and every honored bypass is recorded as a dep_gate_bypassed entry in
+# process_manifest.json plus a test_seam_used row in gate_log.jsonl, so no skip is
+# ever silent.
 # read_run_mode <run_dir> prints the declared mode, or NOTHING AT ALL.
 # Absence is absence: the launcher's own default (model_router.DEFAULT_MODE,
 # "standard") then applies. It never guesses ultra -- nothing silently
@@ -986,12 +1002,15 @@ PYMODE
 
 deps_check() {
     if [ "${QC_SKIP_PRESENTATION_DEPS:-0}" = "1" ]; then
-        if [ -f "$_TEST_CONTEXT_MARKER" ]; then
-            echo "  SKIP: QC_SKIP_PRESENTATION_DEPS=1 honored — test-context marker present ($_TEST_CONTEXT_MARKER)"
-            _record_dep_gate_bypassed "env:QC_SKIP_PRESENTATION_DEPS" "test-context marker present"
+        # PD-201b: the seam is the environment, not a file. Same three names as
+        # phase_verifiers._degraded_allowed (PD-201).
+        if [ "${PRESENTATION_ALLOW_DEGRADED_VERIFIERS:-}" = "1" ] || [ -n "${CI:-}" ] || [ -n "${OPENCLAW_TEST:-}" ]; then
+            echo "  SKIP: QC_SKIP_PRESENTATION_DEPS=1 honored — test seam (PRESENTATION_ALLOW_DEGRADED_VERIFIERS=1 / CI / OPENCLAW_TEST)"
+            _test_seam_used "PRESENTATION_DEPS_MISSING"
+            _record_dep_gate_bypassed "env:QC_SKIP_PRESENTATION_DEPS" "test seam (PRESENTATION_ALLOW_DEGRADED_VERIFIERS=1 / CI / OPENCLAW_TEST)"
             return 0
         fi
-        echo "  NOTE: QC_SKIP_PRESENTATION_DEPS=1 IGNORED on a live run (no test-context marker)." >&2
+        echo "  NOTE: QC_SKIP_PRESENTATION_DEPS=1 IGNORED on a live run (no test seam: set PRESENTATION_ALLOW_DEGRADED_VERIFIERS=1)." >&2
         echo "        To skip a live run, log an owner_skip_approval token for PRESENTATION_DEPS_MISSING in" >&2
         echo "        $PROC_MANIFEST." >&2
     fi

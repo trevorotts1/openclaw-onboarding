@@ -1,0 +1,108 @@
+{
+  "version": 1,
+  "comment": "Shared by scripts/test_interview_status.py (Python) and tests/unit/interview-status.test.ts (TypeScript). One case per state of the interface contract table (01-BUILD-SPEC.md 2.3), plus the unreadable file. Both implementations read THIS file, so the two tables can never drift.",
+  "cases": [
+    {
+      "name": "BUILT - completion verification says verified",
+      "expect": "BUILT",
+      "declared": false,
+      "gate": null,
+      "buildState": {
+        "interviewComplete": true,
+        "completionVerification": { "version": 1, "status": "verified", "checkedAt": "2026-11-01T12:00:00Z" }
+      }
+    },
+    {
+      "name": "BUILDING - interview complete, confirmations recorded",
+      "expect": "BUILDING",
+      "declared": false,
+      "gate": null,
+      "buildState": {
+        "interviewComplete": true,
+        "confirmationsComplete": true,
+        "completionVerification": { "version": 1, "status": "pending" }
+      }
+    },
+    {
+      "name": "BUILDING - interview complete, a department is being built",
+      "expect": "BUILDING",
+      "declared": false,
+      "gate": null,
+      "buildState": {
+        "interviewComplete": true,
+        "departments": [
+          { "slug": "sales", "name": "Sales", "status": "done" },
+          { "slug": "operations", "name": "Operations", "status": "building" }
+        ]
+      }
+    },
+    {
+      "name": "COMPLETE - interview complete, nothing built yet",
+      "expect": "COMPLETE",
+      "declared": false,
+      "gate": null,
+      "buildState": { "interviewComplete": true }
+    },
+    {
+      "name": "PLACEHOLDER - standard placeholder active during the interview",
+      "expect": "PLACEHOLDER",
+      "declared": false,
+      "gate": null,
+      "buildState": {
+        "interviewComplete": false,
+        "companyMode": "standard-placeholder",
+        "standardPlaceholder": { "status": "active", "since": "2026-10-20T00:00:00Z" }
+      }
+    },
+    {
+      "name": "DECLARED - the caller's declarations table holds a row",
+      "expect": "DECLARED",
+      "declared": true,
+      "gate": null,
+      "buildState": { "interviewComplete": false, "interviewProgress": {} }
+    },
+    {
+      "name": "READY - every required question answered, nothing pressed yet",
+      "expect": "READY",
+      "declared": false,
+      "gate": { "answers": 5, "missingRequired": [] },
+      "buildState": { "interviewProgress": { "lastQuestionNumber": 5, "questionCountPlanned": 5 } }
+    },
+    {
+      "name": "IN_PROGRESS - gate holds answers, a required question is open",
+      "expect": "IN_PROGRESS",
+      "declared": false,
+      "gate": { "answers": 2, "missingRequired": ["why_now", "primary_offer"] },
+      "buildState": { "interviewProgress": { "lastQuestionNumber": 2 } }
+    },
+    {
+      "name": "IN_PROGRESS - legacy progress with no gate state file",
+      "expect": "IN_PROGRESS",
+      "declared": false,
+      "gate": null,
+      "buildState": { "interviewProgress": { "lastQuestionNumber": 3 } }
+    },
+    {
+      "name": "NOT_STARTED - no answers and no progress",
+      "expect": "NOT_STARTED",
+      "declared": false,
+      "gate": { "answers": 0, "missingRequired": ["company_name"] },
+      "buildState": { "interviewProgress": { "lastQuestionNumber": 0 } }
+    },
+    {
+      "name": "NOT_STARTED - no gate state file at all",
+      "expect": "NOT_STARTED",
+      "declared": false,
+      "gate": null,
+      "buildState": {}
+    },
+    {
+      "name": "UNDETERMINED - the build-state file could not be read",
+      "expect": "UNDETERMINED",
+      "unreadable": true,
+      "declared": false,
+      "gate": null,
+      "buildState": null
+    }
+  ]
+}

@@ -196,9 +196,10 @@ balance-remaining, by posture.
 
 ## Snapshots and the weekly cadence
 
-- **D7 — retention**: every config write is snapshotted. The sentinel keeps the
-  LARGER of 60 snapshots or 45 days of history; pruning older snapshots is a P3 line
-  in the digest, never silent, never a surprise.
+- **D7 — retention (72 hours)**: every config write is snapshotted. Every scheduled
+  tick prunes anything older than 72 hours: snapshots (the newest 3 are always kept so
+  a revert has a last-known-good), finding events, and alert digests (never cut below
+  the 24-hour alert cap). Run `ews-entry.sh prune` to prune by hand.
 - **D8 — cadence, weekly, pinned**: this skill's own self-update check starts weekly
   and stays weekly. The recommender may print an advisory note in the digest (for
   example, "drift velocity suggests monthly would be safe"), but the default cadence

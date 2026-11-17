@@ -300,6 +300,7 @@ _should_exclude() {
     # an unrelated skill's .part is still hashed and still detectable.
     */75-drama-song-ad-factory/.checkpoint-pending) return 0 ;;
     */75-drama-song-ad-factory/scripts/core/state_store.py.part) return 0 ;;
+    */75-drama-song-ad-factory/assets/face_landmarker.task) return 0 ;;
   esac
   case "$base" in
     # Python compiled/optimised bytecode files — same rationale as __pycache__

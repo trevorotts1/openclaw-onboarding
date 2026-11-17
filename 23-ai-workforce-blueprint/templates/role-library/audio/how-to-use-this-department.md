@@ -86,72 +86,59 @@ and it will pick the right one, or you can ask for a specialist by name.
 | **AI Voice Specialist** | For the department of the company, which exists to . |
 | **CRM Specialist (Audio Department)** | For the department of the company, which exists to . |
 
-### What each specialist is for, with an example request
+### What each specialist is for
 
 **AI Voice Specialist 11 Labs Play.ht**
 
 - *What it is for:* Generates AI voiceovers - for video, podcast, audio ads, audiobooks.
-- *Example request:* "Have the AI Voice Specialist 11 Labs Play.ht take this on: Generates AI voiceovers - for video, podcast, audio ads, audiobooks."
 
 **Audio Mastering Specialist**
 
 - *What it is for:* Final audio mastering - loudness normalization (LUFS standards), EQ, compression.
-- *Example request:* "Have the Audio Mastering Specialist take this on: Final audio mastering - loudness normalization (LUFS standards), EQ, compression."
 
 **Audiobook Production Specialist**
 
 - *What it is for:* Audiobook production - for authors and coaches.
-- *Example request:* "Have the Audiobook Production Specialist take this on: Audiobook production - for authors and coaches."
 
 **CRM Specialist Audio Version**
 
 - *What it is for:* Bridges Audio and CRM.
-- *Example request:* "Have the CRM Specialist Audio Version take this on: Bridges Audio and CRM."
 
 **Music And Audio Producer**
 
 - *What it is for:* Original music for videos, intros, podcasts.
-- *Example request:* "Have the Music And Audio Producer take this on: Original music for videos, intros, podcasts."
 
 **Podcast Editor**
 
 - *What it is for:* Post-production for podcast episodes - cuts, transitions, audio cleanup, music beds, ad insertions.
-- *Example request:* "Have the Podcast Editor take this on: Post-production for podcast episodes - cuts, transitions, audio cleanup, music beds."
 
 **Podcast Producer**
 
 - *What it is for:* Owns podcast strategy + episode flow.
-- *Example request:* "Have the Podcast Producer take this on: Owns podcast strategy + episode flow."
 
 **Sound Design SFX Specialist**
 
 - *What it is for:* Sound effects, transitions, audio branding, music for videos.
-- *Example request:* "Have the Sound Design SFX Specialist take this on: Sound effects, transitions, audio branding, music for videos."
 
 **Speech Writing Specialist**
 
 - *What it is for:* Writes keynotes, podcast guest scripts, talking points for the owner, voiceover scripts.
-- *Example request:* "Have the Speech Writing Specialist take this on: Writes keynotes, podcast guest scripts, talking points for the owner, voiceover scripts."
 
 **Transcription Specialist**
 
 - *What it is for:* Generates and cleans up transcripts - podcast, video, interview, course content.
-- *Example request:* "Have the Transcription Specialist take this on: Generates and cleans up transcripts - podcast, video, interview, course content."
 
 **Voice Agent Builder**
 
 - *What it is for:* Builds AI voice agents - phone bots, voice assistants, IVR systems.
-- *Example request:* "Have the Voice Agent Builder take this on: Builds AI voice agents - phone bots, voice assistants, IVR systems."
 
 **AI Voice Specialist**
 
 - *What it is for:* For the department of the company, which exists to .
-- *Example request:* "Have the AI Voice Specialist take this on: For the department of the company, which exists to ."
 
 **CRM Specialist (Audio Department)**
 
 - *What it is for:* For the department of the company, which exists to .
-- *Example request:* "Have the CRM Specialist (Audio Department) take this on: For the department of the company, which exists to ."
 
 
 ---

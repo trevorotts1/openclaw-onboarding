@@ -1,0 +1,355 @@
+{
+  "research": {
+    "argv": [
+      "python3",
+      "scripts/core/research_engine/research.py",
+      "--brief",
+      "{RUN}/brief.json",
+      "--outdir",
+      "{RUN}"
+    ],
+    "produces": "`research/{market,audience,competitors}.md` + `evidence.json` with every claim source-cited.",
+    "placeholders": [
+      "RUN"
+    ]
+  },
+  "creative-strategy": {
+    "argv": [
+      "python3",
+      "scripts/core/story_arc/story_arc.py",
+      "--story",
+      "{RUN}/creative/story.json"
+    ],
+    "produces": "Validated twelve-beat story arc (agent authors `creative/story.json`; missing beats fail). The story plan also names its VILLAIN (person or not a person: cancer, debt, a layoff, a lie, burnout, fear, the inner critic, a system) - see FU-U16 below.",
+    "placeholders": [
+      "RUN"
+    ]
+  },
+  "script-lyrics": {
+    "argv": [
+      "python3",
+      "scripts/core/lyric_writer/lyric_writer.py",
+      "--lyrics",
+      "{RUN}/creative/lyrics.json",
+      "--brief",
+      "{RUN}/brief.json"
+    ],
+    "produces": "Sung lyric script passing sung-copy rules (first-person, pronunciation, CTA). STOP RULE: at most 3 validator rounds (lyric_writer, check_lyric_sheet, words_fit); still failing -> stop, report the exact gate and ask the client ONE question; never grid-search, never exceed about 10 minutes, never edit a validator.",
+    "placeholders": [
+      "RUN"
+    ]
+  },
+  "music": {
+    "argv": [
+      "python3",
+      "scripts/core/song_choices/song_choices.py",
+      "generate",
+      "--run-dir",
+      "{RUN}",
+      "--request",
+      "{RUN}/music/req.json",
+      "--ledger",
+      "{RUN}/spend.sqlite3",
+      "--run-id",
+      "{RUN_ID}"
+    ],
+    "produces": "Suno song master and timing map for the approved lyrics, on a reserved ledger attempt. This ONE command is the music stage on a clean install: it supplies the production transports itself (`scripts/core/song_transports.py` -- measurements decoded off each take's own audio, every paid take kept under `$RUN/music/takes/<variant>/take-NN/`, the one word-timing step, and the pace order), attaches the run's recorded four-pick card receipt, and hands the `script_words` gate the approved sheet's lyric lines. When the card's SONG APPROVAL answer is Yes it makes three labelled versions of the same sheet in parallel lanes (`generate_choices`), not one; orchestrated runs pass `--variant <variant_id>` or `--unit-id WW-00N` to make exactly ONE. The lower-level row below describes the one-song case only: `kie_dispatch.py dispatch --model <suno-model-id> --request \"$RUN/music/req.json\" --save-dir \"$RUN/music\" --ledger \"$RUN/spend.sqlite3\" --run-id \"$RUN_ID\" --logical-key suno --attempt-id a1 --cost 0` still works for a single hand-built job, but it supplies no transports, no receipt and no sheet words -- the `generate` row is the one to run.",
+    "placeholders": [
+      "RUN",
+      "RUN_ID"
+    ]
+  },
+  "music-offer": {
+    "argv": [
+      "python3",
+      "scripts/core/song_choices/song_choices.py",
+      "offer",
+      "--run-dir",
+      "{RUN}"
+    ],
+    "produces": "Checks and delivers the three saved versions after `generate`: rebuilds the three delivery results from the run's own saved takes, computes D4 (three audibly different versions) once across them, writes/refreshes each take's acceptance record and delivers the offered versions (`SONG-CHOICES/` folder, title tags, README.txt, client message). `generate` alone never offers anything. The stage holds at the pick until `song_choices.py pick --run-dir \"$RUN\" --reply <1|2|3>` records the client's choice; the picked file is `$RUN/music/picked-song.mp3`.",
+    "placeholders": [
+      "RUN"
+    ]
+  },
+  "continuity-bible": {
+    "argv": [
+      "python3",
+      "scripts/core/character_continuity/stage.py",
+      "advance",
+      "--run-dir",
+      "{RUN}",
+      "--run-id",
+      "{RUN_ID}"
+    ],
+    "produces": "Continuity-bible stage runner (one executable step, never a separate manual action): typed load of the agent-authored Character DNA + product DNA + style bible records (`continuity/qc-records.json` LIST shape with legacy dict-wrapper migration, `continuity/makers.json`), the `qc_gate` stage gate always against the DECLARED required evidence (`character_continuity.stage.REQUIRED_CHECKS`, never derived from the records that arrive), then the guarded `state_store` advance of the `continuity-bible` row and the seven downstream stages' rows reported back. `--action check` evaluates without advancing, `--action downstream` lists the seven downstream rows. The registry reconciler predicate is `character_continuity.stage.proven` (`register()` wires it into factory's `_RECONCILIERS`).",
+    "placeholders": [
+      "RUN",
+      "RUN_ID"
+    ]
+  },
+  "storyboard": {
+    "argv": [
+      "python3",
+      "scripts/core/shot_planner/speaker_check/speaker_check.py",
+      "check",
+      "--env",
+      "{RUN}/storyboard/shot-list.json"
+    ],
+    "produces": "Speaker-visible shot list bound to lyric timing; fail-closed before storyboard approval (planner binding via `shot_planner.shot_planner.bind_plan`, import-only). Every villain carries its OWN shots tagged `villain` (or `villain_visibility` outside `none`); the shot's pain and rise tags ride the same shots (FU-U16).",
+    "placeholders": [
+      "RUN"
+    ]
+  },
+  "image-keyframes": {
+    "argv": [
+      "python3",
+      "scripts/core/kie_dispatch/kie_dispatch.py",
+      "dispatch",
+      "--model",
+      "{MODEL}",
+      "--request",
+      "{RUN}/generation/req.json",
+      "--prompt-file",
+      "{RUN}/generation/req.prompt.txt",
+      "--save-dir",
+      "{RUN}/generation",
+      "--ledger",
+      "{RUN}/spend.sqlite3",
+      "--run-id",
+      "{RUN_ID}",
+      "--logical-key",
+      "keyframes",
+      "--attempt-id",
+      "",
+      "--cost",
+      "{COST_MINOR}"
+    ],
+    "produces": "Keyframe images for every planned shot, delivered only after `final_assembler`-independent QC records exist.",
+    "placeholders": [
+      "COST_MINOR",
+      "MODEL",
+      "RUN",
+      "RUN_ID"
+    ]
+  },
+  "video-generation": {
+    "argv": [
+      "python3",
+      "scripts/core/kie_dispatch/kie_dispatch.py",
+      "dispatch",
+      "--model",
+      "{MODEL}",
+      "--request",
+      "{RUN}/generation/req.json",
+      "--prompt-file",
+      "{RUN}/generation/req.prompt.txt",
+      "--save-dir",
+      "{RUN}/generation",
+      "--ledger",
+      "{RUN}/spend.sqlite3",
+      "--run-id",
+      "{RUN_ID}",
+      "--logical-key",
+      "video",
+      "--attempt-id",
+      "",
+      "--cost",
+      "{COST_MINOR}"
+    ],
+    "produces": "Per-shot video clips on reserved KIE attempts (model id from `video_router`). The lip-sync windows keep THIS row verbatim on the Agnes path too. MiniMax H3 (`minimax-h3/*`) refuses a hand-written prompt: build its request with `python3 scripts/core/prompt_templates/make_h3_request.py --spec <spec.json> --characters <chars.json> --first-frame-url <https url> --out \"$RUN/generation/video-req/shot-NN.json\" [--card-receipt ...] [--storyboard-plan ...] [--storyboard-review ...]`, which assembles through `prompt_templates.assemble_h3`, measures the model's own band (5,000-6,800 of a 7,000 cap) and attaches the matching `prompt_receipt`; never substitute another model to get a prompt through.",
+    "placeholders": [
+      "COST_MINOR",
+      "MODEL",
+      "RUN",
+      "RUN_ID"
+    ]
+  },
+  "agnes-keyframes": {
+    "argv": [
+      "python3",
+      "scripts/core/agnes_dispatch/agnes_dispatch.py",
+      "image",
+      "--request",
+      "{RUN}/generation/req.json",
+      "--prompt-file",
+      "{RUN}/generation/req.prompt.txt",
+      "--save-dir",
+      "{RUN}/generation",
+      "--ledger",
+      "{RUN}/spend.sqlite3",
+      "--run-id",
+      "{RUN_ID}",
+      "--logical-key",
+      "keyframes",
+      "--attempt-id",
+      "",
+      "--aspect-ratio",
+      "9:16",
+      "--run-dir",
+      "{RUN}",
+      "--stage",
+      "image-keyframes"
+    ],
+    "produces": "Agnes path only (`agnes.answer == \"yes\"`): the same keyframes from Agnes Image 2.5 Flash at 2K, no words in the picture (`onscreen_text.no_text_block()` in the prompt, bake or overlay per `onscreen_text.decide`), one spend_ledger row at cost 0 plus one quota row. Replaces the `image-keyframes` row; every other row is untouched.",
+    "placeholders": [
+      "RUN",
+      "RUN_ID"
+    ]
+  },
+  "agnes-video-segment": {
+    "argv": [
+      "python3",
+      "scripts/core/agnes_dispatch/agnes_dispatch.py",
+      "video",
+      "--request",
+      "{RUN}/generation/segments/segment-{SEGMENT}-req.json",
+      "--save-dir",
+      "{RUN}/generation/segments/segment-{SEGMENT}",
+      "--ledger",
+      "{RUN}/spend.sqlite3",
+      "--run-id",
+      "{RUN_ID}",
+      "--logical-key",
+      "video-segment-{SEGMENT}",
+      "--attempt-id",
+      "",
+      "--seconds",
+      "10",
+      "--poll-s",
+      "15",
+      "--pool-dir",
+      "{RUN}/control/agnes-pool",
+      "--run-dir",
+      "{RUN}",
+      "--stage",
+      "video-generation"
+    ],
+    "produces": "Agnes path only: ONE fixed 10-second clip for segment `<segment>` (`segments = ceil(delivered / 10)`), run as a background job with at most 2 in flight, polling no faster than every 15 seconds, cost 0. `next` hands out one segment at a time and answers `waiting` (`agnes-video-running`, or `agnes-quota-next-day` until the next 00:00 UTC reset) while they run. Lip-sync windows never use this row: they keep `video-generation`.",
+    "placeholders": [
+      "RUN",
+      "RUN_ID",
+      "SEGMENT"
+    ]
+  },
+  "qc-retakes": {
+    "argv": [
+      "python3",
+      "scripts/core/retake_manager/retake_manager.py",
+      "--request",
+      "{RUN}/qc/retake-request.json"
+    ],
+    "produces": "Targeted retake plan naming only failed units, capped at 2 attempts per unit.",
+    "placeholders": [
+      "RUN"
+    ]
+  },
+  "assembly": {
+    "argv": [
+      "python3",
+      "scripts/core/final_assembler/assembler.py",
+      "{RUN}/edit/timeline.json",
+      "{RUN}/edit/ad.mp4"
+    ],
+    "produces": "Frame-exact ffmpeg master render of `blackceo.timeline/v1`.",
+    "placeholders": [
+      "RUN"
+    ]
+  },
+  "clips": {
+    "argv": [
+      "python3",
+      "scripts/core/clip_cutdown/clip_cutdown.py",
+      "{RUN}/edit/timeline.json",
+      "--length",
+      "{LENGTH_S}",
+      "--master",
+      "{RUN}/edit/ad.mp4",
+      "--outdir",
+      "{RUN}/edit/clips"
+    ],
+    "produces": "3, 5 and 10 minute ads only: the 60-second and 90-second clips cut from the master on whole lines, hook placement kept (FFmpeg only, no spend). Prints `[]` for 60/90 s.",
+    "placeholders": [
+      "LENGTH_S",
+      "RUN"
+    ]
+  },
+  "lip-sync": {
+    "argv": [
+      "python3",
+      "-m",
+      "lip_sync",
+      "run",
+      "--run-dir",
+      "{RUN}"
+    ],
+    "produces": "Lip-sync windows only, after the `clips` row: the whole lip-sync chain in one command for every approved shot that carries `lip_sync_line_ids` - the measured picture gate and its sha256-bound upload, the own-line cut from the ONE vocal stem the music stage already separated (`music/vocal-stem.mp3`), the stem uploaded under its own receipt, the paid `kling/ai-avatar-standard` job through `kie_dispatch`, then `lip_gate.run_gate` (the 2-try rule, the attempt ceiling, `load_governor.kie_request`). Writes one evidence row and one dispatch receipt per clip under `$RUN/control/lip-sync/`; `final_assembler`'s `check_plan` reads the receipt each row's `artifact.provenance.receipt_path` names and REFUSES when the command was never run. This row is a module invocation: run it from `scripts/core` (or with `scripts/core` on `PYTHONPATH`). The lip-sync windows keep the plain `video-generation` row for everything that is not a mouth: nothing here re-plans clips.",
+    "placeholders": [
+      "RUN"
+    ]
+  },
+  "trailers": {
+    "argv": [
+      "python3",
+      "scripts/core/clip_cutdown/clip_cutdown.py",
+      "{RUN}/edit/timeline.json",
+      "--length",
+      "{LENGTH_S}",
+      "--master",
+      "{RUN}/edit/ad.mp4",
+      "--outdir",
+      "{RUN}/edit/clips"
+    ],
+    "produces": "Campaign runs only (`method.json` purpose `campaign`): `next` presents THIS row as the `clips` stage in front of `delivery`, and keeps presenting it until `$RUN/edit/clips` holds its cut files. Same `clip_cutdown.py` command as `clips`, read one way more: on a method campaign timeline `clip_cutdown.plan_clips` returns `trailer.plan_trailers` + `ad_clip.plan_ad_clips`, so the run gets two 60/90 s trailers (episode destination, \"watch the full episode\" end card) and two ad clips (offer destination), each recording its own source in/out and destination. Never a second command: one call makes both.",
+    "placeholders": [
+      "LENGTH_S",
+      "RUN"
+    ]
+  },
+  "final-qc": {
+    "argv": [
+      "python3",
+      "scripts/core/qc_gate.py",
+      "evaluate",
+      "--run",
+      "{RUN_ID}",
+      "--stage",
+      "final-qc",
+      "--records",
+      "{RUN}/qc/records.json",
+      "--makers",
+      "{RUN}/qc/makers.json",
+      "--required",
+      "{REQUIRED_CHECKS}"
+    ],
+    "produces": "Approved final-QC verdict records on the rendered master (independent reviewer, UNAVAILABLE never passes).",
+    "placeholders": [
+      "REQUIRED_CHECKS",
+      "RUN",
+      "RUN_ID"
+    ]
+  },
+  "delivery": {
+    "argv": [
+      "python3",
+      "-m",
+      "delivery_package",
+      "package",
+      "--run-dir",
+      "{RUN}"
+    ],
+    "produces": "Packages the run into `$RUN/delivery` through the run's own resolved obligations (the twelve numbered items, or eleven when the chosen length owes no clips) and prints one JSON envelope (`ok`, `items`, `missing`, `problems`); exit 0 only when `contract.verify_folder` opens every owed file. This row is a module invocation: run it from `scripts/core` (or with `scripts/core` on `PYTHONPATH`). A missing packaging input is refused by STAGE (`music/word-timings.json` and the two stems -> the music stage, `edit/timeline.json` -> the edit stage). Then the delivery gate record: `python3 scripts/core/qc_gate.py evaluate --run \"$RUN_ID\" --stage delivery --records \"$RUN/qc/records.json\" --makers \"$RUN/qc/makers.json\" --required <required-checks>`; board event follows via `cc_sync` (import-only).",
+    "placeholders": [
+      "RUN"
+    ]
+  },
+  "platform-fit": {
+    "argv": [
+      "python3",
+      "-c",
+      "import json,sys; sys.path.insert(0,'scripts/core'); from platform_fit import platform_fit as pf; print(json.dumps(pf.check(pf.probe_file('<delivered-file>'), '<placement>'), indent=2, sort_keys=True))"
+    ],
+    "produces": "Paid and social runs only (`method.json` purpose `paid_ad` or `short_post`), and `next` carries this command on the `delivery` presentation so it runs before the delivery gate. One verdict for the delivered file against the researched spec row: `PASS`, `FLAG`, `UNDETERMINED` or `NOT_AVAILABLE`, with the row's source URL and read date. A row past its re-verify window answers `STALE_SPEC`, which is a FLAG naming the URL to re-read and never a PASS; nothing here is a second copy of the spec table (`platform_fit/platform-specs.json` is the one).",
+    "placeholders": []
+  }
+}

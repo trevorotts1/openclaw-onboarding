@@ -30,12 +30,12 @@ figures out who handles it and routes it for you.
 
 Reach for this department when you want any of the following:
 
-- Backup & Recovery Specialist for the company, the guardian of the OpenClaw AI workforce platform's data.
+- Backup & Recovery Specialist for the company.
 - Cost / Model Optimizer Specialist for the company, the AI workforce's economic efficiency officer.
-- Disaster Recovery Specialist for the company, the architect of organizational resilience for the OpenClaw AI.
+- Disaster Recovery Specialist for the company.
 - You own the connective tissue between the OpenClaw AI workforce and the outside world.
 - Memory Hygiene Specialist for the company, the keeper of the OpenClaw AI workforce's collective knowledge.
-- Monitoring & Observability Specialist for the company, the architect and operator of the sensory.
+- Monitoring & Observability Specialist for the company.
 
 If you are not sure whether a request belongs here, ask anyway. The department
 head will either take it or hand it to the right department. You never have to
@@ -72,104 +72,88 @@ and it will pick the right one, or you can ask for a specialist by name.
 
 | Specialist | What it is for |
 | --- | --- |
-| **Backup And Recovery Specialist** | Backup & Recovery Specialist for the company, the guardian of the OpenClaw AI workforce platform's data integrity. |
+| **Backup And Recovery Specialist** | Backup & Recovery Specialist for the company. |
 | **Cost Model Optimizer Specialist** | Cost / Model Optimizer Specialist for the company, the AI workforce's economic efficiency officer. |
-| **Disaster Recovery Specialist** | Disaster Recovery Specialist for the company, the architect of organizational resilience for the OpenClaw AI workforce. |
+| **Disaster Recovery Specialist** | Disaster Recovery Specialist for the company. |
 | **Integration MCP Specialist** | You own the connective tissue between the OpenClaw AI workforce and the outside world. |
 | **Memory Hygiene Specialist** | Memory Hygiene Specialist for the company, the keeper of the OpenClaw AI workforce's collective knowledge. |
-| **Monitoring Observability Specialist** | Monitoring & Observability Specialist for the company, the architect and operator of the sensory infrastructure. |
+| **Monitoring Observability Specialist** | Monitoring & Observability Specialist for the company. |
 | **Performance Tuning Specialist** | Performance Tuning Specialist for the company, the optimizer of the OpenClaw AI workforce platform's speed, efficiency. |
-| **Security And Secrets Specialist** | Security & Secrets Specialist for the company, the guardian of the OpenClaw AI workforce platform's security posture. |
+| **Security And Secrets Specialist** | Security & Secrets Specialist for the company. |
 | **Skill Update And Patch Specialist** | You own the lifecycle of every skill, capability, and behavioral patch deployed across the OpenClaw AI workforce. |
 | **System Health Uptime Specialist** | System Health & Uptime Specialist for the company, the first line of defense for the OpenClaw AI workforce platform. |
 | **Token Manager Furnace Watch Specialist** | Token Manager / Furnace Watch Specialist for the company, the primary budget defender of the OpenClaw AI workforce. |
 | **Uptime Connectivity Watchdog Specialist** | Uptime / Connectivity Watchdog Specialist for the company, the guardian of the box's connection to the world. |
 | **Version And Upgrade Manager Specialist** | OpenClaw Version & Upgrade Manager Specialist for the company, the guardian of the platform's upgrade lifecycle. |
-| **Furnace Watch Mandate Phase2** | Layer that exists **before** the spend cap is hit. |
-| **Platform Specific Guardrails For Uptime Watchdog** | Engineer who answers one question, per platform, in writing. |
+| **Furnace Watch Mandate Phase2** | Layer that exists **before** the spend cap is hit: you watch the burn curve across every running agent. |
+| **Platform Specific Guardrails For Uptime Watchdog** | Engineer who answers one question, per platform. |
 | **Rescue Rangers Escalation Lead Phase2** | For - the top of the escalation chain that keeps every client's workforce running. |
 
-### What each specialist is for, with an example request
+### What each specialist is for
 
 **Backup And Recovery Specialist**
 
-- *What it is for:* Backup & Recovery Specialist for the company, the guardian of the OpenClaw AI workforce platform's data integrity.
-- *Example request:* "Have the Backup And Recovery Specialist take this on: Backup & Recovery Specialist for the company, the guardian of the OpenClaw AI workforce."
+- *What it is for:* Backup & Recovery Specialist for the company.
 
 **Cost Model Optimizer Specialist**
 
 - *What it is for:* Cost / Model Optimizer Specialist for the company, the AI workforce's economic efficiency officer.
-- *Example request:* "Have the Cost Model Optimizer Specialist take this on: Cost / Model Optimizer Specialist for the company."
 
 **Disaster Recovery Specialist**
 
-- *What it is for:* Disaster Recovery Specialist for the company, the architect of organizational resilience for the OpenClaw AI workforce.
-- *Example request:* "Have the Disaster Recovery Specialist take this on: Disaster Recovery Specialist for the company, the architect of organizational resilience."
+- *What it is for:* Disaster Recovery Specialist for the company.
 
 **Integration MCP Specialist**
 
 - *What it is for:* You own the connective tissue between the OpenClaw AI workforce and the outside world.
-- *Example request:* "Have the Integration MCP Specialist take this on: You own the connective tissue between the OpenClaw AI workforce and the outside world."
 
 **Memory Hygiene Specialist**
 
 - *What it is for:* Memory Hygiene Specialist for the company, the keeper of the OpenClaw AI workforce's collective knowledge.
-- *Example request:* "Have the Memory Hygiene Specialist take this on: Memory Hygiene Specialist for the company, the keeper of the OpenClaw AI workforce's."
 
 **Monitoring Observability Specialist**
 
-- *What it is for:* Monitoring & Observability Specialist for the company, the architect and operator of the sensory infrastructure.
-- *Example request:* "Have the Monitoring Observability Specialist take this on: Monitoring & Observability Specialist for the company."
+- *What it is for:* Monitoring & Observability Specialist for the company.
 
 **Performance Tuning Specialist**
 
 - *What it is for:* Performance Tuning Specialist for the company, the optimizer of the OpenClaw AI workforce platform's speed, efficiency.
-- *Example request:* "Have the Performance Tuning Specialist take this on: Performance Tuning Specialist for the company."
 
 **Security And Secrets Specialist**
 
-- *What it is for:* Security & Secrets Specialist for the company, the guardian of the OpenClaw AI workforce platform's security posture.
-- *Example request:* "Have the Security And Secrets Specialist take this on: Security & Secrets Specialist for the company."
+- *What it is for:* Security & Secrets Specialist for the company.
 
 **Skill Update And Patch Specialist**
 
 - *What it is for:* You own the lifecycle of every skill, capability, and behavioral patch deployed across the OpenClaw AI workforce.
-- *Example request:* "Have the Skill Update And Patch Specialist take this on: You own the lifecycle of every skill, capability."
 
 **System Health Uptime Specialist**
 
 - *What it is for:* System Health & Uptime Specialist for the company, the first line of defense for the OpenClaw AI workforce platform.
-- *Example request:* "Have the System Health Uptime Specialist take this on: System Health & Uptime Specialist for the company."
 
 **Token Manager Furnace Watch Specialist**
 
 - *What it is for:* Token Manager / Furnace Watch Specialist for the company, the primary budget defender of the OpenClaw AI workforce.
-- *Example request:* "Have the Token Manager Furnace Watch Specialist take this on: Token Manager / Furnace Watch Specialist for the company."
 
 **Uptime Connectivity Watchdog Specialist**
 
 - *What it is for:* Uptime / Connectivity Watchdog Specialist for the company, the guardian of the box's connection to the world.
-- *Example request:* "Have the Uptime Connectivity Watchdog Specialist take this on: Uptime / Connectivity Watchdog Specialist for the company."
 
 **Version And Upgrade Manager Specialist**
 
 - *What it is for:* OpenClaw Version & Upgrade Manager Specialist for the company, the guardian of the platform's upgrade lifecycle.
-- *Example request:* "Have the Version And Upgrade Manager Specialist take this on: OpenClaw Version & Upgrade Manager Specialist for the company."
 
 **Furnace Watch Mandate Phase2**
 
-- *What it is for:* Layer that exists **before** the spend cap is hit.
-- *Example request:* "Have the Furnace Watch Mandate Phase2 take this on: Layer that exists **before** the spend cap is hit."
+- *What it is for:* Layer that exists **before** the spend cap is hit: you watch the burn curve across every running agent.
 
 **Platform Specific Guardrails For Uptime Watchdog**
 
-- *What it is for:* Engineer who answers one question, per platform, in writing.
-- *Example request:* "Have the Platform Specific Guardrails For Uptime Watchdog take this on: Engineer who answers one question, per platform, in writing."
+- *What it is for:* Engineer who answers one question, per platform.
 
 **Rescue Rangers Escalation Lead Phase2**
 
 - *What it is for:* For - the top of the escalation chain that keeps every client's workforce running.
-- *Example request:* "Have the Rescue Rangers Escalation Lead Phase2 take this on: For - the top of the escalation chain that keeps every client's workforce running."
 
 
 ---

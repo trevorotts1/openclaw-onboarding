@@ -35,6 +35,7 @@ Run: python3 core/audio_c3/test_soundtrack_f1.py
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 
 try:  # package import (audio_c3.soundtrack) and flat script import both work
@@ -73,7 +74,18 @@ AUDIO_C3_SPOKEN_ROUTING = (
 _DEFAULTS = {"route": "ai-music-api/generate",
              "endpoint": "/api/v1/jobs/createTask",
              "version": "V6"}
-CALLBACK_URL = "https://example.invalid/cb"
+
+
+def _callback_from_env():
+    """The callback address to send, or None (KIE_CALLBACK_URL is the source).
+
+    Skill 68's music reference (references/music.md, section 1) lists the
+    CURRENT createTask song request's required input as ``custom_mode``,
+    ``instrumental`` and ``model`` only: no callback address is required, so
+    with ``KIE_CALLBACK_URL`` unset the request carries no ``callBackUrl`` and
+    the run polls the task. No placeholder is invented.
+    """
+    return (os.environ.get("KIE_CALLBACK_URL") or "").strip() or None
 
 
 def _loud(kind, code, detail):
@@ -88,10 +100,23 @@ def _loud(kind, code, detail):
     getattr(loud_failure, kind)(code, detail)
 
 
+def _audio_catalog():
+    """The 68 work copy, located by ``prompt_limits.find_catalogs`` (one locator)."""
+    import sys as _sys
+    core = Path(__file__).resolve().parents[1]          # audio_c3 -> core
+    if str(core) not in _sys.path:
+        _sys.path.insert(0, str(core))
+    import prompt_limits
+    return prompt_limits.find_catalogs()[0]
+
+
 def _workcopy():
     """(route, version) for suno-generate from the repo's work copy, or None."""
-    root = Path(__file__).resolve().parents[4]
-    doc = root / "68-kie-audio" / "models.json"
+    doc = _audio_catalog()
+    if doc is None:
+        _loud("warn", "SUNO_ROUTE_UNREADABLE", "68-kie-audio/models.json not found")
+        return None
+    doc = Path(doc)
     try:
         entries = json.loads(doc.read_text(encoding="utf-8")).get("entries", [])
         for e in entries:
@@ -162,11 +187,15 @@ def generate_soundtrack_request(package):
     request = {
         "endpoint": _DEFAULTS["endpoint"],
         "model": picked[0],
-        "callBackUrl": CALLBACK_URL,
         "input": {"custom_mode": True, "instrumental": False,
                   "model": picked[1], "style": package["style_text"],
                   "title": package["title"], "lyrics": lyrics},
     }
+    # U-M01: no callback address is required by the CURRENT createTask song
+    # request, and none is invented -- the address rides only when one exists.
+    cb = _callback_from_env()
+    if cb:
+        request["callBackUrl"] = cb
     if package.get("vocal_gender") is not None:
         request["input"]["vocal_gender"] = package["vocal_gender"]
     if package.get("duration") is not None:

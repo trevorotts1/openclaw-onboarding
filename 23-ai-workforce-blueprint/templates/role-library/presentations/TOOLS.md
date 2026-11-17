@@ -26,9 +26,9 @@ truncation-event counter at
 `working/checkpoints/read_slice_truncations.json`. A sliced build keeps that
 counter at **0** — that is the FIX-19 QC gate.
 
-The `--next` phase turn-gate emits each `sop_ref` with a `read_slice_hint`
-(and marks `sliced_read_required: true` when the SOP exceeds the guard budget),
-so follow the hint the runner gives you rather than doing a whole-file read.
+Each phase's manifest row names the `sop_refs` that phase reads, so use
+`read_slice.py --index` then `--lines A-B` for anything over ~32KB rather than
+doing a whole-file read.
 
 ---
 
@@ -43,9 +43,9 @@ bash <SCRIPTS_DIR>/presentation-canonical-entry.sh \
 ```
 
 `build_deck.py` is NEVER invoked directly. `presentation-canonical-entry.sh` is the
-ONE sanctioned command; it runs the deps/bypass/version/interview gates and then
-dispatches the canonical orchestrator (`run_signature_deck.py` → `build_deck.py`).
-A direct `build_deck.py` or `working/*.py` call is blocked by the front-door guard
+ONE sanctioned command; it runs seven fail-closed gates and then starts the presentation
+engine (`presentation_job.py`), which walks every manifest phase in order. A direct
+`build_deck.py` or `working/*.py` call is blocked by the front-door guard
 (AF-CANONICAL-RENDER-BYPASS).
 
 `presentation-canonical-entry.sh`, `build_deck.py`, `run_signature_deck.py`,
@@ -58,11 +58,11 @@ The scripts directory defaults to the materialized department's `scripts/` folde
 **Your job is NOT just `slides.json`.** `slides.json` is the Layer-A structure ledger; the
 render also requires the hand-authored rich per-slide prompt files
 (`working/prompts/slide-NN.txt`, sized to the prompt budget of the pinned model (rule 12 of `07-kie-setup/references/kie-common-rules.md`: target 95 to 100 percent of the model maximum, hard floor 80 percent), read with `kie_live_adapter.py prompt-budget --check`; the renderer gate enforces rule 12 through the shared enforcer shared-utils/kie_prompt_enforcer.py, so write to the enforcer's floor and target for the pin) and every other upstream Layer-A artifact the manifest
-requires before the render preflight will pass. The full two-layer procedure — walk
-`run_signature_deck.py --next` phase by phase, THEN dispatch the canonical entry command
-above — is in `BUILDER-PROMPT.md`; read it first on every deck task. Treat the mechanics
-summary below as reference for what the render step itself does at P4-RENDER, not as a
-shortcut past Layer A.
+requires before the render preflight will pass. The full two-layer procedure — produce each
+phase's artifact when the engine writes its work order, THEN let the engine reach the
+canonical render phase — is in `BUILDER-PROMPT.md`; read it first on every deck task. Treat
+the mechanics summary below as reference for what the render step itself does at
+P4-RENDER, not as a shortcut past Layer A.
 
 **FORBIDDEN (any one = immediate FAIL at QC, AF-I14):**
 - The native `image_generate` tool, or any other image-generating tool, for a deck slide.
@@ -104,10 +104,12 @@ model is re-oriented, not silently re-run.
 ## What the canonical pipeline does (so you don't have to)
 
 You hand `slides.json`, the pre-authored `working/prompts/slide-NN.txt` rich prompts, and
-an output path to `presentation-canonical-entry.sh`. It runs three fail-closed gates
-(deps / bypass-scan / version-hash-pin) and then dispatches `run_signature_deck.py` →
-`build_deck.py`, which does EVERYTHING else, deterministically, with zero AI judgement at
-runtime:
+an output path to `presentation-canonical-entry.sh`. It runs seven fail-closed gates
+(intake ledger, intake trace, drift, deps, the Skill-48 GHL module co-location, the
+bypass-scan, and the version-hash pin) and then starts the presentation engine
+(`presentation_job.py`), which walks every phase of the manifest in order and, for the
+render phase `P4-RENDER`, dispatches `build_deck.py` — the render is deterministic, with
+zero AI judgement at runtime:
 
 1. Validates `slides.json` (fails loud on bad JSON / missing fields / non-unique ordinals)
    AND preflights the full Layer-A artifact set — including the rich prompt files.
@@ -170,11 +172,17 @@ deck run directory: the render guard (`canonical_render_guard.py`) blocks any `*
 that mentions `createTask`, `recordInfo` or `api.kie.ai` (`AF-CANONICAL-RENDER-BYPASS`).
 
 **Exit codes (the contract you act on):**
-- `0` — every slide rendered and the `.pptx` was written. `outputPath` is your deliverable.
-- `1` — one or more slides failed (NO `.pptx` written), or assembly failed.
-  Read `failures`. Fix `slides.json` if it was a content problem and re-run; otherwise
-  report the failure. NEVER substitute an image.
-- `2` — fatal config error (no `KIE_API_KEY`, bad `slides.json`, `python-pptx` missing).
+- `0` — the engine finished every phase and the bundle gate passed.
+- `2` — usage error, or no working Python interpreter.
+- `3` — a slide failed to render. `4` — the image account has no credit.
+- `5` — an intake gate or the bypass scan refused the build.
+- `6` — a required tool is missing on this box.
+- `7` — the renderer does not match the pinned version.
+- `8` — the GoHighLevel media module cannot be loaded.
+- `9` — the engine refused the job, or is not installed.
+- `10` — legacy runner only, owner-approved: NOT a full deliverable build.
+- `12` — started 3 times in 6 hours without finishing; use `--resume`.
+On any non-zero code: read the message, fix what it names, run the same command again. Never substitute an image. Never write your own build script.
 
 **API key:** the script reads `KIE_API_KEY` itself, from env or the client's own env stores
 (`~/.openclaw/workspace/.env`, `~/clawd/secrets/.env`, `~/.openclaw/secrets/.env`). It is
@@ -215,7 +223,7 @@ URL is downloaded to a local PNG in the run directory first). The render stays t
 `assemble_pptx` places the exact PNG on every slide at assembly time (top-right, ~13% of slide
 width, 0.25 inch margin). The URL image-to-image mode (`build_deck.py --logo <https URL>`, the logo
 riding `input_urls`) exists in the renderer but is not forwarded by the entry or the runner, so it
-is not available to a department agent until lane D plumbs it; never hand-run `build_deck.py` to
+is not available to a department agent; never hand-run `build_deck.py` to
 reach it (AF-CANONICAL-RENDER-BYPASS). You never pass logo image files into `slides.json` — its `logo` field is a TEXT wordmark only, and there is
 no per-slide `mode` choice for a deck build. (The separate `kie_generate.py` helper runs
 standalone i2i jobs for the full webinar pipeline per SOP-IMG-01, but it is OUT OF SCOPE
@@ -236,3 +244,101 @@ The task message always contains an `ARTIFACT_DIR` line. Use that exact path. Pa
 `<ARTIFACT_DIR>/presentation.pptx` to `presentation-canonical-entry.sh` as `--out`; the renderer writes
 the renders under `<ARTIFACT_DIR>/presentation/renders/` (or the `renders_dir` you pass).
 `mkdir -p $ARTIFACT_DIR` first if it does not exist.
+
+---
+
+## Developer rules moved out of the client guide (PD-022)
+
+These sections were appended to the owner-facing
+`how-to-use-this-department.md` by the guide generator. They are build rules for
+this department, not something a client reads, so they live here now and the
+generator no longer appends them to the guide.
+
+---
+
+## Canonical Entry Command (the only way to build a deck)
+
+A deck is built by running, and ONLY by running, the single sanctioned \
+entry script:
+
+```
+23-ai-workforce-blueprint/scripts/presentation-canonical-entry.sh \
+  --run-dir <RUN_DIR> --slides slides.json --out <OUT>.pptx
+```
+
+That entry script runs seven fail-closed gates before starting the presentation engine
+(`presentation_job.py`), which walks every phase of the pipeline manifest in order and
+refuses to skip. For a phase a person or an AI role must author, the engine writes a work
+order to `working/work-orders/<phase>.json` and waits for the product; the role produces
+exactly that product and nothing else. `run_signature_deck.py` is used only on a box where
+the engine is not installed, and that is not a full build.
+
+1. **Intake-ledger check** - the interview ledger must exist and be complete.
+2. **Intake-trace check** - intake must be a real conversation, with no owner override.
+3. **Drift gates** - warning-only: drift is reported and the build continues.
+4. **Deps check** - all required runtime dependencies are present.
+5. **Skill-48 GHL module co-location** - the `ghl_media` module must be importable.
+6. **Bypass-scan** - refuses to start if any hand-rolled renderer or assembler exists in the run directory. Specifically: any non-canonical `*.py` defining a 2048x1152 `Image.new` slide canvas (AF-LOCAL-CANVAS), a native `add_textbox`/`add_text_box` overlay (AF-CANONICAL-RENDER-BYPASS), or a direct kie `createTask` call outside `build_deck.py` (AF-CANONICAL-RENDER-BYPASS).
+7. **Version/hash pin** - the deployed renderer must be in lockstep with the SOP/manifest stack and match the pinned governed head.
+
+**`python3 working/*.py` (writing and running your own per-deck \
+driver/submit/assemble scripts) is the ungoverned path and is FORBIDDEN \
+(AF-CANONICAL-RENDER-BYPASS).**
+
+A gate may be skipped ONLY by an explicit, logged owner/founder approval token \
+recorded in `working/checkpoints/process_manifest.json` \
+(`owner_skip_approval`: `approved:true` + `approved_by` + `reason`, naming \
+the exact gate code). Agents may NEVER skip a gate silently or by their own \
+choice.
+
+---
+
+## AF-CANONICAL-RENDER-BYPASS - No Hand-Rolled Renderer (AUTO-FAIL)
+
+All image generation MUST route through the canonical module \
+`build_deck.py`. A hand-rolled per-deck assembler or renderer is FORBIDDEN. \
+Specifically, the presence of `add_textbox` / `add_text_box` calls or a \
+direct kie `createTask` call outside `build_deck.py` in any run-directory \
+`*.py` file triggers AF-CANONICAL-RENDER-BYPASS. This auto-fail also fires \
+when the entry check detects an attempt to bypass the sanctioned entry script.
+
+---
+
+## AF-LOCAL-CANVAS - No Local Canvas Fabrication (AUTO-FAIL)
+
+A slide image MUST be generated via kie.ai GPT Image 2.6 Sunburst. A slide image \
+fabricated locally (e.g. `canvas = Image.new('RGB', (2048, 1152), ...)`) \
+is FORBIDDEN. The presence of a 2048x1152 `Image.new` call in any \
+run-directory `*.py` file triggers AF-LOCAL-CANVAS.
+
+---
+
+## AF-IMAGE-QC-VISION - Real Pixel Image QC Required (AUTO-FAIL)
+
+The image-QC pass is NOT satisfied by a JSON score alone. The QC report at \
+`working/qc/image_qc_report.json` MUST declare a `vision_model` (the AI \
+model that performed the pixel/vision read) and a `slides` list with at \
+least one per-slide entry containing `baked: true`. A QC report that lacks \
+the `vision_model` field or an empty `slides` list triggers \
+AF-IMAGE-QC-VISION.
+
+---
+
+## AF-DARK-SLIDE - No Dark Slides (AUTO-FAIL)
+
+Slides MUST use LIGHT / bright backgrounds by DEFAULT. DARK or \
+black-background slides are NOT ALLOWED unless the CLIENT EXPLICITLY requests \
+a dark theme via the intake flag `client_dark_theme: true`. Light is the \
+default; dark is opt-in by client request only.
+
+- DEFAULT: Light / bright background slides
+- ALLOWED dark: Only when `client_dark_theme: true` is set in \
+working/copy/intake.json
+- AUTO-FAIL: Any dark/black/near-black default background without \
+`client_dark_theme: true`
+
+**To enable a dark theme:** during onboarding, explicitly tell the Director \
+of Presentations you want dark slides. The Director will record \
+`client_dark_theme: true` in your intake.json. Without this explicit request, \
+all slides default to light/bright backgrounds and any dark background \
+specification is an AUTO-FAIL blocked by the build pipeline.

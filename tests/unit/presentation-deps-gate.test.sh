@@ -339,11 +339,11 @@ FAKERUNNER
 # Functional: bypass-scan TRIPS (exit 5) on a hand-rolled renderer in the run dir.
 SCAN_RUN="$TMPDIR_TEST/scan-run"
 mkdir -p "$SCAN_RUN/working/checkpoints"
-# FIX-PRES-01: the entry's GATE 1 honors QC_SKIP_PRESENTATION_DEPS=1 ONLY in a
-# test context — a `.test-context` marker file the harness drops in the run dir.
-# Drop it so these functional tests can reach GATE 2 (bypass-scan) on a runner
-# that lacks the four presentation deps (soffice/pdftoppm/reportlab/python-pptx).
-touch "$SCAN_RUN/working/checkpoints/.test-context"
+# PD-201b: the entry's GATE 1 honors QC_SKIP_PRESENTATION_DEPS=1 ONLY when the
+# ENVIRONMENT test seam is set (PRESENTATION_ALLOW_DEGRADED_VERIFIERS=1 / CI /
+# OPENCLAW_TEST) — the old `.test-context` marker FILE is gone. Setting it lets
+# these functional tests reach GATE 2 (bypass-scan) on a runner that lacks the
+# four presentation deps (soffice/pdftoppm/reportlab/python-pptx).
 write_complete_ledger "$SCAN_RUN"
 echo '[{"slide":1,"scene":"x","copy":["hi"]}]' > "$SCAN_RUN/slides.json"
 cat > "$SCAN_RUN/working/phase6_assemble.py" <<'PYBAD'
@@ -353,7 +353,7 @@ def hook():
     slide.shapes.add_text_box(1, 1, 1, 1)
 PYBAD
 ENTRY_RC=0
-QC_SKIP_PRESENTATION_DEPS=1 bash "$ENTRY" --run-dir "$SCAN_RUN" --scripts-dir "$FAKE_SCRIPTS" \
+QC_SKIP_PRESENTATION_DEPS=1 PRESENTATION_ALLOW_DEGRADED_VERIFIERS=1 bash "$ENTRY" --run-dir "$SCAN_RUN" --scripts-dir "$FAKE_SCRIPTS" \
     --slides "$SCAN_RUN/slides.json" --out "$SCAN_RUN/out.pptx" \
     > "$TMPDIR_TEST/scan-trip.log" 2>&1 || ENTRY_RC=$?
 if [ "$ENTRY_RC" -eq 5 ]; then
@@ -374,7 +374,7 @@ cat > "$SCAN_RUN/working/checkpoints/process_manifest.json" <<'PMOK'
 ]}
 PMOK
 ENTRY_RC=0
-QC_SKIP_PRESENTATION_DEPS=1 bash "$ENTRY" --run-dir "$SCAN_RUN" --scripts-dir "$FAKE_SCRIPTS" \
+QC_SKIP_PRESENTATION_DEPS=1 PRESENTATION_ALLOW_DEGRADED_VERIFIERS=1 bash "$ENTRY" --run-dir "$SCAN_RUN" --scripts-dir "$FAKE_SCRIPTS" \
     --slides "$SCAN_RUN/slides.json" --out "$SCAN_RUN/out.pptx" \
     > "$TMPDIR_TEST/scan-waived.log" 2>&1 || ENTRY_RC=$?
 if [ "$ENTRY_RC" -ne 5 ] && grep -q "OWNER-APPROVED" "$TMPDIR_TEST/scan-waived.log"; then
@@ -387,12 +387,10 @@ fi
 # Functional: a CLEAN run dir does NOT trip the scan (exit code is not 5).
 CLEAN_RUN="$TMPDIR_TEST/clean-run"
 mkdir -p "$CLEAN_RUN/working/checkpoints"
-# FIX-PRES-01: test-context marker so GATE 1 honors the deps-skip on a dep-less runner.
-touch "$CLEAN_RUN/working/checkpoints/.test-context"
 write_complete_ledger "$CLEAN_RUN"
 echo '[{"slide":1,"scene":"x","copy":["hi"]}]' > "$CLEAN_RUN/slides.json"
 ENTRY_RC=0
-QC_SKIP_PRESENTATION_DEPS=1 bash "$ENTRY" --run-dir "$CLEAN_RUN" --scripts-dir "$FAKE_SCRIPTS" \
+QC_SKIP_PRESENTATION_DEPS=1 PRESENTATION_ALLOW_DEGRADED_VERIFIERS=1 bash "$ENTRY" --run-dir "$CLEAN_RUN" --scripts-dir "$FAKE_SCRIPTS" \
     --slides "$CLEAN_RUN/slides.json" --out "$CLEAN_RUN/out.pptx" \
     > "$TMPDIR_TEST/clean-scan.log" 2>&1 || ENTRY_RC=$?
 if [ "$ENTRY_RC" -ne 5 ] && grep -q "no hand-rolled renderer" "$TMPDIR_TEST/clean-scan.log"; then
@@ -421,7 +419,6 @@ assert_entry_has "entry: forces KIE_PROMPT_GATE=presentations default" 'KIE_PROM
 # with a stubbed SCRIPTS_DIR pointing at a fake run_signature_deck.py that dumps env.
 ENV_RUN="$TMPDIR_TEST/env-run"
 mkdir -p "$ENV_RUN/working/checkpoints"
-touch "$ENV_RUN/working/checkpoints/.test-context"
 write_complete_ledger "$ENV_RUN"
 echo '[{"slide":1,"scene":"x","copy":["hi"]}]' > "$ENV_RUN/slides.json"
 # PD-005: this fixture has no presentation_job.py, so the door refuses the legacy
@@ -447,7 +444,7 @@ PMLEGACY
 # self-contained scripts-dir fixture used by every functional entry-script
 # invocation in this file.
 ENTRY_RC=0
-QC_SKIP_PRESENTATION_DEPS=1 SCRIPTS_DIR="$FAKE_SCRIPTS" bash "$ENTRY" --run-dir "$ENV_RUN" \
+QC_SKIP_PRESENTATION_DEPS=1 PRESENTATION_ALLOW_DEGRADED_VERIFIERS=1 SCRIPTS_DIR="$FAKE_SCRIPTS" bash "$ENTRY" --run-dir "$ENV_RUN" \
     --slides "$ENV_RUN/slides.json" --out "$ENV_RUN/out.pptx" \
     > "$TMPDIR_TEST/env-run.log" 2>&1 || ENTRY_RC=$?
 if grep -q "KIE_PROMPT_GATE=presentations" "$TMPDIR_TEST/env-run.log"; then
@@ -459,7 +456,7 @@ fi
 
 # Functional: an explicit caller override is respected (never clobbered).
 ENTRY_RC=0
-QC_SKIP_PRESENTATION_DEPS=1 SCRIPTS_DIR="$FAKE_SCRIPTS" KIE_PROMPT_GATE=off bash "$ENTRY" --run-dir "$ENV_RUN" \
+QC_SKIP_PRESENTATION_DEPS=1 PRESENTATION_ALLOW_DEGRADED_VERIFIERS=1 SCRIPTS_DIR="$FAKE_SCRIPTS" KIE_PROMPT_GATE=off bash "$ENTRY" --run-dir "$ENV_RUN" \
     --slides "$ENV_RUN/slides.json" --out "$ENV_RUN/out.pptx" \
     > "$TMPDIR_TEST/env-run-override.log" 2>&1 || ENTRY_RC=$?
 if grep -q "KIE_PROMPT_GATE=off" "$TMPDIR_TEST/env-run-override.log"; then
@@ -476,7 +473,7 @@ echo "(E) U006 — entry script refuses rather than guessing the scripts directo
 # `case` on captured runtime output, never a search over a file on disk.
 EX_RUN="$TMPDIR_TEST/refuse-run"; mkdir -p "$EX_RUN/working/checkpoints"
 EX_RC=0
-QC_SKIP_PRESENTATION_DEPS=1 bash "$ENTRY" --run-dir "$EX_RUN" \
+QC_SKIP_PRESENTATION_DEPS=1 PRESENTATION_ALLOW_DEGRADED_VERIFIERS=1 bash "$ENTRY" --run-dir "$EX_RUN" \
     --scripts-dir "$TMPDIR_TEST/no-such-scripts-dir" --plan \
     > "$TMPDIR_TEST/refuse.out" 2> "$TMPDIR_TEST/refuse.err" || EX_RC=$?
 [ "$EX_RC" -eq 2 ] \
@@ -488,7 +485,7 @@ case "$(cat "$TMPDIR_TEST/refuse.err")" in
 esac
 # Negative control: a CORRECT --scripts-dir must NOT take the refusal path.
 OK_RC=0
-QC_SKIP_PRESENTATION_DEPS=1 bash "$ENTRY" --run-dir "$EX_RUN" \
+QC_SKIP_PRESENTATION_DEPS=1 PRESENTATION_ALLOW_DEGRADED_VERIFIERS=1 bash "$ENTRY" --run-dir "$EX_RUN" \
     --scripts-dir "$FAKE_SCRIPTS" --plan \
     > "$TMPDIR_TEST/accept.out" 2> "$TMPDIR_TEST/accept.err" || OK_RC=$?
 [ "$OK_RC" -ne 2 ] \

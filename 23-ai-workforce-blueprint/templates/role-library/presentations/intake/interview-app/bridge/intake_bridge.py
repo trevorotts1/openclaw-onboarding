@@ -937,6 +937,24 @@ def validate_operator_contract(contract: dict) -> dict:
         raise ValueError("operator contract delivery_destinations must be a non-empty string or string list")
     if not isinstance(contract.get("answers"), dict):
         raise ValueError("operator contract answers must be an object")
+    # PD-013 pace: the interview depth is a separate axis from run_mode and
+    # must be declared explicitly; a value outside the bank's two modes is a
+    # refusal, never a default.
+    depth = contract.get("interview_depth")
+    if depth is not None and depth not in ("quick", "in_depth"):
+        raise ValueError("operator contract interview_depth must be quick or in_depth")
+    # PD-013/PD-004b: a QUICK run's defaults are only provable through the real
+    # owner message that accepted them. This is transport for a message the
+    # operator already received; it is never synthesized here.
+    acceptance = contract.get("default_acceptance")
+    if acceptance is not None:
+        if not isinstance(acceptance, dict):
+            raise ValueError("operator contract default_acceptance must be an object")
+        for field, limit in (("msg_id", 256), ("chat_id", 256), ("text", 4000)):
+            value = acceptance.get(field)
+            if not isinstance(value, str) or not value.strip() or len(value.strip()) > limit:
+                raise ValueError(
+                    "operator contract default_acceptance %s is invalid" % field)
     return contract
 
 
@@ -970,8 +988,32 @@ def _operator_driver_answers(contract: dict, driver: pathlib.Path) -> dict[str, 
         schema = json.loads(schema_path.read_text(encoding="utf-8"))
         driver_ids = {row["id"] for row in schema.get("questions", [])
                       if isinstance(row, dict) and isinstance(row.get("id"), str)}
+        # The driver answers the bank's projected atomic question set (one
+        # question per answer field), not only the merged turn rows. Use that
+        # same projection so canonical required fields (representation_mix,
+        # goal, deadline, ...) transport instead of being refused as unknown.
+        try:
+            if str(schema_path.parent) not in sys.path:
+                sys.path.insert(0, str(schema_path.parent))
+            import question_sequence as _question_sequence  # noqa: PLC0415
+            driver_ids.update(
+                q["id"] for q in _question_sequence.atomic_questions(schema)
+                if isinstance(q, dict) and isinstance(q.get("id"), str))
+        except Exception:  # noqa: BLE001 -- older bank: top-level ids only
+            pass
     except (OSError, ValueError, TypeError, KeyError) as exc:
         raise RuntimeError(f"canonical intake question schema is unavailable: {exc}") from exc
+    # PD-927: a one-question-per-message bank answers ATOMIC subfield ids, and
+    # the driver resolves --answer against that atomic sequence too. Accept the
+    # same ids here or a caller cannot supply the very turns the turn gate
+    # requires -- the refusal at :1102 was this whitelist being too narrow, not
+    # the gate being too broad. Merged parents stay answerable as well.
+    for row in schema.get("questions", []):
+        if not isinstance(row, dict):
+            continue
+        subfields = row.get("subfields")
+        if isinstance(subfields, dict):
+            driver_ids.update(k for k in subfields if isinstance(k, str))
     # The driver permits this typed merged-turn subfield directly.
     driver_ids.add("pitch_included")
 
@@ -1064,6 +1106,83 @@ def _operator_driver_answer(driver: pathlib.Path, rd: pathlib.Path,
         proc = subprocess.run(argv, text=True, capture_output=True, check=False)
     return proc
 
+def _operator_default_acceptance(driver: pathlib.Path, rd: pathlib.Path,
+                                 owner_msg_id: str) -> subprocess.CompletedProcess:
+    """Answer PD-013's review turn with the owner's real acceptance message.
+
+    `--accept-default`/`--answer defaults_review` requires `--owner-msg-id` (a
+    crafted acceptance is a forged approval), so this call carries the id the
+    signed contract transported -- never `--operator-contract`, which would be
+    the one-flag-not-both refusal.
+    """
+    argv = [sys.executable, str(driver), "--run-dir", str(rd),
+            "--answer", "defaults_review", "good",
+            "--owner-msg-id", str(owner_msg_id)]
+    return subprocess.run(argv, text=True, capture_output=True, check=False)
+
+def _stamp_defaults_review_turn(rd: pathlib.Path) -> None:
+    """Mark the QUICK review turn as the acceptance ACTION, not an answer.
+
+    PD-013's review turn stores the same owner message id the driver stamped on
+    every defaulted entry. PD-004b's reuse rule allows that id on `defaulted`
+    rows but rejects a second non-defaulted row carrying it, so the review row
+    itself would fail the proof even though every defaulted answer is proven.
+    The review row is bookkeeping for an action, not a client answer; the
+    proof module already exempts `source: "derived"`. Only that one row is
+    touched -- no defaulted entry's `default_accepted_msg_id` changes.
+    """
+    ledger_path = rd / "working" / "interview" / "intake_ledger.json"
+    try:
+        ledger = json.loads(ledger_path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return
+    entries = ledger.get("entries") if isinstance(ledger, dict) else None
+    review = entries.get("defaults_review") if isinstance(entries, dict) else None
+    if isinstance(review, dict) and review.get("accepted"):
+        review["source"] = "derived"
+        ledger_path.write_text(json.dumps(ledger, indent=2), encoding="utf-8")
+
+def _verify_operator_acceptance_message(rd: pathlib.Path, acceptance: dict) -> None:
+    """Require the signed acceptance message to already exist in run evidence.
+
+    PD-004b's `resolve_owner_message` reads
+    `working/interview/inbound_messages.jsonl`, written by the channel that
+    actually received the message. The bridge never writes that file: a contract
+    that merely NAMES a message is not proof the client sent it. This function
+    reads the existing evidence and requires the id, chat and text to match
+    before the id is passed to the driver; absent or different evidence is a
+    refusal, never a synthesized row.
+    """
+    msg_id = str(acceptance.get("msg_id") or "").strip()
+    if not msg_id:
+        raise ValueError("operator contract default_acceptance msg_id is empty")
+    path = rd / "working" / "interview" / "inbound_messages.jsonl"
+    want_chat = str(acceptance.get("chat_id") or "").strip()
+    want_text = str(acceptance.get("text") or "")
+    try:
+        lines = path.read_text(encoding="utf-8").splitlines()
+    except OSError:
+        lines = []
+    for line in lines:
+        try:
+            row = json.loads(line)
+        except (ValueError, TypeError):
+            continue
+        if not isinstance(row, dict) or str(row.get("msg_id") or "").strip() != msg_id:
+            continue
+        if str(row.get("chat_id") or "").strip() != want_chat:
+            raise ValueError(
+                "operator contract default_acceptance chat does not match the "
+                "inbound message")
+        if " ".join(str(row.get("text") or "").split()) != " ".join(want_text.split()):
+            raise ValueError(
+                "operator contract default_acceptance text does not match the "
+                "inbound message")
+        return
+    raise ValueError(
+        "operator contract default_acceptance message is not present in this "
+        "run's inbound evidence; refusing to synthesize a client approval")
+
 def _stamp_operator_contract_mirrors(rd: pathlib.Path,
                                      receipt_path: pathlib.Path) -> None:
     """Declare the run-mode mirror this contract caused.
@@ -1101,6 +1220,16 @@ def _stamp_operator_contract_mirrors(rd: pathlib.Path,
     if changed:
         ledger_path.write_text(json.dumps(ledger, indent=2), encoding="utf-8")
 
+def _driver_stderr(proc) -> str:
+    """The driver's refusal text, whichever stream it used.
+
+    PD-927: `--complete` prints its "incomplete" refusal as JSON on STDOUT and
+    writes nothing to stderr, so a caller that reported only stderr reported an
+    empty reason. Prefer stderr when it carries something (real crashes), else
+    fall back to the tail of stdout.
+    """
+    return (proc.stderr or "").strip()[-500:] or (proc.stdout or "").strip()[-500:]
+
 def drive_operator_contract(contract: dict, run_dir: pathlib.Path, *,
                             driver_path: pathlib.Path | None = None,
                             launch: bool = True,
@@ -1118,6 +1247,23 @@ def drive_operator_contract(contract: dict, run_dir: pathlib.Path, *,
     # Validate every supplied answer against the installed canonical driver
     # before creating the receipt or any partial intake artifact.
     answers = _operator_driver_answers(contract, driver)
+    # PD-013: the pace decision is a separate axis from run_mode. Answer it
+    # FIRST so a QUICK contract records its defaults on this turn; an
+    # in-depth contract asks every question instead. Never inferred.
+    depth = contract.get("interview_depth")
+    if depth:
+        depth_text = "QUICK" if depth == "quick" else "IN-DEPTH"
+        declared = answers.get("interview_depth")
+        if declared is not None:
+            declared_text = str(declared)
+            if "standard_mode:" in declared_text:
+                declared_text = declared_text.split("standard_mode:", 1)[1].split(";", 1)[0]
+            normalized = declared_text.strip().upper().replace("-", "")
+            if normalized != depth_text.upper().replace("-", ""):
+                raise ValueError(
+                    "operator contract interview_depth conflicts with answers.interview_depth")
+        answers = {"interview_depth": depth_text, **answers}
+    acceptance = contract.get("default_acceptance")
     receipt_path = rd / "working" / "interview" / "operator_contract.json"
     contract_sha = hashlib.sha256(_canonical_contract_bytes(contract)).hexdigest()
     existing = receipt_path.is_file()
@@ -1138,11 +1284,24 @@ def drive_operator_contract(contract: dict, run_dir: pathlib.Path, *,
     elif (rd / "state.json").exists() or (rd / "working" / "copy" / "intake.json").exists():
         raise ValueError("initialized run lacks an authenticated operator contract receipt")
     else:
-        rd.mkdir(parents=True, exist_ok=False)
+        # A session/channel may already have created the run directory and
+        # written inbound evidence; the guard above refused anything already
+        # initialized, so creating the directory itself is safe to repeat.
+        rd.mkdir(parents=True, exist_ok=True)
+    # The signed acceptance message must already be the client's real inbound
+    # message. The bridge reads that evidence and never writes it. Check before
+    # the receipt file so a refused acceptance leaves no artifact behind.
+    if acceptance:
+        _verify_operator_acceptance_message(rd, acceptance)
     receipt = {
         "version": _OPERATOR_CONTRACT_VERSION,
         "source": "operator-delegated",
         "receipt_version": 1 if receipt_hmac else None,
+        # INT-AUTH: persist the EXACT received signed contract body so the
+        # AUTH004 verifier (receipt_version 1 + contract dict + HMAC over
+        # canonical(contract)) can authenticate it. receipt_hmac is stored
+        # unchanged — never re-signed, never recomputed here.
+        "contract": contract,
         "receipt_hmac": receipt_hmac,
         "contract_sha256": hashlib.sha256(_canonical_contract_bytes(contract)).hexdigest(),
         "task_id": contract["task_id"],
@@ -1156,8 +1315,10 @@ def drive_operator_contract(contract: dict, run_dir: pathlib.Path, *,
         receipt_path.parent.mkdir(parents=True, exist_ok=True)
         receipt_path.write_text(json.dumps(receipt, indent=2), encoding="utf-8")
     # The validated mapper already removes user-facing `mode` and converts
-    # semantic `brief` to canonical `client_notes`.
-    answers.update({
+    # semantic `brief` to canonical `client_notes`. A contract that supplies a
+    # complete canonical answer keeps it; the synthesized values only fill turns
+    # the contract did not answer.
+    synthesized = {
         "deck_type_source": "presentation_type: from_scratch; pitch_included: false",
         "resource_plan": "workhorse: deepseek-flash@deepseek-direct; mode: " + contract["run_mode"],
         "core_deliverables": ("deliverable_set: " + contract["deliverable_set"] +
@@ -1172,7 +1333,8 @@ def drive_operator_contract(contract: dict, run_dir: pathlib.Path, *,
         "audio_settings": ("want_audio_demo: " + ("yes" if contract["want_audio_demo"] else "no") +
                            "; speech_speed_preference: default"),
         "duration_and_slide_count": "slide_count: " + str(contract["slide_count"]),
-    })
+    }
+    answers = {**synthesized, **answers}
     if needs_initialization:
         answered = ledger.get("entries", {}) if isinstance(ledger.get("entries", {}), dict) else {}
         for question_id, text in answers.items():
@@ -1182,12 +1344,69 @@ def drive_operator_contract(contract: dict, run_dir: pathlib.Path, *,
                 continue
             proc = _operator_driver_answer(driver, rd, question_id, text)
             if proc.returncode:
-                raise RuntimeError("driver refused %s: %s" % (question_id, proc.stderr[-500:]))
+                raise RuntimeError("driver refused %s: %s" % (question_id, _driver_stderr(proc)))
         _stamp_operator_contract_mirrors(rd, receipt_path)
+        # PD-013: a QUICK interview ends with one review turn listing every
+        # default. `--complete` will refuse the unproven defaults under
+        # `enforce`, so accept them through the real owner message the signed
+        # contract transported. No acceptance message -> refuse; never invent.
+        nxt = subprocess.run([sys.executable, str(driver), "--run-dir", str(rd), "--next"],
+                             text=True, capture_output=True, check=False)
+        pending = None
+        if nxt.returncode == 0:
+            try:
+                pending = json.loads(nxt.stdout)
+            except ValueError:
+                pending = None
+        pending_id = (pending.get("question_id") or pending.get("id")) if isinstance(pending, dict) else None
+        if pending_id == "defaults_review":
+            if not acceptance:
+                raise RuntimeError(
+                    "driver completion refused: QUICK defaults require a signed "
+                    "owner default_acceptance message; refusing to fabricate one")
+            accepted = _operator_default_acceptance(driver, rd, acceptance["msg_id"])
+            if accepted.returncode:
+                raise RuntimeError("driver refused defaults acceptance: " +
+                                   _driver_stderr(accepted))
+            _stamp_defaults_review_turn(rd)
         proc = subprocess.run([sys.executable, str(driver), "--run-dir", str(rd), "--complete"],
                               text=True, capture_output=True, check=False)
         if proc.returncode:
-            raise RuntimeError("driver completion refused: " + proc.stderr[-500:])
+            # PD-927: the driver prints a refusal as JSON on STDOUT (stderr is
+            # empty), so reporting only stderr reported an empty reason. Name
+            # the refusal the driver actually gave; END008 adds the structured
+            # missing/unproven fields without discarding the driver's own
+            # error text.
+            detail = (proc.stderr or "")[-500:]
+            try:
+                payload = json.loads(proc.stdout)
+            except (ValueError, TypeError):
+                payload = None
+            if isinstance(payload, dict):
+                error = str(payload.get("error") or "").strip()
+                findings = " | ".join(map(str, payload.get("findings") or []))
+                missing = payload.get("missing")
+                unproven = payload.get("unproven_questions")
+                pieces = []
+                if missing:
+                    pieces.append("operator contract is incomplete")
+                elif unproven:
+                    pieces.append("operator contract provenance refused")
+                if error:
+                    pieces.append(error)
+                if missing:
+                    pieces.append("missing turns: " + ", ".join(map(str, missing)))
+                elif unproven:
+                    pieces.append("unproven: " + ", ".join(map(str, unproven)))
+                    if findings:
+                        pieces.append("findings: " + findings)
+                elif findings and not error:
+                    pieces.append(findings)
+                if pieces:
+                    detail = "; ".join(pieces)
+            if not detail:
+                detail = _driver_stderr(proc)
+            raise RuntimeError("driver completion refused: " + detail)
     # The direct CC bridge bypasses scheduler shells, so load their sanctioned
     # selected-box environment before the launcher/model consumers run.
     launch_environment = _load_operator_launch_environment()
