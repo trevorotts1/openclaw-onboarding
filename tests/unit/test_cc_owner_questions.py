@@ -17,7 +17,7 @@ ROOT = Path(__file__).resolve().parents[2]
 HELPER = ROOT / "shared-utils" / "cc_owner_questions" / "cc_owner_questions.py"
 TOKEN = "tok-SECRET-9f8e7d"
 
-QUESTIONS = [{"id": "uuid-1", "task_id": "t1", "task_title": "Landing page", "kind": "audience",
+QUESTIONS = [{"id": "uuid-0001-aaaa", "task_id": "t1", "task_title": "Landing page", "kind": "audience",
               "short_code": "Q-ABC123", "question": "Is this for new clients?",
               "recommendation": "Yes, target new clients.", "asked_at": "x", "pushed_at": "y"}]
 
@@ -105,10 +105,10 @@ class CCQ(unittest.TestCase):
                                 "source_message_ref": "msg-77"})
 
     def test_answer_by_id_and_webchat(self):
-        rc, _, err = self.run_h("answer", "--ref", "uuid-1", "--text", "no, do X",
+        rc, _, err = self.run_h("answer", "--ref", "uuid-0001-aaaa", "--text", "no, do X",
                                 "--source-message-ref", "m1", "--channel", "webchat")
         self.assertEqual(rc, 0, err)
-        self.assertEqual(Handler.seen[0][1], "/api/owner-questions/uuid-1/chat-answer")
+        self.assertEqual(Handler.seen[0][1], "/api/owner-questions/uuid-0001-aaaa/chat-answer")
         self.assertEqual(Handler.seen[0][3]["channel"], "webchat")
 
     def test_match_short_code_needs_no_server_call(self):
