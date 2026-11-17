@@ -1,11 +1,9 @@
 ## [v28.0.0]  -  2026-11-17  -  Milestone
 
-- Major milestone release. Five build rooms closed on November 16, 2026, and this version marks them as one delivered set. No behaviour changes ship in this entry; it moves the repository version markers (root `version`, install and update scripts, README, release cohort, Command Center compatibility file, Skill 23) from v27.1.77 to v28.0.0.
-- Skill 75, the drama song ad factory: 166 units delivered.
-- AI Workforce: 92 units delivered.
-- Presentation department: 202 units delivered.
-- Command Center: 24 units delivered.
-- Rescue Rangers: 62 units delivered.
+- Major milestone release. Five build rooms closed on November 16, 2026, and this version marks them as one delivered set: Skill 75, the drama song ad factory (166 units); AI Workforce (92 units); the Presentation department (202 units); Command Center (24 units); and Rescue Rangers (62 units).
+- Fix 1, release-ceremony guard: `scripts/check-no-standalone-release-pr.py` now recognises every file and line the version bump writes. `release-cohort.json`, `scripts/agent-browser-reaper.sh`, `scripts/guard-agent-browser-managed.sh` and `docs/interview-launch-recovery.md` count as release files, and a release file counts as ceremony when only version numbers (including the README and `update-skills.sh` relabel lines and the bumper's JSON re-serialisation) changed. A pure bump is now rejected, and a bump carrying a real change is accepted. Proven by `tests/unit/test_check_no_standalone_release_pr.py`, run by the guard itself.
+- Fix 2, flaky `u53-crown-executor-single-path-guard`: root cause was `printf "$BLOCK" | grep -q` under `set -o pipefail`. `grep -q` exits at the first match, the writer takes SIGPIPE on a large block, and a present anchor was reported as "extraction empty/vacuous" at random. The test now uses here-strings (`grep -q pat <<<"$BLOCK"`); no assertion was weakened. Locked by `tests/probe/test-pipefail-grep-q-sigpipe.sh`.
+- Version markers moved v27.1.77 -> v28.0.0: `version`, `install.sh`, `update-skills.sh`, `README.md`, `DIRECT-TO-AGENT-UPDATE-MESSAGE.md`, `cc-compat.json`, `release-cohort.json`, `scripts/agent-browser-reaper.sh`, `scripts/guard-agent-browser-managed.sh`, `docs/interview-launch-recovery.md`, and Skill 23 (`23-ai-workforce-blueprint/skill-version.txt`, `SKILL.md`, `templates/role-library/_index.json`).
 - Skill 23 v27.1.77 -> v28.0.0 (carries the repository version). Migration: none beyond the normal update. Risk: LOW.
 
 ## [v27.1.77]  -  2026-11-16  -  PD-021 follow-up: retire the old "8 Questions in ONE block" wording

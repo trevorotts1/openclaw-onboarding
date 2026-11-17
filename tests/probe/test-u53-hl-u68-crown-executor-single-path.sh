@@ -39,6 +39,12 @@
 #  EXIT CODES: 0 all passed, 1 one or more failed.
 # ============================================================
 set -uo pipefail
+# NOTE (v28.0.0): never feed a captured block to `grep -q` through a pipe
+# (`printf .. | grep -q`). Under pipefail, grep -q exits at the first match, the
+# writer takes SIGPIPE on a large block, and the pipeline reports failure even
+# though the text matched -- a timing-dependent false "extraction empty" in CI.
+# Use here-strings (`grep -q pat <<<"$VAR"`). Pinned by
+# tests/probe/test-pipefail-grep-q-sigpipe.sh.
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
@@ -83,25 +89,25 @@ BLOCK1="$(awk '
 _strip_prose() { grep -vE '^\s*#' | grep -vE '^\s*(log|echo) "'; }
 BLOCK1_CODE="$(printf '%s\n' "$BLOCK1" | _strip_prose)"
 
-if [ -z "$BLOCK1" ] || ! printf '%s' "$BLOCK1" | grep -q "UPDATE_ONLY"; then
+if [ -z "$BLOCK1" ] || ! grep -q "UPDATE_ONLY" <<<"$BLOCK1"; then
   _fail "Block 1 extraction is empty/vacuous — anchor drift in run-full-install.sh; every downstream assertion below would be meaningless"
 else
   _pass "Block 1 extracted non-vacuously from run-full-install.sh (anchors intact)"
 
-  _CALLS=$(printf '%s' "$BLOCK1_CODE" | grep -c "cc_route_update_through_canonical_path" || true)
+  _CALLS=$(grep -c "cc_route_update_through_canonical_path" <<<"$BLOCK1_CODE" || true)
   if [ "$_CALLS" -eq 1 ]; then
     _pass "Phase 6 --update-only branch delegates to cc_route_update_through_canonical_path() exactly once"
   else
     _fail "expected exactly 1 call to cc_route_update_through_canonical_path() in the --update-only branch, found $_CALLS — the single-executor invariant (D-HL-3) is not being honored at this call site"
   fi
 
-  if printf '%s' "$BLOCK1_CODE" | grep -q "npm run build"; then
+  if grep -q "npm run build" <<<"$BLOCK1_CODE"; then
     _fail "Phase 6 --update-only branch inlines its OWN 'npm run build' — this is exactly the duplicated build logic D-HL-3 says to delete (build must live ONLY inside the crowned executor's own tiers)"
   else
     _pass "Phase 6 --update-only branch never inlines a bare 'npm run build' outside the crowned executor"
   fi
 
-  if printf '%s' "$BLOCK1_CODE" | grep -q "pm2 restart"; then
+  if grep -q "pm2 restart" <<<"$BLOCK1_CODE"; then
     _fail "Phase 6 --update-only branch inlines its OWN 'pm2 restart' — restart must be owned exclusively by cc_route_update_through_canonical_path()'s tiers, never duplicated at the caller"
   else
     _pass "Phase 6 --update-only branch never inlines a bare 'pm2 restart' outside the crowned executor"
@@ -125,18 +131,18 @@ BLOCK2="$(awk '
 
 BLOCK2_CODE="$(printf '%s\n' "$BLOCK2" | _strip_prose)"
 
-if [ -z "$BLOCK2" ] || ! printf '%s' "$BLOCK2" | grep -q "_CC_RUN_INSTALL"; then
+if [ -z "$BLOCK2" ] || ! grep -q "_CC_RUN_INSTALL" <<<"$BLOCK2"; then
   _fail "Block 2 extraction is empty/vacuous — anchor drift in update-skills.sh; every downstream assertion below would be meaningless"
 else
   _pass "Block 2 extracted non-vacuously from update-skills.sh (anchors intact)"
 
-  if printf '%s' "$BLOCK2" | grep -qF 'bash "$_CC_RUN_INSTALL" --update-only'; then
+  if grep -qF 'bash "$_CC_RUN_INSTALL" --update-only' <<<"$BLOCK2"; then
     _pass "D5 refresh call site delegates to run-full-install.sh --update-only (thin wrapper, per D-HL-3)"
   else
     _fail "D5 section no longer delegates its refresh to 'bash \"\$_CC_RUN_INSTALL\" --update-only' — the thin-wrapper contract D-HL-3 requires is not met"
   fi
 
-  if printf '%s' "$BLOCK2" | grep -qF 'bash "$_CC_RUN_INSTALL" "$_CC_SLUG" "$_CC_COMPANY" "$_CC_EMAIL"'; then
+  if grep -qF 'bash "$_CC_RUN_INSTALL" "$_CC_SLUG" "$_CC_COMPANY" "$_CC_EMAIL"' <<<"$BLOCK2"; then
     _pass "D5 F10 full-bootstrap call site also delegates to run-full-install.sh (no separate ad-hoc clone/build path)"
   else
     _fail "D5 F10 bootstrap branch no longer delegates to run-full-install.sh via 'bash \"\$_CC_RUN_INSTALL\" \"\$_CC_SLUG\" \"\$_CC_COMPANY\" \"\$_CC_EMAIL\"' — a duplicated bootstrap path may have been introduced"
@@ -144,7 +150,7 @@ else
 
   _DUP_FOUND=""
   for pat in 'npm install' 'npm run build' 'npm run db:push' 'pm2 restart' 'git pull' 'git reset --hard' 'git clone'; do
-    if printf '%s' "$BLOCK2_CODE" | grep -qF "$pat"; then
+    if grep -qF "$pat" <<<"$BLOCK2_CODE"; then
       _DUP_FOUND="${_DUP_FOUND}${_DUP_FOUND:+, }$pat"
     fi
   done
@@ -167,11 +173,11 @@ _section "Block 3 — tier 1 pins CC_APP_DIR at the freshly-pulled checkout when
 
 FUNC_BODY="$(awk '/^cc_route_update_through_canonical_path\(\) \{/{flag=1} flag{print} flag && /^}/{exit}' "$RUN_FULL_INSTALL")"
 
-if [ -z "$FUNC_BODY" ] || ! printf '%s' "$FUNC_BODY" | grep -q "tier=1"; then
+if [ -z "$FUNC_BODY" ] || ! grep -q "tier=1" <<<"$FUNC_BODY"; then
   _fail "cc_route_update_through_canonical_path() extraction is empty/vacuous — anchor drift in run-full-install.sh"
 else
   _pass "cc_route_update_through_canonical_path() extracted non-vacuously"
-  if printf '%s' "$FUNC_BODY" | grep -qF 'CC_APP_DIR="$DASHBOARD_DIR" CC_PORT="$DASHBOARD_PORT" bash "$update_sh"'; then
+  if grep -qF 'CC_APP_DIR="$DASHBOARD_DIR" CC_PORT="$DASHBOARD_PORT" bash "$update_sh"' <<<"$FUNC_BODY"; then
     _pass "tier 1 invokes update.sh with CC_APP_DIR (+ CC_PORT) pinned to the freshly-pulled checkout — matches D-HL-3's ruling verbatim"
   else
     _fail "tier 1 no longer pins CC_APP_DIR=\$DASHBOARD_DIR when invoking update.sh — the crowned-executor contract D-HL-3 requires is not met in source"
