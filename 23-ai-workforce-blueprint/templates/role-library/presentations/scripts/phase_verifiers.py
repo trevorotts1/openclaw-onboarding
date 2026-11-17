@@ -5115,7 +5115,8 @@ _CRAFT_HOLD_SWITCH_ENV = "PRESENTATION_CRAFT_ENGINE_HOLDS"
 
 def _craft_hold_reasons(phase_id: str, run_dir) -> List[str]:
     """PD-310b: craft_judgement.engine_attestation_reasons for the two QC step
-    ids, only when PRESENTATION_CRAFT_ENGINE_HOLDS is exactly "1".
+    ids, only when PRESENTATION_CRAFT_ENGINE_HOLDS is 1/true/on/yes
+    (the same values craft_judgement._engine_holds_active accepts).
 
     With the switch off this imports nothing and returns [] — both step checks
     return exactly what they returned before. With it on, a missing independent
@@ -5125,7 +5126,9 @@ def _craft_hold_reasons(phase_id: str, run_dir) -> List[str]:
     Fails closed in every direction: with the switch on, a craft module that
     cannot be imported, a missing engine_attestation_reasons, or a hook that
     raises is an OPERATOR-REVIEW reason, never a pass."""
-    if os.environ.get(_CRAFT_HOLD_SWITCH_ENV) != "1":
+    # Same accepted values as craft_judgement._engine_holds_active: 1/true/on/yes.
+    if (os.environ.get(_CRAFT_HOLD_SWITCH_ENV) or "").strip().lower() not in (
+            "1", "true", "on", "yes"):
         return []
     if phase_id not in _CRAFT_HOLD_PHASES:
         return []
