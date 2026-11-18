@@ -84,15 +84,20 @@ grep -q 'could not converge Command Center checkout onto the latest origin defau
 # Since v25.1.96 the Sunday script runs the operator roll's exact path
 # (scripts/weekly-full-update.sh -> fleet-refresh.sh --local --apply, which
 # runs the root updater), never the legacy scripts/update-skills.sh.
-grep -q 'UPDATE_SCRIPT_URL=.*main/scripts/weekly-full-update.sh' "$CRON_SETUP" \
-  && ! grep -q 'UPDATE_SCRIPT_URL=.*main/scripts/update-skills.sh' "$CRON_SETUP" \
+AUTO_UPDATE_PY="$(dirname "$CRON_SETUP")/auto_update.py"
+grep -q 'weekly-full-update.sh' "$AUTO_UPDATE_PY" \
   && grep -q 'fleet-refresh.sh" --local --apply' "$(dirname "$CRON_SETUP")/weekly-full-update.sh" \
-  && ok "Sunday restart script runs the full update (weekly-full-update.sh -> fleet-refresh --local --apply)" \
-  || bad "Sunday restart script points at the legacy updater"
-grep -q '_UPDATE_RC=\$?' "$CRON_SETUP" \
-  && grep -q 'exit "\$_UPDATE_RC"' "$CRON_SETUP" \
-  && ok "Sunday wrapper propagates a failed complete update" \
-  || bad "Sunday wrapper can swallow a failed updater exit"
+  && ! grep -q 'main/scripts/update-skills.sh' "$AUTO_UPDATE_PY" \
+  && ok "auto-update run executes the full update (weekly-full-update.sh -> fleet-refresh --local --apply)" \
+  || bad "auto-update run does not execute the full update path"
+grep -q 'result = "FAILED"' "$AUTO_UPDATE_PY" \
+  && grep -q 'result = "ROLLED_BACK"' "$AUTO_UPDATE_PY" \
+  && grep -q 'AUTO_UPDATE_BEHIND' "$AUTO_UPDATE_PY" \
+  && ok "auto-update records a failed or rolled-back complete update instead of swallowing it" \
+  || bad "auto-update can swallow a failed updater exit"
+grep -q 'auto_update.py" install' "$CRON_SETUP" \
+  && ok "setup-weekly-update.sh installs the Tue/Fri/Sun schedule through auto_update.py" \
+  || bad "setup-weekly-update.sh no longer installs the auto-update schedule"
 grep -q 'LEGACY_UPDATER_PATH_FRAGMENT="main/scripts/update-skills.sh"' "$UPDATE_SH" \
   && grep -q 'heal_weekly_cron_updater' "$UPDATE_SH" \
   && ok "installed legacy Sunday scripts self-heal to the root updater" \

@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# p107-sunday-update-probe.sh — P1-07 (c)3: per-box Sunday-update-cron presence
-# probe + Docker-VPS survives-a-container-restart check. SHIPS IN P6-01 (built
+# p107-sunday-update-probe.sh — P1-07 (c)3: per-box auto-update-schedule presence
+# probe (the Tue/Fri/Sun tick line; the old Sunday 3:00 AM and Saturday 23:59
+# lines must be GONE) + Docker-VPS survives-a-container-restart check. SHIPS IN P6-01 (built
 # and QC'd now; run against live fleet boxes only in the final rollout phase).
 #
 # WHAT THIS CLOSES
@@ -77,14 +78,22 @@ while [ $# -gt 0 ]; do
   shift
 done
 
-# ---- canonical targets (must match scripts/setup-weekly-update.sh exactly) ----
+# ---- canonical targets (must match scripts/auto_update.py install exactly) ----
+# ONE crontab line every 5 minutes runs the tick; the tick keeps its own Eastern
+# clock for the Tue/Fri/Sun 2:15 AM notice and 2:30 AM run. The old Sunday 3:00 AM
+# updater line and the old Saturday 23:59 OpenClaw self-update line are RETIRED:
+# finding either one is a miss (two schedulers would collide).
+TICK_SCHEDULE="*/5 * * * *"
+TICK_CMD="/bin/bash '$HOME/.openclaw/scripts/auto-update-tick.sh' # openclaw-auto-update"
 SUNDAY_SCHEDULE="0 3 * * 0"
 SUNDAY_CMD="$HOME/.openclaw/skills/.update-restart-if-needed"
 SATURDAY_SCHEDULE="59 23 * * 6"
 SATURDAY_CMD="$HOME/.openclaw/skills/.openclaw-self-update"
 
+TICK_PRESENT=0
 SUNDAY_PRESENT=0
 SATURDAY_PRESENT=0
+TICK_LINE=""
 SUNDAY_LINE=""
 SATURDAY_LINE=""
 
@@ -116,19 +125,23 @@ _exact_cron_present() {
   return 1
 }
 
-SUNDAY_LINE="$(_exact_cron_present "$SUNDAY_SCHEDULE" "$SUNDAY_CMD")" && SUNDAY_PRESENT=1
-SATURDAY_LINE="$(_exact_cron_present "$SATURDAY_SCHEDULE" "$SATURDAY_CMD")" && SATURDAY_PRESENT=1
+_check_all() {
+  TICK_PRESENT=0; SUNDAY_PRESENT=0; SATURDAY_PRESENT=0
+  TICK_LINE="$(_exact_cron_present "$TICK_SCHEDULE" "$TICK_CMD")" && TICK_PRESENT=1
+  SUNDAY_LINE="$(_exact_cron_present "$SUNDAY_SCHEDULE" "$SUNDAY_CMD")" && SUNDAY_PRESENT=1
+  SATURDAY_LINE="$(_exact_cron_present "$SATURDAY_SCHEDULE" "$SATURDAY_CMD")" && SATURDAY_PRESENT=1
+}
+_check_all
 
 REMEDIATED=0
-if [ "$REMEDIATE" -eq 1 ] && { [ "$SUNDAY_PRESENT" -eq 0 ] || [ "$SATURDAY_PRESENT" -eq 0 ]; }; then
+if [ "$REMEDIATE" -eq 1 ] && { [ "$TICK_PRESENT" -eq 0 ] || [ "$SUNDAY_PRESENT" -eq 1 ] || [ "$SATURDAY_PRESENT" -eq 1 ]; }; then
   SETUP_SCRIPT="$REPO_ROOT/scripts/setup-weekly-update.sh"
   if [ -f "$SETUP_SCRIPT" ]; then
     bash "$SETUP_SCRIPT" >/dev/null 2>&1
     REMEDIATED=1
     # Re-check after remediation (exact match again — never trust the
     # installer's own exit code as proof of the live crontab state).
-    SUNDAY_LINE="$(_exact_cron_present "$SUNDAY_SCHEDULE" "$SUNDAY_CMD")" && SUNDAY_PRESENT=1
-    SATURDAY_LINE="$(_exact_cron_present "$SATURDAY_SCHEDULE" "$SATURDAY_CMD")" && SATURDAY_PRESENT=1
+    _check_all
   fi
 fi
 
@@ -164,24 +177,25 @@ if [ "$IS_DOCKER" -eq 1 ]; then
 fi
 
 OVERALL_OK=1
-[ "$SUNDAY_PRESENT" -eq 1 ] || OVERALL_OK=0
-[ "$SATURDAY_PRESENT" -eq 1 ] || OVERALL_OK=0
+[ "$TICK_PRESENT" -eq 1 ] || OVERALL_OK=0
+[ "$SUNDAY_PRESENT" -eq 0 ] || OVERALL_OK=0
+[ "$SATURDAY_PRESENT" -eq 0 ] || OVERALL_OK=0
 if [ "$IS_DOCKER" -eq 1 ] && [ "$DATA_PERSISTENT" -eq 0 ]; then OVERALL_OK=0; fi
 
 CHECKED_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 
 if [ "$JSON" -eq 1 ]; then
-  python3 - "$BOX" "$SUNDAY_PRESENT" "$SUNDAY_LINE" "$SATURDAY_PRESENT" "$SATURDAY_LINE" \
+  python3 - "$BOX" "$TICK_PRESENT" "$TICK_LINE" "$SUNDAY_PRESENT" "$SATURDAY_PRESENT" \
     "$IS_DOCKER" "$DATA_PERSISTENT_CHECKED" "$DATA_PERSISTENT" "$REMEDIATED" "$OVERALL_OK" "$CHECKED_AT" <<'PYEOF'
 import json, sys
-box, sun_p, sun_l, sat_p, sat_l, is_docker, data_checked, data_ok, remediated, overall_ok, checked_at = sys.argv[1:12]
+box, tick_p, tick_l, sun_p, sat_p, is_docker, data_checked, data_ok, remediated, overall_ok, checked_at = sys.argv[1:12]
 print(json.dumps({
     "box": box,
     "checked_at": checked_at,
-    "sunday_cron_present": bool(int(sun_p)),
-    "sunday_cron_line": sun_l or None,
-    "saturday_cron_present": bool(int(sat_p)),
-    "saturday_cron_line": sat_l or None,
+    "auto_update_tick_present": bool(int(tick_p)),
+    "auto_update_tick_line": tick_l or None,
+    "retired_sunday_cron_present": bool(int(sun_p)),
+    "retired_saturday_cron_present": bool(int(sat_p)),
     "is_docker_vps": bool(int(is_docker)),
     "data_mount_checked": bool(int(data_checked)),
     "data_mount_persistent": bool(int(data_ok)) if int(data_checked) else None,
@@ -190,16 +204,21 @@ print(json.dumps({
 }, indent=2))
 PYEOF
 else
-  echo "P1-07 Sunday-update-probe — box: $BOX  ($CHECKED_AT)"
-  if [ "$SUNDAY_PRESENT" -eq 1 ]; then
-    echo "  [OK]   Sunday 3:00 AM updater cron — exact match: $SUNDAY_LINE"
+  echo "P1-07 auto-update-probe — box: $BOX  ($CHECKED_AT)"
+  if [ "$TICK_PRESENT" -eq 1 ]; then
+    echo "  [OK]   Tue/Fri/Sun auto-update tick cron — exact match: $TICK_LINE"
   else
-    echo "  [MISS] Sunday 3:00 AM updater cron NOT found (exact schedule+command match failed)"
+    echo "  [MISS] Tue/Fri/Sun auto-update tick cron NOT found (exact schedule+command match failed)"
   fi
-  if [ "$SATURDAY_PRESENT" -eq 1 ]; then
-    echo "  [OK]   Saturday 23:59 OpenClaw-CLI-update cron — exact match: $SATURDAY_LINE"
+  if [ "$SUNDAY_PRESENT" -eq 0 ]; then
+    echo "  [OK]   retired Sunday 3:00 AM updater cron is gone"
   else
-    echo "  [MISS] Saturday 23:59 OpenClaw-CLI-update cron NOT found (exact schedule+command match failed)"
+    echo "  [MISS] retired Sunday 3:00 AM updater cron is STILL present (it would collide with the auto-update run)"
+  fi
+  if [ "$SATURDAY_PRESENT" -eq 0 ]; then
+    echo "  [OK]   retired Saturday 23:59 OpenClaw-CLI-update cron is gone"
+  else
+    echo "  [MISS] retired Saturday 23:59 OpenClaw-CLI-update cron is STILL present (the CLI update now runs inside the auto-update run)"
   fi
   if [ "$IS_DOCKER" -eq 1 ]; then
     if [ "$DATA_PERSISTENT" -eq 1 ]; then
@@ -212,7 +231,7 @@ else
   if [ "$OVERALL_OK" -eq 1 ]; then
     echo "  VERDICT: ARMED"
   else
-    echo "  VERDICT: DEGRADED — see MISS lines above; re-run with --remediate to install missing crons"
+    echo "  VERDICT: DEGRADED — see MISS lines above; re-run with --remediate to install the schedule and retire the old crons"
   fi
 fi
 

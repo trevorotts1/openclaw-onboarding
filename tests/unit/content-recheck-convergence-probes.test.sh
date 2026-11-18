@@ -274,26 +274,26 @@ RC=$?
 rm -f /tmp/pip1.out /tmp/pip2.out /tmp/pip3.out /tmp/pip4.out
 
 # ===========================================================================
-# WEEKLY-CRON PROBE
+# WEEKLY-CRON PROBE  (the Tue/Fri/Sun auto-update schedule: ONE crontab line
+# tagged "# openclaw-auto-update"; retired Sunday/Saturday lines must be gone)
 # ===========================================================================
-make_openclaw_mock() {  # make_openclaw_mock <bindir> <cron_json>
-  local bindir="$1" json="$2"
+make_crontab_mock() {  # make_crontab_mock <bindir> <mode: text|none|error> [crontab text]
+  local bindir="$1" mode="$2" text="${3:-}"
   mkdir -p "$bindir"
-  cat > "$bindir/openclaw" <<EOF
+  printf '%s\n' "$text" > "$bindir/crontab.txt"
+  cat > "$bindir/crontab" <<MOCKEOF
 #!/usr/bin/env bash
-if [ "\$1" = "cron" ] && [ "\$2" = "list" ]; then
-  cat <<'JSONEOF'
-$json
-JSONEOF
-  exit 0
-fi
-exit 1
-EOF
-  chmod +x "$bindir/openclaw"
+case "$mode" in
+  text)  cat "$bindir/crontab.txt"; exit 0 ;;
+  none)  echo "no crontab for user" >&2; exit 1 ;;
+  error) echo "crontab: cannot read the spool" >&2; exit 1 ;;
+esac
+MOCKEOF
+  chmod +x "$bindir/crontab"
 }
 
-run_cron_probe() {  # run_cron_probe <json_or_empty> <tombstoned:yes/no> <no_cli:yes/no>
-  local json="$1" tomb="$2" no_cli="$3"
+run_cron_probe() {  # run_cron_probe <mode: text|none|error|nocmd> [crontab text]
+  local mode="$1" text="${2:-}"
   local CASE_DIR; CASE_DIR="$(mktemp -d "$WORK/cron-case-XXXXXX")"
   (
     set -euo pipefail
@@ -301,15 +301,14 @@ run_cron_probe() {  # run_cron_probe <json_or_empty> <tombstoned:yes/no> <no_cli
     source "$WORK/probes-wrapped.sh"
     probes_block
     HOME="$CASE_DIR/home"
-    mkdir -p "$HOME/.openclaw/workspace/.cron-tombstones"
-    if [ "$tomb" = "yes" ]; then
-      printf 'TOMBSTONED\n' > "$HOME/.openclaw/workspace/.cron-tombstones/weekly-onboarding-update"
-    fi
+    mkdir -p "$HOME/.openclaw"
     BINDIR="$CASE_DIR/bin"
-    if [ "$no_cli" = "yes" ]; then
-      PATH="/usr/bin:/bin"
+    if [ "$mode" = "nocmd" ]; then
+      mkdir -p "$BINDIR"
+      for t in grep printf cat mktemp tr sed awk; do ln -sf "$(command -v $t)" "$BINDIR/$t" 2>/dev/null || true; done
+      PATH="$BINDIR"
     else
-      make_openclaw_mock "$BINDIR" "$json"
+      make_crontab_mock "$BINDIR" "$mode" "$text"
       PATH="$BINDIR:$PATH"
     fi
     _weekly_cron_currency_probe
@@ -317,32 +316,45 @@ run_cron_probe() {  # run_cron_probe <json_or_empty> <tombstoned:yes/no> <no_cli
 }
 
 echo ""
-echo "== Weekly-cron registration probe =="
-run_cron_probe '[{"name":"weekly-onboarding-update","id":"1"}]' no no >/tmp/wcp1.out 2>&1
+echo "== Weekly-cron (Tue/Fri/Sun auto-update schedule) probe =="
+TAG_LINE="*/5 * * * * /bin/bash '/h/.openclaw/scripts/auto-update-tick.sh' # openclaw-auto-update"
+run_cron_probe text "$TAG_LINE" >/tmp/wcp1.out 2>&1
 RC=$?
-[ "$RC" -eq 0 ] && ok "(cron) job present in JSON returns 0 (registered)" \
-  || bad "(cron) present-job case returned $RC (expected 0): $(cat /tmp/wcp1.out)"
+[ "$RC" -eq 0 ] && ok "(cron) tagged tick line present returns 0 (registered)" \
+  || bad "(cron) present-schedule case returned $RC (expected 0): $(cat /tmp/wcp1.out)"
 
-run_cron_probe '[{"name":"some-other-cron","id":"1"}]' no no >/tmp/wcp2.out 2>&1
+run_cron_probe text "30 4 * * 1 /usr/local/bin/their-backup.sh" >/tmp/wcp2.out 2>&1
 RC=$?
-[ "$RC" -eq 1 ] && ok "(cron) job absent + not tombstoned returns 1 (outstanding)" \
-  || bad "(cron) absent-job case returned $RC (expected 1): $(cat /tmp/wcp2.out)"
+[ "$RC" -eq 1 ] && ok "(cron) schedule absent returns 1 (outstanding)" \
+  || bad "(cron) absent-schedule case returned $RC (expected 1): $(cat /tmp/wcp2.out)"
 
-run_cron_probe '[{"name":"some-other-cron","id":"1"}]' yes no >/tmp/wcp3.out 2>&1
+run_cron_probe none >/tmp/wcp3.out 2>&1
 RC=$?
-[ "$RC" -eq 0 ] && ok "(cron) job absent BUT tombstoned returns 0 (deliberate, not outstanding)" \
-  || bad "(cron) tombstoned case returned $RC (expected 0): $(cat /tmp/wcp3.out)"
+[ "$RC" -eq 1 ] && ok "(cron) an empty crontab ('no crontab for user') is a definite absent: returns 1" \
+  || bad "(cron) empty-crontab case returned $RC (expected 1): $(cat /tmp/wcp3.out)"
 
-run_cron_probe '' no yes >/tmp/wcp4.out 2>&1
+run_cron_probe text "$TAG_LINE
+0 3 * * 0 /h/.openclaw/skills/.update-restart-if-needed" >/tmp/wcp4.out 2>&1
 RC=$?
-[ "$RC" -eq 0 ] && ok "(cron) openclaw CLI missing returns 0 (unknown, not forced)" \
-  || bad "(cron) no-CLI case returned $RC (expected 0): $(cat /tmp/wcp4.out)"
+[ "$RC" -eq 1 ] && ok "(cron) a retired Sunday line still present returns 1 (outstanding)" \
+  || bad "(cron) retired-entry case returned $RC (expected 1): $(cat /tmp/wcp4.out)"
 
-run_cron_probe 'not valid json{{{' no no >/tmp/wcp5.out 2>&1
+run_cron_probe text "$TAG_LINE
+59 23 * * 6 /h/.openclaw/skills/.openclaw-self-update" >/tmp/wcp5.out 2>&1
 RC=$?
-[ "$RC" -eq 0 ] && ok "(cron) unparseable JSON returns 0 (advisory, not forced -- NOT fail-open like oc_cron_present)" \
-  || bad "(cron) unparseable-JSON case returned $RC (expected 0): $(cat /tmp/wcp5.out)"
-rm -f /tmp/wcp1.out /tmp/wcp2.out /tmp/wcp3.out /tmp/wcp4.out /tmp/wcp5.out
+[ "$RC" -eq 1 ] && ok "(cron) a retired Saturday self-update line still present returns 1 (outstanding)" \
+  || bad "(cron) retired-Saturday case returned $RC (expected 1): $(cat /tmp/wcp5.out)"
+
+run_cron_probe error >/tmp/wcp6.out 2>&1
+RC=$?
+[ "$RC" -eq 0 ] && ok "(cron) an unreadable crontab returns 0 (unknown, never forces a pass)" \
+  || bad "(cron) unreadable-crontab case returned $RC (expected 0): $(cat /tmp/wcp6.out)"
+
+run_cron_probe nocmd >/tmp/wcp7.out 2>&1
+RC=$?
+[ "$RC" -eq 0 ] && ok "(cron) no crontab command returns 0 (unknown, not forced)" \
+  || bad "(cron) no-crontab-command case returned $RC (expected 0): $(cat /tmp/wcp7.out)"
+rm -f /tmp/wcp1.out /tmp/wcp2.out /tmp/wcp3.out /tmp/wcp4.out /tmp/wcp5.out /tmp/wcp6.out /tmp/wcp7.out
 
 # ===========================================================================
 # AGENTS.md HYGIENE PROBE

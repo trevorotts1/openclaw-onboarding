@@ -6,7 +6,7 @@
 This contract is referenced by:
 - `install.sh` UPDATE PENDING flag
 - `update-skills.sh` UPDATE PENDING flag
-- `cron-prompt.txt` (Sunday weekly update orchestration)
+- `cron-prompt.txt` (RETIRED: the old Sunday ask-first prompt; no longer installed, kept for history)
 - Each skill's `SKILL.md` and `INSTALL.md`
 - Telegram-driven onboarding contracts (Blocks 2, 4, 6, 8 of `ONBOARDING-TRIGGERS.md`)
 

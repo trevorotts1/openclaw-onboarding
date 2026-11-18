@@ -21,7 +21,7 @@
 set -uo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-SETUP_SCRIPT="$REPO_ROOT/scripts/setup-weekly-update.sh"
+SETUP_SCRIPT="$REPO_ROOT/scripts/openclaw-cli-update.sh"   # the former Saturday heredoc, now a real file run inside every auto-update run
 
 [ -f "$SETUP_SCRIPT" ] || { echo "FATAL: $SETUP_SCRIPT not found"; exit 2; }
 if [ -z "${BASH_VERSION:-}" ]; then echo "FATAL: not running under bash"; exit 2; fi
@@ -38,13 +38,9 @@ trap 'rm -rf "$WORK"' EXIT
 # --- Step 1: extract the generated inner script VERBATIM, between the
 #     `<< 'OCUPDATE_EOF'` opener and the bare `OCUPDATE_EOF` terminator. ---
 INNER="$WORK/openclaw-self-update.sh"
-awk '
-  /<< .OCUPDATE_EOF.$/ { p=1; next }
-  p && $0 == "OCUPDATE_EOF" { exit }
-  p { print }
-' "$SETUP_SCRIPT" > "$INNER"
+cp "$SETUP_SCRIPT" "$INNER"
 if [ ! -s "$INNER" ]; then
-  echo "FATAL: could not extract the OCUPDATE_EOF heredoc body from $SETUP_SCRIPT (marker drift?)"
+  echo "FATAL: $SETUP_SCRIPT is empty"
   exit 2
 fi
 echo "Extracted generated inner script: $(wc -l < "$INNER" | tr -d ' ') lines -> $INNER"

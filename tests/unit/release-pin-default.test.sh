@@ -11,7 +11,7 @@ check() { # label expected-rc expected-ref
   set -- "$1" "$2" "$3" $out
   if [ "$4" = "$2" ] && [ "$5" = "$3" ]; then echo "  PASS $1 -> rc=$4 ref=$5"; else echo "  FAIL $1 -> rc=$4 ref=$5 reason=$6 (want rc=$2 ref=$3)"; fail=1; fi
 }
-for f in update-skills.sh scripts/weekly-full-update.sh scripts/fleet-refresh.sh scripts/setup-weekly-update.sh; do
+for f in update-skills.sh scripts/weekly-full-update.sh scripts/fleet-refresh.sh; do
   echo "== $f"
   sed -n '/>>> RELEASE-PIN BEGIN/,/<<< RELEASE-PIN END/p' "$REPO/$f" > "$T/blk.sh"
   [ -s "$T/blk.sh" ] || { echo "  FAIL no RELEASE-PIN block found"; fail=1; continue; }

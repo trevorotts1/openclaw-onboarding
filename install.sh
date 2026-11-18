@@ -26,7 +26,7 @@
 #  because VPS container re-exec uses conditional commands that may fail.
 # ============================================================
 
-ONBOARDING_VERSION="v27.1.81"
+ONBOARDING_VERSION="v27.1.82"
 
 # ----------------------------------------------------------
 # Platform detection + bootstrap (MUST run before set -euo pipefail)
@@ -7303,234 +7303,30 @@ cat <<BACKUP_BLOCK
 BACKUP_BLOCK
 
 # ----------------------------------------------------------
-# Step 12: Install Sunday weekly update-check cron (idempotent)
+# Step 12: Install the Tue/Fri/Sun auto-update schedule (idempotent)
 # ----------------------------------------------------------
-step "Step 12: Installing Sunday weekly update-check cron"
+step "Step 12: Installing the Tuesday/Friday/Sunday auto-update schedule"
 
 install_weekly_cron() {
-    # Skip if openclaw CLI isn't available
-    if ! command -v openclaw >/dev/null 2>&1; then
-        warn "openclaw CLI not on PATH — skipping cron install. Re-run update-skills.sh later to install it."
-        return 0
-    fi
-
-    # v10.0.1 — REMOVED approve_pending_scopes() pre-flight here too. Same reason
-    # as the top-of-script removal: every paired client already has operator.write
-    # (their daily Telegram usage requires it). `openclaw cron create` works
-    # directly without scope manipulation.
-
-    # CRON REWRITE MIGRATION (fix/existing-box-cron-rewrite v14.19.1):
-    # Boxes provisioned BEFORE the silent-cron fix (v14.10.2) carry the OLD
-    # weekly-onboarding-update cron wired with --announce --channel telegram
-    # --to <client-chat-id>.  The scheduler auto-delivers raw maintenance traffic
-    # into the CLIENT's Telegram chat every Sunday.  A plain "already installed"
-    # skip leaves the leaking cron in place on every pre-existing box.  Fix:
-    # detect old delivery wiring via openclaw cron list --json and delete the
-    # stale entry so the creation code below always lands the SILENT main-session
-    # form.  If python3 is absent, the detection conservatively skips deletion
-    # (ensure-pipeline-crons.sh reconcile pass then catches it via --no-deliver).
-    if openclaw cron list 2>/dev/null | grep -qi "weekly-onboarding-update"; then
-        local _cron_has_old_wiring=false
-        if command -v python3 >/dev/null 2>&1; then
-            local _oc_raw_json
-            _oc_raw_json=$(openclaw cron list --json 2>/dev/null) || _oc_raw_json=""
-            if [ -n "$_oc_raw_json" ] && \
-               OC_CRON_JSON="$_oc_raw_json" python3 - <<'PYEOF' 2>/dev/null
-import json, os, sys
-raw = os.environ.get('OC_CRON_JSON', '')
-try:
-    data = json.loads(raw)
-except Exception:
-    sys.exit(1)
-jobs = data if isinstance(data, list) else data.get('jobs', [])
-for j in jobs:
-    if j.get('name') == 'weekly-onboarding-update':
-        dl = j.get('delivery') or {}
-        if dl.get('mode') == 'announce' or dl.get('to'):
-            sys.exit(0)  # old auto-announce wiring detected
-sys.exit(1)
-PYEOF
-            then
-                _cron_has_old_wiring=true
-            fi
+    # ONE crontab line (every 5 minutes) runs scripts/auto-update-tick.sh, which keeps its own
+    # America/New_York clock: 2:15 AM Eastern owner notice in the main chat, 2:30 AM Eastern update run
+    # (type cancel to skip one run). No agent prompt, no "ask first" job. Re-running changes nothing.
+    # Runtime files are persisted to $SCRIPTS_DIR so the schedule survives the temp-clone cleanup.
+    local _f _setup="$SCRIPTS_DIR/setup-weekly-update.sh"
+    for _f in auto_update.py auto-update-tick.sh auto-update-run.sh box-update-lock.sh weekly-full-update.sh openclaw-cli-update.sh setup-weekly-update.sh; do
+        if [ -f "$ONBOARDING_DIR/scripts/$_f" ]; then
+            cp -f "$ONBOARDING_DIR/scripts/$_f" "$SCRIPTS_DIR/$_f" && chmod +x "$SCRIPTS_DIR/$_f"
         fi
-        if [ "$_cron_has_old_wiring" = "true" ]; then
-            warn "Existing weekly-onboarding-update cron has old auto-announce delivery — deleting for silent-form recreate"
-            openclaw cron delete --name "weekly-onboarding-update" >/dev/null 2>&1 || true
-            # Fall through to creation logic below (cron is now absent)
-        else
-            success "Sunday weekly update-check cron already installed (SILENT — no client auto-announce)"
-            return 0
-        fi
-    fi
-
-    # Reuse the bulletproof 23-location resolver from the top of this script.
-    # Cached after first call, so this is a no-op if already resolved.
-    if [ "$TELEGRAM_RESOLVED" != "true" ]; then
-        resolve_telegram_target_universal
-    fi
-    local TG_TARGET="$TELEGRAM_TARGET_CACHED"
-
-    if [ -z "$TG_TARGET" ]; then
-        warn "Telegram chat ID not found by bulletproof resolver — cannot install weekly cron."
-        warn "Run the diagnostic to dump every location that was checked:"
-        warn "  curl -fsSL https://raw.githubusercontent.com/trevorotts1/openclaw-onboarding/main/scripts/diagnose-telegram-config.sh | bash"
-        return 0
-    fi
-    # REGRESSION GUARD (fix/cron-owner-chat-routing): operator IDs must NEVER
-    # be wired as a cron delivery target — crons must reach the CLIENT OWNER.
-    # is_chat_id() now rejects them inside the Python resolver; this second
-    # check catches any future path that bypasses the resolver.
-    case "$TG_TARGET" in
-        5252140759|6663821679|6771245262)
-            warn "ERROR: weekly-onboarding-update cron target resolved to an OPERATOR chat ID ($TG_TARGET)."
-            warn "This would route every weekly update to the operator, not the client owner. Aborting cron install."
-            warn "Set OPENCLAW_OWNER_CHAT_ID=<client-owner-chat-id> before running install.sh to force the correct target."
-            return 1
-            ;;
-    esac
-    note "Telegram cron target resolved: $TG_TARGET (source: $TELEGRAM_SOURCE_CACHED)"
-
-    # Pull cron prompt from the just-installed repo files
-    local PROMPT_FILE=""
-    for candidate in "$SKILLS_DIR/.cron-prompt.txt" "$OC_DOWNLOADS/openclaw-master-files/.cron-prompt.txt" "/tmp/openclaw-cron-prompt-${ONBOARDING_VERSION}.txt"; do
-        [ -f "$candidate" ] && PROMPT_FILE="$candidate" && break
     done
-
-    # If not staged locally, fetch from GitHub
-    if [ -z "$PROMPT_FILE" ]; then
-        PROMPT_FILE="/tmp/openclaw-cron-prompt-${ONBOARDING_VERSION}.txt"
-        curl -fsSL --max-time 15 "https://raw.githubusercontent.com/trevorotts1/openclaw-onboarding/main/cron-prompt.txt" -o "$PROMPT_FILE" 2>/dev/null || {
-            warn "Failed to fetch cron-prompt.txt from GitHub — skipping cron install"
-            return 0
-        }
-    fi
-    if [ ! -s "$PROMPT_FILE" ]; then
-        warn "cron-prompt.txt is empty — skipping cron install"
+    if [ ! -f "$_setup" ] || [ ! -f "$SCRIPTS_DIR/auto_update.py" ]; then
+        warn "scripts/setup-weekly-update.sh or auto_update.py missing from the onboarding copy — auto-update schedule NOT installed. Re-run update-skills.sh later."
         return 0
     fi
-
-    # v9.7.8: Detect multi-account Telegram setup AND auto-detect the default
-    # agent ID. Older onboarding hardcoded "--agent main" but some installs
-    # use a different default agent name. We pull both from the live config.
-    local CHANNEL_ACCOUNT=""
-    local DEFAULT_AGENT=""
-    local DETECT_OUT
-    DETECT_OUT=$(python3 -c "
-import json, os, re
-HOME = os.path.expanduser('~')
-candidates = [
-    os.path.expanduser('~/.openclaw/openclaw.json'),
-    os.path.expanduser('~/Library/Application Support/openclaw/openclaw.json'),
-    os.path.expanduser('~/.config/openclaw/openclaw.json'),
-]
-account = ''
-agent_id = ''
-
-# Detect account from credentials/telegram-<account>-allowFrom.json (Mac canonical location).
-for cdir in (os.path.join(HOME, '.openclaw', 'credentials'),
-             os.path.expanduser('~/Library/Application Support/openclaw/credentials')):
-    if not os.path.isdir(cdir):
-        continue
-    try:
-        for fn in os.listdir(cdir):
-            m = re.match(r'^telegram-(.+)-allowFrom\.json\$', fn)
-            if m:
-                account = m.group(1)
-                break
-    except Exception:
-        pass
-    if account:
-        break
-
-for p in candidates:
-    if not os.path.isfile(p):
-        continue
-    try:
-        cfg = json.load(open(p))
-        if not account:
-            accounts = cfg.get('channels', {}).get('telegram', {}).get('accounts', {})
-            if isinstance(accounts, dict) and accounts:
-                account = 'default' if 'default' in accounts else list(accounts.keys())[0]
-        for a in cfg.get('agents', {}).get('list', []) or []:
-            if isinstance(a, dict) and a.get('default'):
-                agent_id = a.get('id', '')
-                break
-        if not agent_id:
-            for a in cfg.get('agents', {}).get('list', []) or []:
-                if isinstance(a, dict) and a.get('id'):
-                    agent_id = a.get('id')
-                    break
-        break
-    except Exception:
-        continue
-print(f'{account}|{agent_id}')
-" 2>/dev/null)
-    CHANNEL_ACCOUNT="${DETECT_OUT%%|*}"
-    DEFAULT_AGENT="${DETECT_OUT##*|}"
-    [ -n "$DEFAULT_AGENT" ] && note "Default agent detected: $DEFAULT_AGENT"
-    [ -n "$CHANNEL_ACCOUNT" ] && note "Multi-account Telegram detected; will use --account $CHANNEL_ACCOUNT"
-
-    local PROMPT_CONTENT
-    PROMPT_CONTENT=$(cat "$PROMPT_FILE")
-
-    # ── SILENT-OPERATOR-CRON RULE (chore/silent-operator-crons) ──────────────
-    # weekly-onboarding-update is a MAINTENANCE/update-check cron, NOT an
-    # owner-facing announcement. The old form registered it with
-    # `--channel telegram --to $TG_TARGET` (+ a final `--announce` attempt),
-    # which made the OpenClaw scheduler AUTO-DELIVER the raw maintenance prompt
-    # straight into the CLIENT's chat every Sunday — internal operator traffic
-    # the client was never meant to see (the exact leak OPERATOR-MAINTENANCE.md
-    # "operator-drive contract" forbids).
-    #
-    # FIX: register it as a SILENT AGENT-MESSAGE cron on the agent's OWN main
-    # session — `--agent <main> --session-target main --light-context` with NO
-    # `--channel`, NO `--to`, NO `--announce`. The cron fires the update-check
-    # in the agent's own context (log-only); the agent then decides, using its
-    # own deliberate `openclaw message send`, whether to surface an
-    # owner-facing "an update is available, may I apply it?" question. Nothing
-    # is auto-pushed to the client chat. This mirrors the silent main-session
-    # pattern used by Skill 35 (register-weekly-cron.sh) and the 5.x
-    # agent-message fallback in ensure-pipeline-crons.sh.
-    #
-    # $TG_TARGET is still resolved + operator-guarded above so the agent knows
-    # the owner chat to send to WHEN it decides to — we just never wire it as
-    # the cron's auto-delivery sink.
-    # Runtime answer first: the config parse above reads only agents.list and
-    # misses boxes whose agents live in agents.entries, falling back to "main",
-    # which the runtime rejects when main is not the default agent.
-    local CRON_AGENT="$(openclaw agents list --json 2>/dev/null | python3 -c 'import json,sys
-r=sys.stdin.read(); i=min([x for x in (r.find("{"),r.find("[")) if x>=0] or [0]); d=json.loads(r[i:])
-a=d if isinstance(d,list) else d.get("agents",[])
-print(([x.get("id") for x in a if isinstance(x,dict) and (x.get("default") or x.get("isDefault"))] or [""])[0])' 2>/dev/null || true)"
-    [ -n "$CRON_AGENT" ] || CRON_AGENT="${DEFAULT_AGENT:-main}"
-
-    # Runtime-compatible SILENT main-session cron (fix/cron-flag-skew). The old
-    # ladder only emitted `--session-target main` forms, ALL of which the 2026.6.11
-    # runtime rejects ("does not recognize option --session-target" / "Main jobs
-    # require --system-event") — so a fresh install on 6.11 registered NO weekly
-    # cron. _oc_cron_silent_main probes `openclaw cron add --help` and emits the
-    # accepted form (`--session main --system-event` on 6.11+), degrading gracefully.
-    # Box update schedule (2026-11-02): Tue/Fri/Sun 2:00 AM Eastern command job
-    # (shared-utils/cron-lib.sh oc_box_update_cron_ensure); agent prompt below
-    # only when this OpenClaw has no command jobs or the create failed.
-    if command -v oc_box_update_cron_ensure >/dev/null 2>&1 && oc_box_update_cron_ensure; then
-        success "Box update cron installed — Tue/Fri/Sun 2:00 AM Eastern, silent command job"
-        return 0
+    if bash "$_setup" >> "${LOG_FILE:-/dev/null}" 2>&1; then
+        success "Auto-update schedule installed — Tue/Fri/Sun, 2:15 AM Eastern notice, 2:30 AM Eastern run (cancel skips one run)"
+    else
+        warn "Auto-update schedule install failed (see ${LOG_FILE:-the install log}). Manual: bash $_setup"
     fi
-    if _oc_cron_silent_main "weekly-onboarding-update" "$CRON_AGENT" "${OC_BOX_UPDATE_SCHEDULE:-0 2 * * 0,2,5}" "America/New_York" "$PROMPT_CONTENT" --light-context; then
-        success "Sunday update-check cron installed — Sundays 3am ET, SILENT main-session (no client auto-announce)"
-        return 0
-    fi
-
-    # All silent attempts failed — leave a recovery hint (still SILENT: no
-    # --channel/--to/--announce in the manual command either).
-    warn "Cron creation failed. Manual install command (SILENT — no client auto-announce):"
-    warn "  openclaw cron create --name weekly-onboarding-update --agent $CRON_AGENT \\"
-    warn "    --cron '0 2 * * 0,2,5' --tz America/New_York \\"
-    warn "    --session main --system-event \"\$(cat $PROMPT_FILE)\"   # older CLIs: --session-target main --message"
-    warn ""
-    warn "If that fails too, send Trevor the EXACT error message (see $LOG_FILE)."
     return 0
 }
 

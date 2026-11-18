@@ -87,7 +87,6 @@ ALLOWLIST=(
   "install.sh"                                                    # explicit "never scripts/update-skills.sh" warning
   "ledgers/evidence/GK-01-U63/README.md"                          # historical evidence
   "scripts/qc-assert-chmod600-real.py"                            # historical incident comment
-  "scripts/setup-weekly-update.sh"                                # self-heal DETECTS this string on purpose
   "scripts/test-config-injection-shapes.sh"                       # negative-assertion test (asserts absence of a bad literal)
   "scripts/test-single-update-skills-entrypoint.sh"               # this file
   "tests/test-ungated-claim-points.sh"                            # comment, substring-filtered from a write-site scan
