@@ -25,11 +25,20 @@
 #     v2.1.48 against a skill-version.txt of v2.1.49 (commit d0855b696 rolled
 #     skill-version.txt + SKILL.md by hand and skipped VERSION) TWICE, and no
 #     gate compared the two, so the split shipped silently both times.
+#   * EVERY SKILL.md under the root (versioned or not) must not repeat a
+#     top-level key inside its first `---` ... `---` frontmatter block. FRF-002:
+#     two branches each added `version:` to 37-zhc-closeout/SKILL.md at a
+#     different line, a clean 3-way merge kept both, and OpenClaw's skill
+#     loader (yaml parseDocument) rejected the whole file with DUPLICATE_KEY,
+#     so agents lost the skill. The version check above reads only the first
+#     `version:` line, so it stayed green with two of them.
 #
 # Exit codes:
 #   0  — every checked skill's frontmatter `version:` == skill-version.txt
-#        (and VERSION, when present, == skill-version.txt)
+#        (and VERSION, when present, == skill-version.txt), and no SKILL.md
+#        repeats a top-level frontmatter key
 #   1  — INVARIANT VIOLATED (one or more skills drifted)
+#        or a SKILL.md repeats a top-level frontmatter key
 #   2  — could not resolve a repo root / no skill-version.txt found (environment)
 #
 # Usage:
@@ -38,9 +47,12 @@
 #   bash scripts/qc-assert-skill-frontmatter-version.sh --self-test # embedded test
 #
 # Wired into:
-#   - .github/workflows/skill-frontmatter-version-guard.yml (push/PR)
+#   - scripts/ci/fast-guards.d/skill-frontmatter-version-guard.sh (fast-guards;
+#     folded from .github/workflows/skill-frontmatter-version-guard.yml)
+#   - .github/workflows/version-consistency.yml (required check; the only one
+#     of the two that also runs on batch pull requests, where merges meet)
 #
-# v1.0.0 (P1-4 / July-3-Fixes)
+# v1.1.0 (FRF-002 duplicate top-level key scan; v1.0.0 P1-4 / July-3-Fixes)
 
 set -uo pipefail
 
@@ -95,15 +107,44 @@ normalize_version() {
   printf '%s' "$v"
 }
 
+# ── Duplicate TOP-LEVEL frontmatter keys in one SKILL.md (FRF-002) ────────────
+# Prints one `key|first_line|repeat_line` row per repeated column-0 key inside
+# the first `---` ... `---` block. Prints nothing when the file has no leading
+# fence or the block never closes (the skill loader reads no frontmatter then).
+# CR line endings and a UTF-8 BOM are ignored, as the loader normalizes both.
+# ponytail: a column-0 line scan, not a YAML parse. Strict PyYAML would falsely
+# fail 14 SKILL.md files whose description carries an unquoted ': ' that the
+# loader accepts. Switch to the loader's own parser only if its rules change.
+find_duplicate_frontmatter_keys() {
+  LC_ALL=C awk '
+    { sub(/\r$/, "") }
+    NR == 1 {
+      if (substr($0, 1, 3) == "\357\273\277") $0 = substr($0, 4)
+      if ($0 !~ /^---[ \t]*$/) exit
+      next
+    }
+    /^---[ \t]*$/ { closed = 1; exit }
+    /^[A-Za-z0-9_-]+:([ \t]|$)/ {
+      key = $0
+      sub(/:.*/, "", key)
+      if (key in seen) out = out key "|" seen[key] "|" NR "\n"
+      else seen[key] = NR
+    }
+    END { if (closed) printf "%s", out }
+  ' "$1"
+}
+
 # ── Scan a root directory for frontmatter/skill-version drift ──────────────────
 # Returns: 0 = all agree, 1 = drift found, 2 = no skill-version.txt under root.
 scan_root() {
   local root="$1"
   local vf dir smd fmraw svraw fmver svver base vfile vraw vver
+  local dup dpath dkey dfirst drepeat
   local -a drifted=()
   local -a vdrifted=()
   local -a skipped=()
-  local checked=0 found=0
+  local -a dupkeys=()
+  local checked=0 found=0 scanned=0
 
   while IFS= read -r vf; do
     found=$((found + 1))
@@ -144,11 +185,20 @@ scan_root() {
     return 2
   fi
 
+  # FRF-002: every SKILL.md under root, including ones with no skill-version.txt.
+  while IFS= read -r smd; do
+    scanned=$((scanned + 1))
+    while IFS= read -r dup; do
+      [ -n "$dup" ] && dupkeys+=("${smd#"$root"/}|${dup}")
+    done < <(find_duplicate_frontmatter_keys "$smd")
+  done < <(find "$root" \( -type f -o -type l \) -name SKILL.md -not -path '*/node_modules/*' -not -path '*/.git/*' 2>/dev/null | LC_ALL=C sort)
+
   if [ "${#skipped[@]}" -gt 0 ]; then
     echo "SKIPPED (${#skipped[@]}) — SKILL.md has no top-level frontmatter version: ${skipped[*]}"
   fi
 
-  if [ "${#drifted[@]}" -eq 0 ] && [ "${#vdrifted[@]}" -eq 0 ]; then
+  if [ "${#drifted[@]}" -eq 0 ] && [ "${#vdrifted[@]}" -eq 0 ] && [ "${#dupkeys[@]}" -eq 0 ]; then
+    echo "PASS - ${scanned} SKILL.md file(s) scanned; no SKILL.md repeats a top-level frontmatter key"
     echo "PASS — ${checked} skill(s) checked; every SKILL.md frontmatter version == skill-version.txt (and every VERSION == skill-version.txt)"
     return 0
   fi
@@ -173,6 +223,17 @@ scan_root() {
       printf '  %-45s VERSION=%-10s != skill-version.txt=%s\n' "$name" "$fm" "$sv" >&2
     done
     echo "  Remedy: roll the VERSION file to match skill-version.txt (never lower skill-version.txt); \`scripts/batch-prep.sh\` rolls every stamp a skill's own gate compares." >&2
+  fi
+  if [ "${#dupkeys[@]}" -gt 0 ]; then
+    echo "INVARIANT VIOLATED - repeated top-level frontmatter key in SKILL.md (${#dupkeys[@]} repeat(s)); the skill loader rejects the whole file (DUPLICATE_KEY):" >&2
+    for rec in "${dupkeys[@]}"; do
+      IFS='|' read -r dpath dkey dfirst drepeat <<<"$rec"
+      printf '  %s: key "%s" on line %s repeats line %s\n' "$dpath" "$dkey" "$drepeat" "$dfirst" >&2
+      if [ "${GITHUB_ACTIONS:-}" = true ]; then
+        printf '::error file=%s,line=%s::repeated top-level frontmatter key %s (first on line %s)\n' "$dpath" "$drepeat" "$dkey" "$dfirst"
+      fi
+    done
+    echo "  Remedy: delete the repeated line and keep one. When bumping a version, update the existing \`version:\` line; add one only if the frontmatter has none." >&2
   fi
   return 1
 }
@@ -222,11 +283,42 @@ run_self_test() {
   printf '1.0.2\n' > "$tmp/badver2/82-vdrift-skip/skill-version.txt"
   printf '1.0.1\n' > "$tmp/badver2/82-vdrift-skip/VERSION"
 
+  # FRF-002 repeated top-level keys. Added to the MATCH tree (must still PASS):
+  #   75: top-level version + nested `metadata:` and `openclaw:` maps that each
+  #       hold `version:` and `name:`, a repeated comment, and body lines after
+  #       the closing fence that reuse key names;
+  #   76: no skill-version.txt, no frontmatter, repeated `Note:` lines in the body;
+  #   77: no skill-version.txt, frontmatter never closes (the loader reads none).
+  mkdir -p "$tmp/good/75-nested" "$tmp/good/76-nofm" "$tmp/good/77-unclosed"
+  printf -- '---\nname: nested\nversion: 2.0.0\nmetadata:\n  version: "1.9.0"\n  name: inner\nopenclaw:\n  version: "1.9.1"\n  name: inner2\n# version: 0.0.1\n# version: 0.0.1\n---\nbody\nversion: 9.9.9\nname: body\n' > "$tmp/good/75-nested/SKILL.md"
+  printf '2.0.0\n' > "$tmp/good/75-nested/skill-version.txt"
+  printf -- '# Title\nNote: one\nNote: two\n' > "$tmp/good/76-nofm/SKILL.md"
+  printf -- '---\nname: a\nname: b\nno closing fence\n' > "$tmp/good/77-unclosed/SKILL.md"
+
+  # Fixture E: the 37-zhc-closeout shape: `version:` twice with the same value,
+  # so the first-match version check agrees; only the key scan can fail it.
+  mkdir -p "$tmp/dupver/83-dupver"
+  printf -- '---\nname: dupver\nversion: "v1.0.0"\ndescription: d\nversion: v1.0.0\n---\nbody\n' > "$tmp/dupver/83-dupver/SKILL.md"
+  printf 'v1.0.0\n' > "$tmp/dupver/83-dupver/skill-version.txt"
+
+  # Fixture F: repeated `name:` in a SKILL.md with NO skill-version.txt beside
+  # it (every SKILL.md is scanned, not only versioned skill dirs).
+  mkdir -p "$tmp/dupname/84-ok/upstream"
+  printf -- '---\nname: ok\nversion: 1.0.0\n---\n' > "$tmp/dupname/84-ok/SKILL.md"
+  printf '1.0.0\n' > "$tmp/dupname/84-ok/skill-version.txt"
+  printf -- '---\nname: one\ndescription: d\nname: two\n---\n' > "$tmp/dupname/84-ok/upstream/SKILL.md"
+
+  # Fixture G: repeated key in a CRLF file that starts with a UTF-8 BOM (the
+  # loader strips the BOM and normalizes line endings, so it still rejects it).
+  mkdir -p "$tmp/dupcrlf/85-crlf"
+  printf -- '\357\273\277---\r\nname: crlf\r\ndescription: a\r\ndescription: b\r\n---\r\n' > "$tmp/dupcrlf/85-crlf/SKILL.md"
+  printf '3.0.0\n' > "$tmp/dupcrlf/85-crlf/skill-version.txt"
+
   echo "== self-test =="
 
   scan_root "$tmp/good" >/dev/null 2>&1; rc=$?
   if [ "$rc" -eq 0 ]; then
-    echo "  [PASS] match fixture returns exit 0 (agree + v-normalize + skip + VERSION all handled)"
+    echo "  [PASS] match fixture returns exit 0 (agree + v-normalize + skip + VERSION + nested/body/unclosed keys all handled)"
   else
     echo "  [FAIL] match fixture should PASS (exit 0) but returned $rc"; fails=$((fails + 1))
   fi
@@ -250,6 +342,27 @@ run_self_test() {
     echo "  [PASS] VERSION split with skipped SKILL.md still returns exit 1 (skip does not bypass)"
   else
     echo "  [FAIL] VERSION split with skipped SKILL.md should FAIL (exit 1) but returned $rc"; fails=$((fails + 1))
+  fi
+
+  scan_root "$tmp/dupver" >/dev/null 2>&1; rc=$?
+  if [ "$rc" -eq 1 ]; then
+    echo "  [PASS] repeated top-level version: with equal values returns exit 1 (the 37-zhc-closeout shape)"
+  else
+    echo "  [FAIL] repeated top-level version: should FAIL (exit 1) but returned $rc"; fails=$((fails + 1))
+  fi
+
+  scan_root "$tmp/dupname" >/dev/null 2>&1; rc=$?
+  if [ "$rc" -eq 1 ]; then
+    echo "  [PASS] repeated name: in an unversioned SKILL.md returns exit 1 (every SKILL.md scanned)"
+  else
+    echo "  [FAIL] repeated name: in an unversioned SKILL.md should FAIL (exit 1) but returned $rc"; fails=$((fails + 1))
+  fi
+
+  scan_root "$tmp/dupcrlf" >/dev/null 2>&1; rc=$?
+  if [ "$rc" -eq 1 ]; then
+    echo "  [PASS] repeated key in a BOM + CRLF SKILL.md returns exit 1 (BOM and line endings normalized)"
+  else
+    echo "  [FAIL] repeated key in a BOM + CRLF SKILL.md should FAIL (exit 1) but returned $rc"; fails=$((fails + 1))
   fi
 
   if [ "$fails" -eq 0 ]; then
