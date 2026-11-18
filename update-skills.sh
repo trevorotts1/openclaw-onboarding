@@ -6254,6 +6254,13 @@ if [ -f "$ONBOARDING_DIR/lib-shared.sh" ]; then
       && echo "  ✓ lib-shared.sh delivered to $SKILLS_DIR" \
       || echo "  ⚠ could not deliver lib-shared.sh to $SKILLS_DIR" >&2
 fi
+# ONE-PYTHON (v27.1.80): record the canonical interpreter in <root>/.oc-python
+# (platform/common.sh oc_python_record_stamp). A changed answer (the image moved
+# its Python) is printed loudly. Guarded: a test that sources only this delivery
+# slice has no resolver loaded.
+if declare -F oc_python_record_stamp >/dev/null 2>&1; then
+    oc_python_record_stamp || echo "  ⚠ one-python: canonical interpreter not recorded (see the line above)" >&2
+fi
 
   # >>> CANONICAL-CONFIG-DELIVERY-BEGIN  (v21.6.0 / R1)
   # config/ is a SIBLING of scripts/ and, until now, was delivered by NOTHING on
@@ -13456,14 +13463,17 @@ PY
     # FIX 71: department venv — created on BOTH platforms (the VPS reassert script
     # predates the venv and pip-installs into the system interpreter; converging
     # the venv here closes that gap until install.sh Step 6.5 ships the venv too).
-    if command -v python3 >/dev/null 2>&1; then
-      if [ ! -x "$_PRES_VENV_PY" ]; then
-        echo "    Creating department venv at $_PRES_VENV ..."
-        if python3 -m venv "$_PRES_VENV" >/dev/null 2>&1 && [ -x "$_PRES_VENV_PY" ]; then
+    # ONE-PYTHON (v27.1.80): the venv is built on the canonical interpreter by
+    # oc_venv (platform/common.sh): `uv venv --python <canonical> --seed`, so
+    # Debian's ensurepip-less 3.13 no longer leaves a hollow venv, and a hollow
+    # venv already on the box (bin/python but no pip) is repaired in place.
+    if oc_python >/dev/null 2>&1; then
+      if [ ! -x "$_PRES_VENV_PY" ] || ! "$_PRES_VENV_PY" -m pip --version >/dev/null 2>&1; then
+        echo "    Creating department venv at $_PRES_VENV on $(oc_python 2>/dev/null) ..."
+        if oc_venv "$_PRES_VENV" >/dev/null 2>&1 && [ -x "$_PRES_VENV_PY" ]; then
           echo "    ✓ venv created ($_PRES_VENV)"
         else
-          rm -rf "$_PRES_VENV" 2>/dev/null
-          echo "    ⚠⚠ python3 -m venv FAILED — the venv half was not created. Debian/Ubuntu images need: apt-get install -y python3-venv python3-pip. The four Python presentation deps (reportlab, python-pptx, pypdf, pytesseract) are NOT installed; deck assembly + presenter PDF + workbook read-back + OCR readback will fail at GATE 1."
+          echo "    ⚠⚠ venv creation FAILED at $_PRES_VENV (oc_venv: needs uv, or a python with ensurepip). The four Python presentation deps (reportlab, python-pptx, pypdf, pytesseract) are NOT installed; deck assembly + presenter PDF + workbook read-back + OCR readback will fail at GATE 1. Manual: bash ${SKILLS_DIR:-<root>/skills}/shared-utils/oc-python.sh venv $_PRES_VENV"
         fi
       fi
       if [ -x "$_PRES_VENV_PY" ]; then
@@ -13475,7 +13485,7 @@ PY
              && "$_PRES_VENV_PY" -c "import reportlab, pptx, pypdf, pytesseract" >/dev/null 2>&1; then
             echo "    ✓ reportlab + python-pptx + pypdf + pytesseract installed in the venv"
           else
-            echo "    ⚠ venv pip install failed — deck assembly + presenter PDF + workbook read-back + OCR readback will fail. Re-run: $_PRES_VENV_PY -m pip install reportlab python-pptx pypdf pytesseract"
+            echo "    ⚠ venv package install failed, deck assembly + presenter PDF + workbook read-back + OCR readback will fail. Re-run: $_PRES_VENV_PY -m pip install reportlab python-pptx pypdf pytesseract"
           fi
         fi
         # FIX 70: converge every remaining canon python_import row (a canon dep
@@ -13554,7 +13564,7 @@ PY
     # the verdict.
     pres_deps_verify_rows
     if [ -n "$_pres_missing" ]; then
-      echo "  ⚠⚠ PRESENTATION_DEPS_MISSING after converge:${_pres_missing}. The Skill 23 presentation pipeline will refuse every deck build at GATE 1 until these resolve. Department venv (FIX 71): python3 -m venv ${OC_CONFIG:-$HOME/.openclaw}/.venv-presentations && ${OC_CONFIG:-$HOME/.openclaw}/.venv-presentations/bin/python -m pip install reportlab python-pptx pypdf pytesseract. Mac system deps: brew install poppler; brew install --cask libreoffice; brew install ffmpeg; brew install tesseract. VPS: bash $_PRES_OC_ROOT/scripts/reassert-presentation-deps.sh"
+      echo "  ⚠⚠ PRESENTATION_DEPS_MISSING after converge:${_pres_missing}. The Skill 23 presentation pipeline will refuse every deck build at GATE 1 until these resolve. Department venv (FIX 71): bash ${SKILLS_DIR:-${OC_CONFIG:-$HOME/.openclaw}/skills}/shared-utils/oc-python.sh venv ${OC_CONFIG:-$HOME/.openclaw}/.venv-presentations && ${OC_CONFIG:-$HOME/.openclaw}/.venv-presentations/bin/python -m pip install reportlab python-pptx pypdf pytesseract. Mac system deps: brew install poppler; brew install --cask libreoffice; brew install ffmpeg; brew install tesseract. VPS: bash $_PRES_OC_ROOT/scripts/reassert-presentation-deps.sh"
       echo "  [pres-readiness] aggregated updater result PRESERVED: unrelated department updates already performed are NOT rolled back; the final exit code latches this readiness verdict."
     else
       echo "  ✓ presentation deps converged: soffice + pdftoppm + venv(reportlab + python-pptx + pypdf + pytesseract) + ffmpeg/ffprobe + tesseract all present (canon-checked)"

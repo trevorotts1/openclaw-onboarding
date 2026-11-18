@@ -234,7 +234,7 @@ PYEOF
   [ -z "$_PRES_PY3" ] && _PRES_PY3="python3"
   log "presentation deps interpreter: ${_PRES_PY3}"
   if [ "$_PRES_PY3" = "python3" ] && ! command -v python3 >/dev/null 2>&1; then
-    _PRES_DEPS_MISSING="${_PRES_DEPS_MISSING} python3(no venv at ${PRESENTATION_PIPELINE_INTERPRETER:-~/.openclaw/.venv-presentations}; create it with python3 -m venv and pip install reportlab python-pptx pypdf)"
+    _PRES_DEPS_MISSING="${_PRES_DEPS_MISSING} python3(no venv at ${PRESENTATION_PIPELINE_INTERPRETER:-~/.openclaw/.venv-presentations}; create it with bash ~/.openclaw/skills/shared-utils/oc-python.sh venv <root>/.venv-presentations, then <root>/.venv-presentations/bin/python -m pip install reportlab python-pptx pypdf)"
   else
     "$_PRES_PY3" -c "import reportlab, pptx, pypdf" >/dev/null 2>&1 \
       || _PRES_DEPS_MISSING="${_PRES_DEPS_MISSING} python(reportlab+python-pptx+pypdf in the department venv; fix: ${_PRES_PY3} -m pip install reportlab python-pptx pypdf)"
@@ -275,7 +275,7 @@ PYEOF
       [ -d "/data/.openclaw" ] && _PRES_QC_ROOT="/data/.openclaw"
     fi
     log "  or on a VPS run: bash $_PRES_QC_ROOT/scripts/reassert-presentation-deps.sh"
-    log "  FIX 71 venv one-liner: python3 -m venv $HOME/.openclaw/.venv-presentations && $HOME/.openclaw/.venv-presentations/bin/python -m pip install reportlab python-pptx pypdf   (VPS: use $_PRES_QC_ROOT/.venv-presentations)"
+    log "  FIX 71 venv one-liner: bash $SCRIPT_DIR/../../shared-utils/oc-python.sh venv $HOME/.openclaw/.venv-presentations && $HOME/.openclaw/.venv-presentations/bin/python -m pip install reportlab python-pptx pypdf   (VPS: use $_PRES_QC_ROOT/.venv-presentations)"
     printf '{"status":"PRESENTATION_DEPS_MISSING","ts":"%s","missing":"%s","interpreter":"%s"}\n' "$TS" "${_PRES_DEPS_MISSING# }" "$_PRES_PY3" > "$JSON_FILE"
     exit 6
   fi

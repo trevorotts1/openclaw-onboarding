@@ -3899,11 +3899,14 @@ if [ "$OC_PLATFORM" = "vps" ] || { [ -z "${OC_PLATFORM:-}" ] && [ "$(uname -s 2>
     _need_base=""
     command -v jq    >/dev/null 2>&1 || _need_base="${_need_base}jq "
     command -v unzip >/dev/null 2>&1 || _need_base="${_need_base}unzip "
-    # pip presence = either a pip3/pip binary OR `python3 -m pip` importable.
-    if ! command -v pip3 >/dev/null 2>&1 && ! command -v pip >/dev/null 2>&1 \
-         && ! python3 -m pip --version >/dev/null 2>&1; then
+    # pip presence = pip importable by the ONE canonical interpreter (oc_python,
+    # platform/common.sh). A pip3/pip binary on PATH proves nothing: on a Hostinger
+    # image it is Homebrew's pip, which installs into a different Python.
+    _base_py="$(oc_python 2>/dev/null || true)"
+    if [ -z "$_base_py" ] || ! "$_base_py" -m pip --version >/dev/null 2>&1; then
         _need_base="${_need_base}python3-pip "
     fi
+    unset _base_py
     if [ -z "$_need_base" ]; then
         success "Base runtime tools already present (jq, unzip, pip)"
     elif [ -n "$_BASE_APT" ] && [ -x "$_BASE_APT" ]; then
@@ -4851,19 +4854,23 @@ PYEOF
     unset _BROWSER_HEAL_OUT
 fi
 
-# FIX 71: NO `--break-system-packages` anywhere in this installer. Externally
-# managed environments (macOS 13+ python, PEP 668 Debian containers) reject the
-# bare install, so try a --user install first, then pipx, and fail LOUDLY with
-# the manual remediation instead of punching through the environment marker.
-if ! python3 -c "import google.genai" 2>/dev/null; then
-    note "Installing google-genai package..."
-    if python3 -m pip install --user google-genai >> "$LOG_FILE" 2>&1 \
-       && python3 -c "import google.genai" 2>/dev/null; then
-        success "google-genai installed via pip --user"
-    elif command -v pipx >/dev/null 2>&1 && pipx inject google-genai 2>/dev/null; then
-        success "google-genai installed via pipx inject"
+# FIX 71 + ONE-PYTHON (v27.1.80): no `--break-system-packages` in this installer.
+# Every Python package goes to the ONE canonical interpreter through
+# oc_pip_install (platform/common.sh): `<canonical> -m pip install --user`. The
+# PEP 668 override, where the box needs it, lives only in that resolver and only
+# together with --user. Failures are LOUD with the one manual command.
+ONE_PY="$(oc_python 2>/dev/null || true)"
+ONE_PY_CLI="$SKILLS_DIR/shared-utils/oc-python.sh"
+oc_python_record_stamp >> "$LOG_FILE" 2>&1 || warn "one-python: could not record $(oc_python_stamp_path) (see $LOG_FILE)"
+if [ -z "$ONE_PY" ]; then
+    warn "one-python: no canonical python3 found, Python packages cannot be installed. Fix: install python3, then re-run."
+elif ! "$ONE_PY" -c "import google.genai" 2>/dev/null; then
+    note "Installing google-genai package into $ONE_PY ..."
+    if oc_pip_install google-genai >> "$LOG_FILE" 2>&1 \
+       && "$ONE_PY" -c "import google.genai" 2>/dev/null; then
+        success "google-genai installed for $ONE_PY (pip --user)"
     else
-        warn "google-genai install failed — manual install required: python3 -m pip install --user google-genai (or a venv)"
+        warn "google-genai install failed, manual install required: bash $ONE_PY_CLI pip-install google-genai"
     fi
 else
     success "google-genai already installed"
@@ -4880,9 +4887,10 @@ fi
 # ----------------------------------------------------------
 # Install pdfplumber, pypdf, ebooklib, mobi, beautifulsoup4, aiohttp, numpy.
 # Each verified individually; failures LOUDLY warn (not silently swallowed).
-# FIX 71 install order: uv → pip --user → venv pip → pipx fallback. NO
-# --break-system-packages anywhere — an externally-managed environment (PEP
-# 668, macOS 13+) is worked WITH (user site / a venv), never punched through.
+# ONE-PYTHON install order: canonical --user install (oc_pip_install) -> the
+# Skill 22 fallback venv built on the canonical interpreter (oc_venv). The old
+# `uv pip install` (no target), bare `python3 -m pip` and pipx tiers each landed
+# in a different Python and are gone.
 # ────────────────────────────────────────────────────────────────────────────
 
 step "Step 6.4: Installing Skill 22 Python pipeline dependencies (Mac)"
@@ -4895,11 +4903,7 @@ _ensure_s22_fallback_venv() {
     if [ -d "/data/.openclaw" ]; then VENV_ROOT="/data/.openclaw"; else VENV_ROOT="${OC_CONFIG:-$HOME/.openclaw}"; fi
     local VENV_DIR="$VENV_ROOT/.venv-skill22"
     local VENV_PY="$VENV_DIR/bin/python"
-    if [ -x "$VENV_PY" ]; then
-        echo "$VENV_PY"; return 0
-    fi
-    if python3 -m venv "$VENV_DIR" >> "$LOG_FILE" 2>&1; then
-        "$VENV_PY" -m pip install --quiet --upgrade pip >> "$LOG_FILE" 2>&1 || true
+    if oc_venv "$VENV_DIR" >> "$LOG_FILE" 2>&1; then
         echo "$VENV_PY"; return 0
     fi
     return 1
@@ -4910,37 +4914,25 @@ _install_py_pkg_mac() {
     local import="$2"
     local display="${3:-$pkg}"
 
-    if python3 -c "import $import" 2>/dev/null; then
+    local _py
+    _py="$(oc_python 2>/dev/null)" || { warn "WARN: $display not installed: no canonical python3 (one-python)"; return 1; }
+    if "$_py" -c "import $import" 2>/dev/null; then
         success "$display already installed"
         return 0
     fi
-    note "Installing $display..."
+    note "Installing $display into $_py ..."
 
-    # Attempt 1: uv pip install
-    if command -v uv >/dev/null 2>&1; then
-        if uv pip install "$pkg" >> "$LOG_FILE" 2>&1; then
-            if python3 -c "import $import" 2>/dev/null; then
-                success "$display installed via uv"
-                return 0
-            fi
-        fi
-    fi
-
-    # Attempt 2: pip --user. v14.1.3: `python3 -m pip` instead of bare `pip3` —
-    # portable. Resolves to the SAME pip on Mac, and works on a fresh Linux
-    # container where pip is installed as a module with no `pip3` binary on
-    # PATH (this helper now also runs Skill 22 deps on VPS, where bare `pip3`
-    # would have been "command not found"). FIX 71: no --break-system-packages;
-    # on a PEP-668 system python this attempt simply fails and we fall through.
-    if python3 -m pip install --user "$pkg" >> "$LOG_FILE" 2>&1; then
-        if python3 -c "import $import" 2>/dev/null; then
-            success "$display installed via pip --user"
+    # Attempt 1: the ONE canonical interpreter, user site (oc_pip_install). On a
+    # Mac PEP-668 python this attempt fails and we fall through to the venv.
+    if oc_pip_install "$pkg" >> "$LOG_FILE" 2>&1; then
+        if "$_py" -c "import $import" 2>/dev/null; then
+            success "$display installed via pip --user ($_py)"
             return 0
         fi
     fi
 
-    # Attempt 3 (FIX 71): the Skill 22 fallback venv — guaranteed importable
-    # there even on an externally-managed system python.
+    # Attempt 2 (FIX 71): the Skill 22 fallback venv on the canonical
+    # interpreter, importable there even on an externally-managed python.
     local _s22_venv_py
     if _s22_venv_py="$(_ensure_s22_fallback_venv)" && [ -n "$_s22_venv_py" ]; then
         if "$_s22_venv_py" -m pip install --quiet "$pkg" >> "$LOG_FILE" 2>&1; then
@@ -4951,17 +4943,9 @@ _install_py_pkg_mac() {
         fi
     fi
 
-    # Attempt 4: pipx (runs apps in their own venvs — never touches system site).
-    if command -v pipx >/dev/null 2>&1; then
-        if pipx inject skill22-shared "$pkg" >> "$LOG_FILE" 2>&1; then
-            success "$display installed via pipx (skill22-shared)"
-            return 0
-        fi
-    fi
-
     warn "WARN: $display installation failed after all attempts."
     warn "      Skill 22 book extraction may fail for formats requiring $display."
-    warn "      Manual fix: python3 -m pip install --user $pkg  (or: python3 -m venv ~/.openclaw/.venv-skill22 && ~/.openclaw/.venv-skill22/bin/pip install $pkg)"
+    warn "      Manual fix: bash $ONE_PY_CLI pip-install $pkg"
     return 1
 }
 
@@ -5065,8 +5049,8 @@ ensure_presentation_venv() {
         success "FIX 71: presentation venv already healthy at $VENV_DIR (reportlab, pptx, pypdf, pytesseract all import)"
     else
         note "FIX 71: creating presentation venv at $VENV_DIR ..."
-        if ! python3 -m venv "$VENV_DIR" >> "$LOG_FILE" 2>&1; then
-            warn "FIX 71: python3 -m venv failed at $VENV_DIR — the presentation pipeline will fall back to the system python3. Manual fix: python3 -m venv $VENV_DIR && $VENV_DIR/bin/pip install reportlab python-pptx pypdf pytesseract Pillow"
+        if ! oc_venv "$VENV_DIR" >> "$LOG_FILE" 2>&1; then
+            warn "FIX 71: venv creation failed at $VENV_DIR (see $LOG_FILE), the presentation pipeline will fall back to the system python3. Manual fix: bash $ONE_PY_CLI venv $VENV_DIR && $VENV_DIR/bin/python -m pip install reportlab python-pptx pypdf pytesseract Pillow"
             return 0
         fi
         # venv pip is self-contained (no PEP 668 external-management marker) —
@@ -5080,7 +5064,7 @@ ensure_presentation_venv() {
                 warn "FIX 71: venv packages installed but the import check FAILED — see $LOG_FILE. Manual: $VENV_PY -c 'import reportlab, pptx, pypdf, pytesseract'"
             fi
         else
-            warn "FIX 71: pip install into $VENV_DIR failed (network/offline?) — see $LOG_FILE. Manual: $VENV_PY -m pip install $_pkgs"
+            warn "FIX 71: venv package install into $VENV_DIR failed (network/offline?), see $LOG_FILE. Manual: $VENV_PY -m pip install $_pkgs"
         fi
     fi
 
@@ -5169,8 +5153,8 @@ if [ "$OPENCLAW_PLATFORM" = "vps" ]; then
     # dpkg-backed apt. We also resolve the python3 that build_deck.py will run so
     # reportlab/python-pptx land in the interpreter that actually imports them.
     _APT_GET="/usr/bin/apt-get"
-    _PY3="$(command -v python3 || echo /usr/bin/python3)"
-    note "VPS: using real Debian apt at $_APT_GET and python3 at $_PY3"
+    _PY3="$(oc_python 2>/dev/null || echo /usr/bin/python3)"
+    note "VPS: using real Debian apt at $_APT_GET and python3 at $_PY3 (one-python canonical)"
 
     # Write the reassert script FIRST so the install path and the cron path run
     # IDENTICAL logic (the install below simply invokes it once).
@@ -5198,7 +5182,21 @@ echo "[$(ts)] reassert-presentation-deps starting" >> "$LOG"
 
 # Real Debian apt (NOT the /usr/local/bin brew shim).
 APT_GET="/usr/bin/apt-get"
-PY3="$(command -v python3 || echo /usr/bin/python3)"
+# ONE-PYTHON: the canonical interpreter + venv builder come from the delivered
+# platform/common.sh (oc_python / oc_venv); never the python3 PATH happens to
+# find first (Homebrew python on a docker exec).
+OC_COMMON=""
+for _c in "${OPENCLAW_ROOT:-/data/.openclaw}/platform/common.sh" /data/.openclaw/platform/common.sh; do
+    [ -f "$_c" ] && { OC_COMMON="$_c"; break; }
+done
+if [ -n "$OC_COMMON" ]; then
+    # shellcheck source=/dev/null
+    . "$OC_COMMON"
+    PY3="$(oc_python 2>>"$LOG" || echo /usr/bin/python3)"
+else
+    echo "[$(ts)] WARN: platform/common.sh not delivered under the OpenClaw root, venv creation skipped (re-run update-skills.sh)" >> "$LOG"
+    PY3=/usr/bin/python3
+fi
 
 # --- System packages: libreoffice-impress (soffice) + poppler-utils (pdftoppm) + ffmpeg
 # --- + tesseract-ocr (the OCR readback binary pytesseract shells out to).
@@ -5223,21 +5221,21 @@ fi
 # --- DOES survive a force-recreate; this script still (re)asserts idempotently.
 VENV_DIR="/data/.openclaw/.venv-presentations"
 VENV_PY="$VENV_DIR/bin/python"
-if [ ! -x "$VENV_PY" ]; then
-    echo "[$(ts)] FIX 71: creating venv at $VENV_DIR" >> "$LOG"
-    python3 -m venv "$VENV_DIR" >> "$LOG" 2>&1 \
+if [ -n "$OC_COMMON" ] && { [ ! -x "$VENV_PY" ] || ! "$VENV_PY" -m pip --version >/dev/null 2>&1; }; then
+    echo "[$(ts)] FIX 71: creating venv at $VENV_DIR on $PY3 (oc_venv)" >> "$LOG"
+    oc_venv "$VENV_DIR" >> "$LOG" 2>&1 \
         && echo "[$(ts)] venv created" >> "$LOG" \
         || echo "[$(ts)] WARN: venv creation failed at $VENV_DIR" >> "$LOG"
 fi
 if [ -x "$VENV_PY" ]; then
     if ! "$VENV_PY" -c "import reportlab, pptx, pypdf, pytesseract" >/dev/null 2>&1; then
-        echo "[$(ts)] FIX 71: pip install reportlab python-pptx pypdf pytesseract Pillow (venv pip, no external-management marker)" >> "$LOG"
+        echo "[$(ts)] FIX 71: installing reportlab python-pptx pypdf pytesseract Pillow with the venv pip (no external-management marker)" >> "$LOG"
         "$VENV_PY" -m pip install --quiet --upgrade pip >> "$LOG" 2>&1 || true
         "$VENV_PY" -m pip install --quiet reportlab python-pptx pypdf pytesseract Pillow >> "$LOG" 2>&1 \
             && echo "[$(ts)] FIX 71: venv packages OK" >> "$LOG" \
-            || echo "[$(ts)] WARN: venv pip install failed (see above)" >> "$LOG"
+            || echo "[$(ts)] WARN: venv package install failed (see above)" >> "$LOG"
     else
-        echo "[$(ts)] FIX 71: venv already healthy — pip install skipped" >> "$LOG"
+        echo "[$(ts)] FIX 71: venv already healthy, package install skipped" >> "$LOG"
     fi
 else
     echo "[$(ts)] WARN: no venv interpreter at $VENV_PY — presentation python deps NOT installed" >> "$LOG"
@@ -5270,7 +5268,7 @@ REASSERT_EOF
     _IMP_PY="$_PY3"; [ -x "$_VENV_PY" ] && _IMP_PY="$_VENV_PY"
     "$_IMP_PY" -c "import reportlab" >/dev/null 2>&1 \
         && success "reportlab importable in $_IMP_PY" \
-        || warn "reportlab NOT importable — presenter-guide PDF will not render. Manual fix: ${_VENV_PY} -m pip install reportlab (create venv first: python3 -m venv /data/.openclaw/.venv-presentations)"
+        || warn "reportlab NOT importable, presenter-guide PDF will not render. Manual fix: ${_VENV_PY} -m pip install reportlab (create venv first: bash $ONE_PY_CLI venv /data/.openclaw/.venv-presentations)"
     "$_IMP_PY" -c "import pptx" >/dev/null 2>&1 \
         && success "python-pptx importable in $_IMP_PY" \
         || warn "python-pptx NOT importable — deck assembly will fail at Phase 4. Manual fix: ${_VENV_PY} -m pip install python-pptx"
@@ -5370,7 +5368,7 @@ else
         if [ -x "$_MAC_VENV_PY" ] && "$_MAC_VENV_PY" -c "import reportlab, pptx, pypdf, pytesseract" >/dev/null 2>&1; then
             success "Mac presentation venv verified: reportlab, pptx, pypdf, pytesseract import in $_MAC_VENV_PY"
         else
-            warn "Mac presentation venv incomplete — re-running ensure_presentation_venv checks is advised. Manual: python3 -m venv ${OC_CONFIG:-$HOME/.openclaw}/.venv-presentations && ${OC_CONFIG:-$HOME/.openclaw}/.venv-presentations/bin/pip install reportlab python-pptx pypdf pytesseract Pillow"
+            warn "Mac presentation venv incomplete, re-running ensure_presentation_venv checks is advised. Manual: bash $ONE_PY_CLI venv ${OC_CONFIG:-$HOME/.openclaw}/.venv-presentations && ${OC_CONFIG:-$HOME/.openclaw}/.venv-presentations/bin/python -m pip install reportlab python-pptx pypdf pytesseract Pillow"
         fi
     fi
 
@@ -6350,30 +6348,21 @@ install_faster_whisper() {
         return 0
     fi
     note "Installing faster-whisper locally (Apple Silicon, runs on the Neural Engine)…"
-    # Preferred: uv tool install (isolated, fast). The whisper-ctranslate2 package
-    # exposes the faster-whisper (CTranslate2) engine through a `whisper`-compatible
-    # CLI and supports `--model medium`.
-    if command -v uv >/dev/null 2>&1; then
-        if uv tool install whisper-ctranslate2 2>&1 | tee -a "$LOG_FILE" | tail -3; then
-            note "Installed faster-whisper via 'uv tool install whisper-ctranslate2'"
-            return 0
-        fi
-        # Secondary uv attempt: the SYSTRAN faster-whisper library + faster-whisper-cli front-end.
-        uv tool install faster-whisper-cli 2>&1 | tee -a "$LOG_FILE" | tail -3 && {
-            note "Installed faster-whisper via 'uv tool install faster-whisper-cli'"; return 0; }
+    # Preferred: uv tool install (isolated, fast) ON THE ONE canonical interpreter
+    # (oc_uv_tool_install passes --python; a bare `uv tool install` picks whatever
+    # python3 PATH lists first). The whisper-ctranslate2 package exposes the
+    # faster-whisper (CTranslate2) engine through a `whisper`-compatible CLI and
+    # supports `--model medium`. No torch, so no CUDA wheels.
+    if oc_uv_tool_install whisper-ctranslate2 2>&1 | tee -a "$LOG_FILE" | tail -3; then
+        note "Installed faster-whisper via 'uv tool install --python $(oc_python 2>/dev/null) whisper-ctranslate2'"
+        return 0
     fi
-    # Fallback: pipx (also isolated).
-    if command -v pipx >/dev/null 2>&1; then
-        pipx install whisper-ctranslate2 2>&1 | tee -a "$LOG_FILE" | tail -3 && {
-            note "Installed faster-whisper via 'pipx install whisper-ctranslate2'"; return 0; }
-    fi
-    # Last resort: pip3 --user.
-    if command -v pip3 >/dev/null 2>&1; then
-        pip3 install --user whisper-ctranslate2 2>&1 | tee -a "$LOG_FILE" | tail -3 && {
-            note "Installed faster-whisper via 'pip3 install --user whisper-ctranslate2'"; return 0; }
+    # Fallback: the canonical interpreter's user site.
+    if oc_pip_install whisper-ctranslate2 2>&1 | tee -a "$LOG_FILE" | tail -3; then
+        note "Installed faster-whisper via oc_pip_install (pip --user on $(oc_python 2>/dev/null))"; return 0
     fi
     warn "Could not auto-install faster-whisper. Local transcription will fall back to OpenAI cloud."
-    warn "To install manually: 'uv tool install whisper-ctranslate2' (or 'pipx install whisper-ctranslate2')."
+    warn "To install manually: bash $ONE_PY_CLI tool-install whisper-ctranslate2"
     return 1
 }
 install_faster_whisper || true

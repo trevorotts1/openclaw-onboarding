@@ -79,7 +79,17 @@ VC_DIR="${VIDEO_CREATOR_DIR:-$SKILLS_PARENT/video-creator}"
 VENV_DIR="${VENV_DIR:-$(dirname "$SKILLS_PARENT")/venvs/video-creator}"
 LEGACY_VENV="$VC_DIR/venv"   # pre-fix location: INSTALL.md named it `venv`, inside VC_DIR
 STAMP="$VC_DIR/.installed-from"
-PY="${PYTHON:-python3}"
+
+# ONE-PYTHON (v27.1.80): the venv is created by oc_venv from platform/common.sh
+# on the box's ONE canonical interpreter (`uv venv --python <canonical> --seed`).
+# The old `python3 -m venv` made HOLLOW venvs (no pip, no moviepy) on Debian's
+# ensurepip-less 3.13 and used Homebrew python under a `docker exec` PATH.
+# PYTHON=<interpreter> still pins the base interpreter (OC_PYTHON for oc_venv).
+_oc_common=""
+for _c in "$SCRIPT_DIR/../platform/common.sh" "$SCRIPT_DIR/../../platform/common.sh" \
+          "${OPENCLAW_ROOT:-/nonexistent}/platform/common.sh"; do
+  [ -f "$_c" ] && { _oc_common="$_c"; break; }
+done
 
 # Pinned runtime per INSTALL.md Step 2.4. MoviePy MUST stay v1.x — its scripts
 # import `moviepy.editor`, which MoviePy v2 removed.
@@ -95,10 +105,6 @@ fi
 # ---- preflight: missing source scripts or python -> log + bow out -----------
 if [ ! -d "$SCRIPT_DIR/scripts" ]; then
   log "ERROR: skill source scripts/ not found at $SCRIPT_DIR/scripts — cannot install video-creator. Skipping (update continues)."
-  exit 0
-fi
-if ! command -v "$PY" >/dev/null 2>&1; then
-  log "ERROR: '$PY' not found — cannot build video-creator venv. Skipping (update continues)."
   exit 0
 fi
 # Safety: never let the install dir resolve onto the source dir (would self-copy).
@@ -129,7 +135,8 @@ fi
 # imports fine; `source activate` does not). Repair it in place, in-process —
 # no reinstall, no network.
 if [ -x "$VENV_DIR/bin/python" ] && [ -f "$VENV_DIR/bin/activate" ] && ! grep -qF "$VENV_DIR" "$VENV_DIR/bin/activate" 2>/dev/null; then
-  if "$VENV_DIR/bin/python" -m venv --without-pip "$VENV_DIR" >/dev/null 2>&1; then
+  # shellcheck source=/dev/null
+  if [ -n "$_oc_common" ] && ( . "$_oc_common" && oc_venv_repair_scripts "$VENV_DIR" ) >/dev/null 2>&1; then
     log "repaired venv activate/scripts for relocated venv at $VENV_DIR"
   else
     log "WARN: venv script repair failed for $VENV_DIR"
@@ -203,12 +210,21 @@ rebuild() {
   done
   chmod +x "$VC_DIR/scripts/"*.py 2>/dev/null || true
 
-  # venv: create if missing, otherwise reuse (idempotent). Lives outside the
-  # skill root (see header) so OpenClaw's skill-root scan never walks it.
+  # venv: create if missing OR hollow (bin/python but no pip, the Debian 3.13
+  # ensurepip defect), otherwise reuse (idempotent). Lives outside the skill
+  # root (see header) so OpenClaw's skill-root scan never walks it.
   mkdir -p "$(dirname "$VENV_DIR")" 2>/dev/null || true
-  if [ ! -x "$VENV_DIR/bin/python" ]; then
-    log "creating venv -> $VENV_DIR"
-    "$PY" -m venv "$VENV_DIR" || { log "ERROR: venv creation failed"; return 1; }
+  if [ ! -x "$VENV_DIR/bin/python" ] || ! "$VENV_DIR/bin/python" -m pip --version >/dev/null 2>&1; then
+    if [ -z "$_oc_common" ]; then
+      log "ERROR: platform/common.sh (one-python resolver) not found near $SCRIPT_DIR, cannot build the venv"
+      return 1
+    fi
+    log "creating venv -> $VENV_DIR (one-python: oc_venv)"
+    # shellcheck source=/dev/null
+    _pin="${OC_PYTHON:-}"
+    [ -n "${PYTHON:-}" ] && _pin="$(command -v "$PYTHON" 2>/dev/null || printf '%s' "$PYTHON")"
+    ( . "$_oc_common" && OC_PYTHON="$_pin" oc_venv "$VENV_DIR" ) \
+      || { log "ERROR: venv creation failed"; return 1; }
   fi
 
   # Use the venv's own python module invocations directly — never bare `pip`
@@ -217,7 +233,7 @@ rebuild() {
   # calling shell's PATH.
   "$VENV_DIR/bin/python" -m pip install --upgrade pip -q 2>/dev/null || log "WARN: pip self-upgrade warned (continuing)"
   if ! "$VENV_DIR/bin/python" -m pip install -q "${PIP_PINS[@]}"; then
-    log "ERROR: 'pip install ${PIP_PINS[*]}' failed"
+    log "ERROR: venv package install (${PIP_PINS[*]}) failed"
     return 1
   fi
 

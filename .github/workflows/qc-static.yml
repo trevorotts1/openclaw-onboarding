@@ -110,6 +110,29 @@ jobs:
               print("✓ Python syntax OK across all skill scripts (%d files)" % len(files))
           sys.exit(bad)'
 
+      - name: ONE-PYTHON guard (no install site outside the resolver) + resolver / box-check tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          # v27.1.80: every Python package install / venv in shipped shell code
+          # goes through the resolver in platform/common.sh (oc_python,
+          # oc_pip_install, oc_venv, oc_uv_tool_install). The guard fails on bare
+          # pip/pip3, pipx, `python3 -m pip`, any `-m venv`, uv without --python,
+          # --break-system-packages without --user and Homebrew python paths;
+          # only the resolver block itself is allowlisted.
+          python3 scripts/ci/one-python-guard.py
+          # Guard discriminates: each forbidden pattern caught, compliant rewrite
+          # passes, allowlist is the resolver block only, repo is clean.
+          python3 tests/unit/one-python-guard.test.py
+          # Resolver: Homebrew-first PATH on a VPS layout still resolves
+          # /usr/bin/python3, Mac unchanged, stamp written/read, CPU torch,
+          # uv-seeded venvs; includes the mutation proof (a PATH-python3
+          # fallback must fail R1).
+          bash tests/unit/one-python-resolver.test.sh
+          # Read-only fleet check: one user tree, venvs on /usr/bin, no CUDA
+          # wheels without a GPU.
+          bash tests/unit/one-python-box-check.test.sh
+
       - name: DEFAULT_WEIGHTS sums to 1.0
         shell: python {0}
         run: |

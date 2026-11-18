@@ -245,7 +245,7 @@ dst = os.environ["TEXT_FILE_ENV"]
 try:
     import pdfplumber
 except ImportError:
-    print("ERROR: pdfplumber not installed. Run: pip install pdfplumber")
+    print("ERROR: pdfplumber not installed. Run: bash ~/.openclaw/skills/shared-utils/oc-python.sh pip-install pdfplumber")
     sys.exit(1)
 text = ""
 with pdfplumber.open(src) as pdf:
@@ -293,7 +293,7 @@ PYEOF
 
     if ! command -v yt-dlp >/dev/null 2>&1; then
       red "ERROR: yt-dlp not installed."
-      red "  Install: brew install yt-dlp   (or)  pip3 install --user yt-dlp"
+      red "  Install: brew install yt-dlp   (or)  bash ~/.openclaw/skills/shared-utils/oc-python.sh pip-install yt-dlp"
       red "  install.sh v10.14.32+ auto-installs yt-dlp + whisper-cpp + ffmpeg."
       exit 3
     fi
@@ -365,7 +365,7 @@ PYEOF
       yellow "  No auto-subs available. Falling back to audio + whisper-cpp transcription."
       if ! command -v whisper-cpp >/dev/null 2>&1 && ! command -v whisper-cli >/dev/null 2>&1 && ! command -v whisper >/dev/null 2>&1; then
         red "ERROR: no whisper backend installed (whisper-cpp / whisper-cli / whisper)."
-        red "  Install: brew install whisper-cpp   (or)  pip3 install --user openai-whisper"
+        red "  Install: brew install whisper-cpp   (or)  bash ~/.openclaw/skills/shared-utils/oc-python.sh pip-install openai-whisper  (CPU-only torch on a box without a GPU)"
         red "  See $YT_LOG for yt-dlp's auto-subs failure details."
         exit 3
       fi
@@ -413,7 +413,7 @@ PYEOF
     fi
     if ! command -v whisper-cpp >/dev/null 2>&1 && ! command -v whisper-cli >/dev/null 2>&1 && ! command -v whisper >/dev/null 2>&1; then
       red "ERROR: no whisper backend installed (whisper-cpp / whisper-cli / whisper)."
-      red "  Install: brew install whisper-cpp   (or)  pip3 install --user openai-whisper"
+      red "  Install: brew install whisper-cpp   (or)  bash ~/.openclaw/skills/shared-utils/oc-python.sh pip-install openai-whisper  (CPU-only torch on a box without a GPU)"
       exit 3
     fi
 
@@ -494,7 +494,7 @@ txt_path  = os.environ["TEXT_FILE_ENV"]
 try:
     from bs4 import BeautifulSoup
 except ImportError:
-    print("ERROR: beautifulsoup4 not installed. Run: pip3 install beautifulsoup4")
+    print("ERROR: beautifulsoup4 not installed. Run: bash ~/.openclaw/skills/shared-utils/oc-python.sh pip-install beautifulsoup4")
     sys.exit(1)
 with open(html_path, "rb") as f:
     raw = f.read()

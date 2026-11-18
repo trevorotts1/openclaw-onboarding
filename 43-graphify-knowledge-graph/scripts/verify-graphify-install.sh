@@ -30,7 +30,7 @@ done
 if command -v graphify >/dev/null 2>&1; then
   ok "graphify CLI present ($(command -v graphify))"
 else
-  bad "graphify CLI not found — run: uv tool install \"graphifyy[all]\""
+  bad "graphify CLI not found, run: bash ~/.openclaw/skills/shared-utils/oc-python.sh tool-install \"graphifyy[all]\""
 fi
 
 # 3. OpenClaw claw skill registered (best-effort detection)

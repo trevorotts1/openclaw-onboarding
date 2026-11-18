@@ -37,20 +37,33 @@ note "STEP 1/4 -- dependency check"
 # silently unenforced). Install it best-effort into the SAME interpreter the gate
 # runs under, BEFORE verify-deps.sh -- which then HARD-asserts fitz so this
 # bootstrap aborts loud below if it is still missing.
-if command -v python3 >/dev/null 2>&1 && ! python3 -c "import fitz" >/dev/null 2>&1; then
-    note "installing PyMuPDF (fitz) for the font-floor gate"
-    python3 -m pip install --user --break-system-packages --quiet PyMuPDF >/dev/null 2>&1 \
-        || python3 -m pip install --user --quiet PyMuPDF >/dev/null 2>&1 \
+# ONE-PYTHON (v27.1.80): the box's ONE canonical interpreter comes from
+# platform/common.sh (oc_python / oc_pip_install): repo layout <skill>/.., the
+# installed layout <root>/skills/<skill>/../.., or the OpenClaw root.
+OC_COMMON=""
+for _c in "$SELF_DIR/../platform/common.sh" "$SELF_DIR/../../platform/common.sh" \
+          "${OPENCLAW_ROOT:-/nonexistent}/platform/common.sh"; do
+    [ -f "$_c" ] && { OC_COMMON="$_c"; break; }
+done
+PY=""
+if [ -n "$OC_COMMON" ]; then
+    # shellcheck source=/dev/null
+    . "$OC_COMMON"
+    PY="$(oc_python 2>/dev/null || true)"
+fi
+[ -n "$PY" ] || echo "  (one-python resolver unavailable: platform/common.sh not found near $SELF_DIR; dependencies cannot be installed)"
+if [ -n "$PY" ] && ! "$PY" -c "import fitz" >/dev/null 2>&1; then
+    note "installing PyMuPDF (fitz) for the font-floor gate into $PY"
+    oc_pip_install --quiet PyMuPDF >/dev/null 2>&1 \
         || echo "  (PyMuPDF install attempt failed; verify-deps.sh will name it as a hard prerequisite)"
 fi
 # pytest is a HARD dependency of the shipped tooling CLIs' OFFLINE --self-test
 # batteries (each assembler imports its u0N_modules/test_*.py modules, which
 # `import pytest` at module scope). Installed best-effort into the SAME
 # interpreter BEFORE verify-deps.sh, which then HARD-asserts it.
-if command -v python3 >/dev/null 2>&1 && ! python3 -c "import pytest" >/dev/null 2>&1; then
-    note "installing pytest (the shipped CLIs' self-test batteries import it)"
-    python3 -m pip install --user --break-system-packages --quiet pytest >/dev/null 2>&1 \
-        || python3 -m pip install --user --quiet pytest >/dev/null 2>&1 \
+if [ -n "$PY" ] && ! "$PY" -c "import pytest" >/dev/null 2>&1; then
+    note "installing pytest (the shipped CLIs' self-test batteries import it) into $PY"
+    oc_pip_install --quiet pytest >/dev/null 2>&1 \
         || echo "  (pytest install attempt failed; verify-deps.sh will name it as a hard prerequisite)"
 fi
 if [ -f "$SELF_DIR/verify-deps.sh" ]; then
