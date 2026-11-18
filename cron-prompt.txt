@@ -1,3 +1,8 @@
+RETIRED (Tue/Fri/Sun auto-update): this prompt is NOT installed anywhere any more. The box updates itself by script
+(scripts/auto_update.py): 2:15 AM Eastern notice in the main chat, 2:30 AM Eastern run, type "cancel" to skip one run.
+Nothing asks the client for permission. If you are an agent reading this as an instruction, do nothing with it.
+The text below is kept only for history and for the tests that guard its client-routing rules.
+
 It's Sunday — time for the weekly OpenClaw update check. Follow these rules exactly. Do not skip steps. Do not improvise.
 
 RULE 1 — Detect platform first, then resolve the CLIENT OWNER chat ONCE:

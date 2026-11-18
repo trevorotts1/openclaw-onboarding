@@ -67,7 +67,7 @@ export FLEET_PREFLIGHT_BYPASS=1
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 GATE="$REPO_ROOT/scripts/qc-assert-legacy-agents-list.sh"
 UPDATER="$REPO_ROOT/update-skills.sh"
-WEEKLY="$REPO_ROOT/scripts/setup-weekly-update.sh"
+WEEKLY="$REPO_ROOT/scripts/openclaw-cli-update.sh"   # the former Saturday cron script, now run inside every auto-update run
 
 PASS=0
 FAIL=0
@@ -515,18 +515,9 @@ echo "--- (6) the generated weekly-cron script: does \`npm update\` actually run
 CRON_SCRIPT="$SANDBOX/openclaw-self-update"
 WEEKLY_PATH="$WEEKLY" CRON_OUT="$CRON_SCRIPT" python3 - <<'PY'
 import os, sys
-src = open(os.environ["WEEKLY_PATH"], encoding="utf-8").read().splitlines()
-start = end = None
-for i, l in enumerate(src):
-    if "<< 'OCUPDATE_EOF'" in l:
-        start = i + 1
-    elif start is not None and l.strip() == "OCUPDATE_EOF":
-        end = i
-        break
-if start is None or end is None:
-    sys.stderr.write("could not locate the OCUPDATE_EOF heredoc\n")
-    sys.exit(1)
-body = "\n".join(src[start:end])
+# The script is a real file now (it was a heredoc inside setup-weekly-update.sh until the Tue/Fri/Sun
+# auto-update folded the OpenClaw CLI update into every run).
+body = open(os.environ["WEEKLY_PATH"], encoding="utf-8").read()
 # BFR #21: the generated script must carry NO executable bare npm upgrade.
 # Mentions in comments/echo text are fine; a COMMAND is the defect.
 for ln in body.splitlines():
@@ -540,7 +531,7 @@ if "oc-atomic-upgrade.sh" not in body:
 open(os.environ["CRON_OUT"], "w").write(body + "\n")
 PY
 if [ $? -eq 0 ]; then
-  pass "6-pre: the generated self-update script was extracted from setup-weekly-update.sh"
+  pass "6-pre: the self-update script was read from scripts/openclaw-cli-update.sh"
 else
   fail "6-pre: could not extract the generated self-update script"
 fi

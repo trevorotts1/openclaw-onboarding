@@ -28,6 +28,7 @@ FAKEBIN="$TESTHOME/bin"
 mkdir -p "$FAKEBIN" "$TESTHOME/.openclaw/skills"
 trap 'rm -rf "$TESTHOME"' EXIT
 
+TICK_CMD="/bin/bash '$TESTHOME/.openclaw/scripts/auto-update-tick.sh' # openclaw-auto-update"
 SUNDAY_CMD="$TESTHOME/.openclaw/skills/.update-restart-if-needed"
 SATURDAY_CMD="$TESTHOME/.openclaw/skills/.openclaw-self-update"
 
@@ -50,51 +51,50 @@ _run_probe() {
   HOME="$TESTHOME" PATH="$FAKEBIN:$PATH" bash "$PROBE" "$@"
 }
 
-# ─── Scenario 1: empty crontab — pre-fix behaviour class (never installed) ──
-_section "Scenario 1 — empty crontab must report MISS for both crons, exit 1"
+# ─── Scenario 1: empty crontab — never installed ──
+_section "Scenario 1 — empty crontab must report the tick MISS, exit 1"
 _install_fake_crontab ""
 OUT="$(_run_probe 2>&1)"; RC=$?
-if [ "$RC" -eq 1 ] && echo "$OUT" | grep -q "\[MISS\].*Sunday" && echo "$OUT" | grep -q "\[MISS\].*Saturday"; then
-  _pass "empty crontab -> MISS/MISS, exit 1"
+if [ "$RC" -eq 1 ] && echo "$OUT" | grep -q "\[MISS\].*auto-update tick"; then
+  _pass "empty crontab -> tick MISS, exit 1"
 else
-  _fail "empty crontab did not report MISS/MISS exit 1 (rc=$RC): $OUT"
+  _fail "empty crontab did not report the tick MISS exit 1 (rc=$RC): $OUT"
 fi
 
-# ─── Scenario 2: exact canonical lines present — must report OK/OK, exit 0 ──
-_section "Scenario 2 — exact canonical lines present must report ARMED, exit 0"
-_install_fake_crontab "0 3 * * 0 $SUNDAY_CMD
-59 23 * * 6 $SATURDAY_CMD"
+# ─── Scenario 2: exact canonical tick line, old crons gone — ARMED ──
+_section "Scenario 2 — exact tick line present and old crons gone must report ARMED, exit 0"
+_install_fake_crontab "*/5 * * * * $TICK_CMD"
 OUT="$(_run_probe 2>&1)"; RC=$?
 if [ "$RC" -eq 0 ] && echo "$OUT" | grep -q "VERDICT: ARMED"; then
-  _pass "exact canonical lines -> ARMED, exit 0"
+  _pass "exact tick line, no retired lines -> ARMED, exit 0"
 else
-  _fail "exact canonical lines did not report ARMED exit 0 (rc=$RC): $OUT"
+  _fail "exact tick line did not report ARMED exit 0 (rc=$RC): $OUT"
 fi
 
 # ─── Scenario 3: THE BUG CLASS — a line that would false-positive under a
-# substring grep (e.g. `grep -q "update-restart-if-needed"`) but is NOT the
-# canonical schedule (wrong hour) must still be reported MISS. This is the
-# exact failure mode the old setup-weekly-update.sh add-or-skip check (a
-# truncated-text grep) could not distinguish, and is the fail-first proof
-# this probe's exact-match logic actually fixes it. ───────────────────────
-_section "Scenario 3 — wrong-schedule line must be MISS despite command substring matching (proves no grep-substring false positive)"
-_install_fake_crontab "0 5 * * 0 $SUNDAY_CMD --some-extra-flag-a-substring-grep-would-still-match
+# substring grep but is NOT the canonical schedule (wrong cadence) must be MISS,
+# and a retired Sunday line left behind must be flagged. ──────────────────────
+_section "Scenario 3 — wrong-cadence tick must be MISS (no substring false positive); a retired line left behind is MISS"
+_install_fake_crontab "*/30 * * * * $TICK_CMD"
+OUT="$(_run_probe 2>&1)"; RC=$?
+if [ "$RC" -eq 1 ] && echo "$OUT" | grep -q "\[MISS\].*auto-update tick"; then
+  _pass "wrong-cadence tick line correctly reported MISS (exact match, not substring)"
+else
+  _fail "wrong-cadence tick line was NOT reported as MISS — exact-match regressed to substring behaviour (rc=$RC): $OUT"
+fi
+if HOME="$TESTHOME" PATH="$FAKEBIN:$PATH" crontab -l 2>/dev/null | grep -qF "auto-update-tick.sh"; then
+  _pass "control: naive substring grep DOES false-positive on the wrong-cadence line (confirms the probe tests the real bug class)"
+else
+  _fail "control: naive substring grep unexpectedly did not match — fixture is not exercising the intended bug class"
+fi
+_install_fake_crontab "*/5 * * * * $TICK_CMD
+0 3 * * 0 $SUNDAY_CMD
 59 23 * * 6 $SATURDAY_CMD"
 OUT="$(_run_probe 2>&1)"; RC=$?
-if [ "$RC" -eq 1 ] && echo "$OUT" | grep -q "\[MISS\].*Sunday"; then
-  _pass "wrong-schedule/extra-args Sunday line correctly reported MISS (exact match, not substring)"
+if [ "$RC" -eq 1 ] && echo "$OUT" | grep -q "\[MISS\].*retired Sunday" && echo "$OUT" | grep -q "\[MISS\].*retired Saturday"; then
+  _pass "retired Sunday and Saturday lines still present -> MISS, exit 1"
 else
-  _fail "wrong-schedule Sunday line was NOT reported as MISS — exact-match regressed to substring behaviour (rc=$RC): $OUT"
-fi
-
-# Cross-check: a plain grep -qF over the SAME crontab WOULD have wrongly
-# reported present, demonstrating why the exact-match rewrite matters.
-# (Both invocations below are pinned to the FAKE crontab binary — this test
-# must never read or write the real system crontab.)
-if HOME="$TESTHOME" PATH="$FAKEBIN:$PATH" crontab -l 2>/dev/null | grep -qF "$SUNDAY_CMD"; then
-  _pass "control: naive substring grep DOES false-positive on scenario 3 (confirms the probe is testing the real bug class)"
-else
-  _fail "control: naive substring grep unexpectedly did not match scenario 3 — test fixture is not exercising the intended bug class"
+  _fail "retired lines left behind were not flagged (rc=$RC): $OUT"
 fi
 
 # ─── Scenario 4: --json emits well-formed JSON with the expected keys ──────
@@ -104,8 +104,9 @@ OUT="$(_run_probe --json 2>&1)"; RC=$?
 if echo "$OUT" | python3 -c "
 import json,sys
 d = json.load(sys.stdin)
-assert d['sunday_cron_present'] is False
-assert d['saturday_cron_present'] is False
+assert d['auto_update_tick_present'] is False
+assert d['retired_sunday_cron_present'] is False
+assert d['retired_saturday_cron_present'] is False
 assert d['overall_armed'] is False
 assert 'box' in d and 'checked_at' in d
 " 2>/dev/null; then
@@ -133,7 +134,7 @@ EOF
 chmod +x "$FAKEBIN/crontab"
 OUT="$(_run_probe --remediate 2>&1)"; RC=$?
 if [ "$RC" -eq 0 ] && echo "$OUT" | grep -q "VERDICT: ARMED" && echo "$OUT" | grep -q "\-\-remediate ran"; then
-  _pass "--remediate installed both crons and re-check reports ARMED"
+  _pass "--remediate installed the tick line and re-check reports ARMED"
 else
   _fail "--remediate did not converge to ARMED (rc=$RC): $OUT"
 fi

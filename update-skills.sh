@@ -14,7 +14,7 @@
 
 # Platform detection + bootstrap (MUST run before set -euo pipefail -- VPS container
 # re-exec uses conditional commands that may fail intentionally).
-ONBOARDING_VERSION="v27.1.80"
+ONBOARDING_VERSION="v27.1.81"
 _SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" 2>/dev/null && pwd || pwd)"
 _PLATFORM_COMMON="$_SCRIPT_DIR/platform/common.sh"
 _PLATFORM_COMMON_TEMP=""
@@ -2514,7 +2514,7 @@ reap_dead_skill_manifest() {
 # --- END REAP-DEAD-SKILL-MANIFEST ---
 
 # ----------------------------------------------------------
-# v27.1.80 - safe_json_edit
+# v27.1.81 - safe_json_edit
 # Harden any direct write to openclaw.json: back up, apply the
 # python3 transform, validate with `openclaw config validate`,
 # and ROLL BACK from the backup on failure so one bad key can
@@ -6934,75 +6934,37 @@ except Exception:
   # output -> 0 (advisory, never forces a pass on a CLI/gateway hiccup).
   # READ-ONLY: only ever runs `cron list`, never `cron create`/`edit`/`delete`.
   _weekly_cron_currency_probe() {
-    if ! command -v openclaw >/dev/null 2>&1; then
-      echo "  — [WEEKLY CRON] state=unknown — openclaw CLI not found — not forcing a pass."
+    # Tue/Fri/Sun auto-update schedule probe. The schedule is ONE crontab line tagged
+    # "# openclaw-auto-update" (scripts/setup-weekly-update.sh -> scripts/auto_update.py install). It is
+    # "absent" when the crontab is readable and lacks that line, or still carries a retired entry
+    # (.update-restart-if-needed, .openclaw-self-update). READ-ONLY: only `crontab -l`.
+    # An unreadable crontab, or no crontab command, is advisory (return 0), never a forced pass.
+    if ! command -v crontab >/dev/null 2>&1; then
+      echo "  — [WEEKLY CRON] state=unknown — crontab not found — not forcing a pass."
       return 0
     fi
-
-    local _wcp_root="$HOME/.openclaw"
-    [ -d "/data/.openclaw" ] && _wcp_root="/data/.openclaw"
-    local _wcp_tomb="$_wcp_root/workspace/.cron-tombstones/weekly-onboarding-update"
-    if [ -f "$_wcp_tomb" ]; then
-      echo "  ✓ [WEEKLY CRON] state=tombstoned — deliberately removed; not treated as outstanding work."
-      return 0
-    fi
-
     local _wcp_raw="" _wcp_rc=0
-    if ! _wcp_raw="$(openclaw cron list --json 2>/dev/null)"; then
-      _wcp_rc=$?
-    fi
-    if [ -z "$_wcp_raw" ]; then
-      echo "  — [WEEKLY CRON] state=unknown — 'openclaw cron list --json' returned nothing (rc=$_wcp_rc) — not forcing a pass."
-      return 0
-    fi
-
-    local _wcp_present=""
-    if command -v jq >/dev/null 2>&1; then
-      local _wcp_jq_rc=0
-      if printf '%s' "$_wcp_raw" | jq -e '
-          ( if type=="array" then . else .jobs // [] end)
-          | map(select(.name=="weekly-onboarding-update"))
-          | length > 0
-        ' >/dev/null 2>&1; then
-        _wcp_jq_rc=0
-      else
-        _wcp_jq_rc=$?
-      fi
-      case "$_wcp_jq_rc" in
-        0) _wcp_present=1 ;;
-        1) _wcp_present=0 ;;
-        *) echo "  — [WEEKLY CRON] state=unknown — jq could not parse cron list JSON (rc=$_wcp_jq_rc) — not forcing a pass."; return 0 ;;
+    _wcp_raw="$(crontab -l 2>/dev/null)" || _wcp_rc=$?
+    if [ "$_wcp_rc" -ne 0 ] && [ -z "$_wcp_raw" ]; then
+      # `crontab -l` exits 1 with "no crontab for user": an EMPTY crontab is a definite answer, anything else is unknown
+      local _wcp_err=""
+      _wcp_err="$(crontab -l 2>&1 || true)"
+      case "$_wcp_err" in
+        *[Nn]o\ crontab*) _wcp_raw="" ;;
+        *)
+        echo "  — [WEEKLY CRON] state=unknown — 'crontab -l' failed (rc=$_wcp_rc) — not forcing a pass."
+        return 0 ;;
       esac
-    elif command -v python3 >/dev/null 2>&1; then
-      local _wcp_py_rc=0
-      if OC_CRON_RAW="$_wcp_raw" python3 -c '
-import json, os, sys
-try:
-    data = json.loads(os.environ.get("OC_CRON_RAW", ""))
-except Exception:
-    sys.exit(2)
-jobs = data if isinstance(data, list) else data.get("jobs", [])
-sys.exit(0 if any(j.get("name") == "weekly-onboarding-update" for j in jobs) else 1)
-' 2>/dev/null; then
-        _wcp_py_rc=0
-      else
-        _wcp_py_rc=$?
-      fi
-      case "$_wcp_py_rc" in
-        0) _wcp_present=1 ;;
-        1) _wcp_present=0 ;;
-        *) echo "  — [WEEKLY CRON] state=unknown — could not parse cron list JSON (rc=$_wcp_py_rc) — not forcing a pass."; return 0 ;;
-      esac
-    else
-      echo "  — [WEEKLY CRON] state=unknown — jq and python3 both unavailable — not forcing a pass."
+    fi
+    if printf '%s\n' "$_wcp_raw" | grep -Eq 'update-restart-if-needed|\.openclaw-self-update'; then
+      echo "  ✗ [WEEKLY CRON] state=retired-entry-present — an old Sunday/Saturday update line is still in the crontab."
+      return 1
+    fi
+    if printf '%s\n' "$_wcp_raw" | grep -q '# openclaw-auto-update'; then
+      echo "  ✓ [WEEKLY CRON] state=registered (Tue/Fri/Sun auto-update tick)"
       return 0
     fi
-
-    if [ "$_wcp_present" = "1" ]; then
-      echo "  ✓ [WEEKLY CRON] state=registered"
-      return 0
-    fi
-    echo "  ✗ [WEEKLY CRON] state=absent — weekly-onboarding-update is NOT registered and NOT tombstoned."
+    echo "  ✗ [WEEKLY CRON] state=absent — the Tue/Fri/Sun auto-update schedule is NOT installed."
     return 1
   }
 
@@ -11426,314 +11388,28 @@ PY
     retire_legacy_sunday_crontab
   fi
 
-  # Ensure the Sunday weekly update-check cron exists (idempotent)
-  # Existing clients on pre-v9.2.0 won't have it; running the updater
-  # backfills it.
-  # ----------------------------------------------------------
-  # JSON-exact cron presence check (fix/industry-gate-and-idempotent-crons):
-  # `weekly-onboarding-update` is 24 chars — over the ~22-char threshold at
-  # which `openclaw cron list`'s TEXT TABLE truncates names — so a text-grep
-  # presence gate here false-negatives and re-adds a duplicate on every update
-  # run (the same defect confirmed in Skill 39 / Skill 38's own registrars; see
-  # shared-utils/cron-lib.sh). Sourced with an inline fallback so this update
-  # pass never depends on a specific working directory.
-  command -v oc_cron_present >/dev/null 2>&1 || {
-    _lib_cron_present_uskl="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/shared-utils/cron-lib.sh"
-    if [ -f "$_lib_cron_present_uskl" ]; then
-      # shellcheck source=/dev/null
-      source "$_lib_cron_present_uskl"
+  # Tue/Fri/Sun AUTO-UPDATE SCHEDULE (replaces the Sunday 3:00 AM crontab, the Saturday 11:59 PM OpenClaw
+  # self-update crontab, and the `weekly-onboarding-update` openclaw cron job -- the old "ask first" agent
+  # job and the 2:00 AM command job). scripts/setup-weekly-update.sh -> scripts/auto_update.py install is
+  # idempotent: it retires every old entry and installs the one tick line exactly once; a second run
+  # changes nothing. 2:15 AM Eastern notice, 2:30 AM Eastern run (see UPDATE-PLAYBOOK.md).
+  _AU_ROOT="$HOME/.openclaw"
+  [ -d "/data/.openclaw" ] && _AU_ROOT="/data/.openclaw"
+  _AU_SETUP=""
+  for _au_cand in "${OC_PERSISTENT_SCRIPTS_DIR:-$_AU_ROOT/scripts}/setup-weekly-update.sh" \
+                  "${ONBOARDING_DIR:-/nonexistent}/scripts/setup-weekly-update.sh" \
+                  "${EXTRACTED_DIR:-/nonexistent}/scripts/setup-weekly-update.sh" \
+                  "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/scripts/setup-weekly-update.sh"; do
+    if [ -f "$_au_cand" ] && [ -f "$(dirname "$_au_cand")/auto_update.py" ]; then _AU_SETUP="$_au_cand"; break; fi
+  done
+  if [ -n "$_AU_SETUP" ]; then
+    if bash "$_AU_SETUP" >> "$LOG_FILE" 2>&1; then
+      echo "  ✓ Tue/Fri/Sun auto-update schedule installed (2:15 AM Eastern notice, 2:30 AM Eastern run; old Sunday/Saturday crons and the ask-first job retired)"
+    else
+      echo "  ⚠ auto-update schedule install failed (see $LOG_FILE) — re-run: bash $_AU_SETUP"
     fi
-  }
-  command -v oc_cron_present >/dev/null 2>&1 || oc_cron_present() {
-    local _name="$1" _raw
-    _raw=$(openclaw cron list --json 2>/dev/null) || return 2
-    if command -v jq >/dev/null 2>&1; then
-      printf '%s' "$_raw" | jq -e --arg n "$_name" '
-        ( if type == "array" then . else .jobs // [] end ) | map(select(.name == $n)) | length > 0
-      ' >/dev/null 2>&1
-      case $? in 0) return 0;; 1) return 1;; *) return 2;; esac
-    fi
-    if command -v python3 >/dev/null 2>&1; then
-      OC_CRON_RAW="$_raw" python3 - "$_name" 2>/dev/null <<'PYEOF'
-import json, os, sys
-name = sys.argv[1]
-raw = os.environ.get("OC_CRON_RAW", "")
-try:
-    data = json.loads(raw)
-except Exception:
-    sys.exit(2)
-jobs = data if isinstance(data, list) else data.get("jobs", [])
-sys.exit(0 if any(j.get("name") == name for j in jobs) else 1)
-PYEOF
-      return $?
-    fi
-    return 2
-  }
-  # DURABLE TOMBSTONE fallback (fix/industry-gate-and-idempotent-crons,
-  # live-VPS finding): fail OPEN (never tombstoned) if shared-utils/cron-lib.sh
-  # wasn't found above — never block registration outright over a missing
-  # helper file. The real oc_cron_tombstoned (durable file-marker check) is
-  # used automatically when the shared lib IS found.
-  command -v oc_cron_tombstoned >/dev/null 2>&1 || oc_cron_tombstoned() { return 1; }
-
-  if command -v openclaw >/dev/null 2>&1 && oc_cron_tombstoned "weekly-onboarding-update"; then
-    echo "  weekly-onboarding-update is TOMBSTONED (deliberately removed) — NOT re-registering. Un-tombstone: bash scripts/tombstone-cron.sh --remove weekly-onboarding-update"
-  elif command -v openclaw >/dev/null 2>&1; then
-    #=== BEGIN WEEKLY-CRON-FULL-REGISTRATION-V1 ===
-    # Box update schedule (2026-11-02): Tue/Fri/Sun 2:00 AM Eastern as a COMMAND
-    # job that runs scripts/weekly-full-update.sh directly -- no model turn, no
-    # client message. See oc_box_update_cron_ensure in shared-utils/cron-lib.sh.
-    # The agent-prompt registration below runs only when that is unavailable
-    # (rc 1 = this OpenClaw has no command jobs, rc 2 = list/create failed).
-    command -v oc_box_update_cron_ensure >/dev/null 2>&1 || {
-      for _wou_lib in "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/shared-utils/cron-lib.sh" "${SKILLS_DIR:-/nonexistent}/shared-utils/cron-lib.sh"; do
-        if [ -f "$_wou_lib" ]; then
-          # shellcheck source=/dev/null
-          source "$_wou_lib"; break
-        fi
-      done
-    }
-    _WOU_CMD_RC=1
-    if command -v oc_box_update_cron_ensure >/dev/null 2>&1; then
-      oc_box_update_cron_ensure && _WOU_CMD_RC=0 || _WOU_CMD_RC=$?
-    fi
-    #=== BEGIN WEEKLY-CRON-MESSAGE-REFRESH-V1 ===
-    # refresh_weekly_cron_message <job_id> <job_kind> <new_content>
-    #
-    # THE DRIFT BUG THIS CLOSES (2026-07-30): an EXISTING weekly-onboarding-update
-    # cron (the "already installed" branch a few lines below) was never touched
-    # again after creation. cron-prompt.txt could gain new RULES -- or drop a
-    # pattern this same repo now calls a leak -- forever without a single
-    # already-provisioned box ever seeing the change; only a box whose cron was
-    # ABSENT, or still carried the old auto-announce wiring, ever got a fresh
-    # payload. This function is the missing refresh path: it reads the job's
-    # CURRENTLY STORED message via `openclaw cron get`, and only when that
-    # differs from the freshly-fetched cron-prompt.txt does it patch the message
-    # in place with `openclaw cron edit <id> --message` (or `--system-event` for
-    # a systemEvent-kind job) -- confirmed via `openclaw cron edit --help` to be
-    # a field-level PATCH ("Edit a cron job (patch fields)"), so schedule, tz,
-    # sessionTarget, wakeMode, timeoutSeconds, and delivery are never touched
-    # because they are never passed. Deliberately NOT delete+recreate: that would
-    # require this function to already know every other field to preserve, and
-    # getting even one wrong would silently reset it -- an in-place patch cannot.
-    #
-    # FAIL-SAFE: every step that can fail (CLI missing, gateway unreachable,
-    # malformed JSON, python3 absent, edit rejected) is guarded and logs a
-    # SKIP/WARN instead of propagating a nonzero exit -- this function always
-    # returns 0 so it can never abort the enclosing `set -euo pipefail` run. A
-    # failed refresh leaves the OLD message in place (stale-but-safe), never a
-    # blank or partial one.
-    command -v refresh_weekly_cron_message >/dev/null 2>&1 || refresh_weekly_cron_message() {
-      local _job_id="$1" _job_kind="$2" _new_content="$3"
-      if [ -z "$_job_id" ] || [ -z "$_new_content" ]; then
-        echo "  [weekly-cron-refresh] SKIP — missing job id or empty new content; nothing changed"
-        return 0
-      fi
-      if ! command -v openclaw >/dev/null 2>&1; then
-        echo "  [weekly-cron-refresh] SKIP — openclaw CLI not found; nothing changed"
-        return 0
-      fi
-      local _current_json=""
-      _current_json=$(openclaw cron get "$_job_id" 2>/dev/null) || _current_json=""
-      if [ -z "$_current_json" ]; then
-        echo "  [weekly-cron-refresh] SKIP — could not read current cron job ($_job_id); nothing changed"
-        return 0
-      fi
-      local _current_message=""
-      if command -v python3 >/dev/null 2>&1; then
-        _current_message=$(OC_CRON_JOB_JSON="$_current_json" python3 - <<'PYEOF' 2>/dev/null
-import json, os
-raw = os.environ.get("OC_CRON_JOB_JSON", "")
-try:
-    data = json.loads(raw)
-except Exception:
-    raise SystemExit(0)
-payload = data.get("payload") or {}
-msg = payload.get("message")
-if msg is None:
-    msg = payload.get("systemEvent")
-print(msg if isinstance(msg, str) else "", end="")
-PYEOF
-) || _current_message=""
-      fi
-      if [ -z "$_current_message" ]; then
-        echo "  [weekly-cron-refresh] SKIP — could not parse current message from cron get output; nothing changed"
-        return 0
-      fi
-      if [ "$_current_message" = "$_new_content" ]; then
-        echo "  [weekly-cron-refresh] OK — cron-prompt.txt content already current, no rewrite needed"
-        return 0
-      fi
-      local -a _edit_flags=(--message "$_new_content")
-      if [ "$_job_kind" = "systemEvent" ]; then
-        _edit_flags=(--system-event "$_new_content")
-      fi
-      if openclaw cron edit "$_job_id" "${_edit_flags[@]}" >/dev/null 2>&1; then
-        echo "  [weekly-cron-refresh] DONE — refreshed stale cron message from current cron-prompt.txt (schedule/tz/sessionTarget/delivery untouched -- cron edit patches only the flags passed)"
-      else
-        echo "  [weekly-cron-refresh] WARN — cron edit rejected/failed; message left as-is (stale but safe), will retry next run"
-      fi
-      return 0
-    }
-    #=== END WEEKLY-CRON-MESSAGE-REFRESH-V1 ===
-
-    # CRON REWRITE MIGRATION (fix/existing-box-cron-rewrite v14.19.1):
-    # Boxes provisioned BEFORE the silent-cron fix (v14.10.2) carry the OLD
-    # weekly-onboarding-update cron wired with --announce --channel telegram
-    # --to <client-chat-id>.  The scheduler auto-delivers the raw maintenance
-    # prompt into the CLIENT's Telegram chat every Sunday — internal operator
-    # traffic the client was never meant to see.  A plain "already installed"
-    # skip leaves the leaking cron in place.  Fix: detect old delivery wiring
-    # via openclaw cron list --json and delete the stale entry so the creation
-    # block below always lands the SILENT main-session form.
-    if [ "$_WOU_CMD_RC" -ne 0 ] && oc_cron_present "weekly-onboarding-update"; then
-      _CRON_HAS_OLD_WIRING=false
-      if command -v python3 >/dev/null 2>&1; then
-        _OC_RAW_JSON=$(openclaw cron list --json 2>/dev/null) || _OC_RAW_JSON=""
-        if [ -n "$_OC_RAW_JSON" ] && \
-           OC_CRON_JSON="$_OC_RAW_JSON" python3 - <<'PYEOF' 2>/dev/null
-import json, os, sys
-raw = os.environ.get('OC_CRON_JSON', '')
-try:
-    data = json.loads(raw)
-except Exception:
-    sys.exit(1)
-jobs = data if isinstance(data, list) else data.get('jobs', [])
-for j in jobs:
-    if j.get('name') == 'weekly-onboarding-update':
-        dl = j.get('delivery') or {}
-        if dl.get('mode') == 'announce' or dl.get('to'):
-            sys.exit(0)  # old auto-announce wiring detected
-sys.exit(1)
-PYEOF
-        then
-          _CRON_HAS_OLD_WIRING=true
-        fi
-      fi
-      if [ "$_CRON_HAS_OLD_WIRING" = "true" ]; then
-        echo "  ↻ Existing weekly-onboarding-update cron has old auto-announce delivery — deleting for silent-form recreate"
-        openclaw cron delete --name "weekly-onboarding-update" >/dev/null 2>&1 || true
-        # Fall through to creation block below (cron is now absent)
-      else
-        echo "  ✓ Sunday weekly update-check cron already installed (SILENT — no client auto-announce)"
-        # Refresh the stored message from the CURRENT cron-prompt.txt so a RULE
-        # change in the repo actually reaches a box whose cron already exists --
-        # see refresh_weekly_cron_message above; this branch used to be a
-        # permanent no-op, the confirmed root cause of the RULE 5.6 drift.
-        _WOU_JOB_ID=""
-        _WOU_JOB_KIND=""
-        if [ -n "${_OC_RAW_JSON:-}" ] && command -v python3 >/dev/null 2>&1; then
-          _WOU_ID_KIND=$(OC_CRON_JSON="$_OC_RAW_JSON" python3 - <<'PYEOF' 2>/dev/null
-import json, os
-raw = os.environ.get('OC_CRON_JSON', '')
-try:
-    data = json.loads(raw)
-except Exception:
-    raise SystemExit(0)
-jobs = data if isinstance(data, list) else data.get('jobs', [])
-for j in jobs:
-    if j.get('name') == 'weekly-onboarding-update':
-        print("%s\t%s" % (j.get('id', ''), (j.get('payload') or {}).get('kind', '')))
-        break
-PYEOF
-) || _WOU_ID_KIND=""
-          IFS=$'\t' read -r _WOU_JOB_ID _WOU_JOB_KIND <<< "$_WOU_ID_KIND" || true
-        fi
-        if [ -n "$_WOU_JOB_ID" ]; then
-          _WOU_PROMPT_TMP="/tmp/openclaw-cron-refresh-check-$$.txt"
-          if curl -fsSL --max-time 15 "https://raw.githubusercontent.com/trevorotts1/openclaw-onboarding/${RELEASE_REF:-main}/cron-prompt.txt" -o "$_WOU_PROMPT_TMP" 2>/dev/null && [ -s "$_WOU_PROMPT_TMP" ]; then
-            refresh_weekly_cron_message "$_WOU_JOB_ID" "$_WOU_JOB_KIND" "$(cat "$_WOU_PROMPT_TMP")"
-          else
-            echo "  [weekly-cron-refresh] SKIP — could not fetch cron-prompt.txt; nothing changed"
-          fi
-          rm -f "$_WOU_PROMPT_TMP" 2>/dev/null || true
-        else
-          echo "  [weekly-cron-refresh] SKIP — could not resolve job id for weekly-onboarding-update; nothing changed"
-        fi
-      fi
-    fi
-    # Create cron only when it is absent (never existed, or just deleted above)
-    # D10: register only on a definite "absent" (rc 1); rc 2 = cron list unreadable -> unknown, skip
-    if [ "$_WOU_CMD_RC" -ne 0 ] && { oc_cron_present "weekly-onboarding-update"; [ $? -eq 1 ]; }; then
-      # ── SILENT-OPERATOR-CRON RULE (chore/silent-operator-crons) ───────────
-      # weekly-onboarding-update is a MAINTENANCE/update-check cron, NOT an
-      # owner-facing announcement. The old form registered it
-      # `--session isolated --announce --channel telegram --to <owner-chat>`,
-      # so the scheduler AUTO-DELIVERED the raw update-check prompt into the
-      # CLIENT chat every Sunday — internal operator traffic the owner was never
-      # meant to see (the leak OPERATOR-MAINTENANCE.md forbids). NOTE: the old
-      # `isolated + --announce + --channel` shape is ALSO rejected by the gateway
-      # on some builds (confirmed live; see 35-social-media-planner/INSTRUCTIONS.md).
-      #
-      # FIX: register a SILENT main-session agent-message cron — `--agent main
-      # --session-target main --light-context` with NO --channel/--to/--announce.
-      # The update-check runs in the agent's OWN context (log-only); the agent
-      # then decides, via its own deliberate `openclaw message send`, whether to
-      # surface an owner-facing "an update is available, may I apply it?" question.
-      # Nothing is auto-pushed to the client. No owner target needed, so the old
-      # operator-ID resolver/guard is removed entirely. Mirrors install.sh Step 12.
-      PROMPT_TMP="/tmp/openclaw-cron-prompt-$$.txt"
-      REPO_URL="https://raw.githubusercontent.com/trevorotts1/openclaw-onboarding/${RELEASE_REF:-main}"
-      # Unified repo: same URL for both Mac and VPS platforms
-      if curl -fsSL --max-time 15 "${REPO_URL}/cron-prompt.txt" -o "$PROMPT_TMP" 2>/dev/null && [ -s "$PROMPT_TMP" ]; then
-        PROMPT_CONTENT=$(cat "$PROMPT_TMP")
-        # fix/cron-flag-skew: define the runtime-compatible cron helper on the
-        # guaranteed path to the create below (the resume-cron lib that also
-        # defines it is sourced inside a conditional block above, so we re-guard
-        # it here — its definition wins if already present). Emits the flags the
-        # INSTALLED runtime accepts: 2026.6.11+ needs `--session main
-        # --system-event`; older CLIs `--session-target main --message`.
-        command -v _oc_cron_silent_main >/dev/null 2>&1 || _oc_cron_silent_main() {
-          local _name="$1" _agent="$2" _expr="$3" _tz="$4" _prompt="$5"; shift 5
-          local _extra=( "$@" ); local _n=${#_extra[@]}
-          local _base=( --name "$_name" --agent "$_agent" --cron "$_expr" --tz "$_tz" )
-          local _help _modern=0
-          _help="$(openclaw cron add --help 2>&1 || true)"
-          printf '%s' "$_help" | grep -qE '^[[:space:]]*--session[[:space:]<]' && _modern=1
-          local _order _k
-          if [ "$_modern" = "1" ]; then _order="modern old"; else _order="old modern"; fi
-          for _k in $_order; do
-            if [ "$_k" = "modern" ]; then
-              [ "$_n" -gt 0 ] && openclaw cron create "${_base[@]}" "${_extra[@]}" --session main --system-event "$_prompt" >/dev/null 2>&1 && return 0
-              openclaw cron create "${_base[@]}" --session main --system-event "$_prompt" >/dev/null 2>&1 && return 0
-            else
-              [ "$_n" -gt 0 ] && openclaw cron create "${_base[@]}" "${_extra[@]}" --session-target main --message "$_prompt" >/dev/null 2>&1 && return 0
-              openclaw cron create "${_base[@]}" --session-target main --message "$_prompt" >/dev/null 2>&1 && return 0
-            fi
-          done
-          openclaw cron create "$_expr" "$_prompt" --name "$_name" --agent "$_agent" --tz "$_tz" --session main >/dev/null 2>&1 && return 0
-          openclaw cron create "${_base[@]}" --message "$_prompt" --no-deliver >/dev/null 2>&1 && return 0
-          return 1
-        }
-        # Runtime-compatible SILENT main-session cron (fix/cron-flag-skew). The
-        # 2026.6.11 runtime rejects `--session-target` and requires
-        # `--session main --system-event` for main-session jobs; the old two-branch
-        # form only ever emitted `--session-target main --message`, so a rolled box
-        # silently installed NO weekly cron. _oc_cron_silent_main probes the CLI,
-        # emits the accepted form, and degrades gracefully (never hard-fails).
-        _WEEKLY_DESC="Tue/Fri/Sun 2am ET -- SILENT update-check: look for OpenClaw onboarding + command-center updates; ask the owner permission (via your own message send) before applying anything."
-        # Register under the box's DEFAULT agent, asked of the runtime. A hard-coded
-        # "main" is rejected wherever main is not the default ("sessionTarget main is
-        # only valid for the default agent" / "cron job agent is unavailable: main"),
-        # and every attempt above swallows that error -- 5 boxes silently had NO
-        # Sunday update cron at all (found 2026-11-02).
-        _WOU_AGENT="$(openclaw agents list --json 2>/dev/null | python3 -c 'import json,sys
-r=sys.stdin.read(); i=min([x for x in (r.find("{"),r.find("[")) if x>=0] or [0]); d=json.loads(r[i:])
-a=d if isinstance(d,list) else d.get("agents",[])
-print(([x.get("id") for x in a if isinstance(x,dict) and (x.get("default") or x.get("isDefault"))] or [""])[0])' 2>/dev/null || true)"
-        [ -n "$_WOU_AGENT" ] || _WOU_AGENT=main
-        if _oc_cron_silent_main "weekly-onboarding-update" "$_WOU_AGENT" "${OC_BOX_UPDATE_SCHEDULE:-0 2 * * 0,2,5}" "America/New_York" "$PROMPT_CONTENT" \
-             --description "$_WEEKLY_DESC" --exact --light-context --thinking high --timeout-seconds 7200; then
-          echo "  ✓ Sunday weekly update-check cron installed (Sundays 3am ET, SILENT main-session — no client auto-announce)"
-        else
-          echo "  ⚠ Cron install failed -- agent can retry manually (SILENT main-session form)"
-        fi
-        rm -f "$PROMPT_TMP"
-      else
-        echo "  ⚠ Could not fetch cron-prompt.txt -- agent can install cron manually later"
-      fi
-    fi
-    #=== END WEEKLY-CRON-FULL-REGISTRATION-V1 ===
+  else
+    echo "  ⚠ scripts/setup-weekly-update.sh + auto_update.py not found — auto-update schedule NOT installed on this pass (older bundle?)"
   fi
 
   # ----------------------------------------------------------

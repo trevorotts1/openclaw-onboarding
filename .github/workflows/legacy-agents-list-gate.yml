@@ -61,6 +61,7 @@ on:
       - scripts/oc-schema-migrate.py
       - scripts/oc-supervisor-install.py
       - scripts/setup-weekly-update.sh
+      - scripts/openclaw-cli-update.sh
       - scripts/fleet-audit-remediate.sh
       - scripts/u126-remediate.sh
       - platform/mac/service-selfheal/remediate.sh
@@ -78,6 +79,7 @@ on:
       - scripts/oc-schema-migrate.py
       - scripts/oc-supervisor-install.py
       - scripts/setup-weekly-update.sh
+      - scripts/openclaw-cli-update.sh
       - scripts/fleet-audit-remediate.sh
       - scripts/u126-remediate.sh
       - platform/mac/service-selfheal/remediate.sh
@@ -119,38 +121,30 @@ jobs:
           python3 -c "import ast; ast.parse(open('scripts/oc-schema-migrate.py').read())"
           python3 -c "import ast; ast.parse(open('scripts/oc-supervisor-install.py').read())"
           bash -n scripts/setup-weekly-update.sh
+          bash -n scripts/openclaw-cli-update.sh
           bash -n scripts/fleet-audit-remediate.sh
           bash -n scripts/u126-remediate.sh
           bash -n update-skills.sh
           bash -n tests/unit/legacy-agents-list-gate.test.sh
           bash -n tests/unit/safe-json-edit-isolated-validate.test.sh
 
-      - name: The GENERATED weekly-cron script must also parse
-        # The script that actually performs the version change on every box is
-        # generated from a heredoc, so `bash -n` on its parent proves nothing
-        # about it. Extract it and check it directly.
+      - name: The OpenClaw CLI update script must carry the gate and never run a bare npm upgrade
+        # The script that actually performs the OpenClaw version change on every box is
+        # scripts/openclaw-cli-update.sh (it was a heredoc in setup-weekly-update.sh until the
+        # Tue/Fri/Sun auto-update ran it inside every update run).
         run: |
           python3 - <<'PY'
-          src = open('scripts/setup-weekly-update.sh', encoding='utf-8').read().splitlines()
-          start = end = None
-          for i, l in enumerate(src):
-              if "<< 'OCUPDATE_EOF'" in l:
-                  start = i + 1
-              elif start is not None and l.strip() == 'OCUPDATE_EOF':
-                  end = i
-                  break
-          assert start is not None and end is not None, "OCUPDATE_EOF heredoc not found"
-          body = "\n".join(src[start:end])
+          body = open('scripts/openclaw-cli-update.sh', encoding='utf-8').read()
           for ln in body.splitlines():
               t = ln.strip()
               assert not t.startswith(("npm update", "npm install", "npm i ", "sudo npm")), (
-                  "the generated script RUNS a bare npm command (BFR error #21: it rewrites the "
+                  "the script RUNS a bare npm command (BFR error #21: it rewrites the "
                   "package under a KeepAlive-respawned gateway; only the atomic procedure may upgrade): " + ln)
-          assert 'OC_GATE_BLOCK' in body, "the generated script no longer carries the pre-upgrade gate"
-          assert 'oc-atomic-upgrade.sh' in body, "the generated script no longer delegates to the atomic procedure"
+          assert 'OC_GATE_BLOCK' in body, "the script no longer carries the pre-upgrade gate"
+          assert 'oc-atomic-upgrade.sh' in body, "the script no longer delegates to the atomic procedure"
           for ln in body.splitlines():
               assert not ln.strip().startswith('openclaw doctor'), (
-                  "the generated script INVOKES `openclaw doctor`, which was measured not to perform "
+                  "the script INVOKES `openclaw doctor`, which was measured not to perform "
                   "this migration (config SHA-256 identical on 12 boxes) and which rewrites model pins: " + ln)
           open('/tmp/generated-selfupdate.sh', 'w').write(body + "\n")
           PY
@@ -233,7 +227,7 @@ jobs:
         run: |
           python3 - <<'PYDOC'
           import sys
-          files = ["update-skills.sh", "scripts/setup-weekly-update.sh",
+          files = ["update-skills.sh", "scripts/setup-weekly-update.sh", "scripts/openclaw-cli-update.sh",
                    "scripts/fleet-audit-remediate.sh", "scripts/u126-remediate.sh",
                    "scripts/qc-assert-legacy-agents-list.sh", "scripts/oc-atomic-upgrade.sh"]
           bad = []

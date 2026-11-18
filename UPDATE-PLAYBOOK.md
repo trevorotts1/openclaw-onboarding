@@ -41,12 +41,8 @@ Trevor messages the client's agent on Telegram via Skill 15 (BlackCEO Management
 
 The agent reads this playbook and executes it. No terminal. No client involvement.
 
-### Method 3: Remote/Heartbeat (Scheduled)
-Add this to the agent's HEARTBEAT.md:
-
-"Every Sunday at 3 AM, check for updates: Go to https://github.com/trevorotts1/openclaw-onboarding, read the version file, compare it to your installed version. If there is a new version, follow UPDATE-PLAYBOOK.md."
-
-The agent checks automatically on schedule and follows this same playbook.
+### Method 3: Automatic (Scheduled, no agent involved)
+Every box updates itself Tuesday, Friday and Sunday at 2:30 AM Eastern. Nothing needs to be added to HEARTBEAT.md and nothing asks the client for permission: see "Automatic Update Schedule (Tuesday, Friday, Sunday)" below. The schedule is installed by `scripts/setup-weekly-update.sh`; a manual run of this playbook (Methods 1 and 2) never conflicts with it because both take the same box update lock.
 
 ---
 
@@ -452,21 +448,109 @@ If a CORE_UPDATES.md entry conflicts with existing content:
 
 ---
 
-## Automated Command Center Update — Sunday 3AM (P1-07)
+## Automatic Update Schedule (Tuesday, Friday, Sunday)
+
+Every client box keeps itself current with no operator roll and no "ask first" step. The whole run is a script
+(`scripts/auto_update.py`), not a conversation: no model decides timing, locking, versions or rollback.
+
+### The schedule (America/New_York, daylight saving handled inside the script, independent of the box time zone)
+
+| When (Eastern) | Tuesday, Friday, Sunday | What happens |
+|---|---|---|
+| 2:15 AM | notice | ONE message in the owner's main chat: "Heads up: I'll start updating your system in 15 minutes (2:30 AM). Type cancel if you want to skip this update." |
+| 2:15 AM to start | watch | If the owner types the whole word `cancel` (any case), this run is skipped. The owner gets one reply: "OK, I skipped this update. I'll try again at the next scheduled time." and the status beacon records `CANCELLED`. The next scheduled day runs normally. |
+| 2:30 AM plus 0 to 15 minutes | run | A per-box, per-day random offset (a hash of the box id and the date) so the fleet does not start in the same second. |
+| 5:30 AM | cutoff | A run that never started by then is recorded `DEFERRED` (the box was off or busy). |
+
+On the spring-forward Sunday (when 2:00 AM jumps to 3:00 AM) the whole window moves one hour later. A box that
+woke up after the 2:30 AM notice window never updates unannounced: it records `DEFERRED` ("missed notice window").
+
+How it is wired: ONE crontab line, every 5 minutes, tagged `# openclaw-auto-update`, runs
+`scripts/auto-update-tick.sh` (a box without cron gets the same tick as one OpenClaw command job named
+`auto-update-tick`). The tick decides from its own Eastern clock whether anything is due; on every other tick it
+does nothing.
+
+### What one run does, in order
+
+1. **Lock.** Takes the shared box update lock (`/tmp/openclaw-update.lock`, `scripts/box-update-lock.sh`), the same lock
+   the operator's fleet roll takes. A busy box is waited on for 30 minutes (poll every 30 seconds), then recorded
+   `DEFERRED`. Everything below runs as a child of the lock holder, so update-skills.sh, fleet-refresh and the
+   Command Center `update.sh` inherit the lock instead of fighting it.
+2. **Version check** against GitHub: onboarding (the released `version` on `main`, or the approved pinned release when
+   `fleet-refresh/release-pin.json` pins one), Command Center (the release pinned in `cc-compat.json`, which is what the
+   fleet roll deploys; falls back to the Command Center `main` package version), and 999-setup (**macOS only**, and
+   only where it is already installed; Linux, VPS and Contabo boxes never check or touch it). A repo is updated ONLY
+   when the installed version is behind. Nothing behind: `CURRENT`, exit. The latest version cannot be read: `DEFERRED`.
+3. **Snapshot**, **update**, **health gate**: `scripts/weekly-full-update.sh` -> `scripts/fleet-refresh.sh --local --apply`
+   (the same machinery as the operator's roll: snapshot before, update-skills.sh, Command Center through
+   atomic-deploy.sh, 999 on a Mac, health gate after). Repos that are not behind are skipped. Credentials, models,
+   providers and the client's custom departments are never touched; `interviewComplete` and the fleet standing gate
+   are respected exactly as before.
+4. **OpenClaw CLI update** runs inside the same run, after the Command Center restart and before the health gate
+   (`scripts/openclaw-cli-update.sh`, the former Saturday 11:59 PM cron, unchanged: it only upgrades through
+   `oc-atomic-upgrade.sh` and rolls its own binary and config back on failure).
+5. **Health gate**: gateway process and `/health`, Telegram `getMe`, Command Center `/api/health`, the
+   `sessions.reset` probe, content integrity (personas, SOPs, role library, departments).
+6. **Repair.** A failed check is first fixed mechanically (restart the gateway, re-run the failed step, rebuild the
+   Command Center, up to 3 attempts). Then, still before any rollback, the repair agent gets up to 3 attempts.
+7. **Rollback.** Still failing: the box is rolled back to the snapshot and health is re-verified. The box always ends
+   working, on the new version or the old one. Recorded `ROLLED_BACK` (or `FAILED` when the rollback itself is
+   incomplete).
+8. **Beacon.** One JSON line per run (below), then the lock is released.
+
+### The repair agent (latest DeepSeek Flash)
+
+The repair agent can only pick from the runner's own, already-tested repair actions (restart gateway, rebuild Command
+Center, re-run the onboarding or Command Center step); it never gets a shell. It uses the first available of:
+Ollama Cloud DeepSeek Flash, then OpenRouter DeepSeek Flash, then DeepSeek Direct `deepseek-v4-flash`. "Available"
+means a key for that provider already resolves from the box's own config, environment or secrets stores. It never
+adds, changes or prints a key and never changes the client's primary model. None available: repair is skipped, the box
+rolls back if unhealthy, and the run is recorded `NO_DEEPSEEK` and alerted to the operator.
+
+### The status beacon
+
+`~/.openclaw/skills/.auto-update-status.json` (latest run; `/data/.openclaw/...` on VPS and Contabo) and one line per
+run in `.auto-update-history.jsonl` (last 200 kept). The same object is posted to the operator collection point with the
+credentials every box already carries (`FLEET_STANDING_GATE_URL`, header and secret; no new secret).
+
+```json
+{"schema":"auto-update-beacon/1","box":"<box slug>","run_at":"2026-11-18T07:41:12Z","scheduled_day":"2026-11-18",
+ "result":"CURRENT|UPDATED|CANCELLED|DEFERRED|ROLLED_BACK|FAILED|NO_DEEPSEEK",
+ "versions":{"onboarding":{"before":"v27.1.80","after":"v27.1.81"},"command_center":{"before":"...","after":"..."},"999":null},
+ "failing_check":null,"model_used":null,"notice_sent":true,"run_id":"auto-update-20261118T074112Z-4242"}
+```
+
+`999` is `null` on every box that is not a Mac with a 999-setup checkout. Clients receive nothing except the 2:15 AM
+notice and the cancel reply. The operator gets one 6:00 AM Eastern summary of the beacons (operator side, not a client box).
+
+### Retired by this schedule (setup removes them, once, idempotently)
+
+- the Sunday `0 3 * * 0` crontab line (`.update-restart-if-needed`)
+- the Saturday `59 23 * * 6` OpenClaw self-update crontab line (`.openclaw-self-update`); its work is step 4 above
+- every `openclaw cron` job named `weekly-onboarding-update`: the old agent "ask first" job and the 2:00 AM command job
+- `cron-prompt.txt` is no longer installed anywhere
+
+`bash scripts/setup-weekly-update.sh` installs the schedule (update-skills.sh runs it on every update); running it
+again changes nothing. A box migrates on the next old-path run (the last Sunday 3:00 AM run) or any fleet roll.
+Check a box: `crontab -l | grep openclaw-auto-update`, `python3 scripts/auto_update.py next`, `cat ~/.openclaw/skills/.auto-update-status.json`.
+
+---
+
+## Command Center Update (P1-07), now part of the automatic run
 
 **This section is separate from the skill-update playbook above.** Everything
-above this line governs the general OpenClaw/skills update (Method 3's
-"check for updates" step). THIS section is the one-page answer to "what runs,
-which file, what proves success, how to roll back" specifically for the
-**Command Center** half of the same Sunday run — see also the CC repo's own
+above this line governs the general OpenClaw/skills update. THIS section is the
+one-page answer to "what runs, which file, what proves success, how to roll back"
+specifically for the **Command Center** half of the automatic run described in
+"Automatic Update Schedule" — see also the CC repo's own
 `DEPLOYMENT.md` ("Automated Sunday Update Path (P1-07)" section) for the
 CC-side half of this same chain.
 
 ### What runs, in order
 
-1. **Cron** (`scripts/setup-weekly-update.sh` installs it): `0 3 * * 0` →
-   `~/.openclaw/skills/.update-restart-if-needed`, which downloads and runs the
-   LATEST `update-skills.sh` from this repo (never a stale local copy).
+1. **The schedule** (`scripts/setup-weekly-update.sh` installs it): the Tue/Fri/Sun
+   tick described above, whose run executes `scripts/weekly-full-update.sh`, which
+   syncs the box's roll copy of this repo and runs `scripts/fleet-refresh.sh --local --apply`.
 2. **`update-skills.sh` D5 block** (~line 2651+) runs, after refreshing the
    on-box Skill 32 installer itself (D5-PRE, v19.48.0 — closes the
    stale-installer half-provisioning class):
@@ -495,7 +579,7 @@ exit code: `.next/BUILD_ID` mtime newer than the pull timestamp AND
 `curl -fsS localhost:4000/api/health` returns `200`. It stamps
 `commandCenterLastUpdateVerified` (`true`/`false`) into the box's build-state
 file (`$STATE_FILE`) either way. **This stamp is the single source of truth**
-for whether Sunday's CC update actually took effect on a given box — check it
+for whether the automatic Command Center update actually took effect on a given box — check it
 before trusting a log line or an exit code. A `false` stamp means the box
 needs operator attention; it does NOT mean the box is down (tiers 1/2 already
 rolled back to a health-verified prior build before returning failure).
@@ -512,7 +596,7 @@ rolled back to a health-verified prior build before returning failure).
   line) since it has no health-retry loop of its own.
 - **Repo-level (a bad merge, not a bad box):** `git revert` the offending
   commit on `main` in the affected repo (onboarding or CC) and let the next
-  Sunday run — or a manual `run-full-install.sh --update-only` /
+  scheduled run — or a manual `run-full-install.sh --update-only` /
   `update.sh` re-run — pull the reverted code through the exact same
   atomic/health/rollback contract.
 
@@ -520,7 +604,7 @@ rolled back to a health-verified prior build before returning failure).
 
 The CC update above runs identically inside the container (in-container git
 pull + build + pm2 restart) — there is no separate docker-compose-managed "CC
-container" for a code-only Sunday update. VPS installs land under
+container" for a code-only automatic update. VPS installs land under
 `/data/projects/command-center` specifically because `/data` is the
 persistent bind-mounted volume, so the checkout + database survive a
 `docker compose up -d --force-recreate` of the OUTER OpenClaw container (a
@@ -528,15 +612,15 @@ DIFFERENT, less-frequent maintenance action, e.g. an image/dependency bump).
 Never use bare `docker compose restart` for that outer-container action — it
 skips `env_file` re-read.
 
-### Cron-presence probe (ships in P6-01)
+### Schedule-presence probe (ships in P6-01)
 
 `scripts/probe/p107-sunday-update-probe.sh` asserts, per box, by EXACT
 schedule+command matching against `crontab -l` (never a truncated-text
-grep — the v19.47.0 lesson): the Sunday 3:00 AM CC/onboarding updater cron is
-present, the Saturday 23:59 OpenClaw-CLI updater cron is present, and — on a
+grep — the v19.47.0 lesson): the Tue/Fri/Sun auto-update tick line is present, the retired
+Sunday 3:00 AM and Saturday 23:59 lines are gone, and — on a
 Docker VPS box — that `/data` is a genuine persistent mount (structural proof
 the CC checkout survives a container recreate). `--remediate` re-runs
-`scripts/setup-weekly-update.sh` to install whatever is missing, then
+`scripts/setup-weekly-update.sh` to install the schedule and retire the old lines, then
 re-verifies. Run it with `--json` for the fleet ledger.
 
 ---
