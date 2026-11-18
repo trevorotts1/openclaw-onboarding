@@ -256,6 +256,8 @@ def sig_s5(config, traj_events, billing, role, initiated_sessions=None, sig=None
     sig = sig if sig is not None else C.load_signatures()
     defaults = C.dotpath_get(config, "agents.defaults")
     hb = defaults.get("heartbeat") if isinstance(defaults, dict) else None
+    # No heartbeat block is not a finding: on OpenClaw 2026.11.5+ it is retired
+    # (C.heartbeat_retired) and the monitor is an automation job outside openclaw.json.
     if isinstance(hb, dict):
         every = hb.get("every")
         bound = C.fires_per_day_bound(every)

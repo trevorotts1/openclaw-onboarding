@@ -22,6 +22,10 @@ LF8_COMMANDS = [
     "openclaw config set agents.defaults.heartbeat.isolatedSession true --strict-json",
     "openclaw config set agents.defaults.heartbeat.lightContext true --strict-json",
 ]
+# OpenClaw 2026.11.5 retired heartbeat config; the heartbeat is an automation job there.
+LF8_COMMANDS_2026_11_5_PLUS = [
+    "openclaw automations edit <HEARTBEAT_JOB_ID> --session isolated --light-context",
+]
 PARAM_KEYS = {  # OpenClaw 2026.9.x gateway schemas (SessionsAbortParams / SessionsResetParams)
     "sessions.abort": {"key", "runId", "agentId", "clearQueued"},
     "sessions.reset": {"key", "agentId", "reason", "expectedSessionId"},
@@ -69,6 +73,16 @@ def check_all(fx):
     assert "model" not in _active(lf8), "LF-8 must never reference a heartbeat/client model"
     assert "requireapproval" not in _active(lf8)
     assert "PREPARED PROPOSAL" in lf8["title"] and "never applied" in lf8["title"]
+    # ---- LF-8 on OpenClaw 2026.11.5+: edit the heartbeat automation, never openclaw.json ----
+    gate = lf8.get("version_gate", "")
+    assert "2026.11.5" in gate and "doctor --fix" in gate, "LF-8 must carry its version gate"
+    assert lf8["commands_openclaw_2026_11_5_plus"] == LF8_COMMANDS_2026_11_5_PLUS
+    new_lists = (lf8["commands_openclaw_2026_11_5_plus"]
+                 + lf8["snapshot_before_openclaw_2026_11_5_plus"]
+                 + lf8["revert_commands_openclaw_2026_11_5_plus"])
+    assert all(c.startswith("openclaw automations ") for c in new_lists), new_lists
+    assert not any("heartbeat." in c or "config set" in c for c in new_lists), new_lists
+    assert any("<PRIOR_" in c for c in lf8["revert_commands_openclaw_2026_11_5_plus"])
 
     # ---- LF-9 (Fix 13): sessions.abort RPC, Tier 2 ----
     lf9 = fcs["LF-9"]
@@ -114,7 +128,8 @@ def check_all(fx):
 
     # ---- every re-pointed command goes through the running gateway, never a file ----
     for fid in ("LF-8", "LF-9", "LF-10", "LF-12"):
-        for c in fcs[fid]["commands"] + fcs[fid].get("alternative_commands", []):
+        for c in (fcs[fid]["commands"] + fcs[fid].get("alternative_commands", [])
+                  + fcs[fid].get("commands_openclaw_2026_11_5_plus", [])):
             assert c.startswith("openclaw "), (fid, c)
             assert not any(bad in c for bad in FORBIDDEN_IN_COMMANDS), (fid, c)
 
@@ -164,6 +179,10 @@ def main():
     _expect_fail("LF-8 promoted to Tier 1", lambda f: f["LF-8"].__setitem__("tier", 1))
     _expect_fail("LF-8 mentions a model", lambda f: f["LF-8"]["commands"].append(
         "openclaw config set agents.defaults.heartbeat.model x --strict-json"))
+    _expect_fail("LF-8 2026.11.5+ writes a retired heartbeat key",
+                 lambda f: f["LF-8"]["commands_openclaw_2026_11_5_plus"].append(
+                     "openclaw config set agents.defaults.heartbeat.lightContext true --strict-json"))
+    _expect_fail("LF-8 loses its version gate", lambda f: f["LF-8"].pop("version_gate"))
     _expect_fail("LF-9 back to July claim", lambda f: f["LF-9"].__setitem__(
         "proof", "As of OpenClaw 2026.7.1-2 no supported run-abort CLI was found"))
     _expect_fail("LF-10 file move", lambda f: f["LF-10"]["commands"].__setitem__(
@@ -171,7 +190,7 @@ def main():
     _expect_fail("LF-11 un-retired", lambda f: f["LF-11"].__setitem__("retired", False))
     _expect_fail("LF-12 loses clearQueued", lambda f: f["LF-12"]["commands"].__setitem__(
         0, "openclaw gateway call sessions.abort --params '{\"key\":\"k\"}'"))
-    print("  mutation case: PASS (7 broken variants all rejected)")
+    print("  mutation case: PASS (9 broken variants all rejected)")
     print("[test_fix_classes_plan] PASS")
 
 

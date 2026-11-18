@@ -89,14 +89,14 @@
       "class": "furnace",
       "direction": "tighten",
       "severity": "P2",
-      "note": "S5: heartbeat cadence IS spend. A cadence tightened below the fleet floor is P2 (cadence is a spend cap)."
+      "note": "S5: heartbeat cadence IS spend. A cadence tightened below the fleet floor is P2 (cadence is a spend cap). OpenClaw 2026.11.5+ retired this key: openclaw doctor --fix moves the heartbeat into an automation job ('Heartbeat (<agent>)') and deletes the key, so its absence there is 'retired', not drift."
     },
     {
       "path": "agents.defaults.heartbeat.model",
       "class": "furnace",
       "direction": "any_change",
       "severity": "P2",
-      "note": "S5: a heartbeat model resolving to a paid :cloud or metered tier is P2."
+      "note": "S5: a heartbeat model resolving to a paid :cloud or metered tier is P2. Retired on OpenClaw 2026.11.5+ like heartbeat.every: the model moves to the automation job, and a missing key there is 'retired', not drift."
     },
     {
       "path": "channels.telegram.accounts.default.allowFrom",
