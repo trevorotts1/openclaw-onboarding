@@ -93,6 +93,18 @@ record_query() {
   printf '%s\n' "$(( ${n:-0} + 1 ))" > "$cf"
 }
 
+# _now_f — epoch seconds with a fractional part (python3, then perl); prints
+# nothing and returns 1 when neither exists so the caller can fall back safely.
+_now_f() {
+  if command -v python3 >/dev/null 2>&1; then
+    python3 -c 'import time; print("%.3f" % time.time())' 2>/dev/null && return 0
+  fi
+  if command -v perl >/dev/null 2>&1; then
+    perl -MTime::HiRes=time -e 'printf "%.3f\n", time' 2>/dev/null && return 0
+  fi
+  return 1
+}
+
 # rate_wait <target_ref> — ATOMIC per-target reservation (SK1-30 / T2-33).
 #
 # The old shape computed the remaining delay, PRINTED it, stamped the timestamp
@@ -147,16 +159,25 @@ rate_wait() {
     sleep 1
   done
 
-  now="$(date +%s)"
+  # Sub-second clock (T2-33 root cause, v28.0.0): the old code compared WHOLE-second
+  # stamps. A stamp of 100.9 stored as 100 and a check at 101.05 read as 101 made the
+  # limiter think 1s had passed when 0.15s had, so a request could land up to ~1s
+  # inside the configured interval. Now: fractional stamps, fractional sleep, and the
+  # integer printed for the audit event is the remaining time rounded UP.
+  local slop=0 rem
+  now="$(_now_f)" || now="$(date +%s)"
+  case "$now" in *.*) ;; *) slop=1 ;; esac   # whole-second fallback clock: be conservative
   last=0; [ -f "$lf" ] && last="$(tr -d '[:space:]' < "$lf" 2>/dev/null || echo 0)"
-  diff=$(( now - ${last:-0} ))
-  if [ "${last:-0}" -gt 0 ] && [ "$diff" -lt "$PR_PER_TARGET_MIN_INTERVAL_S" ]; then
-    waited=$(( PR_PER_TARGET_MIN_INTERVAL_S - diff ))
-    sleep "$waited"
+  case "${last:-0}" in ''|*[!0-9.]*) last=0 ;; esac
+  rem="$(awk -v n="$now" -v l="${last:-0}" -v i="$PR_PER_TARGET_MIN_INTERVAL_S" -v s="$slop" \
+    'BEGIN{ if (l>0) { r=i+s-(n-l); if (r>0) printf "%.3f", r; else print "0" } else print "0" }')"
+  if [ "$rem" != "0" ]; then
+    waited="$(awk -v r="$rem" 'BEGIN{ w=int(r); if (w<r) w++; print w }')"
+    sleep "$rem"
   fi
   # REQUEST BOUNDARY: stamp now, release, return — the caller issues the request
   # on the very next statement.
-  printf '%s\n' "$(date +%s)" > "$lf"
+  _now_f > "$lf" 2>/dev/null || date +%s > "$lf"
   rmdir "$lockdir" 2>/dev/null || true
   echo "$waited"
 }

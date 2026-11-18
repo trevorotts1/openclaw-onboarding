@@ -3091,6 +3091,7 @@
      "update-skills.sh",
      "32-command-center-setup/scripts/run-full-install.sh",
      "tests/probe/test-u53-hl-u68-crown-executor-single-path.sh",
+     "tests/probe/test-pipefail-grep-q-sigpipe.sh",
      ".github/workflows/u53-crown-executor-single-path-guard.yml"
     ]
    },
@@ -3102,6 +3103,7 @@
      "update-skills.sh",
      "32-command-center-setup/scripts/run-full-install.sh",
      "tests/probe/test-u53-hl-u68-crown-executor-single-path.sh",
+     "tests/probe/test-pipefail-grep-q-sigpipe.sh",
      ".github/workflows/u53-crown-executor-single-path-guard.yml"
     ]
    }

@@ -223,7 +223,12 @@ prev=""; spacing_ok=1; observed=""
 for i in 1 2 3; do
   MASTER_FILES_DIR="$SB4" PR_PER_TARGET_MIN_INTERVAL_S=$INTERVAL \
     bash "$C40/scripts/lib-cost-cap.sh" rate_wait rate-target >/dev/null 2>&1
-  now="$(_now)"
+  # Measure at the limiter's OWN request boundary (the stamp it wrote just before
+  # returning), not at a wall-clock read taken after the subprocess exits: process
+  # startup/teardown jitter (~0.03s) between two calls otherwise makes a compliant
+  # 2.00s spacing read as 1.97s. A real violation still shows, because the stamp is
+  # the time the request was released.
+  now="$(tr -d '[:space:]' < "$SB4/public-records-cache/.last-fetch-rate-target")"
   if [ -n "$prev" ]; then
     gap="$(awk -v a="$prev" -v b="$now" 'BEGIN{printf "%.3f", b-a}')"
     observed="$observed ${gap}s"
@@ -233,6 +238,24 @@ for i in 1 2 3; do
 done
 [ "$spacing_ok" -eq 1 ] && pass "T2-33: observed spacing$observed, every gap >= ${INTERVAL}s measured at the request boundary" \
   || fail "T2-33: observed spacing$observed — a request landed inside the configured interval"
+
+# T2-33b — sub-second precision (v28.0.0 flake root cause). The limiter used to
+# compare WHOLE-second stamps, so a request could land up to ~1s inside the
+# interval depending on where in the second the previous one was stamped. Seed a
+# stamp 1.2s in the past (fractional) with a 2s interval: the limiter must wait
+# the remaining ~0.8s, so the new stamp is >= 2s after the seeded one, and the
+# integer it prints for the audit event is the remainder rounded UP.
+SB5="$SANDBOX/mfd-rate-frac"; mkdir -p "$SB5/public-records-cache"; LF5="$SB5/public-records-cache/.last-fetch-frac-target"
+seed="$(python3 -c 'import time; print("%.3f" % (time.time() - 1.2))')"
+printf '%s\n' "$seed" > "$LF5"
+waited_out="$(MASTER_FILES_DIR="$SB5" PR_PER_TARGET_MIN_INTERVAL_S=2 bash "$C40/scripts/lib-cost-cap.sh" rate_wait frac-target 2>/dev/null)"
+stamped="$(tr -d '[:space:]' < "$LF5")"
+gap="$(awk -v a="$seed" -v b="$stamped" 'BEGIN{printf "%.3f", b-a}')"
+if awk -v g="$gap" 'BEGIN{exit !(g >= 1.99)}' && [ "${waited_out:-0}" -ge 1 ] 2>/dev/null; then
+  pass "T2-33b: fractional stamp honoured — gap from the seeded stamp ${gap}s >= 2s, audit wait ${waited_out}s (rounded up)"
+else
+  fail "T2-33b: sub-second spacing lost — gap from the seeded stamp ${gap}s (need >= 1.99s), printed wait '${waited_out}'"
+fi
 
 # MUTATION: stamp the timestamp where it used to be stamped (before the sleep)
 # and let the caller do the sleeping — the exact pre-fix shape.
