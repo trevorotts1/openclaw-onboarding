@@ -6,5 +6,6 @@ cd "$GITHUB_WORKSPACE"
 set -e -o pipefail
 set -euo pipefail
 bash tests/probe/test-u53-hl-u68-crown-executor-single-path.sh
+bash tests/probe/test-pipefail-grep-q-sigpipe.sh
 echo "u53-crown-executor-single-path-guard: PASS"
 )
