@@ -2716,6 +2716,28 @@ def _find_999_checkout() -> Optional[Path]:
     return None
 
 
+def _step_update_999_own(repo: Path, script: Path, res: BoxResult, dry_run: bool) -> None:
+    """Auto-update only: run the 999 repo's own updater (scripts/auto-update-mac.sh). It rides the lease of the
+    auto-update run that launched it, updates only when behind, touches nothing but the checkout fast-forward and
+    `setup-macos.sh --skills-only`, and puts the checkout back if that refresh fails. Last stdout line:
+    AUTO-UPDATE-999 result=... before=v.. after=v.. latest=v.. rc=.. reason=..."""
+    if dry_run:
+        res.step_skip("update-999", f"dry-run (own updater at {script})")
+        return
+    r = subprocess.run(["bash", str(script), "--checkout", str(repo)], capture_output=True, text=True, timeout=3600)
+    line = next((l for l in reversed((r.stdout or "").splitlines()) if l.startswith("AUTO-UPDATE-999 ")), "")
+    info = dict(kv.split("=", 1) for kv in line.split()[1:] if "=" in kv)
+    res.update_999.update({"result": info.get("result"), "before": info.get("before"), "after": info.get("after")})
+    if r.returncode == 0:
+        res.step_ok("update-999")
+    elif r.returncode in (64, 65):
+        res.step_skip("update-999", f"999 not updated on this box ({info.get('reason') or 'not applicable'})")
+    elif r.returncode == 75:
+        res.step_skip("update-999", "DEFERRED: another updater held the lock; 999 not changed")
+    else:
+        res.step_fail("update-999", f"auto-update-mac.sh exit {r.returncode}: {info.get('reason') or (r.stderr or '').strip()[-160:]}")
+
+
 def step_update_999(res: BoxResult, dry_run: bool) -> None:
     """Refresh 999-setup ONLY where it is already installed; never install it."""
     repo = _find_999_checkout()
@@ -2723,6 +2745,10 @@ def step_update_999(res: BoxResult, dry_run: bool) -> None:
         res.step_skip("update-999", "999 not installed")
         return
     res.update_999 = {"path": str(repo)}
+    own = repo / "scripts" / "auto-update-mac.sh"
+    if os.environ.get("AUTO_UPDATE") == "1" and own.is_file():
+        _step_update_999_own(repo, own, res, dry_run)       # the 999 repo's own updater (Tue/Fri/Sun auto-update)
+        return
     if not (repo / ".git").exists():
         res.step_skip("update-999", f"999 at {repo} is an archive extract, not a git clone; not refreshed")
         return
@@ -3071,6 +3097,24 @@ def step_agnes_30_upgrade(paths: dict, res: BoxResult, dry_run: bool) -> None:
 
 # Mutating steps whose failure leaves a half-updated box (-> rollback).
 _MUTATING_STEPS = ("pull-onboarding", "pull-cc", "build-cc", "restart-cc")
+
+
+# Tue/Fri/Sun auto-update (scripts/auto_update.py) drives this runner with these variables; the operator's
+# own fleet roll sets none of them, so its behaviour is unchanged.
+#   AUTO_UPDATE_BEHIND   comma list of repos behind GitHub (onboarding, command_center, 999): a repo that is
+#                        not listed is already current and its step is skipped
+#   AUTO_UPDATE_OPENCLAW 1 = fold the OpenClaw CLI update into this run (before the health gate)
+#   AUTO_UPDATE_REPAIR   1 = model-guided repair attempts before a roll back (shared-utils/auto_update_repair.py)
+def _auto_behind() -> Optional[set]:
+    raw = os.environ.get("AUTO_UPDATE_BEHIND")
+    if raw is None:
+        return None
+    return {x.strip() for x in raw.split(",") if x.strip()}
+
+
+def _auto_repo_current(repo: str) -> bool:
+    behind = _auto_behind()
+    return behind is not None and repo not in behind
 # Stamp/state files update-skills.sh writes next to the skill trees.
 _SKILLS_STATE_FILES = (".onboarding-version", ".onboarding-content-manifest.json",
                        ".installed-versions", ".command-center-state")
@@ -4159,6 +4203,66 @@ def _run_heal_action(act: str, paths: dict, repo_root: Path, res: BoxResult, ctx
     return "unknown action"
 
 
+def step_openclaw_update(repo_root: Path, res: BoxResult) -> None:
+    """Auto-update only: run scripts/openclaw-cli-update.sh (the former Saturday cron, moved verbatim). It
+    upgrades only through oc-atomic-upgrade.sh, which rolls the binary and config back on its own failure;
+    exit 78 means the pre-upgrade gate refused and nothing changed. Not a gating step: a box that is unhealthy
+    afterwards is caught by the health gate that follows."""
+    script = repo_root / "scripts" / "openclaw-cli-update.sh"
+    if not script.is_file():
+        res.step_skip("openclaw-update", "scripts/openclaw-cli-update.sh not in this release")
+        return
+    r = subprocess.run(["bash", str(script)], capture_output=True, text=True, timeout=3600)
+    if r.returncode == 0:
+        res.step_ok("openclaw-update")
+    elif r.returncode == 78:
+        res.step_skip("openclaw-update", "blocked by the pre-upgrade gate; nothing changed")
+    else:
+        res.step_fail("openclaw-update", f"exit {r.returncode}: {(r.stderr or r.stdout).strip()[-160:]}")
+
+
+def _repair_agent_loop(paths: dict, repo_root: Path, res: BoxResult, baseline: dict, ctx: dict,
+                       probs: dict) -> tuple[bool, dict]:
+    """Auto-update only (AUTO_UPDATE_REPAIR=1): up to 3 model-guided repair attempts, each followed by a full
+    re-run of the health gate. The model only picks from the runner's own heal actions (see
+    shared-utils/auto_update_repair.py). Returns (healed, the failing checks that remain)."""
+    info = res.heal.setdefault("repair_agent", {"attempts": 0, "model": None, "no_model": False, "tried": []})
+    try:
+        import auto_update_repair  # type: ignore
+        chain = auto_update_repair.provider_chain(Path(paths["root"]))
+    except Exception as e:
+        _warn(f"  repair agent unavailable: {type(e).__name__}")
+        chain = []
+    if not chain:
+        info["no_model"] = True
+        _warn("  repair agent: no DeepSeek Flash provider is configured on this box; skipping repair")
+        return False, probs
+    for n in range(1, HEAL_ATTEMPTS + 1):
+        plan = auto_update_repair.plan_actions(probs, info["tried"], chain)
+        info["attempts"] = n
+        if plan["model"]:
+            info["model"] = plan["model"]
+        attempt = {"n": n, "failing": sorted(probs), "model": plan["model"], "actions": {}, "error": plan["error"]}
+        info["tried"].append(attempt)
+        _warn(f"  REPAIR AGENT ATTEMPT {n}/{HEAL_ATTEMPTS} ({plan['model'] or 'no answer'}): {', '.join(plan['actions']) or 'nothing to run'}")
+        for act in plan["actions"]:
+            try:
+                out = _run_heal_action(act, paths, repo_root, res, ctx)
+            except Exception as e:
+                out = f"error: {e}"
+            attempt["actions"][act] = str(out)[:240]
+        if not plan["actions"]:
+            break
+        post = probe_health(paths, res)
+        integ = probe_integrity(paths, repo_root, res.heal.get("run_start", 0), ctx["pinned"])
+        res.health["post"], res.health["integrity"] = post, integ
+        probs = gate_problems(res, baseline, post, integ)
+        res.health["regressions"] = sorted(probs)
+        if not probs:
+            return True, probs
+    return False, probs
+
+
 def heal_and_gate(paths: dict, repo_root: Path, res: BoxResult, baseline: dict, ctx: dict) -> str:
     """Returns "done" (gate settled: healthy, healed, rolled back or failed) or
     "needs-host-restart" (state saved; fleet-refresh.sh restarts the container
@@ -4222,7 +4326,15 @@ def heal_and_gate(paths: dict, repo_root: Path, res: BoxResult, baseline: dict, 
                 out = "skipped: running inside the container with no host access"
             attempt["actions"][act] = str(out)[:240]
 
-    # Every fix attempt failed.
+    # Every mechanical fix attempt failed. Auto-update gives the repair agent its three tries first.
+    if os.environ.get("AUTO_UPDATE_REPAIR") == "1" and probs:
+        healed, probs = _repair_agent_loop(paths, repo_root, res, baseline, ctx, probs)
+        if healed:
+            res.step_ok("health-gate")
+            heal["healed"] = True
+            res.steps["health-gate"] = f"ok:healed by the repair agent ({res.heal['repair_agent'].get('model')})"
+            _save_heal_budget(paths, None)
+            return "done"
     reasons = [f"{n}: {d}" for n, d in sorted(probs.items())]
     res.steps["health-gate"] = "failed:" + "; ".join(reasons)[:300]
     restored = rollback_box(paths, repo_root, res, reasons)
@@ -4478,6 +4590,8 @@ def _run_box_body(res: BoxResult, compat: dict, pinned_onboarding_tag: str, path
         try:
             if res.nine_router_guard_failed:   # the updater's front door already tripped the guard: run nothing more
                 res.step_fail("update-999", f"9Router guard: {res.nine_router_guard_failed}")
+            elif _auto_repo_current("999"):
+                res.step_skip("update-999", "already current")
             else:
                 step_update_999(res, dry_run)
         except Exception as e:
@@ -4505,13 +4619,19 @@ def _run_box_body(res: BoxResult, compat: dict, pinned_onboarding_tag: str, path
             res.step_fail("agnes-30-upgrade", str(e))
 
         # Step 3: pull-cc
+        cc_current = _auto_repo_current("command_center")
         try:
-            step_pull_cc(paths, cc_tag, res, dry_run, force_cc)
+            if cc_current:
+                res.step_skip("pull-cc", "already current")
+            else:
+                step_pull_cc(paths, cc_tag, res, dry_run, force_cc)
         except Exception as e:
             res.step_fail("pull-cc", str(e))
 
         # Step 4: build-cc (ONLY if pull-cc succeeded or was skipped)
-        if "failed" not in str(res.steps.get("pull-cc", "")):
+        if cc_current:
+            res.step_skip("build-cc", "already current")
+        elif "failed" not in str(res.steps.get("pull-cc", "")):
             try:
                 step_build_cc(paths, res, dry_run, local)
             except SystemExit:
@@ -4520,13 +4640,22 @@ def _run_box_body(res: BoxResult, compat: dict, pinned_onboarding_tag: str, path
                 res.step_fail("build-cc", str(e))
 
         # Step 5: restart-cc (ONLY if build-cc succeeded or was skipped)
-        if "failed" not in str(res.steps.get("build-cc", "")):
+        if cc_current:
+            res.step_skip("restart-cc", "already current")
+        elif "failed" not in str(res.steps.get("build-cc", "")):
             try:
                 step_restart_cc(paths, res, dry_run)
             except SystemExit:
                 res.step_fail("restart-cc", "Wave-5 preflight blocked the Command Center restart")
             except Exception as e:
                 res.step_fail("restart-cc", str(e))
+
+        # Step 5b (auto-update only): the OpenClaw CLI update, inside the same snapshot and health gate.
+        if not dry_run and os.environ.get("AUTO_UPDATE_OPENCLAW") == "1":
+            try:
+                step_openclaw_update(repo_root, res)
+            except Exception as e:
+                res.step_fail("openclaw-update", str(e))
 
         # Step 6: health + content gate -> fix up to 3 times -> roll back
         if not dry_run:

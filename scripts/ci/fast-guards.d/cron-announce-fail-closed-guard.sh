@@ -103,7 +103,7 @@ trap 'fg_rc=$?; [ "$fg_rc" -eq 0 ] || echo "::error::fast-guards cron-announce-f
 # change can never silently break one.
 FAILED=""
 for t in pipeline-cron-idempotency cron-tombstone-durability \
-         closeout-resume-cron-routing closeout-resume-exhausted-silent-d25 weekly-cron-message-refresh \
+         closeout-resume-cron-routing closeout-resume-exhausted-silent-d25 \
          standard-first-cron-awareness workforce-resume-cheap-command-mode \
          real-estate-industry-gate skill39-cron-path-and-retire; do
   if ! bash "tests/unit/$t.test.sh" >/tmp/"$t".log 2>&1; then

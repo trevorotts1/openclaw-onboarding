@@ -1,12 +1,12 @@
 {
   "onb_sha": "dbd7b82c74be10536954c514c97785d8738033fe",
   "cc_sha": "9c88cc7a6a26504d5ef7c2c994026771c56f87ca",
-  "onb_version": "v27.1.81",
+  "onb_version": "v27.1.82",
   "cc_version": "v7.6.128",
   "contract": "1.1.0",
   "sources": {
     "onboarding": {
-      "version": "v27.1.81",
+      "version": "v27.1.82",
       "sha": "dbd7b82c74be10536954c514c97785d8738033fe"
     },
     "n999": {
