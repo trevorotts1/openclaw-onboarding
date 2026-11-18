@@ -14,6 +14,7 @@ first on PATH where a script would call it).
 import importlib.util
 import json
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -115,28 +116,176 @@ class EntriesRoster(unittest.TestCase):
         self.assertIn("agents.entries.main.memory.search", r.stdout)
 
     # -- writers -----------------------------------------------------------
-    def run_heartbeat(self):
-        env = dict(self.env, OC_JSON=str(self.cfg), LOG_FILE=str(self.tmp / "hb.log"))
+    def run_heartbeat(self, **extra):
+        env = dict(self.env, OC_JSON=str(self.cfg), LOG_FILE=str(self.tmp / "hb.log"), **extra)
         return subprocess.run(["bash", str(REPO / "scripts/ensure-heartbeat-defaults.sh")],
                               capture_output=True, text=True, env=env, timeout=60)
 
+    def stub_openclaw_hb(self, schema, set_rc, version="OpenClaw 2026.11.4 (test)"):
+        """An `openclaw` stub for ensure-heartbeat-defaults.sh. Logs argv plus
+        the isolation env to openclaw.argv. `config schema` prints a schema whose
+        agents.defaults has heartbeat (schema="accepted"), lacks it ("retired"),
+        or fails ("fail"); `config set` exits set_rc; `--version` prints version."""
+        bindir = self.tmp / "bin"
+        bindir.mkdir(exist_ok=True)
+        log = self.tmp / "openclaw.argv"
+        hb = ', "heartbeat": {}' if schema == "accepted" else ""
+        doc = '{"properties": {"agents": {"properties": {"defaults": {"properties": {"model": {}%s}}}}}}' % hb
+        (self.tmp / "schema.json").write_text(doc)
+        stub = bindir / "openclaw"
+        stub.write_text(
+            "#!/bin/sh\n"
+            f'echo "$* | HOME=$OPENCLAW_HOME STATE=$OPENCLAW_STATE_DIR CFG=$OPENCLAW_CONFIG_PATH" >> "{log}"\n'
+            'case "$1 $2" in\n'
+            f'  "config schema") [ "{schema}" = fail ] && exit 1; cat "{self.tmp / "schema.json"}"; exit 0 ;;\n'
+            f'  "config set") exit {set_rc} ;;\n'
+            f'  "--version "*) printf \'%b\\n\' "{version}"; exit 0 ;;\n'
+            "esac\n"
+            "exit 0\n")
+        stub.chmod(0o755)
+        self.env["PATH"] = f"{bindir}:{os.environ['PATH']}"
+        return log
+
+    def calls(self, log):
+        return log.read_text().splitlines() if log.exists() else []
+
+    def hb_sets(self, log):
+        return [c for c in self.calls(log) if c.startswith("config set") and "heartbeat" in c.split(" | ")[0]]
+
+    def path_without_openclaw(self):
+        """PATH with bash/python3 but no openclaw anywhere on it."""
+        bindir = self.tmp / "noclaw"
+        bindir.mkdir(exist_ok=True)
+        (bindir / "python3").symlink_to(sys.executable)
+        for tool in ("bash", "cat", "cp", "rm", "mktemp", "grep", "head", "sort", "tr"):
+            found = shutil.which(tool)
+            if found:
+                (bindir / tool).symlink_to(found)
+        return str(bindir)
+
     def test_ensure_heartbeat_cli_writes_entries_path(self):
-        log = self.stub_openclaw(0)
+        log = self.stub_openclaw_hb("accepted", set_rc=0)
         self.write_cfg({"agents": {"entries": {"main": {"workspace": "/w"}}}})
         r = self.run_heartbeat()
         self.assertEqual(r.returncode, 0, r.stderr)
-        argv = log.read_text() if log.exists() else ""
+        argv = "\n".join(self.calls(log))
         self.assertIn("config set agents.entries.main.heartbeat.every", argv)
         self.assertNotIn("agents.list", argv)
+        self.assertIn("Heartbeat config keys accepted", r.stdout)
 
-    def test_ensure_heartbeat_python_fallback_writes_entries_never_list(self):
-        self.stub_openclaw(1)  # CLI write fails -> Python fallback
+    def test_ensure_heartbeat_probe_runs_isolated(self):
+        log = self.stub_openclaw_hb("accepted", set_rc=0)
+        self.write_cfg({"agents": {"entries": {"main": {"workspace": "/w"}}}})
+        self.run_heartbeat()
+        probe = [c for c in self.calls(log) if c.startswith("config schema")]
+        self.assertEqual(len(probe), 1, self.calls(log))
+        self.assertNotIn(str(self.home), probe[0])
+        self.assertIn("hb-capability.", probe[0])
+
+    def test_ensure_heartbeat_retired_schema_writes_nothing(self):
+        # The schema answer wins over a version that would say "accepted".
+        log = self.stub_openclaw_hb("retired", set_rc=1)
+        self.write_cfg({"agents": {"entries": {"main": {"workspace": "/w"}}}})
+        before = self.cfg.read_bytes()
+        r = self.run_heartbeat(FLEET_OC_VERSION_OVERRIDE="2026.11.4")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual(self.hb_sets(log), [])
+        self.assertEqual(self.cfg.read_bytes(), before)
+        self.assertIn("retired on this OpenClaw build", r.stdout)
+        self.assertNotIn("Python fallback", r.stdout + r.stderr)
+
+    def test_ensure_heartbeat_retired_with_legacy_keys_advises_doctor(self):
+        log = self.stub_openclaw_hb("retired", set_rc=1)
+        self.write_cfg({"agents": {"entries": {"main": {"workspace": "/w", "heartbeat": {"every": "6h"}}}}})
+        before = self.cfg.read_bytes()
+        r = self.run_heartbeat()
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual(self.hb_sets(log), [])
+        self.assertEqual(self.cfg.read_bytes(), before)
+        self.assertIn("openclaw doctor --fix", r.stderr)
+
+    def test_ensure_heartbeat_cli_refusal_never_falls_back_to_python(self):
+        # Replaces the old test that pinned the defect: a CLI refusal used to
+        # drop into the Python fallback and write the key anyway.
+        log = self.stub_openclaw_hb("accepted", set_rc=1)
+        self.write_cfg({"agents": {"entries": {"main": {"workspace": "/w"}}}})
+        before = self.cfg.read_bytes()
+        r = self.run_heartbeat()
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual(self.cfg.read_bytes(), before)
+        self.assertNotIn("Python fallback", r.stdout)
+        self.assertIn("openclaw refused the per-agent heartbeat block", r.stderr)
+        self.assertTrue(self.hb_sets(log), "the CLI write must still be attempted")
+
+    def test_ensure_heartbeat_schema_fail_version_cutoff(self):
+        for version, writes in (("2026.11.5", False), ("2026.11.4", True)):
+            with self.subTest(version=version):
+                log = self.stub_openclaw_hb("fail", set_rc=0, version=f"OpenClaw {version} (test)")
+                log.unlink(missing_ok=True)
+                self.write_cfg({"agents": {"entries": {"main": {"workspace": "/w"}}}})
+                r = self.run_heartbeat()
+                self.assertEqual(r.returncode, 0, r.stderr)
+                self.assertEqual(bool(self.hb_sets(log)), writes, self.calls(log))
+
+    def test_ensure_heartbeat_version_scan_skips_banner_line(self):
+        log = self.stub_openclaw_hb(
+            "fail", set_rc=0,
+            version='openclaw: Retrying with cached runtime\nOpenClaw 2026.11.5 (test)')
         self.write_cfg({"agents": {"entries": {"main": {"workspace": "/w"}}}})
         r = self.run_heartbeat()
         self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual(self.hb_sets(log), [])
+        self.assertIn("2026.11.5", r.stdout)
+
+    def test_ensure_heartbeat_unknown_capability_writes_nothing(self):
+        log = self.stub_openclaw_hb("fail", set_rc=0, version="no version here")
+        self.write_cfg({"agents": {"entries": {"main": {"workspace": "/w"}}}})
+        before = self.cfg.read_bytes()
+        r = self.run_heartbeat()
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual(self.hb_sets(log), [])
+        self.assertEqual(self.cfg.read_bytes(), before)
+        self.assertIn("Heartbeat capability unknown", r.stderr)
+
+    def test_ensure_heartbeat_python_fallback_only_without_cli(self):
+        self.write_cfg({"agents": {"entries": {"main": {"workspace": "/w"}}}})
+        self.cfg.chmod(0o640)
+        self.env["PATH"] = self.path_without_openclaw()
+        r = self.run_heartbeat(FLEET_OC_VERSION_OVERRIDE="2026.11.4")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertIn("Python fallback (openclaw CLI absent)", r.stdout)
         agents = self.read_cfg()["agents"]
         self.assertNotIn("list", agents)
         self.assertEqual(agents["entries"]["main"]["heartbeat"]["every"], "6h")
+        self.assertEqual(self.cfg.stat().st_mode & 0o777, 0o640)
+        self.assertEqual(list(self.cfg.parent.glob(".hb-fallback.*")), [])
+
+    def test_ensure_heartbeat_no_cli_retired_version_writes_nothing(self):
+        self.write_cfg({"agents": {"entries": {"main": {"workspace": "/w"}}}})
+        before = self.cfg.read_bytes()
+        self.env["PATH"] = self.path_without_openclaw()
+        r = self.run_heartbeat(FLEET_OC_VERSION_OVERRIDE="2026.11.5")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual(self.cfg.read_bytes(), before)
+
+    def test_ensure_heartbeat_vps_data_path_same_gate(self):
+        # Docker/VPS boxes keep the config under /data/.openclaw; OC_JSON points
+        # there. Same branches must hold on that layout.
+        vps = self.tmp / "data" / ".openclaw"
+        vps.mkdir(parents=True)
+        self.cfg = vps / "openclaw.json"
+        log = self.stub_openclaw_hb("retired", set_rc=1)
+        self.write_cfg({"agents": {"entries": {"main": {"workspace": "/data/w"}}}})
+        before = self.cfg.read_bytes()
+        r = self.run_heartbeat()
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual(self.hb_sets(log), [])
+        self.assertEqual(self.cfg.read_bytes(), before)
+        log.unlink()
+        self.stub_openclaw_hb("accepted", set_rc=0)
+        r = self.run_heartbeat()
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertIn("config set agents.entries.main.heartbeat.every", "\n".join(self.calls(log)))
 
     def test_pixel_hook_registers_into_entries_never_list(self):
         self.stub_openclaw(0)  # its trailing `openclaw config validate`

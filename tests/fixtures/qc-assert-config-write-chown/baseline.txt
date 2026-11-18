@@ -19,12 +19,12 @@ install.sh::note "ensure-heartbeat-defaults.sh not in bundle — skipping (set m
 install.sh::open(p, "w", encoding="utf-8").write(new)	1
 install.sh::openclaw config set agents.defaults.workspace "$WORKSPACE_DIR" 2>/dev/null || true	1
 install.sh::p.write_text(json.dumps(cfg, indent=2) + "\n")	1
-scripts/ensure-heartbeat-defaults.sh::echo " ⚠ Cannot add per-agent heartbeat block (no openclaw CLI / no python3) — manual: openclaw config set 'agents.list[$PRIMARY_IDX].heartbeat.every' $HB_EVERY" >&2	1
+scripts/ensure-heartbeat-defaults.sh::echo " ⚠ Cannot add per-agent heartbeat block (no openclaw CLI / no python3) — manual: openclaw config set '$PRIMARY_PATH.heartbeat.every' $HB_EVERY" >&2	1
 scripts/ensure-heartbeat-defaults.sh::echo " ⚠ Could not set agents.defaults.heartbeat.every — manual: openclaw config set agents.defaults.heartbeat.every 6h" >&2	1
 scripts/ensure-heartbeat-defaults.sh::echo " ⚠ openclaw not on PATH — interval default not set; run: openclaw config set agents.defaults.heartbeat.every 6h" >&2	1
-scripts/ensure-heartbeat-defaults.sh::if openclaw config set "agents.list[$PRIMARY_IDX].heartbeat.every" "$HB_EVERY" 2>>"$LOG_FILE"; then	1
+scripts/ensure-heartbeat-defaults.sh::if openclaw config set "$PRIMARY_PATH.heartbeat.every" "$HB_EVERY" 2>>"$LOG_FILE"; then	1
+scripts/ensure-heartbeat-defaults.sh::openclaw config set "$PRIMARY_PATH.heartbeat.model" "$HB_MODEL" 2>>"$LOG_FILE" || true	1
 scripts/ensure-heartbeat-defaults.sh::openclaw config set "agents.defaults.heartbeat.model" "$HB_MODEL" 2>>"$LOG_FILE" || true	1
-scripts/ensure-heartbeat-defaults.sh::openclaw config set "agents.list[$PRIMARY_IDX].heartbeat.model" "$HB_MODEL" 2>>"$LOG_FILE" || true	1
 scripts/ensure-heartbeat-defaults.sh::openclaw config set agents.defaults.heartbeat.every 6h 2>>"$LOG_FILE" || _iv=0	1
 scripts/ensure-heartbeat-defaults.sh::openclaw config set agents.defaults.heartbeat.maxTokens 2000 2>>"$LOG_FILE" || true	1
 scripts/ghl-mcp-autostart.sh::openclaw config set env.vars.GHL_COMMUNITY_MCP_URL "$_ghl_want" >/dev/null 2>&1 || true	1
