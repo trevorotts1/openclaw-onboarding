@@ -1145,7 +1145,8 @@ class QcRound2(BoxCase):
         self.assertFalse(marker.exists())
         self.assertIn("container", b["openclaw_upgrade_reason"])
         self.assertEqual(b["openclaw_upgrade"], "blocked")
-        self.assertNotIn("blocked", b["versions"]["openclaw"])               # before/after stay plain
+        self.assertEqual(b["versions"]["openclaw"]["blocked"], b["openclaw_upgrade_reason"])   # kept as well
+        self.assertEqual(b["versions"]["openclaw"]["before"], b["versions"]["openclaw"]["after"])
 
     def test_an_npm_pin_is_the_target_not_npm_latest(self):
         marker = self.install_update_stub()
@@ -1165,6 +1166,14 @@ class QcRound2(BoxCase):
         self.assertEqual(b["result"], "CURRENT")
         self.assertFalse(marker.exists())
         self.assertIn("blocked", b["openclaw_upgrade_reason"])
+
+    def test_beacon_carries_scheduler_with_the_three_fixed_values_and_no_block_fields_when_not_blocked(self):
+        for sched in ("crontab", "openclaw-job", "agent-fallback"):
+            au.write_json_atomic(au.install_path(self.root), {"scheduler": sched})
+            b = au.build_beacon(self.root, "CURRENT", {}, {}, run_id="r", day="d")
+            self.assertEqual(b["scheduler"], sched)
+            self.assertNotIn("openclaw_upgrade", b)
+            self.assertNotIn("blocked", b["versions"]["openclaw"])
 
     def test_an_upgrade_that_refuses_at_run_time_with_only_the_cli_behind_is_not_reported_updated(self):
         self.install_update_stub(steps={"openclaw-update": "skip:blocked by the pre-upgrade gate; nothing changed"})

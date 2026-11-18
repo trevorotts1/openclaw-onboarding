@@ -569,6 +569,8 @@ def build_beacon(root: Path, result: str, versions_before: dict, versions_after:
     assert result in RESULTS, result
     vers = {}
     vers["openclaw"] = {"before": versions_before.get("openclaw"), "after": versions_after.get("openclaw", versions_before.get("openclaw"))}
+    if openclaw_blocked:
+        vers["openclaw"]["blocked"] = openclaw_blocked      # kept next to the top-level fields the 6 AM report reads
 
     for n in ("onboarding", "command_center", "999"):
         if n == "999" and not is_mac():
