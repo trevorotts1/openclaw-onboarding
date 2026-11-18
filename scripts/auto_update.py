@@ -243,6 +243,8 @@ def decide(local: dt.datetime, box: str, day_state: dict) -> str:
 def _run(cmd: list[str], timeout: int = 60) -> subprocess.CompletedProcess:
     try:
         return subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+    except subprocess.TimeoutExpired:
+        return subprocess.CompletedProcess(cmd, 124, "", "timeout")
     except (OSError, subprocess.SubprocessError) as e:
         return subprocess.CompletedProcess(cmd, 127, "", str(e))
 
@@ -266,6 +268,9 @@ def send_owner_message(text: str) -> tuple[bool, str]:
     if not chat:
         return False, "no client owner chat resolved"
     r = _run(["openclaw", "message", "send", "--channel", "telegram", "--target", chat, "--message", text], 90)
+    if r.returncode == 124:
+        # The send may well have been delivered: count it as sent so it is never repeated (no duplicate notices).
+        return True, "openclaw message send timed out (delivery unknown; not resent)"
     return (r.returncode == 0), f"openclaw message send rc={r.returncode}"
 
 
@@ -281,10 +286,12 @@ def _owner_agent_ids(root: Path) -> list[str]:
 
 
 def owner_session_keys(root: Path, chat: str = "") -> list[str]:
-    """Sessions whose messages may cancel: the owner's own Telegram DM (peer id == the chat the notice went to).
-    The collapsed agent:<id>:main session counts only when the agent has no per-peer DM sessions at all, so a
-    different person who can talk to the agent can never cancel the owner's update."""
-    keys: list[str] = []
+    """Sessions whose messages may cancel. Every candidate agent is searched (a direct-peer binding that routes
+    someone else to another agent never hides the owner's agent). First choice: the owner's own Telegram DM
+    session (peer id == the chat the notice went to). When no per-peer session matches the owner, fall back to
+    the collapsed agent:<id>:main sessions, where the owner's DMs land under dmScope main."""
+    owner_dms: list[str] = []
+    mains: list[str] = []
     for agent in _owner_agent_ids(root):
         r = _run(["openclaw", "sessions", "list", "--agent", agent, "--json", "--limit", "all"], 90)
         try:
@@ -294,15 +301,13 @@ def owner_session_keys(root: Path, chat: str = "") -> list[str]:
         dm = re.compile(rf"^agent:{re.escape(agent)}:telegram:(?:[^:]+:)?direct:(\d+)$")
         found = sorted((x for x in rows if isinstance(x, dict) and x.get("key")),
                        key=lambda x: float(x.get("updatedAt") or 0), reverse=True)
-        directs = [(x["key"], dm.match(x["key"]).group(1)) for x in found if dm.match(x["key"])]
-        mains = [x["key"] for x in found if x["key"] == f"agent:{agent}:main"]
-        if directs:
-            keys += [k for k, peer in directs if chat and peer == chat]
-        else:
-            keys += mains
-        if keys or directs:
-            break
-    return list(dict.fromkeys(keys))
+        for x in found:
+            m = dm.match(x["key"])
+            if m and chat and m.group(1) == chat:
+                owner_dms.append(x["key"])
+            elif x["key"] == f"agent:{agent}:main":
+                mains.append(x["key"])
+    return list(dict.fromkeys(owner_dms or mains))
 
 
 def _message_text(msg: dict) -> str:
@@ -484,6 +489,38 @@ def latest_openclaw() -> str | None:
     return norm_version(r.stdout.strip()) if r.returncode == 0 else None
 
 
+def in_container() -> bool:
+    """The same markers oc-atomic-upgrade.sh _running_in_container uses (it refuses, exit 79, in a container)."""
+    if any(os.path.exists(m) for m in ("/.dockerenv", "/.containerenv", "/run/.containerenv")):
+        return True
+    try:
+        return bool(re.search(r"docker|kubepods|containerd|libpod", Path("/proc/1/cgroup").read_text()))
+    except OSError:
+        return False
+
+
+def npm_pin(root: Path) -> str | None:
+    v = os.environ.get("OPENCLAW_APPROVED_NPM_VERSION", "").strip() or \
+        str(read_json(root / "fleet-refresh" / "release-pin.json", {}).get("approved_npm_version") or "").strip()
+    return norm_version(v)
+
+
+def openclaw_blocked_reason(root: Path) -> str:
+    """Why the OpenClaw CLI upgrade cannot run on this box right now ('' = it can). OpenClaw counts as behind
+    only where the upgrade can actually run, so a blocked box does not get a full update every scheduled day."""
+    if in_container():
+        return "container: the atomic upgrade tool refuses to run in a container (host-managed)"
+    marker = skills_dir(root) / ".openclaw-upgrade-blocked"
+    if marker.exists():
+        return "blocked by the pre-upgrade gate (see skills/.openclaw-upgrade-blocked)"
+    cfg = read_json(root / "openclaw.json", {})
+    agents = cfg.get("agents") or {}
+    if isinstance(agents, dict) and "list" in agents and "entries" not in agents \
+            and not (root / "scripts" / "oc-atomic-upgrade.sh").is_file():
+        return "legacy agents.list config and the atomic upgrade tool is not on this box"
+    return ""
+
+
 def check_versions(root: Path) -> dict:
     """{repo: {installed, latest, behind}} for onboarding, command_center and (macOS only) 999."""
     ref = pinned_ref(root)
@@ -497,6 +534,9 @@ def check_versions(root: Path) -> dict:
         fx = read_json(Path(fixture), {})
         for name, row in rows.items():
             row["fetch"] = (lambda n=name: norm_version(fx.get(n)) if fx.get(n) else (_ for _ in ()).throw(OSError("fixture")))
+    pinned_npm = npm_pin(root)
+    if pinned_npm:                           # an approved npm version is the target, not npm latest
+        rows["openclaw"]["fetch"] = lambda: pinned_npm
     out = {}
     for name, row in rows.items():
         if name == "999" and find_999_checkout() is None:
@@ -513,16 +553,24 @@ def check_versions(root: Path) -> dict:
             err = None
         out[name] = {"installed": row["installed"], "latest": latest,
                      "behind": is_behind(row["installed"], latest), "error": err}
+        if name == "openclaw":
+            blocked = openclaw_blocked_reason(root)
+            if blocked:
+                out[name]["blocked"] = blocked
+                out[name]["behind"] = False
     return out
 
 
 # --------------------------------------------------------------- beacon ------
 
 def build_beacon(root: Path, result: str, versions_before: dict, versions_after: dict, *, run_id: str,
-                 day: str, failing: str | None = None, model: str | None = None, notice_sent: bool = False) -> dict:
+                 day: str, failing: str | None = None, model: str | None = None, notice_sent: bool = False,
+                 openclaw_blocked: str = "") -> dict:
     assert result in RESULTS, result
     vers = {}
     vers["openclaw"] = {"before": versions_before.get("openclaw"), "after": versions_after.get("openclaw", versions_before.get("openclaw"))}
+    if openclaw_blocked:
+        vers["openclaw"]["blocked"] = openclaw_blocked
     for n in ("onboarding", "command_center", "999"):
         if n == "999" and not is_mac():
             vers[n] = None          # never on Linux/VPS/Contabo
@@ -531,7 +579,7 @@ def build_beacon(root: Path, result: str, versions_before: dict, versions_after:
             vers[n] = {"before": None, "after": None, "status": "NOT_INSTALLED"}    # a Mac without 999-setup: not a failure
             continue
         vers[n] = {"before": versions_before.get(n), "after": versions_after.get(n, versions_before.get(n))}
-    return {"schema": SCHEMA, "box": box_id(root), "run_at": now_utc().strftime("%Y-%m-%dT%H:%M:%SZ"),
+    return {"schema": SCHEMA, "scheduler": read_json(install_path(root), {}).get("scheduler"), "box": box_id(root), "run_at": now_utc().strftime("%Y-%m-%dT%H:%M:%SZ"),
             "scheduled_day": day, "result": result, "versions": vers, "failing_check": failing,
             "model_used": model, "notice_sent": bool(notice_sent), "run_id": run_id}
 
@@ -627,8 +675,10 @@ def run_update(root: Path, day: str, run_id: str, notice_sent: bool) -> dict:
         return build_beacon(root, "DEFERRED", before, before, run_id=run_id, day=day, notice_sent=notice_sent,
                             failing=f"could not read the latest {', '.join(sorted(unreadable))} version")
     behind = sorted(k for k, v in versions.items() if v["behind"])
+    oc_blocked = (versions.get("openclaw") or {}).get("blocked", "")
     if not behind:
-        return build_beacon(root, "CURRENT", before, before, run_id=run_id, day=day, notice_sent=notice_sent)
+        return build_beacon(root, "CURRENT", before, before, run_id=run_id, day=day, notice_sent=notice_sent,
+                            openclaw_blocked=oc_blocked)
     log(f"behind: {', '.join(behind)}; running the update")
     cc_file = skills_dir(root) / f".cc-update-result-{os.getpid()}.json"
     cc_file.unlink(missing_ok=True)
@@ -684,6 +734,10 @@ def run_update(root: Path, day: str, run_id: str, notice_sent: bool) -> dict:
         result, failing = "FAILED", failing or "Command Center update reported FAILED"
     elif result == "UPDATED" and cc_status == "DEFERRED":
         result, failing = "DEFERRED", "Command Center update deferred (box lock busy)"
+    if result == "UPDATED" and behind == ["openclaw"] and str(steps.get("openclaw-update", "")).startswith("skip:"):
+        # only the CLI was behind and its upgrade refused: nothing changed, so it is not an update
+        result = "CURRENT"
+        oc_blocked = oc_blocked or str(steps["openclaw-update"])[5:160]
     if result == "UPDATED":
         s999, soc = str(steps.get("update-999", "")), str(steps.get("openclaw-update", ""))
         if s999.startswith("failed"):
@@ -699,7 +753,7 @@ def run_update(root: Path, day: str, run_id: str, notice_sent: bool) -> dict:
         result = "NO_DEEPSEEK"
         failing = failing or (row.get("outcome_detail") or "")[:200]
     return build_beacon(root, result, before, after, run_id=run_id, day=day, failing=failing, model=model,
-                        notice_sent=notice_sent)
+                        notice_sent=notice_sent, openclaw_blocked=oc_blocked)
 
 
 # ----------------------------------------------------------------- tick ------
@@ -747,13 +801,18 @@ def _tick_locked(root: Path) -> str:
         return "idle"
     if act == "notice":
         sent, detail = send_owner_message(notice_text(local.date()))
+        now_ms = int(utc.timestamp() * 1000)
+        prev_n = st.get("notice") or {}
+        # first_ms: when the first attempt began (a cancel typed after it counts, even if a retry delivered later);
+        # at_ms: when the notice actually went out (the 15 minutes run from it).
         st["notice"] = {"attempted": True, "sent": sent, "detail": detail,
-                        "chat_found": detail != "no client owner chat resolved", "at_ms": int(utc.timestamp() * 1000)}
+                        "chat_found": detail != "no client owner chat resolved",
+                        "first_ms": prev_n.get("first_ms") or now_ms, "at_ms": now_ms}
         write_json_atomic(state_path(root), st)
         log(f"notice {'sent' if sent else 'NOT sent (' + detail + ')'}")
         return "notice"
     if act in ("watch", "run"):
-        since = int(st.get("notice", {}).get("at_ms") or 0)
+        since = int(st.get("notice", {}).get("first_ms") or st.get("notice", {}).get("at_ms") or 0)
         if not st.get("cancel") and cancel_requested(root, since):
             ok, _ = send_owner_message(CANCEL_ACK_TEXT)
             st["cancel"] = {"acked": ok, "at_ms": int(utc.timestamp() * 1000)}
@@ -780,11 +839,13 @@ def _tick_locked(root: Path) -> str:
         return "run"
     migration = False
     if act == "missed_notice" and st.get("notice", {}).get("attempted"):
-        reason = "notice could not be delivered to the owner chat; not updating unannounced"
+        reason = "notice-undeliverable"      # CONTRACT.md section 10: the 6 AM report surfaces this box
     elif act == "missed_notice":
         reason = "missed notice window"
-        installed_at = read_json(install_path(root), {}).get("installed_at_ms") or 0
-        if installed_at >= int(eastern_to_utc(_at(local.date(), NOTICE_AT)).timestamp() * 1000):
+        meta = read_json(install_path(root), {})
+        installed_at = meta.get("installed_at_ms") or 0
+        if meta.get("migration_day") == day and \
+                installed_at >= int(eastern_to_utc(_at(local.date(), NOTICE_AT)).timestamp() * 1000):
             # The schedule was installed after today's notice window (the last run of the old Sunday path
             # installed it): nothing was missed by a working schedule.
             migration = True
@@ -877,25 +938,43 @@ def _cron_jobs() -> list[dict] | None:
     return [j for j in (data if isinstance(data, list) else data.get("jobs", [])) if isinstance(j, dict)]
 
 
-def old_job_ids() -> list[str] | None:
+def old_jobs() -> list[dict] | None:
+    """[{id, kind}] for every weekly-onboarding-update job; kind 'command' is the silent 2:00 AM updater, any
+    other kind (agentTurn, systemEvent) is the agent 'ask first' job."""
     jobs = _cron_jobs()
     if jobs is None:
         return None
-    return [str(j["id"]) for j in jobs if j.get("name") == OLD_CRON_NAME and j.get("id")]
+    return [{"id": str(j["id"]), "kind": str((j.get("payload") or {}).get("kind") or "")}
+            for j in jobs if j.get("name") == OLD_CRON_NAME and j.get("id")]
 
 
-def retire_cron_jobs() -> list[str]:
-    """Remove every openclaw cron job named weekly-onboarding-update (the old agent 'ask first' job and
-    the 2:00 AM command job). Returns the ids removed. Unreadable list = nothing removed, retried next time.
-    Callers run this ONLY after the new schedule is installed and verified."""
+def old_job_ids() -> list[str] | None:
+    jobs = old_jobs()
+    return None if jobs is None else [j["id"] for j in jobs]
+
+
+def retire_cron_jobs(only_ask: bool = False) -> list[str]:
+    """Remove openclaw cron jobs named weekly-onboarding-update by id (with retries on a busy box). only_ask
+    removes just the agent 'ask first' jobs and keeps the silent command job as the safety net until a tick has
+    proven the new schedule. Unreadable list = nothing removed, retried next time."""
     removed = []
-    for jid in old_job_ids() or []:
+    for j in old_jobs() or []:
+        if only_ask and j["kind"] == "command":
+            continue
         for _ in range(int(os.environ.get("AUTO_UPDATE_RM_TRIES", "3"))):
-            if _run(["openclaw", "cron", "rm", str(jid)], 60).returncode == 0:
-                removed.append(str(jid))
+            if _run(["openclaw", "cron", "rm", j["id"]], 60).returncode == 0:
+                removed.append(j["id"])
                 break
             time.sleep(float(os.environ.get("AUTO_UPDATE_RM_DELAY", "5")))
     return removed
+
+
+def remove_jobs_named(name: str) -> list[str]:
+    out = []
+    for j in _cron_jobs() or []:
+        if j.get("name") == name and j.get("id") and _run(["openclaw", "cron", "rm", str(j["id"])], 60).returncode == 0:
+            out.append(str(j["id"]))
+    return out
 
 
 TICK_JOB_NAME = "auto-update-tick"
@@ -905,6 +984,63 @@ def _tick_job_present(root: Path) -> bool:
     cmd = f"/bin/bash '{root}/scripts/auto-update-tick.sh'"
     return any(j.get("name") == TICK_JOB_NAME and (j.get("payload") or {}).get("argv") == ["sh", "-lc", cmd]
                and j.get("enabled", True) is not False for j in (_cron_jobs() or []))
+
+
+SELF_JOB_NAME = "auto-update-selfcheck"
+AGENT_TICK_PROMPT = ("Silent maintenance task. Run exactly this one command and nothing else: bash '{root}/scripts/auto-update-tick.sh'. "
+                     "Never send any message to the owner or anyone, never ask a question, never start any other task. "
+                     "When it finishes reply with the single word OK.")
+
+
+def _commands_supported() -> bool:
+    h = _run(["openclaw", "cron", "add", "--help"], 30)
+    return h.returncode != 0 or bool(re.search(r"^\s*--command[\s<]", h.stdout + h.stderr, re.M))
+
+
+def ensure_selfcheck_job(root: Path) -> str:
+    """A real timer for the 15-minute proof: a silent OpenClaw command job that runs `selfcheck` every 15
+    minutes until selfcheck itself removes it (proven or fallen back)."""
+    jobs = _cron_jobs()
+    if jobs is None or not _commands_supported():
+        return "unavailable"
+    if any(j.get("name") == SELF_JOB_NAME for j in jobs):
+        return "present"
+    cmd = f"python3 '{root}/scripts/auto_update.py' selfcheck"
+    r = _run(["openclaw", "cron", "add", "--name", SELF_JOB_NAME, "--cron", "*/15 * * * *", "--tz", "America/New_York",
+              "--exact", "--description", "Auto-update schedule self-check (silent; removes itself once the tick is proven)",
+              "--command", cmd, "--timeout-seconds", "600", "--no-deliver"], 90)
+    return "created" if r.returncode == 0 else "unavailable"
+
+
+def ensure_agent_tick_job(root: Path) -> str:
+    """Last resort for an OpenClaw with no command jobs and no cron daemon: a SILENT agent job whose only
+    instruction is to run the tick script and never message the owner (replaces the old ask-first job)."""
+    jobs = _cron_jobs()
+    if jobs is None:
+        return "unavailable"
+    if any(j.get("name") == TICK_JOB_NAME for j in jobs):
+        return "present"
+    agent = ""
+    ra = _run(["openclaw", "agents", "list", "--json"], 30)
+    try:
+        raw = ra.stdout
+        data = json.loads(raw[min([x for x in (raw.find("{"), raw.find("[")) if x >= 0] or [0]):])
+        lst = data if isinstance(data, list) else data.get("agents", [])
+        agent = next((x.get("id") for x in lst if isinstance(x, dict) and (x.get("default") or x.get("isDefault"))), "") or ""
+    except ValueError:
+        pass
+    agent = agent or "main"
+    prompt = AGENT_TICK_PROMPT.format(root=root)
+    h = _run(["openclaw", "cron", "add", "--help"], 30)
+    modern = bool(re.search(r"^\s*--session[\s<]", h.stdout + h.stderr, re.M))
+    base = ["openclaw", "cron", "add", "--name", TICK_JOB_NAME, "--agent", agent, "--cron", "*/5 * * * *",
+            "--tz", "America/New_York", "--exact", "--light-context", "--no-deliver"]
+    tries = ([base + ["--session", "main", "--system-event", prompt], base + ["--session-target", "main", "--message", prompt]]
+             if modern else [base + ["--session-target", "main", "--message", prompt], base + ["--session", "main", "--system-event", prompt]])
+    for cmd in tries:
+        if _run(cmd, 90).returncode == 0 and any(j.get("name") == TICK_JOB_NAME for j in _cron_jobs() or []):
+            return "created"
+    return "unavailable"
 
 
 def ensure_openclaw_tick_job(root: Path, dry_run: bool = False) -> str:
@@ -962,20 +1098,28 @@ def install(root: Path | None = None, src: Path | None = None, dry_run: bool = F
         res["scripts_changed"] = ensure_scripts(root, src)
     use_crontab = cron_daemon_running()
     res["scheduler"] = "crontab" if use_crontab else "openclaw-cron"
-    old_jobs = old_job_ids() or []
+    old = old_jobs() or []
+    had_old = bool(old) or any((skills_dir(root) / f).exists() for f in (".update-restart-if-needed", ".openclaw-self-update"))
     if dry_run:
         res["old_files_removed"] = [f for f in (".update-restart-if-needed", ".openclaw-self-update") if (skills_dir(root) / f).exists()]
         return res
     if use_crontab:
         if not _install_crontab(root, res):
             return res
-        # A line in a crontab is not proof that something fires it: the old jobs stay until a tick has run
-        # (finish_migration, called by every tick and by `selfcheck`) or the fallback job takes over.
-        res["retire_pending"] = bool(old_jobs)
+        remove_jobs_named(TICK_JOB_NAME)       # one scheduler only: a leftover fallback tick job would double-tick
+        # The agent "ask first" jobs go NOW (the new schedule is verified written). The silent command job stays
+        # as the safety net until a tick has run; selfcheck (a real 15-minute timer job) retires it or falls back.
+        res["cron_jobs_removed"] = retire_cron_jobs(only_ask=True)
+        res["retire_pending"] = any(j["kind"] == "command" for j in old)
+        res["selfcheck_job"] = ensure_selfcheck_job(root)
     else:
         res["tick_job"] = ensure_openclaw_tick_job(root)
         if res["tick_job"] == "unavailable":
-            res["error"] = "no cron daemon is running and the openclaw cron job could not be created; the old schedule was kept"
+            res["tick_job"] = ensure_agent_tick_job(root)
+            if res["tick_job"] != "unavailable":
+                res["scheduler"] = "agent-fallback"        # flagged in every beacon so the 6 AM report shows it
+        if res["tick_job"] == "unavailable":
+            res["error"] = "no cron daemon is running and no openclaw cron job could be created; the old schedule was kept"
             return res
         res["cron_jobs_removed"] = retire_cron_jobs()
         cur = _run([_crontab_bin(), "-l"], 30) if shutil.which(_crontab_bin()) else None
@@ -987,16 +1131,18 @@ def install(root: Path | None = None, src: Path | None = None, dry_run: bool = F
             res["old_files_removed"].append(old)
             f.unlink()
     prev = read_json(install_path(root), {})
+    migration_day = prev.get("migration_day") or (to_eastern(now_utc()).date().isoformat() if had_old else None)
     same = prev.get("scheduler") == res["scheduler"] and not res["crontab_changed"] and not res["scripts_changed"]
     write_json_atomic(install_path(root), {
         "installed_at_ms": prev.get("installed_at_ms") if same and prev.get("installed_at_ms") else int(now_utc().timestamp() * 1000),
-        "scheduler": res["scheduler"], "retire_pending": bool(res["retire_pending"] or prev.get("retire_pending") and same)})
+        "scheduler": res["scheduler"], "migration_day": migration_day,
+        "retire_pending": bool(res["retire_pending"] or prev.get("retire_pending") and same)})
     return res
 
 
 def _install_crontab_retire_only(root: Path, current: str, res: dict) -> None:
     """On an openclaw-cron box that still has retired crontab lines (no daemon fires them): drop them."""
-    keep = [l for l in current.splitlines() if not any(p.search(l) for p in OLD_CRON_PATTERNS)]
+    keep = [l for l in current.splitlines() if not any(p.search(l) for p in OLD_CRON_PATTERNS) and CRON_TAG not in l]
     if len(keep) != len(current.splitlines()):
         subprocess.run([_crontab_bin(), "-"], input="\n".join(keep) + "\n", text=True, capture_output=True)
 
@@ -1029,20 +1175,27 @@ def selfcheck(root: Path | None = None) -> dict:
         beat = int(hb.read_text().strip())
     except (OSError, ValueError):
         beat = 0
-    if meta.get("scheduler") == "openclaw-cron":
-        out["state"] = "openclaw-cron" if _tick_job_present(root) else "tick-job-missing"
+    if meta.get("scheduler") in ("openclaw-cron", "agent-fallback"):
+        out["state"] = meta["scheduler"] if any(j.get("name") == TICK_JOB_NAME for j in _cron_jobs() or []) else "tick-job-missing"
+        remove_jobs_named(SELF_JOB_NAME)
         return out
     if beat >= installed:
         out["state"] = "proven"
         out["retired"] = finish_migration(root)
+        remove_jobs_named(SELF_JOB_NAME)             # the timer has done its job
         return out
     if int(now_utc().timestamp() * 1000) - installed < 15 * 60 * 1000:
         out["state"] = "waiting-for-first-tick"
         return out
     job = ensure_openclaw_tick_job(root)
+    sched = "openclaw-cron"
+    if job == "unavailable":
+        job = ensure_agent_tick_job(root)
+        sched = "agent-fallback"
     out["state"], out["tick_job"] = "fallback-to-openclaw-cron", job
     if job in ("present", "created"):
-        meta["scheduler"] = "openclaw-cron"
+        remove_jobs_named(SELF_JOB_NAME)
+        meta["scheduler"] = sched
         write_json_atomic(install_path(root), meta)
         out["retired"] = retire_cron_jobs()
         meta["retire_pending"] = bool(old_job_ids())

@@ -2268,8 +2268,10 @@ write_update_pending_flag() {
   # Scheduled auto-update runs (lock run id auto-update-*) never message the owner: the owner gets ONLY the
   # 2:15 AM notice and the cancel reply. Fleet-roll and manual runs keep the owner report.
   case "${BFX_LOCK_RUN_ID:-}" in
-    auto-update-*) _UPD_REPORT_STEP="6. Scheduled automatic update: do NOT message the owner about this update (the owner already got the 2:15 AM notice and gets nothing else). Record what is verified-installed in your own notes only, and keep working the gated items." ;;
-    *) _UPD_REPORT_STEP="6. REPORT to owner ONLY what is verified-installed, plus what remains gated." ;;
+    auto-update-*) _UPD_PARK_NOTE="do NOT message the owner now; the next owner-initiated conversation picks it up"
+                   _UPD_REPORT_STEP="6. Scheduled automatic update: do NOT message the owner about this update (the owner already got the 2:15 AM notice and gets nothing else). Record what is verified-installed in your own notes only, and keep working the gated items." ;;
+    *) _UPD_PARK_NOTE="re-ping the owner"
+       _UPD_REPORT_STEP="6. REPORT to owner ONLY what is verified-installed, plus what remains gated." ;;
   esac
   cat >> "$AGENTS_FILE" <<FLAGCONTENT
 
@@ -2301,7 +2303,7 @@ For each such skill folder under \`~/.openclaw/skills/\`:
 2. CHECK prerequisites and search ALL standard credential locations (canonical: \`~/.openclaw/secrets/.env\` on Mac, \`/data/.openclaw/secrets/.env\` on VPS, plus \`openclaw.json\` env.vars). Skip asking the owner if values already exist.
 3. EXECUTE the activation steps in INSTALL.md (read ≠ execute)
 4. APPLY CORE_UPDATES.md surgically -- add to AGENTS.md / TOOLS.md / MEMORY.md / SOUL.md only the sections explicitly labeled in that file
-5. RUN the gate (\`obs_verify_skill <folder>\`); loop activate→verify until it returns \`qc-passed\`. Skills that legitimately await owner input may be parked \`interview-pending\` (re-ping the owner; do NOT treat as terminal "done").
+5. RUN the gate (\`obs_verify_skill <folder>\`); loop activate→verify until it returns \`qc-passed\`. Skills that legitimately await owner input may be parked \`interview-pending\` (${_UPD_PARK_NOTE}; do NOT treat as terminal "done").
 ${_UPD_REPORT_STEP}
 
 ### Discipline (binding)
