@@ -1,5 +1,17 @@
 # Changelog — 32-command-center-setup
 
+## Unreleased - 2026-11-18 - fix(32): tenant readiness probe sends an explicit User-Agent, survives a Cloudflare edge 403, and the final installer call reads the client's own .env.local
+
+`verify-tenant-readiness.py` sent the stock `Python-urllib` User-Agent. A Cloudflare-fronted public host answers that agent with its own 403 page before Access runs, which was neither an Access redirect nor a receiver refusal, so the probe failed with "authenticated readiness probe failed: HTTPError" and every `run-full-install.sh` pass (including `--update-only`) stamped a healthy Command Center `done-degraded` (`tenantReadiness`), which also kept the ZHC closeout deferred.
+
+1. Every request (`_probe` and `_bounded_json`) sends `User-Agent: OpenClaw-TenantReadiness/1.0` unless the caller set one.
+2. A 403 whose body is not JSON AND that carries a Cloudflare marker (`cf-ray` header or `Server: cloudflare`) raises the new `EdgeBlocked` and is probed on loopback like the Access redirect, with the same identity checks. A JSON 403/503 stays a receiver refusal, and an unmarked HTML 403, a 503 page, any other redirect and a network error still fail with no fallback.
+3. `verify()` reads `tenantId` / `installationId` from the build state first, then `MC_TENANT_ID` / `MC_INSTALLATION_ID` (the startability gate's precedence).
+4. `--env-file`: an unreadable file prints `{"ready": false, "missing": ["service environment unreadable: <error>"]}` and exits 1 instead of a traceback; the file never overrides `--port`.
+5. The FINAL `run-full-install.sh` readiness call passes `--env-file "$DASHBOARD_DIR/.env.local"`, like the interview calls.
+
+Tests: `tests/unit/verify-tenant-readiness-access.test.py` (29 cases; 12 failed on the previous probe and installer).
+
 ## v13.1.68 - 2026-10-29 - fix(32): `backfill-dept-agent-personalization.sh` keeps its backups in the box's central backup folder, not inside the department
 
 The backfill copied each department's IDENTITY / SOUL / MEMORY / HEARTBEAT files to `<dept>/.backfill-backup-<UTC stamp>/` before re-scaffolding them, so a backup folder sat inside every department it touched and was walked by every scanner afterwards. It now copies them to `<OpenClaw root>/backups/backfill-dept-personalization/<UTC stamp>/<dept>/` (resolved by `shared-utils/central_backup.py`, outside every workspace) and prunes that tool's folder to the newest 3 runs after the pass. A dry run creates nothing. If `central_backup.py` is not installed yet the script stops before writing anything and says to run the weekly update first. Folders earlier runs left inside a department are moved to the same place by the roll (`update-skills.sh` `migrate_backups_out_of_departments`).
