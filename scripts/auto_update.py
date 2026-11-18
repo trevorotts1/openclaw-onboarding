@@ -392,9 +392,7 @@ def installed_cc(root: Path) -> str | None:
     return norm_version(read_json(d / "package.json", {}).get("version")) if d else None
 
 
-_999_CANDIDATES = ("999-setup", "Documents/999-setup", "Documents/999-setup-main", "Downloads/999-setup",
-                   "Downloads/999-setup-main", "999-setup-main", "Desktop/999-setup", "clawd/999-setup",
-                   "projects/999-setup", "Projects/999-setup")
+_999_CANDIDATES = ("999-setup", "Documents/999-setup")     # the same search auto-update-mac.sh does
 
 
 def find_999_checkout() -> Path | None:
@@ -495,8 +493,11 @@ def build_beacon(root: Path, result: str, versions_before: dict, versions_after:
     assert result in RESULTS, result
     vers = {}
     for n in ("onboarding", "command_center", "999"):
-        if n == "999" and not (is_mac() and "999" in versions_before):
-            vers[n] = None          # never on Linux/VPS/Contabo, and not on a Mac without a 999-setup checkout
+        if n == "999" and not is_mac():
+            vers[n] = None          # never on Linux/VPS/Contabo
+            continue
+        if n == "999" and "999" not in versions_before:
+            vers[n] = {"before": None, "after": None, "status": "NOT_INSTALLED"}    # a Mac without 999-setup: not a failure
             continue
         vers[n] = {"before": versions_before.get(n), "after": versions_after.get(n, versions_before.get(n))}
     return {"schema": SCHEMA, "box": box_id(root), "run_at": now_utc().strftime("%Y-%m-%dT%H:%M:%SZ"),
@@ -597,7 +598,9 @@ def run_update(root: Path, day: str, run_id: str, notice_sent: bool) -> dict:
     if not behind:
         return build_beacon(root, "CURRENT", before, before, run_id=run_id, day=day, notice_sent=notice_sent)
     log(f"behind: {', '.join(behind)}; running the update")
-    env = dict(os.environ, AUTO_UPDATE="1", AUTO_UPDATE_BEHIND=",".join(behind), AUTO_UPDATE_OPENCLAW="1",
+    cc_file = skills_dir(root) / f".cc-update-result-{os.getpid()}.json"
+    cc_file.unlink(missing_ok=True)
+    env = dict(os.environ, CC_UPDATE_RESULT_FILE=str(cc_file), AUTO_UPDATE="1", AUTO_UPDATE_BEHIND=",".join(behind), AUTO_UPDATE_OPENCLAW="1",
                AUTO_UPDATE_REPAIR="1", AUTO_UPDATE_RUN_ID=run_id)
     t0 = time.time()
     try:
@@ -607,6 +610,20 @@ def run_update(root: Path, day: str, run_id: str, notice_sent: bool) -> dict:
         log(f"update could not run: {type(e).__name__}")
     after = installed_snapshot(root)
     row = latest_summary(t0 - 5) or {}
+    cc = read_json(cc_file, {})                 # Command Center update.sh result (schema cc-update-result/1)
+    cc_file.unlink(missing_ok=True)
+    cc_status = str(cc.get("status") or "")
+    if cc.get("before") or cc.get("after"):
+        for k, side in (("before", before), ("after", after)):
+            v = norm_version((cc.get(k) or {}).get("version") if isinstance(cc.get(k), dict) else cc.get(k))
+            if v:
+                side["command_center"] = v
+    nine = row.get("update_999") or {}
+    if nine.get("before") or nine.get("after"):            # from the AUTO-UPDATE-999 result line
+        if "999" in before and norm_version(nine.get("before")):
+            before["999"] = norm_version(nine["before"])
+        if "999" in before and norm_version(nine.get("after")):
+            after["999"] = norm_version(nine["after"])
     outcome = str(row.get("outcome") or "")
     repair = (row.get("heal") or {}).get("repair_agent") or {}
     model = repair.get("model") or None
@@ -626,6 +643,10 @@ def run_update(root: Path, day: str, run_id: str, notice_sent: bool) -> dict:
     else:
         result = "FAILED"
         failing = failing or (row.get("outcome_detail") or f"update exited {rc}")[:200]
+    if result == "UPDATED" and cc_status == "FAILED":
+        result, failing = "FAILED", failing or "Command Center update reported FAILED"
+    elif result == "UPDATED" and cc_status == "DEFERRED":
+        result, failing = "DEFERRED", "Command Center update deferred (box lock busy)"
     if result in ("ROLLED_BACK", "FAILED") and repair.get("no_model"):
         result = "NO_DEEPSEEK"
         failing = failing or (row.get("outcome_detail") or "")[:200]

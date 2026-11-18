@@ -520,7 +520,7 @@ credentials every box already carries (`FLEET_STANDING_GATE_URL`, header and sec
  "failing_check":null,"model_used":null,"notice_sent":true,"run_id":"auto-update-20261118T074112Z-4242"}
 ```
 
-`999` is `null` on every box that is not a Mac with a 999-setup checkout. Clients receive nothing except the 2:15 AM
+`999` is `null` off macOS, and `{"status":"NOT_INSTALLED"}` on a Mac without a 999-setup checkout. Clients receive nothing except the 2:15 AM
 notice and the cancel reply. The operator gets one 6:00 AM Eastern summary of the beacons (operator side, not a client box).
 
 ### Retired by this schedule (setup removes them, once, idempotently)

@@ -118,19 +118,22 @@ class BoxCase(unittest.TestCase):
         (self.stub / "sessions.json").write_text(json.dumps(
             {"sessions": [{"key": "agent:main:main", "updatedAt": 1}]}))
 
-    def install_update_stub(self, rc=0, outcome="UPDATED", repair=None):
+    def install_update_stub(self, rc=0, outcome="UPDATED", repair=None, cc_result=None, update_999=None):
         """root/scripts/weekly-full-update.sh stand-in: records its env, optionally writes a fleet summary."""
         marker = self.tmp / "update-ran.txt"
         runs = self.home / ".openclaw" / "fleet" / "runs" / "r1"
         row = {"outcome": outcome, "outcome_detail": "stub", "heal": {"repair_agent": repair} if repair else {},
                "health": {"regressions": ["cc-health"] if outcome != "UPDATED" else []}}
+        if update_999:
+            row["update_999"] = update_999
+        cc_line = ("cat > \"$CC_UPDATE_RESULT_FILE\" <<'CCJSON'\n" + json.dumps(cc_result) + "\nCCJSON") if cc_result else ""
         body = f'''#!/bin/bash
 echo "behind=$AUTO_UPDATE_BEHIND repair=$AUTO_UPDATE_REPAIR oc=$AUTO_UPDATE_OPENCLAW" > "{marker}"
 mkdir -p "{runs}"
 cat > "{runs}/summary.json" <<'JSON'
 {json.dumps([row])}
 JSON
-{'echo 2.0.1 > /dev/null' if outcome == 'UPDATED' else ''}
+{cc_line}
 exit {rc}
 '''
         executable(self.root / "scripts" / "weekly-full-update.sh", body)
@@ -287,6 +290,77 @@ class Versions(BoxCase):
         self.assertEqual(au.pinned_ref(self.root), "v27.1.70")
         (self.root / "fleet-refresh" / "release-pin.json").write_text(json.dumps({"approved_ref": "main"}))
         self.assertEqual(au.pinned_ref(self.root), "main")
+
+
+class CcAnd999Results(BoxCase):
+    def test_command_center_versions_come_from_its_result_file(self):
+        self.install_update_stub(cc_result={"schema": "cc-update-result/1", "status": "UPDATED",
+                                            "before": {"version": "2.0.0"}, "after": {"version": "2.3.1"}})
+        self.set_latest(command_center="v2.3.1")
+        b = au.run_update(self.root, "d", "r", True)
+        self.assertEqual(b["result"], "UPDATED")
+        self.assertEqual(b["versions"]["command_center"], {"before": "v2.0.0", "after": "v2.3.1"})
+
+    def test_a_command_center_result_of_failed_is_a_failure_even_when_the_runner_says_updated(self):
+        self.install_update_stub(cc_result={"status": "FAILED", "before": {"version": "2.0.0"}, "after": {"version": "2.0.0"}})
+        self.set_latest(command_center="v2.3.1")
+        b = au.run_update(self.root, "d", "r", True)
+        self.assertEqual(b["result"], "FAILED")
+        self.assertIn("Command Center", b["failing_check"])
+
+    def test_a_command_center_step_that_exits_nonzero_with_no_result_is_failed(self):
+        self.install_update_stub(rc=3, outcome="", cc_result=None)
+        self.set_latest(command_center="v2.3.1")
+        self.assertEqual(au.run_update(self.root, "d", "r", True)["result"], "FAILED")
+
+    def test_the_result_file_path_is_handed_to_the_update(self):
+        marker = self.tmp / "env.txt"
+        executable(self.root / "scripts" / "weekly-full-update.sh", f'#!/bin/bash\necho "$CC_UPDATE_RESULT_FILE" > "{marker}"\n')
+        self.set_latest(onboarding="v1.0.1")
+        au.run_update(self.root, "d", "r", True)
+        self.assertIn(".cc-update-result-", marker.read_text())
+
+    def test_999_versions_come_from_the_999_updaters_result_line_via_the_runner(self):
+        d = Versions.make_999(self, "1.0.0")
+        self.set_latest(**{"999": "v1.1.0"})
+        os.environ["AUTO_UPDATE_PLATFORM"] = "darwin"
+        self.install_update_stub(update_999={"result": "UPDATED", "before": "v1.0.0", "after": "v1.1.0"})
+        b = au.run_update(self.root, "d", "r", True)
+        self.assertEqual(b["versions"]["999"], {"before": "v1.0.0", "after": "v1.1.0"})
+
+    def test_a_mac_without_999_records_not_installed_not_a_failure(self):
+        os.environ["AUTO_UPDATE_PLATFORM"] = "darwin"
+        self.install_update_stub()
+        b = au.run_update(self.root, "d", "r", True)
+        self.assertEqual(b["versions"]["999"]["status"], "NOT_INSTALLED")
+        self.assertEqual(b["result"], "CURRENT")
+
+    def test_999_checkout_search_is_the_same_two_places_as_the_999_updater(self):
+        self.assertEqual(au._999_CANDIDATES, ("999-setup", "Documents/999-setup"))
+
+
+class OwnerNoteOnScheduledRuns(unittest.TestCase):
+    """update-skills.sh's UPDATE PENDING note must not tell the agent to report to the owner on an auto-update."""
+
+    def step6(self, run_id):
+        src = (REPO / "update-skills.sh").read_text()
+        a = src.index('case "${BFX_LOCK_RUN_ID:-}" in')
+        b = src.index("esac", a) + 4
+        r = subprocess.run(["bash", "-c", src[a:b] + '\nprintf "%s" "$_UPD_REPORT_STEP"'],
+                           env={"PATH": os.environ["PATH"], "BFX_LOCK_RUN_ID": run_id}, capture_output=True, text=True)
+        return r.stdout
+
+    def test_scheduled_run_says_do_not_message_the_owner(self):
+        out = self.step6("auto-update-20261118T074112Z-4242")
+        self.assertIn("do NOT message the owner", out)
+        self.assertNotIn("REPORT to owner", out)
+
+    def test_fleet_roll_and_manual_runs_keep_the_owner_report(self):
+        for rid in ("", "fleet-roll-123", "weekly-full-update-9"):
+            self.assertIn("REPORT to owner ONLY what is verified-installed", self.step6(rid))
+
+    def test_the_heredoc_uses_the_variable(self):
+        self.assertIn("${_UPD_REPORT_STEP}", (REPO / "update-skills.sh").read_text())
 
 
 # ─────────────────────────────────────────────── outcomes, rollback, no-DeepSeek ──
