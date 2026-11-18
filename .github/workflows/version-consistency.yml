@@ -157,6 +157,21 @@ jobs:
           bash scripts/qc-assert-skill-version-agreement.sh --self-test
           bash scripts/qc-assert-skill-version-agreement.sh
 
+      # FRF-002: SKILL.md frontmatter gate, including the repeated top-level key
+      # scan. fast-guards runs the same script on member pull requests and on
+      # push to main, but fast-guards is skipped on batch pull requests, and a
+      # batch is where two branches that each add `version:` at a different line
+      # first meet (that clean merge gave 37-zhc-closeout/SKILL.md two of them
+      # and OpenClaw stopped loading the skill). This required job runs on batch
+      # pull requests too.
+      - name: "SKILL.md frontmatter gate incl. repeated top-level keys (scripts/qc-assert-skill-frontmatter-version.sh)"
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash -n scripts/qc-assert-skill-frontmatter-version.sh
+          bash scripts/qc-assert-skill-frontmatter-version.sh --self-test
+          bash scripts/qc-assert-skill-frontmatter-version.sh
+
       - name: "Fix 9: exactly one presentation-intake wrangler.toml (deployed-r2) - no name collision"
         shell: bash
         run: |
@@ -616,11 +631,12 @@ jobs:
               echo "  $sd/skill-version.txt was NOT updated"
             done
             echo ""
-            echo "FIX: bump each affected skill-version.txt to the next patch version,"
-            echo "  AND sync that skill's SKILL.md frontmatter version: to match it,"
-            echo "  then commit all changes together."
+            echo "FIX: bump each affected skill-version.txt to the next patch version and"
+            echo "  commit all changes together. scripts/batch-prep.sh does this for you."
             echo "  e.g.:  echo 'v11.7.1' > <skill-dir>/skill-version.txt"
-            echo "  then set 'version: v11.7.1' in <skill-dir>/SKILL.md frontmatter"
+            echo "  Then keep <skill-dir>/SKILL.md in step: UPDATE its existing top-level"
+            echo "  'version:' line to 'version: v11.7.1'. Add that line only if the frontmatter"
+            echo "  has none, and never add a second one (a repeated key makes OpenClaw reject the skill)."
             exit 1
           fi
 
