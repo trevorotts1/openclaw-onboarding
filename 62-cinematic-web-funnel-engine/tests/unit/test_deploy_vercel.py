@@ -341,14 +341,46 @@ class VercelHostingAdapterDeployTests(unittest.TestCase):
         self.assertEqual(result.http_status, 500)
 
     def test_disable_protection_success(self) -> None:
-        self.transport.queue_patch(_resp(200, {"protection": {"deploymentType": "none"}}))
+        self.transport.queue_get(_resp(200, _load_fixture("deploy_status_ready.json")))
+        self.transport.queue_patch(_resp(200, {"id": "prj_fixture_0000000000000001"}))
+        self.transport.queue_get(_resp(200, {"id": "prj_fixture_0000000000000001",
+                                             "ssoProtection": None, "passwordProtection": None}))
         self.assertTrue(self.adapter.disable_protection("dpl_fixture_0000000000000001"))
-        self.assertEqual(self.transport.patch_calls[0]["body"], {"protection": {"deploymentType": "none"}})
+        project_url = "https://api.vercel.com/v9/projects/prj_fixture_0000000000000001"
+        self.assertEqual(self.transport.patch_calls[0]["url"], project_url)
+        self.assertEqual(self.transport.patch_calls[0]["body"], {"ssoProtection": None, "passwordProtection": None})
+        self.assertEqual(self.transport.get_calls[0]["url"],
+                         "https://api.vercel.com/v13/deployments/dpl_fixture_0000000000000001")
+        self.assertEqual(self.transport.get_calls[1]["url"], project_url)
 
     def test_disable_protection_http_error_raises(self) -> None:
+        self.transport.queue_get(_resp(200, _load_fixture("deploy_status_ready.json")))
         self.transport.queue_patch(_resp(404, {"error": "not found"}))
         with self.assertRaises(dv.DeploymentError):
-            self.adapter.disable_protection("dpl_missing")
+            self.adapter.disable_protection("dpl_fixture_0000000000000001")
+
+    def test_disable_protection_readback_still_protected_raises(self) -> None:
+        self.transport.queue_get(_resp(200, _load_fixture("deploy_status_ready.json")))
+        self.transport.queue_patch(_resp(200, {}))
+        self.transport.queue_get(_resp(200, {"ssoProtection": {"deploymentType": "preview"}}))
+        with self.assertRaises(dv.DeploymentError):
+            self.adapter.disable_protection("dpl_fixture_0000000000000001")
+
+    def test_disable_protection_missing_project_id_raises(self) -> None:
+        self.transport.queue_get(_resp(200, {"id": "dpl_x", "readyState": "READY", "url": "x.vercel.app"}))
+        with self.assertRaises(dv.DeploymentError):
+            self.adapter.disable_protection("dpl_x")
+        self.assertEqual(self.transport.patch_calls, [])
+
+    def test_disable_protection_team_id_on_every_call(self) -> None:
+        adapter = dv.VercelHostingAdapter(self.transport, "fixture-token", team_id="team_x",
+                                          poll_interval_seconds=0.0, sleep_fn=lambda *_: None)
+        self.transport.queue_get(_resp(200, _load_fixture("deploy_status_ready.json")))
+        self.transport.queue_patch(_resp(200, {}))
+        self.transport.queue_get(_resp(200, {"ssoProtection": None, "passwordProtection": None}))
+        self.assertTrue(adapter.disable_protection("dpl_fixture_0000000000000001"))
+        urls = [c["url"] for c in self.transport.get_calls + self.transport.patch_calls]
+        self.assertTrue(all(u.endswith("?teamId=team_x") for u in urls), urls)
 
     def test_unknown_environment_rejected(self) -> None:
         with self.assertRaises(dv.DeploymentError):
