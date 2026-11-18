@@ -717,7 +717,7 @@ case "$1" in -l) cat "$F" ;; -) cat > "$STUB_DIR/crontab.written"; [ -f "$STUB_D
         (self.stub / "no-cron-daemon").write_text("")
         (self.stub / "cron-add-fails").write_text("")
         r = au.install(self.root, REPO / "scripts")
-        self.assertEqual(r["scheduler"], "openclaw-cron")
+        self.assertEqual(r["scheduler"], "openclaw-job")
         self.assertIn("error", r)
         self.assertEqual(r["cron_jobs_removed"], [])
         self.assertFalse((self.stub / "cron-rm.log").exists())
@@ -755,7 +755,7 @@ case "$1" in -l) cat "$F" ;; -) cat > "$STUB_DIR/crontab.written"; [ -f "$STUB_D
         self.seed()
         (self.stub / "no-cron-daemon").write_text("")          # crontab exists, nothing running (container, gateway is PID 1)
         r = au.install(self.root, REPO / "scripts")
-        self.assertEqual((r["scheduler"], r["tick_job"]), ("openclaw-cron", "created"))
+        self.assertEqual((r["scheduler"], r["tick_job"]), ("openclaw-job", "created"))
         add = (self.stub / "cron-add.log").read_text()
         self.assertIn("--name auto-update-tick", add)
         self.assertIn("*/5 * * * *", add)
@@ -778,7 +778,7 @@ case "$1" in -l) cat "$F" ;; -) cat > "$STUB_DIR/crontab.written"; [ -f "$STUB_D
         self.assertEqual((self.stub / "cron-rm.log").read_text().split(), ["j-old-ask"])    # the silent job is still the net
         self.at("2026-11-18T12:16:00Z")                        # 16 minutes, no heartbeat
         out = au.selfcheck(self.root)
-        self.assertEqual((out["state"], out["tick_job"]), ("fallback-to-openclaw-cron", "created"))
+        self.assertEqual((out["state"], out["tick_job"]), ("fallback-to-openclaw-job", "created"))
         self.assertEqual(out["retired"], ["j-old-cmd"])
 
     def test_a_tick_that_fired_proves_the_schedule_and_no_fallback_is_made(self):
@@ -1143,7 +1143,9 @@ class QcRound2(BoxCase):
             b = au.run_update(self.root, "d", "r", True)
         self.assertEqual(b["result"], "CURRENT")
         self.assertFalse(marker.exists())
-        self.assertIn("container", b["versions"]["openclaw"]["blocked"])
+        self.assertIn("container", b["openclaw_upgrade_reason"])
+        self.assertEqual(b["openclaw_upgrade"], "blocked")
+        self.assertNotIn("blocked", b["versions"]["openclaw"])               # before/after stay plain
 
     def test_an_npm_pin_is_the_target_not_npm_latest(self):
         marker = self.install_update_stub()
@@ -1162,14 +1164,14 @@ class QcRound2(BoxCase):
         b = au.run_update(self.root, "d", "r", True)
         self.assertEqual(b["result"], "CURRENT")
         self.assertFalse(marker.exists())
-        self.assertIn("blocked", b["versions"]["openclaw"]["blocked"])
+        self.assertIn("blocked", b["openclaw_upgrade_reason"])
 
     def test_an_upgrade_that_refuses_at_run_time_with_only_the_cli_behind_is_not_reported_updated(self):
         self.install_update_stub(steps={"openclaw-update": "skip:blocked by the pre-upgrade gate; nothing changed"})
         self.set_latest(openclaw="v2026.12.0")
         b = au.run_update(self.root, "d", "r", True)
         self.assertEqual(b["result"], "CURRENT")
-        self.assertIn("blocked", b["versions"]["openclaw"]["blocked"])
+        self.assertIn("blocked", b["openclaw_upgrade_reason"])
 
     # 2: a real owner cancel is never missed
     def bindings(self, *agents_first):
@@ -1223,7 +1225,7 @@ class QcRound2(BoxCase):
         self.at("2026-11-18T12:00:00Z")
         au.install(self.root, REPO / "scripts")
         self.at("2026-11-18T12:20:00Z")
-        self.assertEqual(au.selfcheck(self.root)["state"], "fallback-to-openclaw-cron")
+        self.assertEqual(au.selfcheck(self.root)["state"], "fallback-to-openclaw-job")
         names = [j["name"] for j in self.jobs()]
         self.assertIn(au.TICK_JOB_NAME, names)
         self.assertNotIn(au.SELF_JOB_NAME, names)

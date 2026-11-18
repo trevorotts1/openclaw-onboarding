@@ -569,8 +569,7 @@ def build_beacon(root: Path, result: str, versions_before: dict, versions_after:
     assert result in RESULTS, result
     vers = {}
     vers["openclaw"] = {"before": versions_before.get("openclaw"), "after": versions_after.get("openclaw", versions_before.get("openclaw"))}
-    if openclaw_blocked:
-        vers["openclaw"]["blocked"] = openclaw_blocked
+
     for n in ("onboarding", "command_center", "999"):
         if n == "999" and not is_mac():
             vers[n] = None          # never on Linux/VPS/Contabo
@@ -579,7 +578,8 @@ def build_beacon(root: Path, result: str, versions_before: dict, versions_after:
             vers[n] = {"before": None, "after": None, "status": "NOT_INSTALLED"}    # a Mac without 999-setup: not a failure
             continue
         vers[n] = {"before": versions_before.get(n), "after": versions_after.get(n, versions_before.get(n))}
-    return {"schema": SCHEMA, "scheduler": read_json(install_path(root), {}).get("scheduler"), "box": box_id(root), "run_at": now_utc().strftime("%Y-%m-%dT%H:%M:%SZ"),
+    extra = {"openclaw_upgrade": "blocked", "openclaw_upgrade_reason": openclaw_blocked} if openclaw_blocked else {}
+    return {**extra, "schema": SCHEMA, "scheduler": read_json(install_path(root), {}).get("scheduler"), "box": box_id(root), "run_at": now_utc().strftime("%Y-%m-%dT%H:%M:%SZ"),
             "scheduled_day": day, "result": result, "versions": vers, "failing_check": failing,
             "model_used": model, "notice_sent": bool(notice_sent), "run_id": run_id}
 
@@ -1097,7 +1097,7 @@ def install(root: Path | None = None, src: Path | None = None, dry_run: bool = F
     if not dry_run:
         res["scripts_changed"] = ensure_scripts(root, src)
     use_crontab = cron_daemon_running()
-    res["scheduler"] = "crontab" if use_crontab else "openclaw-cron"
+    res["scheduler"] = "crontab" if use_crontab else "openclaw-job"
     old = old_jobs() or []
     had_old = bool(old) or any((skills_dir(root) / f).exists() for f in (".update-restart-if-needed", ".openclaw-self-update"))
     if dry_run:
@@ -1141,7 +1141,7 @@ def install(root: Path | None = None, src: Path | None = None, dry_run: bool = F
 
 
 def _install_crontab_retire_only(root: Path, current: str, res: dict) -> None:
-    """On an openclaw-cron box that still has retired crontab lines (no daemon fires them): drop them."""
+    """On an openclaw-job box that still has retired crontab lines (no daemon fires them): drop them."""
     keep = [l for l in current.splitlines() if not any(p.search(l) for p in OLD_CRON_PATTERNS) and CRON_TAG not in l]
     if len(keep) != len(current.splitlines()):
         subprocess.run([_crontab_bin(), "-"], input="\n".join(keep) + "\n", text=True, capture_output=True)
@@ -1175,7 +1175,7 @@ def selfcheck(root: Path | None = None) -> dict:
         beat = int(hb.read_text().strip())
     except (OSError, ValueError):
         beat = 0
-    if meta.get("scheduler") in ("openclaw-cron", "agent-fallback"):
+    if meta.get("scheduler") in ("openclaw-job", "agent-fallback"):
         out["state"] = meta["scheduler"] if any(j.get("name") == TICK_JOB_NAME for j in _cron_jobs() or []) else "tick-job-missing"
         remove_jobs_named(SELF_JOB_NAME)
         return out
@@ -1188,11 +1188,11 @@ def selfcheck(root: Path | None = None) -> dict:
         out["state"] = "waiting-for-first-tick"
         return out
     job = ensure_openclaw_tick_job(root)
-    sched = "openclaw-cron"
+    sched = "openclaw-job"
     if job == "unavailable":
         job = ensure_agent_tick_job(root)
         sched = "agent-fallback"
-    out["state"], out["tick_job"] = "fallback-to-openclaw-cron", job
+    out["state"], out["tick_job"] = "fallback-to-openclaw-job", job
     if job in ("present", "created"):
         remove_jobs_named(SELF_JOB_NAME)
         meta["scheduler"] = sched
