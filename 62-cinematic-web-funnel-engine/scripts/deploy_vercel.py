@@ -138,6 +138,7 @@ SCHEMA_VERSION = "1.0.0"
 # ---------------------------------------------------------------------------
 VERCEL_API_ORIGIN = "https://api.vercel.com"
 VERCEL_API_VERSION_DEPLOYMENTS = "v13"
+VERCEL_API_VERSION_PROJECTS = "v9"  # Deployment Protection is a project setting
 HTTP_TIMEOUT_SECONDS = 30
 DEFAULT_POLL_MAX = 30
 DEFAULT_POLL_INTERVAL_SECONDS = 5.0
@@ -408,20 +409,38 @@ class VercelHostingAdapter(ha.HostingAdapter):
         return self._result_from_response(resp.json_body, host_deployment_id)
 
     def disable_protection(self, host_deployment_id: str) -> bool:
-        """Optional: disable Deployment Protection (SSO) on a deployment.
+        """Optional: disable Deployment Protection on the deployment's PROJECT.
         Not called by ``deploy_preview``/``deploy_production`` for
         direct-hosted mode (spec 14.1 default) — new Vercel deployments are
         not protection-gated by default on the plans this engine targets,
         unlike the GHL-iframe-embed path (``ghl_vercel.make_public``, which
         this method mirrors) where protection defeats the iframe entirely.
         Exposed here so a caller that DOES need it never has to write a
-        fourth divergent implementation of the same PATCH call."""
+        fourth divergent implementation of the same call.
+
+        Deployment Protection is a project setting (Vercel has no PATCH on
+        ``/v13/deployments/<id>``): read the deployment's ``projectId``, PATCH
+        ``/v9/projects/<projectId>`` with ``ssoProtection`` and
+        ``passwordProtection`` set to null, then read the project back and
+        return True only when both are off.
+        ponytail: this unprotects EVERY deployment of that project; the
+        caller owns that choice."""
+        project_id = self.get_status(host_deployment_id).host_project_id
+        if not project_id:
+            raise DeploymentError(f"disable_protection: deployment {host_deployment_id} has no projectId")
+        url = self._url(f"/{VERCEL_API_VERSION_PROJECTS}/projects/{urllib.parse.quote(project_id, safe='')}")
         resp = self._transport.patch_json(
-            self._url(f"/{VERCEL_API_VERSION_DEPLOYMENTS}/deployments/{host_deployment_id}"),
-            headers=self._headers(), body={"protection": {"deploymentType": "none"}}, timeout=HTTP_TIMEOUT_SECONDS,
+            url, headers=self._headers(),
+            body={"ssoProtection": None, "passwordProtection": None}, timeout=HTTP_TIMEOUT_SECONDS,
         )
         if resp.status_code >= 400:
-            raise DeploymentError(f"disable_protection failed for {host_deployment_id}: HTTP {resp.status_code}: {resp.json_body}")
+            raise DeploymentError(f"disable_protection failed for {project_id}: HTTP {resp.status_code}: {resp.json_body}")
+        back = self._transport.get_json(url, headers=self._headers(), params=None, timeout=HTTP_TIMEOUT_SECONDS)
+        if back.status_code >= 400:
+            raise DeploymentError(f"disable_protection read-back failed for {project_id}: HTTP {back.status_code}: {back.json_body}")
+        still = [k for k in ("ssoProtection", "passwordProtection") if back.json_body.get(k)]
+        if still:
+            raise DeploymentError(f"disable_protection: project {project_id} still protected: {', '.join(still)}")
         return True
 
     def _result_from_response(self, body: Dict[str, Any], deployment_id: str) -> ha.DeployResult:
