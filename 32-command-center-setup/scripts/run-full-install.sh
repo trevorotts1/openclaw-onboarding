@@ -3912,7 +3912,9 @@ if [[ -f "$STATE_FILE" ]]; then
   # pass rather than via state_get.
   # --port: when the public host sits behind Cloudflare Access (302 to its login) the probe asks the Command
   # Center on this box (127.0.0.1:$DASHBOARD_PORT) with the public Host header instead of failing on the redirect.
-  if ! "$WORKFORCE_PYTHON" "$SKILL_DIR/scripts/verify-tenant-readiness.py" "$STATE_FILE" --port "$DASHBOARD_PORT" >>"$LOG_FILE" 2>&1; then
+  # --env-file: the client's own MC_* identity and token, parsed as data from the same .env.local the interview
+  # calls pass, so this probe sees them whether or not this run loaded the launch environment.
+  if ! "$WORKFORCE_PYTHON" "$SKILL_DIR/scripts/verify-tenant-readiness.py" "$STATE_FILE" --port "$DASHBOARD_PORT" --env-file "$DASHBOARD_DIR/.env.local" >>"$LOG_FILE" 2>&1; then
     log "WARN" "Tenant readiness pending. Configure this client's own IDs and enrollment per TENANT-CONFIGURATION.md; recovery remains enabled."
     state_set '.commandCenterTenantReady = false'
   fi

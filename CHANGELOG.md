@@ -1,3 +1,10 @@
+## [Unreleased]  -  2026-11-18  -  Tenant readiness: explicit User-Agent, Cloudflare edge 403 probed on loopback, final installer call reads the client's own .env.local
+
+- Defect: the Skill 32 tenant readiness probe (`verify-tenant-readiness.py`, run by `run-full-install.sh` on every pass including `--update-only`) sent the stock `Python-urllib` User-Agent. A Cloudflare-fronted public host answers that agent with its own 403 page before Access runs, so the probe failed with "authenticated readiness probe failed: HTTPError", a healthy Command Center was stamped `done-degraded` (`tenantReadiness`) on every pass, and the ZHC closeout stayed deferred.
+- Fix: every request sends `User-Agent: OpenClaw-TenantReadiness/1.0`; a 403 that is both non-JSON and marked by the Cloudflare edge (`cf-ray` header or `Server: cloudflare`) is probed on loopback with the same exact identity checks; tenant and installation ids come from the build state first, then the environment; an unreadable `--env-file` prints a JSON not-ready result instead of a traceback; the FINAL installer call passes `--env-file "$DASHBOARD_DIR/.env.local"`.
+- Not changed: a receiver's own JSON 403/503 is still a refusal with its own reasons, and an unmarked HTML 403, any other redirect or a network failure still fails with no fallback.
+- Test: `tests/unit/verify-tenant-readiness-access.test.py` (29 cases; 12 failed on the previous probe and installer). Migration: none; the next normal update re-runs the installer and a box whose only degraded phase was `tenantReadiness` returns to `done`. Risk: LOW.
+
 ## [v28.0.0]  -  2026-11-17  -  Milestone
 
 - Major milestone release. Five build rooms closed on November 16, 2026, and this version marks them as one delivered set: Skill 75, the drama song ad factory (166 units); AI Workforce (92 units); the Presentation department (202 units); Command Center (24 units); and Rescue Rangers (62 units).
