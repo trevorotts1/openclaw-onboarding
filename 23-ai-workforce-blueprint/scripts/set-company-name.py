@@ -5,21 +5,24 @@ Updates, only with --apply (default is a dry run):
   1. build-state companyName (under the workforce_state lock)
   2. company-config.json "name" in the company root, if the file exists
   3. Command Center companies.name row (by companyId, falling back to companySlug)
-  4. COMPANY_NAME= in the Command Center .env.local (that key only)
+  4. COMPANY_NAME= in the Command Center .env.local (that key only, encoded by
+     shared-utils/service_env.py, written via temp file + os.replace, mode 0600)
 
 NEVER touches the slug (it is immutable). Exit: 0 ok, 1 failure, 2 bad input.
 """
-import argparse, json, os, re, sqlite3, sys
+import argparse, json, os, re, sqlite3, sys, tempfile
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 
 def clean_name(value):
-    """Same validation as scripts/onboarding-identity.py name()."""
+    """Same validation as scripts/onboarding-identity.py name(), plus: the name must fit one
+    lossless COMPANY_NAME line of the Command Center .env.local (checked before any write)."""
     v = value.strip() if isinstance(value, str) else ""
     if not v or len(v) > 200 or any(ord(c) < 32 for c in v):
         raise ValueError("name must be one non-empty line of at most 200 characters")
+    _encoded_company_name(v)
     return v
 
 
@@ -50,6 +53,43 @@ def _env_get(path, key):
     except OSError:
         pass
     return None
+
+
+def _encoded_company_name(name):
+    """COMPANY_NAME=<value> in the shared service-env format that service_env.read_env reads back."""
+    shared = str(Path(__file__).resolve().parents[2] / "shared-utils")
+    if shared not in sys.path:
+        sys.path.append(shared)  # appended, so it never shadows this script's own modules
+    from service_env import encode_assignment
+    return encode_assignment("COMPANY_NAME", name)
+
+
+def _write_env_line(env_path, assignment):
+    """Replace every COMPANY_NAME= line (append one if absent): temp file, os.replace, mode 0600."""
+    # ponytail: no .env.local lock. A lock file created here by a root run would be root-owned
+    # and block interview-launch.py's lock(target) later; os.replace already makes the swap
+    # atomic. Add a lock when a rename can race a launch stage on the same box.
+    target = env_path.resolve()  # write through a symlink, as write_text did
+    st = target.stat()
+    lines, done = target.read_text().splitlines(), False
+    for i, l in enumerate(lines):
+        if re.match(r"\s*COMPANY_NAME\s*=", l):
+            lines[i], done = assignment, True
+    if not done:
+        lines.append(assignment)
+    fd, tmp = tempfile.mkstemp(prefix=".company-name-env-", dir=str(target.parent))
+    try:
+        with os.fdopen(fd, "w") as handle:
+            handle.write("\n".join(lines) + "\n")
+            handle.flush()
+            os.fsync(handle.fileno())
+        if os.geteuid() == 0:  # a root run must not hand the service a root-owned file
+            os.chown(tmp, st.st_uid, st.st_gid)
+        os.replace(tmp, target)
+        os.chmod(target, 0o600)
+    finally:
+        if os.path.exists(tmp):
+            os.unlink(tmp)
 
 
 def set_company_name(name, state_path=None, apply_=False, db_path=None, cc_dir=None):
@@ -101,13 +141,7 @@ def set_company_name(name, state_path=None, apply_=False, db_path=None, cc_dir=N
 
     if env_path and env_path.is_file():
         if apply_:
-            lines, done = env_path.read_text().splitlines(), False
-            for i, l in enumerate(lines):
-                if re.match(r"\s*COMPANY_NAME\s*=", l):
-                    lines[i], done = f"COMPANY_NAME={name}", True
-            if not done:
-                lines.append(f"COMPANY_NAME={name}")
-            env_path.write_text("\n".join(lines) + "\n")
+            _write_env_line(env_path, _encoded_company_name(name))
         out["steps"]["env.local"] = "updated" if apply_ else "would update"
     else:
         out["steps"]["env.local"] = "skipped (no .env.local)"

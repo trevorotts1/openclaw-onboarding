@@ -514,5 +514,136 @@ class TestLivePathTokenKwarg:
         assert "vercel_github_archive:M-LIVE" in summ["created"] + summ["reused"]
 
 
+# ── Secret-store fallback (the detached subprocess and the cron pass no env) ──
+#
+# Skill 10 saves the GitHub token to the box's secrets file, not to the
+# process environment the archive subprocess and the reconcile cron inherit.
+# With env=None, resolve_github_token falls back to shared-utils/
+# secret_helper.py (every alias of the GITHUB_TOKEN family, placeholders
+# skipped). An explicit env dict never reads the stores. Every test isolates
+# the stores: HOME and the helper's candidate list point at tmp_path only, so
+# no real secret on the test machine can take part.
+
+import hashlib
+
+import ghl_image_stage
+
+# Synthetic 40-hex value derived at run time (no token-shaped literal in the
+# repo): passes the helper's GITHUB_TOKEN shape gate and is not a credential.
+_STORE_TOKEN = hashlib.sha1(b"ghl_github_archive store fixture").hexdigest()
+_ENV_TOKEN = "fixture-token-process-env-3Rt8Wn5Qz1"
+
+
+@pytest.fixture
+def isolated_store(tmp_path, monkeypatch):
+    """A secrets file at the Mac canonical path under a temporary HOME, made
+    the helper's ONLY store, with every GitHub token name cleared from the
+    process environment. Returns the file path; tests write it."""
+    home = tmp_path / "home"
+    secrets = home / ".openclaw" / "secrets" / ".env"
+    secrets.parent.mkdir(parents=True)
+    monkeypatch.setenv("HOME", str(home))
+    for name in ("GH_TOKEN", "GITHUB_TOKEN", "GITHUB_API_TOKEN"):
+        monkeypatch.delenv(name, raising=False)
+    helper = ghl_image_stage._load_secret_helper()
+    assert helper is not None, "shared-utils/secret_helper.py must load from the repo"
+    monkeypatch.setattr(helper, "ENV_FILE_CANDIDATES", [str(secrets)])
+    return secrets
+
+
+class TestSecretStoreFallback:
+    def test_env_none_reads_the_secrets_file(self, isolated_store):
+        isolated_store.write_text(f"GITHUB_TOKEN={_STORE_TOKEN}\n")
+        assert gha.resolve_github_token() == _STORE_TOKEN
+
+    def test_env_none_reads_any_alias_in_the_family(self, isolated_store):
+        isolated_store.write_text(f"GITHUB_API_TOKEN={_STORE_TOKEN}\n")
+        assert gha.resolve_github_token() == _STORE_TOKEN
+
+    def test_process_env_still_wins_over_the_store(self, isolated_store, monkeypatch):
+        isolated_store.write_text(f"GITHUB_TOKEN={_STORE_TOKEN}\n")
+        monkeypatch.setenv("GH_TOKEN", _ENV_TOKEN)
+        assert gha.resolve_github_token() == _ENV_TOKEN
+
+    def test_explicit_env_dict_never_reads_the_store(self, isolated_store, monkeypatch):
+        isolated_store.write_text(f"GITHUB_TOKEN={_STORE_TOKEN}\n")
+
+        def must_not_run():
+            raise AssertionError("an explicit env dict must not consult the secret stores")
+
+        monkeypatch.setattr(gha, "_store_github_token", must_not_run)
+        with pytest.raises(gha.GithubTokenError):
+            gha.resolve_github_token({})
+
+    def test_placeholder_in_the_store_is_not_a_token(self, isolated_store):
+        isolated_store.write_text("GITHUB_TOKEN=PASTE_REAL_TOKEN\n")
+        with pytest.raises(gha.GithubTokenError):
+            gha.resolve_github_token()
+
+    def test_nothing_anywhere_still_raises(self, isolated_store):
+        with pytest.raises(gha.GithubTokenError):
+            gha.resolve_github_token()
+
+    def test_unloadable_helper_reads_as_no_token(self, isolated_store, monkeypatch):
+        isolated_store.write_text(f"GITHUB_TOKEN={_STORE_TOKEN}\n")
+        monkeypatch.setattr(ghl_image_stage, "_load_secret_helper", lambda: None)
+        with pytest.raises(gha.GithubTokenError):
+            gha.resolve_github_token()
+
+    def test_error_never_carries_a_value(self, isolated_store, monkeypatch):
+        isolated_store.write_text("GITHUB_TOKEN=PASTE_REAL_TOKEN\n")
+        with pytest.raises(gha.GithubTokenError) as excinfo:
+            gha.resolve_github_token()
+        assert "PASTE_REAL_TOKEN" not in str(excinfo.value)
+
+    def test_archive_async_env_none_spawns_with_a_store_token(self, isolated_store, tmp_path):
+        """The production call shape: run_pipeline passes env=None, the token
+        lives only in the secrets file. Before the fallback this wrote a
+        'failed' receipt and never spawned."""
+        isolated_store.write_text(f"GITHUB_TOKEN={_STORE_TOKEN}\n")
+        project_dir = tmp_path / "proj"
+        project_dir.mkdir()
+        (project_dir / "index.html").write_text("<html>ok</html>")
+        project = types.SimpleNamespace(project_dir=str(project_dir))
+        deployment = types.SimpleNamespace(url="https://x.vercel.app")
+        spawned = []
+        result = gha.archive_async(project, deployment, "M-STORE", str(tmp_path / "evidence"),
+                                    popen=lambda cmd, log_path: spawned.append(cmd))
+        assert result["status"] == "spawned"
+        assert spawned and "--run-task" in spawned[0]
+
+    def test_run_archive_task_env_none_uses_the_store_token(self, isolated_store, tmp_path):
+        """The detached subprocess's shape (``--run-task``): no env passed.
+        The token from the secrets file reaches the GitHub call."""
+        isolated_store.write_text(f"GITHUB_TOKEN={_STORE_TOKEN}\n")
+        seen = []
+
+        def fake_req(method, url, body, token):
+            seen.append(token)
+            if method == "GET" and url.endswith("/user"):
+                return 200, {"login": "fake-owner"}
+            if method == "GET" and "/repos/" in url and "/contents/" not in url:
+                return 404, {}
+            if method == "POST" and url.endswith("/user/repos"):
+                return 201, {"full_name": "fake-owner/zhc-page-store",
+                              "html_url": "https://github.com/fake-owner/zhc-page-store"}
+            if method == "GET" and "/contents/" in url:
+                return 404, {}
+            if method == "PUT" and "/contents/" in url:
+                return 201, {}
+            raise AssertionError((method, url))
+
+        project_dir = tmp_path / "proj"
+        project_dir.mkdir()
+        (project_dir / "index.html").write_text("<html>ok</html>")
+        evidence_root = str(tmp_path / "evidence")
+        src_dir = gha.stage_source(str(project_dir), evidence_root, "M-STORE-TASK")
+        task = {"marker": "M-STORE-TASK", "src_dir": src_dir, "evidence_root": evidence_root,
+                "deployment_url": "https://x.vercel.app", "project_name": "zhc-store"}
+        result = gha.run_archive_task(task, requester=fake_req)
+        assert result["receipt"]["action"] in ("created", "reused")
+        assert seen and set(seen) == {_STORE_TOKEN}
+        assert _STORE_TOKEN not in json.dumps(result["receipt"])
+
 if __name__ == "__main__":
     sys.exit(pytest.main([__file__, "-v"]))

@@ -89,6 +89,18 @@ A global grep guard is embedded in each QC script. Any INSTALL.md in this repo t
 
 ## Heartbeat cadence standards (v12.14.0)
 
+> **OpenClaw 2026.11.5 and later: the table below no longer applies.** OpenClaw
+> 2026.11.5 retired heartbeat configuration. `openclaw.json` must not contain
+> `agents.defaults.heartbeat` or any per-agent `heartbeat` block: config
+> validation rejects them and the gateway refuses to start. `openclaw doctor --fix`
+> turns each heartbeat into an ordinary automation job (it shows as
+> `Heartbeat (<agent>)`, for example `Heartbeat (main) every 6h`) and removes the
+> old keys. A box first set up on 2026.11.5 or later gets `Proactive check (<agent>)`
+> instead. Do not write heartbeat keys into `openclaw.json` on these builds.
+> Change the cadence on the job instead: `openclaw automations list --all`, then
+> `openclaw automations edit <job-id> --every 6h`. Check the build with
+> `openclaw --version`. The table below is for OpenClaw 2026.11.4 and earlier only.
+
 | Agent type | Default `every` | Set via |
 |---|---|---|
 | `agents.defaults` (all agents) | `6h` | `install.sh` Fix D + `openclaw config set agents.defaults.heartbeat.every 6h` |
@@ -105,4 +117,4 @@ A global grep guard is embedded in each QC script. Any INSTALL.md in this repo t
 - `35-social-media-planner/INSTRUCTIONS.md` — §Weekly trigger, §Guard pattern
 - `35-social-media-planner/qc-skill35.sh` — QC assertion Section I
 - `35-social-media-planner/qc-social-media-planner.sh` — QC assertion Section I
-- `install.sh` — Fix D (agents.defaults.heartbeat) + Fix D2 (per-agent main override)
+- `install.sh` — Fix D (agents.defaults.heartbeat) + Fix D2 (per-agent main override), OpenClaw 2026.11.4 and earlier only

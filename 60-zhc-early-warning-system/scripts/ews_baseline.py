@@ -307,13 +307,19 @@ def compute_diff(baseline: dict, config: dict) -> list:
     the values are included so the sentinel can build a value-free alert detail."""
     keys = {k["path"]: k for k in _read_monitored_keys()}
     mon = baseline.get("monitored", {})
+    hb_retired = C.heartbeat_retired(config)
     out = []
     for path, spec in keys.items():
         klass = spec.get("class")
         base_stored = mon.get(path, {"present": False})
         live_val = C.dotpath_get(config, path)
         direction = _direction(klass, path, base_stored, live_val)
-        changed = direction not in ("same",)
+        if (direction == "removed" and hb_retired
+                and path.startswith("agents.defaults.heartbeat.")):
+            # OpenClaw 2026.11.5+: doctor --fix moved the heartbeat to an
+            # automation job and deleted the key. That is the upgrade, not drift.
+            direction = "retired"
+        changed = direction not in ("same", "retired")
         dangerous = direction in _DANGER.get(klass, set())
         rec = {"path": path, "class": klass, "direction": direction, "changed": changed,
                "dangerous": dangerous, "hashed": bool(base_stored.get("hashed")),
@@ -508,6 +514,19 @@ def self_test():
         d3 = {x["path"]: x for x in compute_diff(baseline, furn)}
         assert d3["agents.defaults.heartbeat.every"]["direction"] == "tighten"
         print("  furnace case: PASS (heartbeat tightened)")
+
+        # OpenClaw 2026.11.5+: doctor --fix deleted the heartbeat block -> retired, not drift
+        gone = json.loads(json.dumps(base_cfg))
+        del gone["agents"]["defaults"]["heartbeat"]
+        gone["meta"] = {"lastTouchedVersion": "2026.11.5"}
+        d7 = {x["path"]: x for x in compute_diff(baseline, gone)}
+        for hp in ("agents.defaults.heartbeat.every", "agents.defaults.heartbeat.model"):
+            assert d7[hp]["direction"] == "retired" and not d7[hp]["changed"], d7[hp]
+        gone["meta"] = {"lastTouchedVersion": "2026.11.4"}
+        d8 = {x["path"]: x for x in compute_diff(baseline, gone)}
+        assert d8["agents.defaults.heartbeat.every"]["direction"] == "removed"
+        assert d8["agents.defaults.heartbeat.every"]["changed"]
+        print("  heartbeat-retired case: PASS (removed on 2026.11.5+ = retired; older = drift)")
 
         # model change (not dangerous, but changed)
         modc = json.loads(json.dumps(base_cfg))

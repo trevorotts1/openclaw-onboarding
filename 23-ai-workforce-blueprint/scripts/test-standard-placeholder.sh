@@ -96,10 +96,38 @@ python3 "$RENAME" --build-state-file "$STATE" --cc-dir "$CC" --name "New Co" >/d
 python3 "$RENAME" --build-state-file "$STATE" --cc-dir "$CC" --name "New Co" --apply >/dev/null; RC=$?
 DBN="$(python3 -c "import sqlite3;print(sqlite3.connect('$TMP/cc.db').execute('select name from companies').fetchone()[0])")"
 if [ $RC -eq 0 ] && [ "$(jget "d['companyName']")" = "New Co" ] && [ "$(jget "d['companySlug']")" = blackwoman-startup ] && [ "$DBN" = "New Co" ] \
-   && grep -q '"name": "New Co"' "$COMPANY/company-config.json" && grep -q '^COMPANY_NAME=New Co$' "$CC/.env.local" && grep -q '^OTHER=keep$' "$CC/.env.local"; then
+   && grep -q '"name": "New Co"' "$COMPANY/company-config.json" && grep -qx "COMPANY_NAME='New Co'" "$CC/.env.local" && grep -q '^OTHER=keep$' "$CC/.env.local"; then
   good "rename: --apply updates state, config, db row, COMPANY_NAME only (slug untouched)"
 else bad "rename: --apply rc=$RC db=$DBN"; fi
 python3 "$RENAME" --build-state-file "$STATE" --name "" >/dev/null 2>&1; [ $? -eq 2 ] && good "rename: bad input rc 2" || bad "rename: bad input"
+# The written COMPANY_NAME line must read back EXACTLY through shared-utils/service_env.read_env
+# (spaces, an apostrophe, '$' + digit, '#'). An unencoded line makes read_env reject the whole file.
+SHARED="$SCRIPT_DIR/../../shared-utils"
+for N in "Bob's \$1 Shop" "Acme's Best Shop" "A#1 Shop"; do
+  python3 "$RENAME" --build-state-file "$STATE" --cc-dir "$CC" --name "$N" --apply >/dev/null; RC=$?
+  GOT="$(python3 -c 'import sys;sys.path.insert(0,sys.argv[1]);from service_env import read_env;print(read_env(sys.argv[2])["COMPANY_NAME"],end="")' "$SHARED" "$CC/.env.local" 2>&1)"
+  if [ $RC -eq 0 ] && [ "$GOT" = "$N" ] && [ "$(jget "d['companyName']")" = "$N" ] && [ "$(grep -c '^COMPANY_NAME=' "$CC/.env.local")" = 1 ]; then
+    good "rename: '$N' reads back exactly through service_env.read_env"
+  else bad "rename: '$N' rc=$RC read_env=$GOT"; fi
+done
+MODE="$(python3 -c 'import os,sys;print(oct(os.stat(sys.argv[1]).st_mode & 0o777))' "$CC/.env.local")"
+LEFT="$(find "$CC" -name '.company-name-env-*' | wc -l | tr -d ' ')"
+[ "$MODE" = 0o600 ] && [ "$LEFT" = 0 ] && grep -qx 'OTHER=keep' "$CC/.env.local" && grep -qxF "DATABASE_PATH=$TMP/cc.db" "$CC/.env.local" \
+  && good "rename: .env.local is 0600, no temp file left, other lines kept" || bad "rename: mode=$MODE temp_files=$LEFT"
+B="$(cat "$STATE")$(cat "$COMPANY/company-config.json")$(cat "$CC/.env.local")"
+python3 "$RENAME" --build-state-file "$STATE" --cc-dir "$CC" --name $'It\'s "a" `b` #1' --apply >/dev/null 2>&1; RC=$?
+[ $RC -eq 2 ] && [ "$B" = "$(cat "$STATE")$(cat "$COMPANY/company-config.json")$(cat "$CC/.env.local")" ] \
+  && good "rename: name with no lossless dotenv form refused rc 2 before any write" || bad "rename: unencodable name rc=$RC"
+# A root run (euid 0) hands the replaced file back to its previous owner, never leaves it root-owned.
+python3 - "$RENAME" "$CC/.env.local" <<'PY' && good "rename: root run restores the .env.local owner" || bad "rename: root-run owner restore"
+import importlib.util, os, sys
+spec = importlib.util.spec_from_file_location("scn", sys.argv[1]); m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
+st, calls = os.stat(sys.argv[2]), []
+m.os.geteuid = lambda: 0
+m.os.chown = lambda path, uid, gid: calls.append((uid, gid))
+m._write_env_line(m.Path(sys.argv[2]), "COMPANY_NAME='Root Run'")
+assert calls == [(st.st_uid, st.st_gid)], calls
+PY
 
 echo "=============================================="
 echo "test-standard-placeholder.sh: PASS=$PASS FAIL=$FAIL"

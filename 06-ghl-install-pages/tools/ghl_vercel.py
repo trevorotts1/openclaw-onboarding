@@ -18,7 +18,10 @@ this module handles the full lifecycle:
      VERCEL_API_TOKEN env var). Does NOT use the Vercel CLI — pure REST API.
 
   3. ``make_public(deployment_id, token)``
-     Disable Deployment Protection (SSO) on the deployment via the Vercel API.
+     Disable Deployment Protection (Vercel Authentication + password) on the
+     deployment's PROJECT via the Vercel API (Deployment Protection is a
+     project setting: ``PATCH /v9/projects/<projectId>``), then read the
+     project back to prove it. Refuses any project not named ``zhc-*``.
      This is the critical step that most callers skip:
        - Default Vercel deployments have Deployment Protection ON
        - That means: HTTP 401 + ``_vercel_sso_nonce`` cookie + ``x-frame-options: DENY``
@@ -44,6 +47,10 @@ VERCEL TOKEN SOURCE
 -------------------
 Read from env in this order (mirrors Skill 08 convention):
   VERCEL_TOKEN → VERCEL_API_TOKEN → VERCEL_API_KEY
+When none is exported (a scheduled job loads no env file), fall back to the
+shared resolver ``shared-utils/secret_helper.py`` (the box's canonical env
+stores, e.g. ``~/.openclaw/secrets/.env``). Read-only: nothing is ever
+written to openclaw.json or a service-env file.
 
 CONTENT-SECURITY-POLICY SEED
 -----------------------------
@@ -139,6 +146,11 @@ GHL_FRAME_ANCESTOR_HOSTS = [
 # confirm the page was actually served (not a CDN placeholder or 404 body).
 MARKER_COMMENT_TEMPLATE = "<!-- zhc-vercel-marker:{marker} -->"
 
+# make_public changes a PROJECT-wide setting (every deployment of the project
+# goes public), so it only ever runs on the throwaway embed projects this
+# module creates. Any other project name is refused.
+EMBED_PROJECT_PREFIX = "zhc-"
+
 # Env var names for the Vercel token (first non-empty wins).
 VERCEL_TOKEN_ENV_CANDIDATES = (
     "VERCEL_TOKEN",
@@ -169,13 +181,19 @@ class VercelTokenError(RuntimeError):
 # ── Token resolution ──────────────────────────────────────────────────────────
 
 def resolve_token(env: dict | None = None) -> str:
-    """Resolve the Vercel API token from the environment.
+    """Resolve the Vercel API token.
 
     Looks for ``VERCEL_TOKEN`` → ``VERCEL_API_TOKEN`` → ``VERCEL_API_KEY``
-    (first non-empty wins). Raises ``VercelTokenError`` if none found.
+    (first non-empty wins). When ``env`` is None and the process environment
+    has none of them, falls back to the shared secret resolver
+    (``shared-utils/secret_helper.py``, loaded by the same function
+    ``ghl_image_stage`` uses), which reads the box's canonical env stores and
+    skips placeholder values. On a client box that is the client's OWN
+    token. Read-only: this never writes the token anywhere. An explicit
+    ``env`` dict is the ONLY source consulted (tests stay hermetic).
 
     Args:
-        env: Optional env dict override (default ``os.environ``).
+        env: Optional env dict override (default ``os.environ`` + env stores).
 
     Returns:
         The Vercel API token string.
@@ -183,15 +201,26 @@ def resolve_token(env: dict | None = None) -> str:
     Raises:
         ``VercelTokenError`` if no token is present.
     """
-    env = env if env is not None else os.environ
+    source = env if env is not None else os.environ
     for name in VERCEL_TOKEN_ENV_CANDIDATES:
-        val = (env.get(name) or "").strip()
+        val = (source.get(name) or "").strip()
         if val:
             return val
+    if env is None:
+        try:
+            import ghl_image_stage  # lazy: reuse its shared-utils loader (no network)
+            helper = ghl_image_stage._load_secret_helper()
+        except Exception:  # noqa: BLE001 - an unloadable resolver means "no store token", never a crash
+            helper = None
+        if helper is not None:
+            val, _src = helper.resolve_real_secret_with_source("VERCEL_TOKEN")
+            if val:
+                return val
     raise VercelTokenError(
         "No Vercel API token found. Set one of: "
         + ", ".join(VERCEL_TOKEN_ENV_CANDIDATES)
-        + " (Skill 08's operator VERCEL_TOKEN)."
+        + " in the environment or in the box's secrets env store"
+        " (Skill 08's VERCEL_TOKEN). No value is printed here by design."
     )
 
 
@@ -443,17 +472,30 @@ def deploy(project: VercelProject, token: str, *,
     )
 
 
+def _team_query(team_id: str | None) -> str:
+    return f"?teamId={urllib.parse.quote(team_id)}" if team_id else ""
+
+
 def make_public(deployment_id: str, token: str, *,
                 team_id: str | None = None,
                 requester: Callable[[str, str, dict | None], dict] | None = None) -> bool:
-    """Disable Deployment Protection (SSO) on a Vercel deployment.
+    """Disable Deployment Protection on the PROJECT that owns a deployment.
 
     This is the critical step that makes a Vercel deployment embeddable:
       - Default Vercel: protection ON → HTTP 401 + XFO:DENY → NOT embeddable.
       - After make_public: protection OFF → HTTP 200 → embeddable.
 
-    Calls ``PATCH /v13/deployments/<id>`` with ``{"protection": false}``.
-    Also disables password protection if present.
+    Deployment Protection is a project setting (Vercel has no PATCH on
+    ``/v13/deployments/<id>``). Steps, with ``teamId`` on every call:
+      1. ``GET /v13/deployments/<id>`` for ``projectId`` and project ``name``.
+      2. Refuse unless the project name starts with ``zhc-``.
+      3. ``PATCH /v9/projects/<projectId>`` with
+         ``{"ssoProtection": null, "passwordProtection": null}``.
+      4. ``GET /v9/projects/<projectId>`` and require both fields null/absent.
+
+    ponytail: the PATCH unprotects EVERY deployment of that project. Fine for
+    the throwaway ``zhc-*`` embed projects; the name guard stops it touching
+    anything else.
 
     Args:
         deployment_id: The Vercel deployment id (e.g. ``dpl_...``).
@@ -462,43 +504,75 @@ def make_public(deployment_id: str, token: str, *,
         requester: Injected for tests.
 
     Returns:
-        True when the API confirms protection is disabled.
+        True only when the read-back proves both protections are off.
 
     Raises:
-        ``VercelEmbedError``: if the API call fails or protection cannot be
-            confirmed disabled.
+        ``VercelEmbedError``: if any call fails, the project is not a
+            ``zhc-*`` project, or the read-back still shows protection.
     """
     _req = requester if requester is not None else _http_request
+    team_q = _team_query(team_id)
 
-    url = f"{VERCEL_API_ORIGIN}/{VERCEL_API_VERSION_DEPLOYMENTS}/deployments/{deployment_id}"
-    if team_id:
-        url += f"?teamId={urllib.parse.quote(team_id)}"
-
-    # Disable Deployment Protection via the deployments PATCH endpoint.
-    payload = {
-        "protection": {
-            "deploymentType": "none",  # "none" = no protection
-        },
-    }
-
+    dep_url = (f"{VERCEL_API_ORIGIN}/{VERCEL_API_VERSION_DEPLOYMENTS}/deployments/"
+               f"{urllib.parse.quote(deployment_id, safe='')}{team_q}")
     try:
-        resp = _req("PATCH", url, payload, token=token)
+        dep = _req("GET", dep_url, None, token=token)
     except Exception as exc:
         raise VercelEmbedError(
-            f"make_public: Vercel API PATCH failed for {deployment_id}: {exc}"
+            f"make_public: deployment lookup failed for {deployment_id}: {exc}"
         ) from exc
-
-    # Accept the response if it doesn't indicate an error.
-    err = resp.get("error") or resp.get("message")
-    if err and "not found" in str(err).lower():
+    project_id = dep.get("projectId")
+    project_name = str(dep.get("name") or "")
+    if not project_id:
         raise VercelEmbedError(
-            f"make_public: deployment {deployment_id!r} not found. "
-            f"API error: {err}"
+            f"make_public: deployment {deployment_id!r} has no projectId; "
+            "cannot change its project's protection."
+        )
+    if not project_name.startswith(EMBED_PROJECT_PREFIX):
+        raise VercelEmbedError(
+            f"make_public: refusing project {project_name!r}: only "
+            f"{EMBED_PROJECT_PREFIX}* embed projects may be made public "
+            "(the change is project-wide)."
         )
 
-    # The PATCH may return the updated deployment or just an ack.
-    # We confirm via assert_embeddable later — this just records the attempt.
+    proj_url = (f"{VERCEL_API_ORIGIN}/{VERCEL_API_VERSION_PROJECTS}/projects/"
+                f"{urllib.parse.quote(project_id, safe='')}{team_q}")
+    try:
+        _req("PATCH", proj_url, {"ssoProtection": None, "passwordProtection": None},
+             token=token)
+        after = _req("GET", proj_url, None, token=token)
+    except Exception as exc:
+        raise VercelEmbedError(
+            f"make_public: project protection update failed for {project_id}: {exc}"
+        ) from exc
+    still = [k for k in ("ssoProtection", "passwordProtection") if after.get(k)]
+    if still:
+        raise VercelEmbedError(
+            f"make_public: project {project_id} still protected after PATCH: "
+            + ", ".join(still)
+        )
     return True
+
+
+def delete_deployment(deployment_id: str, token: str, *,
+                      team_id: str | None = None,
+                      requester: Callable[[str, str, dict | None], dict] | None = None) -> bool:
+    """Delete one deployment (``DELETE /v13/deployments/<id>``, ``teamId`` when
+    given). Returns True only when Vercel answers ``state: DELETED``.
+
+    Raises:
+        ``VercelEmbedError``: if the API call fails.
+    """
+    _req = requester if requester is not None else _http_request
+    url = (f"{VERCEL_API_ORIGIN}/{VERCEL_API_VERSION_DEPLOYMENTS}/deployments/"
+           f"{urllib.parse.quote(deployment_id, safe='')}{_team_query(team_id)}")
+    try:
+        resp = _req("DELETE", url, None, token=token)
+    except Exception as exc:
+        raise VercelEmbedError(
+            f"delete_deployment: Vercel API DELETE failed for {deployment_id}: {exc}"
+        ) from exc
+    return resp.get("state") == "DELETED"
 
 
 # ── Embeddability hard gate ────────────────────────────────────────────────────
@@ -714,13 +788,18 @@ def run_pipeline(html_fragment: str, marker: str, project_dir: str, *,
             only — GitHub archival failures are never raised, only recorded).
         ``VercelTokenError``: if no Vercel token is resolvable.
     """
+    if not project_name.startswith(EMBED_PROJECT_PREFIX):
+        raise VercelEmbedError(
+            f"run_pipeline: project_name {project_name!r} must start with "
+            f"{EMBED_PROJECT_PREFIX!r}: make_public turns off protection for the "
+            "WHOLE project, so only throwaway embed projects are allowed."
+        )
     project = prepare_app(html_fragment, marker, project_dir)
     token = resolve_token(env)
     deployment = deploy(project, token, project_name=project_name,
                         team_id=team_id, requester=requester)
-    make_public(deployment.deployment_id, token,
-                team_id=team_id, requester=requester)
-    deployment.protection_disabled = True
+    deployment.protection_disabled = make_public(
+        deployment.deployment_id, token, team_id=team_id, requester=requester)
     embeddability = assert_embeddable(deployment.url, marker, fetcher=fetcher)
     snippet = iframe_embed_snippet(deployment.url, height_px=height_px)
 
@@ -886,6 +965,7 @@ def _read_project_files(project_dir: str) -> list[dict]:
 __all__ = [
     "GHL_FRAME_ANCESTOR_HOSTS",
     "VERCEL_TOKEN_ENV_CANDIDATES",
+    "EMBED_PROJECT_PREFIX",
     "DEPLOY_POLL_MAX",
     "DEPLOY_POLL_INTERVAL_SECONDS",
     "VercelEmbedError",
@@ -898,6 +978,7 @@ __all__ = [
     "prepare_app",
     "deploy",
     "make_public",
+    "delete_deployment",
     "assert_embeddable",
     "run_pipeline",
     "iframe_embed_snippet",  # re-exported from ghl_method
