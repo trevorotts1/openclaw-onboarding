@@ -18,3 +18,8 @@ trap 'fg_rc=$?; [ "$fg_rc" -eq 0 ] || echo "::error::fast-guards release-ceremon
 export BASE_REF="${GITHUB_BASE_REF:-}"
 python3 scripts/check-no-standalone-release-pr.py --base "origin/$BASE_REF" --head HEAD
 )
+( # step: Prove the guard rejects a pure bump and accepts a bump with a real change
+echo "--- step: Guard self-test (pure bump rejected, bump + real change accepted)"
+set -e
+python3 -m unittest tests/unit/test_check_no_standalone_release_pr.py
+)
