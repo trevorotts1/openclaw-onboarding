@@ -160,7 +160,7 @@ The weekly upgrade safety evaluation is the core job of this role.
 7. **Run a real live turn.** Send one test message to the agent and confirm: response is received, model routes correctly, no fallback chain errors in the log. A config-check alone is not verification — the memory rule is explicit.
 8. **Run post-upgrade maintenance checks:**
    a. F2 check (Token Manager): `openclaw config get plugins.entries.memory-core.config.dreaming.enabled` — confirm it is `false` (a new version may reset this to `true`).
-   b. Heartbeat interval check (Token Manager): confirm `heartbeat.every` is still >= 4h.
+   b. Heartbeat interval check (Token Manager): on OpenClaw 2026.11.4 and earlier, confirm `heartbeat.every` is still >= 4h. On an upgrade to OpenClaw 2026.11.5 or later, heartbeat config is retired: run `openclaw doctor --fix` with the gateway stopped (it moves each heartbeat into an automation job named `Heartbeat (<agent>)`, for example `Heartbeat (main) every 6h`, and removes the old keys; a box first set up on 2026.11.5 or later has `Proactive check (<agent>)` instead), then confirm with `openclaw automations list --all` that the job's interval is >= 4h. Never write heartbeat keys back into `openclaw.json` on 2026.11.5 or later; the gateway refuses to start with them.
    c. MCP schema check (Integration/MCP): confirm all entries in the MCP registry are still valid in the new schema.
    d. Gateway liveness (Uptime Watchdog): confirm port 18789 is listening.
 9. **Log the upgrade.** Write to `working/version-manager/post-upgrade-verification.md`: old version, new version, platform, upgrade timestamp, validation pass, live-turn pass, post-upgrade checks pass, any config migrations applied.

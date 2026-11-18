@@ -67,6 +67,18 @@
         "agents.defaults.heartbeat.isolatedSession",
         "agents.defaults.heartbeat.lightContext"
       ],
+      "version_gate": "commands, snapshot_before and the revert lists apply to OpenClaw 2026.11.4 and earlier only. OpenClaw 2026.11.5 retired heartbeat config: openclaw.json rejects agents.defaults.heartbeat and the gateway refuses to start with it. There, openclaw doctor --fix has already moved each heartbeat into an automation job (shown as 'Heartbeat (<agent>)', for example 'Heartbeat (main) every 6h'; a box first set up on 2026.11.5 or later has 'Proactive check (<agent>)' instead), so use the *_openclaw_2026_11_5_plus lists, which edit that job and never write heartbeat keys into openclaw.json. Read the version with: openclaw --version",
+      "commands_openclaw_2026_11_5_plus": [
+        "openclaw automations edit <HEARTBEAT_JOB_ID> --session isolated --light-context"
+      ],
+      "snapshot_before_openclaw_2026_11_5_plus": [
+        "openclaw automations list --all --json",
+        "openclaw automations show <HEARTBEAT_JOB_ID> --json"
+      ],
+      "revert_note_openclaw_2026_11_5_plus": "<PRIOR_sessionTarget> is the job's sessionTarget from the snapshot (for example session:<key>); <PRIOR_LIGHT_CONTEXT_FLAG> is --light-context when the snapshot payload had lightContext true, otherwise --no-light-context.",
+      "revert_commands_openclaw_2026_11_5_plus": [
+        "openclaw automations edit <HEARTBEAT_JOB_ID> --session <PRIOR_sessionTarget> <PRIOR_LIGHT_CONTEXT_FLAG>"
+      ],
       "reversible_in": "restore the PRIOR values of agents.defaults.heartbeat.isolatedSession and agents.defaults.heartbeat.lightContext (read them with the snapshot_before commands first; set them back with --strict-json, or `openclaw config unset <path>` when they were unset)",
       "proof": "Source: OpenClaw docs gateway/config-agents/heartbeat-compaction-and-streaming.md lines 22-49. isolatedSession=true runs each heartbeat in a fresh session with no conversation history; the doc says it reduces per-heartbeat token cost from ~100K to ~2-5K tokens. lightContext=true makes heartbeat runs skip the workspace bootstrap files. Separate operator choice, NOT part of this proposal: every: \"0m\" stops the recurring heartbeat cadence (event-driven wakes can still run one turn). Tier 2 STAYS Tier 2: the watchdog prepares the two commands + the revert and sends them to the OPERATOR for an `approve <finding-id>`; the unattended tick never applies them, and no client box is changed without that stamp. The proposal touches only the two keys listed in touches_only - no provider, no credential, nothing the client chose.",
       "superseded_text": {
