@@ -189,6 +189,14 @@ class ScheduleAndDst(unittest.TestCase):
         self.assertEqual(au.decide(d(2026, 11, 17, 5, 30), "b", noticed), "missed_run")
         self.assertEqual(au.decide(start, "b", {**noticed, "settled": "DONE"}), "idle")
 
+    def test_a_late_notice_never_starts_the_run_before_its_fifteen_minutes_are_up(self):
+        d = dt.datetime
+        sent = d(2026, 11, 17, 2, 25, 10)                          # first tick after the box woke up
+        at_ms = int(au.eastern_to_utc(sent).timestamp() * 1000)
+        st = {"notice": {"attempted": True, "at_ms": at_ms}}
+        self.assertEqual(au.decide(d(2026, 11, 17, 2, 40, 9), "b", st), "watch")
+        self.assertEqual(au.decide(d(2026, 11, 17, 2, 40, 10), "b", st), "run")
+
     def test_jitter_is_deterministic_per_box_and_day_within_15_minutes(self):
         self.assertEqual(au.jitter_seconds("a", "2026-11-17"), au.jitter_seconds("a", "2026-11-17"))
         vals = {au.jitter_seconds(f"box{i}", "2026-11-17") for i in range(200)}
@@ -219,14 +227,12 @@ class Versions(BoxCase):
         self.assertTrue(au.is_behind(None, "v1.0.0"))                # unreadable installed: the update repairs it
         self.assertIsNone(au.is_behind("v1.0.0", None))              # unreadable latest: cannot judge
 
-    def make_999(self):
+    def make_999(self, version="1.0.0"):
         d = self.home / "999-setup"
         d.mkdir()
-        (d / "AGENT_INSTALL.md").write_text("x")
+        (d / "VERSION").write_text(version + "\n")
         subprocess.run(["git", "-C", str(d), "init", "-q"], check=True)
-        subprocess.run(["git", "-C", str(d), "-c", "user.name=t", "-c", "user.email=t@x.invalid", "commit", "-q",
-                        "--allow-empty", "-m", "i"], check=True)
-        subprocess.run(["git", "-C", str(d), "tag", "v1.0.0"], check=True)
+        return d
 
     def test_999_is_never_checked_on_linux_even_when_a_checkout_exists(self):
         self.make_999()
@@ -242,6 +248,7 @@ class Versions(BoxCase):
         os.environ["AUTO_UPDATE_PLATFORM"] = "darwin"
         v = au.check_versions(self.root)
         self.assertEqual(v["999"], {"installed": "v1.0.0", "latest": "v1.0.1", "behind": True, "error": None})
+        self.assertEqual(au.installed_999(), "v1.0.0")           # the checkout VERSION file, not a git tag
 
     def test_999_is_skipped_on_a_mac_that_does_not_have_it(self):
         self.set_latest(**{"999": "v1.0.1"})
@@ -737,6 +744,37 @@ class RunnerRepairAndRollback(unittest.TestCase):
         with mock.patch.dict(os.environ, {}, clear=False):
             os.environ.pop("AUTO_UPDATE_BEHIND", None)
             self.assertFalse(self.fr._auto_repo_current("command_center"))     # fleet roll: nothing skipped
+
+
+class Update999OwnUpdater(unittest.TestCase):
+    """The runner hands 999 to the 999 repo's own updater (scripts/auto-update-mac.sh) during an auto-update."""
+
+    def run_step(self, body, rc):
+        import fleet_refresh_runner as fr
+        with tempfile.TemporaryDirectory() as td:
+            repo = Path(td) / "999-setup"
+            (repo / "scripts").mkdir(parents=True)
+            script = executable(repo / "scripts" / "auto-update-mac.sh", f"#!/bin/bash\n{body}\nexit {rc}\n")
+            res = fr.BoxResult("t", dry_run=False)
+            res.update_999 = {"path": str(repo)}
+            fr._step_update_999_own(repo, script, res, False)
+            return res
+
+    def test_updated_is_ok_and_carries_the_versions(self):
+        res = self.run_step('echo "AUTO-UPDATE-999 result=UPDATED before=v1.38.0 after=v1.39.0 latest=v1.39.0 rc=0 reason=-"', 0)
+        self.assertEqual(res.steps["update-999"], "ok")
+        self.assertEqual((res.update_999["before"], res.update_999["after"]), ("v1.38.0", "v1.39.0"))
+
+    def test_not_a_mac_or_no_checkout_is_a_skip_not_a_failure(self):
+        for rc in (64, 65):
+            res = self.run_step('echo "AUTO-UPDATE-999 result=REFUSED before=- after=- latest=- rc=%d reason=not-macos"' % rc, rc)
+            self.assertTrue(res.steps["update-999"].startswith("skip:"), res.steps)
+
+    def test_busy_lock_is_a_deferral_and_a_real_failure_is_a_failure(self):
+        self.assertIn("DEFERRED", self.run_step("echo AUTO-UPDATE-999 result=DEFERRED", 75).steps["update-999"])
+        res = self.run_step('echo "AUTO-UPDATE-999 result=FAILED before=v1 after=v1 latest=v2 rc=69 reason=skills-only-failed"', 69)
+        self.assertTrue(res.steps["update-999"].startswith("failed:"))
+        self.assertIn("skills-only-failed", res.steps["update-999"])
 
 
 # ─────────────────────────────────────────────────────────── wiring guards ──

@@ -119,7 +119,7 @@ don't trust the label.
 | Tests (14 cases) | `tests/unit/fleet-standing-gate.test.sh` |
 | Fleet seeding | `scripts/fleet-standing/propagate-fleet-standing-gate.sh` |
 | n8n workflow backups | `scripts/fleet-standing/n8n-backups/` |
-| Weekly cron message refresh | `update-skills.sh`, block `WEEKLY-CRON-MESSAGE-REFRESH-V1`; `tests/unit/weekly-cron-message-refresh.test.sh` (31 cases) |
+| Auto-update schedule (replaced the weekly cron message refresh) | `scripts/auto_update.py`; `tests/unit/auto-update.test.py` |
 | Operator control (flip / list / check standing) | `~/clawd/fleet-standing/standing.sh` — operator-local, not tracked in this repo |
 
 All three update paths — the Sunday `openclaw cron`, the legacy silent shell cron, and the
@@ -159,25 +159,14 @@ Rows page through the n8n data-table API by an opaque `nextCursor`, not `offset`
 but the table is loaded through this pagination loop regardless, so growth past 250 rows
 doesn't silently truncate results.
 
-## The Sunday cron refresh
+## The Sunday cron refresh (retired)
 
-`update-skills.sh` used to register the `weekly-onboarding-update` cron only when it was
-absent. Once a box had it, that box's stored cron message was frozen at whatever
-`cron-prompt.txt` said the day it was provisioned — a later repo edit to `cron-prompt.txt`
-(new rules, a fixed leak, anything) never reached a box that already had the cron. Only a
-box whose cron was missing, or still carried old auto-announce wiring that forced a
-delete-and-recreate, ever picked up the change.
-
-`refresh_weekly_cron_message()` closes that gap: on every run it reads the job's currently
-stored message via `openclaw cron get`, compares it to the freshly-fetched
-`cron-prompt.txt`, and — only on a mismatch — patches the message in place with
-`openclaw cron edit <id> --message` (`--system-event` for a systemEvent-kind job). `cron
-edit` is a field-level PATCH, so schedule, timezone, `sessionTarget`, wake mode, timeout,
-and delivery are untouched **by construction**, because they are never passed — not because
-the function is careful to re-specify them correctly. Every failure path (CLI missing,
-gateway unreachable, malformed JSON, `python3` absent, the edit itself rejected) logs a
-SKIP/WARN and returns 0, leaving the OLD message in place rather than a blank or partial
-one — this function can never be the reason an update aborts.
+This section described `refresh_weekly_cron_message()`, which patched the stored message of the
+`weekly-onboarding-update` openclaw cron job (the agent "ask first" prompt in `cron-prompt.txt`).
+That job no longer exists: the Tuesday/Friday/Sunday update is a script (`scripts/auto_update.py`), with no
+agent prompt to refresh. `scripts/setup-weekly-update.sh` removes any leftover job with that name, and the
+fleet standing gate is still enforced by `update-skills.sh` (FLEET-STANDING-GATE-V1) on every update path,
+including the automatic one.
 
 ## Env vars (per box)
 

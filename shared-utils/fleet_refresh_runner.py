@@ -2716,6 +2716,28 @@ def _find_999_checkout() -> Optional[Path]:
     return None
 
 
+def _step_update_999_own(repo: Path, script: Path, res: BoxResult, dry_run: bool) -> None:
+    """Auto-update only: run the 999 repo's own updater (scripts/auto-update-mac.sh). It rides the lease of the
+    auto-update run that launched it, updates only when behind, touches nothing but the checkout fast-forward and
+    `setup-macos.sh --skills-only`, and puts the checkout back if that refresh fails. Last stdout line:
+    AUTO-UPDATE-999 result=... before=v.. after=v.. latest=v.. rc=.. reason=..."""
+    if dry_run:
+        res.step_skip("update-999", f"dry-run (own updater at {script})")
+        return
+    r = subprocess.run(["bash", str(script), "--checkout", str(repo)], capture_output=True, text=True, timeout=3600)
+    line = next((l for l in reversed((r.stdout or "").splitlines()) if l.startswith("AUTO-UPDATE-999 ")), "")
+    info = dict(kv.split("=", 1) for kv in line.split()[1:] if "=" in kv)
+    res.update_999.update({"result": info.get("result"), "before": info.get("before"), "after": info.get("after")})
+    if r.returncode == 0:
+        res.step_ok("update-999")
+    elif r.returncode in (64, 65):
+        res.step_skip("update-999", f"999 not updated on this box ({info.get('reason') or 'not applicable'})")
+    elif r.returncode == 75:
+        res.step_skip("update-999", "DEFERRED: another updater held the lock; 999 not changed")
+    else:
+        res.step_fail("update-999", f"auto-update-mac.sh exit {r.returncode}: {info.get('reason') or (r.stderr or '').strip()[-160:]}")
+
+
 def step_update_999(res: BoxResult, dry_run: bool) -> None:
     """Refresh 999-setup ONLY where it is already installed; never install it."""
     repo = _find_999_checkout()
@@ -2723,6 +2745,10 @@ def step_update_999(res: BoxResult, dry_run: bool) -> None:
         res.step_skip("update-999", "999 not installed")
         return
     res.update_999 = {"path": str(repo)}
+    own = repo / "scripts" / "auto-update-mac.sh"
+    if os.environ.get("AUTO_UPDATE") == "1" and own.is_file():
+        _step_update_999_own(repo, own, res, dry_run)       # the 999 repo's own updater (Tue/Fri/Sun auto-update)
+        return
     if not (repo / ".git").exists():
         res.step_skip("update-999", f"999 at {repo} is an archive extract, not a git clone; not refreshed")
         return

@@ -213,6 +213,11 @@ def decide(local: dt.datetime, box: str, day_state: dict) -> str:
         return "idle"
     notice_done = bool(day_state.get("notice", {}).get("attempted"))
     start = run_start_local(box, local)
+    at_ms = day_state.get("notice", {}).get("at_ms")
+    if at_ms:
+        # The notice promises "in 15 minutes": a notice that went out late pushes the start later, never earlier.
+        sent_local = to_eastern(dt.datetime.fromtimestamp(float(at_ms) / 1000, tz=dt.timezone.utc))
+        start = max(start, sent_local + dt.timedelta(minutes=15))
     if not notice_done:
         if local < _at(d, START_AT):
             return "notice"
@@ -387,28 +392,29 @@ def installed_cc(root: Path) -> str | None:
     return norm_version(read_json(d / "package.json", {}).get("version")) if d else None
 
 
-_999_CANDIDATES = ("Documents/999-setup", "Documents/999-setup-main", "Downloads/999-setup",
-                   "Downloads/999-setup-main", "999-setup", "999-setup-main", "Desktop/999-setup",
-                   "clawd/999-setup", "projects/999-setup", "Projects/999-setup")
+_999_CANDIDATES = ("999-setup", "Documents/999-setup", "Documents/999-setup-main", "Downloads/999-setup",
+                   "Downloads/999-setup-main", "999-setup-main", "Desktop/999-setup", "clawd/999-setup",
+                   "projects/999-setup", "Projects/999-setup")
 
 
 def find_999_checkout() -> Path | None:
+    """The 999-setup git checkout, only where it is already installed (never installed here)."""
     home = Path(os.environ.get("AUTO_UPDATE_HOME") or Path.home())
-    for c in _999_CANDIDATES:
-        d = home / c
-        if (d / ".git").exists() and (d / "AGENT_INSTALL.md").is_file():
+    cands = []
+    env = os.environ.get("NINE_999_CHECKOUT", "").strip()
+    if env:
+        cands.append(Path(env).expanduser())
+    cands += [home / c for c in _999_CANDIDATES]
+    for d in cands:
+        if (d / ".git").exists() and (d / "VERSION").is_file():
             return d
     return None
 
 
-def _git(repo: Path, *args: str) -> str:
-    r = _run(["git", "-C", str(repo), *args], 60)
-    return r.stdout.strip() if r.returncode == 0 else ""
-
-
 def installed_999() -> str | None:
+    """The checkout's own VERSION file is the source of truth (the repo's tags lag it)."""
     d = find_999_checkout()
-    return norm_version(_git(d, "describe", "--tags", "--abbrev=0")) if d else None
+    return norm_version(_first_line(d / "VERSION")) if d else None
 
 
 def http_get(url: str, timeout: int = 20) -> str:
@@ -449,10 +455,8 @@ def latest_cc(ref: str) -> str | None:
 
 
 def latest_999() -> str | None:
-    r = _run(["git", "ls-remote", "--tags", "--refs", "https://github.com/trevorotts1/999-setup.git"], 60)
-    tags = [parse_version(line.rsplit("/", 1)[-1]) for line in r.stdout.splitlines()]
-    tags = [t for t in tags if t]
-    return "v%d.%d.%d" % max(tags) if tags else None
+    """VERSION on 999-setup main (the same file the checkout's VERSION is compared with)."""
+    return norm_version(_first_line_text(http_get("https://raw.githubusercontent.com/trevorotts1/999-setup/main/VERSION")))
 
 
 def check_versions(root: Path) -> dict:
@@ -732,7 +736,9 @@ def ensure_scripts(root: Path, src: Path) -> list[str]:
         if not s.is_file() or (s.resolve() == d.resolve() if d.exists() else False):
             continue
         if not d.is_file() or d.read_bytes() != s.read_bytes():
-            shutil.copy2(s, d)
+            tmp = d.with_name(d.name + f".new{os.getpid()}")
+            shutil.copy2(s, tmp)
+            os.replace(tmp, d)          # atomic: a copy of this file that is running right now keeps its old inode
             changed.append(name)
         if not os.access(d, os.X_OK):
             d.chmod(0o755)

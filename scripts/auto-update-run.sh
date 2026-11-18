@@ -4,6 +4,7 @@
 # /tmp/openclaw-update.lock). A busy box is waited on for 30 minutes (poll every 30 seconds), then the
 # run is recorded DEFERRED. Everything below runs as a child of this process, so update-skills.sh,
 # fleet-refresh and Command Center's update.sh inherit the lease instead of fighting it.
+{
 set -u
 SELF_DIR="$(CDPATH= cd -- "$(dirname -- "$0")" 2>/dev/null && pwd)"
 ROOT="${OPENCLAW_ROOT:-}"
@@ -47,3 +48,5 @@ done
 trap 'box_update_lock_release' EXIT
 
 python3 "$SELF_DIR/auto_update.py" run
+exit $?
+}
