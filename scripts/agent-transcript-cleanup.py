@@ -678,7 +678,10 @@ def vacuum(conn, max_pages, deadline):
         if done and _now() >= deadline:
             break
         step = min(VACUUM_STEP_PAGES, max_pages - done, free)
-        conn.execute("PRAGMA incremental_vacuum(%d)" % step).fetchall()
+        # executescript steps the pragma to completion on every Python version. execute().fetchall()
+        # frees only ONE page per call on Python 3.11 (the pragma yields a row per page), which left a
+        # box's freelist undrained and the file at its old size.
+        conn.executescript("PRAGMA incremental_vacuum(%d);" % step)
         done += step
     return done
 
