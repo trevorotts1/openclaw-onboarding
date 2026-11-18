@@ -288,18 +288,59 @@ import ghl_receipts  # noqa: E402
 import ghl_github_archive  # noqa: E402
 
 
-def _vercel_requester():
-    """Fake requester for deploy()/make_public() — mirrors the real Vercel
-    deployments API shape closely enough for run_pipeline to complete."""
-    def _req(method, url, body, *, token=""):
-        if method == "POST" and url.endswith("/deployments"):
-            return {"id": "dpl_test123", "url": "test-deploy.vercel.app"}
-        if method == "GET" and "/deployments/" in url:
-            return {"readyState": "READY", "url": "test-deploy.vercel.app"}
-        if method == "PATCH":
-            return {"ok": True}
-        raise AssertionError(f"unexpected vercel call {method} {url}")
-    return _req
+_API = "https://api.vercel.com"
+_PROJECT_ID = "prj_test123"
+
+
+class _FakeVercel:
+    """Fake Vercel REST API, routed by exact (method, URL) like the real one.
+
+    Only the routes Vercel really publishes answer: POST /v13/deployments,
+    GET /v13/deployments/<id>, PATCH + GET /v9/projects/<projectId>,
+    DELETE /v13/deployments/<id>. Any other call (including the old,
+    non-existent PATCH /v13/deployments/<id>) raises VercelEmbedError the way
+    _http_request does on Vercel's HTTP 404. Every call is recorded.
+    """
+
+    def __init__(self, project_name="zhc-ghl-page", team_id=None,
+                 protection_after_patch=None, project_patch_404=False):
+        self.calls = []
+        self.project_name = project_name
+        self.q = f"?teamId={team_id}" if team_id else ""
+        self.protection_after_patch = protection_after_patch
+        self.project_patch_404 = project_patch_404
+        self.project = {"id": _PROJECT_ID, "name": project_name,
+                        "ssoProtection": {"deploymentType": "all_except_custom_domains"},
+                        "passwordProtection": None}
+
+    def __call__(self, method, url, body, *, token=""):
+        self.calls.append((method, url, body))
+        dep = f"{_API}/v13/deployments/dpl_test123{self.q}"
+        proj = f"{_API}/v9/projects/{_PROJECT_ID}{self.q}"
+        if (method, url) == ("POST", f"{_API}/v13/deployments{self.q}"):
+            return {"id": "dpl_test123", "url": "test-deploy.vercel.app",
+                    "projectId": _PROJECT_ID, "name": self.project_name}
+        if (method, url) == ("GET", dep):
+            return {"id": "dpl_test123", "readyState": "READY", "url": "test-deploy.vercel.app",
+                    "projectId": _PROJECT_ID, "name": self.project_name}
+        if (method, url) == ("PATCH", proj) and not self.project_patch_404:
+            self.project.update(body)
+            if self.protection_after_patch:
+                self.project.update(self.protection_after_patch)
+            return dict(self.project)
+        if (method, url) == ("GET", proj):
+            return dict(self.project)
+        if (method, url) == ("DELETE", dep):
+            return {"state": "DELETED", "uid": "dpl_test123"}
+        raise gv.VercelEmbedError(f"HTTP 404 from {url}: not_found")
+
+    def only(self, method):
+        return [(u, b) for m, u, b in self.calls if m == method]
+
+
+def _vercel_requester(**kw):
+    """Fake requester for deploy()/make_public() (see _FakeVercel)."""
+    return _FakeVercel(**kw)
 
 
 def _embeddable_fetcher(marker: str):
@@ -407,6 +448,180 @@ class TestRunPipelineGithubArchival:
                 evidence_root=str(tmp_path / "evidence"),
             )
         assert called["n"] == 0, "archival must never be attempted when the Vercel gate itself fails"
+
+
+# ── make_public: project-scoped PATCH with readback (FRF-003) ────────────────
+
+
+class TestMakePublic:
+    def test_patches_project_not_deployment_and_reads_back(self):
+        fake = _FakeVercel()
+        assert gv.make_public("dpl_test123", "fake", requester=fake) is True
+        assert fake.only("PATCH") == [
+            (f"{_API}/v9/projects/{_PROJECT_ID}",
+             {"ssoProtection": None, "passwordProtection": None})]
+        gets = [u for u, _ in fake.only("GET")]
+        assert gets == [f"{_API}/v13/deployments/dpl_test123",
+                        f"{_API}/v9/projects/{_PROJECT_ID}"]
+        assert not any("/v13/deployments/" in u for u, _ in fake.only("PATCH"))
+
+    def test_team_id_on_every_call(self):
+        fake = _FakeVercel(team_id="team_x")
+        gv.make_public("dpl_test123", "fake", team_id="team_x", requester=fake)
+        assert len(fake.calls) == 3
+        assert all(u.endswith("?teamId=team_x") for _, u, _ in fake.calls)
+
+    def test_missing_project_id_raises_before_any_patch(self):
+        calls = []
+
+        def req(method, url, body, *, token=""):
+            calls.append(method)
+            return {"id": "dpl_test123", "name": "zhc-ghl-page"}  # no projectId
+
+        with pytest.raises(gv.VercelEmbedError, match="no projectId"):
+            gv.make_public("dpl_test123", "fake", requester=req)
+        assert calls == ["GET"]
+
+    def test_refuses_non_zhc_project(self):
+        fake = _FakeVercel(project_name="client-real-site")
+        with pytest.raises(gv.VercelEmbedError, match="refusing project"):
+            gv.make_public("dpl_test123", "fake", requester=fake)
+        assert fake.only("PATCH") == []
+
+    def test_readback_still_protected_raises(self):
+        fake = _FakeVercel(protection_after_patch={"ssoProtection": {"deploymentType": "preview"}})
+        with pytest.raises(gv.VercelEmbedError, match="still protected"):
+            gv.make_public("dpl_test123", "fake", requester=fake)
+
+    def test_project_patch_404_propagates(self):
+        fake = _FakeVercel(project_patch_404=True)
+        with pytest.raises(gv.VercelEmbedError, match="HTTP 404"):
+            gv.make_public("dpl_test123", "fake", requester=fake)
+
+
+class TestRunPipelineProjectGuard:
+    def test_non_zhc_project_name_refused_before_any_network(self, tmp_path):
+        def must_not_call(*a, **kw):
+            raise AssertionError("network must not be touched")
+
+        with pytest.raises(gv.VercelEmbedError, match="must start with"):
+            gv.run_pipeline("<p>hi</p>", "M-GUARD", str(tmp_path / "proj"),
+                            project_name="client-real-site",
+                            env={"VERCEL_TOKEN": "fake"},
+                            requester=must_not_call,
+                            fetcher=_embeddable_fetcher("M-GUARD"))
+
+    def test_protection_disabled_reflects_proven_readback(self, tmp_path):
+        r = gv.run_pipeline("<p>hi</p>", "M-OK", str(tmp_path / "proj"),
+                            env={"VERCEL_TOKEN": "fake"},
+                            requester=_FakeVercel(),
+                            fetcher=_embeddable_fetcher("M-OK"))
+        assert r.deployment.protection_disabled is True
+
+
+class TestDeleteDeployment:
+    def test_delete_hits_v13_with_team_and_reports_deleted(self):
+        fake = _FakeVercel(team_id="team_x")
+        assert gv.delete_deployment("dpl_test123", "fake", team_id="team_x",
+                                    requester=fake) is True
+        assert fake.only("DELETE") == [(f"{_API}/v13/deployments/dpl_test123?teamId=team_x", None)]
+
+
+# ── resolve_token: shared secret-store fallback (FRF-003) ────────────────────
+
+_FAKE_TOKEN = "FAKEvercelTOKENfixture0123456789"  # synthetic, not a real secret
+
+
+class TestResolveTokenStoreFallback:
+    def _isolate(self, monkeypatch, tmp_path, store_text=None):
+        import ghl_image_stage
+        helper = ghl_image_stage._load_secret_helper()
+        assert helper is not None, "shared-utils/secret_helper.py must load from the repo"
+        store = tmp_path / "secrets.env"
+        if store_text is not None:
+            store.write_text(store_text, encoding="utf-8")
+        monkeypatch.setattr(helper, "ENV_FILE_CANDIDATES", [str(store)])
+        for name in ("VERCEL_TOKEN", "VERCEL_API_TOKEN", "VERCEL_API_KEY"):
+            monkeypatch.delenv(name, raising=False)
+
+    def test_env_none_reads_secret_store(self, monkeypatch, tmp_path):
+        self._isolate(monkeypatch, tmp_path, f"VERCEL_TOKEN={_FAKE_TOKEN}\n")
+        assert gv.resolve_token() == _FAKE_TOKEN
+
+    def test_explicit_env_never_reads_store(self, monkeypatch, tmp_path):
+        self._isolate(monkeypatch, tmp_path, f"VERCEL_TOKEN={_FAKE_TOKEN}\n")
+        with pytest.raises(gv.VercelTokenError):
+            gv.resolve_token({})
+
+    def test_placeholder_in_store_is_not_a_token(self, monkeypatch, tmp_path):
+        self._isolate(monkeypatch, tmp_path, "VERCEL_TOKEN=PASTE_REAL_TOKEN\n")
+        with pytest.raises(gv.VercelTokenError) as exc:
+            gv.resolve_token()
+        assert "PASTE_REAL_TOKEN" not in str(exc.value)
+
+    def test_nothing_anywhere_raises(self, monkeypatch, tmp_path):
+        self._isolate(monkeypatch, tmp_path, None)
+        with pytest.raises(gv.VercelTokenError):
+            gv.resolve_token()
+
+    def test_store_token_never_appears_in_error_or_files(self, monkeypatch, tmp_path):
+        self._isolate(monkeypatch, tmp_path, f"VERCEL_TOKEN={_FAKE_TOKEN}\n")
+        before = sorted(p.name for p in tmp_path.iterdir())
+        gv.resolve_token()
+        assert sorted(p.name for p in tmp_path.iterdir()) == before, "resolve_token must not write files"
+
+
+# ── Live-path regression: requester=None, only urlopen stubbed (FRF-003) ─────
+
+import io  # noqa: E402
+import json as _json  # noqa: E402
+import urllib.error  # noqa: E402
+import urllib.request  # noqa: E402
+
+
+class _LiveResp:
+    def __init__(self, body):
+        self.status = 200
+        self._b = _json.dumps(body).encode("utf-8")
+
+    def read(self):
+        return self._b
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        return False
+
+
+class TestLivePathMakePublic:
+    """The production transport (_http_request) against a fake Vercel that,
+    like the real one, answers 404 to PATCH /v13/deployments/<id>. FAILS on
+    the pre-fix code (HTTP 404 VercelEmbedError), PASSES after the fix."""
+
+    def test_make_public_live_transport(self, monkeypatch):
+        seen = []
+        project = {"id": _PROJECT_ID, "name": "zhc-ghl-page",
+                   "ssoProtection": {"deploymentType": "preview"}, "passwordProtection": None}
+
+        def fake_urlopen(req, timeout=None):
+            method, url = req.get_method(), req.full_url
+            body = _json.loads(req.data) if req.data else None
+            seen.append((method, url, body))
+            if method == "GET" and url == f"{_API}/v13/deployments/dpl_live1":
+                return _LiveResp({"id": "dpl_live1", "projectId": _PROJECT_ID, "name": "zhc-ghl-page"})
+            if method == "PATCH" and url == f"{_API}/v9/projects/{_PROJECT_ID}":
+                project.update(body)
+                return _LiveResp(project)
+            if method == "GET" and url == f"{_API}/v9/projects/{_PROJECT_ID}":
+                return _LiveResp(project)
+            raise urllib.error.HTTPError(url, 404, "Not Found", {},
+                                         io.BytesIO(b'{"error": {"code": "not_found"}}'))
+
+        monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen)
+        assert gv.make_public("dpl_live1", "fake", requester=None) is True
+        assert ("PATCH", f"{_API}/v9/projects/{_PROJECT_ID}",
+                {"ssoProtection": None, "passwordProtection": None}) in seen
 
 
 if __name__ == "__main__":

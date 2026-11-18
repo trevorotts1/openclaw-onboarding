@@ -51,16 +51,44 @@ import ghl_routing_drift_check as rdc
 
 # ── Fake Vercel transport (mirrors tests/test_ghl_vercel.py's pattern) ────────
 
-def _vercel_requester():
-    def _req(method, url, body, *, token=""):
-        if method == "POST" and url.endswith("/deployments"):
-            return {"id": "dpl_driftcheck123", "url": "drift-check.vercel.app"}
-        if method == "GET" and "/deployments/" in url:
-            return {"readyState": "READY", "url": "drift-check.vercel.app"}
-        if method == "PATCH":
-            return {"ok": True}
-        raise AssertionError(f"unexpected vercel call {method} {url}")
-    return _req
+_API = "https://api.vercel.com"
+_DEP = "dpl_driftcheck123"
+_PRJ = "prj_driftcheck123"
+
+
+class _FakeVercel:
+    """Fake Vercel routed by exact (method, URL); records every call.
+    Unknown routes (e.g. the non-existent PATCH /v13/deployments/<id>)
+    raise VercelEmbedError like _http_request on a real HTTP 404."""
+
+    def __init__(self, delete_fails=False, patch_404=False):
+        self.calls = []
+        self.delete_fails = delete_fails
+        self.patch_404 = patch_404
+        self.project = {"id": _PRJ, "name": "zhc-routing-drift-check",
+                        "ssoProtection": {"deploymentType": "preview"}, "passwordProtection": None}
+
+    def __call__(self, method, url, body, *, token=""):
+        self.calls.append((method, url, body))
+        dep, proj = f"{_API}/v13/deployments/{_DEP}", f"{_API}/v9/projects/{_PRJ}"
+        if (method, url) == ("POST", f"{_API}/v13/deployments"):
+            return {"id": _DEP, "url": "drift-check.vercel.app", "projectId": _PRJ,
+                    "name": "zhc-routing-drift-check"}
+        if (method, url) == ("GET", dep):
+            return {"id": _DEP, "readyState": "READY", "url": "drift-check.vercel.app",
+                    "projectId": _PRJ, "name": "zhc-routing-drift-check"}
+        if (method, url) == ("PATCH", proj) and not self.patch_404:
+            self.project.update(body)
+            return dict(self.project)
+        if (method, url) == ("GET", proj):
+            return dict(self.project)
+        if (method, url) == ("DELETE", dep) and not self.delete_fails:
+            return {"state": "DELETED", "uid": _DEP}
+        raise gv.VercelEmbedError(f"HTTP 404 from {url}: not_found")
+
+
+def _vercel_requester(**kw):
+    return _FakeVercel(**kw)
 
 
 def _embeddable_fetcher(marker: str):
@@ -316,6 +344,59 @@ class TestCli:
         assert rc == 1
         out = capsys.readouterr().out
         assert "FAIL" in out
+
+
+# ── FRF-003: real Vercel shape, cleanup of the throwaway deployment ──────────
+
+
+class TestThrowawayCleanup:
+    def test_success_path_patches_project_and_deletes_after_receipt(self, tmp_path):
+        fake = _FakeVercel()
+        marker = "ZHC-ROUTING-DRIFT-CHECK-CLEAN"
+        receipt = rdc.run_routing_drift_check(
+            str(tmp_path / "evidence"), str(tmp_path / "proj"), marker=marker,
+            env={"VERCEL_TOKEN": "fake"}, requester=fake,
+            fetcher=_embeddable_fetcher(marker))
+        methods = [m for m, _, _ in fake.calls]
+        assert ("PATCH", f"{_API}/v9/projects/{_PRJ}",
+                {"ssoProtection": None, "passwordProtection": None}) in fake.calls
+        assert methods[-1] == "DELETE"
+        assert fake.calls[-1][1] == f"{_API}/v13/deployments/{_DEP}"
+        assert receipt.cleanup == {"deployment_id": _DEP, "deleted": True}
+        data = json.load(open(receipt.receipt_path, encoding="utf-8"))
+        assert data["cleanup"]["deleted"] is True
+
+    def test_non_embeddable_still_deletes_and_records(self, tmp_path):
+        fake = _FakeVercel()
+        with pytest.raises(rdc.RoutingDriftCheckError, match="is NOT embeddable"):
+            rdc.run_routing_drift_check(
+                str(tmp_path / "evidence"), str(tmp_path / "proj"),
+                marker="ZHC-ROUTING-DRIFT-CHECK-BLOCKED2",
+                env={"VERCEL_TOKEN": "fake"}, requester=fake,
+                fetcher=_sso_blocked_fetcher())
+        assert [m for m, _, _ in fake.calls][-1] == "DELETE"
+
+    def test_failed_delete_is_recorded_not_raised(self, tmp_path):
+        fake = _FakeVercel(delete_fails=True)
+        marker = "ZHC-ROUTING-DRIFT-CHECK-DELFAIL"
+        receipt = rdc.run_routing_drift_check(
+            str(tmp_path / "evidence"), str(tmp_path / "proj"), marker=marker,
+            env={"VERCEL_TOKEN": "fake"}, requester=fake,
+            fetcher=_embeddable_fetcher(marker))
+        assert receipt.cleanup["deleted"] is False
+        assert "HTTP 404" in receipt.cleanup["error"]
+
+    def test_make_public_failure_deletes_orphan_and_raises(self, tmp_path):
+        fake = _FakeVercel(patch_404=True)
+        with pytest.raises(rdc.RoutingDriftCheckError, match="Vercel deploy leg failed"):
+            rdc.run_routing_drift_check(
+                str(tmp_path / "evidence"), str(tmp_path / "proj"),
+                marker="ZHC-ROUTING-DRIFT-CHECK-404",
+                env={"VERCEL_TOKEN": "fake"}, requester=fake,
+                fetcher=_embeddable_fetcher("x"))
+        assert [m for m, _, _ in fake.calls][-1] == "DELETE"
+        routing_dir = os.path.join(str(tmp_path / "evidence"), "routing")
+        assert not os.path.isdir(routing_dir) or not os.listdir(routing_dir)
 
 
 if __name__ == "__main__":

@@ -40,6 +40,10 @@ operator-authorized test location, render_check PASS")
      ``"deferred_to_live_run"`` — never fabricated, never silence.
   4. Write a dated receipt to
      ``<evidence_root>/routing/routing-drift-check-<UTC-date>.json``.
+  5. Delete the throwaway deployment (``ghl_vercel.delete_deployment``,
+     ``DELETE /v13/deployments/<id>``) so no public fixture is left behind,
+     then record the outcome in the receipt's ``cleanup`` field. A failed
+     delete is recorded, never raised: the proof already stands.
 
 GLUE BOUNDARY — same posture as ``ghl_method.py``'s ``decide_and_record``:
 this module is PURE ORCHESTRATION over already-real, already-tested
@@ -83,6 +87,15 @@ GOLDEN_ADVANCED_FIXTURE_HTML = (
 )
 
 
+def _cleanup(deployment_id: str, token: str, requester: Callable | None) -> dict:
+    """Delete the throwaway deployment; return a record, never raise."""
+    try:
+        deleted = ghl_vercel.delete_deployment(deployment_id, token, requester=requester)
+    except ghl_vercel.VercelEmbedError as exc:
+        return {"deployment_id": deployment_id, "deleted": False, "error": str(exc)[:300]}
+    return {"deployment_id": deployment_id, "deleted": deleted}
+
+
 class RoutingDriftCheckError(RuntimeError):
     """Raised when the routing-drift check cannot complete, OR the golden
     fixture no longer self-classifies as VERCEL_EMBED (a decision-engine
@@ -106,6 +119,7 @@ class RoutingDriftCheckReceipt:
     embeddable: bool
     ghl_embed_leg: dict
     receipt_path: str
+    cleanup: dict = field(default_factory=dict)
     checked_at: str = field(
         default_factory=lambda: time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
     )
@@ -186,8 +200,14 @@ def run_routing_drift_check(
         deployment = ghl_vercel.deploy(
             project, token, project_name=project_name, requester=requester
         )
-        ghl_vercel.make_public(deployment.deployment_id, token, requester=requester)
     except (ghl_vercel.VercelEmbedError, ghl_vercel.VercelTokenError) as exc:
+        raise RoutingDriftCheckError(f"Vercel deploy leg failed: {exc}") from exc
+    try:
+        ghl_vercel.make_public(deployment.deployment_id, token, requester=requester)
+    except ghl_vercel.VercelEmbedError as exc:
+        # The deployment already exists: remove it so no protected orphan is
+        # left behind, then fail loud.
+        _cleanup(deployment.deployment_id, token, requester)
         raise RoutingDriftCheckError(f"Vercel deploy leg failed: {exc}") from exc
 
     # ── Step 2b: assert_embeddable — the hard gate. Capture a failure into
@@ -234,6 +254,12 @@ def run_routing_drift_check(
     with open(receipt_path, "w", encoding="utf-8") as f:
         json.dump(record, f, indent=2)
 
+    # ── Step 5: delete the throwaway deployment AFTER the receipt exists ─────
+    cleanup = _cleanup(deployment.deployment_id, token, requester)
+    record["cleanup"] = cleanup
+    with open(receipt_path, "w", encoding="utf-8") as f:
+        json.dump(record, f, indent=2)
+
     if not embeddable:
         raise RoutingDriftCheckError(
             f"Vercel deployment {deployment.url} is NOT embeddable: "
@@ -249,6 +275,7 @@ def run_routing_drift_check(
         embeddable=embeddable,
         ghl_embed_leg=ghl_embed_leg,
         receipt_path=receipt_path,
+        cleanup=cleanup,
     )
 
 

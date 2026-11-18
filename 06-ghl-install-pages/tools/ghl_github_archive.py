@@ -50,7 +50,11 @@ owner defaults to whoever the resolved GitHub token authenticates as
 TOKEN SOURCE
 ------------
 ``GH_TOKEN`` -> ``GITHUB_TOKEN`` (same order as ``CREDENTIALS.md``'s "GitHub
-Token" entry, Skill 10's setup output). If neither is set, archival is
+Token" entry, Skill 10's setup output). When the caller passes no ``env``,
+the box's canonical secret stores are read next (``shared-utils/
+secret_helper.py``, every alias of the ``GITHUB_TOKEN`` family, placeholders
+skipped), so the detached archive subprocess and the reconcile cron find the
+token Skill 10 saved to the secrets file. If nothing resolves, archival is
 recorded as a FAILED (not fatal) receipt with ``error`` explaining why — the
 Vercel path is completely unaffected.
 
@@ -131,24 +135,56 @@ class GithubArchiveError(RuntimeError):
 
 
 class GithubTokenError(GithubArchiveError):
-    """No GH_TOKEN/GITHUB_TOKEN resolvable from the environment."""
+    """No GitHub token resolvable from the environment or the secret stores."""
 
 
 # ── Token resolution ──────────────────────────────────────────────────────────
 
-def resolve_github_token(env: dict | None = None) -> str:
-    """Resolve the GitHub token from the environment (GH_TOKEN -> GITHUB_TOKEN).
+def _store_github_token() -> str | None:
+    """The GitHub token from the box's canonical secret stores, or None.
 
-    Raises ``GithubTokenError`` if neither is set. Callers in the non-blocking
-    path MUST catch this and record it as a failed (not raised) receipt.
+    Reads every alias of the ``GITHUB_TOKEN`` family in
+    ``shared-utils/secret_names.json`` across the stores
+    ``shared-utils/secret_helper.py`` knows (Mac ``~/.openclaw``, VPS
+    ``/data/.openclaw``), skipping placeholder values. The helper is loaded by
+    ``ghl_image_stage._load_secret_helper``, this skill's one loader for it.
+    On a client box this is the client's own token. Never raises and never
+    logs a value: an unloadable helper reads as "no token".
     """
-    env = env if env is not None else os.environ
+    try:
+        import ghl_image_stage
+        helper = ghl_image_stage._load_secret_helper()
+        if helper is None:
+            return None
+        value, _source = helper.resolve_real_secret_with_source("GITHUB_TOKEN")
+        return value
+    except Exception:  # noqa: BLE001 (a broken helper must never break archival)
+        return None
+
+
+def resolve_github_token(env: dict | None = None) -> str:
+    """Resolve the GitHub token (GH_TOKEN -> GITHUB_TOKEN).
+
+    With an explicit ``env`` dict only that dict is read (tests stay
+    hermetic). With ``env=None``: the process environment, then the box's
+    canonical secret stores (``_store_github_token``).
+
+    Raises ``GithubTokenError`` if nothing resolves. Callers in the
+    non-blocking path MUST catch this and record it as a failed (not raised)
+    receipt.
+    """
+    explicit = env is not None
+    env = env if explicit else os.environ
     for name in GITHUB_TOKEN_ENV_CANDIDATES:
         val = (env.get(name) or "").strip()
         if val:
             return val
+    if not explicit:
+        val = _store_github_token()
+        if val:
+            return val
     raise GithubTokenError(
-        "No GitHub token found. Set one of: "
+        "No GitHub token found in the environment or the secret stores. Set one of: "
         + ", ".join(GITHUB_TOKEN_ENV_CANDIDATES)
         + " (CREDENTIALS.md 'GitHub Token' — Skill 10's own setup output)."
     )
@@ -454,8 +490,6 @@ def archive_async(project, deployment, marker: str, evidence_root: str, *,
     """
     if not evidence_root:
         return {"status": "skipped", "reason": "no evidence_root supplied"}
-
-    env = env if env is not None else os.environ
 
     # Cheap, synchronous, no-network pre-check: if there is plainly no token,
     # record the honest failure now instead of spawning a subprocess that
