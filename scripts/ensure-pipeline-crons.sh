@@ -936,6 +936,10 @@ MANAGED_RECONCILE_CRONS=(
   # Registered below and audited in main(); listed here so the reconcile pass
   # repairs an existing copy that was born announce+last.
   "memory-guard"
+  # Daily prune of old session windows in every agent database
+  # (scripts/agent-transcript-cleanup.py). Listed here so an existing copy born
+  # announce+last is silenced, in lockstep with the registrar and the audit list.
+  "agent-transcript-cleanup"
 )
 
 # Emit one TSV row per managed cron that currently exists, with the fields the
@@ -1308,6 +1312,15 @@ main() {
   # memory-search option is dead; see scripts/memory-guard.py.
   _ensure_health_cron "memory-guard"             "15 2 * * *" "memory-guard.sh" "America/New_York"        || fails=$((fails + 1))
 
+  # ── AGENT TRANSCRIPT CLEANUP: daily prune of old session windows ────────────
+  # Every cron run on a session key opens a new session_windows row in that agent's
+  # openclaw-agent.sqlite and nothing ever removes the old ones (one box reached 1.8 GB,
+  # 33,881 windows). COMMAND kind (no model, no delivery, never messages anyone). 04:30
+  # America/New_York: after the 03:00 weekly update and 02:15 memory-guard, and the same
+  # zone as the other pinned jobs so the order holds on a box set to another zone. The
+  # job archives rows before deleting, stops after 5 minutes and resumes next day.
+  _ensure_health_cron "agent-transcript-cleanup" "30 4 * * *" "agent-transcript-cleanup.sh" "America/New_York" || fails=$((fails + 1))
+
   # ── GHL TOKEN LIVENESS (Skills 44 + 46) ─────────────────────────────────────
   # Daily at 08:00 UTC: checks if the client's GOHIGHLEVEL_FIREBASE_REFRESH_TOKEN
   # is still exchangeable at securetoken.googleapis.com. On INVALID, the check
@@ -1330,7 +1343,7 @@ main() {
   for _n in "workforce-build-resume" "interview-nudge" "closeout-readiness-watchdog" "closeout-resume" \
             "index-model-drift-check" "orphan-temp-sweep" "disk-usage-alert" "pre-july14-embed-migrate" \
             "toolsearch-drift-guard" "agent-browser-reaper" "ghl-token-liveness" \
-            "bootstrap-validate-daily" "bootstrap-compact-weekly" "memory-guard"; do
+            "bootstrap-validate-daily" "bootstrap-compact-weekly" "memory-guard" "agent-transcript-cleanup"; do
     _cron_present "$_n" && present="${present}${_n} "
   done
   present="${present% }"  # trim trailing space
