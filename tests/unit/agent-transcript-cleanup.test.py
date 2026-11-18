@@ -220,6 +220,46 @@ class Cleanup(Base):
         for sid in KEPT:
             self.assertIn(sid, left)
 
+    def test_default_keep_days_is_three(self):
+        build_db(self.db)
+        c = sqlite3.connect(self.db)
+        t = NOW - 5 * DAY
+        c.execute("INSERT INTO session_windows VALUES ('five_days','A',NULL,'cron',?,?,?)", (t, t, t))
+        c.execute("INSERT INTO session_windows VALUES ('two_days','A',NULL,'cron',?,?,?)", (NOW - 2 * DAY,) * 3)
+        c.commit(); c.close()
+        self.assertEqual(load_module().DEFAULT_KEEP_DAYS, 3)
+        dry = self.agent(self.run_script("--dry-run", "--json"))
+        dry14 = self.agent(self.run_script("--dry-run", "--json", "--keep-days", "14"))
+        self.assertEqual(dry["candidates"], len(OLD) + 1)      # five_days is a candidate by default
+        self.assertEqual(dry14["candidates"], len(OLD))         # and is kept at 14 days
+        self.run_script()
+        left = {r[0] for r in sqlite3.connect(self.db).execute("SELECT session_id FROM session_windows")}
+        self.assertNotIn("five_days", left)
+        self.assertIn("two_days", left)
+
+    def test_quick_check_skipped_on_huge_database_and_without_removals(self):
+        build_db(self.db)
+        mod = load_module()
+        mod.INTEGRITY_MAX_BYTES = 1000                         # the fixture is now "over 1 GB"
+        with contextlib.redirect_stdout(io.StringIO()) as out:
+            rc = mod.main(["--home", self.home, "--json"])
+        a = json.loads(out.getvalue())["agents"][0]
+        self.assertEqual(rc, 0)
+        self.assertEqual(a["windows_removed"], len(OLD))
+        self.assertEqual(a["integrity"], "integrity check skipped (database over 1 GB before vacuum)")
+        self.assertIn("integrity check skipped", Path(self.home, "logs", "agent-transcript-cleanup.log").read_text())
+        r = self.run_script("--json")                           # second run removes nothing: no check at all
+        self.assertEqual(self.agent(r)["integrity"], "not run (nothing removed)")
+
+    def test_quick_check_is_aborted_by_its_time_cap(self):
+        build_db(self.db)
+        mod = load_module()
+        c = sqlite3.connect(self.db)
+        self.assertEqual(mod.integrity(c, 60), "ok")
+        mod._now = lambda: 10 ** 9                              # the cap has already passed
+        self.assertEqual(mod.integrity(c, -1), "integrity check skipped (time cap -1s)")
+        c.close()
+
     def test_unknown_discovered_cascade_child_is_archived_and_removed(self):
         extra = ("CREATE TABLE acp_parent_stream_events (id INTEGER PRIMARY KEY, session_id TEXT NOT NULL, v TEXT, "
                  "FOREIGN KEY (session_id) REFERENCES session_windows(session_id) ON DELETE CASCADE) STRICT;"

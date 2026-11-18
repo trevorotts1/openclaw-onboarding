@@ -16,7 +16,7 @@ WHAT IT DOES, per agent database, while the gateway stays live:
      ON DELETE CASCADE. The descendant list is discovered at run time from
      PRAGMA foreign_key_list, never hardcoded, so a future OpenClaw schema change fails closed.
   2. Builds the KEEP set (never deleted): every session_nodes.current_session_id, every
-     session_conversations.session_id, every window touched in the last --keep-days, every window
+     session_conversations.session_id, every window touched in the last --keep-days (default 3), every window
      of a session key whose session_nodes row is running, windows of unknown age, and the
      previous_session_id of any of those (one hop only; following the whole chain would keep
      everything). Delete candidates are all other windows.
@@ -59,6 +59,9 @@ REQUIRED_COLUMNS = {
     "session_conversations": {"session_id"},
 }
 DAY_MS = 86400 * 1000
+DEFAULT_KEEP_DAYS = 3  # a busy orchestrator opens ~650 windows a day; 14 days kept 9,046 of them
+INTEGRITY_MAX_BYTES = 1 << 30  # skip the post-removal quick_check on a database over 1 GB
+INTEGRITY_MAX_SECONDS = 60     # and never let it run longer than this
 SECONDS_LOOKING_EPOCH_MS = 100_000_000_000  # below this a "ms" timestamp is really seconds: refuse
 VACUUM_STEP_PAGES = 5000
 VACUUM_GRACE_SECONDS = 60
@@ -414,11 +417,20 @@ def file_bytes(path):
     return total
 
 
-def integrity(conn):
+def integrity(conn, max_seconds=None):
+    deadline = None if max_seconds is None else _now() + max_seconds
+    if deadline is not None:
+        # Abort the pragma from inside sqlite when the time cap passes.
+        conn.set_progress_handler(lambda: 1 if _now() >= deadline else 0, 1000)
     try:
         rows = conn.execute("PRAGMA quick_check(1)").fetchall()
-    except sqlite3.Error:
+    except sqlite3.Error as exc:
+        if "interrupt" in str(exc).lower():
+            return "integrity check skipped (time cap %ss)" % max_seconds
         return "integrity check skipped (vec0)"
+    finally:
+        if deadline is not None:
+            conn.set_progress_handler(None, 0)
     return "ok" if rows and rows[0][0] == "ok" else "FAILED: %s" % (rows[0][0] if rows else "no result")
 
 
@@ -523,12 +535,18 @@ def process_db(agent, dbpath, home, opts):
             cand, kept = _recount(conn, cutoff)
         res["candidates_remaining"] = cand
         # Vacuum: give the freed pages back, in steps, with a small grace beyond the delete budget.
+        pre_vacuum_bytes = file_bytes(dbpath)
         res["pages_vacuumed"] = vacuum(conn, opts.vacuum_pages, deadline + VACUUM_GRACE_SECONDS)
         try:
             conn.execute("PRAGMA wal_checkpoint(PASSIVE)").fetchall()
         except sqlite3.Error:
             pass
-        res["integrity"] = integrity(conn) if removed_total else "not run (nothing removed)"
+        if not removed_total:
+            res["integrity"] = "not run (nothing removed)"
+        elif pre_vacuum_bytes > INTEGRITY_MAX_BYTES:
+            res["integrity"] = "integrity check skipped (database over 1 GB before vacuum)"
+        else:
+            res["integrity"] = integrity(conn, INTEGRITY_MAX_SECONDS)
         if res["integrity"].startswith("FAILED"):
             res["status"] = "error"
             res["detail"] = res["integrity"]
@@ -569,7 +587,7 @@ def main(argv=None):
     ap = argparse.ArgumentParser(description="Prune old session windows from every agent database.")
     ap.add_argument("--home", help="OpenClaw home (default: OPENCLAW_HOME, OC_ROOT, /data/.openclaw, ~/.openclaw)")
     ap.add_argument("--agent", help="only this agent id")
-    ap.add_argument("--keep-days", type=float, default=14)
+    ap.add_argument("--keep-days", type=float, default=DEFAULT_KEEP_DAYS)
     ap.add_argument("--batch", type=int, default=200, help="windows deleted per transaction")
     ap.add_argument("--max-seconds", type=float, default=300)
     ap.add_argument("--vacuum-pages", type=int, default=50000)
