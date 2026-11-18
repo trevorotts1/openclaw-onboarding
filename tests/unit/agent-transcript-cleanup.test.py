@@ -6,7 +6,7 @@ tables, foreign keys with ON DELETE CASCADE, an fts5 table with a rows table tha
 a delete trigger, auto_vacuum=INCREMENTAL). Everything runs in a private temp directory; no real
 OpenClaw home is ever read or written.
 """
-import contextlib, hashlib, importlib.util, io, json, os, sqlite3, subprocess, sys, tempfile, time, unittest
+import contextlib, datetime, hashlib, importlib.util, io, json, os, sqlite3, subprocess, sys, tempfile, time, types, unittest
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[2]
@@ -69,24 +69,28 @@ def add_window(c, sid, key, age_days, prev=None, rows=3, blob=0):
     c.execute("INSERT INTO session_transcript_cold_archives (session_id, blob) VALUES (?,?)", (sid, b"x" * blob))
 
 
-def build_db(path, blob=0, wal=False, extra_schema=""):
+def build_db(path, blob=0, wal=False, extra_schema="", fts_cascade=False, rows=3):
     os.makedirs(os.path.dirname(path), exist_ok=True)
     c = sqlite3.connect(path, isolation_level=None)
     c.execute("PRAGMA auto_vacuum=2")
     if wal:
         c.execute("PRAGMA journal_mode=WAL")
-    c.executescript(SCHEMA + extra_schema)
+    schema = SCHEMA
+    if fts_cascade:
+        schema = schema.replace("message_id TEXT) STRICT;", "message_id TEXT, FOREIGN KEY (session_id) "
+                                "REFERENCES session_windows(session_id) ON DELETE CASCADE) STRICT;")
+    c.executescript(schema + extra_schema)
     c.execute("BEGIN")
     prev = None
     for i, sid in enumerate(OLD):                      # key A: old windows chained, newest old first
-        add_window(c, sid, "A", 40 + i, prev=None, blob=blob)
-    add_window(c, "cur", "A", 30, blob=blob)           # current window of key A, old by age
-    add_window(c, "prev_of_recent", "B", 50, blob=blob)
-    add_window(c, "recent", "B", 2, prev="prev_of_recent", blob=blob)
-    add_window(c, "running", "R", 60, blob=blob)       # old, but its key is running
-    add_window(c, "running_current", "R", 1, blob=blob)
-    add_window(c, "conv", "C", 70, blob=blob)          # old, not current: kept only by its conversation row
-    add_window(c, "conv_cur", "C", 1, blob=blob)
+        add_window(c, sid, "A", 40 + i, prev=None, blob=blob, rows=rows)
+    add_window(c, "cur", "A", 30, blob=blob, rows=rows)           # current window of key A, old by age
+    add_window(c, "prev_of_recent", "B", 50, blob=blob, rows=rows)
+    add_window(c, "recent", "B", 2, prev="prev_of_recent", blob=blob, rows=rows)
+    add_window(c, "running", "R", 60, blob=blob, rows=rows)       # old, but its key is running
+    add_window(c, "running_current", "R", 1, blob=blob, rows=rows)
+    add_window(c, "conv", "C", 70, blob=blob, rows=rows)          # old, not current: kept only by its conversation row
+    add_window(c, "conv_cur", "C", 1, blob=blob, rows=rows)
     c.execute("INSERT INTO session_nodes VALUES ('A','cur','done'),('B','recent','done'),('R','running_current','running'),"
               "('C','conv_cur','done')")
     c.execute("INSERT INTO session_transcript_archives (session_key, blob) VALUES ('A', x'00')")
@@ -446,6 +450,263 @@ class Shrink(Base):
         c = sqlite3.connect(self.db)
         self.assertLess(c.execute("PRAGMA page_count").fetchone()[0], pages0)
 
+
+
+class Safety(Base):
+    """Disk space, archive retention and archive size."""
+
+    def run_inproc(self, *args, **patches):
+        mod = load_module()
+        for k, v in patches.items():
+            setattr(mod, k, v)
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf), contextlib.redirect_stderr(io.StringIO()):
+            rc = mod.main(["--home", self.home, "--json", *args])
+        return rc, json.loads(buf.getvalue()), mod
+
+    def test_low_disk_skips_with_zero_writes_and_exit_zero(self):
+        build_db(self.db)
+        d0 = digest(self.db)
+        rc, out, mod = self.run_inproc(_free_bytes=lambda p: 1)
+        self.assertEqual(rc, 0)
+        self.assertEqual(out["agents"][0]["status"], "skipped")
+        self.assertIn("skipped: low disk", out["agents"][0]["detail"])
+        self.assertEqual(digest(self.db), d0)
+        self.assertFalse(Path(self.home, "archives").exists())
+        self.assertIn("skipped: low disk", Path(self.home, "logs", "agent-transcript-cleanup.log").read_text())
+
+    def test_required_free_space_is_max_of_floor_and_twice_the_archive(self):
+        build_db(self.db, blob=300_000)
+        mod = load_module()
+        self.assertEqual(mod.MIN_FREE_BYTES, 2 << 30)
+        rc, out, _ = self.run_inproc("--dry-run")
+        a = out["agents"][0]
+        self.assertEqual(a["required_free_bytes"], max(2 << 30, 2 * a["estimated_archive_bytes"]))
+        rc, out, _ = self.run_inproc("--dry-run", MIN_FREE_BYTES=1)
+        a = out["agents"][0]
+        self.assertGreater(a["estimated_archive_bytes"], 1000)
+        self.assertEqual(a["required_free_bytes"], 2 * a["estimated_archive_bytes"])
+        need = a["required_free_bytes"]
+        rc, out, _ = self.run_inproc(MIN_FREE_BYTES=1, _free_bytes=lambda p: need - 1)
+        self.assertEqual(out["agents"][0]["status"], "skipped")
+        rc, out, _ = self.run_inproc(MIN_FREE_BYTES=1, _free_bytes=lambda p: need)
+        self.assertEqual(out["agents"][0]["status"], "ok")
+        self.assertEqual(out["agents"][0]["windows_removed"], len(OLD))
+
+    def archive_dir(self):
+        d = Path(self.home, "archives", "agent-transcripts", "main")
+        d.mkdir(parents=True, exist_ok=True)
+        return d
+
+    def test_retention_keeps_current_and_previous_month_only(self):
+        build_db(self.db)
+        d = self.archive_dir()
+        now = datetime.datetime.now()
+        cur = now.strftime("%Y-%m")
+        prev = (now.replace(day=1) - datetime.timedelta(days=1)).strftime("%Y-%m")
+        for name in ("2020-01.sqlite", "2020-01.sqlite-journal", "2026-01.sqlite", prev + ".sqlite", cur + ".sqlite", "notes.txt"):
+            (d / name).write_bytes(b"x")
+        old = sorted({"2020-01.sqlite", "2020-01.sqlite-journal"} | ({"2026-01.sqlite"} if "2026-01" < prev else set()))
+        r = self.run_script("--dry-run", "--json")                # dry run reports but deletes nothing
+        self.assertEqual(sorted(os.path.basename(x) for x in self.agent(r)["archive_retention_would_remove"]), old)
+        self.assertTrue((d / "2020-01.sqlite").exists())
+        r = self.run_script("--json")
+        self.assertEqual(r.returncode, 0, r.stderr + r.stdout)
+        left = sorted(x.name for x in d.iterdir())
+        self.assertEqual(left, sorted({prev + ".sqlite", cur + ".sqlite", "notes.txt"}))
+        log = Path(self.home, "logs", "agent-transcript-cleanup.log").read_text()
+        for name in old:
+            self.assertIn("archive retention removed", log)
+            self.assertIn(name, log)
+
+    def test_archive_is_no_bigger_than_the_bytes_it_frees_and_carries_no_extra_index(self):
+        build_db(self.db, blob=20000, rows=250)
+        r = self.run_script("--json")
+        self.assertEqual(r.returncode, 0, r.stderr + r.stdout)
+        a = self.agent(r)
+        freed = a["before_bytes"] - a["after_bytes"]
+        arch = os.path.getsize(self.archive_files()[0])
+        self.assertGreater(freed, 0)
+        self.assertLessEqual(arch, freed, "archive %d bytes vs %d freed" % (arch, freed))
+        ac = sqlite3.connect(str(self.archive_files()[0]))
+        self.assertEqual(ac.execute("SELECT count(*) FROM sqlite_master WHERE type='index'").fetchone()[0], 0)
+        for (t,) in ac.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall():
+            cols = [c[1] for c in ac.execute('PRAGMA table_info("%s")' % t)]
+            self.assertNotIn("_arch_batch", cols)
+        self.assertGreater(ac.execute("SELECT count(*) FROM _archive_log").fetchone()[0], 0)
+
+    def test_fts_rows_as_a_cascade_table_is_archived_once(self):
+        build_db(self.db, fts_cascade=True)
+        before = counts(self.db)
+        r = self.run_script("--json")
+        self.assertEqual(r.returncode, 0, r.stderr + r.stdout)
+        self.assertEqual(self.agent(r)["windows_removed"], len(OLD))
+        ac = sqlite3.connect(str(self.archive_files()[0]))
+        self.assertEqual(ac.execute("SELECT count(*) FROM session_transcript_fts_rows").fetchone()[0],
+                         sum(before["session_transcript_fts_rows"].get(s, 0) for s in OLD))
+        self.assertEqual(counts(self.db)["session_transcript_fts_rows"].get("old1"), None)
+
+
+class Race(Base):
+    """A second connection changes a candidate AFTER the archive step: the in-transaction keep re-check
+    must save it. With that re-check disabled these tests fail."""
+
+    def run_injected(self, inject):
+        build_db(self.db)
+        mod = load_module()
+        real = mod.archive_batch
+        seen = {}
+
+        def patched(conn, plan, batch_id, now_ms):
+            counts_ = real(conn, plan, batch_id, now_ms)
+            if not seen:
+                seen["batch"] = [x[0] for x in conn.execute("SELECT session_id FROM temp.oc_batch")]
+                w = sqlite3.connect(self.db, timeout=30, isolation_level=None)
+                w.execute("PRAGMA foreign_keys=ON")
+                inject(w)
+                w.close()
+            return counts_
+
+        mod.archive_batch = patched
+        opts = types.SimpleNamespace(keep_days=3, batch=len(OLD), max_seconds=300, vacuum_pages=50000, dry_run=False)
+        res = mod.process_db("main", self.db, self.home, opts)
+        left = {r[0] for r in sqlite3.connect(self.db).execute("SELECT session_id FROM session_windows")}
+        self.assertEqual(sorted(seen["batch"]), sorted(OLD), "the injection must happen inside the full batch")
+        self.assertEqual(res["status"], "ok", res)
+        return left
+
+    def test_touched_window_survives(self):
+        def inject(w):
+            w.execute("UPDATE session_windows SET updated_at=? WHERE session_id='old1'", (int(time.time() * 1000),))
+        left = self.run_injected(inject)
+        self.assertIn("old1", left)
+        self.assertNotIn("old3", left)
+
+    def test_window_made_current_survives(self):
+        def inject(w):
+            w.execute("UPDATE session_nodes SET current_session_id='old2' WHERE session_key='A'")
+        left = self.run_injected(inject)
+        self.assertIn("old2", left)
+        self.assertNotIn("old3", left)
+
+    def test_window_of_a_key_that_became_running_survives(self):
+        def inject(w):
+            w.execute("UPDATE session_nodes SET status='running' WHERE session_key='A'")
+        left = self.run_injected(inject)
+        self.assertTrue(set(OLD) <= left)
+
+    def test_previous_of_a_new_kept_window_survives(self):
+        def inject(w):
+            t = int(time.time() * 1000)
+            w.execute("INSERT INTO session_windows VALUES ('fresh','A','old4','cron',?,?,?)", (t, t, t))
+        left = self.run_injected(inject)
+        self.assertIn("old4", left)
+        self.assertIn("fresh", left)
+        self.assertNotIn("old3", left)
+
+    def test_window_that_gained_a_conversation_survives(self):
+        def inject(w):
+            w.execute("INSERT INTO session_conversations VALUES ('old5','late')")
+        left = self.run_injected(inject)
+        self.assertIn("old5", left)
+        self.assertNotIn("old3", left)
+
+    def test_late_event_in_a_batch_window_aborts_with_nothing_deleted(self):
+        build_db(self.db)
+        mod = load_module()
+        real = mod.archive_batch
+        done = []
+
+        def patched(conn, plan, batch_id, now_ms):
+            c_ = real(conn, plan, batch_id, now_ms)
+            if not done:
+                done.append(1)
+                w = sqlite3.connect(self.db, timeout=30, isolation_level=None)
+                w.execute("INSERT INTO transcript_events VALUES ('old3', 99, 'late')")
+                w.close()
+            return c_
+
+        mod.archive_batch = patched
+        opts = types.SimpleNamespace(keep_days=3, batch=len(OLD), max_seconds=300, vacuum_pages=50000, dry_run=False)
+        with self.assertRaises(mod.Abort):
+            mod.process_db("main", self.db, self.home, opts)
+        left = {r[0] for r in sqlite3.connect(self.db).execute("SELECT session_id FROM session_windows")}
+        self.assertTrue(set(OLD) <= left)
+
+
+class LockAndLocations(Base):
+    def run_env(self, env, *args):
+        e = {k: v for k, v in os.environ.items()
+             if k not in ("OPENCLAW_HOME", "OC_ROOT", "OPENCLAW_STATE_DIR", "OPENCLAW_MAINTENANCE", "OPENCLAW_MAINTENANCE_SILENT")}
+        e["HOME"] = os.path.join(self._td.name, "emptyhome")
+        os.makedirs(e["HOME"], exist_ok=True)
+        e.update(env)
+        return subprocess.run([sys.executable, "-I", str(SCRIPT), *args], capture_output=True, text=True, env=e)
+
+    @unittest.skipIf(hasattr(os, "geteuid") and os.geteuid() == 0, "root ignores file modes")
+    def test_unopenable_lock_is_an_error_not_a_silent_locked(self):
+        build_db(self.db)
+        logs = Path(self.home, "logs"); logs.mkdir()
+        lock = logs / "agent-transcript-cleanup.lock"
+        lock.write_text(""); lock.chmod(0o444)
+        d0 = digest(self.db)
+        r = self.run_script("--json")
+        self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
+        self.assertIn("cannot open or lock", r.stderr)
+        self.assertNotIn("locked", r.stdout)
+        self.assertEqual(digest(self.db), d0)
+
+    def test_a_really_held_lock_still_reports_locked(self):
+        import fcntl
+        build_db(self.db)
+        logs = Path(self.home, "logs"); logs.mkdir()
+        fh = open(logs / "agent-transcript-cleanup.lock", "a+")
+        fcntl.flock(fh.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        r = self.run_script("--json")
+        fh.close()
+        self.assertEqual(r.returncode, 0)
+        self.assertEqual(json.loads(r.stdout)["status"], "locked")
+
+    def test_lock_and_log_follow_the_database_owner(self):
+        build_db(self.db)
+        self.assertEqual(self.run_script().returncode, 0)
+        st = os.stat(self.db)
+        for name in ("agent-transcript-cleanup.lock", "agent-transcript-cleanup.log"):
+            s2 = os.stat(os.path.join(self.home, "logs", name))
+            self.assertEqual((s2.st_uid, s2.st_gid), (st.st_uid, st.st_gid))
+
+    def test_openclaw_home_may_be_the_dot_openclaw_directory(self):
+        build_db(self.db)                                  # <tmp>/home/agents/main/...
+        r = self.run_env({"OPENCLAW_HOME": self.home}, "--json")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual(json.loads(r.stdout)["agents"][0]["windows_removed"], len(OLD))
+
+    def test_openclaw_home_may_be_the_parent_of_dot_openclaw(self):
+        parent = os.path.join(self._td.name, "parent")
+        db = os.path.join(parent, ".openclaw", "agents", "main", "agent", "openclaw-agent.sqlite")
+        build_db(db)
+        r = self.run_env({"OPENCLAW_HOME": parent}, "--json")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        out = json.loads(r.stdout)
+        self.assertEqual(out["agents"][0]["windows_removed"], len(OLD))
+        self.assertEqual(out["home"], os.path.join(parent, ".openclaw"))
+        self.assertTrue(Path(parent, ".openclaw", "archives", "agent-transcripts", "main").is_dir())
+
+    def test_state_dir_wins_over_openclaw_home(self):
+        build_db(self.db)
+        other = os.path.join(self._td.name, "otherparent")
+        os.makedirs(os.path.join(other, "agents"))
+        r = self.run_env({"OPENCLAW_STATE_DIR": self.home, "OPENCLAW_HOME": other}, "--json")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual(json.loads(r.stdout)["agents"][0]["windows_removed"], len(OLD))
+
+    @unittest.skipIf(os.path.isdir("/data/.openclaw"), "this machine has /data/.openclaw")
+    def test_no_databases_found_is_said_even_in_quiet_mode(self):
+        nowhere = os.path.join(self._td.name, "nowhere")
+        r = self.run_env({"OPENCLAW_HOME": nowhere, "OPENCLAW_MAINTENANCE": "1"})
+        self.assertEqual(r.returncode, 0)
+        self.assertIn("no agent databases found at", r.stdout)
+        self.assertIn(os.path.join(nowhere, ".openclaw", "agents"), r.stdout)
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

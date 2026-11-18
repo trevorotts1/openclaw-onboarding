@@ -28,6 +28,12 @@ WHAT IT DOES, per agent database, while the gateway stays live:
   4. Stops after --max-seconds (resumes the next day), then runs incremental_vacuum in steps
      and a PASSIVE WAL checkpoint so the file actually shrinks.
 
+Disk safety: before writing anything it needs free space on the archive filesystem of at least
+max(2 GB, 2 x the bytes it expects to archive); otherwise it logs "skipped: low disk" and exits 0 with
+zero writes. At the start of each run it deletes that agent's archive files older than the previous
+month (logging each one). The archive mirrors the source columns with no per-row bookkeeping and no
+extra indexes, so it costs no more than the bytes it frees.
+
 It never sends a chat message, never touches session_nodes, session_transcript_archives or any
 memory table, and skips virtual tables it cannot introspect (the sqlite-vec vec0 table cannot be
 loaded by plain python).
@@ -42,7 +48,6 @@ import os
 import sqlite3
 import sys
 import time
-import uuid
 
 ALLOWED_USER_VERSIONS = {27}
 DB_RELPATH = os.path.join("agent", "openclaw-agent.sqlite")
@@ -59,6 +64,9 @@ REQUIRED_COLUMNS = {
     "session_conversations": {"session_id"},
 }
 DAY_MS = 86400 * 1000
+MIN_FREE_BYTES = 2 << 30       # archive filesystem must have at least this much free ...
+FREE_MULTIPLE = 2              # ... and at least this many times the bytes about to be archived
+ARCHIVE_KEEP_MONTHS = 2        # current and previous month's archive file are kept; older ones are deleted
 DEFAULT_KEEP_DAYS = 3  # a busy orchestrator opens ~650 windows a day; 14 days kept 9,046 of them
 INTEGRITY_MAX_BYTES = 1 << 30  # skip the post-removal quick_check on a database over 1 GB
 INTEGRITY_MAX_SECONDS = 60     # and never let it run longer than this
@@ -83,20 +91,39 @@ def q(name):
 
 # ---------------------------------------------------------------------------- locations
 
-def resolve_home(cli_home):
+def candidate_agent_dirs(cli_home):
+    """Where the agents directory may be, in order. OPENCLAW_HOME is the .openclaw directory on some
+    boxes and its PARENT on others (lib-shared.sh exports the parent), so both shapes are tried."""
     if cli_home:
-        return cli_home
-    for var in ("OPENCLAW_HOME", "OC_ROOT", "OPENCLAW_STATE_DIR"):
+        return [os.path.join(cli_home, "agents"), os.path.join(cli_home, ".openclaw", "agents")]
+    out = []
+    state = os.environ.get("OPENCLAW_STATE_DIR")
+    if state:
+        out.append(os.path.join(state, "agents"))
+    for var in ("OPENCLAW_HOME", "OC_ROOT"):
         v = os.environ.get(var)
         if v:
-            return v
-    if os.path.isdir("/data/.openclaw"):
-        return "/data/.openclaw"
-    return os.path.join(os.path.expanduser("~"), ".openclaw")
+            out += [os.path.join(v, "agents"), os.path.join(v, ".openclaw", "agents")]
+    out += [os.path.join(os.path.expanduser("~"), ".openclaw", "agents"), "/data/.openclaw/agents"]
+    seen, uniq = set(), []
+    for d in out:
+        if d not in seen:
+            seen.add(d)
+            uniq.append(d)
+    return uniq
 
 
-def find_agent_dbs(home, only_agent=None):
-    base = os.path.join(home, "agents")
+def resolve_roots(cli_home):
+    """Returns (home, agents_dir, tried). home is the directory that holds agents/, archives/ and logs/."""
+    tried = candidate_agent_dirs(cli_home)
+    for d in tried:
+        if os.path.isdir(d):
+            return os.path.dirname(d), d, tried
+    return None, None, tried
+
+
+def find_agent_dbs(agents_dir, only_agent=None):
+    base = agents_dir
     out = []
     try:
         names = sorted(os.listdir(base))
@@ -298,81 +325,130 @@ def check_timestamp_units(conn):
 
 # ---------------------------------------------------------------------------- archive
 
+def _free_bytes(path):
+    """Free bytes on the filesystem that holds `path` (nearest existing ancestor)."""
+    p = os.path.abspath(path)
+    while not os.path.exists(p) and os.path.dirname(p) != p:
+        p = os.path.dirname(p)
+    import shutil
+    return shutil.disk_usage(p).free
+
+
+def _month_stems(now=None):
+    now = now or datetime.datetime.now()
+    prev = (now.replace(day=1) - datetime.timedelta(days=1))
+    return now.strftime("%Y-%m"), prev.strftime("%Y-%m")
+
+
+def prune_archives(home, agent, dry=False):
+    """Delete this agent's archive files older than the previous month. Returns the paths (to be) removed."""
+    import re
+    d = os.path.join(home, "archives", "agent-transcripts", agent)
+    cur, prev = _month_stems()
+    removed = []
+    try:
+        names = sorted(os.listdir(d))
+    except OSError:
+        return removed
+    for name in names:
+        m = re.match(r"^(\d{4}-\d{2})\.sqlite(-journal|-wal|-shm)?$", name)
+        if not m or m.group(1) >= prev:
+            continue
+        path = os.path.join(d, name)
+        if not dry:
+            try:
+                os.remove(path)
+            except OSError as exc:
+                write_log(home, "%s agent=%s archive retention could not remove %s: %s"
+                          % (_stamp_now(), agent, path, exc))
+                continue
+        removed.append(path)
+    return removed
+
+
+def _stamp_now():
+    return datetime.datetime.now().astimezone().isoformat(timespec="seconds")
+
+
 def archive_path(home, agent, ref_stat, stamp):
     d = os.path.join(home, "archives", "agent-transcripts", agent)
     makedirs_like(d, ref_stat)
     return os.path.join(d, stamp + ".sqlite")
 
 
-def ensure_archive_tables(conn, plan):
-    """Create (or extend) the archive tables. Columns mirror the source; two bookkeeping columns lead."""
-    tables = plan["tables"]
+def archive_tables(plan):
+    """Every table the archive holds, each exactly once (fts_rows may or may not be a cascade table)."""
     names = list(plan["desc"])
-    for n in names:
+    if plan["fts_rows"] and FTS_ROWS_TABLE not in names:
+        names.append(FTS_ROWS_TABLE)
+    return names
+
+
+def ensure_archive_tables(conn, plan, page_size=None):
+    """Create (or extend) the archive tables. Columns mirror the source exactly, with no extra per-row
+    columns and no extra indexes, so the archive costs about what the rows cost in the source. Batch
+    lineage lives in one small table (_archive_log) instead of two columns and an index on every table."""
+    if page_size:
+        try:
+            conn.execute("PRAGMA arch.page_size=%d" % int(page_size))  # only takes effect on a new file
+        except sqlite3.Error:
+            pass
+    tables = plan["tables"]
+    for n in archive_tables(plan):
         _ensure_one(conn, n, tables[n]["cols"], tables[n]["types"])
-    if plan["fts_rows"]:
-        _ensure_one(conn, FTS_ROWS_TABLE, tables[FTS_ROWS_TABLE]["cols"], tables[FTS_ROWS_TABLE]["types"])
     if plan["fts_rows"] and plan["fts_cols"] is not None:
-        cols = ["rowid_src"] + plan["fts_cols"]
-        _ensure_one(conn, FTS_TABLE + "_text", cols, {})
+        _ensure_one(conn, FTS_TABLE + "_text", ["rowid_src"] + plan["fts_cols"], {})
+    conn.execute("CREATE TABLE IF NOT EXISTS arch._archive_log "
+                 "(batch INTEGER, at INTEGER, tbl TEXT, first_rowid INTEGER, nrows INTEGER)")
 
 
 def _ensure_one(conn, name, cols, types):
-    conn.execute("CREATE TABLE IF NOT EXISTS arch.%s (_arch_batch TEXT, _arch_at INTEGER)" % q(name))
     have = {r[1] for r in conn.execute("PRAGMA arch.table_info(%s)" % q(name))}
+    if not have:
+        conn.execute("CREATE TABLE arch.%s (%s)" % (q(name), ", ".join(
+            "%s %s" % (q(c), types.get(c, "") or "") for c in cols)))
+        return
     for c in cols:
         if c not in have:
             conn.execute("ALTER TABLE arch.%s ADD COLUMN %s %s" % (q(name), q(c), types.get(c, "") or ""))
-    conn.execute("CREATE INDEX IF NOT EXISTS arch.%s ON %s (_arch_batch)"
-                 % (q("idx_batch_" + name), q(name)))
+
+
+def _copy(conn, batch_id, now_ms, dest, dest_cols, select_exprs, src_table, where, label):
+    """INSERT..SELECT one table's rows and prove selected == inserted == newly present (by rowid range)."""
+    want = conn.execute("SELECT count(*) FROM main.%s WHERE %s" % (q(src_table), where)).fetchone()[0]
+    base = conn.execute("SELECT coalesce(max(rowid), 0) FROM arch.%s" % q(dest)).fetchone()[0]
+    cur = conn.execute("INSERT INTO arch.%s (%s) SELECT %s FROM main.%s WHERE %s"
+                       % (q(dest), ", ".join(q(c) for c in dest_cols), select_exprs, q(src_table), where))
+    got = conn.execute("SELECT count(*) FROM arch.%s WHERE rowid > ?" % q(dest), (base,)).fetchone()[0]
+    if not (want == cur.rowcount == got):
+        raise Abort("archive count mismatch on %s: selected %d, inserted %d, present %d"
+                    % (label, want, cur.rowcount, got))
+    conn.execute("INSERT INTO arch._archive_log VALUES (?,?,?,?,?)", (batch_id, now_ms, dest, base + 1, want))
+    return want
 
 
 def archive_batch(conn, plan, batch_id, now_ms):
     """Copy every row the cascade will delete. Returns {table: count}. Raises Abort on a mismatch."""
     tables, counts = plan["tables"], {}
+    sel = "session_id IN (SELECT session_id FROM temp.oc_batch)"
     # Deferred BEGIN: this transaction only writes the archive file, so the live database is
     # read (snapshot) but never write-locked while rows are copied.
     conn.execute("BEGIN")
     try:
         for n in plan["desc"]:
-            cols = tables[n]["cols"]
-            clist = ", ".join(q(c) for c in cols)
-            where = plan["wheres"][n]
-            want = conn.execute("SELECT count(*) FROM main.%s WHERE %s" % (q(n), where)).fetchone()[0]
-            cur = conn.execute("INSERT INTO arch.%s (_arch_batch, _arch_at, %s) SELECT ?, ?, %s FROM main.%s WHERE %s"
-                               % (q(n), clist, clist, q(n), where), (batch_id, now_ms))
-            got = conn.execute("SELECT count(*) FROM arch.%s WHERE _arch_batch=?" % q(n), (batch_id,)).fetchone()[0]
-            if not (want == cur.rowcount == got):
-                raise Abort("archive count mismatch on %s: selected %d, inserted %d, present %d"
-                            % (n, want, cur.rowcount, got))
-            counts[n] = want
+            clist = ", ".join(q(c) for c in tables[n]["cols"])
+            counts[n] = _copy(conn, batch_id, now_ms, n, tables[n]["cols"], clist, n, plan["wheres"][n], n)
         if plan["fts_rows"]:
-            cols = tables[FTS_ROWS_TABLE]["cols"]
-            clist = ", ".join(q(c) for c in cols)
-            sel = "session_id IN (SELECT session_id FROM temp.oc_batch)"
-            want = conn.execute("SELECT count(*) FROM main.%s WHERE %s" % (q(FTS_ROWS_TABLE), sel)).fetchone()[0]
-            cur = conn.execute("INSERT INTO arch.%s (_arch_batch, _arch_at, %s) SELECT ?, ?, %s FROM main.%s WHERE %s"
-                               % (q(FTS_ROWS_TABLE), clist, clist, q(FTS_ROWS_TABLE), sel), (batch_id, now_ms))
-            got = conn.execute("SELECT count(*) FROM arch.%s WHERE _arch_batch=?" % q(FTS_ROWS_TABLE),
-                               (batch_id,)).fetchone()[0]
-            if not (want == cur.rowcount == got):
-                raise Abort("archive count mismatch on %s: selected %d, inserted %d, present %d"
-                            % (FTS_ROWS_TABLE, want, cur.rowcount, got))
-            counts[FTS_ROWS_TABLE] = want
+            if FTS_ROWS_TABLE not in plan["desc"]:   # already copied above when it is a cascade table
+                cols = tables[FTS_ROWS_TABLE]["cols"]
+                counts[FTS_ROWS_TABLE] = _copy(conn, batch_id, now_ms, FTS_ROWS_TABLE, cols,
+                                               ", ".join(q(c) for c in cols), FTS_ROWS_TABLE, sel, FTS_ROWS_TABLE)
             if plan["fts_cols"] is not None:
                 fcols = plan["fts_cols"]
-                flist = ", ".join(q(c) for c in fcols)
                 src = "rowid IN (SELECT id FROM main.%s WHERE %s)" % (q(FTS_ROWS_TABLE), sel)
-                want = conn.execute("SELECT count(*) FROM main.%s WHERE %s" % (q(FTS_TABLE), src)).fetchone()[0]
-                cur = conn.execute("INSERT INTO arch.%s (_arch_batch, _arch_at, rowid_src, %s) "
-                                   "SELECT ?, ?, rowid, %s FROM main.%s WHERE %s"
-                                   % (q(FTS_TABLE + "_text"), flist, flist, q(FTS_TABLE), src), (batch_id, now_ms))
-                got = conn.execute("SELECT count(*) FROM arch.%s WHERE _arch_batch=?" % q(FTS_TABLE + "_text"),
-                                   (batch_id,)).fetchone()[0]
-                if not (want == cur.rowcount == got):
-                    raise Abort("archive count mismatch on fts text: selected %d, inserted %d, present %d"
-                                % (want, cur.rowcount, got))
-                counts[FTS_TABLE + "_text"] = want
+                counts[FTS_TABLE + "_text"] = _copy(
+                    conn, batch_id, now_ms, FTS_TABLE + "_text", ["rowid_src"] + fcols,
+                    "rowid, " + ", ".join(q(c) for c in fcols), FTS_TABLE, src, "fts text")
         conn.execute("COMMIT")
     except BaseException:
         try:
@@ -388,9 +464,10 @@ def source_counts(conn, plan):
     for n in plan["desc"]:
         out[n] = conn.execute("SELECT count(*) FROM main.%s WHERE %s" % (q(n), plan["wheres"][n])).fetchone()[0]
     if plan["fts_rows"]:
-        out[FTS_ROWS_TABLE] = conn.execute(
-            "SELECT count(*) FROM main.%s WHERE session_id IN (SELECT session_id FROM temp.oc_batch)"
-            % q(FTS_ROWS_TABLE)).fetchone()[0]
+        if FTS_ROWS_TABLE not in plan["desc"]:
+            out[FTS_ROWS_TABLE] = conn.execute(
+                "SELECT count(*) FROM main.%s WHERE session_id IN (SELECT session_id FROM temp.oc_batch)"
+                % q(FTS_ROWS_TABLE)).fetchone()[0]
         if plan["fts_cols"] is not None:
             out[FTS_TABLE + "_text"] = conn.execute(
                 "SELECT count(*) FROM main.%s WHERE rowid IN (SELECT id FROM main.%s WHERE "
@@ -458,9 +535,25 @@ def process_db(agent, dbpath, home, opts):
         cand, kept = compute_candidates(conn, cutoff)
         res["candidates"], res["kept"] = cand, kept
         if dry:
+            total_windows = cand + kept
+            est = int(res["before_bytes"] * (cand / total_windows)) if total_windows else 0
+            res["estimated_archive_bytes"] = est
+            res["required_free_bytes"] = max(MIN_FREE_BYTES, FREE_MULTIPLE * est)
+            res["free_bytes"] = _free_bytes(os.path.join(home, "archives"))
+            res["would_skip_low_disk"] = cand > 0 and res["free_bytes"] < res["required_free_bytes"]
             conn.execute("CREATE TEMP TABLE oc_batch AS SELECT session_id FROM temp.oc_cand")
             res["would_remove_rows"] = source_counts(conn, plan)
             res["integrity"] = "not run (dry run)"
+            res["after_bytes"] = res["before_bytes"]
+            return res
+        total_windows = cand + kept
+        est = int(res["before_bytes"] * (cand / total_windows)) if total_windows else 0
+        need = max(MIN_FREE_BYTES, FREE_MULTIPLE * est)
+        free = _free_bytes(os.path.join(home, "archives"))
+        res["estimated_archive_bytes"], res["required_free_bytes"], res["free_bytes"] = est, need, free
+        if cand > 0 and free < need:
+            res["status"] = "skipped"
+            res["detail"] = "skipped: low disk (free %d bytes, need %d)" % (free, need)
             res["after_bytes"] = res["before_bytes"]
             return res
         conn.execute("PRAGMA foreign_keys=ON")
@@ -486,7 +579,8 @@ def process_db(agent, dbpath, home, opts):
                 existed = os.path.exists(arch)
                 conn.execute("ATTACH DATABASE ? AS arch", (arch,))
                 conn.execute("PRAGMA arch.synchronous=FULL")
-                ensure_archive_tables(conn, plan)
+                ensure_archive_tables(conn, plan, conn.execute("PRAGMA main.page_size").fetchone()[0]
+                                      if not existed else None)
                 if not existed:
                     try:
                         os.chmod(arch, ref_stat.st_mode & 0o777)
@@ -494,7 +588,8 @@ def process_db(agent, dbpath, home, opts):
                         pass
                 chown_like(arch, ref_stat)
                 res["archive"] = arch
-            batch_id = uuid.uuid4().hex
+            batch_id = res["batches"] + 1 + conn.execute(
+                "SELECT coalesce(max(batch), 0) FROM arch._archive_log").fetchone()[0]
             counts = archive_batch(conn, plan, batch_id, int(time.time() * 1000))
             chown_like(arch, ref_stat)
             # Delete phase: one short write transaction. Re-evaluate KEEP inside it.
@@ -600,19 +695,39 @@ def main(argv=None):
         return 2
     quiet = opts.quiet or os.environ.get("OPENCLAW_MAINTENANCE") == "1" \
         or os.environ.get("OPENCLAW_MAINTENANCE_SILENT") == "1"
-    home = resolve_home(opts.home)
+    home, agents_dir, tried = resolve_roots(opts.home)
+    if agents_dir is None:
+        msg = "no agent databases found at %s" % ", ".join(tried)
+        print(json.dumps({"status": "none", "detail": msg}) if opts.json else msg)  # even in quiet mode
+        return 0
+    dbs = find_agent_dbs(agents_dir, opts.agent)
+    if not dbs:
+        msg = "no agent databases found at %s" % ", ".join(tried)
+        print(json.dumps({"status": "none", "detail": msg}) if opts.json else msg)
+        return 0
     results, worst = [], 0
     lock_fh = None
     if not opts.dry_run:
-        lock_fh = acquire_lock(home)
+        try:
+            lock_fh = acquire_lock(home, os.stat(dbs[0][1]))
+        except OSError as exc:
+            msg = "ERROR: cannot open or lock %s: %s" % (os.path.join(home, "logs", LOCK_NAME), exc)
+            print(msg, file=sys.stderr)
+            write_log(home, "%s agent=* status=ERROR detail=%s" % (_stamp_now(), msg), dbs[0][1])
+            return 1
         if lock_fh is False:
             msg = "another agent-transcript-cleanup run holds the lock; nothing to do"
             print(json.dumps({"status": "locked", "detail": msg}) if opts.json else msg)
             return 0
-    for agent, db in find_agent_dbs(home, opts.agent):
+    for agent, db in dbs:
+        retention = []
         try:
+            retention = prune_archives(home, agent, dry=opts.dry_run)
+            for path in retention:
+                if not opts.dry_run:
+                    write_log(home, "%s agent=%s archive retention removed %s" % (_stamp_now(), agent, path), db)
             r = process_db(agent, db, home, opts)
-            if r["status"] != "ok":
+            if r["status"] == "error":
                 worst = max(worst, 1)
         except Refusal as exc:
             r = {"agent": agent, "db": db, "status": "refused", "detail": str(exc)}
@@ -620,22 +735,23 @@ def main(argv=None):
         except (Abort, sqlite3.Error, OSError) as exc:
             r = {"agent": agent, "db": db, "status": "error", "detail": "%s: %s" % (type(exc).__name__, exc)}
             worst = max(worst, 1)
+        r["archive_retention_removed" if not opts.dry_run else "archive_retention_would_remove"] = retention
         results.append(r)
         if not opts.dry_run:
-            write_log(home, summary_line(r))
+            write_log(home, summary_line(r), db)
+    if lock_fh:
+        lock_fh.close()
     if opts.json:
         print(json.dumps({"home": home, "dry_run": opts.dry_run, "agents": results}, indent=1, default=str))
     elif not quiet or worst:
         for r in results:
             print(summary_line(r))
-        if not results:
-            print("no agent databases found under %s" % os.path.join(home, "agents"))
     return worst
 
 
 def summary_line(r):
     ts = datetime.datetime.now().astimezone().isoformat(timespec="seconds")
-    if r["status"] in ("refused", "error"):
+    if r["status"] in ("refused", "error", "skipped"):
         return "%s agent=%s status=%s detail=%s" % (ts, r["agent"], r["status"].upper(), r["detail"])
     return ("%s agent=%s status=%s before_bytes=%s after_bytes=%s windows_removed=%s archived_rows=%s "
             "candidates=%s kept=%s batches=%s stopped_early=%s pages_vacuumed=%s integrity=%s%s"
@@ -644,29 +760,52 @@ def summary_line(r):
                r["pages_vacuumed"], r["integrity"], " dry_run" if r["integrity"] == "not run (dry run)" else ""))
 
 
-def acquire_lock(home):
+LOCK_NAME = "agent-transcript-cleanup.lock"
+
+
+def acquire_lock(home, ref_stat=None):
+    """Returns the open lock file, or False ONLY when another process really holds the flock.
+    Any open/permission failure raises OSError so the caller reports it loudly."""
     try:
         import fcntl
     except ImportError:
         return None
     d = os.path.join(home, "logs")
-    try:
+    if ref_stat is not None:
+        makedirs_like(d, ref_stat)
+    else:
         os.makedirs(d, exist_ok=True)
-        fh = open(os.path.join(d, "agent-transcript-cleanup.lock"), "a+")
+    path = os.path.join(d, LOCK_NAME)
+    fh = open(path, "a+")
+    if ref_stat is not None:
+        chown_like(path, ref_stat)
+    try:
         fcntl.flock(fh.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
-        return fh
-    except OSError:
+    except BlockingIOError:
+        fh.close()
         return False
+    except OSError:
+        fh.close()
+        raise
+    return fh
 
 
-def write_log(home, line):
+def write_log(home, line, db=None):
     try:
         d = os.path.join(home, "logs")
-        os.makedirs(d, exist_ok=True)
-        with open(os.path.join(d, "agent-transcript-cleanup.log"), "a") as fh:
+        ref = os.stat(db) if db else None
+        if ref is not None:
+            makedirs_like(d, ref)
+        else:
+            os.makedirs(d, exist_ok=True)
+        path = os.path.join(d, "agent-transcript-cleanup.log")
+        with open(path, "a") as fh:
             fh.write(line + "\n")
-    except OSError:
-        pass
+        if ref is not None:
+            chown_like(path, ref)
+    except OSError as exc:
+        print("ERROR: cannot write %s: %s" % (os.path.join(home, "logs", "agent-transcript-cleanup.log"), exc),
+              file=sys.stderr)
 
 
 if __name__ == "__main__":

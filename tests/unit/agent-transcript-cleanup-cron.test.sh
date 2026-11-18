@@ -158,6 +158,16 @@ left="$(python3 -c "import sqlite3,sys;print(sqlite3.connect(sys.argv[1]).execut
   && pass "4b: summary line logged and archive written" || fail "4b: log or archive missing"
 [ -z "$out" ] && pass "4c: quiet under the wrapper's maintenance mode (no stdout)" || fail "4c: stdout was: $out"
 
+E2E2="$SANDBOX/e2e-parent"
+python3 - "$REPO_ROOT/tests/unit/agent-transcript-cleanup.test.py" "$E2E2/.openclaw/agents/main/agent/openclaw-agent.sqlite" <<'PY'
+import importlib.util, sys
+spec = importlib.util.spec_from_file_location("atct", sys.argv[1]); m = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(m); m.build_db(sys.argv[2])
+PY
+OPENCLAW_HOME="$E2E2" bash "$SANDBOX/w/agent-transcript-cleanup.sh" >/dev/null 2>&1
+left="$(python3 -c "import sqlite3,sys;print(sqlite3.connect(sys.argv[1]).execute('select count(*) from session_windows').fetchone()[0])" "$E2E2/.openclaw/agents/main/agent/openclaw-agent.sqlite")"
+[ "$left" = "7" ] && pass "4d: OPENCLAW_HOME as the PARENT of .openclaw works through the wrapper" || fail "4d: parent-shaped OPENCLAW_HOME left $left windows"
+
 echo
 echo "Results: $PASS passed, $FAIL failed"
 [ "$FAIL" -eq 0 ]

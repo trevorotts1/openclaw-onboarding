@@ -18,20 +18,13 @@ DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 
 say() { printf '%s [agent-transcript-cleanup] %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$*"; }
 
-# OpenClaw root: explicit OPENCLAW_HOME / OC_ROOT, else VPS /data first, then the Mac home.
-if [ -z "${OPENCLAW_HOME:-}" ]; then
-  if [ -n "${OC_ROOT:-}" ]; then
-    OPENCLAW_HOME="$OC_ROOT"
-  elif [ -d /data/.openclaw ]; then
-    OPENCLAW_HOME=/data/.openclaw
-  elif [ -d "$HOME/.openclaw" ]; then
-    OPENCLAW_HOME="$HOME/.openclaw"
-  else
-    say "SKIPPED: no OpenClaw root found; nothing to do"
-    exit 0
-  fi
+# OpenClaw root. The python resolves it (OPENCLAW_STATE_DIR first, then OPENCLAW_HOME as either the
+# .openclaw directory or its parent, then OC_ROOT, ~/.openclaw, /data/.openclaw) and says so out loud
+# when it finds no agent databases. This wrapper only skips when nothing could possibly exist.
+if [ -z "${OPENCLAW_STATE_DIR:-}${OPENCLAW_HOME:-}${OC_ROOT:-}" ] && [ ! -d /data/.openclaw ] && [ ! -d "$HOME/.openclaw" ]; then
+  say "SKIPPED: no OpenClaw root found; nothing to do"
+  exit 0
 fi
-export OPENCLAW_HOME
 export OPENCLAW_MAINTENANCE=1
 
 command -v python3 >/dev/null 2>&1 || { say "SKIPPED: python3 not found"; exit 0; }
