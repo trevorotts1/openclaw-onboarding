@@ -131,6 +131,8 @@ def main():
             elif chain and all(provider_of(x) in OLLAMA_FAMILY for x in chain):
                 all_ollama.append(label)
 
+    # A missing heartbeat block is skipped, never an error: OpenClaw 2026.11.5+
+    # retired it (doctor --fix moves the monitor to an automation job).
     for key, blk in (('agents.defaults.model', defs.get('model')),
                      ('agents.defaults.subagents.model', (defs.get('subagents') or {}).get('model')),
                      ('agents.defaults.heartbeat.model', (defs.get('heartbeat') or {}).get('model'))):

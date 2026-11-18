@@ -4122,6 +4122,17 @@ jobs:
           python3 -I "$t" || { echo "✗ failed: $t"; exit 1; }
           echo "✓ 61-loop-protection-system/tests/test_paid_tiers.py"
 
+      - name: "Heartbeat readers on OpenClaw 2026.11.5+: tests/unit/heartbeat-retired-readers.test.py"
+        shell: bash
+        run: |
+          set -uo pipefail
+          t="tests/unit/heartbeat-retired-readers.test.py"
+          if [ ! -f "$t" ]; then
+            echo "✗ suite is absent from this checkout: $t"; exit 1
+          fi
+          python3 -I "$t" -v || { echo "✗ failed: $t"; exit 1; }
+          echo "✓ tests/unit/heartbeat-retired-readers.test.py"
+
       - name: "Never-run suite: 75-drama-song-ad-factory/shared-bridge/checks/test_agnes_progress.py"
         shell: bash
         run: |

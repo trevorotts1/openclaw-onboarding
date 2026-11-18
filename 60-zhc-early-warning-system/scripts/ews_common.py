@@ -126,6 +126,30 @@ def dotpath_get(obj, path: str):
 
 
 # --------------------------------------------------------------------------- #
+# heartbeat retirement (OpenClaw 2026.11.5+)
+# --------------------------------------------------------------------------- #
+# OpenClaw 2026.11.5 retired heartbeat config: `openclaw doctor --fix` turns each
+# monitor into an automation job and deletes agents.defaults.heartbeat, so a
+# missing key on that build is the healthy state, not drift. The version comes
+# from meta.lastTouchedVersion, which OpenClaw stamps on every config write.
+HEARTBEAT_RETIRED_FROM = (2026, 11, 5)
+
+
+def config_openclaw_version(config):
+    """(year, month, patch) from meta.lastTouchedVersion, or None when absent/unparseable."""
+    meta = config.get("meta") if isinstance(config, dict) else None
+    raw = meta.get("lastTouchedVersion") if isinstance(meta, dict) else None
+    m = re.search(r"(\d{4})\.(\d{1,2})\.(\d+)", raw) if isinstance(raw, str) else None
+    return tuple(int(g) for g in m.groups()) if m else None
+
+
+def heartbeat_retired(config) -> bool:
+    """True when the config was last written by OpenClaw 2026.11.5 or later."""
+    v = config_openclaw_version(config)
+    return v is not None and v >= HEARTBEAT_RETIRED_FROM
+
+
+# --------------------------------------------------------------------------- #
 # hashing (value-free storage / comparison)
 # --------------------------------------------------------------------------- #
 def canonical(value) -> str:
@@ -429,6 +453,13 @@ def self_test():
     assert dotpath_get(cfg, "agents.defaults.subagents.maxConcurrent") == 16
     assert dotpath_get(cfg, "agents.defaults.nope.here") is MISSING
     print("  dotpath case: PASS")
+
+    assert heartbeat_retired({"meta": {"lastTouchedVersion": "2026.11.5"}})
+    assert heartbeat_retired({"meta": {"lastTouchedVersion": "2026.12.1-beta.1"}})
+    assert not heartbeat_retired({"meta": {"lastTouchedVersion": "2026.11.4"}})
+    assert not heartbeat_retired({"meta": {"lastTouchedVersion": "garbage"}})
+    assert not heartbeat_retired(cfg)  # no meta: unknown version, never retired
+    print("  heartbeat-retired case: PASS (2026.11.5+ retired; older/unknown not)")
 
     assert sha256_of_value(64) == sha256_of_value(64)
     assert sha256_of_value([1, 2]) != sha256_of_value([2, 1])  # order matters for lists
