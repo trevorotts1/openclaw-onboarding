@@ -46,6 +46,18 @@ from pathlib import Path
 
 DEFAULT_MARKERS_MANIFEST = "scripts/version-markers.json"
 
+# Files that scripts/bump-version.sh / the release procedure rewrites but that are
+# NOT in the markers manifest (they track the repo version without being one of the
+# 10 drift-checked markers). A change to these that only moves version numbers is
+# release ceremony. v28.0.0: a pure bump used to slip past this guard because these
+# files (and the README / update-skills.sh relabel lines) counted as real code.
+EXTRA_CEREMONY_FILES = {
+    "release-cohort.json",
+    "scripts/agent-browser-reaper.sh",
+    "scripts/guard-agent-browser-managed.sh",
+    "docs/interview-launch-recovery.md",
+}
+
 
 def git(*args: str) -> subprocess.CompletedProcess:
     return subprocess.run(["git", *args], capture_output=True, text=True)
@@ -57,7 +69,7 @@ def release_file_set(manifest_path: Path) -> set[str]:
     Falls back to CHANGELOG.md alone (and prints a loud warning) if the
     manifest is missing, rather than silently under-scoping the guard.
     """
-    files = {"CHANGELOG.md"}
+    files = {"CHANGELOG.md"} | EXTRA_CEREMONY_FILES
     if manifest_path.exists():
         try:
             data = json.loads(manifest_path.read_text(encoding="utf-8"))
@@ -111,6 +123,53 @@ def marker_patterns(manifest_path: Path) -> dict[str, str]:
     return out
 
 
+def _version_rx(versions: list[str]):
+    """Regex matching exactly the given onboarding versions (with or without a
+    leading v), not as part of a longer dotted number."""
+    alts = "|".join(re.escape(v.lstrip("v")) for v in versions if v)
+    return re.compile(r"(?<!\d)(?<!\d\.)v?(?:" + alts + r")(?!\d)(?!\.\d)") if alts else None
+
+
+def _normalize_json(node, rx):
+    if isinstance(node, str):
+        return rx.sub("X.Y.Z", node) if rx else node
+    if isinstance(node, list):
+        return [_normalize_json(n, rx) for n in node]
+    if isinstance(node, dict):
+        return {k: _normalize_json(v, rx) for k, v in node.items()}
+    return node
+
+
+def only_version_numbers_changed(file: str, base: str, head: str) -> bool:
+    """True when `file` differs between base and head ONLY by the ONBOARDING
+    version moving from the base /version value to the head /version value
+    (with or without a leading v). Covers every line bump-version.sh writes,
+    including the README / update-skills.sh relabel lines and the bumper's JSON
+    re-serialisation. Any other semver change (a Command Center re-pin, a
+    minVersion, the n999 version, ...) is real code, not ceremony. A file added
+    or deleted by the PR is never ceremony, nor is a PR that does not move /version."""
+    merge_base = git("merge-base", base, head)
+    base_point = merge_base.stdout.strip() if merge_base.returncode == 0 and merge_base.stdout.strip() else base
+    old_v = git("show", f"{base_point}:version")
+    new_v = git("show", f"{head}:version")
+    if old_v.returncode != 0 or new_v.returncode != 0:
+        return False
+    old_ver, new_ver = old_v.stdout.strip(), new_v.stdout.strip()
+    if not old_ver or old_ver == new_ver:
+        return False
+    rx = _version_rx([old_ver, new_ver])
+    old = git("show", f"{base_point}:{file}")
+    new = git("show", f"{head}:{file}")
+    if old.returncode != 0 or new.returncode != 0:
+        return False
+    if file.endswith(".json"):
+        try:
+            return _normalize_json(json.loads(old.stdout), rx) == _normalize_json(json.loads(new.stdout), rx)
+        except json.JSONDecodeError:
+            pass
+    return rx.sub("X.Y.Z", old.stdout) == rx.sub("X.Y.Z", new.stdout)
+
+
 def is_ceremony_only(file: str, pattern: str, base: str, head: str) -> bool:
     """True when every changed line in `file` matches the marker pattern."""
     merge_base = git("merge-base", base, head)
@@ -158,8 +217,15 @@ def main() -> int:
     for f in files:
         if f not in release_files:
             non_release.append(f)
-        elif f in patterns and not is_ceremony_only(f, patterns[f], args.base, args.head):
-            # The file IS a marker file, but this PR changed real code inside it.
+        elif f == "CHANGELOG.md":
+            continue
+        elif only_version_numbers_changed(f, args.base, args.head):
+            continue
+        elif f in patterns and is_ceremony_only(f, patterns[f], args.base, args.head):
+            continue
+        else:
+            # The file IS a release file, but this PR changed more than version
+            # numbers / marker lines inside it: that is real code.
             non_release.append(f)
 
     print(f"Changed files ({len(files)}): {', '.join(files)}")
