@@ -19,16 +19,23 @@ class ReceiverRefused(Exception):
     """The Command Center answered 403/503 with a JSON body naming why (its `missing[]` or `error`)."""
     def __init__(self,status,names):super().__init__('HTTP '+str(status));self.status,self.names=status,names
 
+class EdgeBlocked(Exception):
+    """The Cloudflare edge answered 403 with its own non-JSON page (cf-ray header or Server: cloudflare)."""
+
+# Cloudflare answers the stock Python-urllib agent with 403 before Access runs (interview-launch.py access_login).
+USER_AGENT='OpenClaw-TenantReadiness/1.0'
+
 def _probe(url,headers,timeout=15):
     """GET one readiness receipt without ever following a redirect (the bearer token must not leave this origin).
 
     A redirect to *.cloudflareaccess.com raises AccessRedirect; a 403/503 with a JSON body raises ReceiverRefused
-    carrying the receiver's own reason names; any other failure is the plain urllib error."""
+    carrying the receiver's own reason names; a 403 whose body is not JSON AND that carries a Cloudflare edge marker
+    (cf-ray header or Server: cloudflare) raises EdgeBlocked; any other failure is the plain urllib error."""
     import re,urllib.error,urllib.request
     class NoRedirect(urllib.request.HTTPRedirectHandler):
         def redirect_request(self,*args,**kwargs):return None
     try:
-        with urllib.request.build_opener(NoRedirect()).open(Request(url,headers=headers),timeout=timeout) as response:
+        with urllib.request.build_opener(NoRedirect()).open(Request(url,headers={**headers,'User-Agent':headers.get('User-Agent') or USER_AGENT}),timeout=timeout) as response:
             if response.status!=200:raise ValueError('readiness status is not 200')
             return json.loads(response.read(65537))
     except urllib.error.HTTPError as exc:
@@ -42,11 +49,15 @@ def _probe(url,headers,timeout=15):
                 names=body.get('missing') if isinstance(body.get('missing'),list) and body.get('missing') else [body.get('error')]
                 names=[n for n in names if isinstance(n,str) and re.fullmatch(r'[A-Za-z0-9_.:-]{1,80}',n)][:20]
                 exc.close();raise ReceiverRefused(exc.code,names or ['no reason given']) from None
+            edge=exc.headers or {}
+            if exc.code==403 and body is None and (edge.get('cf-ray') or (edge.get('Server') or '').strip().lower()=='cloudflare'):
+                exc.close();raise EdgeBlocked() from None
         raise
 
 def verify(state,env,fetch=None,local_fetch=None):
-    expected={'tenantId':env.get('MC_TENANT_ID'),'companyId':state.get('companyId') or env.get('MC_COMPANY_ID'),
-              'installationId':env.get('MC_INSTALLATION_ID')}
+    # State first, then env: the same precedence the startability gate uses.
+    expected={'tenantId':state.get('tenantId') or env.get('MC_TENANT_ID'),'companyId':state.get('companyId') or env.get('MC_COMPANY_ID'),
+              'installationId':state.get('installationId') or env.get('MC_INSTALLATION_ID')}
     url=env.get('MC_TENANT_PUBLIC_URL') or state.get('commandCenterUrl') or ''
     parsed=urlsplit(url)
     missing=[k for k,v in expected.items() if not isinstance(v,str) or not v.strip()]
@@ -63,15 +74,17 @@ def verify(state,env,fetch=None,local_fetch=None):
         port=str(env.get('DASHBOARD_PORT') or env.get('CC_PORT') or 4000)
         if not port.isdigit() or not 0<int(port)<65536:raise ValueError('invalid Command Center port')
         return _probe('http://127.0.0.1:'+port+path,dict(auth,Host=parsed.netloc))
-    via='public'
+    via,why='public','behind Cloudflare Access'
     try:
         try:receipt=fetch() if fetch else network()
-        except AccessRedirect:
+        except (AccessRedirect,EdgeBlocked) as blocked:
             # Cloudflare Access fronts the public host and answers every unauthenticated request with a 302 to its
-            # login: that says nothing about readiness. Ask the Command Center itself, on this box.
+            # login, or the Cloudflare edge refuses the request with its own 403 page: neither says anything about
+            # readiness. Ask the Command Center itself, on this box.
+            if isinstance(blocked,EdgeBlocked):why='blocked by the Cloudflare edge'
             via='loopback';receipt=(local_fetch or loopback)()
     except ReceiverRefused as exc:return {'ready':False,'missing':['receiver refused readiness (HTTP '+str(exc.status)+'): '+', '.join(exc.names)]}
-    except Exception as exc:return {'ready':False,'missing':['authenticated readiness probe failed'+(' (loopback, public host is behind Cloudflare Access)' if via=='loopback' else '')+': '+type(exc).__name__]}
+    except Exception as exc:return {'ready':False,'missing':['authenticated readiness probe failed'+(' (loopback, public host is '+why+')' if via=='loopback' else '')+': '+type(exc).__name__]}
     for key,value in dict(expected,host=host,kind='self',protocol='interview.v1').items():
         if receipt.get(key)!=value:missing.append(key+' mismatch')
     if receipt.get('ready') is not True or receipt.get('missing')!=[]:missing.append('receiver readiness')
@@ -108,7 +121,7 @@ def _bounded_json(url,headers=None,timeout=10):
     import urllib.request
     class NoRedirect(urllib.request.HTTPRedirectHandler):
         def redirect_request(self,*args,**kwargs):return None
-    request=Request(url,headers=headers or {})
+    headers=headers or {};request=Request(url,headers={**headers,'User-Agent':headers.get('User-Agent') or USER_AGENT})
     with urllib.request.build_opener(NoRedirect()).open(request,timeout=timeout) as response:
         if response.status!=200:raise ValueError('status is not 200')
         return json.loads(response.read(65537))
@@ -293,11 +306,13 @@ def main():
         import importlib.util
         spec=importlib.util.spec_from_file_location('launch',Path(__file__).with_name('interview-launch.py'))
         launch=importlib.util.module_from_spec(spec);spec.loader.exec_module(launch)
-        stored=launch.env_read(args.env_file)
+        try:stored=launch.env_read(args.env_file)
+        except (OSError,ValueError) as exc:
+            print(json.dumps({'ready':False,'missing':['service environment unreadable: '+type(exc).__name__]}));return 1
         for key in ('MC_TENANT_ID','MC_COMPANY_ID','MC_INSTALLATION_ID','MC_TENANT_PUBLIC_URL','MC_API_TOKEN'):
             if key in stored and env.get(key) and stored[key]!=env[key]:
                 print(json.dumps({'ready':False,'missing':['service/installer environment conflict: '+key]}));return 1
-        env.update(stored)
+        env.update(stored);env['DASHBOARD_PORT']=str(args.port)   # the service file never overrides the on-box port
     if args.startability:
         if not args.no_send:
             print(json.dumps({'ready':False,'missing':['--startability requires --no-send: this gate must never deliver a client message']}));return 1
