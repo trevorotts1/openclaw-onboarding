@@ -158,6 +158,20 @@ left="$(python3 -c "import sqlite3,sys;print(sqlite3.connect(sys.argv[1]).execut
   && pass "4b: summary line logged and archive written" || fail "4b: log or archive missing"
 [ -z "$out" ] && pass "4c: quiet under the wrapper's maintenance mode (no stdout)" || fail "4c: stdout was: $out"
 
+# a refused database with NO OpenClaw variables set (only HOME): the wrapper must exit 0 and log it
+NOENV="$SANDBOX/noenv-home"
+python3 - "$REPO_ROOT/tests/unit/agent-transcript-cleanup.test.py" "$NOENV/.openclaw/agents/main/agent/openclaw-agent.sqlite" <<'PY'
+import importlib.util, sqlite3, sys
+spec = importlib.util.spec_from_file_location("atct", sys.argv[1]); m = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(m); m.build_db(sys.argv[2])
+c = sqlite3.connect(sys.argv[2]); c.execute("PRAGMA user_version=28"); c.close()
+PY
+out="$(env -i HOME="$NOENV" PATH="$PATH" bash "$SANDBOX/w/agent-transcript-cleanup.sh" 2>&1)"; rc=$?
+[ $rc -eq 0 ] && echo "$out" | grep -q "rc=2" && ! echo "$out" | grep -qi "unbound" \
+  && grep -q "status=REFUSED" "$NOENV/.openclaw/logs/agent-transcript-cleanup.log" \
+  && pass "4e: refused database, only HOME set: wrapper exits 0 (no unbound variable) and the refusal is logged" \
+  || fail "4e: rc=$rc out=$out"
+
 E2E2="$SANDBOX/e2e-parent"
 python3 - "$REPO_ROOT/tests/unit/agent-transcript-cleanup.test.py" "$E2E2/.openclaw/agents/main/agent/openclaw-agent.sqlite" <<'PY'
 import importlib.util, sys

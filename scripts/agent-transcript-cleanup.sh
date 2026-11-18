@@ -34,8 +34,8 @@ python3 -I "$DIR/agent-transcript-cleanup.py" "$@"
 rc=$?
 case "$rc" in
   0) ;;
-  1) say "agent-transcript-cleanup.py reported an error on at least one database (rc=1); see $OPENCLAW_HOME/logs/agent-transcript-cleanup.log" ;;
-  2) say "agent-transcript-cleanup.py refused at least one database (rc=2); see $OPENCLAW_HOME/logs/agent-transcript-cleanup.log" ;;
+  1) say "agent-transcript-cleanup.py reported an error on at least one database (rc=1); see agent-transcript-cleanup.log in the logs directory of the OpenClaw root" ;;
+  2) say "agent-transcript-cleanup.py refused at least one database (rc=2); see agent-transcript-cleanup.log in the logs directory of the OpenClaw root" ;;
   *) say "CRASH: agent-transcript-cleanup.py exited rc=$rc"; exit "$rc" ;;
 esac
 exit 0

@@ -343,15 +343,22 @@ def _month_stems(now=None):
 def prune_archives(home, agent, dry=False):
     """Delete this agent's archive files older than the previous month. Returns the paths (to be) removed."""
     import re
-    d = os.path.join(home, "archives", "agent-transcripts", agent)
+    root = os.path.join(home, "archives", "agent-transcripts")
+    d = os.path.join(root, agent)
     cur, prev = _month_stems()
     removed = []
+    real_d = os.path.realpath(d)
+    if os.path.islink(d) or not real_d.startswith(os.path.realpath(root) + os.sep):
+        if os.path.lexists(d):
+            write_log(home, "%s agent=%s archive retention skipped: %s is a symlink or resolves outside %s"
+                      % (_stamp_now(), agent, d, root))
+        return removed
     try:
         names = sorted(os.listdir(d))
     except OSError:
         return removed
     for name in names:
-        m = re.match(r"^(\d{4}-\d{2})\.sqlite(-journal|-wal|-shm)?$", name)
+        m = re.fullmatch(r"(\d{4}-\d{2})\.sqlite(-journal|-wal|-shm)?", name)
         if not m or m.group(1) >= prev:
             continue
         path = os.path.join(d, name)

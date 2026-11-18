@@ -519,6 +519,28 @@ class Safety(Base):
             self.assertIn("archive retention removed", log)
             self.assertIn(name, log)
 
+    def test_retention_skips_a_symlinked_archive_directory(self):
+        build_db(self.db)
+        outside = Path(self._td.name, "elsewhere"); outside.mkdir()
+        (outside / "2020-01.sqlite").write_bytes(b"x")
+        root = Path(self.home, "archives", "agent-transcripts"); root.mkdir(parents=True)
+        (root / "main").symlink_to(outside, target_is_directory=True)
+        r = self.run_script("--dry-run", "--json")
+        self.assertEqual(self.agent(r)["archive_retention_would_remove"], [])
+        mod = load_module()
+        self.assertEqual(mod.prune_archives(self.home, "main"), [])
+        self.assertTrue((outside / "2020-01.sqlite").exists())
+        self.assertIn("symlink or resolves outside",
+                      Path(self.home, "logs", "agent-transcript-cleanup.log").read_text())
+
+    def test_retention_names_must_match_exactly(self):
+        build_db(self.db)
+        d = self.archive_dir()
+        for name in ("2020-01.sqlite.bak", "x2020-01.sqlite", "2020-01.sqlite\n"):
+            (d / name).write_bytes(b"x")
+        self.assertEqual(load_module().prune_archives(self.home, "main"), [])
+        self.assertEqual(len(list(d.iterdir())), 3)
+
     def test_archive_is_no_bigger_than_the_bytes_it_frees_and_carries_no_extra_index(self):
         build_db(self.db, blob=20000, rows=250)
         r = self.run_script("--json")
@@ -643,12 +665,10 @@ class LockAndLocations(Base):
         e.update(env)
         return subprocess.run([sys.executable, "-I", str(SCRIPT), *args], capture_output=True, text=True, env=e)
 
-    @unittest.skipIf(hasattr(os, "geteuid") and os.geteuid() == 0, "root ignores file modes")
     def test_unopenable_lock_is_an_error_not_a_silent_locked(self):
         build_db(self.db)
         logs = Path(self.home, "logs"); logs.mkdir()
-        lock = logs / "agent-transcript-cleanup.lock"
-        lock.write_text(""); lock.chmod(0o444)
+        (logs / "agent-transcript-cleanup.lock").mkdir()      # cannot be opened as a file, for any uid
         d0 = digest(self.db)
         r = self.run_script("--json")
         self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
@@ -700,13 +720,23 @@ class LockAndLocations(Base):
         self.assertEqual(r.returncode, 0, r.stderr)
         self.assertEqual(json.loads(r.stdout)["agents"][0]["windows_removed"], len(OLD))
 
-    @unittest.skipIf(os.path.isdir("/data/.openclaw"), "this machine has /data/.openclaw")
     def test_no_databases_found_is_said_even_in_quiet_mode(self):
+        from unittest import mock
         nowhere = os.path.join(self._td.name, "nowhere")
-        r = self.run_env({"OPENCLAW_HOME": nowhere, "OPENCLAW_MAINTENANCE": "1"})
-        self.assertEqual(r.returncode, 0)
-        self.assertIn("no agent databases found at", r.stdout)
-        self.assertIn(os.path.join(nowhere, ".openclaw", "agents"), r.stdout)
+        home = os.path.join(self._td.name, "emptyhome")
+        os.makedirs(home, exist_ok=True)
+        real_isdir = os.path.isdir
+        env = {"OPENCLAW_HOME": nowhere, "OPENCLAW_MAINTENANCE": "1", "HOME": home}
+        mod = load_module()
+        buf = io.StringIO()
+        # the machine running the test may have a real /data/.openclaw: pretend it does not
+        with mock.patch.dict(os.environ, env), \
+             mock.patch("os.path.isdir", lambda p: False if str(p).startswith("/data") else real_isdir(p)), \
+             contextlib.redirect_stdout(buf):
+            rc = mod.main([])
+        self.assertEqual(rc, 0)
+        self.assertIn("no agent databases found at", buf.getvalue())
+        self.assertIn(os.path.join(nowhere, ".openclaw", "agents"), buf.getvalue())
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
