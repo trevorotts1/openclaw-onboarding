@@ -1237,6 +1237,44 @@
   }
  },
  {
+  "name": "agent-transcript-cleanup",
+  "was": "(new, agent-transcript-cleanup)",
+  "script": "scripts/ci/fast-guards.d/agent-transcript-cleanup.sh",
+  "python311": true,
+  "events": {
+   "push": {
+    "branches": [
+     "main"
+    ],
+    "paths": [
+     "scripts/agent-transcript-cleanup.py",
+     "scripts/agent-transcript-cleanup.sh",
+     "scripts/ensure-pipeline-crons.sh",
+     "install.sh",
+     "tests/fixtures/fake-openclaw-cron.py",
+     "tests/unit/agent-transcript-cleanup.test.py",
+     "tests/unit/agent-transcript-cleanup-cron.test.sh",
+     "scripts/ci/fast-guards.d/agent-transcript-cleanup.sh"
+    ]
+   },
+   "pull_request": {
+    "branches": [
+     "main"
+    ],
+    "paths": [
+     "scripts/agent-transcript-cleanup.py",
+     "scripts/agent-transcript-cleanup.sh",
+     "scripts/ensure-pipeline-crons.sh",
+     "install.sh",
+     "tests/fixtures/fake-openclaw-cron.py",
+     "tests/unit/agent-transcript-cleanup.test.py",
+     "tests/unit/agent-transcript-cleanup-cron.test.sh",
+     "scripts/ci/fast-guards.d/agent-transcript-cleanup.sh"
+    ]
+   }
+  }
+ },
+ {
   "name": "memory-guard",
   "was": "(new, memory-guard)",
   "script": "scripts/ci/fast-guards.d/memory-guard.sh",
