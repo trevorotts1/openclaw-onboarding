@@ -38,15 +38,40 @@ OPENCLAW_STUB = r'''#!/bin/bash
 D="$STUB_DIR"
 echo "$*" >> "$D/openclaw.log"
 case "$1 $2" in
+  "--version "*) echo "OpenClaw 2026.11.3 (stub)"; exit 0 ;;
   "message send")
+    [ -f "$D/send-fails" ] && exit 1
     while [ $# -gt 0 ]; do case "$1" in --target) T="$2";; --message) M="$2";; esac; shift; done
     printf '%s\t%s\n' "$T" "$M" >> "$D/sent.log"; exit 0 ;;
   "sessions list") cat "$D/sessions.json" 2>/dev/null || echo '{"sessions":[]}'; exit 0 ;;
-  "gateway call") cat "$D/history.json" 2>/dev/null || echo '{"messages":[]}'; exit 0 ;;
+  "gateway call")
+    case "$*" in *direct:999*) f="$D/history-999.json" ;; *) f="$D/history.json" ;; esac
+    cat "$f" 2>/dev/null || echo '{"messages":[]}'; exit 0 ;;
   "cron list") cat "$D/cronlist.json" 2>/dev/null || echo '{"jobs":[]}'; exit 0 ;;
   "cron rm") echo "$3" >> "$D/cron-rm.log"; exit 0 ;;
-  "cron add") echo "$*" >> "$D/cron-add.log"; exit 0 ;;
+  "cron add")
+    [ -f "$D/cron-add-fails" ] && exit 1
+    echo "$*" >> "$D/cron-add.log"
+    case "$*" in *--help*) echo "  --command <shell>"; exit 0 ;; esac
+    if [ -f "$D/cronlist-adds" ]; then :; fi
+    python3 - "$D" "$@" <<'PY'
+import json, sys
+d, a = sys.argv[1], sys.argv[3:]
+p = d + "/cronlist.json"
+try: data = json.load(open(p))
+except Exception: data = {"jobs": []}
+cmd = a[a.index("--command") + 1] if "--command" in a else ""
+data["jobs"].append({"id": "new-" + a[a.index("--name") + 1], "name": a[a.index("--name") + 1], "enabled": True,
+                     "payload": {"kind": "command", "argv": ["sh", "-lc", cmd]}})
+json.dump(data, open(p, "w"))
+PY
+    exit 0 ;;
 esac
+exit 0
+'''
+
+PGREP_STUB = r'''#!/bin/bash
+[ -f "$STUB_DIR/no-cron-daemon" ] && exit 1
 exit 0
 '''
 
@@ -81,10 +106,11 @@ class BoxCase(unittest.TestCase):
         self.stub.mkdir()
         executable(self.stub / "bin" / "openclaw", OPENCLAW_STUB)
         executable(self.stub / "bin" / "crontab", CRONTAB_STUB)
+        executable(self.stub / "bin" / "pgrep", PGREP_STUB)
         self.env = {"HOME": str(self.home), "OPENCLAW_ROOT": str(self.root), "STUB_DIR": str(self.stub),
                     "PATH": f"{self.stub / 'bin'}:{os.environ['PATH']}", "OPENCLAW_OWNER_CHAT_ID": CLIENT_CHAT,
                     "AUTO_UPDATE_PLATFORM": "linux", "FLEET_STANDING_BOX_SLUG": "test-box",
-                    "AUTO_UPDATE_RM_DELAY": "0"}
+                    "AUTO_UPDATE_RM_DELAY": "0", "OPENCLAW_UPDATE_LEASE": str(self.tmp / "lease.lock")}
         patcher = mock.patch.dict(os.environ, self.env)
         patcher.start()
         self.addCleanup(patcher.stop)
@@ -118,7 +144,7 @@ class BoxCase(unittest.TestCase):
         (self.stub / "sessions.json").write_text(json.dumps(
             {"sessions": [{"key": "agent:main:main", "updatedAt": 1}]}))
 
-    def install_update_stub(self, rc=0, outcome="UPDATED", repair=None, cc_result=None, update_999=None):
+    def install_update_stub(self, rc=0, outcome="UPDATED", repair=None, cc_result=None, update_999=None, steps=None):
         """root/scripts/weekly-full-update.sh stand-in: records its env, optionally writes a fleet summary."""
         marker = self.tmp / "update-ran.txt"
         runs = self.home / ".openclaw" / "fleet" / "runs" / "r1"
@@ -126,6 +152,8 @@ class BoxCase(unittest.TestCase):
                "health": {"regressions": ["cc-health"] if outcome != "UPDATED" else []}}
         if update_999:
             row["update_999"] = update_999
+        if steps:
+            row["steps"] = steps
         cc_line = ("cat > \"$CC_UPDATE_RESULT_FILE\" <<'CCJSON'\n" + json.dumps(cc_result) + "\nCCJSON") if cc_result else ""
         body = f'''#!/bin/bash
 echo "behind=$AUTO_UPDATE_BEHIND repair=$AUTO_UPDATE_REPAIR oc=$AUTO_UPDATE_OPENCLAW" > "{marker}"
@@ -183,7 +211,7 @@ class ScheduleAndDst(unittest.TestCase):
         self.assertEqual(au.decide(d(2026, 11, 17, 2, 29, 59), "b", st), "notice")
         self.assertEqual(au.decide(d(2026, 11, 17, 2, 30, 0), "b", st), "missed_notice")
         self.assertEqual(au.decide(d(2026, 11, 18, 2, 20), "b", st), "idle")      # Wednesday
-        noticed = {"notice": {"attempted": True}}
+        noticed = {"notice": {"attempted": True, "sent": True}}
         start = au.run_start_local("b", d(2026, 11, 17, 2, 0))
         self.assertTrue(d(2026, 11, 17, 2, 30) <= start < d(2026, 11, 17, 2, 45))
         self.assertEqual(au.decide(start - dt.timedelta(seconds=1), "b", noticed), "watch")
@@ -196,7 +224,7 @@ class ScheduleAndDst(unittest.TestCase):
         d = dt.datetime
         sent = d(2026, 11, 17, 2, 25, 10)                          # first tick after the box woke up
         at_ms = int(au.eastern_to_utc(sent).timestamp() * 1000)
-        st = {"notice": {"attempted": True, "at_ms": at_ms}}
+        st = {"notice": {"attempted": True, "sent": True, "at_ms": at_ms}}
         self.assertEqual(au.decide(d(2026, 11, 17, 2, 40, 9), "b", st), "watch")
         self.assertEqual(au.decide(d(2026, 11, 17, 2, 40, 10), "b", st), "run")
 
@@ -273,7 +301,7 @@ class Versions(BoxCase):
         marker = self.install_update_stub()
         self.set_latest(onboarding="v1.0.1")                   # Command Center is current
         b = au.run_update(self.root, "2026-11-17", "rid", True)
-        self.assertEqual(marker.read_text().strip(), "behind=onboarding repair=1 oc=1")
+        self.assertEqual(marker.read_text().strip(), "behind=onboarding repair=1 oc=0")
         self.assertEqual(b["result"], "UPDATED")
 
     def test_unreadable_latest_is_deferred_not_guessed(self):
@@ -610,7 +638,7 @@ class Install(BoxCase):
     def crontab(self):
         return (self.stub / "crontab.txt").read_text()
 
-    def test_old_schedule_retired_new_one_installed_once_clients_own_lines_kept(self):
+    def test_old_crontab_lines_go_with_the_new_tick_and_old_jobs_wait_for_the_first_tick(self):
         self.seed()
         r = au.install(self.root, REPO / "scripts")
         ct = self.crontab()
@@ -620,22 +648,71 @@ class Install(BoxCase):
         self.assertEqual(ct.count("# openclaw-auto-update"), 1)
         self.assertIn(f"*/5 * * * * /bin/bash '{self.root}/scripts/auto-update-tick.sh'", ct)
         self.assertEqual(sorted(r["old_files_removed"]), [".openclaw-self-update", ".update-restart-if-needed"])
-        self.assertFalse((self.skills / ".update-restart-if-needed").exists())
-        self.assertEqual(sorted(r["cron_jobs_removed"]), ["j-old-ask", "j-old-cmd"])
-        self.assertEqual(sorted((self.stub / "cron-rm.log").read_text().split()), ["j-old-ask", "j-old-cmd"])
+        # the working old openclaw jobs are NOT removed until a tick has proven the new schedule fires
+        self.assertEqual(r["cron_jobs_removed"], [])
+        self.assertFalse((self.stub / "cron-rm.log").exists())
+        self.assertTrue(r["retire_pending"])
         for f in au.DELIVERED:
             self.assertTrue((self.root / "scripts" / f).is_file(), f)
+        # the first tick (heartbeat) is the proof: now, and only now, the old jobs are retired
+        self.at("2026-11-18T12:00:00Z")                      # Wednesday: the tick has nothing else to do
+        au.tick(self.root)
+        self.assertEqual(sorted((self.stub / "cron-rm.log").read_text().split()), ["j-old-ask", "j-old-cmd"])
+
+    def test_failed_crontab_write_keeps_the_old_schedule_and_fails_loudly(self):
+        self.seed()
+        # a crontab whose write fails: -l works, "-" exits non-zero and leaves the file alone
+        executable(self.stub / "bin" / "crontab", '''#!/bin/bash
+F="$STUB_DIR/crontab.txt"
+case "$1" in -l) cat "$F" ;; -) cat >/dev/null; exit 1 ;; esac
+''')
+        r = au.install(self.root, REPO / "scripts")
+        self.assertIn("error", r)
+        self.assertEqual(self.crontab(), self.OLD)
+        self.assertTrue((self.skills / ".update-restart-if-needed").exists())
+        self.assertFalse((self.stub / "cron-rm.log").exists())
+        self.assertEqual(au.main(["install"]), 1)
+
+    def test_a_write_that_cannot_be_read_back_restores_the_previous_crontab(self):
+        self.seed()
+        executable(self.stub / "bin" / "crontab", '''#!/bin/bash
+F="$STUB_DIR/crontab.txt"
+case "$1" in -l) cat "$F" ;; -) cat > "$STUB_DIR/crontab.written"; [ -f "$STUB_DIR/restored" ] || { touch "$STUB_DIR/restored"; exit 0; }; cp "$STUB_DIR/crontab.written" "$F" ;; esac
+''')
+        r = au.install(self.root, REPO / "scripts")        # first write "succeeds" but nothing changed: unverifiable
+        self.assertIn("error", r)
+        self.assertEqual(self.crontab(), self.OLD)
+
+    def test_no_daemon_and_job_creation_fails_keeps_every_old_entry_and_exits_nonzero(self):
+        self.seed()
+        (self.stub / "no-cron-daemon").write_text("")
+        (self.stub / "cron-add-fails").write_text("")
+        r = au.install(self.root, REPO / "scripts")
+        self.assertEqual(r["scheduler"], "openclaw-cron")
+        self.assertIn("error", r)
+        self.assertEqual(r["cron_jobs_removed"], [])
+        self.assertFalse((self.stub / "cron-rm.log").exists())
+        self.assertEqual(self.crontab(), self.OLD)
+        self.assertTrue((self.skills / ".update-restart-if-needed").exists())
+
+    def test_setup_script_prints_ok_only_when_the_install_worked(self):
+        self.seed()
+        (self.stub / "no-cron-daemon").write_text("")
+        (self.stub / "cron-add-fails").write_text("")
+        r = subprocess.run(["bash", str(REPO / "scripts" / "setup-weekly-update.sh")], env=os.environ.copy(),
+                           capture_output=True, text=True, timeout=120)
+        self.assertNotEqual(r.returncode, 0)
+        self.assertNotIn("[OK]", r.stdout)
+        self.assertIn("left exactly as it was", r.stderr)
 
     def test_second_install_changes_nothing(self):
         self.seed()
         au.install(self.root, REPO / "scripts")
         before = self.crontab()
-        (self.stub / "cronlist.json").write_text(json.dumps({"jobs": [{"id": "j-mine", "name": "clients-own-job"}]}))
         baks = sorted(self.skills.glob(".crontab.bak-auto-update-*"))
         r = au.install(self.root, REPO / "scripts")
         self.assertEqual(self.crontab(), before)
-        self.assertEqual((r["crontab_changed"], r["scripts_changed"], r["old_files_removed"], r["cron_jobs_removed"]),
-                         (False, [], [], []))
+        self.assertEqual((r["crontab_changed"], r["scripts_changed"], r["old_files_removed"]), (False, [], []))
         self.assertEqual(sorted(self.skills.glob(".crontab.bak-auto-update-*")), baks)
 
     def test_dry_run_changes_nothing(self):
@@ -645,16 +722,44 @@ class Install(BoxCase):
         self.assertTrue((self.skills / ".update-restart-if-needed").exists())
         self.assertFalse((self.stub / "cron-rm.log").exists())
 
-    def test_box_without_cron_gets_the_same_tick_as_one_openclaw_command_job(self):
+    def test_a_crontab_binary_with_no_running_daemon_uses_the_openclaw_job(self):
         self.seed()
-        os.environ["AUTO_UPDATE_CRONTAB"] = "no-such-crontab-binary"
+        (self.stub / "no-cron-daemon").write_text("")          # crontab exists, nothing running (container, gateway is PID 1)
         r = au.install(self.root, REPO / "scripts")
         self.assertEqual((r["scheduler"], r["tick_job"]), ("openclaw-cron", "created"))
         add = (self.stub / "cron-add.log").read_text()
         self.assertIn("--name auto-update-tick", add)
         self.assertIn("*/5 * * * *", add)
         self.assertIn("auto-update-tick.sh", add)
-        self.assertNotIn("weekly-onboarding-update", add)
+        # the tick job exists and was verified, so the old jobs are retired now
+        self.assertEqual(sorted(r["cron_jobs_removed"]), ["j-old-ask", "j-old-cmd"])
+
+    def test_macos_cron_is_fine_without_a_daemon_process_check(self):
+        os.environ["AUTO_UPDATE_PLATFORM"] = "darwin"
+        (self.stub / "no-cron-daemon").write_text("")
+        self.assertTrue(au.cron_daemon_running())
+        os.environ["AUTO_UPDATE_PLATFORM"] = "linux"
+        self.assertFalse(au.cron_daemon_running())
+
+    def test_tick_that_never_fires_falls_back_to_the_openclaw_job_after_15_minutes_then_retires_old(self):
+        self.seed()
+        self.at("2026-11-18T12:00:00Z")
+        au.install(self.root, REPO / "scripts")
+        self.assertEqual(au.selfcheck(self.root)["state"], "waiting-for-first-tick")
+        self.assertFalse((self.stub / "cron-rm.log").exists())
+        self.at("2026-11-18T12:16:00Z")                        # 16 minutes, no heartbeat
+        out = au.selfcheck(self.root)
+        self.assertEqual((out["state"], out["tick_job"]), ("fallback-to-openclaw-cron", "created"))
+        self.assertEqual(sorted(out["retired"]), ["j-old-ask", "j-old-cmd"])
+
+    def test_a_tick_that_fired_proves_the_schedule_and_no_fallback_is_made(self):
+        self.seed()
+        self.at("2026-11-18T12:00:00Z")
+        au.install(self.root, REPO / "scripts")
+        self.at("2026-11-18T12:30:00Z")
+        au.tick(self.root)                                      # heartbeat
+        self.assertEqual(au.selfcheck(self.root)["state"], "proven")
+        self.assertFalse((self.stub / "cron-add.log").exists())
 
     def test_setup_script_end_to_end_in_the_sandbox(self):
         self.seed()
@@ -818,6 +923,173 @@ class RunnerRepairAndRollback(unittest.TestCase):
         with mock.patch.dict(os.environ, {}, clear=False):
             os.environ.pop("AUTO_UPDATE_BEHIND", None)
             self.assertFalse(self.fr._auto_repo_current("command_center"))     # fleet roll: nothing skipped
+
+
+class QcFixes(BoxCase):
+    TUE = "2026-11-17T07:15:00Z"
+
+    def history_for(self, name, *msgs):
+        (self.stub / name).write_text(json.dumps({"messages": list(msgs)}))
+
+    # 5: a notice that could not be delivered to a chat that WAS found means no 2:30 run
+    def test_failed_notice_to_a_found_chat_is_retried_then_never_runs_unannounced(self):
+        marker = self.install_update_stub()
+        self.set_latest(onboarding="v1.0.1")
+        (self.stub / "send-fails").write_text("")
+        self.at(self.TUE)
+        au.tick(self.root)
+        self.at("2026-11-17T07:20:00Z")
+        self.assertEqual(au.tick(self.root), "notice")                       # retried, not treated as sent
+        (self.stub / "send-fails").unlink()
+        self.at("2026-11-17T07:25:00Z")
+        self.assertEqual(au.tick(self.root), "notice")                       # delivered on the retry
+        self.assertEqual(len(self.sent()), 1)
+
+    def test_notice_never_delivered_means_deferred_not_run(self):
+        marker = self.install_update_stub()
+        self.set_latest(onboarding="v1.0.1")
+        (self.stub / "send-fails").write_text("")
+        for iso in ("07:15", "07:20", "07:25"):
+            self.at(f"2026-11-17T{iso}:00Z")
+            au.tick(self.root)
+        self.at("2026-11-17T07:45:00Z")
+        self.assertEqual(au.tick(self.root), "missed_notice")
+        self.assertFalse(marker.exists())
+        self.assertIn("could not be delivered", self.beacon()["failing_check"])
+        self.assertEqual(self.beacon()["result"], "DEFERRED")
+
+    # 7: cancel only from the owner's chat
+    def test_cancel_from_someone_else_who_can_talk_to_the_agent_is_ignored(self):
+        (self.stub / "sessions.json").write_text(json.dumps({"sessions": [
+            {"key": f"agent:main:telegram:direct:{CLIENT_CHAT}", "updatedAt": 1},
+            {"key": "agent:main:telegram:direct:999", "updatedAt": 2}]}))
+        t = int(dt.datetime(2026, 11, 17, 7, 16, tzinfo=UTC).timestamp() * 1000)
+        self.history_for("history-999.json", {"role": "user", "content": "cancel", "timestamp": t})
+        self.history_for("history.json")
+        self.at(self.TUE)
+        au.tick(self.root)
+        self.at("2026-11-17T07:20:00Z")
+        self.assertEqual(au.tick(self.root), "watch")
+        self.history_for("history.json", {"role": "user", "content": "cancel", "timestamp": t})
+        self.at("2026-11-17T07:21:00Z")
+        self.assertEqual(au.tick(self.root), "cancelled")
+
+    def test_no_dm_session_for_the_owner_means_nothing_can_cancel(self):
+        (self.stub / "sessions.json").write_text(json.dumps({"sessions": [
+            {"key": "agent:main:telegram:direct:999", "updatedAt": 2}]}))
+        self.assertEqual(au.owner_session_keys(self.root, CLIENT_CHAT), [])
+        self.assertEqual(au.owner_session_keys(self.root, "999"), ["agent:main:telegram:direct:999"])
+
+    # 6 / 9 / 10
+    def run_with(self, **kw):
+        self.install_update_stub(**kw)
+        self.set_latest(onboarding="v1.0.1")
+        return au.run_update(self.root, "d", "r", True)
+
+    def test_999_failure_is_not_reported_updated(self):
+        b = self.run_with(steps={"update-999": "failed:auto-update-mac.sh exit 69: skills-only-failed"})
+        self.assertEqual(b["result"], "FAILED")
+        self.assertIn("999", b["failing_check"])
+
+    def test_999_deferred_is_not_reported_updated(self):
+        b = self.run_with(steps={"update-999": "skip:DEFERRED: another updater held the lock; 999 not changed"})
+        self.assertEqual(b["result"], "DEFERRED")
+
+    def test_999_not_applicable_skip_is_still_updated(self):
+        self.assertEqual(self.run_with(steps={"update-999": "skip:999 not installed"})["result"], "UPDATED")
+
+    def test_openclaw_cli_failure_is_not_reported_updated(self):
+        b = self.run_with(steps={"openclaw-update": "failed:exit 1: boom"})
+        self.assertEqual(b["result"], "FAILED")
+        self.assertIn("OpenClaw", b["failing_check"])
+
+    def test_container_gateway_restart_request_is_updated_with_restart_pending(self):
+        b = self.run_with(rc=0, outcome="PENDING")
+        self.assertEqual(b["result"], "UPDATED")
+        self.assertIn("restart-pending", b["failing_check"])
+
+    def test_openclaw_cli_updates_on_its_own_check_when_no_repo_is_behind(self):
+        marker = self.install_update_stub()
+        self.set_latest(openclaw="v2026.12.0")                     # installed (stub) is 2026.11.3
+        b = au.run_update(self.root, "d", "r", True)
+        self.assertEqual(marker.read_text().strip(), "behind=openclaw repair=1 oc=1")
+        self.assertEqual(b["versions"]["openclaw"]["before"], "v2026.11.3")
+
+    def test_current_openclaw_does_not_trigger_a_run(self):
+        marker = self.install_update_stub()
+        self.set_latest(openclaw="v2026.11.3")
+        self.assertEqual(au.run_update(self.root, "d", "r", True)["result"], "CURRENT")
+        self.assertFalse(marker.exists())
+
+    # 11a: kills the RUNNING-marker mutant
+    def test_a_tick_that_dies_mid_run_is_reported_failed_and_never_re_runs(self):
+        marker = self.install_update_stub()
+        self.set_latest(onboarding="v1.0.1")
+        self.at(self.TUE)
+        au.tick(self.root)
+        start = au.eastern_to_utc(au.run_start_local("test-box", dt.datetime(2026, 11, 17, 2, 0)))
+        self.at((start + dt.timedelta(minutes=1)).strftime("%Y-%m-%dT%H:%M:%SZ"))
+        real = au.subprocess.run
+        def boom(cmd, *a, **k):
+            if cmd and cmd[0] == "bash" and "auto-update-run.sh" in " ".join(cmd):
+                raise KeyboardInterrupt("killed mid-run")
+            return real(cmd, *a, **k)
+        with mock.patch.object(au.subprocess, "run", boom), self.assertRaises(KeyboardInterrupt):
+            au.tick(self.root)
+        self.assertEqual(json.loads((self.skills / ".auto-update-state.json").read_text())["settled"], "RUNNING")
+        self.at((start + dt.timedelta(minutes=6)).strftime("%Y-%m-%dT%H:%M:%SZ"))
+        self.assertEqual(au.tick(self.root), "crashed")
+        self.assertEqual(self.beacon()["result"], "FAILED")
+        self.assertIn("did not finish", self.beacon()["failing_check"])
+        self.assertFalse(marker.exists())
+        self.at((start + dt.timedelta(minutes=11)).strftime("%Y-%m-%dT%H:%M:%SZ"))
+        self.assertEqual(au.tick(self.root), "idle")
+
+    # DST: the notice must say the real start time; one notice per day through both transitions
+    def test_spring_forward_sunday_notice_says_3_30_and_nothing_fires_in_the_missing_hour(self):
+        self.assertIn("(3:30 AM)", au.notice_text(dt.date(2026, 3, 8)))
+        self.assertIn("(2:30 AM)", au.notice_text(dt.date(2026, 3, 15)))
+        self.assertIn("(2:30 AM)", au.notice_text(dt.date(2026, 11, 1)))
+        t = dt.datetime(2026, 3, 8, 5, 0, tzinfo=UTC)
+        while t < dt.datetime(2026, 3, 8, 14, 0, tzinfo=UTC):
+            self.at(t.strftime("%Y-%m-%dT%H:%M:%SZ"))
+            au.tick(self.root)
+            t += dt.timedelta(minutes=5)
+        texts = [m for _, m in self.sent()]
+        self.assertEqual(len(texts), 1)
+        self.assertIn("(3:30 AM)", texts[0])
+        st = json.loads((self.skills / ".auto-update-state.json").read_text())
+        sent_local = au.to_eastern(dt.datetime.fromtimestamp(st["notice"]["at_ms"] / 1000, tz=UTC))
+        self.assertEqual((sent_local.hour, sent_local.minute // 5 * 5), (3, 15))
+
+    def test_fall_back_sunday_gets_exactly_one_notice_at_2_15_and_the_text_says_2_30(self):
+        t = dt.datetime(2026, 11, 1, 4, 0, tzinfo=UTC)
+        while t < dt.datetime(2026, 11, 1, 13, 0, tzinfo=UTC):
+            self.at(t.strftime("%Y-%m-%dT%H:%M:%SZ"))
+            au.tick(self.root)
+            t += dt.timedelta(minutes=5)
+        self.assertEqual(len(self.sent()), 1)
+        self.assertIn("(2:30 AM)", self.sent()[0][1])
+        st = json.loads((self.skills / ".auto-update-state.json").read_text())
+        self.assertEqual(au.to_eastern(dt.datetime.fromtimestamp(st["notice"]["at_ms"] / 1000, tz=UTC)).strftime("%H:%M")[:4], "02:1")
+
+    # migration: the old Sunday path installs the schedule after the notice window
+    def test_a_box_migrated_by_the_old_sunday_run_is_labeled_migration_not_a_problem(self):
+        self.at("2026-11-22T08:00:00Z")                                      # Sunday 3:00 AM, old path installing
+        au.install(self.root, REPO / "scripts")
+        self.at("2026-11-22T08:10:00Z")
+        self.assertEqual(au.tick(self.root), "missed_notice")
+        b = self.beacon()
+        self.assertTrue(b["migration"])
+        self.assertTrue(b["failing_check"].startswith("MIGRATION"))
+
+    def test_a_box_that_simply_slept_through_the_window_is_not_labeled_migration(self):
+        self.at("2026-11-20T12:00:00Z")
+        au.install(self.root, REPO / "scripts")                              # installed days earlier
+        self.at("2026-11-22T08:10:00Z")
+        au.tick(self.root)
+        self.assertNotIn("migration", self.beacon())
+        self.assertEqual(self.beacon()["failing_check"], "missed notice window")
 
 
 class Update999OwnUpdater(unittest.TestCase):

@@ -41,7 +41,12 @@ if [ ! -f "$SELF_DIR/auto_update.py" ]; then
   exit 1
 fi
 
-python3 "$SELF_DIR/auto_update.py" install $DRY || exit $?
+if ! python3 "$SELF_DIR/auto_update.py" install $DRY; then
+  echo "[FAIL] The automatic update schedule could NOT be installed. The old update schedule was left exactly as it was." >&2
+  exit 1
+fi
+# Proves the new schedule fires (or falls back to the openclaw cron job) before the old jobs are retired.
+[ -z "$DRY" ] && python3 "$SELF_DIR/auto_update.py" selfcheck || true
 
 echo ""
 echo "[OK] Automatic update schedule is in place."

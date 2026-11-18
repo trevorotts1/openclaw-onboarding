@@ -173,6 +173,12 @@ def day_shift(day: dt.date) -> dt.timedelta:
     return dt.timedelta(hours=1) if day == _nth_weekday(day.year, 3, 6, 2) else dt.timedelta(0)
 
 
+def notice_text(day: dt.date) -> str:
+    """The exact client notice. On the spring-forward Sunday the start really is 3:30 AM, so the text says so."""
+    shown = "3:30 AM" if day_shift(day) else "2:30 AM"
+    return NOTICE_TEXT.replace("(2:30 AM)", f"({shown})")
+
+
 def _at(day: dt.date, hm: tuple) -> dt.datetime:
     return dt.datetime.combine(day, dt.time(*hm)) + day_shift(day)
 
@@ -211,7 +217,10 @@ def decide(local: dt.datetime, box: str, day_state: dict) -> str:
     d = local.date()
     if local < _at(d, NOTICE_AT):
         return "idle"
-    notice_done = bool(day_state.get("notice", {}).get("attempted"))
+    n = day_state.get("notice", {})
+    # Noticed = it was sent, or this box has no owner chat to send to. A failed send to a chat that WAS found
+    # is retried every tick until 2:30 and otherwise means no unannounced update.
+    notice_done = bool(n.get("attempted")) and (bool(n.get("sent")) or not n.get("chat_found", True))
     start = run_start_local(box, local)
     at_ms = day_state.get("notice", {}).get("at_ms")
     if at_ms:
@@ -271,8 +280,10 @@ def _owner_agent_ids(root: Path) -> list[str]:
     return list(dict.fromkeys(direct + catch_all + ["main"]))
 
 
-def owner_session_keys(root: Path) -> list[str]:
-    """The owner-facing sessions: Telegram direct sessions of the owner agent, or agent:<id>:main."""
+def owner_session_keys(root: Path, chat: str = "") -> list[str]:
+    """Sessions whose messages may cancel: the owner's own Telegram DM (peer id == the chat the notice went to).
+    The collapsed agent:<id>:main session counts only when the agent has no per-peer DM sessions at all, so a
+    different person who can talk to the agent can never cancel the owner's update."""
     keys: list[str] = []
     for agent in _owner_agent_ids(root):
         r = _run(["openclaw", "sessions", "list", "--agent", agent, "--json", "--limit", "all"], 90)
@@ -280,12 +291,16 @@ def owner_session_keys(root: Path) -> list[str]:
             rows = (json.loads(r.stdout) or {}).get("sessions") or []
         except ValueError:
             rows = []
-        dm = re.compile(rf"^agent:{re.escape(agent)}:telegram:(?:[^:]+:)?direct:\d+$")
-        found = sorted((x for x in rows if isinstance(x, dict) and x.get("key")
-                        and (dm.match(x["key"]) or x["key"] == f"agent:{agent}:main")),
+        dm = re.compile(rf"^agent:{re.escape(agent)}:telegram:(?:[^:]+:)?direct:(\d+)$")
+        found = sorted((x for x in rows if isinstance(x, dict) and x.get("key")),
                        key=lambda x: float(x.get("updatedAt") or 0), reverse=True)
-        keys += [x["key"] for x in found]
-        if keys:
+        directs = [(x["key"], dm.match(x["key"]).group(1)) for x in found if dm.match(x["key"])]
+        mains = [x["key"] for x in found if x["key"] == f"agent:{agent}:main"]
+        if directs:
+            keys += [k for k, peer in directs if chat and peer == chat]
+        else:
+            keys += mains
+        if keys or directs:
             break
     return list(dict.fromkeys(keys))
 
@@ -311,7 +326,7 @@ def cancel_requested(root: Path, since_ms: int) -> bool:
             return True
     except OSError:
         pass
-    for key in owner_session_keys(root):
+    for key in owner_session_keys(root, resolve_owner_chat()):
         r = _run(["openclaw", "gateway", "call", "chat.history", "--params",
                   json.dumps({"sessionKey": key, "limit": 60}), "--json"], 60)
         try:
@@ -457,6 +472,18 @@ def latest_999() -> str | None:
     return norm_version(_first_line_text(http_get("https://raw.githubusercontent.com/trevorotts1/999-setup/main/VERSION")))
 
 
+def installed_openclaw() -> str | None:
+    r = _run(["openclaw", "--version"], 30)
+    m = re.search(r"(\d{4}\.\d+\.\d+)", r.stdout if r.returncode == 0 else "")
+    return norm_version(m.group(1)) if m else None
+
+
+def latest_openclaw() -> str | None:
+    """What npm publishes as openclaw latest (oc-atomic-upgrade.sh still applies any pin on its own)."""
+    r = _run(["npm", "view", "openclaw", "version"], 40)
+    return norm_version(r.stdout.strip()) if r.returncode == 0 else None
+
+
 def check_versions(root: Path) -> dict:
     """{repo: {installed, latest, behind}} for onboarding, command_center and (macOS only) 999."""
     ref = pinned_ref(root)
@@ -464,6 +491,7 @@ def check_versions(root: Path) -> dict:
             "command_center": {"installed": installed_cc(root), "fetch": lambda: latest_cc(ref)}}
     if is_mac():
         rows["999"] = {"installed": installed_999(), "fetch": latest_999}
+    rows["openclaw"] = {"installed": installed_openclaw(), "fetch": latest_openclaw}
     fixture = os.environ.get("AUTO_UPDATE_LATEST_JSON", "").strip()    # tests only: latest versions from a file
     if fixture:
         fx = read_json(Path(fixture), {})
@@ -475,6 +503,8 @@ def check_versions(root: Path) -> dict:
             continue                      # 999 is only ever refreshed where it is already installed
         if name == "command_center" and find_cc_dir(root) is None:
             continue                      # no Command Center on this box: nothing to update
+        if name == "openclaw" and row["installed"] is None:
+            continue                      # no openclaw CLI to update
         try:
             latest = row["fetch"]()
         except (OSError, ValueError, urllib.error.URLError, KeyError) as e:
@@ -492,6 +522,7 @@ def build_beacon(root: Path, result: str, versions_before: dict, versions_after:
                  day: str, failing: str | None = None, model: str | None = None, notice_sent: bool = False) -> dict:
     assert result in RESULTS, result
     vers = {}
+    vers["openclaw"] = {"before": versions_before.get("openclaw"), "after": versions_after.get("openclaw", versions_before.get("openclaw"))}
     for n in ("onboarding", "command_center", "999"):
         if n == "999" and not is_mac():
             vers[n] = None          # never on Linux/VPS/Contabo
@@ -517,7 +548,7 @@ def beacon_url() -> tuple[str, str, str]:
 
 
 def installed_snapshot(root: Path) -> dict:
-    snap = {"onboarding": installed_onboarding(root), "command_center": installed_cc(root)}
+    snap = {"onboarding": installed_onboarding(root), "command_center": installed_cc(root), "openclaw": installed_openclaw()}
     if is_mac() and find_999_checkout() is not None:
         snap["999"] = installed_999()
     return snap
@@ -590,7 +621,8 @@ def run_update(root: Path, day: str, run_id: str, notice_sent: bool) -> dict:
     """The locked part of a run. The caller (auto-update-run.sh) already holds the shared lease."""
     versions = check_versions(root)
     before = {k: v["installed"] for k, v in versions.items()}
-    unreadable = [k for k, v in versions.items() if v["behind"] is None]
+    # The OpenClaw CLI is judged on its own: an unreadable npm answer never blocks the repos.
+    unreadable = [k for k, v in versions.items() if v["behind"] is None and k != "openclaw"]
     if unreadable:
         return build_beacon(root, "DEFERRED", before, before, run_id=run_id, day=day, notice_sent=notice_sent,
                             failing=f"could not read the latest {', '.join(sorted(unreadable))} version")
@@ -600,7 +632,8 @@ def run_update(root: Path, day: str, run_id: str, notice_sent: bool) -> dict:
     log(f"behind: {', '.join(behind)}; running the update")
     cc_file = skills_dir(root) / f".cc-update-result-{os.getpid()}.json"
     cc_file.unlink(missing_ok=True)
-    env = dict(os.environ, CC_UPDATE_RESULT_FILE=str(cc_file), AUTO_UPDATE="1", AUTO_UPDATE_BEHIND=",".join(behind), AUTO_UPDATE_OPENCLAW="1",
+    env = dict(os.environ, CC_UPDATE_RESULT_FILE=str(cc_file), AUTO_UPDATE="1", AUTO_UPDATE_BEHIND=",".join(behind),
+               AUTO_UPDATE_OPENCLAW="1" if "openclaw" in behind else "0",
                AUTO_UPDATE_REPAIR="1", AUTO_UPDATE_RUN_ID=run_id)
     t0 = time.time()
     try:
@@ -625,6 +658,7 @@ def run_update(root: Path, day: str, run_id: str, notice_sent: bool) -> dict:
         if "999" in before and norm_version(nine.get("after")):
             after["999"] = norm_version(nine["after"])
     outcome = str(row.get("outcome") or "")
+    steps = row.get("steps") or {}
     repair = (row.get("heal") or {}).get("repair_agent") or {}
     model = repair.get("model") or None
     failing = None
@@ -640,6 +674,9 @@ def run_update(root: Path, day: str, run_id: str, notice_sent: bool) -> dict:
         result = "UPDATED"
     elif outcome == "ROLLED_BACK":
         result = "ROLLED_BACK"
+    elif outcome == "PENDING":
+        # a container's gateway restart was handed to the host: updated, restart pending (CONTRACT.md section 9)
+        result, failing = "UPDATED", "restart-pending: the host restarts this container's gateway"
     else:
         result = "FAILED"
         failing = failing or (row.get("outcome_detail") or f"update exited {rc}")[:200]
@@ -647,6 +684,17 @@ def run_update(root: Path, day: str, run_id: str, notice_sent: bool) -> dict:
         result, failing = "FAILED", failing or "Command Center update reported FAILED"
     elif result == "UPDATED" and cc_status == "DEFERRED":
         result, failing = "DEFERRED", "Command Center update deferred (box lock busy)"
+    if result == "UPDATED":
+        s999, soc = str(steps.get("update-999", "")), str(steps.get("openclaw-update", ""))
+        if s999.startswith("failed"):
+            result, failing = "FAILED", f"999 update failed: {s999[7:150]}"
+        elif s999.startswith("skip:DEFERRED"):
+            result, failing = "DEFERRED", "999 update deferred (box lock busy); onboarding and Command Center updated"
+        elif "999" in after and "999" in versions and is_behind(after.get("999"), versions["999"]["latest"]) \
+                and not s999.startswith("skip:"):
+            result, failing = "FAILED", "999 is still behind after the update"
+        elif soc.startswith("failed"):
+            result, failing = "FAILED", f"OpenClaw CLI update failed: {soc[7:150]}"
     if result in ("ROLLED_BACK", "FAILED") and repair.get("no_model"):
         result = "NO_DEEPSEEK"
         failing = failing or (row.get("outcome_detail") or "")[:200]
@@ -672,6 +720,8 @@ def tick(root: Path | None = None) -> str:
         guard.close()
         return "busy"                      # another tick (or a run) holds the box's auto-update guard
     try:
+        (skills_dir(root) / ".auto-update-heartbeat").write_text(str(int(now_utc().timestamp() * 1000)) + "\n")
+        finish_migration(root)             # proves the new schedule fires, then (and only then) retires the old jobs
         return _tick_locked(root)
     finally:
         guard.close()                      # closing releases the flock
@@ -683,12 +733,22 @@ def _tick_locked(root: Path) -> str:
     day = local.date().isoformat()
     box = box_id(root)
     st = _state(root, day)
+    if st.get("settled") == "RUNNING":
+        # A previous tick died mid-run (the flock is free, so nobody is running): say so, never re-run silently.
+        st["settled"] = "CRASHED"
+        write_json_atomic(state_path(root), st)
+        snap = installed_snapshot(root)
+        emit_beacon(root, build_beacon(root, "FAILED", snap, snap, run_id=f"auto-update-{utc:%Y%m%dT%H%M%SZ}-{os.getpid()}",
+                                       day=day, failing="the update run did not finish (the process ended mid-run)",
+                                       notice_sent=bool(st.get("notice", {}).get("sent"))))
+        return "crashed"
     act = decide(local, box, st)
     if act == "idle":
         return "idle"
     if act == "notice":
-        sent, detail = send_owner_message(NOTICE_TEXT)
-        st["notice"] = {"attempted": True, "sent": sent, "detail": detail, "at_ms": int(utc.timestamp() * 1000)}
+        sent, detail = send_owner_message(notice_text(local.date()))
+        st["notice"] = {"attempted": True, "sent": sent, "detail": detail,
+                        "chat_found": detail != "no client owner chat resolved", "at_ms": int(utc.timestamp() * 1000)}
         write_json_atomic(state_path(root), st)
         log(f"notice {'sent' if sent else 'NOT sent (' + detail + ')'}")
         return "notice"
@@ -718,12 +778,27 @@ def _tick_locked(root: Path) -> str:
         st["run_rc"] = rc
         write_json_atomic(state_path(root), st)
         return "run"
-    reason = "missed notice window" if act == "missed_notice" else "missed run window"
+    migration = False
+    if act == "missed_notice" and st.get("notice", {}).get("attempted"):
+        reason = "notice could not be delivered to the owner chat; not updating unannounced"
+    elif act == "missed_notice":
+        reason = "missed notice window"
+        installed_at = read_json(install_path(root), {}).get("installed_at_ms") or 0
+        if installed_at >= int(eastern_to_utc(_at(local.date(), NOTICE_AT)).timestamp() * 1000):
+            # The schedule was installed after today's notice window (the last run of the old Sunday path
+            # installed it): nothing was missed by a working schedule.
+            migration = True
+            reason = "MIGRATION: schedule installed after today's notice window; the old path already ran today"
+    else:
+        reason = "missed run window"
     st["settled"] = "MISSED"
     write_json_atomic(state_path(root), st)
     before = installed_snapshot(root)
-    emit_beacon(root, build_beacon(root, "DEFERRED", before, before, run_id=f"auto-update-{utc:%Y%m%dT%H%M%SZ}-{os.getpid()}",
-                                   day=day, failing=reason, notice_sent=bool(st.get("notice", {}).get("sent"))))
+    b = build_beacon(root, "DEFERRED", before, before, run_id=f"auto-update-{utc:%Y%m%dT%H%M%SZ}-{os.getpid()}",
+                     day=day, failing=reason, notice_sent=bool(st.get("notice", {}).get("sent")))
+    if migration:
+        b["migration"] = True
+    emit_beacon(root, b)
     return act
 
 
@@ -747,6 +822,29 @@ def _crontab_bin() -> str:
     return os.environ.get("AUTO_UPDATE_CRONTAB", "crontab")
 
 
+def install_path(root: Path | None = None) -> Path:
+    return skills_dir(root) / ".auto-update-install.json"
+
+
+def cron_daemon_running() -> bool:
+    """Whether a cron daemon will actually fire a crontab line. macOS cron is launchd-managed, so the crontab
+    command is enough there. On Linux the crontab BINARY can exist in a container with no daemon at all (the
+    gateway is PID 1), so look for a running cron/crond process."""
+    if shutil.which(_crontab_bin()) is None:
+        return False
+    if is_mac():
+        return True
+    if shutil.which("pgrep"):
+        return any(_run(["pgrep", "-x", name], 10).returncode == 0 for name in ("cron", "crond", "cronie"))
+    for comm in Path("/proc").glob("[0-9]*/comm"):          # no pgrep (minimal image): scan /proc
+        try:
+            if comm.read_text().strip() in ("cron", "crond", "cronie"):
+                return True
+        except OSError:
+            continue
+    return False
+
+
 def ensure_scripts(root: Path, src: Path) -> list[str]:
     """Copy the runtime files into <root>/scripts when they are missing or differ (idempotent)."""
     changed = []
@@ -766,33 +864,6 @@ def ensure_scripts(root: Path, src: Path) -> list[str]:
     return changed
 
 
-def retire_cron_jobs() -> list[str]:
-    """Remove every openclaw cron job named weekly-onboarding-update (the old agent 'ask first' job and
-    the 2:00 AM command job). Returns the ids removed. Unreadable list = nothing removed, retried next time."""
-    r = _run(["openclaw", "cron", "list", "--json"], 60)
-    if r.returncode != 0:
-        return []
-    raw = r.stdout
-    try:
-        i = min([x for x in (raw.find("{"), raw.find("[")) if x >= 0] or [0])
-        data = json.loads(raw[i:])
-    except ValueError:
-        return []
-    jobs = data if isinstance(data, list) else data.get("jobs", [])
-    ids = [j["id"] for j in jobs if isinstance(j, dict) and j.get("name") == OLD_CRON_NAME and j.get("id")]
-    removed = []
-    for jid in ids:
-        for _ in range(int(os.environ.get("AUTO_UPDATE_RM_TRIES", "3"))):
-            if _run(["openclaw", "cron", "rm", str(jid)], 60).returncode == 0:
-                removed.append(str(jid))
-                break
-            time.sleep(float(os.environ.get("AUTO_UPDATE_RM_DELAY", "5")))
-    return removed
-
-
-TICK_JOB_NAME = "auto-update-tick"
-
-
 def _cron_jobs() -> list[dict] | None:
     r = _run(["openclaw", "cron", "list", "--json"], 60)
     if r.returncode != 0:
@@ -806,64 +877,177 @@ def _cron_jobs() -> list[dict] | None:
     return [j for j in (data if isinstance(data, list) else data.get("jobs", [])) if isinstance(j, dict)]
 
 
-def ensure_openclaw_tick_job(root: Path, dry_run: bool = False) -> str:
-    """'present' | 'created' | 'unavailable'. Idempotent: an existing job with the same command is left alone."""
-    cmd = f"/bin/bash '{root}/scripts/auto-update-tick.sh'"
+def old_job_ids() -> list[str] | None:
     jobs = _cron_jobs()
     if jobs is None:
+        return None
+    return [str(j["id"]) for j in jobs if j.get("name") == OLD_CRON_NAME and j.get("id")]
+
+
+def retire_cron_jobs() -> list[str]:
+    """Remove every openclaw cron job named weekly-onboarding-update (the old agent 'ask first' job and
+    the 2:00 AM command job). Returns the ids removed. Unreadable list = nothing removed, retried next time.
+    Callers run this ONLY after the new schedule is installed and verified."""
+    removed = []
+    for jid in old_job_ids() or []:
+        for _ in range(int(os.environ.get("AUTO_UPDATE_RM_TRIES", "3"))):
+            if _run(["openclaw", "cron", "rm", str(jid)], 60).returncode == 0:
+                removed.append(str(jid))
+                break
+            time.sleep(float(os.environ.get("AUTO_UPDATE_RM_DELAY", "5")))
+    return removed
+
+
+TICK_JOB_NAME = "auto-update-tick"
+
+
+def _tick_job_present(root: Path) -> bool:
+    cmd = f"/bin/bash '{root}/scripts/auto-update-tick.sh'"
+    return any(j.get("name") == TICK_JOB_NAME and (j.get("payload") or {}).get("argv") == ["sh", "-lc", cmd]
+               and j.get("enabled", True) is not False for j in (_cron_jobs() or []))
+
+
+def ensure_openclaw_tick_job(root: Path, dry_run: bool = False) -> str:
+    """'present' | 'created' | 'unavailable'. Idempotent, and VERIFIED by reading the job list back."""
+    cmd = f"/bin/bash '{root}/scripts/auto-update-tick.sh'"
+    if _cron_jobs() is None:
         return "unavailable"
-    for j in jobs:
-        if j.get("name") == TICK_JOB_NAME and (j.get("payload") or {}).get("argv") == ["sh", "-lc", cmd] \
-                and j.get("enabled", True) is not False:
-            return "present"
+    if _tick_job_present(root):
+        return "present"
     if dry_run:
         return "created"
+    help_txt = _run(["openclaw", "cron", "add", "--help"], 30)
+    if help_txt.returncode == 0 and not re.search(r"^\s*--command[\s<]", help_txt.stdout + help_txt.stderr, re.M):
+        return "unavailable"                  # this OpenClaw has no command jobs
     r = _run(["openclaw", "cron", "add", "--name", TICK_JOB_NAME, "--cron", "*/5 * * * *", "--tz", "America/New_York",
               "--exact", "--description", "Tue/Fri/Sun auto-update tick (silent; keeps its own Eastern clock)",
               "--command", cmd, "--timeout-seconds", "7200", "--no-deliver"], 90)
-    return "created" if r.returncode == 0 else "unavailable"
+    return "created" if r.returncode == 0 and _tick_job_present(root) else "unavailable"
+
+
+def _install_crontab(root: Path, res: dict) -> bool:
+    """One write that adds the tick line and drops the retired lines, then read back and verify; on any
+    doubt put the previous crontab back (the old schedule survives a failed install)."""
+    cur = _run([_crontab_bin(), "-l"], 30)
+    current = cur.stdout if cur.returncode == 0 else ""
+    want = desired_crontab(current, root)
+    if want.strip() == current.strip():
+        return True
+    bak = skills_dir(root) / f".crontab.bak-auto-update-{now_utc():%Y%m%d-%H%M%S}"
+    try:
+        bak.parent.mkdir(parents=True, exist_ok=True)
+        bak.write_text(current)
+        res["crontab_backup"] = str(bak)
+    except OSError:
+        pass
+    p = subprocess.run([_crontab_bin(), "-"], input=want, text=True, capture_output=True)
+    back = _run([_crontab_bin(), "-l"], 30)
+    ok = p.returncode == 0 and back.returncode == 0 and want.strip() == back.stdout.strip()
+    if not ok:
+        subprocess.run([_crontab_bin(), "-"], input=current, text=True, capture_output=True)    # restore
+        res["error"] = "crontab install could not be verified; the previous crontab was kept"
+        return False
+    res["crontab_changed"] = True
+    return True
 
 
 def install(root: Path | None = None, src: Path | None = None, dry_run: bool = False) -> dict:
-    """Idempotent: retire the old schedule, install the new one exactly once. A second call changes nothing."""
+    """Idempotent. The old schedule is retired ONLY after the new one is installed and verified, and a box is
+    never left without one: a failed install keeps every old entry and reports an error (non-zero exit)."""
     root = root or oc_root()
     src = src or SCRIPT_DIR
-    res = {"scripts_changed": [], "crontab_changed": False, "old_files_removed": [], "cron_jobs_removed": []}
+    res = {"scripts_changed": [], "crontab_changed": False, "old_files_removed": [], "cron_jobs_removed": [],
+           "retire_pending": False}
     if not dry_run:
         res["scripts_changed"] = ensure_scripts(root, src)
-    if shutil.which(_crontab_bin()) is None:
-        # Containers without cron: the same tick runs as an OpenClaw command job instead (every 5 minutes).
-        res["scheduler"] = "openclaw-cron"
-        res["tick_job"] = ensure_openclaw_tick_job(root, dry_run)
-        current, want = "", ""
+    use_crontab = cron_daemon_running()
+    res["scheduler"] = "crontab" if use_crontab else "openclaw-cron"
+    old_jobs = old_job_ids() or []
+    if dry_run:
+        res["old_files_removed"] = [f for f in (".update-restart-if-needed", ".openclaw-self-update") if (skills_dir(root) / f).exists()]
+        return res
+    if use_crontab:
+        if not _install_crontab(root, res):
+            return res
+        # A line in a crontab is not proof that something fires it: the old jobs stay until a tick has run
+        # (finish_migration, called by every tick and by `selfcheck`) or the fallback job takes over.
+        res["retire_pending"] = bool(old_jobs)
     else:
-        res["scheduler"] = "crontab"
-        cur = _run([_crontab_bin(), "-l"], 30)
-        current = cur.stdout if cur.returncode == 0 else ""
-        want = desired_crontab(current, root)
-    if want.strip() != current.strip():
-        res["crontab_changed"] = True
-        if not dry_run:
-            bak = skills_dir(root) / f".crontab.bak-auto-update-{now_utc():%Y%m%d-%H%M%S}"
-            try:
-                bak.parent.mkdir(parents=True, exist_ok=True)
-                bak.write_text(current)
-                res["crontab_backup"] = str(bak)
-            except OSError:
-                pass
-            p = subprocess.run([_crontab_bin(), "-"], input=want, text=True, capture_output=True)
-            if p.returncode != 0:
-                res["error"] = "crontab install failed"
-                res["crontab_changed"] = False
+        res["tick_job"] = ensure_openclaw_tick_job(root)
+        if res["tick_job"] == "unavailable":
+            res["error"] = "no cron daemon is running and the openclaw cron job could not be created; the old schedule was kept"
+            return res
+        res["cron_jobs_removed"] = retire_cron_jobs()
+        cur = _run([_crontab_bin(), "-l"], 30) if shutil.which(_crontab_bin()) else None
+        if cur is not None and cur.returncode == 0:
+            _install_crontab_retire_only(root, cur.stdout, res)
     for old in (".update-restart-if-needed", ".openclaw-self-update"):
         f = skills_dir(root) / old
         if f.exists():
             res["old_files_removed"].append(old)
-            if not dry_run:
-                f.unlink()
-    if not dry_run:
-        res["cron_jobs_removed"] = retire_cron_jobs()
+            f.unlink()
+    prev = read_json(install_path(root), {})
+    same = prev.get("scheduler") == res["scheduler"] and not res["crontab_changed"] and not res["scripts_changed"]
+    write_json_atomic(install_path(root), {
+        "installed_at_ms": prev.get("installed_at_ms") if same and prev.get("installed_at_ms") else int(now_utc().timestamp() * 1000),
+        "scheduler": res["scheduler"], "retire_pending": bool(res["retire_pending"] or prev.get("retire_pending") and same)})
     return res
+
+
+def _install_crontab_retire_only(root: Path, current: str, res: dict) -> None:
+    """On an openclaw-cron box that still has retired crontab lines (no daemon fires them): drop them."""
+    keep = [l for l in current.splitlines() if not any(p.search(l) for p in OLD_CRON_PATTERNS)]
+    if len(keep) != len(current.splitlines()):
+        subprocess.run([_crontab_bin(), "-"], input="\n".join(keep) + "\n", text=True, capture_output=True)
+
+
+def finish_migration(root: Path) -> list[str]:
+    """Called by every tick: the tick running IS the proof the crontab schedule fires, so the old openclaw
+    jobs are retired now (never earlier). Returns the ids removed."""
+    meta = read_json(install_path(root), {})
+    if not meta.get("retire_pending"):
+        return []
+    removed = retire_cron_jobs()
+    if not old_job_ids():                      # gone (or none left): done; unreadable list keeps it pending
+        meta["retire_pending"] = False
+        write_json_atomic(install_path(root), meta)
+    return removed
+
+
+def selfcheck(root: Path | None = None) -> dict:
+    """Run by setup-weekly-update.sh and update-skills.sh. If the crontab schedule was installed more than
+    15 minutes ago and no tick has run since, the cron line is not firing: fall back to the openclaw cron job
+    (verified), and only then retire the old jobs. If a tick has run, finish retiring the old jobs."""
+    root = root or oc_root()
+    meta = read_json(install_path(root), {})
+    out = {"state": "no-install-record"}
+    if not meta:
+        return out
+    hb = skills_dir(root) / ".auto-update-heartbeat"
+    installed = meta.get("installed_at_ms") or 0
+    try:
+        beat = int(hb.read_text().strip())
+    except (OSError, ValueError):
+        beat = 0
+    if meta.get("scheduler") == "openclaw-cron":
+        out["state"] = "openclaw-cron" if _tick_job_present(root) else "tick-job-missing"
+        return out
+    if beat >= installed:
+        out["state"] = "proven"
+        out["retired"] = finish_migration(root)
+        return out
+    if int(now_utc().timestamp() * 1000) - installed < 15 * 60 * 1000:
+        out["state"] = "waiting-for-first-tick"
+        return out
+    job = ensure_openclaw_tick_job(root)
+    out["state"], out["tick_job"] = "fallback-to-openclaw-cron", job
+    if job in ("present", "created"):
+        meta["scheduler"] = "openclaw-cron"
+        write_json_atomic(install_path(root), meta)
+        out["retired"] = retire_cron_jobs()
+        meta["retire_pending"] = bool(old_job_ids())
+        write_json_atomic(install_path(root), meta)
+    return out
 
 
 # ------------------------------------------------------------------ cli ------
@@ -877,6 +1061,7 @@ def main(argv: list[str] | None = None) -> int:
     sub.add_parser("check")
     sub.add_parser("status")
     sub.add_parser("next")
+    sub.add_parser("selfcheck")
     pi = sub.add_parser("install")
     pi.add_argument("--dry-run", action="store_true")
     a = ap.parse_args(argv)
@@ -899,7 +1084,11 @@ def main(argv: list[str] | None = None) -> int:
     elif a.cmd == "next":
         print("\n".join(next_runs(now_utc(), box_id(root))))
     elif a.cmd == "install":
-        print(json.dumps(install(root, dry_run=a.dry_run), indent=2))
+        res = install(root, dry_run=a.dry_run)
+        print(json.dumps(res, indent=2))
+        return 1 if res.get("error") else 0
+    elif a.cmd == "selfcheck":
+        print(json.dumps(selfcheck(root), indent=2))
     return 0
 
 

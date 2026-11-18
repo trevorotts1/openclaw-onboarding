@@ -530,6 +530,12 @@ notice and the cancel reply. The operator gets one 6:00 AM Eastern summary of th
 - every `openclaw cron` job named `weekly-onboarding-update`: the old agent "ask first" job and the 2:00 AM command job
 - `cron-prompt.txt` is no longer installed anywhere
 
+The install is atomic and verified: a failed install keeps every old entry, exits non-zero and prints no OK. The
+crontab is used only when a cron daemon is actually running (otherwise the same tick is an OpenClaw command job), and the
+old openclaw jobs are removed only after a tick has proven the new schedule fires (`auto_update.py selfcheck` falls back to
+the openclaw job if no tick ran within 15 minutes). On the spring-forward Sunday the notice says 3:30 AM. A box migrating
+from the old Sunday path records one `DEFERRED` beacon labeled `MIGRATION`.
+
 `bash scripts/setup-weekly-update.sh` installs the schedule (update-skills.sh runs it on every update); running it
 again changes nothing. A box migrates on the next old-path run (the last Sunday 3:00 AM run) or any fleet roll.
 Check a box: `crontab -l | grep openclaw-auto-update`, `python3 scripts/auto_update.py next`, `cat ~/.openclaw/skills/.auto-update-status.json`.
