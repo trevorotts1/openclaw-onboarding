@@ -654,8 +654,14 @@ def check_pace_style(style_text, pace_plan):
     if not pace_plan:
         return []
     o = pace_plan if isinstance(pace_plan, dict) else {}
-    drop = o.get("drop") or getattr(_R, "PACE_DROP_CLAUSE", "")
-    ret = o.get("return") or getattr(_R, "PACE_RETURN_CLAUSE", "")
+    if o.get("method"):
+        # S75: a METHOD order's own two seams, read from the SAME writer
+        # suno_recipe.pace_clause uses, so the drop carries the no-singing
+        # refusal and a method order with no drop text is still accepted.
+        drop, ret = _R.method_pace_clauses(o)
+    else:
+        drop = o.get("drop") or getattr(_R, "PACE_DROP_CLAUSE", "")
+        ret = o.get("return") or getattr(_R, "PACE_RETURN_CLAUSE", "")
     # WWB-INT in-branch seam (WW-23 -> WW-22): the anchor presence is decided by
     # WW-22's ONE ordered matcher, story_coverage.ordered_run_match, instead of a
     # raw substring scan. Each approved direction must appear as a CONTIGUOUS run

@@ -75,6 +75,18 @@ def _read(path):
         return None
 
 
+def _stat_value(read, path, key):
+    """Parse a "key value" line (cgroup memory.stat) -> int, or None when absent."""
+    for line in (read(path) or "").splitlines():
+        parts = line.split()
+        if len(parts) == 2 and parts[0] == key:
+            try:
+                return int(parts[1])
+            except ValueError:
+                return None
+    return None
+
+
 # ── D1 container reader (copied + extended) ──────────────────────────────────
 def container_limits(read=_read):
     """Return (ram_max_gb|None, cores_eff|None, memory_current_gb|None, label).
@@ -94,7 +106,12 @@ def container_limits(read=_read):
             cores = None
         cur = read("/sys/fs/cgroup/memory.current")
         if cur and cur.isdigit():
-            ram_now = int(cur) / GIB
+            # working set = usage - inactive_file; inactive page cache is reclaimable
+            usage = int(cur)
+            inactive = _stat_value(read, "/sys/fs/cgroup/memory.stat", "inactive_file")
+            if inactive is not None:
+                usage = max(0, usage - inactive)
+            ram_now = usage / GIB
         label.append("cgroup-v2")
     else:  # v1
         m = read("/sys/fs/cgroup/memory/memory.limit_in_bytes")
@@ -105,7 +122,13 @@ def container_limits(read=_read):
             cores = int(q) / int(p)
         cur = read("/sys/fs/cgroup/memory/memory.usage_in_bytes")
         if cur and cur.isdigit():
-            ram_now = int(cur) / GIB
+            # working set = usage - total_inactive_file; inactive page cache is reclaimable
+            usage = int(cur)
+            inactive = _stat_value(read, "/sys/fs/cgroup/memory/memory.stat",
+                                   "total_inactive_file")
+            if inactive is not None:
+                usage = max(0, usage - inactive)
+            ram_now = usage / GIB
         if m is not None or q is not None:
             label.append("cgroup-v1")
     return ram, cores, ram_now, "+".join(label)
@@ -145,7 +168,7 @@ def ram_avail_gb(read=_read, system=None):
 def _linux_mem_available(read=_read):
     for line in (read("/proc/meminfo") or "").splitlines():
         if line.startswith("MemAvailable:"):
-            return int(line.split()[1]) / 1024  # kB -> GB
+            return int(line.split()[1]) / (1024 * 1024)  # kB -> GiB
     return None
 
 
@@ -481,12 +504,12 @@ def selftest():
           round(ram_avail_gb(rd({"/proc/meminfo": "MemAvailable: 8000000 kB\n",
                                  "/sys/fs/cgroup/memory.max": str(6 * GIBV),
                                  "/sys/fs/cgroup/memory.current": str(2 * GIBV)}), "Linux"), 2),
-          round(min(8000000 / 1024, 4 * GIBV / GIB), 2))
+          round(min(8000000 / (1024 * 1024), 4 * GIBV / GIB), 2))
     check("v2 memory.max 'max' sentinel ignored",
           round(ram_avail_gb(rd({"/proc/meminfo": "MemAvailable: 8000000 kB\n",
                                  "/sys/fs/cgroup/memory.max": "max",
                                  "/sys/fs/cgroup/memory.current": str(2 * GIBV)}), "Linux"), 2),
-          round(8000000 / 1024, 2))
+          round(8000000 / (1024 * 1024), 2))
     # D2 formula cases (worked example: 10 cores, 8 GB free, load 2)
     mc, fc = machine_cap(8, 2, 10, RESERVE_GB, GB_PER_AGENT, AGENT_PER_FREE_CORE)
     check("machine_cap 10c/8GB/load2 -> 4", mc, 4)

@@ -379,6 +379,89 @@ TODO (U3, U9): refresh the band bullet and the caption bullet below when FU-U3 (
 - **Book campaigns.** The shots stage requires a PASS `book_orientation` record (`BOOK_MIRRORED`, `BOOK_COVER_NOT_FRONT`, `BOOK_SPINE_WRONG_SIDE`, `BOOK_WRONG_DIRECTION`, `BOOK_NO_MOTION`; UNAVAILABLE never advances; the checker must pass its calibration pair). `BOOK_SHOT_NOT_CONTRACTED` for a book video job with no start frame from the cover file. FU-U11 (open branch) adds `BOOK_BLANK_PAGES` and `BOOK_PLAN_NOT_APPROVED`; refresh this line when it lands.
 - **Per-style spoken bands.** FU-U3 (landed in 2.7.31 via PR #120) judges R&B Flow against its planned share and counts music-only time as neither sung nor spoken; Soul Ballad and Soul Rise stay at 22.5 / 77.5. The 5/10 band and the 6 s sung stretch do not change.
 
+## Lyric pain, persona and the spoken opening (method runs)
+
+A method run (`pace_plan["method"]` true) is judged on the lyric method as well as the
+story. The rows below split into two kinds and each row says which it is: a **code gate**
+returns a PASS, a FAIL with the code the code actually emits, or UNAVAILABLE; a **reviewer
+check** is read by a person against the sheet and the brief, because nothing in the skill
+writes a record for it. A reviewer check is written into the QC record with the line it
+was read from; it is never quoted as a code output, and UNAVAILABLE never advances.
+
+- **Persona matches the brief's audience - reviewer check, no code producer.** Read the
+  audience the brief names and the sheet's first person. On the run this row was written
+  from, the brief names a salaried professional: a degree, forty hours plus overtime, a
+  second job, the bills and the family, and nothing to show for it. A sheet written for a
+  different person (a nail tech, a hustler, "a strong woman" in general) fails the row even
+  though it passes every code gate. Record the brief sentence and the sheet line that
+  carries the persona.
+- **At least five pain details - reviewer check, no code producer.** Count concrete,
+  first-person, present-tense details: an amount, the hours, a second job, a dependent, a
+  bill, the promised degree, a peer comparison, a fear about retirement or travel, the
+  villain as an object (a letter, a bill, a notice). Fewer than five fails the row. Write
+  the count and the five lines into the QC record.
+- **At least two sung pain sections before the hero - reviewer check, no code producer.**
+  Count the sung sections between the spoken opening and the Hero Shift from the sheet's
+  own order. Two or more pass; one is a line, not a story, and fails. On the campaign run
+  the sheet carries Verse 1, Pre-Chorus 1 and Verse 2 before the hero enters at
+  Pre-Chorus 2.
+- **Client lines present and logged - reviewer check, no code producer.** Every line the
+  client supplied is present, cleaned only for grammar and meter, with the original next to
+  the cleaned line in the script notes. No `client_lines` field is written to
+  `creative/script.json` by the skill today; the log is the sheet's own notes, and the
+  reviewer writes it into the QC record. A client line dropped or reworded fails the row.
+- **Style equals the card choice - reviewer check, no code producer.** Compare the style
+  the card offered and the client chose with the style that was dispatched, field by field.
+  A substituted style fails the row: it re-cuts the whole song, and no rewrite, gate or
+  operator order may re-pick it.
+- **The final style carries "no singing until the groove drops" - code gate.**
+  `suno_recipe.method_pace_clauses` writes the clause into a method order's drop text, and
+  `song_contract.check_pace_style(style_text, pace_plan)` refuses a final style that does
+  not carry the approved drop direction as a contiguous, in-order run of its words. The
+  refusal is `PACE_DIRECTION_MISSING: the final style does not carry the drop direction
+  (...) in order`, and it fires before any paid request. The same call also enforces the
+  return direction; a style with the drop and no return fails the same code.
+- **`PRE_ERM_SPOKEN_SHORT` / `PRE_ERM_SPOKEN_LONG` clear - code gate, on the sheet.**
+  `suno_recipe.check_pre_erm_opening(sheet, length_s)` runs inside `check_lyric_sheet` on
+  method runs, before dispatch. It measures nothing: it walks the sheet from the top,
+  sums the words of the sections before the first sung or rap section, divides by the
+  style's planned spoken rate (`words_fit.rates_for`), and compares the planned seconds
+  with `erm_apex_s - METHOD_FIRST_SUNG_TOL_S` (32.5 - 1.5 = 31.0 s at 3 minutes) and with
+  the window's high end. A planned lead-in that is too short is `PRE_ERM_SPOKEN_SHORT`
+  (planned seconds, words, floor, apex, words still needed); past the window's close is
+  `PRE_ERM_SPOKEN_LONG` (planned seconds, window close, most words allowed). A sheet that
+  opens with a no-voice `[Instrumental]` tag earns `PRE_ERM_LEAD_IN_UNPLANNED` as a
+  warning instead, and the take is then judged by word timing.
+- **`ERM_OUTSIDE_WINDOW` clear - code gate.** The ERM apex must sit inside
+  `control/method.json`'s `runtime_targets.erm_window_s` (at 3 minutes, 25-40 s), and
+  `method_plan.validate(blueprint, method)` rejects a blueprint apex outside it with
+  `ERM_OUTSIDE_WINDOW` before any lyric spend. The method record is the authority: when
+  `music/req.json` and `creative/blueprint.json` say 65 s and the method says 32.5 s, the
+  blueprint is what moves.
+- **First sung word, by word timing - code gate.** The `first_sung` gate calls
+  `spoken_share.judge_first_vocal_at_erm(first_sung_s, sung_starts, erm_apex_s,
+  tol_s=1.5)`. On a method run the first sung word must fall inside the window
+  `[apex - 1.5 s, apex + 1.5 s]`; early and late are both FAIL (the ERM Drop is where the
+  song turns). The figure is the earliest sung word start, never the closest one, and
+  `song_dispatch` sets `first_sung.measurement.source`: `word_timing` when
+  `aligned_words` supplied a word, `singing_detector` otherwise. The word-timing figure is
+  the one that counts: the singing detector reads a spoken backstory over music as sung and
+  reported 0-10 s on takes whose first sung lyric word was at 38-46 s by word timing. On a
+  3-minute song the window's floor (31.0 s) is already above the operator's 30-second rule,
+  so a take inside the window has not sung before 30 s; the measured word-timing second is
+  recorded per take. A late FAIL is open: `first_sung` is emitted by the take judge but is
+  not in `REQUIRED_TAKE_GATES`, so `take_accepted` does not read it and the FAIL is
+  recorded without stopping delivery, and the operator-decision record's
+  `gates_not_proven` accepts only D1-D5, so this gate is not nameable there either
+  (worked through in EXAMPLES.md).
+- **`WORD_TIMING_UNAVAILABLE` means stop and fix the install.** `song_transports` raises
+  the loud `WORD_TIMING_UNAVAILABLE` warning when a take returns no aligned words or the
+  timing call errors (the measured cause was faster-whisper `small` never installed on the
+  box). The take still records the error and no word-timing figure is invented. Stop
+  there, repair the install (INSTALL.md), re-measure; the gate never passes on a plan, a
+  prompt or a promise.
+
+
 ## No blur fill (DEL-14)
 
 Blur fill is never used. Full height comes from crop-in of the source frame
