@@ -160,5 +160,9 @@ def main():
         print("FAIL:", f)
     return 1 if fails else 0
 
+def test_pick_operator_decision():
+    assert main() == 0
+
+
 if __name__ == "__main__":
     sys.exit(main())
