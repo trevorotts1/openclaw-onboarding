@@ -481,6 +481,22 @@ class X07OfflineDispatch(unittest.TestCase):
         self.assertEqual(self.transport.submits(), 2, self.transport.calls)
         self.assertEqual(self._summary()["actual_cost"], CREDITS)
 
+    def test_keep_one_after_an_initial_failure_stops_the_retry(self):
+        """keep_one after the INITIAL take failed at the provider: the retry
+        is refused with no submit and no new row. The latest recorded answer
+        decides: keep_one never buys a new paid round, even when no redo
+        answer ever existed."""
+        self.transport.fail_submits = {1}
+        failed = self._generate()
+        self.assertNotEqual(failed["results"][0]["envelope"]["outcome"], "ok")
+        self.assertEqual(self.transport.submits(), 1, self.transport.calls)
+        self.assertEqual(self._fork("keep one")["answer"], "keep_one")
+        retry = self._generate()
+        self._refused(retry, "MISSING_AUTH_REF")
+        self.assertEqual(self.transport.submits(), 1, self.transport.calls)
+        self.assertEqual(len(self._auth_rows()), 1, self._auth_rows())
+        self.assertEqual(self._summary()["actual_cost"], 0)
+
     def test_replayed_decision_mints_no_second_authorization(self):
         """The SAME recorded decision written twice (same answer, reply, who,
         channel and time) is one decision: one reference, one paid take."""

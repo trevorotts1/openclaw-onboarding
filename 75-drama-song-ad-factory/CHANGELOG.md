@@ -4,6 +4,13 @@ All notable changes to this skill are documented here. The version of
 record is `skill-version.txt` (kept in agreement with the `SKILL.md`
 frontmatter `version:` field).
 
+## v2.9.203 - 2026-11-20 - a keep_one answer stops a paid retry after the first take fails
+
+- **The bug.** `spend_ledger` stopped a provider-failure retry without an authorization reference only when the failed take had been an authorized creative retake. When the FIRST take failed at the provider and the client then answered `keep_one`, the song runner sent no reference with `require_round_auth=True`, the ledger allowed the retry as a plain provider-failure retry, and the second paid submit went out. `keep_one` never buys a new paid round, so this was a paid take the client's latest answer did not authorize.
+- **The fix.** The `require_round_auth` refusal now covers every retry in a paid round, not only retries after a creative retake. Runs with no recorded answer pass no flag and keep the plain provider-failure retry they always had; round-2 behavior for other ledger callers is unchanged.
+- **Tests.** New failing-first test in `test_spend_attempts_w02u2.py` (keep_one stops the retry after an initial failure; no-decision callers keep the plain retry) and in `song_choices/test_x07_offline_dispatch.py` (keep_one after the first submit fails: retry refused `MISSING_AUTH_REF`, one submit, one ledger row, zero cost).
+- **Twin.** The same change is made in the 999-setup distribution (999-setup PR #464); the shared `scripts/core/` files stay byte-identical in both copies. Version stamp skill 75 v2.9.202 -> v2.9.203, with the `SKILL.md` frontmatter `version:` kept in agreement. No release or tag is created here.
+
 ## v2.9.202 - 2026-11-20 - a client-approved paid song redo is no longer refused MISSING_AUTH_REF
 
 - **The bug.** When the song judge failed a take, the client answered the fork question and the answer was saved in `song-choices/fork-decision.json`. The answers `redo_all` and `new_three` reopen the music stage for a new round. That new round is a paid creative retake, and the spend ledger refuses a creative retake that carries no authorization reference. Nothing ever passed one: `kie_dispatch.dispatch()` had no way to take it, and the song runner never turned the client's answer into one. So every redo the client asked for was refused `MISSING_AUTH_REF` before anything was reserved. No money was charged and no song was made.

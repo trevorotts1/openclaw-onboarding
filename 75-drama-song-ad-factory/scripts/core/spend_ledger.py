@@ -35,9 +35,11 @@ Paid-attempt identity (directive 8.4, findings D20/D21):
   presents it (an initial one included). A failed/transport retry that
   presents its round's reference again is not refused or re-recorded. A
   caller that passes require_round_auth=True (it knows the client's current
-  answer) is refused MISSING_AUTH_REF for a retry inside a creative round
+  answer) is refused MISSING_AUTH_REF for a retry inside a paid round
   without a reference, so a withdrawn authorization stops the retry; other
-  callers keep the plain retry. A provider success that fails creative QC
+  callers keep the plain retry (ponytail: the caller's flag marks whose
+  call carries the client's current answer; the ledger cannot read the
+  fork file itself). A provider success that fails creative QC
   remains a successful provider result: record_qc_verdict never flips it.
 - An attempt that was ever `unknown` must be reconciled, with provider
   lookup evidence recorded, before ANY resubmission.
@@ -732,18 +734,21 @@ def _allocate(db_path, cmd, run_id, logical_key, attempt_id, request_digest,
             # would refuse the retry DUPLICATE_AUTHORIZATION); a new one is a
             # new decision, checked and recorded below. Only a caller that
             # knows the client's CURRENT answer (require_round_auth) has an
-            # empty reference read as withdrawn: a retry inside a paid
-            # creative round is then refused. Every other caller keeps the
-            # plain provider-failure retry it always had.
+            # empty reference read as withdrawn: any provider-failure retry
+            # inside a paid round -- a creative round after a success, or a
+            # still-open initial round after a failure -- is then refused.
+            # keep_one never buys a new paid round, whatever came before it;
+            # a run with no recorded decision passes no flag and keeps the
+            # plain retry. Every other caller keeps the plain
+            # provider-failure retry it always had.
             start = max((i for i, r in enumerate(prior)
                          if r[9] in ("initial", "creative_retake", "")),
                         default=0)
             live = [r[6] for r in prior[start:] if r[6]]
-            if (require_round_auth and not auth_ref
-                    and prior[start][9] == "creative_retake"):
+            if require_round_auth and not auth_ref:
                 conn.execute("ROLLBACK")
                 return refuse("MISSING_AUTH_REF",
-                              "a retry inside a paid creative retake needs "
+                              "a retry inside a paid round needs "
                               "that round's authorization; the latest "
                               "authorization no longer covers it",
                               attempt_id, run[6])

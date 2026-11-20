@@ -406,6 +406,38 @@ def test_withdrawn_auth_stops_retry_and_initial_spends_ref():
     finally:
         shutil.rmtree(d, ignore_errors=True)
 
+# --- 6d. keep_one stops a retry after an INITIAL failure ---------------
+def test_keep_one_stops_retry_after_initial_failure():
+    """keep_one is the client's CURRENT answer (require_round_auth, no
+    reference): it stops a provider-failure retry even after an INITIAL
+    attempt failed -- the latest recorded answer decides and keep_one never
+    buys a new paid round. A run with NO recorded fork decision passes no
+    flag and keeps today's plain provider-failure retry."""
+    db, d = tmp_db(run_id="ko", repair_cap=3)
+    try:
+        first = L.allocate_attempt(db, "ko", "k1", "digest-1", estimated_cost=5)
+        to_failed(db, "ko", "k1", first["attempt_id"], cost=0)
+        refused = L.plan(db, "ko", "k1", "", "digest-2", 5,
+                         require_round_auth=True)
+        check("keep_one: retry after an initial failure refused",
+              refused["outcome"] == "rejected"
+              and refused["reason_code"] == "MISSING_AUTH_REF", str(refused))
+        got = rows(db, "SELECT count(*) FROM jobs WHERE run_id='ko'")
+        check("keep_one: nothing persisted", got == [(1,)], str(got))
+    finally:
+        shutil.rmtree(d, ignore_errors=True)
+    db, d = tmp_db(run_id="nd", repair_cap=3)
+    try:
+        first = L.allocate_attempt(db, "nd", "k1", "digest-1", estimated_cost=5)
+        to_failed(db, "nd", "k1", first["attempt_id"], cost=0)
+        retry = L.plan(db, "nd", "k1", "", "digest-2", 5)
+        check("no-decision: the provider-failure retry still allowed",
+              retry["outcome"] == "ok"
+              and retry["evidence"]["retry_category"] == "failed_job_retry",
+              str(retry))
+    finally:
+        shutil.rmtree(d, ignore_errors=True)
+
 # --- 7. fractional credits and missing actuals ------------------------------
 def test_fractional_credits_and_missing_actuals():
     db, d = tmp_db(run_id="money", ceiling=100, credit_to_subunit_num=3,
@@ -598,6 +630,7 @@ TESTS = [
     test_failed_job_retry_ignores_auth_ref,
     test_plain_retry_after_authorized_retake_still_allowed,
     test_withdrawn_auth_stops_retry_and_initial_spends_ref,
+    test_keep_one_stops_retry_after_initial_failure,
     test_fractional_credits_and_missing_actuals,
     test_multi_track_counts_distinct,
     test_migration_100_preserves_rows,
