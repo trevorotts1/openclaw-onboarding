@@ -1,3 +1,11 @@
+## [v2.1.63] - 2026-11-20 - every stop tells the client what happened, why the rule exists, the fix, and their choices
+
+- Problem: when a gate stopped a funnel (copy too long, a picture prompt too short, a missing approval, a launch plan waiting on a price), the client only saw an internal code and a technical line. Nobody said why the rule was there or what to do next, so the work just stopped.
+- Fix: one table, `references/stop-explanations.json` (131 stops: every `AF-FUN-*` code, every entry-shell abort, the launch-mode waits and refusals, and an unreadable work file), and one helper, `scripts/explain_stop.py`, turn any stop into four plain parts: what happened (with the real names and numbers, read from the stop's own text), why the rule exists, what will fix it, and 2 to 4 numbered choices, one where the agent does the work. A stop the table does not know still gets all four parts. Codes, file paths and tracebacks never reach the client.
+- Where it shows: `run_signature_funnel.py` prints `FOR THE CLIENT:` and adds `client_explanation` to `process_manifest.json` on every abort; `launch_intake.assemble_plan` returns `client_explanation` beside `missing`; a blocked launch checkpoint from `collect_launch_receipts.py` carries it; and `launch_intake.py`, `dispatch_launch.py` and `legacy_downsell_images.py` print it after their `FAIL` / `REFUSED` line. Nothing was removed and no rule was loosened.
+- Rule for later: `SKILL.md` has a binding section, "When something stops the work", and `scripts/test_explain_stop.py` (wired into `verify.sh`) fails when a new stop code or shell abort tag ships without its plain explanation.
+- Pinned files changed (`run_signature_funnel.py`, `scripts/dispatch_launch.py`, new `scripts/explain_stop.py` and others): the prover pin needs a CI mint.
+
 ## [v2.1.62] - 2026-11-16 - test-only: the CI-wiring test also accepts the folded fast-guards guard (no behavior change)
 
 - `scripts/test_downsell_wrapper.py` `ThankYouTranslatorRunsInCiTests` now reads the folded script `scripts/ci/fast-guards.d/downsell-wrapper-pins.sh` and the `downsell-wrapper-pins` entry in `scripts/ci/fast-guards.json` for the same two assertions (the translator suite is a step of the job; the 82 and shared-contract paths trigger it). Tests are not part of the prover pin, so the pin is unchanged.

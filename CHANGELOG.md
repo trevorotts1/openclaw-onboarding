@@ -1,3 +1,11 @@
+## [Unreleased]  -  2026-11-20  -  Skill 49 (the Signature Funnel): every stop now tells the client what happened, why the rule exists, how to fix it, and what they can choose
+
+- Problem: when a Signature Funnel run stopped (copy over its word count, a picture prompt too short, a missing approval, a launch plan waiting on a price), the client got an internal code and a technical sentence. Nobody told them why the rule was there or what to do next, so the work just stopped.
+- Fix: every stop now comes with four plain parts, written for a fifth-grade reader: what happened (with the real numbers), why this rule exists, what will fix it, and 2 to 4 numbered choices, one of which is always "I do it for you". The words live in one table, `49-signature-funnel/references/stop-explanations.json` (131 stops), and one helper, `scripts/explain_stop.py`, fills them in. A stop the table does not know yet still gets all four parts. Codes, file paths and tracebacks stay in logs.
+- Where the client sees it: the orchestrator's abort record and output, the launch interview's "still needs" answer, a blocked launch checkpoint, and the intake, dispatch and picture-step command lines. Nothing was removed.
+- Rule for later: `SKILL.md` has a new binding section, "When something stops the work", and `scripts/test_explain_stop.py` fails if a new stop ships without its plain explanation.
+- Skill 49 v2.1.62 -> v2.1.63. Pinned files changed, so the prover pin needs its CI mint. Migration: none. Risk: LOW (words and one extra field; no stop was loosened).
+
 ## [Unreleased]  -  2026-11-18  -  Tenant readiness: explicit User-Agent, Cloudflare edge 403 probed on loopback, final installer call reads the client's own .env.local
 
 - Defect: the Skill 32 tenant readiness probe (`verify-tenant-readiness.py`, run by `run-full-install.sh` on every pass including `--update-only`) sent the stock `Python-urllib` User-Agent. A Cloudflare-fronted public host answers that agent with its own 403 page before Access runs, so the probe failed with "authenticated readiness probe failed: HTTPError", a healthy Command Center was stamped `done-degraded` (`tenantReadiness`) on every pass, and the ZHC closeout stayed deferred.
