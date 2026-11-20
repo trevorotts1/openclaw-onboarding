@@ -4,6 +4,14 @@ All notable changes to this skill are documented here. The version of
 record is `skill-version.txt` (kept in agreement with the `SKILL.md`
 frontmatter `version:` field).
 
+## v2.9.203 - 2026-11-20 - round-2 findings: cue words never decide, anywhere
+
+- **Cue words never decide, in any dialect.** `suno_recipe.parse_tag` now splits a non-parenthesized tag at the colon and reads only the name half: `[Intro spoken: instrumental bed]` is spoken, `[Verse: rap beat]` names no delivery at all (it is refused only if a lyric sits under it and the grammar cannot classify it). The parenthesized `[Name (spoken): cue]` rule from round 2 is unchanged. `check_no_voice_lines` judges the same name half, so `[Verse: instrumental bed]` with a lyric is legal while real `[Instrumental]`, `[Instrumental Break: band only]` and `[Break]` sections with a lyric are still refused.
+- **Underscore is a word character.** `is_no_voice_tag` splits words with Unicode-aware `\w`, so `Break_more` and `Break_down` are each one word and never a `[Break]`. `Breaké`, `breakα`, `Breakthrough`, `Heartbreak` and `Breakdown` stay sung.
+- **The closing keeps a spoken cue.** `story_arc.closing_block` skips only sections whose NAME is music-only, so a `[CTA (spoken): over a light instrumental bed]` closing is still the closing: an earlier `Book a call.` cannot mask a closing `The quiz is beautiful.`, which is refused as a summary-only promise.
+- **Semicolons never end a negation; a negated approval refuses.** `_commercial_calls` splits the negation sentence on `. ! ?` and em-dash only, so `Do not; take the quiz.` is refused. A supplied approval that asks for nothing (`Do not book a call.`) now refuses instead of standing aside, so `check_payload_closing` fails closed on it.
+- **Unchanged.** Word budget, opener cap, sung share, sung sections and pre-ERM rules unchanged; the round-2 quiz accept/refuse rows (colon, negative subjects, line breaks, own-sentence calls) hold. New test: `scripts/core/suno_recipe/test_gatefix_final_s75.py` (failing-first on head `f3a5db34`).
+
 ## v2.9.202 - 2026-11-20 - cue words and quiz calls no longer refuse a real song
 
 - **A spoken or sung section is never music-only because of its cue.** The lyric check read the whole bracket, so a spoken intro whose cue said "over a light instrumental bed" was refused as if it were an instrumental section. Now the shared parser honours a declared `[Name (sung|spoken|rap): cue]` first: the spoken intro keeps spoken delivery in every gate (lyric parser, delivery map, contradiction check, lyric-structure gate, hook-placement check), so an intro-only sheet maps to spoken and no longer raises `EMPTY_SHEET_DELIVERIES`. Cue words never grant a delivery to an unnamed section either.

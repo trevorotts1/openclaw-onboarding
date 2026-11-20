@@ -726,9 +726,10 @@ def _commercial_calls(text):
     A call counts only when nothing says not to act. A sentence refuses the
     act when any word before the phrase is "not", "never", "no", "nor",
     "cannot" or an "n't" word ("Do not take the quiz."), or when its subject
-    is negative ("Nobody should take the quiz."). A comma never ends the
-    sentence, so a real call after a negation must stand in its own sentence:
-    "Do not wait. Take the quiz now." ponytail: conservative - "No more
+    is negative ("Nobody should take the quiz."). A comma, colon or
+    semicolon never ends the sentence, so a real call after a negation must
+    stand in its own sentence: "Do not wait. Take the quiz now."
+    ponytail: conservative - "No more
     guessing, take our quiz." is refused too (origin/main refused every quiz
     line); the guard applies to every action phrase, so "Do not book a call."
     and a newline-split "Never\\ntake the quiz." are refused the same way.
@@ -737,7 +738,7 @@ def _commercial_calls(text):
     calls = []
     for m in _COMMERCIAL_RE.finditer(text):
         act = m.group(1).lower()
-        sentence = re.split(r"[.!?;\u2014]", text[:m.start()])[-1].lower()
+        sentence = re.split(r"[.!?\u2014]", text[:m.start()])[-1].lower()
         words = re.findall(r"[\w'\u2019]+", sentence)
         if any(w in _NEGATORS or w.endswith(("n't", "n\u2019t")) for w in words):
             continue
@@ -1017,10 +1018,29 @@ def _blocks(text):
     return out
 
 
+def _is_no_voice_name(tag):
+    """True when a section NAME (before any cue colon) is music-only.
+
+    Whole words only (Unicode-aware word characters keep "Breaké",
+    "breakα" and "Break_more" one word, never "break" plus a separator), so
+    "Breakthrough" stays sung. A cue word after the colon ("Verse:
+    instrumental bed") never makes a voiced section music-only.
+    """
+    name = str(tag or "").split(":", 1)[0]
+    return any(w in ("instrumental", "break")
+               for w in re.findall(r"\w+", name.lower(), re.UNICODE))
+
+
 def closing_block(sheet_text):
-    """The closing block: the last non-[End], non-instrumental section, or None."""
+    """The closing block: the last non-[End], non-instrumental section, or None.
+
+    Only the tag's NAME decides: a cue word ("over a light instrumental
+    bed") never makes a closing unfindable, so an earlier "Book a call."
+    cannot mask a closing quiz line.
+    """
     blocks = [b for b in _blocks(sheet_text)
-              if not re.search(r"\bend\b|instrumental", b["tag"], re.I)]
+              if not re.search(r"\bend\b", b["tag"], re.I)
+              and not _is_no_voice_name(b["tag"])]
     return blocks[-1] if blocks else None
 
 
@@ -1051,7 +1071,12 @@ def check_payload_closing(sheet_text, commercial_action=None, require_cta=False)
         return out
     if commercial_action is not None:
         want = _commercial_calls(commercial_action)
-        if want and want[0] not in calls:
+        if not want:
+            out.update(outcome="rejected", reason_code="closing-not-approved-call",
+                       detail="the approved commercial action asks for no real step: %r"
+                              % commercial_action)
+            return out
+        if want[0] not in calls:
             out.update(outcome="rejected", reason_code="closing-not-approved-call",
                        detail="the closing lacks the approved action %r" % want[0])
             return out
