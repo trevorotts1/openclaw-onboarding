@@ -102,6 +102,10 @@ INVENTORY = {
     # retake manager
     "ACCEPTED_ARTIFACT": "retake_manager", "INVALID_REQUEST": "retake_manager",
     "PROFILE_UNAVAILABLE": "retake_manager", "UNKNOWN_ARTIFACT": "retake_manager",
+    "TARGET_IN_BAND": "retake_manager in-band take kept",
+    # song CLI: bare ChoiceError fallback (conflicting roots / transport /
+    # hook / approval paths all explain; this is the catch-all)
+    "CHOICE_REFUSED": "song_choices.main ChoiceError fallback",
 }
 
 # Codes the scanned modules raise that are operator/plumbing faults, not a

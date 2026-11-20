@@ -68,8 +68,37 @@ VERDICTS = ("FAIL", "PASS", "UNAVAILABLE")
 
 
 def _reject(code, reason):
-    return {"outcome": "rejected", "code": code, "reason": reason,
-            "tool": TOOL_NAME, "tool_version": TOOL_VERSION}
+    """Owner order 2026-11-20: a rejection the client may see carries the
+    four-part client explanation beside the code (loud_failure.explain_stop).
+    Read-only; never changes the stop."""
+    env = {"outcome": "rejected", "code": code, "reason": reason,
+           "tool": TOOL_NAME, "tool_version": TOOL_VERSION}
+    try:
+        sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+        import loud_failure  # noqa: E402
+        env["client_explanation"] = loud_failure.explain_stop(
+            code, None, {"reason_code": code, "detail": reason,
+                         "next_action": ""})
+    except Exception:  # noqa: BLE001 - the explanation never breaks a stop
+        pass
+    return env
+
+
+def _stop(code, reason, outcome="rejected", extra=None, facts=None):
+    """Non-ok retake envelope with the four-part client explanation beside
+    the code. Read-only; never changes the stop."""
+    env = {"outcome": outcome, "code": code, "reason": reason,
+           "tool": TOOL_NAME, "tool_version": TOOL_VERSION}
+    if extra:
+        env.update(extra)
+    try:
+        sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+        import loud_failure  # noqa: E402
+        env["client_explanation"] = loud_failure.explain_stop(
+            code, facts, dict(env, reason_code=code, detail=reason))
+    except Exception:  # noqa: BLE001 - the explanation never breaks a stop
+        pass
+    return env
 
 
 def load_profile(path):
@@ -198,31 +227,35 @@ def plan(req, profile_path=None):
     if gap is not None:
         band = target_engine.band_for_gap(abs(float(gap)))
         if band != target_engine.BAND_REDO:
-            return {
-                "outcome": "rejected",
-                "code": "TARGET_IN_BAND",
-                "reason": ("target gap %.4g points is %s (band: within %d "
-                           "points accept, %d-%d accept with a flag, past %d "
-                           "redo); no retake for an in-band take"
-                           % (abs(float(gap)), band,
-                              target_engine.ACCEPT_PTS,
-                              target_engine.ACCEPT_PTS,
-                              target_engine.FLAG_PTS,
-                              target_engine.FLAG_PTS)),
-                "band": band,
-                "tool": TOOL_NAME, "tool_version": TOOL_VERSION,
-            }
+            # Round 2 finding 2: TARGET_IN_BAND carries the four-part message
+            # beside the reason (the in-band take is kept, never redone).
+            return _stop(
+                "TARGET_IN_BAND",
+                ("target gap %.4g points is %s (band: within %d "
+                 "points accept, %d-%d accept with a flag, past %d "
+                 "redo); no retake for an in-band take"
+                 % (abs(float(gap)), band,
+                    target_engine.ACCEPT_PTS,
+                    target_engine.ACCEPT_PTS,
+                    target_engine.FLAG_PTS,
+                    target_engine.FLAG_PTS)),
+                extra={"band": band},
+                facts={"gap": abs(float(gap)), "band": band,
+                       "accept": target_engine.ACCEPT_PTS,
+                       "flag": target_engine.FLAG_PTS})
 
     prof_path = (profile_path or req.get("profile")
                  or os.environ.get("ACCEPTANCE_PROFILE_JSON")
                  or DEFAULT_PROFILE)
     profile, cap, cap_source, profile_error = load_profile(prof_path)
     if profile_error:
-        return {"outcome": "error", "code": "PROFILE_UNAVAILABLE",
-                "reason": profile_error, "tool": TOOL_NAME,
-                "tool_version": TOOL_VERSION,
-                "recovery": "publish the versioned acceptance-profile.json "
-                            "before generation (directive 17.8)"}
+        # Round 2 finding 2: the missing profile is a client-facing stop, so
+        # it carries the four-part message beside the reason.
+        return _stop("PROFILE_UNAVAILABLE", profile_error,
+                     outcome="error",
+                     extra={"recovery": "publish the versioned "
+                                        "acceptance-profile.json before "
+                                        "generation (directive 17.8)"})
     if cap is None:
         cap, cap_source = DEFAULT_REPAIR_CAP, "default"
     profile_version = profile.get("profile_version", "unspecified")
@@ -273,19 +306,22 @@ def plan(req, profile_path=None):
         detail = ", ".join(
             "%s (%d attempts, cap %d)" % (a, counts.get(a, 0), cap)
             for a in exhausted)
-        return {
-            "outcome": "parked", "code": "REPAIR_CAP_EXHAUSTED",
-            "reason": "repair cap reached (%s %s=%d): %s; "
-                      "park/escalate after the configured budget is spent"
-                      % ("profile" if cap_source == "profile" else "default",
-                         "repair_cap", cap, detail),
-            "targets": targets, "attempt_counts": dict(counts),
-            "repair_cap": cap, "repair_cap_source": cap_source,
-            "profile_version": profile_version,
-            "tool": TOOL_NAME, "tool_version": TOOL_VERSION,
-            "recovery": "escalate to the orchestrator; do not reset counters "
-                        "to force another attempt",
-        }
+        # Round 2 finding 2: the parked cap is a client-facing stop, so it
+        # carries the four-part message beside the reason.
+        first = exhausted[0]
+        return _stop(
+            "REPAIR_CAP_EXHAUSTED",
+            "repair cap reached (%s %s=%d): %s; "
+            "park/escalate after the configured budget is spent"
+            % ("profile" if cap_source == "profile" else "default",
+               "repair_cap", cap, detail),
+            outcome="parked",
+            extra={"targets": targets, "attempt_counts": dict(counts),
+                   "repair_cap": cap, "repair_cap_source": cap_source,
+                   "profile_version": profile_version,
+                   "recovery": "escalate to the orchestrator; do not reset "
+                               "counters to force another attempt"},
+            facts={"attempt": counts.get(first, 0), "cap": cap})
 
     attempts = []
     for artifact_id in targets:

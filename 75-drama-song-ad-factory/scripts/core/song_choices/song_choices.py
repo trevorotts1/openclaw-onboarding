@@ -2750,9 +2750,13 @@ def cmd_generate(a, generate=None, measure=None, save=None, plan=None):
     # on a question the client never answered.
     _hold = _unanswered_refusal(run_dir)
     if _hold:
-        raise ChoiceError("REFUSED: %s -- %s. %s"
+        # Same envelope as the refusals below: the hold carries its own
+        # four-part message, so the CLI exit is never explanation-free.
+        err = ChoiceError("REFUSED: %s -- %s. %s"
                           % (_hold["reason_code"], _hold["detail"],
                              _hold["next_action"]))
+        err.client_explanation = _hold.get("client_explanation")
+        raise err
     spec = _load_request(a.request, run_dir)
     conflict = _run_dir_conflict(spec.get("run_authorities") or {})
     if conflict:
@@ -2863,6 +2867,17 @@ def cmd_generate(a, generate=None, measure=None, save=None, plan=None):
                        "threads are not visible agents"}
     out["units"] = plan_units(run_dir, reqs)
     return out
+
+
+def explain_stop_from_message(msg):
+    """Four-part explanation for a bare ChoiceError refusal message: reuse the
+    refusal's own words through loud_failure.explain_stop (never invent
+    facts). Read-only: it never changes the refusal."""
+    return loud_failure.explain_stop("CHOICE_REFUSED", None,
+                                     {"reason_code": "CHOICE_REFUSED",
+                                      "detail": msg,
+                                      "next_action": ("fix the named run problem "
+                                                      "and run again")})
 
 
 def explain_refusal(exc, spec=None):
@@ -2980,14 +2995,23 @@ def main(argv=None):
                                              timings=_timings),
                     save=_ST.make_save(_run_dir))
             except _R.RecipeError as e:
-                # Same refusal and exit code as a ChoiceError; the client
-                # explanation is printed beside it, never the code alone.
+                # RecipeError path (finding 5): the refusal is the same one
+                # cmd_generate raised (same code, same words, exit 5); only
+                # the four-part client explanation is printed beside it.
+                # next_action stays the exception's own -- the envelope never
+                # invents a new instruction.
                 print("REFUSED: %s" % e, file=sys.stderr)
+                exp = (getattr(e, "client_explanation", None)
+                       or explain_refusal(e, _spec))
+                try:
+                    nxt = exp.get("fix") if isinstance(exp, dict) else ""
+                except Exception:  # noqa: BLE001 - the fix line is optional
+                    nxt = ""
                 json.dump({"outcome": "rejected",
                            "reason_code": getattr(e, "code", "") or "RECIPE_REFUSED",
                            "detail": str(e),
-                           "client_explanation": getattr(e, "client_explanation", None)
-                           or explain_refusal(e, _spec)},
+                           "next_action": nxt or str(e),
+                           "client_explanation": exp},
                           sys.stdout, indent=2, sort_keys=True, default=str)
                 sys.stdout.write("\n")
                 return 5
@@ -3015,7 +3039,29 @@ def main(argv=None):
                 return 5
             print("ok")
     except ChoiceError as e:
+        # Round 2 finding 1: the ChoiceError path is a client-facing stop
+        # (conflicting run roots, missing transport, missing hook, unanswered
+        # approval). It now prints the same structured envelope as a RecipeError
+        # -- reason code, detail, next action AND the four-part
+        # client_explanation -- so choices always reach the caller.
+        exp = getattr(e, "client_explanation", None)
+        if exp is None:
+            try:
+                exp = explain_stop_from_message(str(e))
+            except Exception:  # noqa: BLE001 - the envelope never breaks a stop
+                exp = None
         print("REFUSED: %s" % e, file=sys.stderr)
+        try:
+            json.dump({"outcome": "rejected",
+                       "reason_code": "CHOICE_REFUSED",
+                       "detail": str(e),
+                       "next_action": ("fix the named run problem and run "
+                                       "again"),
+                       "client_explanation": exp},
+                      sys.stdout, indent=2, sort_keys=True, default=str)
+            sys.stdout.write("\n")
+        except Exception:  # noqa: BLE001 - stderr keeps the refusal either way
+            pass
         return 5
     return 0
 

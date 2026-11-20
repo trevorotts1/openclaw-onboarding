@@ -4,6 +4,27 @@ All notable changes to this skill are documented here. The version of
 record is `skill-version.txt` (kept in agreement with the `SKILL.md`
 frontmatter `version:` field).
 
+## v2.9.204 - 2026-11-20 - ux round 2: the five round-2 findings
+
+- **CLI ChoiceError prints the envelope.** `song_choices.main`'s `except
+  ChoiceError` path prints the structured envelope (reason, detail, next
+  action and four-part `client_explanation`) on stdout beside the stderr
+  refusal, exit 5; the unanswered-approval hold rides `client_explanation`
+  on the exception. New `CHOICE_REFUSED` table row + inventory entry.
+- **Retake stops explained.** `retake_manager` rejections (`TARGET_IN_BAND`,
+  `PROFILE_UNAVAILABLE`, `REPAIR_CAP_EXHAUSTED` and every `_reject`) carry
+  `client_explanation` beside the code; new `TARGET_IN_BAND` table row.
+- **Worked example matches the gate.** The SKILL.md LYRICS_REJECTED example
+  no longer promises a 2-minute song for a 62-word opening (no offered
+  length fits it): the message says to shorten the opening first.
+- **Unknown fallback invents nothing.** A stop whose own words were all cut
+  says its details cannot be shown safely and offers only asking for more
+  about this stop or pausing; only stops with surviving words keep the
+  generic action choices.
+- **RecipeError path keeps its behavior.** The `generate` RecipeError envelope
+  keeps the same code, words and exit 5; `next_action` stays the message's
+  own fix line, never a new instruction.
+
 ## v2.9.203 - 2026-11-20 - ux round 1: the five review findings
 
 - **Raw refusals now carry the message.** `song_choices.cmd_generate`'s three

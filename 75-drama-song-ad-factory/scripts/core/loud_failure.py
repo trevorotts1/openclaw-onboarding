@@ -389,12 +389,23 @@ def explain_stop(reason_code, facts=None, envelope=None):
         if parts is None and code in table:
             parts = _row_parts(table[code], _derive(merged))
         if parts is None:
+            # Round 2 finding 4: no invented safety language. The fallback
+            # explains only what THIS stop's own scrubbed words say; a stop
+            # whose words were all cut (a bare command, trace or path) says so
+            # in plain words and asks for more about this stop, never a
+            # generic action that was never offered.
             what = _scrub(detail, code)
             fix = _scrub(nxt, code)
-            parts = {"what_happened": _sentence(what) if what else GENERIC_WHAT,
-                     "why": GENERIC_WHY,
-                     "fix": _sentence(fix) if fix else GENERIC_FIX,
-                     "choices": list(GENERIC_CHOICES)}
+            if what or fix:
+                parts = {"what_happened": _sentence(what) if what else GENERIC_WHAT,
+                         "why": GENERIC_WHY,
+                         "fix": _sentence(fix) if fix else GENERIC_FIX,
+                         "choices": list(GENERIC_CHOICES)}
+            else:
+                parts = {"what_happened": ("I stopped on a step whose details "
+                                           "cannot be shown safely."),
+                         "why": GENERIC_WHY, "fix": GENERIC_FIX,
+                         "choices": [GENERIC_CHOICES[1], GENERIC_CHOICES[2]]}
     except Exception:  # noqa: BLE001 - an explanation must never break a stop
         parts = {"what_happened": GENERIC_WHAT, "why": GENERIC_WHY, "fix": GENERIC_FIX, "choices": list(GENERIC_CHOICES)}
     parts["message"] = _message(parts)

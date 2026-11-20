@@ -1,7 +1,7 @@
 ---
 name: drama-song-ad-factory
 description: End-to-end drama-song advertisement factory on OpenClaw: a sung direct-response story (twelve-beat drama song) carried through intake, preflight, storyboard, shot planning, KIE music/lyric/vocal generation (Suno via Skill 68's createTask contract), timed film assembly (FFmpeg), independent music/timing/QC gates, Command Center ad-campaigns delivery, delivery variants and retake management. Standard-library Python control layer with transactional state, spend ledger with recorded ceilings, bounded worker leases and fail-closed recovery. Same canonical methodology and control CLI as the Claude-Nine / Claude Code distribution (999-setup .claude/skills/drama-song-ad-factory) — one skill folder per runtime, shared core, shared exit codes, no bypass of a failed shared guard. Use when asked to produce a drama song ad or song-driven video ad, or to run intake, preflight, resume or QC gates for an existing drama-song campaign run. Not for motion graphics (use motion-video-plus), plain AI video generation (use 67-kie-video), or landing pages (use blackceo-signature-page).
-version: v2.9.203
+version: v2.9.204
 priority: MEDIUM
 ---
 # Drama Song Ad Factory (Skill 75)
@@ -221,9 +221,10 @@ no row, still builds all four parts from the envelope's own words.
 
 **Worked example (LYRICS_REJECTED).** The lyric check refused a 90-second
 song: 135 words against a 95-word budget, and a 62-word spoken opening where
-3 words fit. `song_choices.explain_refusal` asks the skill's own length plan
-(`suno_recipe.length_that_fits`) which offered length fits the words (2
-minutes) and the client gets:
+3 words fit. No offered length fits a 62-word opening (the opener cap tops
+out at 12 words even at the longest length), so `song_choices.explain_refusal`
+asks the skill's own length plan (`suno_recipe.length_that_fits`), learns no
+length clears both checks, and the client gets:
 
 > What happened: Your song has 135 words. A 90-second song only has room for
 > about 95, so the words would be crammed. Your spoken opening has 62 words.
@@ -232,10 +233,11 @@ minutes) and the client gets:
 >
 > Why this rule is here: A singer can only sing so many words a second ...
 >
-> What will fix it: Make the song longer (a 2-minute song fits these words),
-> or trim the words to about 95. ...
+> What will fix it: No offered length fits a 62-word opening, so shorten the
+> spoken opening first (keep about 3 words up front), or trim the words to
+> about 95. ...
 >
-> 1. I make the song longer, up to 2 minutes, so your words have room.
+> 1. I shorten the spoken opening and show you first, no offered length fits it.
 > 2. I trim the words to about 95 and show you before I make anything.
 > 3. Keep your words as they are and I check again.
 > 4. I move the rest of your opening to a spoken part later in the song and show you.
