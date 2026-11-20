@@ -339,6 +339,46 @@ def test_failed_job_retry_ignores_auth_ref():
     finally:
         shutil.rmtree(d, ignore_errors=True)
 
+def test_withdrawn_auth_stops_retry_and_initial_spends_ref():
+    """A retry inside a paid creative round without the round's reference
+    (the client withdrew it) is refused MISSING_AUTH_REF; a reference that
+    rode an initial attempt is spent there and never funds a retake."""
+    db, d = tmp_db(run_id="wd", repair_cap=3)
+    try:
+        first = L.allocate_attempt(db, "wd", "k1", "digest-1", estimated_cost=5)
+        to_succeeded(db, "wd", "k1", first["attempt_id"], cost=5)
+        rt = L.allocate_attempt(db, "wd", "k1", "digest-2", "creative_retake",
+                                auth_ref="auth-1", estimated_cost=5)
+        to_failed(db, "wd", "k1", rt["attempt_id"], cost=0)
+        bare = L.plan(db, "wd", "k1", "", "digest-3", 5)
+        check("withdrawn: retry without the round's ref refused",
+              bare["reason_code"] == "MISSING_AUTH_REF", str(bare))
+        got = rows(db, "SELECT count(*) FROM jobs WHERE run_id='wd'")
+        check("withdrawn: nothing persisted", got == [(2,)], str(got))
+        new = L.plan(db, "wd", "k1", "", "digest-3", 5, auth_ref="auth-2")
+        check("withdrawn: a new decision funds the retry and is recorded",
+              new["outcome"] == "ok"
+              and new["evidence"]["retry_category"] == "failed_job_retry",
+              str(new))
+        got = rows(db, "SELECT auth_ref FROM jobs WHERE run_id='wd' "
+                   "ORDER BY attempt_no")
+        check("withdrawn: refs on record",
+              got == [("",), ("auth-1",), ("auth-2",)], str(got))
+    finally:
+        shutil.rmtree(d, ignore_errors=True)
+    db, d = tmp_db(run_id="ia", repair_cap=3)
+    try:
+        first = L.allocate_attempt(db, "ia", "k1", "digest-1",
+                                   auth_ref="auth-early", estimated_cost=5)
+        check("initial: ref accepted", first["outcome"] == "ok", str(first))
+        to_succeeded(db, "ia", "k1", first["attempt_id"], cost=5)
+        rt = L.allocate_attempt(db, "ia", "k1", "digest-2", "creative_retake",
+                                auth_ref="auth-early", estimated_cost=5)
+        check("initial: the spent ref never funds a retake",
+              rt["reason_code"] == "DUPLICATE_AUTHORIZATION", str(rt))
+    finally:
+        shutil.rmtree(d, ignore_errors=True)
+
 # --- 7. fractional credits and missing actuals ------------------------------
 def test_fractional_credits_and_missing_actuals():
     db, d = tmp_db(run_id="money", ceiling=100, credit_to_subunit_num=3,
@@ -529,6 +569,7 @@ TESTS = [
     test_uncertain_reconcile_and_categories,
     test_qc_failure_keeps_provider_success,
     test_failed_job_retry_ignores_auth_ref,
+    test_withdrawn_auth_stops_retry_and_initial_spends_ref,
     test_fractional_credits_and_missing_actuals,
     test_multi_track_counts_distinct,
     test_migration_100_preserves_rows,

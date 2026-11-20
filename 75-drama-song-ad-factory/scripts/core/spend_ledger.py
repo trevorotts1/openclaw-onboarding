@@ -31,7 +31,10 @@ Paid-attempt identity (directive 8.4, findings D20/D21):
   provider lookup that reconciled it), `failed_job_retry` (a confirmed
   failed job), `creative_retake` (new creative take after a SUCCESSFUL
   provider generation; needs its own authorization reference and consumes
-  the repair allowance). A provider success that fails creative QC remains
+  the repair allowance). A reference is spent on the first attempt that
+  presents it (an initial one included). A failed/transport retry inside a
+  creative round needs that round's live reference again, so a withdrawn
+  authorization stops the retry; the same reference is not re-recorded. A provider success that fails creative QC remains
   a successful provider result: record_qc_verdict never flips it.
 - An attempt that was ever `unknown` must be reconciled, with provider
   lookup evidence recorded, before ANY resubmission.
@@ -665,7 +668,8 @@ def _allocate(db_path, cmd, run_id, logical_key, attempt_id, request_digest,
                           "identities, never reuses one", attempt_id, run[6])
         prior = conn.execute(
             "SELECT attempt_id,state,final_outcome,uncertain,request_digest,"
-            "provider_lookup_ref,auth_ref,attempt_no,remote_task_id FROM jobs "
+            "provider_lookup_ref,auth_ref,attempt_no,remote_task_id,"
+            "retry_category FROM jobs "
             "WHERE run_id=? AND logical_key=? ORDER BY attempt_no",
             (run_id, logical_key)).fetchall()
         repair_cap = run[4]
@@ -714,13 +718,30 @@ def _allocate(db_path, cmd, run_id, logical_key, attempt_id, request_digest,
                           "a creative retake consumes repair allowance and "
                           "needs its own authorization reference",
                           attempt_id, run[6])
-        # The authorization reference funds a creative retake and nothing
-        # else: a provider-failure retry inside an authorized round needs no
-        # new authorization, so the reference is neither re-checked nor
-        # recorded for it (recording it would refuse that retry as a
-        # DUPLICATE_AUTHORIZATION of the retake it belongs to).
-        if cat_final != "creative_retake":
-            auth_ref = ""
+        if cat_final in ("transport_retry", "failed_job_retry"):
+            # A provider-failure retry belongs to the round opened by the
+            # last initial / creative_retake row. A paid creative round stays
+            # authorized only while the caller still presents the round's
+            # live reference: an empty one (the client's later answer
+            # withdrew it) is refused; the same one is allowed without being
+            # recorded again (it would refuse the retry DUPLICATE_
+            # AUTHORIZATION); a new one is a new decision, checked and
+            # recorded below.
+            start = max((i for i, r in enumerate(prior)
+                         if r[9] in ("initial", "creative_retake", "")),
+                        default=0)
+            live = [r[6] for r in prior[start:] if r[6]]
+            if prior[start][9] == "creative_retake" and not auth_ref:
+                conn.execute("ROLLBACK")
+                return refuse("MISSING_AUTH_REF",
+                              "a retry inside a paid creative retake needs "
+                              "that round's authorization; the latest "
+                              "authorization no longer covers it",
+                              attempt_id, run[6])
+            if live and auth_ref == live[-1]:
+                auth_ref = ""
+        # Any other reference presented is spent on THIS attempt (an initial
+        # attempt included), so one authorization never funds a later retake.
         if auth_ref:
             dup = conn.execute(
                 "SELECT 1 FROM jobs WHERE run_id=? AND auth_ref=?",

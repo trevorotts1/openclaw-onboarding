@@ -1833,12 +1833,15 @@ def redo_authorization(run_dir, logical_key):
     by the spend ledger without its own authorization reference
     (MISSING_AUTH_REF). The client's recorded fork answer IS that
     authorization: only the LATEST decision counts, and only redo_all /
-    new_three authorize. The reference names the decision (its place in the
-    log plus a digest of the record) and the one job it funds, so each song
-    in the round has its own reference and the ledger's one-authorization-
-    one-job rule still refuses a second spend on the same answer. A later
-    answer is a new decision and a new reference. Nothing recorded, or a
-    keep_one answer, returns "" and the ledger refuses the retake."""
+    new_three authorize. The reference names the decision (a digest of the
+    record: answer, reply, who, channel and time) and the one job it funds,
+    so each song in the round has its own reference and the ledger's one-
+    authorization-one-job rule still refuses a second spend on the same
+    answer. The log position is NOT part of it: the same decision recorded
+    twice (a replay) is the same reference and is refused
+    DUPLICATE_AUTHORIZATION; a client answering again at another time is a
+    new decision and a new reference. Nothing recorded, or a keep_one answer,
+    returns "" and the ledger refuses the retake."""
     try:
         with open(_path(run_dir, FORK_FILE), encoding="utf-8") as f:
             doc = json.load(f) or {}
@@ -1851,7 +1854,7 @@ def redo_authorization(run_dir, logical_key):
     if rec.get("answer") not in REDO_ANSWERS:
         return ""
     digest = hashlib.sha256(json.dumps(rec, sort_keys=True).encode("utf-8")).hexdigest()[:16]
-    return "fork-decision-%d-%s:%s" % (len(log), digest, logical_key)
+    return "fork-decision-%s:%s" % (digest, logical_key)
 
 def client_message(offered, failed=(), recommend=None, concerns=None):
     nums = sorted(int(n) for n in offered)

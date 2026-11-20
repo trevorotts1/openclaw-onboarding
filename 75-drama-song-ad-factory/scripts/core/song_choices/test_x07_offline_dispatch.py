@@ -175,6 +175,8 @@ class FakeTransport(object):
 
     def __init__(self):
         self.calls = []
+        #: submits (1-based) the provider refuses with a definite failure.
+        self.fail_submits = set()
 
     def __call__(self, argv):
         cmd = argv[1] if len(argv) > 1 else ""
@@ -186,6 +188,9 @@ class FakeTransport(object):
         if cmd == "prompt-budget":
             return 0, json.dumps({"state": "ok", "data": {"status": "OK"}})
         if cmd == "submit":
+            if self.submits() in self.fail_submits:
+                return 0, json.dumps({"state": "fail", "error": {
+                    "code": "offline-provider-failure", "message": "x"}})
             return 0, json.dumps({"state": "success", "task_id": TASK_ID,
                                   "credits_consumed": CREDITS})
         if cmd == "save":
@@ -435,6 +440,64 @@ class X07OfflineDispatch(unittest.TestCase):
         second = self._generate()
         self._refused(second, "MISSING_AUTH_REF")
         self.assertEqual(self.transport.submits(), 1, self.transport.calls)
+
+    def test_redo_recorded_before_the_first_take_funds_no_retake(self):
+        """An answer recorded BEFORE the take it would replace is spent on the
+        take it rode with: it never funds a later paid retake."""
+        self._fork("redo all")
+        first = self._generate()
+        self.assertEqual(first["results"][0]["envelope"]["outcome"], "ok")
+        second = self._generate()
+        self._refused(second, "DUPLICATE_AUTHORIZATION")
+        self.assertEqual(self.transport.submits(), 1, self.transport.calls)
+        self.assertEqual(self._summary()["actual_cost"], CREDITS)
+
+    def test_failed_redo_is_retried_on_the_same_answer(self):
+        """A provider failure inside an authorized round is retried on the
+        same answer: the retry is not refused."""
+        self._generate()
+        self._fork("redo all")
+        self.transport.fail_submits = {2}
+        failed = self._generate()
+        self.assertNotEqual(failed["results"][0]["envelope"]["outcome"], "ok")
+        self.assertEqual(self.transport.submits(), 2, self.transport.calls)
+        retry = self._generate()
+        env = retry["results"][0]["envelope"]
+        self.assertEqual(env["outcome"], "ok", env)
+        self.assertEqual(self.transport.submits(), 3, self.transport.calls)
+        self.assertEqual(self._summary()["actual_cost"], CREDITS * 2)
+
+    def test_keep_one_after_a_failed_redo_stops_the_retry(self):
+        """A keep_one answer after an authorized redo failed at the provider
+        withdraws the round: the retry is refused with no submit."""
+        self._generate()
+        self._fork("redo all")
+        self.transport.fail_submits = {2}
+        self._generate()
+        self.assertEqual(self.transport.submits(), 2, self.transport.calls)
+        self._fork("keep one")
+        retry = self._generate()
+        self._refused(retry, "MISSING_AUTH_REF")
+        self.assertEqual(self.transport.submits(), 2, self.transport.calls)
+        self.assertEqual(self._summary()["actual_cost"], CREDITS)
+
+    def test_replayed_decision_mints_no_second_authorization(self):
+        """The SAME recorded decision written twice (same answer, reply, who,
+        channel and time) is one decision: one reference, one paid take."""
+        self._generate()
+        same = dict(who="client", channel="card", at="2026-11-20T18:00:00Z")
+        SC.record_fork_decision(self.run_dir, "redo all", **same)
+        ref = SC.redo_authorization(self.run_dir, "song/%s" % VARIANT_ID)
+        SC.record_fork_decision(self.run_dir, "redo all", **same)
+        self.assertEqual(SC.redo_authorization(
+            self.run_dir, "song/%s" % VARIANT_ID), ref)
+        second = self._generate()
+        self.assertEqual(second["results"][0]["envelope"]["outcome"], "ok",
+                         second["results"][0]["envelope"])
+        third = self._generate()
+        self._refused(third, "DUPLICATE_AUTHORIZATION")
+        self.assertEqual(self.transport.submits(), 2, self.transport.calls)
+        self.assertEqual(self._summary()["actual_cost"], CREDITS * 2)
 
     # ---- guard-removal control ----------------------------------------
     def test_control_guard_removal_replays_the_second_submit(self):
