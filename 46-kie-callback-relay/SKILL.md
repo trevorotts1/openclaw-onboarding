@@ -8,7 +8,7 @@ description: >
   crash-safe on-disk task registry. Applies to large decks (above configurable
   threshold); smaller decks use efficient batch polling per Candidate C of the
   design.
-version: v2.1.3
+version: v2.1.4
 metadata:
   version: "v2.1.1"
   skill_number: 46
@@ -27,6 +27,10 @@ all client boxes, verifies the HMAC signature centrally, and stores the
 result in Worker KV. The box polls the Worker KV (not Kie) for its result.
 If the callback does not arrive within the per-model timeout, the box falls
 back to a single reconciling poll of Kie's `recordInfo` endpoint.
+
+## KIE file upload (free)
+
+KIE FILE UPLOAD (free): KIE.ai has its own file upload service that costs NOTHING (no credits). It turns a local picture, audio or video file into a public https link that any KIE model (GPT Image, MiniMax H3, Kling, Suno, etc.) can read. Three ways: POST https://kieai.redpandaai.co/api/file-base64-upload (JSON {base64Data, uploadPath, fileName}, best for files under about 10 MB), /api/file-url-upload (copy from a web link, up to about 100 MB), /api/file-stream-upload (large files). Auth: Authorization: Bearer $KIE_API_KEY. The link is in data.downloadUrl. Files are DELETED after 24 hours, so upload right before the job and never use it as storage. Use this instead of uploading working files to a client's GoHighLevel media library. Source: https://docs.kie.ai/file-upload-api/quickstart
 
 ## When to Use This Skill
 

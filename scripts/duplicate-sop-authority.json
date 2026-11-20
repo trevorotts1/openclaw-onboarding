@@ -33,8 +33,8 @@
       "dept": "presentations",
       "role_library_path": "23-ai-workforce-blueprint/templates/role-library/presentations/sops/SOP-IMG-01-KIE-CALL-MECHANICS.md",
       "universal_sops_path": "universal-sops/presentation-image-library/SOP-IMG-01-KIE-CALL-MECHANICS.md",
-      "role_library_sha256": "d54132359573bf751f3efb21e413a6c88a8c4252e48188cd334135986256d897",
-      "universal_sops_sha256": "881587856fe7821a061b2813bddd9c16b1eb589930c5972eff9409405e64a3fb",
+      "role_library_sha256": "db105256f29012d9a339d29e65e1080abfffc0d278122b4be928f299e37c9332",
+      "universal_sops_sha256": "c0d98a69f7c7eef5f8356beb0900d31d515b951d30284ace0487891e51b5c958",
       "canonical_side": "role-library",
       "reason": "Pre-existing divergence recorded, not reconciled. Content is doctrine and belongs to the operator. Pinned by sha256 on BOTH sides: any edit to either copy invalidates this waiver and the gate fails until the change is reviewed and re-recorded.",
       "recorded_at": "2026-09-05"
@@ -66,8 +66,8 @@
       "dept": "presentations",
       "role_library_path": "23-ai-workforce-blueprint/templates/role-library/presentations/sops/SOP-IMG-04-SIGNATURE-STYLE-RECALL-AND-DIU-LOGO-I2I.md",
       "universal_sops_path": "universal-sops/presentation-image-library/SOP-IMG-04-SIGNATURE-STYLE-RECALL-AND-DIU-LOGO-I2I.md",
-      "role_library_sha256": "014ba3f50f2643b44f19eb128e867208747a89bb462ee8ad33ba9f411a19946d",
-      "universal_sops_sha256": "309a4785931b4e561271e1f8412ced680f29b4b55a6de9f306980aa50d5d72ac",
+      "role_library_sha256": "771c51bb24bf10896aaf0068ee1b71469e112b5ed364c8593980ca6e62ccfc8e",
+      "universal_sops_sha256": "df3a0941a25c5db207218cb0f3b0b691dde8d5f460297eee0ece145c13cff59b",
       "canonical_side": "role-library",
       "reason": "Pre-existing divergence recorded, not reconciled. Content is doctrine and belongs to the operator. Pinned by sha256 on BOTH sides: any edit to either copy invalidates this waiver and the gate fails until the change is reviewed and re-recorded.",
       "recorded_at": "2026-09-05"

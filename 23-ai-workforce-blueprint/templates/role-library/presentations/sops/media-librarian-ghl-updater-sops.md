@@ -6,6 +6,10 @@
 
 ---
 
+## KIE file upload (free)
+
+KIE FILE UPLOAD (free): KIE.ai has its own file upload service that costs NOTHING (no credits). It turns a local picture, audio or video file into a public https link that any KIE model (GPT Image, MiniMax H3, Kling, Suno, etc.) can read. Three ways: POST https://kieai.redpandaai.co/api/file-base64-upload (JSON {base64Data, uploadPath, fileName}, best for files under about 10 MB), /api/file-url-upload (copy from a web link, up to about 100 MB), /api/file-stream-upload (large files). Auth: Authorization: Bearer $KIE_API_KEY. The link is in data.downloadUrl. Files are DELETED after 24 hours, so upload right before the job and never use it as storage. Use this instead of uploading working files to a client's GoHighLevel media library. Source: https://docs.kie.ai/file-upload-api/quickstart
+
 ## 9. Standard Operating Procedures (Numbered)
 
 Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
@@ -65,6 +69,7 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
 **Steps:**
 1. **Classify each provided asset** into a `kind`: `photo` | `logo` | `brand_color` | `product` | `scratch_slide` | `concept`.
 2. **Upload each asset to a STABLE public URL** (the same GHL/Drive upload path SOP 9.3 uses; the URL must be reachable so KIE can fetch it as `input_urls`). Record the resolved `public_url`.
+   Prefer KIE's free file upload (see KIE file upload note) for files that are only job inputs; GoHighLevel's media library is for files the client keeps.
 3. **Write `working/copy/assets_manifest.json`** with this shape:
    ```json
    {

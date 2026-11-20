@@ -41,6 +41,10 @@ When intake sets `STYLE_SOURCE = saved_style` and `STYLE_ID = "<name>"` (from th
 
 ---
 
+## KIE file upload (free)
+
+KIE FILE UPLOAD (free): KIE.ai has its own file upload service that costs NOTHING (no credits). It turns a local picture, audio or video file into a public https link that any KIE model (GPT Image, MiniMax H3, Kling, Suno, etc.) can read. Three ways: POST https://kieai.redpandaai.co/api/file-base64-upload (JSON {base64Data, uploadPath, fileName}, best for files under about 10 MB), /api/file-url-upload (copy from a web link, up to about 100 MB), /api/file-stream-upload (large files). Auth: Authorization: Bearer $KIE_API_KEY. The link is in data.downloadUrl. Files are DELETED after 24 hours, so upload right before the job and never use it as storage. Use this instead of uploading working files to a client's GoHighLevel media library. Source: https://docs.kie.ai/file-upload-api/quickstart
+
 ## 3. DIU LOGO-AS-IMAGE-TO-IMAGE (closes GAP c)
 
 The DIU's style cards carry an optional `{LOGO_NOTE}` text variable (MASTER-SOP §3.2) - words only, which means the model REDRAWS the logo (the mutation path). This section adds the I2I mechanic so the logo is COMPOSITED from a supplied asset, mirroring SOP-IMG-01 Mode B.
@@ -80,6 +84,9 @@ The DIU's style cards carry an optional `{LOGO_NOTE}` text variable (MASTER-SOP 
 | Client requests a v2.0 of their saved style mid-run | Block the advance; SOP-DIU-607 §B requires a side-by-side regression render vs frozen refs + CDO written confirmation before the alias moves. The current run finishes on the pinned version. | CDO |
 | DIU logo rendered as a wrong/mutated mark (check 5/7) | Re-route to I2I with the `LOGO_URL` reference + "place, do not redraw"; if it still garbles after 2 attempts, escalate to the CDO (DIU imagery is outside the Presentations assembler, so no composite step exists here; for a Presentations deck the logo mechanisms are SOP-IMG-05 Rule A). Never place the logo as a native text box. | CDO |
 | No `LOGO_URL` exists but client wants the logo on DIU imagery | Brand Steward requests a high-res transparent PNG + a public https URL (host to GHL media library / Drive); until then, flag that the logo will be approximate. | Director / operator |
+
+> Prefer KIE's free file upload (see KIE file upload note) for files that are only job inputs; GoHighLevel's media library is for files the client keeps.
+
 
 ---
 

@@ -4,7 +4,7 @@ description: >
   Complete setup, credential management, and API router reference for KIE.ai, a
   unified API platform for generating images, videos, and audio through one API
   key and consistent async job conventions.
-version: v7.2.12
+version: v7.2.13
 metadata:
   version: "7.2.3"
   priority: CRITICAL
@@ -17,6 +17,10 @@ images, videos, and audio using a single API key (`KIE_API_KEY`) and consistent
 endpoints.
 
 Think of KIE.ai as a universal remote control and gateway for AI media generation.
+
+## KIE file upload (free)
+
+KIE FILE UPLOAD (free): KIE.ai has its own file upload service that costs NOTHING (no credits). It turns a local picture, audio or video file into a public https link that any KIE model (GPT Image, MiniMax H3, Kling, Suno, etc.) can read. Three ways: POST https://kieai.redpandaai.co/api/file-base64-upload (JSON {base64Data, uploadPath, fileName}, best for files under about 10 MB), /api/file-url-upload (copy from a web link, up to about 100 MB), /api/file-stream-upload (large files). Auth: Authorization: Bearer $KIE_API_KEY. The link is in data.downloadUrl. Files are DELETED after 24 hours, so upload right before the job and never use it as storage. Use this instead of uploading working files to a client's GoHighLevel media library. Source: https://docs.kie.ai/file-upload-api/quickstart
 
 ## When to Use This Skill
 
