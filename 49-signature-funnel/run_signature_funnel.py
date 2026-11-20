@@ -1425,11 +1425,16 @@ def main(argv: List[str]) -> int:
         return self_test()
 
     if not args.run_dir:
-        print("USAGE ERROR: pass --run-dir <dir> (or --self-test).")
+        detail = "USAGE ERROR: pass --run-dir <dir> (or --self-test)."
+        print(detail)
+        print(f"FOR THE CLIENT:\n{_client_explanation(detail)['message']}")
         return EXIT_FRONT_DOOR
     run_dir = Path(args.run_dir).expanduser().resolve()
     if not run_dir.is_dir():
-        print(f"USAGE ERROR: run-dir {run_dir} is not a directory.")
+        detail = (f"USAGE ERROR: run-dir {run_dir} is not a directory. "
+                  "Start it again with the job folder that holds your run's work files.")
+        print(detail)
+        print(f"FOR THE CLIENT:\n{_client_explanation(detail)['message']}")
         return EXIT_FRONT_DOOR
 
     nonce_file = Path(args.nonce_file).expanduser() if args.nonce_file else None

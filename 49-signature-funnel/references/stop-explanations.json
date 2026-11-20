@@ -26,7 +26,7 @@
     },
     "AF-FUN-BENEFIT-WORDS": {
       "what_happened": "{section_label} has {count} words. It must be between {min} and {max} words.",
-      "why": "These lengths are part of the Signature Funnel method and they never change. Too short is as much a miss as too long.",
+      "why": "The benefit blocks are three matching proof blocks at the peak of the sales story. Matching lengths keep the peak even; too short is as much a miss as too long.",
       "fix": "Make {section_label} between {min} and {max} words.",
       "choices": [
         "I rewrite {section_label} to fit, and show you before anything else runs.",
@@ -62,7 +62,7 @@
       "spends_nothing": true
     },
     "AF-FUN-BUILD-PAGESET": {
-      "what_happened": "Not every page of your {size}-step funnel was built.",
+      "what_happened": "Not every page of your {size} funnel was built.",
       "why": "A funnel with a missing page would send buyers to a dead end.",
       "fix": "Build the missing pages.",
       "choices": [
@@ -72,7 +72,7 @@
       ],
       "spends_nothing": true,
       "defaults": {
-        "size": "approved"
+        "size": "approved funnel"
       }
     },
     "AF-FUN-BUILD-PREVIEW": {
@@ -106,7 +106,7 @@
       "spends_nothing": true
     },
     "AF-FUN-BUILD-QC": {
-      "what_happened": "The built funnel scored {score} out of 10. It must score at least 8.5.",
+      "what_happened": "The quality check for the built funnel has {score}. It must score at least 8.5 out of 10.",
       "why": "8.5 is the quality floor for every funnel we deliver, so your buyers only ever see work that passed it.",
       "fix": "Fix the pages that failed their checks and build again.",
       "choices": [
@@ -116,7 +116,7 @@
       ],
       "spends_nothing": true,
       "defaults": {
-        "score": "under 8.5"
+        "score": "no score recorded, so nothing passed"
       }
     },
     "AF-FUN-BUILD-QC-RECORD": {
@@ -572,7 +572,7 @@
     },
     "AF-FUN-INTAKE-SIZE": {
       "what_happened": "The funnel size is set to {size}. It must be 3, 5 or 7 steps.",
-      "why": "The page plan, the upsells and the downsells are all built from the size. Any other number has no plan to follow.",
+      "why": "The size decides which pages your funnel gets: a short funnel has no upsell or downsell pages, and a long one has extra ones. Without a real size, the page list cannot be worked out.",
       "fix": "Pick 3, 5 or 7 steps.",
       "choices": [
         "I explain the 3, 5 and 7 step funnels in plain words so you can pick.",

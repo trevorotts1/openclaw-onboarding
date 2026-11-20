@@ -186,7 +186,8 @@ class Rendering(unittest.TestCase):
 
     def test_given_facts_win_and_are_cleaned(self):
         out = es.explain_stop("AF-FUN-BUILD-QC", {"score": "7.1"})
-        self.assertIn("7.1 out of 10", out["what_happened"])
+        self.assertIn("7.1", out["what_happened"])
+        self.assertIn("8.5 out of 10", out["what_happened"])
         out = es.explain_stop("AF-FUN-INTAKE-MISSING", {"missing": "/tmp/x/brief.json AF-FUN-X"})
         self.assertClean(out)
 
@@ -212,16 +213,29 @@ class Rendering(unittest.TestCase):
 
     def test_unknown_codes_exception_names_and_env_names_never_reach_the_client(self):
         for detail in ("RUN-UNKNOWN: PermissionError: /tmp/private.txt", "KeyError: q3_offer_name",
-                       "SF_RUN_NONCE refused rc=2", "OSError [Errno 13] on copy_ledger.json"):
+                       "SF_RUN_NONCE refused rc=2", "OSError [Errno 13] on copy_ledger.json",
+                       "HTTP 403 from https:/a file with API access forbidden"):
             out = es.explain_stop(envelope={"detail": detail})
             self.assertIsNone(out["code"], detail)
             self.assertEqual(out["what_happened"], TABLE["fallback"]["what_happened"], detail)
             for word in ("RUN-UNKNOWN", "PermissionError", "KeyError", "q3_offer_name", "SF_RUN_NONCE", "Errno",
-                         "rc=", "private"):
+                         "rc=", "private", "403", "HTTP"):
                 self.assertNotIn(word, out["message"], detail)
             self.assertClean(out)
         out = es.explain_stop(envelope={"detail": "the brief could not be read because the disk is full"})
         self.assertEqual(out["what_happened"], "the brief could not be read because the disk is full")
+
+    def test_missing_qc_score_never_reports_a_score(self):
+        out = es.explain_stop("AF-FUN-BUILD-QC")
+        self.assertIn("no score recorded", out["what_happened"], out)
+        self.assertNotRegex(out["what_happened"], r"scored [\d.]+", out)
+        scored = es.explain_stop("AF-FUN-BUILD-QC", {"score": "7.1"})
+        self.assertIn("7.1", scored["what_happened"], scored)
+
+    def test_funnel_size_fallback_names_no_number(self):
+        out = es.explain_stop("AF-FUN-BUILD-PAGESET")
+        self.assertNotIn("approved-step", out["message"], out)
+        self.assertClean(out)
 
     def test_traceback_never_reaches_the_client(self):
         tb = 'Traceback (most recent call last):\n  File "/x/y.py", line 3, in <module>\nValueError: bad'

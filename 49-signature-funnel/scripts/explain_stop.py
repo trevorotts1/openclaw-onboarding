@@ -38,8 +38,10 @@ PATH_RE = re.compile(r"(?:[A-Za-z]:\\|~/|\.{0,2}/)?\b[\w.<>-]+(?:/[\w.<>-]+)+")
 # A bare file name ("copy_ledger.json") reads as "a file" too.
 FILE_RE = re.compile(r"\b[\w.-]+\.(?:py|json|sh|md|txt|ya?ml|log|html|csv)\b")
 # Anything else that is for logs, not people: any CODE-LIKE or ENV_NAME token (RUN-UNKNOWN, SF_RUN_NONCE),
-# exception class names (PermissionError), [Errno n], key=value pairs (rc=2) and long hex digests.
-LOG_ONLY_RE = re.compile(r"\b[A-Z][A-Z0-9]*(?:[-_][A-Z0-9]+)+\b|\b[A-Za-z_]*(?:Error|Exception|Warning)\b|"
+# exception class names (PermissionError), [Errno n], key=value pairs (rc=2), long hex digests,
+# and a leading HTTP/network status ("HTTP 403 ...", "HTTPS ...") — a status line is never a sentence.
+LEAD_STATUS_RE = re.compile(r"^(?:https?[\s:/\\._-]*)+(\d{3})\b[\s:/\\._-]*", re.IGNORECASE)
+LOG_ONLY_RE = re.compile(r"\bHTTP\s+\d{3}\b|\b[A-Z][A-Z0-9]*(?:[-_][A-Z0-9]+)+\b|\b[A-Za-z_]*(?:Error|Exception|Warning)\b|"
                          r"\[Errno \d+\]|\b\w+=\S+|\b[0-9a-f]{12,}\b")
 SPENT_NOTHING = " This check did not spend any money."
 
@@ -49,9 +51,12 @@ def load_table(path=TABLE_PATH):
 
 
 def clean(text):
-    """Plain words only: no reason codes, file paths, bracket tags or traceback lines."""
+    """Plain words only: no reason codes, file paths, bracket tags or traceback lines.
+    A leading HTTP/network status line is not a sentence for the client, so it is
+    dropped before cleaning (the fallback message says the work stopped instead)."""
     lines = [l for l in str(text or "").splitlines()
              if not l.lstrip().startswith(("Traceback", 'File "')) and not re.match(r"\s+\^", l)]
+    lines = [l for l in lines if not LEAD_STATUS_RE.match(l.strip())]
     out = PATH_RE.sub("a file", ANY_CODE_RE.sub("", " ".join(lines)))
     out = LOG_ONLY_RE.sub("", FILE_RE.sub("a file", out))
     out = re.sub(r"\s+([:;,.])", r"\1", out)
@@ -135,7 +140,7 @@ def facts_from_detail(text):
         f["size"] = m.group(1)
     m = re.search(r"\b([357])-step\b", t)
     if m and "size" not in f:
-        f["size"] = m.group(1)
+        f["size"] = m.group(0)
     slot = re.search(r"\('([a-z0-9-]+)', '?([\w-]+)'?\)", t)
     if slot and "where" not in f:
         f["where"] = f"the Section {slot.group(2)} picture on the {_page(slot.group(1), labels)}"
@@ -275,6 +280,10 @@ def self_test():
         "thing, and run it again.", unknown
     leak = explain_stop(envelope={"detail": "RUN-UNKNOWN: PermissionError: /tmp/private.txt"})
     assert leak["what_happened"] == "The funnel work stopped before it finished.", leak
+    http_leak = explain_stop(envelope="HTTP 403 from a file with API access forbidden")
+    assert http_leak["code"] is None, http_leak
+    for word in ("403", "HTTP", "API"):
+        assert word not in http_leak["message"], http_leak
     print("explain_stop --self-test: PASS (real numbers, shell abort tag, parent code, unknown-code fallback, no leak)")
     return 0
 
