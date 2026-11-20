@@ -2626,9 +2626,12 @@ def _real_generate(run_dir, ledger, run_id, dispatcher=None):
         logical_key = "song/%s" % variant["id"]
         # A redo the client asked for is a paid creative retake: the ledger
         # needs the client's recorded answer as its authorization reference
-        # or it refuses MISSING_AUTH_REF and nothing is bought.
+        # or it refuses MISSING_AUTH_REF and nothing is bought. This reference
+        # IS the client's current answer, so an empty one (a later keep_one)
+        # also stops a failed redo's retry (require_round_auth).
         auth = redo_authorization(run_dir, logical_key)
         extra = {"auth_ref": auth} if auth else {}
+        extra["require_round_auth"] = True
         env = _dispatch(model=payload.get("model") or "ai-music-api/generate",
                         request=payload, save_dir=save_dir, ledger_db=ledger,
                         run_id=run_id or (os.path.basename(run_dir) or "run"),

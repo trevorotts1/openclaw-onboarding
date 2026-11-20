@@ -339,10 +339,35 @@ def test_failed_job_retry_ignores_auth_ref():
     finally:
         shutil.rmtree(d, ignore_errors=True)
 
+def test_plain_retry_after_authorized_retake_still_allowed():
+    """A caller that supplied authorization only for the retake (and does not
+    opt in to require_round_auth) keeps its provider-failure retry with no
+    reference: nothing new is refused and nothing new is recorded."""
+    db, d = tmp_db(run_id="pr", repair_cap=3)
+    try:
+        first = L.plan(db, "pr", "k1", "", "digest-1", 5)
+        to_succeeded(db, "pr", "k1", first["attempt_id"], cost=5)
+        rt = L.plan(db, "pr", "k1", "", "digest-2", 5, auth_ref="auth-1")
+        check("plain: retake funded", rt["outcome"] == "ok", str(rt))
+        to_failed(db, "pr", "k1", rt["attempt_id"], cost=0)
+        retry = L.plan(db, "pr", "k1", "", "digest-3", 5)
+        check("plain: retry without a reference is not refused",
+              retry["outcome"] == "ok"
+              and retry["evidence"]["retry_category"] == "failed_job_retry",
+              str(retry))
+        got = rows(db, "SELECT auth_ref FROM jobs WHERE run_id='pr' "
+                   "ORDER BY attempt_no")
+        check("plain: refs on record",
+              got == [("",), ("auth-1",), ("",)], str(got))
+    finally:
+        shutil.rmtree(d, ignore_errors=True)
+
 def test_withdrawn_auth_stops_retry_and_initial_spends_ref():
-    """A retry inside a paid creative round without the round's reference
-    (the client withdrew it) is refused MISSING_AUTH_REF; a reference that
-    rode an initial attempt is spent there and never funds a retake."""
+    """With require_round_auth (the caller knows the client's current
+    answer), a retry inside a paid creative round without the round's
+    reference (the client withdrew it) is refused MISSING_AUTH_REF; a
+    reference that rode an initial attempt is spent there and never funds a
+    retake."""
     db, d = tmp_db(run_id="wd", repair_cap=3)
     try:
         first = L.allocate_attempt(db, "wd", "k1", "digest-1", estimated_cost=5)
@@ -350,12 +375,14 @@ def test_withdrawn_auth_stops_retry_and_initial_spends_ref():
         rt = L.allocate_attempt(db, "wd", "k1", "digest-2", "creative_retake",
                                 auth_ref="auth-1", estimated_cost=5)
         to_failed(db, "wd", "k1", rt["attempt_id"], cost=0)
-        bare = L.plan(db, "wd", "k1", "", "digest-3", 5)
+        bare = L.plan(db, "wd", "k1", "", "digest-3", 5,
+                      require_round_auth=True)
         check("withdrawn: retry without the round's ref refused",
               bare["reason_code"] == "MISSING_AUTH_REF", str(bare))
         got = rows(db, "SELECT count(*) FROM jobs WHERE run_id='wd'")
         check("withdrawn: nothing persisted", got == [(2,)], str(got))
-        new = L.plan(db, "wd", "k1", "", "digest-3", 5, auth_ref="auth-2")
+        new = L.plan(db, "wd", "k1", "", "digest-3", 5, auth_ref="auth-2",
+                     require_round_auth=True)
         check("withdrawn: a new decision funds the retry and is recorded",
               new["outcome"] == "ok"
               and new["evidence"]["retry_category"] == "failed_job_retry",
@@ -569,6 +596,7 @@ TESTS = [
     test_uncertain_reconcile_and_categories,
     test_qc_failure_keeps_provider_success,
     test_failed_job_retry_ignores_auth_ref,
+    test_plain_retry_after_authorized_retake_still_allowed,
     test_withdrawn_auth_stops_retry_and_initial_spends_ref,
     test_fractional_credits_and_missing_actuals,
     test_multi_track_counts_distinct,

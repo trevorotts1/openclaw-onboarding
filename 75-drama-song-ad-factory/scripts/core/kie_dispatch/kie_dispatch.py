@@ -1695,7 +1695,8 @@ def production_process_admission(*, model, request, save_dir, ledger_db,
 def dispatch(*, model, request, save_dir, ledger_db, run_id, logical_key,
              attempt_id, estimated_cost, prompt="", units=1, stage="kie",
              owner="kie-dispatch", adapter_path=None, runner=None,
-             timeout=300, state_store=None, video_job=None, auth_ref=""):
+             timeout=300, state_store=None, video_job=None, auth_ref="",
+             require_round_auth=False):
     """Governed production, or explicitly identified offline runner simulation.
 
     A fake injected runner exercises the existing protocol without conferring
@@ -1710,7 +1711,7 @@ def dispatch(*, model, request, save_dir, ledger_db, run_id, logical_key,
         estimated_cost=estimated_cost, prompt=prompt, units=units, stage=stage,
         owner=owner, adapter_path=adapter_path, runner=runner, timeout=timeout,
         state_store=state_store, video_job=video_job, auth_ref=auth_ref,
-        _execution=execution)
+        require_round_auth=require_round_auth, _execution=execution)
     evidence = result.setdefault("evidence", {})
     evidence["execution_mode"] = execution["mode"]
     evidence["production_admitted"] = bool((execution.get("admission") or {}).get("ok"))
@@ -1725,7 +1726,7 @@ def _dispatch_pipeline(*, model, request, save_dir, ledger_db, run_id, logical_k
              attempt_id, estimated_cost, prompt="", units=1, stage="kie",
              owner="kie-dispatch", adapter_path=None, runner=None,
              timeout=300, state_store=None, video_job=None, auth_ref="",
-             _execution=None):
+             require_round_auth=False, _execution=None):
     """Run the plan 5.4 pipeline once. Returns one envelope; never raises.
 
     F14 video-model lock: video jobs (video_job=True, or a video model on
@@ -2002,9 +2003,12 @@ def _dispatch_pipeline(*, model, request, save_dir, ledger_db, run_id, logical_k
     # auth_ref: the client's authorization for a creative retake (a new paid
     # take after a successful one). The ledger refuses a retake without it
     # (MISSING_AUTH_REF) and refuses one authorization funding two retakes.
+    # require_round_auth: the caller's auth_ref is the client's CURRENT
+    # answer, so an empty one also stops a retry inside a paid creative round.
     pl = L.plan(ledger_db, run_id, logical_key, attempt_id, digest,
                 estimated_cost, stage=stage, owner=owner,
-                auth_ref=auth_ref or "")
+                auth_ref=auth_ref or "",
+                require_round_auth=bool(require_round_auth))
     if pl["outcome"] != "ok":
         return envelope("dispatch", pl["outcome"], pl["reason_code"],
                         pl.get("next_action", ""), run_id=run_id,
