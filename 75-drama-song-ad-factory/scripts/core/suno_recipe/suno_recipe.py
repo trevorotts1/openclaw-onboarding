@@ -654,9 +654,14 @@ def recipe_style_ids():
 
 
 def is_no_voice_tag(tag):
-    """True for a section that has NO voice: a tag only, never a lyric line."""
-    head = str(tag).lower()
-    return any(word in head for word in NO_VOICE_TAGS)
+    """True for a section that has NO voice: a tag only, never a lyric line.
+
+    Whole words only: "Breakthrough", "Heartbreak" and "Breakdown" are sung
+    section names, never a [Break]; a substring test made render_lyrics drop
+    every line of a sung [Breakthrough] section.
+    """
+    words = re.sub(r"[^a-z0-9]+", " ", str(tag).lower()).split()
+    return any(word in NO_VOICE_TAGS for word in words)
 
 
 def _tag(sec, style_id=None):
@@ -814,8 +819,14 @@ def check_no_voice_lines(text):
         if not s:
             continue
         if s.startswith("[") and s.endswith("]"):
-            no_voice = "(" not in s or is_no_voice_tag(s[1:].split(":")[0])
-            no_voice = no_voice or is_no_voice_tag(s)
+            named = _NAMED_TAG_RE.match(s[1:-1].strip())
+            if named is not None:
+                # A declared [Name (sung|spoken|rap): cue]: only Name decides.
+                # Cue words ("over a light instrumental bed") never make a
+                # voiced section music-only.
+                no_voice = is_no_voice_tag(named.group(1))
+            else:
+                no_voice = "(" not in s or is_no_voice_tag(s)
             continue
         if s.startswith("["):
             no_voice = False

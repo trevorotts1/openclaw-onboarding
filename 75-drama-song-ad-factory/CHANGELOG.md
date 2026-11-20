@@ -4,6 +4,13 @@ All notable changes to this skill are documented here. The version of
 record is `skill-version.txt` (kept in agreement with the `SKILL.md`
 frontmatter `version:` field).
 
+## v2.9.202 - 2026-11-20 - cue words and quiz calls no longer refuse a real song
+
+- **A spoken or sung section is never music-only because of its cue.** The lyric check read the whole bracket, so a spoken intro whose cue said "over a light instrumental bed" was refused as if it were an instrumental section. Now, when a tag declares its delivery (`[Name (sung|spoken|rap): cue]`), only the section name decides; the cue never does. Tags that declare no delivery keep the old rule.
+- **Whole words only for no-voice names.** "Breakthrough", "Heartbreak" and "Breakdown" used to count as a `[Break]`, so the lyric sheet silently dropped every line of a sung Breakthrough section. Only the whole words "instrumental" and "break" mark a music-only section now.
+- **"Take the quiz" is a call to action.** The closing check now accepts "take the quiz", "take our quiz", "take this quiz" and "start the quiz". The bare word "quiz" still asks for nothing and is still refused.
+- **Unchanged.** Real `[Instrumental]`, `[Instrumental Break: band only]` and `[Break]` sections with a lyric line under them are still refused. No word budget, opener length, sung share or sung-section count changed. New test: `scripts/core/suno_recipe/test_cue_false_positives_s75.py`. Same change as the 999-setup twin (PR #465).
+
 ## v2.9.155 - 2026-11-02 - chore(batch): version stamp for batch PR #2784 (ST2, X01, F14, PR #2779)
 
 - **G3 version stamp, skill 75 v2.9.154 -> v2.9.155.** Batch PR #2784 combines ST2, X01,

@@ -699,9 +699,12 @@ CAUSAL_FIELDS = ("scene", "inciting_event", "opposing_action", "escalation",
 #: are never mixed: a claim shown as the client's real life is not a scene.
 SCENE_KINDS = ("fiction", "testimonial")
 #: A real commercial call: an action the viewer can take. PROPOSED list.
+#: The quiz entries are actionable phrases only: the bare noun "quiz" is no
+#: call ("The quiz is beautiful." asks for nothing).
 COMMERCIAL_ACTIONS = ("book", "order", "assessment", "schedule", "call",
                       "apply", "enroll", "enrol", "reserve", "checkout", "buy",
-                      "sign up")
+                      "sign up", "take the quiz", "take our quiz", "take this quiz",
+                      "start the quiz")
 #: A closing that promises but never asks for anything.
 _PROMISE_RE = re.compile(r"\b(will (?:change|transform)|your (?:life|world)|a new you|"
                          r"believing in yourself|the answer is within|everything you ever|"
