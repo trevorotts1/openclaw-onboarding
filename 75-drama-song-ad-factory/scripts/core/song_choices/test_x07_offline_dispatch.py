@@ -233,6 +233,15 @@ class X07OfflineDispatch(unittest.TestCase):
         os.environ["KIE_LIVE_ADAPTER_PATH"] = self.adapter
         self._real_dispatch = KD.dispatch
         self._install_transport()
+        # Round-3 finding 2: keep the KIE token bucket off HOME. The bucket
+        # lives in ~/.cache unless DSAF_GOVERNOR_DIR points elsewhere, so an
+        # unwritable HOME fails every offline dispatch with [Errno 13] --
+        # which proves nothing about the product path. Point it inside the
+        # test root instead; the seam never touches a real shared dir.
+        self._governor_dir = os.path.join(self.root, "governor")
+        os.makedirs(self._governor_dir, exist_ok=True)
+        self._old_governor_dir = os.environ.get("DSAF_GOVERNOR_DIR")
+        os.environ["DSAF_GOVERNOR_DIR"] = self._governor_dir
 
     def tearDown(self):
         KD.dispatch = self._real_dispatch
@@ -240,6 +249,10 @@ class X07OfflineDispatch(unittest.TestCase):
             os.environ.pop("KIE_LIVE_ADAPTER_PATH", None)
         else:
             os.environ["KIE_LIVE_ADAPTER_PATH"] = self._old_adapter
+        if self._old_governor_dir is None:
+            os.environ.pop("DSAF_GOVERNOR_DIR", None)
+        else:
+            os.environ["DSAF_GOVERNOR_DIR"] = self._old_governor_dir
 
     def _install_transport(self):
         """Fake the EXTERNAL provider only: the real dispatcher runs unchanged."""
@@ -565,6 +578,23 @@ class X07OfflineDispatch(unittest.TestCase):
             KD.dispatch = current
         self.assertEqual(self.transport.submits(), 1, self.transport.calls)
         self.assertEqual(seen, [False, True], seen)
+
+    # ---- governor isolation (round-3: HOME-independent offline seam) --
+    def test_governor_dir_isolated_to_the_run(self):
+        """Round-3 finding 2: the KIE token bucket lives in
+        ``~/.cache/drama-song-ad-factory`` unless ``DSAF_GOVERNOR_DIR``
+        points elsewhere. Under an unwritable HOME every offline dispatch
+        failed ``[Errno 13] Permission denied: '/var/empty/.cache'`` --
+        all 14 tests -- which proves nothing about the product path. The
+        offline seam points the governor at a writable directory inside the
+        test root, so the suite runs under an unwritable HOME. Passes after
+        (the override is inside the test root); on the old head the same
+        assertion fails because no override exists."""
+        self.assertEqual(
+            os.environ.get("DSAF_GOVERNOR_DIR"), self._governor_dir,
+            os.environ)
+        self.assertTrue(
+            self._governor_dir.startswith(self.root), self._governor_dir)
 
     # ---- guard-removal control ----------------------------------------
     def test_control_guard_removal_replays_the_second_submit(self):

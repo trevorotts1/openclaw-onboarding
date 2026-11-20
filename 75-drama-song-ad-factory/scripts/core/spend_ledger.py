@@ -35,8 +35,9 @@ Paid-attempt identity (directive 8.4, findings D20/D21):
   presents it (an initial one included). A failed/transport retry that
   presents its round's reference again is not refused or re-recorded. A
   caller that passes require_round_auth=True (it knows the client's current
-  answer) is refused MISSING_AUTH_REF for a retry inside a paid round
-  without a reference, so a withdrawn authorization stops the retry; other
+  answer) is refused MISSING_AUTH_REF for an initial allocation or a retry
+  inside a paid round without a reference, so a withdrawn authorization
+  stops the retry and keep_one never buys a first take; other
   callers keep the plain retry (ponytail: the caller's flag marks whose
   call carries the client's current answer; the ledger cannot read the
   fork file itself). A provider success that fails creative QC
@@ -715,6 +716,13 @@ def _allocate(db_path, cmd, run_id, logical_key, attempt_id, request_digest,
                           "would falsify the prior outcome"
                           % (cat, retry_category), attempt_id, run[6])
         cat_final = retry_category or cat
+        if cat_final == "initial" and require_round_auth and not auth_ref:
+            conn.execute("ROLLBACK")
+            return refuse("MISSING_AUTH_REF",
+                          "a first take with the client's current answer "
+                          "recorded needs that round's authorization; "
+                          "keep_one never buys a new paid round",
+                          attempt_id, run[6])
         if cat_final in ("transport_retry", "failed_job_retry"):
             if any(r[1] in ("planned", "reserved", "submitted") for r in prior):
                 conn.execute("ROLLBACK")
@@ -734,10 +742,14 @@ def _allocate(db_path, cmd, run_id, logical_key, attempt_id, request_digest,
             # would refuse the retry DUPLICATE_AUTHORIZATION); a new one is a
             # new decision, checked and recorded below. Only a caller that
             # knows the client's CURRENT answer (require_round_auth) has an
-            # empty reference read as withdrawn: any provider-failure retry
-            # inside a paid round -- a creative round after a success, or a
-            # still-open initial round after a failure -- is then refused.
-            # keep_one never buys a new paid round, whatever came before it.
+            # empty reference read as withdrawn: any initial allocation or
+            # provider-failure retry with the flag and no reference -- a
+            # creative round after a success, a still-open initial round
+            # after a failure, or a first take recorded under keep_one --
+            # is then refused. keep_one never buys a new paid round,
+            # whatever came before it (round-3: initial allocations used to
+            # bypass both checks, so a song with no prior history was bought
+            # despite keep_one).
             # The flag only rides when the caller recorded a decision: a run
             # with no recorded decision passes no flag and keeps the plain
             # retry. Every other caller keeps the plain

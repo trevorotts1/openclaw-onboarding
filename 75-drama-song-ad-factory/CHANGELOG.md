@@ -4,6 +4,13 @@ All notable changes to this skill are documented here. The version of
 record is `skill-version.txt` (kept in agreement with the `SKILL.md`
 frontmatter `version:` field).
 
+## v2.9.205 - 2026-11-20 - a recorded keep_one stops the first take, and the offline dispatch tests run without HOME
+
+- **The bug.** A recorded `keep_one` passed `require_round_auth=True` with an empty reference, but initial allocations skipped both authorization checks, so a song with no prior ledger history was bought despite `keep_one` (the independent probe returned `ok` with one persisted row for that case). Separately, all 14 offline dispatch tests failed under `HOME=/var/empty` because that directory is not writable: the KIE token bucket lives in `~/.cache` unless `DSAF_GOVERNOR_DIR` points elsewhere, so every dispatch failed `[Errno 13] Permission denied`. That failure says nothing about the product path.
+- **The fix.** An initial allocation with the flag and no reference is refused `MISSING_AUTH_REF` and persists nothing, so `keep_one` never buys a first take; a plain initial allocation with no flag still works, and a run with no recorded decision still retries after a provider failure. The offline dispatch tests point the governor at a writable directory inside the test root, so the suite passes under an unwritable `HOME` and under an empty writable one.
+- **Tests.** Failing-first: new `test_spend_attempts_w02u2.py` suite `test_keep_one_stops_initial_allocation_with_round_auth` failed on the old head (`ok` with one persisted row) and passes now (`MISSING_AUTH_REF`, zero rows; plain initial still `ok`). New `test_x07_offline_dispatch.py` test `test_governor_dir_isolated_to_the_run` pins the governor override inside the test root; the full 15-test file passes under both `HOME=/var/empty` and a writable empty `HOME`.
+- **Twin.** The same change belongs in the 999-setup distribution; the shared `scripts/core/` files stay byte-identical in both copies once both pull requests carry this same repair. Version stamp skill 75 v2.9.204 -> v2.9.205, with the `SKILL.md` frontmatter `version:` kept in agreement. No release or tag is created here.
+
 ## v2.9.204 - 2026-11-20 - a run with no recorded fork decision keeps the provider-failure retry
 
 - **The bug.** The song runner sent `require_round_auth=True` on every paid take, even when the client had recorded no fork decision at all. After an initial provider failure with no decision on file, the ledger read the empty reference as a withdrawn authorization and refused the retry `MISSING_AUTH_REF` with one submit and nothing settled. Today's behavior is the plain provider-failure retry, so the round-2 flag stopped a retry the client never withdrew.

@@ -474,6 +474,41 @@ def test_keep_one_stops_retry_after_initial_failure():
     finally:
         shutil.rmtree(d, ignore_errors=True)
 
+
+# --- 6e. keep_one stops the FIRST take (round-3: initial with the flag) ---
+def test_keep_one_stops_initial_allocation_with_round_auth():
+    """Round-3 finding 1: a recorded keep_one passes require_round_auth=True
+    with an empty reference, but initial allocations bypassed both
+    authorization checks. A song with no prior ledger history was bought
+    despite keep_one. The flag means the caller's call carries the client's
+    current answer, so an initial allocation with the flag and no reference
+    is refused MISSING_AUTH_REF and persists nothing. Fails on the old head
+    (outcome ok, one row); passes after (rejected, zero rows)."""
+    db, d = tmp_db(run_id="ko-first", repair_cap=3)
+    try:
+        refused = L.allocate_attempt(db, "ko-first", "k1", "digest-1",
+                                     estimated_cost=5,
+                                     require_round_auth=True)
+        check("keep_one: initial allocation with the flag refused",
+              refused["outcome"] == "rejected"
+              and refused["reason_code"] == "MISSING_AUTH_REF",
+              str(refused))
+        got = rows(db, "SELECT count(*) FROM jobs WHERE run_id='ko-first'")
+        check("keep_one: initial refusal persists nothing",
+              got == [(0,)], str(got))
+    finally:
+        shutil.rmtree(d, ignore_errors=True)
+    db, d = tmp_db(run_id="plain-first", repair_cap=3)
+    try:
+        first = L.allocate_attempt(db, "plain-first", "k1", "digest-1",
+                                   estimated_cost=5)
+        check("no-decision: a plain initial allocation still allowed",
+              first["outcome"] == "ok"
+              and first["evidence"]["retry_category"] == "initial",
+              str(first))
+    finally:
+        shutil.rmtree(d, ignore_errors=True)
+
 # --- 7. fractional credits and missing actuals ------------------------------
 def test_fractional_credits_and_missing_actuals():
     db, d = tmp_db(run_id="money", ceiling=100, credit_to_subunit_num=3,
@@ -668,6 +703,7 @@ TESTS = [
     test_plain_retry_after_authorized_retake_still_allowed,
     test_withdrawn_auth_stops_retry_and_initial_spends_ref,
     test_keep_one_stops_retry_after_initial_failure,
+    test_keep_one_stops_initial_allocation_with_round_auth,
     test_fractional_credits_and_missing_actuals,
     test_multi_track_counts_distinct,
     test_migration_100_preserves_rows,
