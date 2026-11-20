@@ -104,7 +104,7 @@ sel = build_selection(SELF_TEST_LAUNCH, offer_id="MAIN-A", price_choice_id="MAIN
                       selected_at="2026-10-15T20:00:00Z", source_page_id="P", session_ref="opaque")
 jsonschema.validate(sel, json.loads((root / "schema" / "selection.schema.json").read_text()))
 req = {"request_id": "verify-request", "page_id": "VERIFY-SELECTION-PAGE",
-       "input_hash": "d" * 64, "test_only": True}
+       "input_hash": "d" * 64, "page_role": "product_selection", "test_only": True}
 res = emit(build_plan(SELF_TEST_LAUNCH), author_session="verify", request=req)
 assert "outcome" not in res, "page-result document must not carry outcome"
 jsonschema.validate(res, json.loads((root / "schema" / "page-result.schema.json").read_text()))
