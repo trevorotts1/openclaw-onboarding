@@ -4,6 +4,12 @@ All notable changes to this skill are documented here. The version of
 record is `skill-version.txt` (kept in agreement with the `SKILL.md`
 frontmatter `version:` field).
 
+## v2.9.204 - 2026-11-20 - round-3 findings: em dash never ends negation, cue words never drop lyrics
+
+- **An em dash never ends a negation.** `_commercial_calls` splits the negation sentence on `. ! ?` only, so `Never — take the quiz.` and `Nobody — take the quiz.` are refused as calls for nothing. Commas, colons, semicolons, line breaks and em dashes never end it; a real call still needs its own sentence (`Do not wait. Take the quiz now.`).
+- **Cue words never drop lyrics during rendering.** `_tag`, `render_lyrics`, the sheet gate and the seconds estimate now judge a section by its name half and declared delivery, never the whole bracket: `[Intro spoken: instrumental bed]` keeps its lyric lines, and `parse_lyrics` round-trips it back intact. A rendered spoken tag keeps `check_no_voice_lines` quiet too. Real `[Instrumental]`, `[Instrumental Break: band only]` and `[Break]` sections with a lyric under them are still refused.
+- **Unchanged.** Whole-word no-voice names, declared-delivery parsing, delivery map, closing accept/refuse rows, word budget, opener cap, sung share and pre-ERM rules unchanged. New test: `scripts/core/suno_recipe/test_gatefix_round3_s75.py` (failing-first on head `f09cda23`).
+
 ## v2.9.203 - 2026-11-20 - round-2 findings: cue words never decide, anywhere
 
 - **Cue words never decide, in any dialect.** `suno_recipe.parse_tag` now splits a non-parenthesized tag at the colon and reads only the name half: `[Intro spoken: instrumental bed]` is spoken, `[Verse: rap beat]` names no delivery at all (it is refused only if a lyric sits under it and the grammar cannot classify it). The parenthesized `[Name (spoken): cue]` rule from round 2 is unchanged. `check_no_voice_lines` judges the same name half, so `[Verse: instrumental bed]` with a lyric is legal while real `[Instrumental]`, `[Instrumental Break: band only]` and `[Break]` sections with a lyric are still refused.

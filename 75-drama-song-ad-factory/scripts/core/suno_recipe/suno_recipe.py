@@ -669,9 +669,29 @@ def is_no_voice_tag(tag):
     return any(word in NO_VOICE_TAGS for word in words)
 
 
+def _no_voice_section(sec):
+    """True for a section that carries no voice: a tag only, never a lyric.
+
+    Only the tag's NAME half (before any cue colon) or declared delivery
+    decides. A declared [Name (sung|spoken|rap): cue] always carries voice,
+    and a cue word after the colon ("Intro spoken: instrumental bed") never
+    makes a voiced section music-only -- the same name-half rule the lyric
+    checker (check_no_voice_lines) and the delivery parser (parse_tag) use.
+    """
+    tag = str(sec.get("tag", ""))
+    named = _NAMED_TAG_RE.match(tag.strip())
+    if named is not None:
+        d = named.group(2).lower()
+        if d in DELIVERIES:
+            return False
+        return is_no_voice_tag(named.group(1))
+    name = tag.split(":", 1)[0]
+    return is_no_voice_tag(name)
+
+
 def _tag(sec, style_id=None):
     d = sec["delivery"]
-    if d is None or is_no_voice_tag(sec["tag"]):
+    if d is None or _no_voice_section(sec):
         # no voice: a TAG ONLY, with its cue inside the tag, never a line
         return ("[%s: %s]" % (sec["tag"], sec["cue"])) if sec.get("cue") \
             else "[%s]" % sec["tag"]
@@ -694,14 +714,17 @@ def render_lyrics(sheet, style_id=None):
     """Lyric sheet text: spoken tags only Intro/Outro, ends with [End].
 
     A no-voice section renders as a TAG with no lyric line: a line under an
-    instrumental tag would be SUNG by Suno (design 4.3).
+    instrumental tag would be SUNG by Suno (design 4.3). Only the tag's name
+    half decides: a declared delivery or a cue word after the colon never
+    makes a voiced section music-only, so a spoken "[Intro spoken:
+    instrumental bed]" keeps its lyric lines.
     """
     out = []
     for s in sheet:
         if str(s["tag"]).strip().lower() == "end":
             continue                          # the terminator is appended once
         tag = _tag(s, style_id)
-        if s.get("delivery") is None or is_no_voice_tag(s["tag"]):
+        if s.get("delivery") is None or _no_voice_section(s):
             out.append(tag)
         else:
             out.append(tag + "\n" + "\n".join(s["lines"]))
@@ -839,17 +862,14 @@ def check_no_voice_lines(text):
         if not s:
             continue
         if s.startswith("[") and s.endswith("]"):
-            named = _NAMED_TAG_RE.match(s[1:-1].strip())
-            if named is not None:
-                # A declared [Name (sung|spoken|rap): cue]: only Name decides.
-                # Cue words ("over a light instrumental bed") never make a
-                # voiced section music-only.
-                no_voice = is_no_voice_tag(named.group(1))
-            else:
-                # No parenthesized delivery: the name half (before any colon)
-                # decides; a cue word after the colon never makes it no-voice.
-                inner = s[1:-1].strip().split(":", 1)[0]
-                no_voice = is_no_voice_tag(inner)
+            # A rendered tag carries "(spoken): cue" inside the bracket, so
+            # strip any parenthesized delivery tail first, then judge the
+            # same name half the parser uses: only the name decides, a cue
+            # word after the colon never makes a voiced section no-voice.
+            inner = re.sub(r"\s*\((sung|spoken|rap)\)\s*",
+                           " ", s[1:-1].strip(), flags=re.I)
+            inner = inner.split(":", 1)[0]
+            no_voice = is_no_voice_tag(inner)
             continue
         if s.startswith("["):
             no_voice = False
@@ -999,7 +1019,7 @@ def check_lyric_sheet(sheet, client_text, length_s=None, spoken_share_pct=None,
         return ["no tagged sections: every section must be (sung), (spoken) or (rap)"]
     for s in sheet:
         d, tag = s.get("delivery"), str(s.get("tag", ""))
-        if d is None or is_no_voice_tag(tag):
+        if d is None or _no_voice_section(s):
             if s.get("lines"):
                 errs.append("section %r has no voice but carries lyric lines "
                             "(Suno would sing them)" % tag)
@@ -1101,7 +1121,7 @@ def sheet_seconds(sheet, rate=None):
     rate = rate or {"sung": _LF.SUNG_WPS, "spoken": _LF.SPOKEN_WPS}
     total = 0.0
     for s in sheet:
-        if s.get("delivery") is None or is_no_voice_tag(s.get("tag", "")):
+        if s.get("delivery") is None or _no_voice_section(s):
             total += float(s.get("seconds") or 0.0)
             continue
         wps = rate.get(s["delivery"])

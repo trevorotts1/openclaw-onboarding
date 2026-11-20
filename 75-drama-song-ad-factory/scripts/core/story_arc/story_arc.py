@@ -726,19 +726,20 @@ def _commercial_calls(text):
     A call counts only when nothing says not to act. A sentence refuses the
     act when any word before the phrase is "not", "never", "no", "nor",
     "cannot" or an "n't" word ("Do not take the quiz."), or when its subject
-    is negative ("Nobody should take the quiz."). A comma, colon or
-    semicolon never ends the sentence, so a real call after a negation must
-    stand in its own sentence: "Do not wait. Take the quiz now."
+    is negative ("Nobody should take the quiz."). A comma, colon,
+    semicolon or em dash never ends the sentence, so a real call after a
+    negation must stand in its own sentence: "Do not wait. Take the quiz now."
     ponytail: conservative - "No more
     guessing, take our quiz." is refused too (origin/main refused every quiz
     line); the guard applies to every action phrase, so "Do not book a call."
-    and a newline-split "Never\\ntake the quiz." are refused the same way.
+    and newline- or dash-split ("Never\ntake the quiz.", "Never \u2014 take
+    the quiz.") refusals work the same way.
     """
     text = str(text or "")
     calls = []
     for m in _COMMERCIAL_RE.finditer(text):
         act = m.group(1).lower()
-        sentence = re.split(r"[.!?\u2014]", text[:m.start()])[-1].lower()
+        sentence = re.split(r"[.!?]", text[:m.start()])[-1].lower()
         words = re.findall(r"[\w'\u2019]+", sentence)
         if any(w in _NEGATORS or w.endswith(("n't", "n\u2019t")) for w in words):
             continue
