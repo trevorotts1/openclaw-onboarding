@@ -27,7 +27,7 @@ from pathlib import Path
 from typing import Any, List
 
 from . import (checks, council, dependencies, image_plan, install_handoff, intake, launch_bridge,
-               launch_plan, package, page_designs, production, route)
+               launch_plan, package, page_designs, production, route, stop_explain)
 from .constants import DECIDED, SEAMS
 
 _TEST_ONLY_REF = "TEST-ONLY"  # the placeholder approval ref on test fixtures
@@ -47,6 +47,13 @@ def _read_json(path: Path) -> Any:
 
 def _emit(obj: Any) -> None:
     print(json.dumps(obj, indent=2, sort_keys=True))
+
+def _tell_client(explanations: List[dict]) -> None:
+    """The words for the client when the run stops (owner order 2026-11-20): what happened, why the rule
+    exists, what fixes it and numbered choices. Printed after the operator line; the code stays above it."""
+    for each in explanations:
+        print("\nCLIENT MESSAGE (say this to the client, in your own warm voice):\n" + each["message"],
+              file=sys.stderr)
 
 
 def _launch_event(launch_id: str, event: dict) -> None:
@@ -539,6 +546,7 @@ def cmd_dispatch(args: argparse.Namespace) -> int:
             li.verify(_read_json(args.intake), prov, _read_json(args.answers), Path(args.answers))
         except li.AnswersError as exc:
             print(f"FAIL {exc}", file=sys.stderr)
+            _tell_client([stop_explain.explain_exception(exc)])
             return 2
     payload = _read_json(args.intake)
     # The mode is read from the intake's own claim (paid KIE pictures or a stub
@@ -655,6 +663,7 @@ def cmd_check(args: argparse.Namespace) -> int:
         print(f"FAIL {len(fails)} violation(s)")
         for f in fails:
             print(" -", f)
+        _tell_client(stop_explain.explain_violations([str(f) for f in fails])[:3])
         return 2
     print("PASS package complete")
     return 0
@@ -984,6 +993,7 @@ def main(argv: List[str] | None = None) -> int:
             launch_plan.LaunchPlanError, CliError, production.ProductionError,
             install_handoff.InstallError, dependencies.DependencyError) as exc:
         print(f"FAIL {exc}", file=sys.stderr)
+        _tell_client([stop_explain.explain_exception(exc)])
         return 2
 
 

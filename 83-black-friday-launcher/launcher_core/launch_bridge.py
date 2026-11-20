@@ -734,6 +734,7 @@ def run(payload: Dict[str, Any], out_dir: Path, *, approval: Dict[str, Any],
             "pages": resources["pages"],
             "client_blockers": resources["summary"]["client_blockers"],
             "next_steps": resources["summary"]["next_steps"],
+            "client_explanations": [b["client_explanation"] for b in resources["blockers"]],
         },
         "delivery": {
             "record": delivered["record_path"],
@@ -812,9 +813,14 @@ def summary_lines(report: Dict[str, Any]) -> List[str]:
     # F22 item 8: a real blocker is stated in plain words with the practical next step,
     # and the work that does not depend on it keeps going. It is never hidden.
     linked = report.get("linked_delivery") or {}
-    for message, step in zip(linked.get("client_blockers") or [],
-                             linked.get("next_steps") or []):
+    explanations = linked.get("client_explanations") or []
+    for i, (message, step) in enumerate(zip(linked.get("client_blockers") or [],
+                                            linked.get("next_steps") or [])):
         lines.append(f"Still to sort out: {message} Next step: {step}")
+        # Owner order 2026-11-20: a blocker never ends without the client's choices.
+        if i < len(explanations):
+            lines += [f"  Why: {explanations[i]['why']}", "  What I can do right now:"]
+            lines += [f"    {n}. {c}" for n, c in enumerate(explanations[i]["choices"], 1)]
     # Issue 80: these lines are DATA-DRIVEN. What a page is called depends on what exists on disk, not on a
     # fixed sentence: the production manifest (report["production"]: role -> "built" | "not_built") and the
     # install read-back (report["install_readbacks"]), both added by with_production(). A page with no

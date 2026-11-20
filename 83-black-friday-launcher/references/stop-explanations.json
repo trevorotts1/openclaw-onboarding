@@ -1,0 +1,1457 @@
+{
+  "schema": "launcher.stop-explanations/1",
+  "note": "What the client is told when the launcher stops, refuses, holds or waits. Each code resolves to four parts: what_happened ({placeholders} filled from real facts; what_happened_general when a fact is missing), why (what the rule protects the client from), fix, and choices (2 to 4, at least one the agent does). A code row names its family and may override any part; a variant matches the stop's own detail and fills the placeholders from it. tests/test_stop_explanations.py fails when a stop in the launcher's code has no row here.",
+  "families": {
+    "answers": {
+      "what_happened": "One of the details I need for your sale is missing, or it isn't in a form I can use yet.",
+      "why": "I only build from answers you really gave me. Nothing gets filled in by guessing, so your pages never show a price, product or promise you didn't choose.",
+      "fix": "Your answer to that one question, in your own words.",
+      "choices": [
+        "I ask you the one question I still need, in plain words.",
+        "I show you everything I have so far so you can look it over.",
+        "I suggest an answer from what you already told me, and you decide."
+      ]
+    },
+    "suggestion": {
+      "what_happened": "Some choices are still my suggestions, and you haven't said yes to them yet.",
+      "why": "A suggestion is never treated as your decision. Only what you say yes to goes on your pages.",
+      "fix": "A quick yes, or your own answer, for each suggestion.",
+      "choices": [
+        "I show you each suggestion so you can say yes or change it.",
+        "You give me your own answers instead.",
+        "You tell me to use all my suggestions as they are."
+      ]
+    },
+    "price": {
+      "what_happened": "A price is missing, or it isn't a price I can use. It has to be a real amount above zero.",
+      "why": "Your price is never guessed and never set to zero or free, so customers always see exactly the price you chose.",
+      "fix": "The price you want to charge for that offer.",
+      "choices": [
+        "I ask you for the price now.",
+        "I suggest a price based on what you told me, and you decide.",
+        "I leave this offer out of the sale for now."
+      ]
+    },
+    "offer": {
+      "what_happened": "One of your offers is missing something I need, like its name, its price, or what kind of offer it is.",
+      "why": "Each offer needs its own clear name, price and place in the sale, so the order form charges the right amount for the right thing.",
+      "fix": "The missing detail for that offer.",
+      "choices": [
+        "I go through that offer with you, one question at a time.",
+        "I show you all your offers side by side so you can spot it.",
+        "I leave that offer out for now and build the rest."
+      ]
+    },
+    "billing-plan": {
+      "what_happened": "You asked for a payment plan (paying in parts) or a free trial first. Right now I can do one payment, or a price that repeats every week, month, quarter or year, but not payment plans or trials yet.",
+      "why": "Your order form can't charge payment plans or trials yet. I stop now, before you approve anything, so you never approve a sale the order form can't really charge.",
+      "fix": "One payment, or a repeating price, for that offer.",
+      "choices": [
+        "I set it up as one payment.",
+        "I set it up as a repeating price, like $49 a month. Just tell me how often.",
+        "I leave that offer out of this sale for now."
+      ]
+    },
+    "billing-interval": {
+      "what_happened": "One of your prices repeats, but I don't know how often to charge it.",
+      "why": "Customers must see how often they'll be charged before they pay, so it's never guessed.",
+      "fix": "How often that price repeats: every week, month, quarter or year.",
+      "choices": [
+        "I ask you how often that price repeats.",
+        "I make it one payment instead.",
+        "I show you how the price will look on the order form first."
+      ]
+    },
+    "level": {
+      "what_happened": "What's included in one of your levels isn't clear yet. Each level needs a name and at least one thing the buyer gets.",
+      "why": "Levels are never made up, so customers see exactly what each level includes before they pay.",
+      "fix": "The name of that level and what comes with it.",
+      "choices": [
+        "I ask you what's in that level, one item at a time.",
+        "I suggest a list from what you've told me, and you fix it.",
+        "I mark that level as still to be decided and build the rest."
+      ]
+    },
+    "delivery": {
+      "what_happened": "I don't have the web address where your buyers get what they paid for, or it isn't a safe (https) address you've confirmed.",
+      "why": "A buyer's link is never guessed. A wrong or unsafe link would send paying customers to the wrong place.",
+      "fix": "The https link where buyers get their purchase, and your OK that it's right.",
+      "choices": [
+        "I ask you for the link and go over it with you.",
+        "I help you find the link in your account.",
+        "You tell me there's nothing to send for this offer, and I note that."
+      ]
+    },
+    "terms": {
+      "what_happened": "Your order form still needs your guarantee, your terms, and the line customers agree to before they pay.",
+      "why": "Customers must see your real terms before they pay, and those words are never written for you without your OK.",
+      "fix": "Your guarantee, terms and agreement wording.",
+      "choices": [
+        "I write a first draft of the wording for you to approve.",
+        "You paste in the wording you already use.",
+        "You point me to the page on your website that has it."
+      ]
+    },
+    "offer-order": {
+      "what_happened": "The order of your special offers doesn't work yet. The second upsell only shows after someone buys an earlier offer, and the downsell and second upsell need the first upsell to be on.",
+      "why": "Each special offer shows up only after the right step, so nobody is shown an offer that doesn't make sense for what they just did.",
+      "fix": "Turn the first upsell back on, or take out the offers that come after it.",
+      "choices": [
+        "I turn the first upsell back on and show you the order.",
+        "I take out the later offers and keep the rest.",
+        "I walk through your offers with you, one at a time."
+      ]
+    },
+    "steps": {
+      "what_happened": "The steps your customers go through (sales page, order form, special offers, thank-you page) don't connect the right way yet.",
+      "why": "Every path has to end at your thank-you page, and a payment that is still pending or failed never unlocks anything, so no customer gets stuck or gets something they didn't pay for.",
+      "fix": "I fix how the steps connect.",
+      "choices": [
+        "I fix the steps and show you the path your customers will take.",
+        "I make the sale simpler, with fewer special offers.",
+        "I show you the steps as they are now first."
+      ]
+    },
+    "mode": {
+      "what_happened": "The way your customers move through the sale isn't one I can build yet. I can do one offer, a page where they pick from several options, or levels shown on one page.",
+      "why": "I only build sale shapes I can finish and test from start to end, so you never get a sale that breaks halfway.",
+      "fix": "Pick one of the three shapes I can build.",
+      "choices": [
+        "I recommend the shape that fits your offers best, and you decide.",
+        "You pick: one offer, several options, or levels on one page.",
+        "I show you a quick example of each."
+      ]
+    },
+    "practice-or-real": {
+      "what_happened": "I couldn't tell if this is a practice run or your real sale.",
+      "why": "A practice run costs nothing and uses placeholder pictures. A real run spends money. I never guess which one you meant.",
+      "fix": "Tell me: practice or real.",
+      "choices": [
+        "I do a practice run first, with free placeholder pictures.",
+        "I get the real run ready and send you the picture budget to approve.",
+        "I explain the difference in a little more detail."
+      ]
+    },
+    "go-live": {
+      "what_happened": "You asked for your pages to be set up in your account or put live, but I don't have your recorded OK for this account yet.",
+      "why": "Nothing goes live without your written OK for that exact account, so a practice run can never turn into your real sale by accident.",
+      "fix": "Your OK for this account.",
+      "choices": [
+        "I send you the request to approve right here in chat.",
+        "I keep everything as drafts for you to look over first.",
+        "I do a practice run first so you can see it all."
+      ]
+    },
+    "approval-changed": {
+      "what_happened": "The plan changed after you approved it, so your OK no longer matches what I'd build.",
+      "why": "Your OK only counts for the exact plan you saw. If anything changes, you see it again, so nothing gets built that you didn't approve.",
+      "fix": "Your OK on the updated plan.",
+      "choices": [
+        "I send you the updated plan to approve right here in chat.",
+        "I show you exactly what changed first.",
+        "I go back to the plan you already approved."
+      ]
+    },
+    "answers-source": {
+      "what_happened": "I can't match what I'm about to build to your saved answers. Your answers may have changed after I got ready.",
+      "why": "Everything I build has to come from your saved answers, so nothing slips in that you didn't say.",
+      "fix": "Rebuild from your latest answers.",
+      "choices": [
+        "I rebuild from your latest answers and show you the plan.",
+        "I go over the answers that changed with you.",
+        "I show you the answers I have saved."
+      ]
+    },
+    "look": {
+      "what_happened": "You haven't picked the look of your pages yet.",
+      "why": "I never pay for pictures in a look you didn't choose, so your pages look the way you want.",
+      "fix": "Your pick: A Block (square photos), B Circle (round photos), or C Hybrid (both).",
+      "choices": [
+        "I show you an example of each look so you can pick.",
+        "I use the look I recommend, once you say yes.",
+        "You tell me A, B or C."
+      ]
+    },
+    "brand": {
+      "what_happened": "Your brand colors haven't been confirmed yet, or I can't tell whose brand this is.",
+      "why": "I never pay for pictures in colors that aren't yours, and I never use another business's look on your pages.",
+      "fix": "Your OK on your colors, or your own colors.",
+      "choices": [
+        "I show you the colors I have so you can say OK.",
+        "You send me your own colors or brand file.",
+        "I make a practice version with free placeholder pictures meanwhile."
+      ]
+    },
+    "picture-budget": {
+      "what_happened": "A real run spends money on pictures, and I don't have your spending limit yet.",
+      "why": "I never spend money on pictures beyond the limit you set, so your costs never surprise you.",
+      "fix": "A picture budget that covers every picture, or fewer pictures.",
+      "choices": [
+        "I work out the budget that covers every picture and send it to you to approve.",
+        "I use fewer pictures so everything fits your budget.",
+        "I make a practice version with free placeholder pictures first, so you can see the pages."
+      ],
+      "variants": [
+        {
+          "match": "(?P<pictures>\\d+) pictures cost more than your budget: (?P<budget_minor>\\d+) minor (?P<currency>[A-Z]{3}) pays for at most (?P<ceiling>\\d+)",
+          "what_happened": "Your pages need {pictures} pictures, but your picture budget of {budget} covers only {ceiling}."
+        },
+        {
+          "match": "(?P<budget_minor>\\d+) minor (?P<currency>[A-Z]{3}) does not pay for one picture \\((?P<price_minor>\\d+) each\\)",
+          "what_happened": "Your picture budget of {budget} doesn't cover even one picture. Each one costs {price}."
+        },
+        {
+          "match": "no live money price for (?P<currency>[A-Z]{3})",
+          "what_happened": "I can only look up picture prices in US dollars, and your budget is in {currency}.",
+          "fix": "Your picture budget in US dollars.",
+          "choices": [
+            "I work out the budget in US dollars for you to approve.",
+            "You tell me your budget in US dollars.",
+            "I make a practice version with free placeholder pictures first, so you can see the pages."
+          ]
+        },
+        {
+          "match": "amount of money|whole number|3-letter",
+          "what_happened": "Your picture budget needs to be an amount of money with its currency, like $50 in US dollars."
+        }
+      ]
+    },
+    "spend-approval": {
+      "what_happened": "I need your OK to spend money on pictures, and I don't have it yet, or I couldn't confirm it.",
+      "why": "No money is ever spent without your recorded OK for this exact plan and this exact amount.",
+      "fix": "Your OK on the picture budget.",
+      "choices": [
+        "I send you the picture budget to approve right here in chat.",
+        "I lower the budget first, then send it to you.",
+        "I make a practice version with free placeholder pictures meanwhile."
+      ]
+    },
+    "picture-service": {
+      "what_happened": "The picture service picked for your pages can't make paid pictures yet, or I couldn't get today's price for pictures.",
+      "why": "Pictures are only made through a service I can price ahead of time, so you always know the cost before anything is spent.",
+      "fix": "The standard picture service, or a practice run.",
+      "choices": [
+        "I switch to the standard picture service and show you the price.",
+        "I try getting the price again in a few minutes.",
+        "I make a practice version with free placeholder pictures meanwhile."
+      ]
+    },
+    "launch-plan": {
+      "what_happened": "Your launch calendar (the emails, texts and follow-up steps) doesn't fit together yet.",
+      "why": "Every email, text and step has to line up with your sale dates and with each other, so nothing goes out at the wrong time or waits forever.",
+      "fix": "I fix the calendar so every piece lines up.",
+      "choices": [
+        "I fix the calendar and show you what changed.",
+        "I go over your sale dates with you first.",
+        "I build just the pages now and the emails and texts after."
+      ]
+    },
+    "text-cap": {
+      "what_happened": "Your plan has {count} sets of sales texts, but a launch can have at most {cap}.",
+      "why": "Too many sales texts wear out your list and push people to text STOP, so every launch keeps its sales texts to a small number.",
+      "fix": "Fewer sales texts.",
+      "choices": [
+        "I trim the texts down to the limit and show you which ones stayed.",
+        "I move some of the texts into emails instead.",
+        "You pick which text sets to keep."
+      ],
+      "what_happened_general": "Your plan has more sets of sales texts than one launch is allowed.",
+      "variants": [
+        {
+          "match": "(?P<count>\\d+) promotional sets exceeds the cap of (?P<cap>\\d+)",
+          "what_happened": "Your plan has {count} sets of sales texts, but a launch can have at most {cap}."
+        }
+      ]
+    },
+    "plan-scope": {
+      "what_happened": "Your plan has no launch emails or no follow-up steps, and you haven't told me you want to leave them out.",
+      "why": "A Black Friday sale usually needs both, so I never drop them without your say-so.",
+      "fix": "Add them, or tell me to leave them out.",
+      "choices": [
+        "I add the launch emails and follow-up steps to your plan.",
+        "I leave them out and note that it was your choice.",
+        "I explain what each one does first."
+      ]
+    },
+    "scope": {
+      "what_happened": "I need to know if this is the full sale (pages plus emails and texts) or just the pages.",
+      "why": "A full sale includes your launch calendar and pages only don't. I never mix the two up, so you always know what you're getting.",
+      "fix": "Full sale, or pages only.",
+      "choices": [
+        "I put together the full sale with the emails and texts.",
+        "I deliver just the pages for now.",
+        "I explain the difference first."
+      ]
+    },
+    "calendar": {
+      "what_happened": "One of your sale dates or times is missing, in the wrong order, or has no time zone.",
+      "why": "Every deadline is tied to your real time zone, so countdowns and last-call messages go out at the right moment.",
+      "fix": "Your sale dates, times and time zone.",
+      "choices": [
+        "I suggest the usual Black Friday dates and times for you to OK.",
+        "You tell me your dates and your time zone.",
+        "I show you your calendar as it is now so you can spot it."
+      ]
+    },
+    "order-form": {
+      "what_happened": "Your order form is missing something it needs before it can take payments, like a price setting from your account, your terms, or which add-on goes with which offer.",
+      "why": "The order form only charges what it can show clearly and correctly, so no customer is ever charged the wrong amount.",
+      "fix": "The missing order form details.",
+      "choices": [
+        "I list exactly what's missing and ask you for each one.",
+        "I look it up in your account, once you say OK.",
+        "I keep the order form as a design for now and finish the other pages."
+      ]
+    },
+    "products": {
+      "what_happened": "Your products and prices aren't set up in your account yet, so the order form has nothing to charge.",
+      "why": "Your sale is never called ready until every product and price really exists in your account.",
+      "fix": "Your products and prices, set up in your account.",
+      "choices": [
+        "I set up the products and prices for you to look over, once you say OK.",
+        "I keep your pages as drafts until they're set up.",
+        "I show you the list of products and prices I'd set up."
+      ]
+    },
+    "linked-pages": {
+      "what_happened": "One of the places your buyers go after they buy (like a members area, a course, or a booking page) isn't fully set up yet.",
+      "why": "Every link a buyer clicks has an owner and has been tested, so paying customers never land on a broken or unknown page.",
+      "fix": "The details for that page, or building it as part of this sale.",
+      "choices": [
+        "I ask you for that page's details, one at a time.",
+        "I build that page as part of this sale.",
+        "I leave that link out for now and finish everything else."
+      ]
+    },
+    "advisors": {
+      "what_happened": "You asked for advice from the advisors before I build, and that advice hasn't come back yet.",
+      "why": "When you ask for advice first, I wait for it, so nothing is built before you've heard it.",
+      "fix": "The advisors' answer, or your OK to go ahead without it.",
+      "choices": [
+        "I wait for the advice and tell you as soon as it's in.",
+        "I go ahead without the advice.",
+        "I explain what the advisors will look at."
+      ]
+    },
+    "designs": {
+      "what_happened": "Some of your pages don't have their finished designs and pictures yet.",
+      "why": "You only get your finished pages once every page has its designs and real pictures, so nothing half-done reaches your customers.",
+      "fix": "Finish the missing designs and pictures.",
+      "choices": [
+        "I finish the missing designs and pictures, then show you.",
+        "I show you what's finished so far.",
+        "I give you the finished pages now and the rest as soon as they're ready."
+      ]
+    },
+    "picture-quality": {
+      "what_happened": "Some pictures didn't pass their quality review yet.",
+      "why": "Every picture is looked at by a separate reviewer before you see it, so nothing with mistakes or off-brand colors reaches your customers.",
+      "fix": "Redo or review those pictures again.",
+      "choices": [
+        "I redo the pictures that failed and have them reviewed again.",
+        "I show you the pictures so you can see the problem.",
+        "I swap those pictures for simpler ones that fit your brand."
+      ]
+    },
+    "integrity": {
+      "what_happened": "When I put everything together for you, one piece was missing or had changed since it was looked over.",
+      "why": "Every piece is looked over again right before you get it, so you only ever receive exactly what was reviewed.",
+      "fix": "Rebuild that piece and look everything over again.",
+      "choices": [
+        "I rebuild the missing piece and look everything over again.",
+        "I show you what's complete right now.",
+        "I tell you as soon as everything is ready."
+      ]
+    },
+    "blocked-page": {
+      "what_happened": "One of your pages still has an open problem, so the whole sale can't be called finished yet.",
+      "why": "Your sale is only called finished when every page is done, so you never launch with a page that doesn't work.",
+      "fix": "Fix that page, or deliver the others first.",
+      "choices": [
+        "I fix that page and let you know when it's done.",
+        "I give you the other pages now, as drafts to look over.",
+        "I show you what's still open on that page."
+      ]
+    },
+    "practice": {
+      "what_happened": "This was a practice version, so it can't be handed over as your real sale.",
+      "why": "Practice versions use placeholder pictures and sample words and cost nothing. They're never shown to your customers.",
+      "fix": "Make the real version.",
+      "choices": [
+        "I get the real version ready and send you the picture budget to approve.",
+        "I keep showing you the practice version so you can give feedback.",
+        "I explain what changes in the real version."
+      ]
+    },
+    "drafts-to-do": {
+      "what_happened": "Some of the emails, texts or follow-up steps in your plan aren't finished and checked yet.",
+      "why": "Your sale only counts as complete when every planned email, text and follow-up step is done and reviewed.",
+      "fix": "Finish the missing pieces, or take them out of the plan.",
+      "choices": [
+        "I finish the missing emails, texts or steps and show you.",
+        "I give you the pages now and the rest when they're ready.",
+        "I take those pieces out of the plan, if you'd rather skip them."
+      ]
+    },
+    "claims": {
+      "what_happened": "One page says something like 40% off, only 50 left, or limited time, and I can't back it up with your real facts.",
+      "why": "Your pages never claim a discount, a limit or a deadline that isn't true. That protects you and your customers.",
+      "fix": "Take out that wording, or give me the real facts.",
+      "choices": [
+        "I take that wording out and show you the new version.",
+        "You tell me the real discount, limit or deadline, and I use it.",
+        "I show you every line that was flagged."
+      ]
+    },
+    "selection": {
+      "what_happened": "The page where customers compare your options doesn't have anything to compare yet.",
+      "why": "A comparison page that only lists prices doesn't help anyone choose, so each option needs at least one thing to compare.",
+      "fix": "What's different between your options.",
+      "choices": [
+        "I ask you what makes each option different.",
+        "I draft a comparison from what you've told me, for you to fix.",
+        "I use one offer instead, with no comparison page."
+      ]
+    },
+    "finishing": {
+      "what_happened": "Turning your approved designs into finished pages, or setting them up in your account, didn't finish.",
+      "why": "Pages are only built from designs that passed every review, and they're only called set up when I can see them working in your account.",
+      "fix": "Fix what stopped it and try again.",
+      "choices": [
+        "I fix it and try again, then tell you how it went.",
+        "I keep your approved designs safe as they are for now.",
+        "I show you which pages are finished."
+      ]
+    },
+    "building": {
+      "what_happened": "Building your pages couldn't start, or one page didn't come out.",
+      "why": "Every page is built from your one approved plan with one look, so no page comes out different from the rest.",
+      "fix": "Fix the setup and build again.",
+      "choices": [
+        "I fix the setup and build your pages again.",
+        "I build the pages that are ready to go now.",
+        "I show you what was built so far."
+      ]
+    },
+    "our-side": {
+      "what_happened": "I need a moment to get something ready on my side — I'll be right back with you.",
+      "why": "I make sure everything on my side is ready before I build, so your sale is never put together with missing pieces. This isn't anything you did.",
+      "fix": "I'm getting it ready on my side now.",
+      "choices": [
+        "I get it ready on my side and come right back to you.",
+        "Meanwhile, we keep going with your questions.",
+        "I show you what's already done while I get it ready."
+      ]
+    }
+  },
+  "codes": {
+    "AF-CHECKOUT-BILLING": {
+      "family": "billing-interval"
+    },
+    "AF-DI-PROSE": {
+      "family": "our-side"
+    },
+    "AF-G-VISION": {
+      "family": "picture-quality",
+      "what_happened": "Some pictures haven't been looked at by the reviewer yet."
+    },
+    "AF-G1": {
+      "family": "picture-quality",
+      "what_happened": "A picture has misspelled or jumbled words in it."
+    },
+    "AF-G2": {
+      "family": "picture-quality",
+      "what_happened": "A picture changed your logo or made up a new one."
+    },
+    "AF-G3": {
+      "family": "picture-quality",
+      "what_happened": "Some words in a picture are too hard to read."
+    },
+    "AF-G4": {
+      "family": "picture-quality",
+      "what_happened": "A picture shows people with odd-looking hands, faces or bodies."
+    },
+    "AF-G5": {
+      "family": "picture-quality",
+      "what_happened": "A picture shows leftover filler text, like brackets or the word placeholder."
+    },
+    "AF-G6": {
+      "family": "picture-quality",
+      "what_happened": "A picture's colors drift away from your brand colors."
+    },
+    "AF-G7": {
+      "family": "picture-quality",
+      "what_happened": "The people in a picture don't look like your real customers, or their skin tones aren't true to life."
+    },
+    "AF-G8": {
+      "family": "picture-quality",
+      "what_happened": "I can't show where one of the pictures came from."
+    },
+    "AF-LAUNCH-ACTIVATION": {
+      "family": "go-live"
+    },
+    "AF-LAUNCH-ACTIVATION-AUTHORITY": {
+      "family": "go-live"
+    },
+    "AF-LAUNCH-ACTIVATION-MISSING": {
+      "family": "go-live"
+    },
+    "AF-LAUNCH-ACTIVATION-PENDING": {
+      "family": "go-live"
+    },
+    "AF-LAUNCH-ACTIVATION-READBACK": {
+      "family": "go-live"
+    },
+    "AF-LAUNCH-ACTIVATION-RECEIPT": {
+      "family": "go-live"
+    },
+    "AF-LAUNCH-ACTIVATION-RECORD": {
+      "family": "go-live"
+    },
+    "AF-LAUNCH-ACTIVATION-SCOPE": {
+      "family": "go-live"
+    },
+    "AF-LAUNCH-ACTIVATION-SHAPE": {
+      "family": "go-live"
+    },
+    "AF-LAUNCH-ACTIVATION-STATE": {
+      "family": "go-live"
+    },
+    "AF-LAUNCH-ACTIVATION-TEST-ONLY": {
+      "family": "go-live"
+    },
+    "AF-LAUNCH-ANSWERS-APPROVAL": {
+      "family": "approval-changed",
+      "what_happened": "You haven't approved the plan yet, so I can't start building.",
+      "fix": "Your OK on the plan.",
+      "choices": [
+        "I send you the plan to approve right here in chat.",
+        "I go over the plan with you first, step by step.",
+        "You tell me what to change, and I update the plan."
+      ]
+    },
+    "AF-LAUNCH-ANSWERS-DIRECTION": {
+      "family": "look",
+      "what_happened": "You haven't told me which look you want for your pages yet.",
+      "fix": "The house look, a look like your own brand or website, or a style you name.",
+      "choices": [
+        "I show you the house look so you can decide.",
+        "I match the look of your own brand or website. Just send me the link.",
+        "You name a style you like, and I follow it."
+      ]
+    },
+    "AF-LAUNCH-ANSWERS-DOWNSELL2": {
+      "family": "offer",
+      "what_happened": "A second downsell isn't something I can build yet.",
+      "why": "I only build offers I can finish and test from start to end, so nothing in your sale is left half-working.",
+      "fix": "Keep one downsell.",
+      "choices": [
+        "I keep one downsell and build the rest.",
+        "I leave downsells out of this sale.",
+        "I note the second downsell for later."
+      ]
+    },
+    "AF-LAUNCH-ANSWERS-HASH-MISMATCH": {
+      "family": "answers-source"
+    },
+    "AF-LAUNCH-ANSWERS-HASH-MISSING": {
+      "family": "answers-source"
+    },
+    "AF-LAUNCH-ANSWERS-MISSING": {
+      "family": "answers",
+      "what_happened": "I'm still missing your answer to one question."
+    },
+    "AF-LAUNCH-ANSWERS-OFFER": {
+      "family": "offer"
+    },
+    "AF-LAUNCH-ANSWERS-PACKAGES": {
+      "family": "offer",
+      "what_happened": "Your options need at least two packages, each with a name, what's included and a price."
+    },
+    "AF-LAUNCH-ANSWERS-PRICE": {
+      "family": "price"
+    },
+    "AF-LAUNCH-ANSWERS-PROVIDER": {
+      "family": "picture-service"
+    },
+    "AF-LAUNCH-ANSWERS-SCHEMA": {
+      "family": "our-side"
+    },
+    "AF-LAUNCH-ANSWERS-SHAPE": {
+      "family": "mode"
+    },
+    "AF-LAUNCH-ANSWERS-SYSTEM": {
+      "family": "our-side"
+    },
+    "AF-LAUNCH-ANSWERS-TERMS": {
+      "family": "terms"
+    },
+    "AF-LAUNCH-ANSWERS-UNAPPROVED": {
+      "family": "suggestion"
+    },
+    "AF-LAUNCH-APPROVAL-BINDING": {
+      "family": "approval-changed"
+    },
+    "AF-LAUNCH-APPROVAL-HASH": {
+      "family": "approval-changed"
+    },
+    "AF-LAUNCH-APPROVAL-UNBOUND": {
+      "family": "approval-changed"
+    },
+    "AF-LAUNCH-ASSEMBLE-ARGS": {
+      "family": "our-side"
+    },
+    "AF-LAUNCH-ASSEMBLE-DESIGN": {
+      "family": "designs"
+    },
+    "AF-LAUNCH-ASSEMBLE-DESIGN-WAIVER": {
+      "family": "designs",
+      "what_happened": "You asked to skip the page designs, but your real sale always gets its full designs.",
+      "why": "Your customers only see pages that were designed and checked. Skipping that is only allowed for a practice version.",
+      "fix": "Finish the designs, or make a practice version.",
+      "choices": [
+        "I finish the designs for every page.",
+        "I make a practice version without designs, just for you to look at.",
+        "I show you which designs are still missing."
+      ]
+    },
+    "AF-LAUNCH-ASSEMBLY-NOT-DELIVERABLE": {
+      "family": "integrity",
+      "inner": true
+    },
+    "AF-LAUNCH-BRIDGE-ADAPTERS": {
+      "family": "building"
+    },
+    "AF-LAUNCH-BRIDGE-APPROVAL": {
+      "family": "approval-changed"
+    },
+    "AF-LAUNCH-BRIDGE-COPY-FORM": {
+      "family": "building"
+    },
+    "AF-LAUNCH-BRIDGE-DELIVERY": {
+      "family": "delivery"
+    },
+    "AF-LAUNCH-BRIDGE-DISPATCH": {
+      "family": "building"
+    },
+    "AF-LAUNCH-BRIDGE-EXTRA-PAGES": {
+      "family": "building"
+    },
+    "AF-LAUNCH-BRIDGE-IMAGE-PLAN": {
+      "family": "building"
+    },
+    "AF-LAUNCH-BRIDGE-LANDING-SPLIT": {
+      "family": "building"
+    },
+    "AF-LAUNCH-BRIDGE-PAGES": {
+      "family": "building"
+    },
+    "AF-LAUNCH-BRIDGE-PROVENANCE": {
+      "family": "answers-source"
+    },
+    "AF-LAUNCH-BRIDGE-RECORD": {
+      "family": "building"
+    },
+    "AF-LAUNCH-CALENDAR-MISSING": {
+      "family": "calendar"
+    },
+    "AF-LAUNCH-CALENDAR-OFFSET": {
+      "family": "calendar"
+    },
+    "AF-LAUNCH-CALENDAR-ORDER": {
+      "family": "calendar"
+    },
+    "AF-LAUNCH-CALENDAR-TIME": {
+      "family": "calendar"
+    },
+    "AF-LAUNCH-CALENDAR-ZONE": {
+      "family": "calendar"
+    },
+    "AF-LAUNCH-CAPABILITY": {
+      "family": "our-side",
+      "variants": [
+        {
+          "match": "^\\s*(?:journey_mapping|native_checkout_family):",
+          "what_happened": "The way your offers are set up isn't one your order form can take yet.",
+          "why": "I only build a sale once I know the order form can really charge it, so nothing is built that can't take payments.",
+          "fix": "Set your offers up in a way the order form can take.",
+          "choices": [
+            "I set it up as one main offer and show you.",
+            "I go through your offers with you to find a setup that works.",
+            "I build the pages as designs now and the order form once it's ready."
+          ]
+        },
+        {
+          "match": "^\\s*workflow_authorization:",
+          "what_happened": "Your account isn't connected yet for the follow-up steps (the automatic emails and texts).",
+          "why": "Follow-up steps are only built in an account that's properly connected, so nothing goes to the wrong place.",
+          "fix": "Connect your account.",
+          "choices": [
+            "I walk you through connecting your account, one step at a time.",
+            "I build the pages now and the follow-up steps after.",
+            "I explain what connecting your account does."
+          ]
+        },
+        {
+          "match": "^\\s*billing_type:",
+          "what_happened": "Some of your prices don't say yet whether they're one payment or repeating.",
+          "why": "Customers must see how they'll be charged before they pay, so it's never guessed.",
+          "fix": "How each of those prices is charged.",
+          "choices": [
+            "I ask you how each of those prices is charged.",
+            "I set them all as one payment, if that's right.",
+            "I show you the prices so you can check them."
+          ]
+        },
+        {
+          "match": "^\\s*output_destination:",
+          "what_happened": "I'm not sure which account your pages should go to.",
+          "why": "Your pages only ever go to the account you approved, never anyone else's.",
+          "fix": "Your OK on the account.",
+          "choices": [
+            "I show you the account I have, so you can say OK.",
+            "You tell me which account to use.",
+            "I keep everything as drafts for now."
+          ]
+        },
+        {
+          "match": "^\\s*conversational_workflows:",
+          "what_happened": "You asked for the chat assistant, but it isn't connected yet.",
+          "why": "The chat assistant only goes on once it's connected and has one clear job, so it never gives customers mixed answers.",
+          "fix": "Connect the chat assistant, or build without it for now.",
+          "choices": [
+            "I get the chat assistant connected and tell you when it's ready.",
+            "I build the sale without the chat assistant for now.",
+            "I explain what the chat assistant would do."
+          ]
+        }
+      ]
+    },
+    "AF-LAUNCH-CHECK-RULE": {
+      "family": "our-side"
+    },
+    "AF-LAUNCH-CHECKOUT": {
+      "family": "order-form"
+    },
+    "AF-LAUNCH-CHECKOUT-BINDING": {
+      "family": "order-form"
+    },
+    "AF-LAUNCH-CHECKOUT-DUPLICATE": {
+      "family": "order-form"
+    },
+    "AF-LAUNCH-CHECKOUT-FIELD": {
+      "family": "order-form"
+    },
+    "AF-LAUNCH-CHECKOUT-INCOMPLETE": {
+      "family": "order-form"
+    },
+    "AF-LAUNCH-CHECKOUT-INSTANCES": {
+      "family": "order-form"
+    },
+    "AF-LAUNCH-CHECKOUT-MODE": {
+      "family": "order-form"
+    },
+    "AF-LAUNCH-CHECKOUT-NATIVE-IDS": {
+      "family": "order-form"
+    },
+    "AF-LAUNCH-CHECKOUT-NODE": {
+      "family": "steps"
+    },
+    "AF-LAUNCH-CHECKOUT-NONE": {
+      "family": "order-form"
+    },
+    "AF-LAUNCH-CHECKOUT-OFFER": {
+      "family": "order-form"
+    },
+    "AF-LAUNCH-CHECKOUT-READBACK": {
+      "family": "order-form"
+    },
+    "AF-LAUNCH-CHECKOUT-RECORD": {
+      "family": "order-form"
+    },
+    "AF-LAUNCH-CHECKOUT-REJECTED": {
+      "family": "order-form"
+    },
+    "AF-LAUNCH-CHECKOUT-REPLAY": {
+      "family": "order-form"
+    },
+    "AF-LAUNCH-CHECKOUT-RUNTIME": {
+      "family": "order-form"
+    },
+    "AF-LAUNCH-CHECKOUT-SELECTION": {
+      "family": "order-form"
+    },
+    "AF-LAUNCH-CHECKOUT-VALIDATOR": {
+      "family": "order-form"
+    },
+    "AF-LAUNCH-CLAIM": {
+      "family": "claims"
+    },
+    "AF-LAUNCH-COMMERCE-KIND": {
+      "family": "products"
+    },
+    "AF-LAUNCH-COMMERCE-MISSING": {
+      "family": "products"
+    },
+    "AF-LAUNCH-COMMERCE-NATIVE-ID": {
+      "family": "products"
+    },
+    "AF-LAUNCH-COMMERCE-PROVIDER": {
+      "family": "products"
+    },
+    "AF-LAUNCH-COMMERCE-SHAPE": {
+      "family": "products"
+    },
+    "AF-LAUNCH-COUNCIL": {
+      "family": "integrity"
+    },
+    "AF-LAUNCH-COUNCIL-REQUIRED": {
+      "family": "advisors"
+    },
+    "AF-LAUNCH-COUNCIL-SESSION": {
+      "family": "our-side"
+    },
+    "AF-LAUNCH-CROSS-SALES": {
+      "family": "integrity"
+    },
+    "AF-LAUNCH-DELIVERY-ANSWER": {
+      "family": "delivery"
+    },
+    "AF-LAUNCH-DELIVERY-COLLISION": {
+      "family": "integrity"
+    },
+    "AF-LAUNCH-DELIVERY-HASH": {
+      "family": "integrity"
+    },
+    "AF-LAUNCH-DELIVERY-OWNER": {
+      "family": "integrity"
+    },
+    "AF-LAUNCH-DELIVERY-SHEET": {
+      "family": "integrity"
+    },
+    "AF-LAUNCH-DELIVERY-URL": {
+      "family": "delivery"
+    },
+    "AF-LAUNCH-DEPENDENCY": {
+      "family": "our-side"
+    },
+    "AF-LAUNCH-ENTITLEMENT-BILLING": {
+      "family": "integrity"
+    },
+    "AF-LAUNCH-FULFILLMENT-MAP": {
+      "family": "linked-pages"
+    },
+    "AF-LAUNCH-HOSTING-BINDING": {
+      "family": "designs"
+    },
+    "AF-LAUNCH-IMAGE-PLAN-APPROVAL": {
+      "family": "spend-approval"
+    },
+    "AF-LAUNCH-IMAGE-PLAN-BRAND": {
+      "family": "brand"
+    },
+    "AF-LAUNCH-IMAGE-PLAN-CAP": {
+      "family": "picture-budget"
+    },
+    "AF-LAUNCH-IMAGE-PLAN-OWNER": {
+      "family": "brand",
+      "what_happened": "I need to know whose brand these pages are for."
+    },
+    "AF-LAUNCH-IMAGE-PLAN-PRICE": {
+      "family": "picture-service"
+    },
+    "AF-LAUNCH-IMAGE-PLAN-PROVIDER": {
+      "family": "picture-service"
+    },
+    "AF-LAUNCH-IMAGE-PLAN-SHAPE": {
+      "family": "our-side"
+    },
+    "AF-LAUNCH-IMAGE-PLAN-STYLE": {
+      "family": "look"
+    },
+    "AF-LAUNCH-IMAGE-PLAN-TEST-ONLY": {
+      "family": "practice-or-real"
+    },
+    "AF-LAUNCH-IMAGE-QC": {
+      "family": "picture-quality"
+    },
+    "AF-LAUNCH-IMAGE-STAGES": {
+      "family": "designs"
+    },
+    "AF-LAUNCH-INSTALL": {
+      "family": "finishing"
+    },
+    "AF-LAUNCH-INSTALL-CHECK": {
+      "family": "finishing"
+    },
+    "AF-LAUNCH-INSTALL-EMPTY": {
+      "family": "finishing"
+    },
+    "AF-LAUNCH-INSTALL-PRODUCTION": {
+      "family": "finishing"
+    },
+    "AF-LAUNCH-INSTALL-RAIL": {
+      "family": "finishing"
+    },
+    "AF-LAUNCH-INSTALL-READBACK": {
+      "family": "finishing"
+    },
+    "AF-LAUNCH-INTAKE-ACTIVATION": {
+      "family": "go-live"
+    },
+    "AF-LAUNCH-INTAKE-AUTOMATION": {
+      "family": "go-live",
+      "what_happened": "You asked for the emails and texts to be sent, but here they're only written as drafts. Sending them is a separate step you approve."
+    },
+    "AF-LAUNCH-INTAKE-CHECKOUT": {
+      "family": "offer"
+    },
+    "AF-LAUNCH-INTAKE-CHOICES": {
+      "family": "answers"
+    },
+    "AF-LAUNCH-INTAKE-DELIVERY": {
+      "family": "delivery"
+    },
+    "AF-LAUNCH-INTAKE-LEVEL": {
+      "family": "level"
+    },
+    "AF-LAUNCH-INTAKE-LINKED": {
+      "family": "linked-pages"
+    },
+    "AF-LAUNCH-INTAKE-LOCALE": {
+      "family": "answers",
+      "what_happened": "I couldn't tell which language your pages should be in."
+    },
+    "AF-LAUNCH-INTAKE-MISSING": {
+      "family": "answers"
+    },
+    "AF-LAUNCH-INTAKE-MODE": {
+      "family": "mode"
+    },
+    "AF-LAUNCH-INTAKE-OFFER": {
+      "family": "offer",
+      "variants": [
+        {
+          "match": "(?P<amount_minor>\\d+) is outside \\d+\\.\\.\\d+ minor units",
+          "what_happened": "The price {amount} is much lower or higher than most prices, so I want to be sure it's right before it goes on your order form.",
+          "why": "A mistyped price is easy to miss, so a very small or very large price always gets a quick yes from you first.",
+          "fix": "Your yes to that price, or the right price.",
+          "choices": [
+            "I ask you to confirm the price, and go on as soon as you say yes.",
+            "You give me the right price.",
+            "I show you the price on a sample order form first."
+          ]
+        },
+        {
+          "match": "duplicate (?:offer id|display name)",
+          "what_happened": "Two of your offers have the same name, so your customers couldn't tell them apart.",
+          "fix": "A different name for one of them.",
+          "choices": [
+            "I suggest a new name for one of them, and you pick.",
+            "You tell me the new name.",
+            "I combine the two into one offer."
+          ]
+        },
+        {
+          "match": "one funnel is one cart in one currency",
+          "what_happened": "Your offers use different currencies, but one order form can only take one currency.",
+          "fix": "One currency for every offer in this sale.",
+          "choices": [
+            "I switch every offer to your main currency and show you the prices.",
+            "You tell me which currency to use."
+          ]
+        }
+      ]
+    },
+    "AF-LAUNCH-INTAKE-PAYMENT-PLAN": {
+      "family": "billing-plan"
+    },
+    "AF-LAUNCH-INTAKE-PRICE": {
+      "family": "price"
+    },
+    "AF-LAUNCH-INTAKE-PROMOTION": {
+      "family": "answers",
+      "what_happened": "Some details of your sale promotion, like a seat limit, aren't clear yet.",
+      "why": "Any limit or deadline on your pages must come from you, so nothing untrue is ever promised."
+    },
+    "AF-LAUNCH-INTAKE-PROPOSAL": {
+      "family": "suggestion"
+    },
+    "AF-LAUNCH-INTAKE-PROVENANCE": {
+      "family": "answers-source"
+    },
+    "AF-LAUNCH-INTAKE-RELATION": {
+      "family": "offer"
+    },
+    "AF-LAUNCH-INTAKE-ROUTE": {
+      "family": "offer-order"
+    },
+    "AF-LAUNCH-INTAKE-SCHEMA": {
+      "family": "our-side"
+    },
+    "AF-LAUNCH-INTAKE-SHAPE": {
+      "family": "our-side"
+    },
+    "AF-LAUNCH-INTAKE-TERMS": {
+      "family": "terms"
+    },
+    "AF-LAUNCH-INTAKE-TEST-ONLY": {
+      "family": "practice-or-real"
+    },
+    "AF-LAUNCH-INTAKE-UNKNOWN": {
+      "family": "our-side"
+    },
+    "AF-LAUNCH-INTAKE-WRITE-TARGET": {
+      "family": "go-live"
+    },
+    "AF-LAUNCH-LINKED-BLOCKED": {
+      "family": "blocked-page"
+    },
+    "AF-LAUNCH-LINKED-BUMP": {
+      "family": "linked-pages",
+      "what_happened": "The add-on is part of the order form, so it can't be its own page.",
+      "why": "The add-on is a checkbox on the order form, so customers can add it with one click while they pay.",
+      "fix": "Keep the add-on on the order form.",
+      "choices": [
+        "I keep the add-on on the order form and build its delivery page separately.",
+        "I show you how the add-on will look on the order form.",
+        "I turn it into a special offer after checkout instead."
+      ]
+    },
+    "AF-LAUNCH-LINKED-DRIFT": {
+      "family": "approval-changed"
+    },
+    "AF-LAUNCH-LINKED-EVIDENCE": {
+      "family": "linked-pages"
+    },
+    "AF-LAUNCH-LINKED-KEY": {
+      "family": "linked-pages"
+    },
+    "AF-LAUNCH-LINKED-KIND": {
+      "family": "linked-pages"
+    },
+    "AF-LAUNCH-LINKED-PURCHASE-ROUTE": {
+      "family": "linked-pages"
+    },
+    "AF-LAUNCH-LINKED-REGISTRY": {
+      "family": "our-side"
+    },
+    "AF-LAUNCH-LINKED-REQUIREMENT": {
+      "family": "linked-pages"
+    },
+    "AF-LAUNCH-LINKED-ROLE": {
+      "family": "linked-pages"
+    },
+    "AF-LAUNCH-LINKED-URL": {
+      "family": "delivery"
+    },
+    "AF-LAUNCH-OFFER-DEFAULTED": {
+      "family": "suggestion"
+    },
+    "AF-LAUNCH-OFFER-FACTS": {
+      "family": "integrity"
+    },
+    "AF-LAUNCH-OFFER-PRICE": {
+      "family": "price"
+    },
+    "AF-LAUNCH-PAGE-DESIGNS": {
+      "family": "designs"
+    },
+    "AF-LAUNCH-PKG-APPROVAL-HASH": {
+      "family": "approval-changed"
+    },
+    "AF-LAUNCH-PKG-ARTIFACT-EMPTY": {
+      "family": "integrity"
+    },
+    "AF-LAUNCH-PKG-ARTIFACT-MISSING": {
+      "family": "integrity"
+    },
+    "AF-LAUNCH-PKG-ARTIFACT-SIZE": {
+      "family": "integrity"
+    },
+    "AF-LAUNCH-PKG-BLOCKED": {
+      "family": "blocked-page"
+    },
+    "AF-LAUNCH-PKG-BLOCKERS": {
+      "family": "blocked-page"
+    },
+    "AF-LAUNCH-PKG-BRIDGE-RECEIPT": {
+      "family": "integrity"
+    },
+    "AF-LAUNCH-PKG-COLLISION": {
+      "family": "integrity"
+    },
+    "AF-LAUNCH-PKG-DESIGN-WAIVER": {
+      "family": "designs",
+      "what_happened": "You asked to skip the page designs, but your real sale always gets its full designs.",
+      "why": "Your customers only see pages that were designed and checked. Skipping that is only allowed for a practice version.",
+      "fix": "Finish the designs, or make a practice version.",
+      "choices": [
+        "I finish the designs for every page.",
+        "I make a practice version without designs, just for you to look at.",
+        "I show you which designs are still missing."
+      ]
+    },
+    "AF-LAUNCH-PKG-DISPATCH-MISSING": {
+      "family": "integrity"
+    },
+    "AF-LAUNCH-PKG-DISPATCH-PLAN": {
+      "family": "approval-changed"
+    },
+    "AF-LAUNCH-PKG-DISPATCH-REPORT": {
+      "family": "integrity"
+    },
+    "AF-LAUNCH-PKG-ECHO": {
+      "family": "integrity"
+    },
+    "AF-LAUNCH-PKG-HASH": {
+      "family": "integrity"
+    },
+    "AF-LAUNCH-PKG-INTAKE-DRIFT": {
+      "family": "approval-changed"
+    },
+    "AF-LAUNCH-PKG-INTAKE-MISSING": {
+      "family": "answers-source"
+    },
+    "AF-LAUNCH-PKG-MANIFEST": {
+      "family": "integrity"
+    },
+    "AF-LAUNCH-PKG-MISSING": {
+      "family": "designs"
+    },
+    "AF-LAUNCH-PKG-MISSING-ROLE": {
+      "family": "designs"
+    },
+    "AF-LAUNCH-PKG-PAGE-DESIGNS": {
+      "family": "designs"
+    },
+    "AF-LAUNCH-PKG-PATH-UNRESOLVED": {
+      "family": "integrity"
+    },
+    "AF-LAUNCH-PKG-PIECE": {
+      "family": "integrity"
+    },
+    "AF-LAUNCH-PKG-PLACEHOLDER": {
+      "family": "integrity"
+    },
+    "AF-LAUNCH-PKG-PLAN-CALENDAR": {
+      "family": "calendar"
+    },
+    "AF-LAUNCH-PKG-PLAN-DRIFT": {
+      "family": "approval-changed"
+    },
+    "AF-LAUNCH-PKG-PLAN-HASH": {
+      "family": "approval-changed"
+    },
+    "AF-LAUNCH-PKG-PLAN-MISSING": {
+      "family": "drafts-to-do"
+    },
+    "AF-LAUNCH-PKG-PLAN-RECEIPT": {
+      "family": "integrity"
+    },
+    "AF-LAUNCH-PKG-PRACTICE": {
+      "family": "practice"
+    },
+    "AF-LAUNCH-PKG-PROOF-FLOOR": {
+      "family": "integrity"
+    },
+    "AF-LAUNCH-PKG-RECEIPT": {
+      "family": "integrity"
+    },
+    "AF-LAUNCH-PKG-RECEIPT-ARTIFACT": {
+      "family": "drafts-to-do"
+    },
+    "AF-LAUNCH-PKG-RECEIPT-BINDING": {
+      "family": "integrity"
+    },
+    "AF-LAUNCH-PKG-RECEIPT-DRAFT": {
+      "family": "integrity",
+      "what_happened": "Something is marked as sent or live, but everything here is still a draft.",
+      "why": "Everything starts as a draft you look over, and nothing is ever marked live unless it really is.",
+      "fix": "Mark it as the draft it really is.",
+      "choices": [
+        "I mark it as a draft and look everything over again.",
+        "I show you what's ready for you to look over.",
+        "I tell you as soon as everything is ready."
+      ]
+    },
+    "AF-LAUNCH-PKG-RECEIPT-LANE": {
+      "family": "drafts-to-do"
+    },
+    "AF-LAUNCH-PKG-RECEIPT-LIVE": {
+      "family": "integrity",
+      "what_happened": "Something is marked as sent or live, but everything here is still a draft.",
+      "why": "Everything starts as a draft you look over, and nothing is ever marked live unless it really is.",
+      "fix": "Mark it as the draft it really is.",
+      "choices": [
+        "I mark it as a draft and look everything over again.",
+        "I show you what's ready for you to look over.",
+        "I tell you as soon as everything is ready."
+      ]
+    },
+    "AF-LAUNCH-PKG-RECEIPT-PROOF": {
+      "family": "integrity"
+    },
+    "AF-LAUNCH-PKG-RECEIPT-REQUEST": {
+      "family": "drafts-to-do"
+    },
+    "AF-LAUNCH-PKG-RECEIPT-SCHEMA": {
+      "family": "integrity"
+    },
+    "AF-LAUNCH-PKG-RECEIPT-UNITS": {
+      "family": "drafts-to-do"
+    },
+    "AF-LAUNCH-PKG-RECEIPTS": {
+      "family": "integrity"
+    },
+    "AF-LAUNCH-PKG-REPO-FIXTURE": {
+      "family": "integrity"
+    },
+    "AF-LAUNCH-PKG-REQUEST": {
+      "family": "steps"
+    },
+    "AF-LAUNCH-PKG-RESULT": {
+      "family": "building"
+    },
+    "AF-LAUNCH-PKG-REVIEW": {
+      "family": "integrity",
+      "what_happened": "A page says someone else reviewed it, but no separate reviewer is on record.",
+      "why": "Every page is reviewed by someone other than the one who made it, so mistakes get caught before you see them.",
+      "fix": "A real review by a separate reviewer.",
+      "choices": [
+        "I have a separate reviewer look at that page now.",
+        "I show you the page so you can look at it too.",
+        "I tell you as soon as the review is done."
+      ]
+    },
+    "AF-LAUNCH-PKG-SLOT": {
+      "family": "steps"
+    },
+    "AF-LAUNCH-PLAN-AI": {
+      "family": "launch-plan"
+    },
+    "AF-LAUNCH-PLAN-ARGS": {
+      "family": "our-side"
+    },
+    "AF-LAUNCH-PLAN-BIND": {
+      "family": "approval-changed"
+    },
+    "AF-LAUNCH-PLAN-CYCLE": {
+      "family": "launch-plan"
+    },
+    "AF-LAUNCH-PLAN-DEPENDENCY": {
+      "family": "launch-plan"
+    },
+    "AF-LAUNCH-PLAN-DRAFT": {
+      "family": "launch-plan"
+    },
+    "AF-LAUNCH-PLAN-DUPLICATE": {
+      "family": "launch-plan"
+    },
+    "AF-LAUNCH-PLAN-HASH-UNSTABLE": {
+      "family": "approval-changed"
+    },
+    "AF-LAUNCH-PLAN-LAUNCH": {
+      "family": "approval-changed"
+    },
+    "AF-LAUNCH-PLAN-MISSING": {
+      "family": "drafts-to-do"
+    },
+    "AF-LAUNCH-PLAN-PAYMENT": {
+      "family": "launch-plan"
+    },
+    "AF-LAUNCH-PLAN-REQUIRED": {
+      "family": "scope"
+    },
+    "AF-LAUNCH-PLAN-SCHEMA": {
+      "family": "launch-plan"
+    },
+    "AF-LAUNCH-PLAN-SCOPE": {
+      "family": "plan-scope"
+    },
+    "AF-LAUNCH-PLAN-SHAPE": {
+      "family": "launch-plan"
+    },
+    "AF-LAUNCH-PLAN-TEXT-CAP": {
+      "family": "text-cap"
+    },
+    "AF-LAUNCH-PRODUCE": {
+      "family": "finishing"
+    },
+    "AF-LAUNCH-PRODUCE-80": {
+      "family": "finishing"
+    },
+    "AF-LAUNCH-PRODUCE-81": {
+      "family": "finishing"
+    },
+    "AF-LAUNCH-PRODUCE-82": {
+      "family": "finishing"
+    },
+    "AF-LAUNCH-PRODUCE-ARGS": {
+      "family": "our-side"
+    },
+    "AF-LAUNCH-PRODUCE-CHECK": {
+      "family": "finishing"
+    },
+    "AF-LAUNCH-PRODUCE-DEPENDENCY": {
+      "family": "our-side"
+    },
+    "AF-LAUNCH-PRODUCE-INPUT": {
+      "family": "finishing"
+    },
+    "AF-LAUNCH-PRODUCE-RULE": {
+      "family": "finishing"
+    },
+    "AF-LAUNCH-PRODUCE-TEST-COPY": {
+      "family": "practice",
+      "what_happened": "Some of the page wording is practice wording, and it can't go on your real pages.",
+      "fix": "Your real, approved wording.",
+      "choices": [
+        "I swap in your real approved wording and build the pages again.",
+        "I show you which wording is practice wording.",
+        "I write fresh wording for you to approve."
+      ]
+    },
+    "AF-LAUNCH-PRODUCE-U2-ENTRY": {
+      "family": "finishing"
+    },
+    "AF-LAUNCH-PRODUCTION": {
+      "family": "finishing"
+    },
+    "AF-LAUNCH-ROUTE-CYCLE": {
+      "family": "steps"
+    },
+    "AF-LAUNCH-ROUTE-ENTRY": {
+      "family": "steps"
+    },
+    "AF-LAUNCH-ROUTE-EVENT": {
+      "family": "steps"
+    },
+    "AF-LAUNCH-ROUTE-GUARD": {
+      "family": "steps"
+    },
+    "AF-LAUNCH-ROUTE-GUARD-NO-RUNTIME": {
+      "family": "steps"
+    },
+    "AF-LAUNCH-ROUTE-LAW": {
+      "family": "steps"
+    },
+    "AF-LAUNCH-ROUTE-NODES": {
+      "family": "steps"
+    },
+    "AF-LAUNCH-ROUTE-OFFER": {
+      "family": "steps"
+    },
+    "AF-LAUNCH-ROUTE-PAYMENT-ERROR": {
+      "family": "steps"
+    },
+    "AF-LAUNCH-ROUTE-REACH": {
+      "family": "steps"
+    },
+    "AF-LAUNCH-ROUTE-REF": {
+      "family": "steps"
+    },
+    "AF-LAUNCH-ROUTE-TERMINAL": {
+      "family": "steps"
+    },
+    "AF-LAUNCH-ROUTE-U2": {
+      "family": "steps"
+    },
+    "AF-LAUNCH-SCOPE-CONFLICT": {
+      "family": "scope"
+    },
+    "AF-LAUNCH-SCOPE-UNKNOWN": {
+      "family": "scope"
+    },
+    "AF-LAUNCH-SECTION-STRUCTURE": {
+      "family": "designs"
+    },
+    "AF-LAUNCH-SELECTION": {
+      "family": "selection"
+    },
+    "AF-LAUNCH-SOP-ACK": {
+      "family": "our-side"
+    },
+    "AF-LAUNCH-STEP-ARTIFACT": {
+      "family": "integrity"
+    },
+    "AF-LAUNCH-STEP-FAILED": {
+      "family": "integrity"
+    },
+    "AF-LAUNCH-TO-CONFIRM": {
+      "family": "suggestion"
+    },
+    "AF-LAUNCH-UNIT-AUTOMATION": {
+      "family": "drafts-to-do"
+    },
+    "AF-LAUNCH-UNIT-PLAN": {
+      "family": "drafts-to-do"
+    },
+    "image_stage:awaiting_client_approval": {
+      "family": "designs",
+      "what_happened": "Your design board is ready and waiting for your OK.",
+      "why": "Nothing moves on to your finished pages until you've seen and approved the designs.",
+      "fix": "Your OK on the design board, or what to change.",
+      "choices": [
+        "I send you the design board to look at right now.",
+        "You tell me what to change, and I fix it.",
+        "You approve it, and I finish the pages."
+      ]
+    },
+    "image_stage:awaiting_layout_proof_approval": {
+      "family": "designs",
+      "what_happened": "Your layout drafts are ready and waiting for your OK. No pictures are made until you say the layouts look right.",
+      "why": "The layouts are your first checkpoint, so money is only spent on pictures after you like the layout.",
+      "fix": "Your OK on the layouts, or what to change.",
+      "choices": [
+        "I send you the layouts to look at right now.",
+        "You tell me what to change, and I fix it.",
+        "You approve them, and I start on the pictures."
+      ]
+    },
+    "image_stage:blocked": {
+      "family": "our-side"
+    },
+    "image_stage:missing_page": {
+      "family": "designs",
+      "what_happened": "One of the pages in your plan hasn't been started yet."
+    },
+    "image_stage:needs_authoring": {
+      "family": "designs",
+      "what_happened": "The picture descriptions for one of your pages aren't written yet.",
+      "why": "Each picture is planned in words first, so what gets made matches your page and your brand.",
+      "fix": "Write the picture descriptions.",
+      "choices": [
+        "I write the picture descriptions and keep going.",
+        "I show you the descriptions before any picture is made.",
+        "I use simpler pictures on that page."
+      ]
+    },
+    "image_stage:needs_hosting": {
+      "family": "designs",
+      "what_happened": "The finished pictures are waiting to be uploaded to your account.",
+      "why": "Pictures go to your account only with your OK, so nothing is uploaded that you didn't approve.",
+      "fix": "Your OK to upload them.",
+      "choices": [
+        "I send you the request to approve the upload.",
+        "I keep the pictures here for you to look at first.",
+        "I show you which pictures will be uploaded."
+      ]
+    },
+    "image_stage:needs_qc": {
+      "family": "picture-quality",
+      "what_happened": "Some new pictures are waiting for their review before they can be used."
+    },
+    "image_stage:unexpected_run": {
+      "family": "designs",
+      "what_happened": "I found work for a page that isn't in your plan.",
+      "why": "Only pages in your approved plan are part of your sale, so nothing extra sneaks in.",
+      "fix": "Add it to the plan, or set it aside.",
+      "choices": [
+        "I set that page aside and finish the planned ones.",
+        "I add that page to your plan and send it to you to approve.",
+        "I show you that page first."
+      ]
+    }
+  }
+}
