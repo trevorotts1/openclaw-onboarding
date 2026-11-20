@@ -150,7 +150,9 @@ def delivery_of_tag(tag):
     if _CORE not in sys.path:
         sys.path.insert(0, _CORE)
     from suno_recipe.suno_recipe import parse_tag
-    return parse_tag(norm)
+    # The RAW tag, not the normalized one: normalizing strips the "(spoken)"
+    # declaration parse_tag needs to judge a declared tag by its name only.
+    return parse_tag(tag)
 
 
 def is_spoken(block):

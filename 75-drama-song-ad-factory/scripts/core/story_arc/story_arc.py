@@ -715,6 +715,26 @@ _CURE_RE = re.compile(r"\b(miraculous|instantly (?:cures?|fixes?|heals?)|"
                       r"(?:guaranteed|always) works|fixes? (?:you|it all))\b", re.I)
 _COMMERCIAL_RE = re.compile(r"\b(%s)\b" % "|".join(re.escape(a) for a in COMMERCIAL_ACTIONS),
                             re.I)
+#: A negation earlier in the action's own clause ("Do not take the quiz",
+#: "Never book a call", "don't ever book"): that clause asks for nothing.
+#: A clause ends at . ! ? ; : , a dash or a line end, so "Don't wait. Book
+#: now." still asks, and so does "Why not book today?".
+_CLAUSE_START_RE = re.compile(r"[^.!?;:,\u2014\n]*\Z")
+_NEGATED_RE = re.compile(r"(?<!why )\b(?:not|never|no)\b|n't\b", re.I)
+#: A declared [Name (sung|spoken|rap): cue] tag: only Name is the section.
+_DECLARED_TAG_RE = re.compile(r"^(.*?)\s*\((?:sung|spoken|rap)\)", re.I)
+
+
+def _asks(text, action=None):
+    """The first commercial action in ``text`` that is not negated (only
+    ``action`` when given), or None."""
+    for m in _COMMERCIAL_RE.finditer(text):
+        if action is not None and m.group(1).lower() != action.lower():
+            continue
+        clause = _CLAUSE_START_RE.search(text[:m.start()]).group(0)
+        if not _NEGATED_RE.search(clause):
+            return m
+    return None
 #: a block tagged as the closing call.
 _CTA_TAG_RE = re.compile(r"\b(?:cta|call ?to ?action|offer|book|assessment|"
                          r"next ?step|closing|pitch)\b", re.I)
@@ -988,8 +1008,13 @@ def _blocks(text):
 
 def closing_block(sheet_text):
     """The closing block: the last non-[End], non-instrumental section, or None."""
+    def name(tag):
+        # cue words ("over a light instrumental bed", "to the end") never
+        # make a declared voiced section the [End] or an instrumental
+        m = _DECLARED_TAG_RE.match(tag)
+        return m.group(1) if m else tag
     blocks = [b for b in _blocks(sheet_text)
-              if not re.search(r"\bend\b|instrumental", b["tag"], re.I)]
+              if not re.search(r"\bend\b|instrumental", name(b["tag"]), re.I)]
     return blocks[-1] if blocks else None
 
 
@@ -1012,14 +1037,15 @@ def check_payload_closing(sheet_text, commercial_action=None, require_cta=False)
         out.update(outcome="rejected", reason_code="magical-cure",
                    detail="the closing promises a cure with no mechanism")
         return out
-    if not _COMMERCIAL_RE.search(body):
+    said = "\n".join(blk["lines"])     # a lyric line ends a clause too
+    if _asks(said) is None:
         out.update(outcome="rejected", reason_code="summary-only-promise",
                    detail="the closing asks for no commercial action "
                           "(book/order/assessment/schedule/call/apply)")
         return out
     if commercial_action is not None:
         want = _COMMERCIAL_RE.search(str(commercial_action))
-        if want and not re.search(r"\b%s\b" % re.escape(want.group(1)), body, re.I):
+        if want and _asks(said, want.group(1)) is None:
             out.update(outcome="rejected", reason_code="closing-not-approved-call",
                        detail="the closing lacks the approved action %r" % want.group(1))
             return out

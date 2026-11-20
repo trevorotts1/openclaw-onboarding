@@ -735,6 +735,16 @@ def parse_tag(tag):
     raw = str(tag or "").strip()
     if raw.startswith("[") and raw.endswith("]") and len(raw) > 2:
         raw = raw[1:-1]
+    named = _NAMED_TAG_RE.match(raw.strip())
+    if named is not None:
+        # A declared [Name (sung|spoken|rap): cue]: the declaration is the
+        # delivery and only Name can make it music-only. Cue words ("over a
+        # light instrumental bed") never decide -- the same rule as
+        # parse_lyrics and check_no_voice_lines.
+        name = re.sub(r"[^a-z0-9]+", " ", named.group(1).lower()).strip()
+        if re.search(r"\binstrumental\b", name) or name == "inst":
+            return INSTRUMENTAL
+        return named.group(2).lower()
     norm = re.sub(r"[^a-z0-9]+", " ", raw.lower()).strip()
     if not norm:
         return None
