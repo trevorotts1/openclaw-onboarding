@@ -1309,7 +1309,7 @@
       ],
       "spends_nothing": true,
       "defaults": {
-        "section_label": "The thank-you welcome (TY-1)",
+        "section_label": "The welcome message at the top of the thank-you page",
         "count": "a number of",
         "min": "120",
         "max": "180"

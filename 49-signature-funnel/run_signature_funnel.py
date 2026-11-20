@@ -334,7 +334,8 @@ def _run_visual_stage(run_dir: Path) -> Tuple[bool, str]:
     if str(vs.get("provider") or "").lower() == "stub" and vs.get("stub_approved_by"):
         cmd += ["--stub-approved-by", str(vs["stub_approved_by"])]
     proc = subprocess.run(cmd, capture_output=True, text=True)
-    tail = (proc.stdout + proc.stderr).strip().splitlines()[-6:]
+    # The log keeps the tool's own refusal lines, not the plain client message printed after them.
+    tail = (proc.stdout + proc.stderr).split("FOR THE CLIENT:")[0].strip().splitlines()[-6:]
     if proc.returncode != 0:
         return False, ("AF-FUN-VISUAL-STEP: legacy_downsell_images.py exited %d: %s"
                        % (proc.returncode, " | ".join(tail)))
