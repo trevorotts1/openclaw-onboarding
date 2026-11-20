@@ -1483,6 +1483,9 @@ own documentation of what exists upstream.
 `waiting|success|fail` state machine, `resultJson.resultUrls[]`, `callBackUrl` semantics,
 and the image-to-image reference field **`input_urls`** (30 MB/file; JPEG/PNG/WEBP/JPG).
 
+- **KIE free file upload:** KIE.ai uploads files for free (no credits) and returns a public https link any KIE model can read: POST https://kieai.redpandaai.co/api/file-base64-upload (also /api/file-url-upload and /api/file-stream-upload), Bearer KIE_API_KEY, link in data.downloadUrl. Files are deleted after 24 hours. Use it for job inputs instead of a client's GoHighLevel media library. Docs: https://docs.kie.ai/file-upload-api/quickstart
+
+
 ### Traps proven during the 2026-09-09 migration
 
 1. **`gpt-image-2` is not always Kie.** `universal-sops/video-production/` uses an

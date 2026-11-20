@@ -28,6 +28,10 @@ A successful API response code (`state: "success"`) indicates that rendering fin
    - Confirm pixel dimensions match the requested resolution tier (e.g., 1080P 16:9 = `1920x1080`, 9:16 = `1080x1920`, 1:1 = `1080x1080`; 720P 16:9 = `1280x720`).
    - Flag unauthorized center-cropping or aspect ratio deformation.
 
+## KIE file upload (free)
+
+KIE FILE UPLOAD (free): KIE.ai has its own file upload service that costs NOTHING (no credits). It turns a local picture, audio or video file into a public https link that any KIE model (GPT Image, MiniMax H3, Kling, Suno, etc.) can read. Three ways: POST https://kieai.redpandaai.co/api/file-base64-upload (JSON {base64Data, uploadPath, fileName}, best for files under about 10 MB), /api/file-url-upload (copy from a web link, up to about 100 MB), /api/file-stream-upload (large files). Auth: Authorization: Bearer $KIE_API_KEY. The link is in data.downloadUrl. Files are DELETED after 24 hours, so upload right before the job and never use it as storage. Use this instead of uploading working files to a client's GoHighLevel media library. Source: https://docs.kie.ai/file-upload-api/quickstart
+
 ### Stage 2: Multi-Frame Visual Inspection
 Extract and visually analyze at least three keyframes: **Opening (Frame 0)**, **Midpoint (Frame T/2)**, and **Ending (Frame N)**.
 1. **Subject Identity & Anatomical Integrity:**

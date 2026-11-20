@@ -281,8 +281,8 @@
         "style-steward",
         "thumbnail--cover-designer"
       ],
-      "content_sha": "sha256:e93dd5bf8b4d5ff2617409785adb33a7c6ca81526430cb55b4b3e561a40d26a6",
-      "content_hashed_at": "2026-11-18T13:15:24.725053+00:00"
+      "content_sha": "sha256:3309db58b94b03f10afd298cdfe3c6d1c97b54cb889611dce6ddebf6556cee1a",
+      "content_hashed_at": "2026-11-20T13:44:51.439697+00:00"
     },
     "healer": {
       "count": 6,
@@ -556,8 +556,8 @@
         "slide-submitter",
         "typography-architect"
       ],
-      "content_sha": "sha256:8c9804e84f7f95b716a6b6d82ebf76f1039767703ef989ab40369664d7148059",
-      "content_hashed_at": "2026-11-18T13:15:24.725053+00:00"
+      "content_sha": "sha256:eb68272c1df4a10ba95ac353f0d03ebf3fadc7eec52700f10171d67b3d63669d",
+      "content_hashed_at": "2026-11-20T13:44:51.439697+00:00"
     },
     "product-production": {
       "count": 4,
@@ -3176,10 +3176,10 @@
       "path": "templates/role-library/graphics/asset-provenance-librarian.md",
       "capability_class": "MECHANICAL",
       "vision_flag": false,
-      "content_sha": "sha256:cd6285df801054cd1f94884383ecec35136aacee1b9c9bfe953cc04c8ed63407",
-      "render_sha": "sha256:8a31c6051d8d4c2aec2a9c6c8040e5e08a4e1e7f4cef9fb3d2dfa0c0192a8b60",
-      "content_version": "1.0.9",
-      "content_hashed_at": "2026-11-18T13:15:24.725053+00:00"
+      "content_sha": "sha256:7ecde75910431e2294b39cfdfc022723c797e01e128959d892c79b4caee763b5",
+      "render_sha": "sha256:1801eada7e35d0fbda026437642c4ee3a0a8199bd58f56b3860dab83110e8354",
+      "content_version": "1.0.10",
+      "content_hashed_at": "2026-11-20T13:44:51.439697+00:00"
     },
     {
       "slug": "book-cover-designer",
@@ -3464,10 +3464,10 @@
       "path": "templates/role-library/graphics/photo-shoot-director.md",
       "capability_class": "WRITING",
       "vision_flag": true,
-      "content_sha": "sha256:09cc9e56c9bb2bd5bd6237d63d7259ade7a110a3f7f3417db6d559def60b769c",
-      "render_sha": "sha256:79171a12a4484338bd89c3b183dd9c0825bd9073fbff9f8d9e402880a7b68a2f",
-      "content_version": "1.0.12",
-      "content_hashed_at": "2026-11-18T13:15:24.725053+00:00"
+      "content_sha": "sha256:2479dfd151cf5caa07e583bda0f2cba3bc452d6dc9ef1a477255037b65ff1548",
+      "render_sha": "sha256:36869871aa9baac6f66561176d998bc9cce024352e154c3492f26acd6a654d23",
+      "content_version": "1.0.13",
+      "content_hashed_at": "2026-11-20T13:44:51.439697+00:00"
     },
     {
       "slug": "presentation-designer-slides-decks",
@@ -5672,10 +5672,10 @@
       "path": "templates/role-library/presentations/media-librarian-ghl-updater.md",
       "capability_class": "MECHANICAL",
       "vision_flag": false,
-      "content_sha": "sha256:428ba67cbbbe2a23adda1269de2143fa67e176d21308c2e2d04fd87d5d310a8d",
-      "render_sha": "sha256:428ba67cbbbe2a23adda1269de2143fa67e176d21308c2e2d04fd87d5d310a8d",
-      "content_version": "1.0.14",
-      "content_hashed_at": "2026-11-18T13:15:24.725053+00:00"
+      "content_sha": "sha256:175d1505b61a5b9da9d8ac74c8f1e772311aa278cd681dc02b1cae29bead4527",
+      "render_sha": "sha256:175d1505b61a5b9da9d8ac74c8f1e772311aa278cd681dc02b1cae29bead4527",
+      "content_version": "1.0.15",
+      "content_hashed_at": "2026-11-20T13:44:51.439697+00:00"
     },
     {
       "slug": "offer-price-strategist",
@@ -9691,9 +9691,9 @@
       "slug": "SOP--photo-shoot-director-sops",
       "dept": "graphics",
       "path": "templates/role-library/graphics/sops/SOP--photo-shoot-director-sops.md",
-      "content_sha": "sha256:50c9ddf5493d990afeb19bb35c404b4c873d8e85d1efff0bd755f5b92899e6cb",
-      "content_version": "1.0.6",
-      "content_hashed_at": "2026-11-18T13:15:24.725053+00:00"
+      "content_sha": "sha256:1128a265c8c2849d9abba11e73d6925f16ca8ed0ede236a377382d39f257123a",
+      "content_version": "1.0.7",
+      "content_hashed_at": "2026-11-20T13:44:51.439697+00:00"
     },
     {
       "slug": "SOP--style-analyst-sops",
@@ -9859,9 +9859,9 @@
       "slug": "SOP-DIU-609",
       "dept": "graphics",
       "path": "templates/role-library/graphics/sops/SOP-DIU-609.md",
-      "content_sha": "sha256:0df17e3242d5c4e511a6a154294f747d2811587c7544c413aa60ada2185ac7a4",
-      "content_version": "1.0.6",
-      "content_hashed_at": "2026-11-18T13:15:24.725053+00:00"
+      "content_sha": "sha256:590fe9508a5b73c4b8ee000634404179f60fd87705a06eca151910e30e1fd9b0",
+      "content_version": "1.0.7",
+      "content_hashed_at": "2026-11-20T13:44:51.439697+00:00"
     },
     {
       "slug": "SOP-DIU-610",
@@ -10123,9 +10123,9 @@
       "slug": "SOP-IMG-01-KIE-CALL-MECHANICS",
       "dept": "presentations",
       "path": "templates/role-library/presentations/sops/SOP-IMG-01-KIE-CALL-MECHANICS.md",
-      "content_sha": "sha256:37105865d1a01bbcad6d0512184c45055132fe448608751162c98c3d96ed9043",
-      "content_version": "1.0.25",
-      "content_hashed_at": "2026-11-18T13:15:24.725053+00:00"
+      "content_sha": "sha256:80d5e4661e66350a96b4845a8449fcc57c58c61a5899b1341ed0dfabb86deae2",
+      "content_version": "1.0.26",
+      "content_hashed_at": "2026-11-20T13:44:51.439697+00:00"
     },
     {
       "slug": "SOP-IMG-02-DIU-INTEGRATION-AND-SEEDING",
@@ -10147,9 +10147,9 @@
       "slug": "SOP-IMG-04-SIGNATURE-STYLE-RECALL-AND-DIU-LOGO-I2I",
       "dept": "presentations",
       "path": "templates/role-library/presentations/sops/SOP-IMG-04-SIGNATURE-STYLE-RECALL-AND-DIU-LOGO-I2I.md",
-      "content_sha": "sha256:88f773cb76e81929915e85663b31d2f15a446c88eebc5fcd9f86fe22b3165fdc",
-      "content_version": "1.0.7",
-      "content_hashed_at": "2026-11-18T13:15:24.725053+00:00"
+      "content_sha": "sha256:d5d3b57756f1d7f0df122a5a7afb864b15f2f413f645ebe95f0f5ab6672c7dc4",
+      "content_version": "1.0.8",
+      "content_hashed_at": "2026-11-20T13:44:51.439697+00:00"
     },
     {
       "slug": "SOP-IMG-05-PIL-LOGO-COMPOSITE",
@@ -10547,9 +10547,9 @@
       "slug": "media-librarian-ghl-updater-sops",
       "dept": "presentations",
       "path": "templates/role-library/presentations/sops/media-librarian-ghl-updater-sops.md",
-      "content_sha": "sha256:efb44f3a1f35ec9990cc81964ef3806454dd8c50c5d2b24b0733106c37a2cfc9",
-      "content_version": "1.0.16",
-      "content_hashed_at": "2026-11-18T13:15:24.725053+00:00"
+      "content_sha": "sha256:2d198633dd8e8a75c005d0611fb8c23a79efd2fc2bbcb5ab84a3381d221074d6",
+      "content_version": "1.0.17",
+      "content_hashed_at": "2026-11-20T13:44:51.439697+00:00"
     },
     {
       "slug": "offer-price-strategist-sops",
