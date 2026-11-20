@@ -180,21 +180,27 @@ class RunTests(Fixture):
     def test_inputs_none_is_refused_and_makes_no_images(self):
         proc = self.call(inputs="none")
         self.assertEqual(proc.returncode, 2)
-        self.assertIn("REFUSED", proc.stdout)
+        self.assertIn("REFUSED", proc.stdout + proc.stderr)  # log line on stdout, plain words on stderr
+        self.assertIn("wireframes and mockups", proc.stdout + proc.stderr)
+        self.assertIn("What happened:", proc.stderr)
         self.assertFalse((self.dir / "run").exists())
 
     def test_refusals(self):
         self.inputs.pop("brand_owner")
         self.write_inputs()
         proc = self.call()
+        combined = proc.stdout + proc.stderr
         self.assertEqual(proc.returncode, 2)
-        self.assertIn("missing brand_owner", proc.stdout)
+        self.assertIn("REFUSED", combined)  # log line names the missing setting
+        self.assertIn("missing settings", combined)  # plain words, no internal key name
+        self.assertIn("What happened:", proc.stderr)
         self.inputs["brand_owner"] = "blackceo"
         self.write_inputs()
         (self.dir / "plan.json").write_text(json.dumps({"outcome": "declined_single_offer"}))
         proc = self.call()
         self.assertEqual(proc.returncode, 2)
-        self.assertIn("no order page is built", proc.stdout)
+        self.assertIn("no order page is built", proc.stdout + proc.stderr)
+        self.assertIn("What happened:", proc.stderr)
         self.assertFalse((self.dir / "run").exists())
 
     def test_a_stale_route_graph_is_refused_before_anything_is_written(self):

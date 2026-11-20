@@ -228,10 +228,10 @@ class WiringTests(unittest.TestCase):
                                   "--run-dir", str(tmp / "run"), "--launch-record", str(tmp / "launch.json"),
                                   "--inputs", str(tmp / "inputs.json")], capture_output=True, text=True)
             self.assertEqual(run.returncode, 2, run.stdout + run.stderr)
-            self.assertIn("REFUSED: [S78-INSTALLMENT-TOTAL-MISMATCH]", run.stdout)  # the log line is kept
+            self.assertIn("REFUSED: [S78-INSTALLMENT-TOTAL-MISMATCH]", run.stdout + run.stderr)  # log line kept
             self.assertFalse((tmp / "run").exists())  # nothing drawn
         told = subprocess.run([sys.executable, str(SKILL / "scripts" / "explain_stop.py"), "--from-output", "-"],
-                              input=run.stdout, capture_output=True, text=True)
+                              input=run.stdout + run.stderr, capture_output=True, text=True)
         self.assertEqual(told.returncode, 0, told.stderr)
         self.assertIn("TEST ONLY Elite is split into 2 payments that add up to $496.00, but its price says $497.00.",
                       told.stdout)

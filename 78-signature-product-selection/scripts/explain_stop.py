@@ -10,12 +10,18 @@ file paths and tracebacks never reach the message; they stay in logs, envelopes 
 explain_stop(reason_code, facts=None, envelope=None) -> {"what_happened", "why", "fix", "choices",
 "message", "spent_nothing", "audience"}. spent_nothing is true only for a stop whose check spends no money
 itself; the message then says so, and an unknown stop never claims it. The code is taken from reason_code, else the envelope's
-error.code / reason_code / code, else its session state (expired, reconfirm_required), else an
-S78 code or a known refusal phrase inside its text. The facts are the caller's, over the envelope's
-error.facts (the picture step prints its stop as one envelope line carrying them, so --from-output
-keeps the real names and numbers).
+error.code / reason_code / code, else its session state (expired, reconfirm_required). Only a stop
+with no code at all is looked up by an S78 code or a known refusal phrase inside its text; a code the
+table does not know stays unknown, so a stray phrase in its text never explains a different problem.
+The facts are the caller's, over the envelope's error.facts.
 An unknown stop still gets four parts, in fixed plain words: its raw text (an exception, a path, a
 secret) is for the logs and never reaches the message.
+
+report_stop(log, code=None, facts=None, stream=None, exit_code=2) is how every script in this skill
+prints a stop, on one stream: the log line (code and raw text, for logs and receipts), one JSON
+envelope line {"ok": false, "error": {"code", "message", "facts", "client_explanation"}}, and last,
+after the line "Tell the client:", the plain message. The client is shown only that last part. It
+comes last so a caller that keeps the tail of the output (dispatch does) still carries it.
 
 Usage:
   explain_stop.py --code S78-UNKNOWN-PRICE [--facts '{"offer": "Pro"}']
@@ -29,6 +35,7 @@ import string
 import sys
 from pathlib import Path
 
+CLIENT_HEADER = "Tell the client:"
 TABLE_PATH = Path(__file__).resolve().parent.parent / "references" / "stop-explanations.json"
 CODE_RE = re.compile(r"\b(?:S\d{2}|AF)-[A-Z0-9]+(?:-[A-Z0-9]+)*\b")
 PATH_RE = re.compile(r"(?:[A-Za-z]:\\|~/|\.{0,2}/)?\b[\w.-]+(?:/[\w.-]+)+")
@@ -87,13 +94,19 @@ def from_output(text):
     return text
 
 def _resolve(code, text, entries):
-    if code in entries:
-        return code
+    if code:  # an explicit code is the stop: known, or unknown (the fallback), never another code found in text
+        return code if code in entries else None
     found = [c for c in CODE_RE.findall(text or "") if c in entries]
     if found:
         return found[0]
     low = (text or "").lower()
-    return next((c for c, e in entries.items() if any(m.lower() in low for m in e.get("match") or ())), None)
+    hits = [c for c, e in entries.items() if any(m.lower() in low for m in e.get("match") or ())]
+    if not hits:
+        return None
+    if len(hits) == 1:
+        return hits[0]
+    # "--inputs none" also refuses on missing inputs; the longer refusal phrase wins.
+    return max(hits, key=lambda c: max(len(m) for m in entries[c].get("match") or ("",)))
 
 class _Facts(dict):
     def __missing__(self, key):
@@ -119,17 +132,31 @@ def explain_stop(reason_code=None, facts=None, envelope=None, *, table=None):
     env_code, text, env_facts = _envelope_parts(envelope)
     code = _resolve(reason_code or env_code, text, entries)
     if code is None:
-        parts = {**FALLBACK, "choices": list(FALLBACK["choices"]), "spent_nothing": False, "audience": "client"}
+        parts = {**FALLBACK, "choices": list(FALLBACK["choices"]), "spent_nothing": False, "audience": "client",
+                 "code": None}
     else:
         entry = entries[code]
         values = {**table.get("defaults", {}), **entry.get("defaults", {}),
                   **{k: clean(v) for k, v in {**env_facts, **(facts or {})}.items() if v is not None and clean(v)}}
         parts = {"what_happened": _fill(entry["what_happened"], values), "why": _fill(entry["why"], values),
                  "fix": _fill(entry["fix"], values), "choices": [_fill(c, values) for c in entry["choices"]],
-                 "spent_nothing": bool(entry.get("spends_nothing")), "audience": entry.get("audience", "client")}
+                 "spent_nothing": bool(entry.get("spends_nothing")), "audience": entry.get("audience", "client"),
+                 "code": code}
     parts["message"] = render(parts["what_happened"], parts["why"], parts["fix"], parts["choices"],
                               parts["spent_nothing"], parts["audience"])
     return parts
+
+def report_stop(log, code=None, facts=None, stream=None, exit_code=2):
+    """Print one stop for the logs and for the client (see the module docstring); return exit_code."""
+    stream = stream or sys.stdout
+    exp = explain_stop(code, facts, {"message": log})
+    shown = exp["code"]  # the entry this message really explains; None for the unknown fallback
+    envelope = {"ok": False, "error": {"code": shown, "message": log, "facts": dict(facts or {}),
+                                       "client_explanation": exp}}
+    print(log, file=stream)
+    print(json.dumps(envelope, default=str), file=stream)
+    print(f"{CLIENT_HEADER}\n{exp['message']}", file=stream, flush=True)
+    return exit_code
 
 def self_test():
     out = explain_stop("S78-INSTALLMENT-TOTAL-MISMATCH",
@@ -143,12 +170,15 @@ def self_test():
     unknown = explain_stop("S99-NOT-A-CODE", envelope={"detail": "KeyError: 'secret' in /tmp/x/y.py"})
     assert unknown["what_happened"] == FALLBACK["what_happened"] and "secret" not in unknown["message"], unknown
     assert explain_stop()["what_happened"] == FALLBACK["what_happened"]
+    # a code the table does not know stays unknown, even when the text names a known stop
+    stray = explain_stop(envelope={"error": {"code": "S99-NOT-A-CODE", "message": "REFUSED: --inputs none"}})
+    assert stray["what_happened"] == FALLBACK["what_happened"], stray  # never the inputs-none explanation
     line = json.dumps({"ok": False, "error": {"code": "S78-INSTALLMENT-TOTAL-MISMATCH", "message": "log text",
                        "facts": {"offer": "Pro", "count": 2, "schedule_total": "$180.00", "total": "$197.00"}}})
     piped = explain_stop(envelope=from_output("RUN a b\n" + line + "\nREFUSED: [S78-INSTALLMENT-TOTAL-MISMATCH] log text"))
     assert "2 payments that add up to $180.00" in piped["what_happened"], piped
     print("explain_stop --self-test: PASS (table entry with real numbers, envelope code, refusal text match, "
-          "fixed-words unknown fallback, piped stop line keeps its facts)")
+          "fixed-words unknown fallback, unknown code never re-matched by its text, piped stop line keeps its facts)")
     return 0
 
 def main(argv):
