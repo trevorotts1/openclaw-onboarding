@@ -150,7 +150,7 @@ def _loud(kind, code, detail):
 
 def envelope(command, run_id, outcome, reason_code, next_action,
              data=None, evidence=None, state_version=None):
-    return {"schema_version": SCHEMA_VERSION.replace(
+    env = {"schema_version": SCHEMA_VERSION.replace(
                 "intake-preflight", "intake-preflight", 1),
             "tool_version": TOOL_VERSION, "command": command,
             "run_id": run_id, "outcome": outcome, "reason_code": reason_code,
@@ -158,6 +158,24 @@ def envelope(command, run_id, outcome, reason_code, next_action,
             "data": data or {},
             "state_version": state_version
             or {"expected": None, "current": run_id}}
+    if outcome != "ok":
+        env["client_explanation"] = _client_explanation(reason_code, env, data)
+    return env
+
+
+def _client_explanation(code, env, data=None):
+    """Owner order 2026-11-20: a stop the client sees always carries four
+    plain parts (loud_failure.explain_stop). Read-only; never changes the stop."""
+    d = os.path.dirname(os.path.abspath(__file__))
+    while d != os.path.dirname(d) and not os.path.exists(os.path.join(d, "loud_failure.py")):
+        d = os.path.dirname(d)
+    if d not in sys.path:
+        sys.path.insert(0, d)
+    import loud_failure
+    facts = dict((data or {}).get("explain_facts") or {})
+    return loud_failure.explain_stop(code, facts, {
+        "reason_code": code, "detail": env.get("detail", ""),
+        "next_action": env.get("next_action", "")})
 
 
 def _ro_connect(db, timeout=5):
@@ -1214,7 +1232,10 @@ _APPROVAL_LEASE_S = 86400
 
 
 def _mres(outcome, code, detail, row=None):
-    return {"outcome": outcome, "reason_code": code, "detail": detail, "row": row}
+    res = {"outcome": outcome, "reason_code": code, "detail": detail, "row": row}
+    if outcome != "ok":   # the music block never ends on a dead stop
+        res["client_explanation"] = _client_explanation(code, {"detail": detail})
+    return res
 
 
 def _music_audio(run_dir):

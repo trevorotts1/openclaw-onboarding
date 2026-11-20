@@ -4,6 +4,39 @@ All notable changes to this skill are documented here. The version of
 record is `skill-version.txt` (kept in agreement with the `SKILL.md`
 frontmatter `version:` field).
 
+## v2.9.202 - 2026-11-20 - ux: every stop explains what happened, why the rule exists, the fix, and the client's choices
+
+- **The client is never left at a dead stop.** A client's song was refused for
+  having too many words and an over-long spoken opening, and the only thing
+  anyone saw was a reason code. Now every stop the client can meet carries a
+  plain four-part message: what happened (with the real numbers), why the rule
+  exists, what will fix it, and 2-4 numbered choices that always include one
+  where the agent does the work.
+- **One table, one helper.** `references/client-messages.md` gains the
+  four-part table "Every stop explained" (the one-sentence table stays).
+  `scripts/core/loud_failure.py` gains `explain_stop(reason_code, facts,
+  envelope)`, which fills the table's numbers and, for a code with no row,
+  still builds all four parts from the envelope's own words (never a code, a
+  file path or a trace).
+- **The song-length fix names a length that fits.** `suno_recipe.length_that_fits`
+  uses the skill's own length plan to find the shortest offered length whose
+  word budget and spoken-opening cap a sheet passes; a too-wordy 90-second song
+  is told "a 2-minute song fits these words", with the choices "make the song
+  longer, up to 2 minutes", "I trim the words and show you" and "keep your
+  words and I check again".
+- **Wired where stops already leave the code.** `kie_dispatch` envelopes (so
+  `MISSING_AUTH_REF`, `REPAIR_CAP` and `CARD_UNANSWERED` from the spend ledger
+  and card gate), the factory envelope and its music block
+  (`SONG_FAILURE_AWAITING_CLIENT`), the song-choices attempt envelopes and holds,
+  and the `song_choices.py generate` lyric refusal (`LYRICS_REJECTED`, which
+  used to escape the CLI as a raw traceback and now prints a typed refusal with
+  the explanation and exits 5) all carry a `client_explanation` field beside
+  their existing fields. Nothing was removed.
+- **No gate changed.** Every stop keeps its outcome, reason code and exit code.
+- **Guarded.** `scripts/core/test_stop_explanations_s75.py` lists every
+  client-facing stop and fails when a stop has no table row, a row has fewer
+  than two choices, or a message shows a code, a path or a trace.
+
 ## v2.9.155 - 2026-11-02 - chore(batch): version stamp for batch PR #2784 (ST2, X01, F14, PR #2779)
 
 - **G3 version stamp, skill 75 v2.9.154 -> v2.9.155.** Batch PR #2784 combines ST2, X01,

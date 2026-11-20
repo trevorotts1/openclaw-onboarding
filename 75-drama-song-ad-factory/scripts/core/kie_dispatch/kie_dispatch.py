@@ -999,12 +999,18 @@ class DispatchError(Exception):
 
 def envelope(command, outcome, reason_code, next_action="", run_id="",
              logical_key="", attempt_id="", evidence=None, state_version=0):
-    return {"schema_version": SCHEMA_VERSION, "tool": TOOL_NAME,
-            "tool_version": TOOL_VERSION, "command": command,
-            "run_id": run_id, "logical_key": logical_key,
-            "attempt_id": attempt_id, "outcome": outcome,
-            "reason_code": reason_code, "next_action": next_action,
-            "evidence": evidence or {}, "state_version": state_version}
+    env = {"schema_version": SCHEMA_VERSION, "tool": TOOL_NAME,
+           "tool_version": TOOL_VERSION, "command": command,
+           "run_id": run_id, "logical_key": logical_key,
+           "attempt_id": attempt_id, "outcome": outcome,
+           "reason_code": reason_code, "next_action": next_action,
+           "evidence": evidence or {}, "state_version": state_version}
+    if outcome != "ok":
+        # Owner order 2026-11-20: every stop the client may see carries four
+        # plain parts beside the code (loud_failure.explain_stop). Read-only.
+        import loud_failure  # noqa: PLC0415 - core/ is on sys.path (top of file)
+        env["client_explanation"] = loud_failure.explain_stop(reason_code, None, env)
+    return env
 
 
 def resolve_adapter(explicit=None):
