@@ -657,6 +657,18 @@ def _model_block(run_dir: Path) -> Dict:
         return {}
 
 
+def _client_explanation(detail: str) -> Dict:
+    """The four-part plain message for a stop (what happened, why, fix, choices), from
+    references/stop-explanations.json. The reason code stays in `detail`; it never reaches the
+    message. Never raises: an explanation problem must not turn a clean stop into a crash."""
+    try:
+        import explain_stop
+        out = explain_stop.explain_stop(envelope=str(detail))
+        return {k: out[k] for k in ("what_happened", "why", "fix", "choices", "message", "spent_nothing")}
+    except Exception as exc:  # noqa: BLE001
+        return {"message": "The funnel work stopped before it finished. I can look into it and run it "
+                           "again, or stop and wait for your decision.", "error": str(exc)}
+
 def orchestrate(run_dir: Path, key: str) -> Tuple[int, Dict]:
     phases_attested: List[Dict] = []
     # FIX-COPY-02: echo the engine copy_ledger into build/fab-artifact.json (the FAB
@@ -676,7 +688,9 @@ def orchestrate(run_dir: Path, key: str) -> Tuple[int, Dict]:
         if not ok:
             print(f"ABORT: phase {pid} failed its fail-closed gate. NO certificate issued "
                   "(a later phase can never run before an earlier one passes).")
-            manifest = {"run_id": run_dir.name, "aborted_at": pid, "phases": phases_attested}
+            manifest = {"run_id": run_dir.name, "aborted_at": pid, "phases": phases_attested,
+                        "client_explanation": _client_explanation(detail)}
+            print(f"FOR THE CLIENT:\n{manifest['client_explanation']['message']}")
             (run_dir / "process_manifest.json").write_text(json.dumps(manifest, indent=2), encoding="utf-8")
             return EXIT_GATE_FAIL, manifest
         if pid == "P2-PROMPTS":
@@ -693,7 +707,9 @@ def orchestrate(run_dir: Path, key: str) -> Tuple[int, Dict]:
     print(f"  [{'PASS' if email_ok else 'FAIL':4s}] P10-EMAIL    (emails.json) :: {email_detail}")
     if not email_ok:
         print("ABORT: phase P10-EMAIL failed its fail-closed gate. NO certificate issued.")
-        manifest = {"run_id": run_dir.name, "aborted_at": "P10-EMAIL", "phases": phases_attested}
+        manifest = {"run_id": run_dir.name, "aborted_at": "P10-EMAIL", "phases": phases_attested,
+                    "client_explanation": _client_explanation(email_detail)}
+        print(f"FOR THE CLIENT:\n{manifest['client_explanation']['message']}")
         (run_dir / "process_manifest.json").write_text(json.dumps(manifest, indent=2), encoding="utf-8")
         return EXIT_GATE_FAIL, manifest
     # all phases passed -> mint the signed certificate
@@ -1419,10 +1435,12 @@ def main(argv: List[str]) -> int:
     good, resolved = _check_front_door(run_dir, args.nonce, nonce_file)
     if not good:
         print(resolved)
+        print(f"FOR THE CLIENT:\n{_client_explanation(resolved)['message']}")
         return EXIT_FRONT_DOOR
     mgood, mmsg = _check_model_receipt(run_dir, resolved)
     if not mgood:
         print(f"AF-FUN-FRONT-DOOR: content-authoring model receipt refused :: {mmsg}")
+        print(f"FOR THE CLIENT:\n{_client_explanation('AF-FUN-MODEL-TIER ' + str(mmsg))['message']}")
         return EXIT_FRONT_DOOR
 
     _mc_task = _mc_board_begin(run_dir)

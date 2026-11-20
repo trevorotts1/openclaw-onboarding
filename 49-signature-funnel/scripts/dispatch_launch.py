@@ -1105,6 +1105,8 @@ def main(argv: List[str]) -> int:
     except (DispatchError, pset.PageSetError, swarm.SwarmError,
             vlp.ApprovalError, clr.RouteError, OSError, ValueError) as exc:
         print(f"FAIL: {exc}")
+        import explain_stop
+        print("FOR THE CLIENT:\n" + explain_stop.client_message(str(exc)))
         return EXIT_VIOLATION
     print(json.dumps({"execution": m["execution"],
                       "requests": len(m["requests"]),
