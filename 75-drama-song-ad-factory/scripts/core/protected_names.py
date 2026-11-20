@@ -124,11 +124,16 @@ def packet_required(brief, packet_lines):
 
 def protected_list(brief):
     """Protected names of a brief: protected_names + characters + brands
-    + product_name (strings or {name: ...} dicts). Order kept, no dupes."""
+    + website/url/cta_url + product_name (strings or {name: ...} dicts).
+    website, url and cta_url are each a single string, so the client's site
+    is protected whether the brief calls it website, url or cta_url. Order
+    kept, no dupes."""
     brief = brief or {}
     out, seen = [], set()
-    for key in ("protected_names", "characters", "brands", "website"):
-        for item in ([brief.get(key)] if key == "website" else brief.get(key) or []):
+    for key in ("protected_names", "characters", "brands", "website",
+                "url", "cta_url"):
+        for item in ([brief.get(key)] if key in ("website", "url", "cta_url")
+                     else brief.get(key) or []):
             name = item.get("name") if isinstance(item, dict) else item
             if isinstance(name, str) and _tokens(name) and \
                     tuple(_tokens(name)) not in seen:
