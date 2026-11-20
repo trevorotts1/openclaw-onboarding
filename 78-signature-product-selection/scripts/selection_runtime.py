@@ -5,7 +5,11 @@ One fail-closed facade between the launch runtime and the skill's shipped
 modules. The runtime sends a request envelope {"action": ..., ...args};
 the adapter dispatches to exactly one shipped function and returns
 {"ok": true, "action": ..., "result": ...} or
-{"ok": false, "error": {"code": ..., "message": ...}}.
+{"ok": false, "error": {"code": ..., "message": ..., "client_explanation": {...}}}. code and message
+are for logs; client_explanation (scripts/explain_stop.py) is the four-part plain message the client
+reads: what happened, why the rule exists, the fix, and numbered choices. A plan or invocation that
+declines (one package, or a launch with no selection page) is ok, and its envelope carries
+client_explanation beside result.
 
 Actions: invocation, plan, preview, select, validate_binding,
 reject_query_authority, binding_plan, page_result, session_create,
@@ -38,6 +42,7 @@ from build_selection_plan import SELF_TEST_LAUNCH, build_plan  # noqa: E402
 from emit_binding_plan import emit_plan  # noqa: E402
 from emit_page_result import emit as emit_page_result  # noqa: E402
 from render_selection_preview import render  # noqa: E402
+from explain_stop import explain_stop  # noqa: E402
 from selection_core import (  # noqa: E402
     Violation, build_selection, check_invocation, reject_query_authority, validate_binding,
 )
@@ -156,18 +161,34 @@ class Runtime:
             else:
                 return self._err(V_RUNTIME_UNKNOWN_ACTION, f"unknown action {action!r}")
         except Violation as v:
-            return self._err(v.code, v.message)
+            return self._err(v.code, v.message, v.facts)
         except StorageError as e:
             return self._err(e.code, e.message)
         except BadRequest as e:
             return self._err(e.code, e.message)
         except Exception as e:  # fail closed: never leak a traceback as a result
             return self._err(V_RUNTIME_BAD_REQUEST, f"request could not be processed: {e}")
-        return {"ok": True, "action": action, "result": result}
+        out = {"ok": True, "action": action, "result": result}
+        declined = self._declined(request, result)
+        if declined:
+            out["client_explanation"] = explain_stop(*declined)
+        return out
 
     @staticmethod
-    def _err(code, message):
-        return {"ok": False, "error": {"code": code, "message": message}}
+    def _declined(request, result):
+        """(code, facts) when an ok result is still a stop for the client: no selection page is built."""
+        verdict = (result or {}).get("mode") or (result or {}).get("outcome") if isinstance(result, dict) else None
+        if verdict in ("decline_single_offer", "declined_single_offer"):
+            return "S78-SINGLE-OFFER-DECLINE", None
+        if verdict == "decline":
+            mode = (request.get("launch") or {}).get("journey_mode")
+            return "S78-JOURNEY-MODE-DECLINE", {"mode": f'a "{str(mode).replace("_", " ")}"'} if mode else None
+        return None
+
+    @staticmethod
+    def _err(code, message, facts=None):
+        return {"ok": False, "error": {"code": code, "message": message,
+                                       "client_explanation": explain_stop(code, facts, {"message": message})}}
 
 
 def self_test():
@@ -204,6 +225,9 @@ def self_test():
     assert resumed["ok"] and resumed["result"]["state"] == "resumed", resumed
     smuggle = rt.handle({"action": "reject_query_authority", "query": {"price": "97"}})
     assert not smuggle["ok"] and smuggle["error"]["code"] == "S78-QUERY-PRICE-AUTHORITY", smuggle
+    assert "S78-" not in smuggle["error"]["client_explanation"]["message"], smuggle
+    single = dict(SELF_TEST_LAUNCH, journey_mode="single_simple", offers=SELF_TEST_LAUNCH["offers"][:1])
+    assert "only one main package" in rt.handle({"action": "plan", "launch": single})["client_explanation"]["message"]
     unknown = rt.handle({"action": "nonsense"})
     assert not unknown["ok"] and unknown["error"]["code"] == V_RUNTIME_UNKNOWN_ACTION, unknown
     bad = json.loads(json.dumps(SELF_TEST_LAUNCH))
@@ -211,7 +235,7 @@ def self_test():
     bad["offers"][0]["prices"][0]["approval_status"] = "unknown"
     rejected = rt.handle({"action": "plan", "launch": bad})
     assert not rejected["ok"] and rejected["error"]["code"] == "S78-UNKNOWN-PRICE", rejected
-    print("selection_runtime --self-test: PASS (plan, select, session round trip, query authority, unknown action, violation mapping)")
+    print("selection_runtime --self-test: PASS (plan, select, session round trip, query authority, unknown action, violation mapping, client explanations)")
     return 0
 
 

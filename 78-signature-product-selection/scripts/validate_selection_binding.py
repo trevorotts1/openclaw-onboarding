@@ -41,7 +41,8 @@ def validate_plan(plan, launch, *, approval_verifier=None):
     with no mappings validates nothing and is refused."""
     mappings = plan.get("mappings")
     if not isinstance(mappings, list) or not mappings or not all(isinstance(m, dict) for m in mappings):
-        raise Violation(V_PLAN_EMPTY, "Binding plan has no usable mappings; a plan that validates nothing is refused.")
+        raise Violation(V_PLAN_EMPTY, "Binding plan has no usable mappings; a plan that validates nothing is refused.",
+                        {"missing": "The list of checkout links is empty."})
     revision = plan.get("revision")
     revision = revision if isinstance(revision, int) and not isinstance(revision, bool) else -1
     for m in mappings:

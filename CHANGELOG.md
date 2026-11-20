@@ -1,3 +1,12 @@
+## [Unreleased]  -  2026-11-20  -  Skill 78 (the choose-your-package page): every stop now tells the client what happened, why the rule exists, how to fix it, and what they can choose
+
+- Problem: when the choose-your-package page stopped (a price not approved yet, a "most popular" claim with no proof, payments that do not add up to the price, a design board waiting for approval, and so on), the client got a short internal code and a technical sentence. Nobody told them why the rule was there or what to do next, so the work just stopped.
+- Fix: every stop now comes with four plain parts, written for a fifth-grade reader: what happened (with the real names and numbers), why this rule exists, what will fix it, and 2 to 4 numbered choices, one of which is always "I do it for you". The words live in one table, `78-signature-product-selection/references/stop-explanations.json` (46 stops), and one small helper, `scripts/explain_stop.py`, fills them in. A stop the table does not know yet still gets all four parts, built from the stop's own details. Codes, file paths and tracebacks never reach the client; they stay in logs.
+- Where the client sees it: the runtime's error answers carry `error.client_explanation` beside the code and message; a plan that declines (only one package) carries `client_explanation`; a buyer's timed-out or changed choice carries it in the buyer's own words; every catalog stop raised in code carries its real numbers. Nothing was removed.
+- Rule for later: `SKILL.md` has a new binding section, "When something stops the work", and `tests/test_explain_stop.py` fails if a new stop code ships without its plain explanation.
+- Also: `runtime-manifest.json` had fallen one version behind `skill-version.txt` (0.2.9 against 0.2.10); it now moves with it.
+- Skill 78 0.2.10 -> 0.2.11. Migration: none. Risk: LOW (words and one extra field; no stop was loosened).
+
 ## [Unreleased]  -  2026-11-18  -  Tenant readiness: explicit User-Agent, Cloudflare edge 403 probed on loopback, final installer call reads the client's own .env.local
 
 - Defect: the Skill 32 tenant readiness probe (`verify-tenant-readiness.py`, run by `run-full-install.sh` on every pass including `--update-only`) sent the stock `Python-urllib` User-Agent. A Cloudflare-fronted public host answers that agent with its own 403 page before Access runs, so the probe failed with "authenticated readiness probe failed: HTTPError", a healthy Command Center was stamped `done-degraded` (`tenantReadiness`) on every pass, and the ZHC closeout stayed deferred.

@@ -10,6 +10,9 @@ opaque reference; this module is the deterministic core that bridge calls:
   'reconfirm_required' with the material diff, never a silent switch
 - expiry: an expired or unknown ref returns 'expired' with a helpful
   restart/confirm message, never a defaulted package
+- every expired / reconfirm_required result also carries client_explanation:
+  the four-part plain message (what happened, why, the fix, the buyer's
+  choices) from scripts/explain_stop.py, beside the existing message
 - submit idempotence: confirming the same session and selection twice
   returns the same draft reference; a second draft order is never created
 
@@ -24,7 +27,8 @@ import secrets
 from datetime import datetime, timezone
 from typing import Any, Dict, Mapping, Optional
 
-from selection_core import Violation, validate_binding
+from explain_stop import explain_stop
+from selection_core import Violation, format_money, validate_binding
 
 DEFAULT_TTL_SECONDS = 1800
 
@@ -38,6 +42,35 @@ EXPIRED_MESSAGE = (
     "Your selection session has expired, so nothing was chosen for you. "
     "Review the packages and choose again to continue to checkout."
 )
+RECONFIRM_CODES = ("S78-SELECTION-PRICE-DRIFT", "S78-SELECTION-STALE-REVISION", "S78-UNAPPROVED-PRICE")
+
+def _expired() -> Dict[str, Any]:
+    return {"state": "expired", "message": EXPIRED_MESSAGE, "client_explanation": explain_stop("S78-SESSION-EXPIRED")}
+
+def _reconfirm(v: Violation, selection: Mapping[str, Any], launch: Mapping[str, Any]) -> Dict[str, Any]:
+    """The reconfirm_required result: the stored choice is shown, never swapped, never charged silently."""
+    current = next((o for o in launch["offers"] if o["offer_id"] == selection.get("offer_id")), None)
+    price = next((p for p in (current or {}).get("prices") or []
+                  if p.get("price_choice_id") == selection.get("price_choice_id")), None)
+    old, new = selection.get("amount_minor_snapshot"), (price or {}).get("amount_minor")
+    change = None
+    if isinstance(old, int) and isinstance(new, int) and old != new:
+        change = (f"It was {format_money(old, selection.get('currency'))}, "
+                  f"now it is {format_money(new, price.get('currency'))}.")
+    return {
+        "state": "reconfirm_required",
+        "reason_code": v.code,
+        "message": (
+            "The terms for your selected package changed since you chose it. "
+            "Review the current terms and confirm before continuing; "
+            "you will never be charged a changed amount without confirming."
+        ),
+        "selected_offer_id": selection.get("offer_id"),
+        "previous_amount_minor": selection.get("amount_minor_snapshot"),
+        "current_offer": current,
+        "client_explanation": explain_stop(
+            "S78-SESSION-RECONFIRM", {"offer": (current or {}).get("display_name"), "change": change}),
+    }
 
 
 class SessionStore:
@@ -89,28 +122,14 @@ class SessionStore:
     def resume(self, ref: str, *, tenant_id: str, launch_id: str, launch: Mapping[str, Any], now: int) -> Dict[str, Any]:
         rec = self._lookup(ref, tenant_id=tenant_id, launch_id=launch_id, now=now)
         if rec is None:
-            return {"state": "expired", "message": EXPIRED_MESSAGE}
+            return _expired()
         selection = rec["selection"]
         try:
             validate_binding(selection, launch, expected_revision=int(launch["revision"]))
         except Violation as v:
-            if v.code in ("S78-SELECTION-PRICE-DRIFT", "S78-SELECTION-STALE-REVISION", "S78-UNAPPROVED-PRICE"):
-                current = next(
-                    (o for o in launch["offers"] if o["offer_id"] == selection.get("offer_id")), None
-                )
-                return {
-                    "state": "reconfirm_required",
-                    "reason_code": v.code,
-                    "message": (
-                        "The terms for your selected package changed since you chose it. "
-                        "Review the current terms and confirm before continuing; "
-                        "you will never be charged a changed amount without confirming."
-                    ),
-                    "selected_offer_id": selection.get("offer_id"),
-                    "previous_amount_minor": selection.get("amount_minor_snapshot"),
-                    "current_offer": current,
-                }
-            return {"state": "expired", "message": EXPIRED_MESSAGE}
+            if v.code in RECONFIRM_CODES:
+                return _reconfirm(v, selection, launch)
+            return _expired()
         return {"state": "resumed", "selection": selection, "expires_at": to_iso(rec["expires_at"])}
 
     def confirm(self, ref: str, *, tenant_id: str, launch_id: str, launch: Mapping[str, Any], now: int) -> Dict[str, Any]:
@@ -123,28 +142,14 @@ class SessionStore:
         reference no matter how many times the CTA is clicked."""
         rec = self._lookup(ref, tenant_id=tenant_id, launch_id=launch_id, now=now)
         if rec is None:
-            return {"state": "expired", "message": EXPIRED_MESSAGE}
+            return _expired()
         selection = rec["selection"]
         try:
             validate_binding(selection, launch, expected_revision=int(launch["revision"]))
         except Violation as v:
-            if v.code in ("S78-SELECTION-PRICE-DRIFT", "S78-SELECTION-STALE-REVISION", "S78-UNAPPROVED-PRICE"):
-                current = next(
-                    (o for o in launch["offers"] if o["offer_id"] == selection.get("offer_id")), None
-                )
-                return {
-                    "state": "reconfirm_required",
-                    "reason_code": v.code,
-                    "message": (
-                        "The terms for your selected package changed since you chose it. "
-                        "Review the current terms and confirm before continuing; "
-                        "you will never be charged a changed amount without confirming."
-                    ),
-                    "selected_offer_id": selection.get("offer_id"),
-                    "previous_amount_minor": selection.get("amount_minor_snapshot"),
-                    "current_offer": current,
-                }
-            return {"state": "expired", "message": EXPIRED_MESSAGE}
+            if v.code in RECONFIRM_CODES:
+                return _reconfirm(v, selection, launch)
+            return _expired()
         existing = self._get_draft(ref)
         if existing is not None:
             return {"state": "confirmed", "draft_ref": existing, "duplicate": True}

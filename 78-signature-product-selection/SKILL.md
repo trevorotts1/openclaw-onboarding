@@ -1,7 +1,7 @@
 ---
 name: signature-product-selection
 description: Build the specificity-led Product Selection page (the order page: the page where a buyer chooses between packages, with its desktop and mobile wireframes and mockups) for a Signature Launch with multiple meaningful packages or tiers. Normalizes approved offers into an accurate comparison matrix (included, not included, limited, conditional), an optional evidence-backed recommendation, accessible selection UI model, and a validated selection.json intent that preserves the native product/price mapping into Skill 79 checkout. Invoke only when the approved launch has multiple meaningful choices; one simple offer skips this skill entirely and uses Skill 79 combined explanation/checkout mode. Never collects payment, never trusts a URL price, never invents tiers, prices, popularity, or savings claims.
-version: 0.2.10
+version: 0.2.11
 ---
 
 # Signature Product Selection (Skill 78) - the order page (package selection)
@@ -41,6 +41,49 @@ between packages. The order form that takes payment is Skill 79 (checkout).
   binds every stated price; an optional `approval_verifier` callable can veto
   the ref). Anywhere else it is `S78-UNAPPROVED-PRICE`.
 - Selection output is `selection.json`: intent only, never payment evidence.
+
+## When something stops the work (binding, every stop)
+
+The client must never be left with a stop and no answer. When anything in this skill stops,
+refuses, holds or waits, tell the client (or, at checkout, the buyer) in fifth-grade words, in
+this order, every time:
+
+1. **What happened**: exactly what the problem is, with the real names and numbers.
+2. **Why this rule exists**: one or two sentences on what the rule protects them from.
+3. **What will fix it**: the specific fix.
+4. **Your choices**: 2 to 4 numbered things you can do right now, always including one where you
+   do the work. End with "Reply with the number you want." Never end on a dead stop.
+
+Never show the client a reason code (`S78-...`), a file path or a traceback; codes stay in logs,
+envelopes and receipts. Say a check spent no money only when the explanation says so (the
+explanation adds it for the stops whose check spends nothing); never claim it for a picture step.
+
+You do not write these words from scratch. `scripts/explain_stop.py` builds them from
+`references/stop-explanations.json`: `explain_stop(reason_code, facts=None, envelope=None)` returns
+`what_happened`, `why`, `fix`, `choices` and the ready `message`. Every runtime error envelope
+already carries `error.client_explanation`, a declined plan carries `client_explanation`, every
+expired or reconfirm session result carries `client_explanation`, and every `Violation` has
+`.client_explanation` with its real numbers. For a script that prints text instead of an envelope
+(the picture step), pipe its output through `explain_stop.py --from-output -`. An unknown stop
+still gets all four parts, built from the envelope's `detail` / `message` / `next_action`.
+
+Example (an installment plan whose payments do not add up):
+
+> What happened: Growth is split into 3 payments that add up to $290.00, but its price says
+> $297.00. This check spent no money.
+> Why this rule exists: A buyer must always know the real total. Payments that do not add up to
+> the price would hide the true cost.
+> What will fix it: Make the payments add up to the price, or change the price to match the payments.
+> Your choices:
+> 1. I change the payments so they add up to the price, and show you.
+> 2. I change the price to match the payments and send it to you to approve.
+> 3. You tell me the right numbers, and I fix both.
+> Reply with the number you want.
+
+Maintainer rule: every new stop a client or buyer can see ships with its entry in
+`references/stop-explanations.json` and in the stop inventory of `tests/test_explain_stop.py`.
+That test fails on any `S78-` code in `scripts/` with no entry, any entry with fewer than two
+choices, and any rendered message that leaks a code, a path or a traceback.
 
 ## Native ids and the 78 to 79 handoff
 
@@ -152,11 +195,14 @@ Design direction = Skill 71 structure + Skill 45 card/rules via `design_prose.py
   via `emit_selection_result()`). Honest L1 proof.
 - `scripts/selection_core.py` - the shared normalization/validation core the
   wrappers call. No wrapper duplicates its logic.
+- `scripts/explain_stop.py` - the four-part plain message for any stop
+  (what happened, why the rule exists, the fix, the client's choices).
 
 References: `references/selection-copy-profile.md`,
 `references/selection-ui-contract.md`, `references/binding-plan-contract.md`,
 `references/asset-integration.md`, `references/session-storage-contract.md`,
-`references/runtime-adapter-contract.md`. Negative cases ship as inspectable
+`references/runtime-adapter-contract.md`, `references/stop-explanations.json`
+(the plain words for every stop; see "When something stops the work"). Negative cases ship as inspectable
 files under `fixtures/broken/` with their expected violation codes pinned by
 `tests/test_broken_fixtures.py`.
 
