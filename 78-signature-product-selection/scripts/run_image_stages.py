@@ -29,7 +29,11 @@ Before anything is drawn the page copy is gated (validate_selection_content.vali
 manuscript the plan produces and on the authored copy.json, and validate_catalog with production on when
 the launch record or the page request says test_only is false). A claim such as "most popular" or "only 50
 left", a price that is not the approved price, a hidden exclusion, an empty Compare section or a test_only
-offer in a live run is refused here (exit 2, nothing drawn, so the chain writes no page result).
+offer in a live run is refused here (exit 2, nothing drawn, so the chain writes no page result). Every
+stop in this step reports itself at once through explain_stop.report_stop: the log line (code and raw
+text, for logs and receipts), one JSON envelope line carrying the stop's facts, then "Tell the client:"
+with the four plain parts. Nobody has to pipe anything; explain_stop.py --from-output - still reads the
+envelope line.
 
 Operator values come from one inputs file (--inputs), so dispatch binds a single path:
   {"route_graph", "brand_file", "brand_owner", "image_cap", "design_style" (A|B|C),
@@ -48,6 +52,7 @@ Exit: 0 every step passed, 2 a step failed or was refused.
 """
 import argparse
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -56,6 +61,7 @@ HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 from emit_section_manuscript import build as build_manuscript  # noqa: E402
 from emit_section_manuscript import write as write_manuscript  # noqa: E402
+from explain_stop import report_stop  # noqa: E402
 from selection_core import Violation  # noqa: E402
 from validate_selection_content import production_run, validate_manuscript  # noqa: E402
 
@@ -88,9 +94,50 @@ def conform(value, schema):
     return value
 
 
+def explain(stops, stream):
+    """Explain every collected stop (code, log, facts) once each, oldest first; return 2 on any stop.
+
+    The log line prints first (stdout, for logs and receipts), then the four plain parts
+    (the explanation stream, for the client or the agent)."""
+    from explain_stop import explain_stop
+    for code, log, facts in stops:
+        print(log, flush=True)
+    seen, rc = set(), 0
+    for code, log, facts in stops:
+        if (code, log) in seen:
+            continue
+        seen.add((code, log))
+        print(explain_stop(code, facts, {"message": log})["message"], file=stream, flush=True)
+        rc = 2
+    if rc == 0:
+        print("no stop was explained; nothing failed, nothing waited", file=stream)
+        rc = 2
+    return rc
+
+
+_IMAGES_CODES = ("S78-IMAGES-INPUTS-NONE", "S78-IMAGES-INPUTS-MISSING", "S78-IMAGES-PLAN-NOT-BUILT",
+                "S78-IMAGES-PAID-NOT-ALLOWED", "S78-IMAGES-BOARD-APPROVAL-WAIT", "S78-IMAGES-BOARD-SPEC-MISSING",
+                "S78-IMAGES-STEP-FAILED")
+_OTHER_STEP_CODES = ("S78-INSTALLMENT-TOTAL-MISMATCH", "S78-COPY-PRICE-MISMATCH", "S78-UNPROVEN-CLAIM",
+                "S78-HIDDEN-EXCLUSION", "S78-COMPARE-EMPTY", "S78-MANUSCRIPT-SHAPE", "S78-CTA-PAYMENT-LANGUAGE",
+                "S78-PAYMENT-COLLECTION", "S78-TEST-ONLY-IN-PRODUCTION", "S78-QUERY-PRICE-AUTHORITY")
+
+
+def stop_code(text):
+    """The entry for a raised stop: this step's own S78-IMAGES-* first, else the copy-gate stop code
+    the step re-raises, else None. The chain runs this step for its pictures, so an unknown stop is
+    explained as a picture-step failure, never left to the unknown fallback."""
+    from explain_stop import explain_stop
+    text = text if isinstance(text, str) else str(text)
+    found = explain_stop(None, None, {"message": text})["code"]
+    if found in _IMAGES_CODES or found in _OTHER_STEP_CODES:
+        return found
+    return "S78-IMAGES-STEP-FAILED"
+
+
 def run(cmd):
     print("RUN " + " ".join(str(c) for c in cmd[1:3]), flush=True)
-    proc = subprocess.run([str(c) for c in cmd])
+    proc = subprocess.run([str(c) for c in cmd], stdout=None, stderr=subprocess.STDOUT)
     if proc.returncode:
         raise SystemExit(f"FAIL: step exited {proc.returncode}: {Path(str(cmd[1])).name}")
 
@@ -103,38 +150,73 @@ def main(argv=None):
     p.add_argument("--allow-paid", action="store_true")
     p.add_argument("--preflight", action="store_true", help="compose and check every prompt; no provider call")
     p.add_argument("--skill71-root", type=Path, default=HERE.parents[1] / "71-blackceo-signature-page")
+    p.add_argument("--explain-stdout", action="store_true",
+                   help="print the client explanation to stdout too, after the stdout log line "
+                        "(default: stdout log line for logs, stderr explanation for the agent)")
     a = p.parse_args(argv)
+    explain_stream = sys.stdout if a.explain_stdout else sys.stderr
+    stops = []  # (code, log, facts) in order; every stop explained exactly once at the end, oldest first
     if a.inputs == "none":
-        print("REFUSED: --inputs none; the order page's wireframes and mockups are required in a full funnel")
-        return 2
+        return report_stop("REFUSED: --inputs none; the order page's wireframes and mockups are required in a full funnel",
+                           "S78-IMAGES-INPUTS-NONE", stream=explain_stream)
     s71 = a.skill71_root / "scripts"
     py, run_dir = sys.executable, a.run_dir
     try:
-        cfg = json.loads(Path(a.inputs).read_text(encoding="utf-8"))
+        try:
+            cfg = json.loads(Path(a.inputs).read_text(encoding="utf-8"))
+        except (OSError, ValueError) as exc:
+            stops.append((stop_code(exc) or "S78-IMAGES-INPUTS-MISSING", f"REFUSED: the inputs file is missing {exc}", None))
+            return explain(stops, explain_stream)
         missing = [k for k in REQUIRED if not cfg.get(k)]
         if missing:
-            raise SystemExit(f"REFUSED: the inputs file is missing {', '.join(missing)}")
-        plan = json.loads(a.plan.read_text(encoding="utf-8"))
+            stops.append(("S78-IMAGES-INPUTS-MISSING", f"REFUSED: the inputs file is missing {', '.join(missing)}", None))
+            return explain(stops, explain_stream)
+        try:
+            plan = json.loads(a.plan.read_text(encoding="utf-8"))
+        except (OSError, ValueError) as exc:
+            stops.append((stop_code(exc) or "S78-IMAGES-PLAN-NOT-BUILT", f"REFUSED: the plan outcome is {exc}", None))
+            return explain(stops, explain_stream)
         if plan.get("outcome") != "plan":
-            raise SystemExit(f"REFUSED: the plan outcome is {plan.get('outcome')!r}; no order page is built")
+            stops.append(("S78-IMAGES-PLAN-NOT-BUILT",
+                          f"REFUSED: the plan outcome is {plan.get('outcome')!r}; no order page is built", None))
+            return explain(stops, explain_stream)
         stages = cfg.get("stages") or list(DEFAULT_STAGES)
         style, provider = cfg.get("design_style"), cfg.get("provider", "stub")
         if provider != "stub" and not (a.allow_paid or a.preflight):
             # fail before any lane draws or spends, not after (IMG-05): the executor refuses the paid route without it
-            raise SystemExit(f"REFUSED: provider {provider!r} is a paid route and needs --allow-paid on this command line")
+            stops.append(("S78-IMAGES-PAID-NOT-ALLOWED",
+                          f"REFUSED: provider {provider!r} is a paid route and needs --allow-paid on this command line", None))
+            return explain(stops, explain_stream)
         # 1. admit the page into the shared image service (the one pipeline for every page role).
         # The service checks the launch record's identity, status, brand and route hashes against the frozen
         # packet schema, which closes every object; Skill 78's own launch fields (buyer, outcome, FAQ and the
         # like) belong to the plan, so the service is given the record cut down to the packet's fields.
-        launch = json.loads(a.launch_record.read_text(encoding="utf-8"))
+        try:
+            launch = json.loads(a.launch_record.read_text(encoding="utf-8"))
+        except (OSError, ValueError) as exc:
+            stops.append((stop_code(exc) or "S78-IMAGES-PLAN-NOT-BUILT", f"REFUSED: the plan outcome is {exc}", None))
+            return explain(stops, explain_stream)
         # 1a. the copy gate: what the buyer would read, checked before a single picture is drawn
-        authored = json.loads(Path(cfg["copy"]).read_text(encoding="utf-8")) if cfg.get("copy") else None
-        request = json.loads(a.request.read_text(encoding="utf-8"))
+        try:
+            authored = json.loads(Path(cfg["copy"]).read_text(encoding="utf-8")) if cfg.get("copy") else None
+        except (OSError, ValueError) as exc:
+            stops.append((stop_code(exc) or "S78-RUNTIME-BAD-REQUEST", f"REFUSED: {exc}", None))
+            return explain(stops, explain_stream)
+        try:
+            request = json.loads(a.request.read_text(encoding="utf-8"))
+        except (OSError, ValueError) as exc:
+            stops.append((stop_code(exc) or "S78-RUNTIME-BAD-REQUEST", f"REFUSED: {exc}", None))
+            return explain(stops, explain_stream)
         try:
             validate_manuscript(build_manuscript(plan, authored)[0], launch,
                                 production=production_run(launch, request), authored=authored)
         except Violation as exc:
-            raise SystemExit(f"REFUSED: [{exc.code}] {exc.message}")
+            # the copy gate: no page copy, no pictures, so nothing is drawn and the chain writes no result
+            return report_stop(f"REFUSED: [{exc.code}] {exc.message}", exc.code, exc.facts,
+                               stream=explain_stream)
+        except (OSError, ValueError) as exc:
+            stops.append((stop_code(exc) or "S78-RUNTIME-BAD-REQUEST", f"REFUSED: {exc}", None))
+            return explain(stops, explain_stream)
         schema = json.loads((a.skill71_root / "references" / "launch.schema.json").read_text(encoding="utf-8"))
         view = conform(launch, schema)
         run_dir.mkdir(parents=True, exist_ok=True)
@@ -165,7 +247,9 @@ def main(argv=None):
             run(build)
             if stage == BOARD:
                 if not cfg.get("design_board_spec"):
-                    raise SystemExit("REFUSED: the design-board stage needs design_board_spec (the client's own brand facts)")
+                    stops.append(("S78-IMAGES-BOARD-SPEC-MISSING",
+                                  "REFUSED: the design-board stage needs design_board_spec (the client's own brand facts)", None))
+                    return explain(stops, explain_stream)
                 doc = json.loads(request.read_text(encoding="utf-8"))
                 doc["design_board"] = {**json.loads(Path(cfg["design_board_spec"]).read_text(encoding="utf-8")),
                                        "page_role": "product_selection"}
@@ -178,11 +262,17 @@ def main(argv=None):
                 execute.append("--preflight")
             run(execute)
     except SystemExit as exc:
-        print(exc)
-        return 2
+        text = exc.code if isinstance(exc.code, str) else str(exc)
+        code = stop_code(text)
+        if code:
+            stops.append((code, text, None))
+        else:
+            print(text, file=sys.stderr)
+            stops.append(("S78-IMAGES-STEP-FAILED", text, None))
+        return explain(stops, explain_stream)
     except (OSError, ValueError) as exc:
-        print(f"REFUSED: {exc}")
-        return 2
+        stops.append((stop_code(exc) or "S78-RUNTIME-BAD-REQUEST", f"REFUSED: {exc}", None))
+        return explain(stops, explain_stream)
     print(f"order page {'preflight' if a.preflight else 'stages'} ok: {', '.join(stages)} in {run_dir}")
     return 0
 

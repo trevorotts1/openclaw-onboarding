@@ -45,9 +45,11 @@ V_BINDING_ALLOWLIST = "S78-BINDING-NOT-ALLOWLISTED"
 
 def emit_plan(launch, targets, *, route, allowlist=None, approval_verifier=None):
     if route not in ("per_offer_targets", "platform_native_selection"):
-        raise Violation(V_BINDING_INCOMPLETE, f"Unknown handoff route {route!r}.")
+        raise Violation(V_BINDING_INCOMPLETE, f"Unknown handoff route {route!r}.",
+                        {"missing": "The way buyers reach checkout is not one this skill knows."})
     if check_invocation(launch, route=route) != "proceed":
-        raise Violation(V_BINDING_INCOMPLETE, "Binding plan requires a multiple_options launch.")
+        raise Violation(V_BINDING_INCOMPLETE, "Binding plan requires a multiple_options launch.",
+                        {"missing": "Checkout links per package are only built when the launch has several packages."})
     validate_catalog(launch, approval_verifier=approval_verifier, route=route)
     mains = [o for o in launch["offers"] if o.get("slot") == "main"]
     production = launch.get("test_only") is not True
@@ -60,13 +62,15 @@ def emit_plan(launch, targets, *, route, allowlist=None, approval_verifier=None)
                         f"Offer {offer['offer_id']!r} / price {price['price_choice_id']!r} has a null or blank "
                         "native product/price id on a production launch; the native product must be created "
                         "and read back before a binding plan can claim it.",
+                        {"missing": f"{offer.get('display_name') or offer['offer_id']} is not set up in your checkout system yet."},
                     )
     by_key = {}
     seen_targets = set()
     for t in targets:
         key = (t.get("offer_id"), t.get("price_choice_id"))
         if key in by_key:
-            raise Violation(V_BINDING_DUPLICATE, f"Two checkout targets claim {key}; the mapping must be explicit and single.")
+            raise Violation(V_BINDING_DUPLICATE, f"Two checkout targets claim {key}; the mapping must be explicit and single.",
+                            {"offer": key[0]})
         target_ref = t.get("target_ref")
         if target_ref in seen_targets:
             raise Violation(V_BINDING_SHARED, f"Checkout target {target_ref!r} is shared by more than one price choice.")
@@ -82,11 +86,13 @@ def emit_plan(launch, targets, *, route, allowlist=None, approval_verifier=None)
                 raise Violation(
                     V_BINDING_INCOMPLETE,
                     f"Offer {offer['offer_id']!r} price choice {price['price_choice_id']!r} has no native checkout target.",
+                    {"missing": f"One price of {offer.get('display_name') or offer['offer_id']} has no checkout page."},
                 )
             if production and not (_nonblank(t.get("native_product_id")) and _nonblank(t.get("native_price_id"))):
                 raise Violation(
                     V_BINDING_INCOMPLETE,
                     f"Target for {offer['offer_id']!r} / {price['price_choice_id']!r} has a null or blank native id on a production launch.",
+                    {"missing": f"The checkout page for {offer.get('display_name') or offer['offer_id']} is not linked to a product yet."},
                 )
             if t.get("native_product_id") != offer.get("native_product_id") or t.get("native_price_id") != price.get("native_price_id"):
                 raise Violation(

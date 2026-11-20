@@ -130,10 +130,20 @@ def format_money(amount_minor: int, currency: str) -> str:
 
 
 class Violation(Exception):
-    def __init__(self, code: str, message: str):
+    """A stop. code and message are for logs and receipts; facts are the real names and numbers the
+    plain client message needs (scripts/explain_stop.py fills references/stop-explanations.json with them)."""
+
+    def __init__(self, code: str, message: str, facts: Optional[Mapping[str, Any]] = None):
         super().__init__(message)
         self.code = code
         self.message = message
+        self.facts = dict(facts or {})
+
+    @property
+    def client_explanation(self) -> Dict[str, Any]:
+        """The four-part plain message for this stop: what happened, why the rule exists, the fix, the choices."""
+        from explain_stop import explain_stop  # sibling module; scripts/ is on sys.path wherever this one is
+        return explain_stop(self.code, self.facts, {"message": self.message})
 
 
 def _nonblank(value: Any) -> bool:
@@ -168,19 +178,26 @@ def check_invocation(launch: Mapping[str, Any], *, route: Optional[str] = None) 
     return "proceed"
 
 
-def _check_price(price: Mapping[str, Any], offer_id: Any, launch: Optional[Mapping[str, Any]] = None, verifier=None) -> None:
+def _money_or_none(price: Mapping[str, Any], amount: Any) -> Optional[str]:
+    ok = isinstance(amount, int) and not isinstance(amount, bool)
+    return format_money(amount, price.get("currency") or "") if ok else None
+
+def _check_price(price: Mapping[str, Any], offer_id: Any, launch: Optional[Mapping[str, Any]] = None, verifier=None,
+                 name: Optional[str] = None) -> None:
     status = price.get("approval_status")
+    facts = {"offer": name or offer_id}
     if status == "unknown" or price.get("amount_minor") is None:
         raise Violation(
             V_UNKNOWN_PRICE,
             f"Offer {offer_id!r} price {price.get('price_choice_id')!r} is unknown; "
-            "unknown is never displayed as zero or free.",
+            "unknown is never displayed as zero or free.", facts,
         )
     if not isinstance(price.get("amount_minor"), int) or isinstance(price.get("amount_minor"), bool) or int(price["amount_minor"]) < 0:
         raise Violation(
             V_INVALID_AMOUNT,
             f"Offer {offer_id!r} price {price.get('price_choice_id')!r} amount_minor "
             f"{price.get('amount_minor')!r} is not a non-negative integer minor-unit amount.",
+            {**facts, "amount": str(price.get("amount_minor"))},
         )
     if not price_is_approved(price, launch, verifier):
         raise Violation(
@@ -188,6 +205,7 @@ def _check_price(price: Mapping[str, Any], offer_id: Any, launch: Optional[Mappi
             f"Offer {offer_id!r} price {price.get('price_choice_id')!r} approval_status "
             f"{status!r} is not approved for publication (a recommended price is "
             "covered only by an approved record with a verified plan_approval_ref).",
+            {**facts, "price": _money_or_none(price, price.get("amount_minor"))},
         )
     schedule = price.get("schedule") or []
     if price.get("billing_type") == "installment" and schedule:
@@ -198,20 +216,22 @@ def _check_price(price: Mapping[str, Any], offer_id: Any, launch: Optional[Mappi
                 f"Offer {offer_id!r} installment schedule sums to {total} minor units, "
                 f"not the stated total {price['amount_minor']}; an installment "
                 "amount must never be implied to be the total cost.",
+                {**facts, "count": len(schedule), "schedule_total": _money_or_none(price, total),
+                 "total": _money_or_none(price, price["amount_minor"])},
             )
     if price.get("billing_type") == "recurring" and not schedule and not price.get("recurring_interval"):
         raise Violation(
             V_RECURRING_INTERVAL,
             f"Offer {offer_id!r} price {price.get('price_choice_id')!r} is recurring but "
             "carries neither a schedule nor a recurring_interval; the billing "
-            "interval is material disclosure and must be stated (doc 02 s3).",
+            "interval is material disclosure and must be stated (doc 02 s3).", facts,
         )
     if price.get("billing_type") == "trial" and not price.get("trial_terms") and not price.get("terms_source"):
         raise Violation(
             V_TRIAL_TERMS,
             f"Offer {offer_id!r} price {price.get('price_choice_id')!r} is a trial but "
             "carries no trial_terms or terms_source; trial terms must be surfaced, "
-            "never implied (doc 02 s3).",
+            "never implied (doc 02 s3).", facts,
         )
 
 
@@ -224,15 +244,17 @@ def validate_catalog(launch: Mapping[str, Any], *, production: bool = False, app
         raise Violation(
             V_JOURNEY_MODE,
             f"Journey mode {mode!r} has no selection page; this skill declines it.",
+            {"mode": f'a "{str(mode).replace("_", " ")}"'},
         )
     seen = set()
     for offer in launch.get("offers", []):
         oid = offer.get("offer_id")
         if oid in seen:
-            raise Violation(V_DUPLICATE_OFFER, f"Duplicate offer_id {oid!r}.")
+            raise Violation(V_DUPLICATE_OFFER, f"Duplicate offer_id {oid!r}.", {"offer": offer.get("display_name") or oid})
         seen.add(oid)
         if production and offer.get("test_only"):
-            raise Violation(V_TEST_ONLY_LEAK, f"Test-only offer {oid!r} in a production catalog.")
+            raise Violation(V_TEST_ONLY_LEAK, f"Test-only offer {oid!r} in a production catalog.",
+                            {"offer": offer.get("display_name") or oid})
         if offer.get("slot") != "main":
             continue
         prices = offer.get("prices") or []
@@ -240,10 +262,10 @@ def validate_catalog(launch: Mapping[str, Any], *, production: bool = False, app
             raise Violation(
                 V_UNKNOWN_PRICE,
                 f"Offer {oid!r} has no price choices; a selectable offer without "
-                "an approved price cannot be published.",
+                "an approved price cannot be published.", {"offer": offer.get("display_name") or oid},
             )
         for price in prices:
-            _check_price(price, oid, launch, approval_verifier)
+            _check_price(price, oid, launch, approval_verifier, name=offer.get("display_name"))
 
 
 def validate_assets(launch: Mapping[str, Any]) -> List[Dict[str, Any]]:
@@ -284,6 +306,7 @@ def scan_claims(text: str, *, claim_evidence: Optional[Mapping[str, str]] = None
             raise Violation(
                 V_UNPROVEN_CLAIM,
                 f"Unproven claim {phrase!r} with no claim-specific evidence reference supplied.",
+                {"phrase": f'"{phrase}"'},
             )
 
 
@@ -366,7 +389,8 @@ def build_recommendation(launch: Mapping[str, Any], recommendation: Optional[Map
     offer_id = recommendation.get("offer_id")
     reason = (recommendation.get("reason") or "").strip()
     if offer_id not in {o["offer_id"] for o in _main_offers(launch)}:
-        raise Violation(V_SELECTION_UNKNOWN_OFFER, f"Recommended offer {offer_id!r} is not a main offer.")
+        raise Violation(V_SELECTION_UNKNOWN_OFFER, f"Recommended offer {offer_id!r} is not a main offer.",
+                        {"offer": offer_id})
     if not reason:
         raise Violation(V_RECOMMENDATION_UNAPPROVED, "Recommendation without an explicit reason is not allowed.")
     scan_claims(reason, claim_evidence=recommendation.get("claim_evidence") or {})
@@ -396,16 +420,19 @@ def build_selection(
     catalog validation and still mint a selection for an unapproved price."""
     offer = next((o for o in _main_offers(launch) if o["offer_id"] == offer_id), None)
     if offer is None:
-        raise Violation(V_SELECTION_UNKNOWN_OFFER, f"Selected offer {offer_id!r} is not an approved main offer.")
+        raise Violation(V_SELECTION_UNKNOWN_OFFER, f"Selected offer {offer_id!r} is not an approved main offer.",
+                        {"offer": offer_id})
+    name = offer.get("display_name") or offer_id
     price = next((p for p in offer.get("prices", []) if p["price_choice_id"] == price_choice_id), None)
     if price is None:
-        raise Violation(V_SELECTION_PRICE_DRIFT, f"Price choice {price_choice_id!r} is not on offer {offer_id!r}.")
-    _check_price(price, offer_id, launch, approval_verifier)
+        raise Violation(V_SELECTION_PRICE_DRIFT, f"Price choice {price_choice_id!r} is not on offer {offer_id!r}.",
+                        {"offer": name, "change": "That price choice is not on the package."})
+    _check_price(price, offer_id, launch, approval_verifier, name=name)
     if not _nonblank(offer.get("native_product_id")) or not _nonblank(price.get("native_price_id")):
         raise Violation(
             V_MISSING_NATIVE_MAPPING,
             f"Offer {offer_id!r} / price {price_choice_id!r} has no verified native "
-            "product/price mapping; selection cannot hand off to checkout (A05).",
+            "product/price mapping; selection cannot hand off to checkout (A05).", {"offer": name},
         )
     return {
         "schema_version": SCHEMA_VERSION,
@@ -447,23 +474,31 @@ def validate_binding(selection: Mapping[str, Any], launch: Mapping[str, Any], *,
         raise Violation(V_SELECTION_STALE, "Selection revision is stale; the visitor must confirm current terms.")
     offer = next((o for o in _main_offers(launch) if o["offer_id"] == selection.get("offer_id")), None)
     if offer is None:
-        raise Violation(V_SELECTION_UNKNOWN_OFFER, "Selected offer no longer exists in the approved catalog.")
+        raise Violation(V_SELECTION_UNKNOWN_OFFER, "Selected offer no longer exists in the approved catalog.",
+                        {"offer": selection.get("offer_id")})
+    name = offer.get("display_name") or offer["offer_id"]
     price = next((p for p in offer.get("prices", []) if p["price_choice_id"] == selection.get("price_choice_id")), None)
     if price is None:
-        raise Violation(V_SELECTION_PRICE_DRIFT, "Selected price choice no longer exists on the offer.")
+        raise Violation(V_SELECTION_PRICE_DRIFT, "Selected price choice no longer exists on the offer.",
+                        {"offer": name, "change": "The price that was chosen is no longer on the package."})
     if not price_is_approved(price, launch, approval_verifier):
         raise Violation(
             V_UNAPPROVED_PRICE,
             f"Selected price {selection.get('price_choice_id')!r} is no longer approved "
             f"(status {price.get('approval_status')!r}); it cannot proceed to checkout.",
+            {"offer": name, "price": _money_or_none(price, price.get("amount_minor"))},
         )
     if offer.get("native_product_id") != selection.get("native_product_id") or price.get("native_price_id") != selection.get("native_price_id"):
-        raise Violation(V_SELECTION_PRICE_DRIFT, "Native product/price mapping drifted between selection and checkout.")
+        raise Violation(V_SELECTION_PRICE_DRIFT, "Native product/price mapping drifted between selection and checkout.",
+                        {"offer": name, "change": "Its checkout link points to a different product or price now."})
     if price.get("amount_minor") != selection.get("amount_minor_snapshot") or price.get("currency") != selection.get("currency"):
+        old = _money_or_none({"currency": selection.get("currency")}, selection.get("amount_minor_snapshot"))
+        new = _money_or_none(price, price.get("amount_minor"))
         raise Violation(
             V_SELECTION_PRICE_DRIFT,
             "Material terms changed since selection; display the new terms for "
             "confirmation, never charge a changed amount invisibly.",
+            {"offer": name, "change": f"It was {old}, now it is {new}." if old and new else None},
         )
 
 
