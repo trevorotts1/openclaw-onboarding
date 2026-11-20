@@ -812,15 +812,23 @@ def summary_lines(report: Dict[str, Any]) -> List[str]:
         lines.append("Every choice came from you. Nothing is waiting for confirmation.")
     # F22 item 8: a real blocker is stated in plain words with the practical next step,
     # and the work that does not depend on it keeps going. It is never hidden.
+    # Owner order 2026-11-20: the client reads the EXPLANATION's what_happened and fix
+    # (finding 3: the raw operator sentence and next_step are less specific), then why
+    # and the numbered choices. Raw blocker text stays in the operator record only.
     linked = report.get("linked_delivery") or {}
     explanations = linked.get("client_explanations") or []
-    for i, (message, step) in enumerate(zip(linked.get("client_blockers") or [],
-                                            linked.get("next_steps") or [])):
-        lines.append(f"Still to sort out: {message} Next step: {step}")
-        # Owner order 2026-11-20: a blocker never ends without the client's choices.
+    blockers = linked.get("client_blockers") or []
+    steps = linked.get("next_steps") or []
+    for i in range(max(len(blockers), len(explanations))):
         if i < len(explanations):
+            lines.append(f"Still to sort out: {explanations[i]['what_happened']}")
+            lines.append(f"What will fix it: {explanations[i]['fix']}")
             lines += [f"  Why: {explanations[i]['why']}", "  What I can do right now:"]
             lines += [f"    {n}. {c}" for n, c in enumerate(explanations[i]["choices"], 1)]
+        else:
+            message = blockers[i] if i < len(blockers) else ""
+            step = steps[i] if i < len(steps) else ""
+            lines.append(f"Still to sort out: {message} Next step: {step}")
     # Issue 80: these lines are DATA-DRIVEN. What a page is called depends on what exists on disk, not on a
     # fixed sentence: the production manifest (report["production"]: role -> "built" | "not_built") and the
     # install read-back (report["install_readbacks"]), both added by with_production(). A page with no

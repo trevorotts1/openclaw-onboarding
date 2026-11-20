@@ -32,6 +32,21 @@ PARTS = ("what_happened", "why", "fix", "choices")
 _CODE = re.compile(r"\bAF-[A-Z0-9]+(?:-[A-Z0-9]+)*\b")
 _PATH = re.compile(r"\S*(?:/|\\)\S*|\S+\.(?:py|json|md|sh|html|txt|pdf|png)\b")
 _TRACE = re.compile(r"Traceback \(most recent call last\):.*", re.S)
+# A bare identifier that looks like a secret value, never a plain word: mixed letters and
+# digits (abc123, tok_9f2), the shape real tokens and digests take. Pure words ("widget",
+# "broke", "retry") are kept; these are not.
+_SECRET_TOKEN = re.compile(r"\b(?=[A-Za-z]*\d)[A-Za-z0-9_-]{4,}\b")
+# A whole identifier built around a secret word (secret_setting, customer_token): the value
+# beside it is dropped with it, so neither half reaches the client.
+_SECRET_WORD = re.compile(
+    r"(?i)[A-Za-z0-9_]*(?:secret|token|password|passwd|credential|private|internal|customer)"
+    r"[A-Za-z0-9_]*")
+# Python exception class names: the client never needs to know the error's class.
+_ERROR_CLASS = re.compile(r"(?i)\b(?:KeyError|ValueError|TypeError|AttributeError|IndexError|"
+                          r"RuntimeError|OSError|IOError|FileNotFoundError|PermissionError)\b"
+                          r"\s*:?\s*['\"]?")
+# Leftover filler an exception leak leaves behind once its identifiers are gone.
+_FILLER = re.compile(r"(?i)\b(?:keys?|settings?|values?|errors?)\b")
 _NOTHING_SPENT = re.compile(r"nothing (?:has been|was) spent", re.I)
 
 _FALLBACK = {
@@ -59,10 +74,31 @@ def _row(code: str) -> Optional[Dict[str, Any]]:
     return codes.get(code)
 
 def _plain(text: Any) -> str:
-    """Stop text with every code, file path and stack trace taken out."""
-    text = _TRACE.sub("", str(text or ""))
+    """Stop text with every code, file path and stack trace taken out, scrubbed for the client.
+
+    Unknown exception detail passes through here on its way to the client message. Secret-shaped
+    tokens, secret-word identifiers and their KEY=value pairs are removed before the plain words
+    are used, so a leak like ``KeyError: 'secret_setting'`` can never reach the client. A scrubbed
+    line is kept only when real words remain; a line that was all identifiers becomes "" and the
+    caller falls back to the generic parts.
+    """
+    text = str(text or "")
+    # A KEY=value pair dies whole: dropping only the value would leave "customer_token is" behind.
+    text = re.sub(r"(?i)\b[A-Za-z0-9_]*(?:secret|token|password|passwd|credential|private|internal|customer)[A-Za-z0-9_]*\s*[=:]\s*[^\s,;]+", " ", text)
+    text = _SECRET_WORD.sub(" ", text)
+    text = _TRACE.sub("", text)
     text = _PATH.sub("", _CODE.sub("", text))
+    text = _SECRET_TOKEN.sub(" ", text)
+    text = _ERROR_CLASS.sub(" ", text)
+    text = re.sub(r"['\"]", " ", text)
+    text = _FILLER.sub(" ", text)
     text = re.sub(r"\s+([,.;:])", r"\1", re.sub(r"\s{2,}", " ", text)).strip(" :;,-")
+    # Residue of a scrubbed code/path: "the widget at broke ()" -> "The widget broke".
+    text = re.sub(r"\(\s*\)", "", text)
+    text = re.sub(r"(?i)\b(at|in|on|from)\s+(broke|failed|missing|stopped)\b", r"\2", text)
+    text = re.sub(r"\s{2,}", " ", text).strip(" :;,-")
+    if not re.search(r"[a-zA-Z]{3,}", text):
+        return ""
     return text[:1].upper() + text[1:] if text else ""
 
 def _money(minor: Any, currency: Optional[str]) -> str:

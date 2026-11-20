@@ -174,6 +174,54 @@ class UnknownStopsStillGetFourParts(unittest.TestCase):
             "detail": 'Traceback (most recent call last):\n  File "x.py", line 3, in <module>\nKeyError: 1'})
         clean(self, out["message"], "trace")
 
+    def test_an_exception_with_a_secret_value_is_scrubbed_to_generic_parts(self):
+        """Round-1 finding 2: 'internal customer token is abc123; KeyError: secret_setting'
+        must not reach the client — no token, no identifier, no error class."""
+        from launcher_core import launch_bridge  # noqa: E402  (local: summary uses explanations)
+        out = stop_explain.explain_stop("AF-NEVER-SEEN", envelope={
+            "detail": "internal customer token is abc123; KeyError: secret_setting"})
+        message = out["message"]
+        lowered = message.lower()
+        for leaked in ("abc123", "secret_setting", "keyerror", "internal",
+                       "customer token", "token is"):
+            self.assertNotIn(leaked, lowered, f"secret/exception text reaches the client: {leaked!r}")
+        clean(self, message, "secret-scrub")
+        self.assertEqual(out["what_happened"], stop_explain._FALLBACK["what_happened"])
+
+    def test_every_cli_stop_forwards_the_client_four_parts(self):
+        """Round-1 finding 1: the flagged stops (brand, revise-image, shared intake,
+        dependencies, sop-ack) print a CLIENT MESSAGE, never a bare FAIL."""
+        import inspect  # noqa: E402
+        from launcher_core import cli as cli_module  # noqa: E402
+        source = inspect.getsource(cli_module)
+        for fn in ("cmd_brand", "cmd_revise_image", "cmd_dependencies", "cmd_sop_ack",
+                   "cmd_dispatch", "cmd_questions"):
+            body = source.split(f"def {fn}")[1].split("\ndef ")[0]
+            self.assertIn("_tell_stop", body, f"{fn} ends without a four-part client message")
+
+    def test_summary_states_the_explanation_not_the_raw_blocker(self):
+        """Round-1 finding 3: summary_lines prints the explanation's what_happened and fix,
+        with why and the numbered choices — never the raw operator sentence alone."""
+        from launcher_core import launch_bridge  # noqa: E402
+        rep = {"pages": ["landing"], "page_labels": ["landing"],
+               "lane_plan": {"phase_1_alone": [], "independent_pages": 1},
+               "parallel": "parallel", "paid_calls_allowed": False, "to_confirm": [],
+               "linked_delivery": {
+                   "client_blockers": ["EXTERNAL xyz url 'http://x' is not an https address"],
+                   "next_steps": ["Record the https address."],
+                   "client_explanations": [stop_explain.explain_stop(
+                       "AF-LAUNCH-LINKED-URL",
+                       envelope={"detail": "whatever the operator logged",
+                                 "client_message": "The destination 'members' needs a real https address.",
+                                 "next_step": "Record the https address buyers are actually sent to."})]}}
+        lines = launch_bridge.summary_lines(rep)
+        joined = "\n".join(lines)
+        explanation = rep["linked_delivery"]["client_explanations"][0]
+        self.assertIn(explanation["what_happened"], joined)
+        self.assertIn(explanation["fix"], joined)
+        self.assertIn("What I can do right now:", joined)
+        self.assertNotIn("EXTERNAL xyz", joined)
+
 class TheStopPointsCarryTheExplanation(unittest.TestCase):
     def test_a_raised_refusal_becomes_a_clean_client_message(self):
         refusal = cli.CliError("AF-LAUNCH-ASSEMBLE-ARGS", "give --run-dir (the dispatch run folder) or --pieces")
