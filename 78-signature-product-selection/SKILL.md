@@ -64,8 +64,11 @@ You do not write these words from scratch. `scripts/explain_stop.py` builds them
 already carries `error.client_explanation`, a declined plan carries `client_explanation`, every
 expired or reconfirm session result carries `client_explanation`, and every `Violation` has
 `.client_explanation` with its real numbers. For a script that prints text instead of an envelope
-(the picture step), pipe its output through `explain_stop.py --from-output -`. An unknown stop
-still gets all four parts, built from the envelope's `detail` / `message` / `next_action`.
+(the picture step), pipe its output through `explain_stop.py --from-output -`: the picture step
+prints its copy-gate stop as one JSON line carrying the stop's facts, so the message keeps the real
+names and numbers. An unknown stop still gets all four parts, in fixed plain words; its raw text
+(an exception, a path) stays in the logs and never reaches the message. Buyer stops (a timed-out
+or changed choice) always offer one choice where the page does the work for the buyer.
 
 Example (an installment plan whose payments do not add up):
 

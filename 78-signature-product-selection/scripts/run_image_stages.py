@@ -29,7 +29,9 @@ Before anything is drawn the page copy is gated (validate_selection_content.vali
 manuscript the plan produces and on the authored copy.json, and validate_catalog with production on when
 the launch record or the page request says test_only is false). A claim such as "most popular" or "only 50
 left", a price that is not the approved price, a hidden exclusion, an empty Compare section or a test_only
-offer in a live run is refused here (exit 2, nothing drawn, so the chain writes no page result).
+offer in a live run is refused here (exit 2, nothing drawn, so the chain writes no page result). That
+refusal first prints one JSON stop line, {"ok": false, "error": {"code", "message", "facts"}}, so
+explain_stop.py --from-output tells the client the stop with its real names and numbers.
 
 Operator values come from one inputs file (--inputs), so dispatch binds a single path:
   {"route_graph", "brand_file", "brand_owner", "image_cap", "design_style" (A|B|C),
@@ -134,6 +136,9 @@ def main(argv=None):
             validate_manuscript(build_manuscript(plan, authored)[0], launch,
                                 production=production_run(launch, request), authored=authored)
         except Violation as exc:
+            # one stop line with the real names and numbers, so explain_stop.py --from-output can tell the client
+            print(json.dumps({"ok": False, "error": {"code": exc.code, "message": exc.message, "facts": exc.facts}},
+                             default=str), flush=True)
             raise SystemExit(f"REFUSED: [{exc.code}] {exc.message}")
         schema = json.loads((a.skill71_root / "references" / "launch.schema.json").read_text(encoding="utf-8"))
         view = conform(launch, schema)

@@ -5,7 +5,12 @@
 - Where the client sees it: the runtime's error answers carry `error.client_explanation` beside the code and message; a plan that declines (only one package) carries `client_explanation`; a buyer's timed-out or changed choice carries it in the buyer's own words; every catalog stop raised in code carries its real numbers. Nothing was removed.
 - Rule for later: `SKILL.md` has a new binding section, "When something stops the work", and `tests/test_explain_stop.py` fails if a new stop code ships without its plain explanation.
 - Also: `runtime-manifest.json` had fallen one version behind `skill-version.txt` (0.2.9 against 0.2.10); it now moves with it.
-- Skill 78 0.2.10 -> 0.2.11. Migration: none. Risk: LOW (words and one extra field; no stop was loosened).
+- A stop the table does not know yet never shows its raw text: an exception message or a file path stays in the logs, and the client gets fixed plain words with the same four parts.
+- The picture step (`run_image_stages.py`) prints its copy-gate stop as one JSON line carrying the stop's real names and numbers before its log line, so `explain_stop.py --from-output -` tells the client, for example, "TEST ONLY Elite is split into 2 payments that add up to $496.00, but its price says $497.00."
+- A buyer whose choice timed out or whose package terms changed is always offered one choice where the page does the work for them ("We take you back to the packages now", "We show you the new terms next to the old ones").
+- Skill 83 pins `run_image_stages.py` by sha256; that one pin is re-stamped (`cli dependencies --stamp-interfaces`, the `emit_page_result.py` pin left as it was) and Skill 83 moves 0.2.39 -> 0.2.40 with it. The launch-path pin (`49-signature-funnel/scripts/SF-PROVER-PIN.sha256`) covers `83-black-friday-launcher/launcher_core/`, so it is re-minted by the pin workflow, never by hand.
+- Two Skill 78 seam tests (`test_seam_plan_approval_78_79.py`, `test_selection_seam_time_and_schedule.py`) need jsonschema through Skill 79; on an interpreter without it they now report a named skip (`SKIP-NAMED: jsonschema package not installed`) instead of an import error. CI installs jsonschema and runs them in full.
+- Skill 78 0.2.10 -> 0.2.11, Skill 83 0.2.39 -> 0.2.40. Migration: none. Risk: LOW (words, one extra printed line and one extra field; no stop was loosened).
 
 ## [Unreleased]  -  2026-11-18  -  Tenant readiness: explicit User-Agent, Cloudflare edge 403 probed on loopback, final installer call reads the client's own .env.local
 

@@ -1,10 +1,11 @@
 """Every Skill 78 stop explains itself in plain words (owner order, 2026-11-20).
 
 Offline, no spend. Proves: every stop the client or a buyer can see has a table entry with all four
-parts (what happened, why the rule exists, the fix, 2 to 4 choices, one the agent doing the work);
-no rendered message carries a reason code, file path or traceback; an unknown stop still gets four
-parts; placeholders fill with the real names and numbers; and the stops really reach the client with
-their explanation (runtime envelope, session states, a Violation raised by the catalog check).
+parts (what happened, why the rule exists, the fix, 2 to 4 choices, one the agent or, for a buyer,
+the page doing the work); no rendered message carries a reason code, file path, traceback or raw
+exception text; an unknown stop still gets four parts in fixed plain words; placeholders fill with the
+real names and numbers; and the stops really reach the client with their explanation (runtime envelope,
+session states, a Violation raised by the catalog check, the picture step's printed stop line).
 
 STOP INVENTORY (every place this skill stops, refuses, holds or waits; the table entry for each):
   plan / invocation (selection_core.check_invocation, validate_catalog, build_selection_plan):
@@ -39,12 +40,13 @@ import re
 import sys
 import unittest
 from pathlib import Path
+from unittest import mock
 
 SKILL = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(SKILL / "scripts"))
 
 from build_selection_plan import SELF_TEST_LAUNCH, build_plan  # noqa: E402
-from explain_stop import explain_stop, load_table  # noqa: E402
+from explain_stop import FALLBACK, explain_stop, from_output, load_table  # noqa: E402
 from selection_core import Violation, validate_catalog  # noqa: E402
 from selection_runtime import Runtime  # noqa: E402
 from selection_session import SessionStore  # noqa: E402
@@ -54,8 +56,10 @@ TABLE = load_table()
 ENTRIES = TABLE["entries"]
 LEAKS = [re.compile(r"\bS\d{2}-[A-Z]"), re.compile(r"\bAF-[A-Z]"), re.compile(r"Traceback|File \""),
          re.compile(r"\w+\.(py|json|sh|md)\b"), re.compile(r"(^|\s)/\w+/")]
-# A choice where the agent does the work starts "I " (the agent speaking); buyer-facing entries are the buyer's own moves.
+# A choice where the agent does the work starts "I " (the agent speaking to the client); to a buyer it is the
+# page doing the work, "We " (the business speaking). Every entry has one.
 AGENT_CHOICE = re.compile(r"^I ")
+DONE_FOR_BUYER = re.compile(r"^We ")
 
 def leaks(text):
     return [p.pattern for p in LEAKS if p.search(text)]
@@ -72,8 +76,8 @@ class TableTests(unittest.TestCase):
             for part in ("what_happened", "why", "fix"):
                 self.assertTrue(str(e.get(part, "")).strip(), f"{code} has no {part}")
             self.assertTrue(2 <= len(e["choices"]) <= 4, f"{code} has {len(e['choices'])} choices")
-            if e.get("audience") != "buyer":
-                self.assertTrue(any(AGENT_CHOICE.match(c) for c in e["choices"]), f"{code} has no do-it-for-you choice")
+            done_for_you = DONE_FOR_BUYER if e.get("audience") == "buyer" else AGENT_CHOICE
+            self.assertTrue(any(done_for_you.match(c) for c in e["choices"]), f"{code} has no do-it-for-you choice")
 
     def test_every_stop_in_the_inventory_has_an_entry(self):
         self.assertGreaterEqual(len(INVENTORY), 46)
@@ -121,13 +125,26 @@ class FillTests(unittest.TestCase):
         self.assertEqual(leaks(out["message"]), [])
 
 class FallbackTests(unittest.TestCase):
-    def test_unknown_code_still_gets_four_parts_from_the_envelope(self):
-        out = explain_stop("S99-NEVER-SEEN", envelope={"detail": "The brand file could not be read.",
-                                                        "next_action": "Upload the brand file again."})
-        self.assertEqual(out["what_happened"], "The brand file could not be read.")
-        self.assertEqual(out["fix"], "Upload the brand file again.")
-        self.assertTrue(out["why"] and 2 <= len(out["choices"]) <= 4)
+    def test_unknown_code_gets_four_fixed_plain_parts_and_never_its_raw_text(self):
+        out = explain_stop("S99-NEVER-SEEN", envelope={"detail": "KeyError: 'secret'", "next_action": "rm -rf x"})
+        self.assertEqual((out["what_happened"], out["why"], out["fix"]),
+                         (FALLBACK["what_happened"], FALLBACK["why"], FALLBACK["fix"]))
+        self.assertNotIn("secret", out["message"])
+        self.assertNotIn("KeyError", out["message"])
+        self.assertNotIn("rm -rf", out["message"])
+        self.assertTrue(2 <= len(out["choices"]) <= 4 and any(AGENT_CHOICE.match(c) for c in out["choices"]))
         self.assertFalse(out["spent_nothing"])
+
+    def test_a_crash_inside_the_runtime_never_reaches_the_client_as_exception_text(self):
+        import selection_runtime
+        with mock.patch.object(selection_runtime, "build_plan", side_effect=KeyError("secret")):
+            out = Runtime().handle({"action": "plan", "launch": SELF_TEST_LAUNCH})
+        self.assertFalse(out["ok"])
+        self.assertIn("secret", out["error"]["message"])  # the exception text stays here, for the logs
+        shown = out["error"]["client_explanation"]["message"]
+        self.assertEqual(leaks(shown), [], shown)
+        self.assertNotIn("secret", shown)
+        self.assertNotIn("KeyError", shown)
 
     def test_unknown_with_nothing_is_never_empty_and_never_a_raw_code(self):
         for env in (None, {}, {"error": {"code": "S78-BRAND-NEW", "message": "S78-BRAND-NEW"}},
@@ -135,6 +152,14 @@ class FallbackTests(unittest.TestCase):
             out = explain_stop(envelope=env)
             self.assertTrue(out["what_happened"] and out["why"] and out["fix"] and out["choices"], env)
             self.assertEqual(leaks(out["message"]), [], out["message"])
+
+    def test_a_piped_stop_line_keeps_its_real_numbers(self):
+        line = json.dumps({"ok": False, "error": {"code": "S78-INSTALLMENT-TOTAL-MISMATCH", "message": "log",
+                           "facts": {"offer": "Elite", "count": 2, "schedule_total": "$400.00", "total": "$497.00"}}})
+        out = explain_stop(envelope=from_output("RUN x y\n" + line + "\nREFUSED: [S78-INSTALLMENT-TOTAL-MISMATCH] log\n"))
+        self.assertEqual(out["what_happened"],
+                         "Elite is split into 2 payments that add up to $400.00, but its price says $497.00.")
+        self.assertEqual(from_output("plain text, no envelope"), "plain text, no envelope")
 
     def test_image_step_refusal_text_is_matched_to_its_entry(self):
         out = explain_stop(envelope="REFUSED: provider 'kie' is a paid route and needs --allow-paid on this command line")
@@ -173,6 +198,7 @@ class WiringTests(unittest.TestCase):
         gone = store.resume(ref, tenant_id="TEST-TENANT", launch_id="TEST-LAUNCH", launch=SELF_TEST_LAUNCH, now=99)
         self.assertEqual(gone["state"], "expired")
         self.assertIn("nothing was picked for you", gone["client_explanation"]["message"])
+        self.assertIn("1. We take you back to the packages now", gone["client_explanation"]["message"])
         changed = json.loads(json.dumps(SELF_TEST_LAUNCH))
         changed["offers"][1]["prices"][0]["amount_minor"] = 24700
         ref = store.create(sel, now=0)
@@ -181,6 +207,35 @@ class WiringTests(unittest.TestCase):
         self.assertEqual(out["reason_code"], "S78-SELECTION-PRICE-DRIFT")  # kept for logs
         self.assertIn("It was $197.00, now it is $247.00.", out["client_explanation"]["what_happened"])
         self.assertIn("You have not been charged.", out["client_explanation"]["message"])
+
+    def test_the_picture_step_stop_reaches_the_client_with_its_real_numbers(self):
+        """run_image_stages.py refuses the copy gate; its printed output, piped through
+        explain_stop.py --from-output, still says how many payments and what they add up to."""
+        import subprocess
+        import tempfile
+        golden = SKILL / "fixtures" / "golden-three-option"
+        launch = json.loads((golden / "launch.json").read_text())
+        price = next(o for o in launch["offers"] if o["offer_id"] == "MAIN-ELITE")["prices"][0]
+        price["schedule"][1]["amount_minor"] = 24750  # 24850 + 24750 = $496.00, the price says $497.00
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp = Path(tmp)
+            (tmp / "launch.json").write_text(json.dumps(launch))
+            (tmp / "request.json").write_text(json.dumps({"test_only": True}))
+            (tmp / "inputs.json").write_text(json.dumps(
+                {"route_graph": "g", "brand_file": "b", "brand_owner": "o", "image_cap": "1"}))
+            run = subprocess.run([sys.executable, str(SKILL / "scripts" / "run_image_stages.py"),
+                                  "--plan", str(golden / "plan.json"), "--request", str(tmp / "request.json"),
+                                  "--run-dir", str(tmp / "run"), "--launch-record", str(tmp / "launch.json"),
+                                  "--inputs", str(tmp / "inputs.json")], capture_output=True, text=True)
+            self.assertEqual(run.returncode, 2, run.stdout + run.stderr)
+            self.assertIn("REFUSED: [S78-INSTALLMENT-TOTAL-MISMATCH]", run.stdout)  # the log line is kept
+            self.assertFalse((tmp / "run").exists())  # nothing drawn
+        told = subprocess.run([sys.executable, str(SKILL / "scripts" / "explain_stop.py"), "--from-output", "-"],
+                              input=run.stdout, capture_output=True, text=True)
+        self.assertEqual(told.returncode, 0, told.stderr)
+        self.assertIn("TEST ONLY Elite is split into 2 payments that add up to $496.00, but its price says $497.00.",
+                      told.stdout)
+        self.assertEqual(leaks(told.stdout), [], told.stdout)
 
     def test_plan_built_normally_has_no_explanation_noise(self):
         out = Runtime().handle({"action": "plan", "launch": SELF_TEST_LAUNCH})

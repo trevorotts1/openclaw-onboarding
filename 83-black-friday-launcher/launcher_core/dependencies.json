@@ -34,7 +34,7 @@
       "interface_sha256": {
         "scripts/build_selection_plan.py": "f15394a971606cd3355d0cd11a498a291309f3c19ccaafd02d1a95e19f150d98",
         "scripts/emit_page_result.py": "bd32cfa76e452d3c7586139c1f1a3385dc6404b8a4076cf87a57abe923e080f9",
-        "scripts/run_image_stages.py": "24c8f3a52eee3ff8861201e7283cc39121c588da3a71f5b9464017b94a70b84a"
+        "scripts/run_image_stages.py": "e52540bf019e429652261ab68f9cde1cfcf510e6435c36e31671b3418cdb6993"
       },
       "required": true,
       "why": "product_selection page producer"

@@ -420,8 +420,9 @@
       "why": "We never choose a package for you. A choice is only saved for a short time to keep your order safe.",
       "fix": "Look at the packages and choose again.",
       "choices": [
-        "Go back to the packages and choose again.",
-        "Ask us for help if you are not sure which package to pick."
+        "We take you back to the packages now, so you can choose again.",
+        "We help you compare the packages before you choose.",
+        "Go back to the packages and choose on your own."
       ],
       "spends_nothing": true,
       "audience": "buyer"
@@ -431,6 +432,7 @@
       "why": "You will never be charged a changed amount without seeing it and saying yes first.",
       "fix": "Look at the new terms and confirm them, or pick a different package.",
       "choices": [
+        "We show you the new terms next to the old ones, and you say yes before anything goes on.",
         "Confirm the new terms and keep going.",
         "Pick a different package."
       ],

@@ -11,8 +11,11 @@ explain_stop(reason_code, facts=None, envelope=None) -> {"what_happened", "why",
 "message", "spent_nothing", "audience"}. spent_nothing is true only for a stop whose check spends no money
 itself; the message then says so, and an unknown stop never claims it. The code is taken from reason_code, else the envelope's
 error.code / reason_code / code, else its session state (expired, reconfirm_required), else an
-S78 code or a known refusal phrase inside its text (the image step prints text, not envelopes).
-An unknown stop still gets four parts, built from the envelope's detail / message / next_action.
+S78 code or a known refusal phrase inside its text. The facts are the caller's, over the envelope's
+error.facts (the picture step prints its stop as one envelope line carrying them, so --from-output
+keeps the real names and numbers).
+An unknown stop still gets four parts, in fixed plain words: its raw text (an exception, a path, a
+secret) is for the logs and never reaches the message.
 
 Usage:
   explain_stop.py --code S78-UNKNOWN-PRICE [--facts '{"offer": "Pro"}']
@@ -31,7 +34,7 @@ CODE_RE = re.compile(r"\b(?:S\d{2}|AF)-[A-Z0-9]+(?:-[A-Z0-9]+)*\b")
 PATH_RE = re.compile(r"(?:[A-Za-z]:\\|~/|\.{0,2}/)?\b[\w.-]+(?:/[\w.-]+)+")
 STATE_CODES = {"expired": "S78-SESSION-EXPIRED", "reconfirm_required": "S78-SESSION-RECONFIRM"}
 FALLBACK = {
-    "what_happened": "The work stopped before it finished.",
+    "what_happened": "The work stopped before it finished, on a check that does not have plain words yet.",
     "why": "This skill stops instead of guessing when something does not look right, "
            "so nothing wrong reaches your page or your buyers.",
     "fix": "Find out what stopped it, fix that one thing, and try again.",
@@ -53,17 +56,35 @@ def clean(text):
     return re.sub(r"\s{2,}", " ", out).strip(" :;")
 
 def _envelope_parts(envelope):
-    """(code, text, next_action) from any envelope shape this skill emits, or from raw output text."""
+    """(code, text, facts) from any envelope shape this skill emits, or from raw output text.
+    text only finds the code or a known refusal phrase; it is never shown to the client."""
     if envelope is None:
-        return None, "", ""
+        return None, "", {}
     if isinstance(envelope, str):
-        return None, envelope, ""
+        return None, envelope, {}
     err = envelope.get("error") if isinstance(envelope.get("error"), dict) else {}
     code = err.get("code") or envelope.get("reason_code") or envelope.get("code")
     if not code and envelope.get("state") in STATE_CODES:
         code = STATE_CODES[envelope["state"]]
     text = err.get("message") or envelope.get("detail") or envelope.get("message") or ""
-    return code, str(text), str(envelope.get("next_action") or "")
+    facts = err.get("facts") if isinstance(err.get("facts"), dict) else {}
+    return code, str(text), facts
+
+def from_output(text):
+    """The stop in a script's printed output: the whole text as JSON, else its last line that is a
+    JSON envelope with an error (the picture step's stop line), else the text itself."""
+    try:
+        return json.loads(text)
+    except ValueError:
+        pass
+    for line in reversed(text.splitlines()):
+        try:
+            obj = json.loads(line)
+        except ValueError:
+            continue
+        if isinstance(obj, dict) and isinstance(obj.get("error"), dict):
+            return obj
+    return text
 
 def _resolve(code, text, entries):
     if code in entries:
@@ -95,17 +116,14 @@ def render(what, why, fix, choices, spent_nothing=False, audience="client"):
 def explain_stop(reason_code=None, facts=None, envelope=None, *, table=None):
     table = table or load_table()
     entries = table["entries"]
-    env_code, text, next_action = _envelope_parts(envelope)
+    env_code, text, env_facts = _envelope_parts(envelope)
     code = _resolve(reason_code or env_code, text, entries)
     if code is None:
-        what = clean(text) or FALLBACK["what_happened"]
-        fix = clean(next_action) or FALLBACK["fix"]
-        parts = {"what_happened": what, "why": FALLBACK["why"], "fix": fix, "choices": list(FALLBACK["choices"]),
-                 "spent_nothing": False, "audience": "client"}
+        parts = {**FALLBACK, "choices": list(FALLBACK["choices"]), "spent_nothing": False, "audience": "client"}
     else:
         entry = entries[code]
         values = {**table.get("defaults", {}), **entry.get("defaults", {}),
-                  **{k: clean(v) for k, v in (facts or {}).items() if v is not None and clean(v)}}
+                  **{k: clean(v) for k, v in {**env_facts, **(facts or {})}.items() if v is not None and clean(v)}}
         parts = {"what_happened": _fill(entry["what_happened"], values), "why": _fill(entry["why"], values),
                  "fix": _fill(entry["fix"], values), "choices": [_fill(c, values) for c in entry["choices"]],
                  "spent_nothing": bool(entry.get("spends_nothing")), "audience": entry.get("audience", "client")}
@@ -122,10 +140,15 @@ def self_test():
     assert "price=" in explain_stop(envelope=env)["what_happened"]
     assert "waiting for you to approve" in explain_stop(
         envelope="FAIL: design board: no client approval recorded for this page's board")["what_happened"]
-    unknown = explain_stop("S99-NOT-A-CODE", envelope={"detail": "S78-X broke in /tmp/x/y.py", "next_action": "retry"})
-    assert unknown["what_happened"] == "broke in a file" and unknown["fix"] == "retry", unknown
+    unknown = explain_stop("S99-NOT-A-CODE", envelope={"detail": "KeyError: 'secret' in /tmp/x/y.py"})
+    assert unknown["what_happened"] == FALLBACK["what_happened"] and "secret" not in unknown["message"], unknown
     assert explain_stop()["what_happened"] == FALLBACK["what_happened"]
-    print("explain_stop --self-test: PASS (table entry with real numbers, envelope code, refusal text match, unknown-code fallback)")
+    line = json.dumps({"ok": False, "error": {"code": "S78-INSTALLMENT-TOTAL-MISMATCH", "message": "log text",
+                       "facts": {"offer": "Pro", "count": 2, "schedule_total": "$180.00", "total": "$197.00"}}})
+    piped = explain_stop(envelope=from_output("RUN a b\n" + line + "\nREFUSED: [S78-INSTALLMENT-TOTAL-MISMATCH] log text"))
+    assert "2 payments that add up to $180.00" in piped["what_happened"], piped
+    print("explain_stop --self-test: PASS (table entry with real numbers, envelope code, refusal text match, "
+          "fixed-words unknown fallback, piped stop line keeps its facts)")
     return 0
 
 def main(argv):
@@ -138,11 +161,7 @@ def main(argv):
     if "--from-output" in argv:
         src = opt("--from-output")
         text = sys.stdin.read() if src in (None, "-") else Path(src).read_text(encoding="utf-8")
-        try:
-            envelope = json.loads(text)
-        except ValueError:
-            envelope = text
-        print(explain_stop(envelope=envelope)["message"])
+        print(explain_stop(envelope=from_output(text))["message"])
         return 0
     if "--code" in argv:
         print(explain_stop(opt("--code"), json.loads(opt("--facts") or "{}"))["message"])
