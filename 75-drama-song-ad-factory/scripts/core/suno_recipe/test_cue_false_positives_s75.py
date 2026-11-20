@@ -99,10 +99,13 @@ def test_negated_call_asks_for_nothing():
         return SA.check_payload_closing("[CTA (spoken)]\n" + line, **kw)["outcome"]
     for line in ("Do not take the quiz.", "Don't take the quiz.",
                  "Do not ever take the quiz.", "Never book a call.",
+                 "Do not, take the quiz.", "You cannot book.",
                  "Don't wait\nto never book"):
         assert closing(line) == "rejected", line
     for line in ("Don't wait. Book now.", "Don't wait\nBook now",
-                 "No need to wait, book now.", "Why not book today?"):
+                 "No need to wait, book now.", "Why not book today?",
+                 "No more waiting book now.", "Don't wait, book now.",
+                 "Do not book, call now."):
         assert closing(line) == "ok", line
     # the approved action itself must be asked for, not refused
     assert closing("Do not call. Book now.", commercial_action="call") == "rejected"

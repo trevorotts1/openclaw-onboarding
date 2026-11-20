@@ -715,12 +715,17 @@ _CURE_RE = re.compile(r"\b(miraculous|instantly (?:cures?|fixes?|heals?)|"
                       r"(?:guaranteed|always) works|fixes? (?:you|it all))\b", re.I)
 _COMMERCIAL_RE = re.compile(r"\b(%s)\b" % "|".join(re.escape(a) for a in COMMERCIAL_ACTIONS),
                             re.I)
-#: A negation earlier in the action's own clause ("Do not take the quiz",
-#: "Never book a call", "don't ever book"): that clause asks for nothing.
-#: A clause ends at . ! ? ; : , a dash or a line end, so "Don't wait. Book
-#: now." still asks, and so does "Why not book today?".
-_CLAUSE_START_RE = re.compile(r"[^.!?;:,\u2014\n]*\Z")
-_NEGATED_RE = re.compile(r"(?<!why )\b(?:not|never|no)\b|n't\b", re.I)
+#: A negation directly in front of the action refuses it: "Do not take the
+#: quiz", "Do not, take the quiz", "Never book a call", "don't ever book".
+#: Only "not", "cannot", "never" or "n't" (then optional commas and "ever")
+#: right before the action count, so "No more waiting book now.", "Don't
+#: wait. Book now." and "Why not book today?" still ask. A line end breaks it.
+#: A refused action also refuses the actions after it up to the next
+#: . ! ? ; : , dash or line end ("Never book a call." asks for no call),
+#: while "Do not book, call now." still asks for the call.
+_NEGATED_BEFORE_RE = re.compile(r"(?:(?<!why )\b(?:can)?not|\bnever|n['\u2019]t)"
+                                r"[ \t,]*(?:\bever\b[ \t,]*)*\Z", re.I)
+_CLAUSE_END_RE = re.compile(r"[.!?;:,\u2014\n]|\s-\s")
 #: A declared [Name (sung|spoken|rap): cue] tag: only Name is the section.
 _DECLARED_TAG_RE = re.compile(r"^(.*?)\s*\((?:sung|spoken|rap)\)", re.I)
 
@@ -728,11 +733,13 @@ _DECLARED_TAG_RE = re.compile(r"^(.*?)\s*\((?:sung|spoken|rap)\)", re.I)
 def _asks(text, action=None):
     """The first commercial action in ``text`` that is not negated (only
     ``action`` when given), or None."""
+    refused_end = None              # end of the last refused action
     for m in _COMMERCIAL_RE.finditer(text):
-        if action is not None and m.group(1).lower() != action.lower():
-            continue
-        clause = _CLAUSE_START_RE.search(text[:m.start()]).group(0)
-        if not _NEGATED_RE.search(clause):
+        refused = bool(_NEGATED_BEFORE_RE.search(text[:m.start()])) or (
+            refused_end is not None
+            and not _CLAUSE_END_RE.search(text, refused_end, m.start()))
+        refused_end = m.end() if refused else None
+        if not refused and (action is None or m.group(1).lower() == action.lower()):
             return m
     return None
 #: a block tagged as the closing call.
