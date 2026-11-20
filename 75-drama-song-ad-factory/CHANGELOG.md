@@ -4,6 +4,15 @@ All notable changes to this skill are documented here. The version of
 record is `skill-version.txt` (kept in agreement with the `SKILL.md`
 frontmatter `version:` field).
 
+## v2.9.202 - 2026-11-20 - a client-approved paid song redo is no longer refused MISSING_AUTH_REF
+
+- **The bug.** When the song judge failed a take, the client answered the fork question and the answer was saved in `song-choices/fork-decision.json`. The answers `redo_all` and `new_three` reopen the music stage for a new round. That new round is a paid creative retake, and the spend ledger refuses a creative retake that carries no authorization reference. Nothing ever passed one: `kie_dispatch.dispatch()` had no way to take it, and the song runner never turned the client's answer into one. So every redo the client asked for was refused `MISSING_AUTH_REF` before anything was reserved. No money was charged and no song was made.
+- **The fix.** `song_choices.redo_authorization(run_dir, logical_key)` turns the LATEST saved fork answer into one authorization reference per song (`fork-decision-<n>-<digest>:<logical key>`) when that answer is `redo_all` or `new_three`, and returns nothing otherwise. The song runner passes it to `kie_dispatch.dispatch(..., auth_ref=...)`, which hands it to `spend_ledger.plan`. The dispatch command line gains `--auth-ref`.
+- **What still holds.** No saved answer, or a `keep_one` answer, is still refused `MISSING_AUTH_REF` with no provider call. One answer buys exactly one new paid take per song: running again on the same answer is refused `DUPLICATE_AUTHORIZATION`. A new answer is a new reference, and the ledger's repair cap still limits the total.
+- **Ledger.** `spend_ledger._allocate` checks and records an authorization reference only for a creative retake. A provider-failure retry inside an authorized round needs no new authorization, so a reference passed with it is ignored instead of being refused as a second use of the same authorization.
+- **Tests.** `song_choices/test_x07_offline_dispatch.py` drives the real song runner, dispatcher and ledger with a fake provider (no network, no spend) through redo, keep-one, same-answer and new-answer rounds and the repair cap. `test_spend_attempts_w02u2.py` covers the provider-failure retry. `kie_dispatch/test_kie_cli_state_store_b5.py` covers `--auth-ref`.
+- **Twin.** The six changed `scripts/core/` files are byte-identical to the same change in the 999-setup distribution (999-setup PR #464), so the two copies agree again. Version stamp skill 75 v2.9.201 -> v2.9.202, with the `SKILL.md` frontmatter `version:` kept in agreement. No release or tag is created here.
+
 ## v2.9.155 - 2026-11-02 - chore(batch): version stamp for batch PR #2784 (ST2, X01, F14, PR #2779)
 
 - **G3 version stamp, skill 75 v2.9.154 -> v2.9.155.** Batch PR #2784 combines ST2, X01,

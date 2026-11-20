@@ -313,6 +313,32 @@ def test_qc_failure_keeps_provider_success():
         shutil.rmtree(d, ignore_errors=True)
 
 
+# --- 6c. an auth ref funds only a creative retake ---------------------------
+def test_failed_job_retry_ignores_auth_ref():
+    """A provider-failure retry inside an authorized round needs no new
+    authorization: the reference is neither refused nor recorded for it, so
+    it cannot be refused DUPLICATE_AUTHORIZATION by the retake it serves."""
+    db, d = tmp_db(run_id="fr", repair_cap=3)
+    try:
+        first = L.allocate_attempt(db, "fr", "k1", "digest-1", estimated_cost=5)
+        to_succeeded(db, "fr", "k1", first["attempt_id"], cost=5)
+        rt = L.allocate_attempt(db, "fr", "k1", "digest-2", "creative_retake",
+                                auth_ref="auth-1", estimated_cost=5)
+        check("auth: retake funded", rt["outcome"] == "ok", str(rt))
+        to_failed(db, "fr", "k1", rt["attempt_id"], cost=0)
+        retry = L.plan(db, "fr", "k1", "", "digest-3", 5, auth_ref="auth-1")
+        check("auth: failed_job_retry carrying the round's ref is not refused",
+              retry["outcome"] == "ok"
+              and retry["evidence"]["retry_category"] == "failed_job_retry",
+              str(retry))
+        got = rows(db, "SELECT retry_category,auth_ref FROM jobs "
+                   "WHERE run_id='fr' ORDER BY attempt_no")
+        check("auth: the ref is stored on the retake only",
+              got == [("initial", ""), ("creative_retake", "auth-1"),
+                      ("failed_job_retry", "")], str(got))
+    finally:
+        shutil.rmtree(d, ignore_errors=True)
+
 # --- 7. fractional credits and missing actuals ------------------------------
 def test_fractional_credits_and_missing_actuals():
     db, d = tmp_db(run_id="money", ceiling=100, credit_to_subunit_num=3,
@@ -502,6 +528,7 @@ TESTS = [
     test_concurrent_authorized_retakes,
     test_uncertain_reconcile_and_categories,
     test_qc_failure_keeps_provider_success,
+    test_failed_job_retry_ignores_auth_ref,
     test_fractional_credits_and_missing_actuals,
     test_multi_track_counts_distinct,
     test_migration_100_preserves_rows,

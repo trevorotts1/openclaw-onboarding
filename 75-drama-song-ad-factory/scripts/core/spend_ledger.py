@@ -714,6 +714,13 @@ def _allocate(db_path, cmd, run_id, logical_key, attempt_id, request_digest,
                           "a creative retake consumes repair allowance and "
                           "needs its own authorization reference",
                           attempt_id, run[6])
+        # The authorization reference funds a creative retake and nothing
+        # else: a provider-failure retry inside an authorized round needs no
+        # new authorization, so the reference is neither re-checked nor
+        # recorded for it (recording it would refuse that retry as a
+        # DUPLICATE_AUTHORIZATION of the retake it belongs to).
+        if cat_final != "creative_retake":
+            auth_ref = ""
         if auth_ref:
             dup = conn.execute(
                 "SELECT 1 FROM jobs WHERE run_id=? AND auth_ref=?",

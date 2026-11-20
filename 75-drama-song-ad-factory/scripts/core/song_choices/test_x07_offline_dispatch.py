@@ -23,6 +23,14 @@ subprocess, and no paid provider call.
      before any adapter call; the provider submit count stays at 1 and the
      ledger cost is unchanged.
 
+  4. A CLIENT-AUTHORIZED REDO IS BOUGHT, ONCE. When the client's recorded
+     fork answer is ``redo_all`` / ``new_three`` the next round carries that
+     answer to the ledger as the creative retake's authorization reference
+     (song_choices.redo_authorization): exactly one new paid take. A
+     ``keep_one`` answer still refuses MISSING_AUTH_REF; re-running on the SAME
+     answer refuses DUPLICATE_AUTHORIZATION; a NEW answer is a new reference,
+     and the repair cap still bounds the total.
+
 GUARD-REMOVAL CONTROL (test_control_guard_removal_replays_the_second_submit):
 the second-resume refusal is produced by ``spend_ledger._derive_category``
 reading persisted prior state and classifying a settled job as
@@ -266,6 +274,25 @@ class X07OfflineDispatch(unittest.TestCase):
         finally:
             conn.close()
 
+    def _auth_rows(self):
+        conn = sqlite3.connect(self.db)
+        try:
+            conn.row_factory = sqlite3.Row
+            return [dict(r) for r in conn.execute(
+                "SELECT attempt_no,retry_category,auth_ref,remote_task_id "
+                "FROM jobs ORDER BY attempt_no")]
+        finally:
+            conn.close()
+
+    def _fork(self, reply):
+        return SC.record_fork_decision(self.run_dir, reply, who="client")
+
+    def _refused(self, out, code):
+        env = out["results"][0]["envelope"]
+        self.assertNotEqual(env["outcome"], "ok", env)
+        self.assertEqual(env["reason_code"], code, env)
+        self.assertEqual(out["dispatched"], 0, out)
+
     def _receipts(self):
         conn = sqlite3.connect(self.db)
         try:
@@ -342,6 +369,72 @@ class X07OfflineDispatch(unittest.TestCase):
         self.assertEqual(after["unknown_or_reserved_cost"], 0, after)
         self.assertEqual(len(self._receipts()), 1, self._receipts())
         self.assertEqual(len(self._job_rows()), 1, self._job_rows())
+
+    # ---- 4. a client-authorized redo is bought, once -----------------
+    def test_redo_all_buys_exactly_one_new_take(self):
+        first = self._generate()
+        self.assertEqual(first["results"][0]["envelope"]["outcome"], "ok")
+        self.assertEqual(self._fork("redo all")["answer"], "redo_all")
+
+        second = self._generate()
+        env2 = second["results"][0]["envelope"]
+        self.assertEqual(env2["outcome"], "ok", env2)
+        self.assertEqual(self.transport.submits(), 2, self.transport.calls)
+        rows = self._auth_rows()
+        self.assertEqual(len(rows), 2, rows)
+        self.assertEqual(rows[0]["retry_category"], "initial", rows)
+        self.assertEqual(rows[0]["auth_ref"], "", rows)
+        self.assertEqual(rows[1]["retry_category"], "creative_retake", rows)
+        self.assertTrue(rows[1]["auth_ref"], rows)
+        self.assertEqual(rows[1]["auth_ref"],
+                         SC.redo_authorization(self.run_dir,
+                                               "song/%s" % VARIANT_ID), rows)
+        self.assertEqual(self._summary()["actual_cost"], CREDITS * 2)
+
+        # The SAME answer never funds a second paid take.
+        third = self._generate()
+        self._refused(third, "DUPLICATE_AUTHORIZATION")
+        self.assertEqual(self.transport.submits(), 2, self.transport.calls)
+        self.assertEqual(len(self._auth_rows()), 2, self._auth_rows())
+
+        # A NEW answer is a new reference (repair 2 of the default cap 2).
+        self.assertEqual(self._fork("generate three new options")["answer"],
+                         "new_three")
+        fourth = self._generate()
+        self.assertEqual(fourth["results"][0]["envelope"]["outcome"], "ok",
+                         fourth["results"][0]["envelope"])
+        self.assertEqual(self.transport.submits(), 3, self.transport.calls)
+        refs = [r["auth_ref"] for r in self._auth_rows()]
+        self.assertEqual(len(set(refs[1:])), 2, refs)
+
+        # The ledger's repair cap still bounds the total.
+        self._fork("redo all")
+        fifth = self._generate()
+        self._refused(fifth, "REPAIR_CAP")
+        self.assertEqual(self.transport.submits(), 3, self.transport.calls)
+        self.assertEqual(self._summary()["actual_cost"], CREDITS * 3)
+
+    def test_keep_one_still_refuses_missing_auth_ref(self):
+        first = self._generate()
+        self.assertEqual(first["results"][0]["envelope"]["outcome"], "ok")
+        self.assertEqual(self._fork("keep one")["answer"], "keep_one")
+        self.assertEqual(SC.redo_authorization(
+            self.run_dir, "song/%s" % VARIANT_ID), "")
+
+        second = self._generate()
+        self._refused(second, "MISSING_AUTH_REF")
+        self.assertEqual(self.transport.submits(), 1, self.transport.calls)
+        self.assertEqual(len(self._auth_rows()), 1, self._auth_rows())
+        self.assertEqual(self._summary()["actual_cost"], CREDITS)
+
+    def test_keep_one_after_redo_revokes_the_redo(self):
+        """Only the LATEST answer counts: a later keep_one buys nothing."""
+        self._generate()
+        self._fork("redo all")
+        self._fork("keep one")
+        second = self._generate()
+        self._refused(second, "MISSING_AUTH_REF")
+        self.assertEqual(self.transport.submits(), 1, self.transport.calls)
 
     # ---- guard-removal control ----------------------------------------
     def test_control_guard_removal_replays_the_second_submit(self):
