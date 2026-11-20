@@ -84,17 +84,32 @@ TABLE_HEAD = "## Every stop explained"
 PARTS = ("what_happened", "why", "fix", "choices")
 _TABLE = {}
 _PH = re.compile(r"\{(\w+)(?::([^{}]*))?\}")
+# Conditional blocks {+name}...{/name}: kept only when facts[name] is truthy.
+# {name:fallback} keeps the old meaning (value or fallback). Blocks let one
+# row say two different things, e.g. a longer-song fix vs. shorten-the-opener.
+_BLOCK_OPEN = re.compile(r"\{\+(\w+)\}")
+_BLOCK_CLOSE = re.compile(r"\{/\w+\}")
 _CODE_TOKEN = re.compile(r"\b[A-Za-z][A-Za-z0-9]*(?:_[A-Za-z0-9]+)+\b")
 _PATHISH = re.compile(r"(?:~|\.{1,2})?/[\w.\-/]+|\b[\w\-]+\.(?:py|json|sqlite3|md|sh|txt|log|mp3)\b"
                       r"|--[\w-]+|`[^`]*`")
+# A run path in client text is not a secret, so a detail that only carries
+# the run's own files stays usable: only the risky pieces get cut.
+_RUN_PATH = re.compile(r"(?:~|\.{1,2})?/[\w.\-/]*runs?/[\w.\-/]*"
+                       r"|/tmp/[\w.\-/]*")
+_QUOTED_PATH = re.compile(r"'[^']*(?:/|\.py|\.json|\.sqlite3|\.log)[^']*'|"
+                          r'"[^"]*(?:/|\.py|\.json|\.sqlite3|\.log)[^"]*"')
 GENERIC_WHAT = "The work paused before the next step."
 GENERIC_WHY = ("Each step waits until it is safe and ready, so nothing goes "
-               "wrong and nothing is charged by mistake.")
+               "wrong.")
 GENERIC_FIX = "I check what this step needs and take care of it before going on."
 GENERIC_CHOICES = ("I take care of what this step needs and tell you when it is done.",
                    "I explain more about this stop first.",
                    "We pause here until you say go.")
 # LYRICS_REJECTED carries several causes in one detail; each has its own row.
+# A charge happened only when the envelope says the provider billed us: any
+# recorded credits consumed, an accepted submit stamp, or generated media.
+_CHARGED_KEYS = ("credits_consumed", "actual_cost", "accepted_submit_at",
+                 "kicks_cost_cents", "spent_cents", "charge_cents", "cost_cents")
 _LYRIC_CAUSES = (
     ("LYRICS_REJECTED/words_over_budget",
      re.compile(r"(?P<total>\d+) words, the (?P<delivered_s>\d+) s budget is (?P<budget>\d+)")),
@@ -112,6 +127,36 @@ _DETAIL_FACTS = {
 }
 _FIELD_WORDS = {"video_style": "video style", "audio_style": "music style",
                 "length": "length", "video_model": "video model"}
+
+
+def _split_choices(cell):
+    """Split a table choices cell on top-level <br>, keeping conditional
+    blocks whole: a {+name}...{/name} span may itself contain <br>."""
+    parts, depth, cur = [], 0, ""
+    for tok in re.split(r"(<br>|\{\+\w+\}|\{/\w+\})", cell):
+        if not tok:
+            continue
+        if _BLOCK_OPEN.fullmatch(tok):
+            if depth == 0 and cur.strip():
+                parts.append(cur.strip())
+                cur = ""
+            depth += 1
+            cur += tok
+        elif _BLOCK_CLOSE.fullmatch(tok):
+            depth = max(0, depth - 1)
+            cur += tok
+            if depth == 0:
+                parts.append(cur.strip())
+                cur = ""
+        elif tok == "<br>" and depth == 0:
+            if cur.strip():
+                parts.append(cur.strip())
+            cur = ""
+        else:
+            cur += tok
+    if cur.strip():
+        parts.append(cur.strip())
+    return parts
 
 
 def explanation_table(path=None):
@@ -135,7 +180,7 @@ def explanation_table(path=None):
             continue
         rows[cells[0].strip("`")] = {
             "what_happened": cells[1], "why": cells[2], "fix": cells[3],
-            "choices": [c.strip() for c in cells[4].split("<br>") if c.strip()]}
+            "choices": [c.strip() for c in _split_choices(cells[4]) if c.strip()]}
     _TABLE[key] = rows
     return rows
 
@@ -169,24 +214,70 @@ def _derive(facts):
                                  for m in f["missing"])
     if isinstance(f.get("line"), str):
         f["line"] = f["line"].strip().strip("'\"")
+        # A lyric line naming a run path is a leak vector: keep words, cut path.
+        cut = _RUN_PATH.sub(" ", _QUOTED_PATH.sub(" ", f["line"]))
+        if _PATHISH.search(cut):
+            f["line"] = "that line"
+        else:
+            f["line"] = re.sub(r"\s{2,}", " ", cut).strip(" ;:,-")
+            if len(f["line"].split()) < 2:
+                f["line"] = "that line"
     return {k: _num(v) for k, v in f.items()}
 
 
 def _fill(text, facts):
-    out = _PH.sub(lambda m: facts.get(m.group(1)) or (m.group(2) or ""), text)
-    return re.sub(r"\s{2,}", " ", out).strip()
+    def _blocks(s):
+        # innermost-first: drop or keep each {+name}...{/name} span
+        while True:
+            m = _BLOCK_OPEN.search(s)
+            if not m:
+                return s
+            name, start = m.group(1), m.start()
+            depth, i = 1, m.end()
+            while depth:
+                o = _BLOCK_OPEN.search(s, i)
+                c = _BLOCK_CLOSE.search(s, i)
+                if c is None:
+                    return s  # unbalanced: leave the rest alone
+                if o is not None and o.start() < c.start():
+                    depth += 1
+                    i = o.end()
+                else:
+                    depth -= 1
+                    i = c.end()
+                    if depth == 0:
+                        inner = s[m.end():c.start()]
+                        s = s[:start] + (inner if facts.get(name) else "") + s[c.end():]
+        return s
+    out = _blocks(text)
+    # Split choices on <br> BEFORE filling, so a dropped span never leaves a
+    # dangling separator and a kept span never leaks block tags.
+    seps = [m.start() for m in re.finditer(r"<br>", out)]
+    out = _PH.sub(lambda m: str(facts.get(m.group(1)) or (m.group(2) or "")), out)
+    out = re.sub(r"\s{2,}", " ", out).strip(" ,")
+    out = re.sub(r"(?:^|<br>)\s*<br>", "<br>", out)
+    out = re.sub(r"<br>\s*<br>", "<br>", out).strip(" ,")
+    return out.replace(" ,", ",").replace(" .", ".").strip()
 
 
 def _scrub(text, code=""):
     """Plain words from an envelope's own text, or "" when it is not fit for a
-    client (a file path, a command, a stack trace, or too little left)."""
+    client (a command, a stack trace, or too little left). A run-folder or
+    /tmp path is cut but the words around it stay, so the stop still explains
+    itself; anything outside the run (a home dir, .py/.json source file, an
+    --option or `backticked` command) rejects the whole text."""
     t = str(text or "")
-    if "Traceback" in t or _PATHISH.search(t):
+    if "Traceback" in t:
         return ""
+    cut = _RUN_PATH.sub(" ", _QUOTED_PATH.sub(" ", t))
+    if _PATHISH.search(cut):
+        return ""
+    t = cut
     if code:
         t = t.replace(code, " ")
     t = _CODE_TOKEN.sub(" ", t)
     t = re.sub(r"\s{2,}", " ", t).strip(" ;:,-")
+    t = re.sub(r"\s+([.,])", r"\1", t).strip(" ;:,-")
     return t if len(t.split()) >= 3 else ""
 
 
@@ -206,12 +297,39 @@ def _message(p):
 
 
 def _row_parts(row, facts):
-    return {"what_happened": _fill(row["what_happened"], facts),
-            "why": _fill(row["why"], facts), "fix": _fill(row["fix"], facts),
-            "choices": [_fill(c, facts) for c in row["choices"]]}
+    parts = {"what_happened": _fill(row["what_happened"], facts),
+             "why": _fill(row["why"], facts), "fix": _fill(row["fix"], facts),
+             "choices": [_fill(c, facts) for c in row["choices"]]}
+    # A conditional span that did not apply leaves an empty choice: drop it
+    # (the table still guarantees 2-4 choices; the test holds the floor).
+    parts["choices"] = [c for c in parts["choices"] if c.strip()]
+    return parts
 
 
-def _lyric_parts(table, detail, facts):
+def _charged(env):
+    """True only when the stop's own envelope records a provider charge:
+    recorded credits consumed or cost, an accepted submit stamp, or generated
+    media. Anything else -- a refused dispatch, a held gate, a garbled check --
+    was stopped before spend."""
+    ev = env.get("evidence") if isinstance(env, dict) else None
+    if isinstance(ev, dict):
+        for k in _CHARGED_KEYS:
+            v = ev.get(k)
+            if isinstance(v, bool):
+                if v and k != "generated":
+                    return True
+            elif isinstance(v, (int, float)) and v > 0:
+                return True
+            elif isinstance(v, str) and v.strip() and k in (
+                    "accepted_submit_at",):
+                return True
+        gen = ev.get("generated")
+        if gen is True:
+            return True
+    return False
+
+
+def _lyric_parts(table, detail, facts, charged=False):
     """One LYRICS_REJECTED detail can carry several causes; explain each."""
     found = []
     for cause in [c.strip() for c in detail.split("; ") if c.strip()]:
@@ -236,7 +354,7 @@ def _lyric_parts(table, detail, facts):
         choices += [c for c in p["choices"] if c not in choices]
     # LYRICS_REJECTED is raised while the request is built, before any spend.
     what = " ".join(p["what_happened"] for p in parts)
-    if "nothing new was charged" not in what.lower():
+    if not charged and "nothing new was charged" not in what.lower():
         what += " I stopped before making the song, so nothing new was charged."
     return {"what_happened": what,
             "why": " ".join(dict.fromkeys(p["why"] for p in parts)),
@@ -266,7 +384,8 @@ def explain_stop(reason_code, facts=None, envelope=None):
             merged.update({k: v for k, v in m.groupdict().items() if v})
         merged.update(facts or {})
         table = explanation_table()
-        parts = _lyric_parts(table, detail, merged) if code == "LYRICS_REJECTED" else None
+        parts = _lyric_parts(table, detail, merged, _charged(env)) \
+            if code == "LYRICS_REJECTED" else None
         if parts is None and code in table:
             parts = _row_parts(table[code], _derive(merged))
         if parts is None:

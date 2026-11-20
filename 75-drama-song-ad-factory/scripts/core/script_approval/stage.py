@@ -148,10 +148,31 @@ def _default_studio_publish(run_dir, msgs):
 
 
 def _unknown(state_detail):
-    return {"outcome": "blocked", "reason": "approval-state-unknown",
-            "reason_code": AE.UNKNOWN_REASON, "approval_state": "unknown",
-            "unknown": {"detail": state_detail}, "recoverable": True,
-            "problems": [SA.UNKNOWN_QUESTION], "messages": []}
+    out = {"outcome": "blocked", "reason": "approval-state-unknown",
+           "reason_code": AE.UNKNOWN_REASON, "approval_state": "unknown",
+           "unknown": {"detail": state_detail}, "recoverable": True,
+           "problems": [SA.UNKNOWN_QUESTION], "messages": []}
+    # Owner order 2026-11-20: the client meets this stop (the approval record
+    # is unreadable), so it carries the four-part message beside the code.
+    try:
+        import sys as _sys
+        import os as _os
+        _d = _os.path.dirname(_os.path.abspath(__file__))
+        while _d != _os.path.dirname(_d) and not _os.path.exists(
+                _os.path.join(_d, "loud_failure.py")):
+            _d = _os.path.dirname(_d)
+        if _d != _os.path.dirname(_d) and _d not in _sys.path:
+            _sys.path.insert(0, _d)
+        import loud_failure
+        out["client_explanation"] = loud_failure.explain_stop(
+            "APPROVAL_STATE_UNKNOWN", None,
+            {"reason_code": "APPROVAL_STATE_UNKNOWN",
+             "detail": "the saved script-approval record is missing or "
+                       "unreadable: %s" % (state_detail or "no detail"),
+             "next_action": "answer the one approval question again"})
+    except Exception:  # noqa: BLE001 - an explanation never breaks a stop
+        pass
+    return out
 
 
 def _recover_answer(reply):

@@ -88,7 +88,15 @@ _TABLE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "variants.json
 
 
 class ChoiceError(ValueError):
-    """A loud refusal: nothing was spent or delivered on the broken path."""
+    """A loud refusal: nothing was spent or delivered on the broken path.
+
+    ``client_explanation`` (loud_failure.explain_stop) rides on the exception
+    from the three raw CLI refusals below (conflicting run roots, missing
+    transport, missing hook text): the exit stays a raw refusal but the agent
+    always has the four-part client message to send. The LYRICS_REJECTED path
+    fills it in ``cmd_generate`` via ``explain_refusal``.
+    """
+    client_explanation = None
 
 
 # ---- S75-W02-U3: the complete typed result envelope per attempt ----------
@@ -2748,16 +2756,38 @@ def cmd_generate(a, generate=None, measure=None, save=None, plan=None):
     spec = _load_request(a.request, run_dir)
     conflict = _run_dir_conflict(spec.get("run_authorities") or {})
     if conflict:
-        raise ChoiceError("REFUSED: conflicting run roots (%s); name ONE run "
+        # Raw refusal EXCEPT it carries the four-part client message: the
+        # caller asked for two run folders at once, so nothing ran.
+        err = ChoiceError("REFUSED: conflicting run roots (%s); name ONE run "
                           "directory" % conflict)
+        err.client_explanation = loud_failure.explain_stop(
+            "CONFLICTING_RUN_ROOTS", None,
+            {"reason_code": "CONFLICTING_RUN_ROOTS",
+             "detail": "the request names two different run folders: %s" % conflict,
+             "next_action": "name ONE run folder and run again"})
+        raise err
     for _label, _fn in (("measure", measure), ("save", save)):
         if _fn is None:
-            raise ChoiceError("REFUSED: the production run needs a real %s transport, "
+            err = ChoiceError("REFUSED: the production run needs a real %s transport, "
                               "not an empty default no-op" % _label)
+            err.client_explanation = loud_failure.explain_stop(
+                "TRANSPORT_MISSING", None,
+                {"reason_code": "TRANSPORT_MISSING",
+                 "detail": "the production run was started without its %s step" % _label,
+                 "next_action": "start the run through the normal command, "
+                                "which wires the %s step in" % _label})
+            raise err
     hook_text = _hook_text(spec)
     if not str(hook_text).strip():
-        raise ChoiceError("REFUSED: the run has no hook text (the sheet repeats no "
+        err = ChoiceError("REFUSED: the run has no hook text (the sheet repeats no "
                           "sung hook); the hook gate cannot be skipped")
+        err.client_explanation = loud_failure.explain_stop(
+            "HOOK_TEXT_MISSING", None,
+            {"reason_code": "HOOK_TEXT_MISSING",
+             "detail": "the sheet repeats no sung hook, so there is no hook "
+                       "to judge or place",
+             "next_action": "repeat the sung hook lines in the sheet and run again"})
+        raise err
     try:
         reqs = build_requests(spec["style_id"], spec["sheet"], spec["client_text"],
                               spec["title"], spec["length_s"], spec["vocal_gender"],
@@ -2847,9 +2877,16 @@ def explain_refusal(exc, spec=None):
     facts = {}
     if code == "LYRICS_REJECTED" and isinstance(spec, dict) and spec.get("sheet"):
         try:
+            # The named length must clear BOTH word checks (budget and spoken
+            # intro), so the client's "make it longer" choice never lands on a
+            # length the gate still refuses. None = no offered length fits:
+            # the opener (or the words) must get shorter, and no longer-song
+            # choice is offered.
             fit = _R.length_that_fits(spec["sheet"], spec.get("style_id"))
-            if fit.get("words_fit_length_s"):
-                facts["fit_length_s"] = fit["words_fit_length_s"]
+            if fit.get("length_s"):
+                facts["fit_length_s"] = fit["length_s"]
+            else:
+                facts["no_fit_length"] = "shorten the opener"
         except Exception:  # noqa: BLE001 - the explanation never breaks a refusal
             pass
     return loud_failure.explain_stop(code, facts,

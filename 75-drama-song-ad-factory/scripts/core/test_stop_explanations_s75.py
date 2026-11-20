@@ -42,6 +42,22 @@ INVENTORY = {
     "SONG_PICK_MISSING": "song_choices.refusal",
     "SONG_APPROVAL_UNANSWERED": "song_choices._unanswered_hold",
     "SONG_CONSTITUENT_EVIDENCE_MISSING": "song_choices.constituent_hold",
+    "CONFLICTING_RUN_ROOTS": "song_choices.cmd_generate two run folders at once",
+    "TRANSPORT_MISSING": "song_choices.cmd_generate empty measure/save",
+    "HOOK_TEXT_MISSING": "song_choices.cmd_generate sheet with no sung hook",
+    "SONG_WORD_TIMINGS_MISSING": "song_choices.record_pick unmeasured take",
+    "SONG_WORD_TIMINGS_UNWRITABLE": "song_choices.record_pick timing save",
+    "SONG_FORK_UNREADABLE": "factory.music_stage unreadable fork record",
+    "SCRIPT_AWAITING_APPROVAL": "factory script gate",
+    "APPROVAL_STATE_UNKNOWN": "script_approval.stage unreadable record",
+    "PROVIDER_FRAME_STILL_MISSING": "kie_dispatch.upload_storyboard_frame no local still",
+    "PROVIDER_FRAME_SHOT_MISMATCH": "kie_dispatch.upload_storyboard_frame shot not approved",
+    "PROVIDER_FRAME_STAGE_MISMATCH": "kie_dispatch.upload_storyboard_frame wrong stage",
+    "PROVIDER_FRAME_UPLOAD_UNVERIFIED": "kie_dispatch.upload_storyboard_frame no image URL",
+    "script-checks-failed": "factory script gate story/lyric checks",
+    "script-delivery-failed": "factory script gate undelivered script",
+    "state-file-missing": "factory lifecycle missing run state",
+    "music-run-id-ambiguous": "factory.music_stage ambiguous run id",
     "ACCEPTANCE_NOT_PROVEN": "song_dispatch acceptance hold",
     "EMPTY_TAKE_LIST": "song_choices.run_takes",
     "SONG_SAVE_FAILED": "song_choices save recovery",
@@ -202,25 +218,65 @@ def test_lyric_word_budget_names_the_length_that_fits():
     fit = R.length_that_fits(SHEET, "soul-ballad")
     L = fit["words_fit_length_s"]
     assert L == 120, fit
-    # held in step with the gate itself: the word-budget error is gone at the
-    # named length and present at the offered length before it
-    def budget_errs(length):
-        return [e for e in R.check_lyric_sheet(SHEET, "rise up now", length - 2,
-                                               style_id="soul-ballad")
-                if re.search(r"\d+ words, the \d+ s budget", e)]
-    assert not budget_errs(L), budget_errs(L)
-    assert budget_errs(90), "the 90 s card must still refuse 135 words"
+    # The 135-word sheet clears the WORD budget at 120 but its 62-word spoken
+    # opening fits no offered length (cap tops out at 12): no longer-song
+    # choice is offered, the message says to shorten the opener.
+    assert fit["length_s"] is None and fit["opener_fit_length_s"] is None, fit
     detail = "; ".join(R.check_lyric_sheet(SHEET, "rise up now", 88, style_id="soul-ballad"))
-    out = LF.explain_stop("LYRICS_REJECTED", {"fit_length_s": L}, {"detail": detail})
+    out = LF.explain_stop("LYRICS_REJECTED", {"no_fit_length": "shorten the opener"},
+                          {"detail": detail})
     _assert_four(out, "lyrics")
     w = out["what_happened"]
     assert "135 words" in w and "90-second" in w and "about 95" in w, w
     assert "62 words" in w and "about 3 spoken words" in w, w
-    assert "2-minute song fits" in out["fix"], out["fix"]
+    assert "no offered length fits" in out["fix"], out["fix"]
     joined = " | ".join(out["choices"])
-    assert "make the song longer, up to 2 minutes" in joined, joined
+    assert "make the song longer" not in joined, joined
+    assert "shorten the spoken opening" in joined, joined
     assert "trim the words" in joined and "show you" in joined, joined
     assert "Keep your words as they are and I check again" in joined, joined
+
+
+def test_lyric_longer_song_choice_clears_both_word_checks():
+    # A sheet whose words AND opener both fit at a longer offered length: the
+    # "make it longer" fix names a length the lyric word checks really pass.
+    sheet = [{"tag": "Intro", "delivery": "spoken",
+              "lines": [" ".join(["word"] * 8)]},
+             {"tag": "Verse", "delivery": "sung",
+              "lines": [" ".join(["sing"] * 45)]},
+             {"tag": "Hook 1", "delivery": "sung", "lines": ["rise up now"]},
+             {"tag": "Pre", "delivery": "sung", "lines": ["build up now"]},
+             {"tag": "Hook 2", "delivery": "sung", "lines": ["rise up now"]},
+             {"tag": "Verse 2", "delivery": "sung",
+              "lines": [" ".join(["more"] * 20)]},
+             {"tag": "Hook 3", "delivery": "sung", "lines": ["rise up now"]},
+             {"tag": "Hook 4", "delivery": "sung", "lines": ["rise up now"]},
+             {"tag": "Hook 5", "delivery": "sung", "lines": ["rise up now"]},
+             {"tag": "Hook 6", "delivery": "sung", "lines": ["rise up now"]},
+             {"tag": "Hook 7", "delivery": "sung", "lines": ["rise up now"]},
+             {"tag": "Hook 8", "delivery": "sung", "lines": ["rise up now"]},
+             {"tag": "Outro", "delivery": "spoken",
+              "lines": [" ".join(["call"] * 14)]}]
+    fit = R.length_that_fits(sheet, "soul-ballad")
+    assert fit["length_s"] == 120, fit
+    # held in step with the gate itself: BOTH word checks are gone at the
+    # named length and at least one is present at the offered length before it
+    def word_errs(length):
+        return [e for e in R.check_lyric_sheet(sheet, "rise up now", length - 2,
+                                                style_id="soul-ballad")
+                if re.search(r"\d+ words, the \d+ s budget", e)
+                or e.startswith("spoken intro is")]
+    assert not word_errs(fit["length_s"]), word_errs(fit["length_s"])
+    assert word_errs(90), "the 90 s card must still refuse the words or opener"
+    detail = "; ".join(R.check_lyric_sheet(sheet, "rise up now", 88, style_id="soul-ballad"))
+    out = LF.explain_stop("LYRICS_REJECTED", {"fit_length_s": fit["length_s"]},
+                          {"detail": detail})
+    _assert_four(out, "lyrics-fit")
+    assert "song of that length fits your words and opening" in out["fix"], out["fix"]
+    joined = " | ".join(out["choices"])
+    assert "make the song longer" in joined, joined
+    # the named length really clears the lyric word checks end to end
+    assert not word_errs(fit["length_s"])
 
 
 def test_no_voice_cue_line_is_named():
@@ -288,7 +344,12 @@ def test_cmd_generate_lyric_refusal_carries_the_explanation():
         assert exc.code == "LYRICS_REJECTED", exc      # the gate itself is unchanged
         out = exc.client_explanation
         _assert_four(out, "cmd_generate")
-        assert "2-minute song fits" in out["fix"], out["fix"]
+        # The 135-word sheet's 62-word opener fits no offered length: no
+        # longer-song fix, the message says to shorten the opener.
+        assert "no offered length fits" in out["fix"], out["fix"]
+        joined = " | ".join(out["choices"])
+        assert "make the song longer" not in joined, joined
+        assert "shorten the spoken opening" in joined, joined
     else:
         raise AssertionError("the 135-word sheet must still be refused at 90 s")
 

@@ -4,6 +4,29 @@ All notable changes to this skill are documented here. The version of
 record is `skill-version.txt` (kept in agreement with the `SKILL.md`
 frontmatter `version:` field).
 
+## v2.9.203 - 2026-11-20 - ux round 1: the five review findings
+
+- **Raw refusals now carry the message.** `song_choices.cmd_generate`'s three
+  bare `ChoiceError` exits (conflicting run roots, missing measure/save
+  transport, missing hook text) ride a `client_explanation` on the exception;
+  the exit and the refusal words are unchanged. `intake_preflight.preflight`
+  stops and the `kie_dispatch` frame-upload refusal print their
+  `client_explanation` beside the existing fields.
+- **No uncovered client-facing stop.** New table rows for the word-timing,
+  fork-record, script-check, approval-state and frame-binding stops, plus the
+  lifecycle `state-file-missing` / `music-run-id-ambiguous` stops; the test
+  inventory scans them and fails on any new stop without a row.
+- **No false charge claim.** The unknown-code fallback no longer says anything
+  about charges; only a stop whose own envelope records a charge says
+  "nothing was charged".
+- **No path in a client message.** Run-folder and /tmp paths are cut from
+  explanation words (anything outside the run still rejects the whole text),
+  and a lyric line carrying a path renders as "that line".
+- **The longer-song fix clears both gates.** `length_that_fits` now names a
+  length that passes the word budget AND the spoken-intro cap; when no
+  offered length fits (a 62-word opener fits none), the message says to
+  shorten the opener instead of naming a length the gate would still refuse.
+
 ## v2.9.202 - 2026-11-20 - ux: every stop explains what happened, why the rule exists, the fix, and the client's choices
 
 - **The client is never left at a dead stop.** A client's song was refused for

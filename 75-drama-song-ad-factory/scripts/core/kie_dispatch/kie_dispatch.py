@@ -2512,8 +2512,21 @@ def main(argv=None):
             sys.stdout.write("\n")
             return 0
         except (ProviderFrameBindingError, OSError, ValueError) as exc:
-            json.dump({"outcome": "rejected", "reason_code": getattr(exc, "code", "PROVIDER_FRAME_UPLOAD_UNVERIFIED"),
-                       "detail": str(exc)}, sys.stdout, indent=2)
+            code = getattr(exc, "code", "PROVIDER_FRAME_UPLOAD_UNVERIFIED")
+            out = {"outcome": "rejected", "reason_code": code,
+                   "detail": str(exc)}
+            # Owner order 2026-11-20: the client meets this stop (the still
+            # did not bind), so it carries the four-part message beside the
+            # code. The outcome and exit code are unchanged.
+            try:
+                import loud_failure  # noqa: PLC0415 - core/ on sys.path above
+                out["client_explanation"] = loud_failure.explain_stop(
+                    code, None, {"reason_code": code, "detail": str(exc),
+                                 "next_action": "Name a shot from the current "
+                                 "approved storyboard and upload its still again."})
+            except Exception:  # noqa: BLE001 - never breaks the refusal
+                pass
+            json.dump(out, sys.stdout, indent=2)
             sys.stdout.write("\n")
             return EXIT["rejected"]
 
