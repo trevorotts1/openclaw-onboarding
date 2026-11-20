@@ -715,33 +715,37 @@ _CURE_RE = re.compile(r"\b(miraculous|instantly (?:cures?|fixes?|heals?)|"
                       r"(?:guaranteed|always) works|fixes? (?:you|it all))\b", re.I)
 _COMMERCIAL_RE = re.compile(r"\b(%s)\b" % "|".join(re.escape(a) for a in COMMERCIAL_ACTIONS),
                             re.I)
-#: A negation directly in front of the action refuses it: "Do not take the
-#: quiz", "Do not, take the quiz", "Never book a call", "don't ever book".
-#: Only "not", "cannot", "never" or "n't" (then optional commas and "ever")
-#: right before the action count, so "No more waiting book now.", "Don't
-#: wait. Book now." and "Why not book today?" still ask. A line end breaks it.
-#: A refused action also refuses the actions after it up to the next
-#: . ! ? ; : , dash or line end ("Never book a call." asks for no call),
-#: while "Do not book, call now." still asks for the call.
-_NEGATED_BEFORE_RE = re.compile(r"(?:(?<!why )\b(?:can)?not|\bnever|n['\u2019]t)"
-                                r"[ \t,]*(?:\bever\b[ \t,]*)*\Z", re.I)
-_CLAUSE_END_RE = re.compile(r"[.!?;:,\u2014\n]|\s-\s")
-#: A declared [Name (sung|spoken|rap): cue] tag: only Name is the section.
-_DECLARED_TAG_RE = re.compile(r"^(.*?)\s*\((?:sung|spoken|rap)\)", re.I)
+_NEGATORS = ("not", "never", "no", "nor", "cannot", "dont", "didnt", "doesnt", "cant", "wont")
+#: Subjects that forbid the act for everyone: "Nobody should take the quiz."
+#: matches even with no negator word in the sentence.
+_NEGATIVE_SUBJECTS = ("nobody", "no one", "noone", "neither", "none")
 
+def _commercial_calls(text):
+    """Every commercial action ``text`` asks for, lower-cased, in order.
 
-def _asks(text, action=None):
-    """The first commercial action in ``text`` that is not negated (only
-    ``action`` when given), or None."""
-    refused_end = None              # end of the last refused action
+    A call counts only when nothing says not to act. A sentence refuses the
+    act when any word before the phrase is "not", "never", "no", "nor",
+    "cannot" or an "n't" word ("Do not take the quiz."), or when its subject
+    is negative ("Nobody should take the quiz."). A comma never ends the
+    sentence, so a real call after a negation must stand in its own sentence:
+    "Do not wait. Take the quiz now." ponytail: conservative - "No more
+    guessing, take our quiz." is refused too (origin/main refused every quiz
+    line); the guard applies to every action phrase, so "Do not book a call."
+    and a newline-split "Never\\ntake the quiz." are refused the same way.
+    """
+    text = str(text or "")
+    calls = []
     for m in _COMMERCIAL_RE.finditer(text):
-        refused = bool(_NEGATED_BEFORE_RE.search(text[:m.start()])) or (
-            refused_end is not None
-            and not _CLAUSE_END_RE.search(text, refused_end, m.start()))
-        refused_end = m.end() if refused else None
-        if not refused and (action is None or m.group(1).lower() == action.lower()):
-            return m
-    return None
+        act = m.group(1).lower()
+        sentence = re.split(r"[.!?;\u2014]", text[:m.start()])[-1].lower()
+        words = re.findall(r"[\w'\u2019]+", sentence)
+        if any(w in _NEGATORS or w.endswith(("n't", "n\u2019t")) for w in words):
+            continue
+        if re.search(r"\b(nobody|no\s+one|noone|neither|none)\b", sentence):
+            continue
+        calls.append(act)
+    return calls
+
 #: a block tagged as the closing call.
 _CTA_TAG_RE = re.compile(r"\b(?:cta|call ?to ?action|offer|book|assessment|"
                          r"next ?step|closing|pitch)\b", re.I)
@@ -965,7 +969,7 @@ def check_causal_story(story):
         if _CURE_RE.search(ca):
             errors.append({"error": "magical-cure",
                            "detail": "commercial action promises a cure with no mechanism: %r" % ca})
-        elif not _COMMERCIAL_RE.search(ca):
+        elif not _commercial_calls(ca):
             errors.append({"error": "summary-only-promise",
                            "detail": "commercial action %r asks for no real step "
                                      "(book/order/assessment/schedule/call/apply)" % ca})
@@ -1015,13 +1019,8 @@ def _blocks(text):
 
 def closing_block(sheet_text):
     """The closing block: the last non-[End], non-instrumental section, or None."""
-    def name(tag):
-        # cue words ("over a light instrumental bed", "to the end") never
-        # make a declared voiced section the [End] or an instrumental
-        m = _DECLARED_TAG_RE.match(tag)
-        return m.group(1) if m else tag
     blocks = [b for b in _blocks(sheet_text)
-              if not re.search(r"\bend\b|instrumental", name(b["tag"]), re.I)]
+              if not re.search(r"\bend\b|instrumental", b["tag"], re.I)]
     return blocks[-1] if blocks else None
 
 
@@ -1044,17 +1043,17 @@ def check_payload_closing(sheet_text, commercial_action=None, require_cta=False)
         out.update(outcome="rejected", reason_code="magical-cure",
                    detail="the closing promises a cure with no mechanism")
         return out
-    said = "\n".join(blk["lines"])     # a lyric line ends a clause too
-    if _asks(said) is None:
+    calls = _commercial_calls(body)
+    if not calls:
         out.update(outcome="rejected", reason_code="summary-only-promise",
                    detail="the closing asks for no commercial action "
                           "(book/order/assessment/schedule/call/apply)")
         return out
     if commercial_action is not None:
-        want = _COMMERCIAL_RE.search(str(commercial_action))
-        if want and _asks(said, want.group(1)) is None:
+        want = _commercial_calls(commercial_action)
+        if want and want[0] not in calls:
             out.update(outcome="rejected", reason_code="closing-not-approved-call",
-                       detail="the closing lacks the approved action %r" % want.group(1))
+                       detail="the closing lacks the approved action %r" % want[0])
             return out
     out.update(outcome="ok", reason_code="closing-ok",
                detail="the closing carries the commercial call")

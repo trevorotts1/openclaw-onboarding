@@ -35,6 +35,7 @@ from __future__ import annotations
 import os
 import re
 import sys
+import unicodedata
 
 _CORE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if _CORE not in sys.path:
@@ -660,7 +661,10 @@ def is_no_voice_tag(tag):
     section names, never a [Break]; a substring test made render_lyrics drop
     every line of a sung [Breakthrough] section.
     """
-    words = re.sub(r"[^a-z0-9]+", " ", str(tag).lower()).split()
+    # A word is a run of Unicode letters, digits and combining marks, so
+    # "Breaké" or "breakα" is one word, never "break" plus a separator.
+    words = "".join(ch if ch.isalnum() or unicodedata.category(ch)[0] == "M"
+                    else " " for ch in str(tag).lower()).split()
     return any(word in NO_VOICE_TAGS for word in words)
 
 
@@ -731,19 +735,17 @@ def parse_tag(tag):
     THE one parser (FU-U1): suno_recipe.parse_lyrics, words_fit.parse_sheet_words,
     music_styles.sheet_deliveries and lyric_writer.lyric_structure.delivery_of_tag
     all read tags through here, so no gate measures a different sheet.
+
+    A declared [Name (sung|spoken|rap): cue] names its own delivery, and only
+    Name is ever scanned for more delivery words: cue words ("over a light
+    instrumental bed") never decide the delivery (cue words never refuse a
+    section as music-only, and never grant it a delivery either).
     """
     raw = str(tag or "").strip()
     if raw.startswith("[") and raw.endswith("]") and len(raw) > 2:
         raw = raw[1:-1]
     named = _NAMED_TAG_RE.match(raw.strip())
     if named is not None:
-        # A declared [Name (sung|spoken|rap): cue]: the declaration is the
-        # delivery and only Name can make it music-only. Cue words ("over a
-        # light instrumental bed") never decide -- the same rule as
-        # parse_lyrics and check_no_voice_lines.
-        name = re.sub(r"[^a-z0-9]+", " ", named.group(1).lower()).strip()
-        if re.search(r"\binstrumental\b", name) or name == "inst":
-            return INSTRUMENTAL
         return named.group(2).lower()
     norm = re.sub(r"[^a-z0-9]+", " ", raw.lower()).strip()
     if not norm:

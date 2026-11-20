@@ -638,11 +638,8 @@ def check_returned(sheet, aligned_words, style_id, delivered_s, hook_plan=None, 
     got_tags = returned_sections(aligned_words)
     if not got_tags:
         return _check_lexical(secs, want, aligned_words, segments, style_id, delivered_s, true_at)
-    import suno_recipe as _R
-    # THE tag grammar: a declared header's cue ("over a light instrumental
-    # bed") never makes a voiced section instrumental.
     got = [(_head_kind(t), t, s) for t, s in got_tags
-           if t.lower() != "end" and _R.parse_tag(t) != _R.INSTRUMENTAL]
+           if t.lower() != "end" and "instrumental" not in t.lower()]
     reasons = []
     wh, gh = want.count("hook"), sum(1 for k, _, _ in got if k == "hook")
     if gh > wh:
