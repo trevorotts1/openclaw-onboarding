@@ -4,6 +4,13 @@ All notable changes to this skill are documented here. The version of
 record is `skill-version.txt` (kept in agreement with the `SKILL.md`
 frontmatter `version:` field).
 
+## v2.9.204 - 2026-11-20 - a run with no recorded fork decision keeps the provider-failure retry
+
+- **The bug.** The song runner sent `require_round_auth=True` on every paid take, even when the client had recorded no fork decision at all. After an initial provider failure with no decision on file, the ledger read the empty reference as a withdrawn authorization and refused the retry `MISSING_AUTH_REF` with one submit and nothing settled. Today's behavior is the plain provider-failure retry, so the round-2 flag stopped a retry the client never withdrew.
+- **The fix.** The song runner passes `require_round_auth` only when a fork decision is recorded (`fork_decision(run_dir) is not None`); with no recorded answer no flag rides along and the ledger keeps the plain initial-round retry. A recorded `keep_one` still stops the retry, an authorized redo retry still works, and callers that never pass the flag are unchanged.
+- **Tests.** Failing-first: new `test_x07_offline_dispatch.py` tests (no-decision retry succeeds with a second submit and one settled charge; the flag rides only when a decision exists) failed on the old head (`MISSING_AUTH_REF` after one submit; `[True, True]`) and pass now. New `test_spend_attempts_w02u2.py` suite `test_no_decision_keeps_plain_failed_job_retry` pins the ledger side of the caller contract.
+- **Twin.** Same fix belongs in the 999-setup distribution (999-setup PR #465); the shared `scripts/core/` files stay byte-identical in both copies. Version stamp skill 75 v2.9.203 -> v2.9.204, with the `SKILL.md` frontmatter `version:` kept in agreement. No release or tag is created here.
+
 ## v2.9.203 - 2026-11-20 - a keep_one answer stops a paid retry after the first take fails
 
 - **The bug.** `spend_ledger` stopped a provider-failure retry without an authorization reference only when the failed take had been an authorized creative retake. When the FIRST take failed at the provider and the client then answered `keep_one`, the song runner sent no reference with `require_round_auth=True`, the ledger allowed the retry as a plain provider-failure retry, and the second paid submit went out. `keep_one` never buys a new paid round, so this was a paid take the client's latest answer did not authorize.

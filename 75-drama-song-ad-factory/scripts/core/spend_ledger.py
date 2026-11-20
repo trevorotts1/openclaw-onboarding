@@ -737,9 +737,10 @@ def _allocate(db_path, cmd, run_id, logical_key, attempt_id, request_digest,
             # empty reference read as withdrawn: any provider-failure retry
             # inside a paid round -- a creative round after a success, or a
             # still-open initial round after a failure -- is then refused.
-            # keep_one never buys a new paid round, whatever came before it;
-            # a run with no recorded decision passes no flag and keeps the
-            # plain retry. Every other caller keeps the plain
+            # keep_one never buys a new paid round, whatever came before it.
+            # The flag only rides when the caller recorded a decision: a run
+            # with no recorded decision passes no flag and keeps the plain
+            # retry. Every other caller keeps the plain
             # provider-failure retry it always had.
             start = max((i for i, r in enumerate(prior)
                          if r[9] in ("initial", "creative_retake", "")),

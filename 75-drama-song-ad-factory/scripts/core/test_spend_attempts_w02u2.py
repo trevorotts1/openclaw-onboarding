@@ -236,6 +236,42 @@ def test_concurrent_authorized_retakes():
         shutil.rmtree(d, ignore_errors=True)
 
 
+# --- 5b. no recorded decision keeps the plain provider-failure retry -----
+def test_no_decision_keeps_plain_failed_job_retry():
+    """Round-2: require_round_auth is a caller flag, never a ledger default.
+    A provider-failure retry with no recorded decision passes no flag and
+    stays allowed (outcome ok, failed_job_retry); the same retry WITH the
+    flag and no reference is refused MISSING_AUTH_REF and persists
+    nothing. This is the caller contract song_choices implements: the flag
+    only when a fork decision is recorded."""
+    db, d = tmp_db(run_id="nflag", repair_cap=3)
+    try:
+        first = L.allocate_attempt(db, "nflag", "k1", "digest-1",
+                                   estimated_cost=5)
+        to_failed(db, "nflag", "k1", first["attempt_id"], cost=0)
+        retry = L.plan(db, "nflag", "k1", "", "digest-2", 5)
+        check("no-flag retry allowed",
+              retry["outcome"] == "ok"
+              and retry["evidence"]["retry_category"] == "failed_job_retry",
+              str(retry))
+    finally:
+        shutil.rmtree(d, ignore_errors=True)
+    db, d = tmp_db(run_id="yflag", repair_cap=3)
+    try:
+        first = L.allocate_attempt(db, "yflag", "k1", "digest-1",
+                                   estimated_cost=5)
+        to_failed(db, "yflag", "k1", first["attempt_id"], cost=0)
+        refused = L.plan(db, "yflag", "k1", "", "digest-2", 5,
+                         require_round_auth=True)
+        check("flagged retry without a reference refused",
+              refused["outcome"] == "rejected"
+              and refused["reason_code"] == "MISSING_AUTH_REF", str(refused))
+        got = rows(db, "SELECT count(*) FROM jobs WHERE run_id='yflag'")
+        check("flagged retry persists nothing", got == [(1,)], str(got))
+    finally:
+        shutil.rmtree(d, ignore_errors=True)
+
+
 # --- 6. uncertain jobs: reconcile + provider lookup before resubmission ------
 def test_uncertain_reconcile_and_categories():
     db, d = tmp_db(run_id="unk", repair_cap=4)
@@ -625,6 +661,7 @@ TESTS = [
     test_explicit_ordinal_two_still_repair_cap,
     test_omitted_ordinal_derived_and_one_again_refused,
     test_concurrent_authorized_retakes,
+    test_no_decision_keeps_plain_failed_job_retry,
     test_uncertain_reconcile_and_categories,
     test_qc_failure_keeps_provider_success,
     test_failed_job_retry_ignores_auth_ref,

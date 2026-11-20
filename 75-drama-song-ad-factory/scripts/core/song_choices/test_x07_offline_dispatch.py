@@ -515,6 +515,57 @@ class X07OfflineDispatch(unittest.TestCase):
         self.assertEqual(self.transport.submits(), 2, self.transport.calls)
         self.assertEqual(self._summary()["actual_cost"], CREDITS * 2)
 
+    def test_no_decision_retry_after_initial_failure_succeeds(self):
+        """Round-2: with NO recorded fork decision an initial provider
+        failure retries as a plain provider-failure retry: a second
+        submit, an ok envelope, two ledger rows and one settled charge.
+        Unconditional require_round_auth refused this retry
+        MISSING_AUTH_REF (one submit, then refusal)."""
+        self.transport.fail_submits = {1}
+        failed = self._generate()
+        self.assertNotEqual(failed["results"][0]["envelope"]["outcome"], "ok")
+        self.assertEqual(self.transport.submits(), 1, self.transport.calls)
+        self.assertIsNone(SC.fork_decision(self.run_dir))
+        retry = self._generate()
+        env = retry["results"][0]["envelope"]
+        self.assertEqual(env["outcome"], "ok", env)
+        self.assertEqual(self.transport.submits(), 2, self.transport.calls)
+        rows = self._auth_rows()
+        self.assertEqual(len(rows), 2, rows)
+        self.assertEqual(rows[0]["retry_category"], "initial", rows)
+        self.assertIn(rows[1]["retry_category"],
+                      ("transport_retry", "failed_job_retry"), rows)
+        self.assertEqual(rows[1]["auth_ref"], "", rows)
+        self.assertEqual(self._summary()["actual_cost"], CREDITS)
+
+    def test_no_decision_passes_no_round_auth_flag(self):
+        """Round-2 contract: the song runner passes require_round_auth only
+        when a fork decision is recorded. No decision means no flag (the
+        plain provider-failure retry survives); a recorded answer means the
+        flag (a later keep_one stops the retry)."""
+        seen = []
+        current = KD.dispatch
+
+        def spy(**kw):
+            seen.append(kw.get("require_round_auth", False))
+            return current(**kw)
+
+        KD.dispatch = spy
+        try:
+            self.transport.fail_submits = {1}
+            first = self._generate()
+            self.assertNotEqual(first["results"][0]["envelope"]["outcome"],
+                                "ok")
+            self.assertEqual(self.transport.submits(), 1,
+                             self.transport.calls)
+            self.assertEqual(self._fork("keep one")["answer"], "keep_one")
+            retry = self._generate()
+            self._refused(retry, "MISSING_AUTH_REF")
+        finally:
+            KD.dispatch = current
+        self.assertEqual(self.transport.submits(), 1, self.transport.calls)
+        self.assertEqual(seen, [False, True], seen)
+
     # ---- guard-removal control ----------------------------------------
     def test_control_guard_removal_replays_the_second_submit(self):
         """CONTROL: neutralize the ledger's prior-state classification.

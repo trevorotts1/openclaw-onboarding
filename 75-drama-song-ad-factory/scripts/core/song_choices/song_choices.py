@@ -2628,10 +2628,15 @@ def _real_generate(run_dir, ledger, run_id, dispatcher=None):
         # needs the client's recorded answer as its authorization reference
         # or it refuses MISSING_AUTH_REF and nothing is bought. This reference
         # IS the client's current answer, so an empty one (a later keep_one)
-        # also stops a failed redo's retry (require_round_auth).
+        # also stops a failed redo's retry (require_round_auth) -- but only
+        # when a decision is recorded at all. With no recorded answer there is
+        # nothing withdrawn, so no flag rides along and the run keeps the
+        # plain initial-round provider-failure retry it always had.
         auth = redo_authorization(run_dir, logical_key)
+        decided = fork_decision(run_dir) is not None
         extra = {"auth_ref": auth} if auth else {}
-        extra["require_round_auth"] = True
+        if decided:
+            extra["require_round_auth"] = True
         env = _dispatch(model=payload.get("model") or "ai-music-api/generate",
                         request=payload, save_dir=save_dir, ledger_db=ledger,
                         run_id=run_id or (os.path.basename(run_dir) or "run"),
