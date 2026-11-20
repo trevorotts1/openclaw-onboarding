@@ -22,7 +22,9 @@ The guard below collects the AF-FUN codes from the code itself, so a new stop wi
 import json
 import os
 import re
+import subprocess
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -35,9 +37,14 @@ TABLE = es.load_table()
 ENTRIES = TABLE["entries"]
 SKIP = ("vendor", "fixtures", "working", "examples", "tests", "__pycache__")
 CODE = re.compile(r"AF-FUN-[A-Z0-9]+(?:-[A-Z0-9]+)*")
-LEAKS = re.compile(r"\b(?:AF|FD|LAUNCH|RUN)-[A-Z0-9-]+|ABORT \[|Traceback|File \"|\.py\b|\.json\b|/[\w.-]+/|[{}]")
-SHELL_TAGS = ("DEPS", "VERSION", "MODE", "USAGE", "MODEL-TIER", "SELF-TEST",
-              "DEPT-MAP", "HASH-PIN", "BYPASS-SCAN", "PIN-ROTATION")
+# Client words never carry a code-like or ENV_NAME token, an exception name, a path, a file name or a {slot}.
+LEAKS = re.compile(r"\b[A-Z][A-Z0-9]*(?:[-_][A-Z0-9]+)+\b|\b\w*(?:Error|Exception)\b|ABORT \[|Traceback|File \"|"
+                   r"\.py\b|\.json\b|/[\w.-]+/|[{}]")
+# Each entry-shell / front_door abort tag and the one entry that must explain it.
+SHELL_TAGS = {"DEPS": "FD-DEPS", "VERSION": "FD-VERSION", "MODE": "FD-MODE", "USAGE": "FD-USAGE",
+              "MODEL-TIER": "AF-FUN-MODEL-TIER", "SELF-TEST": "FD-SELF-TEST", "DEPT-MAP": "FD-DEPT-MAP",
+              "HASH-PIN": "AF-FUN-HASH-PIN", "BYPASS-SCAN": "AF-FUN-CANONICAL-BYPASS",
+              "PIN-ROTATION": "FD-PIN-ROTATION"}
 # Launch-mode and setup stops that carry no AF code: the refusal text that must resolve.
 PHRASE_STOPS = {
     "FAIL: plan is not ready: missing main offer price": "LAUNCH-MISSING-FACT",
@@ -63,6 +70,17 @@ def code_inventory():
     return found
 
 
+def missing_entries(entries, inventory):
+    """Codes with no entry OF THEIR OWN. The parent fallback in resolve() is a runtime safety net only; a
+    shipped stop must carry its own words, so a parent never stands in for a missing child here."""
+    return sorted(c for c in inventory if c not in entries)
+
+
+def client_part(stderr):
+    """What the entry shell prints for the client: everything after its FOR THE CLIENT: line."""
+    return stderr.split("FOR THE CLIENT:\n", 1)[1] if "FOR THE CLIENT:\n" in stderr else ""
+
+
 class TableShape(unittest.TestCase):
     def test_every_entry_has_four_parts_and_two_to_four_choices(self):
         for code, e in ENTRIES.items():
@@ -80,13 +98,20 @@ class TableShape(unittest.TestCase):
 
 
 class InventoryGuard(unittest.TestCase):
-    def test_every_stop_code_in_the_code_has_an_entry(self):
-        missing = sorted(c for c in code_inventory() if es.resolve(c, "", ENTRIES) is None)
-        self.assertEqual(missing, [], "add these stops to references/stop-explanations.json")
+    def test_every_stop_code_in_the_code_has_its_own_entry(self):
+        self.assertEqual(missing_entries(ENTRIES, code_inventory()), [],
+                         "add these stops to references/stop-explanations.json")
 
-    def test_every_shell_abort_tag_resolves(self):
-        for tag in SHELL_TAGS:
-            self.assertIsNotNone(es.resolve(None, f"ABORT [{tag}]: detail", ENTRIES), tag)
+    def test_guard_catches_a_child_code_hidden_by_its_parent(self):
+        inventory = code_inventory()
+        self.assertIn("AF-FUN-DELEG-RECEIPT-UNSIGNED", inventory)
+        without = {k: v for k, v in ENTRIES.items() if k != "AF-FUN-DELEG-RECEIPT-UNSIGNED"}
+        self.assertIsNotNone(es.resolve("AF-FUN-DELEG-RECEIPT-UNSIGNED", "", without))  # the parent still answers
+        self.assertEqual(missing_entries(without, inventory), ["AF-FUN-DELEG-RECEIPT-UNSIGNED"])
+
+    def test_every_shell_abort_tag_resolves_to_its_entry(self):
+        for tag, want in SHELL_TAGS.items():
+            self.assertEqual(es.resolve(None, f"ABORT [{tag}]: detail", ENTRIES), want, tag)
 
     def test_entry_shell_tags_are_all_listed(self):
         sh = (SKILL / "signature-funnel-entry.sh").read_text(encoding="utf-8")
@@ -97,6 +122,39 @@ class InventoryGuard(unittest.TestCase):
     def test_launch_and_setup_phrases_resolve(self):
         for text, want in PHRASE_STOPS.items():
             self.assertEqual(es.resolve(None, text, ENTRIES), want, text)
+
+
+class EntryShellExplains(unittest.TestCase):
+    """A refusal from the canonical entry shell carries the four plain parts, never only its ABORT code."""
+
+    def entry(self, *args):
+        with tempfile.TemporaryDirectory() as home:
+            env = {"PATH": os.environ.get("PATH", "/usr/bin:/bin"), "HOME": home,
+                   "PYTHON": sys.executable, "OPENCLAW_PLATFORM": "mac"}
+            return subprocess.run(["bash", str(SKILL / "signature-funnel-entry.sh"), *args],
+                                  text=True, capture_output=True, env=env, timeout=120)
+
+    def assertExplained(self, p, needle):
+        self.assertNotEqual(p.returncode, 0)
+        msg = client_part(p.stderr)
+        self.assertIn(needle, msg, p.stderr)
+        for head in ("What happened:", "Why this rule exists:", "What will fix it:", "Your choices:", "1. ", "2. "):
+            self.assertIn(head, msg)
+        self.assertIsNone(LEAKS.search(msg), msg)
+        self.assertTrue(msg.rstrip().endswith("Reply with the number you want."), msg)
+
+    def test_invalid_mode_is_explained(self):
+        self.assertExplained(self.entry("--mode", "bogus"), "started without everything it needs")
+
+    def test_missing_run_dir_value_is_explained(self):
+        self.assertExplained(self.entry("--run-dir"), "started without everything it needs")
+
+    def test_front_door_refusal_is_explained(self):
+        with tempfile.TemporaryDirectory() as rd:
+            Path(rd, "d.sh").write_text("curl https://api.kie.ai/api/v1/jobs/" + "createTask\n", encoding="utf-8")
+            p = self.entry("--scan-only", "--run-dir", rd)
+        self.assertIn("ABORT [BYPASS-SCAN]", p.stderr)  # the code stays for the log
+        self.assertExplained(p, "approved tools")
 
 
 class Rendering(unittest.TestCase):
@@ -142,15 +200,28 @@ class Rendering(unittest.TestCase):
 
     def test_unknown_stop_still_gets_four_parts(self):
         out = es.explain_stop("AF-NOPE", envelope={"detail": "it broke in /tmp/a/b.py AF-FUN-ZZZ-QQ",
-                                                    "next_action": "run it again"})
+                                                    "next_action": "run the step again"})
         self.assertIsNone(out["code"])
         self.assertEqual(out["what_happened"], "it broke in a file")
-        self.assertEqual(out["fix"], "run it again")
+        self.assertEqual(out["fix"], "run the step again")
         self.assertTrue(out["why"] and len(out["choices"]) >= 2)
         self.assertClean(out)
         empty = es.explain_stop()
         self.assertEqual(empty["what_happened"], TABLE["fallback"]["what_happened"])
         self.assertClean(empty)
+
+    def test_unknown_codes_exception_names_and_env_names_never_reach_the_client(self):
+        for detail in ("RUN-UNKNOWN: PermissionError: /tmp/private.txt", "KeyError: q3_offer_name",
+                       "SF_RUN_NONCE refused rc=2", "OSError [Errno 13] on copy_ledger.json"):
+            out = es.explain_stop(envelope={"detail": detail})
+            self.assertIsNone(out["code"], detail)
+            self.assertEqual(out["what_happened"], TABLE["fallback"]["what_happened"], detail)
+            for word in ("RUN-UNKNOWN", "PermissionError", "KeyError", "q3_offer_name", "SF_RUN_NONCE", "Errno",
+                         "rc=", "private"):
+                self.assertNotIn(word, out["message"], detail)
+            self.assertClean(out)
+        out = es.explain_stop(envelope={"detail": "the brief could not be read because the disk is full"})
+        self.assertEqual(out["what_happened"], "the brief could not be read because the disk is full")
 
     def test_traceback_never_reaches_the_client(self):
         tb = 'Traceback (most recent call last):\n  File "/x/y.py", line 3, in <module>\nValueError: bad'

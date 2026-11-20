@@ -194,9 +194,12 @@ The words live in one table, `references/stop-explanations.json` (one entry per 
 explains one code, and `explain_stop.explain_stop(reason_code, facts, envelope)` does the same in Python. Where a
 stop is already turned into output, the plain message is already there: the orchestrator prints `FOR THE CLIENT:`
 and writes `client_explanation` into `process_manifest.json` beside `aborted_at`; `launch_intake.assemble_plan`
-returns `client_explanation` beside `missing`; a blocked launch checkpoint carries `client_explanation`; and the
-intake, dispatch and image-step command lines print `FOR THE CLIENT:` after their `FAIL` / `REFUSED` line. Send
-that message as it is.
+returns `client_explanation` beside `missing`; a blocked launch checkpoint carries `client_explanation`; the
+intake, dispatch and image-step command lines print `FOR THE CLIENT:` after their `FAIL` / `REFUSED` line; and
+`signature-funnel-entry.sh` prints `FOR THE CLIENT:` after every `ABORT [TAG]` line it or `front_door.py` writes
+(a bad flag, a missing job folder, the wrong mode, a seal mismatch, a bypass). Send that message as it is. A stop
+the table does not know uses its own words only when they are plain sentences; a bare code, an exception name, an
+environment name or a path falls back to the table's plain default.
 
 Worked example. P1 stops with `AF-FUN-SEC12-WORDS` (the founder letter on the sales page is 160 words). The
 client reads:
@@ -213,8 +216,9 @@ client reads:
 
 **Maintainer rule:** every new client-facing stop ships with its entry in `references/stop-explanations.json`.
 `scripts/test_explain_stop.py` collects every `AF-FUN-*` code from the code and every entry-shell abort tag, and
-fails when one has no entry, when an entry lacks a part or has fewer than 2 choices, or when the client words
-carry a code or a path.
+fails when one has no entry of its own (a parent entry never stands in for a missing child), when an entry lacks
+a part or has fewer than 2 choices, when the client words carry a code, an exception name or a path, or when an
+entry-shell refusal reaches the client without the four parts.
 
 ## Owner approvals: in chat, by button, or in Command Center (any one works)
 

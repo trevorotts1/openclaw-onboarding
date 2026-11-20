@@ -35,6 +35,12 @@ PAGE_TYPES_PATH = SKILL_DIR / "structure" / "page_types.json"
 CODE_RE = re.compile(r"\bAF-FUN-[A-Z0-9]+(?:-[A-Z0-9]+)*\b")
 ANY_CODE_RE = re.compile(r"\b(?:AF(?:-FUN)?|FD|LAUNCH)-[A-Z0-9]+(?:-[A-Z0-9]+)*\b|\bABORT \[[A-Z-]+\]:?")
 PATH_RE = re.compile(r"(?:[A-Za-z]:\\|~/|\.{0,2}/)?\b[\w.<>-]+(?:/[\w.<>-]+)+")
+# A bare file name ("copy_ledger.json") reads as "a file" too.
+FILE_RE = re.compile(r"\b[\w.-]+\.(?:py|json|sh|md|txt|ya?ml|log|html|csv)\b")
+# Anything else that is for logs, not people: any CODE-LIKE or ENV_NAME token (RUN-UNKNOWN, SF_RUN_NONCE),
+# exception class names (PermissionError), [Errno n], key=value pairs (rc=2) and long hex digests.
+LOG_ONLY_RE = re.compile(r"\b[A-Z][A-Z0-9]*(?:[-_][A-Z0-9]+)+\b|\b[A-Za-z_]*(?:Error|Exception|Warning)\b|"
+                         r"\[Errno \d+\]|\b\w+=\S+|\b[0-9a-f]{12,}\b")
 SPENT_NOTHING = " This check did not spend any money."
 
 
@@ -47,6 +53,9 @@ def clean(text):
     lines = [l for l in str(text or "").splitlines()
              if not l.lstrip().startswith(("Traceback", 'File "')) and not re.match(r"\s+\^", l)]
     out = PATH_RE.sub("a file", ANY_CODE_RE.sub("", " ".join(lines)))
+    out = LOG_ONLY_RE.sub("", FILE_RE.sub("a file", out))
+    out = re.sub(r"\s+([:;,.])", r"\1", out)
+    out = re.sub(r"^(?:\s*[:;,.]\s*)+|(?:\s*[:;,.])+(?=\s*[:;,.])", "", out)
     out = re.sub(r"\[\s*\]|\(\s*\)", "", out)
     out = re.sub(r"^\s*(?:VIOLATION|FAIL-CLOSED|REFUSED|FAIL|ABORT|USAGE ERROR)\s*:?\s*", "", out)
     return re.sub(r"\s{2,}", " ", out).strip(" :;")
@@ -96,7 +105,7 @@ def facts_from_detail(text):
     elif re.search(r"Section (\d+)", t):
         f["section"] = re.search(r"Section (\d+)", t).group(1)
     if "TY-1" in t:
-        f["section_label"] = "The thank-you welcome (TY-1)"
+        f["section_label"] = "The welcome message at the top of the thank-you page"
     m = re.search(r"\b(\d+) (?:chars|characters|words)\b", t)
     if m:
         f["count"] = m.group(1)
@@ -195,6 +204,12 @@ def resolve(code, text, entries):
     return None
 
 
+def _plain(text, default):
+    """An unknown stop's own words, cleaned; the table's plain default when too little plain text is left
+    (a bare code, an exception name or a path is never a sentence for the client)."""
+    out = clean(text)
+    return out if len(re.findall(r"[A-Za-z]{2,}", out)) >= 3 else default
+
 class _Facts(dict):
     def __missing__(self, key):
         return "{" + key + "}"
@@ -219,8 +234,8 @@ def explain_stop(reason_code=None, facts=None, envelope=None, *, table=None):
     env_code, text, next_action = _envelope_parts(envelope)
     code = resolve(reason_code or env_code, text, entries)
     if code is None:
-        parts = {"what_happened": clean(text) or fallback["what_happened"], "why": fallback["why"],
-                 "fix": clean(next_action) or fallback["fix"], "choices": list(fallback["choices"]),
+        parts = {"what_happened": _plain(text, fallback["what_happened"]), "why": fallback["why"],
+                 "fix": _plain(next_action, fallback["fix"]), "choices": list(fallback["choices"]),
                  "spent_nothing": False}
     else:
         entry = entries[code]
@@ -256,8 +271,11 @@ def self_test():
     assert explain_stop(envelope="ABORT [HASH-PIN]: pin mismatch")["code"] == "AF-FUN-HASH-PIN"
     assert explain_stop("AF-FUN-IMG-HOST-UNSIGNED")["code"] == "AF-FUN-IMG-HOST"
     unknown = explain_stop("AF-FUN-NOT-A-CODE", envelope={"detail": "it broke in /tmp/x/y.py", "next_action": "retry"})
-    assert unknown["what_happened"] == "it broke in a file" and unknown["fix"] == "retry", unknown
-    print("explain_stop --self-test: PASS (real numbers, shell abort tag, parent code, unknown-code fallback)")
+    assert unknown["what_happened"] == "it broke in a file" and unknown["fix"] == "Find out what stopped it, fix that one "\
+        "thing, and run it again.", unknown
+    leak = explain_stop(envelope={"detail": "RUN-UNKNOWN: PermissionError: /tmp/private.txt"})
+    assert leak["what_happened"] == "The funnel work stopped before it finished.", leak
+    print("explain_stop --self-test: PASS (real numbers, shell abort tag, parent code, unknown-code fallback, no leak)")
     return 0
 
 
