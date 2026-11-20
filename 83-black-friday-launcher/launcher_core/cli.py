@@ -688,7 +688,9 @@ def cmd_check(args: argparse.Namespace) -> int:
         print(f"FAIL {len(fails)} violation(s)")
         for f in fails:
             print(" -", f)
-        _tell_client(stop_explain.explain_violations([str(f) for f in fails])[:3])
+        # Round-2 finding 2: every distinct check failure gets its explanation. Slicing to
+        # three left later blockers unexplained and the client short of the fix.
+        _tell_client(stop_explain.explain_violations([str(f) for f in fails]))
         return 2
     print("PASS package complete")
     return 0
@@ -797,7 +799,15 @@ def cmd_dependencies(args: argparse.Namespace) -> int:
     print("  UNSELECTED-OPTIONAL: " + (", ".join(cl["unselected_optional"]) or "none"))
     if cl["selected_missing"]:
         print("  SELECTED BUT MISSING: " + ", ".join(cl["selected_missing"]))
-    return 2 if args.install and report["blockers"] else 0
+    # Round-2 finding 1: --install blockers stop the run, so the client gets four parts,
+    # not a bare nonzero exit. The guard sits inside the blockers branch: a clean report
+    # prints its tables and exits 0 without a stop message.
+    if args.install and report["blockers"]:
+        _tell_client([stop_explain.explain_stop("AF-LAUNCH-DEPENDENCY", envelope={
+            "detail": "setup is still missing pieces I could not install: "
+                      + ", ".join(report["blockers"])})])
+        return 2
+    return 0
 
 
 def cmd_sop_ack(args: argparse.Namespace) -> int:

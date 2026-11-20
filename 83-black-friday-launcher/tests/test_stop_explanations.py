@@ -188,6 +188,57 @@ class UnknownStopsStillGetFourParts(unittest.TestCase):
         clean(self, message, "secret-scrub")
         self.assertEqual(out["what_happened"], stop_explain._FALLBACK["what_happened"])
 
+    def test_round2_unknown_transport_codes_never_reach_the_client(self):
+        """Round-2 finding 3: raw 'HTTP 429 billing problem' must not reach the client.
+        Transport words and their 4xx/5xx status go; the plain words stay."""
+        out = stop_explain.explain_stop("AF-NEVER-SEEN", envelope={
+            "detail": "HTTP 429 billing problem"})
+        lowered = out["message"].lower()
+        self.assertNotIn("http", lowered)
+        self.assertNotIn("429", out["message"])
+        self.assertIn("billing problem", lowered)
+        clean(self, out["message"], "transport-scrub")
+
+    def test_round2_an_operator_note_never_becomes_the_client_fix(self):
+        """Round-2 finding 4: a next_step written for the operator (a tool path) must not
+        reach the client as the fix. The fix falls back to the plain generic one."""
+        out = stop_explain.explain_stop("AF-NEVER-SEEN", envelope={
+            "detail": "something stopped the run",
+            "next_action": "run tools/fix.py then retry"})
+        clean(self, out["message"], "operator-note")
+        self.assertNotIn("tools/fix.py", out["message"])
+        self.assertEqual(out["fix"], stop_explain._FALLBACK["fix"])
+
+    def test_round2_unknown_fallback_names_no_rule_and_no_cost_claim(self):
+        """Round-2 finding 4: the unknown fallback asserts no protective rule and no cost
+        record it has no evidence for. The why names only the stop itself."""
+        out = stop_explain.explain_stop("AF-NEVER-SEEN")
+        lowered = (out["why"] + " " + out["fix"]).lower()
+        for claimed in ("protect", "customer", "money", "charged", "spent", "cost"):
+            self.assertNotIn(claimed, lowered,
+                             f"fallback claims what it has no evidence for: {claimed!r}")
+
+    def test_round2_every_distinct_check_failure_gets_its_explanation(self):
+        """Round-2 finding 2: no slice on explain_violations in cmd_check. Five distinct check
+        failures print five client messages, not three."""
+        import inspect  # noqa: E402
+        from launcher_core import cli as cli_module  # noqa: E402
+        body = inspect.getsource(cli_module).split("def cmd_check")[1].split("\ndef ")[0]
+        self.assertNotIn("[:3]", body)
+        five = ["AF-LAUNCH-IMAGE-PLAN-CAP: detail one", "AF-LAUNCH-PLAN-TEXT-CAP: detail two",
+                "AF-LAUNCH-PKG-HASH: detail three", "AF-LAUNCH-ASSEMBLE-ARGS: detail four",
+                "AF-LAUNCH-LINKED-URL: detail five"]
+        self.assertEqual(len(stop_explain.explain_violations(five)), 5)
+
+    def test_round2_install_blockers_get_a_client_message(self):
+        """Round-2 finding 1: 'dependencies --install' with leftover blockers prints a
+        CLIENT MESSAGE. A blocked install is a stop, never a bare nonzero exit."""
+        import inspect  # noqa: E402
+        from launcher_core import cli as cli_module  # noqa: E402
+        body = inspect.getsource(cli_module).split("def cmd_dependencies")[1].split("\ndef ")[0]
+        tail = body.split("SELECTED BUT MISSING")[1]
+        self.assertIn("_tell_client", tail)
+
     def test_every_cli_stop_forwards_the_client_four_parts(self):
         """Round-1 finding 1: the flagged stops (brand, revise-image, shared intake,
         dependencies, sop-ack) print a CLIENT MESSAGE, never a bare FAIL."""

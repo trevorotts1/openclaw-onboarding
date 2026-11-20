@@ -230,7 +230,15 @@ parts ride in the records beside the older one-line messages (`client_explanatio
 `python3 -m launcher_core.stop_explain <code> "<detail>"`.
 
 - Never show the client a code, a file name, a command or error text. Codes stay in the logs and records.
-- Say "nothing was charged" only when the stop really happened before any money was spent.
+  A bare transport note ("HTTP 429 ...") is error text too: the status number is a transport code, not a
+  real count, so the client hears only the plain words ("Billing problem").
+- Say "nothing was charged" only when the stop really happened before any money was spent. An unknown
+  stop names no rule and no cost claim it has no evidence for: its why says only that the work stops and
+  gets sorted instead of guessed.
+- An operator note (a tool path, a run/fix/retry loop) never becomes the client's fix: when the note
+  scrubs to nothing, the fix falls back to "I sort it out, then keep going."
+- Every distinct failure gets its own explanation: never slice the list to the first few, and a blocked
+  install (`dependencies --install` with leftovers) is a stop with four parts, not a bare nonzero exit.
 - A problem on our side keeps the "technical problem" line above as its first sentence. Never ask the client
   to fix, install or update anything.
 - Never end on a dead stop: the last thing the client reads is their numbered choices.

@@ -32,6 +32,12 @@ PARTS = ("what_happened", "why", "fix", "choices")
 _CODE = re.compile(r"\bAF-[A-Z0-9]+(?:-[A-Z0-9]+)*\b")
 _PATH = re.compile(r"\S*(?:/|\\)\S*|\S+\.(?:py|json|md|sh|html|txt|pdf|png)\b")
 _TRACE = re.compile(r"Traceback \(most recent call last\):.*", re.S)
+# A bare HTTP status ("HTTP 429 billing problem"): technical transport words the client
+# never needs. The number beside them is a transport code, not a real count, so it goes
+# with them; real counts ("135 pictures") have no such neighbour and are kept. Only
+# 4xx/5xx transport codes are stripped, so real counts like 135 or 95 are never touched.
+_HTTP_WORD = re.compile(r"(?i)\bhttps?\b")
+_HTTP_STATUS_CODE = re.compile(r"\b[45]\d\d\b")
 # A bare identifier that looks like a secret value, never a plain word: mixed letters and
 # digits (abc123, tok_9f2), the shape real tokens and digests take. Pure words ("widget",
 # "broke", "retry") are kept; these are not.
@@ -51,9 +57,8 @@ _NOTHING_SPENT = re.compile(r"nothing (?:has been|was) spent", re.I)
 
 _FALLBACK = {
     "what_happened": "I had to stop for a moment before going further.",
-    "why": "I stop instead of guessing, so nothing wrong reaches your customers and nothing costs you money "
-           "by mistake.",
-    "fix": "I sort this out, then keep going.",
+    "why": "I stop and sort it out instead of guessing, so nothing half-done goes any further.",
+    "fix": "I sort it out, then keep going.",
     "choices": ["I sort it out and come right back to you.",
                 "I show you what's already done.",
                 "We keep going with your other questions meanwhile."],
@@ -78,9 +83,12 @@ def _plain(text: Any) -> str:
 
     Unknown exception detail passes through here on its way to the client message. Secret-shaped
     tokens, secret-word identifiers and their KEY=value pairs are removed before the plain words
-    are used, so a leak like ``KeyError: 'secret_setting'`` can never reach the client. A scrubbed
-    line is kept only when real words remain; a line that was all identifiers becomes "" and the
-    caller falls back to the generic parts.
+    are used, so a leak like ``KeyError: 'secret_setting'`` can never reach the client. Bare
+    transport words (HTTP/HTTPS) and their 4xx/5xx status numbers are removed too, so a note like
+    "HTTP 429 billing problem" reaches the client as "Billing problem": the status is a transport
+    code, not a fact the client can act on. Real counts always have a counted word beside them
+    ("135 pictures") and are never stripped. A scrubbed line is kept only when real words remain;
+    a line that was all identifiers becomes "" and the caller falls back to the generic parts.
     """
     text = str(text or "")
     # A KEY=value pair dies whole: dropping only the value would leave "customer_token is" behind.
@@ -92,6 +100,29 @@ def _plain(text: Any) -> str:
     text = _ERROR_CLASS.sub(" ", text)
     text = re.sub(r"['\"]", " ", text)
     text = _FILLER.sub(" ", text)
+    # Bare HTTP transport words and their 4xx/5xx status numbers: "HTTP 429 billing
+    # problem" -> "billing problem". The status is a transport code, not a client fact.
+    # Kept distinct from real counts: a count always has a counted word beside it
+    # ("135 pictures"), so "Your pages need 135 pictures" is never touched.
+    text = _HTTP_STATUS_CODE.sub(" ", text)
+    text = _HTTP_WORD.sub(" ", text)
+    # A bare tool path or operator loop word is not client words: "tools/fix.py" dies
+    # with the _PATH pattern above, and "run"/"retry" beside it die here, so
+    # "run tools/fix.py then retry" becomes "" instead of "Run then retry". Bare verbs
+    # ("then", "name", "record") are kept, so client next_steps survive untouched.
+    # "run" dies only as the first word ("run tools/..." / "run, then ..."), never as a
+    # noun later in the line: "the paid logo run" keeps its run, "Name the page run"
+    # keeps its run. A client next_step never opens with "run".
+    text = re.sub(r"(?i)\b(?:fix|tools?|retrys?|retry)\b", " ", text)
+    text = re.sub(r"(?i)^\s*run\b(?=\s|\$)", " ", text)
+    # A lone "then" left by a scrubbed tool path ("run ... then ...") is an operator
+    # loop connector, not client words. "Name ..., then retry" keeps its then: the
+    # retry-word scrub above already removed a real retry, so a surviving "then" with
+    # real words on both sides stays.
+    collapsed = re.sub(r"\s{2,}", " ", text).strip(" :;,-")
+    if re.fullmatch(r"(?i)(?:then|and|to|please)[\s,.;:]*", collapsed):
+        return ""
+    text = re.sub(r"\s+([,.;:])", r"\1", collapsed).strip(" :;,-")
     text = re.sub(r"\s+([,.;:])", r"\1", re.sub(r"\s{2,}", " ", text)).strip(" :;,-")
     # Residue of a scrubbed code/path: "the widget at broke ()" -> "The widget broke".
     text = re.sub(r"\(\s*\)", "", text)
@@ -140,6 +171,9 @@ def explain_stop(reason_code: Optional[str], facts: Optional[Mapping[str, Any]] 
     ``facts`` fills the {placeholders} with real numbers. ``envelope`` is the stop itself: its ``code``,
     ``detail`` (the refusal text) and any ``client_message`` / ``next_step`` / ``next_action`` it carries.
     A variant in the table that matches the detail fills its placeholders from the detail too.
+    An unknown code's ``next_step`` is trusted only when the same scrub that cleans the detail
+    leaves real client words in it; a technician's note (an operator path or command) scrubs to
+    "" and the fix falls back to the generic "I sort it out", which is all the evidence supports.
     """
     envelope = dict(envelope or {})
     code = str(reason_code or envelope.get("code") or "")
