@@ -1,7 +1,7 @@
 ---
 name: drama-song-ad-factory
 description: End-to-end drama-song advertisement factory on OpenClaw: a sung direct-response story (twelve-beat drama song) carried through intake, preflight, storyboard, shot planning, KIE music/lyric/vocal generation (Suno via Skill 68's createTask contract), timed film assembly (FFmpeg), independent music/timing/QC gates, Command Center ad-campaigns delivery, delivery variants and retake management. Standard-library Python control layer with transactional state, spend ledger with recorded ceilings, bounded worker leases and fail-closed recovery. Same canonical methodology and control CLI as the Claude-Nine / Claude Code distribution (999-setup .claude/skills/drama-song-ad-factory) — one skill folder per runtime, shared core, shared exit codes, no bypass of a failed shared guard. Use when asked to produce a drama song ad or song-driven video ad, or to run intake, preflight, resume or QC gates for an existing drama-song campaign run. Not for motion graphics (use motion-video-plus), plain AI video generation (use 67-kie-video), or landing pages (use blackceo-signature-page).
-version: v2.9.201
+version: v2.9.204
 priority: MEDIUM
 ---
 # Drama Song Ad Factory (Skill 75)
@@ -186,6 +186,70 @@ silently.
   `tests/test_loud_failure.py`.
 
 **Stage 3 stop rule (script-lyrics, v2.9.70).** Run the lyric validator (`lyric_writer.py`), the hook/recipe check (`suno_recipe.check_lyric_sheet`) and the words-fit check (`words_fit.preflight`) at most **3 rounds**. If a gate still fails after round 3, STOP: report the exact gate, its reason code and the failing lines, and ask the client ONE question with the concrete choices, numbered, in one message (in a Claude Code session use the AskUserQuestion tool; on an OpenClaw box send it on the client's own channel with `openclaw message send` and wait for the reply) (for example: use these client words as written, pick a longer length, cut the named lines). Never grid-search word counts or rewrites, never spend more than about 10 minutes on this stage, and never edit, bypass or monkey-patch a validator during a run -- a gate that contradicts another gate is a skill defect to report, not a puzzle to solve.
+
+## When something stops the work (binding, owner order 2026-11-20)
+
+The client is never left at a dead stop. Whenever the work stops, refuses,
+holds or waits and the client would see it, send ONE message with these four
+parts, in fifth-grade words:
+
+1. **What happened** - the exact problem, with the real numbers ("Your song
+   has 135 words. A 90-second song only has room for about 95.").
+2. **Why this rule exists** - one or two sentences on what the rule or gate
+   protects the client from (never invented: each reason is taken from the
+   code, this file or the CHANGELOG).
+3. **What will fix it** - the specific fix ("a 2-minute song fits these
+   words").
+4. **Your choices** - 2 to 4 numbered things you can do right now, always
+   including one where you do the work ("1. I make the song longer, up to 2
+   minutes. 2. I trim the words and show you. 3. Keep your words and I check
+   again.").
+
+Never show the client a reason code, a file path or an error trace; codes stay
+in logs and receipts. Say "nothing new was charged" only when the stop came
+before any spend. Never end on a stop with no choices.
+
+**How.** Every stop envelope that is not `ok` now carries a
+`client_explanation` beside its existing fields (`kie_dispatch` envelopes, the
+factory envelope and its music block, the song-choices attempt envelopes and
+holds, and the `song_choices.py generate` lyric refusal). Send its `message`
+field. For anything else call
+`loud_failure.explain_stop(reason_code, facts, envelope)`
+(`scripts/core/loud_failure.py`); it reads the four-part table in
+`references/client-messages.md` ("Every stop explained") and, for a code with
+no row, still builds all four parts from the envelope's own words.
+
+**Worked example (LYRICS_REJECTED).** The lyric check refused a 90-second
+song: 135 words against a 95-word budget, and a 62-word spoken opening where
+3 words fit. No offered length fits a 62-word opening (the opener cap tops
+out at 12 words even at the longest length), so `song_choices.explain_refusal`
+asks the skill's own length plan (`suno_recipe.length_that_fits`), learns no
+length clears both checks, and the client gets:
+
+> What happened: Your song has 135 words. A 90-second song only has room for
+> about 95, so the words would be crammed. Your spoken opening has 62 words.
+> At this length the song can only start with about 3 spoken words before the
+> music begins. I stopped before making the song, so nothing new was charged.
+>
+> Why this rule is here: A singer can only sing so many words a second ...
+>
+> What will fix it: No offered length fits a 62-word opening, so shorten the
+> spoken opening first (keep about 3 words up front), or trim the words to
+> about 95. ...
+>
+> 1. I shorten the spoken opening and show you first, no offered length fits it.
+> 2. I trim the words to about 95 and show you before I make anything.
+> 3. Keep your words as they are and I check again.
+> 4. I move the rest of your opening to a spoken part later in the song and show you.
+
+The explanation never changes a gate: the same stop, the same reason code and
+the same exit code; only the client's words are added.
+
+**Maintainer rule.** Every new client-facing stop ships with its row in
+`references/client-messages.md` ("Every stop explained") and its entry in the
+`INVENTORY` of `scripts/core/test_stop_explanations_s75.py`. That test fails
+when a scanned module grows a stop code with no row, when a row has fewer than
+two choices, or when a rendered message shows a code, a path or a trace.
 
 ## Run keepalive: the client hears from us every 10 minutes (v2.9.77)
 
@@ -744,7 +808,8 @@ Every paid path reserves through `core/spend_ledger.py` with a recorded
 ceiling first (no recorded ceiling = no paid call), keeps
 reserved/submitted/unknown/reconciled protocol, and never auto-resubmits an
 uncertain outcome. Always show the client the sentence from
-`references/client-messages.md`, never the reason code.
+`references/client-messages.md`, never the reason code; when the work stops,
+send the four-part message ("When something stops the work").
 
 - **All ready KIE clips go out at once (Part F F5):** Built, not yet
   connected to the run (tracked as U-R01). Stage order stays
