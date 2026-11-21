@@ -1012,6 +1012,18 @@ def _package_offers(session: Dict[str, Any],
     return out
 
 
+def _missing_fact_explanation(missing: List[str]) -> Dict[str, Any]:
+    """The four-part plain message (what happened, why, fix, choices) for a plan that waits on
+    facts. A payment-plan refusal gets its own entry; anything else is the missing-fact entry."""
+    try:
+        import funnel_stop_explainer as explain_stop
+        text = "; ".join(missing)
+        code = None if "payment plans are not supported" in text else "LAUNCH-MISSING-FACT"
+        out = explain_stop.explain_stop(code, {"missing": text} if code else None, envelope=text)
+        return {k: out[k] for k in ("what_happened", "why", "fix", "choices", "message")}
+    except Exception as exc:  # noqa: BLE001 - never turn a named wait into a crash
+        return {"message": "Your launch plan still needs: " + "; ".join(missing) + ".", "error": str(exc)}
+
 def assemble_plan(session: Dict[str, Any]) -> Dict[str, Any]:
     """Assemble the launch record + compiled route graph from the ledger.
     Stops at awaiting_missing_fact when an enabled chargeable slot lacks a
@@ -1134,7 +1146,8 @@ def assemble_plan(session: Dict[str, Any]) -> Dict[str, Any]:
                     "missing_capability": [f"deliverable producer: {exc}"]}
         _persist(session)
         return {"state": "awaiting_missing_fact", "missing": missing,
-                "deliverables": session.get("deliverables")}
+                "deliverables": session.get("deliverables"),
+                "client_explanation": _missing_fact_explanation(missing)}
     graph = clr.compile_route(launch)
     launch["route_graph_ref"] = f"route-graph:{launch['launch_id']}:rev{launch['revision']}"
     launch["route_graph_hash"] = clr.graph_hash(graph)
@@ -1149,7 +1162,8 @@ def assemble_plan(session: Dict[str, Any]) -> Dict[str, Any]:
         session["missing_facts"] = missing
         session["plan"] = None
         _persist(session)
-        return {"state": "awaiting_missing_fact", "missing": missing}
+        return {"state": "awaiting_missing_fact", "missing": missing,
+                "client_explanation": _missing_fact_explanation(missing)}
     session["plan"] = launch
     session["route_graph"] = graph
     session["plan_hash"] = plan_hash(launch)
@@ -1789,6 +1803,8 @@ def main(argv: List[str]) -> int:
             return EXIT_FAILCLOSED
     except (IntakeError, vlp.ApprovalError) as exc:
         print(f"FAIL: {exc}")
+        import funnel_stop_explainer as explain_stop
+        print("FOR THE CLIENT:\n" + explain_stop.client_message(str(exc)))
         return EXIT_VIOLATION
     return EXIT_OK
 
