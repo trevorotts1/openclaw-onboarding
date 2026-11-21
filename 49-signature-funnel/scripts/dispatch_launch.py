@@ -88,6 +88,7 @@ import compile_launch_route as clr  # noqa: E402
 import page_set as pset  # noqa: E402
 import page_swarm as swarm  # noqa: E402
 import validate_launch_plan as vlp  # noqa: E402
+import funnel_stop_explainer as explain_stop  # noqa: E402  (the client-facing four-part explanation)
 
 EXIT_OK = 0
 EXIT_VIOLATION = 2
@@ -1027,9 +1028,19 @@ def main(argv: List[str]) -> int:
         args.approval = args.approval or str(rd / "approval.json")
         cfg_path = rd / "launch-request.json"
         if cfg_path.is_file():
-            cfg = _load(str(cfg_path))
+            try:
+                cfg = _load(str(cfg_path))
+            except (OSError, ValueError):
+                cfg = None
+            if not isinstance(cfg, dict):
+                detail = "the launch request file is not valid JSON"
+                print(f"FAIL: {detail}")
+                print("FOR THE CLIENT:\n" + explain_stop.client_message(detail))
+                return EXIT_VIOLATION
         if cfg.get("mode") not in (None, "signature_launch"):
-            print("FAIL: launch-request.json mode is not signature_launch")
+            detail = "launch-request.json mode is not signature_launch"
+            print(f"FAIL: {detail}")
+            print("FOR THE CLIENT:\n" + explain_stop.client_message(detail))
             return EXIT_VIOLATION
         args.image_inputs = args.image_inputs or cfg.get("image_inputs")
         args.landing_pages = args.landing_pages or (
@@ -1043,7 +1054,10 @@ def main(argv: List[str]) -> int:
         args.write_target = cfg.get("allowed_write_target", args.write_target)
         args.out = args.out or str(rd / "dispatch")
     if not (args.launch and args.approval and args.client and args.worker):
-        print("USAGE ERROR: --launch --approval --client --worker are required.")
+        detail = ("USAGE ERROR: --launch --approval --client --worker are required "
+                  "(pass --run-dir <dir> and it fills them in from the run folder).")
+        print(detail)
+        print("FOR THE CLIENT:\n" + explain_stop.client_message(detail))
         return EXIT_FAILCLOSED
     try:
         launch = _load(args.launch)
@@ -1065,8 +1079,10 @@ def main(argv: List[str]) -> int:
         executor = None
         if adapters_cfg is not None:
             if not args.out:
-                print("FAIL: adapters require --out (or --run-dir) as the "
-                      "work dir for request/result files")
+                detail = ("adapters require --out (or --run-dir) as the "
+                          "work dir for request/result files")
+                print(f"FAIL: {detail}")
+                print("FOR THE CLIENT:\n" + explain_stop.client_message(detail))
                 return EXIT_FAILCLOSED
             executor = executor_from_config(
                 adapters_cfg, Path(args.out),
@@ -1105,6 +1121,7 @@ def main(argv: List[str]) -> int:
     except (DispatchError, pset.PageSetError, swarm.SwarmError,
             vlp.ApprovalError, clr.RouteError, OSError, ValueError) as exc:
         print(f"FAIL: {exc}")
+        print("FOR THE CLIENT:\n" + explain_stop.client_message(str(exc)))
         return EXIT_VIOLATION
     print(json.dumps({"execution": m["execution"],
                       "requests": len(m["requests"]),
