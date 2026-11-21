@@ -543,7 +543,21 @@ def collect(manifest: Dict[str, Any], results: List[Dict[str, Any]],
                      for ro in sorted(by_role)},
         "weakest_proof_class": weakest,
         "aggregate_status": aggregate,
+        **({"client_explanation": _blocked_explanation(problems, by_role, blocked)}
+           if aggregate == "blocked" else {}),
     }
+
+def _blocked_explanation(problems: List[str], by_role: Dict[str, Any],
+                         blocked: List[str]) -> Dict[str, Any]:
+    """Four-part plain message for a blocked launch checkpoint, from the first named blocker."""
+    first = next(iter([b for ro in blocked for b in (by_role[ro].get("blockers") or [])] + problems), "")
+    try:
+        sys.path.insert(0, str(Path(__file__).resolve().parent))
+        import explain_stop
+        out = explain_stop.explain_stop(envelope=str(first))
+        return {k: out[k] for k in ("what_happened", "why", "fix", "choices", "message")}
+    except Exception as exc:  # noqa: BLE001 - never turn a named block into a crash
+        return {"message": f"A page of your launch is blocked: {first}", "error": str(exc)}
 
 
 def _load(p: str) -> Any:
