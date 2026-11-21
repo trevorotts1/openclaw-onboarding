@@ -432,7 +432,7 @@ def main(argv=None):
         return 0
     except (Refused, OSError, ValueError, KeyError) as exc:
         print(f"REFUSED: {exc}", file=sys.stderr)
-        import explain_stop
+        import funnel_stop_explainer as explain_stop
         print("FOR THE CLIENT:\n" + explain_stop.client_message(str(exc)), file=sys.stderr)
         return 2
 

@@ -553,8 +553,8 @@ def _blocked_explanation(problems: List[str], by_role: Dict[str, Any],
     first = next(iter([b for ro in blocked for b in (by_role[ro].get("blockers") or [])] + problems), "")
     try:
         sys.path.insert(0, str(Path(__file__).resolve().parent))
-        import explain_stop
-        out = explain_stop.explain_stop(envelope=str(first))
+        import funnel_stop_explainer
+        out = funnel_stop_explainer.explain_stop(envelope=str(first))
         return {k: out[k] for k in ("what_happened", "why", "fix", "choices", "message")}
     except Exception as exc:  # noqa: BLE001 - never turn a named block into a crash
         return {"message": f"A page of your launch is blocked: {first}", "error": str(exc)}

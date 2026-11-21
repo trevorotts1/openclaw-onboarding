@@ -663,8 +663,8 @@ def _client_explanation(detail: str) -> Dict:
     references/stop-explanations.json. The reason code stays in `detail`; it never reaches the
     message. Never raises: an explanation problem must not turn a clean stop into a crash."""
     try:
-        import explain_stop
-        out = explain_stop.explain_stop(envelope=str(detail))
+        import funnel_stop_explainer
+        out = funnel_stop_explainer.explain_stop(envelope=str(detail))
         return {k: out[k] for k in ("what_happened", "why", "fix", "choices", "message", "spent_nothing")}
     except Exception as exc:  # noqa: BLE001
         return {"message": "The funnel work stopped before it finished. I can look into it and run it "

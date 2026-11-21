@@ -1,7 +1,7 @@
 {
   "contract": "signature-funnel-stop-explanations/v1",
   "purpose": "Every place Skill 49 stops, refuses, holds or waits, told in fifth-grade words: what happened, why the rule exists, what will fix it, and 2 to 4 choices. Reason codes stay in logs; only these words reach the client.",
-  "how_to_add": "A new client-facing stop ships with an entry here (scripts/test_explain_stop.py fails otherwise). {placeholders} are filled from real facts; an unfilled one falls back to defaults.",
+  "how_to_add": "A new client-facing stop ships with an entry here (scripts/test_funnel_stop_explainer.py fails otherwise). {placeholders} are filled from real facts; an unfilled one falls back to defaults.",
   "fallback": {
     "what_happened": "The funnel work stopped before it finished.",
     "why": "This skill stops instead of guessing when something does not look right, so nothing wrong reaches your pages, your buyers or your bill.",

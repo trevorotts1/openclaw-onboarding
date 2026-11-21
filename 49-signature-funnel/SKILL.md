@@ -1,7 +1,7 @@
 ---
 name: signature-funnel
 description: Builds a Trevor Otts Signature Funnel — the SACRED 12-section Hero copy system, per-section long-form image prompts sized to the model's own character budget (95 to 100 percent of its maximum, never below 80 percent), GHL media + funnel build, and a configurable 3/5/7-step funnel (Main -> Checkout -> Upsell-1 -> Downsell-1 -> Upsell-2 -> Downsell-2 -> Thank-You with accept/decline branching). Gates the sacred method with fail-closed deterministic provers: the intake gate, the 12-section copy contract (per-section char/word bands, six page profiles), the image-prompt two-floor gate (length and structure), and a no-pitch (clean thank-you) + image-provenance gate. A canonical fail-closed entry (deps/version/dept-map/hash-pin/bypass-scan/operator key) drives a no-skip orchestrator that issues a signed PROCESS-CERTIFICATE only on all-phases-pass. Delegates image generation to Skill 66 (model policy) then Skill 74 (the one approved KIE transport) and the media hosting (P4) and funnel/page build (P7) to the delivery rail the brief names, which proves them with signed receipts. Client runtime uses the client's own providers, never Anthropic.
-version: v2.1.65
+version: v2.1.66
 ---
 
 # Signature Funnel (Skill 49)
@@ -190,8 +190,8 @@ receipts. Say "this check did not spend any money" only when the stop really cam
 marks it). Never end on a dead stop: always end with the numbered choices.
 
 The words live in one table, `references/stop-explanations.json` (one entry per stop), and one helper fills them in:
-`python3 scripts/explain_stop.py --from-output <file|->` reads any refusal output, `--code <code> --facts '<json>'`
-explains one code, and `explain_stop.explain_stop(reason_code, facts, envelope)` does the same in Python. Where a
+`python3 scripts/funnel_stop_explainer.py --from-output <file|->` reads any refusal output, `--code <code> --facts '<json>'`
+explains one code, and `funnel_stop_explainer.explain_stop(reason_code, facts, envelope)` does the same in Python. Where a
 stop is already turned into output, the plain message is already there: the orchestrator prints `FOR THE CLIENT:`
 and writes `client_explanation` into `process_manifest.json` beside `aborted_at`; `launch_intake.assemble_plan`
 returns `client_explanation` beside `missing`; a blocked launch checkpoint carries `client_explanation`; the
@@ -216,7 +216,7 @@ client reads:
 > it is and I check it again, so you can see the exact numbers.
 
 **Maintainer rule:** every new client-facing stop ships with its entry in `references/stop-explanations.json`.
-`scripts/test_explain_stop.py` collects every `AF-FUN-*` code from the code and every entry-shell abort tag, and
+`scripts/test_funnel_stop_explainer.py` collects every `AF-FUN-*` code from the code and every entry-shell abort tag, and
 fails when one has no entry of its own (a parent entry never stands in for a missing child), when an entry lacks
 a part or has fewer than 2 choices, when the client words carry a code, an exception name or a path, or when an
 entry-shell refusal reaches the client without the four parts.

@@ -109,11 +109,11 @@ PINNED_FILES=(
 )
 
 # Every stop also tells the client, in plain words, what happened, why the rule exists, what will fix it and
-# their numbered choices (scripts/explain_stop.py). The ABORT line above it stays for logs; the code never
+# their numbered choices (scripts/funnel_stop_explainer.py). The ABORT line above it stays for logs; the code never
 # reaches the plain message. If Python itself cannot run, a fixed plain message is printed instead.
 explain_for_client() {
   local msg=""
-  msg="$("$PY" -I "$SCRIPTS_DIR/explain_stop.py" --from-output - <<<"$1" 2>/dev/null)" || msg=""
+  msg="$("$PY" -I "$SCRIPTS_DIR/funnel_stop_explainer.py" --from-output - <<<"$1" 2>/dev/null)" || msg=""
   if [ -z "$msg" ]; then
     msg="What happened: The funnel tools could not run on this computer, so the work stopped before anything was checked.
 Why this rule exists: This skill stops instead of guessing when something does not look right, so nothing wrong reaches your pages, your buyers or your bill.

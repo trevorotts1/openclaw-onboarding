@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""explain_stop.py - turn any Skill 49 stop into the four-part plain message the client reads.
+"""funnel_stop_explainer.py - turn any Skill 49 stop into the four-part plain message the client reads.
 
 Every stop the client sees is told in fifth-grade words:
   1. what happened (with the real numbers), 2. why this rule exists, 3. what will fix it,
@@ -18,9 +18,9 @@ that spends no money itself; the message then says so. An unknown stop still get
 built from the envelope's detail / message / next_action. "code" is for logs, never shown.
 
 Usage:
-  explain_stop.py --code AF-FUN-SEC12-WORDS [--facts '{"count": 160}']
-  bash signature-funnel-entry.sh --run-dir <dir> 2>&1 | explain_stop.py --from-output -
-  explain_stop.py --self-test
+  funnel_stop_explainer.py --code AF-FUN-SEC12-WORDS [--facts '{"count": 160}']
+  bash signature-funnel-entry.sh --run-dir <dir> 2>&1 | funnel_stop_explainer.py --from-output -
+  funnel_stop_explainer.py --self-test
 Exit: 0 message printed, 3 bad usage.
 """
 import json
@@ -322,7 +322,7 @@ def main(argv):
     if "--code" in argv:
         print(explain_stop(opt("--code"), json.loads(opt("--facts") or "{}"))["message"])
         return 0
-    print("usage: explain_stop.py --code <AF-FUN-...> [--facts <json>] | --from-output <file|-> | --self-test",
+    print("usage: funnel_stop_explainer.py --code <AF-FUN-...> [--facts <json>] | --from-output <file|-> | --self-test",
           file=sys.stderr)
     return 3
 

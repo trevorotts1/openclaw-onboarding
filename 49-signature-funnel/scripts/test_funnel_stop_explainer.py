@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""test_explain_stop.py - every Skill 49 stop the client can see explains itself in plain words.
+"""test_funnel_stop_explainer.py - every Skill 49 stop the client can see explains itself in plain words.
 
-Offline, stdlib only, no spend. Run: python3 test_explain_stop.py
+Offline, stdlib only, no spend. Run: python3 test_funnel_stop_explainer.py
 
 STOP INVENTORY (where Skill 49 stops, refuses, holds or waits, and who sees it):
   * signature-funnel-entry.sh die "<TAG>": DEPS, VERSION, MODE, USAGE, MODEL-TIER, SELF-TEST
@@ -31,7 +31,7 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 SKILL = HERE.parent
 sys.path.insert(0, str(HERE))
-import explain_stop as es  # noqa: E402
+import funnel_stop_explainer as es  # noqa: E402
 
 TABLE = es.load_table()
 ENTRIES = TABLE["entries"]
@@ -68,7 +68,7 @@ def code_inventory():
     for root, dirs, files in os.walk(SKILL):
         dirs[:] = [d for d in dirs if d not in SKIP]
         for f in files:
-            if f.endswith((".py", ".sh")) and not f.startswith("test_") and f != "explain_stop.py":
+            if f.endswith((".py", ".sh")) and not f.startswith("test_") and f != "funnel_stop_explainer.py":
                 found |= set(CODE.findall(Path(root, f).read_text(encoding="utf-8", errors="replace")))
     return found
 

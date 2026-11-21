@@ -88,7 +88,7 @@ import compile_launch_route as clr  # noqa: E402
 import page_set as pset  # noqa: E402
 import page_swarm as swarm  # noqa: E402
 import validate_launch_plan as vlp  # noqa: E402
-import explain_stop  # noqa: E402  (the client-facing four-part explanation)
+import funnel_stop_explainer as explain_stop  # noqa: E402  (the client-facing four-part explanation)
 
 EXIT_OK = 0
 EXIT_VIOLATION = 2

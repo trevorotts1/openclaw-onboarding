@@ -1016,7 +1016,7 @@ def _missing_fact_explanation(missing: List[str]) -> Dict[str, Any]:
     """The four-part plain message (what happened, why, fix, choices) for a plan that waits on
     facts. A payment-plan refusal gets its own entry; anything else is the missing-fact entry."""
     try:
-        import explain_stop
+        import funnel_stop_explainer as explain_stop
         text = "; ".join(missing)
         code = None if "payment plans are not supported" in text else "LAUNCH-MISSING-FACT"
         out = explain_stop.explain_stop(code, {"missing": text} if code else None, envelope=text)
@@ -1803,7 +1803,7 @@ def main(argv: List[str]) -> int:
             return EXIT_FAILCLOSED
     except (IntakeError, vlp.ApprovalError) as exc:
         print(f"FAIL: {exc}")
-        import explain_stop
+        import funnel_stop_explainer as explain_stop
         print("FOR THE CLIENT:\n" + explain_stop.client_message(str(exc)))
         return EXIT_VIOLATION
     return EXIT_OK
