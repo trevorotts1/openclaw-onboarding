@@ -361,3 +361,120 @@ def test_an_unknown_kind_is_still_refused(cc):
     with pytest.raises(ar.ApprovalRefused) as e:
         call(cc, kind="not_a_real_kind", scope=["not_a_real_kind"])
     assert e.value.code == "APPROVAL-KIND-UNKNOWN"
+
+# ---------------------------------------------------------------------------
+# The owner-request binding (JJA Black Friday / launch bf2026-jjwd, 2026-11-21)
+#
+# Command Center's owner decision path stores `scope` as a serialized JSON
+# object -- {"location_id", "action", "object_key"} -- and returns those three
+# flat on the record. normalize_scope() split that string on commas, so the
+# stored scope became four junk fragments and NO canonical kind was ever a
+# member: every owner-approved build was refused at the application boundary
+# with APPROVAL-SCOPE. These tests pin the binding representation and prove the
+# surrounding guarantees still hold.
+# ---------------------------------------------------------------------------
+
+BINDING = {"location_id": "Tk9al4un291lMTUlqTLQ",
+           "action": "plan_build_approve",
+           "object_key": "bf2026-jjwd-free-pictures"}
+BINDING_WIRE = json.dumps(BINDING, separators=(",", ":"))
+BOUND_RECORD = dict(RECORD, kind="plan_build", scope=BINDING_WIRE,
+                    client_identity=None, client_identity_ref="telegram:8606145708",
+                    tenant_id="self", source_message_ref="approval-request:req-1",
+                    plan_hash="sha256:" + HASH)
+
+
+def bound(cc, **fields):
+    rec = copy.deepcopy(BOUND_RECORD)
+    rec.update(fields)
+    cc["record"] = rec
+
+
+def bcall(cc, **over):
+    args = dict(kind="launch_plan_build", plan_hash=HASH,
+                scope=["plan_build_approve", "bf2026-jjwd-free-pictures"],
+                client_identity="telegram:8606145708", env=cc["env"])
+    args.update(over)
+    return ar.verify("appr_12345678", args.pop("kind"), args.pop("plan_hash"),
+                     args.pop("scope"), **args)
+
+
+def test_structural_binding_reads_the_three_keys():
+    assert ar.structural_binding(BINDING_WIRE) == BINDING
+    assert ar.structural_binding(BINDING) == BINDING
+
+
+def test_structural_binding_refuses_a_half_binding():
+    assert ar.structural_binding(json.dumps({"location_id": "x", "action": "y"})) == "conflict"
+    assert ar.structural_binding(json.dumps({"location_id": "x", "action": "y",
+                                             "object_key": "  "})) == "conflict"
+
+
+def test_structural_binding_ignores_a_non_binding():
+    assert ar.structural_binding("images, pages") is None
+    assert ar.structural_binding(["images", "pages"]) is None
+    assert ar.structural_binding(json.dumps({"note": "free text"})) is None
+
+
+def test_normalize_scope_prefers_the_binding_over_comma_splitting():
+    assert ar.normalize_scope(BINDING_WIRE) == ["plan_build_approve", "bf2026-jjwd-free-pictures"]
+    # the documented Command Center free-text legacy shape is unchanged
+    assert ar.normalize_scope("images, pages") == ["images, pages", "images", "pages"]
+    assert ar.normalize_scope(["images", "pages"]) == ["images", "pages"]
+
+
+def test_a_genuine_owner_bound_build_approval_verifies(cc):
+    """The live failure: this exact shape was refused. It must pass."""
+    bound(cc)
+    out = bcall(cc)
+    assert out["ok"] is True and out["kind"] == "launch_plan_build"
+    assert out["scope"] == ["plan_build_approve", "bf2026-jjwd-free-pictures"]
+
+
+@pytest.mark.parametrize("scope,code", [
+    (["publish_approve", "bf2026-jjwd-free-pictures"], "APPROVAL-SCOPE"),
+    (["plan_build_approve", "someone-elses-object"], "APPROVAL-SCOPE"),
+    (["*"], "APPROVAL-SCOPE"),
+    (["launch_plan_build"], "APPROVAL-SCOPE"),
+    (["images", "pages"], "APPROVAL-SCOPE"),
+])
+def test_a_binding_grants_exactly_its_action_and_object(cc, scope, code):
+    bound(cc)
+    with pytest.raises(ar.ApprovalRefused) as e:
+        bcall(cc, scope=scope)
+    assert e.value.code == code
+
+
+@pytest.mark.parametrize("fields,code", [
+    ({"client_identity_ref": "telegram:9999999999"}, "APPROVAL-IDENTITY"),
+    ({"plan_hash": "sha256:" + "f" * 64}, "APPROVAL-HASH"),
+    ({"expires_at": (datetime.now(timezone.utc) - timedelta(seconds=1)).isoformat()}, "APPROVAL-EXPIRED"),
+    ({"revoked": True}, "APPROVAL-REVOKED"),
+])
+def test_a_bound_build_still_enforces_identity_hash_expiry_and_revocation(cc, fields, code):
+    bound(cc, **fields)
+    with pytest.raises(ar.ApprovalRefused) as e:
+        bcall(cc)
+    assert e.value.code == code
+
+
+def test_a_paid_budget_approval_cannot_be_replayed_as_a_build(cc):
+    bound(cc, kind="paid_asset_budget")
+    with pytest.raises(ar.ApprovalRefused) as e:
+        bcall(cc)
+    assert e.value.code == "APPROVAL-KIND"
+
+
+def test_a_scope_that_disagrees_with_the_flat_fields_is_refused(cc):
+    """Half or conflicting bindings are refused, never completed by guesswork."""
+    bound(cc, object_key="bf2026-jjwd-practice-build")
+    with pytest.raises(ar.ApprovalRefused) as e:
+        bcall(cc)
+    assert e.value.code == "APPROVAL-NOT-FROM-AUTHORITY"
+
+
+def test_a_half_binding_in_scope_is_refused(cc):
+    bound(cc, scope=json.dumps({"location_id": "x", "action": "plan_build_approve"}))
+    with pytest.raises(ar.ApprovalRefused) as e:
+        bcall(cc)
+    assert e.value.code == "APPROVAL-NOT-FROM-AUTHORITY"
