@@ -9,7 +9,17 @@ of a traceback.
 
 Request: `{"action": <name>, ...action fields}`.
 Success: `{"ok": true, "action": <name>, "result": ...}`.
-Failure: `{"ok": false, "error": {"code": "S78-*", "message": ...}}`.
+Failure: `{"ok": false, "error": {"code": "S78-*", "message": ..., "client_explanation": {...}}}`.
+
+`code` and `message` are for logs and receipts. `client_explanation`
+(`scripts/explain_stop.py`, words in `references/stop-explanations.json`)
+is what the client reads: `what_happened`, `why`, `fix`, `choices` (2 to
+4, numbered) and the ready `message`, with no code, path or traceback in
+it. A plan or invocation that declines (one package, or a journey mode
+with no selection page) is `ok`, and its envelope carries
+`client_explanation` beside `result`. Session results in the
+`expired` and `reconfirm_required` states carry `client_explanation`
+too (the buyer's words).
 
 CLI exit codes mirror the house convention: 0 ok, 2 violation, 3
 fail-closed (bad request, unknown action, storage failure).

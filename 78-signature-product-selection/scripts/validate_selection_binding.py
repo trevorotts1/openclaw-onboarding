@@ -25,6 +25,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+from explain_stop import report_stop  # noqa: E402
 from selection_core import Violation, build_selection, reject_query_authority, validate_binding  # noqa: E402
 from build_selection_plan import SELF_TEST_LAUNCH  # noqa: E402
 
@@ -41,7 +42,8 @@ def validate_plan(plan, launch, *, approval_verifier=None):
     with no mappings validates nothing and is refused."""
     mappings = plan.get("mappings")
     if not isinstance(mappings, list) or not mappings or not all(isinstance(m, dict) for m in mappings):
-        raise Violation(V_PLAN_EMPTY, "Binding plan has no usable mappings; a plan that validates nothing is refused.")
+        raise Violation(V_PLAN_EMPTY, "Binding plan has no usable mappings; a plan that validates nothing is refused.",
+                        {"missing": "The list of checkout links is empty."})
     revision = plan.get("revision")
     revision = revision if isinstance(revision, int) and not isinstance(revision, bool) else -1
     for m in mappings:
@@ -120,11 +122,9 @@ def main(argv):
             reject_query_authority(json.loads(Path(argv[argv.index("--query") + 1]).read_text()))
         validate_binding(selection, launch, expected_revision=int(launch["revision"]))
     except Violation as v:
-        print(f"VIOLATION [{v.code}]: {v.message}", file=sys.stderr)
-        return 2
+        return report_stop(f"REFUSED: [{v.code}] {v.message}", v.code, v.facts, stream=sys.stderr, exit_code=2)
     except Exception as e:
-        print(f"FAIL-CLOSED: {e}", file=sys.stderr)
-        return 3
+        return report_stop(f"REFUSED: {e}", None, None, stream=sys.stderr, exit_code=3)
     print("BINDING PASS: selection preserves the approved native product/price mapping.")
     return 0
 

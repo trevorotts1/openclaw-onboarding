@@ -45,6 +45,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+from explain_stop import report_stop  # noqa: E402
 from selection_core import (  # noqa: E402
     Violation, currency_exponent, format_money, scan_claims, validate_catalog,
 )
@@ -113,7 +114,7 @@ def validate_content(copy_doc, launch, production=False):
     for block in copy_doc.get("blocks", []):
         oid = block.get("offer_id")
         if oid not in mains:
-            raise Violation("S78-SELECTION-UNKNOWN-OFFER", f"Copy block for unapproved offer {oid!r}.")
+            raise Violation("S78-SELECTION-UNKNOWN-OFFER", f"Copy block for unapproved offer {oid!r}.", {"offer": oid})
         text = block.get("text", "")
         scan_claims(text, claim_evidence=block.get("claim_evidence") or {})
         low = text.lower()
@@ -127,6 +128,7 @@ def validate_content(copy_doc, launch, production=False):
                     V_AMBIGUOUS,
                     f"Copy for {oid!r} uses ambiguous scope term {term!r} without defining "
                     "what it means in concrete scope; define it or replace it with deliverables.",
+                    {"term": f'"{term}"', "offer": mains[oid].get("display_name") or oid},
                 )
         text_by_offer.setdefault(oid, []).append(text)
     for oid, offer in mains.items():
@@ -136,6 +138,7 @@ def validate_content(copy_doc, launch, production=False):
         approved_minors = {int(p["amount_minor"]) for p in offer["prices"]}
         # an installment or recurring schedule row is part of the same approved price
         approved_minors |= {int(r["amount_minor"]) for p in offer["prices"] for r in p.get("schedule") or []}
+        name = offer.get("display_name") or oid
         for m in MONEY_RE.finditer(joined):
             minor = _money_to_minor(m.group(1), m.group(2), m.group(3))
             if minor not in approved_minors:
@@ -146,6 +149,7 @@ def validate_content(copy_doc, launch, production=False):
                     V_PRICE_MISMATCH,
                     f"Copy for {oid!r} displays {m.group(0)} but approved prices are {expected}; "
                     "a wrong displayed price is an automatic fail.",
+                    {"shown": m.group(0), "offer": name, "approved": expected},
                 )
         offer_currencies = {p["currency"] for p in offer["prices"]}
         for m in CODE_MONEY_RE.finditer(joined):
@@ -161,6 +165,7 @@ def validate_content(copy_doc, launch, production=False):
                     V_PRICE_MISMATCH,
                     f"Copy for {oid!r} displays {m.group(0)} but approved prices are {expected}; "
                     "a wrong displayed price is an automatic fail.",
+                    {"shown": m.group(0), "offer": name, "approved": expected},
                 )
         for ex in offer.get("exclusions", []):
             if ex not in joined:
@@ -168,6 +173,7 @@ def validate_content(copy_doc, launch, production=False):
                     V_HIDDEN_EXCLUSION,
                     f"Material exclusion {ex!r} for {oid!r} does not appear verbatim in the visible copy; "
                     "exclusions are never hidden, including on mobile.",
+                    {"offer": name, "exclusion": f'"{ex}"'},
                 )
     return True
 
@@ -242,7 +248,8 @@ def validate_manuscript(text, catalog, *, production=False, authored=None):
         for price in offer["prices"]:
             shown = format_money(price["amount_minor"], price["currency"])
             if shown not in card:
-                raise Violation(V_PRICE_MISMATCH, f"Card for {name!r} does not show its approved price {shown}.")
+                raise Violation(V_PRICE_MISMATCH, f"Card for {name!r} does not show its approved price {shown}.",
+                                {"shown": "a different price", "offer": name, "approved": shown})
     validate_content({"blocks": [{"offer_id": o["offer_id"], "text": card} for o, (_, card) in zip(mains, cards)]},
                      {"offers": mains}, production=False)
     return True
@@ -346,11 +353,9 @@ def main(argv):
                 for piece in _strings(doc):
                     scan_claims(piece)
     except Violation as v:
-        print(f"VIOLATION [{v.code}]: {v.message}", file=sys.stderr)
-        return 2
+        return report_stop(f"REFUSED: [{v.code}] {v.message}", v.code, v.facts, stream=sys.stderr, exit_code=2)
     except Exception as e:
-        print(f"FAIL-CLOSED: {e}", file=sys.stderr)
-        return 3
+        return report_stop(f"REFUSED: {e}", None, None, stream=sys.stderr, exit_code=3)
     print("CONTENT PASS: copy facts match the approved catalog.")
     return 0
 
