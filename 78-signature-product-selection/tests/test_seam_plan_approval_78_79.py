@@ -23,6 +23,11 @@ REPO = HERE.parents[2]
 sys.path.insert(0, str(HERE.parents[1] / "scripts"))
 sys.path.insert(0, str(REPO / "79-signature-order-form" / "scripts"))
 
+try:  # Skill 79's validator needs jsonschema; CI installs it, a bare interpreter gets a named skip, never a crash
+    import jsonschema  # noqa: F401
+except ImportError:  # pragma: no cover - environment without the package
+    raise unittest.SkipTest("SKIP-NAMED: jsonschema package not installed; this 78 to 79 seam cannot run here")
+
 from build_selection_plan import SELF_TEST_LAUNCH  # noqa: E402
 from selection_core import Violation, validate_catalog  # noqa: E402
 from validate_checkout import CheckoutValidationError, validate_request  # noqa: E402

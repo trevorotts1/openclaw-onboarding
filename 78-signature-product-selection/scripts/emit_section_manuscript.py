@@ -30,6 +30,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+from explain_stop import report_stop  # noqa: E402
 from build_selection_plan import SELF_TEST_LAUNCH, build_plan  # noqa: E402
 from render_selection_preview import price_line  # noqa: E402
 
@@ -178,8 +179,7 @@ def main(argv):
     try:
         paths = write(args[0], opt("--run-dir"), opt("--copy"))
     except Exception as e:  # fail closed
-        print(f"FAIL-CLOSED: {e}", file=sys.stderr)
-        return 3
+        return report_stop(f"REFUSED: {e}", None, None, stream=sys.stderr, exit_code=3)
     print("wrote " + " and ".join(str(p) for p in paths))
     return 0
 

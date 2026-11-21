@@ -35,6 +35,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+from explain_stop import report_stop  # noqa: E402
 from selection_core import format_money  # noqa: E402
 from build_selection_plan import SELF_TEST_LAUNCH, build_plan  # noqa: E402
 
@@ -302,11 +303,9 @@ def main(argv):
         plan = json.loads(Path(args[0]).read_text())
         out = render(plan, state=state)
     except ValueError as v:
-        print(f"VIOLATION: {v}", file=sys.stderr)
-        return 2
+        return report_stop(f"REFUSED: {v}", None, None, stream=sys.stderr, exit_code=2)
     except Exception as e:
-        print(f"FAIL-CLOSED: {e}", file=sys.stderr)
-        return 3
+        return report_stop(f"REFUSED: {e}", None, None, stream=sys.stderr, exit_code=3)
     Path(args[1]).write_text(out)
     print(f"Wrote LOCAL ONLY preview: {args[1]}")
     return 0
