@@ -17,7 +17,11 @@ SKILL = HERE.parents[1]
 sys.path.insert(0, str(SKILL / "scripts"))
 sys.path.insert(0, str(HERE.parents[2] / "79-signature-order-form" / "scripts"))
 
-import jsonschema  # noqa: E402  (activated through the PYDEPS block in the scripts above when needed)
+try:  # Skill 79's validator needs jsonschema; CI installs it, a bare interpreter gets a named skip, never a crash
+    import jsonschema  # noqa: F401
+except ImportError:  # pragma: no cover - environment without the package
+    raise unittest.SkipTest("SKIP-NAMED: jsonschema package not installed; this 78 to 79 seam cannot run here")
+
 
 from build_selection_plan import SELF_TEST_LAUNCH  # noqa: E402
 from selection_core import build_selection, validate_binding  # noqa: E402

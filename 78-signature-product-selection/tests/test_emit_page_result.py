@@ -292,7 +292,8 @@ class EmitCliTests(unittest.TestCase):
                  "--author-session", "test-cli", "--request-id", "r-only"],
                 capture_output=True, text=True)
             self.assertEqual(run.returncode, 3, run.stdout + run.stderr)
-            self.assertIn("FAIL-CLOSED", run.stderr)
+            self.assertIn("REFUSED", run.stderr)  # the log line keeps the raw text for the logs
+            self.assertIn("What happened:", run.stderr)  # and the stop ends in the four plain parts
             self.assertFalse(out_path.exists())
 
 

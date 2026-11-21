@@ -32,6 +32,14 @@ import run_image_stages as ris  # noqa: E402
 from build_selection_plan import SELF_TEST_LAUNCH, build_plan  # noqa: E402
 
 needs71 = unittest.skipUnless(S71.is_dir(), "Skill 71 is not beside this skill")
+def _require_pil():
+    """Skill 71's picture modules import Pillow (circle_image.py). A bare interpreter gets a named
+    skip from setUp, never an import crash and never four red tests; CI installs the pin."""
+    try:
+        import PIL  # noqa: F401
+    except ImportError:
+        raise unittest.SkipTest(
+            "SKIP-NAMED: Pillow (PIL) not installed; Skill 71's picture modules cannot run here")
 PLAN = json.loads((GOLDEN / "plan.json").read_text())
 
 
@@ -94,6 +102,7 @@ class Fixture(unittest.TestCase):
     """A launch, request, route graph and brand file that agree with each other, on the bundled test brand."""
 
     def setUp(self):
+        _require_pil()
         self.tmp = tempfile.TemporaryDirectory()
         self.dir = Path(self.tmp.name)
         brand = (S71 / "assets" / "brand" / "blackceo-brand.json").read_bytes()
@@ -180,21 +189,27 @@ class RunTests(Fixture):
     def test_inputs_none_is_refused_and_makes_no_images(self):
         proc = self.call(inputs="none")
         self.assertEqual(proc.returncode, 2)
-        self.assertIn("REFUSED", proc.stdout)
+        self.assertIn("REFUSED", proc.stdout + proc.stderr)  # log line on stdout, plain words on stderr
+        self.assertIn("wireframes and mockups", proc.stdout + proc.stderr)
+        self.assertIn("What happened:", proc.stderr)
         self.assertFalse((self.dir / "run").exists())
 
     def test_refusals(self):
         self.inputs.pop("brand_owner")
         self.write_inputs()
         proc = self.call()
+        combined = proc.stdout + proc.stderr
         self.assertEqual(proc.returncode, 2)
-        self.assertIn("missing brand_owner", proc.stdout)
+        self.assertIn("REFUSED", combined)  # log line names the missing setting
+        self.assertIn("missing settings", combined)  # plain words, no internal key name
+        self.assertIn("What happened:", proc.stderr)
         self.inputs["brand_owner"] = "blackceo"
         self.write_inputs()
         (self.dir / "plan.json").write_text(json.dumps({"outcome": "declined_single_offer"}))
         proc = self.call()
         self.assertEqual(proc.returncode, 2)
-        self.assertIn("no order page is built", proc.stdout)
+        self.assertIn("no order page is built", proc.stdout + proc.stderr)
+        self.assertIn("What happened:", proc.stderr)
         self.assertFalse((self.dir / "run").exists())
 
     def test_a_stale_route_graph_is_refused_before_anything_is_written(self):
