@@ -147,11 +147,56 @@ def _default_studio_publish(run_dir, msgs):
     raise RuntimeError("studio sink not wired for script presentation")
 
 
+def _blocked(problems):
+    """A blocked script stage carries the four-part client explanation beside
+    its problems. The problems name files for the operator; the explanation
+    never does, so a client reading it sees plain words."""
+    out = {"outcome": "blocked", "problems": list(problems)}
+    try:
+        import sys as _sys
+        import os as _os
+        _d = _os.path.dirname(_os.path.abspath(__file__))
+        while _d != _os.path.dirname(_d) and not _os.path.exists(
+                _os.path.join(_d, "loud_failure.py")):
+            _d = _os.path.dirname(_d)
+        if _d != _os.path.dirname(_d) and _d not in _sys.path:
+            _sys.path.insert(0, _d)
+        import loud_failure
+        out["client_explanation"] = loud_failure.explain_stop(
+            "script-checks-failed", None,
+            {"reason_code": "script-checks-failed",
+             "detail": "your story or lyrics did not pass their checks",
+             "next_action": "fix what the check named and show it again"})
+    except Exception:  # noqa: BLE001 - an explanation never breaks a stop
+        pass
+    return out
+
 def _unknown(state_detail):
-    return {"outcome": "blocked", "reason": "approval-state-unknown",
-            "reason_code": AE.UNKNOWN_REASON, "approval_state": "unknown",
-            "unknown": {"detail": state_detail}, "recoverable": True,
-            "problems": [SA.UNKNOWN_QUESTION], "messages": []}
+    out = {"outcome": "blocked", "reason": "approval-state-unknown",
+           "reason_code": AE.UNKNOWN_REASON, "approval_state": "unknown",
+           "unknown": {"detail": state_detail}, "recoverable": True,
+           "problems": [SA.UNKNOWN_QUESTION], "messages": []}
+    # Owner order 2026-11-20: the client meets this stop (the approval record
+    # is unreadable), so it carries the four-part message beside the code.
+    try:
+        import sys as _sys
+        import os as _os
+        _d = _os.path.dirname(_os.path.abspath(__file__))
+        while _d != _os.path.dirname(_d) and not _os.path.exists(
+                _os.path.join(_d, "loud_failure.py")):
+            _d = _os.path.dirname(_d)
+        if _d != _os.path.dirname(_d) and _d not in _sys.path:
+            _sys.path.insert(0, _d)
+        import loud_failure
+        out["client_explanation"] = loud_failure.explain_stop(
+            "APPROVAL_STATE_UNKNOWN", None,
+            {"reason_code": "APPROVAL_STATE_UNKNOWN",
+             "detail": "the saved script-approval record is missing or "
+                       "unreadable: %s" % (state_detail or "no detail"),
+             "next_action": "answer the one approval question again"})
+    except Exception:  # noqa: BLE001 - an explanation never breaks a stop
+        pass
+    return out
 
 
 def _recover_answer(reply):
@@ -187,7 +232,7 @@ def run_stage(run_dir, deliver, reply=None, apply_edit=None, checks=None,
         return _unknown(rec.get("unknown_detail"))
     doc = _doc(run_dir)
     if doc is None:
-        return {"outcome": "blocked", "problems": ["creative/script.json is missing or has no sheet"]}
+        return _blocked(["creative/script.json is missing or has no sheet"])
     title, story, sheet, lyrics, elements = doc
     check = checks or (lambda s, h: _problems(run_dir))
     if rec and rec.get("status") == "approved" and \
@@ -196,7 +241,7 @@ def run_stage(run_dir, deliver, reply=None, apply_edit=None, checks=None,
     if rec is None:                                       # first time: checks, record, send, pause
         problems = list(check(story, sheet))
         if problems:
-            return {"outcome": "blocked", "problems": problems}
+            return _blocked(problems)
         msgs = SA.request_approval(run_dir, title, story, sheet, lyrics,
                                    context=context, elements=elements)
         _send(run_dir, deliver, msgs, studio_publish)
@@ -217,7 +262,7 @@ def run_stage(run_dir, deliver, reply=None, apply_edit=None, checks=None,
     if r["status"] == "approved":
         return {"outcome": "go", "reason": "approved", "messages": r["messages"]}
     if r["problems"]:
-        return {"outcome": "blocked", "problems": r["problems"]}
+        return _blocked(r["problems"])
     if r.get("edited"):                    # edit applied: keep it on disk, re-send
         d = _load(os.path.join(run_dir, SCRIPT))
         d.update(story=[list(a) for a in r["story"]], sheet=r["sheet"], lyrics=r["lyrics"])

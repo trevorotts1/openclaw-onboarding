@@ -1,0 +1,466 @@
+#!/usr/bin/env python3
+"""Every stop explains itself: what happened, why the rule exists, the fix,
+and the client's choices (owner order 2026-11-20). Offline, no spend.
+
+Run: python3 scripts/core/test_stop_explanations_s75.py   (also collects as pytest)
+
+The INVENTORY below is every place in this skill where the work stops,
+refuses, holds or waits and the client would see it. A new client-facing stop
+must be added here AND given a row in references/client-messages.md ("Every
+stop explained"); ``test_every_inventoried_stop_has_a_row`` fails otherwise,
+and ``test_inventory_matches_the_code`` fails when a scanned module grows a
+stop code that is neither inventoried nor named internal.
+"""
+import json
+import os
+import re
+import sys
+import tempfile
+import types
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+if HERE not in sys.path:
+    sys.path.insert(0, HERE)
+
+import loud_failure as LF                         # noqa: E402
+import suno_recipe as R                           # noqa: E402
+
+# code -> where the client meets it (source of the stop)
+INVENTORY = {
+    # music: lyric checks (suno_recipe.prepare, raised from build_requests in cmd_generate)
+    "LYRICS_REJECTED": "suno_recipe.prepare -> song_choices.build_requests / cmd_generate",
+    "LYRICS_REJECTED/words_over_budget": "suno_recipe.check_lyric_sheet word budget",
+    "LYRICS_REJECTED/opener_over_cap": "suno_recipe.check_lyric_sheet spoken-intro cap",
+    "LYRICS_REJECTED/line_under_no_voice_cue": "suno_recipe.check_no_voice_lines",
+    "CAST_REJECTED": "suno_recipe.build_request ensemble gate",
+    "VOICE_TAG_MISMATCH": "suno_recipe.guard_request voice tags",
+    "STYLE_TOO_LONG": "suno_recipe style cap",
+    "UNTAGGED_LYRIC_LINES": "suno_recipe.parse_lyrics",
+    "SONG_LENGTH_NOT_SUPPORTED": "song_choices.build_requests",
+    # music: song stage
+    "SONG_FAILURE_AWAITING_CLIENT": "factory.music_stage (song judge failed: client fork)",
+    "SONG_PICK_MISSING": "song_choices.refusal",
+    "SONG_APPROVAL_UNANSWERED": "song_choices._unanswered_hold",
+    "SONG_CONSTITUENT_EVIDENCE_MISSING": "song_choices.constituent_hold",
+    "CONFLICTING_RUN_ROOTS": "song_choices.cmd_generate two run folders at once",
+    "TRANSPORT_MISSING": "song_choices.cmd_generate empty measure/save",
+    "HOOK_TEXT_MISSING": "song_choices.cmd_generate sheet with no sung hook",
+    "SONG_WORD_TIMINGS_MISSING": "song_choices.record_pick unmeasured take",
+    "SONG_WORD_TIMINGS_UNWRITABLE": "song_choices.record_pick timing save",
+    "SONG_FORK_UNREADABLE": "factory.music_stage unreadable fork record",
+    "SCRIPT_AWAITING_APPROVAL": "factory script gate",
+    "APPROVAL_STATE_UNKNOWN": "script_approval.stage unreadable record",
+    "PROVIDER_FRAME_STILL_MISSING": "kie_dispatch.upload_storyboard_frame no local still",
+    "PROVIDER_FRAME_SHOT_MISMATCH": "kie_dispatch.upload_storyboard_frame shot not approved",
+    "PROVIDER_FRAME_STAGE_MISMATCH": "kie_dispatch.upload_storyboard_frame wrong stage",
+    "PROVIDER_FRAME_UPLOAD_UNVERIFIED": "kie_dispatch.upload_storyboard_frame no image URL",
+    "script-checks-failed": "factory script gate story/lyric checks",
+    "script-delivery-failed": "factory script gate undelivered script",
+    "state-file-missing": "factory lifecycle missing run state",
+    "music-run-id-ambiguous": "factory.music_stage ambiguous run id",
+    "ACCEPTANCE_NOT_PROVEN": "song_dispatch acceptance hold",
+    "EMPTY_TAKE_LIST": "song_choices.run_takes",
+    "SONG_SAVE_FAILED": "song_choices save recovery",
+    # money and redo limits (spend_ledger, carried by kie_dispatch)
+    "MISSING_AUTH_REF": "spend_ledger.plan creative retake without the client's OK",
+    "REPAIR_CAP": "spend_ledger.plan redo limit",
+    "REPAIR_CAP_EXHAUSTED": "retake_manager redo limit",
+    "BUDGET_EXCEEDED": "spend_ledger.can_spend",
+    "NO_CEILING": "spend_ledger.init_run",
+    "UNKNOWN_PRICE": "spend_ledger.can_spend / kie_dispatch",
+    "RUN_PARKED": "spend_ledger",
+    "RECONCILE_FIRST": "spend_ledger.plan",
+    "DUPLICATE_LOGICAL_JOB": "spend_ledger.plan",
+    # approvals and the card
+    "CARD_UNANSWERED": "card_gate / preflight / kie_dispatch / agnes_dispatch",
+    "TESTIMONIAL_PERMISSION_MISSING": "factory next",
+    "SCRIPT_AWAITING_APPROVAL": "factory script gate",
+    "storyboard-approval-required": "factory next",
+    "approval-missing": "preflight",
+    "approval-expired": "preflight",
+    "approval-out-of-scope": "preflight",
+    # dispatch (kie_dispatch)
+    "MODEL_REQUIRED": "kie_dispatch", "VIDEO_MODEL_LOCK_MISSING": "kie_dispatch",
+    "VIDEO_MODEL_MISMATCH": "kie_dispatch", "VIDEO_MODEL_DOWN": "kie_dispatch",
+    "kie-rate-limited-not-submitted": "kie_dispatch",
+    "preflight-shortfall": "kie_dispatch", "preflight-failed": "kie_dispatch",
+    "preflight-unreadable": "kie_dispatch", "adapter-not-found": "kie_dispatch",
+    "adapter-health-unreadable": "kie_dispatch", "adapter-mode-unknown": "kie_dispatch",
+    "generation-not-switched-on": "kie_dispatch",
+    "generation-skipped-not-generated": "kie_dispatch",
+    "prompt-over-max": "kie_dispatch", "prompt-below-floor": "kie_dispatch",
+    "prompt-budget-failed": "kie_dispatch", "prompt-budget-unreadable": "kie_dispatch",
+    "kie-submit-failed": "kie_dispatch", "kie-run-failed": "kie_dispatch",
+    "unknown-outcome-no-retry": "kie_dispatch", "ledger-settle-failed": "kie_dispatch",
+    "dispatch-internal-error": "kie_dispatch",
+    # preflight (intake_preflight/preflight.py)
+    "schema-untrusted": "preflight", "delivery-profile-unknown": "preflight",
+    "reference-outside-approved-storage": "preflight",
+    "reference-missing-or-truncated": "preflight", "tool-unavailable": "preflight",
+    "module-unavailable": "preflight", "storage-not-writable": "preflight",
+    "disk-limit": "preflight", "credential-missing": "preflight",
+    # retake manager
+    "ACCEPTED_ARTIFACT": "retake_manager", "INVALID_REQUEST": "retake_manager",
+    "PROFILE_UNAVAILABLE": "retake_manager", "UNKNOWN_ARTIFACT": "retake_manager",
+    "TARGET_IN_BAND": "retake_manager in-band take kept",
+    # song CLI: bare ChoiceError fallback (conflicting roots / transport /
+    # hook / approval paths all explain; this is the catch-all)
+    "CHOICE_REFUSED": "song_choices.main ChoiceError fallback",
+}
+
+# Codes the scanned modules raise that are operator/plumbing faults, not a
+# client decision; they still get the four-part fallback (never a dead stop).
+INTERNAL = {
+    "BAD_BILLABLE", "BAD_OUTCOME", "BAD_OUTCOME_CLASS", "BAD_RETRY_CATEGORY",
+    "BAD_TRACK_NO", "BAD_TRANSITION", "BAD_VERDICT", "DUPLICATE_ATTEMPT",
+    "DUPLICATE_AUTHORIZATION", "DUPLICATE_PROVIDER_JOB", "LEASE_HELD",
+    "MISSING_DIGEST", "MISSING_LOOKUP_REF", "MISSING_REMOTE_ID", "NO_SUCH_JOB",
+    "NO_SUCH_RUN", "NO_SUCH_TRACK", "ORDINAL_MISMATCH", "PROVIDER_LOOKUP_REQUIRED",
+    "RETRY_CATEGORY_MISMATCH", "STALE_VERSION", "TASK_TAKEN",
+    "ILLEGAL_TRANSITION", "LEASE_EXPIRED_WAITING", "NOT_OWNER",
+    "BAD_DELIVERED_S", "BAD_VOCAL_GENDER", "EXEMPT", "GENDER_REQUIRED",
+    "NO_STYLE_PARTS", "RECIPE_BYPASSED", "REQUEST_ENVELOPE_REJECTED",
+    "UNKNOWN_STYLE", "UNMEASURED",
+    "SUBMIT_ALL_READY-EXCEPTION", "LIPSYNC_PICTURE_NOT_GATED",
+    "ONSCREEN_TEXT_NOT_CHECKED", "SFX_JOB_NOT_ORDERED",
+    "ZERO_ESTIMATE_FOR_PAID_JOB", "REQUEST_PLACEHOLDER",
+}
+
+SCANS = {   # module -> regexes that capture the stop codes it hands back
+    "spend_ledger.py": [r'refuse\(\s*"([A-Za-z_-]+)"',
+                        r'envelope\(\s*(?:cmd|"[a-z_]+")\s*,\s*"(?:rejected|waiting|error|parked)"\s*,\s*"([A-Za-z_-]+)"'],
+    "kie_dispatch/kie_dispatch.py": [
+        r'stop\(\s*"(?:rejected|waiting|error|parked)"\s*,\s*"([A-Za-z_-]+)"',
+        r'"dispatch",\s*"(?:rejected|waiting|error|parked)",\s*"([A-Za-z_-]+)"'],
+    "intake_preflight/factory.py": [r'_mres\(\s*"(?:waiting|rejected)"\s*,\s*"([A-Za-z_-]+)"'],
+    "intake_preflight/preflight.py": [
+        r'"outcome":\s*"(?:rejected|waiting|error)",\s*"reason_code":\s*"([A-Za-z_-]+)"'],
+    "song_choices/song_choices.py": [r'reason_code="([A-Z_]+)"', r'"reason_code": "([A-Z_]+)"'],
+    "suno_recipe/suno_recipe.py": [r'RecipeError\(\s*"([A-Z_]+)"'],
+    # The script gate and the research stage hand the client a stop from
+    # their own envelopes. Their codes are lowercase and are covered by the
+    # behavioral tests below (test_script_and_research_stops_carry_the_
+    # explanation), which is stricter than a name inventory: it fails when
+    # the envelope ships without a four-part message at all.
+
+}
+# preflight setup faults the operator repairs (the box, not a client choice)
+INTERNAL |= {"PRODUCTION_PROCESS_UNVERIFIED", "requirements-empty",
+             "manifest-unavailable"}
+
+RAW_CODE = re.compile(r"\b[A-Z][A-Z0-9]*(?:_[A-Z0-9]+)+\b|\b[a-z]+(?:-[a-z]+){2,}\b")
+PATH = re.compile(r"(?:~|\.{1,2})?/[\w.\-]+/|\b\w+\.(?:py|json|sqlite3|sh)\b")
+
+
+def _assert_plain(text, where):
+    assert text and text.strip(), where
+    assert not RAW_CODE.search(text), (where, RAW_CODE.search(text).group(0), text)
+    assert not PATH.search(text), (where, text)
+    assert "Traceback" not in text, (where, text)
+    assert "{" not in text and "}" not in text, (where, text)
+
+
+def _assert_four(parts, where):
+    for k in LF.PARTS + ("message",):
+        assert parts.get(k), (where, k, parts)
+    assert 2 <= len(parts["choices"]) <= 4, (where, parts["choices"])
+    for k in ("what_happened", "why", "fix", "message"):
+        _assert_plain(parts[k], "%s/%s" % (where, k))
+    for c in parts["choices"]:
+        _assert_plain(c, "%s/choice" % where)
+
+
+def test_every_table_row_has_four_parts_and_two_choices():
+    table = LF.explanation_table()
+    assert len(table) >= len(INVENTORY), len(table)
+    for code, row in table.items():
+        for k in ("what_happened", "why", "fix"):
+            assert row[k].strip(), (code, k)
+        assert 2 <= len(row["choices"]) <= 4, (code, row["choices"])
+
+
+def test_every_inventoried_stop_has_a_row():
+    missing = sorted(set(INVENTORY) - set(LF.explanation_table()))
+    assert not missing, "stops with no explanation row: %s" % missing
+
+
+def test_inventory_matches_the_code():
+    found = set()
+    for rel, pats in SCANS.items():
+        text = open(os.path.join(HERE, rel), encoding="utf-8").read()
+        for p in pats:
+            found |= set(re.findall(p, text))
+    unknown = sorted(found - set(INVENTORY) - INTERNAL)
+    assert not unknown, ("new stop codes need an INVENTORY entry and a table "
+                         "row, or an INTERNAL entry: %s" % unknown)
+
+
+def test_rendered_messages_are_plain():
+    for code in LF.explanation_table():
+        _assert_four(LF.explain_stop(code.split("/")[0] if "/" in code else code), code)
+
+
+def test_unknown_code_falls_back_to_four_parts():
+    env = {"reason_code": "SOMETHING_NEW",
+           "detail": "SOMETHING_NEW: broke at /tmp/x/run/a.json\nTraceback (most recent call last): boom",
+           "next_action": "re-run factory.py next --run-dir /tmp/x"}
+    _assert_four(LF.explain_stop("SOMETHING_NEW", None, env), "fallback-dirty")
+    clean = LF.explain_stop("ODD_STOP", None, {
+        "detail": "ODD_STOP: the cover title came back blank",
+        "next_action": "add the cover title and try again"})
+    _assert_four(clean, "fallback-clean")
+    assert "cover title came back blank" in clean["what_happened"], clean
+    _assert_four(LF.explain_stop(None, None, None), "fallback-empty")
+
+
+SHEET = [{"tag": "Intro", "delivery": "spoken", "lines": [" ".join(["word"] * 62)]},
+         {"tag": "Verse", "delivery": "sung", "lines": [" ".join(["sing"] * 45)]},
+         {"tag": "Hook 1", "delivery": "sung", "lines": ["rise up now"]},
+         {"tag": "Bridge", "delivery": "spoken", "lines": ["a b c d e"]},
+         {"tag": "Hook 2", "delivery": "sung", "lines": ["rise up now"]},
+         {"tag": "Hook 3", "delivery": "sung", "lines": ["rise up now"]},
+         {"tag": "Outro", "delivery": "spoken", "lines": [" ".join(["call"] * 14)]}]
+
+
+def test_lyric_word_budget_names_the_length_that_fits():
+    total = R.sheet_words(SHEET)
+    assert total == 135, total
+    fit = R.length_that_fits(SHEET, "soul-ballad")
+    L = fit["words_fit_length_s"]
+    assert L == 120, fit
+    # The 135-word sheet clears the WORD budget at 120 but its 62-word spoken
+    # opening fits no offered length (cap tops out at 12): no longer-song
+    # choice is offered, the message says to shorten the opener.
+    assert fit["length_s"] is None and fit["opener_fit_length_s"] is None, fit
+    detail = "; ".join(R.check_lyric_sheet(SHEET, "rise up now", 88, style_id="soul-ballad"))
+    out = LF.explain_stop("LYRICS_REJECTED", {"no_fit_length": "shorten the opener"},
+                          {"detail": detail})
+    _assert_four(out, "lyrics")
+    w = out["what_happened"]
+    assert "135 words" in w and "90-second" in w and "about 95" in w, w
+    assert "62 words" in w and "about 3 spoken words" in w, w
+    assert "no offered length fits" in out["fix"], out["fix"]
+    joined = " | ".join(out["choices"])
+    assert "make the song longer" not in joined, joined
+    assert "shorten the spoken opening" in joined, joined
+    assert "trim the words" in joined and "show you" in joined, joined
+    assert "Keep your words as they are and I check again" in joined, joined
+
+
+def test_lyric_longer_song_choice_clears_both_word_checks():
+    # A sheet whose words AND opener both fit at a longer offered length: the
+    # "make it longer" fix names a length the lyric word checks really pass.
+    sheet = [{"tag": "Intro", "delivery": "spoken",
+              "lines": [" ".join(["word"] * 8)]},
+             {"tag": "Verse", "delivery": "sung",
+              "lines": [" ".join(["sing"] * 45)]},
+             {"tag": "Hook 1", "delivery": "sung", "lines": ["rise up now"]},
+             {"tag": "Pre", "delivery": "sung", "lines": ["build up now"]},
+             {"tag": "Hook 2", "delivery": "sung", "lines": ["rise up now"]},
+             {"tag": "Verse 2", "delivery": "sung",
+              "lines": [" ".join(["more"] * 20)]},
+             {"tag": "Hook 3", "delivery": "sung", "lines": ["rise up now"]},
+             {"tag": "Hook 4", "delivery": "sung", "lines": ["rise up now"]},
+             {"tag": "Hook 5", "delivery": "sung", "lines": ["rise up now"]},
+             {"tag": "Hook 6", "delivery": "sung", "lines": ["rise up now"]},
+             {"tag": "Hook 7", "delivery": "sung", "lines": ["rise up now"]},
+             {"tag": "Hook 8", "delivery": "sung", "lines": ["rise up now"]},
+             {"tag": "Outro", "delivery": "spoken",
+              "lines": [" ".join(["call"] * 14)]}]
+    fit = R.length_that_fits(sheet, "soul-ballad")
+    assert fit["length_s"] == 120, fit
+    # held in step with the gate itself: BOTH word checks are gone at the
+    # named length and at least one is present at the offered length before it
+    def word_errs(length):
+        return [e for e in R.check_lyric_sheet(sheet, "rise up now", length - 2,
+                                                style_id="soul-ballad")
+                if re.search(r"\d+ words, the \d+ s budget", e)
+                or e.startswith("spoken intro is")]
+    assert not word_errs(fit["length_s"]), word_errs(fit["length_s"])
+    assert word_errs(90), "the 90 s card must still refuse the words or opener"
+    detail = "; ".join(R.check_lyric_sheet(sheet, "rise up now", 88, style_id="soul-ballad"))
+    out = LF.explain_stop("LYRICS_REJECTED", {"fit_length_s": fit["length_s"]},
+                          {"detail": detail})
+    _assert_four(out, "lyrics-fit")
+    assert "a 2-minute song fits your words and opening" in out["fix"], out["fix"]
+    joined = " | ".join(out["choices"])
+    assert "make the song longer" in joined, joined
+    # the named length really clears the lyric word checks end to end
+    assert not word_errs(fit["length_s"])
+
+
+def test_no_voice_cue_line_is_named():
+    raw = "[Intro (spoken)]\nOne door.\n[Instrumental Break]\n6 s, band only\n"
+    errs = R.check_no_voice_lines(raw)
+    assert errs, raw
+    out = LF.explain_stop("LYRICS_REJECTED", None, {"detail": "; ".join(errs)})
+    _assert_four(out, "no-voice")
+    assert "6 s, band only" in out["what_happened"], out["what_happened"]
+    assert ".." not in out["what_happened"], out["what_happened"]
+
+
+def test_placeholders_fill_with_real_numbers():
+    rc = LF.explain_stop("REPAIR_CAP", None, {"next_action":
+         "retry count exceeds approved repair cap 2; this attempt would be repair 3"})
+    assert "redone 2 times" in rc["what_happened"] and "redo number 3" in rc["what_happened"], rc
+    card = LF.explain_stop("CARD_UNANSWERED", None, {"missing": ["video_model", "length"]})
+    assert "video model, length" in card["what_happened"], card
+    short = LF.explain_stop("preflight-shortfall", {"shortfall": 412})
+    assert "412 credits" in short["what_happened"], short
+    sl = LF.explain_stop("SONG_LENGTH_NOT_SUPPORTED", None, {"detail":
+         "the ad asks for a 600-second song and the song provider makes one take "
+         "of at most 360 seconds; choose 360 seconds or less."})
+    assert "600-second" in sl["what_happened"] and "360" in sl["fix"], sl
+
+
+def test_required_codes_carry_their_choices():
+    auth = LF.explain_stop("MISSING_AUTH_REF")
+    assert any("record your OK" in c for c in auth["choices"]), auth
+    fork = LF.explain_stop("SONG_FAILURE_AWAITING_CLIENT")
+    assert [c.split(" (")[0].rstrip(".") for c in fork["choices"][:3]] == \
+        ["Redo all of them", "Keep one of these three", "Generate three new options"], fork
+
+
+def test_wired_envelopes_carry_the_explanation_and_keep_their_fields():
+    from kie_dispatch import kie_dispatch as KD
+    from intake_preflight import factory as F
+    e = KD.envelope("dispatch", "rejected", "MISSING_AUTH_REF", "needs auth")
+    assert e["reason_code"] == "MISSING_AUTH_REF" and e["outcome"] == "rejected"
+    _assert_four(e["client_explanation"], "kie envelope")
+    assert "client_explanation" not in KD.envelope("dispatch", "ok", "KIE_DISPATCH_OK")
+    m = F._mres("waiting", "SONG_FAILURE_AWAITING_CLIENT", "fork")
+    assert m["reason_code"] == "SONG_FAILURE_AWAITING_CLIENT" and m["detail"] == "fork"
+    _assert_four(m["client_explanation"], "music block")
+    assert "client_explanation" not in F._mres("ok", "music-complete", "done")
+    f = F.envelope("music", "r", "error", "MUSIC_OWNER_REQUIRED", "name the worker")
+    _assert_four(f["client_explanation"], "factory envelope")
+
+
+def test_cmd_generate_lyric_refusal_carries_the_explanation():
+    from song_choices import song_choices as SC
+    d = tempfile.mkdtemp(prefix="s75-explain-")
+    # The declared-delivery dialect the parser accepts: [Name (spoken)].
+    # "[Intro: spoken]" stopped naming a delivery when parse_tag began reading
+    # only the name half (a cue after the colon never grants one).
+    text = "".join("[%s (%s)]\n%s\n" % (s["tag"], s["delivery"], "\n".join(s["lines"]))
+                   for s in SHEET)
+    req = os.path.join(d, "req.json")
+    with open(req, "w", encoding="utf-8") as fh:
+        json.dump({"style_id": "soul-ballad", "sheet_text": text,
+                   "client_text": "rise up now", "title": "T", "length_s": 88}, fh)
+    a = types.SimpleNamespace(run_dir=d, request=req, ledger="", run_id="",
+                              variant="", unit_id="")
+    try:
+        SC.cmd_generate(a, generate=lambda *x, **k: [], measure=lambda t: {},
+                        save=lambda *x, **k: None)
+    except R.RecipeError as exc:
+        assert exc.code == "LYRICS_REJECTED", exc      # the gate itself is unchanged
+        out = exc.client_explanation
+        _assert_four(out, "cmd_generate")
+        # The 135-word sheet's 62-word opener fits no offered length: no
+        # longer-song fix, the message says to shorten the opener.
+        assert "no offered length fits" in out["fix"], out["fix"]
+        joined = " | ".join(out["choices"])
+        assert "make the song longer" not in joined, joined
+        assert "shorten the spoken opening" in joined, joined
+    else:
+        raise AssertionError("the 135-word sheet must still be refused at 90 s")
+
+
+def test_script_and_research_stops_carry_the_explanation():
+    """Round 3 finding: blocked script and research stops hand the client an
+    envelope too. Each one is checked here on the real envelope, which is
+    stronger than a name inventory: the test fails if the stop ships without
+    a four-part message at all."""
+    import os as _os
+    import sys as _sys
+    _core = _os.path.dirname(_os.path.abspath(__file__))
+    for sub in ("script_approval", "research_engine"):
+        _p = _os.path.join(_core, sub)
+        if _p not in _sys.path:
+            _sys.path.insert(0, _p)
+    import stage as ST
+    blocked = ST._blocked(["creative/story.json and creative/lyrics.json "
+                           "must exist and be readable"])
+    assert blocked["outcome"] == "blocked"
+    assert blocked["problems"], blocked
+    _assert_four(blocked["client_explanation"], "stage-blocked")
+    import research as RS
+    for outcome, code, nxt in (
+            ("waiting", "search-no-results", "Continue with what I gave you?"),
+            ("rejected", "source-invalid", "Fix the listed source errors."),
+            ("error", "render-failed", "Run it again."),
+            ("parked", "claims-without-source", "Cite a source for each claim.")):
+        env = RS.envelope("research", "run-1", outcome, code, nxt)
+        assert env["outcome"] == outcome and env["reason_code"] == code
+        _assert_four(env["client_explanation"], "research-%s" % code)
+    assert "client_explanation" not in RS.envelope(
+        "research", "run-1", "ok", "research-complete", "go")
+
+def test_charged_envelope_never_says_nothing_was_charged():
+    """Round 3 finding: an envelope that records credits consumed must not
+    tell the client nothing was charged."""
+    env = {"reason_code": "REPAIR_CAP_EXHAUSTED", "detail": "(3 attempts, cap 2)",
+           "evidence": {"credits_consumed": 3}}
+    out = LF.explain_stop("REPAIR_CAP_EXHAUSTED", None, env)
+    _assert_four(out, "charged-cap")
+    assert "nothing new was charged" not in out["message"].lower(), out["message"]
+    assert "already used 3 credits" in out["what_happened"], out["what_happened"]
+    plain = LF.explain_stop("REPAIR_CAP_EXHAUSTED", None, {"detail": "(3 attempts, cap 2)"})
+    assert "already used" not in plain["what_happened"], plain["what_happened"]
+
+def test_all_cut_fallback_still_offers_the_agent_doing_the_work():
+    """Round 3 finding: even a stop whose own words were all cut keeps a
+    choice where the agent does the work."""
+    out = LF.explain_stop("SOMETHING_NEW", None, {
+        "detail": "SOMETHING_NEW: /tmp/x/run/a.json",
+        "next_action": "run factory.py next --run-dir /tmp/x"})
+    _assert_four(out, "all-cut")
+    assert out["choices"][0].startswith("I take care of"), out["choices"]
+
+def test_fitting_length_is_named_in_the_words():
+    """Round 3 finding: the length that fits is interpolated into the message,
+    not left as an unnamed "that length"."""
+    sheet = [{"tag": "Intro", "delivery": "spoken",
+              "lines": [" ".join(["word"] * 8)]},
+             {"tag": "Verse", "delivery": "sung",
+              "lines": [" ".join(["sing"] * 45)]},
+             {"tag": "Hook 1", "delivery": "sung", "lines": ["rise up now"]},
+             {"tag": "Pre", "delivery": "sung", "lines": ["build up now"]},
+             {"tag": "Hook 2", "delivery": "sung", "lines": ["rise up now"]},
+             {"tag": "Verse 2", "delivery": "sung",
+              "lines": [" ".join(["more"] * 20)]},
+             {"tag": "Hook 3", "delivery": "sung", "lines": ["rise up now"]},
+             {"tag": "Hook 4", "delivery": "sung", "lines": ["rise up now"]},
+             {"tag": "Hook 5", "delivery": "sung", "lines": ["rise up now"]},
+             {"tag": "Hook 6", "delivery": "sung", "lines": ["rise up now"]},
+             {"tag": "Hook 7", "delivery": "sung", "lines": ["rise up now"]},
+             {"tag": "Hook 8", "delivery": "sung", "lines": ["rise up now"]},
+             {"tag": "Outro", "delivery": "spoken",
+              "lines": [" ".join(["call"] * 14)]}]
+    fit = R.length_that_fits(sheet, "soul-ballad")
+    assert fit["length_s"], fit
+    detail = "; ".join(R.check_lyric_sheet(sheet, "rise up now", 88,
+                                           style_id="soul-ballad"))
+    out = LF.explain_stop("LYRICS_REJECTED", {"fit_length_s": fit["length_s"]},
+                          {"detail": detail})
+    _assert_four(out, "fit-named")
+    named = LF.length_words(fit["length_s"])
+    assert named in out["fix"], (named, out["fix"])
+    assert "that length" not in out["fix"], out["fix"]
+    assert any(named in c for c in out["choices"]), out["choices"]
+
+def test_no_message_claims_a_job_never_fails_halfway():
+    """Round 3 finding: checking a tool does not guarantee no halfway failure,
+    so no message may say so."""
+    for code in LF.explanation_table():
+        row = LF.explanation_table()[code]
+        text = " ".join([row["what_happened"], row["why"], row["fix"]] + row["choices"])
+        assert "halfway" not in text.lower(), (code, text)
+
+if __name__ == "__main__":
+    tests = [v for k, v in sorted(globals().items()) if k.startswith("test_")]
+    for t in tests:
+        t()
+        print("PASS", t.__name__)
+    print("%d passed" % len(tests))
