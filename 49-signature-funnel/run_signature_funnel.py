@@ -1431,7 +1431,8 @@ def main(argv: List[str]) -> int:
         return EXIT_FRONT_DOOR
     run_dir = Path(args.run_dir).expanduser().resolve()
     if not run_dir.is_dir():
-        detail = (f"USAGE ERROR: run-dir {run_dir} is not a directory. "
+        # The run dir is the client's own folder; its absolute path is for the log, never the message.
+        detail = ("USAGE ERROR: the job folder given is not a folder. "
                   "Start it again with the job folder that holds your run's work files.")
         print(detail)
         print(f"FOR THE CLIENT:\n{_client_explanation(detail)['message']}")

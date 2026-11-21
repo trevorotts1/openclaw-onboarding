@@ -1609,6 +1609,20 @@
         "missing": "a few details"
       }
     },
+    "LAUNCH-NO-WORK-FOLDER": {
+      "what_happened": "The run was asked to hand the page work to the page-building tools, but it has no folder to put that work in.",
+      "why": "Each page request and each page result is written to a file in a work folder. With no folder, the tools have nowhere to put their work and nothing would be saved.",
+      "fix": "Start the run with the job folder, so the work folder is created inside it.",
+      "choices": [
+        "I start the run again with the job folder.",
+        "I make the work folder for you and start the run again.",
+        "I stop here and wait for your decision."
+      ],
+      "spends_nothing": true,
+      "match": [
+        "adapters require --out"
+      ]
+    },
     "LAUNCH-PAID-NEEDS-OK": {
       "what_happened": "Making the real designs costs money, and your OK for that cost is missing.",
       "why": "Nothing that costs money runs until you approve the amount.",
@@ -1636,6 +1650,20 @@
       "spends_nothing": true,
       "match": [
         "payment plans are not supported in this release"
+      ]
+    },
+    "LAUNCH-REQUEST-BROKEN": {
+      "what_happened": "The launch request for this run is damaged, so its settings could not be read.",
+      "why": "The run reads its settings (the mode, who the client is, who is doing the work) from that one file. If the file is damaged, the run cannot tell what it was asked to do, so it stops rather than guess.",
+      "fix": "Write the launch request again, then start the run again.",
+      "choices": [
+        "I write the launch request again for you and start the run.",
+        "I show you what the request should contain so you can check it.",
+        "I stop here and wait for your decision."
+      ],
+      "spends_nothing": true,
+      "match": [
+        "launch request file is not valid JSON"
       ]
     },
     "RUN-FILE-UNREADABLE": {

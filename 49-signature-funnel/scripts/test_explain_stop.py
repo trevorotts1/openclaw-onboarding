@@ -57,6 +57,9 @@ PHRASE_STOPS = {
     "checkout: the manuscript names card, expiry or security-code fields": "LAUNCH-CARD-FIELDS",
     "final-mockups has no closed record with images for page(s) ['main']; nothing recorded": "LAUNCH-DESIGN-RECORD",
     "USAGE/IO ERROR: cannot load copy ledger 'copy_ledger.json': [Errno 2]": "RUN-FILE-UNREADABLE",
+    # the dispatch command line's two named launch-mode stops (their own entries, not a borrow)
+    "FAIL: the launch request file is not valid JSON": "LAUNCH-REQUEST-BROKEN",
+    "adapters require --out (or --run-dir) as the work dir for request/result files": "LAUNCH-NO-WORK-FOLDER",
 }
 
 
@@ -123,6 +126,34 @@ class InventoryGuard(unittest.TestCase):
         for text, want in PHRASE_STOPS.items():
             self.assertEqual(es.resolve(None, text, ENTRIES), want, text)
 
+
+class OrchestratorUsageStopsCarryNoPath(unittest.TestCase):
+    """Round-2 review, finding 4: the run-dir usage error printed the absolute run directory
+    before the client message, so the raw operator path stayed visible in the command output."""
+
+    def run_orch(self, *args):
+        with tempfile.TemporaryDirectory() as home:
+            env = {"PATH": os.environ.get("PATH", "/usr/bin:/bin"), "HOME": home}
+            return subprocess.run([sys.executable, str(SKILL / "run_signature_funnel.py"), *args],
+                                  text=True, capture_output=True, env=env, timeout=120)
+
+    def test_a_missing_job_folder_names_no_path(self):
+        with tempfile.TemporaryDirectory() as td:
+            missing = Path(td) / "not-a-folder"
+            p = self.run_orch("--run-dir", str(missing))
+        out = p.stdout + p.stderr
+        self.assertNotEqual(p.returncode, 0, out)
+        self.assertNotIn(str(missing), out, out)      # the whole path, never printed
+        self.assertNotIn(str(Path(td)), out, out)     # nor its parent
+        self.assertIn("Start it again with the job folder", out, out)
+        self.assertIn("FOR THE CLIENT:", out, out)
+
+    def test_the_job_folder_stop_is_still_explained(self):
+        with tempfile.TemporaryDirectory() as td:
+            p = self.run_orch("--run-dir", str(Path(td) / "gone"))
+        msg = client_part(p.stdout + p.stderr)
+        self.assertIn("started without everything it needs", msg, msg)
+        self.assertIsNone(LEAKS.search(msg), msg)
 
 class EntryShellExplains(unittest.TestCase):
     """A refusal from the canonical entry shell carries the four plain parts, never only its ABORT code."""
@@ -236,6 +267,21 @@ class Rendering(unittest.TestCase):
         out = es.explain_stop("AF-FUN-BUILD-PAGESET")
         self.assertNotIn("approved-step", out["message"], out)
         self.assertClean(out)
+
+    def test_technical_prose_is_not_echoed_as_the_client_message(self):
+        """Reproduction from the round-2 review: cleaned machine talk is not fifth-grade wording."""
+        out = es.explain_stop(envelope="encrypted archive exceeds 17 bytes and requires signature")
+        self.assertEqual(out["what_happened"], TABLE["fallback"]["what_happened"], out)
+        self.assertEqual(out["fix"], TABLE["fallback"]["fix"], out)
+        self.assertClean(out)
+        for detail in ("the payload could not be decoded (checksum mismatch)",
+                       "serialized schema offset 0x1f out of range",
+                       "compression failed on the buffer"):
+            self.assertEqual(es.explain_stop(envelope=detail)["what_happened"],
+                             TABLE["fallback"]["what_happened"], detail)
+        # the control: a plain sentence about the client's own work is still their own words
+        plain = "the brief could not be read because the disk is full"
+        self.assertEqual(es.explain_stop(envelope=plain)["what_happened"], plain)
 
     def test_traceback_never_reaches_the_client(self):
         tb = 'Traceback (most recent call last):\n  File "/x/y.py", line 3, in <module>\nValueError: bad'

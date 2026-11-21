@@ -88,6 +88,7 @@ import compile_launch_route as clr  # noqa: E402
 import page_set as pset  # noqa: E402
 import page_swarm as swarm  # noqa: E402
 import validate_launch_plan as vlp  # noqa: E402
+import explain_stop  # noqa: E402  (the client-facing four-part explanation)
 
 EXIT_OK = 0
 EXIT_VIOLATION = 2
@@ -1027,11 +1028,18 @@ def main(argv: List[str]) -> int:
         args.approval = args.approval or str(rd / "approval.json")
         cfg_path = rd / "launch-request.json"
         if cfg_path.is_file():
-            cfg = _load(str(cfg_path))
+            try:
+                cfg = _load(str(cfg_path))
+            except (OSError, ValueError):
+                cfg = None
+            if not isinstance(cfg, dict):
+                detail = "the launch request file is not valid JSON"
+                print(f"FAIL: {detail}")
+                print("FOR THE CLIENT:\n" + explain_stop.client_message(detail))
+                return EXIT_VIOLATION
         if cfg.get("mode") not in (None, "signature_launch"):
             detail = "launch-request.json mode is not signature_launch"
             print(f"FAIL: {detail}")
-            import explain_stop
             print("FOR THE CLIENT:\n" + explain_stop.client_message(detail))
             return EXIT_VIOLATION
         args.image_inputs = args.image_inputs or cfg.get("image_inputs")
@@ -1049,7 +1057,6 @@ def main(argv: List[str]) -> int:
         detail = ("USAGE ERROR: --launch --approval --client --worker are required "
                   "(pass --run-dir <dir> and it fills them in from the run folder).")
         print(detail)
-        import explain_stop
         print("FOR THE CLIENT:\n" + explain_stop.client_message(detail))
         return EXIT_FAILCLOSED
     try:
@@ -1114,7 +1121,6 @@ def main(argv: List[str]) -> int:
     except (DispatchError, pset.PageSetError, swarm.SwarmError,
             vlp.ApprovalError, clr.RouteError, OSError, ValueError) as exc:
         print(f"FAIL: {exc}")
-        import explain_stop
         print("FOR THE CLIENT:\n" + explain_stop.client_message(str(exc)))
         return EXIT_VIOLATION
     print(json.dumps({"execution": m["execution"],

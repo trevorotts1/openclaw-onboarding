@@ -44,6 +44,12 @@ LEAD_STATUS_RE = re.compile(r"^(?:https?[\s:/\\._-]*)+(\d{3})\b[\s:/\\._-]*", re
 LOG_ONLY_RE = re.compile(r"\bHTTP\s+\d{3}\b|\b[A-Z][A-Z0-9]*(?:[-_][A-Z0-9]+)+\b|\b[A-Za-z_]*(?:Error|Exception|Warning)\b|"
                          r"\[Errno \d+\]|\b\w+=\S+|\b[0-9a-f]{12,}\b")
 SPENT_NOTHING = " This check did not spend any money."
+# Words a machinery message uses about itself and the client never uses about their work: an unknown stop
+# that arrives in this vocabulary is answered with the plain fallback instead of being echoed back. The
+# client's page words (signature, page, picture, copy) are deliberately NOT here.
+MACHINE_RE = re.compile(r"\b(?:bytes?|encod\w*|decod\w*|payload|checksum|digest|archive|buffer|"
+                        r"socket|syscall|offset|headers?|bytecode|regex|schemas?|serializ\w*|"
+                        r"nonce|cipher\w*|compress\w*|truncat\w*|overflow\w*|\w+_\w+)\b", re.IGNORECASE)
 
 
 def load_table(path=TABLE_PATH):
@@ -211,9 +217,13 @@ def resolve(code, text, entries):
 
 def _plain(text, default):
     """An unknown stop's own words, cleaned; the table's plain default when too little plain text is left
-    (a bare code, an exception name or a path is never a sentence for the client)."""
+    (a bare code, an exception name or a path is never a sentence for the client) or when what is left is a
+    machine talking about itself ("encrypted archive exceeds 17 bytes and requires signature"), which reads as
+    technical prose to a client. Echoing such a line back is the thing this fallback exists to prevent."""
     out = clean(text)
-    return out if len(re.findall(r"[A-Za-z]{2,}", out)) >= 3 else default
+    if len(re.findall(r"[A-Za-z]{2,}", out)) < 3 or MACHINE_RE.search(out):
+        return default
+    return out
 
 class _Facts(dict):
     def __missing__(self, key):
@@ -280,6 +290,11 @@ def self_test():
         "thing, and run it again.", unknown
     leak = explain_stop(envelope={"detail": "RUN-UNKNOWN: PermissionError: /tmp/private.txt"})
     assert leak["what_happened"] == "The funnel work stopped before it finished.", leak
+    machine = explain_stop(envelope="encrypted archive exceeds 17 bytes and requires signature")
+    assert machine["what_happened"] == "The funnel work stopped before it finished.", machine
+    assert machine["fix"] == "Find out what stopped it, fix that one thing, and run it again.", machine
+    plain = explain_stop(envelope="the brief could not be read because the disk is full")
+    assert plain["what_happened"] == "the brief could not be read because the disk is full", plain
     http_leak = explain_stop(envelope="HTTP 403 from a file with API access forbidden")
     assert http_leak["code"] is None, http_leak
     for word in ("403", "HTTP", "API"):

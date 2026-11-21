@@ -1,3 +1,9 @@
+## [Unreleased]  -  2026-11-21  -  Skill 49 (the Signature Funnel): the last four stops that reached the client in machine words or not at all
+
+- Problem: four stops still broke the rule. A launch handed to the page-building tools with no work folder crashed instead of explaining (the explainer was imported inside the function, so that path had never bound it). A damaged launch-request file was read before the error handler, so the run died in a traceback with no explanation. A stop the table did not know echoed machine talk back to the client ("encrypted archive exceeds 17 bytes and requires signature"). And the bad-job-folder usage line printed the absolute run directory before the plain message.
+- Fix: every stop on that command line now carries the four plain parts, the damaged launch-request and the missing work folder have their own plain entries, a machine-sounding unknown stop falls back to the plain default instead of being echoed, and the orchestrator's usage line no longer prints the path. Nothing was removed and no rule was loosened.
+- Skill 49 v2.1.64 -> v2.1.65. Pinned files changed, so the prover pin needs its CI mint. Migration: none. Risk: LOW (words and two new table entries).
+
 ## [Unreleased]  -  2026-11-20  -  Skill 49 (the Signature Funnel): every stop now tells the client what happened, why the rule exists, how to fix it, and what they can choose
 
 - Problem: when a Signature Funnel run stopped (copy over its word count, a picture prompt too short, a missing approval, a launch plan waiting on a price), the client got an internal code and a technical sentence. Nobody told them why the rule was there or what to do next, so the work just stopped.
