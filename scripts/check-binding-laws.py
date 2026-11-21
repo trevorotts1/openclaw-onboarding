@@ -138,6 +138,36 @@ def _show(rev: str, path: str) -> str:
 def _assert_count(text: str) -> int:
     return sum(1 for line in text.splitlines() if ASSERT_RE.search(line))
 
+def _present(rev: str, path: str) -> bool:
+    """True when `path` exists in the tree of `rev`, independent of its bytes.
+
+    `_show` cannot tell "absent" from "empty": both return `''`. L1 must be able
+    to, or a file that never existed on the head side is read as 0 assertions.
+    """
+    return git("cat-file", "-e", f"{rev}:{path}").returncode == 0
+
+def _basename_elsewhere(head: str, path: str) -> str:
+    """The head-side path carrying this file's basename, or '' when there is none.
+
+    A move must not read as a deletion. `git diff` reports the old path as
+    removed whether or not the same file landed at a new path, so L1 compares
+    base:old-path against head:old-path and sees 59 asserting lines become 0.
+    """
+    name = path.rsplit("/", 1)[-1]
+    listing = git_ok("ls-tree", "-r", head, "--name-only").splitlines()
+    for candidate in listing:
+        if candidate.rsplit("/", 1)[-1] == name and candidate != path:
+            return candidate
+    return ""
+
+def _base_ancestor(base: str, head: str) -> bool:
+    """True when `base` is an ancestor of `head` (the range is a real one)."""
+    return git("merge-base", "--is-ancestor", base, head).returncode == 0
+
+def _merge_base(base: str, head: str) -> str:
+    cp = git("merge-base", base, head)
+    return cp.stdout.strip() if cp.returncode == 0 else ""
+
 
 def check_no_check_weakened(spec, base, head) -> Result:
     """L1: no assertion net-removed, no added skip/xfail, no threshold widened.
@@ -148,19 +178,45 @@ def check_no_check_weakened(spec, base, head) -> Result:
     drop in a test file's asserting lines is the deletion the law names.
     """
     violations = []
+    moved = []
+    # A range whose base is not an ancestor of its head is not a change set: it
+    # also reports everything that landed on main after the branch forked. Those
+    # paths read as "deleted" while they were never on the branch at all, so
+    # comparing base:path to head:path invents a deletion. Grade the range the
+    # branch actually owns -- merge-base(base, head)..head -- and say so in the
+    # detail. L13 reports the stale base on its own; L1 must not add a fictional
+    # second failure for it.
+    effective_base = base
+    stale = not _base_ancestor(base, head)
+    if stale:
+        effective_base = _merge_base(base, head) or base
     changed = [
         p
-        for p in git_ok("diff", "--name-only", base, head).splitlines()
+        for p in git_ok("diff", "--name-only", effective_base, head).splitlines()
         if p.strip() and TEST_PATH_RE.search(p)
     ]
     for path in changed:
-        before = _assert_count(_show(base, path))
+        before = _assert_count(_show(effective_base, path))
         after = _assert_count(_show(head, path))
+        if _present(effective_base, path) and not _present(head, path):
+            # The old path is gone. If the same basename exists somewhere on the
+            # head tree it moved; a move is not a deleted check. Compare against
+            # where it went so a move that genuinely drops assertions still fails.
+            landed = _basename_elsewhere(head, path)
+            if landed:
+                landed_after = _assert_count(_show(head, landed))
+                moved.append(f"{path} -> {landed} ({before} -> {landed_after} asserting line(s))")
+                if landed_after < before:
+                    violations.append(
+                        f"{path} moved to {landed} and lost checks: {before} asserting line(s) "
+                        f"before, {landed_after} after -- a check was deleted"
+                    )
+                continue
         if after < before:
             violations.append(
                 f"{path}: {before} asserting line(s) before, {after} after -- a check was deleted"
             )
-        out = git_ok("diff", "-U0", base, head, "--", path)
+        out = git_ok("diff", "-U0", effective_base, head, "--", path)
         removed_thresholds = {}
         added_thresholds = {}
         for raw in out.splitlines():
@@ -197,13 +253,18 @@ def check_no_check_weakened(spec, base, head) -> Result:
                 )
     if violations:
         return Result("L1", spec["check"], "tree", "FAIL", violations)
-    return Result(
-        "L1",
-        spec["check"],
-        "tree",
-        "PASS",
-        f"{len(changed)} test file(s) in range; no assertion net-removed, no added skip/xfail, no widened threshold",
+    detail = (
+        f"{len(changed)} test file(s) in range; no assertion net-removed, "
+        f"no added skip/xfail, no widened threshold"
     )
+    if moved:
+        detail += "; moved (not deleted): " + ", ".join(moved)
+    if stale:
+        detail += (
+            f"; base {base[:9]} is not an ancestor of {head[:9]}, graded the range "
+            f"{effective_base[:9]}..{head[:9]} this branch owns (L13 reports the stale base)"
+        )
+    return Result("L1", spec["check"], "tree", "PASS", detail)
 
 
 def _commits_touching(base, head, path):

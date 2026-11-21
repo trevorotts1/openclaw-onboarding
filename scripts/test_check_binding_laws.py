@@ -160,6 +160,113 @@ def test_l1_widened_threshold_fails():
         r.cleanup()
 
 
+def test_l1_moved_test_file_is_not_a_deletion():
+    """A rename must not read as a deleted check.
+
+    `git diff` lists the old path as removed whether or not the file landed at a
+    new path, so L1 compared base:old-path to head:old-path and saw a full test
+    file's assertions go to 0. That is a move, not a deletion, and the law forbids
+    deleting a check.
+    """
+    r = Repo()
+    try:
+        # The new home must be dissimilar enough that `git diff` reports D + A
+        # rather than an identical rename, which git already hides from
+        # --name-only. A move that also rewrites the file is the reachable case.
+        r._write(
+            "scripts/core/test_moved.py",
+            "def test_a():\n    assert 1 == 1\n\ndef test_b():\n    assert 2 == 2\n",
+        )
+        r.commit("add the test at its first path")
+        r.base = r.head()
+        r._git("rm", "-q", "scripts/core/test_moved.py")
+        r._write(
+            "tests/test_moved.py",
+            '"""Rewritten home: a different module entirely."""\n'
+            "import json\nimport os\n\n"
+            "def test_case_1():\n    payload = json.dumps({\"k\": 1})\n    assert payload and os.sep\n\n"
+            "def test_case_2():\n    payload = json.dumps({\"k\": 2})\n    assert payload and os.sep\n",
+        )
+        r.commit("move it under tests/ and rewrite it")
+        rc, out = run(r)
+        assert statuses(out)["L1"] == "PASS", out
+        assert "moved (not deleted): scripts/core/test_moved.py -> tests/test_moved.py" in out, out
+        assert rc == 0, out
+    finally:
+        r.cleanup()
+
+def test_l1_real_deletion_still_fails():
+    """The move guard must not become a loophole: a file with no new home still fails."""
+    r = Repo()
+    try:
+        body = "def test_a():\n    assert 1 == 1\n\ndef test_b():\n    assert 2 == 2\n"
+        r._write("scripts/core/test_gone.py", body)
+        r.commit("add the test")
+        r.base = r.head()
+        r._git("rm", "-q", "scripts/core/test_gone.py")
+        r.commit("delete the test outright")
+        rc, out = run(r)
+        assert statuses(out)["L1"] == "FAIL", out
+        assert "test_gone.py: 2 asserting line(s) before, 0 after" in out, out
+        assert rc == 1, out
+    finally:
+        r.cleanup()
+
+def test_l1_move_that_drops_assertions_still_fails():
+    """Moved AND weakened is still a deleted check -- the guard compares with the new home."""
+    r = Repo()
+    try:
+        r._write(
+            "scripts/core/test_shrunk.py",
+            "def test_a():\n    assert 1 == 1\n\ndef test_b():\n    assert 2 == 2\n",
+        )
+        r.commit("add the test at its first path")
+        r.base = r.head()
+        r._git("rm", "-q", "scripts/core/test_shrunk.py")
+        r._write(
+            "tests/test_shrunk.py",
+            '"""Rewritten home so git reports D + A, not an identical rename."""\n'
+            "import json\nimport os\n\n"
+            "def test_a():\n    payload = json.dumps({\"k\": 1})\n    assert payload and os.sep\n",
+        )
+        r.commit("move it and drop a case")
+        rc, out = run(r)
+        assert statuses(out)["L1"] == "FAIL", out
+        assert "moved to tests/test_shrunk.py and lost checks" in out, out
+        assert rc == 1, out
+    finally:
+        r.cleanup()
+
+def test_l1_stale_base_does_not_invent_a_deletion():
+    """The real shape behind the 75-drama-song-ad-factory false alarm.
+
+    A branch forks before main grows a test file. A range measured from main's
+    LATER tip to the branch shows that file as removed although it never existed
+    on the branch. That range is not a change set; the law must grade the range
+    the branch owns (merge-base..head) and leave the stale base to L13.
+    """
+    r = Repo()
+    try:
+        r._git("checkout", "-q", "-b", "branch")
+        r._write("branch.txt", "b\n")
+        r.commit("branch work")
+        r._git("checkout", "-q", "main")
+        r._write("tests/test_late.py", "def test_x():\n    assert 1\n\ndef test_y():\n    assert 2\n")
+        r.commit("main grows a test after the fork")
+        stale_base = r.head()
+        cp = subprocess.run(
+            [sys.executable, CHECKER, "--repo", r.path, "--base", stale_base, "--head", "branch"],
+            capture_output=True,
+            text=True,
+        )
+        out = cp.stdout + cp.stderr
+        assert statuses(out)["L1"] == "PASS", out
+        assert "is not an ancestor of" in out, out
+        assert "test_late.py" not in out, out
+        assert statuses(out)["L13"] == "FAIL", "the stale base is still reported, by the law that owns it: " + out
+    finally:
+        r.cleanup()
+
 # --- L12 / L13 --------------------------------------------------------------------
 def test_l12_merge_commit_fails():
     r = Repo()
