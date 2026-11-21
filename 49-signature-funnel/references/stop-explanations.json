@@ -1,0 +1,1690 @@
+{
+  "contract": "signature-funnel-stop-explanations/v1",
+  "purpose": "Every place Skill 49 stops, refuses, holds or waits, told in fifth-grade words: what happened, why the rule exists, what will fix it, and 2 to 4 choices. Reason codes stay in logs; only these words reach the client.",
+  "how_to_add": "A new client-facing stop ships with an entry here (scripts/test_explain_stop.py fails otherwise). {placeholders} are filled from real facts; an unfilled one falls back to defaults.",
+  "fallback": {
+    "what_happened": "The funnel work stopped before it finished.",
+    "why": "This skill stops instead of guessing when something does not look right, so nothing wrong reaches your pages, your buyers or your bill.",
+    "fix": "Find out what stopped it, fix that one thing, and run it again.",
+    "choices": [
+      "I look into what stopped it, fix it, and run it again.",
+      "I explain the problem to you in more detail before I change anything.",
+      "I stop here and wait for your decision."
+    ]
+  },
+  "entries": {
+    "AF-FUN-BENEFIT-NO-CTA": {
+      "what_happened": "Benefit 1 or Benefit 2 has a button, and those two must not have one.",
+      "why": "The method saves the big button for Benefit 3, the peak of the story. An early button weakens it.",
+      "fix": "Take the button out of Benefit 1 and Benefit 2.",
+      "choices": [
+        "I rewrite it for you so it fits, and show you before anything else runs.",
+        "You send me the change yourself and I check it right away.",
+        "I stop here and wait for your decision."
+      ],
+      "spends_nothing": true
+    },
+    "AF-FUN-BENEFIT-WORDS": {
+      "what_happened": "{section_label} has {count} words. It must be between {min} and {max} words.",
+      "why": "The benefit blocks are three matching proof blocks at the peak of the sales story. Matching lengths keep the peak even; too short is as much a miss as too long.",
+      "fix": "Make {section_label} between {min} and {max} words.",
+      "choices": [
+        "I rewrite {section_label} to fit, and show you before anything else runs.",
+        "You send me the change yourself and I check it right away.",
+        "Keep it as it is and I check it again, so you can see the exact numbers."
+      ],
+      "spends_nothing": true,
+      "defaults": {
+        "section_label": "A benefit section",
+        "count": "a number of",
+        "min": "18",
+        "max": "30"
+      }
+    },
+    "AF-FUN-BUILD-FAB": {
+      "what_happened": "The copy scorecard file is missing, so the copy quality check could not run.",
+      "why": "Your copy must score at least 8.5 out of 10 before the funnel is called done. Without the scorecard, that check would be skipped.",
+      "fix": "Create the scorecard from your approved copy, then run the check again.",
+      "choices": [
+        "I create the scorecard and run the quality check again.",
+        "I stop here and wait for your decision."
+      ],
+      "spends_nothing": true
+    },
+    "AF-FUN-BUILD-MALFORMED": {
+      "what_happened": "The record of what was built is missing or empty.",
+      "why": "We only call a page built when the builder's record says so. With no record, nothing can be proven.",
+      "fix": "Run the build step again so it writes its record.",
+      "choices": [
+        "I run the build step again.",
+        "I stop here and wait for your decision."
+      ],
+      "spends_nothing": true
+    },
+    "AF-FUN-BUILD-PAGESET": {
+      "what_happened": "Not every page of your {size} funnel was built.",
+      "why": "A funnel with a missing page would send buyers to a dead end.",
+      "fix": "Build the missing pages.",
+      "choices": [
+        "I build the missing pages for you.",
+        "I show you which pages are missing.",
+        "I stop here and wait for your decision."
+      ],
+      "spends_nothing": true,
+      "defaults": {
+        "size": "approved funnel"
+      }
+    },
+    "AF-FUN-BUILD-PREVIEW": {
+      "what_happened": "A built page has no preview link.",
+      "why": "You must be able to open and look at every page before it goes live.",
+      "fix": "Build the page again so it gets a preview link.",
+      "choices": [
+        "I rebuild that page.",
+        "I stop here and wait for your decision."
+      ],
+      "spends_nothing": true
+    },
+    "AF-FUN-BUILD-PREVIEW-PLACEHOLDER": {
+      "what_happened": "A page's preview link is a fake test address, not a real page.",
+      "why": "A fake link proves nothing. You need a real preview you can open.",
+      "fix": "Build the page for real so it gets a real preview link.",
+      "choices": [
+        "I rebuild that page for real.",
+        "I stop here and wait for your decision."
+      ],
+      "spends_nothing": true
+    },
+    "AF-FUN-BUILD-PREVIEW-UNBOUND": {
+      "what_happened": "A page's preview link is not one the page builder actually made.",
+      "why": "We only trust preview links the builder itself recorded, so nobody can point you at the wrong page.",
+      "fix": "Use the preview link the builder recorded, or build the page again.",
+      "choices": [
+        "I rebuild that page and use the builder's own link.",
+        "I stop here and wait for your decision."
+      ],
+      "spends_nothing": true
+    },
+    "AF-FUN-BUILD-QC": {
+      "what_happened": "The quality check for the built funnel has {score}. It must score at least 8.5 out of 10.",
+      "why": "8.5 is the quality floor for every funnel we deliver, so your buyers only ever see work that passed it.",
+      "fix": "Fix the pages that failed their checks and build again.",
+      "choices": [
+        "I fix the failing pages and rebuild.",
+        "I show you which pages failed and why.",
+        "I stop here and wait for your decision."
+      ],
+      "spends_nothing": true,
+      "defaults": {
+        "score": "no score recorded, so nothing passed"
+      }
+    },
+    "AF-FUN-BUILD-QC-RECORD": {
+      "what_happened": "The page builder's signed quality record is missing, or it does not cover every page.",
+      "why": "We only trust the builder's own signed record of each page, never a score this job writes about itself.",
+      "fix": "Build the pages again through your page builder so it writes a signed record for each page.",
+      "choices": [
+        "I run the build again through your page builder.",
+        "I show you which pages have no signed record.",
+        "I stop here and wait for your decision."
+      ],
+      "spends_nothing": true
+    },
+    "AF-FUN-BUILD-SIZE": {
+      "what_happened": "The funnel size (3, 5 or 7 steps) is not written down anywhere, so the list of pages cannot be worked out.",
+      "why": "The size you approved decides which pages must exist. Without it, we cannot prove every page was built.",
+      "fix": "Confirm the funnel size.",
+      "choices": [
+        "I ask you to confirm the size now.",
+        "I stop here and wait for your decision."
+      ],
+      "spends_nothing": true
+    },
+    "AF-FUN-BUILD-SIZE-MISMATCH": {
+      "what_happened": "The build record says a different funnel size than the one you approved.",
+      "why": "The build must match the size you approved, or buyers would see a funnel you never agreed to.",
+      "fix": "Build the funnel again at the size you approved.",
+      "choices": [
+        "I rebuild it at your approved size.",
+        "You tell me the size you really want and I update the plan.",
+        "I stop here and wait for your decision."
+      ],
+      "spends_nothing": true
+    },
+    "AF-FUN-BUILD-TYPE": {
+      "what_happened": "The build record is for a different kind of funnel.",
+      "why": "The build must match the Signature Funnel you approved.",
+      "fix": "Build the funnel again as a Signature Funnel.",
+      "choices": [
+        "I rebuild it for you.",
+        "I stop here and wait for your decision."
+      ],
+      "spends_nothing": true
+    },
+    "AF-FUN-BUILD-VISUAL": {
+      "what_happened": "The wireframes and mockups are missing for at least one page.",
+      "why": "Every page gets desktop and mobile wireframes and mockups, so you see and approve the look before anything goes live.",
+      "fix": "Make the wireframes and mockups for every page, and approve each page's design board.",
+      "choices": [
+        "I make the missing wireframes and mockups for you (picture costs need your OK first).",
+        "I send you the design boards that are waiting for your approval.",
+        "I stop here and wait for your decision."
+      ],
+      "spends_nothing": false
+    },
+    "AF-FUN-BUILD-VISUAL-STUB": {
+      "what_happened": "The wireframes were made as free placeholders, and your written OK for placeholders is missing.",
+      "why": "Placeholder pictures are only allowed when you have said yes to them, so you never mistake a placeholder for the real design.",
+      "fix": "Approve the placeholder run, or make the real pictures.",
+      "choices": [
+        "I send you the request to approve placeholders.",
+        "I make the real pictures instead (this costs money, so I ask for your OK first).",
+        "I stop here and wait for your decision."
+      ],
+      "spends_nothing": true
+    },
+    "AF-FUN-CANONICAL-BYPASS": {
+      "what_happened": "Some files in this job try to talk to the page builder, email or picture service directly, which is not allowed.",
+      "why": "All page building, emails and pictures go through the approved tools only, so nothing runs without its checks and nothing is charged by surprise.",
+      "fix": "Remove those files and do that work through the approved tools.",
+      "choices": [
+        "I remove those files and redo that work through the approved tools.",
+        "I show you which files are the problem.",
+        "I stop here and wait for your decision."
+      ],
+      "spends_nothing": true,
+      "match": [
+        "ABORT [BYPASS-SCAN]"
+      ]
+    },
+    "AF-FUN-CERT-MISSING": {
+      "what_happened": "The funnel's final sign-off certificate is missing or broken.",
+      "why": "The certificate is the proof that every step ran in order and passed. No certificate means the funnel is not done.",
+      "fix": "Run the whole funnel check again from the start so it writes the certificate.",
+      "choices": [
+        "I run the full check again.",
+        "I stop here and wait for your decision."
+      ],
+      "spends_nothing": true
+    },
+    "AF-FUN-CERT-PHASE-FAIL": {
+      "what_happened": "The sign-off certificate shows a step did not pass.",
+      "why": "A funnel is only done when every step passes.",
+      "fix": "Fix the step that failed, then run the whole check again.",
+      "choices": [
+        "I find the failed step, fix it, and run the check again.",
+        "I stop here and wait for your decision."
+      ],
+      "spends_nothing": true
+    },
+    "AF-FUN-CERT-PHASE-GAP": {
+      "what_happened": "The sign-off certificate shows a step was skipped.",
+      "why": "Every step must run in order. A skipped step means part of your funnel was never checked.",
+      "fix": "Run the whole funnel check again from the start.",
+      "choices": [
+        "I run the full check again.",
+        "I stop here and wait for your decision."
+      ],
+      "spends_nothing": true
+    },
+    "AF-FUN-CERT-SIGNATURE": {
+      "what_happened": "The sign-off certificate's seal does not match.",
+      "why": "The seal proves nobody changed the certificate after it was made. A broken seal means it cannot be trusted.",
+      "fix": "Run the whole funnel check again so a fresh, sealed certificate is made.",
+      "choices": [
+        "I run the full check again.",
+        "I stop here and wait for your decision."
+      ],
+      "spends_nothing": true
+    },
+    "AF-FUN-DELEG-IMAGES": {
+      "what_happened": "The pictures have no proof they were really made by the picture service.",
+      "why": "We only count a picture as made when the picture service gives it a real job number. A file alone could be a placeholder.",
+      "fix": "Make the pictures through the approved picture service so each one has its real job number.",
+      "choices": [
+        "I make the pictures through the approved service (this costs money, so I ask for your OK on the amount first).",
+        "I show you which pictures have no proof.",
+        "I stop here and wait for your decision."
+      ],
+      "spends_nothing": false
+    },
+    "AF-FUN-DELEG-MEDIA": {
+      "what_happened": "A picture's web address does not match where it was really uploaded.",
+      "why": "Your page must show the exact picture that was uploaded to your account, never a copy from somewhere else.",
+      "fix": "Upload the pictures again through your page builder so the addresses match.",
+      "choices": [
+        "I redo the upload step for you.",
+        "I show you which pictures do not match.",
+        "I stop here and wait for your decision."
+      ],
+      "spends_nothing": true
+    },
+    "AF-FUN-DELEG-RECEIPT": {
+      "what_happened": "The proof from the picture service or the page builder is missing or does not check out.",
+      "why": "We only trust signed proof from the service that did the work. A note written by this job itself does not count.",
+      "fix": "Run that step again through the real service so it writes its signed proof.",
+      "choices": [
+        "I run that step again through the real service.",
+        "I show you exactly which proof is missing.",
+        "I stop here and wait for your decision."
+      ],
+      "spends_nothing": false,
+      "match": [
+        "AF-FUN-DELEG-RECEIPT-ABSENT",
+        "AF-FUN-DELEG-RECEIPT-UNSIGNED",
+        "AF-FUN-DELEG-RECEIPT-SCHEMA",
+        "AF-FUN-DELEG-RECEIPT-MALFORMED",
+        "AF-FUN-DELEG-RECEIPT-COVERAGE",
+        "AF-FUN-DELEG-RECEIPT-MISSING-PHASE",
+        "AF-FUN-DELEG-RECEIPT-STATUS",
+        "AF-FUN-DELEG-RECEIPT-ID"
+      ]
+    },
+    "AF-FUN-DELEG-RECEIPT-ABSENT": {
+      "what_happened": "The proof from the picture service or the page builder is missing or does not check out.",
+      "why": "We only trust signed proof from the service that did the work. A note written by this job itself does not count.",
+      "fix": "Run that step again through the real service so it writes its signed proof.",
+      "choices": [
+        "I run that step again through the real service.",
+        "I show you exactly which proof is missing.",
+        "I stop here and wait for your decision."
+      ],
+      "spends_nothing": false
+    },
+    "AF-FUN-DELEG-RECEIPT-SCHEMA": {
+      "what_happened": "The proof from the picture service or the page builder is missing or does not check out.",
+      "why": "We only trust signed proof from the service that did the work. A note written by this job itself does not count.",
+      "fix": "Run that step again through the real service so it writes its signed proof.",
+      "choices": [
+        "I run that step again through the real service.",
+        "I show you exactly which proof is missing.",
+        "I stop here and wait for your decision."
+      ],
+      "spends_nothing": false
+    },
+    "AF-FUN-DELEG-RECEIPT-SELF-AUTHORED": {
+      "what_happened": "The proof for a step was written by this job itself, not by the service that did the work.",
+      "why": "A job cannot sign off on its own work. Only the outside service's signed proof counts.",
+      "fix": "Run that step again through the real service so it writes its own proof.",
+      "choices": [
+        "I run that step again through the real service.",
+        "I show you which proof was self-written.",
+        "I stop here and wait for your decision."
+      ],
+      "spends_nothing": false
+    },
+    "AF-FUN-DELEG-RECEIPT-UNSIGNED": {
+      "what_happened": "The proof from the picture service or the page builder is missing or does not check out.",
+      "why": "We only trust signed proof from the service that did the work. A note written by this job itself does not count.",
+      "fix": "Run that step again through the real service so it writes its signed proof.",
+      "choices": [
+        "I run that step again through the real service.",
+        "I show you exactly which proof is missing.",
+        "I stop here and wait for your decision."
+      ],
+      "spends_nothing": false
+    },
+    "AF-FUN-DERIVE-LEDGER": {
+      "what_happened": "The list of upsell, downsell and thank-you pages is missing or does not match your funnel size.",
+      "why": "This list proves every follow-up page was made from your main page the right way.",
+      "fix": "Make the list again for your funnel size.",
+      "choices": [
+        "I make the list again for you.",
+        "I stop here and wait for your decision."
+      ],
+      "spends_nothing": true
+    },
+    "AF-FUN-FRONT-DOOR": {
+      "what_happened": "The funnel builder was started the wrong way, so it refused to run.",
+      "why": "The funnel must start through its one safe front door, which checks the setup and keeps the final sign-off honest.",
+      "fix": "Start the funnel through its normal front door.",
+      "choices": [
+        "I start it again the right way for you.",
+        "I stop here and wait for your decision."
+      ],
+      "spends_nothing": true
+    },
+    "AF-FUN-GRAPH-BRANCH": {
+      "what_happened": "An upsell page in the funnel map is missing its \"yes\" path or its \"no thanks\" path.",
+      "why": "Every buyer must be able to say yes or no on each offer, and every path must end on the thank-you page. Nobody should get stuck on an offer page.",
+      "fix": "Fix the funnel map so every page is reachable and every path ends on the thank-you page.",
+      "choices": [
+        "I fix the funnel map for you and check again.",
+        "I show you a simple drawing of the map so you can see the problem.",
+        "I stop here and wait for your decision."
+      ],
+      "spends_nothing": true
+    },
+    "AF-FUN-GRAPH-EDGE": {
+      "what_happened": "A link in the funnel map points to a page that does not exist.",
+      "why": "Every buyer must be able to say yes or no on each offer, and every path must end on the thank-you page. Nobody should get stuck on an offer page.",
+      "fix": "Fix the funnel map so every page is reachable and every path ends on the thank-you page.",
+      "choices": [
+        "I fix the funnel map for you and check again.",
+        "I show you a simple drawing of the map so you can see the problem.",
+        "I stop here and wait for your decision."
+      ],
+      "spends_nothing": true
+    },
+    "AF-FUN-GRAPH-NODES": {
+      "what_happened": "The funnel map does not have exactly the pages your funnel size needs.",
+      "why": "Every buyer must be able to say yes or no on each offer, and every path must end on the thank-you page. Nobody should get stuck on an offer page.",
+      "fix": "Fix the funnel map so every page is reachable and every path ends on the thank-you page.",
+      "choices": [
+        "I fix the funnel map for you and check again.",
+        "I show you a simple drawing of the map so you can see the problem.",
+        "I stop here and wait for your decision."
+      ],
+      "spends_nothing": true
+    },
+    "AF-FUN-GRAPH-REACH": {
+      "what_happened": "In the funnel map, some page can never be reached, or never leads to the thank-you page.",
+      "why": "Every buyer must be able to say yes or no on each offer, and every path must end on the thank-you page. Nobody should get stuck on an offer page.",
+      "fix": "Fix the funnel map so every page is reachable and every path ends on the thank-you page.",
+      "choices": [
+        "I fix the funnel map for you and check again.",
+        "I show you a simple drawing of the map so you can see the problem.",
+        "I stop here and wait for your decision."
+      ],
+      "spends_nothing": true
+    },
+    "AF-FUN-GRAPH-SIZE": {
+      "what_happened": "The funnel map does not say if it is a 3, 5 or 7 step funnel.",
+      "why": "The funnel map decides where every button takes the buyer. It must match the size you approved.",
+      "fix": "Rebuild the funnel map for your approved size.",
+      "choices": [
+        "I rebuild the funnel map for you.",
+        "I stop here and wait for your decision."
+      ],
+      "spends_nothing": true
+    },
+    "AF-FUN-GRAPH-TERMINAL": {
+      "what_happened": "In the funnel map, a buyer could end on a page that is not the thank-you page.",
+      "why": "Every buyer must be able to say yes or no on each offer, and every path must end on the thank-you page. Nobody should get stuck on an offer page.",
+      "fix": "Fix the funnel map so every page is reachable and every path ends on the thank-you page.",
+      "choices": [
+        "I fix the funnel map for you and check again.",
+        "I show you a simple drawing of the map so you can see the problem.",
+        "I stop here and wait for your decision."
+      ],
+      "spends_nothing": true
+    },
+    "AF-FUN-GRAPH-TYPE": {
+      "what_happened": "The funnel map is for a different kind of funnel.",
+      "why": "The map must match the Signature Funnel you approved, or buyers could land on the wrong page.",
+      "fix": "Rebuild the funnel map as a Signature Funnel.",
+      "choices": [
+        "I rebuild the funnel map for you.",
+        "I stop here and wait for your decision."
+      ],
+      "spends_nothing": true
+    },
+    "AF-FUN-HASH-PIN": {
+      "what_happened": "The funnel checking tools on this computer do not match the approved version.",
+      "why": "The checking tools are sealed so nobody can quietly change a rule. If they do not match the seal, we stop instead of trusting them.",
+      "fix": "Update this computer to the approved version of the skill, then start again.",
+      "choices": [
+        "I fix the setup on this computer and start again.",
+        "I explain the setup problem in more detail first.",
+        "I stop here and wait for your decision."
+      ],
+      "spends_nothing": true,
+      "match": [
+        "ABORT [HASH-PIN]"
+      ]
+    },
+    "AF-FUN-HTML-FRAGMENT": {
+      "what_happened": "The page file for {page} is missing or empty.",
+      "why": "Every page in your funnel must have its page file, or that step of the funnel would be blank.",
+      "fix": "Build the page file for {page}.",
+      "choices": [
+        "I build the missing page file for you.",
+        "I show you which pages are missing.",
+        "I stop here and wait for your decision."
+      ],
+      "spends_nothing": true,
+      "defaults": {
+        "page": "one page"
+      }
+    },
+    "AF-FUN-HTML-SECTIONS": {
+      "what_happened": "The page file for {page} does not have all its sections in order, or a section is empty.",
+      "why": "A page file has to carry every section of the copy, in order, with real words, so the live page matches the approved copy.",
+      "fix": "Rebuild that page file from the approved copy.",
+      "choices": [
+        "I rebuild it for you from your approved copy.",
+        "I show you which sections are missing or empty.",
+        "I stop here and wait for your decision."
+      ],
+      "spends_nothing": true,
+      "defaults": {
+        "page": "one page"
+      }
+    },
+    "AF-FUN-IMAGE-CAP-MONEY": {
+      "what_happened": "The picture budget does not add up: the picture count and the money for it do not match.",
+      "why": "Pictures cost money. The number of pictures must be backed by the money you approved, so nothing is charged by surprise.",
+      "fix": "Set the picture budget amount, the currency and the price per picture so they add up.",
+      "choices": [
+        "I work out the right budget and send it to you to approve.",
+        "I stop here and wait for your decision."
+      ],
+      "spends_nothing": true
+    },
+    "AF-FUN-IMG-COVERAGE": {
+      "what_happened": "Some pictures your funnel needs were never made.",
+      "why": "Every section that needs a picture must have one, or the page would go live with empty spaces.",
+      "fix": "Make the missing pictures.",
+      "choices": [
+        "I make the missing pictures (this costs money, so I ask for your OK first).",
+        "I show you which pictures are missing.",
+        "I stop here and wait for your decision."
+      ],
+      "spends_nothing": false
+    },
+    "AF-FUN-IMG-EMPTY": {
+      "what_happened": "The funnel has no pictures at all.",
+      "why": "Every Signature Funnel page uses real pictures, and we can only prove they are real when they exist.",
+      "fix": "Make the pictures for your funnel.",
+      "choices": [
+        "I make the pictures (this costs money, so I ask for your OK first).",
+        "I stop here and wait for your decision."
+      ],
+      "spends_nothing": false
+    },
+    "AF-FUN-IMG-HOST": {
+      "what_happened": "A picture's web address is not the one your page builder uploaded.",
+      "why": "Your page must show the exact picture uploaded to your account, never one from somewhere else.",
+      "fix": "Upload the picture through your page builder and use its address.",
+      "choices": [
+        "I redo the upload for you.",
+        "I stop here and wait for your decision."
+      ],
+      "spends_nothing": true
+    },
+    "AF-FUN-IMG-PROVENANCE": {
+      "what_happened": "A picture has no real job number from the picture service.",
+      "why": "We only ship pictures we can prove were really made for you, never placeholders.",
+      "fix": "Make that picture through the approved picture service.",
+      "choices": [
+        "I make that picture through the approved service (this costs money, so I ask for your OK first).",
+        "I show you which pictures have no proof.",
+        "I stop here and wait for your decision."
+      ],
+      "spends_nothing": false
+    },
+    "AF-FUN-INPUT": {
+      "what_happened": "The picture list for your funnel could not be read.",
+      "why": "We check every picture before we call the funnel done. A list we cannot read cannot be checked.",
+      "fix": "Make the picture list again.",
+      "choices": [
+        "I make the picture list again from your pictures.",
+        "I stop here and wait for your decision."
+      ],
+      "spends_nothing": true
+    },
+    "AF-FUN-INTAKE-MISSING": {
+      "what_happened": "Some of your setup answers are still empty: {missing}.",
+      "why": "Every page is written from your own answers. If an answer is missing, the writer would have to guess, and a guess can put something untrue on your page.",
+      "fix": "Answer the questions that are still empty, then I check again.",
+      "choices": [
+        "I ask you only the missing questions now, one at a time.",
+        "I suggest answers for you to approve or change.",
+        "I stop here and wait for your decision."
+      ],
+      "spends_nothing": true,
+      "defaults": {
+        "missing": "one or more required questions"
+      }
+    },
+    "AF-FUN-INTAKE-OFFER": {
+      "what_happened": "Your offer's exact name was never written down.",
+      "why": "The thank-you page must never sell again, and the checker proves that by looking for your offer names. With no names on file it cannot prove it.",
+      "fix": "Tell me the exact name of your offer (and of any upsell or downsell).",
+      "choices": [
+        "I ask you for the offer names now.",
+        "I pull the names from your earlier answers and show them to you to confirm.",
+        "I stop here and wait for your decision."
+      ],
+      "spends_nothing": true
+    },
+    "AF-FUN-INTAKE-PERSONA-LOG": {
+      "what_happened": "The writing voice for your copy has not been chosen yet.",
+      "why": "Your copy is written in a chosen expert voice so it sounds like a real, proven writer and not like a generic robot.",
+      "fix": "Choose the writing voice before any copy is written.",
+      "choices": [
+        "I pick the best voice for your offer and show you why.",
+        "I show you two or three voices and you pick one.",
+        "I stop here and wait for your decision."
+      ],
+      "spends_nothing": true
+    },
+    "AF-FUN-INTAKE-REPRESENTATION": {
+      "what_happened": "You have not told me who should appear in your pictures.",
+      "why": "Who appears in your pictures is your choice, never ours. We never guess it for you.",
+      "fix": "Tell me who should appear in the pictures, for example \"70% Black women, 20% mixed, 10% men\".",
+      "choices": [
+        "I ask you that question now.",
+        "I show you a few common mixes and you pick one or change it.",
+        "I stop here and wait for your decision."
+      ],
+      "spends_nothing": true
+    },
+    "AF-FUN-INTAKE-SIZE": {
+      "what_happened": "The funnel size is set to {size}. It must be 3, 5 or 7 steps.",
+      "why": "The size decides which pages your funnel gets: a short funnel has no upsell or downsell pages, and a long one has extra ones. Without a real size, the page list cannot be worked out.",
+      "fix": "Pick 3, 5 or 7 steps.",
+      "choices": [
+        "I explain the 3, 5 and 7 step funnels in plain words so you can pick.",
+        "I set it to the size I recommend for your offer, and you approve it.",
+        "I stop here and wait for your decision."
+      ],
+      "spends_nothing": true,
+      "defaults": {
+        "size": "a number that is not 3, 5 or 7"
+      }
+    },
+    "AF-FUN-INTAKE-TRUTHGATE": {
+      "what_happened": "One of the promises your page makes is not confirmed yet: {detail}.",
+      "why": "Your how-to section and thank-you page promise a bonus, a personal text from you and a community to join. We only promise things that are real, so your buyers can trust every word.",
+      "fix": "Confirm the community link, name the bonus, and confirm you will really send the personal text.",
+      "choices": [
+        "I ask you those three things now.",
+        "I take the promise that is not real yet out of the page plan and show you the change.",
+        "I stop here and wait for your decision."
+      ],
+      "spends_nothing": true,
+      "defaults": {
+        "detail": "the community link, the bonus or the personal text"
+      }
+    },
+    "AF-FUN-INTAKE-TYPE": {
+      "what_happened": "This job was set up as a different kind of funnel, not a Signature Funnel.",
+      "why": "Each kind of funnel has its own rules. Running the wrong rules would build pages that do not match what you asked for.",
+      "fix": "Start this job as a Signature Funnel, or use the skill made for the kind of funnel you want.",
+      "choices": [
+        "I restart it as a Signature Funnel for you, using your same answers.",
+        "I move your answers to the skill made for the funnel you really want.",
+        "I stop here and wait for your decision."
+      ],
+      "spends_nothing": true
+    },
+    "AF-FUN-INTAKE-UNLOCKED": {
+      "what_happened": "Your setup answers have not been approved and locked yet.",
+      "why": "Nothing is written until you approve the summary of your answers. That way the pages always match what you said.",
+      "fix": "Read the summary of your answers and approve it.",
+      "choices": [
+        "I send you the summary now so you can approve it.",
+        "I show you the summary and you tell me what to change first.",
+        "I stop here and wait for your decision."
+      ],
+      "spends_nothing": true
+    },
+    "AF-FUN-LAUNCH-EMAIL-REGISTRY": {
+      "what_happened": "The list that says how many launch emails to write could not be read.",
+      "why": "Email counts come from the email skill's own list. We never guess how many emails you get.",
+      "fix": "Update this computer so the email skill's list is present.",
+      "choices": [
+        "I fix the setup on this computer and start again.",
+        "I explain the setup problem in more detail first.",
+        "I stop here and wait for your decision."
+      ],
+      "spends_nothing": true
+    },
+    "AF-FUN-MODEL-TIER": {
+      "what_happened": "There is no proof that your copy was written by your strongest writing model.",
+      "why": "Your sales copy is the most important writing in the funnel, so it must come from your strongest model, with proof.",
+      "fix": "Write the copy again with your strongest model so the proof is recorded.",
+      "choices": [
+        "I rewrite the copy with your strongest model.",
+        "I stop here and wait for your decision."
+      ],
+      "spends_nothing": false,
+      "match": [
+        "ABORT [MODEL-TIER]"
+      ]
+    },
+    "AF-FUN-OFFER-LEDGER-MISSING": {
+      "what_happened": "Your offer names are not on file, so the thank-you page cannot be checked.",
+      "why": "The checker proves the thank-you page does not sell by looking for your offer names. With no names, it cannot prove it.",
+      "fix": "Tell me the exact names of your offers.",
+      "choices": [
+        "I ask you for your offer names now.",
+        "I stop here and wait for your decision."
+      ],
+      "spends_nothing": true
+    },
+    "AF-FUN-P10-EMAILS": {
+      "what_happened": "You said yes to the 10 promo emails, but they are not finished and approved yet.",
+      "why": "If you asked for the emails, the funnel is not done until they are written and pass their own quality check.",
+      "fix": "Finish the 10 emails, or tell me you do not want them.",
+      "choices": [
+        "I finish the emails for you now.",
+        "I take the emails off this funnel (you can add them later).",
+        "I stop here and wait for your decision."
+      ],
+      "spends_nothing": true
+    },
+    "AF-FUN-PAIN-2ND-PERSON": {
+      "what_happened": "A pain section does not speak to the reader as \"you\".",
+      "why": "Pain sections talk straight to the reader so they feel seen.",
+      "fix": "Rewrite the pain section using \"you\" and \"your\".",
+      "choices": [
+        "I rewrite it for you so it fits, and show you before anything else runs.",
+        "You send me the change yourself and I check it right away.",
+        "I stop here and wait for your decision."
+      ],
+      "spends_nothing": true
+    },
+    "AF-FUN-PAIN-CHARBAND": {
+      "what_happened": "{section_label} has {count} characters. It must be between {min} and {max} characters.",
+      "why": "These lengths are part of the Signature Funnel method and they never change. Each pain section fills one space on the page; too short says too little, too long gets skipped.",
+      "fix": "Make {section_label} between {min} and {max} characters.",
+      "choices": [
+        "I rewrite {section_label} to fit, and show you before anything else runs.",
+        "You send me the change yourself and I check it right away.",
+        "Keep it as it is and I check it again, so you can see the exact numbers."
+      ],
+      "spends_nothing": true,
+      "defaults": {
+        "section_label": "A pain section",
+        "count": "a number of",
+        "min": "180",
+        "max": "225"
+      }
+    },
+    "AF-FUN-PAIN-CTA": {
+      "what_happened": "A pain section is missing its button text, or has a button where the method does not allow one.",
+      "why": "The method says exactly where a buy button goes. Buttons in the right places lead the reader to act; buttons in the wrong places feel pushy.",
+      "fix": "Add the button line (written like \"CTA: Start My ...\") where it belongs, or take it out where it does not.",
+      "choices": [
+        "I rewrite it for you so it fits, and show you before anything else runs.",
+        "You send me the change yourself and I check it right away.",
+        "I stop here and wait for your decision."
+      ],
+      "spends_nothing": true
+    },
+    "AF-FUN-PAIN-QUESTION": {
+      "what_happened": "A pain section is written as a question.",
+      "why": "Pain sections speak to the reader directly. A question lets the reader answer \"no\" in their head and move on.",
+      "fix": "Rewrite the pain section as a statement, with no question mark.",
+      "choices": [
+        "I rewrite it for you so it fits, and show you before anything else runs.",
+        "You send me the change yourself and I check it right away.",
+        "I stop here and wait for your decision."
+      ],
+      "spends_nothing": true
+    },
+    "AF-FUN-PROCESS-INTEGRITY": {
+      "what_happened": "The funnel's sign-off certificate did not pass its own check, so the funnel is not marked done.",
+      "why": "Only a valid certificate can mark a funnel done. This keeps an unfinished funnel from being delivered.",
+      "fix": "Run the whole funnel check again from the start.",
+      "choices": [
+        "I run the full check again.",
+        "I stop here and wait for your decision."
+      ],
+      "spends_nothing": true
+    },
+    "AF-FUN-PROFILE-UNKNOWN": {
+      "what_happened": "The copy names a page type the funnel does not know: {page}.",
+      "why": "Each page type has its own section rules. A page with an unknown type cannot be checked, so it could go live broken.",
+      "fix": "Name the page as one of: main, upsell, downsell, upsell-2, downsell-2, thank-you or checkout.",
+      "choices": [
+        "I fix the page name for you and check again.",
+        "I show you the page list so you can tell me which page it was meant to be.",
+        "I stop here and wait for your decision."
+      ],
+      "spends_nothing": true,
+      "defaults": {
+        "page": "a page with no known type"
+      }
+    },
+    "AF-FUN-PROMPT-CEILING": {
+      "what_happened": "The picture instructions for {where} are longer than the picture model allows.",
+      "why": "Picture prompts must use 95 to 100 percent of the picture model's own size limit, and never less than 80 percent. Longer, fuller prompts make much better pictures; going over the limit makes the model refuse the job.",
+      "fix": "Shorten the picture instructions to fit the model's limit.",
+      "choices": [
+        "I rewrite the picture instructions for you so they pass, then check again.",
+        "I show you the limit and how far over it is.",
+        "I stop here and wait for your decision."
+      ],
+      "spends_nothing": true,
+      "defaults": {
+        "where": "one picture"
+      }
+    },
+    "AF-FUN-PROMPT-COVERAGE": {
+      "what_happened": "Some pictures your funnel needs have no picture instructions yet.",
+      "why": "Every section that needs a picture must have one, or the page would go live with empty spaces.",
+      "fix": "Write picture instructions for every picture the funnel needs.",
+      "choices": [
+        "I write the missing picture instructions for you.",
+        "I show you which pictures are missing.",
+        "I stop here and wait for your decision."
+      ],
+      "spends_nothing": true
+    },
+    "AF-FUN-PROMPT-DENSITY": {
+      "what_happened": "The picture instructions for {where} repeat the same words too much ({count} different words; at least 220 are needed).",
+      "why": "Repeating words just to reach a length does not help the picture. Real detail does.",
+      "fix": "Rewrite the instructions with more real detail and fewer repeats.",
+      "choices": [
+        "I rewrite the picture instructions for you so they pass, then check again.",
+        "I stop here and wait for your decision."
+      ],
+      "spends_nothing": true,
+      "defaults": {
+        "where": "one picture",
+        "count": "too few"
+      }
+    },
+    "AF-FUN-PROMPT-EMDASH": {
+      "what_happened": "The picture instructions for {where} use a long dash.",
+      "why": "Long dashes are banned in picture instructions because they can confuse the picture model.",
+      "fix": "Replace each long dash with a comma or a period.",
+      "choices": [
+        "I rewrite the picture instructions for you so they pass, then check again.",
+        "I stop here and wait for your decision."
+      ],
+      "spends_nothing": true,
+      "defaults": {
+        "where": "one picture"
+      }
+    },
+    "AF-FUN-PROMPT-FLOOR": {
+      "what_happened": "The picture instructions for {where} are too short.",
+      "why": "Picture prompts must use 95 to 100 percent of the picture model's own size limit, and never less than 80 percent. Longer, fuller prompts make much better pictures; going over the limit makes the model refuse the job.",
+      "fix": "Make the picture instructions longer and richer, up to the model's target size.",
+      "choices": [
+        "I rewrite the picture instructions for you so they pass, then check again.",
+        "I show you the target size and how far off it is.",
+        "I stop here and wait for your decision."
+      ],
+      "spends_nothing": true,
+      "defaults": {
+        "where": "one picture"
+      }
+    },
+    "AF-FUN-PROMPT-GRADE": {
+      "what_happened": "The picture instructions for {where} are missing the Signature look paragraph.",
+      "why": "That paragraph gives every picture the bold Signature look, so your whole funnel looks like one brand.",
+      "fix": "Add the Signature look paragraph, word for word.",
+      "choices": [
+        "I rewrite the picture instructions for you so they pass, then check again.",
+        "I stop here and wait for your decision."
+      ],
+      "spends_nothing": true,
+      "defaults": {
+        "where": "one picture"
+      }
+    },
+    "AF-FUN-PROMPT-NEGATIVE": {
+      "what_happened": "The picture instructions for {where} do not say what to leave out.",
+      "why": "A \"Do not ...\" list at the end stops the picture model from adding things you do not want, like wrong text or extra people.",
+      "fix": "Add a short \"Do not ...\" list at the end of the instructions.",
+      "choices": [
+        "I rewrite the picture instructions for you so they pass, then check again.",
+        "I stop here and wait for your decision."
+      ],
+      "spends_nothing": true,
+      "defaults": {
+        "where": "one picture"
+      }
+    },
+    "AF-FUN-PROMPT-STYLE-CARD": {
+      "what_happened": "You picked a design style card, but the picture instructions for {where} do not use it.",
+      "why": "When you choose a style card, every picture must use it word for word so the whole funnel matches the look you picked.",
+      "fix": "Add the style card's full text to every picture's instructions.",
+      "choices": [
+        "I rewrite the picture instructions for you so they pass, then check again.",
+        "I take the style card off and use the standard Signature look instead, if you prefer.",
+        "I stop here and wait for your decision."
+      ],
+      "spends_nothing": true,
+      "defaults": {
+        "where": "one picture"
+      }
+    },
+    "AF-FUN-PROMPT-TYPO": {
+      "what_happened": "The picture instructions for {where} do not handle the words in the picture the right way.",
+      "why": "Pictures with words must spell them exactly, and pictures without words must say \"no text\", or the model may add misspelled words.",
+      "fix": "For a picture with words, add the exact words and a spelling lock. For a picture without words, say \"no text anywhere\".",
+      "choices": [
+        "I rewrite the picture instructions for you so they pass, then check again.",
+        "I stop here and wait for your decision."
+      ],
+      "spends_nothing": true,
+      "defaults": {
+        "where": "one picture"
+      }
+    },
+    "AF-FUN-PROMPT-UNEXPANDED": {
+      "what_happened": "The picture instructions for {where} are long enough to pass the floor, but still under the target size.",
+      "why": "Picture prompts must use 95 to 100 percent of the picture model's own size limit, and never less than 80 percent. Longer, fuller prompts make much better pictures; going over the limit makes the model refuse the job.",
+      "fix": "Add more detail to the picture instructions until they reach the target size.",
+      "choices": [
+        "I rewrite the picture instructions for you so they pass, then check again.",
+        "I show you how many characters to add.",
+        "I stop here and wait for your decision."
+      ],
+      "spends_nothing": true,
+      "defaults": {
+        "where": "one picture"
+      }
+    },
+    "AF-FUN-SEC1-CHARBAND": {
+      "what_happened": "{section_label} has {count} characters. It must be between {min} and {max} characters.",
+      "why": "These lengths are part of the Signature Funnel method and they never change. Section 1 is the first thing a reader sees, so it has to fit its space and land one big promise.",
+      "fix": "Make {section_label} between {min} and {max} characters.",
+      "choices": [
+        "I rewrite {section_label} to fit, and show you before anything else runs.",
+        "You send me the change yourself and I check it right away.",
+        "Keep it as it is and I check it again, so you can see the exact numbers."
+      ],
+      "spends_nothing": true,
+      "defaults": {
+        "section_label": "Section 1 (The Big Bold Claim)",
+        "count": "a number of",
+        "min": "180",
+        "max": "225"
+      }
+    },
+    "AF-FUN-SEC1-CTA": {
+      "what_happened": "Section 1 is missing its button text, or has a button where the method does not allow one.",
+      "why": "The method says exactly where a buy button goes. Buttons in the right places lead the reader to act; buttons in the wrong places feel pushy.",
+      "fix": "Add the button line (written like \"CTA: Start My ...\") where it belongs, or take it out where it does not.",
+      "choices": [
+        "I rewrite it for you so it fits, and show you before anything else runs.",
+        "You send me the change yourself and I check it right away.",
+        "I stop here and wait for your decision."
+      ],
+      "spends_nothing": true
+    },
+    "AF-FUN-SEC1-TITLE": {
+      "what_happened": "Section 1 does not say the name of your product.",
+      "why": "Section 1 is the first thing a reader sees. Your product name must be in it so they know right away what this is.",
+      "fix": "Add your product name to Section 1.",
+      "choices": [
+        "I rewrite it for you so it fits, and show you before anything else runs.",
+        "You send me the change yourself and I check it right away.",
+        "I stop here and wait for your decision."
+      ],
+      "spends_nothing": true
+    },
+    "AF-FUN-SEC10-CTA": {
+      "what_happened": "Section 10 (Benefit 3) is missing its button text, or has a button where the method does not allow one.",
+      "why": "The method says exactly where a buy button goes. Buttons in the right places lead the reader to act; buttons in the wrong places feel pushy.",
+      "fix": "Add the button line (written like \"CTA: Start My ...\") where it belongs, or take it out where it does not.",
+      "choices": [
+        "I rewrite it for you so it fits, and show you before anything else runs.",
+        "You send me the change yourself and I check it right away.",
+        "I stop here and wait for your decision."
+      ],
+      "spends_nothing": true
+    },
+    "AF-FUN-SEC11-NO-CTA-BUTTON": {
+      "what_happened": "Section 11 (The Big How To) has a button, and it must not have one.",
+      "why": "In Section 11 the last step itself is the call to act. A button there would double it up.",
+      "fix": "Take the button out of Section 11; keep the last step as the call to act.",
+      "choices": [
+        "I rewrite it for you so it fits, and show you before anything else runs.",
+        "You send me the change yourself and I check it right away.",
+        "I stop here and wait for your decision."
+      ],
+      "spends_nothing": true
+    },
+    "AF-FUN-SEC11-REQUIRED-STEPS": {
+      "what_happened": "Section 11 is missing a step it must always have: {detail}.",
+      "why": "Every Signature Funnel how-to tells buyers to share with a friend, check their email for a bonus, watch for a text from the founder, and join the community.",
+      "fix": "Add the missing step to Section 11.",
+      "choices": [
+        "I rewrite it for you so it fits, and show you before anything else runs.",
+        "You send me the change yourself and I check it right away.",
+        "I stop here and wait for your decision."
+      ],
+      "spends_nothing": true,
+      "defaults": {
+        "detail": "share, email bonus, founder text or community"
+      }
+    },
+    "AF-FUN-SEC11-STEP7": {
+      "what_happened": "A late step in Section 11 has {count} characters. It must be 170 characters or less.",
+      "why": "The last step is the call to act and it has a fixed space on the page.",
+      "fix": "Make that step 170 characters or less.",
+      "choices": [
+        "I rewrite it for you so it fits, and show you before anything else runs.",
+        "You send me the change yourself and I check it right away.",
+        "Keep it as it is and I check it again, so you can see the exact numbers."
+      ],
+      "spends_nothing": true,
+      "defaults": {
+        "count": "too many"
+      }
+    },
+    "AF-FUN-SEC11-STEPBAND": {
+      "what_happened": "Step {step} of Section 11 has {count} characters. Steps 1 to 6 must each be 89 to 116 characters.",
+      "why": "Every step gets the same amount of space on the page so the list looks even and is easy to read.",
+      "fix": "Make that step between 89 and 116 characters.",
+      "choices": [
+        "I rewrite it for you so it fits, and show you before anything else runs.",
+        "You send me the change yourself and I check it right away.",
+        "Keep it as it is and I check it again, so you can see the exact numbers."
+      ],
+      "spends_nothing": true,
+      "defaults": {
+        "step": "one",
+        "count": "the wrong number of"
+      }
+    },
+    "AF-FUN-SEC11-STEPS": {
+      "what_happened": "Section 11 has {count} steps. It must have 5 to 10.",
+      "why": "The how-to section walks the reader through clear steps. Too few feels empty; too many feels like work.",
+      "fix": "Use between 5 and 10 steps in Section 11.",
+      "choices": [
+        "I rewrite it for you so it fits, and show you before anything else runs.",
+        "You send me the change yourself and I check it right away.",
+        "I stop here and wait for your decision."
+      ],
+      "spends_nothing": true,
+      "defaults": {
+        "count": "the wrong number of"
+      }
+    },
+    "AF-FUN-SEC11-WORDS": {
+      "what_happened": "{section_label} has {count} words. It must be between {min} and {max} words.",
+      "why": "These lengths are part of the Signature Funnel method and they never change. The how-to steps have to fit their space on the page.",
+      "fix": "Make {section_label} between {min} and {max} words.",
+      "choices": [
+        "I rewrite {section_label} to fit, and show you before anything else runs.",
+        "You send me the change yourself and I check it right away.",
+        "Keep it as it is and I check it again, so you can see the exact numbers."
+      ],
+      "spends_nothing": true,
+      "defaults": {
+        "section_label": "Section 11 (The Big How To)",
+        "count": "a number of",
+        "min": "100",
+        "max": "150"
+      }
+    },
+    "AF-FUN-SEC12-PARTS": {
+      "what_happened": "Section 12 has {count} labeled parts. It must have exactly 6.",
+      "why": "The heartfelt letter has six parts in a set order, from your struggle to your invitation.",
+      "fix": "Write Section 12 as exactly 6 labeled parts.",
+      "choices": [
+        "I rewrite it for you so it fits, and show you before anything else runs.",
+        "You send me the change yourself and I check it right away.",
+        "I stop here and wait for your decision."
+      ],
+      "spends_nothing": true,
+      "defaults": {
+        "count": "the wrong number of"
+      }
+    },
+    "AF-FUN-SEC12-STRUGGLE": {
+      "what_happened": "Part 2 of Section 12 does not start with \"I used to be just like you...\".",
+      "why": "That opening line is part of the Signature Funnel method and never changes.",
+      "fix": "Start part 2 of Section 12 with \"I used to be just like you...\".",
+      "choices": [
+        "I rewrite it for you so it fits, and show you before anything else runs.",
+        "You send me the change yourself and I check it right away.",
+        "I stop here and wait for your decision."
+      ],
+      "spends_nothing": true
+    },
+    "AF-FUN-SEC12-WORDS": {
+      "what_happened": "{section_label} has {count} words. It must be between {min} and {max} words.",
+      "why": "These lengths are part of the Signature Funnel method and they never change. The personal letter has to fit its space on the page.",
+      "fix": "Make {section_label} between {min} and {max} words.",
+      "choices": [
+        "I rewrite {section_label} to fit, and show you before anything else runs.",
+        "You send me the change yourself and I check it right away.",
+        "Keep it as it is and I check it again, so you can see the exact numbers."
+      ],
+      "spends_nothing": true,
+      "defaults": {
+        "section_label": "Section 12 (The Big Bold Heartfelt Message)",
+        "count": "a number of",
+        "min": "100",
+        "max": "150"
+      }
+    },
+    "AF-FUN-SEC5-CTA": {
+      "what_happened": "Section 5 is missing its button text, or has a button where the method does not allow one.",
+      "why": "The method says exactly where a buy button goes. Buttons in the right places lead the reader to act; buttons in the wrong places feel pushy.",
+      "fix": "Add the button line (written like \"CTA: Start My ...\") where it belongs, or take it out where it does not.",
+      "choices": [
+        "I rewrite it for you so it fits, and show you before anything else runs.",
+        "You send me the change yourself and I check it right away.",
+        "I stop here and wait for your decision."
+      ],
+      "spends_nothing": true
+    },
+    "AF-FUN-SEC5-LEAD": {
+      "what_happened": "Section 5 does not start with \"That's the reason why...\".",
+      "why": "That opening line is part of the Signature Funnel method and never changes.",
+      "fix": "Start Section 5 with \"That's the reason why...\".",
+      "choices": [
+        "I rewrite it for you so it fits, and show you before anything else runs.",
+        "You send me the change yourself and I check it right away.",
+        "I stop here and wait for your decision."
+      ],
+      "spends_nothing": true
+    },
+    "AF-FUN-SEC5-WORDS": {
+      "what_happened": "{section_label} has {count} words. It must be between {min} and {max} words.",
+      "why": "These lengths are part of the Signature Funnel method and they never change. Too short is as much a miss as too long: the reader needs enough words to feel it, but not so many they skim.",
+      "fix": "Make {section_label} between {min} and {max} words.",
+      "choices": [
+        "I rewrite {section_label} to fit, and show you before anything else runs.",
+        "You send me the change yourself and I check it right away.",
+        "Keep it as it is and I check it again, so you can see the exact numbers."
+      ],
+      "spends_nothing": true,
+      "defaults": {
+        "section_label": "Section 5 (The Big Bold Why)",
+        "count": "a number of",
+        "min": "18",
+        "max": "30"
+      }
+    },
+    "AF-FUN-SEC6-NO-CTA": {
+      "what_happened": "Section 6 has a button, and Section 6 must never have one.",
+      "why": "Section 6 is where readers see themselves. A button there interrupts that moment.",
+      "fix": "Take the button out of Section 6.",
+      "choices": [
+        "I rewrite it for you so it fits, and show you before anything else runs.",
+        "You send me the change yourself and I check it right away.",
+        "I stop here and wait for your decision."
+      ],
+      "spends_nothing": true
+    },
+    "AF-FUN-SEC6-PERSONAS": {
+      "what_happened": "Section 6 names {count} kinds of people. It must name 3 to 6.",
+      "why": "Section 6 shows who this is for. Fewer than 3 feels too narrow; more than 6 makes nobody feel picked.",
+      "fix": "Name between 3 and 6 kinds of people in Section 6.",
+      "choices": [
+        "I rewrite it for you so it fits, and show you before anything else runs.",
+        "You send me the change yourself and I check it right away.",
+        "I stop here and wait for your decision."
+      ],
+      "spends_nothing": true,
+      "defaults": {
+        "count": "the wrong number of"
+      }
+    },
+    "AF-FUN-SEC6-WORDS": {
+      "what_happened": "{section_label} has {count} words. It must be between {min} and {max} words.",
+      "why": "These lengths are part of the Signature Funnel method and they never change. Too short is as much a miss as too long.",
+      "fix": "Make {section_label} between {min} and {max} words.",
+      "choices": [
+        "I rewrite {section_label} to fit, and show you before anything else runs.",
+        "You send me the change yourself and I check it right away.",
+        "Keep it as it is and I check it again, so you can see the exact numbers."
+      ],
+      "spends_nothing": true,
+      "defaults": {
+        "section_label": "Section 6 (The Big Bold Who)",
+        "count": "a number of",
+        "min": "18",
+        "max": "30"
+      }
+    },
+    "AF-FUN-SEC7-BULLETS": {
+      "what_happened": "Section 7 has {count} bullet points. It must have 5 to 10.",
+      "why": "Section 7 lists exactly what the buyer gets. Too few looks thin; too many gets skimmed.",
+      "fix": "Use between 5 and 10 bullet points in Section 7.",
+      "choices": [
+        "I rewrite it for you so it fits, and show you before anything else runs.",
+        "You send me the change yourself and I check it right away.",
+        "I stop here and wait for your decision."
+      ],
+      "spends_nothing": true,
+      "defaults": {
+        "count": "the wrong number of"
+      }
+    },
+    "AF-FUN-SEC7-CTA": {
+      "what_happened": "Section 7 is missing its button text, or has a button where the method does not allow one.",
+      "why": "The method says exactly where a buy button goes. Buttons in the right places lead the reader to act; buttons in the wrong places feel pushy.",
+      "fix": "Add the button line (written like \"CTA: Start My ...\") where it belongs, or take it out where it does not.",
+      "choices": [
+        "I rewrite it for you so it fits, and show you before anything else runs.",
+        "You send me the change yourself and I check it right away.",
+        "I stop here and wait for your decision."
+      ],
+      "spends_nothing": true
+    },
+    "AF-FUN-SEC7-WORDS": {
+      "what_happened": "{section_label} has {count} words. It must be between {min} and {max} words.",
+      "why": "These lengths are part of the Signature Funnel method and they never change. This section lists what the buyer gets, and it has to fit its place on the page.",
+      "fix": "Make {section_label} between {min} and {max} words.",
+      "choices": [
+        "I rewrite {section_label} to fit, and show you before anything else runs.",
+        "You send me the change yourself and I check it right away.",
+        "Keep it as it is and I check it again, so you can see the exact numbers."
+      ],
+      "spends_nothing": true,
+      "defaults": {
+        "section_label": "Section 7 (The Big Bold What)",
+        "count": "a number of",
+        "min": "70",
+        "max": "120"
+      }
+    },
+    "AF-FUN-SEC8REPL-COUNT": {
+      "what_happened": "The new Section 8 on {page} has {count} items. It must have exactly 7.",
+      "why": "The method calls for exactly 7 reasons (or 7 things they will miss), building from practical to personal.",
+      "fix": "Write exactly 7 items.",
+      "choices": [
+        "I rewrite it for you so it fits, and show you before anything else runs.",
+        "You send me the change yourself and I check it right away.",
+        "I stop here and wait for your decision."
+      ],
+      "spends_nothing": true,
+      "defaults": {
+        "page": "an upsell or downsell page",
+        "count": "the wrong number of"
+      }
+    },
+    "AF-FUN-SEC8REPL-CTA": {
+      "what_happened": "The new Section 8 is missing its button text, or has a button where the method does not allow one.",
+      "why": "The method says exactly where a buy button goes. Buttons in the right places lead the reader to act; buttons in the wrong places feel pushy.",
+      "fix": "Add the button line (written like \"CTA: Start My ...\") where it belongs, or take it out where it does not.",
+      "choices": [
+        "I rewrite it for you so it fits, and show you before anything else runs.",
+        "You send me the change yourself and I check it right away.",
+        "I stop here and wait for your decision."
+      ],
+      "spends_nothing": true
+    },
+    "AF-FUN-SEC8REPL-NAME": {
+      "what_happened": "The new Section 8 on {page} has the wrong title.",
+      "why": "Upsell pages end with \"7 Reasons To Commit To Your ____ Future\" and downsell pages end with \"When Time Runs Out\". The names never change.",
+      "fix": "Use the right title for that page.",
+      "choices": [
+        "I rewrite it for you so it fits, and show you before anything else runs.",
+        "You send me the change yourself and I check it right away.",
+        "I stop here and wait for your decision."
+      ],
+      "spends_nothing": true,
+      "defaults": {
+        "page": "an upsell or downsell page"
+      }
+    },
+    "AF-FUN-SECTION-EXTRA": {
+      "what_happened": "{page} has a section that does not belong on that kind of page: Section {section}.",
+      "why": "Each page type has a fixed set of sections. Extra sections break the page layout and the order of the story.",
+      "fix": "Remove Section {section} from {page}.",
+      "choices": [
+        "I remove it for you and check again.",
+        "I move what it says into the section where it belongs.",
+        "I stop here and wait for your decision."
+      ],
+      "spends_nothing": true,
+      "defaults": {
+        "page": "A page",
+        "section": "an extra"
+      }
+    },
+    "AF-FUN-SECTION-MISSING": {
+      "what_happened": "Part of your funnel copy is missing: {detail}.",
+      "why": "A funnel with a missing page or section would send buyers to a blank or broken spot.",
+      "fix": "Write the missing page or section.",
+      "choices": [
+        "I write the missing part for you and show you.",
+        "I show you exactly what is missing so you can write it.",
+        "I stop here and wait for your decision."
+      ],
+      "spends_nothing": true,
+      "defaults": {
+        "detail": "a page or section the funnel needs"
+      }
+    },
+    "AF-FUN-SECTION-ORDER": {
+      "what_happened": "The sections on {page} are out of order or repeated.",
+      "why": "The sections tell one story that builds step by step. Out of order, the story stops making sense to the reader.",
+      "fix": "Put the sections back in order, each one only once.",
+      "choices": [
+        "I put them in order for you and check again.",
+        "I show you the order they must be in.",
+        "I stop here and wait for your decision."
+      ],
+      "spends_nothing": true,
+      "defaults": {
+        "page": "a page"
+      }
+    },
+    "AF-FUN-TY-CTA": {
+      "what_happened": "Your thank-you page has a selling button.",
+      "why": "Only helpful buttons are allowed on the thank-you page (join the community, share with a friend, add to calendar).",
+      "fix": "Replace the selling button with a helpful one, or remove it.",
+      "choices": [
+        "I rewrite it for you so it fits, and show you before anything else runs.",
+        "You send me the change yourself and I check it right away.",
+        "I stop here and wait for your decision."
+      ],
+      "spends_nothing": true
+    },
+    "AF-FUN-TY-MISSING": {
+      "what_happened": "Your funnel has no thank-you page.",
+      "why": "Every funnel ends on a thank-you page, so no buyer ever ends a purchase on an offer page.",
+      "fix": "Write and build the thank-you page.",
+      "choices": [
+        "I write the thank-you page for you and show you.",
+        "I stop here and wait for your decision."
+      ],
+      "spends_nothing": true
+    },
+    "AF-FUN-TY-PITCH": {
+      "what_happened": "Your thank-you page names an offer you sell.",
+      "why": "After the last downsell the funnel never sells again. Selling on the thank-you page cheapens every promise you just made.",
+      "fix": "Take the offer name off the thank-you page.",
+      "choices": [
+        "I rewrite it for you so it fits, and show you before anything else runs.",
+        "You send me the change yourself and I check it right away.",
+        "I stop here and wait for your decision."
+      ],
+      "spends_nothing": true
+    },
+    "AF-FUN-TY-PRICE": {
+      "what_happened": "Your thank-you page shows a price.",
+      "why": "After the last downsell the funnel never sells again, so the thank-you page shows no prices.",
+      "fix": "Take the price off the thank-you page.",
+      "choices": [
+        "I rewrite it for you so it fits, and show you before anything else runs.",
+        "You send me the change yourself and I check it right away.",
+        "I stop here and wait for your decision."
+      ],
+      "spends_nothing": true
+    },
+    "AF-FUN-TY1-CHARBAND": {
+      "what_happened": "{section_label} has {count} characters. It must be between {min} and {max} characters.",
+      "why": "These lengths are part of the Signature Funnel method and they never change. The welcome is a short celebration of the buyer's decision.",
+      "fix": "Make {section_label} between {min} and {max} characters.",
+      "choices": [
+        "I rewrite {section_label} to fit, and show you before anything else runs.",
+        "You send me the change yourself and I check it right away.",
+        "Keep it as it is and I check it again, so you can see the exact numbers."
+      ],
+      "spends_nothing": true,
+      "defaults": {
+        "section_label": "The welcome message at the top of the thank-you page",
+        "count": "a number of",
+        "min": "120",
+        "max": "180"
+      }
+    },
+    "AF-FUN-TY1-TITLE": {
+      "what_happened": "The thank-you welcome does not say your product's name.",
+      "why": "The welcome celebrates the exact thing they just bought.",
+      "fix": "Add your product name to the welcome.",
+      "choices": [
+        "I rewrite it for you so it fits, and show you before anything else runs.",
+        "You send me the change yourself and I check it right away.",
+        "I stop here and wait for your decision."
+      ],
+      "spends_nothing": true
+    },
+    "AF-FUN-TY2-STEPBAND": {
+      "what_happened": "A thank-you step has {count} characters. Each must be 89 to 116 characters.",
+      "why": "Every step gets the same space so the list looks even and is easy to follow.",
+      "fix": "Make that step between 89 and 116 characters.",
+      "choices": [
+        "I rewrite it for you so it fits, and show you before anything else runs.",
+        "You send me the change yourself and I check it right away.",
+        "Keep it as it is and I check it again, so you can see the exact numbers."
+      ],
+      "spends_nothing": true,
+      "defaults": {
+        "count": "the wrong number of"
+      }
+    },
+    "AF-FUN-TY2-STEPS": {
+      "what_happened": "The thank-you \"What Happens Next\" part has {count} steps. It must have 4 to 6.",
+      "why": "Buyers need clear next steps right after they pay, not too few and not too many.",
+      "fix": "Use between 4 and 6 steps.",
+      "choices": [
+        "I rewrite it for you so it fits, and show you before anything else runs.",
+        "You send me the change yourself and I check it right away.",
+        "I stop here and wait for your decision."
+      ],
+      "spends_nothing": true,
+      "defaults": {
+        "count": "the wrong number of"
+      }
+    },
+    "AF-FUN-TY3-CHARBAND": {
+      "what_happened": "The thank-you closing has {count} characters. It must be 170 or less.",
+      "why": "The closing is one short, strong line signed by you.",
+      "fix": "Make the closing 170 characters or less.",
+      "choices": [
+        "I rewrite it for you so it fits, and show you before anything else runs.",
+        "You send me the change yourself and I check it right away.",
+        "Keep it as it is and I check it again, so you can see the exact numbers."
+      ],
+      "spends_nothing": true,
+      "defaults": {
+        "count": "too many"
+      }
+    },
+    "AF-FUN-VISUAL-ARGS": {
+      "what_happened": "The design step is missing some setup: {detail}.",
+      "why": "The designs must use your brand file and be tied to your name as the owner, so they match your brand and only you approve them.",
+      "fix": "Add the missing brand file, brand owner or page design tool location.",
+      "choices": [
+        "I find your brand file and fill these in for you to confirm.",
+        "I ask you for the missing items.",
+        "I stop here and wait for your decision."
+      ],
+      "spends_nothing": true,
+      "defaults": {
+        "detail": "the brand file, the brand owner or the design tool location"
+      }
+    },
+    "AF-FUN-VISUAL-PHASE": {
+      "what_happened": "The wireframe and mockup step did not finish, so the build check stopped.",
+      "why": "Every page gets desktop and mobile wireframes and mockups, so you see and approve the look before anything goes live.",
+      "fix": "Finish the wireframes and mockups for every page.",
+      "choices": [
+        "I finish the wireframes and mockups for you (picture costs need your OK first).",
+        "I stop here and wait for your decision."
+      ],
+      "spends_nothing": false
+    },
+    "AF-FUN-VISUAL-SIZE": {
+      "what_happened": "The funnel size is not written down, so the list of pages that need designs cannot be worked out.",
+      "why": "The size you approved decides which pages need designs.",
+      "fix": "Confirm the funnel size.",
+      "choices": [
+        "I ask you to confirm the size now.",
+        "I stop here and wait for your decision."
+      ],
+      "spends_nothing": true
+    },
+    "AF-FUN-VISUAL-SLOTSET": {
+      "what_happened": "A page's design plan is missing picture spots that its sections need.",
+      "why": "Every section that needs a picture must have a spot for it in the design, so no picture is left out.",
+      "fix": "Rebuild that page's design plan so every needed picture has a spot.",
+      "choices": [
+        "I rebuild the design plan for you.",
+        "I stop here and wait for your decision."
+      ],
+      "spends_nothing": true
+    },
+    "AF-FUN-VISUAL-STEP": {
+      "what_happened": "The design step tried to run and stopped.",
+      "why": "Designs are only drawn after your copy and picture instructions pass, and only with your OK on any cost.",
+      "fix": "Fix what stopped the design step and run it again.",
+      "choices": [
+        "I look into what stopped it, fix it, and run it again.",
+        "I explain what stopped it in more detail first.",
+        "I stop here and wait for your decision."
+      ],
+      "spends_nothing": false
+    },
+    "FD-DEPS": {
+      "what_happened": "A tool the funnel needs (Python) is not installed on this computer.",
+      "why": "The funnel checks run in Python. Without it, nothing can be checked.",
+      "fix": "Install Python 3 on this computer.",
+      "choices": [
+        "I fix the setup on this computer and start again.",
+        "I explain the setup problem in more detail first.",
+        "I stop here and wait for your decision."
+      ],
+      "spends_nothing": true,
+      "match": [
+        "ABORT [DEPS]"
+      ]
+    },
+    "FD-DEPT-MAP": {
+      "what_happened": "The team list on this computer does not include the Signature Funnel yet.",
+      "why": "Funnel jobs are only run by the team members set up to run them, so the right specialist does the work.",
+      "fix": "Update this computer so the Signature Funnel is on the team list.",
+      "choices": [
+        "I fix the setup on this computer and start again.",
+        "I explain the setup problem in more detail first.",
+        "I stop here and wait for your decision."
+      ],
+      "spends_nothing": true,
+      "match": [
+        "ABORT [DEPT-MAP]"
+      ]
+    },
+    "FD-MODE": {
+      "what_happened": "This job is set up for the other funnel mode (launch mode or the classic funnel), so it was not run here.",
+      "why": "Each mode has its own steps. Running a job in the wrong mode would skip its checks.",
+      "fix": "Start the job in the mode it was set up for.",
+      "choices": [
+        "I start it again in the right mode.",
+        "I stop here and wait for your decision."
+      ],
+      "spends_nothing": true,
+      "match": [
+        "ABORT [MODE]"
+      ]
+    },
+    "FD-PIN-ROTATION": {
+      "what_happened": "Someone tried to change the seal on the checking tools without the owner's signed OK.",
+      "why": "Only the owner's approved process may reseal the checking tools, so no one can quietly change the rules.",
+      "fix": "Leave the seal alone; it is updated by the approved process when a new version ships.",
+      "choices": [
+        "I leave it as it is and update the skill through the normal update instead.",
+        "I stop here and wait for your decision."
+      ],
+      "spends_nothing": true,
+      "match": [
+        "ABORT [PIN-ROTATION]"
+      ]
+    },
+    "FD-SELF-TEST": {
+      "what_happened": "The funnel builder's own self-check failed on this computer.",
+      "why": "The tools test themselves before they test your work. If the self-check fails, their answers cannot be trusted.",
+      "fix": "Update or repair the skill on this computer, then run the self-check again.",
+      "choices": [
+        "I fix the setup on this computer and start again.",
+        "I explain the setup problem in more detail first.",
+        "I stop here and wait for your decision."
+      ],
+      "spends_nothing": true,
+      "match": [
+        "ABORT [SELF-TEST]"
+      ]
+    },
+    "FD-USAGE": {
+      "what_happened": "The funnel builder was started without everything it needs (for example the job folder).",
+      "why": "The builder needs the exact job folder so it checks the right work.",
+      "fix": "Start it again with the job folder.",
+      "choices": [
+        "I start it again the right way for you.",
+        "I stop here and wait for your decision."
+      ],
+      "spends_nothing": true,
+      "match": [
+        "ABORT [USAGE]",
+        "USAGE ERROR"
+      ]
+    },
+    "FD-VERSION": {
+      "what_happened": "The funnel skill's version label on this computer is wrong or out of step.",
+      "why": "The version tells the tools which rules to use. If it is wrong, the tools could use the wrong rules.",
+      "fix": "Update this computer to the latest approved version of the skill.",
+      "choices": [
+        "I fix the setup on this computer and start again.",
+        "I explain the setup problem in more detail first.",
+        "I stop here and wait for your decision."
+      ],
+      "spends_nothing": true,
+      "match": [
+        "ABORT [VERSION]"
+      ]
+    },
+    "LAUNCH-ALREADY-APPROVED": {
+      "what_happened": "This plan is already approved, so it cannot be changed in place.",
+      "why": "Once you approve a plan, it is locked. A change makes a new plan that you approve again, so you always know exactly what you said yes to.",
+      "fix": "Ask for a revision; I then show you the changed plan to approve.",
+      "choices": [
+        "I start a revision and send you the new plan.",
+        "I keep the approved plan as it is.",
+        "I stop here and wait for your decision."
+      ],
+      "spends_nothing": true,
+      "match": [
+        "this plan is already approved"
+      ]
+    },
+    "LAUNCH-APPROVAL": {
+      "what_happened": "Your approval for this step is missing, expired, or does not match the plan.",
+      "why": "Nothing is built, charged or published until you approve that exact plan. If the plan changed, the old yes does not count.",
+      "fix": "Approve the current plan (reply in chat, tap the button, or use Command Center).",
+      "choices": [
+        "I send you the plan to approve now.",
+        "I show you what changed since your last approval.",
+        "I stop here and wait for your decision."
+      ],
+      "spends_nothing": true,
+      "match": [
+        "approval not verified",
+        "cannot approve its own work",
+        "self-approval is refused",
+        "approval names no client"
+      ]
+    },
+    "LAUNCH-CARD-FIELDS": {
+      "what_happened": "The order form text asks for card details, which this page must never do.",
+      "why": "Card details are only taken by the real, secure checkout form, never by a designed page.",
+      "fix": "Remove the card, expiry and security code fields from the order form text.",
+      "choices": [
+        "I rewrite it for you so it fits, and show you before anything else runs.",
+        "I stop here and wait for your decision."
+      ],
+      "spends_nothing": true,
+      "match": [
+        "names card, expiry or security-code fields"
+      ]
+    },
+    "LAUNCH-DESIGN-RECORD": {
+      "what_happened": "A page's final mockups are not done yet, so nothing was recorded.",
+      "why": "Final mockups are drawn only after you approve that page's design board.",
+      "fix": "Approve the design boards that are waiting, then make the final mockups.",
+      "choices": [
+        "I send you the design boards that are waiting for your approval.",
+        "I stop here and wait for your decision."
+      ],
+      "spends_nothing": true,
+      "match": [
+        "final-mockups has no closed record",
+        "run this tool first, then record final-mockups"
+      ]
+    },
+    "LAUNCH-IMAGE-CAP": {
+      "what_happened": "Your picture budget does not cover the pictures this launch needs.",
+      "why": "Pictures cost money. We stop at the budget you set, so you are never charged more than you approved.",
+      "fix": "Raise the picture budget, or make fewer pictures.",
+      "choices": [
+        "I ask you to approve a bigger picture budget, with the exact amount.",
+        "I make fewer pictures to fit your budget and show you which ones.",
+        "I stop here and wait for your decision."
+      ],
+      "spends_nothing": true,
+      "match": [
+        "image cap",
+        "AF-FUN-IMAGE-CAP-MONEY"
+      ]
+    },
+    "LAUNCH-MISSING-FACT": {
+      "what_happened": "Your launch plan still needs some facts before you can approve it: {missing}.",
+      "why": "We never make up a price, a product, a date or a link. The plan waits until you give the real ones, so nothing false is built or charged.",
+      "fix": "Give the missing facts, then I put the plan together again.",
+      "choices": [
+        "I ask you only the missing questions now.",
+        "I suggest values for you to approve or change.",
+        "I stop here and wait for your decision."
+      ],
+      "spends_nothing": true,
+      "match": [
+        "plan is not ready: missing"
+      ],
+      "defaults": {
+        "missing": "a few details"
+      }
+    },
+    "LAUNCH-NO-WORK-FOLDER": {
+      "what_happened": "The run was asked to hand the page work to the page-building tools, but it has no folder to put that work in.",
+      "why": "Each page request and each page result is written to a file in a work folder. With no folder, the tools have nowhere to put their work and nothing would be saved.",
+      "fix": "Start the run with the job folder, so the work folder is created inside it.",
+      "choices": [
+        "I start the run again with the job folder.",
+        "I make the work folder for you and start the run again.",
+        "I stop here and wait for your decision."
+      ],
+      "spends_nothing": true,
+      "match": [
+        "adapters require --out"
+      ]
+    },
+    "LAUNCH-PAID-NEEDS-OK": {
+      "what_happened": "Making the real designs costs money, and your OK for that cost is missing.",
+      "why": "Nothing that costs money runs until you approve the amount.",
+      "fix": "Approve the picture cost, or use free placeholder designs for now.",
+      "choices": [
+        "I send you the exact cost to approve.",
+        "I make free placeholders first, after you approve that.",
+        "I stop here and wait for your decision."
+      ],
+      "spends_nothing": true,
+      "match": [
+        "spends money; it needs --allow-paid",
+        "needs the owner's"
+      ]
+    },
+    "LAUNCH-PAYMENT-PLAN": {
+      "what_happened": "One of your prices is set up as a payment plan or a free trial first.",
+      "why": "Payment plans and trials are not supported in this release, so the order form cannot charge them correctly. We stop now instead of after you approve.",
+      "fix": "Make that price one payment, or a repeating price (weekly, monthly, quarterly or yearly).",
+      "choices": [
+        "I change it to one payment for you to approve.",
+        "I change it to a monthly price for you to approve.",
+        "I stop here and wait for your decision."
+      ],
+      "spends_nothing": true,
+      "match": [
+        "payment plans are not supported in this release"
+      ]
+    },
+    "LAUNCH-REQUEST-BROKEN": {
+      "what_happened": "The launch request for this run is damaged, so its settings could not be read.",
+      "why": "The run reads its settings (the mode, who the client is, who is doing the work) from that one file. If the file is damaged, the run cannot tell what it was asked to do, so it stops rather than guess.",
+      "fix": "Write the launch request again, then start the run again.",
+      "choices": [
+        "I write the launch request again for you and start the run.",
+        "I show you what the request should contain so you can check it.",
+        "I stop here and wait for your decision."
+      ],
+      "spends_nothing": true,
+      "match": [
+        "launch request file is not valid JSON"
+      ]
+    },
+    "RUN-FILE-UNREADABLE": {
+      "what_happened": "A work file this step needs ({file}) is missing or could not be read.",
+      "why": "Every check reads the real work file. If the file is missing or broken, nothing can be checked, so we stop instead of passing it blindly.",
+      "fix": "Make that file again from the step before it, then run the check again.",
+      "choices": [
+        "I make the file again from the step before it and run the check again.",
+        "I show you which step made that file so we can redo it.",
+        "I stop here and wait for your decision."
+      ],
+      "spends_nothing": true,
+      "match": [
+        "USAGE/IO ERROR",
+        "No such file or directory",
+        "is not valid JSON",
+        "is absent or unreadable"
+      ],
+      "defaults": {
+        "file": "a work file"
+      }
+    }
+  }
+}
