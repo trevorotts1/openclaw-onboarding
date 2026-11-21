@@ -1823,6 +1823,39 @@ def fork_decision(run_dir):
     return log[-1] if log and isinstance(log[-1], dict) else None
 
 
+#: The fork answers that authorize a new PAID round (a creative retake).
+REDO_ANSWERS = ("redo_all", "new_three")
+
+def redo_authorization(run_dir, logical_key):
+    """The ledger authorization reference for ONE paid retake, or "".
+
+    A creative retake (a new take after a provider-successful one) is refused
+    by the spend ledger without its own authorization reference
+    (MISSING_AUTH_REF). The client's recorded fork answer IS that
+    authorization: only the LATEST decision counts, and only redo_all /
+    new_three authorize. The reference names the decision (a digest of the
+    record: answer, reply, who, channel and time) and the one job it funds,
+    so each song in the round has its own reference and the ledger's one-
+    authorization-one-job rule still refuses a second spend on the same
+    answer. The log position is NOT part of it: the same decision recorded
+    twice (a replay) is the same reference and is refused
+    DUPLICATE_AUTHORIZATION; a client answering again at another time is a
+    new decision and a new reference. Nothing recorded, or a keep_one answer,
+    returns "" and the ledger refuses the retake."""
+    try:
+        with open(_path(run_dir, FORK_FILE), encoding="utf-8") as f:
+            doc = json.load(f) or {}
+    except (OSError, ValueError):
+        return ""
+    log = doc.get("decisions") if isinstance(doc, dict) else None
+    if not isinstance(log, list) or not log or not isinstance(log[-1], dict):
+        return ""
+    rec = log[-1]
+    if rec.get("answer") not in REDO_ANSWERS:
+        return ""
+    digest = hashlib.sha256(json.dumps(rec, sort_keys=True).encode("utf-8")).hexdigest()[:16]
+    return "fork-decision-%s:%s" % (digest, logical_key)
+
 def client_message(offered, failed=(), recommend=None, concerns=None):
     nums = sorted(int(n) for n in offered)
     rows = ["%d. %s - %s" % (n, offered[str(n)]["label"].split(" - ", 1)[1], offered[str(n)]["duration"])
@@ -2590,10 +2623,24 @@ def _real_generate(run_dir, ledger, run_id, dispatcher=None):
             receipt = _card_receipt(run_dir)
             if receipt is not None:
                 payload["card_receipt"] = receipt
+        logical_key = "song/%s" % variant["id"]
+        # A redo the client asked for is a paid creative retake: the ledger
+        # needs the client's recorded answer as its authorization reference
+        # or it refuses MISSING_AUTH_REF and nothing is bought. This reference
+        # IS the client's current answer, so an empty one (a later keep_one)
+        # also stops a failed redo's retry (require_round_auth) -- but only
+        # when a decision is recorded at all. With no recorded answer there is
+        # nothing withdrawn, so no flag rides along and the run keeps the
+        # plain initial-round provider-failure retry it always had.
+        auth = redo_authorization(run_dir, logical_key)
+        decided = fork_decision(run_dir) is not None
+        extra = {"auth_ref": auth} if auth else {}
+        if decided:
+            extra["require_round_auth"] = True
         env = _dispatch(model=payload.get("model") or "ai-music-api/generate",
                         request=payload, save_dir=save_dir, ledger_db=ledger,
                         run_id=run_id or (os.path.basename(run_dir) or "run"),
-                        logical_key="song/%s" % variant["id"],
+                        logical_key=logical_key, **extra,
                         # Empty: the ledger mints the attempt identity and
                         # dispatch() carries the committed id back. A literal
                         # "a1" made every retry after a failed paid take
