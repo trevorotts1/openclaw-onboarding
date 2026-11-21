@@ -31,8 +31,17 @@ Paid-attempt identity (directive 8.4, findings D20/D21):
   provider lookup that reconciled it), `failed_job_retry` (a confirmed
   failed job), `creative_retake` (new creative take after a SUCCESSFUL
   provider generation; needs its own authorization reference and consumes
-  the repair allowance). A provider success that fails creative QC remains
-  a successful provider result: record_qc_verdict never flips it.
+  the repair allowance). A reference is spent on the first attempt that
+  presents it (an initial one included). A failed/transport retry that
+  presents its round's reference again is not refused or re-recorded. A
+  caller that passes require_round_auth=True (it knows the client's current
+  answer) is refused MISSING_AUTH_REF for an initial allocation or a retry
+  inside a paid round without a reference, so a withdrawn authorization
+  stops the retry and keep_one never buys a first take; other
+  callers keep the plain retry (ponytail: the caller's flag marks whose
+  call carries the client's current answer; the ledger cannot read the
+  fork file itself). A provider success that fails creative QC
+  remains a successful provider result: record_qc_verdict never flips it.
 - An attempt that was ever `unknown` must be reconciled, with provider
   lookup evidence recorded, before ANY resubmission.
 
@@ -586,7 +595,8 @@ def _park_locked(conn, run_id, reason):
 
 def allocate_attempt(db_path, run_id, logical_key, request_digest,
                      retry_category="", auth_ref="", estimated_cost=None,
-                     stage="", owner="cli", est_credits_micro=None):
+                     stage="", owner="cli", est_credits_micro=None,
+                     require_round_auth=False):
     """Canonical paid-attempt allocation (directive 8.4).
 
     ONE ledger transaction mints the stable logical job's new attempt ID and
@@ -599,12 +609,14 @@ def allocate_attempt(db_path, run_id, logical_key, request_digest,
     """
     return _allocate(db_path, "allocate", run_id, logical_key, "",
                      request_digest, estimated_cost, stage, None, owner,
-                     retry_category or "", auth_ref or "", est_credits_micro)
+                     retry_category or "", auth_ref or "", est_credits_micro,
+                     require_round_auth)
 
 
 def plan(db_path, run_id, logical_key, attempt_id, request_digest,
          estimated_cost=None, stage="", attempt_no=None, owner="cli",
-         retry_category="", auth_ref="", est_credits_micro=None):
+         retry_category="", auth_ref="", est_credits_micro=None,
+         require_round_auth=False):
     """Record a planned job: digest + logical job + attempt identity first.
 
     Compatible entrypoint for existing callers (kie_dispatch dispatch shape).
@@ -616,12 +628,13 @@ def plan(db_path, run_id, logical_key, attempt_id, request_digest,
     """
     return _allocate(db_path, "plan", run_id, logical_key, attempt_id or "",
                      request_digest, estimated_cost, stage, attempt_no, owner,
-                     retry_category or "", auth_ref or "", est_credits_micro)
+                     retry_category or "", auth_ref or "", est_credits_micro,
+                     require_round_auth)
 
 
 def _allocate(db_path, cmd, run_id, logical_key, attempt_id, request_digest,
               estimated_cost, stage, attempt_no, owner, retry_category,
-              auth_ref, est_credits_micro):
+              auth_ref, est_credits_micro, require_round_auth=False):
     """The single allocation transaction: identity + ordinal + digest +
     retry category + authorization reference + prior-state and repair-cap
     checks, all committed atomically. No MAX()+1 exists outside this."""
@@ -665,7 +678,8 @@ def _allocate(db_path, cmd, run_id, logical_key, attempt_id, request_digest,
                           "identities, never reuses one", attempt_id, run[6])
         prior = conn.execute(
             "SELECT attempt_id,state,final_outcome,uncertain,request_digest,"
-            "provider_lookup_ref,auth_ref,attempt_no,remote_task_id FROM jobs "
+            "provider_lookup_ref,auth_ref,attempt_no,remote_task_id,"
+            "retry_category FROM jobs "
             "WHERE run_id=? AND logical_key=? ORDER BY attempt_no",
             (run_id, logical_key)).fetchall()
         repair_cap = run[4]
@@ -702,6 +716,13 @@ def _allocate(db_path, cmd, run_id, logical_key, attempt_id, request_digest,
                           "would falsify the prior outcome"
                           % (cat, retry_category), attempt_id, run[6])
         cat_final = retry_category or cat
+        if cat_final == "initial" and require_round_auth and not auth_ref:
+            conn.execute("ROLLBACK")
+            return refuse("MISSING_AUTH_REF",
+                          "a first take with the client's current answer "
+                          "recorded needs that round's authorization; "
+                          "keep_one never buys a new paid round",
+                          attempt_id, run[6])
         if cat_final in ("transport_retry", "failed_job_retry"):
             if any(r[1] in ("planned", "reserved", "submitted") for r in prior):
                 conn.execute("ROLLBACK")
@@ -714,6 +735,40 @@ def _allocate(db_path, cmd, run_id, logical_key, attempt_id, request_digest,
                           "a creative retake consumes repair allowance and "
                           "needs its own authorization reference",
                           attempt_id, run[6])
+        if cat_final in ("transport_retry", "failed_job_retry"):
+            # A provider-failure retry belongs to the round opened by the
+            # last initial / creative_retake row. Presenting that round's
+            # live reference again is allowed without recording it twice (it
+            # would refuse the retry DUPLICATE_AUTHORIZATION); a new one is a
+            # new decision, checked and recorded below. Only a caller that
+            # knows the client's CURRENT answer (require_round_auth) has an
+            # empty reference read as withdrawn: any initial allocation or
+            # provider-failure retry with the flag and no reference -- a
+            # creative round after a success, a still-open initial round
+            # after a failure, or a first take recorded under keep_one --
+            # is then refused. keep_one never buys a new paid round,
+            # whatever came before it (round-3: initial allocations used to
+            # bypass both checks, so a song with no prior history was bought
+            # despite keep_one).
+            # The flag only rides when the caller recorded a decision: a run
+            # with no recorded decision passes no flag and keeps the plain
+            # retry. Every other caller keeps the plain
+            # provider-failure retry it always had.
+            start = max((i for i, r in enumerate(prior)
+                         if r[9] in ("initial", "creative_retake", "")),
+                        default=0)
+            live = [r[6] for r in prior[start:] if r[6]]
+            if require_round_auth and not auth_ref:
+                conn.execute("ROLLBACK")
+                return refuse("MISSING_AUTH_REF",
+                              "a retry inside a paid round needs "
+                              "that round's authorization; the latest "
+                              "authorization no longer covers it",
+                              attempt_id, run[6])
+            if live and auth_ref == live[-1]:
+                auth_ref = ""
+        # Any other reference presented is spent on THIS attempt (an initial
+        # attempt included), so one authorization never funds a later retake.
         if auth_ref:
             dup = conn.execute(
                 "SELECT 1 FROM jobs WHERE run_id=? AND auth_ref=?",

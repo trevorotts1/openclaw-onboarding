@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """BATCH-5 member B: the dispatch CLI must reach the F14 lock and the receipt.
 
-Two defects this pins, both on the CLI surface only:
+Three defects this pins, all on the CLI surface only:
 
   * `--state-store` did not exist, so every video dispatch typed on the
     command line could never pass F14 (VIDEO_MODEL_LOCK_MISSING no matter what
@@ -9,6 +9,8 @@ Two defects this pins, both on the CLI surface only:
   * `--prompt-file` kept the file's trailing newline, while a prompt receipt
     hashes the prompt text; one 0x0A made every templated H3 job refuse
     PROMPT_NOT_TEMPLATED. Reading a file drops exactly one trailing newline.
+  * `--auth-ref` carries the client's authorization for a paid creative
+    retake to the ledger; without it the CLI could never fund one.
 
 stdlib only, no network, no provider: dispatch() is replaced in-process.
 
@@ -77,6 +79,12 @@ def main():
                   seen.get("prompt"), "hello H3 prompt")
             check("2: --state-store reaches dispatch()",
                   seen.get("state_store"), str(tmp / "state.sqlite3"))
+            check("2b: no --auth-ref means an empty authorization",
+                  seen.get("auth_ref"), "")
+            with contextlib.redirect_stdout(io.StringIO()):
+                KD.main(_args(tmp, auth_ref="fork-decision-1-abc:song/v1"))
+            check("2c: --auth-ref reaches dispatch()",
+                  seen.get("auth_ref"), "fork-decision-1-abc:song/v1")
 
             (tmp / "p2.txt").write_text("two newlines\n\n", encoding="utf-8")
             with contextlib.redirect_stdout(io.StringIO()):

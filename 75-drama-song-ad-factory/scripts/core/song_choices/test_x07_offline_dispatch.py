@@ -23,6 +23,14 @@ subprocess, and no paid provider call.
      before any adapter call; the provider submit count stays at 1 and the
      ledger cost is unchanged.
 
+  4. A CLIENT-AUTHORIZED REDO IS BOUGHT, ONCE. When the client's recorded
+     fork answer is ``redo_all`` / ``new_three`` the next round carries that
+     answer to the ledger as the creative retake's authorization reference
+     (song_choices.redo_authorization): exactly one new paid take. A
+     ``keep_one`` answer still refuses MISSING_AUTH_REF; re-running on the SAME
+     answer refuses DUPLICATE_AUTHORIZATION; a NEW answer is a new reference,
+     and the repair cap still bounds the total.
+
 GUARD-REMOVAL CONTROL (test_control_guard_removal_replays_the_second_submit):
 the second-resume refusal is produced by ``spend_ledger._derive_category``
 reading persisted prior state and classifying a settled job as
@@ -167,6 +175,8 @@ class FakeTransport(object):
 
     def __init__(self):
         self.calls = []
+        #: submits (1-based) the provider refuses with a definite failure.
+        self.fail_submits = set()
 
     def __call__(self, argv):
         cmd = argv[1] if len(argv) > 1 else ""
@@ -178,6 +188,9 @@ class FakeTransport(object):
         if cmd == "prompt-budget":
             return 0, json.dumps({"state": "ok", "data": {"status": "OK"}})
         if cmd == "submit":
+            if self.submits() in self.fail_submits:
+                return 0, json.dumps({"state": "fail", "error": {
+                    "code": "offline-provider-failure", "message": "x"}})
             return 0, json.dumps({"state": "success", "task_id": TASK_ID,
                                   "credits_consumed": CREDITS})
         if cmd == "save":
@@ -220,6 +233,15 @@ class X07OfflineDispatch(unittest.TestCase):
         os.environ["KIE_LIVE_ADAPTER_PATH"] = self.adapter
         self._real_dispatch = KD.dispatch
         self._install_transport()
+        # Round-3 finding 2: keep the KIE token bucket off HOME. The bucket
+        # lives in ~/.cache unless DSAF_GOVERNOR_DIR points elsewhere, so an
+        # unwritable HOME fails every offline dispatch with [Errno 13] --
+        # which proves nothing about the product path. Point it inside the
+        # test root instead; the seam never touches a real shared dir.
+        self._governor_dir = os.path.join(self.root, "governor")
+        os.makedirs(self._governor_dir, exist_ok=True)
+        self._old_governor_dir = os.environ.get("DSAF_GOVERNOR_DIR")
+        os.environ["DSAF_GOVERNOR_DIR"] = self._governor_dir
 
     def tearDown(self):
         KD.dispatch = self._real_dispatch
@@ -227,6 +249,10 @@ class X07OfflineDispatch(unittest.TestCase):
             os.environ.pop("KIE_LIVE_ADAPTER_PATH", None)
         else:
             os.environ["KIE_LIVE_ADAPTER_PATH"] = self._old_adapter
+        if self._old_governor_dir is None:
+            os.environ.pop("DSAF_GOVERNOR_DIR", None)
+        else:
+            os.environ["DSAF_GOVERNOR_DIR"] = self._old_governor_dir
 
     def _install_transport(self):
         """Fake the EXTERNAL provider only: the real dispatcher runs unchanged."""
@@ -265,6 +291,25 @@ class X07OfflineDispatch(unittest.TestCase):
                 "actual_cost,estimated_cost FROM jobs")]
         finally:
             conn.close()
+
+    def _auth_rows(self):
+        conn = sqlite3.connect(self.db)
+        try:
+            conn.row_factory = sqlite3.Row
+            return [dict(r) for r in conn.execute(
+                "SELECT attempt_no,retry_category,auth_ref,remote_task_id "
+                "FROM jobs ORDER BY attempt_no")]
+        finally:
+            conn.close()
+
+    def _fork(self, reply):
+        return SC.record_fork_decision(self.run_dir, reply, who="client")
+
+    def _refused(self, out, code):
+        env = out["results"][0]["envelope"]
+        self.assertNotEqual(env["outcome"], "ok", env)
+        self.assertEqual(env["reason_code"], code, env)
+        self.assertEqual(out["dispatched"], 0, out)
 
     def _receipts(self):
         conn = sqlite3.connect(self.db)
@@ -342,6 +387,214 @@ class X07OfflineDispatch(unittest.TestCase):
         self.assertEqual(after["unknown_or_reserved_cost"], 0, after)
         self.assertEqual(len(self._receipts()), 1, self._receipts())
         self.assertEqual(len(self._job_rows()), 1, self._job_rows())
+
+    # ---- 4. a client-authorized redo is bought, once -----------------
+    def test_redo_all_buys_exactly_one_new_take(self):
+        first = self._generate()
+        self.assertEqual(first["results"][0]["envelope"]["outcome"], "ok")
+        self.assertEqual(self._fork("redo all")["answer"], "redo_all")
+
+        second = self._generate()
+        env2 = second["results"][0]["envelope"]
+        self.assertEqual(env2["outcome"], "ok", env2)
+        self.assertEqual(self.transport.submits(), 2, self.transport.calls)
+        rows = self._auth_rows()
+        self.assertEqual(len(rows), 2, rows)
+        self.assertEqual(rows[0]["retry_category"], "initial", rows)
+        self.assertEqual(rows[0]["auth_ref"], "", rows)
+        self.assertEqual(rows[1]["retry_category"], "creative_retake", rows)
+        self.assertTrue(rows[1]["auth_ref"], rows)
+        self.assertEqual(rows[1]["auth_ref"],
+                         SC.redo_authorization(self.run_dir,
+                                               "song/%s" % VARIANT_ID), rows)
+        self.assertEqual(self._summary()["actual_cost"], CREDITS * 2)
+
+        # The SAME answer never funds a second paid take.
+        third = self._generate()
+        self._refused(third, "DUPLICATE_AUTHORIZATION")
+        self.assertEqual(self.transport.submits(), 2, self.transport.calls)
+        self.assertEqual(len(self._auth_rows()), 2, self._auth_rows())
+
+        # A NEW answer is a new reference (repair 2 of the default cap 2).
+        self.assertEqual(self._fork("generate three new options")["answer"],
+                         "new_three")
+        fourth = self._generate()
+        self.assertEqual(fourth["results"][0]["envelope"]["outcome"], "ok",
+                         fourth["results"][0]["envelope"])
+        self.assertEqual(self.transport.submits(), 3, self.transport.calls)
+        refs = [r["auth_ref"] for r in self._auth_rows()]
+        self.assertEqual(len(set(refs[1:])), 2, refs)
+
+        # The ledger's repair cap still bounds the total.
+        self._fork("redo all")
+        fifth = self._generate()
+        self._refused(fifth, "REPAIR_CAP")
+        self.assertEqual(self.transport.submits(), 3, self.transport.calls)
+        self.assertEqual(self._summary()["actual_cost"], CREDITS * 3)
+
+    def test_keep_one_still_refuses_missing_auth_ref(self):
+        first = self._generate()
+        self.assertEqual(first["results"][0]["envelope"]["outcome"], "ok")
+        self.assertEqual(self._fork("keep one")["answer"], "keep_one")
+        self.assertEqual(SC.redo_authorization(
+            self.run_dir, "song/%s" % VARIANT_ID), "")
+
+        second = self._generate()
+        self._refused(second, "MISSING_AUTH_REF")
+        self.assertEqual(self.transport.submits(), 1, self.transport.calls)
+        self.assertEqual(len(self._auth_rows()), 1, self._auth_rows())
+        self.assertEqual(self._summary()["actual_cost"], CREDITS)
+
+    def test_keep_one_after_redo_revokes_the_redo(self):
+        """Only the LATEST answer counts: a later keep_one buys nothing."""
+        self._generate()
+        self._fork("redo all")
+        self._fork("keep one")
+        second = self._generate()
+        self._refused(second, "MISSING_AUTH_REF")
+        self.assertEqual(self.transport.submits(), 1, self.transport.calls)
+
+    def test_redo_recorded_before_the_first_take_funds_no_retake(self):
+        """An answer recorded BEFORE the take it would replace is spent on the
+        take it rode with: it never funds a later paid retake."""
+        self._fork("redo all")
+        first = self._generate()
+        self.assertEqual(first["results"][0]["envelope"]["outcome"], "ok")
+        second = self._generate()
+        self._refused(second, "DUPLICATE_AUTHORIZATION")
+        self.assertEqual(self.transport.submits(), 1, self.transport.calls)
+        self.assertEqual(self._summary()["actual_cost"], CREDITS)
+
+    def test_failed_redo_is_retried_on_the_same_answer(self):
+        """A provider failure inside an authorized round is retried on the
+        same answer: the retry is not refused."""
+        self._generate()
+        self._fork("redo all")
+        self.transport.fail_submits = {2}
+        failed = self._generate()
+        self.assertNotEqual(failed["results"][0]["envelope"]["outcome"], "ok")
+        self.assertEqual(self.transport.submits(), 2, self.transport.calls)
+        retry = self._generate()
+        env = retry["results"][0]["envelope"]
+        self.assertEqual(env["outcome"], "ok", env)
+        self.assertEqual(self.transport.submits(), 3, self.transport.calls)
+        self.assertEqual(self._summary()["actual_cost"], CREDITS * 2)
+
+    def test_keep_one_after_a_failed_redo_stops_the_retry(self):
+        """A keep_one answer after an authorized redo failed at the provider
+        withdraws the round: the retry is refused with no submit."""
+        self._generate()
+        self._fork("redo all")
+        self.transport.fail_submits = {2}
+        self._generate()
+        self.assertEqual(self.transport.submits(), 2, self.transport.calls)
+        self._fork("keep one")
+        retry = self._generate()
+        self._refused(retry, "MISSING_AUTH_REF")
+        self.assertEqual(self.transport.submits(), 2, self.transport.calls)
+        self.assertEqual(self._summary()["actual_cost"], CREDITS)
+
+    def test_keep_one_after_an_initial_failure_stops_the_retry(self):
+        """keep_one after the INITIAL take failed at the provider: the retry
+        is refused with no submit and no new row. The latest recorded answer
+        decides: keep_one never buys a new paid round, even when no redo
+        answer ever existed."""
+        self.transport.fail_submits = {1}
+        failed = self._generate()
+        self.assertNotEqual(failed["results"][0]["envelope"]["outcome"], "ok")
+        self.assertEqual(self.transport.submits(), 1, self.transport.calls)
+        self.assertEqual(self._fork("keep one")["answer"], "keep_one")
+        retry = self._generate()
+        self._refused(retry, "MISSING_AUTH_REF")
+        self.assertEqual(self.transport.submits(), 1, self.transport.calls)
+        self.assertEqual(len(self._auth_rows()), 1, self._auth_rows())
+        self.assertEqual(self._summary()["actual_cost"], 0)
+
+    def test_replayed_decision_mints_no_second_authorization(self):
+        """The SAME recorded decision written twice (same answer, reply, who,
+        channel and time) is one decision: one reference, one paid take."""
+        self._generate()
+        same = dict(who="client", channel="card", at="2026-11-20T18:00:00Z")
+        SC.record_fork_decision(self.run_dir, "redo all", **same)
+        ref = SC.redo_authorization(self.run_dir, "song/%s" % VARIANT_ID)
+        SC.record_fork_decision(self.run_dir, "redo all", **same)
+        self.assertEqual(SC.redo_authorization(
+            self.run_dir, "song/%s" % VARIANT_ID), ref)
+        second = self._generate()
+        self.assertEqual(second["results"][0]["envelope"]["outcome"], "ok",
+                         second["results"][0]["envelope"])
+        third = self._generate()
+        self._refused(third, "DUPLICATE_AUTHORIZATION")
+        self.assertEqual(self.transport.submits(), 2, self.transport.calls)
+        self.assertEqual(self._summary()["actual_cost"], CREDITS * 2)
+
+    def test_no_decision_retry_after_initial_failure_succeeds(self):
+        """Round-2: with NO recorded fork decision an initial provider
+        failure retries as a plain provider-failure retry: a second
+        submit, an ok envelope, two ledger rows and one settled charge.
+        Unconditional require_round_auth refused this retry
+        MISSING_AUTH_REF (one submit, then refusal)."""
+        self.transport.fail_submits = {1}
+        failed = self._generate()
+        self.assertNotEqual(failed["results"][0]["envelope"]["outcome"], "ok")
+        self.assertEqual(self.transport.submits(), 1, self.transport.calls)
+        self.assertIsNone(SC.fork_decision(self.run_dir))
+        retry = self._generate()
+        env = retry["results"][0]["envelope"]
+        self.assertEqual(env["outcome"], "ok", env)
+        self.assertEqual(self.transport.submits(), 2, self.transport.calls)
+        rows = self._auth_rows()
+        self.assertEqual(len(rows), 2, rows)
+        self.assertEqual(rows[0]["retry_category"], "initial", rows)
+        self.assertIn(rows[1]["retry_category"],
+                      ("transport_retry", "failed_job_retry"), rows)
+        self.assertEqual(rows[1]["auth_ref"], "", rows)
+        self.assertEqual(self._summary()["actual_cost"], CREDITS)
+
+    def test_no_decision_passes_no_round_auth_flag(self):
+        """Round-2 contract: the song runner passes require_round_auth only
+        when a fork decision is recorded. No decision means no flag (the
+        plain provider-failure retry survives); a recorded answer means the
+        flag (a later keep_one stops the retry)."""
+        seen = []
+        current = KD.dispatch
+
+        def spy(**kw):
+            seen.append(kw.get("require_round_auth", False))
+            return current(**kw)
+
+        KD.dispatch = spy
+        try:
+            self.transport.fail_submits = {1}
+            first = self._generate()
+            self.assertNotEqual(first["results"][0]["envelope"]["outcome"],
+                                "ok")
+            self.assertEqual(self.transport.submits(), 1,
+                             self.transport.calls)
+            self.assertEqual(self._fork("keep one")["answer"], "keep_one")
+            retry = self._generate()
+            self._refused(retry, "MISSING_AUTH_REF")
+        finally:
+            KD.dispatch = current
+        self.assertEqual(self.transport.submits(), 1, self.transport.calls)
+        self.assertEqual(seen, [False, True], seen)
+
+    # ---- governor isolation (round-3: HOME-independent offline seam) --
+    def test_governor_dir_isolated_to_the_run(self):
+        """Round-3 finding 2: the KIE token bucket lives in
+        ``~/.cache/drama-song-ad-factory`` unless ``DSAF_GOVERNOR_DIR``
+        points elsewhere. Under an unwritable HOME every offline dispatch
+        failed ``[Errno 13] Permission denied: '/var/empty/.cache'`` --
+        all 14 tests -- which proves nothing about the product path. The
+        offline seam points the governor at a writable directory inside the
+        test root, so the suite runs under an unwritable HOME. Passes after
+        (the override is inside the test root); on the old head the same
+        assertion fails because no override exists."""
+        self.assertEqual(
+            os.environ.get("DSAF_GOVERNOR_DIR"), self._governor_dir,
+            os.environ)
+        self.assertTrue(
+            self._governor_dir.startswith(self.root), self._governor_dir)
 
     # ---- guard-removal control ----------------------------------------
     def test_control_guard_removal_replays_the_second_submit(self):

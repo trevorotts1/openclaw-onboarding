@@ -1695,7 +1695,8 @@ def production_process_admission(*, model, request, save_dir, ledger_db,
 def dispatch(*, model, request, save_dir, ledger_db, run_id, logical_key,
              attempt_id, estimated_cost, prompt="", units=1, stage="kie",
              owner="kie-dispatch", adapter_path=None, runner=None,
-             timeout=300, state_store=None, video_job=None):
+             timeout=300, state_store=None, video_job=None, auth_ref="",
+             require_round_auth=False):
     """Governed production, or explicitly identified offline runner simulation.
 
     A fake injected runner exercises the existing protocol without conferring
@@ -1709,7 +1710,8 @@ def dispatch(*, model, request, save_dir, ledger_db, run_id, logical_key,
         run_id=run_id, logical_key=logical_key, attempt_id=attempt_id,
         estimated_cost=estimated_cost, prompt=prompt, units=units, stage=stage,
         owner=owner, adapter_path=adapter_path, runner=runner, timeout=timeout,
-        state_store=state_store, video_job=video_job, _execution=execution)
+        state_store=state_store, video_job=video_job, auth_ref=auth_ref,
+        require_round_auth=require_round_auth, _execution=execution)
     evidence = result.setdefault("evidence", {})
     evidence["execution_mode"] = execution["mode"]
     evidence["production_admitted"] = bool((execution.get("admission") or {}).get("ok"))
@@ -1723,7 +1725,8 @@ def dispatch(*, model, request, save_dir, ledger_db, run_id, logical_key,
 def _dispatch_pipeline(*, model, request, save_dir, ledger_db, run_id, logical_key,
              attempt_id, estimated_cost, prompt="", units=1, stage="kie",
              owner="kie-dispatch", adapter_path=None, runner=None,
-             timeout=300, state_store=None, video_job=None, _execution=None):
+             timeout=300, state_store=None, video_job=None, auth_ref="",
+             require_round_auth=False, _execution=None):
     """Run the plan 5.4 pipeline once. Returns one envelope; never raises.
 
     F14 video-model lock: video jobs (video_job=True, or a video model on
@@ -1997,8 +2000,15 @@ def _dispatch_pipeline(*, model, request, save_dir, ledger_db, run_id, logical_k
 
     # ---- 1. ledger reserve -------------------------------------------------
     digest = L.digest_request(request)
+    # auth_ref: the client's authorization for a creative retake (a new paid
+    # take after a successful one). The ledger refuses a retake without it
+    # (MISSING_AUTH_REF) and refuses one authorization funding two retakes.
+    # require_round_auth: the caller's auth_ref is the client's CURRENT
+    # answer, so an empty one also stops a retry inside a paid creative round.
     pl = L.plan(ledger_db, run_id, logical_key, attempt_id, digest,
-                estimated_cost, stage=stage, owner=owner)
+                estimated_cost, stage=stage, owner=owner,
+                auth_ref=auth_ref or "",
+                require_round_auth=bool(require_round_auth))
     if pl["outcome"] != "ok":
         return envelope("dispatch", pl["outcome"], pl["reason_code"],
                         pl.get("next_action", ""), run_id=run_id,
@@ -2486,6 +2496,9 @@ def main(argv=None):
     x.add_argument("--adapter", default=None,
                    help="Path to kie_live_adapter.py (default: search).")
     x.add_argument("--timeout", type=int, default=300)
+    x.add_argument("--auth-ref", default="",
+                   help="the client's authorization reference for a paid "
+                        "creative retake (required by the ledger for one)")
     x.add_argument("--state-store", default=None,
                    help="run state DB (control/state.sqlite3) for the F14 "
                         "video-model lock; without it a video job can never "
@@ -2534,7 +2547,8 @@ def main(argv=None):
                        logical_key=a.logical_key, attempt_id=a.attempt_id,
                        estimated_cost=a.cost, prompt=prompt, units=a.units,
                        stage=a.stage, owner=a.owner, adapter_path=a.adapter,
-                       timeout=a.timeout, state_store=a.state_store)
+                       timeout=a.timeout, state_store=a.state_store,
+                       auth_ref=a.auth_ref)
         json.dump(env, sys.stdout, indent=2, sort_keys=True, default=str)
         sys.stdout.write("\n")
         return EXIT[env["outcome"]]
