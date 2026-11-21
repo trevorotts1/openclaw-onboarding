@@ -108,7 +108,33 @@ PINNED_FILES=(
   "scripts/agnes_response.py"
 )
 
-die() { printf 'ABORT [%s]: %s\n' "$1" "$2" >&2; exit 1; }
+# Every stop also tells the client, in plain words, what happened, why the rule exists, what will fix it and
+# their numbered choices (scripts/explain_stop.py). The ABORT line above it stays for logs; the code never
+# reaches the plain message. If Python itself cannot run, a fixed plain message is printed instead.
+explain_for_client() {
+  local msg=""
+  msg="$("$PY" -I "$SCRIPTS_DIR/explain_stop.py" --from-output - <<<"$1" 2>/dev/null)" || msg=""
+  if [ -z "$msg" ]; then
+    msg="What happened: The funnel tools could not run on this computer, so the work stopped before anything was checked.
+Why this rule exists: This skill stops instead of guessing when something does not look right, so nothing wrong reaches your pages, your buyers or your bill.
+What will fix it: Install or repair Python 3 on this computer, then start again.
+Your choices:
+1. I fix the setup on this computer and start again.
+2. I explain the setup problem in more detail first.
+3. I stop here and wait for your decision.
+Reply with the number you want."
+  fi
+  printf 'FOR THE CLIENT:\n%s\n' "$msg" >&2
+}
+
+die() { printf 'ABORT [%s]: %s\n' "$1" "$2" >&2; explain_for_client "ABORT [$1]: $2"; exit 1; }
+
+# A front_door.py gate refused: show its ABORT line (for logs), then the plain message, then stop.
+gate_refused() {
+  printf '%s\n' "$1" >&2
+  explain_for_client "$1"
+  exit 1
+}
 
 step_deps() {
   command -v "$PY" >/dev/null 2>&1 || die "DEPS" "python3 not found on PATH"
@@ -129,17 +155,20 @@ step_version() {
 }
 
 step_departmap() {
-  "$PY" "$FRONT_DOOR" departmap >/dev/null || exit 1
+  local out=""
+  out="$("$PY" "$FRONT_DOOR" departmap 2>&1 >/dev/null)" || gate_refused "$out"
 }
 
 step_hashpin() {
-  "$PY" "$FRONT_DOOR" hashpin --must-cover "${PINNED_FILES[@]}" >/dev/null || exit 1
+  local out=""
+  out="$("$PY" "$FRONT_DOOR" hashpin --must-cover "${PINNED_FILES[@]}" 2>&1 >/dev/null)" || gate_refused "$out"
 }
 
 step_bypass_scan() {
   local rd="$1"
   # Scans the skill tree (strings + AST network check) and, when the run dir exists, the run dir.
-  "$PY" "$FRONT_DOOR" bypass-scan --run-dir "$rd" >/dev/null || exit 1
+  local out=""
+  out="$("$PY" "$FRONT_DOOR" bypass-scan --run-dir "$rd" 2>&1 >/dev/null)" || gate_refused "$out"
 }
 
 # FIX-XC-09e / A6 — the CLIENT's own execution-tier authoring model (role=content) must be
@@ -261,7 +290,7 @@ write_pin() {
   # with the operator key for this exact tree. CI mints the pin on merge; nothing else may.
   step_deps
   local rec=("$@")
-  "$PY" "$FRONT_DOOR" write-pin "${rec[@]+"${rec[@]}"}" || exit 1
+  "$PY" "$FRONT_DOOR" write-pin "${rec[@]+"${rec[@]}"}" || { explain_for_client "ABORT [PIN-ROTATION]"; exit 1; }
 }
 
 main() {
@@ -274,12 +303,13 @@ main() {
   local mode="" rd="" req_mode="" rotation=""
   while [ $# -gt 0 ]; do
     case "$1" in
-      --run-dir) rd="${2:-}"; shift 2 ;;
-      --mode) req_mode="${2:-}"; shift 2 ;;
+      # A flag with no value falls through to the USAGE stop below (explained), never a silent shift failure.
+      --run-dir) rd="${2:-}"; shift; [ $# -eq 0 ] || shift ;;
+      --mode) req_mode="${2:-}"; shift; [ $# -eq 0 ] || shift ;;
       --self-test) mode="selftest"; shift ;;
       --check-version) mode="checkversion"; shift ;;
       --write-pin) mode="writepin"; shift ;;
-      --rotation-record) rotation="${2:-}"; shift 2 ;;
+      --rotation-record) rotation="${2:-}"; shift; [ $# -eq 0 ] || shift ;;
       --scan-only) mode="scanonly"; shift ;;
       --version-only) mode="versiononly"; shift ;;
       -h|--help) grep -E '^#( |$)' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
