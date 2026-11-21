@@ -23,6 +23,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+from explain_stop import report_stop  # noqa: E402
 from selection_core import (  # noqa: E402
     Violation, build_recommendation, check_invocation, normalize_matrix, validate_assets, validate_catalog,
 )
@@ -172,11 +173,9 @@ def main(argv):
             rec = json.loads(Path(argv[argv.index("--recommendation") + 1]).read_text())
         plan = build_plan(launch, rec, production="--production" in argv)
     except Violation as v:
-        print(f"VIOLATION [{v.code}]: {v.message}", file=sys.stderr)
-        return 2
+        return report_stop(f"REFUSED: [{v.code}] {v.message}", v.code, v.facts, stream=sys.stderr, exit_code=2)
     except Exception as e:  # fail closed
-        print(f"FAIL-CLOSED: {e}", file=sys.stderr)
-        return 3
+        return report_stop(f"REFUSED: {e}", None, None, stream=sys.stderr, exit_code=3)
     print(json.dumps(plan, indent=2))
     return 0
 
