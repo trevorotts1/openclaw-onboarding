@@ -57,6 +57,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+from explain_stop import report_stop  # noqa: E402
 from build_selection_plan import SELF_TEST_LAUNCH, build_plan  # noqa: E402
 from selection_core import Violation  # noqa: E402
 from validate_selection_content import validate_manuscript  # noqa: E402
@@ -288,8 +289,7 @@ def main(argv):
             out_path.parent.mkdir(parents=True, exist_ok=True)
         out_path.write_text(json.dumps(result, indent=2) + "\n")
     except Exception as e:
-        print(f"FAIL-CLOSED: {e}", file=sys.stderr)
-        return 3
+        return report_stop(f"REFUSED: {e}", None, None, stream=sys.stderr, exit_code=3)
     return 0
 
 

@@ -1,0 +1,553 @@
+{
+  "_about": "Skill 78 stop explanations. One entry per stop a client (or, for audience buyer, a buyer) can see. Read by scripts/explain_stop.py; every S78 stop code in scripts/ must have an entry here (tests/test_explain_stop.py fails otherwise). Placeholders in {braces} are filled from the stop's facts; a missing fact uses the entry's defaults, then the shared defaults below. spends_nothing is true only when the check that raises the stop spends no money itself; the message then says so (\"This check spent no money.\" to a client, \"You have not been charged.\" to a buyer). audience is client unless it says buyer.",
+  "defaults": {
+    "offer": "one of your packages"
+  },
+  "entries": {
+    "S78-SINGLE-OFFER-DECLINE": {
+      "what_happened": "Your launch has only one main package, so there is nothing for a buyer to choose between.",
+      "why": "A choose-your-package page with only one choice is a fake choice. It adds an extra step and confuses buyers.",
+      "fix": "Use the simple order form that explains your one package and takes the order on the same page.",
+      "choices": [
+        "I build the one-page order form for your package instead.",
+        "You add another real package to the plan, and I build the choose page."
+      ],
+      "spends_nothing": true
+    },
+    "S78-JOURNEY-MODE-DECLINE": {
+      "what_happened": "Your launch plan is set up as {mode}. That kind of launch has no choose-your-package page.",
+      "why": "We build pages from the plan you approved. We never change your plan just to get past a check.",
+      "fix": "Keep your plan and skip this page, or change the plan to \"several packages to choose from\" and approve it.",
+      "choices": [
+        "I keep your plan as it is and skip the choose page.",
+        "I change the plan to several packages and send it to you to approve.",
+        "I show you the two kinds of plans side by side so you can pick."
+      ],
+      "spends_nothing": true,
+      "defaults": {
+        "mode": "a different kind of launch"
+      }
+    },
+    "S78-NO-MAIN-OFFERS": {
+      "what_happened": "Your launch has no main packages in it yet, so there is nothing to show.",
+      "why": "A choose page lists your packages. With none, the page would be empty.",
+      "fix": "Add your main packages, with their prices, to the launch plan.",
+      "choices": [
+        "I help you list your packages and prices now.",
+        "You send me your packages and prices, and I add them."
+      ],
+      "spends_nothing": true
+    },
+    "S78-OFFER-NO-DELIVERABLES": {
+      "what_happened": "{offer} does not list what the buyer gets.",
+      "why": "Buyers choose by comparing what each package includes. Without that list the page would show prices and nothing else.",
+      "fix": "List what comes with each package. We never make this list up for you.",
+      "choices": [
+        "I ask you what each package includes and add it.",
+        "I draft the list from your launch plan and send it to you to check and approve."
+      ],
+      "spends_nothing": true
+    },
+    "S78-NO-COMPARISON-ROWS": {
+      "what_happened": "There is nothing to compare between your packages.",
+      "why": "Buyers choose by comparing what each package includes. A compare table with no rows would leave them guessing.",
+      "fix": "List what each package includes, so the table has something to show.",
+      "choices": [
+        "I ask you what each package includes and add it.",
+        "I draft the list from your launch plan and send it to you to check and approve."
+      ],
+      "spends_nothing": true
+    },
+    "S78-UNKNOWN-PRICE": {
+      "what_happened": "{offer} has no price yet.",
+      "why": "We never show a missing price as $0 or \"free\". A buyer would think it costs nothing.",
+      "fix": "Give the package its real price and approve it.",
+      "choices": [
+        "I ask you for the price now and add it.",
+        "I take that package off this page until it has a price."
+      ],
+      "spends_nothing": true
+    },
+    "S78-UNAPPROVED-PRICE": {
+      "what_happened": "The price for {offer} ({price}) has not been approved yet.",
+      "why": "Only prices you said yes to go on a page buyers can see. That way nobody sees a price you did not agree to.",
+      "fix": "Approve the price, or approve the whole launch plan, which approves every price in it.",
+      "choices": [
+        "I send you this price to approve now.",
+        "I send you the whole launch plan to approve.",
+        "You give me a different price, and I send that to you to approve."
+      ],
+      "spends_nothing": true,
+      "defaults": {
+        "price": "its price"
+      }
+    },
+    "S78-INVALID-AMOUNT": {
+      "what_happened": "The price for {offer} is written as {amount}, which is not a real price.",
+      "why": "A price must be a whole amount of money that is zero or more. Anything else could show the wrong number on the page or at checkout.",
+      "fix": "Fix the price in the launch plan.",
+      "choices": [
+        "I ask you for the correct price and fix it.",
+        "I show you where the wrong number is so you can fix it."
+      ],
+      "spends_nothing": true,
+      "defaults": {
+        "amount": "something"
+      }
+    },
+    "S78-DUPLICATE-OFFER-ID": {
+      "what_happened": "{offer} is in your launch plan twice.",
+      "why": "Each package must be listed once, so a buyer's choice always goes to the right package.",
+      "fix": "Remove the extra copy.",
+      "choices": [
+        "I remove the extra copy and check again.",
+        "I show you both copies so you can say which one to keep."
+      ],
+      "spends_nothing": true
+    },
+    "S78-INSTALLMENT-TOTAL-MISMATCH": {
+      "what_happened": "{offer} is split into {count} payments that add up to {schedule_total}, but its price says {total}.",
+      "why": "A buyer must always know the real total. Payments that do not add up to the price would hide the true cost.",
+      "fix": "Make the payments add up to the price, or change the price to match the payments.",
+      "choices": [
+        "I change the payments so they add up to the price, and show you.",
+        "I change the price to match the payments and send it to you to approve.",
+        "You tell me the right numbers, and I fix both."
+      ],
+      "spends_nothing": true,
+      "defaults": {
+        "count": "several",
+        "schedule_total": "one amount",
+        "total": "a different amount"
+      }
+    },
+    "S78-RECURRING-INTERVAL-MISSING": {
+      "what_happened": "{offer} is a repeating charge, but it does not say how often it repeats.",
+      "why": "A buyer has to know if they pay every week, month or year before they choose.",
+      "fix": "Say how often the charge repeats.",
+      "choices": [
+        "I ask you how often it repeats and add it.",
+        "I make it a one-time price instead and send it to you to approve."
+      ],
+      "spends_nothing": true
+    },
+    "S78-TRIAL-TERMS-MISSING": {
+      "what_happened": "{offer} has a trial, but the trial rules are not written down.",
+      "why": "Trial rules must be shown, never guessed, so a buyer knows what happens when the trial ends.",
+      "fix": "Write down the trial rules: how long it lasts and what it costs after that.",
+      "choices": [
+        "I ask you for the trial rules and add them.",
+        "I remove the trial and use the normal price."
+      ],
+      "spends_nothing": true
+    },
+    "S78-TEST-ONLY-IN-PRODUCTION": {
+      "what_happened": "{offer} is a test package, but this is your real, live launch.",
+      "why": "Test packages and test prices must never reach real buyers.",
+      "fix": "Take the test package out of the live launch, or run this as a test.",
+      "choices": [
+        "I remove the test package and check again.",
+        "I run this as a test instead, so nothing goes live."
+      ],
+      "spends_nothing": true
+    },
+    "S78-MISSING-NATIVE-MAPPING": {
+      "what_happened": "{offer} is not connected to its product and price in your checkout system yet.",
+      "why": "A buyer's choice has to reach the right product and price at checkout. Without that link the buyer could land on the wrong order form, or on none.",
+      "fix": "Set up the product and price in your checkout system, then link them to this launch.",
+      "choices": [
+        "I run the product setup step and link it (I ask your OK before anything is installed).",
+        "I list what is missing so you can set it up."
+      ],
+      "spends_nothing": true
+    },
+    "S78-ASSET-PROVENANCE": {
+      "what_happened": "One of the pictures or files listed for this page has no name or no owner.",
+      "why": "We only use files whose source we know, so a picture you do not have the right to use never lands on your page.",
+      "fix": "Give the file a name and say who owns it, or take it off the list.",
+      "choices": [
+        "I take that file off the list and check again.",
+        "You tell me where the file came from, and I add it."
+      ],
+      "spends_nothing": true
+    },
+    "S78-UNPROVEN-CLAIM": {
+      "what_happened": "Your page says {phrase}, and there is no proof for it.",
+      "why": "Words like \"most popular\", \"best value\" or \"only 50 left\" must be true and backed by proof. Claims with no proof can break advertising rules and lose your buyers' trust.",
+      "fix": "Take that line out, or write it without the claim.",
+      "choices": [
+        "I rewrite that line without the claim and show you.",
+        "I show you every line with a claim like this, so you can pick new words."
+      ],
+      "spends_nothing": true,
+      "defaults": {
+        "phrase": "something like \"most popular\" or \"only 50 left\""
+      }
+    },
+    "S78-RECOMMENDATION-UNAPPROVED": {
+      "what_happened": "A package is marked \"recommended\", but no reason is given.",
+      "why": "We only recommend a package with a clear reason tied to the buyer, like \"for founders who want one-on-one help\". A bare \"recommended\" badge is pushy and unproven.",
+      "fix": "Add the reason, or remove the recommendation.",
+      "choices": [
+        "I write a reason for you to approve.",
+        "I remove the recommended badge."
+      ],
+      "spends_nothing": true
+    },
+    "S78-COPY-PRICE-MISMATCH": {
+      "what_happened": "The page shows {shown} for {offer}, but the price you approved is {approved}.",
+      "why": "A wrong price on the page is never allowed. Buyers must see the exact price they will pay.",
+      "fix": "Make the page show the approved price, or approve the new price.",
+      "choices": [
+        "I change the page to your approved price and show you.",
+        "I send the new price to you to approve.",
+        "I check every price on the page against your plan."
+      ],
+      "spends_nothing": true,
+      "defaults": {
+        "shown": "a different price",
+        "approved": "another amount"
+      }
+    },
+    "S78-HIDDEN-EXCLUSION": {
+      "what_happened": "Your plan says {offer} does not include {exclusion}, but the page does not say so.",
+      "why": "Buyers must see what a package leaves out before they choose, on phones too. Hiding it would mislead them.",
+      "fix": "Add that line to the package's part of the page.",
+      "choices": [
+        "I add the line and show you.",
+        "You tell me if that item is really left out, and I update the plan."
+      ],
+      "spends_nothing": true,
+      "defaults": {
+        "exclusion": "one item"
+      }
+    },
+    "S78-AMBIGUOUS-COPY": {
+      "what_happened": "The page says {term} for {offer}, but does not say what it means.",
+      "why": "Fuzzy words like \"VIP support\" or \"and more\" hide what the buyer really gets. Each benefit must name the real thing behind it.",
+      "fix": "Say exactly what it means, like \"two private review calls\", or take it out.",
+      "choices": [
+        "I rewrite it with the real details from your plan and show you.",
+        "You tell me what it includes, and I write it."
+      ],
+      "spends_nothing": true,
+      "defaults": {
+        "term": "a fuzzy phrase like \"VIP support\""
+      }
+    },
+    "S78-COMPARE-EMPTY": {
+      "what_happened": "The Compare part of the page is empty.",
+      "why": "Buyers choose by comparing what each package includes. An empty Compare part makes them choose by price alone.",
+      "fix": "List what each package includes, so the Compare part has rows.",
+      "choices": [
+        "I ask you what each package includes and add it.",
+        "I draft the list from your launch plan and send it to you to check and approve."
+      ],
+      "spends_nothing": true
+    },
+    "S78-MANUSCRIPT-SHAPE": {
+      "what_happened": "The page draft is missing a part, or it lists the packages in the wrong order.",
+      "why": "The choose page always has the same five parts and shows your approved packages in order, so buyers can compare them fairly.",
+      "fix": "Rebuild the page draft from your approved plan.",
+      "choices": [
+        "I rebuild the draft from your plan and check it again.",
+        "I show you what is missing first."
+      ],
+      "spends_nothing": true
+    },
+    "S78-CTA-PAYMENT-LANGUAGE": {
+      "what_happened": "A button on the choose page says \"Buy now\".",
+      "why": "On this page a click only picks a package. Paying happens on the next page, so \"Buy now\" would tell buyers they are paying when they are not.",
+      "fix": "Use button words like \"Choose\" and the package name.",
+      "choices": [
+        "I change the button words and show you.",
+        "You give me the button words you like, and I use them."
+      ],
+      "spends_nothing": true
+    },
+    "S78-PAYMENT-COLLECTION": {
+      "what_happened": "The choose page asks for card details.",
+      "why": "This page never takes payment. Card details are only asked for on the secure order form.",
+      "fix": "Take the card questions off this page.",
+      "choices": [
+        "I take them off and check again.",
+        "I move that part to the order form."
+      ],
+      "spends_nothing": true
+    },
+    "S78-SELECTION-UNKNOWN-OFFER": {
+      "what_happened": "{offer} is not one of the approved packages in your launch plan.",
+      "why": "Only approved packages can be shown or chosen, so nobody can buy something you never agreed to sell.",
+      "fix": "Use one of the approved packages, or add this one to the plan and approve it.",
+      "choices": [
+        "I switch it to one of your approved packages.",
+        "I add this package to the plan and send it to you to approve."
+      ],
+      "spends_nothing": true,
+      "defaults": {
+        "offer": "a package"
+      }
+    },
+    "S78-SELECTION-PRICE-DRIFT": {
+      "what_happened": "The price or checkout link for {offer} no longer matches what was chosen. {change}",
+      "why": "A buyer is never charged a changed amount without seeing it first.",
+      "fix": "Show the buyer the new price and ask them to confirm it.",
+      "choices": [
+        "I show the buyer the new price and ask them to confirm.",
+        "I put the old price back if the change was a mistake (you approve it first)."
+      ],
+      "spends_nothing": true,
+      "defaults": {
+        "change": ""
+      }
+    },
+    "S78-SELECTION-TENANT-MISMATCH": {
+      "what_happened": "A choice from a different business or launch was sent to this checkout.",
+      "why": "Each business keeps its own buyers and prices. One business's checkout never uses another's.",
+      "fix": "Start the choice again from this launch's own page.",
+      "choices": [
+        "I send the buyer back to the right page to choose again.",
+        "I check that every link on your page points to your own checkout."
+      ],
+      "spends_nothing": true
+    },
+    "S78-SELECTION-STALE-REVISION": {
+      "what_happened": "Your launch plan was updated after this choice was made, so the choice is out of date.",
+      "why": "A buyer must see the current terms before paying, never old ones.",
+      "fix": "Show the buyer the current terms and ask them to confirm.",
+      "choices": [
+        "I show the buyer the current terms and ask them to confirm.",
+        "I rebuild the page from your newest plan."
+      ],
+      "spends_nothing": true
+    },
+    "S78-QUERY-PRICE-AUTHORITY": {
+      "what_happened": "A web link tried to set the price or the package by itself (for example by adding \"price=\" to the address).",
+      "why": "Anyone can type into a web address. If a link could set the price, a buyer could change $197 to $1. Prices come only from your approved plan.",
+      "fix": "Use the normal page link. Prices load from your plan by themselves.",
+      "choices": [
+        "I take the price part out of the link and give you the clean link.",
+        "I check every link on your page for this."
+      ],
+      "spends_nothing": true
+    },
+    "S78-BINDING-INCOMPLETE": {
+      "what_happened": "The checkout links for your packages are not complete. {missing}",
+      "why": "Each package price needs its own checkout link, so a buyer who picks it pays exactly that amount. We stop until every link is right.",
+      "fix": "Create or link the missing checkout page, then build the links again.",
+      "choices": [
+        "I set up the missing checkout links (I ask your OK before anything is installed).",
+        "I list which prices are missing a link."
+      ],
+      "spends_nothing": true,
+      "defaults": {
+        "missing": ""
+      }
+    },
+    "S78-BINDING-SHARED-TARGET": {
+      "what_happened": "Two different package prices point to the same checkout page.",
+      "why": "If two prices share one checkout page, a buyer could pay the wrong price.",
+      "fix": "Give each price its own checkout page.",
+      "choices": [
+        "I give each price its own checkout page and check again.",
+        "I show you which two prices are sharing."
+      ],
+      "spends_nothing": true
+    },
+    "S78-BINDING-DUPLICATE-TARGET": {
+      "what_happened": "One package price has two checkout pages.",
+      "why": "Each price must lead to exactly one checkout page, so the buyer's path is clear.",
+      "fix": "Keep one checkout page and remove the other.",
+      "choices": [
+        "I keep one and remove the extra, then check again.",
+        "I show you both so you can choose which one stays."
+      ],
+      "spends_nothing": true
+    },
+    "S78-BINDING-TARGET-DRIFT": {
+      "what_happened": "A checkout page points to a different product or price than your approved plan.",
+      "why": "The checkout must charge exactly the approved product and price.",
+      "fix": "Link that checkout page to the approved product and price again.",
+      "choices": [
+        "I link it again and check it.",
+        "I show you both so you can say which one is right."
+      ],
+      "spends_nothing": true
+    },
+    "S78-BINDING-NOT-ALLOWLISTED": {
+      "what_happened": "A checkout page is not on your list of approved checkout pages.",
+      "why": "Only checkout pages you approved may take payments, so a buyer is never sent somewhere unknown.",
+      "fix": "Approve that checkout page, or use an approved one.",
+      "choices": [
+        "I switch it to one of your approved checkout pages.",
+        "I send that checkout page to you to approve."
+      ],
+      "spends_nothing": true
+    },
+    "S78-RUNTIME-BAD-REQUEST": {
+      "what_happened": "The choose page got a request it could not read.",
+      "why": "When something does not make sense, the page stops instead of guessing, so it never picks a package or a price by mistake.",
+      "fix": "Send the request again with the missing details.",
+      "choices": [
+        "I check what was missing and send it again.",
+        "I send the buyer back to the page to choose again."
+      ],
+      "spends_nothing": true
+    },
+    "S78-RUNTIME-UNKNOWN-ACTION": {
+      "what_happened": "The choose page was asked to do something it does not know how to do.",
+      "why": "When something does not make sense, the page stops instead of guessing, so it never picks a package or a price by mistake.",
+      "fix": "Use one of the page's normal steps.",
+      "choices": [
+        "I find the right step and run it.",
+        "I report it to support so it gets fixed."
+      ],
+      "spends_nothing": true
+    },
+    "S78-SESSION-STORAGE": {
+      "what_happened": "The buyer's choice could not be saved.",
+      "why": "A choice that is not saved safely would vanish if the system restarts, so we stop instead of pretending it was saved.",
+      "fix": "Try saving again. If it keeps failing, the storage needs a check.",
+      "choices": [
+        "I try again now.",
+        "I check the storage space and settings, then try again.",
+        "I ask the buyer to choose again in a few minutes."
+      ],
+      "spends_nothing": true
+    },
+    "S78-SESSION-EXPIRED": {
+      "what_happened": "Your package choice timed out, so nothing was picked for you.",
+      "why": "We never choose a package for you. A choice is only saved for a short time to keep your order safe.",
+      "fix": "Look at the packages and choose again.",
+      "choices": [
+        "We take you back to the packages now, so you can choose again.",
+        "We help you compare the packages before you choose.",
+        "Go back to the packages and choose on your own."
+      ],
+      "spends_nothing": true,
+      "audience": "buyer"
+    },
+    "S78-SESSION-RECONFIRM": {
+      "what_happened": "The price or terms of {offer} changed after you picked it. {change}",
+      "why": "You will never be charged a changed amount without seeing it and saying yes first.",
+      "fix": "Look at the new terms and confirm them, or pick a different package.",
+      "choices": [
+        "We show you the new terms next to the old ones, and you say yes before anything goes on.",
+        "Confirm the new terms and keep going.",
+        "Pick a different package."
+      ],
+      "spends_nothing": true,
+      "audience": "buyer",
+      "defaults": {
+        "offer": "the package you picked",
+        "change": ""
+      }
+    },
+    "S78-IMAGES-INPUTS-NONE": {
+      "what_happened": "The pictures step was told to skip this page's wireframes and mockups.",
+      "why": "Every funnel with a choose page gets its wireframes and mockups. Skipping them would leave the page with no design.",
+      "fix": "Run the pictures step with its normal settings file.",
+      "choices": [
+        "I run the pictures step with the right settings.",
+        "I show you which settings it needs."
+      ],
+      "spends_nothing": true,
+      "match": [
+        "--inputs none"
+      ]
+    },
+    "S78-IMAGES-INPUTS-MISSING": {
+      "what_happened": "The pictures step is missing settings it needs, like your brand file or your picture limit.",
+      "why": "Pictures must use your own brand colors and stay under your picture limit, so the step stops when those are missing.",
+      "fix": "Fill in the missing settings.",
+      "choices": [
+        "I fill in the missing settings from your brand file and try again.",
+        "I ask you for anything I cannot find."
+      ],
+      "spends_nothing": true,
+      "match": [
+        "the inputs file is missing"
+      ]
+    },
+    "S78-IMAGES-PLAN-NOT-BUILT": {
+      "what_happened": "There is no choose page to draw, because the plan did not build one (for example, there is only one package).",
+      "why": "We only draw pages that are really in your funnel.",
+      "fix": "Build the plan first, or skip pictures for this page.",
+      "choices": [
+        "I build the plan first, then draw the page.",
+        "I skip this page's pictures because there is no choose page."
+      ],
+      "spends_nothing": true,
+      "match": [
+        "the plan outcome is"
+      ]
+    },
+    "S78-IMAGES-PAID-NOT-ALLOWED": {
+      "what_happened": "The pictures were set to use the paid picture service, but nobody said yes to spending money.",
+      "why": "Money is only spent after you say yes. The system never decides to spend on its own.",
+      "fix": "Say yes to the paid run, or use the free practice pictures.",
+      "choices": [
+        "I run the free practice version now, at no cost.",
+        "I ask you to approve the paid run, then run it."
+      ],
+      "spends_nothing": true,
+      "match": [
+        "is a paid route and needs --allow-paid"
+      ]
+    },
+    "S78-IMAGES-BOARD-APPROVAL-WAIT": {
+      "what_happened": "The final mockups are waiting for you to approve the design board.",
+      "why": "Final mockups cost money and are built on top of the design board. We wait for your yes, so we never pay for a look you have not approved.",
+      "fix": "Look at the design board and approve it, or ask for changes.",
+      "choices": [
+        "I send you the design board to look at now.",
+        "I make the changes you want, then send it to you again.",
+        "I wait until you are ready."
+      ],
+      "spends_nothing": true,
+      "match": [
+        "no client approval recorded for this page's board"
+      ]
+    },
+    "S78-IMAGES-BOARD-SPEC-MISSING": {
+      "what_happened": "The design board step is missing your brand facts.",
+      "why": "The design board shows your real brand, so it cannot be made without your brand facts.",
+      "fix": "Add your brand facts for the board.",
+      "choices": [
+        "I gather your brand facts from your brand file and try again.",
+        "I ask you for the facts I cannot find."
+      ],
+      "match": [
+        "design-board stage needs design_board_spec"
+      ]
+    },
+    "S78-IMAGES-DEPENDENCY-MISSING": {
+      "what_happened": "The picture step could not start, because a helper program it needs is not installed on this computer.",
+      "why": "The picture step draws the wireframes and mockups, and it needs that helper to draw anything. It stops instead of failing halfway through your pages.",
+      "fix": "Install the missing helper on this computer, then run the page again.",
+      "choices": [
+        "I install the missing helper and run the page again.",
+        "I run the free practice version first once the helper is installed.",
+        "I tell you what is missing and wait for your decision."
+      ],
+      "match": [
+        "missing Python package",
+        "No module named",
+        "ModuleNotFoundError"
+      ]
+    },
+    "S78-IMAGES-STEP-FAILED": {
+      "what_happened": "One of the picture steps stopped before it finished.",
+      "why": "Each step checks its own work. When one fails, the next ones stop, so nothing is built on a broken step. A later step is not started on top of a failure, and this run is not treated as a finished page.",
+      "fix": "Find the step that stopped, fix that one thing, and run the page again.",
+      "choices": [
+        "I find what stopped it, fix it, and run the page again.",
+        "I run the free practice version first to test it.",
+        "I explain the problem to you in plain words before I change anything."
+      ],
+      "match": [
+        "FAIL: step exited"
+      ]
+    }
+  }
+}
