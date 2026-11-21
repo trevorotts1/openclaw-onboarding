@@ -30,6 +30,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Mapping, Optional, Sequence
 
 from . import checkout as checkout_module
+from . import stop_explain
 from .constants import (
     REPO_ROOT,
     SkillResolutionError,
@@ -530,6 +531,11 @@ def run(normalized: Mapping[str, Any], *,
                                             normalized.get("test_only") is not False else "ready"),
         "client_blockers": [rows[name]["client_message"] for name in blocked],
         "next_steps": [rows[name]["next_step"] for name in blocked],
+        "client_explanations": [stop_explain.explain_stop(
+            "AF-LAUNCH-CAPABILITY", envelope={"detail": f"{name}: {rows[name]['detail']}",
+                                              "client_message": rows[name]["client_message"],
+                                              "next_step": rows[name]["next_step"]})
+            for name in blocked],
         "operator_diagnostics": [f"{name}: {rows[name]['detail']}" for name in blocked],
     }
     return record
