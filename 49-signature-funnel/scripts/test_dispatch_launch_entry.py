@@ -242,6 +242,64 @@ class ASimulatedRunIsLabelledAndTestOnly(unittest.TestCase):
         self.assertIn("simulate-executor", str(ctx.exception))
 
 
+class EveryDispatchStopReachesTheClientInPlainWords(unittest.TestCase):
+    """Round-2 review, findings 1 and 2: two dispatch stops crashed or went unexplained.
+
+    (1) adapters configured with no output directory raised UnboundLocalError, because the
+        four-part explainer was imported inside the function and that path had never bound it.
+    (2) a malformed launch-request.json was loaded before the handler, so the run died in a
+        JSON traceback and the client saw no explanation at all."""
+
+    def cli(self, *args):
+        return run([sys.executable, str(HERE / "dispatch_launch.py"), *args])
+
+    def assertExplained(self, p, needle):
+        out = p.stdout + p.stderr
+        self.assertNotIn("Traceback", out, out)
+        self.assertNotIn("UnboundLocalError", out, out)
+        self.assertIn("FOR THE CLIENT:", out, out)
+        msg = out.split("FOR THE CLIENT:\n", 1)[1]
+        self.assertIn(needle, msg, out)
+        for head in ("What happened:", "Why this rule exists:", "What will fix it:",
+                     "Your choices:", "1. ", "2. "):
+            self.assertIn(head, msg, out)
+        self.assertNotIn(needle.__class__.__name__, msg)  # never the bare machine line
+        self.assertTrue(msg.rstrip().endswith("Reply with the number you want."), msg)
+
+    def test_adapters_without_an_output_dir_is_explained_not_a_crash(self):
+        with tempfile.TemporaryDirectory() as td:
+            tdp = Path(td)
+            adapters = _adapters(tdp, *dl.PAGE_ROLES)
+            cfg = tdp / "adapters.json"
+            cfg.write_text(json.dumps({"adapters": adapters}), encoding="utf-8")
+            launch, approval = approved_launch()
+            lp, ap = tdp / "launch.json", tdp / "approval.json"
+            lp.write_text(json.dumps(launch), encoding="utf-8")
+            ap.write_text(json.dumps(approval), encoding="utf-8")
+            p = self.cli("--launch", str(lp), "--approval", str(ap),
+                         "--client", CLIENT, "--worker", WORKER,
+                         "--adapters", str(cfg), "--parallel", "1")
+            self.assertEqual(p.returncode, dl.EXIT_FAILCLOSED, p.stdout + p.stderr)
+            self.assertExplained(p, "no folder to put that work in")
+
+    def test_a_malformed_launch_request_is_explained_not_a_traceback(self):
+        with tempfile.TemporaryDirectory() as td:
+            rd = make_run_dir(Path(td), adapters=False, parallel=1)
+            (rd / "launch-request.json").write_text(
+                '{"mode": "signature_launch", not json', encoding="utf-8")
+            p = self.cli("--run-dir", str(rd), "--client", CLIENT, "--worker", WORKER)
+            self.assertEqual(p.returncode, dl.EXIT_VIOLATION, p.stdout + p.stderr)
+            self.assertIn("launch request file is not valid JSON", p.stdout + p.stderr)
+            self.assertExplained(p, "launch request for this run is damaged")
+
+    def test_a_launch_request_that_is_not_an_object_is_explained(self):
+        with tempfile.TemporaryDirectory() as td:
+            rd = make_run_dir(Path(td), adapters=False, parallel=1)
+            (rd / "launch-request.json").write_text("[1, 2, 3]", encoding="utf-8")
+            p = self.cli("--run-dir", str(rd), "--client", CLIENT, "--worker", WORKER)
+            self.assertEqual(p.returncode, dl.EXIT_VIOLATION, p.stdout + p.stderr)
+            self.assertExplained(p, "launch request for this run is damaged")
+
 class ARefusalPrintedToStdoutStillShowsItsCause(unittest.TestCase):
     """DTY-28: a lane that exits non-zero with empty stderr used to read 'exited 2:'."""
     def test_stdout_stands_in_for_an_empty_stderr(self):
