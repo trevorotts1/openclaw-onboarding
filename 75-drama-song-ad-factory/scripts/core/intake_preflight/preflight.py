@@ -61,6 +61,48 @@ def check_storage_writable(path):
     return os.path.isdir(path) and os.access(path, os.W_OK | os.X_OK)
 
 
+def _stop(out):
+    """A stop the client can meet: the same outcome, reason and next action,
+    plus ``client_explanation`` (the four-part plain message beside the code).
+    Read-only; never changes the gate. ``missing``/``outside`` names ride as
+    explanation facts so the message names the real files and sign-ins."""
+    if isinstance(out, dict) and out.get("outcome") != "ok":
+        try:
+            d = os.path.dirname(os.path.abspath(__file__))
+            while d != os.path.dirname(d) and not os.path.exists(
+                    os.path.join(d, "loud_failure.py")):
+                d = os.path.dirname(d)
+            if d not in sys.path:
+                sys.path.insert(0, d)
+            import loud_failure
+            env = {"reason_code": out.get("reason_code", ""),
+                   "detail": {  # the stop's own words name the real cause
+                       "reference-outside-approved-storage":
+                           "references outside the approved project folder: %s"
+                           % ", ".join(out.get("outside") or []),
+                       "reference-missing-or-truncated":
+                           "references missing or damaged: %s"
+                           % ", ".join(out.get("missing") or []),
+                       "tool-unavailable":
+                           "missing runtime tools: %s"
+                           % ", ".join(out.get("missing") or []),
+                       "module-unavailable":
+                           "missing python modules: %s"
+                           % ", ".join(out.get("missing") or []),
+                   }.get(out.get("reason_code") or "", ""),
+                   "next_action": out.get("next_action", ""),
+                   "missing": out.get("missing") or out.get("outside")}
+            facts = {}
+            if isinstance(out.get("missing"), list) and out.get("missing") \
+                    and out.get("reason_code") == "credential-missing":
+                facts["missing"] = out["missing"]
+            out["client_explanation"] = loud_failure.explain_stop(
+                out.get("reason_code", ""), facts, env)
+        except Exception:  # noqa: BLE001 - an explanation never breaks a stop
+            pass
+    return out
+
+
 def check_credentials(names, env=None):
     env = env if env is not None else os.environ
     return {n: bool(_env_value(n, env)) for n in (names or [])}  # presence only, values never returned
@@ -668,21 +710,26 @@ def check(payload):
     durations and channel via PREREQS.json. Empty tool/module/credential lists
     therefore never pass a media production; missing derived requirements come
     back with a repair plan. A non-generating run declares itself (reason
-    ``preflight-pass-diagnostic``, never ``preflight-pass``)."""
+    ``preflight-pass-diagnostic``, never ``preflight-pass``).
+
+    Owner order 2026-11-20: every stop the client can meet also carries
+    ``client_explanation`` (the four-part plain message beside the code). It is
+    filled from the stop's own reason, detail words and next action, plus the
+    ``missing``/``outside`` names; gates and exits are unchanged."""
     p = payload or {}
     checks = {}
     schemas = p.get("allowed_schemas") or ["blackceo.campaign/v1"]
     sv = p.get("schema_version") or "blackceo.campaign/v1"
     checks["schema_trusted"] = sv in schemas
     if not checks["schema_trusted"]:
-        return {"outcome": "error", "reason_code": "schema-untrusted",
-                "checks": checks, "next_action": f"Use a trusted schema: {schemas}."}
+        return _stop({"outcome": "error", "reason_code": "schema-untrusted",
+                "checks": checks, "next_action": f"Use a trusted schema: {schemas}."})
     allowed = p.get("allowed_profiles") or list(DEFAULT_PROFILES)
     chosen_profile = p.get("profile") or DEFAULT_PROFILES[0]
     checks["profile_known"] = chosen_profile in allowed
     if not checks["profile_known"]:
-        return {"outcome": "rejected", "reason_code": "delivery-profile-unknown",
-                "checks": checks, "next_action": f"Choose a delivery profile in {allowed}."}
+        return _stop({"outcome": "rejected", "reason_code": "delivery-profile-unknown",
+                "checks": checks, "next_action": f"Choose a delivery profile in {allowed}."})
     # SC-17: the receipt records WHICH duration profile the run used, so the
     # chosen shape+length is readable after the run and not only inside the
     # request payload. ``allowed`` is caller-supplied, so it can only narrow
@@ -693,12 +740,12 @@ def check(payload):
         registry.profile_row(chosen_profile)
     except ValueError as exc:
         checks["duration_profile_known"] = False
-        return {"outcome": "rejected", "reason_code": "delivery-profile-unknown",
+        return _stop({"outcome": "rejected", "reason_code": "delivery-profile-unknown",
                 "checks": checks,
                 "next_action": "The canonical duration registry "
                                "(suno_recipe.duration_registry) is the authority "
                                "on the recorded profile: %s. Choose one of %s."
-                               % (str(exc)[:160], list(registry.profiles()))}
+                               % (str(exc)[:160], list(registry.profiles()))})
     checks["duration_profile_known"] = True
     checks["duration_profile"] = chosen_profile
 
@@ -713,41 +760,41 @@ def check(payload):
     checks["references_ok"] = not bad
     checks["references_inside_approved_storage"] = not outside
     if outside:
-        return {"outcome": "rejected", "reason_code": "reference-outside-approved-storage",
+        return _stop({"outcome": "rejected", "reason_code": "reference-outside-approved-storage",
                 "checks": checks, "missing": [], "outside": outside,
-                "next_action": "Move references inside approved storage and retry."}
+                "next_action": "Move references inside approved storage and retry."})
     if bad:
-        return {"outcome": "error", "reason_code": "reference-missing-or-truncated",
+        return _stop({"outcome": "error", "reason_code": "reference-missing-or-truncated",
                 "checks": checks, "missing": bad,
-                "next_action": "Restore missing/truncated references and retry."}
+                "next_action": "Restore missing/truncated references and retry."})
     tools = check_tools(p.get("tools"))
     checks["tools"] = tools
     if not all(tools.values()):
-        return {"outcome": "error", "reason_code": "tool-unavailable",
+        return _stop({"outcome": "error", "reason_code": "tool-unavailable",
                 "checks": checks, "missing": sorted(k for k, v in tools.items() if not v),
-                "next_action": "Install missing runtime tools and retry."}
+                "next_action": "Install missing runtime tools and retry."})
     mods = check_modules(p.get("modules"))
     checks["modules"] = mods
     if not all(mods.values()):
-        return {"outcome": "error", "reason_code": "module-unavailable",
+        return _stop({"outcome": "error", "reason_code": "module-unavailable",
                 "checks": checks, "missing": sorted(k for k, v in mods.items() if not v),
-                "next_action": "Install missing Python modules and retry."}
+                "next_action": "Install missing Python modules and retry."})
     sdir = p.get("storage_dir") or root
     checks["storage_writable"] = check_storage_writable(sdir)
     disk = check_disk(sdir, p.get("min_free_bytes") or 0)
     checks["disk"] = {k: disk[k] for k in ("total", "free", "ok") if k in disk}
     if not checks["storage_writable"]:
-        return {"outcome": "error", "reason_code": "storage-not-writable",
-                "checks": checks, "next_action": f"Make {sdir} writable and retry."}
+        return _stop({"outcome": "error", "reason_code": "storage-not-writable",
+                "checks": checks, "next_action": f"Make {sdir} writable and retry."})
     if not disk.get("ok"):
-        return {"outcome": "error", "reason_code": "disk-limit",
-                "checks": checks, "next_action": "Free disk space and retry."}
+        return _stop({"outcome": "error", "reason_code": "disk-limit",
+                "checks": checks, "next_action": "Free disk space and retry."})
     creds = check_credentials(p.get("credentials"), p.get("env"))
     checks["credentials_present"] = creds
     if creds and not all(creds.values()):
-        return {"outcome": "rejected", "reason_code": "credential-missing",
+        return _stop({"outcome": "rejected", "reason_code": "credential-missing",
                 "checks": checks, "missing": sorted(k for k, v in creds.items() if not v),
-                "next_action": "Provide credentials (presence only; values never logged)."}
+                "next_action": "Provide credentials (presence only; values never logged)."})
 
     # ── D05: capability-derived requirements (spec 9.1). The explicit lists
     # above keep their exact behaviour; these derive the REAL dependency set
@@ -761,9 +808,9 @@ def check(payload):
         try:
             planning = not production_process.needs_media_dependencies(p.get("stage"))
         except (ImportError, ValueError, TypeError, KeyError) as exc:
-            return {"outcome": "error", "reason_code": "PRODUCTION_PROCESS_UNVERIFIED",
+            return _stop({"outcome": "error", "reason_code": "PRODUCTION_PROCESS_UNVERIFIED",
                     "checks": checks, "production_admitted": False,
-                    "next_action": "The canonical planning dependency graph cannot be verified: " + str(exc)}
+                    "next_action": "The canonical planning dependency graph cannot be verified: " + str(exc)})
         if planning:
             # Initial intake/research/script planning checks its own runtime;
             # it cannot require future media keys or approve future assets.
@@ -804,33 +851,33 @@ def check(payload):
         import time
         exp = auth.get("expires_unix")
         if isinstance(exp, (int, float)) and int(time.time()) > exp:
-            return {"outcome": "rejected", "reason_code": "approval-expired",
-                    "checks": checks, "next_action": "Renew expired authorization."}
+            return _stop({"outcome": "rejected", "reason_code": "approval-expired",
+                    "checks": checks, "next_action": "Renew expired authorization."})
         scope = auth.get("scope")
         dgst = p.get("summary_digest")
         if scope not in ("campaign", dgst):
-            return {"outcome": "rejected", "reason_code": "approval-out-of-scope",
-                    "checks": checks, "next_action": "Bind authorization to this campaign summary digest."}
+            return _stop({"outcome": "rejected", "reason_code": "approval-out-of-scope",
+                    "checks": checks, "next_action": "Bind authorization to this campaign summary digest."})
     # Retain F15's useful missing-answer diagnostic for old callers. Passing
     # it is only data completeness, never permission to spend or accept stages.
     card_refusal = check_card_receipt(p.get("run_state"), p.get("card_receipt"))
     checks["card_recorded"] = card_refusal is None
     if card_refusal is not None and not p.get("run_dir"):
-        return {"outcome": "waiting", "reason_code": card_refusal["reason_code"],
+        return _stop({"outcome": "waiting", "reason_code": card_refusal["reason_code"],
                 "checks": checks, "missing": card_refusal.get("missing", []),
-                "next_action": card_refusal.get("next_action", "Show and answer the choice card first.")}
+                "next_action": card_refusal.get("next_action", "Show and answer the choice card first.")})
     # F15 precedence: the card gate is the paid-work precondition, so it is
     # answered BEFORE any capability-derived refusal. A dependency refusal in
     # a credential-free environment must never stand in for "answer the card".
     if ctx["generating"] and (not ctx["media"] or not derived):
-        return {"outcome": "error", "reason_code": "requirements-empty",
+        return _stop({"outcome": "error", "reason_code": "requirements-empty",
                 "checks": checks, "missing": [],
                 "next_action": "A media production derives a real dependency set "
                                "from its mode, media, durations and channel; declare "
                                "them (capabilities{}) so preflight can check them. "
-                               "Empty tool/module/credential lists never pass."}
+                               "Empty tool/module/credential lists never pass."})
     if ctx["generating"] and not manifest_ok:
-        return {"outcome": "error", "reason_code": "manifest-unavailable",
+        return _stop({"outcome": "error", "reason_code": "manifest-unavailable",
                 "checks": checks, "missing": ["PREREQS.json"],
                 "repair_plan": {"plan": [{"id": "PREREQS.json", "manual": True,
                                  "command": None,
@@ -838,7 +885,7 @@ def check(payload):
                                            "manifest) to the skill folder."}],
                                  "unsupported": []},
                 "next_action": "Restore PREREQS.json and retry; a media production "
-                               "cannot verify its dependency set without it."}
+                               "cannot verify its dependency set without it."})
     if dfail:
         plan = repair_plan_for(dfail, ctx, manifest)
         reason = "dependency-missing"

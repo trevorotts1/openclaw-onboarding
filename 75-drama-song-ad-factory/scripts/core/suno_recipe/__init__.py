@@ -27,4 +27,5 @@ from .suno_recipe import (  # noqa: F401
     render_lyrics, score_take, set_constraint_policy, shapes, sheet_seconds,
     sheet_words, style_text, suno_style_ids,
     syllables, vocal_gender_word, GENDER_WORDS, check_voice_tags, parse_voice_tags,
+    length_that_fits,
 )

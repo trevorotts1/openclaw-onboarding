@@ -1992,3 +1992,45 @@ def score_take(take, hook_text=None, words=None, length_s=None,
 
 def _res(verdict, reasons):
     return {"verdict": verdict, "reasons": reasons}
+
+def length_that_fits(sheet, style_id=None, spoken_share_pct=None, lengths=None):
+    """The shortest offered song length whose LYRICS_REJECTED word checks BOTH
+    pass for this sheet -- the word budget AND the spoken-intro cap -- for the
+    client's "what will fix it" line. Read-only: it judges nothing and refuses
+    nothing.
+
+    Same arithmetic as ``check_lyric_sheet`` (the length plan's word total
+    with its drafting tolerance, and the spoken-intro cap); the test
+    ``test_stop_explanations_s75.py`` holds the two in step by running the gate
+    at the length this names and at the one before it. None = no offered
+    length fits (the words, or the spoken intro, must get shorter).
+    """
+    total = sheet_words(sheet)
+    intro = [s for s in sheet if s.get("delivery") == "spoken"
+             and str(s.get("tag", "")).lower().startswith("intro")]
+    opener = sheet_words(intro) if intro else 0
+    out = {"total_words": total, "opener_words": opener,
+           "words_fit_length_s": None, "opener_fit_length_s": None}
+    for L in sorted(lengths or CANONICAL_DURATION_S):
+        try:
+            p = _LF.plan(L, spoken_share_pct, style_id=style_id)
+            budget = max(p["words"]["total"],
+                         _LF.plan(L, spoken_share_pct)["words"]["total"])
+        except Exception:  # noqa: BLE001 - a length the plan cannot price never fits
+            continue
+        if out["words_fit_length_s"] is None and total <= budget * 1.1 + 2:
+            out["words_fit_length_s"] = L
+        if out["opener_fit_length_s"] is None and opener <= p["words"]["opener_max"]:
+            out["opener_fit_length_s"] = L
+    # One length the client can actually pick: it must clear BOTH checks.
+    # The opener cap tops out at 12 words even at the longest length, so a
+    # 62-word spoken opening fits NO offered length: both stays None and the
+    # message tells the client to shorten the opener instead of naming a
+    # length the gate would still refuse.
+    both = [L for L in sorted(lengths or CANONICAL_DURATION_S)
+            if (out["words_fit_length_s"] is not None
+                and out["opener_fit_length_s"] is not None
+                and L >= out["words_fit_length_s"]
+                and L >= out["opener_fit_length_s"])]
+    out["length_s"] = both[0] if both else None
+    return out

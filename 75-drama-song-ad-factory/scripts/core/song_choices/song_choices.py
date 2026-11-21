@@ -88,7 +88,15 @@ _TABLE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "variants.json
 
 
 class ChoiceError(ValueError):
-    """A loud refusal: nothing was spent or delivered on the broken path."""
+    """A loud refusal: nothing was spent or delivered on the broken path.
+
+    ``client_explanation`` (loud_failure.explain_stop) rides on the exception
+    from the three raw CLI refusals below (conflicting run roots, missing
+    transport, missing hook text): the exit stays a raw refusal but the agent
+    always has the four-part client message to send. The LYRICS_REJECTED path
+    fills it in ``cmd_generate`` via ``explain_refusal``.
+    """
+    client_explanation = None
 
 
 # ---- S75-W02-U3: the complete typed result envelope per attempt ----------
@@ -241,16 +249,20 @@ def attempt_envelope(variant_id, attempt_id, outcome, counts,
             raise ChoiceError("causal_chain entries need a stage; got %r" % (link,))
         chain.append(causal_link(link.get("stage"), link.get("reason_code", ""),
                                  link.get("detail", "")))
-    return {"schema_version": ENVELOPE_SCHEMA_VERSION, "tool": TOOL_NAME,
-            "variant_id": str(variant_id), "attempt_id": str(attempt_id),
-            "outcome": outcome,
-            "reason_code": str(reason_code or ""),
-            "detail": str(detail or ""),
-            "next_action": str(next_action or ""),
-            "counts": make_counts(**(counts or {})),
-            "causal_chain": chain,
-            "evidence": dict(evidence or {}),
-            "dispatch_ok": outcome == "ok"}
+    env = {"schema_version": ENVELOPE_SCHEMA_VERSION, "tool": TOOL_NAME,
+           "variant_id": str(variant_id), "attempt_id": str(attempt_id),
+           "outcome": outcome,
+           "reason_code": str(reason_code or ""),
+           "detail": str(detail or ""),
+           "next_action": str(next_action or ""),
+           "counts": make_counts(**(counts or {})),
+           "causal_chain": chain,
+           "evidence": dict(evidence or {}),
+           "dispatch_ok": outcome == "ok"}
+    if outcome != "ok":   # owner order 2026-11-20: never a dead stop
+        env["client_explanation"] = loud_failure.explain_stop(
+            env["reason_code"], None, env)
+    return env
 
 
 def carry(envelope, stage, detail=""):
@@ -2245,7 +2257,8 @@ def _refuse(why, code="SONG_PICK_MISSING"):
                            "No picture timing, video, image or lip-sync job starts before it.",
             # S75-W02-U3: the refusal travels as an envelope with its causal
             # chain, so a wrapper boundary can never flatten it to a bare "no".
-            "causal_chain": [causal_link("song_choices", code, why)]}
+            "causal_chain": [causal_link("song_choices", code, why)],
+            "client_explanation": loud_failure.explain_stop(code)}
 
 
 def _unanswered_hold(run_dir, st):
@@ -2259,7 +2272,8 @@ def _unanswered_hold(run_dir, st):
                            "song, picture, video, image or lip-sync job starts "
                            "before it." % SONG_APPROVAL_QUESTION,
             "causal_chain": [causal_link("song_choices",
-                                         "SONG_APPROVAL_UNANSWERED", why)]}
+                                         "SONG_APPROVAL_UNANSWERED", why)],
+            "client_explanation": loud_failure.explain_stop("SONG_APPROVAL_UNANSWERED")}
 
 
 def _unanswered_refusal(run_dir):
@@ -2783,25 +2797,57 @@ def cmd_generate(a, generate=None, measure=None, save=None, plan=None):
     # on a question the client never answered.
     _hold = _unanswered_refusal(run_dir)
     if _hold:
-        raise ChoiceError("REFUSED: %s -- %s. %s"
+        # Same envelope as the refusals below: the hold carries its own
+        # four-part message, so the CLI exit is never explanation-free.
+        err = ChoiceError("REFUSED: %s -- %s. %s"
                           % (_hold["reason_code"], _hold["detail"],
                              _hold["next_action"]))
+        err.client_explanation = _hold.get("client_explanation")
+        raise err
     spec = _load_request(a.request, run_dir)
     conflict = _run_dir_conflict(spec.get("run_authorities") or {})
     if conflict:
-        raise ChoiceError("REFUSED: conflicting run roots (%s); name ONE run "
+        # Raw refusal EXCEPT it carries the four-part client message: the
+        # caller asked for two run folders at once, so nothing ran.
+        err = ChoiceError("REFUSED: conflicting run roots (%s); name ONE run "
                           "directory" % conflict)
+        err.client_explanation = loud_failure.explain_stop(
+            "CONFLICTING_RUN_ROOTS", None,
+            {"reason_code": "CONFLICTING_RUN_ROOTS",
+             "detail": "the request names two different run folders: %s" % conflict,
+             "next_action": "name ONE run folder and run again"})
+        raise err
     for _label, _fn in (("measure", measure), ("save", save)):
         if _fn is None:
-            raise ChoiceError("REFUSED: the production run needs a real %s transport, "
+            err = ChoiceError("REFUSED: the production run needs a real %s transport, "
                               "not an empty default no-op" % _label)
+            err.client_explanation = loud_failure.explain_stop(
+                "TRANSPORT_MISSING", None,
+                {"reason_code": "TRANSPORT_MISSING",
+                 "detail": "the production run was started without its %s step" % _label,
+                 "next_action": "start the run through the normal command, "
+                                "which wires the %s step in" % _label})
+            raise err
     hook_text = _hook_text(spec)
     if not str(hook_text).strip():
-        raise ChoiceError("REFUSED: the run has no hook text (the sheet repeats no "
+        err = ChoiceError("REFUSED: the run has no hook text (the sheet repeats no "
                           "sung hook); the hook gate cannot be skipped")
-    reqs = build_requests(spec["style_id"], spec["sheet"], spec["client_text"],
-                          spec["title"], spec["length_s"], spec["vocal_gender"],
-                          hook_plan=spec["hook_plan"], pace_plan=spec["pace_plan"])
+        err.client_explanation = loud_failure.explain_stop(
+            "HOOK_TEXT_MISSING", None,
+            {"reason_code": "HOOK_TEXT_MISSING",
+             "detail": "the sheet repeats no sung hook, so there is no hook "
+                       "to judge or place",
+             "next_action": "repeat the sung hook lines in the sheet and run again"})
+        raise err
+    try:
+        reqs = build_requests(spec["style_id"], spec["sheet"], spec["client_text"],
+                              spec["title"], spec["length_s"], spec["vocal_gender"],
+                              hook_plan=spec["hook_plan"], pace_plan=spec["pace_plan"])
+    except _R.RecipeError as exc:
+        # Owner order 2026-11-20: the refusal is unchanged (same exception,
+        # same pass/fail); it now carries the four-part client explanation.
+        exc.client_explanation = explain_refusal(exc, spec)
+        raise
     _require_three(reqs, key=lambda r: r[0]["id"])
     if a.variant or a.unit_id:
         idx = _select_one(reqs, a.unit_id or None, a.variant or None)
@@ -2868,6 +2914,45 @@ def cmd_generate(a, generate=None, measure=None, save=None, plan=None):
                        "threads are not visible agents"}
     out["units"] = plan_units(run_dir, reqs)
     return out
+
+
+def explain_stop_from_message(msg):
+    """Four-part explanation for a bare ChoiceError refusal message: reuse the
+    refusal's own words through loud_failure.explain_stop (never invent
+    facts). Read-only: it never changes the refusal."""
+    return loud_failure.explain_stop("CHOICE_REFUSED", None,
+                                     {"reason_code": "CHOICE_REFUSED",
+                                      "detail": msg,
+                                      "next_action": ("fix the named run problem "
+                                                      "and run again")})
+
+
+def explain_refusal(exc, spec=None):
+    """The four-part client explanation (loud_failure.explain_stop) for a
+    refusal raised on the song path. For LYRICS_REJECTED it adds the song
+    length that WOULD fit these words, from the skill's own length plan
+    (suno_recipe.length_that_fits); a refusal of any other kind falls back to
+    the envelope's own words. Read-only: it never changes the refusal."""
+    msg = str(exc)
+    code = getattr(exc, "code", None) or msg.split(":", 1)[0].strip()
+    detail = msg.split(":", 1)[1].strip() if ":" in msg else msg
+    facts = {}
+    if code == "LYRICS_REJECTED" and isinstance(spec, dict) and spec.get("sheet"):
+        try:
+            # The named length must clear BOTH word checks (budget and spoken
+            # intro), so the client's "make it longer" choice never lands on a
+            # length the gate still refuses. None = no offered length fits:
+            # the opener (or the words) must get shorter, and no longer-song
+            # choice is offered.
+            fit = _R.length_that_fits(spec["sheet"], spec.get("style_id"))
+            if fit.get("length_s"):
+                facts["fit_length_s"] = fit["length_s"]
+            else:
+                facts["no_fit_length"] = "shorten the opener"
+        except Exception:  # noqa: BLE001 - the explanation never breaks a refusal
+            pass
+    return loud_failure.explain_stop(code, facts,
+                                     {"reason_code": code, "detail": detail})
 
 
 def main(argv=None):
@@ -2950,11 +3035,33 @@ def main(argv=None):
             _timings = _ST.make_timings(
                 _run_dir, ledger=a.ledger or os.path.join(_run_dir, "spend.sqlite3"),
                 run_id=a.run_id)
-            out = cmd_generate(
-                a,
-                measure=_ST.make_measure(pace_plan=_spec.get("pace_plan"),
-                                         timings=_timings),
-                save=_ST.make_save(_run_dir))
+            try:
+                out = cmd_generate(
+                    a,
+                    measure=_ST.make_measure(pace_plan=_spec.get("pace_plan"),
+                                             timings=_timings),
+                    save=_ST.make_save(_run_dir))
+            except _R.RecipeError as e:
+                # RecipeError path (finding 5): the refusal is the same one
+                # cmd_generate raised (same code, same words, exit 5); only
+                # the four-part client explanation is printed beside it.
+                # next_action stays the exception's own -- the envelope never
+                # invents a new instruction.
+                print("REFUSED: %s" % e, file=sys.stderr)
+                exp = (getattr(e, "client_explanation", None)
+                       or explain_refusal(e, _spec))
+                try:
+                    nxt = exp.get("fix") if isinstance(exp, dict) else ""
+                except Exception:  # noqa: BLE001 - the fix line is optional
+                    nxt = ""
+                json.dump({"outcome": "rejected",
+                           "reason_code": getattr(e, "code", "") or "RECIPE_REFUSED",
+                           "detail": str(e),
+                           "next_action": nxt or str(e),
+                           "client_explanation": exp},
+                          sys.stdout, indent=2, sort_keys=True, default=str)
+                sys.stdout.write("\n")
+                return 5
             json.dump(out, sys.stdout, indent=2, sort_keys=True, default=str)
             sys.stdout.write("\n")
             if out.get("outcome") != "ok":
@@ -2979,7 +3086,29 @@ def main(argv=None):
                 return 5
             print("ok")
     except ChoiceError as e:
+        # Round 2 finding 1: the ChoiceError path is a client-facing stop
+        # (conflicting run roots, missing transport, missing hook, unanswered
+        # approval). It now prints the same structured envelope as a RecipeError
+        # -- reason code, detail, next action AND the four-part
+        # client_explanation -- so choices always reach the caller.
+        exp = getattr(e, "client_explanation", None)
+        if exp is None:
+            try:
+                exp = explain_stop_from_message(str(e))
+            except Exception:  # noqa: BLE001 - the envelope never breaks a stop
+                exp = None
         print("REFUSED: %s" % e, file=sys.stderr)
+        try:
+            json.dump({"outcome": "rejected",
+                       "reason_code": "CHOICE_REFUSED",
+                       "detail": str(e),
+                       "next_action": ("fix the named run problem and run "
+                                       "again"),
+                       "client_explanation": exp},
+                      sys.stdout, indent=2, sort_keys=True, default=str)
+            sys.stdout.write("\n")
+        except Exception:  # noqa: BLE001 - stderr keeps the refusal either way
+            pass
         return 5
     return 0
 
