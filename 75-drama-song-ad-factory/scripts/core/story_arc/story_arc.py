@@ -699,9 +699,12 @@ CAUSAL_FIELDS = ("scene", "inciting_event", "opposing_action", "escalation",
 #: are never mixed: a claim shown as the client's real life is not a scene.
 SCENE_KINDS = ("fiction", "testimonial")
 #: A real commercial call: an action the viewer can take. PROPOSED list.
+#: The quiz entries are actionable phrases only: the bare noun "quiz" is no
+#: call ("The quiz is beautiful." asks for nothing).
 COMMERCIAL_ACTIONS = ("book", "order", "assessment", "schedule", "call",
                       "apply", "enroll", "enrol", "reserve", "checkout", "buy",
-                      "sign up")
+                      "sign up", "take the quiz", "take our quiz", "take this quiz",
+                      "start the quiz")
 #: A closing that promises but never asks for anything.
 _PROMISE_RE = re.compile(r"\b(will (?:change|transform)|your (?:life|world)|a new you|"
                          r"believing in yourself|the answer is within|everything you ever|"
@@ -712,6 +715,39 @@ _CURE_RE = re.compile(r"\b(miraculous|instantly (?:cures?|fixes?|heals?)|"
                       r"(?:guaranteed|always) works|fixes? (?:you|it all))\b", re.I)
 _COMMERCIAL_RE = re.compile(r"\b(%s)\b" % "|".join(re.escape(a) for a in COMMERCIAL_ACTIONS),
                             re.I)
+_NEGATORS = ("not", "never", "no", "nor", "cannot", "dont", "didnt", "doesnt", "cant", "wont")
+#: Subjects that forbid the act for everyone: "Nobody should take the quiz."
+#: matches even with no negator word in the sentence.
+_NEGATIVE_SUBJECTS = ("nobody", "no one", "noone", "neither", "none")
+
+def _commercial_calls(text):
+    """Every commercial action ``text`` asks for, lower-cased, in order.
+
+    A call counts only when nothing says not to act. A sentence refuses the
+    act when any word before the phrase is "not", "never", "no", "nor",
+    "cannot" or an "n't" word ("Do not take the quiz."), or when its subject
+    is negative ("Nobody should take the quiz."). A comma, colon,
+    semicolon or em dash never ends the sentence, so a real call after a
+    negation must stand in its own sentence: "Do not wait. Take the quiz now."
+    ponytail: conservative - "No more
+    guessing, take our quiz." is refused too (origin/main refused every quiz
+    line); the guard applies to every action phrase, so "Do not book a call."
+    and newline- or dash-split ("Never\ntake the quiz.", "Never \u2014 take
+    the quiz.") refusals work the same way.
+    """
+    text = str(text or "")
+    calls = []
+    for m in _COMMERCIAL_RE.finditer(text):
+        act = m.group(1).lower()
+        sentence = re.split(r"[.!?]", text[:m.start()])[-1].lower()
+        words = re.findall(r"[\w'\u2019]+", sentence)
+        if any(w in _NEGATORS or w.endswith(("n't", "n\u2019t")) for w in words):
+            continue
+        if re.search(r"\b(nobody|no\s+one|noone|neither|none)\b", sentence):
+            continue
+        calls.append(act)
+    return calls
+
 #: a block tagged as the closing call.
 _CTA_TAG_RE = re.compile(r"\b(?:cta|call ?to ?action|offer|book|assessment|"
                          r"next ?step|closing|pitch)\b", re.I)
@@ -935,7 +971,7 @@ def check_causal_story(story):
         if _CURE_RE.search(ca):
             errors.append({"error": "magical-cure",
                            "detail": "commercial action promises a cure with no mechanism: %r" % ca})
-        elif not _COMMERCIAL_RE.search(ca):
+        elif not _commercial_calls(ca):
             errors.append({"error": "summary-only-promise",
                            "detail": "commercial action %r asks for no real step "
                                      "(book/order/assessment/schedule/call/apply)" % ca})
@@ -983,10 +1019,29 @@ def _blocks(text):
     return out
 
 
+def _is_no_voice_name(tag):
+    """True when a section NAME (before any cue colon) is music-only.
+
+    Whole words only (Unicode-aware word characters keep "Breaké",
+    "breakα" and "Break_more" one word, never "break" plus a separator), so
+    "Breakthrough" stays sung. A cue word after the colon ("Verse:
+    instrumental bed") never makes a voiced section music-only.
+    """
+    name = str(tag or "").split(":", 1)[0]
+    return any(w in ("instrumental", "break")
+               for w in re.findall(r"\w+", name.lower(), re.UNICODE))
+
+
 def closing_block(sheet_text):
-    """The closing block: the last non-[End], non-instrumental section, or None."""
+    """The closing block: the last non-[End], non-instrumental section, or None.
+
+    Only the tag's NAME decides: a cue word ("over a light instrumental
+    bed") never makes a closing unfindable, so an earlier "Book a call."
+    cannot mask a closing quiz line.
+    """
     blocks = [b for b in _blocks(sheet_text)
-              if not re.search(r"\bend\b|instrumental", b["tag"], re.I)]
+              if not re.search(r"\bend\b", b["tag"], re.I)
+              and not _is_no_voice_name(b["tag"])]
     return blocks[-1] if blocks else None
 
 
@@ -1009,16 +1064,22 @@ def check_payload_closing(sheet_text, commercial_action=None, require_cta=False)
         out.update(outcome="rejected", reason_code="magical-cure",
                    detail="the closing promises a cure with no mechanism")
         return out
-    if not _COMMERCIAL_RE.search(body):
+    calls = _commercial_calls(body)
+    if not calls:
         out.update(outcome="rejected", reason_code="summary-only-promise",
                    detail="the closing asks for no commercial action "
                           "(book/order/assessment/schedule/call/apply)")
         return out
     if commercial_action is not None:
-        want = _COMMERCIAL_RE.search(str(commercial_action))
-        if want and not re.search(r"\b%s\b" % re.escape(want.group(1)), body, re.I):
+        want = _commercial_calls(commercial_action)
+        if not want:
             out.update(outcome="rejected", reason_code="closing-not-approved-call",
-                       detail="the closing lacks the approved action %r" % want.group(1))
+                       detail="the approved commercial action asks for no real step: %r"
+                              % commercial_action)
+            return out
+        if want[0] not in calls:
+            out.update(outcome="rejected", reason_code="closing-not-approved-call",
+                       detail="the closing lacks the approved action %r" % want[0])
             return out
     out.update(outcome="ok", reason_code="closing-ok",
                detail="the closing carries the commercial call")

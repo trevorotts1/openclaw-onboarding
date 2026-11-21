@@ -136,21 +136,24 @@ def delivery_of_tag(tag):
     or None for a BARE structure tag ([Verse], [Chorus], [Bridge], [Hook]).
 
     None is the O3 fault: a bare tag beside delivery-named ones let Suno
-    read the "sung" blocks as more of the same speech (review G4). The
-    EARLIEST delivery word in the tag wins, so a named lead may still say
-    "speaks softly" without turning a [Sung - ...] block spoken; ties go
-    rap -> spoken -> sung. Matched at word boundaries on a normalized tag,
-    so "trap beat" and "rapid" are never read as rap.
+    read the "sung" blocks as more of the same speech (review G4). A declared
+    [Name (sung|spoken|rap): cue] names its own delivery: cue words ("over a
+    light instrumental bed") never decide it. Otherwise the EARLIEST delivery
+    word in the tag wins, so a named lead may still say "speaks softly"
+    without turning a [Sung - ...] block spoken; ties go rap -> spoken ->
+    sung. Matched at word boundaries on a normalized tag, so "trap beat" and
+    "rapid" are never read as rap.
     """
-    norm = re.sub(r"[^a-z0-9]+", " ", str(tag or "").lower()).strip()
-    if not norm:
+    raw = str(tag or "")
+    if not raw.strip():
         return None
     # FU-U1: THE grammar lives in suno_recipe.parse_tag. Delegating keeps one
-    # owner, so this gate and the lyric gate measure the same sheet.
+    # owner, so this gate and the lyric gate measure the same sheet. Pass the
+    # RAW tag: normalizing first would strip the declared-delivery parens.
     if _CORE not in sys.path:
         sys.path.insert(0, _CORE)
     from suno_recipe.suno_recipe import parse_tag
-    return parse_tag(norm)
+    return parse_tag(raw)
 
 
 def is_spoken(block):
