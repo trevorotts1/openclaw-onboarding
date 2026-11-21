@@ -331,11 +331,27 @@ def render(brief, evidence, outdir, bundle=None):
 
 def envelope(command, run_id, outcome, reason_code, next_action,
              data=None, evidence_refs=None, state_version=None):
-    return {"schema_version": SCHEMA_VERSION, "tool_version": TOOL_VERSION,
-            "command": command, "run_id": run_id, "outcome": outcome,
-            "reason_code": reason_code, "next_action": next_action,
-            "evidence": evidence_refs or [], "data": data or {},
-            "state_version": state_version or {"expected": None, "current": run_id}}
+    env = {"schema_version": SCHEMA_VERSION, "tool_version": TOOL_VERSION,
+           "command": command, "run_id": run_id, "outcome": outcome,
+           "reason_code": reason_code, "next_action": next_action,
+           "evidence": evidence_refs or [], "data": data or {},
+           "state_version": state_version or {"expected": None, "current": run_id}}
+    if outcome != "ok":
+        # Owner order 2026-11-20: the research stop is client-facing (a bare
+        # brief waits, a bad source is rejected), so it carries the four-part
+        # message beside the code. Read-only; the outcome and exit code stay.
+        try:
+            _core = str(Path(__file__).resolve().parents[1])
+            if _core not in sys.path:
+                sys.path.insert(0, _core)
+            import loud_failure  # noqa: PLC0415 - core/ resolved at call time
+            detail = "; ".join(str(e) for e in (env["data"].get("errors") or []))
+            env["client_explanation"] = loud_failure.explain_stop(reason_code, None, {
+                "reason_code": reason_code, "detail": detail,
+                "next_action": next_action})
+        except Exception:  # noqa: BLE001 - an explanation never breaks a stop
+            pass
+    return env
 
 
 # Keyless gatherer outcomes that mean "not yet, ask again" rather than "the

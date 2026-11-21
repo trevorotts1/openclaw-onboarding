@@ -56,6 +56,123 @@ frontmatter `version:` field).
 - **"Take the quiz" is a call to action.** The closing check now accepts "take the quiz", "take our quiz", "take this quiz" and "start the quiz". The bare word "quiz" still asks for nothing and is still refused. A negated call asks for nothing whatever its shape: a colon never ends the negation's sentence ("Do not: take the quiz." is refused) and negative subjects refuse too ("Nobody should take the quiz.", "No one should take the quiz."). The guard applies to every action phrase and reaches across line breaks ("Never\ntake the quiz.", "Do not\nbook a call." are refused; "Do not wait. Take the quiz now." in its own sentence still counts).
 - **Unchanged.** Real `[Instrumental]`, `[Instrumental Break: band only]` and `[Break]` sections with a lyric line under them are still refused. No word budget, opener length, sung share or sung-section count changed. New tests: `scripts/core/suno_recipe/test_cue_false_positives_s75.py` and `scripts/core/suno_recipe/test_gatefix_round2_s75.py` (failing-first on head `c041cc6e`). Same change as the 999-setup twin (PR #465).
 
+## v2.9.208 - 2026-11-21 - round-3 findings: blocked script and research stops, a charge that really happened, the named length
+
+- **Blocked script and research stops explain themselves.** `script_approval.stage`'s
+  three `blocked` returns (missing script, failed story/lyric checks, a failed
+  re-check after the client's edit) now carry a four-part
+  `client_explanation` beside their problems. The research stage's own
+  `envelope()` carries one on every non-ok outcome (waiting on a bare brief,
+  a rejected source, an unreadable brief, a failed render). Both name no file
+  path: the problems still name files for the operator, the client text never does.
+- **No message says "nothing was charged" after a charge.** A stop whose own
+  envelope records credits consumed, a cost, an accepted submit or generated
+  media now has every no-charge sentence removed from all four parts, and
+  `what_happened` says plainly what was already spent. A stop with no such
+  record keeps its no-charge promise untouched.
+- **The fitting length is named, not implied.** The words-over-budget row now
+  interpolates the fitting duration (`a {fit_length} song fits your words and
+  opening`), so the client reads "a 2-minute song", never "that length".
+- **A stop with every word cut still offers the agent doing the work.** The
+  all-cut fallback keeps the agent-works choice instead of dropping it, and it
+  still names no cause, so it invents nothing.
+- **No message promises a job never fails halfway.** Four rows claimed that
+  checking a tool or a balance guarantees no halfway failure. Checking a tool
+  cannot promise that, so each now says what the check really does: the
+  problem is found before money goes out.
+- **Tests.** `test_stop_explanations_s75.py` gains one test per finding above,
+  plus a behavioral test that drives the real script-stage and research
+  envelopes and fails if either ships a stop with no four-part message. Its
+  `generate` fixture now uses the declared-delivery tag dialect the parser
+  actually accepts (`[Name (spoken)]`), which the round-3 parser change made
+  necessary. A dropped conditional block no longer leaves its separator
+  stranded at the front of a sentence ("Or trim the words" now reads
+  "Trim the words"). Whole suite: 17 tests, all pass.
+- **The entrypoint citations follow SKILL.md.** The new "When something
+  stops the work" section moved every later SKILL.md line down by 64, and
+  `tests/fixtures/999_entrypoints.json` pins the line each advertised
+  command sits on. The seven pins were re-read from the file and updated,
+  so the package adapter suite is 37/37 again.
+
+## v2.9.207 - 2026-11-21 - every client-facing stop explains itself, and the explainer invents nothing
+
+This pull request carries three UX rounds on skill 75; they ship together under
+this one stamp. Rounds are recorded in order below.
+
+- **CLI ChoiceError prints the envelope.** `song_choices.main`'s `except
+  ChoiceError` path prints the structured envelope (reason, detail, next
+  action and four-part `client_explanation`) on stdout beside the stderr
+  refusal, exit 5; the unanswered-approval hold rides `client_explanation`
+  on the exception. New `CHOICE_REFUSED` table row + inventory entry.
+- **Retake stops explained.** `retake_manager` rejections (`TARGET_IN_BAND`,
+  `PROFILE_UNAVAILABLE`, `REPAIR_CAP_EXHAUSTED` and every `_reject`) carry
+  `client_explanation` beside the code; new `TARGET_IN_BAND` table row.
+- **Worked example matches the gate.** The SKILL.md LYRICS_REJECTED example
+  no longer promises a 2-minute song for a 62-word opening (no offered
+  length fits it): the message says to shorten the opening first.
+- **Unknown fallback invents nothing.** A stop whose own words were all cut
+  says its details cannot be shown safely and offers only asking for more
+  about this stop or pausing; only stops with surviving words keep the
+  generic action choices.
+- **RecipeError path keeps its behavior.** The `generate` RecipeError envelope
+  keeps the same code, words and exit 5; `next_action` stays the message's
+  own fix line, never a new instruction.
+
+
+- **Raw refusals now carry the message.** `song_choices.cmd_generate`'s three
+  bare `ChoiceError` exits (conflicting run roots, missing measure/save
+  transport, missing hook text) ride a `client_explanation` on the exception;
+  the exit and the refusal words are unchanged. `intake_preflight.preflight`
+  stops and the `kie_dispatch` frame-upload refusal print their
+  `client_explanation` beside the existing fields.
+- **No uncovered client-facing stop.** New table rows for the word-timing,
+  fork-record, script-check, approval-state and frame-binding stops, plus the
+  lifecycle `state-file-missing` / `music-run-id-ambiguous` stops; the test
+  inventory scans them and fails on any new stop without a row.
+- **No false charge claim.** The unknown-code fallback no longer says anything
+  about charges; only a stop whose own envelope records a charge says
+  "nothing was charged".
+- **No path in a client message.** Run-folder and /tmp paths are cut from
+  explanation words (anything outside the run still rejects the whole text),
+  and a lyric line carrying a path renders as "that line".
+- **The longer-song fix clears both gates.** `length_that_fits` now names a
+  length that passes the word budget AND the spoken-intro cap; when no
+  offered length fits (a 62-word opener fits none), the message says to
+  shorten the opener instead of naming a length the gate would still refuse.
+
+
+- **The client is never left at a dead stop.** A client's song was refused for
+  having too many words and an over-long spoken opening, and the only thing
+  anyone saw was a reason code. Now every stop the client can meet carries a
+  plain four-part message: what happened (with the real numbers), why the rule
+  exists, what will fix it, and 2-4 numbered choices that always include one
+  where the agent does the work.
+- **One table, one helper.** `references/client-messages.md` gains the
+  four-part table "Every stop explained" (the one-sentence table stays).
+  `scripts/core/loud_failure.py` gains `explain_stop(reason_code, facts,
+  envelope)`, which fills the table's numbers and, for a code with no row,
+  still builds all four parts from the envelope's own words (never a code, a
+  file path or a trace).
+- **The song-length fix names a length that fits.** `suno_recipe.length_that_fits`
+  uses the skill's own length plan to find the shortest offered length whose
+  word budget and spoken-opening cap a sheet passes; a too-wordy 90-second song
+  is told "a 2-minute song fits these words", with the choices "make the song
+  longer, up to 2 minutes", "I trim the words and show you" and "keep your
+  words and I check again".
+- **Wired where stops already leave the code.** `kie_dispatch` envelopes (so
+  `MISSING_AUTH_REF`, `REPAIR_CAP` and `CARD_UNANSWERED` from the spend ledger
+  and card gate), the factory envelope and its music block
+  (`SONG_FAILURE_AWAITING_CLIENT`), the song-choices attempt envelopes and holds,
+  and the `song_choices.py generate` lyric refusal (`LYRICS_REJECTED`, which
+  used to escape the CLI as a raw traceback and now prints a typed refusal with
+  the explanation and exits 5) all carry a `client_explanation` field beside
+  their existing fields. Nothing was removed.
+- **No gate changed.** Every stop keeps its outcome, reason code and exit code.
+- **Guarded.** `scripts/core/test_stop_explanations_s75.py` lists every
+  client-facing stop and fails when a stop has no table row, a row has fewer
+  than two choices, or a message shows a code, a path or a trace.
+
+
 ## v2.9.155 - 2026-11-02 - chore(batch): version stamp for batch PR #2784 (ST2, X01, F14, PR #2779)
 
 - **G3 version stamp, skill 75 v2.9.154 -> v2.9.155.** Batch PR #2784 combines ST2, X01,
