@@ -27,7 +27,7 @@ from pathlib import Path
 from typing import Any, List
 
 from . import (checks, council, dependencies, image_plan, install_handoff, intake, launch_bridge,
-               launch_plan, package, page_designs, production, route)
+               launch_plan, package, page_designs, production, route, stop_explain)
 from .constants import DECIDED, SEAMS
 
 _TEST_ONLY_REF = "TEST-ONLY"  # the placeholder approval ref on test fixtures
@@ -47,6 +47,32 @@ def _read_json(path: Path) -> Any:
 
 def _emit(obj: Any) -> None:
     print(json.dumps(obj, indent=2, sort_keys=True))
+
+def _tell_client(explanations: List[dict]) -> None:
+    """The words for the client when the run stops (owner order 2026-11-20): what happened, why the rule
+    exists, what fixes it and numbered choices. Printed after the operator line; the code stays above it."""
+    for each in explanations:
+        print("\nCLIENT MESSAGE (say this to the client, in your own warm voice):\n" + each["message"],
+              file=sys.stderr)
+
+
+def _stop_client_message(code: str, detail: str = "",
+                         facts: Any = None, envelope: Any = None) -> dict:
+    """The four-part client explanation of one stop: what happened (with the real numbers), why the
+    rule exists, the fix, and numbered choices. Used at every CLI stop the client can see, so a stop
+    never ends as a raw FAIL line with no answer."""
+    env = dict(envelope or {})
+    env.setdefault("code", code)
+    env.setdefault("detail", detail)
+    try:
+        return stop_explain.explain_stop(code, facts=facts, envelope=env)
+    except Exception:  # noqa: BLE001 — the client explanation must never fail the run
+        return stop_explain.explain_stop(None)
+
+
+def _tell_stop(code: str, detail: str = "", facts: Any = None, envelope: Any = None) -> None:
+    """Print the four-part client explanation of one stop to stderr (operator order 2026-11-20)."""
+    _tell_client([_stop_client_message(code, detail, facts, envelope)])
 
 
 def _launch_event(launch_id: str, event: dict) -> None:
@@ -530,6 +556,9 @@ def cmd_dispatch(args: argparse.Namespace) -> int:
     if args.answers:  # PRD-16: the intake must be the one built from this answers file
         li = _launcher_intake()
         if li is None:
+            _tell_stop("AF-LAUNCH-ANSWERS-SYSTEM",
+                        "the shared answers reader (shared-utils/client_intake/launcher_intake.py) "
+                        "is not installed, so an intake cannot be checked against its answers file")
             print("FAIL shared-utils/client_intake/launcher_intake.py not found; an intake cannot be "
                   "checked against its answers file", file=sys.stderr)
             return 2
@@ -539,6 +568,7 @@ def cmd_dispatch(args: argparse.Namespace) -> int:
             li.verify(_read_json(args.intake), prov, _read_json(args.answers), Path(args.answers))
         except li.AnswersError as exc:
             print(f"FAIL {exc}", file=sys.stderr)
+            _tell_client([stop_explain.explain_exception(exc)])
             return 2
     payload = _read_json(args.intake)
     # The mode is read from the intake's own claim (paid KIE pictures or a stub
@@ -603,6 +633,9 @@ def cmd_questions(args: argparse.Namespace) -> int:
     selected by the bank's own conditions one at a time."""
     eng = _client_intake()
     if eng is None:
+        _tell_stop("AF-LAUNCH-ANSWERS-SYSTEM",
+                    "the shared guided intake (shared-utils/client_intake/engine.py) is not installed, "
+                    "so the interview cannot run from the shared question bank")
         print("FAIL shared-utils/client_intake not found; the interview runs on the shared "
               "guided intake, never a local question list", file=sys.stderr)
         return 2
@@ -655,6 +688,9 @@ def cmd_check(args: argparse.Namespace) -> int:
         print(f"FAIL {len(fails)} violation(s)")
         for f in fails:
             print(" -", f)
+        # Round-2 finding 2: every distinct check failure gets its explanation. Slicing to
+        # three left later blockers unexplained and the client short of the fix.
+        _tell_client(stop_explain.explain_violations([str(f) for f in fails]))
         return 2
     print("PASS package complete")
     return 0
@@ -676,7 +712,15 @@ def cmd_brand(args: argparse.Namespace) -> int:
         allow_paid=bool(args.allow_paid), approval_ref=args.approval_ref,
         model_id=args.model_id, provider=args.provider)
     _emit(result)
-    return 0 if result.get("state") in ("recorded", "created", "brief_ready") else 2
+    state = result.get("state")
+    if state in ("recorded", "created", "brief_ready"):
+        return 0
+    # Finding 1: every brand stop tells the client what happened, why, the fix and the choices.
+    _tell_stop("AF-LAUNCH-IMAGE-PLAN-BRAND",
+                f"brand {state}: {result.get('reason') or result.get('missing_capability') or result}",
+                envelope={"client_message": str(result.get("reason") or ""),
+                          "next_step": "Answer the brand question, or approve the paid logo run."})
+    return 2
 
 
 def cmd_revise_image(args: argparse.Namespace) -> int:
@@ -685,7 +729,14 @@ def cmd_revise_image(args: argparse.Namespace) -> int:
     result = graphics_hooks.revise_asset(Path(args.run), args.item, args.defect,
                                          provider=args.provider, allow_paid=bool(args.allow_paid))
     _emit(result)
-    return 0 if result.get("state") == "regenerated" else 2
+    if result.get("state") == "regenerated":
+        return 0
+    # Finding 1: every revise-image stop tells the client what happened, why, the fix and the choices.
+    _tell_stop("AF-LAUNCH-IMAGE-STAGES",
+                f"revise-image {result.get('state')}: {result.get('reason') or result}",
+                envelope={"client_message": str(result.get("reason") or ""),
+                          "next_step": "Name the page run, the image item and the defect to repair, then retry."})
+    return 2
 
 
 def cmd_seams(_args: argparse.Namespace) -> int:
@@ -701,6 +752,8 @@ def cmd_dependencies(args: argparse.Namespace) -> int:
         try:
             changed = dependencies.stamp_interfaces(root)
         except dependencies.DependencyError as exc:
+            # Finding 1: the shared-interface re-stamp is an operator step; the client gets four parts.
+            _tell_stop("AF-LAUNCH-DEPENDENCY", str(exc))
             print(f"FAIL {exc}", file=sys.stderr)
             return 2
         print(f"{len(changed)} interface hash(es) re-stamped" + "".join(f"\n  {f}" for f in changed))
@@ -710,6 +763,8 @@ def cmd_dependencies(args: argparse.Namespace) -> int:
         report = (dependencies.ensure_runtime_packages(root, mode=mode) if args.install
                   else dependencies.check(root, mode))
     except dependencies.DependencyError as exc:
+        # Finding 1: a preflight refusal tells the client what setup is missing and who fixes it.
+        _tell_stop("AF-LAUNCH-DEPENDENCY", str(exc))
         print(f"FAIL {exc}", file=sys.stderr)
         return 2
     _emit(report)
@@ -744,7 +799,15 @@ def cmd_dependencies(args: argparse.Namespace) -> int:
     print("  UNSELECTED-OPTIONAL: " + (", ".join(cl["unselected_optional"]) or "none"))
     if cl["selected_missing"]:
         print("  SELECTED BUT MISSING: " + ", ".join(cl["selected_missing"]))
-    return 2 if args.install and report["blockers"] else 0
+    # Round-2 finding 1: --install blockers stop the run, so the client gets four parts,
+    # not a bare nonzero exit. The guard sits inside the blockers branch: a clean report
+    # prints its tables and exits 0 without a stop message.
+    if args.install and report["blockers"]:
+        _tell_client([stop_explain.explain_stop("AF-LAUNCH-DEPENDENCY", envelope={
+            "detail": "setup is still missing pieces I could not install: "
+                      + ", ".join(report["blockers"])})])
+        return 2
+    return 0
 
 
 def cmd_sop_ack(args: argparse.Namespace) -> int:
@@ -753,6 +816,8 @@ def cmd_sop_ack(args: argparse.Namespace) -> int:
         result = dependencies.ack_sop(args.sop, args.session, args.sections,
                                       Path(args.root) if args.root else None)
     except dependencies.DependencyError as exc:
+        # Finding 1: a refused read receipt tells the client what to open and what to send.
+        _tell_stop("AF-LAUNCH-SOP-ACK", str(exc))
         print(f"FAIL {exc}", file=sys.stderr)
         return 2
     print(f"OK read receipt written: {result['receipt']}")
@@ -984,6 +1049,7 @@ def main(argv: List[str] | None = None) -> int:
             launch_plan.LaunchPlanError, CliError, production.ProductionError,
             install_handoff.InstallError, dependencies.DependencyError) as exc:
         print(f"FAIL {exc}", file=sys.stderr)
+        _tell_client([stop_explain.explain_exception(exc)])
         return 2
 
 

@@ -207,6 +207,65 @@ I need a moment to get something ready on my side — I'll be right back with yo
 | "the manifest and the receipt" | "a complete folder with everything we made" |
 | "One soft flag: a package isn't importable. Want me to install it?" | Nothing at all. Fix it quietly. |
 
+## When something stops the work (BINDING)
+
+Sometimes a rule or a problem stops the work: a price is missing, the picture budget is too small, the plan
+changed after the client said yes, a page is waiting for their OK. The client is never left with a stop and
+no answer. Every time the work stops, holds or waits and the client would notice, tell them four things, in
+short, warm, everyday words:
+
+1. **What happened.** Exactly what the problem is, with the real numbers.
+2. **Why this rule is here.** One or two sentences on what the rule protects them from. Never "the system
+   says no".
+3. **What will fix it.** The specific fix.
+4. **Their choices.** Two to four numbered things you can do right now, always including one where you do
+   the work. Then let them pick a number.
+
+The words are already written for you. Every stop the launcher can make has its explanation in
+`references/stop-explanations.json`. When a command stops, it prints the operator line first (`FAIL` and a
+code) and then a `CLIENT MESSAGE`: say that message to the client in your own warm voice. The same four
+parts ride in the records beside the older one-line messages (`client_explanation` on each blocker in
+`launch-resources.json` and on each waiting page in the picture-stage report, `client_explanations` in
+`capability-check.json` and in the dispatch report). For any other stop, get the four parts with
+`python3 -m launcher_core.stop_explain <code> "<detail>"`.
+
+- Never show the client a code, a file name, a command or error text. Codes stay in the logs and records.
+  A bare transport note ("HTTP 429 ...") is error text too: the status number is a transport code, not a
+  real count, so the client hears only the plain words ("Billing problem").
+- Say "nothing was charged" only when the stop really happened before any money was spent. An unknown
+  stop names no rule and no cost claim it has no evidence for: its why says only that the work stops and
+  gets sorted instead of guessed.
+- An operator note (a tool path, a run/fix/retry loop) never becomes the client's fix: when the note
+  scrubs to nothing, the fix falls back to "I sort it out, then keep going."
+- Every distinct failure gets its own explanation: never slice the list to the first few, and a blocked
+  install (`dependencies --install` with leftovers) is a stop with four parts, not a bare nonzero exit.
+- A problem on our side keeps the "technical problem" line above as its first sentence. Never ask the client
+  to fix, install or update anything.
+- Never end on a dead stop: the last thing the client reads is their numbered choices.
+
+Worked example (the picture budget is too small for the pages; the stop names 135 pictures and a $95
+budget):
+
+<!-- CLIENT-TEXT:BEGIN stop-explained -->
+Your pages need 135 pictures, but your picture budget of $95 covers only 95.
+Nothing was charged.
+
+Why this rule is here: I never spend money on pictures beyond the limit you set, so your costs never surprise you.
+
+What will fix it: A picture budget that covers every picture, or fewer pictures.
+
+Here's what I can do right now:
+1. I work out the budget that covers every picture and send it to you to approve.
+2. I use fewer pictures so everything fits your budget.
+3. I make a practice version with free placeholder pictures first, so you can see the pages.
+
+Just tell me the number you'd like.
+<!-- CLIENT-TEXT:END -->
+
+**Maintainer rule.** Every new stop the client can see ships with its row in
+`references/stop-explanations.json` (what happened, why, fix, two to four choices). `tests/test_stop_explanations.py`
+reads every stop code in this skill's code and fails when one has no row.
+
 ## Operator reference (NEVER read, summarize or paraphrase anything from here to the end of the file to the client)
 
 Everything below is for the operator and for you as the engine room. It is technical on purpose. If the
