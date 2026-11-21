@@ -14,6 +14,7 @@
 - Wired where the launcher already turns a stop into client words: every command refusal now prints a `CLIENT MESSAGE` after the operator `FAIL` line, `check` prints one for its first violations, and a `client_explanation` (or `client_explanations`) field rides beside the existing fields on linked-destination blockers, capability blockers, the dispatch report and summary, and each waiting page in the picture-stage report. Nothing was removed.
 - `SKILL.md` gains the binding section "When something stops the work" with a worked example and the maintainer rule. New `tests/test_stop_explanations.py` (offline, nothing spent) fails when a stop in the code has no explanation row, when a row lacks a part or has fewer than two choices, or when a rendered message shows a code, a path or a stack trace.
 - Skill 83 0.2.39 -> 0.2.40 (no per-skill CHANGELOG file). Pinned launcher files changed; the Skill 49 prover pin needs a CI mint (not hand-minted). Not merged, deployed or rolled onto any client box.
+
 ## [Unreleased]  -  2026-11-20  -  Skill 78 (the choose-your-package page): every stop now tells the client what happened, why the rule exists, how to fix it, and what they can choose
 
 - Problem: when the choose-your-package page stopped (a price not approved yet, a "most popular" claim with no proof, payments that do not add up to the price, a design board waiting for approval, and so on), the client got a short internal code and a technical sentence. Nobody told them why the rule was there or what to do next, so the work just stopped.
