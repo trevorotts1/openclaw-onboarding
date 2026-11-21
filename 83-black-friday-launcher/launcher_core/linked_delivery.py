@@ -39,6 +39,7 @@ import json
 from pathlib import Path
 from typing import Any, Dict, List, Mapping, Optional, Sequence
 
+from . import stop_explain
 from .constants import FUNNEL_SKILL_SLUG, skill_path
 
 # The three ownership kinds. Anything else is refused by name.
@@ -122,9 +123,12 @@ def registered_pages() -> Dict[str, Dict[str, Any]]:
 
 def _blocker(code: str, client_message: str, next_step: str, operator_detail: str,
              resource: str) -> Dict[str, str]:
-    """One blocker, stated twice: what the client hears and what the operator sees."""
+    """One blocker, stated twice: what the client hears and what the operator sees. The client side also
+    carries the four-part explanation (what happened, why, fix, choices)."""
     return {"code": code, "resource": resource, "client_message": client_message,
-            "next_step": next_step, "operator_detail": operator_detail}
+            "next_step": next_step, "operator_detail": operator_detail,
+            "client_explanation": stop_explain.explain_stop(code, envelope={
+                "detail": operator_detail, "client_message": client_message, "next_step": next_step})}
 
 
 def _requirements_problems(entry: Mapping[str, Any], key: str) -> List[Dict[str, str]]:

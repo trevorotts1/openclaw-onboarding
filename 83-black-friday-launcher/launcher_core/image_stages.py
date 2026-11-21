@@ -79,6 +79,7 @@ import sys
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
 
+from . import stop_explain
 from .constants import REPO_ROOT, resolve_ref
 
 STAGES = ("image-inventory-prompts", "image-generation-qc", "image-map-upload",
@@ -1451,6 +1452,10 @@ def drive(run_dir: Path, *, runner: Runner = default_runner, provider: str = "st
         entry.update(status="unexpected_run",
                      reason=f"this run is not a page {planned_source or 'the launch'} plans")
         pages.append(entry)
+    for p in pages:  # a held or waiting page tells the client what happened, why, the fix and the choices
+        if p.get("status") != "complete":
+            p["client_explanation"] = stop_explain.explain_stop(f"image_stage:{p.get('status')}",
+                                                                envelope={"detail": p.get("reason") or ""})
     missing = [p["page_key"] for p in pages if p.get("status") == "missing_page"]
     complete = bool(pages) and all(p["status"] == "complete" for p in pages) and not missing
     report = {"schema": SCHEMA, "run_dir": str(run_dir.resolve()), "stages": list(STAGES),
