@@ -1,7 +1,7 @@
 ---
 name: signature-funnel
 description: Builds a Trevor Otts Signature Funnel — the SACRED 12-section Hero copy system, per-section long-form image prompts sized to the model's own character budget (95 to 100 percent of its maximum, never below 80 percent), GHL media + funnel build, and a configurable 3/5/7-step funnel (Main -> Checkout -> Upsell-1 -> Downsell-1 -> Upsell-2 -> Downsell-2 -> Thank-You with accept/decline branching). Gates the sacred method with fail-closed deterministic provers: the intake gate, the 12-section copy contract (per-section char/word bands, six page profiles), the image-prompt two-floor gate (length and structure), and a no-pitch (clean thank-you) + image-provenance gate. A canonical fail-closed entry (deps/version/dept-map/hash-pin/bypass-scan/operator key) drives a no-skip orchestrator that issues a signed PROCESS-CERTIFICATE only on all-phases-pass. Delegates image generation to Skill 66 (model policy) then Skill 74 (the one approved KIE transport) and the media hosting (P4) and funnel/page build (P7) to the delivery rail the brief names, which proves them with signed receipts. Client runtime uses the client's own providers, never Anthropic.
-version: v2.1.62
+version: v2.1.66
 ---
 
 # Signature Funnel (Skill 49)
@@ -173,6 +173,53 @@ The copy ledger and `build_receipt.json` are written by the run's own agent, so 
 - **`prove_sf_cert.py`** — the signed PROCESS-CERTIFICATE: contiguous phase order, all pass, valid HMAC.
 
 Each prover ships a `--self-test` with VALID + VIOLATION fixtures; run everything with `bash verify.sh`.
+
+## When something stops the work (BINDING)
+
+The client is never left with a dead stop. Whenever a gate, a rule or an error stops a Skill 49 run (a prover
+violation, a phase abort, a front-door refusal, a launch plan waiting on a fact, a missing approval), tell the
+client four things in fifth-grade words, in this order:
+
+1. **What happened** - exactly what the problem is, with the real names and numbers.
+2. **Why this rule exists** - one or two sentences on what the rule protects the client from.
+3. **What will fix it** - the specific fix.
+4. **Your choices** - 2 to 4 numbered things the agent can do right now, always one where the agent does the work.
+
+Never show the client a reason code, a file path or a traceback; those stay in logs, `process_manifest.json` and
+receipts. Say "this check did not spend any money" only when the stop really came before any spend (the table
+marks it). Never end on a dead stop: always end with the numbered choices.
+
+The words live in one table, `references/stop-explanations.json` (one entry per stop), and one helper fills them in:
+`python3 scripts/funnel_stop_explainer.py --from-output <file|->` reads any refusal output, `--code <code> --facts '<json>'`
+explains one code, and `funnel_stop_explainer.explain_stop(reason_code, facts, envelope)` does the same in Python. Where a
+stop is already turned into output, the plain message is already there: the orchestrator prints `FOR THE CLIENT:`
+and writes `client_explanation` into `process_manifest.json` beside `aborted_at`; `launch_intake.assemble_plan`
+returns `client_explanation` beside `missing`; a blocked launch checkpoint carries `client_explanation`; the
+intake, dispatch and image-step command lines print `FOR THE CLIENT:` after their `FAIL` / `REFUSED` line; and
+`signature-funnel-entry.sh` prints `FOR THE CLIENT:` after every `ABORT [TAG]` line it or `front_door.py` writes
+(a bad flag, a missing job folder, the wrong mode, a seal mismatch, a bypass). Send that message as it is. A stop
+the table does not know uses its own words only when they are plain sentences about the client's own work; a bare
+code, an exception name, an environment name, a path, or machinery talking about itself (bytes, checksums,
+archives, schemas) falls back to the table's plain default.
+
+Worked example. P1 stops with `AF-FUN-SEC12-WORDS` (the founder letter on the sales page is 160 words). The
+client reads:
+
+> What happened: Section 12 (The Big Bold Heartfelt Message) on the Signature Sales Page has 160 words. It must
+> be between 100 and 150 words. This check did not spend any money.
+> Why this rule exists: These lengths are part of the Signature Funnel method and they never change. The
+> personal letter has to fit its space on the page.
+> What will fix it: Make Section 12 (The Big Bold Heartfelt Message) on the Signature Sales Page between 100 and
+> 150 words.
+> Your choices: 1. I rewrite Section 12 (The Big Bold Heartfelt Message) on the Signature Sales Page to fit, and
+> show you before anything else runs. 2. You send me the change yourself and I check it right away. 3. Keep it as
+> it is and I check it again, so you can see the exact numbers.
+
+**Maintainer rule:** every new client-facing stop ships with its entry in `references/stop-explanations.json`.
+`scripts/test_funnel_stop_explainer.py` collects every `AF-FUN-*` code from the code and every entry-shell abort tag, and
+fails when one has no entry of its own (a parent entry never stands in for a missing child), when an entry lacks
+a part or has fewer than 2 choices, when the client words carry a code, an exception name or a path, or when an
+entry-shell refusal reaches the client without the four parts.
 
 ## Owner approvals: in chat, by button, or in Command Center (any one works)
 
