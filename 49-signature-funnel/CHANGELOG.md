@@ -1,3 +1,10 @@
+## [v2.1.67] - 2026-11-21 - version only: the prover pin re-mint for the Skill 83 stop explainer touches this skill's pin file
+
+- Why: the Skill 83 stop-explainer work in this pull request changes pinned launcher files, so the Skill 49 prover pin (`scripts/SF-PROVER-PIN.sha256`) is re-minted for the new tree. That pin file lives inside this skill, so Skill 49 has to carry its own patch bump or the batch version-agreement guard finds `VERSION` at v2.1.66 against a bumped `skill-version.txt`.
+- Change: no code, no behaviour, no wording. `VERSION`, `skill-version.txt` and the `SKILL.md` frontmatter move together from v2.1.66 to v2.1.67. `scripts/SF-PROVER-PIN.sha256` is untouched here — the `sf-prover-pin-authority` workflow mints it, never by hand.
+- Guard notes: `VERSION`, `SKILL.md`, `skill-version.txt` and this `CHANGELOG.md` are not pinned, so the pin digest is unchanged by this bump.
+- Migration: none. Risk: LOW (a version-marker roll only).
+
 ## [v2.1.66] - 2026-11-21 - round 4: Skill 49's stop explainer gets its own module name so Skill 78's can never be shadowed
 
 - Problem: the merge onto current main put two modules named `explain_stop.py` in the repo — Skill 49's (`scripts/explain_stop.py`) and Skill 78's (`78-signature-product-selection/scripts/explain_stop.py`, landed by PR #3890). `shared-utils/signature_launch_contract/offer_mapper.py` loads Skill 78's `build_selection_plan.py` by path, and that file does `from explain_stop import report_stop` at module scope. Python returned whichever `explain_stop` was already in `sys.modules`; when Skill 49's scripts directory is first on `sys.path`, 78's builder got 49's module and died with `ImportError: cannot import name 'report_stop'`. Every Skill 49 caller of `offer_mapper.currency_exponent` / `format_money` broke (14 checkout-wrapper tests after the merge, all green on main and on the pre-merge branch head).

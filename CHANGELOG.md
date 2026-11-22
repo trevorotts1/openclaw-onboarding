@@ -6,6 +6,7 @@
 - Two failures that share one code now get two explanations. `explain_violations` keys on the whole failure, not the code alone, so two blocked pages produce two messages; only a literally repeated line is shown once.
 - The operator line carries no credential and no operator disk path: every `FAIL` line is printed through `stop_explain.operator_text`, which keeps the reason code the agent and the log need and drops credentials and absolute operator paths. Relative repository paths stay, because the agent needs them to find the file.
 - Skill 83 0.2.40 -> 0.2.41. Five new tests in `tests/test_stop_explanations.py` (one per finding, each with its control). Guards `scripts/bump-version.sh --check` and `scripts/check-doc-currency-guards.sh` pass. Pinned launcher files changed, so the Skill 49 prover pin is minted by CI, not here. Not merged, deployed or rolled onto any client box.
+- Skill 49 v2.1.66 -> v2.1.67 (version only; see its own CHANGELOG file). The re-minted `49-signature-funnel/scripts/SF-PROVER-PIN.sha256` lives inside that skill, and the batch version-agreement guard needs its `VERSION`, `skill-version.txt` and `SKILL.md` frontmatter to move with it. No behaviour change. Migration: none. Risk: LOW.
 
 ## [Unreleased]  -  2026-11-20  -  Skill 83: every stop explains what happened, why the rule exists, the fix, and the client's choices
 
