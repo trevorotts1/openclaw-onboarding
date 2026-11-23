@@ -176,6 +176,159 @@ def validate_result(res: Any, request: Optional[Dict[str, Any]], *,
 #: keeps its status at "authored"; the client_delivery scope then refuses it.
 REVIEW_PENDING = "REVIEW-PENDING"
 LEDGER_NAME = "dispatch-session-registry.json"
+#: B4. An accepted review record that names Skill 71 Review Receipt v2 files
+#: which do not all verify leaves the page where it was, with this blocker.
+RECEIPT_PENDING = "REVIEW-RECEIPT-PENDING"
+#: Skill 71 references/qc-contract.md "Named review criteria": the page-design
+#: stages whose Review Receipt v2 proves the page, and the items each must score.
+#: A wireframe, prompt or image receipt reviews part of a page, never the page.
+PAGE_RECEIPT_CRITERIA = {
+    "visual-mockup": ("composition_fidelity", "brand_token_discipline",
+                      "banned_pattern_absence", "section_rhythm_variety",
+                      "image_slot_integrity"),
+}
+PAGE_RECEIPT_CRITERIA["final-mockups"] = \
+    PAGE_RECEIPT_CRITERIA["visual-mockup"] + ("mockup_trait_fidelity",)
+RECEIPT_MIN_SCORE = 8   # stage-contract.json min_scores.each for both stages
+RECEIPT_MIN_NOTE = 40   # write_review.py MIN_NOTE_CHARS
+# stage_gate.py PLACEHOLDER_SESSIONS: none of these names a real session or model.
+_PLACEHOLDERS = {"", "-", "none", "null", "nil", "n/a", "na", "tbd", "todo",
+                 "native", "placeholder", "fake", "dummy", "test", "unknown",
+                 "unknown-author", "0"}
+
+
+def _named(value: Any) -> bool:
+    return isinstance(value, str) and value.strip().lower() not in _PLACEHOLDERS
+
+
+def receipt_problems(ref: Any, base: Path, result: Dict[str, Any],
+                     reviewer: Any, ledger: Any) -> List[str]:
+    """Why one {path, sha256} pointer is not a passing, independent Skill 71
+    Review Receipt v2 of THIS page's mockup (empty when it is)."""
+    if not isinstance(ref, dict) or not isinstance(ref.get("path"), str) \
+            or not ref["path"].strip():
+        return ["a review_receipts entry names no path"]
+    path = Path(ref["path"])
+    path = path if path.is_absolute() else base / path
+    where = f"receipt {ref['path']}"
+    try:
+        raw = path.read_bytes()
+        rec = json.loads(raw)
+    except (OSError, ValueError) as exc:
+        return [f"{where} is unreadable ({exc})"]
+    fails: List[str] = []
+    if hashlib.sha256(raw).hexdigest() != ref.get("sha256"):
+        fails.append(f"{where} does not hash to the sha256 the review record "
+                     "names (it changed after it was recorded)")
+    if not isinstance(rec, dict):
+        return fails + [f"{where} is not a JSON object"]
+    stage = path.parent.name
+    if path.parts[-4:-2] != ("private", "reviews") \
+            or path.name != f"{rec.get('item')}.review.json":
+        fails.append(f"{where} is not a Skill 71 Review Receipt v2 file "
+                     "(private/reviews/<stage>/<item>.review.json)")
+    need = PAGE_RECEIPT_CRITERIA.get(stage)
+    if need is None:
+        fails.append(f"{where} is a {stage!r} review; only a page-design stage "
+                     f"({', '.join(PAGE_RECEIPT_CRITERIA)}) proves the page")
+        need = ()
+    elif not str(rec.get("artifact") or "").startswith(stage + "/"):
+        fails.append(f"{where} reviewed {rec.get('artifact')!r}, which is not "
+                     f"in its stage folder {stage}/")
+    shas = {a.get("sha256") for a in result.get("artifacts") or []
+            if isinstance(a, dict)}
+    if rec.get("artifact_sha256") not in shas:
+        fails.append(f"{where} reviewed sha256 "
+                     f"{str(rec.get('artifact_sha256'))[:12]}..., which is no "
+                     "artifact of this page (other bytes)")
+    author, rev = rec.get("author_session"), rec.get("reviewer_session")
+    if not (_named(author) and _named(rev)):
+        fails.append(f"{where} does not name a real author and reviewer session")
+    elif author == rev:
+        fails.append(f"{where} is a self-review (reviewer_session == "
+                     "author_session); it never proves a page")
+    if rev != reviewer:
+        fails.append(f"{where} reviewer {rev!r} is not the review record's "
+                     f"reviewer {reviewer!r}")
+    sessions = review_record.ledger_sessions(ledger) if review_record else {}
+    if rev not in sessions:
+        fails.append(f"{where} reviewer {rev!r} is not in the dispatch ledger")
+    elif sessions[rev].get("model") not in (None, rec.get("reviewer_model")):
+        fails.append(f"{where} reviewer_model disagrees with the dispatch "
+                     "ledger's recorded model")
+    if rec.get("independent_review") is not True:
+        fails.append(f"{where} does not record an independent review")
+    am, rm = rec.get("author_model"), rec.get("reviewer_model")
+    if rec.get("model_independence") != "independent" or not (
+            _named(am) and _named(rm)) or am.strip().lower() == rm.strip().lower():
+        fails.append(f"{where} does not prove model independence (author and "
+                     "reviewer models must both be named and differ)")
+    if rec.get("verdict") != "pass":
+        fails.append(f"{where} verdict is {rec.get('verdict')!r}, not 'pass'")
+    if rec.get("automatic_failures") != []:
+        fails.append(f"{where} does not record zero automatic failures")
+    criteria = rec.get("criteria") if isinstance(rec.get("criteria"), dict) else {}
+    missing = [c for c in need if c not in criteria]
+    if missing:
+        fails.append(f"{where} lacks required score item(s): {', '.join(missing)}")
+    for name, entry in sorted(criteria.items()):
+        score = entry.get("score") if isinstance(entry, dict) else None
+        note = entry.get("note") if isinstance(entry, dict) else None
+        if isinstance(score, bool) or not isinstance(score, (int, float)) \
+                or score < RECEIPT_MIN_SCORE:
+            fails.append(f"{where} {name} scores {score!r}, below the floor "
+                         f"{RECEIPT_MIN_SCORE}")
+        if not isinstance(note, str) or len(note.strip()) < RECEIPT_MIN_NOTE:
+            fails.append(f"{where} {name} carries no {RECEIPT_MIN_NOTE}-character "
+                         "evidence note")
+    return fails
+
+
+def _stub_drawn(result: Dict[str, Any]) -> bool:
+    """A stage record among the artifacts says the free stub drew the images."""
+    for a in result.get("artifacts") or []:
+        p = Path(str(a.get("path") or "")) if isinstance(a, dict) else None
+        if p is not None and p.name == "stage-executor-record.json":
+            try:
+                if json.loads(p.read_text(encoding="utf-8"))["provider"] == "stub":
+                    return True
+            except (OSError, ValueError, KeyError, TypeError):
+                pass
+    return False
+
+
+def _raise_on_receipts(result: Dict[str, Any], review: Dict[str, Any],
+                       base: Path, ledger: Any) -> None:
+    """B4: raise an accepted page to the client_delivery floor (locally_verified,
+    L2) only on Review Receipt v2 files that ALL verify; never lower, never
+    unblock. A record that names no receipt changes nothing here."""
+    refs = review.get("review_receipts")
+    if refs is None:
+        return
+    problems: List[str] = []
+    if not isinstance(refs, list) or not refs:
+        problems.append("review_receipts must be a non-empty list of {path, sha256}")
+    else:
+        for ref in refs:
+            problems += receipt_problems(ref, base, result,
+                                         review.get("reviewer_session"), ledger)
+    status, proof = result.get("status"), result.get("proof_class")
+    if status not in STATUSES or proof not in LEVELS or status == "blocked":
+        problems.append(f"the page is {status!r} / {proof!r}; a review never "
+                        "unblocks or repairs a page")
+    if _stub_drawn(result):
+        problems.append("the free stub provider drew the images; placeholders "
+                        "are never a verified page")
+    if problems:
+        result["blockers"] = list(result.get("blockers") or []) + [
+            f"{RECEIPT_PENDING}: " + "; ".join(problems)
+            + f"; the page stays {status} / {proof}"]
+        return
+    floor_status, floor_proof = MIN_STATUS["client_delivery"], MIN_PROOF["client_delivery"]
+    if STATUSES.index(status) < STATUSES.index(floor_status):
+        result["status"] = floor_status
+    if LEVELS.index(proof) < LEVELS.index(floor_proof):
+        result["proof_class"] = floor_proof
 
 
 def apply_review(result: Dict[str, Any], review_path: Any = None,
@@ -184,11 +337,16 @@ def apply_review(result: Dict[str, Any], review_path: Any = None,
 
     A supplied review record that review_record accepts (recognised verdict,
     reviewer in the dispatch ledger and not the author, every artifact sha256
-    listed) sets independent_review true and the reviewer session. Anything
-    else (no record, unreadable, refused) leaves independent_review false,
-    drops the status to "authored" and appends a REVIEW-PENDING blocker that
-    names the reason. Returns the ledger/review keywords validate_result needs
-    to re-check the claim when the review was accepted, else None."""
+    listed) sets independent_review true and the reviewer session. When that
+    record also names Skill 71 Review Receipt v2 files (review_receipts:
+    [{path, sha256}], a path relative to the record's folder) and every one
+    verifies (receipt_problems), the page is raised to locally_verified / L2;
+    otherwise it stays where it was with a REVIEW-RECEIPT-PENDING blocker
+    naming why. Anything else (no record, unreadable, refused) leaves
+    independent_review false, drops the status to "authored" and appends a
+    REVIEW-PENDING blocker that names the reason. Returns the ledger/review keywords
+    validate_result needs to re-check the claim when the review was accepted,
+    else None."""
     why = "no review record was supplied (pass --review <record.json>)"
     if review_path:
         try:
@@ -207,6 +365,8 @@ def apply_review(result: Dict[str, Any], review_path: Any = None,
             if not fails:
                 result["independent_review"] = True
                 result["reviewer_session"] = review["reviewer_session"]
+                _raise_on_receipts(result, review,
+                                   Path(review_path).resolve().parent, ledger)
                 return {"ledger": ledger, "review": review}
             why = "the review record was refused: " + "; ".join(fails)
             listed = {a.get("sha256") for a in review.get("reviewed_artifacts") or []
