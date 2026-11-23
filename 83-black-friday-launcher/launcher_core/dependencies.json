@@ -32,9 +32,9 @@
       "ref": "78-signature-product-selection",
       "min_version": "0.2.7",
       "interface_sha256": {
-        "scripts/build_selection_plan.py": "f15394a971606cd3355d0cd11a498a291309f3c19ccaafd02d1a95e19f150d98",
-        "scripts/emit_page_result.py": "f53bac3945a033c01402c3723acdb0113de8adecde2119bd80ac8355b45bb34f",
-        "scripts/run_image_stages.py": "24c8f3a52eee3ff8861201e7283cc39121c588da3a71f5b9464017b94a70b84a"
+        "scripts/build_selection_plan.py": "5fd2192dc25c55b6d2484c8ec871480450595bf2dd1250074b1475c86329fc35",
+        "scripts/emit_page_result.py": "92f7b463deede36c967aba271f4a850234689cab3e8d6cb2c481b0f53dbac59c",
+        "scripts/run_image_stages.py": "caa5ed055eccb9987428c0d33534cf670c0d5008a05ce40fe729182e67110955"
       },
       "required": true,
       "why": "product_selection page producer"
