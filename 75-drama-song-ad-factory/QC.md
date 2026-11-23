@@ -240,6 +240,33 @@ check. FAIL when the master has no assembler receipt (`produced_by.module`,
 Builders call the skill's assembler, lip-sync and caption modules, never
 their own scripts.
 
+**The codes that block delivery, named exactly as the code emits them.** A master
+that hits any of these refuses delivery, not a warning:
+
+- `LIPSYNC_COVERAGE_SHORT` and `LIPSYNC_LINES_TOO_FEW` (from
+  `final_assembler/__init__.py`, re-exported from the coverage and line-count
+  checks) — too little lip-sync, or too few lip-sync lines, for the run.
+- `LIPSYNC_EVIDENCE_MISSING` (`lipsync_evidence.py`) — the per-clip lip-sync
+  evidence row is absent or malformed.
+- `LAST_LINE_OVER_ENDCARD` (`final_assembler/__init__.py`) — the last sung line
+  runs over the end card.
+- `TIMELINE_DUP_FRAMES` (`fps_conform.py`) — the master carries more than the
+  2 percent duplicate-frame cap.
+
+**The timeline-writer codes.** `plan_run_timeline()` (in `assembler.py`) composes
+`edit/timeline.json` from the run folder and writes `TIMELINE_WRITTEN` on success.
+It never invents a default: a missing input is refused as
+`TIMELINE_INPUT_MISSING:<what>` (for example `TIMELINE_INPUT_MISSING:motion_score:<shot>`).
+A hand-built timeline never substitutes for `plan_run_timeline`, and a run folder
+whose timeline was not written by it is a provenance FAIL.
+
+**The sibling lip-sync codes already enforced here stay:** `FACE_SPEAKS_NO_LIPSYNC`,
+`LIPSYNC_COVERAGE_BELOW_BAND`, `LIPSYNC_OVER_CAP` and `LIPSYNC_DURATION_CONFLICT`
+(Part H H4, below). The codes above are added beside them, not in place of them.
+
+**The BUILD-RECORD contract** every delivered run carries is specified in
+section 5.2 (F-ASM-7).
+
 ## 6. Cost / No-Double-Spend Checks (directive 18, enforced with section 17)
 - [ ] Every paid submission has a prior `reserve` and a later `reconcile`
       to actual cost, within the run ceiling recorded by the operator.
