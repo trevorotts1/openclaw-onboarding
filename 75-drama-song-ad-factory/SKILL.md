@@ -1010,20 +1010,6 @@ lacks `produced_by.module` and a matching `master_sha256`
 (`final_assembler/master_provenance.py::check_master_provenance`); nothing in
 the run calls it yet.
 
-**The codes that block delivery, named exactly as the code emits them.** A
-master that hits any of these refuses delivery, not a warning:
-`LIPSYNC_COVERAGE_SHORT` and `LIPSYNC_LINES_TOO_FEW`
-(`final_assembler/__init__.py`, re-exported from `lipsync_coverage`),
-`LIPSYNC_EVIDENCE_MISSING` (`lipsync_evidence.py`), `LAST_LINE_OVER_ENDCARD`
-(`assembler.py` line 147 and `check_last_line_before_endcard`), and
-`TIMELINE_DUP_FRAMES` (`fps_conform.py`, on the whole-master and per-segment
-caps). The timeline writer emits `TIMELINE_WRITTEN` and
-`TIMELINE_INPUT_MISSING` (`assembler.py`; `plan_run_timeline` composes
-`edit/timeline.json` from the run's own records, and it raises
-`TIMELINE_INPUT_MISSING` rather than invent a default). The BUILD-RECORD
-contract in `QC.md` and `INSTRUCTIONS.md` is the record a delivered master
-must carry.
-
 **The delivery-blocking codes, named exactly as the code emits them.** A master
 that hits any of these refuses delivery, not a warning:
 
