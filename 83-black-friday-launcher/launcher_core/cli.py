@@ -300,8 +300,11 @@ def cmd_assemble(args: argparse.Namespace) -> int:
     graph = route.compile_route(normalized)
     advice = council.planning_step(normalized, graph=graph, run_dir=str(source_root),
                                    session=_council_session(args))
+    # SWB-033: with --deliveries, a route page no launcher piece file carries may be a page another skill
+    # installed; assemble then seals it from its verified page-install delivery or refuses it by name.
     pieces = {role: _read_json(pieces_dir / f"{role}.json")
-              for role in (n["role"] for n in graph["nodes"])}
+              for role in (n["role"] for n in graph["nodes"])
+              if not args.deliveries or (pieces_dir / f"{role}.json").is_file()}
     for slot in package.EXTRA_SLOTS:  # a second page of a role (downsell_2) rides beside its parent
         extra = pieces_dir / f"{slot}.json"
         if extra.is_file():

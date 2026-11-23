@@ -362,8 +362,8 @@ def base_intake(*args, **kwargs) -> dict:
 
 def plan_intake() -> dict:
     """An intake whose route carries every page the Black Friday plan lists (the order form, a one-click
-    upsell and downsell, the thank-you; the sales page is added by with_sales_piece). A page another lane
-    delivers has no producer contract, so a full launch needs a launcher piece for each of its pages."""
+    upsell and downsell, the thank-you; the sales page is added by with_sales_piece). Without a verified
+    page-install delivery (SWB-033), a full launch needs a launcher piece for each of its pages."""
     raw = _base_intake_raw()
     raw["offers"] += [
         {"offer_id": "up-1", "name": "Upgrade", "role": "upsell_1",

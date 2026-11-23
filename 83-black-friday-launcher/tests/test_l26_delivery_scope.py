@@ -184,7 +184,7 @@ class PackageScopeTests(_Base):
         from test_delivery_units import with_sales_piece
         from test_launch_plan_law import plan_intake
         plan = plan_fixture()
-        # every page of the plan is a launcher piece: no lane can seal a page (no producer yet)
+        # every page of the plan is a launcher piece (no page-install delivery is supplied here)
         normalized = intake.validate(plan_intake())
         graph = route.compile_route(normalized, self.advice)
         pieces = with_sales_piece(pieces_for(self.run_dir, graph, normalized), self.run_dir, normalized)

@@ -2,7 +2,7 @@
 name: black-friday-launcher
 description: "Helps a business owner get their whole Black Friday sale ready, step by step: the sales page, the order form, the special offers, the thank-you page, and the launch emails and text messages. Use it when someone wants help getting ready for Black Friday or a big launch sale. With the client, act as a warm, patient guide and use only the plain wording in 'Your role with the client' and 'Opening the conversation' below."
 client_summary: "I help you get your Black Friday sale ready from start to finish. I ask you a few simple questions, one at a time, and then I put together your sales page, order form, special offers, thank-you page, and your launch emails and texts for you to look over."
-version: 0.2.43
+version: 0.2.44
 priority: HIGH
 ---
 
@@ -566,10 +566,22 @@ steps, all DRAFT-ONLY (nothing is sent and nothing goes live):
    including a self-declared one, is refused) and, for an email, when `validate_delivery.py --check`, run by path
    from the package folder, exits 0; an absent validator or a failed re-check refuses the unit
    (`AF-LAUNCH-PKG-RECEIPT-LANE`). A text set is checked against its contract id only until Skill 44 ships a
-   text-set validator. A page the launcher builds itself is proved by its own page row. A page another lane
-   delivers and the Conversation AI have no producer contract yet (their allow-list is empty), so `assemble` and
-   `check` refuse any lane delivery for them with `AF-LAUNCH-PKG-RECEIPT-LANE` ("has no producer yet"), whatever
-   contract string it carries. Every lane unit's files keep their producer's `role` tag and are sealed under the
+   text-set validator. A page the launcher builds itself is proved by its own page row; a page another skill installed is `skill06.page-draft-install.v1`
+   (a GoHighLevel DRAFT page a page skill installed through Skill 06's rail, delivered with no launcher piece
+   file): its delivery carries a `page_install` record (`page_id`, `funnel_id`, `step_id`, `location_id`,
+   `draft_version_id`, `content_sha256`, `preview_http_status` 200, `published` false, `installed_by`,
+   `read_by`) plus two kinds of files, and `assemble` and `check` re-read every fact from those files, never
+   from the record: one or more `install_receipt` artifacts, one of which is written by `installed_by` (its
+   `unit`) and names this page, this location and this exact draft (its version id or content sha256), and
+   exactly one `independent_readback` artifact (`kind` `rest_readback`, read by GET, written by `read_by`, a
+   different unit than the installer) whose `pages.<unit id>` record shows HTTP 200, the same page, funnel and
+   step ids, not deleted, no published version, a `draft` top version with that version id and content sha256,
+   and preview HTTP 200. A published page, a self-read, a mismatched id or hash, a missing file or changed
+   bytes is refused (`AF-LAUNCH-PKG-RECEIPT-LANE`). Such a page fills its route slot (recorded as `page_slot` on
+   its row), so `assemble --deliveries` no longer needs `pieces/<role>.json` for it; a route page with neither
+   a piece file nor a page-install delivery is still refused (`AF-LAUNCH-PKG-MISSING`). The Conversation AI has
+   no producer contract yet (its allow-list is empty), so `assemble` and `check` refuse any lane delivery for
+   it with `AF-LAUNCH-PKG-RECEIPT-LANE` ("has no producer yet"), whatever contract string it carries. Every lane unit's files keep their producer's `role` tag and are sealed under the
    unit's own folder in the package (`lanes/<unit id>/...`), so each email sequence's `--check` finds its own files.
 
 A full launch refuses open page blockers (`AF-LAUNCH-PKG-BLOCKERS`), with one exception: a dispatched package that

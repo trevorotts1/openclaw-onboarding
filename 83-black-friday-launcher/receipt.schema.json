@@ -210,7 +210,18 @@
           ]
         },
         "draft_only": {"type": "boolean"},
-        "delivery": {"type": "string", "enum": ["declared"]}
+        "delivery": {"type": "string", "enum": ["declared"]},
+        "page_slot": {"type": "string", "minLength": 1},
+        "page_install": {
+          "type": "object",
+          "required": ["page_id", "funnel_id", "step_id", "location_id", "draft_version_id",
+                       "content_sha256", "preview_http_status", "published", "installed_by", "read_by"],
+          "properties": {
+            "content_sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+            "preview_http_status": {"type": "integer", "const": 200},
+            "published": {"type": "boolean", "const": false}
+          }
+        }
       }
     }
   }

@@ -30,14 +30,15 @@ from test_delivery_units import (ABSENT, APPROVED, EMAIL_VALIDATOR_PATH,  # noqa
 
 CODE = "AF-LAUNCH-PKG-RECEIPT-LANE"
 EMAIL, TEXT, AUTO = (LANE_CONTRACT_IDS[k] for k in ("email", "text", "automation"))
-EXPECTED = {"email": EMAIL, "text": TEXT, "automation": AUTO, "page": None, "conversation_ai": None}
+PAGE = "skill06.page-draft-install.v1"
+EXPECTED = {"email": EMAIL, "text": TEXT, "automation": AUTO, "page": PAGE, "conversation_ai": None}
 LANE = {"lane": "L", "state": "passed"}
 
 
 class ContractAllowListTests(unittest.TestCase):
     def test_each_unit_type_accepts_exactly_its_producers_contract(self):
         for unit_type, expected in EXPECTED.items():
-            for contract in (EMAIL, TEXT, AUTO, "x", "", None):
+            for contract in (EMAIL, TEXT, AUTO, PAGE, "x", "", None):
                 with self.subTest(unit_type=unit_type, contract=contract):
                     fails = du.lane_contract_violations("u1", unit_type, {**LANE, "contract": contract})
                     if contract is not None and contract == expected:
@@ -64,11 +65,11 @@ class ContractAllowListTests(unittest.TestCase):
                     self.assertEqual(len(du.lane_contract_violations("u1", unit_type, lane)), 1)
 
     def test_the_allow_list_names_the_producers_contract_and_no_producer_is_said_so(self):
-        for unit_type in ("email", "text", "automation"):
+        for unit_type in ("email", "text", "automation", "page"):
             fails = du.lane_contract_violations("u1", unit_type, {**LANE, "contract": "x"})
             self.assertIn(repr(EXPECTED[unit_type]), fails[0])
             self.assertNotIn("no producer yet", fails[0])
-        for unit_type in ("page", "conversation_ai", "other"):
+        for unit_type in ("conversation_ai", "other"):
             fails = du.lane_contract_violations("u1", unit_type, {**LANE, "contract": "x"})
             self.assertIn("no producer yet", fails[0])
 
@@ -76,7 +77,7 @@ class ContractAllowListTests(unittest.TestCase):
         self.assertEqual((du.CODE_LANE, du.CODE_PLAN, du.CODE_AUTOMATION),
                          (CODE, "AF-LAUNCH-UNIT-PLAN", "AF-LAUNCH-UNIT-AUTOMATION"))
         self.assertEqual(du.LANE_CONTRACTS, {"email": (EMAIL,), "text": (TEXT,), "automation": (AUTO,),
-                                             "page": (), "conversation_ai": ()})
+                                             "page": (PAGE,), "conversation_ai": ()})
 
 
 class EmailRecheckTests(unittest.TestCase):
@@ -291,13 +292,20 @@ class CheckTimeLoopTests(unittest.TestCase):
         with mock.patch.object(du, "email_delivery_violations", side_effect=AssertionError("email only")):
             self.assertEqual(self.lane_fails([self.row("text_doors_open", "text", TEXT)]), [])
 
-    def test_a_page_another_lane_declared_is_refused_whatever_it_carries(self):
+    def test_a_page_another_lane_declared_is_refused_under_any_other_contract(self):
         for contract in (TEXT, EMAIL, AUTO, "typed"):
             with self.subTest(contract=contract):
                 fails = self.lane_fails([self.row("page_sales", "page", contract, delivery="declared")])
                 self.assertEqual(len(fails), 1, fails)
                 self.assertIn("page_sales", fails[0])
-                self.assertIn("no producer yet", fails[0])
+                self.assertIn(repr(PAGE), fails[0])
+
+    def test_a_page_under_the_page_contract_with_no_proof_files_is_refused(self):
+        # SWB-033: naming the page-install contract is not proof; the install receipt and read-back are.
+        fails = self.lane_fails([self.row("page_sales", "page", PAGE, delivery="declared")])
+        self.assertEqual(len(fails), 1, fails)
+        self.assertIn("page_sales", fails[0])
+        self.assertIn("page_install", fails[0])
 
     def test_a_page_the_launcher_built_is_not_judged_by_the_lane_law(self):
         for marker in ({}, {"delivery": "launcher"}, {"delivery": None}):

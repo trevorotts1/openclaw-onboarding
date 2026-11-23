@@ -36,6 +36,7 @@ from test_launch_plan_law import (lane_deliveries, pieces_for, plan_fixture, pla
                                   stub_council)
 
 SELF_DECLARED = {"lane": "x", "contract": "y", "state": "passed"}
+PAGE_CONTRACT = "skill06.page-draft-install.v1"
 LANE_CODE = "AF-LAUNCH-PKG-RECEIPT-LANE"
 
 
@@ -98,14 +99,15 @@ class LaneReceiptTests(unittest.TestCase):
         deliveries[self.text]["lane_validation"]["contract"] = LANE_CONTRACT_IDS["email"]
         self.assertIn(LANE_CONTRACT_IDS["text"], self.refused(deliveries))
 
-    # ---- no producer yet (question WP-06a-3): a page another lane delivers and the Conversation AI ----
-    def test_a_page_or_conversation_ai_has_no_producer_so_no_lane_delivery_seals_it(self):
+    # ---- no producer yet (question WP-06a-3): the Conversation AI. A page another skill installed has the
+    # ---- page-install contract (SWB-033, test_external_page_install.py); any other string is refused.
+    def test_a_conversation_ai_has_no_producer_and_a_page_takes_only_its_contract(self):
         for unit_type in ("page", "conversation_ai"):
             for lane in (SELF_DECLARED, {"lane": "S50", "contract": LANE_CONTRACT_IDS["email"], "state": "passed"}):
                 with self.subTest(unit_type=unit_type, contract=lane["contract"]):
                     fails = du.lane_contract_violations("u", unit_type, lane)
                     self.assertEqual(len(fails), 1, fails)
-                    self.assertIn("no producer yet", fails[0])
+                    self.assertIn("no producer yet" if unit_type == "conversation_ai" else PAGE_CONTRACT, fails[0])
                     self.assertTrue(fails[0].startswith(LANE_CODE))
 
     def test_a_requested_conversation_ai_delivered_by_a_lane_is_refused(self):
@@ -122,7 +124,7 @@ class LaneReceiptTests(unittest.TestCase):
         self.assertIn("lane_validation", self.deliveries["page_sales"])
         message = self.refused()
         self.assertIn("page_sales", message)
-        self.assertIn("no producer yet", message)
+        self.assertIn(PAGE_CONTRACT, message)
 
     def test_check_refuses_a_page_row_another_lane_declared(self):
         _, manifest = self.sealed()
@@ -133,7 +135,7 @@ class LaneReceiptTests(unittest.TestCase):
                 row.update(delivery="declared", lane_validation=dict(SELF_DECLARED))
         receipt_path.write_text(json.dumps(receipt, indent=2, sort_keys=True) + "\n", encoding="utf-8")
         fails = checks.check_package(manifest, self.run_dir)
-        self.assertTrue(any(f.startswith(LANE_CODE) and "page_sales" in f and "no producer yet" in f
+        self.assertTrue(any(f.startswith(LANE_CODE) and "page_sales" in f and PAGE_CONTRACT in f
                             for f in fails), fails)
 
     def test_a_certificate_is_sealed_only_when_it_is_64_lowercase_hex(self):
@@ -280,8 +282,9 @@ class SkillDocLockstepTests(unittest.TestCase):
         "automation": r"an automation is Skill 44's build export \(`([\w.-]+)`",
         "email": r"an email sequence is the row .*? writes \(`([\w.-]+)`",
         "text": r"a text set is Skill 44's `([\w.-]+)`",
+        "page": r"a page another skill installed is `([\w.-]+)`",
     }
-    DOC_NO_PRODUCER = r"A page another lane delivers and the Conversation AI have no producer contract yet"
+    DOC_NO_PRODUCER = r"The Conversation AI has no producer contract yet"
 
     def test_every_contract_the_doc_names_is_the_one_the_rule_allows(self):
         for unit_type, pattern in self.DOC_CONTRACT.items():
@@ -295,16 +298,15 @@ class SkillDocLockstepTests(unittest.TestCase):
 
     def test_the_doc_and_the_rule_agree_on_which_unit_types_have_no_producer(self):
         self.assertEqual({t for t, contracts in du.LANE_CONTRACTS.items() if not contracts},
-                         {"page", "conversation_ai"})
+                         {"conversation_ai"})
         self.assertRegex(self.DOC, self.DOC_NO_PRODUCER)
         self.assertNotIn("keep their existing rule", self.DOC)
         self.assertEqual(set(du.LANE_CONTRACTS), {"email", "text", "automation", "page", "conversation_ai"})
 
     def test_the_refusal_text_the_doc_quotes_is_the_refusal_the_rule_gives(self):
-        for unit_type in ("page", "conversation_ai"):
-            fails = du.lane_contract_violations("u", unit_type, {"contract": "anything"})
-            self.assertIn("has no producer yet", fails[0])
-            self.assertTrue(fails[0].startswith(LANE_CODE))
+        fails = du.lane_contract_violations("u", "conversation_ai", {"contract": "anything"})
+        self.assertIn("has no producer yet", fails[0])
+        self.assertTrue(fails[0].startswith(LANE_CODE))
         self.assertIn(f"`{LANE_CODE}` (\"has no producer yet\")", self.DOC)
 
 

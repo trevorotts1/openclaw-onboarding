@@ -19,17 +19,27 @@
   return 0, cannot be sealed.
 * AF-LAUNCH-PKG-RECEIPT-LANE. A unit another lane delivered counts only when its
   ``lane_validation.contract`` is the contract id that unit type's producer writes
-  (``LANE_CONTRACTS``: email = Skill 50, text and automation = Skill 44), never a string the
-  caller typed. A page another lane delivered and the Conversation AI have NO producer yet, so
-  their set is empty and any lane delivery for them is refused by name. An email is also
-  re-verified by Skill 50's own ``validate_delivery.py --check``, run by path exactly as
-  ``validate_graph.py`` is run for an automation; an absent validator or a non-zero exit is a
-  refusal, never a pass.
+  (``LANE_CONTRACTS``: email = Skill 50, text and automation = Skill 44, a page another skill
+  installed = ``skill06.page-draft-install.v1``), never a string the caller typed. The
+  Conversation AI has NO producer yet, so its set is empty and any lane delivery for it is
+  refused by name. An email is also re-verified by Skill 50's own ``validate_delivery.py
+  --check``, run by path exactly as ``validate_graph.py`` is run for an automation; an absent
+  validator or a non-zero exit is a refusal, never a pass.
+* SWB-033. A page another skill installed (a GoHighLevel DRAFT page installed through Skill 06's
+  rail by a page skill) counts only when ``page_draft_violations`` holds: its ``page_install``
+  facts (page, funnel, step, location, draft version id, content sha256, preview status 200,
+  ``published`` false, installed_by, read_by) are re-read from its own sealed files, never
+  believed: one ``install_receipt`` artifact written by ``installed_by`` must name this page, its
+  location and this exact draft (version id or content sha256), and exactly one
+  ``independent_readback`` artifact written by ``read_by`` (a different unit than the installer)
+  must show the live record read by GET: the same ids, a draft top version with that version id
+  and content sha256, no published version, not deleted, preview HTTP 200. Anything unverifiable
+  is refused.
 
 Validator of record per unit type: automations = Skill 44 (here); email = Skill 50 (here, by
 path); text = the contract allow-list only until Skill 44 ships a text-set validator; a page
-another lane delivers and Conversation AI (Skill 38) = none yet, so they cannot be sealed from
-a lane delivery.
+another skill installed = ``page_draft_violations`` (here); Conversation AI (Skill 38) = none
+yet, so it cannot be sealed from a lane delivery.
 """
 
 from __future__ import annotations
@@ -53,10 +63,17 @@ CODE_LANE = "AF-LAUNCH-PKG-RECEIPT-LANE"
 EXPORT_CONTRACT = "skill44.workflow-export.v1"
 EMAIL_CONTRACT = "skill50.email-delivery.v1"
 TEXT_CONTRACT = "skill44.sms-set.v1"
+PAGE_CONTRACT = "skill06.page-draft-install.v1"
 # unit_type -> the contract ids the producing lane may write into lane_validation.contract.
 # An empty tuple means "no producer yet": nothing a caller types can seal that unit type.
 LANE_CONTRACTS = {"email": (EMAIL_CONTRACT,), "text": (TEXT_CONTRACT,), "automation": (EXPORT_CONTRACT,),
-                  "page": (), "conversation_ai": ()}
+                  "page": (PAGE_CONTRACT,), "conversation_ai": ()}
+# SWB-033: the facts a page another skill installed carries, and the artifact roles that prove them.
+PAGE_INSTALL_ROLE = "install_receipt"
+PAGE_READBACK_ROLE = "independent_readback"
+PAGE_READBACK_KIND = "rest_readback"
+PAGE_ID_KEYS = ("page_id", "funnel_id", "step_id", "location_id", "draft_version_id",
+                "installed_by", "read_by")
 BUILD_COMMAND = "caf workflows build --from-automation-build"
 BUILDS_DOC = "automation-builds.json"
 VALIDATOR_REF = "44-convert-and-flow-operator/tools/validate_graph.py"
@@ -172,12 +189,153 @@ def email_delivery_violations(unit_id: str, document: Mapping[str, Any], root: P
     return []
 
 
+def _strings(value: Any) -> List[str]:
+    """Every string value inside a JSON document (keys excluded)."""
+    if isinstance(value, str):
+        return [value]
+    if isinstance(value, Mapping):
+        return [s for v in value.values() for s in _strings(v)]
+    if isinstance(value, list):
+        return [s for v in value for s in _strings(v)]
+    return []
+
+
+def _sealed_json(label: str, art: Mapping[str, Any], root: Path):
+    """(document, refusal): one artifact's JSON, read from its hash-checked bytes inside ``root``."""
+    target = _inside(root, art.get("path"))
+    if target is None:
+        return None, f"{label} artifact {art.get('path')!r} does not resolve inside the package"
+    if hashlib.sha256(target.read_bytes()).hexdigest() != art.get("sha256"):
+        return None, f"{label} artifact {art.get('path')!r} does not match its recorded sha256"
+    try:
+        return _load(target), None
+    except (OSError, ValueError):
+        return None, f"{label} artifact {art.get('path')!r} is not JSON"
+
+
+def page_draft_violations(unit_id: str, row: Mapping[str, Any], root: Path) -> List[str]:
+    """SWB-033: why ``row`` is not a verified DRAFT page another skill installed (empty = it is).
+
+    Every fact in ``row['page_install']`` must be re-read from the row's own sealed files: an
+    ``install_receipt`` written by the installer that names this page and this exact draft, and one
+    ``independent_readback`` written by a different unit that read the live record by GET."""
+    label = f"{CODE_LANE}: unit {unit_id!r} (page)"
+    lane = row.get("lane_validation")
+    if not (isinstance(lane, Mapping) and lane.get("contract") == PAGE_CONTRACT and lane.get("state") == "passed"):
+        return [f"{label} lane_validation is not a passed {PAGE_CONTRACT!r}"]
+    facts = row.get("page_install")
+    if not isinstance(facts, Mapping):
+        return [f"{label} carries no page_install record (page, funnel, step, location, draft version, "
+                "content sha256, preview status, published, installed_by, read_by)"]
+    wrong = [f"page_install.{key} is missing" for key in PAGE_ID_KEYS if not lp._nonempty_str(facts.get(key))]
+    sha = facts.get("content_sha256")
+    if not (isinstance(sha, str) and len(sha) == 64 and all(c in "0123456789abcdef" for c in sha)):
+        wrong.append("page_install.content_sha256 is not 64 lowercase hex")
+    if facts.get("published") is not False:
+        wrong.append(f"page_install.published is {facts.get('published')!r}, not false: only an unpublished "
+                     "DRAFT page is delivered by this contract")
+    status = facts.get("preview_http_status")
+    if status != 200 or type(status) is not int:
+        wrong.append(f"page_install.preview_http_status is {status!r}, not 200")
+    if lp._nonempty_str(facts.get("installed_by")) and facts.get("installed_by") == facts.get("read_by"):
+        wrong.append("read_by is the installer itself: the read-back must be independent")
+    if lp._nonempty_str(row.get("location_id")) and facts.get("location_id") != row.get("location_id"):
+        wrong.append(f"page_install.location_id {facts.get('location_id')!r} is not the launch's "
+                     f"{row.get('location_id')!r}")
+    if wrong:
+        return [f"{label} page_install is not a verifiable draft install: " + "; ".join(wrong)]
+
+    artifacts = [a for a in (row.get("artifacts") or []) if isinstance(a, Mapping)]
+    installs = [a for a in artifacts if a.get("role") == PAGE_INSTALL_ROLE]
+    readbacks = [a for a in artifacts if a.get("role") == PAGE_READBACK_ROLE]
+    if not installs:
+        return [f"{label} carries no {PAGE_INSTALL_ROLE!r} artifact"]
+    if len(readbacks) != 1:
+        return [f"{label} carries {len(readbacks)} {PAGE_READBACK_ROLE!r} artifacts, not exactly one"]
+
+    # The installer's own receipt must name this page, its location and this exact draft.
+    named = False
+    for art in installs:
+        doc, why = _sealed_json(label, art, root)
+        if why:
+            return [why]
+        if not isinstance(doc, Mapping):
+            return [f"{label} install receipt {art.get('path')!r} is not a JSON object"]
+        if doc.get("unit") == facts["read_by"]:
+            return [f"{label} install receipt {art.get('path')!r} was written by the reader "
+                    f"{facts['read_by']!r}: the read-back must be independent of the install"]
+        if doc.get("published") is True:
+            return [f"{label} install receipt {art.get('path')!r} records a publish"]
+        text = _strings(doc)
+        if (doc.get("unit") == facts["installed_by"] and doc.get("page_id") == facts["page_id"]
+                and doc.get("location_id") == facts["location_id"]
+                and (facts["draft_version_id"] in text or sha in text)):
+            named = True
+    if not named:
+        return [f"{label} no install receipt written by {facts['installed_by']!r} names page "
+                f"{facts['page_id']!r} in location {facts['location_id']!r} and its draft "
+                f"(version {facts['draft_version_id']!r} or content {sha})"]
+
+    doc, why = _sealed_json(label, readbacks[0], root)
+    if why:
+        return [why]
+    if not isinstance(doc, Mapping) or doc.get("kind") != PAGE_READBACK_KIND:
+        return [f"{label} read-back is not a {PAGE_READBACK_KIND!r} record"]
+    method = doc.get("method")
+    page = (doc.get("pages") or {}).get(unit_id) if isinstance(doc.get("pages"), Mapping) else None
+    top = page.get("top_version") if isinstance(page, Mapping) else None
+    if not isinstance(top, Mapping):
+        return [f"{label} read-back carries no live record for {unit_id!r}"]
+    checks = (
+        ("read-back unit", doc.get("unit"), facts["read_by"]),
+        ("read-back location_id", doc.get("location_id"), facts["location_id"]),
+        ("read_at present", lp._nonempty_str(doc.get("read_at")), True),
+        ("read by GET", isinstance(method, str) and "GET" in method, True),
+        ("http_status", page.get("http_status"), 200),
+        ("page_id", page.get("page_id"), facts["page_id"]),
+        ("funnelId", page.get("funnelId"), facts["funnel_id"]),
+        ("stepId", page.get("stepId"), facts["step_id"]),
+        ("deleted", page.get("deleted"), False),
+        ("published_version_present", page.get("published_version_present"), False),
+        ("top_version.pageType", top.get("pageType"), "draft"),
+        ("top_version.versionId", top.get("versionId"), facts["draft_version_id"]),
+        ("top_version.blob_sha256", top.get("blob_sha256"), sha),
+        ("preview_http_status", page.get("preview_http_status"), 200),
+    )
+    bad = [f"{name} is {got!r}, not {want!r}" for name, got, want in checks
+           if got != want or type(got) is not type(want)]
+    if bad:
+        return [f"{label} the independent read-back does not show this draft: " + "; ".join(bad)]
+    return []
+
+
 def row_lane_violations(unit_id: str, unit_type: str, row: Mapping[str, Any], root: Path) -> List[str]:
-    """The lane law for one sealed receipt row: the contract allow-list, then (email) the re-check."""
+    """The lane law for one sealed receipt row: the contract allow-list, then (email) the re-check
+    and (a page another skill installed) the draft read-back law."""
     fails = lane_contract_violations(unit_id, unit_type, row.get("lane_validation"))
-    if fails or unit_type != "email":
+    if fails:
+        return fails
+    if unit_type == "page":
+        return page_draft_violations(unit_id, row, root)
+    if unit_type != "email":
         return fails
     return email_delivery_violations(unit_id, lane_document(unit_id, row), root)
+
+
+def external_page_slots(receipt: Any) -> Dict[str, str]:
+    """route slot -> unit id for every sealed page row another skill delivered (SWB-033).
+
+    Only a row under the page contract that names its slot counts; whether the row is TRUE is judged by
+    ``violations`` (row_lane_violations), so a forged row still fails the package."""
+    out: Dict[str, str] = {}
+    rows = receipt.get("units") if isinstance(receipt, Mapping) else None
+    for row in rows or []:
+        if (isinstance(row, Mapping) and row.get("unit_type") == "page" and row.get("delivery") == "declared"
+                and isinstance(row.get("lane_validation"), Mapping)
+                and row["lane_validation"].get("contract") == PAGE_CONTRACT
+                and lp._nonempty_str(row.get("page_slot")) and lp._nonempty_str(row.get("unit_id"))):
+            out[row["page_slot"]] = row["unit_id"]
+    return out
 
 
 def reader_hashes(doc: Any, launch_id: Any) -> Dict[str, str]:

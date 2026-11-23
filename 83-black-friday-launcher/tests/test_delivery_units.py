@@ -97,8 +97,8 @@ def lane_contract_delivery(unit_type: str, delivery: dict) -> dict:
 def with_sales_piece(pieces: dict, run_dir: Path, normalized: dict) -> dict:
     """Add the signature sales page (the plan's `page_sales`) as the second page of the landing route node.
 
-    A page another lane delivers has no producer contract, so no lane delivery can seal it: the Black Friday
-    plan's sales page must arrive as a launcher piece, the way a real launch delivers it."""
+    A page another lane delivers is sealed only by a verified page-install delivery (SWB-033), which these
+    fixtures do not carry: the Black Friday plan's sales page arrives as a launcher piece here."""
     import copy as _copy
     from launcher_core import route
     sales_id = route.route_law._page_id(normalized["launch_id"], "sales")

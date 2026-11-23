@@ -406,6 +406,33 @@ def _page_deliveries(plan: Dict[str, Any], pieces: Dict[str, Any]) -> Dict[str, 
     return out
 
 
+def external_page_units(plan: Optional[Dict[str, Any]], pieces: Dict[str, Any],
+                        deliveries: Optional[Dict[str, Any]]) -> Dict[str, str]:
+    """SWB-033: plan page unit id -> the route slot it fills, for each page no launcher piece carries
+    whose lane delivery names the page-install contract (``skill06.page-draft-install.v1``).
+
+    Slots are handed out in plan order exactly as ``_page_deliveries`` does, after the launcher's own
+    pieces took theirs. Naming the contract only reserves the slot: ``_lane_receipt`` then refuses the
+    unit unless its install receipt and independent read-back prove the draft."""
+    if plan is None:
+        return {}
+    taken = {result["piece"] for result in _page_deliveries(plan, pieces).values()}
+    out: Dict[str, str] = {}
+    for unit in launch_plan_module.planned_units(plan):
+        if unit["type"] != "page" or unit["id"] in _page_deliveries(plan, pieces):
+            continue
+        delivery = (deliveries or {}).get(unit["id"])
+        lane = delivery.get("lane_validation") if isinstance(delivery, dict) else None
+        if not (isinstance(lane, dict) and lane.get("contract") == delivery_units.PAGE_CONTRACT):
+            continue
+        candidates = _PAGE_KIND_SLOTS.get(unit["kind"], (unit["kind"],))
+        slot = next((c for c in candidates if c not in pieces and c not in taken), None)
+        if slot:
+            taken.add(slot)
+            out[unit["id"]] = slot
+    return out
+
+
 def _launch_plan_record(plan: Optional[Dict[str, Any]], deliveries: Optional[Dict[str, Any]],
                         pieces: Dict[str, Any],
                         launch: Optional[Dict[str, Any]] = None) -> Optional[Dict[str, Any]]:
@@ -590,6 +617,13 @@ def _lane_receipt(unit: Dict[str, Any], delivery: Any, intake: Dict[str, Any],
             unit["id"], delivery_units.lane_document(unit["id"], row), run_dir)
         if bad_email:
             raise PackageError("AF-LAUNCH-PKG-RECEIPT-LANE", "; ".join(bad_email))
+    if row["unit_type"] == "page":
+        # SWB-033: a page another skill installed is sealed only from its own verified files.
+        if isinstance(delivery.get("page_install"), dict):
+            row["page_install"] = dict(delivery["page_install"])
+        bad_page = delivery_units.page_draft_violations(unit["id"], row, run_dir)
+        if bad_page:
+            raise PackageError("AF-LAUNCH-PKG-RECEIPT-LANE", "; ".join(bad_page))
     if row["unit_type"] in ("email", "text", "automation"):
         row["draft_only"] = True
     if delivery_marker:
@@ -639,6 +673,7 @@ def _unit_receipts(ordered: List[Dict[str, Any]], intake: Dict[str, Any],
     by_slot = {piece["slot"]: piece for piece in ordered}
     lane_deliveries = lane_deliveries or {}
     deliveries = _page_deliveries(plan, pieces)
+    external = external_page_units(plan, pieces, lane_deliveries)
     rows: List[Dict[str, Any]] = []
     for unit in launch_plan_module.planned_units(plan):
         if unit["type"] == "page":
@@ -649,10 +684,12 @@ def _unit_receipts(ordered: List[Dict[str, Any]], intake: Dict[str, Any],
                                            plan_ref["sha256"], run_dir))
             else:
                 # A page another lane delivered: its lane receipt proves it, never the plan.
-                rows.append(_lane_receipt(unit, lane_deliveries.get(unit["id"]), intake,
-                                          approved, plan_ref["sha256"], plan_ref["path"],
-                                          run_dir, unit_type="page",
-                                          delivery_marker="declared"))
+                row = _lane_receipt(unit, lane_deliveries.get(unit["id"]), intake,
+                                    approved, plan_ref["sha256"], plan_ref["path"],
+                                    run_dir, unit_type="page", delivery_marker="declared")
+                if unit["id"] in external:
+                    row["page_slot"] = external[unit["id"]]
+                rows.append(row)
         else:
             if unit["type"] == "automation":
                 # S44-21: a done.txt and three free-text strings never seal an automation.
@@ -1535,16 +1572,23 @@ def assemble(run_dir: Path, intake: Dict[str, Any], route: Dict[str, Any],
     plan_record = _launch_plan_record(launch_plan, deliveries, pieces,
                                       {**intake, "approved_plan_hash": approved})
 
+    # SWB-033: a route slot no launcher piece fills may be a page another skill installed; its lane
+    # receipt is then judged in full (page_draft_violations) when the unit rows are built.
+    external_slots = set(external_page_units(launch_plan, pieces, deliveries).values())
     ordered: List[Dict[str, Any]] = []
     for node in route["nodes"]:
         piece = pieces.get(node["role"])
         if piece is None:
+            if node["role"] in external_slots:
+                continue
             raise PackageError("AF-LAUNCH-PKG-MISSING",
-                               f"route node {node['role']} has no delivered piece")
+                               f"route node {node['role']} has no delivered piece and no "
+                               f"{delivery_units.PAGE_CONTRACT} page delivery in the launch plan's deliveries")
         ordered.append(_validate_piece(piece, node, intake, source_root))
         if binding is not None:
             _bind_piece(binding, piece, node["role"], node["role"], False, test_only)
-    if landing_pages and set(landing_pages) == {"landing", "sales"} and "sales" not in pieces:
+    if landing_pages and set(landing_pages) == {"landing", "sales"} and "sales" not in pieces \
+            and "sales" not in external_slots:
         raise PackageError("AF-LAUNCH-PKG-MISSING",
                            "the client's plan has both landing pages but no signature sales page piece "
                            "was delivered; a package one page short is not delivered")

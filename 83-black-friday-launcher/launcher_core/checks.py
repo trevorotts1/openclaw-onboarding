@@ -20,6 +20,7 @@ from . import launch_plan as launch_plan_module
 from . import package as package_module
 from . import page_designs
 from . import route as route_module
+from .check_rules import delivery_units
 from .package import (PROOF_BY_STATUS, PROOF_KEYS, RECEIPT_SCHEMA_VERSION,
                       RECEIPT_TYPE)
 from .constants import (CHECKOUT_SKILL_SLUG, CHECKOUT_VALIDATOR_REF,
@@ -465,6 +466,20 @@ def _read_json_file(path: Path) -> Tuple[Any, str]:
         return None, str(exc)
 
 
+def _external_page_slots(manifest: Dict[str, Any], root: Path) -> Dict[str, str]:
+    """SWB-033: route slot -> unit id for each page another skill installed, from the sealed receipt.
+
+    Only a full launch (a sealed plan) can carry one. The row's truth is judged by the check_rules seam
+    (delivery_units.page_draft_violations), so a forged row still fails the package."""
+    if manifest.get("launch_plan") is None:
+        return {}
+    try:
+        receipt = json.loads((Path(root) / "receipt.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    return delivery_units.external_page_slots(receipt)
+
+
 def _route_graph_violations(manifest: Dict[str, Any], root: Path) -> List[str]:
     """The carried route graph: every node has its piece, and the graph holds doc 02's edge law."""
     refs = {}
@@ -479,8 +494,11 @@ def _route_graph_violations(manifest: Dict[str, Any], root: Path) -> List[str]:
     graph, intake_doc = refs["route_graph"], refs["intake"]
     fails: List[str] = []
     delivered = {p.get("role"): p for p in manifest.get("pieces") or [] if not p.get("role_instance")}
+    external = _external_page_slots(manifest, root)
     for node in graph.get("nodes") or []:
         piece = delivered.get(node.get("role"))
+        if piece is None and node.get("role") in external:
+            continue  # SWB-033: sealed from a page another skill installed; delivery_units judges that row
         if piece is None:
             fails.append(f"AF-LAUNCH-PKG-MISSING-ROLE: route node {node.get('role')!r} has no "
                          "delivered piece in the package manifest")
@@ -640,6 +658,8 @@ def check_package(manifest_path: Path, root: Path,
     pieces = manifest.get("pieces") or []
     # A page is its role plus its instance: downsell_1 and downsell_2 are two pages of one role.
     roles = [p.get("role") for p in pieces if not p.get("role_instance")]
+    # SWB-033: a route page another skill installed fills its slot through its sealed page row.
+    roles += list(_external_page_slots(manifest, root))
     for role in ROUTE_ROLES:
         if role in ("landing", "checkout", "thank_you"):
             if roles.count(role) != 1:
