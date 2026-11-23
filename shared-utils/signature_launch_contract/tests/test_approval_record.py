@@ -356,6 +356,26 @@ def test_qc_session_and_email_deploy_are_kinds_that_verify_and_imply_nothing(cc,
     assert e.value.code == "APPROVAL-KIND"
 
 
+@pytest.mark.parametrize("record", [
+    # The Skill 50 adapter fixture shape (1.0, list scope) and the Command Center wire
+    # shape (plan_build alias, one-string scope): the record's own kind is NOT scope.
+    dict(RECORD, kind="launch_plan_build", scope=["paid_asset_budget"], cap=None),
+    dict(CC, scope="paid_asset_budget"),
+], ids=["v1-list-scope", "cc-alias-string-scope"])
+def test_a_record_covers_only_the_scope_it_carries_never_its_own_kind(cc, record):
+    """RFX-002: an approval scoped only to paid_asset_budget never covers launch_plan_build."""
+    identity = record.get("client_identity") or record["client_identity_ref"]
+    ask = dict(kind="launch_plan_build", plan_hash=HASH, scope=["launch_plan_build"],
+               client_identity=identity)
+    for mode in ({"env": cc["env"]}, {"test_only": True, "record": dict(record), "env": {}}):
+        cc["record"] = dict(record)
+        with pytest.raises(ar.ApprovalRefused) as e:
+            ar.verify(record["approval_id"], **ask, **mode)
+        assert e.value.code == "APPROVAL-SCOPE"
+    cc["record"] = dict(record, scope=["launch_plan_build"])  # control: explicit scope is accepted
+    assert ar.verify(record["approval_id"], env=cc["env"], **ask)["kind"] == "launch_plan_build"
+
+
 def test_an_unknown_kind_is_still_refused(cc):
     mutated(cc, kind="not_a_real_kind", scope=["not_a_real_kind"])
     with pytest.raises(ar.ApprovalRefused) as e:
