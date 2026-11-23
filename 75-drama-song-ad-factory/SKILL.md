@@ -429,6 +429,15 @@ The layers and the assembler are the same in both distributions (U15a-U15i):
   the only table; the card, the planner and QC read it, and
   `prompt_templates.length_class(L)` raises `PROMPT_LENGTH_CLASS_DRIFT` rather
   than let a stale row be read silently.
+- **Prompt writers fan out; a song is never one writer's serial job
+  (F-SPD-4).** The shots' own prompt parts are written in parallel, one writer
+  per 2 to 3 prompts (30 prompts means 10 to 15 writers working at once, not
+  one writer walking the song), and each writer writes only its own shots'
+  parts. Every writer reads the same spine, Story Beats, Shot Router record and
+  lock file, so the parts cannot drift. One joiner collects the parts, and the
+  Prompt Builder assembles and stamps every payload after the join. A fan-out
+  below the planned number is `CONSERVATIVE_FANOUT`: the missing writers are
+  launched at once, never allowed to leave the batch waiting on one writer.
 
 ## Suno song recipe (read this first when you build audio)
 
@@ -1305,10 +1314,9 @@ SOP named above.
   clip-side. A deliberate still is marked `hold`; a per-segment duplicate count
   is advice only while the whole master is under the 2% cap (N-15).
 - **Native-rate measurement before any paid spend (pre-flight step).** Before a
-  run commits a paid job to a clip, it measures that clip's native rate and its
-  duplicate ratio with the existing mpdecimate procedure (`fps_probe` +
-  mpdecimate through `load_governor`), and records both on the clip's receipt
-  row. Any clip already on disk is measured the same way at pre-flight, before
+  run commits a paid job to a clip, it measures that clip's native rate
+  (`ffprobe`) and its duplicate ratio (mpdecimate through `load_governor`), and
+  records both on the clip's receipt row. Any clip already on disk is measured the same way at pre-flight, before
   the first paid job of the stage. A clip over the cap is refused then, before
   assembly and before any further paid work on it, and the refusal names the
   clip, its measured ratio, and the clip-side fix (retake or replace). The
