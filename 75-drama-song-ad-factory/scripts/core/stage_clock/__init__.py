@@ -1,9 +1,3 @@
-"""stage_clock: stage timing and the run-time budget (stdlib only).
-
-The stage table lives in references/time-budgets.json so no stage time is
-coded. Every stage stamps its start and end; an overrun is logged and the run
-is never restarted for the clock (plan section 10D).
-"""
-from . import clock  # noqa: F401
-
-__all__ = ["clock"]
+"""stage_clock package - row N-02 (clock), N-68 (overlap), N-96 (budget),
+N-108 (overrun diagnosis). Backed by references/time-budgets.json."""
+from .clock import StageClock, load_budgets, budget_for  # noqa: F401
