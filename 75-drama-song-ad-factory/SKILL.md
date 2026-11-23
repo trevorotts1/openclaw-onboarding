@@ -1274,7 +1274,10 @@ SOP named above.
   native rate and the model itself emits duplicate frames at that rate; a
   24-to-30 timeline conform cannot take them out and is never the fix. The one
   fix is clip-side: retake the shot or replace the clip. The master runs at the
-  native rate of its story clips, and a clip at another rate is matched by
+  native rate of its story clips. Native-24 sources are **MiniMax H3** and
+  **Hailuo 02 Standard**, alongside Kling at its own native rate;
+  `fps_conform.py` already maps `minimax`, `h3` and `hailuo` to 24.0, so this
+  rule follows the code. A clip at another rate is matched by
   plain frame repeat or drop - never by a motion-interpolated conform. The
   assembler refuses any other timeline rate unless the choice card sets it
   (`fps_set_by_choice_card`), and refuses a master that fails the cap with
