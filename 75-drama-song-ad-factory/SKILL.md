@@ -1352,15 +1352,15 @@ SOP named above.
   clip as it lands, before assembly; a clip over the cap is refused and remade
   clip-side. A deliberate still is marked `hold`; a per-segment duplicate count
   is advice only while the whole master is under the 2% cap (N-15).
-- **Native-rate measurement before any paid spend (pre-flight step).** Before a
-  run commits a paid job to a clip, it measures that clip's native rate
-  (`ffprobe`) and its duplicate ratio (mpdecimate through `load_governor`), and
-  records both on the clip's receipt row. Any clip already on disk is measured the same way at pre-flight, before
-  the first paid job of the stage. A clip over the cap is refused then, before
-  assembly and before any further paid work on it, and the refusal names the
-  clip, its measured ratio, and the clip-side fix (retake or replace). The
-  measurement never edits the clip: no timeline-rate change, no frame drop, no
-  interpolation.
+- **Per-clip native-rate measurement before spend and before assembly.** Each
+  clip's native rate (`ffprobe`) and its duplicate ratio (mpdecimate through
+  `load_governor`) are measured and written on its receipt row at two points:
+  at pre-flight for any clip already on disk that the run intends to reuse,
+  before that clip is paid for again or conformed; and as each new clip lands,
+  before assembly. A clip over the cap is refused at that measurement and
+  remade clip-side (retake or replace); it never reaches assembly and no further
+  paid work is spent on it. The measurement never edits the clip: no
+  timeline-rate change, no frame drop, no interpolation.
   `fps_set_by_choice_card` is the only non-30 timeline escape, and it passes
   only when all three hold: the run owner recorded the rate on the choice card,
   every clip's native rate equals the chosen rate or is matched by plain frame
