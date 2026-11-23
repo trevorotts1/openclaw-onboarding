@@ -877,7 +877,7 @@ only while a key is present; a run without that answer behaves exactly as today.
   `OCR_UNAVAILABLE`, which is never a PASS.
 - **Conform:** clips arrive 704x1280 at 24 fps carrying their own audio, which is
   stripped - the song is the only audio - and the master is cover-scaled to its
-  export size and 30 fps.
+  export size at its clips' native rate (24 fps here), never re-timed to 30.
 - **Progress, because it takes hours:** the video stage runs as a background job that
   writes the run's progress record, the studio page shows "Making your video clips:
   N of M done - about X to go" (or the waiting reason), and the stage answers
