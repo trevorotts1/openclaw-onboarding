@@ -4,7 +4,7 @@
   "_lockstep_rule": "Any byte change to a file listed in 'pinned' requires, in the SAME commit: (1) this file's sha256 updated, (2) the named pin constant in the named consumer updated, (3) the consumer's own test suite re-run. Use `python3 tests/test_validator_pin_lockstep.py` from this directory to see the current three-way agreement.",
   "pinned": {
     "validators/validate_downsell.py": {
-      "sha256": "43291ab4f8705b5a96da1f944f8a1c88869bfd52bb77dbc4a46128630a6edae1",
+      "sha256": "8a109f2a2c9115fa136b3f6a2d3074e9ceaa88e8e771cbb1661191e0fc0c8e1a",
       "consumers": [
         {
           "repo": "openclaw-onboarding",
@@ -26,7 +26,7 @@
       ]
     },
     "schemas/downsell-result-extension.schema.json": {
-      "sha256": "8108de3c81fe0d93843e8511d94b82ffe2bb0da6d723e3e0438b5268aa39e80e",
+      "sha256": "b2721ec3c6e6186bac2da65994c8e5cf89fb6422401d879f43a9e292ac844944",
       "consumers": [
         {
           "repo": "openclaw-onboarding",

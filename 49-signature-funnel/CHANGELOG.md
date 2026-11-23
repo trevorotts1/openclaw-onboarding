@@ -1,3 +1,10 @@
+## [v2.1.68] - 2026-11-23 - RFX-013: the downsell wrapper carries a recorded owner decision for a same-promise lower-total D1
+
+- Problem: Skill 81 refused a `lower_total_price` D1 with Upsell 1's deliverables as `D1-OFFER-IDENTICAL-PROMISE`, and the wrapper had no way to carry the owner's recorded decision, although `81-signature-downsell/references/offer-alternatives.md` sends exactly this case to the owner.
+- Fix: `scripts/downsell_wrapper.py` admits `owner_rationale` in the enrichment sidecar (copied from the difference-table row, never authored), folds it onto D1 for `validate_offer_difference`, and refuses a result extension whose `difference_matrix.owner_rationale` differs from the sidecar's (`D1-RESULT-OWNER-RATIONALE-MISMATCH`), so the receipt shows the decision. `scripts/downsell_extension.py` derives the same block onto the extension and cross-checks a staged one. The Skill 81 validator and result-extension pins (`PIN_VALIDATE_DOWNSELL`, `PIN_EXTENSION_SCHEMA`) move with Skill 81 0.1.12.
+- Tests: `DownsellOwnerRationaleTests` in `scripts/test_downsell_wrapper.py` (refused without a block, runs with a complete one and the receipt shows it, refused when incomplete, refused when the receipt hides or alters it) and one derive test in `scripts/test_downsell_extension.py`.
+- Pinned launch-path files changed, so the prover pin is minted by the `sf-prover-pin-authority` workflow, not here. Migration: none. Risk: LOW (one new optional sidecar key; every existing refusal stands).
+
 ## [v2.1.67] - 2026-11-21 - version only: the prover pin re-mint for the Skill 83 stop explainer touches this skill's pin file
 
 - Why: the Skill 83 stop-explainer work in this pull request changes pinned launcher files, so the Skill 49 prover pin (`scripts/SF-PROVER-PIN.sha256`) is re-minted for the new tree. That pin file lives inside this skill, so Skill 49 has to carry its own patch bump or the batch version-agreement guard finds `VERSION` at v2.1.66 against a bumped `skill-version.txt`.

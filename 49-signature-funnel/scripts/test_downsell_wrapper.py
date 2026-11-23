@@ -1395,5 +1395,61 @@ class DownsellSchemaEvaluatorAllOfTests(unittest.TestCase):
         self.assertTrue(dw._schema_violations("ab", schema))
 
 
+class DownsellOwnerRationaleTests(unittest.TestCase):
+    """RFX-013: a lower_total_price D1 with U1's own deliverables runs only on a recorded owner decision,
+    and the receipt (the result extension) shows that decision exactly as the sidecar recorded it."""
+    OWNER = {"text": "TEST ONLY: owner keeps the full promise at a lower total for decliners.",
+             "decided_by": "TEST-OWNER", "decided_at": "2026-11-20T10:00:00-05:00",
+             "approval_ref": "TEST-APPROVAL-D1-PRICE"}
+
+    def same_promise(self, owner=None, shown=None):
+        """D1 = U1's deliverables at a $37 one-time total against U1's $1 + $27; kind lower_total_price."""
+        paths = stage(_request(None))
+        _edit(paths, "launch.json", lambda doc: _offer(doc, "downsell_1").update(
+            deliverables=list(_offer(doc, "upsell_1")["deliverables"])))
+        _edit(paths, "launch.json", lambda doc: _offer(doc, "upsell_1")["prices"][0].update(
+            schedule=[{"amount_minor": 9700}]))
+        _edit(paths, "enrichment-downsell_1.json", lambda d: d.update(
+            difference_kind="lower_total_price", **({"owner_rationale": owner} if owner is not None else {})))
+
+        def matrix(doc):
+            m = doc["downsell_result_extension"]["difference_matrix"]
+            m["difference_kind"] = "lower_total_price"
+            if shown is not None:
+                m["owner_rationale"] = shown
+        _edit(paths, "extension-downsell_1.json", matrix)
+        return paths, run_wrapper(paths)
+
+    def test_without_an_owner_rationale_the_identical_promise_is_refused(self):
+        paths, proc = self.same_promise()
+        self.assertEqual(proc.returncode, 2, proc.stdout)
+        self.assertIn("D1-OFFER-IDENTICAL-PROMISE", proc.stderr)
+        self.assertFalse(paths["result"].exists())
+
+    def test_with_a_complete_owner_rationale_it_runs_and_the_receipt_shows_it(self):
+        paths, proc = self.same_promise(self.OWNER, self.OWNER)
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        shown = json.loads((paths["workdir"] / "downsell-result-extension.json").read_text())
+        self.assertEqual(shown["difference_matrix"]["owner_rationale"], self.OWNER)
+        artifacts = json.loads(paths["result"].read_text())["artifacts"]
+        self.assertIn(_sha(paths["enrichment-downsell_1.json"]), [a["sha256"] for a in artifacts])
+
+    def test_an_incomplete_owner_rationale_is_refused(self):
+        block = {k: v for k, v in self.OWNER.items() if k != "approval_ref"}
+        paths, proc = self.same_promise(block, block)
+        self.assertEqual(proc.returncode, 2, proc.stdout)
+        self.assertIn("D1-OFFER-IDENTICAL-PROMISE", proc.stderr)
+        self.assertIn("D1-OFFER-OWNER-RATIONALE-INCOMPLETE", proc.stderr)
+        self.assertFalse(paths["result"].exists())
+
+    def test_a_receipt_that_hides_or_alters_the_decision_is_refused(self):
+        for shown in (None, dict(self.OWNER, decided_by="SOMEONE-ELSE")):
+            with self.subTest(shown=shown):
+                paths, proc = self.same_promise(self.OWNER, shown)
+                self.assertEqual(proc.returncode, 2, proc.stdout)
+                self.assertIn("D1-RESULT-OWNER-RATIONALE-MISMATCH", proc.stderr)
+                self.assertFalse(paths["result"].exists())
+
+
 if __name__ == "__main__":
     unittest.main()

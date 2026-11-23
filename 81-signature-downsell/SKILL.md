@@ -1,7 +1,7 @@
 ---
 name: signature-downsell
 description: Build the Signature Downsell page (D1) - the reshaped alternative offer shown only after an explicit Upsell 1 decline. Derives an exact eight-section page from the 12-section landing format (keep sections 1-7, remove 8-11, replace section 12 with a renumbered section 8, "When Time Runs Out", listing 7 missed-out consequences), a CTA in every section, truthful scarcity only, a guarded native one-click action shared with the checkout system, and routes: D1 paid goes to the SAME Upsell 2 when enabled else the final thank-you; D1 declined goes to the final thank-you with the original order untouched.
-version: 0.1.11
+version: 0.1.12
 ---
 
 # Signature Downsell Page (Skill 81)
@@ -41,7 +41,7 @@ This package ships no command of its own: its validators and adapters are librar
 
 ## What D1 is
 
-An alternative to the declined U1 - changed scope or changed payment terms, recorded in a private difference table before any copy is written (see `references/offer-alternatives.md`). Never an additional charge for the identical promise. A lower installment is not a lower total price. Never auto-discount because a payment failed.
+An alternative to the declined U1 - changed scope or changed payment terms, recorded in a private difference table before any copy is written (see `references/offer-alternatives.md`). Never an additional charge for the identical promise. U1's promise at a genuinely lower total is flagged for owner decision (`D1-OFFER-IDENTICAL-PROMISE`) and runs only when the difference-table row records a complete `owner_rationale` (text, decided_by, decided_at, approval or decision reference), which the result extension then shows. A lower installment is not a lower total price. Never auto-discount because a payment failed.
 
 ## Copy contract (see `references/downsell-copy-profile.md`)
 
