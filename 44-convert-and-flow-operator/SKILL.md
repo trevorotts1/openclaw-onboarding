@@ -1,7 +1,7 @@
 ---
 name: convert-and-flow-operator
 description: Tier 0 GHL operator — the Convert and Flow CLI (caf/convertandflow/ghl) gives the agent direct CRM access for contacts, opportunities, calendars, conversations, documents, payments, forms, social, locations, and workflow builds via internal API (no MCP overhead). Standard ops run on the PIT alone. Workflow writes additionally require the Firebase refresh token; when absent, falls through to Tier 4 agent-browser as the backstop. Write-safe by default (dry-run, draft-only, location whitelist, approval gate).
-version: v2.1.53
+version: v2.1.54
 ---
 
 > **GHL PIT aliases:** `GOHIGHLEVEL_API_KEY` is the preferred name; 10 additional aliases resolve the same LOCATION PIT. See **`TERMINOLOGY.md`** (repo root) for the canonical alias set and backend-equivalence notes (Convert & Flow / leadconnectorhq.com = one platform).
@@ -224,6 +224,10 @@ Repairing a launch goes through the build command above, never by enabling that 
 `caf payments create-price` exist, but on main they are not tied to an approval record and
 `create-price` takes `--amount` in cents. Do not create a product or price for a launch without
 the owner's recorded approval of the plan, and read the created price back before use.
+`create-product` reuses an exact-name product of the same type already in the location
+(`action: reused`, no POST). GHL's single-product GET reports a DIGITAL product as PHYSICAL;
+the read-back then confirms DIGITAL from that product's own row in the product list and names
+the confirming route in `type_confirmed_by`. Any other mismatch is still a failure.
 
 **Template library size:** 49 template-shaped JSON files in `automation-templates/` (28 editorial
 sequence templates + 21 launch-family build specs). Verify it, never hand-edit it:

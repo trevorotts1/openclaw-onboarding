@@ -2345,8 +2345,12 @@ def payments_create_product(ctx, name, product_type, description, image_url,
     """Create a product through shared-utils/ghl/products_prices.py.
 
     POST /products/ (Version 2021-07-28), then GET /products/{id} read-back of
-    name, type and location; a mismatch is a failure, never a success. A product
-    is the catalog entry; attach prices with ``payments create-price``. A create
+    name, type and location; a mismatch is a failure, never a success. A DIGITAL
+    product the single GET reports as PHYSICAL (measured platform split) is
+    confirmed only by its own row in GET /products/ (``type_confirmed_by``). An
+    exact-name product of the same type already in the location is reused with
+    no POST (``action`` reused). A product is the catalog entry; attach prices
+    with ``payments create-price``. A create
     needs a verified ``automation_write`` approval (``--approval-id`` and
     ``--plan-sha256``); without one nothing is POSTed. The safety gate runs
     inside ``api.post``.
@@ -2374,9 +2378,11 @@ def payments_create_product(ctx, name, product_type, description, image_url,
             "name": product.name,
             "product_type": product.product_type,
             "location_id": product.location_id,
+            "action": op.action,
             "route": op.route,
             "readback": op.readback,
-        }, "Product Created")
+            "type_confirmed_by": product.type_confirmed_by,
+        }, "Product Reused" if op.action == "reused" else "Product Created")
     except Exception as e:
         _handle_error(e)
 
