@@ -298,6 +298,89 @@ def offers_by_slot(launch: dict) -> dict:
             "schedule": price.get("schedule") or [],
             "test_only": bool(offer.get("test_only")),
         }
+
+        if slot in (SLOT_U1, SLOT_U2):
+            choices = _upsell_price_choices(slot, prices)
+            if choices:
+                out[slot]["price_choices"] = choices
+    return out
+
+
+MAX_UPSELL_PRICE_CHOICES = 2
+
+
+def _upsell_price_choices(slot: str, prices: list) -> list:
+    """The approved price choices one upsell page sells, in record order.
+
+    One price keeps the single-action page exactly as before (returns []).
+    Two approved choices of one offer (a monthly and a yearly membership)
+    become two guarded native accept actions on the same page. More than
+    two, an unapproved, installment or trial choice, a shared id or a second
+    currency is refused, never trimmed to one.
+    """
+    prices = [p for p in prices if isinstance(p, dict)]
+    if len(prices) <= 1:
+        return []
+    if len(prices) > MAX_UPSELL_PRICE_CHOICES:
+        raise PageBuildError(
+            f"{slot}: the offer carries {len(prices)} price choices; one "
+            f"upsell page sells at most {MAX_UPSELL_PRICE_CHOICES}")
+    ids = [str(p.get("price_choice_id") or "") for p in prices]
+    if not all(ids) or len(set(ids)) != len(ids):
+        raise PageBuildError(
+            f"{slot}: each price choice needs its own price_choice_id, got {ids}")
+    if len({p.get("currency") for p in prices}) != 1:
+        raise PageBuildError(f"{slot}: the price choices are in different "
+                             "currencies; one offer is sold in one currency")
+    for pid, p in zip(ids, prices):
+        if p.get("approval_status") not in ("approved", "provided"):
+            raise PageBuildError(
+                f"{slot}: price choice {pid!r} is "
+                f"{p.get('approval_status')!r}; a page with two price "
+                "choices sells only approved prices")
+        if p.get("billing_type") not in ("one_time", "recurring"):
+            raise PageBuildError(
+                f"{slot}: price choice {pid!r} is {p.get('billing_type')!r}; "
+                "installments and trials are never sold as a price choice")
+    return [{"price_choice_id": pid,
+             "native_price_id": str(p.get("native_price_id") or ""),
+             "amount_minor": p.get("amount_minor"),
+             "currency": str(p.get("currency") or ""),
+             "billing_type": p["billing_type"],
+             "recurring_interval": p.get("recurring_interval"),
+             "schedule": p.get("schedule") or []}
+            for pid, p in zip(ids, prices)]
+
+
+def accept_actions(slot: str, offer: dict, refs: list, lead) -> list:
+    """One guarded native accept action per approved price choice, lead first.
+
+    ``refs`` are the per-choice action refs ``_require_identical_cta``
+    derived, in record order. The lead is the copy document's
+    ``lead_price_choice_id`` when it names one, else the record's first
+    price. Every action carries its own native price and its own exact
+    disclosure; two actions never share a native price.
+    """
+    choices = offer["price_choices"]
+    ids = [c["price_choice_id"] for c in choices]
+    lead = lead or ids[0]
+    if lead not in ids:
+        raise PageBuildError(
+            f"{slot}: lead_price_choice_id {lead!r} is not one of the "
+            f"offer's price choices {ids}")
+    natives = [c["native_price_id"] for c in choices]
+    if not all(natives) or len(set(natives)) != len(natives):
+        raise PageBuildError(
+            f"{slot}: each price choice needs its own verified native price, "
+            f"got {natives}; two buttons never charge one price")
+    out = []
+    for c, ref in sorted(zip(choices, refs),
+                         key=lambda cr: cr[0]["price_choice_id"] != lead):
+        amount = _format_amount(c["amount_minor"], c["currency"])
+        interval = c.get("recurring_interval")
+        out.append(dict(
+            c, action_ref=ref, disclosure=disclosure_for(slot, dict(offer, **c)),
+            label=(amount + " per " + interval) if interval else amount))
     return out
 
 
@@ -397,7 +480,11 @@ def disclosure_for(slot: str, offer: dict) -> str:
 
 # ── copy documents ──────────────────────────────────────────────────────────
 
-def _require_identical_cta(slot: str, refs, expected_ref):
+def _require_identical_cta(slot: str, refs, expected_ref, choices=None):
+    """Every section CTA names the page's ONE declared action ref. With two
+    approved price choices the page renders one guarded native action per
+    choice, each ref derived as ``<declared ref>.<price_choice_id>``; the
+    returned refs must be distinct, one per choice, never shared."""
     distinct = sorted({r for r in refs if r})
     if len(distinct) != 1:
         raise PageBuildError(
@@ -407,17 +494,27 @@ def _require_identical_cta(slot: str, refs, expected_ref):
         raise PageBuildError(
             f"{slot}: CTA action ref {distinct[0]!r} is not the page's "
             f"declared action ref {expected_ref!r}")
+    if not choices:
+        return [distinct[0]]
+    derived = ["%s.%s" % (distinct[0], c) for c in choices]
+    if len(set(derived)) != len(derived) or len(derived) > MAX_UPSELL_PRICE_CHOICES:
+        raise PageBuildError(
+            f"{slot}: the price choices {list(choices)} do not give one "
+            "distinct guarded native action each")
+    return derived
 
 
-def sections_from_upsell_copy(slot: str, doc: dict) -> list:
-    """Normalize Skill 80's eight-section copy document."""
+def sections_from_upsell_copy(slot: str, doc: dict, choices=None):
+    """Normalize Skill 80's eight-section copy document. With ``choices``
+    (the offer's price_choice_ids) it returns ``(sections, refs)``, one
+    derived guarded action ref per choice."""
     sections = doc.get("sections")
     if not isinstance(sections, list) or len(sections) != 8:
         raise PageBuildError(f"{slot}: the copy document must carry exactly "
                              f"8 sections, got {len(sections or [])}")
-    _require_identical_cta(
+    refs = _require_identical_cta(
         slot, [((s.get("cta") or {}).get("action_ref")) for s in sections],
-        doc.get("accept_action_ref"))
+        doc.get("accept_action_ref"), choices)
     out = []
     for index, section in enumerate(sections, 1):
         if section.get("number") != index:
@@ -437,7 +534,7 @@ def sections_from_upsell_copy(slot: str, doc: dict) -> list:
             "reasons": section.get("reasons") or [],
             "cta_text": cta.get("text"),
         })
-    return out
+    return (out, refs) if choices else out
 
 
 def sections_from_downsell_page(slot: str, page: dict) -> list:
@@ -496,8 +593,9 @@ def _brand_css(colors: dict) -> str:
                token("tint", "#eef3fd"), token("primary", "#2456c8")))
 
 
-def _cta_html(slot: str, copy_doc: dict, section: dict, offer: dict,
-              family: str, disclosure: str, primary: bool) -> str:
+def _button_attrs(slot: str, copy_doc: dict, offer: dict, family: str,
+                  primary: bool, price_id: str, action_ref: str,
+                  choice_id: str = None) -> str:
     attrs = (
         ' type="button" class="cta%s"'
         ' data-native-action="%s"'
@@ -515,17 +613,41 @@ def _cta_html(slot: str, copy_doc: dict, section: dict, offer: dict,
         _esc(copy_doc["page_id"]),
         _esc(slot),
         _esc(offer["native_product_id"]),
-        _esc(offer["native_price_id"]),
+        _esc(price_id),
         NATIVE_SESSION,
-        _esc(copy_doc["action_ref"]),
+        _esc(action_ref),
     )
+    if choice_id:
+        attrs += ' data-price-choice-id="%s"' % _esc(choice_id)
     if primary:
         attrs += ' id="primary-cta"'
-    return (
-        '<div class="cta-block"><button%s>%s</button>'
-        '<p class="disclosure">%s</p></div>'
-        % (attrs, _esc(section["cta_text"]), _esc(disclosure))
-    )
+    return attrs
+
+
+def _cta_html(slot: str, copy_doc: dict, section: dict, offer: dict,
+              family: str, disclosure: str, primary: bool) -> str:
+    actions = copy_doc.get("accept_actions")
+    if not actions:
+        return (
+            '<div class="cta-block"><button%s>%s</button>'
+            '<p class="disclosure">%s</p></div>'
+            % (_button_attrs(slot, copy_doc, offer, family, primary,
+                             offer["native_price_id"], copy_doc["action_ref"]),
+               _esc(section["cta_text"]), _esc(disclosure)))
+    # Two approved price choices: one guarded native button per choice, each
+    # with its own native price, its own action ref and its own adjacent exact
+    # disclosure; only the lead choice's button in section 1 is the primary.
+    blocks = []
+    for n, act in enumerate(actions):
+        blocks.append(
+            '<div class="cta-choice"><button%s>%s - %s</button>'
+            '<p class="disclosure">%s</p></div>'
+            % (_button_attrs(slot, copy_doc, offer, family, primary and n == 0,
+                             act["native_price_id"], act["action_ref"],
+                             act["price_choice_id"]),
+               _esc(section["cta_text"]), _esc(act["label"]),
+               _esc(act["disclosure"])))
+    return '<div class="cta-block">%s</div>' % "".join(blocks)
 
 
 def render_page(slot: str, copy_doc: dict, route: dict, offer: dict,
@@ -650,6 +772,7 @@ def build(launch: dict, graph: dict, family: str, copies: dict,
                 f"{slot}: the approved launch record carries no native "
                 "product/price for this slot; a page with no bindable "
                 "purchase action is not built")
+        actions = None  # set only for an upsell offer with two price choices
         if slot == SLOT_D1:
             page_doc = downsell_page.get("page") if "page" in downsell_page \
                 else downsell_page
@@ -668,7 +791,12 @@ def build(launch: dict, graph: dict, family: str, copies: dict,
                 raise PageBuildError(
                     f"{slot}: the copy document is for {doc.get('instance')!r}")
             _refuse_test_only_copy(slot, launch, doc)
-            sections = sections_from_upsell_copy(slot, doc)
+            choices = [c["price_choice_id"] for c in offer.get("price_choices") or []]
+            sections = sections_from_upsell_copy(slot, doc, choices)
+            if choices:
+                sections, refs = sections
+                actions = accept_actions(slot, offer, refs,
+                                         doc.get("lead_price_choice_id"))
             offer_name = doc.get("offer_name")
             action_ref = doc.get("accept_action_ref")
             acknowledgement = ""
@@ -681,6 +809,8 @@ def build(launch: dict, graph: dict, family: str, copies: dict,
             "action_ref": action_ref,
             "sections": sections,
         }
+        if actions:
+            copy_doc["accept_actions"] = actions
         html_text = render_page(slot, copy_doc, route, offer, brand, family,
                                 acknowledgement,
                                 bool(launch.get("test_only")))
@@ -712,6 +842,15 @@ def build(launch: dict, graph: dict, family: str, copies: dict,
             "test_only": bool(launch.get("test_only")),
             **({"entry_paths": entry_paths} if slot == SLOT_U2 else {}),
         })
+        if actions:
+            # the row's own price and disclosure are the lead action's
+            manifest[-1]["native_price_id"] = actions[0]["native_price_id"]
+            manifest[-1]["disclosure"] = actions[0]["disclosure"]
+            manifest[-1]["accept_actions"] = [
+                {k: a[k] for k in ("price_choice_id", "native_price_id",
+                                   "action_ref", "amount_minor", "currency",
+                                   "billing_type", "recurring_interval",
+                                   "disclosure")} for a in actions]
     return {
         "pages": pages,
         "manifest": {

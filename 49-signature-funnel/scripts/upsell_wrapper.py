@@ -401,27 +401,69 @@ def _offer_block(offer: Mapping[str, Any], problems: List[str]) -> Optional[Dict
     return out
 
 
-def _select_price(offer: Mapping[str, Any],
-                  problems: List[str]) -> Optional[Dict[str, Any]]:
+MAX_PRICE_CHOICES = 2  # one upsell page sells at most two approved price choices
+
+
+def _price_choices(offer: Mapping[str, Any]) -> List[Dict[str, Any]]:
+    """The offer's price choices when it sells two on one page, else []."""
+    prices = [p for p in offer.get("prices") or [] if isinstance(p, dict)]
+    if len(prices) == MAX_PRICE_CHOICES \
+            and all(p.get("approval_status") in ("approved", "provided") for p in prices) \
+            and all(p.get("billing_type") in ("one_time", "recurring") for p in prices):
+        return prices
+    return []
+
+
+def _select_price(offer: Mapping[str, Any], problems: List[str],
+                  lead: Optional[str] = None) -> Optional[Dict[str, Any]]:
+    """The price the page's disclosure block names.
+
+    One price, or exactly one approved price, is that price (unchanged). Two
+    approved one_time/recurring price choices of one offer (a monthly and a
+    yearly membership) are both sold on the one page, as two guarded native
+    actions (Skill 80's production builder renders one per choice); the block
+    names the lead: ``lead`` (the copy document's ``lead_price_choice_id``)
+    when given, else the first price. More than two choices, or two that are
+    not both approved one_time/recurring prices (an installment, a trial), is
+    refused: the wrapper never guesses which price a page sells.
+    """
     prices = [p for p in offer.get("prices") or [] if isinstance(p, dict)]
     approved = [p for p in prices
                 if p.get("approval_status") in ("approved", "provided")]
-    if len(approved) == 1:
+    choices = _price_choices(offer)
+    if choices:
+        want = lead or choices[0].get("price_choice_id")
+        hit = [p for p in choices if p.get("price_choice_id") == want]
+        if len(hit) == 1:
+            return hit[0]
+        problems.append(f"disclosure: lead_price_choice_id {want!r} is not one "
+                        f"of offer {offer.get('offer_id')!r}'s price choices")
+        return None
+    if len(approved) == 1 and len(prices) <= MAX_PRICE_CHOICES:
         return approved[0]
     if len(prices) == 1:
         return prices[0]
     problems.append(
         f"disclosure: offer {offer.get('offer_id')!r} carries "
-        f"{len(prices)} price choices ({len(approved)} approved); the "
+        f"{len(prices)} price choices ({len(approved)} approved); one upsell "
+        f"page sells one price or {MAX_PRICE_CHOICES} approved one_time or "
+        "recurring price choices (never an installment or a trial), and the "
         "wrapper never guesses which price a page discloses")
     return None
 
 
 def _disclosure_block(offer: Mapping[str, Any], sidecar: Mapping[str, Any],
-                      problems: List[str]) -> Optional[Dict[str, Any]]:
-    price = _select_price(offer, problems)
+                      problems: List[str],
+                      lead: Optional[str] = None) -> Optional[Dict[str, Any]]:
+    price = _select_price(offer, problems, lead)
     if price is None:
         return None
+    for other in _price_choices(offer):
+        # The second choice is sold on the same page: its own terms must be
+        # disclosable from the record alone (the sidecar's terms are the lead's).
+        if other is not price and _disclosure_block(
+                dict(offer, prices=[other]), {}, problems) is None:
+            return None
     amount = price.get("amount_minor")
     if type(amount) is not int or amount < 0:
         problems.append(
@@ -801,7 +843,8 @@ def enrich(request: Mapping[str, Any], launch: Mapping[str, Any],
     design = stage == "design" and not carries_purchases
     design_slot = _design_slot(launch, problems) if design and instance == "upsell_2" else None
     offer_block = _offer_block(offer, problems) if offer else None
-    disclosure = _disclosure_block(offer, sidecar, problems) if offer else None
+    disclosure = _disclosure_block(offer, sidecar, problems,
+                                   copy_doc.get("lead_price_choice_id")) if offer else None
     eligibility = _eligibility_block(instance, offer, journey, sidecar, problems,
                                       design_slot=design_slot, design=design) if offer else None
     entry_context = _entry_context(instance, journey, problems, design_slot=design_slot, design=design)

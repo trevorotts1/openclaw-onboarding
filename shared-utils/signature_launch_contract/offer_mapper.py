@@ -183,6 +183,46 @@ def _billing_fact(doc: Mapping[str, Any], price: Mapping[str, Any], where: str, 
     return "one_time", None
 
 
+ANNUAL_SLOTS = ("upsell_1", "upsell_2")  # one upsell page may sell a second (yearly) price choice
+
+
+def _annual_price(price: Mapping[str, Any], where: str, slot: str, oid: str, first_billing: str,
+                  status: str) -> Optional[Dict[str, Any]]:
+    """The answers entry's ``price.annual`` as a second price choice of the SAME offer: recurring, yearly.
+
+    Shape: ``price.annual`` is the yearly amount in minor units (an integer) or an object
+    ``{amount_minor, [currency], [native_price_id]}``. Only an upsell carries one (one upsell page sells
+    at most two price choices, Skill 80), its currency is the offer's, and the first price must itself be
+    a recurring price on another interval: the yearly choice is an alternative cadence of one membership,
+    never a second product, an installment plan or a second charge on top of the first."""
+    annual = price.get("annual")
+    if annual is None:
+        return None
+    if slot not in ANNUAL_SLOTS:
+        raise MapperError("AF-OFFER-ANNUAL", f"{where}: price.annual is only carried by an upsell offer, not {slot!r}")
+    if isinstance(annual, bool) or not isinstance(annual, (int, dict)):
+        raise MapperError("AF-OFFER-ANNUAL", f"{where}: price.annual must be whole minor units or "
+                          "{amount_minor, currency, native_price_id}")
+    block = annual if isinstance(annual, dict) else {"amount_minor": annual}
+    extra = set(block) - {"amount_minor", "currency", "native_price_id"}
+    if extra:
+        raise MapperError("AF-OFFER-ANNUAL", f"{where}: price.annual carries undeclared field(s) {sorted(extra)}")
+    amount = block.get("amount_minor")
+    if isinstance(amount, bool) or not isinstance(amount, int) or amount <= 0:
+        raise MapperError("AF-OFFER-ANNUAL", f"{where}: price.annual has no whole-number amount_minor above zero")
+    currency = block.get("currency", price["currency"])
+    if currency != price["currency"]:
+        raise MapperError("AF-OFFER-ANNUAL", f"{where}: price.annual is in {currency!r} but the offer is in "
+                          f"{price['currency']!r}; one offer is sold in one currency")
+    if first_billing != "recurring":
+        raise MapperError("AF-OFFER-ANNUAL", f"{where}: price.annual is a yearly choice of a recurring "
+                          f"membership, but the first price is {first_billing!r}; state the first price's "
+                          "cadence (for example monthly)")
+    return {"price_choice_id": f"{oid}-{currency}-YEAR", "currency": currency, "amount_minor": amount,
+            "billing_type": "recurring", "recurring_interval": "year",
+            "native_price_id": block.get("native_price_id"), "schedule": [], "approval_status": status}
+
+
 def answers_to_offers(doc: Mapping[str, Any], *, test_only: bool = True) -> Tuple[List[Dict[str, Any]], List[Dict[str, str]]]:
     """(launch record 1.2 offers, to_confirm lines). Refuses a price with no amount or an unknown status."""
     state, to_confirm, offers = _engine()._STATE, [], []
@@ -212,6 +252,10 @@ def answers_to_offers(doc: Mapping[str, Any], *, test_only: bool = True) -> Tupl
                     [by_slot["upsell_1"]] if slot == "downsell_1" and by_slot["upsell_1"] else [])
         s = state[status]
         billing, interval = _billing(doc, price, where, item, to_confirm)
+        annual = _annual_price(price, where, slot, oid, billing, s)
+        if annual is not None and interval == "year":
+            raise MapperError("AF-OFFER-ANNUAL", f"{where}: the first price is already yearly, so price.annual "
+                              "would be a second yearly price for one offer")
         out.append({
             "offer_id": oid, "slot": slot, "display_name": name,
             "deliverables": list(item.get("deliverables") or []),
@@ -225,7 +269,7 @@ def answers_to_offers(doc: Mapping[str, Any], *, test_only: bool = True) -> Tupl
                 **({"recurring_interval": interval} if interval else {}),
                 "native_price_id": price.get("native_price_id"), "schedule": list(price.get("schedule") or []),
                 "approval_status": s,
-            }],
+            }] + ([annual] if annual else []),
             "source_kind": "owner" if s == "provided" else "recommendation",
             "source_ref": f"answers-file:{where}",
             "test_only": test_only,

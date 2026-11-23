@@ -158,6 +158,18 @@ Rules that override main-page conventions for this profile:
 - All CTAs on a page invoke the **same guarded native product-bound one-click
   action** (Skill 6). No custom fetch to an invented charge endpoint; no
   fabricated payment token from an opt-in.
+- **Two approved price choices on one upsell offer** (for example a
+  membership at a monthly AND a yearly price, from the answers file's
+  `price.annual`) are sold on the same page as **two guarded native accept
+  actions**: every section renders one button per price choice, each bound
+  to its own native price, its own action ref
+  (`<accept_action_ref>.<price_choice_id>`) and its own exact disclosure,
+  with ONE decline. The copy keeps its one declared `accept_action_ref`;
+  its optional `lead_price_choice_id` puts that choice first (default: the
+  record's first price). The production builder refuses more than two
+  choices, an unapproved, installment or trial choice, two choices sharing
+  one native price, and a lead that is not a choice. A single-price offer
+  renders exactly as before.
 - Adjacent to the action, the page discloses the **exact amount** (rendered
   from integer minor units with per-currency exponents), the currency, and
   one-time vs recurring terms in words that match the terms exactly.

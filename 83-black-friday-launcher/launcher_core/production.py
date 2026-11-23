@@ -156,7 +156,10 @@ def produce(root: Path, *, run_dir: Path, copies: Mapping[str, Path],
                        **({"entry_paths": page_rows[role]["entry_paths"]} if role == "upsell_2" else {}),
                        "native_product_id": page_rows[role]["native_product_id"],
                        "native_price_id": page_rows[role]["native_price_id"],
-                       "routes": page_rows[role]["routes"]}
+                       "routes": page_rows[role]["routes"],
+                       # two approved price choices on one upsell page: both native actions ride on
+                       **({"accept_actions": page_rows[role]["accept_actions"]}
+                          if page_rows[role].get("accept_actions") else {})}
 
     if "downsell_1" in html:
         pages["downsell_1"]["handoff"] = _downsell_handoff(run_dir, graph, d1_doc, html["downsell_1"])

@@ -74,6 +74,7 @@ jobs:
           for f in \
             49-signature-funnel/scripts/test_thankyou_translator.py \
             49-signature-funnel/scripts/test_upsell_wrapper.py \
+            49-signature-funnel/scripts/test_upsell_two_prices.py \
             49-signature-funnel/scripts/test_downsell_wrapper.py \
             49-signature-funnel/scripts/test_sop_lockstep.py \
             49-signature-funnel/scripts/test_compile_launch_route.py \
@@ -98,6 +99,9 @@ jobs:
       - name: 49 upsell wrapper
         if: always()
         run: env -i HOME="$(mktemp -d)" PATH="$PATH" python3 49-signature-funnel/scripts/test_upsell_wrapper.py
+      - name: 49 upsell wrapper, two price choices on one offer (RFX-015)
+        if: always()
+        run: env -i HOME="$(mktemp -d)" PATH="$PATH" python3 49-signature-funnel/scripts/test_upsell_two_prices.py
       - name: 49 downsell wrapper
         if: always()
         run: env -i HOME="$(mktemp -d)" PATH="$PATH" python3 49-signature-funnel/scripts/test_downsell_wrapper.py
