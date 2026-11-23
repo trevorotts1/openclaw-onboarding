@@ -108,8 +108,8 @@ class BrowserOnlyStepsStayOutOfTheApiSave(_Base):
         self.assertTrue(all(isinstance(s.get("order"), int) for s in saved))
         # the removed step is recorded and its ledger row stays owed
         excluded = stats["browser_only_excluded"][key]
-        self.assertEqual([e["ledger_id"] for e in excluded],
-                         [until["attributes"]["ledger_id"]])
+        self.assertIn(until["attributes"]["ledger_id"],
+                      [e["ledger_id"] for e in excluded])
         owed = stats["browser_steps"]["requested"]
         self.assertIn(until["attributes"]["ledger_id"], [r["ledger_id"] for r in owed])
         self.assertNotIn(until["attributes"]["ledger_id"], stats["browser_steps"]["completed"])
@@ -174,6 +174,114 @@ class TrueSaveErrorIsSurfaced(_Base):
             tr.requests.request = original
         self.assertEqual(out["http_code"], 400)
         self.assertTrue(out["message"].endswith('THE-END"}'), out["message"][-40:])
+
+
+class StructuralProvider(l07.FakeClient):
+    """GoHighLevel's observed INVALID_STRUCTURE rules (live 2026-11-23):
+    every parentKey must be named by that parent's next, and the compiler's
+    if_else / workflow_goal shapes are refused."""
+
+    def request(self, method, path, body=None, workflow_name=None):
+        if (method == "PUT" and path.startswith("/workflow/%s/" % LOC)
+                and "/trigger/" not in path and body and "workflowData" in body):
+            steps = body["workflowData"]["templates"]
+            by_id = {s["id"]: s for s in steps}
+            for s in steps:
+                parent = by_id.get(s.get("parentKey"))
+                bad = s.get("type") in ("if_else", "workflow_goal") or (
+                    parent is not None and parent.get("next") != s["id"])
+                if bad:
+                    self.call_count += 1
+                    self.calls.append((method, path, copy.deepcopy(body)))
+                    return {"_error": True, "http_code": 400, "code": 400,
+                            "message": '{"messageKey":"INVALID_STRUCTURE"}'}
+        return super().request(method, path, body, workflow_name)
+
+
+def _gated_campaign():
+    """The compiled promotional launch workflow (wait-until steps, purchase
+    gates, goal terminals from the real compiler) plus one SMS behind the
+    compiler's own eligibility guard (apply_sms_guards)."""
+    campaign = wb.compile_launch_builds(l07.synthetic_document())
+    key = next(k for k in campaign if "pre_launch" in k)
+    wf = campaign[key]
+    steps = wf["templates"]
+    by_id = {s["id"]: s for s in steps}
+    end = next(s for s in steps if s["id"].endswith("-end"))
+    last = by_id[end["parentKey"]]
+    sms = {"id": "s0", "type": "sms", "name": "SMS: last_call",
+           "attributes": {"body": "synthetic"}, "parentKey": last["id"], "next": end["id"]}
+    last["next"] = "s0"
+    end["parentKey"] = "s0"
+    steps.insert(steps.index(end), sms)
+    out = {"blocked_by": [], "browser_steps": [], "unit_key": wf["unit_key"]}
+    lsc.apply_sms_guards(out, steps, "bid", "2026-11-10T23:59:00-05:00")
+    wf["browser_steps"] = list(wf.get("browser_steps") or []) + out["browser_steps"]
+    return campaign, key
+
+
+class UnverifiedGatesAndGoalsAreOwedNotSent(_Base):
+    def test_launch_gates_and_goals_stay_out_and_the_chain_saves(self):
+        campaign, key = _gated_campaign()
+        types = {s["type"] for s in campaign[key]["templates"]}
+        self.assertTrue({"if_else", "workflow_goal"} <= types, types)
+        client = StructuralProvider()
+        stats = wb.CampaignBuilder(client).build(
+            campaign, folder_name="Synthetic", journal=self.journal)
+        self.assertEqual(stats["errors"], [], stats["errors"])
+        saved = client.workflows[stats["workflow_ids"][key]]["templates"]
+        self.assertEqual([s["type"] for s in saved], ["email", "email", "sms"])
+        by_id = {s["id"]: s for s in saved}
+        for s in saved[1:]:
+            self.assertEqual(by_id[s["parentKey"]]["next"], s["id"])
+        excluded = stats["browser_only_excluded"][key]
+        actions = [e["owed_action"] for e in excluded]
+        self.assertEqual(actions.count("configure_purchase_gate"), 2)
+        self.assertEqual(actions.count("configure_if_else_condition"), 1)
+        self.assertEqual(actions.count("set_goal"), 2)
+        waits = [e for e in excluded if e["type"] == "wait"]
+        self.assertEqual(len(waits), 2)
+        owed = {r["ledger_id"] for r in stats["browser_steps"]["requested"]}
+        self.assertTrue(all(e["ledger_id"] in owed for e in excluded))
+        self.assertTrue(all(item["ok"] for item in stats["readback"].values()))
+        fallback = stats["structure_fallback"][key]
+        self.assertIn("INVALID_STRUCTURE", fallback["first_refusal"])
+        self.assertTrue(fallback["saved"])
+        modes = [e.get("mode") for e in self.journal.entries() if e["phase"] == "save"]
+        self.assertIn("structure_fallback", modes)
+
+    def test_a_provider_that_accepts_the_gates_keeps_them(self):
+        campaign, key = _gated_campaign()
+        client = l07.FakeClient()
+        stats = wb.CampaignBuilder(client).build(
+            campaign, folder_name="Synthetic", journal=self.journal)
+        self.assertEqual(stats["errors"], [], stats["errors"])
+        saved = client.workflows[stats["workflow_ids"][key]]["templates"]
+        self.assertIn("if_else", [s["type"] for s in saved])
+        self.assertNotIn(key, stats.get("structure_fallback") or {})
+
+    def test_plan_built_if_else_is_not_removed(self):
+        steps = [{"id": "g", "type": "if_else", "branches": {"true": "a", "false": "b"}},
+                 {"id": "a", "type": "email", "parentKey": "g"},
+                 {"id": "b", "type": "workflow_goal", "parentKey": "g"}]
+        kept, removed = wb.split_browser_only_steps(steps)
+        self.assertEqual(removed, [])
+        self.assertEqual([s["id"] for s in kept], ["g", "a", "b"])
+
+
+class EmptyShellReadsBackAsNoSteps(unittest.TestCase):
+    def test_empty_workflow_data_is_an_empty_graph_not_unreadable(self):
+        class Shell:
+            def request(self, method, path, body=None, workflow_name=None):
+                return {"id": "wf-1", "_id": "wf-1", "name": "x", "workflowData": {}}
+        self.assertEqual(wb._readback_templates(Shell(), LOC, "wf-1"), [])
+        self.assertIsNone(wb._readback_templates(Shell(), LOC, "wf-2"))
+
+    def test_error_document_is_still_unreadable(self):
+        class Broken:
+            def request(self, method, path, body=None, workflow_name=None):
+                return {"_error": True, "http_code": 503}
+        self.assertIsNone(wb._readback_templates(Broken(), LOC, "wf-1"))
 
 
 class JournalledEmptyShellIsResumed(_Base):

@@ -495,26 +495,76 @@ def _is_browser_only(step: Any) -> bool:
     return step.get("rail") == "managed_browser" or attrs.get("rail") == "managed_browser"
 
 
-def split_browser_only_steps(templates: list) -> tuple[list[dict], list[dict]]:
+# Launch-compiler nodes whose GoHighLevel internal step-save shape is NOT
+# verified.  Live refusal 2026-11-23 (SWB-021, HTTP 400 INVALID_STRUCTURE):
+# "parentKey points to <if_else> ... but that node's next does not contain
+# <child>" and, on workflow_goal, "Segments is required. Op is required.
+# Action is required."  Until a captured payload exists they are configured
+# through the managed browser like the wait-until-date steps.
+def _pass_branch(step: dict, steps: list) -> Optional[str]:
+    """The branch a contact takes when the gate is absent, or None."""
+    branches = step.get("branches") if isinstance(step.get("branches"), dict) else {}
+    attrs = step.get("attributes") if isinstance(step.get("attributes"), dict) else {}
+    if attrs.get("purchase_tag") and "false" in branches:
+        return "false"  # purchase gate: true -> stop goal, false -> the send
+    guarded = next((s.get("id") for s in steps if isinstance(s, dict)
+                    and (s.get("attributes") or {}).get("sms_guard") == step.get("id")), None)
+    if guarded is not None:
+        return next((k for k, v in branches.items() if v == guarded), None)
+    return None
+
+
+def _unverified_structure(step: Any, steps: list) -> Optional[str]:
+    """The owed browser action for a launch node with no verified save shape."""
+    if not isinstance(step, dict):
+        return None
+    if step.get("type") == "workflow_goal":
+        return "set_goal"
+    if step.get("type") == "if_else" and _pass_branch(step, steps):
+        attrs = step.get("attributes") or {}
+        return "configure_purchase_gate" if attrs.get("purchase_tag") \
+            else "configure_if_else_condition"
+    return None
+
+
+def split_browser_only_steps(templates: list, *,
+                             unverified_structure: bool = False
+                             ) -> tuple[list[dict], list[dict]]:
     """Return ``(api_templates, browser_only)``.
 
     Each browser-only step is removed and the graph is re-joined around it:
     a reference to it in ``next``, ``parentKey`` or a branch target is
-    replaced by the step's own successor (``next``) or parent (``parentKey``),
-    so the remaining API steps stay one connected chain.  Inputs are not
-    mutated.
+    replaced by the step's own successor (``next``, or for a gate its pass
+    branch) or parent (``parentKey``), so the remaining API steps stay one
+    connected chain.  With ``unverified_structure`` (compiled launch builds)
+    the gates and goal terminals that have no verified save shape are removed
+    too.  Inputs are not mutated.
     """
     steps = [copy.deepcopy(s) for s in templates or []]
-    removed = [s for s in steps if _is_browser_only(s)]
+    owed_action = {}
+    for s in steps:
+        if _is_browser_only(s):
+            owed_action[s.get("id")] = None
+        elif unverified_structure:
+            action = _unverified_structure(s, steps)
+            if action:
+                owed_action[s.get("id")] = action
+    removed = [s for s in steps if s.get("id") in owed_action]
     if not removed:
         return steps, []
     by_id = {s.get("id"): s for s in removed}
+
+    def _succ(step: dict) -> Any:
+        if step.get("next") is not None or not step.get("branches"):
+            return step.get("next")
+        branch = _pass_branch(step, steps)
+        return step["branches"].get(branch) if branch else None
 
     def _resolve_next(step_id: Any) -> Any:
         seen = set()
         while step_id in by_id and step_id not in seen:
             seen.add(step_id)
-            step_id = by_id[step_id].get("next")
+            step_id = _succ(by_id[step_id])
         return step_id
 
     def _resolve_parent(step_id: Any) -> Any:
@@ -526,7 +576,7 @@ def split_browser_only_steps(templates: list) -> tuple[list[dict], list[dict]]:
 
     kept = []
     for step in steps:
-        if _is_browser_only(step):
+        if step.get("id") in by_id:
             continue
         if step.get("next") in by_id:
             step["next"] = _resolve_next(step["next"])
@@ -538,8 +588,10 @@ def split_browser_only_steps(templates: list) -> tuple[list[dict], list[dict]]:
         kept.append(step)
     browser_only = [{"id": s.get("id"), "type": s.get("type"), "name": s.get("name"),
                      "ledger_id": (s.get("attributes") or {}).get("ledger_id"),
-                     "before": _resolve_next(s.get("next")),
+                     "owed_action": owed_action[s.get("id")],
+                     "before": _resolve_next(_succ(s)),
                      "after": _resolve_parent(s.get("parentKey")),
+                     "branches": copy.deepcopy(s.get("branches")),
                      "attributes": copy.deepcopy(s.get("attributes") or {})}
                     for s in removed]
     return kept, browser_only
@@ -1435,6 +1487,11 @@ def _readback_templates(client: Any, location_id: str,
         return workflow_data["templates"]
     if isinstance(data.get("templates"), list):
         return data["templates"]
+    if workflow_data == {} and (data.get("id") or data.get("_id")) == workflow_id:
+        # SWB-021: a never-saved shell reads back as the workflow document
+        # with an EMPTY workflowData object: a read graph with no steps, not
+        # an unreadable one.
+        return []
     return None
 
 
@@ -2341,24 +2398,57 @@ class CampaignBuilder:
             # SWB-021: browser-only steps (wait-until-date and other
             # managed-browser rail steps) are never sent in the API save body;
             # they stay owed as the compiler's browser ledger rows.
-            api_templates, browser_only = split_browser_only_steps(
-                wf_def.get("templates", []))
-            if browser_only:
-                self.stats.setdefault("browser_only_excluded", {})[key] = browser_only
-            templates, unlinked = link_steps(api_templates)
+            launch_build = bool(wf_def.get("unit_key") and wf_def.get("compile_mode"))
+
+            def _owe(excluded: list) -> None:
+                """Every excluded step is an OWED browser row: the compiler
+                ledgered the waits and SMS guards; gates and goals it did not
+                ledger are added here so none is silently dropped."""
+                self.stats.setdefault("browser_only_excluded", {})[key] = excluded
+                rows = [dict(r) for r in wf_def.get("browser_steps") or []
+                        if isinstance(r, Mapping)]
+                have = {r.get("ledger_id") for r in rows}
+                for item in excluded:
+                    if item.get("ledger_id") and item.get("ledger_id") in have:
+                        continue
+                    ledger_id = "%s#%s#%s" % (wf_def.get("unit_key") or key,
+                                              item.get("owed_action") or "browser_step",
+                                              item.get("id"))
+                    item["ledger_id"] = ledger_id
+                    have.add(ledger_id)
+                    rows.append({"kind": "managed_browser_step",
+                                 "action": item.get("owed_action") or "browser_step",
+                                 "unit_key": wf_def.get("unit_key"), "status": "pending",
+                                 "step_id": item.get("id"), "name": item.get("name"),
+                                 "insert_after": item.get("after"),
+                                 "insert_before": item.get("before"),
+                                 "branches": item.get("branches"),
+                                 "attributes": item.get("attributes"),
+                                 "ledger_id": ledger_id})
+                wf_def["browser_steps"] = rows
+
+            def _prepare(unverified: bool) -> tuple:
+                api, excluded = split_browser_only_steps(
+                    wf_def.get("templates", []), unverified_structure=unverified)
+                linked, unlinked_ids = link_steps(api)
+                if unlinked_ids:
+                    return None, excluded, unlinked_ids
+                # A16 layer-7: the step-save backend validates action ids as
+                # UUIDs; plan-supplied slug ids are rejected ("Invalid uuid").
+                # Mint deterministic UUIDv5 ids for non-UUID action ids BEFORE
+                # any consumer reads them (the trigger link below uses
+                # templates[0]["id"] as its targetActionId), remapping link
+                # references (next/parentKey) to the same mints.
+                return normalize_action_ids(linked, self.loc), excluded, []
+
+            templates, browser_only, unlinked = _prepare(False)
             if unlinked:
                 return (key, None, False, False, None,
                         f"{wf_name}: branch node(s) {', '.join(unlinked)} have no authored "
                         "branch targets - refusing to build a graph whose conditions cannot "
                         "be wired. Author next/branches on each branch node in the plan.")
-
-            # A16 layer-7: the step-save backend validates action ids as
-            # UUIDs; plan-supplied slug ids are rejected ("Invalid uuid").
-            # Mint deterministic UUIDv5 ids for non-UUID action ids BEFORE
-            # any consumer reads them (the trigger link below uses
-            # templates[0]["id"] as its targetActionId), remapping link
-            # references (next/parentKey) to the same mints.
-            templates = normalize_action_ids(templates, self.loc)
+            if browser_only:
+                _owe(browser_only)
 
             unit_key = wf_def.get("unit_key")
             expected_hash = graph_hash(templates)
@@ -2574,6 +2664,48 @@ class CampaignBuilder:
                     f"(HTTP {http_code if http_code is not None else 'unknown'}): "
                     f"{pr.get('message', 'no response')}"
                 )
+                # SWB-021 structural fallback: the provider refused the full
+                # launch graph (HTTP 400).  The compiler's gates and goal
+                # terminals have no verified save shape, so save the graph
+                # WITHOUT them once, and owe each one as a browser row.  The
+                # first refusal is kept on the record, never hidden.
+                if launch_build and http_code == 400:
+                    alt, alt_excluded, alt_unlinked = _prepare(True)
+                    if not alt_unlinked and alt and len(alt_excluded) > len(browser_only):
+                        first_refusal = step_err
+                        _owe(alt_excluded)
+                        browser_only = alt_excluded
+                        templates = alt
+                        expected_hash = graph_hash(templates)
+                        put_body["workflowData"] = {"templates": templates}
+                        put_result = self.client.request(
+                            "PUT", f"/workflow/{self.loc}/{wf_id}", put_body,
+                            workflow_name=wf_name,
+                        )
+                        steps_ok = bool(put_result and not put_result.get("_error"))
+                        if journal and unit_key:
+                            journal.append(unit_key=unit_key, name=wf_name,
+                                           remote_id=str(wf_id), phase="save",
+                                           status="ok" if steps_ok else "failed",
+                                           expected_hash=expected_hash,
+                                           mode="structure_fallback")
+                        self.stats.setdefault("structure_fallback", {})[key] = {
+                            "first_refusal": first_refusal,
+                            "saved": steps_ok,
+                            "owed": [i.get("ledger_id") for i in alt_excluded],
+                        }
+                        if steps_ok:
+                            step_err = None
+                            if trigger_data and templates:
+                                trigger_data["targetActionId"] = templates[0]["id"]
+                        else:
+                            pr = put_result or {}
+                            http_code = pr.get("http_code") or pr.get("code")
+                            step_err = (
+                                f"{wf_name}: step-save PUT failed again without the "
+                                "unverified gates/goals "
+                                f"(HTTP {http_code if http_code is not None else 'unknown'}): "
+                                f"{pr.get('message', 'no response')} | first: {first_refusal}")
 
             # Step 4: Sync triggers + canvas meta
             if steps_ok:
