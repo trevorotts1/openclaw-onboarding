@@ -1046,6 +1046,23 @@ substitutes for `plan_run_timeline`. The sibling lip-sync codes already enforced
 in QC (`FACE_SPEAKS_NO_LIPSYNC`, `LIPSYNC_COVERAGE_BELOW_BAND`, `LIPSYNC_OVER_CAP`,
 `LIPSYNC_DURATION_CONFLICT`) stay; these are added beside them.
 
+**The BUILD-RECORD contract.** Every delivered run ships a BUILD-RECORD,
+written from the session's own verified facts and never from a summary, and QC
+refuses a delivery whose BUILD-RECORD is missing any field: the job (run id and
+the brief it came from); the assembler's path plus the SHA-256 of the file that
+ran; the exact commands issued, verbatim; the SHA-256 of `edit/timeline.json`
+and the `TIMELINE_WRITTEN` receipt from `plan_run_timeline`; one row per shot
+carrying the on-disk SHA-256 of every input used; every gate's verdict per stage
+with its code(s); every refusal and how it was cleared (or that it was not), by
+code; the corrections made after a gate, and why; the checks or steps
+deliberately not run, named; a concurrent-writer note (which output each writer
+owned, one writer per output file); credit reconciliation (reserved against
+actual per stage, plus the ledger's own totals); verification status (measured,
+`UNAVAILABLE`, or passed by a person); the measurement renders, with their
+paths; and every delivered file with its SHA-256. A BUILD-RECORD a reader could
+not reproduce the master from is a provenance FAIL, the same as a missing
+assembler receipt. The full field list is QC.md section 5.2.
+
 ## Model and agent choice: the user's choice wins
 
 This skill never picks, forces or recommends a model, an alias or an agent.
@@ -1378,9 +1395,20 @@ SOP named above.
   item 6 of the delivery package, every file through
   `delivery_audio.check_delivery_audio()`). Cutting a clip is free (FFmpeg);
   the AI that picks the moments runs on the client's own AI plan.
-- **Five looks (decision 29):** Lifelike 3D (default), 2D Hand-Painted,
-  Sketch to Life, Canvas to Life, Canvas to 3D. Each look owns its style
-  bible block, its own switching rules and its own QC. The three hybrids
+- **Six looks (decision 29):** Lifelike 3D (default), 2D Hand-Painted,
+  Sketch to Life, Canvas to Life, Canvas to 3D, and **Stylized 3D animation**
+  (`stylized-3d`, the look clients call "Pixar-like": rounded, appealing
+  character shapes, slightly enlarged eyes, simplified skin, soft bounced
+  light, rich color). Each look owns its style bible block, its own switching
+  rules, its own QC and a `client_wording` line. **Client wording comes only
+  from that line:** the guide's line for a look must equal it, and the document
+  guard fails when they drift. Lifelike 3D is described as high-end 3D animation
+  with lifelike faces, clearly animated - never "realistic" or "look real"; a
+  client who wants real people is sent to the realism look. The mapping is
+  fixed once: "Pixar", "Disney-style", "animated movie" and "cartoon 3D" mean
+  Stylized 3D; "real", "real people", "like a movie with actors" mean realism;
+  "Lifelike 3D" alone stays Lifelike 3D; anything unclear gets one question
+  with the samples, never a guess. The three hybrids
   switch sketch or paint to realism (or to lifelike 3D for Canvas to 3D) on
   matched poses, 0.3-0.4 s dissolve, at least 3 seconds held per style, no
   flicker, identity locked; golden realism carries the transformation and
