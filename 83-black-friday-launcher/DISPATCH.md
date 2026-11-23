@@ -92,6 +92,10 @@ nothing is published.
   receipts it belongs to. `package-manifest.json` and `receipt.json` carry that record
   and its digest. A desired install/publication with no read-back stays pending and
   says so; a local/draft package is never relabelled installed or live.
+- A `draft_constructed` full launch may carry only the named not-installed page blockers
+  (`package.OPEN_BY_DESIGN_BLOCKERS`), recorded as `open_by_design_blockers`; every other blocker, and any blocker
+  on an `installed`/`published` (or `local_prepared`) full launch, refuses (`AF-LAUNCH-PKG-BLOCKERS`, re-proved by
+  `launcher_core/check_rules/open_blockers.py`).
 - `check` RE-PROVES the stage (`launcher_core/check_rules/activation.py`): the sealed
   `activation.json` must resolve and match its digest, agree with the manifest and the
   receipt, and an `installed`/`published` stage must still be proved by the read-back —

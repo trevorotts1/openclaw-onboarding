@@ -84,6 +84,61 @@ DELIVERY_LABEL_DESIGN_ONLY = ("design-only (open page blockers: the pages are dr
 # Open until the native checkout install (CHK-01) ships; recorded on every package.
 SEAM_NATIVE_CHECKOUT_INSTALL = "native_checkout_install"
 
+# B3: the standing blockers the page producers attach to EVERY design-time result. Each means only
+# "not installed by Skill 06 yet", so a draft_constructed full launch may carry them, named, as open by
+# design. Exact producer text -> (name, the roles it may ride on). Nothing else is accepted, and none of
+# these is accepted once a package is installed or published. Lockstep with the producers
+# (49 checkout_wrapper.BLOCKERS, 80 adapter_common.build_result, 49 translate_thank_you_result
+# DESIGN_BLOCKER and DESIGN_BLOCKER_TEXT) is pinned by tests/test_package_draft_and_roles.py.
+OPEN_BY_DESIGN_STAGE = "draft_constructed"
+OPEN_BY_DESIGN_BLOCKERS = {
+    "the native checkout form is installed by Skill 06; this result carries the page's design "
+    "stages only and no native binding": ("CHECKOUT-NATIVE-FORM-NOT-INSTALLED", ("checkout",)),
+    "the design board and final-mockups wait for the image chain and the client's recorded "
+    "board approval (design_board.py gate)": ("CHECKOUT-BOARD-AWAITS-CLIENT-APPROVAL", ("checkout",)),
+    "S80-06 extra-offer binding is integrated at interface-conformance "
+    "level only (S79 confirmed interface, revision 2, fixture level): "
+    "the native action ID is null pending S06 confirmation (open "
+    "questions S06-Q1..Q6, S44-Q7/Q8, S49-Q9) - result is authored/local "
+    "only, NOT installed or live proof.": ("S80-06-BINDING-NOT-INSTALLED", ("upsell_1", "upsell_2")),
+    "THANK-YOU-RUNTIME-NOT-INSTALLED": ("THANK-YOU-RUNTIME-NOT-INSTALLED", ("thank_you",)),
+    "the thank-you page is a design deliverable only: the purchase-time "
+    "runtime (Skill 82 resolver against a real purchase snapshot) is not "
+    "installed, so no order view, no-pitch check or entitlement check "
+    "exists for it yet": ("THANK-YOU-RUNTIME-NOT-INSTALLED", ("thank_you",)),
+}
+# B5: every lane unit's sealed bytes live under lanes/<unit id>/, so no two units share a path.
+LANE_STAGE_DIR = "lanes"
+_UNIT_ID_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.-]*")
+
+
+def slot_role(slot: str) -> str:
+    """The route role a piece slot belongs to (a second page of a role rides on its parent's)."""
+    return EXTRA_SLOTS.get(slot, slot)
+
+
+def open_blocker_split(rows: Sequence[Tuple[str, str, Sequence[Any]]]) -> Tuple[List[Dict[str, Any]],
+                                                                               List[Tuple[str, Any]]]:
+    """(open-by-design records, every other blocker) for (slot, role, blockers) rows.
+
+    A blocker is open by design only when it is exactly an OPEN_BY_DESIGN_BLOCKERS text on a role that
+    text names; anything else (a new text, a changed word, the right text on another page) is returned
+    in the second list and never accepted."""
+    by_design: List[Dict[str, Any]] = []
+    other: List[Tuple[str, Any]] = []
+    for slot, role, blockers in rows:
+        names: List[str] = []
+        for blocker in blockers or []:
+            known = OPEN_BY_DESIGN_BLOCKERS.get(blocker) if isinstance(blocker, str) else None
+            if known is not None and role in known[1]:
+                if known[0] not in names:
+                    names.append(known[0])
+            else:
+                other.append((slot, blocker))
+        if names:
+            by_design.append({"slot": slot, "role": role, "names": names})
+    return by_design, other
+
 # F06: installation and publication are separate stages, recorded separately from the
 # construction receipts. A package is only ever labelled with the stage the EVIDENCE
 # proves; a local or draft package is never relabelled installed or live.
@@ -478,7 +533,10 @@ def _lane_receipt(unit: Dict[str, Any], delivery: Any, intake: Dict[str, Any],
             raise PackageError("AF-LAUNCH-PKG-ARTIFACT-SIZE",
                                f"{label} artifact {path!r} is {actual_size} bytes, "
                                f"the lane receipt says {size!r}")
-        artifacts.append({"path": path, "sha256": digest, "size": actual_size})
+        entry = {"path": path, "sha256": digest, "size": actual_size}
+        if _nonempty_str(art.get("role")):  # B5: the producer's role tag is how its validator finds each file
+            entry["role"] = art["role"].strip()
+        artifacts.append(entry)
 
     lane = delivery.get("lane_validation")
     if not isinstance(lane, dict) or not _nonempty_str(lane.get("lane")) \
@@ -507,6 +565,7 @@ def _lane_receipt(unit: Dict[str, Any], delivery: Any, intake: Dict[str, Any],
         raise PackageError("AF-LAUNCH-PKG-RECEIPT-REQUEST",
                            f"{label} carries no request echo")
 
+    artifacts = _stage_unit_artifacts(unit["id"], artifacts, run_dir)
     row = {
         **_identity(intake, approved),
         "unit_id": unit["id"],
@@ -536,6 +595,35 @@ def _lane_receipt(unit: Dict[str, Any], delivery: Any, intake: Dict[str, Any],
     if delivery_marker:
         row["delivery"] = delivery_marker
     return row
+
+
+def _stage_unit_artifacts(unit_id: str, artifacts: List[Dict[str, Any]],
+                          run_dir: Path) -> List[Dict[str, Any]]:
+    """B5: seal one lane unit's (already verified) bytes under lanes/<unit id>/ inside the package.
+
+    Skill 50 names every email run's files by the same run-relative paths, so units sealed at shared
+    paths would prove each other. A file already under this unit's prefix stays where it is; a different
+    file already at the staged path is refused, never overwritten."""
+    if not isinstance(unit_id, str) or not _UNIT_ID_RE.fullmatch(unit_id):
+        raise PackageError("AF-LAUNCH-PKG-RECEIPT-ARTIFACT",
+                           f"unit {unit_id!r} is not one plain path segment, so its files cannot be staged")
+    root = run_dir.resolve()
+    prefix = Path(LANE_STAGE_DIR) / unit_id
+    out: List[Dict[str, Any]] = []
+    for art in artifacts:
+        src = (run_dir / art["path"]).resolve()
+        inside = src.relative_to(root)
+        staged = inside if inside.parts[:2] == prefix.parts else prefix / inside
+        dest = root / staged
+        data = src.read_bytes()
+        if dest.exists() and dest.read_bytes() != data:
+            raise PackageError("AF-LAUNCH-PKG-COLLISION",
+                               f"unit {unit_id!r}: {staged.as_posix()!r} already holds other bytes")
+        if not dest.exists():
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            dest.write_bytes(data)
+        out.append({**art, "path": staged.as_posix()})
+    return out
 
 
 def _unit_receipts(ordered: List[Dict[str, Any]], intake: Dict[str, Any],
@@ -1314,8 +1402,13 @@ def assemble(run_dir: Path, intake: Dict[str, Any], route: Dict[str, Any],
     client delivery. A client delivery (test_only false) also needs Skill 49's live receipt store to verify.
 
     Open page blockers travel with each piece into the manifest and receipt units. A full launch
-    refuses to assemble while any are open (AF-LAUNCH-PKG-BLOCKERS); a page-only package is labelled
-    design-only. ``require_designs=False`` needs a verified ``design_waiver`` bound to the plan hash.
+    refuses to assemble while any are open (AF-LAUNCH-PKG-BLOCKERS), except that a draft_constructed
+    package may carry the named "not installed by Skill 06 yet" standing blockers
+    (OPEN_BY_DESIGN_BLOCKERS, each on its own page role only), recorded by name in
+    ``open_by_design_blockers``; an installed or published package carries none. A page-only package
+    is labelled design-only. Each lane unit's artifacts keep their producer's ``role`` tag and are
+    sealed under ``lanes/<unit id>/`` so every unit's validator resolves its own files.
+    ``require_designs=False`` needs a verified ``design_waiver`` bound to the plan hash.
     ``refuse_incomplete_designs`` (the CLI passes it unless --allow-no-designs) judges the whole design
     set (page_designs.design_violations) BEFORE the first write and raises AF-LAUNCH-ASSEMBLE-DESIGN, so
     a partial set seals nothing. Library callers that build a package to hand to `check` leave it off.
@@ -1334,12 +1427,6 @@ def assemble(run_dir: Path, intake: Dict[str, Any], route: Dict[str, Any],
     open_raw = {slot: piece["blockers"] for slot, piece in pieces.items()
                 if isinstance(piece, dict) and isinstance(piece.get("blockers"), list)
                 and piece["blockers"]}
-    if open_raw and scope == DELIVERY_SCOPE_FULL:
-        raise PackageError(
-            "AF-LAUNCH-PKG-BLOCKERS",
-            "a full launch cannot carry open page blockers (assemble a page-only, design-only "
-            "package instead): " + "; ".join(
-                f"{slot}: {json.dumps(b, sort_keys=True, default=str)}" for slot, b in open_raw.items()))
     test_only = bool(intake.get("test_only", True))
     root, explicit = _find_dispatch_root(dispatch_run, [source_root, run_dir.resolve()])
     binding = None
@@ -1364,6 +1451,21 @@ def assemble(run_dir: Path, intake: Dict[str, Any], route: Dict[str, Any],
         dispatch_record = {"state": DISPATCH_STATE_UNBOUND_FIXTURE,
                            "detail": "no dispatch run: hand-built test fixture, not a dispatched build"}
     activation = _activation(intake, binding, activation_readback)
+    # B3: a full launch carries no open page blocker, except the named "not installed by Skill 06 yet"
+    # standing blockers on a draft_constructed package (never on an installed or published one).
+    if open_raw and scope == DELIVERY_SCOPE_FULL:
+        _, other = open_blocker_split([(slot, slot_role(slot), b) for slot, b in open_raw.items()])
+        draft = activation["achieved_state"] == OPEN_BY_DESIGN_STAGE
+        refused = other if draft else [(slot, b) for slot, bs in open_raw.items() for b in bs]
+        if refused:
+            raise PackageError(
+                "AF-LAUNCH-PKG-BLOCKERS",
+                "a full launch cannot carry open page blockers (assemble a page-only, design-only "
+                "package instead"
+                + ("" if draft else f"; the package is {activation['achieved_state']}, and only a "
+                   f"{OPEN_BY_DESIGN_STAGE} package may carry the named not-installed blockers")
+                + "): " + "; ".join(f"{slot}: {json.dumps(b, sort_keys=True, default=str)}"
+                                     for slot, b in refused))
     # The activation record is written SEPARATELY from the construction receipts (after the design
     # refusal below, so a refused package leaves nothing on disk),
     # before the manifest, so its own digest can be carried by the manifest without
@@ -1616,6 +1718,9 @@ def assemble(run_dir: Path, intake: Dict[str, Any], route: Dict[str, Any],
 
     open_blockers = [{"slot": p["slot"], "page_id": p["page_id"], "role": p["role"],
                       "blockers": p["blockers"]} for p in ordered if p["blockers"]]
+    # B3: the named not-installed blockers a draft_constructed package carries open by design.
+    open_by_design = (open_blocker_split([(b["slot"], b["role"], b["blockers"]) for b in open_blockers])[0]
+                      if activation["achieved_state"] == OPEN_BY_DESIGN_STAGE else [])
     delivery_label = DELIVERY_LABELS[scope]
     if open_blockers:
         delivery_label = f"{DELIVERY_LABEL_DESIGN_ONLY}; {delivery_label}"
@@ -1651,6 +1756,7 @@ def assemble(run_dir: Path, intake: Dict[str, Any], route: Dict[str, Any],
         "client_handoff": _client_handoff(intake, ordered, plan_record, activation,
                                           open_blockers),
         "open_blockers": open_blockers,
+        "open_by_design_blockers": open_by_design,
         "design_waiver": waiver,
         "intake": {"path": "intake.json", "sha256": _sha256_file(intake_path)},
         "route_graph": {"path": "route-graph.json", "sha256": _sha256_file(route_path)},
@@ -1716,6 +1822,7 @@ def assemble(run_dir: Path, intake: Dict[str, Any], route: Dict[str, Any],
         "activation_label": manifest["activation_label"],
         "client_handoff": manifest["client_handoff"],
         "open_blockers": open_blockers,
+        "open_by_design_blockers": open_by_design,
         "design_waiver": waiver,
         "manifest": {"path": "package-manifest.json", "sha256": _sha256_file(manifest_path)},
         "units": _unit_receipts(ordered, intake, launch_plan, pieces, plan_ref, run_dir,

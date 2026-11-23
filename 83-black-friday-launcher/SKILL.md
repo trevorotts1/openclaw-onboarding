@@ -2,7 +2,7 @@
 name: black-friday-launcher
 description: "Helps a business owner get their whole Black Friday sale ready, step by step: the sales page, the order form, the special offers, the thank-you page, and the launch emails and text messages. Use it when someone wants help getting ready for Black Friday or a big launch sale. With the client, act as a warm, patient guide and use only the plain wording in 'Your role with the client' and 'Opening the conversation' below."
 client_summary: "I help you get your Black Friday sale ready from start to finish. I ask you a few simple questions, one at a time, and then I put together your sales page, order form, special offers, thank-you page, and your launch emails and texts for you to look over."
-version: 0.2.41
+version: 0.2.42
 priority: HIGH
 ---
 
@@ -569,7 +569,15 @@ steps, all DRAFT-ONLY (nothing is sent and nothing goes live):
    text-set validator. A page the launcher builds itself is proved by its own page row. A page another lane
    delivers and the Conversation AI have no producer contract yet (their allow-list is empty), so `assemble` and
    `check` refuse any lane delivery for them with `AF-LAUNCH-PKG-RECEIPT-LANE` ("has no producer yet"), whatever
-   contract string it carries.
+   contract string it carries. Every lane unit's files keep their producer's `role` tag and are sealed under the
+   unit's own folder in the package (`lanes/<unit id>/...`), so each email sequence's `--check` finds its own files.
+
+A full launch refuses open page blockers (`AF-LAUNCH-PKG-BLOCKERS`), with one exception: a dispatched package that
+is still `draft_constructed` (nothing installed or published) may carry the named "not installed by Skill 06 yet"
+blockers the page producers always attach (the order form's two, Skill 80's S80-06 binding note, the thank-you
+page's THANK-YOU-RUNTIME-NOT-INSTALLED), each on its own page only. They are recorded by name as
+`open_by_design_blockers` in the manifest and the receipt. Any other blocker, and any of these once a package is
+installed or published, still refuses.
 
 Skill 83 builds pages; it does not build workflows itself. See Skill 44's own SKILL.md and INSTRUCTIONS.md for
 the same four steps from the other side.
