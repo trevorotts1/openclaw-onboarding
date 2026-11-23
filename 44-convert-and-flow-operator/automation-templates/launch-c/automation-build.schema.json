@@ -243,7 +243,39 @@
           "type": "object",
           "description": "Approved copy the reader bound into this build. sms_copy maps an SMS step id (or its body_ref) to the Skill 50 approved body from working/text/<set_id>.sms.json; the compiler binds it and the build command refuses an elected SMS step that stays copy_pending. Present only when the automation waits on a text set.",
           "additionalProperties": false,
-          "properties": { "sms_copy": { "type": "object", "additionalProperties": { "type": "string", "minLength": 1 } } }
+          "properties": {
+            "sms_copy": { "type": "object", "additionalProperties": { "type": "string", "minLength": 1 } },
+            "sms_sets": {
+              "type": "array",
+              "description": "The explicit step-id map the compiler binds SMS copy by: one entry per elected text set, in plan order, with the set's kind, its category from the plan's promotional flag, and its approved message step ids in order. A template SMS slot takes the next message of the set its kind matches; copy that lands in no slot stays a refusal.",
+              "items": {
+                "type": "object",
+                "required": ["set_id", "kind", "category", "step_ids"],
+                "additionalProperties": false,
+                "properties": {
+                  "set_id": { "type": "string", "minLength": 1 },
+                  "kind": { "type": ["string", "null"] },
+                  "category": { "type": "string", "enum": ["marketing", "operational"] },
+                  "step_ids": { "type": "array", "items": { "type": "string", "minLength": 1 } },
+                  "after_steps": {
+                    "type": "object",
+                    "description": "Optional explicit position from the approved copy file: message step id -> the id of the approved email it is sent with.",
+                    "additionalProperties": { "type": "string", "minLength": 1 }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "followed_offer_slot": {
+          "type": ["string", "null"],
+          "description": "The offer.packages[].slot whose offer_id equals followed_offer_id (null when none or several match). The upsell/downsell template names its tags option-branch:<slot>:<offer_id>, declined-<slot> and bought-<slot>; without the slot that template graph is refused by name.",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9:_./-]*$"
+        },
+        "compile_spec": {
+          "type": ["object", "null"],
+          "description": "new_template.compile_spec of a template 'new' unit the owner approved (null otherwise). Its build_graph is compiled exactly like a library template, under the same draft-only gates and refusals.",
+          "additionalProperties": true
         },
         "expected_graph_hash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
         "required_outputs": { "type": "array", "items": { "type": "string" }, "uniqueItems": true },

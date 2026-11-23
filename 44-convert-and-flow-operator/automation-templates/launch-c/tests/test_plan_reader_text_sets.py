@@ -136,9 +136,18 @@ def test_compiled_sms_steps_carry_the_approved_copy(tmp_path):
     assert all(s["attributes"]["copy_pending"] is False for s in steps)
 
 
+def _unslotted_plan():
+    """The same launch, but the elected set is a kind the abandoned-checkout template has no
+    SMS slot for, so copy keyed to ids that exist in no step reaches no step at all."""
+    plan = launch_plan()
+    plan["text_sets"][0]["kind"] = "last_call"
+    return plan
+
+
 def test_a_step_the_copy_never_reached_is_a_named_refusal(tmp_path):
-    # copy keyed to step ids that exist in no SMS step: the template steps stay copy_pending
-    _rc, doc = read(tmp_path, copy_dir=skill50_copy(tmp_path, step_ids=("nope-1", "nope-2")))
+    # copy keyed to step ids that exist in no SMS step, of a kind no slot takes: the template steps stay copy_pending
+    _rc, doc = read(tmp_path, copy_dir=skill50_copy(tmp_path, step_ids=("nope-1", "nope-2")),
+                    plan=_unslotted_plan())
     campaign = launch_text.enforce_sms_copy(wb.compile_launch_builds(doc), doc)
     refusal = next(r for r in campaign.refusals if r["id"] == "auto_abandoned_checkout")
     assert refusal["code"] == launch_text.CODE_PENDING
@@ -148,7 +157,8 @@ def test_a_step_the_copy_never_reached_is_a_named_refusal(tmp_path):
 
 def test_compile_launch_builds_alone_refuses_pending_copy(tmp_path):
     # Only the production entry point (no direct enforce_sms_copy call): removing its wiring turns this red.
-    _rc, doc = read(tmp_path, copy_dir=skill50_copy(tmp_path, step_ids=("nope-1", "nope-2")))
+    _rc, doc = read(tmp_path, copy_dir=skill50_copy(tmp_path, step_ids=("nope-1", "nope-2")),
+                    plan=_unslotted_plan())
     campaign = wb.compile_launch_builds(doc, require_ready=True)
     refusal = next(r for r in campaign.refusals if r["id"] == "auto_abandoned_checkout")
     assert refusal["code"] == "SMS-COPY-PENDING" and refusal["detail"]["pending"]

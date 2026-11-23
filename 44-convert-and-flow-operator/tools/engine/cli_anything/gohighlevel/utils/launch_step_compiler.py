@@ -16,13 +16,16 @@ reasons and the browser ledger rows an operator must still perform.
 """
 from __future__ import annotations
 
+import importlib.util
 import json
 import re
 from datetime import datetime
+from functools import lru_cache
 from pathlib import Path
 from typing import Any, Mapping, Optional
 
 from cli_anything.gohighlevel.utils.workflow_builder import (
+    BRANCH_TYPES,
     GUARD_PURCHASE,
     VERIFIED_ACTIONS,
     compile_guard_conditions,
@@ -94,6 +97,82 @@ TAG_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9:_./-]*$")
 TOKEN_RE = re.compile(r"<([A-Za-z0-9_-]+)>|\[([A-Za-z0-9_-]+)\]")
 LEFTOVER_RE = re.compile(r"<[^>]*>|\[[^\]]*\]|\{\{[^}]*\}\}")
 DURATION_RE = re.compile(r"^(\d+)\s*(minute|hour|day|week)s?$")
+# "onboard_start_at+1day" (a template `wait until`, spaces stripped): a per-contact event clock.
+EVENT_TOKEN_RE = re.compile(r"^([a-z][a-z0-9_]*)([+-])(\d+)(minute|hour|day|week)s?$")
+
+# ── Template tokens bound from the launch plan's own fields ──────────────────
+# launch-a/optin-register-login.json: the entry tag a variant adds and the guard
+# its reentry rule names (`launch-access-requested` guards with `launch-access-started`).
+OPTIN_ENTRY_TOKEN = "variant entry tag"
+OPTIN_GUARD_TOKEN = "matching *-started guard"
+OPTIN_ENTRY_GUARDS = {
+    "launch-optin": "launch-optin-started",
+    "launch-registered": "launch-registered-started",
+    "launch-access-requested": "launch-access-started",
+}
+# Event clocks a template may wait on, and the plan field that proves the clock.
+# onboard_start_at is set from the purchase event (onboarding template node n7).
+EVENT_ANCHORS = {"onboard_start_at": "purchase_identity"}
+
+# ── Approved SMS copy -> SMS steps (the explicit step-id map) ─────────────────
+# A template SMS slot and the launch text-set kinds whose approved messages it
+# carries, in step order.  A slot not listed here binds only by its exact step id
+# (or body_ref); a compile_spec / template node may declare `text_set_kind` itself.
+# ponytail: add a slot here only when the template's own copy brief names that kind.
+TEMPLATE_SMS_SLOTS = {
+    "launch-a/launch-optin-register-login": {"n5": ("opt_in_confirmation", "keyword_opt_in")},
+    "launch-b/launch-post-sale-purchase": {"n5": ("access_link",)},
+    "launch-b/abandoned-checkout-recovery": {"n9": ("abandoned_checkout",),
+                                             "n18": ("abandoned_checkout",)},
+    "launch-c/launch-c-onboarding-first-hour-day-week": {"n3": ("access_link",)},
+}
+# Bound-sequence mode has no template slot, so a message is placed only where the
+# launch contract itself says it sends: operational entry texts right after the
+# first email, calendar texts at the plan's own calendar instant (gated by a
+# ledgered wait-until-date step).  Any other kind stays unplaced and is refused.
+SEQUENCE_SMS_IMMEDIATE = ("access_link", "opt_in_confirmation", "keyword_opt_in")
+SEQUENCE_SMS_CALENDAR = {"doors_open": "doors_open", "last_call": "last_call"}
+# Texts that are the consent handshake itself: they cannot require sms-subscribed.
+SMS_HANDSHAKE_KINDS = ("opt_in_confirmation", "keyword_opt_in")
+
+
+@lru_cache(maxsize=1)
+def _sms_contract() -> Optional[Mapping[str, Any]]:
+    """EXPECTED_CONDITIONS of launch-text/sms_eligibility.py: the ONE shape WF-25 verifies."""
+    path = _templates_root() / "launch-text" / "sms_eligibility.py"
+    try:
+        spec = importlib.util.spec_from_file_location("_caf_sms_eligibility", path)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        return module.EXPECTED_CONDITIONS
+    except (OSError, ImportError, AttributeError):
+        return None
+
+
+def sms_guard_conditions(category: str, kind: Optional[str] = None,
+                         close_at: Optional[str] = None) -> Optional[list]:
+    """The native conditions every SMS step is saved with (WF-25 / WF-16), or None.
+
+    marketing: sms-subscribed, not sms-opted-out, the aggregate contact cap, the
+    08:00-21:00 recipient-local window and the doors-close deadline.  operational
+    (access, reminders) never consumes the cap and is never cut by the launch
+    deadline (sms_eligibility law), but still needs consent, the opt-out stop and
+    the window; only the opt-in handshake itself is sent before sms-subscribed.
+    """
+    contract = _sms_contract()
+    if contract is None or category not in contract:
+        return None
+    rules = dict(contract["marketing"])
+    keep = list(contract[category])
+    if category == "operational" and kind not in SMS_HANDSHAKE_KINDS:
+        keep.insert(0, ("consent", rules["consent"]))
+    out = []
+    for rule, expected in keep:
+        condition = dict(expected, id="sms-%s" % rule.replace("_", "-"), rule=rule)
+        if rule == "launch_deadline" and close_at:
+            condition["value"] = close_at
+        out.append(condition)
+    return out
 
 
 def purchase_tag(launch_id: str) -> str:
@@ -129,10 +208,58 @@ def _templates_root() -> Path:
     return Path(__file__).resolve().parents[5] / "automation-templates"
 
 
+# Template tokens -> (binding key, launch-plan field that binds it).  An unbound
+# token is named with its field, so the gap reads "needs:variant_tag", never a guess.
+TOKEN_FIELDS = {
+    OPTIN_ENTRY_TOKEN: (OPTIN_ENTRY_TOKEN, "variant_tag"),
+    OPTIN_GUARD_TOKEN: (OPTIN_GUARD_TOKEN, "variant_tag=" + "|".join(sorted(OPTIN_ENTRY_GUARDS))),
+    VARIANT_BINDING: (VARIANT_BINDING, "variant_tag"),
+    "<slot>": ("slot", "followed_offer_slot"),
+    "<offer_id>": ("offer_id", "followed_offer_id"),
+}
+
+
+def plan_bindings(build: Mapping[str, Any]) -> dict:
+    """Template-token bindings from fields the launch plan already carries (never guessed)."""
+    out: dict[str, Any] = {}
+    variant = build.get("variant_tag")
+    if isinstance(variant, str) and TAG_RE.match(variant.strip()):
+        variant = variant.strip()
+        out[VARIANT_BINDING] = [variant]
+        out[OPTIN_ENTRY_TOKEN] = [variant]
+        if variant in OPTIN_ENTRY_GUARDS:
+            out[OPTIN_GUARD_TOKEN] = [OPTIN_ENTRY_GUARDS[variant]]
+    offer, slot = build.get("followed_offer_id"), build.get("followed_offer_slot")
+    if isinstance(offer, str) and TAG_RE.match(offer):
+        out["offer_id"] = offer
+    if isinstance(slot, str) and TAG_RE.match(slot):
+        out["slot"] = slot
+    if purchase_identity(build)["sufficient"]:
+        out["event_anchors"] = ["onboard_start_at"]
+    return out
+
+
+def _needs(raw: Any, bindings: Mapping[str, Any]) -> str:
+    """``:needs:<field>`` for the first unbound plan token in a raw template value, else ''."""
+    text = json.dumps(raw)
+    return next((":needs:%s" % field for token, (key, field) in TOKEN_FIELDS.items()
+                 if token in text and key not in bindings), "")
+
+
 # ── Template resolution (buildable spec) ─────────────────────────────────────
 def resolve_template(build: Mapping[str, Any], *, root: Optional[Path] = None,
                      manifest: Optional[Mapping[str, Any]] = None) -> tuple:
-    """Return ``(spec, key, reason)``; spec is a template doc with a build_graph."""
+    """Return ``(spec, key, reason)``; spec is a template doc with a build_graph.
+
+    A template "new" unit carrying the owner-approved new_template.compile_spec
+    (the reader passes it on as ``compile_spec``) compiles that graph, under the
+    same gates as a library template."""
+    if str(build.get("template") or "").strip() == "new" and build.get("compile_spec") is not None:
+        spec = build["compile_spec"]
+        graph = spec.get("build_graph") if isinstance(spec, Mapping) else None
+        if not isinstance(graph, list) or not graph:
+            return None, "new_template", "template_unbuildable:new_template.compile_spec"
+        return dict(spec), "new_template:%s" % build.get("id"), None
     root = Path(root) if root else _templates_root()
     if manifest is None:
         try:
@@ -289,12 +416,10 @@ def compile_build(build: Mapping[str, Any], *, bindings: Optional[Mapping[str, A
                            "workflows": {}, "browser_steps": []}
     blocked = out["blocked_by"]
     bindings = dict(bindings or {})
-    # The variant tag the reader carried on this build (it validates the shape);
-    # without it the template's variant placeholder cannot resolve and the
-    # purchase handler would compile without the tag that marks the variant.
-    variant = build.get("variant_tag")
-    if isinstance(variant, str) and variant.strip():
-        bindings.setdefault(VARIANT_BINDING, [variant.strip()])
+    # The variant tag, followed offer and purchase identity the reader carried on
+    # this build; without them the template's placeholders cannot resolve.
+    for key, value in plan_bindings(build).items():
+        bindings.setdefault(key, value)
 
     if build.get("draft_only") is not True:
         blocked.append("not_draft")
@@ -351,7 +476,8 @@ def compile_build(build: Mapping[str, Any], *, bindings: Optional[Mapping[str, A
     steps: list = []
     if spec is not None:
         steps = _compile_graph(out, spec["build_graph"], bid, emails, bindings, promo,
-                               close_at, ptag, family)
+                               close_at, ptag, family, sms_slots=TEMPLATE_SMS_SLOTS.get(key))
+        bind_sms_copy(steps, bindings)
     if steps and not blocked:
         until_dates = {"%s_at" % n["phase"]: n["at"] for n in schedule.get("calendar_nodes") or []
                        if isinstance(n, Mapping) and n.get("phase") and n.get("at")}
@@ -361,6 +487,9 @@ def compile_build(build: Mapping[str, Any], *, bindings: Optional[Mapping[str, A
         _apply_purchase_gate(steps, bid, gtag)
     if steps and not out["blocked_by"]:
         _terminate(steps, bid)
+        doors_close = next((n.get("at") for n in schedule.get("calendar_nodes") or []
+                            if isinstance(n, Mapping) and n.get("phase") == "doors_close"), None)
+        apply_sms_guards(out, steps, bid, close_at or doors_close)
     if family == "post_sale" and steps and not any(
             s["type"] == "add_contact_tag" and ptag in s["attributes"].get("tags", []) for s in steps):
         blocked.append("purchase_tag_not_set:%s" % bid)
@@ -380,8 +509,35 @@ def compile_build(build: Mapping[str, Any], *, bindings: Optional[Mapping[str, A
     return out
 
 
-def _compile_graph(out, graph, bid, emails, bindings, promo, close_at, ptag, family) -> list:
+def _event_wait(out, sid, token, bindings) -> Optional[dict]:
+    """A per-contact event-relative wait (``onboard_start_at + 1 day``) or None.
+
+    Bound only when the launch plan carries the field that proves the clock
+    (EVENT_ANCHORS).  No API payload is verified for Set event start time or an
+    event-relative Wait (references/workflow-timing.md), so both are ledgered
+    managed-browser steps, never a duration wait that would fire from enrolment."""
+    m = EVENT_TOKEN_RE.match(token)
+    if not m or m.group(1) not in (bindings.get("event_anchors") or ()):
+        return None
+    anchor, sign, value, unit = m.group(1), m.group(2), int(m.group(3)), m.group(4)
+    value, unit = (value * 7, "day") if unit == "week" else (value, unit)
+    offset = value if sign == "+" else -value
+    if not any(r["action"] == "set_event_start_time" and r.get("anchor") == anchor
+               for r in out["browser_steps"]):
+        _ledger(out, "set_event_start_time", anchor=anchor, source=EVENT_ANCHORS[anchor])
+    row = _ledger(out, "wait_until_event", step_id=sid, anchor=anchor, offset=offset,
+                  unit="%ss" % unit)
+    name = "Wait until %s %+d %ss" % (anchor, offset, unit)
+    return {"id": sid, "type": "wait", "name": name, "rail": "managed_browser",
+            "attributes": {"type": "event_relative", "anchor": anchor, "offset": offset,
+                           "unit": "%ss" % unit, "name": name, "rail": "managed_browser",
+                           "ledger_id": row["ledger_id"]}}
+
+
+def _compile_graph(out, graph, bid, emails, bindings, promo, close_at, ptag, family,
+                   sms_slots=None) -> list:
     blocked = out["blocked_by"]
+    sms_slots = sms_slots or {}
     nodes = [n for n in graph if isinstance(n, Mapping) and n.get("type") != "trigger"]
     idmap = {n["id"]: "%s-%s" % (bid, n["id"]) for n in nodes}
     kids = {n["id"]: [] for n in nodes}
@@ -427,8 +583,16 @@ def _compile_graph(out, graph, bid, emails, bindings, promo, close_at, ptag, fam
             ref = str(a.get("message") or a.get("ref") or nid)
             step = sms_step(ref, "", id=sid)
             step["attributes"].update({"body_ref": ref, "copy_pending": True})
+            # Which approved text-set kinds this slot carries: the template's own
+            # declaration, else the library slot map; the copy is bound later by id.
+            kinds = a.get("text_set_kind") or sms_slots.get(nid) or ()
+            step["attributes"]["text_set_kinds"] = [kinds] if isinstance(kinds, str) else list(kinds)
         elif ntype == "wait":
-            if a.get("kind") == "until":
+            token = re.sub(r"[{}\s]", "", str(a.get("until") or ""))
+            event = _event_wait(out, sid, token, bindings) if a.get("kind") == "until" else None
+            if event is not None:
+                step = event
+            elif a.get("kind") == "until":
                 step = {"id": sid, "type": "wait", "name": "Wait until %s" % a.get("until"),
                         "attributes": {"type": "until_date", "untilDate": None, "template_until": a.get("until")}}
             else:
@@ -440,9 +604,10 @@ def _compile_graph(out, graph, bid, emails, bindings, promo, close_at, ptag, fam
                 value, unit = (value * 7, "day") if unit == "week" else (value, unit)
                 step = wait_step("", value, {"minute": "minutes", "hour": "hours", "day": "days"}[unit], id=sid)
         elif ntype in ("add_contact_tag", "remove_contact_tag"):
-            tags = _resolve_tags(a.get("tags") or a.get("tags_removed") or a.get("tag"), bindings)
+            raw = a.get("tags") or a.get("tags_removed") or a.get("tag")
+            tags = _resolve_tags(raw, bindings)
             if not tags:
-                blocked.append("tag_unresolved:%s" % nid)
+                blocked.append("tag_unresolved:%s%s" % (nid, _needs(raw, bindings)))
                 continue
             step = tag_step(str(a.get("ref") or nid), tags, remove=ntype == "remove_contact_tag", id=sid)
         elif ntype == "if_else":
@@ -480,7 +645,7 @@ def _compile_graph(out, graph, bid, emails, bindings, promo, close_at, ptag, fam
 def _apply_absolute(out, steps, sched, until_dates, tz, allow_browser_steps) -> list:
     """Gate every date-anchored send by a ledgered wait-until-date step."""
     blocked = out["blocked_by"]
-    for eid in [s["id"] for s in steps if s["type"] == "email"]:
+    for eid in [s["id"] for s in steps if s["type"] in ("email", "sms")]:
         node = sched.get(eid)
         if not node or node.get("kind") != "absolute" or not node.get("at"):
             continue
@@ -548,6 +713,173 @@ def _apply_purchase_gate(steps: list, bid: str, ptag: str) -> None:
                   "attributes": {"goal": "purchased", "goalType": "contact_tag", "tag": ptag,
                                  "scope": "this_campaign_only"},
                   "parentKey": sends[-1]["id"], "next": None})
+
+
+# ── approved SMS copy -> SMS steps, and the native SMS guards ────────────────
+def _sms_messages(bindings: Mapping[str, Any]) -> list:
+    """Every approved message of the elected text sets, in plan order (the explicit map)."""
+    copy = bindings.get("sms_copy") if isinstance(bindings.get("sms_copy"), Mapping) else {}
+    out = []
+    for s in bindings.get("sms_sets") or []:
+        if not isinstance(s, Mapping):
+            continue
+        for sid in s.get("step_ids") or []:
+            body = copy.get(sid)
+            if isinstance(body, str) and body.strip():
+                after = (s.get("after_steps") or {}).get(sid)
+                out.append({"step_id": sid, "body": body, "set_id": s.get("set_id"),
+                            "kind": s.get("kind"), "category": s.get("category"),
+                            "after_step": after if isinstance(after, str) else None})
+    return out
+
+
+def _set_copy(attrs: dict, message: Mapping[str, Any]) -> None:
+    attrs.update(body=message["body"], copy_step_id=message["step_id"], copy_pending=False)
+    for key in ("set_id", "kind", "category"):
+        if message.get(key):
+            attrs[key if key != "set_id" else "text_set"] = message[key]
+
+
+def bind_sms_copy(steps: list, bindings: Mapping[str, Any]) -> set:
+    """Bind approved copy into the SMS steps; returns the message step ids placed.
+
+    An exact step id or body_ref wins; otherwise a step takes the next unplaced
+    message of the first text-set kind its slot declares (``text_set_kinds``).
+    Copy is never written by this compiler: only an approved body is bound."""
+    copy = bindings.get("sms_copy") if isinstance(bindings.get("sms_copy"), Mapping) else {}
+    by_id = {m["step_id"]: m for m in _sms_messages(bindings)}
+    placed: set = set()
+    sms = [s for s in steps if s.get("type") == "sms"]
+    for step in sms:
+        attrs = step.setdefault("attributes", {})
+        for key in (step.get("id"), attrs.get("body_ref")):
+            body = copy.get(key) if isinstance(key, str) else None
+            if isinstance(body, str) and body.strip() and key not in placed:
+                _set_copy(attrs, by_id.get(key) or {"step_id": key, "body": body})
+                placed.add(key)
+                break
+    queue = [m for m in _sms_messages(bindings) if m["step_id"] not in placed]
+    for step in sms:
+        attrs = step["attributes"]
+        if attrs.get("copy_step_id"):
+            continue
+        for kind in attrs.get("text_set_kinds") or ():
+            hit = next((m for m in queue if m["kind"] == kind), None)
+            if hit:
+                queue.remove(hit)
+                _set_copy(attrs, hit)
+                placed.add(hit["step_id"])
+                break
+    return placed
+
+
+def place_sequence_sms(out: dict, steps: list, bindings: Mapping[str, Any],
+                       schedule: Mapping[str, Any], seq_schedule: Mapping[str, Any],
+                       bid: str) -> dict:
+    """Bound-sequence mode: insert an SMS step only where an approved source says it sends.
+
+    A message whose copy file names ``after_step`` (an approved email id of this
+    workflow) goes right after that email.  Otherwise the launch contract decides:
+    operational entry texts (access link, opt-in confirmation) right after the
+    first email; a doors-open / last-call text at the plan's own calendar instant,
+    one message per instant, in an absolute (calendar-anchored) sequence and never
+    at or after doors close.  Returns ``{sms step id: schedule node}`` for the
+    wait-until gate; everything else is left unplaced and named."""
+    sched: dict = {}
+    first = next((i for i, s in enumerate(steps) if s.get("type") == "email"), None)
+    if first is None:
+        return sched
+    calendar = {n.get("phase"): n for n in schedule.get("calendar_nodes") or []
+                if isinstance(n, Mapping) and n.get("at")}
+    close = calendar.get("doors_close", {}).get("at")
+    at_of = {n.get("step_id"): _instant(n.get("at")) for n in seq_schedule.get("nodes") or []
+             if isinstance(n, Mapping) and n.get("kind") == "absolute" and n.get("at")}
+    messages = _sms_messages(bindings)
+    counts: dict = {}
+    for m in messages:
+        counts[m["set_id"]] = counts.get(m["set_id"], 0) + 1
+
+    def insert_after(index: int, step: dict) -> None:
+        # Directly after the anchor email and any texts already placed there, so a
+        # text never takes over the wait that times the NEXT email.
+        while index + 1 < len(steps) and steps[index + 1].get("type") == "sms":
+            index += 1
+        steps.insert(index + 1, step)
+
+    used = set()
+    for m in messages:
+        sid = "%s-%s" % (bid, m["step_id"])
+        step = sms_step(m["step_id"], "", id=sid)
+        step["attributes"]["body_ref"] = m["step_id"]
+        _set_copy(step["attributes"], m)
+        if m["after_step"]:
+            anchor = next((i for i, s in enumerate(steps) if s.get("type") == "email"
+                           and s.get("id") == m["after_step"]), None)
+            if anchor is None:
+                out["notes"].append("sms_unplaced:%s:after_step_not_in_workflow" % m["step_id"])
+            else:
+                insert_after(anchor, step)
+            continue
+        if m["kind"] in SEQUENCE_SMS_IMMEDIATE:
+            insert_after(next(i for i, s in enumerate(steps) if s.get("type") == "email"), step)
+            continue
+        phase = SEQUENCE_SMS_CALENDAR.get(m["kind"])
+        node = calendar.get(phase) if phase else None
+        reason = ("no_contract_send_time" if node is None
+                  else "relative_sequence" if seq_schedule.get("kind") != "absolute"
+                  else "set_has_%d_messages_for_one_instant" % counts[m["set_id"]]
+                  if counts[m["set_id"]] != 1
+                  else "instant_taken" if phase in used
+                  else "past" if node.get("status") == "past"
+                  else "at_or_after_doors_close" if m["category"] == "marketing" and close
+                  and _instant(node["at"]) >= _instant(close) else None)
+        if reason:
+            out["notes"].append("sms_unplaced:%s:%s" % (m["step_id"], reason))
+            continue
+        used.add(phase)
+        when = _instant(node["at"])
+        earlier = [i for i, s in enumerate(steps) if s.get("type") == "email"
+                   and at_of.get(s.get("id")) and at_of[s["id"]] <= when]
+        if earlier:
+            insert_after(earlier[-1], step)
+        else:
+            steps.insert(first, step)
+        sched[sid] = {"step_id": sid, "kind": "absolute", "at": node["at"], "phase": phase}
+    return sched
+
+
+def apply_sms_guards(out: dict, steps: list, bid: str, deadline: Optional[str]) -> None:
+    """One native eligibility if/else in front of EVERY SMS step (WF-25 / WF-16).
+
+    true -> the SMS, false -> what follows it; the SMS carries the same conditions.
+    No API payload is verified for these condition types, so each guard is also a
+    ledgered managed-browser row (configure_if_else_condition), never assumed saved."""
+    for sms in [s for s in steps if s.get("type") == "sms"]:
+        attrs = sms.setdefault("attributes", {})
+        category = attrs.get("category") if attrs.get("category") in ("marketing", "operational") \
+            else "marketing"
+        conditions = sms_guard_conditions(category, attrs.get("kind"), deadline)
+        if conditions is None:
+            out["blocked_by"].append("sms_guard_contract_missing:%s" % sms["id"])
+            continue
+        nxt = sms.get("next")
+        if nxt is None:  # _terminate ran first, so this only happens on a bare graph
+            out["blocked_by"].append("sms_guard_no_successor:%s" % sms["id"])
+            continue
+        gid = "%s-sms-guard" % sms["id"]
+        text = "SMS eligibility (%s): %s" % (category, ", ".join(c["rule"] for c in conditions))
+        row = _ledger(out, "configure_if_else_condition", step_id=gid, condition_text=text)
+        guard = {"id": gid, "type": "if_else", "name": "SMS eligible?",
+                 "attributes": {"condition_text": text, "conditions": conditions,
+                                "category": category, "ledger_id": row["ledger_id"]},
+                 "parentKey": sms.get("parentKey"), "branches": {"true": sms["id"], "false": nxt}}
+        _retarget(steps, sms["id"], gid)
+        sms["parentKey"] = gid
+        attrs["conditions"] = [dict(c) for c in conditions]
+        attrs["sms_guard"] = gid
+        target = next(s for s in steps if s["id"] == nxt)
+        target.setdefault("attributes", {})["join"] = True  # the SMS and its skip arm meet here
+        steps.insert(steps.index(sms), guard)
 
 
 # The one terminal type that is both a VERIFIED action and a terminal in tools/validate_graph.py
@@ -622,8 +954,10 @@ def purchase_identity(build: Mapping[str, Any]) -> dict:
     }
 
 
-def _unresolved_until(graph: list, until_dates: Mapping[str, Any]) -> Optional[str]:
-    """The first template ``wait until`` token this build cannot resolve."""
+def _unresolved_until(graph: list, until_dates: Mapping[str, Any],
+                      bindings: Optional[Mapping[str, Any]] = None) -> Optional[str]:
+    """The first template ``wait until`` token this build cannot resolve (with what it needs)."""
+    anchors = (bindings or {}).get("event_anchors") or ()
     for node in graph:
         if not isinstance(node, Mapping) or node.get("type") != "wait":
             continue
@@ -631,9 +965,17 @@ def _unresolved_until(graph: list, until_dates: Mapping[str, Any]) -> Optional[s
         if attrs.get("kind") != "until":
             continue
         token = re.sub(r"[{}\s]", "", str(attrs.get("until") or ""))
+        event = EVENT_TOKEN_RE.match(token)
+        if event and event.group(1) in anchors:
+            continue
         if token not in until_dates:
-            return token or "(empty)"
+            needs = EVENT_ANCHORS.get(event.group(1)) if event else None
+            return (token or "(empty)") + (":needs:%s" % needs if needs else "")
     return None
+
+
+def _graph_email_slots(graph: list) -> int:
+    return sum(1 for n in graph if isinstance(n, Mapping) and n.get("type") == "email")
 
 
 def compile_installable(workflow: Mapping[str, Any], build: Mapping[str, Any], *,
@@ -668,6 +1010,8 @@ def compile_installable(workflow: Mapping[str, Any], build: Mapping[str, Any], *
     )
 
     bindings = dict(bindings or {})
+    for name, value in plan_bindings(build).items():
+        bindings.setdefault(name, value)
     bid = str(build.get("id"))
     unit_key = build.get("unit_key") or bid
     launch_id = unit_key.split("/")[0] if "/" in unit_key else None
@@ -710,19 +1054,26 @@ def compile_installable(workflow: Mapping[str, Any], build: Mapping[str, Any], *
     out["template"] = key
     emails = [step for step in workflow.get("steps") or []
               if isinstance(step, Mapping) and step.get("type") == "email"]
+    slots = _graph_email_slots(spec.get("build_graph") or []) if spec is not None else 0
     if spec is None:
         out["notes"].append("template_graph_skipped:%s" % (reason or "unresolved"))
     elif not emails:
         out["notes"].append("template_graph_skipped:no_email_copy")
+    elif len(emails) != slots:
+        # Every approved email must land in a slot: a graph with fewer slots would
+        # silently drop approved copy, so the approved sequence is installed instead.
+        out["notes"].append("template_graph_skipped:approved_emails_%d_template_slots_%d"
+                            % (len(emails), slots))
     else:
-        token = _unresolved_until(spec.get("build_graph") or [], until_dates)
+        token = _unresolved_until(spec.get("build_graph") or [], until_dates, bindings)
         if token:
             out["notes"].append("template_graph_skipped:unresolved_until:%s" % token)
         else:
             trial = {"unit_key": unit_key, "blocked_by": [], "browser_steps": []}
             graph_steps = _compile_graph(trial, spec["build_graph"], bid, emails,
                                          bindings, promotional, close_at, ptag,
-                                         build.get("family"))
+                                         build.get("family"),
+                                         sms_slots=TEMPLATE_SMS_SLOTS.get(key))
             if trial["blocked_by"] or not graph_steps:
                 out["notes"].append("template_graph_skipped:" + ",".join(
                     trial["blocked_by"] or ["empty_graph"]))
@@ -730,6 +1081,22 @@ def compile_installable(workflow: Mapping[str, Any], build: Mapping[str, Any], *
                 steps = graph_steps
                 out["browser_steps"] = trial["browser_steps"]
                 out["compile_mode"] = "template_graph"
+
+    # Approved SMS copy -> SMS steps by the explicit step-id map (never invented).
+    sms_sched: dict = {}
+    if out["compile_mode"] == "template_graph":
+        placed = bind_sms_copy(steps, bindings)
+        unplaced_reason = "no_template_slot"
+    else:
+        sms_sched = place_sequence_sms(out, steps, bindings, schedule, seq_schedule, bid)
+        placed = {m["step_id"] for m in _sms_messages(bindings)
+                  if any((s.get("attributes") or {}).get("copy_step_id") == m["step_id"]
+                         for s in steps)}
+        unplaced_reason = None
+    for message in _sms_messages(bindings):
+        if message["step_id"] not in placed and unplaced_reason:
+            out["notes"].append("sms_unplaced:%s:%s" % (message["step_id"], unplaced_reason))
+    out["sms_placed"] = sorted(placed)
 
     # Trigger: the automation's OWN declared trigger decides.  A contact-tag
     # trigger is installed only when that is the approved trigger type; any
@@ -763,6 +1130,7 @@ def compile_installable(workflow: Mapping[str, Any], build: Mapping[str, Any], *
              if isinstance(node, Mapping) and node.get("step_id")
              and node.get("kind") == "absolute" and node.get("at")
              and node.get("status") != "suppressed"}
+    sched.update(sms_sched)
     steps = _apply_absolute(out, steps, sched, until_dates, tz, allow_browser_steps)
 
     if promotional and build.get("family") == FOLLOW_UP_FAMILY and gtag is None:
@@ -774,6 +1142,10 @@ def compile_installable(workflow: Mapping[str, Any], build: Mapping[str, Any], *
             out["notes"].append("purchase_gate_unset:%s" % gtag)
     if steps:
         _terminate(steps, bid)
+    # Every SMS step is saved behind its native eligibility conditions (WF-25/WF-16).
+    doors_close = next((n.get("at") for n in schedule.get("calendar_nodes") or []
+                        if isinstance(n, Mapping) and n.get("phase") == "doors_close"), None)
+    apply_sms_guards(out, steps, bid, close_at or doors_close)
 
     # F05 short purchase handler: the tag it sets is what lets the promotional
     # gate fire.  A handler that installs no tag step is recorded as an
@@ -786,18 +1158,12 @@ def compile_installable(workflow: Mapping[str, Any], build: Mapping[str, Any], *
         out["notes"].append("purchase_tag_step_missing:%s" % ptag)
         handler_incomplete.append("purchase_tag:%s" % ptag)
 
-    sms_copy = bindings.get("sms_copy") if isinstance(bindings.get("sms_copy"),
-                                                      Mapping) else {}
     pending = []
     for step in steps:
         if step.get("type") != "sms":
             continue
         attrs = step.setdefault("attributes", {})
-        ref = str(attrs.get("body_ref") or "")
-        supplied = sms_copy.get(step.get("id")) or sms_copy.get(ref)
-        if isinstance(supplied, str) and supplied.strip():
-            attrs["body"] = supplied
-            attrs["body_ref"] = ref or step.get("name")
+        if attrs.get("copy_step_id"):
             attrs["copy_pending"] = False
         elif attrs.get("copy_pending") or not str(attrs.get("body") or "").strip():
             attrs["copy_pending"] = True

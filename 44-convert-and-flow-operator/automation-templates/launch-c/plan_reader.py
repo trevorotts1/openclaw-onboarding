@@ -496,6 +496,7 @@ def read_launch_plan(plan, source="launch-plan"):
 
     return {
         "launch_id": plan["launch_id"],
+        "offer": plan.get("offer") if isinstance(plan.get("offer"), dict) else {},
         "units": units,
         "pages": pages,
         "email_sequences": email_sequences,
@@ -908,6 +909,10 @@ def read_text_copy(copy_dir, set_id, expected_messages):
                 and all(isinstance(message.get(k), str) and message[k].strip()
                         for k in ("step_id", "body", "category"))):
             return None, "%s has a message without step_id, body and category" % path.name
+        # Optional explicit position: the id of the approved email this text is sent with.
+        if "after_step" in message and not (isinstance(message["after_step"], str)
+                                            and message["after_step"].strip()):
+            return None, "%s has an after_step that is not an email step id" % path.name
         ids.append(message["step_id"])
     if len(set(ids)) != len(ids):
         return None, "%s repeats a step_id" % path.name
@@ -971,6 +976,30 @@ def _enrollment(automation):
     return value if value in ("single", "successive") else None
 
 
+def _followed_offer_slot(plan, automation):
+    """The offer.packages[].slot whose offer_id is this unit's followed offer, else None.
+
+    The upsell/downsell template names its tags by slot and offer id
+    (`option-branch:<slot>:<offer_id>`); both come from the plan, never from a unit id.
+    Zero or several matching packages bind nothing, so the compiler names the gap."""
+    followed = automation.get(FOLLOWED_OFFER_KEY)
+    if not isinstance(followed, str):
+        return None
+    slots = [p.get("slot") for p in (plan.get("offer") or {}).get("packages") or []
+             if isinstance(p, dict) and p.get("offer_id") == followed]
+    return slots[0] if len(slots) == 1 and isinstance(slots[0], str) \
+        and VARIANT_TAG_RE.match(slots[0]) else None
+
+
+def _compile_spec(automation):
+    """The owner-approved new_template.compile_spec of a template 'new' unit, else None."""
+    new = automation.get("new_template")
+    if automation.get("template") == "new" and isinstance(new, dict) \
+            and isinstance(new.get("compile_spec"), dict):
+        return new["compile_spec"]
+    return None
+
+
 def build_document(plan_path, plan, bound, unbound, warnings, now=None, acknowledged=None,
                    text_copy_dir=None):
     now = now or datetime.now(timezone.utc)
@@ -1016,13 +1045,24 @@ def build_document(plan_path, plan, bound, unbound, warnings, now=None, acknowle
         # with the build (bindings.sms_copy) or the build is blocked, never built with the
         # copy left pending.
         elected = [dep for dep in automation["waits_for"] if plan["units"].get(dep) == "text_sets"]
-        sms_copy = {}
+        sms_copy, sms_sets = {}, []
         for set_id in elected:
             copy, problem = text_copy[set_id]
             if copy is None:
                 blocked_by.append("text_set:%s copy" % set_id)
             else:
                 sms_copy.update({m["step_id"]: m["body"] for m in copy["messages"]})
+                # The explicit step-id map the compiler binds by: which set, of which kind,
+                # carries which message ids in order. Category is the plan's, never the author's.
+                set_doc = plan["text_sets"][set_id]
+                entry = {"set_id": set_id, "kind": set_doc.get("kind"),
+                         "category": "marketing" if set_doc.get("promotional") else "operational",
+                         "step_ids": [m["step_id"] for m in copy["messages"]]}
+                after = {m["step_id"]: m["after_step"] for m in copy["messages"]
+                         if isinstance(m.get("after_step"), str)}
+                if after:
+                    entry["after_steps"] = after
+                sms_sets.append(entry)
 
         # Email count is a hard output contract: a mismatch blocks the build.
         for seq_id in refs:
@@ -1106,6 +1146,12 @@ def build_document(plan_path, plan, bound, unbound, warnings, now=None, acknowle
             # launch plan's automation unit (null when none).  The compiler gates
             # on purchased-<this id>; without it the follow-up build is blocked.
             FOLLOWED_OFFER_KEY: automation.get(FOLLOWED_OFFER_KEY),
+            # The offer.packages[].slot of that offer (null when none or ambiguous): the
+            # upsell/downsell template names its tags option-branch:<slot>:<offer_id>.
+            "followed_offer_slot": _followed_offer_slot(plan, automation),
+            # The owner-approved graph of a template "new" unit (null otherwise); the
+            # compiler builds it like a library template, under the same gates.
+            "compile_spec": _compile_spec(automation),
             # Reentry/enrolment exactly as the plan declared them.  allow_reentry
             # is the native boolean CampaignBuilder applies and reads back; None
             # means "not declared" and the compiler records it insufficient.
@@ -1149,7 +1195,8 @@ def build_document(plan_path, plan, bound, unbound, warnings, now=None, acknowle
             "dropped_sends": dropped,
             "state": state,
             "blocked_by": blocked_by,
-            **({"text_sets": elected, "bindings": {"sms_copy": sms_copy}} if elected else {}),
+            **({"text_sets": elected, "bindings": {"sms_copy": sms_copy, "sms_sets": sms_sets}}
+               if elected else {}),
         })
 
     text_builds = []
