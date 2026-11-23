@@ -1,0 +1,46 @@
+{
+  "schema": "blackceo.time-budgets/v1",
+  "source": "Plan section 10B stage table and section 10D run-time budget; one data file so no stage time lives in code.",
+  "sending_pace": {"requests": 20, "window_s": 15},
+  "checker_ratio": {"items_per_checker": 3},
+  "worker_rule": {"cores_minus": 1, "memory_gb_divisor": 2, "pressure_hold_percent": 85, "fresh_reading_max_age_s": 300},
+  "browser": {
+    "tag": "s75-video-tool",
+    "timeout_s": {"card_or_transition": 180, "caption_layer": 600},
+    "reaper_interval_s": 300,
+    "cap_absolute": 6,
+    "gb_per_browser": 1.5,
+    "disk_major_free_percent": 10
+  },
+  "lip_sync": {"min_piece_s": 5.0, "max_piece_s": 30.0, "no_breath_gap_s": 1.0, "min_rest_s": 0.3, "model_floor_s": 4.0},
+  "prompt_floor_chars": 5000,
+  "upload_link_max_age_h": 23,
+  "stages": [
+    {"id": "set-up", "title": "Set-up: pre-flight, look lock, song timing, Voice Map, lip audio", "avg_min": 3, "ceiling_min": 6, "agents_by_length": {"90": 3, "180": 3, "300": 4, "600": 5}, "in_sequence": "the lock needs the run owner's look choice"},
+    {"id": "story-spine", "title": "Story spine, then Story Beats and the beats gate", "avg_min": 1, "ceiling_min": 2, "agents_by_length": {"90": 1, "180": 1, "300": 1, "600": 1}, "in_sequence": "one author, the root every other writer obeys"},
+    {"id": "beat-rows", "title": "Beat rows with emotion tags, then the join", "avg_min": 2, "ceiling_min": 4, "agents_by_length": {"90": 2, "180": 2, "300": 2, "600": 2}, "in_sequence": "writers need the spine"},
+    {"id": "story-gate", "title": "Story gate: four checks and the story review at once; Shot Router beside them", "avg_min": 3, "ceiling_min": 8, "agents_by_length": {"90": 3, "180": 3, "300": 3, "600": 3}, "in_sequence": "no keyframe until this passes"},
+    {"id": "shot-prompts", "title": "Shot parts and prompts; Prompt Builder stamps; one joiner", "avg_min": 2, "ceiling_min": 4, "agents_by_length": {"90": 2, "180": 2, "300": 2, "600": 2}, "in_sequence": "needs the passed beat sheet and Shot Router record"},
+    {"id": "keyframes", "title": "Keyframes and lip-sync pictures, checked as each lands", "avg_min": 4, "ceiling_min": 8, "agents_by_length": {"90": 3, "180": 4, "300": 5, "600": 7}, "in_sequence": "needs the references and stamped prompts"},
+    {"id": "picture-remakes", "title": "Picture remakes and the side-by-side pass", "avg_min": 2, "ceiling_min": 6, "agents_by_length": {"90": 2, "180": 2, "300": 2, "600": 2}, "in_sequence": "the video burst waits for the side-by-side pass and one remake round"},
+    {"id": "video-burst", "title": "The video burst: every H3 and lip-sync job at once, checks as each lands", "avg_min": 8, "ceiling_min": 22, "agents_by_length": {"90": 8, "180": 8, "300": 9, "600": 9}, "in_sequence": "sending, then the slowest route, then the last checks"},
+    {"id": "remake-burst", "title": "The remake burst, sent when 9 in 10 clips are back; clip side-by-side", "avg_min": 6, "ceiling_min": 24, "agents_by_length": {"90": 6, "180": 6, "300": 6, "600": 6}, "in_sequence": "needs the check results"},
+    {"id": "assembly", "title": "Assembly: clips swapped in, pieces rendered at once, joined", "avg_min": 2.5, "ceiling_min": 10, "agents_by_length": {"90": 2, "180": 3, "300": 5, "600": 8}, "in_sequence": "the join needs every piece"},
+    {"id": "delivery-gate", "title": "Delivery gate: letter scan, style sample, audio, length, captions", "avg_min": 3, "ceiling_min": 15, "agents_by_length": {"90": 4, "180": 6, "300": 6, "600": 12}, "in_sequence": "nothing is sent until all of it passes"},
+    {"id": "delivery", "title": "Delivery", "avg_min": 3, "ceiling_min": 6, "agents_by_length": {"90": 1, "180": 1, "300": 1, "600": 1}, "in_sequence": "needs the passed gate"}
+  ],
+  "overlapping": [
+    {"runs_beside": ["beat-rows", "story-gate"], "stage": "character-and-place-bibles", "starts_when": "beats gate passes", "note": "masters when the look is locked and the cast is named; variants second burst"},
+    {"runs_beside": ["keyframes", "picture-remakes"], "stage": "placeholder-timeline", "starts_when": "storyboard approved", "note": "rough cut, caption layer, end card, transitions"},
+    {"runs_beside": ["video-burst"], "stage": "delivery-preparation", "starts_when": "clips begin landing", "note": "message and links prepared; nothing shared until checks pass"},
+    {"runs_beside": ["set-up", "story-spine", "beat-rows"], "stage": "voice-map", "starts_when": "song split returns", "note": "must be back before the lip-sync plan"}
+  ],
+  "checkpoint_min": [20, 30, 40, 45],
+  "diagnosis_trigger_min": [60, 150, 180],
+  "trending_late_min": 10,
+  "totals_min": {
+    "no_nine_picture": {"90": 38, "180": 40, "300": 45, "600": 49},
+    "with_nine_picture": {"90": 42, "180": 44, "300": 49, "600": 53},
+    "with_nine_picture_remake": {"90": 48, "180": 50, "300": 55, "600": 59}
+  }
+}
