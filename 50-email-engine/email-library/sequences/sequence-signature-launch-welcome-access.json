@@ -107,7 +107,27 @@
           "9": "six-ws",
           "10": "three-b-plan"
         },
-        "purpose": "Transactional welcome plus event nurture: E1 delivers access, the receipt and the first step the moment payment clears; E2-E10 are non-selling event nurture (preparation, what to expect, logistics, reminders) that carry no offer, no price and no urgency; every CTA returns the buyer to the access / event page."
+        "purpose": "Transactional welcome plus event nurture: E1 delivers access, the receipt and the first step the moment payment clears; E2-E10 are non-selling event nurture (preparation, what to expect, logistics, reminders) that carry no offer, no price and no urgency; every CTA returns the buyer to the access / event page.",
+        "pattern_maps": {
+          "event_nurture_short_form": {
+            "1": "six-ws",
+            "2": "before-after-bridge",
+            "3": "three-b-plan",
+            "4": "pas",
+            "5": "three-b-plan",
+            "6": "six-ws",
+            "7": "three-b-plan",
+            "8": "three-b-plan",
+            "9": "three-b-plan",
+            "10": "three-b-plan"
+          }
+        },
+        "authored_order_patterns": [
+          "event_nurture_short_form"
+        ],
+        "pattern_purposes": {
+          "event_nurture_short_form": "Registered short-form event-nurture order for the 10-email welcome: E1 is the transactional welcome (The 6 W's), E2 Before-After-Bridge, E4 PAS and E6 The 6 W's are the longer nurture notes in the default 150-300 band, and E3, E5 and E7-E10 are 3-B Plan short notes (0-149 words: brief, blunt, basic preparation, logistics and reminders). Same count, timing, eligibility and lifecycle as the 10-email variant, still non-selling (no offer, no price, no urgency). Selected only when the authored framework order equals this map slot for slot; labels and copy are never rewritten or padded to fit."
+        }
       }
     },
     "count_variant_rule": "a launch plan may declare the default length or one of these registered counts; the registry (profiles/launch-email-families.json) is authoritative and any other count is refused, never padded or trimmed",

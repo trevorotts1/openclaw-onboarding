@@ -1,5 +1,12 @@
 # Changelog — Skill 50 (email-engine)
 
+## [2.0.13] - 2026-11-23 - Registered authored framework orders for launch count variants (SWB-022)
+
+- `profiles/launch-email-families.json` (registry 1.2.0): a count variant may register named `authored_order_patterns` (each a `pattern_maps` entry with a `pattern_purposes` line). `welcome_access` 10 registers `event_nurture_short_form` (six-ws, before-after-bridge, three-b-plan, pas, three-b-plan, six-ws, three-b-plan x4; the 3-B Plan slots 3, 5, 7-10 are short notes in a 0-149 word band). `upsell_followup` 2 registers `one_email_per_upsell_page` (features-to-benefit following upsell page 1, before-after-bridge following upsell page 2; `pattern_slot_pages` names each slot's page). Every default count, default map, existing pattern map and prover floor is unchanged. The sequence records mirror the new orders.
+- `tools/launch_profiles.py` validates authored orders (each must be a pattern map of the same variant, carry a purpose, and differ from the default map and from each other) and adds `select_pattern`: a declared ledger `pattern` still wins; otherwise a sequence whose authored framework order equals ONE registered authored order slot for slot is graded against that map and its word bands. Any other order keeps the default map and is refused with AF-EMAIL-SEQUENCE-MAP as before. Labels are never rewritten and copy is never padded to fit.
+- `tools/prove-email.py` and `tools/emit_build_plan.py` use `select_pattern`; the emitted plan's `_meta` carries `framework_pattern`, `framework_pattern_purpose`, `framework_pattern_slot_pages` and the `framework_map` it was graded against, and `validate_plan` refuses a `framework_pattern` the family does not register.
+- `ENGINE-PIN.sha256` recomputed with the CI formula; tests `tests/test_launch_authored_orders.py` (6 of 10 fail before this change, 10 of 10 pass after).
+
 ## [2.0.12] - 2026-11-23 - Launch family count variants and full catalog registration (BUG-098)
 
 - `profiles/launch-email-families.json` (registry 1.1.0) adds registered `count_variants`: `main_launch` 3 (the three P.A.S.T.O.R. Solutions emails), `doors_closing` 1 (last call, 3-B Plan), `upsell_followup` 2 (both upsell page patterns), `welcome_access` 10 (one transactional welcome plus nine non-selling event nurture emails that honor a marketing opt-out). Every existing default count, framework map and prover floor is unchanged. A launch plan may declare a family's default count or a registered variant; any other count is still refused, never padded or trimmed.

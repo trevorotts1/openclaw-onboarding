@@ -138,9 +138,25 @@
           "upsell_2": {
             "1": "acca",
             "2": "three-b-plan"
+          },
+          "one_email_per_upsell_page": {
+            "1": "features-to-benefit",
+            "2": "before-after-bridge"
           }
         },
-        "purpose": "Two-email post-offer follow-up after a verified buyer leaves an upsell page without accepting: one feature-to-benefit email and one direct close, every CTA back to that upsell page."
+        "purpose": "Two-email post-offer follow-up after a verified buyer leaves an upsell page without accepting: one feature-to-benefit email and one direct close, every CTA back to that upsell page.",
+        "authored_order_patterns": [
+          "one_email_per_upsell_page"
+        ],
+        "pattern_purposes": {
+          "one_email_per_upsell_page": "One email per upsell page: E1 follows upsell page 1 (Features-to-Benefit, its CTA returns the buyer to upsell page 1) and E2 follows upsell page 2 (Before-After-Bridge, its CTA returns the buyer to upsell page 2), both in the default 150-300 band. E2 carries the upsell_2 eligibility rules (a verified upsell 1 or downsell 1 purchase; a bump alone does not qualify). pattern_slot_pages names each slot's page so Skill 44 binds each step to its own page; the plan's relative wait stays the registered 48 hours. Selected only when the authored framework order equals this map slot for slot."
+        },
+        "pattern_slot_pages": {
+          "one_email_per_upsell_page": {
+            "1": "upsell_1",
+            "2": "upsell_2"
+          }
+        }
       }
     },
     "count_variant_rule": "a launch plan may declare the default length or one of these registered counts; the registry (profiles/launch-email-families.json) is authoritative and any other count is refused, never padded or trimmed",

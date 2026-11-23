@@ -841,7 +841,11 @@ def evaluate_sequence(ledger, brief=None):
     founder = ledger.get("founder_name", "")
     require_disruptive = bool(spec and spec.get("disruptive_required")) \
         or seq_type == "high_ticket_12"
-    pattern = ledger.get("pattern")
+    # A registered authored order (the variant's `authored_order_patterns`) is
+    # matched slot for slot; a declared ledger pattern still wins and any other
+    # order keeps the default map, so it is refused as before.
+    pattern = (launch_profiles.select_pattern(spec, emails, ledger.get("pattern"))
+               if spec is not None else ledger.get("pattern"))
 
     for i, e in enumerate(emails, 1):
         slot = e.get("e_slot", i) if isinstance(e, dict) else i

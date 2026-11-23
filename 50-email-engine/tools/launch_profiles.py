@@ -142,6 +142,38 @@ def _check_count_variants(fam: Dict[str, Any]) -> None:
         if isinstance(gaps, list) and len(gaps) != n - 1:
             raise RegistryError("family %r count variant %d declares %d waits for %d emails"
                                 % (kind, n, len(gaps), n))
+        _check_authored_orders(kind, n, var)
+
+
+def _check_authored_orders(kind: str, n: int, var: Dict[str, Any]) -> None:
+    """`authored_order_patterns` names the pattern maps of ONE count variant
+    that a sequence may match by its authored framework order (an approved
+    client order registered here, never a free choice). Each name must be a
+    pattern map of the same variant, carry a purpose, and differ from the
+    variant's own default map."""
+    names = var.get("authored_order_patterns")
+    if names is None:
+        return
+    pmaps = var.get("pattern_maps") or {}
+    notes = var.get("pattern_purposes") or {}
+    if not isinstance(names, list) or not names:
+        raise RegistryError("family %r count variant %d authored_order_patterns must be "
+                            "a non-empty list" % (kind, n))
+    seen = []
+    for name in names:
+        if not (isinstance(name, str) and name in pmaps):
+            raise RegistryError("family %r count variant %d authored order %r is not one of "
+                                "its pattern_maps" % (kind, n, name))
+        if not (isinstance(notes.get(name), str) and notes[name].strip()):
+            raise RegistryError("family %r count variant %d authored order %r carries no "
+                                "purpose" % (kind, n, name))
+        if pmaps[name] == var.get("framework_map"):
+            raise RegistryError("family %r count variant %d authored order %r repeats the "
+                                "variant's default map" % (kind, n, name))
+        if pmaps[name] in seen:
+            raise RegistryError("family %r count variant %d authored order %r repeats "
+                                "another authored order" % (kind, n, name))
+        seen.append(pmaps[name])
 
 
 def allowed_email_counts(fam: Dict[str, Any]) -> List[int]:
@@ -256,6 +288,51 @@ def framework_map(fam: Dict[str, Any], pattern: Optional[str] = None) -> Dict[in
         if pm:
             return {int(k): v for k, v in pm.items()}
     return {int(k): v for k, v in (fam.get("framework_map") or {}).items()}
+
+
+def authored_order(emails: Any) -> Optional[Dict[int, str]]:
+    """slot -> framework label exactly as the emails were authored, or None
+    when the sequence is not a list of email objects with integer slots."""
+    if not isinstance(emails, list):
+        return None
+    out: Dict[int, str] = {}
+    for i, e in enumerate(emails, 1):
+        if not isinstance(e, dict):
+            return None
+        slot = e.get("e_slot", i)
+        if isinstance(slot, bool):
+            return None
+        try:
+            slot = int(slot)
+        except (TypeError, ValueError):
+            return None
+        out[slot] = e.get("framework")
+    return out
+
+
+def select_pattern(fam: Optional[Dict[str, Any]], emails: Any,
+                   declared: Any = None) -> Optional[str]:
+    """The pattern map a sequence is graded against.
+
+    A declared pattern (the ledger's `pattern`) wins, exactly as before.
+    Otherwise, when the resolved family registers `authored_order_patterns`,
+    a sequence whose authored framework order equals ONE of those registered
+    maps slot for slot is graded against that map (and its word bands). Any
+    other order keeps the family's default map, so an unregistered order is
+    still refused with AF-EMAIL-SEQUENCE-MAP; labels are never rewritten."""
+    if declared:
+        return declared
+    if not fam:
+        return None
+    names = fam.get("authored_order_patterns") or []
+    if not names:
+        return None
+    authored = authored_order(emails)
+    if not authored or authored == framework_map(fam):
+        return None
+    hits = [n for n in names
+            if (fam.get("pattern_maps") or {}).get(n) and framework_map(fam, n) == authored]
+    return hits[0] if len(hits) == 1 else None
 
 
 def wait_after_hours(fam: Dict[str, Any], gap_index: int) -> Optional[float]:

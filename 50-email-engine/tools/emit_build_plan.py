@@ -308,6 +308,9 @@ def build_plan(brief, emails_doc, folder=None, workflow_slug=None):
     if emails is None:
         emails = [emails_doc]  # single-email plan
 
+    pattern = (launch_profiles.select_pattern(
+        family, emails, emails_doc.get("pattern") if isinstance(emails_doc, dict) else None)
+        if family is not None else None)
     slug = _slugify(workflow_slug or seq_id)
     folder = folder or "Email Engine — Drafts"
     launch = family is not None
@@ -432,6 +435,13 @@ def build_plan(brief, emails_doc, folder=None, workflow_slug=None):
             "destination": family["destination"],
             "expected_email_count": family["email_count"],
             "count_variant": family.get("count_variant"),
+            "framework_pattern": pattern,
+            "framework_pattern_purpose": ((family.get("pattern_purposes") or {}).get(pattern)
+                                          if pattern else None),
+            "framework_pattern_slot_pages": ((family.get("pattern_slot_pages") or {}).get(pattern)
+                                             if pattern else None),
+            "framework_map": {str(k): v for k, v in sorted(
+                launch_profiles.framework_map(family, pattern).items())},
             "registry_version": REGISTRY.get("registry_version"),
             "content_hashes": {
                 "algorithm": "sha256",
@@ -567,6 +577,11 @@ def _validate_launch_plan(plan, meta, family):
         if "ab" in s:
             errors.append("launch plan: email step %r carries the legacy flat "
                           "'ab' block — profile pairs must not be flattened" % s.get("id"))
+    pattern = meta.get("framework_pattern")
+    if pattern is not None and pattern not in (family.get("pattern_maps") or {}):
+        errors.append("launch plan: _meta.framework_pattern %r is not a pattern the %s "
+                      "family registers at %d emails"
+                      % (pattern, family["kind"], family["email_count"]))
     lifecycle = meta.get("lifecycle") or {}
     if not isinstance(lifecycle.get("stop_rules"), list) or not lifecycle["stop_rules"]:
         errors.append("launch plan: lifecycle.stop_rules missing/empty")
