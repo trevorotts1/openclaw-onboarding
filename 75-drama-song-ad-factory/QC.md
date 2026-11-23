@@ -445,3 +445,28 @@ waived through, and a PASS record for the no_blur_fill check that names a
 blur fill is refused as FILL_CLAIM_MEASURED. Proof lives in the canonical
 build tree's `tests/test_no_blur_fill/`: a blur-fill render fails red, the
 crop-in render passes, and the refusal gates fire.
+
+## Never hide a problem (CG-04)
+
+QC enforces one rule over every deliverable: **never crop, zoom, freeze,
+stretch or hand-join to clear any gate.** Each of those changes the picture to
+make a check pass instead of fixing what the check found, and a PASS record
+carrying one of them is refused the same way a blur fill is refused.
+
+- **Crop** (beyond the sanctioned crop-in of DEL-14 on the lip-sync subject) and
+  **zoom** to hide a defect, a stranger, a wrong wardrobe or a lettered corner
+  are refused.
+- **Freeze** (a held frame standing in for motion) is refused; a frozen body
+  with only the mouth moving is not motion.
+- **Stretch** (a non-uniform scale) is refused; full height comes from crop-in
+  only (DEL-14).
+- **Hand-join** (splicing two takes or two windows inside one shot to hide a
+  seam or a failure) is refused; a shot is remade from its locked picture.
+- **Allowed, and not a violation:** picking a different time window of the
+  *same* clip. Changing the picture is not allowed; re-timing the existing clip
+  is.
+
+A deliverable whose repair shows any refused edit is treated as not repaired:
+the shot is remade and re-checked, and the edit is named on the receipt. This
+rule sits beside "No blur fill (DEL-14)" and applies to every gate, not only
+the fill gate.
