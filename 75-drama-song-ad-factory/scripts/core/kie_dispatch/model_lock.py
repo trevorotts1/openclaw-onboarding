@@ -58,6 +58,13 @@ DEFAULT_VIDEO_MODEL = "hailuo/02-image-to-video-*"
 # one model through F14 and then holds it to the picture gate.
 LOCKED_LIPSYNC_MODEL = "kling/ai-avatar-standard"
 
+#: LIP-02: the approved H3 singing fallback. After two lettered Kling tries the
+#: rule is a model switch to an H3 singing take, not a third Kling remake; that
+#: take IS lip-sync evidence when its receipt binds it to the approved shot
+#: revision. Both ids are listed in price-menu.md; nothing else counts.
+LIPSYNC_FALLBACK_MODEL = "minimax-h3/image-to-video"
+LIPSYNC_MODELS = (LOCKED_LIPSYNC_MODEL, LIPSYNC_FALLBACK_MODEL)
+
 # Agnes flash is the Agnes door's own video model (SPEC A10). Not a KIE menu
 # model: it never enters ALLOWED_VIDEO_MODELS, and the delivery gate accepts it
 # only for a run that chose Agnes.
@@ -94,6 +101,19 @@ class ModelLockError(Exception):
 def is_locked_lipsync(model):
     """True for the one lip-sync model Trevor locked (exact id)."""
     return (model or "").strip() == LOCKED_LIPSYNC_MODEL
+
+def is_allowed_lipsync(model):
+    """True for either approved lip-sync model (Kling, or the H3 fallback)."""
+    return (model or "").strip() in LIPSYNC_MODELS
+
+def lipsync_model_role(model):
+    """'locked' | 'fallback' | None -- which approved slot the id fills."""
+    m = (model or "").strip()
+    if m == LOCKED_LIPSYNC_MODEL:
+        return "locked"
+    if m == LIPSYNC_FALLBACK_MODEL:
+        return "fallback"
+    return None
 
 
 def resolve_price_menu(explicit=None):

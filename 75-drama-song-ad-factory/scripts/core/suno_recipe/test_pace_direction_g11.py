@@ -196,13 +196,16 @@ def test_no_gate_threshold_moved():
 
 
 def test_the_method_clauses_are_deliberately_untouched():
-    """No METHOD stem has ever been measured, so the method lane carries no
-    evidence of the same failure; and the Hero Shift must stay
-    direction-agnostic (C4 / Trevor 2026-10-13 decision #5), which a fixed
-    intensity would contradict. Pinned so the no-change is a decision on
-    record, not an oversight nobody can see."""
-    assert R.METHOD_ERM_DROP_CLAUSE == ("the first sung line enters exactly as the "
-                                        "groove drops to a heavier, sparser half-time feel")
+    """S75 (2026-11-19) MEASURED the method lane and it failed the same way the
+    generic lane did: under the old wording a method stem sang about 5 s in,
+    while the same order naming "no singing until the groove drops" held the
+    first sung line back to 38-46 s, inside the ERM window. The drop now
+    LEADS with that refusal and keeps the anchor. The Hero Shift is still
+    direction-agnostic (C4 / Trevor 2026-10-13 decision #5), so it stays
+    unpinned to any intensity -- only its fixed sentence is pinned."""
+    assert R.METHOD_ERM_DROP_CLAUSE == ("no singing until the groove drops, and the "
+                                        "first sung line enters exactly as the groove "
+                                        "drops to a heavier, sparser half-time feel")
     assert R.METHOD_HERO_SHIFT_CLAUSE == ("when help arrives the music changes pace "
                                           "again, clearly and dramatically, in the "
                                           "direction this story calls for")

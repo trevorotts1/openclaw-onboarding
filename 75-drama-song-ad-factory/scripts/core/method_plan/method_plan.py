@@ -526,6 +526,11 @@ def validate(blueprint, method):
 
     Returns the report above: ``outcome`` ok / rejected, ``reason_code`` the
     first error, every error as ``{"error": CODE, "detail": ...}``.
+
+    The ERM_DROP apex must sit inside the method record's
+    ``runtime_targets.erm_window_s``; ``control/method.json`` is the authority
+    and wins over the blueprint and req.json, so a blueprint ERM outside that
+    window is rejected with ERM_OUTSIDE_WINDOW before any lyric spend.
     """
     errors = []
     method = method if isinstance(method, dict) else {}
@@ -610,6 +615,28 @@ def validate(blueprint, method):
                         "%s s; no sung word before the ERM (method 11.2)"
                         % (cue.get("music_cue_id"), at, erm_s)))
                     break
+
+    # The ERM apex belongs to the method record's runtime_targets, not to the
+    # blueprint's own clock. control/method.json is the authority and wins over
+    # the blueprint and req.json, so an ERM outside its window is rejected
+    # before the lyric spend. block_anchors_s are block END times, never the ERM.
+    win = ((method or {}).get("runtime_targets") or {}).get("erm_window_s")
+    if erm_s is not None and isinstance(win, (list, tuple)) and len(win) == 2:
+        try:
+            lo_w, hi_w = float(win[0]), float(win[1])
+        except (TypeError, ValueError):
+            lo_w = hi_w = None
+        if lo_w is not None and not (lo_w <= erm_s <= hi_w):
+            apex = (method.get("runtime_targets") or {}).get("erm_apex_s")
+            errors.append(_e(
+                "ERM_OUTSIDE_WINDOW",
+                "the blueprint's ERM_DROP starts at %s s but the method "
+                "record's runtime_targets.erm_window_s is [%s, %s] s with "
+                "erm_apex_s %s s; control/method.json is the authority and "
+                "wins over the blueprint and req.json. block_anchors_s values "
+                "are block END times, never the ERM; move ERM_DROP.start_s and "
+                "the first sung cue to the apex"
+                % (erm_s, lo_w, hi_w, apex)))
 
     anchors = _anchors(blueprint, purpose)
     hero_s, hook_s = anchors["hero_shift"], anchors["hook"]

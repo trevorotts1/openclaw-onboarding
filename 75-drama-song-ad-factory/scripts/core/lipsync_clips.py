@@ -279,11 +279,24 @@ def count_jobs(job_keys, segment):
     return sum(1 for k in job_keys if pat.match(k))
 
 
-def check_try_limit(job_keys, segment):
+def check_try_limit(job_keys, segment, prior_prompts=None,
+                    candidate_prompt=None):
     """Refuse a 3rd paid job for a segment BEFORE anything is spent. Returns
-    the tries left; raises LipsyncClipsError(TRY_LIMIT) at 0."""
+    the tries left; raises LipsyncClipsError(TRY_LIMIT) at 0.
+
+    Lock 1 (NEVER-AGAIN): when the caller also passes the tried prompts plus
+    the candidate, an unchanged 3rd prompt raises TEMPLATE_FAIL_LOCK.
+    """
     n = count_jobs(job_keys, segment)
     if n >= MAX_TRIES:
+        if prior_prompts is not None or candidate_prompt is not None:
+            import never_again as _na
+            lock = _na.check_template_fail(prior_prompts or [],
+                                           candidate_prompt or "")
+            if lock is not None:
+                raise LipsyncClipsError(
+                    lock["code"], lock["detail"] + " for segment %s "
+                    "(drop the stillness line or stop and report)" % segment)
         raise LipsyncClipsError(TRY_LIMIT, "lip-sync try limit reached for "
                                 "segment %s (%d jobs; limit %d, every name "
                                 "variant counts): use the best-measured take, "

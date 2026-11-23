@@ -127,18 +127,37 @@ def force_style(style):
     ``box="rounded"`` arrives square. Upgrade path: emit an ASS ``\\p`` draw
     path when the render pass grows one; the style record already carries the
     intent.
+
+    PlayResX/PlayResY are the frame itself: an SRT carries no PlayRes, so
+    libass falls back to its 384x288 script canvas and every px value below
+    is scaled by height/288 -- which pushed a 1920-tall master's caption off
+    the frame and burned nothing. With the real canvas the px values mean
+    what captions_burn wrote them as.
+
+    BorderStyle=3 paints the box in OutlineColour at Outline thickness
+    (BackColour is the SHADOW), so the box colour goes to OutlineColour and
+    Outline is the box padding around the text.
     """
-    return ",".join((
-        "FontSize=%d" % int(round(style.get("font_size_px") or 48)),
+    font_px = int(round(style.get("font_size_px") or 48))
+    box = _ass_colour(style.get("box_colour"))
+    fields = [
+        "FontSize=%d" % font_px,
         "PrimaryColour=%s" % _ass_colour(style.get("font_colour")),
-        "BackColour=%s" % _ass_colour(style.get("box_colour")),
+        "BackColour=%s" % box,
+        "OutlineColour=%s" % box,
         "BorderStyle=3",            # 3 = background box, the white rounded box
-        "Outline=0", "Shadow=0",
+        "Outline=%d" % max(1, int(round(font_px * 0.2))),
+        "Shadow=0",
         "Alignment=2",              # bottom centre
         "MarginV=%d" % int(round(style.get("bottom_margin_px") or 0)),
         "MarginL=%d" % int(round(style.get("edge_margin_px") or 0)),
         "MarginR=%d" % int(round(style.get("edge_margin_px") or 0)),
-    ))
+    ]
+    w, h = style.get("width_px"), style.get("height_px")
+    if w and h:
+        fields += ["PlayResX=%d" % int(round(w)),
+                   "PlayResY=%d" % int(round(h))]
+    return ",".join(fields)
 
 
 def burn_argv(master, out, srt_name, style, ffmpeg="ffmpeg"):

@@ -172,6 +172,18 @@ this one stamp. Rounds are recorded in order below.
   client-facing stop and fails when a stop has no table row, a row has fewer
   than two choices, or a message shows a code, a path or a trace.
 
+## v2.9.202 - 2026-11-19 - fix(song): speak first, sing at the drop; lyric doctrine; word timing; pick after operator decision
+
+Lessons from a 3-minute Soul Ballad campaign run, where the first three rounds sang at about 5 s and the lyrics missed the real audience.
+
+- **Suno waits for the drop (suno_recipe, song_contract, suno-v6.json).** On a method run the style text now carries "no singing until the groove drops" and a spoken-backstory sentence in place of "Only the short intro is spoken". `check_pre_erm_opening` refuses a sheet whose spoken words before the first sung line cannot reach the ERM window (PRE_ERM_SPOKEN_SHORT / PRE_ERM_SPOKEN_LONG). `check_pace_style` accepts the method clauses. New Backstory cue.
+- **ERM window (method_plan).** A blueprint ERM outside the method window is refused with ERM_OUTSIDE_WINDOW.
+- **Take judge (song_dispatch).** The ERM apex comes from control/method.json and first singing is measured from word timing when present (the singing detector mis-scored spoken backstory as singing).
+- **Word timing (PREREQS, INSTALL, song_transports).** Model name corrected to `small`; install pre-fetches it and fixes cache ownership; a missing model raises WORD_TIMING_UNAVAILABLE instead of silently empty aligned words.
+- **Memory guard (lane_size).** Free memory is the cgroup working set, so reclaimable page cache no longer refuses local model loads; MiB/GB label fixed.
+- **Website spelling (protected_names).** `url` and `cta_url` from the brief are protected.
+- **Pick after operator decision (song_choices).** `record_pick` honours a recorded, digest-bound WW-21 operator decision for that variant, the same decision `factory music --operator-decision` already accepts.
+- **Doctrine (SKILL.md, INSTRUCTIONS.md, QC.md, EXAMPLES.md).** Write for the brief's real audience; concrete pain checklist; the client's own lines kept in the pain section; spoken backstory plus two sung pain sections before the hero; keep the chosen style; three places that tell Suno to wait; QC rows and a worked example.
 
 ## v2.9.155 - 2026-11-02 - chore(batch): version stamp for batch PR #2784 (ST2, X01, F14, PR #2779)
 

@@ -301,6 +301,66 @@ def plan(req, profile_path=None):
             queue.append(artifact_id)
 
     # Repair bounds: per-artifact attempt counts from durable history.
+    # Lock 5: one lone drip (single target, cap 1 pass each) refuses
+    # RETAKE_DRIP — remakes go back in ONE blast, never one by one.
+    # Lock 1: identical-template retries past the cap raise
+    # TEMPLATE_FAIL_LOCK with the prompt-change order.
+    drip = req.get("drip") or (len(targets) == 1
+                               and int(req.get("passes_used") or 1) > 1
+                               and int(req.get("ready_count") or 1) > 1)
+    if drip:
+        import never_again as _na
+        return {"outcome": "rejected", "code": _na.RETAKE_DRIP,
+                "reason": "drip submit refused: %d ready jobs belong in one "
+                          "blast up to the rate limit, never one by one"
+                          % int(req.get("ready_count") or len(targets)),
+                "targets": targets, "attempt_counts": dict(counts),
+                "tool": TOOL_NAME, "tool_version": TOOL_VERSION,
+                "recovery": "resubmit all ready jobs in ONE blast"}
+    # Lock 8 (F-KLING-ROUTE, Trevor order 2026-11-21): Kling retakes
+    # ride ONLY lip_sync:true shots (talking or singing). Caller passes
+    # shot lip_sync state as req["lip_sync_by_artifact"] {id: bool} and
+    # the retake model as req["retake_model"]; a Kling model
+    # (kie_dispatch/model_lock.is_locked_lipsync) on a non-lip-sync shot
+    # refuses ROUTE_CHANGED -- re-plan as an H3 remake.
+    _lip_sync_map = req.get("lip_sync_by_artifact") or {}
+    _retake_model = req.get("retake_model") or ""
+    try:
+        from kie_dispatch.model_lock import is_locked_lipsync as _is_kling
+    except ImportError:
+        try:
+            from model_lock import is_locked_lipsync as _is_kling  # type: ignore
+        except ImportError:
+            _is_kling = None
+    if _is_kling is not None and _is_kling(_retake_model):
+        import never_again as _na
+        for _a in targets:
+            if not _lip_sync_map.get(_a, False):
+                return {"outcome": "rejected", "code": _na.ROUTE_CHANGED,
+                        "reason": ("Kling allowed ONLY on lip_sync:true "
+                                   "shots (talking or singing); %r is not "
+                                   "lip-sync -- re-plan as an H3 remake"
+                                   % _a),
+                        "targets": targets, "attempt_counts": dict(counts),
+                        "tool": TOOL_NAME, "tool_version": TOOL_VERSION,
+                        "recovery": "re-plan %r as an H3 remake" % _a}
+    # Lock 10 (F-MODEL-AUTH, Trevor order 2026-11-21): req["retake_model"]
+    # must be in never_again.AUTHORIZED_DISPATCH_MODELS or every target
+    # needs a Trevor written order binding that model + shot
+    # (req["model_auth_order"]); else MODEL_UNAUTHORIZED before cap math.
+    _auth_model = req.get("retake_model")
+    if _auth_model:
+        import never_again as _na
+        _auth_hit = _na.check_model_authorized(_auth_model)
+        _unbound = [a for a in targets if not _na.check_model_order(
+            req.get("model_auth_order"), _auth_model, a)]
+        if _auth_hit is not None and _unbound:
+            return {"outcome": "rejected", "code": _na.MODEL_UNAUTHORIZED,
+                    "reason": _auth_hit["detail"] + " (retake %r)" % _unbound[0],
+                    "targets": targets, "attempt_counts": dict(counts),
+                    "tool": TOOL_NAME, "tool_version": TOOL_VERSION,
+                    "recovery": "re-plan with an authorized model or get a "
+                                "Trevor written order binding model + shot"}
     exhausted = [a for a in targets if counts.get(a, 0) >= cap]
     if exhausted:
         detail = ", ".join(

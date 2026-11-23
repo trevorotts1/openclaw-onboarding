@@ -285,6 +285,41 @@ echo "rc=$?"     # 0 all present; 2 missing or broken (informational, per Step 2
 Exact fixture shapes and captured outputs for 5b/5c: `EXAMPLES.md`
 (Examples 1 and 6). Then run `QC.md` and score ≥ 8.5/10.
 
+### Word-timing model (tier-2 local fallback only)
+
+Word timing is what the judge measures first singing from: with no word
+timings, `aligned_words` comes back EMPTY (`WHISPER_MODEL_LOAD_FAILED`) and
+the judge cannot place the first vocal line, so the whole 30-second opening
+check goes unmeasured. **Empty `aligned_words` means stop and fix — never let
+a run through without it.**
+
+Skip this step unless the tier-2 local fallback is enabled (tier 1, Suno
+timestamped lyrics, is the default and needs no model).
+
+The code loads the **`small`** model (`audio_c3/lyric_timing.py`,
+`DEFAULT_WHISPER_SIZE`), int8 on CPU. Pre-fetch that exact model **as the
+factory's run user** — not as root, and inside a container as its run user:
+
+```bash
+# 5f. pre-fetch the exact model the code loads, as the RUN USER
+sudo -u <run-user> python3 -c \
+  "from faster_whisper import WhisperModel; WhisperModel('small', device='cpu', compute_type='int8')"
+
+# 5g. that run user must OWN its Hugging Face cache, or the pre-fetch above
+#     fails for the run user and every take returns empty word timings
+sudo chown -R <run-user> "$(sudo -u <run-user> python3 -c 'import os;print(os.path.expanduser("~/.cache/huggingface"))')"
+
+# 5h. verify: loads from the run user's own cache with no network
+sudo -u <run-user> python3 -c \
+  "from faster_whisper import WhisperModel; WhisperModel('small', device='cpu', compute_type='int8'); print('WORD_TIMING_MODEL_OK')"
+echo "rc=$?"     # expect 0 and WORD_TIMING_MODEL_OK
+```
+
+A missing or root-owned cache leaves the model unloadable for the run user, so
+word timing fails soft: the take still measures, but `aligned_words` is empty
+and `WORD_TIMING_UNAVAILABLE` / `WHISPER_MODEL_LOAD_FAILED` is printed. Fix
+the cache ownership and re-run 5f/5h before any take is judged.
+
 ## Step 5e: Emergency owner (per install)
 
 The emergency owner is a PER-INSTALL value, never a hard-coded name. It is the
