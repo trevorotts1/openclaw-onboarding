@@ -256,6 +256,60 @@ class RoleSpecCopyTest(unittest.TestCase):
                 self.assertEqual(lines, [], role)
                 self.assertEqual(argv[-1], "references/copy-specs/" + spec, role)
 
+    def test_an_upsell_or_downsell_run_resolves_its_own_form_through_the_role(self):
+        """RFX-011: shared_page_service.py records copy_version upsell/downsell for these roles;
+        the copy stage resolves it through the declared role, runs the role's own validator, and
+        still refuses a version that is unknown or not the declared role's own form."""
+        sys.path.insert(0, str(SKILL / "scripts"))
+        try:
+            import stage_gate
+        finally:
+            sys.path.pop(0)
+        cmd = "python3 scripts/validate_copy_structure.py {run_dir} --spec {copy_spec}"
+        spec_of = {"upsell": "upsell-v6.json", "downsell": "downsell-v1.json"}
+        cases = [("upsell", "upsell_1", "launch"), ("upsell", "upsell_2", "page-request"),
+                 ("downsell", "downsell_1", "launch")]
+        for form, role, where in cases:
+            with tempfile.TemporaryDirectory() as tmp:
+                run = Path(tmp)
+                intake = {"copy_version": form}
+                if where == "launch":
+                    intake["launch"] = {"page_role": role}
+                else:
+                    (run / "page-request.json").write_text(json.dumps({"page_role": role}), encoding="utf-8")
+                (run / "intake.json").write_text(json.dumps(intake), encoding="utf-8")
+                argv, lines = stage_gate.resolve_brand_placeholder(cmd, run, "copy", None, as_argv=True)
+                self.assertEqual(lines, [], role)
+                self.assertEqual(argv[-1], "references/copy-specs/" + spec_of[form], role)
+                spec = json.loads((SPECS / spec_of[form]).read_text(encoding="utf-8"))
+                (run / "copy").mkdir()
+                (run / "copy" / "internal-manuscript.md").write_text("".join(
+                    f"## Section {s['id']}: {s['framework_name']}\n\nPlain approved copy for this "
+                    "part of the page.\n\n[CTA BUTTON: Yes, add it]\n\n" for s in spec["sections"]),
+                    encoding="utf-8")
+                self.assertIsNone(stage_gate.run_one_validator(argv, run), role)
+        refused = [({"copy_version": "short-form", "launch": {"page_role": "upsell_1"}}, "unknown version"),
+                   ({"copy_version": "upsell"}, "upsell on a landing run"),
+                   ({"copy_version": "downsell", "launch": {"page_role": "upsell_1"}}, "another role's form"),
+                   ({"launch": {"page_role": "downsell_1"}}, "no copy_version")]
+        for intake, why in refused:
+            with tempfile.TemporaryDirectory() as tmp:
+                (Path(tmp) / "intake.json").write_text(json.dumps(intake), encoding="utf-8")
+                argv, lines = stage_gate.resolve_brand_placeholder(cmd, Path(tmp), "copy", None, as_argv=True)
+                self.assertIsNone(argv, why)
+                self.assertTrue(any("copy_version" in line for line in lines), (why, lines))
+        with tempfile.TemporaryDirectory() as tmp:  # the same rule serves the order page's own form
+            (Path(tmp) / "intake.json").write_text(json.dumps(
+                {"copy_version": "product-selection", "page_role": "product_selection"}), encoding="utf-8")
+            argv, lines = stage_gate.resolve_brand_placeholder(cmd, Path(tmp), "copy", None, as_argv=True)
+            self.assertEqual((lines, argv[-1]), ([], "references/copy-specs/product-selection-v1.json"))
+        for form, want in (("standard", "standard-v6.json"), ("long-form", "long-form-v6.json"),
+                           ("thank-you", "thank-you-v1.json")):
+            with tempfile.TemporaryDirectory() as tmp:
+                (Path(tmp) / "intake.json").write_text(json.dumps({"copy_version": form}), encoding="utf-8")
+                argv, lines = stage_gate.resolve_brand_placeholder(cmd, Path(tmp), "copy", None, as_argv=True)
+                self.assertEqual((lines, argv[-1]), ([], "references/copy-specs/" + want), form)
+
 
 if __name__ == "__main__":
     unittest.main()

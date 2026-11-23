@@ -278,19 +278,22 @@ def resolve_brand_placeholder(cmd, run_dir, stage, receipt, as_argv=False):
         except Exception:
             intake = {}
         cv = intake.get("copy_version") if isinstance(intake, dict) else None
-        if cv not in page_role.copy_versions():
-            return None, ["copy stage validator needs intake.json copy_version "
-                          "(\"standard\" or \"long-form\", or the page type's own form such as "
-                          "\"thank-you\"), the required intake decision "
-                          "(Amendment 6, Items 18/19); none is recorded"]
-        substitutions["{copy_version}"] = cv
-        substitutions["{copy_spec}"] = page_role.spec_ref(cv)
-        # A priced page (checkout, upsell, downsell) records the landing form its images are drawn
-        # from as copy_version, but its copy has the page role's own sections: validate against them.
+        # A priced page (checkout, upsell, downsell) has the page role's own sections: validate
+        # against them. Its copy_version is a landing form, or the role's own registered form
+        # (upsell for upsell_1/upsell_2, downsell for downsell_1, product-selection for
+        # product_selection), which shared_page_service.py forces and only the declared role resolves.
         role = page_role.declared_role(run_dir)
         role_ref = copy_spec_for_role(role) if role != page_role.LANDING_ROLE else ""
-        if role_ref:
-            substitutions["{copy_spec}"] = role_ref
+        import copy_forms
+        own_form = bool(cv and role_ref) and cv == copy_forms.form_for_role(role)
+        if cv not in page_role.copy_versions() and not own_form:
+            return None, ["copy stage validator needs intake.json copy_version "
+                          "(\"standard\" or \"long-form\", or the page type's own form such as "
+                          "\"thank-you\", or the declared page role's own form: \"upsell\" for "
+                          "upsell_1/upsell_2, \"downsell\" for downsell_1), the required intake "
+                          "decision (Amendment 6, Items 18/19); none is recorded"]
+        substitutions["{copy_version}"] = cv
+        substitutions["{copy_spec}"] = role_ref or page_role.spec_ref(cv)
     files = []
     per_file = spec.get("per_file_glob")
     if per_file:

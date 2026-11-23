@@ -1,3 +1,9 @@
+## [1.3.39] - 2026-11-23 - the copy stage closes on upsell and downsell runs
+
+- `scripts/stage_gate.py` `resolve_brand_placeholder` (copy-spec resolution only): `shared_page_service.py` records `copy_version` `upsell` for page roles `upsell_1`/`upsell_2` and `downsell` for `downsell_1` (and refuses `standard` for them), but the copy validator refused any version outside `page_role.copy_versions()` (standard, long-form, thank-you) before its own role fallback ran, so the copy stage, and every stage after it, could never close on those runs. The declared role is now resolved first: a `copy_version` that is the declared role's own registered form (`copy_forms.form_for_role`) is accepted and validated against that role's spec (`upsell-v6.json`, `downsell-v1.json`; the order page's `product-selection` follows the same rule). An unknown version, a role form on a landing run, another role's form, or no version still refuses. Standard, long-form, thank-you and checkout resolution are unchanged.
+- Tests (`tests/test_validate_copy_structure.py`): upsell_1, upsell_2 and downsell_1 runs resolve their own spec and the resolved validator passes a minimal manuscript of that spec; the four refusals above; landing and thank-you unchanged. Fails on 1.3.38.
+- Version bump so the pull request carries a version above main (G3).
+
 ## [1.3.38] - 2026-11-13 - the launch record schema carries a price's billing interval
 
 - `references/launch.schema.json` (byte copy of Skill 49's) gains `recurring_interval` (week, month, quarter, year) on a price, so a launch record with a monthly, quarterly or yearly offer passes `scripts/launch_context.py` instead of being refused as an unknown key. No other change to this skill.
