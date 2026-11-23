@@ -554,10 +554,17 @@ card. The answers and the time answered go into the receipt
   automatic 60-second clip and one 90-second clip (`core/clip_cutdown`).
   Cutting is free (FFmpeg edit, no new AI media), so the price already
   includes them. 60 s and 90 s ads get none.
-- **Five looks:** each look owns its style-bible block, its own switching
-  rules and its own QC. The three hybrids switch on matched poses with a
-  0.3-0.4 s dissolve, hold each style at least 3 seconds, never flicker, and
-  lock identity across styles; golden realism carries the transformation.
+- **Six looks:** Lifelike 3D (default), Stylized 3D animation (the rounded,
+  appealing look clients call "Pixar-style"), 2D Hand-Painted, Sketch to Life,
+  Canvas to Life and Canvas to 3D. Each look owns its style-bible block, its
+  own switching rules and its own QC. The three hybrids switch on matched poses
+  with a 0.3-0.4 s dissolve, hold each style at least 3 seconds, never flicker,
+  and lock identity across styles; golden realism carries the transformation.
+  The client wording for every look comes from that look's own mode file
+  (`client_wording` in `references/prompt-templates/modes/<look>.json`), and a
+  guide line that differs from it is a document-guard failure. Lifelike 3D is
+  described to clients as high-end 3D animation with lifelike faces, clearly
+  animated, never live action; a client who wants real people is shown realism.
   No lip-sync on sketch shots; Canvas to 3D lip-syncs only on lifelike 3D
   close-ups.
 - **Dual presence (hybrid ads, APPROVED 2026-10-11):** each hybrid ad carries
