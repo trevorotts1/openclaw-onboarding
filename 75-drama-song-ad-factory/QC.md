@@ -322,6 +322,17 @@ contact sheet.
 - **The motion score stays advice.** A low motion score flags the take for a
   look; it never blocks on its own, and lip-sync takes are exempt (N-03).
 
+### 5.4 A plan that names gates carries a self-check table (R-7 / OR-10)
+
+No run ships a plan that fails its own gates. Any plan, storyboard or run
+document that **names gates** must carry a self-check table proving its own
+numbers pass those gates: the marked shots, the windows, the summed seconds,
+and each threshold cited with its file and line. A plan that fails its own
+gates is refused at review, never shipped to build, and no spend, blast or
+assembly starts until the plan's rows read PASS. QC checks for the table
+before the first paid job; a plan with gates and no self-check table is a
+review refusal, not a warning.
+
 ## 6. Cost / No-Double-Spend Checks (directive 18, enforced with section 17)
 - [ ] Every paid submission has a prior `reserve` and a later `reconcile`
       to actual cost, within the run ceiling recorded by the operator.
