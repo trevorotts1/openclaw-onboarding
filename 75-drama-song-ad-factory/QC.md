@@ -297,6 +297,31 @@ The fields, exactly:
 A BUILD-RECORD that a reader could not reproduce the master from is a
 provenance FAIL, the same as a missing assembler receipt.
 
+### 5.3 Streaming checks and score-carrying contact sheets (SPD-05)
+
+Checks do not wait for a stage to finish, and every piece carries a scored
+contact sheet.
+
+- **Checks stream as items land.** One checker per piece, at the 10B ratio of
+  one checker per 3 pictures and one checker per 3 clips, starts on each item
+  the moment it lands instead of after the last one. An unknown outcome is
+  handled with `mark_unknown` + `recover`/POLL (section 6), never a silent wait.
+- **Checks run while renders fly.** Picture, clip and letter checks run in
+  parallel windows beside a render whenever a fresh memory reading (never older
+  than 5 minutes) is at or below 85 percent pressure (3D.5); on a low-memory box
+  the checker count drops to one at a time before any check is skipped.
+- **Score-carrying contact sheets.** Every picture, clip and lip-sync take gets
+  a contact sheet that carries that piece's own scores — the cut/segment result
+  and the motion score — not just a strip of frames. They are produced for every
+  run, not only for client cards and approval packages, and they are produced
+  while renders fly so the side-by-side passes and the run owner have them in
+  time.
+- **A missing sheet is a refusal.** A piece admitted to the timeline with no
+  score-carrying contact sheet fails `CONTACT_SHEET_MISSING`, the same way a
+  lip-sync take with no eye record fails `LIP_TAKE_NOT_EYE_CHECKED`.
+- **The motion score stays advice.** A low motion score flags the take for a
+  look; it never blocks on its own, and lip-sync takes are exempt (N-03).
+
 ## 6. Cost / No-Double-Spend Checks (directive 18, enforced with section 17)
 - [ ] Every paid submission has a prior `reserve` and a later `reconcile`
       to actual cost, within the run ceiling recorded by the operator.
