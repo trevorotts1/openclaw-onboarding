@@ -1,5 +1,5 @@
 ---
-id: signature-launch-downsell
+id: sequence-signature-launch-downsell
 type: sequence
 name: Signature Launch Downsell Profile
 tags: [sequence, signature-launch, signature-launch-profile, downsell, declined-offer, smaller-option, face-saving, risk-reduction, incremental-commitment, foot-in-door, value-recalibration, future-opportunity, pas, before-after-bridge, aida, paired-variants, founder-signature, launch-brief-intake, draft-only-handoff]
@@ -41,8 +41,8 @@ A "no" is usually a no to the size of the commitment, not to the problem. This p
 11. **Founder's ACTUAL name** in every closing signature, from the brief. No placeholder ever ships.
 12. **Draft-only, always.** The profile produces plans and drafts. The build-plan handoff to Skill 44 carries `draft_only=true`, the profile name, the downsell page id, approved content hashes, the variant-pairing strategy, enrollment timing, and stop/suppression rules, and never any credential. This profile never sends.
 
-## Registration Note (for the integrator — a lane file cannot do this)
-The profile is authored as a file pair only. It is **not** in `catalog-index.json` / `catalog-built-index.json`, and `prove-email.py` does not yet know `signature_launch_downsell` in `SEQ_LENGTHS`, `PREVIEW_EXPECTED`, or `_sequence_type`. Until those shared files are updated by the integrator, a run resolving this `sequence_type` fails `AF-EMAIL-TYPE-MISMATCH` by design. `register.py --check` keeps its frozen 36-entry census, so adding this pair alone does not change or break it.
+## Registration Note
+This profile is registered: `sequence-signature-launch-downsell` is in `catalog-index.json` / `catalog-built-index.json` (the P1 selection gate accepts it), its family row lives in `profiles/launch-email-families.json`, and `prove-email.py` resolves `signature_launch_downsell` through `tools/launch_profiles.py`. `register.py --check` counts it in the sequence census.
 
 ## Use Cases
 - The email leg that follows a decline of the main launch offer, offering the approved smaller option

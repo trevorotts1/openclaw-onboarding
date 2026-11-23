@@ -1,5 +1,5 @@
 {
-  "id": "signature-launch-prelaunch",
+  "id": "sequence-signature-launch-prelaunch",
   "type": "sequence",
   "name": "Signature Launch Pre-Launch Profile",
   "tags": [
@@ -30,7 +30,7 @@
     "warm-lists",
     "doors-open-anticipation"
   ],
-  "file": "signature-launch-prelaunch.md",
+  "file": "sequence-signature-launch-prelaunch.md",
   "rules": {
     "kind": "sequence",
     "sequence_type": "signature_launch_prelaunch",
@@ -47,9 +47,17 @@
       "5": "pas"
     },
     "phase_map": {
-      "teaser": [1],
-      "value": [2, 3, 4],
-      "doors_soon": [5]
+      "teaser": [
+        1
+      ],
+      "value": [
+        2,
+        3,
+        4
+      ],
+      "doors_soon": [
+        5
+      ]
     },
     "cta_rules": {
       "1": 1,
@@ -64,14 +72,16 @@
     "objective_note": "the frozen objective enum has no pre-launch value; this profile defaults to promotional and must never widen the enum from a lane file",
     "disruptive_required": false,
     "variant_pairing": {
-      "pairs": ["A", "B"],
+      "pairs": [
+        "A",
+        "B"
+      ],
       "pairing": "subject and preview are paired per variant (Pair A = subject A + preview A; Pair B = subject B + preview B); pairs are preserved through the Skill-44 draft handoff, never flattened into unpaired lists",
       "pair_b_style": "prolific and disruptive, truthful and on brand (no false account alert, no fake reply prefix, no fabricated urgency, no misleading price, no fake scarcity)"
     },
     "intake": "the approved S49 shared-launch brief, consumed by the launch intake adapter with per-field provenance; the legacy one-block questionnaire applies only in explicit legacy interactive mode",
     "review_labels": "the private client-review document labels each email with its framework and labels the body 'Email Body:'; the recipient payload carries no framework labels, slot instructions, or production commentary",
     "trigger": "Signature Launch build: the five pre-launch emails are written before the doors-open date, from the approved launch brief and the approved landing page; the sequence runs before the main launch 10 and every CTA points at the opt-in / waitlist page",
-    "registration_note": "not yet in catalog-index.json / catalog-built-index.json and not yet in SEQ_LENGTHS / PREVIEW_EXPECTED / _sequence_type; until the integrator registers the profile, a run resolving sequence_type signature_launch_prelaunch fails AF-EMAIL-TYPE-MISMATCH by design",
     "af_codes": [
       "AF-EMAIL-SEQUENCE-LENGTH",
       "AF-EMAIL-SEQUENCE-MAP",
@@ -81,6 +91,7 @@
       "AF-EMAIL-WORDBAND",
       "AF-EMAIL-SIGNATURE-PLACEHOLDER",
       "AF-EMAIL-TYPE-MISMATCH"
-    ]
+    ],
+    "registration": "registered: catalog-index.json + catalog-built-index.json, the launch family registry, and prove-email.py (through tools/launch_profiles.py)"
   }
 }

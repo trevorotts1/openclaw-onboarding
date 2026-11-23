@@ -101,12 +101,95 @@ def load_registry(path: Optional[Path] = None) -> Dict[str, Any]:
             if not isinstance(fam[key], (dict, list)):
                 raise RegistryError("family %r %s has the wrong shape"
                                     % (kind, key))
+        _check_count_variants(fam)
     missing_kinds = [k for k in PLANNED_KINDS if k not in seen_kinds]
     if missing_kinds:
         raise RegistryError("profile registry is missing the planned famil%s: %s"
                             % ("y" if len(missing_kinds) == 1 else "ies",
                                ", ".join(missing_kinds)))
     return doc
+
+
+def _slots(n: int) -> List[int]:
+    return list(range(1, n + 1))
+
+
+def _check_count_variants(fam: Dict[str, Any]) -> None:
+    """A count variant is a REGISTERED alternative length for one family: its
+    own framework map (and, where they differ, CTA floors, word bands, timing
+    and lifecycle) for exactly that many emails. A plan may declare the
+    family's email_count or one of these counts, never any other number."""
+    kind = fam["kind"]
+    variants = fam.get("count_variants")
+    if variants is None:
+        return
+    if not isinstance(variants, dict) or not variants:
+        raise RegistryError("family %r count_variants must be a non-empty object" % kind)
+    for key, var in variants.items():
+        if not (isinstance(key, str) and key.isdigit() and int(key) > 0):
+            raise RegistryError("family %r count variant %r is not a positive count" % (kind, key))
+        n = int(key)
+        if n == fam["email_count"]:
+            raise RegistryError("family %r count variant %d repeats the default count" % (kind, n))
+        if not isinstance(var, dict) or not var.get("purpose"):
+            raise RegistryError("family %r count variant %d carries no purpose" % (kind, n))
+        maps = [var.get("framework_map")] + list((var.get("pattern_maps") or {}).values())
+        for fw in maps:
+            if not isinstance(fw, dict) or sorted(int(k) for k in fw) != _slots(n):
+                raise RegistryError("family %r count variant %d framework maps must cover "
+                                    "slots 1..%d exactly" % (kind, n, n))
+        gaps = (var.get("timing") or {}).get("wait_after_hours")
+        if isinstance(gaps, list) and len(gaps) != n - 1:
+            raise RegistryError("family %r count variant %d declares %d waits for %d emails"
+                                % (kind, n, len(gaps), n))
+
+
+def allowed_email_counts(fam: Dict[str, Any]) -> List[int]:
+    """Every email count a launch plan may declare for this family."""
+    return sorted({fam["email_count"]} | {int(k) for k in fam.get("count_variants") or {}})
+
+
+def resolve(fam: Optional[Dict[str, Any]],
+            email_count: Any = None) -> Optional[Dict[str, Any]]:
+    """The family as it applies to `email_count`: the default row for its own
+    count (or None), the default row overlaid with the registered variant for
+    a variant count, and None for any count the registry does not register.
+    The result is a copy; `count_variant` names the variant applied (or None)."""
+    if fam is None:
+        return None
+    if email_count is None:
+        email_count = fam["email_count"]
+    if isinstance(email_count, bool) or not isinstance(email_count, int):
+        return None
+    out = json.loads(json.dumps(fam))
+    out.pop("count_variants", None)
+    out["count_variant"] = None
+    if email_count == fam["email_count"]:
+        return out
+    var = (fam.get("count_variants") or {}).get(str(email_count))
+    if var is None:
+        return None
+    for key, value in var.items():
+        if key == "timing":
+            out["timing"] = dict(out["timing"], **value)
+        else:
+            out[key] = json.loads(json.dumps(value))
+    out["email_count"] = email_count
+    out["count_variant"] = str(email_count)
+    return out
+
+
+def locked_count(brief: Any, fam: Optional[Dict[str, Any]]) -> Optional[int]:
+    """The email count a LOCKED brief fixed for `fam`, or None. Only the brief's
+    own family block for the same family counts; the authored emails never
+    choose their own length."""
+    block = brief.get("family") if isinstance(brief, dict) else None
+    if not (isinstance(block, dict) and fam is not None):
+        return None
+    if _norm(block.get("profile")) != _norm(fam["profile"]):
+        return None
+    count = block.get("email_count")
+    return count if isinstance(count, int) and not isinstance(count, bool) else None
 
 
 def families(registry: Optional[Dict[str, Any]] = None) -> Dict[str, Dict[str, Any]]:

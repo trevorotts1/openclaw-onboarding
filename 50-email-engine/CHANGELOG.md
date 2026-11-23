@@ -1,5 +1,13 @@
 # Changelog — Skill 50 (email-engine)
 
+## [2.0.12] - 2026-11-23 - Launch family count variants and full catalog registration (BUG-098)
+
+- `profiles/launch-email-families.json` (registry 1.1.0) adds registered `count_variants`: `main_launch` 3 (the three P.A.S.T.O.R. Solutions emails), `doors_closing` 1 (last call, 3-B Plan), `upsell_followup` 2 (both upsell page patterns), `welcome_access` 10 (one transactional welcome plus nine non-selling event nurture emails that honor a marketing opt-out). Every existing default count, framework map and prover floor is unchanged. A launch plan may declare a family's default count or a registered variant; any other count is still refused, never padded or trimmed.
+- `tools/launch_profiles.py` validates the variants and resolves a family at a count; `launch_intake_adapter.py` locks each brief at its planned count (the brief's `family` block carries the count and its framework map, CTA floors and word band); `prove-email.py` grades a sequence at the count the LOCKED brief fixed, never the count the authored emails choose; `emit_build_plan.py` carries the variant timing and count.
+- The six launch family sequence records are renamed `sequence-signature-launch-*` and registered in `catalog-index.json` / `catalog-built-index.json` with a new `objective-transactional` entry, so the P1 selection gate accepts every family (it refused all but the main landing-10 with AF-EMAIL-TYPE-MISMATCH). `register.py --check` census is 44 and now proves every registry family and count variant is covered.
+- `word_band_override` has one shape: `[min, max]`, which the schemas and the prover honor. The adapter required an object the prover ignored, so the documented override path was dead; it now emits the list and normalizes a legacy `{min, max}` object to it.
+- `ENGINE-PIN.sha256` recomputed with the CI formula; tests `tests/test_launch_count_variants.py`.
+
 ## [2.0.11] - 2026-11-11 - Harmony-95 Batch T: email engine producers and seams (WP-05b)
 
 - Batch T member WP-05b lands in this skill; `ENGINE-PIN.sha256` is recomputed with the CI formula over the final file set.

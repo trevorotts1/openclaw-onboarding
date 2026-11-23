@@ -634,6 +634,31 @@
     "file": "objectives/objective-downsell.md"
   },
   {
+    "id": "objective-transactional",
+    "type": "objective",
+    "name": "Transactional",
+    "tags": [
+      "objective",
+      "transactional",
+      "post-purchase",
+      "access-delivery",
+      "receipt",
+      "order-confirmation",
+      "welcome",
+      "operational",
+      "no-offer",
+      "signature-launch"
+    ],
+    "length": "150-300 words",
+    "best_for": [
+      "welcome-access",
+      "post-purchase",
+      "access-delivery",
+      "receipt-and-next-steps"
+    ],
+    "file": "objectives/objective-transactional.md"
+  },
+  {
     "id": "persona-style-les-brown",
     "type": "persona-style",
     "name": "Les Brown Style (Motivational)",
@@ -1147,5 +1172,210 @@
       "full-launch-builds"
     ],
     "file": "sequences/sequence-signature-launch-landing-10.md"
+  },
+  {
+    "id": "sequence-signature-launch-prelaunch",
+    "type": "sequence",
+    "name": "Signature Launch Pre-Launch Profile",
+    "tags": [
+      "sequence",
+      "signature-launch",
+      "signature-launch-profile",
+      "pre-launch",
+      "teaser",
+      "value",
+      "doors-soon",
+      "waitlist",
+      "opt-in",
+      "star-chain-hook",
+      "pastor-story",
+      "features-to-benefit",
+      "before-after-bridge",
+      "pas",
+      "paired-variants",
+      "founder-signature",
+      "launch-brief-intake",
+      "draft-only-handoff"
+    ],
+    "length": "150-300 words",
+    "best_for": [
+      "pre-launch",
+      "signature-launch-builds",
+      "waitlist-growth",
+      "warm-lists",
+      "doors-open-anticipation"
+    ],
+    "file": "sequences/sequence-signature-launch-prelaunch.md"
+  },
+  {
+    "id": "sequence-signature-launch-doors-closing",
+    "type": "sequence",
+    "name": "Signature Launch Doors-Closing Profile",
+    "tags": [
+      "sequence",
+      "signature-launch",
+      "signature-launch-profile",
+      "doors-closing",
+      "last-48-hours",
+      "final-call",
+      "deadline",
+      "truthful-deadline",
+      "landing-page",
+      "aida",
+      "pas",
+      "three-b-plan",
+      "paired-variants",
+      "founder-signature",
+      "launch-brief-intake",
+      "draft-only-handoff"
+    ],
+    "length": "150-300 words",
+    "best_for": [
+      "doors-closing",
+      "signature-launch-builds",
+      "final-48-hours",
+      "warm-lists",
+      "launch-close"
+    ],
+    "file": "sequences/sequence-signature-launch-doors-closing.md"
+  },
+  {
+    "id": "sequence-signature-launch-upsell",
+    "type": "sequence",
+    "name": "Signature Launch Upsell Follow-Up Sequence",
+    "tags": [
+      "sequence",
+      "signature-launch",
+      "upsell-followup",
+      "post-purchase",
+      "upsell-1",
+      "upsell-2",
+      "honor-the-purchase",
+      "value-multiplication",
+      "commitment-consistency",
+      "one-click",
+      "verified-purchase",
+      "route-graph-truth",
+      "no-invented-scarcity",
+      "moves-buyer-to-next-offer",
+      "founder-signature",
+      "convert-and-flow"
+    ],
+    "length": "150-300 words",
+    "best_for": [
+      "upsell",
+      "signature-launch-clients",
+      "verified-buyers",
+      "upsell-1-page",
+      "upsell-2-page",
+      "post-purchase-ascension"
+    ],
+    "file": "sequences/sequence-signature-launch-upsell.md"
+  },
+  {
+    "id": "sequence-signature-launch-downsell",
+    "type": "sequence",
+    "name": "Signature Launch Downsell Profile",
+    "tags": [
+      "sequence",
+      "signature-launch",
+      "signature-launch-profile",
+      "downsell",
+      "declined-offer",
+      "smaller-option",
+      "face-saving",
+      "risk-reduction",
+      "incremental-commitment",
+      "foot-in-door",
+      "value-recalibration",
+      "future-opportunity",
+      "pas",
+      "before-after-bridge",
+      "aida",
+      "paired-variants",
+      "founder-signature",
+      "launch-brief-intake",
+      "draft-only-handoff"
+    ],
+    "length": "150-300 words",
+    "best_for": [
+      "downsell",
+      "post-decline",
+      "signature-launch-builds",
+      "smaller-entry-offer",
+      "warm-lists"
+    ],
+    "file": "sequences/sequence-signature-launch-downsell.md"
+  },
+  {
+    "id": "sequence-signature-launch-abandoned-checkout",
+    "type": "sequence",
+    "name": "Signature Launch Abandoned-Checkout Recovery Profile",
+    "tags": [
+      "sequence",
+      "signature-launch",
+      "signature-launch-profile",
+      "abandoned-checkout",
+      "abandoned-cart",
+      "cart-recovery",
+      "checkout-recovery",
+      "order-recovery",
+      "zeigarnik-effect",
+      "loss-aversion",
+      "cognitive-dissonance",
+      "trust",
+      "reciprocity",
+      "three-b-plan",
+      "pas",
+      "before-after-bridge",
+      "per-buyer-type-tactics",
+      "timing-1-3-hours",
+      "founder-signature",
+      "launch-brief-intake",
+      "draft-only-handoff"
+    ],
+    "length": "<150 words",
+    "best_for": [
+      "abandoned-cart",
+      "abandoned-checkout",
+      "signature-launch-builds",
+      "checkout-recovery",
+      "ecommerce",
+      "warm-lists",
+      "buyer-type-segmented-lists"
+    ],
+    "file": "sequences/sequence-signature-launch-abandoned-checkout.md"
+  },
+  {
+    "id": "sequence-signature-launch-welcome-access",
+    "type": "sequence",
+    "name": "Signature Launch Welcome / Access Profile",
+    "tags": [
+      "sequence",
+      "signature-launch",
+      "signature-launch-profile",
+      "welcome-access",
+      "post-purchase",
+      "access",
+      "receipt",
+      "next-steps",
+      "onboarding",
+      "transactional",
+      "six-ws",
+      "before-after-bridge",
+      "paired-variants",
+      "founder-signature",
+      "launch-brief-intake",
+      "draft-only-handoff"
+    ],
+    "length": "150-300 words",
+    "best_for": [
+      "post-purchase",
+      "welcome-access",
+      "signature-launch-builds",
+      "access-delivery",
+      "receipt-and-next-steps"
+    ],
+    "file": "sequences/sequence-signature-launch-welcome-access.md"
   }
 ]

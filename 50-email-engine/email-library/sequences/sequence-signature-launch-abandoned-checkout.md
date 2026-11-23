@@ -1,5 +1,5 @@
 ---
-id: signature-launch-abandoned-checkout
+id: sequence-signature-launch-abandoned-checkout
 type: sequence
 name: Signature Launch Abandoned-Checkout Recovery Profile
 tags: [sequence, signature-launch, signature-launch-profile, abandoned-checkout, abandoned-cart, cart-recovery, checkout-recovery, order-recovery, zeigarnik-effect, loss-aversion, cognitive-dissonance, trust, reciprocity, three-b-plan, pas, before-after-bridge, per-buyer-type-tactics, timing-1-3-hours, founder-signature, launch-brief-intake, draft-only-handoff]
@@ -52,8 +52,8 @@ An abandoned checkout is the warmest cold moment in a launch: desire was proven,
 | Humanistic | "Did something come up?" human check-in; offer real help from a real person | Reciprocity + trust |
 | Competitive | What they lose by waiting; price protection or stock claim only when the approved offer version supplies it | Loss aversion, status-coded |
 
-## Registration Note (for the integrator — a lane file cannot do this)
-The profile is authored as a file pair only. It is **not** in `catalog-index.json` / `catalog-built-index.json`, and `prove-email.py` does not yet know `signature_launch_abandoned_checkout` in `SEQ_LENGTHS`, `PREVIEW_EXPECTED`, or `_sequence_type`. The shared prover also applies its default 150-300 word band (3-B under 150), so this profile's compact **under 150** band is not modeled yet. Until the integrator registers the profile and its band, a run resolving this `sequence_type` fails `AF-EMAIL-TYPE-MISMATCH` by design. `register.py --check` keeps its frozen 36-entry census, so adding this pair alone does not change or break it.
+## Registration Note
+This profile is registered: `sequence-signature-launch-abandoned-checkout` is in `catalog-index.json` / `catalog-built-index.json` (the P1 selection gate accepts it), its family row lives in `profiles/launch-email-families.json`, and `prove-email.py` resolves `signature_launch_abandoned_checkout` through `tools/launch_profiles.py`. `register.py --check` counts it in the sequence census.
 
 ## Use Cases
 - The recovery leg of a Signature Launch, after the checkout page and offer version are approved

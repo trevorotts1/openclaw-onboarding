@@ -1,0 +1,36 @@
+{
+  "id": "objective-transactional",
+  "type": "objective",
+  "name": "Transactional",
+  "tags": [
+    "objective",
+    "transactional",
+    "post-purchase",
+    "access-delivery",
+    "receipt",
+    "order-confirmation",
+    "welcome",
+    "operational",
+    "no-offer",
+    "signature-launch"
+  ],
+  "length": "150-300 words",
+  "best_for": [
+    "welcome-access",
+    "post-purchase",
+    "access-delivery",
+    "receipt-and-next-steps"
+  ],
+  "file": "objective-transactional.md",
+  "rules": {
+    "kind": "objective",
+    "objective_id": "transactional",
+    "one_objective_per_email": true,
+    "scope": "the Signature Launch welcome_access family only (access, receipt, next steps, non-selling event nurture)",
+    "carries_no_offer_price_or_urgency": true,
+    "interactive_questionnaire_offers_it": false,
+    "af_codes": [
+      "AF-EMAIL-OBJECTIVE-INVALID"
+    ]
+  }
+}

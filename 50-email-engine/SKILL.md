@@ -1,7 +1,7 @@
 ---
 name: email-engine
 description: The Email Engine — a governed skill + Email Superlibrary that SELECTS the right framework, GENERATES corpus-faithful email copy, QCs it against fail-closed provers, and hands a DRAFT-ONLY deploy plan to the Convert & Flow (GoHighLevel) operator. Owns the reusable IP — 13 email frameworks, 12 persona styles, the buyer-type -> email# -> framework map, the 4 sequence objectives, the 10-email landing-page promo sequence and the 12-email buyer-type / high-ticket-appointment sequences — and gates every one of those SACRED structures with a deterministic, model-free floor prover (prove-email.py). Runs P1 SELECT -> P2 GENERATE -> P3 QC -> P4 DEPLOY through one canonical entry (email-engine-entry.sh) with a deps/bypass/hash-pin/nonce gate; nothing is ever sent without explicit human approval.
-version: 2.0.11
+version: 2.0.12
 ---
 
 # Email Engine (Skill 50)
@@ -36,7 +36,7 @@ email itself.
 - `MASTERDOC.md` — the SACRED email IP verbatim (13 frameworks + structures, the
   buyer-type -> email# -> framework map, 12 persona styles, 4 objectives, and the
   three named sequences), each rule tied to its `AF-EMAIL-*` code.
-- `email-library/` — THE Email Superlibrary: **36 entries** as paired `<id>.json`
+- `email-library/` — THE Email Superlibrary: **44 entries** as paired `<id>.json`
   (machine `rules{}` spec) + `<id>.md` (how-to / example / tags) under
   `frameworks/ buyer-types/ objectives/ persona-styles/ sequences/`, plus the
   lexical `catalog-index.json` + built `catalog-built-index.json` and a
@@ -70,13 +70,13 @@ All from `SOURCE-EMAIL-CORPUS.md`. Each is a deterministic measurer with a named
 | Framework set | `framework` is one of the 13 canonical ids; if a structured `sections[]` is supplied it must match the framework's declared part count | `AF-EMAIL-FRAMEWORK-UNKNOWN` / `AF-EMAIL-FRAMEWORK-INCOMPLETE` |
 | Buyer-type map (12-email) | E1-2 spontaneous (3-B, Star-Chain-Hook) / E3-6 methodical (F2B, 6 W's, ACCA, PASTOR-Solutions) / E7-9 humanistic (PASTOR-Story, Star-Story-Solution, PAS) / E10-12 competitive (AIDA, Million-Dollar-Sales, BAB) | `AF-EMAIL-BUYERTYPE-MAP` |
 | Landing-page map (10-email) | E1-3 PASTOR-Solutions, E4 F2B, E5 6 W's, E6 BAB, E7 3-B, E8 Million-Dollar-Sales, E9 AIDA, E10 PAS | `AF-EMAIL-SEQUENCE-MAP` |
-| Sequence length | landing-page = 10 emails; high-ticket / buyer-type = 12 emails; slots contiguous 1..N | `AF-EMAIL-SEQUENCE-LENGTH` |
+| Sequence length | landing-page = 10 emails; high-ticket / buyer-type = 12 emails; a Signature Launch family = its registered count (`profiles/launch-email-families.json`), or one of its registered `count_variants` when the LOCKED brief fixes it; slots contiguous 1..N | `AF-EMAIL-SEQUENCE-LENGTH` |
 | Objective validity | exactly one of promotional / abandoned-cart / upsell / downsell / transactional (transactional is the launch welcome_access email only) | `AF-EMAIL-OBJECTIVE-INVALID` |
 | Persona-style validity | if set, one of the 12 canonical styles | `AF-EMAIL-PERSONA-INVALID` |
 | Persona never named | NEVER name/quote the referenced person (tone only, 100% original) — scanned in EVERY recipient-visible field: subjects, **previews (the inbox preheader)**, body, ctas, sections, disruptive_elements and founder_name (the From line) | `AF-EMAIL-PERSONA-NAMED` |
 | Subject count | exactly 2 (A/B), both non-empty | `AF-EMAIL-SUBJECT-COUNT` |
 | Preview count | Convert&Flow master = 1 line; high-ticket = 2 (the sequence declares which) | `AF-EMAIL-PREVIEW-COUNT` |
-| Word band | 150-300 words, EXCEPT the 3-B Plan (< 150). A logged client-exact override wins over the default band | `AF-EMAIL-WORDBAND` |
+| Word band | 150-300 words, EXCEPT the 3-B Plan (< 150). A logged client-exact override (`word_band_override`, always `[min, max]`) wins over the default band | `AF-EMAIL-WORDBAND` |
 | CTA count | >=1 per email; >=3 for the landing-page PASTOR emails (E1-3) | `AF-EMAIL-CTA-COUNT` |
 | Subject char band | C&F: 8-12 words, no pricing token / high-ticket: 80-87 rendered chars, exactly ONE emoji | `AF-EMAIL-SUBJECT-CHARBAND` |
 | First-name placement | `{{contact.first_name}}` in the first 40 chars of a subject (C&F) / present in a subject (HT) | `AF-EMAIL-FIRSTNAME-PLACEMENT` |
@@ -95,6 +95,15 @@ brief** (`locked_overrides.word_band_override` / `expected_preview_count` / `sub
 override that appears on the authoring-written `emails.json` but is NOT echoed in the locked brief
 is refused (`AF-EMAIL-OVERRIDE-UNLOGGED`) and the SACRED default re-applies, so an override can never
 silently loosen a gate. The honored override's source is recorded on the process certificate.
+
+**Launch family lengths are registered, never improvised.** Each Signature Launch family in
+`profiles/launch-email-families.json` has a default count and may register `count_variants`
+(for example a 3-email main launch, a 1-email last call, a 10-email welcome with event nurture,
+a 2-email upsell follow-up). A launch plan may declare the default or a registered variant; the
+adapter locks the brief at that count with the variant's own framework map, CTA floors and word
+bands, and the prover grades the sequence at the count the LOCKED brief fixed. Any other count is
+refused, never padded or trimmed. To support a new length, register a variant (and its record
+entry) rather than loosening the gate.
 
 ## How it runs — THROUGH one canonical entry
 
