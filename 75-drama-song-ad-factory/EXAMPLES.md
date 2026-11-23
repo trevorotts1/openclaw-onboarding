@@ -363,3 +363,44 @@ MISTAKE 6: Inventing commands.
 MISTAKE 7: Reading a passing preflight as "the video was generated".
   RIGHT: preflight NEVER submits generation. API success is not quality
          success - run the QC gates (QC.md, section 17 evidence gates).
+
+──────────────────────────────────────────────────────────────────
+WORKED EXAMPLE: NATIVE RATE AND DUPLICATE FRAMES BEFORE SPEND
+──────────────────────────────────────────────────────────────────
+
+Duplicate frames are generated inside a clip, at that clip's own native rate.
+A timeline conform cannot remove them, so the measurement is a CLIP-SIDE gate
+that runs before any conform and before assembly, never a timeline-rate change.
+
+What is measured, and when
+1. Before any paid step, record the clip's native rate from the model: MiniMax
+   H3 and Hailuo 02 Standard are native 24 fps; a Kling clip carries its own
+   native rate (30 for the Kling standard model). It is read from the model,
+   never guessed.
+2. When each clip lands, measure its duplicate frames with the existing
+   mpdecimate procedure in `final_assembler/fps_conform.py`, under
+   `load_governor`. A clip over the 2 percent cap is refused and remade
+   clip-side (retake or replace); it never enters the timeline.
+3. A deliberate still is declared `hold` so its held frames are not counted as
+   defects. Hold spans are declared in the shot's storyboard row before the clip
+   is measured.
+
+The non-30 timeline escape
+`fps_set_by_choice_card` is the only path to a timeline rate other than the
+clips' native rate. It is allowed only when the choice card sets the rate AND a
+deliberate playback requirement names it; it is never used to hide duplicate
+frames. When it is set, every clip is still measured at its own native rate
+first, and the master is still checked against `TIMELINE_DUP_FRAMES`.
+
+A segment report line
+For each clip the segment report records: shot id, native rate, measured
+duplicate count, cap pass/fail, any declared hold span, and the action taken
+(kept, remade clip-side). A per-segment count over the cap is advice only while
+the whole master stays under the 2 percent cap (N-15); it is never a reason to
+change the timeline rate.
+
+MISTAKE: Fixing duplicate frames with a 24-to-30 conform.
+  WRONG: motion-interpolating a native-24 clip up to a 30 fps timeline to
+         "smooth" it, or re-timing the timeline to drop frames.
+  RIGHT: remake or replace the clip; match a different-rate clip with plain
+         frame repeat or drop only.
