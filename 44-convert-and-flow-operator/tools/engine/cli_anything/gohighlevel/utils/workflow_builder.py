@@ -7,6 +7,7 @@ EXPERIMENTAL: Gated behind --experimental flag in CLI.
 """
 from __future__ import annotations
 
+import copy
 import hashlib
 import json
 import os
@@ -475,6 +476,73 @@ def normalize_action_ids(templates: list[dict], location_id: str) -> list[dict]:
         return node
 
     return [_remap(step) for step in templates]
+
+
+# ── Browser-only steps never ride the API save (SWB-021) ────────────────────
+#
+# The launch compiler marks steps that have no verified API payload with
+# rail "managed_browser" (wait-until-date steps from _apply_absolute and the
+# template "until" waits).  GoHighLevel's step-save PUT validates the WHOLE
+# graph and rejects it on one such step ("Type has an invalid value
+# until_date"), so sending them loses every API-buildable step too.  They are
+# spliced out of the save body here; the compiler's ledger row for each one
+# (wf_def["browser_steps"]) stays owed for the managed-browser route.
+
+def _is_browser_only(step: Any) -> bool:
+    if not isinstance(step, dict):
+        return False
+    attrs = step.get("attributes") if isinstance(step.get("attributes"), dict) else {}
+    return step.get("rail") == "managed_browser" or attrs.get("rail") == "managed_browser"
+
+
+def split_browser_only_steps(templates: list) -> tuple[list[dict], list[dict]]:
+    """Return ``(api_templates, browser_only)``.
+
+    Each browser-only step is removed and the graph is re-joined around it:
+    a reference to it in ``next``, ``parentKey`` or a branch target is
+    replaced by the step's own successor (``next``) or parent (``parentKey``),
+    so the remaining API steps stay one connected chain.  Inputs are not
+    mutated.
+    """
+    steps = [copy.deepcopy(s) for s in templates or []]
+    removed = [s for s in steps if _is_browser_only(s)]
+    if not removed:
+        return steps, []
+    by_id = {s.get("id"): s for s in removed}
+
+    def _resolve_next(step_id: Any) -> Any:
+        seen = set()
+        while step_id in by_id and step_id not in seen:
+            seen.add(step_id)
+            step_id = by_id[step_id].get("next")
+        return step_id
+
+    def _resolve_parent(step_id: Any) -> Any:
+        seen = set()
+        while step_id in by_id and step_id not in seen:
+            seen.add(step_id)
+            step_id = by_id[step_id].get("parentKey")
+        return step_id
+
+    kept = []
+    for step in steps:
+        if _is_browser_only(step):
+            continue
+        if step.get("next") in by_id:
+            step["next"] = _resolve_next(step["next"])
+        if step.get("parentKey") in by_id:
+            step["parentKey"] = _resolve_parent(step["parentKey"])
+        if isinstance(step.get("branches"), dict):
+            step["branches"] = {k: (_resolve_next(v) if v in by_id else v)
+                                for k, v in step["branches"].items()}
+        kept.append(step)
+    browser_only = [{"id": s.get("id"), "type": s.get("type"), "name": s.get("name"),
+                     "ledger_id": (s.get("attributes") or {}).get("ledger_id"),
+                     "before": _resolve_next(s.get("next")),
+                     "after": _resolve_parent(s.get("parentKey")),
+                     "attributes": copy.deepcopy(s.get("attributes") or {})}
+                    for s in removed]
+    return kept, browser_only
 
 
 # ── Step Linker ───────────────────────────────────────────────────────────
@@ -1482,6 +1550,20 @@ def reconcile_journal(client: Any, journal: BuildJournal, location_id: str) -> d
     return report
 
 
+def _journal_empty_shell(journal: Optional[BuildJournal], unit_key: Optional[str],
+                         remote_id: str) -> bool:
+    """True when the journal shows THIS build created ``remote_id`` and no step
+    save into it ever succeeded (the shell a refused save leaves behind)."""
+    if not journal or not unit_key:
+        return False
+    mine = [e for e in journal.entries()
+            if e.get("unit_key") == unit_key and str(e.get("remote_id")) == remote_id]
+    created = any(e.get("phase") == "create" and e.get("status") == "ok" for e in mine)
+    saved = any(e.get("phase") in ("save", "readback") and e.get("status") == "ok"
+                for e in mine)
+    return created and not saved
+
+
 def _journal_trigger_ok(journal: Optional[BuildJournal], unit_key: Optional[str],
                         wf_def: Mapping[str, Any]) -> bool:
     """Adoption proves outputs only from the journal's own prior receipts."""
@@ -2209,6 +2291,11 @@ class CampaignBuilder:
                         "hash and was NOT overwritten."
                     )
                     continue
+                if not templates and _journal_empty_shell(journal, unit_key, remote_id):
+                    # SWB-021: this build's own shell, every save refused, still
+                    # empty: _create_workflow resumes the save into it (no create).
+                    to_build[key] = wf_def
+                    continue
                 self.stats["errors"].append(
                     f"{wf_name}: existing workflow {remote_id} differs from the "
                     "journalled graph (expected %s, observed %s) — a human edit "
@@ -2251,7 +2338,14 @@ class CampaignBuilder:
                 if reason:
                     return (key, None, False, False, None, reason)
 
-            templates, unlinked = link_steps(wf_def.get("templates", []))
+            # SWB-021: browser-only steps (wait-until-date and other
+            # managed-browser rail steps) are never sent in the API save body;
+            # they stay owed as the compiler's browser ledger rows.
+            api_templates, browser_only = split_browser_only_steps(
+                wf_def.get("templates", []))
+            if browser_only:
+                self.stats.setdefault("browser_only_excluded", {})[key] = browser_only
+            templates, unlinked = link_steps(api_templates)
             if unlinked:
                 return (key, None, False, False, None,
                         f"{wf_name}: branch node(s) {', '.join(unlinked)} have no authored "
@@ -2278,6 +2372,7 @@ class CampaignBuilder:
             # Reconcile-before-retry: a journalled remote id is authoritative.
             # Read it back; adopt only when it matches, never retry a create.
             prior = journal.latest(unit_key) if (journal and unit_key) else None
+            resume_id = None
             if prior and prior.get("remote_id"):
                 remote_id = str(prior["remote_id"])
                 ok, observed, prior_templates = verify_saved_graph(
@@ -2287,7 +2382,18 @@ class CampaignBuilder:
                     return (key, None, False, False, None,
                             f"{wf_name}: prior attempt {remote_id} cannot be read "
                             "back — reconcile before any retry; no create fired.")
-                if not ok:
+                if not ok and not prior_templates and _journal_empty_shell(
+                        journal, unit_key, remote_id):
+                    # SWB-021: this run's own shell (create ok, every save
+                    # failed) still reads back EMPTY.  Nothing a human made
+                    # can be lost by saving into it, and creating again would
+                    # duplicate it — resume the save on the journalled id.
+                    journal.append(unit_key=unit_key, name=wf_name, remote_id=remote_id,
+                                   phase="reconcile", status="resume_empty_shell",
+                                   expected_hash=expected_hash, readback_hash=observed)
+                    self.stats.setdefault("resumed", []).append(wf_name)
+                    resume_id = remote_id
+                elif not ok:
                     journal.append(unit_key=unit_key, remote_id=remote_id,
                                    phase="reconcile", status="human_edit",
                                    expected_hash=prior.get("expected_hash"),
@@ -2296,20 +2402,22 @@ class CampaignBuilder:
                             f"{wf_name}: existing workflow {remote_id} differs from "
                             "the journalled graph — human edit preserved; no "
                             "overwrite fired.")
-                journal.append(unit_key=unit_key, remote_id=remote_id,
-                               phase="reconcile", status="adopted",
-                               expected_hash=prior.get("expected_hash"),
-                               readback_hash=observed)
-                self.stats["adopted"].append(wf_name)
-                return (key, remote_id, True,
-                        _journal_trigger_ok(journal, unit_key, wf_def), None, True)
+                else:
+                    journal.append(unit_key=unit_key, remote_id=remote_id,
+                                   phase="reconcile", status="adopted",
+                                   expected_hash=prior.get("expected_hash"),
+                                   readback_hash=observed)
+                    self.stats["adopted"].append(wf_name)
+                    return (key, remote_id, True,
+                            _journal_trigger_ok(journal, unit_key, wf_def), None, True)
 
             # GU-013 route decision — made BEFORE any transport call and never
             # switched after one.  Public V4 is used only when its capability
             # row is enabled AND the plan maps onto the documented V4 create
-            # body (no contact_tag trigger, no explicit folder id).
+            # body (no contact_tag trigger, no explicit folder id).  A resumed
+            # shell was made on the private rail and is finished there.
             route = self.route_for("create")
-            if route.public:
+            if route.public and resume_id is None:
                 blocker = self._v4_create_blocker(
                     wf_def, folder_name=folder_name,
                     requested_folder_id=requested_folder_id,
@@ -2329,7 +2437,7 @@ class CampaignBuilder:
             # Named private fallback (unchanged behaviour): public capability is
             # disabled, or this plan cannot be expressed by the V4 contract.
 
-            # Step 1: Create workflow
+            # Step 1: Create workflow (skipped when resuming a journalled empty shell)
             create_body: dict[str, Any] = {"name": wf_name, "parentId": folder_id}
             if wf_def.get("settings"):
                 create_body["settings"] = wf_def["settings"]
@@ -2339,11 +2447,14 @@ class CampaignBuilder:
                 # the workflow document; the enrolment control is the boolean
                 # allowMultiple. Applied here, proven only by the readback.
                 create_body[NATIVE_ENROLLMENT_FIELD] = native_enrollment
-            result = self.client.request(
-                "POST", f"/workflow/{self.loc}",
-                create_body,
-                workflow_name=wf_name,
-            )
+            if resume_id is not None:
+                result = {"id": resume_id}
+            else:
+                result = self.client.request(
+                    "POST", f"/workflow/{self.loc}",
+                    create_body,
+                    workflow_name=wf_name,
+                )
             if not result or not result.get("id"):
                 # An absent/unknown create response is UNCERTAIN, not a failure:
                 # the workflow may exist. Journal it so the next run reconciles
@@ -2358,15 +2469,19 @@ class CampaignBuilder:
                         "reconcile before retry; no duplicate create was attempted.")
 
             wf_id = result["id"]
-            if journal and unit_key:
+            if journal and unit_key and resume_id is None:
                 journal.append(unit_key=unit_key, name=wf_name, remote_id=str(wf_id),
                                phase="create", status="ok",
                                expected_hash=expected_hash)
 
-            # Step 2: Create tag + trigger if specified
+            # Step 2: Create tag + trigger if specified.  A resumed shell whose
+            # trigger the journal already proved is not given a second one.
             tag = wf_def.get("tag")
             trigger_ok = False
             trigger_data = None
+            if tag and resume_id is not None and _journal_trigger_ok(journal, unit_key, wf_def):
+                trigger_ok = True
+                tag = None
             if tag:
                 self.client.create_location_tag(tag, workflow_name=wf_name)
 
@@ -2570,12 +2685,17 @@ class CampaignBuilder:
                                 "unknown" if observed_reentry is None else "mismatch"),
                         expected_hash=expected_hash)
                 if not applied:
-                    step_err = (
+                    reentry_err = (
                         f"{wf_name}: Allow Reentry was requested "
                         f"{declared_reentry} but read back "
                         + ("an unreadable/absent value" if observed_reentry is None
                            else str(observed_reentry))
                         + " — the setting is NOT proven applied.")
+                    # SWB-021: never replace an earlier, truer error (the
+                    # step-save refusal or a readback failure) with this
+                    # secondary one; report both, the root cause first.
+                    step_err = reentry_err if step_err is None else (
+                        "%s | also: %s" % (step_err, reentry_err))
 
             # F05/BLD-015: enrolment is proven by the READBACK, never by the
             # request. `applied` is set from the observed native field; an
@@ -2641,7 +2761,10 @@ class CampaignBuilder:
                     wf_ids[key] = wf_id
                     self.stats["workflows_created"] += 1
                     if steps_ok:
-                        self.stats["steps_saved"] += len(campaign[key]["templates"])
+                        # API-saved steps only; browser-only steps are owed rows.
+                        self.stats["steps_saved"] += (
+                            len(campaign[key]["templates"])
+                            - len((self.stats.get("browser_only_excluded") or {}).get(key) or []))
                     if trigger_ok:
                         self.stats["triggers_created"] += 1
                 else:

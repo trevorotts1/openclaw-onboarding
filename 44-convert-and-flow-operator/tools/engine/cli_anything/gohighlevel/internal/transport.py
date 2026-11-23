@@ -274,7 +274,10 @@ class InternalTransport:
                     "_error": True,
                     "http_code": resp.status_code,
                     "code": resp.status_code,
-                    "message": error_body[:200],
+                    # SWB-021: 200 chars cut GoHighLevel's step-save validation
+                    # message before it named the failing action; keep enough to
+                    # surface the whole refusal.
+                    "message": error_body[:2000],
                 }
             text = resp.content.decode("utf-8")
             return json.loads(text) if text else {}
