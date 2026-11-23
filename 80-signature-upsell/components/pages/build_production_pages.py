@@ -47,6 +47,15 @@ Routes implemented (from the graph, stated for the reader):
   main paid -> U1; U1 paid -> U2; U1 declined -> D1; D1 paid -> the SAME U2;
   D1 declined -> thank-you; U2 paid or declined -> thank-you.
 
+ONE U2 PAGE, ONE TRUE ACKNOWLEDGEMENT
+-------------------------------------
+The U2 acknowledgement is chosen from the graph's paid edges into U2, never
+from a caller's flag. When both U1 and D1 pay into the one U2 page, it says
+only "Your purchase is confirmed." (true for either buyer). When one path
+exists, it names that purchase. A stated ``u2_entry_context`` that is not the
+graph's only path (including either path on a two-entry graph) is refused,
+because it would claim a purchase the other buyer never made.
+
 USAGE
 -----
   python3 build_production_pages.py \
@@ -210,6 +219,42 @@ def read_route_graph(graph: dict) -> dict:
                 f"route graph has {slot_role!r} without both a paid and an "
                 "explicit-decline edge")
     return by_role
+
+
+U2_ENTRY_PATHS = ((SLOT_U1, "from_upsell_1"), (SLOT_D1, "from_downsell_1"))
+NEUTRAL_U2_ACK = "Your purchase is confirmed. This is the next optional extra."
+
+
+def u2_entry_paths(routes: dict) -> list:
+    """Entry contexts of the one U2 page: each upsell_1 / downsell_1 whose
+    verified paid edge in the approved graph targets upsell_2."""
+    return [ctx for role, ctx in U2_ENTRY_PATHS
+            if ((routes.get(role) or {}).get("accept") or {})
+            .get("target_role") == SLOT_U2]
+
+
+def u2_acknowledgement(paths: list, stated, offers: dict) -> str:
+    """Neutral when both paths reach U2; the one path's purchase otherwise.
+    A stated context is checked against the graph, never trusted over it."""
+    if not paths:
+        raise PageBuildError(
+            "upsell_2: no verified paid edge from upsell_1 or downsell_1 "
+            "enters it in the approved route graph")
+    if stated and [stated] != paths:
+        raise PageBuildError(
+            "upsell_2: u2_entry_context %r disagrees with the approved route "
+            "graph, which enters the one upsell_2 page from %s; the "
+            "acknowledgement is read from the graph and must be true for every "
+            "buyer who reaches it" % (stated, " and ".join(paths)))
+    if len(paths) > 1:
+        return NEUTRAL_U2_ACK
+    if paths == ["from_upsell_1"]:
+        return ("Your Upsell 1 purchase is confirmed (%s). This is the next "
+                "optional extra." % (offers.get(SLOT_U1, {}).get("display_name")
+                                     or "your previous extra"))
+    return ("Your alternative offer purchase is confirmed (%s). This is the "
+            "next optional extra." % (offers.get(SLOT_D1, {}).get("display_name")
+                                      or "your alternative offer"))
 
 
 def graph_hash(graph: dict, raw: bytes = None) -> str:
@@ -554,6 +599,7 @@ def build(launch: dict, graph: dict, family: str, copies: dict,
                 f"the route graph carries {slot!r} but the launch record does "
                 "not enable it; the graph is not this launch's graph")
     offers = offers_by_slot(launch)
+    entry_paths = u2_entry_paths(routes)
     pages = {}
     manifest = []
     for slot in enabled:
@@ -591,24 +637,8 @@ def build(launch: dict, graph: dict, family: str, copies: dict,
             action_ref = doc.get("accept_action_ref")
             acknowledgement = ""
             if slot == SLOT_U2:
-                entry = launch.get("u2_entry_context")
-                if entry == "from_upsell_1":
-                    acknowledgement = (
-                        "Your Upsell 1 purchase is confirmed (%s). This is the "
-                        "next optional extra." % (
-                            offers.get(SLOT_U1, {}).get("display_name")
-                            or "your previous extra"))
-                elif entry == "from_downsell_1":
-                    acknowledgement = (
-                        "Your alternative offer purchase is confirmed (%s). "
-                        "This is the next optional extra." % (
-                            offers.get(SLOT_D1, {}).get("display_name")
-                            or "your alternative offer"))
-                else:
-                    raise PageBuildError(
-                        "upsell_2: the launch record names no entry context "
-                        "(from_upsell_1 or from_downsell_1); the page's "
-                        "acknowledgement must be truthful on both paths")
+                acknowledgement = u2_acknowledgement(
+                    entry_paths, launch.get("u2_entry_context"), offers)
         copy_doc = {
             "page_id": route["page_id"],
             "offer_name": offer_name,
@@ -644,6 +674,7 @@ def build(launch: dict, graph: dict, family: str, copies: dict,
             "disabled_states": sorted(CTA_DISABLED_STATES),
             "state_banners": {k: STATE_BANNERS[k] for k in STATE_BANNERS},
             "test_only": bool(launch.get("test_only")),
+            **({"entry_paths": entry_paths} if slot == SLOT_U2 else {}),
         })
     return {
         "pages": pages,
@@ -701,7 +732,6 @@ def _selftest(out_dir: Path) -> int:
 
     launch = load_json(repo / "49-signature-funnel" / "scripts" / "fixtures"
                        / "finalized-launch-record-signature-launch-l4.json")
-    launch["u2_entry_context"] = "from_upsell_1"
     graph = compiler.compile_route(launch)
     copies = {
         SLOT_U1: load_json(repo / "80-signature-upsell" / "components"
@@ -756,19 +786,15 @@ def _selftest(out_dir: Path) -> int:
         errors.append("U2 paid does not route to thank-you")
     if 'data-charges="false"' not in built["pages"][SLOT_U1]:
         errors.append("the decline control does not declare no charge")
-    if "Upsell 1 purchase is confirmed" not in built["pages"][SLOT_U2]:
-        errors.append("U2 does not acknowledge the verified U1 purchase")
-    # A second entry context is a different acknowledgement, same page.
-    launch_d1 = dict(launch, u2_entry_context="from_downsell_1")
-    built_d1 = build(launch_d1, graph, "order_upsell_v2_funnel", copies,
-                     downsell, brand)
-    d1_text = built_d1["pages"][SLOT_U2]
-    if "Upsell 1 purchase is confirmed" in d1_text \
-            or "alternative offer purchase is confirmed" not in d1_text:
-        errors.append("U2 on the D1 path wrongly claims a U1 purchase")
-    if built_d1["manifest"]["pages"][2]["page_id"] \
-            != by_slot[SLOT_U2]["page_id"]:
-        errors.append("U2 is not one canonical page across both entry paths")
+    # U1 and D1 both pay into the one U2 page: its acknowledgement names
+    # neither purchase, so it is true for both buyers.
+    u2_text = built["pages"][SLOT_U2]
+    if NEUTRAL_U2_ACK not in u2_text or "Upsell 1 purchase" in u2_text \
+            or "alternative offer purchase" in u2_text:
+        errors.append("U2 on a two-entry graph names one path's purchase")
+    if by_slot[SLOT_U2].get("entry_paths") != ["from_upsell_1",
+                                                "from_downsell_1"]:
+        errors.append("U2 manifest does not record both entry paths")
     # Fail-closed probes.
     probes = [
         ("no route graph node",
@@ -801,12 +827,14 @@ def _selftest(out_dir: Path) -> int:
         errors.append("a slot with no native product was not refused")
     except PageBuildError:
         pass
-    try:
-        build(dict(launch, u2_entry_context=None), graph,
-              "order_upsell_v2_funnel", copies, downsell, brand)
-        errors.append("U2 without an entry context was not refused")
-    except PageBuildError:
-        pass
+    for wrong in ("from_upsell_1", "from_downsell_1"):
+        try:
+            build(dict(launch, u2_entry_context=wrong), graph,
+                  "order_upsell_v2_funnel", copies, downsell, brand)
+            errors.append("a one-path context on a two-entry U2 was not "
+                          "refused: %s" % wrong)
+        except PageBuildError:
+            pass
 
     written = write_pages(out_dir, built)
     for path in written:

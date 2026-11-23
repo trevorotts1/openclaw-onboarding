@@ -122,8 +122,7 @@ class World:
 
     def produce(self, **over):
         args = dict(run_dir=self.run_dir, copies=self.copies, downsell_page=self.d1_page, brand=self.brand,
-                    thank_you_view=self.view, thank_you_fulfillment=self.fulfillment,
-                    u2_entry_context="from_upsell_1")
+                    thank_you_view=self.view, thank_you_fulfillment=self.fulfillment)
         args.update(over)
         return production.produce(self.root, **args)
 
@@ -156,7 +155,7 @@ class ProduceStageTests(Base):
         self.assertEqual({manifest["pages"][r]["builder"]["skill"] for r in built}, {80, 82})
         self.assertEqual(manifest["pages"]["downsell_1"]["handoff_builder"]["skill"], 81)
         self.assertIn("install_rail", manifest["pages"]["downsell_1"]["handoff"])  # Skill 81 production_handoff ran
-        self.assertEqual(manifest["pages"]["upsell_2"]["entry_context"], "from_upsell_1")
+        self.assertEqual(manifest["pages"]["upsell_2"]["entry_paths"], ["from_upsell_1", "from_downsell_1"])
         self.assertEqual(rule.production_violations(read(world.root / "package-manifest.json"), world.root,
                                                     required=True), [])
 
@@ -186,11 +185,15 @@ class ProduceStageTests(Base):
         self.assertIn("upsell_1", ctx.exception.detail)
         self.assertFalse((world.root / "production").exists())
 
-    def test_upsell_2_needs_an_entry_path_the_launch_record_cannot_carry(self):
+    def test_upsell_2_needs_no_entry_path_flag_and_its_acknowledgement_names_neither_purchase(self):
+        # U1 and D1 both pay into the one U2 page: the graph decides, and the words are true for both buyers.
         world = World(self.td)
-        with self.assertRaises(production.ProductionError) as ctx:
-            world.produce(u2_entry_context=None)
-        self.assertEqual(ctx.exception.code, "AF-LAUNCH-PRODUCE-U2-ENTRY")
+        manifest = world.produce()
+        text = (world.root / "production" / "upsell_2.html").read_text(encoding="utf-8")
+        self.assertIn("Your purchase is confirmed.", text)
+        self.assertNotIn("Upsell 1 purchase", text)
+        self.assertNotIn("alternative offer purchase", text)
+        self.assertEqual(manifest["pages"]["upsell_2"]["entry_paths"], ["from_upsell_1", "from_downsell_1"])
 
     def test_a_missing_native_id_is_skill_81s_named_refusal(self):
         world = World(self.td)
@@ -215,8 +218,7 @@ class ProduceStageTests(Base):
         argv = ["produce", "--package", str(world.root), "--run-dir", str(world.run_dir),
                 "--copy", f"upsell_1={world.copies['upsell_1']}", "--copy", f"upsell_2={world.copies['upsell_2']}",
                 "--downsell-page", str(world.d1_page), "--brand", str(world.brand),
-                "--thank-you-view", str(world.view), "--thank-you-fulfillment", str(world.fulfillment),
-                "--u2-entry-context", "from_upsell_1"]
+                "--thank-you-view", str(world.view), "--thank-you-fulfillment", str(world.fulfillment)]
         with contextlib.redirect_stdout(out):
             self.assertEqual(cli.main(argv), 0)
         self.assertTrue((world.root / "production" / "manifest.json").is_file())
@@ -392,7 +394,7 @@ def client_world(td: Path, *, with_thank_you_view: bool = False) -> World:
 def produce_argv(world: World, *extra: str, run_dir=None) -> list:
     argv = ["produce", "--package", str(world.root), "--run-dir", str(run_dir or world.run_dir),
             "--copy", f"upsell_1={world.copies['upsell_1']}", "--copy", f"upsell_2={world.copies['upsell_2']}",
-            "--downsell-page", str(world.d1_page), "--brand", str(world.brand), "--u2-entry-context", "from_upsell_1"]
+            "--downsell-page", str(world.d1_page), "--brand", str(world.brand)]
     if world.view:
         argv += ["--thank-you-view", str(world.view), "--thank-you-fulfillment", str(world.fulfillment)]
     return argv + list(extra)
@@ -489,7 +491,7 @@ class ProduceDetailTests(Base):
             self.assertTrue(row["routes"], role)
             self.assertEqual(row["builder"], {"skill": 80, "module": production.BUILDERS["80"]})
             self.assertEqual(row["page_id"], next(n["page_id"] for n in world.graph["nodes"] if n["role"] == role))
-        self.assertNotIn("entry_context", manifest["pages"]["upsell_1"])
+        self.assertNotIn("entry_paths", manifest["pages"]["upsell_1"])
         self.assertNotIn("handoff", manifest["pages"]["upsell_1"])
         self.assertEqual(manifest["pages"]["thank_you"]["builder"], {"skill": 82, "module": production.BUILDERS["82"]})
         self.assertEqual(manifest["pages"]["downsell_1"]["handoff_builder"],
@@ -507,22 +509,25 @@ class ProduceDetailTests(Base):
                 self.assertEqual(ctx.exception.code, "AF-LAUNCH-PRODUCE-U2-ENTRY")
         self.assertFalse((world.root / "production").exists())
 
-    def test_a_downsell_entry_path_is_built_and_recorded(self):
+    def test_a_one_path_context_on_a_two_entry_upsell_2_is_refused_and_writes_nothing(self):
+        # Either one-path wording would be false for the other buyer, so a stated path is refused, not obeyed.
         world = World(self.td)
-        manifest = world.produce(u2_entry_context="from_downsell_1")
-        self.assertEqual(manifest["pages"]["upsell_2"]["entry_context"], "from_downsell_1")
+        for wrong in ("from_upsell_1", "from_downsell_1"):
+            with self.subTest(wrong=wrong):
+                with self.assertRaises(production.ProductionError) as ctx:
+                    world.produce(u2_entry_context=wrong)
+                self.assertEqual(ctx.exception.code, "AF-LAUNCH-PRODUCE-80")
+                self.assertIn("disagrees with the approved route graph", ctx.exception.detail)
+        self.assertFalse((world.root / "production").exists())
 
-    def test_a_launch_record_that_already_names_the_u2_entry_path_needs_no_argument(self):
+    def test_a_launch_record_naming_one_path_on_a_two_entry_graph_is_refused(self):
         world = World(self.td)
         launch = read(world.run_dir / "launch.json")
         launch["u2_entry_context"] = "from_downsell_1"
         write(world.run_dir / "launch.json", launch)
-        try:
-            manifest = world.produce(u2_entry_context=None)
-        except production.ProductionError as exc:  # the closed launch schema may refuse the key: then it is Skill 80's word
-            self.assertEqual(exc.code, "AF-LAUNCH-PRODUCE-80")
-        else:
-            self.assertEqual(manifest["pages"]["upsell_2"]["entry_context"], "from_downsell_1")
+        with self.assertRaises(production.ProductionError) as ctx:
+            world.produce()
+        self.assertEqual(ctx.exception.code, "AF-LAUNCH-PRODUCE-80")
 
     def test_an_unreadable_input_is_a_named_refusal_and_writes_nothing(self):
         world = World(self.td)
@@ -1110,7 +1115,7 @@ class ProduceRoleTests(Base):
         write(world.root / "package-manifest.json", manifest)
         with NO_CHECK:
             try:
-                world.produce(u2_entry_context=None)
+                world.produce()
             except production.ProductionError as exc:
                 self.assertNotEqual(exc.code, "AF-LAUNCH-PRODUCE-U2-ENTRY", exc)
 
