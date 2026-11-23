@@ -326,6 +326,16 @@ shared guard: every runtime path invokes the same Python control entrypoint
 and the same exit codes BEFORE the affected action, not as an
 after-the-fact audit.
 
+**There is no waiver path, and no flag can suppress a gate.** The assembler's
+real argument list is the whole surface: the positional `timeline` and
+`output`, then `--dry-run`, `--chosen-length-s`, `--ffmpeg`, `--ffprobe`,
+`--timeout`, `--detector-result`, `--target`, `--takes`, `--verdict` and
+`--run-dir` (`assembler.py main()`). There is no `--expects` flag, no waiver
+flag, no suppression flag and no skip switch anywhere in that parser - a
+refusal run searched the argparse block and found `expects` false. A failed
+gate is repaired, or the item is refused; a waiver that would carry it past a
+check is never available, and no run folder or receipt can supply one.
+
 Build hygiene never reaches the client: drift reports are operator-only and
 silent during a client run. Drift between the installed tree and its source
 (missing files, differing files, a stale distribution, a sync that would
@@ -1293,7 +1303,13 @@ SOP named above.
   `TIMELINE_DUP_FRAMES`. Duplicate frames are measured with mpdecimate on every
   clip as it lands, before assembly; a clip over the cap is refused and remade
   clip-side. A deliberate still is marked `hold`; a per-segment duplicate count
-  is advice only while the whole master is under the 2% cap (N-15). Replaces
+  is advice only while the whole master is under the 2% cap (N-15).
+  `fps_set_by_choice_card` is the only non-30 timeline escape, and it passes
+  only when all three hold: the run owner recorded the rate on the choice card,
+  every clip's native rate equals the chosen rate or is matched by plain frame
+  repeat or drop, and every clip's mpdecimate duplicate ratio was measured and
+  is under the cap before assembly. A timeline that fails any of the three is
+  refused (`TIMELINE_FPS_NOT_30` or `TIMELINE_DUP_FRAMES`). Replaces
   the old "output = the clips' native rate" line and the old "drop frames,
   never invent them" wording for lip-sync clips, and replaces S75-048 step 3
   with N-23.
