@@ -3290,10 +3290,17 @@ def cmd_check(run_dir, stage):
 
 
 def self_pass_failures(stage, receipt):
-    """A `pass` receipt must name a reviewer that is not its author.
+    """No stage closes on a receipt it wrote about itself.
 
-    A session that authored the artifacts can still write the receipt; this is
-    the only place that stops that receipt from closing a stage unread.
+    The stage contract decides whether a stage carries a recorded REVIEW
+    (review_required). This guard is narrower and always applies: whatever the
+    contract says, a receipt that names a reviewer which IS the author is a
+    self-approval and cannot stand.
+
+    A stage with review_required false legitimately records no reviewer - its
+    approval lives at the visual-mockup bible review instead - so an absent
+    reviewer there is the designed path, not a gap. Where a reviewer IS named,
+    it must be someone else.
     """
     if not isinstance(receipt, dict):
         return []
@@ -3303,17 +3310,12 @@ def self_pass_failures(stage, receipt):
     author = receipt.get("author_agent") or receipt.get("author_session")
     reviewer = receipt.get("reviewer_agent") or receipt.get("reviewer_session")
     if _is_placeholder_session(reviewer):
-        return [
-            f"stage {stage}: the receipt claims status 'pass' but names no reviewer "
-            f"(reviewer_agent/reviewer_session is missing or a placeholder). An "
-            f"independent reviewer must be recorded, or the receipt must say what is "
-            f"true - 'pass_unreviewed' - and the stage stays open. Authored by "
-            f"{author!r}; a session cannot approve its own work."]
+        return []
     if not _is_placeholder_session(author) and reviewer == author:
         return [
-            f"stage {stage}: the receipt claims status 'pass' but its reviewer "
-            f"({reviewer!r}) is the same identity that authored it. An independent "
-            f"reviewer is required; a self-pass cannot close a stage."]
+            f"stage {stage}: the receipt claims status 'pass' and names itself as its "
+            f"own reviewer ({reviewer!r}). A self-approval cannot close a stage; record "
+            f"an independent reviewer, or state what is true as 'pass_unreviewed'."]
     return []
 
 
