@@ -610,6 +610,13 @@ card. The answers and the time answered go into the receipt
   Clips go on every sung hook, the spoken opener and the spoken closing line
   first, and are listed on the approval card. The historical FREE /
   no-lip-sync route stays an explicit owner opt-in and is never the default.
+  Its record is literal: the timeline carries the value `no_lipsync`, and
+  `control/method.json` records who chose it and when (the owner and the
+  timestamp). A run that claims the route without that record is refused
+  `LIPSYNC_OPT_OUT_MISSING` (`lipsync_clips.py`). On this route there are no
+  lip-sync clips by design, so `FACE_SPEAKS_NO_LIPSYNC` is not raised for a
+  speaking face; a lip-sync clip, where one exists, must still match its
+  on-screen speaker (`LIPSYNC_WRONG_FACE`).
   Each clip is a paid job, so a plan past the spend cap is refused loudly. Every
   lip-sync source picture passes the lip-sync image gate before any paid job
   (the dispatcher measures the picture with `picture_gate`: PASS, ACCEPT_WITH_FLAG or
