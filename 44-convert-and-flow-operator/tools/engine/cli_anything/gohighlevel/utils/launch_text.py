@@ -37,15 +37,22 @@ def enforce_sms_copy(campaign: Any, document: Mapping[str, Any]) -> Any:
                 wf.get("source_unit") == unit for wf in campaign.values()):
             continue
         code = CODE_PENDING if pending else CODE_UNBOUND
+        # Why the compiler could not place each approved message (sms_unplaced:<id>:<why>).
+        why = sorted({note.split(":", 1)[1] for wf in campaign.values()
+                      if isinstance(wf, Mapping) and wf.get("source_unit") == unit
+                      for note in wf.get("compile_notes") or []
+                      if isinstance(note, str) and note.startswith("sms_unplaced:")})
         reason = ("elected text set(s) %s: " % ", ".join(build["text_sets"])
                   + ("SMS step(s) %s are still copy_pending" % ", ".join(map(str, pending))
                      if pending else
                      "approved copy for step(s) %s landed in no SMS step"
                      % (", ".join(unbound) or "(none)") if steps else
-                     "the build compiles no SMS step to carry the approved copy"))
+                     "the build compiles no SMS step to carry the approved copy")
+                  + ("; unplaced: %s" % ", ".join(why) if why else ""))
         for key in [k for k, wf in campaign.items() if wf.get("source_unit") == unit]:
             del campaign[key]
         campaign.refusals.append({
             "id": unit, "unit_key": build.get("unit_key"), "state": "blocked", "code": code,
-            "reason": reason, "detail": {"pending": pending, "unbound": unbound}})
+            "reason": reason, "detail": {"pending": pending, "unbound": unbound,
+                                         **({"unplaced": why} if why else {})}})
     return campaign

@@ -1007,6 +1007,9 @@ def compile_automation_build(build: Mapping[str, Any], *, external_deps: Optiona
 
     compiled = {}
     previous_keys = []
+    # One approved text lands in one SMS step: a message placed by an earlier
+    # workflow of this build is not offered to the next one.
+    merged_bindings = {**(bindings or {}), **(build.get("bindings") or {})}
     for workflow in workflows:
         email_steps = [step for step in (workflow.get("steps") or [])
                        if isinstance(step, Mapping) and step.get("type") == "email"]
@@ -1041,8 +1044,13 @@ def compile_automation_build(build: Mapping[str, Any], *, external_deps: Optiona
         installable = compile_installable(
             workflow, build, seq_schedule=seq_schedule,
             promotional=promotional, close_at=close_at,
-            bindings={**(bindings or {}), **(build.get("bindings") or {})},
+            bindings=merged_bindings,
             purchase_tag_set=purchase_tag_set)
+        placed = set(installable.get("sms_placed") or ())
+        if placed:
+            merged_bindings = {**merged_bindings, "sms_sets": [
+                {**s, "step_ids": [i for i in s.get("step_ids") or [] if i not in placed]}
+                for s in merged_bindings.get("sms_sets") or [] if isinstance(s, Mapping)]}
         if installable["blocked_by"]:
             raise WorkflowCompileError(
                 "BUILD-UNCOMPILABLE",

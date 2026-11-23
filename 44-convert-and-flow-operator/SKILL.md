@@ -202,6 +202,14 @@ The path, in order: **reader -> build command -> QC -> receipt**.
 comes from no approved source stays `copy_pending` (the compiler reports it under
 `channel_actions.sms` and `incomplete_actions`); an email step always carries its approved
 sender/subject/body. A pending SMS is recorded as unavailable and never blocks the email work.
+Approved text-set copy binds by the reader's explicit step-id map (`bindings.sms_sets`): exact
+step id, then the template SMS slot's text-set kind, then (bound sequence) only where an approved
+source times it. A build that elected texts is refused `SMS-COPY-UNBOUND` while any approved
+message has no step, with the reason per message. Template tokens bind from the plan's own
+`variant_tag`, `followed_offer_id` / `followed_offer_slot` and `purchase_identity`; a missing field
+is refused by name (`needs:<field>`), never guessed. Every SMS step sits behind a native
+eligibility if/else carrying the WF-25 conditions (sms-subscribed, sms-opted-out stop,
+08:00-21:00 recipient-local window, contact cap, doors-close deadline).
 
 **Settings are applied and read back.** `settings.marketing` is the promotional flag itself
 (never its negation), and a requested Allow Reentry is written as `settings.allowReentry` and
