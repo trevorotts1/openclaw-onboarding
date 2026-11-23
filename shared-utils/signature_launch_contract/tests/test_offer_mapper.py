@@ -419,3 +419,36 @@ def test_a_record_that_turns_a_one_payment_answer_into_a_subscription_fails_prov
     with pytest.raises(om.MapperError) as e:
         om.verify_provenance(d, forged["offers"])
     assert e.value.code == "AF-OFFER-PROVENANCE"
+
+def test_an_upsells_price_annual_is_a_second_yearly_price_choice_every_consumer_accepts():
+    """RFX-015: a membership approved at a monthly AND a yearly price carries both choices on one offer."""
+    d = doc("answers.elevation.json")
+    u1 = d["answers"]["upsell_1"]["value"]
+    u1["billing"], u1["price"]["annual"] = "monthly", 50000
+    record, _ = om.answers_to_record(d, **IDENT)
+    prices = next(o for o in record["offers"] if o["slot"] == "upsell_1")["prices"]
+    assert [(p["billing_type"], p.get("recurring_interval"), p["amount_minor"]) for p in prices] == [
+        ("recurring", "month", u1["price"]["amount_minor"]), ("recurring", "year", 50000)]
+    assert len({p["price_choice_id"] for p in prices}) == 2
+    assert vlp.validate_launch(record) == []
+    om.verify_provenance(d, record["offers"])  # the second choice is the answers', not a forgery
+    oid = next(o for o in record["offers"] if o["slot"] == "upsell_1")["offer_id"]
+    req = om.record_to_checkout_request(record, oid, checkout_mode="combined_single_offer",
+                                        price_choice_id=prices[1]["price_choice_id"], **CONTEXT)
+    vco.validate_request(req)
+    assert (req["main_price"]["amount_minor"], req["main_price"]["recurring_interval"]) == (50000, "year")
+
+@pytest.mark.parametrize("slot,billing,annual,needle", [
+    ("upsell_1", "all at once", 50000, "first price is 'one_time'"),
+    ("upsell_1", "yearly", 50000, "already yearly"),
+    ("upsell_1", "monthly", {"amount_minor": 50000, "currency": "EUR"}, "one currency"),
+    ("upsell_1", "monthly", 0, "above zero"),
+    ("downsell_1", "monthly", 30000, "only carried by an upsell"),
+])
+def test_price_annual_refusals(slot, billing, annual, needle):
+    d = doc("answers.elevation.json")
+    v = d["answers"][slot]["value"]
+    v["billing"], v["price"]["annual"] = billing, annual
+    with pytest.raises(om.MapperError) as e:
+        om.answers_to_offers(d)
+    assert e.value.code == "AF-OFFER-ANNUAL" and needle in e.value.detail

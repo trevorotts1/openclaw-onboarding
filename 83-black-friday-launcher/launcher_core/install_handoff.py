@@ -80,7 +80,8 @@ def build_handoff(root: Path, rail_name: str) -> Dict[str, Any]:
         rows.append({"role": role, "page_id": row["page_id"], "file": f"production/{row['file']}",
                      "sha256": row["sha256"], "native_product_id": row.get("native_product_id"),
                      "native_price_id": row.get("native_price_id"), "routes": row.get("routes"),
-                     **({"handoff": row["handoff"]} if row.get("handoff") else {})})
+                     **({"handoff": row["handoff"]} if row.get("handoff") else {}),
+                     **({"accept_actions": row["accept_actions"]} if row.get("accept_actions") else {})})
     if not rows:
         raise InstallError(f"{CODE}-EMPTY", "no produced page to install")
     return {"schema": "83-install-handoff/1", "rail": rail_name, "launch_id": production.get("launch_id"),

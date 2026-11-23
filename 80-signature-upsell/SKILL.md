@@ -2,7 +2,7 @@
 name: signature-upsell
 assigned_skill: 80
 description: Builds BOTH Signature upsell page instances of a Signature Launch from one reusable skill — Upsell 1 (U1, offered after a verified original purchase) and Upsell 2 (U2, one canonical page offered after a verified accepted U1 or Downsell 1 purchase) — as two distinct, separately built and separately tested deliverables. Owns the derived eight-section upsell copy profile (owner 12-section format minus sections 8–11, section 12 replaced by the "7 Reasons To Commit To Your ____ Future" section renumbered as section 8, a CTA in EVERY section), the deterministic copy validator and substantive review rubric, the U1/U2 production adapters and route state machine, a TEST ONLY local page renderer, and ONE production page builder (`components/pages/build_production_pages.py`, which builds the U1, D1 and U2 pages from the approved launch record and route graph and refuses copy marked test_only on a launch that is not a test launch). Eligibility is proven purchase only: a bump alone never qualifies for U2 and a client-side claim such as acceptedU1=true is never purchase proof. Every CTA invokes the same guarded native product-bound one-click action with the exact amount and terms disclosed adjacent; S80's side of that binding is built and independently reviewed at interface level (S80-06), while the native install itself is provisioned through Skill 6 and still pending (see Status).
-version: 0.2.9
+version: 0.2.10
 ---
 
 # Signature Upsell 1 + Upsell 2 (Skill 80, slug signature-upsell)
@@ -154,6 +154,18 @@ Rules that override main-page conventions for this profile:
 - All CTAs on a page invoke the **same guarded native product-bound one-click
   action** (Skill 6). No custom fetch to an invented charge endpoint; no
   fabricated payment token from an opt-in.
+- **Two approved price choices on one upsell offer** (for example a
+  membership at a monthly AND a yearly price, from the answers file's
+  `price.annual`) are sold on the same page as **two guarded native accept
+  actions**: every section renders one button per price choice, each bound
+  to its own native price, its own action ref
+  (`<accept_action_ref>.<price_choice_id>`) and its own exact disclosure,
+  with ONE decline. The copy keeps its one declared `accept_action_ref`;
+  its optional `lead_price_choice_id` puts that choice first (default: the
+  record's first price). The production builder refuses more than two
+  choices, an unapproved, installment or trial choice, two choices sharing
+  one native price, and a lead that is not a choice. A single-price offer
+  renders exactly as before.
 - Adjacent to the action, the page discloses the **exact amount** (rendered
   from integer minor units with per-currency exponents), the currency, and
   one-time vs recurring terms in words that match the terms exactly.

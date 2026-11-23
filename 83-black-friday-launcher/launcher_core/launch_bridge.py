@@ -78,7 +78,11 @@ def _offer(normalized: Dict[str, Any], offer: Dict[str, Any], by_role: Dict[str,
         "requires": route.offer_requires(offer),
         "excludes": excludes,
         "native_product_id": canon["native_product_id"],
-        "prices": [{**p, "price_choice_id": f"{offer['offer_id']}-{p['currency']}"} for p in canon["prices"]],
+        # The first price is <offer_id>-<currency>; a second choice the answers carry (an upsell's
+        # price.annual, the yearly membership) keeps its own id suffix, so two choices never share one id.
+        "prices": [{**p, "price_choice_id": f"{offer['offer_id']}-{p['currency']}"
+                    + p["price_choice_id"][len(f"{canon['offer_id']}-{p['currency']}"):]}
+                   for p in canon["prices"]],
         "source_kind": canon["source_kind"],
         "source_ref": canon["source_ref"],
         "test_only": test_only,

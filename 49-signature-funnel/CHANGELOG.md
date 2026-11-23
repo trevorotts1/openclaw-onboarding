@@ -1,3 +1,10 @@
+## [v2.1.68] - 2026-11-23 - an upsell sells a monthly and a yearly price on one page (RFX-015)
+
+- Problem: a membership approved at 8900 a month and 50000 a year could not be sold on one Upsell 2 page. `scripts/upsell_wrapper.py` `_select_price` refused any offer carrying two approved prices ("the wrapper never guesses which price a page discloses").
+- Fix: `_select_price` accepts exactly two approved `one_time`/`recurring` price choices on one upsell offer and names the lead in the disclosure block: the copy document's `lead_price_choice_id` when given, else the first price. `_disclosure_block` also checks the second choice's terms are disclosable from the record. More than two choices, an installment or trial choice, or a lead that is not a choice still refuse by name. A single price, or one approved price among several, is unchanged. Skill 80's production builder renders one guarded native accept action per choice.
+- Tests: new `scripts/test_upsell_two_prices.py` (9). Reverting `_select_price` fails 5 of them.
+- Skill 49 v2.1.67 -> v2.1.68. `upsell_wrapper.py` is pinned, so `scripts/SF-PROVER-PIN.sha256` is minted by CI, not here. Migration: none. Risk: LOW (a refusal narrowed to the two-approved-choice case; every other refusal kept).
+
 ## [v2.1.67] - 2026-11-21 - version only: the prover pin re-mint for the Skill 83 stop explainer touches this skill's pin file
 
 - Why: the Skill 83 stop-explainer work in this pull request changes pinned launcher files, so the Skill 49 prover pin (`scripts/SF-PROVER-PIN.sha256`) is re-minted for the new tree. That pin file lives inside this skill, so Skill 49 has to carry its own patch bump or the batch version-agreement guard finds `VERSION` at v2.1.66 against a bumped `skill-version.txt`.
