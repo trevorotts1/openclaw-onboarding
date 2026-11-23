@@ -2173,35 +2173,42 @@ def payments_create_invoice(ctx, contact_id, name, amount, due_date):
         _handle_error(e)
 
 
-def _products_prices():
-    """Load shared-utils/ghl/products_prices.py (the one products/prices adapter).
+def _shared_utils_file(*parts):
+    """Path of one shared-utils file (the folder name has a hyphen, so it is loaded by path).
 
-    The directory name has a hyphen, so it is loaded by file path. Searched in
-    order: $CAF_SHARED_UTILS_DIR, then the sibling of the skill folders (repo
-    checkout and the installed skills folder share this layout).
+    Searched in order: $CAF_SHARED_UTILS_DIR; the sibling of the skill folders (repo
+    checkout and installed skills folder); ``<root>/skills/shared-utils`` seen from the
+    CAF engine copy at ``<root>/tools/convert-and-flow-cli/engine``; then the standard
+    ``~/.openclaw/skills/shared-utils``.
     """
+    up = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "..", "..", "..")
+    roots = (os.environ.get("CAF_SHARED_UTILS_DIR", "").strip(),
+             os.path.join(up, "shared-utils"),
+             os.path.join(up, "skills", "shared-utils"),
+             os.path.expanduser(os.path.join("~", ".openclaw", "skills", "shared-utils")))
+    candidates = [os.path.normpath(os.path.join(root, *parts)) for root in roots if root]
+    for path in candidates:
+        if os.path.isfile(path):
+            return path
+    raise RuntimeError(
+        "shared-utils/%s not found (looked in: %s). Set CAF_SHARED_UTILS_DIR to the "
+        "shared-utils folder." % ("/".join(parts), ", ".join(candidates)))
+
+
+def _load_shared(name, *parts):
     import importlib.util
-    name = "_caf_shared_products_prices"
     if name in sys.modules:
         return sys.modules[name]
-    candidates = []
-    override = os.environ.get("CAF_SHARED_UTILS_DIR", "").strip()
-    if override:
-        candidates.append(os.path.join(override, "ghl", "products_prices.py"))
-    candidates.append(os.path.join(
-        os.path.dirname(os.path.abspath(__file__)),
-        "..", "..", "..", "..", "..", "shared-utils", "ghl", "products_prices.py"))
-    for path in candidates:
-        path = os.path.normpath(path)
-        if os.path.isfile(path):
-            spec = importlib.util.spec_from_file_location(name, path)
-            module = importlib.util.module_from_spec(spec)
-            sys.modules[name] = module  # dataclasses resolve annotations via sys.modules
-            spec.loader.exec_module(module)
-            return module
-    raise RuntimeError(
-        "shared-utils/ghl/products_prices.py not found (looked in: %s). Set "
-        "CAF_SHARED_UTILS_DIR to the shared-utils folder." % ", ".join(candidates))
+    spec = importlib.util.spec_from_file_location(name, _shared_utils_file(*parts))
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[name] = module  # dataclasses resolve annotations via sys.modules
+    spec.loader.exec_module(module)
+    return module
+
+
+def _products_prices():
+    """Load shared-utils/ghl/products_prices.py (the one products/prices adapter)."""
+    return _load_shared("_caf_shared_products_prices", "ghl", "products_prices.py")
 
 
 class _GhlApiTransport:
@@ -2237,35 +2244,53 @@ class _GhlApiTransport:
 
 
 def _approval_record():
-    """Load shared-utils/signature_launch_contract/approval_record.py by path (the
-    ONE approval verifier, stdlib only). Searched like ``_products_prices``."""
-    import importlib.util
-    name = "_caf_shared_approval_record"
-    if name in sys.modules:
-        return sys.modules[name]
-    candidates = []
-    override = os.environ.get("CAF_SHARED_UTILS_DIR", "").strip()
-    if override:
-        candidates.append(os.path.join(override, "signature_launch_contract", "approval_record.py"))
-    candidates.append(os.path.join(
-        os.path.dirname(os.path.abspath(__file__)),
-        "..", "..", "..", "..", "..", "shared-utils", "signature_launch_contract", "approval_record.py"))
-    for path in candidates:
-        path = os.path.normpath(path)
-        if os.path.isfile(path):
-            spec = importlib.util.spec_from_file_location(name, path)
-            module = importlib.util.module_from_spec(spec)
-            sys.modules[name] = module
-            spec.loader.exec_module(module)
-            return module
-    raise RuntimeError("approval_record.py not found (looked in: %s)" % ", ".join(candidates))
+    """Load shared-utils/signature_launch_contract/approval_record.py (the ONE approval
+    verifier, stdlib only)."""
+    return _load_shared("_caf_shared_approval_record", "signature_launch_contract", "approval_record.py")
 
 
-def _verify_automation_write(approval_id, plan_sha256, action):
-    """Verify an ``automation_write`` approval for one action against the approval
-    authority (Command Center). Returns approval_record's result dict
-    (``ok`` True) or raises. This is the CLI's verify hook."""
-    return _approval_record().verify(approval_id, "automation_write", plan_sha256, [action])
+def _verify_automation_write(approval_id, plan_sha256, action, location_id):
+    """Verify an ``automation_write`` approval for one action on one location against the
+    approval authority (Command Center). Returns approval_record's result dict (``ok``
+    True) or raises ``ApprovalRefused``. This is the CLI's verify hook.
+
+    Command Center's owner decision mints ``scope`` as the JSON object string
+    ``{"location_id", "action", "object_key"}``; approval_record splits a scope string on
+    commas, so ``[action]`` is never covered by such a record (RFX-016). For that shape the
+    record is verified with its own scope string as the requested scope (kind
+    ``automation_write``, plan hash, identity, expiry and revocation are all still checked
+    by approval_record), then the binding must list this action (``action`` may be a comma
+    list), name this location and name an object. Any other scope is verified with
+    ``[action]`` exactly as before.
+    """
+    ar = _approval_record()
+    raw = ar._fetch(approval_id, os.environ)
+    scope = raw.get("scope") if isinstance(raw, dict) else None
+    try:
+        binding = json.loads(scope) if isinstance(scope, str) else None
+    except ValueError:
+        binding = None
+    if not isinstance(binding, dict):
+        return ar.verify(approval_id, "automation_write", plan_sha256, [action])
+    # The scope string itself, not wrapped in a list: every approval_record version
+    # normalizes a bare string the same way it normalized the record's own scope.
+    # ponytail: two Command Center GETs (raw read, then verify); fold into one when
+    # approval_record returns the parsed binding itself.
+    verified = ar.verify(approval_id, "automation_write", plan_sha256, scope)
+
+    def field(name):
+        value = binding.get(name)
+        return value.strip() if isinstance(value, str) else ""
+
+    if action not in [item.strip() for item in field("action").split(",")]:
+        raise ar.ApprovalRefused("APPROVAL-ACTION", "the approval names action %r, not %r"
+                                 % (field("action"), action))
+    if not location_id or field("location_id") != location_id:
+        raise ar.ApprovalRefused("APPROVAL-LOCATION", "the approval is for location %r, not %r"
+                                 % (field("location_id"), location_id))
+    if not field("object_key"):
+        raise ar.ApprovalRefused("APPROVAL-OBJECT", "the approval names no object_key")
+    return dict(verified, binding=binding)
 
 
 def _write_approval(pp, approval_id, plan_sha256, action, key):
@@ -2278,7 +2303,7 @@ def _write_approval(pp, approval_id, plan_sha256, action, key):
     try:
         if not plan_sha256:
             raise ValueError("--plan-sha256 is required with --approval-id")
-        verified = _verify_automation_write(approval_id, plan_sha256, action)
+        verified = _verify_automation_write(approval_id, plan_sha256, action, key.location_id)
         expiry = datetime.fromisoformat(str(verified["expires_at"]).replace("Z", "+00:00")).timestamp()
         return {"kind": "automation_write", "approval_id": approval_id,
                 "location_id": key.location_id, "action": action,
@@ -2294,7 +2319,8 @@ def _products_prices_adapter(pp):
     def _reverify(record):
         try:  # the authority re-checks the very record the adapter is about to trust
             return _verify_automation_write(
-                record["approval_id"], record["plan_sha256"], record["action"]).get("ok") is True
+                record["approval_id"], record["plan_sha256"], record["action"],
+                record["location_id"]).get("ok") is True
         except Exception:  # noqa: BLE001 - fail closed
             return False
     return pp.ProductsPricesAdapter(_GhlApiTransport(pp), pp.InMemoryStore(),
