@@ -419,3 +419,65 @@ def test_a_record_that_turns_a_one_payment_answer_into_a_subscription_fails_prov
     with pytest.raises(om.MapperError) as e:
         om.verify_provenance(d, forged["offers"])
     assert e.value.code == "AF-OFFER-PROVENANCE"
+
+# ------------------------------------------------ RFX-019: the main 'price' entry carries its native product id
+def _single_price(tmp_path, product_id=None):
+    """(Skill 83 intake, answers) for one main offer answered by the 'price' key (not packages)."""
+    intake = json.loads((FIXTURES_83 / "elevation" / "intake.json").read_text())
+    d = json.loads((FIXTURES_83 / "elevation" / "answers.json").read_text())
+    intake["journey_mode"] = "single_simple"
+    intake["offers"] = [o for o in intake["offers"] if o["offer_id"] not in ("MAIN-PRO", "MAIN-ELITE")]
+    intake["offers"][0]["price"]["source_ref"] = "answers-file:price"
+    main = d["answers"].pop("packages")["value"][0]
+    price = dict(main["price"], **({"native_product_id": product_id} if product_id is not None else {}))
+    for key, value in (("offer_name", main["display_name"]), ("price", price), ("deliverables", main["deliverables"])):
+        d["answers"][key] = {"value": value, "status": "provided", "source": "client"}
+    d["answers"]["funnel_shape"]["value"] = "single_simple"
+    path = tmp_path / f"answers-{len(list(tmp_path.iterdir()))}.json"
+    path.write_text(json.dumps(d))
+    intake["answers_file"] = str(path)
+    return intake, d
+
+def _skill83_intake():
+    sys.path.insert(0, str(_skill("83-black-friday-launcher")))
+    from launcher_core import intake  # noqa: E402
+    return intake
+
+def test_a_main_price_product_id_reaches_the_record_the_79_request_and_the_83_intake(tmp_path):
+    intake83, d = _single_price(tmp_path, "prod_main_1")
+    record, _ = om.answers_to_record(d, **IDENT)
+    main = record["offers"][0]
+    assert (main["slot"], main["source_ref"], main["native_product_id"]) == ("main", "answers-file:price", "prod_main_1")
+    assert vlp.validate_launch(record) == []
+    req = om.record_to_checkout_request(record, main["offer_id"], checkout_mode="combined_single_offer", **CONTEXT)
+    vco.validate_request(req)
+    assert req["main_price"]["native_product_id"] == "prod_main_1"
+    intake83["offers"][0]["checkout"] = {"native_product_id": "prod_main_1"}  # stated id agrees with the answers
+    bound = _skill83_intake().validate(intake83)["offers"][0]
+    assert (bound["canonical"]["native_product_id"], bound["checkout"]["native_product_id"]) == ("prod_main_1",) * 2
+
+def test_a_main_price_without_a_product_id_still_maps_to_null(tmp_path):
+    intake83, d = _single_price(tmp_path)
+    assert om.answers_to_record(d, **IDENT)[0]["offers"][0]["native_product_id"] is None
+    assert _skill83_intake().validate(intake83)["offers"][0]["canonical"]["native_product_id"] is None
+
+def _refused(intake83, code, field):
+    mod = _skill83_intake()
+    with pytest.raises(mod.IntakeError) as e:
+        mod.validate(intake83)
+    assert e.value.code.startswith(code) and e.value.field == field, (e.value.code, e.value.field)
+
+def test_a_malformed_or_mismatched_main_product_id_is_refused_as_for_the_bump(tmp_path):
+    for bad in (123, "", ["prod_main_1"]):  # a stated id that is not a non-empty string: same refusal, both roles
+        intake83, _ = _single_price(tmp_path, "prod_main_1")
+        intake83["offers"][0]["checkout"] = {"native_product_id": bad}
+        _refused(intake83, "AF-LAUNCH-INTAKE-CHECKOUT", "offers[0].checkout.native_product_id")
+        intake83["offers"][0]["checkout"] = {}
+        intake83["offers"][1]["checkout"]["native_product_id"] = bad
+        _refused(intake83, "AF-LAUNCH-INTAKE-CHECKOUT", "offers[1].checkout.native_product_id")
+    intake83, _ = _single_price(tmp_path, "prod_main_1")  # a stated id the answers do not carry
+    intake83["offers"][0]["checkout"] = {"native_product_id": "prod_other"}
+    _refused(intake83, "AF-LAUNCH-INTAKE-PROVENANCE", "offers[0].checkout.native_product_id")
+    intake83["offers"][0]["checkout"] = {}
+    intake83["offers"][1]["checkout"]["native_product_id"] = "prod_other"
+    _refused(intake83, "AF-LAUNCH-INTAKE-PROVENANCE", "offers[1].checkout.native_product_id")

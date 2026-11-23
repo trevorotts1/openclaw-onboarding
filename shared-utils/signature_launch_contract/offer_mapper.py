@@ -97,8 +97,11 @@ def _answer_items(doc: Mapping[str, Any]) -> List[Tuple[str, str, Optional[int],
     if val("packages"):
         out += [("main", "packages", i, p) for i, p in enumerate(val("packages"))]
     elif val("price") is not None:
+        # the main price entry carries its native product id beside the amount, as the other roles do
         out.append(("main", "price", None, {"display_name": val("offer_name"), "price": val("price"),
-                                            "deliverables": val("deliverables") or []}))
+                                            "deliverables": val("deliverables") or [],
+                                            "native_product_id": (val("price") if isinstance(val("price"), dict)
+                                                                  else {}).get("native_product_id")}))
     else:
         raise MapperError("AF-OFFER-NO-MAIN", "the answers file has neither packages nor a price for the main offer")
     for slot in SLOTS:
