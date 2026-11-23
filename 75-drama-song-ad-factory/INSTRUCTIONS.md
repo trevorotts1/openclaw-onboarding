@@ -627,9 +627,9 @@ card. The answers and the time answered go into the receipt
   sung)`; an 8-frame mouth strip at `<delivery folder>/mouth-strips/<segment>.png` for
   every UNDETERMINED or flagged segment, listed in the receipt; edit placement (trim to
   audio length, place at the Suno word time corrected by the stem offset, lanczos upscale
-  to 1080x1920, conform to the 30 fps master under SKILL.md "Frame rate (Part H H3)"
-  (a native-30 Kling clip passes through; a 24 fps source is motion-interpolated, never
-  the plain `fps` filter), all ffmpeg through `load_governor`); QC items 8 and 11 accept
+  to 1080x1920, conform to the master's native rate under SKILL.md "Frame rate (Part H H3)"
+  (a native-rate Kling clip passes through; a clip at another rate is matched by plain frame
+  repeat or drop, never a motion-interpolated conform), all ffmpeg through `load_governor`); QC items 8 and 11 accept
   `KEPT_BEST` and flagged rows with a strip. Model order is
   Kling avatar `kling/ai-avatar-standard` first (a front-facing close-up
   image plus that character's own isolated line; THE lip-sync model), InfiniTalk
