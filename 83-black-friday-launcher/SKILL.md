@@ -569,7 +569,15 @@ steps, all DRAFT-ONLY (nothing is sent and nothing goes live):
    text-set validator. A page the launcher builds itself is proved by its own page row. A page another lane
    delivers and the Conversation AI have no producer contract yet (their allow-list is empty), so `assemble` and
    `check` refuse any lane delivery for them with `AF-LAUNCH-PKG-RECEIPT-LANE` ("has no producer yet"), whatever
-   contract string it carries.
+   contract string it carries. Every lane unit's files keep their producer's `role` tag and are sealed under the
+   unit's own folder in the package (`lanes/<unit id>/...`), so each email sequence's `--check` finds its own files.
+
+A full launch refuses open page blockers (`AF-LAUNCH-PKG-BLOCKERS`), with one exception: a dispatched package that
+is still `draft_constructed` (nothing installed or published) may carry the named "not installed by Skill 06 yet"
+blockers the page producers always attach (the order form's two, Skill 80's S80-06 binding note, the thank-you
+page's THANK-YOU-RUNTIME-NOT-INSTALLED), each on its own page only. They are recorded by name as
+`open_by_design_blockers` in the manifest and the receipt. Any other blocker, and any of these once a package is
+installed or published, still refuses.
 
 Skill 83 builds pages; it does not build workflows itself. See Skill 44's own SKILL.md and INSTRUCTIONS.md for
 the same four steps from the other side.

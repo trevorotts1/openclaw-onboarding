@@ -24,8 +24,12 @@ CONTRACT = "skill50.email-delivery.v1"
 
 
 def certificate(artifacts) -> str:
-    """The certificate for a list of ``{"path", "sha256", ...}``: it moves if any name or hash moves."""
-    body = json.dumps(sorted((a["path"], a["sha256"]) for a in artifacts), separators=(",", ":"))
+    """The certificate for a list of ``{"path", "sha256", ...}``: it moves if any file name or hash moves.
+
+    It binds the file NAME, not the folder: Skill 83 seals each lane unit under its own lanes/<unit id>/
+    prefix, and the real Skill 50 certificate is the hash of the certificate file's own bytes, which no
+    folder move changes either."""
+    body = json.dumps(sorted((Path(a["path"]).name, a["sha256"]) for a in artifacts), separators=(",", ":"))
     return hashlib.sha256(("stand-in-certificate:" + body).encode("utf-8")).hexdigest()
 
 
