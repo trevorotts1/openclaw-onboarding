@@ -47,6 +47,18 @@ def write(path: Path, text):
         path.write_text(text, encoding="utf-8")
 
 
+def write_image_qc_pass(run):
+    """image-qc.json PASS plus a vision-log record for each delivered Image-*.png (RFX-006: the
+    image-generation-qc close reads both)."""
+    import hashlib as _h
+    qc = run / "image-generation-qc"
+    pngs = sorted(qc.glob("Image-*.png"))
+    write(qc / "image-qc.json", json.dumps({"verdict": "PASS", "passed": len(pngs), "failed": 0}))
+    write(run / "qc" / "vision_qc_log.json", json.dumps(
+        [{"artifact_sha256": _h.sha256(p.read_bytes()).hexdigest(),
+          "vision_api_response": {"fixture": "vision pass recorded"}} for p in pngs]))
+
+
 def fixture_contract(td: Path) -> Path:
     contract = json.loads((ROOT / "references" / "stage-contract.json").read_text())
     for stage in contract["stages"].values():
@@ -276,7 +288,7 @@ class ItemGateTest(unittest.TestCase):
         proc = self.close_prompt_item("IMG-001")
         self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
         write(self.run / "image-generation-qc" / "Image-001.png", PNG_1PX)
-        write(self.run / "image-generation-qc" / "image-qc.json", "{}")
+        write_image_qc_pass(self.run)
         write(self.run / "receipts" / "kie74" / "task-001.json", json.dumps({
             "provider": "kie", "adapter": "74-kie-live-adapter",
             "adapter_mode": "active", "backend": "native-live",
@@ -311,7 +323,7 @@ class ItemGateTest(unittest.TestCase):
         proc = self.close_prompt_item("IMG-001")
         self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
         write(self.run / "image-generation-qc" / "Image-001.png", PNG_1PX)
-        write(self.run / "image-generation-qc" / "image-qc.json", "{}")
+        write_image_qc_pass(self.run)
         put_receipt(self.run, "image-generation-qc",
                     cost={"provider": "kie", "credits_before": 100.0,
                           "credits_after": 96.0})
@@ -456,7 +468,7 @@ class SuppliedAssetGateTest(unittest.TestCase):
     def stage_supplied_files(self, run, supplied_sha=PNG_1PX_SHA):
         write(run / "image-generation-qc" / "Image-001.png", PNG_1PX)
         write(run / "image-generation-qc" / "Image-002.png", PNG_1PX)
-        write(run / "image-generation-qc" / "image-qc.json", "{}")
+        write_image_qc_pass(run)
         return {"file": "image-generation-qc/Image-002.png",
                 "supplied_asset": True, "sha256": supplied_sha}
 
@@ -534,7 +546,7 @@ class SuppliedAssetGateTest(unittest.TestCase):
         image-generation-qc/Image-002.png, while that file is
         deliberately NOT written to disk (Item 3 review defect D1)."""
         write(run / "image-generation-qc" / "Image-001.png", PNG_1PX)
-        write(run / "image-generation-qc" / "image-qc.json", "{}")
+        write_image_qc_pass(run)
         entry = {"file": "image-generation-qc/Image-002.png",
                  "supplied_asset": True, "sha256": PNG_1PX_SHA}
         self.put_generation_receipt(run, entry)

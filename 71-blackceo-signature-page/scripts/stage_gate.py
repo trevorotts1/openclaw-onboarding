@@ -375,6 +375,18 @@ def artifacts_for(run_dir, stage):
                 f"stage {stage}: artifact glob {pattern!r} matched {len(matches)} file(s), "
                 f"requires {min_count}"
             )
+        # Tightening-only (build run 95): a matched artifact that exists but is
+        # ZERO bytes is a missing artifact, not a produced one. The build rule
+        # is "a stage is closed only when its own gate closes it with artifacts
+        # on disk"; an empty file satisfies the glob count while carrying no
+        # work. Refusing it can only refuse a close that would otherwise have
+        # been recorded -- it can never manufacture or preserve a pass.
+        for matched in matches:
+            if matched.is_file() and matched.stat().st_size == 0:
+                problems.append(
+                    f"stage {stage}: artifact {str(matched.relative_to(run_dir))!r} is "
+                    f"ZERO bytes; an empty file is not a produced artifact"
+                )
     return problems, counts
 
 
@@ -490,6 +502,25 @@ def check_requires(run_dir, stage):
         if not p.exists():
             lines.append(f"stage {stage} cannot start: required artifact missing: {rel}")
 
+    return lines
+
+
+def blocked_dependency_failures(run_dir, stage):
+    """Transitive dependencies recorded blocked in state, or whose receipt says fail/blocked."""
+    state, _ = load_state(run_dir)
+    seen, stack, lines = [], list(STAGES[stage].get("depends_on", [])), []
+    while stack:
+        dep = stack.pop(0)
+        if dep in seen:
+            continue
+        seen.append(dep)
+        stack.extend(STAGES.get(dep, {}).get("depends_on", []))
+        recorded = state.get("stages", {}).get(dep, {}).get("status")
+        status, _receipt, _ = receipt_status(run_dir, dep)
+        if recorded == "blocked" or status in ("fail", "blocked"):
+            lines.append(f"stage {stage}: dependency {dep} is "
+                         f"{'blocked' if recorded == 'blocked' else status}; "
+                         f"close refused until it is repaired")
     return lines
 
 
@@ -826,11 +857,48 @@ def run_builtin(name, args, run_dir):
         except Exception as exc:
             return f"gate:grade_calibrated: brand file unreadable: {exc}"
         grade = bdata.get("grade") or {}
-        if grade.get("min_mean_saturation") is None or grade.get("min_luma_std") is None:
-            return ("image grade thresholds are uncalibrated (grade.min_mean_saturation / "
-                    "grade.min_luma_std are null in the brand file): a production run cannot "
-                    "be certified against uncalibrated thresholds. Calibrate per Item 8 "
-                    "(scripts/calibrate_grade.py) or close this stage in a test run.")
+        _need = ("min_mean_saturation", "min_luma_std", "min_colorfulness",
+                 "min_sharpness")
+        _missing = [k for k in _need if grade.get(k) is None]
+        if _missing:
+            return ("image grade thresholds are uncalibrated (%s null in the brand "
+                    "file): a production run cannot be certified against uncalibrated "
+                    "thresholds. Calibrate per Item 8 (scripts/calibrate_grade.py) or "
+                    "close this stage in a test run."
+                    % " / ".join("grade." + k for k in _missing))
+        # BUG-20261122-063: a family with an adapt/noncolor block but no
+        # calibrated FULL block lets an UNRECORDED-posture slot fall through
+        # to "uncalibrated", which the per-file validator only WARNs about
+        # (exit 0). Refuse a production close for any family the run's
+        # inventory actually names and the brand cannot fully calibrate.
+        _inv = run_dir / "desktop-wireframe" / "image-inventory.json"
+        if _inv.is_file():
+            try:
+                _idata = json.loads(_inv.read_text(encoding="utf-8"))
+            except Exception as exc:
+                return f"gate:grade_calibrated: inventory unreadable: {exc}"
+            _entries = (_idata.get("images") if isinstance(_idata, dict) else None) \
+                or (_idata.get("entries") if isinstance(_idata, dict) else None) or []
+            if isinstance(_entries, dict):
+                _entries = list(_entries.values())
+            _floors = grade.get("floors") or {}
+            if _floors:
+                _fams = set()
+                for _e in _entries:
+                    if isinstance(_e, dict):
+                        _f = _e.get("active_family")
+                        if isinstance(_f, str) and _f.strip():
+                            _fams.add(_f.strip().lower())
+                        else:
+                            _fams.add("photographic")
+                for _fam in sorted(_fams):
+                    _blk = _floors.get(_fam)
+                    if not isinstance(_blk, dict) or _blk.get("full") is None:
+                        return (f"image grade: family '{_fam}' has no calibrated "
+                                "FULL floors in the brand file, so a production close "
+                                "cannot certify it (Item 8 close rule; "
+                                "BUG-20261122-063). Calibrate the family or record "
+                                "the slot under a calibrated family.")
         return None
     if name == "gate:image_grade_full_set":
         # S2 GCR-S2-2: the per-file validator line sees one file at a
@@ -1302,6 +1370,27 @@ def check_cost(run_dir, stage, receipt):
         for key in ("provider", "credits_before", "credits_after"):
             if key not in cost:
                 problems.append(f"stage {stage}: receipt.cost missing {key}")
+        # BUG-20261122-074 (repair, run 87): key presence alone let a receipt
+        # record a free "render" (credits_before == credits_after, both 0) and
+        # still satisfy a cost_required stage -- the run-23 fabrication shape.
+        # A paid provider's receipt must record the spend it actually made.
+        # Tightening-only: a supplied/no-charge provider is exempt, and this can
+        # never manufacture or preserve a pass.
+        provider = str(cost.get("provider") or "").strip().lower()
+        if provider in ("kie", "agnes"):
+            before = cost.get("credits_before")
+            after = cost.get("credits_after")
+            numeric = (isinstance(before, (int, float)) and not isinstance(before, bool)
+                       and isinstance(after, (int, float)) and not isinstance(after, bool))
+            if not numeric:
+                problems.append(
+                    f"stage {stage}: receipt.cost credits_before/credits_after must "
+                    f"be numbers for a paid provider ({provider})")
+            elif not after < before:
+                problems.append(
+                    f"stage {stage}: receipt.cost records no spend for paid provider "
+                    f"{provider} ({before} -> {after}); a paid render receipt must "
+                    f"record a real credit reduction")
     return problems
 
 
@@ -1403,6 +1492,19 @@ def _kie74_problems(run_dir, stage, tasks, alias=False):
         elif ok:
             ok = (obj.get("adapter") == "74-kie-live-adapter"
                   and obj.get("adapter_mode") == "active")
+        if ok:
+            # BUG-20261122-066: an adapter label alone is not provenance. A receipt
+            # that self-describes a hand-rolled direct createTask is the bypass the
+            # launch has already quarantined; refuse it even if it copies the
+            # sanctioned adapter string and writes a binding.
+            _gen = str(obj.get("generated_by") or "").lower()
+            if (obj.get("adapter") == "direct-kie" or "kie_direct" in _gen
+                    or "direct kie createtask" in _gen):
+                problems.append(
+                    f"stage {stage}: {KIE74_DIR}/{f.name} records a hand-rolled direct "
+                    "createTask provenance, not the sanctioned Skill 74 transport "
+                    "(AF-FUN-CANONICAL-BYPASS, BUG-20261122-066)")
+                ok = False
         if not ok:
             problems.append(f"stage {stage}: {KIE74_DIR}/{f.name} is not a successful active Skill 74 result for {tid!r}")
         else:
@@ -3292,6 +3394,48 @@ def cmd_check(run_dir, stage):
     return 0
 
 
+def vision_log_problems(run_dir):
+    """BUG-20261122-064 second half (repair): SOP-GIP-02 step 1 requires a real
+    multimodal pass over every delivered image, recorded in qc/vision_qc_log.json
+    as a record whose artifact_sha256 names those exact bytes and whose
+    vision_api_response is non-null. The stage close read only image-qc.json, so
+    a hand-written PASS verdict carried the whole stage without any vision pass.
+    Read the log directly at close. Empty when there is no delivered image (the
+    artifact contract reports that separately). Tightening-only: it can refuse a
+    close that would otherwise have been recorded and can never make one pass."""
+    stage = "image-generation-qc"
+    pngs = sorted((Path(run_dir) / stage).glob("Image-*.png"))
+    if not pngs:
+        return []
+    log_path = Path(run_dir) / "qc" / "vision_qc_log.json"
+    try:
+        log = json.loads(log_path.read_text(encoding="utf-8"))
+    except Exception:
+        log = None
+    records = log.get("assets") if isinstance(log, dict) else log
+    if not isinstance(records, list):
+        records = []
+    problems = []
+    for png in pngs:
+        try:
+            digest = sha256_file(png)
+        except OSError:
+            digest = None
+        ok = any(
+            isinstance(rec, dict)
+            and str(rec.get("artifact_sha256") or "").strip().lower() == digest
+            and rec.get("vision_api_response") not in (None, "", {}, [])
+            for rec in records
+        )
+        if not ok:
+            problems.append(
+                f"stage {stage}: {png.name} has no record with a non-null "
+                f"vision_api_response for its bytes in qc/vision_qc_log.json "
+                f"(SOP-GIP-02 step 1, AF-G-VISION); close refused — a review "
+                f"graded from filenames or prompt text is not a vision pass")
+    return problems
+
+
 def cmd_close(run_dir, stage):
     spec, errs = load_contract_stage(stage)
     if errs:
@@ -3310,7 +3454,13 @@ def cmd_close(run_dir, stage):
             record_not_applicable(run_dir, stage, reason)
             print(f"NOT APPLICABLE: stage {stage} recorded in state.json ({reason})")
             return 0
-    failures = brand_color_failures(run_dir, stage)
+    # BUG-20261122-058 (repair, run 72): a downstream stage whose own artifacts
+    # and validators pass could close mechanically while an upstream stage was
+    # still blocked or failed. Refuse exactly that. Narrower than cmd_check's
+    # full-chain start rule on purpose: close does not require every upstream
+    # stage closed (item closes and fixtures close a stage directly), but it
+    # never records a close over a blocked or failed upstream. Tightening-only.
+    failures = blocked_dependency_failures(run_dir, stage) + brand_color_failures(run_dir, stage)
     # Item 33: the reaper pass runs before anything else is evaluated,
     # so a run whose runner died still gets its sessions accounted, and
     # the receipt it writes satisfies the stage's artifact contract.
@@ -3324,6 +3474,43 @@ def cmd_close(run_dir, stage):
     receipt_status_val = receipt.get("status") if receipt else None
     if receipt_status_val == "fail":
         failures.append(f"stage {stage}: receipt status is 'fail'; close refused")
+    # BUG-20261122-071 (repair, run 79): close used to bar only the exact
+    # string 'fail'. A stage receipt carrying any other non-pass status --
+    # 'blocked', an empty string, a missing status, a typo -- fell through
+    # to the validators and could close a stage whose own receipt never
+    # claimed a pass. A close now requires an explicit 'pass' (or
+    # 'not_authorized', which has its own branch below). Tightening-only:
+    # it can refuse a close that would otherwise have been recorded, and
+    # can never manufacture or preserve a pass.
+    elif receipt and receipt_status_val not in ("pass", "not_authorized"):
+        failures.append(
+            f"stage {stage}: receipt status is {receipt_status_val!r}; a close "
+            f"requires 'pass' (or 'not_authorized' where the contract allows it)")
+    # BUG-20261122-064 (repair, run 79): the image-generation-qc close read
+    # only the receipt. A receipt that said 'pass' while the stage's own
+    # image-qc.json said FAIL closed the stage (the run-23 false-close
+    # shape). Read the stage's own QC artifact directly; any verdict other
+    # than PASS refuses. Tightening-only.
+    if stage == "image-generation-qc":
+        qc_path = run_dir / stage / "image-qc.json"
+        try:
+            qc_doc = json.loads(qc_path.read_text(encoding="utf-8"))
+        except Exception:
+            qc_doc = None
+        if not isinstance(qc_doc, dict):
+            failures.append(
+                f"stage {stage}: {stage}/image-qc.json is missing or "
+                f"unreadable; a close requires the stage's own QC verdict")
+        else:
+            qc_verdict = str(qc_doc.get("verdict") or "").strip().upper()
+            if qc_verdict != "PASS":
+                failures.append(
+                    f"stage {stage}: image-qc.json verdict is "
+                    f"{qc_doc.get('verdict')!r} (passed {qc_doc.get('passed')}, "
+                    f"failed {qc_doc.get('failed')}); close refused")
+        # BUG-20261122-064 second half: the vision pass SOP-GIP-02 step 1
+        # demands is read here at stage close, not only at Skill 83 assemble.
+        failures.extend(vision_log_problems(run_dir))
     # R71H seam P2: a filed dispatch refusal is itself a close verdict
     # for automation-wiring. The receipt records the receiver's refusal
     # reason verbatim; the stage stays open and the close names the

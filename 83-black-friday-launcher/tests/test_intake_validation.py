@@ -531,5 +531,22 @@ class SharedBillingVocabularyMissing(IntakeCase):  # issue 70: no vocabulary ins
         self.assertIn("not installed", ctx.exception.detail)
 
 
+class ValidateIsIdempotent(IntakeCase):  # RFX-006: assemble re-validates the dispatch snapshot
+    def test_validate_accepts_and_reproduces_its_own_output(self):
+        for name in ("elevation", "seven-figure-preneur"):
+            once = intake.validate(load(name))
+            self.assertEqual(intake.validate(copy.deepcopy(once)), once, name)
+
+    def test_an_echoed_default_is_never_upgraded_to_supplied(self):
+        once = intake.validate(load("elevation"))
+        twice = intake.validate(copy.deepcopy(once))
+        self.assertTrue(twice["provenance"]["locale"].startswith("default: "))
+        self.assertTrue(twice["activation"]["source"].startswith("default: "))
+
+    def test_a_hand_written_activation_source_is_refused(self):
+        payload = load("elevation")
+        payload["activation"] = {"desired_state": "draft_constructed", "source": "attested"}
+        self.refuses(payload, "AF-LAUNCH-INTAKE-ACTIVATION", "activation.source")
+
 if __name__ == "__main__":
     unittest.main()

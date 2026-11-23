@@ -170,9 +170,53 @@ def slot_number(slot_id):
     return int(m.group(1)) if m else None
 
 
+def slot_key(slot_id):
+    """The cross-namespace identity of one slot: its trailing number, else its text.
+
+    The pipeline names the same slot ``IMG-001`` in the page request and
+    ``Image-01`` in the inventory / image map / generation record; the
+    inventory's own ``slot_name`` carries that bridge. The trailing integer is
+    the one stable identity across those names, so every cross-file lookup is
+    keyed by it. A slot id with no trailing number keeps its literal text as
+    the key. Two DIFFERENT ids that share a number are ambiguous and fail
+    closed (see ``keyed``), never silently merged.
+    """
+    text = str(slot_id or "").strip()
+    m = SLOT_NUM_RE.search(text)
+    return "#%d" % int(m.group(1)) if m else "id:%s" % text
+
+
+def keyed(ids, items, where):
+    """{slot_key: (slot_id, item)} plus ambiguity failures.
+
+    ``ids`` and ``items`` are parallel sequences. Two different slot ids that
+    resolve to the same key (e.g. ``IMG-001`` and ``PKG-1``) can never be told
+    apart by the renderer, so they are reported by name instead of one quietly
+    overwriting the other.
+    """
+    out, failures = {}, []
+    for slot_id, item in zip(ids, items):
+        if not isinstance(slot_id, str) or not slot_id:
+            continue
+        k = slot_key(slot_id)
+        if k in out and out[k][0] != slot_id:
+            failures.append(
+                f"{where}: slots {out[k][0]!r} and {slot_id!r} share the "
+                f"identity {k!r}; two different slot ids can never be told "
+                f"apart by the renderer")
+            continue
+        out[k] = (slot_id, item)
+    return out, failures
+
+
 def plan_slot_sections(run_dir):
     """{slot_id: section_id} from the desktop wireframe section plan,
-    or None when no readable plan is on record."""
+    or None when no readable plan is on record.
+
+    Keyed by the id as written in the plan (its public shape, also read by
+    ``design_board.py``); ``check_run`` re-keys it by ``slot_key`` when it
+    compares namespaces.
+    """
     path = run_dir / "desktop-wireframe" / "section-plan.json"
     if not path.exists():
         return None
@@ -192,16 +236,17 @@ def plan_slot_sections(run_dir):
 
 
 def image_map_files(run_dir):
-    """{slot_id: run-relative file} from image-map-upload/image-map.json,
-    or {} when the map is absent or records nothing usable."""
+    """({slot_key: run-relative file}, failures) from
+    image-map-upload/image-map.json, or ({}, []) when the map is absent or
+    records nothing usable."""
     path = run_dir / "image-map-upload" / "image-map.json"
     if not path.exists():
-        return {}
+        return {}, []
     try:
         data = load_json(path)
     except Exception:
-        return {}
-    out = {}
+        return {}, []
+    ids, rels = [], []
     entries = data.get("images") if isinstance(data, dict) else None
     if isinstance(entries, list):
         for entry in entries:
@@ -212,8 +257,10 @@ def image_map_files(run_dir):
             if isinstance(slot_id, str) and isinstance(rel, str) and rel:
                 if "/" not in rel and "\\" not in rel:
                     rel = f"image-generation-qc/{rel}"
-                out[slot_id] = rel
-    return out
+                ids.append(slot_id)
+                rels.append(rel)
+    index, failures = keyed(ids, rels, "image-map-upload/image-map.json")
+    return {k: v for k, (_, v) in index.items()}, failures
 
 
 def check_run(run_dir, stage=DEFAULT_STAGE):
@@ -231,20 +278,23 @@ def check_run(run_dir, stage=DEFAULT_STAGE):
     except Exception as exc:
         return [f"stage {stage}: image inventory unreadable: {exc}"], 0
     entries = inventory_entries(inventory)
-    inventory_by_id = {}
+    inv_ids, inv_entries = [], []
     for entry in entries:
         eid = entry_id(entry)
         if eid:
-            inventory_by_id[eid] = entry
+            inv_ids.append(eid)
+            inv_entries.append(entry)
+    inventory_by_id, inventory_failures = keyed(
+        inv_ids, inv_entries, "desktop-wireframe/image-inventory.json")
     if not inventory_by_id:
-        return [f"stage {stage}: image inventory declares no slot ids; "
-                f"the mockup gate has no slots to trace"], 0
+        return ([f"stage {stage}: image inventory declares no slot ids; "
+                 f"the mockup gate has no slots to trace"] + inventory_failures), 0
 
     record_path = run_dir / stage / "generation-record.json"
-    record_slots = {}  # slot_id -> (section_id, entry)
-    record_failures = []
+    record_slots = {}  # slot_key -> (slot_id, section_id, entry)
+    record_failures = list(inventory_failures)
     if not record_path.exists():
-        for slot_id in inventory_by_id:
+        for slot_id, _entry in inventory_by_id.values():
             record_failures.append(
                 f"stage {stage} slot {slot_id}: placeholder slot M1 "
                 f"(real photography in every slot; zero placeholder "
@@ -272,34 +322,60 @@ def check_run(run_dir, stage=DEFAULT_STAGE):
             slot_id = entry.get("slot_id") or entry.get("id")
             if not isinstance(slot_id, str) or not slot_id:
                 continue
-            if slot_id in record_slots:
-                record_failures.append(
-                    f"stage {stage} slot {slot_id}: the generation record "
-                    f"traces the slot more than once (sections "
-                    f"{record_slots[slot_id][0]!r} and {section_id!r}); "
-                    f"one trace per slot is required")
+            k = slot_key(slot_id)
+            if k in record_slots:
+                prior_id, prior_section = record_slots[k][0], record_slots[k][1]
+                if prior_id != slot_id:
+                    record_failures.append(
+                        f"stage {stage} slot {slot_id}: the generation record "
+                        f"traces slots {prior_id!r} and {slot_id!r} as one "
+                        f"identity; two different slot ids can never be told "
+                        f"apart by the renderer")
+                else:
+                    record_failures.append(
+                        f"stage {stage} slot {slot_id}: the generation record "
+                        f"traces the slot more than once (sections "
+                        f"{prior_section!r} and {section_id!r}); "
+                        f"one trace per slot is required")
             else:
-                record_slots[slot_id] = (section_id, entry)
+                record_slots[k] = (slot_id, section_id, entry)
 
-    plan_sections = plan_slot_sections(run_dir)
-    map_files = image_map_files(run_dir)
-    failures = list(record_failures)
+    plan_display = plan_slot_sections(run_dir)
+    plan_failures = []
+    if plan_display is None:
+        plan_sections = None
+    else:
+        plan_index, plan_failures = keyed(
+            list(plan_display), list(plan_display.values()),
+            "desktop-wireframe/section-plan.json")
+        plan_sections = {k: v for k, (_, v) in plan_index.items()}
+    map_files, map_failures = image_map_files(run_dir)
+    failures = list(record_failures) + plan_failures + map_failures
     # The reverse-coverage floor: every PLANNED slot must appear in the rendered
     # mockup. The inventory check below can only police the slots the run itself
     # planned; a short plan is exactly how a twelve-slot page shipped with two
-    # pictures, so the plan comes from the request (else the copy spec).
+    # pictures, so the plan comes from the request (else the copy spec). Slots
+    # are compared by their stable identity (slot_key) so the request's
+    # ``IMG-001`` and the record's ``Image-01`` are the same picture.
     planned, planned_source = planned_slot_ids(run_dir)
     if planned:
-        for line in image_slots().check_planned_coverage(planned, list(record_slots)):
-            failures.append(f"stage {stage} {line} [plan: {planned_source}]")
-    for slot_id, entry in record_slots.items():
-        if slot_id not in inventory_by_id:
+        rendered_keys = set(record_slots)
+        missing = [p for p in planned if slot_key(p) not in rendered_keys]
+        total = len(planned)
+        for slot_id in missing:
+            failures.append(
+                f"stage {stage} planned image slot {slot_id} is missing from "
+                f"the rendered page ({total - len(missing)} of {total} "
+                f"planned slot(s) rendered; every planned slot must carry "
+                f"real photography) [plan: {planned_source}]")
+    for k, (slot_id, _section, _entry) in record_slots.items():
+        if k not in inventory_by_id:
             failures.append(
                 f"stage {stage} slot {slot_id}: the generation record "
                 f"traces a slot that is not in the image inventory")
 
-    for slot_id, inv_entry in inventory_by_id.items():
-        traced = record_slots.get(slot_id)
+    for k, (slot_id, inv_entry) in inventory_by_id.items():
+        traced = record_slots.get(k)
         if traced is None:
             failures.append(
                 f"stage {stage} slot {slot_id}: placeholder slot M1 "
@@ -308,14 +384,14 @@ def check_run(run_dir, stage=DEFAULT_STAGE):
                 f"record and traces to neither a generated image file "
                 f"nor a placed supplied asset")
             continue
-        section_id, entry = traced
+        section_id, entry = traced[1], traced[2]
         where = f"stage {stage} section {section_id} slot {slot_id}"
-        if plan_sections is not None and slot_id in plan_sections \
-                and plan_sections[slot_id] != section_id:
+        if plan_sections is not None and k in plan_sections \
+                and plan_sections[k] != section_id:
             failures.append(
                 f"{where}: the generation record places the slot in "
                 f"section {section_id!r} but the wireframe section plan "
-                f"assigns it to section {plan_sections[slot_id]!r}")
+                f"assigns it to section {plan_sections[k]!r}")
         source = entry.get("source")
         rel = entry.get("file") or entry.get("asset_file")
         if source not in ("generated", "supplied"):
@@ -349,7 +425,7 @@ def check_run(run_dir, stage=DEFAULT_STAGE):
                     f"record traces it as generated; supplied assets "
                     f"are placed as files, never generated (Item 3)")
                 continue
-            mapped = map_files.get(slot_id)
+            mapped = map_files.get(k)
             if mapped is not None:
                 if Path(mapped) != Path(rel):
                     failures.append(
@@ -360,13 +436,15 @@ def check_run(run_dir, stage=DEFAULT_STAGE):
                         f"image file for this slot")
             else:
                 number = slot_number(slot_id)
-                expected_name = f"Image-{number:03d}.png" if number is not None else None
-                if expected_name is None or filed.name != expected_name \
+                expected_names = ({f"Image-{number:03d}.png",
+                                   f"Image-{number:02d}.png"}
+                                  if number is not None else set())
+                if not expected_names or filed.name not in expected_names \
                         or filed.parent.name != "image-generation-qc":
                     failures.append(
                         f"{where}: the generation record traces the slot "
                         f"to {rel}, which is not the slot's generated "
-                        f"asset (image-generation-qc/{expected_name or 'Image-NNN.png'} "
+                        f"asset (image-generation-qc/Image-{number if number is not None else 'NNN'}.png "
                         f"and no image-map entry backs another file); "
                         f"the slot traces to no generated image file")
         else:  # supplied

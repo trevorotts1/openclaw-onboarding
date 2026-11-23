@@ -110,7 +110,7 @@
       "min_version": "1.3.28",
       "interface_sha256": {
         "scripts/launch_context.py": "33a37e16284cfbbc58c3d1c49da7da82be117790e6592a50fdf1a4edb721680c",
-        "scripts/page_result.py": "1ce877aa699211e280b5aaa930d29a00dcabc63a09dcd181eef803e79cc61c57"
+        "scripts/page_result.py": "54985ee7c29a290887fec0116b6431d41d65ad8424756f2d74c460abe4bcbd43"
       },
       "required": true,
       "why": "landing page producer reached through the S49 landing bridge"

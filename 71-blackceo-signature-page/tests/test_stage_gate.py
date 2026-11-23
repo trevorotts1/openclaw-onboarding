@@ -69,6 +69,18 @@ def write(path: Path, text):
         path.write_text(text, encoding="utf-8")
 
 
+def write_image_qc_pass(run):
+    """image-qc.json PASS plus a vision-log record for each delivered Image-*.png (RFX-006: the
+    image-generation-qc close reads both)."""
+    import hashlib as _h
+    qc = run / "image-generation-qc"
+    pngs = sorted(qc.glob("Image-*.png"))
+    write(qc / "image-qc.json", json.dumps({"verdict": "PASS", "passed": len(pngs), "failed": 0}))
+    write(run / "qc" / "vision_qc_log.json", json.dumps(
+        [{"artifact_sha256": _h.sha256(p.read_bytes()).hexdigest(),
+          "vision_api_response": {"fixture": "vision pass recorded"}} for p in pngs]))
+
+
 def receipt(stage, author="builder-agent", reviewer=None, status="pass", scores=None, extra=None):
     r = {
         "stage": stage,
@@ -487,7 +499,7 @@ class StageGateTest(unittest.TestCase):
                   {"applies_to": "all", "source_library": "image-guide-sauce-only",
                    "style_id": "signature-grade", "branded_name": "Signature Grade"}]}))
         di_receipt.put(run)  # fix spec M4: the prompts stage closes only on the Skill 45 receipt
-        write(run / "image-generation-qc" / "image-qc.json", "{}")
+        write_image_qc_pass(run)
 
         def gate(*args, expect=None, env=fixture_env):
             return run_gate(*args, expect=expect, env=env)
@@ -927,7 +939,7 @@ class StageGateTest(unittest.TestCase):
         di_receipt.put(run)  # fix spec M4: the prompts stage closes only on the Skill 45 receipt
         write(run / "image-generation-qc" / "Image-001.png", "stub")
         write(run / "image-generation-qc" / "Image-002.png", "stub")
-        write(run / "image-generation-qc" / "image-qc.json", "{}")
+        write_image_qc_pass(run)
         write(run / "image-map-upload" / "image-map.json", "{}")
         write(run / "image-map-upload" / "image-map.md", "map")
         write(run / "final-mockups" / "mockup.html", "<html></html>")

@@ -466,7 +466,7 @@
       "cost_required": true,
       "transport_required": true,
       "validators": [
-        "python3 scripts/validate_image_grade.py {file} --brand {brand}",
+        "python3 scripts/validate_image_grade.py {file} --brand {brand} --inventory {run_dir}/desktop-wireframe/image-inventory.json",
         "python3 scripts/circle_image.py check {file} --inventory {run_dir}/desktop-wireframe/image-inventory.json",
         "python3 scripts/design_style.py validate-inventory {run_dir}",
         "gate:image_grade_full_set image-generation-qc",

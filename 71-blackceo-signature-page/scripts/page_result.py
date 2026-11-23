@@ -460,6 +460,11 @@ def resolve_route(run_dir, request):
     if page is None or page.get("role") != page_role:
         return info, [f"route graph has no {page_role!r} node for page "
                       f"{request.get('page_id')!r}"]
+    if page_role != "landing":
+        # The next-role rule is the landing page's own (launch_context.next_role_for_landing).
+        # A checkout or thank_you node has payment_succeeded / explicit_decline edges,
+        # never the landing's interest_submitted edge, so the landing rule does not apply.
+        return info, []
     edge = None
     for candidate in graph.get("edges", []):
         if isinstance(candidate, dict) \

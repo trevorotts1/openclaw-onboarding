@@ -4,6 +4,21 @@
 - Tests (`tests/test_validate_copy_structure.py`): upsell_1, upsell_2 and downsell_1 runs resolve their own spec and the resolved validator passes a minimal manuscript of that spec; the four refusals above; landing and thank-you unchanged. Fails on 1.3.38.
 - Version bump so the pull request carries a version above main (G3).
 
+## [1.3.39] - 2026-11-23 - fixes a client box carried locally, now upstream
+
+- `scripts/build_production_request.py`: every prose block, not only the design tokens, escapes literal braces before `str.format`, so a measured design system that embeds JSON is no longer silently trimmed at its first brace.
+- `scripts/design_board.py`: the board reads its palette chip row chip by chip; a single-tenant box's Command Center approval binds to the box owner when the tenant name does not match; the board is reported ceiling-only only where the installed prompt policy supports it; tesseract output is decoded with replacement.
+- `scripts/page_result.py`: a non-landing page (checkout, thank-you) is no longer judged by the landing page's next-role rule.
+- `scripts/preflight_installed.py`: the self-test manuscript prints a button only where the section's spec allows one.
+- `scripts/stage_executor.py`: an empty reference list is dropped instead of sent (text-to-image refuses an empty `input_urls`); the design board's ceiling-only declaration reaches the policy and Skill 74 only when each accepts it.
+- `scripts/stage_gate.py`: tightening-only close checks (zero-byte artifacts, every grade family calibrated, paid receipts record a real credit draw, hand-rolled createTask provenance refused, a close needs an explicit pass receipt, image-generation-qc needs a PASS `image-qc.json` and a vision-log record per delivered image, a close over a blocked or failed upstream stage is refused).
+- `scripts/validate_copy_structure.py`: a sales page's primary CTA is its checkout link (`external_link`), from the declared page kind.
+- `scripts/validate_image_grade.py`, `scripts/validate_mockup_slots.py`: slot ids compare by number (`IMG-001` = `Image-01`), and two different ids sharing a number fail by name.
+- `scripts/validate_image_manifest.py`: a map entry marked `qc_status: passed` must be backed by the image-generation-qc report.
+- `scripts/validate_page.py`: the composition cues carry the client's design style; the pinned validation log has no wall-clock field.
+- `references/stage-contract.json`: the per-file grade validator gets the image inventory. `references/wireframe-build-spec.json`: the behavior note uses US spelling.
+- Tests: `tests/test_rfx006_box_fixes.py` (13 tests, all fail on 1.3.38); fixtures write a PASS QC verdict and vision log.
+
 ## [1.3.38] - 2026-11-13 - the launch record schema carries a price's billing interval
 
 - `references/launch.schema.json` (byte copy of Skill 49's) gains `recurring_interval` (week, month, quarter, year) on a price, so a launch record with a monthly, quarterly or yearly offer passes `scripts/launch_context.py` instead of being refused as an unknown key. No other change to this skill.

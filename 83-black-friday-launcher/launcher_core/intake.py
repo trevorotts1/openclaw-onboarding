@@ -78,6 +78,12 @@ OPTIONAL_FIELDS = ("image_plan", "client_choices", "promotion", "activation",
 # question must not break an intake that a saved run already carries. It changes nothing.
 LEGACY_IGNORED_FIELDS = ("entitlement_attestation",)
 
+# Written BY validate() onto its own output and read back by assemble's drift comparison.
+# Declared here so validate() accepts its own output: without this, validate(validate(x))
+# raises AF-LAUNCH-INTAKE-UNKNOWN and package.assemble can never bind the dispatch snapshot.
+DERIVED_FIELDS = ("entitlement", "provenance", "locale", "automation_execution",
+                  "allowed_write_target")
+
 # What the normalized record says about the account. Nobody declared it and nobody was
 # asked, so it is exactly this and no build consumes it as a permission.
 ENTITLEMENT_UNKNOWN = {
@@ -103,6 +109,11 @@ ACTIVATION_AUTHORITY_SCOPES = {"installed": "installation", "published": "public
 
 OFFER_REQUIRED = ("offer_id", "name", "role", "price", "delivery")
 OFFER_OPTIONAL = ("level", "relationships", "checkout")
+# `canonical` is written onto each offer by _bind_provenance and read back by the
+# checkout mapping. It is derived, not supplied, but validate() must ACCEPT its own
+# output: without this, validate(validate(x)) fails and package.assemble can never compare
+# the dispatch snapshot to the intake it was given.
+OFFER_DERIVED = ("canonical",)
 PRICE_REQUIRED = ("amount_minor", "currency")
 PRICE_OPTIONAL = ("bounds_confirmed", "source_ref")
 
@@ -370,15 +381,19 @@ def _validate_activation(raw: Any, *, location_id: str, test_only: bool) -> Dict
     same recorded approval is carried forward, never asked for twice, and it can never
     authorize another location. A test-only run may not request either.
     """
-    if raw is None:
-        return {"desired_state": "local_prepared", "authority": None,
-                "source": "default: local preparation; nothing is installed or published"}
+    default = {"desired_state": "local_prepared", "authority": None,
+               "source": "default: local preparation; nothing is installed or published"}
+    if raw is None or raw == default:  # validate()'s own default, echoed back, stays a default
+        return dict(default)
     if not isinstance(raw, dict):
         _fail("AF-LAUNCH-INTAKE-ACTIVATION", "activation", "must be an object")
-    extra = set(raw) - {"desired_state", "authority"}
+    extra = set(raw) - {"desired_state", "authority", "source"}
     if extra:
         _fail("AF-LAUNCH-INTAKE-ACTIVATION", "activation",
               f"undeclared field(s) {sorted(extra)!r}")
+    if raw.get("source", "supplied") != "supplied":  # `source` is derived; only validate()'s value
+        _fail("AF-LAUNCH-INTAKE-ACTIVATION", "activation.source",
+              "is written by validation; a caller may only echo 'supplied'")
     desired = raw.get("desired_state")
     if desired not in ACTIVATION_STATES:
         _fail("AF-LAUNCH-INTAKE-ACTIVATION", "activation.desired_state",
@@ -465,7 +480,7 @@ def _validate_offer(index: int, offer: Any) -> Dict[str, Any]:
     if not _nonempty_str(currency) or len(currency) != 3 or not currency.isupper():
         _fail("AF-LAUNCH-INTAKE-PRICE", f"{field}.price.currency",
               "must be a 3-letter uppercase currency code")
-    extra = set(offer) - set(OFFER_REQUIRED) - set(OFFER_OPTIONAL)
+    extra = set(offer) - set(OFFER_REQUIRED) - set(OFFER_OPTIONAL) - set(OFFER_DERIVED)
     if extra:
         _fail("AF-LAUNCH-INTAKE-UNKNOWN", field,
               f"undeclared offer field(s) {sorted(extra)!r}; add them to intake.py deliberately")
@@ -899,7 +914,7 @@ def _validate(payload: Any) -> Tuple[Dict[str, Any], Dict[str, Any]]:
               "when upsell_1 is disabled, downsell_1 and upsell_2 cannot remain enabled")
 
     known = (set(REQUIRED_FIELDS) | set(EXPLICIT_FIELDS) | set(PERMITTED_DEFAULTS) | set(OPTIONAL_FIELDS)
-             | set(LEGACY_IGNORED_FIELDS))
+             | set(LEGACY_IGNORED_FIELDS) | set(DERIVED_FIELDS))
     unknown = set(payload) - known
     if unknown:
         _fail("AF-LAUNCH-INTAKE-UNKNOWN", "<root>",
@@ -962,6 +977,15 @@ def _validate(payload: Any) -> Tuple[Dict[str, Any], Dict[str, Any]]:
         provenance["linked_destinations"] = "supplied"
     if promotion is not None:
         normalized["promotion"] = promotion
+    prior = payload.get("provenance")
+    if isinstance(prior, dict):
+        # Re-validating validate()'s own output (DERIVED_FIELDS): the recorded provenance may only
+        # WEAKEN a label or drop a key, never upgrade one, so an echoed default stays a default
+        # and validate(validate(x)) == validate(x).
+        def _weaker(label):
+            return isinstance(label, str) and (label == "unknown" or label.startswith("default: "))
+        provenance = {k: (prior[k] if v == "supplied" and _weaker(prior[k]) else v)
+                      for k, v in provenance.items() if k in prior}
     normalized["provenance"] = provenance
     assert_no_commercial_defaults(normalized)
     return normalized, reconciliation

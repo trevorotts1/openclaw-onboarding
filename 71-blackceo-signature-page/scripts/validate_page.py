@@ -66,7 +66,6 @@ import shutil
 import sys
 import tempfile
 import urllib.parse
-from datetime import datetime, timezone
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -1935,7 +1934,14 @@ def main():
                             exemptions=declared_exemptions)
                         width_results[width]["layout"] = layout_report
                         errors.extend(layout_report["failures"])
-                        comp_lines = (composition.page_failures(layout_data, composition.composition_cues(brand))
+                        # The client's design style is part of the composition
+                        # cues: Style A (Block) forbids shaped crops, so a
+                        # shaped-crop minimum that only forbidden treatments
+                        # could meet is waived by composition.budget_failures.
+                        style_id = intake.get("design_style") if isinstance(intake, dict) else None
+                        comp_lines = (composition.page_failures(
+                                          layout_data,
+                                          composition.composition_cues(brand, style_id))
                                       + composition_pixel_failures(page))
                         width_results[width]["composition"] = {"failures": comp_lines}
                         errors.extend(comp_lines)
@@ -2038,7 +2044,10 @@ def main():
         "warnings": warnings,
         "checks": checks,
         "width_results": width_results,
-        "generated_at": datetime.now(timezone.utc).isoformat(),
+        # Determinism (BUG-20261122-051): this log is pinned in the stage receipt, and a
+        # wall-clock `generated_at` made every honest re-validation look like artifact drift.
+        # The close receipt already records when validation ran (started_at/finished_at), so the
+        # log keeps only content-derived fields and is byte-identical for identical inputs.
         "passed": not errors,
     }
 

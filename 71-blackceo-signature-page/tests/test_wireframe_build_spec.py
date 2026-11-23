@@ -156,7 +156,7 @@ class PromptBlockTests(unittest.TestCase):
         text = self.block()
         for needle in ('"SECTION 1"', '"HERO CLAIM"', "INLINE TYPE SPECS", "IMAGE 16:9",
                        "edge bar", "CTA MICROCOPY", "1440 PX PAGE / 1200 PX CONTENT",
-                       "BEHAVIOUR NOTE", "BRAND COLORS", "never colourless",
+                       "BEHAVIOR NOTE", "BRAND COLORS", "never colourless",
                        "DO NOT COPY THE EXAMPLE'S MISTAKES"):
             self.assertIn(needle, text)
         self.assertIsNone(re.search(r"#[0-9A-Fa-f]{6}\b", text), "no hex colour in the block")

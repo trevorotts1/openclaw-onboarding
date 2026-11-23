@@ -152,7 +152,7 @@
     "bands": "5. BANDS — the band runs edge to edge across the whole frame with no margin gap, no page card, no device frame, no navigation bar, no header links and no footer links. Grounds alternate between the light and the dark brand colours from section to section, so the stitched page reads as contiguous bands.",
     "strip_first": "6. WIDTHS HEADER STRIP — a thin dark strip across the very top of this slice reading exactly \"{page} PX PAGE / {content} PX CONTENT\". It appears on this first slice only.",
     "strip_other": "6. WIDTHS HEADER STRIP — none on this slice. The strip belongs to the first slice only.",
-    "behaviour": "7. BEHAVIOUR NOTE — one small line along the bottom of the band reading exactly \"{note}\".",
+    "behaviour": "7. BEHAVIOR NOTE — one small line along the bottom of the band reading exactly \"BEHAVIOR NOTE: {note}\". Use this US spelling exactly; never \"BEHAVIOUR\".",
     "cta_shape_desktop": "a filled primary-colour rectangular button",
     "cta_shape_mobile": "a full-width filled primary-colour rectangular button",
     "cta_strip_long_form": " Where this is a solution band, a full-width CTA strip carries the button across the foot of the band.",

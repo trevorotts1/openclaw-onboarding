@@ -610,13 +610,26 @@ def compose_prompt(p: dict, request: dict, run_dir: Path | None = None):
                "production labels; no text that is not given above.")
     prompt = se.sanitize_prompt("\n\n".join(out))
     budget = se.prompt_budget(request.get("model"))
+    pol = se._prompt_policy()
+    # The board is judged ceiling-only only where the installed policy can do so; otherwise the
+    # executor keeps the full band, and this line must say what will actually happen.
+    ceiling_only = bool(pol is not None and se._ceiling_kw(pol.freeze, True))
     sizes = {"chars": len(prompt), "floor_chars": budget and budget["floor_chars"],
              "target_chars": budget and budget["target_chars"],
-             "max_chars": budget and budget["max_chars"]}
-    if budget and len(prompt) < budget["floor_chars"]:  # the executor's convention: warn, never pad
+             "max_chars": budget and budget["max_chars"],
+             "band": "ceiling_only" if ceiling_only else "band"}
+    if budget and len(prompt) < budget["floor_chars"] and not ceiling_only:
         print(f"WARN prompt_budget design-board: {len(prompt)} chars, "
               f"{budget['floor_chars'] - len(prompt)} below the {budget['floor_chars']}-char floor; "
               "add genuine board specification, never filler", file=sys.stderr)
+    elif budget and len(prompt) < budget["floor_chars"]:
+        # BFD-956: the board is a verbatim layout sheet (owner rule 12 exempts verbatim
+        # fields from the floor and keeps the ceiling), so a short board prompt is the
+        # norm, not a defect. Say what the gate will actually do, never "add filler".
+        print(f"CEILING_ONLY prompt_budget design-board: {len(prompt)} chars "
+              f"(verbatim layout sheet; the {budget['floor_chars']}-char descriptive floor "
+              f"does not apply, the {budget['max_chars']}-char maximum does)",
+              file=sys.stderr)
     if budget and len(prompt) > budget["max_chars"]:
         raise BoardError(f"design board prompt is {len(prompt)} chars, over the "
                          f"{budget['max_chars']}-char model maximum; shorten board content")
@@ -875,34 +888,98 @@ def image_misses(anchors_by_block: dict, ocr: str) -> dict:
     return out
 
 
+def _chip_row_box(rgb):
+    """The printed palette chip row: the first band in the board's right half where saturated
+    blocks and near-black blocks sit side by side, grown down so each chip is kept whole."""
+    w, h = rgb.size
+    small = rgb.resize((max(1, w // 8), max(1, h // 8)))
+    sw, sh = small.size
+    band = []
+    for y in range(sh // 8, sh * 2 // 3):
+        row = [small.getpixel((x, y)) for x in range(sw // 2, sw)]
+        sat = sum((max(p) - min(p)) > 120 for p in row)
+        dark = sum(sum(p) < 120 for p in row)
+        if sat > sw * 0.06 and dark > sw * 0.06:
+            band.append(y)
+        elif band:
+            break
+    if not band:
+        return None
+    top = max(0, band[0] * 8 - 24)
+    bottom = min(h, (band[-1] + 1) * 8 + 24)
+    px = rgb.load()
+    xs = range(w // 2, w, 8)
+    while bottom < h - 8:
+        line = [px[x, bottom] for x in xs]
+        if sum((max(p) - min(p)) > 120 or sum(p) < 120 for p in line) < len(line) * 0.06:
+            break
+        bottom += 8
+    return (w // 2, top, w, min(h, bottom + 16))
+
+
+def _chip_spans(gray, thresh=225):
+    """Column runs of the chip row that hold one chip each."""
+    w, h = gray.size
+    px = gray.load()
+    filled = [any(px[x, y] < thresh for y in range(0, h, 2)) for x in range(w)]
+    spans, x = [], 0
+    while x < w:
+        if filled[x]:
+            s = x
+            while x < w and filled[x]:
+                x += 1
+            if x - s > w * 0.04:
+                spans.append((s, x))
+        else:
+            x += 1
+    return spans
+
+
 def ocr_text(png: Path) -> str:
     """The board image read by a machine, independent of whatever transcript the caller has.
     Two reads, separated by a form feed: the image as is, and its inverted grayscale (light
-    text on a dark or colored ground is read far better inverted)."""
+    text on a dark or colored ground is read far better inverted). The printed palette chip
+    row is read chip by chip and added to each read once, since a whole-board read cannot see
+    hex text set inside solid color chips (Trevor 2026-11-22)."""
     exe = shutil.which("tesseract")
     if not exe:
         raise BoardError("tesseract, the board's independent text reader, is not installed "
                          "(brew install tesseract / apt install tesseract-ocr); the read-back "
                          "cannot be checked against the image without it")
 
-    def read(path: Path) -> str:
-        out = subprocess.run([exe, str(path), "stdout", "--psm", "11"], text=True,
-                             capture_output=True, timeout=180)
+    def read(path: Path, psm: str = "11") -> str:
+        out = subprocess.run([exe, str(path), "stdout", "--psm", psm], text=True, errors="replace",
+                             capture_output=True, timeout=180)  # stderr can echo raw image bytes
         if out.returncode != 0:
             raise BoardError(f"tesseract failed on {png.name}: {out.stderr.strip()[:200]}")
         return out.stdout
 
-    reads = [read(png)]
     try:
-        from PIL import Image, ImageOps
-        with tempfile.TemporaryDirectory(prefix="board-ocr-") as td:
-            inverted = Path(td) / "inverted.png"
-            with Image.open(png) as im:
-                ImageOps.invert(ImageOps.grayscale(im.convert("RGB"))).save(inverted)
-            reads.append(read(inverted))
+        from PIL import Image, ImageDraw, ImageOps
     except ImportError:
-        pass
-    return READ_SEP.join(reads)
+        return read(png)
+    with tempfile.TemporaryDirectory(prefix="board-ocr-") as td:
+        with Image.open(png) as im:
+            rgb = im.convert("RGB")
+        box = _chip_row_box(rgb)
+        chips = ""
+        board = rgb
+        if box:
+            row = ImageOps.grayscale(rgb.crop(box))
+            parts = []
+            for i, (a, b) in enumerate(_chip_spans(row)):
+                inset = min(14, (b - a) // 6, row.height // 6)
+                chip = Path(td) / f"chip-{i}.png"
+                row.crop((a + inset, inset, b - inset, row.height - inset)).save(chip)
+                parts.append(read(chip, "6"))
+            chips = "\n".join(parts)
+            board = rgb.copy()
+            ImageDraw.Draw(board).rectangle(box, fill=(255, 255, 255))
+        plain = Path(td) / "board.png"
+        board.save(plain)
+        inverted = Path(td) / "inverted.png"
+        ImageOps.invert(ImageOps.grayscale(board)).save(inverted)
+        return READ_SEP.join([read(plain) + "\n" + chips, read(inverted) + "\n" + chips])
 
 
 def palette_pixel_failures(board: Path, palette: list) -> list:
@@ -1094,6 +1171,41 @@ def _approval_verifier():
     return mod
 
 
+def _box_owner_subject():
+    """This box's registered owner as Command Center names the owner's session:
+    invited-owner:<sha256(owner chat id)>, the owner chat id read from the same sources
+    Command Center reads (environment, openclaw.json env vars, secrets/.env). None if absent."""
+    import os
+    key = "OPENCLAW_OWNER_CHAT_ID"
+    chat = (os.environ.get(key) or "").strip()
+    home = Path.home() / ".openclaw"
+    if not chat:
+        try:
+            cfg = json.loads((home / "openclaw.json").read_text(encoding="utf-8"))
+            stack = [cfg]
+            while stack and not chat:
+                node = stack.pop()
+                if isinstance(node, dict):
+                    if isinstance(node.get(key), (str, int)):
+                        chat = str(node[key]).strip()
+                    stack.extend(node.values())
+                elif isinstance(node, list):
+                    stack.extend(node)
+        except (OSError, ValueError):
+            pass
+    if not chat:
+        try:
+            for line in (home / "secrets" / ".env").read_text(encoding="utf-8").splitlines():
+                if line.startswith(key + "="):
+                    chat = line.split("=", 1)[1].strip().strip('"').strip("'")
+                    break
+        except OSError:
+            pass
+    if not chat:
+        return None
+    return "invited-owner:" + hashlib.sha256(chat.encode("utf-8")).hexdigest()
+
+
 def approve_with_command_center(run_dir: Path, approval_id: str, request_name=DEFAULT_REQUEST) -> dict:
     """Record the client's approval from a Command Center `design_board` record.
 
@@ -1109,13 +1221,30 @@ def approve_with_command_center(run_dir: Path, approval_id: str, request_name=DE
     ver = _approval_verifier()
     ident = launch_client_ref(run_dir)
     extra = {"client_identity": ident, "identity_kind": "tenant"} if ident else {}
+
+    def _verify(**kw):
+        return ver.verify(str(approval_id or "").strip(), "design_board", rec["board"]["sha256"],
+                          ["design_board"], test_only=False, **kw)
+
+    def _refused(exc):
+        return BoardError(f"{approval_id!r} is not a verified design board approval from Command Center "
+                          f"({getattr(exc, 'code', type(exc).__name__)}); nothing was recorded. Ask the client "
+                          "to answer in chat, by button or on the link, then use the id Command Center gives back")
+
     try:
-        got = ver.verify(str(approval_id or "").strip(), "design_board", rec["board"]["sha256"],
-                         ["design_board"], test_only=False, **extra)
-    except (ver.ApprovalRefused, ver.ApprovalUnavailable) as exc:
-        raise BoardError(f"{approval_id!r} is not a verified design board approval from Command Center "
-                         f"({getattr(exc, 'code', type(exc).__name__)}); nothing was recorded. Ask the client "
-                         "to answer in chat, by button or on the link, then use the id Command Center gives back")
+        got = _verify(**extra)
+    except ver.ApprovalUnavailable as exc:
+        raise _refused(exc)
+    except ver.ApprovalRefused as exc:
+        # A single-tenant box's Command Center names its tenant 'self' while the launch names
+        # the client by slug. Bind to the consenting person instead: this box's own owner.
+        owner = _box_owner_subject()
+        if getattr(exc, "code", "") != "APPROVAL-IDENTITY" or not owner:
+            raise _refused(exc)
+        try:
+            got = _verify(client_identity=owner, identity_kind="actor")
+        except (ver.ApprovalRefused, ver.ApprovalUnavailable) as exc2:
+            raise _refused(exc2)
     if not (got.get("ok") is True and got.get("authority") == "command-center"
             and got.get("approval_id") == str(approval_id).strip()):
         raise BoardError("that is not a design board approval recorded in Command Center")

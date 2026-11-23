@@ -214,7 +214,12 @@ def test_grade_calibrated_builtin():
         fixture_intake(run, test_run=True)
         assert gate.run_builtin("gate:grade_calibrated", [], run) is None
         fixture_intake(run, test_run=False)
+        # RFX-006: colorfulness and sharpness are calibrated thresholds too; two of four is uncalibrated.
         fixture_brand(run, grade={"min_mean_saturation": 0.1, "min_luma_std": 5.0})
+        out = gate.run_builtin("gate:grade_calibrated", [], run)
+        assert out and "min_colorfulness" in out and "min_sharpness" in out, out
+        fixture_brand(run, grade={"min_mean_saturation": 0.1, "min_luma_std": 5.0,
+                                  "min_colorfulness": 10.0, "min_sharpness": 50.0})
         assert gate.run_builtin("gate:grade_calibrated", [], run) is None
 
 

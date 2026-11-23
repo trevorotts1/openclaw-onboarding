@@ -593,8 +593,21 @@ def check_dry_run(root: Path):
         sequence = list(spec["sequence"])
         ms = tmp / "copy" / "internal-manuscript.md"
         ms.parent.mkdir(parents=True, exist_ok=True)
+        # The synthetic manuscript must satisfy the very spec the dry run exercises.
+        # Section 6 ("The Big Bold Who") declares `cta.standalone: "forbidden"`, so a
+        # blanket [CTA BUTTON: Continue] made build_production_request.py refuse its
+        # own self-test on every install (VERDICT "installed runtime GAP"). Emit the
+        # button only where the spec allows one.
+        spec_sections = {str(s.get("id")): s for s in (spec.get("sections") or [])
+                         if isinstance(s, dict)}
         lines = []
         for sid in sequence:
+            sec = spec_sections.get(str(sid)) or {}
+            cta_rule = sec.get("cta") if isinstance(sec.get("cta"), dict) else {}
+            if cta_rule.get("standalone") == "forbidden":
+                lines.append(f"## Section {sid}: Preflight section {sid}, no button\n")
+                lines.append("Word " * 24 + "\n")  # inside section 6's 30-word hard maximum
+                continue
             lines.append(f"## Section {sid}: Preflight section {sid}\n")
             lines.append("[CTA BUTTON: Continue]\n")
             lines.append("Word " * 160 + "\n")
