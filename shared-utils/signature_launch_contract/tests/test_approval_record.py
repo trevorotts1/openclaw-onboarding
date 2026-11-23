@@ -361,3 +361,70 @@ def test_an_unknown_kind_is_still_refused(cc):
     with pytest.raises(ar.ApprovalRefused) as e:
         call(cc, kind="not_a_real_kind", scope=["not_a_real_kind"])
     assert e.value.code == "APPROVAL-KIND-UNKNOWN"
+
+
+# ---------------------------------------------------------------------------
+# RFX-010: a Command Center owner-decision row carries its authority in `kind`;
+# its `scope` is the object binding JSON {location_id, action, object_key}
+# (approval-requests.ts decideApprovalRequest). That row covers its OWN kind
+# and nothing else; a record with an explicit scope list is covered by that
+# list only (the Skill 50 adapter's "scope without launch_plan_build" case).
+# ---------------------------------------------------------------------------
+
+BINDING = json.dumps({"location_id": "loc-1", "action": "create_contact", "object_key": "contact:42"},
+                     separators=(",", ":"))
+
+
+def binding_record(kind, **over):
+    rec = dict(CC, kind=kind, scope=BINDING, source_message_ref="approval-request:req-1")
+    rec.update(over)
+    return rec
+
+
+@pytest.mark.parametrize("wire,canonical", [
+    ("plan_build", "launch_plan_build"), ("automation_write", "automation_write"),
+    ("design_board", "design_board"),
+])
+def test_object_binding_record_covers_its_own_kind_only(cc, wire, canonical):
+    cc["record"] = binding_record(wire)
+    out = cc_call(cc, kind=canonical, scope=[canonical])
+    assert out["ok"] is True and out["kind"] == canonical and out["kind_wire"] == wire
+    other = "page_publication"
+    with pytest.raises(ar.ApprovalRefused) as e:  # a different kind is refused outright
+        cc_call(cc, kind=other, scope=[other])
+    assert e.value.code == "APPROVAL-KIND"
+    with pytest.raises(ar.ApprovalRefused) as e:  # and its own kind never covers another kind's scope
+        cc_call(cc, kind=canonical, scope=[canonical, other])
+    assert e.value.code == "APPROVAL-SCOPE"
+
+
+def test_list_scope_record_is_covered_by_its_list_only(cc):
+    """The 1.0 record with scope ['paid_asset_budget'] is refused for launch_plan_build."""
+    mutated(cc, kind="launch_plan_build", scope=["paid_asset_budget"])
+    with pytest.raises(ar.ApprovalRefused) as e:
+        call(cc, kind="launch_plan_build", scope=["launch_plan_build"])
+    assert e.value.code == "APPROVAL-SCOPE"
+    rec = dict(RECORD, kind="launch_plan_build", scope=["paid_asset_budget"])
+    with pytest.raises(ar.ApprovalRefused) as e:  # test-only path, as the adapter self-test calls it
+        ar.verify(rec, test_only=True, client_identity="client-a", env={},
+                  kind="launch_plan_build", plan_hash=HASH, scope=["launch_plan_build"])
+    assert e.value.code == "APPROVAL-SCOPE"
+
+
+@pytest.mark.parametrize("scope", [
+    "images, pages",                                                    # free-text string
+    json.dumps({"location_id": "loc-1", "action": "x"}),                # binding missing a key
+    json.dumps({"location_id": "loc-1", "action": "x", "object_key": "k", "kind": "plan_build"}),
+])
+def test_only_the_exact_object_binding_earns_kind_coverage(cc, scope):
+    cc["record"] = binding_record("plan_build", scope=scope)
+    with pytest.raises(ar.ApprovalRefused) as e:
+        cc_call(cc)
+    assert e.value.code == "APPROVAL-SCOPE"
+
+
+def test_a_versioned_record_with_a_binding_scope_earns_no_kind_coverage(cc):
+    cc["record"] = binding_record("plan_build", schema_version="2.0")
+    with pytest.raises(ar.ApprovalRefused) as e:
+        cc_call(cc)
+    assert e.value.code == "APPROVAL-SCOPE"
