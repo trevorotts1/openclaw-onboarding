@@ -627,7 +627,10 @@ the delivery rail, in this order and never skipped:
    runs only after `check` exits 0. It calls Skill 80's `build_production_pages.py` (U1, D1, U2),
    Skill 81's `production_handoff` (D1) and Skill 82's `build_thank_you_page.py`, and writes
    `production/<role>.html` plus `production/manifest.json` (sha256 per page) into the package. A copy
-   document marked `test_only` on a launch that is not `test_only` is refused. Skill 82 renders a verified
+   document marked `test_only` on a launch that is not `test_only` is refused. No entry-path flag is
+   needed for Upsell 2: Skill 80 reads its entry paths from the approved route graph and, when Upsell 1
+   and the downsell both lead to it, writes a neutral "Your purchase is confirmed."; `--u2-entry-context`
+   is an optional cross-check that is refused when the graph has more than that one path. Skill 82 renders a verified
    order view, so without `--thank-you-view` and `--thank-you-fulfillment` the thank-you page is recorded
    `not_built` with the reason, and a client package is then not complete. `AF-LAUNCH-PRODUCTION`
    (`check_rules/production.py`) fails a client package whose approved pieces lack a built page, and any

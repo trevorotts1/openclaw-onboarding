@@ -115,7 +115,11 @@ Rules that override main-page conventions for this profile:
 - U2 copy must be genuinely distinct from U1 (a different incremental
   outcome), and its acknowledgement text must be truthful on both entry
   paths: a buyer who arrived via Downsell 1 is never told they bought the
-  full U1 package.
+  full U1 package. The production builder reads the entry paths from the
+  approved route graph (verified paid edges into U2): when U1 and D1 both
+  pay into the one U2 page it writes only "Your purchase is confirmed.";
+  with one path it names that purchase. A stated `u2_entry_context` that is
+  not the graph's only path is refused, never obeyed.
 
 ## Eligibility law (proven purchase only)
 

@@ -934,8 +934,9 @@ def build_parser() -> argparse.ArgumentParser:
     pr.add_argument("--checkout-family", default="order_upsell_v2_funnel",
                     choices=["order_upsell_v2_funnel", "store_upsell_website"])
     pr.add_argument("--u2-entry-context", choices=["from_upsell_1", "from_downsell_1"],
-                    help="which entry path the upsell_2 acknowledgement is written for (the launch record "
-                         "carries none, and the canonical U2 page can be entered from either)")
+                    help="optional cross-check: the upsell_2 acknowledgement is read from the approved route "
+                         "graph (neutral when both paths enter it); a path the graph does not have alone is "
+                         "refused")
     pr.add_argument("--thank-you-view", help="the verified order view the thank-you page renders (Skill 82)")
     pr.add_argument("--thank-you-fulfillment", help="the fulfillment read for that view")
     pr.set_defaults(fn=cmd_produce)

@@ -125,15 +125,14 @@ def produce(root: Path, *, run_dir: Path, copies: Mapping[str, Path],
     refuse_test_copy(launch, docs)
     brand_doc = _read(Path(brand), "brand tokens") if brand else {}
 
-    if "upsell_2" in roles and not launch.get("u2_entry_context"):
-        # Skill 80's builder writes the U2 acknowledgement for ONE entry path. The launch record is a
-        # closed schema and carries none, and when downsell_1 is also routed the canonical U2 page has two
-        # entry paths: which acknowledgement to build is a choice, so it is asked for, never guessed.
+    if u2_entry_context is not None:
+        # Skill 80 reads the U2 entry paths from the approved graph (both paths: a neutral acknowledgement).
+        # A stated path is only a cross-check: the builder refuses one the graph does not have alone.
         if u2_entry_context not in ("from_upsell_1", "from_downsell_1"):
             raise ProductionError(
                 f"{CODE}-U2-ENTRY",
-                "upsell_2 is in this package, so say which entry path its acknowledgement is written for: "
-                "--u2-entry-context from_upsell_1 or from_downsell_1. Nothing was produced.")
+                "--u2-entry-context must be from_upsell_1 or from_downsell_1, or left out so the approved "
+                "route graph decides. Nothing was produced.")
         launch = dict(launch, u2_entry_context=u2_entry_context)
     build = _load(BUILDERS["80"], "launcher_s80_production_pages", "80-signature-upsell/components/pages")
     try:
@@ -154,7 +153,7 @@ def produce(root: Path, *, run_dir: Path, copies: Mapping[str, Path],
         pages[role] = {"state": "built", "file": f"{role}.html", "sha256": _sha(text.encode("utf-8")),
                        "page_id": page_rows[role]["page_id"],
                        "builder": {"skill": 80, "module": BUILDERS["80"]},
-                       **({"entry_context": launch["u2_entry_context"]} if role == "upsell_2" else {}),
+                       **({"entry_paths": page_rows[role]["entry_paths"]} if role == "upsell_2" else {}),
                        "native_product_id": page_rows[role]["native_product_id"],
                        "native_price_id": page_rows[role]["native_price_id"],
                        "routes": page_rows[role]["routes"]}
