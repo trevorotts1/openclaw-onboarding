@@ -199,5 +199,106 @@ class ApplyReview(unittest.TestCase):
                              ellipsis, count)
 
 
+class ReceiptRaisesProof(unittest.TestCase):
+    """B4: a verified independent Skill 71 Review Receipt v2 of this page's mockup
+    raises it to locally_verified / L2; anything less leaves it where it was."""
+
+    def setUp(self):
+        import hashlib
+        import json
+        import tempfile
+        self.h, self.json = hashlib.sha256, json
+        self.td = Path(tempfile.mkdtemp(prefix="receipt-raise-"))
+        run = self.td / "checkout-run"
+        (run / "visual-mockup").mkdir(parents=True)
+        self.mockup = run / "visual-mockup" / "mockup.html"
+        self.mockup.write_text("<html>mockup</html>", encoding="utf-8")
+        record = run / "visual-mockup" / "stage-executor-record.json"
+        record.write_text(json.dumps({"provider": "kie"}), encoding="utf-8")
+        self.arts = [{"path": str(p), "sha256": self.sha(p)} for p in (self.mockup, record)]
+        self.receipt = run / "private" / "reviews" / "visual-mockup" / "mockup.review.json"
+        self.receipt.parent.mkdir(parents=True)
+        self.ledger = self.td / "ledger.json"
+        self.ledger.write_text(json.dumps({"sessions": [{"session_id": "rev-1", "model": "model-b"}]}),
+                               encoding="utf-8")
+
+    def sha(self, p):
+        return self.h(Path(p).read_bytes()).hexdigest()
+
+    def page(self):
+        return result(status="authored", proof_class="L0", independent_review=False,
+                      reviewer_session=None, artifacts=[dict(a) for a in self.arts])
+
+    def run_review(self, **over):
+        """Write the receipt (write_review.py's v2 shape), point a review record at it, apply."""
+        note = "the section order, the brand hex values and every slot were checked by eye"
+        rec = {"item": "mockup", "artifact": "visual-mockup/mockup.html",
+               "artifact_sha256": self.sha(self.mockup), "author_session": "author-1",
+               "reviewer_session": "rev-1", "reviewed_at": "2026-11-23T00:00:00+00:00",
+               "criteria": {k: {"score": 9, "note": note}
+                            for k in c.PAGE_RECEIPT_CRITERIA["visual-mockup"]},
+               "verdict": "pass", "automatic_failures": [], "repair_attempt": 0,
+               "specific_defects": [], "performed_check": "opened the mockup beside the wireframe",
+               "next_current_artifact": "final-mockups", "independent_review": True,
+               "author_model": "model-a", "reviewer_model": "model-b",
+               "model_independence": "independent"}
+        rec.update(over.pop("receipt", {}))
+        self.receipt.write_text(self.json.dumps(rec), encoding="utf-8")
+        pointer = {"path": "checkout-run/private/reviews/visual-mockup/mockup.review.json",
+                   "sha256": self.sha(self.receipt)}
+        record = review(reviewer_model="model-b", reviewed_artifacts=self.arts,
+                        review_receipts=[dict(pointer, **over.pop("pointer", {}))])
+        path = self.td / "review-checkout.json"
+        path.write_text(self.json.dumps(record), encoding="utf-8")
+        res = self.page()
+        got = c.apply_review(res, path, self.ledger)
+        return res, got
+
+    def floor_83(self, res):
+        sys.path.insert(0, str(HERE.parents[1] / "83-black-friday-launcher"))
+        from launcher_core import checks
+        return checks._proof_floor_violations({"test_only": False, "pieces": [dict(res, role="checkout")]})
+
+    def test_a_valid_independent_receipt_raises_the_page_and_the_floor_passes(self):
+        res, got = self.run_review()
+        self.assertEqual((res["status"], res["proof_class"]), ("locally_verified", "L2"), res["blockers"])
+        self.assertFalse(any(str(b).startswith(c.RECEIPT_PENDING) for b in res["blockers"]))
+        self.assertEqual(c.validate_result(res, REQ, scope="client_delivery", **got), [])
+        self.assertEqual(self.floor_83(res), [])
+
+    def test_a_self_review_mismatch_missing_item_or_low_score_never_raises(self):
+        drop = c.PAGE_RECEIPT_CRITERIA["visual-mockup"]
+        cases = {
+            "self-review": dict(receipt={"author_session": "rev-1"}),
+            "sha mismatch": dict(receipt={"artifact_sha256": "cd" * 32}),
+            "missing item": dict(receipt={"criteria": {k: {"score": 9, "note": "x" * 40}
+                                                       for k in list(drop)[1:]}}),
+            "below floor": dict(receipt={"criteria": {k: {"score": 7 if i == 0 else 9, "note": "x" * 40}
+                                                      for i, k in enumerate(drop)}}),
+            "receipt edited after it was recorded": dict(pointer={"sha256": "0" * 64}),
+            "same model": dict(receipt={"author_model": "model-b"}),
+        }
+        for why, over in cases.items():
+            res, got = self.run_review(**over)
+            self.assertEqual((res["status"], res["proof_class"]), ("authored", "L0"), why)
+            self.assertTrue(any(str(b).startswith(c.RECEIPT_PENDING) for b in res["blockers"]), why)
+            fails = c.validate_result(res, REQ, scope="client_delivery", **got)
+            self.assertTrue(any("status >=" in f for f in fails), (why, fails))
+            self.assertTrue(any("proof_class >=" in f for f in fails), (why, fails))
+            self.assertTrue(any("below locally_verified" in f for f in self.floor_83(res)), why)
+
+    def test_a_stub_drawn_page_is_never_raised(self):
+        record = Path(self.arts[1]["path"])
+        record.write_text(self.json.dumps({"provider": "stub"}), encoding="utf-8")
+        self.arts[1]["sha256"] = self.sha(record)
+        res, _ = self.run_review()
+        self.assertEqual((res["status"], res["proof_class"]), ("authored", "L0"))
+        self.assertTrue(any("stub" in b for b in res["blockers"] if str(b).startswith(c.RECEIPT_PENDING)))
+
+    def test_the_floor_constants_are_unchanged(self):
+        self.assertEqual((c.MIN_STATUS, c.MIN_PROOF),
+                         ({"client_delivery": "locally_verified"}, {"client_delivery": "L2"}))
+
+
 if __name__ == "__main__":
     unittest.main()
