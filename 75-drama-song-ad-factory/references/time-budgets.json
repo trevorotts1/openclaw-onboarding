@@ -1,81 +1,486 @@
 {
-  "schema": "blackceo.time-budgets/v1",
-  "source": "plan sections 10B and 10D",
-  "generated_for": "skill75 speed build",
-  "lengths_s": [90, 180, 300, 600],
-  "stage_table_note": "Agent counts are for 90 s / 3 min / 5 min / 10 min of video. Minutes are the section 10B averages on the operator Mac.",
-  "stages": [
-    {"id": "set-up", "name": "Set-up: pre-flight, look lock, song timing, Voice Map, lip audio", "agents": 4,
-     "minutes": {"90": 3, "180": 3, "300": 4, "600": 5},
-     "sequence": "lock needs the run owner's look choice; song timing and audio cutting read the whole song"},
-    {"id": "story-spine", "name": "Story spine, then the Story Beats and the beats gate", "agents": 1,
-     "minutes": {"90": 1, "180": 1, "300": 1, "600": 1}},
-    {"id": "beat-rows", "name": "Beat rows with emotion tags, then the join", "agents": 2,
-     "minutes": {"90": 2, "180": 2, "300": 2, "600": 2}},
-    {"id": "story-gate", "name": "Story gate: four checks and the story review; the Shot Router beside them", "agents": 6,
-     "minutes": {"90": 3, "180": 3, "300": 3, "600": 3}},
-    {"id": "shot-parts-prompts", "name": "Shot parts and prompts; Prompt Builder stamps; one joiner", "agents": 7,
-     "minutes": {"90": 2, "180": 2, "300": 2, "600": 2}},
-    {"id": "keyframes-lip-pictures", "name": "Keyframes and lip-sync pictures, one burst, checks as each lands", "agents": 8,
-     "minutes": {"90": 3, "180": 4, "300": 5, "600": 7}},
-    {"id": "picture-remakes", "name": "Picture remakes and the side-by-side pass", "agents": 3,
-     "minutes": {"90": 2, "180": 2, "300": 2, "600": 2}},
-    {"id": "video-burst", "name": "The video burst: every H3 clip and lip-sync take at once", "agents": 8,
-     "minutes": {"90": 8, "180": 8, "300": 9, "600": 9}},
-    {"id": "remake-burst", "name": "The remake burst, MAJOR items only", "agents": 6,
-     "minutes": {"90": 6, "180": 6, "300": 6, "600": 6}},
-    {"id": "assembly", "name": "Assembly: clips swapped into the timeline, pieces rendered, joined", "agents": 2,
-     "minutes": {"90": 2, "180": 2.5, "300": 3, "600": 4}},
-    {"id": "delivery-gate", "name": "Delivery gate: letter scan, style sample, audio, length, captions", "agents": 4,
-     "minutes": {"90": 3, "180": 3, "300": 5, "600": 5}},
-    {"id": "delivery", "name": "Delivery", "agents": 1,
-     "minutes": {"90": 3, "180": 3, "300": 3, "600": 3}}
-  ],
-  "totals_minutes": {"90": 38, "180": 40, "300": 45, "600": 49},
+  "browser": {
+    "max_browsers_per_box": 6,
+    "per_browser_gb": 1.5,
+    "reaper_interval_s": 300,
+    "tag": "s75-video",
+    "timeouts_s": {
+      "caption_layer": 600,
+      "end_card": 180,
+      "transition": 180
+    }
+  },
   "ceilings_minutes_3min": {
-    "set-up": 6, "story-spine": 2, "beat-rows": 4, "story-gate": 8,
-    "shot-parts-prompts": 4, "keyframes-lip-pictures": 8, "picture-remakes": 6,
-    "video-burst": 22, "remake-burst": 24, "assembly": 10, "delivery-gate": 15, "delivery": 6
+    "assembly": 10,
+    "beat-rows": 4,
+    "delivery": 6,
+    "delivery-gate": 15,
+    "keyframes-lip-pictures": 8,
+    "picture-remakes": 6,
+    "remake-burst": 24,
+    "set-up": 6,
+    "shot-parts-prompts": 4,
+    "story-gate": 8,
+    "story-spine": 2,
+    "video-burst": 22
   },
+  "checkpoints_min": [
+    20,
+    30,
+    40,
+    45
+  ],
   "checkpoints_minutes": {
+    "master_joined_by": 45,
     "picture_gate_passed_by": 20,
-    "video_burst_back_by": 30,
     "remake_burst_back_by": 40,
-    "master_joined_by": 45
+    "video_burst_back_by": 30
   },
-  "trending_overrun_minutes": 10,
-  "diagnosis_starts_at_minutes": [60, 150, 180],
+  "diagnosis_starts_at_minutes": [
+    60,
+    150,
+    180
+  ],
+  "disk": {
+    "checked_at": [
+      "pre-flight",
+      "delivery"
+    ],
+    "major_free_fraction": 0.1
+  },
+  "fanout": {
+    "beat_rows_per_writer": [
+      2,
+      3
+    ],
+    "joiners": 1,
+    "prompts_per_writer": [
+      2,
+      3
+    ],
+    "same_spine": [
+      "spine",
+      "beat_sheet",
+      "shot_router_record",
+      "lock_file"
+    ],
+    "writers_fraction": [
+      0.333333,
+      "half"
+    ]
+  },
+  "generated_for": "skill75 speed build",
+  "lengths_s": [
+    90,
+    180,
+    300,
+    600
+  ],
+  "link_max_age_hours": 23,
+  "lip_source_still": {
+    "min_height_px": 1280,
+    "min_width_px": 720
+  },
+  "lipsync_piece_seconds": {
+    "max": 30.0,
+    "min": 5.0,
+    "no_breath_gap_s": 1.0
+  },
+  "logo": {
+    "format": "png",
+    "min_side_px": 512,
+    "needs_alpha": true
+  },
   "never_stop": true,
   "overlaps": [
-    {"stage": "character-masters", "starts_when": ["look_locked", "cast_named"],
-     "runs_beside": ["story-spine", "story-gate"]},
-    {"stage": "picture-remakes", "starts_when": ["check_failed"], "runs_beside": ["picture-checks"]},
-    {"stage": "remake-burst", "starts_when": ["nine_in_ten_clips_back"], "runs_beside": ["video-checks"]},
-    {"stage": "side-by-side-picture-pass", "starts_when": ["pictures_picked"],
-     "runs_beside": ["picture-remakes"], "gates": ["video-burst"]},
-    {"stage": "side-by-side-clip-pass", "starts_when": ["clips_landing"], "runs_beside": ["remake-burst"]},
-    {"stage": "overlays-and-placeholder-timeline", "starts_when": ["storyboard_approved"],
-     "runs_beside": ["video-burst"]},
-    {"stage": "action-question", "joins": "vision_call"}
+    {
+      "runs_beside": [
+        "story-spine",
+        "story-gate"
+      ],
+      "stage": "character-masters",
+      "starts_when": [
+        "look_locked",
+        "cast_named"
+      ]
+    },
+    {
+      "runs_beside": [
+        "picture-checks"
+      ],
+      "stage": "picture-remakes",
+      "starts_when": [
+        "check_failed"
+      ]
+    },
+    {
+      "runs_beside": [
+        "video-checks"
+      ],
+      "stage": "remake-burst",
+      "starts_when": [
+        "nine_in_ten_clips_back"
+      ]
+    },
+    {
+      "gates": [
+        "video-burst"
+      ],
+      "runs_beside": [
+        "picture-remakes"
+      ],
+      "stage": "side-by-side-picture-pass",
+      "starts_when": [
+        "pictures_picked"
+      ]
+    },
+    {
+      "runs_beside": [
+        "remake-burst"
+      ],
+      "stage": "side-by-side-clip-pass",
+      "starts_when": [
+        "clips_landing"
+      ]
+    },
+    {
+      "runs_beside": [
+        "video-burst"
+      ],
+      "stage": "overlays-and-placeholder-timeline",
+      "starts_when": [
+        "storyboard_approved"
+      ]
+    },
+    {
+      "joins": "vision_call",
+      "stage": "action-question"
+    }
   ],
+  "prompt_floor_chars": 5000,
+  "schema": "blackceo.time-budgets/v1",
+  "sending_pace_requests_per_15s": 20,
+  "source": "plan sections 10B and 10D",
+  "stage_budget_min": {
+    "assembly": {
+      "average": 2.5,
+      "ceiling": 10
+    },
+    "beat-rows": {
+      "average": 2,
+      "ceiling": 4
+    },
+    "delivery": {
+      "average": 3,
+      "ceiling": 6
+    },
+    "delivery-gate": {
+      "average": 3,
+      "ceiling": 15
+    },
+    "keyframes-lip-pictures": {
+      "average": 4,
+      "ceiling": 8
+    },
+    "picture-remakes": {
+      "average": 2,
+      "ceiling": 6
+    },
+    "remake-burst": {
+      "average": 6,
+      "ceiling": 24
+    },
+    "set-up": {
+      "average": 3,
+      "ceiling": 6
+    },
+    "shot-parts-prompts": {
+      "average": 2,
+      "ceiling": 4
+    },
+    "story-gate": {
+      "average": 3,
+      "ceiling": 8
+    },
+    "story-spine": {
+      "average": 1,
+      "ceiling": 2
+    },
+    "video-burst": {
+      "average": 8,
+      "ceiling": 22
+    }
+  },
+  "stage_table": [
+    {
+      "agents": 4,
+      "average_min": 3,
+      "ceiling_min": 6,
+      "id": "set-up",
+      "name": "Set-up: pre-flight, look lock, song timing, Voice Map, lip audio"
+    },
+    {
+      "agents": 1,
+      "average_min": 1,
+      "ceiling_min": 2,
+      "id": "story-spine",
+      "name": "Story spine, then the Story Beats and the beats gate"
+    },
+    {
+      "agents": 2,
+      "average_min": 2,
+      "ceiling_min": 4,
+      "id": "beat-rows",
+      "name": "Beat rows with emotion tags, then the join"
+    },
+    {
+      "agents": 6,
+      "average_min": 3,
+      "ceiling_min": 8,
+      "id": "story-gate",
+      "name": "Story gate: four checks and the story review; the Shot Router beside them"
+    },
+    {
+      "agents": 7,
+      "average_min": 2,
+      "ceiling_min": 4,
+      "id": "shot-parts-prompts",
+      "name": "Shot parts and prompts; Prompt Builder stamps; one joiner"
+    },
+    {
+      "agents": 8,
+      "average_min": 4,
+      "ceiling_min": 8,
+      "id": "keyframes-lip-pictures",
+      "name": "Keyframes and lip-sync pictures, one burst, checks as each lands"
+    },
+    {
+      "agents": 3,
+      "average_min": 2,
+      "ceiling_min": 6,
+      "id": "picture-remakes",
+      "name": "Picture remakes and the side-by-side pass"
+    },
+    {
+      "agents": 8,
+      "average_min": 8,
+      "ceiling_min": 22,
+      "id": "video-burst",
+      "name": "The video burst: every H3 clip and lip-sync take at once"
+    },
+    {
+      "agents": 6,
+      "average_min": 6,
+      "ceiling_min": 24,
+      "id": "remake-burst",
+      "name": "The remake burst, MAJOR items only"
+    },
+    {
+      "agents": 2,
+      "average_min": 2.5,
+      "ceiling_min": 10,
+      "id": "assembly",
+      "name": "Assembly: clips swapped into the timeline, pieces rendered, joined"
+    },
+    {
+      "agents": 4,
+      "average_min": 3,
+      "ceiling_min": 15,
+      "id": "delivery-gate",
+      "name": "Delivery gate: letter scan, style sample, audio, length, captions"
+    },
+    {
+      "agents": 1,
+      "average_min": 3,
+      "ceiling_min": 6,
+      "id": "delivery",
+      "name": "Delivery"
+    }
+  ],
+  "stage_table_note": "Agent counts are for 90 s / 3 min / 5 min / 10 min of video. Minutes are the section 10B averages on the operator Mac.",
+  "stages": [
+    {
+      "agent_rule": "one agent each for pre-flight, look lock, song timing, Voice Map, lip audio",
+      "agents": 4,
+      "id": "set-up",
+      "minutes": {
+        "180": 3,
+        "300": 4,
+        "600": 5,
+        "90": 3
+      },
+      "name": "Set-up: pre-flight, look lock, song timing, Voice Map, lip audio",
+      "sequence": "lock needs the run owner's look choice; song timing and audio cutting read the whole song"
+    },
+    {
+      "agent_rule": "one author on purpose; the root every other writer obeys",
+      "agents": 1,
+      "id": "story-spine",
+      "minutes": {
+        "180": 1,
+        "300": 1,
+        "600": 1,
+        "90": 1
+      },
+      "name": "Story spine, then the Story Beats and the beats gate"
+    },
+    {
+      "agent_rule": "one writer per 2 to 3 lyric lines",
+      "agents": 2,
+      "id": "beat-rows",
+      "minutes": {
+        "180": 2,
+        "300": 2,
+        "600": 2,
+        "90": 2
+      },
+      "name": "Beat rows with emotion tags, then the join"
+    },
+    {
+      "agent_rule": "4 checks + 1 whole-story reviewer + 1 reviewer per section",
+      "agents": 6,
+      "agents_by_length": {
+        "180": 13,
+        "300": 17,
+        "600": 25,
+        "90": 10
+      },
+      "id": "story-gate",
+      "minutes": {
+        "180": 3,
+        "300": 3,
+        "600": 3,
+        "90": 3
+      },
+      "name": "Story gate: four checks and the story review; the Shot Router beside them"
+    },
+    {
+      "agent_rule": "one writer per 2 to 3 prompts",
+      "agents": 7,
+      "agents_by_length": {
+        "180": "14-21",
+        "300": "23-35",
+        "600": "46-69",
+        "90": "7-11"
+      },
+      "id": "shot-parts-prompts",
+      "minutes": {
+        "180": 2,
+        "300": 2,
+        "600": 2,
+        "90": 2
+      },
+      "name": "Shot parts and prompts; Prompt Builder stamps; one joiner"
+    },
+    {
+      "agent_rule": "1 checker per 3 pictures",
+      "agents": 8,
+      "id": "keyframes-lip-pictures",
+      "minutes": {
+        "180": 4,
+        "300": 5,
+        "600": 7,
+        "90": 3
+      },
+      "name": "Keyframes and lip-sync pictures, one burst, checks as each lands"
+    },
+    {
+      "agent_rule": "1 burst; 1 side-by-side reviewer; code",
+      "agents": 3,
+      "id": "picture-remakes",
+      "minutes": {
+        "180": 2,
+        "300": 2,
+        "600": 2,
+        "90": 2
+      },
+      "name": "Picture remakes and the side-by-side pass"
+    },
+    {
+      "agent_rule": "1 checker per 3 clips",
+      "agents": 8,
+      "id": "video-burst",
+      "minutes": {
+        "180": 8,
+        "300": 9,
+        "600": 9,
+        "90": 8
+      },
+      "name": "The video burst: every H3 clip and lip-sync take at once"
+    },
+    {
+      "agent_rule": "1 burst; 1 checker per 3 clips; 1 side-by-side reviewer",
+      "agents": 6,
+      "id": "remake-burst",
+      "minutes": {
+        "180": 6,
+        "300": 6,
+        "600": 6,
+        "90": 6
+      },
+      "name": "The remake burst, MAJOR items only"
+    },
+    {
+      "agent_rule": "pieces rendered at once, as memory allows",
+      "agents": 2,
+      "id": "assembly",
+      "minutes": {
+        "180": 2.5,
+        "300": 3,
+        "600": 4,
+        "90": 2
+      },
+      "name": "Assembly: clips swapped into the timeline, pieces rendered, joined"
+    },
+    {
+      "agent_rule": "4 / 6 / 6 / 12 scan workers, as memory allows",
+      "agents": 4,
+      "agents_by_length": {
+        "180": 6,
+        "300": 6,
+        "600": 12,
+        "90": 4
+      },
+      "id": "delivery-gate",
+      "minutes": {
+        "180": 3,
+        "300": 5,
+        "600": 5,
+        "90": 3
+      },
+      "name": "Delivery gate: letter scan, style sample, audio, length, captions"
+    },
+    {
+      "agent_rule": "1",
+      "agents": 1,
+      "id": "delivery",
+      "minutes": {
+        "180": 3,
+        "300": 3,
+        "600": 3,
+        "90": 3
+      },
+      "name": "Delivery"
+    }
+  ],
+  "totals_minutes": {
+    "180": 40,
+    "300": 45,
+    "600": 49,
+    "90": 38
+  },
+  "trending_overrun_minutes": 10,
   "worker_rule": {
+    "checker_ratio": 3,
+    "hold_above_pressure": 0.85,
     "local": "min(plan, cores - 1, memory_gb // 2)",
     "memory_fresh_minutes": 5,
-    "hold_above_pressure": 0.85,
-    "one_full_master_render_at_a_time": true
-  },
-  "sending_pace_requests_per_15s": 20,
-  "browser": {
-    "per_browser_gb": 1.5,
-    "max_browsers_per_box": 6,
-    "timeouts_s": {"end_card": 180, "transition": 180, "caption_layer": 600},
-    "reaper_interval_s": 300,
-    "tag": "s75-video"
-  },
-  "disk": {"major_free_fraction": 0.10, "checked_at": ["pre-flight", "delivery"]},
-  "prompt_floor_chars": 5000,
-  "link_max_age_hours": 23,
-  "logo": {"min_side_px": 512, "format": "png", "needs_alpha": true},
-  "lip_source_still": {"min_width_px": 720, "min_height_px": 1280},
-  "lipsync_piece_seconds": {"min": 5.0, "max": 30.0, "no_breath_gap_s": 1.0}
+    "one_full_master_render_at_a_time": true,
+    "scan_workers_by_length": {
+      "180": 6,
+      "300": 6,
+      "600": 12,
+      "90": 4
+    }
+  }
 }
