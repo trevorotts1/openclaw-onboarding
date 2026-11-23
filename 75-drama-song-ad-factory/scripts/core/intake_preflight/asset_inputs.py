@@ -220,4 +220,13 @@ def validate_intake_assets(brief):
         res = validate_logo(logo)
         facts["logo"] = res["facts"]
         problems.extend(res["problems"])
+    # G-FACE-02: lip-source stills are validated in their own module.
+    try:
+        from . import still_provenance as _stills
+    except ImportError:
+        import still_provenance as _stills
+    stills = _stills.validate_stills(brief.get("source_stills") or [])
+    if stills["facts"]:
+        facts["source_stills"] = stills["facts"]
+    problems.extend(stills["problems"])
     return {"ok": not problems, "problems": problems, "facts": facts}
