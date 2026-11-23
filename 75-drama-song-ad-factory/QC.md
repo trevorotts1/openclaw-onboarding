@@ -267,6 +267,36 @@ whose timeline was not written by it is a provenance FAIL.
 **The BUILD-RECORD contract** every delivered run carries is specified in
 section 5.2 (F-ASM-7).
 
+### 5.2 The BUILD-RECORD contract (F-ASM-7)
+
+Every delivered run ships a BUILD-RECORD — the record of how the master was
+actually built, written from the session's own verified facts, never from a
+summary. QC refuses a delivery whose BUILD-RECORD is missing a field below.
+The fields, exactly:
+
+- **Job** — the run id and the brief it was made from.
+- **Assembler** — the assembler's path plus the SHA-256 of the file that ran.
+- **Commands** — the exact commands issued, verbatim.
+- **Timeline** — the SHA-256 of `edit/timeline.json` actually assembled, and
+  the `TIMELINE_WRITTEN` receipt from `plan_run_timeline`.
+- **Shots** — one row per shot with the on-disk SHA-256 of every input used.
+- **Gate results** — every gate's verdict per stage, with its code(s).
+- **Refusals** — every refusal raised and how it was cleared (or that it was
+  not), by code.
+- **Corrections made** — what was changed after a gate, and why.
+- **Not done by design** — the checks or steps deliberately not run, named.
+- **Concurrent-writer note** — whether more than one writer touched the run,
+  and which output each owned (one writer per output file).
+- **Credit reconciliation** — reserved vs actual credits per stage, and the
+  ledger's own totals.
+- **Verification status** — which checks were measured, which were UNAVAILABLE,
+  and which were passed by a person.
+- **Measurement renders** — the renders used as measurements, with their paths.
+- **Files delivered** — every delivered file with its SHA-256.
+
+A BUILD-RECORD that a reader could not reproduce the master from is a
+provenance FAIL, the same as a missing assembler receipt.
+
 ## 6. Cost / No-Double-Spend Checks (directive 18, enforced with section 17)
 - [ ] Every paid submission has a prior `reserve` and a later `reconcile`
       to actual cost, within the run ceiling recorded by the operator.
