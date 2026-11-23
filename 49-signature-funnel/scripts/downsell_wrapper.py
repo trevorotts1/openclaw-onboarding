@@ -148,7 +148,7 @@ DECLINE_ROUTE = "thank_you"
 # entitlement-identity changes (a463111eb, 1e3c4183b, 460adbec1); the old pin
 # refused every run against the current Skill 81 tree.
 PIN_VALIDATE_DOWNSELL = \
-    "43291ab4f8705b5a96da1f944f8a1c88869bfd52bb77dbc4a46128630a6edae1"
+    "8a109f2a2c9115fa136b3f6a2d3074e9ceaa88e8e771cbb1661191e0fc0c8e1a"
 # PIN_REQUEST_SCHEMA was advanced by the adoption map 1.5 candidate
 # (2026-10-18) to the dual-accept revision of Skill 81's request
 # contract (schema_version enum 1.0/1.1 plus the Q12
@@ -157,7 +157,7 @@ PIN_VALIDATE_DOWNSELL = \
 PIN_REQUEST_SCHEMA = \
     "39e056705cae7fac81025e41feebdef5a1ed1ea87409423a4d60268c8c0d9e2b"
 PIN_EXTENSION_SCHEMA = \
-    "8108de3c81fe0d93843e8511d94b82ffe2bb0da6d723e3e0438b5268aa39e80e"
+    "b2721ec3c6e6186bac2da65994c8e5cf89fb6422401d879f43a9e292ac844944"
 # Issue 91: Skill 81's own request validator (fails closed on any schema keyword it does not
 # implement) is the fourth pinned file; the wrapper RUNS it on the enriched request.
 PIN_VALIDATE_REQUEST = \
@@ -197,8 +197,11 @@ NON_ONE_TIME_BILLING = ("trial", "recurring", "installment")
 # difference_table_ref names the launch's recorded per-launch difference-table
 # file (spec 11 section 4); its sha256 is recorded in the result artifacts, and
 # difference_table_sha256, when the sidecar pins one, must match the file.
+# owner_rationale (RFX-013) is the row's recorded owner decision, carried only
+# when the row has one: it is copied, never authored, like the other two values.
 SIDECAR_KEYS = frozenset({"difference_kind", "rationale", "entry_guard_ref",
-                          "difference_table_ref", "difference_table_sha256"})
+                          "difference_table_ref", "difference_table_sha256",
+                          "owner_rationale"})
 # The journey file is an S49-staged evidence summary carrying exactly
 # the journey facts the entry guard consumes; anything else is the
 # evidence record the sidecar's entry_guard_ref names, not this file.
@@ -757,9 +760,10 @@ def enrich(request: Mapping[str, Any], launch: Mapping[str, Any],
     for key in sorted(set(sidecar) - SIDECAR_KEYS):
         problems.append(
             f"enrichment sidecar: unknown key {key!r}; the sidecar may "
-            "only carry difference_kind, rationale and entry_guard_ref "
-            "(the recorded difference-table values and the entry "
-            "evidence name, CR-S49-005 items 2 and 3)")
+            "only carry difference_kind, rationale, owner_rationale and "
+            "entry_guard_ref (the recorded difference-table values and the "
+            "entry evidence name, CR-S49-005 items 2 and 3) plus the "
+            "difference-table reference and its sha256")
     kind = sidecar.get("difference_kind")
     if kind not in DIFFERENCE_KINDS:
         problems.append(
@@ -1316,6 +1320,8 @@ def run(args) -> Dict[str, Any]:
     u1, d1_extended = _normalise_excludes(u1, d1)
     d1_extended["difference_kind"] = sidecar["difference_kind"]
     d1_extended["rationale"] = sidecar["rationale"]
+    if "owner_rationale" in sidecar:
+        d1_extended["owner_rationale"] = sidecar["owner_rationale"]
     codes = vd.validate_offer_difference(u1, d1_extended, main_offer)
     if codes:
         raise WrapperError([f"offer difference: {c}" for c in codes])
@@ -1370,6 +1376,15 @@ def run(args) -> Dict[str, Any]:
     codes = vd.validate_result_extension(ext, u2_id)
     if codes:
         raise WrapperError([f"result extension: {c}" for c in codes])
+    # RFX-013: an owner decision that lifted the identical-promise flag must
+    # show on the receipt exactly as recorded, and none may appear without one.
+    shown = (ext.get("difference_matrix") or {}).get("owner_rationale")
+    if shown != sidecar.get("owner_rationale"):
+        raise WrapperError(
+            ["result extension: D1-RESULT-OWNER-RATIONALE-MISMATCH: "
+             "difference_matrix.owner_rationale must equal the sidecar's "
+             "recorded owner_rationale (both absent, or the same block), so "
+             "the receipt shows the owner decision the offer check relied on"])
     target = (ext.get("route_result") or {}).get("success_target")
     if target != enriched["success_route"]:
         raise WrapperError(

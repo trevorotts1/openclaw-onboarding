@@ -948,9 +948,31 @@ def validate_copy(page):
     return v
 
 
+_ISO_DATE = re.compile(r"^\d{4}-\d{2}-\d{2}")
+
+
+def owner_rationale_problem(block):
+    """None when `block` is a complete recorded owner decision, else the
+    reason. Complete means non-blank text, decided_by and an ISO-8601
+    decided_at, plus a non-blank approval_ref or decision_ref (RFX-013)."""
+    if not isinstance(block, dict):
+        return "not an object"
+    for field in ("text", "decided_by", "decided_at"):
+        if not isinstance(block.get(field), str) or _blank(block.get(field)):
+            return f"{field} missing"
+    if not _ISO_DATE.match(block["decided_at"].strip()):
+        return "decided_at is not an ISO-8601 date"
+    if not any(isinstance(block.get(k), str) and not _blank(block.get(k))
+               for k in ("approval_ref", "decision_ref")):
+        return "approval_ref or decision_ref missing"
+    return None
+
+
 def validate_offer_difference(u1, d1, base=None, entitlement_aliases=None):
     """u1/d1: offer dicts per packet offer schema. d1 additionally carries
-    difference_kind, rationale, and optionally entitlements_removed_vs_u1.
+    difference_kind, rationale, and optionally entitlements_removed_vs_u1
+    and owner_rationale (the recorded owner decision that lets a
+    lower_total_price row keep U1's promise, RFX-013).
     base: the already-purchased main offer, when known.
     entitlement_aliases: the record-declared entitlement alias map, when the
     record supplies one. The shipped schema declares none, so callers omit
@@ -1010,9 +1032,21 @@ def validate_offer_difference(u1, d1, base=None, entitlement_aliases=None):
     feature_paraphrase = _deliverables_feature_paraphrase_match(
         d1_deliverables, u1_deliverables, d1_entitlements, u1_entitlements,
         total_d1, total_u1)
+    # RFX-013: spec 11 section 4 sends "U1's promise at a lower price" to
+    # the owner. A lower_total_price row that carries a COMPLETE recorded
+    # owner decision is that decision, so the flag is lifted for it alone;
+    # reduced_scope never (an identical promise is not a reduced scope), and
+    # LOWER-TOTAL-NOT-PROVEN below still demands a genuinely lower total.
+    owner_problem = owner_rationale_problem(d1.get("owner_rationale")) \
+        if "owner_rationale" in d1 else "absent"
+    if owner_problem not in (None, "absent"):
+        v.append("D1-OFFER-OWNER-RATIONALE-INCOMPLETE")
+    if owner_problem != "absent" and kind != "lower_total_price":
+        v.append("D1-OFFER-OWNER-RATIONALE-WRONG-KIND")
+    owner_decided = kind == "lower_total_price" and owner_problem is None
     if (same_deliverables or same_entitlements or same_shape
             or partial_paraphrase or feature_paraphrase) and \
-            kind in ("reduced_scope", "lower_total_price"):
+            kind in ("reduced_scope", "lower_total_price") and not owner_decided:
         v.append("D1-OFFER-IDENTICAL-PROMISE")
     # D1 must never remove anything already bought in the base checkout.
     if base is not None:
@@ -1224,4 +1258,12 @@ def validate_result_extension(ext, canonical_u2_page_id=None):
         v.append("D1-RESULT-DIFFERENCE-REDUCED-SCOPE-UNPROVEN")
     if _blank(matrix.get("objection_addressed")):
         v.append("D1-RESULT-DIFFERENCE-OBJECTION-MISSING")
+    # RFX-013: the receipt shows the owner decision that lifted the
+    # identical-promise flag; it must be complete and only on the one kind
+    # it can authorize.
+    if "owner_rationale" in matrix:
+        if owner_rationale_problem(matrix["owner_rationale"]) is not None:
+            v.append("D1-RESULT-OWNER-RATIONALE-INCOMPLETE")
+        if matrix.get("difference_kind") != "lower_total_price":
+            v.append("D1-RESULT-OWNER-RATIONALE-WRONG-KIND")
     return v

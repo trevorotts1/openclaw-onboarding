@@ -273,6 +273,8 @@ def offer_difference_inputs(launch: Mapping[str, Any],
     d1x = copy.deepcopy(d1)
     d1x["difference_kind"] = sidecar.get("difference_kind")
     d1x["rationale"] = sidecar.get("rationale")
+    if "owner_rationale" in sidecar:
+        d1x["owner_rationale"] = sidecar["owner_rationale"]
     d1x["entitlements_removed_vs_u1"] = entitlements_removed_vs_u1(u1, d1)
     held: List[str] = []
     for o in launch.get("offers") or []:
@@ -425,7 +427,10 @@ def derive(request: Mapping[str, Any], launch: Mapping[str, Any],
             "objection_addressed": sidecar["rationale"],
             "entitlements_u1_only": removed,
             "entitlements_d1_only": [x for x in _ids(d1)
-                                     if x.casefold() not in kept]},
+                                     if x.casefold() not in kept],
+            # RFX-013: the recorded owner decision rides onto the receipt.
+            **({"owner_rationale": sidecar["owner_rationale"]}
+               if "owner_rationale" in sidecar else {})},
         "disclosure_audit": audit,
         "cta_map": [{"section": i, "action_ref": c["action_ref"]}
                     for i, c in enumerate(ctas, 1)],
@@ -475,6 +480,13 @@ def check_staged(staged: Any, derived: Mapping[str, Any]) -> List[str]:
             out.append(f"D1-EXTENSION-{key.upper().replace('_', '-')}-"
                        f"MISMATCH: {key} mismatch: the staged value does not "
                        "match the page and route graph")
+    got_m = staged.get("difference_matrix") \
+        if isinstance(staged.get("difference_matrix"), dict) else {}
+    if got_m.get("owner_rationale") != \
+            derived["difference_matrix"].get("owner_rationale"):
+        out.append("D1-EXTENSION-OWNER-RATIONALE-MISMATCH: owner_rationale "
+                   "mismatch: the staged value is not the recorded owner "
+                   "decision")
     return out
 
 

@@ -70,7 +70,7 @@
       "min_version": "0.1.9",
       "interface_sha256": {
         "validators/validate_request.py": "d0cc190cfbbb8c84d7d70cf0268b658b1b55356f556c74f7039dbe9155be5cc6",
-        "validators/validate_downsell.py": "43291ab4f8705b5a96da1f944f8a1c88869bfd52bb77dbc4a46128630a6edae1"
+        "validators/validate_downsell.py": "8a109f2a2c9115fa136b3f6a2d3074e9ceaa88e8e771cbb1661191e0fc0c8e1a"
       },
       "required": true,
       "why": "downsell_1 validators consumed by the S49 downsell wrapper"

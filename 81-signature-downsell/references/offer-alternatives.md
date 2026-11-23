@@ -22,7 +22,8 @@ For every launch, record privately:
 Hard checks:
 
 - A lower installment is **not** a lower total price. If only the schedule changes, `difference_kind` is `changed_payment_terms` and copy must state the full total honestly.
-- If D1 is equivalent to U1 at a lower price with no approved rationale, STOP: flag for owner decision. Never invent a justification.
+- If D1 is equivalent to U1 at a lower price with no approved rationale, STOP: flag for owner decision. Never invent a justification. The validator raises this flag as `D1-OFFER-IDENTICAL-PROMISE`.
+- The owner's decision, once made, is recorded on the row as `owner_rationale`: `text` (the owner's reason), `decided_by`, `decided_at` (an ISO-8601 date or timestamp), and `approval_ref` or `decision_ref` (where the approval or decision is recorded). Only a COMPLETE block on a `lower_total_price` row lifts `D1-OFFER-IDENTICAL-PROMISE`; an incomplete block refuses (`D1-OFFER-OWNER-RATIONALE-INCOMPLETE`), a block on any other kind refuses (`D1-OFFER-OWNER-RATIONALE-WRONG-KIND`), and the total must still be genuinely lower (`D1-OFFER-LOWER-TOTAL-NOT-PROVEN`). Every other check stands. The block is copied verbatim into the result extension's `difference_matrix.owner_rationale`, so the receipt shows the decision the check relied on.
 - D1 never removes anything already bought in the original checkout.
 - A payment failure is not a reason to discount: D1 is never auto-offered merely because a payment failed (spec 11 section 1).
 
@@ -30,9 +31,9 @@ Hard checks:
 
 The difference table is a standalone private artifact: one table per launch, recorded before any copy is written, and kept with the launch's private working records. It is not part of this skill package (the package ships this form, not any launch's table), not part of the launch record (which has no structured home for these fields), and not part of the copy document (the rationale is a private record by design).
 
-Each row of the table records one D1 offer variant against the U1 offer it is an alternative to: the pair a request carries as `downsell_offer_ref` and `declined_u1_offer_ref`. A row carries the six fields of the table above: `u1_deliverables`, `d1_deliverables`, `difference_kind`, `objection_addressed`, `entitlements_removed_vs_u1`, and `rationale`. `rationale` is REQUIRED: a variant with no recorded rationale has no row, and the hard check above applies (STOP, flag for owner decision; never invent a justification).
+Each row of the table records one D1 offer variant against the U1 offer it is an alternative to: the pair a request carries as `downsell_offer_ref` and `declined_u1_offer_ref`. A row carries the six fields of the table above: `u1_deliverables`, `d1_deliverables`, `difference_kind`, `objection_addressed`, `entitlements_removed_vs_u1`, and `rationale`, plus `owner_rationale` when the owner decided a same-promise lower-total row (see Hard checks). `rationale` is REQUIRED: a variant with no recorded rationale has no row, and the hard check above applies (STOP, flag for owner decision; never invent a justification).
 
-The recorded row is the only source of `difference_kind` and `rationale` values downstream. The request's `difference_kind`, the result extension's `difference_matrix`, and any dispatch-time enrichment sidecar all copy the row's values; authoring or altering these values at dispatch time is not permitted.
+The recorded row is the only source of `difference_kind`, `rationale` and `owner_rationale` values downstream. The request's `difference_kind`, the result extension's `difference_matrix`, and any dispatch-time enrichment sidecar all copy the row's values; authoring or altering these values at dispatch time is not permitted.
 
 What remains launch-specific: the storage system and file naming for the launch's table, and how a row whose `difference_kind` is an approved combination is expressed as the request's single `difference_kind` value.
 

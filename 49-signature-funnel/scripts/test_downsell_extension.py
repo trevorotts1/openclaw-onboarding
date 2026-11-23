@@ -333,3 +333,21 @@ def test_entitlements_removed_vs_u1_is_computed_and_checked_against_all_mains():
     # with two mains the single-main lookup returned None and skipped this
     assert "D1-OFFER-REMOVES-BASE-PURCHASE" in vd.validate_offer_difference(
         u1_, d1_, base)
+
+OWNER = {"text": "TEST ONLY: owner keeps the full promise at a lower total.",
+         "decided_by": "TEST-OWNER", "decided_at": "2026-11-20",
+         "decision_ref": "TEST-DECISION-1"}
+
+def test_owner_rationale_rides_from_the_sidecar_onto_the_derived_receipt():
+    """RFX-013: the recorded owner decision is copied, never authored, and a staged extension must show it."""
+    sidecar = dict(SIDECAR, difference_kind="lower_total_price", owner_rationale=OWNER)
+    ext, _ = derive(sidecar=sidecar)
+    assert ext["difference_matrix"]["owner_rationale"] == OWNER
+    assert dw._schema_violations(ext, EXT_SCHEMA) == []
+    assert vd.validate_result_extension(ext, tw.U2_PAGE_ID) == []
+    assert "owner_rationale" not in derive()[0]["difference_matrix"]
+    _, d1x, _ = dx.offer_difference_inputs(trial_launch(), sidecar)
+    assert d1x["owner_rationale"] == OWNER
+    staged = copy.deepcopy(ext)
+    del staged["difference_matrix"]["owner_rationale"]
+    assert "D1-EXTENSION-OWNER-RATIONALE-MISMATCH" in problems(sidecar=sidecar, staged=staged)

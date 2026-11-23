@@ -1,3 +1,9 @@
+## [Unreleased]  -  2026-11-23  -  Skill 81: a recorded owner decision lets a lower-total downsell keep Upsell 1's promise (RFX-013)
+
+- `validate_offer_difference` raised `D1-OFFER-IDENTICAL-PROMISE` for a `lower_total_price` D1 with the same deliverables as Upsell 1 and nothing could clear it, although the offer-alternatives contract says this case goes to the owner. A difference-table row of that kind may now carry `owner_rationale` (text, decided_by, ISO-8601 decided_at, and approval_ref or decision_ref); only a complete block on that kind lifts the flag. An incomplete block refuses (`D1-OFFER-OWNER-RATIONALE-INCOMPLETE`), a block on another kind refuses (`D1-OFFER-OWNER-RATIONALE-WRONG-KIND`), and `D1-OFFER-LOWER-TOTAL-NOT-PROVEN`, `D1-OFFER-TERMS-CHANGE-MASKS-TOTAL-CHANGE` and every other check stand.
+- The result extension schema admits `difference_matrix.owner_rationale`, `validate_result_extension` checks it, and the Skill 49 wrapper refuses a receipt that does not show the recorded decision verbatim.
+- Skill 81 0.1.11 -> 0.1.12, Skill 49 v2.1.67 -> v2.1.68 (pins and wrapper), Skill 83 0.2.41 -> 0.2.42 (the `validate_downsell.py` interface pin in `launcher_core/dependencies.json`). Pinned launch-path files changed, so the Skill 49 prover pin is minted by CI. Migration: none. Risk: LOW.
+
 ## [Unreleased]  -  2026-11-21  -  Skill 83: a credential can no longer reach the client, an unreadable file stops with words instead of a traceback, and real counts survive the fallback
 
 - Round-three review of the stop explainer found five holes, all closed here. A credential no longer rides on a client message: an authorization header, including a bearer value made only of letters (no digits, so the old token pattern never saw it), is removed whole before the client words are built.
