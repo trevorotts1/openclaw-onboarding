@@ -1304,6 +1304,16 @@ SOP named above.
   clip as it lands, before assembly; a clip over the cap is refused and remade
   clip-side. A deliberate still is marked `hold`; a per-segment duplicate count
   is advice only while the whole master is under the 2% cap (N-15).
+- **Native-rate measurement before any paid spend (pre-flight step).** Before a
+  run commits a paid job to a clip, it measures that clip's native rate and its
+  duplicate ratio with the existing mpdecimate procedure (`fps_probe` +
+  mpdecimate through `load_governor`), and records both on the clip's receipt
+  row. Any clip already on disk is measured the same way at pre-flight, before
+  the first paid job of the stage. A clip over the cap is refused then, before
+  assembly and before any further paid work on it, and the refusal names the
+  clip, its measured ratio, and the clip-side fix (retake or replace). The
+  measurement never edits the clip: no timeline-rate change, no frame drop, no
+  interpolation.
   `fps_set_by_choice_card` is the only non-30 timeline escape, and it passes
   only when all three hold: the run owner recorded the rate on the choice card,
   every clip's native rate equals the chosen rate or is matched by plain frame
@@ -1356,6 +1366,20 @@ SOP named above.
   return **zero passing frames**; the flagship beat is the positive control.
   Bands are starting values - calibrate on both controls. This is a **planned
   shot with its own storyboard field, never a patch**.
+- **Delivered text and logos: one sanctioned overlay stage (F-ASM-5).** On the
+  final-assembly delivery path, every text or logo element that reaches the
+  master - the end card, the offer lower-third and the burned captions - is
+  applied by exactly one overlay stage: one see-through overlay stream
+  composited over the master in a single ffmpeg pass (`captions_burn.py`'s
+  `overlay_excerpt` builds that stream from the timeline's cues). That single
+  stage is the only sanctioned text/logo overlay in the delivery path. It is
+  distinct from the `DUAL_PRESENCE` sketch alpha overlay above, which is a
+  picture element inside one planned hybrid shot and is drawn against the shot
+  itself, and from `_endcard_filters` in `clip_cutdown/trailer.py` (line 579),
+  which draws the end card on the 60- and 90-second cutdown trailers only and
+  never touches the master. No agent and no run tool adds a second overlay
+  pass, a separate drawtext chain or an outside composite to the master; the
+  one stage is applied once, and its output is named on the receipt.
 - **Music (decision 30, extended catalog):** the card lists the eighteen
   canonical styles from `music_styles.catalog.choice_rows()` - Soul Ballad
   (default, recommended), R&B Flow, Soul Rise, Acoustic Pop, Folk
