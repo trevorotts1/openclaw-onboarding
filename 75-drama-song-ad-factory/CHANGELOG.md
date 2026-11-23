@@ -4,6 +4,33 @@ All notable changes to this skill are documented here. The version of
 record is `skill-version.txt` (kept in agreement with the `SKILL.md`
 frontmatter `version:` field).
 
+## Unreleased - 2026-11-23 - docs: frame rate, H3 text, six looks, gate inventory
+
+Docs-only pass; no code and no version stamp changes here.
+
+- **Frame rate.** Duplicate frames are generated inside clips at their native
+  rate; a 24-to-30 conform cannot remove them and the fix is clip-side (retake
+  or replace). MiniMax H3 joins Hailuo 02 Standard as a native-24 source
+  (`fps_conform.py` maps `minimax`/`h3`/`hailuo` to 24.0). The master runs at
+  the clips' native rate, no interpolation on any shot; a non-30 timeline is
+  the choice-card escape only, with per-clip mpdecimate measurement before
+  assembly and before any paid reuse.
+- **Text.** The H3 prompt carries the planned prop words and never asks for new
+  ones; every H3 clip gets an after-clip eyeball pass for NEW text; a lip-sync
+  take is never admitted on a scan alone.
+- **Looks.** Six looks: Stylized 3D animation (`stylized-3d`) added; Lifelike
+  3D described as clearly animated, not realistic; client wording comes from
+  each mode file's `client_wording` line, guarded against drift.
+- **Gates and records.** The four delivery-blocking codes and the timeline
+  writer codes are named in the docs; the BUILD-RECORD contract and the
+  no-waiver inventory (no `--expects`, no suppression flag) are written; the
+  no-lip-sync opt-out record (`no_lipsync`, `control/method.json`,
+  `LIPSYNC_OPT_OUT_MISSING`) is specified; one sanctioned text/logo overlay
+  stage is recorded; the no-crop/zoom/freeze/stretch/hand-join rule has its
+  body; checks stream beside renders with score-carrying contact sheets; prompt
+  writers fan out one per 2 to 3 prompts with never fewer than one per 6 shots;
+  a plan that names gates carries a self-check table.
+
 ## v2.9.205 - 2026-11-20 - a recorded keep_one stops the first take, and the offline dispatch tests run without HOME
 
 - **The bug.** A recorded `keep_one` passed `require_round_auth=True` with an empty reference, but initial allocations skipped both authorization checks, so a song with no prior ledger history was bought despite `keep_one` (the independent probe returned `ok` with one persisted row for that case). Separately, all 14 offline dispatch tests failed under `HOME=/var/empty` because that directory is not writable: the KIE token bucket lives in `~/.cache` unless `DSAF_GOVERNOR_DIR` points elsewhere, so every dispatch failed `[Errno 13] Permission denied`. That failure says nothing about the product path.
