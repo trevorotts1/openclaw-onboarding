@@ -138,6 +138,14 @@ GHL_MEDIA_UPLOAD_PATH = "/medias/upload-file"
 # (media_folder_name_prefix) covers a GHL plan that does not expose this endpoint.
 GHL_MEDIA_FOLDER_PATH = "/medias/folder"
 GHL_MEDIA_VERSION = "2021-07-28"
+# Cloudflare answers HTTP 403 "error code: 1010" to urllib's default
+# Python-urllib User-Agent on the services.* origin; the same call with a browser
+# User-Agent and the same LOCATION PIT returns 200 (measured 2026-11-23). Every
+# Request this module sends there carries this header.
+GHL_BROWSER_USER_AGENT = (
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+    "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36"
+)
 
 # The mandatory English/Latin-only pin — appended VERBATIM to every prompt that
 # renders copy (carried verbatim from kie_generate.py's module docstring so the
@@ -863,6 +871,7 @@ def upload_media(
     req.add_header("Authorization", f"Bearer {pit}")
     req.add_header("Version", GHL_MEDIA_VERSION)
     req.add_header("Content-Type", content_type)
+    req.add_header("User-Agent", GHL_BROWSER_USER_AGENT)
 
     _opener = opener or (lambda r, t: urllib.request.urlopen(r, timeout=t))
     try:
@@ -1086,6 +1095,7 @@ def create_media_folder(
     req.add_header("Version", GHL_MEDIA_VERSION)
     req.add_header("Content-Type", "application/json")
     req.add_header("Accept", "application/json")
+    req.add_header("User-Agent", GHL_BROWSER_USER_AGENT)
 
     _opener = opener or (lambda r, t: urllib.request.urlopen(r, timeout=t))
     try:
@@ -1353,6 +1363,7 @@ __all__ = [
     "GHL_MEDIA_UPLOAD_PATH",
     "GHL_MEDIA_FOLDER_PATH",
     "GHL_MEDIA_VERSION",
+    "GHL_BROWSER_USER_AGENT",
     "ENGLISH_LATIN_PIN",
     "TEXT_ABSENT_PIN",
     "PNG_MAGIC",
