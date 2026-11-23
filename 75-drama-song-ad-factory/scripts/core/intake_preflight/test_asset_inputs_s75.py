@@ -74,7 +74,7 @@ def main():
                             not r["ok"] and r["problems"][0]["code"] == "LOGO_UNUSABLE",
                             repr(r)))
 
-    print("\n%d checks failed" % len([f for f in fails if f]))
+    print("\n%d checks failed" % sum(1 for f in fails if not f))
     return 0 if all(fails) else 1
 
 

@@ -168,10 +168,11 @@ def validate_logo(path, min_edge=MIN_LOGO_EDGE_PX):
     width, height, _bit, color, _interlace = info
     facts.update(width=width, height=height, color_type=color,
                  has_alpha_chunk=bool(trns) or color in _PNG_ALPHA_COLOR_TYPES)
-    if width < min_edge or height < min_edge:
+    if max(width, height) < min_edge:
         problems.append(_problem(
             "LOGO_UNUSABLE", path,
-            "logo is %dx%d; the minimum edge is %d px" % (width, height, min_edge)))
+            "logo is %dx%d; the longest edge must be at least %d px"
+            % (width, height, min_edge)))
     has_alpha = color in _PNG_ALPHA_COLOR_TYPES or (color == 3 and bool(trns)) \
         or (color in (0, 2) and bool(trns))
     if not has_alpha:
