@@ -664,3 +664,20 @@ card. The answers and the time answered go into the receipt
   here hard-codes a rate.
 - **Command Center:** one parent card and twelve stage cards per ad, one
   deliverable per ad (VPS boxes), and one parent card per batch.
+
+## BUILD-RECORD contract (F-ASM-7)
+
+Every delivered run ships a BUILD-RECORD written from the session's verified
+facts, not a summary. QC refuses a delivery whose BUILD-RECORD is missing any
+field: job (run id and brief); assembler path plus the SHA-256 of the file that
+ran; the exact commands issued, verbatim; the SHA-256 of `edit/timeline.json`
+and the `TIMELINE_WRITTEN` receipt from `plan_run_timeline`; one row per shot
+with the on-disk SHA-256 of every input used; every gate's verdict per stage
+with its code(s); every refusal and how it was cleared (or that it was not), by
+code; corrections made after a gate and why; not-done-by-design (the checks or
+steps deliberately not run, named); a concurrent-writer note (whether more than
+one writer touched the run, and which output each owned); credit reconciliation
+(reserved vs actual per stage, and the ledger's totals); verification status
+(measured, UNAVAILABLE, or passed by a person); measurement renders with their
+paths; and every delivered file with its SHA-256. A BUILD-RECORD a reader could
+not reproduce the master from is a provenance FAIL.

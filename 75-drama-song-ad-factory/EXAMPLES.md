@@ -404,3 +404,28 @@ MISTAKE: Fixing duplicate frames with a 24-to-30 conform.
          "smooth" it, or re-timing the timeline to drop frames.
   RIGHT: remake or replace the clip; match a different-rate clip with plain
          frame repeat or drop only.
+
+──────────────────────────────────────────────────────────────────
+WORKED EXAMPLE: THE BUILD-RECORD A DELIVERED RUN SHIPS
+──────────────────────────────────────────────────────────────────
+
+Every delivered run ships a BUILD-RECORD a reader can reproduce the master
+from. It is written from verified facts, never a summary. Fields:
+
+  job                   run id and the brief it came from
+  assembler             path + SHA-256 of the file that ran
+  commands              exact commands, verbatim
+  timeline              SHA-256 of edit/timeline.json + TIMELINE_WRITTEN
+  shots                 one row per shot, on-disk SHA-256 of every input
+  gate results          every gate's verdict per stage, with code(s)
+  refusals              every refusal and how it was cleared (or not), by code
+  corrections           what changed after a gate, and why
+  not done by design    checks/steps deliberately not run, named
+  concurrent writer     which writer owned which output file
+  credit reconciliation reserved vs actual per stage + ledger totals
+  verification status   measured / UNAVAILABLE / passed by a person
+  measurement renders   the renders used as measurements, with paths
+  files delivered       every delivered file with its SHA-256
+
+A BUILD-RECORD a reader could not reproduce the master from is a provenance
+FAIL, the same as a missing assembler receipt.
