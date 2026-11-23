@@ -1010,6 +1010,28 @@ lacks `produced_by.module` and a matching `master_sha256`
 (`final_assembler/master_provenance.py::check_master_provenance`); nothing in
 the run calls it yet.
 
+**The delivery-blocking codes, named exactly as the code emits them.** A master
+that hits any of these refuses delivery, not a warning:
+
+- `LIPSYNC_COVERAGE_SHORT` and `LIPSYNC_LINES_TOO_FEW` (`final_assembler/__init__.py`,
+  re-exported from the coverage and line-count checks) - too little lip-sync, or
+  too few lip-sync lines, for the run.
+- `LIPSYNC_EVIDENCE_MISSING` (`lipsync_evidence.py`) - the per-clip lip-sync
+  evidence row is absent or malformed.
+- `LAST_LINE_OVER_ENDCARD` (`final_assembler/__init__.py`) - the last sung line
+  runs over the end card.
+- `TIMELINE_DUP_FRAMES` (`fps_conform.py`) - the master carries more than the
+  2 percent duplicate-frame cap.
+
+**The timeline-writer codes.** `plan_run_timeline()` (in `assembler.py`) composes
+`edit/timeline.json` from the run folder and writes `TIMELINE_WRITTEN` on
+success. It never invents a default: a missing input is refused as
+`TIMELINE_INPUT_MISSING:<what>` (for example
+`TIMELINE_INPUT_MISSING:motion_score:<shot>`). A hand-built timeline never
+substitutes for `plan_run_timeline`. The sibling lip-sync codes already enforced
+in QC (`FACE_SPEAKS_NO_LIPSYNC`, `LIPSYNC_COVERAGE_BELOW_BAND`, `LIPSYNC_OVER_CAP`,
+`LIPSYNC_DURATION_CONFLICT`) stay; these are added beside them.
+
 ## Model and agent choice: the user's choice wins
 
 This skill never picks, forces or recommends a model, an alias or an agent.
@@ -1443,7 +1465,11 @@ SOP named above.
   `python3 scripts/core/lip_sync/lip_gate/install_face_model.py` (sha256-pinned, from
   Google's official bucket, to `assets/face_landmarker.task`); mediapipe is declared in
   `PREREQS.json` (`python-mediapipe`, `face-landmarker-model`).
-  The local crop is the one allowed exception to "never cropped" below.
+  The local crop is the one allowed exception to the rule that nothing is
+  cropped, zoomed, frozen, stretched or hand-joined to clear a gate: a clip
+  that fails a check is fixed by a new take or a remake, never by an edit that
+  hides the defect. Picking a different time window of the same clip is
+  allowed; changing the picture to get past the check is not.
 - **Lip-sync close-up (owner order 2026-10-08):** the character reference set always
   includes one lip-sync close-up per speaking/singing character. It is MADE from the
   template `lip_gate.closeup_prompt()` (chest-up portrait 9:16, face about 30-40% of the
