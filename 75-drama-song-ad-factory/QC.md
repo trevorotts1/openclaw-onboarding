@@ -328,9 +328,27 @@ to self-approve a run.
   (`lipsync_clips.check_opening`), or `LIPSYNC_OPENING_NOT_ARTICULATED`. A
   duration whose bounds cannot all hold (the 3-clip / 4-s floor outside the 35%
   maximum) fails `LIPSYNC_DURATION_CONFLICT` and is never re-planned silently.
-- The historical FREE / no-lip-sync route stays explicit
-  (`lipsync_clips.ROUTE_NO_LIPSYNC`, zero paid Kling jobs, owner opt-in); it is
-  never the default and never a reason to drop lip-sync from an ordinary run.
+- The historical FREE / no-lip-sync route stays explicit and is never the
+  default and never a reason to drop lip-sync from an ordinary run. Its exact
+  shape, so QC can read it:
+  - **The route value** is the literal timeline value `no_lipsync`
+    (`lipsync_clips.ROUTE_NO_LIPSYNC = "no_lipsync"`; the paid route is
+    `lipsync`). Zero paid lip-sync jobs are valid only under `no_lipsync`.
+  - **The owner's record** lives in `control/method.json` as
+    `lipsync_opt_out`, an object carrying a non-empty `who` (the run owner) and
+    a non-empty `at` (when the opt-out was recorded). `who` and `at` are the
+    whole shape; there is no other field.
+  - **The refusal.** A `no_lipsync` timeline with a missing, unreadable or
+    half-written `control/method.json` (no `lipsync_opt_out`, empty `who`, or
+    empty `at`) fails `LIPSYNC_OPT_OUT_MISSING` (`lipsync_clips.py`,
+    `OPT_OUT_MISSING`). A partial record reads as no opt-out, so every caller
+    keeps refusing.
+  - **One reader, no disagreement.** `lipsync_clips.no_lipsync_opt_out(run_dir)`
+    is the single reader the clip policy, the evidence gate and the final
+    assembler all call, so the three can never disagree. The face-speaks check
+    reads the same opt-out (the code fix is F-LIP-1): a run on `no_lipsync`
+    is not failed for the absence of lip-sync clips the owner declined. The
+    card never offers this route.
 - Lip-sync source pictures: every one passes `lip_gate.image_gate` before any
   paid lip-sync job (its close-up numbers are `picture_gate`'s, one rule set); a
   refusal lists every `LIPSYNC_IMAGE_*` reason and a measurement that could not be
