@@ -3289,6 +3289,34 @@ def cmd_check(run_dir, stage):
     return 0
 
 
+def self_pass_failures(stage, receipt):
+    """A `pass` receipt must name a reviewer that is not its author.
+
+    A session that authored the artifacts can still write the receipt; this is
+    the only place that stops that receipt from closing a stage unread.
+    """
+    if not isinstance(receipt, dict):
+        return []
+    status = str(receipt.get("status") or "").strip().lower()
+    if status != "pass":
+        return []
+    author = receipt.get("author_agent") or receipt.get("author_session")
+    reviewer = receipt.get("reviewer_agent") or receipt.get("reviewer_session")
+    if _is_placeholder_session(reviewer):
+        return [
+            f"stage {stage}: the receipt claims status 'pass' but names no reviewer "
+            f"(reviewer_agent/reviewer_session is missing or a placeholder). An "
+            f"independent reviewer must be recorded, or the receipt must say what is "
+            f"true - 'pass_unreviewed' - and the stage stays open. Authored by "
+            f"{author!r}; a session cannot approve its own work."]
+    if not _is_placeholder_session(author) and reviewer == author:
+        return [
+            f"stage {stage}: the receipt claims status 'pass' but its reviewer "
+            f"({reviewer!r}) is the same identity that authored it. An independent "
+            f"reviewer is required; a self-pass cannot close a stage."]
+    return []
+
+
 def cmd_close(run_dir, stage):
     spec, errs = load_contract_stage(stage)
     if errs:
@@ -3395,6 +3423,15 @@ def cmd_close(run_dir, stage):
             failures.extend(style_selection_problems(run_dir))
             # Fix spec M4: the run must have read Skill 45 (receipt re-hashed against the library).
             failures.extend(design_intelligence_problems(run_dir))
+
+        # SELF-PASS GUARD (2026-11-22). A stage closed by a receipt that claims
+        # `pass` must name a reviewer distinct from its author. Without this, a
+        # session can author the artifacts, write its own `pass` receipt, and
+        # close a review-gated stage with no independent look at all - which is
+        # exactly what happened on bf2026-jjwd's font-action-plan stage.
+        # publish-verify already enforces this for derived fonts; the close of
+        # the stage that PRODUCES the font decision enforced nothing.
+        failures.extend(self_pass_failures(stage, receipt))
 
     if failures:
         # Item 25 (S6 emission spec 6.4): a refused close is a state
