@@ -410,6 +410,43 @@ class TestUploadMedia:
                 m.upload_media(*args, opener=_ok_opener())
 
 
+# ── services.* User-Agent (Cloudflare 1010 on the default Python-urllib UA) ──
+
+class TestServicesUserAgent:
+    """Every services.* Request must carry a browser User-Agent, captured through
+    the opener parameter. urllib stores header keys capitalize()d, so the key is
+    read as ``User-agent``."""
+
+    def _capture(self, body: bytes):
+        seen: list = []
+
+        def _opener(req, timeout):
+            seen.append(req)
+            return _FakeResp(200, body)
+        return seen, _opener
+
+    def _assert_browser_ua(self, req):
+        ua = req.get_header("User-agent")
+        assert ua, "services.* Request sent with no User-Agent header"
+        assert "python-urllib" not in ua.lower()
+        assert ua == m.GHL_BROWSER_USER_AGENT
+        assert req.full_url.startswith("https://services.leadconnectorhq.com/")
+
+    def test_upload_media_sends_browser_user_agent(self, tmp_path):
+        png = tmp_path / "hero.png"
+        png.write_bytes(PNG_BYTES)
+        seen, opener = self._capture(json.dumps({"fileId": "F1", "url": FAKE_GCS_URL}).encode())
+        m.upload_media(str(png), FAKE_LOC, "N", FAKE_PIT, opener=opener)
+        assert len(seen) == 1
+        self._assert_browser_ua(seen[0])
+
+    def test_create_media_folder_sends_browser_user_agent(self):
+        seen, opener = self._capture(json.dumps({"folderId": "FOLDER1"}).encode())
+        m.create_media_folder("ZHC run", FAKE_LOC, FAKE_PIT, opener=opener)
+        assert len(seen) == 1
+        self._assert_browser_ua(seen[0])
+
+
 # ── list_media (REQUIRED type; mock the HTTP via opener) ─────────────────────
 
 class TestListMedia:
