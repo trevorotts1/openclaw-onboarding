@@ -363,6 +363,28 @@ def plan(req, profile_path=None):
                                 "Trevor written order binding model + shot"}
     exhausted = [a for a in targets if counts.get(a, 0) >= cap]
     if exhausted:
+        # Lock 1 (template-fail, NEVER-AGAIN): an identical-template retry
+        # past the cap raises TEMPLATE_FAIL_LOCK with the prompt-change order
+        # instead of another parked cap.
+        prior_prompts = req.get("prior_prompts") or {}
+        cand = req.get("candidate_prompt")
+        for a in exhausted:
+            import never_again as _na
+            lock = _na.check_template_fail(prior_prompts.get(a)
+                                           if isinstance(prior_prompts, dict)
+                                           else prior_prompts, cand or "")
+            if lock is not None and cand:
+                return {
+                    "outcome": "rejected", "code": lock["code"],
+                    "reason": lock["detail"] + " for %s (repair cap also "
+                              "reached)" % a,
+                    "targets": targets, "attempt_counts": dict(counts),
+                    "repair_cap": cap, "repair_cap_source": cap_source,
+                    "profile_version": profile_version,
+                    "tool": TOOL_NAME, "tool_version": TOOL_VERSION,
+                    "recovery": "change the prompt (drop the stillness "
+                                "line) or stop and report",
+                }
         detail = ", ".join(
             "%s (%d attempts, cap %d)" % (a, counts.get(a, 0), cap)
             for a in exhausted)
