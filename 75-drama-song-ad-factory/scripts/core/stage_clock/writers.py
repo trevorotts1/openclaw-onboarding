@@ -18,8 +18,8 @@ def writer_plan(items, items_per_writer=ITEMS_PER_WRITER):
     "count": n, "items_per_writer": (2,3), "fanout_in_range": bool,
     "reads": SHARED_INPUTS, "joiner": "one"}.
 
-    N/3 is the most writers; N/2 the fewest. Splitting evenly inside that band
-    means ceil(N/3) writers, which is the plan's own upper bound."""
+    N/3 is the fewest writers; N/2 the most. Splitting unevenly at 3 items
+    each gives ceil(N/3) writers, which is the plan's lower bound."""
     items = list(items or [])
     low, high = int(items_per_writer[0]), int(items_per_writer[1])
     if high < low or low < 1:
@@ -49,10 +49,13 @@ def writer_plan(items, items_per_writer=ITEMS_PER_WRITER):
             "reads": list(SHARED_INPUTS), "joiner": "one", "reason_code": problem}
 
 def fanout_bounds(item_count):
-    """The band the plan names: N/3 (most writers) to N/2 (fewest)."""
+    """The band the plan names: N/3 to N/2 writers at once.
+
+    With 2 to 3 items each, a writer carrying 2 gives the MOST writers
+    (ceil(N/2)); one carrying 3 gives the FEWEST (ceil(N/3))."""
     n = max(0, int(item_count or 0))
-    return {"most": int(math.ceil(n / 3.0)) if n else 0,
-            "fewest": int(math.ceil(n / 2.0)) if n else 0,
+    return {"most": int(math.ceil(n / 2.0)) if n else 0,
+            "fewest": int(math.ceil(n / 3.0)) if n else 0,
             "n": n}
 
 def selftest():
@@ -61,8 +64,8 @@ def selftest():
     proofs.append(("10 prompts -> 4 writers of 2 to 3",
                    plan["count"] == 4 and all(2 <= len(w) <= 3 for w in plan["writers"])))
     bounds = fanout_bounds(10)
-    proofs.append(("10 prompts: N/3 is 4 and N/2 is 5",
-                   bounds == {"most": 4, "fewest": 5, "n": 10}))
+    proofs.append(("10 prompts: N/2 is 5 writers at most and N/3 is 4 at least",
+                   bounds == {"most": 5, "fewest": 4, "n": 10}))
     proofs.append(("every writer reads the same four inputs",
                    plan["reads"] == list(SHARED_INPUTS) and plan["joiner"] == "one"))
     proofs.append(("no item is lost or duplicated",
