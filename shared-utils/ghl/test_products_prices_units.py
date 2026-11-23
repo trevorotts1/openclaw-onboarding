@@ -188,3 +188,92 @@ def test_inventory_registers_the_documented_create_route():
     assert routes[0].route == "POST /products/"
     assert {r.route for r in routes} == {"POST /products/", "POST /products/{productId}/price"}
     assert ci.validate_inventory() == []
+
+
+# ---- RFX-017: single-product GET says PHYSICAL for a DIGITAL product ---------------
+
+LIST_ROUTE = "GET " + pp.ROUTES["list_products"][1]
+
+
+class SplitTypeGHL(FakeGHL):
+    """GET /products/{id} answers PHYSICAL (measured live 2026-11-23); the list keeps
+    whatever was created unless ``list_type`` overrides it."""
+
+    def __init__(self, single_type="PHYSICAL", list_type=None):
+        super().__init__()
+        self.single_type, self.list_type = single_type, list_type
+
+    def request(self, method, path, body=None):
+        r = super().request(method, path, body)
+        bare = path.split("?", 1)[0].rstrip("/")
+        if method == "GET" and len(bare.split("/")) == 3:
+            return pp.Response(200, {**r.body, "productType": self.single_type})
+        if method == "GET" and bare == "/products" and self.list_type:
+            return pp.Response(200, {**r.body, "products": [
+                {**p, "productType": self.list_type} for p in r.body["products"]]})
+        return r
+
+
+def ensure(fake, name="Workbook", ptype="DIGITAL", store=None):
+    key = product_key(name, ptype)
+    adapter = pp.ProductsPricesAdapter(fake, store or pp.InMemoryStore(), approval_verifier=accept)
+    return adapter.ensure_product(key, pp.ProductSpec(name, LOC, ptype), approval("products.create", key))
+
+
+def test_digital_read_back_physical_is_confirmed_by_the_product_list():
+    fake = SplitTypeGHL()
+    rec, op = ensure(fake)
+    assert rec.product_type == "DIGITAL" and rec.type_confirmed_by == LIST_ROUTE
+    assert op.action == "created" and op.readback == "verified" and len(fake.posts()) == 1
+    assert [c[1].split("?")[0] for c in fake.calls] == ["/products/", "/products/", "/products/prod_1", "/products/"]
+
+
+def test_digital_read_back_physical_and_listed_physical_fails():
+    fake = SplitTypeGHL(list_type="PHYSICAL")
+    store = pp.InMemoryStore()
+    with pytest.raises(pp.ReadbackMismatch, match="does not confirm"):
+        ensure(fake, store=store)
+    assert store.get(product_key("Workbook").as_tuple()) is None
+
+
+def test_only_the_row_with_this_id_and_location_confirms_the_type():
+    single = {"_id": "prod_1", "name": "Workbook", "productType": "PHYSICAL", "locationId": LOC}
+    rows = [{"_id": "prod_2", "name": "Workbook", "productType": "DIGITAL", "locationId": LOC},
+            {"_id": "prod_1", "name": "Workbook", "productType": "DIGITAL", "locationId": "elsewhere"}]
+    t = pp._FakeTransport([pp.Response(200, single), pp.Response(200, {"products": rows, "total": [{"total": 2}]})])
+    adapter = pp.ProductsPricesAdapter(t, pp.InMemoryStore())
+    with pytest.raises(pp.ReadbackMismatch, match="does not confirm"):
+        adapter._read_product("prod_1", pp.ProductSpec("Workbook", LOC, "DIGITAL"))
+
+
+@pytest.mark.parametrize("want,single", [("SERVICE", "PHYSICAL"), ("SERVICE", "DIGITAL"), ("PHYSICAL", "DIGITAL")])
+def test_every_other_type_mismatch_still_fails_without_a_list_lookup(want, single):
+    fake = SplitTypeGHL(single_type=single)
+    with pytest.raises(pp.ReadbackMismatch, match="type readback"):
+        ensure(fake, ptype=want)
+    gets_after_post = [c for c in fake.calls[fake.calls.index(fake.posts()[0]):] if c[0] == "GET"]
+    assert [c[1].split("?")[0] for c in gets_after_post] == ["/products/prod_1"]
+
+
+def test_name_mismatch_still_fails_even_when_the_type_split_applies():
+    fake = SplitTypeGHL()
+    real = fake.request
+
+    def renamed(method, path, body=None):
+        r = real(method, path, body)
+        if method == "GET" and len(path.split("?")[0].rstrip("/").split("/")) == 3:
+            return pp.Response(200, {**r.body, "name": "Other"})
+        return r
+
+    fake.request = renamed
+    with pytest.raises(pp.ReadbackMismatch, match="name readback"):
+        ensure(fake)
+
+
+def test_existing_exact_name_digital_product_is_reused_with_no_post():
+    fake = SplitTypeGHL()
+    fake.products["prod_7"] = {"_id": "prod_7", "name": "Workbook", "productType": "DIGITAL", "locationId": LOC}
+    rec, op = ensure(fake)
+    assert fake.posts() == []
+    assert rec.native_product_id == "prod_7" and rec.type_confirmed_by == LIST_ROUTE
+    assert op.action == "reused" and op.readback == "reconciled"

@@ -382,6 +382,14 @@ class OpRecord:
     logical_key: StoreKey
     readback: str  # "verified" | "mismatch-refused" | "not-attempted" | "reconciled"
 
+    @property
+    def action(self) -> str:
+        """created (this call's POST, read back), reused (an existing object adopted
+        with no POST), or reconciled (an uncertain write resolved through the list)."""
+        if not self.route.startswith("POST "):
+            return "reused"
+        return "created" if self.readback == "verified" else "reconciled"
+
 
 @dataclass(frozen=True)
 class NativeProduct:
@@ -389,6 +397,7 @@ class NativeProduct:
     location_id: str
     name: str
     product_type: str
+    type_confirmed_by: str = ""  # route whose read confirmed product_type; "" = never read back
 
 
 @dataclass(frozen=True)
@@ -591,17 +600,45 @@ class ProductsPricesAdapter:
                              key.location_id, rec.native_product_id, key.as_tuple(), "verified")
 
     def _read_product(self, native_id: str, spec: ProductSpec) -> NativeProduct:
+        """Read one product back; every field must equal the request.
+
+        One measured platform split is settled by a second authoritative read: GET
+        /products/{id} answers productType PHYSICAL for a product created and listed
+        as DIGITAL (live 2026-11-23, Version 2021-07-28 and 2021-04-15; 28 of 29
+        DIGITAL products in one location). Only for a DIGITAL request read back as
+        PHYSICAL is the list route consulted, and only the row with this exact id at
+        this location may confirm DIGITAL; ``type_confirmed_by`` names the route that
+        did. Every other mismatch fails."""
         body = self._call("get_product", {"productId": native_id, "locationId": quote(spec.location_id, safe="")})
         got_id = str(body.get("_id") or "")
         if got_id != native_id:
             raise ReadbackMismatch(f"product readback id {got_id!r} != requested {native_id!r}")
         if str(body.get("name") or "") != spec.name:
             raise ReadbackMismatch(f"product {native_id} name readback {body.get('name')!r} != {spec.name!r}")
-        if str(body.get("productType") or "") != spec.product_type:
-            raise ReadbackMismatch(f"product {native_id} type readback {body.get('productType')!r} != {spec.product_type!r}")
         if str(body.get("locationId") or "") != spec.location_id:
             raise ReadbackMismatch(f"product {native_id} location readback {body.get('locationId')!r} != {spec.location_id!r}")
-        return NativeProduct(native_id, spec.location_id, spec.name, spec.product_type)
+        got_type = str(body.get("productType") or "")
+        confirmed_by = ROUTES["get_product"][0] + " " + ROUTES["get_product"][1]
+        if got_type != spec.product_type:
+            if (spec.product_type, got_type) != ("DIGITAL", "PHYSICAL"):
+                raise ReadbackMismatch(f"product {native_id} type readback {got_type!r} != {spec.product_type!r}")
+            listed = self._listed_product_type(native_id, spec)
+            if listed != spec.product_type:
+                raise ReadbackMismatch(
+                    f"product {native_id} type readback {got_type!r} != {spec.product_type!r}; "
+                    f"the product list does not confirm it either ({listed or 'no row with this id and location'!r})")
+            confirmed_by = ROUTES["list_products"][0] + " " + ROUTES["list_products"][1]
+        return NativeProduct(native_id, spec.location_id, spec.name, spec.product_type, confirmed_by)
+
+    def _listed_product_type(self, native_id: str, spec: ProductSpec) -> str:
+        """productType of the one listed row with exactly this id at this location;
+        "" when there is no such row or more than one (nothing to confirm)."""
+        listed = self._call("list_products", {"locationId": quote(spec.location_id, safe=""),
+                                              "search": quote(spec.name, safe="")})
+        rows = [p for p in (listed.get("products") or [])
+                if isinstance(p, Mapping) and str(p.get("_id") or "") == native_id
+                and str(p.get("locationId") or "") == spec.location_id]
+        return str(rows[0].get("productType") or "") if len(rows) == 1 else ""
 
     def _find_products(self, spec: ProductSpec) -> str:
         """List by identity (location+name+type, never name alone). Returns the single
@@ -1071,6 +1108,19 @@ def _self_check() -> int:
         kp, ProductSpec("Vault Access", loc, "DIGITAL"), ap)
     ok(r1 == r2 and o2.readback == "reconciled" and [c[0] for c in tr.calls].count("POST") == 1,
        "run twice: one POST, second run adopts the existing product")
+
+    # 17. RFX-017: the single GET says PHYSICAL for a DIGITAL product; only its own list
+    #     row confirms DIGITAL, and the confirming route is recorded. Listed PHYSICAL fails.
+    physical = dict(product_body, productType="PHYSICAL")
+    listed = Response(200, {"products": [product_body], "total": [{"total": 1}]})
+    t17 = _FakeTransport([list0, Response(200, product_body), Response(200, physical), listed])
+    r17, o17 = _Approved(t17, InMemoryStore()).ensure_product(kp, ProductSpec("Vault Access", loc, "DIGITAL"))
+    ok(r17.type_confirmed_by == "GET " + ROUTES["list_products"][1] and o17.action == "created",
+       "DIGITAL read back as PHYSICAL is confirmed by the product list, and the route is recorded")
+    t17b = _FakeTransport([list0, Response(200, product_body), Response(200, physical),
+                           Response(200, {"products": [physical], "total": [{"total": 1}]})])
+    refused(lambda: _Approved(t17b, InMemoryStore()).ensure_product(kp, ProductSpec("Vault Access", loc, "DIGITAL")),
+            ReadbackMismatch, "list also PHYSICAL")
 
     return checks
 
