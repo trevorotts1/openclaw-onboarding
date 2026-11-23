@@ -416,6 +416,14 @@ mandatory check records PASS / FAIL / UNAVAILABLE with evidence -
 `UNAVAILABLE` can never become `PASS`, and no aggregate may erase a
 critical identity/lyrics/offer/claim/product/CTA defect (17.8).
 
+- **A plan that names gates ships its own self-check (OR-10 / R-7).** Any plan
+  document that names gates - shots, windows, summed seconds, thresholds -
+  carries a self-check table proving its own numbers pass those gates, with
+  each threshold cited to its file and line. A plan with gates and no
+  self-check table, or one whose table fails, is refused at review and never
+  shipped to build: no spend, no blast and no assembly until its rows read
+  PASS.
+
 ## WHAT THIS SKILL MUST NEVER DO
 
 - Do hands-on work in the main window. The main window only orchestrates: all work runs in visible workflows and agents.
