@@ -245,6 +245,28 @@ def normalize_scope(value):
     return ordered or None
 
 
+#: The exact key set of the scope the Command Center owner decision path writes
+#: (approval-requests.ts decideApprovalRequest): JSON {location_id, action, object_key}.
+OBJECT_BINDING_KEYS = frozenset(("location_id", "action", "object_key"))
+
+
+def is_object_binding_scope(value) -> bool:
+    """True only for a Command Center object-binding scope string.
+
+    That scope binds a location, an action and an object; it names no kind, so
+    the record's authority lives in its ``kind`` field. An explicit kind list
+    (1.0/2.0) or a free-text string is never an object binding.
+    """
+    if not isinstance(value, str):
+        return False
+    try:
+        parsed = json.loads(value)
+    except ValueError:
+        return False
+    return (isinstance(parsed, dict) and set(parsed) == OBJECT_BINDING_KEYS
+            and all(isinstance(v, str) and v.strip() for v in parsed.values()))
+
+
 def record_authorizes_effect(record, effect) -> bool:
     """True only when the record's own canonical kind IS the effect's kind.
 
@@ -405,6 +427,8 @@ def normalize_record(rec, *, authority: str) -> dict:
         "consenting_actor_ref": actor,
         "source_message_ref": rec.get("source_message_ref"),
         "scope": scope,
+        "scope_object_binding": (declared_version == "cc-unversioned"
+                                 and is_object_binding_scope(rec.get("scope"))),
         "cap": cap,
         "expires_at": rec.get("expires_at"),
         "revoked": rec.get("revoked"),
@@ -501,8 +525,15 @@ def _check(rec: dict, approval_id, kind, plan_hash, scope, client_identity, cap,
     if expires is None or expires <= now:
         _refuse("APPROVAL-EXPIRED", "the approval expired or has no valid expiry")
 
+    # A Command Center object-binding scope names no kind; that record's
+    # authority is its own kind (already matched above), so its own kind -- in
+    # either spelling -- is covered. A record with an explicit scope list is
+    # covered by that list ONLY. Nothing here ever adds another kind.
+    covered = set(rec["scope"])
+    if rec.get("scope_object_binding") is True:
+        covered |= {rec["kind"], rec.get("kind_wire")} - {None}
     wanted = normalize_scope(scope)
-    if not wanted or not set(wanted) <= set(rec["scope"]):
+    if not wanted or not set(wanted) <= covered:
         _refuse("APPROVAL-SCOPE", "requested scope is not covered by the approval")
 
     if cap is not None:
