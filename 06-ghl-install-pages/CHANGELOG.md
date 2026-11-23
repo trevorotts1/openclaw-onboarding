@@ -1,3 +1,22 @@
+## [v27.1.114] - 2026-11-23 - funnel read-back names each step by its recorded binding
+
+- Funnel commerce read-back (`tools/ghl_funnel_steps.py`) no longer infers a
+  step's role from its native step type. One account can create every role with
+  the same native type (measured: nearly every step of one account's funnels is
+  `optin_funnel_page`); inverting the captured type map then collapsed every role
+  onto one name, every non-thank-you step failed the type check and
+  `install_funnel` could never return ready. `install_funnel` now records a role
+  binding per slot (role, slot, planned type, graph page id, native page id and
+  the native step id it minted), returns it as `page_bindings`, and hands it to
+  the driver read-back. The REST and managed drivers label each step from that
+  binding; the native type is only a consistency check against the string the
+  capture says that role was created with. An unbound step is typed only when its
+  native string maps to exactly one role. With an optional
+  `read_back_fields.step_id_path` the read-back also compares the native step id,
+  so a page moved under another step fails. Every other read-back check (prices,
+  billing, order-form and bump elements, accept/decline targets) is unchanged.
+  Offline tests only; live read-back proof is still pending.
+
 ## [v27.1.111] - 2026-11-12 - prepared source release: native journey orchestration and page operations
 
 - Add a staged native purchase-flow dispatcher bound to the approved Skill 49

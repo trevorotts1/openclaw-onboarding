@@ -27,9 +27,15 @@ SPLIT (same two-layer rule as ghl_order_elements.py)
                      accepts it must refuse a native price that differs from it.
                place_element(step_id, kind, price_id, default_checked) -> None
                set_action(step_id, action, target_step_id)       -> None
-               read_back(funnel_id) -> {"steps": [{"step_id", "type", "price_ids": [...],
+               read_back(funnel_id[, bindings]) -> {"steps": [{"step_id", "type", "price_ids": [...],
                     "elements": [{"kind", "price_id", "default_checked"}],
-                    "accept_target", "decline_target"[, "price_billing", "bump_billing"]]}
+                    "accept_target", "decline_target"[, "price_billing", "bump_billing"]
+                    [, "role", "slot", "native_step_id"]]}
+                     ``bindings`` is the role binding this install recorded (slot ->
+                     {role, slot, type, graph_page_id, native_page_id, native_step_id},
+                     returned as ``out["page_bindings"]``). A step's role comes from that
+                     binding, never from its native step type: an account can create every
+                     role with the same native type. The type is a secondary check only.
              OPTIONAL resume hooks a driver may implement:
                resolve_step(funnel_id, role, step_type) -> existing step id | ""
                inspect_step(funnel_id, step_id)         -> True | False | None
@@ -451,8 +457,16 @@ def require_approval(record: Optional[Dict[str, Any]], plan: Dict[str, Any],
 
 
 def verify_funnel_readback(plan: Dict[str, Any], readback: Dict[str, Any],
-                           step_ids: Dict[str, str]) -> List[str]:
-    """Compare read-back to the plan. Returns mismatch strings; [] means verified."""
+                           step_ids: Dict[str, str],
+                           bindings: Optional[Mapping[str, Mapping[str, Any]]] = None
+                           ) -> List[str]:
+    """Compare read-back to the plan. Returns mismatch strings; [] means verified.
+
+    A step is found by its BOUND native id (``step_ids``), never by its native
+    type: one account can give every role the same native step type. When the
+    driver labels a row with the role/slot it bound, the label must match; when
+    both the binding and the row carry a native step id, they must match.
+    """
     bad: List[str] = []
     got = {s.get("step_id"): s for s in readback.get("steps") or []}
     for s in plan["steps"]:
@@ -461,6 +475,16 @@ def verify_funnel_readback(plan: Dict[str, Any], readback: Dict[str, Any],
         if r is None:
             bad.append(f"{s['role']}: step not read back")
             continue
+        slot = str(s.get("slot") or s["page_id"])
+        if r.get("role") is not None and r["role"] != s["role"]:
+            bad.append(f"{s['role']}: read back bound to role {r['role']!r}")
+        if r.get("slot") is not None and r["slot"] != slot:
+            bad.append(f"{s['role']}: read back bound to slot {r['slot']!r} != {slot!r}")
+        bound = (bindings or {}).get(slot) or {}
+        if bound.get("native_step_id") and r.get("native_step_id") \
+                and r["native_step_id"] != bound["native_step_id"]:
+            bad.append(f"{s['role']}: native step {r['native_step_id']!r} != bound step "
+                       f"{bound['native_step_id']!r}")
         if r.get("type") != s["type"]:
             bad.append(f"{s['role']}: type {r.get('type')!r} != {s['type']!r}")
         if sorted(r.get("price_ids") or []) != sorted(p["price_id"] for p in s["prices"]):
@@ -573,7 +597,7 @@ def _ensure_step(plan_step: Dict[str, Any], driver: Any, funnel_id: str,
     key = _resume_key(location_id, funnel_id, launch_id, slot)
     record = _resume_get(state, key)
     if record.get("state") == "confirmed" and record.get("step_id"):
-        return str(record["step_id"]), "resumed"
+        return str(record["step_id"]), "resumed", str(record.get("native_step_id") or "")
 
     step_id = str(record.get("step_id") or "")
     if not step_id:
@@ -582,7 +606,7 @@ def _ensure_step(plan_step: Dict[str, Any], driver: Any, funnel_id: str,
             _resume_put(state, key, {"state": "confirmed", "step_id": found,
                                      "role": plan_step["role"],
                                      "page_id": plan_step["page_id"]})
-            return found, "reconciled"
+            return found, "reconciled", ""
         step_id = uuid.uuid4().hex
     _resume_put(state, key, {"state": "creating", "step_id": step_id,
                              "role": plan_step["role"],
@@ -620,10 +644,15 @@ def _ensure_step(plan_step: Dict[str, Any], driver: Any, funnel_id: str,
             else:
                 continue  # provably absent -> retry the SAME persisted id
         confirmed = str(sid or step_id)
-        _resume_put(state, key, {"state": "confirmed", "step_id": confirmed,
-                                 "role": plan_step["role"],
-                                 "page_id": plan_step["page_id"]})
-        return confirmed, how
+        # The id this module minted IS the native step id (the driver was handed
+        # it); a driver that picks its own id leaves the native step id unknown.
+        native_step_id = step_id if supports_id else ""
+        rec = {"state": "confirmed", "step_id": confirmed, "role": plan_step["role"],
+               "page_id": plan_step["page_id"]}
+        if native_step_id:
+            rec["native_step_id"] = native_step_id
+        _resume_put(state, key, rec)
+        return confirmed, how, native_step_id
 
 
 def _attach_price(driver: Any, step_id: str, price: Mapping[str, Any]) -> None:
@@ -703,10 +732,18 @@ def install_funnel(plan: Dict[str, Any], driver: Any, funnel_id: str, location_i
         preflight()  # fail closed on a missing capture BEFORE the first write
     gates = [g for g in [payment_gate(driver.payment_provider_status(location_id))] if g]
     ids: Dict[str, str] = {}
+    bindings: Dict[str, Dict[str, Any]] = {}
     resumed: List[Dict[str, Any]] = []
     for s in plan["steps"]:
-        sid, how = _ensure_step(s, driver, funnel_id, location_id, launch_id, state)
+        sid, how, native_step_id = _ensure_step(s, driver, funnel_id, location_id,
+                                                launch_id, state)
         ids[s["page_id"]] = sid
+        slot = str(s.get("slot") or s["page_id"])
+        # The recorded role binding: role -> the native ids this install bound it to.
+        # Read-back identifies each step by these ids, never by its native type.
+        bindings[slot] = {"role": s["role"], "slot": slot, "type": s["type"],
+                          "graph_page_id": s["page_id"], "native_page_id": sid,
+                          "native_step_id": native_step_id or None}
         note = getattr(driver, "note_step", None)
         if callable(note):
             note(sid, s["type"])
@@ -754,12 +791,15 @@ def install_funnel(plan: Dict[str, Any], driver: Any, funnel_id: str, location_i
             driver.set_action(sid, "accept", ids[s["accept_to"]])
         if s["decline_to"]:
             driver.set_action(sid, "decline", ids[s["decline_to"]])
-    readback = driver.read_back(funnel_id)
-    mismatches = verify_funnel_readback(plan, readback, ids)
+    if _accepts_kwarg(driver.read_back, "bindings"):
+        readback = driver.read_back(funnel_id, bindings=bindings)
+    else:
+        readback = driver.read_back(funnel_id)
+    mismatches = verify_funnel_readback(plan, readback, ids, bindings)
     return {"step_ids": ids, "manual_gates": gates, "mismatches": mismatches,
             "ready": not gates and not mismatches and not unresolved,
             "readback": readback, "resumed": resumed, "resume_state": state is not None,
-            "bound": bound, "unresolved": unresolved}
+            "bound": bound, "unresolved": unresolved, "page_bindings": bindings}
 
 
 # ---------------------------------------------------------------------------
@@ -957,9 +997,27 @@ class RestCanvasFunnelDriver:
     def set_action(self, step_id: str, action: str, target_step_id: str) -> None:
         self._route("set_action", step_id=step_id, action=action, target_step_id=target_step_id)
 
-    def read_back(self, funnel_id: str) -> Dict[str, Any]:
+    def read_back(self, funnel_id: str,
+                  bindings: Optional[Mapping[str, Mapping[str, Any]]] = None) -> Dict[str, Any]:
+        """Read every step back; its ROLE comes from the recorded binding.
+
+        One account can give many roles the same native step type (measured: a
+        funnel where almost every step is ``optin_funnel_page``), so the native
+        type cannot say which role a step is. A step whose page id is bound
+        (``bindings``: slot -> {role, slot, type, native_page_id, native_step_id})
+        is labelled with that role, and its native type is only a consistency
+        check: it must be the string the capture says that role was created with.
+        An unbound step is typed only when its native string maps to exactly one
+        role; otherwise its raw native string is kept, so it can never pass as a
+        role it was not bound to. ``read_back_fields.step_id_path`` (optional)
+        reads the native step id so a step moved under another step is caught.
+        """
         self.preflight()
-        f, native = self.capture["read_back_fields"], {v: k for k, v in self.capture["step_types"].items()}
+        f, types = self.capture["read_back_fields"], self.capture["step_types"]
+        values = list(types.values())
+        unique = {v: k for k, v in types.items() if values.count(v) == 1}
+        by_page = {str(b.get("native_page_id")): b for b in (bindings or {}).values()
+                   if isinstance(b, Mapping) and b.get("native_page_id")}
         fetched = self._call("GET", _rc.funnel_fetch_path(funnel_id))
         out = []
         for st in _dig(fetched, f["steps_path"]) or []:
@@ -971,10 +1029,19 @@ class RestCanvasFunnelDriver:
                     "default_checked": _dig(e, f["element_default_checked"])}
                    for e in _dig(page, f["elements_path"]) or []]
             ntype = _dig(st, f["step_type_path"])
-            out.append({"step_id": str(pid), "type": native.get(ntype, ntype),
-                        "price_ids": list(_dig(page, f["price_ids_path"]) or []), "elements": els,
-                        "accept_target": _dig(page, f["accept_target_path"]),
-                        "decline_target": _dig(page, f["decline_target_path"])})
+            row = {"step_id": str(pid), "type": unique.get(ntype, ntype),
+                   "price_ids": list(_dig(page, f["price_ids_path"]) or []), "elements": els,
+                   "accept_target": _dig(page, f["accept_target_path"]),
+                   "decline_target": _dig(page, f["decline_target_path"])}
+            bound = by_page.get(str(pid))
+            if bound is not None:
+                row["role"], row["slot"] = bound.get("role"), bound.get("slot")
+                if ntype == types.get(str(bound.get("type"))):
+                    row["type"] = bound["type"]
+            if f.get("step_id_path"):
+                native_step = _dig(st, f["step_id_path"])
+                row["native_step_id"] = str(native_step) if native_step else None
+            out.append(row)
         return {"steps": out}
 
 
@@ -1160,8 +1227,9 @@ class ManagedUiFunnelDriver(RestCanvasFunnelDriver):
         executor = self._executor(step_id)
         executor.set_action(self._component(executor, step_id), action, target_step_id)
 
-    def read_back(self, funnel_id: str) -> Dict[str, Any]:
-        out = super().read_back(funnel_id)
+    def read_back(self, funnel_id: str,
+                  bindings: Optional[Mapping[str, Mapping[str, Any]]] = None) -> Dict[str, Any]:
+        out = super().read_back(funnel_id, bindings=bindings)
         for step in out.get("steps") or []:
             step_id = str(step.get("step_id") or "")
             self._step_types.setdefault(step_id, step.get("type") or "order_form")

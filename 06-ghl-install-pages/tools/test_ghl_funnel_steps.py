@@ -216,7 +216,7 @@ class SynGhl:
         if path == "/funnels/funnel/create-step":
             self.create_bodies.append(body)
             pid = f"pg{len(self.steps) + 1}"
-            self.steps.append({"type": body["step"]["type"], "pages": [pid]})
+            self.steps.append({"id": body["step"]["id"], "type": body["step"]["type"], "pages": [pid]})
             self.pages[pid] = {"prices": [], "elements": [], "act": {}}
             seg = ["funnel_pages", pid]
             return {"status": 201, "ok": True, "body": {"page": {"_ref": {"_path": {"segments": seg}}}}}
@@ -354,3 +354,89 @@ def test_concrete_driver_refuses_forged_or_foreign_grant(launch):
     with pytest.raises(fs.ApprovalRefused):
         _install(plan, fs.RestCanvasFunnelDriver(ghl, "OTHER", SYN_CAPTURE, allow_synthetic=True))
     assert ghl.evals == []
+
+
+# ---- role read-back from the recorded binding, not the native step type -------
+# TEST-ONLY: one account gave every role the same native step type, so the type
+# cannot name a role. The step id path lets a page moved under another step show.
+SAME_TYPE_CAPTURE = dict(
+    SYN_CAPTURE,
+    step_types={k: "syn_shared_page" for k in fs.STEP_TYPE_KEYS},
+    read_back_fields=dict(SYN_CAPTURE["read_back_fields"], step_id_path="id"))
+
+
+class SwapPagesOnFetch(SynGhl):
+    """Two steps trade their pages just before the read-back fetch."""
+
+    def __init__(self, i, j):
+        super().__init__()
+        self.swap = (i, j)
+
+    def __call__(self, js):
+        if "/funnels/funnel/fetch/" in js and self.swap:
+            i, j = self.swap
+            self.swap = None
+            self.steps[i]["pages"], self.steps[j]["pages"] = self.steps[j]["pages"], self.steps[i]["pages"]
+        return super().__call__(js)
+
+
+def _slot(step):
+    return step.get("slot") or step["page_id"]
+
+
+@pytest.mark.parametrize("thank_you_type", ["syn_shared_page", "syn_thank_you"])
+def test_same_native_type_for_every_role_reads_back_ready_with_bound_roles(launch, thank_you_type):
+    # also the measured shape: every role shares one type except the thank-you step
+    graph, offers, catalog = launch
+    plan = fs.build_funnel_plan(graph, offers, catalog)
+    cap = copy.deepcopy(SAME_TYPE_CAPTURE)
+    cap["step_types"]["thank_you"] = thank_you_type
+    ghl = SynGhl()
+    d = fs.RestCanvasFunnelDriver(ghl, LOC, cap, allow_synthetic=True)
+    out = _install(plan, d)
+    assert {b["step"]["type"] for b in ghl.create_bodies} == {"syn_shared_page", thank_you_type}
+    assert out["mismatches"] == [] and out["ready"] is True
+    by = {r["step_id"]: r for r in out["readback"]["steps"]}
+    for s in plan["steps"]:
+        row, bound = by[out["step_ids"][s["page_id"]]], out["page_bindings"][_slot(s)]
+        assert (row["role"], row["slot"], row["type"]) == (s["role"], _slot(s), s["type"])
+        assert row["native_step_id"] == bound["native_step_id"] and bound["native_page_id"] == row["step_id"]
+    # without the binding a shared native type names no role: it is never guessed
+    plain = d.read_back("F1")["steps"]
+    assert {r["type"] for r in plain} - {"thank_you"} == {"syn_shared_page"}
+    assert fs.verify_funnel_readback(plan, {"steps": plain}, out["step_ids"])
+
+
+def test_swapped_binding_still_fails(launch):
+    graph, offers, catalog = launch
+    plan = fs.build_funnel_plan(graph, offers, catalog)
+    roles = [s["role"] for s in plan["steps"]]
+    u1, dn = roles.index("upsell_1"), roles.index("downsell_1")
+    # the recorded binding names upsell_1's page as downsell_1's and back
+    ghl = SynGhl()
+    d = fs.RestCanvasFunnelDriver(ghl, LOC, SAME_TYPE_CAPTURE, allow_synthetic=True)
+    out = _install(plan, d)
+    swapped = copy.deepcopy(out["page_bindings"])
+    a, b = swapped[_slot(plan["steps"][u1])], swapped[_slot(plan["steps"][dn])]
+    a["native_page_id"], b["native_page_id"] = b["native_page_id"], a["native_page_id"]
+    bad = fs.verify_funnel_readback(plan, d.read_back("F1", bindings=swapped), out["step_ids"], swapped)
+    assert "upsell_1: read back bound to role 'downsell_1'" in bad
+    assert "downsell_1: read back bound to role 'upsell_1'" in bad
+    # live side: the two pages trade steps, so the native step id betrays the swap
+    out = _install(plan, fs.RestCanvasFunnelDriver(SwapPagesOnFetch(u1, dn), LOC, SAME_TYPE_CAPTURE,
+                                                   allow_synthetic=True))
+    assert out["ready"] is False
+    assert {m.split(":")[0] for m in out["mismatches"] if "native step" in m} == {"upsell_1", "downsell_1"}
+
+
+def test_distinct_native_types_read_back_as_before(launch):
+    graph, offers, catalog = launch
+    plan = fs.build_funnel_plan(graph, offers, catalog)
+    d = fs.RestCanvasFunnelDriver(SynGhl(), LOC, SYN_CAPTURE, allow_synthetic=True)
+    out = _install(plan, d)
+    assert out["ready"] is True and out["mismatches"] == []
+    plain = d.read_back("F1")["steps"]  # the type-only read, no binding
+    assert [r["type"] for r in plain] == [r["type"] for r in out["readback"]["steps"]] == [
+        s["type"] for s in plan["steps"]]
+    assert all("role" not in r and "native_step_id" not in r for r in plain)
+    assert fs.verify_funnel_readback(plan, {"steps": plain}, out["step_ids"]) == []
