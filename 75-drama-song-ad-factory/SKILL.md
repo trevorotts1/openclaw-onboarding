@@ -431,9 +431,11 @@ The layers and the assembler are the same in both distributions (U15a-U15i):
   than let a stale row be read silently.
 - **Prompt writers fan out; a song is never one writer's serial job
   (F-SPD-4).** The shots' own prompt parts are written in parallel, one writer
-  per 2 to 3 prompts (30 prompts means 10 to 15 writers working at once, not
-  one writer walking the song), and each writer writes only its own shots'
-  parts. Every writer reads the same spine, Story Beats, Shot Router record and
+  per 2 to 3 prompts - never fewer writers than one per 6 shots, so 30 prompts
+  means 10 to 15 writers working at once, not one writer walking the song - and
+  each writer writes only its own shots'
+  parts. The old fan-out-NINE warning alone is not enough: it names the
+  mistake but launches no writer. Every writer reads the same spine, Story Beats, Shot Router record and
   lock file, so the parts cannot drift. One joiner collects the parts, and the
   Prompt Builder assembles and stamps every payload after the join. A fan-out
   below the planned number is `CONSERVATIVE_FANOUT`: the missing writers are
