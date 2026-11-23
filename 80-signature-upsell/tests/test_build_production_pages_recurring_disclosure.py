@@ -106,7 +106,6 @@ class RecurringUpsellBuild(unittest.TestCase):
     def setUp(self):
         launch = _load(REPO / "49-signature-funnel" / "scripts" / "fixtures"
                        / "finalized-launch-record-signature-launch-l4.json")
-        launch["u2_entry_context"] = "from_upsell_1"
         self.graph = compiler.compile_route(launch)
         self.launch = launch
         self.copies = {
