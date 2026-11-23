@@ -60,7 +60,6 @@ class TwoPriceChoicesOnOneUpsellPage(unittest.TestCase):
     def setUp(self):
         self.launch = _load(REPO / "49-signature-funnel" / "scripts" / "fixtures"
                             / "finalized-launch-record-signature-launch-l4.json")
-        self.launch["u2_entry_context"] = "from_upsell_1"
         self.graph = compiler.compile_route(self.launch)
         self.copies = {"upsell_1": _load(FIXTURES / "copy-upsell1-public.valid.json"),
                        "upsell_2": _load(FIXTURES / "copy-upsell2-public.valid.json")}
