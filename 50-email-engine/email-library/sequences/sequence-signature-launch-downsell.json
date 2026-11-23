@@ -1,5 +1,5 @@
 {
-  "id": "signature-launch-downsell",
+  "id": "sequence-signature-launch-downsell",
   "type": "sequence",
   "name": "Signature Launch Downsell Profile",
   "tags": [
@@ -31,7 +31,7 @@
     "smaller-entry-offer",
     "warm-lists"
   ],
-  "file": "signature-launch-downsell.md",
+  "file": "sequence-signature-launch-downsell.md",
   "rules": {
     "kind": "sequence",
     "sequence_type": "signature_launch_downsell",
@@ -46,9 +46,15 @@
       "3": "aida"
     },
     "phase_map": {
-      "after_no": [1],
-      "recalibrate": [2],
-      "future_opportunity": [3]
+      "after_no": [
+        1
+      ],
+      "recalibrate": [
+        2
+      ],
+      "future_opportunity": [
+        3
+      ]
     },
     "cta_rules": {
       "1": 1,
@@ -63,7 +69,10 @@
     "face_saving_rule": "the copy acknowledges the no without arguing with it: no guilt, no re-pitching the declined offer, no implying the reader was wrong; the smaller option is framed as a right-sized first step, and declining it too is accepted plainly",
     "disruptive_required": false,
     "variant_pairing": {
-      "pairs": ["A", "B"],
+      "pairs": [
+        "A",
+        "B"
+      ],
       "pairing": "subject and preview are paired per variant (Pair A = subject A + preview A; Pair B = subject B + preview B); pairs are preserved through the Skill-44 draft handoff, never flattened into unpaired lists",
       "pair_b_style": "prolific and disruptive, truthful and on brand (no false account alert, no fake reply prefix, no fabricated urgency, no fake scarcity, no misleading price)"
     },
@@ -71,7 +80,6 @@
     "review_labels": "the private client-review document labels each email with its framework and labels the body 'Email Body:'; the recipient payload carries no framework labels, slot instructions, or production commentary",
     "trigger": "Signature Launch build: after a contact declines the main offer or the preceding upsell, the matching downsell follow-up offers the smaller option on that downsell page; one instance per downsell page, from the approved launch brief and the approved downsell page",
     "stop_rules": "stop on purchase of the main offer, the smaller option, or any later upsell; a purchase moves the contact to access/welcome and the next follow-up, never to remaining downsell emails; a second decline ends the sequence with no further promotional send",
-    "registration_note": "not yet in catalog-index.json / catalog-built-index.json and not yet in SEQ_LENGTHS / PREVIEW_EXPECTED / _sequence_type; until the integrator registers the profile, a run resolving sequence_type signature_launch_downsell fails AF-EMAIL-TYPE-MISMATCH by design",
     "af_codes": [
       "AF-EMAIL-SEQUENCE-LENGTH",
       "AF-EMAIL-SEQUENCE-MAP",
@@ -82,6 +90,7 @@
       "AF-EMAIL-SIGNATURE-PLACEHOLDER",
       "AF-EMAIL-OBJECTIVE-INVALID",
       "AF-EMAIL-TYPE-MISMATCH"
-    ]
+    ],
+    "registration": "registered: catalog-index.json + catalog-built-index.json, the launch family registry, and prove-email.py (through tools/launch_profiles.py)"
   }
 }

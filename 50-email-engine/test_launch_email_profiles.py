@@ -644,17 +644,21 @@ class TransactionalObjectiveTests(unittest.TestCase):
                     else doc["properties"]["answers"]["properties"]["objective"])
             self.assertEqual(tuple(node["enum"]), prover.OBJECTIVES, name)
 
-    def test_the_questionnaire_and_the_library_objectives_are_unchanged(self) -> None:
+    def test_the_questionnaire_is_unchanged_and_the_library_registers_transactional(self) -> None:
         questions = json.loads((SKILL_DIR / "intake" / "email-intake-questions.json")
                                .read_text(encoding="utf-8"))
         objective = next(q for q in questions["questions"] if q["id"] == "objective")
         self.assertEqual(objective["allowed_values"],
                          ["promotional", "abandoned-cart", "upsell", "downsell"])
+        # RFX-003: the P1 selection gate resolves a brief's objective to
+        # "objective-<objective>" in the catalog, so a welcome_access run is
+        # selectable only when the library registers the transactional entry.
         catalog = json.loads((SKILL_DIR / "email-library" / "catalog-index.json")
                              .read_text(encoding="utf-8"))
         self.assertEqual(sorted(e["id"] for e in catalog if e["type"] == "objective"),
                          ["objective-abandoned-cart", "objective-downsell",
-                          "objective-promotional", "objective-upsell"])
+                          "objective-promotional", "objective-transactional",
+                          "objective-upsell"])
 
     def test_a_welcome_access_sequence_passes_the_prover_with_its_transactional_objective(self) -> None:
         fam = FAMILIES["welcome_access"]

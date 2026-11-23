@@ -536,7 +536,7 @@ def evaluate_email(email, ctx):
     fails = []
     tag = ctx.get("tag", "email")
     seq_type = ctx.get("seq_type", "single")
-    spec = PROFILE_SPECS.get(seq_type)
+    spec = ctx.get("spec") or PROFILE_SPECS.get(seq_type)
 
     if not isinstance(email, dict):
         return [(AF_FRAMEWORK_UNKNOWN, "%s: not a JSON object" % tag)]
@@ -808,7 +808,22 @@ def evaluate_sequence(ledger, brief=None):
     if not isinstance(emails, list):
         return [(AF_SEQUENCE_LENGTH, "sequence has no emails[] array")] + fails
 
-    want_len = SEQ_LENGTHS.get(seq_type)
+    # A registered count variant applies ONLY when the LOCKED brief fixed it
+    # for this same family; the authored emails never choose their own length.
+    # The variant brings its own framework map, CTA floors and word bands, so
+    # a shorter plan is graded against a registered shape, never a trimmed one.
+    locked_n = launch_profiles.locked_count(brief, spec)
+    if spec is not None and locked_n is not None:
+        variant = launch_profiles.resolve(spec, locked_n)
+        if variant is None:
+            fails.append((AF_SEQUENCE_LENGTH,
+                          "the locked brief fixes %r emails, which the %s family "
+                          "does not register (registered: %s)"
+                          % (locked_n, spec["kind"], ", ".join(
+                              str(n) for n in launch_profiles.allowed_email_counts(spec)))))
+        else:
+            spec = variant
+    want_len = spec["email_count"] if spec is not None else SEQ_LENGTHS.get(seq_type)
     if want_len is not None and len(emails) != want_len:
         fails.append((AF_SEQUENCE_LENGTH,
                       "sequence has %d emails, needs exactly %d for %s"
@@ -830,7 +845,7 @@ def evaluate_sequence(ledger, brief=None):
 
     for i, e in enumerate(emails, 1):
         slot = e.get("e_slot", i) if isinstance(e, dict) else i
-        ctx = {"tag": "E%d" % slot, "seq_type": seq_type,
+        ctx = {"tag": "E%d" % slot, "seq_type": seq_type, "spec": spec,
                "founder_name": founder, "require_disruptive": require_disruptive,
                "cta_min": 1, "locked_overrides": locked}
         if spec is not None:

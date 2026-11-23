@@ -1,5 +1,5 @@
 ---
-id: signature-launch-doors-closing
+id: sequence-signature-launch-doors-closing
 type: sequence
 name: Signature Launch Doors-Closing Profile
 tags: [sequence, signature-launch, signature-launch-profile, doors-closing, last-48-hours, final-call, deadline, truthful-deadline, landing-page, aida, pas, three-b-plan, paired-variants, founder-signature, launch-brief-intake, draft-only-handoff]
@@ -47,8 +47,10 @@ Most launches lose their last day to noise: three "final hours" emails with thre
 8. **Founder's ACTUAL name** in every closing signature, from the brief. No placeholder ever ships.
 9. **Draft-only, always.** The profile produces plans and drafts. The build-plan handoff to Skill 44 carries `draft_only=true`, the profile name, approved content hashes, the variant-pairing strategy, `launch_calendar.doors_close_at` with its timezone, and stop/suppression rules, and never any credential. This profile never sends.
 
-## Registration Note (for the integrator — a lane file cannot do this)
-The profile is authored as a file pair only. It is **not** in `catalog-index.json` / `catalog-built-index.json`, and `prove-email.py` does not yet know `signature_launch_doors_closing` in `SEQ_LENGTHS`, `PREVIEW_EXPECTED`, or `_sequence_type`. Until those shared files are updated by the integrator, a run resolving this `sequence_type` fails `AF-EMAIL-TYPE-MISMATCH` by design. `register.py --check` keeps its frozen 36-entry census, so adding this pair alone does not change or break it.
+## Registration Note
+This profile is registered: `sequence-signature-launch-doors-closing` is in `catalog-index.json` / `catalog-built-index.json` (the P1 selection gate accepts it), its family row lives in `profiles/launch-email-families.json`, and `prove-email.py` resolves `signature_launch_doors_closing` through `tools/launch_profiles.py`. `register.py --check` counts it in the sequence census.
+
+Registered lengths: 1 or 3 emails (default 3). A launch plan may declare any registered length; the variant's own framework map, CTA floors and word bands apply, and any other count is refused, never padded or trimmed.
 
 ## Use Cases
 - The closing leg of a Signature Launch, after the main launch 10

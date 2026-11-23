@@ -1,5 +1,5 @@
 ---
-id: signature-launch-welcome-access
+id: sequence-signature-launch-welcome-access
 type: sequence
 name: Signature Launch Welcome / Access Profile
 tags: [sequence, signature-launch, signature-launch-profile, welcome-access, post-purchase, access, receipt, next-steps, onboarding, transactional, six-ws, before-after-bridge, paired-variants, founder-signature, launch-brief-intake, draft-only-handoff]
@@ -34,15 +34,15 @@ The sale is done. The next email decides whether the buyer ever gets inside. Eve
 6. **Word band 150–300** for every email. A different exact length is honored only through the existing locked-brief override channel, recorded as an override.
 7. **Timing is relative and truthful.** E1 at payment success, E2 about 24 hours later. Every date, session time, or start date comes from the approved brief and launch calendar. If the brief has no date, the copy names none.
 8. **No fabricated proof.** Testimonials, results, member counts, and revenue figures appear only when the approved brief carries the evidence. Operational email prefers none.
-9. **The objective is `promotional`.** The frozen objective enum has no welcome/access or transactional value. This profile defaults to promotional and carries no promotional claim; no lane file widens the enum.
+9. **The objective is `transactional`.** Access, receipt and next steps carry no promotional claim, urgency, or offer. In the 10-email variant, E2-E10 are non-selling event nurture: no offer, no price, no urgency, and a marketing opt-out stops them.
 10. **Labels live in the review document only.** The private client-review document labels each email with its framework and labels the body "Email Body:". The recipient payload is clean: no framework labels, no slot instructions, no production commentary.
 11. **Founder's ACTUAL name** in every closing signature, from the brief. No placeholder ever ships.
 12. **Draft-only, always.** The profile produces plans and drafts. The build-plan handoff to Skill 44 carries `draft_only=true`, the profile name, approved content hashes, the variant-pairing strategy, the order-fact fields used, the launch calendar, and stop/suppression rules, and never any credential. This profile never sends.
 
-## Registration Note (for the integrator — a lane file cannot do this)
-The profile is authored as a file pair only. It is **not** in `catalog-index.json` / `catalog-built-index.json`, and `prove-email.py` does not yet know `signature_launch_welcome_access` in `SEQ_LENGTHS`, `PREVIEW_EXPECTED`, or `_sequence_type`. Until those shared files are updated by the integrator, a run resolving this `sequence_type` fails `AF-EMAIL-TYPE-MISMATCH` by design. `register.py --check` keeps its frozen 36-entry census, so adding this pair alone does not change or break it.
+## Registration Note
+This profile is registered: `sequence-signature-launch-welcome-access` is in `catalog-index.json` / `catalog-built-index.json` (the P1 selection gate accepts it), its family row lives in `profiles/launch-email-families.json`, and `prove-email.py` resolves `signature_launch_welcome_access` through `tools/launch_profiles.py`. `register.py --check` counts it in the sequence census.
 
-The launch plan's `email_count` for kind `welcome_access` is authoritative. This profile models the two-email core (2 in the elevation, multi-option and black-friday fixtures). The 7figurepreneur fixture declares 3; a plan that declares 3 needs the integrator to extend the profile first, and the lane never pads an email to reach a count.
+Registered lengths: 2 or 10 emails (default 2). A launch plan may declare any registered length; the variant's own framework map, CTA floors and word bands apply, and any other count is refused, never padded or trimmed.
 
 ## Use Cases
 - The post-purchase leg of a Signature Launch, fired on payment success

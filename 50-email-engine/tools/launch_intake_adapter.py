@@ -198,6 +198,23 @@ def _entry_ref(session: Dict[str, Any], entry: Dict[str, Any],
     return f"s49-intake-session:{session.get('session_id', '')}#{key}"
 
 
+def _word_band(value: Any) -> list:
+    """The ONE word_band_override shape: [min, max] integers, min >= 1 and
+    min <= max — exactly what schema/brief.schema.json, schema/email.schema.json
+    and prove-email.py honor. A legacy {"min", "max"} object is normalized to
+    that list; anything else is refused (an override the prover would silently
+    ignore is a dead override, never a locked one)."""
+    if isinstance(value, dict) and set(value) == {"min", "max"}:
+        value = [value["min"], value["max"]]
+    if not (isinstance(value, list) and len(value) == 2
+            and all(isinstance(v, int) and not isinstance(v, bool)
+                    for v in value)
+            and 1 <= value[0] <= value[1]):
+        raise Refusal("override word_band_override must be [min, max] whole "
+                      "word counts (1 <= min <= max), got %r" % (value,))
+    return list(value)
+
+
 def _consumed(entry: Dict[str, Any], label: str) -> None:
     try:
         s49.consumed_state_ok(entry, label)
@@ -292,12 +309,14 @@ def _launch_sequences(plan: Dict[str, Any],
                 "Skill 50 launch sequence profile")
         family = FAMILIES[unit["kind"]]
         declared = unit.get("email_count")
-        if declared != family["email_count"]:
+        allowed = launch_profiles.allowed_email_counts(family)
+        if launch_profiles.resolve(family, declared) is None:
             raise Refusal(
                 f"email sequence {uid!r} declares {declared!r} emails but the "
-                f"{family['kind']} family ({family['profile']}) fixes exactly "
-                f"{family['email_count']} — a count mismatch is never padded "
-                "and never trimmed; fix the plan or extend the registry")
+                f"{family['kind']} family ({family['profile']}) registers only "
+                f"{' or '.join(str(n) for n in allowed)} — a count mismatch is "
+                "never padded and never trimmed; fix the plan or extend the "
+                "registry")
     return units
 
 
@@ -337,7 +356,8 @@ def adapt_launch_plan(session: Dict[str, Any], launch: Dict[str, Any],
         profile, objective = LAUNCH_SEQUENCE_PROFILES[unit["kind"]]
         brief = adapt(session, launch, approval, brand_facts, landing_facts,
                       profile=profile, objective=objective,
-                      full_launch_plan=full, **adapt_kwargs)
+                      full_launch_plan=full,
+                      email_count=unit["email_count"], **adapt_kwargs)
         briefs.append({"sequence_id": unit["id"], "kind": unit["kind"],
                        "brief": brief})
     return briefs
@@ -356,7 +376,8 @@ def adapt(session: Dict[str, Any], launch: Dict[str, Any],
           landing_facts_ref: str = "landing-facts document",
           profile: str = PROFILE,
           objective: Optional[str] = None,
-          full_launch_plan: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+          full_launch_plan: Optional[Dict[str, Any]] = None,
+          email_count: Optional[int] = None) -> Dict[str, Any]:
     """Validate the five launch artifacts and emit the locked brief.
 
     `profile` selects which approved launch family the brief locks (launch mode
@@ -368,6 +389,9 @@ def adapt(session: Dict[str, Any], launch: Dict[str, Any],
     launch record (pages + emails + texts + automations, carrying the typed
     `launch_answers` block and `launch_calendar`); when present the session
     consumer reads its typed block, otherwise the session ledger.
+    `email_count` (launch mode passes the planned unit's count) selects the
+    family's default count or one of its registered count_variants; any other
+    count is a refusal.
 
     Raises Refusal on any defect. The emitted brief is the shape
     tools/prove-email.py consumes under intake_mode signature_launch.
@@ -384,6 +408,13 @@ def adapt(session: Dict[str, Any], launch: Dict[str, Any],
             "profile %r is not a registered launch email family (%s): a brief "
             "cannot be locked against an unknown family"
             % (profile, ", ".join(sorted(FAMILIES)) or "registry empty"))
+    resolved = launch_profiles.resolve(family, email_count)
+    if resolved is None:
+        raise Refusal(
+            "email_count %r is not registered for the %s family (registered: %s)"
+            % (email_count, family["kind"], ", ".join(
+                str(n) for n in launch_profiles.allowed_email_counts(family))))
+    family = resolved
     if objective is None:
         objective = family["objective"]
     elif objective != family["objective"]:
@@ -543,9 +574,8 @@ def adapt(session: Dict[str, Any], launch: Dict[str, Any],
             if channel == "subject_mode" and not _nonempty_str(value):
                 raise Refusal("override subject_mode is not a non-empty "
                               "string")
-            if channel == "word_band_override" \
-                    and not isinstance(value, dict):
-                raise Refusal("override word_band_override is not an object")
+            if channel == "word_band_override":
+                value = _word_band(value)
             overrides[channel] = value
 
     # --- brand facts ---------------------------------------------------------
@@ -770,6 +800,10 @@ def _family_block(family: Dict[str, Any], registry: Dict[str, Any]) -> Dict[str,
         "purpose": family["purpose"],
         "destination": family["destination"],
         "email_count": family["email_count"],
+        "count_variant": family.get("count_variant"),
+        "framework_map": _deep_copy(family["framework_map"]),
+        "cta_rules": _deep_copy(family["cta_rules"]),
+        "word_band": _deep_copy(family["word_band"]),
         "preview_count": family["preview_count"],
         "subject_count": family["subject_count"],
         "paired_variants": {
@@ -1465,9 +1499,28 @@ def _self_test() -> int:
     plan_refuses("plan with an unknown sequence kind is refused",
                  lambda p: p["email_sequences"][0].__setitem__(
                      "kind", "follow_up"))
-    plan_refuses("plan with the wrong count for the family is refused",
+    plan_refuses("plan with an unregistered count for the family is refused",
                  lambda p: p["email_sequences"][3].__setitem__(
-                     "email_count", 2))
+                     "email_count", 4))
+    # A count the registry registers as a count variant is accepted, and the
+    # brief is locked for exactly that count (3 / 1 / 10 / 2).
+    variant = json.loads(json.dumps(plan))
+    for unit in variant["email_sequences"]:
+        unit["email_count"] = {"main_launch": 3, "doors_closing": 1,
+                               "welcome_access": 10,
+                               "upsell_followup": 2}.get(unit["kind"],
+                                                         unit["email_count"])
+    try:
+        got = {a["kind"]: a["brief"]["family"]["email_count"]
+               for a in adapt_launch_plan(
+                   lfx["session"], lfx["launch"], lfx["approval"],
+                   lfx["brand_facts"], lfx["landing_facts"], variant,
+                   worker_identity_ref=lfx["worker_identity_ref"])}
+        say(got["main_launch"] == 3 and got["doors_closing"] == 1
+            and got["welcome_access"] == 10 and got["upsell_followup"] == 2,
+            "registered count variants (3/1/10/2) lock briefs at those counts")
+    except Refusal as exc:
+        say(False, "registered count variants adapt (refused: %s)" % exc)
     print("SELF-TEST RESULT:", "PASS (exit 0)" if ok else "FAIL (exit 1)")
     return EXIT_OK if ok else 1
 

@@ -285,6 +285,16 @@ def build_plan(brief, emails_doc, folder=None, workflow_slug=None):
     if not isinstance(answers, dict):
         answers = {}
     family = _launch_family(brief, emails_doc)
+    if family is not None:
+        # The LOCKED brief may fix a registered count variant (the adapter
+        # resolved it from the launch plan); the emitted plan then carries that
+        # variant's timing and count. An unregistered locked count is refused.
+        locked_n = launch_profiles.locked_count(brief, family)
+        resolved = launch_profiles.resolve(family, locked_n)
+        if resolved is None:
+            raise ValueError("the locked brief fixes %r emails, which the %s family "
+                             "does not register" % (locked_n, family["kind"]))
+        family = resolved
     objective = (answers.get("objective")
                  or (emails_doc.get("objective") if isinstance(emails_doc, dict) else None)
                  or (family["objective"] if family else None))
@@ -421,6 +431,7 @@ def build_plan(brief, emails_doc, folder=None, workflow_slug=None):
             "profile_purpose": family["purpose"],
             "destination": family["destination"],
             "expected_email_count": family["email_count"],
+            "count_variant": family.get("count_variant"),
             "registry_version": REGISTRY.get("registry_version"),
             "content_hashes": {
                 "algorithm": "sha256",
@@ -638,8 +649,16 @@ def validate_plan(plan):
             if family is None:
                 errors.append("_meta.profile %r is not a registered launch family"
                               % (meta.get("profile"),))
+            elif launch_profiles.resolve(family, meta.get("expected_email_count")) is None:
+                errors.append("launch plan: _meta.expected_email_count %r is not a count "
+                              "the %s family registers (%s)"
+                              % (meta.get("expected_email_count"), family["kind"],
+                                 ", ".join(str(n) for n in
+                                           launch_profiles.allowed_email_counts(family))))
             else:
-                errors.extend(_validate_launch_plan(plan, meta, family))
+                errors.extend(_validate_launch_plan(
+                    plan, meta,
+                    launch_profiles.resolve(family, meta.get("expected_email_count"))))
     return errors
 
 

@@ -1,5 +1,5 @@
 {
-  "id": "signature-launch-upsell",
+  "id": "sequence-signature-launch-upsell",
   "type": "sequence",
   "name": "Signature Launch Upsell Follow-Up Sequence",
   "tags": [
@@ -29,7 +29,7 @@
     "upsell-2-page",
     "post-purchase-ascension"
   ],
-  "file": "signature-launch-upsell.md",
+  "file": "sequence-signature-launch-upsell.md",
   "rules": {
     "kind": "sequence",
     "sequence_type": "upsell_followup",
@@ -43,7 +43,10 @@
     "intake": "the approved S49 shared-launch brief plus the approved Skill-80 page request (offer, disclosure, route graph), consumed with per-field provenance; no separate questionnaire",
     "review_labels": "the private client-review document labels each email with its framework and labels the body 'Email Body:'; the recipient payload carries no framework labels, slot instructions, or production commentary",
     "variant_pairing": {
-      "pairs": ["A", "B"],
+      "pairs": [
+        "A",
+        "B"
+      ],
       "pairing": "subject and preview are paired per variant (Pair A = subject A + preview A; Pair B = subject B + preview B); pairs are preserved through the Skill-44 draft handoff, never flattened into unpaired lists",
       "pair_b_style": "pattern-breaking, truthful and on brand (no false account alert, no fake reply prefix, no fabricated urgency, no offensive language, no misleading price)"
     },
@@ -120,6 +123,27 @@
       "AF-EMAIL-OBJECTIVE-INVALID",
       "AF-EMAIL-WORDBAND",
       "AF-EMAIL-SIGNATURE-PLACEHOLDER"
-    ]
+    ],
+    "count_variants": {
+      "2": {
+        "framework_map": {
+          "1": "features-to-benefit",
+          "2": "pas"
+        },
+        "pattern_maps": {
+          "upsell_1": {
+            "1": "features-to-benefit",
+            "2": "pas"
+          },
+          "upsell_2": {
+            "1": "acca",
+            "2": "three-b-plan"
+          }
+        },
+        "purpose": "Two-email post-offer follow-up after a verified buyer leaves an upsell page without accepting: one feature-to-benefit email and one direct close, every CTA back to that upsell page."
+      }
+    },
+    "count_variant_rule": "a launch plan may declare the default length or one of these registered counts; the registry (profiles/launch-email-families.json) is authoritative and any other count is refused, never padded or trimmed",
+    "registration": "registered: catalog-index.json + catalog-built-index.json, the launch family registry, and prove-email.py (through tools/launch_profiles.py)"
   }
 }

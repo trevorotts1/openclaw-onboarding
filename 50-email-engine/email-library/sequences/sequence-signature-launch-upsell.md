@@ -1,5 +1,5 @@
 ---
-id: signature-launch-upsell
+id: sequence-signature-launch-upsell
 type: sequence
 name: Signature Launch Upsell Follow-Up Sequence
 tags: [sequence, signature-launch, upsell-followup, post-purchase, upsell-1, upsell-2, honor-the-purchase, value-multiplication, commitment-consistency, one-click, verified-purchase, route-graph-truth, no-invented-scarcity, moves-buyer-to-next-offer, founder-signature, convert-and-flow]

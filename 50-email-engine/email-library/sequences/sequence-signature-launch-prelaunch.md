@@ -1,5 +1,5 @@
 ---
-id: signature-launch-prelaunch
+id: sequence-signature-launch-prelaunch
 type: sequence
 name: Signature Launch Pre-Launch Profile
 tags: [sequence, signature-launch, signature-launch-profile, pre-launch, teaser, value, doors-soon, waitlist, opt-in, star-chain-hook, pastor-story, features-to-benefit, before-after-bridge, pas, paired-variants, founder-signature, launch-brief-intake, draft-only-handoff]
@@ -40,8 +40,8 @@ A launch sells twice: once to the list that hears about it early, once to everyo
 8. **Founder's ACTUAL name** in every closing signature, from the brief. No placeholder ever ships.
 9. **Draft-only, always.** The profile produces plans and drafts. The build-plan handoff to Skill 44 carries `draft_only=true`, the profile name, approved content hashes, the variant-pairing strategy, the launch calendar, and stop/suppression rules, and never any credential. This profile never sends.
 
-## Registration Note (for the integrator — a lane file cannot do this)
-The profile is authored as a file pair only. It is **not** in `catalog-index.json` / `catalog-built-index.json`, and `prove-email.py` does not yet know `signature_launch_prelaunch` in `SEQ_LENGTHS`, `PREVIEW_EXPECTED`, or `_sequence_type`. Until those shared files are updated by the integrator, a run resolving this `sequence_type` fails `AF-EMAIL-TYPE-MISMATCH` by design. `register.py --check` keeps its frozen 36-entry census, so adding this pair alone does not change or break it.
+## Registration Note
+This profile is registered: `sequence-signature-launch-prelaunch` is in `catalog-index.json` / `catalog-built-index.json` (the P1 selection gate accepts it), its family row lives in `profiles/launch-email-families.json`, and `prove-email.py` resolves `signature_launch_prelaunch` through `tools/launch_profiles.py`. `register.py --check` counts it in the sequence census.
 
 ## Use Cases
 - The email leg that runs before a Signature Launch doors-open date
