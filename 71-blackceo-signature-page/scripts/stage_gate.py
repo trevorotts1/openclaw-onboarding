@@ -3290,34 +3290,44 @@ def cmd_check(run_dir, stage):
 
 
 def self_pass_failures(stage, receipt):
-    """No stage closes on a receipt it wrote about itself.
+    """A receipt that ASSERTS a review cannot name itself as that reviewer.
 
-    The stage contract decides whether a stage carries a recorded REVIEW
-    (review_required). This guard is narrower and always applies: whatever the
-    contract says, a receipt that names a reviewer which IS the author is a
-    self-approval and cannot stand.
+    Precise on purpose. Plenty of receipts legitimately carry no review at all
+    (the stage contract records whether one is required), and a fixture or a
+    no-review stage may fill reviewer_agent with the author without claiming
+    anything was reviewed. That is not self-approval, it is a field with no
+    claim behind it.
 
-    A stage with review_required false legitimately records no reviewer - its
-    approval lives at the visual-mockup bible review instead - so an absent
-    reviewer there is the designed path, not a gap. Where a reviewer IS named,
-    it must be someone else.
+    This fires only on the real defect: a receipt that asserts review evidence
+    - a `review` block, `reviewed` true, or a non-zero review_qc_passes - while
+    naming its own author as the reviewer. On bf2026-jjwd exactly that shape
+    appeared, claiming a pass from a reviewer that never ran and describing
+    fonts that were no longer in the artifact.
     """
     if not isinstance(receipt, dict):
         return []
-    status = str(receipt.get("status") or "").strip().lower()
-    if status != "pass":
+    asserts_review = bool(
+        receipt.get("review")
+        or receipt.get("reviewed") is True
+        or (isinstance(receipt.get("review_qc_passes"), int)
+            and receipt.get("review_qc_passes") > 0)
+        or receipt.get("reviewed_at")
+    )
+    if not asserts_review:
         return []
     author = receipt.get("author_agent") or receipt.get("author_session")
     reviewer = receipt.get("reviewer_agent") or receipt.get("reviewer_session")
     if _is_placeholder_session(reviewer):
-        return []
+        return [
+            f"stage {stage}: the receipt asserts a review but names no reviewer. "
+            f"Record the reviewer who performed it, or state what is true as "
+            f"'pass_unreviewed'."]
     if not _is_placeholder_session(author) and reviewer == author:
         return [
-            f"stage {stage}: the receipt claims status 'pass' and names itself as its "
-            f"own reviewer ({reviewer!r}). A self-approval cannot close a stage; record "
-            f"an independent reviewer, or state what is true as 'pass_unreviewed'."]
+            f"stage {stage}: the receipt asserts a review and names itself as its own "
+            f"reviewer ({reviewer!r}). A self-approval cannot stand; record an "
+            f"independent reviewer, or state what is true as 'pass_unreviewed'."]
     return []
-
 
 def cmd_close(run_dir, stage):
     spec, errs = load_contract_stage(stage)
