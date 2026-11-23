@@ -249,6 +249,7 @@ def offers_by_slot(launch: dict) -> dict:
             "amount_minor": price.get("amount_minor"),
             "currency": str(price.get("currency") or ""),
             "billing_type": price.get("billing_type") or "one_time",
+            "recurring_interval": price.get("recurring_interval"),
             "schedule": price.get("schedule") or [],
             "test_only": bool(offer.get("test_only")),
         }
@@ -274,12 +275,36 @@ def _format_amount(amount_minor, currency: str) -> str:
     return f"{symbol}{major}" if symbol else f"{currency} {major}"
 
 
+def _billing_vocab():
+    """The shared billing vocabulary (shared-utils/signature_launch_contract/billing.py), loaded by
+    path from the nearest ancestor that carries it (onboarding tree or installed skills root).
+    Missing = a recurring cadence cannot be phrased, so the caller fails closed."""
+    mod = sys.modules.get("signature_launch_billing")
+    if mod is not None:
+        return mod
+    import importlib.util
+    for parent in Path(__file__).resolve().parents:
+        path = parent / "shared-utils" / "signature_launch_contract" / "billing.py"
+        if path.is_file():
+            spec = importlib.util.spec_from_file_location("signature_launch_billing", path)
+            mod = importlib.util.module_from_spec(spec)
+            sys.modules["signature_launch_billing"] = mod
+            spec.loader.exec_module(mod)
+            return mod
+    raise PageBuildError("the shared billing vocabulary (billing.py) is not installed, "
+                         "so a recurring price's cadence cannot be disclosed")
+
+
 def disclosure_for(slot: str, offer: dict) -> str:
     """The exact-terms sentence rendered adjacent to every purchase CTA.
 
     Built ONLY from the approved launch record's verified price fields. A
-    term the builder cannot state exactly (installments, an unlabelled
-    recurring price) is refused, never flattened.
+    recurring price with no schedule is phrased from its ``recurring_interval``
+    through the shared billing vocabulary ("$89.00/month", renews until
+    cancelled); Skill 83's intake carries the cadence there and refuses any
+    schedule. A term the builder cannot state exactly (installments, a
+    recurring price with neither an interval nor a schedule, an interval
+    outside the vocabulary) is refused, never flattened.
     """
     amount = _format_amount(offer.get("amount_minor"), offer.get("currency"))
     billing = offer.get("billing_type")
@@ -292,10 +317,21 @@ def disclosure_for(slot: str, offer: dict) -> str:
                 "payment method when you accept. No further charges for "
                 "this offer.")
     schedule = [e for e in offer.get("schedule") or [] if isinstance(e, dict)]
+    interval = offer.get("recurring_interval")
+    if billing == "recurring" and not schedule and interval:
+        bill = _billing_vocab()
+        try:
+            per = bill.price_per_interval(amount, interval)
+        except ValueError as exc:  # BillingError: an interval nobody approved
+            raise PageBuildError(f"{slot}: {exc}") from exc
+        unit = str(interval).strip().casefold()
+        return (f"Recurring charge of {per}, charged to your original payment "
+                f"method when you accept and again every {unit} until you "
+                "cancel. Cancel before a renewal to stop future charges.")
     if not schedule:
         raise PageBuildError(
-            f"{slot}: {billing} price carries no schedule, so the full "
-            "obligation cannot be disclosed")
+            f"{slot}: {billing} price carries neither a recurring_interval "
+            "nor a schedule, so the full obligation cannot be disclosed")
     terms = "; ".join(
         str(e.get("due") or e.get("label") or "")
         + (f" at {_format_amount(e.get('amount_minor'), offer.get('currency'))}"
