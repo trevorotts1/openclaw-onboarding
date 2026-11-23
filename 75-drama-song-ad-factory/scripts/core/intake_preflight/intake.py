@@ -20,6 +20,11 @@ import os
 import re
 import sys
 
+try:                                   # package import in the CLI
+    from . import asset_inputs as _asset_inputs
+except ImportError:                    # tests add this folder to sys.path
+    import asset_inputs as _asset_inputs
+
 # ponytail: placement-substitution capped by leftover slots only; full
 # re-prioritization add when a verdict needs it.
 
@@ -620,6 +625,23 @@ def evaluate(brief, settings=None, resume_state=None, run_id=None, now_unix=None
                      for n in detect_injection(brief or {})]
     r["mode"] = mode_of(brief)
     r["notices"] = notices(brief)
+    # F-EOC-2 / G-FACE-02: a supplied logo or lip-source still is validated at
+    # intake, before any spend. An unusable asset refuses the brief; absent
+    # assets are the interview's business, not an error.
+    assets = _asset_inputs.validate_intake_assets(brief or {})
+    if not assets["ok"]:
+        codes = []
+        for problem in assets["problems"]:
+            if problem["code"] not in codes:
+                codes.append(problem["code"])
+        r.update(outcome="rejected", reason_code=codes[0],
+                 problems=assets["problems"], facts=assets["facts"],
+                 approval_invalidated=False, changes=[],
+                 next_action=("Replace the unusable logo with a PNG of at least "
+                              "512 px per edge on a transparent background, or "
+                              "re-render the lip-source still at 720x1280 or "
+                              "larger, then run intake again."))
+        return r
     if r["mode"] == "concept" and r.get("outcome") == "ok" and not (brief or {}).get("packet_lines"):
         r.update(outcome="waiting", reason_code="PACKET_REQUIRED_IN_CONCEPT_MODE",
                  next_action="Concept mode: send the client's own script or storyboard lines "
