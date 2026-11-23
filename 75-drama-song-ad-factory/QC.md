@@ -345,8 +345,17 @@ to self-approve a run.
   mouth-strip path (`<delivery folder>/mouth-strips/<segment>.png`) and the receipt lists
   them for a person; (4) every second paid job traces to a person-marked defect, a
   changed input and fewer than 2 prior jobs; (5) clips are trimmed to audio length, placed
-  at the Suno time corrected by the stem offset, lanczos-upscaled to 1080x1920, conformed
-  by dropping frames (no minterpolate) through `load_governor`; (6) rows list the take
+  at the Suno time corrected by the stem offset, lanczos-upscaled to 1080x1920, and
+  conformed to the master's native frame rate by plain frame repeat or drop through
+  `final_assembler/fps_conform.py` (invoked under `load_governor`). There is **no
+  24-to-30 frame-rate interpolation on any shot** (N-23; section 2 S-28, which replaces
+  the earlier "motion-interpolated conform" wording): the master runs at the native rate
+  of its story clips and a clip at another rate is matched by repeat or drop only.
+  QC and SKILL.md state this one rule, so the two can no longer disagree. A conform
+  changes the timeline rate only; it never removes duplicate frames generated inside a
+  clip at that clip's native rate, and the fix for those is clip-side (retake or replace
+  the clip, F-DUP-1), never a timeline-rate change. A master over the 2 percent duplicate
+  cap fails `TIMELINE_DUP_FRAMES` in `fps_conform.py`; (6) rows list the take
   kept, jobs used (n of 2), verdict and numbers, flag and strip path, and
   `lip_gate.qc_check` accepts `KEPT_BEST` and flagged rows that carry a strip path.
 
