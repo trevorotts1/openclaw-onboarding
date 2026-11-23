@@ -1269,15 +1269,22 @@ SOP named above.
   records `QC_DURATION_OVERSHOOT_SEVERE` with the exact seconds over. An
   overshoot never stops the run - whether a long master is redone belongs to
   the client.
-- **Frame rate (Part H H3, replaces the old "output = the clips' native
-  rate" line and the old "drop frames, never invent them" wording for lip-sync
-  clips):** the master is always 30 fps. Kling clips are native 30 and pass
-  through with no conform filter (every lip-sync frame kept); Hailuo 02
-  Standard clips are native 24 and are motion-interpolated to 30 (never the
-  plain `fps` filter). The assembler refuses any other timeline rate unless
-  the choice card sets it, and checks every segment with mpdecimate (at most
-  2% duplicated frames; a deliberate still is marked `hold`). Settled by
-  S75-048 step 3.
+- **Frame rate (Part H H3): duplicate frames are generated inside the clips,
+  and no timeline rate change can remove them.** Every clip is made at its own
+  native rate and the model itself emits duplicate frames at that rate; a
+  24-to-30 timeline conform cannot take them out and is never the fix. The one
+  fix is clip-side: retake the shot or replace the clip. The master runs at the
+  native rate of its story clips, and a clip at another rate is matched by
+  plain frame repeat or drop - never by a motion-interpolated conform. The
+  assembler refuses any other timeline rate unless the choice card sets it
+  (`fps_set_by_choice_card`), and refuses a master that fails the cap with
+  `TIMELINE_DUP_FRAMES`. Duplicate frames are measured with mpdecimate on every
+  clip as it lands, before assembly; a clip over the cap is refused and remade
+  clip-side. A deliberate still is marked `hold`; a per-segment duplicate count
+  is advice only while the whole master is under the 2% cap (N-15). Replaces
+  the old "output = the clips' native rate" line and the old "drop frames,
+  never invent them" wording for lip-sync clips, and replaces S75-048 step 3
+  with N-23.
 - **Shapes:** Vertical (9:16) or Wide (16:9), each generated natively - never
   a crop of the other. The card asks these two; there is no "both shapes"
   answer (`intake_card._shape_q`). The "both shapes" promise is a product gap,
