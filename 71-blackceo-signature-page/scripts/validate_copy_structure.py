@@ -33,9 +33,13 @@ never failures. Public-copy leakage stays with validate_public_copy.py.
 
 The copy manifest's CTA entries are checked for their handoff types
 (update plan Item 32): every entry the manifest carries under "ctas" must
-carry a handoff_type of form_pop, in_page_anchor, or external_link;
-exactly one entry may be marked primary, and the primary's type must be
-form_pop, the pop of the form intake names.
+carry a handoff_type of form_pop, in_page_anchor, or external_link.
+At most one entry may be marked primary, and that primary's type must be
+the one the run's page kind declares: form_pop for the signature landing
+(opt-in) page's form route, external_link for the signature sales page's
+checkout route (references/page-kinds.json, the same declaration
+validate_handoff.py reads). A run with no declared page kind keeps the
+form route this check shipped with.
 """
 import argparse
 import json
@@ -270,7 +274,7 @@ def check_limit(rep, value, lim, label, failed_keys):
 
 
 def validate(units, section_order, structure_notes, spec, manifest=None,
-             qc_note_present=False):
+             qc_note_present=False, primary_type="form_pop", page_kind=None):
     rep = Report()
     spec_by_id = {s["id"]: s for s in spec["sections"]}
     sequence = spec["sequence"]
@@ -571,12 +575,20 @@ def validate(units, section_order, structure_notes, spec, manifest=None,
                 rep.fails.append(
                     f"CTA handoff: copy manifest marks {len(primaries)} "
                     f"primary CTAs; the page has exactly one primary CTA")
-            elif primaries and primaries[0][1] != "form_pop":
+            elif primaries and primaries[0][1] != primary_type:
+                if primary_type == "external_link":
+                    requirement = (
+                        "a sales page's primary CTA is the client's checkout "
+                        "page or payment link (external_link)")
+                else:
+                    requirement = (
+                        "the primary CTA's handoff is the form pop (form_pop) "
+                        "against the form intake names")
+                kind_note = f" for page kind {page_kind!r}" if page_kind else ""
                 rep.fails.append(
                     f"CTA handoff: the primary CTA {primaries[0][0]!r} "
-                    f"carries handoff_type {primaries[0][1]!r}; the primary "
-                    f"CTA's handoff is the form pop (form_pop) against the "
-                    f"form intake names")
+                    f"carries handoff_type {primaries[0][1]!r}; "
+                    f"{requirement}{kind_note}")
 
     invite = rules.get("invite_names_offer")
     if invite and manifest and manifest.get("offer_name"):
@@ -684,9 +696,26 @@ def main(argv=None):
               f"'{manifest['copy_version']}' but the spec is "
               f"'{spec['copy_version']}'; validating against the spec given")
 
+    # The expected primary-CTA handoff follows the run's declared page kind
+    # (references/page-kinds.json), the same declaration validate_handoff.py
+    # reads: a sales page hands off to its checkout (external_link), an
+    # opt-in landing page pops the form (form_pop). No declared kind keeps
+    # the form route this check shipped with.
+    primary_type, page_kind = "form_pop", None
+    if target.is_dir():
+        try:
+            import page_kinds
+            page_kind = page_kinds.declared(target, {})
+            if page_kind and \
+                    page_kinds.entry(page_kind).get("action") == "checkout":
+                primary_type = "external_link"
+        except Exception:
+            primary_type, page_kind = "form_pop", None
+
     units, section_order, structure_notes = parse_manuscript(text)
     rep = validate(units, section_order, structure_notes, spec,
-                   manifest=manifest, qc_note_present=qc_note_present)
+                   manifest=manifest, qc_note_present=qc_note_present,
+                   primary_type=primary_type, page_kind=page_kind)
 
     if args.json:
         out = {"spec": spec["spec_id"], "copy_version": spec["copy_version"],

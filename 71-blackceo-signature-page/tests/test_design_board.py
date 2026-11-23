@@ -337,6 +337,45 @@ class QcAndApprovalTests(Base):
         self.assertIsNone(db.load_record(self.run_dir).get("approval"))
         self.assertTrue(db.gate_failures(self.run_dir))
 
+    def test_a_tenant_mismatch_binds_to_this_boxs_owner_never_another_refusal(self):
+        """RFX-006: a single-tenant Command Center names its tenant 'self'; the identity refusal
+        is retried once as the box owner (invited-owner:<sha256 of the owner chat id>)."""
+        import hashlib
+        self.seeded(approved=False)
+
+        class Refused(Exception):
+            def __init__(self, code):
+                self.code = code
+
+        class Ver:
+            ApprovalRefused, ApprovalUnavailable = Refused, RuntimeError
+            calls = []
+
+            @staticmethod
+            def verify(approval_id, kind, plan_hash, scope, **kw):
+                Ver.calls.append(kw)
+                if kw.get("identity_kind") != "actor":
+                    raise Refused("APPROVAL-IDENTITY")
+                return {"ok": True, "approval_id": approval_id, "authority": "command-center",
+                        "consenting_actor_ref": kw["client_identity"], "kind": kind}
+        owner = "invited-owner:" + hashlib.sha256(b"424242").hexdigest()
+        with mock.patch.object(db, "_approval_verifier", return_value=Ver), \
+                mock.patch.dict("os.environ", {"OPENCLAW_OWNER_CHAT_ID": "424242"}):
+            db.approve_with_command_center(self.run_dir, "apr_chat_0001")
+        self.assertEqual(Ver.calls[-1]["client_identity"], owner)
+        self.assertEqual(db.gate_failures(self.run_dir), [])
+        Ver.calls.clear()
+
+        class HashRefusal(Ver):
+            @staticmethod
+            def verify(approval_id, kind, plan_hash, scope, **kw):
+                raise Refused("APPROVAL-HASH")
+        self.seeded(approved=False)
+        with mock.patch.object(db, "_approval_verifier", return_value=HashRefusal), \
+                mock.patch.dict("os.environ", {"OPENCLAW_OWNER_CHAT_ID": "424242"}):
+            with self.assertRaises(db.BoardError):
+                db.approve_with_command_center(self.run_dir, "apr_chat_0001")
+
     def test_command_center_approval_goes_stale_when_the_board_changes(self):
         self.seeded(approved=False)
         with mock.patch.object(db, "_approval_verifier", return_value=self._fake_verifier()):

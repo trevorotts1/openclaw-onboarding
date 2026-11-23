@@ -72,6 +72,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import importlib.util
+import inspect
 import json
 import os
 import re
@@ -110,6 +111,19 @@ COMBINE = SKILL_ROOT / "scripts" / "combine_review_pdf.py"
 DEFAULT_REQUEST = "production-request.json"
 RECORD = "stage-executor-record.json"
 BOARD_STAGE = "design-board"  # SPF021: one client-approved board per page, after the images, before final-mockups
+
+
+def job_is_verbatim_sheet(job: dict) -> bool:
+    """True for a job whose prompt is a VERBATIM layout sheet, never descriptive prose.
+
+    Owner rule 12 exempts verbatim fields from the floor and keeps only the ceiling
+    (BFD-956). The design board is the one such artifact: a fixed set of printed
+    strings, brand colors, logo placement and image tiles, with nothing to expand
+    honestly. Every other stage's prompt is descriptive and keeps the full band.
+    """
+    return job.get("stage") == BOARD_STAGE
+
+
 GATE = SKILL_ROOT / "scripts" / "stage_gate.py"  # the one authority for whether a stage may start
 FIXTURE_MARKER = "SKILL71_FIXTURE_RUN"  # AF-71-UNGATED: set to 1 ONLY by test harnesses, never by a product script
 
@@ -1507,6 +1521,8 @@ def build_input(job: dict, request: dict) -> dict:
         refs = list(dict.fromkeys(str(r) for r in (job.get("style_refs") or []) +
                                   request_references(request) + job["references"]))
     base = {"prompt": job["prompt"], "input_urls": refs}
+    if not refs:
+        del base["input_urls"]  # ponytail: text-to-image schema rejects an empty input_urls; image-to-image requires it
     if job.get("ratio"):
         base["aspect_ratio"] = job["ratio"]
     extra = request.get("input_extra")
@@ -1537,7 +1553,13 @@ def build_input(job: dict, request: dict) -> dict:
         else:
             base.update(extra)
     if exact:  # a request-level extra can never add a picture to the board either
-        base["input_urls"] = refs
+        # Same rule line 1511 already applies: an EMPTY input_urls is rejected by the
+        # text-to-image schema. A non-empty one must hold hosted URLs, never local
+        # paths, so the caller hosts them (hosted_references) before this point.
+        if refs:
+            base["input_urls"] = refs
+        else:
+            base.pop("input_urls", None)
     return base
 
 
@@ -2130,8 +2152,15 @@ class _AdapterTransport:
                                 "spend, so the render is refused (no paid render was made)")
         return value
 
-    def submit(self, req_path: Path) -> dict:
-        return self._call("submit", "--request", str(req_path), "--mode", "active")
+    def submit(self, req_path: Path, ceiling_only: bool = False) -> dict:
+        args = ["submit", "--request", str(req_path), "--mode", "active"]
+        # An adapter that predates the flag would refuse the whole submit on an unknown argument.
+        if ceiling_only and '"--ceiling-only"' in self.adapter.read_text(encoding="utf-8"):
+            # BFD-956: the design board is a verbatim/ceiling-only layout sheet. The adapter's
+            # own paid-submit guard is told so for THIS job only; every other job keeps the
+            # descriptive floor. Never set from anything but job_is_verbatim_sheet().
+            args.append("--ceiling-only")
+        return self._call(*args)
 
     def upload(self, file_path) -> str:
         """Host one local reference image through Skill 74's own `upload` (KIE accepts only http(s)
@@ -2178,6 +2207,41 @@ def hosted_references(refs, transport) -> list:
     return out
 
 
+def _ceiling_kw(fn, ceiling_only: bool) -> dict:
+    """{"ceiling_only": True} only when this job is a verbatim sheet AND the callable accepts the
+    keyword, decided by binding its signature (the same rule as _transport_submit). A policy that
+    predates the keyword keeps the full band, so the call never raises TypeError mid-run.
+    ponytail: until shared-utils/prompt_policy.py takes ceiling_only, the board keeps the floor."""
+    if not ceiling_only:
+        return {}
+    try:
+        accepts = "ceiling_only" in inspect.signature(fn).parameters
+    except (TypeError, ValueError):
+        accepts = False
+    return {"ceiling_only": True} if accepts else {}
+
+
+def _transport_submit(transport, req_path: Path, ceiling_only: bool = False) -> dict:
+    """Submit through the transport, carrying the verbatim/ceiling-only declaration when this
+    job is one (the design board, BFD-956). The declaration is never inferred here: the caller
+    passes job_is_verbatim_sheet(job).
+
+    The transport's support for the keyword is decided by BINDING ITS SIGNATURE, never by
+    calling it and catching TypeError: a submit is a non-idempotent paid call, and catching an
+    exception from inside a real submit could re-submit a job the provider already accepted.
+    So we call submit exactly once, with or without the keyword.
+    """
+    if not ceiling_only:
+        return transport.submit(req_path)
+    try:
+        accepts = "ceiling_only" in inspect.signature(transport.submit).parameters
+    except (TypeError, ValueError):  # a builtin/exotic callable: assume the older shape
+        accepts = False
+    if accepts:
+        return transport.submit(req_path, ceiling_only=True)
+    return transport.submit(req_path)
+
+
 def drive_paid_job(run_dir: Path, job: dict, request: dict, transport, *,
                    cap: int, label: str) -> dict:
     """One paid render with the provider job id persisted BEFORE the wait (F21 steps 2-4).
@@ -2194,7 +2258,11 @@ def drive_paid_job(run_dir: Path, job: dict, request: dict, transport, *,
     req_dir.mkdir(parents=True, exist_ok=True)
     req_path = req_dir / f"request-a{int(ident['attempt']):03d}.json"
     req = {"model": model, "input": build_input(job, request)}
-    req["input"]["input_urls"] = hosted_references(req["input"].get("input_urls"), transport)
+    hosted = hosted_references(req["input"].get("input_urls"), transport)
+    if hosted:
+        req["input"]["input_urls"] = hosted
+    else:
+        req["input"].pop("input_urls", None)  # ponytail: same empty-refs rule as build_input (text-to-image schema)
     # F18 (kept from main): freeze the FINAL prompt and bind the payload that will actually be
     # sent. A payload whose prompt is not the frozen one never reaches the paid call.
     pol = _prompt_policy()
@@ -2203,10 +2271,19 @@ def drive_paid_job(run_dir: Path, job: dict, request: dict, transport, *,
             "shared-utils/prompt_policy.py is missing: the paid prompt band cannot be "
             "enforced, so the render is refused (no API call was made)")
     budget = prompt_budget(model) or {}
+    # BFD-956: the design board is a VERBATIM layout sheet -- a fixed set of printed
+    # strings with no descriptive prose to expand. Owner rule 12's stated verbatim
+    # exemption applies: the ceiling and the documented maximum stay enforced, the
+    # floor does not, because reaching it would mean inventing text the board must not
+    # carry. Every other stage keeps the full band.
+    # Only when the installed policy can judge a ceiling-only sheet: the same flag goes to the
+    # Skill 74 submit, and an adapter or policy without it must never be handed it mid-run.
+    board_verbatim = job_is_verbatim_sheet(job) and bool(_ceiling_kw(pol.freeze, True))
     frozen = pol.freeze(job["prompt"], model=model,
                         max_chars=budget.get("max_chars"),
-                        max_source=budget.get("source"), job_id=ident["key"][:16])
-    gate = pol.assert_payload(req, frozen=frozen)
+                        max_source=budget.get("source"), job_id=ident["key"][:16],
+                        **_ceiling_kw(pol.freeze, board_verbatim))
+    gate = pol.assert_payload(req, frozen=frozen, **_ceiling_kw(pol.assert_payload, board_verbatim))
     if not gate["ok"]:
         raise ExecutorError(
             "prompt policy refused the payload before any paid call: %s"
@@ -2218,7 +2295,7 @@ def drive_paid_job(run_dir: Path, job: dict, request: dict, transport, *,
     # The gate above measured the COMPOSED payload, so its payload_sha256 names the pre-freeze
     # request. The receipt must name the payload the transport receives, so the frozen payload
     # is asserted again AFTER the freeze and THAT hash is recorded.
-    gate = pol.assert_payload(req, frozen=frozen)
+    gate = pol.assert_payload(req, frozen=frozen, **_ceiling_kw(pol.assert_payload, board_verbatim))
     if not gate["ok"]:
         raise ExecutorError(
             "prompt policy refused the frozen payload before any paid call: %s"
@@ -2237,7 +2314,7 @@ def drive_paid_job(run_dir: Path, job: dict, request: dict, transport, *,
                          attempt=ident["attempt"], request_sha256=request_sha256)
 
     try:
-        submitted = transport.submit(req_path)
+        submitted = _transport_submit(transport, req_path, ceiling_only=board_verbatim)
     except ExecutorError as exc:
         mark_uncertain(run_dir, rid, f"submit outcome unknown: {exc}"[:400])
         raise
@@ -2632,7 +2709,7 @@ def run_stage(stage: str, run_dir: Path, request: dict, provider,
                 "provider": result.get("provider"),
                 "mode": result.get("mode"),
                 "task_id": result.get("task_id"),
-                "inputs": build_input(job, request)["input_urls"],
+                "inputs": build_input(job, request).get("input_urls", []),  # absent when no refs
                 "typed_references": job["typed_references"],
                 "treatments": [e["treatment"] for e in resolve_composition(
                     section, index, request)["slots"]],

@@ -139,6 +139,7 @@ import argparse
 import colorsys
 import json
 import math
+import re
 import sys
 from pathlib import Path
 
@@ -413,11 +414,27 @@ def format_measures(m):
             f"aspect={m['aspect_ratio']:.4f}")
 
 
+_SLOT_ID_RE = re.compile(r"^([A-Z][A-Z0-9_]*)-0*(\d+)$")
+
+
 def normalize_id(value):
-    """Normalize an image id / file stem for inventory matching."""
+    """Normalize an image id / file stem for inventory matching.
+
+    Slot numbering is compared NUMERICALLY, the way the sibling
+    validator circle_image._slot_number already compares it: the
+    delivered file stage_executor writes is always ``Image-<nn>.png``
+    (``Image-{int(digits):02d}``), while an inventory may record its
+    slot as ``IMG-001``. ``IMG-01``, ``IMG-001`` and ``Image-1`` all
+    name the same slot. Before this, a zero-padded inventory id never
+    matched the delivered file, and the native-ratio, delivery-dimension
+    and continuity checks were silently skipped as a WARN.
+    """
     text = str(value).strip().upper()
     if text.startswith("IMAGE-"):
         text = "IMG-" + text[len("IMAGE-"):]
+    match = _SLOT_ID_RE.match(text)
+    if match:
+        return f"{match.group(1)}-{int(match.group(2))}"
     return text
 
 

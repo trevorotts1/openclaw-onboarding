@@ -106,6 +106,8 @@ MODULES = [
     "test_copy_forms_cover_all_roles.py",
     "test_routing_guard_receipt.py",
     "test_page_result_role_echo.py",
+    # RFX-006: the fixes a client box carried locally, now upstream.
+    "test_rfx006_box_fixes.py",
 ]
 
 def skip_reason(stdout):

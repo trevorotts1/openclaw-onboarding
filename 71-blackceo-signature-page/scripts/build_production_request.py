@@ -741,9 +741,14 @@ def template_for(stage: str, blocks: dict) -> str:
     parts = [LEADS[stage]]
     for key, heading in BLOCKS:
         if blocks.get(key):
-            body = blocks[key]
-            if key == "rules_json":  # literal braces survive the wire's str.format
-                body = body.replace("{", "{{").replace("}", "}}")
+            # EVERY block, not only rules_json: a literal brace anywhere in the prose
+            # (the measured design system embeds the font map as JSON) raised
+            # "unknown placeholder" from str.format, sizes_for()'s caller read the trial
+            # as "does not fit", and the binary-search trim silently kept only the
+            # prefix before the first brace. The documented remedy ("supply
+            # --design-prose with the run's measured design system") therefore failed
+            # with no error and no growth. Escaping here is what makes the prose usable.
+            body = str(blocks[key]).replace("{", "{{").replace("}", "}}")
             parts += [heading, body]
     if blocks.get("brand_style"):  # the design library card, verbatim; braces survive str.format
         parts += [BRAND_STYLE_HEAD, blocks["brand_style"].replace("{", "{{").replace("}", "}}")]

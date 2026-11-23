@@ -310,7 +310,75 @@ def shape_errors(prefix, item):
     return out
 
 
-def validate(data, base_dir=None, check_files=False, inventory_data=None, measure=False):
+def _slot_number(value):
+    """Last integer in an id/filename, so IMG-001 and Image-01 compare equal."""
+    match = re.search(r"(\d+)\s*$", str(value or "").strip())
+    return int(match.group(1)) if match else None
+
+
+def qc_report_problems(entries, report, report_name):
+    """A map entry claiming qc_status 'passed' must be substantiated by the
+    image-generation-qc stage's own report.
+
+    BUG-20261122-069 residual (repair, run 87): Order C5 checked only that the
+    field read "passed". A map could therefore declare every asset passed while
+    image-qc.json recorded FAIL, or name an asset the QC report never graded.
+    Every item used on the page and marked passed must now resolve to an asset
+    in that report whose own ``pass`` is true. Tightening-only: it can refuse a
+    map that would otherwise have validated, and can never manufacture a pass.
+    """
+    problems = []
+    if not isinstance(report, dict):
+        return [f"QC report {report_name} is missing or unreadable; a map may not "
+                f"claim qc_status 'passed' without the stage's own QC verdict"]
+    claimed = any(
+        entry is not None
+        and (entry[1].get("asset_file") or entry[1].get("asset_path"))
+        and entry[1].get("qc_status") == "passed"
+        for entry in entries
+    )
+    if not claimed:
+        return problems
+    verdict = str(report.get("verdict") or "").strip().upper()
+    if verdict != "PASS":
+        problems.append(
+            f"QC report {report_name} verdict is {report.get('verdict')!r}, not PASS; "
+            f"a map may not mark images passed while the stage's own QC failed"
+        )
+    by_slot = {}
+    for asset in report.get("assets") or []:
+        if not isinstance(asset, dict):
+            continue
+        digits = _slot_number(asset.get("asset_id"))
+        if digits is None:
+            digits = _slot_number(Path(str(asset.get("local_path") or "")).stem)
+        if digits is not None:
+            by_slot[digits] = asset
+    for entry in entries:
+        if entry is None:
+            continue
+        prefix, item, item_id, _ = entry
+        if not (item.get("asset_file") or item.get("asset_path")):
+            continue
+        if item.get("qc_status") != "passed":
+            continue
+        digits = _slot_number(item.get("filename")) or _slot_number(item_id)
+        asset = by_slot.get(digits) if digits is not None else None
+        if asset is None:
+            problems.append(
+                f"{prefix} claims qc_status 'passed' but QC report {report_name} "
+                f"graded no asset for that slot"
+            )
+        elif not asset.get("pass"):
+            problems.append(
+                f"{prefix} claims qc_status 'passed' but QC report {report_name} "
+                f"records pass={asset.get('pass')!r} for that slot"
+            )
+    return problems
+
+
+def validate(data, base_dir=None, check_files=False, inventory_data=None, measure=False,
+             qc_report=None, qc_report_name="image-qc.json", qc_report_provided=False):
     errors = []
     if not isinstance(data, dict) or not isinstance(data.get("images"), list):
         return ["Top-level JSON must contain an images array."]
@@ -435,6 +503,9 @@ def validate(data, base_dir=None, check_files=False, inventory_data=None, measur
     if measure:
         errors.extend(measure_assets(entries, base_dir))
 
+    if qc_report_provided:
+        errors.extend(qc_report_problems(entries, qc_report, qc_report_name))
+
     return errors
 
 
@@ -446,6 +517,10 @@ def main():
                         help="image-inventory.json; generation entries must match the map's master count")
     parser.add_argument("--measure", action="store_true",
                         help="open each asset with Pillow; actual width/height must equal declared")
+    parser.add_argument("--qc-report", type=Path, default=None,
+                        help="image-generation-qc/image-qc.json; a map entry marked qc_status "
+                             "'passed' must be substantiated by that stage's own report. "
+                             "Auto-located for an image-map-upload/ manifest when omitted.")
     args = parser.parse_args()
     try:
         data = json.loads(args.manifest.read_text(encoding="utf-8"))
@@ -461,8 +536,25 @@ def main():
             print(f"FAIL: could not read inventory JSON: {exc}")
             return 2
 
+    qc_report = None
+    qc_report_name = "image-qc.json"
+    qc_path = args.qc_report
+    if qc_path is None and args.manifest.parent.name == "image-map-upload":
+        # The stage contract runs this validator with only {run_dir}; the sibling
+        # QC report is deterministic, so locate it rather than require a new argv.
+        qc_path = args.manifest.parent.parent / "image-generation-qc" / "image-qc.json"
+    qc_report_provided = qc_path is not None
+    if qc_path is not None:
+        qc_report_name = str(qc_path)
+        try:
+            qc_report = json.loads(qc_path.read_text(encoding="utf-8"))
+        except Exception:
+            qc_report = None  # qc_report_problems names the missing/unreadable report
+
     errors = validate(data, args.manifest.parent, args.check_files,
-                      inventory_data=inventory_data, measure=args.measure)
+                      inventory_data=inventory_data, measure=args.measure,
+                      qc_report=qc_report, qc_report_name=qc_report_name,
+                      qc_report_provided=qc_report_provided)
     if errors:
         print("FAIL")
         for error in errors:
