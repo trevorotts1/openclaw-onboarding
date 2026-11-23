@@ -844,9 +844,18 @@ only while a key is present; a run without that answer behaves exactly as today.
   submitted), a 429 is backed off and resubmitted, and an unknown job state is polled,
   never resubmitted. Every failure is reported by name; the run never switches
   provider on its own and asks the one fallback question instead.
-- **No words in the generated pictures** by default. A word that will not bake in is
-  overlaid at assembly (`TEXT_OVERLAID`), never delivered garbled; without tesseract
-  the OCR check reads `OCR_UNAVAILABLE`, which is never a PASS.
+- **Words are planned, never model-invented (the H3 path).** Picture prompts
+  carry the exact, short, correct English a prop must show, from the text record;
+  the H3 prompt describes that same writing so the clip animates it. The H3 prompt
+  never asks the model for new words, captions or a watermark, and no prompt leaves
+  props blank where the plan puts words. Every H3 clip is looked at by eye after it
+  lands - a contact sheet read by a vision model or a person - for NEW text before
+  it may enter the timeline; new readable text is MAJOR. The lip-sync model is never
+  asked for words and must add none; a lip-sync take also gets an eye check because
+  a scan alone never admits one. A word that will not bake in is overlaid at
+  assembly (`TEXT_OVERLAID` is the receipt/decision string, not permission to leave
+  a prop blank), never delivered garbled; without tesseract the OCR check reads
+  `OCR_UNAVAILABLE`, which is never a PASS.
 - **Conform:** clips arrive 704x1280 at 24 fps carrying their own audio, which is
   stripped - the song is the only audio - and the master is cover-scaled to its
   export size and 30 fps.
