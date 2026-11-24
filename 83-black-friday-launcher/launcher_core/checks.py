@@ -124,7 +124,11 @@ def _replay_checkout(request: Dict[str, Any]) -> Tuple[str, str]:
     if module is None or not callable(getattr(module, "validate_request", None)):
         return "unavailable", f"validate_request is absent (replay interpreter {sys.executable})"
     try:
-        module.validate_request(request)
+        # SWB-095: a LIVE request (test_only false) is judged WITH the clock Skill 79 demands, exactly as the
+        # producer's probe (checkout.replay) does. Without it the contract refuses every live request with
+        # "requires `now`", so a package whose probe was accepted could never pass its own check.
+        clock = checkout_module.validation_clock(request)
+        module.validate_request(*((request,) if clock is None else (request, clock)))
     except Exception as exc:  # the contract's own typed validation error
         message = str(exc)
         if any(marker in message for marker in _SHAPE_MARKERS):
@@ -268,7 +272,11 @@ def _decided_requirement_violations(manifest: Dict[str, Any], root: Path,
                      "must be recorded as pending")
     thank_you = next((p for p in (manifest.get("pieces") or [])
                       if p.get("role") == "thank_you"), None)
-    if thank_you is None:
+    # SWB-095: an external-install package carries NO launcher piece (a piece binds only to a Skill 83
+    # dispatch), so its thank-you page is the sealed page row another skill delivered for the thank_you
+    # slot. That row is judged in full by the page lane (delivery_units.page_draft_violations); a package
+    # with neither a piece nor such a row still has nothing to surface the relationships on.
+    if thank_you is None and "thank_you" not in _external_page_slots(manifest, root):
         fails.append("AF-LAUNCH-CROSS-SALES: the package carries no thank_you piece "
                      "to surface the relationships on")
 
