@@ -1,7 +1,7 @@
 ---
 name: blackceo-signature-page
 description: Build, revise, QC, and hand off BlackCEO Signature funnel pages end to end, including Standard or Long-Form copy, font/action planning, desktop/mobile wireframes, visual-direction mockups, image intelligence and prompts, generated-image QC, image maps, responsive HTML, GHL installation/testing, and authorized publishing. Use when a user asks for a BlackCEO Signature landing, signature sales page, opt-in, registration, challenge, booking, squeeze, webinar/event, or comparable focused-conversion page, or asks to apply the BlackCEO page, image, Secret Super Sauce, or visual-direction system. The signature sales page and the signature landing (opt-in) page are the two page kinds of this skill's landing role (`--page-kind sales|opt_in`). Direct-response sales pages (VSL, 8-section main, high-ticket, order-bump asset stacks) belong to Skill 56 `sales-page-assets`.
-version: 1.3.40
+version: 1.3.41
 ---
 
 # BlackCEO Signature Page — Skill 71
@@ -215,6 +215,8 @@ Paid-call approvals, client-owned credentials, provider limits, and retry rules 
 ## Native export and the production record (final-mockups)
 
 A mockup section arrives at its native size and the stage needs page-width slices plus a build record. Two scripts do it, never a hand edit: `scripts/export_native_slices.py <run_dir>/final-mockups` keeps each native in `raw-native/` (never overwritten, sha256 kept), writes the Lanczos page-width export (desktop 1440 px, mobile 390 px, aspect kept, never upscaled) and `export-receipt.json`; then `scripts/write_production_record.py <run_dir>` authors `final-mockups/production-record.json` and `final-mockups/mobile/production-record.json` from the request, the stage executor record, the spend ledger, the saved image-jobs requests, the re-verified export receipt, the real slice sizes and an OCR read-back of each native (`design_board.ocr_text`) against the section copy, and runs `validate_production_record.py` itself. A section whose image contradicts its copy fails and no record is left. Run both under `nice`, one at a time. The SOP's Stage 11 QC leg has the full procedure.
+
+Two further switches close the stage's last hand edits. `write_production_record.py --allow-text WORDS` (extra brand or chrome words an image may carry) now requires `--allow-reason TEXT` and `--allow-authority TEXT`; each section's `text_qc.allowed_text` records the exact words that image shows and its copy lacks, the whole allow list, the reason and the authority, and `validate_production_record.py` requires those fields whenever the object is present (it loosens nothing: an unlisted extra word is still a garble). And `scripts/build_hybrid_board.py <run_dir> --refresh-record [--overwrite]` re-pins `final-mockups/hybrid-board.json` to the CURRENT stitched mockups (desktop `final-mockups/mockup-full.png`, mobile the path its stitch receipt names, e.g. `final-mockups/mobile/mockup-full-mobile.png`) after verifying, from files and never from a record's own claim, that each panel hashes to its stitch receipt, the stitch receipt's slices are on disk and equal the re-verified export receipt's, and the production records exist, pass and cite that export receipt; any mismatch refuses and writes nothing. The new record carries a `refreshed_from` provenance block (prior and new panels, the receipts relied on, a hash over the block); the board is then composed. Without the flag the composer is unchanged.
 
 ## Swarm execution
 

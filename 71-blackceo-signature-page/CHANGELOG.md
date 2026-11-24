@@ -1,3 +1,12 @@
+## [1.3.41] - 2026-11-24 - allow-text carries its reason and authority; the hybrid board record can be refreshed by a tool (SWB-119)
+
+- `scripts/write_production_record.py`: `--allow-reason TEXT` and `--allow-authority TEXT`, both required whenever `--allow-text` is used (and refused without it). Each section's `text_qc.allowed_text` records the exact words that image shows and its copy lacks, the whole allow list, the reason and the authority.
+- `scripts/validate_production_record.py`: accepts `text_qc.allowed_text` and, when present, requires reason, authority and a non-empty allow list, and fails a word outside the list, a word of the section's own copy, or a word absent from the recorded OCR read. Nothing is loosened; a record without the object validates as before.
+- `scripts/build_hybrid_board.py --refresh-record`: re-pins the board record's desktop and mobile panels to the current stitched mockups after verifying every panel against its stitch receipt, the stitch inputs against the re-verified export receipt, and the production records; refuses on any mismatch and writes nothing; writes `refreshed_from` provenance; then composes (`--overwrite` unchanged). No flag, no change.
+- `scripts/validate_hybrid_board.py`: a record carrying `refreshed_from` must hold its own content hash and its `new` panels must equal the record's panels.
+- Docs: SKILL.md, SOP Stage 11 QC leg, `references/artifact-contracts.md`.
+- Tests: `tests/test_allow_text_reason.py` (17), `tests/test_hybrid_board_refresh.py` (20); they fail on 1.3.40. Skill 49 hash pin re-minted with a signed rotation record (Skill 71 scripts are pinned).
+
 ## [1.3.40] - 2026-11-24 - the native export and the production record are tools (SWB-109)
 
 - `scripts/export_native_slices.py` (new): keeps each native final-mockups slice in `raw-native/` (never overwritten, sha256 re-read), writes the Lanczos page-width export (desktop 1440, mobile 390, aspect kept, never upscaled) over `desktop/part-NN.png` and `mobile/part-NN.png`, and writes `export-receipt.json` (inputs, outputs, sizes, sha256, method, `receipt_sha256`). Refuses unreadable or zero-size input, a numbering gap, a native narrower than the page width, a different native already kept, a slice that is not the export of its kept native. Idempotent; `--dry-run`.

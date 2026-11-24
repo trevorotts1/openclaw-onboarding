@@ -116,6 +116,45 @@ def logo_failures(label, section, logo_sha=None):
     return out
 
 
+def allowed_text_failures(label, qc):
+    """An allow-text override recorded in text_qc must name its words, reason and authority.
+
+    Additive: a text_qc with no `allowed_text` is untouched. Present, it must be complete, its
+    words must come from its own allow list, appear in the recorded OCR read and not be words of
+    the section's own copy (an allowance for a word the copy has is no allowance)."""
+    if "allowed_text" not in qc:
+        return []
+    allowed = qc.get("allowed_text")
+    if not isinstance(allowed, dict):
+        return [f"section {label}: text_qc.allowed_text must be an object (words, allow_list, reason, authority)"]
+    out = []
+    for key in ("reason", "authority"):
+        if not isinstance(allowed.get(key), str) or not allowed[key].strip():
+            out.append(f"section {label}: text_qc.allowed_text.{key} is required (an override of the text "
+                       f"read-back names why and who authorised it)")
+    lists = {}
+    for key in ("words", "allow_list"):
+        value = allowed.get(key)
+        if not isinstance(value, list) or not all(isinstance(w, str) and w.strip() for w in value):
+            out.append(f"section {label}: text_qc.allowed_text.{key} must be a list of words")
+        else:
+            lists[key] = value
+    if "allow_list" in lists and not lists["allow_list"]:
+        out.append(f"section {label}: text_qc.allowed_text.allow_list is empty (an override that allows no word)")
+    if "words" in lists and "allow_list" in lists:
+        expected = set(tokens(qc.get("expected_text", "")))
+        ocr_tokens = set(tokens(qc.get("ocr_text", ""))) if isinstance(qc.get("ocr_text"), str) else None
+        for word in lists["words"]:
+            if word not in lists["allow_list"]:
+                out.append(f"section {label}: text_qc.allowed_text word {word!r} is not in its own allow_list")
+            elif word in expected:
+                out.append(f"section {label}: text_qc.allowed_text word {word!r} is a word of the section's copy, "
+                           f"not an allowance")
+            elif ocr_tokens is not None and word not in ocr_tokens:
+                out.append(f"section {label}: text_qc.allowed_text word {word!r} is not in the recorded read of the image")
+    return out
+
+
 def ocr_failures(label, slice_path, qc, ocr, board):
     """AF-G1: the image itself must support the recorded read-back and show the expected copy."""
     seen = board.tokens(ocr(slice_path))
@@ -285,6 +324,7 @@ def check_record(data, base_dir=None, ocr=None, model=None):
         if not isinstance(qc, dict):
             failures.append(f"section {label}: text_qc record is required (the per-section text-QC leg runs before stitching)")
             continue
+        failures.extend(allowed_text_failures(label, qc))
         if qc.get("checked_at_native_resolution") is not True:
             failures.append(f"section {label}: text_qc.checked_at_native_resolution must be true (the read happens at native resolution)")
         expected, readback = qc.get("expected_text"), qc.get("readback_text")

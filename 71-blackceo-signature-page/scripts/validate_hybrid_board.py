@@ -115,6 +115,27 @@ def _section_ids_from(path, kind):
     return None
 
 
+def _refreshed_from_failures(data):
+    """A record re-pinned by build_hybrid_board.py --refresh-record carries its provenance; when the
+    block is present its own content hash must hold and its new panels must be the record's panels.
+    Additive: a record without the block is untouched."""
+    block = data.get("refreshed_from")
+    if block is None:
+        return []
+    if not isinstance(block, dict):
+        return ["refreshed_from must be an object"]
+    body = {k: v for k, v in block.items() if k != "receipt_sha256"}
+    digest = hashlib.sha256(json.dumps(body, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+    if block.get("receipt_sha256") != digest:
+        return ["refreshed_from.receipt_sha256 does not match the block's content (the provenance was edited)"]
+    out = []
+    new = block.get("new") or {}
+    for key in ("desktop_panel", "mobile_panel"):
+        if new.get(key) != data.get(key):
+            out.append(f"{key} differs from refreshed_from.new.{key}: the record was changed after its refresh")
+    return out
+
+
 def check_board(data, run_dir=None):
     """Return a list of named failure strings; empty means the record passes.
 
@@ -130,6 +151,8 @@ def check_board(data, run_dir=None):
 
     failures.extend(_panel_failures(data, "desktop_panel", run_dir))
     failures.extend(_panel_failures(data, "mobile_panel", run_dir))
+
+    failures.extend(_refreshed_from_failures(data))
 
     guide = data.get("guide")
     if not isinstance(guide, dict):

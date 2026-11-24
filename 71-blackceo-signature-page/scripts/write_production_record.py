@@ -4,7 +4,8 @@
 Usage:
   python3 scripts/write_production_record.py <run_dir> [--stage final-mockups]
          [--request production-request-final-mockups.json] [--viewports desktop,mobile]
-         [--allow-text WORDS ...] [--no-ocr-validate] [--ocr-mobile] [--overwrite]
+         [--allow-text WORDS ... --allow-reason TEXT --allow-authority TEXT]
+         [--no-ocr-validate] [--ocr-mobile] [--overwrite]
 
 Writes `<run>/final-mockups/production-record.json` (the desktop record the stage
 gate validates) and `<run>/final-mockups/mobile/production-record.json`, in the
@@ -31,6 +32,12 @@ elsewhere), or a garbled word. Garbled words are put in the read-back, so the
 validator recomputes the same set and the section fails; a section whose image
 shows less than the Design Board's floor of its copy also fails. A failing section
 is never given a pass.
+
+An allow-text override is never silent. `--allow-text` (extra brand or chrome words the
+images may carry) requires `--allow-reason` and `--allow-authority`; each section's text_qc
+then carries an `allowed_text` object: `words` (the exact allowed words that image shows and
+its copy does not), `allow_list` (the whole list given), `reason`, `authority`. The validator
+accepts and requires those fields whenever `allowed_text` is present; it loosens nothing.
 
 Finally the tool runs validate_production_record.py itself (desktop with --ocr
 and --model, as the stage gate does; mobile plain unless --ocr-mobile) on a
@@ -107,7 +114,8 @@ def classify_ocr(expected_text, ocr_text, chrome_text, board):
     return out
 
 
-def text_qc(expected_text, native_path, attempts, ocr, chrome_text, board):
+def text_qc(expected_text, native_path, attempts, ocr, chrome_text, board, allow=None):
+    """allow, when given, is (words, reason, authority): the override the section's text_qc records."""
     ocr_text = ocr(Path(native_path))
     sort = classify_ocr(expected_text, ocr_text, chrome_text, board)
     readback = " ".join(sort["matched"] + sort["garbled"])
@@ -129,6 +137,21 @@ def text_qc(expected_text, native_path, attempts, ocr, chrome_text, board):
         "ocr_variants_of_copy_words": sort["variants"],
         "ocr_noise_ignored": sort["noise"],
     }
+    if allow is not None:
+        words, reason, authority = allow
+        allow_tokens = []
+        for w in words:
+            for tok in vpr.tokens(w):
+                if tok not in allow_tokens:
+                    allow_tokens.append(tok)
+        expected_set = set(vpr.tokens(expected_text))
+        shown = set(vpr.tokens(ocr_text))
+        qc["allowed_text"] = {
+            "words": sorted(t for t in allow_tokens if t in shown and t not in expected_set),
+            "allow_list": sorted(allow_tokens),
+            "reason": reason,
+            "authority": authority,
+        }
     problems = []
     if garbled:
         problems.append(f"the native image shows word(s) the copy does not contain: {', '.join(garbled)}")
@@ -173,7 +196,7 @@ def ratio_ok(requested, width, height):
 
 
 def build_record(run_dir, stage, viewport, request, executor, ledger, receipt, receipt_name, ocr,
-                 board, allow_text, design_style):
+                 board, allow_text, design_style, allow=None):
     run_dir = Path(run_dir)
     stage_dir = run_dir / stage
     vp_dir = stage_dir / viewport
@@ -240,7 +263,8 @@ def build_record(run_dir, stage, viewport, request, executor, ledger, receipt, r
             expected = f"{expected}\n{section['cta']}".strip()
         if not expected:
             raise Refused(f"{label}: the request carries no copy for this section")
-        qc, why = text_qc(expected, run_dir / stage / native_rel, image.get("attempt") or 1, ocr, allow_text, board)
+        qc, why = text_qc(expected, run_dir / stage / native_rel, image.get("attempt") or 1, ocr, allow_text, board,
+                          allow)
         problems.extend(f"{label}: {w}" for w in why)
         evidence.append({"section_id": sid, "slice": f"{viewport}/{name}", "native": native_rel,
                          "ocr_text": qc["ocr_text"], "verdict": qc["verdict"], "problems": why})
@@ -286,11 +310,20 @@ def validate_candidate(candidate, ocr_flag, model):
 
 def run(run_dir, stage="final-mockups", request_name="production-request-final-mockups.json",
         viewports=("desktop", "mobile"), allow_text=(), ocr=None, ocr_validate=True, ocr_mobile=False,
-        overwrite=False, receipt_name="export-receipt.json"):
+        overwrite=False, receipt_name="export-receipt.json", allow_reason=None, allow_authority=None):
     """Returns (ok, lines). On ok both records are in place; otherwise none is."""
     run_dir = Path(run_dir)
     stage_dir = run_dir / stage
     lines = []
+    allow_words = [w for w in allow_text if str(w).strip()]
+    allow = None
+    if allow_words:
+        if not str(allow_reason or "").strip() or not str(allow_authority or "").strip():
+            raise Refused("--allow-text needs both --allow-reason and --allow-authority: an override of the "
+                          "text read-back is never recorded without the reason and who authorised it")
+        allow = (allow_words, str(allow_reason).strip(), str(allow_authority).strip())
+    elif str(allow_reason or "").strip() or str(allow_authority or "").strip():
+        raise Refused("--allow-reason and --allow-authority belong to --allow-text, and no --allow-text was given")
     board = _board()
     ocr = ocr or board.ocr_text
     request = read_json(run_dir / request_name, "the production request")
@@ -320,7 +353,8 @@ def run(run_dir, stage="final-mockups", request_name="production-request-final-m
     candidates, all_problems = {}, []
     for vp in viewports:
         record, evidence, problems = build_record(run_dir, stage, vp, request, executor, ledger, receipt,
-                                                  receipt_name, ocr, board, chrome, design_style)
+                                                  receipt_name, ocr, board, chrome, design_style,
+                                                  allow)
         ev_path = stage_dir / f"text-qc-readback-{vp}.json"
         ev_path.write_text(json.dumps({"viewport": vp, "method": QC_METHOD, "sections": evidence}, indent=2) + "\n",
                            encoding="utf-8")
@@ -357,6 +391,10 @@ def main(argv=None, ocr=None):
     ap.add_argument("--viewports", default="desktop,mobile")
     ap.add_argument("--allow-text", action="append", default=[],
                     help="extra brand or chrome words the images may carry besides the section copy")
+    ap.add_argument("--allow-reason", default=None,
+                    help="why the --allow-text words are allowed (required with --allow-text); recorded in text_qc")
+    ap.add_argument("--allow-authority", default=None,
+                    help="who authorised the --allow-text words (required with --allow-text); recorded in text_qc")
     ap.add_argument("--no-ocr-validate", action="store_true",
                     help="skip --ocr in the validator run (the stage gate still runs it)")
     ap.add_argument("--ocr-mobile", action="store_true", help="also run the validator's --ocr on the mobile record")
@@ -370,7 +408,8 @@ def main(argv=None, ocr=None):
     viewports = tuple(v.strip() for v in args.viewports.split(",") if v.strip())
     try:
         ok, lines = run(args.run_dir, args.stage, args.request, viewports, args.allow_text, ocr,
-                        not args.no_ocr_validate, args.ocr_mobile, args.overwrite)
+                        not args.no_ocr_validate, args.ocr_mobile, args.overwrite,
+                        allow_reason=args.allow_reason, allow_authority=args.allow_authority)
     except Refused as exc:
         print(f"FAIL: refused: {exc}")
         return 1

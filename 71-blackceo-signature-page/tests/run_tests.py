@@ -63,6 +63,8 @@ MODULES = [
     "test_item13_production_method.py",
     "test_export_native_slices.py",
     "test_write_production_record.py",
+    "test_allow_text_reason.py",
+    "test_hybrid_board_refresh.py",
     "test_item12_hybrid_board.py",
     "test_item15_trait_gates.py",
     "test_wireframe_build_spec.py",

@@ -2,7 +2,7 @@
 """Deterministically compose the Skill 71 hybrid board (Update Plan Item 12).
 
 Usage:
-  python3 scripts/build_hybrid_board.py <run_dir> [--record NAME] [--overwrite]
+  python3 scripts/build_hybrid_board.py <run_dir> [--record NAME] [--overwrite] [--refresh-record]
 
 The hybrid board is the standard deliverable at mockup approval: one
 sheet, three panels (trait H1 of the Item 14 trait checklist) - the
@@ -31,16 +31,40 @@ and `final-mockups/hybrid-board-receipt.json` with the sha256 of every
 input, the board's own sha256, and the panel geometry. The board is the
 artifact the final-mockups stage's approval is recorded against.
 
+--refresh-record re-pins the board record's two panels to the CURRENT approved
+full mockups before composing, because no other tool rewrites hybrid-board.json
+and a re-stitched mockup leaves the old pin stale. The desktop panel is the
+desktop stitch (final-mockups/<stitched_output>), the mobile panel is the mobile
+stitch (final-mockups/mobile/<stitched_output>); both paths come from the
+production records and the stitch receipts beside them, never from a guess.
+It VERIFIES first and refuses on any mismatch, writing nothing: per viewport the
+production record exists and passes validate_production_record, the stitch receipt
+names the record's stitched output, the panel file hashes (freshly read) to the
+receipt's output_sha256, every slice the receipt lists is on disk, hashes to the
+receipt's sha256, is the record's section in order, and equals the sha256 the
+export receipt (export_native_slices.py, re-verified file by file) holds for it,
+and the record's own export.receipt_sha256 equals the re-verified export receipt's.
+No hash a record claims about itself is trusted. Then it writes the new record
+with a `refreshed_from` provenance block (prior and new panel paths and shas, the
+receipts relied on with their file hashes, and `receipt_sha256` over the block's
+content), validates it, and only then composes the board (--overwrite semantics
+unchanged: it refuses before writing when the board exists without --overwrite).
+Without the flag nothing changes.
+
 Exit codes: 0 pass, 1 one named FAIL line per failure, 2 unreadable input.
 """
 import argparse
+import hashlib
 import json
+import os
 import sys
 import textwrap
+from datetime import datetime, timezone
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import validate_hybrid_board as vhb  # noqa: E402
+import validate_production_record as vpr  # noqa: E402
 
 MARGIN = 24
 GAP = 24
@@ -73,6 +97,150 @@ def _wrap(text, width_chars):
     return textwrap.wrap(str(text), width=width_chars) or [""]
 
 
+STAGE = "final-mockups"
+VIEWPORT_DIRS = {"desktop": STAGE, "mobile": f"{STAGE}/mobile"}
+EXPORT_RECEIPT = "export-receipt.json"
+STITCH_RECEIPT = "stitch-receipt.json"
+
+
+def _read_json(path):
+    try:
+        return json.loads(Path(path).read_text(encoding="utf-8")), None
+    except (OSError, ValueError) as exc:
+        return None, f"{path} is missing or unreadable ({type(exc).__name__})"
+
+
+def _verify_viewport(run_dir, viewport, export_rows, export_receipt_hash):
+    """Everything one panel must prove. Returns (failures, info)."""
+    rel_dir = VIEWPORT_DIRS[viewport]
+    vp_dir = Path(run_dir) / rel_dir
+    fails = []
+    record_path = vp_dir / "production-record.json"
+    record, err = _read_json(record_path)
+    if err:
+        return [f"{viewport}: the production record {err}"], None
+    bad = vpr.check_record(record, base_dir=vp_dir)
+    if bad:
+        return [f"{viewport}: the production record does not pass validate_production_record: {b}" for b in bad], None
+    stitched = record.get("stitched_output")
+    if not isinstance(stitched, str) or not stitched or "/" in stitched:
+        return [f"{viewport}: the production record names no stitched_output"], None
+    receipt_path = vp_dir / STITCH_RECEIPT
+    receipt, err = _read_json(receipt_path)
+    if err:
+        return [f"{viewport}: the stitch receipt {err}"], None
+    if receipt.get("stitched_output") != stitched:
+        fails.append(f"{viewport}: the stitch receipt names {receipt.get('stitched_output')!r}, "
+                     f"the production record names {stitched!r}")
+    panel = vp_dir / stitched
+    if not panel.is_file():
+        fails.append(f"{viewport}: the panel file {rel_dir}/{stitched} is not on disk")
+        return fails, None
+    panel_sha = vhb.sha256(panel)
+    if panel_sha != receipt.get("output_sha256"):
+        fails.append(f"{viewport}: the panel file {rel_dir}/{stitched} hashes to {panel_sha[:12]} but its stitch "
+                     f"receipt records {str(receipt.get('output_sha256'))[:12]}; it is not the stitch the receipt made")
+    rec_sections, rcp_sections = record["sections"], receipt.get("sections")
+    if not isinstance(rcp_sections, list) or len(rcp_sections) != len(rec_sections):
+        fails.append(f"{viewport}: the stitch receipt lists "
+                     f"{len(rcp_sections) if isinstance(rcp_sections, list) else 'no'} section(s), the production "
+                     f"record {len(rec_sections)}")
+        return fails, None
+    for number, (rec, rcp) in enumerate(zip(rec_sections, rcp_sections), start=1):
+        label = f"{viewport}/{rec.get('slice')}"
+        if rcp.get("slice") != rec.get("slice") or str(rcp.get("section_id")) != str(rec.get("section_id")) \
+                or rcp.get("order") != number:
+            fails.append(f"{label}: the stitch receipt's section {number} is {rcp.get('slice')!r}, not the "
+                         f"production record's, in order")
+            continue
+        path = vp_dir / rcp["slice"]
+        if not path.is_file():
+            fails.append(f"{label}: the slice the stitch receipt lists is not on disk")
+            continue
+        current = vhb.sha256(path)
+        if current != rcp.get("sha256"):
+            fails.append(f"{label}: the slice hashes to {current[:12]} now but the stitch receipt records "
+                         f"{str(rcp.get('sha256'))[:12]}; the panel was stitched from other slices")
+        row = export_rows.get((viewport, Path(rcp["slice"]).name))
+        if row is None:
+            fails.append(f"{label}: the export receipt has no row for this slice")
+            continue
+        if row["output"].get("path") != f"{viewport}/{Path(rcp['slice']).name}":
+            fails.append(f"{label}: the export receipt's output path {row['output'].get('path')!r} is not this slice")
+        if row["output"].get("sha256") != rcp.get("sha256"):
+            fails.append(f"{label}: the stitch receipt's input {str(rcp.get('sha256'))[:12]} is not the slice the "
+                         f"export receipt holds ({str(row['output'].get('sha256'))[:12]}); the stitch is not of the "
+                         f"current export")
+        claimed = (rec.get("export") or {}).get("receipt_sha256")
+        if claimed != export_receipt_hash:
+            fails.append(f"{label}: the production record cites export receipt {str(claimed)[:12]}, the verified "
+                         f"export receipt is {export_receipt_hash[:12]}; the record is stale")
+    if fails:
+        return fails, None
+    return [], {
+        "panel": {"source": f"{rel_dir}/{stitched}", "sha256": panel_sha},
+        "stitch_receipt": {"path": f"{rel_dir}/{STITCH_RECEIPT}", "file_sha256": vhb.sha256(receipt_path),
+                           "output_sha256": receipt["output_sha256"]},
+        "production_record": {"path": f"{rel_dir}/production-record.json", "file_sha256": vhb.sha256(record_path)},
+    }
+
+
+def _provenance_hash(block):
+    body = {k: v for k, v in block.items() if k != "receipt_sha256"}
+    return hashlib.sha256(json.dumps(body, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+
+
+def refresh_record(run_dir, record_name, now=None):
+    """Verify, then return (failures, new_record, prior_record_text). Writes nothing."""
+    import export_native_slices as exporter
+    run_dir = Path(run_dir)
+    stage_dir = run_dir / STAGE
+    prior, err = _read_json(stage_dir / record_name)
+    if err:
+        return [f"the board record {err}"], None
+    if not isinstance(prior, dict):
+        return ["the board record is not a JSON object"], None
+    export_path = stage_dir / EXPORT_RECEIPT
+    bad = exporter.verify_receipt(export_path, stage_dir)
+    if bad:
+        return [f"the export receipt does not verify: {b}" for b in bad], None
+    export_receipt, err = _read_json(export_path)
+    if err:
+        return [f"the export receipt {err}"], None
+    rows = {(r["viewport"], r["section_part"]): r for r in export_receipt["entries"]}
+    export_hash = exporter.body_hash(export_receipt)
+    failures, info = [], {}
+    for viewport in ("desktop", "mobile"):
+        fails, got = _verify_viewport(run_dir, viewport, rows, export_hash)
+        failures.extend(fails)
+        info[viewport] = got
+    if failures:
+        return failures, None
+    new = dict(prior)
+    new["desktop_panel"] = dict(info["desktop"]["panel"])
+    new["mobile_panel"] = dict(info["mobile"]["panel"])
+    block = {
+        "tool": "build_hybrid_board.py --refresh-record",
+        "refreshed_at": now or datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        "prior": {"desktop_panel": prior.get("desktop_panel"), "mobile_panel": prior.get("mobile_panel")},
+        "new": {"desktop_panel": new["desktop_panel"], "mobile_panel": new["mobile_panel"]},
+        "receipts": {
+            "export": {"path": f"{STAGE}/{EXPORT_RECEIPT}", "receipt_sha256": export_hash,
+                       "file_sha256": vhb.sha256(export_path)},
+            "desktop": {"stitch_receipt": info["desktop"]["stitch_receipt"],
+                        "production_record": info["desktop"]["production_record"]},
+            "mobile": {"stitch_receipt": info["mobile"]["stitch_receipt"],
+                       "production_record": info["mobile"]["production_record"]},
+        },
+    }
+    block["receipt_sha256"] = _provenance_hash(block)
+    new["refreshed_from"] = block
+    bad = vhb.check_board(new, run_dir=run_dir)
+    if bad:
+        return [f"the refreshed record does not pass validate_hybrid_board: {b}" for b in bad], None
+    return [], new
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Compose the hybrid board from the approved artifacts named by the board record.")
@@ -80,11 +248,33 @@ def main():
     parser.add_argument("--record", default="hybrid-board.json",
                         help="Board record filename inside final-mockups/ (default hybrid-board.json).")
     parser.add_argument("--overwrite", action="store_true")
+    parser.add_argument("--refresh-record", action="store_true",
+                        help="Verify the current stitched mockups against their receipts and re-pin the record's "
+                             "desktop and mobile panels to them (writes the record with refreshed_from provenance) "
+                             "before composing.")
     args = parser.parse_args()
 
     run_dir = args.run_dir
     stage_dir = run_dir / "final-mockups"
     record_path = stage_dir / args.record
+    if args.refresh_record:
+        failures, new = refresh_record(run_dir, args.record)
+        if failures:
+            print("FAIL: refusing to refresh the board record; nothing was written:")
+            for failure in failures:
+                print(f"- {failure}")
+            return 1
+        out_name = new.get("board_output", "hybrid-board.png")
+        if (stage_dir / out_name).exists() and not args.overwrite:
+            print(f"FAIL: output already exists: {stage_dir / out_name}. Use --overwrite to replace it; "
+                  "the record was not rewritten.")
+            return 1
+        tmp = record_path.with_name(f".{record_path.name}.refresh.tmp")
+        tmp.write_text(json.dumps(new, indent=2) + "\n", encoding="utf-8")
+        os.replace(tmp, record_path)
+        print(f"PASS: re-pinned {record_path.name}: desktop {new['desktop_panel']['source']} "
+              f"{new['desktop_panel']['sha256'][:12]}, mobile {new['mobile_panel']['source']} "
+              f"{new['mobile_panel']['sha256'][:12]} (provenance {new['refreshed_from']['receipt_sha256'][:12]}).")
     try:
         data = json.loads(record_path.read_text(encoding="utf-8"))
     except Exception as exc:
