@@ -1,5 +1,11 @@
 #!/usr/bin/env python3
-"""check-binding-laws.py -- enforce the 16 BINDING LAWS of SCOPE-LEDGER.md section 4.
+"""check-binding-laws.py -- enforce the BINDING LAWS of SCOPE-LEDGER.md section 4.
+
+L12 (no merge commits) and L13 (branch must sit on current origin/main) were
+RETIRED on 2026-11-24 by operator order: the batch merger is built on merge
+commits and never rebases, so both laws blocked batch merges. They are listed
+under `retired_laws` in binding-laws.json only to keep the frozen ledger's
+application numbering stable; this script does not enforce them.
 
 WHY THIS EXISTS
 ---------------
@@ -16,9 +22,8 @@ independent reading of L5/L6 over every declared pin file rather than one.
 
 TWO CLASSES OF LAW, AND WHY THE SPLIT IS NOT A LOOPHOLE
 -------------------------------------------------------
-  tree     -- derivable from the repository: the base..head diff, commit authorship,
-              merge topology, ref ancestry. Evaluated on every pull request. A
-              violation exits 1.
+  tree     -- derivable from the repository: the base..head diff and commit
+              authorship. Evaluated on every pull request. A violation exits 1.
   evidence -- NOT derivable from the tree, because the law constrains what the lane
               DID: force-push, SSH, fleet contact, a secret in a transcript, --admin,
               --no-verify, which model ran QC. These are read from a per-law evidence
@@ -184,8 +189,8 @@ def check_no_check_weakened(spec, base, head) -> Result:
     # paths read as "deleted" while they were never on the branch at all, so
     # comparing base:path to head:path invents a deletion. Grade the range the
     # branch actually owns -- merge-base(base, head)..head -- and say so in the
-    # detail. L13 reports the stale base on its own; L1 must not add a fictional
-    # second failure for it.
+    # detail. A stale base is not itself a failure (L13 is retired), and L1 must
+    # not invent one for it.
     effective_base = base
     stale = not _base_ancestor(base, head)
     if stale:
@@ -262,7 +267,7 @@ def check_no_check_weakened(spec, base, head) -> Result:
     if stale:
         detail += (
             f"; base {base[:9]} is not an ancestor of {head[:9]}, graded the range "
-            f"{effective_base[:9]}..{head[:9]} this branch owns (L13 reports the stale base)"
+            f"{effective_base[:9]}..{head[:9]} this branch owns"
         )
     return Result("L1", spec["check"], "tree", "PASS", detail)
 
@@ -359,42 +364,10 @@ def check_pin_minted_once(spec, laws, base, head) -> Result:
     return Result("L6", spec["check"], "tree", "PASS", "mint count per pin: " + ", ".join(detail))
 
 
-def check_no_merge_commits(spec, base, head) -> Result:
-    """L12: never merge main into a branch."""
-    out = git_ok("rev-list", "--merges", f"{base}..{head}").split()
-    if out:
-        return Result(
-            "L12",
-            spec["check"],
-            "tree",
-            "FAIL",
-            [f"{len(out)} merge commit(s) in range; recut from origin/main instead: {', '.join(s[:12] for s in out[:5])}"],
-        )
-    return Result("L12", spec["check"], "tree", "PASS", "0 merge commits in base..head")
-
-
-def check_ancestry_from_base(spec, base, head) -> Result:
-    """L13: base must be an ancestor of head."""
-    cp = git("merge-base", "--is-ancestor", base, head)
-    if cp.returncode != 0:
-        return Result(
-            "L13",
-            spec["check"],
-            "tree",
-            "FAIL",
-            [f"merge-base --is-ancestor {base} {head} returned {cp.returncode}; the branch is not on top of the base ref"],
-        )
-    return Result(
-        "L13", spec["check"], "tree", "PASS", f"merge-base --is-ancestor {base} {head} returned 0"
-    )
-
-
 TREE_CHECKS = {
     "no_check_weakened": lambda spec, laws, b, h: check_no_check_weakened(spec, b, h),
     "pin_not_hand_written": check_pin_not_hand_written,
     "pin_minted_once": check_pin_minted_once,
-    "no_merge_commits": lambda spec, laws, b, h: check_no_merge_commits(spec, b, h),
-    "ancestry_from_base": lambda spec, laws, b, h: check_ancestry_from_base(spec, b, h),
 }
 
 
@@ -457,18 +430,24 @@ def evaluate_evidence(spec, evidence_dir):
 # --- applications table -----------------------------------------------------------
 def applications(laws, slice_start=141, slice_end=208):
     """Number the 208 binding-law applications exactly as SCOPE-LEDGER.md does:
-    unit-major, law-minor, in ledger order. Returns the requested 1-based slice."""
+    unit-major, law-minor, in ledger order. Returns the requested 1-based slice.
+
+    Retired laws stay in the numbering (the ledger is frozen); they are only
+    no longer enforced."""
+    ledger_laws = sorted(
+        laws["laws"] + laws.get("retired_laws", []), key=lambda law: int(law["id"][1:])
+    )
     rows = []
     n = 0
     for unit in laws["units_in_ledger_order"]:
-        for law in laws["laws"]:
+        for law in ledger_laws:
             n += 1
             rows.append((n, f"{unit}-{law['id']}", law["id"]))
     return [r for r in rows if slice_start <= r[0] <= slice_end]
 
 
 def main() -> int:
-    ap = argparse.ArgumentParser(description="Enforce SCOPE-LEDGER binding laws L1-L16.")
+    ap = argparse.ArgumentParser(description="Enforce SCOPE-LEDGER binding laws (L1-L16 minus retired L12, L13).")
     ap.add_argument("--base", default="origin/main", help="base ref (default origin/main)")
     ap.add_argument("--head", default="HEAD", help="head ref (default HEAD)")
     ap.add_argument("--evidence-dir", default=None, help="directory of per-law evidence JSON files")
@@ -490,6 +469,7 @@ def main() -> int:
 
     if args.apps:
         before = laws.get("_before_state_on_origin_main", {})
+        retired = {law["id"] for law in laws.get("retired_laws", [])}
         rows = applications(laws)
         out = []
         present_before = 0
@@ -505,14 +485,15 @@ def main() -> int:
                     "law": law_id,
                     "before": before_status,
                     "before_evidence": b.get("file", b.get("found", "")),
-                    "after": "PRESENT",
+                    "after": "RETIRED" if law_id in retired else "PRESENT",
                 }
             )
+        present_after = sum(1 for row in out if row["after"] == "PRESENT")
         payload = {
             "slice": {"start": 141, "end": 208, "count": len(rows)},
             "present_before": present_before,
             "present_before_of": len(rows),
-            "present_after": len(rows),
+            "present_after": present_after,
             "present_after_of": len(rows),
             "rows": out,
         }
@@ -527,7 +508,7 @@ def main() -> int:
                 )
             print()
             print(f"PRESENT before: {present_before} of {len(rows)}")
-            print(f"PRESENT after:  {len(rows)} of {len(rows)}")
+            print(f"PRESENT after:  {present_after} of {len(rows)}")
         return 0
 
     try:
