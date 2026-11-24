@@ -379,21 +379,24 @@ to self-approve a run.
   `FACE_SPEAKS_NO_LIPSYNC`; a lip-sync clip whose speaker is not on screen fails
   `LIPSYNC_WRONG_FACE`.
 - Run `face_speaks.check_coverage_band(ad_length_s, lipsync_s, lines)`: it
-  measures the **25-30%** target share of the selected duration (approved
-  direction 2026-10-23, superseding the 2026-10-08 30-40 s order) -- a 15-18 s
-  band at 60 s, scaled with length -- against a clip floor that never drops
-  below 3 (3 at 60 s), each clip 4-6 s with no clip over 6 s, and a 5-point
-  grace. It fails `LIPSYNC_COVERAGE_BELOW_BAND` only below the band minus that
-  grace (3 s at 60 s) or under that clip floor; a plan above the band is
-  reported in `evidence` (`in_band` false), never failed here. The **35% hard
-  maximum** is a separate bound this measurement does not enforce: a plan over
-  it fails `LIPSYNC_OVER_CAP` in `lipsync_clips.check_clips`, and the card
-  guard refuses anything that crosses it. The planner (`plan_lipsync_lines`)
-  picks the lines (every sung hook, the spoken opener and closing first, each
-  cut to 6 s) and the first clip must start inside the opening 12 s
-  (`lipsync_clips.check_opening`), or `LIPSYNC_OPENING_NOT_ARTICULATED`. A
-  duration whose bounds cannot all hold (the 3-clip / 4-s floor outside the 35%
-  maximum) fails `LIPSYNC_DURATION_CONFLICT` and is never re-planned silently.
+  measures the **25-30%** target share of the selected duration -- a 15-18 s
+  band at 60 s, scaled with length -- and a 5-point grace. It fails
+  `LIPSYNC_COVERAGE_BELOW_BAND` only below the band minus that grace; a plan
+  above the band is reported in `evidence` (`in_band` false), never failed
+  here. **35% is a top, not a refusal** (section 3.3a, rule 5): whole sentences
+  win, and a plan over 35% shows its seconds and percent before any spend;
+  `lipsync_clips.check_clips` reports it, and the card shows it, but it is not
+  a hard refusal. **One piece is one or more whole sentences, 5 to 30 seconds**
+  (3.3a): never cut mid-sentence, never padded, and a passage over 30 seconds
+  is stitched at a breath or a line boundary. Under 90 seconds there is no
+  floor of 3 pieces; from 90 seconds up the floor of 3 stands. The planner
+  (`plan_lipsync_lines`) picks whole-sentence passages (every sung hook and the
+  opening and closing first), and the opening passage is lip-synced inside the
+  first **10-15 seconds** (`lipsync_clips.check_opening`), or
+  `LIPSYNC_OPENING_NOT_ARTICULATED`. A duration whose bounds cannot all hold
+  fails `LIPSYNC_DURATION_CONFLICT` and is never re-planned silently. A single
+  piece over 30 seconds fails `LIPSYNC_AUDIO_TOO_LONG` with the stitch named as
+  the fix.
 - The historical FREE / no-lip-sync route stays explicit and is never the
   default and never a reason to drop lip-sync from an ordinary run. Its exact
   shape, so QC can read it:
@@ -420,7 +423,7 @@ to self-approve a run.
   refusal lists every `LIPSYNC_IMAGE_*` reason and a measurement that could not be
   made is a refusal, never a pass.
 - LPG001/LPG002/LPG003: the measured close-up gate is enforced IN the dispatcher
-  (`kie_dispatch.lipsync_picture_refusal`): any kling/ai-avatar job (or a manual infinitalk job) without a
+  (`kie_dispatch.lipsync_picture_refusal`): any `omnihuman-2-0` job without a
   PASS or ACCEPT_WITH_FLAG `picture_gate` receipt (sha256 of the exact image, numbers and
   flags recorded), or whose `input.image_url` is not the bound upload of those exact bytes
   (`picture_gate.upload_measured`), is rejected `LIPSYNC_PICTURE_NOT_GATED` before the
@@ -430,7 +433,7 @@ to self-approve a run.
   (ACCEPT_WITH_FLAG), never a failure and never a paid regeneration. QC fails a run whose
   close-up receipt is missing or FAIL. mediapipe or the pinned face model missing =
   refused (install: `python3 scripts/core/lip_sync/lip_gate/install_face_model.py`).
-- LPG003 F14: the locked lip-sync model `kling/ai-avatar-standard` is not a menu video
+- LPG003 F14: the locked lip-sync model `omnihuman-2-0` is not a menu video
   model; `dispatch` lets it past the F14 video lock and holds it to the picture gate
   instead. Every other off-menu video model is still `MODEL_NOT_ON_MENU`.
 
@@ -443,12 +446,16 @@ to self-approve a run.
   redo. UNMEASURABLE and UNDETERMINED fail `lip_gate.qc_check` until a person writes
   `person_verdict: PASS` on the row. Controls: `lip_sync/lip_gate/calibrate_sync.py`.
   `lip_gate/event_sync.py` is ADVISORY (`advisory_event_sync` in the row), never gating.
-- Two-try rule (Trevor 2026-10-08): at most 2 paid `kling/ai-avatar-standard` jobs per
+- Two-try rule (Trevor 2026-10-08): at most 2 paid `omnihuman-2-0` jobs per
   segment, every name variant counted; try 2 only on a person's call (a defects file or
   `person_verdict` "DEFECT") with a changed input, never on a checker verdict; then the
   best take is kept with a `KEPT_BEST_OF_2 (tN)` receipt row, its numbers, flag and
   mouth-strip path. `lip_gate.qc_check` accepts such a flagged row and rejects a
-  segment with more than 2 jobs. InfiniTalk is a manual backup only, never automatic.
+  segment with more than 2 jobs. Kling Avatar and InfiniTalk are retired (S-42); there
+  is no backup model. Every take also gets a 4-frames-per-second contact sheet looked
+  at by eye for letters, emotion and who is mouthing; no take enters the timeline
+  without that eye record (`LIP_TAKE_NOT_EYE_CHECKED`, `EMOTION_DRIFT`,
+  `WRONG_VOICE_MOUTHED`).
 - Lip-sync process (LSP001, Trevor approved 2026-10-08), what QC checks: (1) reuse first:
   a segment with a usable take on disk has no new paid job in the ledger; (2) a sung line
   the checker cannot confirm is tagged `KEPT_BEST (UNDETERMINED, sung)`, a borderline
