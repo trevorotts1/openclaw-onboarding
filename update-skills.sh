@@ -11722,8 +11722,13 @@ r=sys.stdin.read(); i=min([x for x in (r.find("{"),r.find("[")) if x>=0] or [0])
 a=d if isinstance(d,list) else d.get("agents",[])
 print(([x.get("id") for x in a if isinstance(x,dict) and (x.get("default") or x.get("isDefault"))] or [""])[0])' 2>/dev/null || true)"
         [ -n "$_WOU_AGENT" ] || _WOU_AGENT=main
+        # Outer budget mirrors shared-utils/cron-lib.sh: timeoutSeconds 43200 and
+        # noOutputTimeoutSeconds 43200 — each stays above 2x the inner
+        # UPDATE_SKILLS_TIMEOUT (14400 s) in shared-utils/fleet_refresh_runner.py.
+        # (The runtime stores noOutputTimeoutSeconds only on command payloads; the
+        # flag is accepted here and simply dropped for agentTurn payloads.)
         if _oc_cron_silent_main "weekly-onboarding-update" "$_WOU_AGENT" "${OC_BOX_UPDATE_SCHEDULE:-0 2 * * 0,2,5}" "America/New_York" "$PROMPT_CONTENT" \
-             --description "$_WEEKLY_DESC" --exact --light-context --thinking high --timeout-seconds 7200; then
+             --description "$_WEEKLY_DESC" --exact --light-context --thinking high --timeout-seconds 43200 --no-output-timeout-seconds 43200; then
           echo "  ✓ Sunday weekly update-check cron installed (Sundays 3am ET, SILENT main-session — no client auto-announce)"
         else
           echo "  ⚠ Cron install failed -- agent can retry manually (SILENT main-session form)"

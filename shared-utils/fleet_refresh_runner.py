@@ -1100,9 +1100,9 @@ def step_pin_resolve(paths: dict, repo_root: Path, compat: dict, res: BoxResult)
     return cc_tag
 
 
-# update-skills.sh walks every skill folder and hashes the content: ~55 min on a
-# Hostinger container. The old 20-minute cap failed healthy updates mid-way.
-UPDATE_SKILLS_TIMEOUT = 5400
+# update-skills.sh full runs now exceed the old 90-minute cap (5400), which failed
+# healthy updates mid-way (as did the 20-minute cap before it); 14400 (4 h) is headroom.
+UPDATE_SKILLS_TIMEOUT = 14400
 # update-skills.sh's fleet standing gate: "Update held -- account not current".
 UPDATE_HELD_MARK = "Update held -- account not current"
 UPDATE_HELD = "update held -- account not current on payments (fleet standing gate); nothing changed"
