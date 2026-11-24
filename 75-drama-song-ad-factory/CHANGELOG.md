@@ -30,6 +30,25 @@ Docs-only pass; no code and no version stamp changes here.
   body; checks stream beside renders with score-carrying contact sheets; prompt
   writers fan out one per 2 to 3 prompts with never fewer than one per 6 shots;
   a plan that names gates carries a self-check table.
+- **Lip-sync model.** Decision 33 is replaced by Trevor's order of 2026-11-23
+  about 2:25 PM: OmniHuman 2.0 (`omnihuman-2-0`) on every run - one picture plus
+  the audio, no prompt, watermark off. Kling Avatar and InfiniTalk are retired;
+  no alternative and no backup (`LIPSYNC_MODEL_MISMATCH`). Its price is 14
+  credits per rounded-up second ($0.07/s), measured.
+- **Lip-sync length.** One piece is one or more whole sentences, 5 to 30
+  seconds, stitched only past 30 (section 3.3a). The 4-to-6-second clip rule and
+  the "more pieces, not longer ones" order are superseded for lip-sync. The 35%
+  figure is a top, not a refusal; under 90 seconds there is no floor of 3
+  pieces; the opening passage sits inside the first 10-15 seconds.
+- **Lip-sync takes.** Every take gets a 4-frames-per-second contact sheet looked
+  at by eye for letters, the Emotion Hold (`EMOTION_DRIFT`) and who is mouthing
+  (`WRONG_VOICE_MOUTHED`); no take enters the timeline without that eye record.
+- **Send pace.** One number everywhere: 20 requests per 15 seconds (S-13), a
+  little under KIE's documented 20 per 10 seconds.
+- **Client and intake text.** The choice card asks Quality Mode (Standard /
+  Premium / Ultra / Hybrid recommended), not a vendor model list; the default
+  story-clip model is H3. The client guide states the logo format intake
+  requires and the sung website form for lyrics and captions.
 
 ## v2.9.205 - 2026-11-20 - a recorded keep_one stops the first take, and the offline dispatch tests run without HOME
 
