@@ -84,6 +84,11 @@ LANE_CONTRACTS = {"email": (EMAIL_CONTRACT,), "text": (TEXT_CONTRACT,), "automat
 PAGE_INSTALL_ROLE = "install_receipt"
 PAGE_READBACK_ROLE = "independent_readback"
 PAGE_READBACK_KIND = "rest_readback"
+# SWB-094: a page the owner ordered published. Same contract and same ids; a row says published true only
+# with the owner's live-publication approval record sealed in the row (this role) and a read-back that shows
+# the live top version, served on its public URL.
+PAGE_LIVE_APPROVAL_ROLE = "live_publication_approval"
+PAGE_LIVE_APPROVAL_TARGET = "approved_live_publication"
 PAGE_ID_KEYS = ("page_id", "funnel_id", "step_id", "location_id", "draft_version_id",
                 "installed_by", "read_by")
 # SWB-052: an installer whose own receipt nests the page under "page" and names no location is restated
@@ -262,9 +267,13 @@ def page_draft_violations(unit_id: str, row: Mapping[str, Any], root: Path) -> L
     sha = facts.get("content_sha256")
     if not (isinstance(sha, str) and len(sha) == 64 and all(c in "0123456789abcdef" for c in sha)):
         wrong.append("page_install.content_sha256 is not 64 lowercase hex")
+    if facts.get("published") is True:
+        # SWB-094: published is accepted ONLY through the owner's live-publication approval (its own law).
+        return _page_live_violations(unit_id, row, root, label, facts, sha)
     if facts.get("published") is not False:
         wrong.append(f"page_install.published is {facts.get('published')!r}, not false: only an unpublished "
-                     "DRAFT page is delivered by this contract")
+                     "DRAFT page is delivered by this contract (a published page needs the owner's "
+                     "live-publication approval record in its row)")
     status = facts.get("preview_http_status")
     if status != 200 or type(status) is not int:
         wrong.append(f"page_install.preview_http_status is {status!r}, not 200")
@@ -349,6 +358,125 @@ def page_draft_violations(unit_id: str, row: Mapping[str, Any], root: Path) -> L
            if got != want or type(got) is not type(want)]
     if bad:
         return [f"{label} the independent read-back does not show this draft: " + "; ".join(bad)]
+    return []
+
+
+def _page_live_violations(unit_id: str, row: Mapping[str, Any], root: Path, label: str,
+                          facts: Mapping[str, Any], sha: str) -> List[str]:
+    """SWB-094: why ``row`` is not a verified PUBLISHED page (empty = it is).
+
+    A page that is live is recorded as live, never relabelled a draft. Nothing here weakens the draft law: a row
+    with published false still goes through it. A row with published true needs ALL of:
+
+    * the owner's live-publication approval record, sealed in the row (role ``live_publication_approval``), that
+      is unrevoked, not a test record, writes ``approved_live_publication`` in this location, and names this page
+      (and its funnel), and the row cites it by ``page_install.live_publication_approval_ref``;
+    * the installer's receipt, sealed in the row, naming this page (the page may have been edited after install,
+      so the installer's receipt is believed only for who built it, never for the live bytes);
+    * one independent read-back, by a different unit, read by GET, showing the page's top version is the LIVE
+      version with this version id and content sha256, not deleted, and the public URL answering 200.
+    """
+    wrong: List[str] = []
+    ref = facts.get("live_publication_approval_ref")
+    if not lp._nonempty_str(ref):
+        wrong.append("page_install.live_publication_approval_ref is missing")
+    url = facts.get("public_url")
+    if not (lp._nonempty_str(url) and str(url).startswith("https://")):
+        wrong.append("page_install.public_url is not an https URL")
+    status = facts.get("public_http_status")
+    if status != 200 or type(status) is not int:
+        wrong.append(f"page_install.public_http_status is {status!r}, not 200")
+    if lp._nonempty_str(facts.get("installed_by")) and facts.get("installed_by") == facts.get("read_by"):
+        wrong.append("read_by is the installer itself: the read-back must be independent")
+    if lp._nonempty_str(row.get("location_id")) and facts.get("location_id") != row.get("location_id"):
+        wrong.append(f"page_install.location_id {facts.get('location_id')!r} is not the launch's "
+                     f"{row.get('location_id')!r}")
+    if wrong:
+        return [f"{label} page_install is not a verifiable published page: " + "; ".join(wrong)]
+
+    artifacts = [a for a in (row.get("artifacts") or []) if isinstance(a, Mapping)]
+    approvals = [a for a in artifacts if a.get("role") == PAGE_LIVE_APPROVAL_ROLE]
+    installs = [a for a in artifacts if a.get("role") == PAGE_INSTALL_ROLE]
+    readbacks = [a for a in artifacts if a.get("role") == PAGE_READBACK_ROLE]
+    if len(approvals) != 1:
+        return [f"{label} a published page carries {len(approvals)} {PAGE_LIVE_APPROVAL_ROLE!r} artifacts, "
+                "not exactly one (the owner's live-publication approval record)"]
+    if not installs:
+        return [f"{label} carries no {PAGE_INSTALL_ROLE!r} artifact"]
+    if len(readbacks) != 1:
+        return [f"{label} carries {len(readbacks)} {PAGE_READBACK_ROLE!r} artifacts, not exactly one"]
+
+    approval, why = _sealed_json(label, approvals[0], root)
+    if why:
+        return [why]
+    if not isinstance(approval, Mapping):
+        return [f"{label} the live-publication approval is not a JSON object"]
+    pages = approval.get("page_ids")
+    bad = [f"{name} is {got!r}, not {want!r}" for name, got, want in (
+        ("approval_ref", approval.get("approval_ref"), ref),
+        ("allowed_write_target", approval.get("allowed_write_target"), PAGE_LIVE_APPROVAL_TARGET),
+        ("test_only", approval.get("test_only"), False),
+        ("revoked", approval.get("revoked"), False),
+        ("location_id", approval.get("location_id"), facts["location_id"])) if got != want
+        or type(got) is not type(want)]
+    if not (isinstance(pages, list) and facts["page_id"] in pages):
+        bad.append(f"page_ids does not name page {facts['page_id']!r}")
+    if approval.get("funnel_id") not in (None, facts["funnel_id"]):
+        bad.append(f"funnel_id is {approval.get('funnel_id')!r}, not {facts['funnel_id']!r}")
+    words = approval.get("owner_words")
+    if not (isinstance(words, list) and any(lp._nonempty_str(w) for w in words)):
+        bad.append("owner_words carries none of the owner's own words")
+    if bad:
+        return [f"{label} the live-publication approval does not cover this page: " + "; ".join(bad)]
+
+    named = False
+    for art in installs:
+        doc, why = _sealed_json(label, art, root)
+        if why:
+            return [why]
+        if not isinstance(doc, Mapping):
+            return [f"{label} install receipt {art.get('path')!r} is not a JSON object"]
+        if doc.get("unit") == facts["read_by"]:
+            return [f"{label} install receipt {art.get('path')!r} was written by the reader "
+                    f"{facts['read_by']!r}: the read-back must be independent of the install"]
+        if facts["page_id"] in _strings(doc) and doc.get("unit") == facts["installed_by"]:
+            named = True
+    if not named:
+        return [f"{label} no install receipt written by {facts['installed_by']!r} names page "
+                f"{facts['page_id']!r}"]
+
+    doc, why = _sealed_json(label, readbacks[0], root)
+    if why:
+        return [why]
+    if not isinstance(doc, Mapping) or doc.get("kind") != PAGE_READBACK_KIND:
+        return [f"{label} read-back is not a {PAGE_READBACK_KIND!r} record"]
+    method = doc.get("method")
+    page = (doc.get("pages") or {}).get(unit_id) if isinstance(doc.get("pages"), Mapping) else None
+    top = page.get("top_version") if isinstance(page, Mapping) else None
+    if not isinstance(top, Mapping):
+        return [f"{label} read-back carries no live record for {unit_id!r}"]
+    served = page.get("public") if isinstance(page.get("public"), Mapping) else {}
+    checks = (
+        ("read-back unit", doc.get("unit"), facts["read_by"]),
+        ("read-back location_id", doc.get("location_id"), facts["location_id"]),
+        ("read_at present", lp._nonempty_str(doc.get("read_at")), True),
+        ("read by GET", isinstance(method, str) and "GET" in method, True),
+        ("http_status", page.get("http_status"), 200),
+        ("page_id", page.get("page_id"), facts["page_id"]),
+        ("funnelId", page.get("funnelId"), facts["funnel_id"]),
+        ("stepId", page.get("stepId"), facts["step_id"]),
+        ("locationId", page.get("locationId"), facts["location_id"]),
+        ("deleted", page.get("deleted"), False),
+        ("top_version.pageType", top.get("pageType"), "live"),
+        ("top_version.versionId", top.get("versionId"), facts["draft_version_id"]),
+        ("top_version.blob_sha256", top.get("blob_sha256"), sha),
+        ("public.url", served.get("url"), url),
+        ("public.http_status", served.get("http_status"), 200),
+    )
+    bad = [f"{name} is {got!r}, not {want!r}" for name, got, want in checks
+           if got != want or type(got) is not type(want)]
+    if bad:
+        return [f"{label} the independent read-back does not show this page live: " + "; ".join(bad)]
     return []
 
 

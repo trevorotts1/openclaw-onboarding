@@ -27,7 +27,7 @@ from pathlib import Path
 from typing import Any, List
 
 from . import (checks, council, dependencies, image_plan, install_handoff, intake, launch_bridge,
-               launch_plan, package, page_designs, production, route, stop_explain)
+               launch_plan, owner_override, package, page_designs, production, route, stop_explain)
 from .constants import DECIDED, SEAMS
 
 _TEST_ONLY_REF = "TEST-ONLY"  # the placeholder approval ref on test fixtures
@@ -177,6 +177,21 @@ def _council_session(args: argparse.Namespace) -> "dict | None":
     return doc
 
 
+def cmd_owner_override(args: argparse.Namespace) -> int:
+    """Write a signed owner override. The record carries its HMAC signature, never the key."""
+    out = Path(args.out)
+    if out.exists():
+        raise CliError("AF-LAUNCH-OWNER-OVERRIDE-EXISTS", f"{out} already exists; an override is never overwritten")
+    try:
+        record = owner_override.mint(args.plan_hash, args.scope, args.owner_words, args.note)
+    except ValueError as exc:
+        raise CliError(owner_override.CODE, str(exc))
+    out.write_text(json.dumps(record, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    print(json.dumps({"owner_override": str(out), "scope": record["scope"], "plan_hash": record["plan_hash"],
+                      "marker": owner_override.MARKER, "signature_prefix": record["signature"][:16]}, indent=2))
+    return 0
+
+
 def cmd_route(args: argparse.Namespace) -> int:
     normalized = intake.validate(_read_json(args.intake))
     graph = route.compile_route(normalized)
@@ -318,6 +333,7 @@ def cmd_assemble(args: argparse.Namespace) -> int:
                                require_designs=not args.allow_no_designs,
                                refuse_incomplete_designs=not args.allow_no_designs,
                                design_waiver=_read_json(args.design_waiver) if args.design_waiver else None,
+                               owner_override=_read_json(args.owner_override) if args.owner_override else None,
                                design_approvals=(_read_json(args.design_approvals)
                                                  if args.design_approvals else None),
                                launch_plan=plan, deliveries=deliveries,
@@ -877,6 +893,11 @@ def build_parser() -> argparse.ArgumentParser:
     a.add_argument("--design-waiver",
                    help="the owner's design_waiver approval record (JSON: approval_ref, subject_type "
                         "'design_waiver', subject_hash = the plan hash, owner_identity_ref, revoked)")
+    a.add_argument("--owner-override",
+                   help="SWB-094: the owner's signed override record (made by `owner-override`, signed with "
+                        "the operator key named by SF_OPERATOR_KEY_FILE). With --allow-no-designs it is the ONLY "
+                        "way a client delivery (test_only false) assembles without the page designs; the "
+                        "package and its receipt then carry the marker OWNER OVERRIDE")
     a.add_argument("--design-approvals",
                    help='JSON {"design_board": {state, approval_ref, record_sha256}, "final_mockups": {...}}; '
                         "an approved entry must resolve to a recorded Skill 71 Design Board approval "
@@ -1052,11 +1073,22 @@ def build_parser() -> argparse.ArgumentParser:
                         "The count is printed only after it matches")
     k.add_argument("--root", default=None, help="repository root (default: the repo containing this skill)")
     k.set_defaults(fn=cmd_sop_ack)
+
+    o = sub.add_parser("owner-override",
+                       help="SWB-094: write a signed owner override (page designs) for a plan hash; needs the "
+                            "operator key (SF_OPERATOR_KEY_FILE), which is never printed")
+    o.add_argument("--plan-hash", required=True, help="the approved plan hash (64 hex) the override covers")
+    o.add_argument("--scope", default=owner_override.SCOPE_PAGE_DESIGNS, choices=owner_override.SCOPES)
+    o.add_argument("--owner-word", action="append", required=True, dest="owner_words",
+                   help="a sentence in the owner's own words that grants this (repeat for each)")
+    o.add_argument("--note", default="", help="why, in one line")
+    o.add_argument("--out", required=True, help="where to write the signed record (a NEW file)")
+    o.set_defaults(fn=cmd_owner_override)
     return p
 
 
 # These commands read data only and never import the runtime packages, so they must not start an install.
-_NO_RUNTIME_PACKAGES = ("seams", "dependencies", "questions", "brand", "revise-image", "sop-ack")
+_NO_RUNTIME_PACKAGES = ("seams", "dependencies", "questions", "brand", "revise-image", "sop-ack", "owner-override")
 
 
 def main(argv: List[str] | None = None) -> int:

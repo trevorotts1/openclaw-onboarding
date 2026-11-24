@@ -203,6 +203,7 @@
           "enum": [
             "authored",
             "draft_delivered",
+            "published_delivered",
             "locally_verified",
             "installed_test_verified",
             "ready_for_activation",

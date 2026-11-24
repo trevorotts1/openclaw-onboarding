@@ -17,6 +17,7 @@ from typing import Any, Dict, List, Tuple
 from . import check_rules
 from . import checkout as checkout_module
 from . import launch_plan as launch_plan_module
+from . import owner_override as owner_override_module
 from . import package as package_module
 from . import page_designs
 from . import route as route_module
@@ -422,6 +423,16 @@ def _design_level(manifest: Dict[str, Any], root: Path,
     if not required:
         waiver = manifest.get("design_waiver")  # the record package.assemble writes
         claims_waiver = "designs waived" in str(manifest.get("delivery_label", "")).lower()
+        if not test_only and manifest.get("owner_override") is not None:
+            # SWB-094: the signed owner override is re-verified here, never believed from the manifest.
+            fails = owner_override_module.verify(manifest.get("owner_override"),
+                                                 manifest.get("approved_plan_hash") or "",
+                                                 owner_override_module.SCOPE_PAGE_DESIGNS)
+            if fails:
+                return "designs: none (owner override NOT verified)", [
+                    f"{owner_override_module.CODE}: the owner override does not verify: " + "; ".join(fails)]
+            return (f"{owner_override_module.MARKER}: designs waived by the owner "
+                    f"(signed record {str(manifest['owner_override'].get('signature'))[:16]})"), []
         if not test_only:
             # A client delivery never waives designs, with or without a waiver record.
             return "designs: none (client delivery)", [
@@ -918,7 +929,11 @@ def _receipt_violations(manifest: Dict[str, Any], manifest_path: Path,
     if (receipt.get("manifest") or {}).get("sha256") != _sha256_file(manifest_path):
         fails.append("AF-LAUNCH-PKG-RECEIPT: receipt does not seal this manifest")
     paid = _paid_image_renders(manifest)
-    expected_effects = f"paid_image_renders:{paid}" if paid else "none"
+    published = sum(1 for row in receipt.get("units") or []
+                    if isinstance(row, dict) and row.get("unit_type") == "page"
+                    and isinstance(row.get("page_install"), dict)
+                    and row["page_install"].get("published") is True)
+    expected_effects = package_module.live_effects_text(paid, published)
     if receipt.get("live_effects") != expected_effects:
         fails.append(f"AF-LAUNCH-PKG-RECEIPT: receipt live_effects {receipt.get('live_effects')!r} "
                      f"does not match the package's paid picture renders ({expected_effects!r})")

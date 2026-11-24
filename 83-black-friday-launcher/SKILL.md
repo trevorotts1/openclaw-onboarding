@@ -456,7 +456,7 @@ python3 -m launcher_core.cli dispatch     --intake intake.json --out <run-dir> \
 python3 -m launcher_core.cli questions
 python3 -m launcher_core.cli assemble     --intake intake.json --pieces <run-dir>/pieces --out <package-dir> \
                  (--launch-plan <launch-plan.json> [--deliveries <deliveries.json>] | --page-only) \
-                 [--allow-no-designs] [--run-dir <run-dir>] [--activation-readback <readback.json>] \
+                 [--allow-no-designs [--owner-override <override.json>]] [--run-dir <run-dir>] [--activation-readback <readback.json>] \
                  [--run-image-stages --image-provider stub|kie [--allow-paid]] \
                  [--review-root <page-run>] [--host-media <approval-ref> [--hosting-folder-name NAME] [--probe-hosting]]
 python3 -m launcher_core.cli brand        --answers <answers.json> --out <job-dir> [--brand-file <brand.json>] \
@@ -467,6 +467,7 @@ python3 -m launcher_core.cli check        --manifest <package-dir>/package-manif
 python3 -m launcher_core.cli seams
 python3 -m launcher_core.cli dependencies [--root <repo>] [--install] [--stamp-interfaces]
 python3 -m launcher_core.cli sop-ack      <sop> --session <reader-id> --sections <heading count>
+python3 -m launcher_core.cli owner-override --plan-hash <approved plan hash> --scope page_designs --owner-word "<the owner's own words>" --out <override.json>
 ```
 
 `assemble` also produces the graphics handoff every time: the
@@ -489,6 +490,20 @@ picture questions a client is asked, as data.
 (`AF-LAUNCH-PLAN-REQUIRED`). `--page-only` labels the package page-only: it carries no Black Friday calendar
 and no planned email, text or automation. `--allow-no-designs` is for plan-only packages and is recorded as
 `designs_required: false`.
+
+`--allow-no-designs` is never accepted for a client delivery (`test_only` false) with a plain design waiver. The one
+exception is the owner override (SWB-094): `owner-override` writes a record signed (HMAC-SHA256) with the operator key
+named by `SF_OPERATOR_KEY_FILE` (the key is never printed or stored in the record), bound to the approved plan hash
+and to the scope `page_designs`, carrying the owner's own words. `assemble --allow-no-designs --owner-override FILE`
+accepts it only when the signature verifies; the manifest, the receipt and the delivery label then carry
+`OWNER OVERRIDE`, and `check` re-verifies the signature (no key, an edited record, another plan hash or another key
+fails). An unsigned or plain design waiver is still refused for a client delivery.
+
+A page another skill delivered may be recorded as PUBLISHED (`page_install.published` true) only with the owner's
+live-publication approval record sealed in its row (artifact role `live_publication_approval`), the installer's
+receipt naming the page, and one independent GET read-back showing the LIVE top version (same version id and content
+sha256) served on its public URL with HTTP 200. Such a row is recorded `published_delivered` and the receipt's
+`live_effects` says `published_pages:N`. A row with `published` false still has to be an unpublished draft.
 
 Run the shipped checks with `bash verify.sh` (exit 0 pass, non-zero fail).
 

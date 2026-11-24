@@ -42,6 +42,7 @@ from . import image_plan as image_plan_module
 from . import intake as intake_module
 from . import launch_bridge
 from . import launch_plan as launch_plan_module
+from . import owner_override as owner_override_module
 from . import linked_delivery
 from . import page_designs
 from . import route as route_module
@@ -186,6 +187,7 @@ _IMAGE_SUFFIXES = (".png", ".jpg", ".jpeg", ".webp")
 PROOF_BY_STATUS = {
     "authored": (True, False, False, False),
     "draft_delivered": (True, False, False, False),
+    "published_delivered": (True, True, False, True),
     "locally_verified": (True, False, True, False),
     "installed_test_verified": (True, True, True, False),
     "ready_for_activation": (True, True, True, False),
@@ -632,6 +634,11 @@ def _lane_receipt(unit: Dict[str, Any], delivery: Any, intake: Dict[str, Any],
         bad_page = delivery_units.page_draft_violations(unit["id"], row, run_dir)
         if bad_page:
             raise PackageError("AF-LAUNCH-PKG-RECEIPT-LANE", "; ".join(bad_page))
+        if not bad_page and isinstance(row.get("page_install"), dict) \
+                and row["page_install"].get("published") is True:
+            # SWB-094: a page the owner ordered live, proved by the lane's own live law, is recorded as live.
+            row["status"] = "published_delivered"
+            row["proof"] = _proof("published_delivered")
     if row["unit_type"] in ("email", "text", "automation"):
         row["draft_only"] = True
     if delivery_marker:
@@ -1023,6 +1030,8 @@ def _bind_external_install(root: Path, intake: Dict[str, Any], route: Dict[str, 
                       "installed_by": facts["installed_by"], "draft_version_id": facts["draft_version_id"],
                       "readback_sha256": facts["content_sha256"],
                       "install_receipt_sha256": entry["install_receipt_sha256"]})
+    live_pages = [p["unit_id"] for p in pages
+                  if (deliveries or {})[p["unit_id"]]["page_install"].get("published") is True]
     return {
         "plan_document_hash": plan_hash,
         "record": {
@@ -1033,7 +1042,10 @@ def _bind_external_install(root: Path, intake: Dict[str, Any], route: Dict[str, 
             "plan_document_hash": plan_hash,
             "intake_approval_hash_is_plan_hash": True,
             "pages": pages,
-            "detail": "pages installed as GoHighLevel DRAFTS by other skills; no Skill 83 dispatch drew them",
+            "detail": ("pages installed as GoHighLevel DRAFTS by other skills; no Skill 83 dispatch drew them"
+                       if not live_pages else
+                       f"pages installed by other skills; {len(live_pages)} of {len(pages)} are PUBLISHED on the "
+                       "owner's live-publication approval (never labelled drafts); no Skill 83 dispatch drew them"),
         },
     }
 
@@ -1194,6 +1206,20 @@ def _verify_design_waiver(waiver: Any, approved_hash: str, test_only: bool = Fal
                            "the design waiver approves another plan hash than this package's")
     return {"approval_ref": waiver["approval_ref"], "subject_hash": approved_hash,
             "owner_identity_ref": waiver["owner_identity_ref"]}
+
+
+def published_page_count(deliveries: Optional[Dict[str, Any]]) -> int:
+    """SWB-094: pages another skill delivered as PUBLISHED on the owner's live-publication approval."""
+    return sum(1 for row in (deliveries or {}).values()
+               if isinstance(row, dict) and isinstance(row.get("page_install"), dict)
+               and row["page_install"].get("published") is True)
+
+
+def live_effects_text(paid_renders: int, published_pages: int) -> str:
+    """What the receipt says a package really did live: paid picture renders and published pages."""
+    parts = ([f"paid_image_renders:{paid_renders}"] if paid_renders else []) \
+        + ([f"published_pages:{published_pages}"] if published_pages else [])
+    return ";".join(parts) if parts else "none"
 
 
 def _paid_image_renders(ordered: List[Dict[str, Any]]) -> int:
@@ -1480,7 +1506,8 @@ def assemble(run_dir: Path, intake: Dict[str, Any], route: Dict[str, Any],
              design_waiver: Optional[Dict[str, Any]] = None,
              checkout_readback: Optional[Dict[str, Any]] = None,
              activation_readback: Optional[Dict[str, Any]] = None,
-             refuse_incomplete_designs: bool = False) -> Dict[str, Any]:
+             refuse_incomplete_designs: bool = False,
+             owner_override: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """Write package-manifest.json + receipt.json into run_dir. Returns both records.
 
     Artifacts are copied into run_dir/pieces/<page_id>/ so the delivered package
@@ -1741,8 +1768,22 @@ def assemble(run_dir: Path, intake: Dict[str, Any], route: Dict[str, Any],
     designs_required = require_designs if require_designs is not None else (
         binding is not None or external is not None or not test_only)
     waiver = None
+    override_entry = None
     if require_designs is False:
-        waiver = _verify_design_waiver(design_waiver, approved, test_only)
+        if not test_only and owner_override is not None:
+            # SWB-094: the one exception to "never for a client delivery": an owner override signed with
+            # the operator key. Any other caller (no record, unsigned, edited, another plan) still gets
+            # the refusal from _verify_design_waiver below.
+            try:
+                override_entry = owner_override_module.accept(owner_override, approved, run_dir)
+            except ValueError as exc:
+                raise PackageError(owner_override_module.CODE, str(exc))
+            waiver = {"approval_ref": f"{owner_override_module.MARKER}: {override_entry['signature'][:16]}",
+                      "subject_hash": approved,
+                      "owner_identity_ref": "the holder of the operator key",
+                      "owner_override": True}
+        else:
+            waiver = _verify_design_waiver(design_waiver, approved, test_only)
     approval_copies: List[Tuple[Path, Path]] = []   # written after the design refusal, never before
     if design_approvals is not None:
         # STR-25: an approved Design Board must resolve to a recorded Skill 71 approval, and a relative
@@ -1890,13 +1931,16 @@ def assemble(run_dir: Path, intake: Dict[str, Any], route: Dict[str, Any],
     delivery_label = DELIVERY_LABELS[scope]
     if open_blockers:
         delivery_label = f"{DELIVERY_LABEL_DESIGN_ONLY}; {delivery_label}"
-    if waiver is not None:
+    if override_entry is not None:
+        delivery_label += (f"; {owner_override_module.MARKER}: designs waived by the owner "
+                           f"(signed record {override_entry['signature'][:16]})")
+    elif waiver is not None:
         delivery_label += f"; designs waived (owner approval {waiver['approval_ref']})"
     seams = [seam["id"] for seam in SEAMS]
     if SEAM_NATIVE_CHECKOUT_INSTALL not in seams:
         seams.append(SEAM_NATIVE_CHECKOUT_INSTALL)
     paid_renders = _paid_image_renders(ordered)
-    live_effects = f"paid_image_renders:{paid_renders}" if paid_renders else "none"
+    live_effects = live_effects_text(paid_renders, published_page_count(deliveries))
 
     cross_sales = route.get("cross_sales") or {
         "relationships": [], "teaching": {"state": "pending"}, "route_node": False,
@@ -1924,6 +1968,7 @@ def assemble(run_dir: Path, intake: Dict[str, Any], route: Dict[str, Any],
         "open_blockers": open_blockers,
         "open_by_design_blockers": open_by_design,
         "design_waiver": waiver,
+        "owner_override": override_entry,
         "intake": {"path": "intake.json", "sha256": _sha256_file(intake_path)},
         "route_graph": {"path": "route-graph.json", "sha256": _sha256_file(route_path)},
         "pieces": ordered,
@@ -1990,6 +2035,7 @@ def assemble(run_dir: Path, intake: Dict[str, Any], route: Dict[str, Any],
         "open_blockers": open_blockers,
         "open_by_design_blockers": open_by_design,
         "design_waiver": waiver,
+        "owner_override": override_entry,
         "manifest": {"path": "package-manifest.json", "sha256": _sha256_file(manifest_path)},
         "units": _unit_receipts(ordered, intake, launch_plan, pieces, plan_ref, run_dir,
                                 lane_deliveries=deliveries, approved=approved),
