@@ -369,7 +369,7 @@ PYEOF
   esac
   if ! openclaw cron add --name "$OC_BOX_UPDATE_CRON_NAME" --cron "$OC_BOX_UPDATE_SCHEDULE" --tz "$OC_BOX_UPDATE_TZ" --exact \
        --description "Box update Tue/Fri/Sun 2:00 AM Eastern: runs scripts/weekly-full-update.sh from main (onboarding, 999 if installed, Command Center). Silent." \
-       --command "$OC_BOX_UPDATE_COMMAND" --timeout-seconds 7200 --no-output-timeout-seconds 3600 --no-deliver >/dev/null 2>&1; then
+       --command "$OC_BOX_UPDATE_COMMAND" --timeout-seconds 43200 --no-output-timeout-seconds 43200 --no-deliver >/dev/null 2>&1; then
     echo "  ⚠ box update cron: command-job create failed — existing job left in place"
     return 2
   fi
