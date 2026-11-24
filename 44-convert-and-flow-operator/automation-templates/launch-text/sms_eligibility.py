@@ -461,6 +461,184 @@ PROSE_HINTS = {
 }
 
 
+# ---------------------------------------------------------------------------
+# per-account SMS vocabulary (SWB-072)
+# ---------------------------------------------------------------------------
+# An account may name its consent tag, suppression tags, contact-cap field,
+# quiet-hours window and launch-deadline source differently from the catalog
+# defaults. A small JSON mapping file says so (`--vocab path`). The mapping
+# renames WHAT is looked for; every rule must still be present as a native
+# saved condition, so nothing here can switch a rule off. A mapping may be
+# stricter than the defaults (a narrower window, a smaller cap) and never
+# looser: a window wider than 08:00-21:00 or a cap above MARKETING_CAP is
+# refused. Without a mapping the literal defaults above apply unchanged.
+#
+#   {"consent_tag": "...", "suppression_tags": ["..."],
+#    "cap_field": "...", "cap_max": 5,
+#    "quiet_hours": {"start": "09:00", "end": "20:00"},
+#    "deadline": {"source": "native_wait_until_date", "date": "YYYY-MM-DD",
+#                 "time": "HH:MM", "timezone": "America/New_York",
+#                 "when_passed": "exit", "anchor": "doors_close_at"}}
+
+VOCAB_KEYS = frozenset({"consent_tag", "suppression_tags", "cap_field",
+                        "cap_max", "quiet_hours", "deadline"})
+DEADLINE_SOURCES = frozenset({"condition", "native_wait_until_date"})
+_HHMM_RE = re.compile(r"^([01]\d|2[0-3]):[0-5]\d$")
+_DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+
+
+def _nonempty(value, label):
+    if not isinstance(value, str) or not value.strip():
+        raise ValueError("vocab %s must be a non-empty string" % label)
+    return value
+
+
+def load_vocab(raw) -> dict:
+    """Validate a mapping object and return the effective vocabulary
+    (defaults filled in). Raises ValueError for anything unknown, malformed
+    or looser than the defaults; never guesses."""
+    if not isinstance(raw, dict):
+        raise ValueError("vocab must be a JSON object")
+    unknown = sorted(set(raw) - VOCAB_KEYS)
+    if unknown:
+        raise ValueError("vocab has unknown keys: %s" % ",".join(unknown))
+    vocab = {"consent_tag": "sms-subscribed",
+             "suppression_tags": ["sms-opted-out"],
+             "cap_field": "contact_marketing_sends",
+             "cap_max": MARKETING_CAP,
+             "quiet_hours": {"start": "08:00", "end": "21:00"},
+             "deadline": {"source": "condition", "anchor": "doors_close_at"}}
+    if "consent_tag" in raw:
+        vocab["consent_tag"] = _nonempty(raw["consent_tag"], "consent_tag")
+    if "suppression_tags" in raw:
+        tags = raw["suppression_tags"]
+        if not isinstance(tags, list) or not tags:
+            raise ValueError("vocab suppression_tags must be a non-empty list")
+        vocab["suppression_tags"] = [_nonempty(t, "suppression_tags entry") for t in tags]
+    if "cap_field" in raw:
+        vocab["cap_field"] = _nonempty(raw["cap_field"], "cap_field")
+    if "cap_max" in raw:
+        cap = raw["cap_max"]
+        if isinstance(cap, bool) or not isinstance(cap, int) or not 1 <= cap <= MARKETING_CAP:
+            raise ValueError("vocab cap_max must be an integer 1..%d" % MARKETING_CAP)
+        vocab["cap_max"] = cap
+    if "quiet_hours" in raw:
+        qh = raw["quiet_hours"]
+        if not isinstance(qh, dict) or set(qh) != {"start", "end"}:
+            raise ValueError("vocab quiet_hours needs exactly start and end")
+        start, end = qh["start"], qh["end"]
+        if not (isinstance(start, str) and isinstance(end, str)
+                and _HHMM_RE.match(start) and _HHMM_RE.match(end)):
+            raise ValueError("vocab quiet_hours must be HH:MM strings")
+        lo, hi = "%02d:00" % (QUIET_START // 60), "%02d:00" % (QUIET_END // 60)
+        if not (lo <= start < end <= hi):
+            raise ValueError("vocab quiet_hours must sit inside %s-%s" % (lo, hi))
+        vocab["quiet_hours"] = {"start": start, "end": end}
+    if "deadline" in raw:
+        dl = raw["deadline"]
+        if not isinstance(dl, dict):
+            raise ValueError("vocab deadline must be an object")
+        source = dl.get("source", "condition")
+        if source not in DEADLINE_SOURCES:
+            raise ValueError("vocab deadline.source must be one of %s" % sorted(DEADLINE_SOURCES))
+        out = {"source": source, "anchor": _nonempty(dl.get("anchor", "doors_close_at"), "deadline.anchor")}
+        if source == "native_wait_until_date":
+            date, time_ = dl.get("date"), dl.get("time")
+            if not (isinstance(date, str) and _DATE_RE.match(date)):
+                raise ValueError("vocab deadline.date must be YYYY-MM-DD")
+            try:
+                datetime.strptime(date, "%Y-%m-%d")
+            except ValueError:
+                raise ValueError("vocab deadline.date is not a real date")
+            if not (isinstance(time_, str) and _HHMM_RE.match(time_)):
+                raise ValueError("vocab deadline.time must be HH:MM")
+            out.update({"date": date, "time": time_,
+                        "timezone": _nonempty(dl.get("timezone"), "deadline.timezone"),
+                        # A late entrant must leave, never fall through to a send.
+                        "when_passed": _nonempty(dl.get("when_passed", "exit"), "deadline.when_passed")})
+        vocab["deadline"] = out
+    return vocab
+
+
+def expected_rules(category_name: str, vocab=None):
+    """[(rule, [expected conditions...])] for a category. With no vocab this is
+    exactly EXPECTED_CONDITIONS; with one, the account's names are substituted."""
+    if vocab is None:
+        return [(rule, [expected]) for rule, expected in EXPECTED_CONDITIONS[category_name]]
+    suppression = [{"type": "tag_absent", "value": t} for t in vocab["suppression_tags"]]
+    quiet = {"type": "time_window", "start": vocab["quiet_hours"]["start"],
+             "end": vocab["quiet_hours"]["end"], "timezone": "recipient_local"}
+    if category_name == "operational":
+        return [("suppression", suppression), ("quiet_hours", [quiet])]
+    return [
+        ("consent", [{"type": "tag_present", "value": vocab["consent_tag"]}]),
+        ("suppression", suppression),
+        ("aggregate_contact_cap", [{"type": "field_lt", "field": vocab["cap_field"],
+                                    "value": vocab["cap_max"]}]),
+        ("quiet_hours", [quiet]),
+        ("launch_deadline", [{"type": "deadline", "anchor": vocab["deadline"]["anchor"]}]),
+    ]
+
+
+def _wait_hhmm(attrs):
+    """HH:MM of a native specific-date wait node, or None."""
+    try:
+        hour, minute = int(attrs.get("specificTimeHour")), int(attrs.get("specificTimeMinute") or 0)
+    except (TypeError, ValueError):
+        return None
+    period = str(attrs.get("specificTimePeriod") or "").upper()
+    if period not in ("AM", "PM") or not 1 <= hour <= 12 or not 0 <= minute <= 59:
+        return None
+    if int(attrs.get("specificTimeSecond") or 0) != 0:
+        return None
+    return "%02d:%02d" % (hour % 12 + (12 if period == "PM" else 0), minute)
+
+
+def _is_deadline_wait(step, deadline) -> bool:
+    """A saved native wait-until-date node that IS the vocabulary's launch
+    deadline: enabled, exact date and time, no offsets, and a contact who
+    arrives after it leaves (`when_passed`). A wait for any other moment, or
+    one that lets late contacts through, is a send time, not a deadline."""
+    if not isinstance(step, dict) or str(step.get("type") or "").lower() != "wait":
+        return False
+    attrs = step.get("attributes") if isinstance(step.get("attributes"), dict) else {}
+    if step.get("disabled") is True or attrs.get("disabled") is True:
+        return False
+    return (attrs.get("type") == "specific_date"
+            and attrs.get("specificDate") == deadline["date"]
+            and _wait_hhmm(attrs) == deadline["time"]
+            and attrs.get("specificDatePassed") == deadline["when_passed"]
+            and not any(attrs.get(k) for k in ("specificDateOffsetDays", "specificDateOffsetHours",
+                                               "specificDateOffsetMinutes"))
+            and attrs.get("specificDateProceed", "on") == "on")
+
+
+def deadline_covered(raw_steps, sms_steps, deadline, export_timezone=None) -> bool:
+    """True only when EVERY SMS step sits downstream of a native deadline wait
+    (walking `parentKey` / `parent` links up the saved canvas)."""
+    if not sms_steps:
+        return False
+    if export_timezone not in (None, "account", deadline["timezone"]):
+        return False
+    by_id = {s.get("id"): s for s in raw_steps if isinstance(s, dict) and s.get("id")}
+    for sms in sms_steps:
+        seen, stack, hit = set(), [sms], False
+        while stack and not hit:
+            node = stack.pop()
+            for key in ("parentKey", "parent"):
+                pid = node.get(key)
+                if isinstance(pid, str) and pid not in seen and pid in by_id:
+                    seen.add(pid)
+                    parent = by_id[pid]
+                    if _is_deadline_wait(parent, deadline):
+                        hit = True
+                        break
+                    stack.append(parent)
+        if not hit:
+            return False
+    return True
+
+
 def _matches(expected: dict, observed: dict) -> bool:
     if not isinstance(observed, dict) or observed.get("disabled") is True:
         return False
@@ -500,8 +678,9 @@ def _matches(expected: dict, observed: dict) -> bool:
     return False
 
 
-def verify_saved_conditions(snapshot: dict, category_name: str) -> dict:
-    """Prove the rules are saved native conditions, not template prose."""
+def verify_saved_conditions(snapshot: dict, category_name: str, vocab=None) -> dict:
+    """Prove the rules are saved native conditions, not template prose.
+    `vocab` (from load_vocab) renames what is looked for; None = the defaults."""
     steps = (snapshot or {}).get("steps")
     if not isinstance(steps, list):
         return {"ok": False, "missing": ["workflow.steps"], "prose_only": [],
@@ -521,13 +700,19 @@ def verify_saved_conditions(snapshot: dict, category_name: str) -> dict:
                     native.append(condition)
 
     found, missing, prose_only = {}, [], []
-    for rule, expected in EXPECTED_CONDITIONS[category_name]:
-        ok = any(_matches(expected, condition) for condition in native)
+    for rule, wanted in expected_rules(category_name, vocab):
+        # every expected condition of a rule must be present (all suppression tags)
+        ok = all(any(_matches(expected, condition) for condition in native)
+                 for expected in wanted)
         found[rule] = ok
         if not ok:
             missing.append(rule)
             haystack = " \n".join(prose).lower()
-            if any(hint.lower() in haystack for hint in PROSE_HINTS[rule]):
+            hints = list(PROSE_HINTS[rule])
+            if vocab is not None:
+                for expected in wanted:
+                    hints += [str(expected.get(k)) for k in ("value", "field") if expected.get(k)]
+            if any(hint.lower() in haystack for hint in hints):
                 prose_only.append(rule)
     return {"ok": not missing, "missing": missing,
             "prose_only": prose_only, "found": found}
@@ -607,7 +792,7 @@ def _export_holder(export):
     return export
 
 
-def snapshot_from_export(export):
+def snapshot_from_export(export, vocab=None):
     """(snapshot, sms_steps) for verify_saved_conditions().
 
     A saved export keeps conditions and prose under `attributes`; the
@@ -642,6 +827,12 @@ def snapshot_from_export(export):
             {"type": "native_time_window", "condition": "when",
              "start": window.get("start"), "end": window.get("end"),
              "timezone": holder.get("timezone")}]})
+    deadline = (vocab or {}).get("deadline") or {}
+    if deadline.get("source") == "native_wait_until_date" and deadline_covered(
+            steps, sms, deadline, holder.get("timezone")):
+        # Derived ONLY from native wait nodes upstream of every SMS node.
+        out.append({"type": "wait_until", "disabled": False, "conditions": [
+            {"type": "deadline", "anchor": deadline["anchor"]}]})
     return {"steps": out, "stop_on_response": holder.get("stopOnResponse") is True,
             "timezone": holder.get("timezone")}, sms
 
@@ -661,14 +852,14 @@ def export_category(sms_steps) -> str:
     return "operational"
 
 
-def verify_saved_export(export, category_name="auto") -> dict:
+def verify_saved_export(export, category_name="auto", vocab=None) -> dict:
     """verify_saved_conditions() over a saved workflow export.
 
     `ok` is True when the export has no SMS node (nothing to prove) or every
     rule for its category is a saved native condition. An unreadable export
     is `ok: False` with `unreadable: True`, never a pass.
     """
-    snapshot, sms = snapshot_from_export(export)
+    snapshot, sms = snapshot_from_export(export, vocab)
     if snapshot is None:
         return {"ok": False, "unreadable": True, "category": None, "sms_nodes": 0,
                 "missing": ["workflow.steps"], "prose_only": [], "found": {}}
@@ -676,7 +867,7 @@ def verify_saved_export(export, category_name="auto") -> dict:
         return {"ok": True, "unreadable": False, "category": None, "sms_nodes": 0,
                 "missing": [], "prose_only": [], "found": {}}
     chosen = export_category(sms) if category_name == "auto" else category_name
-    result = verify_saved_conditions(snapshot, chosen)
+    result = verify_saved_conditions(snapshot, chosen, vocab)
     # Workflow-level Stop on Response is a native setting, not a condition node.
     result["stop_on_response"] = snapshot.get("stop_on_response") is True
     result["window_timezone"] = snapshot.get("timezone")
@@ -685,10 +876,10 @@ def verify_saved_export(export, category_name="auto") -> dict:
 
 
 def main(argv=None) -> int:
-    """`verify-saved --export <export.json> [--category auto|marketing|operational]`
+    """`verify-saved --export <export.json> [--category auto|marketing|operational] [--vocab <mapping.json>]`
 
     Exit 0 = every rule saved natively (or no SMS node), 1 = a rule is
-    missing or prose only, 2 = the export could not be read.
+    missing or prose only, 2 = the export or the --vocab mapping could not be read.
     """
     import argparse
     import json
@@ -700,7 +891,18 @@ def main(argv=None) -> int:
     saved.add_argument("--export", required=True, help="saved workflow export JSON")
     saved.add_argument("--category", default="auto",
                        choices=("auto", "marketing", "operational"))
+    saved.add_argument("--vocab", default=None,
+                       help="per-account SMS vocabulary mapping JSON (default: the literal catalog names)")
     args = parser.parse_args(argv)
+    vocab = None
+    if args.vocab is not None:
+        try:
+            with open(args.vocab, encoding="utf-8") as handle:
+                vocab = load_vocab(json.load(handle))
+        except (OSError, ValueError) as exc:
+            print(json.dumps({"ok": False, "unreadable": True,
+                              "error": "vocab_invalid: %s" % exc}))
+            return 2
     try:
         with open(args.export, encoding="utf-8") as handle:
             export = json.load(handle)
@@ -708,7 +910,7 @@ def main(argv=None) -> int:
         print(json.dumps({"ok": False, "unreadable": True,
                           "error": type(exc).__name__}))
         return 2
-    result = verify_saved_export(export, args.category)
+    result = verify_saved_export(export, args.category, vocab)
     print(json.dumps(result, sort_keys=True))
     if result.get("unreadable"):
         return 2

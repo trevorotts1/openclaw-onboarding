@@ -16,7 +16,7 @@ fi
 #                          [--fab] [--evidence <evidence_root>] [--conversational] [--json]
 #                          [--deps <dependency-manifest.json>] [--handoff <path>]
 #                          --plan-mode-file <path> --qc-session <path> --grades <path> \
-#                          [--launch | --launch-schedule <path>]
+#                          [--launch | --launch-schedule <path>] [--sms-vocab <mapping.json>]
 #
 #   workflow-id       GHL workflow id (required)
 #   --publish-intent  Client's publish decision: DRAFT (default) or LIVE
@@ -45,6 +45,12 @@ fi
 #   --launch-schedule Compiled wait schedule JSON ({"waits":[{"kind":"until_date","until":"<ISO8601 with
 #                     offset>"} | {"kind":"delay","value":2,"unit":"days"}]}); implies --launch. WF-9
 #                     compares the export's wait nodes against it (S44-11).
+#   --sms-vocab       WF-25 only (SWB-072): per-account SMS vocabulary mapping JSON naming the consent
+#                     tag, suppression tags, contact-cap field, quiet-hours window and launch-deadline
+#                     source (a native wait-until-date node). Omitted = the literal catalog names
+#                     (sms-subscribed / sms-opted-out / contact_marketing_sends). A mapping renames
+#                     what is looked for; every rule must still be a saved native condition. An
+#                     unreadable or looser-than-default mapping fails WF-25 closed on any SMS node.
 #
 # NOTE on export routing (Tier awareness): `caf workflows list` reads via the LOCATION
 # PIT (Tier 0, public API). `caf workflows get` / `caf workflows export` route through the
@@ -114,6 +120,7 @@ LAUNCH_MODE=0
 LAUNCH_SCHEDULE=""
 ACCOUNT_TZ="${QC_ACCOUNT_TZ:-}"
 TRIGGER_EVIDENCE=""
+SMS_VOCAB=""
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -132,6 +139,7 @@ while [[ $# -gt 0 ]]; do
     --launch-schedule) LAUNCH_SCHEDULE="${2:-}"; LAUNCH_MODE=1; shift 2 ;;
     --account-tz)     ACCOUNT_TZ="${2:-}"; shift 2 ;;     # WF-9: IANA zone a native wait's "account" timezone means
     --trigger-evidence) TRIGGER_EVIDENCE="${2:-}"; shift 2 ;; # WF-24: read-back trigger record(s) (the export carries none)
+    --sms-vocab)      SMS_VOCAB="${2:-}"; shift 2 ;;      # WF-25: per-account SMS vocabulary mapping (SWB-072)
     --conversational) CONVERSATIONAL=1; shift ;;  # WF-19: exec Skill 38 qc-trinity-registry.sh as a HARD gate
     -*)               echo "Unknown option: $1" >&2; exit 2 ;;
     *)                WORKFLOW_ID="$1"; shift ;;
@@ -539,7 +547,9 @@ SMS_JSON=""
 if [ ! -f "$SMS_VERIFIER" ]; then
   SMS_RC=99
 else
-  SMS_JSON=$(python3 -I "$SMS_VERIFIER" verify-saved --export "$TMP" 2>/dev/null) || SMS_RC=$?
+  SMS_VOCAB_ARGS=()
+  [ -n "$SMS_VOCAB" ] && SMS_VOCAB_ARGS=(--vocab "$SMS_VOCAB")
+  SMS_JSON=$(python3 -I "$SMS_VERIFIER" verify-saved --export "$TMP" ${SMS_VOCAB_ARGS[@]+"${SMS_VOCAB_ARGS[@]}"} 2>/dev/null) || SMS_RC=$?
 fi
 SMS_FIELDS=$(printf '%s' "$SMS_JSON" | python3 -c '
 import json, sys

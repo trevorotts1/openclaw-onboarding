@@ -25,7 +25,9 @@ from sms_eligibility import (  # noqa: E402
     category,
     count_segments,
     evaluate_send,
+    expected_rules,
     export_category,
+    load_vocab,
     main as cli_main,
     verify_saved_conditions,
     verify_saved_export,
@@ -331,6 +333,275 @@ class SavedExportTests(unittest.TestCase):
             self.assertEqual(cli_main(["verify-saved", "--export", str(bad)]), 1)
             self.assertEqual(cli_main(["verify-saved", "--export", str(tmp / "junk.json")]), 2)
             self.assertEqual(cli_main(["verify-saved", "--export", str(tmp / "missing.json")]), 2)
+
+
+# ---------------------------------------------------------------------------
+# SWB-072: per-account SMS vocabulary (--vocab)
+# ---------------------------------------------------------------------------
+
+HER_VOCAB = {
+    "consent_tag": "b-018. sms optin",
+    "suppression_tags": ["b-018. unsubscribed on sms"],
+    "cap_field": "contact_marketing_sends",
+    "cap_max": 5,
+    "quiet_hours": {"start": "09:00", "end": "20:00"},
+    "deadline": {"source": "native_wait_until_date", "date": "2026-12-04", "time": "20:00",
+                 "timezone": "America/New_York", "when_passed": "exit", "anchor": "doors_close_at"},
+}
+
+
+def _tag_cond(op, tag):
+    return {"conditionType": "contact_detail", "conditionSubType": "tags",
+            "conditionOperator": op, "conditionValue": [tag]}
+
+
+def _wait_node(**attrs):
+    base = {"type": "specific_date", "specificDate": "2026-12-04", "specificTimeHour": 8,
+            "specificTimeMinute": 0, "specificTimePeriod": "PM", "specificTimeSecond": 0,
+            "specificDateProceed": "on", "specificDateOffsetDays": 0, "specificDateOffsetHours": 0,
+            "specificDateOffsetMinutes": 0, "specificDatePassed": "exit"}
+    base.update(attrs)
+    return {"id": "w1", "type": "wait", "name": "Wait until Dec 4 8:00 PM ET (last call)",
+            "attributes": base}
+
+
+def her_export(consent="b-018. sms optin", suppression=("b-018. unsubscribed on sms",),
+               cap=True, wait=True, wait_attrs=None, window=("09:00", "20:00"), sms_under_wait=True,
+               wait_disabled=False, extra_sms=False):
+    """A saved GoHighLevel export in her account's real shape: a native wait-until-date node, a
+    native if/else (consent present AND suppression absent AND cap), the SMS node on the yes arm,
+    and the workflow's own send window."""
+    conds = []
+    if consent:
+        conds.append(_tag_cond("index-of-true", consent))
+    for tag in suppression:
+        conds.append(_tag_cond("index-of-false", tag))
+    if cap:
+        conds.append({"conditionType": "contact_detail", "conditionSubType": "contact_marketing_sends",
+                      "conditionOperator": "<", "conditionValue": 5})
+    templates = []
+    if wait:
+        node = _wait_node(**(wait_attrs or {}))
+        node["disabled"] = wait_disabled
+        templates.append(node)
+    templates.append({"id": "c1", "type": "if_else", "parentKey": "w1" if wait and sms_under_wait else None,
+                      "attributes": {"branches": [{"id": "b1", "name": "Eligible",
+                                                    "segments": [{"operator": "and", "conditions": conds}]}]}})
+    templates.append({"id": "b1", "type": "if_else", "parent": "c1", "parentKey": "c1",
+                      "attributes": {"if": False, "branches": []}})
+    templates.append({"id": "s1", "type": "sms", "parent": "b1", "parentKey": "b1",
+                      "attributes": {"body": "Last call", "fromNumber": ""}})
+    if extra_sms:  # a second SMS node that is NOT downstream of the wait
+        templates.append({"id": "s2", "type": "sms", "attributes": {"body": "Other"}})
+    export = {"timezone": "account", "stopOnResponse": True, "workflowData": {"templates": templates}}
+    if window:
+        export["window"] = {"condition": "when", "start": window[0], "end": window[1]}
+    return export
+
+
+class VocabDefaultsUnchangedTests(unittest.TestCase):
+    def test_no_vocab_means_the_literal_catalog_rules(self):
+        for cat in ("marketing", "operational"):
+            self.assertEqual(expected_rules(cat), [(r, [e]) for r, e in EXPECTED_CONDITIONS[cat]])
+
+    def test_an_empty_mapping_resolves_to_the_same_rules_as_no_mapping(self):
+        for cat in ("marketing", "operational"):
+            self.assertEqual(expected_rules(cat, load_vocab({})), expected_rules(cat))
+
+    def test_her_tags_still_fail_without_the_mapping(self):
+        result = verify_saved_export(her_export())
+        self.assertFalse(result["ok"])
+        for rule in ("consent", "suppression", "launch_deadline"):
+            self.assertIn(rule, result["missing"])
+
+    def test_the_literal_default_export_still_passes_without_a_mapping(self):
+        result = verify_saved_export(as_saved_export(fixture("native_export_ok.json")))
+        self.assertTrue(result["ok"], result["missing"])
+
+    def test_the_default_literal_tags_do_not_satisfy_the_mapping(self):
+        result = verify_saved_export(as_saved_export(fixture("native_export_ok.json")),
+                                     vocab=load_vocab(HER_VOCAB))
+        self.assertFalse(result["ok"])
+        self.assertIn("consent", result["missing"])
+
+
+class VocabPassTests(unittest.TestCase):
+    def test_her_account_passes_when_every_rule_is_native(self):
+        result = verify_saved_export(her_export(), vocab=load_vocab(HER_VOCAB))
+        self.assertTrue(result["ok"], result)
+        self.assertEqual(result["category"], "marketing")
+        self.assertEqual(result["missing"], [])
+        self.assertTrue(all(result["found"].values()), result["found"])
+
+    def test_a_stricter_window_inside_the_mapping_still_passes(self):
+        result = verify_saved_export(her_export(window=("10:00", "19:00")), vocab=load_vocab(HER_VOCAB))
+        self.assertTrue(result["ok"], result)
+
+    def test_every_suppression_tag_is_required(self):
+        vocab = load_vocab(dict(HER_VOCAB, suppression_tags=["b-018. unsubscribed on sms", "dnd"]))
+        both = her_export(suppression=("b-018. unsubscribed on sms", "dnd"))
+        self.assertTrue(verify_saved_export(both, vocab=vocab)["ok"])
+        one = verify_saved_export(her_export(), vocab=vocab)
+        self.assertFalse(one["ok"])
+        self.assertEqual(one["missing"], ["suppression"])
+
+    def test_the_condition_style_deadline_still_works_under_a_mapping(self):
+        mapping = dict(HER_VOCAB)
+        mapping.pop("deadline")
+        export = her_export(wait=False)
+        export["workflowData"]["templates"].append(
+            {"id": "g", "type": "filter", "attributes": {"conditions": [
+                {"type": "deadline", "anchor": "doors_close_at"}]}})
+        result = verify_saved_export(export, vocab=load_vocab(mapping))
+        self.assertTrue(result["ok"], result)
+
+
+class VocabNegativeTwinTests(unittest.TestCase):
+    """Each rule is still required natively under the mapping: removing or corrupting one fails it."""
+
+    def fail_with(self, export, rule):
+        result = verify_saved_export(export, vocab=load_vocab(HER_VOCAB))
+        self.assertFalse(result["ok"], result)
+        self.assertEqual(result["missing"], [rule], result)
+        return result
+
+    def test_missing_consent_fails(self):
+        self.fail_with(her_export(consent=None), "consent")
+
+    def test_wrong_consent_tag_fails(self):
+        self.fail_with(her_export(consent="sms-subscribed"), "consent")
+
+    def test_missing_suppression_fails(self):
+        self.fail_with(her_export(suppression=()), "suppression")
+
+    def test_suppression_present_instead_of_absent_fails(self):
+        export = her_export(suppression=())
+        export["workflowData"]["templates"][1]["attributes"]["branches"][0]["segments"][0][
+            "conditions"].append(_tag_cond("index-of-true", "b-018. unsubscribed on sms"))
+        self.fail_with(export, "suppression")
+
+    def test_wrong_suppression_tag_fails(self):
+        self.fail_with(her_export(suppression=("sms-opted-out",)), "suppression")
+
+    def test_missing_cap_fails(self):
+        self.fail_with(her_export(cap=False), "aggregate_contact_cap")
+
+    def test_cap_on_another_field_or_a_looser_value_fails(self):
+        export = her_export()
+        cond = export["workflowData"]["templates"][1]["attributes"]["branches"][0]["segments"][0]["conditions"][-1]
+        cond["conditionSubType"] = "some_other_counter"
+        self.fail_with(export, "aggregate_contact_cap")
+        export = her_export()
+        export["workflowData"]["templates"][1]["attributes"]["branches"][0]["segments"][0][
+            "conditions"][-1]["conditionValue"] = 50
+        self.fail_with(export, "aggregate_contact_cap")
+
+    def test_missing_deadline_wait_fails(self):
+        self.fail_with(her_export(wait=False), "launch_deadline")
+
+    def test_a_wait_for_another_date_or_time_is_not_the_deadline(self):
+        self.fail_with(her_export(wait_attrs={"specificDate": "2026-12-05"}), "launch_deadline")
+        self.fail_with(her_export(wait_attrs={"specificTimeHour": 7}), "launch_deadline")
+        self.fail_with(her_export(wait_attrs={"specificTimePeriod": "AM"}), "launch_deadline")
+
+    def test_a_wait_that_lets_late_contacts_through_is_not_a_deadline(self):
+        for passed in ("next", "skip"):
+            self.fail_with(her_export(wait_attrs={"specificDatePassed": passed}), "launch_deadline")
+
+    def test_an_offset_wait_is_not_the_deadline(self):
+        self.fail_with(her_export(wait_attrs={"specificDateOffsetHours": 2}), "launch_deadline")
+
+    def test_a_disabled_wait_is_not_the_deadline(self):
+        self.fail_with(her_export(wait_disabled=True), "launch_deadline")
+
+    def test_a_wait_that_is_not_upstream_of_the_sms_is_not_the_deadline(self):
+        self.fail_with(her_export(sms_under_wait=False), "launch_deadline")
+
+    def test_every_sms_node_must_be_downstream_of_the_wait(self):
+        self.fail_with(her_export(extra_sms=True), "launch_deadline")
+
+    def test_prose_naming_the_deadline_never_satisfies_it(self):
+        export = her_export(wait=False)
+        export["workflowData"]["templates"].append(
+            {"id": "n", "type": "note", "attributes": {"notes": "Wait until Dec 4 8:00 PM; doors_close_at deadline"}})
+        result = self.fail_with(export, "launch_deadline")
+        self.assertIn("launch_deadline", result["prose_only"])
+
+    def test_a_workflow_window_wider_than_the_mapping_fails(self):
+        self.fail_with(her_export(window=("09:00", "21:00")), "quiet_hours")
+
+    def test_no_window_fails(self):
+        self.fail_with(her_export(window=None), "quiet_hours")
+
+    def test_an_export_in_a_different_explicit_timezone_is_not_the_deadline(self):
+        export = her_export()
+        export["timezone"] = "America/Los_Angeles"
+        self.fail_with(export, "launch_deadline")
+
+
+class VocabValidationTests(unittest.TestCase):
+    def test_her_mapping_loads(self):
+        vocab = load_vocab(HER_VOCAB)
+        self.assertEqual(vocab["consent_tag"], "b-018. sms optin")
+
+    def test_a_mapping_can_never_be_looser_than_the_defaults(self):
+        bad = [
+            [], "x", None,
+            {"unknown_key": 1},
+            {"consent_tag": ""},
+            {"consent_tag": 5},
+            {"suppression_tags": []},
+            {"suppression_tags": ["ok", ""]},
+            {"cap_max": 6}, {"cap_max": 0}, {"cap_max": True},
+            {"cap_field": " "},
+            {"quiet_hours": {"start": "07:00", "end": "20:00"}},
+            {"quiet_hours": {"start": "09:00", "end": "22:00"}},
+            {"quiet_hours": {"start": "20:00", "end": "09:00"}},
+            {"quiet_hours": {"start": "09:00"}},
+            {"deadline": {"source": "guess"}},
+            {"deadline": {"source": "native_wait_until_date", "date": "2026-13-40", "time": "20:00",
+                          "timezone": "America/New_York"}},
+            {"deadline": {"source": "native_wait_until_date", "date": "2026-12-04", "time": "8pm",
+                          "timezone": "America/New_York"}},
+            {"deadline": {"source": "native_wait_until_date", "date": "2026-12-04", "time": "20:00"}},
+        ]
+        for raw in bad:
+            with self.assertRaises(ValueError, msg=repr(raw)):
+                load_vocab(raw)
+
+
+class VocabCliTests(unittest.TestCase):
+    def run_cli(self, export, vocab_text):
+        import io
+        import tempfile
+        from contextlib import redirect_stdout
+        tmp = Path(tempfile.mkdtemp())
+        (tmp / "e.json").write_text(json.dumps(export))
+        args = ["verify-saved", "--export", str(tmp / "e.json")]
+        if vocab_text is not None:
+            (tmp / "v.json").write_text(vocab_text)
+            args += ["--vocab", str(tmp / "v.json")]
+        out = io.StringIO()
+        with redirect_stdout(out):
+            rc = cli_main(args)
+        return rc, json.loads(out.getvalue())
+
+    def test_exit_codes_with_a_mapping(self):
+        self.assertEqual(self.run_cli(her_export(), None)[0], 1)
+        self.assertEqual(self.run_cli(her_export(), json.dumps(HER_VOCAB))[0], 0)
+        self.assertEqual(self.run_cli(her_export(consent=None), json.dumps(HER_VOCAB))[0], 1)
+
+    def test_an_unreadable_or_invalid_mapping_is_exit_2_never_a_pass(self):
+        for text in ("{not json", json.dumps({"cap_max": 99}), json.dumps([])):
+            rc, report = self.run_cli(her_export(), text)
+            self.assertEqual(rc, 2, text)
+            self.assertTrue(report["unreadable"])
+            self.assertFalse(report["ok"])
+        import io
+        from contextlib import redirect_stdout
+        with redirect_stdout(io.StringIO()):
+            self.assertEqual(cli_main(["verify-saved", "--export", "/nonexistent.json",
+                                       "--vocab", "/nonexistent-vocab.json"]), 2)
 
 
 GUARD = [{"type": "tag_present", "value": "sms-subscribed"}, {"type": "tag_absent", "value": "sms-opted-out"},

@@ -547,6 +547,97 @@ class TestHumanReviewItems:
 
 
 # ---------------------------------------------------------------------------
+# WF-25 with a per-account SMS vocabulary (--sms-vocab, SWB-072)
+# ---------------------------------------------------------------------------
+
+_HER_VOCAB = {
+    "consent_tag": "b-018. sms optin",
+    "suppression_tags": ["b-018. unsubscribed on sms"],
+    "cap_field": "contact_marketing_sends",
+    "quiet_hours": {"start": "09:00", "end": "20:00"},
+    "deadline": {"source": "native_wait_until_date", "date": "2026-12-04", "time": "20:00",
+                 "timezone": "America/New_York", "when_passed": "exit", "anchor": "doors_close_at"},
+}
+
+
+def _her_workflow(consent="b-018. sms optin", cap=True, wait=True):
+    cond = lambda op, tag: {"conditionType": "contact_detail", "conditionSubType": "tags",
+                            "conditionOperator": op, "conditionValue": [tag]}
+    conds = ([cond("index-of-true", consent)] if consent else []) + [cond("index-of-false", "b-018. unsubscribed on sms")]
+    if cap:
+        conds.append({"conditionType": "contact_detail", "conditionSubType": "contact_marketing_sends",
+                      "conditionOperator": "<", "conditionValue": 5})
+    templates = []
+    if wait:
+        templates.append({"id": "w1", "type": "wait", "name": "Wait until Dec 4 8:00 PM ET", "parentKey": None,
+                          "next": "c1", "attributes": {
+                              "type": "specific_date", "specificDate": "2026-12-04", "specificTimeHour": 8,
+                              "specificTimeMinute": 0, "specificTimePeriod": "PM", "specificDateProceed": "on",
+                              "specificDateOffsetDays": 0, "specificDateOffsetHours": 0,
+                              "specificDateOffsetMinutes": 0, "specificDatePassed": "exit"}})
+    templates += [
+        {"id": "c1", "type": "if_else", "parentKey": "w1" if wait else None, "next": ["b1"],
+         "attributes": {"branches": [{"id": "b1", "name": "Eligible", "segments": [{"conditions": conds}]}]}},
+        {"id": "b1", "type": "if_else", "parent": "c1", "parentKey": "c1", "next": "s1",
+         "attributes": {"if": False, "branches": []}},
+        {"id": "s1", "type": "sms", "name": "SMS: last_call_1", "parent": "b1", "parentKey": "b1", "next": "n2",
+         "attributes": {"body": "Last call", "fromNumber": "+15555550100"}},
+        {"id": "n2", "type": "end", "name": "Finish", "parentKey": "s1"},
+    ]
+    return {"id": "WFTEST001", "status": "draft", "active": False, "allowMultiple": False,
+            "timezone": "account", "stopOnResponse": True,
+            "window": {"condition": "when", "start": "09:00", "end": "20:00"},
+            "workflowData": {"templates": templates},
+            "triggers": [{"id": "T1", "type": "form_submitted", "targetActionId": "c1"}]}
+
+
+class TestWf25SmsVocabulary:
+    def _vocab_file(self, tmp, vocab):
+        path = tmp / "SMS-VOCAB.json"
+        path.write_text(vocab if isinstance(vocab, str) else json.dumps(vocab))
+        return str(path)
+
+    def _wf25(self, factory, workflow, vocab=None):
+        env, tmp = factory(workflow)
+        args = ["WFTEST001", "--json"]
+        if vocab is not None:
+            args += ["--sms-vocab", self._vocab_file(tmp, vocab)]
+        return json.loads(_run_qc(args, env).stdout)["items"]["WF-25"]
+
+    def test_her_tags_fail_without_a_vocabulary(self, stub_caf_with_custom_export):
+        assert self._wf25(stub_caf_with_custom_export, _her_workflow())["status"] == "FAIL"
+
+    def test_her_account_passes_with_the_vocabulary(self, stub_caf_with_custom_export):
+        item = self._wf25(stub_caf_with_custom_export, _her_workflow(), _HER_VOCAB)
+        assert item["status"] == "PASS", item
+
+    def test_missing_consent_still_fails_with_the_vocabulary(self, stub_caf_with_custom_export):
+        item = self._wf25(stub_caf_with_custom_export, _her_workflow(consent=None), _HER_VOCAB)
+        assert item["status"] == "FAIL" and "consent" in json.dumps(item), item
+
+    def test_missing_cap_still_fails_with_the_vocabulary(self, stub_caf_with_custom_export):
+        item = self._wf25(stub_caf_with_custom_export, _her_workflow(cap=False), _HER_VOCAB)
+        assert item["status"] == "FAIL" and "aggregate_contact_cap" in json.dumps(item), item
+
+    def test_missing_deadline_still_fails_with_the_vocabulary(self, stub_caf_with_custom_export):
+        item = self._wf25(stub_caf_with_custom_export, _her_workflow(wait=False), _HER_VOCAB)
+        assert item["status"] == "FAIL" and "launch_deadline" in json.dumps(item), item
+
+    @pytest.mark.parametrize("bad", ["{not json", json.dumps({"cap_max": 99}), json.dumps([])])
+    def test_an_unusable_vocabulary_fails_closed(self, stub_caf_with_custom_export, bad):
+        assert self._wf25(stub_caf_with_custom_export, _her_workflow(), bad)["status"] == "FAIL"
+
+    def test_a_missing_vocabulary_file_fails_closed(self, stub_caf_with_custom_export):
+        env, tmp = stub_caf_with_custom_export(_her_workflow())
+        out = json.loads(_run_qc(["WFTEST001", "--json", "--sms-vocab", str(tmp / "nope.json")], env).stdout)
+        assert out["items"]["WF-25"]["status"] == "FAIL"
+
+    def test_the_default_literal_workflow_is_unchanged_by_the_option_existing(self, stub_caf_env):
+        env, tmp = stub_caf_env
+        assert json.loads(_run_qc(["WFTEST001", "--json"], env).stdout)["items"]["WF-25"]["status"] == "PASS"
+
+
+# ---------------------------------------------------------------------------
 # TEST GROUP 4: JSON output shape
 # ---------------------------------------------------------------------------
 

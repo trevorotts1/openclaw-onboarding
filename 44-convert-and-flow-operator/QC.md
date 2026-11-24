@@ -124,7 +124,7 @@ asserted by qc-convert-and-flow.sh Section S and verified by qc-built-workflow.s
 - [ ] WF-15 delivery chain linkage asserted
 - [ ] WF-18 + WF-21 snapshot existence asserted
 - [ ] WF-22 email body non-empty + ≥200 rendered chars asserted (SEND_INTEGRITY — blank-body gate)
-- [ ] WF-25 SMS compliance asserted: `sms_eligibility.py verify-saved` proves consent, STOP/suppression, contact cap, quiet hours and deadline are saved native conditions (prose never counts); WF-16 is mechanical for SMS workflows
+- [ ] WF-25 SMS compliance asserted: `sms_eligibility.py verify-saved` proves consent, STOP/suppression, contact cap, quiet hours and deadline are saved native conditions (prose never counts); WF-16 is mechanical for SMS workflows; an account with its own tag/field/deadline names passes `--sms-vocab <mapping.json>` (renames only, never loosens)
 - [ ] Build-events ledger append present
 - [ ] Distinct from qc-convert-and-flow.sh (install-level QC)
 
