@@ -78,7 +78,8 @@ class Base260(Base250):
         return {f.name: (f.read_bytes(), f.stat().st_mtime_ns) for f in d.glob("*")} if d.exists() else None
 
     def reanchor(self, **kw):
-        args = dict(confirm_recreated_run=True, reason="recreated", approver="T")
+        args = dict(confirm_recreated_run=True, reason="recreated", approver="T",
+                    new_run_id=json.loads((self.run_root / P / "state.json").read_text())["run_id"])
         args.update(kw)
         return GR.reanchor(self.run_root, **args)
 
@@ -207,7 +208,6 @@ class TestVerifiersNeverTouchTheAnchor(Base260):
     def exercise(self):
         GR.scan(self.run_root)
         oop._ledger_status(self.run_root)
-        self.admitted("copy")
         GR.delivery(self.run_root, [{"path": COPY}])
         self.cli(["status", "--run", str(self.run_root)])
         oop.run_identity(self.run_root)
@@ -287,6 +287,7 @@ class TestReanchorIsNeverImplicit(Base260):
         self.hide()
         self.recreate("run-B", files=False)
         rc, out, err = self.cli(["reanchor", "--run", str(self.run_root), "--confirm-recreated-run",
+                                 "--new-run-id", "run-B",
                                  "--reason", "recreated", "--approver", "T"])
         self.assertEqual(rc, 0, err)
         for needle in ("run-A", "run-B", "serial", "generation 2"):
@@ -365,8 +366,13 @@ class TestAdoptLegacyPrints(Base260):
         shutil.rmtree(self.anchor_dir())
         return led["entries"][0]
 
+    def adopt(self):
+        rc, out, err = self.cli(["adopt-unanchored", "--run", str(self.run_root), "--yes"])
+        self.assertEqual(rc, 0, err)
+
     def test_non_interactive_without_yes_prints_the_list_and_signs_nothing(self):
         entry = self.legacy()
+        self.adopt()
         before = (self.run_root / oop.LEDGER_FILE).read_bytes()
         rc, out, err = self.cli(["seal", "--run", str(self.run_root), "--adopt-legacy"])
         self.assertEqual(rc, 1)
@@ -378,6 +384,7 @@ class TestAdoptLegacyPrints(Base260):
 
     def test_with_yes_prints_each_path_and_sha_it_re_signs(self):
         entry = self.legacy()
+        self.adopt()
         rc, out, err = self.cli(["seal", "--run", str(self.run_root), "--adopt-legacy", "--yes"])
         self.assertEqual(rc, 0, err)
         self.assertIn("re-signing stray.png sha256=%s" % entry["sha256"], out)
@@ -386,11 +393,13 @@ class TestAdoptLegacyPrints(Base260):
 
     def test_the_library_dry_run_writes_nothing(self):
         self.legacy()
+        self.adopt()
         before = (self.run_root / oop.LEDGER_FILE).read_bytes()
+        anchor = self.anchor_state()
         plan = GR.seal_ledger(self.run_root, adopt_legacy=True, dry_run=True)
         self.assertEqual([r["path"] for r in plan["adopted_entries"]], ["stray.png"])
         self.assertEqual((self.run_root / oop.LEDGER_FILE).read_bytes(), before)
-        self.assertFalse(self.anchor_dir().exists())
+        self.assertEqual(self.anchor_state(), anchor)
 
 
 if __name__ == "__main__":

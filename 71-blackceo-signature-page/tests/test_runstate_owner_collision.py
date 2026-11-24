@@ -198,8 +198,10 @@ class TestBrandInput(Helpers):
 
     def test_unsigned_or_foreign_key_acknowledgement_is_ignored(self):
         new = self.edited()
-        self.ack(new, key_file=self.make_key(OTHER_KEY, "other"))
+        with self.assertRaises(ValueError):    # 1.3.50: a foreign key cannot even anchor the run
+            self.ack(new, key_file=self.make_key(OTHER_KEY, "other"))
         self.assertIn("Dr. Brand", self.refused_reason())
+        self.ack(new)
         path = self.run_root / "private" / "input-acknowledgements.json"
         doc = json.loads(path.read_text())
         doc["entries"][0].pop("signature")

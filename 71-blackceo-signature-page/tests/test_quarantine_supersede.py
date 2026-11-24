@@ -119,10 +119,11 @@ class TestQuarantine(Base):
     def test_entry_signed_with_another_key_refuses(self):
         self.write("stray.png", "stray")
         other = self.make_key(OTHER_KEY, "other")
-        governed_runner.quarantine(self.run_root, "stray.png", reason="r", approver="Trevor",
-                                   key_file=str(other))
+        with self.assertRaises(ValueError):    # 1.3.50: a foreign key cannot even anchor the run
+            governed_runner.quarantine(self.run_root, "stray.png", reason="r", approver="Trevor",
+                                       key_file=str(other))
         result = governed_runner.scan(self.run_root)
-        self.assertEqual(result["quarantined"], [])
+        self.assertEqual(result.get("quarantined", []), [])
         self.assertEqual([e["path"] for e in result["ungoverned"]], ["stray.png"])
 
     def test_missing_signature_and_edited_fields_refuse(self):

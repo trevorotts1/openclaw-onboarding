@@ -813,11 +813,21 @@ def seal_ledger(run_dir, *, key_file=None, adopt_legacy=False, dry_run=False):
                                   dry_run=dry_run)
 
 
-def reanchor(run_dir, *, confirm_recreated_run=False, reason, approver, key_file=None):
+def reanchor(run_dir, *, confirm_recreated_run=False, new_run_id=None, reason, approver,
+             key_file=None):
     """The operator's explicit signed replacement of the anchor outside the run after the run was
-    legitimately recreated at the same path (1.3.49). Voids every record bound to the old run_id."""
+    legitimately recreated at the same path (1.3.49). Voids every record bound to the old run_id.
+    1.3.50: `new_run_id` is typed by the operator (state.json is never trusted for it); it must
+    equal state.json's run_id and differ from the old and every retired run_id."""
     return detector().reanchor(run_dir, confirm_recreated_run=confirm_recreated_run,
-                               reason=reason, approver=approver, key_file=key_file)
+                               new_run_id=new_run_id, reason=reason, approver=approver,
+                               key_file=key_file)
+
+
+def adopt_unanchored(run_dir, *, key_file=None, dry_run=False):
+    """The operator's explicit step for a run that holds signed records and no anchor (1.3.50):
+    returns the listing of everything it anchors over; `dry_run` writes nothing."""
+    return detector().adopt_unanchored(run_dir, key_file=key_file, dry_run=dry_run)
 
 
 def rebind(run_dir, path, *, stage, reason, approver, key_file=None):

@@ -171,7 +171,7 @@ class TestReplayBetweenRuns(Base250):
         other = self.other_run()
         status = oop._ledger_status(other)
         self.assertFalse(status["ok"])
-        self.assertIn("another run", status["why"])
+        self.assertTrue("another run" in status["why"] or "anchor" in status["why"], status["why"])
         scan = GR.scan(other)
         self.assertIn("quarantine_ledger_error", scan)
         self.assertEqual(scan["quarantined"], [])
@@ -315,10 +315,13 @@ class TestAbsentLedgerAndSeal(Base250):
         """scan, register, close, admit, delivery and status never create the anchor."""
         self.govern(COPY, "copy", "v1")
         GR.scan(self.run_root)
-        self.admitted("copy")
         GR.delivery(self.run_root, [{"path": COPY}])
         quarantine_ledger.main(["status", "--run", str(self.run_root)])
         self.assertFalse(self.anchor_dir().exists())
+        self.admitted("copy")    # 1.3.50: the governor's signed admission row is a signing writer
+        self.assertTrue(any(self.anchor_dir().glob("*.json")))
+        shutil.rmtree(self.anchor_dir())
+        (self.run_root / "private" / "governor.json").unlink()
         self.write("stray.png", "stray")
         GR.quarantine(self.run_root, "stray.png", reason="r", approver="T")    # operator-signed writer
         self.assertTrue(any(self.anchor_dir().glob("*.json")))
@@ -588,8 +591,9 @@ class TestRebind(Base250):
     # ---- foreign key and unsigned
     def test_foreign_key_record_is_void(self):
         self.edited_copy()
-        GR.rebind(self.run_root, COPY, stage="copy", reason="r", approver="Mallory",
-                  key_file=str(self.make_key(OTHER_KEY, "other")))
+        with self.assertRaises(ValueError):    # 1.3.50: a foreign key cannot even anchor the run
+            GR.rebind(self.run_root, COPY, stage="copy", reason="r", approver="Mallory",
+                      key_file=str(self.make_key(OTHER_KEY, "other")))
         self.assertTrue(self.mismatched())
         self.assertFalse(self.governed(COPY))
         self.assertFalse(self.admitted())

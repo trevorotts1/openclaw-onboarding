@@ -151,7 +151,7 @@ def _state_run_id(base):
     return ""
 
 
-def run_identity(root, *, strict=False, key=None):
+def run_identity(root, *, strict=False, key=None, key_file=None):
     """The run a signed record belongs to (1.3.48): {'root': the resolved absolute run root,
     'run_id': ...}. Every signed record carries this INSIDE its signed payload, and every
     verifier compares it to the run being scanned, so a record signed for run A is void in run B.
@@ -161,14 +161,25 @@ def run_identity(root, *, strict=False, key=None):
     anchor exists, state.json's run_id must equal it; a rewritten state.json (any value other
     than the anchor's) makes this return an identity that matches NO signed record, so every
     verifier refuses. `strict=True` (every signing site) raises instead of returning that
-    identity, so nothing is ever signed for a run the anchor refuses."""
+    identity, so nothing is ever signed for a run the anchor refuses.
+
+    1.3.50: `strict=True` also CREATES the anchor (generation 1, serial 0) when none exists and
+    no signed record is already present in the run; planted/unanchored signed records refuse
+    until the operator runs `adopt-unanchored`."""
     base = Path(root).resolve()
     run_id = _state_run_id(base)
-    verdict = _anchor_verdict(base, key)
+    verdict = _anchor_verdict(base, key, key_file=key_file)
     if not verdict["ok"]:
         if strict:
             raise OutOfPipeline(verdict["why"])
         run_id = REFUSED_RUN_ID
+    elif strict and verdict["anchor"] is None:
+        # 1.3.50 (SWB-270): ANCHOR AT FIRST SIGNED RECORD. Every signing site calls this with
+        # strict=True before it builds its record, so no signed record can exist in an
+        # unanchored run. Verifiers (strict=False) never create or replace an anchor.
+        if key is None:
+            raise OutOfPipeline("a signed record needs the operator key to anchor the run")
+        _create_anchor(base, key, key_file)
     return {"root": str(base), "run_id": run_id}
 
 
@@ -314,7 +325,7 @@ def quarantine(root, path, *, reason, approver, key_file=None, now=None):
     if status["exists"] and not status["ok"]:
         raise OutOfPipeline("the quarantine ledger cannot be extended: %s" % status["why"])
     entry = {
-        "run": run_identity(base, strict=True, key=key),
+        "run": run_identity(base, strict=True, key=key, key_file=key_file),
         "path": rel, "sha256": _sha256_file(target), "size": target.stat().st_size,
         "reason": str(reason).strip(),
         "quarantined_at": (now or datetime.now(timezone.utc)).isoformat(),
@@ -322,19 +333,19 @@ def quarantine(root, path, *, reason, approver, key_file=None, now=None):
     }
     entry["signature"] = _entry_signature(entry, key)
     entries = [e for e in status["entries"] if e.get("path") != rel] + [entry]
-    _write_ledger(base, entries, key, now=now)
+    _write_ledger(base, entries, key, now=now, key_file=key_file)
     return entry
 
 
-def _write_ledger(base, entries, key, *, now=None):
-    verdict = _anchor_verdict(base, key)
+def _write_ledger(base, entries, key, *, now=None, key_file=None):
+    verdict = _anchor_verdict(base, key, key_file=key_file)
     if not verdict["ok"]:    # 1.3.49: nothing is written for a run the operator's anchor refuses
         raise OutOfPipeline(verdict["why"])
     path_out = ledger_path(base)
     path_out.parent.mkdir(parents=True, exist_ok=True)
     path_out.write_text(json.dumps({"schema": LEDGER_SCHEMA, "entries": entries},
                                    indent=2, sort_keys=True) + "\n", encoding="utf-8")
-    _write_seal(base, entries, key, now=now)
+    _write_seal(base, entries, key, now=now, key_file=key_file)
 
 
 # --------------------------------------------------------------------------
@@ -408,18 +419,31 @@ def _anchor_verdict(root, key=None, *, key_file=None):
     (a run recreated at this path, or state.json rewritten), or state.json's run_id was RETIRED
     by an earlier reanchor (a restored older anchor cannot revive a retired run)."""
     base = Path(root).resolve()
-    out = {"anchor": None, "present": False, "ok": True, "why": None, "legacy": False, "raw": None}
+    out = {"anchor": None, "present": False, "ok": True, "why": None, "legacy": False, "raw": None,
+           "unanchored": False}
     path = _anchor_file(base, key_file)
     if path is None:
         return out
     retired_path = _retired_file(path)
     out["present"] = path.is_file()
-    if not path.is_file() and not retired_path.is_file():
-        return out
 
     def refuse(why):
         out.update(ok=False, why=why)
         return out
+
+    def refuse_unanchored():
+        found = signed_records_present(base, key if key is not None else _maybe_key(base, key_file))
+        if not found:
+            return None
+        out["unanchored"] = True
+        return refuse("signed records exist in this run (%s) but the operator's anchor outside the "
+                      "run does not exist (1.3.50: a signed record is always anchored when first "
+                      "signed, so these were planted or are from before 1.3.50); every verifier "
+                      "refuses until the operator runs quarantine_ledger.py adopt-unanchored"
+                      % "; ".join(found))
+
+    if not path.is_file() and not retired_path.is_file():
+        return refuse_unanchored() or out
 
     if key is None:
         try:
@@ -442,7 +466,7 @@ def _anchor_verdict(root, key=None, *, key_file=None):
         if state_id in [r.get("run_id") for r in rows if isinstance(r, dict)]:
             return refuse("this run_id %r was retired by a reanchor; its records are void" % state_id)
     if not path.is_file():
-        return out
+        return refuse_unanchored() or out
     try:
         doc = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, ValueError):
@@ -477,6 +501,105 @@ def _anchor_verdict(root, key=None, *, key_file=None):
     return out
 
 
+def _maybe_key(base, key_file=None):
+    try:
+        return _key_bytes(base, key_file)
+    except OutOfPipeline:
+        return None
+
+
+def signed_rows(root, key=None):
+    """Every signed-record row in the run as dicts {kind, path, sha256, ok, bound, entry}: `ok` =
+    the signature verifies under `key` (with key=None every row that CARRIES a signature counts as
+    ok), `bound` = the row names this run (current state.json run_id and root). Read-only."""
+    base = Path(root).resolve()
+    me = {"root": str(base), "run_id": _state_run_id(base)}
+    out = []
+
+    def add(kind, path, sha, entry, ok):
+        out.append({"kind": kind, "path": path, "sha256": sha, "ok": bool(ok), "entry": entry,
+                    "bound": (entry.get("run") == me or entry.get("run_binding") == me)})
+
+    def valid(entry, make):
+        sig = entry.get("signature")
+        if not isinstance(sig, str):
+            return False
+        return True if key is None else hmac.compare_digest(sig, make())
+
+    ledger = _read_ledger(base)
+    for e in (ledger["entries"] if ledger else []):
+        add("ledger entry", e.get("path"), e.get("sha256"), e,
+            valid(e, lambda: _entry_signature(e, key)) or
+            ("run" not in e and key is not None and isinstance(e.get("signature"), str)
+             and hmac.compare_digest(e["signature"], _legacy_entry_signature(e, key))))
+    seal = _read_seal(base)
+    if isinstance(seal, dict) and not seal.get("unreadable") and isinstance(seal.get("signature"), str):
+        add("quarantine seal", SEAL_FILE, None, seal, valid(seal, lambda: _seal_signature(seal, key)))
+    for rel, kind, fields in ((RELEASE_FILE, RELEASE_KIND, RELEASE_FIELDS),
+                              (REOWN_FILE, REOWN_KIND, REOWN_FIELDS),
+                              (REBIND_FILE, REBIND_KIND, REBIND_FIELDS)):
+        for e in _read_records(base, rel):
+            add(kind, e.get("path"), e.get("sha256"), e,
+                valid(e, lambda: _record_signature(kind, fields, e, key)))
+    for e in _read_acks(base):
+        add("input acknowledgement", e.get("path"), e.get("new_sha256"), e,
+            valid(e, lambda: _ack_signature(e, key)))
+    try:
+        gov = json.loads((base / GOVERNOR_FILE).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        gov = {}
+    for bucket in ("admitted", "refused"):
+        for e in (gov.get(bucket) or []) if isinstance(gov, dict) else []:
+            if isinstance(e, dict) and isinstance(e.get("signature"), str):
+                add("admission row (%s)" % bucket, e.get("signed_at"), None, e,
+                    valid(e, lambda: admission_signature(e, key)))
+    return out
+
+
+def signed_records_present(root, key=None):
+    """Short descriptions of the signed rows that VERIFY under `key` (any row carrying a signature
+    when `key` is None) in a run (1.3.50). Used ONLY when the operator's anchor does not exist:
+    one such row means a signed record exists in an unanchored run. A row that does not verify
+    (junk, forged, another key) is void anyway and is not counted."""
+    counts = {}
+    for row in signed_rows(root, key):
+        if row["ok"]:
+            counts[row["kind"]] = counts.get(row["kind"], 0) + 1
+    return ["%d %s" % (n, kind) for kind, n in sorted(counts.items())]
+
+
+def _create_anchor(base, key, key_file=None, *, now=None, serial=0, seal_signature=None):
+    """Create the operator's anchor (generation 1) for this run. Called ONLY by a signing writer
+    (through run_identity(strict=True)) or by the operator's adopt-unanchored; never by a verifier.
+    Refuses when an anchor already exists or the anchor location is unknown or unwritable."""
+    path = _anchor_file(base, key_file)
+    if path is None:
+        raise OutOfPipeline("there is no operator anchor location (set SF_PIN_AUTHORITY_KEY_FILE "
+                            "or SF_SEAL_ANCHOR_DIR), so nothing can be signed for this run")
+    if path.exists():
+        raise OutOfPipeline("an operator anchor already exists; it is never replaced implicitly")
+    env_key = os.environ.get("SF_PIN_AUTHORITY_KEY_FILE")
+    if env_key and Path(env_key).is_file():
+        try:
+            if Path(env_key).resolve().read_bytes().strip() != key:
+                raise OutOfPipeline("the key signing this record is not the operator key the "
+                                    "verifiers use (SF_PIN_AUTHORITY_KEY_FILE); no anchor is made "
+                                    "under it")
+        except OSError:
+            pass
+    stamp = (now or datetime.now(timezone.utc)).isoformat()
+    new = {"run": {"root": str(base), "run_id": _state_run_id(base)}, "root_fs": _root_fs_id(base),
+           "generation": 1, "serial": serial, "seal_signature": seal_signature,
+           "anchored_at": stamp, "reanchor": None}
+    new["signature"] = _anchor_signature(new, key)
+    try:
+        _put_json(path, new)
+    except OSError as exc:
+        raise OutOfPipeline("the operator's anchor cannot be written (%s); nothing is signed in an "
+                            "unanchored run" % exc)
+    return new
+
+
 def _put_json(path, doc):
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_name(path.name + ".tmp")
@@ -484,17 +607,19 @@ def _put_json(path, doc):
     os.replace(tmp, path)
 
 
-def _write_seal(base, entries, key, *, now=None):
-    verdict = _anchor_verdict(base, key)
+def _write_seal(base, entries, key, *, now=None, key_file=None):
+    ident = run_identity(base, strict=True, key=key, key_file=key_file)   # creates the anchor if none
+    verdict = _anchor_verdict(base, key, key_file=key_file)
     if not verdict["ok"]:
         raise OutOfPipeline(verdict["why"])
     anchor = verdict["anchor"]
+    if anchor is None:
+        raise OutOfPipeline("the operator's anchor does not exist; the seal is not written")
     old = _read_seal(base)
     serial = int(old.get("serial") or 0) + 1 if isinstance(old, dict) else 1
-    if anchor:
-        serial = max(serial, anchor["serial"] + 1)
+    serial = max(serial, anchor["serial"] + 1)
     stamp = (now or datetime.now(timezone.utc)).isoformat()
-    doc = {"schema": SEAL_SCHEMA, "run": run_identity(base, strict=True, key=key), "serial": serial,
+    doc = {"schema": SEAL_SCHEMA, "run": ident, "serial": serial,
            "sealed_at": stamp,
            "entries": sorted(([e.get("path"), e.get("signature")] for e in entries),
                              key=lambda row: (str(row[0]), str(row[1])))}
@@ -502,25 +627,22 @@ def _write_seal(base, entries, key, *, now=None):
     out = seal_path(base)
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(json.dumps(doc, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-    anchor_path = _anchor_file(base)
-    if anchor_path is not None:
-        # The run_id the anchor holds is fixed at FIRST creation (from state.json then) and is
-        # copied unchanged by every later write; only `reanchor` replaces it.
-        new = {"run": anchor["run"] if anchor else {"root": str(base), "run_id": _state_run_id(base)},
-               "root_fs": anchor["root_fs"] if anchor else _root_fs_id(base),
-               "generation": anchor["generation"] if anchor else 1,
-               "serial": serial, "seal_signature": doc["signature"],
-               "anchored_at": anchor["anchored_at"] if anchor else stamp,
-               "reanchor": anchor.get("reanchor") if anchor else None}
-        new["signature"] = _anchor_signature(new, key)
-        try:
-            _put_json(anchor_path, new)
-        except OSError:
-            pass   # an anchor that cannot be written is simply absent; the seal still stands
+    anchor_path = _anchor_file(base, key_file)
+    # The run_id the anchor holds is fixed at FIRST creation and is copied unchanged by every
+    # later write; only `reanchor` replaces it.
+    new = {"run": anchor["run"], "root_fs": anchor["root_fs"], "generation": anchor["generation"],
+           "serial": serial, "seal_signature": doc["signature"],
+           "anchored_at": anchor["anchored_at"], "reanchor": anchor.get("reanchor")}
+    new["signature"] = _anchor_signature(new, key)
+    try:
+        _put_json(anchor_path, new)
+    except OSError:
+        pass   # the anchor already exists (made with the first record); the seal still stands
     return doc
 
 
-def reanchor(root, *, confirm_recreated_run=False, reason, approver, key_file=None, now=None):
+def reanchor(root, *, confirm_recreated_run=False, new_run_id=None, reason, approver,
+             key_file=None, now=None):
     """The operator's explicit, signed replacement of the anchor after a run was legitimately
     recreated at the same path (1.3.49). Never implicit: only this function, called by
     `quarantine_ledger.py reanchor --confirm-recreated-run`, replaces an anchor.
@@ -529,7 +651,13 @@ def reanchor(root, *, confirm_recreated_run=False, reason, approver, key_file=No
     file), the flag, a reason and an approver. Writes generation+1 holding the run_id state.json
     holds NOW, keeps the old serial (so seal serials keep growing), and records the old run_id
     in a signed retired list, so every record bound to the old run_id is void and a restored
-    older anchor cannot revive it. Returns the listing the operator sees."""
+    older anchor cannot revive it. Returns the listing the operator sees.
+
+    1.3.50 (SWB-270): state.json is writable under M, so reanchor NEVER trusts it for the new
+    identity. The operator passes `new_run_id` explicitly; it must equal state.json's run_id AND
+    differ from the old anchor's run_id AND from every run_id on the retired list, whatever the
+    folder's inode or creation time says. Setting state.json back to an old id before the
+    operator reanchors therefore refuses."""
     base = Path(root).resolve()
     for field, value in (("reason", reason), ("approver", approver)):
         if not str(value or "").strip():
@@ -546,7 +674,7 @@ def reanchor(root, *, confirm_recreated_run=False, reason, approver, key_file=No
         raise OutOfPipeline("the existing anchor cannot be read or does not verify under this key "
                             "(%s); reanchor refuses to replace it" % verdict["why"])
     if old is None:
-        raise OutOfPipeline("there is no anchor to replace; the first sealed record creates one")
+        raise OutOfPipeline("there is no anchor to replace; the first signed record creates one (or run adopt-unanchored)")
     old_run = (old.get("run") or {}).get("run_id") if isinstance(old.get("run"), dict) else None
     old_gen = old.get("generation") if isinstance(old.get("generation"), int) else 0
     old_serial = old.get("serial") if isinstance(old.get("serial"), int) else 0
@@ -559,9 +687,16 @@ def reanchor(root, *, confirm_recreated_run=False, reason, approver, key_file=No
     if verdict["anchor"] is not None and verdict["ok"]:
         raise OutOfPipeline("the anchor already holds this run's run_id; there is nothing to "
                             "reanchor. %s" % listing)
-    if not verdict["legacy"] and old_run == new_id and (old.get("root_fs") == _root_fs_id(base)):
-        raise OutOfPipeline("the new run holds the old run_id; reanchor needs a recreated run. %s"
-                            % listing)
+    if not isinstance(new_run_id, str) or not new_run_id.strip():
+        raise OutOfPipeline("reanchor needs --new-run-id VALUE: the run_id of the NEW run, typed by "
+                            "the operator (state.json is never trusted for it). %s" % listing)
+    if new_run_id != new_id:
+        raise OutOfPipeline("--new-run-id %r does not equal the run_id private/state.json holds (%r). %s"
+                            % (new_run_id, new_id, listing))
+    if old_run is not None and new_id == old_run:
+        raise OutOfPipeline("the new run_id equals the old anchor's run_id %r; a run that holds the "
+                            "old id is the old run (or state.json was rewritten back), never a "
+                            "recreated one, whatever the folder identity says. %s" % (old_run, listing))
     retired = []
     retired_path = _retired_file(path)
     if retired_path.is_file():
@@ -574,8 +709,8 @@ def reanchor(root, *, confirm_recreated_run=False, reason, approver, key_file=No
             raise OutOfPipeline("the retired-run list does not verify under this key; reanchor "
                                 "refuses. %s" % listing)
     if new_id in [r.get("run_id") for r in retired]:
-        raise OutOfPipeline("the new run_id was retired before; it cannot be anchored again. %s"
-                            % listing)
+        raise OutOfPipeline("the new run_id %r was retired before; it cannot be anchored again. %s"
+                            % (new_id, listing))
     stamp = (now or datetime.now(timezone.utc)).isoformat()
     if old_run is not None and not verdict["legacy"] and old_run != new_id:
         retired.append({"run_id": old_run, "generation": old_gen, "serial": old_serial,
@@ -595,6 +730,55 @@ def reanchor(root, *, confirm_recreated_run=False, reason, approver, key_file=No
     _put_json(path, new)
     return {"old_run_id": old_run, "old_generation": old_gen, "old_serial": old_serial,
             "new_run_id": new_id, "generation": new["generation"], "listing": listing}
+
+
+def adopt_unanchored(root, *, key_file=None, now=None, dry_run=False):
+    """The operator's explicit step for a run that holds signed records but has no anchor
+    (1.3.50): signed records made before 1.3.50, or planted. Anchors the run (generation 1) at the
+    run_id state.json holds now and the folder identity now, and returns a listing of every signed
+    record file and entry it anchors over; each entry is labelled 'bound here' or 'VOID' (named
+    for another run, unsigned, or not verifying under this key), so the operator signs off on
+    exactly what it sees. `dry_run` writes nothing. Refuses when an anchor exists (use
+    `reanchor`) or the retired list names this run_id."""
+    base = Path(root).resolve()
+    key = _key_bytes(base, key_file)
+    verdict = _anchor_verdict(base, key, key_file=key_file)
+    path = _anchor_file(base, key_file)
+    if path is None:
+        raise OutOfPipeline("there is no operator anchor location (set SF_PIN_AUTHORITY_KEY_FILE "
+                            "or SF_SEAL_ANCHOR_DIR)")
+    if path.exists():
+        raise OutOfPipeline("an operator anchor already exists (%s); adopt-unanchored is only for "
+                            "a run with signed records and no anchor (use reanchor for a "
+                            "recreated run)" % ("verifies" if verdict["ok"] else verdict["why"]))
+    if not verdict["unanchored"] and not verdict["ok"]:
+        raise OutOfPipeline(verdict["why"])
+    state_id = _state_run_id(base)
+    me = {"root": str(base), "run_id": state_id}
+    lines = ["anchoring run_id=%r root=%s" % (state_id, base)]
+    for row in signed_rows(base, key):
+        if not row["ok"]:
+            state = "VOID (does not verify under this key)"
+        elif row["bound"]:
+            state = "bound here"
+        elif (row["entry"].get("run") or row["entry"].get("run_binding")):
+            state = "VOID (named for %r)" % (row["entry"].get("run") or row["entry"].get("run_binding"),)
+        else:
+            state = "legacy, no run binding (re-sign with seal --adopt-legacy)"
+        lines.append("  %s %s%s: %s" % (row["kind"], row["path"],
+                                        (" sha256=%s" % row["sha256"]) if row["sha256"] else "", state))
+    seal = _read_seal(base)
+    seal_ok = isinstance(seal, dict) and not seal.get("unreadable") \
+        and isinstance(seal.get("signature"), str) and isinstance(seal.get("serial"), int) \
+        and hmac.compare_digest(seal["signature"], _seal_signature(seal, key))
+    serial, seal_sig = 0, None
+    if seal_ok and seal.get("run") == me:
+        serial, seal_sig = seal["serial"], seal["signature"]
+        lines.append("  the anchor will take serial=%d and this seal's signature" % serial)
+    result = {"run_id": state_id, "serial": serial, "listing": "\n".join(lines), "dry_run": dry_run}
+    if not dry_run:
+        _create_anchor(base, key, key_file, now=now, serial=serial, seal_signature=seal_sig)
+    return result
 
 
 def _read_seal(root):
@@ -627,7 +811,9 @@ def _ledger_status(root, key=None):
                 paths.add(row[0])
     verdict = _anchor_verdict(root, key)
     anchor = verdict["anchor"]
-    if verdict["present"]:
+    if verdict["present"] and not (verdict["ok"] and anchor is not None
+                                   and anchor.get("seal_signature") is None):
+        # (an anchor made at the first signed record, with nothing sealed yet, is not a ledger)
         result["exists"] = True
     if not verdict["ok"]:
         result["why"] = verdict["why"]
@@ -712,7 +898,7 @@ def seal_ledger(root, *, key_file=None, now=None, adopt_legacy=False, dry_run=Fa
     path and hash before anything is signed."""
     base = Path(root).resolve()
     key = _key_bytes(base, key_file)
-    verdict = _anchor_verdict(base, key)
+    verdict = _anchor_verdict(base, key, key_file=key_file)
     if not verdict["ok"]:
         raise OutOfPipeline(verdict["why"])
     ledger = _read_ledger(base)
@@ -737,7 +923,7 @@ def seal_ledger(root, *, key_file=None, now=None, adopt_legacy=False, dry_run=Fa
                                     "be adopted" % entry.get("path"))
             adopted_entries.append({"path": entry.get("path"), "sha256": entry.get("sha256")})
             entry = dict(entry)
-            entry["run"] = run_identity(base, strict=True, key=key)
+            entry["run"] = run_identity(base, strict=True, key=key, key_file=key_file)
             entry["signature"] = _entry_signature(entry, key)
             ok_now = True
             adopted += 1
@@ -752,10 +938,10 @@ def seal_ledger(root, *, key_file=None, now=None, adopt_legacy=False, dry_run=Fa
         return {"serial": None, "entries": len(entries), "adopted": adopted,
                 "adopted_entries": adopted_entries, "dry_run": True}
     if adopted:
-        _write_ledger(base, entries, key, now=now)
+        _write_ledger(base, entries, key, now=now, key_file=key_file)
         return {"serial": _read_seal(base)["serial"], "entries": len(entries), "adopted": adopted,
                 "adopted_entries": adopted_entries}
-    doc = _write_seal(base, entries, key, now=now)
+    doc = _write_seal(base, entries, key, now=now, key_file=key_file)
     return {"serial": doc["serial"], "entries": len(entries), "adopted": 0, "adopted_entries": []}
 
 
@@ -808,7 +994,7 @@ def sign_admission(root, decision, *, key_file=None, now=None):
         return False
     decision.pop("signature", None)
     try:
-        decision["run_binding"] = run_identity(root, strict=True, key=key)    # inside the signed payload
+        decision["run_binding"] = run_identity(root, strict=True, key=key, key_file=key_file)    # inside the signed payload
     except OutOfPipeline:
         return False   # the operator's anchor refuses this run: the row stays unsigned
     decision["signed_at"] = (now or datetime.now(timezone.utc)).isoformat()
@@ -931,7 +1117,7 @@ def release_quarantine(root, path, *, stage, reason, approver, in_scope=None,
     digest = _sha256_file(target)
     if digest == led.get("sha256"):
         raise OutOfPipeline("%s still holds its quarantined bytes; the stage has not regenerated it" % rel)
-    entry = {"run": run_identity(base, strict=True, key=key), "path": rel, "sha256": digest, "stage": str(stage).strip(),
+    entry = {"run": run_identity(base, strict=True, key=key, key_file=key_file), "path": rel, "sha256": digest, "stage": str(stage).strip(),
              "reason": str(reason).strip(), "approver": str(approver).strip(),
              "signed_at": (now or datetime.now(timezone.utc)).isoformat(),
              "note": _executor_evidence(base, rel, digest)}
@@ -1006,7 +1192,7 @@ def reown(root, path, *, owner_stage, reason, approver, key_file=None, now=None)
         raise OutOfPipeline("%s does not exist" % rel)
     key = _key_bytes(base, key_file)
     listed = _receipt_listing(base, rel)
-    entry = {"run": run_identity(base, strict=True, key=key), "path": rel, "sha256": _sha256_file(target),
+    entry = {"run": run_identity(base, strict=True, key=key, key_file=key_file), "path": rel, "sha256": _sha256_file(target),
              "owner_stage": str(owner_stage).strip(),
              "reason": str(reason).strip(), "approver": str(approver).strip(),
              "signed_at": (now or datetime.now(timezone.utc)).isoformat(),
@@ -1120,7 +1306,7 @@ def rebind(root, path, *, stage, reason, approver, key_file=None, now=None):
     key = _key_bytes(base, key_file)
     if is_quarantined_path(base, rel):
         raise OutOfPipeline("%s is quarantined; use release-quarantine" % rel)
-    entry = {"run": run_identity(base, strict=True, key=key), "path": rel, "old_sha256": registered.get("sha256"),
+    entry = {"run": run_identity(base, strict=True, key=key, key_file=key_file), "path": rel, "old_sha256": registered.get("sha256"),
              "sha256": digest, "stage": str(stage).strip(), "reason": str(reason).strip(),
              "approver": str(approver).strip(),
              "signed_at": (now or datetime.now(timezone.utc)).isoformat(),
@@ -1196,7 +1382,7 @@ def acknowledge_input(root, path, *, old_sha256, new_sha256, reason, approver,
     if (load(base)["outputs"].get(rel) or {}).get("sha256") != old:
         raise OutOfPipeline("%s is not registered with the acknowledged old sha256" % rel)
     key = _key_bytes(base, key_file)
-    entry = {"run": run_identity(base, strict=True, key=key), "path": rel, "old_sha256": old, "new_sha256": new,
+    entry = {"run": run_identity(base, strict=True, key=key, key_file=key_file), "path": rel, "old_sha256": old, "new_sha256": new,
              "reason": str(reason).strip(), "approver": str(approver).strip(),
              "acknowledged_at": (now or datetime.now(timezone.utc)).isoformat()}
     entry["signature"] = _ack_signature(entry, key)

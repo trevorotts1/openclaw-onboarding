@@ -6,8 +6,9 @@
   quarantine_ledger.py acknowledge-input --run DIR --path REL --old-sha256 H --new-sha256 H
                        --reason TEXT --approver NAME [--key-file F]
   quarantine_ledger.py seal --run DIR [--adopt-legacy [--yes]] [--key-file F]
-  quarantine_ledger.py reanchor --run DIR --confirm-recreated-run --reason TEXT --approver NAME
-                       [--key-file F]
+  quarantine_ledger.py reanchor --run DIR --confirm-recreated-run --new-run-id VALUE --reason TEXT
+                       --approver NAME [--key-file F]
+  quarantine_ledger.py adopt-unanchored --run DIR [--yes] [--key-file F]
   quarantine_ledger.py rebind --run DIR --path REL --stage STAGE --reason TEXT --approver NAME
                        [--key-file F]
   quarantine_ledger.py release-quarantine --run DIR --path REL --stage STAGE --reason TEXT
@@ -34,6 +35,17 @@ operator runs `reanchor --confirm-recreated-run` (prints old run_id/serial/gener
 run_id; writes generation+1 and a signed retired list that voids every record of the old run_id);
 verifiers never create or replace an anchor. `seal --adopt-legacy` prints every path and sha256 it
 re-signs and, run non-interactively, refuses unless `--yes` is given (interactive: asks y/N).
+
+1.3.50 (SWB-270): ANCHOR AT FIRST SIGNED RECORD. Every operator-signed writer (add, seal,
+rebind, reown, release-quarantine, acknowledge-input, and the governor's admission signing)
+creates the signed anchor (run_id, folder identity, generation 1, serial) before its first record
+when none exists; no signed record can exist in an unanchored run. Verifiers never create or
+replace an anchor. If signed records exist and no anchor does (planted, or made before 1.3.50)
+every verifier refuses until the operator runs `adopt-unanchored`, which prints every signed
+record it anchors over (bound here / VOID) and, non-interactively, refuses without `--yes`.
+`reanchor` never trusts state.json for the new identity: the operator passes `--new-run-id`,
+which must equal state.json's run_id and differ from the old anchor's run_id and from EVERY
+retired run_id, whatever the folder's inode says.
 
 `add` signs each entry (HMAC-SHA256) with the operator key named by
 SF_PIN_AUTHORITY_KEY_FILE (or --key-file); the key is read by path and never printed.
@@ -88,6 +100,12 @@ def main(argv=None):
     ra = sub.add_parser("reanchor")
     ra.add_argument("--run", required=True)
     ra.add_argument("--confirm-recreated-run", action="store_true")
+    ra.add_argument("--new-run-id")
+    au = sub.add_parser("adopt-unanchored")
+    au.add_argument("--run", required=True)
+    au.add_argument("--yes", action="store_true",
+                    help="anchor without an interactive question")
+    au.add_argument("--key-file")
     ra.add_argument("--reason", required=True)
     ra.add_argument("--approver", required=True)
     ra.add_argument("--key-file")
@@ -137,11 +155,27 @@ def main(argv=None):
             return 0
         if args.cmd == "reanchor":
             r = governed_runner.reanchor(args.run, confirm_recreated_run=args.confirm_recreated_run,
+                                         new_run_id=args.new_run_id,
                                          reason=args.reason, approver=args.approver,
                                          key_file=args.key_file)
             print(r["listing"])
             print("reanchored: generation %d; every record bound to run_id %r is void"
                   % (r["generation"], r["old_run_id"]))
+            return 0
+        if args.cmd == "adopt-unanchored":
+            plan = governed_runner.adopt_unanchored(args.run, key_file=args.key_file, dry_run=True)
+            print(plan["listing"])
+            if not args.yes:
+                if sys.stdin.isatty():
+                    if input("anchor this run over the records above? [y/N] ").strip().lower() != "y":
+                        print("refused: not confirmed; nothing was anchored", file=sys.stderr)
+                        return 1
+                else:
+                    print("refused: non-interactive run; nothing was anchored (review the list "
+                          "above and pass --yes)", file=sys.stderr)
+                    return 1
+            r = governed_runner.adopt_unanchored(args.run, key_file=args.key_file)
+            print("anchored run_id %r, serial %d" % (r["run_id"], r["serial"]))
             return 0
         if args.cmd == "seal":
             if args.adopt_legacy:
