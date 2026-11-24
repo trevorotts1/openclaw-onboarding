@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "_purpose": "Machine-checkable transcription of the 16 BINDING LAWS in SCOPE-LEDGER.md section 4 (GHL Hybrid v3.0 run, waves w61-w66). The ledger states each law as prose that 'applies to EVERY one of the 13 units' (16 x 13 = 208 application items). Prose cannot be enforced, so every law is restated here as a named check that scripts/check-binding-laws.py actually runs. Ledger item ids are '<unit>-L<n>'; this file owns the L<n> half only.",
+  "_purpose": "Machine-checkable transcription of the BINDING LAWS (16 in the ledger; L12 and L13 retired 2026-11-24, see retired_laws, so 14 are enforced) in SCOPE-LEDGER.md section 4 (GHL Hybrid v3.0 run, waves w61-w66). The ledger states each law as prose that 'applies to EVERY one of the 13 units' (16 x 13 = 208 application items). Prose cannot be enforced, so every law is restated here as a named check that scripts/check-binding-laws.py actually runs. Ledger item ids are '<unit>-L<n>'; this file owns the L<n> half only.",
   "_why_this_exists": "Before this file, 14 of the 16 laws lived only in a prompt. A rule stated only in a prompt is verified by trusting a transcript, and a transcript is prose -- it can say anything. ledger-truth-gate.yml already records that exact failure for this repo: an unattended cron stamped whole units verified off prose alone. The two laws that DID have machinery (L5, L6) have it in .github/workflows/sf-prover-pin-authority.yml, and that pair is the model followed here.",
   "_sources": {
     "ledger": "SCOPE-LEDGER.md section 4 'Binding laws' (frozen 2026-11-09 8:01 AM Eastern)",
@@ -38,6 +38,20 @@
   "bot_names": [
     "github-actions[bot]",
     "dependabot[bot]"
+  ],
+  "retired_laws": [
+    {
+      "id": "L12",
+      "text": "If BEHIND: recut from current origin/main; never merge main into a branch.",
+      "retired": "2026-11-24",
+      "why": "Removed by operator order. It rejected any pull request range containing a merge commit, but the batch merger is built on merge commits and never rebases, so the law blocked batch merges (the Skill 75 wave sat blocked all night). Kept here ONLY so the frozen SCOPE-LEDGER application numbering (13 units x 16 laws = 208) does not shift; nothing enforces it."
+    },
+    {
+      "id": "L13",
+      "text": "Ancestry: `git merge-base --is-ancestor <commit> origin/main` returns 0, output pasted.",
+      "retired": "2026-11-24",
+      "why": "Removed by operator order. It required every branch to sit on top of the current origin/main, which forces a recut every time main moves -- the exact churn the batch merger exists to avoid. Kept here ONLY so the frozen SCOPE-LEDGER application numbering does not shift; nothing enforces it."
+    }
   ],
   "laws": [
     {
@@ -116,20 +130,6 @@
       "kind": "evidence",
       "check": "one_pr_per_unit",
       "evidence_fields": { "open_prs_for_unit": 1, "closed_prs_all_link_replacement": true }
-    },
-    {
-      "id": "L12",
-      "text": "If BEHIND: recut from current origin/main; never merge main into a branch.",
-      "kind": "tree",
-      "check": "no_merge_commits",
-      "covers": "git rev-list --merges on the range must be empty"
-    },
-    {
-      "id": "L13",
-      "text": "Ancestry: `git merge-base --is-ancestor <commit> origin/main` returns 0, output pasted.",
-      "kind": "tree",
-      "check": "ancestry_from_base",
-      "covers": "the base ref must be an ancestor of head, i.e. the branch is on top of current origin/main and not a stale fork"
     },
     {
       "id": "L14",

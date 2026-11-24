@@ -4,8 +4,10 @@
 A guard is only worth having if it can be shown to go red on a known-bad tree and
 green on a known-good one. This file builds throwaway git repositories in a temp
 directory, runs the real checker against them, and asserts both directions for every
-law the checker can decide from git (L1, L5, L6, L12, L13) plus the evidence laws
-(L2-L4, L7-L11, L14-L16) and the DEFERRED rule.
+law the checker can decide from git (L1, L5, L6) plus the evidence laws
+(L2-L4, L7-L11, L14-L16) and the DEFERRED rule. L12 and L13 were retired on
+2026-11-24 (they blocked the batch merger); the cases below prove a merge commit
+and a stale base no longer fail the run.
 
 Run either way:
     python3 scripts/test_check_binding_laws.py
@@ -243,7 +245,7 @@ def test_l1_stale_base_does_not_invent_a_deletion():
     A branch forks before main grows a test file. A range measured from main's
     LATER tip to the branch shows that file as removed although it never existed
     on the branch. That range is not a change set; the law must grade the range
-    the branch owns (merge-base..head) and leave the stale base to L13.
+    the branch owns (merge-base..head). A stale base is not a failure (L13 is retired).
     """
     r = Repo()
     try:
@@ -263,12 +265,13 @@ def test_l1_stale_base_does_not_invent_a_deletion():
         assert statuses(out)["L1"] == "PASS", out
         assert "is not an ancestor of" in out, out
         assert "test_late.py" not in out, out
-        assert statuses(out)["L13"] == "FAIL", "the stale base is still reported, by the law that owns it: " + out
+        assert "L13" not in statuses(out), "L13 is retired and must not be evaluated: " + out
     finally:
         r.cleanup()
 
-# --- L12 / L13 --------------------------------------------------------------------
-def test_l12_merge_commit_fails():
+# --- retired L12 / L13 -----------------------------------------------------------
+def test_merge_commit_in_range_no_longer_fails():
+    """L12 is retired: the batch merger's merge commits must not fail the run."""
     r = Repo()
     try:
         r._git("checkout", "-q", "-b", "side")
@@ -279,12 +282,14 @@ def test_l12_merge_commit_fails():
         r.commit("main work")
         r._git("merge", "-q", "--no-ff", "-m", "merge side", "side")
         rc, out = run(r)
-        assert statuses(out)["L12"] == "FAIL", out
+        assert "L12" not in statuses(out), out
+        assert rc == 0, out
     finally:
         r.cleanup()
 
 
-def test_l13_stale_base_fails():
+def test_stale_base_no_longer_fails():
+    """L13 is retired: a branch that main has moved past must not fail the run."""
     r = Repo()
     try:
         r._git("checkout", "-q", "-b", "stale")
@@ -298,8 +303,8 @@ def test_l13_stale_base_fails():
             capture_output=True,
             text=True,
         )
-        assert statuses(cp.stdout + cp.stderr)["L13"] == "FAIL", cp.stdout + cp.stderr
-        assert cp.returncode == 1, cp.stdout + cp.stderr
+        assert "L13" not in statuses(cp.stdout + cp.stderr), cp.stdout + cp.stderr
+        assert cp.returncode == 0, cp.stdout + cp.stderr
     finally:
         r.cleanup()
 
@@ -459,6 +464,7 @@ def test_applications_slice_is_141_to_208():
     last = payload["rows"][-1]
     assert first["n"] == 141 and first["application"] == "RES-004-L13", first
     assert last["n"] == 208 and last["application"] == "INST-001-L16", last
+    assert first["after"] == "RETIRED", first
 
 
 def _main():

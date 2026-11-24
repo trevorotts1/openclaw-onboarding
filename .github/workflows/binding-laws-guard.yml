@@ -29,8 +29,10 @@ name: Binding laws guard
 #   laws     -- runs scripts/check-binding-laws.py over the PR range.
 #
 # TWO CLASSES, AND WHY THE SPLIT IS NOT A LOOPHOLE
-#   tree     (L1, L5, L6, L12, L13) are decided from the base..head diff, commit
-#            authorship, merge topology and ref ancestry. A violation fails here.
+#   tree     (L1, L5, L6) are decided from the base..head diff and commit
+#            authorship. A violation fails here. L12 (no merge commits) and L13
+#            (branch on current main) were retired 2026-11-24: the batch merger
+#            uses merge commits and never rebases, so both blocked batch merges.
 #   evidence (L2, L3, L4, L7-L11, L14-L16) constrain what the LANE DID -- force
 #            push, SSH, fleet contact, a secret in a transcript, --admin,
 #            --no-verify, which model ran QC -- and are not derivable from a tree.
@@ -94,8 +96,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          # Full history: L12 counts merge commits in the range and L13 resolves
-          # merge-base --is-ancestor, both of which need real ancestry, not a
+          # Full history: L1 grades merge-base..head when the base is stale and
+          # L5/L6 walk base..head, both of which need real ancestry, not a
           # shallow tip.
           fetch-depth: 0
           persist-credentials: false
