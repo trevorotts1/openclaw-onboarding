@@ -3289,6 +3289,46 @@ def cmd_check(run_dir, stage):
     return 0
 
 
+def self_pass_failures(stage, receipt):
+    """A receipt that ASSERTS a review cannot name itself as that reviewer.
+
+    Precise on purpose. Plenty of receipts legitimately carry no review at all
+    (the stage contract records whether one is required), and a fixture or a
+    no-review stage may fill reviewer_agent with the author without claiming
+    anything was reviewed. That is not self-approval, it is a field with no
+    claim behind it.
+
+    This fires only on the real defect: a receipt that asserts review evidence
+    - a `review` block, `reviewed` true, or a non-zero review_qc_passes - while
+    naming its own author as the reviewer. On bf2026-jjwd exactly that shape
+    appeared, claiming a pass from a reviewer that never ran and describing
+    fonts that were no longer in the artifact.
+    """
+    if not isinstance(receipt, dict):
+        return []
+    asserts_review = bool(
+        receipt.get("review")
+        or receipt.get("reviewed") is True
+        or (isinstance(receipt.get("review_qc_passes"), int)
+            and receipt.get("review_qc_passes") > 0)
+        or receipt.get("reviewed_at")
+    )
+    if not asserts_review:
+        return []
+    author = receipt.get("author_agent") or receipt.get("author_session")
+    reviewer = receipt.get("reviewer_agent") or receipt.get("reviewer_session")
+    if _is_placeholder_session(reviewer):
+        return [
+            f"stage {stage}: the receipt asserts a review but names no reviewer. "
+            f"Record the reviewer who performed it, or state what is true as "
+            f"'pass_unreviewed'."]
+    if not _is_placeholder_session(author) and reviewer == author:
+        return [
+            f"stage {stage}: the receipt asserts a review and names itself as its own "
+            f"reviewer ({reviewer!r}). A self-approval cannot stand; record an "
+            f"independent reviewer, or state what is true as 'pass_unreviewed'."]
+    return []
+
 def cmd_close(run_dir, stage):
     spec, errs = load_contract_stage(stage)
     if errs:
@@ -3395,6 +3435,15 @@ def cmd_close(run_dir, stage):
             failures.extend(style_selection_problems(run_dir))
             # Fix spec M4: the run must have read Skill 45 (receipt re-hashed against the library).
             failures.extend(design_intelligence_problems(run_dir))
+
+        # SELF-PASS GUARD (2026-11-22). A stage closed by a receipt that claims
+        # `pass` must name a reviewer distinct from its author. Without this, a
+        # session can author the artifacts, write its own `pass` receipt, and
+        # close a review-gated stage with no independent look at all - which is
+        # exactly what happened on bf2026-jjwd's font-action-plan stage.
+        # publish-verify already enforces this for derived fonts; the close of
+        # the stage that PRODUCES the font decision enforced nothing.
+        failures.extend(self_pass_failures(stage, receipt))
 
     if failures:
         # Item 25 (S6 emission spec 6.4): a refused close is a state

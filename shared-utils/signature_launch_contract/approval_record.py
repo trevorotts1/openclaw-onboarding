@@ -217,14 +217,84 @@ def canonical_plan_hash(value) -> "str | None":
     return match.group(1).lower() if match else None
 
 
-def normalize_scope(value):
-    """Scope as a list, from a v2 list or a Command Center single string.
+#: The three keys an owner-request binding carries. Command Center writes them as
+#: the JSON object in ``scope`` and ALSO returns them flat on the record.
+BINDING_KEYS = ("location_id", "action", "object_key")
 
-    A Command Center scope is one free string (``"images, pages"``). It is split
-    on commas; the whole original string is also kept as a member so an entry
-    that legitimately contains a comma still matches. Returns None when the
-    value is not a recognized representation.
+
+def structural_binding(value):
+    """The owner-request binding from a Command Center ``scope``, as flat fields.
+
+    Command Center's owner decision path stores ``scope`` as a serialized JSON
+    object -- ``{"location_id": ..., "action": ..., "object_key": ...}`` -- and
+    returns those same three fields flat on the record. This reads the binding
+    back out of the scope ONLY when all three are present, non-empty strings.
+
+    Returns ``None`` when ``value`` is not such an object. A JSON object that
+    carries some but not all three is a ``"conflict"``: a half binding is never
+    completed by guesswork, exactly as a half cap never is.
     """
+    obj = None
+    if isinstance(value, dict):
+        obj = value
+    elif isinstance(value, str):
+        text = value.strip()
+        if not text.startswith("{"):
+            return None
+        try:
+            parsed = json.loads(text)
+        except ValueError:
+            return None
+        if not isinstance(parsed, dict):
+            return None
+        obj = parsed
+    else:
+        return None
+    present = [key for key in BINDING_KEYS if key in obj]
+    if not present:
+        return None
+    if len(present) != len(BINDING_KEYS):
+        return "conflict"
+    out = {}
+    for key in BINDING_KEYS:
+        item = obj.get(key)
+        if not isinstance(item, str) or not item.strip():
+            return "conflict"
+        out[key] = item.strip()
+    return out
+
+
+def normalize_scope(value, binding=None):
+    """Scope as a list, from a v2 list, a Command Center string, or a binding.
+
+    Three representations, in order:
+
+    1. A serialized JSON object, or the record's own flat
+       ``location_id``/``action``/``object_key`` fields, is an owner-request
+       binding. It normalizes to the ``action`` token it names (so an approval
+       for ``plan_build_approve`` grants ``plan_build_approve`` and nothing else)
+       plus its ``object_key``. The binding's identity is returned by
+       :func:`structural_binding`; the ``location_id`` is enforced against the
+       approved plan by the caller, which is the only place that knows which
+       object is being built.
+    2. A string list, or one free string, splits on commas as before. The whole
+       original entry is kept as a member so an entry that legitimately contains
+       a comma still matches. This is the documented Command Center free-text
+       legacy shape and it is unchanged.
+    3. Anything else is not a recognized representation and returns None.
+
+    ``binding`` is the record's flat binding, used only when ``value`` itself is
+    not a JSON object. A record whose flat fields disagree with its JSON scope is
+    refused by :func:`_check`.
+    """
+    structural = structural_binding(value)
+    if structural is None and binding is not None:
+        structural = structural_binding(binding)
+    if structural == "conflict":
+        return "conflict"
+    if structural is not None:
+        return [structural["action"], structural["object_key"]]
+
     entries = []
     if isinstance(value, str):
         entries.append(value)
@@ -378,9 +448,23 @@ def normalize_record(rec, *, authority: str) -> dict:
         _refuse("APPROVAL-NOT-FROM-AUTHORITY",
                 "record carries a conflicting or half spend cap (nested cap vs flat cap_minor/currency)")
 
-    scope = normalize_scope(rec.get("scope"))
+    scope = normalize_scope(rec.get("scope"), binding=rec)
+    if scope == "conflict":
+        _refuse("APPROVAL-NOT-FROM-AUTHORITY",
+                "record carries a half owner-request binding "
+                "(location_id/action/object_key must all be present and non-empty)")
     if not scope:
         _refuse("APPROVAL-NOT-FROM-AUTHORITY", "record grants no scope")
+
+    from_scope = structural_binding(rec.get("scope"))
+    from_flat = structural_binding(
+        {key: rec[key] for key in BINDING_KEYS
+         if isinstance(rec.get(key), str) and rec[key].strip()})
+    if isinstance(from_scope, dict) and (from_flat == "conflict"
+                                         or (isinstance(from_flat, dict) and from_scope != from_flat)):
+        _refuse("APPROVAL-NOT-FROM-AUTHORITY",
+                "record carries a conflicting owner-request binding "
+                "(its scope and its flat location_id/action/object_key disagree)")
 
     declared_class = rec.get("verification_class")
     if declared_class is not None and declared_class not in VERIFICATION_CLASSES:
@@ -405,6 +489,9 @@ def normalize_record(rec, *, authority: str) -> dict:
         "consenting_actor_ref": actor,
         "source_message_ref": rec.get("source_message_ref"),
         "scope": scope,
+        "binding": structural_binding(rec.get("scope")) or structural_binding(
+            {key: rec[key] for key in BINDING_KEYS
+             if isinstance(rec.get(key), str) and rec[key].strip()}),
         "cap": cap,
         "expires_at": rec.get("expires_at"),
         "revoked": rec.get("revoked"),
@@ -502,7 +589,19 @@ def _check(rec: dict, approval_id, kind, plan_hash, scope, client_identity, cap,
         _refuse("APPROVAL-EXPIRED", "the approval expired or has no valid expiry")
 
     wanted = normalize_scope(scope)
-    if not wanted or not set(wanted) <= set(rec["scope"]):
+    granted = rec["scope"]
+    structural = rec.get("binding")
+    if structural is not None:
+        # An owner-request binding is granted exactly, not by set membership: the
+        # record names ONE action on ONE object, and only that pair is covered.
+        # This is what keeps ``plan_build_approve`` from granting publish, a paid
+        # render or a customer send, and it is why no wildcard is possible here.
+        if wanted != [structural["action"], structural["object_key"]]:
+            _refuse("APPROVAL-SCOPE",
+                    "requested scope is not the binding this approval grants "
+                    "(it names %r on %r)"
+                    % (structural["action"], structural["object_key"]))
+    elif not wanted or not set(wanted) <= set(granted):
         _refuse("APPROVAL-SCOPE", "requested scope is not covered by the approval")
 
     if cap is not None:
