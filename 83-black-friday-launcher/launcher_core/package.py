@@ -169,6 +169,14 @@ LANDING_REQUEST_ROLE = "landing"
 INTAKE_SNAPSHOT_REL = "intake-at-dispatch.json"
 DISPATCH_STATE_BOUND = "bound"
 DISPATCH_STATE_UNBOUND_FIXTURE = "unbound_fixture"
+# SWB-052: the pages were built and installed as GoHighLevel DRAFTS by other skills (Skill 71/49/80/81
+# through Skill 06's rail), not by a Skill 83 dispatch. dispatch/dispatch-manifest.json of this kind lists
+# each page unit with its install receipt and read-back hash; it stands in for a dispatch for PAGE units
+# only, and only when every route page is such a unit and passes the page lane in full.
+DISPATCH_KIND_EXTERNAL_INSTALL = "external-install"
+EXTERNAL_INSTALL_SCHEMA = "skill83.external-install-manifest/v1"
+DISPATCH_STATE_EXTERNAL_INSTALL = "external_install"
+EXTERNAL_INSTALL_CODE = "AF-LAUNCH-PKG-EXTERNAL-INSTALL"
 _REQUEST_RESULT_KEYS = ("request_id", "input_hash", "status", "proof_class", "independent_review",
                         "blockers", "author_session", "reviewer_session", "test_only")
 _IMAGE_SUFFIXES = (".png", ".jpg", ".jpeg", ".webp")
@@ -924,6 +932,112 @@ def _bind_dispatch(root: Path, intake: Dict[str, Any], route: Dict[str, Any],
     }
 
 
+def _dispatch_kind(root: Optional[Path]) -> Optional[str]:
+    """The ``kind`` a dispatch manifest declares (None for a Skill 83 dispatch or an unreadable file)."""
+    if root is None:
+        return None
+    doc = _read_json_or_none(Path(root) / DISPATCH_MANIFEST_REL)
+    return doc.get("kind") if isinstance(doc, dict) else None
+
+
+def _bind_external_install(root: Path, intake: Dict[str, Any], route: Dict[str, Any],
+                           pieces: Dict[str, Any], plan: Optional[Dict[str, Any]],
+                           deliveries: Optional[Dict[str, Any]], run_dir: Path) -> Dict[str, Any]:
+    """SWB-052: bind a package whose pages another skill installed to its external-install manifest.
+
+    The launch record beside the manifest must pass Skill 49's check, and its RECOMPUTED plan hash must be
+    the manifest's and the intake's approval hash, for this launch, tenant, location and revision. The
+    manifest lists page units only (an email, text, automation or AI unit keeps its own lane and is
+    refused here), every route page must be filled by a listed unit, no launcher piece rides beside it
+    (a piece binds only to a Skill 83 dispatch), and each listed unit's lane delivery must pass the page
+    lane in full (delivery_units.page_draft_violations) and be the very receipt and draft it lists."""
+    code = EXTERNAL_INSTALL_CODE
+    manifest = _read_run_json(root, DISPATCH_MANIFEST_REL, code, "external-install manifest")
+    launch = _read_run_json(root, LAUNCH_RECORD_REL, code, "launch record")
+    if not isinstance(manifest, dict) or not isinstance(launch, dict):
+        raise PackageError(code, "the launch record and the external-install manifest must be objects")
+    if manifest.get("schema") != EXTERNAL_INSTALL_SCHEMA:
+        raise PackageError(code, f"the manifest schema is {manifest.get('schema')!r}, not "
+                                 f"{EXTERNAL_INSTALL_SCHEMA!r}")
+    fails = launch_bridge.check_launch_record(launch)
+    if fails:
+        raise PackageError(code, "Skill 49 does not accept the launch record: " + "; ".join(fails))
+    plan_hash = launch_bridge.substrate.dispatch().vlp.plan_document_hash(launch)
+    if manifest.get("plan_document_hash") != plan_hash:
+        raise PackageError(code, "the manifest names a plan hash that is not the recomputed hash of "
+                                 f"launch.json ({plan_hash})")
+    if intake["approval"]["hash"] != plan_hash:
+        raise PackageError(code, "the intake's approval hash is not the recomputed plan hash "
+                                 f"({plan_hash}); approved_plan_hash is computed, never a free string")
+    for key in ("launch_id", "tenant_id", "location_id", "revision"):
+        if manifest.get(key) != intake.get(key) or launch.get(key, intake.get(key)) != intake.get(key):
+            raise PackageError(code, f"{key}: the manifest says {manifest.get(key)!r}, the launch record "
+                                     f"{launch.get(key)!r}, the intake {intake.get(key)!r}")
+    if pieces:
+        raise PackageError(code, "an external-install package carries no launcher piece; "
+                                 f"{sorted(pieces)} would be unbound (a piece binds only to a Skill 83 dispatch)")
+    if plan is None:
+        raise PackageError(code, "an external-install package needs the shared launch plan to name its page units")
+    units = {u["id"]: u for u in launch_plan_module.planned_units(plan)}
+    listed = manifest.get("pages")
+    if not isinstance(listed, list) or not listed:
+        raise PackageError(code, "the manifest lists no page unit")
+    entries: Dict[str, Dict[str, Any]] = {}
+    for entry in listed:
+        uid = entry.get("unit_id") if isinstance(entry, dict) else None
+        if uid in entries:
+            raise PackageError(code, f"page unit {uid!r} is listed twice")
+        if uid not in units:
+            raise PackageError(code, f"{uid!r} is not a unit of the launch plan")
+        if units[uid]["type"] != "page":
+            raise PackageError(code, f"{uid!r} is a {units[uid]['type']} unit: an external-install manifest "
+                                     "lists pages only; emails, texts and automations keep their own lanes")
+        entries[uid] = entry
+    slots = external_page_units(plan, {}, deliveries)
+    unfilled = sorted(n["role"] for n in route["nodes"]
+                      if n["role"] not in {slots[u] for u in entries if u in slots})
+    if unfilled:
+        raise PackageError(code, f"route page(s) {unfilled} are not filled by a listed, page-install "
+                                 "delivered unit")
+    pages = []
+    for uid, entry in sorted(entries.items()):
+        row = (deliveries or {}).get(uid)
+        facts = row.get("page_install") if isinstance(row, dict) else None
+        if not isinstance(facts, dict):
+            raise PackageError(code, f"{uid}: listed without a page-install delivery")
+        fails = delivery_units.page_draft_violations(uid, {**row, "location_id": intake["location_id"]},
+                                                     run_dir)
+        if fails:
+            raise PackageError(code, f"{uid}: listed without its verified receipt: " + "; ".join(fails))
+        receipts = {a.get("sha256") for a in row.get("artifacts") or []
+                    if isinstance(a, dict) and a.get("role") == delivery_units.PAGE_INSTALL_ROLE}
+        want = (("installed_by", entry.get("installed_by"), facts.get("installed_by")),
+                ("draft_version_id", entry.get("draft_version_id"), facts.get("draft_version_id")),
+                ("readback_sha256", entry.get("readback_sha256"), facts.get("content_sha256")))
+        bad = [name for name, got, have in want if got != have]
+        if entry.get("install_receipt_sha256") not in receipts:
+            bad.append("install_receipt_sha256")
+        if bad:
+            raise PackageError(code, f"{uid}: the manifest entry is not its verified delivery: " + ", ".join(bad))
+        pages.append({"unit_id": uid, "page_slot": slots[uid], "page_id": facts["page_id"],
+                      "installed_by": facts["installed_by"], "draft_version_id": facts["draft_version_id"],
+                      "readback_sha256": facts["content_sha256"],
+                      "install_receipt_sha256": entry["install_receipt_sha256"]})
+    return {
+        "plan_document_hash": plan_hash,
+        "record": {
+            "state": DISPATCH_STATE_EXTERNAL_INSTALL,
+            "dispatch_manifest": {"path": DISPATCH_MANIFEST_REL,
+                                  "sha256": _sha256_file(root / DISPATCH_MANIFEST_REL)},
+            "launch": {"path": LAUNCH_RECORD_REL, "sha256": _sha256_file(root / LAUNCH_RECORD_REL)},
+            "plan_document_hash": plan_hash,
+            "intake_approval_hash_is_plan_hash": True,
+            "pages": pages,
+            "detail": "pages installed as GoHighLevel DRAFTS by other skills; no Skill 83 dispatch drew them",
+        },
+    }
+
+
 def _receipts_module():
     return launch_bridge.substrate.load("49-signature-funnel/scripts/collect_launch_receipts.py",
                                         "launcher_collect_launch_receipts")
@@ -1467,7 +1581,12 @@ def assemble(run_dir: Path, intake: Dict[str, Any], route: Dict[str, Any],
     test_only = bool(intake.get("test_only", True))
     root, explicit = _find_dispatch_root(dispatch_run, [source_root, run_dir.resolve()])
     binding = None
-    if root is not None:
+    external = None
+    if _dispatch_kind(root) == DISPATCH_KIND_EXTERNAL_INSTALL:  # SWB-052: pages other skills installed
+        external = _bind_external_install(root, intake, route, pieces, launch_plan, deliveries, run_dir)
+        approved = external["plan_document_hash"]
+        dispatch_record = external["record"]
+    elif root is not None:
         binding = _bind_dispatch(root, intake, route, strict=explicit or not test_only)
         approved = binding["plan_document_hash"]
         dispatch_record = binding["record"]
@@ -1540,7 +1659,9 @@ def assemble(run_dir: Path, intake: Dict[str, Any], route: Dict[str, Any],
         store_ok, store_detail = verify(run_dir)
         if not store_ok:
             raise PackageError("AF-LAUNCH-PKG-RECEIPTS", store_detail)
-    client_delivery = (binding is not None and scope == DELIVERY_SCOPE_FULL) or not test_only
+    # SWB-052: an external-install package is a client delivery exactly as a dispatched one is.
+    client_delivery = ((binding is not None or external is not None) and scope == DELIVERY_SCOPE_FULL) \
+        or not test_only
     if client_delivery and (evidence["state"] != "verified" or not evidence.get("entries")):
         raise PackageError("AF-LAUNCH-PKG-RECEIPTS",
                            f"a client delivery needs Skill 49's lane receipts; the store is "
@@ -1617,7 +1738,8 @@ def assemble(run_dir: Path, intake: Dict[str, Any], route: Dict[str, Any],
     if binding is not None:
         bridge_files = _bind_bridge_receipts(binding, delivery=client_delivery)
 
-    designs_required = require_designs if require_designs is not None else (binding is not None or not test_only)
+    designs_required = require_designs if require_designs is not None else (
+        binding is not None or external is not None or not test_only)
     waiver = None
     if require_designs is False:
         waiver = _verify_design_waiver(design_waiver, approved, test_only)

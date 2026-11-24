@@ -2,7 +2,7 @@
 name: black-friday-launcher
 description: "Helps a business owner get their whole Black Friday sale ready, step by step: the sales page, the order form, the special offers, the thank-you page, and the launch emails and text messages. Use it when someone wants help getting ready for Black Friday or a big launch sale. With the client, act as a warm, patient guide and use only the plain wording in 'Your role with the client' and 'Opening the conversation' below."
 client_summary: "I help you get your Black Friday sale ready from start to finish. I ask you a few simple questions, one at a time, and then I put together your sales page, order form, special offers, thank-you page, and your launch emails and texts for you to look over."
-version: 0.2.44
+version: 0.2.45
 priority: HIGH
 ---
 
@@ -583,6 +583,27 @@ steps, all DRAFT-ONLY (nothing is sent and nothing goes live):
    no producer contract yet (its allow-list is empty), so `assemble` and `check` refuse any lane delivery for
    it with `AF-LAUNCH-PKG-RECEIPT-LANE` ("has no producer yet"), whatever contract string it carries. Every lane unit's files keep their producer's `role` tag and are sealed under the
    unit's own folder in the package (`lanes/<unit id>/...`), so each email sequence's `--check` finds its own files.
+   An installer receipt that nests the page under `page` and names no location is never edited: a different
+   unit writes a NEW `skill83.page-install-restatement/v1` receipt (`unit` = the writer, `published` false, and
+   `page_id`, `funnel_id`, `step_id`, `location_id`, `draft_version_id`, `content_sha256`, `installed_by` top
+   level, plus `source_receipt.sha256` of the installer's own receipt). It counts only when that original is
+   sealed in the same delivery as another `install_receipt`, was written by `installed_by`, records no publish
+   and itself names this page and this exact draft, and when the GET read-back's own `locationId` is the
+   location named; otherwise `AF-LAUNCH-PKG-RECEIPT-LANE`.
+   A live package is assembled from a dispatch run (`AF-LAUNCH-PKG-DISPATCH-MISSING`). When every route page
+   was built and installed as a GoHighLevel DRAFT by other skills (not by a Skill 83 dispatch, which would redraw
+   them), the run folder (`--run-dir`) instead holds the approved `launch.json` and a
+   `dispatch/dispatch-manifest.json` with `kind` `external-install` (`schema`
+   `skill83.external-install-manifest/v1`, `launch_id`, `tenant_id`, `location_id`, `revision`,
+   `plan_document_hash`, and `pages`: one entry per page unit with `unit_id`, `installed_by`,
+   `draft_version_id`, `readback_sha256` and `install_receipt_sha256`). `assemble` accepts it only when Skill 49
+   accepts the launch record, its RECOMPUTED plan hash is the manifest's and the intake's approval hash, the
+   identity matches the intake, no launcher piece rides beside it, every route page is filled by a listed unit,
+   and every listed unit's delivery passes the page lane above in full and is the very receipt and draft listed;
+   anything else is `AF-LAUNCH-PKG-EXTERNAL-INSTALL`. The manifest lists pages only: an email, text, automation
+   or AI unit in it is refused, and those units still need their own lane deliveries. The package records
+   `dispatch_binding.state` `external_install` and is held to the same client-delivery gates (Skill 49 receipt
+   store, designs) as a dispatched one.
 
 A full launch refuses open page blockers (`AF-LAUNCH-PKG-BLOCKERS`), with one exception: a dispatched package that
 is still `draft_constructed` (nothing installed or published) may carry the named "not installed by Skill 06 yet"

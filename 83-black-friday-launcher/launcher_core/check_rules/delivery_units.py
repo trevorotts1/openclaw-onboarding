@@ -35,6 +35,11 @@
   must show the live record read by GET: the same ids, a draft top version with that version id
   and content sha256, no published version, not deleted, preview HTTP 200. Anything unverifiable
   is refused.
+* SWB-052. An installer receipt that nests the page under ``page`` and names no location is never
+  edited: another unit writes a NEW ``skill83.page-install-restatement/v1`` receipt naming every
+  fact top level plus the installer's own receipt by sha256. It counts only when that original is
+  sealed in the same row, was written by the installer, records no publish and itself names this
+  page and this exact draft, and when the GET read-back's own ``locationId`` is the location named.
 
 Validator of record per unit type: automations = Skill 44 (here); email = Skill 50 (here, by
 path); text = the contract allow-list only until Skill 44 ships a text-set validator; a page
@@ -74,6 +79,12 @@ PAGE_READBACK_ROLE = "independent_readback"
 PAGE_READBACK_KIND = "rest_readback"
 PAGE_ID_KEYS = ("page_id", "funnel_id", "step_id", "location_id", "draft_version_id",
                 "installed_by", "read_by")
+# SWB-052: an installer whose own receipt nests the page under "page" and names no location is restated
+# (never edited) by another unit. The restatement is believed only through the installer's own receipt,
+# sealed in the same row and matched by sha256, and the location only through the GET read-back.
+PAGE_RESTATEMENT_SCHEMA = "skill83.page-install-restatement/v1"
+_RESTATED_KEYS = ("page_id", "funnel_id", "step_id", "location_id", "draft_version_id",
+                  "content_sha256", "installed_by")
 BUILD_COMMAND = "caf workflows build --from-automation-build"
 BUILDS_DOC = "automation-builds.json"
 VALIDATOR_REF = "44-convert-and-flow-operator/tools/validate_graph.py"
@@ -254,13 +265,23 @@ def page_draft_violations(unit_id: str, row: Mapping[str, Any], root: Path) -> L
         return [f"{label} carries {len(readbacks)} {PAGE_READBACK_ROLE!r} artifacts, not exactly one"]
 
     # The installer's own receipt must name this page, its location and this exact draft.
-    named = False
+    docs = []
     for art in installs:
         doc, why = _sealed_json(label, art, root)
         if why:
             return [why]
         if not isinstance(doc, Mapping):
             return [f"{label} install receipt {art.get('path')!r} is not a JSON object"]
+        docs.append((art, doc))
+    named = False
+    restated = False
+    for art, doc in docs:
+        if doc.get("schema") == PAGE_RESTATEMENT_SCHEMA:
+            why = _restatement_violation(label, art, doc, facts, sha, docs)
+            if why:
+                return [why]
+            restated = True
+            continue
         if doc.get("unit") == facts["read_by"]:
             return [f"{label} install receipt {art.get('path')!r} was written by the reader "
                     f"{facts['read_by']!r}: the read-back must be independent of the install"]
@@ -271,6 +292,7 @@ def page_draft_violations(unit_id: str, row: Mapping[str, Any], root: Path) -> L
                 and doc.get("location_id") == facts["location_id"]
                 and (facts["draft_version_id"] in text or sha in text)):
             named = True
+    named = named or restated
     if not named:
         return [f"{label} no install receipt written by {facts['installed_by']!r} names page "
                 f"{facts['page_id']!r} in location {facts['location_id']!r} and its draft "
@@ -301,12 +323,49 @@ def page_draft_violations(unit_id: str, row: Mapping[str, Any], root: Path) -> L
         ("top_version.versionId", top.get("versionId"), facts["draft_version_id"]),
         ("top_version.blob_sha256", top.get("blob_sha256"), sha),
         ("preview_http_status", page.get("preview_http_status"), 200),
-    )
+    ) + ((("locationId (the location a restatement names is the one the GET returned)",
+           page.get("locationId"), facts["location_id"]),) if restated else ())
     bad = [f"{name} is {got!r}, not {want!r}" for name, got, want in checks
            if got != want or type(got) is not type(want)]
     if bad:
         return [f"{label} the independent read-back does not show this draft: " + "; ".join(bad)]
     return []
+
+
+def _restatement_violation(label: str, art: Mapping[str, Any], doc: Mapping[str, Any],
+                           facts: Mapping[str, Any], sha: str, docs: List[Any]) -> Optional[str]:
+    """SWB-052: why a restated install receipt does not prove this draft (None = it does).
+
+    The restatement names every page fact top level and the installer's own receipt by sha256. That
+    receipt must be sealed in the same row, be written by the installer, record no publish, and itself
+    name this page id and this exact draft (version id or content sha256). The restating unit is never
+    the installer. The location it names is held to the GET read-back's own locationId by the caller."""
+    where = f"{label} restated install receipt {art.get('path')!r}"
+    author = doc.get("unit")
+    if not lp._nonempty_str(author) or author == facts["installed_by"]:
+        return f"{where} must be written by a unit other than the installer it restates"
+    if doc.get("published") is not False:
+        return f"{where} does not record published false"
+    wrong = [key for key in _RESTATED_KEYS if doc.get(key) != facts.get(key)]
+    if wrong:
+        return f"{where} does not name this draft: " + ", ".join(wrong)
+    source = doc.get("source_receipt")
+    digest = source.get("sha256") if isinstance(source, Mapping) else None
+    match = [d for a, d in docs if a is not art and a.get("sha256") == digest
+             and d.get("schema") != PAGE_RESTATEMENT_SCHEMA]
+    if not (isinstance(digest, str) and match):
+        return (f"{where} names no source_receipt sealed in this row (the installer's own receipt, "
+                "matched by sha256)")
+    original = match[0]
+    if original.get("unit") != facts["installed_by"]:
+        return f"{where} restates a receipt written by {original.get('unit')!r}, not {facts['installed_by']!r}"
+    if original.get("published") is True:
+        return f"{where} restates a receipt that records a publish"
+    text = _strings(original)
+    if facts["page_id"] not in text or not (facts["draft_version_id"] in text or sha in text):
+        return (f"{where} restates a receipt that does not name page {facts['page_id']!r} and its draft "
+                f"(version {facts['draft_version_id']!r} or content {sha})")
+    return None
 
 
 def row_lane_violations(unit_id: str, unit_type: str, row: Mapping[str, Any], root: Path) -> List[str]:
