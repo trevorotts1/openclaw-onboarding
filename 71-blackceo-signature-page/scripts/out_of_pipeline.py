@@ -28,7 +28,10 @@ Stdlib only. No network. No execution. Never deletes anything.
 from __future__ import annotations
 
 import hashlib
+import hmac
 import json
+import os
+from datetime import datetime, timezone
 from pathlib import Path
 
 SCHEMA = "signature-launch-out-of-pipeline/v1"
@@ -36,6 +39,13 @@ SCHEMA = "signature-launch-out-of-pipeline/v1"
 # Run-internal machinery is not pipeline output: the registry, the stage gate's
 # state and receipts, briefs and browser sessions all live under private/.
 INTERNAL_DIRS = ("private",)
+
+# The quarantine ledger (1.3.44): an operator-signed acknowledgement that a file is
+# OUT of the pipeline. It is never a registration and never a promotion.
+LEDGER_FILE = "private/quarantine-ledger.json"
+LEDGER_SCHEMA = "signature-launch-quarantine-ledger/v1"
+LEDGER_KIND = "quarantine_entry"
+ENTRY_FIELDS = ("path", "sha256", "size", "reason", "quarantined_at", "approver")
 
 IN_PROGRESS = "in_progress"
 EMITTED = "emitted"
@@ -126,9 +136,123 @@ def save(root, registry):
     return path
 
 
+# --------------------------------------------------------------------------
+# the quarantine ledger (1.3.44)
+# --------------------------------------------------------------------------
+# A quarantined file is ACKNOWLEDGED as out-of-pipeline and stays out. The ledger
+# can only make the scan stop refusing a file; it can never make a file governed:
+# register() and close() refuse a quarantined path, a registered path cannot be
+# quarantined, and delivery excludes quarantined files. Each entry carries an
+# HMAC-SHA256 signature made with the operator key (SF_PIN_AUTHORITY_KEY_FILE),
+# the same key and the same canonical-JSON signing the pin-rotation record uses.
+# The key is read by path and never printed.
+
+def ledger_path(root):
+    return Path(root).resolve() / LEDGER_FILE
+
+
+def _key_bytes(root, key_file=None):
+    path = Path(key_file or os.environ.get("SF_PIN_AUTHORITY_KEY_FILE") or "")
+    if not str(path) or str(path) == "." or not path.is_file():
+        raise OutOfPipeline("operator key file not found (set SF_PIN_AUTHORITY_KEY_FILE)")
+    real = path.resolve()
+    base = Path(root).resolve()
+    if real == base or base in real.parents:
+        raise OutOfPipeline("operator key must live outside the run root")
+    if real.stat().st_mode & 0o077:
+        raise OutOfPipeline("operator key file must be mode 0600")
+    key = real.read_bytes().strip()
+    if len(key) < 16:
+        raise OutOfPipeline("operator key is too short")
+    return key
+
+
+def _entry_signature(entry, key):
+    body = {k: entry.get(k) for k in ENTRY_FIELDS}
+    body["kind"] = LEDGER_KIND  # domain separation from the pin_rotation record
+    return hmac.new(key, json.dumps(body, sort_keys=True, separators=(",", ":")).encode(),
+                    hashlib.sha256).hexdigest()
+
+
+def _read_ledger(root):
+    """None when there is no ledger file; else {'entries': [...], 'error': str|None}."""
+    path = ledger_path(root)
+    if not path.is_file():
+        return None
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as exc:
+        return {"entries": [], "error": "quarantine ledger is unreadable: %s" % exc}
+    entries = data.get("entries") if isinstance(data, dict) else None
+    if not isinstance(entries, list):
+        return {"entries": [], "error": "quarantine ledger is not a ledger document"}
+    return {"entries": [e for e in entries if isinstance(e, dict)], "error": None}
+
+
+def is_quarantined_path(root, path):
+    """True when ANY ledger entry names this path (valid or not): it can never be
+    registered or closed. A tampered entry must not reopen the door."""
+    ledger = _read_ledger(root)
+    if ledger is None:
+        return False
+    try:
+        rel = normalise(root, path)
+    except OutOfPipeline:
+        return False
+    return any(e.get("path") == rel for e in ledger["entries"])
+
+
+def quarantine(root, path, *, reason, approver, key_file=None, now=None):
+    """Acknowledge one UNREGISTERED file as out-of-pipeline, signed with the operator key."""
+    base = Path(root).resolve()
+    rel = normalise(base, path)
+    if rel.split("/", 1)[0] in INTERNAL_DIRS:
+        raise OutOfPipeline("%s is run-internal machinery, not a file to quarantine" % rel)
+    for field, value in (("reason", reason), ("approver", approver)):
+        if not str(value or "").strip():
+            raise OutOfPipeline("quarantine needs a %s" % field)
+    target = base / rel
+    if not target.is_file():
+        raise OutOfPipeline("%s does not exist, so it cannot be quarantined" % rel)
+    if rel in load(base)["outputs"]:
+        raise OutOfPipeline("%s is a registered pipeline output; a governed file cannot be "
+                            "quarantined (that would hide a mismatch)" % rel)
+    key = _key_bytes(base, key_file)
+    entry = {
+        "path": rel, "sha256": _sha256_file(target), "size": target.stat().st_size,
+        "reason": str(reason).strip(),
+        "quarantined_at": (now or datetime.now(timezone.utc)).isoformat(),
+        "approver": str(approver).strip(),
+    }
+    entry["signature"] = _entry_signature(entry, key)
+    ledger = _read_ledger(base) or {"entries": [], "error": None}
+    if ledger["error"]:
+        raise OutOfPipeline(ledger["error"])
+    entries = [e for e in ledger["entries"] if e.get("path") != rel] + [entry]
+    path_out = ledger_path(base)
+    path_out.parent.mkdir(parents=True, exist_ok=True)
+    path_out.write_text(json.dumps({"schema": LEDGER_SCHEMA, "entries": entries},
+                                   indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    return entry
+
+
+def _quarantine_verdict(entry, key, target):
+    """(acknowledged, why_not). Signature, then the file's current bytes."""
+    if key is None:
+        return False, "operator key unavailable, so the quarantine entry cannot be verified"
+    sig = entry.get("signature")
+    if not isinstance(sig, str) or not hmac.compare_digest(sig, _entry_signature(entry, key)):
+        return False, "quarantine entry signature does not verify"
+    if entry.get("sha256") != _sha256_file(target) or entry.get("size") != target.stat().st_size:
+        return False, "the file changed after it was quarantined"
+    return True, None
+
+
 def register(root, path, *, stage, item=None, expected_sha256=None, producer=None):
     """Register one output BEFORE the producer writes it (item 5)."""
     rel = normalise(root, path)
+    if is_quarantined_path(root, rel):
+        raise OutOfPipeline("%s is quarantined (out of the pipeline) and can never be registered" % rel)
     if not str(stage or "").strip():
         raise OutOfPipeline("register() needs the canonical stage the output belongs to")
     registry = load(root)
@@ -161,6 +285,8 @@ def register(root, path, *, stage, item=None, expected_sha256=None, producer=Non
 def close(root, path, *, stage, sha256=None):
     """Mark one registered output emitted, binding the bytes that were written."""
     rel = normalise(root, path)
+    if is_quarantined_path(root, rel):
+        raise OutOfPipeline("%s is quarantined (out of the pipeline) and can never be closed" % rel)
     registry = load(root)
     entry = registry["outputs"].get(rel)
     if entry is None:
@@ -249,12 +375,34 @@ def scan(root, *, receipts=None, declared_native=None, inputs=()):
         "receipt_unregistered": [],
         "native_unregistered": [],
     }
+    ledger = _read_ledger(base)
+    ledger_by_path = {}
+    key = None
+    if ledger is not None:
+        result["quarantined"] = []
+        for led in ledger["entries"]:
+            ledger_by_path.setdefault(led.get("path"), led)
+        try:
+            key = _key_bytes(base)
+        except OutOfPipeline:
+            key = None
     for rel, path in _walk(base):
         if rel in registered_inputs:
             result["inputs"].append(rel)
             continue
         entry = outputs.get(rel)
         if entry is None:
+            led = ledger_by_path.get(rel)
+            if led is not None:
+                ok_q, why = _quarantine_verdict(led, key, path)
+                if ok_q:
+                    result["quarantined"].append({
+                        "path": rel, "sha256": led["sha256"], "size": led["size"],
+                        "reason": led.get("reason"), "approver": led.get("approver")})
+                    continue
+                result["ungoverned"].append({"path": rel, "reason": "not registered with the "
+                                             "pipeline; " + why})
+                continue
             result["ungoverned"].append({"path": rel, "reason": "not registered with the pipeline"})
             continue
         if entry.get("state") == IN_PROGRESS:
@@ -333,6 +481,9 @@ def excluded_paths(result):
     names = []
     for bucket in ("ungoverned", "content_mismatch"):
         names.extend(entry["path"] for entry in result[bucket])
+    # A quarantined file is acknowledged as out-of-pipeline: it never earns
+    # delivery, credit, installation or publication.
+    names.extend(entry["path"] for entry in result.get("quarantined", ()))
     return sorted(set(names))
 
 
@@ -343,6 +494,7 @@ def delivery(artifacts, result):
     excluded from delivery, progress credit, installation and publication.
     """
     blocked = set(excluded_paths(result))
+    quarantined = {entry["path"] for entry in result.get("quarantined", ())}
     unfinished = {entry["path"] for entry in result["registered_unfinished"]}
     admitted, excluded = [], []
     for entry in artifacts or []:
@@ -351,9 +503,12 @@ def delivery(artifacts, result):
             admitted.append(entry)  # a native resource is compared by the scan, not here
             continue
         if path in blocked:
-            excluded.append({**entry, "verified": False,
-                             "excluded_from": ["delivery", "progress_credit",
-                                               "installation", "publication"]})
+            row = {**entry, "verified": False,
+                   "excluded_from": ["delivery", "progress_credit",
+                                     "installation", "publication"]}
+            if path in quarantined:
+                row["reason"] = "quarantined: acknowledged as out of the pipeline"
+            excluded.append(row)
         elif path in unfinished:
             excluded.append({**entry, "verified": False,
                              "excluded_from": ["delivery", "progress_credit",

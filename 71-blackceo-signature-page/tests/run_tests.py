@@ -95,6 +95,7 @@ MODULES = [
     "test_page_role_thank_you.py",
     # SWB-200: the per-run layout-overrides input of the page-role runner.
     "test_layout_overrides.py",
+    "test_quarantine_supersede.py",
     # AF-71-THANK-YOU-PITCH: the thank-you no-pitch scan, its copy-close receipt and gate row.
     "test_thank_you_no_pitch.py",
     # SPF030: signature sales page vs signature landing (opt-in) page kinds.

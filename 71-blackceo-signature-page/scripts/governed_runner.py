@@ -532,12 +532,26 @@ def admit(run_dir, *, kind, authority, owner="runner", stage=None, item=None,
 
     # --- out-of-pipeline output is refused at an authoritative boundary ------
     scan_result = scan(base)
+    # 1.3.44 (B): a paid dispatch of stage S supersedes the byte-changed outputs of
+    # S and of the stages downstream of S (they are about to be regenerated and the
+    # stage re-closed). Nothing else is relaxed; upstream mismatches still refuse.
+    superseded, blocking_mismatch = [], scan_result["content_mismatch"]
+    if authority == "paid_dispatch" and stage is not None and blocking_mismatch:
+        superseded, blocking_mismatch = supersede_split(base, stage, blocking_mismatch)
+    effective_ok = scan_result["ok"] if not superseded else not (
+        scan_result["ungoverned"] or blocking_mismatch or scan_result["receipt_unregistered"]
+        or scan_result["native_unregistered"])
     decision["out_of_pipeline"] = {
-        "ok": scan_result["ok"],
+        "ok": effective_ok,
         "ungoverned": [e["path"] for e in scan_result["ungoverned"]],
         "registered_unfinished": [e["path"] for e in scan_result["registered_unfinished"]],
         "content_mismatch": [e["path"] for e in scan_result["content_mismatch"]],
     }
+    if superseded:
+        decision["out_of_pipeline"]["superseded_mismatch"] = superseded
+    if "quarantined" in scan_result:
+        decision["out_of_pipeline"]["quarantined"] = [e["path"] for e in scan_result["quarantined"]]
+        decision["out_of_pipeline"]["quarantined_count"] = len(scan_result["quarantined"])
 
     # --- item 3: the existing stage check, before governed work begins ------
     if stage is not None:
@@ -553,8 +567,8 @@ def admit(run_dir, *, kind, authority, owner="runner", stage=None, item=None,
                                    source="stage_gate", detail=[output.strip()[:2000]],
                                    decision=decision)
 
-    if authority in AUTHORITATIVE_AUTHORITIES and not scan_result["ok"]:
-        names = [e["path"] for e in scan_result["ungoverned"] + scan_result["content_mismatch"]]
+    if authority in AUTHORITATIVE_AUTHORITIES and not effective_ok:
+        names = [e["path"] for e in scan_result["ungoverned"] + blocking_mismatch]
         decision["reason"] = ("out-of-pipeline output is present and cannot be admitted "
                               "for %s: %s" % (authority, ", ".join(names)))
         decision["source"] = "out_of_pipeline"
@@ -601,6 +615,53 @@ def complete(run_dir, *, evidence, unit=None, require_review=False, **kwargs):
 # items 5, 6 - registration and quarantined output
 # --------------------------------------------------------------------------
 
+def downstream_stages(stage):
+    """`stage` and every stage that depends on it, directly or transitively, by the
+    contract's depends_on order. The set whose outputs a re-dispatch of `stage` regenerates."""
+    stage_definition(stage)
+    stages = stage_contract()["stages"]
+    found = {stage}
+    grew = True
+    while grew:
+        grew = False
+        for name, definition in stages.items():
+            if name in found:
+                continue
+            deps = definition.get("depends_on") or []
+            if any((d.get("stage") if isinstance(d, dict) else d) in found for d in deps):
+                found.add(name)
+                grew = True
+    return [name for name in canonical_order() if name in found]
+
+
+def supersede_split(run_dir, stage, mismatches):
+    """Split content mismatches into (superseded, blocking) for a paid dispatch of `stage`.
+
+    A mismatch is superseded only when its registered owner stage is `stage` or
+    downstream of it. Each superseded row names the file, its owner stage and the
+    old and new hash. An unknown owner or an upstream owner keeps blocking."""
+    allowed = set(downstream_stages(stage))
+    owners = detector().load(Path(run_dir).resolve())["outputs"]
+    superseded, blocking = [], []
+    for entry in mismatches:
+        owner = (owners.get(entry["path"]) or {}).get("stage")
+        if owner in allowed:
+            superseded.append({"path": entry["path"], "owner_stage": owner,
+                               "dispatched_stage": stage,
+                               "old_sha256": entry.get("registered"),
+                               "new_sha256": entry.get("actual")})
+        else:
+            blocking.append(entry)
+    return superseded, blocking
+
+
+def quarantine(run_dir, path, *, reason, approver, key_file=None):
+    """Acknowledge an unregistered file as out-of-pipeline (operator-signed). It stays
+    out: it can never be registered, closed or delivered."""
+    return detector().quarantine(run_dir, path, reason=reason, approver=approver,
+                                 key_file=key_file)
+
+
 def register_output(run_dir, path, *, stage, item=None, expected_sha256=None,
                     producer=None):
     return detector().register(run_dir, path, stage=stage, item=item,
@@ -629,6 +690,9 @@ def delivery(run_dir, artifacts, *, receipts=None):
     split["scan_ok"] = result["ok"]
     split["ungoverned"] = [e["path"] for e in result["ungoverned"]]
     split["content_mismatch"] = [e["path"] for e in result["content_mismatch"]]
+    if "quarantined" in result:
+        split["quarantined"] = [e["path"] for e in result["quarantined"]]
+        split["quarantined_count"] = len(result["quarantined"])
     return split
 
 
