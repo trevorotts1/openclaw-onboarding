@@ -5,6 +5,7 @@ import json
 import os
 import re  # SEND_INTEGRITY_CODE_GATES_V1
 import sys
+from pathlib import Path
 
 import click
 import requests
@@ -1601,6 +1602,69 @@ def workflows_build(ctx, plan_file, automation_file, journal_path, plan_mode_fil
             stats.setdefault("notes", []).append(
                 "browser capability selection: " + "; ".join(browser_reasons))
         _emit_build_result(ctx, builder, stats)
+    except Exception as e:
+        _handle_error(e)
+
+
+@workflows.command("adopt")
+@click.option("--unit", "unit_key", required=True,
+              help="Launch unit key <launch_id>/<unit_id>, e.g. black-friday-2026/auto_opt_in")
+@click.option("--workflow-id", "workflow_ids", required=True, multiple=True,
+              help="Existing workflow of the unit (repeat; the first is the unit's primary)")
+@click.option("--out-dir", required=True, type=click.Path(file_okay=False),
+              help="Directory for the adopt export (inside the Skill 83 run directory tree)")
+@click.option("--qc-dir", default=None, type=click.Path(exists=True, file_okay=False),
+              help="Directory holding qc-<workflow_id>.json for every workflow: needed for the row")
+@click.option("--deliveries-out", default=None, type=click.Path(),
+              help="Write the unit's delivery row (a JSON object keyed by unit id) here; needs --qc-dir "
+                   "and --launch-plan")
+@click.option("--launch-plan", "launch_plan_file", default=None, type=click.Path(exists=True),
+              help="The sealed launch plan the row is bound to (its sha256 goes in the row)")
+@click.pass_context
+def workflows_adopt(ctx, unit_key, workflow_ids, out_dir, qc_dir, deliveries_out, launch_plan_file):
+    """Adopt existing DRAFT workflows into a skill44.workflow-export.v1 export (read-only).
+
+    produced_by is 'adopt', never the build command. The saved graph is read back now, must be a
+    draft and pass tools/validate_graph.py; expected_graph_hash is its real hash. The delivery row is
+    written only when every workflow has a passing signed qc-<workflow_id>.json whose graph_hash is
+    the hash read now. Writes nothing to GoHighLevel.
+    """
+    try:
+        from cli_anything.gohighlevel.utils import adopt_export
+        from cli_anything.gohighlevel.utils.workflow_builder import (
+            _readback_workflow, graph_hash,
+        )
+        if bool(deliveries_out) != bool(launch_plan_file) or (deliveries_out and not qc_dir):
+            click.echo("Error: --deliveries-out needs --launch-plan and --qc-dir together.", err=True)
+            sys.exit(1)
+        client = _get_internal_client(ctx)
+        location_id = _loc(ctx)
+        path, members, reasons = adopt_export.adopt_unit(
+            unit_key, list(workflow_ids),
+            lambda wid: _readback_workflow(client, location_id, wid), graph_hash, Path(out_dir))
+        report = {"unit_key": unit_key, "export": str(path) if path else None, "refused": reasons,
+                  "workflows": [{"workflow_id": m["workflow_id"], "graph_hash": m["graph_hash"]}
+                                for m in members], "row": None}
+        row_reasons = []
+        if path and qc_dir:
+            import hashlib as _hashlib
+            launch_id, unit_id = adopt_export.split_unit_key(unit_key)
+            plan_sha = _hashlib.sha256(Path(launch_plan_file).read_bytes()).hexdigest() \
+                if launch_plan_file else ""
+            base = Path(deliveries_out).resolve().parent if deliveries_out else Path(out_dir).resolve()
+            row, row_reasons = adopt_export.adopt_row(
+                path, members, Path(qc_dir), base, launch_id=launch_id, unit_id=unit_id,
+                plan_sha256=plan_sha)
+            if row and deliveries_out:
+                from cli_anything.gohighlevel.utils.delivery_export import write_json
+                write_json(Path(deliveries_out), {unit_id: row})
+                report["row"] = deliveries_out
+            report["row_refused"] = row_reasons
+        _output(ctx, report, "Adopt %s" % unit_key)
+        if reasons or row_reasons:
+            sys.exit(1)
+    except SystemExit:
+        raise
     except Exception as e:
         _handle_error(e)
 

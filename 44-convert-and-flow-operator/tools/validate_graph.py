@@ -16,6 +16,7 @@ on its own: an unreachable drip/goto/transition cycle is still CYCLE.
 """
 
 import argparse
+import hashlib
 import json
 import os
 import sys
@@ -799,8 +800,40 @@ def validate_build_contract(contract, manifest, manifest_missing, contract_path)
     return report
 
 
+def graph_hash(nodes):
+    """The saved-graph hash Skill 44's builder and adopt path record (same projection as
+    cli_anything.gohighlevel.utils.workflow_builder.graph_hash: layout and meta excluded)."""
+    projection = []
+    for step in nodes or []:
+        if not isinstance(step, dict):
+            projection.append(step)
+            continue
+        projection.append({key: step.get(key) for key in (
+            "id", "type", "name", "order", "parentKey", "next", "branches", "attributes")})
+    canonical = json.dumps(projection, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+
+def run_hash(path):
+    """Print the graph hash of the export at ``path``; 2 when it carries no readable template list."""
+    try:
+        nodes = templates(read_json(path))
+        if nodes is None or any(not isinstance(n, dict) for n in nodes):
+            raise ValueError("missing or invalid template list")
+    except (OSError, ValueError, json.JSONDecodeError) as exc:
+        print("UNVERIFIED: " + str(exc), file=sys.stderr)
+        return 2
+    print(graph_hash(nodes))
+    return 0
+
+
 def main():
     argv = sys.argv[1:]
+    if argv and argv[0] == "hash":
+        hp = argparse.ArgumentParser(prog="validate_graph.py hash")
+        hp.add_argument("command")
+        hp.add_argument("--export", required=True)
+        return run_hash(hp.parse_args(argv).export)
     if argv and argv[0] not in ("graph", "deps") and "--export" in argv:
         argv.insert(0, "graph")
     parser = argparse.ArgumentParser()

@@ -1433,6 +1433,10 @@ if [ "$JSON_MODE" -eq 1 ]; then
   echo "  \"mechanical_fail\": $FAIL_COUNT,"
   echo "  \"overall_mechanical\": \"$([ "$FAIL_COUNT" -eq 0 ] && echo PASS || echo FAIL)\","
   echo "  \"qc_model\": \"$QC_MODEL_SAFE\","
+  # SWB-081: the hash of the saved graph this run graded, so a delivery can prove the QC was of the
+  # graph it carries (empty when the hash cannot be computed: an adopted workflow is then refused).
+  GRAPH_HASH_OUT=$(python3 -I "$SCRIPT_DIR/tools/validate_graph.py" hash --export "$TMP" 2>/dev/null || true)
+  echo "  \"graph_hash\": \"${GRAPH_HASH_OUT//[^0-9a-f]/}\","
   echo "  \"exit_gate\": \"$EXIT_GATE\","
   echo "  \"plan_mode_gate\": {\"status\": \"$PLAN_GATE\", \"approval_id\": \"$PLAN_APPROVAL_ID\", \"reason\": \"$(printf '%s' "$PLAN_GATE_REASON" | sed 's/"/\\"/g')\"},"
   echo "  \"ungraded_items\": \"$UNGRADED_LIST\","

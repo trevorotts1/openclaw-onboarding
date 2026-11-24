@@ -1016,3 +1016,24 @@ def test_export_temp_template_is_portable(tmp_path, monkeypatch):
         "second mktemp call failed - the template is not portable: " + second.stderr
     )
     assert first.stdout.strip() != second.stdout.strip(), "mktemp returned the same path twice"
+
+
+def test_json_output_names_the_hash_of_the_graph_it_graded(stub_caf_with_custom_export):
+    """SWB-081: an adopted workflow's QC is believed only if it names the saved graph it graded.
+
+    The hash must be the one Skill 44's builder and `caf workflows adopt` record, and it must move
+    when the saved graph moves (graph edited after QC)."""
+    sys_path = str(Path(__file__).resolve().parent.parent / "tools" / "engine")
+    import sys as _sys
+    _sys.path.insert(0, sys_path)
+    from cli_anything.gohighlevel.utils.workflow_builder import graph_hash
+
+    steps = [{"id": "a", "type": "wait", "name": "Wait", "parentKey": None, "next": "b"},
+             {"id": "b", "type": "end", "name": "End", "parentKey": "a", "next": None}]
+    seen = []
+    for graph in (steps, [dict(steps[0], name="Wait (edited)"), steps[1]]):
+        env, tmp = stub_caf_with_custom_export({"id": "WFTEST001", "workflowData": {"templates": graph}})
+        data = json.loads(_run_qc(["WFTEST001", "--json"], env).stdout)
+        assert data["graph_hash"] == graph_hash(graph), data.get("graph_hash")
+        seen.append(data["graph_hash"])
+    assert seen[0] != seen[1]

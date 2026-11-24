@@ -17,6 +17,13 @@
   printed (``qc-<workflow_id>.json``): the same workflow, ``exit_code`` 0, PLAN MODE gate
   PASS and an exit gate PASS. An automation that was never QC'd, or whose QC did not
   return 0, cannot be sealed.
+* SWB-081. A workflow that already existed (built in the browser, or an SMS-only unit the compiler has no
+  workflow for) is delivered by Skill 44's ``caf workflows adopt``, whose export says ``produced_by``
+  ``adopt`` and has NO reader hash. That producer is believed only when, for every workflow it lists:
+  the saved graph passes Skill 44's validator, the graph hash recomputed here (``validate_graph.py hash``)
+  equals the recorded one (and the export's ``expected_graph_hash`` for the primary), and a
+  ``qc-<workflow_id>.json`` passes exactly as above AND carries a ``graph_hash`` equal to that hash (the
+  QC graded this graph, not an earlier one). Any other ``produced_by`` is still refused.
 * AF-LAUNCH-PKG-RECEIPT-LANE. A unit another lane delivered counts only when its
   ``lane_validation.contract`` is the contract id that unit type's producer writes
   (``LANE_CONTRACTS``: email = Skill 50, text and automation = Skill 44, a page another skill
@@ -86,6 +93,10 @@ PAGE_RESTATEMENT_SCHEMA = "skill83.page-install-restatement/v1"
 _RESTATED_KEYS = ("page_id", "funnel_id", "step_id", "location_id", "draft_version_id",
                   "content_sha256", "installed_by")
 BUILD_COMMAND = "caf workflows build --from-automation-build"
+# SWB-081: the producer of a workflow that already existed and was adopted by `caf workflows adopt`.
+# It is a different, honest producer: it is believed only through the graph validator, the real graph
+# hash recomputed here and a signed passing QC result that names that exact hash.
+ADOPT_PRODUCER = "adopt"
 BUILDS_DOC = "automation-builds.json"
 VALIDATOR_REF = "44-convert-and-flow-operator/tools/validate_graph.py"
 EMAIL_VALIDATOR_REF = "50-email-engine/tools/validate_delivery.py"
@@ -108,8 +119,11 @@ def _inside(root: Path, rel: Any) -> Optional[Path]:
     return target if target.is_relative_to(Path(root).resolve()) and target.is_file() else None
 
 
-def qc_violations(label: str, workflow_id: str, artifacts: List[Any], root: Path) -> List[str]:
-    """Why the unit carries no passing per-build QC result for ``workflow_id`` (empty = it does)."""
+def qc_violations(label: str, workflow_id: str, artifacts: List[Any], root: Path,
+                  graph_hash: Optional[str] = None) -> List[str]:
+    """Why the unit carries no passing per-build QC result for ``workflow_id`` (empty = it does).
+
+    ``graph_hash`` (an adopted workflow) also requires the QC to have graded that exact saved graph."""
     name = QC_ARTIFACT.format(workflow_id=workflow_id)
     art = next((a for a in artifacts if isinstance(a, Mapping) and isinstance(a.get("path"), str)
                 and Path(a["path"]).name == name), None)
@@ -138,6 +152,9 @@ def qc_violations(label: str, workflow_id: str, artifacts: List[Any], root: Path
     if not (isinstance(gate, Mapping) and gate.get("status") == "PASS"):
         wrong.append(f"plan_mode_gate.status is {gate.get('status') if isinstance(gate, Mapping) else gate!r}, "
                      "not 'PASS'")
+    if graph_hash is not None and qc.get("graph_hash") != graph_hash:
+        wrong.append(f"graph_hash is {qc.get('graph_hash')!r}, not the saved graph's {graph_hash!r} "
+                     "(the graph was edited after this QC, or this QC graded another graph)")
     if wrong:
         return [f"{label} QC did not pass: " + "; ".join(wrong)]
     return []
@@ -410,6 +427,59 @@ def reader_hashes(doc: Any, launch_id: Any) -> Dict[str, str]:
     return out
 
 
+def _run_graph_tool(validator: Path, subcommand: str, templates: Any):
+    """(exit code, stdout) of Skill 44's validate_graph.py ``subcommand`` on a transient graph file."""
+    with tempfile.TemporaryDirectory(prefix="adopt-graph-") as td:
+        probe = Path(td) / "graph.json"
+        probe.write_text(json.dumps({"templates": templates}), encoding="utf-8")
+        done = subprocess.run([sys.executable, "-I", str(validator), subcommand, "--export", str(probe)],
+                              capture_output=True, text=True, timeout=VALIDATOR_TIMEOUT_S)
+    return done.returncode, done.stdout.strip()
+
+
+def adopt_violations(label: str, unit_id: str, export: Mapping[str, Any], validator: Path,
+                     artifacts: List[Any], root: Path) -> List[str]:
+    """SWB-081: why an ``adopt`` export is not an honest adoption of passing, QC'd draft workflows.
+
+    No reader hash exists for a workflow nobody compiled, so nothing is taken on the export's word:
+    every member's graph is re-validated by Skill 44's validator, its hash is recomputed here and must
+    equal the one recorded, and every member needs a passing signed QC naming that same hash."""
+    members = export.get("workflows")
+    if not (isinstance(members, list) and members and all(isinstance(m, Mapping) for m in members)):
+        return [f"{label} adopt export lists no workflows"]
+    ids = [m.get("workflow_id") for m in members]
+    if not all(lp._nonempty_str(i) for i in ids) or len(set(ids)) != len(ids):
+        return [f"{label} adopt export names a workflow twice or without an id"]
+    if ids[0] != export.get("workflow_id"):
+        return [f"{label} adopt export's workflow_id is not its first workflow"]
+    if members[0].get("templates") != export.get("templates"):
+        return [f"{label} adopt export's graph is not its first workflow's saved graph"]
+    out: List[str] = []
+    for member in members:
+        wid = member["workflow_id"]
+        nodes = member.get("templates")
+        if not (isinstance(nodes, list) and nodes):
+            out.append(f"{label} adopted workflow {wid!r} carries no saved graph")
+            continue
+        try:
+            code, _ = _run_graph_tool(validator, "graph", nodes)
+            hcode, recomputed = _run_graph_tool(validator, "hash", nodes)
+        except (OSError, subprocess.SubprocessError) as exc:
+            out.append(f"{label} Skill 44 graph validator could not run ({type(exc).__name__})")
+            continue
+        if code != 0:
+            out.append(f"{label} Skill 44 graph validator refused adopted workflow {wid!r} (exit {code})")
+            continue
+        if hcode != 0 or not recomputed or member.get("graph_hash") != recomputed:
+            out.append(f"{label} adopted workflow {wid!r} graph_hash is not the hash of its saved graph")
+            continue
+        if wid == export.get("workflow_id") and export.get("expected_graph_hash") != recomputed:
+            out.append(f"{label} adopt export's expected_graph_hash is not the hash of its saved graph")
+            continue
+        out += qc_violations(f"{label} workflow {wid!r}", wid, artifacts, root, graph_hash=recomputed)
+    return out
+
+
 def automation_violations(unit_id: str, row: Any, launch_id: Any, expected: Mapping[str, str],
                           root: Path) -> List[str]:
     """Why ``row`` (a receipt row or a lane delivery) is not a Skill 44 build of ``unit_id``."""
@@ -418,9 +488,6 @@ def automation_violations(unit_id: str, row: Any, launch_id: Any, expected: Mapp
     if not isinstance(row, Mapping):
         return [f"{label} has no delivery receipt row"]
     reader = expected.get(unit_id)
-    if not reader:
-        return [f"{label} has no ready build in the Skill 44 reader output ({BUILDS_DOC}); "
-                "its expected_graph_hash cannot be compared"]
     lane = row.get("lane_validation")
     if not (isinstance(lane, Mapping) and lane.get("contract") == EXPORT_CONTRACT
             and lane.get("state") == "passed"):
@@ -442,6 +509,10 @@ def automation_violations(unit_id: str, row: Any, launch_id: Any, expected: Mapp
     if not isinstance(export, Mapping):
         return [f"{label} export is not a workflow export object"]
 
+    adopted = export.get("produced_by") == ADOPT_PRODUCER
+    if not adopted and not reader:
+        return [f"{label} has no ready build in the Skill 44 reader output ({BUILDS_DOC}); "
+                "its expected_graph_hash cannot be compared"]
     wrong = []
     if not lp._nonempty_str(export.get("workflow_id")):
         wrong.append("no workflow_id")
@@ -449,10 +520,11 @@ def automation_violations(unit_id: str, row: Any, launch_id: Any, expected: Mapp
         wrong.append(f"status is {export.get('status')!r}, not 'draft'")
     if export.get("unit_key") != f"{launch_id}/{unit_id}":
         wrong.append(f"unit_key is {export.get('unit_key')!r}, not '{launch_id}/{unit_id}'")
-    if export.get("produced_by") != BUILD_COMMAND:
-        wrong.append(f"not produced by `{BUILD_COMMAND}`")
-    if export.get("expected_graph_hash") != reader:
-        wrong.append("expected_graph_hash is not the reader's")
+    if not adopted:
+        if export.get("produced_by") != BUILD_COMMAND:
+            wrong.append(f"not produced by `{BUILD_COMMAND}`")
+        if export.get("expected_graph_hash") != reader:
+            wrong.append("expected_graph_hash is not the reader's")
     if wrong:
         return [f"{label} export is not the Skill 44 build: " + "; ".join(wrong)]
 
@@ -469,6 +541,8 @@ def automation_violations(unit_id: str, row: Any, launch_id: Any, expected: Mapp
         return [f"{label} Skill 44 graph validator could not run ({type(exc).__name__})"]
     if done.returncode != 0:
         return [f"{label} Skill 44 graph validator refused the export (exit {done.returncode})"]
+    if adopted:
+        return adopt_violations(label, unit_id, export, validator, artifacts, root)
     return qc_violations(label, export["workflow_id"], artifacts, root)
 
 

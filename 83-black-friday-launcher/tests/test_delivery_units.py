@@ -372,3 +372,124 @@ class SharedCalendarLawTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
+
+
+# ---- SWB-081: the `adopt` producer for a workflow that already existed -----------------------
+def _graph_tool(nodes) -> str:
+    """The graph hash Skill 44's own validator prints for these saved steps (what Skill 83 recomputes)."""
+    import subprocess
+    probe = Path(tempfile.mkdtemp()) / "g.json"
+    probe.write_text(json.dumps({"templates": nodes}), encoding="utf-8")
+    done = subprocess.run([sys.executable, "-I", str(constants.resolve_ref(du.VALIDATOR_REF)), "hash",
+                           "--export", str(probe)], capture_output=True, text=True)
+    assert done.returncode == 0, done.stderr
+    return done.stdout.strip()
+
+
+NODES = GRAPH["workflowData"]["templates"]
+EDITED = [dict(n, name=n["name"] + " (edited)") if n["id"] == "n2" else n for n in NODES]
+
+
+@unittest.skipUnless(BF_PLAN.is_file(), "shared launch-plan contract fixture is not installed")
+class AdoptProducerTests(DeliveryUnitsTests):
+    """Same fixtures as DeliveryUnitsTests (its tests run again here, unchanged); the first automation
+    is an adopted workflow in the SWB-081 tests."""
+
+    def adopted(self, unit_id, nodes=NODES, qc=True, members=None, **override) -> dict:
+        ghash = _graph_tool(nodes)
+        body = {"workflow_id": f"wf-{unit_id}", "status": "draft", "produced_by": du.ADOPT_PRODUCER,
+                "unit_key": f"{self.plan['launch_id']}/{unit_id}", "expected_graph_hash": ghash,
+                "readback_hash": ghash, "templates": nodes,
+                "workflows": members or [{"workflow_id": f"wf-{unit_id}", "name": "n", "graph_hash": ghash,
+                                          "templates": nodes}]}
+        body.update(override)
+        rel = f"automations/{unit_id}.adopt.json"
+        raw = write(self.root / rel, body)
+        artifacts = [{"path": rel, "sha256": hashlib.sha256(raw).hexdigest(), "size": len(raw)}]
+        if qc is not False:
+            artifacts.append(qc_artifact(self.root, unit_id, **({"graph_hash": ghash} | (qc if isinstance(qc, dict) else {}))))
+        return {"unit_id": unit_id, "unit_type": "automation", "artifacts": artifacts,
+                "lane_validation": {"lane": "skill44", "contract": du.EXPORT_CONTRACT, "state": "passed"}}
+
+    def run_with(self, **kwargs) -> list:
+        unit = self.automations[0]
+        rows = [self.adopted(unit, **kwargs)] + [self.export(u) for u in self.automations[1:]]
+        manifest = self.package(rows=rows)
+        # the adopted unit has NO reader hash: nothing the build command wrote vouches for it
+        write(self.root / du.BUILDS_DOC, {"launch_id": self.plan["launch_id"], "builds": [
+            {"id": u, "state": "ready", "expected_graph_hash": reader_hash(u)} for u in self.automations[1:]]})
+        return self.check(manifest)
+
+    def test_an_adopted_workflow_with_a_valid_graph_and_a_qc_of_that_graph_passes(self):
+        self.assertEqual(self.run_with(), [])
+
+    def test_the_hash_the_validator_prints_is_the_hash_the_export_records(self):
+        self.assertEqual(_graph_tool(NODES), _graph_tool(copy.deepcopy(NODES)))
+        self.assertNotEqual(_graph_tool(NODES), _graph_tool(EDITED))
+
+    def test_negative_twin_graph_changed_after_qc_is_refused(self):
+        fails = self.run_with(qc={"graph_hash": _graph_tool(EDITED)})  # QC graded the earlier graph
+        self.assertEqual(len(fails), 1, fails)
+        self.assertIn("edited after this QC", fails[0])
+
+    def test_negative_twin_a_qc_that_names_no_graph_is_refused(self):
+        fails = self.run_with(qc={"graph_hash": ABSENT})
+        self.assertEqual(len(fails), 1, fails)
+        self.assertIn("graph_hash", fails[0])
+
+    def test_negative_twin_missing_qc_is_refused(self):
+        fails = self.run_with(qc=False)
+        self.assertEqual(len(fails), 1, fails)
+        self.assertIn("carries no qc-wf-", fails[0])
+
+    def test_negative_twin_a_qc_that_did_not_exit_zero_is_refused(self):
+        for override in ({"exit_code": 1}, {"exit_gate": "FAIL"}, {"overall_mechanical": "FAIL"}):
+            with self.subTest(override):
+                fails = self.run_with(qc=override)
+                self.assertEqual(len(fails), 1, fails)
+                self.assertIn("QC did not pass", fails[0])
+
+    def test_negative_twin_a_failed_graph_validation_is_refused(self):
+        orphaned = ORPHANED["workflowData"]["templates"]
+        fails = self.run_with(nodes=orphaned)
+        self.assertEqual(len(fails), 1, fails)
+        self.assertIn("graph validator refused", fails[0])
+
+    def test_negative_twin_a_wrong_unit_key_is_refused(self):
+        fails = self.run_with(unit_key="black-friday-2026/auto_other")
+        self.assertEqual(len(fails), 1, fails)
+        self.assertIn("unit_key", fails[0])
+
+    def test_negative_twin_a_recorded_hash_that_is_not_the_graphs_is_refused(self):
+        unit = self.automations[0]
+        wrong = _graph_tool(EDITED)
+        members = [{"workflow_id": f"wf-{unit}", "name": "n", "graph_hash": wrong, "templates": NODES}]
+        fails = self.run_with(members=members, expected_graph_hash=wrong)
+        self.assertEqual(len(fails), 1, fails)
+        self.assertIn("not the hash of its saved graph", fails[0])
+
+    def test_negative_twin_a_not_draft_adopted_workflow_is_refused(self):
+        fails = self.run_with(status="published")
+        self.assertEqual(len(fails), 1, fails)
+        self.assertIn("not 'draft'", fails[0])
+
+    def test_every_listed_workflow_needs_its_own_qc(self):
+        unit = self.automations[0]
+        ghash = _graph_tool(NODES)
+        members = [{"workflow_id": f"wf-{unit}", "name": "a", "graph_hash": ghash, "templates": NODES},
+                   {"workflow_id": f"wf-{unit}-second", "name": "b", "graph_hash": ghash, "templates": NODES}]
+        fails = self.run_with(members=members)
+        self.assertEqual(len(fails), 1, fails)
+        self.assertIn("wf-%s-second" % unit, fails[0])
+
+    def test_an_unknown_producer_is_still_refused_and_a_build_export_still_needs_the_reader(self):
+        unit = self.automations[0]
+        fails = self.run_with(produced_by="hand-written")
+        self.assertEqual(len(fails), 1, fails)
+        self.assertIn(unit, fails[0])
+        # a build-command export with no reader hash is not rescued by the adopt path
+        rows = [self.export(u) for u in self.automations]
+        manifest = self.package(rows=rows)
+        write(self.root / du.BUILDS_DOC, {"launch_id": self.plan["launch_id"], "builds": []})
+        self.assertEqual(len(self.check(manifest)), len(self.automations))
+
