@@ -1,3 +1,13 @@
+## [1.3.52] - 2026-11-24 - guide verifier checks the export receipt; mobile frame ratio needs a recorded row (SWB-300)
+
+Closes the SWB-290 check findings B and D. Known baseline limitations unchanged: N01 to N04 and N11. No validator was loosened.
+
+- b1. `build_hybrid_board._verify_wireframe_stage` (the guide verifier behind `--refresh-record`) now checks every section's `export.receipt_sha256` against the verified flat export receipt's body hash, with the same helper the final-mockups panel path uses (`_stale_export_claim`, one function, two callers). A record whose section cites zeros, or the receipt of another stage, is refused and nothing is written. A record that cites an export receipt the stage does not hold is refused. `tests/test_swb300_guide_receipt.py` (4).
+- b2. Established by reading and running, no tool change needed: closing `desktop-wireframe` runs the four contract validators (`validate_wireframe.py`, `design_style.py validate-inventory`, `validate_production_record.py --ocr`, `validate_review_pdf.py`) plus `layout_gate_failures`; closing `mobile-tablet` runs `validate_wireframe.py`, `validate_production_record.py --ocr` and `validate_review_pdf.py`. The 16,736 px floor is landing-only (a run with a role spec has none), and the brand file resolves from the run's `private/brand.json` pin. On a thank-you scratch run built from 2K stand-ins, export gives 1440x1080 and four 1440x810 slices (sheet 1440x4320) and every validator passes.
+- d1. `stage_executor.target_ratio` honours a section's `layout_aspect_ratio` only when it is portrait or square, names the mobile viewport and the request's `layout_overrides.applied` holds the matching row (stage, section, ratio, mobile). Otherwise it is ignored, and `load_request` refuses a landscape, unknown or unrecorded `layout_aspect_ratio` before any call. `target_ratio` takes the request as an optional last argument. `tests/test_swb300_ratio_authority.py` (7).
+- d2. `build_production_request.load_layout_overrides` refuses an entry that carries `negatives` without a non-empty `layout` (it used to drop the negatives silently). A ratio-only entry with neither text nor negatives stays valid, as 1.3.51 designed.
+- `stage_executor.py` changed (target_ratio, a new `_forced_ratio_refusal`, load_request): on an installed copy that differs from the repo, apply the hunks, never overwrite the file.
+
 ## [1.3.51] - 2026-11-24 - thank-you summary card, wireframe export and record, guide re-pin, mobile frame ratio (SWB-290)
 
 Four changes, one commit each, on Trevor's order of 2026-11-24 (client approval CLIENT-APPROVAL-2026-11-23). Known baseline limitations unchanged: N01 to N04 and N11.

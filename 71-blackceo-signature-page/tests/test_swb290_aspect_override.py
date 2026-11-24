@@ -56,19 +56,21 @@ class AppliedTests(Base):
             before_m = exe.target_ratio(stage, mobile, plain, self.run, 2)
             before_d = exe.target_ratio(stage, desktop, plain, self.run, 2)
             path = self.put({stage: {"2": {"aspect_ratio": "1:1"}}})
-            sec = section(self.build_with(path, stage), "2")
-            self.assertEqual(exe.target_ratio(stage, mobile, sec, self.run, 2), "1:1", stage)
-            self.assertEqual(exe.target_ratio(stage, desktop, sec, self.run, 2), before_d, stage)
+            req = self.build_with(path, stage)
+            sec = section(req, "2")
+            self.assertEqual(exe.target_ratio(stage, mobile, sec, self.run, 2, req), "1:1", stage)
+            self.assertEqual(exe.target_ratio(stage, desktop, sec, self.run, 2, req), before_d, stage)
             self.assertNotEqual(before_m, "1:1", "the fixture must show a real change")
             other = "visual-mockup" if stage == "final-mockups" else "final-mockups"
-            self.assertEqual(exe.target_ratio(other, mobile, sec, self.run, 2),
+            self.assertEqual(exe.target_ratio(other, mobile, sec, self.run, 2, req),
                              exe.target_ratio(other, mobile, plain, self.run, 2), "another stage is untouched")
 
     def test_mobile_tablet_is_a_mobile_stage(self):
         plain = section(self.build_with(None), "2")
         before = exe.target_ratio("mobile-tablet", "section-02.png", plain, self.run, 2)
-        sec = section(self.build_with(self.put({"mobile-tablet": {"2": {"aspect_ratio": "3:4"}}})), "2")
-        self.assertEqual(exe.target_ratio("mobile-tablet", "section-02.png", sec, self.run, 2), "3:4")
+        req = self.build_with(self.put({"mobile-tablet": {"2": {"aspect_ratio": "3:4"}}}))
+        sec = section(req, "2")
+        self.assertEqual(exe.target_ratio("mobile-tablet", "section-02.png", sec, self.run, 2, req), "3:4")
         self.assertEqual(before, "9:16")
 
     def test_an_absent_key_changes_nothing_byte_for_byte(self):

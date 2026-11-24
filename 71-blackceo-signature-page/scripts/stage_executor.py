@@ -454,13 +454,41 @@ def require_brand_line(stage: str, prompt: str) -> None:
             "(scripts/brand_colors.py, R69 sigpage-brand-colors)")
 
 
+def _forced_ratio_refusal(section: dict, request) -> "str | None":
+    """SWB-300 d1: why section['layout_aspect_ratio'] may not be honoured, or None when it may.
+    It is the design-only frame ratio of a MOBILE slice: a known portrait or square ratio that
+    request.layout_overrides.applied also records (stage, section, ratio, mobile). A bare field in
+    production-request.json is never authority."""
+    forced = section.get("layout_aspect_ratio")
+    if forced is None:
+        return None
+    if not isinstance(forced, dict):
+        return "layout_aspect_ratio must be an object"
+    ratio = forced.get("ratio")
+    if ratio not in RATIO_ENUM:
+        return f"layout_aspect_ratio {ratio!r} is not one of {', '.join(RATIO_ENUM)}"
+    a, b = (int(x) for x in ratio.split(":"))
+    if a > b:
+        return f"layout_aspect_ratio {ratio!r} is landscape; the mobile frame is portrait or square"
+    if forced.get("viewport") != "mobile":
+        return "layout_aspect_ratio applies to the mobile viewport only"
+    block = request.get("layout_overrides") if isinstance(request, dict) else None
+    rows = block.get("applied") if isinstance(block, dict) else None
+    if not (isinstance(rows, list) and block.get("stage") == forced.get("stage") and any(
+            isinstance(r, dict) and str(r.get("section_id")) == str(section.get("section_id"))
+            and r.get("aspect_ratio") == ratio and r.get("viewport") == "mobile" for r in rows)):
+        return (f"layout_aspect_ratio {ratio!r} for stage {forced.get('stage')!r} section "
+                f"{section.get('section_id')!r} has no matching row in layout_overrides.applied")
+    return None
+
+
 def target_ratio(stage: str, template: str, section: dict, run_dir: Path,
-                 index: int) -> str:
+                 index: int, request=None) -> str:
     """Per-section, per-platform ratio: the pixel-mate's, never one 3:4 for all."""
     forced = section.get("layout_aspect_ratio")
-    if (isinstance(forced, dict) and forced.get("stage") == stage and forced.get("viewport") == "mobile"
-            and _platform(stage, template) == "mobile" and forced.get("ratio") in RATIO_ENUM):
-        return forced["ratio"]  # SWB-290: the validated design-only override of a slot-less section's frame
+    if (isinstance(forced, dict) and forced.get("stage") == stage and _platform(stage, template) == "mobile"
+            and _forced_ratio_refusal(section, request) is None):
+        return forced["ratio"]  # SWB-290/300: the validated, request-recorded design-only override of a slot-less section's frame
     for candidate in prior_slices(stage, run_dir, index, template):
         size = png_size(candidate)
         if not size:
@@ -1271,6 +1299,9 @@ def load_request(run_dir: Path, name: str, paid: bool = False) -> dict:
     for i, s in enumerate(sections):
         if not isinstance(s, dict) or not s.get("section_id"):
             raise ExecutorError(f"sections[{i}] needs section_id")
+        why = _forced_ratio_refusal(s, data)
+        if why:
+            raise ExecutorError(f"sections[{i}] ({s['section_id']}): {why}")
     data["_section_check"] = check_section_count(run_dir, data, paid)
     data["_role_spec"] = role_spec.for_request(run_dir, data)  # None for a landing run
     data["page_kind"] = None  # SPF030: only a landing-role page is a sales or opt-in page
@@ -2653,7 +2684,7 @@ def run_stage(stage: str, run_dir: Path, request: dict, provider,
         for template, width, height in targets:
             slot = template.format(n=index)
             out = run_dir / stage / slot
-            ratio = target_ratio(stage, template, section, run_dir, index)
+            ratio = target_ratio(stage, template, section, run_dir, index, request)
             style = style_refs(stage, request, provider.name == "kie")
             refs = prior_slices(stage, run_dir, index, template, section)
             typed = section_typed_references(
@@ -3130,7 +3161,7 @@ def main(argv=None) -> int:
                     for template, width, _height in LAYOUT[stage]:
                         name = template.format(n=index)
                         try:
-                            ratio = target_ratio(stage, template, section, run_dir, index)
+                            ratio = target_ratio(stage, template, section, run_dir, index, request)
                             resolved = resolve_composition(section, index, request)
                             typed = section_typed_references(stage, width, resolved, section,
                                                              request_form(request), request)

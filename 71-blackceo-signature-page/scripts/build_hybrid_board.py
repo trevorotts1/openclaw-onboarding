@@ -123,6 +123,16 @@ def _read_json(path):
         return None, f"{path} is missing or unreadable ({type(exc).__name__})"
 
 
+def _stale_export_claim(label, rec, export_receipt_hash):
+    """The one check that a section's export.receipt_sha256 is the verified export receipt's body hash.
+    Shared by the final-mockups panel path and the wireframe guide path. Returns a failure or None."""
+    claimed = (rec.get("export") or {}).get("receipt_sha256")
+    if claimed != export_receipt_hash:
+        return (f"{label}: the production record cites export receipt {str(claimed)[:12]}, the verified "
+                f"export receipt is {str(export_receipt_hash)[:12]}; the record is stale")
+    return None
+
+
 def _verify_viewport(run_dir, viewport, export_rows, export_receipt_hash):
     """Everything one panel must prove. Returns (failures, info)."""
     rel_dir = VIEWPORT_DIRS[viewport]
@@ -184,10 +194,9 @@ def _verify_viewport(run_dir, viewport, export_rows, export_receipt_hash):
             fails.append(f"{label}: the stitch receipt's input {str(rcp.get('sha256'))[:12]} is not the slice the "
                          f"export receipt holds ({str(row['output'].get('sha256'))[:12]}); the stitch is not of the "
                          f"current export")
-        claimed = (rec.get("export") or {}).get("receipt_sha256")
-        if claimed != export_receipt_hash:
-            fails.append(f"{label}: the production record cites export receipt {str(claimed)[:12]}, the verified "
-                         f"export receipt is {export_receipt_hash[:12]}; the record is stale")
+        stale = _stale_export_claim(label, rec, export_receipt_hash)
+        if stale:
+            fails.append(stale)
     if fails:
         return fails, None
     fails = _recompute_panel(vp_dir, viewport, record, receipt, panel, rel_dir, stitched)
@@ -284,13 +293,15 @@ def _verify_wireframe_stage(run_dir):
         return fails + [f"{label}: the stitch receipt lists "
                         f"{len(rcp_sections) if isinstance(rcp_sections, list) else 'no'} section(s), the "
                         f"production record {len(rec_sections)}"], None
-    export_rows = {}
+    export_rows, export_hash = {}, None
     export_path = wf / EXPORT_RECEIPT
     if export_path.is_file():
         bad = exporter.verify_receipt(export_path, wf)
         if bad:
             return fails + [f"{label}: the export receipt does not verify: {b}" for b in bad], None
-        export_rows = {r["section_part"]: r for r in json.loads(export_path.read_text(encoding="utf-8"))["entries"]}
+        export_doc = json.loads(export_path.read_text(encoding="utf-8"))
+        export_hash = exporter.body_hash(export_doc)
+        export_rows = {r["section_part"]: r for r in export_doc["entries"]}
     slices = {}
     for number, (rec, rcp) in enumerate(zip(rec_sections, rcp_sections), start=1):
         name = rec.get("slice")
@@ -314,6 +325,13 @@ def _verify_wireframe_stage(run_dir):
         row = export_rows.get(name)
         if export_rows and (row is None or row["output"].get("sha256") != current):
             fails.append(f"{label}/{name}: the flat export receipt does not hold this slice's sha256")
+        if export_hash is not None:
+            stale = _stale_export_claim(f"{label}/{name}", rec, export_hash)
+            if stale:
+                fails.append(stale)
+        elif (rec.get("export") or {}).get("receipt_sha256") is not None:
+            fails.append(f"{label}/{name}: the production record cites an export receipt but the stage has no "
+                         f"{EXPORT_RECEIPT}")
         slices[str(rec.get("section_id"))] = {"slice": f"{WIREFRAME_STAGE}/{name}", "sha256": current}
     if fails:
         return fails, None

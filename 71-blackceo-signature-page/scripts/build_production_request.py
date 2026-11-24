@@ -861,8 +861,8 @@ def load_layout_overrides(path, stage, sections):
                                  "or section order")
             if "aspect_ratio" in entry:
                 _check_aspect_override(stage_key, sid, entry["aspect_ratio"], ids[str(sid)])
-            if "aspect_ratio" in entry and "layout" not in entry:
-                pass  # a frame-ratio-only entry appends no text
+            if "aspect_ratio" in entry and "layout" not in entry and "negatives" not in entry:
+                pass  # a frame-ratio-only entry appends no text (SWB-300: but never carries negatives with it)
             elif not isinstance(entry.get("layout"), str) or not entry["layout"].strip():
                 raise BuildError(f"layout overrides: {stage_key!r} section {sid!r} needs a non-empty "
                                  "`layout` string")
