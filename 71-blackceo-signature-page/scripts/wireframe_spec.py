@@ -34,6 +34,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+import composition  # noqa: E402  the slot label and the treatment it prints
 import copy_forms  # noqa: E402  the one registry of copy forms
 import page_role  # noqa: E402  a page type's own form: sections, layout, style references
 import page_kinds  # noqa: E402  SPF030: signature sales page vs signature landing (opt-in) page
@@ -212,7 +213,27 @@ def short_direction(text: str, words: int = 8) -> str:
     return " ".join(clause.split()[:words]).strip(" -")
 
 
-def _plates(section: dict) -> str:
+def _slot_treatments(section: dict, index: int, request: dict) -> list:
+    """The treatment of each of this section's identified slots, as the executor resolves them (a declared
+    treatment, else the section role's default under the brand's cues): the plate label prints it."""
+    sections = request.get("sections")
+    cues = composition.composition_cues(request.get("_composition_brand") or composition.load_brand(),
+                                        request.get("design_style"))
+    if (isinstance(sections, list) and 0 < index <= len(sections)
+            and sections[index - 1].get("section_id") == section.get("section_id")):
+        record = composition.assign_treatments(sections, cues)[index - 1]
+    else:
+        record = composition.assign_treatments([section], cues)[0]
+    return [row["treatment"] for row in record["slots"] if row["slot"].get("slot_id")]
+
+
+def labelled_plates(section: dict) -> bool:
+    """True when the section's slots state a pixel box: the plate label is then the slot's id, box, ratio and
+    treatment (W3), not the generic 'IMAGE <ratio> - <direction>'."""
+    return any(isinstance(s, dict) and isinstance(s.get("delivery_px"), dict) for s in section.get("slots") or [])
+
+
+def _plates(section: dict, stage: str = None, treatments: list = None) -> str:
     labels = []
     allowed = spec()["ratio_labels"]
     for slot in section.get("slots") or []:
@@ -226,6 +247,12 @@ def _plates(section: dict) -> str:
         direction = short_direction(slot.get("art_direction")) or "image to be generated"
         # three or more plates (one per package card) are numbered, so no phrase repeats word for word
         lead = f"plate {len(labels) + 1} labelled" if len(section.get("slots") or []) >= 3 else "one plate labelled"
+        if isinstance(slot.get("delivery_px"), dict) and treatments is not None:
+            # W3: the slot's id, pixel box, ratio and treatment, then the short art direction under it
+            tid = treatments[len(labels)] if len(labels) < len(treatments) else "split"
+            labels.append(f"{lead} \"{composition._label(slot, tid, stage)}\" with the art direction "
+                          f"\"{direction}\" printed under it")
+            continue
         labels.append(f"{lead} \"IMAGE {shown} - {direction}\"")
     return "; ".join(labels)
 
@@ -395,9 +422,10 @@ def prompt_block(stage: str, section: dict, index: int, total: int, width: int,
             "described here."))
     lines.append(blocks["chip"].format(tag=tag, name_caps=name.upper()))
     lines.append(blocks["type_specs"].format(type_specs=_type_specs(stage, section, closing)))
-    plates = _plates(section)
-    lines.append(blocks["plates_some"].format(plates=plates, ratio_list=", ".join(s["ratio_labels"]))
-                 if plates else blocks["plates_none"])
+    boxed = labelled_plates(section)
+    plates = _plates(section, stage, _slot_treatments(section, index, request) if boxed else None)
+    lines.append(blocks["plates_some_labelled" if boxed else "plates_some"].format(
+        plates=plates, ratio_list=", ".join(s["ratio_labels"])) if plates else blocks["plates_none"])
     many = [str(x).strip().rstrip(".") for x in section.get("cta_labels") or [] if str(x).strip()]
     if len(many) > 1:
         if section.get("cta_layout") == "utility":

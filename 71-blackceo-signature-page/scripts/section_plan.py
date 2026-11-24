@@ -113,6 +113,24 @@ def match_slot(slot, by_id):
     return None
 
 
+def check_slot(sid, slot, eid, entry):
+    """A request slot must agree with its closed inventory entry: the same ratio, and the same treatment where the
+    request declares one. Raises PlanError naming both sides; the closed inventory governs."""
+    if entry.get("section_id") not in (None, "") and str(entry["section_id"]) != str(sid):
+        raise PlanError(f"slot {eid} is in section {entry['section_id']} of the closed inventory but "
+                        f"section {sid} of the request")
+    want, have = _norm_ratio(slot.get("aspect_ratio")), vw.entry_ratio(entry)
+    if want is not None and have is not None and abs(want - have) / have > vw.RATIO_TOLERANCE:
+        raise PlanError(
+            f"section {sid} slot {slot.get('slot_id')!r}: the request plans {_ratio_text(slot.get('aspect_ratio'))} "
+            f"but the closed image inventory says {_ratio_text(entry.get('aspect_ratio') or entry.get('ratio'))} "
+            f"for {eid}; the closed inventory governs, so correct the spec or the request, never the plan")
+    declared = slot.get("treatment")
+    if declared and entry.get("treatment") and declared != entry["treatment"]:
+        raise PlanError(f"section {sid} slot {slot.get('slot_id')!r}: the request declares treatment "
+                        f"{declared!r} but the closed inventory says {entry['treatment']!r} for {eid}")
+
+
 def _printed_note(stage, section, request, index, total):
     return wireframe_spec.printed_note(stage, section, request, index, total)
 
@@ -153,23 +171,12 @@ def build(request, stage, run_dir, request_sha=None) -> list:
                 raise PlanError(f"section {sid} slot {slot.get('slot_id')!r}: the closed image inventory "
                                 f"({INVENTORY}) has no slot by that id or name")
             eid, entry = found
-            if entry.get("section_id") not in (None, "") and str(entry["section_id"]) != sid:
-                raise PlanError(f"slot {eid} is in section {entry['section_id']} of the closed inventory but "
-                                f"section {sid} of the request")
-            want, have = _norm_ratio(slot.get("aspect_ratio")), vw.entry_ratio(entry)
-            if want is not None and have is not None and abs(want - have) / have > vw.RATIO_TOLERANCE:
-                raise PlanError(
-                    f"section {sid} slot {slot.get('slot_id')!r}: the request plans {_ratio_text(slot.get('aspect_ratio'))} "
-                    f"but the closed image inventory says {_ratio_text(entry.get('aspect_ratio') or entry.get('ratio'))} "
-                    f"for {eid}; the closed inventory governs, so correct the spec or the request, never the plan")
+            check_slot(sid, slot, eid, entry)
             declared = slot.get("treatment")
             treatment = entry.get("treatment") or declared
             if not treatment:
                 row = resolved[index - 1]["slots"]
                 treatment = row[slot_index]["treatment"] if slot_index < len(row) else "split"
-            if declared and entry.get("treatment") and declared != entry["treatment"]:
-                raise PlanError(f"section {sid} slot {slot.get('slot_id')!r}: the request declares treatment "
-                                f"{declared!r} but the closed inventory says {entry['treatment']!r} for {eid}")
             label = {"slot_id": eid,
                      "aspect_ratio": _ratio_text(entry.get("aspect_ratio") or entry.get("ratio") or slot.get("aspect_ratio")),
                      "art_direction": str(entry.get("art_direction") or slot.get("art_direction") or ""),

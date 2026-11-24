@@ -363,14 +363,18 @@ def photo_rules(slot: dict, treatment_id: str, brand: dict | None = None) -> str
     return text
 
 
-def _label(slot: dict, treatment_id: str) -> str:
+def _label(slot: dict, treatment_id: str, stage: str | None = None) -> str:
+    """The slot's printed label: its id (the closed inventory's id when the slot carries one), its pixel box, its
+    ratio and its treatment, e.g. `IMG-001 540 x 540 1:1 overlay-light`. The mobile-tablet sheet prints the
+    slot's mobile box, every other stage its desktop box."""
     px = slot.get("delivery_px")
     size = ""
     if isinstance(px, dict):
-        desktop = px.get("desktop")
-        if isinstance(desktop, (list, tuple)) and len(desktop) == 2:
-            size = f"{desktop[0]} x {desktop[1]} "
-    return f"{slot.get('slot_id')} {size}{slot.get('aspect_ratio') or ''} {treatment_id}".replace("  ", " ").strip()
+        box = (px.get("mobile") if stage == "mobile-tablet" else None) or px.get("desktop")
+        if isinstance(box, (list, tuple)) and len(box) == 2:
+            size = f"{box[0]} x {box[1]} "
+    return (f"{slot.get('inventory_id') or slot.get('slot_id')} {size}{slot.get('aspect_ratio') or ''} "
+            f"{treatment_id}").replace("  ", " ").strip()
 
 
 def typed_reference_text(refs: list, wanted: set | None = None) -> str:
@@ -415,7 +419,7 @@ def block(stage: str, resolved: dict, typed_refs: list | None = None) -> str:
         words = zone_words(slot, tid)
         if wire:
             text = _fill(t["wireframe_drawing"], words)
-            label = _label(slot, tid) if slot.get("slot_id") else "section backdrop"
+            label = _label(slot, tid, stage) if slot.get("slot_id") else "section backdrop"
             if group:
                 if pending and pending[-1][1:] == [tid, text]:
                     pending[-1][0].append(label)

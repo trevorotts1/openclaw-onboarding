@@ -90,6 +90,8 @@ import page_role  # noqa: E402  the one allowed-sequence resolver
 from page_role import BUMP_SECTION  # noqa: E402  (build() has a `page_role` parameter of its own)
 import role_spec  # noqa: E402
 import wireframe_spec  # noqa: E402
+import font_sizes  # noqa: E402  the closed font plan's sizes (SWB-400)
+import section_plan  # noqa: E402  the closed image inventory's slots (SWB-400)
 import page_kinds  # noqa: E402
 from validate_copy_structure import parse_manuscript  # noqa: E402
 
@@ -474,6 +476,90 @@ def fill_to_band(request, stage, spec):
 
 class BuildError(Exception):
     pass
+
+
+def check_slot_boxes(request):
+    """A slot's `delivery_px` (the pixel box the wireframe's plate label prints: {desktop: [w, h], mobile: [w, h]})
+    must be two positive integers per viewport at the slot's own ratio; a box that contradicts the ratio is the
+    mislabelled plate the W3 trait exists to stop."""
+    for section in request["sections"]:
+        for slot in section.get("slots") or []:
+            px = slot.get("delivery_px") if isinstance(slot, dict) else None
+            if px is None:
+                continue
+            ratio = section_plan.vw.parse_ratio(slot.get("aspect_ratio"))
+            for viewport in ("desktop", "mobile"):
+                box = px.get(viewport) if isinstance(px, dict) else None
+                ok = (isinstance(box, list) and len(box) == 2
+                      and all(isinstance(v, int) and not isinstance(v, bool) and v > 0 for v in box))
+                if not ok:
+                    raise BuildError(f"section {section['section_id']} slot {slot.get('slot_id')!r}: delivery_px "
+                                     f"{viewport} must be [width, height] in whole pixels, not {box!r}")
+                if ratio is not None and abs(box[0] / box[1] - ratio) / ratio > section_plan.vw.RATIO_TOLERANCE:
+                    raise BuildError(f"section {section['section_id']} slot {slot.get('slot_id')!r}: its {viewport} "
+                                     f"box {box[0]} x {box[1]} is not the slot's ratio {slot.get('aspect_ratio')}")
+
+
+def apply_inventory(request, run_dir) -> bool:
+    """A page role's slots take their label from the run's closed image inventory
+    (desktop-wireframe/image-inventory.json): the inventory id the plate prints (`inventory_id`), its treatment
+    and, when it records one, its pixel box. A slot that disagrees with its inventory entry in ratio or treatment
+    is refused by name; a slot the inventory does not hold is left alone (the plan writer refuses it). No
+    inventory yet (a run's first pass) changes nothing. True when any slot was matched."""
+    inventory = Path(run_dir) / section_plan.INVENTORY
+    if not request.get("page_role") or not inventory.is_file():
+        return False
+    try:
+        by_id, _entries = section_plan.inventory_for(run_dir)
+        matched = False
+        for section in request["sections"]:
+            for slot in section.get("slots") or []:
+                found = section_plan.match_slot(slot, by_id) if isinstance(slot, dict) else None
+                if not found:
+                    continue
+                eid, entry = found
+                section_plan.check_slot(section["section_id"], slot, eid, entry)
+                slot["inventory_id"] = eid
+                if entry.get("treatment"):
+                    slot["treatment"] = entry["treatment"]
+                if isinstance(entry.get("delivery_px"), dict):
+                    slot["delivery_px"] = entry["delivery_px"]
+                matched = True
+    except section_plan.PlanError as exc:
+        raise BuildError(str(exc))
+    return matched
+
+
+def apply_font_map(request, stage, run_dir) -> bool:
+    """Each wireframe section's `type_specs` are the closed font plan's sizes (font-action-plan/font-map.json),
+    as desktop and tablet (desktop-wireframe) or tablet and mobile (mobile-tablet), so the sheet prints the run's
+    sizes and not the house scale's ranges. An element the font plan does not size (a subhead, the CTA microcopy)
+    keeps its house-scale range. No font map in the run changes nothing. True when type specs were set."""
+    try:
+        font_map = font_sizes.load(run_dir)
+    except font_sizes.FontMapError as exc:
+        raise BuildError(str(exc))
+    if font_map is None:
+        return False
+    scale = wireframe_spec.spec()["type_scale_default"][stage]
+    house = {k.lower(): (k, v) for k, v in scale.items()}
+    sections, kind = request["sections"], request.get("page_kind")
+    for index, section in enumerate(sections, start=1):
+        closing = None
+        if kind:
+            try:
+                label = page_kinds.closing_label(kind, section, sections, index, len(sections))
+            except page_kinds.KindError as exc:
+                raise BuildError(str(exc))
+            closing = label if label and not wireframe_spec._cta(section) else None
+        specs = {}
+        for element in wireframe_spec._type_elements(section, closing):
+            value = font_sizes.caption(font_map, element, stage) or (house.get(element.lower()) or (None, None))[1]
+            if value:
+                specs[element] = value
+        if specs:
+            section["type_specs"] = specs
+    return True
 
 
 # A manuscript link `[Choose your seat](https://...)` is the page's link, not its printed words: the
@@ -1028,6 +1114,11 @@ def build(stage, version, manuscript_text, slots, prose, references, model, styl
         levels = folded_levels(run_dir) if kind == "sales" else None
         if levels:  # the sales page closes on an N-card levels panel (wireframe_spec / page_kinds)
             request["folded_levels"] = levels
+    slot_labels = font_sizes_applied = False
+    if stage in wireframe_spec.WIREFRAME_STAGES:
+        check_slot_boxes(request)
+        slot_labels = apply_inventory(request, run_dir)
+        font_sizes_applied = apply_font_map(request, stage, run_dir)
     run_blocks(request, run_dir)
     budget = exe.prompt_budget(model)
     chosen = {}
@@ -1087,6 +1178,10 @@ def build(stage, version, manuscript_text, slots, prose, references, model, styl
                         "min_seen": min(sizes.values()), "max_seen": max(sizes.values()),
                         "per_section": sizes},
     }
+    if font_sizes_applied:
+        request["metadata"]["type_specs_source"] = str(font_sizes.FONT_MAP)
+    if slot_labels:
+        request["metadata"]["slot_labels_source"] = str(section_plan.INVENTORY)
     padding_check(request, stage)
     # Fail closed on our own output, against the run this manuscript belongs to.
     request["metadata"]["checked_against"] = exe.check_section_count(run_dir, request, paid=True)[2]
