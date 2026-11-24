@@ -427,8 +427,8 @@ The layers and the assembler are the same in both distributions (U15a-U15i):
 
 - **Data:** `references/prompt-templates/` - `manifest.json` (caps with their
   source and status, owner bands, layer order, quality rules), `models/`
-  (minimax-h3, kling-video, kling-ai-avatar-standard, suno-v6), `modes/` (the
-  five render modes the looks are built from), `looks/` (the five card looks),
+  (minimax-h3, kling-video, omnihuman-2-0, suno-v6), `modes/` (the six render
+  modes the looks are built from), `looks/` (the six card looks),
   `shot-types/`, `music/` (the eighteen styles), and `length-classes.json`
   (60/90/120/180/300/600 s: shots, H3 clips, lip-sync clips and seconds,
   lanes, hooks, song words, spoken share, product seconds).
@@ -841,9 +841,10 @@ and a VERIFIED or UNVERIFIED status.
   payload is measured AFTER `ending_qc.with_clean_ending` appends the ending, so
   a style that fit before the ending and not after is refused.
 - **Video and avatar:** the vendor cap per model (Hailuo family 2,000, Kling 2.6
-  image-to-video 2,500, MiniMax H3 7,000 with the owner band 5,000-6,800,
-  `kling/ai-avatar-standard` 2,500 UNVERIFIED). `kie_dispatch.dispatch` measures
-  the FINAL payload before any other gate.
+  image-to-video 2,500, MiniMax H3 7,000 with the owner band 5,000-6,800). The
+  lip-sync model `omnihuman-2-0` gets **no prompt** (its page allows an optional
+  300-character prompt, which this skill never sends), so no prompt cap applies.
+  `kie_dispatch.dispatch` measures the FINAL payload before any other gate.
 - A refusal is `PROMPT_OVER_CAP` naming field, characters, cap, source and
   status. Nothing is ever truncated, and a paid video or avatar job with no
   importable limit table is refused `PROMPT_LIMIT_UNAVAILABLE`.
@@ -948,12 +949,11 @@ send the four-part message ("When something stops the work").
   `max_at_once = len(submitted)` (or the provider cap, named in
   `capped_by`, when that binds). Never submit clips in dribbles or wait for
   one clip before sending the next.
-- **KIE rate limit:** new generation submits are paced to **20 per rolling 15 s** per KIE key (the governor's `KIE_MAX = 20`, `KIE_WINDOW_S = 15.0`, a little under KIE's documented 20 per 10 s, so no test batch is needed - one number everywhere, S-13); a 429 means not run and not queued, so resubmit after a wait. See `references/kie-rate-limit.md`.
   **NEVER-AGAIN blast lock (binding):** every ready job ships in ONE blast
   up to the rate limit; a drip split across passes refuses `RETAKE_DRIP`
   (`core/never_again.py::check_blast`, wired in `retake_manager.plan` and
   `kie_dispatch.refuse_drip`).
-- **KIE rate limit:** new generation submits are paced to 20 or fewer per rolling 10 s per KIE key; a 429 means not run and not queued, so resubmit after a wait. See `references/kie-rate-limit.md`.
+- **KIE rate limit:** new generation submits are paced to **20 per rolling 15 s** per KIE key (the governor's `KIE_MAX = 20`, `KIE_WINDOW_S = 15.0`, a little under KIE's documented 20 per 10 s, so no test batch is needed - one number everywhere, S-13); a 429 means not run and not queued, so resubmit after a wait. See `references/kie-rate-limit.md`.
 
 ## Agnes path (optional)
 
@@ -1448,12 +1448,18 @@ distributions. Field-level rules live in `references/choice-card-spec.md`;
 human price snapshot in `references/price-menu.md`; stage order and QC in the
 SOP named above.
 
-- **Video model question.** Four models (MiniMax H3 RECOMMENDED, Seedance 2.5,
-  Seedance 2.0 Mini, Google Veo 3.1), each with its price for the length the
-  client chose. One rates table (`core/choice_card/video_models/
-  video_model_rates.json`) and one price function shared by the question and
-  the final card; the pick is stored in run state, shown on the card and
-  submitted by dispatch with that model's provider id and resolution.
+- **Quality mode question (F-QM-1).** The card asks for a QUALITY MODE:
+  Standard (default) / Premium / Ultra / Hybrid (**RECOMMENDED**), each with a
+  plain-words price for the client's chosen length. Hybrid is recommended,
+  never required: the run owner's recorded pick is the authorization. Ultra
+  reads `ULTRA_MODEL_UNAVAILABLE` when no live KIE model renders 4K. The
+  lip-sync model is **not** a card choice: OmniHuman 2.0 (`omnihuman-2-0`) on
+  every run, no alternative, no backup (S-42). The card face, the mode gate
+  (`scripts/core/quality_modes/mode_gate.py`) and the price rule live in
+  `references/choice-card-spec.md` sections 3.3, 3.6 and 3.8 and
+  `references/quality-modes.json`; copy their wording, never restate it. The
+  default story-clip model is H3 (`minimax-h3/image-to-video`, Trevor decision
+  9); the retired "Hailuo 02 Standard RECOMMENDED" default is gone.
 
 - **Intake.** The run opens with the intro, then the questions: send
   `factory.py card --step --run-state-file <run-state.json>` first (it prints the
@@ -1629,10 +1635,10 @@ SOP named above.
   for a FAIL a crop cannot fix, then refuse. Smile and teeth never trigger a regeneration.
   Every picture tried gets a receipt (`<dir>/.lipgate/<sha256>.json`). `upload_measured()`
   uploads the exact measured bytes (hashed at upload time, refused on mismatch) and returns
-  the URL for `input.image_url`. `kie_dispatch.dispatch` REFUSES any `ai-avatar` or
-  `infinitalk` job with `LIPSYNC_PICTURE_NOT_GATED` unless `request["lipsync_image_path"]`
+  the URL for `input.image_url`. `kie_dispatch.dispatch` REFUSES any
+  `omnihuman-2-0` job with `LIPSYNC_PICTURE_NOT_GATED` unless `request["lipsync_image_path"]`
   has a PASS or ACCEPT_WITH_FLAG receipt for its exact bytes and `input.image_url` is that
-  bound upload. The locked lip-sync model `kling/ai-avatar-standard` passes the F14 video
+  bound upload. The locked lip-sync model `omnihuman-2-0` passes the F14 video
   lock (it is not a menu video model) and goes to this gate. No receipt, FAIL, changed
   file, or mediapipe / face model missing = refused, never a silent pass. Install the model:
   `python3 scripts/core/lip_sync/lip_gate/install_face_model.py` (sha256-pinned, from
@@ -1643,7 +1649,6 @@ SOP named above.
   that fails a check is fixed by a new take or a remake, never by an edit that
   hides the defect. Picking a different time window of the same clip is
   allowed; changing the picture to get past the check is not.
-  The local crop is the one allowed exception to "never cropped" below.
   **NEVER-AGAIN crop lock (binding):** never crop, zoom, freeze, stretch, or
   hand-join to clear any gate — a repair edit naming crop/zoom/freeze/stretch
   refuses `CROP_REPAIR_REFUSED` and the shot is remade instead
@@ -1681,57 +1686,58 @@ SOP named above.
   (read-only, real controls); `lip_gate/event_sync.py` is an ADVISORY extra measure
   (onsets, offsets and p/b/m closures against the lead-vocal span) recorded in the receipt
   row as `advisory_event_sync`. It never gates and never triggers a redo.
-- **Lip-sync model order (decision 33):** Kling avatar
-  (`kling/ai-avatar-standard`) is THE lip-sync model (Trevor: clearly the best option) - a
-  front-facing close-up image plus that character's own line cut from the one track's
-  vocal stem. InfiniTalk (`infinitalk/from-audio`) is a MANUAL backup only: never called
-  by the code, never on by default, used only when a person asks for it by hand.
-  **Volcengine is dropped**. Tight
-  close-ups only. The lip-sync input contains only the on-screen speaker's
-  line: never a narrator, never another character. Narrator, phone,
-  voicemail and laptop voices may play as voice-over but are never lip-synced
-  onto a person. Lip-sync applies to the pain peak, the product line, the
-  call to action and the chorus hook. Approved direction 2026-10-23 (supersedes
-  the 2026-10-08 doubling): coverage is **25-30% of the selected duration with a
-  35% HARD MAXIMUM**, in 4 to 6 second clips, no clip over 6 seconds, never
-  fewer than 3 clips, and the first **12 seconds** clearly articulated
-  (`core/lipsync_clips.py` is the one source). Clips go on every sung hook, the
-  spoken opener and the spoken closing line first. Each clip is a paid
-  `kling/ai-avatar-standard` job, so the lip-sync cost roughly doubles: the card
-  prices it through Skill 74 and a plan that would pass the spend cap is refused
+- **Lip-sync model: OmniHuman 2.0 on every run (S-42; Trevor, 2026-11-23 about
+  2:25 PM).** The model is `omnihuman-2-0`: one picture in `image_urls` plus one
+  audio piece, **no prompt**, `enable_watermark` false. There is no option
+  menu, no alternative and no backup; Kling Avatar and InfiniTalk are retired
+  and nothing in a run picks another model (`LIPSYNC_MODEL_MISMATCH`). The
+  picture is made in step 2 from the character's master, the scene's wardrobe
+  picture and the expression sheet that matches the sentence's emotion (3G.5),
+  and it shows only the people who sing that piece, large in frame (1 to 3
+  faces). Tight close-ups only. The audio is one **whole sentence or phrase, 5
+  to 30 seconds** (section 3.3a): never cut mid-sentence, never padded, stitched
+  only when a passage is longer than 30 seconds. The lip-sync input contains
+  only the on-screen singer's line, cut from the track the Voice Map names for
+  that stretch (3N.0): never a narrator, never another character. Lip-sync
+  applies to the opening passage, the pain peak, the product line, the call to
+  action and the chorus hook. Coverage is **25-30% of the selected duration**,
+  with **35% as a top, not a refusal** (whole sentences win; a plan over 35%
+  shows its seconds and percent before any spend). Under 90 seconds there is no
+  floor of 3 pieces; from 90 seconds up the floor of 3 stands. The opening
+  passage is lip-synced inside the first 10-15 seconds (N-05).
+  `core/lipsync_clips.py` is the one source. Each piece is a paid
+  `omnihuman-2-0` job at **14 credits per second of the rounded-up clip**
+  ($0.07/s): a 60 s ad's 15-18 s is about $1.05-$1.26 per try. The card prices
+  it through Skill 74 and a plan that would pass the spend cap is refused
   loudly (`lipsync_clips.check_budget`), never trimmed or run past the cap. The
-  list is shown on the approval card; every other shot stays as the video
-  model made it. For an All Suno run the isolated line is cut from the one
-  track's vocal stem by Skill 74's `ai-music-api/separate-vocals`; the stem
-  is only the lip-sync input, never in the final mix.
-  The avatar prompt itself is assembled by `prompt_templates`
-  (`assemble_kling_avatar`): three sentences, one emotion, and the `who`
-  descriptor taken from the look's mode - see "Prompt templates" above.
-  **How a clip is cut, prompted, measured and retried (LSR001 + LSC001, 2026-10-08):**
-  (1) The input is the lead-vocal STEM only, never the mix. `lipsync_clips.choose_window`
-  picks the 4-6 s window from the Suno word timestamps: it starts at a word start and
-  ends at a word end (a real rest where one exists), then adds 0.30 s before and 0.20 s
-  after from try 1 (`stem_offset.cut_plan` corrects the stem lateness); at least 1.5
-  word onsets per second, no held word over 1.2 s (else marked `HELD_NOTE`), words with
-  p, b, m, f, v, w preferred, and a different line of a hook that is sung 2-3 times.
-  (2) The prompt (`lip_gate.kling_prompt`) says "sings" on sung lines and "says" on
-  spoken ones, one emotion, minimal head movement, steady locked camera; it never tells
-  the mouth to move in time (the audio does that). (3) The sync gate is `sync_check`
-  (calibrated on real controls, see the sync-check bullet above); `event_sync` is advisory
-  only. (4) **Two tries, then the best take (Trevor 2026-10-08):** at most 2 paid
-  `kling/ai-avatar-standard` jobs per segment, every name variant counted
-  (`lipsync_clips.check_try_limit`; `run_gate(prior_jobs=)` raises `LipTryLimit` before a
-  3rd). Try 2 runs only on a PERSON'S call (rule 4 of the lip-sync process bullet below)
-  and only with a CHANGED input (the next-best window or the padded cut); no checker
-  verdict, FAIL included, ever triggers it. After that the best-measured take is kept and
-  the receipt says `KEPT_BEST_OF_2 (tN), verdict, numbers, flag` with a mouth-strip path.
-  No third job, no model switch. The card prices the worst case at 2 tries
-  (`check_budget(..., attempts=2)`). Every paid submit goes through
-  `load_governor.kie_request`; landmark extraction through `heavy_slot`. The Kling-avatar-first
-  order itself is a **rule
-  followed by the agent; code check not yet shipped**: `scripts/core/lip_sync/`
-  carries `narrator_rule/` only, no `kling_first/` (see CHANGELOG.md
-  "Not shipped here, on record").
+  list is shown on the approval card; every other shot stays as the video model
+  made it. The audio is cut in stage 1 by the one `split_stem` job (3N.2); it is
+  only the lip-sync input, never in the final mix. **There is no prompt**: with
+  no prompt, the picture carries the expression, and the take is checked for it
+  (3G.6).
+  **How a piece is cut, measured and retried (3.3a + 3C.1a):**
+  (1) `lipsync_clips.choose_window` returns the whole phrase, first word's start
+  to last word's end, 5 to 30 seconds. A held note or a slow passage is a flag on
+  the receipt, never a reason to move, shorten or drop the line. A passage over
+  30 seconds returns a stitch group split at a breath or a line boundary, and
+  the pieces are joined back to back naming each join.
+  (2) No prompt is sent. (3) The sync gate is `sync_check` (calibrated on real
+  controls, see the sync-check bullet above); `event_sync` is advisory only.
+  Every take also gets a 4-frames-per-second contact sheet looked at by eye for
+  letters, emotion and who is mouthing; no take enters the timeline without that
+  eye record (`LIP_TAKE_NOT_EYE_CHECKED`, `EMOTION_DRIFT`, `WRONG_VOICE_MOUTHED`).
+  (4) **Two tries, then the best take (Trevor 2026-10-08):** at most 2 paid
+  `omnihuman-2-0` jobs per segment, every name variant counted
+  (`lipsync_clips.check_try_limit`; `run_gate(prior_jobs=)` raises `LipTryLimit`
+  before a 3rd). Try 2 runs only on a PERSON'S call (rule 4 of the lip-sync
+  process bullet below) and only with a CHANGED input; no checker verdict, FAIL
+  included, ever triggers it. After that the best-measured take is kept and the
+  receipt says `KEPT_BEST_OF_2 (tN), verdict, numbers, flag` with a mouth-strip
+  path. No third job, no model switch. An "overloaded" refusal costs 0 and is
+  resent at once, then every 30 seconds, up to 5 sends, inside the same stage.
+  The card prices the worst case at 2 tries (`check_budget(..., attempts=2)`).
+  Every paid submit goes through `load_governor.kie_request`; landmark
+  extraction through `heavy_slot`.
 - **Lip-sync process (Trevor approved, 2026-10-08, first used on a client's
   ads; LSP001, built on LSC001).** Every run follows these six rules
   (`lip_sync/lip_gate/lip_process.py`):
@@ -1807,15 +1813,16 @@ SOP named above.
   listing every file, duration, resolution and banner link:
   `scripts/core/batch_zip/batch_zip.py build_batch_zip(client, ads,
   out_path)`.
-- **Pricing:** the VIDEO MODEL line comes from the one rates table,
-  `scripts/core/choice_card/video_models/video_model_rates.json`, through the
-  shared price function (`card_render.price_envelope`): video + one keyframe
-  per shot + the character reference pictures + the song, then the planning
-  allowance. Skill 74 `price` returns the highest listed tier, so the chosen
-  model's video line is priced from that table instead. Every OTHER figure on
-  the card - the chosen shape, lip-sync close-ups, voice packs, clips and the
-  batch total - comes from Skill 74 `price`. This skill never hard-codes a
-  rate.
+- **Pricing:** the QUALITY MODE line comes from the mode card's own price rule
+  (`references/choice-card-spec.md` sections 3.3 and 3.6;
+  `scripts/core/quality_modes/`), through the shared price function
+  (`card_render.price_envelope`): video + one keyframe per shot + the character
+  reference pictures + the song, then the planning allowance. Skill 74 `price`
+  returns the highest listed tier, so the chosen mode's video line is priced
+  from that table instead. Every OTHER figure on the card - the chosen shape,
+  lip-sync close-ups (`omnihuman-2-0`, 14 credits per rounded-up second), voice
+  packs, clips and the batch total - comes from Skill 74 `price`. This skill
+  never hard-codes a rate.
 - **Command Center:** one parent card and twelve stage cards per ad, one
   deliverable per ad, and one parent card per batch; department lead role
   `vsl-video-sales-letter-specialist`.
@@ -1905,10 +1912,14 @@ it and the check that proves it; nothing below describes a plan.
    sending a request that follows a different story. Check:
    `music_director/test_blueprint_inputs_s75xw4u2.py`.
 7. **Lip-sync coverage is a share of the ad, not a fixed block.** Target
-   25-30% of the selected duration, 35% HARD maximum, clips 4-6 s, never fewer
-   than 3, and the first 12 s clearly articulated (the first clip must start
-   inside the opening window, else `LIPSYNC_OPENING_NOT_ARTICULATED`; a plan
-   over the maximum fails `LIPSYNC_OVER_CAP`; bounds that cannot all hold fail
+   25-30% of the selected duration; **35% is a top, not a refusal** (whole
+   sentences win, and a plan over 35% shows its seconds and percent before any
+   spend). One piece is one or more whole sentences, 5 to 30 seconds, stitched
+   only past 30. Under 90 seconds there is no floor of 3 pieces; from 90 seconds
+   up the floor of 3 stands. The opening passage is lip-synced inside the first
+   10-15 seconds (N-05). A single piece over 30 seconds fails
+   `LIPSYNC_AUDIO_TOO_LONG` with the stitch named as the fix; bounds that cannot
+   all hold fail
    `LIPSYNC_DURATION_CONFLICT`). The numbers live in `core/lipsync_clips.py`
    and supersede the 2026-10-08 doubling order. Checks:
    `test_lipsync_clips.py`, `final_assembler/test_lipsync_coverage_e6.py`,
