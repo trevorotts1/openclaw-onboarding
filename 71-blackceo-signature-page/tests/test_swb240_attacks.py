@@ -579,8 +579,11 @@ class Twins(Base240):
 
     def test_reown_signed_with_another_key_or_unsigned_refused(self):
         rel = self.board()
-        GR.reown(self.run_root, rel, owner_stage="mobile-tablet", reason="r", approver="T",
-                 key_file=self.make_key(OTHER_KEY, "other"))
+        try:    # 1.3.49: in an anchored run a foreign key is refused at signing, which is stricter
+            GR.reown(self.run_root, rel, owner_stage="mobile-tablet", reason="r", approver="T",
+                     key_file=self.make_key(OTHER_KEY, "other"))
+        except ValueError:
+            pass
         self.assertIn(rel, self.refused_reason())
         GR.reown(self.run_root, rel, owner_stage="mobile-tablet", reason="r", approver="T")
         doc = self.read_json("private/reown-records.json")

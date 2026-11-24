@@ -805,10 +805,19 @@ def quarantine_supersede_rows(run_dir, stage, quarantined):
     return rows
 
 
-def seal_ledger(run_dir, *, key_file=None, adopt_legacy=False):
+def seal_ledger(run_dir, *, key_file=None, adopt_legacy=False, dry_run=False):
     """The operator adopts the quarantine ledger as it stands (needed once for a pre-1.3.47
-    ledger). `adopt_legacy` (1.3.48) re-signs 1.3.47 entries bound to this run."""
-    return detector().seal_ledger(run_dir, key_file=key_file, adopt_legacy=adopt_legacy)
+    ledger). `adopt_legacy` (1.3.48) re-signs 1.3.47 entries bound to this run; `dry_run`
+    (1.3.49) writes nothing and lists each path and sha256 it would re-sign."""
+    return detector().seal_ledger(run_dir, key_file=key_file, adopt_legacy=adopt_legacy,
+                                  dry_run=dry_run)
+
+
+def reanchor(run_dir, *, confirm_recreated_run=False, reason, approver, key_file=None):
+    """The operator's explicit signed replacement of the anchor outside the run after the run was
+    legitimately recreated at the same path (1.3.49). Voids every record bound to the old run_id."""
+    return detector().reanchor(run_dir, confirm_recreated_run=confirm_recreated_run,
+                               reason=reason, approver=approver, key_file=key_file)
 
 
 def rebind(run_dir, path, *, stage, reason, approver, key_file=None):

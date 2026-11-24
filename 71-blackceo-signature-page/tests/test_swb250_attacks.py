@@ -389,7 +389,7 @@ class TestLegacyAdoption(Base250):
     def test_adopt_legacy_through_the_command_line(self):
         self.legacy_ledger()
         self.assertEqual(quarantine_ledger.main(["seal", "--run", str(self.run_root),
-                                                 "--adopt-legacy"]), 0)
+                                                 "--adopt-legacy", "--yes"]), 0)
         self.assertTrue(oop._ledger_status(self.run_root)["ok"])
 
     def test_a_pre_1_3_48_release_record_is_void(self):
