@@ -46,7 +46,7 @@
       ],
       "cwd": "{skill_root}",
       "advertised_in": [
-        "SKILL.md:380 'intake   --brief-file brief.json'"
+        "SKILL.md:403 'intake   --brief-file brief.json'"
       ],
       "expect": {
         "exit_code": 2,
@@ -72,7 +72,7 @@
       ],
       "cwd": "{skill_root}",
       "advertised_in": [
-        "SKILL.md:381 'preflight --root \"$STORAGE\"'"
+        "SKILL.md:404 'preflight --root \"$STORAGE\"'"
       ],
       "expect": {
         "exit_code": 2,
@@ -224,7 +224,7 @@
       ],
       "cwd": "{skill_root}",
       "advertised_in": [
-        "SKILL.md:788 'factory.py card --step --run-state-file'"
+        "SKILL.md:822 'factory.py card --step --run-state-file'"
       ],
       "expect": {
         "exit_code": 0,
@@ -247,7 +247,7 @@
       ],
       "cwd": "{skill_root}",
       "advertised_in": [
-        "SKILL.md:1245 'factory.py card --client-dir <dir>'"
+        "SKILL.md:1327 'factory.py card --client-dir <dir>'"
       ],
       "expect": {
         "exit_code": 0,
@@ -271,7 +271,7 @@
       ],
       "cwd": "{skill_root}",
       "advertised_in": [
-        "SKILL.md:1240 'factory.py character --client-dir'"
+        "SKILL.md:1322 'factory.py character --client-dir'"
       ],
       "expect": {
         "exit_code": 0,
