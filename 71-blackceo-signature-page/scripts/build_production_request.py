@@ -255,7 +255,12 @@ KIND_ROLE = {
     "short": "a label, subhead or chip line, set smaller than the headline and larger than body",
     "body": "a paragraph in sentence case, left aligned, never wider than the content column",
     "step": "a numbered step whose badge number prints once, in order",
+    "heading": "the section heading, set once in the display face at the second-largest size in the one "
+               "text colour, never filled with an accent colour",
 }
+# A spec section may declare `line_roles` (thank-you-v1.json section 2: H2, Body, Body): the role of each
+# copy line in order, which line_role and wireframe_spec._type_elements read instead of guessing from position.
+DECLARED_ROLES = {"h1": "headline", "h2": "heading", "subhead": "short", "body": "body", "step": "step"}
 
 
 def neutral(text):
@@ -275,7 +280,11 @@ def skeleton_table():
     return out
 
 
-def line_role(line, first):
+def line_role(line, first, declared=None):
+    """The role of one copy line. `declared` is the spec's own role for it (H1, H2, Subhead, Body or
+    Step); without one the role is guessed from the line's position and length."""
+    if declared:
+        return DECLARED_ROLES[str(declared).lower()]
     if re.match(r"\d+\.\s", line):
         return "step"
     if first:
@@ -296,7 +305,7 @@ def limits_phrase(spec_section):
 
 def fit_estimate(role, text):
     """Rough line counts at the canon type scale (average glyph = half the font size)."""
-    desktop_px, mobile_px = {"headline": (56, 40), "short": (30, 24)}.get(role, (19, 16))
+    desktop_px, mobile_px = {"headline": (56, 40), "heading": (44, 28), "short": (30, 24)}.get(role, (19, 16))
     per_line = lambda content, px: max(1, min(75, int(content / (px * 0.5))))
     lines = lambda content, px: -(-len(text) // per_line(content, px))
     return lines(1200, desktop_px), lines(342, mobile_px)
@@ -310,7 +319,9 @@ def section_fragments(stage, section, index, sections, spec, table, kind=None):
     spec_section = next((x for x in spec["sections"] if exe.canon_section_id(x["id"]) == sid), {})
     row = table.get(sid, {})
     lines = [l for l in str(section.get("copy") or "").splitlines() if l.strip()]
-    roles = [line_role(l, i == 0) for i, l in enumerate(lines)]
+    declared = section.get("line_roles")
+    roles = [line_role(l, i == 0, (declared[i] if i < len(declared) else "Body") if declared else None)
+             for i, l in enumerate(lines)]
     out = []
     near = [f"directly below {names[index - 2]}" if index > 1 else "at the top of the page, under the header",
             f"directly above {names[index]}" if index < n else "the last section before the footer"]
@@ -387,7 +398,9 @@ def section_fragments(stage, section, index, sections, spec, table, kind=None):
     for i, (line, role) in enumerate(zip(lines, roles), 1):
         d, m = fit_estimate(role, line)
         fit[role] = [fit.get(role, [0, 0])[0] + d, fit.get(role, [0, 0])[1] + m]
-        plan.append(f"{i} {role} opening \"{' '.join(line.split()[:4])}\" ({len(line.split())} words)")
+        # a declared heading is named, never quoted again: its words print once, in the verbatim block
+        opening = "" if role == "heading" else f" opening \"{' '.join(line.split()[:4])}\""
+        plan.append(f"{i} {role}{opening} ({len(line.split())} words)")
     for k in range(0, len(plan), 3):  # three lines per paragraph keeps the top-up granular
         out.append(f"LINE PLAN {k + 1} to {min(k + 3, len(plan))}: " + "; ".join(plan[k:k + 3]) + ".")
     if fit:
@@ -527,7 +540,25 @@ def spec_slots(entry: dict, style_id) -> list:
     return out
 
 
-def sections_from_manuscript(text: str, spec: dict, slots: dict, style_id=None, order_bump=None) -> list:
+def closed_headings(run_dir, spec: dict):
+    """{section id: closed heading} from the run's closed export, copy/public-copy.md: its `## ` lines in
+    order, one per canonical section of the spec's sequence. None when the run has no export (the caller
+    names its fallback). A heading count that differs from the sequence is a named refusal: a guessed
+    pairing would print one section's heading over another's copy."""
+    path = Path(run_dir) / "copy" / "public-copy.md"
+    if not path.is_file():
+        return None
+    found = [l[3:].strip() for l in path.read_text(encoding="utf-8").splitlines() if l.startswith("## ")]
+    sequence = list(spec["sequence"])
+    if len(found) != len(sequence) or not all(found):
+        raise BuildError(f"copy/public-copy.md has {len(found)} section heading(s) ({found}); the "
+                         f"{spec_label(spec)} has {len(sequence)} canonical sections {sequence}, so a closed "
+                         "heading cannot be paired with its section")
+    return dict(zip(sequence, found))
+
+
+def sections_from_manuscript(text: str, spec: dict, slots: dict, style_id=None, order_bump=None,
+                             headings=None) -> list:
     names = spec.get("role_names") or {}
     units, order, _notes = parse_manuscript(text)
     allowed = page_role.allowed_sequences(spec, {"order_bump": order_bump})  # the same resolver the executor's check reads
@@ -567,6 +598,17 @@ def sections_from_manuscript(text: str, spec: dict, slots: dict, style_id=None, 
         if len(buttons) > 1 and not (per_card or utility):
             raise BuildError(f"section {sid}: {len(buttons)} CTA buttons {buttons}; "
                              "one button per section")
+        declared_roles = spec_section.get("line_roles")
+        if declared_roles is not None and (not isinstance(declared_roles, list) or not declared_roles
+                                           or any(str(r).lower() not in DECLARED_ROLES for r in declared_roles)):
+            raise BuildError(f"section {sid}: line_roles {declared_roles!r} must be a non-empty list of "
+                             "H1, H2, Subhead, Body or Step")
+        heading = None
+        if spec_section.get("copy_heading"):
+            # The section's closed heading is the first line of its copy: the manuscript has none (a
+            # heading is not counted copy), the closed export does. No export: the spec's own section name.
+            heading = (headings or {}).get(sid) or spec_section.get("name") or names.get(sid)
+            copy = f"{heading}\n{copy}" if copy else heading
         entry = {"section_id": sid,
                  "section_name": (names.get(sid) or kids.get(sid)
                                   or (spec_section.get("name") if role_page else None)
@@ -599,6 +641,12 @@ def sections_from_manuscript(text: str, spec: dict, slots: dict, style_id=None, 
                 entry[key] = spec_section[field]
         if spec_section.get("behavior_notes"):
             entry["behavior_notes"] = spec_section["behavior_notes"]
+        if declared_roles:
+            entry["line_roles"] = list(declared_roles)
+        if heading:
+            entry["copy_heading"] = heading
+            entry["copy_heading_source"] = ("copy/public-copy.md" if (headings or {}).get(sid)
+                                            else "the spec section name (the run has no copy/public-copy.md)")
         if spec.get("form"):  # a role spec (references/copy-specs/roles/): name, slots, layout, one-button rule
             entry.update(role_section_fields(spec, sid, slots, buttons))
         # The founder letter ends with the founder's signature (copy spec, Section 12
@@ -919,7 +967,10 @@ def build(stage, version, manuscript_text, slots, prose, references, model, styl
                 raise BuildError(f"--copy-version {version!r} is not one of {', '.join(copy_forms.FORMS)}")
             spec = copy_forms.load_spec(version)
         if sections is None:
-            sections = sections_from_manuscript(manuscript_text, spec, slots, exe.style_id_for(Path(run_dir), {}), order_bump)
+            headings = (closed_headings(run_dir, spec)
+                        if any(s.get("copy_heading") for s in spec.get("sections") or []) else None)
+            sections = sections_from_manuscript(manuscript_text, spec, slots, exe.style_id_for(Path(run_dir), {}),
+                                                order_bump, headings)
         elif stage not in wireframe_spec.WIREFRAME_STAGES:
             # A wireframe prompt carries the page type's lines itself (wireframe_spec.prompt_block);
             # the mockup stages take them through the section layout.

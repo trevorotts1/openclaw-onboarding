@@ -1,3 +1,9 @@
+## [1.3.54] - 2026-11-24 - thank-you order summary prints the closed heading once; section plan written by a tool; font-map sizes and slot labels on the sheet (SWB-400)
+
+Three items, one commit each. Known baseline limitations unchanged: N01 to N04 and N11. No validator was loosened (validate_wireframe.py only gains a check).
+
+- Item 1, heading and roles. `references/copy-specs/thank-you-v1.json` section 2 carries `copy_heading` (true), `line_roles` (H2, Body, Body) and `wireframe_colour` (no accent fill), and its desktop and mobile layout text names the heading as the first line of the copy block. `later_decisions` records the 2026-11-24 decision. `build_production_request.py` reads the closed export's `## ` headings (`copy/public-copy.md`, one per canonical section, a count that does not pair refuses) and puts section 2's heading first in the section's copy (`copy_heading`, `copy_heading_source`); with no export it falls back to the spec's section name and says so. `line_role` and `wireframe_spec._type_elements` read `line_roles`, so the type specs read H2 and BODY with no SUBHEAD, COPY ANATOMY says 1 x heading, and a declared heading is named in the LINE PLAN, never quoted twice. `wireframe_spec.prompt_block` takes a section's own `wireframe_colour`. The words ORDER SUMMARY print only in the sheet grammar's name tab. Tests: `tests/test_swb400_heading_roles.py`.
+
 ## [1.3.53] - 2026-11-24 - thank-you spec clears the prompt floor alone; section 5 is the support button only; slot ratio governs (SWB-310)
 
 Closes the SWB-300 check findings A, B and the slot half of D. Known baseline limitations unchanged: N01 to N04 and N11. No validator was loosened.

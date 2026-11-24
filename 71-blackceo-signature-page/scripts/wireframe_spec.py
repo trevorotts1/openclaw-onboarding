@@ -242,6 +242,16 @@ def _type_elements(section: dict, closing=None) -> list:
     words = lambda line: len(line.split())
     numbered = lambda line: bool(re.match(r"\d+\.\s", line))
     out = []
+    declared = section.get("line_roles")
+    if declared:  # the spec states each line's role (thank-you section 2: H2, Body, Body): never guessed
+        names = {"h1": "H1", "h2": "H2", "subhead": "Subhead", "body": "Body"}
+        for i in range(len(lines)):
+            name = names.get(str((declared[i] if i < len(declared) else "Body")).lower(), "Body")
+            if name not in out:
+                out.append(name)
+        if _cta(section) or closing:
+            out += ["CTA", "CTA microcopy"]
+        return out or ["Body"]
     first = section_tag(section, 1) == "1"
     if lines and not numbered(lines[0]) and words(lines[0]) <= 12:
         out.append("H1" if first else "H2")
@@ -355,7 +365,9 @@ def prompt_block(stage: str, section: dict, index: int, total: int, width: int,
     lines += [blocks["style_reference"]]
     if role:
         lines.append(role["wireframe"]["reference_note"])
-    lines += [over.get("colour", blocks["colour"]), blocks["grammar_head"]]
+    own = (page_role.section_spec(role, section.get("section_id")) or {}) if role else {}
+    # a page type's section may state its own colour paragraph (thank-you section 2 spends no accent fill)
+    lines += [own.get("wireframe_colour") or over.get("colour", blocks["colour"]), blocks["grammar_head"]]
     if rspec:  # the reference sheet is style only
         lines.insert(len(lines) - 1, (
             f"PAGE TYPE LAYOUT, {rspec['page_role']} page: {rspec['layout_reference']} The attached sheet "
