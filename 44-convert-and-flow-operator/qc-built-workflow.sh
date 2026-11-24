@@ -112,6 +112,8 @@ QC_SESSION_FILE=""
 GRADES_FILE=""
 LAUNCH_MODE=0
 LAUNCH_SCHEDULE=""
+ACCOUNT_TZ="${QC_ACCOUNT_TZ:-}"
+TRIGGER_EVIDENCE=""
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -128,6 +130,8 @@ while [[ $# -gt 0 ]]; do
     --grades)         GRADES_FILE="${2:-}"; shift 2 ;;
     --launch)         LAUNCH_MODE=1; shift ;;
     --launch-schedule) LAUNCH_SCHEDULE="${2:-}"; LAUNCH_MODE=1; shift 2 ;;
+    --account-tz)     ACCOUNT_TZ="${2:-}"; shift 2 ;;     # WF-9: IANA zone a native wait's "account" timezone means
+    --trigger-evidence) TRIGGER_EVIDENCE="${2:-}"; shift 2 ;; # WF-24: read-back trigger record(s) (the export carries none)
     --conversational) CONVERSATIONAL=1; shift ;;  # WF-19: exec Skill 38 qc-trinity-registry.sh as a HARD gate
     -*)               echo "Unknown option: $1" >&2; exit 2 ;;
     *)                WORKFLOW_ID="$1"; shift ;;
@@ -543,9 +547,10 @@ d = json.load(sys.stdin)
 j = lambda v: ",".join(v) if isinstance(v, list) and v else "none"
 f = d.get("found") if isinstance(d.get("found"), dict) else {}
 print("OK" if d.get("ok") is True else "NOTOK", d.get("category") or "none", int(d.get("sms_nodes") or 0),
-      j(d.get("missing")), j(d.get("prose_only")), int(f.get("suppression") is True), int(f.get("quiet_hours") is True))
-' 2>/dev/null || echo "MALFORMED none 0 none none 0 0")
-read -r SMS_OK SMS_CAT SMS_NODES SMS_MISSING SMS_PROSE SMS_SUPP SMS_QH <<< "$SMS_FIELDS"
+      j(d.get("missing")), j(d.get("prose_only")), int(f.get("suppression") is True), int(f.get("quiet_hours") is True),
+      int(d.get("stop_on_response") is True))
+' 2>/dev/null || echo "MALFORMED none 0 none none 0 0 0")
+read -r SMS_OK SMS_CAT SMS_NODES SMS_MISSING SMS_PROSE SMS_SUPP SMS_QH SMS_STOP <<< "$SMS_FIELDS"
 
 if [ "$SMS_RC" -eq 99 ] && [ "${SMS_TOTAL:-0}" = "0" ]; then
   record_pass "WF-25" "no_sms_nodes" "n/a — no SMS nodes" "No SMS nodes in this workflow (sms_eligibility.py not needed)"
@@ -566,10 +571,13 @@ else
 fi
 # WF-16 (Stop-on-Response + time window) is mechanical when the same verifier ran over SMS nodes.
 if [ "$SMS_NODES" != "0" ] && { [ "$SMS_RC" -eq 0 ] || [ "$SMS_RC" -eq 1 ]; } && [ "$SMS_OK" != "MALFORMED" ]; then
-  if [ "$SMS_SUPP" = "1" ] && [ "$SMS_QH" = "1" ]; then
-    record_pass "WF-16" "stop_condition=saved time_window=saved" "STOP/suppression stop condition and 08:00-21:00 recipient-local window saved natively" "From sms_eligibility.py verify-saved (suppression + quiet_hours rules)."
+  # stop_condition is saved when the workflow's native Stop on Response is on
+  # (stopOnResponse true) or a native suppression condition exists; the window is
+  # the native workflow window or a native time-window condition (verify-saved).
+  if { [ "$SMS_SUPP" = "1" ] || [ "$SMS_STOP" = "1" ]; } && [ "$SMS_QH" = "1" ]; then
+    record_pass "WF-16" "stop_condition=saved(stopOnResponse=$SMS_STOP,suppression=$SMS_SUPP) time_window=saved" "STOP/suppression stop condition and 08:00-21:00 window saved natively" "From sms_eligibility.py verify-saved (stopOnResponse or suppression + native window or quiet_hours rule)."
   else
-    record_fail "WF-16" "stop_condition=$([ "$SMS_SUPP" = "1" ] && echo saved || echo MISSING) time_window=$([ "$SMS_QH" = "1" ] && echo saved || echo MISSING)" "STOP/suppression stop condition and quiet-hours window saved natively" "A reply or opt-out would not stop the sequence, or texts could send outside the recipient-local window. From sms_eligibility.py verify-saved."
+    record_fail "WF-16" "stop_condition=$({ [ "$SMS_SUPP" = "1" ] || [ "$SMS_STOP" = "1" ]; } && echo saved || echo MISSING) time_window=$([ "$SMS_QH" = "1" ] && echo saved || echo MISSING)" "STOP/suppression stop condition and quiet-hours window saved natively" "A reply or opt-out would not stop the sequence, or texts could send outside the recipient-local window. From sms_eligibility.py verify-saved."
   fi
 fi
 
@@ -794,6 +802,25 @@ except Exception:
     print('UNVERIFIED none none none trigger_evidence_unparseable')
     sys.exit(0)
 
+# The saved workflow export carries no trigger (it only names triggersFilePath),
+# so a read-back trigger record may be supplied with --trigger-evidence. It is
+# merged as evidence only: the target is still compared with the validator root.
+evidence_path = (sys.argv[2] if len(sys.argv) > 2 else '').strip()
+if evidence_path:
+    try:
+        ev = json.load(open(evidence_path, encoding='utf-8'))
+    except Exception:
+        print('UNVERIFIED none none none trigger_evidence_unparseable')
+        sys.exit(0)
+    items = ev if isinstance(ev, list) else (
+        [x for k in ('triggers', 'newTriggers', 'trigger') for x in
+         (ev.get(k) if isinstance(ev.get(k), list) else [ev[k]] if isinstance(ev.get(k), dict) else [])]
+        if isinstance(ev, dict) and any(k in ev for k in ('triggers', 'newTriggers', 'trigger')) else [ev])
+    if isinstance(data, dict):
+        data.setdefault('triggers', [])
+        if isinstance(data['triggers'], list):
+            data['triggers'] = data['triggers'] + [x for x in items if isinstance(x, dict)]
+
 def is_trigger(node):
     if not isinstance(node, dict):
         return False
@@ -901,7 +928,7 @@ else:
     state = 'LINKED' if target == root else 'MISMATCH'
     reason = 'none' if state == 'LINKED' else 'trigger_target_mismatch'
     print('%s %s %s %s %s' % (state, target, root, path, reason))
-" "$GRAPH_ROOT" 2>/dev/null || echo "UNVERIFIED none none none trigger_evidence_unparseable")
+" "$GRAPH_ROOT" "$TRIGGER_EVIDENCE" 2>/dev/null || echo "UNVERIFIED none none none trigger_evidence_unparseable")
 read -r TRIGGER_STATE TRIGGER_TARGET TRIGGER_ROOT TRIGGER_PATH TRIGGER_REASON <<< "$TRIGGER_LINK"
 if [ "$TRIGGER_STATE" = "LINKED" ] && [ "$TRIGGER_ROOT" != "none" ] && [ "$TRIGGER_TARGET" = "$TRIGGER_ROOT" ]; then
   record_pass "WF-24" "targetActionId=$TRIGGER_TARGET root=$TRIGGER_ROOT trigger=$TRIGGER_PATH" "trigger link equals root node id" "Trigger entrance linked to the root node."
@@ -930,7 +957,7 @@ if [ "$LAUNCH_MODE" -eq 1 ]; then
   if [ -z "$LAUNCH_SCHEDULE" ] || [ ! -f "$LAUNCH_SCHEDULE" ]; then
     record_fail "WF-9" "no_compiled_schedule" "export wait nodes equal the compiled launch schedule" "Launch build but no readable --launch-schedule file (${LAUNCH_SCHEDULE:-none}); wait timing is unproven. Fail-closed."
   else
-    WF9_RESULT=$(python3 -I - "$TMP" "$LAUNCH_SCHEDULE" <<'WF9PY' 2>/dev/null || echo "FAIL|wf9_comparison_error"
+    WF9_RESULT=$(python3 -I - "$TMP" "$LAUNCH_SCHEDULE" "$ACCOUNT_TZ" <<'WF9PY' 2>/dev/null || echo "FAIL|wf9_comparison_error"
 import json, sys
 from collections import Counter
 from datetime import datetime, timezone
@@ -966,6 +993,27 @@ try:
             want.append(delay(w["value"], w["unit"]))
 except Exception as e:
     print("FAIL|schedule_or_export_unreadable (%s)" % type(e).__name__); sys.exit(0)
+ACCOUNT_TZ = sys.argv[3].strip() if len(sys.argv) > 3 else ""
+def native_until(a):
+    """A saved GoHighLevel 'wait until a date' node keeps the wall-clock parts
+    (specificDate, hour, minute, AM/PM, day/hour/minute offsets). The instant
+    needs a zone: the --account-tz IANA zone (the node's own timezone is "account"). Without it,
+    the wait stays unreadable (and fails): no zone is ever assumed."""
+    try:
+        from zoneinfo import ZoneInfo
+        from datetime import timedelta
+        tzname = ACCOUNT_TZ
+        if not tzname:
+            return "unreadable"
+        hour = int(a["specificTimeHour"]) % 12 + (12 if str(a.get("specificTimePeriod", "")).upper() == "PM" else 0)
+        y, m, d = (int(x) for x in str(a["specificDate"])[:10].split("-"))
+        local = datetime(y, m, d, hour, int(a.get("specificTimeMinute") or 0), tzinfo=ZoneInfo(tzname))
+        local += timedelta(days=int(a.get("specificDateOffsetDays") or 0),
+                           hours=int(a.get("specificDateOffsetHours") or 0),
+                           minutes=int(a.get("specificDateOffsetMinutes") or 0))
+        return "until " + local.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%MZ")
+    except Exception:
+        return "unreadable"
 seen, got = set(), []
 def walk(o):
     if isinstance(o, dict):
@@ -978,6 +1026,8 @@ def walk(o):
                     got.append(delay(sa["value"], sa["type"]))
                 except (TypeError, ValueError):
                     got.append("unreadable")
+            elif a.get("type") == "specific_date" and "specificDate" in a:
+                got.append(native_until(a))
             else:
                 d = first_date(a)
                 got.append("until " + d if d else "unreadable")

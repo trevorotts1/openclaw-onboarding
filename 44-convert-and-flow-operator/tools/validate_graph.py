@@ -89,6 +89,44 @@ MUST_PASS_CHECKS = {
 }
 
 
+def _attrs(node):
+    attrs = node.get("attributes")
+    return attrs if isinstance(attrs, dict) else {}
+
+
+def is_native_condition(node):
+    """A GoHighLevel if/else CONDITION node as saved: type if_else, a list of
+    named branches under attributes.branches, and `next` listing one child
+    branch node per branch plus the None branch. Not the legacy 2-entry
+    top-level `branches` map."""
+    return (
+        node.get("type") == "if_else"
+        and isinstance(_attrs(node).get("branches"), list)
+        and isinstance(node.get("next"), list)
+    )
+
+
+def native_condition_ids(nodes):
+    return {n.get("id") for n in nodes if is_native_condition(n)}
+
+
+def is_native_arm(node, cond_ids):
+    """A branch ARM child of a native condition (a named branch or the None
+    branch). It is not a condition itself: it has one successor, or none when
+    the arm is empty (a native branch end)."""
+    if node.get("type") != "if_else" or is_native_condition(node):
+        return False
+    owner = node.get("parent") or node.get("parentKey")
+    return owner in cond_ids and "branches" not in node
+
+
+def is_native_graph(nodes):
+    """Saved GoHighLevel canvas export: nodes carry canvas metadata."""
+    return any(
+        isinstance(n.get("advanceCanvasMeta"), dict) for n in nodes
+    ) or bool(native_condition_ids(nodes))
+
+
 def read_json(path):
     with open(path, encoding="utf-8") as f:
         return json.load(f)
@@ -161,6 +199,9 @@ def dependencies(data):
         for key in ("tag", "tags"):
             if key in item:
                 add("tags", item[key])
+        if item.get("conditionSubType") == "tags":
+            # a saved GoHighLevel tag condition: conditionValue lists tag names
+            add("tags", item.get("conditionValue", []))
         if item.get("field") in ("tagsAdded", "tagsRemoved"):
             add("tags", item.get("value", item.get("values", [])))
         for key in ("customFieldId", "customFieldName"):
@@ -188,6 +229,7 @@ def identity_failures(nodes):
     ids = [node.get("id") for node in nodes]
     existing = {node_id for node_id in ids if node_id is not None}
     by_id = {}
+    native_ids = native_condition_ids(nodes)
 
     for node in nodes:
         node_id = node.get("id")
@@ -242,7 +284,28 @@ def identity_failures(nodes):
                     "target": target,
                 })
 
-        if node.get("type") == "if_else":
+        if is_native_condition(node):
+            kids = node.get("next")
+            distinct = list(dict.fromkeys(k for k in kids if isinstance(k, str)))
+            valid = (
+                len(distinct) >= 2
+                and len(distinct) == len(kids)
+                and all(k in existing for k in distinct)
+                and all(
+                    (by_id[k].get("parent") or by_id[k].get("parentKey")) == node_id
+                    for k in distinct
+                )
+            )
+            if not valid:
+                failures.append({
+                    "kind": "MALFORMED_BRANCH",
+                    "node_id": node_id,
+                    "branches": kids,
+                    "reason": "native_if_else_requires_two_or_more_distinct_child_arms",
+                })
+        elif is_native_arm(node, native_ids):
+            pass
+        elif node.get("type") == "if_else":
             branches = node.get("branches")
             valid = (
                 isinstance(branches, dict)
@@ -365,9 +428,14 @@ def graph(data, nodes, trigger):
                 "name": n.get("name"),
                 "type": n.get("type"),
             })
+    native_ids = native_condition_ids(nodes)
+    native_mode = is_native_graph(nodes)
+    arm_ids = {n.get("id") for n in nodes if is_native_arm(n, native_ids)}
     for n in nodes:
         targets = set(edges[n.get("id")])
         count = len(targets)
+        if n.get("id") in arm_ids:
+            continue  # an arm has one successor or none; it is not a condition
         if n.get("type") in BRANCH_TYPES and count < 2:
             if not exposes_branches and not strings(n.get("next")):
                 unverified.append({
@@ -537,6 +605,15 @@ def graph(data, nodes, trigger):
                 target for target in edges.get(node_id, [])
                 if target in existing
             ]
+            if not successors and node_id in arm_ids:
+                continue  # an empty native branch arm is a branch end
+            if (
+                not successors
+                and native_mode
+                and node_type not in ("wait", "if_else")
+                and not is_native_condition(node)
+            ):
+                continue  # the last action of a saved canvas branch ends it
             if not successors:
                 if node_id not in unverified_ids:
                     failures.append({

@@ -217,6 +217,32 @@ run export-waits.json "${LCOMMON[@]}" --launch
 run export-waits.json "${LCOMMON[@]}"
 [ "$(json_field items WF-9 status)" = "REQUIRES_HUMAN_REVIEW" ] && ok "WF-9 stays human review on a non-launch build" || bad "WF-9 changed on non-launch build"
 
+# 11. SWB-062: a saved GoHighLevel canvas keeps a date wait as wall-clock parts, the send window as
+# `window` and Stop on Response as `stopOnResponse`. Read natively; no zone is ever assumed.
+mknative() { # mknative <file> <stopOnResponse> <window-json>
+cat > "$T/$1" <<JSON
+{"id":"WFTEST001","name":"ZHC-test","status":"draft","timezone":"account","stopOnResponse":$2,"window":$3,
+ "workflowData":{"templates":[
+  {"id":"w1","type":"wait","name":"Wait until date","next":"s1","advanceCanvasMeta":{},"attributes":{"type":"specific_date","specificDate":"2026-11-27","specificTimeHour":9,"specificTimeMinute":0,"specificTimePeriod":"AM","specificDateOffsetDays":0,"specificDateOffsetHours":0,"specificDateOffsetMinutes":0}},
+  {"id":"s1","type":"sms","name":"Send","parentKey":"w1","advanceCanvasMeta":{},"attributes":{"body":"hi","fromNumber":"+15555550100"}}]},
+ "triggers":[{"id":"T1","type":"form_submitted","targetActionId":"w1"}]}
+JSON
+}
+mknative export-native.json true '{"condition":"when","start":"09:00","end":"21:00","days":[0,1,2,3,4,5,6]}'
+mknative export-native-nostop.json false 'null'
+cat > "$T/sched-native.json" <<'JSON'
+{"waits":[{"kind":"until_date","until":"2026-11-27T09:00:00-05:00"}]}
+JSON
+run export-native.json "${LCOMMON[@]}" --launch-schedule "$T/sched-native.json" --account-tz America/New_York
+[ "$(json_field items WF-9 status)" = "PASS" ] && ok "WF-9 PASS on a native date wait with the account zone given" || bad "WF-9 native date wait not PASS"
+run export-native.json "${LCOMMON[@]}" --launch-schedule "$T/sched-native.json"
+[ "$(json_field items WF-9 status)" = "FAIL" ] && ok "WF-9 FAIL on a native date wait with no zone (never assumed)" || bad "WF-9 passed without a zone"
+run export-native.json "${LCOMMON[@]}" --launch-schedule "$T/sched-native.json" --account-tz America/Los_Angeles
+[ "$(json_field items WF-9 status)" = "FAIL" ] && ok "WF-9 FAIL on a native date wait in the wrong zone" || bad "WF-9 passed in the wrong zone"
+[ "$(json_field items WF-16 status)" = "PASS" ] && ok "WF-16 PASS: stopOnResponse true and a native 09:00-21:00 window" || bad "WF-16 native stop+window not PASS"
+run export-native-nostop.json "${LCOMMON[@]}" --launch-schedule "$T/sched-native.json" --account-tz America/New_York
+[ "$(json_field items WF-16 status)" = "FAIL" ] && ok "WF-16 FAIL with no stopOnResponse and no window" || bad "WF-16 passed with neither saved"
+
 echo
 if [ "$FAILS" -eq 0 ]; then echo "ALL PASS"; exit 0; fi
 echo "$FAILS FAILED"; exit 1

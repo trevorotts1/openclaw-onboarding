@@ -481,6 +481,15 @@ def _matches(expected: dict, observed: dict) -> bool:
                 and (observed.get("type") == "field_lt"
                      or (observed.get("type") == "field" and op == "lt")))
     if kind == "time_window":
+        if observed.get("type") == "native_time_window":
+            # The workflow's own saved send window (GoHighLevel `window`).
+            # A window INSIDE the quiet-hours bounds is as strict or stricter.
+            return (
+                observed.get("condition") == "when"
+                and isinstance(observed.get("start"), str)
+                and isinstance(observed.get("end"), str)
+                and expected["start"] <= observed["start"] < observed["end"] <= expected["end"]
+            )
         return (observed.get("type") == "time_window"
                 and observed.get("start") == expected["start"]
                 and observed.get("end") == expected["end"]
@@ -549,6 +558,55 @@ def _is_sms(step) -> bool:
     return isinstance(step, dict) and "SMS" in str(step.get("type") or "").upper()
 
 
+_TAG_PRESENT_OPS = ("index-of-true", "contains", "is")
+_TAG_ABSENT_OPS = ("index-of-false", "does-not-contain", "is-not")
+_LT_OPS = ("<", "lt", "less-than", "less_than", "less than")
+
+
+def native_conditions(step):
+    """Normalise the conditions of a saved GoHighLevel if/else CONDITION node
+    (attributes.branches[].segments[].conditions[]) into the verifier's shape.
+    Only a condition node is read; a branch arm or any other node yields none.
+    Unrecognised conditions are dropped, never guessed."""
+    attrs = step.get("attributes") if isinstance(step.get("attributes"), dict) else {}
+    if str(step.get("type") or "").lower() != "if_else" \
+            or not isinstance(attrs.get("branches"), list):
+        return []
+    out = []
+    for branch in attrs["branches"]:
+        for segment in (branch.get("segments") or []) if isinstance(branch, dict) else []:
+            for cond in (segment.get("conditions") or []) if isinstance(segment, dict) else []:
+                if not isinstance(cond, dict):
+                    continue
+                op = str(cond.get("conditionOperator") or "").lower()
+                sub = cond.get("conditionSubType")
+                value = cond.get("conditionValue")
+                values = value if isinstance(value, list) else [value]
+                if cond.get("conditionType") == "contact_detail" and sub == "tags":
+                    kind = ("tag_present" if op in _TAG_PRESENT_OPS
+                            else "tag_absent" if op in _TAG_ABSENT_OPS else None)
+                    if kind:
+                        out.extend({"type": kind, "value": v} for v in values
+                                   if isinstance(v, str))
+                elif op in _LT_OPS and isinstance(sub, str):
+                    try:
+                        out.append({"type": "field_lt", "field": sub,
+                                    "value": int(values[0])})
+                    except (TypeError, ValueError, IndexError):
+                        pass
+    return out
+
+
+def _export_holder(export):
+    for holder in (export, export.get("data"), export.get("workflow")):
+        if isinstance(holder, dict) and (
+                isinstance(holder.get("workflowData"), dict)
+                or any(isinstance(holder.get(k), list)
+                       for k in ("steps", "actions", "nodes", "templates"))):
+            return holder
+    return export
+
+
 def snapshot_from_export(export):
     """(snapshot, sms_steps) for verify_saved_conditions().
 
@@ -573,10 +631,19 @@ def snapshot_from_export(export):
             value = step.get(key) if isinstance(step.get(key), str) else attrs.get(key)
             if isinstance(value, str):
                 flat[key] = value
+        flat["conditions"] = list(flat["conditions"]) + native_conditions(step)
         out.append(flat)
         if _is_sms(step):
             sms.append(step)
-    return {"steps": out}, sms
+    holder = _export_holder(export)
+    window = holder.get("window")
+    if isinstance(window, dict) and window.get("condition") == "when":
+        out.append({"type": "condition", "disabled": False, "conditions": [
+            {"type": "native_time_window", "condition": "when",
+             "start": window.get("start"), "end": window.get("end"),
+             "timezone": holder.get("timezone")}]})
+    return {"steps": out, "stop_on_response": holder.get("stopOnResponse") is True,
+            "timezone": holder.get("timezone")}, sms
 
 
 def export_category(sms_steps) -> str:
@@ -610,6 +677,9 @@ def verify_saved_export(export, category_name="auto") -> dict:
                 "missing": [], "prose_only": [], "found": {}}
     chosen = export_category(sms) if category_name == "auto" else category_name
     result = verify_saved_conditions(snapshot, chosen)
+    # Workflow-level Stop on Response is a native setting, not a condition node.
+    result["stop_on_response"] = snapshot.get("stop_on_response") is True
+    result["window_timezone"] = snapshot.get("timezone")
     result.update({"unreadable": False, "category": chosen, "sms_nodes": len(sms)})
     return result
 
