@@ -36,7 +36,7 @@ _SKILL_ROOT = Path(__file__).resolve().parents[2]
 if str(_SKILL_ROOT) not in sys.path:
     sys.path.insert(0, str(_SKILL_ROOT))
 
-from launcher_core import graphics_hooks, image_stages, page_designs  # noqa: E402
+from launcher_core import graphics_hooks, image_stages, owner_override, page_designs  # noqa: E402
 
 CODE = "AF-LAUNCH-IMAGE-STAGES"
 CODE_BINDING = "AF-LAUNCH-HOSTING-BINDING"
@@ -76,7 +76,8 @@ def _page_rows(report: Dict[str, Any]) -> List[Dict[str, Any]]:
     return [row for row in report.get("pages") or [] if isinstance(row, dict)]
 
 
-def _set_violations(report: Dict[str, Any], rows: List[Dict[str, Any]]) -> List[str]:
+def _set_violations(report: Dict[str, Any], rows: List[Dict[str, Any]],
+                    waived: Tuple[str, ...] = ()) -> List[str]:
     """The planned page set: named missing pages, one run per identity, and a run that stays its own."""
     fails: List[str] = []
     state = report.get("expected_pages_state")
@@ -85,7 +86,7 @@ def _set_violations(report: Dict[str, Any], rows: List[Dict[str, Any]]) -> List[
                      f"({report.get('reason') or 'no reason recorded'}); a directory listing of run folders "
                      "cannot prove every planned page was designed, so completeness is unverified")
     for row in rows:
-        if row.get("status") == "missing_page":
+        if row.get("status") == "missing_page" and str(row.get("role") or "") not in waived:
             key = row.get("page_key") or row.get("role")
             fails.append(f"{CODE}: page {key} (role {row.get('role') or '?'}) is missing: "
                          f"{row.get('reason') or 'the launch plans this page and no run folder was found'}")
@@ -117,7 +118,7 @@ def _set_violations(report: Dict[str, Any], rows: List[Dict[str, Any]]) -> List[
     return fails
 
 
-def _stage_violations(manifest: Dict[str, Any], root: Path) -> List[str]:
+def _stage_violations(manifest: Dict[str, Any], root: Path, waived: Tuple[str, ...] = ()) -> List[str]:
     path = Path(root) / image_stages.REPORT_REL
     try:
         report = json.loads(path.read_text(encoding="utf-8"))
@@ -128,7 +129,7 @@ def _stage_violations(manifest: Dict[str, Any], root: Path) -> List[str]:
         return [f"{CODE}: {image_stages.REPORT_REL} is missing or lists no page; the post-dispatch image "
                 "stages never ran, so this package holds layout proofs only "
                 "(python3 -m launcher_core.image_stages --run-dir <launch run folder>)"]
-    fails: List[str] = _set_violations(report, rows)
+    fails: List[str] = _set_violations(report, rows, waived)
     pieces = [piece for piece in manifest.get("pieces") or [] if isinstance(piece, dict)]
     per_role: Dict[str, int] = {}
     for piece in pieces:
@@ -136,6 +137,8 @@ def _stage_violations(manifest: Dict[str, Any], root: Path) -> List[str]:
         per_role[role] = per_role.get(role, 0) + 1
     seen: List[Path] = []
     for piece in pieces:
+        if str(piece.get("role") or "") in waived:  # SWB-096: the verified owner override names this page
+            continue
         mine, why = _runs_for(piece, rows, per_role)
         if why:
             fails.append(f"{CODE}: {why}")
@@ -155,7 +158,7 @@ def _stage_violations(manifest: Dict[str, Any], root: Path) -> List[str]:
     return fails
 
 
-def _hosting_binding_violations(manifest: Dict[str, Any], root: Path) -> List[str]:
+def _hosting_binding_violations(manifest: Dict[str, Any], root: Path, waived: Tuple[str, ...] = ()) -> List[str]:
     """A client delivery ships hosted images: every page's own binding must admit them.
 
     ``image_stages.hosted_admission`` is the launcher's decision; it is re-run from each
@@ -175,6 +178,8 @@ def _hosting_binding_violations(manifest: Dict[str, Any], root: Path) -> List[st
     fails: List[str] = []
     for piece in pieces:
         key, role = page_designs.page_key(piece), str(piece.get("role") or "")
+        if role in waived:
+            continue
         mine = [run for run in runs if image_stages.page_key_for_run(run) == key]
         if not mine and per_role.get(role, 0) == 1:  # a role-level run, one instance of that role
             mine = [run for run in runs if image_stages.page_role(run) == role]
@@ -207,6 +212,13 @@ def violations(manifest: Dict[str, Any], root: Path, skill_root: Path) -> List[s
     root = Path(root)
     if not applies(manifest, root):
         return []
-    return (graphics_hooks.report_violations(manifest, root)
-            + _stage_violations(manifest, root)
-            + _hosting_binding_violations(manifest, root))
+    # SWB-096: the owner's signed image-stage override is re-verified here (never believed from the manifest)
+    # and waives ONLY the pages it names; a record that does not verify waives nothing and is itself a violation.
+    waived, override_fails, _banner = owner_override.image_stage_waiver(manifest, Path(root).name)
+    override_msgs = [f"{owner_override.CODE_IMAGE_STAGES}: the image-stage owner override does not verify: {why}"
+                     for why in override_fails]
+    waived_t = tuple(waived)
+    return (override_msgs
+            + graphics_hooks.report_violations(manifest, root)
+            + _stage_violations(manifest, root, waived_t)
+            + _hosting_binding_violations(manifest, root, waived_t))

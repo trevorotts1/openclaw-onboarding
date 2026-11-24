@@ -183,7 +183,13 @@ def cmd_owner_override(args: argparse.Namespace) -> int:
     if out.exists():
         raise CliError("AF-LAUNCH-OWNER-OVERRIDE-EXISTS", f"{out} already exists; an override is never overwritten")
     try:
-        record = owner_override.mint(args.plan_hash, args.scope, args.owner_words, args.note)
+        if args.scope == owner_override.SCOPE_IMAGE_STAGES:
+            if not args.package_id or not args.page_roles:
+                raise ValueError("--scope image_stages needs --package-id and at least one --page-role")
+            record = owner_override.mint_image_stages(args.plan_hash, args.package_id, args.page_roles,
+                                                      args.owner_words, args.note)
+        else:
+            record = owner_override.mint(args.plan_hash, args.scope, args.owner_words, args.note)
     except ValueError as exc:
         raise CliError(owner_override.CODE, str(exc))
     out.write_text(json.dumps(record, indent=2, sort_keys=True) + "\n", encoding="utf-8")
@@ -334,6 +340,8 @@ def cmd_assemble(args: argparse.Namespace) -> int:
                                refuse_incomplete_designs=not args.allow_no_designs,
                                design_waiver=_read_json(args.design_waiver) if args.design_waiver else None,
                                owner_override=_read_json(args.owner_override) if args.owner_override else None,
+                               owner_override_image_stages=(_read_json(args.owner_override_image_stages)
+                                                            if args.owner_override_image_stages else None),
                                design_approvals=(_read_json(args.design_approvals)
                                                  if args.design_approvals else None),
                                launch_plan=plan, deliveries=deliveries,
@@ -898,6 +906,10 @@ def build_parser() -> argparse.ArgumentParser:
                         "the operator key named by SF_OPERATOR_KEY_FILE). With --allow-no-designs it is the ONLY "
                         "way a client delivery (test_only false) assembles without the page designs; the "
                         "package and its receipt then carry the marker OWNER OVERRIDE")
+    a.add_argument("--owner-override-image-stages", dest="owner_override_image_stages",
+                   help="SWB-096: the owner's signed image-stage override (`owner-override --scope image_stages`), "
+                        "bound to the plan hash and this package's run id (the --out folder name). It waives the "
+                        "Skill 71 image stages ONLY for the pages it names; check re-verifies it")
     a.add_argument("--design-approvals",
                    help='JSON {"design_board": {state, approval_ref, record_sha256}, "final_mockups": {...}}; '
                         "an approved entry must resolve to a recorded Skill 71 Design Board approval "
@@ -1078,7 +1090,11 @@ def build_parser() -> argparse.ArgumentParser:
                        help="SWB-094: write a signed owner override (page designs) for a plan hash; needs the "
                             "operator key (SF_OPERATOR_KEY_FILE), which is never printed")
     o.add_argument("--plan-hash", required=True, help="the approved plan hash (64 hex) the override covers")
-    o.add_argument("--scope", default=owner_override.SCOPE_PAGE_DESIGNS, choices=owner_override.SCOPES)
+    o.add_argument("--scope", default=owner_override.SCOPE_PAGE_DESIGNS, choices=(*owner_override.SCOPES, owner_override.SCOPE_IMAGE_STAGES))
+    o.add_argument("--package-id", default=None,
+                   help="SWB-096, scope image_stages: the package run id (the assemble --out folder name)")
+    o.add_argument("--page-role", action="append", dest="page_roles",
+                   help="SWB-096, scope image_stages: a page role the override covers (repeat)")
     o.add_argument("--owner-word", action="append", required=True, dest="owner_words",
                    help="a sentence in the owner's own words that grants this (repeat for each)")
     o.add_argument("--note", default="", help="why, in one line")

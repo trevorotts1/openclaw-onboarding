@@ -639,6 +639,10 @@ def _proof_floor_violations(manifest: Dict[str, Any]) -> List[str]:
     return fails
 
 
+def test_only_manifest(manifest: Dict[str, Any]) -> bool:
+    return manifest.get("test_only") is True
+
+
 def check_package(manifest_path: Path, root: Path,
                   skill_root: Path | None = None,
                   require_designs: bool | None = None,
@@ -743,6 +747,9 @@ def check_package(manifest_path: Path, root: Path,
     fails.extend(design_fails)
     if announce:
         print(f"delivery level: {label}")
+        if manifest.get("owner_override_image_stages") is not None and not test_only_manifest(manifest):
+            roles, _why, banner = owner_override_module.image_stage_waiver(manifest, root.name)
+            print(banner if roles else "OWNER OVERRIDE: image stages override NOT verified (no page waived)")
 
     # Route graph: every node has its piece (U1/U2 included) and doc 02's edge law holds.
     fails.extend(_route_graph_violations(manifest, root))

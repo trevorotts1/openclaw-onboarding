@@ -1507,7 +1507,8 @@ def assemble(run_dir: Path, intake: Dict[str, Any], route: Dict[str, Any],
              checkout_readback: Optional[Dict[str, Any]] = None,
              activation_readback: Optional[Dict[str, Any]] = None,
              refuse_incomplete_designs: bool = False,
-             owner_override: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+             owner_override: Optional[Dict[str, Any]] = None,
+             owner_override_image_stages: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """Write package-manifest.json + receipt.json into run_dir. Returns both records.
 
     Artifacts are copied into run_dir/pieces/<page_id>/ so the delivered package
@@ -1784,6 +1785,23 @@ def assemble(run_dir: Path, intake: Dict[str, Any], route: Dict[str, Any],
                       "owner_override": True}
         else:
             waiver = _verify_design_waiver(design_waiver, approved, test_only)
+    image_override_entry = None
+    if owner_override_image_stages is not None:
+        # SWB-096: a second, separately scoped owner override: the Skill 71 image stages (never the designs)
+        # for the pages it names, bound to this plan hash and this package run id. A practice package has no
+        # use for it, so it is refused there rather than silently carried.
+        if test_only:
+            raise PackageError(owner_override_module.CODE_IMAGE_STAGES,
+                               "an image-stage owner override is only for a client delivery (test_only false)")
+        try:
+            image_override_entry = owner_override_module.accept_image_stages(
+                owner_override_image_stages, approved, Path(run_dir).name, run_dir)
+        except ValueError as exc:
+            raise PackageError(owner_override_module.CODE_IMAGE_STAGES, str(exc))
+        unplanned = [r for r in image_override_entry["page_roles"] if r not in {p["role"] for p in ordered}]
+        if unplanned:
+            raise PackageError(owner_override_module.CODE_IMAGE_STAGES,
+                               f"the record names pages this package does not have: {unplanned}")
     approval_copies: List[Tuple[Path, Path]] = []   # written after the design refusal, never before
     if design_approvals is not None:
         # STR-25: an approved Design Board must resolve to a recorded Skill 71 approval, and a relative
@@ -1936,6 +1954,9 @@ def assemble(run_dir: Path, intake: Dict[str, Any], route: Dict[str, Any],
                            f"(signed record {override_entry['signature'][:16]})")
     elif waiver is not None:
         delivery_label += f"; designs waived (owner approval {waiver['approval_ref']})"
+    if image_override_entry is not None:
+        delivery_label += "; " + owner_override_module.image_stages_banner(
+            image_override_entry["page_roles"], image_override_entry)
     seams = [seam["id"] for seam in SEAMS]
     if SEAM_NATIVE_CHECKOUT_INSTALL not in seams:
         seams.append(SEAM_NATIVE_CHECKOUT_INSTALL)
@@ -1969,6 +1990,7 @@ def assemble(run_dir: Path, intake: Dict[str, Any], route: Dict[str, Any],
         "open_by_design_blockers": open_by_design,
         "design_waiver": waiver,
         "owner_override": override_entry,
+        "owner_override_image_stages": image_override_entry,
         "intake": {"path": "intake.json", "sha256": _sha256_file(intake_path)},
         "route_graph": {"path": "route-graph.json", "sha256": _sha256_file(route_path)},
         "pieces": ordered,
@@ -2036,6 +2058,7 @@ def assemble(run_dir: Path, intake: Dict[str, Any], route: Dict[str, Any],
         "open_by_design_blockers": open_by_design,
         "design_waiver": waiver,
         "owner_override": override_entry,
+        "owner_override_image_stages": image_override_entry,
         "manifest": {"path": "package-manifest.json", "sha256": _sha256_file(manifest_path)},
         "units": _unit_receipts(ordered, intake, launch_plan, pieces, plan_ref, run_dir,
                                 lane_deliveries=deliveries, approved=approved),
