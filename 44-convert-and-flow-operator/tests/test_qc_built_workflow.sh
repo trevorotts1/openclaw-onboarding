@@ -243,6 +243,25 @@ run export-native.json "${LCOMMON[@]}" --launch-schedule "$T/sched-native.json" 
 run export-native-nostop.json "${LCOMMON[@]}" --launch-schedule "$T/sched-native.json" --account-tz America/New_York
 [ "$(json_field items WF-16 status)" = "FAIL" ] && ok "WF-16 FAIL with no stopOnResponse and no window" || bad "WF-16 passed with neither saved"
 
+# 12. SWB-062 WF-24: a saved trigger record has no targetActionId; it belongs to its workflow and enters
+# the one root. The export carries no trigger, so a read-back is supplied with --trigger-evidence.
+python3 -I - "$T" <<'PY'
+import json, sys
+t = sys.argv[1]
+d = json.load(open(t + "/export-native.json")); d.pop("triggers")
+json.dump(d, open(t + "/export-native-notrig.json", "w"))
+mine = {"id": "TR1", "type": "two_step_form_submission", "belongs_to": "workflow", "workflow_id": "WFTEST001",
+        "actions": [{"workflow_id": "WFTEST001", "type": "add_to_workflow"}]}
+json.dump([mine], open(t + "/trig-native.json", "w"))
+json.dump([dict(mine, workflow_id="OTHER", actions=[{"workflow_id": "OTHER", "type": "add_to_workflow"}])], open(t + "/trig-other.json", "w"))
+PY
+run export-native-notrig.json "${LCOMMON[@]}" --launch-schedule "$T/sched-native.json" --account-tz America/New_York
+[ "$(json_field items WF-24 status)" = "FAIL" ] && ok "WF-24 FAIL with no trigger evidence at all" || bad "WF-24 passed with no trigger"
+run export-native-notrig.json "${LCOMMON[@]}" --launch-schedule "$T/sched-native.json" --account-tz America/New_York --trigger-evidence "$T/trig-native.json"
+[ "$(json_field items WF-24 status)" = "PASS" ] && ok "WF-24 PASS: native trigger of this workflow enters the root" || bad "WF-24 native trigger not PASS"
+run export-native-notrig.json "${LCOMMON[@]}" --launch-schedule "$T/sched-native.json" --account-tz America/New_York --trigger-evidence "$T/trig-other.json"
+[ "$(json_field items WF-24 status)" = "FAIL" ] && ok "WF-24 FAIL: trigger belongs to another workflow" || bad "WF-24 passed a foreign trigger"
+
 echo
 if [ "$FAILS" -eq 0 ]; then echo "ALL PASS"; exit 0; fi
 echo "$FAILS FAILED"; exit 1

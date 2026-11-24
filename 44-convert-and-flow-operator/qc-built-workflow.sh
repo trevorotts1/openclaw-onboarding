@@ -911,6 +911,20 @@ if not triggers or root is None:
 targets = [(path, str(node[key]).strip())
            for path, node in triggers for key in TARGETS
            if isinstance(node.get(key), str) and node[key].strip()]
+# A saved GoHighLevel trigger record has no targetActionId: it belongs to its
+# workflow (workflow_id, actions[add_to_workflow]) and enters that workflow's
+# one root. It is linked only when it names THIS workflow; a trigger that
+# belongs to another workflow, or any mix with explicit targets, never passes here.
+wid = str(data.get('id') or data.get('_id') or '') if isinstance(data, dict) else ''
+def native_trigger(node):
+    return (bool(wid) and str(node.get('workflow_id') or '') == wid
+            and node.get('belongs_to') in (None, 'workflow')
+            and any(isinstance(a, dict) and a.get('type') == 'add_to_workflow'
+                    and str(a.get('workflow_id') or '') == wid
+                    for a in (node.get('actions') or [])))
+if not targets and triggers and all(native_trigger(n) for _, n in triggers):
+    print('LINKED %s %s %s none' % (root, root, triggers[0][0] + '(native-add_to_workflow)'))
+    sys.exit(0)
 if not targets:
     print('ABSENT none %s %s trigger_evidence_absent' %
           (root or 'none', triggers[0][0]))
