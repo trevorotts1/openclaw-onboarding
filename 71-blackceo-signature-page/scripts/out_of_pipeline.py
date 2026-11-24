@@ -45,7 +45,27 @@ INTERNAL_DIRS = ("private",)
 LEDGER_FILE = "private/quarantine-ledger.json"
 LEDGER_SCHEMA = "signature-launch-quarantine-ledger/v1"
 LEDGER_KIND = "quarantine_entry"
+GOVERNOR_FILE = "private/governor.json"
 ENTRY_FIELDS = ("path", "sha256", "size", "reason", "quarantined_at", "approver")
+
+# RUN-STATE FILES (1.3.45). Exact root-level names the pipeline rewrites on every
+# dispatch BY DESIGN, so a byte change on one is a record, not out-of-pipeline output:
+#   production-request.json  the stage request is rebuilt from the manuscript on every
+#                            stage (SOP Stage 4, "Per-run layout input"; generation-execution.md)
+#   image-spend-ledger.json  the append-only per-run spend record, written before and after
+#                            every paid render (stage_executor.py, LEDGER)
+#   page-result.json         the page result record rebuilt from stage state (HANDOFF.md,
+#                            doc 02 section 6)
+# The list is CLOSED: a name outside it, the same name in a subfolder, a file that is not
+# registered, or a file whose content does not have the shape below is not run state.
+# A change is recorded (old/new sha) in `run_state_changed` and never fails the scan.
+RUN_STATE_SHAPES = {
+    "production-request.json": ("model", "sections"),
+    "image-spend-ledger.json": ("calls",),
+    "page-result.json": ("request_id", "status", "artifacts"),
+}
+RUN_STATE_FILES = tuple(RUN_STATE_SHAPES)
+RUN_STATE_MAX_BYTES = 64 * 1024 * 1024
 
 IN_PROGRESS = "in_progress"
 EMITTED = "emitted"
@@ -248,11 +268,59 @@ def _quarantine_verdict(entry, key, target):
     return True, None
 
 
+
+def _ledger_entry(root, rel):
+    ledger = _read_ledger(root)
+    if ledger is None:
+        return None
+    return next((e for e in ledger["entries"] if e.get("path") == rel), None)
+
+
+def quarantine_release(root, rel, stage):
+    """The admission row that lets stage `stage` register/close the quarantined `rel`, or None.
+
+    1.3.45 (d). A paid dispatch of stage S regenerates files inside S's own output
+    directories (and S's own `production-request-<stage>.json`); some of those exact
+    paths may sit in the quarantine ledger. The release is narrow on purpose:
+      * an ADMITTED `paid_dispatch` admission record for exactly this stage exists in
+        the run's governor file and names this exact path under
+        `out_of_pipeline.quarantined_to_supersede` with `owner_stage` == this stage;
+      * the record's quarantine ledger hash equals the ledger on disk now (a path
+        quarantined or re-signed after the admission is not covered by it);
+      * the row's sha256 equals the ledger entry's sha256 for the path.
+    A path outside the stage's own scope never appears in the record, so it stays
+    unregisterable. close() additionally requires NEW bytes (see close)."""
+    try:
+        record = json.loads((Path(root).resolve() / GOVERNOR_FILE).read_text(encoding="utf-8"))
+        ledger_sha = _sha256_file(ledger_path(root))
+    except (OSError, ValueError):
+        return None
+    led = _ledger_entry(root, rel)
+    if led is None or not isinstance(record, dict):
+        return None
+    for decision in record.get("admitted") or ():
+        if not isinstance(decision, dict) or decision.get("admitted") is not True \
+                or decision.get("authority") != "paid_dispatch" \
+                or decision.get("stage") != str(stage):
+            continue
+        oop = decision.get("out_of_pipeline") or {}
+        if oop.get("quarantine_ledger_sha256") != ledger_sha:
+            continue
+        for row in oop.get("quarantined_to_supersede") or ():
+            if isinstance(row, dict) and row.get("path") == rel \
+                    and row.get("owner_stage") == str(stage) \
+                    and row.get("sha256") == led.get("sha256"):
+                return row
+    return None
+
+
 def register(root, path, *, stage, item=None, expected_sha256=None, producer=None):
     """Register one output BEFORE the producer writes it (item 5)."""
     rel = normalise(root, path)
-    if is_quarantined_path(root, rel):
-        raise OutOfPipeline("%s is quarantined (out of the pipeline) and can never be registered" % rel)
+    if is_quarantined_path(root, rel) and quarantine_release(root, rel, stage) is None:
+        raise OutOfPipeline("%s is quarantined (out of the pipeline) and can never be registered "
+                            "(no paid-dispatch admission of stage %r names it as superseded)"
+                            % (rel, stage))
     if not str(stage or "").strip():
         raise OutOfPipeline("register() needs the canonical stage the output belongs to")
     registry = load(root)
@@ -285,8 +353,11 @@ def register(root, path, *, stage, item=None, expected_sha256=None, producer=Non
 def close(root, path, *, stage, sha256=None):
     """Mark one registered output emitted, binding the bytes that were written."""
     rel = normalise(root, path)
-    if is_quarantined_path(root, rel):
-        raise OutOfPipeline("%s is quarantined (out of the pipeline) and can never be closed" % rel)
+    quarantined = is_quarantined_path(root, rel)
+    if quarantined and quarantine_release(root, rel, stage) is None:
+        raise OutOfPipeline("%s is quarantined (out of the pipeline) and can never be closed "
+                            "(no paid-dispatch admission of stage %r names it as superseded)"
+                            % (rel, stage))
     registry = load(root)
     entry = registry["outputs"].get(rel)
     if entry is None:
@@ -301,6 +372,16 @@ def close(root, path, *, stage, sha256=None):
         digest = _sha256_file(target)
     else:
         digest = _digest(sha256, "sha256")
+    if quarantined:
+        # A quarantined file is closed only for bytes the stage wrote AFTER the
+        # quarantine: the old quarantined bytes can never be laundered into governed state.
+        led = _ledger_entry(root, rel)
+        if not target.is_file() or _sha256_file(target) != digest:
+            raise OutOfPipeline("quarantined path %s can only be closed over the bytes now on "
+                                "disk" % rel)
+        if digest == led.get("sha256"):
+            raise OutOfPipeline("quarantined path %s still holds its quarantined bytes; the "
+                                "stage has not regenerated it" % rel)
     expected = entry.get("expected_sha256")
     if expected and expected != digest:
         raise OutOfPipeline("output %s emitted %s but was registered as %s"
@@ -315,6 +396,66 @@ def close(root, path, *, stage, sha256=None):
 # --------------------------------------------------------------------------
 # the scan
 # --------------------------------------------------------------------------
+
+def _json_shape_ok(path, required_keys):
+    """True when `path` is a JSON object (not a list, image or text) holding every key."""
+    try:
+        if path.stat().st_size > RUN_STATE_MAX_BYTES:
+            return False
+        doc = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return False
+    if not isinstance(doc, dict) or not all(k in doc for k in required_keys):
+        return False
+    if "calls" in required_keys and not isinstance(doc.get("calls"), list):
+        return False
+    return True
+
+
+def run_state_name(rel):
+    """The run-state name `rel` is, or None. Root level, exact equality, nothing else."""
+    return rel if rel in RUN_STATE_FILES and "/" not in rel else None
+
+
+def is_run_state(rel, entry, path):
+    """A registered, emitted, root-level file on the closed list with the right shape."""
+    name = run_state_name(rel)
+    return bool(name and entry and entry.get("state") == EMITTED
+                and _json_shape_ok(path, RUN_STATE_SHAPES[name]))
+
+
+def declared_brand_input(base, outputs):
+    """The one brand file the run's own intake names (`brand_file`), or None.
+
+    Exact, root-level, registered under the intake stage, and a JSON brand profile
+    (it carries `brand_id`). Anything else the intake names is not a brand input."""
+    try:
+        intake = json.loads((base / "intake.json").read_text(encoding="utf-8"))
+        name = intake.get("brand_file")
+    except (OSError, ValueError, AttributeError):
+        return None
+    if not isinstance(name, str) or not name or "/" in name or name in INTERNAL_DIRS \
+            or name.startswith("."):
+        return None
+    entry = outputs.get(name)
+    target = base / name
+    if entry is None or entry.get("stage") != "intake" or entry.get("state") != EMITTED \
+            or not target.is_file() or not _json_shape_ok(target, ("brand_id",)):
+        return None
+    return name
+
+
+def _pinned_brand_hashes(base):
+    found = {}
+    for doc in ("launch.json", "page-request.json"):
+        try:
+            value = json.loads((base / doc).read_text(encoding="utf-8")).get("brand_hash")
+        except (OSError, ValueError, AttributeError):
+            value = None
+        if isinstance(value, str) and value:
+            found[doc] = value
+    return found
+
 
 def _walk(root):
     base = Path(root).resolve()
@@ -372,6 +513,8 @@ def scan(root, *, receipts=None, declared_native=None, inputs=()):
         "registered_unfinished": [],
         "ungoverned": [],
         "content_mismatch": [],
+        "run_state_changed": [],
+        "input_changed": [],
         "receipt_unregistered": [],
         "native_unregistered": [],
     }
@@ -386,6 +529,7 @@ def scan(root, *, receipts=None, declared_native=None, inputs=()):
             key = _key_bytes(base)
         except OutOfPipeline:
             key = None
+    brand_input = declared_brand_input(base, outputs)
     for rel, path in _walk(base):
         if rel in registered_inputs:
             result["inputs"].append(rel)
@@ -409,6 +553,20 @@ def scan(root, *, receipts=None, declared_native=None, inputs=()):
             result["registered_unfinished"].append({"path": rel, "stage": entry.get("stage")})
             continue
         digest = _sha256_file(path)
+        if entry.get("sha256") != digest and is_run_state(rel, entry, path):
+            result["run_state_changed"].append({
+                "path": rel, "registered": entry.get("sha256"), "actual": digest,
+                "reason": "run state rewritten by the pipeline on every dispatch (closed list)"})
+            continue
+        if entry.get("sha256") != digest and rel == brand_input:
+            row = {"path": rel, "registered": entry.get("sha256"), "actual": digest,
+                   "reason": "brand input named by intake.json brand_file was edited after it "
+                             "was attested"}
+            pins = {k: v for k, v in _pinned_brand_hashes(base).items() if v != digest}
+            if pins:
+                row["stale_brand_pins"] = pins
+            result["input_changed"].append(row)
+            continue
         if entry.get("sha256") != digest:
             result["content_mismatch"].append({
                 "path": rel, "registered": entry.get("sha256"), "actual": digest})
@@ -479,8 +637,8 @@ def require_governed(root, *, receipts=None, declared_native=None, inputs=()):
 def excluded_paths(result):
     """Every path that may not earn delivery, credit, install or publish."""
     names = []
-    for bucket in ("ungoverned", "content_mismatch"):
-        names.extend(entry["path"] for entry in result[bucket])
+    for bucket in ("ungoverned", "content_mismatch", "run_state_changed", "input_changed"):
+        names.extend(entry["path"] for entry in result.get(bucket, ()))
     # A quarantined file is acknowledged as out-of-pipeline: it never earns
     # delivery, credit, installation or publication.
     names.extend(entry["path"] for entry in result.get("quarantined", ()))

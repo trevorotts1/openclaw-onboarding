@@ -549,9 +549,25 @@ def admit(run_dir, *, kind, authority, owner="runner", stage=None, item=None,
     }
     if superseded:
         decision["out_of_pipeline"]["superseded_mismatch"] = superseded
+    # 1.3.45 (c): run state and the declared brand input are RECORDED (old and new hash),
+    # never refused; the lists are closed (out_of_pipeline.RUN_STATE_FILES).
+    for bucket in ("run_state_changed", "input_changed"):
+        if scan_result.get(bucket):
+            decision["out_of_pipeline"][bucket] = [
+                {"path": e["path"], "old_sha256": e.get("registered"),
+                 "new_sha256": e.get("actual"),
+                 **({"stale_brand_pins": e["stale_brand_pins"]} if e.get("stale_brand_pins") else {})}
+                for e in scan_result[bucket]]
     if "quarantined" in scan_result:
         decision["out_of_pipeline"]["quarantined"] = [e["path"] for e in scan_result["quarantined"]]
         decision["out_of_pipeline"]["quarantined_count"] = len(scan_result["quarantined"])
+        # 1.3.45 (d): quarantined paths a paid dispatch of S will regenerate.
+        if authority == "paid_dispatch" and stage is not None:
+            rows = quarantine_supersede_rows(base, stage, scan_result["quarantined"])
+            if rows:
+                decision["out_of_pipeline"]["quarantined_to_supersede"] = rows
+                decision["out_of_pipeline"]["quarantine_ledger_sha256"] = \
+                    detector()._sha256_file(detector().ledger_path(base))
 
     # --- item 3: the existing stage check, before governed work begins ------
     if stage is not None:
@@ -634,25 +650,153 @@ def downstream_stages(stage):
     return [name for name in canonical_order() if name in found]
 
 
+def stage_scope(stage):
+    """The paths stage `stage` itself writes: its output directories/files and its own
+    `production-request-<stage>.json` working request (run_page_type.py, stage_gate.py)."""
+    stage_definition(stage)
+    return list(STAGE_OUTPUTS.get(stage, [])) + ["production-request-%s.json" % stage]
+
+
+def in_stage_scope(rel, stage):
+    for item in stage_scope(stage):
+        if item.endswith("/"):
+            if rel.startswith(item):
+                return True
+        elif rel == item:
+            return True
+    return False
+
+
+def shared_output_dirs():
+    """Output directories listed for more than one stage (today: review-pdfs/). Only
+    here is the registry's owner ever re-derived, because only here the path cannot say
+    which stage wrote the file."""
+    seen = {}
+    for stage, items in STAGE_OUTPUTS.items():
+        for item in items:
+            if item.endswith("/"):
+                seen.setdefault(item, set()).add(stage)
+    return tuple(sorted(d for d, stages in seen.items() if len(stages) > 1))
+
+
+def _pass_receipt_hashes(base):
+    """{sha256: [(stage, artifact path), ...]} over the pass-stage receipts only."""
+    found = {}
+    for stage in canonical_order():
+        doc = _read_json(Path(base) / "private" / "receipts" / ("%s.json" % stage))
+        if not isinstance(doc, dict) or doc.get("status") != "pass":
+            continue
+        for artifact, value in (doc.get("artifact_hashes") or {}).items():
+            digest = value.get("sha256") if isinstance(value, dict) else value
+            if isinstance(digest, str) and len(digest) == 64:
+                found.setdefault(digest, []).append((stage, artifact))
+    return found
+
+
+def _downstream_most(stages):
+    order = canonical_order()
+    return max(stages, key=order.index)
+
+
+def _cited_hashes(doc, out):
+    if isinstance(doc, dict):
+        for key, value in doc.items():
+            if key in ("sha256", "pdf_sha256") and isinstance(value, str):
+                out.append(value)
+            _cited_hashes(value, out)
+    elif isinstance(doc, list):
+        for value in doc:
+            _cited_hashes(value, out)
+    return out
+
+
+def _sidecar_owner(path, receipt_hashes):
+    """Owner of a JSON review sidecar: every sha256 it cites must be a pass-stage receipt
+    hash; the owner is the downstream-most stage among them. None when any is unknown."""
+    try:
+        doc = json.loads(Path(path).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    cited = _cited_hashes(doc, [])
+    if not cited or any(h not in receipt_hashes for h in cited):
+        return None
+    stages = [stage for h in cited for stage, _a in receipt_hashes[h]]
+    return _downstream_most(stages), "sidecar cites %d pass-receipt artifact hash(es)" % len(cited)
+
+
+def derive_owner(run_dir, rel, actual_sha256):
+    """(owner_stage, basis) for a file in a SHARED output directory, derived from the
+    pass-stage receipts, else None. Never from the path alone:
+
+      1. the file's bytes equal a hash a pass-stage receipt records (a copy of that
+         stage's own closed output): owner is the downstream-most such stage;
+      2. a JSON sidecar (board record, PDF manifest) whose every cited sha256 is a
+         pass-stage receipt hash: owner is the downstream-most cited stage;
+      3. a board image whose sibling JSON names it (`board` basename) and whose
+         `output_sha256` equals these bytes, with that JSON derivable by rule 2.
+    """
+    base = Path(run_dir).resolve()
+    if not any(rel.startswith(d) for d in shared_output_dirs()):
+        return None
+    hashes = _pass_receipt_hashes(base)
+    if actual_sha256 in hashes:
+        stage = _downstream_most([st for st, _a in hashes[actual_sha256]])
+        return stage, "bytes equal the pass-stage receipt hash of %s" % hashes[actual_sha256][0][1]
+    if rel.endswith(".json"):
+        return _sidecar_owner(base / rel, hashes)
+    folder = (base / rel).parent
+    for sibling in sorted(folder.glob("*.json")):
+        doc = _read_json(sibling)
+        if isinstance(doc, dict) and doc.get("board") == Path(rel).name \
+                and doc.get("output_sha256") == actual_sha256:
+            owner = _sidecar_owner(sibling, hashes)
+            if owner:
+                return owner[0], "board image of %s; %s" % (sibling.name, owner[1])
+    return None
+
+
 def supersede_split(run_dir, stage, mismatches):
     """Split content mismatches into (superseded, blocking) for a paid dispatch of `stage`.
 
-    A mismatch is superseded only when its registered owner stage is `stage` or
-    downstream of it. Each superseded row names the file, its owner stage and the
-    old and new hash. An unknown owner or an upstream owner keeps blocking."""
+    A mismatch is superseded only when its owner stage is `stage` or downstream of it.
+    The owner is the registry's, except in a shared output directory where it is derived
+    from the pass-stage receipts (1.3.45 b). Each superseded row names the file, its
+    owner stage, the old and new hash. An unknown or upstream owner keeps blocking."""
     allowed = set(downstream_stages(stage))
     owners = detector().load(Path(run_dir).resolve())["outputs"]
     superseded, blocking = [], []
     for entry in mismatches:
-        owner = (owners.get(entry["path"]) or {}).get("stage")
+        registered_owner = (owners.get(entry["path"]) or {}).get("stage")
+        owner, basis = registered_owner, None
+        derived = derive_owner(run_dir, entry["path"], entry.get("actual"))
+        if derived:
+            owner, basis = derived
         if owner in allowed:
-            superseded.append({"path": entry["path"], "owner_stage": owner,
-                               "dispatched_stage": stage,
-                               "old_sha256": entry.get("registered"),
-                               "new_sha256": entry.get("actual")})
+            row = {"path": entry["path"], "owner_stage": owner,
+                   "dispatched_stage": stage,
+                   "old_sha256": entry.get("registered"),
+                   "new_sha256": entry.get("actual")}
+            if basis:
+                row["registered_owner"] = registered_owner
+                row["owner_basis"] = basis
+            superseded.append(row)
         else:
             blocking.append(entry)
     return superseded, blocking
+
+
+def quarantine_supersede_rows(run_dir, stage, quarantined):
+    """Quarantined paths inside the output scope of `stage` or a stage downstream of it,
+    each with the stage that owns that scope. They are 'to be superseded' by the dispatch;
+    only a row whose owner_stage is `stage` can be released to `stage`'s own register/close."""
+    rows = []
+    for stage_name in downstream_stages(stage):
+        for entry in quarantined:
+            if in_stage_scope(entry["path"], stage_name) \
+                    and all(r["path"] != entry["path"] for r in rows):
+                rows.append({"path": entry["path"], "owner_stage": stage_name,
+                             "sha256": entry["sha256"]})
+    return rows
 
 
 def quarantine(run_dir, path, *, reason, approver, key_file=None):
