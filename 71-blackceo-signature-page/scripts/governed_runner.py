@@ -568,7 +568,7 @@ def admit(run_dir, *, kind, authority, owner="runner", stage=None, item=None,
     if "quarantined" in scan_result:
         decision["out_of_pipeline"]["quarantined"] = [e["path"] for e in scan_result["quarantined"]]
         decision["out_of_pipeline"]["quarantined_count"] = len(scan_result["quarantined"])
-        # 1.3.45 (d): quarantined paths a paid dispatch of S will regenerate.
+        # 1.3.45 (d): quarantined paths a paid dispatch of S will regenerate (information only).
         if authority == "paid_dispatch" and stage is not None:
             rows = quarantine_supersede_rows(base, stage, scan_result["quarantined"])
             if rows:
@@ -717,30 +717,20 @@ def _downstream_most(stages):
     return max(stages, key=order.index)
 
 
-def derive_owner(run_dir, rel, actual_sha256):
-    """(owner_stage, basis) for a file in a SHARED output directory, derived ONLY from what
-    a pass-stage receipt itself lists, else None. Never from the path alone, never from any
-    field inside the file under verification, never from a sibling file's claimed hash:
-
-      1. the exact path is a key of a pass-stage receipt's `artifact_hashes`: the receipt
-         says that stage wrote this path (owner: the downstream-most such stage);
-      2. the file's bytes equal an exact file hash a pass-stage receipt lists (a copy of
-         that stage's own closed output): owner is the downstream-most such stage.
-    A board image follows the same two rules on its own bytes and its own path. A JSON
-    sidecar that cites receipt hashes is NOT evidence (it is file content). 1.3.46 removed
-    the 1.3.45 sidecar and board-sibling rules after SWB-220's attack run (A6, A6b)."""
+def derive_owner(run_dir, rel, actual_sha256=None):
+    """(owner_stage, basis) for a file in a SHARED output directory, derived ONLY from the
+    exact path key of a pass-stage receipt's `artifact_hashes` (a receipt the gate wrote),
+    else None. Never from the path alone, never from any field inside the file under
+    verification, never from a sibling file, and (1.3.47) never from byte equality with a
+    hash a receipt lists: the stage that wrote this exact path is the one its receipt names.
+    A file the receipts do not list takes an owner only from a signed reown record
+    (`reown`, below)."""
     base = Path(run_dir).resolve()
     if not any(rel.startswith(d) for d in shared_output_dirs()):
         return None
-    receipts = _pass_receipts(base)
-    by_path = [st for st, listed in receipts if rel in listed]
+    by_path = [st for st, listed in _pass_receipts(base) if rel in listed]
     if by_path:
         return _downstream_most(by_path), "path is listed in the pass receipt of %s" % by_path[0]
-    by_hash = [(st, a) for st, listed in receipts for a, d in listed.items()
-               if d and d == actual_sha256]
-    if by_hash:
-        return (_downstream_most([st for st, _a in by_hash]),
-                "bytes equal the pass-stage receipt hash of %s" % by_hash[0][1])
     return None
 
 
@@ -748,8 +738,9 @@ def supersede_split(run_dir, stage, mismatches):
     """Split content mismatches into (superseded, blocking) for a paid dispatch of `stage`.
 
     A mismatch is superseded only when its owner stage is `stage` or downstream of it.
-    The owner is the registry's, except in a shared output directory where it is derived
-    from the pass-stage receipts (1.3.45 b). Each superseded row names the file, its
+    The owner is the registry's, except (1) in a shared output directory, where an exact
+    path key of a pass-stage receipt names it, and (2) where a valid signed reown record
+    covers the file's current bytes (1.3.47). Each superseded row names the file, its
     owner stage, the old and new hash. An unknown or upstream owner keeps blocking."""
     allowed = set(downstream_stages(stage))
     owners = detector().load(Path(run_dir).resolve())["outputs"]
@@ -760,6 +751,9 @@ def supersede_split(run_dir, stage, mismatches):
         derived = derive_owner(run_dir, entry["path"], entry.get("actual"))
         if derived:
             owner, basis = derived
+        signed_owner = detector().reowned_to(run_dir, entry["path"], entry.get("actual"))
+        if signed_owner:       # 1.3.47: the operator's signed record outranks everything
+            owner, basis = signed_owner, "signed reown record for these exact bytes"
         if owner in allowed:
             row = {"path": entry["path"], "owner_stage": owner,
                    "dispatched_stage": stage,
@@ -776,8 +770,9 @@ def supersede_split(run_dir, stage, mismatches):
 
 def quarantine_supersede_rows(run_dir, stage, quarantined):
     """Quarantined paths inside the output scope of `stage` or a stage downstream of it,
-    each with the stage that owns that scope. They are 'to be superseded' by the dispatch;
-    only a row whose owner_stage is `stage` can be released to `stage`'s own register/close."""
+    each with the stage that owns that scope. INFORMATION for the operator only (1.3.47): it
+    releases nothing. A quarantined path is registered/closed only through a signed
+    release-quarantine record (`release_quarantine`)."""
     rows = []
     for stage_name in downstream_stages(stage):
         for entry in quarantined:
@@ -786,6 +781,26 @@ def quarantine_supersede_rows(run_dir, stage, quarantined):
                 rows.append({"path": entry["path"], "owner_stage": stage_name,
                              "sha256": entry["sha256"]})
     return rows
+
+
+def seal_ledger(run_dir, *, key_file=None):
+    """The operator adopts the quarantine ledger as it stands (needed once for a pre-1.3.47 ledger)."""
+    return detector().seal_ledger(run_dir, key_file=key_file)
+
+
+def release_quarantine(run_dir, path, *, stage, reason, approver, key_file=None):
+    """Sign that `stage` may register and close the quarantined `path` over the bytes on disk now."""
+    stage_definition(stage)
+    return detector().release_quarantine(run_dir, path, stage=stage, reason=reason,
+                                         approver=approver, in_scope=in_stage_scope,
+                                         key_file=key_file)
+
+
+def reown(run_dir, path, *, owner_stage, reason, approver, key_file=None):
+    """Sign that the registered `path`, as it is now, belongs to `owner_stage`."""
+    stage_definition(owner_stage)
+    return detector().reown(run_dir, path, owner_stage=owner_stage, reason=reason,
+                            approver=approver, key_file=key_file)
 
 
 def quarantine(run_dir, path, *, reason, approver, key_file=None):

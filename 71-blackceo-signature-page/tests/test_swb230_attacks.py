@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""SWB-230 (1.3.46): the SWB-220 attack run, ported. Every test PASSES when the attack is REFUSED.
+"""SWB-230 (1.3.46) / SWB-240 (1.3.47): the SWB-220 attack run, ported. Every test PASSES when the attack is REFUSED.
 
 A1, A5, A6, A6b fail on 1.3.45 and pass on 1.3.46; A2, A3, A4, A7 held on 1.3.45 and keep
 holding. The twins pin each new condition one at a time. Throwaway keys only (the fixture KEY).
@@ -58,8 +58,9 @@ class Attacks(Helpers):
         p.write_bytes(img)
         GR.quarantine(self.run_root, "desktop-wireframe/section-02.png", reason="x", approver="T")
         self.dispatch(DW)
-        GR.register_output(self.run_root, "desktop-wireframe/section-02.png", stage=DW)
         p.write_bytes(img + b"\x00")
+        self.assertTrue(self.refuses(GR.register_output, self.run_root,
+                                     "desktop-wireframe/section-02.png", stage=DW))
         self.assertTrue(self.refuses(GR.close_output, self.run_root,
                                      "desktop-wireframe/section-02.png", stage=DW))
 
@@ -164,45 +165,6 @@ class Attacks(Helpers):
         self.assertTrue(oop.verify_admission(row, self.key.read_bytes().strip()))
         self.assertFalse(oop.verify_admission(row, OTHER_KEY))
         self.assertFalse(oop.verify_admission(dict(row, stage="copy"), self.key.read_bytes().strip()))
-
-    # intended case: signed admission -> register -> executor renders -> close
-    def test_released_path_closes_over_executor_rendered_bytes(self):
-        self.q("desktop-wireframe/a.png", "old image")
-        self.dispatch(DW)
-        GR.register_output(self.run_root, "desktop-wireframe/a.png", stage=DW)
-        self.render("desktop-wireframe/a.png", "freshly rendered", DW)
-        entry = GR.close_output(self.run_root, "desktop-wireframe/a.png", stage=DW)
-        self.assertEqual(entry["sha256"], sha("freshly rendered"))
-
-    def test_closing_needs_an_executor_record_at_all(self):
-        self.q("desktop-wireframe/a.png", "old image")
-        self.dispatch(DW)
-        GR.register_output(self.run_root, "desktop-wireframe/a.png", stage=DW)
-        self.write("desktop-wireframe/a.png", "different bytes, no executor record")
-        self.assertTrue(self.refuses(GR.close_output, self.run_root, "desktop-wireframe/a.png", stage=DW))
-
-    def test_executor_record_with_a_different_hash_refuses(self):
-        self.q("desktop-wireframe/a.png", "old image")
-        self.dispatch(DW)
-        GR.register_output(self.run_root, "desktop-wireframe/a.png", stage=DW)
-        self.render("desktop-wireframe/a.png", "freshly rendered", DW, record_hash=sha("something else"))
-        self.assertTrue(self.refuses(GR.close_output, self.run_root, "desktop-wireframe/a.png", stage=DW))
-
-    def test_executor_record_older_than_the_signed_admission_refuses(self):
-        self.q("desktop-wireframe/a.png", "old image")
-        self.dispatch(DW)
-        GR.register_output(self.run_root, "desktop-wireframe/a.png", stage=DW)
-        self.render("desktop-wireframe/a.png", "rendered before the admission", DW,
-                    when=datetime.now(timezone.utc) - timedelta(hours=1))
-        self.assertTrue(self.refuses(GR.close_output, self.run_root, "desktop-wireframe/a.png", stage=DW))
-
-    def test_executor_record_listing_another_path_refuses(self):
-        self.q("desktop-wireframe/a.png", "old image")
-        self.dispatch(DW)
-        GR.register_output(self.run_root, "desktop-wireframe/a.png", stage=DW)
-        self.render("desktop-wireframe/other.png", "other render", DW)
-        self.write("desktop-wireframe/a.png", "other render")
-        self.assertTrue(self.refuses(GR.close_output, self.run_root, "desktop-wireframe/a.png", stage=DW))
 
     # A6 owner claim forged inside the file under verification
     def test_A6_owner_claim_by_citation(self):

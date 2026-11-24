@@ -98,6 +98,7 @@ MODULES = [
     "test_quarantine_supersede.py",
     "test_runstate_owner_collision.py",
     "test_swb230_attacks.py",
+    "test_swb240_attacks.py",
     # AF-71-THANK-YOU-PITCH: the thank-you no-pitch scan, its copy-close receipt and gate row.
     "test_thank_you_no_pitch.py",
     # SPF030: signature sales page vs signature landing (opt-in) page kinds.

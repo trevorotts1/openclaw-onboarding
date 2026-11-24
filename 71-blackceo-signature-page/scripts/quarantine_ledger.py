@@ -5,12 +5,25 @@
   quarantine_ledger.py add --run DIR --paths-file LIST --reason TEXT --approver NAME
   quarantine_ledger.py acknowledge-input --run DIR --path REL --old-sha256 H --new-sha256 H
                        --reason TEXT --approver NAME [--key-file F]
+  quarantine_ledger.py seal --run DIR [--key-file F]
+  quarantine_ledger.py release-quarantine --run DIR --path REL --stage STAGE --reason TEXT
+                       --approver NAME [--key-file F]
+  quarantine_ledger.py reown --run DIR --path REL --owner-stage STAGE --reason TEXT
+                       --approver NAME [--key-file F]
   quarantine_ledger.py status --run DIR
 
 `add` signs each entry (HMAC-SHA256) with the operator key named by
 SF_PIN_AUTHORITY_KEY_FILE (or --key-file); the key is read by path and never printed.
 A quarantined file is acknowledged as out-of-pipeline and STAYS out: it can never be
 registered, closed or delivered, and a changed or unsigned entry leaves it ungoverned.
+THREAT MODEL M (1.3.47): an actor can write any file in the run folder but does not hold the
+operator key, so only key-signed records and the gate's pass-stage receipts are trusted.
+`seal` (once, for a ledger made before 1.3.47) signs the exact set of ledger entries; a ledger
+that disagrees with its seal, or is older than the operator's anchor, honours nothing.
+`release-quarantine` signs that STAGE may register and close the quarantined path over the
+bytes on disk now (sign it AFTER the stage regenerated the file; the note prints the executor
+record row it saw as evidence only). `reown` signs that a registered file, as it is now,
+belongs to OWNER-STAGE. Both records are valid only while the file's sha256 equals the one signed.
 `acknowledge-input` (1.3.46) signs a record in private/input-acknowledgements.json that a declared
 input (the brand profile named by intake.json brand_file) legitimately changed; a paid dispatch
 with a changed input is refused without one, and the record is valid only while the file's
@@ -43,6 +56,23 @@ def main(argv=None):
     ack.add_argument("--reason", required=True)
     ack.add_argument("--approver", required=True)
     ack.add_argument("--key-file")
+    sl = sub.add_parser("seal")
+    sl.add_argument("--run", required=True)
+    sl.add_argument("--key-file")
+    rl = sub.add_parser("release-quarantine")
+    rl.add_argument("--run", required=True)
+    rl.add_argument("--path", required=True)
+    rl.add_argument("--stage", required=True)
+    rl.add_argument("--reason", required=True)
+    rl.add_argument("--approver", required=True)
+    rl.add_argument("--key-file")
+    ro = sub.add_parser("reown")
+    ro.add_argument("--run", required=True)
+    ro.add_argument("--path", required=True)
+    ro.add_argument("--owner-stage", required=True)
+    ro.add_argument("--reason", required=True)
+    ro.add_argument("--approver", required=True)
+    ro.add_argument("--key-file")
     st = sub.add_parser("status")
     st.add_argument("--run", required=True)
     args = ap.parse_args(argv)
@@ -65,6 +95,24 @@ def main(argv=None):
                 args.run, args.path, old_sha256=args.old_sha256, new_sha256=args.new_sha256,
                 reason=args.reason, approver=args.approver, key_file=args.key_file)
             print("acknowledged %s %s -> %s" % (e["path"], e["old_sha256"], e["new_sha256"]))
+            return 0
+        if args.cmd == "seal":
+            r = governed_runner.seal_ledger(args.run, key_file=args.key_file)
+            print("sealed %d ledger entries, serial %d" % (r["entries"], r["serial"]))
+            return 0
+        if args.cmd == "release-quarantine":
+            e = governed_runner.release_quarantine(
+                args.run, args.path, stage=args.stage, reason=args.reason,
+                approver=args.approver, key_file=args.key_file)
+            print("released %s to %s over sha256=%s" % (e["path"], e["stage"], e["sha256"]))
+            print(e["note"])
+            return 0
+        if args.cmd == "reown":
+            e = governed_runner.reown(
+                args.run, args.path, owner_stage=args.owner_stage, reason=args.reason,
+                approver=args.approver, key_file=args.key_file)
+            print("re-owned %s to %s over sha256=%s" % (e["path"], e["owner_stage"], e["sha256"]))
+            print(e["note"])
             return 0
         result = governed_runner.scan(args.run)
         print(json.dumps({
