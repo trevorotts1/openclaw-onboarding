@@ -852,7 +852,7 @@ send the four-part message ("When something stops the work").
   `max_at_once = len(submitted)` (or the provider cap, named in
   `capped_by`, when that binds). Never submit clips in dribbles or wait for
   one clip before sending the next.
-- **KIE rate limit:** new generation submits are paced to 20 or fewer per rolling 10 s per KIE key; a 429 means not run and not queued, so resubmit after a wait. See `references/kie-rate-limit.md`.
+- **KIE rate limit:** new generation submits are paced to **20 per rolling 15 s** per KIE key (the governor's `KIE_MAX = 20`, `KIE_WINDOW_S = 15.0`, a little under KIE's documented 20 per 10 s, so no test batch is needed - one number everywhere, S-13); a 429 means not run and not queued, so resubmit after a wait. See `references/kie-rate-limit.md`.
 
 ## Agnes path (optional)
 
@@ -1159,7 +1159,7 @@ call to action), and one repair.
   twice. Every lane plans against the ONE ledger run, so spend stays under the
   run cap across all lanes together.
 - Tests: `python3 scripts/core/test_lane_planner.py` (180 s -> 3 lanes on shot
-  boundaries; 90 s -> 1 lane; shared governor <= 20 per 10 s across 3 lanes on a
+  boundaries; 90 s -> 1 lane; shared governor <= 20 per 15 s across 3 lanes on a
   fake clock; a ledger-known tag is polled).
 
 ## Installation
