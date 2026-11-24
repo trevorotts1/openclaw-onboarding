@@ -118,6 +118,8 @@ MODULES = [
     "test_page_result_role_echo.py",
     # RFX-006: the fixes a client box carried locally, now upstream.
     "test_rfx006_box_fixes.py",
+    # SWB-540: the W1 chip measure scales with the slice width (a phone slice's legible chip).
+    "test_swb540_chip_scale.py",
 ]
 
 def skip_reason(stdout):

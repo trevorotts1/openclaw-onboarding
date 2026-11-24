@@ -160,6 +160,16 @@ ACCENT_MIN_SHARE = 0.0025
 STYLE_WIDTH = 720           # measurement width; chips are found at this scale
 CHIP_WIDTH_FRAC = (0.04, 0.40)
 CHIP_HEIGHT_FRAC = (0.012, 0.08)
+# 1.3.55 (SWB-540): the height limit and the closing dilation are set at the
+# STYLE_WIDTH working width the desktop rule was calibrated at. A phone slice is
+# narrower, so the same legible chip (a 26-36 px tall block of 390 px) is a larger
+# share of its width: the upper height share rises linearly from 0.08 at
+# STYLE_WIDTH to CHIP_HEIGHT_MAX_NARROW at CHIP_NARROW_WIDTH and below, and the
+# 7 px closing dilation shrinks in proportion to the width. At STYLE_WIDTH and
+# above (every desktop slice is measured there) both are exactly the old values.
+CHIP_HEIGHT_MAX_NARROW = 0.12
+CHIP_NARROW_WIDTH = 390
+CHIP_DILATION = 7
 CHIP_ASPECT = (1.5, 8.0)
 CHIP_MIN_FILL = 0.75
 CHIP_ZONE = (0.50, 0.25)    # a slice's chip sits in its top-left zone (x fraction, y fraction)
@@ -411,12 +421,34 @@ def _mask_near(img, colors, tolerance):
     return out
 
 
+def chip_height_frac_max(width):
+    """Upper chip height as a share of the slice width: 0.08 at STYLE_WIDTH and
+    wider, rising linearly to CHIP_HEIGHT_MAX_NARROW at CHIP_NARROW_WIDTH."""
+    if width >= STYLE_WIDTH:
+        return CHIP_HEIGHT_FRAC[1]
+    if width <= CHIP_NARROW_WIDTH:
+        return CHIP_HEIGHT_MAX_NARROW
+    t = (STYLE_WIDTH - width) / (STYLE_WIDTH - CHIP_NARROW_WIDTH)
+    return CHIP_HEIGHT_FRAC[1] + t * (CHIP_HEIGHT_MAX_NARROW - CHIP_HEIGHT_FRAC[1])
+
+
+def chip_dilation(width):
+    """The closing dilation (an odd MaxFilter size) in proportion to the slice
+    width: 7 at STYLE_WIDTH and wider, never under 3."""
+    if width >= STYLE_WIDTH:
+        return CHIP_DILATION
+    size = -(-CHIP_DILATION * width // STYLE_WIDTH)  # ceiling
+    size = max(3, int(size))
+    return size if size % 2 else size + 1
+
+
 def _find_chips(mask, slice_zone):
     """Compact, filled rectangular blocks in an accent mask (the section chip
     and CTA chips). Text knocked out of a chip is closed by a dilation first."""
     from PIL import ImageFilter
     width, height = mask.size
-    closed = mask.filter(ImageFilter.MaxFilter(7))
+    height_max = chip_height_frac_max(width)
+    closed = mask.filter(ImageFilter.MaxFilter(chip_dilation(width)))
     data = bytearray(closed.tobytes())
     chips = []
     pos = data.find(255)
@@ -438,7 +470,7 @@ def _find_chips(mask, slice_zone):
                     stack.append(q)
         w, h = x1 - x0 + 1, y1 - y0 + 1
         if (CHIP_WIDTH_FRAC[0] * width <= w <= CHIP_WIDTH_FRAC[1] * width
-                and CHIP_HEIGHT_FRAC[0] * width <= h <= CHIP_HEIGHT_FRAC[1] * width
+                and CHIP_HEIGHT_FRAC[0] * width <= h <= height_max * width
                 and CHIP_ASPECT[0] <= w / h <= CHIP_ASPECT[1]
                 and count / (w * h) >= CHIP_MIN_FILL
                 and (not slice_zone or (x0 <= CHIP_ZONE[0] * width
