@@ -133,6 +133,14 @@ def _refreshed_from_failures(data):
     for key in ("desktop_panel", "mobile_panel"):
         if new.get(key) != data.get(key):
             out.append(f"{key} differs from refreshed_from.new.{key}: the record was changed after its refresh")
+    guide_block = block.get("guide")
+    if guide_block is not None:  # SWB-290: the guide thumbnails were re-pinned too
+        recorded = {str(x.get("section_id")): (x.get("wireframe_thumbnail"), x.get("sha256"))
+                    for x in ((data.get("guide") or {}).get("sections") or []) if isinstance(x, dict)}
+        for row in (guide_block.get("new") if isinstance(guide_block, dict) else None) or []:
+            if recorded.get(str(row.get("section_id"))) != (row.get("wireframe_thumbnail"), row.get("sha256")):
+                out.append(f"guide section {row.get('section_id')} differs from refreshed_from.guide.new: "
+                           f"the record was changed after its refresh")
     return out
 
 

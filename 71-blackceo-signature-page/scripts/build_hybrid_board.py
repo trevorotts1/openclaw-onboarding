@@ -51,6 +51,18 @@ content), validates it, and only then composes the board (--overwrite semantics
 unchanged: it refuses before writing when the board exists without --overwrite).
 Without the flag nothing changes.
 
+The guide column is re-pinned the same way (SWB-290). Its thumbnails are the desktop-wireframe
+slices, and a regenerated wireframe stage leaves their recorded sha256 stale. When the closed
+desktop-wireframe stage carries evidence (its production-record.json or stitch-receipt.json), --refresh-record
+first VERIFIES that stage the same way a panel is verified: the production record passes
+validate_production_record, the stitch receipt names the record's stitched output, the stitched
+sheet is the recomputed stitch of its slices, every slice on disk hashes to the stitch receipt's sha256
+(and to the record's own export.output_sha256 and the flat export receipt's row when they exist),
+in order. Each guide section's thumbnail must be that stage's slice for the section id; its new sha256
+is the verified one, never a claim inside the thumbnail or the old record. The `refreshed_from` block
+then carries a `guide` entry (prior and new thumbnails and shas, the receipts relied on). A run with
+no wireframe-stage evidence keeps its guide untouched, and the validator still refuses a stale pin.
+
 Exit codes: 0 pass, 1 one named FAIL line per failure, 2 unreadable input.
 """
 import argparse
@@ -232,6 +244,119 @@ def _recompute_panel(vp_dir, viewport, record, receipt, panel, rel_dir, stitched
     return fails
 
 
+WIREFRAME_STAGE = "desktop-wireframe"
+
+
+def _verify_wireframe_stage(run_dir):
+    """Verify the closed desktop-wireframe stage against its own record and stitch receipt.
+    Returns (failures, info). info is None when the stage carries no record and no stitch receipt
+    (nothing to re-pin from); otherwise {section_id: {...}} plus the receipts relied on."""
+    import export_native_slices as exporter
+    wf = Path(run_dir) / WIREFRAME_STAGE
+    record_path, receipt_path = wf / "production-record.json", wf / STITCH_RECEIPT
+    if not record_path.exists() and not receipt_path.exists():
+        return [], None
+    label = WIREFRAME_STAGE
+    record, err = _read_json(record_path)
+    if err:
+        return [f"{label}: the production record {err}"], None
+    bad = vpr.check_record(record, base_dir=wf)
+    if bad:
+        return [f"{label}: the production record does not pass validate_production_record: {b}" for b in bad], None
+    stitched = record.get("stitched_output")
+    if not isinstance(stitched, str) or not stitched or "/" in stitched:
+        return [f"{label}: the production record names no stitched_output"], None
+    receipt, err = _read_json(receipt_path)
+    if err:
+        return [f"{label}: the stitch receipt {err}"], None
+    fails = []
+    if receipt.get("stitched_output") != stitched:
+        fails.append(f"{label}: the stitch receipt names {receipt.get('stitched_output')!r}, "
+                     f"the production record names {stitched!r}")
+    panel = wf / stitched
+    if not panel.is_file():
+        return fails + [f"{label}: the stitched sheet {WIREFRAME_STAGE}/{stitched} is not on disk"], None
+    if vhb.sha256(panel) != receipt.get("output_sha256"):
+        fails.append(f"{label}: the stitched sheet hashes to {vhb.sha256(panel)[:12]} but its stitch receipt "
+                     f"records {str(receipt.get('output_sha256'))[:12]}")
+    rec_sections, rcp_sections = record["sections"], receipt.get("sections")
+    if not isinstance(rcp_sections, list) or len(rcp_sections) != len(rec_sections):
+        return fails + [f"{label}: the stitch receipt lists "
+                        f"{len(rcp_sections) if isinstance(rcp_sections, list) else 'no'} section(s), the "
+                        f"production record {len(rec_sections)}"], None
+    export_rows = {}
+    export_path = wf / EXPORT_RECEIPT
+    if export_path.is_file():
+        bad = exporter.verify_receipt(export_path, wf)
+        if bad:
+            return fails + [f"{label}: the export receipt does not verify: {b}" for b in bad], None
+        export_rows = {r["section_part"]: r for r in json.loads(export_path.read_text(encoding="utf-8"))["entries"]}
+    slices = {}
+    for number, (rec, rcp) in enumerate(zip(rec_sections, rcp_sections), start=1):
+        name = rec.get("slice")
+        if rcp.get("slice") != name or str(rcp.get("section_id")) != str(rec.get("section_id")) \
+                or rcp.get("order") != number:
+            fails.append(f"{label}/{name}: the stitch receipt's section {number} is {rcp.get('slice')!r}, not "
+                         f"the production record's, in order")
+            continue
+        path = wf / name
+        if not path.is_file():
+            fails.append(f"{label}/{name}: the slice the stitch receipt lists is not on disk")
+            continue
+        current = vhb.sha256(path)
+        if current != rcp.get("sha256"):
+            fails.append(f"{label}/{name}: the slice hashes to {current[:12]} now but the stitch receipt records "
+                         f"{str(rcp.get('sha256'))[:12]}; the sheet was stitched from other slices")
+        out_sha = (rec.get("export") or {}).get("output_sha256")
+        if out_sha is not None and out_sha != current:
+            fails.append(f"{label}/{name}: the production record's export.output_sha256 {str(out_sha)[:12]} is not "
+                         f"the slice on disk ({current[:12]})")
+        row = export_rows.get(name)
+        if export_rows and (row is None or row["output"].get("sha256") != current):
+            fails.append(f"{label}/{name}: the flat export receipt does not hold this slice's sha256")
+        slices[str(rec.get("section_id"))] = {"slice": f"{WIREFRAME_STAGE}/{name}", "sha256": current}
+    if fails:
+        return fails, None
+    fails = _recompute_panel(wf, label, record, receipt, panel, WIREFRAME_STAGE, stitched)
+    if fails:
+        return fails, None
+    return [], {
+        "slices": slices,
+        "production_record": {"path": f"{WIREFRAME_STAGE}/production-record.json",
+                              "file_sha256": vhb.sha256(record_path)},
+        "stitch_receipt": {"path": f"{WIREFRAME_STAGE}/{STITCH_RECEIPT}", "file_sha256": vhb.sha256(receipt_path),
+                           "output_sha256": receipt["output_sha256"]},
+    }
+
+
+def _repin_guide(prior_guide, info):
+    """(failures, new_guide, change_block). The thumbnails are re-pinned to the verified slices only."""
+    fails, new_sections, rows_prior, rows_new = [], [], [], []
+    for sec in prior_guide.get("sections") or []:
+        sid = str(sec.get("section_id"))
+        got = (info["slices"]).get(sid)
+        if got is None:
+            fails.append(f"guide section {sid}: the closed {WIREFRAME_STAGE} stage has no slice for this section id")
+            continue
+        if sec.get("wireframe_thumbnail") != got["slice"]:
+            fails.append(f"guide section {sid}: the thumbnail is {sec.get('wireframe_thumbnail')!r} but the closed "
+                         f"{WIREFRAME_STAGE} stage's slice for this section is {got['slice']!r}")
+            continue
+        new_sec = dict(sec)
+        new_sec["sha256"] = got["sha256"]
+        new_sections.append(new_sec)
+        rows_prior.append({"section_id": sid, "wireframe_thumbnail": sec.get("wireframe_thumbnail"),
+                           "sha256": sec.get("sha256")})
+        rows_new.append({"section_id": sid, "wireframe_thumbnail": got["slice"], "sha256": got["sha256"]})
+    if fails:
+        return fails, None, None
+    new_guide = dict(prior_guide)
+    new_guide["sections"] = new_sections
+    return [], new_guide, {"prior": rows_prior, "new": rows_new,
+                           "receipts": {"production_record": info["production_record"],
+                                        "stitch_receipt": info["stitch_receipt"]}}
+
+
 def _provenance_hash(block):
     body = {k: v for k, v in block.items() if k != "receipt_sha256"}
     return hashlib.sha256(json.dumps(body, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
@@ -261,11 +386,19 @@ def refresh_record(run_dir, record_name, now=None):
         fails, got = _verify_viewport(run_dir, viewport, rows, export_hash)
         failures.extend(fails)
         info[viewport] = got
+    wf_fails, wf_info = _verify_wireframe_stage(run_dir)
+    failures.extend(wf_fails)
     if failures:
         return failures, None
     new = dict(prior)
     new["desktop_panel"] = dict(info["desktop"]["panel"])
     new["mobile_panel"] = dict(info["mobile"]["panel"])
+    guide_block = None
+    if wf_info is not None and isinstance(prior.get("guide"), dict):
+        g_fails, new_guide, guide_block = _repin_guide(prior["guide"], wf_info)
+        if g_fails:
+            return g_fails, None
+        new["guide"] = new_guide
     block = {
         "tool": "build_hybrid_board.py --refresh-record",
         "refreshed_at": now or datetime.now(timezone.utc).isoformat(timespec="seconds"),
@@ -280,6 +413,8 @@ def refresh_record(run_dir, record_name, now=None):
                        "production_record": info["mobile"]["production_record"]},
         },
     }
+    if guide_block is not None:
+        block["guide"] = guide_block
     block["receipt_sha256"] = _provenance_hash(block)
     new["refreshed_from"] = block
     bad = vhb.check_board(new, run_dir=run_dir)
@@ -297,8 +432,9 @@ def main():
     parser.add_argument("--overwrite", action="store_true")
     parser.add_argument("--refresh-record", action="store_true",
                         help="Verify the current stitched mockups against their receipts and re-pin the record's "
-                             "desktop and mobile panels to them (writes the record with refreshed_from provenance) "
-                             "before composing.")
+                             "desktop and mobile panels to them, and the guide thumbnails to the closed "
+                             "desktop-wireframe stage's current slices (writes the record with refreshed_from "
+                             "provenance) before composing.")
     args = parser.parse_args()
 
     run_dir = args.run_dir
