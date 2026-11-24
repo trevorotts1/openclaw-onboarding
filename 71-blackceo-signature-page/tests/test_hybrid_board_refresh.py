@@ -10,6 +10,7 @@ whose inputs are not the export receipt's, a missing production record, a missin
 export receipt, a tampered production record, a stale record citing another export receipt,
 and an existing board without --overwrite. The no-flag behaviour is unchanged.
 """
+import hashlib
 import json
 import subprocess
 import sys
@@ -212,6 +213,67 @@ class NegativeTests(RefreshBase):
         self.edit(self.rec_path, lambda d: d["guide"]["sections"][0].__setitem__("sha256", "9" * 64))
         self.before = self.rec_path.read_bytes()
         self.assert_refused(self.refresh(), "refreshed record does not pass validate_hybrid_board")
+
+
+class RecomputeTests(RefreshBase):
+    """SWB-123: a stitch receipt is a claim; the panel must be the recomputed stitch of the verified slices."""
+
+    def forge(self, panel_path, receipt_path, image):
+        image.save(panel_path)
+        self.edit(receipt_path, lambda d: d.__setitem__("output_sha256", vhb.sha256(panel_path)))
+
+    def test_forged_desktop_panel_with_an_edited_stitch_receipt_is_refused(self):
+        self.forge(self.fm / "mockup-full.png", self.fm / "stitch-receipt.json",
+                   Image.new("RGB", (144, 10), (3, 3, 3)))
+        self.assert_refused(self.refresh(), "not the stitch of those slices")
+
+    def test_forged_same_size_mobile_panel_with_an_edited_stitch_receipt_is_refused(self):
+        panel = self.fm / "mobile" / "mockup-full-mobile.png"
+        with Image.open(panel) as im:
+            forged = im.convert("RGB")
+        forged.putpixel((0, 0), (1, 2, 3) if forged.getpixel((0, 0)) != (1, 2, 3) else (4, 5, 6))
+        self.forge(panel, self.fm / "mobile" / "stitch-receipt.json", forged)
+        self.assert_refused(self.refresh(), "different pixels from the stitch recomputed")
+
+    def test_a_receipt_with_a_wrong_total_height_is_refused(self):
+        self.edit(self.fm / "stitch-receipt.json", lambda d: d.__setitem__("total_height", 1))
+        self.assert_refused(self.refresh(), "stitch receipt's total_height")
+
+    def test_the_stitch_has_one_definition(self):
+        import stitch_sections as ss
+        self.assertIs(bhb.ss.compose_canvas, ss.compose_canvas)
+
+    def test_the_recomputed_panel_is_pixel_equal_to_the_real_stitch(self):
+        import stitch_sections as ss
+        rec = json.loads((self.fm / "production-record.json").read_text())
+        canvas, _ = ss.compose_canvas(self.fm, rec["sections"], rec["sections"][0]["width"])
+        with Image.open(self.fm / "mockup-full.png") as im:
+            self.assertEqual(im.convert("RGB").tobytes(), canvas.tobytes())
+
+
+class ComposeFailureTests(RefreshBase):
+    def test_a_compose_failure_leaves_the_prior_record_byte_for_byte(self):
+        # a guide thumbnail whose bytes match its recorded hash but are not an image: the record
+        # passes validation, the refresh verifies, and only the compose step fails
+        thumb = self.run_dir / "desktop-wireframe" / "section-01.png"
+        thumb.write_bytes(b"not an image")
+        digest = hashlib.sha256(b"not an image").hexdigest()
+        self.edit(self.rec_path, lambda d: d["guide"]["sections"][0].__setitem__("sha256", digest))
+        self.before = self.rec_path.read_bytes()
+        proc = self.refresh()
+        self.assertEqual(proc.returncode, 1, proc.stdout + proc.stderr)
+        self.assertIn("could not be composed", proc.stdout)
+        self.assertIn("the record was not rewritten", proc.stdout)
+        self.assertEqual(self.rec_path.read_bytes(), self.before, "the prior record must be restored/untouched")
+        self.assertFalse((self.fm / "hybrid-board.png").exists())
+        self.assertFalse((self.fm / "hybrid-board-receipt.json").exists())
+        self.assertFalse(list(self.fm.glob(".hybrid-board.json.refresh.tmp")))
+
+    def test_the_record_is_written_only_after_the_board_exists(self):
+        proc = self.refresh()
+        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+        self.assertTrue((self.fm / "hybrid-board.png").exists())
+        self.assertIn("refreshed_from", json.loads(self.rec_path.read_text()))
 
 
 if __name__ == "__main__":

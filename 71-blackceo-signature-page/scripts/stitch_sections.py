@@ -36,6 +36,35 @@ def sha256(path):
     return h.hexdigest()
 
 
+def compose_canvas(stage_dir, sections, page_width):
+    """The one definition of the stitch: paste each section's slice vertically, in record order.
+
+    Returns (canvas, receipt_sections). Used by main() and by build_hybrid_board.py --refresh-record,
+    which recomputes a panel from its verified slices instead of trusting a stitch receipt.
+    """
+    from PIL import Image
+    stage_dir = Path(stage_dir)
+    total_height = sum(s["height"] for s in sections)
+    canvas = Image.new("RGB", (page_width, total_height), "white")
+    receipt_sections = []
+    y = 0
+    for i, section in enumerate(sections, start=1):
+        slice_path = stage_dir / section["slice"]
+        with Image.open(slice_path) as im:
+            canvas.paste(im.convert("RGB"), (0, y))
+        receipt_sections.append({
+            "order": i,
+            "section_id": section["section_id"],
+            "slice": section["slice"],
+            "sha256": sha256(slice_path),
+            "width": section["width"],
+            "height": section["height"],
+            "y_offset": y,
+        })
+        y += section["height"]
+    return canvas, receipt_sections
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Stitch the ordered section slices named by a production record into one full-page PNG.")
@@ -84,24 +113,8 @@ def main():
         print(f"FAIL: output already exists: {output}. Use --overwrite to replace it.")
         return 1
 
-    total_height = sum(s["height"] for s in sections)
-    canvas = Image.new("RGB", (page_width, total_height), "white")
-    receipt_sections = []
-    y = 0
-    for i, section in enumerate(sections, start=1):
-        slice_path = stage_dir / section["slice"]
-        with Image.open(slice_path) as im:
-            canvas.paste(im.convert("RGB"), (0, y))
-        receipt_sections.append({
-            "order": i,
-            "section_id": section["section_id"],
-            "slice": section["slice"],
-            "sha256": sha256(slice_path),
-            "width": section["width"],
-            "height": section["height"],
-            "y_offset": y,
-        })
-        y += section["height"]
+    canvas, receipt_sections = compose_canvas(stage_dir, sections, page_width)
+    total_height = canvas.height
     canvas.save(output, "PNG")
 
     receipt = {

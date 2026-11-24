@@ -1,3 +1,10 @@
+## [1.3.42] - 2026-11-24 - `--refresh-record` recomputes the panel instead of trusting the stitch receipt (SWB-123)
+
+- `scripts/stitch_sections.py`: the stitch is now one function, `compose_canvas()`, that `main()` calls; behaviour and output unchanged.
+- `scripts/build_hybrid_board.py --refresh-record`: closes the forged-panel hole (a forged `mockup-full.png` plus a stitch receipt edited to its hash used to pass). After the existing checks it calls `stitch_sections.compose_canvas()` on the slices the receipt lists (each already verified against the export receipt) and requires the panel file to be a PNG of the same size and the same pixels, and the receipt's page_width, total_height and per-section y_offsets to match the recomputation; refuses otherwise. Pixel comparison, so PNG encoder differences cannot cause a false refusal.
+- The board record is now written only after the board composes (atomic replace); a compose failure, including an exception, leaves the prior record byte for byte, removes any board file this run created, and exits 1 with a named line.
+- Tests: `tests/test_hybrid_board_refresh.py` gains the forged desktop and same-size mobile twins, a wrong-total-height twin, a one-definition check and a compose-failure twin (they fail on 1.3.41). Skill 49 hash pin re-minted with a signed rotation record.
+
 ## [1.3.41] - 2026-11-24 - allow-text carries its reason and authority; the hybrid board record can be refreshed by a tool (SWB-119)
 
 - `scripts/write_production_record.py`: `--allow-reason TEXT` and `--allow-authority TEXT`, both required whenever `--allow-text` is used (and refused without it). Each section's `text_qc.allowed_text` records the exact words that image shows and its copy lacks, the whole allow list, the reason and the authority.

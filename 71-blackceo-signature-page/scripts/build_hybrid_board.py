@@ -64,6 +64,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import validate_hybrid_board as vhb  # noqa: E402
+import stitch_sections as ss  # noqa: E402
 import validate_production_record as vpr  # noqa: E402
 
 MARGIN = 24
@@ -177,12 +178,58 @@ def _verify_viewport(run_dir, viewport, export_rows, export_receipt_hash):
                          f"export receipt is {export_receipt_hash[:12]}; the record is stale")
     if fails:
         return fails, None
+    fails = _recompute_panel(vp_dir, viewport, record, receipt, panel, rel_dir, stitched)
+    if fails:
+        return fails, None
     return [], {
         "panel": {"source": f"{rel_dir}/{stitched}", "sha256": panel_sha},
         "stitch_receipt": {"path": f"{rel_dir}/{STITCH_RECEIPT}", "file_sha256": vhb.sha256(receipt_path),
                            "output_sha256": receipt["output_sha256"]},
         "production_record": {"path": f"{rel_dir}/production-record.json", "file_sha256": vhb.sha256(record_path)},
     }
+
+
+def _recompute_panel(vp_dir, viewport, record, receipt, panel, rel_dir, stitched):
+    """Recompute the panel from the verified slices with stitch_sections' own function and require the
+    panel file to be that image. A stitch receipt is a claim; this is the proof. Returns failures."""
+    try:
+        from PIL import Image
+    except ImportError:
+        return [f"{viewport}: Pillow is required to recompute the panel from its slices"]
+    sections = record["sections"]
+    widths = {s["width"] for s in sections}
+    if len(widths) != 1:
+        return [f"{viewport}: the production record's section widths differ ({sorted(widths)}); no single page width"]
+    page_width = widths.pop()
+    try:
+        canvas, rebuilt = ss.compose_canvas(vp_dir, sections, page_width)
+    except Exception as exc:
+        return [f"{viewport}: the panel could not be recomputed from its slices ({type(exc).__name__}: {exc})"]
+    fails = []
+    for key, value in (("page_width", page_width), ("total_height", canvas.height)):
+        if receipt.get(key) != value:
+            fails.append(f"{viewport}: the stitch receipt's {key} is {receipt.get(key)!r}, the slices make {value}")
+    for mine, theirs in zip(rebuilt, receipt["sections"]):
+        for key in ("width", "height", "y_offset"):
+            if theirs.get(key) != mine[key]:
+                fails.append(f"{viewport}/{mine['slice']}: the stitch receipt's {key} is {theirs.get(key)!r}, "
+                             f"the recomputed stitch has {mine[key]!r}")
+    try:
+        with Image.open(panel) as im:
+            fmt = im.format
+            actual = im.convert("RGB")
+    except Exception as exc:
+        return fails + [f"{viewport}: the panel file {rel_dir}/{stitched} is not a readable image ({type(exc).__name__})"]
+    if fmt != "PNG":
+        fails.append(f"{viewport}: the panel file {rel_dir}/{stitched} is {fmt}, not the PNG the stitcher writes")
+    if actual.size != canvas.size:
+        fails.append(f"{viewport}: the panel file {rel_dir}/{stitched} is {actual.width}x{actual.height}, the "
+                     f"stitch recomputed from its verified slices is {canvas.width}x{canvas.height}; the panel is "
+                     f"not the stitch of those slices")
+    elif actual.tobytes() != canvas.tobytes():
+        fails.append(f"{viewport}: the panel file {rel_dir}/{stitched} has different pixels from the stitch "
+                     f"recomputed from its verified slices; the panel is not the stitch of those slices")
+    return fails
 
 
 def _provenance_hash(block):
@@ -264,23 +311,40 @@ def main():
             for failure in failures:
                 print(f"- {failure}")
             return 1
-        out_name = new.get("board_output", "hybrid-board.png")
-        if (stage_dir / out_name).exists() and not args.overwrite:
-            print(f"FAIL: output already exists: {stage_dir / out_name}. Use --overwrite to replace it; "
+        # The record is written only after the board composes; a compose failure leaves the prior record
+        # byte for byte (nothing was touched until then, and the write below is an atomic replace).
+        board_path = stage_dir / new.get("board_output", "hybrid-board.png")
+        board_receipt = stage_dir / "hybrid-board-receipt.json"
+        fresh = [q for q in (board_path, board_receipt) if not q.exists()]
+        try:
+            rc = compose_board(run_dir, new, args.overwrite,
+                               refusal_note="the record was not rewritten.")
+        except Exception as exc:
+            for q in fresh:  # remove only what this run created; the prior record is untouched
+                q.unlink(missing_ok=True)
+            print(f"FAIL: the board could not be composed ({type(exc).__name__}: {exc}); "
                   "the record was not rewritten.")
             return 1
+        if rc != 0:
+            return rc
         tmp = record_path.with_name(f".{record_path.name}.refresh.tmp")
         tmp.write_text(json.dumps(new, indent=2) + "\n", encoding="utf-8")
         os.replace(tmp, record_path)
         print(f"PASS: re-pinned {record_path.name}: desktop {new['desktop_panel']['source']} "
               f"{new['desktop_panel']['sha256'][:12]}, mobile {new['mobile_panel']['source']} "
               f"{new['mobile_panel']['sha256'][:12]} (provenance {new['refreshed_from']['receipt_sha256'][:12]}).")
+        return 0
     try:
         data = json.loads(record_path.read_text(encoding="utf-8"))
     except Exception as exc:
         print(f"FAIL: could not read hybrid board record: {exc}")
         return 2
+    return compose_board(run_dir, data, args.overwrite)
 
+
+def compose_board(run_dir, data, overwrite, refusal_note=""):
+    """Compose the board from a record dict. Writes the board and its receipt only; never the record."""
+    stage_dir = Path(run_dir) / "final-mockups"
     failures = vhb.check_board(data, run_dir=run_dir)
     if failures:
         print("FAIL: refusing to compose the board; the board record does not pass:")
@@ -296,8 +360,9 @@ def main():
 
     output_name = data.get("board_output", "hybrid-board.png")
     output = stage_dir / output_name
-    if output.exists() and not args.overwrite:
-        print(f"FAIL: output already exists: {output}. Use --overwrite to replace it.")
+    if output.exists() and not overwrite:
+        print(f"FAIL: output already exists: {output}. Use --overwrite to replace it"
+              + (f"; {refusal_note}" if refusal_note else "."))
         return 1
 
     def load(rel):
