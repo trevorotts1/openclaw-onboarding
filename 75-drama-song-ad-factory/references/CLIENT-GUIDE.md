@@ -72,7 +72,7 @@ Making a great video normally takes a whole studio. You get all of them without 
 - [ ] Have your offer name and its link ready.
 - [ ] Write one line: who the video is for.
 - [ ] Write one line: what viewers should do next.
-- [ ] Gather your logo, product photos and any proof (a testimonial or a result).
+- [ ] Gather your logo, product photos and any proof (a testimonial or a result). **For the logo:** a PNG with a transparent background (no white or flat-colour box behind the mark), at least 512 px on its longest edge. A fully opaque file or a full-white-background file is refused before any spend (`LOGO_UNUSABLE`), so fix it now rather than after the crew starts.
 - [ ] If you have saved characters, know their names.
 - [ ] Set aside 20 to 30 minutes for the three approvals.
 
