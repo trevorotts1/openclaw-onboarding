@@ -2,10 +2,10 @@
 
 Exactly two lines carry a default marker::
 
-    Style:       Lifelike 3D (default)  /  ... five looks ...
+    Style:       Lifelike 3D (default)  /  ... six looks ...
     Music:       Soul Ballad (default)  /  R&B Flow  /  Soul Rise
 
-The Style line is rendered by ``choice_card.looks`` (that unit owns the five
+The Style line is rendered by ``choice_card.looks`` (that unit owns the six
 looks) and composed here so both lines of the pair are produced in one place.
 The Music line is owned here -- nothing else on the card offers a music
 default marker. Applying the choices writes the two fields and nothing else.
@@ -19,7 +19,7 @@ MUSIC_FIELD = D.MUSIC_FIELD                 # "music"
 
 
 def style_line():
-    """Plan 4.1 Style line: five looks, the D24 default marked."""
+    """Plan 4.1 Style line: six looks, the D24 default marked."""
     return D.LOOKS.style_line()
 
 

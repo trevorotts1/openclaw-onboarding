@@ -12,7 +12,10 @@ vocal stem is the lip-sync clip's INPUT ONLY and never enters the final mix:
 ``stem_mix_role`` is always ``lipsync-input-only``, and any proposed mix
 slot that places the stem elsewhere fails ``STEM_IN_FINAL_MIX``
 (``refuse_stem_in_final_mix``). A lip-sync clip citing any other source id
-fails ``LIPSYNC_SOURCE_MISMATCH`` (``verify_lipsync_clip_source``).
+fails ``LIPSYNC_SOURCE_MISMATCH`` (``verify_lipsync_clip_source``). The clip
+must also be cut from its own role's track (``LIPSYNC_WRONG_STEM``): a lead
+piece from ``music/vocals.mp3``, a backing/choir/overlap piece from
+``music/backing-vocals.mp3`` (plan section 3N.0, 3N.9).
 
 Multi-voice probing (the ONE permitted Suno multi-voice probe, executed
 2026-10-08): multi-voice in one Suno generation is UNRELIABLE as the
@@ -38,6 +41,8 @@ STEM_MIX_ROLE = "lipsync-input-only"
 #: Fail reasons (receipt / exception codes).
 STEM_IN_FINAL_MIX = "STEM_IN_FINAL_MIX"
 LIPSYNC_SOURCE_MISMATCH = "LIPSYNC_SOURCE_MISMATCH"
+#: The clip is not cut from its own role's track (3N.5).
+LIPSYNC_WRONG_STEM = "LIPSYNC_WRONG_STEM"
 
 #: Probe closeout note (evidence W-F-U3-F3-VERDICT.md, 2026-10-08):
 #: multi-voice casting is not load-bearing; fallback stays Trevor's call.
@@ -169,17 +174,31 @@ def refuse_stem_in_final_mix(mix_slots):
     return errs
 
 
-def verify_lipsync_clip_source(clip, main_generation_id):
-    """Error list: a lip-sync clip must cite the main track id as source."""
+def verify_lipsync_clip_source(clip, main_generation_id, role_track=None):
+    """Error list: a lip-sync clip must cite the main track id as source.
+
+    When ``role_track`` is named, the clip must also have been cut from that
+    track (``LIPSYNC_WRONG_STEM``); the role's track is the Voice Map's
+    ``track_for(role)``. Omitting it keeps the earlier source-only check.
+    """
     if not isinstance(clip, dict):
         return ["LIPSYNC_CLIP_INVALID:not a dict"]
     if not isinstance(main_generation_id, str) or not main_generation_id.strip():
         return ["TRACK_RECEIPT_INVALID:missing generation id"]
+    errs = []
     source = clip.get("source") or clip.get("generation_id")
     if source != main_generation_id:
-        return ["%s:clip cites %r, main track is %r"
-                % (LIPSYNC_SOURCE_MISMATCH, source, main_generation_id)]
-    return []
+        errs.append("%s:clip cites %r, main track is %r"
+                    % (LIPSYNC_SOURCE_MISMATCH, source, main_generation_id))
+    if role_track is not None:
+        from pathlib import Path
+        got = clip.get("track") or clip.get("stem") or clip.get("stem_path")
+        same = (isinstance(got, str)
+                and Path(got).name == Path(str(role_track)).name)
+        if not same:
+            errs.append("%s:clip carries %r, its role's track is %r"
+                        % (LIPSYNC_WRONG_STEM, got, role_track))
+    return errs
 
 
 def measure_distinct_voices(track_path=None, analyzer=None):

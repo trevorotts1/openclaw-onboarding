@@ -7,5 +7,13 @@
   "kling_block": "Photoreal cinematic live-action: natural skin texture, shallow depth of field, soft motivated light, 35 mm film grade, grounded micro-expressions, no illustration or 3D render look.",
   "kling_who": "photoreal",
   "keyframe_clause": "same person as a photoreal cinematic still, natural skin texture, 35 mm film grade",
-  "lipsync_allowed": true
+  "lipsync_allowed": true,
+  "banned_words": [
+    "animated",
+    "cartoon",
+    "CGI",
+    "3D render",
+    "painted"
+  ],
+  "client_wording": "Realism: photoreal and cinematic, like a movie shot with real actors."
 }

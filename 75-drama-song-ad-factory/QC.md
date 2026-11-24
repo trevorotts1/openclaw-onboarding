@@ -240,6 +240,99 @@ check. FAIL when the master has no assembler receipt (`produced_by.module`,
 Builders call the skill's assembler, lip-sync and caption modules, never
 their own scripts.
 
+**The codes that block delivery, named exactly as the code emits them.** A master
+that hits any of these refuses delivery, not a warning:
+
+- `LIPSYNC_COVERAGE_SHORT` and `LIPSYNC_LINES_TOO_FEW` (from
+  `final_assembler/__init__.py`, re-exported from the coverage and line-count
+  checks) — too little lip-sync, or too few lip-sync lines, for the run.
+- `LIPSYNC_EVIDENCE_MISSING` (`lipsync_evidence.py`) — the per-clip lip-sync
+  evidence row is absent or malformed.
+- `LAST_LINE_OVER_ENDCARD` (`final_assembler/__init__.py`) — the last sung line
+  runs over the end card.
+- `TIMELINE_DUP_FRAMES` (`fps_conform.py`) — the master carries more than the
+  2 percent duplicate-frame cap.
+
+**The timeline-writer codes.** `plan_run_timeline()` (in `assembler.py`) composes
+`edit/timeline.json` from the run folder and writes `TIMELINE_WRITTEN` on success.
+It never invents a default: a missing input is refused as
+`TIMELINE_INPUT_MISSING:<what>` (for example `TIMELINE_INPUT_MISSING:motion_score:<shot>`).
+A hand-built timeline never substitutes for `plan_run_timeline`, and a run folder
+whose timeline was not written by it is a provenance FAIL.
+
+**The sibling lip-sync codes already enforced here stay:** `FACE_SPEAKS_NO_LIPSYNC`,
+`LIPSYNC_COVERAGE_BELOW_BAND`, `LIPSYNC_OVER_CAP` and `LIPSYNC_DURATION_CONFLICT`
+(Part H H4, below). The codes above are added beside them, not in place of them.
+
+**The BUILD-RECORD contract** every delivered run carries is specified in
+section 5.2 (F-ASM-7).
+
+### 5.2 The BUILD-RECORD contract (F-ASM-7)
+
+Every delivered run ships a BUILD-RECORD — the record of how the master was
+actually built, written from the session's own verified facts, never from a
+summary. QC refuses a delivery whose BUILD-RECORD is missing a field below.
+The fields, exactly:
+
+- **Job** — the run id and the brief it was made from.
+- **Assembler** — the assembler's path plus the SHA-256 of the file that ran.
+- **Commands** — the exact commands issued, verbatim.
+- **Timeline** — the SHA-256 of `edit/timeline.json` actually assembled, and
+  the `TIMELINE_WRITTEN` receipt from `plan_run_timeline`.
+- **Shots** — one row per shot with the on-disk SHA-256 of every input used.
+- **Gate results** — every gate's verdict per stage, with its code(s).
+- **Refusals** — every refusal raised and how it was cleared (or that it was
+  not), by code.
+- **Corrections made** — what was changed after a gate, and why.
+- **Not done by design** — the checks or steps deliberately not run, named.
+- **Concurrent-writer note** — whether more than one writer touched the run,
+  and which output each owned (one writer per output file).
+- **Credit reconciliation** — reserved vs actual credits per stage, and the
+  ledger's own totals.
+- **Verification status** — which checks were measured, which were UNAVAILABLE,
+  and which were passed by a person.
+- **Measurement renders** — the renders used as measurements, with their paths.
+- **Files delivered** — every delivered file with its SHA-256.
+
+A BUILD-RECORD that a reader could not reproduce the master from is a
+provenance FAIL, the same as a missing assembler receipt.
+
+### 5.3 Streaming checks and score-carrying contact sheets (SPD-05)
+
+Checks do not wait for a stage to finish, and every piece carries a scored
+contact sheet.
+
+- **Checks stream as items land.** One checker per piece, at the 10B ratio of
+  one checker per 3 pictures and one checker per 3 clips, starts on each item
+  the moment it lands instead of after the last one. An unknown outcome is
+  handled with `mark_unknown` + `recover`/POLL (section 6), never a silent wait.
+- **Checks run while renders fly.** Picture, clip and letter checks run in
+  parallel windows beside a render whenever a fresh memory reading (never older
+  than 5 minutes) is at or below 85 percent pressure (3D.5); on a low-memory box
+  the checker count drops to one at a time before any check is skipped.
+- **Score-carrying contact sheets.** Every picture, clip and lip-sync take gets
+  a contact sheet that carries that piece's own scores — the cut/segment result
+  and the motion score — not just a strip of frames. They are produced for every
+  run, not only for client cards and approval packages, and they are produced
+  while renders fly so the side-by-side passes and the run owner have them in
+  time.
+- **A missing sheet is a refusal.** A piece admitted to the timeline with no
+  score-carrying contact sheet fails `CONTACT_SHEET_MISSING`, the same way a
+  lip-sync take with no eye record fails `LIP_TAKE_NOT_EYE_CHECKED`.
+- **The motion score stays advice.** A low motion score flags the take for a
+  look; it never blocks on its own, and lip-sync takes are exempt (N-03).
+
+### 5.4 A plan that names gates carries a self-check table (R-7 / OR-10)
+
+No run ships a plan that fails its own gates. Any plan, storyboard or run
+document that **names gates** must carry a self-check table proving its own
+numbers pass those gates: the marked shots, the windows, the summed seconds,
+and each threshold cited with its file and line. A plan that fails its own
+gates is refused at review, never shipped to build, and no spend, blast or
+assembly starts until the plan's rows read PASS. QC checks for the table
+before the first paid job; a plan with gates and no self-check table is a
+review refusal, not a warning.
+
 ## 6. Cost / No-Double-Spend Checks (directive 18, enforced with section 17)
 - [ ] Every paid submission has a prior `reserve` and a later `reconcile`
       to actual cost, within the run ceiling recorded by the operator.
@@ -286,30 +379,51 @@ to self-approve a run.
   `FACE_SPEAKS_NO_LIPSYNC`; a lip-sync clip whose speaker is not on screen fails
   `LIPSYNC_WRONG_FACE`.
 - Run `face_speaks.check_coverage_band(ad_length_s, lipsync_s, lines)`: it
-  measures the **25-30%** target share of the selected duration (approved
-  direction 2026-10-23, superseding the 2026-10-08 30-40 s order) -- a 15-18 s
-  band at 60 s, scaled with length -- against a clip floor that never drops
-  below 3 (3 at 60 s), each clip 4-6 s with no clip over 6 s, and a 5-point
-  grace. It fails `LIPSYNC_COVERAGE_BELOW_BAND` only below the band minus that
-  grace (3 s at 60 s) or under that clip floor; a plan above the band is
-  reported in `evidence` (`in_band` false), never failed here. The **35% hard
-  maximum** is a separate bound this measurement does not enforce: a plan over
-  it fails `LIPSYNC_OVER_CAP` in `lipsync_clips.check_clips`, and the card
-  guard refuses anything that crosses it. The planner (`plan_lipsync_lines`)
-  picks the lines (every sung hook, the spoken opener and closing first, each
-  cut to 6 s) and the first clip must start inside the opening 12 s
-  (`lipsync_clips.check_opening`), or `LIPSYNC_OPENING_NOT_ARTICULATED`. A
-  duration whose bounds cannot all hold (the 3-clip / 4-s floor outside the 35%
-  maximum) fails `LIPSYNC_DURATION_CONFLICT` and is never re-planned silently.
-- The historical FREE / no-lip-sync route stays explicit
-  (`lipsync_clips.ROUTE_NO_LIPSYNC`, zero paid Kling jobs, owner opt-in); it is
-  never the default and never a reason to drop lip-sync from an ordinary run.
+  measures the **25-30%** target share of the selected duration -- a 15-18 s
+  band at 60 s, scaled with length -- and a 5-point grace. It fails
+  `LIPSYNC_COVERAGE_BELOW_BAND` only below the band minus that grace; a plan
+  above the band is reported in `evidence` (`in_band` false), never failed
+  here. **35% is a top, not a refusal** (section 3.3a, rule 5): whole sentences
+  win, and a plan over 35% shows its seconds and percent before any spend;
+  `lipsync_clips.check_clips` reports it, and the card shows it, but it is not
+  a hard refusal. **One piece is one or more whole sentences, 5 to 30 seconds**
+  (3.3a): never cut mid-sentence, never padded, and a passage over 30 seconds
+  is stitched at a breath or a line boundary. Under 90 seconds there is no
+  floor of 3 pieces; from 90 seconds up the floor of 3 stands. The planner
+  (`plan_lipsync_lines`) picks whole-sentence passages (every sung hook and the
+  opening and closing first), and the opening passage is lip-synced inside the
+  first **10-15 seconds** (`lipsync_clips.check_opening`), or
+  `LIPSYNC_OPENING_NOT_ARTICULATED`. A duration whose bounds cannot all hold
+  fails `LIPSYNC_DURATION_CONFLICT` and is never re-planned silently. A single
+  piece over 30 seconds fails `LIPSYNC_AUDIO_TOO_LONG` with the stitch named as
+  the fix.
+- The historical FREE / no-lip-sync route stays explicit and is never the
+  default and never a reason to drop lip-sync from an ordinary run. Its exact
+  shape, so QC can read it:
+  - **The route value** is the literal timeline value `no_lipsync`
+    (`lipsync_clips.ROUTE_NO_LIPSYNC = "no_lipsync"`; the paid route is
+    `lipsync`). Zero paid lip-sync jobs are valid only under `no_lipsync`.
+  - **The owner's record** lives in `control/method.json` as
+    `lipsync_opt_out`, an object carrying a non-empty `who` (the run owner) and
+    a non-empty `at` (when the opt-out was recorded). `who` and `at` are the
+    whole shape; there is no other field.
+  - **The refusal.** A `no_lipsync` timeline with a missing, unreadable or
+    half-written `control/method.json` (no `lipsync_opt_out`, empty `who`, or
+    empty `at`) fails `LIPSYNC_OPT_OUT_MISSING` (`lipsync_clips.py`,
+    `OPT_OUT_MISSING`). A partial record reads as no opt-out, so every caller
+    keeps refusing.
+  - **One reader, no disagreement.** `lipsync_clips.no_lipsync_opt_out(run_dir)`
+    is the single reader the clip policy, the evidence gate and the final
+    assembler all call, so the three can never disagree. The face-speaks check
+    reads the same opt-out (the code fix is F-LIP-1): a run on `no_lipsync`
+    is not failed for the absence of lip-sync clips the owner declined. The
+    card never offers this route.
 - Lip-sync source pictures: every one passes `lip_gate.image_gate` before any
   paid lip-sync job (its close-up numbers are `picture_gate`'s, one rule set); a
   refusal lists every `LIPSYNC_IMAGE_*` reason and a measurement that could not be
   made is a refusal, never a pass.
 - LPG001/LPG002/LPG003: the measured close-up gate is enforced IN the dispatcher
-  (`kie_dispatch.lipsync_picture_refusal`): any kling/ai-avatar job (or a manual infinitalk job) without a
+  (`kie_dispatch.lipsync_picture_refusal`): any `omnihuman-2-0` job without a
   PASS or ACCEPT_WITH_FLAG `picture_gate` receipt (sha256 of the exact image, numbers and
   flags recorded), or whose `input.image_url` is not the bound upload of those exact bytes
   (`picture_gate.upload_measured`), is rejected `LIPSYNC_PICTURE_NOT_GATED` before the
@@ -319,7 +433,7 @@ to self-approve a run.
   (ACCEPT_WITH_FLAG), never a failure and never a paid regeneration. QC fails a run whose
   close-up receipt is missing or FAIL. mediapipe or the pinned face model missing =
   refused (install: `python3 scripts/core/lip_sync/lip_gate/install_face_model.py`).
-- LPG003 F14: the locked lip-sync model `kling/ai-avatar-standard` is not a menu video
+- LPG003 F14: the locked lip-sync model `omnihuman-2-0` is not a menu video
   model; `dispatch` lets it past the F14 video lock and holds it to the picture gate
   instead. Every other off-menu video model is still `MODEL_NOT_ON_MENU`.
 
@@ -332,12 +446,16 @@ to self-approve a run.
   redo. UNMEASURABLE and UNDETERMINED fail `lip_gate.qc_check` until a person writes
   `person_verdict: PASS` on the row. Controls: `lip_sync/lip_gate/calibrate_sync.py`.
   `lip_gate/event_sync.py` is ADVISORY (`advisory_event_sync` in the row), never gating.
-- Two-try rule (Trevor 2026-10-08): at most 2 paid `kling/ai-avatar-standard` jobs per
+- Two-try rule (Trevor 2026-10-08): at most 2 paid `omnihuman-2-0` jobs per
   segment, every name variant counted; try 2 only on a person's call (a defects file or
   `person_verdict` "DEFECT") with a changed input, never on a checker verdict; then the
   best take is kept with a `KEPT_BEST_OF_2 (tN)` receipt row, its numbers, flag and
   mouth-strip path. `lip_gate.qc_check` accepts such a flagged row and rejects a
-  segment with more than 2 jobs. InfiniTalk is a manual backup only, never automatic.
+  segment with more than 2 jobs. Kling Avatar and InfiniTalk are retired (S-42); there
+  is no backup model. Every take also gets a 4-frames-per-second contact sheet looked
+  at by eye for letters, emotion and who is mouthing; no take enters the timeline
+  without that eye record (`LIP_TAKE_NOT_EYE_CHECKED`, `EMOTION_DRIFT`,
+  `WRONG_VOICE_MOUTHED`).
 - Lip-sync process (LSP001, Trevor approved 2026-10-08), what QC checks: (1) reuse first:
   a segment with a usable take on disk has no new paid job in the ledger; (2) a sung line
   the checker cannot confirm is tagged `KEPT_BEST (UNDETERMINED, sung)`, a borderline
@@ -345,10 +463,27 @@ to self-approve a run.
   mouth-strip path (`<delivery folder>/mouth-strips/<segment>.png`) and the receipt lists
   them for a person; (4) every second paid job traces to a person-marked defect, a
   changed input and fewer than 2 prior jobs; (5) clips are trimmed to audio length, placed
-  at the Suno time corrected by the stem offset, lanczos-upscaled to 1080x1920, conformed
-  by dropping frames (no minterpolate) through `load_governor`; (6) rows list the take
+  at the Suno time corrected by the stem offset, lanczos-upscaled to 1080x1920, and
+  conformed to the master's native frame rate by plain frame repeat or drop through
+  `final_assembler/fps_conform.py` (invoked under `load_governor`). There is **no
+  24-to-30 frame-rate interpolation on any shot** (N-23; section 2 S-28, which replaces
+  the earlier "motion-interpolated conform" wording): the master runs at the native rate
+  of its story clips and a clip at another rate is matched by repeat or drop only.
+  QC and SKILL.md state this one rule, so the two can no longer disagree. A conform
+  changes the timeline rate only; it never removes duplicate frames generated inside a
+  clip at that clip's native rate, and the fix for those is clip-side (retake or replace
+  the clip, F-DUP-1), never a timeline-rate change. A master over the 2 percent duplicate
+  cap fails `TIMELINE_DUP_FRAMES` in `fps_conform.py`; (6) rows list the take
   kept, jobs used (n of 2), verdict and numbers, flag and strip path, and
   `lip_gate.qc_check` accepts `KEPT_BEST` and flagged rows that carry a strip path.
+- Lip-sync Emotion Hold (N-118, section 3G.6): every lip-sync take passed the
+  Emotion Hold check: no smile or teeth-grin held half a second or more under a
+  pain line, and the tagged feeling in at least half the frames on a joyful or
+  hopeful line. A drift is `EMOTION_DRIFT` - MAJOR at intensity 2 or 3, MEDIUM
+  at 1 - and records the second it starts. The code is
+  `scripts/core/face_emotion/face_emotion.qc_frame_gate`; the result carries
+  `findings[].drift_start_s`. `FACE_EMOTION_MISMATCH` is not the lip-sync check
+  and now only covers storyboard cards with no emotion tag.
 
 ## Clean ending (I5)
 
@@ -361,8 +496,11 @@ length minus 2 s. Check: `scripts/core/ending_qc/` (`check_ending`).
 Every caption word must be a real word or a protected word (names, brands, the
 client's website). An unknown word fails with the word shown
 (`CAPTION_MISSPELLED`). When the ad sends people to a website, intake asks for
-the exact address; it is stored as a protected word and must appear verbatim in
-the lyrics, captions and end card (`WEBSITE_NOT_VERBATIM`).
+the exact address; it is stored as a protected word. In the lyrics and captions
+it may be SUNG in its spoken form ("dot org" for ".org"): a spoken "dot" is
+accepted between two address words, and nothing else is (`WEBSITE_NOT_VERBATIM`,
+`protected_names.check_website`). The printed end card must still carry the
+address itself, verbatim (F-EOC-6).
 
 ## H10 voice fits the character on screen (Part H)
 
@@ -379,6 +517,89 @@ TODO (U3, U9): refresh the band bullet and the caption bullet below when FU-U3 (
 - **Book campaigns.** The shots stage requires a PASS `book_orientation` record (`BOOK_MIRRORED`, `BOOK_COVER_NOT_FRONT`, `BOOK_SPINE_WRONG_SIDE`, `BOOK_WRONG_DIRECTION`, `BOOK_NO_MOTION`; UNAVAILABLE never advances; the checker must pass its calibration pair). `BOOK_SHOT_NOT_CONTRACTED` for a book video job with no start frame from the cover file. FU-U11 (open branch) adds `BOOK_BLANK_PAGES` and `BOOK_PLAN_NOT_APPROVED`; refresh this line when it lands.
 - **Per-style spoken bands.** FU-U3 (landed in 2.7.31 via PR #120) judges R&B Flow against its planned share and counts music-only time as neither sung nor spoken; Soul Ballad and Soul Rise stay at 22.5 / 77.5. The 5/10 band and the 6 s sung stretch do not change.
 
+## Lyric pain, persona and the spoken opening (method runs)
+
+A method run (`pace_plan["method"]` true) is judged on the lyric method as well as the
+story. The rows below split into two kinds and each row says which it is: a **code gate**
+returns a PASS, a FAIL with the code the code actually emits, or UNAVAILABLE; a **reviewer
+check** is read by a person against the sheet and the brief, because nothing in the skill
+writes a record for it. A reviewer check is written into the QC record with the line it
+was read from; it is never quoted as a code output, and UNAVAILABLE never advances.
+
+- **Persona matches the brief's audience - reviewer check, no code producer.** Read the
+  audience the brief names and the sheet's first person. On the run this row was written
+  from, the brief names a salaried professional: a degree, forty hours plus overtime, a
+  second job, the bills and the family, and nothing to show for it. A sheet written for a
+  different person (a nail tech, a hustler, "a strong woman" in general) fails the row even
+  though it passes every code gate. Record the brief sentence and the sheet line that
+  carries the persona.
+- **At least five pain details - reviewer check, no code producer.** Count concrete,
+  first-person, present-tense details: an amount, the hours, a second job, a dependent, a
+  bill, the promised degree, a peer comparison, a fear about retirement or travel, the
+  villain as an object (a letter, a bill, a notice). Fewer than five fails the row. Write
+  the count and the five lines into the QC record.
+- **At least two sung pain sections before the hero - reviewer check, no code producer.**
+  Count the sung sections between the spoken opening and the Hero Shift from the sheet's
+  own order. Two or more pass; one is a line, not a story, and fails. On the campaign run
+  the sheet carries Verse 1, Pre-Chorus 1 and Verse 2 before the hero enters at
+  Pre-Chorus 2.
+- **Client lines present and logged - reviewer check, no code producer.** Every line the
+  client supplied is present, cleaned only for grammar and meter, with the original next to
+  the cleaned line in the script notes. No `client_lines` field is written to
+  `creative/script.json` by the skill today; the log is the sheet's own notes, and the
+  reviewer writes it into the QC record. A client line dropped or reworded fails the row.
+- **Style equals the card choice - reviewer check, no code producer.** Compare the style
+  the card offered and the client chose with the style that was dispatched, field by field.
+  A substituted style fails the row: it re-cuts the whole song, and no rewrite, gate or
+  operator order may re-pick it.
+- **The final style carries "no singing until the groove drops" - code gate.**
+  `suno_recipe.method_pace_clauses` writes the clause into a method order's drop text, and
+  `song_contract.check_pace_style(style_text, pace_plan)` refuses a final style that does
+  not carry the approved drop direction as a contiguous, in-order run of its words. The
+  refusal is `PACE_DIRECTION_MISSING: the final style does not carry the drop direction
+  (...) in order`, and it fires before any paid request. The same call also enforces the
+  return direction; a style with the drop and no return fails the same code.
+- **`PRE_ERM_SPOKEN_SHORT` / `PRE_ERM_SPOKEN_LONG` clear - code gate, on the sheet.**
+  `suno_recipe.check_pre_erm_opening(sheet, length_s)` runs inside `check_lyric_sheet` on
+  method runs, before dispatch. It measures nothing: it walks the sheet from the top,
+  sums the words of the sections before the first sung or rap section, divides by the
+  style's planned spoken rate (`words_fit.rates_for`), and compares the planned seconds
+  with `erm_apex_s - METHOD_FIRST_SUNG_TOL_S` (32.5 - 1.5 = 31.0 s at 3 minutes) and with
+  the window's high end. A planned lead-in that is too short is `PRE_ERM_SPOKEN_SHORT`
+  (planned seconds, words, floor, apex, words still needed); past the window's close is
+  `PRE_ERM_SPOKEN_LONG` (planned seconds, window close, most words allowed). A sheet that
+  opens with a no-voice `[Instrumental]` tag earns `PRE_ERM_LEAD_IN_UNPLANNED` as a
+  warning instead, and the take is then judged by word timing.
+- **`ERM_OUTSIDE_WINDOW` clear - code gate.** The ERM apex must sit inside
+  `control/method.json`'s `runtime_targets.erm_window_s` (at 3 minutes, 25-40 s), and
+  `method_plan.validate(blueprint, method)` rejects a blueprint apex outside it with
+  `ERM_OUTSIDE_WINDOW` before any lyric spend. The method record is the authority: when
+  `music/req.json` and `creative/blueprint.json` say 65 s and the method says 32.5 s, the
+  blueprint is what moves.
+- **First sung word, by word timing - code gate.** The `first_sung` gate calls
+  `spoken_share.judge_first_vocal_at_erm(first_sung_s, sung_starts, erm_apex_s,
+  tol_s=1.5)`. On a method run the first sung word must fall inside the window
+  `[apex - 1.5 s, apex + 1.5 s]`; early and late are both FAIL (the ERM Drop is where the
+  song turns). The figure is the earliest sung word start, never the closest one, and
+  `song_dispatch` sets `first_sung.measurement.source`: `word_timing` when
+  `aligned_words` supplied a word, `singing_detector` otherwise. The word-timing figure is
+  the one that counts: the singing detector reads a spoken backstory over music as sung and
+  reported 0-10 s on takes whose first sung lyric word was at 38-46 s by word timing. On a
+  3-minute song the window's floor (31.0 s) is already above the operator's 30-second rule,
+  so a take inside the window has not sung before 30 s; the measured word-timing second is
+  recorded per take. A late FAIL is open: `first_sung` is emitted by the take judge but is
+  not in `REQUIRED_TAKE_GATES`, so `take_accepted` does not read it and the FAIL is
+  recorded without stopping delivery, and the operator-decision record's
+  `gates_not_proven` accepts only D1-D5, so this gate is not nameable there either
+  (worked through in EXAMPLES.md).
+- **`WORD_TIMING_UNAVAILABLE` means stop and fix the install.** `song_transports` raises
+  the loud `WORD_TIMING_UNAVAILABLE` warning when a take returns no aligned words or the
+  timing call errors (the measured cause was faster-whisper `small` never installed on the
+  box). The take still records the error and no word-timing figure is invented. Stop
+  there, repair the install (INSTALL.md), re-measure; the gate never passes on a plan, a
+  prompt or a promise.
+
+
 ## No blur fill (DEL-14)
 
 Blur fill is never used. Full height comes from crop-in of the source frame
@@ -391,3 +612,28 @@ waived through, and a PASS record for the no_blur_fill check that names a
 blur fill is refused as FILL_CLAIM_MEASURED. Proof lives in the canonical
 build tree's `tests/test_no_blur_fill/`: a blur-fill render fails red, the
 crop-in render passes, and the refusal gates fire.
+
+## Never hide a problem (CG-04)
+
+QC enforces one rule over every deliverable: **never crop, zoom, freeze,
+stretch or hand-join to clear any gate.** Each of those changes the picture to
+make a check pass instead of fixing what the check found, and a PASS record
+carrying one of them is refused the same way a blur fill is refused.
+
+- **Crop** (beyond the sanctioned crop-in of DEL-14 on the lip-sync subject) and
+  **zoom** to hide a defect, a stranger, a wrong wardrobe or a lettered corner
+  are refused.
+- **Freeze** (a held frame standing in for motion) is refused; a frozen body
+  with only the mouth moving is not motion.
+- **Stretch** (a non-uniform scale) is refused; full height comes from crop-in
+  only (DEL-14).
+- **Hand-join** (splicing two takes or two windows inside one shot to hide a
+  seam or a failure) is refused; a shot is remade from its locked picture.
+- **Allowed, and not a violation:** picking a different time window of the
+  *same* clip. Changing the picture is not allowed; re-timing the existing clip
+  is.
+
+A deliverable whose repair shows any refused edit is treated as not repaired:
+the shot is remade and re-checked, and the edit is named on the receipt. This
+rule sits beside "No blur fill (DEL-14)" and applies to every gate, not only
+the fill gate.

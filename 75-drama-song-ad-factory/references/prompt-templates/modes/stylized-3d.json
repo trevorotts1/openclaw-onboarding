@@ -1,0 +1,15 @@
+{
+  "mode_id": "stylized-3d",
+  "label": "Stylized 3D animation",
+  "source": "N-37 / section 3B.5: the rounded family-animation look clients ask for, built to sit beside lifelike-3d as a second 3D look",
+  "h3_block": "A polished stylized 3D animation look: rounded, appealing character shapes with slightly enlarged eyes, simplified smooth skin and soft, expressive faces. Soft bounced light wraps the characters and sets with gentle ambient fill and a warm key, and the colour is rich and saturated without going neon. Sets are 3D in the same render family as the characters: rounded props, clean geometry and soft contact shadows with readable depth layers. {palette} Smooth, clean surfaces with subtle subsurface warmth on skin and crisp but soft specular highlights; no photographic texture, no photoreal skin and no live-action look anywhere. Expressive, characterful acting with clear readable poses and appealing silhouettes at phone width.",
+  "palette_default": "Palette: rich warm coral, golden yellow, soft teal and a deep plum accent.",
+  "kling_block": "Stylized 3D animation, clearly animated: rounded appealing characters, slightly enlarged eyes, simplified smooth skin, soft bounced light, rich saturated colour, clean soft-shadow geometry, no photoreal skin and no live-action look.",
+  "kling_who": "stylized 3D animated",
+  "keyframe_clause": "same stylized 3D character, rounded appealing shapes, slightly enlarged eyes, simplified smooth skin and soft bounced light",
+  "lipsync_allowed": true,
+  "banned_words": ["photoreal", "photorealistic", "photographic", "photograph",
+                   "photo", "live-action", "real human being", "real person",
+                   "DSLR", "35mm", "visible pores", "shot on"],
+  "client_wording": "Stylized 3D animation: rounded, Pixar-style 3D characters with big appealing eyes, simplified skin and rich colour."
+}

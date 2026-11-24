@@ -127,7 +127,7 @@ DUAL_PRESENCE_RULES = (
 )
 
 #: The styles this bible compiles (decision D18 for the three-way menu; the
-#: plan 6.11 five-look card is core/choice_card/looks/, not this module).
+#: plan 6.11 six-look card is core/choice_card/looks/, not this module).
 #: Hybrid is sketch switching to realism; Lifelike 3D is a style of its own,
 #: never a hybrid target, and no 2D-to-3D combination exists in this module.
 OFFERED = {

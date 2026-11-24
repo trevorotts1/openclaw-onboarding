@@ -103,6 +103,8 @@ _LOOK_SENTENCE = {
     "sketch-to-life": "black-and-white pencil sketch that turns into real footage.",
     "canvas-to-life": "painted cartoon that turns into real footage.",
     "canvas-to-3d": "painted cartoon that turns into lifelike 3D.",
+    #: N-37: rounded, appealing 3D animation; no studio name (plan 3B.5).
+    "stylized-3d": "rounded, appealing 3D animation with big expressive eyes.",
 }
 #: Shown under a look whose source registry has no verified sample (Canvas to Life).
 #: Never substitute another look's link; the choice stays usable and explained.

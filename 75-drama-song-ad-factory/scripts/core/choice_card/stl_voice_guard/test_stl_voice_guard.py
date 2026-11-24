@@ -10,7 +10,7 @@ calls:
   2. Velvet Voiceover is **unselectable on the card** for Sketch to Life --
      disabled by default (listed, ``selectable`` False, unavailable note) and
      droppable with ``mode="hide"`` -- while **every other look keeps it**;
-  3. All Suno stays the default and stays selectable on all five looks;
+  3. All Suno stays the default and stays selectable on all six looks;
   4. the card writer ``apply_voice`` refuses the pair without mutating the
      caller's card, and writes the voice field alone when it is allowed;
   5. unknown look / unknown voice fail closed by name instead of guessing;
@@ -114,13 +114,13 @@ def test_constants():
           M.STL_LOOK_ID)
     check("guarded look label is Sketch to Life",
           M.STL_LOOK_LABEL == "Sketch to Life", M.STL_LOOK_LABEL)
-    check("the other four keeps are listed",
-          len(M.STL_OTHER_LOOKS) == 4 and M.STL_LOOK_ID not in M.STL_OTHER_LOOKS,
+    check("the other five keeps are listed",
+          len(M.STL_OTHER_LOOKS) == 5 and M.STL_LOOK_ID not in M.STL_OTHER_LOOKS,
           M.STL_OTHER_LOOKS)
-    check("guard covers all five looks once",
+    check("guard covers all six looks once (N-37 adds Stylized 3D)",
           set(M.STL_OTHER_LOOKS) | {M.STL_LOOK_ID} ==
           {"lifelike-3d", "2d-hand-painted", "sketch-to-life",
-           "canvas-to-life", "canvas-to-3d"}, M.STL_OTHER_LOOKS)
+           "canvas-to-life", "canvas-to-3d", "stylized-3d"}, M.STL_OTHER_LOOKS)
     check("all Suno id and Velvet id come from the sibling module",
           M.ALL_SUNO_ID == "all_suno" and M.VELVET_ID == "velvet_voiceover",
           (M.ALL_SUNO_ID, M.VELVET_ID))

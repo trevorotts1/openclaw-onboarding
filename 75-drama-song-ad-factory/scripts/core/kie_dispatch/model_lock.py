@@ -53,10 +53,19 @@ ALLOWED_VIDEO_MODELS = (
 # family ("minimax-h3/*"); the card's per-member picks stay in the family.
 DEFAULT_VIDEO_MODEL = "hailuo/02-image-to-video-*"
 
-# Lip-sync is not a menu video model: Trevor locked the lip-sync model. The F14
-# video lock (menu + card choice) does not apply to it; kie_dispatch lets this
-# one model through F14 and then holds it to the picture gate.
-LOCKED_LIPSYNC_MODEL = "kling/ai-avatar-standard"
+# Lip-sync is not a menu video model and is not a choice: Trevor fixed it to
+# OmniHuman 2.0 on every run, talking or singing, with no alternative and no
+# backup (N-12, S-42, section 3C.1a, November 23). The F14 video lock (menu +
+# card choice) does not apply to it; kie_dispatch lets this one model through
+# F14 and then holds it to the picture gate.
+LOCKED_LIPSYNC_MODEL = "omnihuman-2-0"
+
+#: Retired with the Kling avatar (S-42): kept as a name so an old caller that
+#: imported it still resolves; it is NOT an approved lip-sync model any more.
+LIPSYNC_FALLBACK_MODEL = ""
+
+#: One model, no fallback (S-42).
+LIPSYNC_MODELS = (LOCKED_LIPSYNC_MODEL,)
 
 # Agnes flash is the Agnes door's own video model (SPEC A10). Not a KIE menu
 # model: it never enters ALLOWED_VIDEO_MODELS, and the delivery gate accepts it
@@ -94,6 +103,17 @@ class ModelLockError(Exception):
 def is_locked_lipsync(model):
     """True for the one lip-sync model Trevor locked (exact id)."""
     return (model or "").strip() == LOCKED_LIPSYNC_MODEL
+
+def is_allowed_lipsync(model):
+    """True for the one approved lip-sync model (OmniHuman 2.0, N-12)."""
+    return (model or "").strip() in LIPSYNC_MODELS
+
+def lipsync_model_role(model):
+    """'locked' | None -- which approved slot the id fills."""
+    m = (model or "").strip()
+    if m == LOCKED_LIPSYNC_MODEL:
+        return "locked"
+    return None
 
 
 def resolve_price_menu(explicit=None):

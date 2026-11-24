@@ -5,15 +5,15 @@
  "adapter": "74-kie-live-adapter",
  "price_note": "pricing.raw is KIE's pricingDesc prose; credits are parsed numbers (never USD).",
  "counts": {
-  "models": 218,
-  "schema_readable": 217,
+  "models": 219,
+  "schema_readable": 218,
   "schema_not_readable": 1,
-  "kind_createTask": 178,
+  "kind_createTask": 179,
   "kind_sync": 39,
-  "with_prompt_field": 155,
-  "prompt_max_known": 141,
+  "with_prompt_field": 156,
+  "prompt_max_known": 142,
   "with_verbatim_fields": 14,
-  "price_parsed": 207,
+  "price_parsed": 208,
   "families": {
    "claude": 12,
    "deepseek": 1,
@@ -34,7 +34,7 @@
    "kimi": 1,
    "kling": 19,
    "nano-banana": 5,
-   "omnihuman": 3,
+   "omnihuman": 4,
    "pixverse": 5,
    "qwen": 11,
    "recraft": 2,
@@ -19131,6 +19131,80 @@
     "maxLength": null,
     "verbatim": false,
     "max_source": null,
+    "limits_listed": []
+   },
+   "verbatim_fields": []
+  },
+  {
+   "id": "omnihuman-2-0",
+   "provider": "Other",
+   "title": "OmniHuman 2.0",
+   "taskType": [
+    "Image to Video"
+   ],
+   "family": "omnihuman",
+   "version": [
+    2,
+    0
+   ],
+   "variant": null,
+   "pricing": {
+    "raw": "14 credits per second of the rounded-up clip",
+    "status": "ok",
+    "credits_min": 14.0,
+    "credits_max": 14.0,
+    "unit": "per-second",
+    "credits_estimate": 14.0
+   },
+   "schema": {
+    "readable": true,
+    "submit_path": "/api/v1/jobs/createTask",
+    "method": "post",
+    "kind": "createTask"
+   },
+   "schema_paths": [
+    {
+     "path": "/api/v1/jobs/createTask",
+     "method": "post",
+     "kind": "createTask"
+    }
+   ],
+   "callback_supported": true,
+   "required": [
+    "image_urls",
+    "audio_url"
+   ],
+   "input_fields": {
+    "image_urls": {
+     "type": "array",
+     "maxItems": 1,
+     "minItems": 1,
+     "items": {
+      "type": "string",
+      "format": "uri"
+     },
+     "description": "Exactly one picture, passed as a one-item list. Under 30 MB, 300 to 6000 pixels a side, width over height between 0.4 and 2.5."
+    },
+    "audio_url": {
+     "type": "string",
+     "format": "uri",
+     "description": "Wav or mp3, under 15 MB, 4 to 300 seconds."
+    },
+    "prompt": {
+     "type": "string",
+     "maxLength": 300
+    },
+    "enable_watermark": {
+     "type": "boolean",
+     "default": true
+    }
+   },
+   "branches": [],
+   "prompt_field": {
+    "name": "prompt",
+    "maxLength": 300,
+    "verbatim": false,
+    "max_source": "schema",
     "limits_listed": []
    },
    "verbatim_fields": []

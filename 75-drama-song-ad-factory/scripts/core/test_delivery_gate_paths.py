@@ -99,11 +99,17 @@ class TestAssemblerPath(Base):
             ff("-i", out, "-c:v", "copy", "-c:a", "libmp3lame", tmp)
             os.replace(tmp, out)
             return r
-        # Isolate the AAC delivery gate from separately tested lip-sync evidence.
-        # These mocks exist only while this fixture deliberately corrupts audio.
+        # Isolate the AAC delivery gate from separately tested lip-sync
+        # evidence AND the letter gate (F-LETTER-RENDER, wave: every take is
+        # gated with the real extractor, so a missing reader fails
+        # GARBLED_TEXT_FRAME / LETTER_GATE_UNAVAILABLE before the audio gate
+        # can report DELIVERY_AUDIO_NOT_AAC). These mocks exist only
+        # while this fixture deliberately corrupts audio; the pixel check
+        # that would read the MP3 master is the separately tested letter gate.
         with patch.object(A, "_run", side_effect=mp3_run), \
                 patch.object(A, "lipsync_gate", return_value=None), \
                 patch.object(A, "face_speaks_gate", return_value=None), \
+                patch.object(A, "frame_text_gate", return_value=([], None)), \
                 patch("lipsync_evidence.check_plan",
                       return_value={"pass": True, "evidence": {}}):
             rec = A.assemble(tl, self.p("out.mp4"))

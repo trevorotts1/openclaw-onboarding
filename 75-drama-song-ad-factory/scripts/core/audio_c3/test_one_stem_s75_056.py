@@ -1,12 +1,14 @@
 #!/usr/bin/env python3
-"""S75-056: one vocal-separation job per song (unit U-U01).
+"""S75-056: one vocal-separation job per song (unit U-U01; N-117 / 3N).
 
 Proves, with a fake dispatch runner and no paid call:
   * five clips over one song submit the separation model exactly once, keyed
-    ``logical_key="vocal-stem"``;
-  * that one job publishes ``music/vocal-stem.mp3`` and
-    ``music/instrumental.mp3``, where delivery reads them;
-  * every clip cuts from the saved vocal stem.
+    ``logical_key="vocal-stem"``, with the plain ``split_stem`` type;
+  * that one job publishes the lead (``music/vocals.mp3`` and its delivery
+    copy ``music/vocal-stem.mp3``), the clean backing
+    (``music/backing-vocals.mp3``) and ``music/instrumental.mp3``;
+  * every clip cuts from its own role's track (the lead track when the row
+    names no role).
 
 Run: python3 -B scripts/core/audio_c3/test_one_stem_s75_056.py
 """
@@ -59,11 +61,14 @@ class OneStemTests(unittest.TestCase):
             save_dir = Path(kwargs["save_dir"])
             stem = save_dir / "isolated.wav"
             stem.write_bytes(b"synthetic-isolated-lead-vocal")
+            backing = save_dir / "backing_vocals.wav"
+            backing.write_bytes(b"synthetic-clean-backing")
             instrumental = save_dir / "instrumental.wav"
             instrumental.write_bytes(b"synthetic-instrumental")
             return {"tool": "kie_dispatch", "outcome": "ok", "run_id": "run-u01",
                     "evidence": {"generated": True, "task_id": "task-one-stem",
-                                 "saved_paths": [str(stem), str(instrumental)],
+                                 "saved_paths": [str(stem), str(backing),
+                                                 str(instrumental)],
                                  "isolated_stem": {"path": str(stem),
                                                    "speaker_id": "cara",
                                                    "kind": "speech",
@@ -83,6 +88,8 @@ class OneStemTests(unittest.TestCase):
         submits, argvs = [], []
         separation_runner, cut_runner = self._runner(submits, argvs)
         vocal = self.root / "music" / "vocal-stem.mp3"
+        lead = self.root / "music" / "vocals.mp3"
+        backing = self.root / "music" / "backing-vocals.mp3"
         instrumental = self.root / "music" / "instrumental.mp3"
         stems = []
         with mock.patch.object(producer, "_approved",
@@ -97,15 +104,21 @@ class OneStemTests(unittest.TestCase):
         self.assertEqual(1, len(submits), submits)
         self.assertEqual("ai-music-api/separate-vocals", submits[0]["model"])
         self.assertEqual("vocal-stem", submits[0]["logical_key"])
+        self.assertEqual("split_stem",
+                         submits[0]["request"]["input"]["type"])
         self.assertTrue(vocal.is_file())
+        self.assertTrue(lead.is_file())
+        self.assertTrue(backing.is_file())
         self.assertTrue(instrumental.is_file())
-        self.assertGreater(vocal.stat().st_size, 0)
-        self.assertGreater(instrumental.stat().st_size, 0)
+        for path in (vocal, lead, backing, instrumental):
+            self.assertGreater(path.stat().st_size, 0)
         for argv in argvs:
-            self.assertEqual(str(vocal), argv[argv.index("-i") + 1])
+            # The rows name no role, so they are lead pieces: the lead track.
+            self.assertEqual(str(lead), argv[argv.index("-i") + 1])
         for stem in stems:
             self.assertTrue(Path(stem["path"]).is_file())
             self.assertEqual("cara", stem["speaker_id"])
+            self.assertEqual("lead", stem["track"])
 
 
 if __name__ == "__main__":

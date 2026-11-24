@@ -1,34 +1,21 @@
-"""fps_conform: motion-compensated fps conform for the final assembler
-(manual 02 Part E E1, Critical; amended by Part H H3).
+"""fps_conform: frame-rate conform for the final assembler.
 
-Part H H3 policy (replaces the old E1 line "output = the clips' native
-rate", which let a builder hard-code 24 and drop 1 of every 5 Kling
-frames):
-- the master is ALWAYS 30 fps (MASTER_FPS);
-- Kling clips are natively 30 fps and pass through with NO conform
-  filter, so every lip-sync mouth frame survives;
-- MiniMax H3 clips are natively 24 fps and are motion-interpolated up to
-  30 (minterpolate mci), never the plain `fps` filter;
-- every segment is checked for duplicate frames (SEGMENT_DUP_CAP).
+N-23 (binding, replaces the old Part H H3 "master is ALWAYS 30 fps" line and
+the whole motion-interpolated conform policy -- S-28 names both):
+- the master is ALWAYS 24 fps (MASTER_FPS), the native rate of MiniMax H3;
+- NO interpolation, ever, on any shot. A clip at another rate is matched by
+  PLAIN FRAME REPEAT OR DROP (the ffmpeg `fps` filter), which duplicates or
+  drops whole frames and never invents a smeared in-between frame;
+- Kling clips are natively 30 fps and are dropped to 24;
+- MiniMax H3 and Agnes clips are natively 24 fps and pass through untouched;
+- the duplicate-frame check counts at the native rate (24).
 
-Problem: the plain ffmpeg `fps` filter conforms clips by DUPLICATING
-frames (or dropping them), which shows up in the finished ad as visible
-stutter when a 24/25 fps source clip is glued into a 30 fps master
-(measured on the failed ad behind manual Part E: `mpdecimate` drops up to
-~30% of the master's frames). This module replaces that filter with
-motion-compensated interpolation:
+Why: interpolation is what smeared the crowds on today's 5-minute master.
+The old policy existed to keep every Kling mouth frame; the delivery rule
+that now outranks it is that a frame is never invented.
 
-    minterpolate=fps=<timeline_fps>:mi_mode=mci
-
-- source fps == timeline fps -> pass-through (no conform filter at all).
-- source fps != timeline fps -> minterpolate (mci) conform. Both the E1
-  "24/25 -> 30" case and the duration-preserving retime (a target fps
-  BELOW the source fps) use the same pattern; minterpolate regenerates
-  the timeline without duplicating or dropping source frames either way.
-- The argv it emits is a FILTER STRING for the assembler's existing
-  per-input chain (trim -> setpts -> <conform> -> scale -> setsar), not a
-  standalone command, so the assembler keeps its M7 bounding and its
-  frame-exact cut plan untouched.
+This module emits a FILTER SEGMENT for the assembler's per-input chain
+(trim -> setpts -> <conform> -> scale -> setsar), not a standalone command.
 
 QC helpers (same module, used by the final gate):
 - mpdecimate_dup_ratio(stderr)   -> percentage-duplicated frames as a
@@ -57,9 +44,16 @@ import video_still_fill as _VSF  # noqa: E402
 # frames under mpdecimate; a master above this fails the final QC gate.
 DUP_FRAMES_CAP = 2.0
 
-# Part H H3: the master frame rate, and the per-segment duplicate cap
-# (mpdecimate), checked on top of the whole-master cap above.
-MASTER_FPS = 30
+# N-23 (binding): the master runs at 24 fps, the native rate of the H3 and
+# OmniHuman takes. S-28 replaces the old 30 fps + minterpolate rule: NO
+# frame-rate interpolation anywhere (interpolation is what smeared the
+# crowds on the 5-minute failure). Another rate is matched by plain frame
+# repeat or drop, and the duplicate-frame check counts at this native rate.
+MASTER_FPS = 24
+#: N-23: 24 is the rate every new master uses. 30 stays accepted so a
+#: timeline written before this rule still assembles (no new refusal on a
+#: plan that passes today); neither rate interpolates.
+ACCEPTED_MASTER_RATES = (24, 30)
 SEGMENT_DUP_CAP = 2.0
 TIMELINE_SEGMENT_DUP_FRAMES = "TIMELINE_SEGMENT_DUP_FRAMES"
 
@@ -68,7 +62,8 @@ TIMELINE_SEGMENT_DUP_FRAMES = "TIMELINE_SEGMENT_DUP_FRAMES"
 # a "model" name matched here by substring.
 # "agnes": measured, trial A (RESEARCH.md 10 / SPEC A8): agnes-video-2.5-flash
 # returned 704x1280 at 24 fps with an AAC audio track, 243 frames in
-# 10.125 s -- so Agnes goes up to 30 fps by interpolation like MiniMax H3.
+# 10.125 s -- Agnes is native 24, the master rate (N-23), so it passes
+# through.
 NATIVE_FPS = {"kling": 30.0, "minimax": 24.0, "hailuo": 24.0, "h3": 24.0,
               "agnes": 24.0}
 
@@ -81,7 +76,7 @@ TIMELINE_DUP_FRAMES = "TIMELINE_DUP_FRAMES"
 # Fractional-rate spellings ffmpeg prints/probes (ntsc/pal film, web).
 _FRAME_RATE_RE = re.compile(r"^\s*(\d+(?:\.\d+)?)(?:\s*/\s*(\d+(?:\.\d+)?))?\s*$")
 
-_CONFORM_MARKER = "minterpolate"
+_CONFORM_MARKER = "fps"     # N-23: plain frame repeat/drop, never minterpolate
 
 
 def parse_fps(value):
@@ -110,13 +105,9 @@ def parse_fps(value):
 def build_conform_argv(source_fps, timeline_fps, width=None, height=None):
     """Return the conform FILTER SEGMENT for one clip input chain.
 
-    - equal fps (tolerance 1e-3) -> "" (pass-through: no filter; E1).
-    - 24/25 -> 30 (any differing pair) ->
-        "minterpolate=fps=<timeline_fps>:mi_mode=mci" (E1 motion-
-        compensated interpolation; never the plain `fps` filter).
-    - duration-preserving retime (timeline fps BELOW source fps) -> the
-      same minterpolate pattern, per manual wording ("a
-      duration-preserving retime" is allowed as an equal alternative).
+    - equal fps (tolerance 1e-3) -> "" (pass-through: no filter).
+    - any differing pair -> "fps=<timeline_fps>": PLAIN frame repeat or drop
+      to the native master rate. NEVER minterpolate (N-23 / S-28).
 
     Returns the string to splice into the per-input filterchain between
     setpts and scale (empty string means splice nothing).
@@ -125,7 +116,10 @@ def build_conform_argv(source_fps, timeline_fps, width=None, height=None):
     dst = parse_fps(timeline_fps)
     if abs(src - dst) <= 1e-3:
         return ""
-    return "%s=fps=%s:mi_mode=mci" % (_CONFORM_MARKER, _g(dst))
+    # N-23 / S-28: plain frame repeat or drop to the native master rate. NEVER
+    # minterpolate -- the interpolation is what smeared the crowds. ffmpeg's
+    # plain `fps` filter is exactly frame repeat/drop, which is the rule.
+    return "fps=%s" % _g(dst)
 
 
 def _g(x):
@@ -139,13 +133,13 @@ def agnes_conform_argv(src, dst, w, h, ffmpeg="ffmpeg", threads=None):
     """Argv conformance for ONE Agnes clip into the master frame (SPEC A8).
 
     Trial A measured the Agnes source: 704x1280, 24 fps, H.264, WITH an
-    AAC track (not silent). The master is 30 fps, so this command:
+    AAC track (not silent). The master is 24 fps (N-23), so this command:
 
       1. strips the clip's own audio with ``-an`` -- the song is the only
          audio in the master (SPEC A8 "Audio: stripped");
-      2. motion-interpolates 24 -> 30 with the SAME H3 filter the master
-         render uses (``build_conform_argv``: minterpolate mci, never the
-         plain ``fps`` filter, which duplicates frames and stutters);
+      2. conforms to the master rate with ``build_conform_argv`` -- for
+         Agnes that is a pass-through (both 24), and for any other rate a
+         plain frame repeat or drop, NEVER minterpolate (N-23, S-28);
       3. cover-scales to the master frame through
          ``video_still_fill.cover_crop_filter`` -- lanczos scale-up then
          crop, so the clip fills 1080x1920 with no blur fill and no
@@ -269,24 +263,41 @@ def measure_dup_pct(path, ffmpeg="ffmpeg", start=None, dur=None, run=None):
 
 def segment_dup_report(master, plan, ffmpeg="ffmpeg", cap=SEGMENT_DUP_CAP,
                        run=None):
-    """Per-segment duplicate check on the rendered master (H3).
+    """Per-shot duplicate check on the rendered master (H3, N-52).
 
-    One row per plan segment: {index, src, start_s, dur_s, dup_pct, hold,
-    pass}. Cross-fade overlaps are excluded from the window. A segment
-    marked hold (a deliberate still) is reported but never fails. Returns
+    ONE row per shot id, keyed by ``shot_id`` (the fallback key is the
+    segment index). A shot split over two plan segments is reported once:
+    its duplicate ratio is measured over the shot's whole on-screen window,
+    never once per piece -- the 580.7 s master carried 16 rows twice because
+    the bookkeeping keyed rows by segment, not by shot.
+
+    Row: {shot_id, index, src, start_s, dur_s, dup_pct, hold, pass}.
+    Cross-fade overlaps are excluded from the window. A segment marked hold
+    (a deliberate still) is reported but never fails. Returns
     (rows, failed_rows).
     """
     fps = plan["fps"]
     segs = plan["segments"]
-    rows = []
+    rows, by_shot = [], {}
     for i, s in enumerate(segs):
         lead = s.get("xfade_frames", 0)
         tail = segs[i + 1].get("xfade_frames", 0) if i + 1 < len(segs) else 0
         start = (s["offset_frames"] + lead) / fps
         dur = (s["frames"] - lead - tail) / fps
-        pct = measure_dup_pct(master, ffmpeg, start, dur, run=run)
         hold = bool(s.get("hold"))
-        rows.append({"index": i, "src": s["src"], "start_s": start,
-                     "dur_s": dur, "dup_pct": pct, "hold": hold,
-                     "pass": hold or pct <= cap})
+        sid = str(s.get("shot_id") or "seg%d" % i)
+        prev = by_shot.get(sid)
+        if prev is not None:
+            # Same shot in a second segment: one row, the whole window.
+            prev["dur_s"] += dur
+            prev["hold"] = prev["hold"] or hold
+            continue
+        row = {"shot_id": sid, "index": i, "src": s["src"], "start_s": start,
+               "dur_s": dur, "hold": hold}
+        by_shot[sid] = row
+        rows.append(row)
+    for row in rows:
+        row["dup_pct"] = measure_dup_pct(master, ffmpeg, row["start_s"],
+                                         row["dur_s"], run=run)
+        row["pass"] = row["hold"] or row["dup_pct"] <= cap
     return rows, [r for r in rows if not r["pass"]]

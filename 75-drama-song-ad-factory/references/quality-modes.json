@@ -1,0 +1,110 @@
+{
+ "_doc": "The quality-mode card: Standard, Premium, Ultra and Hybrid replace the old per-vendor VIDEO MODEL question (F-QM-1). mode_prices is the one price table the card, the gate and the cost estimate read. A KIE credit is $0.005.",
+ "checked": "2026-11-23",
+ "recommended": "hybrid",
+ "run_file": "storyboard/quality-mode.json",
+ "shot_fields": [
+  "picture_mode",
+  "picture_mode_reason",
+  "reference_image_ids",
+  "look_drifted",
+  "video_model",
+  "max_resolution"
+ ],
+ "shot_field_rules": {
+  "picture_mode": "one-picture | two-picture | nine-picture | lip-sync (the Shot Router's four routes, 3E.1). Every clip is image-to-video from its own checked keyframe; text-to-video is refused (N-32). 'two-picture' only where the live registry shows one request accepting both first and last pictures.",
+  "picture_mode_reason": "plain words: why this route was used for this shot",
+  "reference_image_ids": "list of this run's own reference or keyframe picture ids used, never a URL copied from another run",
+  "look_drifted": "boolean: the style check found the take away from the run's locked look",
+  "video_model": "the registry model id the shot was made with (the run owner's choice, N-12)",
+  "max_resolution": "the resolution cap this shot was made under: one of 720p, 768P, 1080p, 2K, 4K"
+ },
+ "lipsync": {
+  "model": "omnihuman-2-0",
+  "on_card": false,
+  "note": "The lip-sync model is fixed: OmniHuman 2.0 on every run, no alternative, no backup (3C.1a). It is not a card choice and never appears as one."
+ },
+ "codes": {
+  "not_chosen": "QUALITY_MODE_NOT_CHOSEN",
+  "unknown": "UNKNOWN_QUALITY_MODE",
+  "price_missing": "PRICE_MISSING",
+  "ultra_unavailable": "ULTRA_MODEL_UNAVAILABLE",
+  "modes_unavailable": "QUALITY_MODES_UNAVAILABLE"
+ },
+ "modes": [
+  {
+   "id": "standard",
+   "label": "Standard",
+   "blurb": "great quality, best value",
+   "description": "MiniMax H3 at 768P; one start picture per moving shot",
+   "default": true,
+   "video_model": "minimax-h3/image-to-video",
+   "resolution": "768P",
+   "max_resolution": "2K",
+   "pictures_per_moving_shot": 1
+  },
+  {
+   "id": "premium",
+   "label": "Premium",
+   "blurb": "every shot in finer detail",
+   "description": "MiniMax H3 at 2K; one start picture per moving shot",
+   "video_model": "minimax-h3/image-to-video",
+   "resolution": "2K",
+   "max_resolution": "2K",
+   "pictures_per_moving_shot": 1
+  },
+  {
+   "id": "ultra",
+   "label": "Ultra",
+   "blurb": "4K pictures and shots, when a model can",
+   "description": "a live-registry model that advertises 4K; shown, never faked when none does",
+   "video_model": null,
+   "resolution": "4K",
+   "max_resolution": "4K",
+   "pictures_per_moving_shot": 1,
+   "requires_4k": true
+  },
+  {
+   "id": "hybrid",
+   "label": "Hybrid",
+   "blurb": "best value everywhere, finer detail on the shots that matter",
+   "description": "Standard route for every shot, Premium (2K) on the shots the Shot Router marks as story turns",
+   "recommended": true,
+   "video_model": "minimax-h3/image-to-video",
+   "hero_resolution": "2K",
+   "resolution": "768P",
+   "max_resolution": "2K",
+   "pictures_per_moving_shot": 1
+  }
+ ],
+ "mode_prices": {
+  "unit": "second",
+  "credits_usd": 0.005,
+  "standard": {
+   "video_model": "minimax-h3/image-to-video",
+   "resolution": "768P",
+   "rate_usd": 0.04,
+   "credits_per_second": 8
+  },
+  "premium": {
+   "video_model": "minimax-h3/image-to-video",
+   "resolution": "2K",
+   "rate_usd": 0.065,
+   "credits_per_second": 13
+  },
+  "ultra": {
+   "video_model": null,
+   "resolution": "4K",
+   "rate_usd": null,
+   "credits_per_second": null,
+   "note": "priced from the live registry model Ultra resolves to; ULTRA_MODEL_UNAVAILABLE when none qualifies"
+  },
+  "hybrid": {
+   "video_model": "minimax-h3/image-to-video",
+   "hero_resolution": "2K",
+   "resolution": "768P",
+   "rate_usd": 0.04,
+   "hero_rate_usd": 0.065
+  }
+ }
+}

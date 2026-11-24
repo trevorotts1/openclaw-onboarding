@@ -226,13 +226,12 @@ Two commands cannot be run as written, and neither is this unit's doing:
 
 * `python3 75-drama-song-ad-factory/tests/test_cli_smoke.py` — **that file does not exist on
   this base** (`git ls-tree -r --name-only 1e1c12dcc | grep test_cli_smoke` → 0 lines). The
-  nearest suite is `python3 -m pytest -q 75-drama-song-ad-factory/tests`, which here reports
-  `1 failed, 193 passed`: the one failure is `test_model_choice.py::test_no_model_pin_in_skill_docs`,
-  failing on **`references/studio-e2e-receipt.md`**, which is on the base and mentions
-  `sonnet-chain` (`git show 1e1c12dcc:…/studio-e2e-receipt.md | grep -c sonnet-chain` → 1).
-  It is pre-existing, unrelated to lip-sync, and owned elsewhere. This receipt carries no
-  model-pin word (`grep -ciE 'fable|opus-chain|sonnet-chain|haiku-chain|ANTHROPIC_DEFAULT_'`
-  on it → 0), so it adds no second failure.
+  nearest suite is `python3 -m pytest -q 75-drama-song-ad-factory/tests`. At that base it
+  reported `1 failed, 193 passed`: `test_model_choice.py::test_no_model_pin_in_skill_docs`
+  failed on **`references/studio-e2e-receipt.md`**, whose recorded card answers carried a
+  model-chain name. That name has since been replaced with a neutral label, so the test no
+  longer reports it. The failure was pre-existing, unrelated to lip-sync, and owned
+  elsewhere.
 
 ## 7. Nothing was written into the trial folders
 

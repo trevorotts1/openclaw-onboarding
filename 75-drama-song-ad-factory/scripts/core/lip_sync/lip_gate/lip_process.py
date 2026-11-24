@@ -175,6 +175,33 @@ def mouth_strip_argv(clip, out_png, duration_s, crop=None, ffmpeg="ffmpeg"):
                            ffmpeg=ffmpeg)
 
 
+#: N-113 (3C.1b lesson 3): the eye check reads the WHOLE FRAME at 4 frames per
+#: second -- not the mouth crop. Every lip-sync take gets one before it may
+#: enter the timeline; a scan alone is never a pass.
+EYE_SHEET_FPS = 4.0
+EYE_SHEET_COLS = 8
+
+def eye_sheet_path(run_dir, segment):
+    """Where ONE whole-frame contact sheet lands:
+    <run>/qc/eye-sheets/<segment>.png (QC evidence, never a deliverable)."""
+    root = _gos.path.abspath(str(run_dir))
+    if _gos.path.basename(root) == DELIVERY_NAME:
+        root = _gos.path.dirname(root)
+    return _gos.path.join(root, "qc", "eye-sheets", safe_name(segment) + ".png")
+
+def eye_sheet_argv(clip, out_png, duration_s, ffmpeg="ffmpeg"):
+    """ffmpeg argv for the N-113 whole-frame contact sheet: one tiled image of
+    the whole frame at 4 frames per second, a reader with eyes looks at every
+    frame. Run it with load_governor.run_ffmpeg."""
+    if duration_s <= 0:
+        raise ValueError("LIP_STRIP_BAD_DURATION")
+    frames = max(1, int(round(EYE_SHEET_FPS * float(duration_s))))
+    vf = ["fps=%.6f" % EYE_SHEET_FPS, "scale=-2:240",
+          "tile=%dx%d" % (EYE_SHEET_COLS, (frames + EYE_SHEET_COLS - 1) // EYE_SHEET_COLS)]
+    return _LG.ffmpeg_argv(["-v", "error", "-y", "-i", str(clip), "-vf",
+                            ",".join(vf), "-frames:v", "1", str(out_png)],
+                           ffmpeg=ffmpeg)
+
 #: The stage name this question asks for, and the stages the Studio approvals
 #: service accepts. Read 2026-11-12: mini-app/service/src/approvals-api.js
 #: STAGES = ['script', 'song', 'storyboard'] and shared-bridge/approvals_bridge

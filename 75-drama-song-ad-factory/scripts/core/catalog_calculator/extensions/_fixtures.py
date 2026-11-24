@@ -19,8 +19,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 DEFAULT_ID = "minimax-h3/image-to-video"
 MUSIC_ID = "ai-music-api/generate"
 IMAGE_ID = "google/imagen4-fast"
-LIPSYNC_ID = "kling/ai-avatar-standard"
-LIPSYNC_BACKUP_ID = "infinitalk/from-audio"
+LIPSYNC_ID = "omnihuman-2-0"        # S-42/3C.1a: the one lip-sync model
 
 
 def load_catalog():

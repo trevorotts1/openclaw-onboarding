@@ -184,7 +184,7 @@ class AgnesPriceTests(unittest.TestCase):
 
             asked = [m for m, _ in fake.calls]
             self.assertEqual(sorted(set(asked)),
-                             ["ai-music-api/generate", "kling/ai-avatar-standard"],
+                             ["ai-music-api/generate", "omnihuman-2-0"],
                              asked)
             self.assertNotIn("google/imagen4-fast", asked)      # pictures are Agnes work
             self.assertNotIn("minimax-h3/image-to-video", asked)  # video is Agnes work
@@ -211,10 +211,12 @@ class AgnesPriceTests(unittest.TestCase):
             self.assertGreater(by_component["music"]["usd"], 0)
             self.assertGreater(by_component["lip_sync"]["usd"], 0)
             # 90 s ad -> 31 s (the largest whole second inside the 35% hard
-            # maximum of 31.5 s) in 7 clips (lipsync_clips.budget)
+            # maximum of 31.5 s) in 6 pieces (lipsync_clips.budget: the 3-piece
+            # floor is 3 x 5 s = 15 s under N-101, and 31 // 5 = 6 is the most
+            # pieces that reach it)
             self.assertEqual(priced_card["lip_sync"], {
-                "model_id": "kling/ai-avatar-standard", "seconds": 31, "lines": 7,
-                "seconds_per_shape": 31, "lines_per_shape": 7, "shape_count": 1})
+                "model_id": "omnihuman-2-0", "seconds": 31, "lines": 6,
+                "seconds_per_shape": 31, "lines_per_shape": 6, "shape_count": 1})
             # the total is the song plus the close-ups, nothing else
             self.assertTrue(approx(
                 priced_card["price_usd"],
@@ -274,8 +276,11 @@ class AgnesPriceTests(unittest.TestCase):
 
         Whole-second quote <= 35% of the duration, at integral and non-integral
         lengths, including the ones where 0.35 x length is already a whole
-        second (40 s -> 14.0, 60 s -> 21.0, 100 s -> 35.0), and at the 3-clip
-        floor boundary where the duration is refused instead of quoted.
+        second (40 s -> 14.0, 60 s -> 21.0, 100 s -> 35.0). Under N-101 the
+        3-piece floor is 3 x 5 s = 15 s and applies from 90 s up, where the top
+        is already past 31.5 s, so no ordinary length collides; the refused
+        branch stays so a future collision is still quoted as unavailable
+        rather than silently re-planned.
         """
         from catalog_calculator.extensions import price_extension
         LC = agnes_price.lipsync_clips

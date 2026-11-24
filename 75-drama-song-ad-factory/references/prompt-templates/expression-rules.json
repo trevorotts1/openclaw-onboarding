@@ -1,0 +1,97 @@
+{
+  "schema_version": "blackceo.prompt-templates/v1",
+  "owner": "U-PROMPT (section 3G.1, 3G.3, N-71)",
+  "purpose": "The Emotion Track's ten tags, their standard facial cues, and the per-emotion contradicting-word lists. The picture and H3 prompt builders read a beat row's emotion, intensity and cues from here and write them into the prompt; the dispatcher refuses a prompt for a shot with a person when the expression is missing (EXPRESSION_MISSING) or carries a word from that emotion's contradicting list (EXPRESSION_CONTRADICTS). One list per emotion, one home: never fork these words into a builder.",
+  "emotions": {
+    "pain": {
+      "smile": false,
+      "teeth": false,
+      "cues": "Eyes glassy or shut; brows drawn up and together; mouth pressed or trembling; tears at intensity 3.",
+      "contradicts": ["smiling", "smile", "grin", "grinning", "beaming", "laughing", "cheerful", "teeth showing", "teeth bared", "broad smile", "happy"]
+    },
+    "worry": {
+      "smile": false,
+      "teeth": false,
+      "cues": "Eyes searching; brows knit; lips pressed.",
+      "contradicts": ["smiling", "smile", "grin", "grinning", "beaming", "laughing", "cheerful", "teeth showing", "delighted", "radiant"]
+    },
+    "exhaustion": {
+      "smile": false,
+      "teeth": false,
+      "cues": "Heavy lids; slack brows; mouth slightly open; shoulders low.",
+      "contradicts": ["smiling", "smile", "grin", "grinning", "beaming", "laughing", "cheerful", "energetic", "wide awake", "bright-eyed"]
+    },
+    "anger": {
+      "smile": false,
+      "teeth": "clenched at intensity 3 only",
+      "cues": "Hard eyes; brows down; jaw set.",
+      "contradicts": ["smiling", "smile", "grin", "grinning", "beaming", "laughing", "cheerful", "playful", "delighted"]
+    },
+    "hope": {
+      "smile": "small, closed",
+      "teeth": false,
+      "cues": "Eyes lifting; brows soft; corners of the mouth just rising.",
+      "contradicts": ["grinning", "beaming", "laughing", "despairing", "hopeless", "sneering", "scowling"]
+    },
+    "relief": {
+      "smile": "small",
+      "teeth": false,
+      "cues": "Eyes closing then opening; brows released; a breath out.",
+      "contradicts": ["grinning", "beaming", "laughing", "tense", "panicked", "scowling"]
+    },
+    "joy": {
+      "smile": true,
+      "teeth": "yes at intensity 2 and 3",
+      "cues": "Bright eyes; raised cheeks.",
+      "contradicts": ["frowning", "scowling", "tearful", "glum", "sad", "miserable", "pained", "grim"]
+    },
+    "pride": {
+      "smile": "small, closed",
+      "teeth": false,
+      "cues": "Chin up; steady eyes.",
+      "contradicts": ["grinning", "beaming", "laughing", "ashamed", "cowering", "sheepish", "scowling"]
+    },
+    "tenderness": {
+      "smile": "soft, closed",
+      "teeth": false,
+      "cues": "Soft eyes; head slightly tilted.",
+      "contradicts": ["grinning", "beaming", "laughing", "glaring", "sneering", "contemptuous", "scowling"]
+    },
+    "resolve": {
+      "smile": false,
+      "teeth": false,
+      "cues": "Level eyes; brows set; mouth firm.",
+      "contradicts": ["smiling", "smile", "grin", "grinning", "beaming", "laughing", "cheerful", "teeth showing", "wavering"]
+    }
+  },
+  "intensity": {
+    "1": "held in",
+    "2": "plain to see",
+    "3": "overflowing"
+  },
+  "one_step_stronger": {
+    "applies_to": ["pain", "worry", "exhaustion", "resolve"],
+    "intensities": [2, 3],
+    "rule": "For a lip-sync picture (no prompt reaches the model), draw these one step stronger than the tag: mouth corners clearly down, brows drawn, no teeth. The model drifts toward the music, so it starts further from the grin (section 3G.6 lever 2)."
+  },
+  "expression_sheet_map": {
+    "pain": "sad",
+    "worry": "worried",
+    "exhaustion": "tired",
+    "hope": "hopeful",
+    "relief": "hopeful",
+    "joy": "joyful",
+    "resolve": "determined",
+    "pride": "determined",
+    "tenderness": "hopeful",
+    "anger": "angry (made on demand: no fixed sheet carries it)"
+  },
+  "expression_sheets": ["neutral", "sad", "worried", "tired", "hopeful", "joyful", "determined"],
+  "beat_sheet_columns": ["emotion", "intensity", "facial_cues"],
+  "refusals": {
+    "EMOTION_MISSING": "a beat-sheet row without all three columns",
+    "EXPRESSION_MISSING": "a prompt for a shot with a person in it that carries no expression",
+    "EXPRESSION_CONTRADICTS": "a prompt carrying a word from the emotion's contradicting list"
+  },
+  "note": "A lip-sync job carries no prompt at all (N-08, S-42): the expression lives in the picture alone. Only the picture and H3 builders write these words."
+}

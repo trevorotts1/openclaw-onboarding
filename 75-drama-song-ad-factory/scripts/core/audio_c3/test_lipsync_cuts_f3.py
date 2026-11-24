@@ -100,6 +100,19 @@ class StemAndSourceTests(unittest.TestCase):
             LC.verify_lipsync_clip_source({"source": "gen-abc-1"},
                                           "gen-abc-1"), [])
 
+    def test_clip_wrong_role_track_fails(self):
+        errs = LC.verify_lipsync_clip_source(
+            {"source": "gen-abc-1", "track": "music/vocals.mp3"},
+            "gen-abc-1", role_track="music/backing-vocals.mp3")
+        self.assertEqual(len(errs), 1)
+        self.assertIn(LC.LIPSYNC_WRONG_STEM, errs[0])
+
+    def test_clip_right_role_track_passes(self):
+        self.assertEqual(
+            LC.verify_lipsync_clip_source(
+                {"source": "gen-abc-1", "track": "music/backing-vocals.mp3"},
+                "gen-abc-1", role_track="music/backing-vocals.mp3"), [])
+
 
 class VoiceAnalyzerTests(unittest.TestCase):
     """measure_distinct_voices: stub path + owner-gated real path."""

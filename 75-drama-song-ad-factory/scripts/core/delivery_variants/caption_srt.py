@@ -49,11 +49,16 @@ NO_CUES = "SRT_NO_MEASURED_CUES"
 BAD_CUES = "SRT_CUES_INVALID"
 NO_SOURCE = "SRT_BURN_SOURCE_UNAVAILABLE"
 WRITE_FAILED = "SRT_WRITE_FAILED"
+NOT_CLIENT_READY = "CAPTION_NOT_CLIENT_READY"   # N-48 production notes leaked
+BAD_TIME = "CAPTION_TIME_WRONG"                 # N-48 clock does not match cues
+OVERLAP = "CAPTION_OVERLAP_CLIPPED"             # N-48 cue clipped to its neighbour
 
-_TIMESTAMP_RE = re.compile(
-    r"^(\d{2,}):([0-5]\d):([0-5]\d),(\d{3}) --> "
-    r"(\d{2,}):([0-5]\d):([0-5]\d),(\d{3})$")
-
+#: N-48: production notes that never belong in a client caption. Any
+#: bracketed or parenthesised aside is refused, as is a shot id standing on
+#: its own line, and these phrases (they only ever come from our own notes).
+NOTE_PHRASES = ("operator decision", "continues in", "to camera")
+_SHOT_ID = re.compile(r"^(?:shot|sc|seg)[-_ ]?\d+[a-z]?$|^s\d+[a-z]?$", re.I)
+_ASIDE = re.compile(r"[\[\](){}]")
 
 def srt_file_name(number=FILE_NUMBER):
     """The numbered name the client sees: ``10 - Captions.srt``."""
@@ -100,11 +105,13 @@ def parse_srt(text):
         if lines[0].strip() != str(i):
             raise ValueError("cue %d: index line is %r, expected %d"
                              % (i, lines[0], i))
-        m = _TIMESTAMP_RE.match(lines[1].strip())
-        if not m:
+        parts = lines[1].strip().split(" --> ")
+        if len(parts) != 2:
             raise ValueError("cue %d: bad timing line %r" % (i, lines[1]))
-        start = _seconds(*m.groups()[:4])
-        end = _seconds(*m.groups()[4:])
+        try:
+            start, end = read_time(parts[0]), read_time(parts[1])
+        except ValueError:
+            raise ValueError("cue %d: bad timing line %r" % (i, lines[1]))
         if end < start:
             raise ValueError("cue %d: ends before it starts" % i)
         if prev_start is not None and start < prev_start:
@@ -117,6 +124,69 @@ def parse_srt(text):
     return cues
 
 
+def read_time(stamp):
+    """Seconds for one SRT timestamp (N-48).
+
+    Hours, minutes, seconds and the THREE millisecond digits are read
+    separately; the old reader added the milliseconds as whole seconds, so
+    a 2.750 s cue played at 2.002 s.
+    """
+    m = re.match(r"^(\d{2,}):([0-5]\d):([0-5]\d),(\d{3})$", str(stamp).strip())
+    if not m:
+        raise ValueError("bad SRT timestamp %r" % (stamp,))
+    return _seconds(*m.groups())
+
+def client_ready_errors(cues):
+    """N-48: cue text that is a production note, never client caption text.
+
+    Refuses any bracketed or parenthesised aside ("(spoken)", "(continues in
+    S29)"), a line that is only a shot id, and our own note phrases."""
+    errors = []
+    for n, cue in enumerate(cues or (), 1):
+        text = str((cue or {}).get("text") or "")
+        for line in text.splitlines():
+            low = " ".join(line.casefold().split())
+            if _ASIDE.search(line):
+                errors.append("%s cue %d %r: bracketed or parenthesised aside"
+                              % (NOT_CLIENT_READY, n, line.strip()))
+            elif _SHOT_ID.match(line.strip()):
+                errors.append("%s cue %d %r: a shot id is not caption text"
+                              % (NOT_CLIENT_READY, n, line.strip()))
+            elif any(p in low for p in NOTE_PHRASES):
+                errors.append("%s cue %d %r: production note in caption text"
+                              % (NOT_CLIENT_READY, n, line.strip()))
+    return errors
+
+def clip_overlaps(cues):
+    """N-48: a cue ends where the next one begins; returns (cues, clipped).
+
+    Cues are put in time order; an end that runs past the next start is
+    clipped to it. A cue clipped to nothing is dropped (it had no time left
+    on screen). The source cues are never mutated.
+    """
+    ordered = sorted((dict(c) for c in cues or ()),
+                     key=lambda c: float(c["start"]))
+    clipped = 0
+    for a, b in zip(ordered, ordered[1:]):
+        if float(a["end"]) > float(b["start"]):
+            a["end"] = float(b["start"])
+            clipped += 1
+    return [c for c in ordered if float(c["end"]) > float(c["start"])], clipped
+
+def check_srt_times(cues, parsed):
+    """N-48: the written file's clock is the source cues' clock (1 ms)."""
+    if len(parsed) != len(cues):
+        return ["%s %d cues written vs %d measured"
+                % (BAD_TIME, len(parsed), len(cues))]
+    errors = []
+    for n, (got, want) in enumerate(zip(parsed, cues), 1):
+        for edge in ("start", "end"):
+            if abs(float(got[edge]) - float(want[edge])) > 0.001:
+                errors.append("%s cue %d %s %.3f s vs measured %.3f s"
+                              % (BAD_TIME, n, edge, float(got[edge]),
+                                 float(want[edge])))
+    return errors
+
 def export_captions_srt(delivery_dir, cues, number=FILE_NUMBER):
     """Write the delivery folder's numbered .srt from MEASURED cues.
 
@@ -126,6 +196,10 @@ def export_captions_srt(delivery_dir, cues, number=FILE_NUMBER):
     ``reason_code`` on refusal. Fail closed: empty or unusable cues write
     nothing (``timing`` stays ``"unavailable"``), a bad delivery folder is
     reported, never worked around.
+
+    N-48: overlapping cues are clipped to their neighbour before the write,
+    production-note text refuses the file, and the written clock is checked
+    against the measured cues before it lands.
     """
     if not isinstance(delivery_dir, (str, os.PathLike)) \
             or not str(delivery_dir).strip():
@@ -135,6 +209,20 @@ def export_captions_srt(delivery_dir, cues, number=FILE_NUMBER):
     if not cues:
         return _refuse(NO_CUES,
                        "no measured cues; the caption file is not invented")
+    try:
+        for c in cues:
+            if float(c["end"]) < float(c["start"]):
+                return _refuse(BAD_CUES, "cue %r ends before it starts"
+                               % (c.get("text"),))
+        cues, clipped = clip_overlaps(cues)
+    except (KeyError, TypeError, ValueError) as exc:
+        return _refuse(BAD_CUES, "cue times are not readable: %s" % exc)
+    if not cues:
+        return _refuse(NO_CUES, "every cue overlapped its neighbour away")
+    notes = client_ready_errors(cues)
+    if notes:
+        return _refuse(NOT_CLIENT_READY, "; ".join(notes[:6]),
+                       overlaps_clipped=clipped)
     try:
         import importlib
         burn = importlib.import_module("final_assembler.captions_burn")
@@ -150,6 +238,9 @@ def export_captions_srt(delivery_dir, cues, number=FILE_NUMBER):
         parsed = parse_srt(text)
     except ValueError as exc:  # a file that cannot parse is never written
         return _refuse(BAD_CUES, "built text is not valid SRT: %s" % exc)
+    clock = check_srt_times(cues, parsed)
+    if clock:
+        return _refuse(BAD_TIME, "; ".join(clock[:6]))
     name = srt_file_name(number)
     path = os.path.join(str(delivery_dir), name)
     try:
@@ -177,6 +268,9 @@ def check_captions_srt(delivery_dir, number=FILE_NUMBER):
         cues = parse_srt(text)
     except ValueError as exc:
         return (FAIL, "%s is not valid SRT: %s" % (name, exc))
+    notes = client_ready_errors(cues)
+    if notes:
+        return (FAIL, "; ".join(notes[:6]))
     return (PASS, "%s carries %d valid cues" % (name, len(cues)))
 
 

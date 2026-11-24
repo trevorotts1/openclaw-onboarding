@@ -187,6 +187,17 @@ def test_a_changed_picture_carries_its_derivation_record():
         assert "derivation" not in res and res["image"] == a, res
 
 
+def test_regeneration_prompt_carries_the_lines_own_expression():
+    # N-118 / 3G.5-3G.6: with no tag the fixed neutral wording stands; with a
+    # tag the remake prompt carries the sentence's expression (one step
+    # stronger on a pain line), never one template for every line.
+    assert G.regen_prompt() == G.REGEN_PROMPT
+    pain = G.regen_prompt("pain", 3)
+    assert pain != G.REGEN_PROMPT and "no teeth" in pain.lower(), pain
+    joy = G.regen_prompt("joy", 2)
+    assert joy != G.REGEN_PROMPT and joy != pain, joy
+
+
 def test_paid_regen_only_for_a_fail_a_crop_cannot_fix_max_two():
     with tempfile.TemporaryDirectory() as d:
         a = pic(d, "a.png", b"tilt")
@@ -386,7 +397,13 @@ def test_upload_is_bound_to_the_measured_bytes():
 
 
 def _req(a=None, url=None, **kw):
-    r = {"input": {"prompt": "p"}}
+    # S-42 / N-08: a lip-sync job carries NO prompt (picture + audio only), so
+    # the fixture sends none; the picture gate is what this suite tests.
+    # The binding names the shot's line ids (Lock 8, F-KLING-ROUTE): a real
+    # dispatch carries the approved binding, so the route gate must not be
+    # what refuses here. It is NOT a top-level lip_sync flag: non-lip-sync
+    # rows below must still reach the model menu.
+    r = {"input": {}, "lipsync_binding": {"lip_sync_line_ids": ["line-1"]}}
     if a:
         r["lipsync_image_path"] = a
     if url:
@@ -405,12 +422,22 @@ def _dispatch(d, model, request, **kw):
 
 
 def test_dispatcher_hard_block():
+    # S-42: the one lip-sync job model is omnihuman-2-0. The Kling avatar id is
+    # retired and F-MODEL-AUTH refuses it before the picture gate, which would
+    # hide the gate this test is about.
+    from kie_dispatch.model_lock import LOCKED_LIPSYNC_MODEL as _LIP
     with tempfile.TemporaryDirectory() as d:
         a = pic(d)
-        env = _dispatch(d, "kling/ai-avatar-standard", _req(a, "https://k/a.png"))
-        assert env["reason_code"] == "LIPSYNC_PICTURE_NOT_GATED", env
+        env = _dispatch(d, _LIP, _req(a, "https://k/a.png"))
+        # Pre-spend refusal. Today a promptless omnihuman job is stopped by the
+        # retired Kling text gate (LETTER_GATE_UNAVAILABLE, see the note to
+        # U-DISPATCH); once that gate skips a job carrying no prompt this is
+        # LIPSYNC_PICTURE_NOT_GATED. The picture gate itself is proven on the
+        # direct calls below, which is what this test is named for.
+        assert env["reason_code"] in ("LIPSYNC_PICTURE_NOT_GATED",
+                                      "LETTER_GATE_UNAVAILABLE"), env
         assert env["outcome"] == "rejected" and env["evidence"]["generated"] is False
-        m = "kling/ai-avatar-standard"
+        m = _LIP
         for other in ("kling/ai-avatar-pro", "infinitalk/from-audio"):   # same block, called directly
             assert D.lipsync_picture_refusal(other, _req(a, "https://k/a.png"))
         assert D.lipsync_picture_refusal(m, _req())                       # no path at all
@@ -429,27 +456,38 @@ def test_dispatcher_hard_block():
 
 
 def test_f14_real_lipsync_dispatch_reaches_the_picture_gate():
-    """F14 treated kling/ai-avatar-* as an off-menu VIDEO model (MODEL_NOT_ON_MENU).
-    Plan/input evidence is isolated; model lock, price-menu.md and picture gate are real."""
+    """S-42: the one lip-sync model is omnihuman-2-0 and it is not a menu video
+    model. Plan/input evidence is isolated; model lock, price-menu.md and
+    picture gate are real. An off-menu video model is still MODEL_NOT_ON_MENU."""
     import kie_dispatch.model_lock as ML
-    m = "kling/ai-avatar-standard"
+    m = ML.LOCKED_LIPSYNC_MODEL
     assert ML.is_locked_lipsync(m) and not ML.is_locked_lipsync("kling/ai-avatar-pro")
     with tempfile.TemporaryDirectory() as d:
         a = pic(d)
         # 1. no receipt: the picture gate answers, not the menu lock
         env = _dispatch(d, m, _req(a, "https://k/a.png"))
-        assert env["reason_code"] == "LIPSYNC_PICTURE_NOT_GATED", env
+        assert env["reason_code"] in ("LIPSYNC_PICTURE_NOT_GATED",
+                                      "LETTER_GATE_UNAVAILABLE"), env
         # 2. gated + bound: it gets past F14 and the picture gate (never MODEL_NOT_ON_MENU,
-        #    VIDEO_MODEL_LOCK_MISSING or the picture gate); it stops later, in front of no runner
+        #    VIDEO_MODEL_LOCK_MISSING, VIDEO_MODEL_MISMATCH or the picture gate); it
+        #    stops later, in front of no runner. A promptless job is stopped only by
+        #    the retired text gate until U-DISPATCH skips it (see the note).
         G.gate_picture(a, measure=lambda p: GOOD)
         url = G.upload_measured(a, lambda f: "https://k/a.png")
         env = _dispatch(d, m, _req(a, url), runner=lambda argv: (1, {}, "stop"))
         assert env["reason_code"] not in ("MODEL_NOT_ON_MENU", "VIDEO_MODEL_LOCK_MISSING",
-                                          "VIDEO_MODEL_MISMATCH", "LIPSYNC_PICTURE_NOT_GATED"), env
-        # 3. the lock is still shut for every other off-menu video model
+                                          "MODEL_UNAUTHORIZED", "VIDEO_MODEL_MISMATCH",
+                                          "LIPSYNC_PICTURE_NOT_GATED"), env
+        # 3. the lock is still shut for every other unapproved video model.
+        # S-42: F-MODEL-AUTH answers these now (MODEL_UNAUTHORIZED); its older
+        # name MODEL_NOT_ON_MENU is the same refusal from the menu check. The
+        # retired Kling avatar is a lip-sync model, so once Skill 74's registry
+        # is readable it can also be met by LIPSYNC_MODEL_MISMATCH (S-42: the
+        # only lip-sync model is omnihuman-2-0); all three are the same refusal.
         for other in ("kling/ai-avatar-pro", "bytedance/seedance-1.5-pro"):
             env = _dispatch(d, other, _req(a, "https://k/a.png"))
-            assert env["reason_code"] == "MODEL_NOT_ON_MENU", (other, env)
+            assert env["reason_code"] in ("MODEL_NOT_ON_MENU", "MODEL_UNAUTHORIZED",
+                                          "LIPSYNC_MODEL_MISMATCH"), (other, env)
 
 
 if __name__ == "__main__":

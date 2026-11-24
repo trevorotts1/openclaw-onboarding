@@ -1,0 +1,42 @@
+{
+  "schema_version": "1.0.0",
+  "note": "Picture-provider capability records read by shot_router.capabilities (3E.3). These are data on file, not code: the newest GPT-image model may be overridden by an image catalog handed to picture_capability(). A provider with takes_reference_images false cannot draw a known character and is refused PROVIDER_CANNOT_HOLD_CHARACTER.",
+  "providers": {
+    "kie-gpt-image": {
+      "provider": "kie",
+      "family": "gpt-image",
+      "model": "gpt-image-2-6/sunburst",
+      "takes_reference_images": true,
+      "max_reference_images": 16,
+      "sizes": ["1:1", "16:9", "9:16"],
+      "price_credits_per_image": 13.1,
+      "price_unit": "per_image",
+      "newest_in_registry": true,
+      "source": "KIE records for 119 tasks, 2026-11-23: a Sunburst picture 12.4 to 13.1 credits (13.1 used, the high end); 16 reference images for Sunburst image-to-image today"
+    },
+    "agnes": {
+      "provider": "agnes",
+      "family": "agnes",
+      "model": "agnes-image",
+      "takes_reference_images": true,
+      "max_reference_images": 4,
+      "sizes": ["1:1", "16:9", "9:16"],
+      "price_credits_per_image": null,
+      "price_unit": "per_image",
+      "newest_in_registry": false,
+      "source": "Agnes capability record; price not on file, so a run on Agnes reports PRICE_MISSING rather than inventing a rate"
+    },
+    "text-only-image": {
+      "provider": "unknown",
+      "family": "text-only",
+      "model": "text-only-image",
+      "takes_reference_images": false,
+      "max_reference_images": 0,
+      "sizes": ["1:1"],
+      "price_credits_per_image": null,
+      "price_unit": "per_image",
+      "newest_in_registry": false,
+      "source": "Example refusal record: a text-only picture provider cannot hold a known character"
+    }
+  }
+}

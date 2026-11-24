@@ -9,14 +9,14 @@ SPEC A6 (words in pictures) and SPEC A8 (clip conform, measured on trial A).
                                 returns PASS.
   fps_conform                 - native_fps("agnes-video-2.5-flash") == 24.0;
                                 agnes_conform_argv strips the clip's AAC
-                                track (-an), motion-interpolates 24 -> 30
-                                (minterpolate, the H3 filter) and cover-
-                                scales with lanczos, never a blur fill and
-                                never a letterbox pad.
+                                track (-an), conforms to the 24 fps master
+                                with no interpolation anywhere (N-23) and
+                                cover-scales with lanczos, never a blur fill
+                                and never a letterbox pad.
                                 On a 704x1280 24 fps clip with audio (trial
                                 A's clip1.mp4 when the trial tree is on this
                                 box, else a 1 s synthetic clip built here)
-                                the output probes 1080x1920, 30 fps, no
+                                the output probes 1080x1920, 24 fps, no
                                 audio stream. Point AGNES_TRIAL_CLIP at
                                 trial-oct13/test-a-30s-cartoon/clip1.mp4 to
                                 run that case on trial A's own clip; the
@@ -206,7 +206,9 @@ class AgnesConformArgvTest(unittest.TestCase):
         self.assertIn("-an", argv)                 # the song is the only audio
         self.assertIn("-i", argv)
         chain = argv[argv.index("-vf") + 1]
-        self.assertIn("minterpolate=fps=30:mi_mode=mci", chain)  # 24 -> 30
+        # N-23: Agnes is native 24, the master rate -> pass-through, and no
+        # interpolation anywhere.
+        self.assertNotIn("minterpolate", chain)
         self.assertIn("flags=lanczos", chain)      # cover-scale, no blur
         self.assertIn("crop=w=%d:h=%d" % (MASTER_W, MASTER_H), chain)
         # Load governor owns every ffmpeg argv.
@@ -219,8 +221,8 @@ class AgnesConformArgvTest(unittest.TestCase):
         chain = argv[argv.index("-vf") + 1]
         for banned in ("blur", "gblur", "boxblur", "pad=", "setsar=2"):
             self.assertNotIn(banned, chain)
-        # Order is load bearing: interpolate FIRST, cover-scale SECOND.
-        self.assertLess(chain.index("minterpolate"), chain.index("scale="))
+        # DEL-14 order: no conform step, so cover-scale is the whole chain.
+        self.assertIn("scale=", chain)
 
     def test_argv_rejects_bad_geometry(self):
         with self.assertRaises(Exception):

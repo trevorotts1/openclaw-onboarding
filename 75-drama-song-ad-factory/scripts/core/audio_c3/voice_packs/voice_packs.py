@@ -23,7 +23,8 @@ Rules implemented:
    overlap (85-155 male, 165-255 female), which the suite asserts.
 2. PACK GENERATION RECORDS THE IDENTITY. Every pack carries the character's
    full voice identity plus provider suno, pack_kind spoken-only, cut_into
-   lead-vocal-stem, recipe hybrid-occ-5min-rnb-flow and the dry close-mic
+   the Voice Map's track for its role (3N.9: lead -> vocals, backing ->
+   backing-vocals), recipe hybrid-occ-5min-rnb-flow and the dry close-mic
    negative tags (D22a / D37 / F13: reverb, echo, choir; spoken parts never
    use "spacious", "cinematic" or "choir").
 3. COLLISION PATH - the reference recipe. The main take gave the female
@@ -61,7 +62,19 @@ EXIT = {"ok": 0, "error": 1, "rejected": 4}
 RECIPE_ID = "hybrid-occ-5min-rnb-flow"
 PROVIDER = "suno"
 PACK_KIND = "spoken-only"
-CUT_INTO = "lead-vocal-stem"
+#: A pack cuts into the Voice Map's track for the piece's role (3N.9); a
+#: spoken pack with no role is the lead's. One definition, from the map's
+#: own table; an overlap shows the backing singers, so it rides the backing
+#: track too (3N.0 line 3).
+from voice_map.voice_map import ROLE_TRACKS as _MAP_ROLE_TRACKS
+ROLE_TRACKS = dict(_MAP_ROLE_TRACKS)
+ROLE_TRACKS.setdefault("overlap", _MAP_ROLE_TRACKS["backing"])
+CUT_INTO = ROLE_TRACKS["lead"]
+
+
+def cut_into_for(role=None):
+    """The stem a pack of this role cuts into (3N.0: backing sings its own)."""
+    return ROLE_TRACKS.get(str(role or "").strip().lower(), CUT_INTO)
 
 #: The lead keeps the main take; colliding non-lead characters get packs.
 LEAD_ROLE = "hero"
@@ -350,7 +363,7 @@ def _pack(request, outcome, reason_code, errors, attempt, measured_hz,
 
 def build_pack_request(registry, character_id, trigger=TRIGGER_REQUESTED,
                        collides_with=(), device=None,
-                       pitch_shift_semitones=0.0):
+                       pitch_shift_semitones=0.0, role=None):
     """Envelope carrying the spoken-only pack request (static fields).
 
     Refused fail-closed on an unknown character, an unknown device, or any
@@ -386,7 +399,7 @@ def build_pack_request(registry, character_id, trigger=TRIGGER_REQUESTED,
         "voice": identity,
         "provider": PROVIDER,
         "pack_kind": PACK_KIND,
-        "cut_into": CUT_INTO,
+        "cut_into": cut_into_for(role),
         "recipe": RECIPE_ID,
         "trigger": trigger,
         "collides_with": [c for c in collides_with if c != character_id],
@@ -500,7 +513,7 @@ def _accept(registry, request, history, measured_hz, attempt):
     entries[cid]["source"] = "spoken-only-pack"
     return _pack(request, "ok", "", [], attempt, measured_hz,
                  "Spoken-only pack accepted; cut into the %s (recipe %s)."
-                 % (CUT_INTO, RECIPE_ID))
+                 % (request.get("cut_into", CUT_INTO), RECIPE_ID))
 
 
 def collision_packs(registry, measured, generator, max_attempts=None):

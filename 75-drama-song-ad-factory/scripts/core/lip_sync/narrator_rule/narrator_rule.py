@@ -18,8 +18,8 @@ here; this package is the one the lip-sync stage V2-08L screens against):
 Two gates, both fail-closed:
 
 * ``screen_line`` / ``screen_selection`` -- planning gate. Screens a selection
-  envelope (line id + chosen 4-6 s window from ``lipsync_clips.choose_window``)
-  against speaker + on-screen identity and extends it with the
+  envelope (line id + its window from ``lipsync_clips.choose_window``; N-101:
+  the whole sentence group, 5 to 30 s) against speaker + on-screen identity and extends it with the
   ``narrator_rule`` block: which flagged lines may be lip-synced, which play
   as voice-over, which scenes are violations.
 * ``check_lipsync_attempt`` -- dispatch/QC gate. Verdict PASS/FAIL for an
@@ -540,17 +540,41 @@ def _override(rule, reason_code):
 
 # ------------------------------------------------- selection extension -----
 
+def _whole_phrase(stamps):
+    """N-101: the line's own first word start to last word end, in the shape
+    ``lipsync_clips.choose_window`` returns. None when there is no word to
+    sing. Never a reason to shorten, move or drop the line."""
+    w = [x for x in stamps
+         if isinstance(x, dict) and isinstance(x.get("start"), (int, float))
+         and isinstance(x.get("end"), (int, float))
+         and not isinstance(x.get("start"), bool) and not isinstance(x.get("end"), bool)
+         and x["end"] > x["start"]]
+    if not w:
+        return None
+    start, end = w[0]["start"], w[-1]["end"]
+    span = max(end - start, 1e-6)
+    return {"start": start, "end": end, "pad_start": start, "pad_end": end,
+            "dur": round(span, 3),
+            "words": " ".join(str(x.get("word", "")).lower() for x in w),
+            "onsets_per_s": round(len(w) / span, 3),
+            "held_s": round(max(x["end"] - x["start"] for x in w), 3),
+            "lip_words": "", "flags": ["WHOLE_PHRASE"]}
+
+
 def choose_selection(timing, flags):
     """The base-shaped selection envelope, windows chosen by ``choose_window``.
 
     ``lip_sync.select_lines`` does not exist (there is no ``core/lip_sync/__init__``;
     the base package is a namespace only), so window choice comes from the
-    module that owns it: ``lipsync_clips.choose_window`` -- the 4-6 s window at
-    real rest / phrase boundaries (U-U03).
+    module that owns it: ``lipsync_clips.choose_window`` -- the whole
+    sentence group, 5 to 30 seconds (N-101, section 3.3a; the numbers are
+    lipsync_clips' own).
 
     timing: {line_id: [word stamps]} or [{"line_id", "words" | "word_stamps"}].
     flags:  line ids to select (list / tuple / set), or {line_id: truthy}.
-    A line with no legal 4-6 s window is never selected.
+    N-101: a line is selected on its story role; it is never dropped for
+    lacking a legal window (5 to 30 s). When ``choose_window`` has none to offer,
+    the line's own first word start to last word end is the piece.
     """
     import lipsync_clips as LC
     if isinstance(timing, dict):
@@ -574,7 +598,13 @@ def choose_selection(timing, flags):
         try:
             window = LC.choose_window(list(stamps))
         except LC.LipsyncClipsError:
-            continue
+            # N-101 (3.3a): the line is selected on its story role, never
+            # dropped for lacking a legal window (5 to 30 s). Its whole phrase is the
+            # piece; a phrase over the top is a stitch group and one under
+            # the floor is joined by the Clip Sizer, not discarded here.
+            window = _whole_phrase(stamps)
+            if window is None:
+                continue
         selected.append({"line_id": lid, "window": window,
                          "word_start": window["start"], "word_end": window["end"]})
     return {"outcome": "ok", "selected": selected}

@@ -143,7 +143,12 @@ def _pipeline(tmp, bad_first=(), bad_always=()):
     reqs = SC.build_requests("rnb-flow", sheet_for("rnb-flow"), CLIENT, "T", RNB_LEN,
                              hook_plan={"true_at_beat": "the_world"}, pace_plan=PACE_ORDER)
     calls, seen, lock = {}, set(), threading.Lock()
-    barrier = threading.Barrier(3, timeout=10)
+    # The wait must outlast the KIE rolling window: run_takes acquires the
+    # shared 20-per-10-s bucket before calling generate, so a busy suite can
+    # hold a thread here for a full window. A 10 s timeout tied to that window
+    # used to break the barrier under whole-tree load, raise out of generate,
+    # and report all three versions REFUSED.
+    barrier = threading.Barrier(3, timeout=60)
 
     def generate(v, rq):
         with lock:

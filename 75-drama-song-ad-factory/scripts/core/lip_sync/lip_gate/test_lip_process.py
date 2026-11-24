@@ -163,15 +163,25 @@ class T5Edit(unittest.TestCase):
     def test_lanczos_upscale(self):
         self.assertIn("scale=1080:1920:flags=lanczos", self.plan()["vf"])
 
-    def test_fps_interpolates_to_the_master_never_drops(self):
-        # U-U03: the assembler's rule wins -- minterpolate mci, never the
-        # plain fps filter that dropped or duplicated frames.
+    def test_fps_conforms_to_the_master_with_plain_repeat_never_interpolates(self):
+        # S-28 / N-23: no 24-to-30 interpolation on any shot. A differing rate
+        # is matched by plain frame repeat or drop; equal rates pass through.
         self.assertEqual(P.fps_filter(30, 30), "")
-        self.assertEqual(P.fps_filter(24, 30), "minterpolate=fps=30:mi_mode=mci")
-        self.assertEqual(P.fps_filter(60, 30), "minterpolate=fps=30:mi_mode=mci")
+        self.assertEqual(P.fps_filter(24, 30), "fps=30")
+        self.assertEqual(P.fps_filter(60, 30), "fps=30")
         self.assertNotIn("minterpolate", self.plan(src_fps=30)["vf"])
-        self.assertIn("minterpolate=fps=30:mi_mode=mci", self.plan(src_fps=24)["vf"])
-        self.assertIn("minterpolate=fps=30:mi_mode=mci", self.plan(src_fps=60)["vf"])
+        self.assertIn("fps=30", self.plan(src_fps=24)["vf"])
+        self.assertIn("fps=30", self.plan(src_fps=60)["vf"])
+
+    def test_eye_sheet_is_whole_frame_at_four_frames_per_second(self):
+        # N-113 (3C.1b lesson 3): the eye check reads the WHOLE FRAME at 4 fps,
+        # not the mouth crop. A 5 s take -> 20 frames, tiled 8 per row.
+        a = P.eye_sheet_argv("c.mp4", "o.png", 5.0)
+        vf = a[a.index("-vf") + 1]
+        self.assertIn("fps=4.0", vf)
+        self.assertIn("tile=8x3", vf)          # 20 frames / 8 cols -> 3 rows
+        self.assertNotIn("crop=", vf)          # whole frame, never a crop
+        self.assertEqual(a[-1], "o.png")
 
     def test_through_load_governor(self):
         a = self.plan()["argv"]

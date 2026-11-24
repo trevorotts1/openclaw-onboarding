@@ -2,7 +2,7 @@
 
 Owns the card's Voice row per look and the intake refusal for the one
 forbidden pair -- Sketch to Life + Velvet Voiceover. Velvet Voiceover stays
-offered on the other four looks; All Suno is the default on every look.
+offered on the other five looks; All Suno is the default on every look.
 """
 from __future__ import annotations
 

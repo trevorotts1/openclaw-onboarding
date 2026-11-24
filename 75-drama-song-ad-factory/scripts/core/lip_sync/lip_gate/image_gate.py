@@ -34,8 +34,10 @@ import struct
 
 try:
     from . import picture_gate as PG
+    from . import picture_measure as PM
 except ImportError:                    # script import (tests run from here)
     import picture_gate as PG
+    import picture_measure as PM
 
 TOOL_NAME = "lipsync_image_gate"
 
@@ -46,7 +48,7 @@ ASPECT_TOL = 0.02
 MIN_LIGHT_EVENNESS = 0.70               # dim-side / bright-side face luma
 MIN_BG_SEPARATION = 0.15                # head-vs-background luma/colour gap
 MIN_REF_SIMILARITY = 0.80               # same character as the storyboard ref
-BAD_PROVENANCE = ("upscaled",)          # a crop is allowed when it passes every check
+BAD_PROVENANCE = ("upscaled", "clip_frame", "frame_from_clip")  # a crop is allowed when it passes every check
 
 # --- reason codes -----------------------------------------------------------
 IMAGE_MISSING = "LIPSYNC_IMAGE_MISSING"
@@ -61,7 +63,8 @@ OCCLUDED = "LIPSYNC_IMAGE_MOUTH_OR_JAW_COVERED"
 LIGHT = "LIPSYNC_IMAGE_LIGHT_UNEVEN"
 MOUTH_SHADOW = "LIPSYNC_IMAGE_MOUTH_SHADOW"
 BACKGROUND = "LIPSYNC_IMAGE_BACKGROUND_NOT_SEPARATED"
-WRONG_CHARACTER = "LIPSYNC_IMAGE_NOT_SAME_CHARACTER"
+WRONG_CHARACTER = "FACE_IDENTITY_MISMATCH"   # F-PIC-1 code (old name kept)
+FACE_IDENTITY_MISMATCH = WRONG_CHARACTER
 SOFT = "LIPSYNC_IMAGE_NOT_SHARP"
 CROPPED = "LIPSYNC_IMAGE_CROPPED_OR_UPSCALED"
 
@@ -208,6 +211,34 @@ def check_source_image(image, analyze, size=None):
     reasons, nums = check_image(size or image_size(path), a)
     return {"pass": not reasons, "image": path, "reasons": reasons,
             "numbers": nums}
+
+
+def reference_analyzer(measure, references):
+    """F-PIC-1: a REAL analysis supplier. ``measure(path)`` gives the geometry;
+    ``reference_similarity`` is COMPUTED against the approved reference pictures
+    (picture_measure.identity_similarity), never accepted from the caller. A
+    detector that cannot measure raises, so check_image refuses UNMEASURED and
+    never passes by default.
+
+    ``references`` is the approved reference set for this character: file paths
+    (or entries carrying ``path``/``file``).
+    """
+    def _path_of(entry):
+        if isinstance(entry, dict):
+            entry = entry.get("path") or entry.get("file")
+        return entry if isinstance(entry, str) and entry else None
+
+    refs = [p for p in map(_path_of, references or []) if p]
+
+    def analyze(image):
+        path = image.get("path") if isinstance(image, dict) else image
+        nums = measure(image)
+        if not isinstance(nums, dict):
+            raise RuntimeError("picture measure returned no numbers")
+        nums = dict(nums)
+        nums["reference_similarity"] = PM.identity_similarity(path, refs)
+        return nums
+    return analyze
 
 
 def require_source_image(image, analyze, size=None):

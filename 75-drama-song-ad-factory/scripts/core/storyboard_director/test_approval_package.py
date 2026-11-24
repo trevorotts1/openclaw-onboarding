@@ -16,7 +16,7 @@ import storyboard_director.approval_package as AP   # noqa: E402
 import kie_dispatch.model_lock as ML                # noqa: E402
 
 KD = importlib.import_module("kie_dispatch.kie_dispatch")
-VIDEO_MODEL = "kling-3.0/video"
+VIDEO_MODEL = "minimax-h3/image-to-video"
 FAILS = []
 
 

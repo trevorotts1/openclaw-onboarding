@@ -1,7 +1,7 @@
 {
   "shot_type": "struggle-beat",
   "purpose": "Wound, frozen, exhaustion, fear, humiliation beats. Realism mode in Sketch to Life / Canvas to Life; lifelike 3D in Canvas to 3D.",
-  "camera_default": "[Static shot] or a very slow [Push in]",
+  "camera_default": "a slow [Push in] on the small break; [Static shot] only when the body action already carries the motion",
   "camera_allowed": [
     "[Static shot]",
     "[Push in]",
@@ -23,5 +23,5 @@
     "no theatrical crying or grimace",
     "no melodramatic lighting flashes"
   ],
-  "beats_pattern": "still weight -> the small break (hands, breath, shoulders) -> the held aftermath"
+  "beats_pattern": "first visible body action (a weight shift, a hand closing, shoulders dropping) -> the small break (hands, breath, shoulders) -> the held aftermath"
 }

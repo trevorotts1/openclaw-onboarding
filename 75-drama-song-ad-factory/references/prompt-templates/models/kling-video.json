@@ -1,7 +1,7 @@
 {
   "model_block": "kling-video",
   "applies_to": ["kling-3.0-omni/image-to-video", "kling-3.0-omni/text-to-video", "kling-3.0/video", "kling/v2-5-turbo-image-to-video-pro"],
-  "when_used": "Only when the card's video model (price menu, F14 lock) is a Kling video model instead of Hailuo 02 Standard. Never for lip-sync (that is kling/ai-avatar-standard, models/kling-ai-avatar-standard.json).",
+  "when_used": "Only when the card's video model (price menu, F14 lock) is a Kling video model instead of Hailuo 02 Standard. Never for lip-sync: the lip-sync model is OmniHuman 2.0 (omnihuman-2-0) on every run and takes no prompt (N-08, S-42).",
   "section_order": "Same order as minimax-h3.json, compressed: header, subject, action, reference, camera, lens_light, continuity, look, book, pages, physics, beats, policy, negatives.",
   "section_scale": 0.38,
   "differences_from_h3": [
@@ -10,5 +10,16 @@
     "Negatives stay inside the prompt: the 67 catalog shows no negative_prompt control field for these KIE entries. Use a separate negative_prompt field only if a later catalog row lists it.",
     "Band: 1,800-2,500 target (Kling recommends 2,500 or less); hard max from the catalog (3,072 omni, 2,500 for 3.0/video and 2.5 turbo).",
     "Duration: kling-3.0-omni 3-15 s; 2.5 turbo 5 or 10 s only."
-  ]
+  ],
+  "prompt_hygiene": {
+    "source": "F-LETTER-PROMPT, the Kling story-clip half. The Kling avatar template and its wording-B prompt rule are retired for lip-sync (N-08, S-42); the Kling video models above are still a card choice, so their prompts keep the hygiene rule.",
+    "no_signage_strings": "No text, words, lettering or signage strings anywhere in a Kling prompt: no shop signs, billboards, posters, captions, titles, doodles, labels, logos, or decor words that invite the provider to burn letters into the frame. A Kling story clip is animated from its checked keyframe, so any real writing the shot needs is already in that keyframe and is never re-asked of the model in words.",
+    "no_text_clause": "Keep the explicit no-new-text clause in the prompt: 'no new writing, no captions, no logo, no watermark; any writing already in the start picture stays exactly as it is.'",
+    "negative_field": "The 67 catalog lists no negative_prompt control for these KIE entries, so a separate negative prompt is not sent; the no-text clause lives in the prompt itself. If a later catalog row lists negative_prompt, add 'text, words, letters, signage, captions, watermark, logo' there and keep the in-prompt clause too.",
+    "forbidden": [
+      "quoted spoken or sung words in a story-clip prompt",
+      "a 4-word or longer run copied from the line's lyric",
+      "decor words that name signage or title lettering the model must draw"
+    ]
+  }
 }

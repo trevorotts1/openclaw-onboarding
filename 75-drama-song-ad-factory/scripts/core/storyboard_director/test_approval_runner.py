@@ -24,7 +24,7 @@ sys.path.insert(0, os.path.join(CORE, "intake_preflight"))
 import factory as FACTORY                                 # noqa: E402
 
 KD = importlib.import_module("kie_dispatch.kie_dispatch")
-VIDEO_MODEL = "kling-3.0/video"
+VIDEO_MODEL = "minimax-h3/image-to-video"
 FAILS = []
 
 
@@ -127,16 +127,21 @@ class World:
         def runner(*a, **k):
             self.events.append(("video_submit",))
             raise RuntimeError("stop after first submit")   # provider mocked: no spend
-        req = {"model": VIDEO_MODEL, "request_kind": "video", "input": {"prompt": "p" * 200},
+        import hashlib
+        prompt = "p" * 200
+        req = {"model": VIDEO_MODEL, "request_kind": "video", "input": {"prompt": prompt},
                "card_receipt": {"answers": {"video_style": "Lifelike 3D", "audio_style": "Soul Ballad",
                                             "length": 60, "video_model": "Hailuo 02 Standard 768P"},
                                 "who": "t", "at": "2026-10-09T09:00:00Z"},
+               "prompt_receipt": {"prompt_sha256":
+                                  hashlib.sha256(prompt.encode("utf-8")).hexdigest(),
+                                  "check": {"verdict": "PASS", "reasons": []}},
                "storyboard": {"shots": gate["shots"], "review": {"outcome": "pass"}}}
         led = os.path.join(tempfile.mkdtemp(), "l.db")
         import spend_ledger as L
         L.init_run(led, "r1", 10_000_000)
         return KD.dispatch(model=VIDEO_MODEL, request=req, save_dir=tempfile.mkdtemp(),
-                           ledger_db=led, run_id="r1",
+                           ledger_db=led, run_id="r1", prompt=prompt,
                            logical_key="k", attempt_id="a", estimated_cost=100,
                            runner=runner, state_store=db)
 

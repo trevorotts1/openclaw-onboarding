@@ -283,7 +283,10 @@ def scan_core_scripts(core_dir):
         for fn in sorted(filenames):
             if not fn.endswith((".py", ".sh", ".js", ".json")):
                 continue
-            if fn in SCANNER_FILES:
+            if fn in SCANNER_FILES or fn.startswith("test_"):
+                # Test files plant the fill needle on purpose to prove this ban
+                # bites (the same exemption qc-operator-path-leak.sh makes);
+                # only shipped, non-test core code is scanned for a real fill.
                 continue
             p = os.path.join(dirpath, fn)
             try:

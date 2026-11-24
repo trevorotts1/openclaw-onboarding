@@ -34,6 +34,11 @@
       "status": "verified",
       "url": "https://assets.cdn.filesafe.space/Mct54Bwi1KlNouGXQcDX/media/9eb9ea93-2cf8-4246-935f-739d2eb576cf.mp4",
       "reported_bytes": 6919899
+    },
+    "stylized-3d": {
+      "status": "unavailable",
+      "url": null,
+      "client_note": "Sample not available yet."
     }
   }
 }

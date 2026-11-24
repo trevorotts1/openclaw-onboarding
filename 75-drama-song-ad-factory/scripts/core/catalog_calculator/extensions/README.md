@@ -13,13 +13,13 @@ re-runs the tests and reads the source.
   close-ups, voice packs, clips and the batch total**.
 - `references/price-menu.md` section **3** (lip-sync close-ups), **4** (voice
   packs), **6** (batch total).
-- Plan **6.3** / decision **33**, approved direction 2026-10-23 (supersedes
-  the 2026-10-08 doubling): lip-sync covers **25-30%** of the selected
-  duration with a **35% hard maximum**, the first **12 s** clearly
-  articulated, in short clips of 4-6 s (no clip over 6 s), **per shape**;
-  roster is Kling avatar first, InfiniTalk backup. The numbers live in
-  `core/lipsync_clips.py`; a duration whose bounds collide is refused with
-  the conflict named.
+- Section **3.3a** / **S-42** (Trevor, November 23): lip-sync covers **25-30%**
+  of the selected duration with a **35% hard maximum**, the first **12 s**
+  clearly articulated, in pieces of **5 to 30 s** (a longer passage is a
+  stitch group), **per shape**; the lip-sync model is **OmniHuman 2.0**
+  (`omnihuman-2-0`) on every run, no alternative and no backup. The numbers
+  live in `core/lipsync_clips.py`; a duration whose bounds collide is refused
+  with the conflict named.
 - Plan **6.2**: the song is one asset shared by every shape.
 - Plan **5.4**: Skill 74 `price --model ID --units N` is the single price
   authority.
@@ -38,7 +38,7 @@ Same envelope as the base calculator, with `unit` set to
 `catalog-calculator.extensions`. Two optional additions to `choice`:
 
 ```json
-"lip_sync":    {"model": "kling/ai-avatar-standard", "seconds": 35, "lines": 7}
+"lip_sync":    {"model": "omnihuman-2-0", "seconds": 35, "lines": 7}
 "voice_packs": {"count": 3}
 ```
 
@@ -78,8 +78,8 @@ and `start_paid` false.
 | Base calculator not found or not loadable | `unavailable` | `PRICE_CALCULATOR_MISSING` / `PRICE_CALCULATOR_LOAD_ERROR` |
 | Lip-sync rate unreadable | `unavailable` | `PRICE_UNAVAILABLE` / `PRICE_UNESTIMABLE` / `PRICE_UNIT_UNSUPPORTED` / `PRICE_RUNNER_ERROR` |
 | Voice-pack rate unreadable | `unavailable` | same codes |
-| Model outside the D33 roster | `unavailable` | `LIPSYNC_MODEL_NOT_OFFERED` |
-| A lip-sync clip over 6 s (`seconds` > 6 x `lines`) | `unavailable` | `LIPSYNC_CLIP_OVER_CAP` |
+| Model that is not the lip-sync model | `unavailable` | `LIPSYNC_MODEL_NOT_OFFERED` |
+| A lip-sync piece over 30 s (`seconds` > 30 x `lines`) | `unavailable` | `LIPSYNC_CLIP_OVER_CAP` |
 | Malformed `lip_sync` / `voice_packs` / choice | `error` | `BAD_LIP_SYNC` / `BAD_VOICE_PACKS` / `BAD_CHOICE` |
 | Empty batch / malformed book | `error` | `BATCH_EMPTY` / `BATCH_AD_ERROR` |
 
@@ -97,8 +97,8 @@ an explicit path is authoritative (no silent fall-through to another file).
 | `base_bridge.py` | locate / import unit V2-W0-U2's calculator; `REQUIRED_ATTRS` guards the surface it calls. |
 | `__init__.py` | public surface. |
 | `fixtures/catalog.json` | the catalog the factory's sync produces (copied read-only from unit V2-W0-U2's fixture). |
-| `fixtures/skill74-responses.json` | mocked Skill 74 answers: the base fixture's table plus the D33 lip-sync roster snapshot. |
-| `_fixtures.py` | `FakeSkill74` (adapter-accurate), choice / roster builders, `walk_numbers`. Not a test. |
+| `fixtures/skill74-responses.json` | mocked Skill 74 answers: the base fixture's table plus the OmniHuman 2.0 lip-sync rate (14 credits per rounded-up second). |
+| `_fixtures.py` | `FakeSkill74` (adapter-accurate), choice / lip-sync builders, `walk_numbers`. Not a test. |
 | `test_card_extension.py` | totals: lip-sync line, voice-pack line, both shapes, re-totalling, transparent passthrough, fallback card. |
 | `test_batch.py` | batch total = sum parts, retake, approval gate, mixed books, one bad book fails the batch. |
 | `test_fail_closed.py` | every unreadable rate, refused model, malformed input and missing calculator leaves no number and no start. |

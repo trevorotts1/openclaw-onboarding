@@ -23,16 +23,17 @@ pieces, stdlib only, no network, no spend:
    off-screen voice (narrator).
 
 2. COVERAGE TARGET (planner + QC): coverage is a SHARE of the selected
-   duration (approved direction 2026-10-23): 25-30% target, 35% HARD MAXIMUM,
-   and the first 12 s clearly articulated. Clips are 4-6 s, never fewer than 3,
-   none over 6 s. The numbers live in core/lipsync_clips.py (the single
-   source). target_band_s() is the seconds band with the 5-point grace
-   (GRACE_POINTS of runtime).
-   plan_lipsync_lines() picks the clips: every sung hook, the spoken opener
-   and the spoken closing line first (line "role": hook / opener / closing),
-   then the longest remaining own-face lines, each cut to at most 6 s;
-   check_coverage_band() is the QC measurement. Part E E6 floors follow the
-   same numbers.
+   duration: 25-30% target, 35% normal top, whole sentences win over the share
+   (N-101, rule 5), and the first 12 s clearly articulated. A piece is one or
+   more whole sentences, 5 to 30 s, never cut mid-sentence (N-101); a passage
+   over 30 s is a stitch group (N-112). The floor of 3 pieces applies from
+   90 s up. The numbers live in core/lipsync_clips.py (the single source).
+   target_band_s() is the seconds band with the 5-point grace (GRACE_POINTS of
+   runtime). plan_lipsync_lines() picks whole lines: every sung hook, the
+   spoken opener and the spoken closing line first (line "role": hook /
+   opener / closing), then the longest remaining own-face lines, each taken
+   whole; check_coverage_band() is the QC measurement. Part E E6 floors
+   follow the same numbers.
 
 ponytail: the 5-point grace is a constant here; fold it into the G10
 constants module when that lands on main.
@@ -66,7 +67,7 @@ OVERLAP_MIN_S = 0.25        # a boundary brush shorter than this is not "heard"
 TARGET_MIN_S = _LC.TOTAL_PER_REF_S[0]   # 60 s reference: 25% of 60 s = 15 s
 TARGET_MAX_S = _LC.TOTAL_PER_REF_S[1]   # ... to 30% = 18 s (35% is the hard max)
 HARD_MAX_S = _LC.MAX_SHARE              # the ceiling no plan may cross
-CLIP_MAX_S = _LC.CLIP_MAX_S             # every clip is cut to at most 6 s
+CLIP_MAX_S = _LC.CLIP_MAX_S             # N-101: one piece, 30 s top (stitch past it)
 GRACE_POINTS = 5.0          # +/- 5 points of runtime around the band
 MIN_LINES = _LC.MIN_CLIPS_FLOOR         # absolute floor; per-length in budget()
 
@@ -212,32 +213,41 @@ def check_coverage_band(ad_length_s, lipsync_total_s, lipsync_lines_count):
 
 
 def plan_lipsync_lines(lines, ad_length_s, must_ids=()):
-    """Pick which script lines become lip-sync clips so coverage hits the
-    target: 25-30% of the ad (35% hard maximum), 4-6 s per clip, first 12 s
-    articulated.
+    """Pick which script lines become lip-sync pieces so coverage hits the
+    target: 25-30% of the ad (35% normal top, whole sentences win over it),
+    whole lines of 5-30 s, first 12 s articulated.
 
     Candidates are lines spoken by a person on screen (never a narrator or
-    device). A clip is its line cut to at most CLIP_MAX_S (6 s). Taken first:
-    must_ids and every line whose "role" is hook / opener / closing (the
-    sung hooks, the spoken opener, the spoken closing line) are taken first, up
-    to the 35% HARD maximum (never past it). Then the longest remaining lines
-    (clips under 4 s last) until the total reaches target_min and the clip
-    count reaches min_clips, never passing max_clips or target_max.
+    device). A piece is its WHOLE line, never cut mid-sentence (N-101): a line
+    outside 5-30 s is refused, not trimmed -- under 5 s the caller joins it
+    with the same singer's neighbour, over 30 s the caller stitches it
+    (N-112). Taken first: must_ids and every line whose "role" is hook /
+    opener / closing. Then the longest remaining whole lines until the total
+    reaches target_min and the count reaches min_clips. Whole sentences win
+    over the 35% top (rule 5): finishing a line is never refused.
 
     Returns {"pass", "reason_code", "selected" (timeline order),
     "clip_s" ({id: seconds}), "total_s", "clips", "first_start_s",
-    "target_min_s", "target_max_s", "min_clips", "max_clips"}; TARGET_UNREACHABLE
-    when the script does not carry enough own-face lines (the script needs more).
+    "target_min_s", "target_max_s", "min_clips", "max_clips",
+    "share_pct", "refused"}; TARGET_UNREACHABLE when the script does not carry
+    enough own-face lines (the script needs more).
     """
     ls = _lines(lines)
     b = _LC.budget(ad_length_s)
     lo, hi = b["total_min_s"], b["total_max_s"]
-    # The priority lines (every sung hook, the spoken opener, the spoken
-    # closing) are always clips; they may use the 35% HARD maximum, never past
-    # it. Discretionary lines stop at the 30% target so the run stays in band.
-    hi_hard = b["hard_max_s"]
-    dur = {k: min(v["end"] - v["start"], CLIP_MAX_S) for k, v in ls.items()}
-    cand = {k for k, v in ls.items() if v["speaker"] and _person(v["speaker"])}
+    # Whole sentences win over the 35% top: the top is reported, not failed.
+    hi_hard = max(b["hard_max_s"], hi)
+    dur, refused = {}, {}
+    for k, v in ls.items():
+        whole = v["end"] - v["start"]
+        if whole + 1e-9 < _LC.CLIP_MIN_S:
+            refused[k] = _LC.AUDIO_TOO_SHORT
+        elif whole > _LC.CLIP_MAX_S + 1e-9:
+            refused[k] = _LC.AUDIO_TOO_LONG
+        else:
+            dur[k] = whole
+    cand = {k for k, v in ls.items() if v["speaker"] and _person(v["speaker"])
+            and k in dur}
     roles = {r.get("line_id") or r.get("name"): r.get("role")
              for r in (lines if not isinstance(lines, dict) else [])
              if isinstance(r, dict)}
@@ -251,11 +261,11 @@ def plan_lipsync_lines(lines, ad_length_s, must_ids=()):
             picked.append(k)
     total = sum(dur[k] for k in picked)
     rest = sorted(cand - set(picked),
-                  key=lambda k: (dur[k] < _LC.CLIP_MIN_S, -dur[k]))
+                  key=lambda k: (roles.get(k) in _LC.PRIORITY_ROLES, -dur[k]))
     for k in rest:
         if total >= lo and len(picked) >= b["min_clips"]:
             break
-        if len(picked) < b["max_clips"] and total + dur[k] <= hi + 1e-9:
+        if len(picked) < b["max_clips"] and total + dur[k] <= hi_hard + 1e-9:
             picked.append(k)
             total += dur[k]
     picked.sort(key=lambda k: ls[k]["start"])
@@ -264,7 +274,10 @@ def plan_lipsync_lines(lines, ad_length_s, must_ids=()):
     return {"pass": ok, "reason_code": "LIPSYNC_PLAN_OK" if ok
             else TARGET_UNREACHABLE, "selected": picked,
             "clip_s": {k: round(dur[k], 3) for k in picked},
-            "total_s": round(total, 3), "clips": len(picked),
-            "first_start_s": first_start,
+            "total_s": round(total, 3),
+            "share_pct": round(100.0 * total / ad_length_s, 2),
+            "over_top": total > hi_hard + 1e-9,
+            "whole_sentences": True, "refused": refused,
+            "clips": len(picked), "first_start_s": first_start,
             "target_min_s": lo, "target_max_s": hi,
             "min_clips": b["min_clips"], "max_clips": b["max_clips"]}

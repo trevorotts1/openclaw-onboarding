@@ -71,8 +71,11 @@ changed. The code references are for the operator; the checks named in
   own music cues: instrumental flag, delivered length, the two pace seams and
   the hook's `true_at_beat`. A collapsed blueprint refuses with a typed
   blueprint error instead of sending a request for a different story.
-- **Lip-sync coverage.** 25-30% of the selected duration target, 35% hard
-  maximum, 4-6 s clips, never fewer than 3, and the first 12 s articulated.
+- **Lip-sync coverage.** 25-30% of the selected duration target; 35% is a top,
+  not a refusal (whole sentences win). One piece is one or more whole sentences,
+  5 to 30 seconds, stitched only past 30. Under 90 seconds there is no floor of
+  3 pieces; from 90 seconds up the floor of 3 stands. The opening passage is
+  lip-synced inside the first 10-15 seconds.
   The lip-sync section above carries the refusal codes.
 
 ## THE ELEVEN RUNTIME STEPS (BUILD-DIRECTIVE SECTION 25)
@@ -188,7 +191,7 @@ guard that already failed.
 
    **Reconciled music direction (WW-29).** Do not mandate wordless held-note openings or a premature hook; the vocalise is an OPTIONAL one-note lead-in, never a forced opening, and the hook is the payoff — the sheet's own hook plan places it at or after `true_at_beat`, and the gate measures it. R&B Flow consistently directs rhythmic speech-rhythm RAP verses contrasted with a fully sung melodic R&B hook (`references/prompt-templates/music/rnb-flow.json`). Cast, pace, hook, ending and the exclusions (`negative_tags`) survive into the exact serialized createTask request (the envelope's nested `input`) and are checked there by `song_dispatch.validate_request` on every entry path; a style text over its 1000-character cap refuses `STYLE_TOO_LONG` rather than dropping a required clause. Delivered-audio acceptance has FIVE gates only (WW-21, `song_dispatch.accept_audio_results`) — real rap, story start, both pace changes, three audibly different versions including an upbeat option, and multiple character voices — never a sixth. Rejected paid files are preserved, there is no automatic paid retry, and nothing regenerates until Trevor approves.
 
-   **The song-failure verdict belongs to the client.** When the song judge fails a take, nothing regenerates and nothing loops: `song_choices.one_variant` makes ONE generation per variant, keeps the paid take, records the judge's named concerns, and presents every take — the passing ones to pick, the failed ones in `SONG-CHOICES/FOR-LISTENING/` to listen to — with ONE question: "Want me to redo all of them, keep one of these three, or generate three new options?" The client's answer is authoritative and recorded in `$RUN/song-choices/fork-decision.json` (`song_choices.py fork`, or `pick --reply` with words): `redo_all` / `new_three` reopen the music row for a round the client asked for, and `keep_one` is recorded but never writes a PASS — the WW-18/WW-21 measured gates still hold, so a kept take whose required gates failed needs the documented `--operator-decision` route. Say the concerns plainly and say the client may decide a take is fine. `song_choices.py offer --run-dir "$RUN"` rebuilds the offer from the run's own saved takes, and a failed version blocks only itself — the passing versions stay offered and pickable.
+   **The song-failure verdict belongs to the client.** When the song judge fails a take, nothing regenerates and nothing loops: `song_choices.one_variant` makes ONE generation per variant, keeps the paid take, records the judge's named concerns, and presents every take — the passing ones to pick, the failed ones in `SONG-CHOICES/FOR-LISTENING/` to listen to — with ONE question: "Want me to redo all of them, keep one of these three, or generate three new options?" The client's answer is authoritative and recorded in `$RUN/song-choices/fork-decision.json` (`song_choices.py fork`, or `pick --reply` with words): `redo_all` / `new_three` reopen the music row for a round the client asked for, and `keep_one` is recorded but never writes a PASS — the WW-18/WW-21 measured gates still hold, so a kept take whose required gates failed needs the documented `--operator-decision` route. Two rules bind this fork: the first singing is judged by the words' own timings on the returned take (word timing, never a "spoken" tag - install the whisper small model), and a first sung word before the apex minus 1.5 s is a FAIL however the sheet labels it. The documented decision route is the sequence in `SKILL.md` "WW-21": `record_acceptance`, then `sha256_evidence_records({vid: measure_evidence_digest})`, then `record_operator_decision`, then `factory.py music --operator-decision`; a FAIL stays recorded as FAIL and the decision never writes PASS. Say the concerns plainly and say the client may decide a take is fine. `song_choices.py offer --run-dir "$RUN"` rebuilds the offer from the run's own saved takes, and a failed version blocks only itself — the passing versions stay offered and pickable.
 
    **QC duration overshoot is a flag, not a stop.** One rule (`master_length.judge_duration`) governs the song length gate (`song_dispatch.judge_take`, target = delivered seconds) and the video master check (`master_length.check_master`, target = chosen length − 2 s; the client-facing line names the chosen length). At or under the target passes clean. An overshoot of up to 10 seconds PASSES and records the named warning `QC_DURATION_OVERSHOOT` ("62s of 60s — within the 10-second allowance") on the receipt through `loud_failure.warn`; an overshoot past 10 seconds ALSO passes and records `QC_DURATION_OVERSHOOT_SEVERE` with the exact seconds over. Neither ever stops the run: whether a long master is redone belongs to the client. An undershoot is unchanged — the song gate keeps the 5/10 band (past 10 points is still FAIL) and the video master stays free on the short side.
 
@@ -199,7 +202,7 @@ guard that already failed.
    creative beats and twelve production stages stay separate contracts
    (section 14).
 
-   **Stage 3 stop rule (script-lyrics, v2.9.70).** Run the lyric validator (`lyric_writer.py`), the hook/recipe check (`suno_recipe.check_lyric_sheet`) and the words-fit check (`words_fit.preflight`) at most **3 rounds**. If a gate still fails after round 3, STOP: report the exact gate, its reason code and the failing lines, and ask the client ONE question with the concrete choices, numbered, in one message (in a Claude Code session use the AskUserQuestion tool; on an OpenClaw box send it on the client's own channel with `openclaw message send` and wait for the reply) (for example: use these client words as written, pick a longer length, cut the named lines). Never grid-search word counts or rewrites, never spend more than about 10 minutes on this stage, and never edit, bypass or monkey-patch a validator during a run -- a gate that contradicts another gate is a skill defect to report, not a puzzle to solve.
+   **Stage 3 stop rule (script-lyrics, v2.9.70).** Read the stage's required list IN FULL first, never grepped - `SKILL.md` ("Writing the lyrics"), `INSTRUCTIONS.md`, `QC.md`, `EXAMPLES.md`, `references/drama-to-demand-method.md` (Steps 1 and 6-12, sections 6 and 7), `references/sensational-openings.md`, and the card's own `references/prompt-templates/music/<style>.json` - then write the sheet into the run's checklist. Run the lyric validator (`lyric_writer.py`), the hook/recipe check (`suno_recipe.check_lyric_sheet`), the words-fit check (`words_fit.preflight`) and the pre-ERM opening check (`check_pre_erm_opening`; `PRE_ERM_SPOKEN_SHORT` / `PRE_ERM_SPOKEN_LONG`) at most **3 rounds**. If a gate still fails after round 3, STOP: report the exact gate, its reason code and the failing lines, and ask the client ONE question with the concrete choices, numbered, in one message (in a Claude Code session use the AskUserQuestion tool; on an OpenClaw box send it on the client's own channel with `openclaw message send` and wait for the reply) (for example: use these client words as written, pick a longer length, cut the named lines). Never grid-search word counts or rewrites, never spend more than about 10 minutes on this stage, and never edit, bypass or monkey-patch a validator during a run -- a gate that contradicts another gate is a skill defect to report, not a puzzle to solve.
 
 9. **Persist every provider task and result (step 9).** Every paid call
    reserves through `scripts/core/spend_ledger.py` with a recorded
@@ -416,6 +419,14 @@ mandatory check records PASS / FAIL / UNAVAILABLE with evidence -
 `UNAVAILABLE` can never become `PASS`, and no aggregate may erase a
 critical identity/lyrics/offer/claim/product/CTA defect (17.8).
 
+- **A plan that names gates ships its own self-check (OR-10 / R-7).** Any plan
+  document that names gates - shots, windows, summed seconds, thresholds -
+  carries a self-check table proving its own numbers pass those gates, with
+  each threshold cited to its file and line. A plan with gates and no
+  self-check table, or one whose table fails, is refused at review and never
+  shipped to build: no spend, no blast and no assembly until its rows read
+  PASS.
+
 ## WHAT THIS SKILL MUST NEVER DO
 
 - Do hands-on work in the main window. The main window only orchestrates: all work runs in visible workflows and agents.
@@ -429,7 +440,7 @@ critical identity/lyrics/offer/claim/product/CTA defect (17.8).
 - Claim merged/published state that has not been independently verified.
 - Compute or hard-code a price; every figure on the choice card comes from
   Skill 74 `price`.
-- Carry the superseded echo-flavoured voice name (the pre-rename spelling), or offer a lip-sync model outside the approved Kling-avatar-first order (Volcengine is dropped).
+- Carry the superseded echo-flavoured voice name (the pre-rename spelling), or offer a lip-sync model other than OmniHuman 2.0 (`omnihuman-2-0`); Kling Avatar, InfiniTalk and Volcengine are retired and there is no lip-sync model choice.
 
 ## VERSION 2 OPTIONS (OWNER BUILD-OUT 2026-10-07)
 
@@ -554,10 +565,20 @@ card. The answers and the time answered go into the receipt
   automatic 60-second clip and one 90-second clip (`core/clip_cutdown`).
   Cutting is free (FFmpeg edit, no new AI media), so the price already
   includes them. 60 s and 90 s ads get none.
-- **Five looks:** each look owns its style-bible block, its own switching
-  rules and its own QC. The three hybrids switch on matched poses with a
-  0.3-0.4 s dissolve, hold each style at least 3 seconds, never flicker, and
-  lock identity across styles; golden realism carries the transformation.
+- **Six looks:** Lifelike 3D (default), Stylized 3D animation (the rounded,
+  appealing look clients call "Pixar-style"), 2D Hand-Painted, Sketch to Life,
+  Canvas to Life and Canvas to 3D. Each look owns its style-bible block, its
+  own switching rules and its own QC. The three hybrids switch on matched poses
+  with a 0.3-0.4 s dissolve, hold each style at least 3 seconds, never flicker,
+  and lock identity across styles; golden realism carries the transformation.
+  The client wording for every look comes from that look's own mode file
+  (`client_wording` in `references/prompt-templates/modes/<look>.json`), and a
+  guide line that differs from it is a document-guard failure
+  (`CLIENT_WORDING_DRIFT`, `style_defaults.client_wording.check_guide_wording`).
+  Lifelike 3D is described to clients in its mode file's own words - "polished
+  3D animation with believable, lifelike faces. Clearly animated, never live
+  action" - never "realistic" or "look real"; a client who wants real people is
+  shown realism.
   No lip-sync on sketch shots; Canvas to 3D lip-syncs only on lifelike 3D
   close-ups.
 - **Dual presence (hybrid ads, APPROVED 2026-10-11):** each hybrid ad carries
@@ -582,7 +603,9 @@ card. The answers and the time answered go into the receipt
   R&B Flow consistently directs rhythmic speech-rhythm RAP verses contrasted
   with a fully sung melodic R&B hook: its verses are rap, its hook is sung
   (`references/prompt-templates/music/rnb-flow.json`). No style mandates a
-  wordless held-note opening or an early hook.
+  wordless held-note opening or an early hook. **The style is locked to the
+  card choice (R9):** the card's style is the sheet's style, and a sheet is
+  never quietly moved onto another style's rates.
 - **Voice (F1, one track):** ONE Suno generation makes the whole soundtrack.
   1. Write every spoken passage into the song's own lyrics, tagged as
      spoken (`[Spoken]` plus the character's voice tag), so Suno performs
@@ -599,46 +622,57 @@ card. The answers and the time answered go into the receipt
   its earlier echo-flavoured spelling, which must not appear anywhere.
 - **Per-character voice registry:** no two characters share a voice, in any
   look or music style. Distinctness still holds inside the one track.
-- **Lip-sync (decision 33):** selected lines only - the pain peak, the
-  product line, the call to action and the chorus hook. Approved direction
-  2026-10-23 (supersedes the 2026-10-08 doubling): coverage is **25-30% of the
-  selected duration with a 35% HARD MAXIMUM**, in clips of 4 to 6 seconds, no
-  clip over 6 seconds, never fewer than 3 clips, and the first **12 seconds**
-  clearly articulated (the spoken opener / first sung hook is lip-synced there).
+- **Lip-sync (S-42; Trevor, 2026-11-23 about 2:25 PM):** selected passages only -
+  the opening passage, the pain peak, the product line, the call to action and
+  the chorus hook. Coverage is **25-30% of the selected duration**; **35% is a
+  top, not a refusal** (whole sentences win, and a plan over 35% shows its
+  seconds and percent before any spend). **One piece is one or more whole
+  sentences, 5 to 30 seconds** (section 3.3a): never cut mid-sentence, never
+  padded, stitched only when a passage is longer than 30 seconds. Under 90
+  seconds there is no floor of 3 pieces; from 90 seconds up the floor of 3
+  stands. The opening passage is lip-synced inside the first **10-15 seconds**.
   The numbers live in `core/lipsync_clips.py`; a duration whose bounds collide
   fails `LIPSYNC_DURATION_CONFLICT` instead of being re-planned silently.
-  Clips go on every sung hook, the spoken opener and the spoken closing line
-  first, and are listed on the approval card. The historical FREE /
-  no-lip-sync route stays an explicit owner opt-in and is never the default.
-  Each clip is a paid job, so a plan past the spend cap is refused loudly. Every
+  Pieces go on every sung hook and the opening and closing first, and are listed
+  on the approval card. The historical FREE / no-lip-sync route stays an
+  explicit owner opt-in and is never the default.
+  Its record is literal: the timeline carries the value `no_lipsync`, and
+  `control/method.json` records who chose it and when (the owner and the
+  timestamp). A run that claims the route without that record is refused
+  `LIPSYNC_OPT_OUT_MISSING` (`lipsync_clips.py`). On this route there are no
+  lip-sync clips by design, so `FACE_SPEAKS_NO_LIPSYNC` is not raised for a
+  speaking face; a lip-sync clip, where one exists, must still match its
+  on-screen speaker (`LIPSYNC_WRONG_FACE`).
+  Each piece is a paid job, so a plan past the spend cap is refused loudly. Every
   lip-sync source picture passes the lip-sync image gate before any paid job
   (the dispatcher measures the picture with `picture_gate`: PASS, ACCEPT_WITH_FLAG or
   FAIL, and refuses a FAIL; `image_gate` uses those same numbers and adds only size
   at least 720x1280 in 9:16, nothing over mouth or jaw, soft even light, same character
-  as the storyboard). Each clip is cut from the lead-vocal stem on phrase boundaries with
-  0.30 s before and 0.20 s after, prompted with "sings" or "says", and measured
-  by `sync_check` (PASS, ACCEPT_WITH_FLAG, FAIL, UNDETERMINED, UNMEASURABLE; `event_sync`
-  is advisory only). Two tries at most per segment, every name variant counted, the
-  second only on a person's call (a person marks a visible defect) and with a changed
-  input, never on a checker verdict, then the best take is kept and flagged
-  `KEPT_BEST_OF_2`. The approved process (SKILL.md "Lip-sync process", six rules): reuse
-  first (re-measure every take on disk, keep the best, drop defects, no new job where a
-  usable take exists); a sung line the checker cannot confirm is `KEPT_BEST (UNDETERMINED,
-  sung)`; an 8-frame mouth strip at `<delivery folder>/mouth-strips/<segment>.png` for
-  every UNDETERMINED or flagged segment, listed in the receipt; edit placement (trim to
-  audio length, place at the Suno word time corrected by the stem offset, lanczos upscale
-  to 1080x1920, conform to the 30 fps master under SKILL.md "Frame rate (Part H H3)"
-  (a native-30 Kling clip passes through; a 24 fps source is motion-interpolated, never
-  the plain `fps` filter), all ffmpeg through `load_governor`); QC items 8 and 11 accept
-  `KEPT_BEST` and flagged rows with a strip. Model order is
-  Kling avatar `kling/ai-avatar-standard` first (a front-facing close-up
-  image plus that character's own isolated line; THE lip-sync model), InfiniTalk
-  `infinitalk/from-audio` manual backup only (never called by the code, not on by
-  default), **Volcengine dropped**. Tight
-  front-facing close-ups only. The input clip contains only the on-screen
-  speaker's line - never a narrator, never another character, never a mixed
-  vocal stem. Narrator, phone, voicemail and laptop voices may play as
-  voice-over but are never lip-synced onto a person.
+  as the storyboard). Each piece is cut whole, first word's start to last word's end,
+  from the track the Voice Map names for its role, and measured by `sync_check` (PASS,
+  ACCEPT_WITH_FLAG, FAIL, UNDETERMINED, UNMEASURABLE; `event_sync` is advisory only).
+  Every take gets a 4-frames-per-second contact sheet looked at by eye; no take enters
+  the timeline without that eye record (`LIP_TAKE_NOT_EYE_CHECKED`). Two tries at most
+  per segment, every name variant counted, the second only on a person's call (a person
+  marks a visible defect) and with a changed input, never on a checker verdict, then
+  the best take is kept and flagged `KEPT_BEST_OF_2`. The approved process (SKILL.md
+  "Lip-sync process", six rules): reuse first (re-measure every take on disk, keep the
+  best, drop defects, no new job where a usable take exists); a sung line the checker
+  cannot confirm is `KEPT_BEST (UNDETERMINED, sung)`; an 8-frame mouth strip at
+  `<delivery folder>/mouth-strips/<segment>.png` for every UNDETERMINED or flagged
+  segment, listed in the receipt; edit placement (trim to audio length, place at the
+  Suno word time corrected by the stem offset, lanczos upscale to 1080x1920, conform to
+  the master's native rate under SKILL.md "Frame rate (Part H H3)" (a native-rate clip
+  passes through; a clip at another rate is matched by plain frame repeat or drop, never
+  a motion-interpolated conform), all ffmpeg through `load_governor`); QC items 8 and 11
+  accept `KEPT_BEST` and flagged rows with a strip. The lip-sync model is
+  **OmniHuman 2.0 (`omnihuman-2-0`) on every run**: one picture plus one audio piece,
+  **no prompt**, watermark off. There is no option, no alternative and no backup; Kling
+  Avatar and InfiniTalk are retired (`LIPSYNC_MODEL_MISMATCH` for anything else). Tight
+  front-facing close-ups only, showing only the people who sing that piece (1 to 3
+  faces). The input piece contains only those singers' line - never a narrator, never
+  another character, never a mixed vocal stem. Narrator, phone, voicemail and laptop
+  voices may play as voice-over but are never lip-synced onto a person.
 - **Speaker and pitch QC:** the person visible during a spoken line must be
   the one speaking it, or the voice's source device; measured pitch must sit
   in the character's gender range (roughly 85-155 Hz male, 165-255 Hz
@@ -664,3 +698,20 @@ card. The answers and the time answered go into the receipt
   here hard-codes a rate.
 - **Command Center:** one parent card and twelve stage cards per ad, one
   deliverable per ad (VPS boxes), and one parent card per batch.
+
+## BUILD-RECORD contract (F-ASM-7)
+
+Every delivered run ships a BUILD-RECORD written from the session's verified
+facts, not a summary. QC refuses a delivery whose BUILD-RECORD is missing any
+field: job (run id and brief); assembler path plus the SHA-256 of the file that
+ran; the exact commands issued, verbatim; the SHA-256 of `edit/timeline.json`
+and the `TIMELINE_WRITTEN` receipt from `plan_run_timeline`; one row per shot
+with the on-disk SHA-256 of every input used; every gate's verdict per stage
+with its code(s); every refusal and how it was cleared (or that it was not), by
+code; corrections made after a gate and why; not-done-by-design (the checks or
+steps deliberately not run, named); a concurrent-writer note (whether more than
+one writer touched the run, and which output each owned); credit reconciliation
+(reserved vs actual per stage, and the ledger's totals); verification status
+(measured, UNAVAILABLE, or passed by a person); measurement renders with their
+paths; and every delivered file with its SHA-256. A BUILD-RECORD a reader could
+not reproduce the master from is a provenance FAIL.

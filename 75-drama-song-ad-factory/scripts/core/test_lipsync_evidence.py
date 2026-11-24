@@ -15,7 +15,7 @@ def _write(path, value):
     path.write_text(json.dumps(value), encoding="utf-8")
 
 
-def attach_evidence(timeline, root, run_id="synthetic-run"):
+def attach_evidence(timeline, root, run_id="synthetic-run", emotion=None):
     """Enrich marked test segments; preserve existing media and line metadata.
 
     Caller marks desired clips first. This creates the normal persisted evidence
@@ -72,6 +72,8 @@ def attach_evidence(timeline, root, run_id="synthetic-run"):
         shot = {"shot_id": sid, "lip_sync": True, "lip_sync_line_ids": lids,
                 "lyric_line_ids": lids, "speaker": speaker, "character_ids": [speaker],
                 "song_start": start, "song_end": end}
+        if emotion:
+            shot["emotion"] = emotion
         shots.append(shot)
         contracts[sid] = {"meaning": "synthetic fixture"}
         still = root / "storyboard" / (sid + ".png")
@@ -86,7 +88,8 @@ def attach_evidence(timeline, root, run_id="synthetic-run"):
         receipt_path = root / "receipts" / (task + ".json")
         _write(receipt_path, {"tool": "kie_dispatch", "outcome": "ok", "run_id": run_id,
                              "evidence": {"generated": True, "task_id": task,
-                                          "lipsync_model": "kling/ai-avatar-standard",
+                                          # S-42: the locked lip-sync model.
+                                          "lipsync_model": "omnihuman-2-0",
                                           "saved_paths": [str(source)],
                                           "saved_sha256": {str(source): digest},
                                           "lipsync_binding": binding}})
@@ -110,6 +113,11 @@ def attach_evidence(timeline, root, run_id="synthetic-run"):
         receipt = json.loads(receipt_path.read_text())
         receipt["evidence"]["lipsync_inputs"] = E.inputs_for_request(str(root), request)
         _write(receipt_path, receipt)
+        # N-113 / G-WIDE-01: a take enters the timeline only with an eye record
+        # (sheet, who looked, verdict) and a landed close-up. Fixtures state them.
+        seg["eye_record"] = {"sheet": "contact-sheet.png", "who": "test reader",
+                             "verdict": "clean"}
+        seg["landed"] = {"max_face_h_pct": 34.0, "camera_move_px": 2.0}
     return timeline
 
 
@@ -161,11 +169,11 @@ def fixture_request(plan, run_id=None, shot_id=None):
             "input": {"image_url": image_url, "audio_url": uploaded["url"]}}
 
 
-def fixture(root):
+def fixture(root, emotion=None):
     tl = {"fps": 30, "chosen_length_s": 60,
           "segments": [{"src": "clip%d.mp4" % i, "dur": 5,
                         "lip_sync": True, "transition": "none"} for i in range(3)]}
-    attach_evidence(tl, root)
+    attach_evidence(tl, root, emotion=emotion)
     for i, seg in enumerate(tl["segments"]):
         seg.update(frames=150, offset_frames=i * 150, xfade_frames=0,
                    snapped_dur=5, source_dur=5, stretch=1)
@@ -324,6 +332,10 @@ class EvidenceTests(unittest.TestCase):
         for seg in self.plan["segments"]:
             seg.pop("lip_sync_line_ids")
             seg.pop("lip_sync")
+            # F-LIP-2: a markerless slot whose receipt still names the lip-sync
+            # model is the route read backwards and refuses LIPSYNC_ROUTE_CHANGED
+            # first. This test is about the requirement, so the take goes too.
+            seg.pop("artifact")
         self.check_bad("LIPSYNC_UNUSED_REQUIREMENTS")
 
     def test_speaker_lost(self):
@@ -333,6 +345,12 @@ class EvidenceTests(unittest.TestCase):
     def test_lines_lost(self):
         self.plan.pop("lines")
         self.check_bad("LIPSYNC_EVIDENCE_MISSING")
+
+    def test_piece_cut_inside_a_sentence_refused(self):
+        # N-101: a piece is whole sentences; one that starts inside a sentence
+        # refuses LIPSYNC_CUTS_SENTENCE before assembly.
+        self.plan["lines"][0]["start_s"] = self.plan["lines"][0]["start_s"] + 0.5
+        self.check_bad("LIPSYNC_CUTS_SENTENCE")
 
     def test_generated_but_unused(self):
         self.plan["segments"].pop()
@@ -387,12 +405,69 @@ class EvidenceTests(unittest.TestCase):
         self.check_bad("LIPSYNC_HASH_MISMATCH")
 
     def test_native_video_receipt_cannot_count(self):
+        # LIP-02: a third model name nobody approved is its own refusal code.
         self.mutate_receipt(lambda r: r["evidence"].update(lipsync_model="minimax-hailuo-02"))
-        self.check_bad("LIPSYNC_MODEL_MISMATCH")
+        self.check_bad("LIPSYNC_MODEL_UNLISTED")
+
+    def test_h3_singing_fallback_counts_as_lipsync(self):
+        # LIP-02: the approved H3 singing fallback is legal lip-sync evidence
+        # ONLY with Trevor written order bound to shot/revision/sha/task/binding.
+        def _order(rec):
+            ev = rec["evidence"]
+            seg = self.plan["segments"][0]
+            import hashlib as _h
+            sha = _h.sha256(Path(seg["artifact"]["path"]).read_bytes()).hexdigest()
+            ev.update(lipsync_model="minimax-h3/image-to-video",
+                      h3_fallback_order={
+                          "order": "Trevor written order 2026-11-21 (test)",
+                          "shot_id": seg["shot_id"],
+                          "shot_revision": ev["lipsync_binding"]["storyboard_revision"],
+                          "sha256": sha, "task_id": ev["task_id"],
+                          "binding": dict(ev["lipsync_binding"])})
+        self.mutate_receipt(_order)
+        result = E.check_plan(self.plan, require_measured=True)
+        self.assertTrue(result["pass"], result.get("detail"))
+
+    def test_h3_without_order_refuses_route_changed(self):
+        self.mutate_receipt(lambda r: r["evidence"].update(
+            lipsync_model="minimax-h3/image-to-video"))
+        self.check_bad("LIPSYNC_ROUTE_CHANGED")
+
+    def test_take_without_an_eye_record_never_enters_the_timeline(self):
+        # N-113 (3C.1b lesson 3): the record (sheet, who looked, verdict) is
+        # required on every take; nothing turns it off.
+        for bad in (None, {}, {"sheet": "s.png"},
+                    {"sheet": "s.png", "who": "a reader"}):
+            self.plan["segments"][0]["eye_record"] = bad
+            self.check_bad("LIP_TAKE_NOT_EYE_CHECKED")
+
+    def test_take_whose_singer_never_comes_close_refuses(self):
+        # G-WIDE-01: a face under 25% of frame height with a camera that never
+        # leaves the wide is a wide take, whatever the sync score said.
+        self.plan["segments"][0]["landed"] = {"max_face_h_pct": 12.0,
+                                             "camera_move_px": 0.0}
+        self.check_bad("LIPSYNC_NO_CLOSEUP")
+        self.plan["segments"][0]["landed"] = {"max_face_h_pct": 34.0,
+                                             "camera_move_px": 3.0}
+        self.assertTrue(E.check_plan(self.plan, require_measured=True)["pass"])
+
+    def test_tagged_take_without_an_emotion_hold_refuses(self):
+        # N-118 (3G.6): a tagged line's take needs its Emotion Hold result; a
+        # drift, or a check that could not run, refuses EMOTION_DRIFT.
+        self.plan = fixture(self.root, emotion="pain")
+        for seg in self.plan["segments"]:              # every tagged take has one
+            seg["emotion_hold"] = {"verdict": "PASS"}
+        self.plan["segments"][0].pop("emotion_hold", None)   # no result at all
+        self.check_bad("EMOTION_DRIFT")
+        self.plan["segments"][0]["emotion_hold"] = {"verdict": "UNMEASURABLE",
+                                                    "detail": "no supplier"}
+        self.check_bad("EMOTION_DRIFT")
+        self.plan["segments"][0]["emotion_hold"] = {"verdict": "PASS"}
+        self.assertTrue(E.check_plan(self.plan, require_measured=True)["pass"])
 
     def test_other_tool_receipt_cannot_count(self):
         self.mutate_receipt(lambda r: r.update(tool="native_video"))
-        self.check_bad("LIPSYNC_TASK_MISMATCH")
+        self.check_bad("NO_DIRECT_SUBMIT")
 
     def test_crossfade_uses_actual_start_and_excludes_opaque_overlap(self):
         tl = {"fps": 30, "transition_duration": 0.4,

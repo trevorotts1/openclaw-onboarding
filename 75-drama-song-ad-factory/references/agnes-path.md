@@ -160,7 +160,7 @@ receipts, prompt compliance and resume behave exactly as they do for a paid job.
 | Clips | 704x1280, **24 fps**, ~10.125 s, H.264, **with an AAC audio track** |
 | Clip audio | **stripped** — the song is the only audio |
 | Scale | cover-scale to the export size (never a blur fill) |
-| fps | 24 → 30 by motion interpolation |
+| fps | Native 24; the master runs at the clips' native rate. Never interpolated (no 24-to-30 motion interpolation on any shot, N-23); a clip at another rate is matched by plain frame repeat or drop only |
 | 16:9 | renders 1280x704; both shapes cost quota, so shape is chosen once |
 
 ## 10. Background job and progress

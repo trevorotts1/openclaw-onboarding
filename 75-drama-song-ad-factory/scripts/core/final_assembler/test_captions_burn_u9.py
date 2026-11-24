@@ -151,13 +151,16 @@ class SrtBuilder(unittest.TestCase):
         self.cb = importlib.import_module("final_assembler.captions_burn")
 
     def _cues(self):
-        return [{"text": EXCERPT[0], "start": 0.0, "end": 2.5},
-                {"text": EXCERPT[1], "start": 2.5, "end": 5.25}]
+        # One measured cue per excerpt line (the SRT round trip asserts
+        # the full EXCERPT list back).
+        spans = [(0.0, 2.5), (2.5, 5.25), (5.25, 8.0)]
+        return [{"text": text, "start": s, "end": e}
+                for text, (s, e) in zip(EXCERPT, spans)]
 
     def test_valid_srt_from_measured_cues(self):
         srt = self.cb.build_srt(self._cues())
         blocks = [b for b in srt.strip().split("\n\n") if b]
-        self.assertEqual(len(blocks), 2, srt)
+        self.assertEqual(len(blocks), 3, srt)
         first = blocks[0].splitlines()
         self.assertEqual(first[0], "1")
         self.assertEqual(first[1], "00:00:00,000 --> 00:00:02,500")
@@ -178,6 +181,27 @@ class SrtBuilder(unittest.TestCase):
                                     cues=self._cues())
         self.assertEqual(r.get("timing"), "measured", r)
         self.assertIn("-->", r.get("srt") or "")
+
+    def test_timestamp_reader_counts_milliseconds(self):
+        # N-48: the old reader added ms as whole seconds (10 of 60 cues late).
+        self.assertAlmostEqual(self.cb.parse_timestamp("00:00:01,250"), 1.25)
+        self.assertAlmostEqual(self.cb.parse_timestamp("00:01:02,5"), 62.5)
+        self.assertAlmostEqual(self.cb.parse_timestamp("01:02:03.004"),
+                               3723.004)
+        with self.assertRaises(ValueError):
+            self.cb.parse_timestamp("not a clock")
+
+    def test_srt_reader_round_trips_and_refuses(self):
+        srt = self.cb.build_srt(self._cues())
+        clean, code, why = self.cb.parse_srt(srt)
+        self.assertIsNone(why, why)
+        self.assertEqual([c["text"] for c in clean], list(EXCERPT))
+        self.assertAlmostEqual(clean[1]["start"], 2.5)
+        bad = self.cb.parse_srt("1\nBROKEN\nx\n")
+        self.assertIsNone(bad[0])
+        self.assertEqual(bad[1], self.cb.BAD_CUES)
+        zero = self.cb.parse_srt("1\n00:00:01,000 --> 00:00:01,000\nz\n")
+        self.assertEqual(zero[1], self.cb.ZERO_DURATION)
 
 
 class NoSpendSurface(unittest.TestCase):

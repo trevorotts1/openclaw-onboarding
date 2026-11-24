@@ -121,6 +121,9 @@ def adversarial_review(shots, contracts=None, timing=None, budget_minor=None,
     findings = []
     n = len(ordered)
 
+    # F-PM-6: one place per shot, and chain criteria when a chain is declared.
+    findings.extend(review_story_fidelity(ordered)["findings"])
+
     if timing is not None:
         if isinstance(timing, dict) and "lines" not in timing \
                 and isinstance(timing.get("sections"), list):
@@ -268,6 +271,166 @@ def adversarial_review(shots, contracts=None, timing=None, budget_minor=None,
             "findings": findings,
             "next_action": "Release to video generation."
             if ok else "Repair the shot plan before generating the clip."}
+
+
+# --- story fidelity review (F-PM-6): the named artifacts --------------------
+# The review demands a location map, a wardrobe ledger, one place per shot and
+# chain criteria. Codes are literal so a red check points at one rule.
+UNEXPLAINED_STORY_ELEMENT = "unexplained_story_element"
+CHAIN_NOT_CONTINUOUS = "CHAIN_NOT_CONTINUOUS"
+MULTI_PLACE_SHOT = "MULTI_PLACE_SHOT"
+LOCATION_MAP_MISSING = "LOCATION_MAP_MISSING"
+WARDROBE_LEDGER_MISSING = "WARDROBE_LEDGER_MISSING"
+
+
+def _fidelity_finding(code, shot_id, detail):
+    return {"criterion": "continuity_mistakes", "code": code,
+            "shot_id": shot_id, "detail": detail}
+
+
+def review_story_fidelity(shots, location_map=None, wardrobe_ledger=None):
+    """Demand the story artifacts F-PM-6 names (review time, no render change).
+
+    shots: 14.2 records sorted by song_start internally.
+    location_map: {location_id: record}; when None the map is not demanded.
+    wardrobe_ledger: {wardrobe_id: record}; when None not demanded.
+
+    Always enforced: one place per shot (``location_ids`` may not list more
+    than one distinct place). When the artifacts are supplied: every place and
+    every wardrobe the plan uses must be explained, and shots sharing a
+    ``chain_id`` must stay in one place and carry ``keyframe_ids`` /
+    ``motion_beats`` so the chain is continuous.
+
+    Returns {"outcome", "findings", "codes"}.
+    """
+    if not isinstance(shots, list) or not shots:
+        raise ReviewError("EMPTY_PLAN", "nothing to review")
+    ordered = sorted(shots, key=lambda s: (s["song_start"], s["song_end"]))
+    findings = []
+
+    def explained(container, key):
+        return isinstance(container, dict) and key in container
+
+    for s in ordered:
+        sid = s.get("shot_id")
+        locs = s.get("location_ids")
+        if isinstance(locs, list):
+            distinct = {l for l in locs if isinstance(l, str) and l.strip()}
+            if len(distinct) > 1:
+                findings.append(_fidelity_finding(
+                    MULTI_PLACE_SHOT, sid,
+                    "shot names %d places (%s); one place per shot"
+                    % (len(distinct), ", ".join(sorted(distinct)))))
+        loc = s.get("location_id")
+        if location_map is not None and not explained(location_map, loc):
+            findings.append(_fidelity_finding(
+                UNEXPLAINED_STORY_ELEMENT, sid,
+                "location %r has no entry in the location map" % (loc,)))
+        if wardrobe_ledger is not None:
+            for wid in s.get("wardrobe_ids") or []:
+                if not explained(wardrobe_ledger, wid):
+                    findings.append(_fidelity_finding(
+                        UNEXPLAINED_STORY_ELEMENT, sid,
+                        "wardrobe %r has no entry in the wardrobe ledger"
+                        % (wid,)))
+
+    # chain criteria: one chain stays in one place and carries continuity keys.
+    by_chain = {}
+    for s in ordered:
+        cid = s.get("chain_id")
+        if isinstance(cid, str) and cid.strip():
+            by_chain.setdefault(cid, []).append(s)
+    for cid, seq in by_chain.items():
+        first_loc = seq[0].get("location_id")
+        for i, s in enumerate(seq):
+            sid = s.get("shot_id")
+            if s.get("location_id") != first_loc:
+                findings.append(_fidelity_finding(
+                    CHAIN_NOT_CONTINUOUS, sid,
+                    "chain %r moves from %r to %r mid-chain"
+                    % (cid, first_loc, s.get("location_id"))))
+            kf = s.get("keyframe_ids")
+            if not isinstance(kf, list) or not kf:
+                findings.append(_fidelity_finding(
+                    CHAIN_NOT_CONTINUOUS, sid,
+                    "chain %r shot has no keyframe_ids" % (cid,)))
+            if i and not isinstance(s.get("matched_frame"), str):
+                findings.append(_fidelity_finding(
+                    CHAIN_NOT_CONTINUOUS, sid,
+                    "chain %r has no matched_frame joining shot %d"
+                    % (cid, i)))
+
+    return {"outcome": "pass" if not findings else "fail",
+            "findings": findings,
+            "codes": sorted({f["code"] for f in findings})}
+
+
+# --- set consistency (F-SET-1): same identifier, same room ------------------
+# Takes that share one location identifier must look like one room (join score
+# from the F-CG-5 SSIM scorer), and rendered geometry must agree with the map.
+SET_INCONSISTENT = "SET_INCONSISTENT"
+MAP_RENDER_MISMATCH = "MAP_RENDER_MISMATCH"
+SET_JOIN_THRESHOLD = 0.85
+
+
+def review_set_consistency(takes, join_scores=None, location_map=None,
+                           threshold=SET_JOIN_THRESHOLD):
+    """Fail a same-identifier set that diverges, or a render that contradicts the map.
+
+    takes: [{take_id, location_id, rendered_adjacency?}].
+    join_scores: {(take_a, take_b): ssim} for pairs sharing a location, or
+      {take_id: ssim_vs_location_reference}. Values under ``threshold`` fail.
+    location_map: {location_id: {"adjacency": [place_id, ...]}}.
+    Returns {"outcome", "findings", "codes"}.
+    """
+    if not isinstance(takes, list) or not takes:
+        raise ReviewError("EMPTY_SET", "nothing to check")
+    findings = []
+
+    def fail(code, take_id, detail):
+        findings.append({"criterion": "continuity_mistakes", "code": code,
+                         "take_id": take_id, "detail": detail})
+
+    if isinstance(join_scores, dict):
+        for key, score in join_scores.items():
+            if not isinstance(score, (int, float)) or isinstance(score, bool):
+                continue
+            if score >= threshold:
+                continue
+            if isinstance(key, tuple) and len(key) == 2:
+                fail(SET_INCONSISTENT, key[1],
+                     "takes %r and %r share a location identifier but join at "
+                     "%.3f (min %.2f)" % (key[0], key[1], score, threshold))
+            else:
+                fail(SET_INCONSISTENT, key,
+                     "take %r diverges from its location reference at %.3f "
+                     "(min %.2f)" % (key, score, threshold))
+
+    if isinstance(location_map, dict):
+        for t in takes:
+            if not isinstance(t, dict):
+                continue
+            loc = t.get("location_id")
+            rendered = t.get("rendered_adjacency")
+            entry = location_map.get(loc)
+            if not isinstance(rendered, dict) or not isinstance(entry, dict):
+                continue
+            mapped = set(entry.get("adjacency") or [])
+            seen = set(rendered.values())
+            for door, place in sorted(rendered.items()):
+                if place not in mapped:
+                    fail(MAP_RENDER_MISMATCH, t.get("take_id"),
+                         "take shows door %r opening into %r, absent from the "
+                         "%r map adjacency %s" % (door, place, loc,
+                                                  sorted(mapped)))
+            for place in sorted(mapped - seen):
+                fail(MAP_RENDER_MISMATCH, t.get("take_id"),
+                     "map says %r links to %r but the render shows no such link"
+                     % (loc, place))
+
+    return {"outcome": "pass" if not findings else "fail",
+            "findings": findings,
+            "codes": sorted({f["code"] for f in findings})}
 
 
 def video_spend_allowed(shots, review):

@@ -34,6 +34,7 @@ import final_assembler.assembler as A          # noqa: E402
 from final_assembler.lipsync_coverage import (  # noqa: E402
     COVERAGE_SHORT, LINES_TOO_FEW,
 )
+import lipsync_clips                             # noqa: E402
 FAILS = []
 FPS = 30
 
@@ -173,8 +174,12 @@ def test_missing_metadata_writes_receipt_offline(tmp_root):
     with mock.patch.object(A, "probe_duration", return_value=5), \
             mock.patch.object(A, "_run") as render:
         rec = A.assemble(timeline, output)
+    # F-LETTER-RENDER: the hard letter gate now runs on every take at the
+    # render, so an unreadable synthetic input refuses fail-closed before the
+    # evidence join is reached (FRAME_EXTRACT_UNAVAILABLE). Either way the
+    # assembly refuses offline and the renderer is never called.
     check("metadata-free assembly refuses offline", rec["outcome"] == "error"
-          and rec["reason_code"] == "LIPSYNC_EVIDENCE_MISSING", rec)
+          and rec["reason_code"] == "FRAME_EXTRACT_UNAVAILABLE", rec)
     check("metadata-free assembly never calls renderer", not render.called)
     with open(output + ".receipt.json", encoding="utf-8") as f:
         saved = json.load(f)
@@ -262,7 +267,10 @@ def test_error_receipt_beside_output(tmp_root):
               saved["reason_code"] == rec["reason_code"] and
               ev.get("lipsync_lines_count") == 0            # zero planned clips
               and ev.get("lipsync_total_s") == 0
-              and ev.get("required_lines_min", 0) >= 3      # the floor it missed
+              # N-101: the floor of 3 applies from 90 s up only; this 10 s
+              # ad's line floor is lipsync_clips.budget's own min_clips.
+              and ev.get("required_lines_min", 0)
+              == lipsync_clips.budget(ev.get("ad_length_s", 0))["min_clips"]
               and ev.get("required_total_s", 0) > 0,        # the seconds it missed
               json.dumps(ev)[:200])
     # (b) structural error before the gates: TIMELINE_BAD_* also writes

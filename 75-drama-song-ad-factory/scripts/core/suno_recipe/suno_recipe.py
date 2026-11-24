@@ -32,6 +32,7 @@ vocals, choir or reverb) stays.
 """
 from __future__ import annotations
 
+import math
 import os
 import re
 import sys
@@ -197,15 +198,23 @@ PACE_RETURN_CLAUSE = "then the drums slam back in at double intensity"
 #: lowest point". C4 + Trevor 2026-10-13 (decision #5): the Hero Shift is any
 #: clear change of pace in the direction this story calls for -- faster, slower,
 #: heavier, bigger, dramatic -- never only a return to the opening groove.
-#: G11 deliberately leaves BOTH method clauses untouched. No method stem has
-#: ever been measured (the 48 measured stems are all non-method), so there is
-#: no evidence the method lane fails the way the generic one did; and a fixed
-#: "double intensity" would contradict C4 / Trevor #5, which rules the Hero
-#: Shift direction-agnostic. Strengthen either here only with a measured
-#: method failure in hand -- and keep the ERM Drop's "the first sung line
-#: enters exactly as" anchor, which test_method_pace asserts.
-METHOD_ERM_DROP_CLAUSE = ("the first sung line enters exactly as the groove drops "
-                          "to a heavier, sparser half-time feel")
+#: S75 measured (2026-11-19): the method lane needed the SAME ABSENCE wording
+#: the generic lane got from G11. A method order under the old wording sang
+#: about 5 s in -- the first sung line long before the ERM -- while the same
+#: order naming "no singing until the groove drops" held the first sung line
+#: back to 38-46 s, inside the ERM window. The drop therefore LEADS with that
+#: refusal and still carries the ERM Drop's "the first sung line enters exactly
+#: as" anchor, which test_method_pace asserts.
+METHOD_ERM_DROP_CLAUSE = ("no singing until the groove drops, and the first sung "
+                          "line enters exactly as the groove drops to a heavier, "
+                          "sparser half-time feel")
+#: The lead a caller's own ``drop`` text gets prefixed with when it names no
+#: refusal of its own: an explicit drop is still an absence, never a texture.
+METHOD_NO_SINGING_LEAD = "no singing until the groove drops, then "
+#: S75: the spoken-band sentence a METHOD style carries verbatim, so the
+#: method's long spoken backstory is licensed under the music (the band never
+#: drops out under the narration), and "no singing yet" is unmistakable.
+METHOD_SPOKEN_CLAUSE = "The full band keeps playing under the spoken lines."
 METHOD_HERO_SHIFT_CLAUSE = ("when help arrives the music changes pace again, clearly and "
                             "dramatically, in the direction this story calls for")
 #: U15d (design 4.2): the style lead, the cue strings and the gender words are
@@ -450,8 +459,10 @@ def method_pace_clauses(pace_plan):
     direction = str(o.get("hero_direction") or o.get("emotional_direction") or "").strip()
     direction = direction.rstrip(".")
     hero = METHOD_HERO_SHIFT_CLAUSE + (": %s" % direction if direction else "")
-    return (o.get("drop") or METHOD_ERM_DROP_CLAUSE,
-            o.get("return") or hero)
+    drop = str(o.get("drop") or METHOD_ERM_DROP_CLAUSE).strip()
+    if "no singing" not in drop.lower():
+        drop = METHOD_NO_SINGING_LEAD + drop
+    return (drop, o.get("return") or hero)
 
 def pace_clause(pace_plan):
     """WW-07: the approved lowest-point direction (drums and bass cut out,
@@ -997,9 +1008,69 @@ def _norm_char(name):
     return re.sub(r"[^a-z0-9]+", " ", str(name or "").lower()).strip()
 
 
+def check_pre_erm_opening(sheet, length_s, style_id=None, warnings_out=None):
+    """S75: a METHOD sheet's spoken lead-in must fill the gap before the ERM.
+
+    A method run's first sung word belongs at the ERM apex (METHOD C3), so the
+    seconds before it have to be SPOKEN, not left silent for Suno to fill with
+    an early vocal -- the measured failure was a sung line about 5 s in. This
+    walks the sheet from the top and sums the words of the sections before the
+    first sung or rap section, at the style's own spoken rate, and refuses a
+    lead-in that cannot reach ``erm_apex_s - METHOD_FIRST_SUNG_TOL_S`` or that
+    overruns the ERM window's close. A sheet that OPENS with a no-voice tag
+    ([Instrumental]) earns a warning instead of a refusal: the render may still
+    hold the silence, but the sheet does not guarantee it. A style with no
+    spoken rate and no style id falls back to the ballad default (fail closed
+    on "too slow", never "promised to fit").
+    """
+    if not sheet or length_s is None:
+        return []
+    m = _LF.plan(length_s + _LF.END_EARLY_S, method=True)["method"]
+    apex = m["erm_apex_s"]
+    tol = getattr(getattr(_SS, "spoken_share", _SS), "METHOD_FIRST_SUNG_TOL_S")
+    lo = apex - tol
+    hi = m["erm_window_s"][1]
+    import words_fit as _WF          # lazy: the measured rates, as line 1818
+    rate = _WF.rates_for(style_id)["spoken"]
+    words, lead_in, has_voice = 0, False, False
+    for s in sheet:
+        d = s.get("delivery")
+        if d in ("sung", "rap"):
+            has_voice = True
+            break
+        if d is None or is_no_voice_tag(s.get("tag", "")):
+            lead_in = True
+            continue
+        if d == "spoken":
+            words += sheet_words([s])
+    if not has_voice:
+        return []
+    planned = words / float(rate)
+    if planned < lo - 1e-9:
+        if lead_in:
+            note = ("PRE_ERM_LEAD_IN_UNPLANNED: the sheet opens with a no-voice "
+                    "lead-in, so the %.1f s of spoken lead-in is not a guarantee "
+                    "that the first sung line lands at or after %.2f s (ERM apex "
+                    "%.2f s)" % (planned, lo, apex))
+            if isinstance(warnings_out, list):
+                warnings_out.append(note)
+            return []
+        need = int(math.ceil(lo * rate - 1e-9))
+        return ["PRE_ERM_SPOKEN_SHORT: the spoken lead-in is %.1f s (%.0f words), "
+                "but the first sung line may not start before %.2f s (ERM apex "
+                "%.2f s - %.1f s); add at least %d spoken words of backstory "
+                "under a spoken [Backstory] tag, or pick a longer card"
+                % (planned, words, lo, apex, tol, need)]
+    if planned > hi + 1e-9:
+        most = int(math.floor(hi * rate + 1e-9))
+        return ["PRE_ERM_SPOKEN_LONG: the spoken lead-in is %.1f s, past the ERM "
+                "window's %.2f s; keep it to %d spoken words or fewer"
+                % (planned, hi, most)]
+    return []
+
 def check_lyric_sheet(sheet, client_text, length_s=None, spoken_share_pct=None,
                       style_id=None, hook_plan=None, policy=None,
-                      warnings_out=None):
+                      warnings_out=None, method=False):
     """Rules 1-3 on the sheet. Returns a list of errors (empty = pass).
 
     S75-W05-U3: the sheet is judged against THE one constraint policy
@@ -1108,6 +1179,8 @@ def check_lyric_sheet(sheet, client_text, length_s=None, spoken_share_pct=None,
         if intro and sheet_words(intro) > p["words"]["opener_max"]:
             errs.append("spoken intro is %d words, max %d at this length"
                         % (sheet_words(intro), p["words"]["opener_max"]))
+        if method:
+            errs += check_pre_erm_opening(sheet, length_s, style_id, warnings_out)
     return errs
 
 
@@ -1222,6 +1295,28 @@ def _too_long_note(text, carried=None):
                carried or ("the delivery map, the band wording, the one clean ending, "
                            "the hook-placement clause and the approved pace clause")))
 
+def _method_style_block(block, pace_plan):
+    """S75: a METHOD style's spoken/band sentence is the ONE approved wording.
+
+    The style data's shared part says the intro and outro are the only spoken
+    sections, which is false on a method run: the backstory is spoken inside
+    the music before the ERM. The part that names ``spoken`` AND ``band keeps
+    playing`` is replaced with ``METHOD_SPOKEN_CLAUSE`` so the band is stated
+    to keep playing under the narration and "no singing yet" survives. Returns
+    the block UNCHANGED (same object, never a copy of a copy) for every
+    non-method run, and NEVER mutates the cached ``music_block``.
+    """
+    if not (isinstance(pace_plan, dict) and pace_plan.get("method")):
+        return block
+    parts = []
+    for part in block.get("style_parts") or []:
+        low = str(part).lower()
+        if "spoken" in low and "band keeps playing" in low:
+            parts.append(METHOD_SPOKEN_CLAUSE)
+        else:
+            parts.append(part)
+    return dict(block, style_parts=parts)
+
 def compose_style_block(block, sheet=None, vocal_gender="f", pace_plan=None,
                         style_id=None, deliveries=None):
     """THE one style-text composer, for any style data block.
@@ -1234,6 +1329,7 @@ def compose_style_block(block, sheet=None, vocal_gender="f", pace_plan=None,
 
     ``deliveries`` is the block's own delivery set when the sheet names none.
     """
+    block = _method_style_block(block, pace_plan)
     word = vocal_gender_word(vocal_gender)
     parts = [_gender_variant(str(p).rstrip("."), word).rstrip(".") + "."
              for p in block["style_parts"]]
@@ -1277,8 +1373,12 @@ def style_text(style_id, sheet=None, vocal_gender="f", pace_plan=None):
         sid = _style_key(style_id)
         return compose_style_block(music_block(sid), sheet, vocal_gender,
                                    pace_plan, sid)
-    text = "%s. Only the short intro and the final outro are spoken; %s." % (
-        _MS.style_prompt(style_id).rstrip(".,"), BAND_WORDING)
+    if (pace_plan or {}).get("method"):
+        text = "%s. %s" % (_MS.style_prompt(style_id).rstrip(".,"),
+                           METHOD_SPOKEN_CLAUSE)
+    else:
+        text = "%s. Only the short intro and the final outro are spoken; %s." % (
+            _MS.style_prompt(style_id).rstrip(".,"), BAND_WORDING)
     pace = pace_clause(pace_plan)
     if pace:
         text = "%s %s" % (text.rstrip(), pace)
@@ -1346,7 +1446,7 @@ def brief_style_text(style_id, brief_text, sheet=None, vocal_gender=None,
     (a raise, never a truncation).
     """
     sid = _style_key(style_id)
-    block = music_block(sid)
+    block = _method_style_block(music_block(sid), pace_plan)
     parts = [str(p).rstrip(".") for p in (block.get("style_parts") or [])]
     if len(parts) < 2:
         raise RecipeError("NO_STYLE_PARTS", "%r carries no compliance parts" % (style_id,))
@@ -1420,7 +1520,8 @@ def prepare(style_id, sheet, client_text, length_s=None, spoken_share_pct=None,
     pol = policy or constraint_policy(mode="dramatization", duration_s=length_s)
     errs = check_lyric_sheet(sheet, client_text, length_s, spoken_share_pct,
                              style_id=style_id, hook_plan=hook_plan,
-                             policy=pol, warnings_out=warnings)
+                             policy=pol, warnings_out=warnings,
+                             method=bool((pace_plan or {}).get("method")))
     errs += check_no_voice_lines(render_lyrics(sheet, style_id))
     d = delivered_s if delivered_s is not None else length_s
     # FU-HOOK-PLACEMENT rule 1, always on (no length = UNMEASURED: length_s)

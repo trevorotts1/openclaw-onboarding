@@ -57,6 +57,7 @@ import sqlite3
 import subprocess
 import sys
 import tempfile
+import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
@@ -368,7 +369,8 @@ def lipsync_picture_refusal(model, request):
     upload of those exact bytes (picture_gate.upload_measured).
     -> None (not lip-sync, or all bound) else the refusal text. Fail-closed:
     a missing path, receipt, binding, or an unimportable gate is a refusal."""
-    if not any(c in str(model or "").lower() for c in ("ai-avatar", "infinitalk")):
+    if not any(c in str(model or "").lower()
+               for c in ("ai-avatar", "infinitalk", "omnihuman")):
         return None
     req = request if isinstance(request, dict) else {}
     try:
@@ -376,8 +378,31 @@ def lipsync_picture_refusal(model, request):
         if lg not in sys.path:
             sys.path.insert(0, lg)
         import picture_gate as _PG
-        _PG.require_receipt(req.get("lipsync_image_path"),
-                            req.get("lipsync_receipt_dir"))
+        rec = _PG.require_receipt(req.get("lipsync_image_path"),
+                                  req.get("lipsync_receipt_dir"))
+        # R-5 / G-FACE-01: a FAIL still never dispatches. require_receipt
+        # already refuses any verdict but PASS / ACCEPT_WITH_FLAG; there is
+        # no measure-and-proceed path here, and the numbers are re-read so a
+        # receipt that changed after the gate cannot slip through. A lead
+        # take needs exactly 1 face (a choir-row take may show 2, S-8/N-07)
+        # and the lead face at least 25 percent of the frame height.
+        nums = (rec or {}).get("numbers") or {}
+        _shot = req.get("shot") if isinstance(req.get("shot"), dict) else {}
+        _choir = bool(_shot.get("choir_row") or req.get("choir_row")
+                      or req.get("take_kind") == "choir")
+        _allowed = (1, 2) if _choir else (1,)
+        _fc = nums.get("face_count")
+        if _fc not in _allowed:
+            return ("LIPSYNC_PICTURE_NOT_GATED: the source picture's face "
+                    "count is %r; %s" % (
+                        _fc, "a choir-row take may show 1 or 2 large faces"
+                        if _choir else "a lead take needs exactly 1 face"))
+        _fh = nums.get("face_h_pct")
+        if isinstance(_fh, (int, float)) and not isinstance(_fh, bool) \
+                and float(_fh) < 25.0:
+            return ("LIPSYNC_PICTURE_NOT_GATED: the lead face is %.1f%% of the "
+                    "frame height; under 25%% never feeds an avatar source "
+                    "picture." % float(_fh))
         inp = req.get("input") if isinstance(req.get("input"), dict) else {}
         _PG.require_upload_bound(req["lipsync_image_path"], inp.get("image_url"),
                                  req.get("lipsync_receipt_dir"))
@@ -809,6 +834,24 @@ def _wait_budget_s(request, model, adapter=None):
     return _WAIT_S[_modality(model, adapter)]
 
 
+def _poll_interval_s(elapsed_s):
+    """F-SPD-2 tiered poll cadence: 2 s early, 5 s, then 10 s.
+
+    Numbers live in scripts/core/speed (references/speed-limits.json). An
+    import failure falls back to the plan's own tiers - never a busy loop.
+    """
+    try:
+        import sys as _sys
+        _core = str(Path(__file__).resolve().parents[1])
+        if _core not in _sys.path:
+            _sys.path.insert(0, _core)
+        from speed import poll as _poll
+        return float(_poll.tier_for(elapsed_s))
+    except Exception:                                       # noqa: BLE001
+        e = float(elapsed_s or 0)
+        return 2.0 if e < 30 else (5.0 if e < 300 else 10.0)
+
+
 def _record_stage_evidence(db, run_id, logical_key, attempt_id, stage,
                            status="fail", task_id="", error=None,
                            adapter_state="", extra=None):
@@ -912,11 +955,222 @@ def submit_all_ready(jobs, max_concurrency=None, *, ledger=None,
 
     # The pass takes every ready job in one go; when a cap binds, the receipt
     # names it and max_at_once records the cap, not the ready count.
+    # Lock 5 (NEVER-AGAIN blast rule): a capped pass is the ONE blast; a
+    # caller splitting ready jobs across passes gets RETAKE_DRIP.
     return _receipt(excluded=excluded, submitted=ok_count,
                     max_at_once=(cap if cap is not None else len(ready)),
                     capped_by=cap,
                     envelopes=envelopes, errors=errors,
                     submission_errors=sub_errs)
+
+def submit_burst(jobs, *, spend=None, estimate=None, balance=None,
+                 ready_count=None, submitted_batches=1, ledger=None,
+                 runner=None, timeout=300, picture_gate_passed=None,
+                 max_concurrency=None):
+    """F-SPD-1: the production run path for a burst. Never a drip.
+
+    One call sends every ready job at once, slowest route first (N-97),
+    paced at 20 per 15 s by the governor (N-79). The spend guard runs
+    BEFORE the pass (N-87): a stop sends nothing and returns the one line.
+    A caller that already sent part of these ready jobs (submitted_batches
+    > 1) is refused STAGGERED_SEND (N-79). No H3 or lip-sync job is sent
+    until the picture gate has passed (N-83): picture_gate_passed=False
+    refuses SPEED_GATE_SKIPPED before any job leaves; None is a caller that
+    has no picture stage at all (a picture-only burst). Returns the
+    submit_all_ready receipt, plus 'refusal' when the burst never left and
+    'resubmit' with the failed jobs to send again at once (N-88).
+    """
+    import never_again as _na
+    import sys as _sys
+    _core = str(Path(__file__).resolve().parents[1])
+    if _core not in _sys.path:
+        _sys.path.insert(0, _core)
+    try:
+        from speed import pacer as _pacer
+        from speed import spend as _spend
+        from speed import chain as _chain
+        from speed import burst as _burst
+    except Exception:                                       # noqa: BLE001
+        _pacer = _spend = _chain = _burst = None
+    ready = list(jobs or [])
+    rc = len(ready) if ready_count is None else int(ready_count)
+    # N-83: the video burst waits for the picture gate. A clip row sent
+    # before the gate passed would be bought against pictures nobody checked.
+    if picture_gate_passed is False:
+        return {"submitted": 0,
+                "refusal": {"ok": False, "code": _na.SPEED_GATE_SKIPPED,
+                            "detail": "no H3 or lip-sync job is sent until the "
+                                      "picture gate has passed; a shot whose "
+                                      "picture failed its remake round joins "
+                                      "the clip remake burst"},
+                "envelopes": [],
+                "excluded": [{"logical_key": j.get("logical_key")
+                              if isinstance(j, dict) else None,
+                              "reason": _na.SPEED_GATE_SKIPPED}
+                             for j in ready]}
+    # F-SPD-3 (S01 rules 1 and 5): a chain child submits within 60 s of its
+    # parent landing. A late one refuses CHAIN_CHILD_LATE at the burst, never
+    # silently waits for the next stage.
+    if _chain is not None:
+        for j in ready:
+            if not isinstance(j, dict) or "parent_landed_at" not in j:
+                continue
+            hit = _chain.child_late_refusal(
+                j.get("logical_key"), j.get("parent_landed_at"),
+                j.get("submitted_at"))
+            if hit is not None:
+                return {"submitted": 0, "refusal": hit, "envelopes": [],
+                        "excluded": [{"logical_key": j.get("logical_key"),
+                                      "reason": _na.CHAIN_CHILD_LATE}]}
+    if _pacer is not None:
+        refusal = _pacer.stagger_refusal(rc, submitted_batches)
+        if refusal is not None:
+            return {"submitted": 0, "refusal": refusal, "envelopes": [],
+                    "excluded": [{"logical_key": j.get("logical_key"),
+                                  "reason": _na.STAGGERED_SEND}
+                                 for j in ready if isinstance(j, dict)]}
+        ordered = _pacer.order_slowest_first(ready)
+    else:
+        ordered = ready
+    if _spend is not None and spend is not None and estimate is not None:
+        ok, code, line = _spend.check_burst(spend, estimate, balance)
+        if not ok:
+            return {"submitted": 0,
+                    "refusal": {"ok": False, "code": code, "detail": line},
+                    "envelopes": [],
+                    "excluded": [{"logical_key": j.get("logical_key"),
+                                  "reason": code}
+                                 for j in ordered if isinstance(j, dict)]}
+    # N-92: every uploaded link is checked the moment before a burst. A link
+    # not on KIE's own upload service refuses UPLOAD_NOT_KIE; one past the
+    # 23-hour window refuses UPLOAD_LINK_STALE and must be uploaded again.
+    try:
+        from speed import read as _read
+    except Exception:                                       # noqa: BLE001
+        _read = None
+    if _read is not None:
+        _times = {}
+        for _j in ordered:
+            if isinstance(_j, dict) and isinstance(_j.get("upload_times"), dict):
+                _times.update(_j["upload_times"])
+        _link_hit = _read.preburst_link_refusal(ordered, now_epoch=time.time(),
+                                                upload_times=_times)
+        if _link_hit is not None:
+            return {"submitted": 0, "refusal": _link_hit, "envelopes": [],
+                    "excluded": [{"logical_key": _link_hit.get("logical_key"),
+                                  "reason": _link_hit.get("code")}]}
+    receipt = submit_all_ready(ordered, max_concurrency=max_concurrency,
+                               ledger=ledger, runner=runner, timeout=timeout)
+    receipt["paced_per_window"] = _pacer.max_at_once() if _pacer else 20
+    # N-88: a failed/refused job costs 0 and comes back fast. Put the jobs to
+    # send again at once in the receipt (same stage, up to twice); the run
+    # loop resubmits them the moment this burst returns, never one by one.
+    if _burst is not None and isinstance(receipt, dict):
+        _errs = receipt.get("submission_errors") or []
+        _failed_keys = {e.get("logical_key") for e in _errs
+                        if isinstance(e, dict)}
+        _failed = [j for j in ordered if isinstance(j, dict)
+                   and j.get("logical_key") in _failed_keys]
+        if _failed:
+            _again, _tries = _burst.resubmit_failed(_failed)
+            if _again:
+                receipt["resubmit"] = _again
+                receipt["resubmit_tries"] = _tries
+    return receipt
+
+
+def outlier_resend_due(job, now_epoch):
+    """N-80: True when a job passed twice its model's 9-in-10 time.
+
+    The job carries the epoch it was submitted (stamped by F-SPD-7) and its
+    kind; twice the model's nine-in-ten time is the re-send point. A caller
+    re-sends ONCE under a new ledger key and the first to land wins. Unreadable
+    times are not due - the run loop keeps its last plan, never re-sends blind.
+    """
+    try:
+        from speed import burst as _burst
+    except Exception:                                       # noqa: BLE001
+        return False
+    if not isinstance(job, dict):
+        return False
+    submitted = (job.get("submitted_epoch")
+                 if job.get("submitted_epoch") is not None
+                 else job.get("submitted_at_epoch"))
+    try:
+        elapsed = float(now_epoch) - float(submitted)
+    except (TypeError, ValueError):
+        return False
+    if elapsed < 0:
+        return False
+    kind = job.get("job_kind") or job.get("kind") or "picture"
+    return bool(_burst.outlier_resend_due(
+        elapsed, kind, stamped_limit_s=job.get("stamped_limit_s")))
+
+
+def due_status_reads(jobs, now_epoch):
+    """N-92: the jobs whose status is due now, soonest expected finish first.
+
+    Read a job by its expected finish, never before its floor (a picture not
+    before 40 s, a nine-picture job not before 240 s). Returns the ordered due
+    subset; a job with no expected finish is left for the floor rule, never
+    read blindly.
+    """
+    try:
+        from speed import read as _read
+    except Exception:                                       # noqa: BLE001
+        return []
+    return _read.read_order(jobs, now_epoch)
+
+
+def clip_seconds_for_shot(shot_seconds, camera_move=False):
+    """N-92 / rule H8: ask for the shot plus 1 s; a camera move needs more."""
+    try:
+        from speed import read as _read
+    except Exception:                                       # noqa: BLE001
+        return None
+    return _read.clip_seconds_for(shot_seconds, camera_move=camera_move)
+
+
+def head_start_jobs(jobs, owner_choice):
+    """N-97: the slow-route jobs to send early, or [] when not pre-authorized.
+
+    Only a run whose owner chose "go ahead if every check passes" may send its
+    nine-picture / long-take jobs with the keyframe burst; every other job
+    waits for the one video burst after the picture gate (N-83).
+    """
+    try:
+        from speed import speed as _S
+    except Exception:                                       # noqa: BLE001
+        return []
+    return _S.head_start_jobs(jobs, owner_choice)
+
+
+def check_blast_single_pass(ready_count, submitted_batches):
+    """Lock 5 entry point: refuse drip submits across passes."""
+    import never_again as _na
+    return _na.check_blast(ready_count, submitted_batches)
+
+def refuse_drip(ready_count, submitted_batches):
+    """Lock 5 receipt-shaped refusal for drip submits."""
+    import never_again as _na
+    lock = _na.check_blast(ready_count, submitted_batches)
+    if lock is None:
+        return None
+    return _receipt(outcome="rejected", reason=lock["detail"])
+
+def check_blast_single_pass(ready_count, submitted_batches):
+    """Lock 5 entry point: refuse drip submits across passes."""
+    import never_again as _na
+    return _na.check_blast(ready_count, submitted_batches)
+
+
+def refuse_drip(ready_count, submitted_batches):
+    """Lock 5 receipt-shaped refusal for drip submits."""
+    import never_again as _na
+    lock = _na.check_blast(ready_count, submitted_batches)
+    if lock is None:
+        return None
+    return _receipt(outcome="rejected", reason=lock["detail"])
 
 
 def _receipt(excluded=None, submitted=0, max_at_once=0, capped_by=None,
@@ -1099,9 +1353,18 @@ def make_runner(timeout=300, *, process_context=None):
                 args, current_request, process_context["request_digest"],
                 process_context["arguments"].get("save_dir") or ".")
         def once():
+            # F-SPD-2: the tiered first read goes through the Skill 74 hint
+            # the adapter already reads (poll0 = KIE_LIVE_POLL_INITIAL); the
+            # `wait` command has no --initial flag. A hint that cannot be
+            # read leaves the adapter's own default and never stops a call.
+            env = dict(os.environ, PYTHONDONTWRITEBYTECODE="1")
+            try:
+                env.setdefault("KIE_LIVE_POLL_INITIAL", str(_poll_interval_s(0.0)))
+            except Exception:                              # noqa: BLE001
+                pass
             r = subprocess.run([sys.executable] + list(args),
                                capture_output=True, text=True, timeout=timeout,
-                               env=dict(os.environ, PYTHONDONTWRITEBYTECODE="1"))
+                               env=env)
             return r.returncode, r.stdout
         # Load governor: only NEW generation requests (submit) draw from the
         # 20-per-10-s bucket; health/preflight/wait/save use the gentle poll
@@ -1473,6 +1736,43 @@ def _frame_still(root, approved, shot_id):
         raise ProviderFrameBindingError("PROVIDER_FRAME_STILL_MISSING", "The approved still must be a readable file in this run.")
     return path
 
+# F-QM-7: a paid job's picture links come from KIE's own upload service, and a
+# link older than 23 hours is uploaded again before it is used. The host list
+# and the URL splitter live in kie_dispatch/upload_hosts.py: this module must
+# not carry a KIE host literal (F14 static check) nor a URL-parser import of its
+# own (test_kie_dispatch.py's "no private KIE client" check).
+from kie_dispatch.upload_hosts import is_kie_upload as _is_kie_upload
+from kie_dispatch.upload_hosts import host_of as _upload_host_of
+
+UPLOAD_FRESHNESS_S = 23 * 3600
+
+def _upload_host_is_kie(url):
+    """True only for a link on KIE's own upload service (F-QM-7)."""
+    return _is_kie_upload(url)
+
+def _fresh_frame_upload(root, sha, now=None):
+    """A frame-upload receipt of these exact bytes younger than 23 hours, or
+    None. Only the production path reuses one; an injected offline upload never
+    counts as a live link (F-QM-7, section 3C.2)."""
+    now = time.time() if now is None else now
+    try:
+        candidates = sorted((root / "control" / "frame-uploads").glob(
+            "*/%s.upload.json" % sha))
+    except OSError:
+        return None
+    for p in candidates:
+        try:
+            rec = json.loads(p.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        at = rec.get("uploaded_at")
+        if (isinstance(at, (int, float)) and not isinstance(at, bool)
+                and 0 <= now - at < UPLOAD_FRESHNESS_S
+                and isinstance(rec.get("url"), str)):
+            return rec
+    return None
+
+
 
 def upload_storyboard_frame(run_dir, shot_id, *, stage="video-generation", run_id=None,
                             uploader=None, adapter_path=None):
@@ -1500,16 +1800,34 @@ def upload_storyboard_frame(run_dir, shot_id, *, stage="video-generation", run_i
         raise ProviderFrameBindingError("PROVIDER_FRAME_SHOT_MISMATCH", "The upload shot is not in the current approved storyboard.")
     source = _frame_still(root, approved, shot_id)
     sha = PG.sha256_file(str(source))
-    with tempfile.TemporaryDirectory(prefix="frame-upload-", dir=root) as temp:
-        copied = Path(temp) / source.name
-        shutil.copyfile(source, copied)
-        if PG.sha256_file(str(copied)) != sha:
-            raise ProviderFrameBindingError("PROVIDER_FRAME_CHANGED_DURING_UPLOAD", "The still changed before upload.")
-        url = (uploader or PG.adapter_uploader(adapter_path=adapter_path))(str(copied))
-        if PG.sha256_file(str(copied)) != sha or PG.sha256_file(str(source)) != sha:
-            raise ProviderFrameBindingError("PROVIDER_FRAME_CHANGED_DURING_UPLOAD", "The uploader or source changed the approved frame bytes.")
+    # F-QM-7: a production link of these exact bytes younger than 23 hours is
+    # reused, not uploaded twice; anything older (or an offline receipt) is
+    # uploaded again now and stamped with the epoch it was made.
+    reused = None if uploader is not None else _fresh_frame_upload(root, sha)
+    if reused is not None:
+        url, uploaded_at = reused["url"], float(reused["uploaded_at"])
+    else:
+        with tempfile.TemporaryDirectory(prefix="frame-upload-", dir=root) as temp:
+            copied = Path(temp) / source.name
+            shutil.copyfile(source, copied)
+            if PG.sha256_file(str(copied)) != sha:
+                raise ProviderFrameBindingError("PROVIDER_FRAME_CHANGED_DURING_UPLOAD", "The still changed before upload.")
+            url = (uploader or PG.adapter_uploader(adapter_path=adapter_path))(str(copied))
+            uploaded_at = time.time()
+            if PG.sha256_file(str(copied)) != sha or PG.sha256_file(str(source)) != sha:
+                raise ProviderFrameBindingError("PROVIDER_FRAME_CHANGED_DURING_UPLOAD", "The uploader or source changed the approved frame bytes.")
     if not validate_upload_url(url):
         raise ProviderFrameBindingError("PROVIDER_FRAME_UPLOAD_UNVERIFIED", "The upload returned no HTTPS image URL.")
+    if uploader is None and not _upload_host_is_kie(url):
+        # A production picture link that is not KIE's own upload service is
+        # refused: a foreign host can change or drop the bytes between upload
+        # and the paid job (F-QM-7). An injected offline uploader is exempt
+        # because it never authorizes a paid dispatch.
+        raise ProviderFrameBindingError(
+            "UPLOAD_NOT_KIE",
+            "The frame link is not on KIE's own upload service (%s); upload "
+            "the approved still through skill 74 and resubmit."
+            % (_upload_host_of(url) or url))
     current = admit_production(root, stage, run_id=authority["run_id"])
     if not current.get("ok") or (current.get("approved_storyboard", {}).get("revisions") or {}).get(shot_id) != revision:
         raise ProviderFrameBindingError("PROVIDER_FRAME_APPROVAL_STALE", "The storyboard approval changed during upload.")
@@ -1517,7 +1835,8 @@ def upload_storyboard_frame(run_dir, shot_id, *, stage="video-generation", run_i
               "execution_mode": "offline" if uploader is not None else "production",
               "production_upload": uploader is None,
               "shot_id": shot_id, "storyboard_revision": revision, "source_path": str(source),
-              "sha256": sha, "url": url}
+              "sha256": sha, "url": url, "uploaded_at": uploaded_at,
+              "reused": reused is not None}
     key = hashlib.sha256(json.dumps(record, sort_keys=True).encode()).hexdigest()
     directory = (root / "control" / "frame-uploads" / key).resolve()
     if not directory.is_relative_to(root):
@@ -1746,12 +2065,25 @@ def _dispatch_pipeline(*, model, request, save_dir, ledger_db, run_id, logical_k
     Turbo 2,500; Kling 3.0 / 3.0 Omni 3,072; the locked avatar 2,500). An
     over-cap field refuses PROMPT_OVER_CAP with field, chars, cap, source and
     status; nothing is reserved, nothing is sent, nothing is truncated.
+
+    F-KLING-TEXT-BAIT: a Kling prompt carrying text/signage/decor-bait
+    refuses TEXT_BAIT through never_again.check_kling_prompt_text, before
+    any ledger row or spend.
+
+    F-MODEL-AUTH (Lock 10), read through N-12 (section 2 row S-3): a video row
+    whose model is neither the run's locked model nor its recorded card
+    choice refuses MODEL_UNAUTHORIZED at block 0, before any ledger row or
+    spend. The lip-sync model is fixed separately (S-42). No override except
+    a written order binding model + shot.
     """
-    # ---- 0. FU-U7 prompt caps (final payload, before any spend) -----------
-    # The request IS the final payload here: every upstream mutation
-    # (kling_prompt, the clean-ending append, a retake rewrite) has already
-    # happened before dispatch is called. Nothing below may spend until the
-    # caps pass; the refusal and the ok receipt both carry the cap and status.
+    # ---- 0. FU-U7 prompt caps (final payload, before ANY other gate) ------
+    # This block runs first on purpose: its refusal must never be masked by a
+    # model gate (a 2,501-char avatar prompt is PROMPT_OVER_CAP, never the
+    # picture gate or MODEL_UNAUTHORIZED). The request IS the final payload
+    # here: every upstream mutation (kling_prompt, the clean-ending append, a
+    # retake rewrite) has already happened before dispatch is called. Nothing
+    # below may spend until the caps pass; the refusal and the ok receipt both
+    # carry the cap and status.
     cap_refusal, prompt_caps = prompt_cap_rows(model, request)
     if cap_refusal is not None:
         return envelope("dispatch", "rejected", cap_refusal["reason_code"],
@@ -1759,6 +2091,152 @@ def _dispatch_pipeline(*, model, request, save_dir, ledger_db, run_id, logical_k
                         run_id=run_id, logical_key=logical_key,
                         attempt_id=attempt_id,
                         evidence=cap_refusal["evidence"])
+    # ---- 0. F-MODEL-AUTH + N-12 (no unauthorized video model spends) ------
+    # Trevor order 2026-11-21 (lock 10), amended by N-12 / S-42 (November 23):
+    # the run owner's recorded choice IS the authorization for the story-clip
+    # model and the picture provider; the lip-sync model is not a choice at
+    # all - it is omnihuman-2-0 on every run, no alternative, no backup.
+    # VIDEO rows only (video_job=True, the locked lip-sync id, or _modality ==
+    # "video"); music/image/TTS keep their own gates. A run that recorded a
+    # choice refuses any other model (N-12); a run that recorded none is
+    # authorized by its F14 locked model. ONLY override for an off-list model:
+    # request["model_auth_order"] = written order binding model + shot
+    # ({"signed_by": "Trevor", "signature", "model", "shot_id"}).
+    import never_again as _NA_AUTH
+    _rq = request if isinstance(request, dict) else {}
+    _rq_shot = _rq.get("shot") if isinstance(_rq.get("shot"), dict) else {}
+    _is_lip_row = bool(
+        _rq.get("lip_sync") is True or _rq.get("lipsync") is True
+        or _rq_shot.get("lip_sync") is True or ML.is_locked_lipsync(model))
+    if bool(video_job) or ML.is_locked_lipsync(model) \
+            or _modality(model) == "video":
+        _rshot = _rq.get("shot") if isinstance(_rq.get("shot"), dict) else {}
+        _shot_id = _rshot.get("shot_id") or _rq.get("shot_id")
+        _run_choice = _rq.get("run_choice") or _rq.get("video_model_choice")
+        # N-12: when the request carries the run's card choice, this gate
+        # enforces it. When it does not but the run has an F14 locked model,
+        # that lock IS the run's recorded choice, so the F14 gate below owns
+        # membership + the match and emits its own codes
+        # (VIDEO_MODEL_LOCK_MISSING / VIDEO_MODEL_MISMATCH); this gate must not
+        # pre-empt them with a coarser refusal. With no choice and no lock the
+        # retired fixed list still fails closed (MODEL_UNAUTHORIZED).
+        _locked = None
+        if not _run_choice and state_store:
+            _locked = ML.read_locked_model(state_store, run_id)
+        _auth_hit = None
+        if _is_lip_row or ML.is_locked_lipsync(model):
+            _auth_hit = _NA_AUTH.check_lipsync_model(model)
+        elif _run_choice:
+            _auth_hit = _NA_AUTH.check_model_choice(model, _run_choice)
+        elif not state_store:
+            # No card choice on the request and no run-state store to hold a
+            # lock: nothing recorded this run's model, so fail closed on the
+            # retired fixed list. With a store present the F14 gate owns both
+            # verdicts (VIDEO_MODEL_LOCK_MISSING / VIDEO_MODEL_MISMATCH).
+            _auth_hit = _NA_AUTH.check_model_authorized(model)
+        if _auth_hit is not None and not _NA_AUTH.check_model_order(
+                _rq.get("model_auth_order"), model, _shot_id):
+            return envelope(
+                "dispatch", "rejected", _auth_hit["code"],
+                _auth_hit["detail"] + ". Nothing was reserved and nothing "
+                                      "was sent.",
+                run_id=run_id, logical_key=logical_key, attempt_id=attempt_id,
+                evidence={"generated": False, "gate": "F-MODEL-AUTH",
+                          "requested_model": model})
+    # ---- 0b. Wave-1 pre-spend gates (dispatch_gates.py) --------------------
+    # Route lock (N-32), the clip call (N-42), keyframes from references
+    # (N-41), the style block from the lock (N-34), the expression (N-71),
+    # the two bibles (N-119, N-122) and the picture gate (G-FACE-01, R-5,
+    # N-83). Every gate is inert until its producer writes the record it
+    # reads, so one wave can land the enforcement point safely.
+    try:
+        from kie_dispatch import dispatch_gates as _DG
+    except ImportError:                     # imported as a top-level module
+        import dispatch_gates as _DG        # type: ignore
+    for _gate in (_DG.route_lock_refusal(model, _rq),                  _DG.keyframe_refusal(model, _rq),
+                  _DG.wrong_call_refusal(model, _rq),
+                  _DG.style_lock_refusal(model, _rq),
+                  _DG.expression_refusal(model, _rq),
+                  _DG.bible_guard_refusal(model, _rq),
+                  _DG.lipsync_refusal(model, _rq),
+                  _DG.picture_gate_refusal(model, _rq)):
+        if _gate is not None:
+            return envelope(
+                "dispatch", "rejected", _gate["code"],
+                _gate["detail"] + " Nothing was reserved and nothing was "
+                                  "sent.",
+                run_id=run_id, logical_key=logical_key, attempt_id=attempt_id,
+                evidence={"generated": False, "gate": "wave-1-pre-spend"})
+    # ---- 0a. F-KLING-TEXT-BAIT (before caps, before any spend) ------------
+    # The FINAL prompt string is measured here: every upstream mutation
+    # (kling_prompt, the ending append, a retake rewrite) already happened.
+    # A letter-bait prompt refuses TEXT_BAIT: never spend on a prompt that
+    # invites provider-burned letters. Runs on every Kling VIDEO row; the
+    # lip-sync row is exempt because OmniHuman 2.0 takes NO prompt at all
+    # (S-42, section 3A.3) and its "no prompt" refusal is LIPSYNC_PROMPT_PRESENT
+    # at the wave-1 gate above. H3 skips this scan (its own template owns
+    # print strands).
+    try:
+        import never_again as _NA
+    except ImportError:
+        _NA = None
+    _is_kling_row = bool(
+        isinstance(model, str)
+        and (model.startswith("kling-") or "kling/" in model)
+        and not ML.is_locked_lipsync(model))
+    if _NA is not None and _is_kling_row:
+        _bait_prompt = prompt if isinstance(prompt, str) and prompt else None
+        if _bait_prompt is None:
+            _inp = (request or {}).get("input") \
+                if isinstance(request, dict) else None
+            _bait_prompt = (_inp or {}).get("prompt") \
+                if isinstance(_inp, dict) else None
+        if _bait_prompt is None and isinstance(prompt, str):
+            _bait_prompt = prompt
+        _bait = _NA.check_kling_prompt_text(_bait_prompt)
+        if _bait is not None:
+            return envelope(
+                "dispatch", "rejected", _bait["code"],
+                _bait["detail"] + " Nothing was reserved and nothing was "
+                                  "sent.",
+                run_id=run_id, logical_key=logical_key,
+                attempt_id=attempt_id,
+                evidence={"generated": False,
+                          "gate": "F-KLING-TEXT-BAIT"})
+    # Lock 8 (F-KLING-ROUTE, Trevor order 2026-11-21): Kling dispatch
+    # rides ONLY lip_sync:true shots (talking or singing). Refused here,
+    # before any ledger row or spend, next to NO_DIRECT_SUBMIT.
+    try:
+        from kie_dispatch.model_lock import is_locked_lipsync as _is_kling
+    except ImportError:
+        try:
+            from model_lock import is_locked_lipsync as _is_kling  # type: ignore
+        except ImportError:
+            _is_kling = None
+    if _is_kling is not None and _is_kling(model):
+        _shot = (request or {}).get("shot") if isinstance(request, dict) else None
+        _lip = None
+        if isinstance(_shot, dict):
+            _lip = _shot.get("lip_sync")
+            if _lip is None:
+                _lip = _shot.get("lip_sync_line_ids")
+        if isinstance(request, dict) and _lip is None:
+            _lip = request.get("lip_sync")
+            if _lip is None:
+                _lip = request.get("lip_sync_line_ids")
+        if _lip is None and isinstance(request, dict) \
+                and isinstance(request.get("lipsync_binding"), dict):
+            _lip = request["lipsync_binding"].get("lip_sync_line_ids")
+        if not _lip:
+            import never_again as _na
+            return envelope(
+                "dispatch", "rejected", _na.ROUTE_CHANGED,
+                "Kling allowed ONLY on lip_sync:true shots (talking or "
+                "singing); this shot is not lip-sync -- re-plan as an H3 "
+                "remake. Nothing was reserved and nothing was sent.",
+                run_id=run_id, logical_key=logical_key, attempt_id=attempt_id,
+                evidence={"generated": False})
+    # FU-U7 prompt caps already ran at block 0 (first gate, before any spend).
 
     # Bind lip-sync generation to the CURRENT approved shot before any spend.
     # This uses the storyboard's existing approval; it creates no new approval.
@@ -2307,8 +2785,20 @@ def _dispatch_pipeline(*, model, request, save_dir, ledger_db, run_id, logical_k
                  + list(RUN_PENDING)})
 
         # (2) wait (async only; sync submit already answered) ---------------
+        # F-SPD-2: the first read is tiered (2 s early), set once on the
+        # runner's env as KIE_LIVE_POLL_INITIAL (make_runner); `wait` takes
+        # --task-id/--timeout only. Every job's wait runs in its own thread,
+        # so a burst's checks overlap instead of queueing behind one another.
         src = s
         if s_state in RUN_PENDING:
+            # F-SPD-7: the first status read is stamped once, so the run
+            # loop can compare a job's first poll with its submit time. A
+            # stamp is observability only - it can never fail a paid job.
+            try:
+                L.stamp_speed(ledger_db, run_id, logical_key, attempt_id,
+                              "first_poll_at", owner=owner)
+            except Exception:                           # noqa: BLE001
+                pass
             try:
                 w_rc, wj, w_raw = _call(
                     wait_run, adapter,
@@ -2398,6 +2888,14 @@ def _dispatch_pipeline(*, model, request, save_dir, ledger_db, run_id, logical_k
                                      save_err_block)
         verified = ([o["path"] for o in hold["outputs"]
                      if o["status"] == "OK"] if hold else list(saved_raw))
+        # F-SPD-7: a file that landed is stamped once. A hold with no file
+        # writes nothing, so every saved result carries its downloaded_at.
+        if verified:
+            try:
+                L.stamp_speed(ledger_db, run_id, logical_key, attempt_id,
+                              "downloaded_at", owner=owner)
+            except Exception:                           # noqa: BLE001
+                pass
         if hold:
             warn.append(hold["reason_code"])
 
@@ -2515,7 +3013,52 @@ def main(argv=None):
     up.add_argument("--stage", default="video-generation", choices=("video-generation", "qc-retakes"))
     up.add_argument("--run-id", default=None)
     up.add_argument("--adapter", default=None)
+    bu = d.add_parser(
+        "burst",
+        help="F-SPD-1: submit every ready job in ONE governed burst (a run "
+             "path for submit_burst; never a single send).")
+    bu.add_argument("--jobs", required=True,
+                    help="JSON list (or {'jobs': [...]}) of ready jobs: "
+                         "logical_key, model, request, estimated_cost, inputs.")
+    bu.add_argument("--ledger", default=None,
+                    help="spend_ledger SQLite path; omit for a memory ledger.")
+    bu.add_argument("--estimate", type=int, default=None,
+                    help="This burst's credit estimate; the ceiling is 1.5x.")
+    bu.add_argument("--spend", type=int, default=None,
+                    help="Already spent in this run, same unit as --estimate.")
+    bu.add_argument("--balance", type=int, default=None,
+                    help="Provider balance read at the start of this burst.")
+    bu.add_argument("--state-store", default=None,
+                    help="run state DB so each job's F14 lock can be read.")
+    bu.add_argument("--adapter", default=None)
+    bu.add_argument("--timeout", type=int, default=300)
     a = ap.parse_args(argv)
+
+    if a.cmd == "burst":
+        # F-SPD-1: the run path for a burst. Every ready job goes in one
+        # governed pass through submit_burst (spend guard, drip refusal, the
+        # chain-child check, slowest route first); there is no single-send
+        # path here, so an orchestrator cannot drip through this tool.
+        with open(a.jobs, encoding="utf-8") as f:
+            blob = json.load(f)
+        jobs = blob.get("jobs") if isinstance(blob, dict) else blob
+        if not isinstance(jobs, list):
+            json.dump({"outcome": "rejected", "reason_code": "JOBS_UNREADABLE",
+                       "detail": "the jobs file holds no JSON list"}, sys.stdout, indent=2)
+            sys.stdout.write("\n")
+            return EXIT["rejected"]
+        for j in jobs:
+            if isinstance(j, dict) and a.state_store and "state_store" not in j:
+                j["state_store"] = a.state_store
+            if isinstance(j, dict) and a.adapter and "adapter_path" not in j:
+                j["adapter_path"] = a.adapter
+        out = submit_burst(jobs, spend=a.spend, estimate=a.estimate,
+                           balance=a.balance,
+                           ready_count=len(jobs), ledger=a.ledger or ":memory:",
+                           timeout=a.timeout)
+        json.dump(out, sys.stdout, indent=2, sort_keys=True, default=str)
+        sys.stdout.write("\n")
+        return EXIT["ok"] if out.get("submitted") else EXIT["rejected"]
 
     if a.cmd == "upload-storyboard-frame":
         try:
@@ -2572,6 +3115,107 @@ def main(argv=None):
         sys.stdout.write("\n")
         return EXIT[env["outcome"]]
     return 1
+
+
+# ---------------------------------------------------------------------------
+# U-DISPATCH lane 6: the public send-and-read surface the run path calls.
+# Each name delegates to the shipped implementation (submit_burst above, or the
+# speed/ package), so there is one behaviour and many names, never two paths.
+# Pure: no clock unless `now` is passed, no sleep, no network, no spend.
+# ---------------------------------------------------------------------------
+
+# F-SPD-1: the one name the run path calls. submit_burst is the production
+# burst - picture gate (N-83), one-burst order (N-79/N-97), spend guard (N-87),
+# pre-burst link check (N-92/F-QM-7) and the resubmit list (N-88). There is
+# deliberately no single-job variant, so a caller cannot send a drip.
+submit_batch = submit_burst
+run_batch = submit_burst
+
+
+def poll_interval_s(elapsed_s):
+    """F-SPD-2: seconds before the next status read (2 s, then 5 s, then 10 s)."""
+    return _poll_interval_s(elapsed_s)
+
+
+def overlapped_checks(checks):
+    """F-SPD-2: run the in-wait checks together; results in input order.
+
+    Zero-arg callables; a check that raises becomes that slot's exception, so
+    one broken check hides nothing. Never one after another.
+    """
+    try:
+        from speed import burst as _burst
+    except Exception:                                       # noqa: BLE001
+        return [fn() for fn in list(checks or [])]
+    return _burst.overlapped_checks(checks)
+
+
+def chain_child_gate(parent_landed_at, child_submitted_at):
+    """F-SPD-3: (ok, code); "CHAIN_CHILD_LATE" unless the child is within 60 s.
+
+    A child with no timestamps, or one submitted before its parent landed, is
+    late - fail closed, never silently pass.
+    """
+    try:
+        from speed import speed as _S
+    except Exception:                                       # noqa: BLE001
+        return False, "CHAIN_CHILD_LATE"
+    return _S.chain_child_late(parent_landed_at, child_submitted_at)
+
+
+def refuse_staggered_send(ready_count, batch_sizes):
+    """N-79: receipt refusal when a batch was drip-sent, else None.
+
+    The stricter "no drip at all" check (never_again.check_batch_only) beside
+    Lock 5's check_blast: any pass smaller than the ready count is a drip.
+    A one-job batch with nothing else ready is a normal batch of 1.
+    """
+    import never_again as _na
+    lock = _na.check_batch_only(ready_count, batch_sizes)
+    if lock is None:
+        return None
+    return _receipt(outcome="rejected", reason=lock["detail"])
+
+
+def resubmit_after_failure(failure_code, sends_used, paid_takes_used=0):
+    """N-88: (resubmit_now, next_wait_s).
+
+    A failure retries at once, up to twice. An OmniHuman "overloaded" refusal
+    costs 0 and does not count against the two paid tries: up to 5 sends,
+    30 s apart. Delegates to speed.speed.resubmit_plan.
+    """
+    try:
+        from speed import speed as _S
+    except Exception:                                       # noqa: BLE001
+        return False, None
+    return _S.resubmit_plan(failure_code, sends_used, paid_takes_used)
+
+
+def job_status_due(expected_finish_at, now, job_kind=None):
+    """N-92: read a job's status at its expected finish, never before its floor.
+
+    A picture is not read before 40 s and a nine-picture job not before 240 s.
+    Unreadable times are not due - the caller keeps its last plan rather than
+    reading blindly. Delegates to speed.read.read_is_due.
+    """
+    try:
+        from speed import read as _read
+    except Exception:                                       # noqa: BLE001
+        return False
+    return _read.read_is_due(expected_finish_at, now, job_kind)
+
+
+def upload_link_fresh(created_at_epoch, now_epoch):
+    """F-QM-7: an uploaded link no older than 23 h may be reused, else re-upload.
+
+    The freshness half only; the non-KIE refusal (UPLOAD_NOT_KIE) and the
+    re-upload live in upload_storyboard_frame / the pre-burst link check.
+    """
+    try:
+        from speed import read as _read
+    except Exception:                                       # noqa: BLE001
+        return False
+    return _read.link_is_fresh(created_at_epoch, now_epoch)
 
 
 if __name__ == "__main__":
