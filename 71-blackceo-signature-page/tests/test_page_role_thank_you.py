@@ -235,8 +235,9 @@ class BuilderTests(RunCase):
             self.assertEqual([s["slot_id"] for s in slots], ["TY-IMG-01"], style)
             shapes[style] = (slots[0].get("shape", "rect"), slots[0]["aspect_ratio"],
                              slots[0].get("treatment"))
-        self.assertEqual(shapes, {None: ("rect", "4:3", None), "A": ("rect", "4:3", None),
-                                  "B": ("circle", "1:1", "mask-circle"), "C": ("rect", "4:3", None)})
+        # 1.3.54 (SWB-400): the hero slot is 1:1 for every style, the closed inventory's ratio
+        self.assertEqual(shapes, {None: ("rect", "1:1", None), "A": ("rect", "1:1", None),
+                                  "B": ("circle", "1:1", "mask-circle"), "C": ("rect", "1:1", None)})
 
     def test_builder_refuses_a_landing_manuscript_for_this_page_and_the_reverse(self):
         landing = (ROOT / "tests" / "fixtures" / "copy_examples" / "standard-path-b.md").read_text(

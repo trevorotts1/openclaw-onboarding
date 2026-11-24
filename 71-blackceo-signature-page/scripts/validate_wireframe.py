@@ -1001,6 +1001,13 @@ def main(argv):
                 failures.append(f"image slot {slot_id!r}: plan ratio {plan_ratio:.3f} "
                                 f"does not match inventory ratio {inv_ratio:.3f}")
 
+    # (4b) SWB-400: the plan is the current request's, not an older hand-written one. A TIGHTENING: it adds named
+    # lines (a differing section name, behavior note, slot ratio or slot count, or a plan header whose request
+    # sha is not the request's) and removes none of the checks above or below. A run with no request built for
+    # this stage has nothing to compare against and is judged as before.
+    import section_plan
+    failures.extend(section_plan.staleness_failures(plan, stage, run_dir))
+
     # (5) Annotation traits W1, W2, W5, W6 (Item 15), judged from the
     # plan record plus the width the sheet itself measures.
     measured_width = None

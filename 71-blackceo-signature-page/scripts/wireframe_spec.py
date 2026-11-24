@@ -293,6 +293,26 @@ def _note(stage: str, section: dict, cta: str, role=None, closing: bool = False)
 _cta = page_kinds.cta_label
 
 
+def printed_note(stage: str, section: dict, request: dict, index: int = 1, total: int = 1) -> str:
+    """The behavior note a wireframe slice prints for this section (prompt_block's own resolution): the section's
+    note, else its page type's, else the CTA-driven default. The section plan (scripts/section_plan.py) records
+    exactly this string, and its staleness check compares against it."""
+    role = _role(form_of(request))
+    cta = _cta(section)
+    closing = None
+    kind = request.get("page_kind")
+    if kind:
+        try:
+            label = page_kinds.closing_label(kind, section, request.get("sections"), index, total)
+        except page_kinds.KindError as exc:
+            raise SpecError(str(exc))
+        closing = label if label and not cta else None
+    many = [str(x).strip() for x in section.get("cta_labels") or [] if str(x).strip()]
+    if len(many) > 1:  # prompt_block names these actions "utility actions" or "per card": either way a CTA exists
+        cta = "utility actions" if section.get("cta_layout") == "utility" else "per card"
+    return _note(stage, section, cta, role, bool(closing))
+
+
 def page_type_lines(form: str, section: dict, tag: str) -> list:
     """The page type's own build-spec lines for one section (references/
     wireframe-build-spec.json `page_type_blocks`): the lines every section of

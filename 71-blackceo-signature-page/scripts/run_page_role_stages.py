@@ -24,6 +24,11 @@ any other key refuses, as does an unknown stage or section. The file's sha256 an
 text are recorded in production-request.json (`layout_overrides`) and in the stage executor record,
 and the builder prints them. With no file, nothing changes.
 
+Section plan (SWB-400): after each wireframe stage's request is built, scripts/write_section_plan.py writes that
+stage's <stage>/section-plan.json from the request, the copy manifest, the closed font map and the closed image
+inventory (a preview only checks it; with no closed inventory yet the plan is skipped and said so). The request is
+also kept as production-request-<stage>.json, which is the file the plan's header sha names.
+
 A thank_you run is scanned before its first stage: scripts/no_pitch_scan.py runs Skill 82's
 semantic_scan.py (or --no-pitch-scan SCRIPT) on the manuscript and refuses on any FLAG line
 (AF-71-THANK-YOU-PITCH); a clean scan writes private/receipts/no-pitch-scan.json, which the copy
@@ -40,6 +45,7 @@ import argparse
 import importlib.util
 import json
 import shlex
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -66,6 +72,29 @@ def govern(run_dir, stage, *, provider, allow_paid, preflight):
     except governed_runner.AdmissionRefused as exc:
         print(f"REFUSED: {exc}")
         return False
+
+
+WIREFRAME_STAGES = ("desktop-wireframe", "mobile-tablet")
+
+
+def write_plan(run_dir, stage, request, *, preview) -> bool:
+    """SWB-400: the stage's section-plan.json is written by scripts/write_section_plan.py from the request just
+    built, never by hand. A preview only checks it (nothing in the run is written). The plan reads the closed image
+    inventory, which a run's first wireframe pass does not have yet: then the plan is skipped, said once, and the
+    wireframe validator asks for it later."""
+    if not (Path(run_dir) / "desktop-wireframe" / "image-inventory.json").is_file():
+        print(f"NOTE: {stage}: no desktop-wireframe/image-inventory.json yet, so no section plan was written; "
+              f"run scripts/write_section_plan.py {run_dir} --stage {stage} once the inventory is closed")
+        return True
+    if not preview and Path(request).is_file():  # the plan's header names this exact request: keep it per stage
+        shutil.copyfile(request, Path(run_dir) / f"production-request-{stage}.json")
+    cmd = [sys.executable, str(HERE / "write_section_plan.py"), str(run_dir), "--stage", stage]
+    if preview:
+        cmd.append("--check-only")
+    if subprocess.run(cmd).returncode:
+        print(f"FAIL: stage {stage} stopped at write_section_plan.py")
+        return False
+    return True
 
 
 def resolve_model(provider: str) -> str:
@@ -150,6 +179,8 @@ def main(argv=None) -> int:
             run.append("--preflight")
         if subprocess.run(build).returncode:
             print(f"FAIL: {spec['page_label']} stage {stage} stopped at {Path(build[1]).name}")
+            return 1
+        if stage in WIREFRAME_STAGES and not write_plan(run_dir, stage, request, preview=a.preflight):
             return 1
         if not govern(run_dir, stage, provider=a.provider, allow_paid=a.allow_paid,
                       preflight=a.preflight):

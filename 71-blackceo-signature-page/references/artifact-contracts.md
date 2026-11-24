@@ -817,6 +817,13 @@ their shape, a full-width tint for a light field) and prints the slot's pixel
 size, ratio and treatment (trait W3); the mockup keeps each slot's declared
 treatment (rule M5).
 
+Who writes it (1.3.54): `scripts/write_section_plan.py <run_dir> --stage desktop-wireframe|mobile-tablet`, from the
+stage's `production-request.json`, `copy/copy-manifest.json`, `font-action-plan/font-map.json` and the closed
+`desktop-wireframe/image-inventory.json`, never by hand. It validates the plan with the wireframe validator's own
+checks, replaces the file atomically and records the request's sha256 in the first section's `plan_header`
+(`{written_by, stage, request_sha256}`). `scripts/validate_wireframe.py` fails a plan whose section names, behavior
+notes, slot ratios or slot count differ from the stage's request, or whose `plan_header` sha is not the request's.
+
 `header_strip` is carried on the first section only (it heads the
 stitched sheet, on its first slice). The annotation fields
 (`section_number`, `section_name`, `type_specs`, `behavior_notes`,

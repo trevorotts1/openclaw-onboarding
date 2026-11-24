@@ -25,6 +25,13 @@
         "ordered_by": "Trevor (operator and owner), 2026-11-24, unit SWB-400",
         "client_approval": "CLIENT-APPROVAL-2026-11-23",
         "basis": "A new dated decision under the rule above, not a change to the ratified five-section sequence. Section 2's heading is the section heading of the closed export (copy/public-copy.md, `## What you purchased`): the request builder puts it first in the section's verbatim copy (`copy_heading`), its lines carry the roles H2, Body, Body (`line_roles`), so the sheet prints one H2 heading and no subhead, and the section's colour paragraph (`wireframe_colour`) spends no accent fill. The grey name tab of the sheet grammar still reads the section name, ORDER SUMMARY, and nowhere else do those words print."
+      },
+      {
+        "decision": "hero_slot_ratio_is_the_closed_inventory_ratio",
+        "date": "2026-11-24",
+        "ordered_by": "Trevor (operator and owner), 2026-11-24, unit SWB-400",
+        "client_approval": "CLIENT-APPROVAL-2026-11-23",
+        "basis": "A new dated decision under the rule above, not a change to the ratified five-section sequence. The page's one celebration image slot (TY-IMG-01, section 1) is 1:1, the ratio the closed image inventory records for it (desktop-wireframe/image-inventory.json, IMG-001), not the 4:3 this spec carried; a request slot and its closed inventory entry must agree, and the section plan writer (scripts/write_section_plan.py) refuses a request that plans another ratio than the inventory. Style B's circle slot was already 1:1."
       }
     ]
   },
@@ -70,7 +77,7 @@
       "composition_role": "hero",
       "ground": "hero",
       "default_slots": [
-        {"slot_id": "TY-IMG-01", "aspect_ratio": "4:3", "art_direction": "warm celebration of the decision, a confident moment for the buyer, never a product pitch", "shape_by_style": {"B": "circle"}, "style_ratio": {"B": "1:1"}, "treatment_by_style": {"B": "mask-circle"}}
+        {"slot_id": "TY-IMG-01", "aspect_ratio": "1:1", "art_direction": "warm celebration of the decision, a confident moment for the buyer, never a product pitch", "shape_by_style": {"B": "circle"}, "style_ratio": {"B": "1:1"}, "treatment_by_style": {"B": "mask-circle"}}
       ],
       "layout": {
         "desktop": "Hero ground band inside the 1200 px content column. The text block, top to bottom: a status label chip, the page headline (H1) stating the order status honestly, one reassurance line, the primary access button (filled, primary brand colour) and under it the order reference in small tracked capitals. The page's one celebration image plate is composed with the treatment the composition contract names for the slot; whatever that treatment, the text block keeps this order and the button stays filled in the primary colour. Spacing and type: about 96 px of padding above and below the band; roughly 24 px between the status label chip and the headline, 16 px between the headline and the reassurance line, 32 px before the button and 16 px between the button and the order reference. The headline takes the largest type size on the page, two lines at most, left-aligned in the brand display face; the reassurance line is body size on one or two lines; the status label chip is a small tag in tracked capitals carrying only the copy's own status word. The button is one filled rectangle at least 48 px tall with the copy's label centred; the order reference is plain muted text without a border or a fill. The text column and the image plate split the band at roughly 55 and 45 percent with a 48 px gutter, the plate top-aligned to the first line of the text block, and the corner treatment of every element follows the client's design style.",
