@@ -101,3 +101,5 @@ python3 44-convert-and-flow-operator/automation-templates/launch-text/test_launc
 # optional, when U-CONTRACT is present:
 python3 shared-utils/signature_launch_contract/validate_launch_plan.py <plan-with-these-text-sets>.json
 ```
+
+**Buyer follow-up offer (v2.1.58).** `buyer_followup_offer` is a marketing kind for a promotional text to someone who already bought, after the launch has closed (challenge or membership invitation). Consent, STOP, the contact cap, quiet hours and one link all apply, but the deadline is the offer's own: pass it as `deadline`; with none the send is refused. It is not a catalog set.

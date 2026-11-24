@@ -782,5 +782,74 @@ class SavedExportBranchTests(unittest.TestCase):
         self.assertEqual(caught.exception.code, 2)
 
 
+class BuyerFollowupOfferTests(unittest.TestCase):
+    """SWB-082: a buyer follow-up offer is marketing with its OWN deadline, never the launch's."""
+
+    LAUNCH_DEADLINE = "2026-12-04T23:59:00"
+    OFFER_DEADLINE = "2027-01-14T19:00:00"
+    BODY = ("Three days to keep going. Choose Yourself starts Thursday January 14. "
+            "Five live hours, $97. Reply YES and I will send the link. https://example.com/up1 "
+            "Stephanie. Reply STOP to opt out.")
+
+    def send(self, **over):
+        base = {"kind": "buyer_followup_offer", "template": self.BODY, "variables": {},
+                "send_at": "2027-01-10T09:00:00", "now": "2026-11-24T00:30:00",
+                "deadline": self.OFFER_DEADLINE, "a2p_ready": True,
+                "contact": {"consent": "confirmed", "sms_subscribed": True,
+                            "tags": ["sms-subscribed"], "marketing_sends": 1,
+                            "operational_sends": 0}}
+        base.update(over)
+        return evaluate_send(base)
+
+    def failed(self, result):
+        return [c["rule"] for c in result["checks"] if not c["ok"]]
+
+    def test_classified_marketing(self):
+        self.assertEqual(category("buyer_followup_offer"), "marketing")
+
+    def test_own_deadline_allows_a_january_send(self):
+        result = self.send()
+        self.assertEqual(self.failed(result), [])
+        self.assertEqual(result["action"], "hold")  # 9 AM is inside the window; "hold" = not yet due
+        self.assertEqual(result["category"], "marketing")
+
+    def test_negative_twin_launch_deadline_refuses_the_same_january_send(self):
+        result = self.send(deadline=self.LAUNCH_DEADLINE)
+        self.assertEqual(result["action"], "skip")
+        self.assertIn("launch_deadline", self.failed(result))
+
+    def test_no_deadline_is_refused_not_defaulted(self):
+        result = self.send(deadline=None)
+        self.assertEqual(result["action"], "skip")
+        self.assertIn("launch_deadline", self.failed(result))
+        text = " ".join(c["detail"] for c in result["checks"] if c["rule"] == "launch_deadline")
+        self.assertIn("per-offer deadline", text)
+
+    def test_send_after_its_own_deadline_is_refused(self):
+        result = self.send(send_at="2027-01-15T09:00:00")
+        self.assertEqual(result["action"], "skip")
+        self.assertIn("launch_deadline", self.failed(result))
+
+    def test_still_needs_a_link_and_stop(self):
+        no_link = self.BODY.replace(" https://example.com/up1", "")
+        result = self.send(template=no_link)
+        self.assertEqual(result["action"], "skip")
+        self.assertIn("content", self.failed(result))
+
+    def test_still_consumes_the_marketing_cap_and_honours_stop(self):
+        capped = self.send(contact={"consent": "confirmed", "sms_subscribed": True,
+                                    "tags": ["sms-subscribed"], "marketing_sends": MARKETING_CAP,
+                                    "operational_sends": 0})
+        self.assertEqual(capped["action"], "skip")
+        stopped = self.send(contact={"consent": "confirmed", "sms_subscribed": True,
+                                     "tags": ["sms-subscribed", "sms-opted-out"],
+                                     "marketing_sends": 0, "operational_sends": 0})
+        self.assertEqual(stopped["action"], "skip")
+
+    def test_last_call_is_unchanged_by_the_new_kind(self):
+        result = self.send(kind="last_call", deadline=None)
+        self.assertNotIn("per-offer", " ".join(c["detail"] for c in result["checks"]))
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

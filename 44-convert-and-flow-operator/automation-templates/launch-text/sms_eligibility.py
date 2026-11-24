@@ -8,8 +8,9 @@ contact-level marketing send count are read at the moment before the
 provider call, so a STOP that landed after the workflow was built still
 wins.
 
-Classification is explicit: `doors_open`, `last_call` and
-`abandoned_checkout` are marketing and consume the aggregate contact cap;
+Classification is explicit: `doors_open`, `last_call`,
+`abandoned_checkout` and `buyer_followup_offer` are marketing and consume
+the aggregate contact cap;
 `opt_in_confirmation`, `keyword_opt_in`, `event_reminder` and
 `access_link` are operational, never consume that cap, and are never
 blocked by the launch deadline.
@@ -30,7 +31,15 @@ import re
 import unicodedata
 from datetime import datetime, timedelta
 
-MARKETING_KINDS = frozenset({"doors_open", "last_call", "abandoned_checkout"})
+MARKETING_KINDS = frozenset({"doors_open", "last_call", "abandoned_checkout",
+                             "buyer_followup_offer"})
+# A buyer follow-up offer is a promotional text sent to someone who already
+# bought, after the launch has closed (a challenge or membership invitation).
+# It is marketing in every respect (consent, STOP, cap, quiet hours, one link)
+# but its deadline is the OFFER'S OWN deadline, never the launch's doors_close_at:
+# the caller must pass that per-offer deadline as `deadline`, and a send without
+# one is refused (fail closed, never defaulted to the launch deadline).
+OFFER_DEADLINE_KINDS = frozenset({"buyer_followup_offer"})
 OPERATIONAL_KINDS = frozenset({
     "opt_in_confirmation", "keyword_opt_in", "event_reminder", "access_link",
 })
@@ -56,7 +65,7 @@ PLACEHOLDER_RE = re.compile(r"\{\{([a-z_]+)\}\}")
 # STOP is required in every message by the shared contract.
 REQUIRES_LINK = frozenset({
     "doors_open", "last_call", "abandoned_checkout", "access_link",
-    "event_reminder",
+    "event_reminder", "buyer_followup_offer",
 })
 GSM7_BASE = frozenset(
     "@£$¥èéùìòÇ\nØø\rÅåΔ_ΦΓΛΩΠΨΣΘΞ\x1bÆæßÉ !\"#¤%&'()*+,-./0123456789:;<=>?"
@@ -405,8 +414,13 @@ def evaluate_send(send: dict) -> dict:
     add("quiet_hours", reason != "quiet_hours_conflict_no_permitted_slot"
         and not reason.startswith("past_"), reason)
 
+    # 6b. A buyer follow-up offer carries its OWN deadline; none given = refused.
+    if send["kind"] in OFFER_DEADLINE_KINDS and deadline is None:
+        add("launch_deadline", False,
+            "%s needs its own per-offer deadline (not the launch's doors_close_at)"
+            % send["kind"])
     # 7. Launch deadline for marketing only; operational stays deliverable.
-    if cat == "marketing" and deadline is not None and send_at is not None:
+    elif cat == "marketing" and deadline is not None and send_at is not None:
         add("launch_deadline", send_at <= deadline,
             "send %s must be <= %s" % (send_at.isoformat(), deadline.isoformat()))
     else:
