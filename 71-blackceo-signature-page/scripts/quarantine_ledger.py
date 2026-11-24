@@ -5,12 +5,24 @@
   quarantine_ledger.py add --run DIR --paths-file LIST --reason TEXT --approver NAME
   quarantine_ledger.py acknowledge-input --run DIR --path REL --old-sha256 H --new-sha256 H
                        --reason TEXT --approver NAME [--key-file F]
-  quarantine_ledger.py seal --run DIR [--key-file F]
+  quarantine_ledger.py seal --run DIR [--adopt-legacy] [--key-file F]
+  quarantine_ledger.py rebind --run DIR --path REL --stage STAGE --reason TEXT --approver NAME
+                       [--key-file F]
   quarantine_ledger.py release-quarantine --run DIR --path REL --stage STAGE --reason TEXT
                        --approver NAME [--key-file F]
   quarantine_ledger.py reown --run DIR --path REL --owner-stage STAGE --reason TEXT
                        --approver NAME [--key-file F]
   quarantine_ledger.py status --run DIR
+
+1.3.48 (SWB-250): every signed record (quarantine entry, seal, release, reown, rebind,
+acknowledgement, admission row) names its RUN inside the signed payload (the resolved run root
+and the run_id private/state.json holds) and is void in any other run. When the operator's seal
+anchor outside the run exists, an absent ledger, an absent or unreadable seal refuses; it is never
+read as "nothing quarantined". `rebind` is the owner's signed re-attestation of a REGISTERED file
+whose bytes changed since the gate attested them (the copy file): bound to run, path, old and new
+sha256, owning stage, reason, approver, time and an evidence note; void when the sha256 changes;
+an owner decision that every admission decision lists. A pre-1.3.48 ledger is adopted once with
+`seal --adopt-legacy`; pre-1.3.48 release, reown and acknowledgement records are void and re-signed.
 
 `add` signs each entry (HMAC-SHA256) with the operator key named by
 SF_PIN_AUTHORITY_KEY_FILE (or --key-file); the key is read by path and never printed.
@@ -58,7 +70,15 @@ def main(argv=None):
     ack.add_argument("--key-file")
     sl = sub.add_parser("seal")
     sl.add_argument("--run", required=True)
+    sl.add_argument("--adopt-legacy", action="store_true")
     sl.add_argument("--key-file")
+    rb = sub.add_parser("rebind")
+    rb.add_argument("--run", required=True)
+    rb.add_argument("--path", required=True)
+    rb.add_argument("--stage", required=True)
+    rb.add_argument("--reason", required=True)
+    rb.add_argument("--approver", required=True)
+    rb.add_argument("--key-file")
     rl = sub.add_parser("release-quarantine")
     rl.add_argument("--run", required=True)
     rl.add_argument("--path", required=True)
@@ -97,8 +117,17 @@ def main(argv=None):
             print("acknowledged %s %s -> %s" % (e["path"], e["old_sha256"], e["new_sha256"]))
             return 0
         if args.cmd == "seal":
-            r = governed_runner.seal_ledger(args.run, key_file=args.key_file)
-            print("sealed %d ledger entries, serial %d" % (r["entries"], r["serial"]))
+            r = governed_runner.seal_ledger(args.run, key_file=args.key_file,
+                                            adopt_legacy=args.adopt_legacy)
+            print("sealed %d ledger entries, serial %d (%d adopted from 1.3.47)"
+                  % (r["entries"], r["serial"], r.get("adopted", 0)))
+            return 0
+        if args.cmd == "rebind":
+            e = governed_runner.rebind(args.run, args.path, stage=args.stage, reason=args.reason,
+                                       approver=args.approver, key_file=args.key_file)
+            print("rebound %s (stage %s) %s -> %s" % (e["path"], e["stage"], e["old_sha256"], e["sha256"]))
+            print(e["note"])
+            print("OWNER DECISION: this is not a pipeline pass; it is void if the file's sha256 changes.")
             return 0
         if args.cmd == "release-quarantine":
             e = governed_runner.release_quarantine(

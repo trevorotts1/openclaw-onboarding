@@ -496,7 +496,8 @@ class Twins(Base240):
         with self.assertRaises(ValueError):                  # the tool will not sign under a foreign key
             GR.release_quarantine(self.run_root, REL, stage=DW, reason="r", approver="T",
                                   key_file=self.make_key(OTHER_KEY, "other"))
-        entry = {"path": REL, "sha256": sha("freshly rendered"), "stage": DW, "reason": "r",
+        entry = {"run": oop.run_identity(self.run_root),   # 1.3.48: records name their run
+                 "path": REL, "sha256": sha("freshly rendered"), "stage": DW, "reason": "r",
                  "approver": "T", "signed_at": datetime.now(timezone.utc).isoformat(), "note": "n"}
         entry["signature"] = oop._record_signature(oop.RELEASE_KIND, oop.RELEASE_FIELDS, entry, OTHER_KEY)
         self.write_json("private/quarantine-releases.json", {"entries": [entry]})   # hand-forged

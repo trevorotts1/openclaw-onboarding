@@ -60,7 +60,7 @@ ADMISSION_KIND = "admission_record"
 ACK_FILE = "private/input-acknowledgements.json"
 ACK_SCHEMA = "signature-launch-input-acknowledgements/v1"
 ACK_KIND = "input_acknowledgement"
-ACK_FIELDS = ("path", "old_sha256", "new_sha256", "reason", "approver", "acknowledged_at")
+ACK_FIELDS = ("run", "path", "old_sha256", "new_sha256", "reason", "approver", "acknowledged_at")
 EXECUTOR_RECORD = "stage-executor-record.json"   # read ONLY to print evidence in a release note
 SEAL_FILE = "private/quarantine-seal.json"
 SEAL_SCHEMA = "signature-launch-quarantine-seal/v1"
@@ -68,12 +68,17 @@ SEAL_KIND = "quarantine_seal"
 RELEASE_FILE = "private/quarantine-releases.json"
 RELEASE_SCHEMA = "signature-launch-quarantine-releases/v1"
 RELEASE_KIND = "quarantine_release"
-RELEASE_FIELDS = ("path", "sha256", "stage", "reason", "approver", "signed_at", "note")
+RELEASE_FIELDS = ("run", "path", "sha256", "stage", "reason", "approver", "signed_at", "note")
 REOWN_FILE = "private/reown-records.json"
 REOWN_SCHEMA = "signature-launch-reown-records/v1"
 REOWN_KIND = "reown"
-REOWN_FIELDS = ("path", "sha256", "owner_stage", "reason", "approver", "signed_at", "note")
-ENTRY_FIELDS = ("path", "sha256", "size", "reason", "quarantined_at", "approver")
+REOWN_FIELDS = ("run", "path", "sha256", "owner_stage", "reason", "approver", "signed_at", "note")
+REBIND_FILE = "private/rebind-records.json"
+REBIND_SCHEMA = "signature-launch-rebind-records/v1"
+REBIND_KIND = "rebind"
+REBIND_FIELDS = ("run", "path", "old_sha256", "sha256", "stage", "reason", "approver", "signed_at",
+                 "note")
+ENTRY_FIELDS = ("run", "path", "sha256", "size", "reason", "quarantined_at", "approver")
 
 # RUN-STATE FILES (1.3.45). Exact root-level names the pipeline rewrites on every
 # dispatch BY DESIGN, so a byte change on one is a record, not out-of-pipeline output:
@@ -128,6 +133,29 @@ def normalise(root, path):
     if rel in ("", "."):
         raise OutOfPipeline("artifact path is the run root itself: %r" % text)
     return rel
+
+
+def run_identity(root):
+    """The run a signed record belongs to (1.3.48): {'root': the resolved absolute run root,
+    'run_id': the id stage_gate `init` mints into private/state.json, or '' when none}.
+    Every signed record carries this INSIDE its signed payload, and every verifier compares it
+    to the run being scanned, so a record signed for run A is void in run B. Under M an actor
+    can rewrite state.json, but that only voids records (a denial); the root path is what
+    separates a copied folder, and a record never becomes valid by being copied."""
+    base = Path(root).resolve()
+    run_id = ""
+    try:
+        data = json.loads((base / "private" / "state.json").read_text(encoding="utf-8"))
+        if isinstance(data, dict) and isinstance(data.get("run_id"), str):
+            run_id = data["run_id"]
+    except (OSError, ValueError):
+        pass
+    return {"root": str(base), "run_id": run_id}
+
+
+def _bound(root, record):
+    """True when `record` names exactly this run."""
+    return isinstance(record, dict) and record.get("run") == run_identity(root)
 
 
 def registry_path(root):
@@ -267,6 +295,7 @@ def quarantine(root, path, *, reason, approver, key_file=None, now=None):
     if status["exists"] and not status["ok"]:
         raise OutOfPipeline("the quarantine ledger cannot be extended: %s" % status["why"])
     entry = {
+        "run": run_identity(base),
         "path": rel, "sha256": _sha256_file(target), "size": target.stat().st_size,
         "reason": str(reason).strip(),
         "quarantined_at": (now or datetime.now(timezone.utc)).isoformat(),
@@ -302,8 +331,8 @@ def seal_path(root):
 
 
 def _seal_signature(doc, key):
-    body = {"kind": SEAL_KIND, "serial": doc.get("serial"), "sealed_at": doc.get("sealed_at"),
-            "entries": doc.get("entries")}
+    body = {"kind": SEAL_KIND, "run": doc.get("run"), "serial": doc.get("serial"),
+            "sealed_at": doc.get("sealed_at"), "entries": doc.get("entries")}
     return hmac.new(key, _canonical_json(body), hashlib.sha256).hexdigest()
 
 
@@ -335,7 +364,7 @@ def _write_seal(base, entries, key, *, now=None):
     anchor = _read_anchor(base)
     if anchor and isinstance(anchor.get("serial"), int):
         serial = max(serial, anchor["serial"] + 1)
-    doc = {"schema": SEAL_SCHEMA, "serial": serial,
+    doc = {"schema": SEAL_SCHEMA, "run": run_identity(base), "serial": serial,
            "sealed_at": (now or datetime.now(timezone.utc)).isoformat(),
            "entries": sorted(([e.get("path"), e.get("signature")] for e in entries),
                              key=lambda row: (str(row[0]), str(row[1])))}
@@ -382,8 +411,21 @@ def _ledger_status(root, key=None):
         for row in seal["entries"]:
             if isinstance(row, (list, tuple)) and row and isinstance(row[0], str):
                 paths.add(row[0])
+    anchor = _read_anchor(root)
+    if anchor is not None:
+        result["exists"] = True
     if ledger is None and seal is None:
+        if anchor is not None:
+            # 1.3.48: the operator's anchor outside the run says a ledger existed. Both files
+            # gone is a deletion, never "nothing was ever quarantined" (SWB-250 N05).
+            result["why"] = ("the operator's seal anchor outside the run exists but the quarantine "
+                             "ledger and its seal are both absent (deleted); nothing is honoured "
+                             "until the operator restores them")
+            return result
         result.update(ok=True)
+        return result
+    if ledger is None:
+        result["why"] = "the quarantine seal exists but the quarantine ledger is absent (deleted)"
         return result
     if key is None:
         try:
@@ -395,14 +437,22 @@ def _ledger_status(root, key=None):
         result["why"] = ledger["error"]
         return result
     if seal is None:
-        result["why"] = ("the quarantine ledger has no signed seal (run quarantine_ledger.py seal "
-                         "once, as the operator)")
+        result["why"] = ("the quarantine ledger has no signed seal%s (run quarantine_ledger.py seal "
+                         "as the operator)" % (" although the operator's anchor outside the run "
+                                               "exists (the seal was deleted)" if anchor is not None else ""))
+        return result
+    if isinstance(seal, dict) and not seal.get("unreadable") and "run" not in seal:
+        result["why"] = ("the quarantine seal was signed before 1.3.48 and names no run (run "
+                         "quarantine_ledger.py seal --adopt-legacy as the operator)")
         return result
     sig = seal.get("signature") if isinstance(seal, dict) else None
     if seal.get("unreadable") or not isinstance(seal.get("entries"), list) \
             or not isinstance(sig, str) or not isinstance(seal.get("serial"), int) \
             or not hmac.compare_digest(sig, _seal_signature(seal, key)):
         result["why"] = "the quarantine seal does not verify under the operator key"
+        return result
+    if seal.get("run") != run_identity(root):
+        result["why"] = "the quarantine seal was signed for another run (records are void here)"
         return result
     listed = sorted((str(r[0]), str(r[1])) for r in seal["entries"]
                     if isinstance(r, (list, tuple)) and len(r) == 2)
@@ -411,7 +461,6 @@ def _ledger_status(root, key=None):
         result["why"] = ("the quarantine ledger does not match its signed seal (an entry was "
                          "deleted, added or replaced)")
         return result
-    anchor = _read_anchor(root)
     if anchor is not None:
         serial = anchor.get("serial")
         if not isinstance(serial, (int, float)) or seal["serial"] < serial or (
@@ -423,9 +472,21 @@ def _ledger_status(root, key=None):
     return result
 
 
-def seal_ledger(root, *, key_file=None, now=None):
+def _legacy_entry_signature(entry, key):
+    """The 1.3.47 entry signature: the same body without the run field."""
+    body = {k: entry.get(k) for k in ENTRY_FIELDS if k != "run"}
+    body["kind"] = LEDGER_KIND
+    return hmac.new(key, json.dumps(body, sort_keys=True, separators=(",", ":")).encode(),
+                    hashlib.sha256).hexdigest()
+
+
+def seal_ledger(root, *, key_file=None, now=None, adopt_legacy=False):
     """The operator adopts the ledger as it stands: every entry must verify, then one signed
-    seal is written. Needed once for a ledger made before 1.3.47."""
+    seal is written. Needed once for a ledger made before 1.3.47. With `adopt_legacy` (1.3.48),
+    an entry signed under 1.3.47 (no run field) whose file still holds the quarantined bytes is
+    re-signed bound to THIS run; nothing else changes. This is the only way a pre-1.3.48 ledger
+    becomes valid; every other pre-1.3.48 record (release, reown, acknowledgement) is void and
+    is signed again."""
     base = Path(root).resolve()
     key = _key_bytes(base, key_file)
     ledger = _read_ledger(base)
@@ -434,25 +495,47 @@ def seal_ledger(root, *, key_file=None, now=None):
     if ledger["error"]:
         raise OutOfPipeline(ledger["error"])
     seen = set()
+    entries = []
+    adopted = 0
     for entry in ledger["entries"]:
         sig = entry.get("signature")
-        if not isinstance(sig, str) or not hmac.compare_digest(sig, _entry_signature(entry, key)):
-            raise OutOfPipeline("ledger entry %r does not verify; it cannot be sealed"
+        ok_now = isinstance(sig, str) and hmac.compare_digest(sig, _entry_signature(entry, key)) \
+            and _bound(base, entry)
+        if not ok_now and adopt_legacy and "run" not in entry and isinstance(sig, str) \
+                and hmac.compare_digest(sig, _legacy_entry_signature(entry, key)):
+            target = base / str(entry.get("path") or "")
+            if not target.is_file() or entry.get("sha256") != _sha256_file(target) \
+                    or entry.get("size") != target.stat().st_size:
+                raise OutOfPipeline("legacy ledger entry %r no longer matches its file; it cannot "
+                                    "be adopted" % entry.get("path"))
+            entry = dict(entry)
+            entry["run"] = run_identity(base)
+            entry["signature"] = _entry_signature(entry, key)
+            ok_now = True
+            adopted += 1
+        if not ok_now:
+            raise OutOfPipeline("ledger entry %r does not verify for this run; it cannot be sealed"
                                 % entry.get("path"))
         if entry.get("path") in seen:
             raise OutOfPipeline("ledger names %r twice" % entry.get("path"))
         seen.add(entry.get("path"))
-    doc = _write_seal(base, ledger["entries"], key, now=now)
-    return {"serial": doc["serial"], "entries": len(ledger["entries"])}
+        entries.append(entry)
+    if adopted:
+        _write_ledger(base, entries, key, now=now)
+        return {"serial": _read_seal(base)["serial"], "entries": len(entries), "adopted": adopted}
+    doc = _write_seal(base, entries, key, now=now)
+    return {"serial": doc["serial"], "entries": len(entries), "adopted": 0}
 
 
-def _quarantine_verdict(entry, key, target):
-    """(acknowledged, why_not). Signature, then the file's current bytes."""
+def _quarantine_verdict(entry, key, target, root=None):
+    """(acknowledged, why_not). Signature, run binding, then the file's current bytes."""
     if key is None:
         return False, "operator key unavailable, so the quarantine entry cannot be verified"
     sig = entry.get("signature")
     if not isinstance(sig, str) or not hmac.compare_digest(sig, _entry_signature(entry, key)):
         return False, "quarantine entry signature does not verify"
+    if root is not None and not _bound(root, entry):
+        return False, "the quarantine entry was signed for another run"
     if entry.get("sha256") != _sha256_file(target) or entry.get("size") != target.stat().st_size:
         return False, "the file changed after it was quarantined"
     return True, None
@@ -492,13 +575,18 @@ def sign_admission(root, decision, *, key_file=None, now=None):
     except OutOfPipeline:
         return False
     decision.pop("signature", None)
+    decision["run_binding"] = run_identity(root)    # 1.3.48: inside the signed payload
     decision["signed_at"] = (now or datetime.now(timezone.utc)).isoformat()
     decision["signature"] = admission_signature(decision, key)
     return True
 
 
-def verify_admission(decision, key):
+def verify_admission(decision, key, root=None):
+    """True when the row is signed under `key`. With `root` (1.3.48) the row must also name
+    exactly that run: an admission record copied from another run verifies nowhere else."""
     if key is None or not isinstance(decision, dict):
+        return False
+    if root is not None and decision.get("run_binding") != run_identity(root):
         return False
     sig = decision.get("signature")
     return isinstance(sig, str) and isinstance(decision.get("signed_at"), str) \
@@ -551,8 +639,11 @@ def _write_records(root, rel_file, schema, entries):
                    encoding="utf-8")
 
 
-def _record_ok(kind, fields, entry, key):
+def _record_ok(kind, fields, entry, key, root=None):
+    """Signature verifies under `key`, and (when `root` is given) the record names this run."""
     sig = entry.get("signature")
+    if root is not None and not _bound(root, entry):
+        return False
     return isinstance(sig, str) and hmac.compare_digest(sig, _record_signature(kind, fields, entry, key))
 
 
@@ -605,7 +696,7 @@ def release_quarantine(root, path, *, stage, reason, approver, in_scope=None,
     digest = _sha256_file(target)
     if digest == led.get("sha256"):
         raise OutOfPipeline("%s still holds its quarantined bytes; the stage has not regenerated it" % rel)
-    entry = {"path": rel, "sha256": digest, "stage": str(stage).strip(),
+    entry = {"run": run_identity(base), "path": rel, "sha256": digest, "stage": str(stage).strip(),
              "reason": str(reason).strip(), "approver": str(approver).strip(),
              "signed_at": (now or datetime.now(timezone.utc)).isoformat(),
              "note": _executor_evidence(base, rel, digest)}
@@ -632,14 +723,16 @@ def find_release(root, rel, stage, in_scope=None):
     if led is None or not target.is_file():
         return None
     sig = led.get("signature")
-    if not isinstance(sig, str) or not hmac.compare_digest(sig, _entry_signature(led, key)):
+    if not isinstance(sig, str) or not hmac.compare_digest(sig, _entry_signature(led, key)) \
+            or not _bound(root, led):
         return None
     digest = _sha256_file(target)
     if digest == led.get("sha256"):
         return None
     for entry in _read_records(root, RELEASE_FILE):
         if entry.get("path") == rel and entry.get("stage") == str(stage) \
-                and entry.get("sha256") == digest and _record_ok(RELEASE_KIND, RELEASE_FIELDS, entry, key):
+                and entry.get("sha256") == digest \
+                and _record_ok(RELEASE_KIND, RELEASE_FIELDS, entry, key, root):
             return entry
     return None
 
@@ -678,7 +771,8 @@ def reown(root, path, *, owner_stage, reason, approver, key_file=None, now=None)
         raise OutOfPipeline("%s does not exist" % rel)
     key = _key_bytes(base, key_file)
     listed = _receipt_listing(base, rel)
-    entry = {"path": rel, "sha256": _sha256_file(target), "owner_stage": str(owner_stage).strip(),
+    entry = {"run": run_identity(base), "path": rel, "sha256": _sha256_file(target),
+             "owner_stage": str(owner_stage).strip(),
              "reason": str(reason).strip(), "approver": str(approver).strip(),
              "signed_at": (now or datetime.now(timezone.utc)).isoformat(),
              "note": "registry owner %r; pass receipts listing this exact path: %s (shown only)" % (
@@ -697,8 +791,130 @@ def reowned_to(root, rel, actual_sha256):
         return None
     for entry in _read_records(root, REOWN_FILE):
         if entry.get("path") == rel and actual_sha256 and entry.get("sha256") == actual_sha256 \
-                and _record_ok(REOWN_KIND, REOWN_FIELDS, entry, key):
+                and _record_ok(REOWN_KIND, REOWN_FIELDS, entry, key, root):
             return entry.get("owner_stage")
+    return None
+
+
+# --------------------------------------------------------------------------
+# signed rebind records (1.3.48)
+# --------------------------------------------------------------------------
+# A REGISTERED file (the copy file, copy/public-copy.md) can change after the gate attested it:
+# the owner edits the copy, then the registry still holds the old bytes and the scan reports a
+# content mismatch. `rebind` is the OWNER'S signed decision that the file, as it is now, is the
+# file the pipeline should carry. It is bound, inside the signed payload, to: the run, the
+# path, the sha256 the registry held (old), the NEW sha256, the owning stage (the registry's),
+# the reason, the approver, the time and an evidence note. The note prints what the gate wrote
+# (state.json close hashes, pass-receipt hashes) so the signer sees it; NOTHING in it is trusted.
+# It is void the moment the file's sha256 differs from the signed one, or the registry's
+# attested sha256 differs from the signed old one, or the run differs. It is an owner decision,
+# not a pipeline pass: every admission decision lists the rebound files it relied on.
+
+def _state_evidence(base, rel):
+    """Text for a signing note only: the hashes private/state.json records for `rel`. Never trusted."""
+    try:
+        state = json.loads((base / "private" / "state.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return "state.json unreadable or absent"
+    seen = []
+
+    def walk(node, trail, depth):
+        if depth > 8 or len(seen) >= 12:
+            return
+        if isinstance(node, dict):
+            for key, value in node.items():
+                if key == rel and isinstance(value, (str, dict)):
+                    digest = value.get("sha256") if isinstance(value, dict) else value
+                    seen.append("%s -> %s" % ("/".join(trail + [key]), digest))
+                elif isinstance(value, (dict, list)):
+                    walk(value, trail + [str(key)], depth + 1)
+            if node.get("path") == rel or node.get("file") == rel:
+                if isinstance(node.get("sha256"), str):
+                    seen.append("%s sha256=%s" % ("/".join(trail) or "(root)", node["sha256"]))
+        elif isinstance(node, list):
+            for index, value in enumerate(node):
+                if isinstance(value, (dict, list)):
+                    walk(value, trail + [str(index)], depth + 1)
+
+    walk(state, [], 0)
+    return "state.json: " + ("; ".join(seen) if seen else "no close hash names this path")
+
+
+def _receipt_evidence(base, rel):
+    rows = []
+    folder = base / "private" / "receipts"
+    try:
+        names = sorted(folder.glob("*.json"))
+    except OSError:
+        names = []
+    for name in names:
+        try:
+            doc = json.loads(name.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        listed = (doc.get("artifact_hashes") or {}) if isinstance(doc, dict) else {}
+        if rel in listed:
+            value = listed[rel]
+            digest = value.get("sha256") if isinstance(value, dict) else value
+            rows.append("%s (%s) lists sha256=%s" % (name.stem, doc.get("status"), digest))
+    return "receipts: " + ("; ".join(rows) if rows else "no receipt names this path")
+
+
+def rebind(root, path, *, stage, reason, approver, key_file=None, now=None):
+    """Sign: the registered, emitted file `path`, whose bytes changed since the gate attested
+    them, is re-attested over the bytes on disk now, under its registered owning `stage`."""
+    base = Path(root).resolve()
+    rel = normalise(base, path)
+    if rel.split("/", 1)[0] in INTERNAL_DIRS:
+        raise OutOfPipeline("%s is run-internal machinery and cannot be rebound" % rel)
+    for field, value in (("stage", stage), ("reason", reason), ("approver", approver)):
+        if not str(value or "").strip():
+            raise OutOfPipeline("a rebind needs a %s" % field)
+    registered = load(base)["outputs"].get(rel)
+    if registered is None or registered.get("state") != EMITTED:
+        raise OutOfPipeline("%s is not a registered, emitted output, so it cannot be rebound" % rel)
+    if registered.get("stage") != str(stage).strip():
+        raise OutOfPipeline("%s is owned by stage %r, not %r (use reown to move an owner)"
+                            % (rel, registered.get("stage"), stage))
+    target = base / rel
+    if not target.is_file():
+        raise OutOfPipeline("%s does not exist" % rel)
+    digest = _sha256_file(target)
+    if digest == registered.get("sha256"):
+        raise OutOfPipeline("%s still holds its attested bytes; there is nothing to rebind" % rel)
+    key = _key_bytes(base, key_file)
+    if is_quarantined_path(base, rel):
+        raise OutOfPipeline("%s is quarantined; use release-quarantine" % rel)
+    entry = {"run": run_identity(base), "path": rel, "old_sha256": registered.get("sha256"),
+             "sha256": digest, "stage": str(stage).strip(), "reason": str(reason).strip(),
+             "approver": str(approver).strip(),
+             "signed_at": (now or datetime.now(timezone.utc)).isoformat(),
+             "note": "owner decision, not a pipeline pass. Evidence the gate wrote (shown only, "
+                     "trusted for nothing): %s | %s" % (_state_evidence(base, rel),
+                                                         _receipt_evidence(base, rel))}
+    entry["signature"] = _record_signature(REBIND_KIND, REBIND_FIELDS, entry, key)
+    entries = [e for e in _read_records(base, REBIND_FILE)
+               if not (e.get("path") == rel and e.get("sha256") == digest
+                       and e.get("run") == entry["run"])] + [entry]
+    _write_records(base, REBIND_FILE, REBIND_SCHEMA, entries)
+    return entry
+
+
+def rebound_record(root, rel, actual_sha256, registered_entry):
+    """The valid signed rebind record for exactly (this run, rel, the bytes on disk now, the
+    registry's attested old hash, the registry's owning stage), or None."""
+    if not actual_sha256 or not isinstance(registered_entry, dict):
+        return None
+    try:
+        key = _key_bytes(root)
+    except OutOfPipeline:
+        return None
+    for entry in _read_records(root, REBIND_FILE):
+        if entry.get("path") == rel and entry.get("sha256") == actual_sha256 \
+                and entry.get("old_sha256") == registered_entry.get("sha256") \
+                and entry.get("stage") == registered_entry.get("stage") \
+                and _record_ok(REBIND_KIND, REBIND_FIELDS, entry, key, root):
+            return entry
     return None
 
 
@@ -745,7 +961,7 @@ def acknowledge_input(root, path, *, old_sha256, new_sha256, reason, approver,
     if (load(base)["outputs"].get(rel) or {}).get("sha256") != old:
         raise OutOfPipeline("%s is not registered with the acknowledged old sha256" % rel)
     key = _key_bytes(base, key_file)
-    entry = {"path": rel, "old_sha256": old, "new_sha256": new,
+    entry = {"run": run_identity(base), "path": rel, "old_sha256": old, "new_sha256": new,
              "reason": str(reason).strip(), "approver": str(approver).strip(),
              "acknowledged_at": (now or datetime.now(timezone.utc)).isoformat()}
     entry["signature"] = _ack_signature(entry, key)
@@ -769,6 +985,7 @@ def input_acknowledged(root, row):
         sig = entry.get("signature")
         if entry.get("path") == row.get("path") and entry.get("old_sha256") == row.get("registered") \
                 and entry.get("new_sha256") == row.get("actual") \
+                and _bound(root, entry) \
                 and isinstance(sig, str) and hmac.compare_digest(sig, _ack_signature(entry, key)):
             return True
     return False
@@ -982,6 +1199,7 @@ def scan(root, *, receipts=None, declared_native=None, inputs=()):
         "ungoverned": [],
         "content_mismatch": [],
         "run_state_changed": [],
+        "rebound": [],
         "input_changed": [],
         "receipt_unregistered": [],
         "native_unregistered": [],
@@ -1014,7 +1232,7 @@ def scan(root, *, receipts=None, declared_native=None, inputs=()):
             led = ledger_by_path.get(rel)
             if led is not None:
                 ok_q, why = (False, "the quarantine ledger is not sound: %s" % status["why"]) \
-                    if not status["ok"] else _quarantine_verdict(led, key, path)
+                    if not status["ok"] else _quarantine_verdict(led, key, path, base)
                 if ok_q:
                     result["quarantined"].append({
                         "path": rel, "sha256": led["sha256"], "size": led["size"],
@@ -1044,6 +1262,16 @@ def scan(root, *, receipts=None, declared_native=None, inputs=()):
             result["input_changed"].append(row)
             continue
         if entry.get("sha256") != digest:
+            record = rebound_record(base, rel, digest, entry)
+            if record is not None:
+                result["rebound"].append({
+                    "path": rel, "stage": entry.get("stage"), "old_sha256": entry.get("sha256"),
+                    "new_sha256": digest, "reason": record.get("reason"),
+                    "approver": record.get("approver"), "signed_at": record.get("signed_at"),
+                    "note": record.get("note")})
+                result["governed"].append({"path": rel, "stage": entry.get("stage"),
+                                           "sha256": digest, "rebound": True})
+                continue
             result["content_mismatch"].append({
                 "path": rel, "registered": entry.get("sha256"), "actual": digest})
             continue

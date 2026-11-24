@@ -565,6 +565,17 @@ def admit(run_dir, *, kind, authority, owner="runner", stage=None, item=None,
                  "new_sha256": e.get("actual"),
                  **({"stale_brand_pins": e["stale_brand_pins"]} if e.get("stale_brand_pins") else {})}
                 for e in scan_result[bucket]]
+    if scan_result.get("rebound"):
+        # 1.3.48: files that passed only because the owner signed a rebind record. This is an
+        # owner decision, not a pipeline pass, and the decision says so.
+        decision["out_of_pipeline"]["rebound"] = [
+            {"path": e["path"], "stage": e["stage"], "old_sha256": e["old_sha256"],
+             "new_sha256": e["new_sha256"], "approver": e["approver"], "reason": e["reason"],
+             "signed_at": e["signed_at"], "basis": "owner decision (signed rebind record), "
+                                                   "not a pipeline pass"}
+            for e in scan_result["rebound"]]
+    if scan_result.get("quarantine_ledger_error"):
+        decision["out_of_pipeline"]["quarantine_ledger_error"] = scan_result["quarantine_ledger_error"]
     if "quarantined" in scan_result:
         decision["out_of_pipeline"]["quarantined"] = [e["path"] for e in scan_result["quarantined"]]
         decision["out_of_pipeline"]["quarantined_count"] = len(scan_result["quarantined"])
@@ -589,6 +600,17 @@ def admit(run_dir, *, kind, authority, owner="runner", stage=None, item=None,
             raise AdmissionRefused(decision["reason"], kind=kind, stage=stage,
                                    source="stage_gate", detail=[output.strip()[:2000]],
                                    decision=decision)
+
+    if authority in AUTHORITATIVE_AUTHORITIES and scan_result.get("quarantine_ledger_error"):
+        # 1.3.48: cannot-verify is refuse. A quarantine ledger that is absent, unsealed, rolled
+        # back, signed for another run or otherwise unsound never reads as "nothing quarantined".
+        decision["reason"] = ("the quarantine ledger cannot be verified, so nothing is admitted for "
+                              "%s: %s" % (authority, scan_result["quarantine_ledger_error"]))
+        decision["source"] = "quarantine_ledger"
+        _record_decision(base, decision)
+        raise AdmissionRefused(decision["reason"], kind=kind, stage=stage,
+                               source="quarantine_ledger",
+                               detail=[scan_result["quarantine_ledger_error"]], decision=decision)
 
     if authority in AUTHORITATIVE_AUTHORITIES and unacknowledged_inputs:
         names = [e["path"] for e in unacknowledged_inputs]
@@ -783,9 +805,19 @@ def quarantine_supersede_rows(run_dir, stage, quarantined):
     return rows
 
 
-def seal_ledger(run_dir, *, key_file=None):
-    """The operator adopts the quarantine ledger as it stands (needed once for a pre-1.3.47 ledger)."""
-    return detector().seal_ledger(run_dir, key_file=key_file)
+def seal_ledger(run_dir, *, key_file=None, adopt_legacy=False):
+    """The operator adopts the quarantine ledger as it stands (needed once for a pre-1.3.47
+    ledger). `adopt_legacy` (1.3.48) re-signs 1.3.47 entries bound to this run."""
+    return detector().seal_ledger(run_dir, key_file=key_file, adopt_legacy=adopt_legacy)
+
+
+def rebind(run_dir, path, *, stage, reason, approver, key_file=None):
+    """Sign that the registered `path`, whose bytes changed since the gate attested them, is
+    re-attested over the bytes on disk now under its owning `stage` (1.3.48). An owner decision;
+    void when the file's sha256 changes."""
+    stage_definition(stage)
+    return detector().rebind(run_dir, path, stage=stage, reason=reason, approver=approver,
+                             key_file=key_file)
 
 
 def release_quarantine(run_dir, path, *, stage, reason, approver, key_file=None):
