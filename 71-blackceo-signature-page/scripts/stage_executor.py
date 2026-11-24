@@ -457,6 +457,10 @@ def require_brand_line(stage: str, prompt: str) -> None:
 def target_ratio(stage: str, template: str, section: dict, run_dir: Path,
                  index: int) -> str:
     """Per-section, per-platform ratio: the pixel-mate's, never one 3:4 for all."""
+    forced = section.get("layout_aspect_ratio")
+    if (isinstance(forced, dict) and forced.get("stage") == stage and forced.get("viewport") == "mobile"
+            and _platform(stage, template) == "mobile" and forced.get("ratio") in RATIO_ENUM):
+        return forced["ratio"]  # SWB-290: the validated design-only override of a slot-less section's frame
     for candidate in prior_slices(stage, run_dir, index, template):
         size = png_size(candidate)
         if not size:

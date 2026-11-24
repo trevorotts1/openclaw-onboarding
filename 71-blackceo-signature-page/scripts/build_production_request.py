@@ -795,7 +795,33 @@ def folded_levels(run_dir):
     return len(mains) if len(mains) >= 2 else None
 
 
-LAYOUT_OVERRIDE_KEYS = ("layout", "negatives")
+LAYOUT_OVERRIDE_KEYS = ("layout", "negatives", "aspect_ratio")
+# SWB-290: stages that draw a mobile slice (the only viewport an aspect_ratio override reaches)
+ASPECT_OVERRIDE_STAGES = ("mobile-tablet", "visual-mockup", "final-mockups")
+
+
+def _slot_ratio(section):
+    """The fixed ratio of the section's first non-circle slot, or None when it has none ("auto" is none)."""
+    flat = [x for x in section.get("slots") or [] if exe.design_style.slot_shape(x) != "circle"]
+    ratio = (flat or [{}])[0].get("aspect_ratio")
+    return ratio if ratio and ratio != "auto" else None
+
+
+def _check_aspect_override(stage_key, sid, value, section):
+    """SWB-290: the design-only mobile frame ratio of a section that has no image slot to set it."""
+    where = f"layout overrides: {stage_key!r} section {sid!r} `aspect_ratio`"
+    if stage_key not in ASPECT_OVERRIDE_STAGES:
+        raise BuildError(f"{where} applies to a stage that draws a mobile slice "
+                         f"({', '.join(ASPECT_OVERRIDE_STAGES)}), not {stage_key!r}")
+    if not isinstance(value, str) or value not in exe.RATIO_ENUM:
+        raise BuildError(f"{where} must be one of {', '.join(exe.RATIO_ENUM)}, not {value!r}")
+    a, b = (int(x) for x in value.split(":"))
+    if a > b:
+        raise BuildError(f"{where} {value!r} is landscape; the mobile frame is portrait or square")
+    slot = _slot_ratio(section)
+    if slot is not None and slot != value:
+        raise BuildError(f"{where} {value!r} would override the section's image slot ratio {slot!r}; "
+                         "a section that has a slot keeps the slot's ratio (override only a section with no slot)")
 
 
 def load_layout_overrides(path, stage, sections):
@@ -833,19 +859,30 @@ def load_layout_overrides(path, stage, sections):
                                  f"{', '.join(extra)}; only {' and '.join(LAYOUT_OVERRIDE_KEYS)} (design "
                                  "text) can be overridden, never copy, ctas, model, references, slots "
                                  "or section order")
-            if not isinstance(entry.get("layout"), str) or not entry["layout"].strip():
+            if "aspect_ratio" in entry:
+                _check_aspect_override(stage_key, sid, entry["aspect_ratio"], ids[str(sid)])
+            if "aspect_ratio" in entry and "layout" not in entry:
+                pass  # a frame-ratio-only entry appends no text
+            elif not isinstance(entry.get("layout"), str) or not entry["layout"].strip():
                 raise BuildError(f"layout overrides: {stage_key!r} section {sid!r} needs a non-empty "
                                  "`layout` string")
             if "negatives" in entry and not isinstance(entry["negatives"], str):
                 raise BuildError(f"layout overrides: {stage_key!r} section {sid!r} `negatives` must be a string")
     applied = []
     for sid, entry in (doc.get(stage) or {}).items():
-        text = entry["layout"].strip()
-        if entry.get("negatives", "").strip():
-            text += "\nNEGATIVES: " + entry["negatives"].strip()
         section = ids[str(sid)]
-        section["layout"] = "\n".join(([section["layout"]] if section.get("layout") else []) + [text])
-        applied.append({"section_id": str(section["section_id"]), "appended_text": text})
+        text = ""
+        if "layout" in entry:
+            text = entry["layout"].strip()
+            if entry.get("negatives", "").strip():
+                text += "\nNEGATIVES: " + entry["negatives"].strip()
+            section["layout"] = "\n".join(([section["layout"]] if section.get("layout") else []) + [text])
+        row = {"section_id": str(section["section_id"]), "appended_text": text}
+        if "aspect_ratio" in entry:  # design-only; stage_executor.target_ratio reads it for the mobile slice
+            section["layout_aspect_ratio"] = {"stage": stage, "viewport": "mobile", "ratio": entry["aspect_ratio"]}
+            row["aspect_ratio"] = entry["aspect_ratio"]
+            row["viewport"] = "mobile"
+        applied.append(row)
     return {"source": str(path), "sha256": hashlib.sha256(raw).hexdigest(), "stage": stage,
             "applied": applied}
 
@@ -1099,6 +1136,8 @@ def main(argv=None) -> int:
               f"sections={','.join(x['section_id'] for x in lo['applied']) or 'none'}")
         for x in lo["applied"]:
             print(f"LAYOUT-OVERRIDE section {x['section_id']}: {x['appended_text']}")
+            if x.get("aspect_ratio"):
+                print(f"LAYOUT-OVERRIDE-ASPECT section {x['section_id']}: {x['aspect_ratio']} ({x['viewport']})")
     print(f"CHECKED run_dir={run_dir} against={'; '.join(m['checked_against']) or 'request only'}")
     print(f"DESIGN-INTELLIGENCE receipt={receipt_path.relative_to(run_dir)} card={card_id or 'none'}")
     return 0
