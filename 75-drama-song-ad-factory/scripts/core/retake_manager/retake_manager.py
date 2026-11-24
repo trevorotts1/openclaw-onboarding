@@ -58,6 +58,29 @@ EXIT = {"ok": 0, "error": 1, "waiting": 3, "parked": 4, "rejected": 5}
 # upgrade path: read cap from the published versioned profile per run.
 DEFAULT_REPAIR_CAP = 2
 
+# F-CG-6 (S01 rule 6 owns the policy; this is the code): per-class retake caps.
+# A defect class past its cap keeps the best take and flags RETAKE_OVER_BUDGET
+# -- it is never retried. The profile may override any class in a
+# ``retake_budgets`` map; the defaults below hold otherwise.
+RETAKE_OVER_BUDGET = "RETAKE_OVER_BUDGET"
+DEFAULT_CLASS_CAPS = {
+    "faces": 1,
+    "painted_letters": 1,
+    "cuts": 2,
+    "eyeball_faults": 1,
+    "burned_text": 1,
+}
+_CLASS_ALIASES = {
+    "face": "faces", "faces": "faces", "identity": "faces",
+    "letters": "painted_letters", "painted_letters": "painted_letters",
+    "painted-letters": "painted_letters", "text_letters": "painted_letters",
+    "cut": "cuts", "cuts": "cuts", "edit": "cuts",
+    "eyeball": "eyeball_faults", "eyeball_faults": "eyeball_faults",
+    "eyeball-faults": "eyeball_faults",
+    "burned_text": "burned_text", "burned-text": "burned_text",
+    "burned_in_text": "burned_text", "text": "burned_text",
+}
+
 # Profile ships beside this package: core/ in the build tree, scripts/core/ in
 # a skill install. Absolute operator-box paths cannot ship (QC static guard).
 DEFAULT_PROFILE = os.path.join(
@@ -142,6 +165,276 @@ def _find_repair_cap(node):
             if found is not None:
                 return found, source
     return None, None
+
+
+def _resolve_defect_class(value):
+    """Map a defect-class name to its canonical key, or None when unknown."""
+    if not isinstance(value, str) or not value.strip():
+        return None
+    return _CLASS_ALIASES.get(value.strip().lower().replace(" ", "_"))
+
+
+def class_caps(profile=None):
+    """Per-class retake caps (F-CG-6). Profile ``retake_budgets`` overrides a
+    class; anything absent keeps its default. Unknown classes are ignored, so a
+    typo never silently lowers a cap."""
+    caps = dict(DEFAULT_CLASS_CAPS)
+    budgets = profile.get("retake_budgets") if isinstance(profile, dict) else None
+    if isinstance(budgets, dict):
+        for key, value in budgets.items():
+            cls = _resolve_defect_class(key)
+            if cls is not None and isinstance(value, int) \
+                    and not isinstance(value, bool) and value >= 0:
+                caps[cls] = value
+    return caps
+
+
+# ---------------------------------------------------------------------------
+# G-LIP-02: no motion-for-lip swap that kills scripted body beats.
+LIP_SWAP_KILLS_BODY = "LIP_SWAP_KILLS_BODY_BEAT"
+
+
+def check_lip_swap(swap, base):
+    """Refuse a lip-swap take whose body-beat score drops below the base take
+    it replaces (G-LIP-02).
+
+    ``swap``/``base``: {"body_beat_score": number}. A take that buys a mouth by
+    freezing the body is refused; the repair path is a two-track take (body
+    motion preserved plus the face lip) or a reshoot briefed with both, never a
+    frozen mouth-only swap. A swap that keeps or raises the score passes.
+    """
+    if not isinstance(swap, dict) or not isinstance(base, dict):
+        return _reject("INVALID_REQUEST",
+                       "lip_swap and base must be records with body_beat_score")
+    cur = swap.get("body_beat_score")
+    was = base.get("body_beat_score")
+    if not (isinstance(cur, (int, float)) and not isinstance(cur, bool)
+            and isinstance(was, (int, float)) and not isinstance(was, bool)):
+        return _reject("INVALID_REQUEST",
+                       "body_beat_score must be a number on both takes")
+    if cur + 1e-9 < was:
+        return {
+            "outcome": "rejected", "code": LIP_SWAP_KILLS_BODY,
+            "reason": ("lip-swap take keeps %.3f of the base take's %.3f body "
+                       "beats; a frozen mouth-only swap loses the beat the "
+                       "script asked for" % (cur, was)),
+            "repair": [
+                "two-track take: body motion preserved, face lip added",
+                "reshoot briefed with the body beat and the lip together",
+            ],
+            "never": "frozen mouth-only swap",
+            "tool": TOOL_NAME, "tool_version": TOOL_VERSION,
+            "recovery": "use the two-track take or a combined reshoot brief",
+        }
+    return {"pass": True, "reason_code": "LIP_SWAP_KEEPS_BODY",
+            "swap": cur, "base": was}
+
+
+# ---------------------------------------------------------------------------
+# G-MOTION-02: ensemble shots enter the retake planner.
+ENSEMBLE_MIN_CAST = 5           # "more than 4 cast members"
+ENSEMBLE_CROWD_COMPLAINTS = frozenset({
+    "crowd_motion", "crowd-motion", "unnatural_choir_movement",
+    "unnatural-choir-movement", "choir_movement", "ensemble_motion",
+    "ensemble-motion",
+})
+
+
+def plan_ensemble_rows(shots):
+    """G-MOTION-02: a shot with more than 4 cast members and a crowd-motion
+    complaint gets a retake row even when it is in neither the H3 nor the
+    lip-sync retake list. The fix is direction-only on H3: one steady action
+    such as a gentle sway plus one clap on beat, the floor singers held or
+    removed. Returns the rows (empty when nothing qualifies)."""
+    if not isinstance(shots, list):
+        raise ValueError("ensemble_shots must be a list of shot records")
+    rows = []
+    for shot in shots:
+        if not isinstance(shot, dict):
+            continue
+        cast = shot.get("cast_count")
+        complaint = str(shot.get("complaint")
+                        or shot.get("motion_complaint") or "").strip().lower()
+        if isinstance(cast, int) and not isinstance(cast, bool) \
+                and cast >= ENSEMBLE_MIN_CAST \
+                and complaint.replace(" ", "_") in ENSEMBLE_CROWD_COMPLAINTS:
+            rows.append({
+                "shot_id": shot.get("shot_id"),
+                "kind": "ensemble_direction_only",
+                "model": "minimax-h3/image-to-video",
+                "direction": ("one steady action such as a gentle sway plus "
+                              "one clap on beat; floor singers held or removed"),
+                "reason": ("more than %d cast members with a crowd-motion "
+                           "complaint" % (ENSEMBLE_MIN_CAST - 1)),
+            })
+    return rows
+
+
+# ---------------------------------------------------------------------------
+# N-31: "keep a usable take" is void after a change of look, bible or route.
+KEEP_VOID_AFTER_CHANGE = "KEEP_VOID_AFTER_CHANGE"
+
+
+def stale_takes(takes, current):
+    """N-31: every take made under an older look, character bible or route is
+    listed for remake; "keep a usable take" never applies to it.
+
+    ``takes``: {artifact_id: {"look_version","bible_version","route_version"}}.
+    ``current``: the run's current {"look_version","bible_version","route_version"}.
+    Returns the list of stale artifact ids (empty when every take is current).
+    """
+    if not isinstance(takes, dict) or not isinstance(current, dict):
+        return []
+    keys = ("look_version", "bible_version", "route_version")
+    stale = []
+    for artifact_id, made in takes.items():
+        if not isinstance(made, dict):
+            stale.append(artifact_id)
+            continue
+        for key in keys:
+            if key in current and made.get(key) != current.get(key):
+                stale.append(artifact_id)
+                break
+    return stale
+
+
+# ---------------------------------------------------------------------------
+# N-44: fixes go back through the steps (3C.6).
+FIX_NOT_FROM_REFERENCES = "FIX_NOT_FROM_REFERENCES"
+STEP_2 = "step_2_keyframe_from_locked_references"
+
+
+def plan_fix_start(artifact_id, made):
+    """N-44: every replacement starts at step 2 from the locked references.
+
+    ``made``: {"shot_id","run_id","look_version"} of the clip being replaced.
+    Returns the repair plan; refuses to select another shot's, run's or
+    version's clip as the source. The retake planner offers no other repair.
+    """
+    if not isinstance(made, dict) or not made.get("shot_id"):
+        return {"outcome": "rejected", "code": FIX_NOT_FROM_REFERENCES,
+                "reason": "replacement must name the shot it belongs to",
+                "recovery": "start at step 2 from this shot's locked references",
+                "tool": TOOL_NAME, "tool_version": TOOL_VERSION}
+    return {
+        "outcome": "ok", "artifact_id": artifact_id,
+        "start_at": STEP_2,
+        "from": {"character_refs": "locked", "location_refs": "locked",
+                 "look_lock": made.get("look_version")},
+        "forbidden_sources": ["another shot's clip", "another run's clip",
+                              "another look version's clip"],
+        "then": ["step_3_story_clip", "step_4_lip_sync_if_lip"],
+        "tool": TOOL_NAME, "tool_version": TOOL_VERSION,
+    }
+
+
+# ---------------------------------------------------------------------------
+# N-122 (Bible Guard, part 3): escalation, never a person asked while a fix is
+# still available.
+RETAKE_ESCALATE = "RETAKE_ESCALATE"
+BIBLE_RECHECK_REQUIRED = "BIBLE_RECHECK_REQUIRED"
+ESCALATE_AFTER_TRIES = 2
+BIBLE_RECHECK_AFTER_SHOTS = 3
+
+
+def escalate(failures):
+    """N-122 part 3: after the second try the shot escalates with both takes,
+    and the same person or place failing in 3 or more shots stops shot-by-shot
+    remaking -- the bible entry is rechecked and remade if it is the cause.
+
+    ``failures``: [{"artifact_id","subject","subject_kind",
+    "tries","takes":[...]}]. ``subject`` is the character id or place id.
+    """
+    escalations, per = [], {}
+    for f in failures if isinstance(failures, list) else []:
+        if not isinstance(f, dict):
+            continue
+        subject = f.get("subject")
+        kind = f.get("subject_kind") or "person"
+        if subject:
+            per[(kind, subject)] = per.get((kind, subject), 0) + 1
+        tries = f.get("tries")
+        if isinstance(tries, int) and not isinstance(tries, bool) \
+                and tries >= ESCALATE_AFTER_TRIES:
+            escalations.append({
+                "artifact_id": f.get("artifact_id"), "code": RETAKE_ESCALATE,
+                "subject": subject, "subject_kind": kind,
+                "both_takes": f.get("takes") or [],
+                "reason": "still failing after %d tries; goes to the run owner "
+                          "with both takes and the reference it failed against"
+                          % tries,
+            })
+    bible = [{"subject": subject, "subject_kind": kind, "shots": shots,
+              "code": BIBLE_RECHECK_REQUIRED,
+              "reason": "failing in %d shots; recheck the bible entry against "
+                        "its own master before remaking again" % shots}
+             for (kind, subject), shots in per.items()
+             if shots >= BIBLE_RECHECK_AFTER_SHOTS]
+    return {"outcome": "ok", "escalate": escalations,
+            "bible_recheck": bible,
+            "tool": TOOL_NAME, "tool_version": TOOL_VERSION}
+
+
+# ---------------------------------------------------------------------------
+# N-04 / N-20: a new clip beats a patch, and a remake only makes the
+# storyboard's own action bigger.
+REMAKE_NOT_FROM_PICTURE = "REMAKE_NOT_FROM_PICTURE"
+REMAKE_INVENTS_ACTION = "REMAKE_INVENTS_ACTION"
+
+
+def check_remake(replacement):
+    """N-04: the repair for a failed shot is a remake from the locked picture in
+    the one remake blast -- never a patch (crop, zoom, freeze, hand-join).
+    N-20: a remake may only make the storyboard's own action bigger; a new prop
+    action is refused.
+
+    ``replacement``: {"from": "locked_picture"|"patch"|..., "action":
+    <storyboard action>, "new_action": <what the remake asks for>, plus
+    optional "extra_prop_action": True}.
+    """
+    if not isinstance(replacement, dict):
+        return _reject("INVALID_REQUEST", "replacement must be a record")
+    frm = str(replacement.get("from") or "").strip().lower()
+    if frm != "locked_picture":
+        return {"outcome": "rejected", "code": REMAKE_NOT_FROM_PICTURE,
+                "reason": ("the repair is a remake from the locked picture, "
+                           "not a %r patch; a new clip beats a patch"
+                           % (frm or "unknown")),
+                "recovery": "remake the shot from its locked picture in the "
+                            "one remake blast",
+                "tool": TOOL_NAME, "tool_version": TOOL_VERSION}
+    if replacement.get("extra_prop_action") is True:
+        return {"outcome": "rejected", "code": REMAKE_INVENTS_ACTION,
+                "reason": ("a remake may only make the storyboard's own action "
+                           "bigger; a new prop action is not a repair"),
+                "recovery": "enlarge the storyboard action, add no new prop act",
+                "tool": TOOL_NAME, "tool_version": TOOL_VERSION}
+    return {"outcome": "ok", "reason_code": "REMAKE_OK",
+            "blast": "one_remake_blast", "from": frm,
+            "tool": TOOL_NAME, "tool_version": TOOL_VERSION}
+
+
+def check_action_scope(storyboard_actions, remake_action_ids):
+    """N-20: a remake only makes the storyboard's own action bigger.
+
+    ``storyboard_actions``: the shot's own action ids; ``remake_action_ids``:
+    the actions the remake asks for. Any remake action that is not one of the
+    storyboard's own is a new invention and is refused.
+    """
+    own = {str(a) for a in (storyboard_actions or [])}
+    asked = [str(a) for a in (remake_action_ids or [])]
+    invented = [a for a in asked if a not in own]
+    if invented:
+        return {"outcome": "rejected", "code": REMAKE_INVENTS_ACTION,
+                "reason": ("remake asks for action(s) %s the storyboard does "
+                           "not carry; a remake enlarges the storyboard's own "
+                           "action and invents nothing" % ", ".join(invented)),
+                "invented": invented,
+                "recovery": "drop the invented action or enlarge a storyboard "
+                            "action instead",
+                "tool": TOOL_NAME, "tool_version": TOOL_VERSION}
+    return {"outcome": "ok", "reason_code": "REMAKE_ACTION_IN_SCOPE",
+            "tool": TOOL_NAME, "tool_version": TOOL_VERSION}
 
 
 def _prior_attempts(history):
@@ -260,7 +553,29 @@ def plan(req, profile_path=None):
         cap, cap_source = DEFAULT_REPAIR_CAP, "default"
     profile_version = profile.get("profile_version", "unspecified")
 
+    # G-LIP-02: a lip-swap take never buys a mouth by killing body beats.
+    if req.get("lip_swap") is not None:
+        verdict = check_lip_swap(req.get("lip_swap"),
+                                 req.get("base_take") or {})
+        if verdict.get("pass") is not True:
+            return verdict
+
+    # N-04 / N-20: a new clip beats a patch, and a remake invents no new action.
+    if req.get("replacement") is not None:
+        remake = check_remake(req.get("replacement"))
+        if remake.get("outcome") != "ok":
+            return remake
+    if req.get("remake_action_ids") is not None:
+        scope = check_action_scope(req.get("storyboard_actions") or [],
+                                   req.get("remake_action_ids") or [])
+        if scope.get("outcome") != "ok":
+            return scope
+
     accepted_set = set(accepted)
+    # N-31: a take made under an older look, bible or route is never "usable";
+    # it is listed for remake even when it looks fine.
+    stale = set(stale_takes(req.get("takes_by_version") or {},
+                            req.get("current_versions") or {}))
     failed_states = {k for k, v in states.items() if v == "FAIL"}
     if failed not in shots:
         return _reject(
@@ -301,8 +616,116 @@ def plan(req, profile_path=None):
             queue.append(artifact_id)
 
     # Repair bounds: per-artifact attempt counts from durable history.
+    # Lock 5: one lone drip (single target, cap 1 pass each) refuses
+    # RETAKE_DRIP — remakes go back in ONE blast, never one by one.
+    # Lock 1: identical-template retries past the cap raise
+    # TEMPLATE_FAIL_LOCK with the prompt-change order.
+    drip = req.get("drip") or (len(targets) == 1
+                               and int(req.get("passes_used") or 1) > 1
+                               and int(req.get("ready_count") or 1) > 1)
+    if drip:
+        import never_again as _na
+        return {"outcome": "rejected", "code": _na.RETAKE_DRIP,
+                "reason": "drip submit refused: %d ready jobs belong in one "
+                          "blast up to the rate limit, never one by one"
+                          % int(req.get("ready_count") or len(targets)),
+                "targets": targets, "attempt_counts": dict(counts),
+                "tool": TOOL_NAME, "tool_version": TOOL_VERSION,
+                "recovery": "resubmit all ready jobs in ONE blast"}
+    # Lock 8 (F-KLING-ROUTE, as revised by S-42/3C.1a): the lip-sync model
+    # (omnihuman-2-0, the only one) rides ONLY lip_sync:true shots (talking or
+    # singing). Caller passes shot lip_sync state as
+    # req["lip_sync_by_artifact"] {id: bool} and the retake model as
+    # req["retake_model"]; the locked lip-sync model
+    # (kie_dispatch/model_lock.is_locked_lipsync) on a non-lip-sync shot
+    # refuses ROUTE_CHANGED -- re-plan as an H3 remake.
+    _lip_sync_map = req.get("lip_sync_by_artifact") or {}
+    _retake_model = req.get("retake_model") or ""
+    try:
+        from kie_dispatch.model_lock import is_locked_lipsync as _is_lipsync
+    except ImportError:
+        try:
+            from model_lock import is_locked_lipsync as _is_lipsync  # type: ignore
+        except ImportError:
+            _is_lipsync = None
+    if _is_lipsync is not None and _is_lipsync(_retake_model):
+        import never_again as _na
+        for _a in targets:
+            if not _lip_sync_map.get(_a, False):
+                return {"outcome": "rejected", "code": _na.ROUTE_CHANGED,
+                        "reason": ("the lip-sync model (omnihuman-2-0) is "
+                                   "allowed ONLY on lip_sync:true shots "
+                                   "(talking or singing); %r is not "
+                                   "lip-sync -- re-plan as an H3 remake"
+                                   % _a),
+                        "targets": targets, "attempt_counts": dict(counts),
+                        "tool": TOOL_NAME, "tool_version": TOOL_VERSION,
+                        "recovery": "re-plan %r as an H3 remake" % _a}
+    # Lock 10 (F-MODEL-AUTH, Trevor order 2026-11-21): req["retake_model"]
+    # must be in never_again.AUTHORIZED_DISPATCH_MODELS or every target
+    # needs a Trevor written order binding that model + shot
+    # (req["model_auth_order"]); else MODEL_UNAUTHORIZED before cap math.
+    _auth_model = req.get("retake_model")
+    if _auth_model:
+        import never_again as _na
+        _auth_hit = _na.check_model_authorized(_auth_model)
+        _unbound = [a for a in targets if not _na.check_model_order(
+            req.get("model_auth_order"), _auth_model, a)]
+        if _auth_hit is not None and _unbound:
+            return {"outcome": "rejected", "code": _na.MODEL_UNAUTHORIZED,
+                    "reason": _auth_hit["detail"] + " (retake %r)" % _unbound[0],
+                    "targets": targets, "attempt_counts": dict(counts),
+                    "tool": TOOL_NAME, "tool_version": TOOL_VERSION,
+                    "recovery": "re-plan with an authorized model or get a "
+                                "Trevor written order binding model + shot"}
+    # F-CG-6: per-class budgets (S01 rule 6 is the policy; this is its code).
+    # A defect class past its cap keeps the best take and flags
+    # RETAKE_OVER_BUDGET -- it is never retried.
+    _caps = class_caps(profile)
+    _defect_class = _resolve_defect_class(req.get("defect_class"))
+    if _defect_class is not None:
+        _class_cap = _caps[_defect_class]
+        _over = [a for a in targets if counts.get(a, 0) >= _class_cap]
+        if _over:
+            return _stop(
+                RETAKE_OVER_BUDGET,
+                "defect class %r is over its %d-try budget: %s; keep the best "
+                "take, flag it and never retry"
+                % (_defect_class, _class_cap,
+                   ", ".join("%s (%d attempts)" % (a, counts.get(a, 0))
+                             for a in _over)),
+                outcome="parked",
+                extra={"defect_class": _defect_class,
+                       "class_cap": _class_cap, "class_caps": _caps,
+                       "keep_best": True, "flag": True,
+                       "targets": targets, "attempt_counts": dict(counts),
+                       "profile_version": profile_version},
+                facts={"attempt": counts.get(_over[0], 0),
+                       "cap": _class_cap})
     exhausted = [a for a in targets if counts.get(a, 0) >= cap]
     if exhausted:
+        # Lock 1 (template-fail, NEVER-AGAIN): an identical-template retry
+        # past the cap raises TEMPLATE_FAIL_LOCK with the prompt-change order
+        # instead of another parked cap.
+        prior_prompts = req.get("prior_prompts") or {}
+        cand = req.get("candidate_prompt")
+        for a in exhausted:
+            import never_again as _na
+            lock = _na.check_template_fail(prior_prompts.get(a)
+                                           if isinstance(prior_prompts, dict)
+                                           else prior_prompts, cand or "")
+            if lock is not None and cand:
+                return {
+                    "outcome": "rejected", "code": lock["code"],
+                    "reason": lock["detail"] + " for %s (repair cap also "
+                              "reached)" % a,
+                    "targets": targets, "attempt_counts": dict(counts),
+                    "repair_cap": cap, "repair_cap_source": cap_source,
+                    "profile_version": profile_version,
+                    "tool": TOOL_NAME, "tool_version": TOOL_VERSION,
+                    "recovery": "change the prompt (drop the stillness "
+                                "line) or stop and report",
+                }
         detail = ", ".join(
             "%s (%d attempts, cap %d)" % (a, counts.get(a, 0), cap)
             for a in exhausted)
@@ -319,9 +742,23 @@ def plan(req, profile_path=None):
             extra={"targets": targets, "attempt_counts": dict(counts),
                    "repair_cap": cap, "repair_cap_source": cap_source,
                    "profile_version": profile_version,
+                   # N-122: at the second try the shot escalates with both
+                   # takes, the reference it failed against and the failed
+                   # question; a subject failing in 3+ shots gets a bible
+                   # recheck. Never a person asked while a fix is available.
+                   "escalation": escalate(req.get("failures") or []),
                    "recovery": "escalate to the orchestrator; do not reset "
                                "counters to force another attempt"},
             facts={"attempt": counts.get(first, 0), "cap": cap})
+
+    # N-31: stale takes are listed for remake inside this same plan.
+    for _s in sorted(stale):
+        if _s in shots and _s not in targets:
+            targets.append(_s)
+
+    # N-44: every replacement starts at step 2 from the locked references.
+    fix_starts = {a: plan_fix_start(a, (req.get("made_by") or {}).get(a, {}))
+                  for a in targets}
 
     attempts = []
     for artifact_id in targets:
@@ -334,6 +771,7 @@ def plan(req, profile_path=None):
             "refers_to": {"failed_artifact_id": failed, "check": check},
             "reason": (reason or
                        "retake of %s for failed check %s" % (artifact_id, check)),
+            "repair": fix_starts.get(artifact_id),
         })
     untouched = sorted(set(shots) - seen)
     return {
@@ -342,6 +780,9 @@ def plan(req, profile_path=None):
         "attempts": attempts,
         "untouched": untouched,
         "excluded_accepted": blocked,
+        "stale_for_remake": sorted(stale),
+        "escalation": escalate(req.get("failures") or []),
+        "ensemble_rows": plan_ensemble_rows(req.get("ensemble_shots") or []),
         "repair_cap": cap,
         "repair_cap_source": cap_source,
         "profile_version": profile_version,

@@ -6,6 +6,7 @@
   "export": {"audio_codec": "AAC", "audio_sample_rate_hz": 48000, "fps": 30, "resolution": "1080p", "video_codec": "H.264"},
   "lyrics": {"critical_word_coverage_required": 1.0, "note": "100% required offer/claim/product/CTA words present and correct. Approved pronunciation mappings may change spelling in generation input, never meaning.", "overall_normalized_coverage_min": 0.98},
   "profile_version": "1.0.0",
+  "retake_budgets": {"faces": 1, "painted_letters": 1, "cuts": 2, "eyeball_faults": 1, "burned_text": 1},
   "source": "directive section 17.8 (baseline specification choices, not claims that provider outputs already pass them)",
   "timeline": {"max_av_duration_diff_frames": 1, "note": "Round once to declared frame grid, prohibit cumulative drift. No unintended gaps, black frames or missing media."},
   "timing": {"critical_boundary_max_ms": 100, "median_max_ms": 100, "note": "Measured on independently annotated sample lines. Record sample, confidence and annotation method. Low-confidence alignment requires review, never invented precision.", "p95_max_ms": 250},

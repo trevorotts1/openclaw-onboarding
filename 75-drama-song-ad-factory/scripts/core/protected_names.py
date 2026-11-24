@@ -124,11 +124,16 @@ def packet_required(brief, packet_lines):
 
 def protected_list(brief):
     """Protected names of a brief: protected_names + characters + brands
-    + product_name (strings or {name: ...} dicts). Order kept, no dupes."""
+    + website/url/cta_url + product_name (strings or {name: ...} dicts).
+    website, url and cta_url are each a single string, so the client's site
+    is protected whether the brief calls it website, url or cta_url. Order
+    kept, no dupes."""
     brief = brief or {}
     out, seen = [], set()
-    for key in ("protected_names", "characters", "brands", "website"):
-        for item in ([brief.get(key)] if key == "website" else brief.get(key) or []):
+    for key in ("protected_names", "characters", "brands", "website",
+                "url", "cta_url"):
+        for item in ([brief.get(key)] if key in ("website", "url", "cta_url")
+                     else brief.get(key) or []):
             name = item.get("name") if isinstance(item, dict) else item
             if isinstance(name, str) and _tokens(name) and \
                     tuple(_tokens(name)) not in seen:
@@ -507,15 +512,60 @@ def check_spelling(cues, protected=(), extra_words=()):
     return errors
 
 
+#: Text labels whose words are SUNG. The address may be sung in its spoken
+#: form ("wake up happy sis dot com"); the printed end card stays verbatim
+#: (F-EOC-6).
+SUNG_LABELS = ("lyrics", "captions")
+
+def _dot_spans(tokens, want):
+    """Start index of every occurrence of ``want`` in ``tokens``, allowing a
+    spoken "dot" wherever the address itself carries a dot (F-EOC-6).
+
+    A sung line says "example dot org"; the printed line says
+    "example.org", which tokenises to the same ["example", "org"]. Both forms
+    match here, and nothing else does: an inserted "dot" is accepted only
+    BETWEEN two address words, never inside one or at the ends.
+    """
+    out = []
+    n = len(want)
+    if not n:
+        return out
+    for i in range(len(tokens) - n + 1):
+        if tokens[i] != want[0]:
+            continue
+        pos, ok = i + 1, True
+        for k in range(1, n):
+            if pos < len(tokens) and tokens[pos] == "dot":
+                pos += 1
+            if pos >= len(tokens) or tokens[pos] != want[k]:
+                ok = False
+                break
+            pos += 1
+        if ok:
+            out.append(i)
+    return out
+
 def check_website(website, **texts):
-    """I1: the client's exact web address, verbatim (case and punctuation
-    ignored), in each given text (lyrics=, captions=, end_card=). A text that
-    is None is skipped. [] when every given text carries it."""
+    """I1: the client's exact web address in each given text (lyrics=,
+    captions=, end_card=). A text that is None is skipped. [] when every
+    given text carries it.
+
+    Case and punctuation are ignored everywhere. Lyrics and captions are
+    SUNG, so their spoken form is accepted too ("dot org" for ".org"); the
+    end card is printed text and still needs the address itself (F-EOC-6).
+    """
     want = _tokens(website)
     if not want:
         return []
-    return ["%s %r missing from %s (found %r)"
-            % (CODE_WEBSITE, website, label,
-               " ".join(_tokens("\n".join(_lines(t)))[:12]))
-            for label, t in sorted(texts.items())
-            if t is not None and not _spans(_tokens("\n".join(_lines(t))), want)]
+    errors = []
+    for label, t in sorted(texts.items()):
+        if t is None:
+            continue
+        tokens = _tokens("\n".join(_lines(t)))
+        found = (_dot_spans(tokens, want) if label in SUNG_LABELS
+                 else _spans(tokens, want))
+        if not found:
+            errors.append("%s %r missing from %s (found %r)"
+                          % (CODE_WEBSITE, website, label,
+                             " ".join(tokens[:12])))
+    return errors

@@ -238,6 +238,17 @@ _ACCEPTANCE_DIR = os.path.join("music", "acceptance")
 #: take's own PASS/FAIL record and never stands IN for one (a refused
 #: ACCEPTANCE_RECORD_MISSING stays refused).
 OPERATOR_DECISION_FILE = "operator-decision.json"
+#: D10: the ONE published order for advancing a run whose gates FAILED on
+#: MEASURED evidence. A refusal names this, verbatim, so no operator invents a
+#: path and no relabel is ever suggested. Every step writes its own evidence
+#: and the decision is bound to the digest of that evidence -- a decision can
+#: never stand in for a measurement.
+OPERATOR_DECISION_SEQUENCE = (
+    "record_acceptance(run_dir, variant_id, take_binding(export, revision), measured results) "
+    "-> digest = sha256_evidence_records({variant_id: measure_evidence_digest(run_dir, "
+    "variant_id)}) -> record_operator_decision(run_dir, decision ACCEPTED_RISK naming the "
+    "variant, gates_not_proven, measured_evidence_digest=digest) -> factory.py music "
+    "--action complete --operator-decision music/acceptance/operator-decision.json")
 #: Decision values this boundary admits for gates a MEASUREMENT failed to
 #: prove. Anything else (an overclaim, a bare string) is refused.
 OPERATOR_DECISIONS = ("ACCEPTED_RISK",)
@@ -369,13 +380,37 @@ def validate_request(req, style_id=None, client_text="", delivered_s=None, pace_
     d = d if isinstance(d, (int, float)) and not isinstance(d, bool) else None
     # FU-RNBFLOW-SONG: the style reaches the sheet check (rap is judged as rap,
     # never refused as "no style"), and the style's own contract runs.
+    # D3 (request path): a METHOD run's sheet answers a different question --
+    # its first sung word lands at the ERM apex, so a sheet that opens with a
+    # short spoken ERM and then sings is the CORRECT shape, not a short hook.
+    # The order rides the request exactly like _hook_plan, so the pre-ERM gate
+    # runs BEFORE any spend. A run with no method block is unchanged.
+    _pp = pace_plan if pace_plan is not None else req.get("_pace_plan")
+    _is_method = bool(isinstance(_pp, dict) and _pp.get("method"))
+    _method_kw = ({"method": True}
+                  if _is_method and _check_lyric_sheet_takes_method() else {})
     errs += _R.check_lyric_sheet(sheet, client_text, d, style_id=style_id,
-                                 hook_plan=hook_plan)
+                                 hook_plan=hook_plan, **_method_kw)
     # WW-16: the declared opening vocalise cue must satisfy the ceiling.
     errs += _SC.check_sheet(_lyrics_of(req), style_id, delivered_s, inp.get("style"))["reasons"]
     errs += _SCM.check_pace_style(inp.get("style"), pace_plan or req.get("_pace_plan"))
     return errs
 
+
+def _check_lyric_sheet_takes_method():
+    """True when ``suno_recipe.check_lyric_sheet`` carries the method gate.
+
+    The gate (PRE_ERM_SPOKEN_SHORT) ships in suno_recipe; a box whose copy
+    predates it takes no flag and there is no gate to run, so the call stays
+    exactly as it is there. Never a silent pass on a box that HAS the gate.
+    """
+    import inspect                      # noqa: PLC0415 - stdlib, cheap
+    try:
+        params = inspect.signature(_R.check_lyric_sheet).parameters
+    except (TypeError, ValueError):
+        return False
+    return "method" in params or any(p.kind is inspect.Parameter.VAR_KEYWORD
+                                     for p in params.values())
 
 def _lyrics_of(req):
     """The ONE approved lyrics source of an envelope: ``input.lyrics``.
@@ -706,6 +741,90 @@ def _method_plan(plan):
     return isinstance(m, dict) and bool(m)
 
 
+def run_method_targets(run_dir):
+    """The run's method record ``runtime_targets``, read from
+    ``<run>/control/method.json`` -- the authority for a METHOD run's ERM
+    apex and window.
+
+    None when there is no run directory or no method record at all; an
+    ``unreadable`` marker on bad JSON and ``runtime_targets_missing`` on a
+    record that carries none. BOTH markers are truthy on purpose: they make
+    the judge a METHOD judge with no apex, which records UNMEASURED and never
+    passes. A run with no method record is untouched.
+    """
+    if not run_dir:
+        return None
+    p = os.path.join(str(run_dir), "control", "method.json")
+    if not os.path.isfile(p):
+        return None
+    try:
+        with open(p, encoding="utf-8") as f:
+            rec = json.load(f)
+    except (OSError, ValueError):
+        return {"unreadable": "control/method.json"}
+    rt = rec.get("runtime_targets") if isinstance(rec, dict) else None
+    if isinstance(rt, dict) and rt:
+        return dict(rt)
+    return {"runtime_targets_missing": True}
+
+#: sections that DELIVER a sung or rapped voice (a no-voice tag delivers none)
+_VOICE_DELIVERIES = ("sung", "rap")
+
+def first_sung_from_words(sheet_text, aligned_words):
+    """The FIRST sung/rap word's start, read off the take's own word timings.
+
+    The detector measures WHEN singing begins; word timing says WHICH word.
+    An earlier sung word than the detector's figure -- a line heard under the
+    groove before the detector calls it singing -- must fail the early bound.
+
+    The line is taken from the sheet, never guessed from the words: the first
+    sung/rap section's first line with 3 or more normalised tokens is the
+    anchor, and the first up-to-3 lines of that section are matched against
+    the aligned word stream. None when there is nothing to match (no sheet, no
+    words, an unparseable sheet, no section that qualifies, or no match), so
+    the caller falls back to the detector figure.
+    """
+    if not sheet_text or not aligned_words:
+        return None
+    try:
+        sheet = _R.parse_lyrics(sheet_text)
+    except _R.RecipeError:
+        return None
+    lines = None
+    for sec in sheet or []:
+        if not isinstance(sec, dict):
+            continue
+        if str(sec.get("delivery") or "").strip().lower() not in _VOICE_DELIVERIES:
+            continue
+        got = [ln for ln in (sec.get("lines") or []) if str(ln).strip()]
+        if got and len(_HP.norm_tokens(got[0])) >= 3:
+            lines = got
+            break
+    if not lines:
+        return None
+    stream = []
+    for i, w in enumerate(aligned_words):
+        if not isinstance(w, dict):
+            continue
+        for tok in _HP.norm_tokens(str(w.get("word", ""))):
+            stream.append((tok, i))
+    for line in lines[:3]:
+        want = _HP.norm_tokens(line)[:4]
+        n = len(want)
+        if not n:
+            continue
+        for pos in range(len(stream) - n + 1):
+            if [t for t, _i in stream[pos:pos + n]] == want:
+                w = aligned_words[stream[pos][1]]
+                start = w.get("start")
+                if start is None:
+                    start = w.get("startS")
+                try:
+                    return float(start)
+                except (TypeError, ValueError):
+                    return None
+    return None
+
 def _erm_apex_s(plan, delivered_s):
     """The ERM apex of a METHOD run, read off the plan -- no table here.
 
@@ -957,7 +1076,21 @@ def _judge_take_inner(take, plan, script_words, hook_text, spoken_range_pct=None
     tail = take.get("tail_rms_dbfs")
     put("clean_ending", "PASS" if isinstance(tail, (int, float)) and tail > NEAR_SILENT_DBFS else "FAIL",
         "final 2 s at %r dBFS" % (tail,))
-    fs = take.get("first_sung_s")
+    # D5/D6-A3: WORD TIMING BEATS THE DETECTOR for the first sung word. The
+    # detector measures when singing begins, never which word; a line heard
+    # under the groove before it is called singing is exactly the early sung
+    # word this gate exists to catch. The detector figure stays as the
+    # fallback, and the source of the number is recorded on the gate.
+    # The override is METHOD-scoped on purpose: the ERM window has an EARLY
+    # bound, and only there does the detector's "when singing starts" differ
+    # from "which word is first" in a way that changes a verdict. A non-method
+    # run keeps the late-only 15 percent rule on the detector figure exactly as
+    # shipped -- its own golden takes measure the detector, and re-reading them
+    # off the word stream would rewrite shipped verdicts this unit does not own.
+    fs_words = (first_sung_from_words(sheet_text or plan.get("sheet_text"),
+                                      take.get("aligned_words") or [])
+                if _method_plan(plan) else None)
+    fs = fs_words if fs_words is not None else take.get("first_sung_s")
     if _method_plan(plan):
         # METHOD C3 (Trevor 2026-10-13): on a method run the first sung line
         # lands at the ERM apex, so the gate is the ERM window -- early AND
@@ -972,6 +1105,12 @@ def _judge_take_inner(take, plan, script_words, hook_text, spoken_range_pct=None
         put("first_sung", j["verdict"], "%.1f s" % fs)
     else:
         put("first_sung", "FAIL", "unmeasured")
+    g["first_sung"]["measurement"] = {
+        "source": "word_timing" if fs_words is not None else "singing_detector",
+        "word_timing_first_sung_s": fs_words,
+        "detector_first_sung_s": take.get("first_sung_s")}
+    g["first_sung"]["detail"] = "%s (%s)" % (
+        g["first_sung"].get("detail") or "", g["first_sung"]["measurement"]["source"])
     # FU-HOOK-PLACEMENT rule 4: always on; a missing input is a FAIL, never a skip
     sheet = sheet_text or plan.get("sheet_text")
     sid = style_id or plan.get("style_id")
@@ -1700,7 +1839,12 @@ def record_acceptance(run_dir, variant_id, binding, results, required=None):
     """Write ONE variant's WW-21 acceptance record under
     ``<run>/music/acceptance/<variant>.json`` and return it. This is the
     WRITER ``acceptance_from_run`` reads, so the read key and the written key
-    are the same key by construction."""
+    are the same key by construction.
+
+    A measured FAIL is recorded as FAIL -- never softened, never dropped: that
+    FAIL record is the input to the operator-decision path
+    (``OPERATOR_DECISION_SEQUENCE``), and a decision is refused unless the
+    evidence it names is the evidence this writer stored."""
     rec = accept_audio_results(results, binding, required=required)
     out = dict(rec, variant_id=str(variant_id))
     p = os.path.join(run_dir, _ACCEPTANCE_DIR, "%s.json" % variant_id)
@@ -1906,14 +2050,16 @@ def acceptance_refusal(run_dir, action):
         nxt = ("re-run the five delivered-audio results against the export being "
                "advanced and record them with record_acceptance; when the gates "
                "fail on MEASURED evidence the run owner may record the documented "
-               "operator decision (factory.py music --action complete "
-               "--operator-decision <path>) -- it never writes a PASS for a "
-               "measured gate and never substitutes a relabel.")
+               "operator decision -- it never writes a PASS for a measured gate "
+               "and never substitutes a relabel. The exact order is: %s"
+               % OPERATOR_DECISION_SEQUENCE)
     return {"reason_code": ACCEPTANCE_CODE_NOT_PROVEN,
             "detail": "the WW-21 acceptance boundary has not passed (%s); %s is held. Only a "
                       "complete set of five PASS delivered-audio results, each bound to the "
                       "take's export digest, creative revision and profile revision, may "
-                      "advance -- zero purchases on this path."
+                      "advance on its own; measured FAILs advance only through a recorded "
+                      "operator decision bound to their evidence digest -- zero purchases "
+                      "on this path."
                       % ("; ".join(detail[:4]) or "no PASS record", action),
             "blocked": chk.get("blocked") or [],
             "next_action": nxt}
@@ -2126,6 +2272,18 @@ def run_takes(request, plan, generate, measure, save, script_words, hook_text,
     # (_pace_plan). It moves into the judge's plan and NEVER reaches KIE.
     plan = dict(plan, pace_change=request.get("_pace_plan") or plan.get("pace_change"))
     request = {k: v for k, v in request.items() if k != "_pace_plan"}
+    # D5/D6: the run's OWN method record is the authority for the ERM apex --
+    # control/method.json's runtime_targets, read at the judge seam. Without
+    # it a method run could be judged against a plan block that disagrees
+    # with the run's control record, and a take singing at 0 s could pass a
+    # first-sung window the record never set. An unreadable record or one
+    # carrying no runtime_targets still makes a METHOD judge, whose missing
+    # apex records UNMEASURED -- never a PASS. A run with no record at all
+    # keeps its plan exactly as it is.
+    if not _method_plan(plan):
+        m = run_method_targets(run_dir or (request or {}).get("run_dir"))
+        if m:
+            plan = dict(plan, method=m)
     # WW-23: BEFORE any generation, the ordered pace change must be complete and
     # the exact request the provider would receive must carry BOTH directions.
     # A missing seam, a reused boundary, a final style that carries only one

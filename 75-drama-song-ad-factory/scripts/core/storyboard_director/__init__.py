@@ -14,7 +14,21 @@ from .storyboard_director import (
     ReviewError,
     is_filler,
     adversarial_review,
+    review_story_fidelity,
+    review_set_consistency,
+    SET_INCONSISTENT,
+    MAP_RENDER_MISMATCH,
+    UNEXPLAINED_STORY_ELEMENT,
+    CHAIN_NOT_CONTINUOUS,
+    MULTI_PLACE_SHOT,
     video_spend_allowed as _video_spend_allowed,
+)
+
+from .story_beat_rules import (  # noqa: E402
+    BEAT_DENSITY_EXCEEDED,
+    LYRIC_PICTURE_SHORT,
+    review_beat_density,
+    review_lyric_picture_coverage,
 )
 
 try:
@@ -61,4 +75,15 @@ __all__ = [
     "CRITERIA", "FILLER_PATTERNS", "SCHEMA_VERSION", "TOOL_VERSION",
     "ReviewError", "is_filler", "adversarial_review", "video_spend_allowed",
     "intake_video_prompt",
+    "review_story_fidelity", "review_set_consistency", "review_beat_density",
+    "review_lyric_picture_coverage", "SET_INCONSISTENT", "MAP_RENDER_MISMATCH",
+    "BEAT_DENSITY_EXCEEDED", "LYRIC_PICTURE_SHORT", "UNEXPLAINED_STORY_ELEMENT",
+    "CHAIN_NOT_CONTINUOUS", "MULTI_PLACE_SHOT",
+    "review_storyboard", "assert_review_clean", "REVIEW_INCOMPLETE",
 ]
+
+from .review_all import (  # noqa: E402  (after the package's own names)
+    REVIEW_INCOMPLETE,
+    assert_review_clean,
+    review_storyboard,
+)

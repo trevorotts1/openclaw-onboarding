@@ -65,20 +65,25 @@ def _mock(table):
     calls = []
 
     def gen(provider, spec):
+        # clip names are this fixture's own table keys ("try1"), never the live
+        # provider id, so the table stays readable whichever model S-42 locks.
         calls.append((provider, "try%s" % spec["try"]))
-        return "%s-%s" % calls[-1]
+        return calls[-1][1]
     return calls, gen, lambda clip: m_of(table[clip])
 
 
 PIC = {"source_image": "closeup.png",
        "image_check": lambda img: {"pass": True},   # picture gate has its own test
-       "acquire": lambda: None}                      # KIE pacing bucket, injected
+       "acquire": lambda: None,                      # KIE pacing bucket, injected
+       # N-113 / G-WIDE-01: every take carries its eye record and landed facts.
+       "eye_record": {"sheet": "sheet.png", "who": "a person", "verdict": "clean"},
+       "landed": {"max_face_h_pct": 34.0, "camera_move_px": 2.0}}
 RETRY = {"retry_input": {"window": "next-best"}}
 PERSON = dict(RETRY, person_verdict="DEFECT")   # a person marked a visible defect (LSP001)
 
 
 def test_pass_first_try_one_paid_job():
-    calls, gen, meas = _mock({"kling-try1": GOOD})
+    calls, gen, meas = _mock({"try1": GOOD})
     row = L.run_gate("L1", gen, meas, **PIC)
     assert row["verdict"] == L.PASS and row["paid_jobs"] == 1 and len(calls) == 1
     assert set(row["numbers"]) == {"offset_s", "lag_frames", "corr",
@@ -108,44 +113,44 @@ def test_weak_first_try_is_accepted_with_flag_no_second_job():
 
 
 def test_person_call_then_pass_on_second_try_with_changed_input():
-    calls, gen, meas = _mock({"kling-try1": WRONG, "kling-try2": GOOD})
+    calls, gen, meas = _mock({"try1": WRONG, "try2": GOOD})
     row = L.run_gate("L1", gen, meas, **PERSON, **PIC)
     assert row["verdict"] == L.PASS and row["paid_jobs"] == 2 and row["kept_try"] == 2
-    assert calls == [("kling", "try1"), ("kling", "try2")]
+    assert calls == [(L.PROVIDER, "try1"), (L.PROVIDER, "try2")]
 
 
 def test_try_two_refused_without_a_changed_input():
-    calls, gen, meas = _mock({"kling-try1": WRONG, "kling-try2": GOOD})
+    calls, gen, meas = _mock({"try1": WRONG, "try2": GOOD})
     row = L.run_gate("L1", gen, meas, person_verdict="DEFECT", **PIC)  # no retry_input
     assert len(calls) == 1 and row["verdict"] == L.KEPT and "RETRY_REFUSED" in row["flag"]
     same = dict(L.IMPROVED_INPUT)
-    calls, gen, meas = _mock({"kling-try1": WRONG, "kling-try2": GOOD})
+    calls, gen, meas = _mock({"try1": WRONG, "try2": GOOD})
     row = L.run_gate("L1", gen, meas, retry_input=same, person_verdict="DEFECT", **PIC)  # identical input
     assert len(calls) == 1 and row["verdict"] == L.KEPT
 
 
 def test_no_automatic_paid_retry_on_any_checker_verdict():
     for sung in (False, True):
-        calls, gen, meas = _mock({"kling-try1": WRONG, "kling-try2": GOOD})
+        calls, gen, meas = _mock({"try1": WRONG, "try2": GOOD})
         row = L.run_gate("L1", gen, meas, sung=sung, **RETRY, **PIC)   # changed input offered
         assert len(calls) == 1 == row["paid_jobs"], (sung, calls)
-    calls, gen, meas = _mock({"kling-try1": WRONG, "kling-try2": GOOD})
+    calls, gen, meas = _mock({"try1": WRONG, "try2": GOOD})
     row = L.run_gate("L1", gen, meas, **RETRY, **PIC)
     assert row["verdict"] == L.KEPT and row["flag"]                    # kept best, flagged
     for pv in ("NOT_SYNCED", "FAIL", "WEAK"):                          # checker words are not a person's call
-        calls, gen, meas = _mock({"kling-try1": WRONG, "kling-try2": GOOD})
+        calls, gen, meas = _mock({"try1": WRONG, "try2": GOOD})
         L.run_gate("L1", gen, meas, person_verdict=pv, **RETRY, **PIC)
         assert len(calls) == 1, pv
 
 
 def test_two_try_cap_keeps_best_take_as_kept_best_of_2():
-    calls, gen, meas = _mock({"kling-try1": WRONG2, "kling-try2": WRONG})
+    calls, gen, meas = _mock({"try1": WRONG2, "try2": WRONG})
     strips = []
     row = L.run_gate("L1", gen, meas, make_strip=lambda c: strips.append(c) or "strip.png",
                      **PERSON, **PIC)
     assert len(calls) == 2 == row["paid_jobs"]     # never a third paid job
     assert row["verdict"] == L.KEPT == "KEPT_BEST_OF_2" and row["jobs_total"] == 2
-    assert row["kept_clip"] in ("kling-try1", "kling-try2") and strips == [row["kept_clip"]]
+    assert row["kept_clip"] in ("try1", "try2") and strips == [row["kept_clip"]]
     assert row["flag"] and row["mouth_strip"] == "strip.png" and "KEPT_BEST_OF_2" in row["receipt"]
     assert L.qc_check([row])["pass"]               # flagged, numbers, strip: accepted
     assert not L.qc_check([dict(row, mouth_strip=None)])["pass"]
@@ -154,7 +159,7 @@ def test_two_try_cap_keeps_best_take_as_kept_best_of_2():
 
 
 def test_prior_jobs_count_against_the_cap_before_anything_is_spent():
-    calls, gen, meas = _mock({"kling-try1": GOOD})
+    calls, gen, meas = _mock({"try1": GOOD})
     try:
         L.run_gate("L1", gen, meas, prior_jobs=2, **PIC)
     except L.LipTryLimit as e:
@@ -162,33 +167,33 @@ def test_prior_jobs_count_against_the_cap_before_anything_is_spent():
     else:
         raise AssertionError("a third job was allowed")
     assert calls == []
-    calls, gen, meas = _mock({"kling-try1": WRONG, "kling-try2": GOOD})
+    calls, gen, meas = _mock({"try1": WRONG, "try2": GOOD})
     row = L.run_gate("L1", gen, meas, prior_jobs=1, **PERSON, **PIC)  # only one try left
     assert len(calls) == 1 and row["jobs_total"] == 2 and row["verdict"] == L.KEPT
 
 
 def test_hard_defect_seen_by_a_person_is_a_fail_and_allows_try_two():
-    seen = {"kling-try1": dict(m_of(GOOD), hard_defects=["GARBLED_CHEST_TEXT"]),
-            "kling-try2": m_of(GOOD)}
+    seen = {"try1": dict(m_of(GOOD), hard_defects=["GARBLED_CHEST_TEXT"]),
+            "try2": m_of(GOOD)}
     calls = []
 
     def gen(provider, spec):
         calls.append(spec["try"])
-        return "kling-try%d" % spec["try"]
+        return "try%d" % spec["try"]
     row = L.run_gate("L1", gen, lambda c: seen[c], **RETRY, **PIC)
     assert calls == [1, 2] and row["verdict"] == L.PASS and row["kept_try"] == 2
-    j = L.judge(seen["kling-try1"])
+    j = L.judge(seen["try1"])
     assert j["verdict"] == L.FAIL and "GARBLED_CHEST_TEXT" in j["reasons"]
 
 
 def test_sung_not_pass_is_held_for_a_person_with_no_paid_redo():
-    calls, gen, meas = _mock({"kling-try1": WRONG, "kling-try2": GOOD})
+    calls, gen, meas = _mock({"try1": WRONG, "try2": GOOD})
     row = L.run_gate("L1", gen, meas, sung=True, **RETRY, **PIC)
     assert row["verdict"] == L.UNDETERMINED and len(calls) == 1 == row["paid_jobs"], row
     q = L.qc_check([row])
     assert not q["pass"] and q["held_for_person"] == ["L1"]
     assert L.qc_check([dict(row, person_verdict=L.PASS)])["pass"]     # a person looked, it is fine
-    calls, gen, meas = _mock({"kling-try1": GOOD})
+    calls, gen, meas = _mock({"try1": GOOD})
     assert L.run_gate("L1", gen, meas, sung=True, **PIC)["verdict"] == L.PASS
 
 
@@ -215,13 +220,13 @@ def test_event_sync_is_advisory_only_and_never_gates():
     assert row["verdict"] == L.PASS and len(calls) == 1
     assert row["advisory_event_sync"] == {"verdict": ES.NOT_SYNCED}
     # gate says FAIL, advisory says SYNCED: still a fail (hard defect path)
-    calls, gen, meas = _mock({"kling-try1": WRONG})
+    calls, gen, meas = _mock({"try1": WRONG})
     row = L.run_gate("L1", gen, meas, advisory=lambda c: {"verdict": ES.SYNCED}, **PIC)
     assert row["verdict"] == L.KEPT
     # advisory that crashes changes nothing
     def boom(c):
         raise RuntimeError("x")
-    calls, gen, meas = _mock({"kling-try1": GOOD})
+    calls, gen, meas = _mock({"try1": GOOD})
     assert L.run_gate("L1", gen, meas, advisory=boom, **PIC)["verdict"] == L.PASS
 
 
@@ -232,30 +237,28 @@ def test_only_the_locked_model_and_no_infinitalk():
         seen.append(provider)
         return "c"
     row = L.run_gate("L1", gen, lambda c: m_of(WRONG), **PERSON, **PIC)
-    assert set(seen) == {"kling"} and len(seen) == 2
-    assert all(a["model"] == "kling/ai-avatar-standard" for a in row["attempts"])
+    assert set(seen) == {L.PROVIDER} and len(seen) == 2
+    assert all(a["model"] == L.LIP_MODEL for a in row["attempts"])
     assert "infinitalk_ab" not in row and "ab_state" not in L.run_gate.__code__.co_varnames
 
 
 def test_paid_submits_go_through_the_kie_governor():
     paced = []
-    calls, gen, meas = _mock({"kling-try1": GOOD})
+    calls, gen, meas = _mock({"try1": GOOD})
     L.run_gate("L1", gen, meas, **dict(PIC, acquire=lambda: paced.append(1)))
     assert paced, "kie_request did not pace the submit"
 
 
-def test_kling_prompt_sings_or_says_one_emotion():
-    s = L.kling_prompt("sung", "woman")
-    assert " sings " in s and "speaks" not in s and "steady locked camera" in s
-    assert "open and close" not in s
-    p = L.kling_prompt("spoken", "man", "tired")
-    assert " says " in p and "tired" in p and p.count("His") == 1
+def test_kling_prompt_is_retired():
+    # S-42 / N-08: the lip-sync model is OmniHuman 2.0 and it takes NO prompt.
+    # The Kling avatar prompt is retired; kling_prompt refuses rather than builds.
     try:
-        L.kling_prompt("rap")
-    except ValueError:
-        pass
+        L.kling_prompt("sung", "woman")
+    except Exception as e:
+        assert e.__class__.__name__ == "PromptTemplateError", e
+        assert getattr(e, "code", "") in ("LIPSYNC_PROMPT_PRESENT", "LIPSYNC_MODEL_MISMATCH"), e
     else:
-        raise AssertionError
+        raise AssertionError("kling_prompt still assembles a retired prompt")
 
 
 def test_missing_mediapipe_or_model_raises_unmeasured():
@@ -270,8 +273,16 @@ def test_missing_mediapipe_or_model_raises_unmeasured():
 
 
 def test_qc_check_fails_unflagged_unmeasured_undetermined_or_unnumbered():
-    ok = {"line_id": "a", "verdict": L.PASS, "numbers": {}}
+    EYE = {"sheet": "s.png", "who": "a person", "verdict": "clean"}
+    LANDED = {"max_face_h_pct": 34.0, "camera_move_px": 2.0}
+    ok = {"line_id": "a", "verdict": L.PASS, "numbers": {}, "eye_record": EYE,
+          "landed": LANDED}
     assert L.qc_check([ok, dict(ok, verdict=L.FLAG)])["pass"]
+    # N-113: no eye record, no pass. G-WIDE-01: a wide-only take refuses.
+    assert not L.qc_check([dict(ok, eye_record=None)])["pass"]
+    assert L.qc_check([dict(ok, eye_record=None)])["reason_code"] == L.LIP_TAKE_NOT_EYE_CHECKED
+    assert not L.qc_check([dict(ok, landed={"max_face_h_pct": 12.0,
+                                            "camera_move_px": 0.0})])["pass"]
     for v in ("FAIL_REPLACE", L.KEPT, L.UNMEASURABLE, L.UNDETERMINED):
         assert not L.qc_check([ok, dict(ok, line_id="b", verdict=v)])["pass"]
     assert not L.qc_check([{"line_id": "c", "verdict": L.PASS}])["pass"]

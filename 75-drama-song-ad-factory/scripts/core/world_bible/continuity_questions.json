@@ -1,0 +1,54 @@
+{
+  "version": "1.0.0",
+  "kind": "world_continuity_questions",
+  "source": "plan section 3M.4 (N-121)",
+  "levels": ["MAJOR", "MEDIUM", "MINOR"],
+  "frames": "every picture and three frames of every clip; evaluated in the vision call shared with the place check",
+  "questions": [
+    {
+      "id": "crowd_state_held",
+      "code": "CROWD_MISMATCH",
+      "question": "Does the room hold the crowd its state gives, to within the state's range?",
+      "default_level": "MEDIUM",
+      "major_when": "the beat's crowd state is full and the room is empty or near empty (fewer than half the state's minimum people)",
+      "inputs": ["crowd_state.count", "crowd_state.full", "observed_people_count"],
+      "level_helper": "world_bible.crowd_mismatch_level"
+    },
+    {
+      "id": "choir_count",
+      "code": "CHOIR_COUNT_MISMATCH",
+      "question": "Is the choir the right number, in the right place, in any shot that shows the whole loft?",
+      "default_level": "MEDIUM",
+      "major_when": "the choir is under half or over double the stated headcount",
+      "inputs": ["crowd_state.choir.count", "observed_choir_count"],
+      "level_helper": "world_bible.choir_mismatch_level"
+    },
+    {
+      "id": "place_identity",
+      "code": "PLACE_MISMATCH",
+      "question": "Is this the same room: size, layout, fixed things?",
+      "default_level": "MEDIUM",
+      "major_when": "the frame is a lip-sync picture whose place is not the place its beat names",
+      "inputs": ["place.size", "place.layout_map", "place.establishing_pictures", "beat.location_id"],
+      "level_helper": null
+    },
+    {
+      "id": "set_pieces",
+      "code": "SET_PIECE_MISSING",
+      "question": "Are the room's set pieces there?",
+      "default_level": "MEDIUM",
+      "major_when": "the room reads as another room",
+      "inputs": ["place.set_pieces", "observed_set_pieces"],
+      "level_helper": null
+    },
+    {
+      "id": "light_clock",
+      "code": "LIGHT_OFF_CLOCK",
+      "question": "Does the light and the window fit the beat's time of day?",
+      "default_level": "MEDIUM",
+      "major_when": "it contradicts the story (night outside a morning scene)",
+      "inputs": ["story_clock.time_of_day", "place.time_of_day_variants", "observed_light"],
+      "level_helper": null
+    }
+  ]
+}

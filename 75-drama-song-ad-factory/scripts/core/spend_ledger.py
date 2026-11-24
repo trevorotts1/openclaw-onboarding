@@ -76,9 +76,17 @@ import time
 from datetime import datetime, timezone
 
 TOOL_NAME = "spend_ledger"
-TOOL_VERSION = "1.1.0"
-SCHEMA_VERSION = "1.1.0"
+TOOL_VERSION = "1.2.0"
+SCHEMA_VERSION = "1.1.0"          # additive speed stamps do not change it (F-SPD-7)
 COMPATIBLE = {"1.0.0", "1.1.0"}
+
+# F-SPD-7 speed stamps. `try` is the existing attempt_no column; `class` is
+# job_class; the six timeline stamps are written the first time they occur
+# and are never overwritten (a resend keeps the first submit time). The file
+# version stays 1.1.0: these are additive columns with defaults, so a 1.1.0
+# reader that ignores them still reads the ledger.
+SPEED_STAMPS = ("submitted_at", "first_poll_at", "succeeded_at",
+                "downloaded_at", "human_handoff_at")
 
 MICRO_PER_CREDIT = 1000000  # provider credits -> micro-credits (exact integers)
 
@@ -118,6 +126,10 @@ CREATE TABLE IF NOT EXISTS jobs(
   provider_lookup_ref TEXT NOT NULL DEFAULT '',
   outcome_class TEXT NOT NULL DEFAULT '',
   est_credits_micro INTEGER, actual_credits_micro INTEGER,
+  batch_id TEXT NOT NULL DEFAULT '', job_class TEXT NOT NULL DEFAULT '',
+  submitted_at TEXT NOT NULL DEFAULT '', first_poll_at TEXT NOT NULL DEFAULT '',
+  succeeded_at TEXT NOT NULL DEFAULT '', downloaded_at TEXT NOT NULL DEFAULT '',
+  human_handoff_at TEXT NOT NULL DEFAULT '',
   created_at TEXT NOT NULL, updated_at TEXT NOT NULL, version INTEGER NOT NULL DEFAULT 1,
   PRIMARY KEY(logical_key, attempt_id));
 CREATE INDEX IF NOT EXISTS idx_jobs_run_state ON jobs(run_id, state);
@@ -305,6 +317,18 @@ def _migrate_100(conn):
     conn.execute("UPDATE schema_info SET value=? WHERE key='schema_version'",
                  (SCHEMA_VERSION,))
 
+def _ensure_speed_columns(conn):
+    """F-SPD-7: add the speed stamps to any compatible ledger, idempotently.
+
+    Runs on every open for a 1.0.0/1.1.0 ledger. Additive only; existing
+    rows get the defaults. The file's declared version is left alone.
+    """
+    have = {r[1] for r in conn.execute("PRAGMA table_info(jobs)")}
+    for col in ("batch_id", "job_class") + SPEED_STAMPS:
+        if col not in have:
+            conn.execute("ALTER TABLE jobs ADD COLUMN %s TEXT NOT NULL DEFAULT ''"
+                         % col)
+
 
 def _open(db_path, create=False):
     """Open verified DB. Never auto-creates over an existing file."""
@@ -334,6 +358,7 @@ def _open(db_path, create=False):
             # Ledgers created before the index existed get it on open.
             conn.execute("CREATE INDEX IF NOT EXISTS idx_receipts_attempt "
                          "ON receipts(run_id, logical_key, attempt_id)")
+            _ensure_speed_columns(conn)
     except sqlite3.DatabaseError as e:
         conn.close()
         raise CorruptStateError("CORRUPT_STATE: %s" % e)
@@ -935,6 +960,73 @@ def _get_est(db_path, run_id, logical_key, attempt_id):
         conn.close()
 
 
+def stamp_speed(db_path, run_id, logical_key, attempt_id, stamp,
+                when=None, batch_id=None, job_class=None, owner="cli"):
+    """F-SPD-7: write one speed stamp (or the batch id / job class).
+
+    stamp: one of SPEED_STAMPS. First write wins - a resend keeps the first
+    submit time, so job time is measurable across retries. Returns the
+    envelope; an unknown stamp or a missing attempt is refused visibly.
+    """
+    if stamp not in SPEED_STAMPS:
+        return envelope("stamp_speed", "rejected", "BAD_STAMP",
+                        "stamp is one of %s" % (SPEED_STAMPS,),
+                        run_id=run_id, logical_key=logical_key,
+                        attempt_id=attempt_id)
+    ts = when if isinstance(when, str) and when.strip() else _now_iso()
+    conn = _open(db_path)
+    try:
+        conn.execute("BEGIN IMMEDIATE")
+        row = _get_job(conn, logical_key, attempt_id)
+        if not row:
+            conn.execute("ROLLBACK")
+            return envelope("stamp_speed", "error", "NO_SUCH_ATTEMPT", "",
+                            run_id=run_id, logical_key=logical_key,
+                            attempt_id=attempt_id)
+        sets = ["%s=CASE WHEN %s='' THEN ? ELSE %s END" % (stamp, stamp, stamp)]
+        vals = [ts]
+        if isinstance(batch_id, str) and batch_id:
+            sets.append("batch_id=?")
+            vals.append(batch_id)
+        if isinstance(job_class, str) and job_class:
+            sets.append("job_class=?")
+            vals.append(job_class)
+        sets.append("updated_at=?")
+        vals.append(_now_iso())
+        vals.extend([logical_key, attempt_id])
+        conn.execute("UPDATE jobs SET %s WHERE logical_key=? AND attempt_id=?"
+                     % ",".join(sets), tuple(vals))
+        conn.execute("COMMIT")
+        return envelope("stamp_speed", "ok", "OK", "", run_id=run_id,
+                        logical_key=logical_key, attempt_id=attempt_id)
+    except sqlite3.Error as e:
+        try:
+            conn.execute("ROLLBACK")
+        except sqlite3.Error:
+            pass
+        raise LedgerError("STAMP_FAILED: %s" % e)
+    finally:
+        conn.close()
+
+def check_ledger_stamps(db_path, run_id):
+    """F-SPD-7: LEDGER_STAMP_MISSING for finished jobs with no timing.
+
+    A succeeded job needs submitted_at and succeeded_at; one whose result
+    is on disk also needs downloaded_at. Open jobs are not judged.
+    """
+    conn = _open(db_path)
+    try:
+        rows = conn.execute(
+            "SELECT logical_key,attempt_id,state,submitted_at,succeeded_at,"
+            "downloaded_at FROM jobs WHERE run_id=? AND state='succeeded'",
+            (run_id,)).fetchall()
+    finally:
+        conn.close()
+    missing = [(r[0], r[1]) for r in rows
+               if not (r[3] or "").strip() or not (r[4] or "").strip()]
+    return {"ok": not missing, "code": "LEDGER_STAMP_MISSING" if missing else "",
+            "missing": missing}
+
 def mark_submitted(db_path, run_id, logical_key, attempt_id, remote_task_id,
                    owner="cli", expected_version=0):
     """reserved -> submitted. Remote task ID persisted immediately."""
@@ -943,10 +1035,14 @@ def mark_submitted(db_path, run_id, logical_key, attempt_id, remote_task_id,
                         "persist remote task IDs immediately when available",
                         run_id=run_id, logical_key=logical_key,
                         attempt_id=attempt_id)
-    return _mutate(db_path, "mark_submitted", run_id, logical_key, attempt_id,
-                   owner, expected_version, ("reserved",), "submitted",
-                   "poll this job; polling is distinct from resubmitting",
-                   remote_task_id=remote_task_id)
+    env = _mutate(db_path, "mark_submitted", run_id, logical_key, attempt_id,
+                  owner, expected_version, ("reserved",), "submitted",
+                  "poll this job; polling is distinct from resubmitting",
+                  remote_task_id=remote_task_id)
+    if env.get("outcome") == "ok":
+        stamp_speed(db_path, run_id, logical_key, attempt_id, "submitted_at",
+                    owner=owner)
+    return env
 
 
 def mark_unknown(db_path, run_id, logical_key, attempt_id, owner="cli",
@@ -971,9 +1067,13 @@ def mark_terminal(db_path, run_id, logical_key, attempt_id, outcome,
         return envelope("mark_terminal", "rejected", "BAD_OUTCOME",
                         "outcome is succeeded or failed", run_id=run_id,
                         logical_key=logical_key, attempt_id=attempt_id)
-    return _mutate(db_path, "mark_terminal", run_id, logical_key, attempt_id,
-                   owner, expected_version, ("submitted", "unknown"), outcome,
-                   "persist receipt then reconcile")
+    env = _mutate(db_path, "mark_terminal", run_id, logical_key, attempt_id,
+                  owner, expected_version, ("submitted", "unknown"), outcome,
+                  "persist receipt then reconcile")
+    if env.get("outcome") == "ok" and outcome == "succeeded":
+        stamp_speed(db_path, run_id, logical_key, attempt_id, "succeeded_at",
+                    owner=owner)
+    return env
 
 
 def reconcile(db_path, run_id, logical_key, attempt_id, final_outcome,

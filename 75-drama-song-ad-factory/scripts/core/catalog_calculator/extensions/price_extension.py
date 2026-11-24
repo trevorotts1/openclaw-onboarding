@@ -3,14 +3,17 @@
 Adds four things to the choice-card total and to the D26 batch total:
 
   * **lip-sync close-up seconds** (choice-card-spec 3.6, price-menu 3): one
-    line per ad, 4-6 s per clip, no clip over 6 s (so seconds <= 6 x lines, or
-    the card is refused), covering the approved 25-30% of the ad with a 35%
-    HARD MAXIMUM (lipsync_clips: the one source), priced by Skill 74 ``price
-    --model <roster model> --units <seconds x shapes>``. A card over the 35%
-    maximum, or a duration whose bounds collide (the 3-clip / 4-s floor cannot
-    fit inside 35%), is refused with the conflict named -- never trimmed and
-    never silently re-planned. Lip-sync runs on every shape that was ordered,
-    so both shapes double this line.
+    line per ad, a piece of 5 to 30 s (so seconds <= 30 x lines, or the card is
+    refused), covering the 25-30% target with 35% as the normal top
+    (lipsync_clips: the one source), priced by Skill 74 ``price --model
+    <roster model> --units <seconds x shapes>``. A card over the 35% top, or a
+    duration whose bounds collide, is refused with the conflict named -- never
+    trimmed and never silently re-planned. Under N-101 the 3-piece floor is 3 x
+    5 s = 15 s and applies from 90 s up, where the top is already past 31.5 s,
+    so no ordinary ad length collides by itself; the branch stays because
+    ``duration_conflicts`` is the one place a collision would be reported.
+    Lip-sync runs on every shape that was ordered, so both shapes double this
+    line.
   * **voice packs** (price-menu 4): one line of extra Suno generations. How
     many generations a pack needs is decided upstream by the music director;
     this module asks Skill 74 ``price`` and never predicts the count or the
@@ -42,7 +45,7 @@ _CORE = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__
 if _CORE not in sys.path:
     sys.path.insert(0, _CORE)
 import budget_contingency as BC         # the one planning-allowance policy
-import lipsync_clips                    # the doubled-lip-sync numbers (one source)
+import lipsync_clips                    # the lip-sync numbers (one source)
 
 try:  # package import (core.catalog_calculator.extensions)
     from . import base_bridge
@@ -56,10 +59,10 @@ BATCH_UNIT_NAME = "catalog-calculator.extensions.batch"
 # name stays for the module's public API only; it is not an independent rate.
 RETAKE_RATE = float(BC.RATE)
 
-# Decision 33 / choice-card-spec 3.6: the lip-sync roster is closed - Kling
-# avatar first, InfiniTalk as the backup. A model outside it is never offered
-# and never asked for a price.
-LIPSYNC_ROSTER = ("kling/ai-avatar-standard", "infinitalk/from-audio")
+# S-42 / 3C.1a (Trevor, November 23): the lip-sync roster is one model.
+# OmniHuman 2.0 on every run, talking or singing, no alternative and no
+# backup. Kling Avatar and its InfiniTalk backup are retired.
+LIPSYNC_ROSTER = ("omnihuman-2-0",)
 
 
 # ---------------------------------------------------------------- helpers
@@ -115,9 +118,9 @@ def _lip_sync_spec(choice):
         return None, "BAD_LIP_SYNC", "error"
     if model not in LIPSYNC_ROSTER:
         return None, "LIPSYNC_MODEL_NOT_OFFERED", "unavailable"
-    # Doubled lip-sync = more pieces, not longer ones: no clip over 6 s. A
-    # card that breaks it is refused loudly ("Price unavailable"), never
-    # trimmed or priced as if it were fine.
+    # N-101: a piece is 5 to 30 s; a longer passage is a stitch group, never a
+    # longer take. A card that breaks it is refused loudly ("Price
+    # unavailable"), never trimmed or priced as if it were fine.
     if seconds > lines * lipsync_clips.CLIP_MAX_S + 1e-9:
         return None, "LIPSYNC_CLIP_OVER_CAP", "unavailable"
     return {"model": model, "seconds": seconds, "lines": lines}, None, None

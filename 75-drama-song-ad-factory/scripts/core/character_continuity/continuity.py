@@ -114,3 +114,111 @@ def reference_binding(characters):
             raise ValueError("DUPLICATE_CHARACTER_ID:%s" % cid)
         out[cid] = list(c["approved_reference_asset_ids"])
     return out
+
+
+# --- cross-shot wardrobe and location check (F-PIC-6) ----------------------
+# Read-only over the plan: walk wardrobe ids and location ids across shots and
+# refuse a change the story did not declare.
+WARDROBE_BREAK = "WARDROBE_BREAK"
+LOCATION_BREAK = "LOCATION_BREAK"
+
+# A transition that legitimately carries the story to another place.
+_MOVING_TRANSITIONS = frozenset(
+    {"scene_change", "location_change", "cutaway", "establishing"})
+
+
+def _ordered(shots):
+    return sorted(shots, key=lambda s: (s.get("song_start", 0),
+                                        s.get("song_end", 0)))
+
+
+def check_cross_shot_continuity(shots, wardrobe_ledger=None):
+    """Refuse a wardrobe or location break across shots (the robe-shot case).
+
+    shots: [{shot_id, scene_id?, character_ids, wardrobe_ids, location_id,
+    transition?}]. A wardrobe change between consecutive shots of one
+    character inside one scene is a WARDROBE_BREAK unless the ledger confirms
+    it. A location change inside one scene is a LOCATION_BREAK unless the
+    shot declares a moving transition.
+
+    Returns {"outcome", "findings", "codes"}.
+    """
+    if not isinstance(shots, list) or not shots:
+        return {"outcome": "pass", "findings": [], "codes": []}
+    ordered = _ordered(shots)
+    findings = []
+
+    def fail(code, shot_id, detail):
+        findings.append({"code": code, "shot_id": shot_id, "detail": detail})
+
+    def explained(wid):
+        return isinstance(wardrobe_ledger, dict) and wid in wardrobe_ledger
+
+    by_char = {}
+    for s in ordered:
+        for cid in s.get("character_ids") or []:
+            by_char.setdefault(cid, []).append(s)
+    for cid, seq in by_char.items():
+        for a, b in zip(seq, seq[1:]):
+            if a.get("scene_id") != b.get("scene_id"):
+                continue
+            if set(a.get("wardrobe_ids") or []) == set(b.get("wardrobe_ids") or []):
+                continue
+            changed = set(b.get("wardrobe_ids") or []) - set(a.get("wardrobe_ids") or [])
+            if wardrobe_ledger is None:
+                continue
+            for wid in sorted(changed):
+                if not explained(wid):
+                    fail(WARDROBE_BREAK, b.get("shot_id"),
+                         "character %r changes into wardrobe %r mid-scene with no "
+                         "wardrobe-ledger entry" % (cid, wid))
+
+    if wardrobe_ledger is not None:
+        for s in ordered:
+            for wid in s.get("wardrobe_ids") or []:
+                if not explained(wid):
+                    fail(WARDROBE_BREAK, s.get("shot_id"),
+                         "wardrobe %r has no ledger entry" % (wid,))
+
+    for a, b in zip(ordered, ordered[1:]):
+        if a.get("scene_id") != b.get("scene_id"):
+            continue
+        if (a.get("location_id") and b.get("location_id")
+                and a.get("location_id") != b.get("location_id")):
+            transition = str(b.get("transition") or "").strip().lower()
+            if transition not in _MOVING_TRANSITIONS:
+                fail(LOCATION_BREAK, b.get("shot_id"),
+                     "location moves %r -> %r inside scene %r with no declared "
+                     "transition" % (a.get("location_id"), b.get("location_id"),
+                                     b.get("scene_id")))
+
+    return {"outcome": "pass" if not findings else "fail",
+            "findings": findings,
+            "codes": sorted({f["code"] for f in findings})}
+
+
+# --- wardrobe accessories lock (N-13) --------------------------------------
+# The wardrobe ledger lists every accessory by name (stole, head wrap, glasses).
+# A clip that starts from a locked picture must show the full wardrobe; a listed
+# accessory missing from the shot's declared wardrobe is an ACCESSORY_BREAK.
+ACCESSORY_BREAK = "ACCESSORY_BREAK"
+
+
+def check_accessory_lock(wardrobe_ledger, shot_wardrobe):
+    """Refuse a shot missing an accessory its wardrobe entry lists (N-13).
+
+    wardrobe_ledger: {wardrobe_id: {"accessories": [names]}}.
+    shot_wardrobe: {wardrobe_id: {"accessories": [names]}} for the shots.
+    Returns the list of findings (empty = clean).
+    """
+    ledger = wardrobe_ledger or {}
+    findings = []
+    for wid, shot in (shot_wardrobe or {}).items():
+        need = [str(x) for x in ((ledger.get(wid) or {}).get("accessories") or [])]
+        have = {str(x) for x in ((shot or {}).get("accessories") or [])}
+        for acc in need:
+            if acc not in have:
+                findings.append({"code": ACCESSORY_BREAK, "wardrobe_id": wid,
+                                 "detail": "accessory %r missing from wardrobe %r"
+                                 % (acc, wid)})
+    return findings

@@ -93,7 +93,7 @@ def test_card_lengths_equal_the_table_keys():
         got = _seconds_in(layout.group(1), unique=True)
         check("the layout Length list equals the table keys",
               got == want, (got, want))
-    # the five look labels the card offers are the look files' own labels.
+    # every look label the card offers is the look file's own label (six, N-37).
     for look_id in PT.LOOKS:
         label = str((PT.load("look", look_id) or {}).get("label", ""))
         check("look %s is named on the card by its look label" % look_id,
@@ -137,14 +137,16 @@ def test_docs_point_at_the_template_system():
           "receipt" in skill.lower() and "prompt_sha256" in skill)
     check("SKILL.md names PROMPT_NOT_TEMPLATED", "PROMPT_NOT_TEMPLATED" in skill)
     check("SKILL.md names the prompt_compliance gate", "prompt_compliance" in skill)
-    # the two pointers the unit names: the Suno recipe and the lip-sync bullets.
+    # the Suno recipe pointer, plus the lip-sync truth: OmniHuman, no prompt (S-42/N-08).
     suno = re.search(r"## Suno song recipe(.*?)\n## ", skill, re.DOTALL)
     check("the Suno recipe section points at the template system",
           suno is not None and "Prompt templates" in suno.group(1))
-    lipsync = re.search(r"- \*\*Lip-sync[^\n]*decision 33(.*?)\n- \*\*", skill, re.DOTALL)
-    check("the lip-sync bullets point at the avatar template",
-          lipsync is not None and "Prompt templates" in lipsync.group(1),
-          "no Prompt templates pointer inside the lip-sync bullets")
+    lipsync = re.search(r"- \*\*Lip-sync model: OmniHuman 2\.0(.*?)\n- \*\*",
+                        skill, re.DOTALL)
+    check("the lip-sync model bullet names omnihuman-2-0 and sends no prompt",
+          lipsync is not None and "omnihuman-2-0" in lipsync.group(1)
+          and "no prompt" in lipsync.group(1).lower(),
+          "no no-prompt sentence inside the OmniHuman lip-sync bullet")
     card = _read("references/choice-card-spec.md") or ""
     check("the card's 3.3 points at looks/", "looks/" in card)
     qc = _read("QC.md") or ""

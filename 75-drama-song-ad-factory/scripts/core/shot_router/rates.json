@@ -1,0 +1,51 @@
+{
+  "schema_version": "1.0.0",
+  "note": "Measured rates for shot_router.estimate (3E.4). Sources: KIE's own records for 119 tasks (2026-11-23) and the 27-piece OmniHuman 2.0 test. A credit is half a cent. A failed job costs 0 and is never a line here. Lengths not in a table are flagged TIME_UNMEASURED_LENGTH, not guessed.",
+  "usd_per_credit": 0.005,
+  "picture_credits": {
+    "default": 13.1,
+    "keyframe": 13.1,
+    "lip_sync_keyframe": 13.1,
+    "composition_keyframe": 13.1,
+    "reference_set": 0.0,
+    "reference": 13.1
+  },
+  "picture_note": "A Sunburst picture is 12.4 to 13.1 credits; 13.1 (the high end) is used so an estimate never understates. Every keyframe is two candidates (N-82), so a keyframe line is 13.1 x 2. A nine-picture reference set draws no new picture by itself (up to 9 come from the lock), so it is 0; its composition keyframe is charged above. A shared location reference is one picture.",
+  "h3_image_to_video": {
+    "4": 32,
+    "5": 40,
+    "6": 48,
+    "7": 56,
+    "8": 64
+  },
+  "h3_nine_picture": {
+    "4": 32,
+    "5": 56,
+    "6": 64,
+    "7": 72,
+    "8": 64
+  },
+  "h3_note": "Credits by whole-second clip length, 3E.4's own table. Median job time 158 s, 9 in 10 within 306 s; a 4-second clip median 96 s, an 8-second clip 265 s.",
+  "h3_time_seconds": {
+    "4": 96,
+    "6": 158,
+    "8": 265
+  },
+  "h3_nine_picture_time_seconds": {
+    "4": 667,
+    "6": 667,
+    "8": 667
+  },
+  "omnihuman": {
+    "credits_per_second": 14,
+    "time_seconds": {
+      "4": 204,
+      "6": 204,
+      "8": 204,
+      "15": 213,
+      "22": 213,
+      "30": 213
+    },
+    "note": "14 credits per whole second of audio, rounded up (56 for 4 s, 70 for 5, 140 for 10, 210 for 15, 420 for 30). Time: 25 of 27 jobs within 204 s (median 110, slowest 338); a 22-second piece took 213 s; lengths between are estimates until a run stamps them (3.3a)."
+  }
+}

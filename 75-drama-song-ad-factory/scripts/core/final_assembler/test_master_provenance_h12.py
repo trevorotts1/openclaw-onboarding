@@ -100,13 +100,24 @@ class T(unittest.TestCase):
                            "segments": [{"src": "c.mp4", "dur": 1.5,
                                          "motion_score": 0.9,
                                          "beat_cut": True,
-                                         "lip_sync": True}] * 3}, f)
+                                         "lip_sync": True,
+                                         "eye_check": {"sheet": "s.jpg",
+                                                       "who": "op",
+                                                       "verdict": "clean"}}] * 3},
+                      f)
             out = os.path.join(tmp, "master.mp4")
             # This fixture tests producer stamps, not the independently tested
-            # approved lip-sync evidence contract. Keep its isolation scoped.
+            # approved lip-sync evidence contract. F-LETTER-RENDER runs the
+            # hard gate on every take at the render, so give it a clean reader
+            # (no text) rather than a stub (which would refuse by design).
+            import final_assembler.frame_text as _FT
+            _FT.register_extractor("prov-clean",
+                                   lambda paths: [None] * len(paths))
             with patch.object(A, "lipsync_gate", return_value=None), \
                     patch("lipsync_evidence.check_plan",
-                          return_value={"pass": True, "evidence": {}}):
+                          return_value={"pass": True, "evidence": {}}), \
+                    patch.object(A, "_onscreen_extractor",
+                                 lambda _ff: "prov-clean"):
                 rc = A.assemble(tl, out)
             self.assertEqual(rc["outcome"], "ok", rc)
             self.assertEqual(rc["produced_by"], M.producer_stamp())

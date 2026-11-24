@@ -116,6 +116,41 @@ def test_reports_every_reason_at_once():
     assert {G.RESOLUTION, G.NOT_FRONTAL, G.SOFT} <= c
 
 
+def test_face_identity_is_measured_not_taken_from_the_caller():
+    # F-PIC-1: the supplier computes reference_similarity against the approved
+    # reference set; a low computed score refuses FACE_IDENTITY_MISMATCH.
+    # patch the module image_gate itself calls, not a same-named top-level
+    # import: pytest loads it as lip_gate.picture_measure, and a second module
+    # object would leave the real detector (mediapipe) on the path.
+    PM = G.PM
+    refs = ["ref-a.png", "ref-b.png"]
+    sig = {"cand.png": (0,), "ref-a.png": (1,), "ref-b.png": (2,)}
+    score = {"call": 0}
+
+    def fake_similarity(a, b):
+        return 0.99 if b == b"ref-b.png" else 0.10
+    real = PM.similarity
+    PM.similarity = fake_similarity
+    try:
+        class Sig:
+            def __call__(self, path):
+                return path.encode()
+        got = PM.identity_similarity("cand.png", refs, signature=Sig())
+    finally:
+        PM.similarity = real
+    assert got == 0.99, got
+
+    an = G.reference_analyzer(lambda i: dict(GOOD, reference_similarity=None), refs)
+    real_ident = PM.identity_similarity
+    PM.identity_similarity = lambda path, refs, signature=None: 0.42
+    try:
+        a = an("cand.png")
+    finally:
+        PM.identity_similarity = real_ident
+    assert a["reference_similarity"] == 0.42
+    assert G.FACE_IDENTITY_MISMATCH in codes(SIZE, a)
+
+
 def test_file_header_size_and_detector_failure():
     with tempfile.TemporaryDirectory() as d:
         p = os.path.join(d, "a.png")

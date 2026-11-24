@@ -7,8 +7,9 @@ from audio/final-r3/r43_1.line-timings.json; shot ranges from the report):
     FACE_SPEAKS_NO_LIPSYNC; the Kiesett S01 / S02 / S08 shots are flagged;
   * QC lists the speaking-face shots (shot / time / line / lip-sync);
   * the planner reaches the coverage target (25-30% of the ad, 35% hard max,
-    4-6 s clips) on a script with enough own-face lines, puts clips on the
-    hooks / opener / closing first, cuts every clip to 6 s, keeps the first
+    whole-sentence pieces of 5-30 s, N-101) on a script with enough own-face
+    lines, puts clips on the hooks / opener / closing first, never returns a
+    piece past the 30 s cap, keeps the first
     clip inside the opening 12 s, and reports Kiesett's thin script as
     unreachable (it needs more lines);
   * the coverage band measures (9.6 s of 60 s fails, 15-18 s passes, above
@@ -30,6 +31,7 @@ if CORE not in sys.path:
 
 from shot_planner import face_speaks as F          # noqa: E402
 from test_lipsync_evidence import attach_evidence
+from kie_dispatch.model_lock import LOCKED_LIPSYNC_MODEL  # noqa: E402
 import final_assembler.assembler as A              # noqa: E402
 
 FAILS = []
@@ -146,7 +148,8 @@ def test_planner_reaches_the_coverage_target():
     check("the priority lines stop at the 35% hard maximum, never past it",
           plan["total_s"] <= F._LC.budget(60)["hard_max_s"] + 1e-9,
           plan["total_s"])
-    check("every clip is cut to at most 6 s", max(plan["clip_s"].values()) <= 6.0 + 1e-9,
+    check("every clip is no longer than the 30 s piece cap (N-101)",
+          max(plan["clip_s"].values()) <= F.CLIP_MAX_S + 1e-9,
           plan["clip_s"])
     check("the first clip is inside the opening 12 s",
           F._LC.check_opening(plan["first_start_s"], 60)["pass"], plan)
@@ -184,8 +187,10 @@ def test_coverage_band_measures():
           old["pass"] and not old["evidence"]["in_band"], old)
     check("12 s of 60 s sits inside the grace band (15 - 3)",
           F.check_coverage_band(60, 12, 3)["pass"])
-    check("3 clips needed at 60 s: 2 clips fail even at 18 s",
-          not F.check_coverage_band(60, 18, 2)["pass"])
+    # N-101: no floor of 3 under 90 s, so 2 clips at 18 s is in band.
+    check("2 clips at 18 s of 60 s is inside the band (no floor under 90 s)",
+          F.check_coverage_band(60, 18, 2)["pass"]
+          and F.check_coverage_band(90, 18, 2)["pass"] is False)
     check("17.5 s in 3 clips passes and 50 s is reported over, not failed",
           F.check_coverage_band(60, 17.5, 3)["pass"]
           and F.check_coverage_band(60, 50, 8)["pass"]
@@ -233,6 +238,23 @@ def _tl(tmp, shots_bad=False, no_faces=False):
           "timing": {"sections": [{"lyrics": [
               {"line_id": i, "start": a, "end": b} for i, _, a, b in rows]}]}}
     attach_evidence(tl, tmp)
+    # S-42: the shared fixture pins the retired Kling id; the gate refuses it
+    # with LIPSYNC_MODEL_UNLISTED. Retarget the synthetic receipts to the
+    # currently locked lip-sync model so this test exercises face_speaks, not
+    # the model roster (which is U-LIPGATE's own test's job).
+    for seg in tl["segments"]:
+        art = seg.get("artifact") or {}
+        prov = art.get("provenance") or {}
+        rp = prov.get("receipt_path")
+        if rp and os.path.isfile(rp):
+            try:
+                with open(rp, encoding="utf-8") as fh:
+                    rec = json.load(fh)
+                rec["evidence"]["lipsync_model"] = LOCKED_LIPSYNC_MODEL
+                with open(rp, "w", encoding="utf-8") as fh:
+                    json.dump(rec, fh)
+            except (OSError, ValueError):
+                pass
     if no_faces:
         for seg in tl["segments"]:
             seg.pop("faces_on_screen", None)

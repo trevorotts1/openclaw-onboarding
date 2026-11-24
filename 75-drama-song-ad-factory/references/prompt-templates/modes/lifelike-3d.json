@@ -7,5 +7,20 @@
   "kling_block": "Cinematic CGI animation, clearly animated with lifelike faces; physically based skin, groomed hair, simulated cloth, soft global illumination, motivated key with soft fill, filmic tone curve, fine grain, no plastic skin or dead eyes.",
   "kling_who": "3D animated",
   "keyframe_clause": "same 3D character, cinematic CGI render, physically based skin and groomed hair",
-  "lipsync_allowed": true
+  "lipsync_allowed": true,
+  "banned_words": [
+    "photoreal",
+    "photorealistic",
+    "photographic",
+    "photograph",
+    "photo",
+    "live-action",
+    "real human being",
+    "real person",
+    "DSLR",
+    "35mm",
+    "visible pores",
+    "shot on"
+  ],
+  "client_wording": "Lifelike 3D: polished 3D animation with believable, lifelike faces. Clearly animated, never live action."
 }

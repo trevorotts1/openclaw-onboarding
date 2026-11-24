@@ -1,13 +1,14 @@
 #!/usr/bin/env python3
-"""Five-look choice card (owner decisions D29 + D23, plan 4.1 / 6.11).
+"""Six-look choice card (owner decisions D29 + D23, plan 4.1 / 6.11; N-37).
 
-Look menu, exactly as Trevor named them (D29)::
+Look menu, exactly as Trevor named them (D29), plus Stylized 3D animation::
 
     Lifelike 3D (default)  /  2D Hand-Painted  /  Sketch to Life
                           /  Canvas to Life    /  Canvas to 3D
+                          /  Stylized 3D
 
 No choice means Lifelike 3D (defaults decision D23, cited as D24 by the
-restart unit). The card's Style line lists all five. Applying a look writes
+restart unit). The card's Style line lists all six. Applying a look writes
 the look field and NOTHING else -- length, shape, music, voice, clips and
 price are untouched and the input card is never mutated.
 
@@ -56,6 +57,7 @@ LOOK_ORDER = (
     "sketch-to-life",
     "canvas-to-life",
     "canvas-to-3d",
+    "stylized-3d",
 )
 
 LOOK_LABELS = {
@@ -64,6 +66,7 @@ LOOK_LABELS = {
     "sketch-to-life": "Sketch to Life",
     "canvas-to-life": "Canvas to Life",
     "canvas-to-3d": "Canvas to 3D",
+    "stylized-3d": "Stylized 3D",
 }
 
 LOOK_DESCRIPTIONS = {
@@ -73,6 +76,9 @@ LOOK_DESCRIPTIONS = {
                        "finale (the reference ad)"),
     "canvas-to-life": "2D painted cartoon to real footage, warm golden finale",
     "canvas-to-3d": "2D painted cartoon to lifelike 3D (Version E)",
+    #: N-37: the look clients call "Pixar-style"; plan 3B.5 words, no studio name.
+    "stylized-3d": ("rounded, appealing 3D animation: enlarged eyes, simplified "
+                    "skin, soft bounced light, rich colour"),
 }
 
 #: Plan 6.11 switching rules, per hybrid look. Pure looks have none.
@@ -135,6 +141,47 @@ LIFELIKE_3D_STYLE = {
     ],
 }
 
+#: N-37 / plan 3B.5: Stylized 3D animation, the look clients call "Pixar-like".
+#: The canonical mode file is U-LOOK's `references/prompt-templates/modes/
+#: stylized-3d.json`; this record is the card's own read-only copy so a look can
+#: never be half-defined. No studio name appears anywhere: it never goes in a prompt.
+STYLIZED_3D_STYLE = {
+    "schema_version": "1.0.0",
+    "style_id": "stylized-3d-animation-01",
+    "aspect_ratio": "9:16",
+    "aesthetic": ("rounded, appealing 3D character animation: big expressive "
+                  "eyes, simplified skin, warm bounced light, rich colour; "
+                  "clearly animated, never photoreal live-action"),
+    "rendering_style": ("stylized 3D feature animation: soft rounded forms, "
+                        "hand-tuned proportions, gentle rim light, clean "
+                        "surfaces with no photographic texture"),
+    "camera_language": ("friendly cinematic staging, clear silhouettes, slow "
+                        "readable moves that hold on faces"),
+    "lens_tendencies": ("mild wide-to-normal framing with soft depth layering; "
+                        "no lens distortion, no photographic bokeh artefacts"),
+    "lighting_doctrine": ("soft key with generous bounce fill, glowing warm "
+                          "highlights, gentle shadows that leave faces open"),
+    "contrast_architecture": ("bright midtones, lifted shadows, saturated but "
+                              "controlled highlights"),
+    "environment_texture": ("stylized sets in the same render family as the "
+                            "characters: simplified surfaces, playful "
+                            "proportions, readable depth"),
+    "grain_sharpness": ("clean render with crisp edges and no film grain, no "
+                        "digital sharpening halo"),
+    "color_palette": ["sunny amber", "coral warm", "clear teal"],
+    "visual_continuity_constraints": [
+        "one character model, wardrobe and grooming for the whole ad; the "
+        "identity lock holds in every shot",
+        "same render family and grade across all shots; no style drift",
+        "clearly animated: never a photograph, never live action",
+    ],
+    "banned_visual_cliches": [
+        "photoreal skin texture",
+        "live-action plate passed off as animation",
+        "uncanny dead eyes",
+    ],
+}
+
 #: Which record each look renders from (plan 6.11 column 2).
 _RECORDS = {
     "lifelike-3d": LIFELIKE_3D_STYLE,
@@ -142,6 +189,7 @@ _RECORDS = {
     "sketch-to-life": _SKETCH_STYLE,
     "canvas-to-life": _PAINTED_STYLE,
     "canvas-to-3d": _PAINTED_STYLE,
+    "stylized-3d": STYLIZED_3D_STYLE,
 }
 
 _STYLE_BLOCK_RE = re.compile(r"\[STYLE\].*?\[/STYLE\]", re.DOTALL)
@@ -171,9 +219,14 @@ for _lid in LOOK_ORDER:
     _BY_NORM[_norm(_lid)] = _lid
     _BY_NORM[_norm(LOOK_LABELS[_lid])] = _lid
 
+#: N-37: the intake menu (`smp/initial_questions`) prints this look as
+#: "Stylized 3D Animation" while the card prints "Stylized 3D". One look, so
+#: both spellings resolve; the guard reads whatever label the sibling prints.
+_BY_NORM[_norm("Stylized 3D Animation")] = "stylized-3d"
+
 
 def looks_menu():
-    """The five-look menu, in card order, each with its default flag."""
+    """The six-look menu, in card order, each with its default flag."""
     return [
         {
             "id": lid,
@@ -208,13 +261,13 @@ def resolve_look(choice=None):
     hit = _BY_NORM.get(norm)
     if hit is None:
         raise LookError("LOOK_NOT_OFFERED",
-                        "%r is not one of the five looks: %s"
+                        "%r is not one of the six looks: %s"
                         % (choice, ", ".join(LOOK_ORDER)))
     return hit
 
 
 def style_line():
-    """The card's Style line: all five looks, default marked (plan 4.1)."""
+    """The card's Style line: all six looks, default marked (plan 4.1, N-37)."""
     parts = []
     for lid in LOOK_ORDER:
         label = LOOK_LABELS[lid]

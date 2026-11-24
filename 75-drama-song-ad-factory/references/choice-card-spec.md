@@ -50,7 +50,7 @@ Your drama song ad
                 10-minute long version)
   Shape:        Vertical 9:16 (Wide 16:9)
   Style:        Lifelike 3D (default) / 2D Hand-Painted / Sketch to Life
-                / Canvas to Life / Canvas to 3D
+                / Canvas to Life / Canvas to 3D / Stylized 3D
   Music:        Soul Ballad (default) / R&B Flow / Soul Rise
   Product tie:  about 7s (12.5% of runtime) planned connecting the story to
                 the product (10-15% target, never a cap; measured at delivery)
@@ -58,10 +58,10 @@ Your drama song ad
                 the song underneath, no echo effect; not with Sketch to Life)
   Clips:        (3, 5 and 10 minutes) automatic 60-second and 90-second
                 clips to post on social media, included in the price
-  Video model:  MiniMax H3 (RECOMMENDED) / Seedance 2.5 / Seedance 2.0 Mini /
-                Google Veo 3.1, each with its price for the chosen length
+  Quality mode: Standard (default) / Premium / Ultra / Hybrid (RECOMMENDED),
+                each with its plain-words price for the chosen length
   Villain:      <name>, shown in N shots    (FU-U16; from the story plan)
-  Price:        the chosen model's price for your length, plus every other line, plus the measured planning allowance
+  Price:        the chosen mode's price for your length, plus every other line, plus the measured planning allowance
   Includes:     all video shots, the song (song mp3 included), one image per shot
   Not included: the AI writing, planning and checking (runs on your own AI plan)
   [Approve]   [Change options]
@@ -163,7 +163,7 @@ write them free hand and never carry them as one JSON string.
   LENGTH for a campaign takes LENGTH's own slot so it adds no screen), then
   AI MODELS, LENGTH (or EPISODE LENGTH), SHAPE (purposes 1-3), MUSIC STYLE,
   VIDEO STYLE, AGNES (when the remembered answer is not "no" and the length
-  is 5 minutes or less), VIDEO MODEL, BUDGET, STORYBOARD APPROVAL, SONG
+  is 5 minutes or less), QUALITY MODE, BUDGET, STORYBOARD APPROVAL, SONG
   APPROVAL, SCRIPT APPROVAL - plus the saved-character question when the
   client has saved characters. `answered_count` / `total_count` come from the
   session response; the card prints `Question <n> of <total>`.
@@ -361,18 +361,17 @@ shapes" promise is a product gap recorded by U-F05; it is not selectable.)
 - Shared between shapes: story, song, timing map, Continuity Bible and the
   shot plan up to framing. Final QC runs separately per shape.
 
-### 3.3 Style (five looks)
+### 3.3 Style (six looks)
 
-Decision 29, plan 6.11:
+Decision 29, plan 6.11; the sixth look is N-37 (3B.5).
 
 Each row picks its render modes from `references/prompt-templates/looks/`:
 `lifelike-3d.json`, `2d-hand-painted.json`, `sketch-to-life.json`,
-`canvas-to-life.json`, `canvas-to-3d.json`. A look file names the modes it
-uses, its beat-to-mode map, its switch rules and the modes that may be
-lip-synced. The mode text itself exists once, in
+`canvas-to-life.json`, `canvas-to-3d.json`, `stylized-3d.json`. A look file
+names the modes it uses, its beat-to-mode map, its switch rules and the modes
+that may be lip-synced. The mode text itself exists once, in
 `references/prompt-templates/modes/`; the style-bible modules keep the plans
 and rules, and the template system owns the prompt text (design 2.4).
-
 
 | Value on the card | Look |
 |---|---|
@@ -381,11 +380,15 @@ and rules, and the template system owns the prompt text (design 2.4).
 | **Sketch to Life (Hybrid)** | Black-and-white hand-drawn sketch switching to realism, warm golden realism finale |
 | **Canvas to Life** | 2D hand-painted cartoon switching to realism, golden realism finale |
 | **Canvas to 3D** | 2D hand-painted cartoon switching to lifelike 3D and back (Version E, offered) |
+| **Stylized 3D** | Rounded, appealing 3D animation with expressive eyes and soft bounced light (clients call it "Pixar-like"; that name never goes into a prompt) |
 
 Rules:
 
 - Every look has its own style-bible block, its own switching rules and its
   own QC; the selected look picks the block, nothing else changes.
+- Every look's client wording comes from that look's own mode file
+  (`client_wording`) and must equal it, so the guide and the mode file can
+  never drift (3B.5, N-36).
 - Hybrid switching (all three hybrids): sketch/paint for comedy, setup,
   everyday moments, doubt and transitions; realism for the hard-hitting
   emotional moments and the people the story turns on; golden realism for the
@@ -401,13 +404,20 @@ Rules:
   faces; 2D Hand-Painted: a warm, hand-painted cartoon from start to finish;
   Sketch to Life (Hybrid): black-and-white pencil sketch that turns into real
   footage; Canvas to Life: painted cartoon that turns into real footage;
-  Canvas to 3D: painted cartoon that turns into lifelike 3D). "Hybrid" is the
+  Canvas to 3D: painted cartoon that turns into lifelike 3D; Stylized 3D:
+  rounded, appealing 3D animation with big expressive eyes). "Hybrid" is the
   official name of the sketch-and-real-footage look and shows on Sketch to
   Life only (the Canvas to 3D bible says 2D-to-3D is not hybrid, D18). Each
   option with a sample shows a `Watch:` link under it. The links live in
   `scripts/core/choice_card/intake_card/style_samples.json` (look id to https
   URL, `null` = no sample yet, nothing is shown). Change a sample by editing
-  that file only. Canvas to Life has no sample yet.
+  that file only. A look with no sample yet shows `Sample not available yet.`
+- **What a client means, mapped once (3B.5):** "Pixar", "Disney-style",
+  "animated movie", "cartoon 3D" mean Stylized 3D; "real", "real people",
+  "like a movie with actors" mean the realism look; "Lifelike 3D" alone stays
+  Lifelike 3D. Anything unclear gets one question with the samples, never a
+  guess. Lifelike 3D is described as clearly animated; a client who wants real
+  people is sent to realism.
 
 ### 3.4 Music
 
@@ -455,7 +465,7 @@ Decision 27 and decision 31, plan 6.12 and 6.12.1:
   `stl-voice-velvet-not-offered` and re-asks with a card that offers only
   All Suno (the client still answers), and
   writing Velvet onto a Sketch to Life card raises `StlGuardError`. The
-  other four looks offer both voices.
+  other five looks offer both voices.
 - Voice choice is verified against the picture, not trusted: `qc_voice_match`
   measures every line's pitch into the D17 gender band (male 85-155 Hz,
   female 165-255 Hz, inclusive), fails two same-gender characters closer than
@@ -466,33 +476,37 @@ Decision 27 and decision 31, plan 6.12 and 6.12.1:
 
 ### 3.6 Lip-sync lines
 
-Owner decision D10, superseded 2026-10-07, plan 6.3 and decision 33.
+Owner decision D10, superseded 2026-10-07 by plan 6.3; its lip-sync model
+order (decision 33) is replaced by OmniHuman 2.0 (section 3C.1a, S-42).
 
-Lip-sync is applied to **selected lines only**. Approved direction 2026-10-23
-(supersedes the 2026-10-08 doubling): coverage is **25-30% of the selected
-duration with a 35% HARD MAXIMUM**, in 4 to 6 second clips, no clip over 6
-seconds, never fewer than 3 clips, and the first **12 seconds** clearly
-articulated, chosen by the factory and listed on the approval card. Enforced at
-the final edit QC gate (Part E E6): at least 3 lip-sync clips and at least 25%
-of runtime in a 60 s ad, scaling with runtime for longer or shorter ads. The
-35% maximum, the 6 s per-clip cap and the spend cap are enforced where the
-clips are planned, priced and dispatched (`core/lipsync_clips.py`); a duration
-whose bounds collide fails `LIPSYNC_DURATION_CONFLICT` and is never re-planned
-silently. The historical FREE / no-lip-sync route stays an explicit owner
-opt-in and is never the default. Clips go first on every sung hook, the spoken
-opener and the spoken closing line, then on:
+Lip-sync is applied to **selected lines only**, and a piece is **one or more
+whole sentences, 5 to 30 seconds** (section 3.3a; N-101, N-112; Trevor,
+November 23). Coverage targets **25-30% of the selected duration with a 35%
+top**, and when finishing the sentences takes it past 35% the plan shows the
+seconds and the percent to the run owner before any spend; the top is not a
+hard refusal. Never fewer than 3 pieces from 90 seconds of video up (no floor
+below 90 seconds), and no piece ever starts or ends inside a sentence
+(`LIPSYNC_CUTS_SENTENCE`). The opening passage is lip-synced inside the first
+**10 to 15 seconds** (N-05), chosen by the factory and listed on the approval
+card. Enforced at the final
+edit QC gate (Part E E6) and where the pieces are planned, priced and
+dispatched (`core/lipsync_clips.py`); a duration whose bounds collide fails
+`LIPSYNC_DURATION_CONFLICT` and is never re-planned silently. The historical
+FREE / no-lip-sync route stays an explicit owner opt-in and is never the
+default. Pieces go first on every sung hook, the spoken opener and the spoken
+closing line, then on:
 
 1. the most painful moment (`pain_peak` on the highest-scoring wound beat),
 2. the product line,
 3. the call to action,
 4. the chorus hook, once, at its strongest occurrence.
 
-Model order:
+**The lip-sync model: OmniHuman 2.0, and nothing else.**
 
-| Order | Model | KIE id | Notes |
-|---|---|---|---|
-| 1 (first) | Kling avatar | `kling/ai-avatar-standard` | A front-facing close-up image plus that character's own isolated line. 720P standard. |
-| manual backup only | InfiniTalk | `infinitalk/from-audio` | Not on by default and never called automatically. A person may run it by hand. The 2-try keep-best rule keeps the best Kling take instead of switching model. |
+| Model | KIE id | Notes |
+|---|---|---|
+| OmniHuman 2.0 | `omnihuman-2-0` | The lip-sync model on every run, talking or singing. One picture plus the audio, no prompt, `enable_watermark` false, 14 credits per rounded-up second (3C.1a). |
+| No alternative, no backup | - | Kling Avatar (`kling/ai-avatar-standard`) is retired; InfiniTalk's manual backup is gone with it. The dispatcher refuses any other lip-sync model (`LIPSYNC_MODEL_MISMATCH`). The card shows the lip-sync cost; it never offers a model. |
 | dropped | Volcengine | - | **Dropped.** It barely moves a closed mouth; it is not offered and never appears in code paths, docs or the card. |
 
 Constraints:
@@ -548,54 +562,92 @@ Decision 32, plan 6.13.
 - The chosen shape (Vertical or Wide) is generated natively; the card has no
   "both shapes" answer. A client who needs both runs the ad twice.
 
-### 3.8 Video model
+### 3.8 Quality mode (the mode card replaces the vendor question)
 
-Default **MiniMax H3 at 768P** (decision 5, restored 2026-10-24: the live KIE
-catalog carries `minimax-h3/image-to-video`). No choice means
-MiniMax H3, and the card says so.
-
-**The intake question (FU-VIDEO-MODEL-CHOICES, 2026-10-09).** After the
-client picks a length, the video model question lists four models, each with
-its price for THAT length, one plain descriptor each (about 8 words), and MiniMax
-H3 first and marked RECOMMENDED:
+F-QM-1, F-QM-5 (N-12). The four vendors are no longer a numbered question:
+they ride the recap as a defaulted line (H3 recommended), and the recorded
+model is the authorization (N-12).
+The mode card asks one plain-words question with four modes, each with a plain-words price
+for the client's chosen length, and **Hybrid** marked RECOMMENDED. Hybrid is
+recommended, never required: the run owner's recorded pick is the authorization
+(N-12), and the card marks it as the recommendation only.
 
 ```
-Question <n> of <total> - VIDEO MODEL
-Which video model should make your shots? Prices are for your 3-minute ad,
-with the song, pictures and the planning allowance (`budget_contingency.label()`).
-1. MiniMax H3 - great quality, best value - about $11.46 (RECOMMENDED)
-2. Seedance 2.5 - premium detail and motion - about $85.71
-3. Seedance 2.0 Mini - quicker and cheaper - about $11.73
-4. Google Veo 3.1 - top-tier realism - about $11.34
+Question <n> of <total> - QUALITY MODE
+How polished should your shots be?
+1. Standard - great quality, best value - about $<x>
+2. Premium - every shot in finer detail - about $<y>
+3. Ultra - 4K pictures and shots, when a model can - about $<z>
+4. Hybrid - best value everywhere, finer detail on the shots that matter -
+   about $<a> (hero shots priced on the final card) (RECOMMENDED)
 ```
 
-Seedance is ByteDance's VIDEO model (Seedream is its image model and cannot
-make shots). The four models, provider ids and rates live in ONE table,
-`scripts/core/choice_card/video_models/video_model_rates.json` (from
-the KIE live model list, checked 2026-10-09), each at the resolution the
-factory really renders: MiniMax H3 768P, Seedance 2.5 720p, Seedance 2.0 Mini 720p,
-Google Veo 3.1 Fast 720p (per 8-second clip). The figure shown comes from the
-SAME function as the final card (`card_render.price_envelope`): video + one
-keyframe per shot + the character reference pictures + the song, then the
-planning allowance (`budget_contingency.label()`), so the number in the
-question is the number on the card
-(for the standard 9:16 ad with one main character; more characters re-price
-on the card with the same function). Skill 74 `price` returns
-the highest listed tier, so the chosen model's video line is priced from the
-table instead; Skill 74's own behaviour for other skills is unchanged.
-The recap line reads `Video model: Seedance 2.5 - about $68.57` (3-minute ad). The
-pick is written to run state (the F14 video-model lock) when the client
-answers; the card's Video model row reads it there, and dispatch reads it too
-and submits that model's provider id and resolution (Seedance: `generate_audio`
-off; Veo 3.1: top-level `veo-3-1`, tier `veo3_fast` inside `input`).
+The words and the figures above are `quality_modes.mode_gate.mode_card_text`'s
+own output: the labels and blurbs come from `references/quality-modes.json`,
+the figure from the same `mode_prices` table the final card prices through.
+Ultra's row reads `- not available on this box` when no live model renders 4K,
+and any row whose price cannot be read reads `- price unavailable (<code>)`;
+no figure is ever made up. The card total then adds the song, the pictures and
+the planning allowance (`budget_contingency.label()`).
 
-Seedance 2.0 Fast is not offered: its 4-15 s clip range is unconfirmed and it
-is not on the price menu; Mini is the "lite" tier on the menu.
+The four modes, their words, the shot schema and the fixed lip-sync model are
+ONE file, `references/quality-modes.json`; the money is ONE block, `mode_prices`
+in that same file. The rates table
+(`scripts/core/choice_card/video_models/video_model_rates.json`) holds the four
+numbered vendor rows, the `ultra` entry the live registry resolves and the
+measured prices, and the two are joined by model id.
+The card, the recap and dispatch all read `scripts/core/quality_modes/mode_gate.py`:
 
-If MiniMax H3 is unavailable, the factory says so and offers the next
-cheapest APPROVED model that fits, with its price. It never switches models
-silently. The chosen model and resolution are saved on the campaign; resumes
-and retakes reuse them.
+- **Standard** (default): the default story-clip model, one checked start
+  picture per shot, 768P. This is the default shape (3C.1b: "Standard as the
+  default shape").
+- **Premium**: the same one start picture per shot, every shot at 2K.
+- **Ultra**: 4K on every shot, **only** when a live KIE catalog model renders
+  4K. With none the row reads **unavailable** (`ULTRA_MODEL_UNAVAILABLE`) and is
+  never priced or submitted as a lower-resolution substitute. Shown, never faked.
+- **Hybrid** (RECOMMENDED): the default model and one start picture per shot,
+  with the shots the Shot Router marks as story turns made at 2K.
+
+Rules:
+
+- **No paid job starts before the mode pick is recorded**
+  (`QUALITY_MODE_NOT_CHOSEN`). The pick is written to the run at
+  `storyboard/quality-mode.json` (`quality_modes.mode_gate.record_mode`).
+- **The recorded pick is the authorization** for the run's story-clip model
+  and picture provider (N-12). An agent may never submit a model the run did
+  not choose, and a client's choice is never refused or swapped. The default
+  story-clip model is H3 (`minimax-h3/image-to-video`).
+- **The lip-sync model is NOT on the card and is not a choice.** OmniHuman 2.0
+  (`omnihuman-2-0`) on every run, no alternative, no backup (3C.1a); the
+  dispatcher refuses any other (`LIPSYNC_MODEL_MISMATCH`). The card shows the
+  lip-sync cost; it does not offer a model.
+- **A cost estimate refuses only a model that truly has no price**
+  (`PRICE_MISSING`, N-55). Measured prices (H3 image-to-video and
+  reference-to-video, OmniHuman, Veo 4K) sit beside the list prices in the
+  rates table and are priced from, never refused.
+- **Every shot carries the mode fields** (F-QM-6): `picture_mode`,
+  `picture_mode_reason`, `reference_image_ids`, `look_drifted`, `video_model`,
+  `max_resolution`. Their allowed values are in `quality-modes.json`
+  (`shot_field_rules`); a shot missing one is `SHOT_FIELD_MISSING`, a
+  `picture_mode` outside the route list is `PICTURE_MODE_UNKNOWN`, and a
+  `max_resolution` outside 720p / 768P / 1080p / 2K / 4K is
+  `MAX_RESOLUTION_UNKNOWN`.
+- **The four numbered vendor rows in `video_model_rates.json` (`models`) stay
+  as data**, so an old card's answer index never moves; the mode card supersedes
+  them for new runs.
+- **Drift convergence (N99):** the Hailuo 02 Standard default named in the old
+  `SKILL.md` around line 1032 is retired; the default story-clip model is H3, by
+  Trevor's decision 9, exactly as `quality-modes.json` and `mode_gate` carry it.
+
+Seedance is ByteDance's video model (Seedream is its image model). The four
+vendor rows, provider ids and rates still live in
+`scripts/core/choice_card/video_models/video_model_rates.json` and feed the
+mode prices through the same table; `card_render.price_envelope` remains the one
+price function the question, the final card and dispatch share.
+
+If a live rate cannot be read, the card says the price is unavailable for that
+mode and does not start paid work (section 4.4).
+
 
 ### 3.9 Product image and book campaigns
 
@@ -693,10 +745,14 @@ numbers `references/price-menu.md` documents:
 
 ## 4. Price rules on the card
 
-1. **The VIDEO MODEL line is priced from this repository's one rates table**,
-   `scripts/core/choice_card/video_models/video_model_rates.json`, through the
-   shared price function (`card_render.price_envelope`), because Skill 74
-   `price` returns the highest listed tier. Every OTHER number on the card -
+1. **The QUALITY MODE line is priced from the one mode table**,
+   `references/quality-modes.json` (`mode_prices`), joined by model id to the
+   rates table
+   (`scripts/core/choice_card/video_models/video_model_rates.json`) that
+   carries the vendor rows, the `ultra` entry and the measured prices, through
+   the shared price
+   function (`card_render.price_envelope`), because Skill 74 `price` returns the
+   highest listed tier. Every OTHER number on the card -
    the chosen shape, lip-sync close-ups, voice packs, clips and the batch
    total - comes from Skill 74 `price`. The card never computes a rate.
 2. `preflight --model ID --units N` runs before approval; a shortfall is

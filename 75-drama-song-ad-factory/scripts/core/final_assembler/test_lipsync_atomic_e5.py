@@ -207,6 +207,15 @@ def test_assemble_gate_wired():
             if not seg.get("lip_sync_line_ids"):
                 seg["faces_on_screen"] = []
         attach_evidence(tl2, tmp)
+        # S-42: OmniHuman 2.0 is the one lip-sync model. The shared
+        # fixture's receipts name the locked model so the evidence gate
+        # admits this positive fixture on the wave truth.
+        from kie_dispatch.model_lock import LOCKED_LIPSYNC_MODEL as _LM
+        from pathlib import Path as _P
+        for _rc in _P(tmp).glob("receipts/task-shot-*.json"):
+            _d = json.loads(_rc.read_text())
+            _d["evidence"]["lipsync_model"] = _LM
+            _rc.write_text(json.dumps(_d))
         path2 = os.path.join(tmp, "timeline2.json")
         with open(path2, "w", encoding="utf-8") as fh:
             json.dump(tl2, fh)

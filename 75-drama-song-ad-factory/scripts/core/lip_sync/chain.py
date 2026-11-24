@@ -17,11 +17,16 @@ For every planned lip-sync clip (every approved shot that carries
                            separation per song (S75-056), every clip cut from
                            ``music/vocal-stem.mp3``.
   4. ``upload_stem``       the own-line stem, receipt bound to the URL.
-  5. ``kie_dispatch``      the paid ``kling/ai-avatar-standard`` job, under the
+  5. ``kie_dispatch``      the paid ``omnihuman-2-0`` job, under the
                            ledger reserve, the card gate, the picture gate and
                            the stem/picture input join.
   6. ``run_gate``          ``lip_gate.run_gate``: the 2-try rule, the attempt
                            ceiling and ``load_governor.kie_request`` pacing.
+  7. ``eye_check``         the whole-frame contact sheet at 4 frames per
+                           second (N-113) for the kept take. The code builds
+                           the sheet; who looked and the verdict are a
+                           reader's, and a take without them is refused
+                           ``LIP_TAKE_NOT_EYE_CHECKED`` at the evidence join.
 
 What it writes under ``<run>/control/lip-sync/``:
 
@@ -63,13 +68,19 @@ _CORE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if _CORE not in sys.path:
     sys.path.insert(0, _CORE)
 
-MODEL = "kling/ai-avatar-standard"
+from kie_dispatch import model_lock as _ML
+
+# F-LIP-2 / S-42: ONE source of truth. The lip-sync model id lives in
+# kie_dispatch.model_lock and this chain follows it, so the route that is
+# dispatched can never drift from the route the evidence join verifies.
+MODEL = _ML.LOCKED_LIPSYNC_MODEL
+PROVIDER = MODEL.split("/")[0] if "/" in MODEL else MODEL
 TOOL = "lip_sync.run"
 SCHEMA = "blackceo.lipsync-run/v1"
 VERSION = "1.0.0"
 STAGES = ("video-generation", "qc-retakes")
 STEPS = ("gate_picture", "upload_measured", "cut_line_from_one_stem",
-         "upload_stem", "kie_dispatch", "run_gate")
+         "upload_stem", "kie_dispatch", "run_gate", "eye_check")
 ACCEPTED = ("PASS", "ACCEPT_WITH_FLAG", "KEPT_BEST_OF_2", "UNDETERMINED",
             "UNMEASURABLE")
 EXIT = {"ok": 0, "refused": 5, "error": 1}
@@ -151,7 +162,11 @@ def _defaults():
             "isolated_stem_reader": None, "separation_runner": None,
             "dispatch_fn": None, "dispatch_runner": None, "adapter_path": None,
             "measure_offset": None, "cut_runner": None, "measure_clip": None,
-            "make_strip": None, "advisory": None, "person_verdicts": {},
+            "make_strip": None, "make_eye_sheet": None,
+            "advisory": None, "person_verdicts": {},
+            "eye_records": None, "landed_takes": None,
+            "image_analyze": None, "identity_references": None,
+            "emotion_takes": None, "voice_map": None,
             "sung": True, "look": None, "stage": "video-generation",
             "ledger_db": None, "state_store": None, "usd_per_s": None,
             "remaining_usd": None, "shots": None, "budget": True}
@@ -202,6 +217,11 @@ def _dispatch_clip(root, run_id, shot_id, row, image, rdir, image_url, uploaded,
                "lipsync_image_path": str(image),
                "lipsync_receipt_dir": str(rdir),
                "lipsync_stems": [uploaded],
+               # N-43 / N-73: the request names the lock version and the sheet
+               # the shot's line came from; the join refuses a mismatch.
+               "lock_version": (row.get("lock_version")),
+               "expression_sheet": row.get("expression_sheet"),
+               "emotion": row.get("emotion"),
                "production_stage": attrs["stage"],
                "storyboard": {"shots": shots, "review": gate_doc.get("review") or {}}}
     save_dir = root / "generation" / "lipsync" / shot_id
@@ -233,6 +253,100 @@ def _dispatch_clip(root, run_id, shot_id, row, image, rdir, image_url, uploaded,
     return clip
 
 
+def _reference_paths(root, speaker):
+    """F-PIC-1: the approved reference pictures for one character, from the
+    run's look lock. Returns [] when the lock or the entry is absent."""
+    path = Path(root) / "control" / "look-lock.json"
+    if not path.is_file():
+        return []
+    doc = _read(path)
+    chars = doc.get("characters") if isinstance(doc, dict) else None
+    entry = None
+    if isinstance(chars, dict):
+        entry = chars.get(speaker)
+    elif isinstance(chars, list):
+        entry = next((c for c in chars if isinstance(c, dict)
+                      and (c.get("character") == speaker or c.get("id") == speaker)), None)
+    out = []
+
+    def collect(v):
+        if isinstance(v, str):
+            out.append(v)
+        elif isinstance(v, dict):
+            for key in ("path", "file"):
+                if isinstance(v.get(key), str):
+                    out.append(v[key])
+    for source in (entry if isinstance(entry, list) else [entry]):
+        if isinstance(source, dict):
+            for key in ("refs", "references", "pictures", "views"):
+                for item in source.get(key) or []:
+                    collect(item)
+            collect(source)
+        elif isinstance(source, str):
+            collect(source)
+    resolved = []
+    for value in out:
+        q = Path(value)
+        q = (q if q.is_absolute() else Path(root) / q).resolve()
+        if q.is_file():
+            resolved.append(str(q))
+    return resolved
+
+
+def _eye_sheet_builder(root):
+    """N-113: the real whole-frame 4-fps contact sheet, built with ffmpeg.
+
+    Returns make_eye_sheet(clip, shot_id) -> sheet path; raises on failure so
+    the caller records the error instead of inventing a pass. A take with no
+    completed eye record is refused LIP_TAKE_NOT_EYE_CHECKED at the join."""
+    from lip_sync.lip_gate import lip_process as _LP
+    import load_governor as _LG
+
+    def build(clip, shot_id, duration_s=None):
+        dur = duration_s
+        if not dur:
+            raise RuntimeError("eye sheet needs the take's measured duration")
+        out = _LP.eye_sheet_path(str(root), shot_id)
+        Path(out).parent.mkdir(parents=True, exist_ok=True)
+        proc = _LG.run_ffmpeg(_LP.eye_sheet_argv(clip, out, dur),
+                              "eye-sheet", stdout=-1, stderr=-1)
+        if proc.returncode != 0 or not Path(out).is_file():
+            raise RuntimeError("ffmpeg contact sheet failed for " + shot_id)
+        return out
+    return build
+
+
+def _voice_map_passed(root):
+    """N-117: the run's Voice Map gate result. Absent or unpassed is a refusal;
+    a map that is present but has not passed is never guessed at."""
+    path = Path(root) / "control" / "voice-map.json"
+    if not path.is_file():
+        return False
+    try:
+        doc = _read(path)
+    except (OSError, ValueError):
+        return False
+    if not isinstance(doc, dict):
+        return False
+    gate = doc.get("gate") if isinstance(doc.get("gate"), dict) else {}
+    return doc.get("passed") is True or gate.get("passed") is True \
+        or doc.get("state") == "passed"
+
+
+def _identity_analyzer(root, p, speaker):
+    """F-PIC-1: the real supplier called in the intake path before any spend.
+    Identity is MEASURED against the approved reference set; with no reference
+    set the chain refuses rather than taking a caller's word."""
+    from lip_sync.lip_gate import image_gate, picture_measure
+    measure = p.get("picture_measure") or getattr(picture_measure, "measure")
+    refs = p.get("identity_references") or _reference_paths(root, speaker)
+    if not refs:
+        raise ChainError("LIPSYNC_IMAGE_UNMEASURED",
+                         "no approved reference pictures for %r; face identity "
+                         "cannot be measured" % (speaker,))
+    return image_gate.reference_analyzer(measure, refs)
+
+
 def _clip(root, run_id, shot_id, row, p, stills, attrs):
     """The chain for ONE planned clip. Returns its evidence row."""
     PG = p["picture_gate"]
@@ -245,8 +359,13 @@ def _clip(root, run_id, shot_id, row, p, stills, attrs):
     _need(image.is_file() and image.is_relative_to(root), "LIPSYNC_IMAGE_MISSING",
           str(image))
 
+    # N-118 / 3G.6 lever 1 and 2: the remake prompt carries the sentence's own
+    # expression, one step stronger on pain lines (the picture is the only
+    # control OmniHuman gets; it is fed no prompt).
     gated = PG.gate_picture(str(image), receipt_dir=str(rdir),
-                            measure=p["picture_measure"], no_smile=True)
+                            measure=p["picture_measure"], no_smile=True,
+                            emotion=row.get("emotion"),
+                            intensity=int(row.get("emotion_intensity") or 2))
     _need(gated.get("verdict") in PG.ACCEPTED, "LIPSYNC_PICTURE_NOT_GATED",
           "%s: %s" % (gated.get("verdict"),
                       "; ".join("%s: %s" % tuple(x)
@@ -254,6 +373,14 @@ def _clip(root, run_id, shot_id, row, p, stills, attrs):
     _need(Path(gated["image"]).resolve() == image, "LIPSYNC_GATED_NOT_APPROVED",
           "the gate kept a different picture (%s); the approved still is the "
           "only lip-sync source (settled by U-U03)" % gated["image"])
+    # F-PIC-1: measure face identity against the approved references at intake.
+    from lip_sync.lip_gate import image_gate as _IG
+    analyze = p.get("image_analyze") or _identity_analyzer(root, p, row["speaker"])
+    try:
+        _IG.require_source_image(str(image), analyze)
+    except _IG.LipsyncImageRefused as exc:
+        raise ChainError((exc.reasons[0][0] if exc.reasons
+                          else _IG.UNMEASURED), str(exc))
     image_url = PG.upload_measured(str(image), uploader=p["picture_uploader"],
                                    receipt_dir=str(rdir))
 
@@ -295,7 +422,7 @@ def _clip(root, run_id, shot_id, row, p, stills, attrs):
         return gate.measure_file(clip, audio=stem["path"])
 
     def generate(provider, spec):
-        _need(provider == "kling", "LIPSYNC_MODEL_MISMATCH",
+        _need(provider == PROVIDER, "LIPSYNC_MODEL_MISMATCH",
               "the locked lip-sync model is %s" % MODEL)
         return _dispatch_clip(root, run_id, shot_id, row, image, rdir,
                               image_url, uploaded, spec, attrs)
@@ -303,6 +430,22 @@ def _clip(root, run_id, shot_id, row, p, stills, attrs):
     prior = len(list((root / "control" / "lip-sync" / "receipts").glob(
         shot_id + "-try*.json")))
     from lip_sync.lip_gate import image_gate
+    # N-117: no passed Voice Map, no lip-sync piece.
+    if p.get("require_voice_map", True):
+        _need(_voice_map_passed(root), "VOICE_MAP_MISSING",
+              "the run has no passed control/voice-map.json; who sings what "
+              "must be known before a paid lip-sync piece")
+    # N-101: the piece is a whole sentence group, 5 to 30 seconds. The
+    # constants are lipsync_clips' (U-PLAN owns the numbers); this is the
+    # dispatcher's refusal before any spend.
+    import lipsync_clips as _LC
+    window = float(row["end_s"]) - float(row["start_s"])
+    _need(window + 1e-9 >= _LC.CLIP_MIN_S, "LIPSYNC_AUDIO_TOO_SHORT",
+          "piece %s is %.2f s of audio; the floor is %.1f s (join the singer's "
+          "neighbouring sentence)" % (shot_id, window, _LC.CLIP_MIN_S))
+    _need(window <= _LC.CLIP_MAX_S + 1e-9, "LIPSYNC_AUDIO_TOO_LONG",
+          "piece %s is %.2f s of audio; the top is %.0f s (the stitch is the fix)"
+          % (shot_id, window, _LC.CLIP_MAX_S))
     try:
         gate_row = gate.run_gate(
             shot_id, generate, measure_clip, source_image=str(image),
@@ -311,6 +454,11 @@ def _clip(root, run_id, shot_id, row, p, stills, attrs):
             prior_jobs=prior,
             make_strip=p["make_strip"], advisory=p["advisory"],
             look=p["look"],
+            eye_record=(p.get("eye_records") or {}).get(shot_id),
+            landed=(p.get("landed_takes") or {}).get(shot_id),
+            emotion=row.get("emotion"),
+            intensity=int(row.get("emotion_intensity") or 2),
+            emotion_check=p.get("emotion_check"),
             person_verdict=(p["person_verdicts"] or {}).get(shot_id))
     except gate.LipTryLimit as exc:
         raise ChainError(gate.LIP_TRY_LIMIT, str(exc))
@@ -319,6 +467,17 @@ def _clip(root, run_id, shot_id, row, p, stills, attrs):
     last = attrs.get("last") or {}
     _need(bool(last.get("receipt_path")), "LIPSYNC_DISPATCH_FAILED",
           "the gate kept no dispatched try for " + shot_id)
+    # N-113 (3C.1b lesson 3), the seventh step: build the whole-frame contact
+    # sheet at 4 frames per second for the kept take. The sheet is made here;
+    # who LOOKED and the verdict are a reader's to write, never this code's.
+    eye_sheet = None
+    make_sheet = p.get("make_eye_sheet") or _eye_sheet_builder(root)
+    take_s = last.get("take_dur_s") or (float(row["end_s"]) - float(row["start_s"]))
+    try:
+        eye_sheet = make_sheet(last["clip"], shot_id, take_s)
+    except Exception as exc:              # a sheet that cannot be built is reported
+        eye_sheet = None
+        attrs["eye_sheet_error"] = "%s: %s" % (type(exc).__name__, exc)
     artifact = {"schema_version": "1.0.0", "artifact_id": "lipsync-" + shot_id,
                 "run_id": run_id, "stage": "generation", "kind": "video",
                 "path": last["clip"], "sha256": last["sha256"],
@@ -338,7 +497,38 @@ def _clip(root, run_id, shot_id, row, p, stills, attrs):
             "clip_path": last["clip"], "clip_sha256": last["sha256"],
             "receipt_path": last["receipt_path"], "task_id": last["task_id"],
             "verdict": gate_row["verdict"], "gate": gate_row,
+            # N-113 / G-WIDE-01 / N-118: the eye record the reader wrote (sheet,
+            # who looked, verdict, right-voice and emotion results) and the
+            # landed close-up facts. Both are REQUIRED for the take to enter the
+            # timeline; the chain never invents either.
+            "eye_record": _eye_record_with_sheet(
+                (p.get("eye_records") or {}).get(shot_id) or gate_row.get("eye_record"),
+                eye_sheet),
+            # N-113: the whole-frame 4-fps sheet this step built for the take.
+            "eye_sheet": eye_sheet,
+            "eye_sheet_error": attrs.get("eye_sheet_error"),
+            "landed": (p.get("landed_takes") or {}).get(shot_id) or gate_row.get("landed"),
+            "emotion_hold": gate_row.get("emotion_hold"),
+            # N-118: the line's own tag travels with the row, so the join can
+            # refuse a tagged take that never had its Emotion Hold.
+            "emotion": row.get("emotion"),
+            "emotion_intensity": int(row.get("emotion_intensity") or 2),
+            "take_dur_s": last.get("take_dur_s"),
             "artifact": artifact, "face_on_screen": row["speaker"]}
+
+
+def _eye_record_with_sheet(record, sheet):
+    """N-113: the receipt needs the sheet, who looked and the verdict.
+
+    The sheet is a fact this step built; who looked and the verdict are the
+    reader's and are never invented here. A reader record that names no sheet
+    gets the built one; a take with no reader record stays without one (the
+    join refuses LIP_TAKE_NOT_EYE_CHECKED)."""
+    if not isinstance(record, dict):
+        return record
+    if record.get("sheet") or not sheet:
+        return record
+    return dict(record, sheet=str(sheet))
 
 
 def _complete(row):
@@ -358,6 +548,7 @@ def _run(run_dir, run_id, overrides):
     from audio_c3 import lipsync_producer as producer
     from delivery_package.run_inputs import audio_sources
     from lipsync_evidence import LipsyncEvidenceError, _approved
+    from lipsync_evidence import _approved_shots, _approved_stills
     try:
         p = _providers(overrides)
         root, required = _approved(run_dir)
@@ -373,11 +564,12 @@ def _run(run_dir, run_id, overrides):
         planned = [sid for sid in required if not wanted or sid in wanted]
         _need(bool(planned), "LIPSYNC_REQUIREMENTS_MISSING",
               "the approved storyboard has no planned lip-sync clip")
-        stills = _read(root / "storyboard" / "stills.json")
+        # F-LIP-3: read either storyboard layout (storyboard/ files or the one
+        # storyboard-v3.json); the evidence join uses the same two readers.
+        stills = _approved_stills(root)
         gate_doc = root / "storyboard" / "gate.json"
         gate = _read(gate_doc) if gate_doc.is_file() else {}
-        shots = _read(root / "storyboard" / "shot-list.json")
-        shots = shots.get("shots") if isinstance(shots, dict) else shots
+        shots = _approved_shots(root)
         shots = [dict(s, status="storyboard_approved") for s in shots or []]
         attrs = {"shots": shots, "gate": gate,
                  "card_receipt": producer._approval_context(root, run_id),

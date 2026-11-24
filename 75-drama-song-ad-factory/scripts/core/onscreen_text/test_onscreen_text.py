@@ -333,6 +333,23 @@ def test_real_tesseract_reads_the_generated_fixture():
         assert out["decision"] == "BAKED" and out["receipt"] == OST.TEXT_BAKED
 
 
+def test_lip_take_needs_a_clean_read_and_a_complete_eye_record():
+    clean = {"verdict": OST.VERDICT_PASS, "read": WORD, "reason_code": None}
+    eye = {"new_writing": False, "non_english": False, "changed": False}
+    assert OST.lip_take_verdict(clean, eye)["verdict"] == OST.VERDICT_PASS
+    assert (OST.lip_take_verdict(clean, None)["reason_code"]
+            == OST.LIP_TAKE_NOT_EYE_CHECKED)
+    bad = dict(eye, new_writing=True)
+    assert OST.lip_take_verdict(clean, bad)["verdict"] == OST.VERDICT_UNAVAILABLE
+    dirty = {"verdict": OST.VERDICT_FAIL, "read": "SALL",
+             "reason_code": OST.TEXT_NOT_VERIFIED}
+    assert OST.lip_take_verdict(dirty, eye)["verdict"] != OST.VERDICT_PASS
+
+def test_camera_readable_required_only_when_the_viewer_must_read():
+    assert OST.camera_readable_required({"viewer_must_read": True})
+    assert not OST.camera_readable_required({"viewer_must_read": False})
+    assert not OST.camera_readable_required({})
+
 def main():
     failures = 0
     for name in sorted(n for n in globals() if n.startswith("test_")):

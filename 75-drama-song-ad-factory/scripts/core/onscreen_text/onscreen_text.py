@@ -259,6 +259,49 @@ def verify_still(path, expected, extractor=None):
     return row
 
 
+# ------------------------------------------------- lip-sync take and 3P ----
+
+#: A lip-sync take's clean OCR read is ONE input, never a pass on its own:
+#: the eye check of its contact sheet is required (section 3C.1b).
+LIP_TAKE_NOT_EYE_CHECKED = "LIP_TAKE_NOT_EYE_CHECKED"
+EYE_REQUIRED = frozenset({"new_writing", "non_english", "changed"})
+
+
+def lip_take_verdict(read_row, eye=None):
+    """A lip-sync take passes only with a clean read AND a complete eye record.
+
+    ``read_row`` is a ``verify_still``-style row (or None for no read);
+    ``eye`` maps the three fixed questions to True (bad) / False (clean).
+    A clean scan alone is recorded as what it is and is NOT a pass.
+    """
+    out = {"verdict": VERDICT_UNAVAILABLE, "reason_code": None,
+           "read": (read_row or {}).get("read", ""),
+           "eye": dict(eye or {})}
+    read_clean = (isinstance(read_row, dict)
+                  and read_row.get("verdict") == VERDICT_PASS)
+    if not isinstance(eye, dict) or not EYE_REQUIRED.issubset(eye):
+        out["reason_code"] = LIP_TAKE_NOT_EYE_CHECKED
+        return out
+    if any(eye.get(k) is True for k in EYE_REQUIRED):
+        out["reason_code"] = TEXT_NOT_VERIFIED
+        return out
+    if not read_clean:
+        out["reason_code"] = (read_row or {}).get("reason_code") or \
+            TEXT_NOT_VERIFIED
+        return out
+    out["verdict"] = VERDICT_PASS
+    return out
+
+
+def camera_readable_required(fields):
+    """Prop Facing (section 3P): a planned word must be readable to the camera
+    only where ``viewer_must_read`` is yes. Everywhere else a prop whose words
+    the camera cannot read is correct, not blank."""
+    if not isinstance(fields, dict):
+        return False
+    return fields.get("viewer_must_read") is True
+
+
 # --------------------------------------------------------------- decide -----
 
 def _overlay_hook():

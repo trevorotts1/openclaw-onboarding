@@ -43,7 +43,7 @@ import spend_ledger as L                                # noqa: E402
 KD = importlib.import_module("kie_dispatch.kie_dispatch")
 import kie_dispatch.model_lock as ML                    # noqa: E402  (F14 lock)
 
-VIDEO_MODEL = "kling-3.0/video"                         # on price-menu.md
+VIDEO_MODEL = "minimax-h3/image-to-video"               # authorized dispatch model (F-MODEL-AUTH)
 
 
 def _locked_state(run_ids):
@@ -217,7 +217,7 @@ def test_no_approval_refuses_animation():
           SD.video_spend_allowed(shots, review)["allowed"] is True)
 
     # F15: every paid dispatch carries the recorded choice-card receipt.
-    req = {"model": "kling-3.0/video", "request_kind": "video",
+    req = {"model": "minimax-h3/image-to-video", "request_kind": "video",
            "input": {"prompt": "p" * 200},
            "card_receipt": {"answers": {"video_style": "Lifelike 3D",
                                         "audio_style": "Soul Ballad",
@@ -229,7 +229,7 @@ def test_no_approval_refuses_animation():
     def _never(*_a, **_k):
         raise AssertionError("no provider call may happen before approval")
 
-    env = KD.dispatch(model="kling-3.0/video", request=dict(req),
+    env = KD.dispatch(model="minimax-h3/image-to-video", request=dict(req),
                       save_dir="/tmp/f6-no-save", ledger_db="/tmp/f6-none.db",
                       run_id="f6-a", logical_key="k", attempt_id="a",
                       estimated_cost=100, runner=_never, state_store=_STATE)
@@ -241,7 +241,7 @@ def test_no_approval_refuses_animation():
     # Draft (unapproved) shots refuse too.
     drafts = [dict(s, status="draft") for s in shots]
     req2 = dict(req, storyboard={"shots": drafts, "review": review})
-    env2 = KD.dispatch(model="kling-3.0/video", request=req2,
+    env2 = KD.dispatch(model="minimax-h3/image-to-video", request=req2,
                        save_dir="/tmp/f6-no-save", ledger_db="/tmp/f6-none.db",
                        run_id="f6-b", logical_key="k", attempt_id="a",
                        estimated_cost=100, runner=_never, state_store=_STATE)
@@ -256,7 +256,7 @@ def test_no_approval_refuses_animation():
     _, review_fail = _approved_plan()
     review_fail["outcome"] = "fail"
     req3 = dict(req, storyboard={"shots": shots, "review": review_fail})
-    env3 = KD.dispatch(model="kling-3.0/video", request=req3,
+    env3 = KD.dispatch(model="minimax-h3/image-to-video", request=req3,
                        save_dir="/tmp/f6-no-save", ledger_db="/tmp/f6-none.db",
                        run_id="f6-c", logical_key="k", attempt_id="a",
                        estimated_cost=100, runner=_never, state_store=_STATE)
@@ -269,7 +269,7 @@ def test_no_approval_refuses_animation():
 def test_recorded_approval_passes_entry_check():
     shots, review = _approved_plan()
     ok = KD.check_storyboard_approval(
-        None, None, {"model": "kling-3.0/video", "request_kind": "video",
+        None, None, {"model": "minimax-h3/image-to-video", "request_kind": "video",
                      "storyboard": {"shots": shots, "review": review}})
     check("run with approval recorded passes the entry check", ok is None, ok)
 

@@ -179,13 +179,36 @@ the per-second models, 8-second clips for Veo, 10-second clips for Gemini.
 | Veo 3.1 Quality (veo3; market id veo-3-1) | 720p $1.25 per clip (250 cr) | 1080p $1.275 per clip (255 cr) | 8 s | Yes, both |
 | HappyHorse 1.1 (happyhorse-1-1/*) | 720p $0.1125/s | 1080p $0.145/s | 15 s (3-15) | Yes, both |
 | Hailuo 02 Standard (hailuo/02-image-to-video-standard;hailuo/02-image-to-video-*) | 768P $0.025/s (720p not offered) | 1080p not offered (Hailuo 02 Pro is a separate model) | 6 s | Yes, both |
-| MiniMax H3 (minimax-h3/image-to-video; minimax-h3/*) | 768P per KIE pricing (owner directive 2026-10-22) | 2K per KIE pricing | 15 s (4-15) | Yes, both |
+| MiniMax H3 (minimax-h3/image-to-video; minimax-h3/*) | **image-to-video measured (N-55): 32/40/48/56/64 credits for 4/5/6/7/8 s**; 768P per KIE pricing (owner directive 2026-10-22) | **reference-to-video measured: 32/56/64/72/64 credits for 4/5/6/7/8 s** (the 8 s reading is lower than the 7 s reading exactly as measured - recorded, not smoothed); 2K per KIE pricing | 15 s (4-15) | Yes, both |
 | Kling 3.0 Omni (kling-3.0-omni/*) | 720p $0.07/s | 1080p $0.09/s | 15 s (3-15) | Yes, both |
 | Gemini Omni Flash 1.1 (google/gemini-omni-flash-1-1) | 720p $0.63 per 10 s clip (126 cr) | 1080p same $0.63 | 10 s (4, 6, 8 or 10) | Yes, both |
 | Seedance 2.5 (bytedance/seedance-2-5) | 720p $0.315/s | 1080p $0.79/s | 30 s (4-30) | Yes, both |
 | Wan 3.0 (wan/3-0-video) | 720p $0.08/s | 1080p $0.16/s | 30 s (2-30) | Yes, both |
 | Kling 3.0 (kling-3.0/video; std=720p, pro=1080p) | 720p $0.07/s | 1080p $0.09/s | 15 s (3-15) | Yes, both |
 | Seedance 2.0 Mini (bytedance/seedance-2-mini) | 720p $0.041/s | 1080p not offered (480p/720p only) | 15 s (4-15) | Yes, both |
+
+### Measured prices (N-55; a cost estimate refuses only a model with no price)
+
+Measured, not list: KIE's own records for 119 tasks and the 2026-11-23
+OmniHuman 2.0 test ledger, re-read 2026-11-23. They sit in
+`scripts/core/choice_card/video_models/video_model_rates.json`
+(`measured` and `ultra`) and are what the card prices from. A model with a
+price anywhere here or in the live registry is never refused; only one with
+no price at all is (`PRICE_MISSING`).
+
+| Item (KIE id) | Measured price | Note |
+|---|---|---|
+| MiniMax H3 image-to-video (`minimax-h3/image-to-video`) | 32/40/48/56/64 credits for 4/5/6/7/8 s | $0.16-$0.32 per clip |
+| MiniMax H3 reference-to-video (`minimax-h3/reference-to-video`) | **32/56/64/72/64 credits for 4/5/6/7/8 s** | $0.16-$0.36 per clip; the 8 s reading is lower than the 7 s reading exactly as measured, recorded, not smoothed |
+| OmniHuman 2.0 (`omnihuman-2-0`) | **14 credits per second of the rounded-up clip** = $0.07/s | the only lip-sync model (S-42, section 3C.1a); 56 for 4 s, 70 for 5, 84 for 6, 98 for 7, 112 for 8, 308 for 22 |
+| Sunburst picture (`gpt-image-2-6/sunburst`) | 12.4-13.1 credits per image | $0.062-$0.066 per picture; the two-cent storyboard picture above is `google/imagen4-fast`, a different model |
+| Veo 3.1 4K (`veo-3-1-4k`) | 150 credits (lite) / **180 credits (fast)** per clip | $0.75 / $0.90 per 8 s clip; the Ultra mode's own price |
+
+**Ultra (4K) is shown, never faked.** The Ultra row prices at the Veo 3.1 Fast
+4K tier (180 credits, $0.90 per 8 s clip) and is offered only while a live KIE
+catalog model advertises 4K on an Image-to-Video task. With none, the row reads
+unavailable (`ULTRA_MODEL_UNAVAILABLE`) and no lower-resolution model is ever
+substituted.
 
 ### Storyboard pictures (two cents each)
 
@@ -228,39 +251,44 @@ it, not an authority.
 
 ## 3. Lip-sync close-ups
 
-Lip-sync covers **25-30%** of the selected duration, with a **35% HARD
-MAXIMUM** nothing may cross, and the first **12 seconds** clearly articulated
-(the spoken opener / first sung hook is lip-synced inside that window). Approved
-direction 2026-10-23, superseding the 2026-10-08 doubling (which had said 30-40
-seconds per 60 s). Still more pieces, not longer ones: 4 to 6 seconds per clip,
-no clip over 6 seconds, never fewer than 3 clips, as footage per shape (choice
-card section 3.6).
+Lip-sync covers **25-30%** of the selected duration, with **35% as a top, not a
+refusal**: whole sentences win over the share, and a plan that passes 35% shows
+its seconds and percent before any spend (section 3.3a, rule 5). The opening
+passage is lip-synced inside the first **10-15 seconds** (N-05). **One piece is
+one or more whole sentences, 5 to 30 seconds long** (section 3.3a): never cut
+mid-sentence, never padded with silence, stitched only when a passage is longer
+than 30 seconds. There is no floor of 3 pieces under 90 seconds; from 90 seconds
+up the floor of 3 stands. "More pieces, not longer ones" is superseded for
+lip-sync by Trevor's 2026-11-23 order.
 
 The numbers live in `core/lipsync_clips.py` (one source): `TARGET_SHARE`,
-`MAX_SHARE`, `OPENING_WINDOW_S`, `CLIP_MIN_S`, `CLIP_MAX_S`,
+`MAX_SHARE`, `OPENING_WINDOW_S`, `CLIP_MIN_S` (5.0), `CLIP_MAX_S` (30.0),
 `MIN_CLIPS_FLOOR`. `TOTAL_PER_REF_S` and `CLIPS_PER_REF` are DERIVED 60 s
-references (15-18 s, 3-5 clips), outputs of the policy and never a second one.
-When a duration cannot satisfy the shares, the 3-clip / 4-s floor and the 6 s
-clip cap at once, `lipsync_clips.duration_conflicts()` names both colliding
-bounds and the run fails `LIPSYNC_DURATION_CONFLICT` instead of being silently
-re-planned. The historical FREE / no-lip-sync route stays an explicit opt-in
+references (15-18 s, 3-5 pieces), outputs of the policy and never a second one.
+When a duration cannot satisfy the shares and the floor at once,
+`lipsync_clips.duration_conflicts()` names both colliding bounds and the run
+fails `LIPSYNC_DURATION_CONFLICT` instead of being silently re-planned. The
+historical FREE / no-lip-sync route stays an explicit opt-in
 (`ROUTE_NO_LIPSYNC`, zero paid jobs); it is never the default.
 Per-ad cap math: `lipsync_clips.check_budget(total_s, usd_per_s, remaining_usd,
 shapes, attempts)` multiplies seconds x the Skill 74 rate x shapes x attempts (attempts defaults to 2, the
 two-try rule: worst case is double the snapshot below) and
 REFUSES loudly (`LIPSYNC_OVER_CAP`, `LIPSYNC_PRICE_UNKNOWN`, `LIPSYNC_CAP_UNKNOWN`)
-rather than trimming the plan or running past the cap. The card also refuses a
-plan with a clip over 6 s (`LIPSYNC_CLIP_OVER_CAP`).
+rather than trimming the plan or running past the cap. A single piece over 30
+seconds is refused (`LIPSYNC_AUDIO_TOO_LONG`) with the stitch named as the fix.
 
-| Order | Model (KIE id) | Rate | Snapshot for one ad, one shape |
-|---|---|---|---|
-| 1 (first) | Kling avatar (`kling/ai-avatar-standard`) | 8 cr/s = $0.04/s at 720P; 16 cr/s = $0.08/s at 1080P; up to 15 s per generation | one 6-second clip ≈ **$0.24** at 720P; a 60 s ad's 25-30% (15-18 s, 3-5 clips) ≈ **$0.60-$0.72** at 720P, **$0.84** at the 35% maximum (double at 1080P) |
-| manual backup only, not on by default | InfiniTalk (`infinitalk/from-audio`) | 12 cr/s = $0.06/s at 720P; 3 cr/s = $0.015/s at 480P; up to 15 s per generation | a 60 s ad's 15-18 s ≈ **$0.90-$1.08** at 720P, **$1.26** at the 35% maximum |
-| dropped | Volcengine | not offered | **Dropped** (decision 33) - it barely moves a closed mouth, so it carries no price and never appears on the card |
+**OmniHuman 2.0 is the lip-sync model on every run** (`omnihuman-2-0`, S-42 and
+section 3C.1a). There is no option, no alternative and no backup; no prompt is
+sent and the watermark is off.
 
-The card's own figure comes from `Skill 74 price --model
-kling/ai-avatar-standard --units <seconds>`; the table above is the snapshot
-that explains it. Lip-sync runs on both shapes when both shapes are ordered.
+| Model (KIE id) | Rate | Snapshot for one ad |
+|---|---|---|
+| `omnihuman-2-0` (the only lip-sync model) | **14 credits per second of the rounded-up clip** = **$0.07/s** (a credit is half a cent): 56 credits for 4 s, 70 for 5, 84 for 6, 98 for 7, 112 for 8, 308 for 22 | a 60 s ad's 15-18 s of lip-sync is about **$1.05-$1.26 per try**; a piece is priced at its length rounded up to a whole second |
+
+The card's own figure comes from `Skill 74 price --model omnihuman-2-0 --units
+<seconds>`; the table above is the snapshot that explains it. Lip-sync runs on
+both shapes when both shapes are ordered. The 14-credit rate is measured
+(U-MODES N-55; KIE's page states no price).
 
 ## 4. Voice packs and Velvet Voiceover
 
@@ -338,8 +366,9 @@ total before approval. Books and authors are never mixed.
   kling/v3-omni-text-to-video (3-15 s), kling-3-0 (up to 15 s, std=720p,
   pro=1080p), veo-3-video (4, 6 or 8 s; 16:9 and 9:16), and the registry
   `input_fields`.
-- Lip-sync: kie.ai registry entries for `kling/ai-avatar-standard`,
-  `kling/ai-avatar-pro` and `infinitalk/from-audio` (`pricing.raw`).
+- Lip-sync: the KIE registry entry for `omnihuman-2-0` (14 credits per
+  rounded-up second, measured; skill 74's registry is the authority). Kling
+  Avatar and InfiniTalk are retired and carry no price (S-42).
 - Music: ai-music-api/generate = 12 credits ($0.06) per request.
   docs.kie.ai/suno-api (2026-10-07) states V6, V6_MINI and V6_WILD accept
   duration 10-360 s; V4_5 and V5 up to 8 min.

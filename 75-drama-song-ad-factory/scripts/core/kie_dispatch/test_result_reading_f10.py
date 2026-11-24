@@ -244,6 +244,17 @@ def test_prose_request_reaches_submit():
     check("clean: full stage order", fake.order() == [
         "health", "preflight", "prompt-budget", "submit", "wait", "save"],
         str(fake.order()))
+    # F-SPD-2: the Skill 74 `wait` command takes --task-id/--timeout only.
+    # The first poll tier rides KIE_LIVE_POLL_INITIAL on the runner's env; a
+    # flag here makes argparse exit 2 and every async job land "unknown".
+    _waits = [c for c in fake.calls if len(c) > 1 and c[1] == "wait"]
+    w_argv = _waits[0] if _waits else None
+    check("clean: wait argv has no flag the adapter rejects",
+          w_argv is not None and "--initial" not in w_argv, str(w_argv))
+    check("clean: wait argv carries the task id and budget",
+          w_argv is not None
+          and w_argv[w_argv.index("--task-id") + 1] == "task-clean"
+          and w_argv[w_argv.index("--timeout") + 1] == "300", str(w_argv))
 
 
 # ---- 2. one-poll failure reporting -----------------------------------------

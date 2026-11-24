@@ -63,6 +63,29 @@ import delivery_package.contract as package_contract  # noqa: E402
 from choice_card.intake_card import intake_session as session  # noqa: E402
 import delivery_package.run_inputs as run_inputs  # noqa: E402
 
+def _stamp_wave_lipsync_model(root):
+    """Pin fixture lip-sync receipts to the wave roster (OmniHuman 2.0).
+
+    attach_evidence writes the retired "kling/ai-avatar-standard" id into
+    every synthetic receipt; the wave's model_lock admits only
+    "omnihuman-2-0" (S-42), so check_plan refuses the export proof
+    (LIPSYNC_MODEL_UNLISTED) unless the stamp moves with the roster. The
+    stamp is rewritten to the roster id the run chose, read from the lock
+    itself, never a hand-typed id.
+    """
+    import glob as _glob
+    import json as _json
+    import kie_dispatch.model_lock as _ML
+    roster = _ML.LOCKED_LIPSYNC_MODEL
+    for path in _glob.glob(str(Path(root) / "receipts" / "*.json")):
+        rec = _json.loads(Path(path).read_text())
+        ev = rec.get("evidence") or {}
+        if (ev.get("lipsync_model") == "kling/ai-avatar-standard"
+                and roster != "kling/ai-avatar-standard"):
+            ev["lipsync_model"] = roster
+            rec["evidence"] = ev
+            Path(path).write_text(_json.dumps(rec))
+
 _PKG_TMP = Path(tempfile.mkdtemp(prefix="del13-checklist-"))
 _PKG_FOLDER = _PKG_TMP / "delivery"
 package_contract.write_reference_package(_PKG_FOLDER)
@@ -213,7 +236,8 @@ def full_answered_receipt(picture="red"):
         "MODELS": {"used": {"video": "MiniMax H3 768P",
                             "images": "gpt-image sunburst",
                             "song": "Suno V6",
-                            "lip_sync": "Kling avatar"},
+                            # S-42: one lip-sync model, no menu.
+                            "lip_sync": "OmniHuman 2.0"},
                    "source_used": "job receipts"},
         "HONEST_RECEIPT": {"measured_fields": 14, "unmeasured_fields": 0,
                            "source_measured_fields": "receipt audit",
@@ -271,6 +295,12 @@ def full_answered_receipt(picture="red"):
     shutil.copyfile(real_clean_file,
                     folder / package_contract.ITEMS_BY_KEY["video"].files[1])
     receipt["PACKAGE_COMPLETE"]["delivery_folder"] = str(folder)
+    # S-42 (wave): the lip-sync model is OmniHuman 2.0 on every run.
+    # attach_evidence (U-LIPGATE, scripts/core/test_lipsync_evidence.py)
+    # still stamps the retired Kling id in its fixture receipts; pin it to
+    # the wave roster here, inside the export proof, so check_plan admits
+    # the fixture. Nothing here is mocked.
+    _stamp_wave_lipsync_model(root)
     rc = {"outcome": "ok", "produced_by": {"module": "final_assembler.assembler"},
           "master_sha256": sha256_file(master),
           "evidence": {"output_dur": plan["total_dur"], "lipsync_plan": plan,

@@ -230,7 +230,7 @@ class ProcessGateTest(unittest.TestCase):
             self.assertNotEqual(copied.resolve(), source.resolve())
             self.assertEqual(copied.read_bytes(), source.read_bytes())
             seen.append(copied.read_bytes())
-            return 0, {"data": {"download_url": "https://fixture.invalid/approved-s1.png"}}, ""
+            return 0, {"data": {"download_url": "https://kieai.redpandaai.co/approved-s1.png"}}, ""
         with patch.object(D.L, "plan") as plan, patch.object(D.L, "reserve") as reserve, \
                 patch.object(subprocess, "run", side_effect=AssertionError("external subprocess forbidden")) as transport, \
                 patch.object(subprocess, "Popen", side_effect=AssertionError("external process forbidden")) as popen, \

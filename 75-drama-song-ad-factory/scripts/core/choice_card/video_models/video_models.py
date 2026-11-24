@@ -181,6 +181,125 @@ def length_phrase(seconds):
         else "%d-second" % seconds
 
 
+#: F-QM-4: the Ultra row is NOT in MODELS, so the four numbered card rows and
+#: their answer-index mapping never move. Ultra is its own entry, shown only
+#: when a live registry model advertises 4K pricing.
+ULTRA = RATES.get("ultra") or {}
+#: N-55: measured prices (credits) so an estimate refuses only a model with
+#: truly no price. Keyed by KIE model id.
+MEASURED = {k: v for k, v in (RATES.get("measured") or {}).items()
+            if not k.startswith("_")}
+
+
+def ultra_model(explicit=None):
+    """(row, None) for the Ultra route when a live registry model advertises 4K
+    pricing, else (None, {"reason_code": "ULTRA_MODEL_UNAVAILABLE", "detail": ...}).
+
+    Shown, never faked: no lower-resolution model is ever substituted for Ultra
+    (F-QM-4). An unreadable registry is the same unavailable answer."""
+    if not ULTRA:
+        return None, {"reason_code": "ULTRA_MODEL_UNAVAILABLE",
+                      "detail": "no Ultra row is recorded in the rates table"}
+    ids = registry_ids(explicit)
+    if ids is None:
+        return None, {"reason_code": "ULTRA_MODEL_UNAVAILABLE",
+                      "detail": ("the live KIE model registry cannot be read "
+                                 "(%s), so no model can be proven to render 4K"
+                                 % (resolve_registry(explicit) or "no "
+                                    "kie-model-registry.json found"))}
+    path = resolve_registry(explicit)
+    try:
+        with open(path, encoding="utf-8") as f:
+            data = json.load(f)
+        rows = data.get("models") if isinstance(data, dict) else None
+    except (OSError, ValueError):
+        rows = None
+    named = ULTRA.get("kie_model")
+    ordered = sorted((m for m in (rows or []) if isinstance(m, dict)),
+                     key=lambda m: 0 if m.get("id") == named else 1)
+    for m in ordered:
+        # A model qualifies only when its OWN schema takes an Image-to-Video
+        # job AND offers a 4K resolution -- never because a price note merely
+        # contains the text "4k" (that once matched a 720p model). The rates
+        # table's named Ultra model is preferred, so its price is the price.
+        tasks = m.get("taskType") or []
+        if not any("Image to Video" in str(t) for t in tasks):
+            continue
+        res = (m.get("input_fields") or {}).get("resolution") or {}
+        enum = [str(v).lower() for v in (res.get("enum") or [])]
+        if not any(v == "4k" or v.startswith("2160") for v in enum):
+            continue
+        probe = dict(ULTRA, kie_model=m.get("id"),
+                     name=ULTRA.get("name", "Ultra"))
+        return probe, None
+    return None, {"reason_code": "ULTRA_MODEL_UNAVAILABLE",
+                  "detail": ("no model in the live KIE registry (%s) advertises "
+                             "4K pricing, so Ultra is shown as unavailable"
+                             % path)}
+
+
+def _clips(seconds, shot_s):
+    """Whole clips needed for ``seconds`` of runtime at a per-clip price."""
+    shot = int(shot_s or 8)
+    return max(1, int(-(-float(seconds) // shot)))
+
+
+def estimate(model_id, units):
+    """Credits for one cost line, or ModelResolutionError PRICE_MISSING.
+
+    N-55: a cost estimate refuses a model only when it truly has no price. It
+    reads the one rates table first (card rows and the measured entries), then
+    the live registry's own credits. ``units`` is seconds, or clips for a
+    per-clip model."""
+    for row in MODELS:
+        if row["kie_model"] == model_id:
+            per = credits_per_unit(row)
+            if row["unit"] == "second":
+                return per * units
+            return per * _clips(units, row.get("shot_s"))
+    if ULTRA and ULTRA.get("kie_model") == model_id:
+        per = float(ULTRA["rate_usd"]) / 0.005
+        if ULTRA.get("unit") == "second":
+            return per * units
+        return per * _clips(units, ULTRA.get("shot_s"))
+    meas = MEASURED.get(model_id)
+    if meas:
+        if "credits_per_second" in meas:
+            per = float(meas["credits_per_second"])
+            #: N-55 / 3C.1a: OmniHuman bills 14 credits per second of the clip
+            #: it returns, which is the audio rounded UP to a whole second.
+            #: 4.2 s of audio is a 5 s clip, 70 credits -- never 58.8.
+            if meas.get("unit") == "rounded-second":
+                return per * int(-(-float(units) // 1))
+            return per * units
+        if "credits_low" in meas or "credits_high" in meas:
+            #: per image; a measured range is priced at its high end.
+            return float(meas.get("credits_high") or meas.get("credits_low")) * units
+        by_s = meas.get("credits_by_seconds") or {}
+        key = str(int(units))
+        if key in by_s:
+            return float(by_s[key])
+        if "credits" in meas:
+            return float(max(meas["credits"].values()))
+    path = resolve_registry()
+    if path:
+        try:
+            with open(path, encoding="utf-8") as f:
+                data = json.load(f)
+            for m in (data.get("models") or []):
+                if isinstance(m, dict) and m.get("id") == model_id:
+                    est = (m.get("pricing") or {}).get("credits_estimate")
+                    if est is not None and float(est) > 0:
+                        return float(est) * (units if m.get("pricing", {})
+                                             .get("unit") == "per-second" else 1)
+        except (OSError, ValueError, TypeError):
+            pass
+    raise ModelResolutionError(
+        "PRICE_MISSING",
+        "%r has no price in the rates table or the live KIE registry, so no "
+        "estimate can be given for it" % (model_id,))
+
+
 def model_for(n):
     return next(m for m in MODELS if m["n"] == n)
 
@@ -247,7 +366,17 @@ def rated_price_fn(model, base=None):
             return ok(RATES["keyframe_usd"] / 0.005 * units, "per-image", "video_model_rates.json")
         if model_id.startswith("ai-music-api"):
             return ok(RATES["song_usd"] / 0.005, "per-job", "video_model_rates.json")
-        return {"state": "fail", "error": {"code": "price_unavailable", "msg": "no rate for " + model_id}}
+        #: N-55: a measured price (reference-to-video, OmniHuman, Ultra 4K,
+        #: gpt-image) is priced, never refused; only a model with no price at
+        #: all refuses, and it refuses PRICE_MISSING.
+        try:
+            meas = MEASURED.get(model_id) or {}
+            unit = "per-second" if "credits_per_second" in meas else "per-job"
+            return ok(estimate(model_id, units), unit,
+                      "video_model_rates.json (measured)")
+        except ModelResolutionError as e:
+            return {"state": "fail", "error": {"code": e.reason or "PRICE_MISSING",
+                                               "msg": str(e)}}
     return run
 
 
@@ -264,8 +393,23 @@ def apply_locked_choice(request, locked):
 
 
 def request_for_run(state_store, run_id, prompt, duration, aspect_ratio="9:16", first_frame_url=None):
-    """The shot request for the model this run's client chose (read from run state)."""
-    return build_request(chosen(state_store, run_id), prompt, duration, aspect_ratio, first_frame_url)
+    """The shot request for the model this run's client chose (read from run state).
+
+    N-12: the run owner's recorded choice IS the authorization, so the choice
+    rides the request as ``run_choice`` for the dispatcher's
+    ``never_again.check_model_choice``. Only a real F14 lock is stamped: a run
+    with no lock records no choice, and the dispatcher refuses or falls back to
+    its own list rather than having an agent's default pass as the owner's pick.
+    The stamp is the card row's model id, not the lock's family pattern: the
+    lock says ``minimax-h3/*``, and the dispatcher compares exact ids.
+    """
+    req = build_request(chosen(state_store, run_id), prompt, duration, aspect_ratio, first_frame_url)
+    import kie_dispatch.model_lock as ML
+    locked = ML.read_locked_model(state_store, run_id)
+    if locked:
+        row = entry_for_lock(locked)
+        req["run_choice"] = [row["kie_model"] if row else locked]
+    return req
 
 
 def build_request(model, prompt, duration, aspect_ratio="9:16", first_frame_url=None):

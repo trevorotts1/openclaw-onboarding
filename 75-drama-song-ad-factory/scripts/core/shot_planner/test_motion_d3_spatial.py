@@ -37,8 +37,9 @@ if CORE not in sys.path:
 
 from shot_planner.motion_score import (           # noqa: E402
     MOTION_SCORE_LOW, MOTION_SUBJECT_LOW, MOTION_STRUCTURE_MIN,
-    CLIP_LOW_MOTION, CLIP_MOTION_UNMEASURABLE, SPATIAL_GRID,
-    MotionScoreError, frame_diff_score, gate_clips, motion_score,
+    CLIP_LOW_MOTION, CLIP_FROZEN_CONFIRMED, CLIP_MOTION_UNMEASURABLE,
+    MOTION_FLAG_ADVISORY,
+    SPATIAL_GRID, MotionScoreError, frame_diff_score, gate_clips, motion_score,
     subject_motion_evidence,
 )
 
@@ -208,12 +209,20 @@ def test_pure_degenerate_and_noise():
           and dark["reason_code"] == CLIP_MOTION_UNMEASURABLE,
           json.dumps(dark, sort_keys=True)[:200])
     res = gate_clips([{"clip_id": "all-black", "motion_score": dark}])
-    check("gate refuses an unmeasurable clip with its own typed reason",
-          res["outcome"] == "rejected"
-          and res["reason_code"] == CLIP_MOTION_UNMEASURABLE
+    # N-03: an unmeasurable clip asks for a look; without one it is kept and
+    # advised, refused only when a look confirms it is frozen.
+    check("gate advises an unmeasurable clip (kept until a look)",
+          res["outcome"] == "ok"
+          and res["reason_code"] == MOTION_FLAG_ADVISORY
           and res["unmeasurable"] == ["all-black"]
-          and res["flagged"] == ["all-black"],
+          and res["flagged"] == ["all-black"]
+          and res["kept_flagged"] == ["all-black"],
           json.dumps(res)[:200])
+    frozen = gate_clips([{"clip_id": "all-black", "motion_score": dark}],
+                        looks={"all-black": {"frozen": True}})
+    check("a look-confirmed frozen unmeasurable clip is refused",
+          frozen["outcome"] == "rejected"
+          and frozen["refused"] == ["all-black"], json.dumps(frozen)[:200])
 
 
 # ---------------------------------------------------------- ffmpeg fixtures --
@@ -435,12 +444,28 @@ def test_real_clips_move_the_decision():
                 for k in ("flash", "pan", "local", "static", "black_strobe",
                           "noise64")]
         res = gate_clips(rows)
-        check("gate rejects flash, pan, static, black strobe and noise",
-              res["outcome"] == "rejected"
-              and res["reason_code"] == CLIP_LOW_MOTION
+        # N-03: the motion score is advice, never a block. The low-motion rows
+        # are flagged and kept on the receipt; a look confirming frozen is
+        # what refuses them.
+        check("gate advises flash, pan, static, black strobe and noise (kept)",
+              res["outcome"] == "ok"
+              and res["reason_code"] == MOTION_FLAG_ADVISORY
               and res["flagged"] == ["flash", "pan", "static",
-                                     "black_strobe", "noise64"],
+                                     "black_strobe", "noise64"]
+              and res["kept_flagged"] == ["flash", "pan", "static",
+                                          "black_strobe", "noise64"]
+              and res["refused"] == [],
               json.dumps(res)[:220])
+        frozen = gate_clips(rows,
+                            looks={k: {"frozen": True} for k in
+                                   ("flash", "pan", "static",
+                                    "black_strobe", "noise64")})
+        check("a look confirming frozen refuses the flagged rows",
+              frozen["outcome"] == "rejected"
+              and frozen["reason_code"] == CLIP_FROZEN_CONFIRMED
+              and frozen["refused"] == ["flash", "pan", "static",
+                                        "black_strobe", "noise64"],
+              json.dumps(frozen)[:220])
         ok = gate_clips([{"clip_id": "local",
                           "motion_score": scores["local"]},
                          {"clip_id": "pan_local",

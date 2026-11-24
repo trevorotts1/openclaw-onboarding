@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""S75-T24: the five visual identities are explained by their real differences,
+"""S75-T24: the six visual identities are explained by their real differences,
 only verified samples are linked, and Canvas to Life never borrows a link.
 
 Run: python3 core/choice_card/intake_card/test_visual_identity_help_s75t24.py
@@ -13,8 +13,10 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(HERE)))
 from choice_card.intake_card import intake_card as IC  # noqa: E402
 from choice_card.looks import looks as L  # noqa: E402
 
-IDS = ["lifelike-3d", "2d-hand-painted", "sketch-to-life", "canvas-to-life", "canvas-to-3d"]
-ALIASES = ["Lifelike3D", "2DHand-Painted", "SketchtoLife", "CanvastoLife", "Canvasto3D"]
+IDS = ["lifelike-3d", "2d-hand-painted", "sketch-to-life", "canvas-to-life",
+       "canvas-to-3d", "stylized-3d"]
+ALIASES = ["Lifelike3D", "2DHand-Painted", "SketchtoLife", "CanvastoLife",
+           "Canvasto3D", "Stylized3D"]
 
 def _load(name):
     with open(os.path.join(HERE, name), encoding="utf-8") as f:
@@ -29,15 +31,15 @@ def _lines_under(text, option_no):
     at = next(j for j, line in enumerate(lines) if line.startswith("%d. " % option_no))
     return lines[at + 1]
 
-def test_five_identities_and_compact_aliases_still_resolve():
+def test_six_identities_and_compact_aliases_still_resolve():
     assert list(L.LOOK_ORDER) == IDS
     for alias, look_id in zip(ALIASES, IDS):
         assert L.resolve_look(alias) == look_id, alias
-    assert len({L.LOOK_LABELS[i] for i in IDS}) == 5
+    assert len({L.LOOK_LABELS[i] for i in IDS}) == 6
 
 def test_explanations_name_the_actual_difference():
     s = {i: IC._LOOK_SENTENCE[i] for i in IDS}
-    assert len(set(s.values())) == 5
+    assert len(set(s.values())) == 6
     assert "animated" in s["lifelike-3d"] and "footage" not in s["lifelike-3d"]
     assert "hand-painted" in s["2d-hand-painted"] and "real" not in s["2d-hand-painted"]
     assert "sketch" in s["sketch-to-life"] and "real footage" in s["sketch-to-life"]
@@ -46,6 +48,8 @@ def test_explanations_name_the_actual_difference():
     # The two transitions start from different media and end differently.
     assert s["sketch-to-life"] != s["canvas-to-life"]
     assert "real footage" not in s["canvas-to-3d"]
+    # N-37: Stylized 3D is its own thing, never described as real footage.
+    assert "3D animation" in s["stylized-3d"] and "real" not in s["stylized-3d"]
 
 def test_only_verified_samples_render_and_missing_one_says_so():
     _, text = _look_text()

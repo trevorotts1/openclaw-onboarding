@@ -58,6 +58,39 @@ BAD_INPUT = "OVERLAY_BAD_INPUT"
 NO_LINES = "OVERLAY_NO_LINES"
 NO_TIMING = "CAPTION_TIMING_UNAVAILABLE"
 BAD_CUES = "CAPTION_CUES_INVALID"
+#: F-EOC-7: a cue whose window has no length cannot be burned or timed.
+ZERO_DURATION = "CAPTION_ZERO_DURATION"
+#: N-48: caption text must be client-ready -- no production notes.
+TEXT_NOT_CLIENT_READY = "CAPTION_TEXT_NOT_CLIENT_READY"
+PROOF_NOT_DELIVERABLE = "PROOF_NOT_DELIVERABLE"
+
+#: N-48: a caption carries the sung words only. Bracketed stage notes,
+#: shot ids and operator language are production scaffolding, never text a
+#: client should read on screen.
+import re as _re
+_NOTE_RE = _re.compile(r"[\[\](){}]")
+_SHOT_ID_RE = _re.compile(r"^(?:[A-Z]{1,3}\d{1,4}|\d{1,4}[A-Z]?)$")
+_OPERATOR_WORDS = ("operator decision", "operator", "shot id", "todo",
+                   "fixme", "tbd", "placeholder")
+
+
+def _client_ready(text):
+    """True when a caption is the words alone, no production notes (N-48)."""
+    if _NOTE_RE.search(text):
+        return False
+    if _SHOT_ID_RE.match(text.strip()):
+        return False
+    low = text.lower()
+    return not any(w in low for w in _OPERATOR_WORDS)
+
+def refuse_proof_output(path):
+    """Lock 3 (NEVER-AGAIN proof rule): PROOF-ONLY is never deliverable."""
+    import never_again as _na
+    if _na.is_proof_only(path or ""):
+        return {"ok": False, "code": _na.PROOF_NOT_DELIVERABLE,
+                "detail": "%s is PROOF-ONLY, never a deliverable" % (path,),
+                "tool": TOOL_NAME, "tool_version": TOOL_VERSION}
+    return None
 
 DEFAULT_FPS = 30
 
@@ -126,34 +159,112 @@ def _stamp(seconds):
     return "%02d:%02d:%02d,%03d" % (h, m, s, ms)
 
 
+_TIME_RE = _re.compile(
+    r"^\s*(\d{1,2}):(\d{2}):(\d{2})(?:[,.](\d{1,3}))?\s*$")
+
+
+def parse_timestamp(text):
+    """Correct SRT/VTT clock reader: HH:MM:SS,mmm -> seconds (float).
+
+    N-48: the old reader added milliseconds as WHOLE SECONDS, so ten of sixty
+    cues showed at the wrong time. Here the fraction is the last field taken
+    as a decimal of a second (one to three digits, right-padded: `,5` = 500 ms),
+    never an extra second. Accepts the SRT comma and the VTT dot. Raises
+    ValueError on anything else -- a bad clock never silently passes.
+    """
+    m = _TIME_RE.match(text if isinstance(text, str) else "")
+    if not m:
+        raise ValueError("bad caption timestamp: %r" % (text,))
+    h, mi, s, frac = m.groups()
+    if int(mi) >= 60 or int(s) >= 60:
+        raise ValueError("bad caption timestamp (field >= 60): %r" % (text,))
+    ms = int((frac or "0").ljust(3, "0")[:3]) if frac else 0
+    return int(h) * 3600 + int(mi) * 60 + int(s) + ms / 1000.0
+
+
+def parse_srt(text):
+    """Parse SRT text into measured cues ({text,start,end}), via _clean_cues.
+
+    The ONE caption-file reader: it reads the file's own clock (parse_timestamp,
+    milliseconds correct) and its own words, then hands them to _clean_cues so
+    the same refusals (zero length, client-ready text, overlap clip) apply.
+    Returns (clean, None, None) or (None, reason_code, detail).
+    """
+    if not isinstance(text, str) or not text.strip():
+        return None, BAD_CUES, "no SRT text"
+    cues = []
+    for block in _re.split(r"\r?\n\r?\n+", text.strip()):
+        lines = block.splitlines()
+        # optional numeric index line first
+        if lines and lines[0].strip().isdigit():
+            lines = lines[1:]
+        if not lines or "-->" not in lines[0]:
+            return None, BAD_CUES, "SRT block with no timing line: %r" % (
+                block[:60],)
+        left, right = lines[0].split("-->", 1)
+        try:
+            start = parse_timestamp(left)
+            end = parse_timestamp(right.split()[0] if right.strip() else right)
+        except ValueError as exc:
+            return None, BAD_CUES, str(exc)
+        cue_text = " ".join(ln.strip() for ln in lines[1:]).strip()
+        cues.append({"text": cue_text, "start": start, "end": end})
+    if not cues:
+        return None, BAD_CUES, "no cues in SRT text"
+    return _clean_cues(cues)
+
+
 def _clean_cues(cues):
     """Measured cues only: text + start/end floats, order kept, no inventing.
 
-    Returns (clean, None) or (None, detail) when the caller gave something
-    that is not a measured window.
+    Returns (clean, None, None) or (None, reason_code, detail) when the
+    caller gave something that is not a measured window. A cue whose end
+    equals its start is refused with CAPTION_ZERO_DURATION (F-EOC-7): a
+    zero-length window draws nothing and times nothing, so it can never
+    ship as a caption.
     """
     if not isinstance(cues, (list, tuple)):
-        return None, "cues must be a list of {text,start,end} windows"
+        return None, BAD_CUES, "cues must be a list of {text,start,end} windows"
     clean = []
     for i, cue in enumerate(cues):
         if not isinstance(cue, dict):
-            return None, "cue %d is not an object" % i
+            return None, BAD_CUES, "cue %d is not an object" % i
         text = cue.get("text")
         start, end = cue.get("start"), cue.get("end")
         if not isinstance(text, str) or not text.strip():
-            return None, "cue %d has no text" % i
+            return None, BAD_CUES, "cue %d has no text" % i
         if not isinstance(start, (int, float)) or not isinstance(end, (int, float)):
-            return None, "cue %d has no numeric window" % i
+            return None, BAD_CUES, "cue %d has no numeric window" % i
         if float(end) < float(start):
-            return None, "cue %d ends before it starts" % i
+            return None, BAD_CUES, "cue %d ends before it starts" % i
+        # F-EOC-7: `<=` -- an end EQUAL to its start is a zero-length window
+        # (the two 0.0 s cues) and refuses instead of shipping.
+        if float(end) <= float(start):
+            return None, ZERO_DURATION, ("cue %d has a zero-length window "
+                                         "(%.3f-%.3f)" % (i, start, end))
+        # N-48: client-ready text only; a production note never burns.
+        if not _client_ready(text):
+            return None, TEXT_NOT_CLIENT_READY, (
+                "cue %d carries production text that a client must never read "
+                "on screen: %r" % (i, text[:80]))
         clean.append({"text": text, "start": float(start),
                       "end": float(end)})
     if not clean:
-        return None, "no cue carried a window"
+        return None, BAD_CUES, "no cue carried a window"
     for prev, nxt in zip(clean, clean[1:]):
         if nxt["start"] < prev["start"]:
-            return None, "cues are not in time order"
-    return clean, None
+            return None, BAD_CUES, "cues are not in time order"
+    # N-48: an overlapping cue is CLIPPED to end where the next one begins,
+    # so two lines never stack on screen.
+    for prev, nxt in zip(clean, clean[1:]):
+        if prev["end"] > nxt["start"]:
+            prev["end"] = nxt["start"]
+    # Clipping can collapse a cue to zero length; drop it rather than ship a
+    # cue that draws nothing.
+    clean = [c for c in clean if c["end"] > c["start"]]
+    if not clean:
+        return None, ZERO_DURATION, "every cue collapsed to zero length"
+    return clean, None, None
 
 
 def build_srt(cues, fps=DEFAULT_FPS):
@@ -161,9 +272,9 @@ def build_srt(cues, fps=DEFAULT_FPS):
 
     The text is the cue's own words; only the clock format is normalised.
     """
-    clean, why = _clean_cues(cues)
+    clean, code, why = _clean_cues(cues)
     if why:
-        raise ValueError("%s: %s" % (BAD_CUES, why))
+        raise ValueError("%s: %s" % (code, why))
     blocks = []
     for i, cue in enumerate(clean, 1):
         blocks.append("%d\n%s --> %s\n%s" % (
@@ -200,9 +311,9 @@ def build_plan(lines, provenance=None, cues=None, height_px=1920,
         plan["cue_count"] = 0
         plan["srt"] = None
         return plan, None
-    clean_cues, why = _clean_cues(cues)
+    clean_cues, code, why = _clean_cues(cues)
     if why:
-        return plan, "%s: %s" % (BAD_CUES, why)
+        return plan, "%s: %s" % (code, why)
     srt = build_srt(clean_cues, fps=fps)
     plan["timing"] = "measured"
     plan["cue_count"] = len(clean_cues)
@@ -247,12 +358,14 @@ def overlay_excerpt(lines, provenance=None, cues=None, height_px=1920,
                "planned": True,
                # Frames are burned by the render pass, never by this call.
                "burned": False,
-               "timing": plan["timing"],
+               # A refused cue set returns before the timing key is set:
+               # the receipt still answers honestly (unavailable).
+               "timing": plan.get("timing", "unavailable"),
                "style": plan["style"],
                "data_only": True, "to_video_model": False,
                "plan": plan,
                "srt": plan.get("srt"),
-               "reason_code": None if why is None else BAD_CUES,
+               "reason_code": None if why is None else why.split(":")[0],
                "detail": why}
     return receipt
 

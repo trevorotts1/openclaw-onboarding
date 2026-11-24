@@ -36,7 +36,10 @@ QUESTION_SHA256 = {
     # Re-pinned for S75-074, which replaces "I start as soon as the card is
     # approved." with plain client words on the CHECKPOINTS screen.
     "checkpoints": "ddd7d0c083f4276a3e6896eab1e13a64c7e6108b844e61e00bd59f209612c812",
-    "look": "0d828d83ec361f2f26f19ca0d5c9361cddf3f6ecbb74fbf590fbcae2764b58dd",
+    # Re-pinned for N-36/N-37: Lifelike 3D is described as clearly animated
+    # (never "realistic" / "look real"), and the sixth look, Stylized 3D
+    # animation (stylized-3d), joins the screen.
+    "look": "4617d0514838bfc968be4da51196d878650a72431abe2e12076e8494c1339940",
     "spend": "5cacf6bad2179a77011f9f7d865b36d7c08ecdcecda267968a9678a902091d85",
     "storyboard": "249a2ac08375b9b6e79ca85e0a0d46699fe18d20a90ada328d54423ec4bac042",
     "song": "54ca39ff3ae50581dcb53fce2021b566a524b1df6f9c640892b4989a77ffc569",

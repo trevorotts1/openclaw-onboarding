@@ -153,6 +153,28 @@ def test_manifest_round_trip_and_cli():
         check("A27-21 CLI builds the manifest from the record", rc == 0, rc)
 
 
+def test_keyframes_are_image_to_image_for_known_characters():
+    # N-41: a known character is drawn image-to-image from its references, in
+    # order; text-to-image is refused.
+    shot = {"shot_id": "S01", "character_ids": ["lead", "pastor"],
+            "references": {
+                "lead": {"master": "lead-master.png", "wardrobe": "lead-robe.png"},
+                "pastor": {"master": "pastor-master.png",
+                           "wardrobe": "pastor-robe.png"}},
+            "location_reference": "sanctuary.png"}
+    refs = K.keyframe_references(shot)
+    check("A27-22 references follow prompt order and budget",
+          [r["ref"] for r in refs] == ["lead-master.png", "lead-robe.png",
+                                       "pastor-master.png", "pastor-robe.png",
+                                       "sanctuary.png"], refs)
+    ok, why = refuse(K.KEYFRAME_NOT_FROM_REFERENCES, K.keyframe_references,
+                     dict(shot, image_mode="text-to-image"))
+    check("A27-23 text-to-image for a known character is refused", ok, why)
+    bare = {"shot_id": "S99", "song_start": 0.0, "song_end": 3.0}
+    check("A27-24 a frame with no known character is text-to-image",
+          K.keyframe_references(bare) == [])
+
+
 def test_run():
     test_one_keyframe_per_shot_in_continuity_order()
     test_digest_is_order_sensitive_and_stable()
@@ -160,9 +182,10 @@ def test_run():
     test_refuses_unordered_continuity()
     test_refuses_bad_shape()
     test_manifest_round_trip_and_cli()
+    test_keyframes_are_image_to_image_for_known_characters()
 
 
 if __name__ == "__main__":
     test_run()
-    print("\n%s" % ("PASS 21/21" if not FAILS else "FAIL: %s" % ", ".join(FAILS)))
+    print("\n%s" % ("PASS 24/24" if not FAILS else "FAIL: %s" % ", ".join(FAILS)))
     sys.exit(1 if FAILS else 0)

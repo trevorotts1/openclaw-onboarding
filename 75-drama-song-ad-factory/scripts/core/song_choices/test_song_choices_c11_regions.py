@@ -434,5 +434,15 @@ if __name__ == "__main__":
     sys.exit(main(sys.argv))
 
 
+def _isolated(fn, *args):
+    before = dict(sys.modules)
+    try:
+        return fn(*args)
+    finally:
+        for name in [n for n in sys.modules if n not in before]:
+            del sys.modules[name]
+        sys.modules.update(before)
+
+
 def test_song_choices_c11_regions():
-    assert main([]) == 0
+    assert _isolated(main, []) == 0

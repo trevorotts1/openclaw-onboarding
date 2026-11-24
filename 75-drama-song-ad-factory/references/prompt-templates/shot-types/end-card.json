@@ -1,7 +1,7 @@
 {
   "shot_type": "end-card",
   "purpose": "The final plate under the CTA: product or book hero with clean negative space for the exact title, offer and link overlaid in post (never generated).",
-  "camera_default": "[Push in] slow, or [Static shot]",
+  "camera_default": "a slow [Push in] over the payoff motion; [Static shot] only when the overlay needs the frame locked",
   "camera_allowed": [
     "[Static shot]",
     "[Push in]"

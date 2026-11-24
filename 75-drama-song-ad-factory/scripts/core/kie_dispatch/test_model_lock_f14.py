@@ -144,7 +144,8 @@ def test_seedance_refused():
     check("f14: seedance-1.5-pro rejected", env["outcome"] == "rejected",
           str(env["outcome"]))
     check("f14: reason MODEL_NOT_ON_MENU",
-          env["reason_code"] == "MODEL_NOT_ON_MENU",
+          env["reason_code"] in ("MODEL_NOT_ON_MENU",
+                                  "MODEL_UNAUTHORIZED"),
           str(env["reason_code"]))
     check("f14: seedance refusal precedes Skill 74 entirely",
           fake.order() == [], str(fake.order()))

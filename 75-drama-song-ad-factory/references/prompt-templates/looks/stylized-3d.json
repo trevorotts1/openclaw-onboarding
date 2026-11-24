@@ -1,0 +1,19 @@
+{
+  "look_id": "stylized-3d",
+  "label": "Stylized 3D",
+  "default": false,
+  "modes": [
+    "stylized-3d"
+  ],
+  "beat_mode": {
+    "*": "stylized-3d"
+  },
+  "switch": null,
+  "lipsync_modes": [
+    "stylized-3d"
+  ],
+  "finale": "stylized-3d",
+  "client_wording": "rounded, appealing, Pixar-like",
+  "note": "N-37 / 3B.5: the look clients call Pixar-like. The studio name is used only as a plain-words comparison in the client guide; it never goes into a prompt.",
+  "source": "choice_card/looks STYLIZED_3D_STYLE"
+}

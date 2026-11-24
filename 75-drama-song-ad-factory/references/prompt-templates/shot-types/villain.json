@@ -2,7 +2,7 @@
   "shot_type": "villain",
   "purpose": "The villain's own shot (U16 carry-in, Trevor order 2026-10-08: people don't care about the hero until they meet the villain). A villain may be a person or NOT a person: cancer, debt, a layoff, a lie, burnout, fear, the inner critic, a system. The shot shows TEXTURE, SCALE, THREAT and the villain's PHYSICAL EFFECT on the hero.",
   "u16_carry_in": "The guidance text lives in scripts/core/product_style_bible/bible.py as VILLAIN_SHOT_GUIDANCE (and VILLAIN_LYRIC_GUIDANCE for the Suno side); the assembler reads it from there and never forks it.",
-  "camera_default": "[Static shot] or a very slow [Push in]",
+  "camera_default": "a slow [Push in] as the threat lands; [Static shot] only when the villain's motion already carries the frame",
   "camera_allowed": [
     "[Static shot]",
     "[Push in]",

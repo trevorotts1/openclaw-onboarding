@@ -58,66 +58,70 @@ def test_lip_gate_delegates_and_removes_the_hard_coded_look():
     assert hasattr(PT, "assemble_kling_avatar"), (
         "prompt_templates.assemble_kling_avatar missing (design 2.2)")
 
-def test_a_canvas_to_life_realism_closeup_is_photoreal():
-    """(a) Canvas to Life realism close-up -> 'photoreal', not '3D animated'."""
-    p = L.kling_prompt("says" if False else "spoken", "woman", "weary",
-                       mode="realism")
-    assert p.startswith("A photoreal woman "), p
-    assert "3D animated" not in p, p
-    d = PT.assemble_kling_avatar("realism", "woman", "says", "weary", "Her")
-    assert d == p, (d, p)
+def _refused(fn, *args, **kw):
+    """S-42 / N-08: the lip-sync model is OmniHuman 2.0 and it takes NO prompt.
+    The Kling avatar prompt is retired; the assembler and the checker refuse."""
+    try:
+        fn(*args, **kw)
+    except Exception as exc:                            # noqa: BLE001
+        text = str(exc)
+        assert "LIPSYNC_PROMPT_PRESENT" in text or "LIPSYNC_MODEL_MISMATCH" in text, exc
+        return exc
+    raise AssertionError("%s still assembles a retired prompt" % (fn,))
 
-def test_b_sketch_and_golden_modes_are_refused():
-    """(b) sketch-ink and golden-realism may not be lip-synced."""
-    for mode in ("sketch-ink", "golden-realism"):
-        for fn, args in ((L.kling_prompt, ("sung", "woman", "calm")),
-                         (PT.assemble_kling_avatar,
-                          (mode, "woman", "sings", "calm", "Her"))):
-            try:
-                if fn is L.kling_prompt:
-                    fn(*args, mode=mode)
-                else:
-                    fn(*args)
-            except Exception as exc:                    # noqa: BLE001
-                assert "LIPSYNC_NOT_ALLOWED_FOR_MODE" in str(exc), (mode, exc)
-            else:
-                raise AssertionError("%s: mode %s was not refused" % (fn, mode))
 
-def test_c_todays_four_sentence_two_emotion_prompt_fails_the_checker():
-    """(c) the fail-first control: today's prompt is 4 sentences, 2 emotions."""
-    n, s = len(TODAYS_SUNG_PROMPT), TODAYS_SUNG_PROMPT.count(".")
-    assert n == 239 and s == 4, (n, s)               # the measured control
-    res = PT.check_kling_avatar(TODAYS_SUNG_PROMPT, emotion="calm, earnest")
-    assert res["pass"] is False, res
-    joined = " | ".join(res["errors"])
-    assert "SENTENCES" in joined, res
-    assert "MORE_THAN_ONE_EMOTION" in joined, res
+def test_a_kling_avatar_prompt_is_retired():
+    """kling_prompt and assemble_kling_avatar refuse for every mode and line:
+    no lip-sync prompt is ever built (S-42, N-08). The refusal names the
+    replacement, OmniHuman 2.0."""
+    exc = _refused(L.kling_prompt, "spoken", "woman", "weary", mode="realism")
+    assert "omnihuman-2-0" in str(exc), exc
+    _refused(L.kling_prompt, "sung", "woman")
+    _refused(PT.assemble_kling_avatar, "realism", "woman", "says", "weary", "Her")
+    for mode in ("sketch-ink", "golden-realism", "lifelike-3d"):
+        _refused(PT.assemble_kling_avatar, mode, "woman", "sings", "calm", "Her")
+    for verb in ("says", "sings", "raps"):
+        _refused(PT.assemble_kling_avatar, "realism", "woman", verb, "calm", "Her")
+    try:
+        PT.kling_avatar_model()
+    except Exception as exc:                            # noqa: BLE001
+        assert "LIPSYNC_MODEL_MISMATCH" in str(exc), exc
+    else:
+        raise AssertionError("kling_avatar_model still returns a template")
 
-def test_d_a_2501_char_prompt_is_refused():
-    """(d) over the UNVERIFIED 2,500 hard cap -> refused, never truncated."""
+
+def test_b_the_checker_refuses_any_prompt():
+    """Every prompt is refused, the measured control and a 2,501-char one alike;
+    the refusal is total, never a sentence or emotion judgement."""
+    assert len(TODAYS_SUNG_PROMPT) == 239 and TODAYS_SUNG_PROMPT.count(".") == 4
     long_prompt = "A 3D animated woman sings this line. " + ("word " * 500)
     assert len(long_prompt) > 2500, len(long_prompt)
-    res = PT.check_kling_avatar(long_prompt, emotion="calm")
-    assert res["pass"] is False and "OVER_HARD_MAX" in " | ".join(res["errors"]), res
-    try:
-        PT.assemble_kling_avatar("lifelike-3d", "w" * 2501, "sings", "calm", "Her")
-    except Exception as exc:                            # noqa: BLE001
-        assert "KLING_AVATAR_OVER_HARD_MAX" in str(exc), exc
-    else:
-        raise AssertionError("assembler did not refuse a 2,501-char prompt")
+    for prompt in (TODAYS_SUNG_PROMPT, long_prompt):
+        res = PT.check_kling_avatar(prompt, emotion="calm")
+        assert res["pass"] is False, res
+        joined = " | ".join(res["errors"])
+        assert "LIPSYNC_PROMPT_PRESENT" in joined, res
+        assert "LIPSYNC_MODEL_MISMATCH" in joined, res
+        assert res["verdict"] == "REFUSE", res
+        assert res["sentences"] == 0, res
+        assert res["cap_status"] == "RETIRED", res
 
-def test_e_golden_rows_assemble_byte_identically():
-    """(e) K1-K3 from fixtures/kling-rows.json, 274/289/301 chars, all pass."""
-    for row in _golden():
+
+def test_c_golden_rows_are_retired_too():
+    """The golden Kling rows can no longer be assembled: the template is gone.
+    The fixtures still hold the measured K1-K3 rows (274/289/301 chars, 864
+    total) -- the data survived, the template did not."""
+    rows = _golden()
+    assert [r["id"] for r in rows] == ["K1", "K2", "K3"], rows
+    assert [r["chars"] for r in rows] == [274, 289, 301], rows
+    assert sum(len(r["prompt"]) for r in rows) == 864, rows
+    for row in rows:
         mode, noun, verb, emotion, poss = row["args"]
-        kw = row["kw"]
-        p = PT.assemble_kling_avatar(mode, noun, verb, emotion, poss, **kw)
-        assert p == row["prompt"], (row["id"], p)
-        assert len(p) == row["chars"], (row["id"], len(p))
-        res = PT.check_kling_avatar(p, line=row["line"], emotion=emotion)
-        assert res["pass"], (row["id"], res)
-        assert res["sentences"] == 3, (row["id"], res)
-    assert sum(len(r["prompt"]) for r in _golden()) == 864
+        _refused(PT.assemble_kling_avatar, mode, noun, verb, emotion, poss, **row["kw"])
+        res = PT.check_kling_avatar(row["prompt"], line=row["line"], emotion=emotion)
+        assert res["pass"] is False, (row["id"], res)
+        assert "LIPSYNC_PROMPT_PRESENT" in " | ".join(res["errors"]), (row["id"], res)
+
 
 def test_f_closeup_prompt_takes_the_mode_keyframe_clause():
     """(f) the realism close-up carries the mode clause, not 'same 3D character'."""

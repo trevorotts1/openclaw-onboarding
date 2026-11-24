@@ -1,0 +1,35 @@
+{
+  "schema_version": "blackceo.prompt-templates/v1",
+  "owner": "U-PROMPT (section 3L, row N-105, plus N-102 and R-1)",
+  "purpose": "The animation rules the H3 prompt template and the Prompt Builder's motion part add, in one home. A lip-sync job carries no prompt (N-08, S-42), so none of this wording ever reaches the lip-sync model; its picture carries the pose. The section writer fills the shot's action; the builder adds the fixed wording below.",
+  "rules": [
+    "One clear action per clip, with a start state and an end state: 'She is seated, hands flat on the table. She ends with the letter held against her chest.' Never a list of five things.",
+    "Bodies have weight: a movement starts with a small shift of weight, travels through an arc and settles. Feet stay planted on the floor when the body turns; a step lands heel first and the weight follows.",
+    "Hands and gestures take time: a reach takes about a second; fingers close after the hand arrives; an object is held with visible contact and moves with the hand.",
+    "Walking is believable: an even stride, arms swinging opposite the legs, the head steady, clothes following a beat late, the ground and the feet moving together with no slide.",
+    "A still person is alive: slow breathing in the chest and shoulders, a blink every few seconds, small eye movements, a small shift of weight.",
+    "The face follows the Emotion Track: the beat's emotion at its intensity, with small changes around the eyes and brows; the cues come from the tag, not from the writer.",
+    "Camera speed is said in words (see camera_speed_words): one move per clip, starting in the first half second and ending before the used window ends.",
+    "What every motion block rules out: floaty or rubbery motion; a sudden change of face, body or clothing; a frozen body with only the mouth moving; sliding feet; hands that merge or gain fingers; over-acting, mugging and stage gestures; looking at the lens unless the row says so.",
+    "A choir moves as people: a natural sway a little out of step with each other, at the speed of the song; shoulders rising with breath before a line; robes and stoles following the sway a beat late; relaxed claps about one a second when the row calls for them.",
+    "Two people touching: the row says who moves first, where the contact is (hands on shoulders, cheek beside cheek, hand to hand), how long it holds, and who lets go first. Faces stay separate and whole; arms go around the back, not through it.",
+    "A lip-sync picture is framed for natural head motion: head and shoulders with room above the head and beside the face, the body angled slightly, eyes to the lens or to the named person, so the head can turn and nod a little without leaving the frame."
+  ],
+  "camera_speed_words": {
+    "very slow": "barely noticeable over the clip",
+    "slow": "a steady drift",
+    "steady": "walking pace",
+    "brisk": "only on hooks"
+  },
+  "motion_block_template": "Start: {start_state}. Action: {one_action}, with weight, contact, arcs and cloth following a beat late. End: {end_state}. Camera: a {speed} {move}, starting in the first half second and ending before the clip ends.",
+  "no_stillness_sentence": "A singing-line or any performance clip never carries a stillness instruction ('minimal head movement', 'steady locked camera' as the only motion, 'settle and hold'). Such a sentence wins over every other motion word and freezes the take; brief one downbeat body action instead (sway, clap, robe swing). Motion-floor waivers are per-shot with a cause, never a blanket waiver across many shots (G-MOTION-01, R-1).",
+  "camera_move_length": {
+    "rule": "A camera move needs room to play out (N-102, rule H8).",
+    "any_move_min_s": 6,
+    "slow_move_across_room_choir_group_s": [8, 10],
+    "move_is_the_point_max_s": 15,
+    "starts_within_s": 0.5,
+    "rule_tail": "The move starts in the first half second and ends inside the used window; otherwise the edit uses the move's final part or the shot is made static."
+  },
+  "note": "The eleven rules are copied here word for word from section 3L.1 so the H3 template and the Prompt Builder's motion part read one file, never a second copy."
+}

@@ -5,7 +5,7 @@ Draft data files for the template system in `../20-OPUS-PROMPT-TEMPLATE-SYSTEM.m
 | Path | Layer |
 |---|---|
 | `manifest.json` | caps (with source and status), bands, layer order, quality rules |
-| `models/` | one block per model: `minimax-h3`, `kling-video`, `kling-ai-avatar-standard`, `suno-v6` |
+| `models/` | one block per model: `minimax-h3`, `kling-video`, `omnihuman-2-0`, `suno-v6`. `kling-ai-avatar-standard` is retired (N-08): the lip-sync model is OmniHuman 2.0 on every run and takes no prompt |
 | `modes/` | the five render modes that the five looks are built from: `lifelike-3d`, `painted-2d`, `sketch-ink`, `realism`, `golden-realism` |
 | `looks/` | the five card looks: which modes each uses, the beat-to-mode map, switch rules and lip-sync modes |
 | `shot-types/` | six shot types: talking close-up, motion b-roll, struggle beat, product/book, style switch, end card |

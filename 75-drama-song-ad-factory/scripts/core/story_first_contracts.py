@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 
 SCHEMA_VERSION = "s75.contracts.v1"
 IDENTITY_SCHEMA_VERSION = "s75.identity.v1"
@@ -376,6 +377,91 @@ def validate_scene_plan(plan, world=None, manifest=None):
             defects.append(defect)
     if manifest is not None:
         defects.extend(validate_cast_manifest(manifest, scenes))
+    return defects
+
+
+# --- storyboard speaker and route checks (G-STORY-01/02, G-SPEAKER-01) -----
+
+#: Speaker values that name no cast member.
+RESERVED_SPEAKERS = frozenset({"narrator-voiceover", "instrumental", "choir"})
+
+#: Phrases that declare nobody lip-syncs in this shot.
+_LIPSYNC_ROUTES = frozenset({"kling_lipsync", "lipsync", "lip-sync", "lip_sync"})
+
+
+def _wants_lipsync(shot):
+    route = str(shot.get("route") or "").strip().lower()
+    return route in _LIPSYNC_ROUTES or shot.get("lip_sync") is True
+
+
+def validate_storyboard_speakers(shots, characters):
+    """G-STORY-01: a shot cannot credit a singer who is not in its cast.
+
+    shots: [{shot_id, speaker, characters, route, lip_sync}].
+    characters: iterable of character ids (strings) or cast entries.
+
+    A reserved speaker is allowed (the spoken call to action is
+    ``narrator-voiceover``); it may never carry a lip-sync route. Any other
+    speaker must appear both in the cast and in the shot's own ``characters``.
+    Returns a defect list; ``issue`` is the code.
+    """
+    cast = set()
+    for c in characters or []:
+        cast.add(c if isinstance(c, str) else (c or {}).get("character_id"))
+    cast.discard(None)
+    defects = []
+    for shot in shots or []:
+        if not isinstance(shot, dict):
+            continue
+        sid = shot.get("shot_id")
+        speaker = shot.get("speaker")
+        if not isinstance(speaker, str) or not speaker.strip():
+            continue
+        if speaker in RESERVED_SPEAKERS:
+            if speaker == "narrator-voiceover" and _wants_lipsync(shot):
+                defects.append(_defect("speaker", "SPEAKER_VOICEOVER_GOT_LIPSYNC",
+                                       {"shot_id": sid, "speaker": speaker}))
+            continue
+        in_shot = speaker in (shot.get("characters") or [])
+        if speaker not in cast or not in_shot:
+            defects.append(_defect("speaker", "SPEAKER_NOT_IN_CAST",
+                                   {"shot_id": sid, "speaker": speaker}))
+    return defects
+
+
+#: Phrases that declare nobody lip-syncs in this shot.
+_NOBODY_LIPSYNCS_RES = (
+    re.compile(r"nobody\s+lip-?syncs?", re.IGNORECASE),
+    re.compile(r"no\s+one\s+lip-?syncs?", re.IGNORECASE),
+    re.compile(r"no\s+lip-?syncs?\b", re.IGNORECASE),
+    re.compile(r"nobody\s+mouths?", re.IGNORECASE),
+)
+
+
+def _shot_text(shot):
+    parts = [shot.get("camera"), shot.get("camera_note"),
+             shot.get("beat"), shot.get("story_beat"), shot.get("note")]
+    return " ".join(p for p in parts if isinstance(p, str))
+
+
+def validate_lipsync_route(shots):
+    """G-STORY-02: a shot whose text says nobody lip-syncs is not a lip-sync shot.
+
+    Fails ``LIPSYNC_ROUTE_CONTRADICTION`` when the shot's camera or beat text
+    declares nobody lip-syncs (the T27 spoken URL over a group aisle) and the
+    route is a lip-sync route or ``lip_sync`` is true. Aligned rows pass.
+    """
+    defects = []
+    for shot in shots or []:
+        if not isinstance(shot, dict):
+            continue
+        text = _shot_text(shot)
+        if not text or not any(rx.search(text) for rx in _NOBODY_LIPSYNCS_RES):
+            continue
+        if _wants_lipsync(shot):
+            defects.append(_defect("route", "LIPSYNC_ROUTE_CONTRADICTION",
+                                   {"shot_id": shot.get("shot_id"),
+                                    "route": shot.get("route")}))
     return defects
 
 

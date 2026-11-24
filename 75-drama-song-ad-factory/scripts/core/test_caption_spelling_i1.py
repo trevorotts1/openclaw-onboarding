@@ -58,6 +58,16 @@ class Spelling(unittest.TestCase):
         self.assertEqual(len(bad), 1)
         self.assertIn("end_card", bad[0])
 
+    def test_website_sung_form_passes_but_end_card_stays_verbatim(self):
+        """F-EOC-6: "dot org" sung passes; the printed end card is verbatim."""
+        sung = ["Go to wakeuphappysis dot com"]
+        self.assertEqual(
+            P.check_website(SITE, lyrics=sung, captions=sung,
+                            end_card=["Visit " + SITE]), [])
+        bad = P.check_website(SITE, lyrics=sung, end_card=sung)
+        self.assertEqual(len(bad), 1)
+        self.assertIn("end_card", bad[0])
+
 
 class CtaHold(unittest.TestCase):
     def test_nan_hold_is_not_a_number(self):

@@ -25,16 +25,56 @@ from pathlib import Path
 TOOL_NAME = "prompt_templates"
 TOOL_VERSION = "0.1.0"
 
-#: The five render modes and the five card looks (design 2.1, fixed vocabulary).
-MODES = ("lifelike-3d", "painted-2d", "sketch-ink", "realism", "golden-realism")
-LOOKS = ("lifelike-3d", "2d-hand-painted", "sketch-to-life", "canvas-to-life",
-         "canvas-to-3d")
-SHOT_TYPES = ("talking-closeup", "motion-broll", "struggle-beat", "product-book",
-              "style-switch", "end-card")
-
+#: Path anchors first: the mode list below reads `modes/` at import, so these
+#: must exist before `_mode_stems()` runs.
 CORE_DIR = Path(__file__).resolve().parents[1]         # .../<skill>/scripts/core
 SKILL_ROOT = CORE_DIR.parents[1]                       # .../<skill>
 TEMPLATES_DIR = SKILL_ROOT / "references" / "prompt-templates"
+
+#: The five render modes and the five card looks (design 2.1, fixed vocabulary).
+#: N-35/N-37: the mode list is read from `modes/` so a look added by its owner
+#: (the sixth, stylized-3d) is picked up at load; the canonical order keeps the
+#: emitted text and the tests stable on either tree.
+_MODES_CANONICAL = ("lifelike-3d", "painted-2d", "sketch-ink", "realism",
+                    "golden-realism", "stylized-3d")
+def _mode_stems():
+    try:
+        return {p.stem for p in (TEMPLATES_DIR / "modes").glob("*.json")}
+    except OSError:
+        return set()
+MODES = tuple(m for m in _MODES_CANONICAL if m in _mode_stems()) or \
+    _MODES_CANONICAL[:5]
+def _look_stems():
+    """Look ids whose look file AND every mode it names are on this tree.
+
+    A look is listed only when it can be assembled: N-37 adds `stylized-3d`
+    (U-MODES owns the card entry, U-LOOK owns `modes/stylized-3d.json`), so on a
+    branch that carries the look file before its mode file the look stays out
+    of the list instead of breaking every look x mode check.
+    """
+    try:
+        files = sorted((TEMPLATES_DIR / "looks").glob("*.json"))
+    except OSError:
+        return set()
+    stems = {p.stem for p in files}
+    mstems = _mode_stems()
+    out = set()
+    for p in files:
+        try:
+            doc = json.loads(p.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        modes = (doc.get("modes") or []) if isinstance(doc, dict) else []
+        if modes and all(m in mstems for m in modes):
+            out.add(p.stem)
+    return out or stems
+#: The six card looks (N-37 adds stylized-3d), derived from the look files.
+_LOOKS_CANONICAL = ("lifelike-3d", "2d-hand-painted", "sketch-to-life",
+                    "canvas-to-life", "canvas-to-3d", "stylized-3d")
+LOOKS = tuple(l for l in _LOOKS_CANONICAL if l in _look_stems()) or \
+    _LOOKS_CANONICAL[:5]
+SHOT_TYPES = ("talking-closeup", "motion-broll", "struggle-beat", "product-book",
+              "style-switch", "end-card")
 
 class PromptTemplateError(ValueError):
     """A template layer is missing or malformed. Fail closed, name the path."""
@@ -203,83 +243,33 @@ def _catalog_suno(model, field):
             "source": "%s/%s" % (audio.parent.name, row["source"])}
 
 # ---------------------------------------------------------------------------
-# Kling avatar (U15e): the one assembler and checker for the lip-sync prompt.
-# Design 5.1: three sentences, ONE emotion, the `who` descriptor from the look's
-# mode (`modes/*.json` kling_who), never a hard-coded look.
+# Lip-sync: no prompt at all (N-08, S-42, 3A.3).
+# The lip-sync model is OmniHuman 2.0 (`omnihuman-2-0`) on every run and is
+# given one picture plus the audio: it takes NO prompt. The Kling avatar
+# template, `assemble_kling_avatar` and `check_kling_avatar` are retired. Every
+# name below is kept only so an old caller fails with the reason instead of an
+# ImportError, and nothing can assemble a lip-sync prompt any more.
 
-KLING_AVATAR_MODEL = "kling-ai-avatar-standard"
-KLING_VERBS = ("sings", "says", "raps")
-KLING_FRAMING_DEFAULT = "chest-up framing, eyes to the lens"
-KLING_FRAMING_ALT = "medium close-up, eyes to the lens"
-KLING_HEAD_EXTRAS = ("", ", a small nod on the strong beat", ", a slight head tilt")
-#: file 17's forbidden mouth-driving phrases plus quoted lyric text.
-KLING_FORBIDDEN = ("lips open", "in time with", "every syllable",
-                   "mouths the words", '"')
+LIPSYNC_MODEL = "omnihuman-2-0"
+LIPSYNC_PROMPT_PRESENT = "LIPSYNC_PROMPT_PRESENT"
+_RETIRED_KLING = ("LIPSYNC_MODEL_MISMATCH: the lip-sync model is OmniHuman 2.0 "
+                  "(%s), and it takes NO prompt (N-08, S-42). The Kling avatar "
+                  "prompt is retired; the face, wardrobe, look and expression "
+                  "live in the picture alone." % LIPSYNC_MODEL)
 
 def kling_avatar_model(root=None):
-    """The Kling avatar model block (sentences + caps). One copy: the JSON."""
-    return load("model", KLING_AVATAR_MODEL, root=root)
+    """RETIRED (N-08). Raises instead of returning a prompt template."""
+    raise PromptTemplateError("LIPSYNC_MODEL_MISMATCH", _RETIRED_KLING)
 
-def assemble_kling_avatar(mode, noun, verb, emotion, poss, head_extra="",
-                          framing=None, root=None):
-    """The lip-sync prompt for one line (design 5.1), assembled from the mode.
-
-    ``mode`` is one of MODES; ``noun`` the cast noun; ``verb`` one of
-    KLING_VERBS; ``emotion`` ONE word; ``poss`` His/Her/Their. A mode whose
-    block forbids lip-sync (sketch-ink, golden-realism) raises
-    LIPSYNC_NOT_ALLOWED_FOR_MODE; over the hard cap raises
-    KLING_AVATAR_OVER_HARD_MAX. Nothing is ever truncated.
-    """
-    m = load("mode", mode, root=root)
-    if not m.get("lipsync_allowed") or not m.get("kling_who"):
-        raise PromptTemplateError(
-            "LIPSYNC_NOT_ALLOWED_FOR_MODE",
-            "%s may not be lip-synced (%s)" % (mode, m.get("lipsync_note", "no kling_who")))
-    if verb not in KLING_VERBS:
-        raise PromptTemplateError("BAD_VERB", "%r not in %s" % (verb, KLING_VERBS))
-    if head_extra not in KLING_HEAD_EXTRAS:
-        raise PromptTemplateError("BAD_HEAD_EXTRA",
-                                  "%r not in KLING_HEAD_EXTRAS" % (head_extra,))
-    if framing is None:
-        framing = KLING_FRAMING_DEFAULT
-    elif framing not in (KLING_FRAMING_DEFAULT, KLING_FRAMING_ALT):
-        raise PromptTemplateError("BAD_FRAMING", "%r is not an allowed framing" % (framing,))
-    t = kling_avatar_model(root=root)["prompt_template"]
-    prompt = " ".join(s.format(who_descriptor=m["kling_who"], character_noun=noun,
-                               verb=verb, emotion=emotion, head_extra=head_extra,
-                               framing=framing, Poss=poss) for s in t["sentences"])
-    if len(prompt) > t["hard_max"]:
-        raise PromptTemplateError(
-            "KLING_AVATAR_OVER_HARD_MAX",
-            "%d chars > hard max %d (%s); never truncated"
-            % (len(prompt), t["hard_max"], t.get("hard_max_status", "")))
-    return prompt
+def assemble_kling_avatar(*_a, **_k):
+    """RETIRED (N-08). No lip-sync prompt may be assembled."""
+    raise PromptTemplateError(LIPSYNC_PROMPT_PRESENT, _RETIRED_KLING)
 
 def check_kling_avatar(prompt, line="", emotion="", root=None):
-    """Judge an avatar prompt (design 8.7). -> {pass, chars, sentences, errors,
-    limits, cap_status}. 1-3 sentences, at most the target max, ONE emotion, no
-    lyric run from ``line``, no forbidden mouth-driving phrase, over the hard
-    max refused. The hard cap is UNVERIFIED for the KIE wrapper and guarded."""
-    t = kling_avatar_model(root=root)["prompt_template"]
-    errs = []
-    n = len(prompt)
-    sents = len(re.findall(r"[.!?](?:\s|$)", prompt))
-    if n > t["char_target_max"]:
-        errs.append("OVER_TARGET %d > %d" % (n, t["char_target_max"]))
-    if n > t["hard_max"]:
-        errs.append("OVER_HARD_MAX %d > %d" % (n, t["hard_max"]))
-    if not 1 <= sents <= 3:
-        errs.append("SENTENCES %d (want 1-3)" % sents)
-    if emotion and ("," in emotion or " and " in emotion):
-        errs.append("MORE_THAN_ONE_EMOTION %r" % emotion)
-    lw = re.findall(r"[a-z']+", line.lower())
-    pw = " ".join(re.findall(r"[a-z']+", prompt.lower()))
-    if any(" ".join(lw[i:i + 4]) in pw for i in range(max(0, len(lw) - 3))):
-        errs.append("LYRIC_RUN_IN_PROMPT")
-    errs += ["FORBIDDEN %r" % b for b in KLING_FORBIDDEN if b in prompt.lower()]
-    return {"pass": not errs, "chars": n, "sentences": sents, "errors": errs,
-            "limits": {"target_max": t["char_target_max"], "hard_max": t["hard_max"]},
-            "cap_status": t.get("hard_max_status", "")}
+    """RETIRED (N-08). Any lip-sync prompt is refused, never judged."""
+    return {"pass": False, "verdict": "REFUSE", "chars": len(str(prompt or "")),
+            "sentences": 0, "errors": [LIPSYNC_PROMPT_PRESENT + " " + _RETIRED_KLING],
+            "limits": {}, "cap_status": "RETIRED"}
 
 # U15b: the H3 assembler, band guard, expand/trim and receipt.
 
@@ -329,6 +319,23 @@ def _look_block(spec, root=None):
         text = mode["h3_block"].replace("{palette}", palette)
     return "%s look, %s mode. %s" % (look["label"], spec["mode"],
                                      re.sub(r"\s+", " ", text).strip())
+
+def locked_look_block(spec, root=None):
+    """The exact style text the assembler placed for this spec's look/mode.
+
+    The N-35 banned-word scan strips this block before scanning, so the lock's
+    own words (a 3D block's 'soft pores') never trip the scan. Re-derived from
+    the look/mode files, never copied by hand. Returns "" when the files do
+    not resolve.
+    """
+    try:
+        block = _look_block(spec, root=root)
+    except PromptTemplateError:
+        return ""
+    # The assembler writes "<label> look, <mode> mode. <block>"; the strip
+    # must remove the block text AND its lead-in, which can itself carry a
+    # banned word ("never photoreal live-action").
+    return block or ""
 
 def _villain_extra(spec):
     """The U16 guidance block when the shot type is the villain."""
@@ -593,7 +600,8 @@ def assemble_kling_video(spec, characters, root=None):
     prompt = _kling_join(sec, order, leads)
     return prompt, {k: len(v) for k, v in sec.items()}
 
-def check_kling(prompt, sections, model, root=None):
+def check_kling(prompt, sections, model, root=None, mode_id=None,
+                banned_words=None, locked_block=None):
     """The Kling guard: the band, no bracket syntax, and the shared rules.
 
     Same verdict vocabulary as ``check()``: REFUSE beats TRIM beats FLAG beats
@@ -602,6 +610,8 @@ def check_kling(prompt, sections, model, root=None):
     phrase and a duplicate sentence. The band and the hard max come from the
     manifest; the cap's status (VERIFIED / UNVERIFIED) is passed through by
     ``band_cap`` so an UNVERIFIED ceiling is never silently promoted.
+    N-35 / 3B.3: the look's banned words outside the locked block are refused
+    (STYLE_WORD_BANNED), same validator as ``check()``.
     """
     b = band(model, root=root)
     qr = load("manifest", root=root)["quality_rules"]
@@ -630,6 +640,28 @@ def check_kling(prompt, sections, model, root=None):
     if re.search(r"\b(left|right)\b", prompt, re.I) and \
             "camera's point of view" not in prompt:
         reasons.append("DIRECTION_WITHOUT_REFERENCE_FRAME")
+    # F-KLING-TEXT-BAIT: letter-bait prompt refuses here too, so a
+    # hand-built Kling prompt that skips dispatch still cannot pass the
+    # template checker. never_again owns the word list; this gate only
+    # reports its refusal.
+    try:
+        if CORE_DIR not in sys.path:
+            sys.path.insert(0, CORE_DIR)
+        import never_again as _na
+        _bait = _na.check_kling_prompt_text(prompt)
+    except (ImportError, AttributeError):
+        _bait = None
+    if _bait is not None and _bait.get("code") == "TEXT_BAIT":
+        reasons.append("KLING_TEXT_BAIT %s" % (_bait.get("detail"),))
+    eff_banned = (list(banned_words) if banned_words is not None
+                  else _banned_words_for(mode_id, root=root))
+    if eff_banned:
+        sw = check_style_words(prompt, eff_banned,
+                               locked_block=locked_block or "")
+        if sw.get("verdict") == "REFUSE":
+            reasons.append("STYLE_WORD_BANNED %r: not this look's word; it may "
+                           "appear only inside the locked block"
+                           % (sw.get("hits") or [],))
     if reasons:
         return {"verdict": "REFUSE", "chars": n, "reasons": reasons,
                 "repeat_8gram": round(rep, 4)}
@@ -773,6 +805,68 @@ def layering_refusal(native_audio, soundtrack=False, audio_dropped=False):
     return None
 
 
+def _text_record_clause(spec, frag):
+    """N-27 / T-2 / 3A.3: one sentence per written object, then the pin.
+
+    ``spec["text_on_screen"]`` is the text record slice for this shot: a list of
+    {object, lines[]} entries (3A.2). Nothing is invented: an entry with no
+    words is skipped, and a shot with no record carries the pin sentence alone.
+    """
+    rec = spec.get("text_on_screen")
+    if not isinstance(rec, list):
+        return ""
+    items = []
+    for e in rec:
+        if not isinstance(e, dict):
+            continue
+        lines = [str(x) for x in (e.get("lines") or []) if str(x).strip()]
+        obj = str(e.get("object") or "").strip()
+        if not lines or not obj:
+            continue
+        quoted = ", ".join('"%s"' % x for x in lines)
+        items.append("The %s reads exactly, in clear printed English: %s." % (obj, quoted))
+    if not items:
+        return ""
+    return frag["TEXT_RECORD"].replace("{items}", " ".join(items))
+
+def _prop_facing_clause(spec, frag):
+    """N-120 / 3P: one fixed sentence per used prop, from the text record.
+
+    Each ``spec["text_on_screen"]`` entry carries ``user``, ``faces`` and
+    ``viewer_must_read`` (3P). The prop faces its user unless the record says
+    the camera may read it; an insert sentence is used when the viewer must
+    read it but the prop still faces its user. Nothing is invented: no words,
+    no sentence. An older template root without the fragments returns "".
+    """
+    if not frag.get("PROP_FACING_USER"):
+        return ""
+    rec = spec.get("text_on_screen")
+    out = []
+    for e in rec if isinstance(rec, list) else []:
+        if not isinstance(e, dict):
+            continue
+        obj = str(e.get("object") or "").strip()
+        if not obj:
+            continue
+        words = ", ".join('"%s"' % str(x) for x in (e.get("lines") or [])
+                          if str(x).strip())
+        user = str(e.get("user") or "").strip()
+        poss = ("%s'" % user) if user.endswith("s") else (
+            "%s's" % user if user else "their")
+        faces = str(e.get("faces") or "").strip().lower()
+        if faces == "camera":
+            if words:
+                out.append(frag["PROP_FACING_CAMERA"].format(obj=obj, words=words))
+        elif e.get("viewer_must_read"):
+            if words:
+                out.append(frag["PROP_FACING_INSERT"].format(
+                    obj=obj, user_poss=poss, words=words))
+        elif user or faces == "other person":
+            out.append(frag["PROP_FACING_USER"].format(
+                obj=obj, user=user or "the person who takes it",
+                user_poss=poss))
+    return " ".join(out)
+
 def assemble_h3(spec, characters, root=None):
     """Assemble one H3 prompt from a shot spec (the planner's facts).
 
@@ -800,9 +894,20 @@ def assemble_h3(spec, characters, root=None):
                         spec["duration_s"], spec["aspect"],
                         spec["beat"].replace("_", " "), spec["intent"]))
     sec["subject"] = "%s %s" % (spec["subject"], spec["composition"])
+    # N-121 / 3M.4: a prompt says who is there. When the beat's crowd state is
+    # not empty, the planner supplies its own sentence for this place.
+    if spec.get("crowd_sentence"):
+        sec["subject"] += " " + spec["crowd_sentence"]
+    # N-120 / 3P: every used prop states which way its reading side faces.
+    facing = _prop_facing_clause(spec, frag)
+    if facing:
+        sec["subject"] += " " + facing
     act = "Start: %s End: %s Direction: %s" % (a["start"], a["end"],
                                                a["direction"])
-    if st.get("mouth_rule"):
+    if spec.get("line_over_picture"):
+        # N-21: a line plays over this picture, so nobody mouths it.
+        act += " " + frag["MOUTHS_CLOSED"]
+    elif st.get("mouth_rule"):
         act += " " + st["mouth_rule"]
     if spec.get("match_pose"):
         act += " " + spec["match_pose"]
@@ -823,7 +928,18 @@ def assemble_h3(spec, characters, root=None):
     sec.update(book_fragments(spec, st, frag, root=root))
     sec["physics"] = spec["motion_physics"]
     sec["beats"] = " ".join("%s: %s" % (t, d) for t, d in spec["beats"])
+    # N-121 / 3M.4: the crowd is stated by the shot's own crowd state. The
+    # blanket "no extra people" line is gone; it survives only for an empty room.
+    crowd = str(spec.get("crowd_state") or "").strip().lower()
+    if crowd == "empty" and frag.get("CROWD_EMPTY"):
+        sec["subject"] = sec["subject"] + " " + frag["CROWD_EMPTY"]
+    elif crowd and frag.get("CROWD_STATE"):
+        sec["subject"] = sec["subject"] + " " + frag["CROWD_STATE"]
     sec["policy"] = frag["SOUND_AND_TEXT"]
+    # N-27 / T-2: H3 describes the words that are already in the picture.
+    text_clause = _text_record_clause(spec, frag)
+    if text_clause:
+        sec["policy"] = sec["policy"] + " " + text_clause
     neg = (list(frag["BASE_NEGATIVES"]) + st.get("negatives", [])
            + spec.get("negatives_extra", []))
     sec["negatives"] = "; ".join(neg[:16]) + "."
@@ -832,12 +948,105 @@ def assemble_h3(spec, characters, root=None):
     parts = ["%s: %s" % (leads[k], sec[k]) for k in order if k in sec]
     return "\n".join(parts), {k: len(v) for k, v in sec.items()}
 
-def check(prompt, sections, model="minimax-h3/image-to-video", root=None):
+#: F-PM-5 / R-2: stillness and angle-cheat phrases refused in every prompt.
+#: Multiword only, so the camera command [Static shot] never matches.
+#: Whole-performance stillness instructions only. A single beat ("she stays
+#: still for a blink") or a camera on a tripod ("locked off") is legitimate
+#: and never matched; what is refused is a sentence that freezes the take.
+STILLNESS_PHRASES = (
+    "minimal head movement", "minimal movement at all", "no body movement",
+    "no movement at all", "frozen in place", "frozen body",
+    "steady locked camera", "settle and hold", "held stillness",
+    "hold completely still", "the body does not move at all",
+)
+ANGLE_CHEAT_PHRASES = (
+    "cheat the angle", "angle cheat", "cheat the cut", "hide the mouth",
+    "cover the mouth with", "crop out the", "freeze the frame",
+)
+#: F-PIC-3: three places stacked into one frame, or a panel/split-screen
+#: layout, is refused unless the run owner approved it on the storyboard.
+MULTI_LOCATION_PHRASES = (
+    "split screen", "split-screen", "two panels", "three panels",
+    "panel layout", "collage of", "montage of places",
+    "two places at once", "three places at once",
+    "two locations in frame", "three locations in frame",
+    "at the same time in two places", "in two rooms at once",
+)
+#: G-STORY-04 / N-14: a sentence that empties a room the story says is full.
+#: Applied only when the shot's cast says the place is full (more singers than
+#: ``empty_room_singer_min``); an empty-room shot keeps its own sentence.
+EMPTY_ROOM_PHRASES = (
+    "no congregation", "no extra people", "empty pews", "the pews are empty",
+    "empty room", "nobody else in the room", "no one else is present",
+    "no crowd", "without a congregation",
+)
+
+#: F-PIC-3: markers of a second or third place in one frame, and of a
+#: split-screen or panel layout. Prose only; the words are ordinary nouns a
+#: one-place prompt never needs twice.
+MULTI_LOCATION_MARKERS = (
+    "cut to", "meanwhile in", "at the same time across", "across the street in",
+    "we see both", "in two rooms", "from the kitchen to the", "through to the",
+    "in the background room", "upstairs and the", "inside and outside",
+    "living room and the kitchen", "split screen", "split-screen", "panel",
+    "panels", "triptych", "side by side scenes", "two places at once",
+)
+SPLIT_FRAME_MARKERS = ("split screen", "split-screen", "triptych",
+                       "grid of scenes", "collage of", "panel layout",
+                       "comic panel", "divided into panels", "four panels")
+
+def _grams8(text):
+    """The set of 8-word runs in a text, lowercased, punctuation stripped."""
+    words = re.findall(r"[a-z0-9']+", str(text or "").lower())
+    return {" ".join(words[i:i + 8]) for i in range(len(words) - 7)}
+
+def _without_run(text, run):
+    """``text`` with one occurrence of ``run`` removed (never counted twice)."""
+    if not run or run not in text:
+        return text
+    return text.replace(run, " ", 1)
+
+def _banned_words_for(mode_id, root=None):
+    """N-35 / 3B.3: the named mode's banned list.
+
+    The mode file's own ``banned_words`` wins when present (U-LOOK carries one;
+    extended modes inherit through ``extends``). Until then the manifest's per-
+    category list answers: the 3D/2D looks ban the photoreal set, the realism
+    looks ban the animated set. Returns [] when neither names one, so a look
+    with no list is never refused by invention.
+    """
+    if not mode_id:
+        return []
+    mode = load("mode", mode_id, root=root, required=False) or {}
+    words = mode.get("banned_words")
+    if words:
+        return [str(w) for w in words if str(w).strip()]
+    if mode.get("extends"):
+        base_words = _banned_words_for(mode["extends"], root=root)
+        if base_words:
+            return base_words
+    qr = load("manifest", root=root)["quality_rules"]
+    cats = qr.get("banned_style_words") or {}
+    mode_id = str(mode_id or "").lower()
+    if any(k in mode_id for k in ("realism", "golden", "live")):
+        return [str(w) for w in (cats.get("realism") or [])]
+    return [str(w) for w in (cats.get("animated") or [])]
+
+def check(prompt, sections, model="minimax-h3/image-to-video", root=None,
+          picture_text=None, look_text=None, identity_text=None,
+          cast=None, expression=None, mode_id=None, banned_words=None,
+          locked_block=None, style_lock=None):
     """The band guard and the quality rules.
 
     -> {"verdict": REFUSE|FLAG|TRIM|PASS, "chars", "reasons"}. REFUSE wins over
     everything: a prompt never leaves this function over the hard max, over one
     bracket group, or carrying a banned phrase or a duplicate sentence.
+    ``mode_id`` selects the look's banned words for N-35 / 3B.3; an explicit
+    ``banned_words`` list wins, and ``locked_block`` is the exact style text the
+    lock placed in the prompt, so the look's own words (a 3D block that says
+    'soft pores') never trip the scan. ``style_lock`` is the run's look-lock
+    record; when the spec carries one, the receipt (see ``receipt()``) stamps
+    it and the banned scan strips its block.
     """
     b = band(model, root=root)
     qr = load("manifest", root=root)["quality_rules"]
@@ -883,14 +1092,89 @@ def check(prompt, sections, model="minimax-h3/image-to-video", root=None):
     if re.search(r"\b(left|right)\b", prompt, re.I) and \
             "camera's point of view" not in prompt:
         reasons.append("DIRECTION_WITHOUT_REFERENCE_FRAME")
+    # F-PIC-3: one place per frame. Three places stacked in one frame, a
+    # split-screen or a panel layout without approval is refused.
+    low2 = prompt.lower()
+    places = [w for w in MULTI_LOCATION_MARKERS if w in low2]
+    if len(places) > 2 or any(w in low2 for w in SPLIT_FRAME_MARKERS):
+        reasons.append("H3_MULTI_LOCATION %d place marker(s) %s: one shot is "
+                       "one place; split the shots instead"
+                       % (len(places), places[:4]))
+    # F-PM-5 / R-2: stillness words and angle cheats are refused. A stillness
+    # instruction wins over every other motion word and freezes the take; an
+    # angle cheat hides a defect the checks must see. The camera command
+    # [Static shot] is a bracket token and never matches a phrase here.
+    low = prompt.lower()
+    for ph in STILLNESS_PHRASES:
+        if ph in low:
+            reasons.append("STILLNESS_WORD %r: brief one body action instead, "
+                           "or split the shot" % ph)
+    for ph in ANGLE_CHEAT_PHRASES:
+        if ph in low:
+            reasons.append("ANGLE_CHEAT %r: never hide a defect by cheating the "
+                           "angle, cropping, freezing or stretching" % ph)
+    # F-PM-3: no re-description of the picture, no identity overload. The
+    # identity/continuity section is the ONE place the face may be named;
+    # anywhere else an 8-word run shared with the shot's picture prompt or the
+    # look/bible text repeats what the reference picture already carries.
+    ident = "" if identity_text is None else str(identity_text)
+    cap = qr.get("identity_cap_chars", 1400)
+    if identity_text is not None and len(ident) > cap:
+        reasons.append("H3_IDENTITY_OVER_CAP %d > %s: trim the identity block; "
+                       "the reference pictures carry the face" % (len(ident), cap))
+    if picture_text or look_text:
+        ident_grams = _grams8(ident)
+        body = _without_run(prompt, ident) if ident else prompt
+        shared = ((_grams8(body) & _grams8(picture_text or ""))
+                  | (_grams8(body) & _grams8(look_text or ""))) - ident_grams
+        if shared:
+            reasons.append("H3_REDESCRIBES_PICTURE %d shared 8-word run(s), "
+                           "first %r" % (len(shared), sorted(shared)[0][:80]))
+    # G-STORY-04 / N-14: never order an empty room on a shot the story says is
+    # full. A cast that lists more singers than the small-room line is a full
+    # place; an Avoid or negative sentence that empties it is refused.
+    if cast is not None:
+        singers = cast.get("singers") if isinstance(cast, dict) else cast
+        try:
+            n_singers = int(singers or 0)
+        except (TypeError, ValueError):
+            n_singers = 0
+        if n_singers > qr.get("empty_room_singer_min", 4):
+            hit = [ph for ph in EMPTY_ROOM_PHRASES if ph in low]
+            if hit:
+                reasons.append("H3_EMPTY_ROOM %r: the beat shows %d singers in "
+                               "this place, so the prompt says who is there, "
+                               "never that the room is empty (G-STORY-04)"
+                               % (hit[0], n_singers))
+    # N-35 / 3B.3: the look's banned words outside the locked block are refused
+    # (STYLE_WORD_BANNED). The locked block is stripped before the scan, so a
+    # 3D block's own 'soft pores' never trips its own list.
+    eff_banned = (list(banned_words) if banned_words is not None
+                  else _banned_words_for(mode_id, root=root))
+    strip_block = locked_block or ""
+    if not strip_block and isinstance(style_lock, dict):
+        strip_block = (style_lock.get("h3_block")
+                       or (style_lock.get("blocks") or {}).get("h3_block") or "")
+    if eff_banned:
+        sw = check_style_words(prompt, eff_banned, locked_block=strip_block)
+        if sw.get("verdict") == "REFUSE":
+            reasons.append("STYLE_WORD_BANNED %r: not this look's word; it may "
+                           "appear only inside the locked block" % (sw.get("hits") or [],))
+    # G-MOTION-01: on a singing shot the stillness template sentence is refused
+    # by the STILLNESS_WORD list above, which is the whole rule for a prompt --
+    # brief one downbeat body action (sway, clap, robe swing) instead.
     if reasons:
         return {"verdict": "REFUSE", "chars": n, "reasons": reasons,
                 "repeat_8gram": round(rep, 4)}
+    # F-PM-1 / N-77: a section-thin or below-floor prompt is a REFUSE, never a
+    # FLAG build() would let ship (build blocks only REFUSE/TRIM). It routes
+    # through expand(), which raises H3_THIN_SPEC naming the empty slots, so
+    # the planner supplies the facts instead of shipping a thin prompt.
     if section_reasons:
-        return {"verdict": "FLAG", "chars": n, "reasons": section_reasons,
+        return {"verdict": "REFUSE", "chars": n, "reasons": section_reasons,
                 "repeat_8gram": round(rep, 4)}
     if b.get("floor") is not None and n < b["floor"]:
-        return {"verdict": "FLAG", "chars": n,
+        return {"verdict": "REFUSE", "chars": n,
                 "reasons": ["H3_BELOW_FLOOR %d < %d: expand from the spec "
                             "(expand_priority) or refuse H3_THIN_SPEC"
                             % (n, b["floor"])],
@@ -903,6 +1187,48 @@ def check(prompt, sections, model="minimax-h3/image-to-video", root=None):
     return {"verdict": "PASS", "chars": n, "reasons": [],
             "repeat_8gram": round(rep, 4)}
 
+#: The shot's OWN sections. The lock blocks (look, continuity/identity, policy,
+#: reference, negatives) are copied whole by design and are never compared.
+_OWN_SECTIONS = ("header", "subject", "action", "camera", "lens_light",
+                 "physics", "beats")
+
+def check_run(prompts, root=None):
+    """Per-run cross-prompt repeat check (F-PM-3, QM-03).
+
+    ``prompts`` is a list of prompt strings, or of {"prompt", "sections"} dicts.
+    Across a run no 8-word run of the shot's own sections may appear in more
+    than ``quality_rules.cross_prompt_repeat.max_shared_run_ratio`` of them: one
+    writer copying another's action or framing is a re-description of a shot it
+    has not seen. File-wide lock blocks are exempt by design.
+    Returns {"verdict": "REFUSE"|"PASS", "reasons", "shared", "checked"}.
+    """
+    qr = (load("manifest", root=root)["quality_rules"]
+          .get("cross_prompt_repeat") or {})
+    limit = float(qr.get("max_shared_run_ratio", 0.15))
+    texts = []
+    for p in prompts or []:
+        if isinstance(p, dict):
+            sec = p.get("sections") or {}
+            own = " ".join(sec.get(k, "") if isinstance(sec.get(k), str) else ""
+                           for k in _OWN_SECTIONS) or str(p.get("prompt") or "")
+            texts.append(own)
+        else:
+            texts.append(str(p or ""))
+    n = len(texts)
+    if n < 2:
+        return {"verdict": "PASS", "reasons": [], "shared": [], "checked": n}
+    seen = {}
+    for t in texts:
+        for g in _grams8(t):
+            seen[g] = seen.get(g, 0) + 1
+    over = sorted(g for g, c in seen.items() if c / n > limit)
+    if over:
+        return {"verdict": "REFUSE", "checked": n, "shared": over[:20],
+                "reasons": ["CROSS_PROMPT_REPEAT %d 8-word run(s) appear in "
+                            "more than %.0f%% of the run's %d prompts, first %r"
+                            % (len(over), limit * 100, n, over[0][:80])]}
+    return {"verdict": "PASS", "reasons": [], "shared": [], "checked": n}
+
 def expand(spec, characters, prompt, verdict, root=None):
     """Under the floor or section-thin: refuse H3_THIN_SPEC, never pad.
 
@@ -914,11 +1240,15 @@ def expand(spec, characters, prompt, verdict, root=None):
     """
     v = verdict.get("verdict")
     reasons = verdict.get("reasons") or []
+    # F-PM-1: check() now returns REFUSE for a section-thin or below-floor
+    # prompt; both route here, and both raise H3_THIN_SPEC. A bare FLAG is
+    # still accepted so no older caller breaks.
     thin = v == "FLAG" or (
         v == "REFUSE" and reasons
-        and all(r.startswith("SECTION_THIN") for r in reasons))
+        and all(r.startswith(("SECTION_THIN", "H3_BELOW_FLOOR")) for r in reasons))
     if not thin:
         return prompt, verdict
+    under_floor = any(r.startswith("H3_BELOW_FLOOR") for r in reasons)
     st = load("shot_type", spec["shot_type"], root=root)
     empty = []
     for slot in st.get("required_spec") or []:
@@ -935,9 +1265,49 @@ def expand(spec, characters, prompt, verdict, root=None):
         % (spec.get("shot_id"),
            "under the floor (%s < %s)" % (verdict.get("chars"),
                                           band(spec["model"], root=root)["floor"])
-           if v == "FLAG" else "section-thin",
+           if (v == "FLAG" or under_floor) else "section-thin",
            ", ".join(empty) if empty else "(none named by the shot type)",
            "; ".join(reasons) or "H3_BELOW_FLOOR"))
+
+def check_style_words(prompt, banned_words, locked_block=""):
+    """N-35 / 3B.3: refuse a look's banned words outside the locked block.
+
+    ``banned_words`` is the chosen look's own list (each mode file carries it);
+    ``locked_block`` is the exact style text the lock placed in the prompt, so
+    the look's own words (a 3D block that says 'soft pores', say) never trip on
+    themselves. A word found anywhere in the rest of the prompt is
+    STYLE_WORD_BANNED. Pure: the caller passes the list, so this works before
+    U-LOOK's mode_files module is on the tree; wire it to mode_files.load_mode's
+    list at dispatch.
+    Returns {"verdict": "REFUSE"|"PASS", "code", "hits"}.
+    """
+    body = _without_run(str(prompt or ""), locked_block) if locked_block else str(prompt or "")
+    low = body.lower()
+    hits = [str(w) for w in (banned_words or []) if str(w).lower() in low]
+    if hits:
+        return {"verdict": "REFUSE", "code": "STYLE_WORD_BANNED",
+                "hits": hits,
+                "detail": "style words %r are not from the locked block" % (hits[:5],)}
+    return {"verdict": "PASS", "code": None, "hits": []}
+
+
+def style_stamp(lock, block_text=""):
+    """N-34 / 3B.3: the style-lock stamp for one prompt.
+
+    ``lock`` is the run's look-lock record (a dict with ``version`` and the
+    style blocks / their fingerprint). The stamp records the lock version and
+    the sha256 of the locked block the prompt carries, so the dispatcher can
+    refuse an unstamped, stale or altered style section
+    (STYLE_BLOCK_NOT_FROM_LOCK, U-DISPATCH). Returns None when no lock is held:
+    a prompt with no lock is never silently treated as stamped.
+    """
+    if not isinstance(lock, dict):
+        return None
+    version = lock.get("version") or lock.get("lock_version")
+    block = block_text or lock.get("h3_block") or (lock.get("blocks") or {}).get("h3_block") or ""
+    return {"lock_version": version,
+            "block_sha256": hashlib.sha256(str(block).encode("utf-8")).hexdigest()}
+
 
 def receipt(spec, prompt, sections, verdict, root=None):
     """The prompt receipt: sha256 + template version + section char map.
@@ -947,15 +1317,21 @@ def receipt(spec, prompt, sections, verdict, root=None):
     take can be assembled without one.
     """
     man = templates_dir(root) / "manifest.json"
-    return {"shot_id": spec["shot_id"], "model": spec["model"],
-            "look": spec["look"], "mode": spec["mode"],
-            "shot_type": spec["shot_type"],
-            "template_version": load("manifest", root=root)["template_version"],
-            "manifest_sha256": hashlib.sha256(man.read_bytes()).hexdigest(),
-            "prompt_sha256": hashlib.sha256(prompt.encode("utf-8")).hexdigest(),
-            "chars": len(prompt), "band": band(spec["model"], root=root),
-            "sections": sections, "check": verdict,
-            "native_audio": native_audio_block(spec)}
+    rec = {"shot_id": spec["shot_id"], "model": spec["model"],
+           "look": spec["look"], "mode": spec["mode"],
+           "shot_type": spec["shot_type"],
+           "template_version": load("manifest", root=root)["template_version"],
+           "manifest_sha256": hashlib.sha256(man.read_bytes()).hexdigest(),
+           "prompt_sha256": hashlib.sha256(prompt.encode("utf-8")).hexdigest(),
+           "chars": len(prompt), "band": band(spec["model"], root=root),
+           "sections": sections, "check": verdict,
+           "native_audio": native_audio_block(spec)}
+    # N-34: the style stamp travels with the prompt when the spec carries the
+    # run's look lock; the dispatcher refuses STYLE_BLOCK_NOT_FROM_LOCK.
+    stamp = style_stamp(spec.get("style_lock"))
+    if stamp is not None:
+        rec["style_stamp"] = stamp
+    return rec
 
 def has_receipt(prompt_sha256, receipts):
     """True when one receipt in ``receipts`` matches this prompt's sha256."""
@@ -1149,11 +1525,12 @@ def check_product_seconds(shots, chosen_length_s):
 __all__ = ["TOOL_NAME", "TOOL_VERSION", "MODES", "LOOKS", "SHOT_TYPES",
            "CORE_DIR", "SKILL_ROOT", "TEMPLATES_DIR", "PromptTemplateError",
            "templates_dir", "catalog_path", "load", "caps",
-           "KLING_AVATAR_MODEL", "KLING_VERBS", "KLING_FRAMING_DEFAULT",
-           "KLING_FRAMING_ALT", "KLING_HEAD_EXTRAS", "kling_avatar_model",
-           "assemble_kling_avatar", "check_kling_avatar",
-           "VILLAIN_SHOT_TYPE_NAME", "band", "assemble_h3", "check", "expand",
-           "receipt", "has_receipt", "assemble_kling_video", "check_kling",
+           "KLING_AVATAR_MODEL", "assemble_kling_avatar", "check_kling_avatar",
+           "LIPSYNC_MODEL", "LIPSYNC_PROMPT_PRESENT",
+           "VILLAIN_SHOT_TYPE_NAME", "band", "assemble_h3", "check", "check_run", "expand",
+           "STILLNESS_PHRASES", "ANGLE_CHEAT_PHRASES", "MULTI_LOCATION_MARKERS",
+           "SPLIT_FRAME_MARKERS",
+           "receipt", "has_receipt", "style_stamp", "check_style_words", "locked_look_block", "assemble_kling_video", "check_kling",
            "kling_section_limits", "band_cap",
            "LENGTH_CLASSES_S", "CLASS_FIELDS", "LANE_MIN_SONG_S",
            "LANE_TARGET_S", "KIE_PER_WINDOW", "KIE_LANE_SHARE_NUM",
