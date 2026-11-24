@@ -71,8 +71,11 @@ changed. The code references are for the operator; the checks named in
   own music cues: instrumental flag, delivered length, the two pace seams and
   the hook's `true_at_beat`. A collapsed blueprint refuses with a typed
   blueprint error instead of sending a request for a different story.
-- **Lip-sync coverage.** 25-30% of the selected duration target, 35% hard
-  maximum, 4-6 s clips, never fewer than 3, and the first 12 s articulated.
+- **Lip-sync coverage.** 25-30% of the selected duration target; 35% is a top,
+  not a refusal (whole sentences win). One piece is one or more whole sentences,
+  5 to 30 seconds, stitched only past 30. Under 90 seconds there is no floor of
+  3 pieces; from 90 seconds up the floor of 3 stands. The opening passage is
+  lip-synced inside the first 10-15 seconds.
   The lip-sync section above carries the refusal codes.
 
 ## THE ELEVEN RUNTIME STEPS (BUILD-DIRECTIVE SECTION 25)
@@ -437,7 +440,7 @@ critical identity/lyrics/offer/claim/product/CTA defect (17.8).
 - Claim merged/published state that has not been independently verified.
 - Compute or hard-code a price; every figure on the choice card comes from
   Skill 74 `price`.
-- Carry the superseded echo-flavoured voice name (the pre-rename spelling), or offer a lip-sync model outside the approved Kling-avatar-first order (Volcengine is dropped).
+- Carry the superseded echo-flavoured voice name (the pre-rename spelling), or offer a lip-sync model other than OmniHuman 2.0 (`omnihuman-2-0`); Kling Avatar, InfiniTalk and Volcengine are retired and there is no lip-sync model choice.
 
 ## VERSION 2 OPTIONS (OWNER BUILD-OUT 2026-10-07)
 
@@ -616,17 +619,20 @@ card. The answers and the time answered go into the receipt
   its earlier echo-flavoured spelling, which must not appear anywhere.
 - **Per-character voice registry:** no two characters share a voice, in any
   look or music style. Distinctness still holds inside the one track.
-- **Lip-sync (decision 33):** selected lines only - the pain peak, the
-  product line, the call to action and the chorus hook. Approved direction
-  2026-10-23 (supersedes the 2026-10-08 doubling): coverage is **25-30% of the
-  selected duration with a 35% HARD MAXIMUM**, in clips of 4 to 6 seconds, no
-  clip over 6 seconds, never fewer than 3 clips, and the first **12 seconds**
-  clearly articulated (the spoken opener / first sung hook is lip-synced there).
+- **Lip-sync (S-42; Trevor, 2026-11-23 about 2:25 PM):** selected passages only -
+  the opening passage, the pain peak, the product line, the call to action and
+  the chorus hook. Coverage is **25-30% of the selected duration**; **35% is a
+  top, not a refusal** (whole sentences win, and a plan over 35% shows its
+  seconds and percent before any spend). **One piece is one or more whole
+  sentences, 5 to 30 seconds** (section 3.3a): never cut mid-sentence, never
+  padded, stitched only when a passage is longer than 30 seconds. Under 90
+  seconds there is no floor of 3 pieces; from 90 seconds up the floor of 3
+  stands. The opening passage is lip-synced inside the first **10-15 seconds**.
   The numbers live in `core/lipsync_clips.py`; a duration whose bounds collide
   fails `LIPSYNC_DURATION_CONFLICT` instead of being re-planned silently.
-  Clips go on every sung hook, the spoken opener and the spoken closing line
-  first, and are listed on the approval card. The historical FREE /
-  no-lip-sync route stays an explicit owner opt-in and is never the default.
+  Pieces go on every sung hook and the opening and closing first, and are listed
+  on the approval card. The historical FREE / no-lip-sync route stays an
+  explicit owner opt-in and is never the default.
   Its record is literal: the timeline carries the value `no_lipsync`, and
   `control/method.json` records who chose it and when (the owner and the
   timestamp). A run that claims the route without that record is refused
@@ -634,35 +640,36 @@ card. The answers and the time answered go into the receipt
   lip-sync clips by design, so `FACE_SPEAKS_NO_LIPSYNC` is not raised for a
   speaking face; a lip-sync clip, where one exists, must still match its
   on-screen speaker (`LIPSYNC_WRONG_FACE`).
-  Each clip is a paid job, so a plan past the spend cap is refused loudly. Every
+  Each piece is a paid job, so a plan past the spend cap is refused loudly. Every
   lip-sync source picture passes the lip-sync image gate before any paid job
   (the dispatcher measures the picture with `picture_gate`: PASS, ACCEPT_WITH_FLAG or
   FAIL, and refuses a FAIL; `image_gate` uses those same numbers and adds only size
   at least 720x1280 in 9:16, nothing over mouth or jaw, soft even light, same character
-  as the storyboard). Each clip is cut from the lead-vocal stem on phrase boundaries with
-  0.30 s before and 0.20 s after, prompted with "sings" or "says", and measured
-  by `sync_check` (PASS, ACCEPT_WITH_FLAG, FAIL, UNDETERMINED, UNMEASURABLE; `event_sync`
-  is advisory only). Two tries at most per segment, every name variant counted, the
-  second only on a person's call (a person marks a visible defect) and with a changed
-  input, never on a checker verdict, then the best take is kept and flagged
-  `KEPT_BEST_OF_2`. The approved process (SKILL.md "Lip-sync process", six rules): reuse
-  first (re-measure every take on disk, keep the best, drop defects, no new job where a
-  usable take exists); a sung line the checker cannot confirm is `KEPT_BEST (UNDETERMINED,
-  sung)`; an 8-frame mouth strip at `<delivery folder>/mouth-strips/<segment>.png` for
-  every UNDETERMINED or flagged segment, listed in the receipt; edit placement (trim to
-  audio length, place at the Suno word time corrected by the stem offset, lanczos upscale
-  to 1080x1920, conform to the master's native rate under SKILL.md "Frame rate (Part H H3)"
-  (a native-rate Kling clip passes through; a clip at another rate is matched by plain frame
-  repeat or drop, never a motion-interpolated conform), all ffmpeg through `load_governor`); QC items 8 and 11 accept
-  `KEPT_BEST` and flagged rows with a strip. Model order is
-  Kling avatar `kling/ai-avatar-standard` first (a front-facing close-up
-  image plus that character's own isolated line; THE lip-sync model), InfiniTalk
-  `infinitalk/from-audio` manual backup only (never called by the code, not on by
-  default), **Volcengine dropped**. Tight
-  front-facing close-ups only. The input clip contains only the on-screen
-  speaker's line - never a narrator, never another character, never a mixed
-  vocal stem. Narrator, phone, voicemail and laptop voices may play as
-  voice-over but are never lip-synced onto a person.
+  as the storyboard). Each piece is cut whole, first word's start to last word's end,
+  from the track the Voice Map names for its role, and measured by `sync_check` (PASS,
+  ACCEPT_WITH_FLAG, FAIL, UNDETERMINED, UNMEASURABLE; `event_sync` is advisory only).
+  Every take gets a 4-frames-per-second contact sheet looked at by eye; no take enters
+  the timeline without that eye record (`LIP_TAKE_NOT_EYE_CHECKED`). Two tries at most
+  per segment, every name variant counted, the second only on a person's call (a person
+  marks a visible defect) and with a changed input, never on a checker verdict, then
+  the best take is kept and flagged `KEPT_BEST_OF_2`. The approved process (SKILL.md
+  "Lip-sync process", six rules): reuse first (re-measure every take on disk, keep the
+  best, drop defects, no new job where a usable take exists); a sung line the checker
+  cannot confirm is `KEPT_BEST (UNDETERMINED, sung)`; an 8-frame mouth strip at
+  `<delivery folder>/mouth-strips/<segment>.png` for every UNDETERMINED or flagged
+  segment, listed in the receipt; edit placement (trim to audio length, place at the
+  Suno word time corrected by the stem offset, lanczos upscale to 1080x1920, conform to
+  the master's native rate under SKILL.md "Frame rate (Part H H3)" (a native-rate clip
+  passes through; a clip at another rate is matched by plain frame repeat or drop, never
+  a motion-interpolated conform), all ffmpeg through `load_governor`); QC items 8 and 11
+  accept `KEPT_BEST` and flagged rows with a strip. The lip-sync model is
+  **OmniHuman 2.0 (`omnihuman-2-0`) on every run**: one picture plus one audio piece,
+  **no prompt**, watermark off. There is no option, no alternative and no backup; Kling
+  Avatar and InfiniTalk are retired (`LIPSYNC_MODEL_MISMATCH` for anything else). Tight
+  front-facing close-ups only, showing only the people who sing that piece (1 to 3
+  faces). The input piece contains only those singers' line - never a narrator, never
+  another character, never a mixed vocal stem. Narrator, phone, voicemail and laptop
+  voices may play as voice-over but are never lip-synced onto a person.
 - **Speaker and pitch QC:** the person visible during a spoken line must be
   the one speaking it, or the voice's source device; measured pitch must sit
   in the character's gender range (roughly 85-155 Hz male, 165-255 Hz
