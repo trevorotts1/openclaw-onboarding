@@ -10,7 +10,16 @@
     "decision": "ratified_as_built",
     "date": "2026-11-02",
     "structure": "thank-you, 5 sections",
-    "basis": "Decision taken as recommended on 2026-11-02 (repair project bfl-s49-repair-20261102, decision STR-17): ratify as built, because the structure already matches Skill 49 page_types, Skill 71 copy specs and funnel_structure.json. A later change to its sections is a new decision with its own date."
+    "basis": "Decision taken as recommended on 2026-11-02 (repair project bfl-s49-repair-20261102, decision STR-17): ratify as built, because the structure already matches Skill 49 page_types, Skill 71 copy specs and funnel_structure.json. A later change to its sections is a new decision with its own date.",
+    "later_decisions": [
+      {
+        "decision": "order_summary_from_copy_only",
+        "date": "2026-11-24",
+        "ordered_by": "Trevor (operator and owner), 2026-11-24, unit SWB-290",
+        "client_approval": "CLIENT-APPROVAL-2026-11-23",
+        "basis": "A new dated decision under the rule above, not a change to the ratified five-section sequence. Section 2 is one summary card holding only the copy's approved item line and payment line (no table, column headers, status chips, grey bars or totals). Section 3 draws one card per item the copy names. Section 5 draws a filled support button, an outlined button with the copy's own label and a signature line, with no grey bar."
+      }
+    ]
   },
   "guide": {
     "file": "82-signature-thank-you/references/layout-and-copy-profiles.md",
@@ -66,16 +75,16 @@
       "id": "2",
       "framework_name": "Order summary",
       "name": "Order summary",
-      "job": "Show exactly what was purchased as a real table: item, status (paid, pending or failed), billing line and amount, then the total paid and, when there is one, the pending total.",
+      "job": "Summarise the purchase from the approved copy only: one summary card that holds the copy's approved item line and the copy's approved payment line as readable text.",
       "cta": {"standalone": "forbidden", "counts_toward_total": false},
       "required": true,
       "composition_role": "what",
       "ground": "light",
       "layout": {
-        "desktop": "Light ground band. A section heading, then one real table across the 1200 px column: a header row (Item, Status, Billing, Amount), one row per purchased item with its status as a small filled chip (paid in the primary brand colour, pending outlined, failed in the darkest brand colour), then a Total paid row and, when needed, a Pending row. No image and no button; the table is drawn as a table, never as a picture of a receipt. The rows come from the verified order at render time, so a wireframe or mockup never invents them: every item name, status, billing line, amount and total the copy does not supply is drawn as a grey bar labelled with its column (ITEM, STATUS, BILLING, AMOUNT, TOTAL PAID), never as a name, a figure or a currency sign.",
-        "mobile": "Light ground band. The table becomes stacked item cards, one per purchase: item name, status chip, billing line and amount. The Total paid card comes last at full width. No image and no button. The rows come from the verified order at render time, so a wireframe or mockup never invents them: every item name, status, billing line, amount and total the copy does not supply is drawn as a grey bar labelled with its column (ITEM, STATUS, BILLING, AMOUNT, TOTAL PAID), never as a name, a figure or a currency sign."
+        "desktop": "Light ground band. A section heading, then ONE summary card inside the 1200 px content column. The card holds only the copy's approved item line and the copy's approved payment line, set as readable text. No table, no column headers, no status chips, no grey bars, no totals, no image and no button. Nothing the copy does not supply is drawn: never an item name, a figure or a currency sign that the approved copy does not carry.",
+        "mobile": "Light ground band. ONE summary card at full width, holding only the copy's approved item line and the copy's approved payment line as readable text. No table, no column headers, no status chips, no grey bars, no totals, no image and no button. Nothing the copy does not supply is drawn: never an item name, a figure or a currency sign that the approved copy does not carry."
       },
-      "note": "Real table, never an image of a receipt; status labels Paid, Pending and Failed are separate per item"
+      "note": "Summary from the approved copy only"
     },
     {
       "id": "3",
@@ -87,10 +96,10 @@
       "composition_role": "what",
       "ground": "dark",
       "layout": {
-        "desktop": "Dark ground band. A section heading, then a row of access cards across the 1200 px column, one card per purchased item (draw three as the pattern; the page repeats the card once per purchase). Each card: an icon at the top from the brand's icon style, the item name, one line saying what it unlocks, and one filled utility button. No photograph. The cards come from the verified purchases at render time: any card the copy does not name is drawn with grey bars labelled ITEM NAME and WHAT IT UNLOCKS, and a card's button label is the copy's own label, never an invented product, bonus or membership.",
-        "mobile": "Dark ground band. The cards stack one per row at full width, each with its icon, item name, one-line description and a full-width utility button. No photograph. The cards come from the verified purchases at render time: any card the copy does not name is drawn with grey bars labelled ITEM NAME and WHAT IT UNLOCKS, and a card's button label is the copy's own label, never an invented product, bonus or membership."
+        "desktop": "Dark ground band. A section heading, then a row of access cards across the 1200 px column, one card per item the copy names. Each card: an icon at the top from the brand's icon style, the item name from the copy, one line saying what it unlocks, and one filled utility button carrying the copy's own label. No photograph. Draw only the cards the copy names: no placeholder card, no grey bar and no invented product, bonus or membership.",
+        "mobile": "Dark ground band. The cards stack one per row at full width, one card per item the copy names, each with its icon, item name, one-line description and a full-width utility button carrying the copy's own label. No photograph. Draw only the cards the copy names: no placeholder card, no grey bar and no invented product, bonus or membership."
       },
-      "note": "One card per purchased item; no card for a pending or failed item"
+      "note": "One card per item the copy names; no card for a pending or failed item"
     },
     {
       "id": "4",
@@ -125,10 +134,10 @@
       "ground": "hero",
       "signature_label": true,
       "layout": {
-        "desktop": "Hero ground band, two columns inside the 1200 px content column. Left: the support heading, one line on how to reach help, the filled support button and beside it an outlined manage-purchase button. Right: the short signed note of thanks, the signature in script. No offer button and no price. When the copy carries no manage-purchase label (its destination comes from the purchase record at render time), the outlined button is drawn as a grey bar labelled MANAGE PURCHASE, and no behaviour note names an element that is not drawn.",
-        "mobile": "Single-column phone stack: the signed note and its script signature first, then the support heading and line, the filled support button at full width and the outlined manage-purchase button at full width under it. No offer button and no price. When the copy carries no manage-purchase label (its destination comes from the purchase record at render time), the outlined button is drawn as a grey bar labelled MANAGE PURCHASE, and no behaviour note names an element that is not drawn."
+        "desktop": "Hero ground band, two columns inside the 1200 px content column. Left: the support heading, one line on how to reach help, the filled support button and beside it an outlined button carrying the copy's own label (for example 'Open my access page'). Right: the short signed note of thanks and the signature line, set in script. No offer button and no price. No grey bar is drawn anywhere in this section, and no behaviour note names an element that is not drawn.",
+        "mobile": "Single-column phone stack: the signed note and its signature line in script first, then the support heading and line, the filled support button at full width and the outlined button carrying the copy's own label at full width under it. No offer button and no price. No grey bar is drawn anywhere in this section, and no behaviour note names an element that is not drawn."
       },
-      "note": "Support is the primary action here; manage purchase is secondary and outlined; no offer button"
+      "note": "Support is the primary action here; the outlined button carries the copy's own label and is secondary; no offer button"
     }
   ],
   "wireframe": {

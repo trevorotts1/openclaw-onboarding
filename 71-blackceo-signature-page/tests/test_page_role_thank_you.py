@@ -284,27 +284,43 @@ class PromptTests(RunCase):
         request["_hypersat"] = exe.hypersaturation.roles_for_run(self.run)
         return exe.stage_prompt(stage, request["sections"][index - 1], index, width, request, "16:9")
 
-    def test_order_summary_and_access_never_invent_purchase_data(self):
-        # the rows and cards come from the verified order at render time; a wireframe drawn from
-        # "one row per purchased item" invented items, amounts, a failed line and a monthly product
+    def test_order_summary_is_one_summary_card_from_the_approved_copy_only(self):
+        # SWB-290 (Trevor, 2026-11-24): the order summary was a drawn table with column headers,
+        # status chips, grey bars and totals; it is now ONE summary card holding only the copy's
+        # approved item line and payment line. The old table wording must be gone from the prompt.
         for stage, width in (("desktop-wireframe", 1440), ("mobile-tablet", 390), ("visual-mockup", 1440)):
             request = self.build(stage=stage)
             summary = self.prompt(stage, 2, width, request)
-            self.assertIn("never as a name, a figure or a currency sign", summary, stage)
+            self.assertIn("ONE summary card", summary, stage)
+            self.assertIn("approved item line", summary, stage)
+            self.assertIn("approved payment line", summary, stage)
+            if stage.endswith("wireframe") or stage == "mobile-tablet":  # the behavior note is a wireframe annotation
+                self.assertIn("Summary from the approved copy only", summary, stage)
+            # negative twins: the table, headers, chips, grey bars and totals are gone
+            for gone in ("real table", "header row", "Item, Status, Billing, Amount", "ITEM, STATUS, BILLING",
+                         "TOTAL PAID", "a Total paid row", "never as a name, a figure or a currency sign",
+                         "Real table, never an image of a receipt"):
+                self.assertNotIn(gone, summary, (stage, gone))
             access = self.prompt(stage, 3, width, request)
-            self.assertIn("never an invented product, bonus or membership", access, stage)
+            self.assertIn("one card per item the copy names", access, stage)
+            self.assertIn("no placeholder card, no grey bar", access, stage)
+            self.assertNotIn("ITEM NAME and WHAT IT UNLOCKS", access, stage)
+            self.assertNotIn("draw three as the pattern", access, stage)
 
     def test_steps_follow_the_design_style_and_manage_purchase_is_never_invented(self):
         # Style A runs numbered lists as full-width rows with square-cornered blocks; a horizontal
         # circle timeline broke the client's style. The manage-purchase button has no destination
-        # until render time, so it is a labelled grey bar, never a note about an undrawn element.
+        # until render time. SWB-290: the outlined button carries the copy's own label and no grey bar is
+        # drawn in the closing section (the MANAGE PURCHASE grey bar is gone).
         for stage, width in (("desktop-wireframe", 1440), ("mobile-tablet", 390)):
             request = self.build(stage=stage)
             steps = self.prompt(stage, 4, width, request)
             self.assertIn("Style A (Block) runs them as full-width numbered rows" if width > 768
                           else "square-cornered number blocks with hairline rules", steps, stage)
             close = self.prompt(stage, 5, width, request)
-            self.assertIn("grey bar labelled MANAGE PURCHASE", close, stage)
+            self.assertIn("outlined button carrying the copy's own label", close, stage)
+            self.assertIn("No grey bar is drawn anywhere in this section", close, stage)
+            self.assertNotIn("MANAGE PURCHASE", close, stage)
 
     def test_every_stage_and_platform_carries_the_pages_own_structure(self):
         for stage, widths in (("desktop-wireframe", (1440,)), ("mobile-tablet", (390,)),
