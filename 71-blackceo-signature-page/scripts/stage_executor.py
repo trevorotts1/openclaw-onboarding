@@ -138,6 +138,8 @@ LAYOUT = {
                       ("mobile/part-{n:02d}.png", 390, 1080)],
 }
 
+# SWB-290: the resolution a wireframe stage asks the provider for when the request's input_extra names none
+WIREFRAME_RESOLUTION = {"desktop-wireframe": "2K", "mobile-tablet": "2K"}
 RATIO_ENUM = ("1:1", "3:2", "2:3", "4:3", "3:4", "16:9", "9:16",
               "21:9", "27:16", "16:27", "9:8", "8:9")
 RATIO_DEFAULT = {
@@ -1525,6 +1527,14 @@ def build_input(job: dict, request: dict) -> dict:
         del base["input_urls"]  # ponytail: text-to-image schema rejects an empty input_urls; image-to-image requires it
     if job.get("ratio"):
         base["aspect_ratio"] = job["ratio"]
+    if job.get("stage") in WIREFRAME_RESOLUTION:
+        # SWB-290: a wireframe request that names no resolution came back at the provider's 1K natives
+        # (1024x768, 1536x864), narrower than the 1440 px page width, so no export could reach it without
+        # upscaling. The request's own input_extra still wins (merged below).
+        base["resolution"] = WIREFRAME_RESOLUTION[job["stage"]]
+        if not job.get("ratio"):  # explicit ratio per section, so the exported widths agree
+            raise ExecutorError(f"{job['stage']}: the job names no aspect ratio; every wireframe section's "
+                                "requested ratio must be explicit")
     extra = request.get("input_extra")
     if isinstance(extra, dict):
         if "prompt" in extra:

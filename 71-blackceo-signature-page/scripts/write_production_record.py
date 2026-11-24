@@ -2,6 +2,8 @@
 """Author a run's final-mockups production record from tool evidence only.
 
 Usage:
+  python3 scripts/write_production_record.py <run_dir> --stage desktop-wireframe|mobile-tablet
+         [--request production-request-<stage>.json] [--allow-text ...] [--no-ocr-validate] [--overwrite]
   python3 scripts/write_production_record.py <run_dir> [--stage final-mockups]
          [--request production-request-final-mockups.json] [--viewports desktop,mobile]
          [--allow-text WORDS ... --allow-reason TEXT --allow-authority TEXT]
@@ -44,6 +46,19 @@ and --model, as the stage gate does; mobile plain unless --ocr-mobile) on a
 candidate file. A record that fails is deleted, never left in place, and the
 failures are printed. Both records are replaced together or not at all.
 
+Wireframe stages (SWB-290). `--stage desktop-wireframe` or `--stage mobile-tablet` writes the
+ONE record of that stage, `<run>/<stage>/production-record.json` (artifact "wireframe"), from
+the same kinds of evidence: the request, `<stage>/stage-executor-record.json`, the spend
+ledger, the saved image-jobs request (reference URLs and the `resolution` actually sent), the
+FLAT export receipt that `export_native_slices.py <stage dir>` wrote (natives kept in
+`<stage>/raw-native/section-NN.png`, slices exported to the page width), the real pixels, and
+an OCR read of each NATIVE. The read is compared with the section's copy plus the wireframe's own
+annotations (the section name, its behavior note, the type-spec vocabulary); any other word is
+garbled and the section fails, or is named with `--allow-text`, `--allow-reason`,
+`--allow-authority`. Nothing in a wireframe record is typed by hand. The record then passes
+`validate_production_record.py` before it is left in place, and `stitch_sections.py` and
+`combine_review_pdf.py` read it.
+
 Exit codes: 0 both records written and validated, 1 refused or failed (named
 lines), 2 usage or a missing dependency.
 """
@@ -63,7 +78,17 @@ VIEWPORT = {
     "desktop": {"wireframe_dir": "desktop-wireframe", "stitched": "mockup-full.png"},
     "mobile": {"wireframe_dir": "mobile-tablet", "stitched": "mockup-full-mobile.png"},
 }
+WIREFRAME_VIEWPORT = exporter.FLAT_VIEWPORT  # stage -> viewport (flat <stage>/section-NN.png layout)
+WIREFRAME_LOGO_WAIVED = ("the wireframe is a private annotated build spec; the client logo is placed as a "
+                         "supplied file at the responsive-html and install stages, not drawn by the image model")
+# words a wireframe sheet legitimately prints besides the copy (references/wireframe-build-spec.json:
+# section chip and name tab, inline type specs, plate labels, CTA microcopy line, behavior note)
+WIREFRAME_ANNOTATION_VOCAB = (
+    "section chip name tab type spec specs px h1 h2 h3 h4 subhead body eyebrow headline cta microcopy "
+    "behavior note image plate slot label ratio treatment mask circle widths header strip desktop mobile "
+    "tablet wireframe overlay light dark field backdrop")
 PDF_OUTPUT = "review-pdfs (combine_review_pdf.py)"
+DEFAULT_FM_REQUEST = "production-request-final-mockups.json"
 QC_METHOD = ("design_board.ocr_text (tesseract) read of the native image kept in raw-native, compared with the "
              "section's own copy; the read-back lists the distinct words of that read that are in the copy, "
              "garbled words included")
@@ -308,10 +333,224 @@ def validate_candidate(candidate, ocr_flag, model):
     return proc.returncode, (proc.stdout + proc.stderr).strip()
 
 
+def find_job_input(run_dir, image):
+    """The saved request `input` of the attempt that made `image` (reference URLs, resolution sent)."""
+    key = (image.get("identity") or {}).get("key")
+    attempt = image.get("attempt")
+    jobs = Path(run_dir) / "image-jobs"
+    if not key or not isinstance(attempt, int) or not jobs.is_dir():
+        raise Refused(f"{image.get('file')}: no identity key or attempt to find its saved request in image-jobs")
+    for job in sorted(jobs.iterdir()):
+        att = job / f"attempt-{attempt:03d}.json"
+        if not att.is_file():
+            continue
+        try:
+            data = json.loads(att.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        if (data.get("identity") or {}).get("key") != key:
+            continue
+        if data.get("task_id") not in (None, image.get("task_id")):
+            raise Refused(f"{image.get('file')}: image-jobs attempt names task {data.get('task_id')} "
+                          f"but the executor record names {image.get('task_id')}")
+        req = read_json(job / "requests" / f"request-a{attempt:03d}.json", "the saved request of the attempt")
+        return req.get("input") or {}
+    raise Refused(f"{image.get('file')}: no image-jobs attempt carries identity key {key[:12]} "
+                  f"attempt {attempt}; the reference URLs cannot be recorded from evidence")
+
+
+def wireframe_annotation_text(section, request):
+    """The words this section's own wireframe annotations print: its name, its behavior note, its
+    type specs, plus the fixed sheet vocabulary. Read from the request and the page type's spec."""
+    parts = [WIREFRAME_ANNOTATION_VOCAB, str(section.get("section_name") or ""), str(section.get("name") or "")]
+    notes = section.get("behavior_notes")
+    parts += [notes] if isinstance(notes, str) else [str(n) for n in notes or []]
+    specs = section.get("type_specs")
+    if isinstance(specs, dict):
+        parts += [f"{k} {v}" for k, v in specs.items()]
+    try:
+        import page_role
+        spec = page_role.request_spec(request)
+        entry = page_role.section_spec(spec, section.get("section_id")) if spec else None
+    except Exception:
+        entry = None
+    if entry:
+        parts += [str(entry.get("name") or ""), str(entry.get("framework_name") or ""), str(entry.get("note") or "")]
+    return " ".join(p for p in parts if p)
+
+
+def build_wireframe_record(run_dir, stage, request, executor, ledger, receipt, receipt_name, ocr, board,
+                           chrome_text, design_style, allow=None):
+    run_dir = Path(run_dir)
+    stage_dir = run_dir / stage
+    viewport = WIREFRAME_VIEWPORT[stage]
+    sections = request.get("sections")
+    if not isinstance(sections, list) or not sections:
+        raise Refused("the request has no sections: cannot name the wireframe slices")
+    if receipt.get("layout") != "flat" or receipt.get("stage") != stage:
+        raise Refused(f"the export receipt is not the flat export of {stage} (export_native_slices.py "
+                      f"{stage_dir} writes it); a wireframe record cites that receipt only")
+    rows = {(r["viewport"], r["section_part"]): r for r in receipt["entries"]}
+    on_disk = sorted(p.name for p in stage_dir.glob("section-*.png"))
+    wanted = [f"section-{i:02d}.png" for i in range(1, len(sections) + 1)]
+    if on_disk != wanted:
+        raise Refused(f"the request names {len(sections)} section(s) ({', '.join(wanted)}) but {stage} holds "
+                      f"{on_disk or 'no slices'}; every request section needs exactly one slice")
+    receipt_names = sorted(n for (v, n) in rows if v == viewport)
+    if receipt_names != wanted:
+        raise Refused(f"the export receipt covers {receipt_names}, not the request's {wanted}")
+    plan_ref = f"{stage}/section-plan.json"
+    if not (run_dir / plan_ref).is_file():
+        raise Refused(f"{plan_ref} (the section plan, a wireframe section's layout reference) is not on disk")
+    if not (run_dir / "private" / "brand.json").is_file():
+        raise Refused("private/brand.json (the wireframe's style input) is not on disk")
+    by_file = {i.get("file"): i for i in executor.get("images", []) if isinstance(i, dict)}
+    ledger_rows = ledger.get("calls") if isinstance(ledger, dict) else None
+    if not isinstance(ledger_rows, list):
+        raise Refused("image-spend-ledger.json has no calls list")
+    out_sections, evidence, problems = [], [], []
+    for section, name in zip(sections, wanted):
+        sid = str(section.get("section_id"))
+        label = f"{stage}/{name} (section {sid})"
+        row = rows[(viewport, name)]
+        native_rel = row["native"]["path"]
+        image = by_file.get(f"{stage}/{name}")
+        if image is None:
+            raise Refused(f"{label}: the executor record has no generated image for {stage}/{name}")
+        if str(image.get("section_id")) != sid:
+            raise Refused(f"{label}: the executor record says this slice is section {image.get('section_id')}")
+        if image.get("provider") != "kie" or not str(image.get("model", "")).startswith("gpt-image"):
+            raise Refused(f"{label}: provider {image.get('provider')!r} model {image.get('model')!r} is not "
+                          f"the KIE.ai GPT-image route; a record never claims it")
+        if request.get("model") != image.get("model"):
+            raise Refused(f"{label}: the request names model {request.get('model')!r} but the image was made by "
+                          f"{image.get('model')!r}")
+        if image.get("sha256") != row["native"]["sha256"]:
+            raise Refused(f"{label}: the executor record's sha256 is not the kept native's ({native_rel}); "
+                          f"the native is not the image the executor delivered")
+        nw, nh = row["native"]["width"], row["native"]["height"]
+        if list(image.get("actual_pixels") or []) != [nw, nh]:
+            raise Refused(f"{label}: the executor record says {image.get('actual_pixels')} pixels, the native is {nw}x{nh}")
+        if not str(image.get("requested_ratio") or "").strip():
+            raise Refused(f"{label}: the executor record names no requested ratio; every section's ratio must be explicit")
+        if not ratio_ok(image.get("requested_ratio"), nw, nh):
+            raise Refused(f"{label}: generated {nw}x{nh} does not equal the requested ratio {image.get('requested_ratio')}")
+        match = [r for r in ledger_rows if r.get("file") == image["file"] and r.get("task_id") == image.get("task_id")
+                 and r.get("status") == "done"]
+        if not match:
+            raise Refused(f"{label}: no done row in image-spend-ledger.json for task {image.get('task_id')}")
+        job_input = find_job_input(run_dir, image)
+        urls = [u for u in job_input.get("input_urls") or [] if isinstance(u, str)]
+        if str(image["model"]).endswith("image-to-image") and not urls:
+            raise Refused(f"{label}: an image-to-image call with no reference URL in its saved request")
+        ow, oh = row["output"]["width"], row["output"]["height"]
+        expected = str(section.get("copy") or "").strip()
+        if section.get("cta"):
+            expected = f"{expected}\n{section['cta']}".strip()
+        if not expected:
+            raise Refused(f"{label}: the request carries no copy for this section")
+        chrome = f"{chrome_text} {wireframe_annotation_text(section, request)}"
+        qc, why = text_qc(expected, run_dir / stage / native_rel, image.get("attempt") or 1, ocr, chrome, board, allow)
+        problems.extend(f"{label}: {w}" for w in why)
+        evidence.append({"section_id": sid, "slice": name, "native": native_rel,
+                         "ocr_text": qc["ocr_text"], "verdict": qc["verdict"], "problems": why})
+        generation = {
+            "route": vpr.ROUTE, "model_id": image["model"], "model_source": "explicit-request",
+            "layout_reference": plan_ref, "reference_urls": urls,
+            "style_input": "private/brand.json", "native_aspect": f"{ow}x{oh}",
+            "native_pixels": f"{nw}x{nh}", "provider": image["provider"], "task_id": image["task_id"],
+            "requested_ratio": image["requested_ratio"], "prompt_sha256": image.get("prompt_sha256"),
+            "request_sha256": image.get("request_sha256"), "attempt": image.get("attempt"),
+            "ledger_id": match[-1].get("id"), "source_image": f"{stage}/{native_rel}",
+            "source_sha256": row["native"]["sha256"],
+        }
+        if job_input.get("resolution"):
+            generation["resolution"] = job_input["resolution"]
+        out_sections.append({
+            "section_id": sid, "slice": name, "width": ow, "height": oh, "logo_expected": False,
+            "generation": generation,
+            "export": {"source_px": f"{nw}x{nh}", "scale_factor": row["scale_factor"], "upscaled": row["upscaled"],
+                       "method": receipt["method"], "receipt": receipt_name, "receipt_sha256": receipt["receipt_sha256"],
+                       "native_path": f"{stage}/{native_rel}", "native_sha256": row["native"]["sha256"],
+                       "output_sha256": row["output"]["sha256"]},
+            "text_qc": qc,
+        })
+    record = {"artifact": "wireframe", "stage": stage, "page_width": receipt["page_widths"][viewport]}
+    if design_style in ("A", "B", "C"):
+        record["design_style"] = design_style
+    record.update(stitched_output="wireframe-full.png", pdf_output=PDF_OUTPUT, logo_waived=WIREFRAME_LOGO_WAIVED,
+                  sections=out_sections)
+    return record, evidence, problems
+
+
+def run_wireframe(run_dir, stage, request_name="production-request.json", allow_text=(), ocr=None,
+                  ocr_validate=True, overwrite=False, receipt_name="export-receipt.json",
+                  allow_reason=None, allow_authority=None):
+    """The wireframe stage's one record. Returns (ok, lines); on ok the record is in place, else none is."""
+    run_dir = Path(run_dir)
+    stage_dir = run_dir / stage
+    lines = []
+    allow_words = [w for w in allow_text if str(w).strip()]
+    allow = None
+    if allow_words:
+        if not str(allow_reason or "").strip() or not str(allow_authority or "").strip():
+            raise Refused("--allow-text needs both --allow-reason and --allow-authority: an override of the "
+                          "text read-back is never recorded without the reason and who authorised it")
+        allow = (allow_words, str(allow_reason).strip(), str(allow_authority).strip())
+    elif str(allow_reason or "").strip() or str(allow_authority or "").strip():
+        raise Refused("--allow-reason and --allow-authority belong to --allow-text, and no --allow-text was given")
+    board = _board()
+    ocr = ocr or board.ocr_text
+    request = read_json(run_dir / request_name, "the production request")
+    executor = read_json(stage_dir / "stage-executor-record.json", "the stage executor record")
+    ledger = read_json(run_dir / "image-spend-ledger.json", "the image spend ledger")
+    bad = exporter.verify_receipt(stage_dir / receipt_name, stage_dir)
+    if bad:
+        raise Refused("the export receipt does not verify: " + "; ".join(bad))
+    receipt = read_json(stage_dir / receipt_name, "the export receipt")
+    target = stage_dir / "production-record.json"
+    if target.exists() and not overwrite:
+        raise Refused(f"{target} already exists; --overwrite replaces it")
+    design_style = None
+    try:
+        design_style = read_json(run_dir / "intake.json", "intake.json").get("design_style")
+    except Refused:
+        pass
+    brand = request.get("design_board") or {}
+    chrome = " ".join([str(brand.get("brand_name") or "")] + [str(t) for t in brand.get("footer_taglines") or []]
+                      + list(allow_words))
+    record, evidence, problems = build_wireframe_record(run_dir, stage, request, executor, ledger, receipt,
+                                                        receipt_name, ocr, board, chrome, design_style, allow)
+    ev_path = stage_dir / "text-qc-readback.json"
+    ev_path.write_text(json.dumps({"stage": stage, "method": QC_METHOD, "sections": evidence}, indent=2) + "\n",
+                       encoding="utf-8")
+    lines.append(f"read-back evidence: {ev_path}")
+    cand = target.with_name(".production-record.candidate.json")
+    cand.write_text(json.dumps(record, indent=2) + "\n", encoding="utf-8")
+    failed = bool(problems)
+    lines.extend(f"FAIL text QC: {p}" for p in problems)
+    rc, out = validate_candidate(cand, ocr_validate, request.get("model"))
+    lines.append(f"validate_production_record.py {stage}: rc {rc}")
+    if rc != 0:
+        failed = True
+        lines.extend("  " + ln for ln in out.splitlines())
+    if failed:
+        cand.unlink(missing_ok=True)
+        lines.append("FAIL: no production record was left in place; fix the sections named above and run again")
+        return False, lines
+    os.replace(cand, target)
+    lines.append(f"PASS: wrote {target} ({len(record['sections'])} sections)")
+    return True, lines
+
+
 def run(run_dir, stage="final-mockups", request_name="production-request-final-mockups.json",
         viewports=("desktop", "mobile"), allow_text=(), ocr=None, ocr_validate=True, ocr_mobile=False,
         overwrite=False, receipt_name="export-receipt.json", allow_reason=None, allow_authority=None):
     """Returns (ok, lines). On ok both records are in place; otherwise none is."""
+    if stage in WIREFRAME_VIEWPORT:  # SWB-290: the flat wireframe stages have their own single record
+        return run_wireframe(run_dir, stage, f"production-request-{stage}.json" if request_name == DEFAULT_FM_REQUEST
+                             else request_name, allow_text, ocr, ocr_validate, overwrite, receipt_name,
+                             allow_reason, allow_authority)
     run_dir = Path(run_dir)
     stage_dir = run_dir / stage
     lines = []
@@ -387,7 +626,8 @@ def main(argv=None, ocr=None):
     ap = argparse.ArgumentParser(description="Author final-mockups production records from tool evidence only.")
     ap.add_argument("run_dir", type=Path)
     ap.add_argument("--stage", default="final-mockups")
-    ap.add_argument("--request", default="production-request-final-mockups.json")
+    ap.add_argument("--request", default=DEFAULT_FM_REQUEST,
+                    help="the production request (a wireframe stage reads production-request-<stage>.json unless this names another)")
     ap.add_argument("--viewports", default="desktop,mobile")
     ap.add_argument("--allow-text", action="append", default=[],
                     help="extra brand or chrome words the images may carry besides the section copy")

@@ -5,6 +5,16 @@ Usage:
   python3 scripts/export_native_slices.py <final-mockups dir> [--raw-dir raw-native]
          [--viewports desktop,mobile] [--desktop-width 1440] [--mobile-width 390]
          [--receipt export-receipt.json] [--dry-run]
+  python3 scripts/export_native_slices.py <run>/desktop-wireframe [--stage desktop-wireframe]
+  python3 scripts/export_native_slices.py <run>/mobile-tablet [--stage mobile-tablet]
+
+The wireframe stages (SWB-290) use the FLAT layout the stage executor writes:
+`<stage>/section-NN.png`, one viewport per stage (desktop-wireframe is desktop,
+1440 px; mobile-tablet is mobile, 390 px). The natives are copied to
+`<stage>/<raw-dir>/section-NN.png`, the slices are replaced by the Lanczos
+export, and the receipt carries `layout: flat` and the stage name. Everything
+else below applies unchanged. `--stage` is inferred from the folder name when
+the folder is called desktop-wireframe or mobile-tablet.
 
 The image route delivers each section at its native size (for example 2880x2880
 or 3840x2160 for desktop, 2160x3840 for mobile). The page-width export is what
@@ -49,6 +59,9 @@ METHOD = ("Lanczos (Pillow Image.LANCZOS) resize to the page width, aspect prese
           "the native is kept unchanged in the raw folder")
 DEFAULT_WIDTHS = {"desktop": 1440, "mobile": 390}
 PART_RE = re.compile(r"^part-(\d{2,3})\.png$")
+FLAT_PART_RE = re.compile(r"^section-(\d{2,3})\.png$")
+# wireframe stage -> its one viewport (flat layout: <stage>/section-NN.png)
+FLAT_VIEWPORT = {"desktop-wireframe": "desktop", "mobile-tablet": "mobile"}
 
 
 class Refused(Exception):
@@ -113,28 +126,32 @@ def same_pixels(a, b):
         return ImageChops.difference(ca, cb).getbbox(alpha_only=False) is None
 
 
-def list_parts(vp_dir, viewport):
+def list_parts(vp_dir, viewport, part_re=PART_RE):
     if not vp_dir.is_dir():
         raise Refused(f"{viewport}: folder is missing: {vp_dir}")
-    names = sorted(p.name for p in vp_dir.iterdir() if PART_RE.match(p.name))
+    names = sorted(p.name for p in vp_dir.iterdir() if part_re.match(p.name) and p.is_file())
     if not names:
-        raise Refused(f"{viewport}: no part-NN.png slices in {vp_dir}")
-    nums = [int(PART_RE.match(n).group(1)) for n in names]
+        raise Refused(f"{viewport}: no {'section' if part_re is FLAT_PART_RE else 'part'}-NN.png slices in {vp_dir}")
+    nums = [int(part_re.match(n).group(1)) for n in names]
     if nums != list(range(1, len(nums) + 1)):
         raise Refused(f"{viewport}: slice numbering has a gap or does not start at 01: {names}")
     return names
 
 
-def plan_viewport(root, viewport, width, raw_dir, prior):
-    """Decide, without touching anything, what each slice of one viewport needs."""
+def plan_viewport(root, viewport, width, raw_dir, prior, flat=False):
+    """Decide, without touching anything, what each slice of one viewport needs.
+
+    flat=True is the wireframe stage layout: the slices sit directly in `root` as section-NN.png."""
     entries = []
-    for name in list_parts(root / viewport, viewport):
-        slice_path = root / viewport / name
-        raw_path = root / raw_dir / viewport / name
+    names = list_parts(root if flat else root / viewport, viewport, FLAT_PART_RE if flat else PART_RE)
+    for name in names:
+        slice_path = root / name if flat else root / viewport / name
+        raw_path = root / raw_dir / name if flat else root / raw_dir / viewport / name
         sw, sh = read_dims(slice_path)
         s_sha = sha256_file(slice_path)
         entry = {"viewport": viewport, "name": name, "slice_path": slice_path, "raw_path": raw_path,
-                 "raw_rel": f"{raw_dir}/{viewport}/{name}", "out_rel": f"{viewport}/{name}", "width": width}
+                 "raw_rel": f"{raw_dir}/{name}" if flat else f"{raw_dir}/{viewport}/{name}",
+                 "out_rel": name if flat else f"{viewport}/{name}", "width": width}
         raw_exists = raw_path.is_file()
         if raw_exists:
             rw, rh = read_dims(raw_path)
@@ -207,7 +224,7 @@ def execute(entry):
                 tmp_out.unlink()
 
 
-def build_receipt(root, entries, raw_dir, widths):
+def build_receipt(root, entries, raw_dir, widths, stage=None):
     rows = []
     for e in entries:
         ow, oh = read_dims(e["slice_path"])
@@ -227,6 +244,9 @@ def build_receipt(root, entries, raw_dir, widths):
         "generated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         "entries": rows,
     }
+    if stage:  # flat wireframe layout; a final-mockups receipt keeps its old shape byte for byte
+        receipt["layout"] = "flat"
+        receipt["stage"] = stage
     receipt["receipt_sha256"] = body_hash(receipt)
     return receipt
 
@@ -264,11 +284,19 @@ def verify_receipt(receipt_path, root):
 
 
 def run(root, raw_dir="raw-native", viewports=("desktop", "mobile"), widths=None,
-        receipt_name="export-receipt.json", dry_run=False):
+        receipt_name="export-receipt.json", dry_run=False, stage=None):
     root = Path(root)
     widths = dict(DEFAULT_WIDTHS, **(widths or {}))
+    if stage is None and root.name in FLAT_VIEWPORT:
+        stage = root.name
+    if stage is not None:
+        if stage not in FLAT_VIEWPORT:
+            raise Refused(f"--stage must be one of {sorted(FLAT_VIEWPORT)}, not {stage!r}")
+        if tuple(viewports) not in (("desktop", "mobile"), (FLAT_VIEWPORT[stage],)):
+            raise Refused(f"{stage} is a {FLAT_VIEWPORT[stage]} stage; viewports {','.join(viewports)} do not apply")
+        viewports = (FLAT_VIEWPORT[stage],)
     if not root.is_dir():
-        raise Refused(f"final-mockups folder is missing: {root}")
+        raise Refused(f"{'stage' if stage else 'final-mockups'} folder is missing: {root}")
     if "/" in raw_dir or raw_dir in ("", ".", "..") or raw_dir in viewports:
         raise Refused(f"--raw-dir must be a plain folder name inside {root}, not {raw_dir!r}")
     receipt_path = root / receipt_name
@@ -277,7 +305,7 @@ def run(root, raw_dir="raw-native", viewports=("desktop", "mobile"), widths=None
     for vp in viewports:
         if vp not in widths:
             raise Refused(f"unknown viewport {vp!r}")
-        plan.extend(plan_viewport(root, vp, widths[vp], raw_dir, prior))
+        plan.extend(plan_viewport(root, vp, widths[vp], raw_dir, prior, flat=stage is not None))
     summary = {"export": [], "unchanged": [], "adopt": []}
     for e in plan:
         summary["export" if e["action"] == "export" else e["action"]].append(e["out_rel"])
@@ -287,7 +315,7 @@ def run(root, raw_dir="raw-native", viewports=("desktop", "mobile"), widths=None
         execute(e)
     if not summary["export"] and not summary["adopt"] and receipt_path.is_file() and not verify_receipt(receipt_path, root):
         return summary, json.loads(receipt_path.read_text(encoding="utf-8"))
-    receipt = build_receipt(root, plan, raw_dir, {v: widths[v] for v in viewports})
+    receipt = build_receipt(root, plan, raw_dir, {v: widths[v] for v in viewports}, stage)
     tmp = receipt_path.with_name(receipt_path.name + ".tmp")
     tmp.write_text(json.dumps(receipt, indent=2) + "\n", encoding="utf-8")
     os.replace(tmp, receipt_path)
@@ -303,6 +331,8 @@ def main(argv=None):
     ap.add_argument("--mobile-width", type=int, default=DEFAULT_WIDTHS["mobile"])
     ap.add_argument("--receipt", default="export-receipt.json")
     ap.add_argument("--dry-run", action="store_true")
+    ap.add_argument("--stage", choices=sorted(FLAT_VIEWPORT), default=None,
+                    help="a wireframe stage folder (flat section-NN.png layout); inferred from the folder name")
     args = ap.parse_args(argv)
     try:
         import PIL  # noqa: F401
@@ -313,7 +343,7 @@ def main(argv=None):
     try:
         summary, receipt = run(args.final_mockups, args.raw_dir, viewports,
                                {"desktop": args.desktop_width, "mobile": args.mobile_width},
-                               args.receipt, args.dry_run)
+                               args.receipt, args.dry_run, args.stage)
     except Refused as exc:
         print(f"FAIL: refused: {exc}")
         return 1
