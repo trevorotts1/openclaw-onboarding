@@ -137,6 +137,10 @@ def disp(label, model, input_body, lock=None, extra=None, script=None):
            "prompt_receipt": {"prompt_sha256": sha,
                               "check": {"verdict": "PASS", "reasons": []}}}
     req.update(extra or {})
+    # Lock 8: Kling avatar/video rows ride lip_sync shots; mark them so the
+    # route gate (pre-spend, pre-cap) does not mask the cap/binding gates.
+    if ML.is_locked_lipsync(model) or model.startswith("kling-"):
+        req.setdefault("lip_sync", True)
     env = MODULE.dispatch(
         model=model, request=req, save_dir=tmp, ledger_db=db,
         run_id="run-u7", logical_key=label, attempt_id="att-1",

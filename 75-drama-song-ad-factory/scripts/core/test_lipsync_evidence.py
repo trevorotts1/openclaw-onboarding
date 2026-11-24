@@ -387,12 +387,37 @@ class EvidenceTests(unittest.TestCase):
         self.check_bad("LIPSYNC_HASH_MISMATCH")
 
     def test_native_video_receipt_cannot_count(self):
+        # LIP-02: a third model name nobody approved is its own refusal code.
         self.mutate_receipt(lambda r: r["evidence"].update(lipsync_model="minimax-hailuo-02"))
-        self.check_bad("LIPSYNC_MODEL_MISMATCH")
+        self.check_bad("LIPSYNC_MODEL_UNLISTED")
+
+    def test_h3_singing_fallback_counts_as_lipsync(self):
+        # LIP-02: the approved H3 singing fallback is legal lip-sync evidence
+        # ONLY with Trevor written order bound to shot/revision/sha/task/binding.
+        def _order(rec):
+            ev = rec["evidence"]
+            seg = self.plan["segments"][0]
+            import hashlib as _h
+            sha = _h.sha256(Path(seg["artifact"]["path"]).read_bytes()).hexdigest()
+            ev.update(lipsync_model="minimax-h3/image-to-video",
+                      h3_fallback_order={
+                          "order": "Trevor written order 2026-11-21 (test)",
+                          "shot_id": seg["shot_id"],
+                          "shot_revision": ev["lipsync_binding"]["storyboard_revision"],
+                          "sha256": sha, "task_id": ev["task_id"],
+                          "binding": dict(ev["lipsync_binding"])})
+        self.mutate_receipt(_order)
+        result = E.check_plan(self.plan, require_measured=True)
+        self.assertTrue(result["pass"], result.get("detail"))
+
+    def test_h3_without_order_refuses_route_changed(self):
+        self.mutate_receipt(lambda r: r["evidence"].update(
+            lipsync_model="minimax-h3/image-to-video"))
+        self.check_bad("LIPSYNC_ROUTE_CHANGED")
 
     def test_other_tool_receipt_cannot_count(self):
         self.mutate_receipt(lambda r: r.update(tool="native_video"))
-        self.check_bad("LIPSYNC_TASK_MISMATCH")
+        self.check_bad("NO_DIRECT_SUBMIT")
 
     def test_crossfade_uses_actual_start_and_excludes_opaque_overlap(self):
         tl = {"fps": 30, "transition_duration": 0.4,

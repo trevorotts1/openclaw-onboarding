@@ -1746,7 +1746,108 @@ def _dispatch_pipeline(*, model, request, save_dir, ledger_db, run_id, logical_k
     Turbo 2,500; Kling 3.0 / 3.0 Omni 3,072; the locked avatar 2,500). An
     over-cap field refuses PROMPT_OVER_CAP with field, chars, cap, source and
     status; nothing is reserved, nothing is sent, nothing is truncated.
+
+    F-KLING-TEXT-BAIT: a Kling prompt carrying text/signage/decor-bait
+    refuses TEXT_BAIT through never_again.check_kling_prompt_text, before
+    any ledger row or spend.
+
+    F-MODEL-AUTH (Lock 10): a video row whose model is not in
+    never_again.AUTHORIZED_DISPATCH_MODELS refuses MODEL_UNAUTHORIZED at
+    block 0, before any ledger row or spend. No override except a Trevor
+    written order binding model + shot.
     """
+    # ---- 0. F-MODEL-AUTH (first: no unauthorized video model spends) ----
+    # Trevor order 2026-11-21: never use a video model not authorized
+    # without permission. VIDEO rows only (video_job=True, the locked
+    # lip-sync id, or _modality == "video"); music/image/TTS keep their own
+    # gates. Allowed: never_again.AUTHORIZED_DISPATCH_MODELS (H3
+    # reference/image-to-video + kling/ai-avatar-standard). Anything else
+    # refuses MODEL_UNAUTHORIZED before caps, ledger or spend. ONLY override:
+    # request["model_auth_order"] = Trevor written order binding model +
+    # shot ({"signed_by": "Trevor", "signature", "model", "shot_id"}).
+    import never_again as _NA_AUTH
+    if bool(video_job) or ML.is_locked_lipsync(model) \
+            or _modality(model) == "video":
+        _auth_hit = _NA_AUTH.check_model_authorized(model)
+        _rq = request if isinstance(request, dict) else {}
+        _rshot = _rq.get("shot") if isinstance(_rq.get("shot"), dict) else {}
+        _shot_id = _rshot.get("shot_id") or _rq.get("shot_id")
+        if _auth_hit is not None and not _NA_AUTH.check_model_order(
+                _rq.get("model_auth_order"), model, _shot_id):
+            return envelope(
+                "dispatch", "rejected", _auth_hit["code"],
+                _auth_hit["detail"] + ". Nothing was reserved and nothing "
+                                      "was sent.",
+                run_id=run_id, logical_key=logical_key, attempt_id=attempt_id,
+                evidence={"generated": False, "gate": "F-MODEL-AUTH",
+                          "requested_model": model})
+    # ---- 0a. F-KLING-TEXT-BAIT (before caps, before any spend) ------------
+    # The FINAL prompt string is measured here: every upstream mutation
+    # (kling_prompt, the ending append, a retake rewrite) already happened.
+    # A letter-bait prompt refuses TEXT_BAIT: never spend on a prompt that
+    # invites provider-burned letters. Runs on the locked Kling avatar +
+    # every Kling video row; H3 skips it (own template owns print strands).
+    try:
+        import never_again as _NA
+    except ImportError:
+        _NA = None
+    _is_kling_row = (ML.is_locked_lipsync(model)
+                     or (isinstance(model, str)
+                         and model.startswith("kling-"))
+                     or (isinstance(model, str)
+                         and "kling/" in model))
+    if _NA is not None and _is_kling_row:
+        _bait_prompt = prompt if isinstance(prompt, str) and prompt else None
+        if _bait_prompt is None:
+            _inp = (request or {}).get("input") \
+                if isinstance(request, dict) else None
+            _bait_prompt = (_inp or {}).get("prompt") \
+                if isinstance(_inp, dict) else None
+        if _bait_prompt is None and isinstance(prompt, str):
+            _bait_prompt = prompt
+        _bait = _NA.check_kling_prompt_text(_bait_prompt)
+        if _bait is not None:
+            return envelope(
+                "dispatch", "rejected", _bait["code"],
+                _bait["detail"] + " Nothing was reserved and nothing was "
+                                  "sent.",
+                run_id=run_id, logical_key=logical_key,
+                attempt_id=attempt_id,
+                evidence={"generated": False,
+                          "gate": "F-KLING-TEXT-BAIT"})
+    # Lock 8 (F-KLING-ROUTE, Trevor order 2026-11-21): Kling dispatch
+    # rides ONLY lip_sync:true shots (talking or singing). Refused here,
+    # before any ledger row or spend, next to NO_DIRECT_SUBMIT.
+    try:
+        from kie_dispatch.model_lock import is_locked_lipsync as _is_kling
+    except ImportError:
+        try:
+            from model_lock import is_locked_lipsync as _is_kling  # type: ignore
+        except ImportError:
+            _is_kling = None
+    if _is_kling is not None and _is_kling(model):
+        _shot = (request or {}).get("shot") if isinstance(request, dict) else None
+        _lip = None
+        if isinstance(_shot, dict):
+            _lip = _shot.get("lip_sync")
+            if _lip is None:
+                _lip = _shot.get("lip_sync_line_ids")
+        if isinstance(request, dict) and _lip is None:
+            _lip = request.get("lip_sync")
+            if _lip is None:
+                _lip = request.get("lip_sync_line_ids")
+        if _lip is None and isinstance(request, dict) \
+                and isinstance(request.get("lipsync_binding"), dict):
+            _lip = request["lipsync_binding"].get("lip_sync_line_ids")
+        if not _lip:
+            import never_again as _na
+            return envelope(
+                "dispatch", "rejected", _na.ROUTE_CHANGED,
+                "Kling allowed ONLY on lip_sync:true shots (talking or "
+                "singing); this shot is not lip-sync -- re-plan as an H3 "
+                "remake. Nothing was reserved and nothing was sent.",
+                run_id=run_id, logical_key=logical_key, attempt_id=attempt_id,
+                evidence={"generated": False})
     # ---- 0. FU-U7 prompt caps (final payload, before any spend) -----------
     # The request IS the final payload here: every upstream mutation
     # (kling_prompt, the clean-ending append, a retake rewrite) has already

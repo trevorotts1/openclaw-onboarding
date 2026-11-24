@@ -146,6 +146,14 @@ EXIT = {"ok": 0, "error": 1, "unavailable": 3}
 # Sung/spoken line windows come from the optional "lines" list.
 LAST_LINE_OVER_ENDCARD = "LAST_LINE_OVER_ENDCARD"
 
+# --- F-DUP-2: a hold nobody declared -----------------------------------------
+# A clip shorter than its planned slot is held on its last frame to keep the
+# plan's length. That hold is NOT a deliberate still: SKILL names the only
+# deliberate-still criteria (shot card `hold: true` with a recorded reason).
+# An auto hold is logged with this code on the receipt and never passed off
+# as an approved still.
+HOLD_AUTO = "HOLD_AUTO"
+
 # --- E2: transitions (manual Part E E2) --------------------------------------
 # Default: fade 0.4 s (manual allows 0.3-0.5) at every scene change;
 # `none` only when the segment carries the planner's on-beat marker
@@ -199,6 +207,63 @@ def _loud(kind, code, detail):
 def _loud_attach(receipt):
     import loud_failure
     return loud_failure.attach(receipt)
+
+# ---------------------------------------------------------------------------
+# Owner override (SOV-001): Trevor decides. The assembler records and OBEYS a
+# SIGNED override for exactly TWO gate sites and discloses every row on the
+# receipt; every other gate stays absolute. Fail closed: a missing, unreadable,
+# half-written or unsigned record exempts nothing.
+OVERRIDE_FILE = "owner-override.json"
+OVERRIDE_SITES = ("lipsync_evidence", "dup_frames")
+
+def owner_override(run_dir):
+    """The Trevor-signed owner override for ONE run, or None (fail closed).
+
+    Reads ``<run_dir>/control/owner-override.json``. Only a record that
+    never_again.check_waiver accepts (signed_by == "Trevor" and a non-empty
+    signature), with non-empty who / at strings and a non-empty sites list
+    of strings, counts. Site names outside OVERRIDE_SITES are dropped.
+    """
+    if not run_dir:
+        return None
+    try:
+        with open(os.path.join(str(run_dir), "control", OVERRIDE_FILE),
+                  encoding="utf-8") as fh:
+            rec = json.load(fh)
+    except (OSError, ValueError):
+        return None
+    if not isinstance(rec, dict):
+        return None
+    try:
+        import never_again as _na
+    except ImportError:
+        return None
+    if _na.check_waiver(rec) is not None:
+        return None
+    who, at, sites = rec.get("who"), rec.get("at"), rec.get("sites")
+    if not (isinstance(who, str) and who.strip()
+            and isinstance(at, str) and at.strip()
+            and isinstance(sites, list)):
+        return None
+    clean = [s.strip() for s in sites if isinstance(s, str) and s.strip()]
+    if not clean:
+        return None
+    return {"who": who.strip(), "at": at.strip(),
+            "sites": [s for s in clean if s in OVERRIDE_SITES]}
+
+def _override_row(record, site, code, detail):
+    """One honest override row, or None when this site is not overridden.
+
+    Pure decision helper: unknown site names never grant anything.
+    """
+    if not (isinstance(record, dict) and site in OVERRIDE_SITES
+            and site in (record.get("sites") or [])
+            and isinstance(record.get("who"), str) and record["who"].strip()
+            and isinstance(record.get("at"), str) and record["at"].strip()):
+        return None
+    return {"site": site, "code": str(code or ""),
+            "detail": str(detail or ""), "who": record["who"],
+            "at": record["at"]}
 
 
 def _effective_cores():
@@ -381,7 +446,12 @@ def motion_f12_gate(plan):
     if core_dir not in sys.path:
         sys.path.insert(0, core_dir)
     import shot_planner.motion_score as ms
-    return ms.gate_clips(plan["segments"])
+    # Lock 4 (gate change via repo fix + tests): a low-motion row passes only
+    # through a Trevor-signed waiver record read by the ONE reader. run_dir is
+    # resolved exactly like every other gate here: plan["run_dir"] (already
+    # made absolute against the timeline's base in _assemble / plan_timeline).
+    return ms.gate_clips(plan["segments"],
+                         waiver=ms.motion_gate_waiver(plan.get("run_dir")))
 
 def _h5_core():
     core_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -485,7 +555,13 @@ def lipsync_gate(plan):
                                  "speaker metadata; missing evidence is not "
                                  "an approved no-lip-sync exception",
                      evidence=evidence)
-    res = check_lipsync_coverage(plan["total_dur"], lines, total)
+    # LIP-07: the 12 s opening rule is enforced here too, off the timeline's
+    # own first marked clip start (never a separately supplied guess).
+    fps = plan["fps"]
+    first_start = min((s["offset_frames"] / fps for s in marked),
+                      default=None)
+    res = check_lipsync_coverage(plan["total_dur"], lines, total,
+                                 first_clip_start_s=first_start)
     if res["pass"]:
         return None
     return _fail(res["reason_code"], next_action=res["detail"],
@@ -504,6 +580,18 @@ def face_speaks_gate(plan):
     """
     lines = [l for l in (plan.get("lines") or []) if l.get("speaker")]
     if not lines:
+        return None
+    # LIP-01: the owner's recorded no-lip-sync opt-out (the SAME record the
+    # coverage gate reads: control/method.json lipsync_opt_out with who+at)
+    # exempts the face-speaks gate too. One reader, one record: an opted-out
+    # run is not an ordinary run with its evidence missing.
+    try:
+        from lipsync_evidence import no_lipsync_opt_out
+    except ImportError:
+        no_lipsync_opt_out = None       # fail closed: no reader, no bypass
+    if (no_lipsync_opt_out is not None
+            and plan.get("route") == "no_lipsync"
+            and no_lipsync_opt_out(plan.get("run_dir"))):
         return None
     core_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     if core_dir not in sys.path:
@@ -539,6 +627,11 @@ def face_speaks_gate(plan):
 # default (OCR optional; register_extractor installs it). No ffmpeg needed
 # on the stub path, so dry runs and tests run it too -- the done-when is
 # "a frame check runs on every lip-sync clip and the receipt shows it".
+try:                                    # F-EOC sibling module (this package)
+    from . import endcard_overlay
+except ImportError:                     # direct script run from this dir
+    import endcard_overlay              # type: ignore
+
 try:                                    # F9 sibling module (this package)
     from . import frame_text as _frame_text
     from .frame_text import GARBLED_TEXT_FRAME, clip_rows as _frame_rows
@@ -596,25 +689,33 @@ def frame_text_warnings(rows):
 
 
 def frame_text_gate(plan, ffmpeg=None, dry_run=False, frame_count=3,
-                    extractor=None):
-    """F9: one frame-text row per lip-sync clip, plus the gate result.
+                    extractor=None, kling_only=False):
+    """F9 + F-LETTER-GATE: letter gate on every take, fail-closed.
 
-    Returns (rows, fail): rows always carry every lip-sync clip (stub mode
-    names the extractor, so a dry-run receipt still shows the check ran);
-    fail is the _fail receipt when a sampled readable-text frame flags
-    GARBLED_TEXT_FRAME (no render spend), else None.
+    Rows: one per lip-sync clip by default; with kling_only=True, one per
+    every non-planned-text segment (every Kling/H3 take). S75-045
+    on-screen-text rows ride in both modes (unchanged verdicts).
 
-    S75-045: rows also carry one named verdict per segment that plans to show
-    words (``check`` = "onscreen_text"). A row whose words are not the planned
-    words fails the gate; a row nobody could read is UNAVAILABLE, and the
-    caller puts ``frame_text_warnings(rows)`` on the receipt.
+    Fail-closed: a stub/extraction outage can never admit a take — any
+    UNAVAILABLE letter-check row (except a stub row whose segment is
+    positively lip-sync-marked AND the gate runs in lip-sync-only mode)
+    returns LETTER_GATE_UNAVAILABLE instead of passing. Letters are never
+    waivable: no waiver argument exists and none is read here.
+    Returns (rows, fail) like before.
     """
     real_ffmpeg = "ffmpeg" if (ffmpeg and not dry_run) else None
-    marked = [s for s in plan["segments"]
-              if s.get("lip_sync") or s.get("lip_sync_line_ids")]
+    if kling_only:
+        marked = [s for s in plan["segments"]
+                  if not _frame_text.planned_text(s)]
+    else:
+        marked = [s for s in plan["segments"]
+                  if s.get("lip_sync") or s.get("lip_sync_line_ids")]
     rows = _frame_rows(
         marked, ffmpeg=real_ffmpeg, frame_count=frame_count,
         extractor=extractor)
+    for row, seg in zip(rows, marked):
+        row["segment_mark"] = {"lip_sync": bool((seg or {}).get("lip_sync")),
+                               "src": (seg or {}).get("src")}
     text_extractor = extractor if extractor is not None \
         else _onscreen_extractor(real_ffmpeg)
     for r in _frame_text.text_check_rows(
@@ -622,6 +723,10 @@ def frame_text_gate(plan, ffmpeg=None, dry_run=False, frame_count=3,
             frame_count=frame_count):
         r["check"] = "onscreen_text"
         rows.append(r)
+    try:
+        import never_again as _na
+    except ImportError:
+        _na = None
     for r in rows:
         if r.get("status") == _frame_text.FAIL:
             fail = _fail(r.get("reason_code") or _frame_text.TEXT_CHANGED,
@@ -633,10 +738,36 @@ def frame_text_gate(plan, ffmpeg=None, dry_run=False, frame_count=3,
                          evidence={"frame_text": rows})
         elif r.get("check") != "onscreen_text" and r["text_frames"]:
             fail = _fail(GARBLED_TEXT_FRAME, next_action=(
-                "lip-sync clip %s shows readable invented text in sampled "
-                "frame(s) %s; regenerate that clip (no OCR text is allowed "
-                "in lip-sync close-ups)"
+                "clip %s shows readable invented text in sampled "
+                "frame(s) %s; regenerate that clip (no invented text is "
+                "allowed in generated takes)"
                 % (r["clip"], r["text_frames"])),
+                evidence={"frame_text": rows})
+        elif r.get("check") != "onscreen_text" \
+                and (r.get("status") == _frame_text.UNAVAILABLE
+                     or (r.get("extractor") == _frame_text.STUB_NAME
+                         and not r.get("text_frames")
+                         and r.get("status") is None
+                         and (kling_only
+                              or not bool((r.get("segment_mark")
+                                           or {}).get("lip_sync"))))):
+            # Hard branch: unread take. A stub row on a positively
+            # lip-sync-marked segment in lip-sync-only mode is the F9
+            # receipt row (admits, unchanged). Everything else with no
+            # pixel verdict refuses LETTER_GATE_UNAVAILABLE.
+            is_f9_stub = (r.get("extractor") == _frame_text.STUB_NAME
+                          and r.get("status") is None
+                          and bool((r.get("segment_mark") or {}).get("lip_sync"))
+                          and not kling_only)
+            if is_f9_stub:
+                continue
+            code = (_na.LETTER_GATE_UNAVAILABLE if _na is not None
+                    else "LETTER_GATE_UNAVAILABLE")
+            fail = _fail(code, next_action=(
+                "the letter gate never ran on %s (no pixel reader / "
+                "extraction outage); install a reader or fix extraction "
+                "and re-run -- an unread take never admits"
+                % (r["clip"],)),
                 evidence={"frame_text": rows})
         else:
             continue
@@ -1055,6 +1186,11 @@ def plan_timeline(tl, base_dir=".", probe=None):
             # F8: card marker + line windows ride the plan so
             # check_last_line_before_endcard(plan) runs off the plan.
             "endcard_start_s": tl.get("endcard_start_s"),
+            # F-EOC-1: the card's hold length (planned by plan_run_timeline).
+            "endcard_hold_s": tl.get("endcard_hold_s"),
+            # F-EOC-5: a "captioned video" asks for the burn; a clean master
+            # leaves it off (DEL-05 ships both, from the same timeline).
+            "captions": tl.get("captions") is True,
             "lines": tl.get("lines")}
 
 
@@ -1304,9 +1440,14 @@ def validate_lipsync_atomic(plan, tl=None):
     return checked
 
 
-def build_argv(plan, output, ffmpeg="ffmpeg"):
+def build_argv(plan, output, ffmpeg="ffmpeg", overlay=None):
     """ffmpeg argv array rendering plan -> output. No gaps by construction
     (concat/xfade chain covers every output frame exactly once).
+
+    ``overlay`` (F-EOC-1) is ``endcard_overlay.plan_overlay``'s plan: its
+    chains are appended after the joined picture, and each logo source
+    becomes one more image input. Hand-drawn overlay commands are still
+    refused (the no-hand-script rule); this is the ONE sanctioned stage.
 
     M7: the command is prefixed with `nice -n 10` and carries `-threads N`
     (from lane_size.py when shipped, else the Part D fallback) so a render
@@ -1329,6 +1470,11 @@ def build_argv(plan, output, ffmpeg="ffmpeg"):
     song_idx = len(segs) if song else None
     if song:
         cmd += ["-i", song]
+    # F-EOC-1: overlay sources (the logo) are extra image inputs.
+    overlay_sources = [c["source"] for c in (overlay or {}).get("chains") or []
+                       if c.get("source")]
+    for src in overlay_sources:
+        cmd += ["-i", src]
     fc = []
     for i, s in enumerate(segs):
         # Part E E1: motion-compensated conform, never the plain `fps`
@@ -1397,6 +1543,29 @@ def build_argv(plan, output, ffmpeg="ffmpeg"):
                 prev = f"[x{i}]"
         fc.append(f"{prev}null[vout]")
         vlast = "[vout]"
+    # F-EOC-1/F-EOC-5: the end card, the logo and the burned captions, from
+    # endcard_overlay's data plan. Every chain consumes {in} (the joined
+    # picture) and chains are joined in order; a chain naming {logo} takes
+    # the logo stream the previous link produced.
+    if overlay and overlay.get("chains"):
+        # Inputs are the segments, then the song, then the logos in order.
+        first_logo = len(segs) + (1 if song else 0)
+        logos = {src: first_logo + i for i, src in enumerate(overlay_sources)}
+        logo_label, out = None, vlast
+        for j, chain in enumerate(overlay["chains"]):
+            body = chain["body"]
+            if chain.get("source"):
+                # one logo image input -> scaled stream
+                body = body.replace("{out}", "[lg%d]" % j)
+                fc.append("[%d:v]%s" % (logos[chain["source"]], body))
+                logo_label = "[lg%d]" % j
+                continue
+            body = body.replace("{in}", out)
+            if logo_label:
+                body = body.replace("{logo}", logo_label)
+            out = "[ov%d]" % j
+            fc.append(body + out)
+        vlast = out
     amap = []
     if song:
         total = plan["total_dur"]
@@ -1592,9 +1761,18 @@ def _assemble(timeline_path, output, ffmpeg="ffmpeg", ffprobe="ffprobe",
             _loud("warn", "SOURCE_DUR_UNKNOWN",
                   "%s: %s" % (s["src"], exc))
             s["source_dur"] = None
+        # F-DUP-2: a hold is a DELIBERATE still only when the shot card
+        # recorded one (hold: true + a reason). A clip shorter than its slot
+        # is still held to the slot to keep the plan's length, but that hold
+        # is DISCLOSED on the receipt as HOLD_AUTO with its own reason and is
+        # never passed off as an approved still.
         if not s.get("hold") and s["source_dur"] is not None \
                 and s["source_dur"] + 1.0 / plan["fps"] < s["snapped_dur"]:
-            s["hold"] = True   # held on its own last frame(s) to the slot
+            s["hold"] = True
+            s["hold_auto"] = {"code": HOLD_AUTO,
+                              "reason": "source %.3fs is shorter than the "
+                                        "%.3fs slot; held on its last frame"
+                                        % (s["source_dur"], s["snapped_dur"])}
     if plan["song_path"]:
         plan["song_path"] = abspath(plan["song_path"])
     # H3 native audio: H3 returns a stereo track the provider cannot disable,
@@ -1687,7 +1865,20 @@ def _assemble(timeline_path, output, ffmpeg="ffmpeg", ffprobe="ffprobe",
         _threads, _nice, timeout = size_ffmpeg(
             plan.get("total_dur", 0), plan.get("width", DEFAULT_WIDTH),
             plan.get("height", DEFAULT_HEIGHT), run_dir=plan.get("run_dir"))
-    argv = build_argv(plan, output, ffmpeg)
+    # F-EOC-1/F-EOC-5: the sanctioned end-card/logo/caption stage is planned
+    # as DATA before the command is built. A refusal here stops the render
+    # with no spend (ENDCARD_INPUT_MISSING / LOGO_UNUSABLE /
+    # CAPTION_BURN_MISSING / CAPTION_ZERO_DURATION).
+    _ov = endcard_overlay.plan_overlay(plan, dry_run=dry_run, ffmpeg=ffmpeg)
+    if _ov.get("refusal") and not dry_run:
+        return _fail(_ov["refusal"]["reason_code"],
+                     next_action=_ov["refusal"]["next_action"],
+                     evidence={"overlay": _ov["rows"]})
+    # A dry run writes nothing and spends nothing, so a refusal is REPORTED
+    # (pending_overlay) rather than raised; the real render refuses. Media-
+    # free dry runs stay media-free, and the gap is loud on the receipt.
+    argv = build_argv(plan, output, ffmpeg,
+                      overlay=None if _ov.get("refusal") else _ov)
     # DEL-14: refuse an attempted blur fill BEFORE any render spend. The
     # timeline (a renderer asking for a fill), the plan it built and the
     # command (blur, edge-sampled backdrop, duplicated blurred strip,
@@ -1703,7 +1894,20 @@ def _assemble(timeline_path, output, ffmpeg="ffmpeg", ffprobe="ffprobe",
     cov = lipsync_gate(plan)
     from lipsync_evidence import check_plan
     export_check = check_plan(plan, require_measured=not dry_run)
-    export_fail = None if export_check["pass"] else _fail(
+    # SOV-001: a Trevor-signed owner override is the ONLY way this site
+    # stops blocking, and every use is a loud, row-carrying disclosure.
+    _owner = owner_override(plan.get("run_dir"))
+    owner_overrides = []
+    if not export_check["pass"]:
+        _row = _override_row(
+            _owner, "lipsync_evidence", export_check["reason_code"],
+            export_check.get("detail") or "lip-sync evidence failed its join")
+        if _row is not None:
+            owner_overrides.append(_row)
+            _loud("warn", "OWNER_OVERRIDE",
+                  "lipsync_evidence: %s OVERRIDDEN by %s at %s"
+                  % (_row["code"], _row["who"], _row["at"]))
+    export_fail = None if (export_check["pass"] or owner_overrides) else _fail(
         export_check["reason_code"], next_action="restore the approved storyboard, "
         "matching generation receipts and included materialized clips",
         evidence=export_check["evidence"])
@@ -1731,8 +1935,14 @@ def _assemble(timeline_path, output, ffmpeg="ffmpeg", ffprobe="ffprobe",
                             "lipsync_export": export_check,
                             "frame_text": frows,
                             "excerpt_overlay": _excerpt,
+                            "overlay": _ov["rows"],
+                            "pending_overlay": _ov.get("refusal"),
                             "motion": motion, "h5": _h5_ev,
-                            "qc_no_blur": nb},
+                            "qc_no_blur": nb,
+                            "owner_overrides": owner_overrides,
+                            "owner_override": (None if _owner is None else
+                                               {"who": _owner["who"],
+                                                "at": _owner["at"]})},
                # S75-045: a text check nobody could run is named on the
                # receipt, never passed over in silence.
                "warnings": frame_text_warnings(frows),
@@ -1779,7 +1989,12 @@ def _assemble(timeline_path, output, ffmpeg="ffmpeg", ffprobe="ffprobe",
             "timeout_s": timeout,
             # F12: every clip's motion score rides in the receipt
             # (scored before the render; flagged clips never reached here).
-            "motion": motion, "h5": _h5_ev}
+            "motion": motion, "h5": _h5_ev,
+            # SOV-001: an override row rides EVERY receipt from here on,
+            # so a later gate's refusal still discloses what was waived.
+            "owner_overrides": owner_overrides,
+            "owner_override": (None if _owner is None else
+                               {"who": _owner["who"], "at": _owner["at"]})}
     # Part E E1(5) final QC gate: a master above 2% duplicated frames
     # (mpdecimate marker ratio) fails with TIMELINE_DUP_FRAMES. The only
     # accepted dup source is source fps == timeline fps; with the E1
@@ -1797,6 +2012,9 @@ def _assemble(timeline_path, output, ffmpeg="ffmpeg", ffprobe="ffprobe",
     evid["dup_frame_pct"] = dup_pct
     evid["segment_dups"] = seg_rows
     evid["frame_text"] = frows   # F9: one row per lip-sync clip, in receipt
+    # F-EOC: what the sanctioned overlay stage actually drew (or why not).
+    evid["overlay"] = _ov["rows"]
+    evid["overlay_files"] = _ov["files"]
     # RL1 hold-to-slot accounting: a held (tpad-cloned) span IS a
     # deliberate still — its own frozen frames are the hold, and the whole
     # mpdecimate run over the master would otherwise count them (and an
@@ -1805,28 +2023,53 @@ def _assemble(timeline_path, output, ffmpeg="ffmpeg", ffprobe="ffprobe",
     # so only the pure (all-trim/non-held) master path runs the
     # master-level assert. Same cap, honest accounting, nothing loosened.
     holds = [s for s in plan["segments"] if s.get("hold")]
+    evid["holds_auto"] = [dict(s["hold_auto"], src=s["src"])
+                          for s in holds if s.get("hold_auto")]
     if holds:
         evid["dup_frame_gate"] = "PASS_VIA_HOLD" if not seg_bad else "SEGMENTS_FAIL"
+        evid["holds_declared"] = [s["src"] for s in holds
+                                  if not s.get("hold_auto")]
     else:
         try:
             fps_conform.assert_no_dupe_frames(dup_pct)
             evid["dup_frame_gate"] = "PASS"
         except ValueError as exc:
-            return _fail(str(exc),
-                         next_action=("master exceeds %s%% duplicated frames; "
-                                      "reconform the offending clip with "
-                                      "fps_conform.build_conform_argv (mci, "
-                                      "never the plain fps filter)"
-                                      % fps_conform.DUP_FRAMES_CAP),
-                         evidence=evid)
+            # SOV-001: dup_frames is one of the two owner-overridable sites.
+            _row = _override_row(
+                _owner, "dup_frames", str(exc),
+                "master duplicated frames %.2f%% above cap %s%%"
+                % (float(dup_pct or 0), fps_conform.DUP_FRAMES_CAP))
+            if _row is None:
+                return _fail(str(exc),
+                             next_action=("master exceeds %s%% duplicated frames; "
+                                          "reconform the offending clip with "
+                                          "fps_conform.build_conform_argv (mci, "
+                                          "never the plain fps filter)"
+                                          % fps_conform.DUP_FRAMES_CAP),
+                             evidence=evid)
+            owner_overrides.append(_row)
+            evid["dup_frame_gate"] = "OVERRIDDEN"
+            _loud("warn", "OWNER_OVERRIDE",
+                  "dup_frames: %s OVERRIDDEN by %s at %s"
+                  % (_row["detail"], _row["who"], _row["at"]))
     if seg_bad:
-        return _fail(fps_conform.TIMELINE_SEGMENT_DUP_FRAMES,
-                     next_action=("segments above %s%% duplicated frames: "
-                                  "%s; regenerate the clip or mark a "
-                                  "deliberate still hold"
-                                  % (fps_conform.SEGMENT_DUP_CAP,
-                                     [r["index"] for r in seg_bad])),
-                     evidence=evid)
+        _row = _override_row(
+            _owner, "dup_frames", fps_conform.TIMELINE_SEGMENT_DUP_FRAMES,
+            "segments above %s%% duplicated frames: %s"
+            % (fps_conform.SEGMENT_DUP_CAP, [r["index"] for r in seg_bad]))
+        if _row is None:
+            return _fail(fps_conform.TIMELINE_SEGMENT_DUP_FRAMES,
+                         next_action=("segments above %s%% duplicated frames: "
+                                      "%s; regenerate the clip or mark a "
+                                      "deliberate still hold"
+                                      % (fps_conform.SEGMENT_DUP_CAP,
+                                         [r["index"] for r in seg_bad])),
+                         evidence=evid)
+        owner_overrides.append(_row)
+        evid["dup_frame_gate"] = "OVERRIDDEN"
+        _loud("warn", "OWNER_OVERRIDE",
+              "dup_frames: %s OVERRIDDEN by %s at %s"
+              % (_row["detail"], _row["who"], _row["at"]))
     if chosen is not None:  # I4: the measured file, not only the plan
         mc = master_length.check_master(chosen, vdur)
         if mc.get("warning"):
@@ -2268,13 +2511,62 @@ def plan_run_timeline(run_dir, out_path=None, width=None, height=None,
                 "timing": {"sections": sections}}
     if chosen is not None:
         timeline["chosen_length_s"] = chosen
+    # F-EOC-4/F-EOC-5: schedule the end card and say whether this edit is
+    # the captioned cut. The check itself is correct (LAST_LINE_OVER_ENDCARD
+    # is a hard refusal, never auto-trimmed); the SCHEDULING is the fix:
+    # the card starts after the final line ends, holds 4-5 s, and finishes
+    # by the chosen length minus 2 s.
+    last_end = max((ln["end_s"] for ln in lines), default=None)
+    if last_end is not None and chosen is not None:
+        try:
+            limit = master_length.plan(chosen)["end_card_end_s"]
+        except ValueError:
+            limit = None
+        if limit is not None:
+            start = last_end + endcard_overlay.ENDCARD_GAP_S
+            hold = endcard_overlay.ENDCARD_HOLD_S
+            if start + hold > limit:
+                raise TimelineInputMissing(
+                    "end card window",
+                    "the final line ends at %.3fs and a %.1fs card cannot end "
+                    "by %gs; shorten earlier content at plan time (the check "
+                    "LAST_LINE_OVER_ENDCARD never trims a sung line)"
+                    % (last_end, hold, limit))
+            timeline["endcard_start_s"] = round(start, 3)
+            timeline["endcard_hold_s"] = hold
+    # NOTE: the timeline does NOT switch captions on. DEL-05's captioned cut
+    # is produced FROM this master by delivery_variants.video_delivery, so
+    # burning into the master too would double-burn. A timeline that must
+    # carry its own burn sets "captions": true explicitly.
     return _write_timeline_atomic(path, timeline)
 
 
 def _write_timeline_atomic(path, timeline):
-    """Write the candidate, validate it with load_timeline(), then replace."""
+    """Write the candidate, validate it with load_timeline(), then replace.
+
+    Lock 4/ASM-6 (NEVER-AGAIN gate-edit/single-writer): a second writer
+    refuses TIMELINE_WRITER_CONFLICT instead of silently overwriting; the
+    lock file carries the writer id and timeline sha.
+    """
+    import hashlib as _hl
     folder = os.path.dirname(os.path.abspath(path)) or "."
     os.makedirs(folder, exist_ok=True)
+    lock_path = os.path.join(folder, ".timeline.lock")
+    digest = _hl.sha256(json.dumps(timeline, sort_keys=True,
+                                   default=str).encode("utf-8")).hexdigest()
+    if os.path.exists(lock_path):
+        try:
+            with open(lock_path, encoding="utf-8") as _lf:
+                prior = json.load(_lf)
+        except (OSError, ValueError):
+            prior = {}
+        if (isinstance(prior, dict) and prior.get("sha256")
+                and prior.get("sha256") != digest):
+            raise TimelineInputMissing(
+                "TIMELINE_WRITER_CONFLICT",
+                "second writer refused: timeline locked by %s "
+                "(one branch/tree writes a run directory)"
+                % (prior.get("writer") or "another writer",))
     fd, tmp = tempfile.mkstemp(prefix=".timeline-", suffix=".json", dir=folder)
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as fh:
@@ -2284,6 +2576,12 @@ def _write_timeline_atomic(path, timeline):
             os.fsync(fh.fileno())
         load_timeline(tmp)          # the plan is validated before it lands
         os.replace(tmp, path)
+        try:
+            with open(lock_path, "w", encoding="utf-8") as _lf:
+                json.dump({"writer": os.environ.get("USER") or "writer",
+                           "sha256": digest}, _lf)
+        except OSError:
+            pass
         return path
     except BaseException:
         try:
@@ -2291,6 +2589,26 @@ def _write_timeline_atomic(path, timeline):
         except OSError:
             pass
         raise
+
+
+def check_proof_output(path):
+    """Lock 3 (NEVER-AGAIN proof rule): refuse PROOF-ONLY as deliverable."""
+    import never_again as _na
+    if _na.is_proof_only(path or ""):
+        return _fail(_na.PROOF_NOT_DELIVERABLE,
+                     next_action="%s is PROOF-ONLY, never a deliverable. "
+                     "Deliver Clean + Captioned + srt + QC PASS receipt."
+                     % (path,))
+    return None
+
+
+def check_crop_repair(edit_description):
+    """Lock 6 (NEVER-AGAIN crop lock): refuse crop/zoom repairs."""
+    import never_again as _na
+    lock = _na.check_crop_repair(edit_description)
+    if lock is not None:
+        return _fail(lock["code"], next_action=lock["detail"])
+    return None
 
 
 def main(argv=None):

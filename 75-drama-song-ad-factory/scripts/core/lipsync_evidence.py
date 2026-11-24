@@ -12,7 +12,8 @@ import math
 from pathlib import Path
 
 from storyboard_director import approval_package as AP
-from kie_dispatch.model_lock import is_locked_lipsync
+from kie_dispatch.model_lock import (is_allowed_lipsync, is_locked_lipsync,
+                                    lipsync_model_role)
 from lip_sync.narrator_rule import person_on_screen
 from lipsync_clips import OPT_OUT_MISSING, ROUTE_NO_LIPSYNC, no_lipsync_opt_out
 
@@ -395,11 +396,50 @@ def check_plan(plan, require_measured=False, route=None):
             _need(isinstance(task, str) and task.strip(), "LIPSYNC_TASK_MISSING", "artifact task ID required")
             receipt = _read(_path(root, provenance.get("receipt_path")))
             ev = receipt.get("evidence") or {}
-            _need(receipt.get("tool") == "kie_dispatch" and receipt.get("outcome") == "ok" and receipt.get("run_id") == run_id
+            # Lock 2 (NEVER-AGAIN dispatch lock): only kie_dispatch receipts
+            # count; a direct-API receipt refuses NO_DIRECT_SUBMIT, never a
+            # generic mismatch.
+            if receipt.get("tool") != "kie_dispatch":
+                import never_again as _na
+                raise LipsyncEvidenceError(
+                    _na.NO_DIRECT_SUBMIT,
+                    "paid job submitted outside kie_dispatch "
+                    "(direct API post refused; re-blast via dispatch())")
+            _need(receipt.get("outcome") == "ok" and receipt.get("run_id") == run_id
                   and ev.get("generated") is True and ev.get("task_id") == task,
                   "LIPSYNC_TASK_MISMATCH", "successful task/run receipt required")
-            _need(isinstance(ev.get("lipsync_model"), str) and is_locked_lipsync(ev["lipsync_model"]),
-                  "LIPSYNC_MODEL_MISMATCH", "unrelated native audio/video cannot count as lip-sync")
+            # LIP-02 / sovereignty lock 1: Kling stays the lip-sync route.
+            # The storyboard route `kling_lipsync` MUST land as a Kling clip.
+            # An H3 singing take counts ONLY with Trevor written order for
+            # that shot on file: the receipt must carry h3_fallback_order
+            # binding the order plus shot revision plus sha/task/binding
+            # (order, shot_id, shot_revision, sha256, task_id, binding).
+            # Route says Kling but clips say H3 with no order refuses
+            # LIPSYNC_ROUTE_CHANGED at this join, before assembly.
+            model = ev.get("lipsync_model")
+            _need(isinstance(model, str) and model.strip(),
+                  "LIPSYNC_MODEL_MISMATCH",
+                  "unrelated native audio/video cannot count as lip-sync")
+            _need(is_allowed_lipsync(model), "LIPSYNC_MODEL_UNLISTED",
+                  "lip-sync model %r is neither the locked Kling model nor the "
+                  "approved H3 singing fallback" % (model,))
+            if not is_locked_lipsync(model):
+                order = ev.get("h3_fallback_order")
+                _need(isinstance(order, dict)
+                      and str(order.get("order") or "").strip()
+                      and order.get("shot_id") == sid
+                      and order.get("shot_revision") == row["storyboard_revision"]
+                      and order.get("sha256") == digest
+                      and str(order.get("task_id") or "").strip() == task
+                      and order.get("binding") == _binding(row),
+                      "LIPSYNC_ROUTE_CHANGED",
+                      "route says kling_lipsync but the landed clip is H3 "
+                      "with no Trevor written order bound to this shot/sha/task")
+            role = lipsync_model_role(model)
+            if model.strip() not in evidence.setdefault("models", []):
+                evidence["models"].append(model.strip())
+            if role == "fallback" and "models_fallback" not in evidence:
+                evidence["models_fallback"] = True
             saved_hashes = ev.get("saved_sha256")
             _need(isinstance(saved_hashes, dict), "LIPSYNC_HASH_MISMATCH", "task completion hashes missing")
             matching_hashes = [value for key, value in saved_hashes.items() if _path(root, key) == source]

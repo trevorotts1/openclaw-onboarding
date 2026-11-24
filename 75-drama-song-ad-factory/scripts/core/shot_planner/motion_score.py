@@ -47,7 +47,9 @@ cannot answer, never a guessed score. Stdlib only, $0 spend, no network.
 """
 from __future__ import annotations
 
+import json
 import math
+import os
 
 # Skill 75 load governor: every heavy local job goes through it (see load_governor/).
 import os as _gos, sys as _gsys
@@ -93,11 +95,61 @@ TOOL_NAME = "motion_score"
 TOOL_VERSION = "2.0.1"
 SCHEMA_VERSION = "1.0.0"
 
+#: Trevor-signed waiver filename under <run_dir>/control/. Mirrors the
+#: lip-sync opt-out reader (lipsync_clips.no_lipsync_opt_out): one record,
+#: fail closed on missing/unreadable/half-written.
+MOTION_GATE_WAIVER = "motion-gate-waiver.json"
+
 
 class MotionScoreError(Exception):
     def __init__(self, code, message):
         super().__init__("%s: %s" % (code, message))
         self.code = code
+
+
+def _never_again():
+    """The NEVER-AGAIN lock module, or None when this lane lacks it."""
+    try:
+        import never_again
+        return never_again
+    except ImportError:
+        return None
+
+
+def motion_gate_waiver(run_dir):
+    """Trevor-signed motion-gate waiver for ONE run, or None.
+
+    Reads ``<run_dir>/control/motion-gate-waiver.json``. The record counts
+    only when never_again.check_waiver accepts it (signed_by == "Trevor"
+    and a non-empty signature) AND it names who, at and a non-empty
+    ``shots`` list. Everything else -- missing file, unreadable JSON, a
+    half-written record, an unsigned record, a lane without the
+    never_again lock -- reads as None, so every caller keeps the full
+    floor. A waiver never exempts an unmeasurable row (see gate_clips).
+    """
+    if not run_dir:
+        return None
+    try:
+        with open(os.path.join(str(run_dir), "control", MOTION_GATE_WAIVER),
+                  encoding="utf-8") as fh:
+            rec = json.load(fh)
+    except (OSError, ValueError):
+        return None
+    if not isinstance(rec, dict):
+        return None
+    na = _never_again()
+    if na is None or na.check_waiver(rec) is not None:
+        return None
+    who, at, shots = rec.get("who"), rec.get("at"), rec.get("shots")
+    if not (isinstance(who, str) and who.strip()
+            and isinstance(at, str) and at.strip()
+            and isinstance(shots, list)):
+        return None
+    clean = [str(s).strip() for s in shots
+             if isinstance(s, str) and s.strip()]
+    if not clean:
+        return None
+    return {"who": who.strip(), "at": at.strip(), "shots": clean}
 
 
 def _is_num(v):
@@ -510,7 +562,7 @@ def _sample_clip_grids(clip_path):
     return [list(raw[i:i + size]) for i in range(0, frames * size, size)]
 
 
-def gate_clips(clips):
+def gate_clips(clips, waiver=None):
     """F12 pre-assembly gate over clip rows (plan segments or receipt rows).
 
     clips: [{clip_id|shot_id|src, motion_score: {'score', 'flagged'...}}].
@@ -533,12 +585,27 @@ def gate_clips(clips):
     an unknown evidence tag — raises MotionScoreError CLIP_UNSCORED
     fail-closed. Returns
     {'outcome', 'reason_code', 'flagged': [ids], 'unscored': [ids],
-    'unmeasurable': [ids], 'scores': {id: gate score}, 'threshold',
-    'structure_threshold', 'legacy_threshold'}.
+    'unmeasurable': [ids], 'waived': [ids], 'waiver': {who, at} | None,
+    'scores': {id: gate score}, 'threshold', 'structure_threshold',
+    'legacy_threshold'}.
+
+    ``waiver`` is ``motion_gate_waiver(run_dir)``: a Trevor-signed record
+    naming shot ids. A row that would be flagged by the MEASURED score
+    (low subject motion / weak structure, or the legacy low-motion floor)
+    is listed in 'waived' instead of 'flagged' when its shot id is named.
+    Three rows are NEVER waived: an unmeasurable row (no measurement
+    exists, so there is nothing to sign off), a row whose stored
+    flagged=True is stricter than its own measured values (a stricter
+    verdict is never loosened), and any shot the waiver does not name --
+    those keep the full floor.
     """
     if not isinstance(clips, list) or not clips:
         raise MotionScoreError("CLIPS_EMPTY", "clips must be a non-empty list")
+    wshots = set()
+    if isinstance(waiver, dict) and isinstance(waiver.get("shots"), list):
+        wshots = {str(x) for x in waiver["shots"]}
     flagged, unscored, unmeasurable, scores = [], [], [], {}
+    waived = []
     for c in clips:
         if not isinstance(c, dict):
             raise MotionScoreError("CLIP_UNSCORED", "clip row not a record")
@@ -583,18 +650,32 @@ def gate_clips(clips):
         # never override a measured sub-threshold score or an inconclusive
         # structure test. A supplied flagged:true is still honoured, so a
         # stricter verdict is never loosened into a pass.
-        if measured < threshold or weak or ms.get("flagged") is True:
-            flagged.append(cid)
+        measured_fail = measured < threshold or weak
+        if not measured_fail and ms.get("flagged") is not True:
+            continue
+        # A Trevor-signed waiver naming this shot moves a MEASURED low-motion
+        # row off 'flagged'. A stored flagged=True only blocks the waiver when
+        # the measured values do NOT themselves fail (a stricter verdict is not
+        # the measured finding). When measured_fail is True the flag is the
+        # scoring tool's own echo of that same measurement, so the waiver
+        # applies to a named shot.
+        if measured_fail and cid in wshots:
+            waived.append(cid)
+            continue
+        flagged.append(cid)
     if not flagged:
-        reason = "CLIPS_MOTION_PASS"
+        reason = "CLIPS_MOTION_WAIVED" if waived else "CLIPS_MOTION_PASS"
     elif unmeasurable and len(unmeasurable) == len(flagged):
         reason = CLIP_MOTION_UNMEASURABLE
     else:
         reason = CLIP_LOW_MOTION
+    wrec = None if not waived else {"who": waiver.get("who"),
+                                    "at": waiver.get("at")}
     return {"outcome": "ok" if not flagged else "rejected",
             "reason_code": reason,
             "flagged": flagged, "unscored": unscored,
-            "unmeasurable": unmeasurable, "scores": scores,
+            "unmeasurable": unmeasurable, "waived": waived, "waiver": wrec,
+            "scores": scores,
             "threshold": MOTION_SUBJECT_LOW,
             "structure_threshold": MOTION_STRUCTURE_MIN,
             "legacy_threshold": MOTION_SCORE_LOW}
@@ -616,12 +697,11 @@ def to_motion_qc_record(clips, reviewer, run_id, stage="final_edit",
         "run_id": run_id, "stage": stage, "check": "clip_motion",
         "verdict": "PASS" if not fail else "FAIL",
         "evidence": {
-            "summary": "clip-motion %s: %d clip(s)%s%s" % (
+            "summary": "clip-motion %s: %d clip(s)%s" % (
                 result["outcome"], len(result["scores"]),
-                "" if not result["flagged"] else
-                " flagged=%s" % ",".join(result["flagged"]),
-                "" if not result["unscored"] else
-                " unscored=%s" % ",".join(result["unscored"])),
+                "".join(" %s=%s" % (key, ",".join(result[key]))
+                        for key in ("flagged", "unscored", "waived")
+                        if result.get(key))),
             "refs": []},
         "reason_code": result["reason_code"] if not result["unscored"]
         else CLIP_LOW_MOTION,

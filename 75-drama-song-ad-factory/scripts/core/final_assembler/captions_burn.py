@@ -58,6 +58,18 @@ BAD_INPUT = "OVERLAY_BAD_INPUT"
 NO_LINES = "OVERLAY_NO_LINES"
 NO_TIMING = "CAPTION_TIMING_UNAVAILABLE"
 BAD_CUES = "CAPTION_CUES_INVALID"
+#: F-EOC-7: a cue whose window has no length cannot be burned or timed.
+ZERO_DURATION = "CAPTION_ZERO_DURATION"
+PROOF_NOT_DELIVERABLE = "PROOF_NOT_DELIVERABLE"
+
+def refuse_proof_output(path):
+    """Lock 3 (NEVER-AGAIN proof rule): PROOF-ONLY is never deliverable."""
+    import never_again as _na
+    if _na.is_proof_only(path or ""):
+        return {"ok": False, "code": _na.PROOF_NOT_DELIVERABLE,
+                "detail": "%s is PROOF-ONLY, never a deliverable" % (path,),
+                "tool": TOOL_NAME, "tool_version": TOOL_VERSION}
+    return None
 
 DEFAULT_FPS = 30
 
@@ -129,31 +141,37 @@ def _stamp(seconds):
 def _clean_cues(cues):
     """Measured cues only: text + start/end floats, order kept, no inventing.
 
-    Returns (clean, None) or (None, detail) when the caller gave something
-    that is not a measured window.
+    Returns (clean, None, None) or (None, reason_code, detail) when the
+    caller gave something that is not a measured window. A cue whose end
+    equals its start is refused with CAPTION_ZERO_DURATION (F-EOC-7): a
+    zero-length window draws nothing and times nothing, so it can never
+    ship as a caption.
     """
     if not isinstance(cues, (list, tuple)):
-        return None, "cues must be a list of {text,start,end} windows"
+        return None, BAD_CUES, "cues must be a list of {text,start,end} windows"
     clean = []
     for i, cue in enumerate(cues):
         if not isinstance(cue, dict):
-            return None, "cue %d is not an object" % i
+            return None, BAD_CUES, "cue %d is not an object" % i
         text = cue.get("text")
         start, end = cue.get("start"), cue.get("end")
         if not isinstance(text, str) or not text.strip():
-            return None, "cue %d has no text" % i
+            return None, BAD_CUES, "cue %d has no text" % i
         if not isinstance(start, (int, float)) or not isinstance(end, (int, float)):
-            return None, "cue %d has no numeric window" % i
+            return None, BAD_CUES, "cue %d has no numeric window" % i
         if float(end) < float(start):
-            return None, "cue %d ends before it starts" % i
+            return None, BAD_CUES, "cue %d ends before it starts" % i
+        if float(end) == float(start):
+            return None, ZERO_DURATION, ("cue %d has a zero-length window "
+                                         "(%.3f-%.3f)" % (i, start, end))
         clean.append({"text": text, "start": float(start),
                       "end": float(end)})
     if not clean:
-        return None, "no cue carried a window"
+        return None, BAD_CUES, "no cue carried a window"
     for prev, nxt in zip(clean, clean[1:]):
         if nxt["start"] < prev["start"]:
-            return None, "cues are not in time order"
-    return clean, None
+            return None, BAD_CUES, "cues are not in time order"
+    return clean, None, None
 
 
 def build_srt(cues, fps=DEFAULT_FPS):
@@ -161,9 +179,9 @@ def build_srt(cues, fps=DEFAULT_FPS):
 
     The text is the cue's own words; only the clock format is normalised.
     """
-    clean, why = _clean_cues(cues)
+    clean, code, why = _clean_cues(cues)
     if why:
-        raise ValueError("%s: %s" % (BAD_CUES, why))
+        raise ValueError("%s: %s" % (code, why))
     blocks = []
     for i, cue in enumerate(clean, 1):
         blocks.append("%d\n%s --> %s\n%s" % (
@@ -200,9 +218,9 @@ def build_plan(lines, provenance=None, cues=None, height_px=1920,
         plan["cue_count"] = 0
         plan["srt"] = None
         return plan, None
-    clean_cues, why = _clean_cues(cues)
+    clean_cues, code, why = _clean_cues(cues)
     if why:
-        return plan, "%s: %s" % (BAD_CUES, why)
+        return plan, "%s: %s" % (code, why)
     srt = build_srt(clean_cues, fps=fps)
     plan["timing"] = "measured"
     plan["cue_count"] = len(clean_cues)
@@ -247,12 +265,14 @@ def overlay_excerpt(lines, provenance=None, cues=None, height_px=1920,
                "planned": True,
                # Frames are burned by the render pass, never by this call.
                "burned": False,
-               "timing": plan["timing"],
+               # A refused cue set returns before the timing key is set:
+               # the receipt still answers honestly (unavailable).
+               "timing": plan.get("timing", "unavailable"),
                "style": plan["style"],
                "data_only": True, "to_video_model": False,
                "plan": plan,
                "srt": plan.get("srt"),
-               "reason_code": None if why is None else BAD_CUES,
+               "reason_code": None if why is None else why.split(":")[0],
                "detail": why}
     return receipt
 

@@ -630,6 +630,19 @@ def check_kling(prompt, sections, model, root=None):
     if re.search(r"\b(left|right)\b", prompt, re.I) and \
             "camera's point of view" not in prompt:
         reasons.append("DIRECTION_WITHOUT_REFERENCE_FRAME")
+    # F-KLING-TEXT-BAIT: letter-bait prompt refuses here too, so a
+    # hand-built Kling prompt that skips dispatch still cannot pass the
+    # template checker. never_again owns the word list; this gate only
+    # reports its refusal.
+    try:
+        if CORE_DIR not in sys.path:
+            sys.path.insert(0, CORE_DIR)
+        import never_again as _na
+        _bait = _na.check_kling_prompt_text(prompt)
+    except (ImportError, AttributeError):
+        _bait = None
+    if _bait is not None and _bait.get("code") == "TEXT_BAIT":
+        reasons.append("KLING_TEXT_BAIT %s" % (_bait.get("detail"),))
     if reasons:
         return {"verdict": "REFUSE", "chars": n, "reasons": reasons,
                 "repeat_8gram": round(rep, 4)}

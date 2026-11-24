@@ -131,6 +131,16 @@ stands unchanged.
   instrumental opening, keeps ERM -> pain -> Hero Shift order, uses the hook only
   after a local breakthrough, and ends on an end card with show, episode and where to
   watch. Its destination is the episode/channel, never the checkout.
+- **The ERM authority.** The apex comes from `control/method.json`
+  `runtime_targets.erm_apex_s`, and that value wins over the blueprint and over
+  `req.json`. A blueprint whose ERM sits outside the length's window is refused
+  `ERM_OUTSIDE_WINDOW`.
+- **`block_anchors_s` are block END times**, never block starts.
+- **The worked case.** At 180 s the method window is 25-40 s and the apex is
+  32.5 s, so no singing before 30 s.
+- **The opener.** A short spoken `[Intro]` (at most `opener_max` words) plus a
+  spoken `[Backstory]` up to the apex, gated by `check_pre_erm_opening`
+  (`PRE_ERM_SPOKEN_SHORT` / `PRE_ERM_SPOKEN_LONG`).
 
 **The four uses - PURPOSE is question 1 of the card.** 1 Grow my business (a full
 campaign: a full episode plus 60 s and 90 s trailers and 60 s and 90 s ad clips),
@@ -454,6 +464,56 @@ The layers and the assembler are the same in both distributions (U15a-U15i):
   below the planned number is `CONSERVATIVE_FANOUT`: the missing writers are
   launched at once, never allowed to leave the batch waiting on one writer.
 
+## Writing the lyrics (script-lyrics stage)
+
+Read this list IN FULL before writing, never grepped: this `SKILL.md`,
+`INSTRUCTIONS.md`, `QC.md`, `EXAMPLES.md`,
+`references/drama-to-demand-method.md` (Steps 1 and 6-12, plus sections 6 and
+7), `references/sensational-openings.md`, and the chosen style's own data in
+`references/prompt-templates/music/<style>.json`. A rule skimmed past is a
+defect; each rule below names the file it protects.
+
+- **R1 - the persona comes from the brief.** Name the singer from the brief's
+  audience, offer and pain (age band, work, family), so the audience hears
+  themselves. Never a generic "I".
+- **R2 - the pain uses the method's checklist.** At least 5 of: hours or jobs
+  with a number; the balance, or "nothing left"; bills by name; dependents;
+  the broken promise (the degree, the career); friends doing better; fear for
+  the future (retirement, travel); the villain as an object (the letter, the
+  bill). First person, present tense, and each line ends on the loss.
+- **R3 - keep the client's own lines.** Client-supplied lines stay in the pain
+  sections, cleaned ONLY for grammar and meter; log the original beside the
+  cleaned line. A phrase the client repeated three times is encouraged.
+- **R4 - the shape.** The spoken backstory plus at least two sung pain sections
+  come before the hero; the hero enters at the Hero Shift, with a musical
+  change.
+- **R5 - call back a concrete image.** The bridge or the hook names a concrete
+  pain image from the pain sections, never a generic one.
+- **R6 - the spoken opening.** `[Intro (spoken)]` at most `opener_max` words
+  (the length plan's number), then `[Backstory (spoken)]`.
+- **R7 - spoken words before the first sung word.** Aim at the minimum plus
+  0-4 words; real speech runs about 1.3-1.6 words/s.
+
+  | Length | Soul Ballad / Soul Rise | R&B Flow |
+  |---:|---|---|
+  | 30 s | 12-16 | 12-18 |
+  | 60 s | 25-33 | 27-36 |
+  | 90 s | 37-46 | 40-50 |
+  | 120 s | 48-59 | 51-64 |
+  | 180 s | 58-74 | 62-80 |
+  | 300 s | 72-92 | 77-100 |
+  | 420 s | 81-103 | 87-112 |
+  | 600 s | 95-120 | 102-130 |
+
+  At 120 s and below reach the count with an `[Instrumental]` lead-in or a
+  longer spoken card.
+- **R8 - the CTA outro** is about 11 words; verify with
+  `spoken_share.check_spoken_word_budget` and `words_fit.preflight_sheet`.
+- **R9 - the style is locked to the card choice.** The card's style is the
+  sheet's style; a sheet is never quietly moved onto another style's rates.
+- **The worked example.** `EXAMPLES.md`, plus the machine-readable golden
+  sheets in `references/prompt-templates/fixtures/suno-sheets/`.
+
 ## Suno song recipe (read this first when you build audio)
 
 Every Suno music style (Soul Ballad, R&B Flow, Soul Rise, and any Suno style
@@ -464,8 +524,10 @@ refuses a raw Suno style that skipped it.
 
 The four rules (recipe v2, replaces G12):
 
-1. Spoken tags only in [Intro] and [Outro]; spoken is named once in the style
-   text, and the style says the full band keeps playing under the spoken lines.
+1. Spoken tags only in [Intro], [Outro] and, on method runs, a [Backstory];
+   spoken is named once in the style text. On method runs the code swaps
+   "Only the short intro..." for "The full band keeps playing under the
+   spoken lines." (C2).
 2. Sung lines are short (5-6 syllables aimed, 8 at most), rhymed, with
    hyphen-held vowels. A wordless vocalise is OPTIONAL, never a forced
    lead-in: a sheet may open with one short note (a brief lead-in, never
@@ -477,6 +539,25 @@ The four rules (recipe v2, replaces G12):
    true; the hook is the client's own words, repeated by
    length (`core/sung_hook`, `core/sung_hook/hook_placement.py`).
 4. Each take's singing is measured, not taken from its labels.
+
+### Telling Suno to wait (method runs)
+
+The first sung line lands at the ERM apex (C1). These are the words that make
+Suno wait, and each one is checked:
+
+- Every spoken cue ends "... plain natural speaking voice ... no melody, no
+  singing yet".
+- The first sung cue says "the groove drops in here ... first sung line lands
+  on the drop".
+- The final style text carries "no singing until the groove drops"
+  (`suno_recipe.method_pace_clauses`); `song_contract.check_pace_style`
+  refuses a style that is missing it.
+- The hook never opens the song; the hook is the payoff, after its build-up.
+- **R11 - measure, never trust the label.** The first singing is judged by the
+  words' timings on the returned take (install the whisper small model); a
+  "spoken" tag sitting over an early sung word is still a FAIL.
+- **R12 - no composites.** Never splice a spoken opening in from another
+  take; the opening comes from the vocal take itself, so its timing is real.
 
 Word budget, section plan, hook repeats, spoken placement, instrumental breaks
 and the extend plan for any length come from ONE function,
@@ -553,6 +634,21 @@ cap refuses `STYLE_TOO_LONG` rather than dropping a clause. See "Prompt template
 R&B Flow reserves at least max(8 seconds, 10% of the delivered runtime) of measured rhythmic rap before any intro/outro allocation, and each rap verse on the sheet must itself reach a real budget: at least 8 seconds and at least ceil(8 seconds × the style's rap rate) words. Story-bearing lexical content starts within 5 seconds, and no opening wordless span may exceed 3 seconds. Real lexical word timing covers at least 70% of the delivered runtime; vocalise and music-only time never count. Every approved plot beat must be heard, in order, and each take is bound to the exact approved sheet revision it was generated from. Two pace changes are ordered, each separately bound to its own story beat and never merged into one. The first, the problem shift, belongs to the beat where the story hits the problem: it must be written into the submitted music style and must then pass a measured onset and energy drop check. The second, the rise shift, belongs to the beat where the story reaches the solution, the rise: it must be written into the submitted music style and must then pass its own measured rise check. Each pace change must additionally pass an independent smooth-transition review. Required rap evidence that is unmeasured, unavailable or unknown cannot pass; only an independent timed listening review or a calibrated classifier may grant it. These are new acceptance rules; the owner's existing spoken/sung 5/10 band is unchanged. The recommended SONG APPROVAL answer is Yes and an explicit No stays one song, but no assistant may answer a card question on the client's behalf: an answer with no recorded author and no recorded authority is treated as unspecified and routes to the recommended Yes.
 
 **Reconciled music direction (WW-29).** Do not mandate wordless held-note openings or a premature hook; the vocalise is an OPTIONAL one-note lead-in, never a forced opening, and the hook-placement rule above — the hook is the payoff, measured at or after `true_at_beat` — is what the gate measures. R&B Flow consistently directs rhythmic speech-rhythm RAP verses contrasted with a fully sung melodic R&B hook (its own data: `references/prompt-templates/music/rnb-flow.json`, verses tagged rap, hook sung). Cast, pace, hook, ending and the exclusions (`negative_tags`) all survive into the exact serialized request — the createTask envelope's nested `input` — and are checked there by `song_dispatch.validate_request` from every entry path; a style text over the 1000-character cap REFUSES with `STYLE_TOO_LONG` rather than dropping a clause, and no required clause is ever trimmed to fit. Planning timestamps, stretched voice time and text labels never become measured audio. Delivered-audio acceptance has FIVE gates only (WW-21, `song_dispatch.accept_audio_results`): real rap, story start, both pace changes, three audibly different versions including an upbeat option, and multiple character voices — never a sixth. Preserve rejected paid files, there is no automatic paid retry, and nothing regenerates until Trevor approves. Evidence confidence: the adopted techniques are classed in the round-3 plan's citation map as DOCUMENTED (Suno/KIE docs), CONSISTENT (repeated measured runs) or LORE (experience only); no LORE technique grants a PASS without its named measured gate, and the newest individual V6 variant stays UNDETERMINED.
+
+### WW-21: the operator decision is recorded, never a PASS
+
+The delivered-audio boundary (WW-21) is crossed only by a recorded human
+decision, and the order is fixed: `song_dispatch.record_acceptance` (the
+take's own measured rows), then
+`song_dispatch.sha256_evidence_records({vid: song_dispatch.measure_evidence_digest(run_dir, vid)})`
+(the digest the decision is bound to), then
+`song_dispatch.record_operator_decision(run_dir, dec)`, then
+`python3 scripts/core/intake_preflight/factory.py music --run-dir "$RUN"
+--operator-decision <music/acceptance/operator-decision.json>`. A failed gate
+is recorded as FAIL and stays FAIL / NOT PROVEN on the receipt; the decision
+records that the run may advance with those gates unproven. It never writes
+PASS and never rewrites a take record, and a hand-set relabel is refused
+`MANUAL_RELABEL`.
 
 ## Sung hook (I8)
 
@@ -853,6 +949,11 @@ send the four-part message ("When something stops the work").
   `capped_by`, when that binds). Never submit clips in dribbles or wait for
   one clip before sending the next.
 - **KIE rate limit:** new generation submits are paced to **20 per rolling 15 s** per KIE key (the governor's `KIE_MAX = 20`, `KIE_WINDOW_S = 15.0`, a little under KIE's documented 20 per 10 s, so no test batch is needed - one number everywhere, S-13); a 429 means not run and not queued, so resubmit after a wait. See `references/kie-rate-limit.md`.
+  **NEVER-AGAIN blast lock (binding):** every ready job ships in ONE blast
+  up to the rate limit; a drip split across passes refuses `RETAKE_DRIP`
+  (`core/never_again.py::check_blast`, wired in `retake_manager.plan` and
+  `kie_dispatch.refuse_drip`).
+- **KIE rate limit:** new generation submits are paced to 20 or fewer per rolling 10 s per KIE key; a 429 means not run and not queued, so resubmit after a wait. See `references/kie-rate-limit.md`.
 
 ## Agnes path (optional)
 
@@ -1063,6 +1164,35 @@ actual per stage, plus the ledger's own totals); verification status (measured,
 paths; and every delivered file with its SHA-256. A BUILD-RECORD a reader could
 not reproduce the master from is a provenance FAIL, the same as a missing
 assembler receipt. The full field list is QC.md section 5.2.
+## NEVER-AGAIN LOCKS (binding — 2026-11-21, from fix plan section 7)
+
+One module owns all seven (`core/never_again.py`); each lock below names its
+wired call site. An agent cannot work around them — the refusal fires in code,
+not in prose.
+
+1. **Template-fail lock.** After 2 same-template fails, retakes must change
+   the prompt (drop the stillness line) or stop and report. Never a 3rd
+   identical take (`lipsync_clips.check_try_limit` raises `TEMPLATE_FAIL_LOCK`;
+   `retake_manager.plan` raises it when the cap is also reached).
+2. **Dispatch lock.** Only `kie_dispatch` may submit paid jobs. A direct API
+   post refuses HARD with `NO_DIRECT_SUBMIT` (`lipsync_evidence.check_plan`;
+   `scripts/qc-no-direct-kie.sh` stays the static tripwire).
+3. **Proof rule.** A file named PROOF-ONLY is never a deliverable. Delivery
+   requires Clean plus Captioned plus srt plus QC PASS receipt
+   (`never_again.check_delivery_set`; `assembler.check_proof_output`,
+   `captions_burn.refuse_proof_output`); zero-duration cues refuse
+   `CAPTION_ZERO_DURATION`.
+4. **Gate-edit lock.** Gates change only via repo fix plus tests, never
+   inline (`never_again.check_gate_edit`; timeline second-writer refuses
+   `TIMELINE_WRITER_CONFLICT` in `_write_timeline_atomic`).
+5. **Blast rule.** All ready jobs in ONE blast up to the rate limit. Drips
+   refuse with `RETAKE_DRIP` (`kie_dispatch.refuse_drip`,
+   `retake_manager.plan` drip branch).
+6. **Crop lock.** Any zoom or crop to hide letters refuses with
+   `CROP_REPAIR_REFUSED`; remake instead (`assembler.check_crop_repair`).
+7. **Approval plus waiver receipts.** Approval only via `approve()` with the
+   recorded client reply; waiver only via a Trevor-signed receipt
+   (`approval_runner.check_approval_receipt`, `check_waiver_receipt`).
 
 ## Model and agent choice: the user's choice wins
 
@@ -1513,6 +1643,12 @@ SOP named above.
   that fails a check is fixed by a new take or a remake, never by an edit that
   hides the defect. Picking a different time window of the same clip is
   allowed; changing the picture to get past the check is not.
+  The local crop is the one allowed exception to "never cropped" below.
+  **NEVER-AGAIN crop lock (binding):** never crop, zoom, freeze, stretch, or
+  hand-join to clear any gate — a repair edit naming crop/zoom/freeze/stretch
+  refuses `CROP_REPAIR_REFUSED` and the shot is remade instead
+  (`core/never_again.py::check_crop_repair`, wired as
+  `final_assembler.assembler.check_crop_repair`).
 - **Lip-sync close-up (owner order 2026-10-08):** the character reference set always
   includes one lip-sync close-up per speaking/singing character. It is MADE from the
   template `lip_gate.closeup_prompt()` (chest-up portrait 9:16, face about 30-40% of the

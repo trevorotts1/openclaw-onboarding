@@ -315,6 +315,17 @@ def make_measure(pace_plan=None, ffmpeg=None, timings=None):
                 take_errors = "word timings unavailable: %s: %s" % (
                     type(e).__name__, str(e)[:200])
                 words = []
+        # Word timing is what the judge measures first singing from. A take
+        # that comes back with no words cannot place the opening vocal line,
+        # so it is SAID LOUDLY here instead of quietly reporting UNMEASURED
+        # (finding A1 / D7). The measurement itself is unchanged.
+        if take_errors or (timings is not None and not words):
+            try:
+                import loud_failure  # noqa: PLC0415 - same core dir
+                loud_failure.warn("WORD_TIMING_UNAVAILABLE",
+                                  take_errors or "no aligned words returned")
+            except Exception:  # noqa: BLE001 - the take still records the error
+                pass
         segs = segments_from_detector(rec, words)
         out = {
             "segments": segs,
