@@ -1248,7 +1248,7 @@ already route through it, and a test fails if one stops.
   are never deleted. Every deletion is logged in the receipt; a failed one prints a WARNING.
 - KIE pacing follows `references/kie-rate-limit.md`. Only NEW generation requests (submit
   and create task: image, video, lip-sync, music, extend) draw from the bucket of at most 20
-  per rolling 10 seconds, shared across all processes, one bucket per KIE key. Status polls,
+  per rolling 15 seconds, shared across all processes, one bucket per KIE key. Status polls,
   health checks and record-info reads use a separate gentler limiter (1 request per second
   per process by default, `DSAF_KIE_POLL_INTERVAL_S`) and never consume generation tokens.
   A 429 on a generation request means the job did NOT run and is not queued: back off and
@@ -1277,7 +1277,7 @@ for the whole ad (hard audio-length rule, captions = lyrics, face through the
 call to action), and one repair.
 
 - **ONE shared KIE governor across all lanes** (`SharedGovernor`): at most 20
-  NEW generation requests per rolling 10 s in total, **per-lane share
+  NEW generation requests per rolling 15 s in total, **per-lane share
   floor(18 / N)** (so 3 lanes -> 6 each), and every submit rides
   `load_governor.kie_request`, so a 429 is backed off and **resubmitted, never
   dropped**.
