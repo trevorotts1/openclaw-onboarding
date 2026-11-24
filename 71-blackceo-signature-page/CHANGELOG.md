@@ -1,3 +1,11 @@
+## [1.3.43] - 2026-11-24 - a sanctioned per-run layout input for the page-role runner (SWB-200)
+
+- `scripts/build_production_request.py`: `--layout-overrides PATH` (and `build(..., layout_overrides=)`) reads `{"<stage>": {"<section id>": {"layout": "design text", "negatives": "optional"}}}` and appends the text to that stage's section `layout` field when the request is built, never replacing it. Design text only: any key but `layout` and `negatives` refuses (copy, ctas, model, references, slots and section order are unreachable), as does an unknown stage, an unknown section id, an empty or non-string `layout`, or an unreadable file. The built request carries a `layout_overrides` provenance block (source, sha256 of the file's bytes, stage, the exact appended text per section) and the builder prints `LAYOUT-OVERRIDES` / `LAYOUT-OVERRIDE section N` lines.
+- `scripts/run_page_role_stages.py`: `--layout-overrides PATH`, defaulting to `<run_dir>/dispatch/layout-overrides.json` when that file exists, passed to every stage's build and to the printed final-mockups build; a missing explicit path exits 2. This replaces the ad-hoc wrapper that SWB-160 ran on a client box.
+- `scripts/stage_executor.py`: the stage executor record (stage-level and per-item) carries the `layout_overrides` block when the request has one.
+- No file, no change: the request is byte-identical to 1.3.42 (tested).
+- Docs: SKILL.md, SOP Stage 4. Tests: `tests/test_layout_overrides.py` (18; fail on 1.3.42), registered in `tests/run_tests.py`. Skill 49 hash pin re-minted with a signed rotation record.
+
 ## [1.3.42] - 2026-11-24 - `--refresh-record` recomputes the panel instead of trusting the stitch receipt (SWB-123)
 
 - `scripts/stitch_sections.py`: the stitch is now one function, `compose_canvas()`, that `main()` calls; behaviour and output unchanged.

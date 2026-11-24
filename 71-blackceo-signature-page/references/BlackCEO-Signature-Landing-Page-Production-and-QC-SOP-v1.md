@@ -154,6 +154,8 @@ Record on-page form versus button-triggered popup versus separate page. Specify 
 
 ## Stage 4 - Create the entire desktop wireframe
 
+**Per-run layout input (page-role runs).** A page-role run's wireframe, mobile and mockup stage requests are rebuilt from the manuscript on every stage, so a design correction for one section goes in `<run>/dispatch/layout-overrides.json` (or `run_page_role_stages.py --layout-overrides PATH`), `{"<stage>": {"<section id>": {"layout": "...", "negatives": "..."}}}`, never into `production-request.json` by hand. It is appended to that stage's section layout, design text only (copy, ctas, model, references, slots and section order refuse), and its sha256 and applied text are recorded in the request (`layout_overrides`) and the stage executor record.
+
 **Layout references resolve in order; only an unresolved reference stops the stage.** Before drawing, resolve each required layout reference: first the supplied or bundled original file; where the original is absent, the approved house default recorded for that reference in the standing registry, `assets/page-references/substitutions.json`; and only where neither exists, a recorded owner waiver with its reason. A reference with none of the three fails the gate by name. Every run records which source each reference used, and REPORT.md prints it: a fallback is visible, never silent. The same resolution governs the mobile wireframe and visual-mockup stages.
 
 ### A. Build the annotated spec sheet around the exact public copy

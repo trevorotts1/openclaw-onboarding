@@ -15,6 +15,14 @@ script never starts them.
 Usage:
   run_page_role_stages.py <run_dir> [--manuscript FILE] [--stages a,b,c] [--design-prose FILE]
       [--model ID] [--provider stub|kie] [--allow-paid] [--preflight] [--no-pitch-scan SCRIPT]
+      [--layout-overrides PATH]
+
+Per-run design text (SWB-200): <run_dir>/dispatch/layout-overrides.json, or --layout-overrides PATH,
+shaped {"<stage>": {"<section id>": {"layout": "design text", "negatives": "optional"}}}, is appended
+to (never replacing) that stage's section layout each time the request is rebuilt. Design text only:
+any other key refuses, as does an unknown stage or section. The file's sha256 and the exact applied
+text are recorded in production-request.json (`layout_overrides`) and in the stage executor record,
+and the builder prints them. With no file, nothing changes.
 
 A thank_you run is scanned before its first stage: scripts/no_pitch_scan.py runs Skill 82's
 semantic_scan.py (or --no-pitch-scan SCRIPT) on the manuscript and refuses on any FLAG line
@@ -92,8 +100,17 @@ def main(argv=None) -> int:
     p.add_argument("--no-pitch-scan", type=Path, default=None, metavar="SCRIPT",
                    help="the no-pitch scanner for a thank_you run (default: Skill 82's semantic_scan.py); "
                         "a missing or failing scanner refuses the run")
+    p.add_argument("--layout-overrides", type=Path, default=None, metavar="PATH",
+                   help="design-text overrides per stage and section (default: <run_dir>/dispatch/"
+                        "layout-overrides.json when that file exists); see the module docstring")
     a = p.parse_args(argv)
     run_dir = a.run_dir.resolve()
+    overrides = a.layout_overrides
+    if overrides is None and (run_dir / "dispatch" / "layout-overrides.json").is_file():
+        overrides = run_dir / "dispatch" / "layout-overrides.json"
+    elif overrides is not None and not overrides.is_file():
+        print(f"FAIL: --layout-overrides {overrides} is not a file")
+        return 2
     try:
         intake = json.loads((run_dir / "intake.json").read_text(encoding="utf-8"))
     except (OSError, ValueError) as exc:
@@ -123,6 +140,8 @@ def main(argv=None) -> int:
                  "--out", str(request), "--model", model, "--run-dir", str(run_dir)]
         if a.design_prose:
             build += ["--design-prose", str(a.design_prose)]
+        if overrides:
+            build += ["--layout-overrides", str(overrides)]
         run = [sys.executable, str(HERE / "stage_executor.py"), str(run_dir), "--stages", stage,
                "--provider", a.provider]
         if a.allow_paid:
@@ -162,6 +181,8 @@ def main(argv=None) -> int:
                    "--model", model, "--run-dir", str(run_dir)]
     if a.design_prose:
         build_final += ["--design-prose", str(a.design_prose)]
+    if overrides:
+        build_final += ["--layout-overrides", str(overrides)]
     print("NEXT 2, final-mockups, only after the client's approval is recorded, in a run of its "
           "own (the executor refuses the two stages together): build its request first, then "
           "run it: " + fmt(build_final) + " && "

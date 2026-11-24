@@ -2739,6 +2739,7 @@ def run_stage(stage: str, run_dir: Path, request: dict, provider,
         "note": "this record is not a gate receipt and cannot close a stage",
         "images": records,
         "composition": composition,
+        **({"layout_overrides": request["layout_overrides"]} if request.get("layout_overrides") else {}),
     }
 
     def merge(data):
@@ -2746,6 +2747,8 @@ def run_stage(stage: str, run_dir: Path, request: dict, provider,
         # part of the stage record as F21's provider/mode/model/composition.
         data.update({k: record[k] for k in ("provider", "mode", "model", "generated_at",
                                             "start_check", "note", "composition")})
+        if record.get("layout_overrides"):  # SWB-200: the design text the stage was built with, hash and all
+            data["layout_overrides"] = record["layout_overrides"]
         merged = {e.get("file"): e for e in (data.get("images") or [])
                   if isinstance(e, dict) and e.get("file")}
         for entry in records:
@@ -3014,6 +3017,8 @@ def run_item(run_dir: Path, stage: str, item: str, request: dict, provider,
         # main's record shape survives the F21 merge: the note and the timestamp it always wrote.
         data["note"] = "this record is not a gate receipt and cannot close a stage"
         data["generated_at"] = now_iso()
+        if request.get("layout_overrides"):
+            data["layout_overrides"] = request["layout_overrides"]
         data.setdefault("items", [])
         data.setdefault("history", [])
         data["items"] = [e for e in data["items"]

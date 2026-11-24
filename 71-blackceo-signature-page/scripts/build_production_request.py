@@ -75,6 +75,7 @@ from __future__ import annotations
 import argparse
 import contextlib
 import copy
+import hashlib
 import io
 import json
 import re
@@ -794,9 +795,64 @@ def folded_levels(run_dir):
     return len(mains) if len(mains) >= 2 else None
 
 
+LAYOUT_OVERRIDE_KEYS = ("layout", "negatives")
+
+
+def load_layout_overrides(path, stage, sections):
+    """SWB-200: the sanctioned per-run design-text input. Returns None when no file is given, else
+    {"source", "sha256", "stage", "applied": [...]} and appends each entry to that stage's section
+    `layout` field. Design text only: any key but `layout` / `negatives` refuses, a stage or a
+    section id the page does not have refuses, and copy, ctas, model, references, slots and section
+    order are never reachable from here."""
+    if path is None:
+        return None
+    path = Path(path)
+    try:
+        raw = path.read_bytes()
+        doc = json.loads(raw.decode("utf-8"))
+    except (OSError, ValueError) as exc:
+        raise BuildError(f"layout overrides {path}: cannot be read as JSON: {exc}")
+    if not isinstance(doc, dict):
+        raise BuildError(f"layout overrides {path}: the file must be an object keyed by stage")
+    ids = {str(s["section_id"]): s for s in sections}
+    for stage_key, per_section in doc.items():
+        if stage_key not in exe.STAGES:
+            raise BuildError(f"layout overrides: unknown stage {stage_key!r} "
+                             f"(stages: {', '.join(exe.STAGES)})")
+        if not isinstance(per_section, dict):
+            raise BuildError(f"layout overrides: stage {stage_key!r} must be an object keyed by section id")
+        for sid, entry in per_section.items():
+            if str(sid) not in ids:
+                raise BuildError(f"layout overrides: stage {stage_key!r} names unknown section {sid!r} "
+                                 f"(sections: {', '.join(ids)})")
+            if not isinstance(entry, dict):
+                raise BuildError(f"layout overrides: {stage_key!r} section {sid!r} must be an object")
+            extra = sorted(set(entry) - set(LAYOUT_OVERRIDE_KEYS))
+            if extra:
+                raise BuildError(f"layout overrides: {stage_key!r} section {sid!r} carries "
+                                 f"{', '.join(extra)}; only {' and '.join(LAYOUT_OVERRIDE_KEYS)} (design "
+                                 "text) can be overridden, never copy, ctas, model, references, slots "
+                                 "or section order")
+            if not isinstance(entry.get("layout"), str) or not entry["layout"].strip():
+                raise BuildError(f"layout overrides: {stage_key!r} section {sid!r} needs a non-empty "
+                                 "`layout` string")
+            if "negatives" in entry and not isinstance(entry["negatives"], str):
+                raise BuildError(f"layout overrides: {stage_key!r} section {sid!r} `negatives` must be a string")
+    applied = []
+    for sid, entry in (doc.get(stage) or {}).items():
+        text = entry["layout"].strip()
+        if entry.get("negatives", "").strip():
+            text += "\nNEGATIVES: " + entry["negatives"].strip()
+        section = ids[str(sid)]
+        section["layout"] = "\n".join(([section["layout"]] if section.get("layout") else []) + [text])
+        applied.append({"section_id": str(section["section_id"]), "appended_text": text})
+    return {"source": str(path), "sha256": hashlib.sha256(raw).hexdigest(), "stage": stage,
+            "applied": applied}
+
+
 def build(stage, version, manuscript_text, slots, prose, references, model, style, run_dir=Path("."),
           page_role="landing", sections=None, structure=None, page_doc=None, page_kind=None,
-          order_bump=None, style_card=None):
+          order_bump=None, style_card=None, layout_overrides=None):
     notes = {"dropped_role_label_headings": [], "terminal_periods_added": []}
     if structure:  # a role with its own entry in references/page-structures.json (downsell_1)
         version, spec = structure["copy_version"], structure
@@ -833,6 +889,7 @@ def build(stage, version, manuscript_text, slots, prose, references, model, styl
             for section in sections:
                 section["layout"] = "\n".join(wireframe_spec.page_type_lines(
                     version, section, wireframe_spec.section_tag(section, 1)))
+    overrides = load_layout_overrides(layout_overrides, stage, sections)
     kind = None
     if page_role == "landing" and not spec.get("page_role"):  # SPF030: only a landing-role page has a kind
         try:  # the page kind (flag, else the run's intake) must allow this copy form
@@ -866,6 +923,8 @@ def build(stage, version, manuscript_text, slots, prose, references, model, styl
                "stage_prompts": {stage: template_for(stage, {})}}
     if built_role:
         request["page_role"] = built_role
+    if overrides:
+        request["layout_overrides"] = overrides
     if spec.get("form"):
         request["_role_spec"] = spec  # the wireframe block reads it; never written out
     if order_bump is not None:  # the funnel's bump decision; the executor reads the same key
@@ -979,6 +1038,10 @@ def main(argv=None) -> int:
     p.add_argument("--style-card-id", default=None,
                    help="a registered Skill 45 style card; default: style_card_id in the run's intake.json. "
                         "Its LONG tier is embedded verbatim in every section prompt")
+    p.add_argument("--layout-overrides", type=Path, default=None, metavar="PATH",
+                   help="design text only: {stage: {section id: {layout, negatives}}} appended to that stage's "
+                        "section layout (never replacing it); sha256 and applied text are recorded in the "
+                        "request's `layout_overrides` block. Absent: nothing changes")
     p.add_argument("--run-dir", type=Path,
                    help="the run whose copy source and copy/copy-manifest.json the request is "
                         "checked against (default: the manuscript's run when it sits in "
@@ -1015,7 +1078,7 @@ def main(argv=None) -> int:
                         [r for r in a.references.split(",") if r], a.model, a.style, run_dir,
                         a.page_role, sections=sections, structure=structure, page_doc=page_doc,
                         page_kind=a.page_kind, order_bump=False if a.no_bump else None,
-                        style_card=style_card)
+                        style_card=style_card, layout_overrides=a.layout_overrides)
         receipt_path = di.write_receipt(run_dir, card_id)
     except (BuildError, exe.ExecutorError, OSError, ValueError, di.DesignIntelligenceError) as exc:
         print(f"REFUSED: {exc}")
@@ -1030,6 +1093,12 @@ def main(argv=None) -> int:
     if cb["target"] and cb["min_seen"] < cb["target"]:  # floor passed (else refused); band goal missed
         print(f"WARN below the {cb['target']}-char target: shortest section {cb['min_seen']} chars; "
               "supply fuller --design-prose to reach the 95 to 100 percent band")
+    lo = request.get("layout_overrides")
+    if lo:
+        print(f"LAYOUT-OVERRIDES file={lo['source']} sha256={lo['sha256']} stage={lo['stage']} "
+              f"sections={','.join(x['section_id'] for x in lo['applied']) or 'none'}")
+        for x in lo["applied"]:
+            print(f"LAYOUT-OVERRIDE section {x['section_id']}: {x['appended_text']}")
     print(f"CHECKED run_dir={run_dir} against={'; '.join(m['checked_against']) or 'request only'}")
     print(f"DESIGN-INTELLIGENCE receipt={receipt_path.relative_to(run_dir)} card={card_id or 'none'}")
     return 0
